@@ -51,6 +51,19 @@ Default reveal rule:
 - Clicking empty canvas or a close action clears the focused arrows.
 - If a focused file has many direct relationships, the arrows are still represented; visual clutter is handled with grouping, bundling, curved parallel paths, or an adjacent relationship list rather than dropping relationships.
 
+### Arrow Visual Style
+
+Arrow form must match the previous understand-anything graph style rather than introduce a new visual language.
+
+- Render arrows as ReactFlow-style curved SVG edges with arrowheads. If the new readable overlay is implemented as raw SVG rather than ReactFlow edges, it should still visually mimic the old ReactFlow edge shape.
+- Use the same warm gold edge family already used by `GraphView.tsx`.
+- Base file/function arrows use the old muted gold treatment: roughly `rgba(212,165,116,0.4-0.5)` with `1.5px` stroke.
+- Aggregated file arrows may scale stroke width by relationship count using the old logarithmic feel, but this affects visual weight only and must not hide or cap relationships.
+- Focused/selected arrows use the stronger old selected-edge treatment: roughly `rgba(212,165,116,0.8)`, thicker stroke, animated emphasis, and gold labels.
+- Unrelated visible arrows, when any are shown around a focus set, fade the same way the old graph fades non-selected edges.
+- Estimated import fallback arrows use the old dashed external/portal treatment.
+- Labels follow the old muted/gold label treatment: muted base labels and brighter focused labels.
+
 ### File Detail
 
 The file detail page gains a function call mini-map near the existing function matrix.
@@ -141,7 +154,7 @@ Add a component:
 Responsibilities:
 
 - Receive rendered file layout anchors from `LayerFileHeatmap`.
-- Draw SVG arrows over the card grid.
+- Draw arrows over the card grid using the previous understand-anything edge form.
 - Keep pointer events minimal so file cards remain easy to click.
 - Render arrows only for the focused/hovered file relationship set.
 - Preserve all direct focused relationships by grouping or bundling dense sets instead of filtering them out.
@@ -158,6 +171,7 @@ Responsibilities:
 
 - Render selected function, incoming callers, outgoing callees, and same-file calls.
 - Show direction clearly with arrowheads.
+- Reuse the previous understand-anything arrow styling so the mini-map feels like the same graph system at a smaller scale.
 - Use compact nodes so it fits beside or below the matrix.
 - On small screens, stack below the matrix instead of forcing a cramped three-column layout.
 
@@ -227,4 +241,5 @@ Manual/browser verification:
 - Layer detail shows readable file cards plus focused directional file-level arrows.
 - File detail shows function-level upstream/downstream arrows.
 - Arrow visibility is controlled by focus, while focused direct relationships are preserved rather than capped away.
+- Arrow shape, color, selected state, dashed fallback state, and label treatment match the previous understand-anything ReactFlow arrows.
 - Existing readable navigation, search, theme switching, and mode controls continue to work.

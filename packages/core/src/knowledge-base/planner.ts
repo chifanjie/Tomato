@@ -7,17 +7,7 @@ import type {
   ProjectProfile,
   TopicCandidate,
 } from "./types.js";
-
-function slug(value: string): string {
-  const cleaned = value
-    .trim()
-    .replace(/[:/\\]+/g, "-")
-    .replace(/\s+/g, "-")
-    .replace(/[^\p{L}\p{N}_.-]+/gu, "")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-  return cleaned || "untitled";
-}
+import { KB_PATHS, indexDocumentPath, moduleDocumentPath, slugPath, topicDocumentPath } from "./paths.js";
 
 function addReason(map: Map<string, Set<string>>, nodeId: string, reason: string): void {
   const reasons = map.get(nodeId) ?? new Set<string>();
@@ -167,17 +157,17 @@ export function buildDocumentPlan(profile: ProjectProfile): DocumentPlan {
   const topicCandidates = selectTopicCandidates(profile);
 
   const topLevelDocs: Array<[string, string, KnowledgeBaseDocumentCategory]> = [
-    ["目录.md", "目录", "top-level"],
-    ["项目总览.md", "项目总览", "top-level"],
-    ["架构与模块总览.md", "架构与模块总览", "top-level"],
-    ["业务流程总览.md", "业务流程总览", "top-level"],
-    ["文件索引.md", "文件索引", "index"],
-    ["函数索引.md", "函数索引", "index"],
-    ["类索引.md", "类索引", "index"],
-    ["配置与外部依赖.md", "配置与外部依赖", "top-level"],
-    ["风险点与待确认项.md", "风险点与待确认项", "top-level"],
-    ["AI检索索引.md", "AI检索索引", "top-level"],
-    ["覆盖报告.md", "覆盖报告", "report"],
+    [KB_PATHS.inventory, "目录", "top-level"],
+    [KB_PATHS.projectOverview, "项目总览", "top-level"],
+    [KB_PATHS.architectureMap, "架构地图", "top-level"],
+    [KB_PATHS.businessFlowMap, "业务流程地图", "top-level"],
+    [KB_PATHS.pendingItems, "待确认项", "top-level"],
+    [KB_PATHS.coverageReport, "覆盖报告", "report"],
+    [indexDocumentPath("文件索引"), "文件索引", "index"],
+    [indexDocumentPath("函数索引"), "函数索引", "index"],
+    [indexDocumentPath("类索引"), "类索引", "index"],
+    [indexDocumentPath("调用关系索引"), "调用关系索引", "index"],
+    [indexDocumentPath("AI检索索引"), "AI检索索引", "index"],
   ];
 
   for (const [path, title, category] of topLevelDocs) {
@@ -193,7 +183,7 @@ export function buildDocumentPlan(profile: ProjectProfile): DocumentPlan {
 
   for (const layer of profile.layerProfiles) {
     const doc = plannedDoc(
-      `模块概览/${slug(layer.name)}.md`,
+      moduleDocumentPath(layer.name),
       `${layer.name} 模块概览`,
       "module",
       layer.nodeIds,
@@ -209,7 +199,7 @@ export function buildDocumentPlan(profile: ProjectProfile): DocumentPlan {
     const title = `${node?.name ?? entry.nodeId} 业务流程`;
     const coveredNodeIds = collectFlowNodeIds(profile, entry.nodeId);
     const doc = plannedDoc(
-      `业务流程/${slug(node?.name ?? entry.nodeId)}.md`,
+      `业务流程/${slugPath(node?.name ?? entry.nodeId)}.md`,
       title,
       "flow",
       coveredNodeIds,
@@ -225,9 +215,8 @@ export function buildDocumentPlan(profile: ProjectProfile): DocumentPlan {
     const fileId = profile.indexes.functionToFileId.get(candidate.nodeId) ?? profile.indexes.classToFileId.get(candidate.nodeId);
     const file = fileId ? profile.indexes.nodesById.get(fileId) : null;
     const title = `${node?.name ?? candidate.nodeId} 关键函数专题`;
-    const pathPrefix = file?.filePath ? `${slug(file.filePath)}-` : "";
     const doc = plannedDoc(
-      `关键函数专题/${pathPrefix}${slug(node?.name ?? candidate.nodeId)}.md`,
+      topicDocumentPath(file?.filePath ?? candidate.nodeId, node?.name ?? candidate.nodeId),
       title,
       "topic",
       [candidate.nodeId],
@@ -245,4 +234,3 @@ export function buildDocumentPlan(profile: ProjectProfile): DocumentPlan {
     coverageReasons,
   };
 }
-

@@ -8,6 +8,7 @@ import type {
   PlannedDocument,
   ProjectProfile,
 } from "./types.js";
+import { KB_PATHS, indexDocumentPath } from "./paths.js";
 
 const DOCUMENT_CATEGORIES: KnowledgeBaseDocumentCategory[] = [
   "top-level",
@@ -21,6 +22,19 @@ const DOCUMENT_CATEGORIES: KnowledgeBaseDocumentCategory[] = [
 ];
 
 const PLACEHOLDER_RE = /\b(TBD|TODO|FIXME)\b|待定|占位|后续补充|这里填写/i;
+const LEGACY_PATHS = {
+  architectureMap: "架构与模块总览.md",
+  businessFlowMap: "业务流程总览.md",
+  fileIndex: "文件索引.md",
+  functionIndex: "函数索引.md",
+  classIndex: "类索引.md",
+  pendingItems: "风险点与待确认项.md",
+  aiIndex: "AI检索索引.md",
+} as const;
+
+function isPath(path: string, currentPath: string, legacyPath?: string): boolean {
+  return path === currentPath || path === legacyPath;
+}
 
 function nodeOf(profile: ProjectProfile, nodeId: string): GraphNode | undefined {
   return profile.indexes.nodesById.get(nodeId);
@@ -75,7 +89,13 @@ export function buildCoverageReport(
   const functionIndexCovered = countCovered(profile, plan, "function", "index");
   const classIndexCovered = countCovered(profile, plan, "class", "index");
   const evidenceWarnings = profile.evidenceGaps.map((gap) => `${gap.kind}: ${gap.message}`);
+  const warnings = [...validation.warnings, ...evidenceWarnings];
   const placeholderFailures = validation.errors.filter((error) => error.includes("placeholder text"));
+  const status = validation.errors.length > 0
+    ? "incomplete"
+    : warnings.length > 0
+      ? "complete-with-warnings"
+      : "complete";
 
   return {
     totalDocuments: documents.length,
@@ -104,9 +124,9 @@ export function buildCoverageReport(
     topicBatches: { total: 0, passed: 0, retry: 0 },
     chineseValidation: { checked: documents.length, failed: [] },
     placeholderValidation: { checked: documents.length, failed: placeholderFailures },
-    warnings: [...validation.warnings, ...evidenceWarnings],
+    warnings,
     errors: validation.errors,
-    status: validation.ok ? "complete" : "incomplete",
+    status,
   };
 }
 
@@ -121,8 +141,8 @@ function renderInventory(profile: ProjectProfile, plan: DocumentPlan, report?: C
     "",
     "## 推荐阅读路径",
     "",
-    "- 工程师接手代码: 项目总览 -> 架构与模块总览 -> 业务流程总览 -> 关键函数专题 -> 函数索引",
-    "- 产品/运营理解业务: 业务流程总览 -> 业务流程 -> 风险点与待确认项",
+    "- 工程师接手代码: 项目总览 -> 架构地图 -> 业务流程地图 -> 关键函数专题 -> 函数索引",
+    "- 产品/运营理解业务: 业务流程地图 -> 业务流程 -> 待确认项",
     "- AI agent 后续检索: AI检索索引 -> 函数索引 -> 文件索引 -> 覆盖报告",
     "",
     "## 文档清单",
@@ -163,7 +183,7 @@ function renderProjectOverview(profile: ProjectProfile): string {
 }
 
 function renderArchitecture(profile: ProjectProfile): string {
-  const lines = ["# 架构与模块总览", "", "## Layer 列表", ""];
+  const lines = ["# 架构地图", "", "## Layer 列表", ""];
   for (const layer of profile.layerProfiles) {
     lines.push(`### ${layer.name}`);
     lines.push("");
@@ -180,9 +200,9 @@ function renderArchitecture(profile: ProjectProfile): string {
 }
 
 function renderFlowOverview(profile: ProjectProfile): string {
-  const lines = ["# 业务流程总览", "", "## 检测到的入口", ""];
+  const lines = ["# 业务流程地图", "", "## 检测到的入口", ""];
   if (profile.entryCandidates.length === 0) {
-    lines.push("- 未检测到明确入口。代码推断: 可从架构与模块总览和函数索引继续定位业务路径。");
+    lines.push("- 未检测到明确入口。代码推断: 可从架构地图和函数索引继续定位业务路径。");
     return lines.join("\n");
   }
   for (const entry of profile.entryCandidates) {
@@ -228,6 +248,14 @@ function renderClassIndex(profile: ProjectProfile, plan: DocumentPlan): string {
   return lines.join("\n");
 }
 
+function renderCallIndex(profile: ProjectProfile): string {
+  const lines = ["# 调用关系索引", "", "| Source | Type | Target | Weight |", "|---|---|---|---:|"];
+  for (const edge of profile.graph.edges) {
+    lines.push(`| \`${edge.source}\` | ${edge.type} | \`${edge.target}\` | ${edge.weight ?? ""} |`);
+  }
+  return lines.join("\n");
+}
+
 function renderDependencies(profile: ProjectProfile): string {
   const externalNodes = profile.graph.nodes.filter((node) => profile.externalNodeIds.has(node.id));
   const lines = ["# 配置与外部依赖", "", "## 本地代码事实", ""];
@@ -243,7 +271,7 @@ function renderDependencies(profile: ProjectProfile): string {
 }
 
 function renderRisks(profile: ProjectProfile): string {
-  const lines = ["# 风险点与待确认项", "", "## Evidence gaps", ""];
+  const lines = ["# 待确认项", "", "## Evidence gaps", ""];
   for (const gap of profile.evidenceGaps) {
     lines.push(`- **${gap.kind}**: ${gap.message}`);
   }
@@ -379,15 +407,15 @@ function renderCoverageReport(report: CoverageReport, validation: CoverageValida
   lines.push("");
   lines.push("## Validation");
   lines.push("");
-  if (validation.errors.length === 0) {
+  if (report.errors.length === 0) {
     lines.push("- Errors: none");
   } else {
-    for (const error of validation.errors) lines.push(`- Error: ${error}`);
+    for (const error of report.errors) lines.push(`- Error: ${error}`);
   }
-  if (validation.warnings.length === 0) {
+  if (report.warnings.length === 0) {
     lines.push("- Warnings: none");
   } else {
-    for (const warning of validation.warnings) lines.push(`- Warning: ${warning}`);
+    for (const warning of report.warnings) lines.push(`- Warning: ${warning}`);
   }
   return lines.join("\n");
 }
@@ -400,17 +428,18 @@ export function renderKnowledgeBaseDocuments(
 ): GeneratedDocument[] {
   return plan.documents.map((doc) => {
     let content: string;
-    if (doc.path === "目录.md") content = renderInventory(profile, plan, report);
-    else if (doc.path === "项目总览.md") content = renderProjectOverview(profile);
-    else if (doc.path === "架构与模块总览.md") content = renderArchitecture(profile);
-    else if (doc.path === "业务流程总览.md") content = renderFlowOverview(profile);
-    else if (doc.path === "文件索引.md") content = renderFileIndex(profile, plan);
-    else if (doc.path === "函数索引.md") content = renderFunctionIndex(profile, plan);
-    else if (doc.path === "类索引.md") content = renderClassIndex(profile, plan);
+    if (doc.path === KB_PATHS.inventory) content = renderInventory(profile, plan, report);
+    else if (doc.path === KB_PATHS.projectOverview) content = renderProjectOverview(profile);
+    else if (isPath(doc.path, KB_PATHS.architectureMap, LEGACY_PATHS.architectureMap)) content = renderArchitecture(profile);
+    else if (isPath(doc.path, KB_PATHS.businessFlowMap, LEGACY_PATHS.businessFlowMap)) content = renderFlowOverview(profile);
+    else if (isPath(doc.path, indexDocumentPath("文件索引"), LEGACY_PATHS.fileIndex)) content = renderFileIndex(profile, plan);
+    else if (isPath(doc.path, indexDocumentPath("函数索引"), LEGACY_PATHS.functionIndex)) content = renderFunctionIndex(profile, plan);
+    else if (isPath(doc.path, indexDocumentPath("类索引"), LEGACY_PATHS.classIndex)) content = renderClassIndex(profile, plan);
+    else if (doc.path === indexDocumentPath("调用关系索引")) content = renderCallIndex(profile);
     else if (doc.path === "配置与外部依赖.md") content = renderDependencies(profile);
-    else if (doc.path === "风险点与待确认项.md") content = renderRisks(profile);
-    else if (doc.path === "AI检索索引.md") content = renderAiIndex(profile, plan);
-    else if (doc.path === "覆盖报告.md" && report && validation) content = renderCoverageReport(report, validation);
+    else if (isPath(doc.path, KB_PATHS.pendingItems, LEGACY_PATHS.pendingItems)) content = renderRisks(profile);
+    else if (isPath(doc.path, indexDocumentPath("AI检索索引"), LEGACY_PATHS.aiIndex)) content = renderAiIndex(profile, plan);
+    else if (doc.path === KB_PATHS.coverageReport && report && validation) content = renderCoverageReport(report, validation);
     else if (doc.category === "module") content = renderModuleDoc(profile, doc);
     else if (doc.category === "flow") content = renderFlowDoc(profile, doc);
     else if (doc.category === "topic") content = renderTopicDoc(profile, doc);
@@ -435,9 +464,12 @@ export function validateKnowledgeBaseCoverage(
   const errors: string[] = [];
   const warnings: string[] = [];
   const docByPath = new Map(documents.map((doc) => [doc.path, doc]));
-  const fileIndex = docByPath.get("文件索引.md")?.content ?? "";
-  const functionIndex = docByPath.get("函数索引.md")?.content ?? "";
-  const classIndex = docByPath.get("类索引.md")?.content ?? "";
+  const contentAt = (currentPath: string, legacyPath: string): string => {
+    return docByPath.get(currentPath)?.content ?? docByPath.get(legacyPath)?.content ?? "";
+  };
+  const fileIndex = contentAt(indexDocumentPath("文件索引"), LEGACY_PATHS.fileIndex);
+  const functionIndex = contentAt(indexDocumentPath("函数索引"), LEGACY_PATHS.functionIndex);
+  const classIndex = contentAt(indexDocumentPath("类索引"), LEGACY_PATHS.classIndex);
 
   for (const node of nodesOfType(profile, "file")) {
     if (!fileIndex.includes(node.id)) errors.push(`file node missing from file index: ${node.id}`);

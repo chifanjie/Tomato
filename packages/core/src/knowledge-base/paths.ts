@@ -34,3 +34,7 @@ export function topicDocumentPath(filePath: string, nodeName: string): string {
 export function moduleDocumentPath(layerName: string): string {
   return `${KB_PATHS.moduleDir}/${slugPath(layerName)}.md`;
 }
+
+export function indexDocumentPath(indexName: string): string {
+  return `${KB_PATHS.indexDir}/${slugPath(indexName)}.md`;
+}

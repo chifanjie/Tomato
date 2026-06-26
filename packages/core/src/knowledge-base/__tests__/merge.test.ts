@@ -1,0 +1,315 @@
+import { describe, expect, it } from "vitest";
+import type {
+  FileDocTask,
+  FileWriterBatchOutput,
+  FileWriterDocument,
+  TopicWriterBatchOutput,
+  TopicWriterDocument,
+} from "../index.js";
+import type { KnowledgeGraph } from "../../types.js";
+import {
+  buildFileDocPlan,
+  buildKnowledgeBaseProfile,
+  mergeKnowledgeBaseWriterOutputs,
+} from "../index.js";
+
+function graph(): KnowledgeGraph {
+  return {
+    version: "1.0.0",
+    kind: "codebase",
+    project: {
+      name: "merge-fixture",
+      languages: ["typescript"],
+      frameworks: [],
+      description: "Fixture for merge coverage",
+      analyzedAt: "2026-06-26T00:00:00Z",
+      gitCommitHash: "abc123",
+    },
+    nodes: [
+      {
+        id: "file:src/service/feed.ts",
+        type: "file",
+        name: "feed.ts",
+        filePath: "src/service/feed.ts",
+        summary: "Feed service",
+        tags: ["service"],
+        complexity: "moderate",
+      },
+      {
+        id: "function:src/service/feed.ts:BuildFeed",
+        type: "function",
+        name: "BuildFeed",
+        filePath: "src/service/feed.ts",
+        lineRange: [1, 8],
+        summary: "Builds a feed",
+        tags: ["feed"],
+        complexity: "moderate",
+      },
+      {
+        id: "class:src/service/feed.ts:FeedBuilder",
+        type: "class",
+        name: "FeedBuilder",
+        filePath: "src/service/feed.ts",
+        lineRange: [10, 20],
+        summary: "Coordinates feed building",
+        tags: ["feed"],
+        complexity: "moderate",
+      },
+      {
+        id: "file:src/missing.ts",
+        type: "file",
+        name: "missing.ts",
+        filePath: "src/missing.ts",
+        summary: "Missing source",
+        tags: ["stale"],
+        complexity: "simple",
+      },
+      {
+        id: "function:src/missing.ts:DeletedHelper",
+        type: "function",
+        name: "DeletedHelper",
+        filePath: "src/missing.ts",
+        lineRange: [1, 2],
+        summary: "Deleted helper",
+        tags: ["stale"],
+        complexity: "simple",
+      },
+    ],
+    edges: [
+      {
+        source: "file:src/service/feed.ts",
+        target: "function:src/service/feed.ts:BuildFeed",
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      },
+      {
+        source: "file:src/service/feed.ts",
+        target: "class:src/service/feed.ts:FeedBuilder",
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      },
+      {
+        source: "file:src/missing.ts",
+        target: "function:src/missing.ts:DeletedHelper",
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      },
+    ],
+    layers: [],
+    tour: [],
+  };
+}
+
+function fixture() {
+  const profile = buildKnowledgeBaseProfile(graph());
+  const fileDocPlan = buildFileDocPlan(profile, {
+    sourceFiles: {
+      "src/service/feed.ts": "export function BuildFeed() { return new FeedBuilder(); }\nclass FeedBuilder {}\n",
+    },
+  });
+
+  return { profile, fileDocPlan };
+}
+
+function existingTask(): FileDocTask {
+  const task = fixture().fileDocPlan.tasks.find((item) => item.fileNodeId === "file:src/service/feed.ts");
+  if (!task) throw new Error("expected existing task");
+  return task;
+}
+
+function missingTask(): FileDocTask {
+  const task = fixture().fileDocPlan.tasks.find((item) => item.fileNodeId === "file:src/missing.ts");
+  if (!task) throw new Error("expected missing task");
+  return task;
+}
+
+function markdownFor(task: FileDocTask): string {
+  return [
+    `# ${task.filePath}`,
+    "",
+    `文件节点: \`${task.fileNodeId}\``,
+    "## 函数卡片",
+    ...task.functionNodeIds.map((nodeId) => `- 节点 ID: \`${nodeId}\``),
+    "## 类卡片",
+    ...task.classNodeIds.map((nodeId) => `- 节点 ID: \`${nodeId}\``),
+  ].join("\n");
+}
+
+function fileDocument(task: FileDocTask, overrides: Partial<FileWriterDocument> = {}): FileWriterDocument {
+  return {
+    fileNodeId: task.fileNodeId,
+    filePath: task.filePath,
+    documentPath: task.documentPath,
+    title: `${task.filePath} 文件知识文档`,
+    coveredFunctionNodeIds: [...task.functionNodeIds],
+    coveredClassNodeIds: [...task.classNodeIds],
+    representedEdgeIds: [...task.incomingEdgeIds, ...task.outgoingEdgeIds],
+    sourceEvidence: [{ filePath: task.filePath, nodeId: task.fileNodeId }],
+    importantNodeIds: [task.fileNodeId, ...task.functionNodeIds, ...task.classNodeIds],
+    markdown: markdownFor(task),
+    ...overrides,
+  };
+}
+
+function fileOutput(batchIndex: number, documents: FileWriterDocument[]): FileWriterBatchOutput {
+  return { batchIndex, documents, warnings: [] };
+}
+
+function topicDocument(overrides: Partial<TopicWriterDocument> = {}): TopicWriterDocument {
+  return {
+    topicNodeId: "function:src/service/feed.ts:BuildFeed",
+    sourceFileNodeId: "file:src/service/feed.ts",
+    documentPath: "专题/BuildFeed.md",
+    title: "BuildFeed 业务专题",
+    coveredNodeIds: ["function:src/service/feed.ts:BuildFeed"],
+    linkedFileDocumentPath: "文件文档/src-service-feed.ts.md",
+    evidence: [{ filePath: "src/service/feed.ts", nodeId: "function:src/service/feed.ts:BuildFeed" }],
+    markdown: "# BuildFeed\n\n节点 ID: `function:src/service/feed.ts:BuildFeed`",
+    ...overrides,
+  };
+}
+
+function topicOutput(batchIndex: number, topics: TopicWriterDocument[]): TopicWriterBatchOutput {
+  return { batchIndex, topics, warnings: [] };
+}
+
+describe("knowledge base writer output merge", () => {
+  it("accepts complete file and topic documents", () => {
+    const { profile, fileDocPlan } = fixture();
+    const task = existingTask();
+    const topic = topicDocument();
+
+    const result = mergeKnowledgeBaseWriterOutputs({
+      profile,
+      fileDocPlan: { ...fileDocPlan, tasks: [task], batches: [{ ...fileDocPlan.batches[0], tasks: [task] }] },
+      fileWriterOutputs: [fileOutput(task.batchIndex, [fileDocument(task)])],
+      topicWriterOutputs: [topicOutput(7, [topic])],
+    });
+
+    expect(result.validation.ok).toBe(true);
+    expect(result.validation.errors).toEqual([]);
+    expect(result.retryPlan).toEqual({ fileBatchIndexes: [], topicBatchIndexes: [], reasons: [] });
+    expect(result.acceptedFileWriterDocuments).toHaveLength(1);
+    expect(result.acceptedTopicWriterDocuments).toEqual([topic]);
+    expect(result.fileDocuments).toEqual([
+      expect.objectContaining({
+        path: task.documentPath,
+        title: `${task.filePath} 文件知识文档`,
+        category: "file",
+        coveredNodeIds: [task.fileNodeId, ...task.functionNodeIds, ...task.classNodeIds],
+        content: markdownFor(task),
+      }),
+    ]);
+    expect(result.topicDocuments).toEqual([
+      expect.objectContaining({
+        path: topic.documentPath,
+        title: topic.title,
+        category: "topic",
+        coveredNodeIds: topic.coveredNodeIds,
+        content: topic.markdown,
+      }),
+    ]);
+  });
+
+  it("fails and retries the batch when a function card is missing", () => {
+    const { profile, fileDocPlan } = fixture();
+    const task = existingTask();
+    const doc = fileDocument(task, { coveredFunctionNodeIds: [], markdown: markdownFor(task).replace(task.functionNodeIds[0], "") });
+
+    const result = mergeKnowledgeBaseWriterOutputs({
+      profile,
+      fileDocPlan: { ...fileDocPlan, tasks: [task], batches: [{ ...fileDocPlan.batches[0], tasks: [task] }] },
+      fileWriterOutputs: [fileOutput(task.batchIndex, [doc])],
+    });
+
+    expect(result.validation.ok).toBe(false);
+    expect(result.validation.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining(`function card missing coveredFunctionNodeIds entry: ${task.functionNodeIds[0]}`),
+      expect.stringContaining(`function card missing markdown node id: ${task.functionNodeIds[0]}`),
+    ]));
+    expect(result.retryPlan.fileBatchIndexes).toEqual([task.batchIndex]);
+    expect(result.acceptedFileWriterDocuments).toEqual([]);
+  });
+
+  it("fails and retries the batch when a class card is missing", () => {
+    const { profile, fileDocPlan } = fixture();
+    const task = existingTask();
+    const doc = fileDocument(task, { coveredClassNodeIds: [], markdown: markdownFor(task).replace(task.classNodeIds[0], "") });
+
+    const result = mergeKnowledgeBaseWriterOutputs({
+      profile,
+      fileDocPlan: { ...fileDocPlan, tasks: [task], batches: [{ ...fileDocPlan.batches[0], tasks: [task] }] },
+      fileWriterOutputs: [fileOutput(task.batchIndex, [doc])],
+    });
+
+    expect(result.validation.ok).toBe(false);
+    expect(result.validation.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining(`class card missing coveredClassNodeIds entry: ${task.classNodeIds[0]}`),
+      expect.stringContaining(`class card missing markdown node id: ${task.classNodeIds[0]}`),
+    ]));
+    expect(result.retryPlan.fileBatchIndexes).toEqual([task.batchIndex]);
+    expect(result.acceptedFileWriterDocuments).toEqual([]);
+  });
+
+  it("fails duplicate file documents and duplicate document paths", () => {
+    const { profile, fileDocPlan } = fixture();
+    const task = existingTask();
+    const duplicate = fileDocument(task, { title: "duplicate" });
+
+    const result = mergeKnowledgeBaseWriterOutputs({
+      profile,
+      fileDocPlan: { ...fileDocPlan, tasks: [task], batches: [{ ...fileDocPlan.batches[0], tasks: [task] }] },
+      fileWriterOutputs: [
+        fileOutput(5, [fileDocument(task)]),
+        fileOutput(3, [duplicate]),
+      ],
+    });
+
+    expect(result.validation.ok).toBe(false);
+    expect(result.validation.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining(`duplicate file writer document for fileNodeId: ${task.fileNodeId}`),
+      expect.stringContaining(`duplicate file writer documentPath: ${task.documentPath}`),
+    ]));
+    expect(result.retryPlan.fileBatchIndexes).toEqual([3, 5]);
+    expect(result.acceptedFileWriterDocuments).toEqual([]);
+  });
+
+  it("fails and retries a planned task with no file writer document", () => {
+    const { profile, fileDocPlan } = fixture();
+    const task = existingTask();
+
+    const result = mergeKnowledgeBaseWriterOutputs({
+      profile,
+      fileDocPlan: { ...fileDocPlan, tasks: [task], batches: [{ ...fileDocPlan.batches[0], tasks: [task] }] },
+      fileWriterOutputs: [fileOutput(task.batchIndex, [])],
+    });
+
+    expect(result.validation.ok).toBe(false);
+    expect(result.validation.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining(`missing file writer document for planned task: ${task.fileNodeId}`),
+    ]));
+    expect(result.retryPlan.fileBatchIndexes).toEqual([task.batchIndex]);
+    expect(result.acceptedFileWriterDocuments).toEqual([]);
+  });
+
+  it("fails and retries missing source tasks even when a writer returns a document", () => {
+    const { profile, fileDocPlan } = fixture();
+    const task = missingTask();
+
+    const result = mergeKnowledgeBaseWriterOutputs({
+      profile,
+      fileDocPlan: { ...fileDocPlan, tasks: [task], batches: [{ ...fileDocPlan.batches[1], tasks: [task] }] },
+      fileWriterOutputs: [fileOutput(task.batchIndex, [fileDocument(task)])],
+    });
+
+    expect(result.validation.ok).toBe(false);
+    expect(result.validation.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining(`source file missing for task: ${task.fileNodeId}`),
+    ]));
+    expect(result.retryPlan.fileBatchIndexes).toEqual([task.batchIndex]);
+    expect(result.acceptedFileWriterDocuments).toEqual([]);
+  });
+});

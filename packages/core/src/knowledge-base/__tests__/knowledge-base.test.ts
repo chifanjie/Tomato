@@ -328,16 +328,15 @@ describe("graph-to-knowledge-base", () => {
     const report = kb.documents.find((item) => item.path === "覆盖报告.md");
 
     expect(report).toBeDefined();
-    expect(report?.content).toContain(`总文档数: ${kb.coverageReport.totalDocuments}`);
-    expect(report?.content).toContain(
-      `File document coverage: ${kb.coverageReport.fileDocumentCoverage.covered} / ${kb.coverageReport.fileDocumentCoverage.total}`,
-    );
-    expect(report?.content).toContain(
-      `Function card coverage: ${kb.coverageReport.functionCardCoverage.covered} / ${kb.coverageReport.functionCardCoverage.total}`,
-    );
-    expect(report?.content).toContain(
-      `Class card coverage: ${kb.coverageReport.classCardCoverage.covered} / ${kb.coverageReport.classCardCoverage.total}`,
-    );
+    expect(kb.coverageReport.totalDocuments).toBe(kb.documents.length);
+    expect(kb.coverageReport.fileDocumentCoverage).toEqual({ covered: 3, total: 3, missing: [] });
+    expect(kb.coverageReport.functionCardCoverage).toEqual({ covered: 4, total: 4, missing: [] });
+    expect(kb.coverageReport.classCardCoverage).toEqual({ covered: 1, total: 1, missing: [] });
+
+    expect(report?.content).toContain(`总文档数: ${kb.documents.length}`);
+    expect(report?.content).toContain("File document coverage: 3 / 3");
+    expect(report?.content).toContain("Function card coverage: 4 / 4");
+    expect(report?.content).toContain("Class card coverage: 1 / 1");
 
     expect(report?.content).not.toContain("File index coverage:");
     expect(report?.content).not.toContain("Function index coverage:");

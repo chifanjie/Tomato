@@ -99,6 +99,9 @@ describe("file document planning", () => {
     expect(dataTask).toBeDefined();
     expect(idsFrom(dataTask, ["classIds"])).toEqual(["class:src/data/store.ts:CandidateStore"]);
     expect(idsFrom(dataTask, ["functionIds"])).toEqual(["function:src/data/store.ts:LoadCandidates"]);
+    expect(dataTask?.sourceReadMode).toBe("full");
+    expect(dataTask?.sourceSnapshot?.exists).toBe(true);
+    expect(idsFrom(dataTask, ["incomingEdgeIds", "incomingNeighborIds", "neighborIds", "neighborNodeIds"]).length).toBeGreaterThan(0);
 
     const missingTask = plan.tasks.find((task) => task.filePath === "src/unused/missing.ts");
     expect(missingTask).toBeDefined();

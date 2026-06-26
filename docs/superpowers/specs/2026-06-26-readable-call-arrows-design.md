@@ -40,14 +40,16 @@ The overlay draws directional arrows between file cards:
 The overlay must not make the view unreadable. It should support:
 
 - A visible toggle: show/hide call arrows.
-- Focus behavior: selecting or hovering a file emphasizes that file's incoming and outgoing arrows.
-- Density control: cap initial displayed arrows to the strongest or currently relevant edges.
+- Focus behavior: arrows are revealed by focusing a concrete file, not by drawing the entire layer's relationships by default.
+- Complete direct relationships: once a file is focused, every directly related incoming/outgoing call relationship for that file should be available as an arrow.
 
-Default density rule:
+Default reveal rule:
 
-- Show at most 40 file-level arrows before a file is focused.
-- Sort by `count` descending, then stable file path order.
-- When a file is focused, always show its direct incoming and outgoing arrows, even if they are outside the global top 40.
+- The default layer view shows file cards and function volume without global arrows.
+- Clicking a file card reveals all direct incoming and outgoing file-level arrows for that file.
+- Hovering a file may preview those direct arrows, but click locks the focus.
+- Clicking empty canvas or a close action clears the focused arrows.
+- If a focused file has many direct relationships, the arrows are still represented; visual clutter is handled with grouping, bundling, curved parallel paths, or an adjacent relationship list rather than dropping relationships.
 
 ### File Detail
 
@@ -62,8 +64,11 @@ The mini-map shows:
 
 Default mini-map density rule:
 
-- Show all same-file calls for the selected function neighborhood when the total is 30 or fewer.
-- When the neighborhood is larger, show the selected function, the top 12 incoming callers, the top 12 outgoing callees, and grouped overflow pills per external file.
+- The default mini-map is driven by the selected function.
+- Show every direct incoming and outgoing call for the selected function.
+- Same-file direct calls render as function nodes with arrows.
+- Cross-file direct calls render as function nodes when practical; otherwise group by external file while preserving the relationship count and allowing drill-in.
+- Larger neighborhoods use grouping and scrolling, not silent truncation.
 
 The function matrix remains the main way to scan function volume. The mini-map is the relationship layer, not a replacement for the matrix.
 
@@ -138,8 +143,8 @@ Responsibilities:
 - Receive rendered file layout anchors from `LayerFileHeatmap`.
 - Draw SVG arrows over the card grid.
 - Keep pointer events minimal so file cards remain easy to click.
-- Highlight arrows related to the selected/hovered file.
-- Hide or collapse low-priority edges when density is high.
+- Render arrows only for the focused/hovered file relationship set.
+- Preserve all direct focused relationships by grouping or bundling dense sets instead of filtering them out.
 
 `LayerFileHeatmap` will need stable refs or measured card positions for file cards. The overlay should be an absolutely positioned SVG inside the heatmap container.
 
@@ -171,7 +176,7 @@ Responsibilities:
 
 - If no `calls` and no `imports` exist, show no arrows and display a subtle "No call edges found" state only where useful.
 - If card positions are not measured yet, skip overlay rendering until after layout.
-- If there are too many arrows, show a capped subset and indicate that the view is focused on strongest or selected relationships.
+- If a focused relationship set is dense, group or bundle arrows and provide a relationship list so every direct relationship remains discoverable.
 - If fallback imports are used, label them as estimated dependency arrows.
 
 ## Performance
@@ -182,8 +187,8 @@ Guidelines:
 
 - Build function-to-file maps once per graph/viewGraph.
 - Aggregate file edges with maps keyed by `sourceFileId|targetFileId|source`.
-- Cap initial visible layer arrows.
-- Recompute SVG paths only when file card positions, selected file, or relationship data changes.
+- Avoid drawing global layer arrows until a file is focused.
+- Recompute SVG paths only when file card positions, focused file, or relationship data changes.
 
 ## Testing
 
@@ -198,14 +203,14 @@ Add focused tests for the relationship helper:
 
 Add component or integration tests where practical:
 
-- Layer overlay receives only capped/relevant file edges.
+- Layer overlay receives all direct focused file edges.
 - Function mini-map updates when selected function changes.
 
 Manual/browser verification:
 
-- Layer detail shows file cards and directional arrows together.
+- Layer detail shows file cards first, then reveals directional arrows when a file is clicked.
 - Toggle hides/shows arrows.
-- Selecting a file emphasizes only related arrows.
+- Selecting a file shows all direct incoming and outgoing arrows for that file.
 - File detail shows the selected function and upstream/downstream arrows.
 - Mobile layout remains usable.
 
@@ -213,13 +218,13 @@ Manual/browser verification:
 
 - Replacing the readable view with the old `GraphView`.
 - Building a full general-purpose graph editor.
-- Showing every function call edge at all zoom levels by default.
+- Showing every function call edge globally before the user focuses a file or function.
 - Changing backend graph generation.
 
 ## Acceptance Criteria
 
 - Users can see function volume and call direction in the same workflow.
-- Layer detail shows readable file cards plus directional file-level arrows.
+- Layer detail shows readable file cards plus focused directional file-level arrows.
 - File detail shows function-level upstream/downstream arrows.
-- Arrow density is controlled enough that the view remains readable.
+- Arrow visibility is controlled by focus, while focused direct relationships are preserved rather than capped away.
 - Existing readable navigation, search, theme switching, and mode controls continue to work.

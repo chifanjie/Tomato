@@ -261,14 +261,23 @@ function validateTopicWriterOutputs(
   for (const candidate of topicCandidates) {
     const { document } = candidate;
     const errorStart = errors.length;
+    const topicNode = inputs.profile.indexes.nodesById.get(document.topicNodeId);
 
-    if (!inputs.profile.indexes.nodesById.has(document.topicNodeId)) {
+    if (!topicNode) {
       invalidTopicNodeIds.add(document.topicNodeId);
       pushError(
         errors,
         retryTopicBatchIndexes,
         [candidate.batchIndex],
         `topicNodeId does not exist in graph: ${document.topicNodeId}`,
+      );
+    } else if (topicNode.type === "file") {
+      invalidTopicNodeIds.add(document.topicNodeId);
+      pushError(
+        errors,
+        retryTopicBatchIndexes,
+        [candidate.batchIndex],
+        `topicNodeId must not be a file node: ${document.topicNodeId}`,
       );
     }
 
@@ -283,15 +292,30 @@ function validateTopicWriterOutputs(
       }
     }
 
-    if (document.sourceFileNodeId && !inputs.profile.indexes.nodesById.has(document.sourceFileNodeId)) {
-      pushError(
-        errors,
-        retryTopicBatchIndexes,
-        [candidate.batchIndex],
-        `topic sourceFileNodeId does not exist in graph: ${document.sourceFileNodeId}`,
-      );
-    } else if (document.sourceFileNodeId && !acceptedFileNodeIds.has(document.sourceFileNodeId)) {
-      warnings.push(`topic source file document was not accepted: ${document.sourceFileNodeId} for ${document.documentPath}`);
+    if (document.sourceFileNodeId) {
+      const sourceFileNode = inputs.profile.indexes.nodesById.get(document.sourceFileNodeId);
+      if (!sourceFileNode) {
+        pushError(
+          errors,
+          retryTopicBatchIndexes,
+          [candidate.batchIndex],
+          `topic sourceFileNodeId does not exist in graph: ${document.sourceFileNodeId}`,
+        );
+      } else if (sourceFileNode.type !== "file") {
+        pushError(
+          errors,
+          retryTopicBatchIndexes,
+          [candidate.batchIndex],
+          `topic sourceFileNodeId must refer to a file node: ${document.sourceFileNodeId}`,
+        );
+      } else if (!acceptedFileNodeIds.has(document.sourceFileNodeId)) {
+        pushError(
+          errors,
+          retryTopicBatchIndexes,
+          [candidate.batchIndex],
+          `topic source file document was not accepted: ${document.sourceFileNodeId} for ${document.documentPath}`,
+        );
+      }
     }
 
     const hasDuplicateError =

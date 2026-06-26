@@ -439,6 +439,53 @@ describe("knowledge base writer output merge", () => {
     expect(result.acceptedTopicWriterDocuments).toEqual([]);
   });
 
+  it("fails when a topic uses a file node as topicNodeId", () => {
+    const { profile, fileDocPlan } = fixture();
+    const task = existingTask();
+    const topic = topicDocument({
+      topicNodeId: "file:src/service/feed.ts",
+      coveredNodeIds: ["file:src/service/feed.ts"],
+    });
+
+    const result = mergeKnowledgeBaseWriterOutputs({
+      profile,
+      fileDocPlan: { ...fileDocPlan, tasks: [task], batches: [{ ...fileDocPlan.batches[0], tasks: [task] }] },
+      fileWriterOutputs: [fileOutput(task.batchIndex, [fileDocument(task)])],
+      topicWriterOutputs: [topicOutput(6, [topic])],
+    });
+
+    expect(result.validation.ok).toBe(false);
+    expect(result.validation.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining("topicNodeId must not be a file node: file:src/service/feed.ts"),
+    ]));
+    expect(result.retryPlan.topicBatchIndexes).toEqual([6]);
+    expect(result.acceptedTopicWriterDocuments).toEqual([]);
+    expect(result.topicDocuments).toEqual([]);
+  });
+
+  it("fails when sourceFileNodeId is not a file node", () => {
+    const { profile, fileDocPlan } = fixture();
+    const task = existingTask();
+    const topic = topicDocument({
+      sourceFileNodeId: "function:src/service/feed.ts:BuildFeed",
+    });
+
+    const result = mergeKnowledgeBaseWriterOutputs({
+      profile,
+      fileDocPlan: { ...fileDocPlan, tasks: [task], batches: [{ ...fileDocPlan.batches[0], tasks: [task] }] },
+      fileWriterOutputs: [fileOutput(task.batchIndex, [fileDocument(task)])],
+      topicWriterOutputs: [topicOutput(6, [topic])],
+    });
+
+    expect(result.validation.ok).toBe(false);
+    expect(result.validation.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining("topic sourceFileNodeId must refer to a file node: function:src/service/feed.ts:BuildFeed"),
+    ]));
+    expect(result.retryPlan.topicBatchIndexes).toEqual([6]);
+    expect(result.acceptedTopicWriterDocuments).toEqual([]);
+    expect(result.topicDocuments).toEqual([]);
+  });
+
   it("sorts accepted topic writer documents and generated topic documents by path", () => {
     const { profile, fileDocPlan } = fixture();
     const task = existingTask();
@@ -470,7 +517,7 @@ describe("knowledge base writer output merge", () => {
     ]);
   });
 
-  it("warns when a topic source file has no accepted file document", () => {
+  it("fails and retries when a topic source file has no accepted file document", () => {
     const { profile, fileDocPlan } = fixture();
     const task = existingTask();
     const topic = topicDocument({ sourceFileNodeId: "file:src/missing.ts" });
@@ -482,10 +529,12 @@ describe("knowledge base writer output merge", () => {
       topicWriterOutputs: [topicOutput(2, [topic])],
     });
 
-    expect(result.validation.ok).toBe(true);
-    expect(result.validation.warnings).toEqual(expect.arrayContaining([
+    expect(result.validation.ok).toBe(false);
+    expect(result.validation.errors).toEqual(expect.arrayContaining([
       expect.stringContaining("topic source file document was not accepted: file:src/missing.ts"),
     ]));
-    expect(result.acceptedTopicWriterDocuments).toEqual([topic]);
+    expect(result.retryPlan.topicBatchIndexes).toEqual([2]);
+    expect(result.acceptedTopicWriterDocuments).toEqual([]);
+    expect(result.topicDocuments).toEqual([]);
   });
 });

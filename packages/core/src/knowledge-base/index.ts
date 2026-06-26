@@ -4,6 +4,7 @@ export * from "./planner.js";
 export * from "./paths.js";
 export * from "./source-snapshot.js";
 export * from "./file-doc-planner.js";
+export * from "./writer-contracts.js";
 export {
   buildCoverageReport,
   renderKnowledgeBaseDocuments,

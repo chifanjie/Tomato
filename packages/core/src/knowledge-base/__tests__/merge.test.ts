@@ -254,6 +254,61 @@ describe("knowledge base writer output merge", () => {
     expect(result.acceptedFileWriterDocuments).toEqual([]);
   });
 
+  it("fails when node ids appear outside their required card sections", () => {
+    const { profile, fileDocPlan } = fixture();
+    const task = existingTask();
+    const misplacedMarkdown = [
+      `# ${task.filePath}`,
+      "",
+      "## 函数卡片",
+      "- BuildFeed without node id",
+      "## 类卡片",
+      "- FeedBuilder without node id",
+      "## AI 检索词",
+      ...task.functionNodeIds.map((nodeId) => `- ${nodeId}`),
+      ...task.classNodeIds.map((nodeId) => `- ${nodeId}`),
+    ].join("\n");
+
+    const result = mergeKnowledgeBaseWriterOutputs({
+      profile,
+      fileDocPlan: { ...fileDocPlan, tasks: [task], batches: [{ ...fileDocPlan.batches[0], tasks: [task] }] },
+      fileWriterOutputs: [fileOutput(task.batchIndex, [fileDocument(task, { markdown: misplacedMarkdown })])],
+    });
+
+    expect(result.validation.ok).toBe(false);
+    expect(result.validation.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining(`function card missing markdown node id in ## 函数卡片 section: ${task.functionNodeIds[0]}`),
+      expect.stringContaining(`class card missing markdown node id in ## 类卡片 section: ${task.classNodeIds[0]}`),
+    ]));
+    expect(result.retryPlan.fileBatchIndexes).toEqual([task.batchIndex]);
+    expect(result.acceptedFileWriterDocuments).toEqual([]);
+  });
+
+  it("fails when required function or class card sections are missing", () => {
+    const { profile, fileDocPlan } = fixture();
+    const task = existingTask();
+    const markdown = [
+      `# ${task.filePath}`,
+      "",
+      ...task.functionNodeIds.map((nodeId) => `function elsewhere: ${nodeId}`),
+      ...task.classNodeIds.map((nodeId) => `class elsewhere: ${nodeId}`),
+    ].join("\n");
+
+    const result = mergeKnowledgeBaseWriterOutputs({
+      profile,
+      fileDocPlan: { ...fileDocPlan, tasks: [task], batches: [{ ...fileDocPlan.batches[0], tasks: [task] }] },
+      fileWriterOutputs: [fileOutput(task.batchIndex, [fileDocument(task, { markdown })])],
+    });
+
+    expect(result.validation.ok).toBe(false);
+    expect(result.validation.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining(`file writer document missing required section: ## 函数卡片`),
+      expect.stringContaining(`file writer document missing required section: ## 类卡片`),
+    ]));
+    expect(result.retryPlan.fileBatchIndexes).toEqual([task.batchIndex]);
+    expect(result.acceptedFileWriterDocuments).toEqual([]);
+  });
+
   it("fails duplicate file documents and duplicate document paths", () => {
     const { profile, fileDocPlan } = fixture();
     const task = existingTask();
@@ -311,5 +366,126 @@ describe("knowledge base writer output merge", () => {
     ]));
     expect(result.retryPlan.fileBatchIndexes).toEqual([task.batchIndex]);
     expect(result.acceptedFileWriterDocuments).toEqual([]);
+  });
+
+  it("fails duplicate topic node ids and duplicate topic document paths", () => {
+    const { profile, fileDocPlan } = fixture();
+    const task = existingTask();
+    const topic = topicDocument();
+    const duplicate = topicDocument({ title: "duplicate" });
+
+    const result = mergeKnowledgeBaseWriterOutputs({
+      profile,
+      fileDocPlan: { ...fileDocPlan, tasks: [task], batches: [{ ...fileDocPlan.batches[0], tasks: [task] }] },
+      fileWriterOutputs: [fileOutput(task.batchIndex, [fileDocument(task)])],
+      topicWriterOutputs: [
+        topicOutput(8, [topic]),
+        topicOutput(4, [duplicate]),
+      ],
+    });
+
+    expect(result.validation.ok).toBe(false);
+    expect(result.validation.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining(`duplicate topic writer document for topicNodeId: ${topic.topicNodeId}`),
+      expect.stringContaining(`duplicate topic writer documentPath: ${topic.documentPath}`),
+    ]));
+    expect(result.retryPlan.topicBatchIndexes).toEqual([4, 8]);
+    expect(result.acceptedTopicWriterDocuments).toEqual([]);
+    expect(result.topicDocuments).toEqual([]);
+  });
+
+  it("fails topic documents that cover unknown graph nodes", () => {
+    const { profile, fileDocPlan } = fixture();
+    const task = existingTask();
+    const topic = topicDocument({ coveredNodeIds: ["function:src/service/feed.ts:BuildFeed", "function:missing:Unknown"] });
+
+    const result = mergeKnowledgeBaseWriterOutputs({
+      profile,
+      fileDocPlan: { ...fileDocPlan, tasks: [task], batches: [{ ...fileDocPlan.batches[0], tasks: [task] }] },
+      fileWriterOutputs: [fileOutput(task.batchIndex, [fileDocument(task)])],
+      topicWriterOutputs: [topicOutput(6, [topic])],
+    });
+
+    expect(result.validation.ok).toBe(false);
+    expect(result.validation.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining("topic coveredNodeIds contains unknown graph node: function:missing:Unknown"),
+    ]));
+    expect(result.retryPlan.topicBatchIndexes).toEqual([6]);
+    expect(result.acceptedTopicWriterDocuments).toEqual([]);
+  });
+
+  it("fails topic documents with unknown topic or source file nodes", () => {
+    const { profile, fileDocPlan } = fixture();
+    const task = existingTask();
+    const topic = topicDocument({
+      topicNodeId: "function:missing:UnknownTopic",
+      sourceFileNodeId: "file:missing-source.ts",
+      coveredNodeIds: ["function:src/service/feed.ts:BuildFeed"],
+    });
+
+    const result = mergeKnowledgeBaseWriterOutputs({
+      profile,
+      fileDocPlan: { ...fileDocPlan, tasks: [task], batches: [{ ...fileDocPlan.batches[0], tasks: [task] }] },
+      fileWriterOutputs: [fileOutput(task.batchIndex, [fileDocument(task)])],
+      topicWriterOutputs: [topicOutput(6, [topic])],
+    });
+
+    expect(result.validation.ok).toBe(false);
+    expect(result.validation.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining("topicNodeId does not exist in graph: function:missing:UnknownTopic"),
+      expect.stringContaining("topic sourceFileNodeId does not exist in graph: file:missing-source.ts"),
+    ]));
+    expect(result.retryPlan.topicBatchIndexes).toEqual([6]);
+    expect(result.acceptedTopicWriterDocuments).toEqual([]);
+  });
+
+  it("sorts accepted topic writer documents and generated topic documents by path", () => {
+    const { profile, fileDocPlan } = fixture();
+    const task = existingTask();
+    const later = topicDocument({
+      topicNodeId: "function:src/service/feed.ts:BuildFeed",
+      documentPath: "专题/z-later.md",
+    });
+    const earlier = topicDocument({
+      topicNodeId: "class:src/service/feed.ts:FeedBuilder",
+      documentPath: "专题/a-earlier.md",
+      coveredNodeIds: ["class:src/service/feed.ts:FeedBuilder"],
+    });
+
+    const result = mergeKnowledgeBaseWriterOutputs({
+      profile,
+      fileDocPlan: { ...fileDocPlan, tasks: [task], batches: [{ ...fileDocPlan.batches[0], tasks: [task] }] },
+      fileWriterOutputs: [fileOutput(task.batchIndex, [fileDocument(task)])],
+      topicWriterOutputs: [topicOutput(2, [later, earlier])],
+    });
+
+    expect(result.validation.ok).toBe(true);
+    expect(result.acceptedTopicWriterDocuments.map((topic) => topic.documentPath)).toEqual([
+      "专题/a-earlier.md",
+      "专题/z-later.md",
+    ]);
+    expect(result.topicDocuments.map((topic) => topic.path)).toEqual([
+      "专题/a-earlier.md",
+      "专题/z-later.md",
+    ]);
+  });
+
+  it("warns when a topic source file has no accepted file document", () => {
+    const { profile, fileDocPlan } = fixture();
+    const task = existingTask();
+    const topic = topicDocument({ sourceFileNodeId: "file:src/missing.ts" });
+
+    const result = mergeKnowledgeBaseWriterOutputs({
+      profile,
+      fileDocPlan: { ...fileDocPlan, tasks: [task], batches: [{ ...fileDocPlan.batches[0], tasks: [task] }] },
+      fileWriterOutputs: [fileOutput(task.batchIndex, [fileDocument(task)])],
+      topicWriterOutputs: [topicOutput(2, [topic])],
+    });
+
+    expect(result.validation.ok).toBe(true);
+    expect(result.validation.warnings).toEqual(expect.arrayContaining([
+      expect.stringContaining("topic source file document was not accepted: file:src/missing.ts"),
+    ]));
+    expect(result.acceptedTopicWriterDocuments).toEqual([topic]);
   });
 });

@@ -32,8 +32,21 @@ interface FileDocumentCandidate {
   document: FileWriterDocument;
 }
 
+interface TopicDocumentCandidate {
+  batchIndex: number;
+  document: TopicWriterDocument;
+}
+
 function sortedNumbers(values: Iterable<number>): number[] {
   return [...new Set(values)].sort((a, b) => a - b);
+}
+
+function compareByDocumentPath<T extends { documentPath: string; title: string }>(a: T, b: T): number {
+  return a.documentPath.localeCompare(b.documentPath) || a.title.localeCompare(b.title);
+}
+
+function generatedByPath(a: GeneratedDocument, b: GeneratedDocument): number {
+  return a.path.localeCompare(b.path) || a.title.localeCompare(b.title);
 }
 
 function nodeIdsForFileTask(task: FileDocTask): string[] {
@@ -89,6 +102,68 @@ function groupCandidatesByDocumentPath(candidates: FileDocumentCandidate[]): Map
   return byDocumentPath;
 }
 
+function groupTopicCandidatesByTopicNodeId(candidates: TopicDocumentCandidate[]): Map<string, TopicDocumentCandidate[]> {
+  const byTopicNodeId = new Map<string, TopicDocumentCandidate[]>();
+  for (const candidate of candidates) {
+    const existing = byTopicNodeId.get(candidate.document.topicNodeId) ?? [];
+    existing.push(candidate);
+    byTopicNodeId.set(candidate.document.topicNodeId, existing);
+  }
+  return byTopicNodeId;
+}
+
+function groupTopicCandidatesByDocumentPath(candidates: TopicDocumentCandidate[]): Map<string, TopicDocumentCandidate[]> {
+  const byDocumentPath = new Map<string, TopicDocumentCandidate[]>();
+  for (const candidate of candidates) {
+    const existing = byDocumentPath.get(candidate.document.documentPath) ?? [];
+    existing.push(candidate);
+    byDocumentPath.set(candidate.document.documentPath, existing);
+  }
+  return byDocumentPath;
+}
+
+function markdownSection(markdown: string, heading: string): string | undefined {
+  const lines = markdown.split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trim() === heading);
+  if (start < 0) return undefined;
+  const end = lines.findIndex((line, index) => index > start && /^##\s+/.test(line));
+  return lines.slice(start, end < 0 ? lines.length : end).join("\n");
+}
+
+function validateMarkdownSection(
+  task: FileDocTask,
+  document: FileWriterDocument,
+  heading: string,
+  nodeIds: string[],
+  nodeKind: "function" | "class",
+  errors: string[],
+  retryBatchIndexes: Set<number>,
+): void {
+  if (nodeIds.length === 0) return;
+
+  const section = markdownSection(document.markdown, heading);
+  if (!section) {
+    pushError(
+      errors,
+      retryBatchIndexes,
+      [task.batchIndex],
+      `file writer document missing required section: ${heading} in ${document.documentPath}`,
+    );
+    return;
+  }
+
+  for (const nodeId of nodeIds) {
+    if (!section.includes(nodeId)) {
+      pushError(
+        errors,
+        retryBatchIndexes,
+        [task.batchIndex],
+        `${nodeKind} card missing markdown node id in ${heading} section: ${nodeId} in file writer document ${document.documentPath}`,
+      );
+    }
+  }
+}
+
 function validateRequiredNodeCoverage(
   task: FileDocTask,
   document: FileWriterDocument,
@@ -114,6 +189,8 @@ function validateRequiredNodeCoverage(
     }
   }
 
+  validateMarkdownSection(task, document, "## 函数卡片", task.functionNodeIds, "function", errors, retryBatchIndexes);
+
   for (const classNodeId of task.classNodeIds) {
     if (!document.coveredClassNodeIds.includes(classNodeId)) {
       pushError(
@@ -132,6 +209,99 @@ function validateRequiredNodeCoverage(
       );
     }
   }
+
+  validateMarkdownSection(task, document, "## 类卡片", task.classNodeIds, "class", errors, retryBatchIndexes);
+}
+
+function validateTopicWriterOutputs(
+  inputs: MergeKnowledgeBaseWriterOutputsInput,
+  acceptedFileWriterDocuments: FileWriterDocument[],
+  errors: string[],
+  warnings: string[],
+  retryTopicBatchIndexes: Set<number>,
+): TopicWriterDocument[] {
+  const topicCandidates = (inputs.topicWriterOutputs ?? []).flatMap((output) =>
+    output.topics.map((document) => ({ batchIndex: output.batchIndex, document })),
+  );
+  const invalidTopicNodeIds = new Set<string>();
+  const invalidDocumentPaths = new Set<string>();
+  const byTopicNodeId = groupTopicCandidatesByTopicNodeId(topicCandidates);
+  const byTopicDocumentPath = groupTopicCandidatesByDocumentPath(topicCandidates);
+
+  for (const [topicNodeId, matchingCandidates] of byTopicNodeId) {
+    if (matchingCandidates.length > 1) {
+      invalidTopicNodeIds.add(topicNodeId);
+      pushError(
+        errors,
+        retryTopicBatchIndexes,
+        matchingCandidates.map((candidate) => candidate.batchIndex),
+        `duplicate topic writer document for topicNodeId: ${topicNodeId}`,
+      );
+    }
+  }
+
+  for (const [documentPath, matchingCandidates] of byTopicDocumentPath) {
+    if (matchingCandidates.length > 1) {
+      invalidDocumentPaths.add(documentPath);
+      for (const candidate of matchingCandidates) {
+        invalidTopicNodeIds.add(candidate.document.topicNodeId);
+      }
+      pushError(
+        errors,
+        retryTopicBatchIndexes,
+        matchingCandidates.map((candidate) => candidate.batchIndex),
+        `duplicate topic writer documentPath: ${documentPath}`,
+      );
+    }
+  }
+
+  const acceptedFileNodeIds = new Set(acceptedFileWriterDocuments.map((document) => document.fileNodeId));
+  const acceptedTopicWriterDocuments: TopicWriterDocument[] = [];
+
+  for (const candidate of topicCandidates) {
+    const { document } = candidate;
+    const errorStart = errors.length;
+
+    if (!inputs.profile.indexes.nodesById.has(document.topicNodeId)) {
+      invalidTopicNodeIds.add(document.topicNodeId);
+      pushError(
+        errors,
+        retryTopicBatchIndexes,
+        [candidate.batchIndex],
+        `topicNodeId does not exist in graph: ${document.topicNodeId}`,
+      );
+    }
+
+    for (const coveredNodeId of document.coveredNodeIds) {
+      if (!inputs.profile.indexes.nodesById.has(coveredNodeId)) {
+        pushError(
+          errors,
+          retryTopicBatchIndexes,
+          [candidate.batchIndex],
+          `topic coveredNodeIds contains unknown graph node: ${coveredNodeId} in ${document.documentPath}`,
+        );
+      }
+    }
+
+    if (document.sourceFileNodeId && !inputs.profile.indexes.nodesById.has(document.sourceFileNodeId)) {
+      pushError(
+        errors,
+        retryTopicBatchIndexes,
+        [candidate.batchIndex],
+        `topic sourceFileNodeId does not exist in graph: ${document.sourceFileNodeId}`,
+      );
+    } else if (document.sourceFileNodeId && !acceptedFileNodeIds.has(document.sourceFileNodeId)) {
+      warnings.push(`topic source file document was not accepted: ${document.sourceFileNodeId} for ${document.documentPath}`);
+    }
+
+    const hasDuplicateError =
+      invalidTopicNodeIds.has(document.topicNodeId) || invalidDocumentPaths.has(document.documentPath);
+    if (errors.length === errorStart && !hasDuplicateError) {
+      acceptedTopicWriterDocuments.push(document);
+    }
+  }
+
+  return acceptedTopicWriterDocuments.sort(compareByDocumentPath);
 }
 
 export function mergeKnowledgeBaseWriterOutputs(
@@ -144,6 +314,7 @@ export function mergeKnowledgeBaseWriterOutputs(
     ...(inputs.topicWriterOutputs ?? []).flatMap((output) => output.warnings),
   ];
   const retryFileBatchIndexes = new Set<number>();
+  const retryTopicBatchIndexes = new Set<number>();
   const invalidFileNodeIds = new Set<string>();
   const invalidDocumentPaths = new Set<string>();
 
@@ -231,8 +402,17 @@ export function mergeKnowledgeBaseWriterOutputs(
     }
   }
 
-  const acceptedTopicWriterDocuments = (inputs.topicWriterOutputs ?? []).flatMap((output) => output.topics);
-  const topicDocuments = acceptedTopicWriterDocuments.map(topicDocumentFromWriter);
+  acceptedFileWriterDocuments.sort(compareByDocumentPath);
+  fileDocuments.sort(generatedByPath);
+
+  const acceptedTopicWriterDocuments = validateTopicWriterOutputs(
+    inputs,
+    acceptedFileWriterDocuments,
+    errors,
+    warnings,
+    retryTopicBatchIndexes,
+  );
+  const topicDocuments = acceptedTopicWriterDocuments.map(topicDocumentFromWriter).sort(generatedByPath);
   const validation: CoverageValidationResult = {
     ok: errors.length === 0,
     errors,
@@ -245,7 +425,7 @@ export function mergeKnowledgeBaseWriterOutputs(
     validation,
     retryPlan: {
       fileBatchIndexes: sortedNumbers(retryFileBatchIndexes),
-      topicBatchIndexes: [],
+      topicBatchIndexes: sortedNumbers(retryTopicBatchIndexes),
       reasons: [...errors],
     },
     acceptedFileWriterDocuments,

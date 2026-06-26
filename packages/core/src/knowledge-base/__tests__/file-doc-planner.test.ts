@@ -3,7 +3,6 @@ import type { KnowledgeGraph } from "../../types.js";
 import {
   buildFileDocPlan,
   buildKnowledgeBaseProfile,
-  generateKnowledgeBase,
 } from "../index.js";
 
 function fullGraph(): KnowledgeGraph {
@@ -54,6 +53,15 @@ function fullGraph(): KnowledgeGraph {
   };
 }
 
+function idsFrom(value: unknown, keys: string[]): string[] {
+  const record = value as Record<string, unknown>;
+  for (const key of keys) {
+    const ids = record[key];
+    if (Array.isArray(ids)) return ids as string[];
+  }
+  return [];
+}
+
 describe("file document planning", () => {
   it("creates exactly one file-doc task per graph file node", () => {
     const profile = buildKnowledgeBaseProfile(fullGraph());
@@ -74,6 +82,29 @@ describe("file document planning", () => {
     ]);
     expect(plan.tasks).toHaveLength(4);
     expect(new Set(plan.tasks.map((task) => task.documentPath)).size).toBe(4);
+
+    const serviceTask = plan.tasks.find((task) => task.filePath === "src/service/feed.ts");
+    expect(serviceTask).toBeDefined();
+    expect(idsFrom(serviceTask, ["functionIds"])).toEqual([
+      "function:src/service/feed.ts:BuildFeed",
+      "function:src/service/feed.ts:rankCandidates",
+    ]);
+    expect(idsFrom(serviceTask, ["classIds"])).toEqual(["class:src/service/feed.ts:FeedBuilder"]);
+    expect(idsFrom(serviceTask, ["incomingEdgeIds", "incomingNeighborIds", "neighborIds", "neighborNodeIds"]).length).toBeGreaterThan(0);
+    expect(idsFrom(serviceTask, ["outgoingEdgeIds", "outgoingNeighborIds", "neighborIds", "neighborNodeIds"]).length).toBeGreaterThan(0);
+    expect(serviceTask?.sourceReadMode).toBe("full");
+    expect(serviceTask?.sourceSnapshot?.exists).toBe(true);
+
+    const dataTask = plan.tasks.find((task) => task.filePath === "src/data/store.ts");
+    expect(dataTask).toBeDefined();
+    expect(idsFrom(dataTask, ["classIds"])).toEqual(["class:src/data/store.ts:CandidateStore"]);
+    expect(idsFrom(dataTask, ["functionIds"])).toEqual(["function:src/data/store.ts:LoadCandidates"]);
+
+    const missingTask = plan.tasks.find((task) => task.filePath === "src/unused/missing.ts");
+    expect(missingTask).toBeDefined();
+    expect(missingTask?.sourceReadMode).toBe("missing");
+    expect(missingTask?.sourceSnapshot?.exists).toBe(false);
+    expect(idsFrom(missingTask, ["functionIds"])).toEqual(["function:src/unused/missing.ts:DeletedHelper"]);
   });
 
   it("does not cap file batches for larger graphs", () => {

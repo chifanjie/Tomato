@@ -311,15 +311,37 @@ describe("graph-to-knowledge-base", () => {
       const parentDoc = kb.documents.find((item) => item.path.startsWith("文件文档/") && item.coveredNodeIds.includes(node.id));
       expect(parentDoc?.content).toContain(`节点 ID: \`${node.id}\``);
     }
+    for (const node of graph.nodes.filter((item) => item.type === "class")) {
+      const parentDoc = kb.documents.find((item) => item.path.startsWith("文件文档/") && item.coveredNodeIds.includes(node.id));
+      expect(parentDoc?.content).toContain(`节点 ID: \`${node.id}\``);
+    }
   });
 
   it("reports actual document counts and coverage status", () => {
-    const report = docContent(sampleGraph(), "覆盖报告.md");
+    const kb = generateKnowledgeBase(sampleGraph(), {
+      sourceFiles: {
+        "src/api/routes.ts": "export function HandleFeedRequest() { return BuildFeed(); }\n",
+        "src/service/feed.ts": "export function BuildFeed() { return rankCandidates([]); }\nfunction rankCandidates(items) { return items; }\n",
+        "src/data/store.ts": "export class CandidateStore {}\nexport function LoadCandidates() { return []; }\n",
+      },
+    });
+    const report = kb.documents.find((item) => item.path === "覆盖报告.md");
 
-    expect(report).toContain("总文档数");
-    expect(report).toContain("File document coverage:");
-    expect(report).toContain("Function card coverage:");
-    expect(report).toContain("Class card coverage:");
-    expect(report).toContain("Coverage status: complete");
+    expect(report).toBeDefined();
+    expect(report?.content).toContain(`总文档数: ${kb.coverageReport.totalDocuments}`);
+    expect(report?.content).toContain(
+      `File document coverage: ${kb.coverageReport.fileDocumentCoverage.covered} / ${kb.coverageReport.fileDocumentCoverage.total}`,
+    );
+    expect(report?.content).toContain(
+      `Function card coverage: ${kb.coverageReport.functionCardCoverage.covered} / ${kb.coverageReport.functionCardCoverage.total}`,
+    );
+    expect(report?.content).toContain(
+      `Class card coverage: ${kb.coverageReport.classCardCoverage.covered} / ${kb.coverageReport.classCardCoverage.total}`,
+    );
+
+    expect(report?.content).not.toContain("File index coverage:");
+    expect(report?.content).not.toContain("Function index coverage:");
+    expect(report?.content).not.toContain("Class index coverage:");
+    expect(report?.content).toContain("Coverage status: complete");
   });
 });

@@ -6,6 +6,7 @@ import {
   getAllFiles,
   getFilesForLayer,
 } from "../viewgraph/readableSelectors";
+import { buildFileCallEdges } from "../viewgraph/callRelationships";
 import LayerOverviewPanel from "./LayerOverviewPanel";
 import LayerFileHeatmap from "./LayerFileHeatmap";
 import ViewGraphBreadcrumb from "./ViewGraphBreadcrumb";
@@ -19,11 +20,28 @@ export default function ReadableViewGraphPage() {
   const searchResults = useDashboardStore((s) => s.searchResults);
   const drillIntoLayer = useDashboardStore((s) => s.drillIntoLayer);
   const openFileDetail = useDashboardStore((s) => s.openFileDetail);
+  const selectNode = useDashboardStore((s) => s.selectNode);
   const { t } = useI18n();
 
   const matches = useMemo(
     () => buildReadableSearchMatches(graph, viewGraph, searchResults),
     [graph, viewGraph, searchResults],
+  );
+  const layer = useMemo(
+    () => (activeLayerId && viewGraph ? viewGraph.layersById.get(activeLayerId) ?? null : null),
+    [activeLayerId, viewGraph],
+  );
+  const files = useMemo(() => {
+    if (!viewGraph) return [];
+    return activeLayerId ? getFilesForLayer(viewGraph, activeLayerId) : getAllFiles(viewGraph);
+  }, [activeLayerId, viewGraph]);
+  const fileCallEdges = useMemo(
+    () => (
+      graph && viewGraph
+        ? buildFileCallEdges(graph, viewGraph, { fileIds: files.map((file) => file.id) })
+        : []
+    ),
+    [files, graph, viewGraph],
   );
 
   if (!graph || !viewGraph) {
@@ -35,9 +53,6 @@ export default function ReadableViewGraphPage() {
   }
 
   if (navigationLevel === "layer-detail") {
-    const layer = activeLayerId ? viewGraph.layersById.get(activeLayerId) ?? null : null;
-    const files = activeLayerId ? getFilesForLayer(viewGraph, activeLayerId) : getAllFiles(viewGraph);
-
     return (
       <div className="flex h-full min-h-0 w-full flex-col">
         <div className="shrink-0 border-b border-border-subtle bg-surface px-5 py-3">
@@ -49,6 +64,8 @@ export default function ReadableViewGraphPage() {
             files={files}
             fileMatchCounts={matches.fileMatchCounts}
             selectedFileId={selectedNodeId}
+            callEdges={fileCallEdges}
+            onFocusFile={selectNode}
             onOpenFile={openFileDetail}
           />
         </div>

@@ -249,13 +249,6 @@ function sampleGraph(extraEntry = false): KnowledgeGraph {
   };
 }
 
-function docContent(graph: KnowledgeGraph, path: string): string {
-  const kb = generateKnowledgeBase(graph);
-  const doc = kb.documents.find((item) => item.path === path);
-  expect(doc).toBeDefined();
-  return doc!.content;
-}
-
 describe("graph-to-knowledge-base", () => {
   it("builds a project profile from graph facts", () => {
     const profile = buildKnowledgeBaseProfile(sampleGraph());
@@ -309,11 +302,21 @@ describe("graph-to-knowledge-base", () => {
     }
     for (const node of graph.nodes.filter((item) => item.type === "function")) {
       const parentDoc = kb.documents.find((item) => item.path.startsWith("文件文档/") && item.coveredNodeIds.includes(node.id));
+      expect(parentDoc?.content).toContain("## 函数卡片");
+      expect(parentDoc?.content).toContain(`### ${node.name}`);
       expect(parentDoc?.content).toContain(`节点 ID: \`${node.id}\``);
+      if (node.lineRange) {
+        expect(parentDoc?.content).toContain(node.lineRange.join("-"));
+      }
     }
     for (const node of graph.nodes.filter((item) => item.type === "class")) {
       const parentDoc = kb.documents.find((item) => item.path.startsWith("文件文档/") && item.coveredNodeIds.includes(node.id));
+      expect(parentDoc?.content).toContain("## 类卡片");
+      expect(parentDoc?.content).toContain(`### ${node.name}`);
       expect(parentDoc?.content).toContain(`节点 ID: \`${node.id}\``);
+      if (node.lineRange) {
+        expect(parentDoc?.content).toContain(node.lineRange.join("-"));
+      }
     }
   });
 

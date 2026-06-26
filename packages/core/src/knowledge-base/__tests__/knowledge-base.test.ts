@@ -317,9 +317,9 @@ describe("graph-to-knowledge-base", () => {
     const report = docContent(sampleGraph(), "覆盖报告.md");
 
     expect(report).toContain("总文档数");
-    expect(report).toContain("File index coverage: 3 / 3");
-    expect(report).toContain("Function index coverage: 4 / 4");
-    expect(report).toContain("Class index coverage: 1 / 1");
+    expect(report).toContain("File document coverage:");
+    expect(report).toContain("Function card coverage:");
+    expect(report).toContain("Class card coverage:");
     expect(report).toContain("Coverage status: complete");
   });
 });

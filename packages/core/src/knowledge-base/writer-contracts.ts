@@ -67,6 +67,20 @@ function requireArray(record: Record<string, unknown>, key: string, path: string
   return value;
 }
 
+function requireNonEmptyArray(
+  record: Record<string, unknown>,
+  key: string,
+  path: string,
+  itemName: string,
+  errors: string[],
+): unknown[] | undefined {
+  const value = requireArray(record, key, path, errors);
+  if (value && value.length === 0) {
+    errors.push(`${fieldPath(path, key)} must contain at least one ${itemName}`);
+  }
+  return value;
+}
+
 function requireStringArray(record: Record<string, unknown>, key: string, path: string, errors: string[]): void {
   const value = record[key];
   const currentPath = fieldPath(path, key);
@@ -92,21 +106,42 @@ function requireSections(markdown: unknown, sections: readonly string[], path: s
   }
 }
 
-function collectPlaceholderErrors(value: unknown, path: string, errors: string[]): void {
-  if (typeof value === "string") {
-    if (PLACEHOLDER_RE.test(value)) {
-      errors.push(`${path || "value"} contains placeholder text`);
-    }
+function validateNoPlaceholderText(value: unknown, path: string, errors: string[]): void {
+  if (typeof value === "string" && PLACEHOLDER_RE.test(value)) {
+    errors.push(`${path} contains placeholder text`);
+  }
+}
+
+function validateWarningPlaceholders(value: unknown, errors: string[]): void {
+  if (!Array.isArray(value)) return;
+  value.forEach((warning, index) => validateNoPlaceholderText(warning, `warnings[${index}]`, errors));
+}
+
+function validateLineRange(value: unknown, path: string, errors: string[]): void {
+  if (
+    !Array.isArray(value)
+    || value.length !== 2
+    || value.some((item) => typeof item !== "number" || !Number.isFinite(item))
+  ) {
+    errors.push(`${path} must be a tuple of two finite numbers`);
+  }
+}
+
+function validateSourceEvidence(value: unknown, path: string, errors: string[]): void {
+  if (!isRecord(value)) {
+    errors.push(`${path} must be an object`);
     return;
   }
-  if (Array.isArray(value)) {
-    value.forEach((item, index) => collectPlaceholderErrors(item, `${path}[${index}]`, errors));
-    return;
+
+  requireString(value, "filePath", path, errors);
+  if ("nodeId" in value && typeof value.nodeId !== "string") {
+    errors.push(`${path}.nodeId must be a string`);
   }
-  if (isRecord(value)) {
-    for (const [key, child] of Object.entries(value)) {
-      collectPlaceholderErrors(child, fieldPath(path, key), errors);
-    }
+  if ("excerpt" in value && typeof value.excerpt !== "string") {
+    errors.push(`${path}.excerpt must be a string`);
+  }
+  if ("lineRange" in value) {
+    validateLineRange(value.lineRange, `${path}.lineRange`, errors);
   }
 }
 
@@ -124,10 +159,14 @@ function validateFileWriterDocument(value: unknown, index: number, errors: strin
   requireStringArray(value, "coveredFunctionNodeIds", path, errors);
   requireStringArray(value, "coveredClassNodeIds", path, errors);
   requireStringArray(value, "representedEdgeIds", path, errors);
-  requireArray(value, "sourceEvidence", path, errors);
+  const sourceEvidence = requireArray(value, "sourceEvidence", path, errors);
+  sourceEvidence?.forEach((item, evidenceIndex) => {
+    validateSourceEvidence(item, `${path}.sourceEvidence[${evidenceIndex}]`, errors);
+  });
   requireStringArray(value, "importantNodeIds", path, errors);
   requireString(value, "markdown", path, errors);
   requireSections(value.markdown, FILE_WRITER_REQUIRED_SECTIONS, `${path}.markdown`, errors);
+  validateNoPlaceholderText(value.markdown, `${path}.markdown`, errors);
 }
 
 function validateTopicWriterDocument(value: unknown, index: number, errors: string[]): void {
@@ -143,9 +182,13 @@ function validateTopicWriterDocument(value: unknown, index: number, errors: stri
   requireString(value, "title", path, errors);
   requireStringArray(value, "coveredNodeIds", path, errors);
   requireString(value, "linkedFileDocumentPath", path, errors);
-  requireArray(value, "evidence", path, errors);
+  const evidence = requireArray(value, "evidence", path, errors);
+  evidence?.forEach((item, evidenceIndex) => {
+    validateSourceEvidence(item, `${path}.evidence[${evidenceIndex}]`, errors);
+  });
   requireString(value, "markdown", path, errors);
   requireSections(value.markdown, TOPIC_WRITER_REQUIRED_SECTIONS, `${path}.markdown`, errors);
+  validateNoPlaceholderText(value.markdown, `${path}.markdown`, errors);
 }
 
 function validateCommonBatchShape(value: unknown, warningsPath: string, errors: string[]): value is Record<string, unknown> {
@@ -161,10 +204,10 @@ function validateCommonBatchShape(value: unknown, warningsPath: string, errors: 
 export function parseFileWriterBatchOutput(value: unknown): ContractParseResult<FileWriterBatchOutput> {
   const errors: string[] = [];
   if (validateCommonBatchShape(value, "warnings", errors)) {
-    const documents = requireArray(value, "documents", "", errors);
+    validateWarningPlaceholders(value.warnings, errors);
+    const documents = requireNonEmptyArray(value, "documents", "", "document", errors);
     documents?.forEach((document, index) => validateFileWriterDocument(document, index, errors));
   }
-  collectPlaceholderErrors(value, "", errors);
 
   if (errors.length > 0) return { ok: false, errors };
   return { ok: true, value: value as FileWriterBatchOutput, errors: [] };
@@ -173,10 +216,10 @@ export function parseFileWriterBatchOutput(value: unknown): ContractParseResult<
 export function parseTopicWriterBatchOutput(value: unknown): ContractParseResult<TopicWriterBatchOutput> {
   const errors: string[] = [];
   if (validateCommonBatchShape(value, "warnings", errors)) {
-    const topics = requireArray(value, "topics", "", errors);
+    validateWarningPlaceholders(value.warnings, errors);
+    const topics = requireNonEmptyArray(value, "topics", "", "topic", errors);
     topics?.forEach((topic, index) => validateTopicWriterDocument(topic, index, errors));
   }
-  collectPlaceholderErrors(value, "", errors);
 
   if (errors.length > 0) return { ok: false, errors };
   return { ok: true, value: value as TopicWriterBatchOutput, errors: [] };

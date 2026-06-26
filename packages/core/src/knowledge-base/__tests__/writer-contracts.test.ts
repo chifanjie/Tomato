@@ -165,6 +165,21 @@ describe("writer contracts", () => {
     expect(result.errors).toContain("documents[0].markdown contains placeholder text");
   });
 
+  it("does not reject placeholder-like text in file paths or ids", () => {
+    const output = completeFileOutput();
+    output.documents[0].fileNodeId = "file:src/flags/FIXME_FLAG.ts";
+    output.documents[0].filePath = "docs/TODO.md";
+    output.documents[0].documentPath = "文件文档/TODO.md";
+
+    const result = parseFileWriterBatchOutput(output);
+
+    expect(result).toEqual({
+      ok: true,
+      value: output,
+      errors: [],
+    });
+  });
+
   it("rejects invalid file-writer array fields", () => {
     const output = completeFileOutput() as Record<string, unknown>;
     output.warnings = "none";
@@ -173,6 +188,36 @@ describe("writer contracts", () => {
 
     expect(result.ok).toBe(false);
     expect(result.errors).toContain("warnings must be an array of strings");
+  });
+
+  it("rejects empty file-writer document arrays", () => {
+    const output = completeFileOutput();
+    output.documents = [];
+
+    const result = parseFileWriterBatchOutput(output);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("documents must contain at least one document");
+  });
+
+  it("rejects non-object file source evidence items", () => {
+    const output = completeFileOutput() as { documents: Array<Record<string, unknown>> };
+    output.documents[0].sourceEvidence = [null];
+
+    const result = parseFileWriterBatchOutput(output);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("documents[0].sourceEvidence[0] must be an object");
+  });
+
+  it("rejects invalid file source evidence line ranges", () => {
+    const output = completeFileOutput() as { documents: Array<Record<string, unknown>> };
+    output.documents[0].sourceEvidence = [{ filePath: "x", lineRange: ["bad"] }];
+
+    const result = parseFileWriterBatchOutput(output);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("documents[0].sourceEvidence[0].lineRange must be a tuple of two finite numbers");
   });
 
   it("accepts a complete topic-writer batch output", () => {
@@ -203,5 +248,35 @@ describe("writer contracts", () => {
 
     expect(result.ok).toBe(false);
     expect(result.errors).toContain("topics[0].evidence must be an array");
+  });
+
+  it("rejects empty topic-writer topic arrays", () => {
+    const output = completeTopicOutput();
+    output.topics = [];
+
+    const result = parseTopicWriterBatchOutput(output);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("topics must contain at least one topic");
+  });
+
+  it("rejects topic evidence with missing file paths", () => {
+    const output = completeTopicOutput() as { topics: Array<Record<string, unknown>> };
+    output.topics[0].evidence = [{}];
+
+    const result = parseTopicWriterBatchOutput(output);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("topics[0].evidence[0].filePath must be a string");
+  });
+
+  it("rejects topic evidence with non-string file paths", () => {
+    const output = completeTopicOutput() as { topics: Array<Record<string, unknown>> };
+    output.topics[0].evidence = [{ filePath: 123 }];
+
+    const result = parseTopicWriterBatchOutput(output);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("topics[0].evidence[0].filePath must be a string");
   });
 });

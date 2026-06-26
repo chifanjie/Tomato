@@ -53,14 +53,10 @@ function fullGraph(): KnowledgeGraph {
   };
 }
 
-function idsFrom(value: unknown, keys: string[]): string[] {
+function stringArrayFrom(value: unknown, key: string): string[] {
   const record = value as Record<string, unknown>;
-  const allIds: string[] = [];
-  for (const key of keys) {
-    const ids = record[key];
-    if (Array.isArray(ids)) allIds.push(...(ids as string[]));
-  }
-  return [...new Set(allIds)];
+  const ids = record[key];
+  return Array.isArray(ids) ? [...(ids as string[])].sort() : [];
 }
 
 describe("file document planning", () => {
@@ -82,37 +78,59 @@ describe("file document planning", () => {
       "file:src/unused/missing.ts",
     ]);
     expect(plan.tasks).toHaveLength(4);
+    expect(plan.tasks.map((task) => task.documentPath).sort()).toEqual([
+      "文件文档/src-api-routes.ts.md",
+      "文件文档/src-data-store.ts.md",
+      "文件文档/src-service-feed.ts.md",
+      "文件文档/src-unused-missing.ts.md",
+    ]);
     expect(new Set(plan.tasks.map((task) => task.documentPath)).size).toBe(4);
 
     const serviceTask = plan.tasks.find((task) => task.filePath === "src/service/feed.ts");
     expect(serviceTask).toBeDefined();
-    expect(idsFrom(serviceTask, ["functionIds"])).toEqual([
+    expect(stringArrayFrom(serviceTask, "functionNodeIds")).toEqual([
       "function:src/service/feed.ts:BuildFeed",
       "function:src/service/feed.ts:rankCandidates",
     ]);
-    expect(idsFrom(serviceTask, ["classIds"])).toEqual(["class:src/service/feed.ts:FeedBuilder"]);
-    const serviceIncomingIds = idsFrom(serviceTask, ["incomingEdgeIds", "incomingNeighborIds", "neighborIds", "neighborNodeIds"]);
-    const serviceOutgoingIds = idsFrom(serviceTask, ["outgoingEdgeIds", "outgoingNeighborIds", "neighborIds", "neighborNodeIds"]);
-    expect(serviceIncomingIds).toContain("function:src/api/routes.ts:HandleFeedRequest");
-    expect(serviceOutgoingIds).toContain("function:src/data/store.ts:LoadCandidates");
-    expect(serviceOutgoingIds).toContain("function:src/service/feed.ts:rankCandidates");
+    expect(stringArrayFrom(serviceTask, "classNodeIds")).toEqual(["class:src/service/feed.ts:FeedBuilder"]);
+    expect(stringArrayFrom(serviceTask, "incomingEdgeIds")).toEqual([
+      "imports:file:src/api/routes.ts->file:src/service/feed.ts",
+    ]);
+    expect(stringArrayFrom(serviceTask, "outgoingEdgeIds")).toEqual([
+      "contains:file:src/service/feed.ts->class:src/service/feed.ts:FeedBuilder",
+      "contains:file:src/service/feed.ts->function:src/service/feed.ts:BuildFeed",
+      "contains:file:src/service/feed.ts->function:src/service/feed.ts:rankCandidates",
+      "imports:file:src/service/feed.ts->file:src/data/store.ts",
+    ]);
+    expect(stringArrayFrom(serviceTask, "neighborNodeIds")).toEqual(expect.arrayContaining([
+      "file:src/api/routes.ts",
+      "file:src/data/store.ts",
+      "function:src/api/routes.ts:HandleFeedRequest",
+      "function:src/data/store.ts:LoadCandidates",
+      "function:src/service/feed.ts:rankCandidates",
+    ]));
     expect(serviceTask?.sourceReadMode).toBe("full");
     expect(serviceTask?.sourceSnapshot?.exists).toBe(true);
 
     const dataTask = plan.tasks.find((task) => task.filePath === "src/data/store.ts");
     expect(dataTask).toBeDefined();
-    expect(idsFrom(dataTask, ["classIds"])).toEqual(["class:src/data/store.ts:CandidateStore"]);
-    expect(idsFrom(dataTask, ["functionIds"])).toEqual(["function:src/data/store.ts:LoadCandidates"]);
+    expect(stringArrayFrom(dataTask, "classNodeIds")).toEqual(["class:src/data/store.ts:CandidateStore"]);
+    expect(stringArrayFrom(dataTask, "functionNodeIds")).toEqual(["function:src/data/store.ts:LoadCandidates"]);
     expect(dataTask?.sourceReadMode).toBe("full");
     expect(dataTask?.sourceSnapshot?.exists).toBe(true);
-    const dataIncomingIds = idsFrom(dataTask, ["incomingEdgeIds", "incomingNeighborIds", "neighborIds", "neighborNodeIds"]);
-    expect(dataIncomingIds).toContain("function:src/service/feed.ts:BuildFeed");
+    expect(stringArrayFrom(dataTask, "incomingEdgeIds")).toEqual([
+      "imports:file:src/service/feed.ts->file:src/data/store.ts",
+    ]);
+    expect(stringArrayFrom(dataTask, "neighborNodeIds")).toEqual(expect.arrayContaining([
+      "file:src/service/feed.ts",
+      "function:src/service/feed.ts:BuildFeed",
+    ]));
 
     const missingTask = plan.tasks.find((task) => task.filePath === "src/unused/missing.ts");
     expect(missingTask).toBeDefined();
     expect(missingTask?.sourceReadMode).toBe("missing");
     expect(missingTask?.sourceSnapshot?.exists).toBe(false);
-    expect(idsFrom(missingTask, ["functionIds"])).toEqual(["function:src/unused/missing.ts:DeletedHelper"]);
+    expect(stringArrayFrom(missingTask, "functionNodeIds")).toEqual(["function:src/unused/missing.ts:DeletedHelper"]);
   });
 
   it("does not cap file batches for larger graphs", () => {

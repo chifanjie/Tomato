@@ -5,6 +5,7 @@ import { buildSourceSnapshot } from "./source-snapshot.js";
 
 const MAX_BATCH_LINES = 1_600;
 const MAX_BATCH_GRAPH_ITEMS = 120;
+const PENDING_BATCH_INDEX = -1;
 
 export function edgeId(edge: GraphEdge): string {
   return `${edge.type}:${edge.source}->${edge.target}`;
@@ -91,7 +92,7 @@ function buildBatches(tasks: FileDocTask[]): FileDocBatch[] {
 
   function flushCurrent(): void {
     if (current.length === 0) return;
-    const batchIndex = batches.length;
+    const batchIndex = batches.length + 1;
     batches.push(assignBatch(current, batchIndex, "dynamic batch sized by source lines and graph relationships"));
     current = [];
     currentLines = 0;
@@ -101,7 +102,7 @@ function buildBatches(tasks: FileDocTask[]): FileDocBatch[] {
   for (const task of tasks) {
     if (task.sourceReadMode === "missing") {
       flushCurrent();
-      const batchIndex = batches.length;
+      const batchIndex = batches.length + 1;
       batches.push(assignBatch([task], batchIndex, "missing source isolated for explicit follow-up"));
       continue;
     }
@@ -135,7 +136,7 @@ export function buildFileDocPlan(profile: ProjectProfile, options: KnowledgeBase
     const fileEdges = directFileEdges(profile, fileNode.id);
 
     return {
-      batchIndex: 0,
+      batchIndex: PENDING_BATCH_INDEX,
       taskIndex,
       fileNodeId: fileNode.id,
       filePath,

@@ -151,4 +151,25 @@ describe("file document planning", () => {
     expect(plan.tasks.filter((task) => task.filePath.startsWith("src/generated/"))).toHaveLength(60);
     expect(plan.tasks).toHaveLength(64);
   });
+
+  it("uses one-based batch indexes for batch artifacts and task membership", () => {
+    const plan = buildFileDocPlan(buildKnowledgeBaseProfile(fullGraph()), {
+      projectRoot: "/repo",
+      sourceFiles: {
+        "src/api/routes.ts": "export function HandleFeedRequest() { return BuildFeed(); }\n",
+        "src/service/feed.ts": "export function BuildFeed() { return rankCandidates([]); }\nfunction rankCandidates(items) { return items; }\n",
+        "src/data/store.ts": "export class CandidateStore {}\nexport function LoadCandidates() { return []; }\n",
+      },
+    });
+
+    for (const [index, batch] of plan.batches.entries()) {
+      expect(batch.batchIndex).toBe(index + 1);
+      expect(batch.tasks.every((task) => task.batchIndex === batch.batchIndex)).toBe(true);
+    }
+
+    const artifactNames = plan.batches.map((batch) => `file-doc-batch-${batch.batchIndex}.json`);
+    expect(artifactNames).toEqual(plan.batches.map((_, index) => `file-doc-batch-${index + 1}.json`));
+    expect(artifactNames[0]).toBe("file-doc-batch-1.json");
+    expect(artifactNames).not.toContain("file-doc-batch-0.json");
+  });
 });

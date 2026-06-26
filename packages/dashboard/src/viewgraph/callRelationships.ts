@@ -73,6 +73,29 @@ function addAggregatedFileEdge(
   });
 }
 
+function buildContainerToFileIds(graph: KnowledgeGraph, viewGraph: ViewGraph): Map<string, string[]> {
+  const result = new Map<string, string[]>();
+  for (const edge of graph.edges) {
+    if (edge.type !== "contains" || !viewGraph.filesById.has(edge.target)) continue;
+    const list = result.get(edge.source) ?? [];
+    list.push(edge.target);
+    result.set(edge.source, list);
+  }
+  for (const [containerId, fileIds] of result) {
+    result.set(containerId, [...new Set(fileIds)].sort((a, b) => a.localeCompare(b)));
+  }
+  return result;
+}
+
+function resolveImportFileIds(
+  endpointId: string,
+  viewGraph: ViewGraph,
+  containerToFileIds: Map<string, string[]>,
+): string[] {
+  if (viewGraph.filesById.has(endpointId)) return [endpointId];
+  return containerToFileIds.get(endpointId) ?? [];
+}
+
 export function buildFileCallEdges(
   graph: KnowledgeGraph,
   viewGraph: ViewGraph,
@@ -100,13 +123,19 @@ export function buildFileCallEdges(
   if (callEdges.size > 0) return [...callEdges.values()].sort(sortFileEdges);
 
   const importEdges = new Map<string, FileCallEdge>();
+  const containerToFileIds = buildContainerToFileIds(graph, viewGraph);
   for (const edge of graph.edges) {
     if (edge.type !== "imports") continue;
-    if (!viewGraph.filesById.has(edge.source) || !viewGraph.filesById.has(edge.target)) continue;
-    if (edge.source === edge.target) continue;
-    if (!inScope(edge.source, allowedFileIds) || !inScope(edge.target, allowedFileIds)) continue;
+    const sourceFileIds = resolveImportFileIds(edge.source, viewGraph, containerToFileIds);
+    const targetFileIds = resolveImportFileIds(edge.target, viewGraph, containerToFileIds);
+    for (const sourceFileId of sourceFileIds) {
+      for (const targetFileId of targetFileIds) {
+        if (sourceFileId === targetFileId) continue;
+        if (!inScope(sourceFileId, allowedFileIds) || !inScope(targetFileId, allowedFileIds)) continue;
 
-    addAggregatedFileEdge(importEdges, edge.source, edge.target, "imports", null);
+        addAggregatedFileEdge(importEdges, sourceFileId, targetFileId, "imports", null);
+      }
+    }
   }
 
   return [...importEdges.values()].sort(sortFileEdges);

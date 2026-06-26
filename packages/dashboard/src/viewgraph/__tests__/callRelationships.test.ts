@@ -71,6 +71,29 @@ describe("callRelationships", () => {
     ]);
   });
 
+  it("expands module import fallback edges into contained file arrows", () => {
+    const base = graphWithCalls();
+    const graph: KnowledgeGraph = {
+      ...base,
+      nodes: [
+        ...base.nodes,
+        { id: "module:shared", type: "module", name: "shared", filePath: "shared", summary: "", tags: [], complexity: "simple" },
+        { id: "file:shared/index.ts", type: "file", name: "index.ts", filePath: "shared/index.ts", summary: "", tags: [], complexity: "simple" },
+      ],
+      edges: [
+        ...base.edges.filter((edge) => edge.type !== "calls"),
+        { source: "module:shared", target: "file:shared/index.ts", type: "contains", direction: "forward", weight: 1 },
+        { source: "file:a", target: "module:shared", type: "imports", direction: "forward", weight: 1 },
+      ],
+      layers: [{ id: "app", name: "App", description: "", nodeIds: ["file:a", "file:b", "file:c", "file:shared/index.ts"] }],
+    };
+    const viewGraph = buildViewGraph(graph);
+
+    expect(buildFileCallEdges(graph, viewGraph, { fileIds: ["file:a", "file:shared/index.ts"] })).toEqual([
+      { sourceFileId: "file:a", targetFileId: "file:shared/index.ts", source: "imports", count: 1, functionEdgeIds: [] },
+    ]);
+  });
+
   it("returns every direct focused file relationship without a count cap", () => {
     const focusedEdges = Array.from({ length: 18 }, (_, index) => ({
       sourceFileId: "file:a",

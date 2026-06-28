@@ -2,9 +2,13 @@ import type { GraphNode } from "../types.js";
 import type {
   CoverageLevel,
   DocumentPlan,
+  FileDocPlan,
+  FileWriterDocument,
   KnowledgeBaseDocumentCategory,
   PlannedDocument,
   ProjectProfile,
+  TopicPlan,
+  TopicPlanItem,
   TopicCandidate,
 } from "./types.js";
 import { KB_PATHS, indexDocumentPath, moduleDocumentPath, slugPath, topicDocumentPath } from "./paths.js";
@@ -232,5 +236,63 @@ export function buildDocumentPlan(profile: ProjectProfile): DocumentPlan {
     topicCandidates,
     nodeCoverage,
     coverageReasons,
+  };
+}
+
+function sourceFileIdForTopic(profile: ProjectProfile, nodeId: string): string | null {
+  return profile.indexes.functionToFileId.get(nodeId) ?? profile.indexes.classToFileId.get(nodeId) ?? null;
+}
+
+function topicCoveredNodeIds(profile: ProjectProfile, nodeId: string): string[] {
+  const related = new Set<string>([nodeId]);
+  for (const edge of [
+    ...(profile.indexes.incomingEdgesByNode.get(nodeId) ?? []),
+    ...(profile.indexes.outgoingEdgesByNode.get(nodeId) ?? []),
+  ]) {
+    if (edge.type === "calls" || edge.type === "configures" || edge.type === "reads_from" || edge.type === "writes_to") {
+      related.add(edge.source);
+      related.add(edge.target);
+    }
+  }
+  return [...related].filter((id) => profile.indexes.nodesById.has(id)).sort();
+}
+
+export function buildTopicPlan(
+  profile: ProjectProfile,
+  _fileDocPlan: FileDocPlan,
+  acceptedFileWriterDocuments: FileWriterDocument[],
+): TopicPlan {
+  const acceptedFileIds = new Set(acceptedFileWriterDocuments.map((document) => document.fileNodeId));
+  const warnings: string[] = [];
+  const topics: TopicPlanItem[] = [];
+
+  for (const candidate of selectTopicCandidates(profile)) {
+    const node = profile.indexes.nodesById.get(candidate.nodeId);
+    const sourceFileNodeId = sourceFileIdForTopic(profile, candidate.nodeId);
+    if (!node || !sourceFileNodeId) {
+      warnings.push(`topic candidate missing source file: ${candidate.nodeId}`);
+      continue;
+    }
+    if (!acceptedFileIds.has(sourceFileNodeId)) {
+      warnings.push(`topic candidate source file document not accepted: ${candidate.nodeId}`);
+      continue;
+    }
+    const fileNode = profile.indexes.nodesById.get(sourceFileNodeId);
+    topics.push({
+      batchIndex: 1,
+      topicNodeId: candidate.nodeId,
+      sourceFileNodeId,
+      documentPath: topicDocumentPath(fileNode?.filePath ?? sourceFileNodeId, node.name),
+      title: `${node.name} 关键函数专题`,
+      reasons: candidate.reasons,
+      coveredNodeIds: topicCoveredNodeIds(profile, candidate.nodeId),
+      linkedFileDocumentPath: acceptedFileWriterDocuments.find((document) => document.fileNodeId === sourceFileNodeId)?.documentPath ?? "",
+    });
+  }
+
+  return {
+    topics,
+    batches: topics.length > 0 ? [{ batchIndex: 1, topics, reason: "dynamic topic batch from graph coverage obligations" }] : [],
+    warnings,
   };
 }

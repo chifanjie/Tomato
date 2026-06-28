@@ -346,4 +346,39 @@ describe("graph-to-knowledge-base", () => {
     expect(report?.content).not.toContain("Class index coverage:");
     expect(report?.content).toContain("Coverage status: complete");
   });
+
+  it("reports actual relationship coverage from generated file documents", () => {
+    const kb = generateKnowledgeBase(sampleGraph(), {
+      sourceFiles: {
+        "src/api/routes.ts": "export function HandleFeedRequest() { return BuildFeed(); }\n",
+        "src/service/feed.ts": "export function BuildFeed() { return rankCandidates([]); }\nfunction rankCandidates(items) { return items; }\n",
+        "src/data/store.ts": "export class CandidateStore {}\nexport function LoadCandidates() { return []; }\n",
+      },
+    });
+
+    expect(kb.coverageReport.relationshipCoverage).toEqual([
+      { edgeType: "calls", covered: 3, total: 3, missingEdgeIds: [] },
+      { edgeType: "imports", covered: 1, total: 1, missingEdgeIds: [] },
+      { edgeType: "contains", covered: 5, total: 5, missingEdgeIds: [] },
+    ]);
+  });
+
+  it("keeps missing source files incomplete instead of hiding them in indexes", () => {
+    const graph = sampleGraph();
+    graph.nodes.push({
+      id: "file:src/missing.ts",
+      type: "file",
+      name: "missing.ts",
+      filePath: "src/missing.ts",
+      summary: "Missing source file",
+      tags: ["stale"],
+      complexity: "simple",
+    });
+
+    const kb = generateKnowledgeBase(graph, { sourceFiles: {} });
+
+    expect(kb.coverageReport.status).toBe("incomplete");
+    expect(kb.coverageReport.sourceReadCoverage.missing).toContain("file:src/missing.ts");
+    expect(kb.retryPlan.fileBatchIndexes.length).toBeGreaterThan(0);
+  });
 });

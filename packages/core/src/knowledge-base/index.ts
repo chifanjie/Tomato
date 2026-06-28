@@ -8,6 +8,7 @@ export * from "./writer-contracts.js";
 export * from "./merge.js";
 export {
   buildCoverageReport,
+  renderDeterministicFileWriterDocument,
   renderKnowledgeBaseDocuments,
   validateKnowledgeBaseCoverage,
 } from "./markdown.js";

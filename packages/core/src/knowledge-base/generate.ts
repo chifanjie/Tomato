@@ -1,33 +1,63 @@
 import type { KnowledgeGraph } from "../types.js";
 import { buildKnowledgeBaseProfile } from "./profile.js";
-import { buildDocumentPlan } from "./planner.js";
+import { buildDocumentPlan, buildTopicPlan } from "./planner.js";
+import { buildFileDocPlan } from "./file-doc-planner.js";
+import { mergeKnowledgeBaseWriterOutputs } from "./merge.js";
 import {
   buildCoverageReport,
+  renderDeterministicFileWriterDocument,
   renderKnowledgeBaseDocuments,
-  validateKnowledgeBaseCoverage,
 } from "./markdown.js";
 import type { GeneratedKnowledgeBase, KnowledgeBaseOptions } from "./types.js";
 
 export function generateKnowledgeBase(
   graph: KnowledgeGraph,
-  _options: KnowledgeBaseOptions = {},
+  options: KnowledgeBaseOptions = {},
 ): GeneratedKnowledgeBase {
   const profile = buildKnowledgeBaseProfile(graph);
   const plan = buildDocumentPlan(profile);
-  const preliminaryDocuments = renderKnowledgeBaseDocuments(profile, plan);
-  const validation = validateKnowledgeBaseCoverage(profile, plan, preliminaryDocuments);
-  const coverageReport = buildCoverageReport(profile, plan, preliminaryDocuments, validation);
-  const documents = renderKnowledgeBaseDocuments(profile, plan, coverageReport, validation);
+  const fileDocPlan = buildFileDocPlan(profile, options);
+  const deterministicFileOutputs = fileDocPlan.batches.map((batch) => ({
+    batchIndex: batch.batchIndex,
+    documents: batch.tasks.map((task) => renderDeterministicFileWriterDocument(profile, task)),
+    warnings: [],
+  }));
+  const merged = mergeKnowledgeBaseWriterOutputs({
+    profile,
+    fileDocPlan,
+    fileWriterOutputs: deterministicFileOutputs,
+  });
+  const topicPlan = buildTopicPlan(profile, fileDocPlan, merged.acceptedFileWriterDocuments);
+  const supportDocuments = renderKnowledgeBaseDocuments(profile, plan, fileDocPlan, topicPlan, merged);
+  const preliminaryDocuments = [...supportDocuments, ...merged.fileDocuments, ...merged.topicDocuments];
+  const coverageReport = buildCoverageReport(
+    profile,
+    fileDocPlan,
+    topicPlan,
+    preliminaryDocuments,
+    merged.validation,
+    merged.retryPlan,
+  );
+  const finalSupportDocuments = renderKnowledgeBaseDocuments(
+    profile,
+    plan,
+    fileDocPlan,
+    topicPlan,
+    merged,
+    coverageReport,
+    merged.validation,
+  );
+  const documents = [...finalSupportDocuments, ...merged.fileDocuments, ...merged.topicDocuments]
+    .sort((a, b) => a.path.localeCompare(b.path) || a.title.localeCompare(b.title));
 
   return {
     profile,
     plan,
-    // Task 3/7 replace these placeholders with real plans.
-    fileDocPlan: { tasks: [], batches: [], warnings: [] },
-    topicPlan: { topics: [], batches: [], warnings: [] },
+    fileDocPlan,
+    topicPlan,
     documents,
-    validation,
+    validation: merged.validation,
     coverageReport,
-    retryPlan: { fileBatchIndexes: [], topicBatchIndexes: [], reasons: [] },
+    retryPlan: merged.retryPlan,
   };
 }

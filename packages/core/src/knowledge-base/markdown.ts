@@ -1,14 +1,22 @@
 import type { EdgeType, GraphNode, NodeType } from "../types.js";
 import type {
   CoverageReport,
+  CoverageRatio,
   CoverageValidationResult,
   DocumentPlan,
+  FileDocPlan,
+  FileDocTask,
+  FileWriterDocument,
   GeneratedDocument,
+  KnowledgeBaseStatus,
   KnowledgeBaseDocumentCategory,
+  RetryPlan,
   PlannedDocument,
   ProjectProfile,
+  TopicPlan,
 } from "./types.js";
 import { KB_PATHS, indexDocumentPath } from "./paths.js";
+import type { MergeKnowledgeBaseWriterOutputsResult } from "./merge.js";
 
 const DOCUMENT_CATEGORIES: KnowledgeBaseDocumentCategory[] = [
   "top-level",
@@ -31,6 +39,7 @@ const LEGACY_PATHS = {
   pendingItems: "风险点与待确认项.md",
   aiIndex: "AI检索索引.md",
 } as const;
+const RELATIONSHIP_COVERAGE_EDGE_TYPES: EdgeType[] = ["calls", "imports", "contains"];
 
 function isPath(path: string, currentPath: string, legacyPath?: string): boolean {
   return path === currentPath || path === legacyPath;
@@ -57,41 +66,186 @@ function edgeName(profile: ProjectProfile, nodeId: string): string {
   return node ? `${node.name} (${node.type})` : nodeId;
 }
 
+function edgeId(edge: { type: string; source: string; target: string }): string {
+  return `${edge.type}:${edge.source}->${edge.target}`;
+}
+
+function nodeLabel(profile: ProjectProfile, nodeId: string): string {
+  const node = nodeOf(profile, nodeId);
+  return node ? `${node.name} (${node.type})` : nodeId;
+}
+
 function countByCategory(documents: GeneratedDocument[]): Record<KnowledgeBaseDocumentCategory, number> {
   const counts = Object.fromEntries(DOCUMENT_CATEGORIES.map((category) => [category, 0])) as Record<KnowledgeBaseDocumentCategory, number>;
   for (const doc of documents) counts[doc.category] += 1;
   return counts;
 }
 
-function countCovered(profile: ProjectProfile, plan: DocumentPlan, type: NodeType, level: "index" | "overview" | "topic"): number {
-  const rank = { none: 0, index: 1, overview: 2, "pending-verification": 2, topic: 3 };
-  const required = rank[level];
-  return nodesOfType(profile, type).filter((node) => rank[plan.nodeCoverage.get(node.id) ?? "none"] >= required).length;
+function lineRef(node: { filePath?: string; lineRange?: [number, number] }, fallbackFilePath: string): string {
+  return `\`${node.filePath ?? fallbackFilePath}\`${node.lineRange ? `:${node.lineRange.join("-")}` : ""}`;
 }
 
-function topicCoveredCount(profile: ProjectProfile, plan: DocumentPlan): number {
-  return profile.graph.nodes.filter((node) => plan.nodeCoverage.get(node.id) === "topic").length;
+function representedEdgesForTask(profile: ProjectProfile, task: FileDocTask): string[] {
+  const localNodeIds = new Set([task.fileNodeId, ...task.functionNodeIds, ...task.classNodeIds]);
+  const represented = new Set<string>();
+  for (const edge of profile.graph.edges) {
+    if (localNodeIds.has(edge.source) || localNodeIds.has(edge.target)) {
+      represented.add(edgeId(edge));
+    }
+  }
+  return [...represented].sort();
+}
+
+function renderFunctionCard(profile: ProjectProfile, task: FileDocTask, nodeId: string): string {
+  const node = nodeOf(profile, nodeId);
+  const outgoing = profile.indexes.outgoingEdgesByNode.get(nodeId) ?? [];
+  const incoming = profile.indexes.incomingEdgesByNode.get(nodeId) ?? [];
+  return [
+    `### ${node?.name ?? nodeId}`,
+    `- 节点 ID: \`${nodeId}\``,
+    `- 位置: ${lineRef(node ?? {}, task.filePath)}`,
+    `- 职责: ${node?.summary || "本地代码事实: 图谱没有提供摘要。"}`,
+    `- 输入/依赖: ${incoming.map((edge) => nodeLabel(profile, edge.source)).join(", ") || "未在图谱中识别"}`,
+    `- 输出/副作用: ${outgoing.map((edge) => nodeLabel(profile, edge.target)).join(", ") || "未在图谱中识别"}`,
+    `- 上游调用: ${incoming.filter((edge) => edge.type === "calls").map((edge) => nodeLabel(profile, edge.source)).join(", ") || "无"}`,
+    `- 下游调用: ${outgoing.filter((edge) => edge.type === "calls").map((edge) => nodeLabel(profile, edge.target)).join(", ") || "无"}`,
+    `- 业务含义: 根据名称、标签和调用关系推断，该函数参与 ${node?.tags.join("、") || "当前文件职责"}。根据代码推断，需线上配置确认`,
+    "- 注意事项: 修改前检查调用关系索引和相关测试。",
+    `- 代码证据: ${lineRef(node ?? {}, task.filePath)}`,
+  ].join("\n");
+}
+
+function renderClassCard(profile: ProjectProfile, task: FileDocTask, nodeId: string): string {
+  const node = nodeOf(profile, nodeId);
+  const outgoing = profile.indexes.outgoingEdgesByNode.get(nodeId) ?? [];
+  const incoming = profile.indexes.incomingEdgesByNode.get(nodeId) ?? [];
+  return [
+    `### ${node?.name ?? nodeId}`,
+    `- 节点 ID: \`${nodeId}\``,
+    `- 位置: ${lineRef(node ?? {}, task.filePath)}`,
+    `- 职责: ${node?.summary || "本地代码事实: 图谱没有提供摘要。"}`,
+    `- 关联入口/依赖: ${[...incoming, ...outgoing].map((edge) => edge.source === nodeId ? nodeLabel(profile, edge.target) : nodeLabel(profile, edge.source)).join(", ") || "未在图谱中识别"}`,
+    `- 代码证据: ${lineRef(node ?? {}, task.filePath)}`,
+  ].join("\n");
+}
+
+export function renderDeterministicFileWriterDocument(profile: ProjectProfile, task: FileDocTask): FileWriterDocument {
+  const representedEdgeIds = representedEdgesForTask(profile, task);
+  const importantNodeIds = [...task.functionNodeIds, ...task.classNodeIds]
+    .filter((nodeId) => nodeOf(profile, nodeId)?.complexity === "complex")
+    .sort();
+  const functionCards = task.functionNodeIds.map((nodeId) => renderFunctionCard(profile, task, nodeId));
+  const classCards = task.classNodeIds.map((nodeId) => renderClassCard(profile, task, nodeId));
+
+  return {
+    fileNodeId: task.fileNodeId,
+    filePath: task.filePath,
+    documentPath: task.documentPath,
+    title: `${task.filePath} 文件知识文档`,
+    coveredFunctionNodeIds: [...task.functionNodeIds],
+    coveredClassNodeIds: [...task.classNodeIds],
+    representedEdgeIds,
+    sourceEvidence: [{ filePath: task.filePath, nodeId: task.fileNodeId }],
+    importantNodeIds,
+    markdown: [
+      `# ${task.filePath} 文件知识文档`,
+      "",
+      "## 文件职责",
+      nodeOf(profile, task.fileNodeId)?.summary || "本地代码事实: 图谱中存在该文件，但没有摘要。",
+      "",
+      "## 所属位置",
+      `- Layer: ${task.layerId ?? "未分层"}`,
+      `- 目录/模块: \`${task.filePath}\``,
+      `- 上游文件/函数: ${task.incomingEdgeIds.length}`,
+      `- 下游文件/函数: ${task.outgoingEdgeIds.length}`,
+      "",
+      "## 文件内结构",
+      `- 函数总数: ${task.functionNodeIds.length}`,
+      `- 类总数: ${task.classNodeIds.length}`,
+      `- 关键函数或类: ${importantNodeIds.map((nodeId) => nodeOf(profile, nodeId)?.name ?? nodeId).join(", ") || "无"}`,
+      "",
+      "## 函数卡片",
+      functionCards.join("\n\n") || "本文件没有图谱函数节点。",
+      "",
+      "## 类卡片",
+      classCards.join("\n\n") || "本文件没有图谱类节点。",
+      "",
+      "## 调用关系",
+      representedEdgeIds.map((id) => `- ${id}`).join("\n") || "- 图谱未记录调用、导入或包含关系。",
+      "",
+      "## 风险点与待确认项",
+      task.sourceSnapshot.exists
+        ? "- 运行时配置、数据内容和线上流量路径需要外部确认。根据代码推断，需线上配置确认"
+        : "- 源文件缺失，当前文档只能基于图谱生成，最终状态必须为 incomplete。",
+      "",
+      "## AI 检索词",
+      [task.filePath, task.fileNodeId, ...task.functionNodeIds, ...task.classNodeIds].join(", "),
+    ].join("\n"),
+  };
 }
 
 export function buildCoverageReport(
   profile: ProjectProfile,
-  plan: DocumentPlan,
+  fileDocPlan: FileDocPlan,
+  topicPlan: TopicPlan,
   documents: GeneratedDocument[],
   validation: CoverageValidationResult,
+  retryPlan: RetryPlan,
 ): CoverageReport {
-  const entryCovered = profile.entryCandidates.filter((entry) => {
-    return plan.documents.some((doc) => (doc.category === "flow" || doc.category === "topic") && doc.coveredNodeIds.includes(entry.nodeId));
-  }).length;
-  const layerOverviewCovered = profile.layerProfiles.filter((layer) => {
-    return plan.documents.some((doc) => doc.category === "module" && doc.coveredNodeIds.some((nodeId) => layer.nodeIds.includes(nodeId)));
-  }).length;
-  const fileIndexCovered = countCovered(profile, plan, "file", "index");
-  const functionIndexCovered = countCovered(profile, plan, "function", "index");
-  const classIndexCovered = countCovered(profile, plan, "class", "index");
+  const docsByCategory = documents.reduce((map, doc) => {
+    const list = map.get(doc.category) ?? [];
+    list.push(doc);
+    map.set(doc.category, list);
+    return map;
+  }, new Map<KnowledgeBaseDocumentCategory, GeneratedDocument[]>());
+  const coveredNodeIdsByCategory = (category: KnowledgeBaseDocumentCategory): Set<string> => {
+    return new Set((docsByCategory.get(category) ?? []).flatMap((doc) => doc.coveredNodeIds));
+  };
+  const fileDocCovered = coveredNodeIdsByCategory("file");
+  const representedEdges = new Set(documents.flatMap((doc) => doc.representedEdgeIds));
+  const expectedIds = (type: NodeType): string[] => nodesOfType(profile, type).map((node) => node.id).sort();
+  const ratio = (coveredIds: Set<string>, expected: string[]): CoverageRatio => {
+    const missing = expected.filter((id) => !coveredIds.has(id)).sort();
+    return { covered: expected.length - missing.length, total: expected.length, missing };
+  };
+  const relationshipRatio = (edgeType: EdgeType) => {
+    const edges = (profile.indexes.edgesByType.get(edgeType) ?? []).map(edgeId).sort();
+    const missingEdgeIds = edges.filter((id) => !representedEdges.has(id)).sort();
+    return { edgeType, covered: edges.length - missingEdgeIds.length, total: edges.length, missingEdgeIds };
+  };
+  const sourceReadMissing = fileDocPlan.tasks
+    .filter((task) => !task.sourceSnapshot.exists)
+    .map((task) => task.fileNodeId)
+    .sort();
+  const sourceReadCoverage = {
+    covered: fileDocPlan.tasks.length - sourceReadMissing.length,
+    total: fileDocPlan.tasks.length,
+    missing: sourceReadMissing,
+  };
+  const layerDocs = docsByCategory.get("module") ?? [];
+  const flowAndTopicNodeIds = new Set([
+    ...(docsByCategory.get("flow") ?? []).flatMap((doc) => doc.coveredNodeIds),
+    ...(docsByCategory.get("topic") ?? []).flatMap((doc) => doc.coveredNodeIds),
+  ]);
+  const layerOverviewMissing = profile.layerProfiles
+    .filter((layer) => !layerDocs.some((doc) => doc.coveredNodeIds.some((nodeId) => layer.nodeIds.includes(nodeId))))
+    .map((layer) => layer.id)
+    .sort();
+  const entryMissing = profile.entryCandidates
+    .filter((entry) => !flowAndTopicNodeIds.has(entry.nodeId))
+    .map((entry) => entry.nodeId)
+    .sort();
+  const topicExpected = topicPlan.topics.map((topic) => topic.topicNodeId).sort();
+  const topicCovered = coveredNodeIdsByCategory("topic");
   const evidenceWarnings = profile.evidenceGaps.map((gap) => `${gap.kind}: ${gap.message}`);
-  const warnings = [...validation.warnings, ...evidenceWarnings];
-  const placeholderFailures = validation.errors.filter((error) => error.includes("placeholder text"));
-  const status = validation.errors.length > 0
+  const chineseFailures = documents.filter((doc) => !/[\u4e00-\u9fff]/.test(doc.content)).map((doc) => doc.path).sort();
+  const placeholderFailures = documents.filter((doc) => PLACEHOLDER_RE.test(doc.content)).map((doc) => doc.path).sort();
+  const structuralErrors = [
+    ...validation.errors,
+    ...placeholderFailures.map((path) => `document contains placeholder text: ${path}`),
+  ];
+  const warnings = [...new Set([...validation.warnings, ...evidenceWarnings])].sort();
+  const status: KnowledgeBaseStatus = structuralErrors.length > 0
     ? "incomplete"
     : warnings.length > 0
       ? "complete-with-warnings"
@@ -102,36 +256,48 @@ export function buildCoverageReport(
     documentCounts: countByCategory(documents),
     nodeCounts: profile.nodeCounts,
     edgeCounts: profile.edgeCounts,
-    // Temporary compatibility until file-doc validation lands.
-    fileDocumentCoverage: { covered: fileIndexCovered, total: profile.nodeCounts.file, missing: [] },
-    // Temporary compatibility until file-doc validation lands.
-    functionCardCoverage: { covered: functionIndexCovered, total: profile.nodeCounts.function, missing: [] },
-    // Temporary compatibility until file-doc validation lands.
-    classCardCoverage: { covered: classIndexCovered, total: profile.nodeCounts.class, missing: [] },
-    // Temporary compatibility until relationship validation lands.
-    relationshipCoverage: Object.entries(profile.edgeCounts).map(([edgeType, total]) => ({
-      edgeType,
-      covered: total,
-      total,
-      missingEdgeIds: [],
-    })),
-    // Temporary compatibility until source-read validation lands.
-    sourceReadCoverage: { covered: fileIndexCovered, total: profile.nodeCounts.file, missing: [] },
-    layerOverviewCoverage: { covered: layerOverviewCovered, total: profile.layerProfiles.length, missing: [] },
-    entryCoverage: { covered: entryCovered, total: profile.entryCandidates.length, missing: [] },
-    topicCoverage: { covered: topicCoveredCount(profile, plan), total: profile.graph.nodes.length, missing: [] },
-    fileWriterBatches: { total: 0, passed: 0, retry: 0 },
-    topicBatches: { total: 0, passed: 0, retry: 0 },
-    chineseValidation: { checked: documents.length, failed: [] },
+    fileDocumentCoverage: ratio(fileDocCovered, expectedIds("file")),
+    functionCardCoverage: ratio(fileDocCovered, expectedIds("function")),
+    classCardCoverage: ratio(fileDocCovered, expectedIds("class")),
+    relationshipCoverage: RELATIONSHIP_COVERAGE_EDGE_TYPES.map((edgeType) => relationshipRatio(edgeType)),
+    sourceReadCoverage,
+    layerOverviewCoverage: {
+      covered: profile.layerProfiles.length - layerOverviewMissing.length,
+      total: profile.layerProfiles.length,
+      missing: layerOverviewMissing,
+    },
+    entryCoverage: {
+      covered: profile.entryCandidates.length - entryMissing.length,
+      total: profile.entryCandidates.length,
+      missing: entryMissing,
+    },
+    topicCoverage: ratio(topicCovered, topicExpected),
+    fileWriterBatches: {
+      total: fileDocPlan.batches.length,
+      passed: Math.max(0, fileDocPlan.batches.length - retryPlan.fileBatchIndexes.length),
+      retry: retryPlan.fileBatchIndexes.length,
+    },
+    topicBatches: {
+      total: topicPlan.batches.length,
+      passed: Math.max(0, topicPlan.batches.length - retryPlan.topicBatchIndexes.length),
+      retry: retryPlan.topicBatchIndexes.length,
+    },
+    chineseValidation: { checked: documents.length, failed: chineseFailures },
     placeholderValidation: { checked: documents.length, failed: placeholderFailures },
     warnings,
-    errors: validation.errors,
+    errors: structuralErrors,
     status,
   };
 }
 
-function renderInventory(profile: ProjectProfile, plan: DocumentPlan, report?: CoverageReport): string {
-  const totalDocuments = report?.totalDocuments ?? plan.documents.length;
+function renderInventory(
+  profile: ProjectProfile,
+  plan: DocumentPlan,
+  fileDocPlan?: FileDocPlan,
+  topicPlan?: TopicPlan,
+  report?: CoverageReport,
+): string {
+  const totalDocuments = report?.totalDocuments ?? plan.documents.length + (fileDocPlan?.tasks.length ?? 0) + (topicPlan?.topics.length ?? 0);
   const lines = [
     "# 目录",
     "",
@@ -150,6 +316,12 @@ function renderInventory(profile: ProjectProfile, plan: DocumentPlan, report?: C
   ];
   for (const doc of plan.documents) {
     lines.push(`- [${doc.title}](${doc.path}) — ${doc.category}; ${doc.reason}`);
+  }
+  for (const task of fileDocPlan?.tasks ?? []) {
+    lines.push(`- [${task.filePath} 文件知识文档](${task.documentPath}) — file; exhaustive file/function/class coverage`);
+  }
+  for (const topic of topicPlan?.topics ?? []) {
+    lines.push(`- [${topic.title}](${topic.documentPath}) — topic; ${topic.reasons.join("; ")}`);
   }
   return lines.join("\n");
 }
@@ -249,10 +421,11 @@ function renderClassIndex(profile: ProjectProfile, plan: DocumentPlan): string {
 }
 
 function renderCallIndex(profile: ProjectProfile): string {
-  const lines = ["# 调用关系索引", "", "| Source | Type | Target | Weight |", "|---|---|---|---:|"];
-  for (const edge of profile.graph.edges) {
-    lines.push(`| \`${edge.source}\` | ${edge.type} | \`${edge.target}\` | ${edge.weight ?? ""} |`);
+  const lines = ["# 调用关系索引", "", "| Source | Target | Type |", "|---|---|---|"];
+  for (const edge of profile.graph.edges.filter((item) => item.type === "calls")) {
+    lines.push(`| \`${edge.source}\` | \`${edge.target}\` | ${edge.type} |`);
   }
+  if (lines.length === 4) lines.push("| 无 | 无 | calls |");
   return lines.join("\n");
 }
 
@@ -423,12 +596,15 @@ function renderCoverageReport(report: CoverageReport, validation: CoverageValida
 export function renderKnowledgeBaseDocuments(
   profile: ProjectProfile,
   plan: DocumentPlan,
+  fileDocPlan?: FileDocPlan,
+  topicPlan?: TopicPlan,
+  _merged?: MergeKnowledgeBaseWriterOutputsResult,
   report?: CoverageReport,
   validation?: CoverageValidationResult,
 ): GeneratedDocument[] {
   return plan.documents.map((doc) => {
     let content: string;
-    if (doc.path === KB_PATHS.inventory) content = renderInventory(profile, plan, report);
+    if (doc.path === KB_PATHS.inventory) content = renderInventory(profile, plan, fileDocPlan, topicPlan, report);
     else if (doc.path === KB_PATHS.projectOverview) content = renderProjectOverview(profile);
     else if (isPath(doc.path, KB_PATHS.architectureMap, LEGACY_PATHS.architectureMap)) content = renderArchitecture(profile);
     else if (isPath(doc.path, KB_PATHS.businessFlowMap, LEGACY_PATHS.businessFlowMap)) content = renderFlowOverview(profile);

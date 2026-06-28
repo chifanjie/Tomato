@@ -660,6 +660,28 @@ function renderCoverageReport(report: CoverageReport, validation: CoverageValida
   lines.push(`- Topic coverage: ${report.topicCoverage.covered} / ${report.topicCoverage.total}`);
   lines.push(`- Source read coverage: ${report.sourceReadCoverage.covered} / ${report.sourceReadCoverage.total}`);
   lines.push("");
+  lines.push("## Relationship coverage");
+  lines.push("");
+  for (const item of report.relationshipCoverage) {
+    lines.push(`- ${item.edgeType}: ${item.covered} / ${item.total}`);
+    if (item.missingEdgeIds.length > 0) {
+      for (const edgeId of item.missingEdgeIds) lines.push(`  - Missing: ${edgeId}`);
+    }
+  }
+  lines.push("");
+  lines.push("## Batch coverage");
+  lines.push("");
+  lines.push(`- File writer batches: ${report.fileWriterBatches.passed} passed / ${report.fileWriterBatches.total} total; retry ${report.fileWriterBatches.retry}`);
+  lines.push(`- Topic batches: ${report.topicBatches.passed} passed / ${report.topicBatches.total} total; retry ${report.topicBatches.retry}`);
+  lines.push("");
+  lines.push("## Source read coverage");
+  lines.push("");
+  if (report.sourceReadCoverage.missing.length === 0) {
+    lines.push("- Missing source files: none");
+  } else {
+    for (const nodeId of report.sourceReadCoverage.missing) lines.push(`- Missing source: ${nodeId}`);
+  }
+  lines.push("");
   lines.push("## Validation");
   lines.push("");
   if (report.errors.length === 0) {

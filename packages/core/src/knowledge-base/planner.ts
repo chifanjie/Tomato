@@ -7,6 +7,7 @@ import type {
   KnowledgeBaseDocumentCategory,
   PlannedDocument,
   ProjectProfile,
+  TopicBatch,
   TopicPlan,
   TopicPlanItem,
   TopicCandidate,
@@ -259,40 +260,66 @@ function topicCoveredNodeIds(profile: ProjectProfile, nodeId: string): string[] 
 
 export function buildTopicPlan(
   profile: ProjectProfile,
-  _fileDocPlan: FileDocPlan,
+  fileDocPlan: FileDocPlan,
   acceptedFileWriterDocuments: FileWriterDocument[],
 ): TopicPlan {
   const acceptedFileIds = new Set(acceptedFileWriterDocuments.map((document) => document.fileNodeId));
+  const acceptedFileDocsById = new Map(acceptedFileWriterDocuments.map((document) => [document.fileNodeId, document]));
+  const importantFromFiles = new Map<string, string[]>();
   const warnings: string[] = [];
-  const topics: TopicPlanItem[] = [];
+  const reasonsByNode = new Map<string, string[]>();
+
+  for (const fileDoc of acceptedFileWriterDocuments) {
+    for (const nodeId of fileDoc.importantNodeIds) {
+      const reasons = importantFromFiles.get(nodeId) ?? [];
+      reasons.push(`file-writer marked important in ${fileDoc.documentPath}`);
+      importantFromFiles.set(nodeId, reasons);
+    }
+  }
 
   for (const candidate of selectTopicCandidates(profile)) {
-    const node = profile.indexes.nodesById.get(candidate.nodeId);
-    const sourceFileNodeId = sourceFileIdForTopic(profile, candidate.nodeId);
+    reasonsByNode.set(candidate.nodeId, [...candidate.reasons]);
+  }
+  for (const [nodeId, reasons] of importantFromFiles) {
+    reasonsByNode.set(nodeId, [...(reasonsByNode.get(nodeId) ?? []), ...reasons]);
+  }
+
+  const pendingTopics: TopicPlanItem[] = [];
+  for (const [nodeId, reasons] of reasonsByNode) {
+    const node = profile.indexes.nodesById.get(nodeId);
+    const sourceFileNodeId = sourceFileIdForTopic(profile, nodeId);
     if (!node || !sourceFileNodeId) {
-      warnings.push(`topic candidate missing source file: ${candidate.nodeId}`);
+      warnings.push(`topic candidate missing source file: ${nodeId}`);
       continue;
     }
     if (!acceptedFileIds.has(sourceFileNodeId)) {
-      warnings.push(`topic candidate source file document not accepted: ${candidate.nodeId}`);
+      warnings.push(`topic candidate source file document not accepted: ${nodeId}`);
       continue;
     }
-    const fileNode = profile.indexes.nodesById.get(sourceFileNodeId);
-    topics.push({
-      batchIndex: 1,
-      topicNodeId: candidate.nodeId,
+    const fileTask = fileDocPlan.tasks.find((task) => task.fileNodeId === sourceFileNodeId);
+    pendingTopics.push({
+      batchIndex: 0,
+      topicNodeId: nodeId,
       sourceFileNodeId,
-      documentPath: topicDocumentPath(fileNode?.filePath ?? sourceFileNodeId, node.name),
+      documentPath: topicDocumentPath(node.filePath ?? sourceFileNodeId, node.name),
       title: `${node.name} 关键函数专题`,
-      reasons: candidate.reasons,
-      coveredNodeIds: topicCoveredNodeIds(profile, candidate.nodeId),
-      linkedFileDocumentPath: acceptedFileWriterDocuments.find((document) => document.fileNodeId === sourceFileNodeId)?.documentPath ?? "",
+      reasons: [...new Set(reasons)].sort(),
+      coveredNodeIds: topicCoveredNodeIds(profile, nodeId),
+      linkedFileDocumentPath: fileTask?.documentPath ?? acceptedFileDocsById.get(sourceFileNodeId)?.documentPath ?? "",
     });
   }
 
+  const batches: TopicBatch[] = pendingTopics
+    .sort((a, b) => a.documentPath.localeCompare(b.documentPath) || a.topicNodeId.localeCompare(b.topicNodeId))
+    .map((topic, index) => ({
+      batchIndex: index + 1,
+      topics: [{ ...topic, batchIndex: index + 1 }],
+      reason: "one topic per batch keeps topic generation isolated and retryable",
+    }));
+
   return {
-    topics,
-    batches: topics.length > 0 ? [{ batchIndex: 1, topics, reason: "dynamic topic batch from graph coverage obligations" }] : [],
+    topics: batches.flatMap((batch) => batch.topics),
+    batches,
     warnings,
   };
 }

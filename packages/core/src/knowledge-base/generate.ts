@@ -6,6 +6,7 @@ import { mergeKnowledgeBaseWriterOutputs } from "./merge.js";
 import {
   buildCoverageReport,
   renderDeterministicFileWriterDocument,
+  renderDeterministicTopicWriterDocument,
   renderKnowledgeBaseDocuments,
 } from "./markdown.js";
 import type { GeneratedKnowledgeBase, KnowledgeBaseOptions } from "./types.js";
@@ -22,12 +23,28 @@ export function generateKnowledgeBase(
     documents: batch.tasks.map((task) => renderDeterministicFileWriterDocument(profile, task)),
     warnings: [],
   }));
-  const merged = mergeKnowledgeBaseWriterOutputs({
+  const fileMerged = mergeKnowledgeBaseWriterOutputs({
     profile,
     fileDocPlan,
     fileWriterOutputs: deterministicFileOutputs,
   });
-  const topicPlan = buildTopicPlan(profile, fileDocPlan, merged.acceptedFileWriterDocuments);
+  const topicPlan = buildTopicPlan(profile, fileDocPlan, fileMerged.acceptedFileWriterDocuments);
+  const deterministicTopicOutputs = topicPlan.batches.map((batch) => ({
+    batchIndex: batch.batchIndex,
+    topics: batch.topics.map((topic) => renderDeterministicTopicWriterDocument(profile, topic)),
+    warnings: [],
+  }));
+  const merged = mergeKnowledgeBaseWriterOutputs({
+    profile,
+    fileDocPlan,
+    fileWriterOutputs: deterministicFileOutputs,
+    topicWriterOutputs: deterministicTopicOutputs,
+  });
+  const validation = {
+    ok: merged.validation.ok,
+    errors: merged.validation.errors,
+    warnings: [...new Set([...merged.validation.warnings, ...topicPlan.warnings])].sort(),
+  };
   const supportDocuments = renderKnowledgeBaseDocuments(profile, plan, fileDocPlan, topicPlan, merged);
   const preliminaryDocuments = [...supportDocuments, ...merged.fileDocuments, ...merged.topicDocuments];
   const coverageReport = buildCoverageReport(
@@ -35,7 +52,7 @@ export function generateKnowledgeBase(
     fileDocPlan,
     topicPlan,
     preliminaryDocuments,
-    merged.validation,
+    validation,
     merged.retryPlan,
   );
   const finalSupportDocuments = renderKnowledgeBaseDocuments(
@@ -45,7 +62,7 @@ export function generateKnowledgeBase(
     topicPlan,
     merged,
     coverageReport,
-    merged.validation,
+    validation,
   );
   const documents = [...finalSupportDocuments, ...merged.fileDocuments, ...merged.topicDocuments]
     .sort((a, b) => a.path.localeCompare(b.path) || a.title.localeCompare(b.title));
@@ -56,7 +73,7 @@ export function generateKnowledgeBase(
     fileDocPlan,
     topicPlan,
     documents,
-    validation: merged.validation,
+    validation,
     coverageReport,
     retryPlan: merged.retryPlan,
   };

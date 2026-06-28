@@ -4,6 +4,7 @@ import {
   buildDocumentPlan,
   buildKnowledgeBaseProfile,
   generateKnowledgeBase,
+  TOPIC_WRITER_REQUIRED_SECTIONS,
 } from "../index.js";
 
 function sampleGraph(extraEntry = false): KnowledgeGraph {
@@ -280,6 +281,55 @@ describe("graph-to-knowledge-base", () => {
       "function:src/api/routes.ts:HandleAdminFeedRequest",
     );
     expect(expandedTopicCount).toBeGreaterThan(baseTopicCount);
+  });
+
+  it("selects topic documents from project signals without a fixed count", () => {
+    const graph = sampleGraph(true);
+    for (let index = 0; index < 25; index += 1) {
+      const filePath = `src/service/important-${index}.ts`;
+      graph.nodes.push(
+        {
+          id: `file:${filePath}`,
+          type: "file",
+          name: `important-${index}.ts`,
+          filePath,
+          summary: `Important business file ${index}`,
+          tags: ["business"],
+          complexity: "complex",
+        },
+        {
+          id: `function:${filePath}:ImportantFlow${index}`,
+          type: "function",
+          name: `ImportantFlow${index}`,
+          filePath,
+          lineRange: [1, 30],
+          summary: `Important business flow ${index}`,
+          tags: ["business", "flow"],
+          complexity: "complex",
+        },
+      );
+      graph.edges.push({
+        source: `file:${filePath}`,
+        target: `function:${filePath}:ImportantFlow${index}`,
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      });
+    }
+    const sourceFiles = Object.fromEntries(
+      graph.nodes
+        .filter((node) => node.type === "file" && node.filePath)
+        .map((node) => [node.filePath!, "export function placeholder() { return true; }\n"]),
+    );
+
+    const kb = generateKnowledgeBase(graph, { sourceFiles });
+
+    expect(kb.topicPlan.topics.length).toBeGreaterThan(25);
+    expect(kb.topicPlan.batches).toHaveLength(kb.topicPlan.topics.length);
+    const topicDoc = kb.documents.find((doc) => doc.category === "topic");
+    for (const section of TOPIC_WRITER_REQUIRED_SECTIONS) {
+      expect(topicDoc?.content).toContain(section);
+    }
   });
 
   it("generates complete file documents and cards for every graph file/function/class", () => {

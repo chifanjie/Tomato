@@ -9,6 +9,7 @@ export * from "./merge.js";
 export {
   buildCoverageReport,
   renderDeterministicFileWriterDocument,
+  renderDeterministicTopicWriterDocument,
   renderKnowledgeBaseDocuments,
   validateKnowledgeBaseCoverage,
 } from "./markdown.js";

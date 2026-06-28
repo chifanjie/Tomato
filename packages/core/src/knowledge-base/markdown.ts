@@ -13,10 +13,13 @@ import type {
   RetryPlan,
   PlannedDocument,
   ProjectProfile,
+  TopicPlanItem,
   TopicPlan,
+  TopicWriterDocument,
 } from "./types.js";
 import { KB_PATHS, indexDocumentPath } from "./paths.js";
 import type { MergeKnowledgeBaseWriterOutputsResult } from "./merge.js";
+import { TOPIC_WRITER_REQUIRED_SECTIONS } from "./writer-contracts.js";
 
 const DOCUMENT_CATEGORIES: KnowledgeBaseDocumentCategory[] = [
   "top-level",
@@ -181,6 +184,85 @@ export function renderDeterministicFileWriterDocument(profile: ProjectProfile, t
       "## AI 检索词",
       [task.filePath, task.fileNodeId, ...task.functionNodeIds, ...task.classNodeIds].join(", "),
     ].join("\n"),
+  };
+}
+
+function edgesForNode(profile: ProjectProfile, nodeId: string): { incoming: string[]; outgoing: string[] } {
+  const incoming = (profile.indexes.incomingEdgesByNode.get(nodeId) ?? [])
+    .map((edge) => `${edgeName(profile, edge.source)} --[${edge.type}]--> ${edgeName(profile, edge.target)}`)
+    .sort();
+  const outgoing = (profile.indexes.outgoingEdgesByNode.get(nodeId) ?? [])
+    .map((edge) => `${edgeName(profile, edge.source)} --[${edge.type}]--> ${edgeName(profile, edge.target)}`)
+    .sort();
+  return { incoming, outgoing };
+}
+
+export function renderDeterministicTopicWriterDocument(
+  profile: ProjectProfile,
+  topic: TopicPlanItem,
+): TopicWriterDocument {
+  const node = nodeOf(profile, topic.topicNodeId);
+  const sourceFile = nodeOf(profile, topic.sourceFileNodeId);
+  const { incoming, outgoing } = edgesForNode(profile, topic.topicNodeId);
+  const configEdges = (profile.indexes.outgoingEdgesByNode.get(topic.topicNodeId) ?? [])
+    .filter((edge) => edge.type === "configures" || edge.type === "reads_from" || edge.type === "writes_to")
+    .map((edge) => edgeName(profile, edge.target));
+  const evidence = topic.coveredNodeIds
+    .map((nodeId) => nodeOf(profile, nodeId))
+    .filter((item): item is GraphNode => Boolean(item))
+    .map((item) => ({ filePath: item.filePath ?? sourceFile?.filePath ?? topic.sourceFileNodeId, lineRange: item.lineRange, nodeId: item.id }));
+
+  const sections: Record<(typeof TOPIC_WRITER_REQUIRED_SECTIONS)[number], string> = {
+    "## 为什么关键": [
+      `该主题围绕 \`${topic.topicNodeId}\` 展开。`,
+      topic.reasons.length > 0 ? `入选原因: ${topic.reasons.join("；")}。` : "入选原因来自图谱结构和文件文档重要节点标记。",
+    ].join("\n"),
+    "## 在业务流程中的位置": [
+      `- 所属文件: \`${sourceFile?.filePath ?? node?.filePath ?? topic.sourceFileNodeId}\``,
+      `- 链接文件文档: \`${topic.linkedFileDocumentPath}\``,
+      `- 节点类型: ${node?.type ?? "unknown"}`,
+      `- 图谱摘要: ${node?.summary || "本地代码事实: 图谱没有提供摘要。"}`,
+    ].join("\n"),
+    "## 主要输入、输出、副作用": [
+      `- 输入/上游: ${incoming.join("；") || "未在图谱中识别"}`,
+      `- 输出/下游: ${outgoing.join("；") || "未在图谱中识别"}`,
+      "- 副作用: 根据调用、配置、读写关系推断；根据代码推断，需线上配置确认",
+    ].join("\n"),
+    "## 关键分支和算法": [
+      node?.summary || "本地代码事实: 图谱未提供算法摘要。",
+      "如果涉及排序、过滤、策略选择或状态变更，需要结合源码和线上配置进一步确认。根据代码推断，需线上配置确认",
+    ].join("\n"),
+    "## 配置和外部依赖": configEdges.length > 0
+      ? configEdges.map((item) => `- ${item}`).join("\n")
+      : "- 图谱未记录直接配置或外部依赖。",
+    "## 上游调用者": incoming.join("\n") || "- 无",
+    "## 下游调用对象": outgoing.join("\n") || "- 无",
+    "## 修改风险": [
+      "- 修改前需要检查上游调用、下游依赖、单测覆盖和运行时配置。",
+      "- 业务口径、实验策略和数据状态需要外部确认。根据代码推断，需线上配置确认",
+    ].join("\n"),
+    "## 测试证据": "- 当前知识库基于图谱和源码生成；是否已有自动化测试需要工程侧继续核验。",
+    "## 代码证据": [
+      "| Node | File | Lines |",
+      "|---|---|---|",
+      ...evidence.map((item) => `| \`${item.nodeId}\` | \`${item.filePath}\` | ${item.lineRange?.join("-") ?? ""} |`),
+    ].join("\n"),
+    "## AI 检索词": [node?.name, node?.filePath, topic.topicNodeId, ...topic.coveredNodeIds, ...(node?.tags ?? [])].filter(Boolean).join(", "),
+  };
+
+  return {
+    topicNodeId: topic.topicNodeId,
+    sourceFileNodeId: topic.sourceFileNodeId,
+    documentPath: topic.documentPath,
+    title: topic.title,
+    coveredNodeIds: [...topic.coveredNodeIds],
+    linkedFileDocumentPath: topic.linkedFileDocumentPath,
+    evidence,
+    markdown: [
+      `# ${topic.title}`,
+      "",
+      ...TOPIC_WRITER_REQUIRED_SECTIONS.flatMap((section) => [section, sections[section], ""]),
+    ].join("\n").trimEnd(),
   };
 }
 
@@ -602,7 +684,8 @@ export function renderKnowledgeBaseDocuments(
   report?: CoverageReport,
   validation?: CoverageValidationResult,
 ): GeneratedDocument[] {
-  return plan.documents.map((doc) => {
+  const planDocuments = topicPlan ? plan.documents.filter((doc) => doc.category !== "topic") : plan.documents;
+  return planDocuments.map((doc) => {
     let content: string;
     if (doc.path === KB_PATHS.inventory) content = renderInventory(profile, plan, fileDocPlan, topicPlan, report);
     else if (doc.path === KB_PATHS.projectOverview) content = renderProjectOverview(profile);

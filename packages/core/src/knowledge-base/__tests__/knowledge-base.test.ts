@@ -447,10 +447,12 @@ describe("graph-to-knowledge-base", () => {
     const extendedIds = new Set(extended.map((topic) => topic.topicNodeId));
 
     expect(required.some((topic) => topic.topicNodeId.includes("HandleFeedRequest"))).toBe(true);
+    expect(required.some((topic) => topic.topicNodeId.includes("HandleAdminFeedRequest"))).toBe(true);
     expect(required.some((topic) => topic.topicNodeId.includes("BuildFeed"))).toBe(true);
     expect(required.some((topic) => topic.topicNodeId.includes("rankCandidates"))).toBe(false);
     expect(extended.some((topic) => topic.topicNodeId.includes("rankCandidates"))).toBe(true);
     expect(extended.some((topic) => topic.topicNodeId.includes("HandleFeedRequest"))).toBe(false);
+    expect(extended.some((topic) => topic.topicNodeId.includes("HandleAdminFeedRequest"))).toBe(false);
     expect(extended.some((topic) => topic.topicNodeId.includes("BuildFeed"))).toBe(false);
     expect([...requiredIds].every((topicNodeId) => !extendedIds.has(topicNodeId))).toBe(true);
     expect(kb.coverageReport.requiredTopicCoverage.total).toBe(required.length);

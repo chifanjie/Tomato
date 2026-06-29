@@ -89,6 +89,7 @@ describe("knowledge-base queue", () => {
   it("marks a leased file-doc queue entry as succeeded", () => {
     const initial = buildFileDocQueue(fileDocPlanFixture(), "2026-06-29T00:00:00.000Z");
     const leased = leaseNextQueueEntry(initial, { workerId: "file-writer-1", now: "2026-06-29T00:01:00.000Z" });
+    const untouchedAttempts = leased.queue[1]?.attempts;
     const succeeded = markQueueEntrySucceeded(leased.queue, {
       batchIndex: 1,
       workerId: "file-writer-1",
@@ -98,6 +99,9 @@ describe("knowledge-base queue", () => {
     expect(succeeded[0].status).toBe("succeeded");
     expect(succeeded[0].lastError).toBeNull();
     expect(succeeded[0].workerId).toBe("file-writer-1");
+    expect(succeeded[1].status).toBe("pending");
+    expect(succeeded[1].workerId).toBeNull();
+    expect(succeeded[1].attempts).toBe(untouchedAttempts);
   });
 
   it("reclaims expired leases during resume", () => {

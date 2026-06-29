@@ -68,12 +68,13 @@ export function markQueueEntrySucceeded<T extends FileDocQueueEntry | TopicQueue
   options: { batchIndex: number; workerId: string; now: string },
 ): T[] {
   return queue.map((entry) =>
-    entry.batchIndex !== options.batchIndex
+    entry.batchIndex !== options.batchIndex || entry.status !== "leased" || entry.workerId !== options.workerId
       ? entry
       : {
           ...entry,
           status: "succeeded",
           workerId: options.workerId,
+          leasedAt: null,
           updatedAt: options.now,
           lastError: null,
         }
@@ -85,12 +86,13 @@ export function markQueueEntryNeedsRetry<T extends FileDocQueueEntry | TopicQueu
   options: { batchIndex: number; workerId: string; now: string; reason: string },
 ): T[] {
   return queue.map((entry) =>
-    entry.batchIndex !== options.batchIndex
+    entry.batchIndex !== options.batchIndex || entry.status !== "leased" || entry.workerId !== options.workerId
       ? entry
       : {
           ...entry,
           status: entry.attempts >= 2 ? "failed_terminal" : "needs_retry",
           workerId: options.workerId,
+          leasedAt: null,
           updatedAt: options.now,
           lastError: options.reason,
         }
@@ -109,6 +111,7 @@ export function reclaimExpiredLeases<T extends FileDocQueueEntry | TopicQueueEnt
     return {
       ...entry,
       status: "pending",
+      attempts: Math.max(0, entry.attempts - 1),
       workerId: null,
       leasedAt: null,
       updatedAt: options.now,

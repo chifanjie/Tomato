@@ -333,6 +333,8 @@ export interface CoverageReport {
   layerOverviewCoverage: CoverageRatio;
   entryCoverage: CoverageRatio;
   topicCoverage: CoverageRatio;
+  requiredTopicCoverage: CoverageRatio;
+  extendedTopicCoverage: CoverageRatio;
   fileWriterBatches: { total: number; passed: number; retry: number };
   topicBatches: { total: number; passed: number; retry: number };
   chineseValidation: { checked: number; failed: string[] };

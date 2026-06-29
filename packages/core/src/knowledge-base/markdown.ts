@@ -644,6 +644,7 @@ export function buildCoverageReport(
     .sort();
   const topicExpected = topicPlan.topics.map((topic) => topic.topicNodeId).sort();
   const topicCovered = coveredNodeIdsByCategory("topic");
+  const allTopicCoverage = ratio(topicCovered, topicExpected);
   const evidenceWarnings = profile.evidenceGaps.map((gap) => `${gap.kind}: ${gap.message}`);
   const chineseFailures = documents.filter((doc) => !/[\u4e00-\u9fff]/.test(doc.content)).map((doc) => doc.path).sort();
   const placeholderFailures = documents.filter((doc) => PLACEHOLDER_RE.test(doc.content)).map((doc) => doc.path).sort();
@@ -688,7 +689,9 @@ export function buildCoverageReport(
       total: profile.entryCandidates.length,
       missing: entryMissing,
     },
-    topicCoverage: ratio(topicCovered, topicExpected),
+    topicCoverage: allTopicCoverage,
+    requiredTopicCoverage: { covered: 0, total: 0, missing: [] },
+    extendedTopicCoverage: allTopicCoverage,
     fileWriterBatches: {
       total: fileDocPlan.batches.length,
       passed: Math.max(0, fileDocPlan.batches.length - retryPlan.fileBatchIndexes.length),

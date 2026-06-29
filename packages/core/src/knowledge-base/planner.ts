@@ -306,7 +306,7 @@ export function buildTopicPlan(
       reasons: [...new Set(reasons)].sort(),
       coveredNodeIds: topicCoveredNodeIds(profile, nodeId),
       linkedFileDocumentPath: fileTask?.documentPath ?? acceptedFileDocsById.get(sourceFileNodeId)?.documentPath ?? "",
-      tier: "extended",
+      tier: "required",
     });
   }
 
@@ -316,7 +316,7 @@ export function buildTopicPlan(
       batchIndex: index + 1,
       topics: [{ ...topic, batchIndex: index + 1 }],
       reason: "one topic per batch keeps topic generation isolated and retryable",
-      tier: "extended",
+      tier: "required",
     }));
 
   return {

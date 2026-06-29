@@ -137,4 +137,15 @@ describe("knowledge-base queue", () => {
     expect(reclaimed[0].status).toBe("pending");
     expect(reclaimed[0].workerId).toBeNull();
   });
+
+  it("keeps consumed attempts when reclaiming an expired lease", () => {
+    const initial = buildFileDocQueue(fileDocPlanFixture(), "2026-06-29T00:00:00.000Z");
+    const leased = leaseNextQueueEntry(initial, { workerId: "file-writer-1", now: "2026-06-29T00:01:00.000Z" }).queue;
+    const reclaimed = reclaimExpiredLeases(leased, {
+      now: "2026-06-29T01:30:00.000Z",
+      maxLeaseAgeMs: 30 * 60 * 1000,
+    });
+
+    expect(reclaimed[0].attempts).toBe(1);
+  });
 });

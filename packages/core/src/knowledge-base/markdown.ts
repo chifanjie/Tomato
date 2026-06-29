@@ -690,8 +690,8 @@ export function buildCoverageReport(
       missing: entryMissing,
     },
     topicCoverage: allTopicCoverage,
-    requiredTopicCoverage: { covered: 0, total: 0, missing: [] },
-    extendedTopicCoverage: allTopicCoverage,
+    requiredTopicCoverage: allTopicCoverage,
+    extendedTopicCoverage: { covered: 0, total: 0, missing: [] },
     fileWriterBatches: {
       total: fileDocPlan.batches.length,
       passed: Math.max(0, fileDocPlan.batches.length - retryPlan.fileBatchIndexes.length),

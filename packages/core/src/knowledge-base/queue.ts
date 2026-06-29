@@ -111,7 +111,6 @@ export function reclaimExpiredLeases<T extends FileDocQueueEntry | TopicQueueEnt
     return {
       ...entry,
       status: "pending",
-      attempts: Math.max(0, entry.attempts - 1),
       workerId: null,
       leasedAt: null,
       updatedAt: options.now,

@@ -89,6 +89,17 @@ const ENTRY_WORDS = [
 ];
 
 const BUSINESS_WORDS = [
+  "业务",
+  "表单",
+  "导流",
+  "策略",
+  "规则",
+  "实验",
+  "配额",
+  "场景",
+  "召回",
+  "推荐",
+  "降级",
   "business",
   "domain",
   "flow",
@@ -110,6 +121,8 @@ const BUSINESS_WORDS = [
   "product",
   "config",
   "experiment",
+  "form",
+  "formtype",
 ];
 
 const EXTERNAL_NODE_TYPES = new Set<NodeType>([
@@ -351,4 +364,3 @@ export function buildKnowledgeBaseProfile(graph: KnowledgeGraph): ProjectProfile
     evidenceGaps: collectEvidenceGaps(graph, indexes),
   };
 }
-

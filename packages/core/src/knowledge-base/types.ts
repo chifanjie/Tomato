@@ -59,6 +59,43 @@ export interface TopicCandidate {
   score: number;
 }
 
+export type BusinessFactKind =
+  | "comment"
+  | "constant"
+  | "branch"
+  | "test"
+  | "config"
+  | "document"
+  | "graph-node";
+
+export interface BusinessFact {
+  id: string;
+  kind: BusinessFactKind;
+  title: string;
+  summary: string;
+  keywords: string[];
+  relatedNodeIds: string[];
+  evidence: SourceEvidence[];
+  score: number;
+}
+
+export interface BusinessCapability {
+  id: string;
+  title: string;
+  keywords: string[];
+  factIds: string[];
+  relatedNodeIds: string[];
+  evidence: SourceEvidence[];
+  score: number;
+}
+
+export interface BusinessCapabilityProfile {
+  facts: BusinessFact[];
+  capabilities: BusinessCapability[];
+  totalFacts: number;
+  sourceBackedFacts: number;
+}
+
 export interface EvidenceGap {
   kind: "missing-summary" | "missing-line-range" | "missing-layer" | "missing-calls";
   nodeId?: string;
@@ -87,6 +124,7 @@ export type KnowledgeBaseDocumentCategory =
   | "file"
   | "flow"
   | "topic"
+  | "business-capability"
   | "report"
   | "intermediate";
 
@@ -256,6 +294,8 @@ export interface CoverageReport {
   classCardCoverage: CoverageRatio;
   relationshipCoverage: RelationshipCoverage[];
   sourceReadCoverage: CoverageRatio;
+  businessFactCoverage: CoverageRatio;
+  businessCapabilityCoverage: CoverageRatio;
   layerOverviewCoverage: CoverageRatio;
   entryCoverage: CoverageRatio;
   topicCoverage: CoverageRatio;
@@ -270,6 +310,7 @@ export interface CoverageReport {
 
 export interface GeneratedKnowledgeBase {
   profile: ProjectProfile;
+  businessCapabilityProfile: BusinessCapabilityProfile;
   plan: DocumentPlan;
   fileDocPlan: FileDocPlan;
   topicPlan: TopicPlan;

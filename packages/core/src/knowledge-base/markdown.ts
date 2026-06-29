@@ -3,6 +3,7 @@ import type {
   CoverageReport,
   CoverageRatio,
   CoverageValidationResult,
+  BusinessCapabilityProfile,
   DocumentPlan,
   FileDocPlan,
   FileDocTask,
@@ -28,6 +29,7 @@ const DOCUMENT_CATEGORIES: KnowledgeBaseDocumentCategory[] = [
   "file",
   "flow",
   "topic",
+  "business-capability",
   "report",
   "intermediate",
 ];
@@ -50,6 +52,7 @@ const CATEGORY_LABELS: Record<KnowledgeBaseDocumentCategory, string> = {
   file: "文件文档",
   flow: "业务流程",
   topic: "关键专题",
+  "business-capability": "业务能力",
   report: "报告",
   intermediate: "中间产物",
 };
@@ -439,6 +442,133 @@ export function renderDeterministicTopicWriterDocument(
   };
 }
 
+function safeCapabilityPathPart(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "business-capability";
+}
+
+function businessCapabilityDocumentPath(title: string, id: string): string {
+  return `业务能力/${safeCapabilityPathPart(title || id)}.md`;
+}
+
+export function renderBusinessCapabilityDocuments(
+  profile: ProjectProfile,
+  businessCapabilityProfile: BusinessCapabilityProfile,
+): GeneratedDocument[] {
+  const indexLines = [
+    "# 业务能力索引",
+    "",
+    "## 覆盖概览",
+    "",
+    `- 业务事实总数: ${businessCapabilityProfile.totalFacts}`,
+    `- 有源码行号证据的业务事实: ${businessCapabilityProfile.sourceBackedFacts}`,
+    `- 业务能力文档: ${businessCapabilityProfile.capabilities.length}`,
+    "",
+    "## 能力清单",
+    "",
+    "| 业务能力 | 事实数 | 关联节点数 | 关键词 |",
+    "|---|---:|---:|---|",
+  ];
+
+  for (const capability of businessCapabilityProfile.capabilities) {
+    indexLines.push(
+      `| [${capability.title}](${businessCapabilityDocumentPath(capability.title, capability.id)}) | ${capability.factIds.length} | ${capability.relatedNodeIds.length} | ${capability.keywords.join("、")} |`,
+    );
+  }
+  if (businessCapabilityProfile.capabilities.length === 0) {
+    indexLines.push("| 未识别到高信号业务能力 | 0 | 0 | 无 |");
+  }
+
+  const factsById = new Map(businessCapabilityProfile.facts.map((fact) => [fact.id, fact]));
+  const documents: GeneratedDocument[] = [
+    {
+      path: "业务能力索引.md",
+      title: "业务能力索引",
+      category: "business-capability",
+      coveredNodeIds: [...new Set(businessCapabilityProfile.facts.flatMap((fact) => fact.relatedNodeIds))].sort(),
+      representedEdgeIds: [],
+      content: indexLines.join("\n"),
+    },
+  ];
+
+  for (const capability of businessCapabilityProfile.capabilities) {
+    const facts = capability.factIds
+      .map((factId) => factsById.get(factId))
+      .filter((fact): fact is NonNullable<typeof fact> => Boolean(fact));
+    const relatedNodes = capability.relatedNodeIds
+      .map((nodeId) => nodeOf(profile, nodeId))
+      .filter((node): node is GraphNode => Boolean(node));
+    const lines = [
+      `# ${capability.title}`,
+      "",
+      "## 业务结论",
+      "",
+      `- 该能力由 ${facts.length} 条业务事实聚合而来。`,
+      `- 主要关键词: ${capability.keywords.join("、") || "未识别"}`,
+      `- 关联代码、配置或文档节点: ${capability.relatedNodeIds.length}`,
+      "",
+      "## 事实证据",
+      "",
+      "| 类型 | 事实 | 证据位置 | 摘录 |",
+      "|---|---|---|---|",
+    ];
+
+    for (const fact of facts) {
+      const evidence = fact.evidence[0];
+      lines.push(
+        `| ${fact.kind} | ${fact.title} | \`${evidence?.filePath ?? ""}\`${evidence?.lineRange ? `:${evidence.lineRange.join("-")}` : ""} | ${evidence?.excerpt ?? fact.summary} |`,
+      );
+    }
+    if (facts.length === 0) lines.push("| 无 | 未找到事实 | 无 | 无 |");
+
+    lines.push("");
+    lines.push("## 关联对象");
+    lines.push("");
+    for (const node of relatedNodes) {
+      lines.push(`- \`${node.id}\`（${NODE_TYPE_LABELS[node.type]}）${node.name}: ${nodeSummary(node)}`);
+    }
+    if (relatedNodes.length === 0) lines.push("- 未关联到图谱节点。");
+
+    lines.push("");
+    lines.push("## 可能触发条件");
+    lines.push("");
+    const triggerFacts = facts.filter((fact) => fact.kind === "branch" || fact.kind === "constant" || fact.kind === "config");
+    for (const fact of triggerFacts) {
+      lines.push(`- ${fact.title}`);
+    }
+    if (triggerFacts.length === 0) lines.push("- 未从源码分支、常量或配置中识别到明确触发条件。");
+
+    lines.push("");
+    lines.push("## 测试与样例");
+    lines.push("");
+    const testFacts = facts.filter((fact) => fact.kind === "test");
+    for (const fact of testFacts) {
+      const evidence = fact.evidence[0];
+      lines.push(`- ${fact.title}（\`${evidence?.filePath ?? ""}\`${evidence?.lineRange ? `:${evidence.lineRange.join("-")}` : ""}）`);
+    }
+    if (testFacts.length === 0) lines.push("- 未从测试文件中识别到直接样例。");
+
+    lines.push("");
+    lines.push("## 待确认项");
+    lines.push("");
+    lines.push("- 业务命名、线上配置值、实验状态和真实流量命中比例需要业务或平台侧确认。");
+
+    documents.push({
+      path: businessCapabilityDocumentPath(capability.title, capability.id),
+      title: capability.title,
+      category: "business-capability",
+      coveredNodeIds: [...capability.relatedNodeIds],
+      representedEdgeIds: [],
+      content: lines.join("\n"),
+    });
+  }
+
+  return documents.sort((a, b) => a.path.localeCompare(b.path) || a.title.localeCompare(b.title));
+}
+
 export function buildCoverageReport(
   profile: ProjectProfile,
   fileDocPlan: FileDocPlan,
@@ -446,6 +576,7 @@ export function buildCoverageReport(
   documents: GeneratedDocument[],
   validation: CoverageValidationResult,
   retryPlan: RetryPlan,
+  businessCapabilityProfile?: BusinessCapabilityProfile,
 ): CoverageReport {
   const docsByCategory = documents.reduce((map, doc) => {
     const list = map.get(doc.category) ?? [];
@@ -477,6 +608,27 @@ export function buildCoverageReport(
     total: fileDocPlan.tasks.length,
     missing: sourceReadMissing,
   };
+  const factCoveredNodeIds = new Set((businessCapabilityProfile?.facts ?? []).flatMap((fact) => fact.relatedNodeIds));
+  const highSignalFilesWithoutFacts = fileDocPlan.tasks
+    .filter((task) => {
+      if (!task.sourceSnapshot.exists) return false;
+      const taskNodeIds = [task.fileNodeId, ...task.functionNodeIds, ...task.classNodeIds];
+      const highSignal = taskNodeIds.some((nodeId) => profile.businessSignalNodeIds.has(nodeId));
+      const coveredByFact = taskNodeIds.some((nodeId) => factCoveredNodeIds.has(nodeId));
+      return highSignal && !coveredByFact;
+    })
+    .map((task) => task.fileNodeId)
+    .sort();
+  const capabilityDocs = docsByCategory.get("business-capability") ?? [];
+  const expectedCapabilityDocPaths = new Set(
+    (businessCapabilityProfile?.capabilities ?? []).map((capability) =>
+      businessCapabilityDocumentPath(capability.title, capability.id)
+    ),
+  );
+  const capabilityDocPaths = new Set(capabilityDocs.map((doc) => doc.path));
+  const missingCapabilityDocs = [...expectedCapabilityDocPaths]
+    .filter((path) => !capabilityDocPaths.has(path))
+    .sort();
   const layerDocs = docsByCategory.get("module") ?? [];
   const flowAndTopicNodeIds = new Set([
     ...(docsByCategory.get("flow") ?? []).flatMap((doc) => doc.coveredNodeIds),
@@ -516,6 +668,16 @@ export function buildCoverageReport(
     classCardCoverage: ratio(fileDocCovered, expectedIds("class")),
     relationshipCoverage: RELATIONSHIP_COVERAGE_EDGE_TYPES.map((edgeType) => relationshipRatio(edgeType)),
     sourceReadCoverage,
+    businessFactCoverage: {
+      covered: businessCapabilityProfile?.sourceBackedFacts ?? 0,
+      total: businessCapabilityProfile?.totalFacts ?? 0,
+      missing: highSignalFilesWithoutFacts,
+    },
+    businessCapabilityCoverage: {
+      covered: (businessCapabilityProfile?.capabilities.length ?? 0) - missingCapabilityDocs.length,
+      total: businessCapabilityProfile?.capabilities.length ?? 0,
+      missing: missingCapabilityDocs,
+    },
     layerOverviewCoverage: {
       covered: profile.layerProfiles.length - layerOverviewMissing.length,
       total: profile.layerProfiles.length,
@@ -833,6 +995,11 @@ function renderCoverageReport(report: CoverageReport, validation: CoverageValida
   lines.push(`- 入口覆盖: ${report.entryCoverage.covered} / ${report.entryCoverage.total}`);
   lines.push(`- 专题覆盖: ${report.topicCoverage.covered} / ${report.topicCoverage.total}`);
   lines.push(`- 源码读取覆盖: ${report.sourceReadCoverage.covered} / ${report.sourceReadCoverage.total}`);
+  lines.push(`- 业务事实覆盖: ${report.businessFactCoverage.covered} / ${report.businessFactCoverage.total}`);
+  lines.push(`- 业务能力文档: ${report.businessCapabilityCoverage.covered} / ${report.businessCapabilityCoverage.total}`);
+  for (const nodeId of report.businessFactCoverage.missing) {
+    lines.push(`  - 业务事实缺失: ${nodeId}`);
+  }
   lines.push("");
   lines.push("## 关系覆盖");
   lines.push("");

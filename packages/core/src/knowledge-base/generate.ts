@@ -2,9 +2,11 @@ import type { KnowledgeGraph } from "../types.js";
 import { buildKnowledgeBaseProfile } from "./profile.js";
 import { buildDocumentPlan, buildTopicPlan } from "./planner.js";
 import { buildFileDocPlan } from "./file-doc-planner.js";
+import { buildBusinessCapabilityProfile } from "./business-facts.js";
 import { mergeKnowledgeBaseWriterOutputs } from "./merge.js";
 import {
   buildCoverageReport,
+  renderBusinessCapabilityDocuments,
   renderDeterministicFileWriterDocument,
   renderDeterministicTopicWriterDocument,
   renderKnowledgeBaseDocuments,
@@ -18,6 +20,7 @@ export function generateKnowledgeBase(
   const profile = buildKnowledgeBaseProfile(graph);
   const plan = buildDocumentPlan(profile);
   const fileDocPlan = buildFileDocPlan(profile, options);
+  const businessCapabilityProfile = buildBusinessCapabilityProfile(profile, fileDocPlan);
   const deterministicFileOutputs = fileDocPlan.batches.map((batch) => ({
     batchIndex: batch.batchIndex,
     documents: batch.tasks.map((task) => renderDeterministicFileWriterDocument(profile, task)),
@@ -46,7 +49,8 @@ export function generateKnowledgeBase(
     warnings: [...new Set([...merged.validation.warnings, ...topicPlan.warnings])].sort(),
   };
   const supportDocuments = renderKnowledgeBaseDocuments(profile, plan, fileDocPlan, topicPlan, merged);
-  const preliminaryDocuments = [...supportDocuments, ...merged.fileDocuments, ...merged.topicDocuments];
+  const businessDocuments = renderBusinessCapabilityDocuments(profile, businessCapabilityProfile);
+  const preliminaryDocuments = [...supportDocuments, ...businessDocuments, ...merged.fileDocuments, ...merged.topicDocuments];
   const coverageReport = buildCoverageReport(
     profile,
     fileDocPlan,
@@ -54,6 +58,7 @@ export function generateKnowledgeBase(
     preliminaryDocuments,
     validation,
     merged.retryPlan,
+    businessCapabilityProfile,
   );
   const finalSupportDocuments = renderKnowledgeBaseDocuments(
     profile,
@@ -64,11 +69,12 @@ export function generateKnowledgeBase(
     coverageReport,
     validation,
   );
-  const documents = [...finalSupportDocuments, ...merged.fileDocuments, ...merged.topicDocuments]
+  const documents = [...finalSupportDocuments, ...businessDocuments, ...merged.fileDocuments, ...merged.topicDocuments]
     .sort((a, b) => a.path.localeCompare(b.path) || a.title.localeCompare(b.title));
 
   return {
     profile,
+    businessCapabilityProfile,
     plan,
     fileDocPlan,
     topicPlan,

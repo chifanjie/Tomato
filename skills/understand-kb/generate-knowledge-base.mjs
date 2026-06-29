@@ -10,6 +10,7 @@
  *   node generate-knowledge-base.mjs [project-root] --merge-file-docs
  *   node generate-knowledge-base.mjs [project-root] --prepare-topics
  *   node generate-knowledge-base.mjs [project-root] --finalize
+ *   Optional safety flags: --max-source-mb N, --allow-large-deterministic
  */
 
 import { execFileSync } from 'node:child_process';
@@ -35,6 +36,8 @@ function parseArgs(argv) {
     phase: 'deterministic',
     keepIntermediate: true,
     deterministicOnly: false,
+    allowLargeDeterministic: false,
+    maxSourceBytes: 64 * 1024 * 1024,
   };
   for (let index = 2; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -44,7 +47,17 @@ function parseArgs(argv) {
     else if (arg === '--finalize') args.phase = 'finalize';
     else if (arg === '--retry') args.phase = 'retry';
     else if (arg === '--deterministic-only') args.deterministicOnly = true;
+    else if (arg === '--allow-large-deterministic') args.allowLargeDeterministic = true;
     else if (arg === '--clean-intermediate') args.keepIntermediate = false;
+    else if (arg === '--max-source-mb') {
+      const value = Number(argv[index + 1]);
+      if (!Number.isFinite(value) || value <= 0) {
+        console.error('--max-source-mb must be a positive number');
+        process.exit(1);
+      }
+      args.maxSourceBytes = Math.floor(value * 1024 * 1024);
+      index += 1;
+    }
     else if (!arg.startsWith('--')) args.projectRoot = resolve(arg);
   }
   return args;
@@ -87,15 +100,64 @@ function readJson(path) {
   return JSON.parse(readFileSync(path, 'utf-8'));
 }
 
-function sourceFilesForGraph(projectRoot, graph) {
-  const result = {};
+function graphStats(graph) {
+  const fileNodes = graph.nodes.filter((node) => node.type === 'file');
+  return {
+    nodes: graph.nodes.length,
+    edges: graph.edges.length,
+    fileNodes: fileNodes.length,
+    functionNodes: graph.nodes.filter((node) => node.type === 'function').length,
+    classNodes: graph.nodes.filter((node) => node.type === 'class').length,
+  };
+}
+
+function sourceFilesForGraph(projectRoot, graph, maxSourceBytes) {
+  const sourceFiles = {};
+  const omittedFiles = [];
+  let readBytes = 0;
   for (const node of graph.nodes) {
     if (node.type !== 'file' || !node.filePath) continue;
     const absolute = join(projectRoot, node.filePath);
     if (!existsSync(absolute)) continue;
-    result[node.filePath] = readFileSync(absolute, 'utf-8');
+    const text = readFileSync(absolute, 'utf-8');
+    const bytes = Buffer.byteLength(text, 'utf-8');
+    if (readBytes + bytes > maxSourceBytes) {
+      omittedFiles.push(node.filePath);
+      continue;
+    }
+    sourceFiles[node.filePath] = text;
+    readBytes += bytes;
   }
-  return result;
+  return {
+    sourceFiles,
+    stats: {
+      readFiles: Object.keys(sourceFiles).length,
+      readBytes,
+      omittedFiles,
+      maxSourceBytes,
+    },
+  };
+}
+
+function printGraphStats(graph, sourceStats) {
+  const stats = graphStats(graph);
+  console.log(`图谱节点: ${stats.nodes}；边: ${stats.edges}；文件: ${stats.fileNodes}；函数: ${stats.functionNodes}；类: ${stats.classNodes}`);
+  if (sourceStats) {
+    console.log(`已读取源码文件: ${sourceStats.readFiles}；源码字节: ${sourceStats.readBytes} / ${sourceStats.maxSourceBytes}`);
+    if (sourceStats.omittedFiles.length > 0) {
+      console.log(`因源码读取上限跳过文件数: ${sourceStats.omittedFiles.length}`);
+    }
+  }
+}
+
+function assertDeterministicAllowed(graph, args) {
+  if (args.allowLargeDeterministic) return;
+  const stats = graphStats(graph);
+  if (stats.nodes <= 5000 && stats.fileNodes <= 500) return;
+  console.error('当前图谱较大，已跳过 deterministic-only 全量内存生成以保护本机内存。');
+  console.error(`图谱节点: ${stats.nodes}；文件节点: ${stats.fileNodes}`);
+  console.error('请使用 phased 模式运行 /understand-kb，或显式传入 --allow-large-deterministic。');
+  process.exit(1);
 }
 
 function writeDocument(outputRoot, doc) {
@@ -130,6 +192,11 @@ function serializableProfile(kb) {
       batches: kb.topicPlan.batches.length,
       warnings: kb.topicPlan.warnings,
     },
+    businessCapabilityProfile: kb.businessCapabilityProfile ? {
+      facts: kb.businessCapabilityProfile.totalFacts,
+      sourceBackedFacts: kb.businessCapabilityProfile.sourceBackedFacts,
+      capabilities: kb.businessCapabilityProfile.capabilities.length,
+    } : undefined,
     documentInventory: kb.documents.map((doc) => ({
       path: doc.path,
       title: doc.title,
@@ -155,6 +222,8 @@ function printCoverage(kb, outputRoot) {
   console.log(`文件文档覆盖: ${kb.coverageReport.fileDocumentCoverage.covered} / ${kb.coverageReport.fileDocumentCoverage.total}`);
   console.log(`函数卡片覆盖: ${kb.coverageReport.functionCardCoverage.covered} / ${kb.coverageReport.functionCardCoverage.total}`);
   console.log(`类卡片覆盖: ${kb.coverageReport.classCardCoverage.covered} / ${kb.coverageReport.classCardCoverage.total}`);
+  console.log(`业务事实覆盖: ${kb.coverageReport.businessFactCoverage.covered} / ${kb.coverageReport.businessFactCoverage.total}`);
+  console.log(`业务能力文档: ${kb.coverageReport.businessCapabilityCoverage.covered} / ${kb.coverageReport.businessCapabilityCoverage.total}`);
   if (kb.validation.warnings.length > 0) console.log(`警告数: ${kb.validation.warnings.length}`);
 }
 
@@ -185,9 +254,11 @@ function writeKnowledgeBase(outputRoot, kb, keepIntermediate = true) {
   if (!keepIntermediate) rmSync(join(outputRoot, '.intermediate'), { recursive: true, force: true });
 }
 
-function deterministicGenerate(core, projectRoot, keepIntermediate) {
+function deterministicGenerate(core, projectRoot, keepIntermediate, args) {
   const graph = loadGraph(core, projectRoot);
-  const sourceFiles = sourceFilesForGraph(projectRoot, graph);
+  assertDeterministicAllowed(graph, args);
+  const { sourceFiles, stats } = sourceFilesForGraph(projectRoot, graph, args.maxSourceBytes);
+  printGraphStats(graph, stats);
   const kb = core.generateKnowledgeBase(graph, { sourceFiles });
   const { outputRoot } = pathsFor(projectRoot);
   rmSync(outputRoot, { recursive: true, force: true });
@@ -196,9 +267,10 @@ function deterministicGenerate(core, projectRoot, keepIntermediate) {
   printCoverage(kb, outputRoot);
 }
 
-function prepareFileDocs(core, projectRoot) {
+function prepareFileDocs(core, projectRoot, maxSourceBytes) {
   const graph = loadGraph(core, projectRoot);
-  const sourceFiles = sourceFilesForGraph(projectRoot, graph);
+  const { sourceFiles, stats } = sourceFilesForGraph(projectRoot, graph, maxSourceBytes);
+  printGraphStats(graph, stats);
   const profile = core.buildKnowledgeBaseProfile(graph);
   const fileDocPlan = core.buildFileDocPlan(profile, { sourceFiles });
   const { outputRoot, intermediateRoot } = pathsFor(projectRoot);
@@ -239,16 +311,17 @@ function readBatchOutputs(intermediateRoot, prefix, parser) {
   return outputs.sort((a, b) => a.batchIndex - b.batchIndex);
 }
 
-function loadProfileAndFilePlan(core, projectRoot) {
+function loadProfileAndFilePlan(core, projectRoot, maxSourceBytes = 64 * 1024 * 1024) {
   const graph = loadGraph(core, projectRoot);
-  const sourceFiles = sourceFilesForGraph(projectRoot, graph);
+  const { sourceFiles, stats } = sourceFilesForGraph(projectRoot, graph, maxSourceBytes);
+  printGraphStats(graph, stats);
   const profile = core.buildKnowledgeBaseProfile(graph);
   const fileDocPlan = core.buildFileDocPlan(profile, { sourceFiles });
   return { graph, profile, fileDocPlan };
 }
 
-function mergeFileDocs(core, projectRoot) {
-  const { profile, fileDocPlan } = loadProfileAndFilePlan(core, projectRoot);
+function mergeFileDocs(core, projectRoot, maxSourceBytes) {
+  const { profile, fileDocPlan } = loadProfileAndFilePlan(core, projectRoot, maxSourceBytes);
   const { outputRoot, intermediateRoot } = pathsFor(projectRoot);
   const fileWriterOutputs = readBatchOutputs(intermediateRoot, 'file-doc-batch', core.parseFileWriterBatchOutput);
   const merged = core.mergeKnowledgeBaseWriterOutputs({ profile, fileDocPlan, fileWriterOutputs });
@@ -266,8 +339,8 @@ function mergeFileDocs(core, projectRoot) {
   console.log(`需要重试的文件写作批次数: ${merged.retryPlan.fileBatchIndexes.length}`);
 }
 
-function prepareTopics(core, projectRoot) {
-  const { profile, fileDocPlan } = loadProfileAndFilePlan(core, projectRoot);
+function prepareTopics(core, projectRoot, maxSourceBytes) {
+  const { profile, fileDocPlan } = loadProfileAndFilePlan(core, projectRoot, maxSourceBytes);
   const { intermediateRoot } = pathsFor(projectRoot);
   const acceptedPath = join(intermediateRoot, 'accepted-file-documents.json');
   if (!existsSync(acceptedPath)) {
@@ -283,8 +356,8 @@ function prepareTopics(core, projectRoot) {
   console.log(`计划生成专题文档数: ${topicPlan.topics.length}`);
 }
 
-function finalizeKnowledgeBase(core, projectRoot, keepIntermediate) {
-  const { graph, profile, fileDocPlan } = loadProfileAndFilePlan(core, projectRoot);
+function finalizeKnowledgeBase(core, projectRoot, keepIntermediate, maxSourceBytes) {
+  const { graph, profile, fileDocPlan } = loadProfileAndFilePlan(core, projectRoot, maxSourceBytes);
   const { outputRoot, intermediateRoot } = pathsFor(projectRoot);
   const fileWriterOutputs = readBatchOutputs(intermediateRoot, 'file-doc-batch', core.parseFileWriterBatchOutput);
   const fileMerged = core.mergeKnowledgeBaseWriterOutputs({ profile, fileDocPlan, fileWriterOutputs });
@@ -304,15 +377,18 @@ function finalizeKnowledgeBase(core, projectRoot, keepIntermediate) {
     errors: merged.validation.errors,
     warnings: [...new Set([...merged.validation.warnings, ...topicPlan.warnings])].sort(),
   };
+  const businessCapabilityProfile = core.buildBusinessCapabilityProfile(profile, fileDocPlan);
   const plan = core.buildDocumentPlan(profile);
   const supportDocuments = core.renderKnowledgeBaseDocuments(profile, plan, fileDocPlan, topicPlan, merged);
-  const preliminaryDocuments = [...supportDocuments, ...merged.fileDocuments, ...merged.topicDocuments];
-  const coverageReport = core.buildCoverageReport(profile, fileDocPlan, topicPlan, preliminaryDocuments, validation, merged.retryPlan);
+  const businessDocuments = core.renderBusinessCapabilityDocuments(profile, businessCapabilityProfile);
+  const preliminaryDocuments = [...supportDocuments, ...businessDocuments, ...merged.fileDocuments, ...merged.topicDocuments];
+  const coverageReport = core.buildCoverageReport(profile, fileDocPlan, topicPlan, preliminaryDocuments, validation, merged.retryPlan, businessCapabilityProfile);
   const finalSupportDocuments = core.renderKnowledgeBaseDocuments(profile, plan, fileDocPlan, topicPlan, merged, coverageReport, validation);
-  const documents = [...finalSupportDocuments, ...merged.fileDocuments, ...merged.topicDocuments]
+  const documents = [...finalSupportDocuments, ...businessDocuments, ...merged.fileDocuments, ...merged.topicDocuments]
     .sort((a, b) => a.path.localeCompare(b.path) || a.title.localeCompare(b.title));
   const kb = {
     profile,
+    businessCapabilityProfile,
     plan,
     fileDocPlan,
     topicPlan,
@@ -349,15 +425,15 @@ async function main() {
   const core = await loadCore();
 
   if (args.deterministicOnly || args.phase === 'deterministic') {
-    deterministicGenerate(core, args.projectRoot, args.keepIntermediate);
+    deterministicGenerate(core, args.projectRoot, args.keepIntermediate, args);
   } else if (args.phase === 'prepare-file-docs') {
-    prepareFileDocs(core, args.projectRoot);
+    prepareFileDocs(core, args.projectRoot, args.maxSourceBytes);
   } else if (args.phase === 'merge-file-docs') {
-    mergeFileDocs(core, args.projectRoot);
+    mergeFileDocs(core, args.projectRoot, args.maxSourceBytes);
   } else if (args.phase === 'prepare-topics') {
-    prepareTopics(core, args.projectRoot);
+    prepareTopics(core, args.projectRoot, args.maxSourceBytes);
   } else if (args.phase === 'finalize') {
-    finalizeKnowledgeBase(core, args.projectRoot, args.keepIntermediate);
+    finalizeKnowledgeBase(core, args.projectRoot, args.keepIntermediate, args.maxSourceBytes);
   } else if (args.phase === 'retry') {
     printRetryPlan(args.projectRoot);
   } else {

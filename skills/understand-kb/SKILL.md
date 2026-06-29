@@ -19,7 +19,13 @@ The command assumes `/understand` has already scanned the repository. It uses th
 
 2. Resolve `PARALLEL_LIMIT`.
    - If `$ARGUMENTS` contains `--parallel <n>`, use that positive integer.
-   - Otherwise use `5`.
+   - Otherwise use `2`.
+   - For large business repositories, prefer `1` or `2`; do not raise this just to make generation faster.
+
+2.5. Resolve memory safety flags.
+   - If `$ARGUMENTS` contains `--max-source-mb <n>`, pass it to every `generate-knowledge-base.mjs` phase.
+   - Otherwise use the script default.
+   - Do not run deterministic-only generation for large graphs unless the user explicitly asks and passes `--allow-large-deterministic`.
 
 3. Check that `$PROJECT_ROOT/.understand-anything/knowledge-graph.json` exists.
    - If it does not exist, tell the user:
@@ -75,6 +81,8 @@ The command assumes `/understand` has already scanned the repository. It uses th
    node "$PLUGIN_ROOT/skills/understand-kb/generate-knowledge-base.mjs" "$PROJECT_ROOT" --deterministic-only
    ```
 
+   For large graphs, the script refuses deterministic-only mode unless `--allow-large-deterministic` is present. Use the phased path below instead.
+
 7. Prepare file document batches.
 
    ```bash
@@ -128,6 +136,8 @@ The command assumes `/understand` has already scanned the repository. It uses th
     - File document coverage from script output.
     - Function card coverage from script output.
     - Class card coverage from script output.
+    - Business fact coverage from script output.
+    - Business capability document coverage from script output.
 
 ## Output
 
@@ -141,10 +151,12 @@ The generated directory includes:
 ├── 业务流程地图.md
 ├── 待确认项.md
 ├── 覆盖报告.md
+├── 业务能力索引.md
 ├── knowledge-base-profile.json
 ├── 索引/
 ├── 模块总览/
 ├── 业务流程/
+├── 业务能力/
 ├── 文件文档/
 ├── 关键函数专题/
 └── .intermediate/

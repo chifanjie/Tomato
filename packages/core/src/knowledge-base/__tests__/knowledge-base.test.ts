@@ -434,6 +434,14 @@ describe("graph-to-knowledge-base", () => {
 
   it("splits topic planning into required and extended tiers", () => {
     const graph = sampleGraph(true);
+    const rankCandidatesNode = graph.nodes.find(
+      (node) => node.id === "function:src/service/feed.ts:rankCandidates",
+    );
+    expect(rankCandidatesNode).toBeDefined();
+    if (rankCandidatesNode) {
+      rankCandidatesNode.summary = "Ranks candidates with a lightweight local scoring helper";
+      rankCandidatesNode.tags = ["helper"];
+    }
     graph.nodes.push(
       {
         id: "function:src/service/feed.ts:prepareHomeFeedScores",

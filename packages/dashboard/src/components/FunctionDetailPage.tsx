@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { GraphNode, KnowledgeGraph } from "@understand-anything/core/types";
 import { useDashboardStore } from "../store";
 import { useI18n } from "../contexts/I18nContext";
+import { buildFunctionCallNeighborhood } from "../viewgraph/callRelationships";
 import { buildFunctionImpact } from "../viewgraph/functionImpact";
 import type { FunctionDot, ViewFileSummary } from "../viewgraph/types";
+import FunctionCallMiniMap from "./FunctionCallMiniMap";
 import FunctionMatrixPanel from "./FunctionMatrixPanel";
 import ViewGraphBreadcrumb from "./ViewGraphBreadcrumb";
 
@@ -121,9 +123,17 @@ export default function FunctionDetailPage() {
 
   const selectedDot = file?.functionDots.find((dot) => dot.nodeId === selectedFunctionId) ?? file?.functionDots[0] ?? null;
   const selectedNode = selectedDot && graph ? graph.nodes.find((node) => node.id === selectedDot.nodeId) ?? null : null;
+  const nodesById = useMemo(
+    () => new Map((graph?.nodes ?? []).map((node) => [node.id, node])),
+    [graph],
+  );
   const impact = useMemo(
     () => (graph && selectedDot ? buildFunctionImpact(graph, selectedDot.nodeId) : null),
     [graph, selectedDot],
+  );
+  const neighborhood = useMemo(
+    () => (graph && viewGraph && selectedDot ? buildFunctionCallNeighborhood(graph, viewGraph, selectedDot.nodeId) : null),
+    [graph, selectedDot, viewGraph],
   );
   const topConnectedDots = useMemo(
     () => (graph && file ? buildTopConnectedDots(file, graph) : []),
@@ -197,18 +207,29 @@ export default function FunctionDetailPage() {
           )}
         </aside>
 
-        <main className="flex-1 min-w-0 min-h-0">
-          {file.functionDots.length > 0 ? (
-            <FunctionMatrixPanel
-              file={file}
-              selectedFunctionId={selectedDot?.nodeId ?? null}
-              onSelectFunction={setSelectedFunctionId}
-            />
-          ) : (
-            <div className="h-full flex items-center justify-center text-sm text-text-muted">
-              {t.functionDetail.noFunctions}
+        <main className="flex-1 min-w-0 min-h-0 flex flex-col">
+          {selectedDot && neighborhood && (
+            <div className="h-[260px] max-h-[34vh] shrink-0">
+              <FunctionCallMiniMap
+                neighborhood={neighborhood}
+                nodesById={nodesById}
+              />
             </div>
           )}
+
+          <div className="min-h-0 flex-1">
+            {file.functionDots.length > 0 ? (
+              <FunctionMatrixPanel
+                file={file}
+                selectedFunctionId={selectedDot?.nodeId ?? null}
+                onSelectFunction={setSelectedFunctionId}
+              />
+            ) : (
+              <div className="h-full flex items-center justify-center text-sm text-text-muted">
+                {t.functionDetail.noFunctions}
+              </div>
+            )}
+          </div>
         </main>
 
         <aside className="w-[360px] shrink-0 overflow-auto border-l border-border-subtle bg-surface px-5 py-4">

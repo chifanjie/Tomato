@@ -129,3 +129,4 @@ export {
   type IgnoreFilter,
 } from "./ignore-filter.js";
 export { generateStarterIgnoreFile } from "./ignore-generator.js";
+export * from "./knowledge-base/index.js";

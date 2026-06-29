@@ -1,7 +1,7 @@
 ---
 name: understand-kb
 description: Generate a complete Markdown knowledge base from an existing understand-anything code knowledge graph
-argument-hint: [project-path] [--parallel N] [--deterministic-only]
+argument-hint: [project-path] [--parallel 1|2] [--resume] [--include-extended-topics] [--deterministic-only]
 ---
 
 # /understand-kb
@@ -18,9 +18,14 @@ The command assumes `/understand` has already scanned the repository. It uses th
    - Resolve relative paths against the current working directory.
 
 2. Resolve `PARALLEL_LIMIT`.
-   - If `$ARGUMENTS` contains `--parallel <n>`, use that positive integer.
+   - If `$ARGUMENTS` contains `--parallel <n>`, only accept `1` or `2`.
    - Otherwise use `2`.
-   - For large business repositories, prefer `1` or `2`; do not raise this just to make generation faster.
+   - Prefer `1` or `2`; do not raise this just to make generation faster.
+
+2.25. Resolve queue control flags.
+   - If `$ARGUMENTS` contains `--resume`, pass `--resume` to every lease phase in this run.
+   - If `$ARGUMENTS` contains `--include-extended-topics`, keep the default required-topic pass first, then run a second topic pass for extended topics after the required-topic finalize succeeds.
+   - Safety posture: keep the fixed pool at `1` or `2` workers. More concurrency is not the goal here; reliable lease ownership is.
 
 2.5. Resolve memory safety flags.
    - If `$ARGUMENTS` contains `--max-source-mb <n>`, pass it to every `generate-knowledge-base.mjs` phase.
@@ -89,45 +94,80 @@ The command assumes `/understand` has already scanned the repository. It uses th
    node "$PLUGIN_ROOT/skills/understand-kb/generate-knowledge-base.mjs" "$PROJECT_ROOT" --prepare-file-docs
    ```
 
-8. Read `$PROJECT_ROOT/.understand-anything/knowledge-base/.intermediate/file-doc-batches.json`.
+8. Create exactly `$PARALLEL_LIMIT` logical file workers.
+   - Default worker count is `2`.
+   - Maximum worker count is `2`.
+   - Use stable worker ids such as `file-writer-1` and `file-writer-2`.
 
-9. Dispatch `agents/kb-file-writer.md` for every file batch, with at most `$PARALLEL_LIMIT` concurrent agents.
-   - Each agent receives one `FileDocBatch`, the associated `FileDocTask` objects, graph context, and source snapshots.
-   - Each agent must write exactly one JSON file:
+9. Run the file-worker lease loop until every worker receives `null`.
+   - Each file worker repeatedly runs:
+     ```bash
+     node "$PLUGIN_ROOT/skills/understand-kb/generate-knowledge-base.mjs" "$PROJECT_ROOT" --lease-file-batch --worker-id <id> [--resume]
+     ```
+   - If the lease output is `null`, that worker stops.
+   - Otherwise the worker runs `agents/kb-file-writer.md` for the leased batch only.
+   - Each worker receives the leased `FileDocBatch`, the associated `FileDocTask` objects, graph context, source snapshots, `workerId`, `attemptNumber`, `previousFailureReason` when present, and `leasedBatchIndex`.
+   - Each worker must write exactly one JSON file:
      ```text
      $PROJECT_ROOT/.understand-anything/knowledge-base/.intermediate/file-doc-batch-<batchIndex>.json
      ```
-   - After each agent returns, verify that its expected JSON file exists.
+   - After the writer returns, verify that the expected JSON file exists.
+   - On success, complete the lease:
+     ```bash
+     node "$PLUGIN_ROOT/skills/understand-kb/generate-knowledge-base.mjs" "$PROJECT_ROOT" --complete-file-batch --worker-id <id> --batch-index <n> --result-status succeeded
+     ```
+   - On validation failure, missing output, or other batch-specific failure, complete the lease with a non-success `--result-status` that preserves the concrete reason.
 
-10. Merge file writer outputs.
+10. After all file workers stop, merge file writer outputs.
 
     ```bash
     node "$PLUGIN_ROOT/skills/understand-kb/generate-knowledge-base.mjs" "$PROJECT_ROOT" --merge-file-docs
     ```
 
-11. If `.intermediate/file-doc-retry-plan.json` exists and contains file batches, rerun only those batches once, then run `--merge-file-docs` again.
-
-12. Prepare topic batches.
+11. Prepare the required-topic queue.
 
     ```bash
     node "$PLUGIN_ROOT/skills/understand-kb/generate-knowledge-base.mjs" "$PROJECT_ROOT" --prepare-topics
     ```
 
-13. Read `$PROJECT_ROOT/.understand-anything/knowledge-base/.intermediate/topic-batches.json`.
+12. Create exactly `$PARALLEL_LIMIT` logical topic workers.
+    - Default worker count is `2`.
+    - Maximum worker count is `2`.
+    - Use stable worker ids such as `topic-writer-1` and `topic-writer-2`.
 
-14. Dispatch `agents/kb-topic-writer.md` for every topic batch, with at most `$PARALLEL_LIMIT` concurrent agents.
-    - Each agent receives one `TopicBatch`, graph context, the linked file document, and source evidence.
-    - Each agent must write exactly one JSON file:
+13. Run the topic-worker lease loop until every worker receives `null`.
+    - Each topic worker repeatedly runs:
+      ```bash
+      node "$PLUGIN_ROOT/skills/understand-kb/generate-knowledge-base.mjs" "$PROJECT_ROOT" --lease-topic-batch --worker-id <id> [--resume]
+      ```
+    - If the lease output is `null`, that worker stops.
+    - Otherwise the worker runs `agents/kb-topic-writer.md` for the leased batch only.
+    - Each worker receives the leased `TopicBatch`, graph context, the linked file document, source evidence, `workerId`, `attemptNumber`, `previousFailureReason` when present, `leasedBatchIndex`, `topicTier`, and `linkedFileDocumentSummary`.
+    - Each worker must write exactly one JSON file:
       ```text
       $PROJECT_ROOT/.understand-anything/knowledge-base/.intermediate/topic-batch-<batchIndex>.json
       ```
-    - After each agent returns, verify that its expected JSON file exists.
+    - After the writer returns, verify that the expected JSON file exists.
+    - On success, complete the lease:
+      ```bash
+      node "$PLUGIN_ROOT/skills/understand-kb/generate-knowledge-base.mjs" "$PROJECT_ROOT" --complete-topic-batch --worker-id <id> --batch-index <n> --result-status succeeded
+      ```
+    - On validation failure, missing output, or other batch-specific failure, complete the lease with a non-success `--result-status` that preserves the concrete reason.
 
-15. Finalize the knowledge base.
+14. After all topic workers stop, finalize the knowledge base.
 
     ```bash
     node "$PLUGIN_ROOT/skills/understand-kb/generate-knowledge-base.mjs" "$PROJECT_ROOT" --finalize
     ```
+
+15. If the user passed `--include-extended-topics`, repeat the topic phase for extended topics after the required-topic finalize succeeds.
+    - Re-run topic preparation with:
+      ```bash
+      node "$PLUGIN_ROOT/skills/understand-kb/generate-knowledge-base.mjs" "$PROJECT_ROOT" --prepare-topics --include-extended-topics
+      ```
+    - Recreate exactly `$PARALLEL_LIMIT` logical topic workers.
+    - Repeat the same `--lease-topic-batch` / topic writer / `--complete-topic-batch` loop for the new extended-topic queue.
+    - Run `--finalize` again after the extended-topic workers stop.
 
 16. Report the result to the user.
     - Knowledge base path: `$PROJECT_ROOT/.understand-anything/knowledge-base/`

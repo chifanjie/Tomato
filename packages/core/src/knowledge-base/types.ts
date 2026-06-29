@@ -194,6 +194,36 @@ export interface FileWriterBatchOutput {
   warnings: string[];
 }
 
+export type TopicTier = "required" | "extended";
+export type QueueTaskStatus = "pending" | "leased" | "succeeded" | "needs_retry" | "failed_terminal";
+
+export interface QueueEntryBase {
+  batchIndex: number;
+  status: QueueTaskStatus;
+  attempts: number;
+  workerId: string | null;
+  leasedAt: string | null;
+  updatedAt: string;
+  lastError: string | null;
+}
+
+export interface FileDocQueueEntry extends QueueEntryBase {
+  kind: "file-doc";
+}
+
+export interface TopicQueueEntry extends QueueEntryBase {
+  kind: "topic";
+  tier: TopicTier;
+}
+
+export interface QueueSummary {
+  pending: number;
+  leased: number;
+  succeeded: number;
+  needsRetry: number;
+  failedTerminal: number;
+}
+
 export interface TopicPlanItem {
   batchIndex: number;
   topicNodeId: string;
@@ -203,12 +233,14 @@ export interface TopicPlanItem {
   reasons: string[];
   coveredNodeIds: string[];
   linkedFileDocumentPath: string;
+  tier: TopicTier;
 }
 
 export interface TopicBatch {
   batchIndex: number;
   topics: TopicPlanItem[];
   reason: string;
+  tier: TopicTier;
 }
 
 export interface TopicPlan {
@@ -250,6 +282,8 @@ export interface RelationshipCoverage {
 export interface RetryPlan {
   fileBatchIndexes: number[];
   topicBatchIndexes: number[];
+  fileTerminalBatchIndexes: number[];
+  topicTerminalBatchIndexes: number[];
   reasons: string[];
 }
 

@@ -131,6 +131,53 @@ function unresolvedQueue(queueSummary) {
   return queueSummary.pending || queueSummary.leased || queueSummary.needsRetry || queueSummary.failedTerminal;
 }
 
+function requireQueue(queuePath, missingMessage) {
+  if (!existsSync(queuePath)) {
+    console.error(missingMessage);
+    process.exit(1);
+  }
+  return readJson(queuePath);
+}
+
+function writeRetryPlan(path, retryPlan, batchIndexes) {
+  if (batchIndexes.length > 0) {
+    writeJson(path, retryPlan);
+  } else {
+    rmSync(path, { force: true });
+  }
+}
+
+function reconcileQueueFromMergeRetries(queue, retryBatchIndexes, options = {}) {
+  const retrySet = new Set(retryBatchIndexes);
+  if (retrySet.size === 0) return queue;
+
+  const now = options.now ?? new Date().toISOString();
+  const matched = new Set();
+  const baseReason = options.lastError && options.lastError.trim()
+    ? options.lastError.trim()
+    : 'writer output did not pass merge validation';
+
+  const nextQueue = queue.map((entry) => {
+    if (!retrySet.has(entry.batchIndex)) return entry;
+    matched.add(entry.batchIndex);
+    return {
+      ...entry,
+      status: entry.attempts >= 2 ? 'failed_terminal' : 'needs_retry',
+      workerId: null,
+      leasedAt: null,
+      updatedAt: now,
+      lastError: `${baseReason} (batch ${entry.batchIndex})`,
+    };
+  });
+
+  if (matched.size !== retrySet.size) {
+    const missing = [...retrySet].filter((batchIndex) => !matched.has(batchIndex));
+    throw new Error(`merge retry batches missing from queue: ${missing.join(', ')}`);
+  }
+
+  return nextQueue;
+}
+
 function graphStats(graph) {
   const fileNodes = graph.nodes.filter((node) => node.type === 'file');
   return {
@@ -355,7 +402,7 @@ function loadProfileAndFilePlan(core, projectRoot, maxSourceBytes = 64 * 1024 * 
 function leaseBatch(core, projectRoot, queueFileName, options) {
   const { intermediateRoot } = pathsFor(projectRoot);
   const queuePath = join(intermediateRoot, queueFileName);
-  const queue = existsSync(queuePath) ? readJson(queuePath) : [];
+  const queue = requireQueue(queuePath, `未找到队列文件: ${queuePath}`);
   const now = new Date().toISOString();
   const current = options.resume
     ? core.reclaimExpiredLeases(queue, { now, maxLeaseAgeMs: 30 * 60 * 1000 })
@@ -371,11 +418,7 @@ function leaseBatch(core, projectRoot, queueFileName, options) {
 function completeBatch(core, projectRoot, queueFileName, args) {
   const { intermediateRoot } = pathsFor(projectRoot);
   const queuePath = join(intermediateRoot, queueFileName);
-  if (!existsSync(queuePath)) {
-    console.error(`未找到队列文件: ${queuePath}`);
-    process.exit(1);
-  }
-  const queue = readJson(queuePath);
+  const queue = requireQueue(queuePath, `未找到队列文件: ${queuePath}`);
   const now = new Date().toISOString();
   const nextQueue = args.resultStatus === 'succeeded'
     ? core.markQueueEntrySucceeded(queue, {
@@ -390,22 +433,32 @@ function completeBatch(core, projectRoot, queueFileName, args) {
       reason: args.resultStatus || 'writer output did not pass validation',
     });
 
+  if (JSON.stringify(nextQueue) === JSON.stringify(queue)) {
+    console.error(`未能更新队列条目: batchIndex=${args.batchIndex}, workerId=${args.workerId}, resultStatus=${args.resultStatus || 'needs_retry'}`);
+    process.exit(1);
+  }
+
   writeJson(queuePath, nextQueue);
 }
 
 function mergeFileDocs(core, projectRoot, maxSourceBytes) {
   const { profile, fileDocPlan } = loadProfileAndFilePlan(core, projectRoot, maxSourceBytes);
   const { outputRoot, intermediateRoot } = pathsFor(projectRoot);
+  const fileQueuePath = join(intermediateRoot, 'file-doc-queue.json');
+  const fileQueue = requireQueue(fileQueuePath, '未找到文件阶段队列。请先运行 --prepare-file-docs。');
   const fileWriterOutputs = readBatchOutputs(intermediateRoot, 'file-doc-batch', core.parseFileWriterBatchOutput);
   const merged = core.mergeKnowledgeBaseWriterOutputs({ profile, fileDocPlan, fileWriterOutputs });
+  const reconciledQueue = reconcileQueueFromMergeRetries(fileQueue, merged.retryPlan.fileBatchIndexes, {
+    now: new Date().toISOString(),
+    lastError: merged.retryPlan.reasons[0] ?? 'file writer output did not pass merge validation',
+  });
 
   mkdirSync(intermediateRoot, { recursive: true });
   writeJson(join(intermediateRoot, 'validation-report.json'), merged.validation);
   writeJson(join(intermediateRoot, 'accepted-file-documents.json'), merged.acceptedFileWriterDocuments);
   writeJson(join(intermediateRoot, 'file-writer-outputs.json'), fileWriterOutputs);
-  if (merged.retryPlan.fileBatchIndexes.length > 0) {
-    writeJson(join(intermediateRoot, 'file-doc-retry-plan.json'), merged.retryPlan);
-  }
+  writeJson(fileQueuePath, reconciledQueue);
+  writeRetryPlan(join(intermediateRoot, 'file-doc-retry-plan.json'), merged.retryPlan, merged.retryPlan.fileBatchIndexes);
   for (const doc of merged.fileDocuments) writeDocument(outputRoot, doc);
 
   console.log(`已接受文件文档数: ${merged.acceptedFileWriterDocuments.length}`);
@@ -421,11 +474,7 @@ function prepareTopics(core, projectRoot, maxSourceBytes, args) {
     process.exit(1);
   }
   const fileQueuePath = join(intermediateRoot, 'file-doc-queue.json');
-  if (!existsSync(fileQueuePath)) {
-    console.error('未找到文件阶段队列。请先运行 --prepare-file-docs。');
-    process.exit(1);
-  }
-  const fileQueue = readJson(fileQueuePath);
+  const fileQueue = requireQueue(fileQueuePath, '未找到文件阶段队列。请先运行 --prepare-file-docs。');
   const fileQueueSummary = core.summarizeQueue(fileQueue);
   if (unresolvedQueue(fileQueueSummary)) {
     console.error('文件阶段尚未完成，不能进入专题阶段。');
@@ -450,10 +499,12 @@ function prepareTopics(core, projectRoot, maxSourceBytes, args) {
 function finalizeKnowledgeBase(core, projectRoot, keepIntermediate, maxSourceBytes) {
   const { graph, profile, fileDocPlan } = loadProfileAndFilePlan(core, projectRoot, maxSourceBytes);
   const { outputRoot, intermediateRoot } = pathsFor(projectRoot);
+  const fileQueuePath = join(intermediateRoot, 'file-doc-queue.json');
+  const fileQueue = requireQueue(fileQueuePath, '未找到文件阶段队列。请先运行 --prepare-file-docs。');
   const topicQueuePath = join(intermediateRoot, 'topic-queue.json');
-  const topicQueue = existsSync(topicQueuePath) ? readJson(topicQueuePath) : [];
-  const queueSummary = core.summarizeQueue(topicQueue);
-  if (unresolvedQueue(queueSummary)) {
+  const topicQueue = requireQueue(topicQueuePath, '未找到专题阶段队列。请先运行 --prepare-topics。');
+  const topicQueueSummary = core.summarizeQueue(topicQueue);
+  if (unresolvedQueue(topicQueueSummary)) {
     console.error('专题阶段尚未完成，不能进入 finalize 成功态。');
     process.exit(1);
   }
@@ -470,6 +521,31 @@ function finalizeKnowledgeBase(core, projectRoot, keepIntermediate, maxSourceByt
     fileWriterOutputs,
     topicWriterOutputs,
   });
+  const reconciledFileQueue = reconcileQueueFromMergeRetries(fileQueue, fileMerged.retryPlan.fileBatchIndexes, {
+    now: new Date().toISOString(),
+    lastError: fileMerged.retryPlan.reasons[0] ?? 'file writer output did not pass merge validation',
+  });
+  const reconciledTopicQueue = reconcileQueueFromMergeRetries(topicQueue, merged.retryPlan.topicBatchIndexes, {
+    now: new Date().toISOString(),
+    lastError: merged.retryPlan.reasons[0] ?? 'topic writer output did not pass merge validation',
+  });
+  writeJson(fileQueuePath, reconciledFileQueue);
+  writeJson(topicQueuePath, reconciledTopicQueue);
+  writeRetryPlan(join(intermediateRoot, 'file-doc-retry-plan.json'), fileMerged.retryPlan, fileMerged.retryPlan.fileBatchIndexes);
+  writeRetryPlan(join(intermediateRoot, 'topic-retry-plan.json'), merged.retryPlan, merged.retryPlan.topicBatchIndexes);
+
+  const reconciledFileSummary = core.summarizeQueue(reconciledFileQueue);
+  const reconciledTopicSummary = core.summarizeQueue(reconciledTopicQueue);
+  if (
+    unresolvedQueue(reconciledFileSummary) ||
+    unresolvedQueue(reconciledTopicSummary) ||
+    fileMerged.retryPlan.fileBatchIndexes.length > 0 ||
+    merged.retryPlan.topicBatchIndexes.length > 0
+  ) {
+    console.error('merge 校验仍存在待重试批次，不能输出最终知识库。');
+    process.exit(1);
+  }
+
   const validation = {
     ok: merged.validation.ok,
     errors: merged.validation.errors,

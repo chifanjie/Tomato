@@ -642,9 +642,30 @@ export function buildCoverageReport(
     .filter((entry) => !flowAndTopicNodeIds.has(entry.nodeId))
     .map((entry) => entry.nodeId)
     .sort();
-  const topicExpected = topicPlan.topics.map((topic) => topic.topicNodeId).sort();
-  const topicCovered = coveredNodeIdsByCategory("topic");
-  const allTopicCoverage = ratio(topicCovered, topicExpected);
+  const generatedTopicPaths = new Set((docsByCategory.get("topic") ?? []).map((doc) => doc.path));
+  const requiredTopics = topicPlan.topics.filter((topic) => topic.tier === "required");
+  const extendedTopics = topicPlan.topics.filter((topic) => topic.tier === "extended");
+  const topicCoverage = {
+    covered: topicPlan.topics.filter((topic) => generatedTopicPaths.has(topic.documentPath)).length,
+    total: topicPlan.topics.length,
+    missing: topicPlan.topics
+      .filter((topic) => !generatedTopicPaths.has(topic.documentPath))
+      .map((topic) => topic.topicNodeId),
+  };
+  const requiredTopicCoverage = {
+    covered: requiredTopics.filter((topic) => generatedTopicPaths.has(topic.documentPath)).length,
+    total: requiredTopics.length,
+    missing: requiredTopics
+      .filter((topic) => !generatedTopicPaths.has(topic.documentPath))
+      .map((topic) => topic.topicNodeId),
+  };
+  const extendedTopicCoverage = {
+    covered: extendedTopics.filter((topic) => generatedTopicPaths.has(topic.documentPath)).length,
+    total: extendedTopics.length,
+    missing: extendedTopics
+      .filter((topic) => !generatedTopicPaths.has(topic.documentPath))
+      .map((topic) => topic.topicNodeId),
+  };
   const evidenceWarnings = profile.evidenceGaps.map((gap) => `${gap.kind}: ${gap.message}`);
   const chineseFailures = documents.filter((doc) => !/[\u4e00-\u9fff]/.test(doc.content)).map((doc) => doc.path).sort();
   const placeholderFailures = documents.filter((doc) => PLACEHOLDER_RE.test(doc.content)).map((doc) => doc.path).sort();
@@ -653,7 +674,8 @@ export function buildCoverageReport(
     ...placeholderFailures.map((path) => `document contains placeholder text: ${path}`),
   ];
   const warnings = [...new Set([...validation.warnings, ...evidenceWarnings])].sort();
-  const status: KnowledgeBaseStatus = structuralErrors.length > 0
+  const hasMissingRequiredTopics = requiredTopicCoverage.covered < requiredTopicCoverage.total;
+  const status: KnowledgeBaseStatus = structuralErrors.length > 0 || hasMissingRequiredTopics
     ? "incomplete"
     : warnings.length > 0
       ? "complete-with-warnings"
@@ -689,9 +711,9 @@ export function buildCoverageReport(
       total: profile.entryCandidates.length,
       missing: entryMissing,
     },
-    topicCoverage: allTopicCoverage,
-    requiredTopicCoverage: allTopicCoverage,
-    extendedTopicCoverage: { covered: 0, total: 0, missing: [] },
+    topicCoverage,
+    requiredTopicCoverage,
+    extendedTopicCoverage,
     fileWriterBatches: {
       total: fileDocPlan.batches.length,
       passed: Math.max(0, fileDocPlan.batches.length - retryPlan.fileBatchIndexes.length),
@@ -997,6 +1019,8 @@ function renderCoverageReport(report: CoverageReport, validation: CoverageValida
   lines.push(`- 模块总览覆盖: ${report.layerOverviewCoverage.covered} / ${report.layerOverviewCoverage.total}`);
   lines.push(`- 入口覆盖: ${report.entryCoverage.covered} / ${report.entryCoverage.total}`);
   lines.push(`- 专题覆盖: ${report.topicCoverage.covered} / ${report.topicCoverage.total}`);
+  lines.push(`- 必需专题覆盖: ${report.requiredTopicCoverage.covered} / ${report.requiredTopicCoverage.total}`);
+  lines.push(`- 扩展专题覆盖: ${report.extendedTopicCoverage.covered} / ${report.extendedTopicCoverage.total}`);
   lines.push(`- 源码读取覆盖: ${report.sourceReadCoverage.covered} / ${report.sourceReadCoverage.total}`);
   lines.push(`- 业务事实覆盖: ${report.businessFactCoverage.covered} / ${report.businessFactCoverage.total}`);
   lines.push(`- 业务能力文档: ${report.businessCapabilityCoverage.covered} / ${report.businessCapabilityCoverage.total}`);

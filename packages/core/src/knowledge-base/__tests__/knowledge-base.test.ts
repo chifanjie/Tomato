@@ -538,6 +538,10 @@ describe("graph-to-knowledge-base", () => {
     const handleFeedRequiredBatch = kb.topicPlan.batches.find(
       (batch) => batch.batchIndex === handleFeedRequiredTopic?.batchIndex,
     );
+    const rankCandidatesExtendedTopic = extended.find((topic) => topic.topicNodeId.includes("rankCandidates"));
+    const rankCandidatesExtendedBatch = kb.topicPlan.batches.find(
+      (batch) => batch.batchIndex === rankCandidatesExtendedTopic?.batchIndex,
+    );
 
     expect(required.some((topic) => topic.topicNodeId.includes("HandleFeedRequest"))).toBe(true);
     expect(required.some((topic) => topic.topicNodeId.includes("HandleAdminFeedRequest"))).toBe(true);
@@ -551,6 +555,13 @@ describe("graph-to-knowledge-base", () => {
     expect(kb.topicPlan.batches.some((batch) => batch.tier === "required")).toBe(true);
     expect(kb.topicPlan.batches.some((batch) => batch.tier === "extended")).toBe(true);
     expect(handleFeedRequiredBatch?.tier).toBe("required");
+    expect(handleFeedRequiredBatch?.reason).toBe("required topic for default high-quality run");
+    expect(rankCandidatesExtendedBatch?.tier).toBe("extended");
+    expect(rankCandidatesExtendedBatch?.reason).toBe("extended topic for optional continuation");
+    expect(kb.coverageReport.topicCoverage.total).toBe(kb.topicPlan.topics.length);
     expect(kb.coverageReport.requiredTopicCoverage.total).toBe(required.length);
+    expect(kb.coverageReport.requiredTopicCoverage.covered).toBe(required.length);
+    expect(kb.coverageReport.extendedTopicCoverage.total).toBe(extended.length);
+    expect(kb.coverageReport.extendedTopicCoverage.covered).toBe(extended.length);
   });
 });

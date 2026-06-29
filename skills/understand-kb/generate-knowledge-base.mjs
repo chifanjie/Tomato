@@ -173,6 +173,7 @@ function invalidateQueueDownstreamArtifacts(intermediateRoot, queueFileName) {
     ? [
       'accepted-file-documents.json',
       'validation-report.json',
+      'file-writer-outputs.json',
       'file-doc-retry-plan.json',
       'topic-plan.json',
       'topic-batches.json',
@@ -183,6 +184,13 @@ function invalidateQueueDownstreamArtifacts(intermediateRoot, queueFileName) {
 
   for (const name of staleArtifacts) {
     rmSync(join(intermediateRoot, name), { recursive: true, force: true });
+  }
+
+  if (queueFileName !== 'file-doc-queue.json' || !existsSync(intermediateRoot)) return;
+  for (const entry of readdirSync(intermediateRoot)) {
+    if (/^topic-batch-\d+\.json$/.test(entry)) {
+      rmSync(join(intermediateRoot, entry), { force: true });
+    }
   }
 }
 

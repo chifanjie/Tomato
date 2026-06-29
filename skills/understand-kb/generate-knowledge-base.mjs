@@ -168,6 +168,24 @@ function writeRetryPlan(path, retryPlan, batchIndexes) {
   }
 }
 
+function invalidateQueueDownstreamArtifacts(intermediateRoot, queueFileName) {
+  const staleArtifacts = queueFileName === 'file-doc-queue.json'
+    ? [
+      'accepted-file-documents.json',
+      'validation-report.json',
+      'file-doc-retry-plan.json',
+      'topic-plan.json',
+      'topic-batches.json',
+      'topic-queue.json',
+      'topic-retry-plan.json',
+    ]
+    : ['topic-retry-plan.json'];
+
+  for (const name of staleArtifacts) {
+    rmSync(join(intermediateRoot, name), { recursive: true, force: true });
+  }
+}
+
 function reconcileQueueFromMergeRetries(queue, retryBatchIndexes, options = {}) {
   const retrySet = new Set(retryBatchIndexes);
   if (retrySet.size === 0) return queue;
@@ -460,6 +478,7 @@ function completeBatch(core, projectRoot, queueFileName, args) {
   }
 
   writeJson(queuePath, nextQueue);
+  invalidateQueueDownstreamArtifacts(intermediateRoot, queueFileName);
 }
 
 function mergeFileDocs(core, projectRoot, maxSourceBytes) {

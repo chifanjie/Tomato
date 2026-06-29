@@ -431,4 +431,137 @@ describe("graph-to-knowledge-base", () => {
     expect(kb.coverageReport.sourceReadCoverage.missing).toContain("file:src/missing.ts");
     expect(kb.retryPlan.fileBatchIndexes.length).toBeGreaterThan(0);
   });
+
+  it("splits topic planning into required and extended tiers", () => {
+    const graph = sampleGraph(true);
+    const rankCandidatesNode = graph.nodes.find(
+      (node) => node.id === "function:src/service/feed.ts:rankCandidates",
+    );
+    expect(rankCandidatesNode).toBeDefined();
+    if (rankCandidatesNode) {
+      rankCandidatesNode.summary = "Ranks candidates with a lightweight local scoring helper";
+      rankCandidatesNode.tags = ["helper"];
+    }
+    graph.nodes.push(
+      {
+        id: "function:src/service/feed.ts:prepareHomeFeedScores",
+        type: "function",
+        name: "prepareHomeFeedScores",
+        filePath: "src/service/feed.ts",
+        lineRange: [122, 130],
+        summary: "Helper that shapes home-feed inputs before ranking",
+        tags: ["helper"],
+        complexity: "simple",
+      },
+      {
+        id: "function:src/service/feed.ts:prepareFreshFeedScores",
+        type: "function",
+        name: "prepareFreshFeedScores",
+        filePath: "src/service/feed.ts",
+        lineRange: [132, 140],
+        summary: "Helper that shapes fresh-feed inputs before ranking",
+        tags: ["helper"],
+        complexity: "simple",
+      },
+      {
+        id: "function:src/service/feed.ts:prepareFallbackFeedScores",
+        type: "function",
+        name: "prepareFallbackFeedScores",
+        filePath: "src/service/feed.ts",
+        lineRange: [142, 150],
+        summary: "Helper that shapes fallback-feed inputs before ranking",
+        tags: ["helper"],
+        complexity: "simple",
+      },
+    );
+    graph.edges.push(
+      {
+        source: "file:src/service/feed.ts",
+        target: "function:src/service/feed.ts:prepareHomeFeedScores",
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      },
+      {
+        source: "file:src/service/feed.ts",
+        target: "function:src/service/feed.ts:prepareFreshFeedScores",
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      },
+      {
+        source: "file:src/service/feed.ts",
+        target: "function:src/service/feed.ts:prepareFallbackFeedScores",
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      },
+      {
+        source: "function:src/service/feed.ts:prepareHomeFeedScores",
+        target: "function:src/service/feed.ts:rankCandidates",
+        type: "calls",
+        direction: "forward",
+        weight: 0.4,
+      },
+      {
+        source: "function:src/service/feed.ts:prepareFreshFeedScores",
+        target: "function:src/service/feed.ts:rankCandidates",
+        type: "calls",
+        direction: "forward",
+        weight: 0.4,
+      },
+      {
+        source: "function:src/service/feed.ts:prepareFallbackFeedScores",
+        target: "function:src/service/feed.ts:rankCandidates",
+        type: "calls",
+        direction: "forward",
+        weight: 0.4,
+      },
+    );
+
+    const plannerPreview = buildDocumentPlan(buildKnowledgeBaseProfile(graph));
+    expect(plannerPreview.topicCandidates.some((candidate) => candidate.nodeId.includes("rankCandidates"))).toBe(true);
+
+    const kb = generateKnowledgeBase(graph, {
+      sourceFiles: {
+        "src/api/routes.ts": "export function HandleFeedRequest() { return BuildFeed(); }\nexport function HandleAdminFeedRequest() { return BuildFeed(); }\n",
+        "src/service/feed.ts": "export function BuildFeed() { return rankCandidates([]); }\nfunction rankCandidates(items) { return items; }\nfunction prepareHomeFeedScores(items) { return rankCandidates(items); }\nfunction prepareFreshFeedScores(items) { return rankCandidates(items); }\nfunction prepareFallbackFeedScores(items) { return rankCandidates(items); }\n",
+        "src/data/store.ts": "export class CandidateStore {}\nexport function LoadCandidates() { return []; }\n",
+      },
+    });
+
+    const required = kb.topicPlan.topics.filter((topic) => topic.tier === "required");
+    const extended = kb.topicPlan.topics.filter((topic) => topic.tier === "extended");
+    const requiredIds = new Set(required.map((topic) => topic.topicNodeId));
+    const extendedIds = new Set(extended.map((topic) => topic.topicNodeId));
+    const handleFeedRequiredTopic = required.find((topic) => topic.topicNodeId.includes("HandleFeedRequest"));
+    const handleFeedRequiredBatch = kb.topicPlan.batches.find(
+      (batch) => batch.batchIndex === handleFeedRequiredTopic?.batchIndex,
+    );
+    const rankCandidatesExtendedTopic = extended.find((topic) => topic.topicNodeId.includes("rankCandidates"));
+    const rankCandidatesExtendedBatch = kb.topicPlan.batches.find(
+      (batch) => batch.batchIndex === rankCandidatesExtendedTopic?.batchIndex,
+    );
+
+    expect(required.some((topic) => topic.topicNodeId.includes("HandleFeedRequest"))).toBe(true);
+    expect(required.some((topic) => topic.topicNodeId.includes("HandleAdminFeedRequest"))).toBe(true);
+    expect(required.some((topic) => topic.topicNodeId.includes("BuildFeed"))).toBe(true);
+    expect(required.some((topic) => topic.topicNodeId.includes("rankCandidates"))).toBe(false);
+    expect(extended.some((topic) => topic.topicNodeId.includes("rankCandidates"))).toBe(true);
+    expect(extended.some((topic) => topic.topicNodeId.includes("HandleFeedRequest"))).toBe(false);
+    expect(extended.some((topic) => topic.topicNodeId.includes("HandleAdminFeedRequest"))).toBe(false);
+    expect(extended.some((topic) => topic.topicNodeId.includes("BuildFeed"))).toBe(false);
+    expect([...requiredIds].every((topicNodeId) => !extendedIds.has(topicNodeId))).toBe(true);
+    expect(kb.topicPlan.batches.some((batch) => batch.tier === "required")).toBe(true);
+    expect(kb.topicPlan.batches.some((batch) => batch.tier === "extended")).toBe(true);
+    expect(handleFeedRequiredBatch?.tier).toBe("required");
+    expect(handleFeedRequiredBatch?.reason).toBe("required topic for default high-quality run");
+    expect(rankCandidatesExtendedBatch?.tier).toBe("extended");
+    expect(rankCandidatesExtendedBatch?.reason).toBe("extended topic for optional continuation");
+    expect(kb.coverageReport.topicCoverage.total).toBe(kb.topicPlan.topics.length);
+    expect(kb.coverageReport.requiredTopicCoverage.total).toBe(required.length);
+    expect(kb.coverageReport.requiredTopicCoverage.covered).toBe(required.length);
+    expect(kb.coverageReport.extendedTopicCoverage.total).toBe(extended.length);
+    expect(kb.coverageReport.extendedTopicCoverage.covered).toBe(extended.length);
+  });
 });

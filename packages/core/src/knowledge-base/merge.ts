@@ -450,6 +450,8 @@ export function mergeKnowledgeBaseWriterOutputs(
     retryPlan: {
       fileBatchIndexes: sortedNumbers(retryFileBatchIndexes),
       topicBatchIndexes: sortedNumbers(retryTopicBatchIndexes),
+      fileTerminalBatchIndexes: [],
+      topicTerminalBatchIndexes: [],
       reasons: [...errors],
     },
     acceptedFileWriterDocuments,

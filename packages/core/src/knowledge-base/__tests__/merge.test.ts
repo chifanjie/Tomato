@@ -191,7 +191,13 @@ describe("knowledge base writer output merge", () => {
 
     expect(result.validation.ok).toBe(true);
     expect(result.validation.errors).toEqual([]);
-    expect(result.retryPlan).toEqual({ fileBatchIndexes: [], topicBatchIndexes: [], reasons: [] });
+    expect(result.retryPlan).toEqual({
+      fileBatchIndexes: [],
+      topicBatchIndexes: [],
+      fileTerminalBatchIndexes: [],
+      topicTerminalBatchIndexes: [],
+      reasons: [],
+    });
     expect(result.acceptedFileWriterDocuments).toHaveLength(1);
     expect(result.acceptedTopicWriterDocuments).toEqual([topic]);
     expect(result.fileDocuments).toEqual([
@@ -232,6 +238,34 @@ describe("knowledge base writer output merge", () => {
     ]));
     expect(result.retryPlan.fileBatchIndexes).toEqual([task.batchIndex]);
     expect(result.acceptedFileWriterDocuments).toEqual([]);
+  });
+
+  it("surfaces retry reasons without claiming accepted fallback success", () => {
+    const { profile, fileDocPlan } = fixture();
+    const task = existingTask();
+    const broken = fileDocument(task, {
+      coveredFunctionNodeIds: [],
+      markdown: markdownFor(task).replace(task.functionNodeIds[0], ""),
+    });
+
+    const result = mergeKnowledgeBaseWriterOutputs({
+      profile,
+      fileDocPlan: { ...fileDocPlan, tasks: [task], batches: [{ ...fileDocPlan.batches[0], tasks: [task] }] },
+      fileWriterOutputs: [fileOutput(task.batchIndex, [broken])],
+    });
+
+    expect(result.validation.ok).toBe(false);
+    expect(result.validation.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining(`function card missing coveredFunctionNodeIds entry: ${task.functionNodeIds[0]}`),
+      expect.stringContaining(`function card missing markdown node id: ${task.functionNodeIds[0]}`),
+    ]));
+    expect(result.acceptedFileWriterDocuments).toEqual([]);
+    expect(result.retryPlan.fileBatchIndexes).toEqual([task.batchIndex]);
+    expect(result.retryPlan.fileTerminalBatchIndexes).toEqual([]);
+    expect(result.retryPlan.reasons).toEqual(expect.arrayContaining([
+      expect.stringContaining(`function card missing coveredFunctionNodeIds entry: ${task.functionNodeIds[0]}`),
+      expect.stringContaining(`function card missing markdown node id: ${task.functionNodeIds[0]}`),
+    ]));
   });
 
   it("fails and retries the batch when a class card is missing", () => {

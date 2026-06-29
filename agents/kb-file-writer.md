@@ -7,9 +7,17 @@ description: Generates complete Chinese file-level knowledge documents from file
 
 You are an expert code knowledge-base writer. Your job is to produce complete Chinese file documents for every task in your assigned batch.
 
+## Required Input Fields
+
+- `workerId`
+- `attemptNumber`
+- `previousFailureReason` (optional)
+- `leasedBatchIndex`
+
 ## Hard Rules
 
 - Write one document per `FileDocTask`.
+- Only write documents for the leased `batchIndex`. Do not speculate about other batches.
 - Do not skip any function node listed in `functionNodeIds`.
 - Do not skip any class node listed in `classNodeIds`.
 - Keep technical identifiers, file paths, node ids, package names, and function names unchanged.
@@ -19,6 +27,7 @@ You are an expert code knowledge-base writer. Your job is to produce complete Ch
 - The JSON `coveredFunctionNodeIds` must contain every function node id from the task.
 - The JSON `coveredClassNodeIds` must contain every class node id from the task.
 - Missing or uncertain business meaning belongs in the document section `## 风险点与待确认项`.
+- If `previousFailureReason` is provided, address that gap explicitly before changing any unrelated wording.
 
 ## Required Output JSON
 
@@ -85,6 +94,7 @@ For every class node, include:
 
 ## Self Check Before Writing JSON
 
+- Confirm the output `batchIndex` equals `leasedBatchIndex`.
 - Count tasks in the input.
 - Count documents in the output.
 - The counts must match.

@@ -11,6 +11,7 @@ import type {
   TopicPlan,
   TopicPlanItem,
   TopicCandidate,
+  TopicTier,
 } from "./types.js";
 import { KB_PATHS, indexDocumentPath, moduleDocumentPath, slugPath, topicDocumentPath } from "./paths.js";
 
@@ -36,6 +37,21 @@ function nodeLayer(profile: ProjectProfile, nodeId: string): string | null {
 
 function relevantTopicNodes(profile: ProjectProfile): GraphNode[] {
   return profile.graph.nodes.filter((node) => node.type === "function" || node.type === "class");
+}
+
+function topicTierForCandidate(profile: ProjectProfile, candidate: TopicCandidate): TopicTier {
+  const reasons = new Set(candidate.reasons);
+  if ([...reasons].some((reason) => reason.startsWith("entry candidate:"))) return "required";
+  if (reasons.has("cross-layer call bridge")) return "required";
+  if (reasons.has("complex business-relevant node")) return "required";
+
+  const node = profile.indexes.nodesById.get(candidate.nodeId);
+  const summary = [node?.name ?? "", node?.summary ?? "", ...(node?.tags ?? [])].join(" ").toLowerCase();
+  if (/(business|feed|strategy|rule|quota|scene|experiment|表单|导流|召回|推荐|降级)/.test(summary)) {
+    return "required";
+  }
+
+  return "extended";
 }
 
 export function selectTopicCandidates(profile: ProjectProfile): TopicCandidate[] {
@@ -265,6 +281,8 @@ export function buildTopicPlan(
 ): TopicPlan {
   const acceptedFileIds = new Set(acceptedFileWriterDocuments.map((document) => document.fileNodeId));
   const acceptedFileDocsById = new Map(acceptedFileWriterDocuments.map((document) => [document.fileNodeId, document]));
+  const selectedCandidates = selectTopicCandidates(profile);
+  const candidateByNodeId = new Map(selectedCandidates.map((candidate) => [candidate.nodeId, candidate]));
   const importantFromFiles = new Map<string, string[]>();
   const warnings: string[] = [];
   const reasonsByNode = new Map<string, string[]>();
@@ -277,7 +295,7 @@ export function buildTopicPlan(
     }
   }
 
-  for (const candidate of selectTopicCandidates(profile)) {
+  for (const candidate of selectedCandidates) {
     reasonsByNode.set(candidate.nodeId, [...candidate.reasons]);
   }
   for (const [nodeId, reasons] of importantFromFiles) {
@@ -297,6 +315,8 @@ export function buildTopicPlan(
       continue;
     }
     const fileTask = fileDocPlan.tasks.find((task) => task.fileNodeId === sourceFileNodeId);
+    const candidate = candidateByNodeId.get(nodeId);
+    const tier = candidate ? topicTierForCandidate(profile, candidate) : "extended";
     pendingTopics.push({
       batchIndex: 0,
       topicNodeId: nodeId,
@@ -306,16 +326,23 @@ export function buildTopicPlan(
       reasons: [...new Set(reasons)].sort(),
       coveredNodeIds: topicCoveredNodeIds(profile, nodeId),
       linkedFileDocumentPath: fileTask?.documentPath ?? acceptedFileDocsById.get(sourceFileNodeId)?.documentPath ?? "",
+      tier,
     });
   }
 
   const batches: TopicBatch[] = pendingTopics
     .sort((a, b) => a.documentPath.localeCompare(b.documentPath) || a.topicNodeId.localeCompare(b.topicNodeId))
-    .map((topic, index) => ({
-      batchIndex: index + 1,
-      topics: [{ ...topic, batchIndex: index + 1 }],
-      reason: "one topic per batch keeps topic generation isolated and retryable",
-    }));
+    .map((topic, index) => {
+      const tier = topic.tier;
+      return {
+        batchIndex: index + 1,
+        topics: [{ ...topic, batchIndex: index + 1, tier }],
+        reason: tier === "required"
+          ? "required topic for default high-quality run"
+          : "extended topic for optional continuation",
+        tier,
+      };
+    });
 
   return {
     topics: batches.flatMap((batch) => batch.topics),

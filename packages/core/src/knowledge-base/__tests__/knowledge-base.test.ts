@@ -433,10 +433,91 @@ describe("graph-to-knowledge-base", () => {
   });
 
   it("splits topic planning into required and extended tiers", () => {
-    const kb = generateKnowledgeBase(sampleGraph(true), {
+    const graph = sampleGraph(true);
+    graph.nodes.push(
+      {
+        id: "function:src/service/feed.ts:prepareHomeFeedScores",
+        type: "function",
+        name: "prepareHomeFeedScores",
+        filePath: "src/service/feed.ts",
+        lineRange: [122, 130],
+        summary: "Helper that shapes home-feed inputs before ranking",
+        tags: ["helper"],
+        complexity: "simple",
+      },
+      {
+        id: "function:src/service/feed.ts:prepareFreshFeedScores",
+        type: "function",
+        name: "prepareFreshFeedScores",
+        filePath: "src/service/feed.ts",
+        lineRange: [132, 140],
+        summary: "Helper that shapes fresh-feed inputs before ranking",
+        tags: ["helper"],
+        complexity: "simple",
+      },
+      {
+        id: "function:src/service/feed.ts:prepareFallbackFeedScores",
+        type: "function",
+        name: "prepareFallbackFeedScores",
+        filePath: "src/service/feed.ts",
+        lineRange: [142, 150],
+        summary: "Helper that shapes fallback-feed inputs before ranking",
+        tags: ["helper"],
+        complexity: "simple",
+      },
+    );
+    graph.edges.push(
+      {
+        source: "file:src/service/feed.ts",
+        target: "function:src/service/feed.ts:prepareHomeFeedScores",
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      },
+      {
+        source: "file:src/service/feed.ts",
+        target: "function:src/service/feed.ts:prepareFreshFeedScores",
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      },
+      {
+        source: "file:src/service/feed.ts",
+        target: "function:src/service/feed.ts:prepareFallbackFeedScores",
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      },
+      {
+        source: "function:src/service/feed.ts:prepareHomeFeedScores",
+        target: "function:src/service/feed.ts:rankCandidates",
+        type: "calls",
+        direction: "forward",
+        weight: 0.4,
+      },
+      {
+        source: "function:src/service/feed.ts:prepareFreshFeedScores",
+        target: "function:src/service/feed.ts:rankCandidates",
+        type: "calls",
+        direction: "forward",
+        weight: 0.4,
+      },
+      {
+        source: "function:src/service/feed.ts:prepareFallbackFeedScores",
+        target: "function:src/service/feed.ts:rankCandidates",
+        type: "calls",
+        direction: "forward",
+        weight: 0.4,
+      },
+    );
+
+    const plannerPreview = buildDocumentPlan(buildKnowledgeBaseProfile(graph));
+    expect(plannerPreview.topicCandidates.some((candidate) => candidate.nodeId.includes("rankCandidates"))).toBe(true);
+
+    const kb = generateKnowledgeBase(graph, {
       sourceFiles: {
         "src/api/routes.ts": "export function HandleFeedRequest() { return BuildFeed(); }\nexport function HandleAdminFeedRequest() { return BuildFeed(); }\n",
-        "src/service/feed.ts": "export function BuildFeed() { return rankCandidates([]); }\nfunction rankCandidates(items) { return items; }\n",
+        "src/service/feed.ts": "export function BuildFeed() { return rankCandidates([]); }\nfunction rankCandidates(items) { return items; }\nfunction prepareHomeFeedScores(items) { return rankCandidates(items); }\nfunction prepareFreshFeedScores(items) { return rankCandidates(items); }\nfunction prepareFallbackFeedScores(items) { return rankCandidates(items); }\n",
         "src/data/store.ts": "export class CandidateStore {}\nexport function LoadCandidates() { return []; }\n",
       },
     });

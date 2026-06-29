@@ -75,6 +75,9 @@ describe("knowledge-base queue", () => {
   it("reuses needs_retry entries before untouched later entries", () => {
     const initial = buildFileDocQueue(fileDocPlanFixture(), "2026-06-29T00:00:00.000Z");
     const first = leaseNextQueueEntry(initial, { workerId: "file-writer-1", now: "2026-06-29T00:01:00.000Z" });
+    expect(first.leased?.status).toBe("leased");
+    expect(first.leased?.workerId).toBe("file-writer-1");
+    expect(first.leased?.leasedAt).toBe("2026-06-29T00:01:00.000Z");
     const retryQueue = markQueueEntryNeedsRetry(first.queue, {
       batchIndex: 1,
       workerId: "file-writer-1",
@@ -84,6 +87,26 @@ describe("knowledge-base queue", () => {
     const second = leaseNextQueueEntry(retryQueue, { workerId: "file-writer-2", now: "2026-06-29T00:03:00.000Z" });
     expect(second.leased?.batchIndex).toBe(1);
     expect(second.leased?.attempts).toBe(2);
+  });
+
+  it("escalates a second retry for the same batch to failed_terminal", () => {
+    const initial = buildFileDocQueue(fileDocPlanFixture(), "2026-06-29T00:00:00.000Z");
+    const first = leaseNextQueueEntry(initial, { workerId: "file-writer-1", now: "2026-06-29T00:01:00.000Z" });
+    const retryQueue = markQueueEntryNeedsRetry(first.queue, {
+      batchIndex: 1,
+      workerId: "file-writer-1",
+      now: "2026-06-29T00:02:00.000Z",
+      reason: "missing function card",
+    });
+    const second = leaseNextQueueEntry(retryQueue, { workerId: "file-writer-2", now: "2026-06-29T00:03:00.000Z" });
+    const terminalQueue = markQueueEntryNeedsRetry(second.queue, {
+      batchIndex: 1,
+      workerId: "file-writer-2",
+      now: "2026-06-29T00:04:00.000Z",
+      reason: "missing dependency summary",
+    });
+
+    expect(terminalQueue[0].status).toBe("failed_terminal");
   });
 
   it("marks a leased file-doc queue entry as succeeded", () => {

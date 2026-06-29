@@ -445,6 +445,10 @@ describe("graph-to-knowledge-base", () => {
     const extended = kb.topicPlan.topics.filter((topic) => topic.tier === "extended");
     const requiredIds = new Set(required.map((topic) => topic.topicNodeId));
     const extendedIds = new Set(extended.map((topic) => topic.topicNodeId));
+    const handleFeedRequiredTopic = required.find((topic) => topic.topicNodeId.includes("HandleFeedRequest"));
+    const handleFeedRequiredBatch = kb.topicPlan.batches.find(
+      (batch) => batch.batchIndex === handleFeedRequiredTopic?.batchIndex,
+    );
 
     expect(required.some((topic) => topic.topicNodeId.includes("HandleFeedRequest"))).toBe(true);
     expect(required.some((topic) => topic.topicNodeId.includes("HandleAdminFeedRequest"))).toBe(true);
@@ -455,6 +459,9 @@ describe("graph-to-knowledge-base", () => {
     expect(extended.some((topic) => topic.topicNodeId.includes("HandleAdminFeedRequest"))).toBe(false);
     expect(extended.some((topic) => topic.topicNodeId.includes("BuildFeed"))).toBe(false);
     expect([...requiredIds].every((topicNodeId) => !extendedIds.has(topicNodeId))).toBe(true);
+    expect(kb.topicPlan.batches.some((batch) => batch.tier === "required")).toBe(true);
+    expect(kb.topicPlan.batches.some((batch) => batch.tier === "extended")).toBe(true);
+    expect(handleFeedRequiredBatch?.tier).toBe("required");
     expect(kb.coverageReport.requiredTopicCoverage.total).toBe(required.length);
   });
 });

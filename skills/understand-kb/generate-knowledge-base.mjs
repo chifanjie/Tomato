@@ -10,6 +10,10 @@
  *   node generate-knowledge-base.mjs [project-root] --merge-file-docs
  *   node generate-knowledge-base.mjs [project-root] --prepare-topics
  *   node generate-knowledge-base.mjs [project-root] --finalize
+ *   node generate-knowledge-base.mjs [project-root] --lease-file-batch --worker-id <id>
+ *   node generate-knowledge-base.mjs [project-root] --lease-topic-batch --worker-id <id>
+ *   node generate-knowledge-base.mjs [project-root] --complete-file-batch --worker-id <id> --batch-index <n> --result-status <value>
+ *   node generate-knowledge-base.mjs [project-root] --complete-topic-batch --worker-id <id> --batch-index <n> --result-status <value>
  *   Optional safety flags: --max-source-mb N, --allow-large-deterministic
  */
 
@@ -38,6 +42,11 @@ function parseArgs(argv) {
     deterministicOnly: false,
     allowLargeDeterministic: false,
     maxSourceBytes: 64 * 1024 * 1024,
+    resume: false,
+    includeExtendedTopics: false,
+    workerId: '',
+    batchIndex: 0,
+    resultStatus: '',
   };
   for (let index = 2; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -45,10 +54,28 @@ function parseArgs(argv) {
     else if (arg === '--merge-file-docs') args.phase = 'merge-file-docs';
     else if (arg === '--prepare-topics') args.phase = 'prepare-topics';
     else if (arg === '--finalize') args.phase = 'finalize';
+    else if (arg === '--lease-file-batch') args.phase = 'lease-file-batch';
+    else if (arg === '--lease-topic-batch') args.phase = 'lease-topic-batch';
+    else if (arg === '--complete-file-batch') args.phase = 'complete-file-batch';
+    else if (arg === '--complete-topic-batch') args.phase = 'complete-topic-batch';
     else if (arg === '--retry') args.phase = 'retry';
     else if (arg === '--deterministic-only') args.deterministicOnly = true;
     else if (arg === '--allow-large-deterministic') args.allowLargeDeterministic = true;
     else if (arg === '--clean-intermediate') args.keepIntermediate = false;
+    else if (arg === '--resume') args.resume = true;
+    else if (arg === '--include-extended-topics') args.includeExtendedTopics = true;
+    else if (arg === '--worker-id') {
+      args.workerId = argv[index + 1] ?? '';
+      index += 1;
+    }
+    else if (arg === '--batch-index') {
+      args.batchIndex = Number(argv[index + 1] ?? 0);
+      index += 1;
+    }
+    else if (arg === '--result-status') {
+      args.resultStatus = argv[index + 1] ?? '';
+      index += 1;
+    }
     else if (arg === '--max-source-mb') {
       const value = Number(argv[index + 1]);
       if (!Number.isFinite(value) || value <= 0) {
@@ -98,6 +125,10 @@ function writeJson(path, value) {
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, 'utf-8'));
+}
+
+function unresolvedQueue(queueSummary) {
+  return queueSummary.pending || queueSummary.leased || queueSummary.needsRetry || queueSummary.failedTerminal;
 }
 
 function graphStats(graph) {
@@ -286,6 +317,7 @@ function prepareFileDocs(core, projectRoot, maxSourceBytes) {
   });
   writeJson(join(intermediateRoot, 'file-doc-plan.json'), fileDocPlan);
   writeJson(join(intermediateRoot, 'file-doc-batches.json'), fileDocPlan.batches);
+  writeJson(join(intermediateRoot, 'file-doc-queue.json'), core.buildFileDocQueue(fileDocPlan, new Date().toISOString()));
 
   console.log(`已准备文件文档批次: ${fileDocPlan.batches.length}`);
   console.log(`文件文档任务数: ${fileDocPlan.tasks.length}`);
@@ -320,6 +352,47 @@ function loadProfileAndFilePlan(core, projectRoot, maxSourceBytes = 64 * 1024 * 
   return { graph, profile, fileDocPlan };
 }
 
+function leaseBatch(core, projectRoot, queueFileName, options) {
+  const { intermediateRoot } = pathsFor(projectRoot);
+  const queuePath = join(intermediateRoot, queueFileName);
+  const queue = existsSync(queuePath) ? readJson(queuePath) : [];
+  const now = new Date().toISOString();
+  const current = options.resume
+    ? core.reclaimExpiredLeases(queue, { now, maxLeaseAgeMs: 30 * 60 * 1000 })
+    : queue;
+  const leased = core.leaseNextQueueEntry(current, {
+    workerId: options.workerId,
+    now,
+  });
+  writeJson(queuePath, leased.queue);
+  console.log(JSON.stringify(leased.leased ?? null, null, 2));
+}
+
+function completeBatch(core, projectRoot, queueFileName, args) {
+  const { intermediateRoot } = pathsFor(projectRoot);
+  const queuePath = join(intermediateRoot, queueFileName);
+  if (!existsSync(queuePath)) {
+    console.error(`未找到队列文件: ${queuePath}`);
+    process.exit(1);
+  }
+  const queue = readJson(queuePath);
+  const now = new Date().toISOString();
+  const nextQueue = args.resultStatus === 'succeeded'
+    ? core.markQueueEntrySucceeded(queue, {
+      batchIndex: args.batchIndex,
+      workerId: args.workerId,
+      now,
+    })
+    : core.markQueueEntryNeedsRetry(queue, {
+      batchIndex: args.batchIndex,
+      workerId: args.workerId,
+      now,
+      reason: args.resultStatus || 'writer output did not pass validation',
+    });
+
+  writeJson(queuePath, nextQueue);
+}
+
 function mergeFileDocs(core, projectRoot, maxSourceBytes) {
   const { profile, fileDocPlan } = loadProfileAndFilePlan(core, projectRoot, maxSourceBytes);
   const { outputRoot, intermediateRoot } = pathsFor(projectRoot);
@@ -339,7 +412,7 @@ function mergeFileDocs(core, projectRoot, maxSourceBytes) {
   console.log(`需要重试的文件写作批次数: ${merged.retryPlan.fileBatchIndexes.length}`);
 }
 
-function prepareTopics(core, projectRoot, maxSourceBytes) {
+function prepareTopics(core, projectRoot, maxSourceBytes, args) {
   const { profile, fileDocPlan } = loadProfileAndFilePlan(core, projectRoot, maxSourceBytes);
   const { intermediateRoot } = pathsFor(projectRoot);
   const acceptedPath = join(intermediateRoot, 'accepted-file-documents.json');
@@ -347,10 +420,28 @@ function prepareTopics(core, projectRoot, maxSourceBytes) {
     console.error('未找到已接受的文件文档。请先运行 --merge-file-docs。');
     process.exit(1);
   }
+  const fileQueuePath = join(intermediateRoot, 'file-doc-queue.json');
+  if (!existsSync(fileQueuePath)) {
+    console.error('未找到文件阶段队列。请先运行 --prepare-file-docs。');
+    process.exit(1);
+  }
+  const fileQueue = readJson(fileQueuePath);
+  const fileQueueSummary = core.summarizeQueue(fileQueue);
+  if (unresolvedQueue(fileQueueSummary)) {
+    console.error('文件阶段尚未完成，不能进入专题阶段。');
+    process.exit(1);
+  }
   const acceptedFileDocs = readJson(acceptedPath);
   const topicPlan = core.buildTopicPlan(profile, fileDocPlan, acceptedFileDocs);
   writeJson(join(intermediateRoot, 'topic-plan.json'), topicPlan);
   writeJson(join(intermediateRoot, 'topic-batches.json'), topicPlan.batches);
+  writeJson(
+    join(intermediateRoot, 'topic-queue.json'),
+    core.buildTopicQueue(topicPlan, {
+      includeExtendedTopics: args.includeExtendedTopics,
+      now: new Date().toISOString(),
+    }),
+  );
 
   console.log(`已准备专题批次: ${topicPlan.batches.length}`);
   console.log(`计划生成专题文档数: ${topicPlan.topics.length}`);
@@ -359,6 +450,13 @@ function prepareTopics(core, projectRoot, maxSourceBytes) {
 function finalizeKnowledgeBase(core, projectRoot, keepIntermediate, maxSourceBytes) {
   const { graph, profile, fileDocPlan } = loadProfileAndFilePlan(core, projectRoot, maxSourceBytes);
   const { outputRoot, intermediateRoot } = pathsFor(projectRoot);
+  const topicQueuePath = join(intermediateRoot, 'topic-queue.json');
+  const topicQueue = existsSync(topicQueuePath) ? readJson(topicQueuePath) : [];
+  const queueSummary = core.summarizeQueue(topicQueue);
+  if (unresolvedQueue(queueSummary)) {
+    console.error('专题阶段尚未完成，不能进入 finalize 成功态。');
+    process.exit(1);
+  }
   const fileWriterOutputs = readBatchOutputs(intermediateRoot, 'file-doc-batch', core.parseFileWriterBatchOutput);
   const fileMerged = core.mergeKnowledgeBaseWriterOutputs({ profile, fileDocPlan, fileWriterOutputs });
   const topicPlanPath = join(intermediateRoot, 'topic-plan.json');
@@ -431,7 +529,15 @@ async function main() {
   } else if (args.phase === 'merge-file-docs') {
     mergeFileDocs(core, args.projectRoot, args.maxSourceBytes);
   } else if (args.phase === 'prepare-topics') {
-    prepareTopics(core, args.projectRoot, args.maxSourceBytes);
+    prepareTopics(core, args.projectRoot, args.maxSourceBytes, args);
+  } else if (args.phase === 'lease-file-batch') {
+    leaseBatch(core, args.projectRoot, 'file-doc-queue.json', args);
+  } else if (args.phase === 'lease-topic-batch') {
+    leaseBatch(core, args.projectRoot, 'topic-queue.json', args);
+  } else if (args.phase === 'complete-file-batch') {
+    completeBatch(core, args.projectRoot, 'file-doc-queue.json', args);
+  } else if (args.phase === 'complete-topic-batch') {
+    completeBatch(core, args.projectRoot, 'topic-queue.json', args);
   } else if (args.phase === 'finalize') {
     finalizeKnowledgeBase(core, args.projectRoot, args.keepIntermediate, args.maxSourceBytes);
   } else if (args.phase === 'retry') {

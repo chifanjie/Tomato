@@ -431,4 +431,22 @@ describe("graph-to-knowledge-base", () => {
     expect(kb.coverageReport.sourceReadCoverage.missing).toContain("file:src/missing.ts");
     expect(kb.retryPlan.fileBatchIndexes.length).toBeGreaterThan(0);
   });
+
+  it("splits topic planning into required and extended tiers", () => {
+    const kb = generateKnowledgeBase(sampleGraph(true), {
+      sourceFiles: {
+        "src/api/routes.ts": "export function HandleFeedRequest() { return BuildFeed(); }\nexport function HandleAdminFeedRequest() { return BuildFeed(); }\n",
+        "src/service/feed.ts": "export function BuildFeed() { return rankCandidates([]); }\nfunction rankCandidates(items) { return items; }\n",
+        "src/data/store.ts": "export class CandidateStore {}\nexport function LoadCandidates() { return []; }\n",
+      },
+    });
+
+    const required = kb.topicPlan.topics.filter((topic) => topic.tier === "required");
+    const extended = kb.topicPlan.topics.filter((topic) => topic.tier === "extended");
+
+    expect(required.some((topic) => topic.topicNodeId.includes("HandleFeedRequest"))).toBe(true);
+    expect(required.some((topic) => topic.topicNodeId.includes("BuildFeed"))).toBe(true);
+    expect(extended.some((topic) => topic.topicNodeId.includes("rankCandidates"))).toBe(true);
+    expect(kb.coverageReport.requiredTopicCoverage.total).toBe(required.length);
+  });
 });

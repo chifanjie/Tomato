@@ -387,14 +387,14 @@ describe("graph-to-knowledge-base", () => {
     expect(kb.coverageReport.classCardCoverage).toEqual({ covered: 1, total: 1, missing: [] });
 
     expect(report?.content).toContain(`总文档数: ${kb.documents.length}`);
-    expect(report?.content).toContain("File document coverage: 3 / 3");
-    expect(report?.content).toContain("Function card coverage: 4 / 4");
-    expect(report?.content).toContain("Class card coverage: 1 / 1");
+    expect(report?.content).toContain("文件文档覆盖: 3 / 3");
+    expect(report?.content).toContain("函数卡片覆盖: 4 / 4");
+    expect(report?.content).toContain("类卡片覆盖: 1 / 1");
 
     expect(report?.content).not.toContain("File index coverage:");
     expect(report?.content).not.toContain("Function index coverage:");
     expect(report?.content).not.toContain("Class index coverage:");
-    expect(report?.content).toContain("Coverage status: complete");
+    expect(report?.content).toContain("覆盖状态: 完整");
   });
 
   it("reports actual relationship coverage from generated file documents", () => {

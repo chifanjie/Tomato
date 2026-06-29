@@ -2,7 +2,7 @@
 /**
  * generate-knowledge-base.mjs
  *
- * Generate a Markdown knowledge base from .understand-anything/knowledge-graph.json.
+ * 从 .understand-anything/knowledge-graph.json 生成 Markdown 知识库。
  *
  * Usage:
  *   node generate-knowledge-base.mjs [project-root] [--deterministic-only]
@@ -141,28 +141,35 @@ function serializableProfile(kb) {
   };
 }
 
+function statusLabel(status) {
+  if (status === 'complete') return '完整';
+  if (status === 'complete-with-warnings') return '完整但有警告';
+  if (status === 'incomplete') return '不完整';
+  return status;
+}
+
 function printCoverage(kb, outputRoot) {
-  console.log(`Knowledge base generated at ${outputRoot}`);
-  console.log(`Generated Markdown documents: ${kb.coverageReport.totalDocuments}`);
-  console.log(`Coverage status: ${kb.coverageReport.status}`);
-  console.log(`File document coverage: ${kb.coverageReport.fileDocumentCoverage.covered} / ${kb.coverageReport.fileDocumentCoverage.total}`);
-  console.log(`Function card coverage: ${kb.coverageReport.functionCardCoverage.covered} / ${kb.coverageReport.functionCardCoverage.total}`);
-  console.log(`Class card coverage: ${kb.coverageReport.classCardCoverage.covered} / ${kb.coverageReport.classCardCoverage.total}`);
-  if (kb.validation.warnings.length > 0) console.log(`Warnings: ${kb.validation.warnings.length}`);
+  console.log(`知识库已生成: ${outputRoot}`);
+  console.log(`生成 Markdown 文档数: ${kb.coverageReport.totalDocuments}`);
+  console.log(`覆盖状态: ${statusLabel(kb.coverageReport.status)}`);
+  console.log(`文件文档覆盖: ${kb.coverageReport.fileDocumentCoverage.covered} / ${kb.coverageReport.fileDocumentCoverage.total}`);
+  console.log(`函数卡片覆盖: ${kb.coverageReport.functionCardCoverage.covered} / ${kb.coverageReport.functionCardCoverage.total}`);
+  console.log(`类卡片覆盖: ${kb.coverageReport.classCardCoverage.covered} / ${kb.coverageReport.classCardCoverage.total}`);
+  if (kb.validation.warnings.length > 0) console.log(`警告数: ${kb.validation.warnings.length}`);
 }
 
 function loadGraph(core, projectRoot) {
   const { graphPath } = pathsFor(projectRoot);
   if (!existsSync(graphPath)) {
-    console.error(`No knowledge graph found at ${graphPath}`);
-    console.error('Run /understand first, then re-run /understand-kb.');
+    console.error(`未找到知识图谱: ${graphPath}`);
+    console.error('请先运行 /understand，再重新运行 /understand-kb。');
     process.exit(1);
   }
 
   const raw = readJson(graphPath);
   const validation = core.validateGraph(raw);
   if (!validation.success) {
-    console.error('knowledge-graph.json failed validation:');
+    console.error('knowledge-graph.json 校验失败:');
     for (const issue of validation.issues) {
       console.error(`- ${issue.path}: ${issue.message}`);
     }
@@ -208,9 +215,9 @@ function prepareFileDocs(core, projectRoot) {
   writeJson(join(intermediateRoot, 'file-doc-plan.json'), fileDocPlan);
   writeJson(join(intermediateRoot, 'file-doc-batches.json'), fileDocPlan.batches);
 
-  console.log(`Prepared file document batches: ${fileDocPlan.batches.length}`);
-  console.log(`File document tasks: ${fileDocPlan.tasks.length}`);
-  console.log(`Missing source files: ${fileDocPlan.tasks.filter((task) => !task.sourceSnapshot.exists).length}`);
+  console.log(`已准备文件文档批次: ${fileDocPlan.batches.length}`);
+  console.log(`文件文档任务数: ${fileDocPlan.tasks.length}`);
+  console.log(`缺失源码文件数: ${fileDocPlan.tasks.filter((task) => !task.sourceSnapshot.exists).length}`);
 }
 
 function readBatchOutputs(intermediateRoot, prefix, parser) {
@@ -223,7 +230,7 @@ function readBatchOutputs(intermediateRoot, prefix, parser) {
     const path = join(intermediateRoot, entry);
     const parsed = parser(readJson(path));
     if (!parsed.ok) {
-      console.error(`${entry} failed contract validation:`);
+      console.error(`${entry} 未通过契约校验:`);
       for (const error of parsed.errors) console.error(`- ${error}`);
       process.exit(1);
     }
@@ -255,8 +262,8 @@ function mergeFileDocs(core, projectRoot) {
   }
   for (const doc of merged.fileDocuments) writeDocument(outputRoot, doc);
 
-  console.log(`Accepted file documents: ${merged.acceptedFileWriterDocuments.length}`);
-  console.log(`File writer batches requiring retry: ${merged.retryPlan.fileBatchIndexes.length}`);
+  console.log(`已接受文件文档数: ${merged.acceptedFileWriterDocuments.length}`);
+  console.log(`需要重试的文件写作批次数: ${merged.retryPlan.fileBatchIndexes.length}`);
 }
 
 function prepareTopics(core, projectRoot) {
@@ -264,7 +271,7 @@ function prepareTopics(core, projectRoot) {
   const { intermediateRoot } = pathsFor(projectRoot);
   const acceptedPath = join(intermediateRoot, 'accepted-file-documents.json');
   if (!existsSync(acceptedPath)) {
-    console.error('No accepted file documents found. Run --merge-file-docs first.');
+    console.error('未找到已接受的文件文档。请先运行 --merge-file-docs。');
     process.exit(1);
   }
   const acceptedFileDocs = readJson(acceptedPath);
@@ -272,8 +279,8 @@ function prepareTopics(core, projectRoot) {
   writeJson(join(intermediateRoot, 'topic-plan.json'), topicPlan);
   writeJson(join(intermediateRoot, 'topic-batches.json'), topicPlan.batches);
 
-  console.log(`Prepared topic batches: ${topicPlan.batches.length}`);
-  console.log(`Topic documents planned: ${topicPlan.topics.length}`);
+  console.log(`已准备专题批次: ${topicPlan.batches.length}`);
+  console.log(`计划生成专题文档数: ${topicPlan.topics.length}`);
 }
 
 function finalizeKnowledgeBase(core, projectRoot, keepIntermediate) {
@@ -316,7 +323,7 @@ function finalizeKnowledgeBase(core, projectRoot, keepIntermediate) {
   };
 
   if (graph.project.gitCommitHash !== profile.graph.project.gitCommitHash) {
-    console.warn('Warning: graph metadata changed while finalizing.');
+    console.warn('警告: 生成最终知识库时图谱元数据发生变化。');
   }
   writeKnowledgeBase(outputRoot, kb, keepIntermediate);
   printCoverage(kb, outputRoot);
@@ -328,7 +335,7 @@ function printRetryPlan(projectRoot) {
     .map((name) => join(intermediateRoot, name))
     .filter((path) => existsSync(path));
   if (retryFiles.length === 0) {
-    console.log('No retry plan found.');
+    console.log('未找到重试计划。');
     return;
   }
   for (const path of retryFiles) {
@@ -354,7 +361,7 @@ async function main() {
   } else if (args.phase === 'retry') {
     printRetryPlan(args.projectRoot);
   } else {
-    console.error(`Unknown phase: ${args.phase}`);
+    console.error(`未知阶段: ${args.phase}`);
     process.exit(1);
   }
 }

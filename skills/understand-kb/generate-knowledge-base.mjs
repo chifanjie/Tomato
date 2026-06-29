@@ -27,6 +27,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 
@@ -100,9 +101,29 @@ function pathsFor(projectRoot) {
   };
 }
 
+function latestModifiedTimeMs(rootPath) {
+  if (!existsSync(rootPath)) return 0;
+
+  const stack = [rootPath];
+  let latest = 0;
+  while (stack.length > 0) {
+    const current = stack.pop();
+    const stats = statSync(current);
+    latest = Math.max(latest, stats.mtimeMs);
+    if (!stats.isDirectory()) continue;
+    for (const entry of readdirSync(current)) {
+      stack.push(join(current, entry));
+    }
+  }
+  return latest;
+}
+
 function ensureCoreBuilt() {
   const distPath = resolve(pluginRoot, 'packages/core/dist/index.js');
-  if (existsSync(distPath)) return;
+  const srcRoot = resolve(pluginRoot, 'packages/core/src');
+  const distMtime = existsSync(distPath) ? statSync(distPath).mtimeMs : 0;
+  const srcMtime = latestModifiedTimeMs(srcRoot);
+  if (distMtime > 0 && distMtime >= srcMtime) return;
   execFileSync('pnpm', ['--filter', '@understand-anything/core', 'build'], {
     cwd: pluginRoot,
     stdio: 'inherit',

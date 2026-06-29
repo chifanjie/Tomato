@@ -148,4 +148,28 @@ describe("knowledge-base queue", () => {
 
     expect(reclaimed[0].attempts).toBe(1);
   });
+
+  it("marks repeatedly expired leases as terminal once the retry budget is exhausted", () => {
+    const initial = buildFileDocQueue(fileDocPlanFixture(), "2026-06-29T00:00:00.000Z");
+    const firstLeased = leaseNextQueueEntry(initial, {
+      workerId: "file-writer-1",
+      now: "2026-06-29T00:01:00.000Z",
+    }).queue;
+    const firstReclaimed = reclaimExpiredLeases(firstLeased, {
+      now: "2026-06-29T01:30:00.000Z",
+      maxLeaseAgeMs: 30 * 60 * 1000,
+    });
+    const secondLeased = leaseNextQueueEntry(firstReclaimed, {
+      workerId: "file-writer-2",
+      now: "2026-06-29T02:00:00.000Z",
+    }).queue;
+    const secondReclaimed = reclaimExpiredLeases(secondLeased, {
+      now: "2026-06-29T03:30:00.000Z",
+      maxLeaseAgeMs: 30 * 60 * 1000,
+    });
+
+    expect(secondReclaimed[0].status).toBe("failed_terminal");
+    expect(secondReclaimed[0].attempts).toBe(2);
+    expect(secondReclaimed[0].workerId).toBeNull();
+  });
 });

@@ -108,9 +108,10 @@ export function reclaimExpiredLeases<T extends FileDocQueueEntry | TopicQueueEnt
     if (entry.status !== "leased" || !entry.leasedAt) return entry;
     const age = nowMs - Date.parse(entry.leasedAt);
     if (age <= options.maxLeaseAgeMs) return entry;
+    const status: QueueTaskStatus = entry.attempts >= 2 ? "failed_terminal" : "pending";
     return {
       ...entry,
-      status: "pending",
+      status,
       workerId: null,
       leasedAt: null,
       updatedAt: options.now,

@@ -86,6 +86,20 @@ describe("knowledge-base queue", () => {
     expect(second.leased?.attempts).toBe(2);
   });
 
+  it("marks a leased file-doc queue entry as succeeded", () => {
+    const initial = buildFileDocQueue(fileDocPlanFixture(), "2026-06-29T00:00:00.000Z");
+    const leased = leaseNextQueueEntry(initial, { workerId: "file-writer-1", now: "2026-06-29T00:01:00.000Z" });
+    const succeeded = markQueueEntrySucceeded(leased.queue, {
+      batchIndex: 1,
+      workerId: "file-writer-1",
+      now: "2026-06-29T00:02:00.000Z",
+    });
+
+    expect(succeeded[0].status).toBe("succeeded");
+    expect(succeeded[0].lastError).toBeNull();
+    expect(succeeded[0].workerId).toBe("file-writer-1");
+  });
+
   it("reclaims expired leases during resume", () => {
     const initial = buildFileDocQueue(fileDocPlanFixture(), "2026-06-29T00:00:00.000Z");
     const leased = leaseNextQueueEntry(initial, { workerId: "file-writer-1", now: "2026-06-29T00:01:00.000Z" }).queue;

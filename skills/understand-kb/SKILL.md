@@ -19,8 +19,9 @@ The command assumes `/understand` has already scanned the repository. It uses th
 
 2. Resolve `PARALLEL_LIMIT`.
    - If `$ARGUMENTS` contains `--parallel <n>`, only accept `1` or `2`.
-   - Otherwise use `2`.
-   - Prefer `1` or `2`; do not raise this just to make generation faster.
+   - Otherwise use `1`.
+   - Prefer `1` by default for quality and memory headroom; use `2` only when the user explicitly asks to trade more memory for speed.
+   - Do not raise this just to make generation faster.
 
 2.25. Resolve queue control flags.
    - If `$ARGUMENTS` contains `--resume`, pass `--resume` to every lease phase in this run.

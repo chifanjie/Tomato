@@ -32,6 +32,12 @@ The command assumes `/understand` has already scanned the repository. It uses th
    - Otherwise use the script default.
    - Do not run deterministic-only generation for large graphs unless the user explicitly asks and passes `--allow-large-deterministic`.
 
+2.75. Preserve quality without increasing fan-out.
+   - Keep `$PARALLEL_LIMIT` at `1` or `2`.
+   - Higher document quality should come from evidence packets, detailed writer prompts, and contract validation.
+   - Do not create extra ad-hoc writer workers to make the run appear faster.
+   - If a writer batch fails quality validation, retry the leased batch with the concrete validation reason.
+
 3. Check that `$PROJECT_ROOT/.understand-anything/knowledge-graph.json` exists.
    - If it does not exist, tell the user:
      ```text
@@ -178,6 +184,7 @@ The command assumes `/understand` has already scanned the repository. It uses th
     - Class card coverage from script output.
     - Business fact coverage from script output.
     - Business capability document coverage from script output.
+    - Quality validation pass count from script output.
 
 ## Output
 

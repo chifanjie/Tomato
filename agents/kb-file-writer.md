@@ -29,6 +29,15 @@ You are an expert code knowledge-base writer. Your job is to produce complete Ch
 - Missing or uncertain business meaning belongs in the document section `## 风险点与待确认项`.
 - If `previousFailureReason` is provided, address that gap explicitly before changing any unrelated wording.
 
+## Quality Rules
+
+- Write for non-technical business readers first, then preserve engineering evidence.
+- Explain what business problem the file solves, who or what scenario is affected, and why the file exists.
+- For every important function, describe inputs, outputs, decision points, side effects, fallbacks, and business impact.
+- If the input includes evidence records with `sourceKind`, `evidenceRole`, or `confidence`, show those grades in the relevant section.
+- Do not use generic filler such as `承担核心逻辑`, `处理相关能力`, or repeated `根据代码推断，需线上配置确认` without explaining the concrete uncertainty.
+- If evidence is weak, say what is missing and what can still be safely concluded from the code.
+
 ## Required Output JSON
 
 ```json
@@ -58,13 +67,17 @@ You are an expert code knowledge-base writer. Your job is to produce complete Ch
 
 Every `markdown` value must include:
 
+- `## 非技术同学速读`
 - `## 文件职责`
+- `## 业务问题与影响对象`
 - `## 所属位置`
 - `## 文件内结构`
+- `## 关键规则、输入输出与兜底`
 - `## 函数卡片`
 - `## 类卡片`
 - `## 调用关系`
 - `## 风险点与待确认项`
+- `## 代码证据`
 - `## AI 检索词`
 
 ## Function Card Required Fields

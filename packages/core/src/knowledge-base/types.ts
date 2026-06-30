@@ -68,6 +68,26 @@ export type BusinessFactKind =
   | "document"
   | "graph-node";
 
+export type BusinessEvidenceSourceKind =
+  | "production-logic"
+  | "configuration"
+  | "comment"
+  | "test"
+  | "documentation"
+  | "prompt-or-tooling-example"
+  | "graph-structure";
+
+export type BusinessEvidenceRole = "primary" | "supporting" | "example-only";
+export type BusinessEvidenceConfidence = "high" | "medium" | "low";
+
+export interface BusinessEvidenceSummary {
+  sourceKind: BusinessEvidenceSourceKind;
+  evidenceRole: BusinessEvidenceRole;
+  confidence: BusinessEvidenceConfidence;
+  businessMeaning: string;
+  riskFlags: string[];
+}
+
 export interface BusinessFact {
   id: string;
   kind: BusinessFactKind;
@@ -77,6 +97,11 @@ export interface BusinessFact {
   relatedNodeIds: string[];
   evidence: SourceEvidence[];
   score: number;
+  sourceKind: BusinessEvidenceSourceKind;
+  evidenceRole: BusinessEvidenceRole;
+  confidence: BusinessEvidenceConfidence;
+  businessMeaning: string;
+  riskFlags: string[];
 }
 
 export interface BusinessCapability {
@@ -87,6 +112,12 @@ export interface BusinessCapability {
   relatedNodeIds: string[];
   evidence: SourceEvidence[];
   score: number;
+  evidenceRole: BusinessEvidenceRole;
+  confidence: BusinessEvidenceConfidence;
+  sourceKindCounts: Partial<Record<BusinessEvidenceSourceKind, number>>;
+  primaryFactIds: string[];
+  supportingFactIds: string[];
+  exampleOnlyFactIds: string[];
 }
 
 export interface BusinessCapabilityProfile {

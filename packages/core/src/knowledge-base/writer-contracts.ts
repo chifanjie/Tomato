@@ -4,23 +4,29 @@ import type {
   TopicWriterBatchOutput,
   TopicWriterDocument,
 } from "./types.js";
+import { validateMarkdownQuality } from "./quality.js";
 
 export type ContractParseResult<T> =
   | { ok: true; value: T; errors: [] }
   | { ok: false; value?: undefined; errors: string[] };
 
 export const FILE_WRITER_REQUIRED_SECTIONS = [
+  "## 非技术同学速读",
   "## 文件职责",
+  "## 业务问题与影响对象",
   "## 所属位置",
   "## 文件内结构",
+  "## 关键规则、输入输出与兜底",
   "## 函数卡片",
   "## 类卡片",
   "## 调用关系",
   "## 风险点与待确认项",
+  "## 代码证据",
   "## AI 检索词",
 ] as const;
 
 export const TOPIC_WRITER_REQUIRED_SECTIONS = [
+  "## 非技术同学速读",
   "## 为什么关键",
   "## 在业务流程中的位置",
   "## 主要输入、输出、副作用",
@@ -145,6 +151,33 @@ function validateSourceEvidence(value: unknown, path: string, errors: string[]):
   }
 }
 
+function validStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function sourceEvidenceRefs(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!isRecord(item) || typeof item.filePath !== "string") return [];
+
+    const refs: string[] = [];
+    if (typeof item.nodeId === "string") {
+      refs.push(item.nodeId);
+    }
+    if (
+      Array.isArray(item.lineRange)
+      && item.lineRange.length === 2
+      && item.lineRange.every((line) => typeof line === "number" && Number.isFinite(line))
+    ) {
+      refs.push(`${item.filePath}:${item.lineRange[0]}-${item.lineRange[1]}`);
+    }
+    if (refs.length === 0) {
+      refs.push(item.filePath);
+    }
+    return refs;
+  });
+}
+
 function validateFileWriterDocument(value: unknown, index: number, errors: string[]): void {
   const path = `documents[${index}]`;
   if (!isRecord(value)) {
@@ -167,6 +200,17 @@ function validateFileWriterDocument(value: unknown, index: number, errors: strin
   requireString(value, "markdown", path, errors);
   requireSections(value.markdown, FILE_WRITER_REQUIRED_SECTIONS, `${path}.markdown`, errors);
   validateNoPlaceholderText(value.markdown, `${path}.markdown`, errors);
+  if (typeof value.markdown === "string") {
+    errors.push(
+      ...validateMarkdownQuality(value.markdown, {
+        path: `${path}.markdown`,
+        sections: FILE_WRITER_REQUIRED_SECTIONS,
+        sourceEvidenceRefs: sourceEvidenceRefs(value.sourceEvidence),
+        coveredFunctionNodeIds: validStringArray(value.coveredFunctionNodeIds),
+        coveredClassNodeIds: validStringArray(value.coveredClassNodeIds),
+      }),
+    );
+  }
 }
 
 function validateTopicWriterDocument(value: unknown, index: number, errors: string[]): void {
@@ -189,6 +233,15 @@ function validateTopicWriterDocument(value: unknown, index: number, errors: stri
   requireString(value, "markdown", path, errors);
   requireSections(value.markdown, TOPIC_WRITER_REQUIRED_SECTIONS, `${path}.markdown`, errors);
   validateNoPlaceholderText(value.markdown, `${path}.markdown`, errors);
+  if (typeof value.markdown === "string") {
+    errors.push(
+      ...validateMarkdownQuality(value.markdown, {
+        path: `${path}.markdown`,
+        sections: TOPIC_WRITER_REQUIRED_SECTIONS,
+        sourceEvidenceRefs: sourceEvidenceRefs(value.evidence),
+      }),
+    );
+  }
 }
 
 function validateCommonBatchShape(value: unknown, warningsPath: string, errors: string[]): value is Record<string, unknown> {

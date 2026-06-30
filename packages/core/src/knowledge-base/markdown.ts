@@ -389,6 +389,10 @@ export function renderDeterministicTopicWriterDocument(
     .map((item) => ({ filePath: item.filePath ?? sourceFile?.filePath ?? topic.sourceFileNodeId, lineRange: item.lineRange, nodeId: item.id }));
 
   const sections: Record<(typeof TOPIC_WRITER_REQUIRED_SECTIONS)[number], string> = {
+    "## 非技术同学速读": [
+      `这个主题用于说明 \`${topic.title}\` 在代码中的业务作用和改动影响。`,
+      `优先关注它覆盖的 ${topic.coveredNodeIds.length} 个代码节点、所在文件 \`${sourceFile?.filePath ?? node?.filePath ?? topic.sourceFileNodeId}\`，以及上下游调用变化对业务流程的影响。`,
+    ].join("\n"),
     "## 为什么关键": [
       `该主题围绕 \`${topic.topicNodeId}\` 展开。`,
       topic.reasons.length > 0 ? `入选原因: ${topic.reasons.map(reasonText).join("；")}。` : "入选原因来自图谱结构和文件文档重要节点标记。",

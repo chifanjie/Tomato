@@ -4,6 +4,7 @@ import {
   buildDocumentPlan,
   buildKnowledgeBaseProfile,
   generateKnowledgeBase,
+  sectionBody,
   TOPIC_WRITER_REQUIRED_SECTIONS,
 } from "../index.js";
 
@@ -330,6 +331,7 @@ describe("graph-to-knowledge-base", () => {
     for (const section of TOPIC_WRITER_REQUIRED_SECTIONS) {
       expect(topicDoc?.content).toContain(section);
     }
+    expect(sectionBody(topicDoc?.content ?? "", "## 非技术同学速读")).toContain("业务作用");
   });
 
   it("generates complete file documents and cards for every graph file/function/class", () => {

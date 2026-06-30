@@ -51,6 +51,27 @@ export function generateKnowledgeBase(
   const supportDocuments = renderKnowledgeBaseDocuments(profile, plan, fileDocPlan, topicPlan, merged);
   const businessDocuments = renderBusinessCapabilityDocuments(profile, businessCapabilityProfile);
   const preliminaryDocuments = [...supportDocuments, ...businessDocuments, ...merged.fileDocuments, ...merged.topicDocuments];
+  const initialCoverageReport = buildCoverageReport(
+    profile,
+    fileDocPlan,
+    topicPlan,
+    preliminaryDocuments,
+    validation,
+    merged.retryPlan,
+    businessCapabilityProfile,
+    [],
+  );
+  const initialFinalSupportDocuments = renderKnowledgeBaseDocuments(
+    profile,
+    plan,
+    fileDocPlan,
+    topicPlan,
+    merged,
+    initialCoverageReport,
+    validation,
+  );
+  const initialFinalDocuments = [...initialFinalSupportDocuments, ...businessDocuments, ...merged.fileDocuments, ...merged.topicDocuments]
+    .sort((a, b) => a.path.localeCompare(b.path) || a.title.localeCompare(b.title));
   const coverageReport = buildCoverageReport(
     profile,
     fileDocPlan,
@@ -59,6 +80,7 @@ export function generateKnowledgeBase(
     validation,
     merged.retryPlan,
     businessCapabilityProfile,
+    initialFinalDocuments,
   );
   const finalSupportDocuments = renderKnowledgeBaseDocuments(
     profile,

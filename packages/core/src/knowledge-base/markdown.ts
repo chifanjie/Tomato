@@ -709,6 +709,7 @@ export function buildCoverageReport(
   validation: CoverageValidationResult,
   retryPlan: RetryPlan,
   businessCapabilityProfile?: BusinessCapabilityProfile,
+  qualityDocuments: GeneratedDocument[] = documents,
 ): CoverageReport {
   const docsByCategory = documents.reduce((map, doc) => {
     const list = map.get(doc.category) ?? [];
@@ -801,7 +802,7 @@ export function buildCoverageReport(
   const evidenceWarnings = profile.evidenceGaps.map((gap) => `${gap.kind}: ${gap.message}`);
   const chineseFailures = documents.filter((doc) => !/[\u4e00-\u9fff]/.test(doc.content)).map((doc) => doc.path).sort();
   const placeholderFailures = documents.filter((doc) => PLACEHOLDER_RE.test(doc.content)).map((doc) => doc.path).sort();
-  const qualityValidation = summarizeMarkdownQuality(documents);
+  const qualityValidation = summarizeMarkdownQuality(qualityDocuments);
   const structuralErrors = [
     ...validation.errors,
     ...placeholderFailures.map((path) => `document contains placeholder text: ${path}`),
@@ -1180,7 +1181,9 @@ function renderCoverageReport(report: CoverageReport, validation: CoverageValida
   lines.push("");
   if (report.sourceReadCoverage.missing.length === 0) {
     lines.push("- 缺失源码文件: 无");
+    lines.push("- 读取结论: 所有计划内源码任务均有快照，可用于后续文件文档和证据核对。");
   } else {
+    lines.push(`- 读取结论: ${report.sourceReadCoverage.missing.length} 个源码任务缺失快照，相关文档只能依赖图谱结构。`);
     for (const nodeId of report.sourceReadCoverage.missing) lines.push(`- 缺失源码: ${nodeId}`);
   }
   lines.push("");
@@ -1195,6 +1198,9 @@ function renderCoverageReport(report: CoverageReport, validation: CoverageValida
     lines.push("- 警告: 无");
   } else {
     for (const warning of report.warnings) lines.push(`- 警告: ${diagnosticText(warning)}`);
+  }
+  if (report.errors.length === 0 && report.warnings.length === 0) {
+    lines.push("- 校验结论: 结构校验没有发现错误或警告，覆盖状态可按当前指标继续复核。");
   }
   lines.push("");
   lines.push("## 质量校验");

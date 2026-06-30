@@ -424,11 +424,16 @@ describe("graph-to-knowledge-base", () => {
     expect(kb.coverageReport.totalDocuments).toBe(kb.documents.length);
     expect(kb.documents.length).toBeGreaterThanOrEqual(kb.coverageReport.totalDocuments);
     expect(kb.coverageReport.qualityValidation.checked).toBe(kb.coverageReport.totalDocuments);
+    expect(kb.coverageReport.qualityValidation.failed).not.toContain("覆盖报告.md");
+    expect(kb.coverageReport.qualityValidation.warnings).not.toContain("document failed quality validation: 覆盖报告.md");
+    expect(kb.coverageReport.qualityValidation.warnings).not.toContain("document has generic filler text: 覆盖报告.md");
     expect(kb.coverageReport.fileDocumentCoverage).toEqual({ covered: 3, total: 3, missing: [] });
     expect(kb.coverageReport.functionCardCoverage).toEqual({ covered: 4, total: 4, missing: [] });
     expect(kb.coverageReport.classCardCoverage).toEqual({ covered: 1, total: 1, missing: [] });
 
     expect(report?.content).toContain(`总文档数: ${kb.documents.length}`);
+    expect(report?.content).toContain("## 质量校验");
+    expect(report?.content).not.toContain("本地代码事实: stable knowledge-base navigation document");
     expect(report?.content).toContain("文件文档覆盖: 3 / 3");
     expect(report?.content).toContain("函数卡片覆盖: 4 / 4");
     expect(report?.content).toContain("类卡片覆盖: 1 / 1");

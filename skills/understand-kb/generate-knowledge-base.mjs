@@ -608,7 +608,20 @@ function finalizeKnowledgeBase(core, projectRoot, keepIntermediate, maxSourceByt
   const supportDocuments = core.renderKnowledgeBaseDocuments(profile, plan, fileDocPlan, topicPlan, merged);
   const businessDocuments = core.renderBusinessCapabilityDocuments(profile, businessCapabilityProfile);
   const preliminaryDocuments = [...supportDocuments, ...businessDocuments, ...merged.fileDocuments, ...merged.topicDocuments];
-  const coverageReport = core.buildCoverageReport(profile, fileDocPlan, topicPlan, preliminaryDocuments, validation, merged.retryPlan, businessCapabilityProfile);
+  const initialCoverageReport = core.buildCoverageReport(profile, fileDocPlan, topicPlan, preliminaryDocuments, validation, merged.retryPlan, businessCapabilityProfile, []);
+  const initialFinalSupportDocuments = core.renderKnowledgeBaseDocuments(profile, plan, fileDocPlan, topicPlan, merged, initialCoverageReport, validation);
+  const initialFinalDocuments = [...initialFinalSupportDocuments, ...businessDocuments, ...merged.fileDocuments, ...merged.topicDocuments]
+    .sort((a, b) => a.path.localeCompare(b.path) || a.title.localeCompare(b.title));
+  const coverageReport = core.buildCoverageReport(
+    profile,
+    fileDocPlan,
+    topicPlan,
+    preliminaryDocuments,
+    validation,
+    merged.retryPlan,
+    businessCapabilityProfile,
+    initialFinalDocuments,
+  );
   const finalSupportDocuments = core.renderKnowledgeBaseDocuments(profile, plan, fileDocPlan, topicPlan, merged, coverageReport, validation);
   const documents = [...finalSupportDocuments, ...businessDocuments, ...merged.fileDocuments, ...merged.topicDocuments]
     .sort((a, b) => a.path.localeCompare(b.path) || a.title.localeCompare(b.title));

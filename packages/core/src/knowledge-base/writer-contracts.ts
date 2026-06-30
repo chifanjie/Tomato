@@ -160,7 +160,7 @@ function sourceEvidenceRefs(value: unknown): string[] {
   return value.flatMap((item) => {
     if (!isRecord(item) || typeof item.filePath !== "string") return [];
 
-    const refs: string[] = [];
+    const refs = [item.filePath, `\`${item.filePath}\``];
     if (typeof item.nodeId === "string") {
       refs.push(item.nodeId);
     }
@@ -170,11 +170,9 @@ function sourceEvidenceRefs(value: unknown): string[] {
       && item.lineRange.every((line) => typeof line === "number" && Number.isFinite(line))
     ) {
       refs.push(`${item.filePath}:${item.lineRange[0]}-${item.lineRange[1]}`);
+      refs.push(`\`${item.filePath}\`:${item.lineRange[0]}-${item.lineRange[1]}`);
     }
-    if (refs.length === 0) {
-      refs.push(item.filePath);
-    }
-    return refs;
+    return [...new Set(refs)];
   });
 }
 

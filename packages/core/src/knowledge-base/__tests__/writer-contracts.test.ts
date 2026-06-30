@@ -3,6 +3,7 @@ import {
   FILE_WRITER_REQUIRED_SECTIONS,
   parseFileWriterBatchOutput,
   parseTopicWriterBatchOutput,
+  summarizeMarkdownQuality,
   TOPIC_WRITER_REQUIRED_SECTIONS,
 } from "../index.js";
 
@@ -221,6 +222,82 @@ describe("writer contracts", () => {
     expect(result.errors).toContain("documents[0].markdown does not explain enough source evidence");
   });
 
+  it("rejects blank required section bodies", () => {
+    const output = completeFileOutput();
+    output.documents[0].markdown = output.documents[0].markdown.replace(
+      "## 文件职责\n`src/service/feed.ts` 承接 Feed 请求的核心组装逻辑：先读取候选内容，再调用排序函数，最后由 `FeedBuilder` 汇总为响应对象。",
+      "## 文件职责\n",
+    );
+
+    const result = parseFileWriterBatchOutput(output);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("documents[0].markdown section has too little detail: ## 文件职责");
+  });
+
+  it("rejects repeated low-variety generic filler", () => {
+    const output = completeFileOutput();
+    output.documents[0].markdown = [
+      "# src/service/feed.ts",
+      "",
+      ...FILE_WRITER_REQUIRED_SECTIONS.flatMap((section) => [
+        section,
+        "承担核心逻辑，处理相关能力。承担核心逻辑，处理相关能力。承担核心逻辑，处理相关能力。",
+        "",
+      ]),
+    ].join("\n");
+
+    const result = parseFileWriterBatchOutput(output);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("documents[0].markdown has too much generic filler text");
+  });
+
+  it("accepts file-path-only source evidence explanations", () => {
+    const output = completeFileOutput();
+    output.documents[0].markdown = output.documents[0].markdown.replace(
+      "- `function:src/service/feed.ts:BuildFeed` 位于 `src/service/feed.ts:30-90`，覆盖读取候选、排序和响应构建。",
+      "- `src/service/feed.ts` 覆盖读取候选、排序和响应构建。",
+    );
+
+    const result = parseFileWriterBatchOutput(output);
+
+    expect(result).toEqual({
+      ok: true,
+      value: output,
+      errors: [],
+    });
+  });
+
+  it("accepts backticked file path with line evidence explanations", () => {
+    const output = completeFileOutput();
+    output.documents[0].markdown = output.documents[0].markdown.replace(
+      "- `function:src/service/feed.ts:BuildFeed` 位于 `src/service/feed.ts:30-90`，覆盖读取候选、排序和响应构建。",
+      "- `src/service/feed.ts`:30-90 覆盖读取候选、排序和响应构建。",
+    );
+
+    const result = parseFileWriterBatchOutput(output);
+
+    expect(result).toEqual({
+      ok: true,
+      value: output,
+      errors: [],
+    });
+  });
+
+  it("rejects source evidence sections that only name a file without explanation", () => {
+    const output = completeFileOutput();
+    output.documents[0].markdown = output.documents[0].markdown.replace(
+      /## 代码证据\n[\s\S]*?\n\n## AI 检索词/,
+      "## 代码证据\n- `src/service/feed.ts`\n\n## AI 检索词",
+    );
+
+    const result = parseFileWriterBatchOutput(output);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("documents[0].markdown does not explain enough source evidence");
+  });
+
   it("rejects file documents that omit covered function ids from function cards", () => {
     const output = completeFileOutput();
     output.documents[0].markdown = output.documents[0].markdown.replace(
@@ -349,5 +426,35 @@ describe("writer contracts", () => {
 
     expect(result.ok).toBe(false);
     expect(result.errors).toContain("topics[0].evidence[0].filePath must be a string");
+  });
+
+  it("summarizes generated document quality from content fields", () => {
+    const summary = summarizeMarkdownQuality([
+      {
+        path: "主题文档/feed-ranking.md",
+        content: completeTopicMarkdown(),
+        sections: TOPIC_WRITER_REQUIRED_SECTIONS,
+        sourceEvidenceRefs: ["src/service/feed.ts"],
+      },
+      {
+        path: "主题文档/thin.md",
+        content: [
+          "# Thin topic",
+          "",
+          ...TOPIC_WRITER_REQUIRED_SECTIONS.flatMap((section) => [
+            section,
+            section === "## 代码证据" ? "`src/service/feed.ts`" : "承担核心逻辑，处理相关能力。",
+            "",
+          ]),
+        ].join("\n"),
+        sections: TOPIC_WRITER_REQUIRED_SECTIONS,
+        sourceEvidenceRefs: ["src/service/feed.ts"],
+      },
+    ]);
+
+    expect(summary.checked).toBe(2);
+    expect(summary.failed).toEqual(["主题文档/thin.md"]);
+    expect(summary.warnings).toContain("document has generic filler text: 主题文档/thin.md");
+    expect(summary.warnings).toContain("document failed quality validation: 主题文档/thin.md");
   });
 });

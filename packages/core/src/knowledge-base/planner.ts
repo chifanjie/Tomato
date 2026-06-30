@@ -13,7 +13,7 @@ import type {
   TopicCandidate,
   TopicTier,
 } from "./types.js";
-import { KB_PATHS, indexDocumentPath, moduleDocumentPath, slugPath, topicDocumentPath } from "./paths.js";
+import { KB_PATHS, businessFlowDocumentPath, indexDocumentPath, moduleDocumentPath, slugPath, topicDocumentPath } from "./paths.js";
 
 function addReason(map: Map<string, Set<string>>, nodeId: string, reason: string): void {
   const reasons = map.get(nodeId) ?? new Set<string>();
@@ -215,12 +215,24 @@ export function buildDocumentPlan(profile: ProjectProfile): DocumentPlan {
     addCoverage(nodeCoverage, coverageReasons, doc.coveredNodeIds, "overview", doc.reason);
   }
 
+  const flowNameCounts = new Map<string, number>();
+  for (const entry of profile.entryCandidates) {
+    const node = profile.indexes.nodesById.get(entry.nodeId);
+    const flowName = node?.name ?? entry.nodeId;
+    const key = slugPath(flowName);
+    flowNameCounts.set(key, (flowNameCounts.get(key) ?? 0) + 1);
+  }
+
   for (const entry of profile.entryCandidates) {
     const node = profile.indexes.nodesById.get(entry.nodeId);
     const title = `${node?.name ?? entry.nodeId} 业务流程`;
+    const flowName = node?.name ?? entry.nodeId;
+    const disambiguator = (flowNameCounts.get(slugPath(flowName)) ?? 0) > 1
+      ? node?.filePath ?? entry.nodeId
+      : undefined;
     const coveredNodeIds = collectFlowNodeIds(profile, entry.nodeId);
     const doc = plannedDoc(
-      `业务流程/${slugPath(node?.name ?? entry.nodeId)}.md`,
+      businessFlowDocumentPath(flowName, disambiguator),
       title,
       "flow",
       coveredNodeIds,

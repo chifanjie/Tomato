@@ -4,6 +4,8 @@ import type {
   CoverageRatio,
   CoverageValidationResult,
   BusinessCapabilityProfile,
+  BusinessEvidenceRole,
+  BusinessFact,
   DocumentPlan,
   FileDocPlan,
   FileDocTask,
@@ -502,10 +504,113 @@ function businessCapabilityDocumentPath(title: string, id: string): string {
   return `业务能力/${safeCapabilityPathPart(title || id)}.md`;
 }
 
+const EVIDENCE_SUMMARY_GROUPS: Array<{
+  role: BusinessEvidenceRole;
+  title: string;
+  path: string;
+  readerSummary: string;
+  usage: string;
+}> = [
+  {
+    role: "primary",
+    title: "生产主证据汇总",
+    path: "业务能力/生产主证据汇总.md",
+    readerSummary: "这一页汇总 production-logic 和 configuration 等主证据，帮助读者优先确认哪些业务能力真正落在生产逻辑或配置里。",
+    usage: "主证据最适合用于判断线上规则、修改风险和回归测试优先级。",
+  },
+  {
+    role: "supporting",
+    title: "支撑证据汇总",
+    path: "业务能力/支撑证据汇总.md",
+    readerSummary: "这一页汇总代码注释、测试样例、设计文档等支撑证据，帮助读者理解业务术语和规则意图。",
+    usage: "支撑证据可以辅助解释业务含义，但需要结合生产逻辑或配置才能确认线上行为。",
+  },
+  {
+    role: "example-only",
+    title: "示例证据汇总",
+    path: "业务能力/示例证据汇总.md",
+    readerSummary: "这一页汇总只出现在 Prompt、工具样例或抽取示例里的业务词，避免这些词被误认为已经有生产规则支撑。",
+    usage: "示例证据适合保留业务词汇线索，但不能单独作为上线规则或产品策略依据。",
+  },
+];
+
 function evidenceLocationText(evidence: { filePath: string; lineRange?: [number, number]; nodeId?: string }): string {
   const line = evidence.lineRange ? `:${evidence.lineRange.join("-")}` : "";
   const node = evidence.nodeId ? `（${evidence.nodeId}）` : "";
   return `\`${evidence.filePath}\`${line}${node}`;
+}
+
+function renderEvidenceSummaryDocument(
+  group: (typeof EVIDENCE_SUMMARY_GROUPS)[number],
+  facts: BusinessFact[],
+): GeneratedDocument {
+  const roleFacts = facts.filter((fact) => fact.evidenceRole === group.role);
+  const keywords = [...new Set(roleFacts.flatMap((fact) => fact.keywords))].sort();
+  const coveredNodeIds = [...new Set(roleFacts.flatMap((fact) => fact.relatedNodeIds))].sort();
+  const sourceKindCounts = roleFacts.reduce((counts, fact) => {
+    counts.set(fact.sourceKind, (counts.get(fact.sourceKind) ?? 0) + 1);
+    return counts;
+  }, new Map<string, number>());
+  const sourceKindText = [...sourceKindCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([kind, count]) => `${kind}: ${count}`)
+    .join("；") || "当前没有该等级证据";
+  const representativeFacts = roleFacts.slice(0, 20);
+  const lines = [
+    `# ${group.title}`,
+    "",
+    "## 非技术同学速读",
+    "",
+    group.readerSummary,
+    `当前共识别 ${roleFacts.length} 条 ${evidenceRoleLabel(group.role)}，覆盖 ${coveredNodeIds.length} 个图谱节点。${group.usage}`,
+    "",
+    "## 包含哪些证据",
+    "",
+    `- 证据等级: ${evidenceRoleLabel(group.role)}`,
+    `- 来源类型分布: ${sourceKindText}`,
+    `- 代表性关键词: ${keywords.slice(0, 30).join("、") || "当前没有关键词"}`,
+    "",
+    "## 代表性证据",
+    "",
+    "| 来源类型 | 事实 | 证据位置 | 业务含义 |",
+    "|---|---|---|---|",
+  ];
+
+  for (const fact of representativeFacts) {
+    lines.push(
+      `| ${fact.sourceKind} | ${fact.title} | ${fact.evidence.map(evidenceLocationText).join("<br>") || "未记录源码位置"} | ${fact.businessMeaning || fact.summary} |`,
+    );
+  }
+  if (representativeFacts.length === 0) {
+    lines.push("| 无 | 当前没有这一证据等级的事实 | 无 | 该页仍保留，用于说明本次知识库没有识别到对应证据等级，避免读者误判证据缺口。 |");
+  }
+
+  lines.push("");
+  lines.push("## 阅读建议");
+  lines.push("");
+  lines.push(group.usage);
+  lines.push(group.role === "primary"
+    ? "阅读业务能力时应优先查看这一组证据，因为它最接近真实执行路径。"
+    : "阅读业务能力时应把这一组证据作为解释材料，再回到生产逻辑、配置和运行数据中确认。");
+  lines.push("");
+  lines.push("## 代码证据");
+  lines.push("");
+  const evidenceItems = roleFacts.flatMap((fact) => fact.evidence).slice(0, 30);
+  for (const evidence of evidenceItems) {
+    lines.push(`- ${evidenceLocationText(evidence)}${evidence.excerpt ? `：${evidence.excerpt}` : ""}`);
+  }
+  if (evidenceItems.length === 0) {
+    lines.push("- 当前没有可列出的源码位置；这说明对应证据等级在本次图谱和源码快照中没有命中。");
+  }
+
+  return {
+    path: group.path,
+    title: group.title,
+    category: "business-capability",
+    coveredNodeIds,
+    representedEdgeIds: [],
+    content: lines.join("\n"),
+  };
 }
 
 export function renderBusinessCapabilityDocuments(
@@ -538,6 +643,10 @@ export function renderBusinessCapabilityDocuments(
   indexLines.push("");
   indexLines.push("## 证据分组");
   indexLines.push("");
+  for (const group of EVIDENCE_SUMMARY_GROUPS) {
+    indexLines.push(`- [${group.title}](${group.path}): ${group.readerSummary}`);
+  }
+  indexLines.push("");
   indexLines.push("| 业务能力 | 证据等级 | 可信度 | 主证据数 | 支撑证据数 | 示例证据数 | 关键词 |");
   indexLines.push("|---|---|---|---:|---:|---:|---|");
   for (const capability of businessCapabilityProfile.capabilities) {
@@ -559,6 +668,9 @@ export function renderBusinessCapabilityDocuments(
       representedEdgeIds: [],
       content: indexLines.join("\n"),
     },
+    ...EVIDENCE_SUMMARY_GROUPS.map((group) =>
+      renderEvidenceSummaryDocument(group, businessCapabilityProfile.facts)
+    ),
   ];
 
   for (const capability of businessCapabilityProfile.capabilities) {

@@ -282,10 +282,59 @@ describe("graph-to-knowledge-base", () => {
     expect(basePlan.topicCandidates.map((candidate) => candidate.nodeId)).toContain(
       "function:src/api/routes.ts:HandleFeedRequest",
     );
+    expect(basePlan.documents.some((doc) => doc.path === "业务流程/HandleFeedRequest.md")).toBe(true);
     expect(expandedPlan.topicCandidates.map((candidate) => candidate.nodeId)).toContain(
       "function:src/api/routes.ts:HandleAdminFeedRequest",
     );
     expect(expandedTopicCount).toBeGreaterThan(baseTopicCount);
+  });
+
+  it("keeps entry flow document paths unique when entry functions share a name", () => {
+    const graph = sampleGraph();
+    for (const name of ["alpha", "beta"]) {
+      const filePath = `src/cmd/${name}/main.ts`;
+      graph.nodes.push(
+        {
+          id: `file:${filePath}`,
+          type: "file",
+          name: "main.ts",
+          filePath,
+          summary: `${name} command entrypoint`,
+          tags: ["cli"],
+          complexity: "moderate",
+        },
+        {
+          id: `function:${filePath}:main`,
+          type: "function",
+          name: "main",
+          filePath,
+          lineRange: [1, 12],
+          summary: `${name} command main entrypoint`,
+          tags: ["entry"],
+          complexity: "moderate",
+        },
+      );
+      graph.edges.push({
+        source: `file:${filePath}`,
+        target: `function:${filePath}:main`,
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      });
+    }
+
+    const plan = buildDocumentPlan(buildKnowledgeBaseProfile(graph));
+    const flowPaths = plan.documents
+      .filter((doc) => doc.category === "flow")
+      .map((doc) => doc.path);
+
+    expect(flowPaths.filter((path) => path.includes("main"))).toHaveLength(2);
+    expect(new Set(flowPaths).size).toBe(flowPaths.length);
+
+    const kb = generateKnowledgeBase(graph);
+    const generatedPaths = kb.documents.map((doc) => doc.path);
+    expect(new Set(generatedPaths).size).toBe(generatedPaths.length);
+    expect(kb.coverageReport.totalDocuments).toBe(generatedPaths.length);
   });
 
   it("selects topic documents from project signals without a fixed count", () => {

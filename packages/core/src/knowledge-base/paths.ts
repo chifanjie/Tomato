@@ -31,6 +31,12 @@ export function topicDocumentPath(filePath: string, nodeName: string): string {
   return `${KB_PATHS.topicDir}/${slugPath(filePath)}-${slugPath(nodeName)}.md`;
 }
 
+export function businessFlowDocumentPath(nodeName: string, disambiguator?: string): string {
+  const baseName = slugPath(nodeName);
+  if (!disambiguator) return `业务流程/${baseName}.md`;
+  return `业务流程/${slugPath(disambiguator)}-${baseName}.md`;
+}
+
 export function moduleDocumentPath(layerName: string): string {
   return `${KB_PATHS.moduleDir}/${slugPath(layerName)}.md`;
 }

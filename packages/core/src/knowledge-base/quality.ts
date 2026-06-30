@@ -12,6 +12,10 @@ export interface MarkdownQualitySummary {
   warnings: string[];
 }
 
+export interface MarkdownQualitySummaryOptions {
+  sections?: readonly string[];
+}
+
 export interface MarkdownQualityDocument {
   path?: string;
   content?: string;
@@ -151,7 +155,14 @@ export function validateMarkdownQuality(markdown: string, options: MarkdownQuali
   return errors;
 }
 
-export function summarizeMarkdownQuality(documents: readonly MarkdownQualityDocument[]): MarkdownQualitySummary {
+function markdownSections(markdown: string): string[] {
+  return [...markdown.matchAll(/^##\s+.+$/gm)].map((match) => match[0].trim());
+}
+
+export function summarizeMarkdownQuality(
+  documents: readonly MarkdownQualityDocument[],
+  options: MarkdownQualitySummaryOptions = {},
+): MarkdownQualitySummary {
   const summary: MarkdownQualitySummary = {
     checked: 0,
     failed: [],
@@ -164,7 +175,7 @@ export function summarizeMarkdownQuality(documents: readonly MarkdownQualityDocu
     const markdown = document.content ?? document.markdown ?? "";
     const errors = validateMarkdownQuality(markdown, {
       path,
-      sections: document.sections ?? [],
+      sections: document.sections ?? options.sections ?? markdownSections(markdown),
       sourceEvidenceRefs: document.sourceEvidenceRefs,
       coveredFunctionNodeIds: document.coveredFunctionNodeIds,
       coveredClassNodeIds: document.coveredClassNodeIds,

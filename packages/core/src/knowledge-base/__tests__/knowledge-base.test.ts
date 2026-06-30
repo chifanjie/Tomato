@@ -3,6 +3,7 @@ import type { KnowledgeGraph } from "../../types.js";
 import {
   buildDocumentPlan,
   buildKnowledgeBaseProfile,
+  FILE_WRITER_REQUIRED_SECTIONS,
   generateKnowledgeBase,
   sectionBody,
   TOPIC_WRITER_REQUIRED_SECTIONS,
@@ -351,6 +352,13 @@ describe("graph-to-knowledge-base", () => {
     for (const node of graph.nodes.filter((item) => item.type === "file")) {
       const doc = kb.documents.find((item) => item.path.startsWith("文件文档/") && item.coveredNodeIds.includes(node.id));
       expect(doc?.content).toContain(`# ${node.filePath} 文件知识文档`);
+      for (const section of FILE_WRITER_REQUIRED_SECTIONS) {
+        expect(doc?.content).toContain(section);
+      }
+      expect(sectionBody(doc?.content ?? "", "## 非技术同学速读")).toContain("快速理解");
+      expect(sectionBody(doc?.content ?? "", "## 业务问题与影响对象")).toContain(node.filePath ?? node.id);
+      expect(sectionBody(doc?.content ?? "", "## 关键规则、输入输出与兜底")).toContain("输入");
+      expect(sectionBody(doc?.content ?? "", "## 代码证据")).toContain(node.filePath ?? node.id);
     }
     for (const node of graph.nodes.filter((item) => item.type === "function")) {
       const parentDoc = kb.documents.find((item) => item.path.startsWith("文件文档/") && item.coveredNodeIds.includes(node.id));

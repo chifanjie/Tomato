@@ -315,6 +315,17 @@ export function renderDeterministicFileWriterDocument(profile: ProjectProfile, t
     .sort();
   const functionCards = task.functionNodeIds.map((nodeId) => renderFunctionCard(profile, task, nodeId));
   const classCards = task.classNodeIds.map((nodeId) => renderClassCard(profile, task, nodeId));
+  const codeEvidenceLines = [
+    `- 文件证据: \`${task.filePath}\` 说明本文档覆盖的源码文件位置和模块边界。`,
+    ...task.functionNodeIds.map((nodeId) => {
+      const node = nodeOf(profile, nodeId);
+      return `- 函数证据: \`${nodeId}\` 位于 ${lineRef(node ?? {}, task.filePath)}，用于核对函数卡片和调用关系。`;
+    }),
+    ...task.classNodeIds.map((nodeId) => {
+      const node = nodeOf(profile, nodeId);
+      return `- 类证据: \`${nodeId}\` 位于 ${lineRef(node ?? {}, task.filePath)}，用于核对类卡片和结构说明。`;
+    }),
+  ];
 
   return {
     fileNodeId: task.fileNodeId,
@@ -329,8 +340,16 @@ export function renderDeterministicFileWriterDocument(profile: ProjectProfile, t
     markdown: [
       `# ${task.filePath} 文件知识文档`,
       "",
+      "## 非技术同学速读",
+      `快速理解: \`${task.filePath}\` 是当前知识库中的文件级文档，重点看它负责什么、包含哪些函数或类，以及改动后会影响哪些调用关系。`,
+      "",
       "## 文件职责",
       nodeSummary(nodeOf(profile, task.fileNodeId), "图谱中存在该文件，但没有摘要。"),
+      "",
+      "## 业务问题与影响对象",
+      `- 业务问题: \`${task.filePath}\` 需要说明本文件承载的代码职责、结构边界和调用影响，方便业务和工程一起判断改动范围。`,
+      `- 影响对象: ${[...task.functionNodeIds, ...task.classNodeIds].map((nodeId) => nodeOf(profile, nodeId)?.name ?? nodeId).join(", ") || "当前文件自身和相关调用方"}`,
+      `- 调用影响: 上游关系 ${task.incomingEdgeIds.length} 个，下游关系 ${task.outgoingEdgeIds.length} 个，修改时需要同步核对这些关系是否仍成立。`,
       "",
       "## 所属位置",
       `- 所属层: ${task.layerId ?? "未分层"}`,
@@ -342,6 +361,13 @@ export function renderDeterministicFileWriterDocument(profile: ProjectProfile, t
       `- 函数总数: ${task.functionNodeIds.length}`,
       `- 类总数: ${task.classNodeIds.length}`,
       `- 关键函数或类: ${importantNodeIds.map((nodeId) => nodeOf(profile, nodeId)?.name ?? nodeId).join(", ") || "无"}`,
+      "",
+      "## 关键规则、输入输出与兜底",
+      `- 输入: 来自上游调用、导入或包含关系的请求、数据对象和模块依赖，共 ${task.incomingEdgeIds.length} 条上游关系需要核对。`,
+      `- 输出: 本文件通过函数、类或导出能力影响下游调用对象，共 ${task.outgoingEdgeIds.length} 条下游关系需要核对。`,
+      task.sourceSnapshot.exists
+        ? "- 兜底: 源文件可读取时，以源码快照、函数卡片和类卡片作为判断依据；线上数据、配置和运行时参数仍需结合实际环境确认。"
+        : "- 兜底: 源文件当前缺失，只能根据图谱关系保留不完整文档，并在恢复源码后重新生成。",
       "",
       "## 函数卡片",
       functionCards.join("\n\n") || "本文件没有图谱函数节点。",
@@ -356,6 +382,9 @@ export function renderDeterministicFileWriterDocument(profile: ProjectProfile, t
       task.sourceSnapshot.exists
         ? "- 运行时配置、数据内容和线上流量路径需要外部确认。根据代码推断，需线上配置确认"
         : "- 源文件缺失，当前文档只能基于图谱生成，最终状态必须为不完整。",
+      "",
+      "## 代码证据",
+      codeEvidenceLines.join("\n"),
       "",
       "## AI 检索词",
       [task.filePath, task.fileNodeId, ...task.functionNodeIds, ...task.classNodeIds].join(", "),

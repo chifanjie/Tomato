@@ -457,4 +457,28 @@ describe("writer contracts", () => {
     expect(summary.warnings).toContain("document has generic filler text: 主题文档/thin.md");
     expect(summary.warnings).toContain("document failed quality validation: 主题文档/thin.md");
   });
+
+  it("summarizes generated document quality by inferring markdown sections", () => {
+    const summary = summarizeMarkdownQuality([
+      {
+        path: "generated/thin.md",
+        content: [
+          "# Generated thin document",
+          "",
+          "## 非技术同学速读",
+          "这段内容足够说明给非技术同学阅读的重点。",
+          "",
+          "## 空章节",
+          "",
+          "## 代码证据",
+          "`src/service/feed.ts` 覆盖排序流程和候选响应构建。",
+        ].join("\n"),
+        sourceEvidenceRefs: ["src/service/feed.ts"],
+      },
+    ]);
+
+    expect(summary.checked).toBe(1);
+    expect(summary.failed).toEqual(["generated/thin.md"]);
+    expect(summary.warnings).toContain("document failed quality validation: generated/thin.md");
+  });
 });

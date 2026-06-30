@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { KnowledgeGraph } from "../../types.js";
 import {
   buildDocumentPlan,
+  buildFileDocPlan,
   buildKnowledgeBaseProfile,
   FILE_WRITER_REQUIRED_SECTIONS,
   generateKnowledgeBase,
+  renderDeterministicFileWriterDocument,
   sectionBody,
   TOPIC_WRITER_REQUIRED_SECTIONS,
+  validateMarkdownQuality,
 } from "../index.js";
 
 function sampleGraph(extraEntry = false): KnowledgeGraph {
@@ -378,6 +381,33 @@ describe("graph-to-knowledge-base", () => {
         expect(parentDoc?.content).toContain(node.lineRange.join("-"));
       }
     }
+  });
+
+  it("renders deterministic file documents that pass shared quality validation", () => {
+    const profile = buildKnowledgeBaseProfile(sampleGraph());
+    const filePlan = buildFileDocPlan(profile, {
+      sourceFiles: {
+        "src/service/feed.ts": [
+          "export function BuildFeed() { return rankCandidates([]); }",
+          "function rankCandidates(items) { return items; }",
+        ].join("\n"),
+      },
+    });
+    const task = filePlan.tasks.find((item) => item.filePath === "src/service/feed.ts");
+    expect(task).toBeDefined();
+
+    const document = renderDeterministicFileWriterDocument(profile, task!);
+    const errors = validateMarkdownQuality(document.markdown, {
+      path: "documents[0].markdown",
+      sections: FILE_WRITER_REQUIRED_SECTIONS,
+      sourceEvidenceRefs: [task!.filePath],
+      coveredFunctionNodeIds: task!.functionNodeIds,
+      coveredClassNodeIds: task!.classNodeIds,
+    });
+
+    expect(task!.functionNodeIds.length).toBeGreaterThan(1);
+    expect(task!.classNodeIds).toHaveLength(0);
+    expect(errors).toEqual([]);
   });
 
   it("reports actual document counts and coverage status", () => {

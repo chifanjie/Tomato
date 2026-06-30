@@ -173,13 +173,17 @@ export function summarizeMarkdownQuality(
     summary.checked += 1;
     const path = document.path ?? `documents[${index}]`;
     const markdown = document.content ?? document.markdown ?? "";
+    const sections = document.sections ?? options.sections ?? markdownSections(markdown);
     const errors = validateMarkdownQuality(markdown, {
       path,
-      sections: document.sections ?? options.sections ?? markdownSections(markdown),
+      sections,
       sourceEvidenceRefs: document.sourceEvidenceRefs,
       coveredFunctionNodeIds: document.coveredFunctionNodeIds,
       coveredClassNodeIds: document.coveredClassNodeIds,
     });
+    if (sections.length === 0) {
+      errors.push(`${path} has no substantive markdown sections`);
+    }
     if (hasGenericFillerText(markdown)) {
       summary.warnings.push(`document has generic filler text: ${path}`);
     }

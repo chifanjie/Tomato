@@ -481,4 +481,16 @@ describe("writer contracts", () => {
     expect(summary.failed).toEqual(["generated/thin.md"]);
     expect(summary.warnings).toContain("document failed quality validation: generated/thin.md");
   });
+
+  it("summarizes empty and title-only generated documents as failed quality validation", () => {
+    const summary = summarizeMarkdownQuality([
+      { path: "generated/empty.md", content: "" },
+      { path: "generated/title-only.md", content: "# Title only" },
+    ]);
+
+    expect(summary.checked).toBe(2);
+    expect(summary.failed).toEqual(["generated/empty.md", "generated/title-only.md"]);
+    expect(summary.warnings).toContain("document failed quality validation: generated/empty.md");
+    expect(summary.warnings).toContain("document failed quality validation: generated/title-only.md");
+  });
 });

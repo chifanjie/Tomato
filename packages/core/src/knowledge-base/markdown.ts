@@ -167,12 +167,12 @@ function tagText(node: GraphNode | undefined): string {
 function nodeSummary(node: GraphNode | undefined, fallback = "图谱没有提供摘要。"): string {
   if (!node) return `本地代码事实: ${fallback}`;
   if (hasChinese(node.summary)) return node.summary;
-  return `本地代码事实: 图谱记录了 ${node.name} 节点；根据名称、标签和关系推断，它与 ${tagText(node)} 相关。根据代码推断，需线上配置确认`;
+  return `本地代码事实: 图谱记录了 ${node.name} 节点；根据名称、标签和关系推断，它与 ${tagText(node)} 相关，运行时配置和线上数据需要结合环境核对。`;
 }
 
 function layerDescription(description: string, layerName: string): string {
   if (hasChinese(description)) return description;
-  return `本地代码事实: 图谱将该层命名为 ${layerName}；该层职责需要结合文件和函数索引确认。根据代码推断，需线上配置确认`;
+  return `本地代码事实: 图谱将该层命名为 ${layerName}；该层职责需要结合文件和函数索引确认，运行时边界需要结合部署环境核对。`;
 }
 
 function projectDescription(profile: ProjectProfile): string {
@@ -284,11 +284,11 @@ function renderFunctionCard(profile: ProjectProfile, task: FileDocTask, nodeId: 
     `- 节点 ID: \`${nodeId}\``,
     `- 位置: ${lineRef(node ?? {}, task.filePath)}`,
     `- 职责: ${nodeSummary(node)}`,
-    `- 输入/依赖: ${incoming.map((edge) => nodeLabel(profile, edge.source)).join(", ") || "未在图谱中识别"}`,
-    `- 输出/副作用: ${outgoing.map((edge) => nodeLabel(profile, edge.target)).join(", ") || "未在图谱中识别"}`,
+    `- 输入/依赖: ${incoming.map((edge) => nodeLabel(profile, edge.source)).join(", ") || "图谱未记录明确输入依赖，需结合源码调用点核对。"}`,
+    `- 输出/副作用: ${outgoing.map((edge) => nodeLabel(profile, edge.target)).join(", ") || "图谱未记录明确输出对象，需结合返回值和副作用核对。"}`,
     `- 上游调用: ${incoming.filter((edge) => edge.type === "calls").map((edge) => nodeLabel(profile, edge.source)).join(", ") || "无"}`,
     `- 下游调用: ${outgoing.filter((edge) => edge.type === "calls").map((edge) => nodeLabel(profile, edge.target)).join(", ") || "无"}`,
-    `- 业务含义: 根据名称、标签和调用关系推断，该函数参与 ${node?.tags.join("、") || "当前文件职责"}。根据代码推断，需线上配置确认`,
+    `- 业务含义: 根据名称、标签和调用关系推断，该函数参与 ${node?.tags.join("、") || "当前文件职责"}，真实业务口径需要结合调用场景确认。`,
     "- 注意事项: 修改前检查调用关系索引和相关测试。",
     `- 代码证据: ${lineRef(node ?? {}, task.filePath)}`,
   ].join("\n");
@@ -303,7 +303,7 @@ function renderClassCard(profile: ProjectProfile, task: FileDocTask, nodeId: str
     `- 节点 ID: \`${nodeId}\``,
     `- 位置: ${lineRef(node ?? {}, task.filePath)}`,
     `- 职责: ${nodeSummary(node)}`,
-    `- 关联入口/依赖: ${[...incoming, ...outgoing].map((edge) => edge.source === nodeId ? nodeLabel(profile, edge.target) : nodeLabel(profile, edge.source)).join(", ") || "未在图谱中识别"}`,
+    `- 关联入口/依赖: ${[...incoming, ...outgoing].map((edge) => edge.source === nodeId ? nodeLabel(profile, edge.target) : nodeLabel(profile, edge.source)).join(", ") || "图谱未记录明确关联对象，需结合构造和调用位置核对。"}`,
     `- 代码证据: ${lineRef(node ?? {}, task.filePath)}`,
   ].join("\n");
 }
@@ -370,17 +370,17 @@ export function renderDeterministicFileWriterDocument(profile: ProjectProfile, t
         : "- 兜底: 源文件当前缺失，只能根据图谱关系保留不完整文档，并在恢复源码后重新生成。",
       "",
       "## 函数卡片",
-      functionCards.join("\n\n") || "本文件没有图谱函数节点。",
+      functionCards.join("\n\n") || "本文件当前没有图谱函数节点；阅读时应重点核对文件职责、类卡片和调用关系，确认是否存在未被解析的导出函数或动态定义。",
       "",
       "## 类卡片",
-      classCards.join("\n\n") || "本文件没有图谱类节点。",
+      classCards.join("\n\n") || "本文件当前没有图谱类节点；阅读时应重点核对函数卡片、文件结构和源码导出，确认是否存在未被解析的类或构造对象。",
       "",
       "## 调用关系",
       representedEdgeIds.map((id) => `- ${id}`).join("\n") || "- 图谱未记录调用、导入或包含关系。",
       "",
       "## 风险点与待确认项",
       task.sourceSnapshot.exists
-        ? "- 运行时配置、数据内容和线上流量路径需要外部确认。根据代码推断，需线上配置确认"
+        ? "- 运行时配置、数据内容和线上流量路径不会完全体现在本地图谱中，修改前需要结合部署环境、调用方和测试结果确认。"
         : "- 源文件缺失，当前文档只能基于图谱生成，最终状态必须为不完整。",
       "",
       "## 代码证据",

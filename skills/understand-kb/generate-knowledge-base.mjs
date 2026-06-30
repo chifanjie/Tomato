@@ -349,6 +349,10 @@ function printCoverage(kb, outputRoot) {
   console.log(`类卡片覆盖: ${kb.coverageReport.classCardCoverage.covered} / ${kb.coverageReport.classCardCoverage.total}`);
   console.log(`业务事实覆盖: ${kb.coverageReport.businessFactCoverage.covered} / ${kb.coverageReport.businessFactCoverage.total}`);
   console.log(`业务能力文档: ${kb.coverageReport.businessCapabilityCoverage.covered} / ${kb.coverageReport.businessCapabilityCoverage.total}`);
+  if (kb.coverageReport.qualityValidation) {
+    const passed = kb.coverageReport.qualityValidation.checked - kb.coverageReport.qualityValidation.failed.length;
+    console.log(`质量校验: ${passed} / ${kb.coverageReport.qualityValidation.checked}`);
+  }
   if (kb.validation.warnings.length > 0) console.log(`警告数: ${kb.validation.warnings.length}`);
 }
 

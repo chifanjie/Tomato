@@ -422,6 +422,8 @@ describe("graph-to-knowledge-base", () => {
 
     expect(report).toBeDefined();
     expect(kb.coverageReport.totalDocuments).toBe(kb.documents.length);
+    expect(kb.documents.length).toBeGreaterThanOrEqual(kb.coverageReport.totalDocuments);
+    expect(kb.coverageReport.qualityValidation.checked).toBe(kb.coverageReport.totalDocuments);
     expect(kb.coverageReport.fileDocumentCoverage).toEqual({ covered: 3, total: 3, missing: [] });
     expect(kb.coverageReport.functionCardCoverage).toEqual({ covered: 4, total: 4, missing: [] });
     expect(kb.coverageReport.classCardCoverage).toEqual({ covered: 1, total: 1, missing: [] });

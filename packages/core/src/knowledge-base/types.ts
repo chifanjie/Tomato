@@ -349,6 +349,12 @@ export interface CoverageValidationResult {
   warnings: string[];
 }
 
+export interface DocumentQualityValidation {
+  checked: number;
+  failed: string[];
+  warnings: string[];
+}
+
 export interface CoverageReport {
   totalDocuments: number;
   documentCounts: Record<KnowledgeBaseDocumentCategory, number>;
@@ -370,6 +376,7 @@ export interface CoverageReport {
   topicBatches: { total: number; passed: number; retry: number };
   chineseValidation: { checked: number; failed: string[] };
   placeholderValidation: { checked: number; failed: string[] };
+  qualityValidation: DocumentQualityValidation;
   warnings: string[];
   errors: string[];
   status: KnowledgeBaseStatus;

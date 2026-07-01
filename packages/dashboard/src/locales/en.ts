@@ -136,6 +136,8 @@ export const en = {
     noGraph: "No graph loaded",
     noFiles: "No files in this layer",
     projectFiles: "Project files",
+    selectFileForRelationships: "Select a file to inspect direct relationships",
+    noRelationships: "No direct file relationships",
   },
   readingAssistant: {
     title: "Reading Assistant",

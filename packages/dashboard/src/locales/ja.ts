@@ -136,6 +136,8 @@ export const ja = {
     noGraph: "グラフが読み込まれていません",
     noFiles: "このレイヤーにファイルはありません",
     projectFiles: "プロジェクトファイル",
+    selectFileForRelationships: "ファイルを選択して直接の関係を確認",
+    noRelationships: "直接のファイル関係はありません",
   },
   readingAssistant: {
     title: "Reading Assistant",

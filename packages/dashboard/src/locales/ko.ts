@@ -136,6 +136,8 @@ export const ko = {
     noGraph: "그래프가 로드되지 않았습니다",
     noFiles: "이 레이어에는 파일이 없습니다",
     projectFiles: "프로젝트 파일",
+    selectFileForRelationships: "파일을 선택해 직접 관계를 확인",
+    noRelationships: "직접 파일 관계가 없습니다",
   },
   readingAssistant: {
     title: "Reading Assistant",

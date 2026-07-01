@@ -136,6 +136,8 @@ export const ru = {
     noGraph: "Граф не загружен",
     noFiles: "В этом слое нет файлов",
     projectFiles: "Файлы проекта",
+    selectFileForRelationships: "Выберите файл, чтобы посмотреть прямые связи",
+    noRelationships: "Нет прямых связей между файлами",
   },
   readingAssistant: {
     title: "Reading Assistant",

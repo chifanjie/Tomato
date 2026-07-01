@@ -136,6 +136,8 @@ export const zh = {
     noGraph: "未加载图谱",
     noFiles: "此层级没有文件",
     projectFiles: "项目文件",
+    selectFileForRelationships: "选择文件以查看直接关系",
+    noRelationships: "没有直接文件关系",
   },
   readingAssistant: {
     title: "阅读助手",

@@ -129,6 +129,7 @@ export const zhTW = {
     modules: "模組",
     importsOut: "匯出依賴",
     importsIn: "被依賴",
+    dependencies: "依賴",
     topFiles: "重點檔案",
     searchMatches: "搜尋命中",
     openLayer: "開啟層級",

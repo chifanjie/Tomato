@@ -129,6 +129,7 @@ export const ko = {
     modules: "모듈",
     importsOut: "내보내는 의존성",
     importsIn: "받는 의존성",
+    dependencies: "의존성",
     topFiles: "주요 파일",
     searchMatches: "검색 일치",
     openLayer: "레이어 열기",

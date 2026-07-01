@@ -129,6 +129,7 @@ export const en = {
     modules: "Modules",
     importsOut: "Imports out",
     importsIn: "Imports in",
+    dependencies: "Dependencies",
     topFiles: "Top files",
     searchMatches: "Search matches",
     openLayer: "Open layer",

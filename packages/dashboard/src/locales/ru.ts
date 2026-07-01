@@ -129,6 +129,7 @@ export const ru = {
     modules: "Модули",
     importsOut: "Исходящие импорты",
     importsIn: "Входящие импорты",
+    dependencies: "Зависимости",
     topFiles: "Ключевые файлы",
     searchMatches: "Совпадения поиска",
     openLayer: "Открыть слой",

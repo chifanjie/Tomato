@@ -36,7 +36,6 @@ interface LayerFileGraphProps {
   files: ViewFileSummary[];
   fileMatchCounts: Map<string, number>;
   selectedFileId: string | null;
-  onSelectFile: (fileId: string | null) => void;
   onOpenFile: (fileId: string) => void;
 }
 
@@ -59,6 +58,8 @@ function RelationshipList({
   onSelectFile,
   onOpenFile,
 }: RelationshipListProps) {
+  const { t } = useI18n();
+
   return (
     <section className="rounded-lg border border-border-subtle bg-surface/70 p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -77,28 +78,55 @@ function RelationshipList({
               direction === "incoming" ? relationship.sourceFileId : relationship.targetFileId;
             const relatedFile = filesById.get(relatedFileId);
 
+            const relatedFileName = relatedFile?.name ?? relatedFileId;
+
             return (
-              <button
+              <div
                 key={relationship.id}
-                type="button"
-                onClick={() => onSelectFile(relatedFileId)}
-                onDoubleClick={() => onOpenFile(relatedFileId)}
-                className="block w-full rounded border border-border-subtle bg-elevated/70 px-2.5 py-2 text-left transition-colors hover:border-accent/55 hover:bg-accent/5"
+                className="flex items-stretch gap-2 rounded border border-border-subtle bg-elevated/70 p-2 transition-colors hover:border-accent/55 hover:bg-accent/5"
               >
-                <div className="flex min-w-0 items-center justify-between gap-2">
-                  <span className="truncate text-xs font-medium text-text-primary">
-                    {relatedFile?.name ?? relatedFileId}
+                <button
+                  type="button"
+                  onClick={() => onSelectFile(relatedFileId)}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <span className="block truncate text-xs font-medium text-text-primary">
+                    {relatedFileName}
                   </span>
+                  {relatedFile?.filePath && (
+                    <span className="mt-1 block truncate font-mono text-[10px] text-text-muted">
+                      {relatedFile.filePath}
+                    </span>
+                  )}
+                </button>
+                <div className="flex shrink-0 items-center gap-1.5">
                   <span className="shrink-0 rounded bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
                     {relationship.count}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => onOpenFile(relatedFileId)}
+                    title={`${t.readingAssistant.open} ${relatedFileName}`}
+                    aria-label={`${t.readingAssistant.open} ${relatedFileName}`}
+                    className="flex h-7 w-7 items-center justify-center rounded border border-border-subtle text-text-muted transition-colors hover:border-accent/55 hover:text-accent"
+                  >
+                    <svg
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={1.8}
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M14 4h6m0 0v6m0-6L10 14m-4 6h12a2 2 0 0 0 2-2v-5M6 20a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5"
+                      />
+                    </svg>
+                  </button>
                 </div>
-                {relatedFile?.filePath && (
-                  <div className="mt-1 truncate font-mono text-[10px] text-text-muted">
-                    {relatedFile.filePath}
-                  </div>
-                )}
-              </button>
+              </div>
             );
           })}
         </div>
@@ -124,7 +152,7 @@ function RelationshipPanel({
 
   if (!selectedDetails) {
     return (
-      <aside className="flex h-full w-[320px] shrink-0 items-center justify-center border-l border-border-subtle bg-panel px-6 text-center text-sm text-text-muted">
+      <aside className="hidden h-full w-[320px] shrink-0 items-center justify-center border-l border-border-subtle bg-panel px-6 text-center text-sm text-text-muted lg:flex">
         {t.readableViewGraph.selectFileForRelationships}
       </aside>
     );
@@ -133,7 +161,7 @@ function RelationshipPanel({
   const { file, incoming, outgoing } = selectedDetails;
 
   return (
-    <aside className="h-full w-[320px] shrink-0 overflow-auto border-l border-border-subtle bg-panel p-4">
+    <aside className="h-[220px] w-full shrink-0 overflow-auto border-t border-border-subtle bg-panel p-3 lg:h-full lg:w-[320px] lg:border-l lg:border-t-0 lg:p-4">
       <div className="rounded-lg border border-border-subtle bg-elevated p-3">
         <h2 className="truncate text-sm font-semibold text-text-primary" title={file.filePath}>
           {file.name}
@@ -183,7 +211,6 @@ interface LayerFileGraphCanvasProps {
   files: ViewFileSummary[];
   fileMatchCounts: Map<string, number>;
   selectedFileId: string | null;
-  onSelectFile: (fileId: string | null) => void;
   onOpenFile: (fileId: string) => void;
 }
 
@@ -193,7 +220,6 @@ function LayerFileGraphCanvas({
   files,
   fileMatchCounts,
   selectedFileId: selectedFileIdProp,
-  onSelectFile,
   onOpenFile,
 }: LayerFileGraphCanvasProps) {
   const [selectedFileId, setSelectedFileId] = useState<string | null>(selectedFileIdProp);
@@ -268,9 +294,8 @@ function LayerFileGraphCanvas({
   const selectFile = useCallback(
     (fileId: string | null) => {
       setSelectedFileId(fileId);
-      onSelectFile(fileId);
     },
-    [onSelectFile],
+    [],
   );
 
   const handleNodeClick = useCallback<NodeMouseHandler<LayerFileGraphFlowNode>>(
@@ -292,8 +317,8 @@ function LayerFileGraphCanvas({
   }, [selectFile]);
 
   return (
-    <div className="flex h-full min-h-0">
-      <div className="min-w-0 flex-1">
+    <div className="flex h-full min-h-0 flex-col lg:flex-row">
+      <div className="min-h-[360px] min-w-0 flex-1">
         <ReactFlow
           nodes={layout.nodes}
           edges={layout.edges}
@@ -342,7 +367,6 @@ export default function LayerFileGraph({
   files,
   fileMatchCounts,
   selectedFileId,
-  onSelectFile,
   onOpenFile,
 }: LayerFileGraphProps) {
   const { t } = useI18n();
@@ -396,7 +420,6 @@ export default function LayerFileGraph({
             files={files}
             fileMatchCounts={fileMatchCounts}
             selectedFileId={selectedFileId}
-            onSelectFile={onSelectFile}
             onOpenFile={onOpenFile}
           />
         </ReactFlowProvider>

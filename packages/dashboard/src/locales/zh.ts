@@ -129,6 +129,7 @@ export const zh = {
     modules: "模块",
     importsOut: "导出依赖",
     importsIn: "被依赖",
+    dependencies: "依赖",
     topFiles: "重点文件",
     searchMatches: "搜索命中",
     openLayer: "打开层级",

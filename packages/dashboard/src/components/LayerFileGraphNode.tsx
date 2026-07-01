@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { Handle, Position } from "@xyflow/react";
 import type { Node, NodeProps } from "@xyflow/react";
+import { useI18n } from "../contexts/I18nContext";
 import type { ViewFileSummary } from "../viewgraph/types";
 import type { LayerFileGraphNodeData } from "../viewgraph/layerFileGraphModel";
 
@@ -13,6 +14,7 @@ function complexityClass(complexity: ViewFileSummary["node"]["complexity"]): str
 }
 
 function LayerFileGraphNode({ data }: NodeProps<LayerFileGraphFlowNode>) {
+  const { t } = useI18n();
   const { file, isSelected, isDimmed, searchMatchCount } = data;
 
   return (
@@ -66,13 +68,14 @@ function LayerFileGraphNode({ data }: NodeProps<LayerFileGraphFlowNode>) {
 
       <div className="mt-3 grid grid-cols-3 gap-2 text-[10px] text-text-secondary">
         <span>
-          <b className="text-text-primary">{file.functionCount}</b> fn
+          <b className="text-text-primary">{file.functionCount}</b> {t.readableViewGraph.functions}
         </span>
         <span>
-          <b className="text-text-primary">{file.classCount}</b> cls
+          <b className="text-text-primary">{file.classCount}</b> {t.readableViewGraph.classes}
         </span>
         <span>
-          <b className="text-text-primary">{file.importInCount + file.importOutCount}</b> deps
+          <b className="text-text-primary">{file.importInCount + file.importOutCount}</b>{" "}
+          {t.readableViewGraph.dependencies}
         </span>
       </div>
     </div>

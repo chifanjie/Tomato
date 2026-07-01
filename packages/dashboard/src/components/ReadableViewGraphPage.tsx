@@ -19,7 +19,6 @@ export default function ReadableViewGraphPage() {
   const searchResults = useDashboardStore((s) => s.searchResults);
   const drillIntoLayer = useDashboardStore((s) => s.drillIntoLayer);
   const openFileDetail = useDashboardStore((s) => s.openFileDetail);
-  const selectNode = useDashboardStore((s) => s.selectNode);
   const { t } = useI18n();
 
   const matches = useMemo(
@@ -57,7 +56,6 @@ export default function ReadableViewGraphPage() {
             files={files}
             fileMatchCounts={matches.fileMatchCounts}
             selectedFileId={selectedNodeId}
-            onSelectFile={selectNode}
             onOpenFile={openFileDetail}
           />
         </div>

@@ -129,6 +129,7 @@ export const ja = {
     modules: "モジュール",
     importsOut: "外部インポート",
     importsIn: "被インポート",
+    dependencies: "依存関係",
     topFiles: "主要ファイル",
     searchMatches: "検索ヒット",
     openLayer: "レイヤーを開く",

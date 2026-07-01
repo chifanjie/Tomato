@@ -89,14 +89,15 @@ export function buildLayerFileFlowModel({
   fileMatchCounts,
   maxDefaultEdges,
 }: LayerFileFlowModelInput): LayerFileFlowModel {
-  const relationshipList = visibleRelationships(relationships, selectedFileId, maxDefaultEdges);
   const selectedFile = selectedFileId ? files.find((file) => file.id === selectedFileId) ?? null : null;
+  const activeSelectedFileId = selectedFile?.id ?? null;
+  const relationshipList = visibleRelationships(relationships, activeSelectedFileId, maxDefaultEdges);
   const relatedToSelected = new Set<string>();
-  if (selectedFileId) {
-    relatedToSelected.add(selectedFileId);
+  if (activeSelectedFileId) {
+    relatedToSelected.add(activeSelectedFileId);
     for (const relationship of relationships) {
-      if (relationship.sourceFileId === selectedFileId) relatedToSelected.add(relationship.targetFileId);
-      if (relationship.targetFileId === selectedFileId) relatedToSelected.add(relationship.sourceFileId);
+      if (relationship.sourceFileId === activeSelectedFileId) relatedToSelected.add(relationship.targetFileId);
+      if (relationship.targetFileId === activeSelectedFileId) relatedToSelected.add(relationship.sourceFileId);
     }
   }
 
@@ -106,13 +107,13 @@ export function buildLayerFileFlowModel({
     position: { x: 0, y: 0 },
     data: {
       file,
-      isSelected: file.id === selectedFileId,
-      isDimmed: Boolean(selectedFileId) && !relatedToSelected.has(file.id),
+      isSelected: file.id === activeSelectedFileId,
+      isDimmed: Boolean(activeSelectedFileId) && !relatedToSelected.has(file.id),
       searchMatchCount: fileMatchCounts.get(file.id) ?? 0,
     },
   }));
 
-  const edges = relationshipList.map((relationship) => edgeStyle(relationship, selectedFileId));
+  const edges = relationshipList.map((relationship) => edgeStyle(relationship, activeSelectedFileId));
 
   return {
     nodes,

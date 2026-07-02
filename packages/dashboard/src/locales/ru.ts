@@ -129,6 +129,7 @@ export const ru = {
     modules: "Модули",
     importsOut: "Исходящие импорты",
     importsIn: "Входящие импорты",
+    dependencies: "Зависимости",
     topFiles: "Ключевые файлы",
     searchMatches: "Совпадения поиска",
     openLayer: "Открыть слой",
@@ -136,6 +137,8 @@ export const ru = {
     noGraph: "Граф не загружен",
     noFiles: "В этом слое нет файлов",
     projectFiles: "Файлы проекта",
+    selectFileForRelationships: "Выберите файл, чтобы посмотреть прямые связи",
+    noRelationships: "Нет прямых связей между файлами",
   },
   readingAssistant: {
     title: "Reading Assistant",

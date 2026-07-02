@@ -129,6 +129,7 @@ export const zh = {
     modules: "模块",
     importsOut: "导出依赖",
     importsIn: "被依赖",
+    dependencies: "依赖",
     topFiles: "重点文件",
     searchMatches: "搜索命中",
     openLayer: "打开层级",
@@ -136,6 +137,8 @@ export const zh = {
     noGraph: "未加载图谱",
     noFiles: "此层级没有文件",
     projectFiles: "项目文件",
+    selectFileForRelationships: "选择文件以查看直接关系",
+    noRelationships: "没有直接文件关系",
   },
   readingAssistant: {
     title: "阅读助手",

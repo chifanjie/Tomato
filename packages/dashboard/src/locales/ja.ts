@@ -129,6 +129,7 @@ export const ja = {
     modules: "モジュール",
     importsOut: "外部インポート",
     importsIn: "被インポート",
+    dependencies: "依存関係",
     topFiles: "主要ファイル",
     searchMatches: "検索ヒット",
     openLayer: "レイヤーを開く",
@@ -136,6 +137,8 @@ export const ja = {
     noGraph: "グラフが読み込まれていません",
     noFiles: "このレイヤーにファイルはありません",
     projectFiles: "プロジェクトファイル",
+    selectFileForRelationships: "ファイルを選択して直接の関係を確認",
+    noRelationships: "直接のファイル関係はありません",
   },
   readingAssistant: {
     title: "Reading Assistant",

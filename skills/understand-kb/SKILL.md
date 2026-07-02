@@ -19,8 +19,9 @@ The command assumes `/understand` has already scanned the repository. It uses th
 
 2. Resolve `PARALLEL_LIMIT`.
    - If `$ARGUMENTS` contains `--parallel <n>`, only accept `1` or `2`.
-   - Otherwise use `2`.
-   - Prefer `1` or `2`; do not raise this just to make generation faster.
+   - Otherwise use `1`.
+   - Prefer `1` by default for quality and memory headroom; use `2` only when the user explicitly asks to trade more memory for speed.
+   - Do not raise this just to make generation faster.
 
 2.25. Resolve queue control flags.
    - If `$ARGUMENTS` contains `--resume`, pass `--resume` to every lease phase in this run.
@@ -31,6 +32,12 @@ The command assumes `/understand` has already scanned the repository. It uses th
    - If `$ARGUMENTS` contains `--max-source-mb <n>`, pass it to every `generate-knowledge-base.mjs` phase.
    - Otherwise use the script default.
    - Do not run deterministic-only generation for large graphs unless the user explicitly asks and passes `--allow-large-deterministic`.
+
+2.75. Preserve quality without increasing fan-out.
+   - Keep `$PARALLEL_LIMIT` at `1` or `2`.
+   - Higher document quality should come from evidence packets, detailed writer prompts, and contract validation.
+   - Do not create extra ad-hoc writer workers to make the run appear faster.
+   - If a writer batch fails quality validation, retry the leased batch with the concrete validation reason.
 
 3. Check that `$PROJECT_ROOT/.understand-anything/knowledge-graph.json` exists.
    - If it does not exist, tell the user:
@@ -178,6 +185,7 @@ The command assumes `/understand` has already scanned the repository. It uses th
     - Class card coverage from script output.
     - Business fact coverage from script output.
     - Business capability document coverage from script output.
+    - Quality validation pass count from script output.
 
 ## Output
 

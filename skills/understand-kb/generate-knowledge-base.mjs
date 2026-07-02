@@ -349,6 +349,10 @@ function printCoverage(kb, outputRoot) {
   console.log(`类卡片覆盖: ${kb.coverageReport.classCardCoverage.covered} / ${kb.coverageReport.classCardCoverage.total}`);
   console.log(`业务事实覆盖: ${kb.coverageReport.businessFactCoverage.covered} / ${kb.coverageReport.businessFactCoverage.total}`);
   console.log(`业务能力文档: ${kb.coverageReport.businessCapabilityCoverage.covered} / ${kb.coverageReport.businessCapabilityCoverage.total}`);
+  if (kb.coverageReport.qualityValidation) {
+    const passed = kb.coverageReport.qualityValidation.checked - kb.coverageReport.qualityValidation.failed.length;
+    console.log(`质量校验: ${passed} / ${kb.coverageReport.qualityValidation.checked}`);
+  }
   if (kb.validation.warnings.length > 0) console.log(`警告数: ${kb.validation.warnings.length}`);
 }
 
@@ -604,7 +608,20 @@ function finalizeKnowledgeBase(core, projectRoot, keepIntermediate, maxSourceByt
   const supportDocuments = core.renderKnowledgeBaseDocuments(profile, plan, fileDocPlan, topicPlan, merged);
   const businessDocuments = core.renderBusinessCapabilityDocuments(profile, businessCapabilityProfile);
   const preliminaryDocuments = [...supportDocuments, ...businessDocuments, ...merged.fileDocuments, ...merged.topicDocuments];
-  const coverageReport = core.buildCoverageReport(profile, fileDocPlan, topicPlan, preliminaryDocuments, validation, merged.retryPlan, businessCapabilityProfile);
+  const initialCoverageReport = core.buildCoverageReport(profile, fileDocPlan, topicPlan, preliminaryDocuments, validation, merged.retryPlan, businessCapabilityProfile, []);
+  const initialFinalSupportDocuments = core.renderKnowledgeBaseDocuments(profile, plan, fileDocPlan, topicPlan, merged, initialCoverageReport, validation);
+  const initialFinalDocuments = [...initialFinalSupportDocuments, ...businessDocuments, ...merged.fileDocuments, ...merged.topicDocuments]
+    .sort((a, b) => a.path.localeCompare(b.path) || a.title.localeCompare(b.title));
+  const coverageReport = core.buildCoverageReport(
+    profile,
+    fileDocPlan,
+    topicPlan,
+    preliminaryDocuments,
+    validation,
+    merged.retryPlan,
+    businessCapabilityProfile,
+    initialFinalDocuments,
+  );
   const finalSupportDocuments = core.renderKnowledgeBaseDocuments(profile, plan, fileDocPlan, topicPlan, merged, coverageReport, validation);
   const documents = [...finalSupportDocuments, ...businessDocuments, ...merged.fileDocuments, ...merged.topicDocuments]
     .sort((a, b) => a.path.localeCompare(b.path) || a.title.localeCompare(b.title));

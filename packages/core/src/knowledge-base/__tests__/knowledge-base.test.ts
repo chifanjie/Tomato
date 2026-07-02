@@ -2,9 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { KnowledgeGraph } from "../../types.js";
 import {
   buildDocumentPlan,
+  buildFileDocPlan,
   buildKnowledgeBaseProfile,
+  FILE_WRITER_REQUIRED_SECTIONS,
   generateKnowledgeBase,
+  renderDeterministicFileWriterDocument,
+  sectionBody,
   TOPIC_WRITER_REQUIRED_SECTIONS,
+  validateMarkdownQuality,
 } from "../index.js";
 
 function sampleGraph(extraEntry = false): KnowledgeGraph {
@@ -277,10 +282,59 @@ describe("graph-to-knowledge-base", () => {
     expect(basePlan.topicCandidates.map((candidate) => candidate.nodeId)).toContain(
       "function:src/api/routes.ts:HandleFeedRequest",
     );
+    expect(basePlan.documents.some((doc) => doc.path === "业务流程/HandleFeedRequest.md")).toBe(true);
     expect(expandedPlan.topicCandidates.map((candidate) => candidate.nodeId)).toContain(
       "function:src/api/routes.ts:HandleAdminFeedRequest",
     );
     expect(expandedTopicCount).toBeGreaterThan(baseTopicCount);
+  });
+
+  it("keeps entry flow document paths unique when entry functions share a name", () => {
+    const graph = sampleGraph();
+    for (const name of ["alpha", "beta"]) {
+      const filePath = `src/cmd/${name}/main.ts`;
+      graph.nodes.push(
+        {
+          id: `file:${filePath}`,
+          type: "file",
+          name: "main.ts",
+          filePath,
+          summary: `${name} command entrypoint`,
+          tags: ["cli"],
+          complexity: "moderate",
+        },
+        {
+          id: `function:${filePath}:main`,
+          type: "function",
+          name: "main",
+          filePath,
+          lineRange: [1, 12],
+          summary: `${name} command main entrypoint`,
+          tags: ["entry"],
+          complexity: "moderate",
+        },
+      );
+      graph.edges.push({
+        source: `file:${filePath}`,
+        target: `function:${filePath}:main`,
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      });
+    }
+
+    const plan = buildDocumentPlan(buildKnowledgeBaseProfile(graph));
+    const flowPaths = plan.documents
+      .filter((doc) => doc.category === "flow")
+      .map((doc) => doc.path);
+
+    expect(flowPaths.filter((path) => path.includes("main"))).toHaveLength(2);
+    expect(new Set(flowPaths).size).toBe(flowPaths.length);
+
+    const kb = generateKnowledgeBase(graph);
+    const generatedPaths = kb.documents.map((doc) => doc.path);
+    expect(new Set(generatedPaths).size).toBe(generatedPaths.length);
+    expect(kb.coverageReport.totalDocuments).toBe(generatedPaths.length);
   });
 
   it("selects topic documents from project signals without a fixed count", () => {
@@ -330,6 +384,7 @@ describe("graph-to-knowledge-base", () => {
     for (const section of TOPIC_WRITER_REQUIRED_SECTIONS) {
       expect(topicDoc?.content).toContain(section);
     }
+    expect(sectionBody(topicDoc?.content ?? "", "## 非技术同学速读")).toContain("业务作用");
   });
 
   it("generates complete file documents and cards for every graph file/function/class", () => {
@@ -349,6 +404,13 @@ describe("graph-to-knowledge-base", () => {
     for (const node of graph.nodes.filter((item) => item.type === "file")) {
       const doc = kb.documents.find((item) => item.path.startsWith("文件文档/") && item.coveredNodeIds.includes(node.id));
       expect(doc?.content).toContain(`# ${node.filePath} 文件知识文档`);
+      for (const section of FILE_WRITER_REQUIRED_SECTIONS) {
+        expect(doc?.content).toContain(section);
+      }
+      expect(sectionBody(doc?.content ?? "", "## 非技术同学速读")).toContain("快速理解");
+      expect(sectionBody(doc?.content ?? "", "## 业务问题与影响对象")).toContain(node.filePath ?? node.id);
+      expect(sectionBody(doc?.content ?? "", "## 关键规则、输入输出与兜底")).toContain("输入");
+      expect(sectionBody(doc?.content ?? "", "## 代码证据")).toContain(node.filePath ?? node.id);
     }
     for (const node of graph.nodes.filter((item) => item.type === "function")) {
       const parentDoc = kb.documents.find((item) => item.path.startsWith("文件文档/") && item.coveredNodeIds.includes(node.id));
@@ -370,6 +432,33 @@ describe("graph-to-knowledge-base", () => {
     }
   });
 
+  it("renders deterministic file documents that pass shared quality validation", () => {
+    const profile = buildKnowledgeBaseProfile(sampleGraph());
+    const filePlan = buildFileDocPlan(profile, {
+      sourceFiles: {
+        "src/service/feed.ts": [
+          "export function BuildFeed() { return rankCandidates([]); }",
+          "function rankCandidates(items) { return items; }",
+        ].join("\n"),
+      },
+    });
+    const task = filePlan.tasks.find((item) => item.filePath === "src/service/feed.ts");
+    expect(task).toBeDefined();
+
+    const document = renderDeterministicFileWriterDocument(profile, task!);
+    const errors = validateMarkdownQuality(document.markdown, {
+      path: "documents[0].markdown",
+      sections: FILE_WRITER_REQUIRED_SECTIONS,
+      sourceEvidenceRefs: [task!.filePath],
+      coveredFunctionNodeIds: task!.functionNodeIds,
+      coveredClassNodeIds: task!.classNodeIds,
+    });
+
+    expect(task!.functionNodeIds.length).toBeGreaterThan(1);
+    expect(task!.classNodeIds).toHaveLength(0);
+    expect(errors).toEqual([]);
+  });
+
   it("reports actual document counts and coverage status", () => {
     const kb = generateKnowledgeBase(sampleGraph(), {
       sourceFiles: {
@@ -382,11 +471,18 @@ describe("graph-to-knowledge-base", () => {
 
     expect(report).toBeDefined();
     expect(kb.coverageReport.totalDocuments).toBe(kb.documents.length);
+    expect(kb.documents.length).toBeGreaterThanOrEqual(kb.coverageReport.totalDocuments);
+    expect(kb.coverageReport.qualityValidation.checked).toBe(kb.coverageReport.totalDocuments);
+    expect(kb.coverageReport.qualityValidation.failed).not.toContain("覆盖报告.md");
+    expect(kb.coverageReport.qualityValidation.warnings).not.toContain("document failed quality validation: 覆盖报告.md");
+    expect(kb.coverageReport.qualityValidation.warnings).not.toContain("document has generic filler text: 覆盖报告.md");
     expect(kb.coverageReport.fileDocumentCoverage).toEqual({ covered: 3, total: 3, missing: [] });
     expect(kb.coverageReport.functionCardCoverage).toEqual({ covered: 4, total: 4, missing: [] });
     expect(kb.coverageReport.classCardCoverage).toEqual({ covered: 1, total: 1, missing: [] });
 
     expect(report?.content).toContain(`总文档数: ${kb.documents.length}`);
+    expect(report?.content).toContain("## 质量校验");
+    expect(report?.content).not.toContain("本地代码事实: stable knowledge-base navigation document");
     expect(report?.content).toContain("文件文档覆盖: 3 / 3");
     expect(report?.content).toContain("函数卡片覆盖: 4 / 4");
     expect(report?.content).toContain("类卡片覆盖: 1 / 1");

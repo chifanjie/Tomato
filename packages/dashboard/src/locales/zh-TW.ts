@@ -129,6 +129,7 @@ export const zhTW = {
     modules: "模組",
     importsOut: "匯出依賴",
     importsIn: "被依賴",
+    dependencies: "依賴",
     topFiles: "重點檔案",
     searchMatches: "搜尋命中",
     openLayer: "開啟層級",
@@ -136,6 +137,8 @@ export const zhTW = {
     noGraph: "未載入圖譜",
     noFiles: "此層級沒有檔案",
     projectFiles: "專案檔案",
+    selectFileForRelationships: "選擇檔案以查看直接關係",
+    noRelationships: "沒有直接檔案關係",
   },
   readingAssistant: {
     title: "閱讀助手",

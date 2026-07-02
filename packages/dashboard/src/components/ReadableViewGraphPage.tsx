@@ -6,9 +6,8 @@ import {
   getAllFiles,
   getFilesForLayer,
 } from "../viewgraph/readableSelectors";
-import { buildFileCallEdges } from "../viewgraph/callRelationships";
 import LayerOverviewPanel from "./LayerOverviewPanel";
-import LayerFileHeatmap from "./LayerFileHeatmap";
+import LayerFileGraph from "./LayerFileGraph";
 import ViewGraphBreadcrumb from "./ViewGraphBreadcrumb";
 
 export default function ReadableViewGraphPage() {
@@ -20,7 +19,6 @@ export default function ReadableViewGraphPage() {
   const searchResults = useDashboardStore((s) => s.searchResults);
   const drillIntoLayer = useDashboardStore((s) => s.drillIntoLayer);
   const openFileDetail = useDashboardStore((s) => s.openFileDetail);
-  const selectNode = useDashboardStore((s) => s.selectNode);
   const { t } = useI18n();
 
   const matches = useMemo(
@@ -35,14 +33,6 @@ export default function ReadableViewGraphPage() {
     if (!viewGraph) return [];
     return activeLayerId ? getFilesForLayer(viewGraph, activeLayerId) : getAllFiles(viewGraph);
   }, [activeLayerId, viewGraph]);
-  const fileCallEdges = useMemo(
-    () => (
-      graph && viewGraph
-        ? buildFileCallEdges(graph, viewGraph, { fileIds: files.map((file) => file.id) })
-        : []
-    ),
-    [files, graph, viewGraph],
-  );
 
   if (!graph || !viewGraph) {
     return (
@@ -59,13 +49,13 @@ export default function ReadableViewGraphPage() {
           <ViewGraphBreadcrumb />
         </div>
         <div className="min-h-0 flex-1">
-          <LayerFileHeatmap
+          <LayerFileGraph
+            graph={graph}
+            viewGraph={viewGraph}
             layer={layer}
             files={files}
             fileMatchCounts={matches.fileMatchCounts}
             selectedFileId={selectedNodeId}
-            callEdges={fileCallEdges}
-            onFocusFile={selectNode}
             onOpenFile={openFileDetail}
           />
         </div>

@@ -129,6 +129,7 @@ export const en = {
     modules: "Modules",
     importsOut: "Imports out",
     importsIn: "Imports in",
+    dependencies: "Dependencies",
     topFiles: "Top files",
     searchMatches: "Search matches",
     openLayer: "Open layer",
@@ -136,6 +137,8 @@ export const en = {
     noGraph: "No graph loaded",
     noFiles: "No files in this layer",
     projectFiles: "Project files",
+    selectFileForRelationships: "Select a file to inspect direct relationships",
+    noRelationships: "No direct file relationships",
   },
   readingAssistant: {
     title: "Reading Assistant",

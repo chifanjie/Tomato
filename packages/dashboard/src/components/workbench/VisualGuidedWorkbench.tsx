@@ -122,7 +122,14 @@ function syncedStepIdForNavigation({
     : null;
 
   if (navigationLevel === "file-detail") {
-    return stepForActiveFile(routeSteps, activeFileId)?.id ?? currentStep?.id ?? firstStepId(routeSteps);
+    return (
+      stepForActiveFile(routeSteps, activeFileId)?.id ??
+      stepForSelectedNode(routeSteps, selectedNodeId, viewGraph)?.id ??
+      stepForActiveLayer(routeSteps, activeLayerId, viewGraph)?.id ??
+      (currentStep && currentStep.kind !== "file" ? currentStep.id : null) ??
+      routeSteps.find((step) => step.kind !== "file")?.id ??
+      firstStepId(routeSteps)
+    );
   }
 
   return (

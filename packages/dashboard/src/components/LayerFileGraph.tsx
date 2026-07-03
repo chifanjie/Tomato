@@ -37,6 +37,7 @@ interface LayerFileGraphProps {
   fileMatchCounts: Map<string, number>;
   selectedFileId: string | null;
   onOpenFile: (fileId: string) => void;
+  presentation?: "default" | "workbench";
 }
 
 interface RelationshipListProps {
@@ -368,6 +369,7 @@ export default function LayerFileGraph({
   fileMatchCounts,
   selectedFileId,
   onOpenFile,
+  presentation = "default",
 }: LayerFileGraphProps) {
   const { t } = useI18n();
 
@@ -397,20 +399,22 @@ export default function LayerFileGraph({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-root">
-      <div className="flex shrink-0 items-end justify-between gap-4 border-b border-border-subtle bg-surface px-5 py-3">
-        <div className="min-w-0">
-          <h2 className="truncate font-heading text-xl text-text-primary">
-            {layer?.name ?? t.readableViewGraph.projectFiles}
-          </h2>
-          {layer?.description && (
-            <p className="mt-1 line-clamp-2 text-sm text-text-secondary">{layer.description}</p>
-          )}
+      {presentation !== "workbench" && (
+        <div className="flex shrink-0 items-end justify-between gap-4 border-b border-border-subtle bg-surface px-5 py-3">
+          <div className="min-w-0">
+            <h2 className="truncate font-heading text-xl text-text-primary">
+              {layer?.name ?? t.readableViewGraph.projectFiles}
+            </h2>
+            {layer?.description && (
+              <p className="mt-1 line-clamp-2 text-sm text-text-secondary">{layer.description}</p>
+            )}
+          </div>
+          <div className="shrink-0 text-right">
+            <div className="font-heading text-xl text-accent">{files.length}</div>
+            <div className="text-[10px] uppercase text-text-muted">{t.readableViewGraph.files}</div>
+          </div>
         </div>
-        <div className="shrink-0 text-right">
-          <div className="font-heading text-xl text-accent">{files.length}</div>
-          <div className="text-[10px] uppercase text-text-muted">{t.readableViewGraph.files}</div>
-        </div>
-      </div>
+      )}
 
       <div className="min-h-0 flex-1">
         <ReactFlowProvider>

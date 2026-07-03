@@ -10,7 +10,13 @@ import LayerOverviewPanel from "./LayerOverviewPanel";
 import LayerFileGraph from "./LayerFileGraph";
 import ViewGraphBreadcrumb from "./ViewGraphBreadcrumb";
 
-export default function ReadableViewGraphPage() {
+interface ReadableViewGraphPageProps {
+  presentation?: "default" | "workbench";
+}
+
+export default function ReadableViewGraphPage({
+  presentation = "default",
+}: ReadableViewGraphPageProps) {
   const graph = useDashboardStore((s) => s.graph);
   const viewGraph = useDashboardStore((s) => s.viewGraph);
   const navigationLevel = useDashboardStore((s) => s.navigationLevel);
@@ -25,15 +31,6 @@ export default function ReadableViewGraphPage() {
     () => buildReadableSearchMatches(graph, viewGraph, searchResults),
     [graph, viewGraph, searchResults],
   );
-  const layer = useMemo(
-    () => (activeLayerId && viewGraph ? viewGraph.layersById.get(activeLayerId) ?? null : null),
-    [activeLayerId, viewGraph],
-  );
-  const files = useMemo(() => {
-    if (!viewGraph) return [];
-    return activeLayerId ? getFilesForLayer(viewGraph, activeLayerId) : getAllFiles(viewGraph);
-  }, [activeLayerId, viewGraph]);
-
   if (!graph || !viewGraph) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-root text-sm text-text-muted">
@@ -43,11 +40,16 @@ export default function ReadableViewGraphPage() {
   }
 
   if (navigationLevel === "layer-detail") {
+    const layer = activeLayerId ? viewGraph.layersById.get(activeLayerId) ?? null : null;
+    const files = activeLayerId ? getFilesForLayer(viewGraph, activeLayerId) : getAllFiles(viewGraph);
+
     return (
       <div className="flex h-full min-h-0 w-full flex-col">
-        <div className="shrink-0 border-b border-border-subtle bg-surface px-5 py-3">
-          <ViewGraphBreadcrumb />
-        </div>
+        {presentation !== "workbench" && (
+          <div className="shrink-0 border-b border-border-subtle bg-surface px-5 py-3">
+            <ViewGraphBreadcrumb />
+          </div>
+        )}
         <div className="min-h-0 flex-1">
           <LayerFileGraph
             graph={graph}
@@ -57,6 +59,7 @@ export default function ReadableViewGraphPage() {
             fileMatchCounts={matches.fileMatchCounts}
             selectedFileId={selectedNodeId}
             onOpenFile={openFileDetail}
+            presentation={presentation}
           />
         </div>
       </div>

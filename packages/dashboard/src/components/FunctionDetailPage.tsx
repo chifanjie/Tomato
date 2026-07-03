@@ -2,10 +2,8 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { GraphNode, KnowledgeGraph } from "@understand-anything/core/types";
 import { useDashboardStore } from "../store";
 import { useI18n } from "../contexts/I18nContext";
-import { buildFunctionCallNeighborhood } from "../viewgraph/callRelationships";
 import { buildFunctionImpact } from "../viewgraph/functionImpact";
 import type { FunctionDot, ViewFileSummary } from "../viewgraph/types";
-import FunctionCallMiniMap from "./FunctionCallMiniMap";
 import FunctionMatrixPanel from "./FunctionMatrixPanel";
 import ViewGraphBreadcrumb from "./ViewGraphBreadcrumb";
 
@@ -104,7 +102,13 @@ export function selectInitialFunctionId(
   return selectedDotFromStore?.nodeId ?? file.functionDots[0]?.nodeId ?? null;
 }
 
-export default function FunctionDetailPage() {
+interface FunctionDetailPageProps {
+  presentation?: "default" | "workbench";
+}
+
+export default function FunctionDetailPage({
+  presentation = "default",
+}: FunctionDetailPageProps) {
   const graph = useDashboardStore((s) => s.graph);
   const viewGraph = useDashboardStore((s) => s.viewGraph);
   const activeFileId = useDashboardStore((s) => s.activeFileId);
@@ -123,17 +127,9 @@ export default function FunctionDetailPage() {
 
   const selectedDot = file?.functionDots.find((dot) => dot.nodeId === selectedFunctionId) ?? file?.functionDots[0] ?? null;
   const selectedNode = selectedDot && graph ? graph.nodes.find((node) => node.id === selectedDot.nodeId) ?? null : null;
-  const nodesById = useMemo(
-    () => new Map((graph?.nodes ?? []).map((node) => [node.id, node])),
-    [graph],
-  );
   const impact = useMemo(
     () => (graph && selectedDot ? buildFunctionImpact(graph, selectedDot.nodeId) : null),
     [graph, selectedDot],
-  );
-  const neighborhood = useMemo(
-    () => (graph && viewGraph && selectedDot ? buildFunctionCallNeighborhood(graph, viewGraph, selectedDot.nodeId) : null),
-    [graph, selectedDot, viewGraph],
   );
   const topConnectedDots = useMemo(
     () => (graph && file ? buildTopConnectedDots(file, graph) : []),
@@ -152,19 +148,21 @@ export default function FunctionDetailPage() {
 
   return (
     <div className="h-full min-h-0 w-full flex flex-col bg-root">
-      <div className="shrink-0 border-b border-border-subtle bg-surface px-5 py-3 flex items-center justify-between gap-4">
-        <ViewGraphBreadcrumb />
-        <button
-          type="button"
-          onClick={closeFileDetail}
-          className="shrink-0 rounded-md border border-border-subtle bg-elevated px-3 py-1.5 text-xs font-semibold text-text-secondary hover:text-text-primary hover:border-accent/40 transition-colors"
-        >
-          {t.functionDetail.backToGraph}
-        </button>
-      </div>
+      {presentation !== "workbench" && (
+        <div className="shrink-0 border-b border-border-subtle bg-surface px-5 py-3 flex items-center justify-between gap-4">
+          <ViewGraphBreadcrumb />
+          <button
+            type="button"
+            onClick={closeFileDetail}
+            className="shrink-0 rounded-md border border-border-subtle bg-elevated px-3 py-1.5 text-xs font-semibold text-text-secondary hover:text-text-primary hover:border-accent/40 transition-colors"
+          >
+            {t.functionDetail.backToGraph}
+          </button>
+        </div>
+      )}
 
-      <div className="flex-1 min-h-0 flex">
-        <aside className="w-[280px] shrink-0 overflow-auto border-r border-border-subtle bg-surface px-4 py-4 space-y-5">
+      <div className="flex-1 min-h-0 overflow-auto lg:overflow-hidden flex flex-col lg:flex-row">
+        <aside className="w-full max-h-[280px] shrink-0 overflow-auto border-b border-border-subtle bg-surface px-4 py-4 space-y-5 lg:max-h-none lg:w-[280px] lg:border-b-0 lg:border-r">
           <Section title={t.common.file}>
             <ObjectButton label={file.name} detail={file.filePath} />
           </Section>
@@ -207,32 +205,21 @@ export default function FunctionDetailPage() {
           )}
         </aside>
 
-        <main className="flex-1 min-w-0 min-h-0 flex flex-col">
-          {selectedDot && neighborhood && (
-            <div className="h-[260px] max-h-[34vh] shrink-0">
-              <FunctionCallMiniMap
-                neighborhood={neighborhood}
-                nodesById={nodesById}
-              />
+        <main className="w-full min-w-0 min-h-[560px] shrink-0 lg:min-h-0 lg:flex-1 lg:shrink">
+          {file.functionDots.length > 0 ? (
+            <FunctionMatrixPanel
+              file={file}
+              selectedFunctionId={selectedDot?.nodeId ?? null}
+              onSelectFunction={setSelectedFunctionId}
+            />
+          ) : (
+            <div className="h-full flex items-center justify-center text-sm text-text-muted">
+              {t.functionDetail.noFunctions}
             </div>
           )}
-
-          <div className="min-h-0 flex-1">
-            {file.functionDots.length > 0 ? (
-              <FunctionMatrixPanel
-                file={file}
-                selectedFunctionId={selectedDot?.nodeId ?? null}
-                onSelectFunction={setSelectedFunctionId}
-              />
-            ) : (
-              <div className="h-full flex items-center justify-center text-sm text-text-muted">
-                {t.functionDetail.noFunctions}
-              </div>
-            )}
-          </div>
         </main>
 
-        <aside className="w-[360px] shrink-0 overflow-auto border-l border-border-subtle bg-surface px-5 py-4">
+        <aside className="w-full shrink-0 overflow-auto border-t border-border-subtle bg-surface px-5 py-4 lg:w-[360px] lg:border-l lg:border-t-0">
           {selectedDot && selectedNode && impact ? (
             <div className="space-y-5">
               <section>

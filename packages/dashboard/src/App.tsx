@@ -7,6 +7,7 @@ import KnowledgeGraphView from "./components/KnowledgeGraphView";
 import FunctionDetailPage from "./components/FunctionDetailPage";
 import ReadableViewGraphPage from "./components/ReadableViewGraphPage";
 import ReadingAssistantPanel from "./components/ReadingAssistantPanel";
+import VisualGuidedWorkbench from "./components/workbench/VisualGuidedWorkbench";
 import SearchBar from "./components/SearchBar";
 import NodeInfo from "./components/NodeInfo";
 import LayerLegend from "./components/LayerLegend";
@@ -27,6 +28,12 @@ import { ThemePicker } from "./components/ThemePicker.tsx";
 import type { ThemeConfig } from "./themes/index.ts";
 import { I18nProvider, useI18n } from "./contexts/I18nContext.tsx";
 import { shouldShowGraphControls } from "./utils/viewModeControls";
+import {
+  buildKnowledgeContextIndex,
+  type KnowledgeContextIndex,
+  type KnowledgeDocumentSummary,
+  type KnowledgeTraceRecord,
+} from "./workbench/knowledgeContext";
 
 // Lazy-load heavy / optional components so they ship in separate chunks.
 const CodeViewer = lazy(() => import("./components/CodeViewer"));
@@ -38,7 +45,7 @@ const KeyboardShortcutsHelp = lazy(
 const OnboardingOverlay = lazy(() => import("./components/OnboardingOverlay"));
 
 const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === "true";
-const SESSION_TOKEN_KEY = "understand-anything-token";
+const TOKEN_STORAGE_KEY = "understand-anything-token";
 const ONBOARDING_DISMISSED_KEY = "ua-onboarding-dismissed-v1";
 type SidebarTab = "info" | "files";
 
@@ -66,16 +73,241 @@ function dataUrl(fileName: string, token: string | null): string {
   return token ? `${path}?token=${encodeURIComponent(token)}` : path;
 }
 
+function optionalDataUrl(path: string, token: string | null): string {
+  const normalizedPath = path.replace(/^\/+/, "");
+  const base = import.meta.env.BASE_URL || "/";
+  const normalizedBase = base.endsWith("/") ? base : `${base}/`;
+  const url = `${normalizedBase}${normalizedPath}`;
+  if (DEMO_MODE) return url;
+  return token ? `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}` : url;
+}
+
+async function fetchOptionalJson<T>(url: string): Promise<T | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchOptionalText(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  }
+}
+
+function decodedMarkdownPath(path: string): string {
+  const withoutWrapper = path.trim().replace(/^<(.+)>$/, "$1");
+  const withoutTitle = withoutWrapper.replace(/\s+["'][^"']*["']\s*$/, "");
+  const withoutFragment = withoutTitle.split("#")[0]?.split("?")[0] ?? "";
+  const normalized = withoutFragment.replace(/\\/g, "/").replace(/^\.\//, "").replace(/^\/+/, "");
+  try {
+    return decodeURIComponent(normalized);
+  } catch {
+    return normalized;
+  }
+}
+
+function knowledgeDocumentId(title: string, path: string): string {
+  const source = (path || title).trim().toLowerCase();
+  const normalized = source
+    .replace(/\\/g, "/")
+    .replace(/^\.\//, "")
+    .replace(/[^a-z0-9\u4e00-\u9fff/._-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `knowledge-doc:${normalized || "untitled"}`;
+}
+
+function documentsFromMarkdownIndex(markdown: string | null): KnowledgeDocumentSummary[] {
+  if (!markdown) return [];
+  const linkPattern = /\[([^\]]+)\]\(([^)]+)\)/g;
+  const documents: KnowledgeDocumentSummary[] = [];
+  const seen = new Set<string>();
+
+  for (const match of markdown.matchAll(linkPattern)) {
+    if (match.index !== undefined && markdown[match.index - 1] === "!") continue;
+
+    const title = match[1]?.trim();
+    const path = decodedMarkdownPath(match[2] ?? "");
+    if (!title || !path || /^https?:\/\//i.test(path) || path.startsWith("mailto:")) continue;
+
+    const id = knowledgeDocumentId(title, path);
+    if (seen.has(id)) continue;
+    seen.add(id);
+
+    documents.push({
+      id,
+      title,
+      summary: `Generated knowledge document linked from the optional knowledge base index: ${title}.`,
+      ...(path.endsWith(".md") ? { filePath: path } : { relatedPaths: [path] }),
+    });
+  }
+
+  return documents;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+}
+
+function titleFromDocumentPath(path: string | undefined): string {
+  if (!path) return "Generated knowledge trace";
+  const fileName = path.split("/").pop() ?? path;
+  return fileName.replace(/\.md$/i, "") || path;
+}
+
+function filePathFromNodeId(nodeId: string): string | undefined {
+  const firstColon = nodeId.indexOf(":");
+  if (firstColon === -1) return undefined;
+  const kind = nodeId.slice(0, firstColon);
+  const rest = nodeId.slice(firstColon + 1);
+  if (kind === "file" || kind === "document" || kind === "config") return rest;
+  const lastColon = rest.lastIndexOf(":");
+  return lastColon > 0 ? rest.slice(0, lastColon) : undefined;
+}
+
+function normalizeTraceAnchors(value: unknown): NonNullable<KnowledgeTraceRecord["anchors"]> {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((anchor) => {
+    if (!isRecord(anchor)) return [];
+    const filePath = stringValue(anchor.filePath);
+    const role = stringValue(anchor.role);
+    const nodeId = stringValue(anchor.nodeId);
+    const lineRangeValue = anchor.lineRange;
+    const lineRange =
+      Array.isArray(lineRangeValue) &&
+      typeof lineRangeValue[0] === "number" &&
+      typeof lineRangeValue[1] === "number"
+        ? ([lineRangeValue[0], lineRangeValue[1]] as [number, number])
+        : undefined;
+    const label = stringValue(anchor.label) ?? role ?? nodeId ?? filePath ?? "Knowledge trace";
+    return [{ label, filePath, lineRange }];
+  });
+}
+
+function normalizeTraceRecord(value: unknown): KnowledgeTraceRecord[] {
+  if (!isRecord(value)) return [];
+
+  const documentPath = stringValue(value.documentPath) ?? stringValue(value.filePath);
+  const title = stringValue(value.title) ?? titleFromDocumentPath(documentPath);
+  const summary =
+    stringValue(value.summary) ??
+    (documentPath
+      ? `Generated knowledge document ${documentPath} is linked to this code path.`
+      : "Generated knowledge trace linked to this code path.");
+  const businessMeaning = stringValue(value.businessMeaning);
+  const changeRisk =
+    stringValue(value.changeRisk) ??
+    (stringArray(value.lowConfidenceClaims).length > 0
+      ? "Some linked knowledge claims need confirmation before relying on this context."
+      : undefined);
+  const anchors = normalizeTraceAnchors(value.anchors ?? value.sourceAnchors);
+  const coveredNodeIds = stringArray(value.coveredNodeIds);
+  const coveredFilePaths = stringArray(value.coveredFilePaths);
+
+  if (coveredNodeIds.length === 0 && coveredFilePaths.length === 0) {
+    return [
+      {
+        nodeId: stringValue(value.nodeId),
+        filePath: stringValue(value.filePath),
+        title,
+        summary,
+        businessMeaning,
+        changeRisk,
+        anchors,
+      },
+    ];
+  }
+
+  const traces: KnowledgeTraceRecord[] = [];
+  for (const nodeId of coveredNodeIds) {
+    traces.push({
+      nodeId,
+      filePath: filePathFromNodeId(nodeId) ?? coveredFilePaths[0],
+      title,
+      summary,
+      businessMeaning,
+      changeRisk,
+      anchors,
+    });
+  }
+  for (const filePath of coveredFilePaths) {
+    traces.push({ filePath, title, summary, businessMeaning, changeRisk, anchors });
+  }
+  return traces;
+}
+
+function normalizeTracePayload(payload: unknown): KnowledgeTraceRecord[] {
+  const records = Array.isArray(payload)
+    ? payload
+    : isRecord(payload) && Array.isArray(payload.traces)
+      ? payload.traces
+      : isRecord(payload) && Array.isArray(payload.documents)
+        ? payload.documents
+        : [];
+
+  return records.flatMap(normalizeTraceRecord);
+}
+
 /**
- * Resolve the access token from the URL query string or sessionStorage.
- * If found in the URL, persist to sessionStorage and strip the param from the address bar.
+ * Resolve the access token from the URL query string or browser storage.
+ * If found in the URL, persist it and strip the param from the address bar.
  */
+function readStoredToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_STORAGE_KEY) ?? sessionStorage.getItem(TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredToken(token: string): void {
+  try {
+    localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
+  } catch {
+    try {
+      sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
+    } catch {
+      // Storage may be unavailable in hardened browser contexts.
+    }
+  }
+}
+
+function clearStoredToken(): void {
+  try {
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+  } catch {
+    try {
+      sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+    } catch {
+      // Storage may be unavailable in hardened browser contexts.
+    }
+  }
+}
+
 function resolveInitialToken(): string | null {
   if (DEMO_MODE) return "__demo__";
   const params = new URLSearchParams(window.location.search);
   const urlToken = params.get("token");
   if (urlToken) {
-    sessionStorage.setItem(SESSION_TOKEN_KEY, urlToken);
+    writeStoredToken(urlToken);
     // Clean the URL
     params.delete("token");
     const cleanSearch = params.toString();
@@ -84,20 +316,25 @@ function resolveInitialToken(): string | null {
     window.history.replaceState(null, "", newUrl);
     return urlToken;
   }
-  return sessionStorage.getItem(SESSION_TOKEN_KEY);
+  return readStoredToken();
 }
 
 function App() {
   const [accessToken, setAccessToken] = useState<string | null>(resolveInitialToken);
 
   const handleTokenValid = useCallback((token: string) => {
-    sessionStorage.setItem(SESSION_TOKEN_KEY, token);
+    writeStoredToken(token);
     setAccessToken(token);
+  }, []);
+
+  const handleTokenInvalid = useCallback(() => {
+    clearStoredToken();
+    setAccessToken(null);
   }, []);
 
   // In demo mode, skip token gate entirely
   if (DEMO_MODE) {
-    return <Dashboard accessToken="__demo__" />;
+    return <Dashboard accessToken="__demo__" onTokenInvalid={handleTokenInvalid} />;
   }
 
   // Show the token gate when no token is available
@@ -105,10 +342,16 @@ function App() {
     return <TokenGate onTokenValid={handleTokenValid} />;
   }
 
-  return <Dashboard accessToken={accessToken} />;
+  return <Dashboard accessToken={accessToken} onTokenInvalid={handleTokenInvalid} />;
 }
 
-function Dashboard({ accessToken }: { accessToken: string }) {
+function Dashboard({
+  accessToken,
+  onTokenInvalid,
+}: {
+  accessToken: string;
+  onTokenInvalid: () => void;
+}) {
   const setGraph = useDashboardStore((s) => s.setGraph);
   const setDomainGraph = useDashboardStore((s) => s.setDomainGraph);
   const setDiffOverlay = useDashboardStore((s) => s.setDiffOverlay);
@@ -116,6 +359,9 @@ function Dashboard({ accessToken }: { accessToken: string }) {
   const [graphIssues, setGraphIssues] = useState<GraphIssue[]>([]);
   const [metaTheme, setMetaTheme] = useState<ThemeConfig | null>(null);
   const [outputLanguage, setOutputLanguage] = useState<string | undefined>();
+  const [knowledgeContextIndex, setKnowledgeContextIndex] = useState<KnowledgeContextIndex>(() =>
+    buildKnowledgeContextIndex({ traces: [], documents: [] }),
+  );
 
   useEffect(() => {
     fetch(dataUrl("meta.json", accessToken))
@@ -133,8 +379,49 @@ function Dashboard({ accessToken }: { accessToken: string }) {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function loadKnowledgeContext(): Promise<void> {
+      const [tracePayload, capabilityIndex, flowIndex] = await Promise.all([
+        fetchOptionalJson<unknown>(
+          optionalDataUrl("knowledge-base/.trace/document-traces.json", accessToken),
+        ),
+        fetchOptionalText(optionalDataUrl("knowledge-base/业务能力索引.md", accessToken)),
+        fetchOptionalText(optionalDataUrl("knowledge-base/业务流程地图.md", accessToken)),
+      ]);
+
+      if (cancelled) return;
+
+      setKnowledgeContextIndex(
+        buildKnowledgeContextIndex({
+          traces: normalizeTracePayload(tracePayload),
+          documents: [
+            ...documentsFromMarkdownIndex(capabilityIndex),
+            ...documentsFromMarkdownIndex(flowIndex),
+          ],
+        }),
+      );
+    }
+
+    void loadKnowledgeContext();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken]);
+
+  useEffect(() => {
     fetch(dataUrl("knowledge-graph.json", accessToken))
-      .then((res) => res.json())
+      .then((res) => {
+        if (res.status === 403) {
+          onTokenInvalid();
+          throw new Error("TOKEN_INVALID");
+        }
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        return res.json();
+      })
       .then((data: unknown) => {
         const result = validateGraph(data);
         if (result.success && result.data) {
@@ -160,10 +447,11 @@ function Dashboard({ accessToken }: { accessToken: string }) {
         }
       })
       .catch((err) => {
+        if (err instanceof Error && err.message === "TOKEN_INVALID") return;
         console.error("Failed to load knowledge graph:", err);
         setLoadError(`Failed to load knowledge graph: ${err instanceof Error ? err.message : String(err)}`);
       });
-  }, [setGraph]);
+  }, [accessToken, onTokenInvalid, setGraph]);
 
   useEffect(() => {
     fetch(dataUrl("diff-overlay.json", accessToken))
@@ -208,28 +496,28 @@ function Dashboard({ accessToken }: { accessToken: string }) {
   }, [setDomainGraph]);
 
   return (
-    <I18nProvider language={outputLanguage ?? "en"}>
+    <I18nProvider language={outputLanguage ?? "zh"}>
       <ThemeProvider metaTheme={metaTheme}>
         <DashboardContent
           accessToken={accessToken}
           loadError={loadError}
           graphIssues={graphIssues}
+          knowledgeContextIndex={knowledgeContextIndex}
         />
       </ThemeProvider>
     </I18nProvider>
   );
 }
 
-function DashboardContent({
-  accessToken,
-  loadError,
-  graphIssues,
-}: {
+function DashboardContent(props: {
   accessToken: string;
   loadError: string | null;
   graphIssues: GraphIssue[];
+  knowledgeContextIndex: KnowledgeContextIndex;
 }) {
+  const { accessToken, loadError, graphIssues, knowledgeContextIndex } = props;
   const graph = useDashboardStore((s) => s.graph);
+  const viewGraph = useDashboardStore((s) => s.viewGraph);
   const selectedNodeId = useDashboardStore((s) => s.selectedNodeId);
   const tourActive = useDashboardStore((s) => s.tourActive);
   const persona = useDashboardStore((s) => s.persona);
@@ -264,6 +552,9 @@ function DashboardContent({
   const isMobile = useIsMobile();
   const { t } = useI18n();
   const showLegacyGraphControls = shouldShowGraphControls({ viewMode, isKnowledgeGraph });
+  const showStructuralWorkbench = Boolean(
+    graph && viewGraph && viewMode === "structural" && !isKnowledgeGraph,
+  );
   const allIssues = useMemo(
     () => [...graphIssues, ...layoutIssues],
     [graphIssues, layoutIssues],
@@ -272,6 +563,14 @@ function DashboardContent({
   useEffect(() => {
     if (selectedNodeId) setSidebarTab("info");
   }, [selectedNodeId]);
+
+  useEffect(() => {
+    if (persona === "experienced" && !selectedNodeId) {
+      setSidebarTab("files");
+    } else if (persona !== "experienced") {
+      setSidebarTab("info");
+    }
+  }, [persona, selectedNodeId]);
 
   // Define keyboard shortcuts
   const shortcuts = useMemo<KeyboardShortcut[]>(
@@ -289,6 +588,10 @@ function DashboardContent({
         key: "Escape",
         description: t.keyboardShortcuts.escapeDesc,
         action: () => {
+          if (showKeyboardHelp) {
+            setShowKeyboardHelp(false);
+            return;
+          }
           // Read from store at invocation time to avoid stale closures
           const state = useDashboardStore.getState();
           if (state.pathFinderOpen) {
@@ -309,8 +612,6 @@ function DashboardContent({
             state.navigateToOverview();
           } else if (state.tourActive) {
             state.stopTour();
-          } else {
-            setShowKeyboardHelp(false);
           }
         },
         category: "Navigation",
@@ -355,6 +656,12 @@ function DashboardContent({
         description: t.keyboardShortcuts.toggleDiff,
         action: () => {
           const state = useDashboardStore.getState();
+          if (!shouldShowGraphControls({
+            viewMode: state.viewMode,
+            isKnowledgeGraph: state.isKnowledgeGraph,
+          })) {
+            return;
+          }
           state.toggleDiffMode();
         },
         category: "View",
@@ -364,6 +671,12 @@ function DashboardContent({
         description: t.keyboardShortcuts.toggleFilter,
         action: () => {
           const state = useDashboardStore.getState();
+          if (!shouldShowGraphControls({
+            viewMode: state.viewMode,
+            isKnowledgeGraph: state.isKnowledgeGraph,
+          })) {
+            return;
+          }
           state.toggleFilterPanel();
         },
         category: "View",
@@ -382,12 +695,18 @@ function DashboardContent({
         description: t.keyboardShortcuts.openPathFinder,
         action: () => {
           const state = useDashboardStore.getState();
+          if (!shouldShowGraphControls({
+            viewMode: state.viewMode,
+            isKnowledgeGraph: state.isKnowledgeGraph,
+          })) {
+            return;
+          }
           state.togglePathFinder();
         },
         category: "View",
       },
     ],
-    [t]
+    [t, showKeyboardHelp]
   );
 
   // Register keyboard shortcuts
@@ -409,32 +728,47 @@ function DashboardContent({
     </>
   );
 
+  const tabbedSidebarContent = (
+    <>
+      <div className="flex items-center gap-1 p-2 border-b border-border-subtle bg-surface shrink-0">
+        {(["info", "files"] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setSidebarTab(tab)}
+            className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold uppercase tracking-wider transition-colors ${
+              sidebarTab === tab
+                ? "bg-accent/15 text-accent"
+                : "text-text-muted hover:text-text-primary hover:bg-elevated"
+            }`}
+          >
+            {tab === "info" ? t.sidebar.info : t.sidebar.files}
+          </button>
+        ))}
+      </div>
+      <div className="flex-1 min-h-0 overflow-auto">
+        {sidebarTab === "files" ? <FileExplorer /> : infoSidebarContent}
+      </div>
+    </>
+  );
+
+  const structuralSidebarContent =
+    persona === "junior" ? (
+      <Suspense fallback={null}>
+        <LearnPanel />
+      </Suspense>
+    ) : persona === "experienced" ? (
+      tabbedSidebarContent
+    ) : (
+      <ReadingAssistantPanel />
+    );
+
   const sidebarContent = (
     <div className="h-full flex flex-col min-h-0">
       {viewMode === "structural" && !isKnowledgeGraph ? (
-        <ReadingAssistantPanel />
+        structuralSidebarContent
       ) : (
-        <>
-          <div className="flex items-center gap-1 p-2 border-b border-border-subtle bg-surface shrink-0">
-            {(["info", "files"] as const).map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setSidebarTab(tab)}
-                className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold uppercase tracking-wider transition-colors ${
-                  sidebarTab === tab
-                    ? "bg-accent/15 text-accent"
-                    : "text-text-muted hover:text-text-primary hover:bg-elevated"
-                }`}
-              >
-                {tab === "info" ? t.sidebar.info : t.sidebar.files}
-              </button>
-            ))}
-          </div>
-          <div className="flex-1 min-h-0 overflow-auto">
-            {sidebarTab === "files" ? <FileExplorer /> : infoSidebarContent}
-          </div>
-        </>
+        tabbedSidebarContent
       )}
     </div>
   );
@@ -568,7 +902,11 @@ function DashboardContent({
                           ? "border-border-medium bg-elevated text-text-secondary hover:text-text-primary"
                           : "border-transparent bg-transparent text-text-muted/40 line-through hover:text-text-muted"
                       }`}
-                      title={`${nodeTypeFilters[cat.key] !== false ? "Hide" : "Show"} ${cat.label} nodes`}
+                      title={`${
+                        nodeTypeFilters[cat.key] !== false
+                          ? t.nodeTypeFilter.hide
+                          : t.nodeTypeFilter.show
+                      } ${cat.label} ${t.nodeTypeFilter.nodesLabel}`}
                     >
                       <span
                         className="w-2 h-2 rounded-full shrink-0"
@@ -659,6 +997,12 @@ function DashboardContent({
             <KnowledgeGraphView />
           ) : viewMode === "domain" && domainGraph ? (
             <DomainGraphView />
+          ) : showStructuralWorkbench && graph && viewGraph ? (
+            <VisualGuidedWorkbench
+              graph={graph}
+              viewGraph={viewGraph}
+              knowledgeContextIndex={knowledgeContextIndex}
+            />
           ) : navigationLevel === "file-detail" && activeFileId ? (
             <FunctionDetailPage />
           ) : (
@@ -670,7 +1014,7 @@ function DashboardContent({
         </div>
 
         {/* Right sidebar — telescopes at narrower widths */}
-        {navigationLevel !== "file-detail" && (
+        {navigationLevel !== "file-detail" && !showStructuralWorkbench && (
           <aside className="w-[260px] md:w-[300px] lg:w-[360px] shrink-0 bg-surface border-l border-border-subtle overflow-auto">
             {sidebarContent}
           </aside>
@@ -718,7 +1062,7 @@ function DashboardContent({
       )}
 
       {/* Path Finder Modal — only mounted when open so its chunk is lazy-loaded on demand. */}
-      {pathFinderOpen && (
+      {showLegacyGraphControls && pathFinderOpen && (
         <Suspense fallback={null}>
           <PathFinderModal isOpen={pathFinderOpen} onClose={togglePathFinder} />
         </Suspense>

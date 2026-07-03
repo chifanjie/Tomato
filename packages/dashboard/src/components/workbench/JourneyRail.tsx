@@ -56,11 +56,14 @@ export default function JourneyRail({ route, activeStepId, onSelectStep }: Journ
                   const index = route.steps.findIndex((item) => item.id === step.id);
                   const active = step.id === activeStepId;
                   const complete = activeIndex >= 0 && index < activeIndex;
+                  const kind = stepKindLabel(step);
+                  const stepNumber = index + 1;
                   return (
                     <button
                       key={step.id}
                       type="button"
                       onClick={() => onSelectStep(step)}
+                      aria-label={`Step ${stepNumber} of ${route.steps.length}. ${step.section}. ${kind}. ${step.title}. Progress ${completedCount} of ${route.steps.length}, ${progress} percent.`}
                       className={`grid w-full grid-cols-[20px_minmax(0,1fr)] gap-2 rounded-md border px-2 py-2 text-left transition-colors ${
                         active
                           ? "border-accent/55 bg-accent/10"
@@ -85,7 +88,7 @@ export default function JourneyRail({ route, activeStepId, onSelectStep }: Journ
                         </span>
                         <span className="mt-0.5 flex min-w-0 items-center gap-1.5">
                           <span className="shrink-0 rounded border border-border-subtle px-1.5 py-0.5 text-[9px] uppercase text-text-muted">
-                            {stepKindLabel(step)}
+                            {kind}
                           </span>
                           <span className="min-w-0 truncate text-[10px] text-text-muted" title={step.subtitle}>
                             {step.subtitle}

@@ -65,6 +65,75 @@ function selectionForStep(
   };
 }
 
+function firstStepId(routeSteps: JourneyStep[]): string | null {
+  return routeSteps[0]?.id ?? null;
+}
+
+function stepForActiveFile(routeSteps: JourneyStep[], activeFileId: string | null): JourneyStep | null {
+  if (!activeFileId) return null;
+  return routeSteps.find((step) => step.kind === "file" && step.targetId === activeFileId) ?? null;
+}
+
+function stepForSelectedNode(
+  routeSteps: JourneyStep[],
+  selectedNodeId: string | null,
+  viewGraph: ViewGraph,
+): JourneyStep | null {
+  if (!selectedNodeId || viewGraph.filesById.has(selectedNodeId)) return null;
+  return routeSteps.find((step) => step.targetId === selectedNodeId) ?? null;
+}
+
+function stepForActiveLayer(
+  routeSteps: JourneyStep[],
+  activeLayerId: string | null,
+  viewGraph: ViewGraph,
+): JourneyStep | null {
+  if (!activeLayerId) return null;
+  const layerParentId = `layer:${activeLayerId}`;
+  return routeSteps.find((step) => {
+    if (step.kind === "file") return false;
+    if (step.parentId === layerParentId) return true;
+    const file = viewGraph.filesById.get(step.targetId);
+    return file?.layerId === activeLayerId;
+  }) ?? null;
+}
+
+function syncedStepIdForNavigation({
+  routeSteps,
+  currentStepId,
+  navigationLevel,
+  activeFileId,
+  activeLayerId,
+  selectedNodeId,
+  viewGraph,
+}: {
+  routeSteps: JourneyStep[];
+  currentStepId: string | null;
+  navigationLevel: "overview" | "layer-detail" | "file-detail";
+  activeFileId: string | null;
+  activeLayerId: string | null;
+  selectedNodeId: string | null;
+  viewGraph: ViewGraph;
+}): string | null {
+  if (routeSteps.length === 0) return null;
+
+  const currentStep = currentStepId
+    ? routeSteps.find((step) => step.id === currentStepId) ?? null
+    : null;
+
+  if (navigationLevel === "file-detail") {
+    return stepForActiveFile(routeSteps, activeFileId)?.id ?? currentStep?.id ?? firstStepId(routeSteps);
+  }
+
+  return (
+    stepForSelectedNode(routeSteps, selectedNodeId, viewGraph)?.id ??
+    stepForActiveLayer(routeSteps, activeLayerId, viewGraph)?.id ??
+    (currentStep && currentStep.kind !== "file" ? currentStep.id : null) ??
+    routeSteps.find((step) => step.kind !== "file")?.id ??
+    null
+  );
+}
+
 export default function VisualGuidedWorkbench({
   graph,
   viewGraph,
@@ -73,6 +142,8 @@ export default function VisualGuidedWorkbench({
   const searchResults = useDashboardStore((s) => s.searchResults);
   const navigationLevel = useDashboardStore((s) => s.navigationLevel);
   const activeFileId = useDashboardStore((s) => s.activeFileId);
+  const activeLayerId = useDashboardStore((s) => s.activeLayerId);
+  const selectedNodeId = useDashboardStore((s) => s.selectedNodeId);
   const openFileDetail = useDashboardStore((s) => s.openFileDetail);
   const navigateToNodeInLayer = useDashboardStore((s) => s.navigateToNodeInLayer);
   const navigateToOverview = useDashboardStore((s) => s.navigateToOverview);
@@ -102,16 +173,31 @@ export default function VisualGuidedWorkbench({
   );
 
   useEffect(() => {
-    if (route.steps.length === 0) {
-      setActiveStepId(null);
-      return;
+    const nextStepId = syncedStepIdForNavigation({
+      routeSteps: route.steps,
+      currentStepId: activeStepId,
+      navigationLevel,
+      activeFileId,
+      activeLayerId,
+      selectedNodeId,
+      viewGraph,
+    });
+    if (nextStepId !== activeStepId) {
+      setActiveStepId(nextStepId);
     }
-    if (!activeStepId || !route.steps.some((step) => step.id === activeStepId)) {
-      setActiveStepId(route.steps[0].id);
-    }
-  }, [activeStepId, route]);
+  }, [
+    activeFileId,
+    activeLayerId,
+    activeStepId,
+    navigationLevel,
+    route.steps,
+    selectedNodeId,
+    viewGraph,
+  ]);
 
-  const activeStep = route.steps.find((step) => step.id === activeStepId) ?? route.steps[0] ?? null;
+  const activeStep = activeStepId
+    ? route.steps.find((step) => step.id === activeStepId) ?? null
+    : null;
   const selection = useMemo(
     () => selectionForStep(activeStep, graph, viewGraph, nodesById),
     [activeStep, graph, viewGraph, nodesById],

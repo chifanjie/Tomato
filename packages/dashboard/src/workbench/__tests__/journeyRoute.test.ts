@@ -211,6 +211,35 @@ describe("buildJourneyRoute", () => {
     expect(route.steps.map((step) => [step.kind, step.targetId])).not.toContainEqual(["layer", "docs"]);
   });
 
+  it("excludes simple isolated raw non-file layers without search or relationship signal", () => {
+    const raw: KnowledgeGraph = {
+      ...graph(),
+      nodes: [
+        { id: "file:src/app.ts", type: "file", name: "app.ts", filePath: "src/app.ts", summary: "App", tags: [], complexity: "simple" },
+        { id: "function:src/app.ts:start", type: "function", name: "start", filePath: "src/app.ts", lineRange: [1, 4], summary: "", tags: [], complexity: "simple" },
+        { id: "document:notes", type: "document", name: "Notes", summary: "Scratch notes", tags: [], complexity: "simple" },
+      ],
+      edges: [
+        { source: "file:src/app.ts", target: "function:src/app.ts:start", type: "contains", direction: "forward", weight: 1 },
+      ],
+      layers: [
+        { id: "app", name: "App", description: "App layer", nodeIds: ["file:src/app.ts"] },
+        { id: "notes", name: "Notes", description: "Notes layer", nodeIds: ["document:notes"] },
+      ],
+    };
+
+    const route = buildJourneyRoute({
+      graph: raw,
+      viewGraph: buildViewGraph(raw),
+      layerMatchCounts: new Map(),
+      fileMatchCounts: new Map(),
+      maxLayers: 4,
+    });
+
+    expect(route.steps.map((step) => [step.kind, step.targetId])).toContainEqual(["layer", "app"]);
+    expect(route.steps.map((step) => [step.kind, step.targetId])).not.toContainEqual(["layer", "notes"]);
+  });
+
   it("uses stable ids and paths when scores and titles tie", () => {
     const raw: KnowledgeGraph = {
       ...graph(),

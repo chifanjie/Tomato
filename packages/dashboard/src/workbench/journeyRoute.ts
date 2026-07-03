@@ -54,9 +54,29 @@ function layerScore(layer: ViewLayerSummary, layerMatchCounts: Map<string, numbe
   );
 }
 
-function directNodeScore(node: GraphNode): number {
+function directNodeRelationshipScores(graph: KnowledgeGraph): Map<string, number> {
+  const scores = new Map<string, number>();
+  for (const edge of graph.edges) {
+    const weight = edge.weight ?? 1;
+    scores.set(edge.source, (scores.get(edge.source) ?? 0) + weight);
+    scores.set(edge.target, (scores.get(edge.target) ?? 0) + weight);
+  }
+  return scores;
+}
+
+function directNodeScore(
+  node: GraphNode,
+  fileMatchCounts: Map<string, number>,
+  relationshipScores: Map<string, number>,
+): number {
   if (!routeableDirectNodeTypes.has(node.type)) return 0;
-  return 24 + complexityWeight(node.complexity);
+
+  const complexity = complexityWeight(node.complexity);
+  const matches = fileMatchCounts.get(node.id) ?? 0;
+  const relationships = relationshipScores.get(node.id) ?? 0;
+  if (complexity === 0 && matches === 0 && relationships === 0) return 0;
+
+  return complexity + matches * 35 + relationships * 8;
 }
 
 function fileScore(file: ViewFileSummary, fileMatchCounts: Map<string, number>): number {
@@ -122,10 +142,13 @@ function layerHasRouteableSignal(
   directNodes: GraphNode[],
   layerMatchCounts: Map<string, number>,
   fileMatchCounts: Map<string, number>,
+  directRelationshipScores: Map<string, number>,
 ): boolean {
   if ((layerMatchCounts.get(layer.id) ?? 0) > 0) return true;
   if (layer.functionCount > 0 || layer.classCount > 0) return true;
-  if (directNodes.some((node) => routeableDirectNodeTypes.has(node.type))) return true;
+  if (directNodes.some((node) => directNodeScore(node, fileMatchCounts, directRelationshipScores) > 0)) {
+    return true;
+  }
 
   return files.some(
     (file) => (fileMatchCounts.get(file.id) ?? 0) > 0 || complexityWeight(file.node.complexity) > 0,
@@ -178,6 +201,7 @@ export function buildJourneyRoute({
   ];
 
   const connectivityScores = functionConnectivityScores(graph);
+  const directRelationshipScores = directNodeRelationshipScores(graph);
   const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
 
   const selectedLayers = viewGraph.layers
@@ -188,13 +212,23 @@ export function buildJourneyRoute({
         files: [...viewGraph.filesById.values()].filter((file) => file.layerId === layer.id),
         directNodes,
         score: layerScore(layer, layerMatchCounts) +
-          directNodes.reduce((sum, node) => sum + directNodeScore(node), 0),
+          directNodes.reduce(
+            (sum, node) => sum + directNodeScore(node, fileMatchCounts, directRelationshipScores),
+            0,
+          ),
         id: layer.id,
         title: layer.name,
       };
     })
     .filter(({ layer, files, directNodes }) =>
-      layerHasRouteableSignal(layer, files, directNodes, layerMatchCounts, fileMatchCounts),
+      layerHasRouteableSignal(
+        layer,
+        files,
+        directNodes,
+        layerMatchCounts,
+        fileMatchCounts,
+        directRelationshipScores,
+      ),
     )
     .sort(byScoreThenTitle)
     .slice(0, maxLayers);

@@ -1,4 +1,4 @@
-import type { KnowledgeGraph } from "@understand-anything/core/types";
+import type { GraphNode, KnowledgeGraph } from "@understand-anything/core/types";
 import type { FunctionDot, ViewFileSummary, ViewGraph, ViewLayerSummary } from "../viewgraph/types";
 
 export type JourneyStepKind = "project" | "layer" | "file" | "function";
@@ -28,6 +28,17 @@ export interface BuildJourneyRouteInput {
   maxFunctionsPerFile?: number;
 }
 
+const routeableDirectNodeTypes = new Set<GraphNode["type"]>([
+  "config",
+  "document",
+  "service",
+  "table",
+  "endpoint",
+  "pipeline",
+  "schema",
+  "resource",
+]);
+
 function complexityWeight(value: string | undefined): number {
   if (value === "complex") return 30;
   if (value === "moderate") return 12;
@@ -41,6 +52,11 @@ function layerScore(layer: ViewLayerSummary, layerMatchCounts: Map<string, numbe
     layer.classCount * 3 +
     (layerMatchCounts.get(layer.id) ?? 0) * 40
   );
+}
+
+function directNodeScore(node: GraphNode): number {
+  if (!routeableDirectNodeTypes.has(node.type)) return 0;
+  return 24 + complexityWeight(node.complexity);
 }
 
 function fileScore(file: ViewFileSummary, fileMatchCounts: Map<string, number>): number {
@@ -103,15 +119,26 @@ function topFunctions(
 function layerHasRouteableSignal(
   layer: ViewLayerSummary,
   files: ViewFileSummary[],
+  directNodes: GraphNode[],
   layerMatchCounts: Map<string, number>,
   fileMatchCounts: Map<string, number>,
 ): boolean {
   if ((layerMatchCounts.get(layer.id) ?? 0) > 0) return true;
   if (layer.functionCount > 0 || layer.classCount > 0) return true;
+  if (directNodes.some((node) => routeableDirectNodeTypes.has(node.type))) return true;
 
   return files.some(
     (file) => (fileMatchCounts.get(file.id) ?? 0) > 0 || complexityWeight(file.node.complexity) > 0,
   );
+}
+
+function rawLayerDirectNodes(graph: KnowledgeGraph, layerId: string, nodesById: Map<string, GraphNode>): GraphNode[] {
+  const rawLayer = graph.layers.find((layer) => layer.id === layerId);
+  if (!rawLayer) return [];
+
+  return rawLayer.nodeIds
+    .map((id) => nodesById.get(id))
+    .filter((node): node is GraphNode => node !== undefined && node.type !== "file");
 }
 
 export function buildJourneyRoute({
@@ -151,16 +178,24 @@ export function buildJourneyRoute({
   ];
 
   const connectivityScores = functionConnectivityScores(graph);
+  const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
 
   const selectedLayers = viewGraph.layers
-    .map((layer) => ({
-      layer,
-      files: [...viewGraph.filesById.values()].filter((file) => file.layerId === layer.id),
-      score: layerScore(layer, layerMatchCounts),
-      id: layer.id,
-      title: layer.name,
-    }))
-    .filter(({ layer, files }) => layerHasRouteableSignal(layer, files, layerMatchCounts, fileMatchCounts))
+    .map((layer) => {
+      const directNodes = rawLayerDirectNodes(graph, layer.id, nodesById);
+      return {
+        layer,
+        files: [...viewGraph.filesById.values()].filter((file) => file.layerId === layer.id),
+        directNodes,
+        score: layerScore(layer, layerMatchCounts) +
+          directNodes.reduce((sum, node) => sum + directNodeScore(node), 0),
+        id: layer.id,
+        title: layer.name,
+      };
+    })
+    .filter(({ layer, files, directNodes }) =>
+      layerHasRouteableSignal(layer, files, directNodes, layerMatchCounts, fileMatchCounts),
+    )
     .sort(byScoreThenTitle)
     .slice(0, maxLayers);
 

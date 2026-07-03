@@ -81,6 +81,32 @@ describe("buildJourneyRoute", () => {
     ]);
   });
 
+  it.each([
+    ["missing graph", null, buildViewGraph(graph())],
+    ["missing view graph", graph(), null],
+  ] as const)("returns a project-only route when %s", (_label, raw, viewGraph) => {
+    const route = buildJourneyRoute({
+      graph: raw,
+      viewGraph,
+      layerMatchCounts: new Map(),
+      fileMatchCounts: new Map(),
+    });
+
+    expect(route).toEqual({
+      projectName: "Project",
+      steps: [
+        {
+          id: "project",
+          kind: "project",
+          targetId: "project",
+          title: "Project overview",
+          subtitle: "Load a graph to build the guided route.",
+          score: 0,
+        },
+      ],
+    });
+  });
+
   it("ranks same-file functions by call connectivity from graph edges", () => {
     const raw: KnowledgeGraph = {
       ...graph(),
@@ -150,6 +176,38 @@ describe("buildJourneyRoute", () => {
 
     expect(route.steps.map((step) => [step.kind, step.targetId])).toContainEqual(["layer", "schema"]);
     expect(route.steps.map((step) => [step.kind, step.targetId])).toContainEqual(["file", "file:src/schema.ts"]);
+    expect(route.steps.map((step) => [step.kind, step.targetId])).not.toContainEqual(["layer", "docs"]);
+  });
+
+  it("includes meaningful raw non-file layers even when view graph has no files for them", () => {
+    const raw: KnowledgeGraph = {
+      ...graph(),
+      nodes: [
+        { id: "file:src/app.ts", type: "file", name: "app.ts", filePath: "src/app.ts", summary: "App", tags: [], complexity: "simple" },
+        { id: "function:src/app.ts:start", type: "function", name: "start", filePath: "src/app.ts", lineRange: [1, 4], summary: "", tags: [], complexity: "simple" },
+        { id: "schema:public-user", type: "schema", name: "PublicUser", summary: "Public API user schema", tags: ["api"], complexity: "moderate" },
+        { id: "file:src/readme.md", type: "file", name: "readme.md", filePath: "src/readme.md", summary: "Docs", tags: [], complexity: "simple" },
+      ],
+      edges: [
+        { source: "file:src/app.ts", target: "function:src/app.ts:start", type: "contains", direction: "forward", weight: 1 },
+      ],
+      layers: [
+        { id: "app", name: "App", description: "App layer", nodeIds: ["file:src/app.ts"] },
+        { id: "contract", name: "Contract", description: "Schema contract layer", nodeIds: ["schema:public-user"] },
+        { id: "docs", name: "Docs", description: "Docs layer", nodeIds: ["file:src/readme.md"] },
+      ],
+    };
+
+    const route = buildJourneyRoute({
+      graph: raw,
+      viewGraph: buildViewGraph(raw),
+      layerMatchCounts: new Map(),
+      fileMatchCounts: new Map(),
+      maxLayers: 4,
+    });
+
+    expect(route.steps.map((step) => [step.kind, step.targetId])).toContainEqual(["layer", "contract"]);
+    expect(route.steps.map((step) => [step.kind, step.targetId])).not.toContainEqual(["file", "schema:public-user"]);
     expect(route.steps.map((step) => [step.kind, step.targetId])).not.toContainEqual(["layer", "docs"]);
   });
 

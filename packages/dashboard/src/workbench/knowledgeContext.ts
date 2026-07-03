@@ -78,6 +78,10 @@ function pushIndexedValue<T>(index: Map<string, T[]>, key: string | null, value:
   index.set(key, [value]);
 }
 
+function snapshotIndex<T>(index: Map<string, T[]>): ReadonlyMap<string, readonly T[]> {
+  return new Map([...index.entries()].map(([key, values]) => [key, Object.freeze([...values])]));
+}
+
 function formattedAnchor(anchor: KnowledgeSourceAnchor): KnowledgeSourceAnchor {
   const parts: string[] = [];
   if (anchor.filePath) {
@@ -123,13 +127,11 @@ function documentsForSelection(
   };
 }
 
-function firstTraceForSelection(
-  index: KnowledgeContextIndex,
-  selection: WorkbenchSelection,
-): KnowledgeTraceRecord | undefined {
-  const byNodeId = index.tracesByNodeId.get(selection.nodeId)?.[0];
-  if (byNodeId) return byNodeId;
+function nodeTraceForSelection(index: KnowledgeContextIndex, selection: WorkbenchSelection): KnowledgeTraceRecord | undefined {
+  return index.tracesByNodeId.get(selection.nodeId)?.[0];
+}
 
+function fileTraceForSelection(index: KnowledgeContextIndex, selection: WorkbenchSelection): KnowledgeTraceRecord | undefined {
   const path = normalizedPath(selection.filePath);
   return path ? index.tracesByFilePath.get(path)?.[0] : undefined;
 }
@@ -146,13 +148,15 @@ export function buildKnowledgeContextIndex({
   const tracesByFilePath = new Map<string, KnowledgeTraceRecord[]>();
   const documentsByFilePath = new Map<string, KnowledgeDocumentSummary[]>();
   const documentsByRelatedPath = new Map<string, KnowledgeDocumentSummary[]>();
+  const traceSnapshot = Object.freeze([...traces]);
+  const documentSnapshot = Object.freeze([...documents]);
 
-  for (const trace of traces) {
+  for (const trace of traceSnapshot) {
     pushIndexedValue(tracesByNodeId, normalizedId(trace.nodeId), trace);
     pushIndexedValue(tracesByFilePath, normalizedPath(trace.filePath), trace);
   }
 
-  for (const document of documents) {
+  for (const document of documentSnapshot) {
     pushIndexedValue(documentsByFilePath, normalizedPath(document.filePath), document);
     for (const relatedPath of document.relatedPaths ?? []) {
       pushIndexedValue(documentsByRelatedPath, normalizedPath(relatedPath), document);
@@ -160,12 +164,12 @@ export function buildKnowledgeContextIndex({
   }
 
   return {
-    traces,
-    documents,
-    tracesByNodeId,
-    tracesByFilePath,
-    documentsByFilePath,
-    documentsByRelatedPath,
+    traces: traceSnapshot,
+    documents: documentSnapshot,
+    tracesByNodeId: snapshotIndex(tracesByNodeId),
+    tracesByFilePath: snapshotIndex(tracesByFilePath),
+    documentsByFilePath: snapshotIndex(documentsByFilePath),
+    documentsByRelatedPath: snapshotIndex(documentsByRelatedPath),
   };
 }
 
@@ -185,18 +189,31 @@ export function resolveKnowledgeContext(
     };
   }
 
-  const trace = firstTraceForSelection(index, selection);
+  const nodeTrace = nodeTraceForSelection(index, selection);
   const documents = documentsForSelection(index, selection);
   const supportingDocuments = uniqueDocuments([...documents.exact, ...documents.related]);
 
-  if (trace) {
+  if (nodeTrace) {
     return {
       matchKind: "direct-trace",
-      title: trace.title,
-      summary: trace.summary,
-      businessMeaning: trace.businessMeaning ?? "No generated business meaning is available for this trace yet.",
-      changeRisk: trace.changeRisk ?? "Review the linked evidence before changing this code path.",
-      evidence: formattedAnchors(trace.anchors),
+      title: nodeTrace.title,
+      summary: nodeTrace.summary,
+      businessMeaning: nodeTrace.businessMeaning ?? "No generated business meaning is available for this trace yet.",
+      changeRisk: nodeTrace.changeRisk ?? "Review the linked evidence before changing this code path.",
+      evidence: formattedAnchors(nodeTrace.anchors),
+      documents: supportingDocuments,
+    };
+  }
+
+  const fileTrace = fileTraceForSelection(index, selection);
+  if (fileTrace) {
+    return {
+      matchKind: "filename-path",
+      title: fileTrace.title,
+      summary: fileTrace.summary,
+      businessMeaning: fileTrace.businessMeaning ?? "No generated business meaning is available for this trace yet.",
+      changeRisk: fileTrace.changeRisk ?? "Review the linked evidence before changing this code path.",
+      evidence: formattedAnchors(fileTrace.anchors),
       documents: supportingDocuments,
     };
   }

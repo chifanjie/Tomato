@@ -67,6 +67,38 @@ describe("knowledgeContext", () => {
     expect(context.evidence.map((anchor) => anchor.label)).toEqual(["API docs - docs/api.md"]);
   });
 
+  it("uses filename-path match kind for filePath trace matches when nodeId misses", () => {
+    const traces: KnowledgeTraceRecord[] = [
+      {
+        nodeId: "function:src/api.ts:saveUsers",
+        filePath: "src/api.ts",
+        title: "API file trace",
+        summary: "Explains shared API file behavior.",
+        businessMeaning: "This file handles multiple user API paths.",
+        changeRisk: "Changing shared helpers can affect all API consumers.",
+        anchors: [{ label: "api helpers", filePath: "src/api.ts", lineRange: [21, 40] }],
+      },
+    ];
+    const documents: KnowledgeDocumentSummary[] = [
+      {
+        id: "doc-api",
+        title: "API module notes",
+        summary: "The API module owns dashboard user loading.",
+        filePath: "src/api.ts",
+      },
+    ];
+
+    const context = resolveKnowledgeContext(buildKnowledgeContextIndex({ traces, documents }), apiSelection);
+
+    expect(context.matchKind).toBe("filename-path");
+    expect(context.title).toBe("API file trace");
+    expect(context.summary).toBe("Explains shared API file behavior.");
+    expect(context.businessMeaning).toBe("This file handles multiple user API paths.");
+    expect(context.changeRisk).toBe("Changing shared helpers can affect all API consumers.");
+    expect(context.evidence.map((anchor) => anchor.label)).toContain("api helpers - src/api.ts L21-40");
+    expect(context.documents.map((document) => document.id)).toEqual(["doc-api"]);
+  });
+
   it("returns graph-only context when no docs or traces exist", () => {
     const context = resolveKnowledgeContext(
       buildKnowledgeContextIndex({ traces: [], documents: [] }),

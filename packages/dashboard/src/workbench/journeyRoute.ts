@@ -23,6 +23,7 @@ export interface BuildJourneyRouteInput {
   viewGraph: ViewGraph | null;
   layerMatchCounts: Map<string, number>;
   fileMatchCounts: Map<string, number>;
+  nodeMatchCounts?: Map<string, number>;
   maxLayers?: number;
   maxFilesPerLayer?: number;
   maxFunctionsPerFile?: number;
@@ -66,13 +67,13 @@ function directNodeRelationshipScores(graph: KnowledgeGraph): Map<string, number
 
 function directNodeScore(
   node: GraphNode,
-  fileMatchCounts: Map<string, number>,
+  nodeMatchCounts: Map<string, number>,
   relationshipScores: Map<string, number>,
 ): number {
   if (!routeableDirectNodeTypes.has(node.type)) return 0;
 
   const complexity = complexityWeight(node.complexity);
-  const matches = fileMatchCounts.get(node.id) ?? 0;
+  const matches = nodeMatchCounts.get(node.id) ?? 0;
   const relationships = relationshipScores.get(node.id) ?? 0;
   if (complexity === 0 && matches === 0 && relationships === 0) return 0;
 
@@ -111,13 +112,19 @@ function functionScore(dot: FunctionDot, connectivityScores: Map<string, number>
   );
 }
 
+function compareString(a: string, b: string): number {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
 function byScoreThenTitle<T extends { id: string; score: number; title: string; path?: string }>(a: T, b: T): number {
   if (b.score !== a.score) return b.score - a.score;
-  const titleOrder = a.title.localeCompare(b.title);
+  const titleOrder = compareString(a.title, b.title);
   if (titleOrder !== 0) return titleOrder;
-  const pathOrder = (a.path ?? "").localeCompare(b.path ?? "");
+  const pathOrder = compareString(a.path ?? "", b.path ?? "");
   if (pathOrder !== 0) return pathOrder;
-  return a.id.localeCompare(b.id);
+  return compareString(a.id, b.id);
 }
 
 function topFunctions(
@@ -129,9 +136,9 @@ function topFunctions(
     .sort((a, b) => {
       const delta = functionScore(b, connectivityScores) - functionScore(a, connectivityScores);
       if (delta !== 0) return delta;
-      const nameOrder = a.name.localeCompare(b.name);
+      const nameOrder = compareString(a.name, b.name);
       if (nameOrder !== 0) return nameOrder;
-      return a.nodeId.localeCompare(b.nodeId);
+      return compareString(a.nodeId, b.nodeId);
     })
     .slice(0, maxFunctions);
 }
@@ -142,11 +149,12 @@ function layerHasRouteableSignal(
   directNodes: GraphNode[],
   layerMatchCounts: Map<string, number>,
   fileMatchCounts: Map<string, number>,
+  nodeMatchCounts: Map<string, number>,
   directRelationshipScores: Map<string, number>,
 ): boolean {
   if ((layerMatchCounts.get(layer.id) ?? 0) > 0) return true;
   if (layer.functionCount > 0 || layer.classCount > 0) return true;
-  if (directNodes.some((node) => directNodeScore(node, fileMatchCounts, directRelationshipScores) > 0)) {
+  if (directNodes.some((node) => directNodeScore(node, nodeMatchCounts, directRelationshipScores) > 0)) {
     return true;
   }
 
@@ -169,6 +177,7 @@ export function buildJourneyRoute({
   viewGraph,
   layerMatchCounts,
   fileMatchCounts,
+  nodeMatchCounts = new Map(),
   maxLayers = 4,
   maxFilesPerLayer = 2,
   maxFunctionsPerFile = 1,
@@ -213,7 +222,7 @@ export function buildJourneyRoute({
         directNodes,
         score: layerScore(layer, layerMatchCounts) +
           directNodes.reduce(
-            (sum, node) => sum + directNodeScore(node, fileMatchCounts, directRelationshipScores),
+            (sum, node) => sum + directNodeScore(node, nodeMatchCounts, directRelationshipScores),
             0,
           ),
         id: layer.id,
@@ -227,6 +236,7 @@ export function buildJourneyRoute({
         directNodes,
         layerMatchCounts,
         fileMatchCounts,
+        nodeMatchCounts,
         directRelationshipScores,
       ),
     )

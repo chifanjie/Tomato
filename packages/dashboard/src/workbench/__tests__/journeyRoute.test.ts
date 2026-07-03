@@ -240,6 +240,43 @@ describe("buildJourneyRoute", () => {
     expect(route.steps.map((step) => [step.kind, step.targetId])).not.toContainEqual(["layer", "notes"]);
   });
 
+  it("uses direct node match counts for simple raw non-file layer search signal", () => {
+    const raw: KnowledgeGraph = {
+      ...graph(),
+      nodes: [
+        { id: "file:src/app.ts", type: "file", name: "app.ts", filePath: "src/app.ts", summary: "App", tags: [], complexity: "simple" },
+        { id: "function:src/app.ts:start", type: "function", name: "start", filePath: "src/app.ts", lineRange: [1, 4], summary: "", tags: [], complexity: "simple" },
+        { id: "schema:public-user", type: "schema", name: "PublicUser", summary: "Public API user schema", tags: ["api"], complexity: "simple" },
+      ],
+      edges: [
+        { source: "file:src/app.ts", target: "function:src/app.ts:start", type: "contains", direction: "forward", weight: 1 },
+      ],
+      layers: [
+        { id: "app", name: "App", description: "App layer", nodeIds: ["file:src/app.ts"] },
+        { id: "contract", name: "Contract", description: "Schema contract layer", nodeIds: ["schema:public-user"] },
+      ],
+    };
+
+    const withoutNodeMatch = buildJourneyRoute({
+      graph: raw,
+      viewGraph: buildViewGraph(raw),
+      layerMatchCounts: new Map(),
+      fileMatchCounts: new Map([["schema:public-user", 3]]),
+      maxLayers: 4,
+    });
+    const withNodeMatch = buildJourneyRoute({
+      graph: raw,
+      viewGraph: buildViewGraph(raw),
+      layerMatchCounts: new Map(),
+      fileMatchCounts: new Map(),
+      nodeMatchCounts: new Map([["schema:public-user", 3]]),
+      maxLayers: 4,
+    });
+
+    expect(withoutNodeMatch.steps.map((step) => [step.kind, step.targetId])).not.toContainEqual(["layer", "contract"]);
+    expect(withNodeMatch.steps.map((step) => [step.kind, step.targetId])).toContainEqual(["layer", "contract"]);
+  });
+
   it("uses stable ids and paths when scores and titles tie", () => {
     const raw: KnowledgeGraph = {
       ...graph(),

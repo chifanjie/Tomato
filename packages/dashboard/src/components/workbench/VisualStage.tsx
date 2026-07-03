@@ -10,7 +10,7 @@ export default function VisualStage({ activeStep, children }: VisualStageProps) 
   const kindLabel = activeStep?.kind ?? "project";
 
   return (
-    <section className="flex h-full min-w-0 flex-1 flex-col bg-root">
+    <section aria-label="Visual workbench stage" className="flex h-full min-w-0 flex-1 flex-col bg-root">
       <header className="shrink-0 border-b border-border-subtle bg-surface/95 px-5 py-4">
         <div className="flex min-w-0 items-start justify-between gap-4">
           <div className="min-w-0">
@@ -32,7 +32,7 @@ export default function VisualStage({ activeStep, children }: VisualStageProps) 
             )}
           </div>
           {activeStep?.reason && (
-            <p className="hidden max-w-[360px] text-right text-xs leading-relaxed text-text-secondary xl:block">
+            <p className="hidden max-w-[360px] shrink-0 text-right text-xs leading-relaxed text-text-secondary xl:block">
               {activeStep.reason}
             </p>
           )}

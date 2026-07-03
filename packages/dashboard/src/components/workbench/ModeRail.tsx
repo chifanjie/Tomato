@@ -74,7 +74,9 @@ export default function ModeRail() {
               isActive
                 ? "border-accent/55 bg-accent/15 text-accent shadow-sm shadow-accent/10"
                 : "border-transparent text-text-muted"
-            } ${action.disabled ? "cursor-not-allowed opacity-35" : "hover:border-border-medium hover:bg-elevated hover:text-text-primary"}`}
+            } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${
+              action.disabled ? "cursor-not-allowed opacity-35" : "hover:border-border-medium hover:bg-elevated hover:text-text-primary"
+            }`}
           >
             <ModeIcon icon={action.icon} />
           </button>

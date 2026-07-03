@@ -21,7 +21,7 @@ function anchorKey(anchor: KnowledgeSourceAnchor): string {
 
 function PanelSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section>
+    <section className="rounded-md border border-border-subtle bg-elevated/35 p-3">
       <h3 className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">{title}</h3>
       <div className="mt-2 text-sm leading-relaxed text-text-secondary">{children}</div>
     </section>
@@ -32,7 +32,10 @@ export default function KnowledgeContextPanel({ context }: KnowledgeContextPanel
   const hasEvidence = context.documents.length > 0 || context.evidence.length > 0;
 
   return (
-    <aside className="flex h-full w-[340px] shrink-0 flex-col border-l border-border-subtle bg-surface">
+    <aside
+      aria-label="Knowledge context"
+      className="flex h-full w-[320px] shrink-0 flex-col border-l border-border-subtle bg-surface xl:w-[340px]"
+    >
       <header className="shrink-0 border-b border-border-subtle px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <h2 className="font-heading text-base text-text-primary">Context</h2>
@@ -47,15 +50,15 @@ export default function KnowledgeContextPanel({ context }: KnowledgeContextPanel
 
       <div className="min-h-0 flex-1 space-y-5 overflow-auto px-4 py-4">
         <PanelSection title="Engineer handoff">
-          <p>{context.summary}</p>
+          <p className="break-words">{context.summary}</p>
         </PanelSection>
 
         <PanelSection title="Business meaning">
-          <p>{context.businessMeaning}</p>
+          <p className="break-words">{context.businessMeaning}</p>
         </PanelSection>
 
         <PanelSection title="Change risk">
-          <p>{context.changeRisk}</p>
+          <p className="break-words">{context.changeRisk}</p>
         </PanelSection>
 
         <PanelSection title="Evidence links">
@@ -86,7 +89,7 @@ export default function KnowledgeContextPanel({ context }: KnowledgeContextPanel
                 </div>
               ))}
 
-              {context.evidence.map((anchor) => {
+              {context.evidence.map((anchor, index) => {
                 const lineRange = lineRangeLabel(anchor);
                 const body = (
                   <>
@@ -103,16 +106,16 @@ export default function KnowledgeContextPanel({ context }: KnowledgeContextPanel
 
                 return anchor.url ? (
                   <a
-                    key={anchorKey(anchor)}
+                    key={anchorKey(anchor) || `anchor:${index}`}
                     href={anchor.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="block rounded-md border border-border-subtle bg-elevated/45 p-3 transition-colors hover:border-accent/45"
+                    className="block rounded-md border border-border-subtle bg-surface/70 p-3 transition-colors hover:border-accent/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55"
                   >
                     {body}
                   </a>
                 ) : (
-                  <div key={anchorKey(anchor)} className="rounded-md border border-border-subtle bg-elevated/45 p-3">
+                  <div key={anchorKey(anchor) || `anchor:${index}`} className="rounded-md border border-border-subtle bg-surface/70 p-3">
                     {body}
                   </div>
                 );

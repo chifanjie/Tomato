@@ -19,7 +19,10 @@ export default function JourneyRail({ route, activeStepId, onSelectStep }: Journ
   );
 
   return (
-    <aside className="flex h-full w-[260px] shrink-0 flex-col border-r border-border-subtle bg-panel">
+    <aside
+      aria-label="Guided workbench route"
+      className="flex h-full w-[248px] shrink-0 flex-col border-r border-border-subtle bg-panel xl:w-[260px]"
+    >
       <div className="shrink-0 border-b border-border-subtle px-4 py-3">
         <div className="min-w-0">
           <p className="truncate text-[10px] font-semibold uppercase tracking-wider text-text-muted">
@@ -34,7 +37,14 @@ export default function JourneyRail({ route, activeStepId, onSelectStep }: Journ
             <span>{completedCount}/{route.steps.length}</span>
             <span>{progress}%</span>
           </div>
-          <div className="mt-1 h-1.5 overflow-hidden rounded bg-elevated">
+          <div
+            aria-label="Guided route progress"
+            aria-valuemax={100}
+            aria-valuemin={0}
+            aria-valuenow={progress}
+            className="mt-1 h-1.5 overflow-hidden rounded bg-elevated"
+            role="progressbar"
+          >
             <div
               className="h-full rounded bg-accent transition-[width]"
               style={{ width: `${progress}%` }}
@@ -68,7 +78,7 @@ export default function JourneyRail({ route, activeStepId, onSelectStep }: Journ
                         active
                           ? "border-accent/55 bg-accent/10"
                           : "border-border-subtle bg-surface/65 hover:border-accent/35 hover:bg-elevated"
-                      }`}
+                      } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55`}
                       aria-current={active ? "step" : undefined}
                     >
                       <span

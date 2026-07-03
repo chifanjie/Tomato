@@ -41,9 +41,7 @@ export interface BuildJourneyRouteInput {
   layerMatchCounts: Map<string, number>;
   fileMatchCounts: Map<string, number>;
   nodeMatchCounts?: Map<string, number>;
-  maxLayers?: number;
-  maxFilesPerLayer?: number;
-  maxFunctionsPerFile?: number;
+  maxStepsPerSection?: number;
 }
 
 interface Candidate {
@@ -198,15 +196,14 @@ function directNodeScore(
   node: GraphNode,
   nodeMatchCounts: Map<string, number>,
   relationshipScoreById: Map<string, number>,
-  layerMatchCount: number,
 ): number {
   if (!routeableDirectNodeTypes.has(node.type)) return 0;
 
   const matches = nodeMatchCounts.get(node.id) ?? 0;
   const relationships = relationshipScoreById.get(node.id) ?? 0;
-  if (matches === 0 && relationships === 0 && layerMatchCount === 0) return 0;
+  if (matches === 0 && relationships === 0) return 0;
 
-  return matches * 35 + relationships * 8 + layerMatchCount * 40;
+  return matches * 35 + relationships * 8;
 }
 
 function fileCandidate(file: ViewFileSummary, fileMatchCounts: Map<string, number>): Candidate | null {
@@ -236,16 +233,10 @@ function directNodeCandidate(
   node: GraphNode,
   layerId: string,
   layerName: string,
-  layerMatchCounts: Map<string, number>,
   nodeMatchCounts: Map<string, number>,
   relationshipScoreById: Map<string, number>,
 ): Candidate | null {
-  const score = directNodeScore(
-    node,
-    nodeMatchCounts,
-    relationshipScoreById,
-    layerMatchCounts.get(layerId) ?? 0,
-  );
+  const score = directNodeScore(node, nodeMatchCounts, relationshipScoreById);
   if (score === 0) return null;
 
   const section = sectionForDirectNode(node);
@@ -280,10 +271,9 @@ function bySectionScorePath(a: Candidate, b: Candidate): number {
 export function buildJourneyRoute({
   graph,
   viewGraph,
-  layerMatchCounts,
   fileMatchCounts,
   nodeMatchCounts = new Map(),
-  maxFilesPerLayer = 2,
+  maxStepsPerSection = 2,
 }: BuildJourneyRouteInput): JourneyRoute {
   if (!graph || !viewGraph) {
     return fallbackRoute();
@@ -306,7 +296,6 @@ export function buildJourneyRoute({
         node,
         layer.id,
         layer.name,
-        layerMatchCounts,
         nodeMatchCounts,
         relationshipScoreById,
       );
@@ -319,7 +308,7 @@ export function buildJourneyRoute({
     .sort(bySectionScorePath)
     .filter((candidate) => {
       const count = sectionCounts.get(candidate.step.section) ?? 0;
-      if (count >= maxFilesPerLayer) return false;
+      if (count >= maxStepsPerSection) return false;
       sectionCounts.set(candidate.step.section, count + 1);
       return true;
     })

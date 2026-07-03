@@ -193,4 +193,23 @@ describe("buildJourneyRoute", () => {
       "schema:matched-user",
     ]);
   });
+
+  it("does not include isolated raw nodes from layer match counts alone", () => {
+    const raw = rawNodeGraph();
+    const route = buildJourneyRoute({
+      graph: raw,
+      viewGraph: buildViewGraph(raw),
+      layerMatchCounts: new Map([["matched-schema", 4], ["notes", 4]]),
+      fileMatchCounts: new Map(),
+    });
+
+    expect(route.steps.map((step) => [step.section, step.targetId])).not.toContainEqual([
+      "Data Models",
+      "schema:matched-user",
+    ]);
+    expect(route.steps.map((step) => [step.section, step.targetId])).not.toContainEqual([
+      "Unmapped",
+      "document:notes",
+    ]);
+  });
 });

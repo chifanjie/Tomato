@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { KnowledgeGraph } from "@understand-anything/core/types";
-import type { SearchResult } from "@understand-anything/core/search";
+import type { KnowledgeGraph } from "@understand-code/core/types";
+import type { SearchResult } from "@understand-code/core/search";
 import { buildViewGraph } from "../../viewgraph/buildViewGraph";
 import { buildReadingAssistantModel } from "../readingAssistantModel";
+import type { ReadingAssistantCopy } from "../readingAssistantModel";
 
 function sampleGraph(): KnowledgeGraph {
   return {
@@ -101,5 +102,79 @@ describe("buildReadingAssistantModel", () => {
       fileMatches: 2,
       layerMatches: 2,
     });
+  });
+
+  it("uses custom copy for model-provided text", () => {
+    const graph = {
+      ...sampleGraph(),
+      project: {
+        ...sampleGraph().project,
+        description: "",
+      },
+    };
+    const viewGraph = buildViewGraph(graph);
+    const copy: ReadingAssistantCopy = {
+      projectReadingMap: "Mapa de lectura",
+      overviewFallbackSubtitle: "Elige una capa y luego abre archivos.",
+      noLayerSelectedTitle: "Sin capa",
+      noLayerSelectedSubtitle: "Vuelve al resumen.",
+      noGraphLoadedTitle: "Sin grafo",
+      noGraphLoadedSubtitle: "Carga un grafo.",
+      overviewRouteSteps: ["Paso uno", "Paso dos", "Paso tres"],
+      layerRouteSteps: ["Archivo uno", "Archivo dos", "Archivo tres"],
+      metrics: {
+        layers: "Capas",
+        files: "Archivos",
+        functions: "Funciones",
+        classes: "Clases",
+        modules: "Modulos",
+      },
+    };
+
+    const overview = buildReadingAssistantModel({
+      graph,
+      viewGraph,
+      navigationLevel: "overview",
+      activeLayerId: null,
+      searchQuery: "",
+      searchResults: [],
+      copy,
+    });
+    const layer = buildReadingAssistantModel({
+      graph,
+      viewGraph,
+      navigationLevel: "layer-detail",
+      activeLayerId: "core",
+      searchQuery: "",
+      searchResults: [],
+      copy,
+    });
+    const empty = buildReadingAssistantModel({
+      graph: null,
+      viewGraph: null,
+      navigationLevel: "overview",
+      activeLayerId: null,
+      searchQuery: "",
+      searchResults: [],
+      copy,
+    });
+
+    expect(overview.title).toBe("Mapa de lectura");
+    expect(overview.subtitle).toBe("Elige una capa y luego abre archivos.");
+    expect(overview.routeSteps).toEqual(["Paso uno", "Paso dos", "Paso tres"]);
+    expect(overview.metrics.map((metric) => metric.label)).toEqual([
+      "Capas",
+      "Archivos",
+      "Funciones",
+    ]);
+    expect(layer.routeSteps).toEqual(["Archivo uno", "Archivo dos", "Archivo tres"]);
+    expect(layer.metrics.map((metric) => metric.label)).toEqual([
+      "Archivos",
+      "Funciones",
+      "Clases",
+      "Modulos",
+    ]);
+    expect(empty.title).toBe("Sin grafo");
+    expect(empty.subtitle).toBe("Carga un grafo.");
   });
 });

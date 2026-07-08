@@ -12,7 +12,7 @@ Usage:
     python merge-knowledge-graph.py <wiki-directory>
 
 Output:
-    Writes assembled-graph.json to <wiki-directory>/.understand-anything/intermediate/
+    Writes assembled-graph.json to <wiki-directory>/.understand-code/intermediate/
 """
 
 import json
@@ -90,7 +90,7 @@ def normalize_entity_name(name: str) -> str:
 # ---------------------------------------------------------------------------
 
 def merge(root: Path) -> dict:
-    intermediate = root / ".understand-anything" / "intermediate"
+    intermediate = root / ".understand-code" / "intermediate"
     manifest_path = intermediate / "scan-manifest.json"
 
     if not manifest_path.is_file():

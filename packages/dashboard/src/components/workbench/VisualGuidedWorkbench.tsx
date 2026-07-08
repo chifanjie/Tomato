@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { GraphNode, KnowledgeGraph } from "@understand-anything/core/types";
+import type { GraphNode, KnowledgeGraph } from "@understand-code/core/types";
 import { useDashboardStore } from "../../store";
 import { buildReadableSearchMatches, findParentFileId } from "../../viewgraph/readableSelectors";
 import type { ViewGraph } from "../../viewgraph/types";
@@ -9,8 +9,7 @@ import {
   type KnowledgeContextIndex,
   type WorkbenchSelection,
 } from "../../workbench/knowledgeContext";
-import FunctionDetailPage from "../FunctionDetailPage";
-import ReadableViewGraphPage from "../ReadableViewGraphPage";
+import GraphView from "../GraphView";
 import JourneyRail from "./JourneyRail";
 import KnowledgeContextPanel from "./KnowledgeContextPanel";
 import ModeRail from "./ModeRail";
@@ -62,6 +61,39 @@ function selectionForStep(
     title: node?.name ?? step.title,
     summary: node?.summary ?? step.reason,
     kind,
+  };
+}
+
+function selectionForNode(
+  nodeId: string | null,
+  graph: KnowledgeGraph,
+  viewGraph: ViewGraph,
+  nodesById: Map<string, GraphNode>,
+): WorkbenchSelection | null {
+  if (!nodeId) return null;
+
+  const file = viewGraph.filesById.get(nodeId);
+  if (file) {
+    return {
+      nodeId,
+      filePath: file.filePath,
+      title: file.name,
+      summary: file.node.summary,
+      kind: "file",
+    };
+  }
+
+  const node = nodesById.get(nodeId);
+  if (!node) return null;
+
+  const parentFileId = findParentFileId(graph, viewGraph, node.id);
+  const parentFile = parentFileId ? viewGraph.filesById.get(parentFileId) : null;
+  return {
+    nodeId,
+    filePath: node.filePath ?? parentFile?.filePath,
+    title: node.name,
+    summary: node.summary,
+    kind: node.type,
   };
 }
 
@@ -137,7 +169,7 @@ function syncedStepIdForNavigation({
     stepForActiveLayer(routeSteps, activeLayerId, viewGraph)?.id ??
     (currentStep && currentStep.kind !== "file" ? currentStep.id : null) ??
     routeSteps.find((step) => step.kind !== "file")?.id ??
-    null
+    firstStepId(routeSteps)
   );
 }
 
@@ -151,11 +183,13 @@ export default function VisualGuidedWorkbench({
   const activeFileId = useDashboardStore((s) => s.activeFileId);
   const activeLayerId = useDashboardStore((s) => s.activeLayerId);
   const selectedNodeId = useDashboardStore((s) => s.selectedNodeId);
-  const openFileDetail = useDashboardStore((s) => s.openFileDetail);
   const navigateToNodeInLayer = useDashboardStore((s) => s.navigateToNodeInLayer);
   const navigateToOverview = useDashboardStore((s) => s.navigateToOverview);
+  const setFocusNode = useDashboardStore((s) => s.setFocusNode);
   const nodesById = useDashboardStore((s) => s.nodesById);
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
+  const [routeVisible, setRouteVisible] = useState(true);
+  const [knowledgeVisible, setKnowledgeVisible] = useState(true);
 
   const searchMatches = useMemo(
     () => buildReadableSearchMatches(graph, viewGraph, searchResults),
@@ -206,8 +240,10 @@ export default function VisualGuidedWorkbench({
     ? route.steps.find((step) => step.id === activeStepId) ?? null
     : null;
   const selection = useMemo(
-    () => selectionForStep(activeStep, graph, viewGraph, nodesById),
-    [activeStep, graph, viewGraph, nodesById],
+    () =>
+      selectionForNode(selectedNodeId, graph, viewGraph, nodesById) ??
+      selectionForStep(activeStep, graph, viewGraph, nodesById),
+    [activeStep, graph, viewGraph, nodesById, selectedNodeId],
   );
   const knowledgeContext = useMemo(
     () => resolveKnowledgeContext(knowledgeContextIndex, selection),
@@ -219,35 +255,69 @@ export default function VisualGuidedWorkbench({
       setActiveStepId(step.id);
 
       const kind = step.kind ?? "project";
-      if (kind === "file" && viewGraph.filesById.has(step.targetId)) {
-        openFileDetail(step.targetId);
-        return;
-      }
-
       if (kind === "project") {
         navigateToOverview();
         return;
       }
 
-      if (nodesById.has(step.targetId)) {
+      if (nodesById.has(step.targetId) || viewGraph.filesById.has(step.targetId)) {
         navigateToNodeInLayer(step.targetId);
+        setFocusNode(step.targetId);
       }
     },
-    [navigateToNodeInLayer, navigateToOverview, nodesById, openFileDetail, viewGraph.filesById],
+    [navigateToNodeInLayer, navigateToOverview, nodesById, setFocusNode, viewGraph.filesById],
+  );
+
+  const handleShowGraph = useCallback(() => {
+    navigateToOverview();
+  }, [navigateToOverview]);
+
+  const handleFocusActive = useCallback(() => {
+    if (activeStep) {
+      handleSelectStep(activeStep);
+      return;
+    }
+    navigateToOverview();
+  }, [activeStep, handleSelectStep, navigateToOverview]);
+
+  const handleFocusSearch = useCallback(() => {
+    document.querySelector<HTMLInputElement>('[data-testid="search-input"]')?.focus();
+  }, []);
+
+  const handleToggleRoute = useCallback(() => {
+    setRouteVisible((visible) => !visible);
+  }, []);
+
+  const handleToggleKnowledge = useCallback(() => {
+    setKnowledgeVisible((visible) => !visible);
+  }, []);
+
+  const handleSelectAndRevealRoute = useCallback(
+    (step: JourneyStep) => {
+      if (!routeVisible) setRouteVisible(true);
+      handleSelectStep(step);
+    },
+    [handleSelectStep, routeVisible],
   );
 
   return (
     <div className="flex h-full min-h-0 w-full overflow-hidden bg-root">
-      <ModeRail />
-      <JourneyRail route={route} activeStepId={activeStep?.id ?? null} onSelectStep={handleSelectStep} />
+      <ModeRail
+        routeVisible={routeVisible}
+        knowledgeVisible={knowledgeVisible}
+        onShowGraph={handleShowGraph}
+        onToggleRoute={handleToggleRoute}
+        onToggleKnowledge={handleToggleKnowledge}
+        onFocusActive={handleFocusActive}
+        onFocusSearch={handleFocusSearch}
+      />
+      {routeVisible && (
+        <JourneyRail route={route} activeStepId={activeStep?.id ?? null} onSelectStep={handleSelectAndRevealRoute} />
+      )}
       <VisualStage activeStep={activeStep}>
-        {navigationLevel === "file-detail" && activeFileId ? (
-          <FunctionDetailPage presentation="workbench" />
-        ) : (
-          <ReadableViewGraphPage presentation="workbench" />
-        )}
+        <GraphView />
       </VisualStage>
-      <KnowledgeContextPanel context={knowledgeContext} />
+      {knowledgeVisible && <KnowledgeContextPanel context={knowledgeContext} />}
     </div>
   );
 }

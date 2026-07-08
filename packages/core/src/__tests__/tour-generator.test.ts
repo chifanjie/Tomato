@@ -65,6 +65,12 @@ describe("tour-generator", () => {
       expect(prompt).toContain("JSON");
       expect(prompt).toContain("steps");
     });
+
+    it("requests Simplified Chinese user-facing content when output language is zh", () => {
+      const prompt = buildTourGenerationPrompt(sampleGraph);
+      expect(prompt).toContain("Simplified Chinese");
+      expect(prompt).toContain("Keep code identifiers");
+    });
   });
 
   describe("parseTourGenerationResponse", () => {
@@ -161,7 +167,7 @@ describe("tour-generator", () => {
 
   describe("generateHeuristicTour", () => {
     it("starts with entry-point nodes", () => {
-      const tour = generateHeuristicTour(sampleGraph);
+      const tour = generateHeuristicTour(sampleGraph, "en");
       // Entry point node (0 incoming edges) is file:src/index.ts
       // It should appear in the first step's nodeIds
       const firstStepNodeIds = tour[0].nodeIds;
@@ -169,7 +175,7 @@ describe("tour-generator", () => {
     });
 
     it("follows topological order", () => {
-      const tour = generateHeuristicTour(sampleGraph);
+      const tour = generateHeuristicTour(sampleGraph, "en");
       // Collect all code node IDs in order across steps (excluding concept steps)
       const codeSteps = tour.filter(
         (s) => !s.title.toLowerCase().includes("concept"),
@@ -188,7 +194,7 @@ describe("tour-generator", () => {
     });
 
     it("includes concept nodes in separate steps", () => {
-      const tour = generateHeuristicTour(sampleGraph);
+      const tour = generateHeuristicTour(sampleGraph, "en");
       // There should be a step containing the concept node
       const conceptStep = tour.find((s) =>
         s.nodeIds.includes("concept:auth-flow"),
@@ -204,14 +210,14 @@ describe("tour-generator", () => {
     });
 
     it("assigns order numbers sequentially", () => {
-      const tour = generateHeuristicTour(sampleGraph);
+      const tour = generateHeuristicTour(sampleGraph, "en");
       for (let i = 0; i < tour.length; i++) {
         expect(tour[i].order).toBe(i + 1);
       }
     });
 
     it("groups nodes by layer when layers exist", () => {
-      const tour = generateHeuristicTour(sampleGraph);
+      const tour = generateHeuristicTour(sampleGraph, "en");
       // With layers, steps should reference layer names
       const stepTitles = tour.map((s) => s.title);
       // Should have steps that reference the layer names
@@ -224,7 +230,7 @@ describe("tour-generator", () => {
     });
 
     it("produces valid TourStep objects", () => {
-      const tour = generateHeuristicTour(sampleGraph);
+      const tour = generateHeuristicTour(sampleGraph, "en");
       for (const step of tour) {
         expect(typeof step.order).toBe("number");
         expect(typeof step.title).toBe("string");
@@ -242,7 +248,7 @@ describe("tour-generator", () => {
         edges: [],
         layers: [],
       };
-      const tour = generateHeuristicTour(noEdgesGraph);
+      const tour = generateHeuristicTour(noEdgesGraph, "en");
       expect(tour.length).toBeGreaterThan(0);
       // All code nodes should still appear somewhere
       const allNodeIds = tour.flatMap((s) => s.nodeIds);
@@ -256,7 +262,7 @@ describe("tour-generator", () => {
         ...sampleGraph,
         layers: [],
       };
-      const tour = generateHeuristicTour(noLayersGraph);
+      const tour = generateHeuristicTour(noLayersGraph, "en");
       expect(tour.length).toBeGreaterThan(0);
       // Should batch code nodes (3 per step) instead of grouping by layer
       const codeSteps = tour.filter(
@@ -264,6 +270,31 @@ describe("tour-generator", () => {
       );
       // With 4 code nodes and batches of 3, expect 2 code steps
       expect(codeSteps.length).toBe(2);
+    });
+
+    it("uses Chinese fallback copy when output language is zh", () => {
+      const tour = generateHeuristicTour(sampleGraph, "zh");
+
+      expect(tour[0].title).toBe("API 层");
+      expect(tour[0].description).toContain("API 层负责：HTTP 路由");
+      expect(tour[0].description).toContain("重点文件");
+
+      const conceptStep = tour.find((s) =>
+        s.nodeIds.includes("concept:auth-flow"),
+      );
+      expect(conceptStep?.title).toBe("关键概念");
+      expect(conceptStep?.description).toContain("重要架构概念");
+    });
+
+    it("uses Chinese fallback copy for no-layer walkthrough steps", () => {
+      const noLayersGraph: KnowledgeGraph = {
+        ...sampleGraph,
+        layers: [],
+      };
+
+      const tour = generateHeuristicTour(noLayersGraph, "zh");
+      expect(tour[0].title).toBe("第 1 步：代码阅读");
+      expect(tour[0].description).toContain("阅读这些文件");
     });
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { KnowledgeGraph } from "@understand-anything/core/types";
+import type { KnowledgeGraph } from "@understand-code/core/types";
 import { buildViewGraph } from "../buildViewGraph";
 import { buildFileRelationships } from "../fileRelationships";
 

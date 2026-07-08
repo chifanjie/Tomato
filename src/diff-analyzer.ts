@@ -3,7 +3,7 @@ import type {
   GraphNode,
   GraphEdge,
   Layer,
-} from "@understand-anything/core";
+} from "@understand-code/core";
 
 export interface DiffContext {
   projectName: string;

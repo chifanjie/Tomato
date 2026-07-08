@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { deriveContainers } from "../containers";
-import type { GraphNode, GraphEdge } from "@understand-anything/core/types";
+import type { GraphNode, GraphEdge } from "@understand-code/core/types";
 
 function node(id: string, filePath?: string): GraphNode {
   return {

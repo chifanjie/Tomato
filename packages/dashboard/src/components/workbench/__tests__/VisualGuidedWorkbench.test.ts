@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { renderToString } from "react-dom/server";
-import type { KnowledgeGraph } from "@understand-anything/core/types";
+import type { KnowledgeGraph } from "@understand-code/core/types";
 import { buildViewGraph } from "../../../viewgraph/buildViewGraph";
 import { buildKnowledgeContextIndex } from "../../../workbench/knowledgeContext";
 import VisualGuidedWorkbench from "../VisualGuidedWorkbench";
@@ -17,6 +17,13 @@ vi.mock("../../FunctionDetailPage", async () => {
   const React = await import("react");
   return {
     default: () => React.createElement("section", null, "Mock function detail workbench"),
+  };
+});
+
+vi.mock("../../GraphView", async () => {
+  const React = await import("react");
+  return {
+    default: () => React.createElement("section", null, "Mock original graph workbench"),
   };
 });
 
@@ -87,10 +94,11 @@ describe("VisualGuidedWorkbench", () => {
       }),
     );
 
-    expect(output).toContain("Guided route");
-    expect(output).toContain("Context");
-    expect(output).toContain("Engineer handoff");
-    expect(output).toContain("No generated knowledge document is linked yet. Showing graph-derived context.");
-    expect(output).toContain("Mock readable graph workbench");
+    expect(output).toContain("引导路线");
+    expect(output).toContain("知识上下文");
+    expect(output).toContain("工程接手");
+    expect(output).toContain("未加载生成知识库");
+    expect(output).toContain("Mock original graph workbench");
+    expect(output).not.toContain("Mock readable graph workbench");
   });
 });

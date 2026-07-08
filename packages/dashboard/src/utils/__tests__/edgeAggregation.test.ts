@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { aggregateContainerEdges } from "../edgeAggregation";
-import type { GraphEdge, EdgeType } from "@understand-anything/core/types";
+import type { GraphEdge, EdgeType } from "@understand-code/core/types";
 
 const ce = (source: string, target: string, type: EdgeType = "calls"): GraphEdge => ({
   source,

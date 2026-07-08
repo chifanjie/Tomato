@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { KnowledgeGraph } from "@understand-anything/core/types";
-import type { SearchResult } from "@understand-anything/core/search";
+import type { KnowledgeGraph } from "@understand-code/core/types";
+import type { SearchResult } from "@understand-code/core/search";
 import { buildViewGraph } from "../buildViewGraph";
 import {
   buildReadableSearchMatches,

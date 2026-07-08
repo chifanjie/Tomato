@@ -1,11 +1,6 @@
 export type PresetId =
   | "engineering-workbench"
-  | "technical-document"
-  | "dark-gold"
-  | "dark-ocean"
-  | "dark-forest"
-  | "dark-rose"
-  | "light-minimal";
+  | "technical-document";
 
 export interface AccentSwatch {
   id: string;

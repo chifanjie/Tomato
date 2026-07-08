@@ -12,7 +12,8 @@ import { DEFAULT_THEME_CONFIG } from "./types.ts";
 import { getPreset } from "./presets.ts";
 import { applyTheme } from "./theme-engine.ts";
 
-const STORAGE_KEY = "ua-theme";
+const STORAGE_KEY = "uc-theme";
+export const THEME_STORAGE_VERSION = 2;
 
 interface ThemeContextValue {
   config: ThemeConfig;
@@ -24,13 +25,25 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-function loadFromLocalStorage(): ThemeConfig | null {
+interface StoredThemeConfig extends ThemeConfig {
+  version: number;
+}
+
+export function parseStoredThemeConfig(raw: string | null): ThemeConfig | null {
+  if (!raw) return null;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed.presetId === "string" && typeof parsed.accentId === "string") {
-      return parsed as ThemeConfig;
+    const parsed = JSON.parse(raw) as Partial<StoredThemeConfig> | null;
+    if (
+      parsed &&
+      parsed.version === THEME_STORAGE_VERSION &&
+      typeof parsed.presetId === "string" &&
+      typeof parsed.accentId === "string"
+    ) {
+      return {
+        presetId: parsed.presetId,
+        accentId: parsed.accentId,
+        headingFont: parsed.headingFont,
+      } as ThemeConfig;
     }
     return null;
   } catch {
@@ -38,9 +51,21 @@ function loadFromLocalStorage(): ThemeConfig | null {
   }
 }
 
+export function serializeThemeConfig(config: ThemeConfig): string {
+  return JSON.stringify({ ...config, version: THEME_STORAGE_VERSION });
+}
+
+function loadFromLocalStorage(): ThemeConfig | null {
+  try {
+    return parseStoredThemeConfig(localStorage.getItem(STORAGE_KEY));
+  } catch {
+    return null;
+  }
+}
+
 function saveToLocalStorage(config: ThemeConfig): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+    localStorage.setItem(STORAGE_KEY, serializeThemeConfig(config));
   } catch {
     // Storage full or unavailable — ignore
   }

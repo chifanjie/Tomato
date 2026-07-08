@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import type { GraphIssue } from "@understand-anything/core/schema";
+import type { GraphIssue } from "@understand-code/core/schema";
 import { useDashboardStore } from "../store";
 import { useI18n } from "../contexts/I18nContext";
 import DomainGraphView from "./DomainGraphView";
@@ -60,6 +60,17 @@ export default function MobileLayout({
   useEffect(() => {
     if (selectedNodeId && navigationLevel !== "file-detail") setActiveTab("info");
   }, [navigationLevel, selectedNodeId]);
+
+  useEffect(() => {
+    if (persona === "junior") {
+      setActiveTab("info");
+    } else if (persona === "experienced") {
+      setActiveTab("files");
+    } else {
+      setActiveTab("graph");
+    }
+    setDrawerOpen(false);
+  }, [persona]);
 
   // When a code viewer opens (e.g. from the Files tab) keep focus there
   useEffect(() => {

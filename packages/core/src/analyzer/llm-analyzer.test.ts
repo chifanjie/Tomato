@@ -22,6 +22,17 @@ describe("LLM Analyzer", () => {
       expect(prompt).toContain("JSON");
     });
 
+    it("defaults to Simplified Chinese generated content", () => {
+      const prompt = buildFileAnalysisPrompt(
+        "src/utils.ts",
+        "export const value = 1;",
+        "A utility package",
+      );
+
+      expect(prompt).toContain("Simplified Chinese");
+      expect(prompt).toContain("Keep code identifiers");
+    });
+
     it("should include project context", () => {
       const prompt = buildFileAnalysisPrompt(
         "app.py",
@@ -30,6 +41,18 @@ describe("LLM Analyzer", () => {
       );
 
       expect(prompt).toContain("A Python web server");
+    });
+
+    it("should request Simplified Chinese user-facing content when output language is zh", () => {
+      const prompt = buildFileAnalysisPrompt(
+        "src/utils.ts",
+        "export const value = 1;",
+        "A utility package",
+        "zh",
+      );
+
+      expect(prompt).toContain("Simplified Chinese");
+      expect(prompt).toContain("Keep code identifiers");
     });
   });
 
@@ -168,6 +191,13 @@ That's the analysis.`;
       expect(prompt).toContain("layers");
     });
 
+    it("defaults project summaries to Simplified Chinese generated content", () => {
+      const prompt = buildProjectSummaryPrompt(["src/app.ts"], []);
+
+      expect(prompt).toContain("Simplified Chinese");
+      expect(prompt).toContain("Keep code identifiers");
+    });
+
     it("should include sample file contents when provided", () => {
       const prompt = buildProjectSummaryPrompt(
         ["src/app.ts"],
@@ -176,6 +206,13 @@ That's the analysis.`;
 
       expect(prompt).toContain("src/app.ts");
       expect(prompt).toContain("const app = express()");
+    });
+
+    it("should request Simplified Chinese user-facing content when output language is zh", () => {
+      const prompt = buildProjectSummaryPrompt(["src/app.ts"], [], "zh");
+
+      expect(prompt).toContain("Simplified Chinese");
+      expect(prompt).toContain("Keep code identifiers");
     });
   });
 

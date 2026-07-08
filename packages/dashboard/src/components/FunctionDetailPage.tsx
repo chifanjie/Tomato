@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { GraphNode, KnowledgeGraph } from "@understand-anything/core/types";
+import type { GraphNode, KnowledgeGraph } from "@understand-code/core/types";
 import { useDashboardStore } from "../store";
 import { useI18n } from "../contexts/I18nContext";
 import { buildFunctionImpact } from "../viewgraph/functionImpact";

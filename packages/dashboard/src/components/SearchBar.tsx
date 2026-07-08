@@ -42,6 +42,11 @@ export default function SearchBar() {
   );
 
   const topResults = searchResults.slice(0, 5);
+  const resultsListId = "search-results-listbox";
+  const hasSearchQuery = searchQuery.trim().length > 0;
+  const showDropdown = dropdownOpen && hasSearchQuery && topResults.length > 0;
+  const resultLabel = searchResults.length === 1 ? t.search.result : t.search.results;
+  const modeLabel = searchMode === "fuzzy" ? t.search.fuzzy : t.search.semantic;
 
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -82,11 +87,9 @@ export default function SearchBar() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const showDropdown = dropdownOpen && searchQuery.trim() && topResults.length > 0;
-
   return (
     <div ref={containerRef} className="relative z-30">
-      <div className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-surface border-b border-border-subtle">
+      <div className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-surface/95 border-b border-border-subtle">
         <svg
           className="w-4 h-4 text-text-muted shrink-0"
           fill="none"
@@ -108,10 +111,16 @@ export default function SearchBar() {
           onFocus={() => setDropdownOpen(true)}
           placeholder={t.search.placeholder}
           data-testid="search-input"
-          className="flex-1 min-w-0 bg-elevated text-text-primary text-sm rounded-lg px-3 py-1.5 border border-border-subtle focus:outline-none focus:border-accent/50 placeholder-text-muted"
+          role="combobox"
+          aria-expanded={showDropdown}
+          aria-controls={resultsListId}
+          aria-autocomplete="list"
+          className="flex-1 min-w-0 bg-elevated text-text-primary text-sm rounded-lg px-3 py-1.5 border border-border-subtle focus:outline-none focus:border-accent/50 placeholder-text-muted shadow-sm"
         />
         <div className="flex items-center gap-1 bg-elevated rounded-lg p-0.5 shrink-0">
           <button
+            type="button"
+            aria-pressed={searchMode === "fuzzy"}
             onClick={() => setSearchMode("fuzzy")}
             className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
               searchMode === "fuzzy"
@@ -122,6 +131,8 @@ export default function SearchBar() {
             {t.search.fuzzy}
           </button>
           <button
+            type="button"
+            aria-pressed={searchMode === "semantic"}
             onClick={() => setSearchMode("semantic")}
             className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
               searchMode === "semantic"
@@ -132,17 +143,21 @@ export default function SearchBar() {
             {t.search.semantic}
           </button>
         </div>
-        {searchQuery.trim() && (
+        {hasSearchQuery && (
           <span className="hidden sm:inline text-xs text-text-muted shrink-0">
-            {searchResults.length} {t.search.result}{searchResults.length !== 1 ? "s" : ""}{" "}
-            <span className="text-text-muted">({searchMode})</span>
+            {searchResults.length} {resultLabel}{" "}
+            <span className="text-text-muted">({modeLabel})</span>
           </span>
         )}
       </div>
 
       {/* Dropdown results */}
       {showDropdown && (
-        <div className="absolute left-4 right-4 top-full mt-0.5 glass rounded-lg shadow-xl overflow-hidden">
+        <div
+          id={resultsListId}
+          role="listbox"
+          className="absolute left-4 right-4 top-full mt-0.5 glass rounded-lg shadow-xl overflow-hidden"
+        >
           {topResults.map((result) => {
             const node = nodeMap.get(result.nodeId);
             if (!node) return null;
@@ -154,6 +169,8 @@ export default function SearchBar() {
               <button
                 key={result.nodeId}
                 type="button"
+                role="option"
+                aria-selected="false"
                 onClick={() => handleResultClick(result.nodeId)}
                 className="w-full flex items-center gap-3 px-3 py-2 hover:bg-elevated transition-colors text-left"
               >

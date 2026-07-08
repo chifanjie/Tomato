@@ -1,12 +1,12 @@
 {
-  "name": "understand-anything",
+  "name": "understand-code",
   "description": "AI-powered codebase understanding — analyze, visualize, and explain any project",
   "version": "2.7.5",
   "author": {
     "name": "Lum1104"
   },
-  "homepage": "https://github.com/Lum1104/Understand-Anything",
-  "repository": "https://github.com/Lum1104/Understand-Anything",
+  "homepage": "https://github.com/Lum1104/Understand-Code",
+  "repository": "https://github.com/Lum1104/Understand-Code",
   "license": "MIT",
   "keywords": [
     "codebase-analysis",

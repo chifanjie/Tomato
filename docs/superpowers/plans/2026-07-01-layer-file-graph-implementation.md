@@ -45,7 +45,7 @@ Create `packages/dashboard/src/viewgraph/__tests__/fileRelationships.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
-import type { KnowledgeGraph } from "@understand-anything/core/types";
+import type { KnowledgeGraph } from "@understand-code/core/types";
 import { buildViewGraph } from "../buildViewGraph";
 import { buildFileRelationships } from "../fileRelationships";
 
@@ -171,7 +171,7 @@ Expected: FAIL with an import error because `../fileRelationships` does not exis
 Create `packages/dashboard/src/viewgraph/fileRelationships.ts`:
 
 ```ts
-import type { KnowledgeGraph } from "@understand-anything/core/types";
+import type { KnowledgeGraph } from "@understand-code/core/types";
 import type { ViewGraph } from "./types";
 
 export type FileRelationshipSource = "calls" | "imports";
@@ -701,7 +701,7 @@ import {
 } from "@xyflow/react";
 import type { Edge, Node } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type { KnowledgeGraph } from "@understand-anything/core/types";
+import type { KnowledgeGraph } from "@understand-code/core/types";
 import { buildFileRelationships } from "../viewgraph/fileRelationships";
 import { buildLayerFileFlowModel } from "../viewgraph/layerFileGraphModel";
 import type { SelectedFileRelationshipDetails } from "../viewgraph/layerFileGraphModel";

@@ -114,8 +114,8 @@ describe("knowledgeContext", () => {
     expect(context.matchKind).toBe("graph-only");
     expect(context.title).toBe("UserModel");
     expect(context.summary).toBe("Normalizes user records.");
-    expect(context.businessMeaning).toContain("No generated knowledge trace");
-    expect(context.changeRisk).toContain("Use the graph relationships");
+    expect(context.businessMeaning).toContain("没有生成知识库线索");
+    expect(context.changeRisk).toContain("先结合图谱关系");
     expect(context.evidence).toEqual([]);
     expect(context.documents).toEqual([]);
   });
@@ -142,9 +142,42 @@ describe("knowledgeContext", () => {
     const context = resolveKnowledgeContext(buildKnowledgeContextIndex({ traces: [], documents: [] }), null);
 
     expect(context.matchKind).toBe("graph-only");
-    expect(context.title).toBe("Select a node");
-    expect(context.summary).toContain("Choose a graph node");
+    expect(context.title).toBe("选择一个节点");
+    expect(context.summary).toContain("选择图谱节点");
     expect(context.evidence).toEqual([]);
     expect(context.documents).toEqual([]);
+  });
+
+  it("carries knowledge-base load counts into every resolved context", () => {
+    const documents: KnowledgeDocumentSummary[] = [
+      {
+        id: "doc-api",
+        title: "API module notes",
+        summary: "The API module owns dashboard user loading.",
+        filePath: "src/api.ts",
+      },
+    ];
+    const traces: KnowledgeTraceRecord[] = [
+      {
+        nodeId: "function:src/other.ts:load",
+        filePath: "src/other.ts",
+        title: "Other trace",
+        summary: "Other trace summary.",
+      },
+    ];
+
+    const context = resolveKnowledgeContext(
+      buildKnowledgeContextIndex({ traces, documents }),
+      {
+        nodeId: "class:src/model.ts:UserModel",
+        filePath: "src/model.ts",
+        title: "UserModel",
+        summary: "Normalizes user records.",
+        kind: "class",
+      },
+    );
+
+    expect(context.loadedTraceCount).toBe(1);
+    expect(context.loadedDocumentCount).toBe(1);
   });
 });

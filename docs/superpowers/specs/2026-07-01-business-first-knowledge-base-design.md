@@ -5,7 +5,7 @@ Date: 2026-07-01
 
 ## Background
 
-The current `/understand-kb` pipeline already generates a broad Markdown knowledge base from `.understand-anything/knowledge-graph.json`. It plans file documents, topic documents, business capability documents, indexes, and coverage reports. It also keeps strong structural coverage by tracking files, functions, classes, graph edges, evidence anchors, and validation status.
+The current `/understand-kb` pipeline already generates a broad Markdown knowledge base from `.understand-code/knowledge-graph.json`. It plans file documents, topic documents, business capability documents, indexes, and coverage reports. It also keeps strong structural coverage by tracking files, functions, classes, graph edges, evidence anchors, and validation status.
 
 The quality problem is not lack of coverage. The problem is that the generated Markdown reads like a graph audit and evidence report instead of a business knowledge base. Many pages contain phrases such as graph nodes, evidence grades, covered node ids, code evidence, and source evidence. Some pages are titled as business capabilities, but their titles and contents come from regexes, `if` statements, test snippets, prompt examples, or tool code. Flow documents can be extremely thin, sometimes only saying that a graph entry was detected and listing one source anchor.
 
@@ -118,7 +118,7 @@ Every official Markdown document should have a corresponding trace record. The t
 Recommended output:
 
 ```text
-.understand-anything/knowledge-base/
+.understand-code/knowledge-base/
 ├── 业务流程/
 ├── 业务能力/
 ├── 文件文档/

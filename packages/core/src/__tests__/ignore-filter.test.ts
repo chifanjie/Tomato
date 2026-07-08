@@ -10,7 +10,7 @@ describe("IgnoreFilter", () => {
   beforeEach(() => {
     testDir = join(tmpdir(), `ignore-filter-test-${Date.now()}`);
     mkdirSync(testDir, { recursive: true });
-    mkdirSync(join(testDir, ".understand-anything"), { recursive: true });
+    mkdirSync(join(testDir, ".understand-code"), { recursive: true });
   });
 
   afterEach(() => {
@@ -87,9 +87,9 @@ describe("IgnoreFilter", () => {
   });
 
   describe("createIgnoreFilter with user .understandignore", () => {
-    it("reads patterns from .understand-anything/.understandignore", () => {
+    it("reads patterns from .understand-code/.understandignore", () => {
       writeFileSync(
-        join(testDir, ".understand-anything", ".understandignore"),
+        join(testDir, ".understand-code", ".understandignore"),
         "# Exclude tests\n__tests__/\n*.test.ts\n"
       );
       const filter = createIgnoreFilter(testDir);
@@ -110,7 +110,7 @@ describe("IgnoreFilter", () => {
 
     it("handles # comments and blank lines", () => {
       writeFileSync(
-        join(testDir, ".understand-anything", ".understandignore"),
+        join(testDir, ".understand-code", ".understandignore"),
         "# This is a comment\n\n\nfixtures/\n\n# Another comment\n"
       );
       const filter = createIgnoreFilter(testDir);
@@ -120,7 +120,7 @@ describe("IgnoreFilter", () => {
 
     it("supports ! negation to override defaults", () => {
       writeFileSync(
-        join(testDir, ".understand-anything", ".understandignore"),
+        join(testDir, ".understand-code", ".understandignore"),
         "!dist/\n"
       );
       const filter = createIgnoreFilter(testDir);
@@ -129,7 +129,7 @@ describe("IgnoreFilter", () => {
 
     it("supports ** recursive matching", () => {
       writeFileSync(
-        join(testDir, ".understand-anything", ".understandignore"),
+        join(testDir, ".understand-code", ".understandignore"),
         "**/snapshots/\n"
       );
       const filter = createIgnoreFilter(testDir);
@@ -137,9 +137,9 @@ describe("IgnoreFilter", () => {
       expect(filter.isIgnored("snapshots/foo.snap")).toBe(true);
     });
 
-    it("merges .understand-anything/ and root .understandignore", () => {
+    it("merges .understand-code/ and root .understandignore", () => {
       writeFileSync(
-        join(testDir, ".understand-anything", ".understandignore"),
+        join(testDir, ".understand-code", ".understandignore"),
         "__tests__/\n"
       );
       writeFileSync(
@@ -150,6 +150,19 @@ describe("IgnoreFilter", () => {
       expect(filter.isIgnored("__tests__/foo.ts")).toBe(true);
       expect(filter.isIgnored("fixtures/data.json")).toBe(true);
       expect(filter.isIgnored("src/index.ts")).toBe(false);
+    });
+
+    it("does not read the legacy product directory .understandignore", () => {
+      const legacyDir = `.understand-${"anything"}`;
+      mkdirSync(join(testDir, legacyDir), { recursive: true });
+      writeFileSync(
+        join(testDir, legacyDir, ".understandignore"),
+        "legacy-only/\n"
+      );
+
+      const filter = createIgnoreFilter(testDir);
+
+      expect(filter.isIgnored("legacy-only/file.ts")).toBe(false);
     });
   });
 });

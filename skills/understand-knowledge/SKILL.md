@@ -32,7 +32,7 @@ Detection signals: has `index.md` + multiple `.md` files with wikilinks. May hav
    python3 <SKILL_DIR>/parse-knowledge-base.py <TARGET_DIR>
    ```
    - If the script exits with an error, tell the user this doesn't appear to be a Karpathy-pattern wiki and explain what was expected
-   - If successful, proceed. The script writes `scan-manifest.json` to `<TARGET_DIR>/.understand-anything/intermediate/`
+   - If successful, proceed. The script writes `scan-manifest.json` to `<TARGET_DIR>/.understand-code/intermediate/`
 
 3. Read the scan-manifest.json and announce the results:
    - "Detected Karpathy wiki: N articles, N sources, N topics, N wikilinks (N unresolved)"
@@ -61,7 +61,7 @@ Dispatch `article-analyzer` subagents to extract implicit knowledge:
    - The batch of articles (id, name, summary, wikilinks, category, content from knowledgeMeta)
    - The full list of existing node IDs (so the agent can reference them)
    - The batch number for output file naming
-   - The intermediate directory path: `$INTERMEDIATE_DIR = <TARGET_DIR>/.understand-anything/intermediate`
+   - The intermediate directory path: `$INTERMEDIATE_DIR = <TARGET_DIR>/.understand-code/intermediate`
    
    The agent will write `analysis-batch-{N}.json` to the intermediate directory.
 
@@ -97,9 +97,9 @@ Dispatch `article-analyzer` subagents to extract implicit knowledge:
    - Every node must have: id, type, name, summary, tags, complexity
    - Remove any edges with dangling references
 
-3. Copy the validated graph to `<TARGET_DIR>/.understand-anything/knowledge-graph.json`
+3. Copy the validated graph to `<TARGET_DIR>/.understand-code/knowledge-graph.json`
 
-4. Write metadata to `<TARGET_DIR>/.understand-anything/meta.json`:
+4. Write metadata to `<TARGET_DIR>/.understand-code/meta.json`:
    ```json
    {
      "lastAnalyzedAt": "<ISO timestamp>",
@@ -111,7 +111,7 @@ Dispatch `article-analyzer` subagents to extract implicit knowledge:
 
 5. Clean up intermediate files:
    ```
-   rm -rf <TARGET_DIR>/.understand-anything/intermediate
+   rm -rf <TARGET_DIR>/.understand-code/intermediate
    ```
 
 6. Report summary to the user:

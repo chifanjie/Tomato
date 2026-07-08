@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildExplainContext, formatExplainPrompt } from "../explain-builder.js";
-import type { KnowledgeGraph } from "@understand-anything/core";
+import type { KnowledgeGraph } from "@understand-code/core";
 
 const sampleGraph: KnowledgeGraph = {
   version: "1.0.0",

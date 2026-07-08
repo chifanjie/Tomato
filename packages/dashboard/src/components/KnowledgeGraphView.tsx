@@ -14,7 +14,7 @@ import CustomNode from "./CustomNode";
 import type { CustomNodeData } from "./CustomNode";
 import { useDashboardStore } from "../store";
 import { applyForceLayout, NODE_WIDTH, NODE_HEIGHT } from "../utils/layout";
-import type { KnowledgeGraph } from "@understand-anything/core/types";
+import type { KnowledgeGraph } from "@understand-code/core/types";
 
 const nodeTypes = {
   custom: CustomNode,

@@ -2,6 +2,7 @@ import { memo } from "react";
 import { Handle, Position } from "@xyflow/react";
 import type { NodeProps, Node } from "@xyflow/react";
 import { getLayerColor } from "./LayerLegend";
+import { complexityDisplayLabel } from "./nodeDisplayLabels";
 
 const complexityColors: Record<string, string> = {
   simple: "text-node-function",
@@ -57,16 +58,16 @@ function LayerClusterNode({
             className="text-[10px] font-semibold uppercase tracking-wider"
             style={{ color: color.label }}
           >
-            Layer
+            层级
           </span>
           <div className="flex items-center gap-2">
             {data.searchMatchCount != null && data.searchMatchCount > 0 && (
               <span className="text-[10px] font-mono bg-gold/20 text-gold px-1.5 py-0.5 rounded">
-                {data.searchMatchCount} match{data.searchMatchCount !== 1 ? "es" : ""}
+                {data.searchMatchCount} 个匹配
               </span>
             )}
             <span className={`text-[10px] font-mono ${complexityColor}`}>
-              {data.aggregateComplexity}
+              {complexityDisplayLabel(data.aggregateComplexity)}
             </span>
           </div>
         </div>
@@ -84,10 +85,10 @@ function LayerClusterNode({
         {/* Footer */}
         <div className="flex items-center justify-between">
           <span className="text-[11px] text-text-muted">
-            {data.fileCount} file{data.fileCount !== 1 ? "s" : ""}
+            {data.fileCount} 个文件
           </span>
           <span className="text-[10px] text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">
-            Click to explore →
+            点击展开 →
           </span>
         </div>
       </div>

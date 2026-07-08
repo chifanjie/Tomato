@@ -1,4 +1,4 @@
-import type { GraphNode, GraphEdge } from "@understand-anything/core/types";
+import type { GraphNode, GraphEdge } from "@understand-code/core/types";
 import type { FilterState, NodeType, Complexity, EdgeCategory } from "../store";
 import { EDGE_CATEGORY_MAP } from "../store";
 

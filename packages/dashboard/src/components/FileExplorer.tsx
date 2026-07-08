@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { GraphNode } from "@understand-anything/core/types";
+import type { GraphNode } from "@understand-code/core/types";
 import { useDashboardStore } from "../store";
 import { useI18n } from "../contexts/I18nContext";
 

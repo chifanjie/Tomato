@@ -80,7 +80,7 @@ export interface IgnoreFilter {
  *
  * Pattern load order (later entries can override earlier ones via ! negation):
  * 1. Hardcoded defaults
- * 2. .understand-anything/.understandignore (if exists)
+ * 2. .understand-code/.understandignore (if exists)
  * 3. .understandignore at project root (if exists)
  */
 export function createIgnoreFilter(projectRoot: string): IgnoreFilter {
@@ -89,8 +89,8 @@ export function createIgnoreFilter(projectRoot: string): IgnoreFilter {
   // Layer 1: hardcoded defaults
   ig.add(DEFAULT_IGNORE_PATTERNS);
 
-  // Layer 2: .understand-anything/.understandignore
-  const projectIgnorePath = join(projectRoot, ".understand-anything", ".understandignore");
+  // Layer 2: .understand-code/.understandignore
+  const projectIgnorePath = join(projectRoot, ".understand-code", ".understandignore");
   if (existsSync(projectIgnorePath)) {
     const content = readFileSync(projectIgnorePath, "utf-8");
     ig.add(content);

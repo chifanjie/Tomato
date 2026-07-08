@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback, lazy, Suspense } from "react";
-import { validateGraph } from "@understand-anything/core/schema";
-import type { GraphIssue } from "@understand-anything/core/schema";
+import { validateGraph } from "@understand-code/core/schema";
+import type { GraphIssue } from "@understand-code/core/schema";
 import { useDashboardStore } from "./store";
 import DomainGraphView from "./components/DomainGraphView";
 import KnowledgeGraphView from "./components/KnowledgeGraphView";
@@ -45,8 +45,8 @@ const KeyboardShortcutsHelp = lazy(
 const OnboardingOverlay = lazy(() => import("./components/OnboardingOverlay"));
 
 const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === "true";
-const TOKEN_STORAGE_KEY = "understand-anything-token";
-const ONBOARDING_DISMISSED_KEY = "ua-onboarding-dismissed-v1";
+const TOKEN_STORAGE_KEY = "understand-code-token";
+const ONBOARDING_DISMISSED_KEY = "uc-onboarding-dismissed-v1";
 type SidebarTab = "info" | "files";
 
 export function shouldShowOnboarding(search?: string): boolean {
@@ -144,7 +144,7 @@ function documentsFromMarkdownIndex(markdown: string | null): KnowledgeDocumentS
     documents.push({
       id,
       title,
-      summary: `Generated knowledge document linked from the optional knowledge base index: ${title}.`,
+      summary: `从生成知识库索引中发现的文档：${title}。`,
       ...(path.endsWith(".md") ? { filePath: path } : { relatedPaths: [path] }),
     });
   }
@@ -164,8 +164,17 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
 }
 
+function traceRoleLabel(role: string | undefined): string | undefined {
+  if (role === "structural") return "结构证据";
+  if (role === "business") return "业务证据";
+  if (role === "implementation") return "实现证据";
+  if (role === "configuration") return "配置证据";
+  if (role === "test") return "测试证据";
+  return role;
+}
+
 function titleFromDocumentPath(path: string | undefined): string {
-  if (!path) return "Generated knowledge trace";
+  if (!path) return "生成知识库线索";
   const fileName = path.split("/").pop() ?? path;
   return fileName.replace(/\.md$/i, "") || path;
 }
@@ -195,8 +204,8 @@ function normalizeTraceAnchors(value: unknown): NonNullable<KnowledgeTraceRecord
       typeof lineRangeValue[1] === "number"
         ? ([lineRangeValue[0], lineRangeValue[1]] as [number, number])
         : undefined;
-    const label = stringValue(anchor.label) ?? role ?? nodeId ?? filePath ?? "Knowledge trace";
-    return [{ label, filePath, lineRange }];
+    const label = stringValue(anchor.label) ?? role ?? nodeId ?? filePath ?? "知识库线索";
+    return [{ label: traceRoleLabel(label) ?? label, filePath, lineRange }];
   });
 }
 
@@ -208,13 +217,13 @@ function normalizeTraceRecord(value: unknown): KnowledgeTraceRecord[] {
   const summary =
     stringValue(value.summary) ??
     (documentPath
-      ? `Generated knowledge document ${documentPath} is linked to this code path.`
-      : "Generated knowledge trace linked to this code path.");
+      ? `生成知识库文档 ${documentPath} 已关联到这段代码路径。`
+      : "生成知识库线索已关联到这段代码路径。");
   const businessMeaning = stringValue(value.businessMeaning);
   const changeRisk =
     stringValue(value.changeRisk) ??
     (stringArray(value.lowConfidenceClaims).length > 0
-      ? "Some linked knowledge claims need confirmation before relying on this context."
+      ? "部分关联知识断言可信度偏低，使用前需要人工确认。"
       : undefined);
   const anchors = normalizeTraceAnchors(value.anchors ?? value.sourceAnchors);
   const coveredNodeIds = stringArray(value.coveredNodeIds);

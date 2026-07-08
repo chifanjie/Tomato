@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import type { GraphIssue } from "@understand-anything/core/schema";
+import type { GraphIssue } from "@understand-code/core/schema";
 
 interface WarningBannerProps {
   issues: GraphIssue[];

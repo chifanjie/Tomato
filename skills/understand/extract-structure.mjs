@@ -3,7 +3,7 @@
  * extract-structure.mjs
  *
  * Deterministic structural extraction script for the file-analyzer agent.
- * Uses PluginRegistry (TreeSitterPlugin + non-code parsers) from @understand-anything/core
+ * Uses PluginRegistry (TreeSitterPlugin + non-code parsers) from @understand-code/core
  * to replace the LLM-generated throwaway regex scripts in Phase 1.
  *
  * Usage:
@@ -27,7 +27,7 @@ const pluginRoot = resolve(__dirname, '../..');
 const require = createRequire(resolve(pluginRoot, 'package.json'));
 
 // ---------------------------------------------------------------------------
-// Resolve @understand-anything/core
+// Resolve @understand-code/core
 //
 // Node ESM dynamic import() requires a file:// URL on Windows; passing a raw
 // absolute path like "C:\..." throws ERR_UNSUPPORTED_ESM_URL_SCHEME because the
@@ -35,7 +35,7 @@ const require = createRequire(resolve(pluginRoot, 'package.json'));
 // ---------------------------------------------------------------------------
 let core;
 try {
-  core = await import(pathToFileURL(require.resolve('@understand-anything/core')).href);
+  core = await import(pathToFileURL(require.resolve('@understand-code/core')).href);
 } catch {
   // Fallback: direct path for installed plugin cache layouts
   core = await import(pathToFileURL(resolve(pluginRoot, 'packages/core/dist/index.js')).href);

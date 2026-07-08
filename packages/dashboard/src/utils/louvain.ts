@@ -1,6 +1,6 @@
 import Graph from "graphology";
 import louvain from "graphology-communities-louvain";
-import type { GraphEdge } from "@understand-anything/core/types";
+import type { GraphEdge } from "@understand-code/core/types";
 
 /**
  * Run Louvain community detection over the provided node set and the

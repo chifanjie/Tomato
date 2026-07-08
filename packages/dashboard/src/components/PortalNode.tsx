@@ -48,7 +48,7 @@ function PortalNode({
           <span className="text-text-muted ml-2 shrink-0">→</span>
         </div>
         <div className="text-[10px] text-text-muted mt-1 pl-4">
-          {data.connectionCount} connection{data.connectionCount !== 1 ? "s" : ""}
+          {data.connectionCount} 条连接
         </div>
       </div>
 

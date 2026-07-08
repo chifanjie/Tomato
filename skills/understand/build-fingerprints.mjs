@@ -4,7 +4,7 @@
  *
  * Builds the structural-fingerprint baseline used by auto-update's
  * incremental change detection. Runs once per /understand full rebuild
- * (Phase 7 step 2.5), generating .understand-anything/fingerprints.json.
+ * (Phase 7 step 2.5), generating .understand-code/fingerprints.json.
  *
  * Replaces the LLM-written fingerprint script that previously sat in
  * SKILL.md as a code example — that example had the wrong signature
@@ -17,7 +17,7 @@
  * Input JSON:
  *   { projectRoot: string, sourceFilePaths: string[], gitCommitHash: string }
  *
- * Writes: <projectRoot>/.understand-anything/fingerprints.json
+ * Writes: <projectRoot>/.understand-code/fingerprints.json
  * Exit code: 0 on success (including 0 files analyzed); non-zero on error.
  */
 
@@ -32,13 +32,13 @@ const pluginRoot = resolve(__dirname, '../..');
 const require = createRequire(resolve(pluginRoot, 'package.json'));
 
 // ---------------------------------------------------------------------------
-// Resolve @understand-anything/core (matches extract-structure.mjs).
+// Resolve @understand-code/core (matches extract-structure.mjs).
 // pathToFileURL() is required for Windows: dynamic import() of a raw
 // "C:\..." path throws ERR_UNSUPPORTED_ESM_URL_SCHEME.
 // ---------------------------------------------------------------------------
 let core;
 try {
-  core = await import(pathToFileURL(require.resolve('@understand-anything/core')).href);
+  core = await import(pathToFileURL(require.resolve('@understand-code/core')).href);
 } catch {
   core = await import(pathToFileURL(resolve(pluginRoot, 'packages/core/dist/index.js')).href);
 }

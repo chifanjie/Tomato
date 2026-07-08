@@ -2,7 +2,7 @@
 /**
  * generate-knowledge-base.mjs
  *
- * 从 .understand-anything/knowledge-graph.json 生成 Markdown 知识库。
+ * 从 .understand-code/knowledge-graph.json 生成 Markdown 知识库。
  *
  * Usage:
  *   node generate-knowledge-base.mjs [project-root] [--deterministic-only]
@@ -92,10 +92,10 @@ function parseArgs(argv) {
 }
 
 function pathsFor(projectRoot) {
-  const outputRoot = join(projectRoot, '.understand-anything', 'knowledge-base');
+  const outputRoot = join(projectRoot, '.understand-code', 'knowledge-base');
   const intermediateRoot = join(outputRoot, '.intermediate');
   return {
-    graphPath: join(projectRoot, '.understand-anything', 'knowledge-graph.json'),
+    graphPath: join(projectRoot, '.understand-code', 'knowledge-graph.json'),
     outputRoot,
     intermediateRoot,
   };
@@ -124,7 +124,7 @@ function ensureCoreBuilt() {
   const distMtime = existsSync(distPath) ? statSync(distPath).mtimeMs : 0;
   const srcMtime = latestModifiedTimeMs(srcRoot);
   if (distMtime > 0 && distMtime >= srcMtime) return;
-  execFileSync('pnpm', ['--filter', '@understand-anything/core', 'build'], {
+  execFileSync('pnpm', ['--filter', '@understand-code/core', 'build'], {
     cwd: pluginRoot,
     stdio: 'inherit',
   });
@@ -133,7 +133,7 @@ function ensureCoreBuilt() {
 async function loadCore() {
   ensureCoreBuilt();
   try {
-    return await import(pathToFileURL(require.resolve('@understand-anything/core')).href);
+    return await import(pathToFileURL(require.resolve('@understand-code/core')).href);
   } catch {
     return await import(pathToFileURL(resolve(pluginRoot, 'packages/core/dist/index.js')).href);
   }

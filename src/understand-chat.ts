@@ -1,4 +1,4 @@
-import type { KnowledgeGraph } from "@understand-anything/core";
+import type { KnowledgeGraph } from "@understand-code/core";
 import { buildChatContext, formatContextForPrompt } from "./context-builder.js";
 
 /**

@@ -11,7 +11,7 @@
 //   - Stage 1 < 500ms at 3000 nodes
 //
 // Usage:
-//   node understand-anything-plugin/packages/dashboard/scripts/benchmark-layout.mjs
+//   node understand-code-plugin/packages/dashboard/scripts/benchmark-layout.mjs
 
 import { performance } from "node:perf_hooks";
 import ELK from "elkjs/lib/elk.bundled.js";

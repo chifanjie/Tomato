@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import type { KnowledgeGraph } from "@understand-anything/core/types";
+import type { KnowledgeGraph } from "@understand-code/core/types";
 import { useDashboardStore } from "../store";
+
+type PersonaModeStore = ReturnType<typeof useDashboardStore.getState> & {
+  activatePersonaMode?: (persona: "non-technical" | "junior" | "experienced") => void;
+};
 
 function sampleGraph(): KnowledgeGraph {
   return {
@@ -25,7 +29,14 @@ function sampleGraph(): KnowledgeGraph {
     layers: [
       { id: "core", name: "Core", description: "Core layer", nodeIds: ["file:src/a.go"] },
     ],
-    tour: [],
+    tour: [
+      {
+        order: 1,
+        title: "Read the core",
+        description: "Start with the core layer",
+        nodeIds: ["file:src/a.go"],
+      },
+    ],
   };
 }
 
@@ -62,5 +73,53 @@ describe("dashboard store readable navigation", () => {
     expect(state.activeLayerId).toBe("core");
     expect(state.activeFileId).toBe("file:src/a.go");
     expect(state.selectedNodeId).toBe("class:src/a.go:Worker");
+  });
+
+  it("activates overview as a real mode by returning to project-level structure", () => {
+    const store = useDashboardStore.getState() as PersonaModeStore;
+
+    store.navigateToNodeInLayer("function:src/a.go:Build");
+    store.setDetailLevel("class");
+    store.activatePersonaMode?.("non-technical");
+
+    const state = useDashboardStore.getState();
+    expect(typeof store.activatePersonaMode).toBe("function");
+    expect(state.persona).toBe("non-technical");
+    expect(state.viewMode).toBe("structural");
+    expect(state.navigationLevel).toBe("overview");
+    expect(state.activeLayerId).toBeNull();
+    expect(state.activeFileId).toBeNull();
+    expect(state.selectedNodeId).toBeNull();
+    expect(state.detailLevel).toBe("file");
+  });
+
+  it("activates learn as a real mode without losing the structural dashboard", () => {
+    const store = useDashboardStore.getState() as PersonaModeStore;
+
+    store.setViewMode("domain");
+    store.setDetailLevel("class");
+    store.activatePersonaMode?.("junior");
+
+    const state = useDashboardStore.getState();
+    expect(typeof store.activatePersonaMode).toBe("function");
+    expect(state.persona).toBe("junior");
+    expect(state.viewMode).toBe("structural");
+    expect(state.detailLevel).toBe("file");
+    expect(state.tourActive).toBe(false);
+  });
+
+  it("activates deep dive as a real mode by exposing code structure", () => {
+    const store = useDashboardStore.getState() as PersonaModeStore;
+
+    store.startTour();
+    store.activatePersonaMode?.("experienced");
+
+    const state = useDashboardStore.getState();
+    expect(typeof store.activatePersonaMode).toBe("function");
+    expect(state.persona).toBe("experienced");
+    expect(state.viewMode).toBe("structural");
+    expect(state.detailLevel).toBe("class");
+    expect(state.showFunctionsInClassView).toBe(true);
+    expect(state.tourActive).toBe(false);
   });
 });

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { saveDomainGraph, loadDomainGraph } from "../persistence/index.js";
 import type { KnowledgeGraph } from "../types.js";
 
-const testRoot = join(tmpdir(), "ua-domain-persist-test");
+const testRoot = join(tmpdir(), "uc-domain-persist-test");
 
 const domainGraph: KnowledgeGraph = {
   version: "1.0.0",
@@ -56,8 +56,8 @@ describe("domain graph persistence", () => {
 
   it("saves to domain-graph.json, not knowledge-graph.json", () => {
     saveDomainGraph(testRoot, domainGraph);
-    const domainPath = join(testRoot, ".understand-anything", "domain-graph.json");
-    const structuralPath = join(testRoot, ".understand-anything", "knowledge-graph.json");
+    const domainPath = join(testRoot, ".understand-code", "domain-graph.json");
+    const structuralPath = join(testRoot, ".understand-code", "knowledge-graph.json");
     expect(existsSync(domainPath)).toBe(true);
     expect(existsSync(structuralPath)).toBe(false);
   });

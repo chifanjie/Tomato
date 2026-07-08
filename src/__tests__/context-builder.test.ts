@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildChatContext, formatContextForPrompt } from "../context-builder.js";
-import type { KnowledgeGraph, GraphNode, GraphEdge, Layer } from "@understand-anything/core";
+import type { KnowledgeGraph, GraphNode, GraphEdge, Layer } from "@understand-code/core";
 
 const makeNode = (
   overrides: Partial<GraphNode> & { id: string; name: string },

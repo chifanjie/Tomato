@@ -74,6 +74,30 @@ describe("language-lesson", () => {
       );
       expect(prompt).toContain("JSON");
     });
+
+    it("defaults to Simplified Chinese user-facing content", () => {
+      const prompt = buildLanguageLessonPrompt(
+        sampleNode,
+        sampleEdges,
+        "typescript",
+      );
+
+      expect(prompt).toContain("Simplified Chinese");
+      expect(prompt).toContain("Keep code identifiers");
+    });
+
+    it("requests Simplified Chinese user-facing content when output language is zh", () => {
+      const prompt = buildLanguageLessonPrompt(
+        sampleNode,
+        sampleEdges,
+        "typescript",
+        undefined,
+        "zh",
+      );
+
+      expect(prompt).toContain("Simplified Chinese");
+      expect(prompt).toContain("Keep code identifiers");
+    });
   });
 
   describe("parseLanguageLessonResponse", () => {

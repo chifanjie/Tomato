@@ -1,7 +1,7 @@
 import type {
   GraphNode,
   GraphEdge,
-} from "@understand-anything/core/types";
+} from "@understand-code/core/types";
 import { detectCommunities } from "./louvain";
 
 export interface DerivedContainer {

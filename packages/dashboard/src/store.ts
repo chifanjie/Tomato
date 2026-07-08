@@ -1,12 +1,12 @@
 import { create } from "zustand";
-import { SearchEngine } from "@understand-anything/core/search";
-import type { SearchResult } from "@understand-anything/core/search";
-import type { GraphIssue } from "@understand-anything/core/schema";
+import { SearchEngine } from "@understand-code/core/search";
+import type { SearchResult } from "@understand-code/core/search";
+import type { GraphIssue } from "@understand-code/core/schema";
 import type {
   GraphNode,
   KnowledgeGraph,
   TourStep,
-} from "@understand-anything/core/types";
+} from "@understand-code/core/types";
 import type { ReactFlowInstance } from "@xyflow/react";
 import { buildViewGraph } from "./viewgraph/buildViewGraph";
 import { findParentFileId } from "./viewgraph/readableSelectors";
@@ -172,6 +172,7 @@ interface DashboardStore {
   setFocusNode: (nodeId: string | null) => void;
   setSearchQuery: (query: string) => void;
   setPersona: (persona: Persona) => void;
+  activatePersonaMode: (persona: Persona) => void;
   openCodeViewer: (nodeId: string) => void;
   closeCodeViewer: () => void;
   expandCodeViewer: () => void;
@@ -316,7 +317,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
   currentTourStep: 0,
   tourHighlightedNodeIds: [],
 
-  persona: "junior",
+  persona: "non-technical",
 
   diffMode: false,
   changedNodeIds: new Set<string>(),
@@ -598,6 +599,62 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
       containerSizeMemory: new Map(),
       expandedContainers: new Set(),
       pendingFocusContainer: null,
+    }),
+
+  activatePersonaMode: (persona) =>
+    set((state) => {
+      const base = {
+        persona,
+        viewMode: "structural" as const,
+        focusNodeId: null,
+        codeViewerOpen: false,
+        codeViewerNodeId: null,
+        codeViewerExpanded: false,
+        containerLayoutCache: new Map<string, {
+          childPositions: Map<string, { x: number; y: number }>;
+          actualSize: { width: number; height: number };
+        }>(),
+        containerSizeMemory: new Map<string, { width: number; height: number }>(),
+        expandedContainers: new Set<string>(),
+        pendingFocusContainer: null,
+      };
+
+      if (persona === "non-technical") {
+        return {
+          ...base,
+          navigationLevel: "overview" as const,
+          activeLayerId: null,
+          activeFileId: null,
+          selectedNodeId: null,
+          detailLevel: "file" as const,
+          showFunctionsInClassView: false,
+          tourActive: false,
+          currentTourStep: 0,
+          tourHighlightedNodeIds: [],
+        };
+      }
+
+      if (persona === "junior") {
+        return {
+          ...base,
+          selectedNodeId: state.selectedNodeId,
+          detailLevel: "file" as const,
+          showFunctionsInClassView: false,
+          tourActive: false,
+          currentTourStep: 0,
+          tourHighlightedNodeIds: [],
+        };
+      }
+
+      return {
+        ...base,
+        selectedNodeId: state.selectedNodeId,
+        detailLevel: "class" as const,
+        showFunctionsInClassView: true,
+        tourActive: false,
+        currentTourStep: 0,
+        tourHighlightedNodeIds: [],
+      };
     }),
 
   openCodeViewer: (nodeId) =>

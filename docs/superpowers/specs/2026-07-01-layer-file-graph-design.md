@@ -45,7 +45,7 @@ The view shows file nodes inside a graph canvas:
 - The graph groups or positions files clearly enough to avoid the old graph's
   clutter, but it remains a graph rather than a card grid.
 
-Edges follow the original understand-anything connection feel with these
+Edges follow the original understand-code connection feel with these
 corrections:
 
 - Use ReactFlow Bezier-style connections.

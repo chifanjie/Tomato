@@ -6,16 +6,16 @@ argument-hint: ["[path] [--full|--auto-update|--no-auto-update|--review|--langua
 
 # /understand
 
-Analyze the current codebase and produce a `knowledge-graph.json` file in `.understand-anything/`. This file powers the interactive dashboard for exploring the project's architecture.
+Analyze the current codebase and produce a `knowledge-graph.json` file in `.understand-code/`. This file powers the interactive dashboard for exploring the project's architecture.
 
 ## Options
 
 - `$ARGUMENTS` may contain:
   - `--full` — Force a full rebuild, ignoring any existing graph
-  - `--auto-update` — Enable automatic graph updates on commit (writes `autoUpdate: true` to `.understand-anything/config.json`)
-  - `--no-auto-update` — Disable automatic graph updates (writes `autoUpdate: false` to `.understand-anything/config.json`)
+  - `--auto-update` — Enable automatic graph updates on commit (writes `autoUpdate: true` to `.understand-code/config.json`)
+  - `--no-auto-update` — Disable automatic graph updates (writes `autoUpdate: false` to `.understand-code/config.json`)
   - `--review` — Run full LLM graph-reviewer instead of inline deterministic validation
-  - `--language <lang>` — Generate all textual content (summaries, descriptions, tags, titles, languageNotes, languageLesson) in the specified language. Accepts ISO 639-1 codes (`zh`, `ja`, `ko`, `en`, `es`, `fr`, `de`, etc.) or friendly names (`chinese`, `japanese`, `korean`, `english`, `spanish`, etc.). Locale variants supported: `zh-TW`, `zh-HK`, etc. Defaults to `en` (English). Stores preference in `.understand-anything/config.json` for consistency across incremental updates.
+  - `--language <lang>` — Generate all textual content (summaries, descriptions, tags, titles, languageNotes, languageLesson) in the specified language. Accepts ISO 639-1 codes (`zh`, `ja`, `ko`, `en`, `es`, `fr`, `de`, etc.) or friendly names (`chinese`, `japanese`, `korean`, `english`, `spanish`, etc.). Locale variants supported: `zh-TW`, `zh-HK`, etc. Defaults to `zh` (Simplified Chinese). Stores preference in `.understand-code/config.json` for consistency across incremental updates.
   - A directory path (e.g. `/path/to/repo` or `../other-project`) — Analyze the given directory instead of the current working directory
 
 ---
@@ -49,7 +49,7 @@ Determine whether to run a full analysis or incremental update.
      - Verify the resolved path exists and is a directory (run `test -d <path>`). If it does not exist or is not a directory, report an error to the user and **STOP**.
      - Set `PROJECT_ROOT` to the resolved absolute path.
    - If no directory path argument is found, set `PROJECT_ROOT` to the current working directory.
-   - **Worktree redirect.** If `PROJECT_ROOT` is inside a git worktree (not the main checkout), redirect output to the main repository root. Worktrees managed by Claude Code are ephemeral — `.understand-anything/` written there is destroyed when the session ends, taking the knowledge graph with it (issue #133). Detect a worktree by comparing `git rev-parse --git-dir` against `git rev-parse --git-common-dir`; in a normal checkout or submodule they resolve to the same path, in a worktree they differ and the parent of `--git-common-dir` is the main repo root.
+   - **Worktree redirect.** If `PROJECT_ROOT` is inside a git worktree (not the main checkout), redirect output to the main repository root. Worktrees managed by Claude Code are ephemeral — `.understand-code/` written there is destroyed when the session ends, taking the knowledge graph with it (issue #133). Detect a worktree by comparing `git rev-parse --git-dir` against `git rev-parse --git-common-dir`; in a normal checkout or submodule they resolve to the same path, in a worktree they differ and the parent of `--git-common-dir` is the main repo root.
 
      ```bash
      COMMON_DIR=$(git -C "$PROJECT_ROOT" rev-parse --git-common-dir 2>/dev/null)
@@ -70,7 +70,7 @@ Determine whether to run a full analysis or incremental update.
      ```
 
      Set `UNDERSTAND_NO_WORKTREE_REDIRECT=1` if you intentionally want a per-worktree graph (rare — most users want the redirect).
-1.5. **Ensure the plugin is built.** Later phases invoke Node scripts that import `@understand-anything/core`. On a fresh install `packages/core/dist/` does not exist yet — build once.
+1.5. **Ensure the plugin is built.** Later phases invoke Node scripts that import `@understand-code/core`. On a fresh install `packages/core/dist/` does not exist yet — build once.
 
    **Important:** do **not** assume the plugin root is simply two directories above the skill path string. In many installations `~/.agents/skills/understand` is a symlink into the real plugin checkout. Prefer runtime-provided plugin roots first (for Claude), then fall back to universal symlinks, skill symlink resolution, and common clone-based install paths.
 
@@ -85,13 +85,13 @@ Determine whether to run a full analysis or incremental update.
    PLUGIN_ROOT=""
    for candidate in \
      "${CLAUDE_PLUGIN_ROOT}" \
-     "$HOME/.understand-anything-plugin" \
+     "$HOME/.understand-code-plugin" \
      "$SELF_RELATIVE" \
      "$COPILOT_SELF_RELATIVE" \
-     "$HOME/.codex/understand-anything/understand-anything-plugin" \
-     "$HOME/.opencode/understand-anything/understand-anything-plugin" \
-     "$HOME/.pi/understand-anything/understand-anything-plugin" \
-     "$HOME/understand-anything/understand-anything-plugin"; do
+     "$HOME/.codex/understand-code/understand-code-plugin" \
+     "$HOME/.opencode/understand-code/understand-code-plugin" \
+     "$HOME/.pi/understand-code/understand-code-plugin" \
+     "$HOME/understand-code/understand-code-plugin"; do
      if [ -n "$candidate" ] && [ -f "$candidate/package.json" ] && [ -f "$candidate/pnpm-workspace.yaml" ]; then
        PLUGIN_ROOT="$candidate"
        break
@@ -99,22 +99,22 @@ Determine whether to run a full analysis or incremental update.
    done
 
    if [ -z "$PLUGIN_ROOT" ]; then
-     echo "Error: Cannot find the understand-anything plugin root."
+     echo "Error: Cannot find the understand-code plugin root."
      echo "Checked:"
      echo "  - ${CLAUDE_PLUGIN_ROOT:-<unset CLAUDE_PLUGIN_ROOT>}"
-     echo "  - $HOME/.understand-anything-plugin"
+     echo "  - $HOME/.understand-code-plugin"
      echo "  - ${SELF_RELATIVE:-<unresolved path derived from ~/.agents/skills/understand>}"
      echo "  - ${COPILOT_SELF_RELATIVE:-<unresolved path derived from ~/.copilot/skills/understand>}"
-     echo "  - $HOME/.codex/understand-anything/understand-anything-plugin"
-     echo "  - $HOME/.opencode/understand-anything/understand-anything-plugin"
-     echo "  - $HOME/.pi/understand-anything/understand-anything-plugin"
-     echo "  - $HOME/understand-anything/understand-anything-plugin"
+     echo "  - $HOME/.codex/understand-code/understand-code-plugin"
+     echo "  - $HOME/.opencode/understand-code/understand-code-plugin"
+     echo "  - $HOME/.pi/understand-code/understand-code-plugin"
+     echo "  - $HOME/understand-code/understand-code-plugin"
      echo "Make sure the plugin is installed correctly."
      exit 1
    fi
 
    if [ ! -f "$PLUGIN_ROOT/packages/core/dist/index.js" ]; then
-     cd "$PLUGIN_ROOT" && (pnpm install --frozen-lockfile 2>/dev/null || pnpm install) && pnpm --filter @understand-anything/core build
+     cd "$PLUGIN_ROOT" && (pnpm install --frozen-lockfile 2>/dev/null || pnpm install) && pnpm --filter @understand-code/core build
    fi
    ```
 
@@ -126,12 +126,12 @@ Determine whether to run a full analysis or incremental update.
    ```
 3. Create the intermediate and temp output directories:
    ```bash
-   mkdir -p $PROJECT_ROOT/.understand-anything/intermediate
-   mkdir -p $PROJECT_ROOT/.understand-anything/tmp
+   mkdir -p $PROJECT_ROOT/.understand-code/intermediate
+   mkdir -p $PROJECT_ROOT/.understand-code/tmp
    ```
 3.5. **Auto-update configuration:**
-    - If `--auto-update` is in `$ARGUMENTS`: write `{"autoUpdate": true}` to `$PROJECT_ROOT/.understand-anything/config.json`
-    - If `--no-auto-update` is in `$ARGUMENTS`: write `{"autoUpdate": false}` to `$PROJECT_ROOT/.understand-anything/config.json`
+    - If `--auto-update` is in `$ARGUMENTS`: write `{"autoUpdate": true}` to `$PROJECT_ROOT/.understand-code/config.json`
+    - If `--no-auto-update` is in `$ARGUMENTS`: write `{"autoUpdate": false}` to `$PROJECT_ROOT/.understand-code/config.json`
     - These flags only set the config — analysis proceeds normally regardless.
 
  3.6. **Language configuration:**
@@ -140,10 +140,10 @@ Determine whether to run a full analysis or incremental update.
       - `chinese` → `zh`, `japanese` → `ja`, `korean` → `ko`, `english` → `en`, `spanish` → `es`, `french` → `fr`, `german` → `de`, `portuguese` → `pt`, `russian` → `ru`, `arabic` → `ar`, etc.
       - Locale variants: `zh-TW`, `zh-HK`, `zh-CN`, `pt-BR`, etc. are preserved as-is.
     - If `--language` is NOT specified:
-      - Check `$PROJECT_ROOT/.understand-anything/config.json` for an existing `outputLanguage` field. If present, use that.
-      - If no stored preference, default to `en` (English).
+      - Check `$PROJECT_ROOT/.understand-code/config.json` for an existing `outputLanguage` field. If present, use that.
+      - If no stored preference, default to `zh` (Simplified Chinese).
     - If `--language` IS specified:
-      - Update `$PROJECT_ROOT/.understand-anything/config.json` with the new language: merge `{"outputLanguage": "<lang>"}` into existing config.
+      - Update `$PROJECT_ROOT/.understand-code/config.json` with the new language: merge `{"outputLanguage": "<lang>"}` into existing config.
       - Store as `$OUTPUT_LANGUAGE` for use throughout all phases.
     - **Language directive template:** Store as `$LANGUAGE_DIRECTIVE`:
       ```markdown
@@ -151,14 +151,14 @@ Determine whether to run a full analysis or incremental update.
       ```
 
  4. **Check for subdomain knowledge graphs to merge:**
-   List all `*knowledge-graph*.json` files in `$PROJECT_ROOT/.understand-anything/` **excluding** `knowledge-graph.json` itself (e.g. `frontend-knowledge-graph.json`, `backend-knowledge-graph.json`). If any subdomain graphs exist, run the merge script bundled with this skill (located next to this SKILL.md file — use the skill directory path, not the project root):
+   List all `*knowledge-graph*.json` files in `$PROJECT_ROOT/.understand-code/` **excluding** `knowledge-graph.json` itself (e.g. `frontend-knowledge-graph.json`, `backend-knowledge-graph.json`). If any subdomain graphs exist, run the merge script bundled with this skill (located next to this SKILL.md file — use the skill directory path, not the project root):
    ```bash
    python <SKILL_DIR>/merge-subdomain-graphs.py $PROJECT_ROOT
    ```
    The script discovers subdomain graphs, loads the existing `knowledge-graph.json` as a base (if present), and merges everything into `knowledge-graph.json` (deduplicating nodes and edges). Report the merge summary to the user, then continue with the merged graph.
 
-5. Check if `$PROJECT_ROOT/.understand-anything/knowledge-graph.json` exists. If it does, read it.
-6. Check if `$PROJECT_ROOT/.understand-anything/meta.json` exists. If it does, read it to get `gitCommitHash`.
+5. Check if `$PROJECT_ROOT/.understand-code/knowledge-graph.json` exists. If it does, read it.
+6. Check if `$PROJECT_ROOT/.understand-code/meta.json` exists. If it does, read it to get `gitCommitHash`.
 7. **Decision logic:**
 
    | Condition | Action |
@@ -169,7 +169,7 @@ Determine whether to run a full analysis or incremental update.
    | Existing graph + unchanged commit hash | Ask the user: "The graph is up to date at this commit. Would you like to: **(a)** run a full rebuild (`--full`), **(b)** run the LLM graph reviewer (`--review`), or **(c)** do nothing?" Then follow their choice. If they pick (c), STOP. |
    | Existing graph + changed files | Incremental update (re-analyze changed files only) |
 
-   **Review-only path:** Copy the existing `knowledge-graph.json` to `$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json`, then jump directly to Phase 6 step 3.
+   **Review-only path:** Copy the existing `knowledge-graph.json` to `$PROJECT_ROOT/.understand-code/intermediate/assembled-graph.json`, then jump directly to Phase 6 step 3.
 
    For incremental updates, get the changed file list:
    ```bash
@@ -193,7 +193,7 @@ Determine whether to run a full analysis or incremental update.
 
 Set up and verify the `.understandignore` file before scanning.
 
-1. Check if `$PROJECT_ROOT/.understand-anything/.understandignore` exists.
+1. Check if `$PROJECT_ROOT/.understand-code/.understandignore` exists.
 2. **If it does NOT exist**, generate a starter file:
    - Run the following Node.js one-liner in `$PROJECT_ROOT` (reads `.gitignore` and deduplicates against built-in defaults):
      ```bash
@@ -215,16 +215,16 @@ Set up and verify the `.understandignore` file before scanning.
      const found = dirs.filter(d => fs.existsSync(path.join(root, d)));
      if (found.length) { body += '# --- Detected directories (uncomment to exclude) ---\n\n' + found.map(d => '# ' + d + '/').join('\n') + '\n\n'; }
      body += '# --- Test file patterns (uncomment to exclude) ---\n\n# *.test.*\n# *.spec.*\n# *.snap\n';
-     const outDir = path.join(root, '.understand-anything');
+     const outDir = path.join(root, '.understand-code');
      if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
      fs.writeFileSync(path.join(outDir, '.understandignore'), header + body);
      "
      ```
    - Report to the user:
-     > Generated `.understand-anything/.understandignore` with suggested exclusions based on your project structure. Please review it and uncomment any patterns you'd like to exclude from analysis. When ready, confirm to continue.
+     > Generated `.understand-code/.understandignore` with suggested exclusions based on your project structure. Please review it and uncomment any patterns you'd like to exclude from analysis. When ready, confirm to continue.
    - **Wait for user confirmation before proceeding.**
 3. **If it already exists**, report:
-   > Found `.understand-anything/.understandignore`. Review it if needed, then confirm to continue.
+   > Found `.understand-code/.understandignore`. Review it if needed, then confirm to continue.
    - **Wait for user confirmation before proceeding.**
 4. After confirmation, proceed to Phase 1.
 
@@ -256,9 +256,9 @@ Pass these parameters in the dispatch prompt:
 
 > Scan this project directory to discover all project files (including non-code files like configs, docs, infrastructure), detect languages and frameworks.
 > Project root: `$PROJECT_ROOT`
-> Write output to: `$PROJECT_ROOT/.understand-anything/intermediate/scan-result.json`
+> Write output to: `$PROJECT_ROOT/.understand-code/intermediate/scan-result.json`
 
-After the subagent completes, read `$PROJECT_ROOT/.understand-anything/intermediate/scan-result.json` to get:
+After the subagent completes, read `$PROJECT_ROOT/.understand-code/intermediate/scan-result.json` to get:
 - Project name, description
 - Languages, frameworks
 - File list with line counts and `fileCategory` per file (`code`, `config`, `docs`, `infra`, `data`, `script`, `markup`)
@@ -284,7 +284,7 @@ Run the bundled batching script:
 node <SKILL_DIR>/compute-batches.mjs $PROJECT_ROOT
 ```
 
-Reads `.understand-anything/intermediate/scan-result.json`, writes `.understand-anything/intermediate/batches.json`.
+Reads `.understand-code/intermediate/scan-result.json`, writes `.understand-code/intermediate/batches.json`.
 
 Capture stderr. Append any line starting with `Warning:` to `$PHASE_WARNINGS` for the final report.
 
@@ -296,7 +296,7 @@ If the script exits non-zero, the failure is hard — relay the full stderr to t
 
 ### Full analysis path
 
-Load `.understand-anything/intermediate/batches.json` (produced by Phase 1.5). Iterate the `batches[]` array.
+Load `.understand-code/intermediate/batches.json` (produced by Phase 1.5). Iterate the `batches[]` array.
 
 Report: `[Phase 2/7] Analyzing files — <totalFiles> files in <totalBatches> batches (up to 5 concurrent)...`
 
@@ -317,7 +317,7 @@ Dispatch prompt template (fill in batch-specific values from `batches.json[i]`):
 > Languages: `<languages>`
 > Batch: `<batchIndex>/<totalBatches>`
 > Skill directory (for bundled scripts): `<SKILL_DIR>`
-> Output: write to `$PROJECT_ROOT/.understand-anything/intermediate/batch-<batchIndex>.json` (single-file mode) OR `batch-<batchIndex>-part-<k>.json` (split mode, per Step B of your output protocol).
+> Output: write to `$PROJECT_ROOT/.understand-code/intermediate/batch-<batchIndex>.json` (single-file mode) OR `batch-<batchIndex>-part-<k>.json` (split mode, per Step B of your output protocol).
 >
 > Pre-resolved import data for this batch (use directly — do NOT re-resolve imports from source):
 > ```json
@@ -343,7 +343,7 @@ Run the merge-and-normalize script bundled with this skill (located next to this
 python <SKILL_DIR>/merge-batch-graphs.py $PROJECT_ROOT
 ```
 
-This script reads all `batch-*.json` files (including `batch-<i>-part-<k>.json` produced by file-analyzers that split their output) from `$PROJECT_ROOT/.understand-anything/intermediate/`, then in one pass:
+This script reads all `batch-*.json` files (including `batch-<i>-part-<k>.json` produced by file-analyzers that split their output) from `$PROJECT_ROOT/.understand-code/intermediate/`, then in one pass:
 - Combines all nodes and edges across batches
 - Normalizes node IDs (strips double prefixes, project-name prefixes, adds missing prefixes)
 - Normalizes complexity values (`low`→`simple`, `medium`→`moderate`, `high`→`complex`, etc.)
@@ -360,14 +360,14 @@ After all file/function/class nodes and import edges are assembled, build call r
 - `functions` from each structure record.
 - `callGraph` from each structure record.
 
-Then call `resolveCalls()` from `@understand-anything/core`. For each `ResolvedCall`, call `GraphBuilder.addCallEdge(callerFile, callerFunc, calleeFile, calleeFunc)`. Add resolver diagnostics to the final summary:
+Then call `resolveCalls()` from `@understand-code/core`. For each `ResolvedCall`, call `GraphBuilder.addCallEdge(callerFile, callerFunc, calleeFile, calleeFunc)`. Add resolver diagnostics to the final summary:
 
 - `resolvedCalls`: number of calls converted to edges.
 - `unresolvedCalls`: number of raw calls that were omitted because they could not be mapped to a unique function node.
 
 The merge script also runs a `tested_by` linker that canonicalizes test-coverage edges in two passes. **Pass 1** walks LLM-emitted `tested_by` edges and flips inverted ones in place; semantically broken edges (test↔test, prod↔prod, orphan endpoints) are dropped. **Pass 2** supplements with path-convention pairings. Production nodes that end up sourcing any `tested_by` edge get a `"tested"` tag. All resulting edges run `production → test`.
 
-Output: `$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json`
+Output: `$PROJECT_ROOT/.understand-code/intermediate/assembled-graph.json`
 
 Include the script's warnings in `$PHASE_WARNINGS` for the reviewer.
 
@@ -377,13 +377,13 @@ The final graph review must include `calls` in the edge type count whenever reso
 
 Write the changed-files list (one path per line) to a temp file:
 ```bash
-git diff <lastCommitHash>..HEAD --name-only > $PROJECT_ROOT/.understand-anything/tmp/changed-files.txt
+git diff <lastCommitHash>..HEAD --name-only > $PROJECT_ROOT/.understand-code/tmp/changed-files.txt
 ```
 
 Run compute-batches with `--changed-files`:
 ```bash
 node <SKILL_DIR>/compute-batches.mjs $PROJECT_ROOT \
-  --changed-files=$PROJECT_ROOT/.understand-anything/tmp/changed-files.txt
+  --changed-files=$PROJECT_ROOT/.understand-code/tmp/changed-files.txt
 ```
 
 This produces a `batches.json` that contains only batches with changed files, but neighborMap entries still reference unchanged files (with their full-graph batchIndex) so cross-batch edges remain emittable.
@@ -409,10 +409,10 @@ Dispatch a subagent using the `assemble-reviewer` agent definition (at `agents/a
 
 Pass these parameters in the dispatch prompt:
 
-> Review the assembled graph at `$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json`.
+> Review the assembled graph at `$PROJECT_ROOT/.understand-code/intermediate/assembled-graph.json`.
 > Project root: `$PROJECT_ROOT`
-> Batch files are at: `$PROJECT_ROOT/.understand-anything/intermediate/batch-*.json`
-> Write review output to: `$PROJECT_ROOT/.understand-anything/intermediate/assemble-review.json`
+> Batch files are at: `$PROJECT_ROOT/.understand-code/intermediate/batch-*.json`
+> Write review output to: `$PROJECT_ROOT/.understand-code/intermediate/assemble-review.json`
 >
 > **Merge script report:**
 > ```
@@ -424,7 +424,7 @@ Pass these parameters in the dispatch prompt:
 > $IMPORT_MAP
 > ```
 
-After the subagent completes, read `$PROJECT_ROOT/.understand-anything/intermediate/assemble-review.json` and add any notes to `$PHASE_WARNINGS`.
+After the subagent completes, read `$PROJECT_ROOT/.understand-code/intermediate/assemble-review.json` and add any notes to `$PHASE_WARNINGS`.
 
 ---
 
@@ -457,7 +457,7 @@ Pass these parameters in the dispatch prompt:
 
 > Analyze this codebase's structure to identify architectural layers.
 > Project root: `$PROJECT_ROOT`
-> Write output to: `$PROJECT_ROOT/.understand-anything/intermediate/layers.json`
+> Write output to: `$PROJECT_ROOT/.understand-code/intermediate/layers.json`
 > Project: `<projectName>` — `<projectDescription>`
 >
 > File nodes (all node types — includes code files, config, document, service, pipeline, table, schema, resource, endpoint):
@@ -475,7 +475,7 @@ Pass these parameters in the dispatch prompt:
 > [list of ALL edges — include all edge types]
 > ```
 
-After the subagent completes, read `$PROJECT_ROOT/.understand-anything/intermediate/layers.json` and normalize it into a final `layers` array. Apply these steps **in order**:
+After the subagent completes, read `$PROJECT_ROOT/.understand-code/intermediate/layers.json` and normalize it into a final `layers` array. Apply these steps **in order**:
 
 1. **Unwrap envelope:** If the file contains `{ "layers": [...] }` instead of a plain array, extract the inner array. (The prompt requests a plain array, but LLMs may still produce an envelope.)
 2. **Rename legacy fields:** If any layer object has a `nodes` field instead of `nodeIds`, rename `nodes` → `nodeIds`. If `nodes` entries are objects with an `id` field rather than plain strings, extract just the `id` values into `nodeIds`.
@@ -534,7 +534,7 @@ Pass these parameters in the dispatch prompt:
 
 > Create a guided learning tour for this codebase.
 > Project root: `$PROJECT_ROOT`
-> Write output to: `$PROJECT_ROOT/.understand-anything/intermediate/tour.json`
+> Write output to: `$PROJECT_ROOT/.understand-code/intermediate/tour.json`
 > Project: `<projectName>` — `<projectDescription>`
 > Languages: `<languages>`
 >
@@ -553,7 +553,7 @@ Pass these parameters in the dispatch prompt:
 > [list of ALL edges — include all edge types for complete graph topology analysis]
 > ```
 
-After the subagent completes, read `$PROJECT_ROOT/.understand-anything/intermediate/tour.json` and normalize it into a final `tour` array. Apply these steps **in order**:
+After the subagent completes, read `$PROJECT_ROOT/.understand-code/intermediate/tour.json` and normalize it into a final `tour` array. Apply these steps **in order**:
 
 1. **Unwrap envelope:** If the file contains `{ "steps": [...] }` instead of a plain array, extract the inner array. (The prompt requests a plain array, but LLMs may still produce an envelope.)
 2. **Rename legacy fields:** If any step has `nodesToInspect` instead of `nodeIds`, rename it → `nodeIds`. If any step has `whyItMatters` instead of `description`, rename it → `description`.
@@ -617,7 +617,7 @@ Assemble the full KnowledgeGraph JSON object:
 
    If validation fails, automatically normalize and rewrite the graph into this shape before saving. If the graph still fails final validation after the normalization pass, save it with warnings but mark dashboard auto-launch as skipped.
 
-2. Write the assembled graph to `$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json`.
+2. Write the assembled graph to `$PROJECT_ROOT/.understand-code/intermediate/assembled-graph.json`.
 
 3. **Check `$ARGUMENTS` for `--review` flag.** Then run the appropriate validation path:
 
@@ -625,7 +625,7 @@ Assemble the full KnowledgeGraph JSON object:
 
 #### Default path (no `--review`): inline deterministic validation
 
-Write the following Node.js script to `$PROJECT_ROOT/.understand-anything/tmp/ua-inline-validate.cjs`:
+Write the following Node.js script to `$PROJECT_ROOT/.understand-code/tmp/uc-inline-validate.cjs`:
 
 ```javascript
 #!/usr/bin/env node
@@ -695,9 +695,9 @@ try {
 
 Execute it:
 ```bash
-node $PROJECT_ROOT/.understand-anything/tmp/ua-inline-validate.cjs \
-  "$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json" \
-  "$PROJECT_ROOT/.understand-anything/intermediate/review.json"
+node $PROJECT_ROOT/.understand-code/tmp/uc-inline-validate.cjs \
+  "$PROJECT_ROOT/.understand-code/intermediate/assembled-graph.json" \
+  "$PROJECT_ROOT/.understand-code/intermediate/review.json"
 ```
 
 If the script exits non-zero, read stderr, fix the script, and retry once.
@@ -724,14 +724,14 @@ Dispatch a subagent using the `graph-reviewer` agent definition (at `agents/grap
 
 Pass these parameters in the dispatch prompt:
 
-> Validate the knowledge graph at `$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json`.
+> Validate the knowledge graph at `$PROJECT_ROOT/.understand-code/intermediate/assembled-graph.json`.
 > Project root: `$PROJECT_ROOT`
 > Read the file and validate it for completeness and correctness.
-> Write output to: `$PROJECT_ROOT/.understand-anything/intermediate/review.json`
+> Write output to: `$PROJECT_ROOT/.understand-code/intermediate/review.json`
 
 ---
 
-4. Read `$PROJECT_ROOT/.understand-anything/intermediate/review.json`.
+4. Read `$PROJECT_ROOT/.understand-code/intermediate/review.json`.
 
 5. **If `issues` array is non-empty:**
    - Review the `issues` list
@@ -750,13 +750,13 @@ Pass these parameters in the dispatch prompt:
 
 Report to the user: `[Phase 7/7] Saving knowledge graph...`
 
-1. Write the final knowledge graph to `$PROJECT_ROOT/.understand-anything/knowledge-graph.json`.
+1. Write the final knowledge graph to `$PROJECT_ROOT/.understand-code/knowledge-graph.json`.
 
 2. **Generate structural fingerprints baseline.** This creates the basis for future automatic incremental updates and **must succeed before `meta.json` is written** — otherwise auto-update sees a fresh commit hash with no fingerprints to compare against, classifies every file as STRUCTURAL, and escalates to `FULL_UPDATE` on every subsequent commit (issue #152).
 
    Write the input file:
    ```bash
-   cat > $PROJECT_ROOT/.understand-anything/intermediate/fingerprint-input.json <<EOF
+   cat > $PROJECT_ROOT/.understand-code/intermediate/fingerprint-input.json <<EOF
    {
      "projectRoot": "$PROJECT_ROOT",
      "sourceFilePaths": [<all source file paths from Phase 1, as JSON array>],
@@ -768,14 +768,14 @@ Report to the user: `[Phase 7/7] Saving knowledge graph...`
    Then invoke the bundled script (located next to this SKILL.md):
    ```bash
    node <SKILL_DIR>/build-fingerprints.mjs \
-     $PROJECT_ROOT/.understand-anything/intermediate/fingerprint-input.json
+     $PROJECT_ROOT/.understand-code/intermediate/fingerprint-input.json
    ```
 
    The script uses `TreeSitterPlugin + PluginRegistry` exactly like `extract-structure.mjs`, so the baseline matches the comparison logic used during auto-updates.
 
    **If the script exits non-zero or stdout does not include `Fingerprints baseline:`, abort Phase 7 and report the error. Do NOT proceed to step 3 (writing `meta.json`).**
 
-3. Write metadata to `$PROJECT_ROOT/.understand-anything/meta.json` (only after step 2 succeeded):
+3. Write metadata to `$PROJECT_ROOT/.understand-code/meta.json` (only after step 2 succeeded):
    ```json
    {
      "lastAnalyzedAt": "<ISO 8601 timestamp>",
@@ -787,8 +787,8 @@ Report to the user: `[Phase 7/7] Saving knowledge graph...`
 
 4. Clean up intermediate files:
    ```bash
-   rm -rf $PROJECT_ROOT/.understand-anything/intermediate
-   rm -rf $PROJECT_ROOT/.understand-anything/tmp
+   rm -rf $PROJECT_ROOT/.understand-code/intermediate
+   rm -rf $PROJECT_ROOT/.understand-code/tmp
    ```
 
 5. Report a summary to the user containing:
@@ -799,7 +799,7 @@ Report to the user: `[Phase 7/7] Saving knowledge graph...`
    - Layers identified (with names)
    - Tour steps generated (count)
    - Any warnings from the reviewer
-   - Path to the output file: `$PROJECT_ROOT/.understand-anything/knowledge-graph.json`
+   - Path to the output file: `$PROJECT_ROOT/.understand-code/knowledge-graph.json`
 
 6. Only automatically launch the dashboard by invoking the `/understand-dashboard` skill if final graph validation passed after normalization/review fixes.
    If final validation did not pass, report that the graph was saved with warnings and dashboard launch was skipped.

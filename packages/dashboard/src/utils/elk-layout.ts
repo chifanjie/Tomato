@@ -1,5 +1,5 @@
 import ELK from "elkjs/lib/elk.bundled.js";
-import type { GraphIssue } from "@understand-anything/core/schema";
+import type { GraphIssue } from "@understand-code/core/schema";
 import { NODE_WIDTH, NODE_HEIGHT } from "./layout";
 
 export interface ElkChild {

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Restore understand-anything-style call arrows in the readable dashboard with focused file-level arrows and a function-level mini-map.
+**Goal:** Restore understand-code-style call arrows in the readable dashboard with focused file-level arrows and a function-level mini-map.
 
 **Architecture:** Add a tested relationship helper under `viewgraph` so UI components receive already-normalized file/function call edges. Keep the readable file-card layout, add an SVG overlay that only renders focused relationships, and add a compact SVG mini-map to the file detail page for the selected function.
 
@@ -19,7 +19,7 @@
 - Create `packages/dashboard/src/viewgraph/__tests__/callRelationships.test.ts`
   - Tests call aggregation, fallback imports, direction, direct focused relationship preservation, and function neighborhoods.
 - Create `packages/dashboard/src/components/LayerCallOverlay.tsx`
-  - Draws understand-anything-style warm-gold SVG arrows between measured file-card anchors.
+  - Draws understand-code-style warm-gold SVG arrows between measured file-card anchors.
   - Exports `buildLayerCallPaths` for deterministic geometry tests.
 - Create `packages/dashboard/src/components/__tests__/LayerCallOverlay.test.ts`
   - Tests focused path generation, missing-anchor filtering, and stroke-width scaling without relationship filtering.
@@ -47,7 +47,7 @@ Create `packages/dashboard/src/viewgraph/__tests__/callRelationships.test.ts` wi
 
 ```ts
 import { describe, expect, it } from "vitest";
-import type { KnowledgeGraph } from "@understand-anything/core/types";
+import type { KnowledgeGraph } from "@understand-code/core/types";
 import { buildViewGraph } from "../buildViewGraph";
 import {
   buildFileCallEdges,
@@ -136,7 +136,7 @@ describe("callRelationships", () => {
 Run:
 
 ```bash
-pnpm --filter @understand-anything/dashboard test -- src/viewgraph/__tests__/callRelationships.test.ts
+pnpm --filter @understand-code/dashboard test -- src/viewgraph/__tests__/callRelationships.test.ts
 ```
 
 Expected: FAIL because `../callRelationships` does not exist.
@@ -187,7 +187,7 @@ Sort returned edges by `sourceFileId`, then `targetFileId`. Skip same-file file-
 Run:
 
 ```bash
-pnpm --filter @understand-anything/dashboard test -- src/viewgraph/__tests__/callRelationships.test.ts
+pnpm --filter @understand-code/dashboard test -- src/viewgraph/__tests__/callRelationships.test.ts
 ```
 
 Expected: PASS for `callRelationships.test.ts`.
@@ -265,7 +265,7 @@ describe("LayerCallOverlay geometry", () => {
 Run:
 
 ```bash
-pnpm --filter @understand-anything/dashboard test -- src/components/__tests__/LayerCallOverlay.test.ts
+pnpm --filter @understand-code/dashboard test -- src/components/__tests__/LayerCallOverlay.test.ts
 ```
 
 Expected: FAIL because `LayerCallOverlay` does not exist.
@@ -286,7 +286,7 @@ Implement:
 Run:
 
 ```bash
-pnpm --filter @understand-anything/dashboard test -- src/components/__tests__/LayerCallOverlay.test.ts
+pnpm --filter @understand-code/dashboard test -- src/components/__tests__/LayerCallOverlay.test.ts
 ```
 
 Expected: PASS for `LayerCallOverlay.test.ts`.
@@ -340,7 +340,7 @@ Render `LayerCallOverlay` inside the relative content wrapper. Render a compact 
 Run:
 
 ```bash
-pnpm --filter @understand-anything/dashboard test
+pnpm --filter @understand-code/dashboard test
 ```
 
 Expected: all dashboard tests pass.
@@ -364,7 +364,7 @@ Create `FunctionCallMiniMap.test.ts` with tests equivalent to:
 
 ```ts
 import { describe, expect, it } from "vitest";
-import type { GraphNode } from "@understand-anything/core/types";
+import type { GraphNode } from "@understand-code/core/types";
 import type { FunctionCallNeighborhood } from "../../viewgraph/callRelationships";
 import { buildFunctionMiniMapModel } from "../FunctionCallMiniMap";
 
@@ -408,7 +408,7 @@ describe("FunctionCallMiniMap model", () => {
 Run:
 
 ```bash
-pnpm --filter @understand-anything/dashboard test -- src/components/__tests__/FunctionCallMiniMap.test.ts
+pnpm --filter @understand-code/dashboard test -- src/components/__tests__/FunctionCallMiniMap.test.ts
 ```
 
 Expected: FAIL because `FunctionCallMiniMap` does not exist.
@@ -428,7 +428,7 @@ Implement:
 Run:
 
 ```bash
-pnpm --filter @understand-anything/dashboard test -- src/components/__tests__/FunctionCallMiniMap.test.ts
+pnpm --filter @understand-code/dashboard test -- src/components/__tests__/FunctionCallMiniMap.test.ts
 ```
 
 Expected: PASS for `FunctionCallMiniMap.test.ts`.
@@ -463,7 +463,7 @@ Render `FunctionCallMiniMap` near the matrix, using `graph.nodes` to build `node
 Run:
 
 ```bash
-pnpm --filter @understand-anything/dashboard test
+pnpm --filter @understand-code/dashboard test
 ```
 
 Expected: all dashboard tests pass.
@@ -473,7 +473,7 @@ Expected: all dashboard tests pass.
 Run:
 
 ```bash
-pnpm --filter @understand-anything/dashboard build
+pnpm --filter @understand-code/dashboard build
 ```
 
 Expected: TypeScript and Vite build complete with exit code 0.
@@ -483,14 +483,14 @@ Expected: TypeScript and Vite build complete with exit code 0.
 Run the dashboard if needed:
 
 ```bash
-pnpm --filter @understand-anything/dashboard dev -- --host 127.0.0.1
+pnpm --filter @understand-code/dashboard dev -- --host 127.0.0.1
 ```
 
 Verify in browser:
 
 - Layer detail initially shows cards without global arrows.
 - Clicking a file card reveals all direct incoming/outgoing arrows for that file.
-- Arrows visually match the old understand-anything ReactFlow warm-gold style.
+- Arrows visually match the old understand-code ReactFlow warm-gold style.
 - The call-arrow toggle hides and restores the focused arrows.
 - The card open action still reaches the file detail page.
 - File detail shows a selected-function mini-map with direct incoming/outgoing arrows.
@@ -504,7 +504,7 @@ git commit -m "Show function call mini map in file detail"
 
 ## Final Verification
 
-- [ ] Run `pnpm --filter @understand-anything/dashboard test`.
-- [ ] Run `pnpm --filter @understand-anything/dashboard build`.
+- [ ] Run `pnpm --filter @understand-code/dashboard test`.
+- [ ] Run `pnpm --filter @understand-code/dashboard build`.
 - [ ] Inspect `git status --short` and ensure only intentional files were committed.
 - [ ] Summarize commit hashes and any remaining unrelated local changes.

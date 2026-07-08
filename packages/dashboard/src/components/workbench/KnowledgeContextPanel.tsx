@@ -5,10 +5,10 @@ interface KnowledgeContextPanelProps {
 }
 
 function matchLabel(matchKind: KnowledgeMatchKind): string {
-  if (matchKind === "direct-trace") return "Direct trace";
-  if (matchKind === "filename-path") return "Path match";
-  if (matchKind === "related-document") return "Related doc";
-  return "Graph only";
+  if (matchKind === "direct-trace") return "直接线索";
+  if (matchKind === "filename-path") return "路径命中";
+  if (matchKind === "related-document") return "相关文档";
+  return "仅图谱";
 }
 
 function lineRangeLabel(anchor: KnowledgeSourceAnchor): string | null {
@@ -28,43 +28,55 @@ function PanelSection({ title, children }: { title: string; children: React.Reac
   );
 }
 
+function knowledgeLoadLabel(context: KnowledgeContext): string {
+  if (context.loadedTraceCount === 0 && context.loadedDocumentCount === 0) {
+    return "未加载生成知识库";
+  }
+  return `已加载 ${context.loadedTraceCount} 条线索 / ${context.loadedDocumentCount} 份文档`;
+}
+
 export default function KnowledgeContextPanel({ context }: KnowledgeContextPanelProps) {
   const hasEvidence = context.documents.length > 0 || context.evidence.length > 0;
 
   return (
     <aside
-      aria-label="Knowledge context"
+      aria-label="知识上下文"
       className="flex h-full w-[320px] shrink-0 flex-col border-l border-border-subtle bg-surface xl:w-[340px]"
     >
       <header className="shrink-0 border-b border-border-subtle px-4 py-3">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="font-heading text-base text-text-primary">Context</h2>
+          <h2 className="font-heading text-base text-text-primary">知识上下文</h2>
           <span className="shrink-0 rounded border border-accent/35 bg-accent/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-accent">
             {matchLabel(context.matchKind)}
           </span>
         </div>
+        <p className="mt-1 text-[10px] font-semibold text-accent/85">
+          {knowledgeLoadLabel(context)}
+        </p>
         <p className="mt-1 line-clamp-2 text-xs text-text-muted" title={context.title}>
           {context.title}
         </p>
       </header>
 
       <div className="min-h-0 flex-1 space-y-5 overflow-auto px-4 py-4">
-        <PanelSection title="Engineer handoff">
+        <PanelSection title="工程接手">
           <p className="break-words">{context.summary}</p>
         </PanelSection>
 
-        <PanelSection title="Business meaning">
+        <PanelSection title="业务含义">
           <p className="break-words">{context.businessMeaning}</p>
         </PanelSection>
 
-        <PanelSection title="Change risk">
+        <PanelSection title="变更风险">
           <p className="break-words">{context.changeRisk}</p>
         </PanelSection>
 
-        <PanelSection title="Evidence links">
+        <PanelSection title="证据链接">
           {!hasEvidence ? (
             <p className="text-text-muted">
-              No generated knowledge document is linked yet. Showing graph-derived context.
+              {context.loadedTraceCount > 0 || context.loadedDocumentCount > 0
+                ? "知识库已加载，但当前选择还没有命中具体文档。正在展示图谱推导上下文。"
+                : "未加载生成知识库。正在展示图谱推导上下文。"}
             </p>
           ) : (
             <div className="space-y-3">

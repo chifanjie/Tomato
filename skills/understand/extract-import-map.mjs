@@ -4,7 +4,7 @@
  *
  * Deterministic import resolution script for the project-scanner agent.
  * Uses PluginRegistry (TreeSitterPlugin + non-code parsers) from
- * @understand-anything/core to extract raw import paths via tree-sitter,
+ * @understand-code/core to extract raw import paths via tree-sitter,
  * then applies language-specific resolution rules to map them to
  * project-internal file paths.
  *
@@ -44,7 +44,7 @@ const pluginRoot = resolve(__dirname, '../..');
 const require = createRequire(resolve(pluginRoot, 'package.json'));
 
 // ---------------------------------------------------------------------------
-// Resolve @understand-anything/core
+// Resolve @understand-code/core
 //
 // Node ESM dynamic import() requires a file:// URL on Windows; passing a raw
 // absolute path like "C:\..." throws ERR_UNSUPPORTED_ESM_URL_SCHEME because the
@@ -52,7 +52,7 @@ const require = createRequire(resolve(pluginRoot, 'package.json'));
 // ---------------------------------------------------------------------------
 let core;
 try {
-  core = await import(pathToFileURL(require.resolve('@understand-anything/core')).href);
+  core = await import(pathToFileURL(require.resolve('@understand-code/core')).href);
 } catch {
   // Fallback: direct path for installed plugin cache layouts
   core = await import(pathToFileURL(resolve(pluginRoot, 'packages/core/dist/index.js')).href);

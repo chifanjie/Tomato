@@ -48,8 +48,8 @@ function importsEdge(src, tgt) {
 }
 
 beforeEach(() => {
-  projectRoot = mkdtempSync(join(tmpdir(), "ua-merge-test-"));
-  intermediateDir = join(projectRoot, ".understand-anything", "intermediate");
+  projectRoot = mkdtempSync(join(tmpdir(), "uc-merge-test-"));
+  intermediateDir = join(projectRoot, ".understand-code", "intermediate");
   mkdirSync(intermediateDir, { recursive: true });
 });
 

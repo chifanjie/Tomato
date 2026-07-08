@@ -77,7 +77,7 @@ Create `packages/dashboard/src/workbench/__tests__/journeyRoute.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
-import type { KnowledgeGraph } from "@understand-anything/core/types";
+import type { KnowledgeGraph } from "@understand-code/core/types";
 import { buildViewGraph } from "../../viewgraph/buildViewGraph";
 import { buildJourneyRoute } from "../journeyRoute";
 
@@ -166,7 +166,7 @@ describe("buildJourneyRoute", () => {
 Run:
 
 ```bash
-pnpm --filter @understand-anything/dashboard test -- src/workbench/__tests__/journeyRoute.test.ts
+pnpm --filter @understand-code/dashboard test -- src/workbench/__tests__/journeyRoute.test.ts
 ```
 
 Expected: fail because `../journeyRoute` does not exist.
@@ -176,7 +176,7 @@ Expected: fail because `../journeyRoute` does not exist.
 Create `packages/dashboard/src/workbench/journeyRoute.ts`:
 
 ```ts
-import type { KnowledgeGraph } from "@understand-anything/core/types";
+import type { KnowledgeGraph } from "@understand-code/core/types";
 import type { FunctionDot, ViewFileSummary, ViewGraph, ViewLayerSummary } from "../viewgraph/types";
 
 export type JourneyStepKind = "project" | "layer" | "file" | "function";
@@ -354,7 +354,7 @@ export function buildJourneyRoute({
 Run:
 
 ```bash
-pnpm --filter @understand-anything/dashboard test -- src/workbench/__tests__/journeyRoute.test.ts
+pnpm --filter @understand-code/dashboard test -- src/workbench/__tests__/journeyRoute.test.ts
 ```
 
 Expected: pass.
@@ -460,7 +460,7 @@ describe("knowledgeContext", () => {
 Run:
 
 ```bash
-pnpm --filter @understand-anything/dashboard test -- src/workbench/__tests__/knowledgeContext.test.ts
+pnpm --filter @understand-code/dashboard test -- src/workbench/__tests__/knowledgeContext.test.ts
 ```
 
 Expected: fail because `../knowledgeContext` does not exist.
@@ -646,7 +646,7 @@ export function resolveKnowledgeContext(
 Run:
 
 ```bash
-pnpm --filter @understand-anything/dashboard test -- src/workbench/__tests__/knowledgeContext.test.ts
+pnpm --filter @understand-code/dashboard test -- src/workbench/__tests__/knowledgeContext.test.ts
 ```
 
 Expected: pass.
@@ -1077,7 +1077,7 @@ Create `packages/dashboard/src/components/workbench/VisualGuidedWorkbench.tsx`:
 
 ```tsx
 import { useMemo, useState } from "react";
-import type { KnowledgeGraph } from "@understand-anything/core/types";
+import type { KnowledgeGraph } from "@understand-code/core/types";
 import { useDashboardStore } from "../../store";
 import { buildReadableSearchMatches } from "../../viewgraph/readableSelectors";
 import type { ViewGraph } from "../../viewgraph/types";
@@ -1208,7 +1208,7 @@ export default function VisualGuidedWorkbench({
 Run:
 
 ```bash
-pnpm --filter @understand-anything/dashboard build
+pnpm --filter @understand-code/dashboard build
 ```
 
 Expected: fail because `ReadableViewGraphPage` and `FunctionDetailPage` do not yet accept `presentation`. Resolve presentation props in Task 5.
@@ -1417,7 +1417,7 @@ to:
 Run:
 
 ```bash
-pnpm --filter @understand-anything/dashboard build
+pnpm --filter @understand-code/dashboard build
 ```
 
 Expected: pass after resolving import and prop errors.
@@ -1442,7 +1442,7 @@ Create `packages/dashboard/src/components/workbench/__tests__/VisualGuidedWorkbe
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { renderToString } from "react-dom/server";
-import type { KnowledgeGraph } from "@understand-anything/core/types";
+import type { KnowledgeGraph } from "@understand-code/core/types";
 import { buildViewGraph } from "../../../viewgraph/buildViewGraph";
 import { buildKnowledgeContextIndex } from "../../../workbench/knowledgeContext";
 import VisualGuidedWorkbench from "../VisualGuidedWorkbench";
@@ -1504,7 +1504,7 @@ describe("VisualGuidedWorkbench", () => {
 Run:
 
 ```bash
-pnpm --filter @understand-anything/dashboard test -- src/components/workbench/__tests__/VisualGuidedWorkbench.test.tsx
+pnpm --filter @understand-code/dashboard test -- src/components/workbench/__tests__/VisualGuidedWorkbench.test.tsx
 ```
 
 Expected: pass.
@@ -1514,7 +1514,7 @@ Expected: pass.
 Run:
 
 ```bash
-pnpm --filter @understand-anything/dashboard test -- src/workbench/__tests__/journeyRoute.test.ts src/workbench/__tests__/knowledgeContext.test.ts src/components/workbench/__tests__/VisualGuidedWorkbench.test.tsx
+pnpm --filter @understand-code/dashboard test -- src/workbench/__tests__/journeyRoute.test.ts src/workbench/__tests__/knowledgeContext.test.ts src/components/workbench/__tests__/VisualGuidedWorkbench.test.tsx
 ```
 
 Expected: pass.
@@ -1578,8 +1578,8 @@ aria-label={item.label}
 Run:
 
 ```bash
-pnpm --filter @understand-anything/dashboard build
-pnpm --filter @understand-anything/dashboard test -- src/workbench/__tests__/journeyRoute.test.ts src/workbench/__tests__/knowledgeContext.test.ts src/components/workbench/__tests__/VisualGuidedWorkbench.test.tsx
+pnpm --filter @understand-code/dashboard build
+pnpm --filter @understand-code/dashboard test -- src/workbench/__tests__/journeyRoute.test.ts src/workbench/__tests__/knowledgeContext.test.ts src/components/workbench/__tests__/VisualGuidedWorkbench.test.tsx
 ```
 
 Expected: both commands pass.
@@ -1601,7 +1601,7 @@ git commit -m "style: polish visual guided workbench"
 Run:
 
 ```bash
-pnpm --filter @understand-anything/dashboard dev -- --host 127.0.0.1
+pnpm --filter @understand-code/dashboard dev -- --host 127.0.0.1
 ```
 
 Expected: Vite prints a local URL such as `http://127.0.0.1:5173/`.
@@ -1668,8 +1668,8 @@ Delete this verification file before committing.
 Run:
 
 ```bash
-pnpm --filter @understand-anything/dashboard build
-pnpm --filter @understand-anything/dashboard test -- src/workbench/__tests__/journeyRoute.test.ts src/workbench/__tests__/knowledgeContext.test.ts src/components/workbench/__tests__/VisualGuidedWorkbench.test.tsx
+pnpm --filter @understand-code/dashboard build
+pnpm --filter @understand-code/dashboard test -- src/workbench/__tests__/journeyRoute.test.ts src/workbench/__tests__/knowledgeContext.test.ts src/components/workbench/__tests__/VisualGuidedWorkbench.test.tsx
 ```
 
 Expected: pass.

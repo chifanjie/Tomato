@@ -11,7 +11,7 @@
 // `src/utils/layerStats.ts::computeLayerStats`.
 //
 // Usage:
-//   node understand-anything-plugin/packages/dashboard/scripts/benchmark-aggregations.mjs
+//   node understand-code-plugin/packages/dashboard/scripts/benchmark-aggregations.mjs
 
 import { performance } from "node:perf_hooks";
 

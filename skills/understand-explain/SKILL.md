@@ -31,7 +31,7 @@ The knowledge graph JSON has this structure:
 
 ## Instructions
 
-1. Check that `.understand-anything/knowledge-graph.json` exists. If not, tell the user to run `/understand` first.
+1. Check that `.understand-code/knowledge-graph.json` exists. If not, tell the user to run `/understand` first.
 
 2. **Find the target node** — use Grep to search the knowledge graph for the component: "$ARGUMENTS"
    - For file paths (e.g., `src/auth/login.ts`): search for `"filePath"` matches

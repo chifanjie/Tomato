@@ -34,6 +34,8 @@ export interface BuildKnowledgeContextIndexInput {
 export interface KnowledgeContextIndex {
   traces: readonly KnowledgeTraceRecord[];
   documents: readonly KnowledgeDocumentSummary[];
+  traceCount: number;
+  documentCount: number;
   tracesByNodeId: ReadonlyMap<string, readonly KnowledgeTraceRecord[]>;
   tracesByFilePath: ReadonlyMap<string, readonly KnowledgeTraceRecord[]>;
   documentsByFilePath: ReadonlyMap<string, readonly KnowledgeDocumentSummary[]>;
@@ -56,6 +58,8 @@ export interface KnowledgeContext {
   changeRisk: string;
   evidence: KnowledgeSourceAnchor[];
   documents: KnowledgeDocumentSummary[];
+  loadedTraceCount: number;
+  loadedDocumentCount: number;
 }
 
 function normalizedPath(value: string | undefined): string | null {
@@ -166,10 +170,20 @@ export function buildKnowledgeContextIndex({
   return {
     traces: traceSnapshot,
     documents: documentSnapshot,
+    traceCount: traceSnapshot.length,
+    documentCount: documentSnapshot.length,
     tracesByNodeId: snapshotIndex(tracesByNodeId),
     tracesByFilePath: snapshotIndex(tracesByFilePath),
     documentsByFilePath: snapshotIndex(documentsByFilePath),
     documentsByRelatedPath: snapshotIndex(documentsByRelatedPath),
+  };
+}
+
+function withLoadCounts(index: KnowledgeContextIndex, context: Omit<KnowledgeContext, "loadedTraceCount" | "loadedDocumentCount">): KnowledgeContext {
+  return {
+    ...context,
+    loadedTraceCount: index.traceCount,
+    loadedDocumentCount: index.documentCount,
   };
 }
 
@@ -178,15 +192,15 @@ export function resolveKnowledgeContext(
   selection: WorkbenchSelection | null | undefined,
 ): KnowledgeContext {
   if (!selection) {
-    return {
+    return withLoadCounts(index, {
       matchKind: "graph-only",
-      title: "Select a node",
-      summary: "Choose a graph node to see generated knowledge traces and related documents.",
-      businessMeaning: "Knowledge context appears here after a workbench selection is active.",
-      changeRisk: "No selected code path yet.",
+      title: "选择一个节点",
+      summary: "选择图谱节点后，这里会展示生成知识库线索、相关文档和代码证据。",
+      businessMeaning: "工作台选中节点后，会在这里汇总它对应的业务含义。",
+      changeRisk: "当前还没有选中的代码路径。",
       evidence: [],
       documents: [],
-    };
+    });
   }
 
   const nodeTrace = nodeTraceForSelection(index, selection);
@@ -194,63 +208,63 @@ export function resolveKnowledgeContext(
   const supportingDocuments = uniqueDocuments([...documents.exact, ...documents.related]);
 
   if (nodeTrace) {
-    return {
+    return withLoadCounts(index, {
       matchKind: "direct-trace",
       title: nodeTrace.title,
       summary: nodeTrace.summary,
-      businessMeaning: nodeTrace.businessMeaning ?? "No generated business meaning is available for this trace yet.",
-      changeRisk: nodeTrace.changeRisk ?? "Review the linked evidence before changing this code path.",
+      businessMeaning: nodeTrace.businessMeaning ?? "这条知识库线索还没有生成更细的业务含义。",
+      changeRisk: nodeTrace.changeRisk ?? "修改这段代码前，先核对下方关联证据和生成文档。",
       evidence: formattedAnchors(nodeTrace.anchors),
       documents: supportingDocuments,
-    };
+    });
   }
 
   const fileTrace = fileTraceForSelection(index, selection);
   if (fileTrace) {
-    return {
+    return withLoadCounts(index, {
       matchKind: "filename-path",
       title: fileTrace.title,
       summary: fileTrace.summary,
-      businessMeaning: fileTrace.businessMeaning ?? "No generated business meaning is available for this trace yet.",
-      changeRisk: fileTrace.changeRisk ?? "Review the linked evidence before changing this code path.",
+      businessMeaning: fileTrace.businessMeaning ?? "这条文件级知识库线索还没有生成更细的业务含义。",
+      changeRisk: fileTrace.changeRisk ?? "修改这段代码前，先核对下方关联证据和生成文档。",
       evidence: formattedAnchors(fileTrace.anchors),
       documents: supportingDocuments,
-    };
+    });
   }
 
   const exactDocument = documents.exact[0];
   if (exactDocument) {
-    return {
+    return withLoadCounts(index, {
       matchKind: "filename-path",
       title: exactDocument.title,
       summary: exactDocument.summary,
-      businessMeaning: `This context comes from a knowledge document linked to ${selection.filePath ?? selection.nodeId}.`,
-      changeRisk: "Use the linked evidence and document summary to understand likely change impact.",
+      businessMeaning: `这段上下文来自直接关联到 ${selection.filePath ?? selection.nodeId} 的知识库文档。`,
+      changeRisk: "根据关联证据和文档摘要判断修改影响范围。",
       evidence: formattedAnchors(exactDocument.anchors),
       documents: documents.exact,
-    };
+    });
   }
 
   const relatedDocument = documents.related[0];
   if (relatedDocument) {
-    return {
+    return withLoadCounts(index, {
       matchKind: "related-document",
       title: relatedDocument.title,
       summary: relatedDocument.summary,
-      businessMeaning: `This context comes from a broader knowledge document related to ${selection.filePath ?? selection.nodeId}.`,
-      changeRisk: "Confirm the selected node still follows the related document before relying on it for changes.",
+      businessMeaning: `这段上下文来自与 ${selection.filePath ?? selection.nodeId} 相关的更大范围知识库文档。`,
+      changeRisk: "使用这份文档判断改动前，先确认当前节点仍符合文档描述的链路。",
       evidence: formattedAnchors(relatedDocument.anchors),
       documents: documents.related,
-    };
+    });
   }
 
-  return {
+  return withLoadCounts(index, {
     matchKind: "graph-only",
     title: fallbackTitle(selection),
-    summary: selection.summary || "No generated knowledge summary is available for this graph selection yet.",
-    businessMeaning: "No generated knowledge trace or related document is available for this selection yet.",
-    changeRisk: "Use the graph relationships and source code before changing this area.",
+    summary: selection.summary || "当前图谱节点还没有生成知识库摘要。",
+    businessMeaning: "没有生成知识库线索或相关文档命中当前选择。",
+    changeRisk: "先结合图谱关系和源代码，再判断这块区域的修改影响。",
     evidence: [],
     documents: [],
-  };
+  });
 }

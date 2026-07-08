@@ -30,7 +30,7 @@ The knowledge graph JSON has this structure:
 
 ## Instructions
 
-1. Check that `.understand-anything/knowledge-graph.json` exists. If not, tell the user to run `/understand` first.
+1. Check that `.understand-code/knowledge-graph.json` exists. If not, tell the user to run `/understand` first.
 
 2. **Read project metadata** — use Grep or Read with a line limit to extract the `"project"` section (name, description, languages, frameworks).
 

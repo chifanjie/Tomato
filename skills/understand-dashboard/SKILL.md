@@ -6,7 +6,7 @@ argument-hint: [project-path]
 
 # /understand-dashboard
 
-Start the Understand Anything dashboard to visualize the knowledge graph for the current project.
+Start the Understand Code dashboard to visualize the knowledge graph for the current project.
 
 ## Instructions
 
@@ -14,21 +14,21 @@ Start the Understand Anything dashboard to visualize the knowledge graph for the
    - If `$ARGUMENTS` contains a path, use that as the project directory
    - Otherwise, use the current working directory
 
-2. Check that `.understand-anything/knowledge-graph.json` exists in the project directory. If not, tell the user:
+2. Check that `.understand-code/knowledge-graph.json` exists in the project directory. If not, tell the user:
    ```
    No knowledge graph found. Run /understand first to analyze this project.
    ```
 
 3. Find the dashboard code. The dashboard is at `packages/dashboard/` relative to this plugin's root directory. Check these paths in order and use the first that exists:
    - `${CLAUDE_PLUGIN_ROOT}/packages/dashboard/` (Claude Code runtime root, highest priority)
-   - `~/.understand-anything-plugin/packages/dashboard/` (universal symlink, all installs)
+   - `~/.understand-code-plugin/packages/dashboard/` (universal symlink, all installs)
    - Two levels up from `~/.agents/skills/understand-dashboard` real path (self-relative fallback)
    - Two levels up from `~/.copilot/skills/understand-dashboard` real path (Copilot personal skills fallback)
    - Common clone-based install roots:
-     - `~/.codex/understand-anything/understand-anything-plugin/packages/dashboard/`
-     - `~/.opencode/understand-anything/understand-anything-plugin/packages/dashboard/`
-     - `~/.pi/understand-anything/understand-anything-plugin/packages/dashboard/`
-     - `~/understand-anything/understand-anything-plugin/packages/dashboard/`
+     - `~/.codex/understand-code/understand-code-plugin/packages/dashboard/`
+     - `~/.opencode/understand-code/understand-code-plugin/packages/dashboard/`
+     - `~/.pi/understand-code/understand-code-plugin/packages/dashboard/`
+     - `~/understand-code/understand-code-plugin/packages/dashboard/`
 
    Use the Bash tool to resolve:
    ```bash
@@ -40,29 +40,29 @@ Start the Understand Anything dashboard to visualize the knowledge graph for the
    PLUGIN_ROOT=""
    for candidate in \
      "${CLAUDE_PLUGIN_ROOT}" \
-     "$HOME/.understand-anything-plugin" \
+     "$HOME/.understand-code-plugin" \
      "$SELF_RELATIVE" \
      "$COPILOT_SELF_RELATIVE" \
-     "$HOME/.codex/understand-anything/understand-anything-plugin" \
-     "$HOME/.opencode/understand-anything/understand-anything-plugin" \
-     "$HOME/.pi/understand-anything/understand-anything-plugin" \
-     "$HOME/understand-anything/understand-anything-plugin"; do
+     "$HOME/.codex/understand-code/understand-code-plugin" \
+     "$HOME/.opencode/understand-code/understand-code-plugin" \
+     "$HOME/.pi/understand-code/understand-code-plugin" \
+     "$HOME/understand-code/understand-code-plugin"; do
      if [ -n "$candidate" ] && [ -d "$candidate/packages/dashboard" ]; then
        PLUGIN_ROOT="$candidate"; break
      fi
    done
 
    if [ -z "$PLUGIN_ROOT" ]; then
-     echo "Error: Cannot find the understand-anything plugin root."
+     echo "Error: Cannot find the understand-code plugin root."
      echo "Checked:"
      echo "  - ${CLAUDE_PLUGIN_ROOT:-<unset CLAUDE_PLUGIN_ROOT>}"
-     echo "  - $HOME/.understand-anything-plugin"
+     echo "  - $HOME/.understand-code-plugin"
      echo "  - ${SELF_RELATIVE:-<unresolved path derived from ~/.agents/skills/understand-dashboard>}"
      echo "  - ${COPILOT_SELF_RELATIVE:-<unresolved path derived from ~/.copilot/skills/understand-dashboard>}"
-     echo "  - $HOME/.codex/understand-anything/understand-anything-plugin"
-     echo "  - $HOME/.opencode/understand-anything/understand-anything-plugin"
-     echo "  - $HOME/.pi/understand-anything/understand-anything-plugin"
-     echo "  - $HOME/understand-anything/understand-anything-plugin"
+     echo "  - $HOME/.codex/understand-code/understand-code-plugin"
+     echo "  - $HOME/.opencode/understand-code/understand-code-plugin"
+     echo "  - $HOME/.pi/understand-code/understand-code-plugin"
+     echo "  - $HOME/understand-code/understand-code-plugin"
      echo "Make sure you followed the installation instructions for your platform."
      exit 1
    fi
@@ -74,7 +74,7 @@ Start the Understand Anything dashboard to visualize the knowledge graph for the
    ```
    Then ensure the core package is built (the dashboard depends on it):
    ```bash
-   cd <plugin-root> && pnpm --filter @understand-anything/core build
+   cd <plugin-root> && pnpm --filter @understand-code/core build
    ```
 
 5. Start the Vite dev server pointing at the project's knowledge graph:
@@ -92,7 +92,7 @@ Start the Understand Anything dashboard to visualize the knowledge graph for the
 7. Report to the user, including the full tokenized URL:
    ```
    Dashboard started at http://127.0.0.1:<PORT>?token=<TOKEN>
-   Viewing: <project-dir>/.understand-anything/knowledge-graph.json
+   Viewing: <project-dir>/.understand-code/knowledge-graph.json
 
    The dashboard is running in the background. Press Ctrl+C in the terminal to stop it.
    ```

@@ -1,8 +1,9 @@
 import { memo } from "react";
 import { Handle, Position } from "@xyflow/react";
 import type { NodeProps, Node } from "@xyflow/react";
-import type { NodeType } from "@understand-anything/core/types";
+import type { NodeType } from "@understand-code/core/types";
 import { useI18n } from "../contexts/I18nContext";
+import { complexityDisplayLabel, nodeTypeDisplayLabel } from "./nodeDisplayLabels";
 
 // Color maps keyed by NodeType — must be kept in sync with core NodeType union.
 const typeColors: Record<NodeType, string> = {
@@ -151,11 +152,11 @@ function CustomNodeComponent({
       <div className="pl-4 pr-3 py-2">
         <div className="flex items-center justify-between mb-1">
           <span className={`text-[10px] font-semibold uppercase tracking-wider ${textColor}`}>
-            {data.nodeType}
+            {nodeTypeDisplayLabel(data.nodeType)}
           </span>
           <div className="flex items-center gap-1.5">
             <span className={`text-[9px] font-mono ${complexityColor}`}>
-              {data.complexity}
+              {complexityDisplayLabel(data.complexity)}
             </span>
             {data.tags?.includes("tested") && (
               <span

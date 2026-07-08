@@ -1,4 +1,4 @@
-import type { GraphNode, KnowledgeGraph } from "@understand-anything/core/types";
+import type { GraphNode, KnowledgeGraph } from "@understand-code/core/types";
 import type { ViewFileSummary, ViewGraph } from "../viewgraph/types";
 
 export const journeySectionLabels = [

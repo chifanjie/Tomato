@@ -53,7 +53,7 @@ Default reveal rule:
 
 ### Arrow Visual Style
 
-Arrow form must match the previous understand-anything graph style rather than introduce a new visual language.
+Arrow form must match the previous understand-code graph style rather than introduce a new visual language.
 
 - Render arrows as ReactFlow-style curved SVG edges with arrowheads. If the new readable overlay is implemented as raw SVG rather than ReactFlow edges, it should still visually mimic the old ReactFlow edge shape.
 - Use the same warm gold edge family already used by `GraphView.tsx`.
@@ -154,7 +154,7 @@ Add a component:
 Responsibilities:
 
 - Receive rendered file layout anchors from `LayerFileHeatmap`.
-- Draw arrows over the card grid using the previous understand-anything edge form.
+- Draw arrows over the card grid using the previous understand-code edge form.
 - Keep pointer events minimal so file cards remain easy to click.
 - Render arrows only for the focused/hovered file relationship set.
 - Preserve all direct focused relationships by grouping or bundling dense sets instead of filtering them out.
@@ -171,7 +171,7 @@ Responsibilities:
 
 - Render selected function, incoming callers, outgoing callees, and same-file calls.
 - Show direction clearly with arrowheads.
-- Reuse the previous understand-anything arrow styling so the mini-map feels like the same graph system at a smaller scale.
+- Reuse the previous understand-code arrow styling so the mini-map feels like the same graph system at a smaller scale.
 - Use compact nodes so it fits beside or below the matrix.
 - On small screens, stack below the matrix instead of forcing a cramped three-column layout.
 
@@ -241,5 +241,5 @@ Manual/browser verification:
 - Layer detail shows readable file cards plus focused directional file-level arrows.
 - File detail shows function-level upstream/downstream arrows.
 - Arrow visibility is controlled by focus, while focused direct relationships are preserved rather than capped away.
-- Arrow shape, color, selected state, dashed fallback state, and label treatment match the previous understand-anything ReactFlow arrows.
+- Arrow shape, color, selected state, dashed fallback state, and label treatment match the previous understand-code ReactFlow arrows.
 - Existing readable navigation, search, theme switching, and mode controls continue to work.

@@ -10,7 +10,7 @@ Usage:
     python parse-knowledge-base.py <wiki-directory>
 
 Output:
-    Writes scan-manifest.json to <wiki-directory>/.understand-anything/intermediate/
+    Writes scan-manifest.json to <wiki-directory>/.understand-code/intermediate/
 """
 
 import json
@@ -492,7 +492,7 @@ def main():
     manifest = parse_wiki(root)
 
     # Write output
-    out_dir = root / ".understand-anything" / "intermediate"
+    out_dir = root / ".understand-code" / "intermediate"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "scan-manifest.json"
     out_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")

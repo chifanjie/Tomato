@@ -1,4 +1,4 @@
-import type { GraphNode, KnowledgeGraph } from "@understand-anything/core/types";
+import type { GraphNode, KnowledgeGraph } from "@understand-code/core/types";
 
 export type FunctionGroupKind = "entry" | "filter" | "data" | "model" | "other";
 

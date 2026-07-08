@@ -19,8 +19,10 @@ const REQUIRED_COLOR_KEYS = [
 
 describe("dashboard theme presets", () => {
   it("includes engineering workbench and technical document presets", () => {
-    expect(PRESETS.map((preset) => preset.id)).toContain("engineering-workbench");
-    expect(PRESETS.map((preset) => preset.id)).toContain("technical-document");
+    expect(PRESETS.map((preset) => preset.id)).toEqual([
+      "engineering-workbench",
+      "technical-document",
+    ]);
   });
 
   it("uses engineering workbench as the default theme", () => {

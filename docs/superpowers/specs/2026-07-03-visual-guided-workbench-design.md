@@ -37,7 +37,7 @@ Existing structural flow:
    `FileExplorer`.
 
 Recent work also generated a Markdown knowledge base under
-`.understand-anything/knowledge-base/`, including:
+`.understand-code/knowledge-base/`, including:
 
 - business capability documents
 - business flow documents
@@ -217,12 +217,12 @@ knowledge documents using existing stable identifiers and filenames.
 
 Recommended sources:
 
-- `.understand-anything/knowledge-base/业务能力索引.md`
-- `.understand-anything/knowledge-base/业务流程地图.md`
-- `.understand-anything/knowledge-base/能力文档/*.md`
-- `.understand-anything/knowledge-base/关键函数专题/*.md`
-- `.understand-anything/knowledge-base/.trace/document-traces.json`
-- `.understand-anything/knowledge-base/.trace/coverage-map.json`
+- `.understand-code/knowledge-base/业务能力索引.md`
+- `.understand-code/knowledge-base/业务流程地图.md`
+- `.understand-code/knowledge-base/能力文档/*.md`
+- `.understand-code/knowledge-base/关键函数专题/*.md`
+- `.understand-code/knowledge-base/.trace/document-traces.json`
+- `.understand-code/knowledge-base/.trace/coverage-map.json`
 
 Matching priority:
 

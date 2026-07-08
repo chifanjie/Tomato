@@ -1,5 +1,9 @@
 import type { GraphNode, GraphEdge } from "../types.js";
 import type { LanguageConfig } from "../languages/types.js";
+import {
+  DEFAULT_OUTPUT_LANGUAGE,
+  buildOutputLanguageDirective,
+} from "./output-language.js";
 
 export interface LanguageLessonResult {
   languageNotes: string;
@@ -114,8 +118,10 @@ export function buildLanguageLessonPrompt(
   edges: GraphEdge[],
   language: string,
   langConfig?: LanguageConfig | null,
+  outputLanguage = DEFAULT_OUTPUT_LANGUAGE,
 ): string {
   const capitalizedLanguage = getLanguageDisplayName(language, langConfig);
+  const outputLanguageDirective = buildOutputLanguageDirective(outputLanguage);
 
   const concepts = detectLanguageConcepts(node, language, langConfig);
 
@@ -134,6 +140,9 @@ export function buildLanguageLessonPrompt(
       : `\nNo specific concepts were pre-detected. Please identify any ${capitalizedLanguage} patterns or idioms present.`;
 
   return `You are a programming teacher specializing in ${capitalizedLanguage}. Analyze the following code component and create a language-specific lesson.
+
+${outputLanguageDirective}
+Apply the output language to "languageNotes" and concept "explanation" values. Keep concept names in their established technical form when that is clearer.
 
 Component: ${node.name}
 Type: ${node.type}

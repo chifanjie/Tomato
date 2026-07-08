@@ -4,7 +4,7 @@ import type { Persona } from "../store";
 
 export default function PersonaSelector() {
   const persona = useDashboardStore((s) => s.persona);
-  const setPersona = useDashboardStore((s) => s.setPersona);
+  const activatePersonaMode = useDashboardStore((s) => s.activatePersonaMode);
   const { t } = useI18n();
 
   const personas: { id: Persona; label: string; description: string }[] = [
@@ -30,7 +30,7 @@ export default function PersonaSelector() {
       {personas.map((p) => (
         <button
           key={p.id}
-          onClick={() => setPersona(p.id)}
+          onClick={() => activatePersonaMode(p.id)}
           title={p.description}
           className={`px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${
             persona === p.id

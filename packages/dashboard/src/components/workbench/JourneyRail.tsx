@@ -1,5 +1,35 @@
 import type { JourneyRoute, JourneyStep } from "../../workbench/journeyRoute";
 
+const sectionLabels: Record<string, string> = {
+  "Start Here": "入口起点",
+  "Product Flow": "业务流程",
+  "Key Files": "关键文件",
+  "Data Models": "数据模型",
+  "Strategy / Logic": "策略逻辑",
+  Tests: "测试验证",
+  Configuration: "配置项",
+  "Risk & Operations": "风险与运维",
+  Unmapped: "未归类",
+};
+
+const kindLabels: Record<string, string> = {
+  project: "项目",
+  file: "文件",
+  function: "函数",
+  class: "类",
+  config: "配置",
+  document: "文档",
+  service: "服务",
+  table: "数据表",
+  endpoint: "接口",
+  pipeline: "管道",
+  schema: "Schema",
+  resource: "资源",
+  domain: "领域",
+  flow: "流程",
+  step: "步骤",
+};
+
 interface JourneyRailProps {
   route: JourneyRoute;
   activeStepId: string | null;
@@ -7,7 +37,12 @@ interface JourneyRailProps {
 }
 
 function stepKindLabel(step: JourneyStep): string {
-  return step.kind ?? "node";
+  const kind = step.kind ?? "node";
+  return kindLabels[kind] ?? kind;
+}
+
+function sectionLabel(section: string): string {
+  return sectionLabels[section] ?? section;
 }
 
 export default function JourneyRail({ route, activeStepId, onSelectStep }: JourneyRailProps) {
@@ -20,13 +55,13 @@ export default function JourneyRail({ route, activeStepId, onSelectStep }: Journ
 
   return (
     <aside
-      aria-label="Guided workbench route"
+      aria-label="引导路线"
       className="flex h-full w-[248px] shrink-0 flex-col border-r border-border-subtle bg-panel xl:w-[260px]"
     >
       <div className="shrink-0 border-b border-border-subtle px-4 py-3">
         <div className="min-w-0">
           <p className="truncate text-[10px] font-semibold uppercase tracking-wider text-text-muted">
-            Guided route
+            引导路线
           </p>
           <h2 className="mt-1 truncate font-heading text-base text-text-primary" title={route.projectName}>
             {route.projectName}
@@ -59,7 +94,7 @@ export default function JourneyRail({ route, activeStepId, onSelectStep }: Journ
           return (
             <section key={section} className="mb-4 last:mb-0">
               <h3 className="mb-1.5 truncate px-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted" title={section}>
-                {section}
+                {sectionLabel(section)}
               </h3>
               <div className="space-y-1.5">
                 {steps.map((step) => {
@@ -73,7 +108,7 @@ export default function JourneyRail({ route, activeStepId, onSelectStep }: Journ
                       key={step.id}
                       type="button"
                       onClick={() => onSelectStep(step)}
-                      aria-label={`Step ${stepNumber} of ${route.steps.length}. ${step.section}. ${kind}. ${step.title}. Progress ${completedCount} of ${route.steps.length}, ${progress} percent.`}
+                      aria-label={`第 ${stepNumber} 步，共 ${route.steps.length} 步。${sectionLabel(step.section)}。${kind}。${step.title}。进度 ${completedCount}/${route.steps.length}，${progress}%。`}
                       className={`grid w-full grid-cols-[20px_minmax(0,1fr)] gap-2 rounded-md border px-2 py-2 text-left transition-colors ${
                         active
                           ? "border-accent/55 bg-accent/10"

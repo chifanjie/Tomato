@@ -4,7 +4,7 @@
 
 **Goal:** Build a complete, Chinese-by-default, source-backed knowledge-base generator where every graph file node has a file document, every graph function/class node has an in-file card, important nodes get dynamic topic docs, and final status cannot be `complete` unless coverage is exhaustive.
 
-**Architecture:** Keep deterministic planning, validation, indexing, and fallback rendering in `@understand-anything/core`; add agent-facing JSON contracts so parallel `kb-file-writer` and `kb-topic-writer` agents can produce rich Markdown without corrupting coverage. The `/understand-kb` skill becomes a phased orchestrator: prepare batches, dispatch many file-writer agents, merge and validate, dispatch topic agents, finalize maps/indexes/report, and rerun only failed batches when needed.
+**Architecture:** Keep deterministic planning, validation, indexing, and fallback rendering in `@understand-code/core`; add agent-facing JSON contracts so parallel `kb-file-writer` and `kb-topic-writer` agents can produce rich Markdown without corrupting coverage. The `/understand-kb` skill becomes a phased orchestrator: prepare batches, dispatch many file-writer agents, merge and validate, dispatch topic agents, finalize maps/indexes/report, and rerun only failed batches when needed.
 
 **Tech Stack:** TypeScript ESM, Node.js fs/path APIs, existing `KnowledgeGraph` types and validation, Vitest, Markdown, Codex/Claude-style skill instructions and Markdown agent prompts.
 
@@ -212,7 +212,7 @@ Run:
 
 ```bash
 cd /Users/example/understand-code
-pnpm --filter @understand-anything/core test -- src/knowledge-base/__tests__/file-doc-planner.test.ts src/knowledge-base/__tests__/knowledge-base.test.ts
+pnpm --filter @understand-code/core test -- src/knowledge-base/__tests__/file-doc-planner.test.ts src/knowledge-base/__tests__/knowledge-base.test.ts
 ```
 
 Expected: tests fail because `buildFileDocPlan`, `sourceFiles`, and strict coverage fields do not exist yet.
@@ -494,7 +494,7 @@ export * from "./paths.js";
 - [ ] **Step 6: Run typecheck-facing tests**
 
 ```bash
-pnpm --filter @understand-anything/core test -- src/knowledge-base/__tests__/file-doc-planner.test.ts
+pnpm --filter @understand-code/core test -- src/knowledge-base/__tests__/file-doc-planner.test.ts
 ```
 
 Expected: failures now reference missing implementation modules, not missing exported types.
@@ -711,7 +711,7 @@ export * from "./file-doc-planner.js";
 - [ ] **Step 6: Run planner tests**
 
 ```bash
-pnpm --filter @understand-anything/core test -- src/knowledge-base/__tests__/file-doc-planner.test.ts
+pnpm --filter @understand-code/core test -- src/knowledge-base/__tests__/file-doc-planner.test.ts
 ```
 
 Expected: file-doc planner tests pass. Legacy generation tests still fail because `generateKnowledgeBase` does not yet use `FileDocPlan`.
@@ -978,7 +978,7 @@ export * from "./writer-contracts.js";
 Run:
 
 ```bash
-pnpm --filter @understand-anything/core test -- src/knowledge-base/__tests__/writer-contracts.test.ts
+pnpm --filter @understand-code/core test -- src/knowledge-base/__tests__/writer-contracts.test.ts
 ```
 
 Expected: contract tests pass.
@@ -1180,7 +1180,7 @@ export * from "./merge.js";
 - [ ] **Step 5: Run knowledge-base tests**
 
 ```bash
-pnpm --filter @understand-anything/core test -- src/knowledge-base/__tests__/knowledge-base.test.ts
+pnpm --filter @understand-code/core test -- src/knowledge-base/__tests__/knowledge-base.test.ts
 ```
 
 Expected: tests still fail until `generateKnowledgeBase` calls the file-doc planner and deterministic file writer.
@@ -1410,7 +1410,7 @@ Adapt imports and function signatures in `markdown.ts` to match this orchestrati
 - [ ] **Step 5: Run all core knowledge-base tests**
 
 ```bash
-pnpm --filter @understand-anything/core test -- src/knowledge-base/__tests__/file-doc-planner.test.ts src/knowledge-base/__tests__/writer-contracts.test.ts src/knowledge-base/__tests__/knowledge-base.test.ts
+pnpm --filter @understand-code/core test -- src/knowledge-base/__tests__/file-doc-planner.test.ts src/knowledge-base/__tests__/writer-contracts.test.ts src/knowledge-base/__tests__/knowledge-base.test.ts
 ```
 
 Expected: all knowledge-base tests pass.
@@ -1535,7 +1535,7 @@ Add a `renderDeterministicTopicWriterDocument` function in `markdown.ts` and use
 - [ ] **Step 4: Run topic tests**
 
 ```bash
-pnpm --filter @understand-anything/core test -- src/knowledge-base/__tests__/knowledge-base.test.ts
+pnpm --filter @understand-code/core test -- src/knowledge-base/__tests__/knowledge-base.test.ts
 ```
 
 Expected: dynamic topic test passes and no topic cap exists.
@@ -1796,9 +1796,9 @@ function readJson(path) {
 
 This phase loads graph, validates it, reads source files, calls core profile and file planner, and writes:
 
-- `.understand-anything/knowledge-base/.intermediate/kb-profile.json`
-- `.understand-anything/knowledge-base/.intermediate/file-doc-plan.json`
-- `.understand-anything/knowledge-base/.intermediate/file-doc-batches.json`
+- `.understand-code/knowledge-base/.intermediate/kb-profile.json`
+- `.understand-code/knowledge-base/.intermediate/file-doc-plan.json`
+- `.understand-code/knowledge-base/.intermediate/file-doc-batches.json`
 
 Print:
 
@@ -1859,7 +1859,7 @@ If `--deterministic-only` is passed, call `generateKnowledgeBase(graph, { source
 Rewrite `skills/understand-kb/SKILL.md` phases:
 
 1. Resolve `PROJECT_ROOT`.
-2. Validate `.understand-anything/knowledge-graph.json`.
+2. Validate `.understand-code/knowledge-graph.json`.
 3. Build core if needed.
 4. Run `node "$PLUGIN_ROOT/skills/understand-kb/generate-knowledge-base.mjs" "$PROJECT_ROOT" --prepare-file-docs`.
 5. Read `.intermediate/file-doc-batches.json`.
@@ -1876,7 +1876,7 @@ Rewrite `skills/understand-kb/SKILL.md` phases:
 - [ ] **Step 10: Run deterministic CLI smoke test**
 
 ```bash
-pnpm --filter @understand-anything/core build
+pnpm --filter @understand-code/core build
 node skills/understand-kb/generate-knowledge-base.mjs /Users/example/understand-code --deterministic-only
 ```
 
@@ -1884,7 +1884,7 @@ Expected:
 
 - exits 0;
 - prints generated Markdown document count;
-- writes `.understand-anything/knowledge-base/覆盖报告.md`;
+- writes `.understand-code/knowledge-base/覆盖报告.md`;
 - generated report includes file document, function card, and class card coverage.
 
 - [ ] **Step 11: Commit CLI and skill orchestration**
@@ -1902,7 +1902,7 @@ git commit -m "feat: orchestrate parallel knowledge base generation"
 - [ ] **Step 1: Run focused tests**
 
 ```bash
-pnpm --filter @understand-anything/core test -- src/knowledge-base/__tests__/file-doc-planner.test.ts src/knowledge-base/__tests__/writer-contracts.test.ts src/knowledge-base/__tests__/knowledge-base.test.ts
+pnpm --filter @understand-code/core test -- src/knowledge-base/__tests__/file-doc-planner.test.ts src/knowledge-base/__tests__/writer-contracts.test.ts src/knowledge-base/__tests__/knowledge-base.test.ts
 ```
 
 Expected: all focused tests pass.
@@ -1910,7 +1910,7 @@ Expected: all focused tests pass.
 - [ ] **Step 2: Run full core test suite**
 
 ```bash
-pnpm --filter @understand-anything/core test
+pnpm --filter @understand-code/core test
 ```
 
 Expected: all core tests pass.
@@ -1918,7 +1918,7 @@ Expected: all core tests pass.
 - [ ] **Step 3: Run core build**
 
 ```bash
-pnpm --filter @understand-anything/core build
+pnpm --filter @understand-code/core build
 ```
 
 Expected: TypeScript build passes.
@@ -1946,7 +1946,7 @@ If source files are missing because the graph is stale, expected status is `inco
 Run:
 
 ```bash
-sed -n '1,220p' /Users/example/understand-code/.understand-anything/knowledge-base/覆盖报告.md
+sed -n '1,220p' /Users/example/understand-code/.understand-code/knowledge-base/覆盖报告.md
 ```
 
 Confirm it includes:
@@ -1964,7 +1964,7 @@ Confirm it includes:
 - [ ] **Step 6: Scan generated docs for placeholder markers**
 
 ```bash
-rg -n "T[B]D|TO[D]O|FIX[M]E|后续\\s*补充|这里\\s*填写" /Users/example/understand-code/.understand-anything/knowledge-base || true
+rg -n "T[B]D|TO[D]O|FIX[M]E|后续\\s*补充|这里\\s*填写" /Users/example/understand-code/.understand-code/knowledge-base || true
 ```
 
 Expected: no output.
@@ -1972,7 +1972,7 @@ Expected: no output.
 - [ ] **Step 7: Scan generated docs for non-Chinese section names that should have been localized**
 
 ```bash
-rg -n "^## (Why|Input|Output|Risk|Evidence|Overview|Summary)" /Users/example/understand-code/.understand-anything/knowledge-base || true
+rg -n "^## (Why|Input|Output|Risk|Evidence|Overview|Summary)" /Users/example/understand-code/.understand-code/knowledge-base || true
 ```
 
 Expected: no output from generated Chinese docs.
@@ -1991,7 +1991,7 @@ If no fixes were required, do not create an empty commit.
 ## Task 11: Manual Parallel-Agent Dry Run
 
 **Files:**
-- Generated files under `.understand-anything/knowledge-base/` only.
+- Generated files under `.understand-code/knowledge-base/` only.
 
 - [ ] **Step 1: Prepare file-doc batches**
 
@@ -2001,13 +2001,13 @@ node skills/understand-kb/generate-knowledge-base.mjs /Users/example/understand-
 
 Expected:
 
-- `.understand-anything/knowledge-base/.intermediate/file-doc-batches.json` exists;
+- `.understand-code/knowledge-base/.intermediate/file-doc-batches.json` exists;
 - the printed task count equals the graph file-node count.
 
 - [ ] **Step 2: Open the batch plan and count batches**
 
 ```bash
-node -e "const fs=require('fs'); const p='/Users/example/understand-code/.understand-anything/knowledge-base/.intermediate/file-doc-batches.json'; const data=JSON.parse(fs.readFileSync(p,'utf8')); console.log(data.batches.length); console.log(data.batches.reduce((sum,b)=>sum+b.tasks.length,0));"
+node -e "const fs=require('fs'); const p='/Users/example/understand-code/.understand-code/knowledge-base/.intermediate/file-doc-batches.json'; const data=JSON.parse(fs.readFileSync(p,'utf8')); console.log(data.batches.length); console.log(data.batches.reduce((sum,b)=>sum+b.tasks.length,0));"
 ```
 
 Expected: first number is the dynamic batch count; second number equals file task count.
@@ -2032,7 +2032,7 @@ Expected:
 Run:
 
 ```bash
-node -e "const fs=require('fs'); const graph=JSON.parse(fs.readFileSync('/Users/example/understand-code/.understand-anything/knowledge-graph.json','utf8')); const report=fs.readFileSync('/Users/example/understand-code/.understand-anything/knowledge-base/覆盖报告.md','utf8'); console.log('graph files', graph.nodes.filter(n=>n.type==='file').length); console.log(report.match(/Generated Markdown documents|总文档数|File document coverage|Function card coverage|Class card coverage/g));"
+node -e "const fs=require('fs'); const graph=JSON.parse(fs.readFileSync('/Users/example/understand-code/.understand-code/knowledge-graph.json','utf8')); const report=fs.readFileSync('/Users/example/understand-code/.understand-code/knowledge-base/覆盖报告.md','utf8'); console.log('graph files', graph.nodes.filter(n=>n.type==='file').length); console.log(report.match(/Generated Markdown documents|总文档数|File document coverage|Function card coverage|Class card coverage/g));"
 ```
 
 Expected: coverage report shows document count and exact file/function/class coverage. If the graph has hundreds of files, the knowledge base has hundreds of file documents.

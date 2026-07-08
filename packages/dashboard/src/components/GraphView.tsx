@@ -29,7 +29,7 @@ import type {
   GraphNode,
   KnowledgeGraph,
   NodeType,
-} from "@understand-anything/core/types";
+} from "@understand-code/core/types";
 import { useTheme } from "../themes/index.ts";
 import {
   NODE_WIDTH,
@@ -1500,7 +1500,7 @@ function GraphViewInner() {
   if (!graph) {
     return (
       <div className="h-full w-full flex items-center justify-center bg-root rounded-lg">
-        <p className="text-text-muted text-sm">No knowledge graph loaded</p>
+        <p className="text-text-muted text-sm">还没有加载知识图谱</p>
       </div>
     );
   }
@@ -1514,7 +1514,7 @@ function GraphViewInner() {
             onClick={() => setFocusNode(null)}
             className="px-4 py-2 rounded-full bg-elevated border border-gold/30 text-gold text-xs font-semibold tracking-wider uppercase hover:bg-gold/10 transition-colors flex items-center gap-2 shadow-lg"
           >
-            <span>Showing neighborhood</span>
+            <span>正在显示邻近节点</span>
             <span className="text-text-muted">&times;</span>
           </button>
         </div>
@@ -1564,7 +1564,7 @@ function GraphViewInner() {
           }}
         >
           <span style={{ color: "#d4a574", fontSize: 14 }}>
-            {tourFitPending ? "Locating tour highlight…" : "Computing layout…"}
+            {tourFitPending ? "正在定位导览高亮..." : "正在计算布局..."}
           </span>
         </div>
       )}

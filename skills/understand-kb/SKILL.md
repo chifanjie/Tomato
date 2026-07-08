@@ -1,12 +1,12 @@
 ---
 name: understand-kb
-description: Generate a complete Markdown knowledge base from an existing understand-anything code knowledge graph
+description: Generate a complete Markdown knowledge base from an existing understand-code code knowledge graph
 argument-hint: [project-path] [--parallel 1|2] [--resume] [--include-extended-topics] [--deterministic-only]
 ---
 
 # /understand-kb
 
-Generate `.understand-anything/knowledge-base/` from `.understand-anything/knowledge-graph.json`.
+Generate `.understand-code/knowledge-base/` from `.understand-code/knowledge-graph.json`.
 
 The command assumes `/understand` has already scanned the repository. It uses the graph as the fact source, writes one file document for every graph file node, covers every function/class card inside its parent file document, plans uncapped topic documents from graph and file-writer signals, and writes a strict coverage report.
 
@@ -39,7 +39,7 @@ The command assumes `/understand` has already scanned the repository. It uses th
    - Do not create extra ad-hoc writer workers to make the run appear faster.
    - If a writer batch fails quality validation, retry the leased batch with the concrete validation reason.
 
-3. Check that `$PROJECT_ROOT/.understand-anything/knowledge-graph.json` exists.
+3. Check that `$PROJECT_ROOT/.understand-code/knowledge-graph.json` exists.
    - If it does not exist, tell the user:
      ```text
      No knowledge graph found. Run /understand first, then run /understand-kb.
@@ -59,13 +59,13 @@ The command assumes `/understand` has already scanned the repository. It uses th
    PLUGIN_ROOT=""
    for candidate in \
      "${CLAUDE_PLUGIN_ROOT}" \
-     "$HOME/.understand-anything-plugin" \
+     "$HOME/.understand-code-plugin" \
      "$SELF_RELATIVE" \
      "$COPILOT_SELF_RELATIVE" \
-     "$HOME/.codex/understand-anything/understand-anything-plugin" \
-     "$HOME/.opencode/understand-anything/understand-anything-plugin" \
-     "$HOME/.pi/understand-anything/understand-anything-plugin" \
-     "$HOME/understand-anything/understand-anything-plugin"; do
+     "$HOME/.codex/understand-code/understand-code-plugin" \
+     "$HOME/.opencode/understand-code/understand-code-plugin" \
+     "$HOME/.pi/understand-code/understand-code-plugin" \
+     "$HOME/understand-code/understand-code-plugin"; do
      if [ -n "$candidate" ] && [ -f "$candidate/package.json" ] && [ -f "$candidate/pnpm-workspace.yaml" ]; then
        PLUGIN_ROOT="$candidate"
        break
@@ -73,7 +73,7 @@ The command assumes `/understand` has already scanned the repository. It uses th
    done
 
    if [ -z "$PLUGIN_ROOT" ]; then
-     echo "Error: Cannot find the understand-anything plugin root."
+     echo "Error: Cannot find the understand-code plugin root."
      exit 1
    fi
    ```
@@ -83,7 +83,7 @@ The command assumes `/understand` has already scanned the repository. It uses th
    ```bash
    cd "$PLUGIN_ROOT"
    if [ ! -f "$PLUGIN_ROOT/packages/core/dist/index.js" ]; then
-     pnpm --filter @understand-anything/core build
+     pnpm --filter @understand-code/core build
    fi
    ```
 
@@ -116,7 +116,7 @@ The command assumes `/understand` has already scanned the repository. It uses th
    - Each worker receives the leased `FileDocBatch`, the associated `FileDocTask` objects, graph context, source snapshots, `workerId`, `attemptNumber`, `previousFailureReason` when present, and `leasedBatchIndex`.
    - Each worker must write exactly one JSON file:
      ```text
-     $PROJECT_ROOT/.understand-anything/knowledge-base/.intermediate/file-doc-batch-<batchIndex>.json
+     $PROJECT_ROOT/.understand-code/knowledge-base/.intermediate/file-doc-batch-<batchIndex>.json
      ```
    - After the writer returns, verify that the expected JSON file exists.
    - On success, complete the lease:
@@ -152,7 +152,7 @@ The command assumes `/understand` has already scanned the repository. It uses th
     - Each worker receives the leased `TopicBatch`, graph context, the linked file document, source evidence, `workerId`, `attemptNumber`, `previousFailureReason` when present, `leasedBatchIndex`, `topicTier`, and `linkedFileDocumentSummary`.
     - Each worker must write exactly one JSON file:
       ```text
-      $PROJECT_ROOT/.understand-anything/knowledge-base/.intermediate/topic-batch-<batchIndex>.json
+      $PROJECT_ROOT/.understand-code/knowledge-base/.intermediate/topic-batch-<batchIndex>.json
       ```
     - After the writer returns, verify that the expected JSON file exists.
     - On success, complete the lease:
@@ -177,7 +177,7 @@ The command assumes `/understand` has already scanned the repository. It uses th
     - Run `--finalize` again after the extended-topic workers stop.
 
 16. Report the result to the user.
-    - Knowledge base path: `$PROJECT_ROOT/.understand-anything/knowledge-base/`
+    - Knowledge base path: `$PROJECT_ROOT/.understand-code/knowledge-base/`
     - Generated Markdown document count from script output.
     - Coverage status from script output.
     - File document coverage from script output.
@@ -192,7 +192,7 @@ The command assumes `/understand` has already scanned the repository. It uses th
 The generated directory includes:
 
 ```text
-.understand-anything/knowledge-base/
+.understand-code/knowledge-base/
 ├── 目录.md
 ├── 项目总览.md
 ├── 架构地图.md

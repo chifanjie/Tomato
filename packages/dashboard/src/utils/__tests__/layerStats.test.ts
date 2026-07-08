@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { computeLayerStats } from "../layerStats";
-import type { GraphNode, Layer } from "@understand-anything/core/types";
+import type { GraphNode, Layer } from "@understand-code/core/types";
 
 function node(
   id: string,

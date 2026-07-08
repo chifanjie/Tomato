@@ -1,5 +1,5 @@
 {
-  "name": "@understand-anything/dashboard",
+  "name": "@understand-code/dashboard",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@dagrejs/dagre": "^2.0.4",
-    "@understand-anything/core": "workspace:*",
+    "@understand-code/core": "workspace:*",
     "@xyflow/react": "^12.0.0",
     "d3-force": "^3.0.0",
     "devlop": "^1.1.0",

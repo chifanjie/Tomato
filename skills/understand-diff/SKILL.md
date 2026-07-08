@@ -5,7 +5,7 @@ description: Use when you need to analyze git diffs or pull requests to understa
 
 # /understand-diff
 
-Analyze the current code changes against the knowledge graph at `.understand-anything/knowledge-graph.json`.
+Analyze the current code changes against the knowledge graph at `.understand-code/knowledge-graph.json`.
 
 ## Graph Structure Reference
 
@@ -30,7 +30,7 @@ The knowledge graph JSON has this structure:
 
 ## Instructions
 
-1. Check that `.understand-anything/knowledge-graph.json` exists. If not, tell the user to run `/understand` first.
+1. Check that `.understand-code/knowledge-graph.json` exists. If not, tell the user to run `/understand` first.
 
 2. **Get the changed files list** (do NOT read the graph yet):
    - If on a branch with uncommitted changes: `git diff --name-only`
@@ -58,7 +58,7 @@ The knowledge graph JSON has this structure:
    - **Risk Assessment**: Based on node `complexity` values, number of cross-layer edges, and blast radius (number of affected components)
    - Suggest what to review carefully and any potential issues
 
-8. **Write diff overlay for dashboard** — after producing the analysis, write the diff data to `.understand-anything/diff-overlay.json` so the dashboard can visualize changed and affected components. The file contains:
+8. **Write diff overlay for dashboard** — after producing the analysis, write the diff data to `.understand-code/diff-overlay.json` so the dashboard can visualize changed and affected components. The file contains:
    ```json
    {
      "version": "1.0.0",
@@ -69,4 +69,4 @@ The knowledge graph JSON has this structure:
      "affectedNodeIds": ["<node IDs from step 5, excluding changedNodeIds>"]
    }
    ```
-   After writing, tell the user they can run `/understand-anything:understand-dashboard` to see the diff overlay visually.
+   After writing, tell the user they can run `/understand-code:understand-dashboard` to see the diff overlay visually.

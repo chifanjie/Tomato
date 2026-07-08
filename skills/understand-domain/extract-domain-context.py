@@ -9,7 +9,7 @@ Usage:
     python extract-domain-context.py <project-root>
 
 Output:
-    <project-root>/.understand-anything/intermediate/domain-context.json
+    <project-root>/.understand-code/intermediate/domain-context.json
 """
 
 import json
@@ -52,7 +52,7 @@ SKIP_DIRS = {
     "node_modules", ".git", ".svn", ".hg", "__pycache__", ".tox",
     "venv", ".venv", "env", ".env", "dist", "build", "out", ".next",
     ".nuxt", "target", "vendor", ".idea", ".vscode", "coverage",
-    ".understand-anything", ".pytest_cache", ".mypy_cache",
+    ".understand-code", ".pytest_cache", ".mypy_cache",
     "Pods", "DerivedData", ".gradle", "bin", "obj",
 }
 
@@ -385,7 +385,7 @@ def main() -> None:
 
     try:
         # Ensure output directory exists
-        output_dir = project_root / ".understand-anything" / "intermediate"
+        output_dir = project_root / ".understand-code" / "intermediate"
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / "domain-context.json"
 

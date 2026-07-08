@@ -43,7 +43,7 @@ export default function LayerOverviewPanel({
               key={layer.id}
               type="button"
               onClick={() => onOpenLayer(layer.id)}
-              className={`w-full rounded-lg border bg-surface px-4 py-3 text-left transition-colors hover:border-accent/50 hover:bg-accent/5 ${
+              className={`w-full rounded-lg border bg-surface/95 px-4 py-3 text-left shadow-sm transition-colors hover:border-accent/45 hover:bg-elevated ${
                 matchCount > 0 ? "border-accent/40" : "border-border-subtle"
               }`}
             >
@@ -64,7 +64,7 @@ export default function LayerOverviewPanel({
                     {layer.topFiles.slice(0, 6).map((file) => (
                       <span
                         key={file.id}
-                        className="max-w-[220px] truncate rounded bg-elevated px-2 py-1 text-[11px] text-text-muted"
+                        className="max-w-[220px] truncate rounded-md border border-border-subtle bg-elevated/80 px-2 py-1 font-mono text-[10px] text-text-muted"
                         title={file.filePath}
                       >
                         {file.name}

@@ -10,7 +10,7 @@ import {
 import type { Edge, NodeMouseHandler } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import type { KnowledgeGraph } from "@understand-anything/core/types";
+import type { KnowledgeGraph } from "@understand-code/core/types";
 import { useI18n } from "../contexts/I18nContext";
 import { useDashboardStore } from "../store";
 import { applyElkLayout } from "../utils/elk-layout";

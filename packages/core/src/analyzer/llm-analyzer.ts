@@ -1,3 +1,8 @@
+import {
+  DEFAULT_OUTPUT_LANGUAGE,
+  buildOutputLanguageDirective,
+} from "./output-language.js";
+
 export interface LLMFileAnalysis {
   fileSummary: string;
   tags: string[];
@@ -20,8 +25,14 @@ export function buildFileAnalysisPrompt(
   filePath: string,
   content: string,
   projectContext: string,
+  outputLanguage = DEFAULT_OUTPUT_LANGUAGE,
 ): string {
+  const outputLanguageDirective = buildOutputLanguageDirective(outputLanguage);
+
   return `You are a code analysis assistant. Analyze the following source file and return a JSON object.
+
+${outputLanguageDirective}
+Apply the output language to descriptive JSON string values such as "fileSummary", "functionSummaries", "classSummaries", and "languageNotes". Keep "complexity" as one of the required enum values.
 
 Project context: ${projectContext}
 
@@ -48,7 +59,9 @@ Respond ONLY with the JSON object, no additional text.`;
 export function buildProjectSummaryPrompt(
   fileList: string[],
   sampleFiles: Array<{ path: string; content: string }>,
+  outputLanguage = DEFAULT_OUTPUT_LANGUAGE,
 ): string {
+  const outputLanguageDirective = buildOutputLanguageDirective(outputLanguage);
   const fileListStr = fileList.map((f) => `  - ${f}`).join("\n");
 
   let samplesStr = "";
@@ -60,6 +73,9 @@ export function buildProjectSummaryPrompt(
   }
 
   return `You are a code analysis assistant. Analyze the following project structure and return a JSON object describing the project.
+
+${outputLanguageDirective}
+Apply the output language to descriptive JSON string values such as "description" and layer "name"/"description" values.
 
 File list:
 ${fileListStr}${samplesStr}

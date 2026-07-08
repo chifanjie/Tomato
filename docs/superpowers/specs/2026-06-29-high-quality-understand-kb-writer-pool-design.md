@@ -4,7 +4,7 @@
 
 当前 `/understand-kb` 已经具备完整知识库生成的骨架能力：
 
-- `/understand` 先扫描仓库并生成 `.understand-anything/knowledge-graph.json`；
+- `/understand` 先扫描仓库并生成 `.understand-code/knowledge-graph.json`；
 - `/understand-kb` 再根据图谱、源码快照、文件任务和专题任务产出 Markdown 知识库；
 - 现有流程已经支持文件文档、关键函数专题、业务事实抽取、业务能力文档、覆盖报告与重试计划；
 - 现有实现也已经加入了大图 deterministic 保护、源码读取上限和保守并发默认值。
@@ -332,7 +332,7 @@ deterministic fallback 仍然保留，但默认只用于：
 保留现有中间文件，并新增以下状态文件：
 
 ```text
-.understand-anything/knowledge-base/.intermediate/
+.understand-code/knowledge-base/.intermediate/
 ├── kb-profile.json
 ├── file-doc-plan.json
 ├── file-doc-batches.json

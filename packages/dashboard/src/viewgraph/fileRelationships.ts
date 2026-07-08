@@ -1,4 +1,4 @@
-import type { KnowledgeGraph } from "@understand-anything/core/types";
+import type { KnowledgeGraph } from "@understand-code/core/types";
 import type { ViewGraph } from "./types";
 
 export type FileRelationshipSource = "calls" | "imports";

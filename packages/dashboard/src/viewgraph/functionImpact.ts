@@ -1,4 +1,4 @@
-import type { KnowledgeGraph } from "@understand-anything/core/types";
+import type { KnowledgeGraph } from "@understand-code/core/types";
 import type { FunctionImpact } from "./types";
 
 function mapFunctionsToFiles(graph: KnowledgeGraph): Map<string, string> {

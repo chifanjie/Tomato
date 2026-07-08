@@ -20,7 +20,7 @@ import { useDashboardStore } from "../store";
 import { useI18n } from "../contexts/I18nContext";
 import { mergeElkPositions, nodesToElkInput } from "../utils/layout";
 import { applyElkLayout } from "../utils/elk-layout";
-import type { KnowledgeGraph, GraphNode } from "@understand-anything/core/types";
+import type { KnowledgeGraph, GraphNode } from "@understand-code/core/types";
 
 const nodeTypes = {
   "domain-cluster": DomainClusterNode,

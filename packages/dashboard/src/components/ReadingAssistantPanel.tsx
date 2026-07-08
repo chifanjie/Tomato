@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useI18n } from "../contexts/I18nContext";
 import { useDashboardStore } from "../store";
 import { buildReadingAssistantModel } from "./readingAssistantModel";
+import type { ReadingAssistantCopy } from "./readingAssistantModel";
 
 function Metric({ label, value }: { label: string; value: number }) {
   return (
@@ -23,6 +24,35 @@ export default function ReadingAssistantPanel() {
   const openFileDetail = useDashboardStore((s) => s.openFileDetail);
   const { t } = useI18n();
 
+  const copy = useMemo<ReadingAssistantCopy>(
+    () => ({
+      projectReadingMap: t.readingAssistant.projectReadingMap,
+      overviewFallbackSubtitle: t.readingAssistant.overviewFallbackSubtitle,
+      noLayerSelectedTitle: t.readingAssistant.noLayerSelectedTitle,
+      noLayerSelectedSubtitle: t.readingAssistant.noLayerSelectedSubtitle,
+      noGraphLoadedTitle: t.readingAssistant.noGraphLoadedTitle,
+      noGraphLoadedSubtitle: t.readingAssistant.noGraphLoadedSubtitle,
+      overviewRouteSteps: [
+        t.readingAssistant.overviewRouteStep1,
+        t.readingAssistant.overviewRouteStep2,
+        t.readingAssistant.overviewRouteStep3,
+      ],
+      layerRouteSteps: [
+        t.readingAssistant.layerRouteStep1,
+        t.readingAssistant.layerRouteStep2,
+        t.readingAssistant.layerRouteStep3,
+      ],
+      metrics: {
+        layers: t.readingAssistant.metricLayers,
+        files: t.readingAssistant.metricFiles,
+        functions: t.readingAssistant.metricFunctions,
+        classes: t.readingAssistant.metricClasses,
+        modules: t.readingAssistant.metricModules,
+      },
+    }),
+    [t],
+  );
+
   const model = useMemo(
     () =>
       buildReadingAssistantModel({
@@ -32,8 +62,9 @@ export default function ReadingAssistantPanel() {
         activeLayerId,
         searchQuery,
         searchResults,
+        copy,
       }),
-    [activeLayerId, graph, navigationLevel, searchQuery, searchResults, viewGraph],
+    [activeLayerId, copy, graph, navigationLevel, searchQuery, searchResults, viewGraph],
   );
 
   const primaryTitle =

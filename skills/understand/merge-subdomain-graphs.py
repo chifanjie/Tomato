@@ -2,7 +2,7 @@
 """
 merge-subdomain-graphs.py — Merge subdomain knowledge-graph files into one.
 
-Auto-discovers *knowledge-graph*.json files in .understand-anything/
+Auto-discovers *knowledge-graph*.json files in .understand-code/
 (excluding knowledge-graph.json itself), loads the existing
 knowledge-graph.json as a base if present, and merges everything
 into a single knowledge-graph.json.
@@ -15,7 +15,7 @@ knowledge-graph.json is loaded as a base but never as a discovery input
 (prevents self-merging on repeated runs).
 
 Output:
-    <project-root>/.understand-anything/knowledge-graph.json
+    <project-root>/.understand-code/knowledge-graph.json
 """
 
 import json
@@ -238,13 +238,13 @@ def main() -> None:
         sys.exit(1)
 
     project_root = Path(sys.argv[1]).resolve()
-    ua_dir = project_root / ".understand-anything"
+    uc_dir = project_root / ".understand-code"
 
-    if not ua_dir.is_dir():
-        print(f"Error: {ua_dir} does not exist", file=sys.stderr)
+    if not uc_dir.is_dir():
+        print(f"Error: {uc_dir} does not exist", file=sys.stderr)
         sys.exit(1)
 
-    output_path = ua_dir / "knowledge-graph.json"
+    output_path = uc_dir / "knowledge-graph.json"
 
     # Determine which files to merge
     if len(sys.argv) > 2:
@@ -254,7 +254,7 @@ def main() -> None:
         # Auto-discover subdomain graphs — exclude the main output file
         # to avoid self-merging on repeated runs
         graph_files = sorted(
-            p for p in ua_dir.glob("*knowledge-graph*.json")
+            p for p in uc_dir.glob("*knowledge-graph*.json")
             if p.name != "knowledge-graph.json"
         )
 

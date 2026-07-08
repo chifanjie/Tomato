@@ -53,10 +53,10 @@ If the manifest is missing or malformed, leave the corresponding field empty rat
 Invoke the bundled scan script. It walks the project (preferring `git ls-files`, falling back to a recursive walk for non-git directories), applies `.understandignore` filtering (defaults + user patterns), assigns `language` and `fileCategory` per the canonical tables, counts lines, and writes deterministic JSON. You do not see or maintain those tables — they live in the script.
 
 ```bash
-mkdir -p $PROJECT_ROOT/.understand-anything/tmp
+mkdir -p $PROJECT_ROOT/.understand-code/tmp
 node $PLUGIN_ROOT/skills/understand/scan-project.mjs \
   "$PROJECT_ROOT" \
-  "$PROJECT_ROOT/.understand-anything/tmp/ua-scan-files.json"
+  "$PROJECT_ROOT/.understand-code/tmp/uc-scan-files.json"
 ```
 
 Output JSON shape (you will read this verbatim and merge into the final scan-result):
@@ -105,7 +105,7 @@ The script:
 
 **Priority rule:** most-specific wins. Filename / path rules fire before extension rules — e.g., `docker-compose.yml` is `infra` (not `config`); `.github/workflows/ci.yml` is `infra` (not `config`); `LICENSE` is `code` (not `docs`).
 
-**`.understandignore` behavior:** the bundled script reads `.understandignore` and `.understand-anything/.understandignore` if present and merges them with the hardcoded defaults via `createIgnoreFilter`. `!`-negation overrides defaults (`!dist/` would re-include `dist/` files). The `filteredByIgnore` counter measures only user-driven drops, not baseline default drops.
+**`.understandignore` behavior:** the bundled script reads `.understandignore` and `.understand-code/.understandignore` if present and merges them with the hardcoded defaults via `createIgnoreFilter`. `!`-negation overrides defaults (`!dist/` would re-include `dist/` files). The `filteredByIgnore` counter measures only user-driven drops, not baseline default drops.
 
 If the script exits with a non-zero status, read stderr to diagnose. You have up to 2 retry attempts (re-invocations) before failing the phase. Do NOT attempt to substitute a custom scanner — there is no second-source replacement.
 
@@ -118,8 +118,8 @@ After Step B has produced the file list, invoke the bundled `extract-import-map.
 Write the input JSON for the bundled script (the `files[]` array is exactly Step B's `files[]` — pass it through verbatim):
 
 ```bash
-mkdir -p $PROJECT_ROOT/.understand-anything/tmp
-cat > $PROJECT_ROOT/.understand-anything/tmp/ua-import-map-input.json << 'ENDJSON'
+mkdir -p $PROJECT_ROOT/.understand-code/tmp
+cat > $PROJECT_ROOT/.understand-code/tmp/uc-import-map-input.json << 'ENDJSON'
 {
   "projectRoot": "<absolute-project-root>",
   "files": [
@@ -134,8 +134,8 @@ Then run:
 
 ```bash
 node $PLUGIN_ROOT/skills/understand/extract-import-map.mjs \
-  $PROJECT_ROOT/.understand-anything/tmp/ua-import-map-input.json \
-  $PROJECT_ROOT/.understand-anything/tmp/ua-import-map-output.json
+  $PROJECT_ROOT/.understand-code/tmp/uc-import-map-input.json \
+  $PROJECT_ROOT/.understand-code/tmp/uc-import-map-output.json
 ```
 
 The output JSON has shape:
@@ -164,8 +164,8 @@ Read the output JSON and merge the `importMap` field directly into your final sc
 ## Phase 2 -- Description and Final Assembly
 
 After Steps A + B + C have all completed, read:
-1. `$PROJECT_ROOT/.understand-anything/tmp/ua-scan-files.json` — output of `scan-project.mjs` (file list with language, sizeLines, fileCategory; plus `totalFiles`, `filteredByIgnore`, `estimatedComplexity`).
-2. `$PROJECT_ROOT/.understand-anything/tmp/ua-import-map-output.json` — output of `extract-import-map.mjs` (the `importMap` field).
+1. `$PROJECT_ROOT/.understand-code/tmp/uc-scan-files.json` — output of `scan-project.mjs` (file list with language, sizeLines, fileCategory; plus `totalFiles`, `filteredByIgnore`, `estimatedComplexity`).
+2. `$PROJECT_ROOT/.understand-code/tmp/uc-import-map-output.json` — output of `extract-import-map.mjs` (the `importMap` field).
 3. Your Step A in-memory notes (`name`, `rawDescription`, `readmeHead`, `frameworks`, `languages` narrative).
 
 Do NOT re-walk the file tree, re-count lines, or re-derive categories — trust `scan-project.mjs` entirely. Do NOT re-implement import resolution — trust `extract-import-map.mjs` entirely.
@@ -226,8 +226,8 @@ Then assemble the final output JSON:
 
 After producing the final JSON:
 
-1. Create the output directory: `mkdir -p <project-root>/.understand-anything/intermediate`
-2. Write the JSON to: `<project-root>/.understand-anything/intermediate/scan-result.json`
+1. Create the output directory: `mkdir -p <project-root>/.understand-code/intermediate`
+2. Write the JSON to: `<project-root>/.understand-code/intermediate/scan-result.json`
 3. Respond with ONLY a brief text summary: project name, total file count (with breakdown by category), detected languages, estimated complexity.
 
 Do NOT include the full JSON in your text response.

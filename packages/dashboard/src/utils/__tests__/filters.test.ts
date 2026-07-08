@@ -4,7 +4,7 @@ import type {
   GraphNode,
   GraphEdge,
   Layer,
-} from "@understand-anything/core/types";
+} from "@understand-code/core/types";
 import type {
   FilterState,
   NodeType,

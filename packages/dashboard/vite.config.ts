@@ -16,10 +16,21 @@ function graphFileCandidates(fileName: string): string[] {
   const graphDir = process.env.GRAPH_DIR;
   return [
     ...(graphDir
-      ? [path.resolve(graphDir, `.understand-anything/${fileName}`)]
+      ? [path.resolve(graphDir, `.understand-code/${fileName}`)]
       : []),
-    path.resolve(process.cwd(), `.understand-anything/${fileName}`),
-    path.resolve(process.cwd(), `../../../.understand-anything/${fileName}`),
+    path.resolve(process.cwd(), `.understand-code/${fileName}`),
+    path.resolve(process.cwd(), `../../../.understand-code/${fileName}`),
+  ];
+}
+
+function knowledgeBaseRootCandidates(): string[] {
+  const graphDir = process.env.GRAPH_DIR;
+  return [
+    ...(graphDir
+      ? [path.resolve(graphDir, ".understand-code", "knowledge-base")]
+      : []),
+    path.resolve(process.cwd(), ".understand-code", "knowledge-base"),
+    path.resolve(process.cwd(), "../../../.understand-code/knowledge-base"),
   ];
 }
 
@@ -107,6 +118,74 @@ function sendJson(res: import("http").ServerResponse, statusCode: number, payloa
   res.end(JSON.stringify(payload));
 }
 
+function contentTypeForKnowledgeBaseFile(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".json") return "application/json; charset=utf-8";
+  if (ext === ".md") return "text/markdown; charset=utf-8";
+  if (ext === ".txt") return "text/plain; charset=utf-8";
+  return "application/octet-stream";
+}
+
+function knowledgeBaseRelativePath(pathname: string): string | null {
+  const prefix = "/knowledge-base/";
+  if (!pathname.startsWith(prefix)) return null;
+  const encodedPath = pathname.slice(prefix.length);
+  if (!encodedPath) return null;
+
+  let decodedPath: string;
+  try {
+    decodedPath = decodeURIComponent(encodedPath);
+  } catch {
+    return null;
+  }
+
+  if (decodedPath.includes("\0")) return null;
+  const normalizedPath = path.normalize(decodedPath);
+  if (
+    normalizedPath === "." ||
+    normalizedPath === ".." ||
+    normalizedPath.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(normalizedPath)
+  ) {
+    return null;
+  }
+  return normalizedPath.split(path.sep).join("/");
+}
+
+function serveKnowledgeBaseFile(pathname: string, res: import("http").ServerResponse): boolean {
+  const relativePath = knowledgeBaseRelativePath(pathname);
+  if (!relativePath) {
+    sendJson(res, 400, { error: "Invalid knowledge base path" });
+    return true;
+  }
+
+  for (const root of knowledgeBaseRootCandidates()) {
+    const absoluteFile = path.resolve(root, relativePath);
+    const relativeToRoot = path.relative(root, absoluteFile);
+    if (
+      !relativeToRoot ||
+      relativeToRoot === ".." ||
+      relativeToRoot.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relativeToRoot)
+    ) {
+      continue;
+    }
+    if (!fs.existsSync(absoluteFile)) continue;
+    const stat = fs.statSync(absoluteFile);
+    if (!stat.isFile()) {
+      sendJson(res, 404, { error: "Knowledge base file not found" });
+      return true;
+    }
+    res.statusCode = 200;
+    res.setHeader("Content-Type", contentTypeForKnowledgeBaseFile(absoluteFile));
+    res.end(fs.readFileSync(absoluteFile));
+    return true;
+  }
+
+  sendJson(res, 404, { error: "Knowledge base file not found" });
+  return true;
+}
+
 function rejectFileRequest(message: string, statusCode = 400) {
   return { statusCode, payload: { error: message } };
 }
@@ -192,9 +271,9 @@ export default defineConfig({
 
   resolve: {
     alias: {
-      "@understand-anything/core/schema": path.resolve(__dirname, "../core/dist/schema.js"),
-      "@understand-anything/core/search": path.resolve(__dirname, "../core/dist/search.js"),
-      "@understand-anything/core/types": path.resolve(__dirname, "../core/dist/types.js"),
+      "@understand-code/core/schema": path.resolve(__dirname, "../core/dist/schema.js"),
+      "@understand-code/core/search": path.resolve(__dirname, "../core/dist/search.js"),
+      "@understand-code/core/types": path.resolve(__dirname, "../core/dist/types.js"),
     },
   },
 
@@ -253,7 +332,8 @@ export default defineConfig({
             pathname === "/diff-overlay.json" ||
             pathname === "/meta.json" ||
             pathname === "/config.json" ||
-            pathname === "/file-content.json";
+            pathname === "/file-content.json" ||
+            pathname.startsWith("/knowledge-base/");
 
           if (!isProtectedEndpoint) {
             next();
@@ -273,6 +353,11 @@ export default defineConfig({
             return;
           }
 
+          if (pathname.startsWith("/knowledge-base/")) {
+            serveKnowledgeBaseFile(pathname, res);
+            return;
+          }
+
           if (pathname === "/config.json") {
             const configCandidates = graphFileCandidates("config.json");
             for (const candidate of configCandidates) {
@@ -287,7 +372,7 @@ export default defineConfig({
                 }
               }
             }
-            sendJson(res, 200, { autoUpdate: false, outputLanguage: "en" });
+            sendJson(res, 200, { autoUpdate: false, outputLanguage: "zh" });
             return;
           }
 
@@ -339,7 +424,7 @@ export default defineConfig({
             } catch (err) {
               // If we cannot parse or sanitise the file, refuse to serve it
               // rather than accidentally leaking raw content.
-              console.error("[understand-anything] Failed to sanitise graph file:", err);
+              console.error("[understand-code] Failed to sanitise graph file:", err);
               res.statusCode = 500;
               res.setHeader("Content-Type", "application/json");
               res.end(JSON.stringify({ error: "Failed to read graph file" }));

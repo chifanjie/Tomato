@@ -16,7 +16,7 @@ interface Props {
   onDismiss: (remember: boolean) => void;
 }
 
-const TITLE_ID = "ua-onboarding-title";
+const TITLE_ID = "uc-onboarding-title";
 
 export default function OnboardingOverlay({ onDismiss }: Props) {
   const { t } = useI18n();
@@ -129,7 +129,7 @@ export default function OnboardingOverlay({ onDismiss }: Props) {
   );
 }
 
-const KEYFRAMES = `@keyframes ua-fade-in { from { opacity: 0 } to { opacity: 1 } }`;
+const KEYFRAMES = `@keyframes uc-fade-in { from { opacity: 0 } to { opacity: 1 } }`;
 
 const overlayStyle: React.CSSProperties = {
   position: "fixed",
@@ -142,7 +142,7 @@ const overlayStyle: React.CSSProperties = {
   justifyContent: "center",
   padding: 16,
   fontFamily: "var(--font-sans)",
-  animation: "ua-fade-in 0.4s cubic-bezier(0.22, 1, 0.36, 1)",
+  animation: "uc-fade-in 0.4s cubic-bezier(0.22, 1, 0.36, 1)",
 };
 
 const cardStyle: React.CSSProperties = {

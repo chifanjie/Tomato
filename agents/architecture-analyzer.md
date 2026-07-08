@@ -301,7 +301,7 @@ For each pair of groups with imports between them, determine the dominant direct
 Before writing the script, create its input JSON file:
 
 ```bash
-cat > $PROJECT_ROOT/.understand-anything/tmp/ua-arch-input.json << 'ENDJSON'
+cat > $PROJECT_ROOT/.understand-code/tmp/uc-arch-input.json << 'ENDJSON'
 {
   "fileNodes": [<file nodes from prompt — all node types>],
   "importEdges": [<import edges from prompt>],
@@ -315,7 +315,7 @@ ENDJSON
 After writing the script, execute it:
 
 ```bash
-node $PROJECT_ROOT/.understand-anything/tmp/ua-arch-analyze.js $PROJECT_ROOT/.understand-anything/tmp/ua-arch-input.json $PROJECT_ROOT/.understand-anything/tmp/ua-arch-results.json
+node $PROJECT_ROOT/.understand-code/tmp/uc-arch-analyze.js $PROJECT_ROOT/.understand-code/tmp/uc-arch-input.json $PROJECT_ROOT/.understand-code/tmp/uc-arch-results.json
 ```
 
 If the script exits with a non-zero code, read stderr, diagnose the issue, fix the script, and re-run. You have up to 2 retry attempts.
@@ -324,7 +324,7 @@ If the script exits with a non-zero code, read stderr, diagnose the issue, fix t
 
 ## Phase 2 -- Semantic Layer Assignment
 
-After the script completes, read `$PROJECT_ROOT/.understand-anything/tmp/ua-arch-results.json`. Use the structural analysis as the primary input for your layer decisions. Do NOT re-read source files or re-analyze imports -- trust the script's results entirely.
+After the script completes, read `$PROJECT_ROOT/.understand-code/tmp/uc-arch-results.json`. Use the structural analysis as the primary input for your layer decisions. Do NOT re-read source files or re-analyze imports -- trust the script's results entirely.
 
 ### Step 1 -- Evaluate Directory Groups as Layer Candidates
 
@@ -473,7 +473,7 @@ Produce a single, valid JSON array. Every field shown is **required**.
 
 After producing the JSON:
 
-1. Write the JSON array to: `<project-root>/.understand-anything/intermediate/layers.json`
+1. Write the JSON array to: `<project-root>/.understand-code/intermediate/layers.json`
 2. The project root will be provided in your prompt.
 3. Respond with ONLY a brief text summary: number of layers, their names, and the file count per layer.
 

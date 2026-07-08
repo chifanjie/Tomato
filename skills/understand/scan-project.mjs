@@ -4,7 +4,7 @@
  *
  * Deterministic file enumeration + language/category detection for the
  * project-scanner agent. Replaces the LLM-written prose scanner that used to
- * (a) author a per-run Node.js script (`tmp/ua-project-scan.js`), (b) walk the
+ * (a) author a per-run Node.js script (`tmp/uc-project-scan.js`), (b) walk the
  * file tree, and (c) classify each file via lookup tables in LLM context — a
  * pure rule-lookup pass that was being billed at LLM rates and adding many
  * minutes of per-run latency on mid-sized monorepos.
@@ -67,7 +67,7 @@ const pluginRoot = resolve(__dirname, '../..');
 const require = createRequire(resolve(pluginRoot, 'package.json'));
 
 // ---------------------------------------------------------------------------
-// Resolve @understand-anything/core
+// Resolve @understand-code/core
 //
 // Two-step resolution: try the workspace-linked package first, fall back to
 // the installed plugin cache layout. pathToFileURL() is required on Windows
@@ -76,7 +76,7 @@ const require = createRequire(resolve(pluginRoot, 'package.json'));
 // ---------------------------------------------------------------------------
 let core;
 try {
-  core = await import(pathToFileURL(require.resolve('@understand-anything/core')).href);
+  core = await import(pathToFileURL(require.resolve('@understand-code/core')).href);
 } catch {
   core = await import(pathToFileURL(resolve(pluginRoot, 'packages/core/dist/index.js')).href);
 }
@@ -87,7 +87,7 @@ const { createIgnoreFilter } = core;
 // Language detection
 //
 // Mirrors the canonical extension list from
-// understand-anything-plugin/packages/core/src/languages/configs/* and the
+// understand-code-plugin/packages/core/src/languages/configs/* and the
 // project-scanner.md Step 3 table. Extensions are matched lowercase;
 // filenames (Dockerfile, Makefile, etc.) are matched case-sensitively because
 // the projects-in-the-wild use canonical capitalizations.
@@ -581,7 +581,7 @@ function buildDefaultsOnlyFilter() {
   // only checks existsSync() before reading.
   const fakeProjectRoot = join(
     require('node:os').tmpdir(),
-    `ua-scan-defaults-${process.pid}-${Date.now()}`,
+    `uc-scan-defaults-${process.pid}-${Date.now()}`,
   );
   return createIgnoreFilter(fakeProjectRoot);
 }
@@ -594,7 +594,7 @@ function buildDefaultsOnlyFilter() {
 function hasUserIgnoreFile(projectRoot) {
   return (
     existsSync(join(projectRoot, '.understandignore'))
-    || existsSync(join(projectRoot, '.understand-anything', '.understandignore'))
+    || existsSync(join(projectRoot, '.understand-code', '.understandignore'))
   );
 }
 

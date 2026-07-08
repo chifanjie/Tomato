@@ -8,8 +8,8 @@
  * Usage:
  *   node compute-batches.mjs <project-root> [--changed-files=<path>]
  *
- * Input:  <project-root>/.understand-anything/intermediate/scan-result.json
- * Output: <project-root>/.understand-anything/intermediate/batches.json
+ * Input:  <project-root>/.understand-code/intermediate/scan-result.json
+ * Output: <project-root>/.understand-code/intermediate/batches.json
  */
 
 import { readFileSync, writeFileSync, existsSync, realpathSync } from 'node:fs';
@@ -23,7 +23,7 @@ const require = createRequire(resolve(PLUGIN_ROOT, 'package.json'));
 
 let core;
 try {
-  core = await import(pathToFileURL(require.resolve('@understand-anything/core')).href);
+  core = await import(pathToFileURL(require.resolve('@understand-code/core')).href);
 } catch {
   core = await import(pathToFileURL(resolve(PLUGIN_ROOT, 'packages/core/dist/index.js')).href);
 }
@@ -195,12 +195,12 @@ function buildBatchOfMap(allBatches) {
 
 /**
  * Returns Map<path, communityId> via Louvain. May throw — caller must catch
- * and fall back if it does. Honors UA_COMPUTE_BATCHES_FORCE_LOUVAIN_THROW=1
+ * and fall back if it does. Honors UC_COMPUTE_BATCHES_FORCE_LOUVAIN_THROW=1
  * to allow tests to exercise the fallback path.
  */
 function runLouvain(codeFiles, importMap) {
-  if (process.env.UA_COMPUTE_BATCHES_FORCE_LOUVAIN_THROW === '1') {
-    throw new Error('forced throw via UA_COMPUTE_BATCHES_FORCE_LOUVAIN_THROW');
+  if (process.env.UC_COMPUTE_BATCHES_FORCE_LOUVAIN_THROW === '1') {
+    throw new Error('forced throw via UC_COMPUTE_BATCHES_FORCE_LOUVAIN_THROW');
   }
   const g = new Graph({ type: 'undirected', allowSelfLoops: false });
   for (const f of codeFiles) g.addNode(f.path);
@@ -328,7 +328,7 @@ async function main() {
     }
   }
 
-  const scanPath = join(projectRoot, '.understand-anything', 'intermediate', 'scan-result.json');
+  const scanPath = join(projectRoot, '.understand-code', 'intermediate', 'scan-result.json');
   if (!existsSync(scanPath)) {
     process.stderr.write(`Error: scan-result.json not found at ${scanPath}\n`);
     process.exit(1);
@@ -514,7 +514,7 @@ async function main() {
     batches: finalBatches,
   };
 
-  const outPath = join(projectRoot, '.understand-anything', 'intermediate', 'batches.json');
+  const outPath = join(projectRoot, '.understand-code', 'intermediate', 'batches.json');
   writeFileSync(outPath, JSON.stringify(output, null, 2), 'utf-8');
   const batchSizes = finalBatches.map(b => b.files.length);
   const maxSize = batchSizes.length ? Math.max(...batchSizes) : 0;

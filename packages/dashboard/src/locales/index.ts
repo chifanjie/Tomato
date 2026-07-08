@@ -18,11 +18,11 @@ export const locales: Record<LocaleKey, Locale> = {
 };
 
 export function getLocale(key: LocaleKey): Locale {
-  return locales[key] ?? locales.en;
+  return locales[key] ?? locales.zh;
 }
 
 export function resolveLocaleKey(lang: string | undefined): LocaleKey {
-  if (!lang) return "en";
+  if (!lang) return "zh";
   const normalized = lang.toLowerCase().replace(/[_\s]/g, "-");
   if (normalized === "zh" || normalized === "chinese" || normalized === "zh-cn") return "zh";
   if (normalized === "zh-tw" || normalized === "traditional-chinese") return "zh-TW";

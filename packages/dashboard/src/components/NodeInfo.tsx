@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useDashboardStore } from "../store";
 import { useI18n } from "../contexts/I18nContext";
-import type { NodeType, EdgeType, KnowledgeGraph, GraphNode } from "@understand-anything/core/types";
+import type { NodeType, EdgeType, KnowledgeGraph, GraphNode } from "@understand-code/core/types";
 
 // Badge color classes keyed by NodeType — must be kept in sync with core NodeType union.
 const typeBadgeColors: Record<NodeType, string> = {

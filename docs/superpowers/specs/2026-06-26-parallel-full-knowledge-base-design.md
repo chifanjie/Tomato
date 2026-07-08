@@ -4,7 +4,7 @@
 
 第一版 Graph-to-Knowledge Base 已经证明这个项目可以做到：
 
-- 读取 `.understand-anything/knowledge-graph.json`；
+- 读取 `.understand-code/knowledge-graph.json`；
 - 构建图谱索引和项目画像；
 - 根据项目规模动态规划文档，而不是写死主题数量；
 - 生成 Markdown 文件；
@@ -71,7 +71,7 @@
 ## 输出目录
 
 ```text
-.understand-anything/knowledge-base/
+.understand-code/knowledge-base/
 ├── 目录.md
 ├── 项目总览.md
 ├── 架构地图.md
@@ -124,9 +124,9 @@
 
 输入：
 
-- `.understand-anything/knowledge-graph.json`
+- `.understand-code/knowledge-graph.json`
 - 仓库源码文件
-- 可选配置 `.understand-anything/config.json`
+- 可选配置 `.understand-code/config.json`
 
 主进程构建以下索引：
 
@@ -196,7 +196,7 @@ agents/kb-file-writer.md
 每个 `kb-file-writer` 接收一个批次，输出一个 JSON 文件：
 
 ```text
-.understand-anything/knowledge-base/.intermediate/file-doc-batch-<batchIndex>.json
+.understand-code/knowledge-base/.intermediate/file-doc-batch-<batchIndex>.json
 ```
 
 主进程可以同时运行多个 file-writer agent。并行方式应参考 `/understand` 的 file-analyzer 批次模式，而不是让一个 agent 独自写完整仓库。
@@ -495,7 +495,7 @@ agents/kb-topic-writer.md
 手动验证包括：
 
 - 极小 fixture 仓库；
-- 当前 understand-anything 仓库在真实 `/understand` 扫描后的图谱；
+- 当前 understand-code 仓库在真实 `/understand` 扫描后的图谱；
 - 文件和函数很多的大型仓库；
 - `calls` 边稀疏的图谱；
 - 源文件缺失的图谱。

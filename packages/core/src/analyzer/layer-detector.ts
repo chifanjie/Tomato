@@ -1,4 +1,9 @@
 import type { KnowledgeGraph, Layer } from "../types.js";
+import {
+  DEFAULT_OUTPUT_LANGUAGE,
+  buildOutputLanguageDirective,
+  isSimplifiedChineseOutputLanguage,
+} from "./output-language.js";
 
 /**
  * LLM layer response structure — what the LLM returns for each layer.
@@ -66,6 +71,57 @@ const LAYER_PATTERNS: Array<{ patterns: string[]; layerName: string; description
   },
 ];
 
+const CHINESE_LAYER_COPY: Record<string, { name: string; description: string }> = {
+  "API Layer": {
+    name: "API 层",
+    description: "HTTP 接口、路由处理器和 API 控制器",
+  },
+  "Service Layer": {
+    name: "服务层",
+    description: "业务逻辑和应用服务",
+  },
+  "Data Layer": {
+    name: "数据层",
+    description: "数据模型、数据库访问和持久化逻辑",
+  },
+  "UI Layer": {
+    name: "界面层",
+    description: "用户界面组件和视图",
+  },
+  "Middleware Layer": {
+    name: "中间件层",
+    description: "请求/响应中间件和拦截器",
+  },
+  "External Services": {
+    name: "外部服务层",
+    description: "外部服务集成、SDK 和第三方适配器",
+  },
+  "Background Tasks": {
+    name: "后台任务层",
+    description: "后台 worker、任务处理器和定时任务",
+  },
+  "Utility Layer": {
+    name: "工具层",
+    description: "共享工具、辅助函数和通用库",
+  },
+  "Test Layer": {
+    name: "测试层",
+    description: "测试文件和测试工具",
+  },
+  "Configuration Layer": {
+    name: "配置层",
+    description: "应用配置和运行环境设置",
+  },
+  Core: {
+    name: "核心层",
+    description: "核心应用文件",
+  },
+  Other: {
+    name: "其他",
+    description: "未归类文件",
+  },
+};
+
 /**
  * Convert a layer name to a kebab-case layer ID.
  */
@@ -102,7 +158,12 @@ function matchFileToLayer(filePath: string): string | null {
  *
  * Only FILE-type nodes are assigned to layers.
  */
-export function detectLayers(graph: KnowledgeGraph): Layer[] {
+export function detectLayers(
+  graph: KnowledgeGraph,
+  outputLanguage = DEFAULT_OUTPUT_LANGUAGE,
+): Layer[] {
+  const useSimplifiedChinese =
+    isSimplifiedChineseOutputLanguage(outputLanguage);
   const layerMap = new Map<string, string[]>(); // layerName -> nodeIds
 
   for (const node of graph.nodes) {
@@ -127,15 +188,18 @@ export function detectLayers(graph: KnowledgeGraph): Layer[] {
 
   const layers: Layer[] = [];
   for (const [name, nodeIds] of layerMap) {
-    const description =
+    const defaultDescription =
       name === "Core"
         ? "Core application files"
         : LAYER_PATTERNS.find((p) => p.layerName === name)?.description ?? "";
+    const translatedCopy = useSimplifiedChinese
+      ? CHINESE_LAYER_COPY[name]
+      : undefined;
 
     layers.push({
       id: toLayerId(name),
-      name,
-      description,
+      name: translatedCopy?.name ?? name,
+      description: translatedCopy?.description ?? defaultDescription,
       nodeIds,
     });
   }
@@ -147,7 +211,11 @@ export function detectLayers(graph: KnowledgeGraph): Layer[] {
  * Builds an LLM prompt that asks the model to identify logical layers
  * from a list of file paths in the knowledge graph.
  */
-export function buildLayerDetectionPrompt(graph: KnowledgeGraph): string {
+export function buildLayerDetectionPrompt(
+  graph: KnowledgeGraph,
+  outputLanguage = DEFAULT_OUTPUT_LANGUAGE,
+): string {
+  const outputLanguageDirective = buildOutputLanguageDirective(outputLanguage);
   const filePaths = graph.nodes
     .filter((n) => n.type === "file" && n.filePath)
     .map((n) => n.filePath!);
@@ -155,6 +223,9 @@ export function buildLayerDetectionPrompt(graph: KnowledgeGraph): string {
   const fileListStr = filePaths.map((f) => `  - ${f}`).join("\n");
 
   return `You are a software architecture analyst. Given the following list of file paths from a codebase, identify the logical architectural layers.
+
+${outputLanguageDirective}
+Apply the output language to each layer name and description. Keep filePatterns and path fragments in their original form.
 
 File paths:
 ${fileListStr}

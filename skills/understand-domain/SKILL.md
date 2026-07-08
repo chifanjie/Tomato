@@ -10,7 +10,7 @@ Extracts business domain knowledge — domains, business flows, and process step
 
 ## How It Works
 
-- If a knowledge graph already exists (`.understand-anything/knowledge-graph.json`), derives domain knowledge from it (cheap, no file scanning)
+- If a knowledge graph already exists (`.understand-code/knowledge-graph.json`), derives domain knowledge from it (cheap, no file scanning)
 - If no knowledge graph exists, performs a lightweight scan: file tree + entry point detection + sampled files
 - Use `--full` flag to force a fresh scan even if a knowledge graph exists
 
@@ -20,7 +20,7 @@ Extracts business domain knowledge — domains, business flows, and process step
 
 Set `PROJECT_ROOT` to the current working directory.
 
-**Worktree redirect.** If `PROJECT_ROOT` is inside a git worktree (not the main checkout), redirect output to the main repository root. Worktrees managed by Claude Code are ephemeral — `.understand-anything/` written there is destroyed when the session ends, taking the domain graph with it (issue #133). Detect a worktree by comparing `git rev-parse --git-dir` against `git rev-parse --git-common-dir`; in a normal checkout or submodule they resolve to the same path, in a worktree they differ and the parent of `--git-common-dir` is the main repo root.
+**Worktree redirect.** If `PROJECT_ROOT` is inside a git worktree (not the main checkout), redirect output to the main repository root. Worktrees managed by Claude Code are ephemeral — `.understand-code/` written there is destroyed when the session ends, taking the domain graph with it (issue #133). Detect a worktree by comparing `git rev-parse --git-dir` against `git rev-parse --git-common-dir`; in a normal checkout or submodule they resolve to the same path, in a worktree they differ and the parent of `--git-common-dir` is the main repo root.
 
 ```bash
 COMMON_DIR=$(git -C "$PROJECT_ROOT" rev-parse --git-common-dir 2>/dev/null)
@@ -55,13 +55,13 @@ COPILOT_SELF_RELATIVE=$([ -n "$COPILOT_SKILL_REAL" ] && cd "$COPILOT_SKILL_REAL/
 PLUGIN_ROOT=""
 for candidate in \
   "${CLAUDE_PLUGIN_ROOT}" \
-  "$HOME/.understand-anything-plugin" \
+  "$HOME/.understand-code-plugin" \
   "$SELF_RELATIVE" \
   "$COPILOT_SELF_RELATIVE" \
-  "$HOME/.codex/understand-anything/understand-anything-plugin" \
-  "$HOME/.opencode/understand-anything/understand-anything-plugin" \
-  "$HOME/.pi/understand-anything/understand-anything-plugin" \
-  "$HOME/understand-anything/understand-anything-plugin"; do
+  "$HOME/.codex/understand-code/understand-code-plugin" \
+  "$HOME/.opencode/understand-code/understand-code-plugin" \
+  "$HOME/.pi/understand-code/understand-code-plugin" \
+  "$HOME/understand-code/understand-code-plugin"; do
   if [ -n "$candidate" ] && [ -f "$candidate/package.json" ] && [ -f "$candidate/pnpm-workspace.yaml" ]; then
     PLUGIN_ROOT="$candidate"
     break
@@ -69,16 +69,16 @@ for candidate in \
 done
 
 if [ -z "$PLUGIN_ROOT" ]; then
-  echo "Error: Cannot find the understand-anything plugin root."
+  echo "Error: Cannot find the understand-code plugin root."
   echo "Checked:"
   echo "  - ${CLAUDE_PLUGIN_ROOT:-<unset CLAUDE_PLUGIN_ROOT>}"
-  echo "  - $HOME/.understand-anything-plugin"
+  echo "  - $HOME/.understand-code-plugin"
   echo "  - ${SELF_RELATIVE:-<unresolved path derived from ~/.agents/skills/understand-domain>}"
   echo "  - ${COPILOT_SELF_RELATIVE:-<unresolved path derived from ~/.copilot/skills/understand-domain>}"
-  echo "  - $HOME/.codex/understand-anything/understand-anything-plugin"
-  echo "  - $HOME/.opencode/understand-anything/understand-anything-plugin"
-  echo "  - $HOME/.pi/understand-anything/understand-anything-plugin"
-  echo "  - $HOME/understand-anything/understand-anything-plugin"
+  echo "  - $HOME/.codex/understand-code/understand-code-plugin"
+  echo "  - $HOME/.opencode/understand-code/understand-code-plugin"
+  echo "  - $HOME/.pi/understand-code/understand-code-plugin"
+  echo "  - $HOME/understand-code/understand-code-plugin"
   echo "Make sure the plugin is installed correctly."
   exit 1
 fi
@@ -88,7 +88,7 @@ Use `$PLUGIN_ROOT` for every reference to agent definitions in subsequent phases
 
 ### Phase 1: Detect Existing Graph
 
-1. Check if `$PROJECT_ROOT/.understand-anything/knowledge-graph.json` exists
+1. Check if `$PROJECT_ROOT/.understand-code/knowledge-graph.json` exists
 2. If it exists AND `--full` was NOT passed → proceed to Phase 3 (derive from graph)
 3. Otherwise → proceed to Phase 2 (lightweight scan)
 
@@ -100,7 +100,7 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
    ```
    python ./extract-domain-context.py "$PROJECT_ROOT"
    ```
-   This outputs `$PROJECT_ROOT/.understand-anything/intermediate/domain-context.json` containing:
+   This outputs `$PROJECT_ROOT/.understand-code/intermediate/domain-context.json` containing:
    - File tree (respecting `.gitignore`)
    - Detected entry points (HTTP routes, CLI commands, event handlers, cron jobs, exported handlers)
    - File signatures (exports, imports per file)
@@ -111,7 +111,7 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
 
 ### Phase 3: Derive from Existing Graph (Path 2)
 
-1. Read `$PROJECT_ROOT/.understand-anything/knowledge-graph.json`
+1. Read `$PROJECT_ROOT/.understand-code/knowledge-graph.json`
 2. Format the graph data as structured context:
    - All nodes with their types, names, summaries, and tags
    - All edges with their types (especially `calls`, `imports`, `contains`)
@@ -124,15 +124,15 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
 
 1. Read the domain-analyzer agent prompt from `$PLUGIN_ROOT/agents/domain-analyzer.md`
 2. Dispatch a subagent with the domain-analyzer prompt + the context from Phase 2 or 3
-3. The agent writes its output to `$PROJECT_ROOT/.understand-anything/intermediate/domain-analysis.json`
+3. The agent writes its output to `$PROJECT_ROOT/.understand-code/intermediate/domain-analysis.json`
 
 ### Phase 5: Validate and Save
 
 1. Read the domain analysis output
 2. Validate using the standard graph validation pipeline (the schema now supports domain/flow/step types)
 3. If validation fails, log warnings but save what's valid (error tolerance)
-4. Save to `$PROJECT_ROOT/.understand-anything/domain-graph.json`
-5. Clean up `$PROJECT_ROOT/.understand-anything/intermediate/domain-analysis.json` and `$PROJECT_ROOT/.understand-anything/intermediate/domain-context.json`
+4. Save to `$PROJECT_ROOT/.understand-code/domain-graph.json`
+5. Clean up `$PROJECT_ROOT/.understand-code/intermediate/domain-analysis.json` and `$PROJECT_ROOT/.understand-code/intermediate/domain-context.json`
 
 ### Phase 6: Launch Dashboard
 

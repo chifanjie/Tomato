@@ -40,7 +40,7 @@ describe("detectLayers", () => {
       makeNode({ id: "f2", name: "auth.ts", filePath: "src/controllers/auth.ts" }),
       makeNode({ id: "f3", name: "health.ts", filePath: "src/api/health.ts" }),
     ]);
-    const layers = detectLayers(graph);
+    const layers = detectLayers(graph, "en");
     const apiLayer = layers.find((l) => l.name === "API Layer");
     expect(apiLayer).toBeDefined();
     expect(apiLayer!.nodeIds).toContain("f1");
@@ -54,7 +54,7 @@ describe("detectLayers", () => {
       makeNode({ id: "f2", name: "Post.ts", filePath: "src/entity/Post.ts" }),
       makeNode({ id: "f3", name: "UserRepo.ts", filePath: "src/repository/UserRepo.ts" }),
     ]);
-    const layers = detectLayers(graph);
+    const layers = detectLayers(graph, "en");
     const dataLayer = layers.find((l) => l.name === "Data Layer");
     expect(dataLayer).toBeDefined();
     expect(dataLayer!.nodeIds).toContain("f1");
@@ -67,7 +67,7 @@ describe("detectLayers", () => {
       makeNode({ id: "f1", name: "main.ts", filePath: "src/main.ts" }),
       makeNode({ id: "f2", name: "app.ts", filePath: "src/app.ts" }),
     ]);
-    const layers = detectLayers(graph);
+    const layers = detectLayers(graph, "en");
     const coreLayer = layers.find((l) => l.name === "Core");
     expect(coreLayer).toBeDefined();
     expect(coreLayer!.nodeIds).toContain("f1");
@@ -80,7 +80,7 @@ describe("detectLayers", () => {
       makeNode({ id: "f2", name: "User.ts", filePath: "src/models/User.ts" }),
       makeNode({ id: "f3", name: "main.ts", filePath: "src/main.ts" }),
     ]);
-    const layers = detectLayers(graph);
+    const layers = detectLayers(graph, "en");
     const ids = layers.map((l) => l.id);
 
     // All IDs should start with "layer:"
@@ -98,11 +98,57 @@ describe("detectLayers", () => {
       makeNode({ id: "fn1", name: "getUser", type: "function", filePath: "src/routes/users.ts" }),
       makeNode({ id: "c1", name: "UserController", type: "class", filePath: "src/routes/users.ts" }),
     ]);
-    const layers = detectLayers(graph);
+    const layers = detectLayers(graph, "en");
     const allNodeIds = layers.flatMap((l) => l.nodeIds);
     expect(allNodeIds).toContain("f1");
     expect(allNodeIds).not.toContain("fn1");
     expect(allNodeIds).not.toContain("c1");
+  });
+
+  it("uses Chinese layer names and descriptions when output language is zh", () => {
+    const graph = makeGraph([
+      makeNode({ id: "f1", name: "users.ts", filePath: "src/routes/users.ts" }),
+      makeNode({ id: "f2", name: "App.tsx", filePath: "src/components/App.tsx" }),
+      makeNode({ id: "f3", name: "main.ts", filePath: "src/main.ts" }),
+    ]);
+
+    const layers = detectLayers(graph, "zh");
+
+    expect(layers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "layer:api-layer",
+          name: "API 层",
+          description: "HTTP 接口、路由处理器和 API 控制器",
+        }),
+        expect.objectContaining({
+          id: "layer:ui-layer",
+          name: "界面层",
+          description: "用户界面组件和视图",
+        }),
+        expect.objectContaining({
+          id: "layer:core",
+          name: "核心层",
+          description: "核心应用文件",
+        }),
+      ]),
+    );
+  });
+
+  it("defaults layer detection to Chinese layer names and descriptions", () => {
+    const graph = makeGraph([
+      makeNode({ id: "f1", name: "users.ts", filePath: "src/routes/users.ts" }),
+      makeNode({ id: "f2", name: "main.ts", filePath: "src/main.ts" }),
+    ]);
+
+    const layers = detectLayers(graph);
+
+    expect(layers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "API 层" }),
+        expect.objectContaining({ name: "核心层" }),
+      ]),
+    );
   });
 });
 
@@ -116,6 +162,18 @@ describe("buildLayerDetectionPrompt", () => {
     expect(prompt).toContain("src/index.ts");
     expect(prompt).toContain("src/app.ts");
     expect(prompt).toContain("JSON");
+  });
+
+  it("requests Simplified Chinese layer content when output language is zh", () => {
+    const graph = makeGraph([
+      makeNode({ id: "f1", name: "index.ts", filePath: "src/index.ts" }),
+    ]);
+
+    const prompt = buildLayerDetectionPrompt(graph, "zh");
+
+    expect(prompt).toContain("Simplified Chinese");
+    expect(prompt).toContain("Keep code identifiers");
+    expect(prompt).toContain("layer name and description");
   });
 });
 

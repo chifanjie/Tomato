@@ -43,7 +43,7 @@ let worktree;
 let subdir;
 
 beforeAll(() => {
-  tmpRoot = realpathSync(mkdtempSync(join(tmpdir(), "ua-wt-")));
+  tmpRoot = realpathSync(mkdtempSync(join(tmpdir(), "uc-wt-")));
   mainRepo = join(tmpRoot, "main");
   worktree = join(tmpRoot, "wt");
   subdir = join(worktree, "src", "deep");

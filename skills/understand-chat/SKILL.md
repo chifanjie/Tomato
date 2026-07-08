@@ -6,7 +6,7 @@ argument-hint: [query]
 
 # /understand-chat
 
-Answer questions about this codebase using the knowledge graph at `.understand-anything/knowledge-graph.json`.
+Answer questions about this codebase using the knowledge graph at `.understand-code/knowledge-graph.json`.
 
 ## Graph Structure Reference
 
@@ -31,7 +31,7 @@ The knowledge graph JSON has this structure:
 
 ## Instructions
 
-1. Check that `.understand-anything/knowledge-graph.json` exists in the current project root. If not, tell the user to run `/understand` first.
+1. Check that `.understand-code/knowledge-graph.json` exists in the current project root. If not, tell the user to run `/understand` first.
 
 2. **Read project metadata only** — use Grep or Read with a line limit to extract just the `"project"` section from the top of the file for context (name, description, languages, frameworks).
 

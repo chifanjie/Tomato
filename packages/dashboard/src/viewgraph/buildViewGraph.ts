@@ -1,4 +1,4 @@
-import type { GraphNode, KnowledgeGraph } from "@understand-anything/core/types";
+import type { GraphNode, KnowledgeGraph } from "@understand-code/core/types";
 import { classifyFunctionName, groupFunctionDots } from "./functionGrouping";
 import type { FunctionDot, ViewFileSummary, ViewGraph, ViewLayerSummary } from "./types";
 

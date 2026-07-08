@@ -1,24 +1,37 @@
+type RailActionId = "graph" | "route" | "knowledge" | "focus" | "search";
+
 interface RailAction {
-  id: string;
+  id: RailActionId;
   label: string;
   title: string;
-  disabled?: boolean;
-  icon: "structure" | "knowledge" | "risk" | "search" | "settings";
+  pressed?: boolean;
+  icon: RailActionId;
+  onClick: () => void;
 }
 
-const actions: RailAction[] = [
-  { id: "structure", label: "Structure", title: "Structure mode", icon: "structure" },
-  { id: "knowledge", label: "Knowledge", title: "Knowledge mode is coming soon", icon: "knowledge", disabled: true },
-  { id: "risk", label: "Risk", title: "Risk mode is coming soon", icon: "risk", disabled: true },
-  { id: "search", label: "Search", title: "Search mode is coming soon", icon: "search", disabled: true },
-  { id: "settings", label: "Settings", title: "Settings are coming soon", icon: "settings", disabled: true },
-];
+interface ModeRailProps {
+  routeVisible: boolean;
+  knowledgeVisible: boolean;
+  onShowGraph: () => void;
+  onToggleRoute: () => void;
+  onToggleKnowledge: () => void;
+  onFocusActive: () => void;
+  onFocusSearch: () => void;
+}
 
 function ModeIcon({ icon }: { icon: RailAction["icon"] }) {
-  if (icon === "structure") {
+  if (icon === "graph") {
     return (
       <svg aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 6h6v6H4zM14 4h6v6h-6zM14 14h6v6h-6zM10 9h4M17 10v4" />
+      </svg>
+    );
+  }
+
+  if (icon === "route") {
+    return (
+      <svg aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 5h10M7 12h10M7 19h10M4 5h.01M4 12h.01M4 19h.01" />
       </svg>
     );
   }
@@ -31,52 +44,58 @@ function ModeIcon({ icon }: { icon: RailAction["icon"] }) {
     );
   }
 
-  if (icon === "risk") {
+  if (icon === "focus") {
     return (
       <svg aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 3 3 20h18L12 3Zm0 6v5m0 3h.01" />
-      </svg>
-    );
-  }
-
-  if (icon === "search") {
-    return (
-      <svg aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="m21 21-4.3-4.3M10.8 18a7.2 7.2 0 1 1 0-14.4 7.2 7.2 0 0 1 0 14.4Z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 5v3m0 8v3M5 12h3m8 0h3m-7 4a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" />
       </svg>
     );
   }
 
   return (
     <svg aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 8.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7Zm8 3.5h-2M6 12H4m12.7-4.7 1.4-1.4M5.9 18.1l1.4-1.4m0-9.4L5.9 5.9m12.2 12.2-1.4-1.4" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="m21 21-4.3-4.3M10.8 18a7.2 7.2 0 1 1 0-14.4 7.2 7.2 0 0 1 0 14.4Z" />
     </svg>
   );
 }
 
-export default function ModeRail() {
+export default function ModeRail({
+  routeVisible,
+  knowledgeVisible,
+  onShowGraph,
+  onToggleRoute,
+  onToggleKnowledge,
+  onFocusActive,
+  onFocusSearch,
+}: ModeRailProps) {
+  const actions: RailAction[] = [
+    { id: "graph", label: "图谱", title: "回到图谱总览", icon: "graph", pressed: true, onClick: onShowGraph },
+    { id: "route", label: "路线", title: routeVisible ? "隐藏引导路线" : "显示引导路线", icon: "route", pressed: routeVisible, onClick: onToggleRoute },
+    { id: "knowledge", label: "知识", title: knowledgeVisible ? "隐藏知识上下文" : "显示知识上下文", icon: "knowledge", pressed: knowledgeVisible, onClick: onToggleKnowledge },
+    { id: "focus", label: "定位", title: "定位当前路线节点", icon: "focus", onClick: onFocusActive },
+    { id: "search", label: "搜索", title: "聚焦搜索框", icon: "search", onClick: onFocusSearch },
+  ];
+
   return (
     <nav
-      aria-label="Workbench modes"
+      aria-label="工作台模式"
       className="flex h-full w-16 shrink-0 flex-col items-center gap-2 border-r border-border-subtle bg-surface px-2 py-3"
     >
       {actions.map((action) => {
-        const isActive = action.id === "structure";
+        const isActive = action.pressed === true;
         return (
           <button
             key={action.id}
             type="button"
-            disabled={action.disabled}
             aria-label={action.label}
-            aria-current={isActive ? "page" : undefined}
+            aria-pressed={action.id === "focus" || action.id === "search" ? undefined : isActive}
             title={action.title}
+            onClick={action.onClick}
             className={`flex h-11 w-11 items-center justify-center rounded-md border transition-colors ${
               isActive
                 ? "border-accent/55 bg-accent/15 text-accent shadow-sm shadow-accent/10"
-                : "border-transparent text-text-muted"
-            } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${
-              action.disabled ? "cursor-not-allowed opacity-35" : "hover:border-border-medium hover:bg-elevated hover:text-text-primary"
-            }`}
+                : "border-transparent text-text-muted hover:border-border-medium hover:bg-elevated hover:text-text-primary"
+            } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-surface`}
           >
             <ModeIcon icon={action.icon} />
           </button>

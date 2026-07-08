@@ -12,10 +12,10 @@ Usage:
     python merge-batch-graphs.py <project-root>
 
 Input:
-    <project-root>/.understand-anything/intermediate/batch-*.json
+    <project-root>/.understand-code/intermediate/batch-*.json
 
 Output:
-    <project-root>/.understand-anything/intermediate/assembled-graph.json
+    <project-root>/.understand-code/intermediate/assembled-graph.json
 """
 
 import json
@@ -1006,7 +1006,7 @@ def main() -> None:
         sys.exit(1)
 
     project_root = Path(sys.argv[1]).resolve()
-    intermediate_dir = project_root / ".understand-anything" / "intermediate"
+    intermediate_dir = project_root / ".understand-code" / "intermediate"
 
     if not intermediate_dir.is_dir():
         print(f"Error: {intermediate_dir} does not exist", file=sys.stderr)

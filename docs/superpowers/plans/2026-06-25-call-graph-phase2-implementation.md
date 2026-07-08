@@ -162,7 +162,7 @@ Run:
 
 ```bash
 cd /Users/example/understand-code
-pnpm --filter @understand-anything/core test -- src/analyzer/call-resolver.test.ts
+pnpm --filter @understand-code/core test -- src/analyzer/call-resolver.test.ts
 ```
 
 Expected result: the command fails because `call-resolver.ts` does not exist yet.
@@ -298,7 +298,7 @@ Run:
 
 ```bash
 cd /Users/example/understand-code
-pnpm --filter @understand-anything/core test -- src/analyzer/call-resolver.test.ts
+pnpm --filter @understand-code/core test -- src/analyzer/call-resolver.test.ts
 ```
 
 Expected result: resolver tests pass.
@@ -328,7 +328,7 @@ Run:
 
 ```bash
 cd /Users/example/understand-code
-pnpm --filter @understand-anything/core build
+pnpm --filter @understand-code/core build
 ```
 
 Expected result: TypeScript build passes and `dist/index.d.ts` exposes the resolver symbols.
@@ -400,7 +400,7 @@ After all file/function/class nodes and import edges are assembled, build call r
 - `functions` from each structure record.
 - `callGraph` from each structure record.
 
-Then call `resolveCalls()` from `@understand-anything/core`. For each `ResolvedCall`, call `GraphBuilder.addCallEdge(callerFile, callerFunc, calleeFile, calleeFunc)`. Add resolver diagnostics to the final summary:
+Then call `resolveCalls()` from `@understand-code/core`. For each `ResolvedCall`, call `GraphBuilder.addCallEdge(callerFile, callerFunc, calleeFile, calleeFunc)`. Add resolver diagnostics to the final summary:
 
 - `resolvedCalls`: number of calls converted to edges.
 - `unresolvedCalls`: number of raw calls that were omitted because they could not be mapped to a unique function node.
@@ -448,7 +448,7 @@ Run:
 
 ```bash
 cd /Users/example/understand-code
-pnpm --filter @understand-anything/core test -- src/analyzer/call-resolver.test.ts src/analyzer/graph-builder.test.ts
+pnpm --filter @understand-code/core test -- src/analyzer/call-resolver.test.ts src/analyzer/graph-builder.test.ts
 ```
 
 Expected result: tests pass.
@@ -464,8 +464,8 @@ Run:
 
 ```bash
 cd /Users/example/understand-code
-pnpm --filter @understand-anything/core build
-pnpm --filter @understand-anything/dashboard build
+pnpm --filter @understand-code/core build
+pnpm --filter @understand-code/dashboard build
 ```
 
 Expected result: both builds pass.
@@ -474,7 +474,7 @@ Expected result: both builds pass.
 
 Use a project with two Go files where `a.go` calls a function in `b.go`. Run `/understand` from that project using this local plugin copy.
 
-Expected result: `.understand-anything/knowledge-graph.json` includes at least one edge:
+Expected result: `.understand-code/knowledge-graph.json` includes at least one edge:
 
 ```json
 {
@@ -495,5 +495,5 @@ Open the dashboard for the same graph, drill into `a.go`, select `Build`, and co
 - Ambiguous or unresolved calls are omitted and counted, not guessed.
 - Final graphs include `calls` edges when resolvable calls exist.
 - Phase 1 function impact switches from estimated imports to exact calls on graphs that contain `calls` edges.
-- `pnpm --filter @understand-anything/core build` passes.
-- `pnpm --filter @understand-anything/core test -- src/analyzer/call-resolver.test.ts src/analyzer/graph-builder.test.ts` passes.
+- `pnpm --filter @understand-code/core build` passes.
+- `pnpm --filter @understand-code/core test -- src/analyzer/call-resolver.test.ts src/analyzer/graph-builder.test.ts` passes.

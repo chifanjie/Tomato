@@ -1,11 +1,60 @@
 import type { KnowledgeGraph, TourStep } from "../types.js";
+import {
+  DEFAULT_OUTPUT_LANGUAGE,
+  buildOutputLanguageDirective,
+  isSimplifiedChineseOutputLanguage,
+} from "./output-language.js";
+
+const CHINESE_LAYER_TITLES: Record<string, string> = {
+  "api layer": "API 层",
+  "configuration layer": "配置层",
+  core: "核心层",
+  "core layer": "核心层",
+  "data layer": "数据层",
+  "database layer": "数据层",
+  "service layer": "服务层",
+  "test layer": "测试层",
+  "ui layer": "界面层",
+  "user interface layer": "界面层",
+  "utility layer": "工具层",
+  "utils layer": "工具层",
+};
+
+const CHINESE_LAYER_DESCRIPTIONS: Record<string, string> = {
+  "application configuration and environment settings":
+    "应用配置和运行环境设置",
+  "business logic": "业务逻辑",
+  "core application files": "核心应用文件",
+  database: "数据库相关代码",
+  "http routes": "HTTP 路由",
+  "shared utilities, helpers, and common libraries":
+    "共享工具、辅助函数和通用库",
+  "test files and test utilities": "测试文件和测试工具",
+  "user interface components and views": "用户界面组件和视图",
+};
+
+function localizeLayerTitleForChinese(title: string): string {
+  const normalized = title.trim().toLowerCase();
+  const knownTitle = CHINESE_LAYER_TITLES[normalized];
+  if (knownTitle) return knownTitle;
+  return title.replace(/\bLayer\b/g, "层");
+}
+
+function localizeLayerDescriptionForChinese(description: string): string {
+  const normalized = description.trim().toLowerCase();
+  return CHINESE_LAYER_DESCRIPTIONS[normalized] ?? description;
+}
 
 /**
  * Builds an LLM prompt asking for a guided tour of the project.
  * Includes project metadata, node summaries, edges, and layer info.
  */
-export function buildTourGenerationPrompt(graph: KnowledgeGraph): string {
+export function buildTourGenerationPrompt(
+  graph: KnowledgeGraph,
+  outputLanguage = DEFAULT_OUTPUT_LANGUAGE,
+): string {
   const { project, nodes, edges, layers } = graph;
+  const outputLanguageDirective = buildOutputLanguageDirective(outputLanguage);
 
   const nodeList = nodes
     .map(
@@ -30,6 +79,9 @@ export function buildTourGenerationPrompt(graph: KnowledgeGraph): string {
       : "  (no layers detected)";
 
   return `You are a software architecture educator. Generate a guided tour of the following project that helps a newcomer understand the codebase step by step.
+
+${outputLanguageDirective}
+Apply the output language to "title", "description", and "languageLesson" values.
 
 Project: ${project.name}
 Description: ${project.description}
@@ -132,8 +184,13 @@ export function parseTourGenerationResponse(response: string): TourStep[] {
  * 7. Add concept nodes as final "Key Concepts" step
  * 8. Assign sequential order numbers
  */
-export function generateHeuristicTour(graph: KnowledgeGraph): TourStep[] {
+export function generateHeuristicTour(
+  graph: KnowledgeGraph,
+  outputLanguage = DEFAULT_OUTPUT_LANGUAGE,
+): TourStep[] {
   const { nodes, edges, layers } = graph;
+  const useSimplifiedChinese =
+    isSimplifiedChineseOutputLanguage(outputLanguage);
 
   // Separate concept nodes from code nodes
   const conceptNodes = nodes.filter((n) => n.type === "concept");
@@ -223,10 +280,18 @@ export function generateHeuristicTour(graph: KnowledgeGraph): TourStep[] {
           .map((id) => nodeMap.get(id)?.name)
           .filter(Boolean)
           .join(", ");
+        const title = useSimplifiedChinese
+          ? localizeLayerTitleForChinese(layer.name)
+          : layer.name;
+        const description = useSimplifiedChinese
+          ? localizeLayerDescriptionForChinese(layer.description)
+          : layer.description;
         steps.push({
           order: 0, // assigned later
-          title: layer.name,
-          description: `${layer.description}. Key files: ${nodeSummaries}.`,
+          title,
+          description: useSimplifiedChinese
+            ? `${title}负责：${description}。重点文件：${nodeSummaries}。`
+            : `${description}. Key files: ${nodeSummaries}.`,
           nodeIds,
         });
       }
@@ -246,8 +311,10 @@ export function generateHeuristicTour(graph: KnowledgeGraph): TourStep[] {
         .join(", ");
       steps.push({
         order: 0,
-        title: "Supporting Components",
-        description: `Additional supporting files: ${nodeSummaries}.`,
+        title: useSimplifiedChinese ? "支撑组件" : "Supporting Components",
+        description: useSimplifiedChinese
+          ? `补充阅读这些支撑文件：${nodeSummaries}。`
+          : `Additional supporting files: ${nodeSummaries}.`,
         nodeIds: unlayeredNodes,
       });
     }
@@ -264,8 +331,12 @@ export function generateHeuristicTour(graph: KnowledgeGraph): TourStep[] {
       const stepNumber = Math.floor(i / 3) + 1;
       steps.push({
         order: 0, // assigned later
-        title: `Step ${stepNumber}: Code Walkthrough`,
-        description: `Exploring: ${nodeSummaries}.`,
+        title: useSimplifiedChinese
+          ? `第 ${stepNumber} 步：代码阅读`
+          : `Step ${stepNumber}: Code Walkthrough`,
+        description: useSimplifiedChinese
+          ? `阅读这些文件：${nodeSummaries}。`
+          : `Exploring: ${nodeSummaries}.`,
         nodeIds: batch,
       });
     }
@@ -278,8 +349,10 @@ export function generateHeuristicTour(graph: KnowledgeGraph): TourStep[] {
       .join("; ");
     steps.push({
       order: 0,
-      title: "Key Concepts",
-      description: `Important architectural concepts: ${conceptSummaries}.`,
+      title: useSimplifiedChinese ? "关键概念" : "Key Concepts",
+      description: useSimplifiedChinese
+        ? `重要架构概念：${conceptSummaries}。`
+        : `Important architectural concepts: ${conceptSummaries}.`,
       nodeIds: conceptNodes.map((n) => n.id),
     });
   }

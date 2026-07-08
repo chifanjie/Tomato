@@ -1,10 +1,10 @@
-import { SearchEngine } from "@understand-anything/core";
+import { SearchEngine } from "@understand-code/core";
 import type {
   KnowledgeGraph,
   GraphNode,
   GraphEdge,
   Layer,
-} from "@understand-anything/core";
+} from "@understand-code/core";
 
 export interface ChatContext {
   projectName: string;

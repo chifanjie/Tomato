@@ -4,14 +4,14 @@ import type { KnowledgeGraph, AnalysisMeta, ProjectConfig } from "../types.js";
 import type { FingerprintStore } from "../fingerprint.js";
 import { validateGraph } from "../schema.js";
 
-const UA_DIR = ".understand-anything";
+const UNDERSTAND_CODE_DIR = ".understand-code";
 const GRAPH_FILE = "knowledge-graph.json";
 const META_FILE = "meta.json";
 const FINGERPRINT_FILE = "fingerprints.json";
 const CONFIG_FILE = "config.json";
 
 function ensureDir(projectRoot: string): string {
-  const dir = join(projectRoot, UA_DIR);
+  const dir = join(projectRoot, UNDERSTAND_CODE_DIR);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
@@ -86,7 +86,7 @@ export function loadGraph(
   projectRoot: string,
   options?: { validate?: boolean },
 ): KnowledgeGraph | null {
-  const filePath = join(projectRoot, UA_DIR, GRAPH_FILE);
+  const filePath = join(projectRoot, UNDERSTAND_CODE_DIR, GRAPH_FILE);
   if (!existsSync(filePath)) return null;
 
   const data = JSON.parse(readFileSync(filePath, "utf-8"));
@@ -110,7 +110,7 @@ export function saveMeta(projectRoot: string, meta: AnalysisMeta): void {
 }
 
 export function loadMeta(projectRoot: string): AnalysisMeta | null {
-  const filePath = join(projectRoot, UA_DIR, META_FILE);
+  const filePath = join(projectRoot, UNDERSTAND_CODE_DIR, META_FILE);
   if (!existsSync(filePath)) return null;
   return JSON.parse(readFileSync(filePath, "utf-8")) as AnalysisMeta;
 }
@@ -121,7 +121,7 @@ export function saveFingerprints(projectRoot: string, store: FingerprintStore): 
 }
 
 export function loadFingerprints(projectRoot: string): FingerprintStore | null {
-  const filePath = join(projectRoot, UA_DIR, FINGERPRINT_FILE);
+  const filePath = join(projectRoot, UNDERSTAND_CODE_DIR, FINGERPRINT_FILE);
   if (!existsSync(filePath)) return null;
   try {
     return JSON.parse(readFileSync(filePath, "utf-8")) as FingerprintStore;
@@ -138,7 +138,7 @@ export function saveConfig(projectRoot: string, config: ProjectConfig): void {
 }
 
 export function loadConfig(projectRoot: string): ProjectConfig {
-  const filePath = join(projectRoot, UA_DIR, CONFIG_FILE);
+  const filePath = join(projectRoot, UNDERSTAND_CODE_DIR, CONFIG_FILE);
   if (!existsSync(filePath)) return { ...DEFAULT_CONFIG };
   try {
     return JSON.parse(readFileSync(filePath, "utf-8")) as ProjectConfig;
@@ -163,7 +163,7 @@ export function loadDomainGraph(
   projectRoot: string,
   options?: { validate?: boolean },
 ): KnowledgeGraph | null {
-  const filePath = join(projectRoot, UA_DIR, DOMAIN_GRAPH_FILE);
+  const filePath = join(projectRoot, UNDERSTAND_CODE_DIR, DOMAIN_GRAPH_FILE);
   if (!existsSync(filePath)) return null;
 
   const data = JSON.parse(readFileSync(filePath, "utf-8"));

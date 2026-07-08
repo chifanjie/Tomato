@@ -1,4 +1,4 @@
-import type { GraphNode, Layer } from "@understand-anything/core/types";
+import type { GraphNode, Layer } from "@understand-code/core/types";
 
 export type Complexity = "simple" | "moderate" | "complex";
 

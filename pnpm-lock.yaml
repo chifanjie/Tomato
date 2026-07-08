@@ -8,7 +8,7 @@ importers:
 
   .:
     dependencies:
-      '@understand-anything/core':
+      '@understand-code/core':
         specifier: workspace:*
         version: link:packages/core
       graphology:
@@ -94,7 +94,7 @@ importers:
       '@dagrejs/dagre':
         specifier: ^2.0.4
         version: 2.0.4
-      '@understand-anything/core':
+      '@understand-code/core':
         specifier: workspace:*
         version: link:../core
       '@xyflow/react':

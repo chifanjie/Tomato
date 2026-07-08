@@ -2,6 +2,10 @@ import { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import { useDashboardStore } from "../store";
 import { useI18n } from "../contexts/I18nContext";
+import {
+  buildLocalizedReadingRouteSteps,
+  resolveReadingRouteTourStep,
+} from "./readingRoute";
 
 export default function LearnPanel() {
   const graph = useDashboardStore((s) => s.graph);
@@ -19,18 +23,42 @@ export default function LearnPanel() {
     () => graph?.tour ? [...graph.tour].sort((a, b) => a.order - b.order) : [],
     [graph?.tour]
   );
+  const localizedRouteSteps = useMemo(
+    () => buildLocalizedReadingRouteSteps(t.readingRoute),
+    [t.readingRoute]
+  );
   const hasTour = tourSteps.length > 0;
 
   // State 1: No tour available
   if (!hasTour) {
     return (
-      <div className="h-full w-full flex items-center justify-center">
-        <div className="text-center px-4">
-          <div className="text-2xl mb-2 text-text-muted">&#x1f9ed;</div>
-          <p className="text-text-muted text-sm">{t.learnPanel.noTour}</p>
-          <p className="text-text-muted text-xs mt-1">
-            {t.learnPanel.noTourHint}
-          </p>
+      <div className="h-full w-full overflow-auto p-5">
+        <div className="mb-4">
+          <h2 className="text-lg font-heading text-text-primary mb-1">{t.readingRoute.title}</h2>
+          <p className="text-xs text-text-muted">{t.readingRoute.subtitle}</p>
+        </div>
+
+        <div className="space-y-2">
+          {localizedRouteSteps.map((step) => (
+            <div
+              key={step.order}
+              className="bg-elevated rounded-lg px-3 py-3 border border-border-subtle"
+            >
+              <div className="flex items-start gap-2">
+                <span className="text-accent font-mono text-xs shrink-0 mt-0.5">
+                  {step.order}.
+                </span>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-medium text-text-primary mb-1">
+                    {step.title}
+                  </h3>
+                  <p className="text-xs text-text-secondary leading-relaxed">
+                    {step.description}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -41,9 +69,9 @@ export default function LearnPanel() {
     return (
       <div className="h-full w-full overflow-auto p-5">
         <div className="mb-4">
-          <h2 className="text-lg font-heading text-text-primary mb-1">{t.learnPanel.projectTour}</h2>
+          <h2 className="text-lg font-heading text-text-primary mb-1">{t.readingRoute.title}</h2>
           <p className="text-xs text-text-muted">
-            {tourSteps.length} {t.learnPanel.steps} &middot; {t.learnPanel.guidedWalkthrough}
+            {`${tourSteps.length} ${t.learnPanel.steps} · ${t.readingRoute.subtitle}`}
           </p>
         </div>
 
@@ -51,7 +79,7 @@ export default function LearnPanel() {
           onClick={startTour}
           className="w-full mb-4 bg-accent/10 border border-accent/30 text-accent text-sm font-medium py-2.5 px-4 rounded-lg hover:bg-accent/20 transition-colors"
         >
-          {t.learnPanel.startTour}
+          {t.readingRoute.start}
         </button>
 
         <div className="space-y-2">
@@ -82,6 +110,7 @@ export default function LearnPanel() {
   const progressPct = ((currentTourStep + 1) / totalSteps) * 100;
   const isFirst = currentTourStep === 0;
   const isLast = currentTourStep === totalSteps - 1;
+  const displayStep = resolveReadingRouteTourStep(step, t.readingRoute);
 
   return (
     <div className="h-full w-full flex flex-col overflow-hidden">
@@ -89,7 +118,7 @@ export default function LearnPanel() {
       <div className="flex items-center justify-between px-3 py-2 border-b border-border-subtle shrink-0">
         <div className="flex items-center gap-2">
           <h3 className="text-[11px] font-semibold text-accent uppercase tracking-wider">
-            {t.learnPanel.tour}
+            {t.readingRoute.route}
           </h3>
           <span className="text-xs text-text-muted">
             {currentTourStep + 1} / {totalSteps}
@@ -99,7 +128,7 @@ export default function LearnPanel() {
           onClick={stopTour}
           className="text-[10px] text-text-muted hover:text-text-secondary transition-colors"
         >
-          {t.learnPanel.exitTour}
+          {t.readingRoute.exit}
         </button>
       </div>
 
@@ -114,7 +143,7 @@ export default function LearnPanel() {
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto p-4 min-h-0">
         {/* Step title */}
-        <h2 className="text-lg font-heading text-text-primary mb-3">{step.title}</h2>
+        <h2 className="text-lg font-heading text-text-primary mb-3">{displayStep.title}</h2>
 
         {/* Description via ReactMarkdown */}
         <div className="text-sm text-text-secondary leading-relaxed mb-4 tour-markdown">
@@ -150,7 +179,7 @@ export default function LearnPanel() {
               ),
             }}
           >
-            {step.description}
+            {displayStep.description}
           </ReactMarkdown>
         </div>
 
@@ -158,7 +187,7 @@ export default function LearnPanel() {
         {step.languageLesson && (
           <div className="bg-accent/5 border border-accent/20 rounded p-3 mb-4">
             <h4 className="text-[11px] font-semibold text-accent uppercase tracking-wider mb-1.5">
-              Language Lesson
+              {t.readingRoute.languageLesson}
             </h4>
             <p className="text-sm text-text-secondary leading-relaxed">
               {step.languageLesson}
@@ -170,7 +199,7 @@ export default function LearnPanel() {
         {step.nodeIds.length > 0 && (
           <div className="mb-4">
             <h4 className="text-[11px] font-semibold text-accent uppercase tracking-wider mb-2">
-              Referenced Components
+              {t.readingRoute.referencedItems}
             </h4>
             <div className="flex flex-wrap gap-1.5">
               {step.nodeIds.map((nodeId) => {
@@ -203,7 +232,7 @@ export default function LearnPanel() {
                   ? "bg-accent"
                   : "bg-elevated hover:bg-surface"
               }`}
-              aria-label={`Go to step ${i + 1}`}
+              aria-label={`${t.readingRoute.goToStep} ${i + 1}`}
             />
           ))}
         </div>

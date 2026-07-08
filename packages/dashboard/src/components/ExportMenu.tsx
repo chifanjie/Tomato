@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useDashboardStore } from "../store";
 import { useI18n } from "../contexts/I18nContext";
-import type { KnowledgeGraph } from "@understand-anything/core/types";
+import type { KnowledgeGraph } from "@understand-code/core/types";
 import { filterNodes, filterEdges } from "../utils/filters";
 
 function escapeXml(s: string): string {

@@ -1,5 +1,5 @@
 {
-  "name": "@understand-anything/skill",
+  "name": "@understand-code/skill",
   "version": "2.7.5",
   "type": "module",
   "main": "dist/index.js",
@@ -9,7 +9,7 @@
     "test": "node -e \"console.log('skill tests live at <repo-root>/tests/skill — run via root \\`pnpm test\\`')\""
   },
   "dependencies": {
-    "@understand-anything/core": "workspace:*",
+    "@understand-code/core": "workspace:*",
     "graphology": "~0.26.0",
     "graphology-communities-louvain": "^2.0.2"
   },

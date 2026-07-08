@@ -7,6 +7,7 @@ import LayerLegend from "./LayerLegend";
 import FilterPanel from "./FilterPanel";
 import ExportMenu from "./ExportMenu";
 import { ThemePicker } from "./ThemePicker";
+import { shouldShowGraphControls } from "../utils/viewModeControls";
 
 interface Props {
   open: boolean;
@@ -63,10 +64,14 @@ export default function MobileDrawer({
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      onClose();
     };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
+    document.addEventListener("keydown", handler, true);
+    return () => document.removeEventListener("keydown", handler, true);
   }, [open, onClose]);
 
   // Lock body scroll while open so the page behind doesn't drift
@@ -81,16 +86,18 @@ export default function MobileDrawer({
 
   const filterDefs = isKnowledgeGraph ? knowledgeFilters : structuralFilters;
   const showViewToggle = Boolean(graph && !isKnowledgeGraph && domainGraph);
+  const showGraphControls = shouldShowGraphControls({ viewMode, isKnowledgeGraph });
 
   return (
     <div
       className={`fixed inset-0 z-40 ${open ? "pointer-events-auto" : "pointer-events-none"}`}
       aria-hidden={!open}
+      inert={!open ? true : undefined}
     >
       {/* Backdrop */}
       <button
         type="button"
-        aria-label="Close menu"
+        aria-label={t.ariaLabels.closeMenu}
         onClick={onClose}
         className={`absolute inset-0 bg-black/65 backdrop-blur-sm transition-opacity duration-300 ${
           open ? "opacity-100" : "opacity-0"
@@ -103,7 +110,7 @@ export default function MobileDrawer({
           open ? "translate-x-0" : "-translate-x-full"
         }`}
         role="dialog"
-        aria-label="Settings"
+        aria-label={t.ariaLabels.settings}
       >
         {/* Drawer header */}
         <header className="flex items-center justify-between px-5 py-4 border-b border-border-subtle shrink-0">
@@ -118,7 +125,7 @@ export default function MobileDrawer({
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close menu"
+            aria-label={t.ariaLabels.closeMenu}
             className="w-9 h-9 flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-elevated transition-colors"
           >
             <svg
@@ -170,42 +177,46 @@ export default function MobileDrawer({
             </section>
           )}
 
-          <section>
-            <SectionLabel>{t.drawer.diffOverlay}</SectionLabel>
-            <DiffToggle />
-          </section>
+          {showGraphControls && (
+            <section>
+              <SectionLabel>{t.drawer.diffOverlay}</SectionLabel>
+              <DiffToggle />
+            </section>
+          )}
 
-          <section>
-            <SectionLabel>{t.drawer.nodeTypes}</SectionLabel>
-            <div className="flex flex-wrap gap-1.5">
-              {filterDefs.map((cat) => {
-                const active = nodeTypeFilters[cat.key] !== false;
-                return (
-                  <button
-                    key={cat.key}
-                    type="button"
-                    onClick={() => toggleNodeTypeFilter(cat.key)}
-                    className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded border transition-colors flex items-center gap-1.5 whitespace-nowrap ${
-                      active
-                        ? "border-border-medium bg-elevated text-text-secondary"
-                        : "border-transparent bg-transparent text-text-muted/40 line-through"
-                    }`}
-                  >
-                    <span
-                      className="w-2 h-2 rounded-full shrink-0"
-                      style={{
-                        backgroundColor: cat.color,
-                        opacity: active ? 1 : 0.3,
-                      }}
-                    />
-                    {cat.label}
-                  </button>
-                );
-              })}
-            </div>
-          </section>
+          {showGraphControls && (
+            <section>
+              <SectionLabel>{t.drawer.nodeTypes}</SectionLabel>
+              <div className="flex flex-wrap gap-1.5">
+                {filterDefs.map((cat) => {
+                  const active = nodeTypeFilters[cat.key] !== false;
+                  return (
+                    <button
+                      key={cat.key}
+                      type="button"
+                      onClick={() => toggleNodeTypeFilter(cat.key)}
+                      className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded border transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+                        active
+                          ? "border-border-medium bg-elevated text-text-secondary"
+                          : "border-transparent bg-transparent text-text-muted/40 line-through"
+                      }`}
+                    >
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{
+                          backgroundColor: cat.color,
+                          opacity: active ? 1 : 0.3,
+                        }}
+                      />
+                      {cat.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
-          {graph && (graph.layers?.length ?? 0) > 0 && (
+          {showGraphControls && graph && (graph.layers?.length ?? 0) > 0 && (
             <section>
               <SectionLabel>{t.drawer.layers}</SectionLabel>
               <div className="-mx-1">
@@ -217,26 +228,28 @@ export default function MobileDrawer({
           <section>
             <SectionLabel>{t.drawer.tools}</SectionLabel>
             <div className="flex flex-wrap items-center gap-2">
-              <FilterPanel />
+              {showGraphControls && <FilterPanel />}
               <ExportMenu />
-              <button
-                type="button"
-                onClick={() => {
-                  onTogglePathFinder();
-                  onClose();
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-elevated text-text-secondary hover:text-text-primary transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
-                  />
-                </svg>
-                {t.drawer.path}
-              </button>
+              {showGraphControls && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onTogglePathFinder();
+                    onClose();
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-elevated text-text-secondary hover:text-text-primary transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
+                    />
+                  </svg>
+                  {t.drawer.path}
+                </button>
+              )}
               <ThemePicker />
               <button
                 type="button"

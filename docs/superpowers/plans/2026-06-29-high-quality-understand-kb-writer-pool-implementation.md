@@ -181,7 +181,7 @@ Run:
 
 ```bash
 cd /Users/example/understand-code
-pnpm --filter @understand-anything/core exec vitest run src/knowledge-base/__tests__/queue.test.ts src/knowledge-base/__tests__/knowledge-base.test.ts
+pnpm --filter @understand-code/core exec vitest run src/knowledge-base/__tests__/queue.test.ts src/knowledge-base/__tests__/knowledge-base.test.ts
 ```
 
 Expected: FAIL because queue helpers, `tier`, and `requiredTopicCoverage` do not exist yet.
@@ -423,7 +423,7 @@ Run:
 
 ```bash
 cd /Users/example/understand-code
-pnpm --filter @understand-anything/core exec vitest run src/knowledge-base/__tests__/queue.test.ts
+pnpm --filter @understand-code/core exec vitest run src/knowledge-base/__tests__/queue.test.ts
 ```
 
 Expected: PASS.
@@ -531,7 +531,7 @@ Run:
 
 ```bash
 cd /Users/example/understand-code
-pnpm --filter @understand-anything/core exec vitest run src/knowledge-base/__tests__/knowledge-base.test.ts
+pnpm --filter @understand-code/core exec vitest run src/knowledge-base/__tests__/knowledge-base.test.ts
 ```
 
 Expected: PASS, including the new required-vs-extended topic assertions.
@@ -598,7 +598,7 @@ Run:
 
 ```bash
 cd /Users/example/understand-code
-pnpm --filter @understand-anything/core exec vitest run src/knowledge-base/__tests__/merge.test.ts
+pnpm --filter @understand-code/core exec vitest run src/knowledge-base/__tests__/merge.test.ts
 ```
 
 Expected: PASS.
@@ -761,7 +761,7 @@ Run:
 ```bash
 cd /Users/example/understand-code
 node --check skills/understand-kb/generate-knowledge-base.mjs
-pnpm --filter @understand-anything/core exec vitest run src/knowledge-base/__tests__/queue.test.ts src/knowledge-base/__tests__/knowledge-base.test.ts src/knowledge-base/__tests__/merge.test.ts
+pnpm --filter @understand-code/core exec vitest run src/knowledge-base/__tests__/queue.test.ts src/knowledge-base/__tests__/knowledge-base.test.ts src/knowledge-base/__tests__/merge.test.ts
 ```
 
 Expected: PASS.
@@ -769,9 +769,9 @@ Expected: PASS.
 Then do a temp-project queue smoke test:
 
 ```bash
-tmp=$(mktemp -d /tmp/ua-kb-queue.XXXXXX)
-mkdir -p "$tmp/.understand-anything"
-cp .understand-anything/knowledge-graph.json "$tmp/.understand-anything/knowledge-graph.json"
+tmp=$(mktemp -d /tmp/uc-kb-queue.XXXXXX)
+mkdir -p "$tmp/.understand-code"
+cp .understand-code/knowledge-graph.json "$tmp/.understand-code/knowledge-graph.json"
 node skills/understand-kb/generate-knowledge-base.mjs "$tmp" --prepare-file-docs
 node skills/understand-kb/generate-knowledge-base.mjs "$tmp" --lease-file-batch --worker-id file-writer-1
 rm -rf "$tmp"
@@ -895,7 +895,7 @@ git commit -m "feat: run understand-kb through a fixed writer pool"
 
 ```bash
 cd /Users/example/understand-code
-pnpm --filter @understand-anything/core exec vitest run src/knowledge-base/__tests__/queue.test.ts src/knowledge-base/__tests__/knowledge-base.test.ts src/knowledge-base/__tests__/merge.test.ts
+pnpm --filter @understand-code/core exec vitest run src/knowledge-base/__tests__/queue.test.ts src/knowledge-base/__tests__/knowledge-base.test.ts src/knowledge-base/__tests__/merge.test.ts
 ```
 
 Expected: PASS.
@@ -904,7 +904,7 @@ Expected: PASS.
 
 ```bash
 cd /Users/example/understand-code
-pnpm --filter @understand-anything/core test
+pnpm --filter @understand-code/core test
 ```
 
 Expected: PASS.
@@ -913,7 +913,7 @@ Expected: PASS.
 
 ```bash
 cd /Users/example/understand-code
-pnpm --filter @understand-anything/core build
+pnpm --filter @understand-code/core build
 ```
 
 Expected: PASS.
@@ -933,11 +933,11 @@ Run a temp smoke sequence:
 
 ```bash
 cd /Users/example/understand-code
-tmp=$(mktemp -d /tmp/ua-kb-final.XXXXXX)
-mkdir -p "$tmp/.understand-anything"
-cp .understand-anything/knowledge-graph.json "$tmp/.understand-anything/knowledge-graph.json"
+tmp=$(mktemp -d /tmp/uc-kb-final.XXXXXX)
+mkdir -p "$tmp/.understand-code"
+cp .understand-code/knowledge-graph.json "$tmp/.understand-code/knowledge-graph.json"
 node skills/understand-kb/generate-knowledge-base.mjs "$tmp" --prepare-file-docs
-test -f "$tmp/.understand-anything/knowledge-base/.intermediate/file-doc-queue.json"
+test -f "$tmp/.understand-code/knowledge-base/.intermediate/file-doc-queue.json"
 rm -rf "$tmp"
 ```
 

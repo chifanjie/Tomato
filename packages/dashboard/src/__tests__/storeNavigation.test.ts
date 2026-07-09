@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { KnowledgeGraph } from "@understand-code/core/types";
 import { useDashboardStore } from "../store";
-import { buildWikiIndex } from "../wiki/wikiIndex";
+import { buildWikiIndex, emptyWikiIndex } from "../wiki/wikiIndex";
 
 type PersonaModeStore = ReturnType<typeof useDashboardStore.getState> & {
   activatePersonaMode?: (persona: "non-technical" | "junior" | "experienced") => void;
@@ -126,6 +126,13 @@ describe("dashboard store readable navigation", () => {
 });
 
 describe("dashboard wiki and graph surface state", () => {
+  beforeEach(() => {
+    useDashboardStore.getState().setDashboardSurface("wiki");
+    useDashboardStore.getState().setWikiIndex(emptyWikiIndex());
+    useDashboardStore.getState().selectWikiPage(null);
+    useDashboardStore.getState().setGraphExplorerMode("global");
+  });
+
   it("defaults to wiki surface when wiki pages exist", () => {
     useDashboardStore.getState().setGraph(sampleGraph());
     useDashboardStore.getState().setWikiIndex(buildWikiIndex({
@@ -192,5 +199,97 @@ describe("dashboard wiki and graph surface state", () => {
     expect(useDashboardStore.getState().dashboardSurface).toBe("wiki");
     expect(useDashboardStore.getState().selectedNodeId).toBe("function:src/a.go:Build");
     expect(useDashboardStore.getState().activeWikiPageId).toBe("wiki:function-build");
+  });
+
+  it("preserves graph surface when wiki metadata reloads", () => {
+    useDashboardStore.getState().setGraph(sampleGraph());
+    useDashboardStore.getState().setDashboardSurface("graph");
+    useDashboardStore.getState().setWikiIndex(buildWikiIndex({
+      version: 1,
+      generatedAt: "2026-07-09T00:00:00.000Z",
+      projectName: "sample",
+      pages: [
+        {
+          id: "wiki:overview",
+          title: "Overview",
+          category: "overview",
+          summary: "Overview.",
+          markdownPath: "knowledge-base/README.md",
+          explainedNodeIds: ["file:src/a.go"],
+          relatedNodeIds: [],
+          evidenceIds: [],
+          coverage: "complete",
+          quality: "verified",
+        },
+      ],
+      evidence: [],
+      gaps: [],
+    }));
+
+    expect(useDashboardStore.getState().dashboardSurface).toBe("graph");
+    expect(useDashboardStore.getState().activeWikiPageId).toBe("wiki:overview");
+  });
+
+  it("does not activate a missing wiki page when opening graph", () => {
+    useDashboardStore.getState().setGraph(sampleGraph());
+    useDashboardStore.getState().setWikiIndex(buildWikiIndex({
+      version: 1,
+      generatedAt: "2026-07-09T00:00:00.000Z",
+      projectName: "sample",
+      pages: [
+        {
+          id: "wiki:overview",
+          title: "Overview",
+          category: "overview",
+          summary: "Overview.",
+          markdownPath: "knowledge-base/README.md",
+          explainedNodeIds: ["file:src/a.go"],
+          relatedNodeIds: [],
+          evidenceIds: [],
+          coverage: "complete",
+          quality: "verified",
+        },
+      ],
+      evidence: [],
+      gaps: [],
+    }));
+
+    useDashboardStore.getState().openGraphForWikiPage("missing");
+
+    expect(useDashboardStore.getState().dashboardSurface).toBe("graph");
+    expect(useDashboardStore.getState().activeWikiPageId).toBe("wiki:overview");
+    expect(useDashboardStore.getState().activeWikiPageId).not.toBe("missing");
+  });
+
+  it("clears active wiki page when wiki metadata becomes empty", () => {
+    useDashboardStore.getState().setGraph(sampleGraph());
+    useDashboardStore.getState().setWikiIndex(buildWikiIndex({
+      version: 1,
+      generatedAt: "2026-07-09T00:00:00.000Z",
+      projectName: "sample",
+      pages: [
+        {
+          id: "wiki:overview",
+          title: "Overview",
+          category: "overview",
+          summary: "Overview.",
+          markdownPath: "knowledge-base/README.md",
+          explainedNodeIds: ["file:src/a.go"],
+          relatedNodeIds: [],
+          evidenceIds: [],
+          coverage: "complete",
+          quality: "verified",
+        },
+      ],
+      evidence: [],
+      gaps: [],
+    }));
+    useDashboardStore.getState().setDashboardSurface("graph");
+
+    useDashboardStore.getState().setWikiIndex(emptyWikiIndex());
+
+    expect(useDashboardStore.getState().dashboardSurface).toBe("graph");
+    expect(useDashboardStore.getState().activeWikiPageId).toBeNull();
+    expect(useDashboardStore.getState().wikiIndex.pageCount).toBe(0);
   });
 });

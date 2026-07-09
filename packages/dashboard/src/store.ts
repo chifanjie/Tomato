@@ -400,7 +400,6 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
   setWikiIndex: (index) =>
     set((state) => ({
       wikiIndex: index,
-      dashboardSurface: index.pageCount > 0 ? "wiki" : state.dashboardSurface,
       activeWikiPageId:
         state.activeWikiPageId && index.pagesById.has(state.activeWikiPageId)
           ? state.activeWikiPageId
@@ -414,10 +413,11 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
   openGraphForWikiPage: (pageId) =>
     set((state) => {
       const page = state.wikiIndex.pagesById.get(pageId);
+      if (!page) return { dashboardSurface: "graph" };
       return {
         dashboardSurface: "graph",
         activeWikiPageId: pageId,
-        graphFocusNodeIds: page ? [...page.explainedNodeIds, ...page.relatedNodeIds] : [],
+        graphFocusNodeIds: [...page.explainedNodeIds, ...page.relatedNodeIds],
         graphExplorerMode: "semantic",
       };
     }),

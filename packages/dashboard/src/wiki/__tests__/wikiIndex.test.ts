@@ -93,7 +93,9 @@ describe("wikiIndex", () => {
   });
 
   it("groups pages into a stable navigation tree", () => {
-    const index = buildWikiIndex(payload());
+    const input = payload();
+    input.pages = [...input.pages].reverse();
+    const index = buildWikiIndex(input);
 
     expect(pageTree(index).map((section) => [section.category, section.pages.map((page) => page.id)])).toEqual([
       ["overview", ["wiki:overview"]],

@@ -413,7 +413,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
   openGraphForWikiPage: (pageId) =>
     set((state) => {
       const page = state.wikiIndex.pagesById.get(pageId);
-      if (!page) return { dashboardSurface: "graph" };
+      if (!page) return { dashboardSurface: "graph", graphFocusNodeIds: [] };
       return {
         dashboardSurface: "graph",
         activeWikiPageId: pageId,

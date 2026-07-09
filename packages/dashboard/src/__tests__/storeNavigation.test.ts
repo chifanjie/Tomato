@@ -261,6 +261,44 @@ describe("dashboard wiki and graph surface state", () => {
     expect(useDashboardStore.getState().activeWikiPageId).not.toBe("missing");
   });
 
+  it("clears stale graph focus when opening graph for a missing wiki page", () => {
+    useDashboardStore.getState().setGraph(sampleGraph());
+    useDashboardStore.getState().setWikiIndex(buildWikiIndex({
+      version: 1,
+      generatedAt: "2026-07-09T00:00:00.000Z",
+      projectName: "sample",
+      pages: [
+        {
+          id: "wiki:function-build",
+          title: "Build Function",
+          category: "symbol",
+          summary: "Build docs.",
+          markdownPath: "knowledge-base/functions/Build.md",
+          explainedNodeIds: ["function:src/a.go:Build"],
+          relatedNodeIds: ["file:src/a.go"],
+          evidenceIds: [],
+          coverage: "partial",
+          quality: "generated",
+        },
+      ],
+      evidence: [],
+      gaps: [],
+    }));
+
+    useDashboardStore.getState().openGraphForWikiPage("wiki:function-build");
+    expect(useDashboardStore.getState().graphFocusNodeIds).toEqual([
+      "function:src/a.go:Build",
+      "file:src/a.go",
+    ]);
+
+    useDashboardStore.getState().openGraphForWikiPage("missing");
+
+    expect(useDashboardStore.getState().dashboardSurface).toBe("graph");
+    expect(useDashboardStore.getState().activeWikiPageId).toBe("wiki:function-build");
+    expect(useDashboardStore.getState().activeWikiPageId).not.toBe("missing");
+    expect(useDashboardStore.getState().graphFocusNodeIds).toEqual([]);
+  });
+
   it("clears active wiki page when wiki metadata becomes empty", () => {
     useDashboardStore.getState().setGraph(sampleGraph());
     useDashboardStore.getState().setWikiIndex(buildWikiIndex({

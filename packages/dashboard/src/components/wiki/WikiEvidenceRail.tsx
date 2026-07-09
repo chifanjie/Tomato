@@ -8,8 +8,10 @@ interface WikiEvidenceRailProps {
 }
 
 export default function WikiEvidenceRail({ page, evidence, graphNodeIds, onOpenGraph }: WikiEvidenceRailProps) {
+  const hasGraphNodes = graphNodeIds.length > 0;
+
   return (
-    <aside className="flex h-full w-[340px] shrink-0 flex-col border-l border-border-subtle bg-surface">
+    <aside className="flex h-full w-[340px] shrink-0 flex-col border-l border-border-subtle bg-surface max-lg:h-auto max-lg:w-full max-lg:border-l-0 max-lg:border-t">
       <header className="border-b border-border-subtle px-4 py-4">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">Evidence</p>
         <h2 className="mt-1 text-base font-semibold text-text-primary">Wiki and Graph Links</h2>
@@ -20,18 +22,23 @@ export default function WikiEvidenceRail({ page, evidence, graphNodeIds, onOpenG
             <button
               type="button"
               onClick={() => onOpenGraph(page.id)}
-              className="w-full rounded-md border border-accent/35 bg-accent/10 px-3 py-2 text-sm font-semibold text-accent transition-colors hover:bg-accent/15"
+              disabled={!hasGraphNodes}
+              className="w-full rounded-md border border-accent/35 bg-accent/10 px-3 py-2 text-sm font-semibold text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:border-border-subtle disabled:bg-elevated/30 disabled:text-text-muted"
             >
-              Open full graph for this page
+              {hasGraphNodes ? "Open full graph for this page" : "No graph nodes available"}
             </button>
             <section className="rounded-md border border-border-subtle bg-elevated/30 p-3">
               <h3 className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">Graph Nodes</h3>
               <div className="mt-3 space-y-2">
-                {graphNodeIds.map((nodeId) => (
-                  <div key={nodeId} className="break-all rounded border border-border-subtle bg-surface px-2 py-2 font-mono text-[11px] text-text-secondary">
-                    {nodeId}
-                  </div>
-                ))}
+                {hasGraphNodes ? (
+                  graphNodeIds.map((nodeId) => (
+                    <div key={nodeId} className="break-all rounded border border-border-subtle bg-surface px-2 py-2 font-mono text-[11px] text-text-secondary">
+                      {nodeId}
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-text-muted">This page does not have graph node metadata yet.</p>
+                )}
               </div>
             </section>
             <section className="rounded-md border border-border-subtle bg-elevated/30 p-3">

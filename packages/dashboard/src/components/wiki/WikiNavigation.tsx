@@ -4,12 +4,13 @@ interface WikiNavigationProps {
   projectName: string;
   sections: WikiTreeSection[];
   activePageId: string | null;
+  emptyReason: string | null;
   onSelectPage: (pageId: string) => void;
 }
 
-export default function WikiNavigation({ projectName, sections, activePageId, onSelectPage }: WikiNavigationProps) {
+export default function WikiNavigation({ projectName, sections, activePageId, emptyReason, onSelectPage }: WikiNavigationProps) {
   return (
-    <nav aria-label="Wiki navigation" className="flex h-full w-[280px] shrink-0 flex-col border-r border-border-subtle bg-surface">
+    <nav aria-label="Wiki navigation" className="flex h-full w-[280px] shrink-0 flex-col border-r border-border-subtle bg-surface max-lg:h-auto max-lg:w-full max-lg:border-b max-lg:border-r-0">
       <div className="border-b border-border-subtle px-4 py-4">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">Knowledge Base</p>
         <h2 className="mt-1 truncate text-base font-semibold text-text-primary">{projectName}</h2>
@@ -17,7 +18,7 @@ export default function WikiNavigation({ projectName, sections, activePageId, on
       <div className="min-h-0 flex-1 overflow-auto px-3 py-3">
         {sections.length === 0 ? (
           <p className="rounded-md border border-border-subtle bg-elevated/35 p-3 text-sm text-text-muted">
-            No generated wiki metadata is available yet.
+            {emptyReason ?? "No generated wiki metadata is available yet."}
           </p>
         ) : (
           <div className="space-y-5">

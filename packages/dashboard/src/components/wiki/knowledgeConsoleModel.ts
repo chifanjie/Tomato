@@ -28,7 +28,7 @@ export function buildKnowledgeConsoleView(
 ): KnowledgeConsoleView {
   const activePage = activePageFor(index, activePageId);
   const graphNodeIds = activePage
-    ? [...activePage.explainedNodeIds, ...activePage.relatedNodeIds]
+    ? [...new Set([...activePage.explainedNodeIds, ...activePage.relatedNodeIds])]
     : [];
   return {
     activePage,

@@ -12,14 +12,15 @@ export default function KnowledgeConsole() {
   const view = buildKnowledgeConsoleView(wikiIndex, activeWikiPageId);
 
   return (
-    <div className="flex min-h-0 flex-1 overflow-hidden bg-root text-text-primary">
+    <div className="flex min-h-0 flex-1 overflow-hidden bg-root text-text-primary max-lg:flex-col max-lg:overflow-auto">
       <WikiNavigation
         projectName={wikiIndex.payload?.projectName ?? "Repository"}
         sections={view.sections}
         activePageId={view.activePage?.id ?? activeWikiPageId}
+        emptyReason={view.emptyReason}
         onSelectPage={selectWikiPage}
       />
-      <WikiPageView page={view.activePage} />
+      <WikiPageView page={view.activePage} emptyReason={view.emptyReason} />
       <WikiEvidenceRail
         page={view.activePage}
         evidence={view.evidence}

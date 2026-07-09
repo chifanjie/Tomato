@@ -71,6 +71,38 @@ describe("knowledgeConsoleModel", () => {
     expect(view.activePage?.id).toBe("wiki:first");
   });
 
+  it("deduplicates graph node ids shared by explained and related links", () => {
+    const index = buildWikiIndex({
+      version: 1,
+      generatedAt: "2026-07-09T00:00:00.000Z",
+      projectName: "sample",
+      pages: [
+        {
+          id: "wiki:shared",
+          title: "Shared Node",
+          category: "module",
+          summary: "Shared graph link.",
+          markdownPath: "knowledge-base/shared.md",
+          explainedNodeIds: ["file:src/a.go", "function:src/a.go:Build"],
+          relatedNodeIds: ["function:src/a.go:Build", "function:src/a.go:Test"],
+          evidenceIds: [],
+          coverage: "complete",
+          quality: "verified",
+        },
+      ],
+      evidence: [],
+      gaps: [],
+    });
+
+    const view = buildKnowledgeConsoleView(index, "wiki:shared");
+
+    expect(view.graphNodeIds).toEqual([
+      "file:src/a.go",
+      "function:src/a.go:Build",
+      "function:src/a.go:Test",
+    ]);
+  });
+
   it("returns an empty-state view when no wiki pages exist", () => {
     const view = buildKnowledgeConsoleView(buildWikiIndex(null), null);
 

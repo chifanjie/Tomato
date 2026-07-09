@@ -70,7 +70,7 @@ function graph(): KnowledgeGraph {
       { source: "schema:recognition_event", target: "table:recognition_events", type: "defines_schema", direction: "forward", weight: 0.9 },
       { source: "pipeline:recognition-events", target: "resource:kafka:recognition-events", type: "publishes", direction: "forward", weight: 0.7 },
       { source: "document:runbook", target: "function:productline/service.go:Recognise", type: "documents", direction: "forward", weight: 0.4 },
-      { source: "function:productline/service.go:Recognise", target: "file:shared/rate_limit.go", type: "calls", direction: "forward", weight: 0.7 },
+      { source: "function:productline/service.go:Recognise", target: "file:shared/rate_limit.go", type: "calls", direction: "forward", description: "Uses rate limit guard.", weight: 0.7 },
       { source: "function:productline/service.go:Recognise", target: "file:shared/rate_limit.go", type: "depends_on", direction: "forward", weight: 0.5 },
       { source: "function:productline/service.go:Recognise", target: "file:shared/rate_limit.go", type: "reads_from", direction: "backward", weight: 0.3 },
     ],
@@ -153,6 +153,29 @@ function nodeIdsFor(mode: GraphExplorerMode, focusNodeIds: string[] = []): strin
 }
 
 describe("semanticGraph", () => {
+  it("exports a semantic graph model builder that works without wiki metadata", async () => {
+    const module = await import("../semanticGraph");
+    const buildSemanticGraphModel = (module as Record<string, unknown>).buildSemanticGraphModel as typeof buildSemanticGraph;
+    const semantic = buildSemanticGraphModel({
+      graph: graph(),
+      mode: "global",
+      focusNodeIds: [],
+    });
+    const domain = semantic.nodes.find((node) => node.id === "domain:commerce");
+
+    expect(buildSemanticGraphModel).toBe(buildSemanticGraph);
+    expect(semantic.nodes.map((node) => node.id)).toEqual(allNodeIds);
+    expect(domain?.coverage.status).toBe("unknown");
+    expect(domain?.wikiPageIds).toEqual([]);
+    expect(domain?.evidenceIds).toEqual([]);
+    expect(domain?.docs).toMatchObject({
+      coverageStatus: "unknown",
+      pageIds: [],
+      evidenceIds: [],
+      gapIds: [],
+    });
+  });
+
   it("groups nodes by readable semantic level", () => {
     expect(semanticGroupForNode(graph().nodes[0])).toBe("capability");
     expect(semanticGroupForNode(graph().nodes[1])).toBe("flow");
@@ -165,6 +188,7 @@ describe("semanticGraph", () => {
 
   it("keeps exact global, semantic, architecture, call, coverage, and evidence node sets", () => {
     expect(nodeIdsFor("global")).toEqual(allNodeIds);
+    expect(nodeIdsFor("focus")).toEqual(allNodeIds);
     expect(nodeIdsFor("semantic")).toEqual([
       "domain:commerce",
       "flow:recognition",
@@ -266,6 +290,50 @@ describe("semanticGraph", () => {
     expect(domain?.evidenceIds).toEqual(["evidence:architecture"]);
   });
 
+  it("exposes rendering-oriented category, cluster, importance, and docs metadata", () => {
+    const semantic = buildSemanticGraph({
+      graph: graph(),
+      wikiIndex,
+      mode: "global",
+      focusNodeIds: [],
+    });
+    const domain = semantic.nodes.find((node) => node.id === "domain:commerce");
+    const recognise = semantic.nodes.find((node) => node.id === "function:productline/service.go:Recognise");
+    const gap = semantic.nodes.find((node) => node.id === "file:shared/rate_limit.go");
+
+    expect(domain).toMatchObject({
+      category: "capability",
+      cluster: "capability",
+      importance: 1,
+      docs: {
+        coverageStatus: "complete",
+        primaryPageId: "wiki:architecture",
+        pageIds: ["wiki:architecture"],
+        evidenceIds: ["evidence:architecture"],
+        gapIds: [],
+      },
+    });
+    expect(domain?.docs.pages[0]).toMatchObject({
+      id: "wiki:architecture",
+      title: "Architecture",
+      markdownPath: "knowledge-base/architecture.md",
+    });
+    expect(domain?.docs.evidence[0]).toMatchObject({
+      id: "evidence:architecture",
+      label: "Architecture evidence",
+    });
+    expect(recognise).toMatchObject({
+      category: "symbol",
+      cluster: "productline",
+      importance: 0.45,
+    });
+    expect(gap?.docs).toMatchObject({
+      coverageStatus: "gap",
+      pageIds: [],
+      gapIds: ["gap:rate-limit"],
+    });
+  });
+
   it("bundles multiple edge types between the same pair and preserves directions", () => {
     const semantic = buildSemanticGraph({
       graph: graph(),
@@ -284,6 +352,55 @@ describe("semanticGraph", () => {
       edgeTypes: ["calls", "depends_on", "reads_from"],
       directions: ["forward", "backward"],
     });
+    expect(bundled?.members).toEqual([
+      {
+        id: expect.any(String),
+        source: "function:productline/service.go:Recognise",
+        target: "file:shared/rate_limit.go",
+        type: "calls",
+        direction: "forward",
+        weight: 0.7,
+        description: "Uses rate limit guard.",
+      },
+      {
+        id: expect.any(String),
+        source: "function:productline/service.go:Recognise",
+        target: "file:shared/rate_limit.go",
+        type: "depends_on",
+        direction: "forward",
+        weight: 0.5,
+      },
+      {
+        id: expect.any(String),
+        source: "function:productline/service.go:Recognise",
+        target: "file:shared/rate_limit.go",
+        type: "reads_from",
+        direction: "backward",
+        weight: 0.3,
+      },
+    ]);
+  });
+
+  it("focus mode keeps focused nodes and directly connected neighbors", () => {
+    expect(nodeIdsFor("focus", ["function:productline/service.go:Recognise"])).toEqual([
+      "file:productline/service.go",
+      "document:runbook",
+      "function:productline/service.go:Recognise",
+      "file:shared/rate_limit.go",
+    ]);
+
+    const semantic = buildSemanticGraph({
+      graph: graph(),
+      wikiIndex,
+      mode: "focus",
+      focusNodeIds: ["function:productline/service.go:Recognise"],
+    });
+
+    expect(semantic.edges.map((edge) => edge.id)).toEqual([
+      "file:productline/service.go->function:productline/service.go:Recognise",
+      "document:runbook->function:productline/service.go:Recognise",
+      "function:productline/service.go:Recognise->file:shared/rate_limit.go",
+    ]);
   });
 
   it("keeps focused nodes even when the current mode would normally filter them out", () => {

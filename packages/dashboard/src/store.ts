@@ -398,13 +398,24 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
   setDashboardSurface: (surface) => set({ dashboardSurface: surface }),
 
   setWikiIndex: (index) =>
-    set((state) => ({
-      wikiIndex: index,
-      activeWikiPageId:
-        state.activeWikiPageId && index.pagesById.has(state.activeWikiPageId)
-          ? state.activeWikiPageId
-          : index.pages[0]?.id ?? null,
-    })),
+    set((state) => {
+      const preservedPage = state.activeWikiPageId
+        ? index.pagesById.get(state.activeWikiPageId) ?? null
+        : null;
+      const activePage = preservedPage ?? index.pages[0] ?? null;
+      const hadWikiGraphFocus = Boolean(state.activeWikiPageId && state.graphFocusNodeIds.length > 0);
+      return {
+        wikiIndex: index,
+        activeWikiPageId: activePage?.id ?? null,
+        ...(hadWikiGraphFocus || !activePage
+          ? {
+              graphFocusNodeIds: activePage
+                ? [...activePage.explainedNodeIds, ...activePage.relatedNodeIds]
+                : [],
+            }
+          : {}),
+      };
+    }),
 
   selectWikiPage: (pageId) => set({ activeWikiPageId: pageId }),
 

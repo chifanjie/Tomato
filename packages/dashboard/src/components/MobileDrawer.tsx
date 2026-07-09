@@ -39,6 +39,7 @@ export default function MobileDrawer({
   onShowKeyboardHelp,
 }: Props) {
   const graph = useDashboardStore((s) => s.graph);
+  const dashboardSurface = useDashboardStore((s) => s.dashboardSurface);
   const isKnowledgeGraph = useDashboardStore((s) => s.isKnowledgeGraph);
   const domainGraph = useDashboardStore((s) => s.domainGraph);
   const viewMode = useDashboardStore((s) => s.viewMode);
@@ -85,8 +86,10 @@ export default function MobileDrawer({
   }, [open]);
 
   const filterDefs = isKnowledgeGraph ? knowledgeFilters : structuralFilters;
-  const showViewToggle = Boolean(graph && !isKnowledgeGraph && domainGraph);
-  const showGraphControls = shouldShowGraphControls({ viewMode, isKnowledgeGraph });
+  const isPeerDashboardSurface = dashboardSurface === "wiki" || dashboardSurface === "graph";
+  const showViewToggle = !isPeerDashboardSurface && Boolean(graph && !isKnowledgeGraph && domainGraph);
+  const showGraphControls =
+    !isPeerDashboardSurface && shouldShowGraphControls({ viewMode, isKnowledgeGraph });
 
   return (
     <div

@@ -6,6 +6,8 @@ import DomainGraphView from "./DomainGraphView";
 import KnowledgeGraphView from "./KnowledgeGraphView";
 import FunctionDetailPage from "./FunctionDetailPage";
 import ReadableViewGraphPage from "./ReadableViewGraphPage";
+import KnowledgeConsole from "./wiki/KnowledgeConsole";
+import GraphExplorer from "./graphExplorer/GraphExplorer";
 import SearchBar from "./SearchBar";
 import NodeInfo from "./NodeInfo";
 import ProjectOverview from "./ProjectOverview";
@@ -29,6 +31,10 @@ interface Props {
   shortcuts: import("../hooks/useKeyboardShortcuts").KeyboardShortcut[];
 }
 
+export function mobilePrimarySurfaceLabel(surface: "wiki" | "graph"): string {
+  return surface === "wiki" ? "Wiki" : "Graph";
+}
+
 export default function MobileLayout({
   accessToken,
   showKeyboardHelp,
@@ -38,6 +44,8 @@ export default function MobileLayout({
   shortcuts,
 }: Props) {
   const graph = useDashboardStore((s) => s.graph);
+  const dashboardSurface = useDashboardStore((s) => s.dashboardSurface);
+  const setDashboardSurface = useDashboardStore((s) => s.setDashboardSurface);
   const selectedNodeId = useDashboardStore((s) => s.selectedNodeId);
   const tourActive = useDashboardStore((s) => s.tourActive);
   const persona = useDashboardStore((s) => s.persona);
@@ -54,6 +62,12 @@ export default function MobileLayout({
   const [activeTab, setActiveTab] = useState<MobileTab>("graph");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const primaryTabLabel = mobilePrimarySurfaceLabel(dashboardSurface);
+
+  const switchDashboardSurface = (surface: "wiki" | "graph") => {
+    setDashboardSurface(surface);
+    setActiveTab("graph");
+  };
 
   // Auto-pivot to Info when a node is selected — keeps feedback visible
   // on a small screen where the graph and sidebar can't coexist.
@@ -142,6 +156,33 @@ export default function MobileLayout({
         </button>
       </header>
 
+      <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle bg-surface px-3 py-2">
+        <div className="grid flex-1 grid-cols-2 rounded-md border border-border-subtle bg-elevated p-0.5">
+          <button
+            type="button"
+            onClick={() => switchDashboardSurface("wiki")}
+            className={`rounded px-3 py-1.5 text-xs font-semibold transition-colors ${
+              dashboardSurface === "wiki"
+                ? "bg-accent/15 text-accent"
+                : "text-text-muted hover:text-text-secondary"
+            }`}
+          >
+            Wiki
+          </button>
+          <button
+            type="button"
+            onClick={() => switchDashboardSurface("graph")}
+            className={`rounded px-3 py-1.5 text-xs font-semibold transition-colors ${
+              dashboardSurface === "graph"
+                ? "bg-accent/15 text-accent"
+                : "text-text-muted hover:text-text-secondary"
+            }`}
+          >
+            Graph
+          </button>
+        </div>
+      </div>
+
       {/* Search (collapsible) */}
       {searchOpen && <SearchBar />}
 
@@ -163,7 +204,11 @@ export default function MobileLayout({
           }`}
           aria-hidden={activeTab !== "graph"}
         >
-          {viewMode === "knowledge" ? (
+          {dashboardSurface === "wiki" ? (
+            <KnowledgeConsole />
+          ) : dashboardSurface === "graph" ? (
+            <GraphExplorer />
+          ) : viewMode === "knowledge" ? (
             <KnowledgeGraphView />
           ) : viewMode === "domain" && domainGraph ? (
             <DomainGraphView />
@@ -194,7 +239,7 @@ export default function MobileLayout({
       </div>
 
       {/* Bottom tab nav */}
-      <MobileBottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+      <MobileBottomNav activeTab={activeTab} onTabChange={setActiveTab} primaryLabel={primaryTabLabel} />
 
       {/* Drawer */}
       <MobileDrawer

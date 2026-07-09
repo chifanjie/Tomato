@@ -6,6 +6,7 @@ export type MobileTab = "graph" | "info" | "files";
 interface Props {
   activeTab: MobileTab;
   onTabChange: (tab: MobileTab) => void;
+  primaryLabel?: string;
 }
 
 const tabIcons: Record<MobileTab, ReactNode> = {
@@ -36,10 +37,10 @@ const tabIcons: Record<MobileTab, ReactNode> = {
 
 const tabOrder: MobileTab[] = ["graph", "info", "files"];
 
-export default function MobileBottomNav({ activeTab, onTabChange }: Props) {
+export default function MobileBottomNav({ activeTab, onTabChange, primaryLabel }: Props) {
   const { t } = useI18n();
   const labels: Record<MobileTab, string> = {
-    graph: t.mobile.graph,
+    graph: primaryLabel ?? t.mobile.graph,
     info: t.mobile.info,
     files: t.mobile.files,
   };

@@ -17,7 +17,7 @@ export default function WikiNavigation({ projectName, sections, activePageId, em
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-3 py-3">
         {sections.length === 0 ? (
-          <p className="rounded-md border border-border-subtle bg-elevated/35 p-3 text-sm text-text-muted">
+          <p className="uc-panel-muted p-3 text-sm text-text-muted">
             {emptyReason ?? "No generated wiki metadata is available yet."}
           </p>
         ) : (
@@ -31,6 +31,7 @@ export default function WikiNavigation({ projectName, sections, activePageId, em
                       key={page.id}
                       type="button"
                       onClick={() => onSelectPage(page.id)}
+                      aria-current={activePageId === page.id ? "page" : undefined}
                       className={`block w-full rounded-md px-2 py-2 text-left text-sm transition-colors ${
                         activePageId === page.id
                           ? "bg-accent/12 text-text-primary"

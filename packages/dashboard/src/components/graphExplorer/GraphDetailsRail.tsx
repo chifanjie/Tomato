@@ -37,7 +37,7 @@ export default function GraphDetailsRail({ view }: GraphDetailsRailProps) {
       <div className="min-h-0 flex-1 space-y-4 overflow-auto px-4 py-4 max-xl:flex-none max-xl:overflow-visible">
         {hiddenNode ? (
           <>
-            <section className="rounded-md border border-border-subtle bg-elevated/30 p-3">
+            <section className="uc-panel-muted p-3">
               <h3 className="text-[10px] font-semibold uppercase text-text-muted">Hidden Selection</h3>
               <p className="mt-2 text-sm leading-6 text-text-secondary">
                 {hiddenNode.name} is selected, but the current graph mode does not include it on the canvas.
@@ -51,7 +51,7 @@ export default function GraphDetailsRail({ view }: GraphDetailsRailProps) {
                 {hiddenNode.filePath && (
                   <div>
                     <dt className="text-text-muted">Path</dt>
-                    <dd className="mt-0.5 break-all font-mono text-[11px] text-text-primary">{hiddenNode.filePath}</dd>
+                    <dd className="uc-code-ref mt-0.5 text-text-primary">{hiddenNode.filePath}</dd>
                   </div>
                 )}
                 {hiddenLineRange && (
@@ -62,12 +62,12 @@ export default function GraphDetailsRail({ view }: GraphDetailsRailProps) {
                 )}
                 <div>
                   <dt className="text-text-muted">ID</dt>
-                  <dd className="mt-0.5 break-all font-mono text-[11px] text-text-primary">{hiddenNode.id}</dd>
+                  <dd className="uc-code-ref mt-0.5 text-text-primary">{hiddenNode.id}</dd>
                 </div>
               </dl>
             </section>
 
-            <section className="rounded-md border border-border-subtle bg-elevated/30 p-3">
+            <section className="uc-panel-muted p-3">
               <h3 className="text-[10px] font-semibold uppercase text-text-muted">Linked Wiki</h3>
               {view.canOpenWiki && (
                 <button
@@ -86,7 +86,7 @@ export default function GraphDetailsRail({ view }: GraphDetailsRailProps) {
                     <div key={page.id} className="border-t border-border-subtle pt-2 first:border-t-0 first:pt-0">
                       <p className="text-sm font-medium text-text-primary">{page.title}</p>
                       <p className="mt-1 text-xs leading-5 text-text-muted">{page.summary}</p>
-                      <p className="mt-1 break-all font-mono text-[11px] text-text-muted">{page.markdownPath}</p>
+                      <p className="uc-code-ref mt-1">{page.markdownPath}</p>
                     </div>
                   ))
                 )}
@@ -94,12 +94,12 @@ export default function GraphDetailsRail({ view }: GraphDetailsRailProps) {
             </section>
           </>
         ) : !node ? (
-          <p className="rounded-md border border-border-subtle bg-elevated/35 p-3 text-sm leading-6 text-text-muted">
+          <p className="uc-panel-muted p-3 text-sm leading-6 text-text-muted">
             Select a graph node to inspect wiki coverage, related pages, evidence, and gaps.
           </p>
         ) : (
           <>
-            <section className="rounded-md border border-border-subtle bg-elevated/30 p-3">
+            <section className="uc-panel-muted p-3">
               <h3 className="text-[10px] font-semibold uppercase text-text-muted">Node</h3>
               <p className="mt-2 text-sm leading-6 text-text-secondary">{node.summary || "No summary available."}</p>
               <dl className="mt-3 grid gap-2 text-xs">
@@ -116,7 +116,7 @@ export default function GraphDetailsRail({ view }: GraphDetailsRailProps) {
                 {node.filePath && (
                   <div>
                     <dt className="text-text-muted">Path</dt>
-                    <dd className="mt-0.5 break-all font-mono text-[11px] text-text-primary">{node.filePath}</dd>
+                    <dd className="uc-code-ref mt-0.5 text-text-primary">{node.filePath}</dd>
                   </div>
                 )}
                 {lineRange && (
@@ -127,12 +127,12 @@ export default function GraphDetailsRail({ view }: GraphDetailsRailProps) {
                 )}
                 <div>
                   <dt className="text-text-muted">ID</dt>
-                  <dd className="mt-0.5 break-all font-mono text-[11px] text-text-primary">{node.id}</dd>
+                  <dd className="uc-code-ref mt-0.5 text-text-primary">{node.id}</dd>
                 </div>
               </dl>
             </section>
 
-            <section className="rounded-md border border-border-subtle bg-elevated/30 p-3">
+            <section className="uc-panel-muted p-3">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-[10px] font-semibold uppercase text-text-muted">Wiki Coverage</h3>
                 <span className="rounded border border-border-subtle px-2 py-1 text-[11px] font-medium text-text-secondary">
@@ -156,14 +156,14 @@ export default function GraphDetailsRail({ view }: GraphDetailsRailProps) {
                     <div key={page.id} className="border-t border-border-subtle pt-2 first:border-t-0 first:pt-0">
                       <p className="text-sm font-medium text-text-primary">{page.title}</p>
                       <p className="mt-1 text-xs leading-5 text-text-muted">{page.summary}</p>
-                      <p className="mt-1 break-all font-mono text-[11px] text-text-muted">{page.markdownPath}</p>
+                      <p className="uc-code-ref mt-1">{page.markdownPath}</p>
                     </div>
                   ))
                 )}
               </div>
             </section>
 
-            <section className="rounded-md border border-border-subtle bg-elevated/30 p-3">
+            <section className="uc-panel-muted p-3">
               <h3 className="text-[10px] font-semibold uppercase text-text-muted">Evidence</h3>
               {evidence.length === 0 ? (
                 <p className="mt-2 text-sm text-text-muted">No evidence records linked.</p>
@@ -173,7 +173,7 @@ export default function GraphDetailsRail({ view }: GraphDetailsRailProps) {
                     <li key={item.id}>
                       <p className="text-sm font-medium text-text-primary">{item.label}</p>
                       {item.filePath && (
-                        <p className="mt-1 break-all font-mono text-[11px] text-text-muted">
+                        <p className="uc-code-ref mt-1">
                           {item.filePath}
                           {item.lineRange ? `:${item.lineRange[0]}-${item.lineRange[1]}` : ""}
                         </p>
@@ -184,7 +184,7 @@ export default function GraphDetailsRail({ view }: GraphDetailsRailProps) {
               )}
             </section>
 
-            <section className="rounded-md border border-border-subtle bg-elevated/30 p-3">
+            <section className="uc-panel-muted p-3">
               <h3 className="text-[10px] font-semibold uppercase text-text-muted">Gaps</h3>
               {gaps.length === 0 ? (
                 <p className="mt-2 text-sm text-text-muted">No known documentation gaps.</p>

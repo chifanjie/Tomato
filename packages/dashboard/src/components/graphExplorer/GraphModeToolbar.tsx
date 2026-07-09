@@ -33,7 +33,7 @@ function focusTitle(focusNodeCount: number): string {
 
 export default function GraphModeToolbar({ mode, focusNodeCount, onChangeMode }: GraphModeToolbarProps) {
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-1 rounded-md border border-border-subtle bg-surface p-1">
+    <div className="uc-panel flex min-w-0 flex-wrap items-center gap-1 p-1">
       {MODE_ORDER.map((item) => {
         const isActive = item === mode;
         const isFocus = item === "focus";

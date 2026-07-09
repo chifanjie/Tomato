@@ -242,8 +242,8 @@ export default function SemanticGraphCanvas({ semanticGraph }: SemanticGraphCanv
 
   if (semanticGraph.nodes.length === 0) {
     return (
-      <div className="flex min-h-[420px] flex-1 items-center justify-center overflow-hidden rounded-md border border-border-subtle bg-root">
-        <p className="rounded-md border border-border-subtle bg-surface px-4 py-3 text-sm text-text-muted">
+      <div className="uc-graph-frame flex min-h-[420px] flex-1 items-center justify-center overflow-hidden">
+        <p className="uc-panel px-4 py-3 text-sm text-text-muted">
           No graph nodes match this view.
         </p>
       </div>
@@ -251,7 +251,7 @@ export default function SemanticGraphCanvas({ semanticGraph }: SemanticGraphCanv
   }
 
   return (
-    <div className="min-h-[420px] flex-1 overflow-hidden rounded-md border border-border-subtle bg-root">
+    <div className="uc-graph-frame min-h-[420px] flex-1 overflow-hidden">
       <ReactFlow
         nodes={nodes}
         edges={edges}

@@ -214,6 +214,51 @@ body {
   transition: opacity 0.3s ease, filter 0.3s ease;
 }
 
+.uc-doc-surface {
+  background: color-mix(in srgb, var(--color-root) 94%, white 6%);
+}
+
+.uc-panel {
+  background: color-mix(in srgb, var(--color-surface) 92%, white 8%);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 6px;
+}
+
+.uc-panel-muted {
+  background: color-mix(in srgb, var(--color-elevated) 86%, transparent 14%);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 6px;
+}
+
+.uc-graph-frame {
+  background:
+    radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--color-accent) 10%, transparent 90%), transparent 34%),
+    var(--color-root);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 6px;
+}
+
+.uc-code-ref {
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--color-text-muted);
+}
+
+.uc-readable-prose {
+  color: var(--color-text-secondary);
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.uc-readable-prose h2 {
+  margin-top: 2rem;
+  color: var(--color-text-primary);
+  font-size: 1.125rem;
+  font-weight: 650;
+}
+
 /* Hide scrollbar but keep scroll functionality */
 .scrollbar-hide {
   -ms-overflow-style: none;

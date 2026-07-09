@@ -31,7 +31,7 @@ export default function GraphExplorer() {
   if (!graph || !view) {
     return (
       <section aria-label="Full graph explorer" className="flex min-h-0 flex-1 items-center justify-center bg-root">
-        <p className="rounded-md border border-border-subtle bg-surface p-4 text-sm text-text-muted">
+        <p className="uc-panel p-4 text-sm text-text-muted">
           No graph has been loaded.
         </p>
       </section>

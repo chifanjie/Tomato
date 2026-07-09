@@ -1,8 +1,14 @@
 import type { GraphEdge, GraphNode, KnowledgeGraph } from "@understand-code/core/types";
-import { coverageForNode, pagesForNode, type WikiCoverageResult, type WikiIndex } from "../wiki/wikiIndex";
+import {
+  coverageForNode,
+  evidenceForPage,
+  pagesForNode,
+  type WikiCoverageResult,
+  type WikiIndex,
+} from "../wiki/wikiIndex";
 
 export type GraphExplorerMode = "global" | "semantic" | "architecture" | "call" | "coverage" | "evidence";
-export type SemanticNodeGroup = "capability" | "flow" | "module" | "file" | "symbol" | "document" | "data" | "other";
+export type SemanticNodeGroup = "capability" | "flow" | "module" | "file" | "symbol" | "document" | "data" | "infra" | "other";
 
 export interface SemanticGraphNode {
   id: string;
@@ -14,6 +20,7 @@ export interface SemanticGraphNode {
   lineRange?: [number, number];
   coverage: WikiCoverageResult;
   wikiPageIds: string[];
+  evidenceIds: string[];
 }
 
 export interface SemanticGraphEdge {
@@ -21,6 +28,9 @@ export interface SemanticGraphEdge {
   source: string;
   target: string;
   type: GraphEdge["type"];
+  direction: GraphEdge["direction"];
+  edgeTypes: GraphEdge["type"][];
+  directions: GraphEdge["direction"][];
   weight: number;
   bundledCount: number;
 }
@@ -37,6 +47,22 @@ export interface BuildSemanticGraphInput {
   focusNodeIds: string[];
 }
 
+const ARCHITECTURE_NODE_TYPES = new Set<GraphNode["type"]>([
+  "config",
+  "domain",
+  "endpoint",
+  "file",
+  "flow",
+  "module",
+  "pipeline",
+  "resource",
+  "schema",
+  "service",
+  "table",
+]);
+
+const CALL_NODE_TYPES = new Set<GraphNode["type"]>(["file", "function", "class"]);
+
 export function semanticGroupForNode(node: GraphNode): SemanticNodeGroup {
   if (node.type === "domain") return "capability";
   if (node.type === "flow" || node.type === "step") return "flow";
@@ -45,15 +71,21 @@ export function semanticGroupForNode(node: GraphNode): SemanticNodeGroup {
   if (node.type === "function" || node.type === "class") return "symbol";
   if (node.type === "document" || node.type === "article" || node.type === "claim" || node.type === "source") return "document";
   if (node.type === "table" || node.type === "schema") return "data";
+  if (node.type === "endpoint" || node.type === "pipeline" || node.type === "resource" || node.type === "service") {
+    return "infra";
+  }
   return "other";
 }
 
 function allowedNodeForMode(node: GraphNode, mode: GraphExplorerMode, wikiIndex: WikiIndex): boolean {
-  if (mode === "architecture") return ["domain", "flow", "module", "file", "config", "service", "table"].includes(node.type);
-  if (mode === "call") return ["file", "function", "class"].includes(node.type);
+  if (mode === "semantic") return semanticGroupForNode(node) !== "symbol";
+  if (mode === "architecture") return ARCHITECTURE_NODE_TYPES.has(node.type);
+  if (mode === "call") return CALL_NODE_TYPES.has(node.type);
   if (mode === "coverage") return coverageForNode(wikiIndex, node.id).status !== "unknown";
   if (mode === "evidence") {
-    return pagesForNode(wikiIndex, node.id).length > 0 || coverageForNode(wikiIndex, node.id).status === "gap";
+    return evidenceIdsForNode(wikiIndex, node.id).length > 0
+      || pagesForNode(wikiIndex, node.id).length > 0
+      || coverageForNode(wikiIndex, node.id).status === "gap";
   }
   return true;
 }
@@ -70,7 +102,22 @@ function focusNeighborhood(graph: KnowledgeGraph, focusNodeIds: string[]): Set<s
 }
 
 function edgeKey(edge: GraphEdge): string {
-  return `${edge.source}->${edge.target}:${edge.type}`;
+  return `${edge.source}->${edge.target}`;
+}
+
+function pushUnique<T>(values: T[], value: T): void {
+  if (!values.includes(value)) values.push(value);
+}
+
+function evidenceIdsForNode(wikiIndex: WikiIndex, nodeId: string): string[] {
+  const ids: string[] = [];
+  for (const page of pagesForNode(wikiIndex, nodeId)) {
+    for (const evidence of evidenceForPage(wikiIndex, page.id)) pushUnique(ids, evidence.id);
+  }
+  for (const evidence of wikiIndex.evidence) {
+    if (evidence.nodeIds.includes(nodeId)) pushUnique(ids, evidence.id);
+  }
+  return ids;
 }
 
 export function buildSemanticGraph({
@@ -80,8 +127,9 @@ export function buildSemanticGraph({
   focusNodeIds,
 }: BuildSemanticGraphInput): SemanticGraph {
   const includedByFocus = focusNeighborhood(graph, focusNodeIds);
+  const focusedNodeIds = new Set(focusNodeIds);
   const sourceNodes = graph.nodes.filter(
-    (node) => includedByFocus.has(node.id) && allowedNodeForMode(node, mode, wikiIndex),
+    (node) => includedByFocus.has(node.id) && (focusedNodeIds.has(node.id) || allowedNodeForMode(node, mode, wikiIndex)),
   );
   const nodeIds = new Set(sourceNodes.map((node) => node.id));
   const nodes: SemanticGraphNode[] = sourceNodes.map((node) => ({
@@ -94,6 +142,7 @@ export function buildSemanticGraph({
     lineRange: node.lineRange,
     coverage: coverageForNode(wikiIndex, node.id),
     wikiPageIds: pagesForNode(wikiIndex, node.id).map((page) => page.id),
+    evidenceIds: evidenceIdsForNode(wikiIndex, node.id),
   }));
 
   const bundled = new Map<string, SemanticGraphEdge>();
@@ -106,6 +155,8 @@ export function buildSemanticGraph({
     if (current) {
       current.bundledCount += 1;
       current.weight = Math.max(current.weight, edge.weight);
+      pushUnique(current.edgeTypes, edge.type);
+      pushUnique(current.directions, edge.direction);
       continue;
     }
     bundled.set(key, {
@@ -113,6 +164,9 @@ export function buildSemanticGraph({
       source: edge.source,
       target: edge.target,
       type: edge.type,
+      direction: edge.direction,
+      edgeTypes: [edge.type],
+      directions: [edge.direction],
       weight: edge.weight,
       bundledCount: 1,
     });

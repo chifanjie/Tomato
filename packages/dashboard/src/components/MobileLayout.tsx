@@ -35,6 +35,18 @@ export function mobilePrimarySurfaceLabel(surface: "wiki" | "graph"): string {
   return surface === "wiki" ? "Wiki" : "Graph";
 }
 
+export function shouldAutoPivotMobileInfo({
+  dashboardSurface,
+  selectedNodeId,
+  navigationLevel,
+}: {
+  dashboardSurface: "wiki" | "graph";
+  selectedNodeId: string | null;
+  navigationLevel: string;
+}): boolean {
+  return dashboardSurface !== "wiki" && dashboardSurface !== "graph" && Boolean(selectedNodeId) && navigationLevel !== "file-detail";
+}
+
 export default function MobileLayout({
   accessToken,
   showKeyboardHelp,
@@ -62,6 +74,7 @@ export default function MobileLayout({
   const [activeTab, setActiveTab] = useState<MobileTab>("graph");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const isPeerDashboardSurface = dashboardSurface === "wiki" || dashboardSurface === "graph";
   const primaryTabLabel = mobilePrimarySurfaceLabel(dashboardSurface);
 
   const switchDashboardSurface = (surface: "wiki" | "graph") => {
@@ -72,8 +85,10 @@ export default function MobileLayout({
   // Auto-pivot to Info when a node is selected — keeps feedback visible
   // on a small screen where the graph and sidebar can't coexist.
   useEffect(() => {
-    if (selectedNodeId && navigationLevel !== "file-detail") setActiveTab("info");
-  }, [navigationLevel, selectedNodeId]);
+    if (shouldAutoPivotMobileInfo({ dashboardSurface, selectedNodeId, navigationLevel })) {
+      setActiveTab("info");
+    }
+  }, [dashboardSurface, navigationLevel, selectedNodeId]);
 
   useEffect(() => {
     if (persona === "junior") {
@@ -281,7 +296,7 @@ export default function MobileLayout({
       )}
 
       {/* Path finder */}
-      {pathFinderOpen && (
+      {!isPeerDashboardSurface && pathFinderOpen && (
         <Suspense fallback={null}>
           <PathFinderModal isOpen={pathFinderOpen} onClose={togglePathFinder} />
         </Suspense>

@@ -4,7 +4,7 @@ import { renderToString } from "react-dom/server";
 import { I18nProvider } from "../../contexts/I18nContext";
 import { useDashboardStore } from "../../store";
 import { ThemeProvider } from "../../themes";
-import MobileLayout, { mobilePrimarySurfaceLabel } from "../MobileLayout";
+import MobileLayout, { mobilePrimarySurfaceLabel, shouldAutoPivotMobileInfo } from "../MobileLayout";
 
 vi.mock("../wiki/KnowledgeConsole", async () => {
   const React = await import("react");
@@ -58,5 +58,22 @@ describe("MobileLayout", () => {
   it("labels the primary mobile tab for each peer surface", () => {
     expect(mobilePrimarySurfaceLabel("wiki")).toBe("Wiki");
     expect(mobilePrimarySurfaceLabel("graph")).toBe("Graph");
+  });
+
+  it("does not auto-pivot peer surfaces away from the primary mobile tab", () => {
+    expect(
+      shouldAutoPivotMobileInfo({
+        dashboardSurface: "graph",
+        selectedNodeId: "function:src/app.ts:run",
+        navigationLevel: "overview",
+      }),
+    ).toBe(false);
+    expect(
+      shouldAutoPivotMobileInfo({
+        dashboardSurface: "wiki",
+        selectedNodeId: "function:src/app.ts:run",
+        navigationLevel: "overview",
+      }),
+    ).toBe(false);
   });
 });

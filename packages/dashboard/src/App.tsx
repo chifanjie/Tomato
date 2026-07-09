@@ -520,6 +520,9 @@ function DashboardContent(props: {
         description: t.keyboardShortcuts.openPathFinder,
         action: () => {
           const state = useDashboardStore.getState();
+          if (state.dashboardSurface === "wiki" || state.dashboardSurface === "graph") {
+            return;
+          }
           if (!shouldShowGraphControls({
             viewMode: state.viewMode,
             isKnowledgeGraph: state.isKnowledgeGraph,

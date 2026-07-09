@@ -185,10 +185,12 @@ describe("dashboard wiki and graph surface state", () => {
       "function:src/a.go:Build",
       "file:src/a.go",
     ]);
+    expect(useDashboardStore.getState().graphExplorerMode).toBe("semantic");
 
     useDashboardStore.getState().openWikiForGraphNode("function:src/a.go:Build");
 
     expect(useDashboardStore.getState().dashboardSurface).toBe("wiki");
+    expect(useDashboardStore.getState().selectedNodeId).toBe("function:src/a.go:Build");
     expect(useDashboardStore.getState().activeWikiPageId).toBe("wiki:function-build");
   });
 });

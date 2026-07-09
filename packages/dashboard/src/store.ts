@@ -11,6 +11,11 @@ import type { ReactFlowInstance } from "@xyflow/react";
 import { buildViewGraph } from "./viewgraph/buildViewGraph";
 import { findParentFileId } from "./viewgraph/readableSelectors";
 import type { ViewGraph } from "./viewgraph/types";
+import {
+  emptyWikiIndex,
+  pagesForNode,
+  type WikiIndex,
+} from "./wiki/wikiIndex";
 
 export type Persona = "non-technical" | "junior" | "experienced";
 export type NavigationLevel = "overview" | "layer-detail" | "file-detail";
@@ -18,6 +23,8 @@ export type NodeType = "file" | "function" | "class" | "module" | "concept" | "c
 export type Complexity = "simple" | "moderate" | "complex";
 export type EdgeCategory = "structural" | "behavioral" | "data-flow" | "dependencies" | "semantic" | "infrastructure" | "domain" | "knowledge";
 export type ViewMode = "structural" | "domain" | "knowledge";
+export type DashboardSurface = "wiki" | "graph";
+export type GraphExplorerMode = "global" | "semantic" | "architecture" | "call" | "coverage" | "evidence";
 export type DetailLevel = "file" | "class";
 
 export interface FilterState {
@@ -110,6 +117,17 @@ interface DashboardStore {
   /** id → set of every layer the node belongs to, rebuilt by setGraph. Empty before any graph loads. */
   nodeIdToLayerIds: Map<string, Set<string>>;
   selectedNodeId: string | null;
+  dashboardSurface: DashboardSurface;
+  setDashboardSurface: (surface: DashboardSurface) => void;
+  wikiIndex: WikiIndex;
+  setWikiIndex: (index: WikiIndex) => void;
+  activeWikiPageId: string | null;
+  selectWikiPage: (pageId: string | null) => void;
+  graphExplorerMode: GraphExplorerMode;
+  setGraphExplorerMode: (mode: GraphExplorerMode) => void;
+  graphFocusNodeIds: string[];
+  openGraphForWikiPage: (pageId: string) => void;
+  openWikiForGraphNode: (nodeId: string) => void;
   searchQuery: string;
   searchResults: SearchResult[];
   searchEngine: SearchEngine | null;
@@ -301,6 +319,11 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
   nodeIdToLayerId: new Map<string, string>(),
   nodeIdToLayerIds: new Map<string, Set<string>>(),
   selectedNodeId: null,
+  dashboardSurface: "wiki",
+  wikiIndex: emptyWikiIndex(),
+  activeWikiPageId: null,
+  graphExplorerMode: "global",
+  graphFocusNodeIds: [],
   searchQuery: "",
   searchResults: [],
   searchEngine: null,
@@ -371,6 +394,43 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
       expandedContainers: new Set(),
       pendingFocusContainer: null,
     })),
+
+  setDashboardSurface: (surface) => set({ dashboardSurface: surface }),
+
+  setWikiIndex: (index) =>
+    set((state) => ({
+      wikiIndex: index,
+      dashboardSurface: index.pageCount > 0 ? "wiki" : state.dashboardSurface,
+      activeWikiPageId:
+        state.activeWikiPageId && index.pagesById.has(state.activeWikiPageId)
+          ? state.activeWikiPageId
+          : index.pages[0]?.id ?? null,
+    })),
+
+  selectWikiPage: (pageId) => set({ activeWikiPageId: pageId }),
+
+  setGraphExplorerMode: (mode) => set({ graphExplorerMode: mode }),
+
+  openGraphForWikiPage: (pageId) =>
+    set((state) => {
+      const page = state.wikiIndex.pagesById.get(pageId);
+      return {
+        dashboardSurface: "graph",
+        activeWikiPageId: pageId,
+        graphFocusNodeIds: page ? [...page.explainedNodeIds, ...page.relatedNodeIds] : [],
+        graphExplorerMode: "semantic",
+      };
+    }),
+
+  openWikiForGraphNode: (nodeId) =>
+    set((state) => {
+      const page = pagesForNode(state.wikiIndex, nodeId)[0] ?? null;
+      return {
+        dashboardSurface: "wiki",
+        selectedNodeId: nodeId,
+        activeWikiPageId: page?.id ?? state.activeWikiPageId,
+      };
+    }),
 
   setGraph: (graph) => {
     const searchEngine = new SearchEngine(graph.nodes);

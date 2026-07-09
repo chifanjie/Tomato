@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { KnowledgeGraph } from "@understand-code/core/types";
 import { useDashboardStore } from "../store";
+import { buildWikiIndex } from "../wiki/wikiIndex";
 
 type PersonaModeStore = ReturnType<typeof useDashboardStore.getState> & {
   activatePersonaMode?: (persona: "non-technical" | "junior" | "experienced") => void;
@@ -121,5 +122,73 @@ describe("dashboard store readable navigation", () => {
     expect(state.detailLevel).toBe("class");
     expect(state.showFunctionsInClassView).toBe(true);
     expect(state.tourActive).toBe(false);
+  });
+});
+
+describe("dashboard wiki and graph surface state", () => {
+  it("defaults to wiki surface when wiki pages exist", () => {
+    useDashboardStore.getState().setGraph(sampleGraph());
+    useDashboardStore.getState().setWikiIndex(buildWikiIndex({
+      version: 1,
+      generatedAt: "2026-07-09T00:00:00.000Z",
+      projectName: "sample",
+      pages: [
+        {
+          id: "wiki:overview",
+          title: "Overview",
+          category: "overview",
+          summary: "Overview.",
+          markdownPath: "knowledge-base/README.md",
+          explainedNodeIds: ["file:src/a.go"],
+          relatedNodeIds: [],
+          evidenceIds: [],
+          coverage: "complete",
+          quality: "verified",
+        },
+      ],
+      evidence: [],
+      gaps: [],
+    }));
+
+    expect(useDashboardStore.getState().dashboardSurface).toBe("wiki");
+    expect(useDashboardStore.getState().activeWikiPageId).toBe("wiki:overview");
+  });
+
+  it("focuses graph from wiki page and links graph node back to wiki", () => {
+    useDashboardStore.getState().setGraph(sampleGraph());
+    useDashboardStore.getState().setWikiIndex(buildWikiIndex({
+      version: 1,
+      generatedAt: "2026-07-09T00:00:00.000Z",
+      projectName: "sample",
+      pages: [
+        {
+          id: "wiki:function-build",
+          title: "Build Function",
+          category: "symbol",
+          summary: "Build docs.",
+          markdownPath: "knowledge-base/functions/Build.md",
+          explainedNodeIds: ["function:src/a.go:Build"],
+          relatedNodeIds: ["file:src/a.go"],
+          evidenceIds: [],
+          coverage: "partial",
+          quality: "generated",
+        },
+      ],
+      evidence: [],
+      gaps: [],
+    }));
+
+    useDashboardStore.getState().openGraphForWikiPage("wiki:function-build");
+
+    expect(useDashboardStore.getState().dashboardSurface).toBe("graph");
+    expect(useDashboardStore.getState().graphFocusNodeIds).toEqual([
+      "function:src/a.go:Build",
+      "file:src/a.go",
+    ]);
+
+    useDashboardStore.getState().openWikiForGraphNode("function:src/a.go:Build");
+
+    expect(useDashboardStore.getState().dashboardSurface).toBe("wiki");
+    expect(useDashboardStore.getState().activeWikiPageId).toBe("wiki:function-build");
   });
 });

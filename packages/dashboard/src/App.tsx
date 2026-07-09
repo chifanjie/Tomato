@@ -8,6 +8,8 @@ import FunctionDetailPage from "./components/FunctionDetailPage";
 import ReadableViewGraphPage from "./components/ReadableViewGraphPage";
 import ReadingAssistantPanel from "./components/ReadingAssistantPanel";
 import VisualGuidedWorkbench from "./components/workbench/VisualGuidedWorkbench";
+import KnowledgeConsole from "./components/wiki/KnowledgeConsole";
+import GraphExplorer from "./components/graphExplorer/GraphExplorer";
 import SearchBar from "./components/SearchBar";
 import NodeInfo from "./components/NodeInfo";
 import LayerLegend from "./components/LayerLegend";
@@ -31,9 +33,11 @@ import { shouldShowGraphControls } from "./utils/viewModeControls";
 import {
   buildKnowledgeContextIndex,
   type KnowledgeContextIndex,
-  type KnowledgeDocumentSummary,
-  type KnowledgeTraceRecord,
 } from "./workbench/knowledgeContext";
+import {
+  loadDashboardKnowledge,
+  shouldRetryKnowledgeContextLoad,
+} from "./workbench/knowledgeContextLoader";
 
 // Lazy-load heavy / optional components so they ship in separate chunks.
 const CodeViewer = lazy(() => import("./components/CodeViewer"));
@@ -47,6 +51,8 @@ const OnboardingOverlay = lazy(() => import("./components/OnboardingOverlay"));
 const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === "true";
 const TOKEN_STORAGE_KEY = "understand-code-token";
 const ONBOARDING_DISMISSED_KEY = "uc-onboarding-dismissed-v1";
+const KNOWLEDGE_CONTEXT_RELOAD_INTERVAL_MS = 1000;
+const KNOWLEDGE_CONTEXT_RELOAD_MAX_ATTEMPTS = 3;
 type SidebarTab = "info" | "files";
 
 export function shouldShowOnboarding(search?: string): boolean {
@@ -71,206 +77,6 @@ function dataUrl(fileName: string, token: string | null): string {
   }
   const path = `/${fileName}`;
   return token ? `${path}?token=${encodeURIComponent(token)}` : path;
-}
-
-function optionalDataUrl(path: string, token: string | null): string {
-  const normalizedPath = path.replace(/^\/+/, "");
-  const base = import.meta.env.BASE_URL || "/";
-  const normalizedBase = base.endsWith("/") ? base : `${base}/`;
-  const url = `${normalizedBase}${normalizedPath}`;
-  if (DEMO_MODE) return url;
-  return token ? `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}` : url;
-}
-
-async function fetchOptionalJson<T>(url: string): Promise<T | null> {
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    return (await res.json()) as T;
-  } catch {
-    return null;
-  }
-}
-
-async function fetchOptionalText(url: string): Promise<string | null> {
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    return await res.text();
-  } catch {
-    return null;
-  }
-}
-
-function decodedMarkdownPath(path: string): string {
-  const withoutWrapper = path.trim().replace(/^<(.+)>$/, "$1");
-  const withoutTitle = withoutWrapper.replace(/\s+["'][^"']*["']\s*$/, "");
-  const withoutFragment = withoutTitle.split("#")[0]?.split("?")[0] ?? "";
-  const normalized = withoutFragment.replace(/\\/g, "/").replace(/^\.\//, "").replace(/^\/+/, "");
-  try {
-    return decodeURIComponent(normalized);
-  } catch {
-    return normalized;
-  }
-}
-
-function knowledgeDocumentId(title: string, path: string): string {
-  const source = (path || title).trim().toLowerCase();
-  const normalized = source
-    .replace(/\\/g, "/")
-    .replace(/^\.\//, "")
-    .replace(/[^a-z0-9\u4e00-\u9fff/._-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return `knowledge-doc:${normalized || "untitled"}`;
-}
-
-function documentsFromMarkdownIndex(markdown: string | null): KnowledgeDocumentSummary[] {
-  if (!markdown) return [];
-  const linkPattern = /\[([^\]]+)\]\(([^)]+)\)/g;
-  const documents: KnowledgeDocumentSummary[] = [];
-  const seen = new Set<string>();
-
-  for (const match of markdown.matchAll(linkPattern)) {
-    if (match.index !== undefined && markdown[match.index - 1] === "!") continue;
-
-    const title = match[1]?.trim();
-    const path = decodedMarkdownPath(match[2] ?? "");
-    if (!title || !path || /^https?:\/\//i.test(path) || path.startsWith("mailto:")) continue;
-
-    const id = knowledgeDocumentId(title, path);
-    if (seen.has(id)) continue;
-    seen.add(id);
-
-    documents.push({
-      id,
-      title,
-      summary: `从生成知识库索引中发现的文档：${title}。`,
-      ...(path.endsWith(".md") ? { filePath: path } : { relatedPaths: [path] }),
-    });
-  }
-
-  return documents;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value : undefined;
-}
-
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
-}
-
-function traceRoleLabel(role: string | undefined): string | undefined {
-  if (role === "structural") return "结构证据";
-  if (role === "business") return "业务证据";
-  if (role === "implementation") return "实现证据";
-  if (role === "configuration") return "配置证据";
-  if (role === "test") return "测试证据";
-  return role;
-}
-
-function titleFromDocumentPath(path: string | undefined): string {
-  if (!path) return "生成知识库线索";
-  const fileName = path.split("/").pop() ?? path;
-  return fileName.replace(/\.md$/i, "") || path;
-}
-
-function filePathFromNodeId(nodeId: string): string | undefined {
-  const firstColon = nodeId.indexOf(":");
-  if (firstColon === -1) return undefined;
-  const kind = nodeId.slice(0, firstColon);
-  const rest = nodeId.slice(firstColon + 1);
-  if (kind === "file" || kind === "document" || kind === "config") return rest;
-  const lastColon = rest.lastIndexOf(":");
-  return lastColon > 0 ? rest.slice(0, lastColon) : undefined;
-}
-
-function normalizeTraceAnchors(value: unknown): NonNullable<KnowledgeTraceRecord["anchors"]> {
-  if (!Array.isArray(value)) return [];
-
-  return value.flatMap((anchor) => {
-    if (!isRecord(anchor)) return [];
-    const filePath = stringValue(anchor.filePath);
-    const role = stringValue(anchor.role);
-    const nodeId = stringValue(anchor.nodeId);
-    const lineRangeValue = anchor.lineRange;
-    const lineRange =
-      Array.isArray(lineRangeValue) &&
-      typeof lineRangeValue[0] === "number" &&
-      typeof lineRangeValue[1] === "number"
-        ? ([lineRangeValue[0], lineRangeValue[1]] as [number, number])
-        : undefined;
-    const label = stringValue(anchor.label) ?? role ?? nodeId ?? filePath ?? "知识库线索";
-    return [{ label: traceRoleLabel(label) ?? label, filePath, lineRange }];
-  });
-}
-
-function normalizeTraceRecord(value: unknown): KnowledgeTraceRecord[] {
-  if (!isRecord(value)) return [];
-
-  const documentPath = stringValue(value.documentPath) ?? stringValue(value.filePath);
-  const title = stringValue(value.title) ?? titleFromDocumentPath(documentPath);
-  const summary =
-    stringValue(value.summary) ??
-    (documentPath
-      ? `生成知识库文档 ${documentPath} 已关联到这段代码路径。`
-      : "生成知识库线索已关联到这段代码路径。");
-  const businessMeaning = stringValue(value.businessMeaning);
-  const changeRisk =
-    stringValue(value.changeRisk) ??
-    (stringArray(value.lowConfidenceClaims).length > 0
-      ? "部分关联知识断言可信度偏低，使用前需要人工确认。"
-      : undefined);
-  const anchors = normalizeTraceAnchors(value.anchors ?? value.sourceAnchors);
-  const coveredNodeIds = stringArray(value.coveredNodeIds);
-  const coveredFilePaths = stringArray(value.coveredFilePaths);
-
-  if (coveredNodeIds.length === 0 && coveredFilePaths.length === 0) {
-    return [
-      {
-        nodeId: stringValue(value.nodeId),
-        filePath: stringValue(value.filePath),
-        title,
-        summary,
-        businessMeaning,
-        changeRisk,
-        anchors,
-      },
-    ];
-  }
-
-  const traces: KnowledgeTraceRecord[] = [];
-  for (const nodeId of coveredNodeIds) {
-    traces.push({
-      nodeId,
-      filePath: filePathFromNodeId(nodeId) ?? coveredFilePaths[0],
-      title,
-      summary,
-      businessMeaning,
-      changeRisk,
-      anchors,
-    });
-  }
-  for (const filePath of coveredFilePaths) {
-    traces.push({ filePath, title, summary, businessMeaning, changeRisk, anchors });
-  }
-  return traces;
-}
-
-function normalizeTracePayload(payload: unknown): KnowledgeTraceRecord[] {
-  const records = Array.isArray(payload)
-    ? payload
-    : isRecord(payload) && Array.isArray(payload.traces)
-      ? payload.traces
-      : isRecord(payload) && Array.isArray(payload.documents)
-        ? payload.documents
-        : [];
-
-  return records.flatMap(normalizeTraceRecord);
 }
 
 /**
@@ -364,6 +170,7 @@ function Dashboard({
   const setGraph = useDashboardStore((s) => s.setGraph);
   const setDomainGraph = useDashboardStore((s) => s.setDomainGraph);
   const setDiffOverlay = useDashboardStore((s) => s.setDiffOverlay);
+  const setWikiIndex = useDashboardStore((s) => s.setWikiIndex);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [graphIssues, setGraphIssues] = useState<GraphIssue[]>([]);
   const [metaTheme, setMetaTheme] = useState<ThemeConfig | null>(null);
@@ -389,35 +196,40 @@ function Dashboard({
 
   useEffect(() => {
     let cancelled = false;
+    let emptyLoadAttempts = 0;
+    let retryTimer: number | undefined;
 
     async function loadKnowledgeContext(): Promise<void> {
-      const [tracePayload, capabilityIndex, flowIndex] = await Promise.all([
-        fetchOptionalJson<unknown>(
-          optionalDataUrl("knowledge-base/.trace/document-traces.json", accessToken),
-        ),
-        fetchOptionalText(optionalDataUrl("knowledge-base/业务能力索引.md", accessToken)),
-        fetchOptionalText(optionalDataUrl("knowledge-base/业务流程地图.md", accessToken)),
-      ]);
+      const dashboardKnowledge = await loadDashboardKnowledge(accessToken);
 
       if (cancelled) return;
 
-      setKnowledgeContextIndex(
-        buildKnowledgeContextIndex({
-          traces: normalizeTracePayload(tracePayload),
-          documents: [
-            ...documentsFromMarkdownIndex(capabilityIndex),
-            ...documentsFromMarkdownIndex(flowIndex),
-          ],
-        }),
-      );
+      setKnowledgeContextIndex(dashboardKnowledge.contextIndex);
+      setWikiIndex(dashboardKnowledge.wikiIndex);
+      if (
+        !shouldRetryKnowledgeContextLoad(
+          dashboardKnowledge.contextIndex,
+          emptyLoadAttempts,
+          KNOWLEDGE_CONTEXT_RELOAD_MAX_ATTEMPTS,
+        )
+      ) {
+        return;
+      }
+
+      emptyLoadAttempts += 1;
+      retryTimer = window.setTimeout(() => {
+        retryTimer = undefined;
+        void loadKnowledgeContext();
+      }, KNOWLEDGE_CONTEXT_RELOAD_INTERVAL_MS);
     }
 
     void loadKnowledgeContext();
 
     return () => {
       cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
-  }, [accessToken]);
+  }, [accessToken, setWikiIndex]);
 
   useEffect(() => {
     fetch(dataUrl("knowledge-graph.json", accessToken))
@@ -527,6 +339,8 @@ function DashboardContent(props: {
   const { accessToken, loadError, graphIssues, knowledgeContextIndex } = props;
   const graph = useDashboardStore((s) => s.graph);
   const viewGraph = useDashboardStore((s) => s.viewGraph);
+  const dashboardSurface = useDashboardStore((s) => s.dashboardSurface);
+  const setDashboardSurface = useDashboardStore((s) => s.setDashboardSurface);
   const selectedNodeId = useDashboardStore((s) => s.selectedNodeId);
   const tourActive = useDashboardStore((s) => s.tourActive);
   const persona = useDashboardStore((s) => s.persona);
@@ -560,7 +374,9 @@ function DashboardContent(props: {
   const layoutIssues = useDashboardStore((s) => s.layoutIssues);
   const isMobile = useIsMobile();
   const { t } = useI18n();
-  const showLegacyGraphControls = shouldShowGraphControls({ viewMode, isKnowledgeGraph });
+  const isPeerDashboardSurface = dashboardSurface === "wiki" || dashboardSurface === "graph";
+  const showLegacyGraphControls =
+    !isPeerDashboardSurface && shouldShowGraphControls({ viewMode, isKnowledgeGraph });
   const showStructuralWorkbench = Boolean(
     graph && viewGraph && viewMode === "structural" && !isKnowledgeGraph,
   );
@@ -804,9 +620,29 @@ function DashboardContent(props: {
           <h1 className="font-heading text-base sm:text-lg text-text-primary tracking-wide truncate max-w-[160px] sm:max-w-[220px] lg:max-w-none">
             {graph?.project.name ?? t.common.appName}
           </h1>
+          <div className="flex items-center rounded-md border border-border-subtle bg-elevated p-0.5">
+            <button
+              type="button"
+              onClick={() => setDashboardSurface("wiki")}
+              className={`rounded px-3 py-1.5 text-xs font-semibold transition-colors ${
+                dashboardSurface === "wiki" ? "bg-accent/15 text-accent" : "text-text-muted hover:text-text-secondary"
+              }`}
+            >
+              Wiki
+            </button>
+            <button
+              type="button"
+              onClick={() => setDashboardSurface("graph")}
+              className={`rounded px-3 py-1.5 text-xs font-semibold transition-colors ${
+                dashboardSurface === "graph" ? "bg-accent/15 text-accent" : "text-text-muted hover:text-text-secondary"
+              }`}
+            >
+              Graph
+            </button>
+          </div>
           <div className="w-px h-5 bg-border-subtle hidden sm:block" />
           <PersonaSelector />
-          {graph && !isKnowledgeGraph && domainGraph && (
+          {!isPeerDashboardSurface && graph && !isKnowledgeGraph && domainGraph && (
             <>
               <div className="w-px h-5 bg-border-subtle" />
               <div className="flex items-center bg-elevated rounded-lg p-0.5">
@@ -1001,8 +837,12 @@ function DashboardContent(props: {
       {/* Main content: Graph + Sidebar */}
       <div className="flex-1 flex min-h-0 relative">
         {/* Graph area */}
-        <div className="flex-1 min-w-0 min-h-0 relative">
-          {viewMode === "knowledge" ? (
+        <div className="relative flex min-h-0 min-w-0 flex-1">
+          {dashboardSurface === "wiki" ? (
+            <KnowledgeConsole />
+          ) : dashboardSurface === "graph" ? (
+            <GraphExplorer />
+          ) : viewMode === "knowledge" ? (
             <KnowledgeGraphView />
           ) : viewMode === "domain" && domainGraph ? (
             <DomainGraphView />
@@ -1017,13 +857,15 @@ function DashboardContent(props: {
           ) : (
             <ReadableViewGraphPage />
           )}
-          <div className="absolute top-3 right-3 text-sm text-text-muted/60 pointer-events-none select-none">
-            {t.common.pressKeyboard}
-          </div>
+          {!isPeerDashboardSurface && (
+            <div className="absolute top-3 right-3 text-sm text-text-muted/60 pointer-events-none select-none">
+              {t.common.pressKeyboard}
+            </div>
+          )}
         </div>
 
         {/* Right sidebar — telescopes at narrower widths */}
-        {navigationLevel !== "file-detail" && !showStructuralWorkbench && (
+        {!isPeerDashboardSurface && navigationLevel !== "file-detail" && !showStructuralWorkbench && (
           <aside className="w-[260px] md:w-[300px] lg:w-[360px] shrink-0 bg-surface border-l border-border-subtle overflow-auto">
             {sidebarContent}
           </aside>

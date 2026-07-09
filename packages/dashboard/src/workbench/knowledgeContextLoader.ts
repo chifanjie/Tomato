@@ -215,19 +215,45 @@ function isLineRangeValue(value: unknown): value is [number, number] | undefined
   );
 }
 
+function isWikiPageCategory(value: unknown): value is WikiIndexPayload["pages"][number]["category"] {
+  return (
+    value === "overview" ||
+    value === "capability" ||
+    value === "flow" ||
+    value === "module" ||
+    value === "file" ||
+    value === "symbol" ||
+    value === "gap" ||
+    value === "quality" ||
+    value === "other"
+  );
+}
+
+function isWikiPageCoverage(value: unknown): value is WikiIndexPayload["pages"][number]["coverage"] {
+  return value === "complete" || value === "partial";
+}
+
+function isWikiQualityStatus(value: unknown): value is WikiIndexPayload["pages"][number]["quality"] {
+  return value === "verified" || value === "generated" || value === "low-confidence";
+}
+
+function isGapSeverity(value: unknown): value is WikiIndexPayload["gaps"][number]["severity"] {
+  return value === "low" || value === "medium" || value === "high";
+}
+
 function isWikiPageRecord(value: unknown): value is WikiIndexPayload["pages"][number] {
   return (
     isRecord(value) &&
     typeof value.id === "string" &&
     typeof value.title === "string" &&
-    typeof value.category === "string" &&
+    isWikiPageCategory(value.category) &&
     typeof value.summary === "string" &&
     typeof value.markdownPath === "string" &&
     isStringArrayValue(value.explainedNodeIds) &&
     isStringArrayValue(value.relatedNodeIds) &&
     isStringArrayValue(value.evidenceIds) &&
-    typeof value.coverage === "string" &&
-    typeof value.quality === "string"
+    isWikiPageCoverage(value.coverage) &&
+    isWikiQualityStatus(value.quality)
   );
 }
 
@@ -248,7 +274,7 @@ function isWikiGapRecord(value: unknown): value is WikiIndexPayload["gaps"][numb
     typeof value.id === "string" &&
     typeof value.nodeId === "string" &&
     typeof value.reason === "string" &&
-    typeof value.severity === "string"
+    isGapSeverity(value.severity)
   );
 }
 

@@ -299,6 +299,154 @@ function cleanOutputDocuments(outputRoot) {
   }
 }
 
+function wikiId(prefix, value) {
+  return `${prefix}:${encodeURIComponent(String(value || 'unknown'))}`;
+}
+
+function compareStrings(a, b) {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
+function uniqueSortedStrings(values) {
+  return [...new Set(values.filter((value) => typeof value === 'string' && value.trim().length > 0))]
+    .sort(compareStrings);
+}
+
+function markdownPathForDocument(doc) {
+  return `knowledge-base/${doc.path.replace(/\\/g, '/').replace(/^\/+/, '')}`;
+}
+
+function wikiPageCategoryForDocument(category) {
+  if (category === 'module') return 'module';
+  if (category === 'file') return 'file';
+  if (category === 'flow' || category === 'topic') return 'flow';
+  if (category === 'business-capability') return 'capability';
+  if (category === 'report') return 'quality';
+  if (category === 'top-level' || category === 'index') return 'overview';
+  return 'other';
+}
+
+function wikiPageCategoryForNode(node) {
+  if (node.type === 'domain') return 'capability';
+  if (node.type === 'flow' || node.type === 'step') return 'flow';
+  if (node.type === 'module') return 'module';
+  if (node.type === 'file' || node.type === 'config' || node.type === 'document') return 'file';
+  if (node.type === 'function' || node.type === 'class') return 'symbol';
+  return 'other';
+}
+
+function relatedNodeIdsFor(graph, explainedNodeIds) {
+  const explained = new Set(explainedNodeIds);
+  const related = [];
+  for (const edge of graph.edges) {
+    if (explained.has(edge.source) && !explained.has(edge.target)) related.push(edge.target);
+    else if (explained.has(edge.target) && !explained.has(edge.source)) related.push(edge.source);
+  }
+  return uniqueSortedStrings(related);
+}
+
+function summaryForDocument(doc, nodes) {
+  const summarizedNode = nodes.find((node) => node?.summary);
+  if (summarizedNode?.summary) return summarizedNode.summary;
+  if (doc.coveredNodeIds.length > 0) {
+    return `${doc.title} explains ${doc.coveredNodeIds.length} graph node${doc.coveredNodeIds.length === 1 ? '' : 's'}.`;
+  }
+  return `${doc.title} is generated knowledge-base documentation.`;
+}
+
+function evidenceForNode(node) {
+  const evidence = {
+    id: wikiId('evidence', node.id),
+    label: node.name || node.id,
+    nodeIds: [node.id],
+  };
+  if (node.filePath) evidence.filePath = node.filePath;
+  if (Array.isArray(node.lineRange) && node.lineRange.length === 2) evidence.lineRange = node.lineRange;
+  return evidence;
+}
+
+function gapSeverityForNode(node) {
+  if (node.complexity === 'complex') return 'high';
+  if (node.complexity === 'moderate') return 'medium';
+  return 'low';
+}
+
+function fallbackMarkdownPath(kb) {
+  const overview = kb.documents.find((doc) => doc.path === '项目总览.md');
+  const firstMarkdown = kb.documents.find((doc) => doc.path.endsWith('.md'));
+  const fallbackDoc = overview ?? firstMarkdown;
+  return fallbackDoc ? markdownPathForDocument(fallbackDoc) : 'knowledge-base/README.md';
+}
+
+function buildWikiIndexPayload(kb) {
+  const graph = kb.profile.graph;
+  const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const evidenceById = new Map();
+  const pages = kb.documents.map((doc) => {
+    const explainedNodeIds = uniqueSortedStrings(doc.coveredNodeIds.filter((nodeId) => nodesById.has(nodeId)));
+    const nodes = explainedNodeIds.map((nodeId) => nodesById.get(nodeId));
+    const evidenceIds = [];
+    for (const node of nodes) {
+      const evidence = evidenceForNode(node);
+      evidenceById.set(evidence.id, evidence);
+      evidenceIds.push(evidence.id);
+    }
+    return {
+      id: wikiId('wiki', doc.path),
+      title: doc.title,
+      category: wikiPageCategoryForDocument(doc.category),
+      summary: summaryForDocument(doc, nodes),
+      markdownPath: markdownPathForDocument(doc),
+      explainedNodeIds,
+      relatedNodeIds: relatedNodeIdsFor(graph, explainedNodeIds),
+      evidenceIds: uniqueSortedStrings(evidenceIds),
+      coverage: explainedNodeIds.length > 0 ? 'complete' : 'partial',
+      quality: kb.validation.ok ? 'generated' : 'low-confidence',
+    };
+  });
+
+  if (!pages.some((page) => page.explainedNodeIds.length > 0)) {
+    const markdownPath = fallbackMarkdownPath(kb);
+    for (const node of graph.nodes) {
+      const evidence = evidenceForNode(node);
+      evidenceById.set(evidence.id, evidence);
+      pages.push({
+        id: wikiId('wiki-node', node.id),
+        title: node.name || node.id,
+        category: wikiPageCategoryForNode(node),
+        summary: node.summary || `${node.name || node.id} is part of ${graph.project.name}.`,
+        markdownPath,
+        explainedNodeIds: [node.id],
+        relatedNodeIds: relatedNodeIdsFor(graph, [node.id]),
+        evidenceIds: [evidence.id],
+        coverage: 'partial',
+        quality: kb.validation.ok ? 'generated' : 'low-confidence',
+      });
+    }
+  }
+
+  const explainedNodeIds = new Set(pages.flatMap((page) => page.explainedNodeIds));
+  const gaps = graph.nodes
+    .filter((node) => !explainedNodeIds.has(node.id))
+    .map((node) => ({
+      id: wikiId('gap', node.id),
+      nodeId: node.id,
+      reason: 'No generated wiki page explains this graph node.',
+      severity: gapSeverityForNode(node),
+    }));
+
+  return {
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    projectName: graph.project.name,
+    pages,
+    evidence: [...evidenceById.values()].sort((a, b) => compareStrings(a.id, b.id)),
+    gaps,
+  };
+}
+
 function serializableProfile(kb) {
   return {
     project: kb.profile.graph.project,
@@ -379,6 +527,7 @@ function loadGraph(core, projectRoot) {
 function writeKnowledgeBase(outputRoot, kb, keepIntermediate = true) {
   cleanOutputDocuments(outputRoot);
   for (const doc of kb.documents) writeDocument(outputRoot, doc);
+  writeJson(join(outputRoot, 'wiki-index.json'), buildWikiIndexPayload(kb));
   writeJson(join(outputRoot, 'knowledge-base-profile.json'), serializableProfile(kb));
   if (!keepIntermediate) rmSync(join(outputRoot, '.intermediate'), { recursive: true, force: true });
 }

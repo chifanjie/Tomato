@@ -21,6 +21,7 @@ import type { WikiCoverageStatus } from "../../wiki/wikiIndex";
 
 interface SemanticGraphCanvasProps {
   semanticGraph: SemanticGraph;
+  viewKey: string;
 }
 
 interface SemanticNodeData extends Record<string, unknown> {
@@ -43,6 +44,7 @@ const NODE_WIDTH = 248;
 const NODE_HEIGHT = 124;
 const GROUP_COLUMN_WIDTH = 310;
 const GROUP_ROW_HEIGHT = 166;
+const INITIAL_READABLE_ZOOM = 0.62;
 
 const GROUP_ORDER: SemanticNodeGroup[] = [
   "capability",
@@ -173,7 +175,7 @@ const nodeTypes = {
   semantic: memo(SemanticNodeCard),
 };
 
-export default function SemanticGraphCanvas({ semanticGraph }: SemanticGraphCanvasProps) {
+export default function SemanticGraphCanvas({ semanticGraph, viewKey }: SemanticGraphCanvasProps) {
   const selectedNodeId = useDashboardStore((state) => state.selectedNodeId);
   const selectNode = useDashboardStore((state) => state.selectNode);
   const onNodeClick = useCallback<NodeMouseHandler<SemanticFlowNode>>(
@@ -253,13 +255,14 @@ export default function SemanticGraphCanvas({ semanticGraph }: SemanticGraphCanv
   return (
     <div className="uc-graph-frame min-h-[420px] flex-1 overflow-hidden">
       <ReactFlow
+        key={viewKey}
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
         onNodeClick={onNodeClick}
         fitView
-        fitViewOptions={{ padding: 0.18 }}
-        minZoom={0.05}
+        fitViewOptions={{ padding: 0.16, minZoom: INITIAL_READABLE_ZOOM, maxZoom: 1.05 }}
+        minZoom={0.08}
         maxZoom={1.7}
         proOptions={{ hideAttribution: true }}
       >

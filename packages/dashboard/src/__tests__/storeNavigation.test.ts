@@ -192,7 +192,7 @@ describe("dashboard wiki and graph surface state", () => {
       "function:src/a.go:Build",
       "file:src/a.go",
     ]);
-    expect(useDashboardStore.getState().graphExplorerMode).toBe("semantic");
+    expect(useDashboardStore.getState().graphExplorerMode).toBe("focus");
 
     useDashboardStore.getState().openWikiForGraphNode("function:src/a.go:Build");
 

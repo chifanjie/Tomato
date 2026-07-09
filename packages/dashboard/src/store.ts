@@ -322,7 +322,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
   dashboardSurface: "wiki",
   wikiIndex: emptyWikiIndex(),
   activeWikiPageId: null,
-  graphExplorerMode: "global",
+  graphExplorerMode: "semantic",
   graphFocusNodeIds: [],
   searchQuery: "",
   searchResults: [],
@@ -429,7 +429,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
         dashboardSurface: "graph",
         activeWikiPageId: pageId,
         graphFocusNodeIds: [...page.explainedNodeIds, ...page.relatedNodeIds],
-        graphExplorerMode: "semantic",
+        graphExplorerMode: "focus",
       };
     }),
 

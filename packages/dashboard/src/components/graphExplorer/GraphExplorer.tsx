@@ -48,7 +48,10 @@ export default function GraphExplorer() {
           <GraphModeToolbar mode={mode} focusNodeCount={focusNodeIds.length} onChangeMode={setGraphExplorerMode} />
           <GraphCoverageLegend />
         </div>
-        <SemanticGraphCanvas semanticGraph={view.semanticGraph} />
+        <SemanticGraphCanvas
+          semanticGraph={view.semanticGraph}
+          viewKey={`${mode}:${focusNodeIds.join("|")}:${view.semanticGraph.nodes.length}:${view.semanticGraph.edges.length}`}
+        />
       </div>
       <GraphDetailsRail view={view} />
     </section>

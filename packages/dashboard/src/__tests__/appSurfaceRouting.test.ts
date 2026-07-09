@@ -62,6 +62,7 @@ describe("app surface routing", () => {
 
   it("declares wiki as the initial peer surface and selects the first loaded page", () => {
     expect(useDashboardStore.getInitialState().dashboardSurface).toBe("wiki");
+    expect(useDashboardStore.getInitialState().graphExplorerMode).toBe("semantic");
     expect(useDashboardStore.getState().dashboardSurface).toBe("wiki");
     expect(useDashboardStore.getState().activeWikiPageId).toBe("wiki:overview");
   });

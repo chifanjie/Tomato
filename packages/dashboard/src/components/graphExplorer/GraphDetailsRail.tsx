@@ -18,20 +18,82 @@ function formatCoverage(status: string | undefined): string {
 export default function GraphDetailsRail({ view }: GraphDetailsRailProps) {
   const openWikiForGraphNode = useDashboardStore((state) => state.openWikiForGraphNode);
   const node = view.selectedNode;
+  const hiddenNode = view.hiddenSelectedNode;
   const semanticNode = view.selectedSemanticNode;
   const lineRange = formatLineRange(node?.lineRange);
+  const hiddenLineRange = formatLineRange(hiddenNode?.lineRange);
   const evidence = semanticNode?.docs.evidence ?? [];
   const gaps = view.selectedCoverage?.gaps ?? semanticNode?.docs.gaps ?? [];
 
   return (
-    <aside className="flex h-full w-[360px] shrink-0 flex-col border-l border-border-subtle bg-surface max-xl:h-[340px] max-xl:w-full max-xl:border-l-0 max-xl:border-t">
+    <aside className="flex w-[360px] shrink-0 flex-col border-l border-border-subtle bg-surface xl:h-full max-xl:h-auto max-xl:w-full max-xl:border-l-0 max-xl:border-t">
       <header className="border-b border-border-subtle px-4 py-4">
         <p className="text-[11px] font-semibold uppercase text-text-muted">Graph Details</p>
-        <h2 className="mt-1 truncate text-base font-semibold text-text-primary">{node?.name ?? "Select a node"}</h2>
+        <h2 className="mt-1 truncate text-base font-semibold text-text-primary">
+          {hiddenNode ? "Selection hidden" : node?.name ?? "Select a node"}
+        </h2>
       </header>
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-auto px-4 py-4">
-        {!node ? (
+      <div className="min-h-0 flex-1 space-y-4 overflow-auto px-4 py-4 max-xl:flex-none max-xl:overflow-visible">
+        {hiddenNode ? (
+          <>
+            <section className="rounded-md border border-border-subtle bg-elevated/30 p-3">
+              <h3 className="text-[10px] font-semibold uppercase text-text-muted">Hidden Selection</h3>
+              <p className="mt-2 text-sm leading-6 text-text-secondary">
+                {hiddenNode.name} is selected, but the current graph mode does not include it on the canvas.
+                Switch to a mode that shows this node before inspecting evidence or gaps.
+              </p>
+              <dl className="mt-3 grid gap-2 text-xs">
+                <div>
+                  <dt className="text-text-muted">Type</dt>
+                  <dd className="mt-0.5 text-text-primary">{hiddenNode.type}</dd>
+                </div>
+                {hiddenNode.filePath && (
+                  <div>
+                    <dt className="text-text-muted">Path</dt>
+                    <dd className="mt-0.5 break-all font-mono text-[11px] text-text-primary">{hiddenNode.filePath}</dd>
+                  </div>
+                )}
+                {hiddenLineRange && (
+                  <div>
+                    <dt className="text-text-muted">Lines</dt>
+                    <dd className="mt-0.5 font-mono text-[11px] text-text-primary">{hiddenLineRange}</dd>
+                  </div>
+                )}
+                <div>
+                  <dt className="text-text-muted">ID</dt>
+                  <dd className="mt-0.5 break-all font-mono text-[11px] text-text-primary">{hiddenNode.id}</dd>
+                </div>
+              </dl>
+            </section>
+
+            <section className="rounded-md border border-border-subtle bg-elevated/30 p-3">
+              <h3 className="text-[10px] font-semibold uppercase text-text-muted">Linked Wiki</h3>
+              {view.canOpenWiki && (
+                <button
+                  type="button"
+                  onClick={() => openWikiForGraphNode(hiddenNode.id)}
+                  className="mt-3 w-full rounded-md border border-accent/35 bg-accent/10 px-3 py-2 text-sm font-semibold text-accent transition-colors hover:bg-accent/15"
+                >
+                  Open linked wiki
+                </button>
+              )}
+              <div className="mt-3 space-y-2">
+                {view.selectedPages.length === 0 ? (
+                  <p className="text-sm text-text-muted">No linked wiki pages for this hidden selection.</p>
+                ) : (
+                  view.selectedPages.map((page) => (
+                    <div key={page.id} className="border-t border-border-subtle pt-2 first:border-t-0 first:pt-0">
+                      <p className="text-sm font-medium text-text-primary">{page.title}</p>
+                      <p className="mt-1 text-xs leading-5 text-text-muted">{page.summary}</p>
+                      <p className="mt-1 break-all font-mono text-[11px] text-text-muted">{page.markdownPath}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+          </>
+        ) : !node ? (
           <p className="rounded-md border border-border-subtle bg-elevated/35 p-3 text-sm leading-6 text-text-muted">
             Select a graph node to inspect wiki coverage, related pages, evidence, and gaps.
           </p>

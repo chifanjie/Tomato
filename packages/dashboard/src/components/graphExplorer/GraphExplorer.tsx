@@ -41,11 +41,11 @@ export default function GraphExplorer() {
   return (
     <section
       aria-label="Full graph explorer"
-      className="flex min-h-0 flex-1 overflow-hidden bg-root text-text-primary max-xl:flex-col"
+      className="flex min-h-0 flex-1 overflow-x-hidden overflow-y-auto bg-root text-text-primary xl:overflow-hidden max-xl:flex-col"
     >
-      <div className="flex min-w-0 flex-1 flex-col gap-3 p-4 max-xl:min-h-[540px] max-sm:p-3">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 p-4 max-xl:min-h-[540px] max-xl:flex-none max-sm:min-h-[480px] max-sm:p-3">
         <div className="flex items-start justify-between gap-3 max-lg:flex-col">
-          <GraphModeToolbar mode={mode} onChangeMode={setGraphExplorerMode} />
+          <GraphModeToolbar mode={mode} focusNodeCount={focusNodeIds.length} onChangeMode={setGraphExplorerMode} />
           <GraphCoverageLegend />
         </div>
         <SemanticGraphCanvas semanticGraph={view.semanticGraph} />

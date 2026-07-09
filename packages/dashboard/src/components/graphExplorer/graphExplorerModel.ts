@@ -16,6 +16,8 @@ import {
 export interface GraphExplorerView {
   semanticGraph: SemanticGraph;
   selectedNode: GraphNode | null;
+  selectedNodeVisible: boolean;
+  hiddenSelectedNode: GraphNode | null;
   selectedSemanticNode: SemanticGraphNode | null;
   selectedCoverage: WikiCoverageResult | null;
   selectedPages: WikiPageRecord[];
@@ -44,13 +46,15 @@ export function buildGraphExplorerView({
   selectedNodeId,
 }: BuildGraphExplorerViewInput): GraphExplorerView {
   const semanticGraph = buildSemanticGraph({ graph, wikiIndex, mode, focusNodeIds });
-  const selectedNode = selectedNodeId
+  const selectedGraphNode = selectedNodeId
     ? graph.nodes.find((node) => node.id === selectedNodeId) ?? null
     : null;
   const selectedSemanticNode = selectedNodeId
     ? semanticGraph.nodes.find((node) => node.id === selectedNodeId) ?? null
     : null;
-  const selectedPages = selectedNode && wikiIndex ? pagesForNode(wikiIndex, selectedNode.id) : [];
+  const selectedNode = selectedGraphNode && selectedSemanticNode ? selectedGraphNode : null;
+  const hiddenSelectedNode = selectedGraphNode && !selectedSemanticNode ? selectedGraphNode : null;
+  const selectedPages = selectedGraphNode && wikiIndex ? pagesForNode(wikiIndex, selectedGraphNode.id) : [];
   const selectedCoverage = selectedNode
     ? wikiIndex
       ? coverageForNode(wikiIndex, selectedNode.id)
@@ -60,6 +64,8 @@ export function buildGraphExplorerView({
   return {
     semanticGraph,
     selectedNode,
+    selectedNodeVisible: Boolean(selectedNode),
+    hiddenSelectedNode,
     selectedSemanticNode,
     selectedCoverage,
     selectedPages,

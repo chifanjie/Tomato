@@ -118,6 +118,8 @@ describe("graphExplorerModel", () => {
       "file:src/b.go",
     ]);
     expect(view.selectedNode?.name).toBe("Build");
+    expect(view.selectedNodeVisible).toBe(true);
+    expect(view.hiddenSelectedNode).toBeNull();
     expect(view.selectedSemanticNode?.group).toBe("symbol");
     expect(view.selectedCoverage?.status).toBe("complete");
     expect(view.selectedPages.map((page) => page.id)).toEqual(["wiki:build"]);
@@ -135,6 +137,8 @@ describe("graphExplorerModel", () => {
     });
 
     expect(view.selectedNode).toBeNull();
+    expect(view.selectedNodeVisible).toBe(false);
+    expect(view.hiddenSelectedNode).toBeNull();
     expect(view.selectedSemanticNode).toBeNull();
     expect(view.selectedCoverage).toBeNull();
     expect(view.selectedPages).toEqual([]);
@@ -150,9 +154,34 @@ describe("graphExplorerModel", () => {
     });
 
     expect(view.selectedNode?.id).toBe("function:src/a.go:Build");
+    expect(view.selectedNodeVisible).toBe(true);
+    expect(view.hiddenSelectedNode).toBeNull();
     expect(view.selectedCoverage).toMatchObject({ status: "unknown", pages: [], gaps: [] });
     expect(view.selectedPages).toEqual([]);
     expect(view.canOpenWiki).toBe(false);
+  });
+
+  it("reports a selected function as hidden when semantic mode filters it out", () => {
+    const view = buildGraphExplorerView({
+      graph: graph(),
+      wikiIndex,
+      mode: "semantic",
+      focusNodeIds: [],
+      selectedNodeId: "function:src/a.go:Build",
+    });
+
+    expect(view.semanticGraph.nodes.map((node) => node.id)).toEqual([
+      "file:src/a.go",
+      "file:src/b.go",
+    ]);
+    expect(view.selectedNode).toBeNull();
+    expect(view.selectedNodeVisible).toBe(false);
+    expect(view.selectedSemanticNode).toBeNull();
+    expect(view.hiddenSelectedNode?.id).toBe("function:src/a.go:Build");
+    expect(view.hiddenSelectedNode?.name).toBe("Build");
+    expect(view.selectedCoverage).toBeNull();
+    expect(view.selectedPages.map((page) => page.id)).toEqual(["wiki:build"]);
+    expect(view.canOpenWiki).toBe(true);
   });
 
   it("filters the semantic graph by focus node ids", () => {

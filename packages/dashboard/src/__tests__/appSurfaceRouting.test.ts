@@ -60,9 +60,13 @@ describe("app surface routing", () => {
     );
   });
 
-  it("defaults to wiki and switches to graph through wiki page focus", () => {
+  it("declares wiki as the initial peer surface and selects the first loaded page", () => {
+    expect(useDashboardStore.getInitialState().dashboardSurface).toBe("wiki");
     expect(useDashboardStore.getState().dashboardSurface).toBe("wiki");
+    expect(useDashboardStore.getState().activeWikiPageId).toBe("wiki:overview");
+  });
 
+  it("switches to graph through wiki page focus", () => {
     useDashboardStore.getState().openGraphForWikiPage("wiki:overview");
 
     expect(useDashboardStore.getState().dashboardSurface).toBe("graph");

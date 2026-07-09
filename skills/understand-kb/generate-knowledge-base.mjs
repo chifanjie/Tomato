@@ -314,6 +314,8 @@ function uniqueSortedStrings(values) {
     .sort(compareStrings);
 }
 
+const MAX_RELATED_NODE_IDS = 24;
+
 function markdownPathForDocument(doc) {
   return `knowledge-base/${doc.path.replace(/\\/g, '/').replace(/^\/+/, '')}`;
 }
@@ -339,12 +341,24 @@ function wikiPageCategoryForNode(node) {
 
 function relatedNodeIdsFor(graph, explainedNodeIds) {
   const explained = new Set(explainedNodeIds);
-  const related = [];
+  const relatedById = new Map();
   for (const edge of graph.edges) {
-    if (explained.has(edge.source) && !explained.has(edge.target)) related.push(edge.target);
-    else if (explained.has(edge.target) && !explained.has(edge.source)) related.push(edge.source);
+    const relatedId = explained.has(edge.source) && !explained.has(edge.target)
+      ? edge.target
+      : explained.has(edge.target) && !explained.has(edge.source)
+        ? edge.source
+        : null;
+    if (!relatedId) continue;
+    const current = relatedById.get(relatedId);
+    const weight = Number.isFinite(edge.weight) ? edge.weight : 0;
+    if (!current || weight > current.weight) {
+      relatedById.set(relatedId, { nodeId: relatedId, weight, type: edge.type || '' });
+    }
   }
-  return uniqueSortedStrings(related);
+  return [...relatedById.values()]
+    .sort((a, b) => b.weight - a.weight || compareStrings(a.type, b.type) || compareStrings(a.nodeId, b.nodeId))
+    .slice(0, MAX_RELATED_NODE_IDS)
+    .map((item) => item.nodeId);
 }
 
 function summaryForDocument(doc, nodes) {
@@ -363,8 +377,19 @@ function evidenceForNode(node) {
     nodeIds: [node.id],
   };
   if (node.filePath) evidence.filePath = node.filePath;
-  if (Array.isArray(node.lineRange) && node.lineRange.length === 2) evidence.lineRange = node.lineRange;
+  if (validLineRange(node.lineRange)) evidence.lineRange = node.lineRange;
   return evidence;
+}
+
+function validLineRange(lineRange) {
+  return (
+    Array.isArray(lineRange) &&
+    lineRange.length === 2 &&
+    Number.isInteger(lineRange[0]) &&
+    Number.isInteger(lineRange[1]) &&
+    lineRange[0] > 0 &&
+    lineRange[1] >= lineRange[0]
+  );
 }
 
 function gapSeverityForNode(node) {
@@ -384,8 +409,10 @@ function buildWikiIndexPayload(kb) {
   const graph = kb.profile.graph;
   const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
   const evidenceById = new Map();
+  const documentExplainedNodeIds = new Set();
   const pages = kb.documents.map((doc) => {
     const explainedNodeIds = uniqueSortedStrings(doc.coveredNodeIds.filter((nodeId) => nodesById.has(nodeId)));
+    for (const nodeId of explainedNodeIds) documentExplainedNodeIds.add(nodeId);
     const nodes = explainedNodeIds.map((nodeId) => nodesById.get(nodeId));
     const evidenceIds = [];
     for (const node of nodes) {
@@ -407,7 +434,7 @@ function buildWikiIndexPayload(kb) {
     };
   });
 
-  if (!pages.some((page) => page.explainedNodeIds.length > 0)) {
+  if (documentExplainedNodeIds.size === 0) {
     const markdownPath = fallbackMarkdownPath(kb);
     for (const node of graph.nodes) {
       const evidence = evidenceForNode(node);
@@ -427,9 +454,8 @@ function buildWikiIndexPayload(kb) {
     }
   }
 
-  const explainedNodeIds = new Set(pages.flatMap((page) => page.explainedNodeIds));
   const gaps = graph.nodes
-    .filter((node) => !explainedNodeIds.has(node.id))
+    .filter((node) => !documentExplainedNodeIds.has(node.id))
     .map((node) => ({
       id: wikiId('gap', node.id),
       nodeId: node.id,

@@ -121,4 +121,92 @@ describe("knowledge base wiki index generation", () => {
       rmSync(repo, { recursive: true, force: true });
     }
   });
+
+  it("keeps fallback node pages from hiding gaps and caps related nodes", () => {
+    const repo = mkdtempSync(join(tmpdir(), "understand-code-wiki-index-fallback-"));
+    try {
+      const outputDir = join(repo, ".understand-code");
+      mkdirSync(outputDir, { recursive: true });
+      const leafNodes = Array.from({ length: 30 }, (_, index) => ({
+        id: `resource:leaf-${index + 1}`,
+        type: "resource",
+        name: `Leaf ${index + 1}`,
+        summary: `Leaf ${index + 1}.`,
+        tags: [],
+        complexity: "simple",
+      }));
+      const nodes = [
+        {
+          id: "resource:hub",
+          type: "resource",
+          name: "Hub",
+          filePath: "src/hub.go",
+          lineRange: [9, 2],
+          summary: "Hub resource.",
+          tags: [],
+          complexity: "complex",
+        },
+        ...leafNodes,
+      ];
+      writeFileSync(
+        join(outputDir, "knowledge-graph.json"),
+        JSON.stringify({
+          version: "1.0.0",
+          project: {
+            name: "sparse",
+            languages: [],
+            frameworks: [],
+            description: "",
+            analyzedAt: "2026-07-09T00:00:00.000Z",
+            gitCommitHash: "local",
+          },
+          nodes,
+          edges: leafNodes.map((node, index) => ({
+            source: "resource:hub",
+            target: node.id,
+            type: "depends_on",
+            direction: "forward",
+            weight: (index + 1) / 100,
+          })),
+          layers: [],
+          tour: [],
+        }),
+      );
+
+      const result = spawnSync(
+        "node",
+        ["skills/understand-kb/generate-knowledge-base.mjs", repo, "--deterministic-only"],
+        {
+          cwd: repoRoot,
+          encoding: "utf8",
+        },
+      );
+
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+      const wikiIndex = JSON.parse(
+        readFileSync(join(outputDir, "knowledge-base/wiki-index.json"), "utf8"),
+      );
+      const hubPage = wikiIndex.pages.find((page: { explainedNodeIds: string[] }) =>
+        page.explainedNodeIds.includes("resource:hub"),
+      );
+      const hubEvidence = wikiIndex.evidence.find((item: { nodeIds: string[] }) =>
+        item.nodeIds.includes("resource:hub"),
+      );
+
+      expect(hubPage).toBeDefined();
+      expect(hubPage.relatedNodeIds).toHaveLength(24);
+      expect(hubPage.relatedNodeIds[0]).toBe("resource:leaf-30");
+      expect(hubEvidence).toEqual(
+        expect.objectContaining({
+          filePath: "src/hub.go",
+        }),
+      );
+      expect(hubEvidence).not.toHaveProperty("lineRange");
+      expect(wikiIndex.gaps.map((gap: { nodeId: string }) => gap.nodeId).sort()).toEqual(
+        nodes.map((node) => node.id).sort(),
+      );
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
 });

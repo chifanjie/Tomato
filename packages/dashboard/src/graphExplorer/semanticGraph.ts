@@ -110,7 +110,16 @@ export function semanticGroupForNode(node: GraphNode): SemanticNodeGroup {
   if (node.type === "module" || node.type === "concept") return "module";
   if (node.type === "file" || node.type === "config") return "file";
   if (node.type === "function" || node.type === "class") return "symbol";
-  if (node.type === "document" || node.type === "article" || node.type === "claim" || node.type === "source") return "document";
+  if (
+    node.type === "document"
+    || node.type === "article"
+    || node.type === "entity"
+    || node.type === "topic"
+    || node.type === "claim"
+    || node.type === "source"
+  ) {
+    return "document";
+  }
   if (node.type === "table" || node.type === "schema") return "data";
   if (node.type === "endpoint" || node.type === "pipeline" || node.type === "resource" || node.type === "service") {
     return "infra";
@@ -222,8 +231,10 @@ export function buildSemanticGraphModel({
   mode,
   focusNodeIds,
 }: BuildSemanticGraphInput): SemanticGraph {
-  const includedByFocus = focusNeighborhood(graph, focusNodeIds);
-  const focusedNodeIds = new Set(focusNodeIds);
+  const graphNodeIds = new Set(graph.nodes.map((node) => node.id));
+  const validFocusNodeIds = focusNodeIds.filter((nodeId) => graphNodeIds.has(nodeId));
+  const includedByFocus = focusNeighborhood(graph, validFocusNodeIds);
+  const focusedNodeIds = new Set(validFocusNodeIds);
   const sourceNodes = graph.nodes.filter(
     (node) => includedByFocus.has(node.id) && (focusedNodeIds.has(node.id) || allowedNodeForMode(node, mode, wikiIndex)),
   );

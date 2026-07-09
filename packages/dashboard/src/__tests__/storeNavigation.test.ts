@@ -201,6 +201,40 @@ describe("dashboard wiki and graph surface state", () => {
     expect(useDashboardStore.getState().activeWikiPageId).toBe("wiki:function-build");
   });
 
+  it("accepts focus graph explorer mode without clearing graph focus ids", () => {
+    useDashboardStore.getState().setGraph(sampleGraph());
+    useDashboardStore.getState().setWikiIndex(buildWikiIndex({
+      version: 1,
+      generatedAt: "2026-07-09T00:00:00.000Z",
+      projectName: "sample",
+      pages: [
+        {
+          id: "wiki:function-build",
+          title: "Build Function",
+          category: "symbol",
+          summary: "Build docs.",
+          markdownPath: "knowledge-base/functions/Build.md",
+          explainedNodeIds: ["function:src/a.go:Build"],
+          relatedNodeIds: ["file:src/a.go"],
+          evidenceIds: [],
+          coverage: "partial",
+          quality: "generated",
+        },
+      ],
+      evidence: [],
+      gaps: [],
+    }));
+
+    useDashboardStore.getState().openGraphForWikiPage("wiki:function-build");
+    useDashboardStore.getState().setGraphExplorerMode("focus");
+
+    expect(useDashboardStore.getState().graphExplorerMode).toBe("focus");
+    expect(useDashboardStore.getState().graphFocusNodeIds).toEqual([
+      "function:src/a.go:Build",
+      "file:src/a.go",
+    ]);
+  });
+
   it("preserves graph surface when wiki metadata reloads", () => {
     useDashboardStore.getState().setGraph(sampleGraph());
     useDashboardStore.getState().setDashboardSurface("graph");

@@ -184,6 +184,8 @@ describe("semanticGraph", () => {
     expect(semanticGroupForNode(graph().nodes[10])).toBe("data");
     expect(semanticGroupForNode(graph().nodes[13])).toBe("document");
     expect(semanticGroupForNode(graph().nodes[14])).toBe("symbol");
+    expect(semanticGroupForNode({ id: "entity:user", type: "entity", name: "User", summary: "", tags: [], complexity: "simple" })).toBe("document");
+    expect(semanticGroupForNode({ id: "topic:search", type: "topic", name: "Search", summary: "", tags: [], complexity: "simple" })).toBe("document");
   });
 
   it("keeps exact global, semantic, architecture, call, coverage, and evidence node sets", () => {
@@ -400,6 +402,30 @@ describe("semanticGraph", () => {
       "file:productline/service.go->function:productline/service.go:Recognise",
       "document:runbook->function:productline/service.go:Recognise",
       "function:productline/service.go:Recognise->file:shared/rate_limit.go",
+    ]);
+  });
+
+  it("falls back to the selected mode when every focus id is stale", () => {
+    expect(nodeIdsFor("semantic", ["missing:node"])).toEqual(nodeIdsFor("semantic"));
+    expect(nodeIdsFor("architecture", ["missing:node"])).toEqual(nodeIdsFor("architecture"));
+    expect(nodeIdsFor("focus", ["missing:node"])).toEqual(allNodeIds);
+  });
+
+  it("ignores stale focus ids when at least one focus id is valid", () => {
+    const validFocusNeighborhood = [
+      "file:productline/service.go",
+      "document:runbook",
+      "function:productline/service.go:Recognise",
+      "file:shared/rate_limit.go",
+    ];
+
+    expect(nodeIdsFor("focus", ["missing:node", "function:productline/service.go:Recognise"])).toEqual(
+      validFocusNeighborhood,
+    );
+    expect(nodeIdsFor("architecture", ["missing:node", "function:productline/service.go:Recognise"])).toEqual([
+      "file:productline/service.go",
+      "function:productline/service.go:Recognise",
+      "file:shared/rate_limit.go",
     ]);
   });
 

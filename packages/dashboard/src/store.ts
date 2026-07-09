@@ -24,7 +24,7 @@ export type Complexity = "simple" | "moderate" | "complex";
 export type EdgeCategory = "structural" | "behavioral" | "data-flow" | "dependencies" | "semantic" | "infrastructure" | "domain" | "knowledge";
 export type ViewMode = "structural" | "domain" | "knowledge";
 export type DashboardSurface = "wiki" | "graph";
-export type GraphExplorerMode = "global" | "semantic" | "architecture" | "call" | "coverage" | "evidence";
+export type GraphExplorerMode = "global" | "semantic" | "architecture" | "call" | "coverage" | "evidence" | "focus";
 export type DetailLevel = "file" | "class";
 
 export interface FilterState {

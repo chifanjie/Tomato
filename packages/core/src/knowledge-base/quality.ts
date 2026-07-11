@@ -48,10 +48,77 @@ const REPEATED_DOCUMENT_RATIO = 0.2;
 const MAX_REPEATED_LINES_BEFORE_FAILURE = 3;
 const PLACEHOLDER_PROSE_RE = /\b(TBD|TODO|FIXME)\b|待\s*定|占\s*位|后续\s*补充|这里\s*填写/i;
 
+function masked(value: string): string {
+  return value.replace(/[^\r\n]/g, " ");
+}
+
+function maskFencedCode(markdown: string): string {
+  let fence: { marker: "`" | "~"; length: number } | undefined;
+  return markdown.split(/(\r?\n)/).map((line) => {
+    if (/^\r?\n$/.test(line)) return line;
+
+    if (fence) {
+      const closing = line.match(/^ {0,3}(`+|~+)[ \t]*$/)?.[1];
+      if (closing?.[0] === fence.marker && closing.length >= fence.length) {
+        fence = undefined;
+      }
+      return masked(line);
+    }
+
+    const opening = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (!opening) return line;
+    const marker = opening[1][0] as "`" | "~";
+    if (marker === "`" && opening[2].includes("`")) return line;
+    fence = { marker, length: opening[1].length };
+    return masked(line);
+  }).join("");
+}
+
+function backtickRunLength(value: string, start: number): number {
+  let end = start;
+  while (value[end] === "`") end += 1;
+  return end - start;
+}
+
+function maskInlineCode(markdown: string): string {
+  let result = "";
+  let index = 0;
+  while (index < markdown.length) {
+    if (markdown[index] !== "`") {
+      result += markdown[index];
+      index += 1;
+      continue;
+    }
+
+    const openingLength = backtickRunLength(markdown, index);
+    let cursor = index + openingLength;
+    let closingEnd = -1;
+    while (cursor < markdown.length) {
+      if (markdown[cursor] !== "`") {
+        cursor += 1;
+        continue;
+      }
+      const closingLength = backtickRunLength(markdown, cursor);
+      if (closingLength === openingLength) {
+        closingEnd = cursor + closingLength;
+        break;
+      }
+      cursor += closingLength;
+    }
+
+    if (closingEnd < 0) {
+      result += markdown.slice(index, index + openingLength);
+      index += openingLength;
+      continue;
+    }
+    result += masked(markdown.slice(index, closingEnd));
+    index = closingEnd;
+  }
+  return result;
+}
+
 export function containsPlaceholderProse(markdown: string): boolean {
-  const proseOnly = markdown
-    .replace(/```[\s\S]*?(?:```|$)/g, "")
-    .replace(/`[^`\n]*`/g, "");
+  const proseOnly = maskInlineCode(maskFencedCode(markdown));
   return PLACEHOLDER_PROSE_RE.test(proseOnly);
 }
 

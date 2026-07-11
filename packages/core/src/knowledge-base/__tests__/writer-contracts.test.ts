@@ -288,6 +288,14 @@ describe("writer contracts", () => {
       .toBe(true);
   });
 
+  it.each([
+    ["tilde fence", "~~~ts\nconst TODO = true;\n~~~"],
+    ["long backtick fence", "````md\n```ts\nconst FIXME = true;\n```\n````"],
+    ["multi-backtick inline span", "行内代码：``TODO``"],
+  ])("ignores placeholder tokens inside %s", (_label, markdown) => {
+    expect(containsPlaceholderProse(markdown)).toBe(false);
+  });
+
   it("rejects file documents that have headings but generic filler", () => {
     const output = completeFileOutput();
     output.documents[0].markdown = [

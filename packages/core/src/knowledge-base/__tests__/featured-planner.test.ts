@@ -102,6 +102,135 @@ describe("featured planning", () => {
     expect(new Set(capabilityPages.map((document) => document.id)).size).toBe(2);
   });
 
+  it("keeps capability, flow, and module page paths globally unique after lossy slug collisions", () => {
+    const collisionGraph: KnowledgeGraph = {
+      ...graph,
+      nodes: [
+        ...graph.nodes,
+        {
+          id: "function:src/a.ts:run-duplicate",
+          type: "function",
+          name: "run",
+          filePath: "src/a.ts",
+          lineRange: [15, 19],
+          summary: "接收另一类请求并调用同一策略",
+          tags: ["entry"],
+          complexity: "complex",
+        },
+      ],
+      edges: [
+        ...graph.edges,
+        { source: "file:src/a.ts", target: "function:src/a.ts:run-duplicate", type: "contains", direction: "forward", weight: 1 },
+        { source: "function:src/a.ts:run-duplicate", target: "function:src/service.ts:apply", type: "calls", direction: "forward", weight: 1 },
+      ],
+      layers: [
+        ...graph.layers,
+        { id: "layer:api-duplicate", name: "入口层", description: "另一个同名入口层", nodeIds: [] },
+      ],
+    };
+    const shared = {
+      title: "重复能力",
+      keywords: ["重复"],
+      factIds: [],
+      relatedNodeIds: ["function:src/a.ts:run"],
+      evidence: [{ filePath: "src/a.ts", nodeId: "function:src/a.ts:run" }],
+      score: 10,
+      evidenceRole: "primary" as const,
+      confidence: "high" as const,
+      sourceKindCounts: { "production-logic": 1 },
+      primaryFactIds: [],
+      supportingFactIds: [],
+      exampleOnlyFactIds: [],
+    };
+    const collisionProfile: BusinessCapabilityProfile = {
+      facts: [],
+      capabilities: [
+        { id: "capability:0-first", ...shared },
+        { id: "capability:a/b", ...shared },
+        { id: "capability:a:b", ...shared },
+      ],
+      totalFacts: 0,
+      sourceBackedFacts: 0,
+    };
+
+    const plan = buildFeaturedPlan({
+      profile: buildKnowledgeBaseProfile(collisionGraph),
+      businessProfile: collisionProfile,
+      fileDocPlan,
+      topicPlan,
+      config: {},
+    });
+    const generatedPages = plan.documents.filter((document) =>
+      document.category === "capability" || document.category === "flow" || document.category === "module");
+
+    expect(generatedPages.filter((document) => document.category === "capability")).toHaveLength(3);
+    expect(generatedPages.filter((document) => document.category === "flow")).toHaveLength(2);
+    expect(generatedPages.filter((document) => document.category === "module")).toHaveLength(3);
+    expect(new Set(plan.documents.map((document) => document.path)).size).toBe(plan.documents.length);
+    expect(new Set(plan.documents.map((document) => document.id)).size).toBe(plan.documents.length);
+  });
+
+  it("builds Source entry from every valid entry before pseudo-flow filtering and the flow cap", () => {
+    const entryIds = Array.from({ length: 13 }, (_, index) =>
+      `function:src/entries.ts:entry-${index.toString().padStart(2, "0")}`);
+    const isolatedEntryId = "function:src/entries.ts:zz-isolated";
+    const completeEntryGraph: KnowledgeGraph = {
+      version: "1.0.0",
+      project: graph.project,
+      nodes: [
+        { id: "file:src/entries.ts", type: "file", name: "entries.ts", filePath: "src/entries.ts", summary: "入口集合", tags: [], complexity: "moderate" },
+        ...entryIds.map((id, index) => ({
+          id,
+          type: "function" as const,
+          name: `入口 ${index.toString().padStart(2, "0")}`,
+          filePath: "src/entries.ts",
+          lineRange: [index * 2 + 1, index * 2 + 2] as [number, number],
+          summary: `处理第 ${index + 1} 个入口`,
+          tags: ["entry"],
+          complexity: "moderate" as const,
+        })),
+        { id: isolatedEntryId, type: "function", name: "孤立入口", filePath: "src/entries.ts", lineRange: [30, 31], summary: "合法入口但没有下游行为", tags: ["entry"], complexity: "moderate" },
+        { id: "function:src/entries.ts:shared", type: "function", name: "共享处理", filePath: "src/entries.ts", lineRange: [33, 35], summary: "共享行为阶段", tags: [], complexity: "moderate" },
+        { id: "config:config/entries.json", type: "config", name: "entries.json", filePath: "config/entries.json", summary: "入口配置", tags: [], complexity: "simple" },
+      ],
+      edges: [
+        ...[...entryIds, isolatedEntryId, "function:src/entries.ts:shared"].map((target) => ({
+          source: "file:src/entries.ts",
+          target,
+          type: "contains" as const,
+          direction: "forward" as const,
+          weight: 1,
+        })),
+        ...entryIds.map((source) => ({
+          source,
+          target: "function:src/entries.ts:shared",
+          type: "calls" as const,
+          direction: "forward" as const,
+          weight: 1,
+        })),
+        { source: "function:src/entries.ts:shared", target: "config:config/entries.json", type: "reads_from", direction: "forward", weight: 1 },
+      ],
+      layers: [{ id: "layer:entry", name: "入口层", description: "入口集合", nodeIds: ["file:src/entries.ts"] }],
+      tour: [],
+    };
+
+    const plan = buildFeaturedPlan({
+      profile: buildKnowledgeBaseProfile(completeEntryGraph),
+      businessProfile,
+      fileDocPlan: { tasks: [], batches: [], warnings: [] },
+      topicPlan,
+      config: {},
+    });
+    const overview = plan.documents.find((document) => document.path === KB_PATHS.projectOverview)!;
+    const sourceEntry = plan.documents.find((document) => document.path === KB_PATHS.sourceEntry)!;
+
+    expect(overview.directNodeIds).toHaveLength(12);
+    expect(overview.directNodeIds).not.toContain(entryIds[12]);
+    expect(sourceEntry.contextNodeIds).toEqual(expect.arrayContaining([...entryIds, isolatedEntryId]));
+    expect(sourceEntry.representedEdgeIds).toContain(`contains:file:src/entries.ts->${isolatedEntryId}`);
+    expect(sourceEntry.representedEdgeIds).toContain(`calls:${entryIds[12]}->function:src/entries.ts:shared`);
+  });
+
   it("keeps status pages in maintenance even when route config pins them", () => {
     const plan = buildFeaturedPlan({
       profile: buildKnowledgeBaseProfile(graph),

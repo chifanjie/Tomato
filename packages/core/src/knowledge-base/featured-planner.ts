@@ -100,6 +100,62 @@ function plannedDocument(
   };
 }
 
+function normalizedPagePath(path: string): string {
+  return path.replace(/\\/g, "/");
+}
+
+function pathWithSuffix(path: string, suffix: string): string {
+  const extension = path.match(/\.md$/i)?.[0] ?? "";
+  const stem = extension ? path.slice(0, -extension.length) : path;
+  return `${stem}-${suffix}${extension}`;
+}
+
+function encodedPathSuffix(stableId: string): string {
+  return encodeURIComponent(stableId).replace(/[!'()*]/g, (character) =>
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+function plannerPathAllocator(exactPaths: readonly string[]): (path: string, stableId: string) => string {
+  const used = new Set<string>();
+  for (const path of exactPaths) {
+    const normalized = normalizedPagePath(path);
+    if (used.has(normalized)) {
+      throw new Error(`知识库规划路径冲突：${path}`);
+    }
+    used.add(normalized);
+  }
+
+  return (path, stableId) => {
+    if (!used.has(normalizedPagePath(path))) {
+      used.add(normalizedPagePath(path));
+      return path;
+    }
+
+    const suffix = encodedPathSuffix(stableId);
+    let attempt = 1;
+    let candidate = pathWithSuffix(path, suffix);
+    while (used.has(normalizedPagePath(candidate))) {
+      attempt += 1;
+      candidate = pathWithSuffix(path, `${suffix}-${attempt}`);
+    }
+    used.add(normalizedPagePath(candidate));
+    return candidate;
+  };
+}
+
+function assertUniqueDocumentPaths(documents: readonly PlannedDocument[]): void {
+  const paths = new Set<string>();
+  const ids = new Set<string>();
+  for (const document of documents) {
+    const normalizedPath = normalizedPagePath(document.path);
+    if (paths.has(normalizedPath) || ids.has(document.id)) {
+      throw new Error(`知识库规划生成了重复页面：${document.path}`);
+    }
+    paths.add(normalizedPath);
+    ids.add(document.id);
+  }
+}
+
 function symbolAnchors(task: FileDocTask, profile: ProjectProfile): SymbolAnchor[] {
   const counts = new Map<string, number>();
   return sortedUnique([...task.functionNodeIds, ...task.classNodeIds]).map((nodeId) => {
@@ -382,11 +438,25 @@ export function buildFeaturedPlan(input: BuildFeaturedPlanInput): FeaturedPlan {
   publishableFlows.splice(12);
 
   const publishableEntryIds = publishableFlows.map((flow) => flow.nodeId);
-  const entryFileIds = sortedUnique(publishableEntryIds.flatMap((nodeId) => {
+  const publishableEntryFileIds = sortedUnique(publishableEntryIds.flatMap((nodeId) => {
+    const fileId = fileNodeIdForNode(profile, nodeId);
+    return fileId ? [fileId] : [];
+  }));
+  const sourceEntryNodeIds = entries.map((entry) => entry.nodeId);
+  const sourceEntryFileIds = sortedUnique(sourceEntryNodeIds.flatMap((nodeId) => {
     const fileId = fileNodeIdForNode(profile, nodeId);
     return fileId ? [fileId] : [];
   }));
   const layerFileIds = sortedUnique(profile.layerProfiles.flatMap((layer) => fileIdsInLayer(profile, layer.id)));
+  const exactPaths = [
+    KB_PATHS.projectOverview,
+    KB_PATHS.sourceEntry,
+    KB_PATHS.qualityStatus,
+    KB_PATHS.referenceCoverage,
+    ...fileDocPlan.tasks.map((task) => task.documentPath),
+    ...topicPlan.topics.filter((topic) => topic.tier === "required").map((topic) => topic.documentPath),
+  ];
+  const allocateGeneratedPath = plannerPathAllocator(exactPaths);
   const documents: PlannedDocument[] = [];
 
   documents.push(plannedDocument({
@@ -396,22 +466,20 @@ export function buildFeaturedPlan(input: BuildFeaturedPlanInput): FeaturedPlan {
     category: "overview",
     role: "featured",
     directNodeIds: publishableEntryIds,
-    contextNodeIds: sortedUnique([...entryFileIds, ...layerFileIds]),
+    contextNodeIds: sortedUnique([...publishableEntryFileIds, ...layerFileIds]),
     symbolAnchors: [],
     route: { order: 0, stage: "purpose" },
-    representedEdgeIds: behaviorEdgesAmong(profile, [...publishableEntryIds, ...entryFileIds, ...layerFileIds]),
+    representedEdgeIds: behaviorEdgesAmong(profile, [...publishableEntryIds, ...publishableEntryFileIds, ...layerFileIds]),
     reason: "项目总览固定承载项目目的、边界与主要入口",
   }));
 
-  const usedCapabilityPaths = new Set<string>();
   for (const capability of rankedCapabilities(businessProfile)) {
     const directNodeIds = sortedUnique(capability.evidence.flatMap((evidence) => evidence.nodeId ? [evidence.nodeId] : []));
     const contextNodeIds = sortedUnique(capability.relatedNodeIds.filter((nodeId) => !directNodeIds.includes(nodeId)));
-    const basePath = businessCapabilityDocumentPath(capability.title, capability.id);
-    const path = usedCapabilityPaths.has(basePath)
-      ? basePath.replace(/\.md$/, `-${slugPath(capability.id)}.md`)
-      : basePath;
-    usedCapabilityPaths.add(path);
+    const path = allocateGeneratedPath(
+      businessCapabilityDocumentPath(capability.title, capability.id),
+      capability.id,
+    );
     documents.push(plannedDocument({
       path,
       title: capability.title,
@@ -438,7 +506,10 @@ export function buildFeaturedPlan(input: BuildFeaturedPlanInput): FeaturedPlan {
       : undefined;
     const title = `${flow.node.name} 业务流程`;
     documents.push(plannedDocument({
-      path: businessFlowDocumentPath(flow.node.name, disambiguator),
+      path: allocateGeneratedPath(
+        businessFlowDocumentPath(flow.node.name, disambiguator),
+        flow.nodeId,
+      ),
       title,
       summary: concreteSummary(flow.node.summary, title),
       category: "flow",
@@ -458,7 +529,7 @@ export function buildFeaturedPlan(input: BuildFeaturedPlanInput): FeaturedPlan {
       .find((node) => node?.type === "module");
     const title = `${layer.name} 模块概览`;
     documents.push(plannedDocument({
-      path: moduleDocumentPath(layer.name),
+      path: allocateGeneratedPath(moduleDocumentPath(layer.name), layer.id),
       title,
       summary: concreteSummary(layer.description, title),
       category: "module",
@@ -503,13 +574,13 @@ export function buildFeaturedPlan(input: BuildFeaturedPlanInput): FeaturedPlan {
     summary: concreteSummary("从入口文件、函数与配置边界回到可核对源码。", "源码入口"),
     category: "overview",
     role: "featured",
-    directNodeIds: entryFileIds,
-    contextNodeIds: publishableEntryIds,
+    directNodeIds: sourceEntryFileIds,
+    contextNodeIds: sourceEntryNodeIds,
     symbolAnchors: [],
     route: { order: 0, stage: "evidence" },
     representedEdgeIds: profile.graph.edges
-      .filter((edge) => (edge.type === "contains" && entryFileIds.includes(edge.source) && publishableEntryIds.includes(edge.target))
-        || (BEHAVIOR_EDGE_TYPES.has(edge.type) && publishableEntryIds.includes(edge.source)))
+      .filter((edge) => (edge.type === "contains" && sourceEntryFileIds.includes(edge.source) && sourceEntryNodeIds.includes(edge.target))
+        || (BEHAVIOR_EDGE_TYPES.has(edge.type) && sourceEntryNodeIds.includes(edge.source)))
       .map(edgeId),
     reason: "主阅读路径必须提供从业务结论返回源码的证据入口",
   }));
@@ -557,6 +628,8 @@ export function buildFeaturedPlan(input: BuildFeaturedPlanInput): FeaturedPlan {
     representedEdgeIds: [],
     reason: "引用覆盖只诊断已物化语料，不参与主阅读状态判断",
   }));
+
+  assertUniqueDocumentPaths(documents);
 
   let routed = assignRoutes(capFeaturedDocuments(documents));
   const originallyFeaturedIds = new Set(routed

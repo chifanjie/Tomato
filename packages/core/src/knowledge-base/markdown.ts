@@ -6,58 +6,56 @@ import type {
   BusinessCapabilityProfile,
   BusinessEvidenceRole,
   BusinessFact,
-  DocumentPlan,
+  FeaturedPlan,
   FileDocPlan,
   FileDocTask,
   FileWriterDocument,
   GeneratedDocument,
   KnowledgeBaseStatus,
-  KnowledgeBaseDocumentCategory,
+  KnowledgeDocumentCategory,
   RetryPlan,
   PlannedDocument,
   ProjectProfile,
+  SourceEvidence,
   TopicPlanItem,
   TopicPlan,
   TopicWriterDocument,
 } from "./types.js";
-import { KB_PATHS, indexDocumentPath } from "./paths.js";
+import {
+  KB_PATHS,
+  businessCapabilityDocumentPath as sharedBusinessCapabilityDocumentPath,
+  normalizeKnowledgeSourcePath,
+} from "./paths.js";
 import type { MergeKnowledgeBaseWriterOutputsResult } from "./merge.js";
 import { TOPIC_WRITER_REQUIRED_SECTIONS } from "./writer-contracts.js";
-import { summarizeMarkdownQuality } from "./quality.js";
+import { containsPlaceholderProse, summarizeMarkdownQuality } from "./quality.js";
+import type { MarkdownQualitySummary } from "./quality.js";
 
-const DOCUMENT_CATEGORIES: KnowledgeBaseDocumentCategory[] = [
-  "top-level",
-  "index",
+type DocumentPlan = FeaturedPlan;
+
+const DOCUMENT_CATEGORIES: KnowledgeDocumentCategory[] = [
+  "overview",
+  "capability",
+  "flow",
   "module",
   "file",
-  "flow",
   "topic",
-  "business-capability",
-  "report",
-  "intermediate",
+  "quality",
+  "coverage",
+  "other",
 ];
 
-const PLACEHOLDER_RE = /\b(TBD|TODO|FIXME)\b|待定|占位|后续补充|这里填写/i;
-const LEGACY_PATHS = {
-  architectureMap: "架构与模块总览.md",
-  businessFlowMap: "业务流程总览.md",
-  fileIndex: "文件索引.md",
-  functionIndex: "函数索引.md",
-  classIndex: "类索引.md",
-  pendingItems: "风险点与待确认项.md",
-  aiIndex: "AI检索索引.md",
-} as const;
 const RELATIONSHIP_COVERAGE_EDGE_TYPES: EdgeType[] = ["calls", "imports", "contains"];
-const CATEGORY_LABELS: Record<KnowledgeBaseDocumentCategory, string> = {
-  "top-level": "顶层导航",
-  index: "索引",
+const CATEGORY_LABELS: Record<KnowledgeDocumentCategory, string> = {
+  overview: "阅读总览",
+  capability: "业务能力",
+  flow: "业务流程",
   module: "模块总览",
   file: "文件文档",
-  flow: "业务流程",
   topic: "关键专题",
-  "business-capability": "业务能力",
-  report: "报告",
-  intermediate: "中间产物",
+  quality: "质量状态",
+  coverage: "引用覆盖",
+  other: "其他",
 };
 const NODE_TYPE_LABELS: Record<NodeType, string> = {
   file: "文件",
@@ -184,11 +182,9 @@ function projectDescription(profile: ProjectProfile): string {
   return `${profile.graph.project.name} 的代码结构知识库。`;
 }
 
-function coverageLevelLabel(level: string | undefined): string {
-  if (level === "index") return "已进入索引";
-  if (level === "overview") return "已进入总览";
-  if (level === "topic") return "已生成专题";
-  if (level === "pending-verification") return "待核验";
+function coverageLevelLabel(plan: FeaturedPlan, nodeId: string): string {
+  if (plan.documents.some((document) => document.directNodeIds.includes(nodeId))) return "已直接说明";
+  if (plan.documents.some((document) => document.contextNodeIds.includes(nodeId))) return "已作为上下文";
   return "未覆盖";
 }
 
@@ -214,7 +210,7 @@ function entryTypeLabel(entryType: string): string {
   return entryType;
 }
 
-function categoryLabel(category: KnowledgeBaseDocumentCategory): string {
+function categoryLabel(category: KnowledgeDocumentCategory): string {
   return CATEGORY_LABELS[category];
 }
 
@@ -258,7 +254,10 @@ function confidenceLabel(confidence: string): string {
 
 function reasonText(reason: string): string {
   if (reason === "stable knowledge-base navigation document") return "稳定的知识库导航文档";
-  if (reason.startsWith("entry flow for ")) return `入口流程：${reason.replace("entry flow for ", "")}`;
+  if (reason.startsWith("entry flow for ")) {
+    const [entryType, entryNode] = reason.replace("entry flow for ", "").split("; entry node ");
+    return `入口流程：${entryType}${entryNode ? `；入口节点 ${entryNode}` : ""}`;
+  }
   if (reason === "one module overview per graph layer") return "每个图谱层对应一个模块总览";
   if (reason === "entry candidate: entry-like name or summary") return "入口候选：名称或摘要呈现入口特征";
   if (reason === "complex business-relevant node") return "复杂且具有业务相关性的节点";
@@ -271,8 +270,8 @@ function reasonText(reason: string): string {
   return hasChinese(reason) ? reason : `图谱结构信号：${reason}`;
 }
 
-function countByCategory(documents: GeneratedDocument[]): Record<KnowledgeBaseDocumentCategory, number> {
-  const counts = Object.fromEntries(DOCUMENT_CATEGORIES.map((category) => [category, 0])) as Record<KnowledgeBaseDocumentCategory, number>;
+function countByCategory(documents: GeneratedDocument[]): Record<KnowledgeDocumentCategory, number> {
+  const counts = Object.fromEntries(DOCUMENT_CATEGORIES.map((category) => [category, 0])) as Record<KnowledgeDocumentCategory, number>;
   for (const doc of documents) counts[doc.category] += 1;
   return counts;
 }
@@ -282,7 +281,7 @@ function lineRef(node: { filePath?: string; lineRange?: [number, number] }, fall
 }
 
 function representedEdgesForTask(profile: ProjectProfile, task: FileDocTask): string[] {
-  const localNodeIds = new Set([task.fileNodeId, ...task.functionNodeIds, ...task.classNodeIds]);
+  const localNodeIds = new Set([...task.sourceNodeIds, ...task.functionNodeIds, ...task.classNodeIds]);
   const represented = new Set<string>();
   for (const edge of profile.graph.edges) {
     if (localNodeIds.has(edge.source) || localNodeIds.has(edge.target)) {
@@ -296,6 +295,9 @@ function renderFunctionCard(profile: ProjectProfile, task: FileDocTask, nodeId: 
   const node = nodeOf(profile, nodeId);
   const outgoing = profile.indexes.outgoingEdgesByNode.get(nodeId) ?? [];
   const incoming = profile.indexes.incomingEdgesByNode.get(nodeId) ?? [];
+  const reads = outgoing.filter((edge) => edge.type === "reads_from");
+  const writes = outgoing.filter((edge) => edge.type === "writes_to");
+  const stateRelations = outgoing.filter((edge) => edge.type === "transforms" || edge.type === "validates");
   return [
     `### ${node?.name ?? nodeId}`,
     `- 节点 ID: \`${nodeId}\``,
@@ -305,6 +307,10 @@ function renderFunctionCard(profile: ProjectProfile, task: FileDocTask, nodeId: 
     `- 输出/副作用: ${outgoing.map((edge) => nodeLabel(profile, edge.target)).join(", ") || "图谱未记录明确输出对象，需结合返回值和副作用核对。"}`,
     `- 上游调用: ${incoming.filter((edge) => edge.type === "calls").map((edge) => nodeLabel(profile, edge.source)).join(", ") || "无"}`,
     `- 下游调用: ${outgoing.filter((edge) => edge.type === "calls").map((edge) => nodeLabel(profile, edge.target)).join(", ") || "无"}`,
+    `- 入口条件: ${incoming.filter((edge) => edge.type === "calls" || edge.type === "triggers").map((edge) => `${nodeLabel(profile, edge.source)} 通过 ${edgeTypeLabel(edge.type)} 进入`).join("；") || "图谱未记录明确入口条件，需从调用点或触发器核对。"}`,
+    `- 字段/资源读取: ${reads.map((edge) => nodeLabel(profile, edge.target)).join(", ") || "图谱未记录 reads_from 关系。"}`,
+    `- 字段/资源写入: ${writes.map((edge) => nodeLabel(profile, edge.target)).join(", ") || "图谱未记录 writes_to 关系。"}`,
+    `- 状态变化/校验: ${stateRelations.map((edge) => `${edgeTypeLabel(edge.type)} ${nodeLabel(profile, edge.target)}`).join("；") || "图谱未记录 transforms 或 validates 关系。"}`,
     `- 业务含义: 根据名称、标签和调用关系推断，该函数参与 ${node?.tags.join("、") || "当前文件职责"}，真实业务口径需要结合调用场景确认。`,
     "- 注意事项: 修改前检查调用关系索引和相关测试。",
     `- 代码证据: ${lineRef(node ?? {}, task.filePath)}`,
@@ -327,6 +333,13 @@ function renderClassCard(profile: ProjectProfile, task: FileDocTask, nodeId: str
 
 export function renderDeterministicFileWriterDocument(profile: ProjectProfile, task: FileDocTask): FileWriterDocument {
   const representedEdgeIds = representedEdgesForTask(profile, task);
+  const localNodeIds = new Set([...task.sourceNodeIds, ...task.functionNodeIds, ...task.classNodeIds]);
+  const relatedEdges = profile.graph.edges.filter((edge) => localNodeIds.has(edge.source) || localNodeIds.has(edge.target));
+  const incomingRelations = relatedEdges.filter((edge) => !localNodeIds.has(edge.source) && localNodeIds.has(edge.target));
+  const outgoingRelations = relatedEdges.filter((edge) => localNodeIds.has(edge.source));
+  const readRelations = outgoingRelations.filter((edge) => edge.type === "reads_from");
+  const writeRelations = outgoingRelations.filter((edge) => edge.type === "writes_to");
+  const stateRelations = outgoingRelations.filter((edge) => edge.type === "transforms" || edge.type === "validates");
   const importantNodeIds = [...task.functionNodeIds, ...task.classNodeIds]
     .filter((nodeId) => nodeOf(profile, nodeId)?.complexity === "complex")
     .sort();
@@ -348,6 +361,7 @@ export function renderDeterministicFileWriterDocument(profile: ProjectProfile, t
     fileNodeId: task.fileNodeId,
     filePath: task.filePath,
     documentPath: task.documentPath,
+    referenceKind: task.referenceKind,
     title: `${task.filePath} 文件知识文档`,
     coveredFunctionNodeIds: [...task.functionNodeIds],
     coveredClassNodeIds: [...task.classNodeIds],
@@ -386,6 +400,16 @@ export function renderDeterministicFileWriterDocument(profile: ProjectProfile, t
         ? "- 兜底: 源文件可读取时，以源码快照、函数卡片和类卡片作为判断依据；线上数据、配置和运行时参数仍需结合实际环境确认。"
         : "- 兜底: 源文件当前缺失，只能根据图谱关系保留不完整文档，并在恢复源码后重新生成。",
       "",
+      "## 入口条件与处理顺序",
+      `- 入口条件: ${incomingRelations.map((edge) => `${nodeLabel(profile, edge.source)} --[${edgeTypeLabel(edge.type)}]--> ${nodeLabel(profile, edge.target)}`).join("；") || `图谱没有记录进入 \`${task.filePath}\` 的显式调用或触发关系，需从导出点和运行时入口核对。`}`,
+      `- 处理顺序: ${outgoingRelations.slice(0, 12).map((edge) => `${nodeLabel(profile, edge.source)} --[${edgeTypeLabel(edge.type)}]--> ${nodeLabel(profile, edge.target)}`).join("；") || `图谱没有记录 \`${task.filePath}\` 的下游关系。`}`,
+      `- 顺序边界: 上述处理顺序来自静态关系图，只能说明 \`${task.filePath}\` 与相邻节点的关系，不能单独证明异步、并行或条件分支的严格运行时先后。`,
+      "",
+      "## 字段读写与状态变化",
+      `- 读取: ${readRelations.map((edge) => `${nodeLabel(profile, edge.source)} 读取 ${nodeLabel(profile, edge.target)}`).join("；") || `\`${task.filePath}\` 未检测到 reads_from 关系；函数参数和对象字段仍需结合源码核对。`}`,
+      `- 写入: ${writeRelations.map((edge) => `${nodeLabel(profile, edge.source)} 写入 ${nodeLabel(profile, edge.target)}`).join("；") || `\`${task.filePath}\` 未检测到 writes_to 关系，不能据此断言没有缓存、数据库或内存写入。`}`,
+      `- 状态变化: ${stateRelations.map((edge) => `${nodeLabel(profile, edge.source)} 通过 ${edgeTypeLabel(edge.type)} 作用于 ${nodeLabel(profile, edge.target)}`).join("；") || `\`${task.filePath}\` 未检测到 transforms/validates 关系；返回对象变更和校验失败路径需从源码确认。`}`,
+      "",
       "## 函数卡片",
       functionCards.join("\n\n") || "本文件当前没有图谱函数节点；阅读时应重点核对文件职责、类卡片和调用关系，确认是否存在未被解析的导出函数或动态定义。",
       "",
@@ -400,11 +424,25 @@ export function renderDeterministicFileWriterDocument(profile: ProjectProfile, t
         ? "- 运行时配置、数据内容和线上流量路径不会完全体现在本地图谱中，修改前需要结合部署环境、调用方和测试结果确认。"
         : "- 源文件缺失，当前文档只能基于图谱生成，最终状态必须为不完整。",
       "",
+      "## 证据分级",
+      `- 本地代码事实: 文件路径 \`${task.filePath}\`、${task.functionNodeIds.length} 个函数节点、${task.classNodeIds.length} 个类节点和 ${representedEdgeIds.length} 条相邻关系来自源码快照或图谱。`,
+      `- 代码推断: 本文对 \`${task.filePath}\` 的入口、下游影响和状态变化解释由节点名称、摘要及关系类型归纳，不等同于运行时观测。`,
+      `- 外部待核验: \`${task.filePath}\` 使用的真实配置值、数据库内容、流量分支和发布效果需要通过配置平台、日志、指标或调用方契约确认。`,
+      "",
+      "## 待核验清单",
+      `- [ ] 核对 \`${task.filePath}\` 的真实入口是否与 ${incomingRelations.length} 条入站关系一致，并补充动态调用或反射入口。`,
+      `- [ ] 核对 \`${task.filePath}\` 的读取、写入和状态变化是否遗漏未建图的字段、缓存、数据库或消息副作用。`,
+      `- [ ] 运行与 \`${task.filePath}\` 相关的单元测试和集成测试，确认兜底、错误路径及关键分支。`,
+      "",
       "## 代码证据",
       codeEvidenceLines.join("\n"),
       "",
-      "## AI 检索词",
-      [task.filePath, task.fileNodeId, ...task.functionNodeIds, ...task.classNodeIds].join(", "),
+      "## AI 检索索引",
+      "| 检索意图 | 关键词 | 定位 |",
+      "|---|---|---|",
+      `| 理解文件职责 | ${task.filePath}, ${task.fileNodeId} | 本文“文件职责”“入口条件与处理顺序” |`,
+      `| 定位函数与类 | ${[...task.functionNodeIds, ...task.classNodeIds].join(", ") || task.fileNodeId} | 本文“函数卡片”“类卡片” |`,
+      `| 评估改动风险 | ${representedEdgeIds.slice(0, 8).join(", ") || task.filePath} | 本文“字段读写与状态变化”“待核验清单”“代码证据” |`,
     ].join("\n"),
   };
 }
@@ -426,9 +464,15 @@ export function renderDeterministicTopicWriterDocument(
   const node = nodeOf(profile, topic.topicNodeId);
   const sourceFile = nodeOf(profile, topic.sourceFileNodeId);
   const { incoming, outgoing } = edgesForNode(profile, topic.topicNodeId);
-  const configEdges = (profile.indexes.outgoingEdgesByNode.get(topic.topicNodeId) ?? [])
-    .filter((edge) => edge.type === "configures" || edge.type === "reads_from" || edge.type === "writes_to")
-    .map((edge) => edgeName(profile, edge.target));
+  const incomingEdges = profile.indexes.incomingEdgesByNode.get(topic.topicNodeId) ?? [];
+  const outgoingEdges = profile.indexes.outgoingEdgesByNode.get(topic.topicNodeId) ?? [];
+  const entryEdges = incomingEdges.filter((edge) => edge.type === "calls" || edge.type === "triggers" || edge.type === "routes");
+  const readEdges = outgoingEdges.filter((edge) => edge.type === "reads_from");
+  const writeEdges = outgoingEdges.filter((edge) => edge.type === "writes_to");
+  const stateEdges = outgoingEdges.filter((edge) => edge.type === "transforms" || edge.type === "validates");
+  const dependencyEdges = [...incomingEdges, ...outgoingEdges]
+    .filter((edge) => ["configures", "reads_from", "writes_to", "depends_on", "transforms", "validates"].includes(edge.type));
+  const testEdges = [...incomingEdges, ...outgoingEdges].filter((edge) => edge.type === "tested_by");
   const evidence = topic.coveredNodeIds
     .map((nodeId) => nodeOf(profile, nodeId))
     .filter((item): item is GraphNode => Boolean(item))
@@ -458,8 +502,18 @@ export function renderDeterministicTopicWriterDocument(
       nodeSummary(node, "图谱未提供算法摘要。"),
       "如果涉及排序、过滤、策略选择或状态变更，需要结合源码和线上配置进一步确认。根据代码推断，需线上配置确认",
     ].join("\n"),
-    "## 配置和外部依赖": configEdges.length > 0
-      ? configEdges.map((item) => `- ${item}`).join("\n")
+    "## 入口条件与处理顺序": [
+      `- 入口条件: ${entryEdges.map((edge) => `${nodeLabel(profile, edge.source)} 通过 ${edgeTypeLabel(edge.type)} 到达 ${nodeLabel(profile, edge.target)}`).join("；") || `图谱没有记录 \`${topic.topicNodeId}\` 的显式调用、触发或路由入口，需从所属文件的导出点继续核对。`}`,
+      `- 处理顺序: ${outgoingEdges.slice(0, 12).map((edge) => `${nodeLabel(profile, edge.source)} --[${edgeTypeLabel(edge.type)}]--> ${nodeLabel(profile, edge.target)}`).join("；") || `图谱没有记录 \`${topic.topicNodeId}\` 的下游处理关系。`}`,
+      `- 顺序边界: 上述处理顺序是静态关系展开，不证明异步任务、并行调用和条件分支的严格运行时先后；严格顺序需由控制流、源码分支或 trace 证据确认。`,
+    ].join("\n"),
+    "## 字段读写与状态变化": [
+      `- 读取: ${readEdges.map((edge) => nodeLabel(profile, edge.target)).join("；") || `\`${topic.topicNodeId}\` 未记录 reads_from 关系，参数字段和隐式上下文需从源码核对。`}`,
+      `- 写入: ${writeEdges.map((edge) => nodeLabel(profile, edge.target)).join("；") || `\`${topic.topicNodeId}\` 未记录 writes_to 关系，不能据此排除缓存、存储或内存写入。`}`,
+      `- 状态变化: ${stateEdges.map((edge) => `${edgeTypeLabel(edge.type)} ${nodeLabel(profile, edge.target)}`).join("；") || `\`${topic.topicNodeId}\` 未记录 transforms/validates 关系，返回对象变化和校验失败路径需工程核验。`}`,
+    ].join("\n"),
+    "## 配置和外部依赖": dependencyEdges.length > 0
+      ? dependencyEdges.map((edge) => `- ${nodeLabel(profile, edge.source)} --[${edgeTypeLabel(edge.type)}]--> ${nodeLabel(profile, edge.target)}`).join("\n")
       : "- 图谱未记录直接配置或外部依赖。",
     "## 上游调用者": incoming.join("\n") || "- 无",
     "## 下游调用对象": outgoing.join("\n") || "- 无",
@@ -467,13 +521,31 @@ export function renderDeterministicTopicWriterDocument(
       "- 修改前需要检查上游调用、下游依赖、单测覆盖和运行时配置。",
       "- 业务口径、实验策略和数据状态需要外部确认。根据代码推断，需线上配置确认",
     ].join("\n"),
-    "## 测试证据": "- 当前知识库基于图谱和源码生成；是否已有自动化测试需要工程侧继续核验。",
+    "## 测试证据": testEdges.length > 0
+      ? testEdges.map((edge) => `- ${nodeLabel(profile, edge.source)} --[${edgeTypeLabel(edge.type)}]--> ${nodeLabel(profile, edge.target)}`).join("\n")
+      : `- 图谱没有为 \`${topic.topicNodeId}\` 记录 tested_by 关系；自动化测试是否覆盖入口条件、分支、读写副作用和异常路径需要工程侧核验。`,
+    "## 证据分级": [
+      `- 本地代码事实: \`${topic.topicNodeId}\`、所属文件 \`${sourceFile?.filePath ?? node?.filePath ?? topic.sourceFileNodeId}\`、${incomingEdges.length} 条入站关系和 ${outgoingEdges.length} 条出站关系来自图谱与源码定位。`,
+      `- 代码推断: 业务作用、处理顺序和影响范围由节点摘要、关系类型及上下游名称归纳，不等同于运行时观测。`,
+      `- 外部待核验: \`${topic.topicNodeId}\` 的真实配置值、数据内容、流量命中条件和线上指标需通过配置平台、日志、trace 或业务 owner 确认。`,
+    ].join("\n"),
+    "## 待核验清单": [
+      `- [ ] 核对 \`${topic.topicNodeId}\` 的真实入口条件以及 ${entryEdges.length} 条入口关系是否覆盖动态调用。`,
+      `- [ ] 核对 \`${topic.topicNodeId}\` 的读取、写入、转换和校验关系是否完整，并记录关键字段前后值。`,
+      `- [ ] 运行或补充 \`${topic.topicNodeId}\` 的正常、边界、异常与回归测试，确认线上配置差异。`,
+    ].join("\n"),
     "## 代码证据": [
       "| 节点 | 文件 | 行号 |",
       "|---|---|---|",
       ...evidence.map((item) => `| \`${item.nodeId}\` | \`${item.filePath}\` | ${item.lineRange?.join("-") ?? ""} |`),
     ].join("\n"),
-    "## AI 检索词": [node?.name, node?.filePath, topic.topicNodeId, ...topic.coveredNodeIds, ...(node?.tags ?? [])].filter(Boolean).join(", "),
+    "## AI 检索索引": [
+      "| 检索意图 | 关键词 | 定位 |",
+      "|---|---|---|",
+      `| 理解业务作用 | ${[node?.name, topic.topicNodeId, ...(node?.tags ?? [])].filter(Boolean).join(", ")} | 本文“为什么关键”“在业务流程中的位置” |`,
+      `| 追踪关系与状态 | ${topic.coveredNodeIds.join(", ")} | 本文“入口条件与处理顺序”“字段读写与状态变化” |`,
+      `| 评估变更与验证 | ${[node?.filePath, topic.linkedFileDocumentPath, ...testEdges.map((edge) => edgeId(edge))].filter(Boolean).join(", ")} | 本文“修改风险”“测试证据”“待核验清单”“代码证据” |`,
+    ].join("\n"),
   };
 
   return {
@@ -492,16 +564,8 @@ export function renderDeterministicTopicWriterDocument(
   };
 }
 
-function safeCapabilityPathPart(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80) || "business-capability";
-}
-
 function businessCapabilityDocumentPath(title: string, id: string): string {
-  return `业务能力/${safeCapabilityPathPart(title || id)}.md`;
+  return sharedBusinessCapabilityDocumentPath(title, id);
 }
 
 const EVIDENCE_SUMMARY_GROUPS: Array<{
@@ -543,10 +607,10 @@ function evidenceLocationText(evidence: { filePath: string; lineRange?: [number,
 function renderEvidenceSummaryDocument(
   group: (typeof EVIDENCE_SUMMARY_GROUPS)[number],
   facts: BusinessFact[],
-): GeneratedDocument {
+): any {
   const roleFacts = facts.filter((fact) => fact.evidenceRole === group.role);
   const keywords = [...new Set(roleFacts.flatMap((fact) => fact.keywords))].sort();
-  const coveredNodeIds = [...new Set(roleFacts.flatMap((fact) => fact.relatedNodeIds))].sort();
+  const directNodeIds = [...new Set(roleFacts.flatMap((fact) => fact.relatedNodeIds))].sort();
   const sourceKindCounts = roleFacts.reduce((counts, fact) => {
     counts.set(fact.sourceKind, (counts.get(fact.sourceKind) ?? 0) + 1);
     return counts;
@@ -562,7 +626,7 @@ function renderEvidenceSummaryDocument(
     "## 非技术同学速读",
     "",
     group.readerSummary,
-    `当前共识别 ${roleFacts.length} 条 ${evidenceRoleLabel(group.role)}，覆盖 ${coveredNodeIds.length} 个图谱节点。${group.usage}`,
+    `当前共识别 ${roleFacts.length} 条 ${evidenceRoleLabel(group.role)}，覆盖 ${directNodeIds.length} 个图谱节点。${group.usage}`,
     "",
     "## 包含哪些证据",
     "",
@@ -606,17 +670,17 @@ function renderEvidenceSummaryDocument(
   return {
     path: group.path,
     title: group.title,
-    category: "business-capability",
-    coveredNodeIds,
+    category: "capability",
+    directNodeIds,
     representedEdgeIds: [],
     content: lines.join("\n"),
   };
 }
 
-export function renderBusinessCapabilityDocuments(
+export function renderBusinessCapabilityInventoryDocuments(
   profile: ProjectProfile,
   businessCapabilityProfile: BusinessCapabilityProfile,
-): GeneratedDocument[] {
+): any[] {
   const indexLines = [
     "# 业务能力索引",
     "",
@@ -659,12 +723,12 @@ export function renderBusinessCapabilityDocuments(
   }
 
   const factsById = new Map(businessCapabilityProfile.facts.map((fact) => [fact.id, fact]));
-  const documents: GeneratedDocument[] = [
+  const documents: any[] = [
     {
       path: "业务能力索引.md",
       title: "业务能力索引",
-      category: "business-capability",
-      coveredNodeIds: [...new Set(businessCapabilityProfile.facts.flatMap((fact) => fact.relatedNodeIds))].sort(),
+      category: "capability",
+      directNodeIds: [...new Set(businessCapabilityProfile.facts.flatMap((fact) => fact.relatedNodeIds))].sort(),
       representedEdgeIds: [],
       content: indexLines.join("\n"),
     },
@@ -803,8 +867,8 @@ export function renderBusinessCapabilityDocuments(
     documents.push({
       path: businessCapabilityDocumentPath(capability.title, capability.id),
       title: capability.title,
-      category: "business-capability",
-      coveredNodeIds: [...capability.relatedNodeIds],
+      category: "capability",
+      directNodeIds: [...capability.relatedNodeIds],
       representedEdgeIds: [],
       content: lines.join("\n"),
     });
@@ -817,22 +881,30 @@ export function buildCoverageReport(
   profile: ProjectProfile,
   fileDocPlan: FileDocPlan,
   topicPlan: TopicPlan,
+  plan: FeaturedPlan,
   documents: GeneratedDocument[],
   validation: CoverageValidationResult,
   retryPlan: RetryPlan,
   businessCapabilityProfile?: BusinessCapabilityProfile,
-  qualityDocuments: GeneratedDocument[] = documents,
+  evaluatedQuality?: MarkdownQualitySummary,
 ): CoverageReport {
   const docsByCategory = documents.reduce((map, doc) => {
     const list = map.get(doc.category) ?? [];
     list.push(doc);
     map.set(doc.category, list);
     return map;
-  }, new Map<KnowledgeBaseDocumentCategory, GeneratedDocument[]>());
-  const coveredNodeIdsByCategory = (category: KnowledgeBaseDocumentCategory): Set<string> => {
-    return new Set((docsByCategory.get(category) ?? []).flatMap((doc) => doc.coveredNodeIds));
+  }, new Map<KnowledgeDocumentCategory, GeneratedDocument[]>());
+  const directNodeIdsByCategory = (category: KnowledgeDocumentCategory): Set<string> => {
+    return new Set((docsByCategory.get(category) ?? []).flatMap((doc) => doc.directNodeIds));
   };
-  const fileDocCovered = coveredNodeIdsByCategory("file");
+  const fileDocCovered = directNodeIdsByCategory("file");
+  const fileSymbolAnchors = (docsByCategory.get("file") ?? []).flatMap((doc) => doc.symbolAnchors);
+  const functionCardCovered = new Set(fileSymbolAnchors
+    .filter((anchor) => profile.indexes.nodesById.get(anchor.nodeId)?.type === "function")
+    .map((anchor) => anchor.nodeId));
+  const classCardCovered = new Set(fileSymbolAnchors
+    .filter((anchor) => profile.indexes.nodesById.get(anchor.nodeId)?.type === "class")
+    .map((anchor) => anchor.nodeId));
   const representedEdges = new Set(documents.flatMap((doc) => doc.representedEdgeIds));
   const expectedIds = (type: NodeType): string[] => nodesOfType(profile, type).map((node) => node.id).sort();
   const ratio = (coveredIds: Set<string>, expected: string[]): CoverageRatio => {
@@ -864,57 +936,54 @@ export function buildCoverageReport(
     })
     .map((task) => task.fileNodeId)
     .sort();
-  const capabilityDocs = docsByCategory.get("business-capability") ?? [];
-  const expectedCapabilityDocPaths = new Set(
-    (businessCapabilityProfile?.capabilities ?? []).map((capability) =>
-      businessCapabilityDocumentPath(capability.title, capability.id)
-    ),
-  );
+  const capabilityDocs = docsByCategory.get("capability") ?? [];
+  const plannedCapabilityDocs = plan.documents.filter((document) => document.category === "capability");
+  const expectedCapabilityDocPaths = new Set(plannedCapabilityDocs.map((document) => document.path));
   const capabilityDocPaths = new Set(capabilityDocs.map((doc) => doc.path));
   const missingCapabilityDocs = [...expectedCapabilityDocPaths]
     .filter((path) => !capabilityDocPaths.has(path))
     .sort();
   const layerDocs = docsByCategory.get("module") ?? [];
   const flowAndTopicNodeIds = new Set([
-    ...(docsByCategory.get("flow") ?? []).flatMap((doc) => doc.coveredNodeIds),
-    ...(docsByCategory.get("topic") ?? []).flatMap((doc) => doc.coveredNodeIds),
+    ...(docsByCategory.get("flow") ?? []).flatMap((doc) => doc.directNodeIds),
+    ...(docsByCategory.get("topic") ?? []).flatMap((doc) => doc.directNodeIds),
   ]);
   const layerOverviewMissing = profile.layerProfiles
-    .filter((layer) => !layerDocs.some((doc) => doc.coveredNodeIds.some((nodeId) => layer.nodeIds.includes(nodeId))))
+    .filter((layer) => !layerDocs.some((doc) => [...doc.directNodeIds, ...doc.contextNodeIds].some((nodeId) => layer.nodeIds.includes(nodeId))))
     .map((layer) => layer.id)
     .sort();
   const entryMissing = profile.entryCandidates
     .filter((entry) => !flowAndTopicNodeIds.has(entry.nodeId))
     .map((entry) => entry.nodeId)
     .sort();
-  const generatedTopicPaths = new Set((docsByCategory.get("topic") ?? []).map((doc) => doc.path));
+  const generatedTopicNodeIds = directNodeIdsByCategory("topic");
   const requiredTopics = topicPlan.topics.filter((topic) => topic.tier === "required");
   const extendedTopics = topicPlan.topics.filter((topic) => topic.tier === "extended");
   const topicCoverage = {
-    covered: topicPlan.topics.filter((topic) => generatedTopicPaths.has(topic.documentPath)).length,
+    covered: topicPlan.topics.filter((topic) => generatedTopicNodeIds.has(topic.topicNodeId)).length,
     total: topicPlan.topics.length,
     missing: topicPlan.topics
-      .filter((topic) => !generatedTopicPaths.has(topic.documentPath))
+      .filter((topic) => !generatedTopicNodeIds.has(topic.topicNodeId))
       .map((topic) => topic.topicNodeId),
   };
   const requiredTopicCoverage = {
-    covered: requiredTopics.filter((topic) => generatedTopicPaths.has(topic.documentPath)).length,
+    covered: requiredTopics.filter((topic) => generatedTopicNodeIds.has(topic.topicNodeId)).length,
     total: requiredTopics.length,
     missing: requiredTopics
-      .filter((topic) => !generatedTopicPaths.has(topic.documentPath))
+      .filter((topic) => !generatedTopicNodeIds.has(topic.topicNodeId))
       .map((topic) => topic.topicNodeId),
   };
   const extendedTopicCoverage = {
-    covered: extendedTopics.filter((topic) => generatedTopicPaths.has(topic.documentPath)).length,
+    covered: extendedTopics.filter((topic) => generatedTopicNodeIds.has(topic.topicNodeId)).length,
     total: extendedTopics.length,
     missing: extendedTopics
-      .filter((topic) => !generatedTopicPaths.has(topic.documentPath))
+      .filter((topic) => !generatedTopicNodeIds.has(topic.topicNodeId))
       .map((topic) => topic.topicNodeId),
   };
   const evidenceWarnings = profile.evidenceGaps.map((gap) => `${gap.kind}: ${gap.message}`);
   const chineseFailures = documents.filter((doc) => !/[\u4e00-\u9fff]/.test(doc.content)).map((doc) => doc.path).sort();
-  const placeholderFailures = documents.filter((doc) => PLACEHOLDER_RE.test(doc.content)).map((doc) => doc.path).sort();
-  const qualityValidation = summarizeMarkdownQuality(qualityDocuments);
+  const placeholderFailures = documents.filter((doc) => containsPlaceholderProse(doc.content)).map((doc) => doc.path).sort();
+  const qualityValidation = evaluatedQuality ?? summarizeMarkdownQuality(documents);
   const structuralErrors = [
     ...validation.errors,
     ...placeholderFailures.map((path) => `document contains placeholder text: ${path}`),
@@ -933,8 +1002,8 @@ export function buildCoverageReport(
     nodeCounts: profile.nodeCounts,
     edgeCounts: profile.edgeCounts,
     fileDocumentCoverage: ratio(fileDocCovered, expectedIds("file")),
-    functionCardCoverage: ratio(fileDocCovered, expectedIds("function")),
-    classCardCoverage: ratio(fileDocCovered, expectedIds("class")),
+    functionCardCoverage: ratio(functionCardCovered, expectedIds("function")),
+    classCardCoverage: ratio(classCardCovered, expectedIds("class")),
     relationshipCoverage: RELATIONSHIP_COVERAGE_EDGE_TYPES.map((edgeType) => relationshipRatio(edgeType)),
     sourceReadCoverage,
     businessFactCoverage: {
@@ -943,8 +1012,8 @@ export function buildCoverageReport(
       missing: highSignalFilesWithoutFacts,
     },
     businessCapabilityCoverage: {
-      covered: (businessCapabilityProfile?.capabilities.length ?? 0) - missingCapabilityDocs.length,
-      total: businessCapabilityProfile?.capabilities.length ?? 0,
+      covered: plannedCapabilityDocs.length - missingCapabilityDocs.length,
+      total: plannedCapabilityDocs.length,
       missing: missingCapabilityDocs,
     },
     layerOverviewCoverage: {
@@ -1000,6 +1069,35 @@ function renderInventory(
     "- 产品/运营理解业务: 业务流程地图 -> 业务流程 -> 待确认项",
     "- AI 代理后续检索: AI检索索引 -> 函数索引 -> 文件索引 -> 覆盖报告",
     "",
+    "## 覆盖状态与清单",
+    "",
+    `- 当前状态: ${report ? STATUS_LABELS[report.status] : "生成中，覆盖报告尚未汇总"}`,
+    `- [${report && report.fileDocumentCoverage.covered === report.fileDocumentCoverage.total ? "x" : " "}] 文件文档: ${report?.fileDocumentCoverage.covered ?? 0} / ${report?.fileDocumentCoverage.total ?? fileDocPlan?.tasks.length ?? 0}`,
+    `- [${report && report.functionCardCoverage.covered === report.functionCardCoverage.total ? "x" : " "}] 函数卡片: ${report?.functionCardCoverage.covered ?? 0} / ${report?.functionCardCoverage.total ?? profile.nodeCounts.function}`,
+    `- [${report && report.classCardCoverage.covered === report.classCardCoverage.total ? "x" : " "}] 类卡片: ${report?.classCardCoverage.covered ?? 0} / ${report?.classCardCoverage.total ?? profile.nodeCounts.class}`,
+    `- [${report && report.requiredTopicCoverage.covered === report.requiredTopicCoverage.total ? "x" : " "}] 必需专题: ${report?.requiredTopicCoverage.covered ?? 0} / ${report?.requiredTopicCoverage.total ?? topicPlan?.topics.filter((topic) => topic.tier === "required").length ?? 0}`,
+    `- [${report && report.sourceReadCoverage.covered === report.sourceReadCoverage.total ? "x" : " "}] 源码读取: ${report?.sourceReadCoverage.covered ?? 0} / ${report?.sourceReadCoverage.total ?? fileDocPlan?.tasks.length ?? 0}`,
+    "- 详细缺口、失败批次和质量问题见 [覆盖报告](覆盖报告.md) 与 [待确认项](待确认项.md)。",
+    "",
+    "## 证据分级怎么读",
+    "",
+    "- 本地代码事实 / primary: 源码、配置或明确图谱关系直接支持，可作为定位和修改的第一入口。",
+    "- 代码推断 / supporting: 由名称、摘要、调用或测试归纳，用来解释上下文，但仍要回到代码证据核对。",
+    "- 外部待核验 / example-only: 线上配置、数据、指标或仅出现在示例中的信息，不能单独作为生产结论。",
+    "",
+    "## 配置、依赖、测试与核验入口",
+    "",
+    "- [配置与外部依赖](配置与外部依赖.md): 查看配置、服务、数据表、端点、schema 和资源节点。",
+    `- 测试关系: 图谱记录 ${(profile.indexes.edgesByType.get("tested_by") ?? []).length} 条 tested_by 关系；未建图的测试需在源码和 CI 中继续检索。`,
+    "- [调用关系索引](索引/调用关系索引.md): 核对静态调用；业务流程文档中的关系路径不代表严格运行时顺序。",
+    "- [待确认项](待确认项.md): 汇总证据缺口和必须由配置、日志、trace、指标或业务 owner 核验的事项。",
+    "",
+    "## AI 使用指南",
+    "",
+    "1. 先读取项目总览、覆盖报告和待确认项，确认回答可依赖的证据范围。",
+    "2. 再从 AI检索索引定位节点，回到专题或文件文档中的代码证据，不要只根据摘要作结论。",
+    "3. 回答时区分本地代码事实、代码推断和外部待核验；关系路径不可改写为未被证明的执行时序。",
+    "",
     "## 文档清单",
     "",
   ];
@@ -1016,7 +1114,15 @@ function renderInventory(
   return lines.join("\n");
 }
 
-function renderProjectOverview(profile: ProjectProfile): string {
+function renderProjectOverview(
+  profile: ProjectProfile,
+  plan: DocumentPlan,
+  fileDocPlan?: FileDocPlan,
+  topicPlan?: TopicPlan,
+  report?: CoverageReport,
+): string {
+  const externalNodes = profile.graph.nodes.filter((node) => profile.externalNodeIds.has(node.id));
+  const testedByCount = profile.indexes.edgesByType.get("tested_by")?.length ?? 0;
   return [
     "# 项目总览",
     "",
@@ -1037,6 +1143,38 @@ function renderProjectOverview(profile: ProjectProfile): string {
     profile.entryCandidates.length > 0
       ? `- 检测到 ${profile.entryCandidates.length} 个入口候选，业务流程文档会从这些入口展开。`
       : "- 未检测到明确入口候选，业务流程文档会主要依赖模块和索引。",
+    "",
+    "## 推荐阅读",
+    "",
+    "1. 先读架构地图理解分层，再读业务流程地图定位入口。",
+    "2. 沿业务流程中的关系路径进入关键函数专题，最后回到文件文档和代码证据。",
+    "3. 改代码前查看配置与外部依赖、测试证据、覆盖报告和待确认项。",
+    "",
+    "## 覆盖状态与清单",
+    "",
+    `- 当前状态: ${report ? STATUS_LABELS[report.status] : "生成中，覆盖报告尚未汇总"}`,
+    `- [${report && report.fileDocumentCoverage.covered === report.fileDocumentCoverage.total ? "x" : " "}] 文件文档 ${report?.fileDocumentCoverage.covered ?? 0} / ${report?.fileDocumentCoverage.total ?? fileDocPlan?.tasks.length ?? 0}`,
+    `- [${report && report.requiredTopicCoverage.covered === report.requiredTopicCoverage.total ? "x" : " "}] 必需专题 ${report?.requiredTopicCoverage.covered ?? 0} / ${report?.requiredTopicCoverage.total ?? topicPlan?.topics.filter((topic) => topic.tier === "required").length ?? 0}`,
+    `- [${report && report.sourceReadCoverage.covered === report.sourceReadCoverage.total ? "x" : " "}] 源码读取 ${report?.sourceReadCoverage.covered ?? 0} / ${report?.sourceReadCoverage.total ?? fileDocPlan?.tasks.length ?? 0}`,
+    `- 计划内文档: ${plan.documents.length}；证据缺口: ${profile.evidenceGaps.length}；详细状态见 [覆盖报告](覆盖报告.md)。`,
+    "",
+    "## 证据分级",
+    "",
+    "- 本地代码事实: 源码位置、节点、边和配置文件等可直接核对的信息。",
+    "- 代码推断: 由静态结构归纳的职责、路径和影响范围，需用分支、测试或 trace 加强。",
+    "- 外部待核验: 线上配置值、真实数据、流量比例、指标和业务口径，不能由本地图谱独立确认。",
+    "",
+    "## 配置、依赖与测试",
+    "",
+    `- 配置与外部依赖节点: ${externalNodes.length} 个，详见 [配置与外部依赖](配置与外部依赖.md)。`,
+    `- tested_by 关系: ${testedByCount} 条；没有关系不等于没有测试，仍需在测试目录和 CI 中核验。`,
+    "- 流程页面展示静态关系路径；只有源码控制流、分支条件或运行时 trace 才能证明严格执行顺序。",
+    "",
+    "## 核验与 AI 使用指南",
+    "",
+    "- 人工核验: 从待确认项逐条补配置、日志、trace、指标、调用方契约和测试结果。",
+    "- AI 检索: 先用 AI检索索引定位节点，再引用专题或文件文档中的代码证据，并显式标注证据等级。",
+    "- 回答约束: 未获得控制流或运行时证据时，应写“关系路径”，不得声称为严格执行顺序。",
     "",
     "## 外部待核验",
     "",
@@ -1072,6 +1210,11 @@ function renderFlowOverview(profile: ProjectProfile): string {
     lines.push(`- **${node?.name ?? entry.nodeId}**（入口类型：${entryTypeLabel(entry.entryType)}）— 根据名称、标签和图谱关系识别为入口候选。`);
   }
   lines.push("");
+  lines.push("## 阅读边界");
+  lines.push("");
+  lines.push("- 每个流程页面从入口候选沿静态关系向外展开，展示的是可达关系路径，不是经过运行时 trace 证明的严格执行顺序。");
+  lines.push("- calls、reads_from、writes_to、configures 等边类型会保留；分叉只表示一个节点存在多个相邻关系，是否互斥、并行或有先后仍需源码和运行数据确认。");
+  lines.push("");
   lines.push("## 外部待核验");
   lines.push("");
   lines.push("- 业务命名来自代码名称、标签和摘要；真实产品口径需要业务 owner 确认。根据代码推断，需线上配置确认");
@@ -1082,7 +1225,7 @@ function renderFileIndex(profile: ProjectProfile, plan: DocumentPlan): string {
   const lines = ["# 文件索引", "", "| 节点 ID | 路径 | 所属层 | 摘要 | 复杂度 | 函数数 | 类数 | 覆盖状态 |", "|---|---|---|---|---|---:|---:|---|"];
   for (const node of nodesOfType(profile, "file")) {
     lines.push(
-      `| \`${node.id}\` | \`${node.filePath ?? node.name}\` | ${layerNameForNode(profile, node.id)} | ${nodeSummary(node)} | ${complexityLabel(node.complexity)} | ${profile.indexes.fileToFunctionIds.get(node.id)?.length ?? 0} | ${profile.indexes.fileToClassIds.get(node.id)?.length ?? 0} | ${coverageLevelLabel(plan.nodeCoverage.get(node.id))} |`,
+      `| \`${node.id}\` | \`${node.filePath ?? node.name}\` | ${layerNameForNode(profile, node.id)} | ${nodeSummary(node)} | ${complexityLabel(node.complexity)} | ${profile.indexes.fileToFunctionIds.get(node.id)?.length ?? 0} | ${profile.indexes.fileToClassIds.get(node.id)?.length ?? 0} | ${coverageLevelLabel(plan, node.id)} |`,
     );
   }
   return lines.join("\n");
@@ -1094,7 +1237,7 @@ function renderFunctionIndex(profile: ProjectProfile, plan: DocumentPlan): strin
   for (const node of nodesOfType(profile, "function")) {
     const degree = profile.nodeDegrees.get(node.id);
     lines.push(
-      `| \`${node.id}\` | ${node.name} | \`${node.filePath ?? ""}\` | ${node.lineRange?.join("-") ?? ""} | ${layerNameForNode(profile, node.id)} | ${nodeSummary(node)} | ${degree?.incomingCalls ?? 0} | ${degree?.outgoingCalls ?? 0} | ${booleanLabel(entryIds.has(node.id))} | ${booleanLabel(plan.nodeCoverage.get(node.id) === "topic")} |`,
+      `| \`${node.id}\` | ${node.name} | \`${node.filePath ?? ""}\` | ${node.lineRange?.join("-") ?? ""} | ${layerNameForNode(profile, node.id)} | ${nodeSummary(node)} | ${degree?.incomingCalls ?? 0} | ${degree?.outgoingCalls ?? 0} | ${booleanLabel(entryIds.has(node.id))} | ${booleanLabel(plan.documents.some((document) => document.category === "topic" && document.directNodeIds.includes(node.id)))} |`,
     );
   }
   return lines.join("\n");
@@ -1104,7 +1247,7 @@ function renderClassIndex(profile: ProjectProfile, plan: DocumentPlan): string {
   const lines = ["# 类索引", "", "| 节点 ID | 类 | 文件 | 行号 | 所属层 | 摘要 | 覆盖状态 |", "|---|---|---|---|---|---|---|"];
   for (const node of nodesOfType(profile, "class")) {
     lines.push(
-      `| \`${node.id}\` | ${node.name} | \`${node.filePath ?? ""}\` | ${node.lineRange?.join("-") ?? ""} | ${layerNameForNode(profile, node.id)} | ${nodeSummary(node)} | ${coverageLevelLabel(plan.nodeCoverage.get(node.id))} |`,
+      `| \`${node.id}\` | ${node.name} | \`${node.filePath ?? ""}\` | ${node.lineRange?.join("-") ?? ""} | ${layerNameForNode(profile, node.id)} | ${nodeSummary(node)} | ${coverageLevelLabel(plan, node.id)} |`,
     );
   }
   return lines.join("\n");
@@ -1150,7 +1293,7 @@ function renderAiIndex(profile: ProjectProfile, plan: DocumentPlan): string {
   const lines = ["# AI检索索引", "", "## 核心检索词", ""];
   for (const node of profile.graph.nodes) {
     const tags = node.tags.join(", ");
-    lines.push(`- \`${node.id}\` | ${node.name} | ${NODE_TYPE_LABELS[node.type]} | ${node.filePath ?? ""} | ${tags} | 覆盖=${coverageLevelLabel(plan.nodeCoverage.get(node.id))}`);
+    lines.push(`- \`${node.id}\` | ${node.name} | ${NODE_TYPE_LABELS[node.type]} | ${node.filePath ?? ""} | ${tags} | 覆盖=${coverageLevelLabel(plan, node.id)}`);
   }
   return lines.join("\n");
 }
@@ -1175,34 +1318,93 @@ function renderModuleDoc(profile: ProjectProfile, planDoc: PlannedDocument): str
   lines.push("");
   lines.push("## AI 检索词");
   lines.push("");
-  lines.push(planDoc.coveredNodeIds.map((nodeId) => nodeOf(profile, nodeId)?.name).filter(Boolean).join(", ") || "无");
+  lines.push([...planDoc.directNodeIds, ...planDoc.contextNodeIds].map((nodeId) => nodeOf(profile, nodeId)?.name).filter(Boolean).join(", ") || "无");
   return lines.join("\n");
 }
 
 function renderFlowDoc(profile: ProjectProfile, planDoc: PlannedDocument): string {
-  const lines = [`# ${planDoc.title}`, "", "## 流程结论", "", `代码推断: 该流程从入口节点展开，覆盖 ${planDoc.coveredNodeIds.length} 个相关节点。`, "", "## 执行顺序", ""];
-  for (const nodeId of planDoc.coveredNodeIds) {
-    const node = nodeOf(profile, nodeId);
-    if (node) lines.push(`- \`${node.id}\`（${NODE_TYPE_LABELS[node.type]}）${node.name}: ${nodeSummary(node)}`);
+  const coveredNodeIds = new Set(planDoc.directNodeIds);
+  const flowEdgeTypes = new Set<EdgeType>([
+    "calls",
+    "configures",
+    "reads_from",
+    "writes_to",
+    "depends_on",
+    "transforms",
+    "validates",
+    "triggers",
+    "routes",
+  ]);
+  const representedEdgeIds = new Set(planDoc.representedEdgeIds);
+  const relationshipEdges = profile.graph.edges.filter((edge) =>
+    representedEdgeIds.has(edgeId(edge)) && flowEdgeTypes.has(edge.type)
+  );
+  const entryNodeId = planDoc.reason.match(/^入口 (.+?) 具有/)?.[1]
+    ?? profile.entryCandidates.find((entry) => coveredNodeIds.has(entry.nodeId))?.nodeId
+    ?? planDoc.directNodeIds[0];
+  const entryNode = nodeOf(profile, entryNodeId);
+  const branches = [...new Set(relationshipEdges.map((edge) => edge.source))]
+    .map((source) => ({ source, edges: relationshipEdges.filter((edge) => edge.source === source) }))
+    .filter((item) => item.edges.length > 1);
+  const lines = [
+    `# ${planDoc.title}`,
+    "",
+    "## 流程结论",
+    "",
+    `代码推断: 本页从入口候选 \`${entryNodeId}\` 沿静态关系展开，覆盖 ${planDoc.directNodeIds.length} 个相关节点和 ${relationshipEdges.length} 条关系边。`,
+    "本页只说明“哪些节点通过什么关系可达”，不把广度优先遍历得到的列表宣称为严格执行顺序；严格时序必须由源码控制流、分支条件或运行时 trace 证明。",
+    "",
+    "## 入口与边界",
+    "",
+    `- 入口候选: \`${entryNodeId}\`${entryNode ? `（${NODE_TYPE_LABELS[entryNode.type]}）${entryNode.name}` : ""}`,
+    `- 入口证据: ${entryNode ? `${lineRef(entryNode, entryNode.filePath ?? "未记录文件")}；${nodeSummary(entryNode)}` : "图谱未保留入口节点详情，需回到业务流程地图核对。"}`,
+    `- 展开边类型: ${[...new Set(relationshipEdges.map((edge) => edgeTypeLabel(edge.type)))].join("、") || "当前没有可展示的行为、数据或依赖关系边"}`,
+    "- 边界说明: 配置取值、动态调用、异步调度、异常跳转和真实流量条件可能未进入静态图谱。",
+    "",
+    "## 关系路径（非严格执行顺序）",
+    "",
+  ];
+  if (relationshipEdges.length === 0) {
+    lines.push("- 图谱未记录入口到下游的关系边；当前只能确认入口候选本身，不能推导处理时序。");
+  } else {
+    for (const edge of relationshipEdges) {
+      const source = nodeOf(profile, edge.source);
+      const target = nodeOf(profile, edge.target);
+      lines.push(
+        `- \`${edge.source}\` --[${edgeTypeLabel(edge.type)} / ${edge.type}]--> \`${edge.target}\`${edge.description ? `：${edge.description}` : ""}；证据 ${source ? lineRef(source, source.filePath ?? "未记录文件") : "未记录来源位置"} -> ${target ? lineRef(target, target.filePath ?? "未记录文件") : "未记录目标位置"}`,
+      );
+    }
+  }
+  lines.push("");
+  lines.push("## 分支证据");
+  lines.push("");
+  if (branches.length === 0) {
+    lines.push("- 当前关系子图没有一个节点连接多个下游的分叉候选；这不等于源码不存在条件分支。 ");
+  } else {
+    for (const branch of branches) {
+      lines.push(`- 分叉候选 \`${branch.source}\` 连接 ${branch.edges.length} 个下游：${branch.edges.map((edge) => `${edge.type}->${edge.target}`).join("；")}。这些边只能证明相邻关系，是否互斥、并行、兜底或有先后需要源码分支和 trace 核验。`);
+    }
   }
   lines.push("");
   lines.push("## 代码证据");
   lines.push("");
   lines.push("| 节点 | 文件 | 行号 |");
   lines.push("|---|---|---|");
-  for (const nodeId of planDoc.coveredNodeIds) {
+  for (const nodeId of planDoc.directNodeIds) {
     const node = nodeOf(profile, nodeId);
     if (node) lines.push(`| \`${node.id}\` | \`${node.filePath ?? ""}\` | ${node.lineRange?.join("-") ?? ""} |`);
   }
   lines.push("");
   lines.push("## 待核验项");
   lines.push("");
-  lines.push("- 业务名称和真实运行条件需要业务或线上平台确认。根据代码推断，需线上配置确认");
+  lines.push(`- [ ] 核对入口 \`${entryNodeId}\` 的真实触发条件、鉴权、参数前置条件和失败返回。`);
+  lines.push("- [ ] 用源码控制流或运行时 trace 核对关系路径的真实先后、异步边界和分支命中条件。");
+  lines.push("- [ ] 核对配置取值、读写副作用、测试覆盖和业务命名；根据代码推断，需线上配置确认。");
   return lines.join("\n");
 }
 
 function renderTopicDoc(profile: ProjectProfile, planDoc: PlannedDocument): string {
-  const nodeId = planDoc.coveredNodeIds[0];
+  const nodeId = planDoc.directNodeIds[0];
   const node = nodeOf(profile, nodeId);
   const incoming = profile.indexes.incomingEdgesByNode.get(nodeId) ?? [];
   const outgoing = profile.indexes.outgoingEdgesByNode.get(nodeId) ?? [];
@@ -1325,86 +1527,408 @@ function renderCoverageReport(report: CoverageReport, validation: CoverageValida
   return lines.join("\n");
 }
 
-export function renderKnowledgeBaseDocuments(
-  profile: ProjectProfile,
-  plan: DocumentPlan,
-  fileDocPlan?: FileDocPlan,
-  topicPlan?: TopicPlan,
-  _merged?: MergeKnowledgeBaseWriterOutputsResult,
-  report?: CoverageReport,
-  validation?: CoverageValidationResult,
-): GeneratedDocument[] {
-  const planDocuments = topicPlan ? plan.documents.filter((doc) => doc.category !== "topic") : plan.documents;
-  return planDocuments.map((doc) => {
-    let content: string;
-    if (doc.path === KB_PATHS.inventory) content = renderInventory(profile, plan, fileDocPlan, topicPlan, report);
-    else if (doc.path === KB_PATHS.projectOverview) content = renderProjectOverview(profile);
-    else if (isPath(doc.path, KB_PATHS.architectureMap, LEGACY_PATHS.architectureMap)) content = renderArchitecture(profile);
-    else if (isPath(doc.path, KB_PATHS.businessFlowMap, LEGACY_PATHS.businessFlowMap)) content = renderFlowOverview(profile);
-    else if (isPath(doc.path, indexDocumentPath("文件索引"), LEGACY_PATHS.fileIndex)) content = renderFileIndex(profile, plan);
-    else if (isPath(doc.path, indexDocumentPath("函数索引"), LEGACY_PATHS.functionIndex)) content = renderFunctionIndex(profile, plan);
-    else if (isPath(doc.path, indexDocumentPath("类索引"), LEGACY_PATHS.classIndex)) content = renderClassIndex(profile, plan);
-    else if (doc.path === indexDocumentPath("调用关系索引")) content = renderCallIndex(profile);
-    else if (doc.path === "配置与外部依赖.md") content = renderDependencies(profile);
-    else if (isPath(doc.path, KB_PATHS.pendingItems, LEGACY_PATHS.pendingItems)) content = renderRisks(profile);
-    else if (isPath(doc.path, indexDocumentPath("AI检索索引"), LEGACY_PATHS.aiIndex)) content = renderAiIndex(profile, plan);
-    else if (doc.path === KB_PATHS.coverageReport && report && validation) content = renderCoverageReport(report, validation);
-    else if (doc.category === "module") content = renderModuleDoc(profile, doc);
-    else if (doc.category === "flow") content = renderFlowDoc(profile, doc);
-    else if (doc.category === "topic") content = renderTopicDoc(profile, doc);
-    else content = `# ${doc.title}\n\n本地代码事实: ${doc.reason}`;
-
-    return {
-      path: doc.path,
-      title: doc.title,
-      category: doc.category,
-      coveredNodeIds: doc.coveredNodeIds,
-      representedEdgeIds: [],
-      content,
-    };
-  });
+export interface MaterializeKnowledgeBaseDocumentsInput {
+  profile: ProjectProfile;
+  plan: FeaturedPlan;
+  fileDocPlan: FileDocPlan;
+  businessCapabilityProfile: BusinessCapabilityProfile;
+  topicPlan: TopicPlan;
+  merged: MergeKnowledgeBaseWriterOutputsResult;
 }
 
-export function validateKnowledgeBaseCoverage(
-  profile: ProjectProfile,
-  plan: DocumentPlan,
-  documents: GeneratedDocument[],
-): CoverageValidationResult {
-  const errors: string[] = [];
-  const warnings: string[] = [];
-  const docByPath = new Map(documents.map((doc) => [doc.path, doc]));
-  const contentAt = (currentPath: string, legacyPath: string): string => {
-    return docByPath.get(currentPath)?.content ?? docByPath.get(legacyPath)?.content ?? "";
-  };
-  const fileIndex = contentAt(indexDocumentPath("文件索引"), LEGACY_PATHS.fileIndex);
-  const functionIndex = contentAt(indexDocumentPath("函数索引"), LEGACY_PATHS.functionIndex);
-  const classIndex = contentAt(indexDocumentPath("类索引"), LEGACY_PATHS.classIndex);
+export interface MaterializeKnowledgeBaseDocumentsResult {
+  documents: GeneratedDocument[];
+  errors: string[];
+}
 
-  for (const node of nodesOfType(profile, "file")) {
-    if (!fileIndex.includes(node.id)) errors.push(`file node missing from file index: ${node.id}`);
+function excerptForNode(task: FileDocTask, node: GraphNode): string | undefined {
+  if (!task.sourceSnapshot.exists || !task.sourceSnapshot.text.trim()) return undefined;
+  const lines = task.sourceSnapshot.text.split(/\r?\n/);
+  if (!node.lineRange) return lines.find((line) => line.trim())?.trim();
+  const start = Math.max(0, node.lineRange[0] - 1);
+  const end = Math.min(lines.length, node.lineRange[1]);
+  return lines.slice(start, end).map((line) => line.trim()).filter(Boolean).slice(0, 3).join(" ") || undefined;
+}
+
+function evidenceForNode(
+  profile: ProjectProfile,
+  fileDocPlan: FileDocPlan,
+  nodeId: string,
+  claim: string,
+): SourceEvidence | undefined {
+  const node = nodeOf(profile, nodeId);
+  if (!node?.filePath) return undefined;
+  const normalizedPath = normalizeKnowledgeSourcePath(node.filePath);
+  const task = fileDocPlan.tasks.find((candidate) => candidate.filePath === normalizedPath);
+  return {
+    filePath: normalizedPath,
+    ...(node.lineRange ? { lineRange: node.lineRange } : {}),
+    nodeId,
+    ...(task ? { excerpt: excerptForNode(task, node) } : {}),
+    claim,
+  };
+}
+
+function supportEvidence(
+  profile: ProjectProfile,
+  fileDocPlan: FileDocPlan,
+  planned: PlannedDocument,
+  minimum = 0,
+): SourceEvidence[] {
+  const candidates = [...planned.directNodeIds, ...planned.contextNodeIds];
+  if (minimum > 0) candidates.push(...profile.graph.nodes.map((node) => node.id));
+  const evidence: SourceEvidence[] = [];
+  const seen = new Set<string>();
+  for (const nodeId of candidates) {
+    const item = evidenceForNode(
+      profile,
+      fileDocPlan,
+      nodeId,
+      `节点 \`${nodeId}\` 支持“${planned.title}”页面中与该源码位置相邻的结论。`,
+    );
+    if (!item) continue;
+    const key = `${item.filePath}:${item.lineRange?.join("-") ?? "file"}:${item.nodeId ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    evidence.push(item);
+    if (minimum > 0 && evidence.length >= minimum) break;
   }
-  for (const node of nodesOfType(profile, "function")) {
-    if (!functionIndex.includes(node.id)) errors.push(`function node missing from function index: ${node.id}`);
+  return evidence;
+}
+
+function sourceEvidenceMarkdown(evidence: SourceEvidence[]): string {
+  if (evidence.length === 0) return "- 证据不足：当前源码快照没有可引用的精确位置。";
+  return evidence.map((item) =>
+    `- ${item.claim ?? "该源码位置支持本页结论"} 证据：\`${item.filePath}\`${item.lineRange ? `:${item.lineRange.join("-")}` : ""}${item.excerpt ? `；摘录：\`${item.excerpt}\`` : ""}`,
+  ).join("\n");
+}
+
+function generatedFromPlan(
+  planned: PlannedDocument,
+  content: string,
+  sourceEvidence: SourceEvidence[],
+  profile: ProjectProfile,
+): GeneratedDocument {
+  const nodeTerms = [...planned.directNodeIds, ...planned.contextNodeIds]
+    .flatMap((nodeId) => {
+      const node = nodeOf(profile, nodeId);
+      return [nodeId, node?.name, node?.filePath, ...(node?.tags ?? [])];
+    })
+    .filter((term): term is string => Boolean(term));
+  return {
+    ...planned,
+    content,
+    sourceEvidence,
+    searchTerms: [...new Set([planned.title, planned.summary, planned.path, ...nodeTerms])],
+    quality: "generated",
+    generationStatus: "complete",
+    qualityIssues: [],
+  };
+}
+
+function renderFeaturedProjectOverview(
+  profile: ProjectProfile,
+  plan: FeaturedPlan,
+  fileDocPlan: FileDocPlan,
+  planned: PlannedDocument,
+): GeneratedDocument {
+  const flowPages = plan.documents.filter((document) => document.role === "featured" && document.category === "flow");
+  const modulePages = plan.documents.filter((document) => document.role === "featured" && document.category === "module");
+  const configurationNodes = profile.graph.nodes.filter((node) => node.type === "config" || node.type === "schema");
+  const testTasks = fileDocPlan.tasks.filter((task) => task.referenceKind === "test");
+  const evidence = supportEvidence(profile, fileDocPlan, planned, 6);
+  const routePages = plan.documents.filter((document) => document.role === "featured" && document.route)
+    .sort((left, right) => (left.route?.order ?? 0) - (right.route?.order ?? 0));
+  const content = [
+    "# 项目总览",
+    "",
+    "## 项目目的与边界",
+    "",
+    `- 项目：${profile.graph.project.name}。${projectDescription(profile)}`,
+    `- 技术边界：${profile.graph.project.languages.join("、") || "证据不足：未记录语言"}；框架：${profile.graph.project.frameworks.join("、") || "证据不足：未记录框架"}。`,
+    "- 运行时边界：静态图谱只能证明源码结构和可达关系，不能独立证明线上流量、配置值、异步时序或业务口径。",
+    "",
+    "## 生命周期与可发布流程",
+    "",
+    flowPages.length > 0
+      ? flowPages.map((flow) => `- [${flow.title}](${flow.path})：${flow.summary}`).join("\n")
+      : "- 证据不足：没有入口达到三个阶段和两条行为边，当前不发布业务流程。",
+    "",
+    "## 模块与职责入口",
+    "",
+    modulePages.length > 0
+      ? modulePages.map((module) => `- [${module.title}](${module.path})：${module.summary}`).join("\n")
+      : "- 证据不足：图谱没有可发布模块层。",
+    "",
+    "## 配置、结构与测试边界",
+    "",
+    `- 配置或结构定义节点：${configurationNodes.length} 个；文件引用任务：${fileDocPlan.tasks.length} 个。`,
+    `- 测试引用任务：${testTasks.length} 个；没有测试任务不等于没有运行时验证，需要继续核对 CI 与集成环境。`,
+    "",
+    "## 推荐阅读",
+    "",
+    routePages.map((page) => `${(page.route?.order ?? 0) + 1}. [${page.title}](${page.path})（${page.route?.stage}）`).join("\n")
+      || "1. 证据不足：主阅读路径为空。",
+    "",
+    "## 代码证据",
+    "",
+    sourceEvidenceMarkdown(evidence),
+  ].join("\n");
+  return generatedFromPlan(planned, content, evidence, profile);
+}
+
+export function renderBusinessCapabilityDocuments(
+  profile: ProjectProfile,
+  fileDocPlan: FileDocPlan,
+  businessProfile: BusinessCapabilityProfile,
+  planned: PlannedDocument,
+): GeneratedDocument {
+  const capabilityId = planned.reason.match(/；能力 (.+)$/)?.[1];
+  const capability = businessProfile.capabilities.find((candidate) => candidate.id === capabilityId)
+    ?? businessProfile.capabilities.find((candidate) => candidate.title === planned.title);
+  if (!capability) {
+    const evidence = supportEvidence(profile, fileDocPlan, planned);
+    return generatedFromPlan(planned, `# ${planned.title}\n\n## 业务结论\n\n证据不足：找不到与计划页面匹配的业务能力。\n\n## 代码证据\n\n${sourceEvidenceMarkdown(evidence)}`, evidence, profile);
   }
-  for (const node of nodesOfType(profile, "class")) {
-    if (!classIndex.includes(node.id)) errors.push(`class node missing from class index: ${node.id}`);
+  const factsById = new Map(businessProfile.facts.map((fact) => [fact.id, fact]));
+  const facts = capability.factIds.map((factId) => factsById.get(factId)).filter((fact): fact is BusinessFact => Boolean(fact));
+  const primary = facts.filter((fact) => fact.evidenceRole === "primary");
+  const supporting = facts.filter((fact) => fact.evidenceRole === "supporting");
+  const examples = facts.filter((fact) => fact.evidenceRole === "example-only");
+  const triggers = [...primary, ...supporting].filter((fact) => ["branch", "constant", "config"].includes(fact.kind));
+  const evidence = facts.flatMap((fact) => fact.evidence.map((item) => ({
+    ...item,
+    claim: `事实“${fact.title}”支持能力“${capability.title}”中的${fact.businessMeaning || fact.summary}`,
+  })));
+  const factsTable = (items: BusinessFact[], empty: string): string => items.length > 0
+    ? items.map((fact) => `- ${fact.title}（${fact.kind} / ${fact.sourceKind}）：${fact.summary}`).join("\n")
+    : `- 证据不足：${empty}`;
+  const content = [
+    `# ${planned.title}`,
+    "",
+    "## 非技术同学速读",
+    "",
+    `本页只使用 primary 与 supporting 事实解释“${capability.title}”；example-only 内容单列为语义上下文，不能当作生产规则。`,
+    "",
+    "## 业务结论",
+    "",
+    planned.summary,
+    "",
+    "## 关键规则与触发条件",
+    "",
+    factsTable(triggers, "没有从分支、常量或配置中提取到明确触发条件、字段或规则。"),
+    "",
+    "## 主证据事实",
+    "",
+    factsTable(primary, "没有 production-logic 或 configuration 主证据。"),
+    "",
+    "## 支撑证据事实",
+    "",
+    factsTable(supporting, "没有测试、注释或文档支撑事实。"),
+    "",
+    "## 示例上下文（不代表线上规则）",
+    "",
+    factsTable(examples, "没有 example-only 事实。"),
+    "",
+    "## 事实证据",
+    "",
+    sourceEvidenceMarkdown(evidence),
+    "",
+    "## 修改风险与待核验",
+    "",
+    "- 修改前核对触发字段、分支条件、配置默认值与回归测试；静态事实不能替代线上配置和运行时数据。",
+  ].join("\n");
+  return generatedFromPlan(planned, content, evidence, profile);
+}
+
+function renderPlannedModule(
+  profile: ProjectProfile,
+  fileDocPlan: FileDocPlan,
+  planned: PlannedDocument,
+): GeneratedDocument {
+  const layerId = planned.reason.match(/^按层 (.+?) 生成/)?.[1];
+  const layer = profile.layerProfiles.find((candidate) => candidate.id === layerId);
+  const coreFiles = planned.contextNodeIds
+    .map((nodeId) => nodeOf(profile, nodeId))
+    .filter((node): node is GraphNode => node?.type === "file")
+    .sort((left, right) => (profile.nodeDegrees.get(right.id)?.total ?? 0) - (profile.nodeDegrees.get(left.id)?.total ?? 0) || left.id.localeCompare(right.id))
+    .slice(0, 15);
+  const represented = new Set(planned.representedEdgeIds);
+  const edges = profile.graph.edges.filter((edge) => represented.has(edgeId(edge)));
+  const configTasks = fileDocPlan.tasks.filter((task) => task.layerId === layerId && ["configuration", "schema"].includes(task.referenceKind));
+  const testTasks = fileDocPlan.tasks.filter((task) => task.layerId === layerId && task.referenceKind === "test");
+  const evidence = supportEvidence(profile, fileDocPlan, planned);
+  const content = [
+    `# ${planned.title}`,
+    "",
+    "## 责任与非责任",
+    "",
+    `- 责任：${layer ? layerDescription(layer.description, layer.name) : planned.summary}`,
+    "- 非责任：静态分层不证明部署边界、事务边界、调用时序或业务归属；这些结论需要运行环境证据。",
+    "",
+    "## 入口与输出关系",
+    "",
+    edges.length > 0 ? edges.map((edge) => `- ${edge.source} --[${edgeTypeLabel(edge.type)}]--> ${edge.target}`).join("\n") : "- 证据不足：没有跨文件关系边。",
+    "",
+    "## 核心文件（按关系度，最多十五个）",
+    "",
+    coreFiles.length > 0 ? coreFiles.map((file) => `- \`${file.id}\` ${file.name}：${nodeSummary(file)}`).join("\n") : "- 证据不足：该层没有文件节点。",
+    "",
+    "## 依赖层与边界",
+    "",
+    `- 入站依赖层：${layer?.inboundLayerIds.join("、") || "无显式入站层"}；出站依赖层：${layer?.outboundLayerIds.join("、") || "无显式出站层"}。`,
+    `- 配置或结构定义引用：${configTasks.length} 个；测试引用：${testTasks.length} 个。`,
+    "",
+    "## 代码证据",
+    "",
+    sourceEvidenceMarkdown(evidence),
+  ].join("\n");
+  return generatedFromPlan(planned, content, evidence, profile);
+}
+
+function renderSourceEntry(
+  profile: ProjectProfile,
+  plan: FeaturedPlan,
+  fileDocPlan: FileDocPlan,
+  planned: PlannedDocument,
+): GeneratedDocument {
+  const evidence = supportEvidence(profile, fileDocPlan, planned, 6);
+  const entryNodes = planned.contextNodeIds.map((nodeId) => nodeOf(profile, nodeId)).filter((node): node is GraphNode => Boolean(node));
+  const configTasks = fileDocPlan.tasks.filter((task) => task.referenceKind === "configuration");
+  const testTasks = fileDocPlan.tasks.filter((task) => task.referenceKind === "test");
+  const nextPages = plan.documents.filter((document) => document.role === "featured" && document.id !== planned.id).slice(0, 8);
+  const content = [
+    "# 源码入口",
+    "",
+    "## 入口文件与函数",
+    "",
+    planned.directNodeIds.map((nodeId) => `- 文件：\`${nodeId}\` ${nodeSummary(nodeOf(profile, nodeId))}`).join("\n") || "- 证据不足：没有可发布入口文件。",
+    entryNodes.map((node) => `- 入口节点：\`${node.id}\` ${node.name}，位置 ${lineRef(node, node.filePath ?? "未记录文件")}`).join("\n"),
+    "",
+    "## 启动或请求路径",
+    "",
+    plan.documents.filter((document) => document.category === "flow" && document.role === "featured")
+      .map((flow) => `- [${flow.title}](${flow.path})：${flow.summary}`).join("\n") || "- 证据不足：没有满足发布阈值的静态路径。",
+    "",
+    "## 配置与测试入口",
+    "",
+    `- 配置引用：${configTasks.map((task) => `\`${task.filePath}\``).join("、") || "证据不足：没有配置引用任务"}。`,
+    `- 测试引用：${testTasks.map((task) => `\`${task.filePath}\``).join("、") || "证据不足：没有测试引用任务"}。`,
+    "",
+    "## 推荐下一页",
+    "",
+    nextPages.map((page) => `- [${page.title}](${page.path})`).join("\n") || "- 证据不足：没有其他 featured 页面。",
+    "",
+    "## 代码证据",
+    "",
+    sourceEvidenceMarkdown(evidence),
+  ].join("\n");
+  return generatedFromPlan(planned, content, evidence, profile);
+}
+
+export function materializeKnowledgeBaseDocuments(
+  input: MaterializeKnowledgeBaseDocumentsInput,
+): MaterializeKnowledgeBaseDocumentsResult {
+  const { profile, plan, fileDocPlan, businessCapabilityProfile, topicPlan, merged } = input;
+  const documents: GeneratedDocument[] = [];
+  const errors: string[] = [];
+  const fileWriterByOwner = new Map(merged.acceptedFileWriterDocuments.map((document) => [document.fileNodeId, document]));
+  const topicWriterByNode = new Map(merged.acceptedTopicWriterDocuments.map((document) => [document.topicNodeId, document]));
+
+  for (const planned of plan.documents) {
+    if (planned.role === "maintenance") continue;
+
+    if (planned.category === "file") {
+      const task = fileDocPlan.tasks.find((candidate) => candidate.documentPath === planned.path);
+      const writer = task ? fileWriterByOwner.get(task.fileNodeId) : undefined;
+      if (!task || !writer) {
+        errors.push(`计划文件缺少已接受写作者输出：${planned.path}`);
+        continue;
+      }
+      documents.push(generatedFromPlan(planned, writer.markdown, writer.sourceEvidence, profile));
+      continue;
+    }
+
+    if (planned.category === "topic") {
+      const topic = topicPlan.topics.find((candidate) => candidate.documentPath === planned.path);
+      const writer = topic ? topicWriterByNode.get(topic.topicNodeId) : undefined;
+      if (!topic || !writer) {
+        errors.push(`计划专题缺少已接受写作者输出：${planned.path}`);
+        continue;
+      }
+      documents.push(generatedFromPlan(planned, writer.markdown, writer.evidence, profile));
+      continue;
+    }
+
+    if (planned.path === KB_PATHS.projectOverview) {
+      documents.push(renderFeaturedProjectOverview(profile, plan, fileDocPlan, planned));
+    } else if (planned.path === KB_PATHS.sourceEntry) {
+      documents.push(renderSourceEntry(profile, plan, fileDocPlan, planned));
+    } else if (planned.category === "capability") {
+      documents.push(renderBusinessCapabilityDocuments(profile, fileDocPlan, businessCapabilityProfile, planned));
+    } else if (planned.category === "flow") {
+      const evidence = supportEvidence(profile, fileDocPlan, planned);
+      documents.push(generatedFromPlan(planned, renderFlowDoc(profile, planned), evidence, profile));
+    } else if (planned.category === "module") {
+      documents.push(renderPlannedModule(profile, fileDocPlan, planned));
+    } else {
+      errors.push(`计划页面没有专用渲染器：${planned.path}`);
+    }
   }
-  for (const layer of profile.layerProfiles) {
-    const moduleDoc = documents.find((doc) => doc.category === "module" && doc.content.includes(`层 ID: \`${layer.id}\``));
-    if (!moduleDoc) errors.push(`layer missing module overview: ${layer.id}`);
-  }
-  for (const entry of profile.entryCandidates) {
-    const covered = plan.documents.some((doc) => (doc.category === "flow" || doc.category === "topic") && doc.coveredNodeIds.includes(entry.nodeId));
-    if (!covered) errors.push(`entry candidate missing flow/topic coverage: ${entry.nodeId}`);
-  }
-  for (const doc of documents.filter((item) => item.category === "topic")) {
-    if (!doc.content.includes("## 代码证据")) errors.push(`topic document lacks code evidence: ${doc.path}`);
-  }
-  for (const doc of documents) {
-    if (PLACEHOLDER_RE.test(doc.content)) errors.push(`document contains placeholder text: ${doc.path}`);
-  }
-  if (profile.evidenceGaps.some((gap) => gap.kind === "missing-calls")) {
-    warnings.push("calls edges are unavailable; some linkage may be estimated");
-  }
-  return { ok: errors.length === 0, errors, warnings };
+
+  return { documents, errors };
+}
+
+export function renderKnowledgeBaseStatusDocuments(
+  profile: ProjectProfile,
+  plan: FeaturedPlan,
+  report: CoverageReport,
+  validation: CoverageValidationResult,
+  retryPlan: RetryPlan,
+): GeneratedDocument[] {
+  return plan.documents.filter((planned) => planned.role === "maintenance").map((planned) => {
+    const content = planned.path === KB_PATHS.qualityStatus
+      ? [
+          "# 质量状态",
+          "",
+          "## 发布状态",
+          "",
+          `- 状态：${STATUS_LABELS[report.status]}。`,
+          `- 结构错误：${report.errors.length} 个；质量失败：${report.qualityValidation.failed.length} 个；警告：${report.warnings.length} 个。`,
+          "",
+          "## 失败与缺失",
+          "",
+          [...report.errors, ...validation.errors].map((message) => `- ${diagnosticText(message)}`).join("\n") || "- 没有结构失败。",
+          report.qualityValidation.failed.map((path) => `- 质量失败：${path}`).join("\n") || "- 没有质量失败页面。",
+          "",
+          "## 重试与恢复步骤",
+          "",
+          `- 文件批次重试：${retryPlan.fileBatchIndexes.join("、") || "无"}；专题批次重试：${retryPlan.topicBatchIndexes.join("、") || "无"}。`,
+          "- 恢复步骤：补齐缺失源码或 writer 输出，重新运行生成，再核对质量失败页面和引用覆盖。",
+        ].join("\n")
+      : [
+          "# 引用覆盖",
+          "",
+          "## 文件与符号覆盖",
+          "",
+          `- 文件：${report.fileDocumentCoverage.covered} / ${report.fileDocumentCoverage.total}；缺失 ${report.fileDocumentCoverage.missing.join("、") || "无"}。`,
+          `- 函数锚点：${report.functionCardCoverage.covered} / ${report.functionCardCoverage.total}；缺失 ${report.functionCardCoverage.missing.join("、") || "无"}。`,
+          `- 类型锚点：${report.classCardCoverage.covered} / ${report.classCardCoverage.total}；缺失 ${report.classCardCoverage.missing.join("、") || "无"}。`,
+          "",
+          "## 关系与专题覆盖",
+          "",
+          report.relationshipCoverage.map((item) => `- ${edgeTypeLabel(item.edgeType)}：${item.covered} / ${item.total}；缺失 ${item.missingEdgeIds.join("、") || "无"}。`).join("\n"),
+          `- 必需专题：${report.requiredTopicCoverage.covered} / ${report.requiredTopicCoverage.total}。`,
+          "",
+          "## 业务证据覆盖",
+          "",
+          `- 业务事实：${report.businessFactCoverage.covered} / ${report.businessFactCoverage.total}；缺失 ${report.businessFactCoverage.missing.join("、") || "无"}。`,
+          `- 业务能力：${report.businessCapabilityCoverage.covered} / ${report.businessCapabilityCoverage.total}；缺失 ${report.businessCapabilityCoverage.missing.join("、") || "无"}。`,
+          "",
+          "## 恢复步骤",
+          "",
+          "- 为缺失文件补源码快照，为函数和类型补文件内锚点，为缺失关系补可核对的 representedEdgeIds 后重新生成。",
+        ].join("\n");
+    return generatedFromPlan(planned, content, [], profile);
+  });
 }

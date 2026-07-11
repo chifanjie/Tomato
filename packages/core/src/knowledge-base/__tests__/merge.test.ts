@@ -143,6 +143,7 @@ function fileDocument(task: FileDocTask, overrides: Partial<FileWriterDocument> 
     fileNodeId: task.fileNodeId,
     filePath: task.filePath,
     documentPath: task.documentPath,
+    referenceKind: task.referenceKind,
     title: `${task.filePath} 文件知识文档`,
     coveredFunctionNodeIds: [...task.functionNodeIds],
     coveredClassNodeIds: [...task.classNodeIds],
@@ -200,23 +201,75 @@ describe("knowledge base writer output merge", () => {
     });
     expect(result.acceptedFileWriterDocuments).toHaveLength(1);
     expect(result.acceptedTopicWriterDocuments).toEqual([topic]);
-    expect(result.fileDocuments).toEqual([
-      expect.objectContaining({
-        path: task.documentPath,
-        title: `${task.filePath} 文件知识文档`,
-        category: "file",
-        coveredNodeIds: [task.fileNodeId, ...task.functionNodeIds, ...task.classNodeIds],
-        content: markdownFor(task),
-      }),
-    ]);
-    expect(result.topicDocuments).toEqual([
-      expect.objectContaining({
-        path: topic.documentPath,
-        title: topic.title,
-        category: "topic",
-        coveredNodeIds: topic.coveredNodeIds,
-        content: topic.markdown,
-      }),
+    expect(result).not.toHaveProperty("fileDocuments");
+    expect(result).not.toHaveProperty("topicDocuments");
+  });
+
+  it("rejects a file writer document whose reference kind differs from its task", () => {
+    const { profile, fileDocPlan } = fixture();
+    const task = existingTask();
+    const document = fileDocument(task, { referenceKind: "schema" });
+
+    const result = mergeKnowledgeBaseWriterOutputs({
+      profile,
+      fileDocPlan: { ...fileDocPlan, tasks: [task], batches: [] },
+      fileWriterOutputs: [fileOutput(task.batchIndex, [document])],
+    });
+
+    expect(result.validation.ok).toBe(false);
+    expect(result.validation.errors).toContain(
+      `file writer referenceKind must match planned task: ${task.fileNodeId} expected ${task.referenceKind} received schema`,
+    );
+    expect(result.acceptedFileWriterDocuments).toEqual([]);
+  });
+
+  it("rejects source nodes whose normalized path differs from the task path", () => {
+    const { profile, fileDocPlan } = fixture();
+    const task = existingTask();
+    const invalidTask = {
+      ...task,
+      sourceNodeIds: [...task.sourceNodeIds, "file:src/missing.ts"],
+    };
+
+    const result = mergeKnowledgeBaseWriterOutputs({
+      profile,
+      fileDocPlan: { ...fileDocPlan, tasks: [invalidTask], batches: [] },
+      fileWriterOutputs: [fileOutput(task.batchIndex, [fileDocument(invalidTask)])],
+    });
+
+    expect(result.validation.ok).toBe(false);
+    expect(result.validation.errors).toContain(
+      `file task sourceNodeId path mismatch: file:src/missing.ts expected ${task.filePath} received src/missing.ts`,
+    );
+    expect(result.acceptedFileWriterDocuments).toEqual([]);
+  });
+
+  it("accepts configuration, schema, and documentation task owners", () => {
+    const sourceGraph = graph();
+    sourceGraph.nodes.push(
+      { id: "config:config/app.yaml", type: "config", name: "app.yaml", filePath: "config/app.yaml", summary: "应用配置", tags: ["config"], complexity: "simple" },
+      { id: "schema:schemas/feed.proto", type: "schema", name: "feed.proto", filePath: "schemas/feed.proto", summary: "Feed schema", tags: ["schema"], complexity: "simple" },
+      { id: "document:docs/feed.md", type: "document", name: "feed.md", filePath: "docs/feed.md", summary: "Feed documentation", tags: ["docs"], complexity: "simple" },
+    );
+    const profile = buildKnowledgeBaseProfile(sourceGraph);
+    const planned = buildFileDocPlan(profile, { sourceFiles: {
+      "config/app.yaml": "enabled: true\n",
+      "schemas/feed.proto": "message Feed {}\n",
+      "docs/feed.md": "# Feed\n",
+    } });
+    const tasks = planned.tasks.filter((task) => ["config", "schema", "document"].includes(profile.indexes.nodesById.get(task.fileNodeId)?.type ?? ""));
+
+    const result = mergeKnowledgeBaseWriterOutputs({
+      profile,
+      fileDocPlan: { ...planned, tasks, batches: [] },
+      fileWriterOutputs: tasks.map((task) => fileOutput(task.batchIndex, [fileDocument(task)])),
+    });
+
+    expect(result.validation.ok).toBe(true);
+    expect(result.acceptedFileWriterDocuments.map((document) => document.fileNodeId).sort()).toEqual([
+      "config:config/app.yaml",
+      "document:docs/feed.md",
+      "schema:schemas/feed.proto",
     ]);
   });
 
@@ -425,7 +478,6 @@ describe("knowledge base writer output merge", () => {
     ]));
     expect(result.retryPlan.topicBatchIndexes).toEqual([4, 8]);
     expect(result.acceptedTopicWriterDocuments).toEqual([]);
-    expect(result.topicDocuments).toEqual([]);
   });
 
   it("fails topic documents that cover unknown graph nodes", () => {
@@ -494,7 +546,6 @@ describe("knowledge base writer output merge", () => {
     ]));
     expect(result.retryPlan.topicBatchIndexes).toEqual([6]);
     expect(result.acceptedTopicWriterDocuments).toEqual([]);
-    expect(result.topicDocuments).toEqual([]);
   });
 
   it("fails when sourceFileNodeId is not a file node", () => {
@@ -517,10 +568,9 @@ describe("knowledge base writer output merge", () => {
     ]));
     expect(result.retryPlan.topicBatchIndexes).toEqual([6]);
     expect(result.acceptedTopicWriterDocuments).toEqual([]);
-    expect(result.topicDocuments).toEqual([]);
   });
 
-  it("sorts accepted topic writer documents and generated topic documents by path", () => {
+  it("sorts accepted topic writer documents by path", () => {
     const { profile, fileDocPlan } = fixture();
     const task = existingTask();
     const later = topicDocument({
@@ -545,10 +595,6 @@ describe("knowledge base writer output merge", () => {
       "专题/a-earlier.md",
       "专题/z-later.md",
     ]);
-    expect(result.topicDocuments.map((topic) => topic.path)).toEqual([
-      "专题/a-earlier.md",
-      "专题/z-later.md",
-    ]);
   });
 
   it("fails and retries when a topic source file has no accepted file document", () => {
@@ -569,6 +615,5 @@ describe("knowledge base writer output merge", () => {
     ]));
     expect(result.retryPlan.topicBatchIndexes).toEqual([2]);
     expect(result.acceptedTopicWriterDocuments).toEqual([]);
-    expect(result.topicDocuments).toEqual([]);
   });
 });

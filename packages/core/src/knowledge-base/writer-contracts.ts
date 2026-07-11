@@ -4,7 +4,7 @@ import type {
   TopicWriterBatchOutput,
   TopicWriterDocument,
 } from "./types.js";
-import { validateMarkdownQuality } from "./quality.js";
+import { containsPlaceholderProse, sectionBody, validateMarkdownQuality } from "./quality.js";
 
 export type ContractParseResult<T> =
   | { ok: true; value: T; errors: [] }
@@ -17,12 +17,16 @@ export const FILE_WRITER_REQUIRED_SECTIONS = [
   "## 所属位置",
   "## 文件内结构",
   "## 关键规则、输入输出与兜底",
+  "## 入口条件与处理顺序",
+  "## 字段读写与状态变化",
   "## 函数卡片",
   "## 类卡片",
   "## 调用关系",
   "## 风险点与待确认项",
+  "## 证据分级",
+  "## 待核验清单",
   "## 代码证据",
-  "## AI 检索词",
+  "## AI 检索索引",
 ] as const;
 
 export const TOPIC_WRITER_REQUIRED_SECTIONS = [
@@ -31,16 +35,20 @@ export const TOPIC_WRITER_REQUIRED_SECTIONS = [
   "## 在业务流程中的位置",
   "## 主要输入、输出、副作用",
   "## 关键分支和算法",
+  "## 入口条件与处理顺序",
+  "## 字段读写与状态变化",
   "## 配置和外部依赖",
   "## 上游调用者",
   "## 下游调用对象",
   "## 修改风险",
   "## 测试证据",
+  "## 证据分级",
+  "## 待核验清单",
   "## 代码证据",
-  "## AI 检索词",
+  "## AI 检索索引",
 ] as const;
 
-const PLACEHOLDER_RE = /\b(T[B]D|TO[D]O|FIX[M]E)\b|待\s*定|占\s*位|后续\s*补充|这里\s*填写/i;
+const REFERENCE_TEMPLATE_KINDS = ["code", "configuration", "schema", "documentation", "test"] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -61,6 +69,12 @@ function requireString(record: Record<string, unknown>, key: string, path: strin
   const value = record[key];
   if (typeof value !== "string") {
     errors.push(`${fieldPath(path, key)} must be a string`);
+  }
+}
+
+function requireReferenceKind(record: Record<string, unknown>, path: string, errors: string[]): void {
+  if (!REFERENCE_TEMPLATE_KINDS.includes(record.referenceKind as (typeof REFERENCE_TEMPLATE_KINDS)[number])) {
+    errors.push(`${fieldPath(path, "referenceKind")} must be one of: ${REFERENCE_TEMPLATE_KINDS.join(", ")}`);
   }
 }
 
@@ -112,8 +126,47 @@ function requireSections(markdown: unknown, sections: readonly string[], path: s
   }
 }
 
+function requireSectionTerms(
+  markdown: string,
+  section: string,
+  terms: readonly string[],
+  path: string,
+  errors: string[],
+): void {
+  const body = sectionBody(markdown, section);
+  for (const term of terms) {
+    if (!body.includes(term)) {
+      errors.push(`${path} section ${section} missing required field: ${term}`);
+    }
+  }
+}
+
+function validateStructuredWriterSections(markdown: unknown, path: string, errors: string[]): void {
+  if (typeof markdown !== "string") return;
+
+  requireSectionTerms(markdown, "## 入口条件与处理顺序", ["入口条件", "处理顺序"], path, errors);
+  requireSectionTerms(markdown, "## 字段读写与状态变化", ["读取", "写入", "状态变化"], path, errors);
+  requireSectionTerms(markdown, "## 证据分级", ["本地代码事实", "代码推断", "外部待核验"], path, errors);
+
+  const verificationBody = sectionBody(markdown, "## 待核验清单");
+  if (!/^\s*- \[ \]\s+\S/m.test(verificationBody)) {
+    errors.push(`${path} section ## 待核验清单 must contain at least one unchecked verification item`);
+  }
+
+  const aiIndexBody = sectionBody(markdown, "## AI 检索索引");
+  for (const column of ["检索意图", "关键词", "定位"]) {
+    if (!aiIndexBody.includes(column)) {
+      errors.push(`${path} section ## AI 检索索引 missing required column: ${column}`);
+    }
+  }
+  const tableRows = aiIndexBody.split(/\r?\n/).filter((line) => /^\s*\|.*\|\s*$/.test(line));
+  if (tableRows.length < 3) {
+    errors.push(`${path} section ## AI 检索索引 must contain a header and at least one data row`);
+  }
+}
+
 function validateNoPlaceholderText(value: unknown, path: string, errors: string[]): void {
-  if (typeof value === "string" && PLACEHOLDER_RE.test(value)) {
+  if (typeof value === "string" && containsPlaceholderProse(value)) {
     errors.push(`${path} contains placeholder text`);
   }
 }
@@ -186,6 +239,7 @@ function validateFileWriterDocument(value: unknown, index: number, errors: strin
   requireString(value, "fileNodeId", path, errors);
   requireString(value, "filePath", path, errors);
   requireString(value, "documentPath", path, errors);
+  requireReferenceKind(value, path, errors);
   requireString(value, "title", path, errors);
   requireStringArray(value, "coveredFunctionNodeIds", path, errors);
   requireStringArray(value, "coveredClassNodeIds", path, errors);
@@ -197,6 +251,7 @@ function validateFileWriterDocument(value: unknown, index: number, errors: strin
   requireStringArray(value, "importantNodeIds", path, errors);
   requireString(value, "markdown", path, errors);
   requireSections(value.markdown, FILE_WRITER_REQUIRED_SECTIONS, `${path}.markdown`, errors);
+  validateStructuredWriterSections(value.markdown, `${path}.markdown`, errors);
   validateNoPlaceholderText(value.markdown, `${path}.markdown`, errors);
   if (typeof value.markdown === "string") {
     errors.push(
@@ -230,6 +285,7 @@ function validateTopicWriterDocument(value: unknown, index: number, errors: stri
   });
   requireString(value, "markdown", path, errors);
   requireSections(value.markdown, TOPIC_WRITER_REQUIRED_SECTIONS, `${path}.markdown`, errors);
+  validateStructuredWriterSections(value.markdown, `${path}.markdown`, errors);
   validateNoPlaceholderText(value.markdown, `${path}.markdown`, errors);
   if (typeof value.markdown === "string") {
     errors.push(

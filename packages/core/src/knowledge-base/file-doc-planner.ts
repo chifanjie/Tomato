@@ -1,6 +1,6 @@
 import type { GraphEdge, GraphNode } from "../types.js";
-import type { FileDocBatch, FileDocPlan, FileDocTask, KnowledgeBaseOptions, ProjectProfile } from "./types.js";
-import { fileDocumentPath } from "./paths.js";
+import type { FileDocBatch, FileDocPlan, FileDocTask, KnowledgeBaseOptions, ProjectProfile, ReferenceTemplateKind } from "./types.js";
+import { fileDocumentPath, normalizeKnowledgeSourcePath } from "./paths.js";
 import { buildSourceSnapshot } from "./source-snapshot.js";
 
 const MAX_BATCH_LINES = 1_600;
@@ -15,30 +15,29 @@ function sortedIds(ids: Iterable<string>): string[] {
   return [...new Set(ids)].sort();
 }
 
-function filePathForNode(node: GraphNode): string {
-  return node.filePath ?? node.name ?? node.id;
-}
-
-function directFileEdges(profile: ProjectProfile, fileNodeId: string): {
+function directSourceEdges(profile: ProjectProfile, sourceNodeIds: string[]): {
   incoming: GraphEdge[];
   outgoing: GraphEdge[];
 } {
+  const sourceIds = new Set(sourceNodeIds);
   return {
-    incoming: profile.indexes.incomingEdgesByNode.get(fileNodeId) ?? [],
-    outgoing: profile.indexes.outgoingEdgesByNode.get(fileNodeId) ?? [],
+    incoming: profile.graph.edges.filter((edge) => sourceIds.has(edge.target)),
+    outgoing: profile.graph.edges.filter((edge) => sourceIds.has(edge.source)),
   };
 }
 
-function collectNeighborNodeIds(profile: ProjectProfile, fileNodeId: string): string[] {
+function collectNeighborNodeIds(profile: ProjectProfile, sourceNodeIds: string[], childNodeIds: string[]): string[] {
   const neighbors = new Set<string>();
-  const childNodeIds = profile.indexes.fileToChildIds.get(fileNodeId) ?? [];
+  const sourceIds = new Set(sourceNodeIds);
 
-  for (const edge of [
-    ...(profile.indexes.incomingEdgesByNode.get(fileNodeId) ?? []),
-    ...(profile.indexes.outgoingEdgesByNode.get(fileNodeId) ?? []),
-  ]) {
-    if (edge.source !== fileNodeId) neighbors.add(edge.source);
-    if (edge.target !== fileNodeId) neighbors.add(edge.target);
+  for (const sourceNodeId of sourceNodeIds) {
+    for (const edge of [
+      ...(profile.indexes.incomingEdgesByNode.get(sourceNodeId) ?? []),
+      ...(profile.indexes.outgoingEdgesByNode.get(sourceNodeId) ?? []),
+    ]) {
+      if (!sourceIds.has(edge.source)) neighbors.add(edge.source);
+      if (!sourceIds.has(edge.target)) neighbors.add(edge.target);
+    }
   }
 
   for (const childNodeId of childNodeIds) {
@@ -46,24 +45,52 @@ function collectNeighborNodeIds(profile: ProjectProfile, fileNodeId: string): st
       ...(profile.indexes.incomingEdgesByNode.get(childNodeId) ?? []),
       ...(profile.indexes.outgoingEdgesByNode.get(childNodeId) ?? []),
     ]) {
-      if (edge.source !== childNodeId) neighbors.add(edge.source);
-      if (edge.target !== childNodeId) neighbors.add(edge.target);
+      if (!sourceIds.has(edge.source) && edge.source !== childNodeId) neighbors.add(edge.source);
+      if (!sourceIds.has(edge.target) && edge.target !== childNodeId) neighbors.add(edge.target);
     }
   }
 
-  neighbors.delete(fileNodeId);
   return sortedIds(neighbors);
 }
 
 function taskGraphItemCount(task: FileDocTask): number {
   return (
-    1 +
+    task.sourceNodeIds.length +
     task.functionNodeIds.length +
     task.classNodeIds.length +
     task.incomingEdgeIds.length +
     task.outgoingEdgeIds.length +
     task.neighborNodeIds.length
   );
+}
+
+const SOURCE_NODE_TYPES = new Set(["file", "config", "schema", "document"]);
+const OWNER_TYPE_RANK = new Map(["file", "config", "schema", "document"].map((type, index) => [type, index]));
+
+function referenceKindFor(path: string, nodes: GraphNode[], owner: GraphNode): ReferenceTemplateKind {
+  const normalized = path.toLowerCase();
+  if (/(^|[._/-])(tests?|specs?|fixtures?)([._/-]|$)/.test(normalized)) return "test";
+  if (/(^|\/)(config|configs)(\/|$)/.test(normalized)
+    || /(^|[._/-])env([._/-]|$)/.test(normalized)
+    || /\.(?:ya?ml|json|toml)$/.test(normalized)
+    || owner.type === "config"
+    || nodes.some((node) => node.type === "config")) return "configuration";
+  if (owner.type === "schema" || nodes.some((node) => node.type === "schema")) return "schema";
+  if (owner.type === "document" || nodes.some((node) => node.type === "document") || /\.md(?:own)?$/.test(normalized)) {
+    return "documentation";
+  }
+  return "code";
+}
+
+function childrenForSources(profile: ProjectProfile, sourceNodeIds: string[], filePath: string): GraphNode[] {
+  return sortedIds(sourceNodeIds.flatMap((sourceNodeId) => profile.indexes.fileToChildIds.get(sourceNodeId) ?? []))
+    .map((nodeId) => profile.indexes.nodesById.get(nodeId))
+    .filter((node): node is GraphNode => Boolean(
+      node
+      && (node.type === "function" || node.type === "class")
+      && node.filePath
+      && normalizeKnowledgeSourcePath(node.filePath) === filePath,
+    ));
 }
 
 function finalizeBatch(batchIndex: number, tasks: FileDocTask[], reason: string): FileDocBatch {
@@ -125,28 +152,47 @@ function buildBatches(tasks: FileDocTask[]): FileDocBatch[] {
 }
 
 export function buildFileDocPlan(profile: ProjectProfile, options: KnowledgeBaseOptions = {}): FileDocPlan {
-  const sourceFiles = options.sourceFiles ?? {};
-  const fileNodes = profile.graph.nodes
-    .filter((node) => node.type === "file")
-    .sort((a, b) => filePathForNode(a).localeCompare(filePathForNode(b)) || a.id.localeCompare(b.id));
+  const sourceFiles = Object.fromEntries(Object.entries(options.sourceFiles ?? {}).map(([path, content]) => [
+    normalizeKnowledgeSourcePath(path),
+    content,
+  ]));
+  const nodesByPath = new Map<string, GraphNode[]>();
+  for (const node of profile.graph.nodes) {
+    if (!SOURCE_NODE_TYPES.has(node.type) || !node.filePath) continue;
+    const filePath = normalizeKnowledgeSourcePath(node.filePath);
+    const nodes = nodesByPath.get(filePath) ?? [];
+    nodes.push(node);
+    nodesByPath.set(filePath, nodes);
+  }
 
-  const tasks: FileDocTask[] = fileNodes.map((fileNode, taskIndex) => {
-    const filePath = filePathForNode(fileNode);
+  const pathGroups = [...nodesByPath.entries()].sort(([left], [right]) => left.localeCompare(right));
+  const tasks: FileDocTask[] = pathGroups.map(([filePath, sourceNodes], taskIndex) => {
+    sourceNodes.sort((left, right) =>
+      (OWNER_TYPE_RANK.get(left.type) ?? Number.MAX_SAFE_INTEGER) - (OWNER_TYPE_RANK.get(right.type) ?? Number.MAX_SAFE_INTEGER)
+      || left.id.localeCompare(right.id));
+    const owner = sourceNodes[0];
+    const sourceNodeIds = sortedIds(sourceNodes.map((node) => node.id));
     const sourceSnapshot = buildSourceSnapshot(filePath, sourceFiles);
-    const fileEdges = directFileEdges(profile, fileNode.id);
+    const sourceEdges = directSourceEdges(profile, sourceNodeIds);
+    const children = childrenForSources(profile, sourceNodeIds, filePath);
+    const childNodeIds = children.map((node) => node.id);
 
     return {
       batchIndex: PENDING_BATCH_INDEX,
       taskIndex,
-      fileNodeId: fileNode.id,
+      fileNodeId: owner.id,
       filePath,
-      layerId: profile.indexes.nodeToLayerId.get(fileNode.id) ?? null,
+      layerId: sourceNodeIds
+        .map((nodeId) => profile.indexes.nodeToLayerId.get(nodeId))
+        .find((layerId): layerId is string => Boolean(layerId)) ?? null,
       documentPath: fileDocumentPath(filePath),
-      functionNodeIds: sortedIds(profile.indexes.fileToFunctionIds.get(fileNode.id) ?? []),
-      classNodeIds: sortedIds(profile.indexes.fileToClassIds.get(fileNode.id) ?? []),
-      incomingEdgeIds: fileEdges.incoming.map(edgeId).sort(),
-      outgoingEdgeIds: fileEdges.outgoing.map(edgeId).sort(),
-      neighborNodeIds: collectNeighborNodeIds(profile, fileNode.id),
+      sourceNodeIds,
+      referenceKind: referenceKindFor(filePath, sourceNodes, owner),
+      functionNodeIds: children.filter((node) => node.type === "function").map((node) => node.id).sort(),
+      classNodeIds: children.filter((node) => node.type === "class").map((node) => node.id).sort(),
+      incomingEdgeIds: sourceEdges.incoming.map(edgeId).sort(),
+      outgoingEdgeIds: sourceEdges.outgoing.map(edgeId).sort(),
+      neighborNodeIds: collectNeighborNodeIds(profile, sourceNodeIds, childNodeIds),
       sourceSnapshot,
       sourceReadMode: sourceSnapshot.exists ? "full" : "missing",
       batchingReason: "pending batch assignment",

@@ -29,6 +29,10 @@ function fullGraph(): KnowledgeGraph {
       { id: "function:src/data/store.ts:LoadCandidates", type: "function", name: "LoadCandidates", filePath: "src/data/store.ts", lineRange: [62, 78], summary: "Loads candidate rows", tags: ["data"], complexity: "moderate" },
       { id: "file:src/unused/missing.ts", type: "file", name: "missing.ts", filePath: "src/unused/missing.ts", summary: "Graph references a deleted file", tags: ["stale"], complexity: "simple" },
       { id: "function:src/unused/missing.ts:DeletedHelper", type: "function", name: "DeletedHelper", filePath: "src/unused/missing.ts", lineRange: [1, 4], summary: "Deleted helper still present in graph", tags: ["stale"], complexity: "simple" },
+      { id: "file:config/feed.yaml", type: "file", name: "feed.yaml", filePath: "config/feed.yaml", summary: "Feed configuration source", tags: ["config"], complexity: "simple" },
+      { id: "config:config/feed.yaml", type: "config", name: "feed.yaml", filePath: "config/feed.yaml", summary: "Feed configuration model", tags: ["config"], complexity: "simple" },
+      { id: "schema:schemas/feed.proto", type: "schema", name: "feed.proto", filePath: "schemas/feed.proto", summary: "Feed response schema", tags: ["schema"], complexity: "simple" },
+      { id: "document:docs/feed.md", type: "document", name: "feed.md", filePath: "docs/feed.md", summary: "Feed operator guide", tags: ["documentation"], complexity: "simple" },
     ],
     edges: [
       { source: "file:src/api/routes.ts", target: "function:src/api/routes.ts:HandleFeedRequest", type: "contains", direction: "forward", weight: 1 },
@@ -60,7 +64,7 @@ function stringArrayFrom(value: unknown, key: string): string[] {
 }
 
 describe("file document planning", () => {
-  it("creates exactly one file-doc task per graph file node", () => {
+  it("assigns every file node to exactly one path task and adds config, schema, and document references", () => {
     const profile = buildKnowledgeBaseProfile(fullGraph());
     const plan = buildFileDocPlan(profile, {
       projectRoot: "/repo",
@@ -68,23 +72,50 @@ describe("file document planning", () => {
         "src/api/routes.ts": "export function HandleFeedRequest() { return BuildFeed(); }\n",
         "src/service/feed.ts": "export function BuildFeed() { return rankCandidates([]); }\nfunction rankCandidates(items) { return items; }\n",
         "src/data/store.ts": "export class CandidateStore {}\nexport function LoadCandidates() { return []; }\n",
+        "config/feed.yaml": "ranking: enabled\n",
+        "schemas/feed.proto": "message Feed {}\n",
+        "docs/feed.md": "# Feed\n",
       },
     });
 
+    const fileNodeIds = profile.graph.nodes.filter((node) => node.type === "file").map((node) => node.id).sort();
+    for (const fileNodeId of fileNodeIds) {
+      expect(plan.tasks.filter((task) => task.sourceNodeIds.includes(fileNodeId))).toHaveLength(1);
+    }
     expect(plan.tasks.map((task) => task.fileNodeId).sort()).toEqual([
+      "document:docs/feed.md",
+      "file:config/feed.yaml",
       "file:src/api/routes.ts",
       "file:src/data/store.ts",
       "file:src/service/feed.ts",
       "file:src/unused/missing.ts",
+      "schema:schemas/feed.proto",
     ]);
-    expect(plan.tasks).toHaveLength(4);
+    expect(plan.tasks).toHaveLength(7);
     expect(plan.tasks.map((task) => task.documentPath).sort()).toEqual([
+      "文件文档/config-feed.yaml.md",
+      "文件文档/docs-feed.md.md",
+      "文件文档/schemas-feed.proto.md",
       "文件文档/src-api-routes.ts.md",
       "文件文档/src-data-store.ts.md",
       "文件文档/src-service-feed.ts.md",
       "文件文档/src-unused-missing.ts.md",
     ]);
-    expect(new Set(plan.tasks.map((task) => task.documentPath)).size).toBe(4);
+    expect(new Set(plan.tasks.map((task) => task.documentPath)).size).toBe(7);
+
+    expect(plan.tasks.find((task) => task.filePath === "config/feed.yaml")).toMatchObject({
+      fileNodeId: "file:config/feed.yaml",
+      sourceNodeIds: ["config:config/feed.yaml", "file:config/feed.yaml"],
+      referenceKind: "configuration",
+    });
+    expect(plan.tasks.find((task) => task.filePath === "schemas/feed.proto")).toMatchObject({
+      sourceNodeIds: ["schema:schemas/feed.proto"],
+      referenceKind: "schema",
+    });
+    expect(plan.tasks.find((task) => task.filePath === "docs/feed.md")).toMatchObject({
+      sourceNodeIds: ["document:docs/feed.md"],
+      referenceKind: "documentation",
+    });
 
     const serviceTask = plan.tasks.find((task) => task.filePath === "src/service/feed.ts");
     expect(serviceTask).toBeDefined();
@@ -149,7 +180,7 @@ describe("file document planning", () => {
     }
     const plan = buildFileDocPlan(buildKnowledgeBaseProfile(graph), { projectRoot: "/repo", sourceFiles: {} });
     expect(plan.tasks.filter((task) => task.filePath.startsWith("src/generated/"))).toHaveLength(60);
-    expect(plan.tasks).toHaveLength(64);
+    expect(plan.tasks).toHaveLength(67);
   });
 
   it("uses one-based batch indexes for batch artifacts and task membership", () => {
@@ -159,6 +190,9 @@ describe("file document planning", () => {
         "src/api/routes.ts": "export function HandleFeedRequest() { return BuildFeed(); }\n",
         "src/service/feed.ts": "export function BuildFeed() { return rankCandidates([]); }\nfunction rankCandidates(items) { return items; }\n",
         "src/data/store.ts": "export class CandidateStore {}\nexport function LoadCandidates() { return []; }\n",
+        "config/feed.yaml": "ranking: enabled\n",
+        "schemas/feed.proto": "message Feed {}\n",
+        "docs/feed.md": "# Feed\n",
       },
     });
 

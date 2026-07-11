@@ -1,24 +1,112 @@
 import type { KnowledgeGraph } from "../types.js";
 import { buildKnowledgeBaseProfile } from "./profile.js";
-import { buildDocumentPlan, buildTopicPlan } from "./planner.js";
+import { buildTopicPlan } from "./planner.js";
 import { buildFileDocPlan } from "./file-doc-planner.js";
 import { buildBusinessCapabilityProfile } from "./business-facts.js";
-import { mergeKnowledgeBaseWriterOutputs } from "./merge.js";
+import { mergeKnowledgeBaseWriterOutputs, type MergeKnowledgeBaseWriterOutputsResult } from "./merge.js";
+import { buildFeaturedPlan } from "./featured-planner.js";
 import {
   buildCoverageReport,
-  renderBusinessCapabilityDocuments,
   renderDeterministicFileWriterDocument,
   renderDeterministicTopicWriterDocument,
-  renderKnowledgeBaseDocuments,
+  materializeKnowledgeBaseDocuments,
+  renderKnowledgeBaseStatusDocuments,
 } from "./markdown.js";
-import type { GeneratedKnowledgeBase, KnowledgeBaseOptions } from "./types.js";
+import { summarizeMarkdownQuality } from "./quality.js";
+import type {
+  BusinessCapabilityProfile,
+  FileDocPlan,
+  GeneratedKnowledgeBase,
+  KnowledgeBaseOptions,
+  ProjectProfile,
+  TopicPlan,
+} from "./types.js";
+
+export interface MaterializeKnowledgeBaseInput {
+  profile: ProjectProfile;
+  fileDocPlan: FileDocPlan;
+  businessCapabilityProfile: BusinessCapabilityProfile;
+  topicPlan: TopicPlan;
+  merged: MergeKnowledgeBaseWriterOutputsResult;
+  options: KnowledgeBaseOptions;
+}
+
+export function materializeKnowledgeBase(input: MaterializeKnowledgeBaseInput): GeneratedKnowledgeBase {
+  const { profile, fileDocPlan, businessCapabilityProfile, topicPlan, merged, options } = input;
+  const plan = buildFeaturedPlan({
+    profile,
+    businessProfile: businessCapabilityProfile,
+    fileDocPlan,
+    topicPlan,
+    config: options.knowledgeBaseConfig ?? {},
+  });
+  const materialized = materializeKnowledgeBaseDocuments({
+    profile,
+    plan,
+    fileDocPlan,
+    businessCapabilityProfile,
+    topicPlan,
+    merged,
+  });
+  const validationErrors = [...new Set([...merged.validation.errors, ...materialized.errors])];
+  const validationWarnings = [...new Set([
+    ...merged.validation.warnings,
+    ...topicPlan.warnings,
+    ...plan.warnings,
+  ])].sort();
+  const validation = {
+    ok: validationErrors.length === 0,
+    errors: validationErrors,
+    warnings: validationWarnings,
+  };
+
+  const qualityEvaluation = summarizeMarkdownQuality(materialized.documents);
+  const failedQualityPaths = new Set(qualityEvaluation.failed);
+  const evaluatedDocuments = materialized.documents.map((document) => failedQualityPaths.has(document.path)
+    ? {
+        ...document,
+        quality: "needs-review" as const,
+        generationStatus: "partial" as const,
+        qualityIssues: ["文档未通过发布质量校验"],
+      }
+    : document);
+  const coverageReport = buildCoverageReport(
+    profile,
+    fileDocPlan,
+    topicPlan,
+    plan,
+    evaluatedDocuments,
+    validation,
+    merged.retryPlan,
+    businessCapabilityProfile,
+    qualityEvaluation,
+  );
+  const statusDocuments = renderKnowledgeBaseStatusDocuments(
+    profile,
+    plan,
+    coverageReport,
+    validation,
+    merged.retryPlan,
+  );
+
+  return {
+    profile,
+    businessCapabilityProfile,
+    plan,
+    fileDocPlan,
+    topicPlan,
+    documents: [...evaluatedDocuments, ...statusDocuments],
+    validation,
+    coverageReport,
+    retryPlan: merged.retryPlan,
+  };
+}
 
 export function generateKnowledgeBase(
   graph: KnowledgeGraph,
   options: KnowledgeBaseOptions = {},
 ): GeneratedKnowledgeBase {
   const profile = buildKnowledgeBaseProfile(graph);
-  const plan = buildDocumentPlan(profile);
   const fileDocPlan = buildFileDocPlan(profile, options);
   const businessCapabilityProfile = buildBusinessCapabilityProfile(profile, fileDocPlan);
   const deterministicFileOutputs = fileDocPlan.batches.map((batch) => ({
@@ -43,66 +131,12 @@ export function generateKnowledgeBase(
     fileWriterOutputs: deterministicFileOutputs,
     topicWriterOutputs: deterministicTopicOutputs,
   });
-  const validation = {
-    ok: merged.validation.ok,
-    errors: merged.validation.errors,
-    warnings: [...new Set([...merged.validation.warnings, ...topicPlan.warnings])].sort(),
-  };
-  const supportDocuments = renderKnowledgeBaseDocuments(profile, plan, fileDocPlan, topicPlan, merged);
-  const businessDocuments = renderBusinessCapabilityDocuments(profile, businessCapabilityProfile);
-  const preliminaryDocuments = [...supportDocuments, ...businessDocuments, ...merged.fileDocuments, ...merged.topicDocuments];
-  const initialCoverageReport = buildCoverageReport(
+  return materializeKnowledgeBase({
     profile,
     fileDocPlan,
-    topicPlan,
-    preliminaryDocuments,
-    validation,
-    merged.retryPlan,
     businessCapabilityProfile,
-    [],
-  );
-  const initialFinalSupportDocuments = renderKnowledgeBaseDocuments(
-    profile,
-    plan,
-    fileDocPlan,
     topicPlan,
     merged,
-    initialCoverageReport,
-    validation,
-  );
-  const initialFinalDocuments = [...initialFinalSupportDocuments, ...businessDocuments, ...merged.fileDocuments, ...merged.topicDocuments]
-    .sort((a, b) => a.path.localeCompare(b.path) || a.title.localeCompare(b.title));
-  const coverageReport = buildCoverageReport(
-    profile,
-    fileDocPlan,
-    topicPlan,
-    preliminaryDocuments,
-    validation,
-    merged.retryPlan,
-    businessCapabilityProfile,
-    initialFinalDocuments,
-  );
-  const finalSupportDocuments = renderKnowledgeBaseDocuments(
-    profile,
-    plan,
-    fileDocPlan,
-    topicPlan,
-    merged,
-    coverageReport,
-    validation,
-  );
-  const documents = [...finalSupportDocuments, ...businessDocuments, ...merged.fileDocuments, ...merged.topicDocuments]
-    .sort((a, b) => a.path.localeCompare(b.path) || a.title.localeCompare(b.title));
-
-  return {
-    profile,
-    businessCapabilityProfile,
-    plan,
-    fileDocPlan,
-    topicPlan,
-    documents,
-    validation,
-    coverageReport,
-    retryPlan: merged.retryPlan,
-  };
+    options: { ...options, generationMode: options.generationMode ?? "deterministic" },
+  });
 }

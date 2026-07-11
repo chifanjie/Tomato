@@ -1,11 +1,7 @@
 import type { GraphNode } from "../types.js";
 import type {
-  CoverageLevel,
-  DocumentPlan,
   FileDocPlan,
   FileWriterDocument,
-  KnowledgeBaseDocumentCategory,
-  PlannedDocument,
   ProjectProfile,
   TopicBatch,
   TopicPlan,
@@ -13,7 +9,7 @@ import type {
   TopicCandidate,
   TopicTier,
 } from "./types.js";
-import { KB_PATHS, businessFlowDocumentPath, indexDocumentPath, moduleDocumentPath, slugPath, topicDocumentPath } from "./paths.js";
+import { topicDocumentPath } from "./paths.js";
 
 function addReason(map: Map<string, Set<string>>, nodeId: string, reason: string): void {
   const reasons = map.get(nodeId) ?? new Set<string>();
@@ -108,177 +104,27 @@ export function selectTopicCandidates(profile: ProjectProfile): TopicCandidate[]
     .sort((a, b) => b.score - a.score || a.nodeId.localeCompare(b.nodeId));
 }
 
-function addCoverage(
-  coverage: Map<string, CoverageLevel>,
-  reasons: Map<string, string[]>,
-  nodeIds: string[],
-  level: CoverageLevel,
-  reason: string,
-): void {
-  const rank: Record<CoverageLevel, number> = {
-    none: 0,
-    index: 1,
-    overview: 2,
-    "pending-verification": 2,
-    topic: 3,
-  };
-  for (const nodeId of nodeIds) {
-    const current = coverage.get(nodeId) ?? "none";
-    if (rank[level] >= rank[current]) {
-      coverage.set(nodeId, level);
-    }
-    const list = reasons.get(nodeId) ?? [];
-    list.push(reason);
-    reasons.set(nodeId, list);
-  }
-}
-
-function plannedDoc(
-  path: string,
-  title: string,
-  category: KnowledgeBaseDocumentCategory,
-  coveredNodeIds: string[],
-  coverageLevel: CoverageLevel,
-  reason: string,
-): PlannedDocument {
-  return {
-    path,
-    title,
-    category,
-    coveredNodeIds: [...new Set(coveredNodeIds)].sort(),
-    coverageLevel,
-    reason,
-  };
-}
-
-function collectFlowNodeIds(profile: ProjectProfile, entryNodeId: string): string[] {
-  const visited = new Set<string>([entryNodeId]);
-  let frontier = [entryNodeId];
-  for (let depth = 0; depth < 4; depth += 1) {
-    const next: string[] = [];
-    for (const nodeId of frontier) {
-      for (const edge of profile.indexes.outgoingEdgesByNode.get(nodeId) ?? []) {
-        if (edge.type !== "calls" && edge.type !== "configures" && edge.type !== "reads_from" && edge.type !== "writes_to") continue;
-        if (!visited.has(edge.target)) {
-          visited.add(edge.target);
-          next.push(edge.target);
-        }
-      }
-    }
-    frontier = next;
-    if (frontier.length === 0) break;
-  }
-  return [...visited];
-}
-
-export function buildDocumentPlan(profile: ProjectProfile): DocumentPlan {
-  const documents: PlannedDocument[] = [];
-  const nodeCoverage = new Map<string, CoverageLevel>();
-  const coverageReasons = new Map<string, string[]>();
-  const topicCandidates = selectTopicCandidates(profile);
-
-  const topLevelDocs: Array<[string, string, KnowledgeBaseDocumentCategory]> = [
-    [KB_PATHS.inventory, "目录", "top-level"],
-    [KB_PATHS.projectOverview, "项目总览", "top-level"],
-    [KB_PATHS.architectureMap, "架构地图", "top-level"],
-    [KB_PATHS.businessFlowMap, "业务流程地图", "top-level"],
-    [KB_PATHS.pendingItems, "待确认项", "top-level"],
-    [KB_PATHS.coverageReport, "覆盖报告", "report"],
-    [indexDocumentPath("文件索引"), "文件索引", "index"],
-    [indexDocumentPath("函数索引"), "函数索引", "index"],
-    [indexDocumentPath("类索引"), "类索引", "index"],
-    [indexDocumentPath("调用关系索引"), "调用关系索引", "index"],
-    [indexDocumentPath("AI检索索引"), "AI检索索引", "index"],
-  ];
-
-  for (const [path, title, category] of topLevelDocs) {
-    documents.push(plannedDoc(path, title, category, [], "overview", "stable knowledge-base navigation document"));
-  }
-
-  const fileIds = profile.graph.nodes.filter((node) => node.type === "file").map((node) => node.id);
-  const functionIds = profile.graph.nodes.filter((node) => node.type === "function").map((node) => node.id);
-  const classIds = profile.graph.nodes.filter((node) => node.type === "class").map((node) => node.id);
-  addCoverage(nodeCoverage, coverageReasons, fileIds, "index", "listed in file index");
-  addCoverage(nodeCoverage, coverageReasons, functionIds, "index", "listed in function index");
-  addCoverage(nodeCoverage, coverageReasons, classIds, "index", "listed in class index");
-
-  for (const layer of profile.layerProfiles) {
-    const doc = plannedDoc(
-      moduleDocumentPath(layer.name),
-      `${layer.name} 模块概览`,
-      "module",
-      layer.nodeIds,
-      "overview",
-      "one module overview per graph layer",
-    );
-    documents.push(doc);
-    addCoverage(nodeCoverage, coverageReasons, doc.coveredNodeIds, "overview", doc.reason);
-  }
-
-  const flowNameCounts = new Map<string, number>();
-  for (const entry of profile.entryCandidates) {
-    const node = profile.indexes.nodesById.get(entry.nodeId);
-    const flowName = node?.name ?? entry.nodeId;
-    const key = slugPath(flowName);
-    flowNameCounts.set(key, (flowNameCounts.get(key) ?? 0) + 1);
-  }
-
-  for (const entry of profile.entryCandidates) {
-    const node = profile.indexes.nodesById.get(entry.nodeId);
-    const title = `${node?.name ?? entry.nodeId} 业务流程`;
-    const flowName = node?.name ?? entry.nodeId;
-    const disambiguator = (flowNameCounts.get(slugPath(flowName)) ?? 0) > 1
-      ? node?.filePath ?? entry.nodeId
-      : undefined;
-    const coveredNodeIds = collectFlowNodeIds(profile, entry.nodeId);
-    const doc = plannedDoc(
-      businessFlowDocumentPath(flowName, disambiguator),
-      title,
-      "flow",
-      coveredNodeIds,
-      "topic",
-      `entry flow for ${entry.entryType}`,
-    );
-    documents.push(doc);
-    addCoverage(nodeCoverage, coverageReasons, doc.coveredNodeIds, "topic", doc.reason);
-  }
-
-  for (const candidate of topicCandidates) {
-    const node = profile.indexes.nodesById.get(candidate.nodeId);
-    const fileId = profile.indexes.functionToFileId.get(candidate.nodeId) ?? profile.indexes.classToFileId.get(candidate.nodeId);
-    const file = fileId ? profile.indexes.nodesById.get(fileId) : null;
-    const title = `${node?.name ?? candidate.nodeId} 关键函数专题`;
-    const doc = plannedDoc(
-      topicDocumentPath(file?.filePath ?? candidate.nodeId, node?.name ?? candidate.nodeId),
-      title,
-      "topic",
-      [candidate.nodeId],
-      "topic",
-      candidate.reasons.join("; "),
-    );
-    documents.push(doc);
-    addCoverage(nodeCoverage, coverageReasons, doc.coveredNodeIds, "topic", doc.reason);
-  }
-
-  return {
-    documents,
-    topicCandidates,
-    nodeCoverage,
-    coverageReasons,
-  };
-}
-
 function sourceFileIdForTopic(profile: ProjectProfile, nodeId: string): string | null {
   return profile.indexes.functionToFileId.get(nodeId) ?? profile.indexes.classToFileId.get(nodeId) ?? null;
 }
 
 function topicCoveredNodeIds(profile: ProjectProfile, nodeId: string): string[] {
   const related = new Set<string>([nodeId]);
+  const topicRelationshipTypes = new Set([
+    "calls",
+    "configures",
+    "reads_from",
+    "writes_to",
+    "tested_by",
+    "depends_on",
+    "transforms",
+    "validates",
+  ]);
   for (const edge of [
     ...(profile.indexes.incomingEdgesByNode.get(nodeId) ?? []),
     ...(profile.indexes.outgoingEdgesByNode.get(nodeId) ?? []),
   ]) {
-    if (edge.type === "calls" || edge.type === "configures" || edge.type === "reads_from" || edge.type === "writes_to") {
+    if (topicRelationshipTypes.has(edge.type)) {
       related.add(edge.source);
       related.add(edge.target);
     }

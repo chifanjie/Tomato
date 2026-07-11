@@ -9,6 +9,8 @@ export interface KnowledgeBaseOptions {
   currentGitCommitHash?: string;
   keepIntermediate?: boolean;
   deterministicOnly?: boolean;
+  knowledgeBaseConfig?: import("../types.js").KnowledgeBaseProjectConfig;
+  generationMode?: "writer" | "deterministic";
 }
 
 export interface GraphIndexes {
@@ -146,18 +148,28 @@ export interface ProjectProfile {
   evidenceGaps: EvidenceGap[];
 }
 
-export type CoverageLevel = "none" | "index" | "overview" | "topic" | "pending-verification";
+export interface SymbolAnchor {
+  nodeId: string;
+  anchor: string;
+}
 
-export type KnowledgeBaseDocumentCategory =
-  | "top-level"
-  | "index"
-  | "module"
-  | "file"
+export type ReferenceTemplateKind = "code" | "configuration" | "schema" | "documentation" | "test";
+export type KnowledgeDocumentRole = "featured" | "reference" | "maintenance";
+export type KnowledgeDocumentCategory =
+  | "overview"
+  | "capability"
   | "flow"
+  | "module"
   | "topic"
-  | "business-capability"
-  | "report"
-  | "intermediate";
+  | "file"
+  | "quality"
+  | "coverage"
+  | "other";
+
+export interface DocumentRoute {
+  order: number;
+  stage: "purpose" | "flow" | "rule" | "implementation" | "evidence";
+}
 
 export interface SourceSnapshot {
   filePath: string;
@@ -173,6 +185,7 @@ export interface SourceEvidence {
   lineRange?: [number, number];
   nodeId?: string;
   excerpt?: string;
+  claim?: string;
 }
 
 export interface FileDocTask {
@@ -182,6 +195,8 @@ export interface FileDocTask {
   filePath: string;
   layerId: string | null;
   documentPath: string;
+  sourceNodeIds: string[];
+  referenceKind: ReferenceTemplateKind;
   functionNodeIds: string[];
   classNodeIds: string[];
   incomingEdgeIds: string[];
@@ -210,6 +225,7 @@ export interface FileWriterDocument {
   fileNodeId: string;
   filePath: string;
   documentPath: string;
+  referenceKind: ReferenceTemplateKind;
   title: string;
   coveredFunctionNodeIds: string[];
   coveredClassNodeIds: string[];
@@ -319,28 +335,35 @@ export interface RetryPlan {
 }
 
 export interface PlannedDocument {
+  id: string;
   path: string;
   title: string;
-  category: KnowledgeBaseDocumentCategory;
-  coveredNodeIds: string[];
-  coverageLevel: CoverageLevel;
+  summary: string;
+  category: KnowledgeDocumentCategory;
+  role: KnowledgeDocumentRole;
+  directNodeIds: string[];
+  contextNodeIds: string[];
+  symbolAnchors: SymbolAnchor[];
+  referenceKind?: ReferenceTemplateKind;
+  route?: DocumentRoute;
+  representedEdgeIds: string[];
   reason: string;
 }
 
-export interface DocumentPlan {
-  documents: PlannedDocument[];
-  topicCandidates: TopicCandidate[];
-  nodeCoverage: Map<string, CoverageLevel>;
-  coverageReasons: Map<string, string[]>;
+export interface GeneratedDocument extends PlannedDocument {
+  content: string;
+  sourceEvidence: SourceEvidence[];
+  searchTerms: string[];
+  quality: "verified" | "generated" | "needs-review" | "failed";
+  generationStatus: "complete" | "partial" | "failed";
+  qualityIssues: string[];
+  verification?: { method: "human" | "external"; verifiedAt: string; verifier?: string };
 }
 
-export interface GeneratedDocument {
-  path: string;
-  title: string;
-  category: KnowledgeBaseDocumentCategory;
-  coveredNodeIds: string[];
-  representedEdgeIds: string[];
-  content: string;
+export interface FeaturedPlan {
+  documents: PlannedDocument[];
+  warnings: string[];
+  requiredRouteStages: Array<DocumentRoute["stage"]>;
 }
 
 export interface CoverageValidationResult {
@@ -357,7 +380,7 @@ export interface DocumentQualityValidation {
 
 export interface CoverageReport {
   totalDocuments: number;
-  documentCounts: Record<KnowledgeBaseDocumentCategory, number>;
+  documentCounts: Record<KnowledgeDocumentCategory, number>;
   nodeCounts: Record<NodeType, number>;
   edgeCounts: Record<EdgeType, number>;
   fileDocumentCoverage: CoverageRatio;
@@ -385,7 +408,7 @@ export interface CoverageReport {
 export interface GeneratedKnowledgeBase {
   profile: ProjectProfile;
   businessCapabilityProfile: BusinessCapabilityProfile;
-  plan: DocumentPlan;
+  plan: FeaturedPlan;
   fileDocPlan: FileDocPlan;
   topicPlan: TopicPlan;
   documents: GeneratedDocument[];

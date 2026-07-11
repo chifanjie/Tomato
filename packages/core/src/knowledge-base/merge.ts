@@ -4,12 +4,12 @@ import type {
   FileDocTask,
   FileWriterBatchOutput,
   FileWriterDocument,
-  GeneratedDocument,
   ProjectProfile,
   RetryPlan,
   TopicWriterBatchOutput,
   TopicWriterDocument,
 } from "./types.js";
+import { normalizeKnowledgeSourcePath } from "./paths.js";
 
 export interface MergeKnowledgeBaseWriterOutputsInput {
   profile: ProjectProfile;
@@ -19,8 +19,6 @@ export interface MergeKnowledgeBaseWriterOutputsInput {
 }
 
 export interface MergeKnowledgeBaseWriterOutputsResult {
-  fileDocuments: GeneratedDocument[];
-  topicDocuments: GeneratedDocument[];
   validation: CoverageValidationResult;
   retryPlan: RetryPlan;
   acceptedFileWriterDocuments: FileWriterDocument[];
@@ -45,40 +43,90 @@ function compareByDocumentPath<T extends { documentPath: string; title: string }
   return a.documentPath.localeCompare(b.documentPath) || a.title.localeCompare(b.title);
 }
 
-function generatedByPath(a: GeneratedDocument, b: GeneratedDocument): number {
-  return a.path.localeCompare(b.path) || a.title.localeCompare(b.title);
-}
-
-function nodeIdsForFileTask(task: FileDocTask): string[] {
-  return [task.fileNodeId, ...task.functionNodeIds, ...task.classNodeIds];
-}
-
-function fileDocumentFromWriter(task: FileDocTask, document: FileWriterDocument): GeneratedDocument {
-  return {
-    path: document.documentPath,
-    title: document.title,
-    category: "file",
-    coveredNodeIds: nodeIdsForFileTask(task),
-    representedEdgeIds: [...document.representedEdgeIds],
-    content: document.markdown,
-  };
-}
-
-function topicDocumentFromWriter(document: TopicWriterDocument): GeneratedDocument {
-  return {
-    path: document.documentPath,
-    title: document.title,
-    category: "topic",
-    coveredNodeIds: [...document.coveredNodeIds],
-    representedEdgeIds: [],
-    content: document.markdown,
-  };
-}
-
 function pushError(errors: string[], retryBatchIndexes: Set<number>, batchIndexes: Iterable<number>, message: string): void {
   errors.push(message);
   for (const batchIndex of batchIndexes) {
     retryBatchIndexes.add(batchIndex);
+  }
+}
+
+function validateFileTaskOwnership(
+  profile: ProjectProfile,
+  task: FileDocTask,
+  errors: string[],
+  retryBatchIndexes: Set<number>,
+): void {
+  const expectedPath = normalizeKnowledgeSourcePath(task.filePath);
+  const owner = profile.indexes.nodesById.get(task.fileNodeId);
+  const allowedOwnerTypes = new Set(["file", "config", "schema", "document"]);
+
+  if (!owner) {
+    pushError(errors, retryBatchIndexes, [task.batchIndex], `file task owner does not exist in graph: ${task.fileNodeId}`);
+  } else if (!allowedOwnerTypes.has(owner.type)) {
+    pushError(errors, retryBatchIndexes, [task.batchIndex], `file task owner has unsupported type: ${task.fileNodeId} (${owner.type})`);
+  }
+
+  if (!task.sourceNodeIds.includes(task.fileNodeId)) {
+    pushError(errors, retryBatchIndexes, [task.batchIndex], `file task sourceNodeIds must include owner: ${task.fileNodeId}`);
+  }
+
+  for (const sourceNodeId of task.sourceNodeIds) {
+    const sourceNode = profile.indexes.nodesById.get(sourceNodeId);
+    if (!sourceNode) {
+      pushError(errors, retryBatchIndexes, [task.batchIndex], `file task sourceNodeId does not exist in graph: ${sourceNodeId}`);
+      continue;
+    }
+    const receivedPath = sourceNode.filePath ? normalizeKnowledgeSourcePath(sourceNode.filePath) : "";
+    if (receivedPath !== expectedPath) {
+      pushError(
+        errors,
+        retryBatchIndexes,
+        [task.batchIndex],
+        `file task sourceNodeId path mismatch: ${sourceNodeId} expected ${expectedPath} received ${receivedPath || "<missing>"}`,
+      );
+    }
+  }
+
+  const fileOwnerIds = task.sourceNodeIds.filter((sourceNodeId) => profile.indexes.nodesById.get(sourceNodeId)?.type === "file");
+  for (const [nodeId, expectedType] of [
+    ...task.functionNodeIds.map((nodeId) => [nodeId, "function"] as const),
+    ...task.classNodeIds.map((nodeId) => [nodeId, "class"] as const),
+  ]) {
+    const node = profile.indexes.nodesById.get(nodeId);
+    const mappedOwner = expectedType === "function"
+      ? profile.indexes.functionToFileId.get(nodeId)
+      : profile.indexes.classToFileId.get(nodeId);
+    const explicitSamePathParent = task.sourceNodeIds.some((sourceNodeId) =>
+      (profile.indexes.fileToChildIds.get(sourceNodeId) ?? []).includes(nodeId));
+    if (!node || node.type !== expectedType || normalizeKnowledgeSourcePath(node.filePath ?? "") !== expectedPath) {
+      pushError(errors, retryBatchIndexes, [task.batchIndex], `${expectedType} node does not belong to task path: ${nodeId} (${expectedPath})`);
+    } else if (fileOwnerIds.length > 0 && (!mappedOwner || !fileOwnerIds.includes(mappedOwner))) {
+      pushError(errors, retryBatchIndexes, [task.batchIndex], `${expectedType} node is not owned by a file source node: ${nodeId}`);
+    } else if (fileOwnerIds.length === 0 && !explicitSamePathParent) {
+      pushError(errors, retryBatchIndexes, [task.batchIndex], `${expectedType} node lacks an explicit same-path source mapping: ${nodeId}`);
+    }
+  }
+}
+
+function validateFileWriterIdentity(
+  task: FileDocTask,
+  document: FileWriterDocument,
+  errors: string[],
+  retryBatchIndexes: Set<number>,
+): void {
+  if (normalizeKnowledgeSourcePath(document.filePath) !== normalizeKnowledgeSourcePath(task.filePath)) {
+    pushError(errors, retryBatchIndexes, [task.batchIndex], `file writer filePath must match planned task: ${task.fileNodeId}`);
+  }
+  if (document.documentPath !== task.documentPath) {
+    pushError(errors, retryBatchIndexes, [task.batchIndex], `file writer documentPath must match planned task: ${task.fileNodeId}`);
+  }
+  if (document.referenceKind !== task.referenceKind) {
+    pushError(
+      errors,
+      retryBatchIndexes,
+      [task.batchIndex],
+      `file writer referenceKind must match planned task: ${task.fileNodeId} expected ${task.referenceKind} received ${document.referenceKind}`,
+    );
   }
 }
 
@@ -389,11 +437,11 @@ export function mergeKnowledgeBaseWriterOutputs(
   }
 
   const acceptedFileWriterDocuments: FileWriterDocument[] = [];
-  const fileDocuments: GeneratedDocument[] = [];
 
   for (const task of inputs.fileDocPlan.tasks) {
     const matchingCandidates = byFileNodeId.get(task.fileNodeId) ?? [];
     const errorStart = errors.length;
+    validateFileTaskOwnership(inputs.profile, task, errors, retryFileBatchIndexes);
 
     if (matchingCandidates.length === 0) {
       pushError(
@@ -415,19 +463,18 @@ export function mergeKnowledgeBaseWriterOutputs(
 
     if (matchingCandidates.length === 1) {
       const [{ document }] = matchingCandidates;
+      validateFileWriterIdentity(task, document, errors, retryFileBatchIndexes);
       validateRequiredNodeCoverage(task, document, errors, retryFileBatchIndexes);
 
       const hasDuplicateError =
         invalidFileNodeIds.has(document.fileNodeId) || invalidDocumentPaths.has(document.documentPath);
       if (errors.length === errorStart && !hasDuplicateError) {
         acceptedFileWriterDocuments.push(document);
-        fileDocuments.push(fileDocumentFromWriter(task, document));
       }
     }
   }
 
   acceptedFileWriterDocuments.sort(compareByDocumentPath);
-  fileDocuments.sort(generatedByPath);
 
   const acceptedTopicWriterDocuments = validateTopicWriterOutputs(
     inputs,
@@ -436,7 +483,6 @@ export function mergeKnowledgeBaseWriterOutputs(
     warnings,
     retryTopicBatchIndexes,
   );
-  const topicDocuments = acceptedTopicWriterDocuments.map(topicDocumentFromWriter).sort(generatedByPath);
   const validation: CoverageValidationResult = {
     ok: errors.length === 0,
     errors,
@@ -444,8 +490,6 @@ export function mergeKnowledgeBaseWriterOutputs(
   };
 
   return {
-    fileDocuments,
-    topicDocuments,
     validation,
     retryPlan: {
       fileBatchIndexes: sortedNumbers(retryFileBatchIndexes),

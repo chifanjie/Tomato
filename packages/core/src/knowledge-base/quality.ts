@@ -18,6 +18,7 @@ export interface MarkdownQualitySummaryOptions {
 
 export interface MarkdownQualityDocument {
   path?: string;
+  category?: string;
   content?: string;
   markdown?: string;
   sections?: readonly string[];
@@ -28,15 +29,31 @@ export interface MarkdownQualityDocument {
 
 const GENERIC_FILLER = [
   "承担核心逻辑",
+  "承担该文件中的一段核心逻辑",
   "处理相关能力",
-  "本地代码事实",
   "未在图谱中识别",
-  "根据代码推断，需线上配置确认",
+  "接收上游传入的业务上下文",
+  "同文件内的协作单元",
+  "主要把处理结果返回给调用方",
+  "候选数据为空、配置缺失",
+  "需要重点检查条件分支、排序或过滤规则",
 ] as const;
 
-const MIN_SECTION_BODY_CHARS = 12;
+const MIN_SECTION_BODY_CHARS = 16;
 const MAX_UNIQUE_GENERIC_FILLER = 3;
 const MAX_TOTAL_GENERIC_FILLER_OCCURRENCES = 4;
+const MIN_REPEATED_LINE_CHARS = 32;
+const MIN_REPEATED_DOCUMENTS = 5;
+const REPEATED_DOCUMENT_RATIO = 0.2;
+const MAX_REPEATED_LINES_BEFORE_FAILURE = 3;
+const PLACEHOLDER_PROSE_RE = /\b(TBD|TODO|FIXME)\b|待\s*定|占\s*位|后续\s*补充|这里\s*填写/i;
+
+export function containsPlaceholderProse(markdown: string): boolean {
+  const proseOnly = markdown
+    .replace(/```[\s\S]*?(?:```|$)/g, "")
+    .replace(/`[^`\n]*`/g, "");
+  return PLACEHOLDER_PROSE_RE.test(proseOnly);
+}
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -159,6 +176,30 @@ function markdownSections(markdown: string): string[] {
   return [...markdown.matchAll(/^##\s+.+$/gm)].map((match) => match[0].trim());
 }
 
+function repeatedLineCandidates(markdown: string): string[] {
+  const candidates = markdown
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => {
+      if (!line || line.startsWith("#") || line.startsWith("|") || line.startsWith("```")) return false;
+      return meaningfulCharacterCount(line) >= MIN_REPEATED_LINE_CHARS;
+    });
+  return [...new Set(candidates)];
+}
+
+function appendWarning(summary: MarkdownQualitySummary, warning: string): void {
+  if (!summary.warnings.includes(warning)) summary.warnings.push(warning);
+}
+
+function isSideChannelDocument(document: MarkdownQualityDocument, path: string): boolean {
+  return document.category === "index"
+    || document.category === "report"
+    || path === "目录.md"
+    || path === "覆盖报告.md"
+    || path === "质量报告.md"
+    || path.startsWith("索引/");
+}
+
 export function summarizeMarkdownQuality(
   documents: readonly MarkdownQualityDocument[],
   options: MarkdownQualitySummaryOptions = {},
@@ -174,24 +215,63 @@ export function summarizeMarkdownQuality(
     const path = document.path ?? `documents[${index}]`;
     const markdown = document.content ?? document.markdown ?? "";
     const sections = document.sections ?? options.sections ?? markdownSections(markdown);
-    const errors = validateMarkdownQuality(markdown, {
-      path,
-      sections,
-      sourceEvidenceRefs: document.sourceEvidenceRefs,
-      coveredFunctionNodeIds: document.coveredFunctionNodeIds,
-      coveredClassNodeIds: document.coveredClassNodeIds,
-    });
-    if (sections.length === 0) {
+    const sideChannel = isSideChannelDocument(document, path);
+    const errors = sideChannel
+      ? []
+      : validateMarkdownQuality(markdown, {
+          path,
+          sections,
+          sourceEvidenceRefs: document.sourceEvidenceRefs,
+          coveredFunctionNodeIds: document.coveredFunctionNodeIds,
+          coveredClassNodeIds: document.coveredClassNodeIds,
+        });
+    if (!sideChannel && sections.length === 0) {
       errors.push(`${path} has no substantive markdown sections`);
     }
-    if (hasGenericFillerText(markdown)) {
-      summary.warnings.push(`document has generic filler text: ${path}`);
+    if (!sideChannel && hasGenericFillerText(markdown)) {
+      appendWarning(summary, `document has generic filler text: ${path}`);
     }
     if (errors.length > 0) {
       summary.failed.push(path);
-      summary.warnings.push(`document failed quality validation: ${path}`);
+      appendWarning(summary, `document failed quality validation: ${path}`);
     }
   });
+
+  const repeatedLineDocuments = new Map<string, Set<number>>();
+  documents.forEach((document, index) => {
+    const path = document.path ?? `documents[${index}]`;
+    if (isSideChannelDocument(document, path)) return;
+    const markdown = document.content ?? document.markdown ?? "";
+    for (const line of repeatedLineCandidates(markdown)) {
+      const indexes = repeatedLineDocuments.get(line) ?? new Set<number>();
+      indexes.add(index);
+      repeatedLineDocuments.set(line, indexes);
+    }
+  });
+
+  const proseDocumentCount = documents.filter((document, index) => {
+    const path = document.path ?? `documents[${index}]`;
+    return !isSideChannelDocument(document, path);
+  }).length;
+  const repeatedThreshold = Math.max(
+    MIN_REPEATED_DOCUMENTS,
+    Math.ceil(proseDocumentCount * REPEATED_DOCUMENT_RATIO),
+  );
+  const repeatedLinesByDocument = new Map<number, number>();
+  for (const indexes of repeatedLineDocuments.values()) {
+    if (indexes.size < repeatedThreshold) continue;
+    for (const index of indexes) {
+      repeatedLinesByDocument.set(index, (repeatedLinesByDocument.get(index) ?? 0) + 1);
+    }
+  }
+
+  for (const [index, repeatedLines] of repeatedLinesByDocument) {
+    const path = documents[index]?.path ?? `documents[${index}]`;
+    appendWarning(summary, `document repeats ${repeatedLines} boilerplate lines across corpus: ${path}`);
+    if (repeatedLines < MAX_REPEATED_LINES_BEFORE_FAILURE) continue;
+    if (!summary.failed.includes(path)) summary.failed.push(path);
+    appendWarning(summary, `document failed quality validation: ${path}`);
+  }
 
   return summary;
 }

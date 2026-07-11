@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   FILE_WRITER_REQUIRED_SECTIONS,
+  containsPlaceholderProse,
   parseFileWriterBatchOutput,
   parseTopicWriterBatchOutput,
   summarizeMarkdownQuality,
   TOPIC_WRITER_REQUIRED_SECTIONS,
+  validateMarkdownQuality,
 } from "../index.js";
 
 function completeFileMarkdown(): string {
@@ -36,6 +38,15 @@ function completeFileMarkdown(): string {
     "- 输出: 已排序的 Feed 响应和用于排查的排序元数据。",
     "- 兜底: 当候选为空时返回空列表但保留请求元数据，避免上游接口失败。",
     "",
+    "## 入口条件与处理顺序",
+    "- 入口条件: `HandleFeedRequest` 已解析用户标识和请求上下文后调用 `BuildFeed`。",
+    "- 处理顺序: `BuildFeed` 先调用 `LoadCandidates`，再调用 `rankCandidates`，最后由 `FeedBuilder.build` 生成响应；该顺序来自源码调用证据。",
+    "",
+    "## 字段读写与状态变化",
+    "- 读取: request.userId、请求上下文和候选对象的 score 字段。",
+    "- 写入: `FeedBuilder` 写入 items 与 metadata；当前没有数据库 writes_to 关系。",
+    "- 状态变化: candidates 从未排序列表转换为稳定排序后的 Feed items，空候选保持为空列表。",
+    "",
     "## 函数卡片",
     "- `function:src/service/feed.ts:BuildFeed` - `BuildFeed` 读取候选内容，调用排序逻辑，并把排序后的候选交给 `FeedBuilder`。",
     "- `function:src/service/feed.ts:rankCandidates` - `rankCandidates` 按候选分数和请求上下文重排列表，是影响曝光顺序的关键函数。",
@@ -52,13 +63,25 @@ function completeFileMarkdown(): string {
     "- 排序字段缺失会改变 Feed 顺序，需要确认缺失分数时的默认值。",
     "- 候选为空时接口仍应返回成功响应，需要用调用方契约确认状态码。",
     "",
+    "## 证据分级",
+    "- 本地代码事实: 函数节点、类节点、源码行号和 calls 边可直接核对。",
+    "- 代码推断: 排序变化会影响曝光顺序由函数职责和返回对象归纳。",
+    "- 外部待核验: 线上 score 配置、流量比例和业务指标需要配置平台确认。",
+    "",
+    "## 待核验清单",
+    "- [ ] 核对 score 缺失时的默认值和同分稳定排序行为。",
+    "- [ ] 核对空候选响应状态码以及线上排序配置。",
+    "",
     "## 代码证据",
     "- `function:src/service/feed.ts:BuildFeed` 位于 `src/service/feed.ts:30-90`，覆盖读取候选、排序和响应构建。",
     "- `function:src/service/feed.ts:rankCandidates` 位于 `src/service/feed.ts:92-120`，覆盖排序规则。",
     "- `class:src/service/feed.ts:FeedBuilder` 位于 `src/service/feed.ts:122-180`，覆盖响应对象组装。",
     "",
-    "## AI 检索词",
-    "- Feed 排序, 候选内容, BuildFeed, rankCandidates, FeedBuilder, src/service/feed.ts",
+    "## AI 检索索引",
+    "| 检索意图 | 关键词 | 定位 |",
+    "|---|---|---|",
+    "| 理解 Feed 组装 | BuildFeed, FeedBuilder, src/service/feed.ts | 文件职责、函数卡片 |",
+    "| 核对排序状态 | rankCandidates, score, candidates | 字段读写与状态变化、代码证据 |",
   ].join("\n");
 }
 
@@ -85,6 +108,15 @@ function completeTopicMarkdown(): string {
     "## 关键分支和算法",
     "`rankCandidates` 优先使用候选分数排序；当分数相同，会保留原始候选顺序，降低结果抖动。",
     "",
+    "## 入口条件与处理顺序",
+    "- 入口条件: 请求入口完成用户身份和上下文解析后调用 `BuildFeed`。",
+    "- 处理顺序: `BuildFeed` 读取候选、调用 `rankCandidates`，再构建响应；严格先后由源码调用和同步返回证据支持。",
+    "",
+    "## 字段读写与状态变化",
+    "- 读取: request.userId、candidate.score 和候选原始顺序。",
+    "- 写入: Feed items 与排序 metadata；当前没有持久化 writes_to 关系。",
+    "- 状态变化: candidates 从召回顺序转换为按 score 排序的结果，同分项保持原始相对顺序。",
+    "",
     "## 配置和外部依赖",
     "- 候选数据来自 `LoadCandidates`。",
     "- 排序字段依赖候选对象中的 score，需要确认召回层是否始终提供该字段。",
@@ -104,12 +136,24 @@ function completeTopicMarkdown(): string {
     "- 建议覆盖 `BuildFeed` 正常候选、空候选和同分候选三类用例。",
     "- 建议为 `rankCandidates` 增加稳定排序断言。",
     "",
+    "## 证据分级",
+    "- 本地代码事实: BuildFeed、rankCandidates、源码行号和 calls 关系可直接核对。",
+    "- 代码推断: 排序结果影响曝光由返回 Feed items 的使用方式归纳。",
+    "- 外部待核验: score 生产口径、线上权重和指标影响需配置与数据平台确认。",
+    "",
+    "## 待核验清单",
+    "- [ ] 核对 score 缺失、同分和空候选分支的测试结果。",
+    "- [ ] 核对线上排序权重与源码默认值是否一致。",
+    "",
     "## 代码证据",
     "- `function:src/service/feed.ts:BuildFeed` 位于 `src/service/feed.ts:30-120`，覆盖候选加载、排序和响应输出。",
     "- `function:src/service/feed.ts:rankCandidates` 位于 `src/service/feed.ts:92-120`，覆盖排序规则。",
     "",
-    "## AI 检索词",
-    "- Feed ranking, BuildFeed, rankCandidates, candidate score, src/service/feed.ts",
+    "## AI 检索索引",
+    "| 检索意图 | 关键词 | 定位 |",
+    "|---|---|---|",
+    "| 追踪排序入口 | BuildFeed, HandleFeedRequest | 入口条件与处理顺序 |",
+    "| 核对排序字段 | rankCandidates, candidate.score | 字段读写与状态变化、代码证据 |",
   ].join("\n");
 }
 
@@ -121,6 +165,7 @@ function completeFileOutput() {
         fileNodeId: "file:src/service/feed.ts",
         filePath: "src/service/feed.ts",
         documentPath: "文件文档/src-service-feed.ts.md",
+        referenceKind: "code",
         title: "src/service/feed.ts",
         coveredFunctionNodeIds: [
           "function:src/service/feed.ts:BuildFeed",
@@ -183,6 +228,23 @@ describe("writer contracts", () => {
     });
   });
 
+  it("rejects file documents that keep the headings but omit structured verification and retrieval fields", () => {
+    const output = completeFileOutput();
+    output.documents[0].markdown = output.documents[0].markdown
+      .replace(/- \[ \]/g, "- [x]")
+      .replace("| 检索意图 | 关键词 | 定位 |", "| 关键词 | 说明 |");
+
+    const result = parseFileWriterBatchOutput(output);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain(
+      "documents[0].markdown section ## 待核验清单 must contain at least one unchecked verification item",
+    );
+    expect(result.errors).toContain(
+      "documents[0].markdown section ## AI 检索索引 missing required column: 检索意图",
+    );
+  });
+
   it.each(FILE_WRITER_REQUIRED_SECTIONS)("rejects missing required file document section %s", (section) => {
     const output = completeFileOutput();
     output.documents[0].markdown = output.documents[0].markdown.replace(section, `### ${section.slice(3)}`);
@@ -201,6 +263,29 @@ describe("writer contracts", () => {
 
     expect(result.ok).toBe(false);
     expect(result.errors).toContain("documents[0].markdown contains placeholder text");
+  });
+
+  it("rejects missing or unknown file reference kinds", () => {
+    const missing = completeFileOutput() as { documents: Array<Record<string, unknown>> };
+    delete missing.documents[0].referenceKind;
+    const unknown = completeFileOutput();
+    unknown.documents[0].referenceKind = "unknown";
+
+    expect(parseFileWriterBatchOutput(missing).errors).toContain(
+      "documents[0].referenceKind must be one of: code, configuration, schema, documentation, test",
+    );
+    expect(parseFileWriterBatchOutput(unknown).errors).toContain(
+      "documents[0].referenceKind must be one of: code, configuration, schema, documentation, test",
+    );
+  });
+
+  it("ignores placeholder tokens in code while keeping prose and headings invalid", () => {
+    expect(containsPlaceholderProse("## 代码证据\n\n- 行内：`TODO`\n\n```ts\nconst FIXME = true;\n```"))
+      .toBe(false);
+    expect(containsPlaceholderProse("## TODO\n\n这里是正文说明。"))
+      .toBe(true);
+    expect(containsPlaceholderProse("## 待核验\n\nTODO：补充真实业务结论。"))
+      .toBe(true);
   });
 
   it("rejects file documents that have headings but generic filler", () => {
@@ -288,8 +373,8 @@ describe("writer contracts", () => {
   it("rejects source evidence sections that only name a file without explanation", () => {
     const output = completeFileOutput();
     output.documents[0].markdown = output.documents[0].markdown.replace(
-      /## 代码证据\n[\s\S]*?\n\n## AI 检索词/,
-      "## 代码证据\n- `src/service/feed.ts`\n\n## AI 检索词",
+      /## 代码证据\n[\s\S]*?\n\n## AI 检索索引/,
+      "## 代码证据\n- `src/service/feed.ts`\n\n## AI 检索索引",
     );
 
     const result = parseFileWriterBatchOutput(output);
@@ -376,6 +461,23 @@ describe("writer contracts", () => {
       value: completeTopicOutput(),
       errors: [],
     });
+  });
+
+  it("rejects topic documents without explicit read/write/state and evidence-grade fields", () => {
+    const output = completeTopicOutput();
+    output.topics[0].markdown = output.topics[0].markdown
+      .replace("- 写入: Feed items 与排序 metadata；当前没有持久化 writes_to 关系。", "- 变更结果对象。")
+      .replace("- 外部待核验: score 生产口径、线上权重和指标影响需配置与数据平台确认。", "- 线上信息需确认。");
+
+    const result = parseTopicWriterBatchOutput(output);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain(
+      "topics[0].markdown section ## 字段读写与状态变化 missing required field: 写入",
+    );
+    expect(result.errors).toContain(
+      "topics[0].markdown section ## 证据分级 missing required field: 外部待核验",
+    );
   });
 
   it.each(TOPIC_WRITER_REQUIRED_SECTIONS)("rejects missing required topic document section %s", (section) => {
@@ -492,5 +594,70 @@ describe("writer contracts", () => {
     expect(summary.failed).toEqual(["generated/empty.md", "generated/title-only.md"]);
     expect(summary.warnings).toContain("document failed quality validation: generated/empty.md");
     expect(summary.warnings).toContain("document failed quality validation: generated/title-only.md");
+  });
+
+  it("rejects observed template prose even when every section is non-empty", () => {
+    const errors = validateMarkdownQuality(
+      [
+        "# 模板专题",
+        "",
+        "## 说明",
+        "该函数承担该文件中的一段核心逻辑，接收上游传入的业务上下文。",
+        "它与同文件内的协作单元配合，主要把处理结果返回给调用方。",
+        "候选数据为空、配置缺失时，需要重点检查条件分支、排序或过滤规则。",
+      ].join("\n"),
+      { path: "generated/template.md", sections: ["## 说明"] },
+    );
+
+    expect(errors).toContain("generated/template.md has too much generic filler text");
+  });
+
+  it("rejects section bodies that only barely clear the former minimum length", () => {
+    const errors = validateMarkdownQuality(
+      `# 过短页面\n\n## 说明\n${"说明".repeat(7)}`,
+      { path: "generated/short.md", sections: ["## 说明"] },
+    );
+
+    expect(errors).toContain("generated/short.md section has too little detail: ## 说明");
+  });
+
+  it("allows required evidence labels when they accompany concrete facts", () => {
+    const errors = validateMarkdownQuality(
+      [
+        "# 证据分级页面",
+        "",
+        "## 说明",
+        "本地代码事实：`src/handler.ts:18` 先校验 request.userId，再调用 loadProfile。",
+        "代码推断：缓存命中会减少下游读取；根据代码推断，需线上配置确认缓存 TTL。",
+      ].join("\n"),
+      { path: "generated/evidence-labels.md", sections: ["## 说明"] },
+    );
+
+    expect(errors).toEqual([]);
+  });
+
+  it("flags documents that repeat several long boilerplate lines across the corpus", () => {
+    const sharedLines = [
+      "这一段在大量页面中完全重复，只说明需要检查输入输出和上下游关系是否仍然成立。",
+      "这一段同样没有结合当前对象，只笼统提醒关注配置、默认值、异常路径和发布风险。",
+      "这一段仍然属于通用建议，没有给出当前页面独有的规则、关键数据、实际副作用或证据。",
+    ];
+    const documents = Array.from({ length: 6 }, (_, index) => ({
+      path: `generated/repeated-${index + 1}.md`,
+      content: [
+        `# 重复页面 ${index + 1}`,
+        "",
+        "## 说明",
+        ...sharedLines,
+        `- 页面独有标记：对象 ${index + 1}。`,
+      ].join("\n"),
+    }));
+
+    const summary = summarizeMarkdownQuality(documents);
+
+    expect(summary.failed).toEqual(documents.map((document) => document.path));
+    expect(summary.warnings).toContain(
+      "document repeats 3 boilerplate lines across corpus: generated/repeated-1.md",
+    );
   });
 });

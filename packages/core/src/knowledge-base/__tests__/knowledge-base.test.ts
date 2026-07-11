@@ -1,16 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { KnowledgeGraph } from "../../types.js";
 import {
-  buildDocumentPlan,
+  buildBusinessCapabilityProfile,
   buildFileDocPlan,
   buildKnowledgeBaseProfile,
   FILE_WRITER_REQUIRED_SECTIONS,
   generateKnowledgeBase,
   renderDeterministicFileWriterDocument,
+  selectTopicCandidates,
   sectionBody,
   TOPIC_WRITER_REQUIRED_SECTIONS,
   validateMarkdownQuality,
 } from "../index.js";
+import { buildCoverageReport } from "../markdown.js";
+import { materializeKnowledgeBase } from "../generate.js";
 
 function sampleGraph(extraEntry = false): KnowledgeGraph {
   const nodes: KnowledgeGraph["nodes"] = [
@@ -256,6 +259,38 @@ function sampleGraph(extraEntry = false): KnowledgeGraph {
 }
 
 describe("graph-to-knowledge-base", () => {
+  it("materializes non-status pages once and never substitutes prose for missing writers", () => {
+    const profile = buildKnowledgeBaseProfile(sampleGraph());
+    const fileDocPlan = buildFileDocPlan(profile, { sourceFiles: {
+      "src/api/routes.ts": "export function HandleFeedRequest() { return BuildFeed(); }\n",
+      "src/service/feed.ts": "export function BuildFeed() { return rankCandidates([]); }\n",
+      "src/data/store.ts": "export class CandidateStore {}\n",
+      "config/feed.yaml": "ranking: enabled\n",
+    } });
+    const businessCapabilityProfile = buildBusinessCapabilityProfile(profile, fileDocPlan);
+    const kb = materializeKnowledgeBase({
+      profile,
+      fileDocPlan,
+      businessCapabilityProfile,
+      topicPlan: { topics: [], batches: [], warnings: [] },
+      merged: {
+        validation: { ok: true, errors: [], warnings: [] },
+        retryPlan: { fileBatchIndexes: [], topicBatchIndexes: [], fileTerminalBatchIndexes: [], topicTerminalBatchIndexes: [], reasons: [] },
+        acceptedFileWriterDocuments: [],
+        acceptedTopicWriterDocuments: [],
+      },
+      options: { generationMode: "writer" },
+    });
+
+    expect(kb.validation.errors).toContain("计划文件缺少已接受写作者输出：文件文档/src-api-routes.ts.md");
+    expect(kb.documents.some((document) => document.path === "文件文档/src-api-routes.ts.md")).toBe(false);
+    expect(kb.documents.filter((document) => document.role === "maintenance").map((document) => document.path)).toEqual([
+      "引用覆盖.md",
+      "质量状态.md",
+    ]);
+    expect(kb.coverageReport.totalDocuments).toBe(kb.documents.filter((document) => document.role !== "maintenance").length);
+  });
+
   it("builds a project profile from graph facts", () => {
     const profile = buildKnowledgeBaseProfile(sampleGraph());
 
@@ -273,20 +308,176 @@ describe("graph-to-knowledge-base", () => {
   });
 
   it("plans topic documents from coverage obligations instead of a fixed count", () => {
-    const basePlan = buildDocumentPlan(buildKnowledgeBaseProfile(sampleGraph()));
-    const expandedPlan = buildDocumentPlan(buildKnowledgeBaseProfile(sampleGraph(true)));
+    const baseGraph = sampleGraph();
+    const expandedGraph = sampleGraph(true);
+    const baseCandidates = selectTopicCandidates(buildKnowledgeBaseProfile(baseGraph));
+    const expandedCandidates = selectTopicCandidates(buildKnowledgeBaseProfile(expandedGraph));
+    const sourceFiles = {
+      "src/api/routes.ts": "export function HandleFeedRequest() { return BuildFeed(); }\n",
+      "src/service/feed.ts": "export function BuildFeed() { return rankCandidates([]); }\nfunction rankCandidates(items) { return items; }\n",
+      "src/data/store.ts": "export class CandidateStore {}\nexport function LoadCandidates() { return []; }\n",
+      "config/feed.yaml": "ranking: enabled\n",
+    };
+    const basePlan = generateKnowledgeBase(baseGraph, { sourceFiles }).plan;
+    const expandedPlan = generateKnowledgeBase(expandedGraph, { sourceFiles }).plan;
+    const baseTopicCount = basePlan.documents.filter((document) => document.category === "topic").length;
+    const expandedTopicCount = expandedPlan.documents.filter((document) => document.category === "topic").length;
 
-    const baseTopicCount = basePlan.documents.filter((doc) => doc.category === "topic").length;
-    const expandedTopicCount = expandedPlan.documents.filter((doc) => doc.category === "topic").length;
-
-    expect(basePlan.topicCandidates.map((candidate) => candidate.nodeId)).toContain(
+    expect(baseCandidates.map((candidate) => candidate.nodeId)).toContain(
       "function:src/api/routes.ts:HandleFeedRequest",
     );
     expect(basePlan.documents.some((doc) => doc.path === "业务流程/HandleFeedRequest.md")).toBe(true);
-    expect(expandedPlan.topicCandidates.map((candidate) => candidate.nodeId)).toContain(
+    expect(expandedCandidates.map((candidate) => candidate.nodeId)).toContain(
       "function:src/api/routes.ts:HandleAdminFeedRequest",
     );
     expect(expandedTopicCount).toBeGreaterThan(baseTopicCount);
+    expect(basePlan.documents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "源码入口.md", role: "featured" }),
+        expect.objectContaining({ path: "文件文档/config-feed.yaml.md", referenceKind: "configuration" }),
+      ]),
+    );
+  });
+
+  it("renders reading, coverage, evidence, dependency, verification, and AI guidance in fixed entry documents", () => {
+    const kb = generateKnowledgeBase(sampleGraph(), {
+      sourceFiles: {
+        "src/api/routes.ts": "export function HandleFeedRequest() { return BuildFeed(); }\n",
+        "src/service/feed.ts": "export function BuildFeed() { return rankCandidates([]); }\nfunction rankCandidates(items) { return items; }\n",
+        "src/data/store.ts": "export class CandidateStore {}\nexport function LoadCandidates() { return []; }\n",
+        "config/feed.yaml": "ranking: enabled\n",
+      },
+    });
+    const overview = kb.documents.find((document) => document.path === "项目总览.md")?.content ?? "";
+    const sourceEntry = kb.documents.find((document) => document.path === "源码入口.md")?.content ?? "";
+    const quality = kb.documents.find((document) => document.path === "质量状态.md");
+    const coverage = kb.documents.find((document) => document.path === "引用覆盖.md");
+
+    expect(overview).toContain("## 项目目的与边界");
+    expect(overview).toContain("## 生命周期与可发布流程");
+    expect(overview).toContain("## 配置、结构与测试边界");
+    expect(overview).toContain("## 推荐阅读");
+    expect(sourceEntry).toContain("## 配置与测试入口");
+    expect(sourceEntry).toContain("config/feed.yaml");
+    expect(quality).toMatchObject({ role: "maintenance", category: "quality", directNodeIds: [], contextNodeIds: [] });
+    expect(coverage).toMatchObject({ role: "maintenance", category: "coverage", directNodeIds: [], contextNodeIds: [] });
+  });
+
+  it("renders flow graph reachability as a typed relationship path rather than strict execution order", () => {
+    const kb = generateKnowledgeBase(sampleGraph(), {
+      sourceFiles: {
+        "src/api/routes.ts": "export function HandleFeedRequest() { return BuildFeed(); }\n",
+        "src/service/feed.ts": "export function BuildFeed() { return rankCandidates([]); }\nfunction rankCandidates(items) { return items; }\n",
+        "src/data/store.ts": "export class CandidateStore {}\nexport function LoadCandidates() { return []; }\n",
+        "config/feed.yaml": "ranking: enabled\n",
+      },
+    });
+    const flow = kb.documents.find((document) => document.path === "业务流程/HandleFeedRequest.md");
+
+    expect(flow?.content).toContain("## 关系路径（非严格执行顺序）");
+    expect(flow?.content).toContain("--[调用 / calls]-->");
+    expect(flow?.content).toContain("## 分支证据");
+    expect(flow?.content).toContain("不把广度优先遍历得到的列表宣称为严格执行顺序");
+    expect(flow?.content).not.toContain("## 执行顺序");
+    expect(flow?.representedEdgeIds).toEqual(
+      expect.arrayContaining([
+        "calls:function:src/api/routes.ts:HandleFeedRequest->function:src/service/feed.ts:BuildFeed",
+        "calls:function:src/service/feed.ts:BuildFeed->function:src/data/store.ts:LoadCandidates",
+      ]),
+    );
+  });
+
+  it("keeps test, dependency, transform, and validation relations in topic coverage", () => {
+    const graph = sampleGraph();
+    graph.nodes.push(
+      {
+        id: "file:tests/feed.test.ts",
+        type: "file",
+        name: "feed.test.ts",
+        filePath: "tests/feed.test.ts",
+        summary: "BuildFeed regression tests",
+        tags: ["test"],
+        complexity: "moderate",
+      },
+      {
+        id: "service:candidate-api",
+        type: "service",
+        name: "candidate-api",
+        summary: "Candidate service dependency",
+        tags: ["external"],
+        complexity: "moderate",
+      },
+      {
+        id: "schema:feed-request",
+        type: "schema",
+        name: "FeedRequest",
+        summary: "Validated feed request schema",
+        tags: ["schema"],
+        complexity: "simple",
+      },
+      {
+        id: "schema:feed-result",
+        type: "schema",
+        name: "FeedResult",
+        summary: "Transformed feed result schema",
+        tags: ["schema"],
+        complexity: "simple",
+      },
+    );
+    graph.edges.push(
+      {
+        source: "function:src/service/feed.ts:BuildFeed",
+        target: "file:tests/feed.test.ts",
+        type: "tested_by",
+        direction: "forward",
+        weight: 0.9,
+      },
+      {
+        source: "function:src/service/feed.ts:BuildFeed",
+        target: "service:candidate-api",
+        type: "depends_on",
+        direction: "forward",
+        weight: 0.8,
+      },
+      {
+        source: "function:src/service/feed.ts:BuildFeed",
+        target: "schema:feed-request",
+        type: "validates",
+        direction: "forward",
+        weight: 0.8,
+      },
+      {
+        source: "function:src/service/feed.ts:BuildFeed",
+        target: "schema:feed-result",
+        type: "transforms",
+        direction: "forward",
+        weight: 0.8,
+      },
+    );
+    const kb = generateKnowledgeBase(graph, {
+      sourceFiles: {
+        "src/api/routes.ts": "export function HandleFeedRequest() { return BuildFeed(); }\n",
+        "src/service/feed.ts": "export function BuildFeed() { return rankCandidates([]); }\nfunction rankCandidates(items) { return items; }\n",
+        "src/data/store.ts": "export class CandidateStore {}\nexport function LoadCandidates() { return []; }\n",
+        "tests/feed.test.ts": "test('BuildFeed', () => expect(true).toBe(true));\n",
+        "config/feed.yaml": "ranking: enabled\n",
+      },
+    });
+    const topicPlan = kb.topicPlan.topics.find((topic) => topic.topicNodeId === "function:src/service/feed.ts:BuildFeed");
+    const topicDocument = kb.documents.find((document) => document.title === "BuildFeed 关键函数专题");
+
+    expect(topicPlan?.coveredNodeIds).toEqual(
+      expect.arrayContaining([
+        "file:tests/feed.test.ts",
+        "service:candidate-api",
+        "schema:feed-request",
+        "schema:feed-result",
+      ]),
+    );
+    expect(topicDocument?.content).toContain("--[被测试覆盖]-->");
+    expect(topicDocument?.content).toContain("--[依赖]-->");
+    expect(topicDocument?.content).toContain("--[转换]-->");
+    expect(topicDocument?.content).toContain("--[校验]-->");
   });
 
   it("keeps entry flow document paths unique when entry functions share a name", () => {
@@ -321,20 +512,29 @@ describe("graph-to-knowledge-base", () => {
         direction: "forward",
         weight: 1,
       });
+      graph.edges.push({
+        source: `function:${filePath}:main`,
+        target: "function:src/service/feed.ts:BuildFeed",
+        type: "calls",
+        direction: "forward",
+        weight: 1,
+      });
     }
 
-    const plan = buildDocumentPlan(buildKnowledgeBaseProfile(graph));
-    const flowPaths = plan.documents
+    const sourceFiles = Object.fromEntries(graph.nodes
+      .filter((node) => ["file", "config", "schema", "document"].includes(node.type) && node.filePath)
+      .map((node) => [node.filePath!, "export function main() { return true; }\n"]));
+    const kb = generateKnowledgeBase(graph, { sourceFiles });
+    const flowPaths = kb.plan.documents
       .filter((doc) => doc.category === "flow")
       .map((doc) => doc.path);
 
     expect(flowPaths.filter((path) => path.includes("main"))).toHaveLength(2);
     expect(new Set(flowPaths).size).toBe(flowPaths.length);
 
-    const kb = generateKnowledgeBase(graph);
     const generatedPaths = kb.documents.map((doc) => doc.path);
     expect(new Set(generatedPaths).size).toBe(generatedPaths.length);
-    expect(kb.coverageReport.totalDocuments).toBe(generatedPaths.length);
+    expect(kb.coverageReport.totalDocuments).toBe(kb.documents.filter((document) => document.role !== "maintenance").length);
   });
 
   it("selects topic documents from project signals without a fixed count", () => {
@@ -372,7 +572,7 @@ describe("graph-to-knowledge-base", () => {
     }
     const sourceFiles = Object.fromEntries(
       graph.nodes
-        .filter((node) => node.type === "file" && node.filePath)
+        .filter((node) => ["file", "config", "schema", "document"].includes(node.type) && node.filePath)
         .map((node) => [node.filePath!, "export function placeholder() { return true; }\n"]),
     );
 
@@ -394,6 +594,7 @@ describe("graph-to-knowledge-base", () => {
         "src/api/routes.ts": "export function HandleFeedRequest() { return BuildFeed(); }\n",
         "src/service/feed.ts": "export function BuildFeed() { return rankCandidates([]); }\nfunction rankCandidates(items) { return items; }\n",
         "src/data/store.ts": "export class CandidateStore {}\nexport function LoadCandidates() { return []; }\n",
+        "config/feed.yaml": "ranking: enabled\n",
       },
     });
 
@@ -402,7 +603,7 @@ describe("graph-to-knowledge-base", () => {
     expect(kb.coverageReport.classCardCoverage.covered).toBe(kb.coverageReport.classCardCoverage.total);
 
     for (const node of graph.nodes.filter((item) => item.type === "file")) {
-      const doc = kb.documents.find((item) => item.path.startsWith("文件文档/") && item.coveredNodeIds.includes(node.id));
+      const doc = kb.documents.find((item) => item.path.startsWith("文件文档/") && item.directNodeIds.includes(node.id));
       expect(doc?.content).toContain(`# ${node.filePath} 文件知识文档`);
       for (const section of FILE_WRITER_REQUIRED_SECTIONS) {
         expect(doc?.content).toContain(section);
@@ -413,7 +614,7 @@ describe("graph-to-knowledge-base", () => {
       expect(sectionBody(doc?.content ?? "", "## 代码证据")).toContain(node.filePath ?? node.id);
     }
     for (const node of graph.nodes.filter((item) => item.type === "function")) {
-      const parentDoc = kb.documents.find((item) => item.path.startsWith("文件文档/") && item.coveredNodeIds.includes(node.id));
+      const parentDoc = kb.documents.find((item) => item.path.startsWith("文件文档/") && item.symbolAnchors.some((anchor) => anchor.nodeId === node.id));
       expect(parentDoc?.content).toContain("## 函数卡片");
       expect(parentDoc?.content).toContain(`### ${node.name}`);
       expect(parentDoc?.content).toContain(`节点 ID: \`${node.id}\``);
@@ -422,7 +623,7 @@ describe("graph-to-knowledge-base", () => {
       }
     }
     for (const node of graph.nodes.filter((item) => item.type === "class")) {
-      const parentDoc = kb.documents.find((item) => item.path.startsWith("文件文档/") && item.coveredNodeIds.includes(node.id));
+      const parentDoc = kb.documents.find((item) => item.path.startsWith("文件文档/") && item.symbolAnchors.some((anchor) => anchor.nodeId === node.id));
       expect(parentDoc?.content).toContain("## 类卡片");
       expect(parentDoc?.content).toContain(`### ${node.name}`);
       expect(parentDoc?.content).toContain(`节点 ID: \`${node.id}\``);
@@ -465,32 +666,30 @@ describe("graph-to-knowledge-base", () => {
         "src/api/routes.ts": "export function HandleFeedRequest() { return BuildFeed(); }\n",
         "src/service/feed.ts": "export function BuildFeed() { return rankCandidates([]); }\nfunction rankCandidates(items) { return items; }\n",
         "src/data/store.ts": "export class CandidateStore {}\nexport function LoadCandidates() { return []; }\n",
+        "config/feed.yaml": "ranking: enabled\n",
       },
     });
-    const report = kb.documents.find((item) => item.path === "覆盖报告.md");
+    const report = kb.documents.find((item) => item.path === "引用覆盖.md");
+    const nonStatusDocuments = kb.documents.filter((document) => document.role !== "maintenance");
 
     expect(report).toBeDefined();
-    expect(kb.coverageReport.totalDocuments).toBe(kb.documents.length);
-    expect(kb.documents.length).toBeGreaterThanOrEqual(kb.coverageReport.totalDocuments);
+    expect(report).toMatchObject({ role: "maintenance", category: "coverage" });
+    expect(kb.coverageReport.totalDocuments).toBe(nonStatusDocuments.length);
+    expect(kb.documents.length).toBe(kb.coverageReport.totalDocuments + 2);
     expect(kb.coverageReport.qualityValidation.checked).toBe(kb.coverageReport.totalDocuments);
-    expect(kb.coverageReport.qualityValidation.failed).not.toContain("覆盖报告.md");
-    expect(kb.coverageReport.qualityValidation.warnings).not.toContain("document failed quality validation: 覆盖报告.md");
-    expect(kb.coverageReport.qualityValidation.warnings).not.toContain("document has generic filler text: 覆盖报告.md");
+    expect(kb.coverageReport.qualityValidation.failed).not.toContain("引用覆盖.md");
+    expect(kb.coverageReport.documentCounts.file).toBe(4);
+    expect(kb.plan.documents.filter((document) => document.role === "featured").length).toBeGreaterThan(0);
+    expect(kb.plan.documents.filter((document) => document.role === "reference")).toHaveLength(4);
+    expect(kb.plan.documents.filter((document) => document.role === "maintenance")).toHaveLength(2);
     expect(kb.coverageReport.fileDocumentCoverage).toEqual({ covered: 3, total: 3, missing: [] });
     expect(kb.coverageReport.functionCardCoverage).toEqual({ covered: 4, total: 4, missing: [] });
     expect(kb.coverageReport.classCardCoverage).toEqual({ covered: 1, total: 1, missing: [] });
 
-    expect(report?.content).toContain(`总文档数: ${kb.documents.length}`);
-    expect(report?.content).toContain("## 质量校验");
-    expect(report?.content).not.toContain("本地代码事实: stable knowledge-base navigation document");
-    expect(report?.content).toContain("文件文档覆盖: 3 / 3");
-    expect(report?.content).toContain("函数卡片覆盖: 4 / 4");
-    expect(report?.content).toContain("类卡片覆盖: 1 / 1");
-
-    expect(report?.content).not.toContain("File index coverage:");
-    expect(report?.content).not.toContain("Function index coverage:");
-    expect(report?.content).not.toContain("Class index coverage:");
-    expect(report?.content).toContain("覆盖状态: 完整");
+    expect(report?.content).toContain("## 文件与符号覆盖");
+    expect(report?.content).toContain("文件：3 / 3");
+    expect(report?.content).toContain("函数锚点：4 / 4");
+    expect(report?.content).toContain("类型锚点：1 / 1");
   });
 
   it("reports actual relationship coverage from generated file documents", () => {
@@ -499,6 +698,7 @@ describe("graph-to-knowledge-base", () => {
         "src/api/routes.ts": "export function HandleFeedRequest() { return BuildFeed(); }\n",
         "src/service/feed.ts": "export function BuildFeed() { return rankCandidates([]); }\nfunction rankCandidates(items) { return items; }\n",
         "src/data/store.ts": "export class CandidateStore {}\nexport function LoadCandidates() { return []; }\n",
+        "config/feed.yaml": "ranking: enabled\n",
       },
     });
 
@@ -615,14 +815,15 @@ describe("graph-to-knowledge-base", () => {
       },
     );
 
-    const plannerPreview = buildDocumentPlan(buildKnowledgeBaseProfile(graph));
-    expect(plannerPreview.topicCandidates.some((candidate) => candidate.nodeId.includes("rankCandidates"))).toBe(true);
+    const plannerPreview = selectTopicCandidates(buildKnowledgeBaseProfile(graph));
+    expect(plannerPreview.some((candidate) => candidate.nodeId.includes("rankCandidates"))).toBe(true);
 
     const kb = generateKnowledgeBase(graph, {
       sourceFiles: {
         "src/api/routes.ts": "export function HandleFeedRequest() { return BuildFeed(); }\nexport function HandleAdminFeedRequest() { return BuildFeed(); }\n",
         "src/service/feed.ts": "export function BuildFeed() { return rankCandidates([]); }\nfunction rankCandidates(items) { return items; }\nfunction prepareHomeFeedScores(items) { return rankCandidates(items); }\nfunction prepareFreshFeedScores(items) { return rankCandidates(items); }\nfunction prepareFallbackFeedScores(items) { return rankCandidates(items); }\n",
         "src/data/store.ts": "export class CandidateStore {}\nexport function LoadCandidates() { return []; }\n",
+        "config/feed.yaml": "ranking: enabled\n",
       },
     });
 
@@ -655,9 +856,28 @@ describe("graph-to-knowledge-base", () => {
     expect(rankCandidatesExtendedBatch?.tier).toBe("extended");
     expect(rankCandidatesExtendedBatch?.reason).toBe("extended topic for optional continuation");
     expect(kb.coverageReport.topicCoverage.total).toBe(kb.topicPlan.topics.length);
+    expect(kb.coverageReport.topicCoverage.covered).toBe(required.length);
     expect(kb.coverageReport.requiredTopicCoverage.total).toBe(required.length);
     expect(kb.coverageReport.requiredTopicCoverage.covered).toBe(required.length);
     expect(kb.coverageReport.extendedTopicCoverage.total).toBe(extended.length);
-    expect(kb.coverageReport.extendedTopicCoverage.covered).toBe(extended.length);
+    expect(kb.coverageReport.extendedTopicCoverage.covered).toBe(0);
+
+    const firstRequired = required[0]!;
+    const documentsWithoutItsDirectCoverage = kb.documents
+      .filter((document) => document.role !== "maintenance")
+      .map((document) => document.category === "topic" && document.directNodeIds.includes(firstRequired.topicNodeId)
+        ? { ...document, directNodeIds: document.directNodeIds.filter((nodeId) => nodeId !== firstRequired.topicNodeId) }
+        : document);
+    const recalculated = buildCoverageReport(
+      kb.profile,
+      kb.fileDocPlan,
+      kb.topicPlan,
+      kb.plan,
+      documentsWithoutItsDirectCoverage,
+      kb.validation,
+      kb.retryPlan,
+      kb.businessCapabilityProfile,
+    );
+    expect(recalculated.requiredTopicCoverage.missing).toContain(firstRequired.topicNodeId);
   });
 });

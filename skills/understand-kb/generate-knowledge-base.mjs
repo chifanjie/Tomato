@@ -18,6 +18,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -236,21 +237,25 @@ function graphStats(graph) {
   };
 }
 
-function sourceFilesForGraph(projectRoot, graph, maxSourceBytes) {
+function sourceFilesForGraph(core, projectRoot, graph, maxSourceBytes) {
   const sourceFiles = {};
   const omittedFiles = [];
   let readBytes = 0;
-  for (const node of graph.nodes) {
-    if (node.type !== 'file' || !node.filePath) continue;
-    const absolute = join(projectRoot, node.filePath);
+  const sourceNodeTypes = new Set(['file', 'config', 'schema', 'document']);
+  const sourcePaths = [...new Set(graph.nodes
+    .filter((node) => sourceNodeTypes.has(node.type) && node.filePath)
+    .map((node) => core.normalizeKnowledgeSourcePath(node.filePath))
+    .filter(Boolean))].sort(compareStrings);
+  for (const sourcePath of sourcePaths) {
+    const absolute = join(projectRoot, sourcePath);
     if (!existsSync(absolute)) continue;
     const text = readFileSync(absolute, 'utf-8');
     const bytes = Buffer.byteLength(text, 'utf-8');
     if (readBytes + bytes > maxSourceBytes) {
-      omittedFiles.push(node.filePath);
+      omittedFiles.push(sourcePath);
       continue;
     }
-    sourceFiles[node.filePath] = text;
+    sourceFiles[sourcePath] = text;
     readBytes += bytes;
   }
   return {
@@ -321,10 +326,13 @@ function markdownPathForDocument(doc) {
 }
 
 function wikiPageCategoryForDocument(category) {
+  if (category === 'overview') return 'overview';
   if (category === 'module') return 'module';
   if (category === 'file') return 'file';
-  if (category === 'flow' || category === 'topic') return 'flow';
-  if (category === 'business-capability') return 'capability';
+  if (category === 'flow') return 'flow';
+  if (category === 'topic') return 'symbol';
+  if (category === 'capability') return 'capability';
+  if (category === 'quality' || category === 'coverage') return 'quality';
   if (category === 'report') return 'quality';
   if (category === 'top-level' || category === 'index') return 'overview';
   return 'other';
@@ -361,13 +369,57 @@ function relatedNodeIdsFor(graph, explainedNodeIds) {
     .map((item) => item.nodeId);
 }
 
-function summaryForDocument(doc, nodes) {
-  const summarizedNode = nodes.find((node) => node?.summary);
-  if (summarizedNode?.summary) return summarizedNode.summary;
-  if (doc.coveredNodeIds.length > 0) {
-    return `${doc.title} explains ${doc.coveredNodeIds.length} graph node${doc.coveredNodeIds.length === 1 ? '' : 's'}.`;
+function firstChineseSummaryLine(markdown) {
+  for (const rawLine of String(markdown || '').split(/\r?\n/)) {
+    const trimmedRawLine = rawLine.trim();
+    if (!trimmedRawLine || trimmedRawLine.startsWith('#') || trimmedRawLine.startsWith('|') || trimmedRawLine.startsWith('```')) {
+      continue;
+    }
+    const line = rawLine
+      .trim()
+      .replace(/^[-*+]\s+/, '')
+      .replace(/^\d+[.)]\s+/, '')
+      .replace(/[`*_>#]/g, '')
+      .trim();
+    if (line.length < 12 || !/\p{Script=Han}/u.test(line)) continue;
+    return line.length > 220 ? `${line.slice(0, 219)}…` : line;
   }
-  return `${doc.title} is generated knowledge-base documentation.`;
+  return '';
+}
+
+function summaryForDocument(doc, nodes) {
+  const markdownSummary = firstChineseSummaryLine(doc.content);
+  if (markdownSummary) return markdownSummary;
+  const summarizedNode = nodes.find((node) => /\p{Script=Han}/u.test(node?.summary || ''));
+  if (summarizedNode?.summary) return summarizedNode.summary;
+  if (doc.directNodeIds.length > 0) {
+    return `“${doc.title}”直接说明 ${doc.directNodeIds.length} 个代码对象，并把其余对象作为上下文。`;
+  }
+  return `“${doc.title}”是自动生成的知识库页面，用于提供项目说明和阅读导航。`;
+}
+
+function markdownSearchTerms(markdown) {
+  const text = String(markdown || '');
+  const headings = [...text.matchAll(/^#{1,3}\s+(.+)$/gm)]
+    .map((match) => match[1].replace(/[`*_~#]/g, '').trim());
+  const codeTerms = [...text.matchAll(/`([^`\n]{2,120})`/g)]
+    .map((match) => match[1].trim());
+  const aiSection = text.match(/^##\s+AI\s*检索(?:词|索引)\s*$([\s\S]*?)(?=^##\s|\s*$)/m)?.[1] || '';
+  const aiTerms = aiSection
+    .split(/[\n,，;；]+/)
+    .map((value) => value.replace(/^[-*+]\s+/, '').replace(/[`*_~]/g, '').trim());
+  return uniqueSortedStrings([...headings, ...codeTerms, ...aiTerms])
+    .filter((value) => value.length <= 160)
+    .slice(0, 160);
+}
+
+function searchTermsForDocument(doc, nodes) {
+  return uniqueSortedStrings([
+    doc.title,
+    doc.path,
+    ...markdownSearchTerms(doc.content),
+    ...nodes.flatMap((node) => [node?.name, node?.id, node?.filePath, ...(node?.tags || [])]),
+  ]).slice(0, 200);
 }
 
 function evidenceForNode(node) {
@@ -398,6 +450,44 @@ function gapSeverityForNode(node) {
   return 'low';
 }
 
+const PARTIAL_COVERAGE_CATEGORIES = new Set([
+  'overview',
+  'module',
+  'quality',
+  'coverage',
+  'other',
+]);
+
+function pageQualityIssues(kb, doc) {
+  const report = kb.coverageReport || {};
+  const issues = [];
+  if ((report.qualityValidation?.failed || []).includes(doc.path)) issues.push('正文质量校验未通过');
+  if ((report.placeholderValidation?.failed || []).includes(doc.path)) issues.push('占位文本校验未通过');
+  if ((report.chineseValidation?.failed || []).includes(doc.path)) issues.push('中文内容校验未通过');
+  if ((kb.validation?.errors || []).some((error) => String(error).includes(doc.path))) {
+    issues.push('文档结构校验未通过');
+  }
+  return uniqueSortedStrings(issues);
+}
+
+function pageQualityFor(doc, issues) {
+  if (issues.length > 0) return 'low-confidence';
+  if (doc.quality === 'verified') return 'verified';
+  return 'generated';
+}
+
+function pageCoverageFor(doc, explainedNodeIds, nodes, quality) {
+  if (explainedNodeIds.length === 0) return 'partial';
+  if (PARTIAL_COVERAGE_CATEGORIES.has(doc.category)) return 'partial';
+  if (quality === 'low-confidence') return 'partial';
+  if (!nodes.some((node) => typeof node?.filePath === 'string' && node.filePath.length > 0)) return 'partial';
+  return 'complete';
+}
+
+function graphDigest(graph) {
+  return createHash('sha256').update(JSON.stringify(graph)).digest('hex');
+}
+
 function fallbackMarkdownPath(kb) {
   const overview = kb.documents.find((doc) => doc.path === '项目总览.md');
   const firstMarkdown = kb.documents.find((doc) => doc.path.endsWith('.md'));
@@ -405,15 +495,18 @@ function fallbackMarkdownPath(kb) {
   return fallbackDoc ? markdownPathForDocument(fallbackDoc) : 'knowledge-base/README.md';
 }
 
-function buildWikiIndexPayload(kb) {
+function buildWikiIndexPayload(kb, options = {}) {
   const graph = kb.profile.graph;
   const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
   const evidenceById = new Map();
   const documentExplainedNodeIds = new Set();
   const pages = kb.documents.map((doc) => {
-    const explainedNodeIds = uniqueSortedStrings(doc.coveredNodeIds.filter((nodeId) => nodesById.has(nodeId)));
+    const explainedNodeIds = uniqueSortedStrings(doc.directNodeIds.filter((nodeId) => nodesById.has(nodeId)));
+    const contextualNodeIds = uniqueSortedStrings(doc.contextNodeIds.filter((nodeId) => nodesById.has(nodeId)));
     for (const nodeId of explainedNodeIds) documentExplainedNodeIds.add(nodeId);
     const nodes = explainedNodeIds.map((nodeId) => nodesById.get(nodeId));
+    const qualityIssues = pageQualityIssues(kb, doc);
+    const quality = pageQualityFor(doc, qualityIssues);
     const evidenceIds = [];
     for (const node of nodes) {
       const evidence = evidenceForNode(node);
@@ -427,10 +520,12 @@ function buildWikiIndexPayload(kb) {
       summary: summaryForDocument(doc, nodes),
       markdownPath: markdownPathForDocument(doc),
       explainedNodeIds,
-      relatedNodeIds: relatedNodeIdsFor(graph, explainedNodeIds),
+      relatedNodeIds: contextualNodeIds.slice(0, MAX_RELATED_NODE_IDS),
       evidenceIds: uniqueSortedStrings(evidenceIds),
-      coverage: explainedNodeIds.length > 0 ? 'complete' : 'partial',
-      quality: kb.validation.ok ? 'generated' : 'low-confidence',
+      coverage: pageCoverageFor(doc, explainedNodeIds, nodes, quality),
+      quality,
+      qualityIssues,
+      searchTerms: searchTermsForDocument(doc, nodes),
     };
   });
 
@@ -443,13 +538,22 @@ function buildWikiIndexPayload(kb) {
         id: wikiId('wiki-node', node.id),
         title: node.name || node.id,
         category: wikiPageCategoryForNode(node),
-        summary: node.summary || `${node.name || node.id} is part of ${graph.project.name}.`,
+        summary: /\p{Script=Han}/u.test(node.summary || '')
+          ? node.summary
+          : `${node.name || node.id} 是 ${graph.project.name} 中尚待补充详细说明的代码对象。`,
         markdownPath,
         explainedNodeIds: [node.id],
         relatedNodeIds: relatedNodeIdsFor(graph, [node.id]),
         evidenceIds: [evidence.id],
         coverage: 'partial',
-        quality: kb.validation.ok ? 'generated' : 'low-confidence',
+        quality: 'low-confidence',
+        qualityIssues: ['尚无专门的 Wiki 正文'],
+        searchTerms: uniqueSortedStrings([
+          node.name,
+          node.id,
+          node.filePath,
+          ...(node.tags || []),
+        ]),
       });
     }
   }
@@ -459,14 +563,25 @@ function buildWikiIndexPayload(kb) {
     .map((node) => ({
       id: wikiId('gap', node.id),
       nodeId: node.id,
-      reason: 'No generated wiki page explains this graph node.',
+      reason: '尚未生成能够充分解释该代码对象的 Wiki 页面。',
       severity: gapSeverityForNode(node),
     }));
 
+  const generatedAt = new Date().toISOString();
+  const source = {
+    outputLanguage: 'zh-Hans',
+    graphDigest: graphDigest(graph),
+    generationMode: options.generationMode || 'unknown',
+    coverageStatus: kb.coverageReport?.status || 'unknown',
+  };
+  if (graph.project.gitCommitHash) source.gitCommitHash = graph.project.gitCommitHash;
+  if (graph.project.analyzedAt) source.graphAnalyzedAt = graph.project.analyzedAt;
+
   return {
     version: 1,
-    generatedAt: new Date().toISOString(),
+    generatedAt,
     projectName: graph.project.name,
+    source,
     pages,
     evidence: [...evidenceById.values()].sort((a, b) => compareStrings(a.id, b.id)),
     gaps,
@@ -480,7 +595,11 @@ function serializableProfile(kb) {
     edgeCounts: kb.coverageReport.edgeCounts,
     layerProfiles: kb.profile.layerProfiles,
     entryCandidates: kb.profile.entryCandidates,
-    topicCandidates: kb.plan.topicCandidates,
+    topicCandidates: kb.topicPlan.topics.map((topic) => ({
+      nodeId: topic.topicNodeId,
+      reasons: topic.reasons,
+      tier: topic.tier,
+    })),
     fileDocPlan: {
       tasks: kb.fileDocPlan.tasks.length,
       batches: kb.fileDocPlan.batches.length,
@@ -550,10 +669,14 @@ function loadGraph(core, projectRoot) {
   return validation.data;
 }
 
-function writeKnowledgeBase(outputRoot, kb, keepIntermediate = true) {
+function loadKnowledgeBaseConfig(core, projectRoot) {
+  return core.loadConfig(projectRoot).knowledgeBase ?? {};
+}
+
+function writeKnowledgeBase(outputRoot, kb, keepIntermediate = true, generationMode = 'writer-pool') {
   cleanOutputDocuments(outputRoot);
   for (const doc of kb.documents) writeDocument(outputRoot, doc);
-  writeJson(join(outputRoot, 'wiki-index.json'), buildWikiIndexPayload(kb));
+  writeJson(join(outputRoot, 'wiki-index.json'), buildWikiIndexPayload(kb, { generationMode }));
   writeJson(join(outputRoot, 'knowledge-base-profile.json'), serializableProfile(kb));
   if (!keepIntermediate) rmSync(join(outputRoot, '.intermediate'), { recursive: true, force: true });
 }
@@ -561,19 +684,22 @@ function writeKnowledgeBase(outputRoot, kb, keepIntermediate = true) {
 function deterministicGenerate(core, projectRoot, keepIntermediate, args) {
   const graph = loadGraph(core, projectRoot);
   assertDeterministicAllowed(graph, args);
-  const { sourceFiles, stats } = sourceFilesForGraph(projectRoot, graph, args.maxSourceBytes);
+  const { sourceFiles, stats } = sourceFilesForGraph(core, projectRoot, graph, args.maxSourceBytes);
   printGraphStats(graph, stats);
-  const kb = core.generateKnowledgeBase(graph, { sourceFiles });
+  const kb = core.generateKnowledgeBase(graph, {
+    sourceFiles,
+    knowledgeBaseConfig: loadKnowledgeBaseConfig(core, projectRoot),
+  });
   const { outputRoot } = pathsFor(projectRoot);
   rmSync(outputRoot, { recursive: true, force: true });
   mkdirSync(outputRoot, { recursive: true });
-  writeKnowledgeBase(outputRoot, kb, keepIntermediate);
+  writeKnowledgeBase(outputRoot, kb, keepIntermediate, 'deterministic');
   printCoverage(kb, outputRoot);
 }
 
 function prepareFileDocs(core, projectRoot, maxSourceBytes) {
   const graph = loadGraph(core, projectRoot);
-  const { sourceFiles, stats } = sourceFilesForGraph(projectRoot, graph, maxSourceBytes);
+  const { sourceFiles, stats } = sourceFilesForGraph(core, projectRoot, graph, maxSourceBytes);
   printGraphStats(graph, stats);
   const profile = core.buildKnowledgeBaseProfile(graph);
   const fileDocPlan = core.buildFileDocPlan(profile, { sourceFiles });
@@ -618,7 +744,7 @@ function readBatchOutputs(intermediateRoot, prefix, parser) {
 
 function loadProfileAndFilePlan(core, projectRoot, maxSourceBytes = 64 * 1024 * 1024) {
   const graph = loadGraph(core, projectRoot);
-  const { sourceFiles, stats } = sourceFilesForGraph(projectRoot, graph, maxSourceBytes);
+  const { sourceFiles, stats } = sourceFilesForGraph(core, projectRoot, graph, maxSourceBytes);
   printGraphStats(graph, stats);
   const profile = core.buildKnowledgeBaseProfile(graph);
   const fileDocPlan = core.buildFileDocPlan(profile, { sourceFiles });
@@ -686,7 +812,6 @@ function mergeFileDocs(core, projectRoot, maxSourceBytes) {
   writeJson(join(intermediateRoot, 'file-writer-outputs.json'), fileWriterOutputs);
   writeJson(fileQueuePath, reconciledQueue);
   writeRetryPlan(join(intermediateRoot, 'file-doc-retry-plan.json'), merged.retryPlan, merged.retryPlan.fileBatchIndexes);
-  for (const doc of merged.fileDocuments) writeDocument(outputRoot, doc);
 
   console.log(`已接受文件文档数: ${merged.acceptedFileWriterDocuments.length}`);
   console.log(`需要重试的文件写作批次数: ${merged.retryPlan.fileBatchIndexes.length}`);
@@ -773,44 +898,18 @@ function finalizeKnowledgeBase(core, projectRoot, keepIntermediate, maxSourceByt
     process.exit(1);
   }
 
-  const validation = {
-    ok: merged.validation.ok,
-    errors: merged.validation.errors,
-    warnings: [...new Set([...merged.validation.warnings, ...topicPlan.warnings])].sort(),
-  };
   const businessCapabilityProfile = core.buildBusinessCapabilityProfile(profile, fileDocPlan);
-  const plan = core.buildDocumentPlan(profile);
-  const supportDocuments = core.renderKnowledgeBaseDocuments(profile, plan, fileDocPlan, topicPlan, merged);
-  const businessDocuments = core.renderBusinessCapabilityDocuments(profile, businessCapabilityProfile);
-  const preliminaryDocuments = [...supportDocuments, ...businessDocuments, ...merged.fileDocuments, ...merged.topicDocuments];
-  const initialCoverageReport = core.buildCoverageReport(profile, fileDocPlan, topicPlan, preliminaryDocuments, validation, merged.retryPlan, businessCapabilityProfile, []);
-  const initialFinalSupportDocuments = core.renderKnowledgeBaseDocuments(profile, plan, fileDocPlan, topicPlan, merged, initialCoverageReport, validation);
-  const initialFinalDocuments = [...initialFinalSupportDocuments, ...businessDocuments, ...merged.fileDocuments, ...merged.topicDocuments]
-    .sort((a, b) => a.path.localeCompare(b.path) || a.title.localeCompare(b.title));
-  const coverageReport = core.buildCoverageReport(
+  const kb = core.materializeKnowledgeBase({
     profile,
     fileDocPlan,
-    topicPlan,
-    preliminaryDocuments,
-    validation,
-    merged.retryPlan,
     businessCapabilityProfile,
-    initialFinalDocuments,
-  );
-  const finalSupportDocuments = core.renderKnowledgeBaseDocuments(profile, plan, fileDocPlan, topicPlan, merged, coverageReport, validation);
-  const documents = [...finalSupportDocuments, ...businessDocuments, ...merged.fileDocuments, ...merged.topicDocuments]
-    .sort((a, b) => a.path.localeCompare(b.path) || a.title.localeCompare(b.title));
-  const kb = {
-    profile,
-    businessCapabilityProfile,
-    plan,
-    fileDocPlan,
     topicPlan,
-    documents,
-    validation,
-    coverageReport,
-    retryPlan: merged.retryPlan,
-  };
+    merged,
+    options: {
+      generationMode: 'writer',
+      knowledgeBaseConfig: loadKnowledgeBaseConfig(core, projectRoot),
+    },
+  });
 
   if (graph.project.gitCommitHash !== profile.graph.project.gitCommitHash) {
     console.warn('警告: 生成最终知识库时图谱元数据发生变化。');

@@ -12,12 +12,10 @@ export * from "./quality.js";
 export * from "./queue.js";
 export * from "./merge.js";
 export * from "./route-overrides.js";
+export * from "./featured-planner.js";
 export {
-  buildCoverageReport,
   renderBusinessCapabilityDocuments,
   renderDeterministicFileWriterDocument,
   renderDeterministicTopicWriterDocument,
-  renderKnowledgeBaseDocuments,
-  validateKnowledgeBaseCoverage,
 } from "./markdown.js";
-export { generateKnowledgeBase } from "./generate.js";
+export { generateKnowledgeBase, materializeKnowledgeBase } from "./generate.js";

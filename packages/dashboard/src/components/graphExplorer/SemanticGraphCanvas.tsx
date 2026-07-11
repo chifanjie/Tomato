@@ -15,9 +15,9 @@ import type {
   SemanticGraphEdge,
   SemanticGraphNode,
   SemanticNodeGroup,
+  GraphDocumentationStatus,
 } from "../../graphExplorer/semanticGraph";
 import { useDashboardStore } from "../../store";
-import type { WikiCoverageStatus } from "../../wiki/wikiIndex";
 
 interface SemanticGraphCanvasProps {
   semanticGraph: SemanticGraph;
@@ -31,10 +31,10 @@ interface SemanticNodeData extends Record<string, unknown> {
   category: SemanticNodeGroup;
   rawType: string;
   cluster: string;
-  coverageStatus: WikiCoverageStatus;
+  coverageStatus: GraphDocumentationStatus;
   pageCount: number;
   evidenceCount: number;
-  gapCount: number;
+  failedCount: number;
   isSelected: boolean;
 }
 
@@ -70,10 +70,10 @@ const GROUP_COLORS: Record<SemanticNodeGroup, string> = {
   other: "var(--color-text-muted)",
 };
 
-const COVERAGE_COLORS: Record<WikiCoverageStatus, string> = {
+const COVERAGE_COLORS: Record<GraphDocumentationStatus, string> = {
   complete: "var(--color-accent)",
   partial: "var(--color-node-module)",
-  gap: "var(--color-complexity-complex)",
+  failed: "var(--color-complexity-complex)",
   unknown: "var(--color-text-muted)",
 };
 
@@ -162,7 +162,7 @@ function SemanticNodeCard({ data }: NodeProps<SemanticFlowNode>) {
         <div className="mt-auto flex items-center justify-between gap-3 text-[10px] text-text-muted">
           <span className="min-w-0 truncate">{data.cluster}</span>
           <span className="shrink-0">
-            {data.pageCount}p / {data.evidenceCount}e / {data.gapCount}g
+            {data.pageCount}p / {data.evidenceCount}e / {data.failedCount}f
           </span>
         </div>
       </div>
@@ -202,7 +202,7 @@ export default function SemanticGraphCanvas({ semanticGraph, viewKey }: Semantic
         coverageStatus: node.coverage.status,
         pageCount: node.docs.pageIds.length,
         evidenceCount: node.docs.evidenceIds.length,
-        gapCount: node.docs.gapIds.length,
+        failedCount: node.coverage.status === "failed" ? 1 : 0,
         isSelected: node.id === selectedNodeId,
       },
       width: NODE_WIDTH,

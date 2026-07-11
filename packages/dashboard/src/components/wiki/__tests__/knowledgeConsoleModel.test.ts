@@ -1,115 +1,56 @@
 import { describe, expect, it } from "vitest";
-import { buildWikiIndex } from "../../../wiki/wikiIndex";
+import { buildWikiRuntimeIndex } from "../../../wiki/wikiIndex";
+import { wikiV2Fixture } from "../../../wiki/__tests__/fixtures/wikiV2Fixtures";
 import { buildKnowledgeConsoleView } from "../knowledgeConsoleModel";
 
 describe("knowledgeConsoleModel", () => {
-  it("builds navigation, active page, evidence, and graph node ids", () => {
-    const index = buildWikiIndex({
-      version: 1,
-      generatedAt: "2026-07-09T00:00:00.000Z",
-      projectName: "sample",
-      pages: [
-        {
-          id: "wiki:overview",
-          title: "Project Overview",
-          category: "overview",
-          summary: "Repository overview.",
-          markdownPath: "knowledge-base/README.md",
-          explainedNodeIds: ["file:src/a.go"],
-          relatedNodeIds: ["function:src/a.go:Build"],
-          evidenceIds: ["evidence:build"],
-          coverage: "complete",
-          quality: "verified",
-        },
-      ],
-      evidence: [
-        {
-          id: "evidence:build",
-          label: "Build implementation",
-          filePath: "src/a.go",
-          lineRange: [10, 20],
-          nodeIds: ["function:src/a.go:Build"],
-        },
-      ],
-      gaps: [],
-    });
+  it("builds navigation, active page, evidence, and graph node ids from V2", () => {
+    const index = buildWikiRuntimeIndex(wikiV2Fixture());
 
-    const view = buildKnowledgeConsoleView(index, "wiki:overview");
+    const view = buildKnowledgeConsoleView(index, "page:run");
 
-    expect(view.activePage?.title).toBe("Project Overview");
-    expect(view.sections.map((section) => section.category)).toEqual(["overview"]);
-    expect(view.evidence.map((item) => item.label)).toEqual(["Build implementation"]);
-    expect(view.graphNodeIds).toEqual(["file:src/a.go", "function:src/a.go:Build"]);
+    expect(view.activePage?.title).toBe("运行流程");
+    expect(view.sections.map((section) => section.category)).toEqual([
+      "overview",
+      "flow",
+      "file",
+    ]);
+    expect(view.evidence.map((item) => item.filePath)).toEqual(["src/a.ts"]);
+    expect(view.graphNodeIds).toEqual(["function:src/a.ts:run"]);
     expect(view.emptyReason).toBeNull();
   });
 
   it("uses the first page when the active page id is missing", () => {
-    const index = buildWikiIndex({
-      version: 1,
-      generatedAt: "2026-07-09T00:00:00.000Z",
-      projectName: "sample",
-      pages: [
-        {
-          id: "wiki:first",
-          title: "First",
-          category: "overview",
-          summary: "First page.",
-          markdownPath: "knowledge-base/README.md",
-          explainedNodeIds: [],
-          relatedNodeIds: [],
-          evidenceIds: [],
-          coverage: "complete",
-          quality: "verified",
-        },
-      ],
-      evidence: [],
-      gaps: [],
-    });
+    const view = buildKnowledgeConsoleView(
+      buildWikiRuntimeIndex(wikiV2Fixture()),
+      "page:missing",
+    );
 
-    const view = buildKnowledgeConsoleView(index, "wiki:missing");
-
-    expect(view.activePage?.id).toBe("wiki:first");
+    expect(view.activePage?.id).toBe("page:overview");
   });
 
-  it("deduplicates graph node ids shared by explained and related links", () => {
-    const index = buildWikiIndex({
-      version: 1,
-      generatedAt: "2026-07-09T00:00:00.000Z",
-      projectName: "sample",
-      pages: [
-        {
-          id: "wiki:shared",
-          title: "Shared Node",
-          category: "module",
-          summary: "Shared graph link.",
-          markdownPath: "knowledge-base/shared.md",
-          explainedNodeIds: ["file:src/a.go", "function:src/a.go:Build"],
-          relatedNodeIds: ["function:src/a.go:Build", "function:src/a.go:Test"],
-          evidenceIds: [],
-          coverage: "complete",
-          quality: "verified",
-        },
-      ],
-      evidence: [],
-      gaps: [],
-    });
-
-    const view = buildKnowledgeConsoleView(index, "wiki:shared");
+  it("keeps graph focus limited to direct page links", () => {
+    const payload = wikiV2Fixture();
+    const filePage = payload.pages.find((page) => page.id === "page:file-a");
+    if (!filePage) throw new Error("missing fixture page");
+    filePage.contextNodeIds = ["file:src/a.ts"];
+    const view = buildKnowledgeConsoleView(
+      buildWikiRuntimeIndex(payload),
+      "page:file-a",
+    );
 
     expect(view.graphNodeIds).toEqual([
-      "file:src/a.go",
-      "function:src/a.go:Build",
-      "function:src/a.go:Test",
+      "function:src/a.ts:run",
     ]);
   });
 
   it("returns an empty-state view when no wiki pages exist", () => {
-    const view = buildKnowledgeConsoleView(buildWikiIndex(null), null);
+    const view = buildKnowledgeConsoleView(buildWikiRuntimeIndex(null), null);
 
     expect(view.activePage).toBeNull();
     expect(view.sections).toEqual([]);
     expect(view.evidence).toEqual([]);
     expect(view.graphNodeIds).toEqual([]);
-    expect(view.emptyReason).toBe("No generated wiki metadata is available yet.");
+    expect(view.emptyReason).toBe("还没有生成可阅读的知识库内容。");
   });
 });

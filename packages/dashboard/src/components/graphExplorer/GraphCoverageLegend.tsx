@@ -1,14 +1,14 @@
-import type { WikiCoverageStatus } from "../../wiki/wikiIndex";
+import type { GraphDocumentationStatus } from "../../graphExplorer/semanticGraph";
 
 const COVERAGE_ITEMS: Array<{
-  status: WikiCoverageStatus;
+  status: GraphDocumentationStatus;
   label: string;
   className: string;
 }> = [
-  { status: "complete", label: "Complete", className: "bg-accent" },
-  { status: "partial", label: "Partial", className: "bg-node-module" },
-  { status: "gap", label: "Gap", className: "bg-complexity-complex" },
-  { status: "unknown", label: "Unknown", className: "bg-text-muted" },
+  { status: "complete", label: "完整", className: "bg-accent" },
+  { status: "partial", label: "部分覆盖", className: "bg-node-module" },
+  { status: "failed", label: "生成失败", className: "bg-complexity-complex" },
+  { status: "unknown", label: "未评估", className: "bg-text-muted" },
 ];
 
 export default function GraphCoverageLegend() {

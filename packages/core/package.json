@@ -21,6 +21,10 @@
       "types": "./dist/schema.d.ts",
       "default": "./dist/schema.js"
     },
+    "./knowledge-base": {
+      "types": "./dist/knowledge-base/index.d.ts",
+      "default": "./dist/knowledge-base/index.js"
+    },
     "./languages": {
       "types": "./dist/languages/index.d.ts",
       "default": "./dist/languages/index.js"

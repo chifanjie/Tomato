@@ -1,14 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   loadDashboardKnowledge,
-  shouldRetryKnowledgeContextLoad,
+  loadKnowledgeContextIndex,
+  shouldRetryWikiLoad,
   type DashboardKnowledge,
 } from "../knowledgeContextLoader";
 import {
-  buildKnowledgeContextIndex,
   resolveKnowledgeContext,
   type WorkbenchSelection,
 } from "../knowledgeContext";
+import { wikiV2Fixture } from "../../wiki/__tests__/fixtures/wikiV2Fixtures";
 
 function jsonResponse(value: unknown): Response {
   return new Response(JSON.stringify(value), {
@@ -110,11 +111,16 @@ describe("dashboard knowledge loader", () => {
     expect(calls[0]).toContain("token=local-token");
     expect(calls.some((url) => url.includes("document-traces.json"))).toBe(false);
     expect(result.wikiIndex.pageCount).toBe(1);
-    expect(result.contextIndex.documentCount).toBeGreaterThanOrEqual(1);
+    expect(result.wikiStatus).toBe("ready");
+    expect(result.sourceVersion).toBe(1);
+    expect(result).not.toHaveProperty("contextIndex");
+    expect(calls).toHaveLength(1);
   });
 
-  it("makes wiki-index pages reachable by workbench node and file selections", async () => {
+  it("keeps wiki-index node and evidence linkage in the wiki index without building workbench context", async () => {
+    const calls: string[] = [];
     const fetcher = async (url: string) => {
+      calls.push(url);
       if (url.includes("knowledge-base/wiki-index.json")) {
         return jsonResponse({
           version: 1,
@@ -150,35 +156,41 @@ describe("dashboard knowledge loader", () => {
     };
 
     const result = await loadDashboardKnowledge("local-token", fetcher as typeof fetch);
-    const nodeSelection: WorkbenchSelection = {
-      nodeId: "function:productline/service.go:Recognise",
-      filePath: "productline/service.go",
-      title: "Recognise",
-      summary: "Recognises product lines.",
-      kind: "function",
-    };
-    const fileSelection: WorkbenchSelection = {
-      nodeId: "file:productline/service.go",
-      filePath: "productline/service.go",
-      title: "service.go",
-      summary: "Product line service.",
-      kind: "file",
-    };
 
-    const nodeContext = resolveKnowledgeContext(result.contextIndex, nodeSelection);
-    const fileContext = resolveKnowledgeContext(result.contextIndex, fileSelection);
-
-    expect(nodeContext.matchKind).toBe("direct-trace");
-    expect(nodeContext.title).toBe("Product Line Recognition");
-    expect(nodeContext.evidence.map((anchor) => anchor.label)).toContain(
-      "Recognise implementation - productline/service.go L10-20",
+    expect(calls).toHaveLength(1);
+    expect(result).not.toHaveProperty("contextIndex");
+    expect(
+      result.wikiIndex.directPagesByNodeId.get(
+        "function:productline/service.go:Recognise",
+      )?.[0]?.id,
+    ).toBe("wiki:productline");
+    expect(result.wikiIndex.evidenceById.get("ev:recognise")?.filePath).toBe(
+      "productline/service.go",
     );
-    expect(fileContext.matchKind).toBe("filename-path");
-    expect(fileContext.title).toBe("Product Line Recognition");
   });
 
-  it("falls back safely when wiki-index.json is malformed", async () => {
+  it("loads a Core V2 payload without a Dashboard-local schema", async () => {
     const fetcher = async (url: string) => {
+      if (url.includes("knowledge-base/wiki-index.json")) {
+        return jsonResponse(wikiV2Fixture());
+      }
+      return new Response("missing", { status: 404 });
+    };
+
+    const result = await loadDashboardKnowledge("local-token", fetcher as typeof fetch);
+
+    expect(result.wikiStatus).toBe("ready");
+    expect(result.sourceVersion).toBe(2);
+    expect(result.wikiIndex.routePages.map((page) => page.id)).toEqual([
+      "page:overview",
+      "page:run",
+    ]);
+  });
+
+  it("returns invalid without loading legacy fallback data when wiki-index.json is malformed", async () => {
+    const calls: string[] = [];
+    const fetcher = async (url: string) => {
+      calls.push(url);
       if (url.includes("knowledge-base/wiki-index.json")) {
         return jsonResponse({});
       }
@@ -191,10 +203,52 @@ describe("dashboard knowledge loader", () => {
     const result = await loadDashboardKnowledge("local-token", fetcher as typeof fetch);
 
     expect(result.wikiIndex.pageCount).toBe(0);
-    expect(result.contextIndex.traceCount).toBe(2);
+    expect(result.wikiStatus).toBe("invalid");
+    expect(result.sourceVersion).toBeNull();
+    expect(result).not.toHaveProperty("contextIndex");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain("knowledge-base/wiki-index.json");
   });
 
-  it("falls back safely when wiki-index.json contains invalid enum values", async () => {
+  it("returns missing with a null source version for a 404", async () => {
+    const result = await loadDashboardKnowledge(
+      "local-token",
+      (async () => new Response("missing", { status: 404 })) as typeof fetch,
+    );
+
+    expect(result.wikiStatus).toBe("missing");
+    expect(result.sourceVersion).toBeNull();
+    expect(result.wikiIndex.pageCount).toBe(0);
+  });
+
+  it("returns invalid when wiki-index.json contains malformed JSON", async () => {
+    const result = await loadDashboardKnowledge(
+      "local-token",
+      (async () => new Response("{", { status: 200 })) as typeof fetch,
+    );
+
+    expect(result.wikiStatus).toBe("invalid");
+    expect(result.sourceVersion).toBeNull();
+    expect(result.wikiIndex.pageCount).toBe(0);
+  });
+
+  it("returns forbidden immediately without probing legacy protected files", async () => {
+    const calls: string[] = [];
+    const fetcher = async (url: string) => {
+      calls.push(url);
+      return new Response("forbidden", { status: 403 });
+    };
+
+    const result = await loadDashboardKnowledge("expired-token", fetcher as typeof fetch);
+
+    expect(result.wikiStatus).toBe("forbidden");
+    expect(result.sourceVersion).toBeNull();
+    expect(result.wikiIndex.pageCount).toBe(0);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain("knowledge-base/wiki-index.json");
+  });
+
+  it("returns invalid without legacy requests when wiki-index.json contains invalid enum values", async () => {
     const validPayload = validWikiPayload();
     const [validPage] = validPayload.pages as Record<string, unknown>[];
     const [validGap] = validPayload.gaps as Record<string, unknown>[];
@@ -206,7 +260,9 @@ describe("dashboard knowledge loader", () => {
     ];
 
     for (const { field, payload } of invalidPayloads) {
+      const calls: string[] = [];
       const fetcher = async (url: string) => {
+        calls.push(url);
         if (url.includes("knowledge-base/wiki-index.json")) {
           return jsonResponse(payload);
         }
@@ -219,7 +275,9 @@ describe("dashboard knowledge loader", () => {
       const result = await loadDashboardKnowledge("local-token", fetcher as typeof fetch);
 
       expect(result.wikiIndex.pageCount, field).toBe(0);
-      expect(result.contextIndex.traceCount, field).toBe(2);
+      expect(result.wikiStatus, field).toBe("invalid");
+      expect(calls, field).toHaveLength(1);
+      expect(calls[0], field).toContain("knowledge-base/wiki-index.json");
     }
   });
 
@@ -233,48 +291,20 @@ describe("dashboard knowledge loader", () => {
 
     await loadDashboardKnowledge("local-token", fetcher as typeof fetch);
 
-    expect(calls.length).toBeGreaterThan(0);
+    expect(calls).toHaveLength(1);
     expect(calls.every((url) => !url.includes("token="))).toBe(true);
   });
 
-  it("retries knowledge context loading only while no knowledge has loaded", () => {
-    expect(shouldRetryKnowledgeContextLoad(buildKnowledgeContextIndex({ traces: [], documents: [] }), 0, 3)).toBe(true);
-    expect(shouldRetryKnowledgeContextLoad(buildKnowledgeContextIndex({ traces: [], documents: [] }), 3, 3)).toBe(false);
-    expect(
-      shouldRetryKnowledgeContextLoad(
-        buildKnowledgeContextIndex({
-          traces: [
-            {
-              nodeId: "function:productline/service.go:Recognise",
-              title: "Trace",
-              summary: "Loaded trace.",
-            },
-          ],
-          documents: [],
-        }),
-        0,
-        3,
-      ),
-    ).toBe(false);
-    expect(
-      shouldRetryKnowledgeContextLoad(
-        buildKnowledgeContextIndex({
-          traces: [],
-          documents: [
-            {
-              id: "doc-productline",
-              title: "ProductLine",
-              summary: "Loaded doc.",
-            },
-          ],
-        }),
-        0,
-        3,
-      ),
-    ).toBe(false);
+  it("retries only retryable wiki statuses and respects the attempt limit", () => {
+    expect(shouldRetryWikiLoad("missing", 0, 3)).toBe(true);
+    expect(shouldRetryWikiLoad("invalid", 0, 3)).toBe(true);
+    expect(shouldRetryWikiLoad("error", 0, 3)).toBe(true);
+    expect(shouldRetryWikiLoad("missing", 3, 3)).toBe(false);
+    expect(shouldRetryWikiLoad("ready", 0, 3)).toBe(false);
+    expect(shouldRetryWikiLoad("forbidden", 0, 3)).toBe(false);
   });
 
-  it("falls back to trace and markdown indexes when wiki-index.json is missing", async () => {
+  it("keeps the legacy context loader available without invoking it from the wiki-first loader", async () => {
     const fetcher = async (url: string) => {
       if (url.includes("document-traces.json")) {
         return jsonResponse({
@@ -297,9 +327,19 @@ describe("dashboard knowledge loader", () => {
       return new Response("missing", { status: 404 });
     };
 
-    const result = await loadDashboardKnowledge("local-token", fetcher as typeof fetch);
+    const result = await loadKnowledgeContextIndex("local-token", fetcher as typeof fetch);
 
-    expect(result.wikiIndex.pageCount).toBe(0);
-    expect(result.contextIndex.traceCount).toBe(2);
+    const selection: WorkbenchSelection = {
+      nodeId: "function:productline/service.go:Recognise",
+      filePath: "productline/service.go",
+      title: "Recognise",
+      summary: "Recognises product lines.",
+      kind: "function",
+    };
+    const context = resolveKnowledgeContext(result, selection);
+
+    expect(result.traceCount).toBe(2);
+    expect(result.documentCount).toBe(1);
+    expect(context.matchKind).toBe("direct-trace");
   });
 });

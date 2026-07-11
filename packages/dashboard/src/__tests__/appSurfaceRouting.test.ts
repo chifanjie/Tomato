@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { KnowledgeGraph } from "@understand-code/core/types";
 import { useDashboardStore } from "../store";
-import { buildWikiIndex } from "../wiki/wikiIndex";
+import { buildWikiRuntimeIndex } from "../wiki/wikiIndex";
+import { wikiV2Fixture } from "../wiki/__tests__/fixtures/wikiV2Fixtures";
 
 function graph(): KnowledgeGraph {
   return {
@@ -33,30 +34,26 @@ function graph(): KnowledgeGraph {
 
 describe("app surface routing", () => {
   beforeEach(() => {
+    const payload = wikiV2Fixture();
+    const overview = payload.pages[0];
+    if (!overview) throw new Error("missing fixture overview");
+    payload.pages = [{
+      ...overview,
+      id: "wiki:overview",
+      title: "Project Overview",
+      markdownPath: "knowledge-base/README.md",
+      directNodeIds: ["file:src/a.go"],
+      contextNodeIds: [],
+      evidenceIds: [],
+      route: undefined,
+    }];
+    payload.mainReadiness = { status: "blocked", reasons: ["测试夹具"], routePageIds: [] };
+    payload.nodeDocumentation = [];
+    payload.evidence = [];
     useDashboardStore.getState().setGraph(graph());
     useDashboardStore.getState().setDashboardSurface("wiki");
     useDashboardStore.getState().setWikiIndex(
-      buildWikiIndex({
-        version: 1,
-        generatedAt: "2026-07-09T00:00:00.000Z",
-        projectName: "sample",
-        pages: [
-          {
-            id: "wiki:overview",
-            title: "Project Overview",
-            category: "overview",
-            summary: "Overview.",
-            markdownPath: "knowledge-base/README.md",
-            explainedNodeIds: ["file:src/a.go"],
-            relatedNodeIds: [],
-            evidenceIds: [],
-            coverage: "complete",
-            quality: "verified",
-          },
-        ],
-        evidence: [],
-        gaps: [],
-      }),
+      buildWikiRuntimeIndex(payload),
     );
   });
 

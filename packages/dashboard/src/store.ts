@@ -12,10 +12,10 @@ import { buildViewGraph } from "./viewgraph/buildViewGraph";
 import { findParentFileId } from "./viewgraph/readableSelectors";
 import type { ViewGraph } from "./viewgraph/types";
 import {
-  emptyWikiIndex,
-  pagesForNode,
-  type WikiIndex,
+  emptyWikiRuntimeIndex,
+  type WikiRuntimeIndex,
 } from "./wiki/wikiIndex";
+import type { WikiPageV2 } from "@understand-code/core/knowledge-base";
 
 export type Persona = "non-technical" | "junior" | "experienced";
 export type NavigationLevel = "overview" | "layer-detail" | "file-detail";
@@ -57,6 +57,10 @@ const DEFAULT_FILTERS: FilterState = {
   layerIds: new Set<string>(),
   edgeCategories: new Set<EdgeCategory>(ALL_EDGE_CATEGORIES),
 };
+
+function wikiPageNodeIds(page: WikiPageV2): string[] {
+  return [...new Set([...page.directNodeIds, ...page.contextNodeIds])];
+}
 
 /** Categories used for node type filter toggles. Single source of truth for NodeCategory. */
 export type NodeCategory = "code" | "config" | "docs" | "infra" | "data" | "domain" | "knowledge";
@@ -119,8 +123,8 @@ interface DashboardStore {
   selectedNodeId: string | null;
   dashboardSurface: DashboardSurface;
   setDashboardSurface: (surface: DashboardSurface) => void;
-  wikiIndex: WikiIndex;
-  setWikiIndex: (index: WikiIndex) => void;
+  wikiIndex: WikiRuntimeIndex;
+  setWikiIndex: (index: WikiRuntimeIndex) => void;
   activeWikiPageId: string | null;
   selectWikiPage: (pageId: string | null) => void;
   graphExplorerMode: GraphExplorerMode;
@@ -320,7 +324,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
   nodeIdToLayerIds: new Map<string, Set<string>>(),
   selectedNodeId: null,
   dashboardSurface: "wiki",
-  wikiIndex: emptyWikiIndex(),
+  wikiIndex: emptyWikiRuntimeIndex(),
   activeWikiPageId: null,
   graphExplorerMode: "semantic",
   graphFocusNodeIds: [],
@@ -409,9 +413,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
         activeWikiPageId: activePage?.id ?? null,
         ...(hadWikiGraphFocus || !activePage
           ? {
-              graphFocusNodeIds: activePage
-                ? [...activePage.explainedNodeIds, ...activePage.relatedNodeIds]
-                : [],
+              graphFocusNodeIds: activePage ? wikiPageNodeIds(activePage) : [],
             }
           : {}),
       };
@@ -428,14 +430,16 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
       return {
         dashboardSurface: "graph",
         activeWikiPageId: pageId,
-        graphFocusNodeIds: [...page.explainedNodeIds, ...page.relatedNodeIds],
+        graphFocusNodeIds: wikiPageNodeIds(page),
         graphExplorerMode: "focus",
       };
     }),
 
   openWikiForGraphNode: (nodeId) =>
     set((state) => {
-      const page = pagesForNode(state.wikiIndex, nodeId)[0] ?? null;
+      const page = state.wikiIndex.directPagesByNodeId.get(nodeId)?.[0]
+        ?? state.wikiIndex.contextPagesByNodeId.get(nodeId)?.[0]
+        ?? null;
       return {
         dashboardSurface: "wiki",
         selectedNodeId: nodeId,

@@ -14,7 +14,7 @@ export default function KnowledgeConsole() {
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden bg-root text-text-primary max-lg:flex-col max-lg:overflow-auto">
       <WikiNavigation
-        projectName={wikiIndex.payload?.projectName ?? "Repository"}
+        projectName={wikiIndex.payload?.projectName ?? "代码仓库"}
         sections={view.sections}
         activePageId={view.activePage?.id ?? activeWikiPageId}
         emptyReason={view.emptyReason}

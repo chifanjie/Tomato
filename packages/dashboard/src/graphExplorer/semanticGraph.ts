@@ -1,27 +1,28 @@
 import type { GraphEdge, GraphNode, KnowledgeGraph } from "@understand-code/core/types";
-import {
-  coverageForNode,
-  evidenceForPage,
-  pagesForNode,
-  type WikiEvidenceRecord,
-  type WikiGapRecord,
-  type WikiCoverageResult,
-  type WikiIndex,
-  type WikiPageRecord,
-} from "../wiki/wikiIndex";
+import type { GenerationStatus, WikiEvidenceV2, WikiPageV2 } from "@understand-code/core/knowledge-base";
+import type { WikiRuntimeIndex } from "../wiki/wikiIndex";
 
 export type GraphExplorerMode = "global" | "semantic" | "architecture" | "call" | "coverage" | "evidence" | "focus";
 export type SemanticNodeGroup = "capability" | "flow" | "module" | "file" | "symbol" | "document" | "data" | "infra" | "other";
+export type GraphDocumentationStatus = GenerationStatus | "unknown";
+
+export interface GraphDocumentationCoverage {
+  status: GraphDocumentationStatus;
+  pages: WikiPageV2[];
+}
 
 export interface SemanticGraphDocMetadata {
-  coverageStatus: WikiCoverageResult["status"];
+  coverageStatus: GraphDocumentationStatus;
   primaryPageId?: string;
   pageIds: string[];
-  pages: WikiPageRecord[];
+  pages: WikiPageV2[];
+  directPageIds: string[];
+  directPages: WikiPageV2[];
+  contextPageIds: string[];
+  contextPages: WikiPageV2[];
   evidenceIds: string[];
-  evidence: WikiEvidenceRecord[];
-  gapIds: string[];
-  gaps: WikiGapRecord[];
+  evidence: WikiEvidenceV2[];
+  failureReasons: string[];
 }
 
 export interface SemanticGraphNode {
@@ -35,7 +36,7 @@ export interface SemanticGraphNode {
   summary: string;
   filePath?: string;
   lineRange?: [number, number];
-  coverage: WikiCoverageResult;
+  coverage: GraphDocumentationCoverage;
   wikiPageIds: string[];
   evidenceIds: string[];
   docs: SemanticGraphDocMetadata;
@@ -71,7 +72,7 @@ export interface SemanticGraph {
 
 export interface BuildSemanticGraphInput {
   graph: KnowledgeGraph;
-  wikiIndex?: WikiIndex;
+  wikiIndex?: WikiRuntimeIndex;
   mode: GraphExplorerMode;
   focusNodeIds: string[];
 }
@@ -127,7 +128,7 @@ export function semanticGroupForNode(node: GraphNode): SemanticNodeGroup {
   return "other";
 }
 
-function allowedNodeForMode(node: GraphNode, mode: GraphExplorerMode, wikiIndex: WikiIndex | undefined): boolean {
+function allowedNodeForMode(node: GraphNode, mode: GraphExplorerMode, wikiIndex: WikiRuntimeIndex | undefined): boolean {
   if (mode === "semantic") return semanticGroupForNode(node) !== "symbol";
   if (mode === "architecture") return ARCHITECTURE_NODE_TYPES.has(node.type);
   if (mode === "call") return CALL_NODE_TYPES.has(node.type);
@@ -135,7 +136,7 @@ function allowedNodeForMode(node: GraphNode, mode: GraphExplorerMode, wikiIndex:
   if (mode === "evidence") {
     return evidenceIdsForNode(wikiIndex, node.id).length > 0
       || pagesForOptionalWiki(wikiIndex, node.id).length > 0
-      || coverageForOptionalWiki(wikiIndex, node.id).status === "gap";
+      || coverageForOptionalWiki(wikiIndex, node.id).status === "failed";
   }
   return true;
 }
@@ -159,34 +160,29 @@ function pushUnique<T>(values: T[], value: T): void {
   if (!values.includes(value)) values.push(value);
 }
 
-function pagesForOptionalWiki(wikiIndex: WikiIndex | undefined, nodeId: string): WikiPageRecord[] {
-  return wikiIndex ? pagesForNode(wikiIndex, nodeId) : [];
-}
-
-function coverageForOptionalWiki(wikiIndex: WikiIndex | undefined, nodeId: string): WikiCoverageResult {
-  return wikiIndex ? coverageForNode(wikiIndex, nodeId) : { status: "unknown", pages: [], gaps: [] };
-}
-
-function evidenceForNode(wikiIndex: WikiIndex | undefined, nodeId: string): WikiEvidenceRecord[] {
+export function pagesForOptionalWiki(wikiIndex: WikiRuntimeIndex | undefined, nodeId: string): WikiPageV2[] {
   if (!wikiIndex) return [];
-  const evidence: WikiEvidenceRecord[] = [];
-  const seen = new Set<string>();
-  for (const page of pagesForOptionalWiki(wikiIndex, nodeId)) {
-    for (const item of evidenceForPage(wikiIndex, page.id)) {
-      if (seen.has(item.id)) continue;
-      seen.add(item.id);
-      evidence.push(item);
-    }
-  }
-  for (const item of wikiIndex.evidence) {
-    if (!item.nodeIds.includes(nodeId) || seen.has(item.id)) continue;
-    seen.add(item.id);
-    evidence.push(item);
-  }
-  return evidence;
+  const directPages = wikiIndex.directPagesByNodeId.get(nodeId);
+  return directPages && directPages.length > 0
+    ? [...directPages]
+    : [...(wikiIndex.contextPagesByNodeId.get(nodeId) ?? [])];
 }
 
-function evidenceIdsForNode(wikiIndex: WikiIndex | undefined, nodeId: string): string[] {
+export function coverageForOptionalWiki(
+  wikiIndex: WikiRuntimeIndex | undefined,
+  nodeId: string,
+): GraphDocumentationCoverage {
+  return {
+    status: wikiIndex?.nodeDocumentationById.get(nodeId)?.generationStatus ?? "unknown",
+    pages: pagesForOptionalWiki(wikiIndex, nodeId),
+  };
+}
+
+function evidenceForNode(wikiIndex: WikiRuntimeIndex | undefined, nodeId: string): WikiEvidenceV2[] {
+  return [...(wikiIndex?.evidenceByNodeId.get(nodeId) ?? [])];
+}
+
+function evidenceIdsForNode(wikiIndex: WikiRuntimeIndex | undefined, nodeId: string): string[] {
   return evidenceForNode(wikiIndex, nodeId).map((evidence) => evidence.id);
 }
 
@@ -195,18 +191,25 @@ function clusterForNode(node: GraphNode, group: SemanticNodeGroup): string {
 }
 
 function docsForNode(
-  coverage: WikiCoverageResult,
-  pages: WikiPageRecord[],
-  evidence: WikiEvidenceRecord[],
+  wikiIndex: WikiRuntimeIndex | undefined,
+  nodeId: string,
+  coverage: GraphDocumentationCoverage,
+  pages: WikiPageV2[],
+  evidence: WikiEvidenceV2[],
 ): SemanticGraphDocMetadata {
+  const directPages = [...(wikiIndex?.directPagesByNodeId.get(nodeId) ?? [])];
+  const contextPages = [...(wikiIndex?.contextPagesByNodeId.get(nodeId) ?? [])];
   const docs: SemanticGraphDocMetadata = {
     coverageStatus: coverage.status,
     pageIds: pages.map((page) => page.id),
     pages,
+    directPageIds: directPages.map((page) => page.id),
+    directPages,
+    contextPageIds: contextPages.map((page) => page.id),
+    contextPages,
     evidenceIds: evidence.map((item) => item.id),
     evidence,
-    gapIds: coverage.gaps.map((gap) => gap.id),
-    gaps: coverage.gaps,
+    failureReasons: wikiIndex?.payload?.mainReadiness.reasons ?? [],
   };
   if (pages[0]) docs.primaryPageId = pages[0].id;
   return docs;
@@ -244,7 +247,7 @@ export function buildSemanticGraphModel({
     const coverage = coverageForOptionalWiki(wikiIndex, node.id);
     const pages = pagesForOptionalWiki(wikiIndex, node.id);
     const evidence = evidenceForNode(wikiIndex, node.id);
-    const docs = docsForNode(coverage, pages, evidence);
+    const docs = docsForNode(wikiIndex, node.id, coverage, pages, evidence);
 
     return {
       id: node.id,

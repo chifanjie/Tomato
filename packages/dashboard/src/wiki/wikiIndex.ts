@@ -1,205 +1,132 @@
-export type WikiPageCategory =
-  | "overview"
-  | "capability"
-  | "flow"
-  | "module"
-  | "file"
-  | "symbol"
-  | "gap"
-  | "quality"
-  | "other";
+import type {
+  WikiDocumentCategory,
+  WikiEvidenceV2,
+  WikiIndexV2,
+  WikiNodeDocumentationV2,
+  WikiPageV2,
+} from "@understand-code/core/knowledge-base";
 
-export type WikiCoverageStatus = "complete" | "partial" | "gap" | "unknown";
-export type WikiQualityStatus = "verified" | "generated" | "low-confidence";
-export type GapSeverity = "low" | "medium" | "high";
-
-export interface WikiPageRecord {
-  id: string;
-  title: string;
-  category: WikiPageCategory;
-  summary: string;
-  markdownPath: string;
-  explainedNodeIds: string[];
-  relatedNodeIds: string[];
-  evidenceIds: string[];
-  coverage: Exclude<WikiCoverageStatus, "gap" | "unknown">;
-  quality: WikiQualityStatus;
-}
-
-export interface WikiEvidenceRecord {
-  id: string;
-  label: string;
-  filePath?: string;
-  lineRange?: [number, number];
-  nodeIds: string[];
-}
-
-export interface WikiGapRecord {
-  id: string;
-  nodeId: string;
-  reason: string;
-  severity: GapSeverity;
-}
-
-export interface WikiIndexPayload {
-  version: 1;
-  generatedAt: string;
-  projectName: string;
-  pages: WikiPageRecord[];
-  evidence: WikiEvidenceRecord[];
-  gaps: WikiGapRecord[];
-}
-
-export interface WikiCoverageResult {
-  status: WikiCoverageStatus;
-  pages: WikiPageRecord[];
-  gaps: WikiGapRecord[];
+export interface WikiRuntimeIndex {
+  payload: WikiIndexV2 | null;
+  pages: readonly WikiPageV2[];
+  pageCount: number;
+  pagesById: ReadonlyMap<string, WikiPageV2>;
+  nodeDocumentationById: ReadonlyMap<string, WikiNodeDocumentationV2>;
+  evidenceById: ReadonlyMap<string, WikiEvidenceV2>;
+  directPagesByNodeId: ReadonlyMap<string, readonly WikiPageV2[]>;
+  contextPagesByNodeId: ReadonlyMap<string, readonly WikiPageV2[]>;
+  evidenceByNodeId: ReadonlyMap<string, readonly WikiEvidenceV2[]>;
+  routePages: readonly WikiPageV2[];
 }
 
 export interface WikiTreeSection {
-  category: WikiPageCategory;
+  category: WikiDocumentCategory;
   title: string;
-  pages: WikiPageRecord[];
+  pages: WikiPageV2[];
 }
 
-export interface WikiIndex {
-  payload: WikiIndexPayload | null;
-  pages: readonly WikiPageRecord[];
-  evidence: readonly WikiEvidenceRecord[];
-  gaps: readonly WikiGapRecord[];
-  pageCount: number;
-  evidenceCount: number;
-  gapCount: number;
-  pagesById: ReadonlyMap<string, WikiPageRecord>;
-  evidenceById: ReadonlyMap<string, WikiEvidenceRecord>;
-  gapsByNodeId: ReadonlyMap<string, readonly WikiGapRecord[]>;
-  pagesByExplainedNodeId: ReadonlyMap<string, readonly WikiPageRecord[]>;
-  pagesByRelatedNodeId: ReadonlyMap<string, readonly WikiPageRecord[]>;
-}
-
-const SECTION_TITLES: Record<WikiPageCategory, string> = {
-  overview: "Project Overview",
-  capability: "Business Capabilities",
-  flow: "Business Flows",
-  module: "Modules",
-  file: "Files",
-  symbol: "Functions and Classes",
-  gap: "Gaps",
-  quality: "Quality Report",
-  other: "Other",
+const CATEGORY_TITLES: Record<WikiDocumentCategory, string> = {
+  overview: "开始阅读",
+  capability: "核心能力",
+  flow: "业务流程",
+  module: "架构与模块",
+  topic: "函数与类型",
+  file: "文件参考",
+  quality: "知识库质量",
+  coverage: "覆盖情况",
+  other: "其他",
 };
 
-const CATEGORY_ORDER: WikiPageCategory[] = [
+const CATEGORY_ORDER: readonly WikiDocumentCategory[] = [
   "overview",
   "capability",
   "flow",
   "module",
+  "topic",
   "file",
-  "symbol",
-  "gap",
   "quality",
+  "coverage",
   "other",
 ];
 
-function pushMapValue<T>(map: Map<string, T[]>, key: string, value: T): void {
-  const list = map.get(key) ?? [];
-  list.push(value);
-  map.set(key, list);
+function append<K, V>(map: Map<K, V[]>, key: K, value: V): void {
+  map.set(key, [...(map.get(key) ?? []), value]);
 }
 
-function readonlyListMap<T>(map: Map<string, T[]>): ReadonlyMap<string, readonly T[]> {
-  return new Map([...map.entries()].map(([key, value]) => [key, Object.freeze([...value])]));
+function readonlyListMap<K, V>(map: Map<K, V[]>): ReadonlyMap<K, readonly V[]> {
+  return new Map(
+    [...map.entries()].map(([key, values]) => [key, Object.freeze([...values])]),
+  );
 }
 
-export function emptyWikiIndex(): WikiIndex {
-  return buildWikiIndex(null);
-}
-
-export function buildWikiIndex(payload: WikiIndexPayload | null | undefined): WikiIndex {
+export function buildWikiRuntimeIndex(
+  payload: WikiIndexV2 | null | undefined,
+): WikiRuntimeIndex {
   const pages = Object.freeze([...(payload?.pages ?? [])]);
-  const evidence = Object.freeze([...(payload?.evidence ?? [])]);
-  const gaps = Object.freeze([...(payload?.gaps ?? [])]);
-  const pagesById = new Map<string, WikiPageRecord>();
-  const evidenceById = new Map<string, WikiEvidenceRecord>();
-  const gapsByNodeId = new Map<string, WikiGapRecord[]>();
-  const pagesByExplainedNodeId = new Map<string, WikiPageRecord[]>();
-  const pagesByRelatedNodeId = new Map<string, WikiPageRecord[]>();
+  const pagesById = new Map(pages.map((page) => [page.id, page]));
+  const nodeDocumentationById = new Map(
+    (payload?.nodeDocumentation ?? []).map((item) => [item.nodeId, item]),
+  );
+  const evidenceById = new Map(
+    (payload?.evidence ?? []).map((item) => [item.id, item]),
+  );
+  const directPagesByNodeId = new Map<string, WikiPageV2[]>();
+  const contextPagesByNodeId = new Map<string, WikiPageV2[]>();
+  const evidenceByNodeId = new Map<string, WikiEvidenceV2[]>();
 
   for (const page of pages) {
-    pagesById.set(page.id, page);
-    for (const nodeId of page.explainedNodeIds) pushMapValue(pagesByExplainedNodeId, nodeId, page);
-    for (const nodeId of page.relatedNodeIds) pushMapValue(pagesByRelatedNodeId, nodeId, page);
+    for (const nodeId of page.directNodeIds) append(directPagesByNodeId, nodeId, page);
+    for (const nodeId of page.contextNodeIds) append(contextPagesByNodeId, nodeId, page);
+  }
+  for (const item of payload?.evidence ?? []) {
+    for (const nodeId of item.nodeIds) append(evidenceByNodeId, nodeId, item);
   }
 
-  for (const item of evidence) evidenceById.set(item.id, item);
-  for (const gap of gaps) pushMapValue(gapsByNodeId, gap.nodeId, gap);
+  const routePages = Object.freeze(
+    (payload?.mainReadiness.routePageIds ?? []).flatMap((pageId) => {
+      const page = pagesById.get(pageId);
+      return page?.role === "featured" && page.route ? [page] : [];
+    }),
+  );
 
   return {
     payload: payload ?? null,
     pages,
-    evidence,
-    gaps,
     pageCount: pages.length,
-    evidenceCount: evidence.length,
-    gapCount: gaps.length,
     pagesById,
+    nodeDocumentationById,
     evidenceById,
-    gapsByNodeId: readonlyListMap(gapsByNodeId),
-    pagesByExplainedNodeId: readonlyListMap(pagesByExplainedNodeId),
-    pagesByRelatedNodeId: readonlyListMap(pagesByRelatedNodeId),
+    directPagesByNodeId: readonlyListMap(directPagesByNodeId),
+    contextPagesByNodeId: readonlyListMap(contextPagesByNodeId),
+    evidenceByNodeId: readonlyListMap(evidenceByNodeId),
+    routePages,
   };
 }
 
-export function pagesForNode(index: WikiIndex, nodeId: string): WikiPageRecord[] {
-  const explained = index.pagesByExplainedNodeId.get(nodeId) ?? [];
-  const related = index.pagesByRelatedNodeId.get(nodeId) ?? [];
-  const seen = new Set<string>();
-  const result: WikiPageRecord[] = [];
-  for (const page of [...explained, ...related]) {
-    if (seen.has(page.id)) continue;
-    seen.add(page.id);
-    result.push(page);
-  }
-  return result;
+export function emptyWikiRuntimeIndex(): WikiRuntimeIndex {
+  return buildWikiRuntimeIndex(null);
 }
 
-export function primaryPageForNode(index: WikiIndex, nodeId: string): WikiPageRecord | null {
-  return index.pagesByExplainedNodeId.get(nodeId)?.[0] ?? index.pagesByRelatedNodeId.get(nodeId)?.[0] ?? null;
-}
-
-export function evidenceForPage(index: WikiIndex, pageId: string): WikiEvidenceRecord[] {
+export function evidenceForPage(
+  index: WikiRuntimeIndex,
+  pageId: string,
+): WikiEvidenceV2[] {
   const page = index.pagesById.get(pageId);
   if (!page) return [];
-  return page.evidenceIds
-    .map((id) => index.evidenceById.get(id))
-    .filter((item): item is WikiEvidenceRecord => Boolean(item));
+  return page.evidenceIds.flatMap((evidenceId) => {
+    const evidence = index.evidenceById.get(evidenceId);
+    return evidence ? [evidence] : [];
+  });
 }
 
-export function coverageForNode(index: WikiIndex, nodeId: string): WikiCoverageResult {
-  const explainedPages = [...(index.pagesByExplainedNodeId.get(nodeId) ?? [])];
-  const gaps = [...(index.gapsByNodeId.get(nodeId) ?? [])];
-  if (gaps.length > 0) return { status: "gap", pages: pagesForNode(index, nodeId), gaps };
-  if (explainedPages.some((page) => page.coverage === "complete")) {
-    return { status: "complete", pages: pagesForNode(index, nodeId), gaps: [] };
-  }
-  if (explainedPages.length > 0) return { status: "partial", pages: pagesForNode(index, nodeId), gaps: [] };
-  return { status: "unknown", pages: pagesForNode(index, nodeId), gaps: [] };
-}
+export function categorySections(index: WikiRuntimeIndex): WikiTreeSection[] {
+  const pagesByCategory = new Map<WikiDocumentCategory, WikiPageV2[]>();
+  for (const page of index.pages) append(pagesByCategory, page.category, page);
 
-export function pageTree(index: WikiIndex): WikiTreeSection[] {
-  const sections = new Map<WikiPageCategory, WikiPageRecord[]>();
-  for (const page of index.pages) {
-    const list = sections.get(page.category) ?? [];
-    list.push(page);
-    sections.set(page.category, list);
-  }
   return CATEGORY_ORDER.flatMap((category) => {
-    const pages = sections.get(category);
-    if (!pages || pages.length === 0) return [];
-    return [{
-      category,
-      title: SECTION_TITLES[category],
-      pages: [...pages].sort((a, b) => a.title.localeCompare(b.title)),
-    }];
+    const pages = pagesByCategory.get(category);
+    return pages && pages.length > 0
+      ? [{ category, title: CATEGORY_TITLES[category], pages: [...pages] }]
+      : [];
   });
 }

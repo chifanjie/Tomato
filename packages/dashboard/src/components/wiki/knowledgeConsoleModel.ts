@@ -1,21 +1,20 @@
 import {
+  categorySections,
   evidenceForPage,
-  pageTree,
-  type WikiEvidenceRecord,
-  type WikiIndex,
-  type WikiPageRecord,
+  type WikiRuntimeIndex,
   type WikiTreeSection,
 } from "../../wiki/wikiIndex";
+import type { WikiEvidenceV2, WikiPageV2 } from "@understand-code/core/knowledge-base";
 
 export interface KnowledgeConsoleView {
-  activePage: WikiPageRecord | null;
+  activePage: WikiPageV2 | null;
   sections: WikiTreeSection[];
-  evidence: WikiEvidenceRecord[];
+  evidence: WikiEvidenceV2[];
   graphNodeIds: string[];
   emptyReason: string | null;
 }
 
-function activePageFor(index: WikiIndex, activePageId: string | null): WikiPageRecord | null {
+function activePageFor(index: WikiRuntimeIndex, activePageId: string | null): WikiPageV2 | null {
   if (activePageId && index.pagesById.has(activePageId)) {
     return index.pagesById.get(activePageId) ?? null;
   }
@@ -23,18 +22,18 @@ function activePageFor(index: WikiIndex, activePageId: string | null): WikiPageR
 }
 
 export function buildKnowledgeConsoleView(
-  index: WikiIndex,
+  index: WikiRuntimeIndex,
   activePageId: string | null,
 ): KnowledgeConsoleView {
   const activePage = activePageFor(index, activePageId);
   const graphNodeIds = activePage
-    ? [...new Set([...activePage.explainedNodeIds, ...activePage.relatedNodeIds])]
+    ? [...new Set(activePage.directNodeIds)]
     : [];
   return {
     activePage,
-    sections: pageTree(index),
+    sections: categorySections(index),
     evidence: activePage ? evidenceForPage(index, activePage.id) : [],
     graphNodeIds,
-    emptyReason: index.pageCount === 0 ? "No generated wiki metadata is available yet." : null,
+    emptyReason: index.pageCount === 0 ? "还没有生成可阅读的知识库内容。" : null,
   };
 }

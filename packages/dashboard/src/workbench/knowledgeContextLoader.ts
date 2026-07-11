@@ -1,8 +1,7 @@
+import { parseWikiIndex } from "@understand-code/core/knowledge-base";
 import {
-  buildWikiIndex,
-  emptyWikiIndex,
-  type WikiIndex,
-  type WikiIndexPayload,
+  buildWikiRuntimeIndex,
+  type WikiRuntimeIndex,
 } from "../wiki/wikiIndex";
 import {
   buildKnowledgeContextIndex,
@@ -13,9 +12,21 @@ import {
 
 type Fetcher = typeof fetch;
 
-export interface DashboardKnowledge {
-  contextIndex: KnowledgeContextIndex;
-  wikiIndex: WikiIndex;
+export type DashboardKnowledge =
+  | {
+      wikiIndex: WikiRuntimeIndex;
+      wikiStatus: "ready";
+      sourceVersion: 1 | 2;
+    }
+  | {
+      wikiIndex: WikiRuntimeIndex;
+      wikiStatus: "missing" | "invalid" | "forbidden" | "error";
+      sourceVersion: null;
+    };
+
+interface JsonLoadResult {
+  status: "ok" | "missing" | "invalid" | "forbidden" | "error";
+  value: unknown;
 }
 
 function optionalDataUrl(path: string, token: string | null): string {
@@ -37,92 +48,20 @@ async function fetchOptionalJson<T>(url: string, fetcher: Fetcher = fetch): Prom
   }
 }
 
-function documentsFromWikiIndexPayload(payload: WikiIndexPayload | null): KnowledgeDocumentSummary[] {
-  if (!payload) return [];
-  return payload.pages.map((page) => ({
-    id: page.id,
-    title: page.title,
-    summary: page.summary,
-    filePath: page.markdownPath,
-    relatedPaths: wikiPageRelatedPaths(payload, page),
-    anchors: payload.evidence
-      .filter((item) => page.evidenceIds.includes(item.id))
-      .map((item) => ({
-        label: item.label,
-        filePath: item.filePath,
-        lineRange: item.lineRange,
-      })),
-  }));
-}
-
-function wikiPageEvidence(payload: WikiIndexPayload, page: WikiIndexPayload["pages"][number]): WikiIndexPayload["evidence"] {
-  const evidenceIds = new Set(page.evidenceIds);
-  return payload.evidence.filter((item) => evidenceIds.has(item.id));
-}
-
-function wikiPageAnchors(
-  payload: WikiIndexPayload,
-  page: WikiIndexPayload["pages"][number],
-): NonNullable<KnowledgeTraceRecord["anchors"]> {
-  return wikiPageEvidence(payload, page).map((item) => ({
-    label: item.label,
-    filePath: item.filePath,
-    lineRange: item.lineRange,
-  }));
-}
-
-function uniqueStrings(values: readonly (string | undefined)[]): string[] {
-  return [...new Set(values.filter((value): value is string => Boolean(value)))];
-}
-
-function wikiPageRelatedPaths(payload: WikiIndexPayload, page: WikiIndexPayload["pages"][number]): string[] {
-  const evidence = wikiPageEvidence(payload, page);
-  const nodeIds = uniqueStrings([
-    ...page.explainedNodeIds,
-    ...page.relatedNodeIds,
-    ...evidence.flatMap((item) => item.nodeIds),
-  ]);
-  return uniqueStrings([
-    ...nodeIds,
-    ...nodeIds.map(filePathFromNodeId),
-    ...evidence.map((item) => item.filePath),
-  ]);
-}
-
-function tracesFromWikiIndexPayload(payload: WikiIndexPayload | null): KnowledgeTraceRecord[] {
-  if (!payload) return [];
-
-  return payload.pages.flatMap((page) => {
-    const evidence = wikiPageEvidence(payload, page);
-    const anchors = wikiPageAnchors(payload, page);
-    const nodeIds = uniqueStrings([
-      ...page.explainedNodeIds,
-      ...page.relatedNodeIds,
-      ...evidence.flatMap((item) => item.nodeIds),
-    ]);
-    const evidenceFilePaths = uniqueStrings(evidence.map((item) => item.filePath));
-    const sourceFilePaths = uniqueStrings([...nodeIds.map(filePathFromNodeId), ...evidenceFilePaths]);
-    const firstEvidenceFilePath = evidenceFilePaths[0];
-    const baseTrace = {
-      title: page.title,
-      summary: page.summary,
-      businessMeaning: `这段上下文来自 wiki 页面 ${page.markdownPath}。`,
-      changeRisk: "修改这段代码前，先核对 wiki 页面和下方代码证据。",
-      anchors,
-    };
-
-    return [
-      ...nodeIds.map((nodeId) => ({
-        ...baseTrace,
-        nodeId,
-        filePath: filePathFromNodeId(nodeId) ?? firstEvidenceFilePath,
-      })),
-      ...sourceFilePaths.map((filePath) => ({
-        ...baseTrace,
-        filePath,
-      })),
-    ];
-  });
+async function fetchJsonWithStatus(url: string, fetcher: Fetcher): Promise<JsonLoadResult> {
+  try {
+    const response = await fetcher(url);
+    if (response.status === 404) return { status: "missing", value: null };
+    if (response.status === 403) return { status: "forbidden", value: null };
+    if (!response.ok) return { status: "error", value: null };
+    try {
+      return { status: "ok", value: await response.json() };
+    } catch {
+      return { status: "invalid", value: null };
+    }
+  } catch {
+    return { status: "error", value: null };
+  }
 }
 
 async function fetchOptionalText(url: string, fetcher: Fetcher = fetch): Promise<string | null> {
@@ -195,102 +134,6 @@ function stringValue(value: unknown): string | undefined {
 
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
-}
-
-function isStringArrayValue(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
-}
-
-function isOptionalString(value: unknown): value is string | undefined {
-  return value === undefined || typeof value === "string";
-}
-
-function isLineRangeValue(value: unknown): value is [number, number] | undefined {
-  return (
-    value === undefined ||
-    (Array.isArray(value) &&
-      value.length === 2 &&
-      typeof value[0] === "number" &&
-      typeof value[1] === "number")
-  );
-}
-
-function isWikiPageCategory(value: unknown): value is WikiIndexPayload["pages"][number]["category"] {
-  return (
-    value === "overview" ||
-    value === "capability" ||
-    value === "flow" ||
-    value === "module" ||
-    value === "file" ||
-    value === "symbol" ||
-    value === "gap" ||
-    value === "quality" ||
-    value === "other"
-  );
-}
-
-function isWikiPageCoverage(value: unknown): value is WikiIndexPayload["pages"][number]["coverage"] {
-  return value === "complete" || value === "partial";
-}
-
-function isWikiQualityStatus(value: unknown): value is WikiIndexPayload["pages"][number]["quality"] {
-  return value === "verified" || value === "generated" || value === "low-confidence";
-}
-
-function isGapSeverity(value: unknown): value is WikiIndexPayload["gaps"][number]["severity"] {
-  return value === "low" || value === "medium" || value === "high";
-}
-
-function isWikiPageRecord(value: unknown): value is WikiIndexPayload["pages"][number] {
-  return (
-    isRecord(value) &&
-    typeof value.id === "string" &&
-    typeof value.title === "string" &&
-    isWikiPageCategory(value.category) &&
-    typeof value.summary === "string" &&
-    typeof value.markdownPath === "string" &&
-    isStringArrayValue(value.explainedNodeIds) &&
-    isStringArrayValue(value.relatedNodeIds) &&
-    isStringArrayValue(value.evidenceIds) &&
-    isWikiPageCoverage(value.coverage) &&
-    isWikiQualityStatus(value.quality)
-  );
-}
-
-function isWikiEvidenceRecord(value: unknown): value is WikiIndexPayload["evidence"][number] {
-  return (
-    isRecord(value) &&
-    typeof value.id === "string" &&
-    typeof value.label === "string" &&
-    isOptionalString(value.filePath) &&
-    isLineRangeValue(value.lineRange) &&
-    isStringArrayValue(value.nodeIds)
-  );
-}
-
-function isWikiGapRecord(value: unknown): value is WikiIndexPayload["gaps"][number] {
-  return (
-    isRecord(value) &&
-    typeof value.id === "string" &&
-    typeof value.nodeId === "string" &&
-    typeof value.reason === "string" &&
-    isGapSeverity(value.severity)
-  );
-}
-
-function isWikiIndexPayload(value: unknown): value is WikiIndexPayload {
-  return (
-    isRecord(value) &&
-    value.version === 1 &&
-    typeof value.generatedAt === "string" &&
-    typeof value.projectName === "string" &&
-    Array.isArray(value.pages) &&
-    value.pages.every(isWikiPageRecord) &&
-    Array.isArray(value.evidence) &&
-    value.evidence.every(isWikiEvidenceRecord) &&
-    Array.isArray(value.gaps) &&
-    value.gaps.every(isWikiGapRecord)
-  );
 }
 
 function traceRoleLabel(role: string | undefined): string | undefined {
@@ -428,29 +271,43 @@ export async function loadDashboardKnowledge(
   accessToken: string,
   fetcher: Fetcher = fetch,
 ): Promise<DashboardKnowledge> {
-  const wikiPayloadValue = await fetchOptionalJson<unknown>(
+  const wikiLoad = await fetchJsonWithStatus(
     optionalDataUrl("knowledge-base/wiki-index.json", accessToken),
     fetcher,
   );
-  const wikiPayload = isWikiIndexPayload(wikiPayloadValue) ? wikiPayloadValue : null;
-
-  if (wikiPayload) {
-    const wikiIndex = buildWikiIndex(wikiPayload);
+  if (wikiLoad.status !== "ok") {
     return {
-      wikiIndex,
-      contextIndex: buildKnowledgeContextIndex({
-        traces: tracesFromWikiIndexPayload(wikiPayload),
-        documents: documentsFromWikiIndexPayload(wikiPayload),
-      }),
+      wikiIndex: buildWikiRuntimeIndex(null),
+      wikiStatus: wikiLoad.status,
+      sourceVersion: null,
+    };
+  }
+
+  const parsed = parseWikiIndex(wikiLoad.value);
+  if (!parsed.ok || !parsed.sourceVersion) {
+    return {
+      wikiIndex: buildWikiRuntimeIndex(null),
+      wikiStatus: "invalid",
+      sourceVersion: null,
     };
   }
 
   return {
-    wikiIndex: emptyWikiIndex(),
-    contextIndex: await loadKnowledgeContextIndex(accessToken, fetcher),
+    wikiIndex: buildWikiRuntimeIndex(parsed.value),
+    wikiStatus: "ready",
+    sourceVersion: parsed.sourceVersion,
   };
 }
 
+export function shouldRetryWikiLoad(
+  status: DashboardKnowledge["wikiStatus"],
+  attempts: number,
+  maxAttempts: number,
+): boolean {
+  return status !== "ready" && status !== "forbidden" && attempts < maxAttempts;
+}
+
+/** @deprecated Legacy workbench-only retry helper. Wiki-first App uses shouldRetryWikiLoad. */
 export function shouldRetryKnowledgeContextLoad(
   index: Pick<KnowledgeContextIndex, "traceCount" | "documentCount">,
   attempts: number,

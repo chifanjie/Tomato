@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { KnowledgeGraph } from "@understand-code/core/types";
-import { buildWikiIndex } from "../../../wiki/wikiIndex";
+import { buildWikiRuntimeIndex } from "../../../wiki/wikiIndex";
+import { wikiV2Fixture } from "../../../wiki/__tests__/fixtures/wikiV2Fixtures";
 import { buildGraphExplorerView } from "../graphExplorerModel";
 
 function graph(): KnowledgeGraph {
@@ -65,42 +66,62 @@ function graph(): KnowledgeGraph {
   };
 }
 
-const wikiIndex = buildWikiIndex({
-  version: 1,
-  generatedAt: "2026-07-09T00:00:00.000Z",
-  projectName: "sample",
-  pages: [
-    {
-      id: "wiki:build",
-      title: "Build Function",
-      category: "symbol",
-      summary: "Build docs.",
-      markdownPath: "knowledge-base/functions/Build.md",
-      explainedNodeIds: ["function:src/a.go:Build"],
-      relatedNodeIds: ["file:src/a.go"],
-      evidenceIds: ["evidence:build"],
-      coverage: "complete",
-      quality: "verified",
-    },
-  ],
-  evidence: [
-    {
-      id: "evidence:build",
-      label: "Build implementation",
-      filePath: "src/a.go",
-      lineRange: [10, 20],
-      nodeIds: ["function:src/a.go:Build"],
-    },
-  ],
-  gaps: [
-    {
-      id: "gap:b",
-      nodeId: "file:src/b.go",
-      reason: "File B has no wiki page yet.",
-      severity: "medium",
-    },
-  ],
-});
+const wikiPayload = wikiV2Fixture();
+const buildPage = wikiPayload.pages.find((page) => page.id === "page:run");
+if (!buildPage) throw new Error("missing fixture page");
+wikiPayload.pages = [{
+  ...buildPage,
+  id: "wiki:build",
+  title: "Build Function",
+  markdownPath: "knowledge-base/functions/Build.md",
+  category: "topic",
+  directNodeIds: ["function:src/a.go:Build"],
+  contextNodeIds: ["file:src/a.go"],
+  evidenceIds: ["evidence:build"],
+  route: undefined,
+}];
+wikiPayload.mainReadiness = { status: "blocked", reasons: ["测试夹具"], routePageIds: [] };
+wikiPayload.nodeDocumentation = [{
+  nodeId: "function:src/a.go:Build",
+  relation: "direct",
+  quality: "generated",
+  evidenceHealth: "source-linked",
+  generationStatus: "complete",
+  referenceCoverage: "anchored",
+  directPageIds: ["wiki:build"],
+  contextPageIds: [],
+  evidenceIds: ["evidence:build"],
+  primaryPageId: "wiki:build",
+}, {
+  nodeId: "file:src/a.go",
+  relation: "context",
+  quality: "needs-review",
+  evidenceHealth: "missing",
+  generationStatus: "partial",
+  referenceCoverage: "unanchored",
+  directPageIds: [],
+  contextPageIds: ["wiki:build"],
+  evidenceIds: [],
+}, {
+  nodeId: "file:src/b.go",
+  relation: "none",
+  quality: "failed",
+  evidenceHealth: "missing",
+  generationStatus: "failed",
+  referenceCoverage: "unanchored",
+  directPageIds: [],
+  contextPageIds: [],
+  evidenceIds: [],
+}];
+wikiPayload.evidence = [{
+  id: "evidence:build",
+  filePath: "src/a.go",
+  lineRange: [10, 20],
+  nodeIds: ["function:src/a.go:Build"],
+  excerpt: "func Build() {}",
+  evidenceType: "production",
+}];
+const wikiIndex = buildWikiRuntimeIndex(wikiPayload);
 
 describe("graphExplorerModel", () => {
   it("builds full graph explorer view data for a selected node", () => {
@@ -156,7 +177,7 @@ describe("graphExplorerModel", () => {
     expect(view.selectedNode?.id).toBe("function:src/a.go:Build");
     expect(view.selectedNodeVisible).toBe(true);
     expect(view.hiddenSelectedNode).toBeNull();
-    expect(view.selectedCoverage).toMatchObject({ status: "unknown", pages: [], gaps: [] });
+    expect(view.selectedCoverage).toMatchObject({ status: "unknown", pages: [] });
     expect(view.selectedPages).toEqual([]);
     expect(view.canOpenWiki).toBe(false);
   });

@@ -36,7 +36,8 @@ import {
 } from "./workbench/knowledgeContext";
 import {
   loadDashboardKnowledge,
-  shouldRetryKnowledgeContextLoad,
+  loadKnowledgeContextIndex,
+  shouldRetryWikiLoad,
 } from "./workbench/knowledgeContextLoader";
 
 // Lazy-load heavy / optional components so they ship in separate chunks.
@@ -196,7 +197,7 @@ function Dashboard({
 
   useEffect(() => {
     let cancelled = false;
-    let emptyLoadAttempts = 0;
+    let wikiLoadAttempts = 0;
     let retryTimer: number | undefined;
 
     async function loadKnowledgeContext(): Promise<void> {
@@ -204,19 +205,20 @@ function Dashboard({
 
       if (cancelled) return;
 
-      setKnowledgeContextIndex(dashboardKnowledge.contextIndex);
       setWikiIndex(dashboardKnowledge.wikiIndex);
-      if (
-        !shouldRetryKnowledgeContextLoad(
-          dashboardKnowledge.contextIndex,
-          emptyLoadAttempts,
-          KNOWLEDGE_CONTEXT_RELOAD_MAX_ATTEMPTS,
-        )
-      ) {
+      if (dashboardKnowledge.wikiStatus === "forbidden") {
+        onTokenInvalid();
+        return;
+      }
+      if (!shouldRetryWikiLoad(
+        dashboardKnowledge.wikiStatus,
+        wikiLoadAttempts,
+        KNOWLEDGE_CONTEXT_RELOAD_MAX_ATTEMPTS,
+      )) {
         return;
       }
 
-      emptyLoadAttempts += 1;
+      wikiLoadAttempts += 1;
       retryTimer = window.setTimeout(() => {
         retryTimer = undefined;
         void loadKnowledgeContext();
@@ -229,7 +231,17 @@ function Dashboard({
       cancelled = true;
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
-  }, [accessToken, setWikiIndex]);
+  }, [accessToken, onTokenInvalid, setWikiIndex]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadKnowledgeContextIndex(accessToken).then((index) => {
+      if (!cancelled) setKnowledgeContextIndex(index);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken]);
 
   useEffect(() => {
     fetch(dataUrl("knowledge-graph.json", accessToken))

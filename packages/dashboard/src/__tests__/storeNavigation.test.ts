@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import type { WikiPageV2 } from "@understand-code/core/knowledge-base";
 import type { KnowledgeGraph } from "@understand-code/core/types";
 import { useDashboardStore } from "../store";
-import { buildWikiIndex, emptyWikiIndex } from "../wiki/wikiIndex";
+import {
+  buildWikiRuntimeIndex,
+  emptyWikiRuntimeIndex,
+} from "../wiki/wikiIndex";
 
 type PersonaModeStore = ReturnType<typeof useDashboardStore.getState> & {
   activatePersonaMode?: (persona: "non-technical" | "junior" | "experienced") => void;
@@ -39,6 +43,36 @@ function sampleGraph(): KnowledgeGraph {
       },
     ],
   };
+}
+
+function wikiIndexWithPage(
+  page: Partial<WikiPageV2> & Pick<WikiPageV2, "id" | "title" | "category" | "summary" | "markdownPath">,
+) {
+  return buildWikiRuntimeIndex({
+    version: 2,
+    generatedAt: "2026-07-11T00:00:00.000Z",
+    projectName: "sample",
+    source: { outputLanguage: "zh-CN", generationMode: "test" },
+    mainReadiness: { status: "blocked", reasons: ["测试夹具"], routePageIds: [] },
+    referenceCoverage: {
+      status: "complete",
+      files: { covered: 0, total: 0, missingIds: [] },
+      functions: { covered: 0, total: 0, missingIds: [] },
+      types: { covered: 0, total: 0, missingIds: [] },
+    },
+    pages: [{
+      role: "reference",
+      quality: "generated",
+      generationStatus: "partial",
+      directNodeIds: [],
+      contextNodeIds: [],
+      evidenceIds: [],
+      searchTerms: [],
+      ...page,
+    }],
+    nodeDocumentation: [],
+    evidence: [],
+  });
 }
 
 describe("dashboard store readable navigation", () => {
@@ -128,33 +162,21 @@ describe("dashboard store readable navigation", () => {
 describe("dashboard wiki and graph surface state", () => {
   beforeEach(() => {
     useDashboardStore.getState().setDashboardSurface("wiki");
-    useDashboardStore.getState().setWikiIndex(emptyWikiIndex());
+    useDashboardStore.getState().setWikiIndex(emptyWikiRuntimeIndex());
     useDashboardStore.getState().selectWikiPage(null);
     useDashboardStore.getState().setGraphExplorerMode("global");
   });
 
   it("defaults to wiki surface when wiki pages exist", () => {
     useDashboardStore.getState().setGraph(sampleGraph());
-    useDashboardStore.getState().setWikiIndex(buildWikiIndex({
-      version: 1,
-      generatedAt: "2026-07-09T00:00:00.000Z",
-      projectName: "sample",
-      pages: [
-        {
-          id: "wiki:overview",
-          title: "Overview",
-          category: "overview",
-          summary: "Overview.",
-          markdownPath: "knowledge-base/README.md",
-          explainedNodeIds: ["file:src/a.go"],
-          relatedNodeIds: [],
-          evidenceIds: [],
-          coverage: "complete",
-          quality: "verified",
-        },
-      ],
-      evidence: [],
-      gaps: [],
+    useDashboardStore.getState().setWikiIndex(wikiIndexWithPage({
+      id: "wiki:overview",
+      title: "Overview",
+      category: "overview",
+      summary: "Overview.",
+      markdownPath: "knowledge-base/README.md",
+      directNodeIds: ["file:src/a.go"],
+      generationStatus: "complete",
     }));
 
     expect(useDashboardStore.getState().dashboardSurface).toBe("wiki");
@@ -163,26 +185,14 @@ describe("dashboard wiki and graph surface state", () => {
 
   it("focuses graph from wiki page and links graph node back to wiki", () => {
     useDashboardStore.getState().setGraph(sampleGraph());
-    useDashboardStore.getState().setWikiIndex(buildWikiIndex({
-      version: 1,
-      generatedAt: "2026-07-09T00:00:00.000Z",
-      projectName: "sample",
-      pages: [
-        {
-          id: "wiki:function-build",
-          title: "Build Function",
-          category: "symbol",
-          summary: "Build docs.",
-          markdownPath: "knowledge-base/functions/Build.md",
-          explainedNodeIds: ["function:src/a.go:Build"],
-          relatedNodeIds: ["file:src/a.go"],
-          evidenceIds: [],
-          coverage: "partial",
-          quality: "generated",
-        },
-      ],
-      evidence: [],
-      gaps: [],
+    useDashboardStore.getState().setWikiIndex(wikiIndexWithPage({
+      id: "wiki:function-build",
+      title: "Build Function",
+      category: "topic",
+      summary: "Build docs.",
+      markdownPath: "knowledge-base/functions/Build.md",
+      directNodeIds: ["function:src/a.go:Build"],
+      contextNodeIds: ["file:src/a.go"],
     }));
 
     useDashboardStore.getState().openGraphForWikiPage("wiki:function-build");
@@ -203,26 +213,14 @@ describe("dashboard wiki and graph surface state", () => {
 
   it("accepts focus graph explorer mode without clearing graph focus ids", () => {
     useDashboardStore.getState().setGraph(sampleGraph());
-    useDashboardStore.getState().setWikiIndex(buildWikiIndex({
-      version: 1,
-      generatedAt: "2026-07-09T00:00:00.000Z",
-      projectName: "sample",
-      pages: [
-        {
-          id: "wiki:function-build",
-          title: "Build Function",
-          category: "symbol",
-          summary: "Build docs.",
-          markdownPath: "knowledge-base/functions/Build.md",
-          explainedNodeIds: ["function:src/a.go:Build"],
-          relatedNodeIds: ["file:src/a.go"],
-          evidenceIds: [],
-          coverage: "partial",
-          quality: "generated",
-        },
-      ],
-      evidence: [],
-      gaps: [],
+    useDashboardStore.getState().setWikiIndex(wikiIndexWithPage({
+      id: "wiki:function-build",
+      title: "Build Function",
+      category: "topic",
+      summary: "Build docs.",
+      markdownPath: "knowledge-base/functions/Build.md",
+      directNodeIds: ["function:src/a.go:Build"],
+      contextNodeIds: ["file:src/a.go"],
     }));
 
     useDashboardStore.getState().openGraphForWikiPage("wiki:function-build");
@@ -238,26 +236,14 @@ describe("dashboard wiki and graph surface state", () => {
   it("preserves graph surface when wiki metadata reloads", () => {
     useDashboardStore.getState().setGraph(sampleGraph());
     useDashboardStore.getState().setDashboardSurface("graph");
-    useDashboardStore.getState().setWikiIndex(buildWikiIndex({
-      version: 1,
-      generatedAt: "2026-07-09T00:00:00.000Z",
-      projectName: "sample",
-      pages: [
-        {
-          id: "wiki:overview",
-          title: "Overview",
-          category: "overview",
-          summary: "Overview.",
-          markdownPath: "knowledge-base/README.md",
-          explainedNodeIds: ["file:src/a.go"],
-          relatedNodeIds: [],
-          evidenceIds: [],
-          coverage: "complete",
-          quality: "verified",
-        },
-      ],
-      evidence: [],
-      gaps: [],
+    useDashboardStore.getState().setWikiIndex(wikiIndexWithPage({
+      id: "wiki:overview",
+      title: "Overview",
+      category: "overview",
+      summary: "Overview.",
+      markdownPath: "knowledge-base/README.md",
+      directNodeIds: ["file:src/a.go"],
+      generationStatus: "complete",
     }));
 
     expect(useDashboardStore.getState().dashboardSurface).toBe("graph");
@@ -266,26 +252,14 @@ describe("dashboard wiki and graph surface state", () => {
 
   it("does not activate a missing wiki page when opening graph", () => {
     useDashboardStore.getState().setGraph(sampleGraph());
-    useDashboardStore.getState().setWikiIndex(buildWikiIndex({
-      version: 1,
-      generatedAt: "2026-07-09T00:00:00.000Z",
-      projectName: "sample",
-      pages: [
-        {
-          id: "wiki:overview",
-          title: "Overview",
-          category: "overview",
-          summary: "Overview.",
-          markdownPath: "knowledge-base/README.md",
-          explainedNodeIds: ["file:src/a.go"],
-          relatedNodeIds: [],
-          evidenceIds: [],
-          coverage: "complete",
-          quality: "verified",
-        },
-      ],
-      evidence: [],
-      gaps: [],
+    useDashboardStore.getState().setWikiIndex(wikiIndexWithPage({
+      id: "wiki:overview",
+      title: "Overview",
+      category: "overview",
+      summary: "Overview.",
+      markdownPath: "knowledge-base/README.md",
+      directNodeIds: ["file:src/a.go"],
+      generationStatus: "complete",
     }));
 
     useDashboardStore.getState().openGraphForWikiPage("missing");
@@ -297,26 +271,14 @@ describe("dashboard wiki and graph surface state", () => {
 
   it("clears stale graph focus when opening graph for a missing wiki page", () => {
     useDashboardStore.getState().setGraph(sampleGraph());
-    useDashboardStore.getState().setWikiIndex(buildWikiIndex({
-      version: 1,
-      generatedAt: "2026-07-09T00:00:00.000Z",
-      projectName: "sample",
-      pages: [
-        {
-          id: "wiki:function-build",
-          title: "Build Function",
-          category: "symbol",
-          summary: "Build docs.",
-          markdownPath: "knowledge-base/functions/Build.md",
-          explainedNodeIds: ["function:src/a.go:Build"],
-          relatedNodeIds: ["file:src/a.go"],
-          evidenceIds: [],
-          coverage: "partial",
-          quality: "generated",
-        },
-      ],
-      evidence: [],
-      gaps: [],
+    useDashboardStore.getState().setWikiIndex(wikiIndexWithPage({
+      id: "wiki:function-build",
+      title: "Build Function",
+      category: "topic",
+      summary: "Build docs.",
+      markdownPath: "knowledge-base/functions/Build.md",
+      directNodeIds: ["function:src/a.go:Build"],
+      contextNodeIds: ["file:src/a.go"],
     }));
 
     useDashboardStore.getState().openGraphForWikiPage("wiki:function-build");
@@ -335,30 +297,18 @@ describe("dashboard wiki and graph surface state", () => {
 
   it("clears active wiki page when wiki metadata becomes empty", () => {
     useDashboardStore.getState().setGraph(sampleGraph());
-    useDashboardStore.getState().setWikiIndex(buildWikiIndex({
-      version: 1,
-      generatedAt: "2026-07-09T00:00:00.000Z",
-      projectName: "sample",
-      pages: [
-        {
-          id: "wiki:overview",
-          title: "Overview",
-          category: "overview",
-          summary: "Overview.",
-          markdownPath: "knowledge-base/README.md",
-          explainedNodeIds: ["file:src/a.go"],
-          relatedNodeIds: [],
-          evidenceIds: [],
-          coverage: "complete",
-          quality: "verified",
-        },
-      ],
-      evidence: [],
-      gaps: [],
+    useDashboardStore.getState().setWikiIndex(wikiIndexWithPage({
+      id: "wiki:overview",
+      title: "Overview",
+      category: "overview",
+      summary: "Overview.",
+      markdownPath: "knowledge-base/README.md",
+      directNodeIds: ["file:src/a.go"],
+      generationStatus: "complete",
     }));
     useDashboardStore.getState().setDashboardSurface("graph");
 
-    useDashboardStore.getState().setWikiIndex(emptyWikiIndex());
+    useDashboardStore.getState().setWikiIndex(emptyWikiRuntimeIndex());
 
     expect(useDashboardStore.getState().dashboardSurface).toBe("graph");
     expect(useDashboardStore.getState().activeWikiPageId).toBeNull();
@@ -367,26 +317,14 @@ describe("dashboard wiki and graph surface state", () => {
 
   it("clears stale graph focus when wiki metadata removes the focused page", () => {
     useDashboardStore.getState().setGraph(sampleGraph());
-    useDashboardStore.getState().setWikiIndex(buildWikiIndex({
-      version: 1,
-      generatedAt: "2026-07-09T00:00:00.000Z",
-      projectName: "sample",
-      pages: [
-        {
-          id: "wiki:function-build",
-          title: "Build Function",
-          category: "symbol",
-          summary: "Build docs.",
-          markdownPath: "knowledge-base/functions/Build.md",
-          explainedNodeIds: ["function:src/a.go:Build"],
-          relatedNodeIds: ["file:src/a.go"],
-          evidenceIds: [],
-          coverage: "partial",
-          quality: "generated",
-        },
-      ],
-      evidence: [],
-      gaps: [],
+    useDashboardStore.getState().setWikiIndex(wikiIndexWithPage({
+      id: "wiki:function-build",
+      title: "Build Function",
+      category: "topic",
+      summary: "Build docs.",
+      markdownPath: "knowledge-base/functions/Build.md",
+      directNodeIds: ["function:src/a.go:Build"],
+      contextNodeIds: ["file:src/a.go"],
     }));
     useDashboardStore.getState().openGraphForWikiPage("wiki:function-build");
     expect(useDashboardStore.getState().graphFocusNodeIds).toEqual([
@@ -394,7 +332,7 @@ describe("dashboard wiki and graph surface state", () => {
       "file:src/a.go",
     ]);
 
-    useDashboardStore.getState().setWikiIndex(emptyWikiIndex());
+    useDashboardStore.getState().setWikiIndex(emptyWikiRuntimeIndex());
 
     expect(useDashboardStore.getState().dashboardSurface).toBe("graph");
     expect(useDashboardStore.getState().activeWikiPageId).toBeNull();
@@ -404,49 +342,26 @@ describe("dashboard wiki and graph surface state", () => {
 
   it("refreshes graph focus when wiki metadata updates the focused page", () => {
     useDashboardStore.getState().setGraph(sampleGraph());
-    useDashboardStore.getState().setWikiIndex(buildWikiIndex({
-      version: 1,
-      generatedAt: "2026-07-09T00:00:00.000Z",
-      projectName: "sample",
-      pages: [
-        {
-          id: "wiki:function-build",
-          title: "Build Function",
-          category: "symbol",
-          summary: "Build docs.",
-          markdownPath: "knowledge-base/functions/Build.md",
-          explainedNodeIds: ["function:src/a.go:Build"],
-          relatedNodeIds: ["file:src/a.go"],
-          evidenceIds: [],
-          coverage: "partial",
-          quality: "generated",
-        },
-      ],
-      evidence: [],
-      gaps: [],
+    useDashboardStore.getState().setWikiIndex(wikiIndexWithPage({
+      id: "wiki:function-build",
+      title: "Build Function",
+      category: "topic",
+      summary: "Build docs.",
+      markdownPath: "knowledge-base/functions/Build.md",
+      directNodeIds: ["function:src/a.go:Build"],
+      contextNodeIds: ["file:src/a.go"],
     }));
     useDashboardStore.getState().openGraphForWikiPage("wiki:function-build");
 
-    useDashboardStore.getState().setWikiIndex(buildWikiIndex({
-      version: 1,
-      generatedAt: "2026-07-09T00:00:00.000Z",
-      projectName: "sample",
-      pages: [
-        {
-          id: "wiki:function-build",
-          title: "Build Function",
-          category: "symbol",
-          summary: "Updated build docs.",
-          markdownPath: "knowledge-base/functions/Build.md",
-          explainedNodeIds: ["file:src/a.go"],
-          relatedNodeIds: ["class:src/a.go:Worker"],
-          evidenceIds: [],
-          coverage: "complete",
-          quality: "verified",
-        },
-      ],
-      evidence: [],
-      gaps: [],
+    useDashboardStore.getState().setWikiIndex(wikiIndexWithPage({
+      id: "wiki:function-build",
+      title: "Build Function",
+      category: "topic",
+      summary: "Updated build docs.",
+      markdownPath: "knowledge-base/functions/Build.md",
+      directNodeIds: ["file:src/a.go"],
+      contextNodeIds: ["class:src/a.go:Worker"],
+      generationStatus: "complete",
     }));
 
     expect(useDashboardStore.getState().dashboardSurface).toBe("graph");

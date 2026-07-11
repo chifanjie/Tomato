@@ -1,17 +1,15 @@
+import type { WikiPageV2 } from "@understand-code/core/knowledge-base";
 import type { GraphNode, KnowledgeGraph } from "@understand-code/core/types";
 import {
   buildSemanticGraph,
+  coverageForOptionalWiki,
+  pagesForOptionalWiki,
+  type GraphDocumentationCoverage,
   type GraphExplorerMode,
   type SemanticGraph,
   type SemanticGraphNode,
 } from "../../graphExplorer/semanticGraph";
-import {
-  coverageForNode,
-  pagesForNode,
-  type WikiCoverageResult,
-  type WikiIndex,
-  type WikiPageRecord,
-} from "../../wiki/wikiIndex";
+import type { WikiRuntimeIndex } from "../../wiki/wikiIndex";
 
 export interface GraphExplorerView {
   semanticGraph: SemanticGraph;
@@ -19,23 +17,22 @@ export interface GraphExplorerView {
   selectedNodeVisible: boolean;
   hiddenSelectedNode: GraphNode | null;
   selectedSemanticNode: SemanticGraphNode | null;
-  selectedCoverage: WikiCoverageResult | null;
-  selectedPages: WikiPageRecord[];
+  selectedCoverage: GraphDocumentationCoverage | null;
+  selectedPages: WikiPageV2[];
   canOpenWiki: boolean;
 }
 
 export interface BuildGraphExplorerViewInput {
   graph: KnowledgeGraph;
-  wikiIndex?: WikiIndex;
+  wikiIndex?: WikiRuntimeIndex;
   mode: GraphExplorerMode;
   focusNodeIds: string[];
   selectedNodeId: string | null;
 }
 
-const UNKNOWN_COVERAGE: WikiCoverageResult = {
+const UNKNOWN_COVERAGE: GraphDocumentationCoverage = {
   status: "unknown",
   pages: [],
-  gaps: [],
 };
 
 export function buildGraphExplorerView({
@@ -54,10 +51,12 @@ export function buildGraphExplorerView({
     : null;
   const selectedNode = selectedGraphNode && selectedSemanticNode ? selectedGraphNode : null;
   const hiddenSelectedNode = selectedGraphNode && !selectedSemanticNode ? selectedGraphNode : null;
-  const selectedPages = selectedGraphNode && wikiIndex ? pagesForNode(wikiIndex, selectedGraphNode.id) : [];
+  const selectedPages = selectedGraphNode
+    ? pagesForOptionalWiki(wikiIndex, selectedGraphNode.id)
+    : [];
   const selectedCoverage = selectedNode
     ? wikiIndex
-      ? coverageForNode(wikiIndex, selectedNode.id)
+      ? coverageForOptionalWiki(wikiIndex, selectedNode.id)
       : UNKNOWN_COVERAGE
     : null;
 

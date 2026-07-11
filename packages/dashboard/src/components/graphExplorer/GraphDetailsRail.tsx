@@ -11,8 +11,13 @@ function formatLineRange(lineRange: [number, number] | undefined): string | null
 }
 
 function formatCoverage(status: string | undefined): string {
-  if (!status) return "Unknown";
-  return status.charAt(0).toUpperCase() + status.slice(1);
+  const labels: Record<string, string> = {
+    complete: "生成完成",
+    partial: "部分生成",
+    failed: "生成失败",
+    unknown: "未评估",
+  };
+  return status ? labels[status] ?? status : labels.unknown;
 }
 
 export default function GraphDetailsRail({ view }: GraphDetailsRailProps) {
@@ -23,14 +28,14 @@ export default function GraphDetailsRail({ view }: GraphDetailsRailProps) {
   const lineRange = formatLineRange(node?.lineRange);
   const hiddenLineRange = formatLineRange(hiddenNode?.lineRange);
   const evidence = semanticNode?.docs.evidence ?? [];
-  const gaps = view.selectedCoverage?.gaps ?? semanticNode?.docs.gaps ?? [];
+  const failureReasons = semanticNode?.docs.failureReasons ?? [];
 
   return (
     <aside className="flex w-[360px] shrink-0 flex-col border-l border-border-subtle bg-surface xl:h-full max-xl:h-auto max-xl:w-full max-xl:border-l-0 max-xl:border-t">
       <header className="border-b border-border-subtle px-4 py-4">
-        <p className="text-[11px] font-semibold uppercase text-text-muted">Graph Details</p>
+        <p className="text-[11px] font-semibold uppercase text-text-muted">图谱详情</p>
         <h2 className="mt-1 truncate text-base font-semibold text-text-primary">
-          {hiddenNode ? "Selection hidden" : node?.name ?? "Select a node"}
+          {hiddenNode ? "所选节点在当前视图中隐藏" : node?.name ?? "选择一个节点"}
         </h2>
       </header>
 
@@ -38,172 +43,72 @@ export default function GraphDetailsRail({ view }: GraphDetailsRailProps) {
         {hiddenNode ? (
           <>
             <section className="uc-panel-muted p-3">
-              <h3 className="text-[10px] font-semibold uppercase text-text-muted">Hidden Selection</h3>
-              <p className="mt-2 text-sm leading-6 text-text-secondary">
-                {hiddenNode.name} is selected, but the current graph mode does not include it on the canvas.
-                Switch to a mode that shows this node before inspecting evidence or gaps.
-              </p>
+              <h3 className="text-[10px] font-semibold uppercase text-text-muted">隐藏的节点</h3>
+              <p className="mt-2 text-sm leading-6 text-text-secondary">{hiddenNode.name} 仍被选中，但当前图谱模式没有显示它。</p>
               <dl className="mt-3 grid gap-2 text-xs">
-                <div>
-                  <dt className="text-text-muted">Type</dt>
-                  <dd className="mt-0.5 text-text-primary">{hiddenNode.type}</dd>
-                </div>
-                {hiddenNode.filePath && (
-                  <div>
-                    <dt className="text-text-muted">Path</dt>
-                    <dd className="uc-code-ref mt-0.5 text-text-primary">{hiddenNode.filePath}</dd>
-                  </div>
-                )}
-                {hiddenLineRange && (
-                  <div>
-                    <dt className="text-text-muted">Lines</dt>
-                    <dd className="mt-0.5 font-mono text-[11px] text-text-primary">{hiddenLineRange}</dd>
-                  </div>
-                )}
-                <div>
-                  <dt className="text-text-muted">ID</dt>
-                  <dd className="uc-code-ref mt-0.5 text-text-primary">{hiddenNode.id}</dd>
-                </div>
+                <div><dt className="text-text-muted">类型</dt><dd className="mt-0.5 text-text-primary">{hiddenNode.type}</dd></div>
+                {hiddenNode.filePath && <div><dt className="text-text-muted">路径</dt><dd className="uc-code-ref mt-0.5 text-text-primary">{hiddenNode.filePath}</dd></div>}
+                {hiddenLineRange && <div><dt className="text-text-muted">行号</dt><dd className="mt-0.5 font-mono text-[11px] text-text-primary">{hiddenLineRange}</dd></div>}
               </dl>
             </section>
-
-            <section className="uc-panel-muted p-3">
-              <h3 className="text-[10px] font-semibold uppercase text-text-muted">Linked Wiki</h3>
-              {view.canOpenWiki && (
-                <button
-                  type="button"
-                  onClick={() => openWikiForGraphNode(hiddenNode.id)}
-                  className="mt-3 w-full rounded-md border border-accent/35 bg-accent/10 px-3 py-2 text-sm font-semibold text-accent transition-colors hover:bg-accent/15"
-                >
-                  Open linked wiki
-                </button>
-              )}
-              <div className="mt-3 space-y-2">
-                {view.selectedPages.length === 0 ? (
-                  <p className="text-sm text-text-muted">No linked wiki pages for this hidden selection.</p>
-                ) : (
-                  view.selectedPages.map((page) => (
-                    <div key={page.id} className="border-t border-border-subtle pt-2 first:border-t-0 first:pt-0">
-                      <p className="text-sm font-medium text-text-primary">{page.title}</p>
-                      <p className="mt-1 text-xs leading-5 text-text-muted">{page.summary}</p>
-                      <p className="uc-code-ref mt-1">{page.markdownPath}</p>
-                    </div>
-                  ))
-                )}
-              </div>
-            </section>
+            {view.canOpenWiki && (
+              <button type="button" onClick={() => openWikiForGraphNode(hiddenNode.id)} className="w-full rounded-md border border-accent/35 bg-accent/10 px-3 py-2 text-sm font-semibold text-accent">
+                阅读关联文档
+              </button>
+            )}
           </>
         ) : !node ? (
-          <p className="uc-panel-muted p-3 text-sm leading-6 text-text-muted">
-            Select a graph node to inspect wiki coverage, related pages, evidence, and gaps.
-          </p>
+          <p className="uc-panel-muted p-3 text-sm leading-6 text-text-muted">选择一个图谱节点以查看知识库覆盖与代码证据。</p>
         ) : (
           <>
             <section className="uc-panel-muted p-3">
-              <h3 className="text-[10px] font-semibold uppercase text-text-muted">Node</h3>
-              <p className="mt-2 text-sm leading-6 text-text-secondary">{node.summary || "No summary available."}</p>
-              <dl className="mt-3 grid gap-2 text-xs">
-                <div>
-                  <dt className="text-text-muted">Type</dt>
-                  <dd className="mt-0.5 text-text-primary">{node.type}</dd>
-                </div>
-                {semanticNode && (
-                  <div>
-                    <dt className="text-text-muted">Group</dt>
-                    <dd className="mt-0.5 text-text-primary">{semanticNode.group}</dd>
-                  </div>
-                )}
-                {node.filePath && (
-                  <div>
-                    <dt className="text-text-muted">Path</dt>
-                    <dd className="uc-code-ref mt-0.5 text-text-primary">{node.filePath}</dd>
-                  </div>
-                )}
-                {lineRange && (
-                  <div>
-                    <dt className="text-text-muted">Lines</dt>
-                    <dd className="mt-0.5 font-mono text-[11px] text-text-primary">{lineRange}</dd>
-                  </div>
-                )}
-                <div>
-                  <dt className="text-text-muted">ID</dt>
-                  <dd className="uc-code-ref mt-0.5 text-text-primary">{node.id}</dd>
-                </div>
-              </dl>
+              <h3 className="text-[10px] font-semibold uppercase text-text-muted">节点</h3>
+              <p className="mt-2 text-sm leading-6 text-text-secondary">{node.summary || "暂无说明。"}</p>
+              {node.filePath && <p className="uc-code-ref mt-3">{node.filePath}{lineRange ? `:${lineRange}` : ""}</p>}
             </section>
 
             <section className="uc-panel-muted p-3">
               <div className="flex items-center justify-between gap-3">
-                <h3 className="text-[10px] font-semibold uppercase text-text-muted">Wiki Coverage</h3>
-                <span className="rounded border border-border-subtle px-2 py-1 text-[11px] font-medium text-text-secondary">
-                  {formatCoverage(view.selectedCoverage?.status)}
-                </span>
+                <h3 className="text-[10px] font-semibold uppercase text-text-muted">知识库覆盖</h3>
+                <span className="rounded border border-border-subtle px-2 py-1 text-[11px] font-medium text-text-secondary">{formatCoverage(view.selectedCoverage?.status)}</span>
               </div>
               {view.canOpenWiki && (
-                <button
-                  type="button"
-                  onClick={() => openWikiForGraphNode(node.id)}
-                  className="mt-3 w-full rounded-md border border-accent/35 bg-accent/10 px-3 py-2 text-sm font-semibold text-accent transition-colors hover:bg-accent/15"
-                >
-                  Open linked wiki
+                <button type="button" onClick={() => openWikiForGraphNode(node.id)} className="mt-3 w-full rounded-md border border-accent/35 bg-accent/10 px-3 py-2 text-sm font-semibold text-accent">
+                  阅读关联文档
                 </button>
               )}
               <div className="mt-3 space-y-2">
-                {view.selectedPages.length === 0 ? (
-                  <p className="text-sm text-text-muted">No linked wiki pages.</p>
-                ) : (
-                  view.selectedPages.map((page) => (
-                    <div key={page.id} className="border-t border-border-subtle pt-2 first:border-t-0 first:pt-0">
-                      <p className="text-sm font-medium text-text-primary">{page.title}</p>
-                      <p className="mt-1 text-xs leading-5 text-text-muted">{page.summary}</p>
-                      <p className="uc-code-ref mt-1">{page.markdownPath}</p>
-                    </div>
-                  ))
-                )}
+                {view.selectedPages.length === 0 ? <p className="text-sm text-text-muted">暂无关联文档。</p> : view.selectedPages.map((page) => (
+                  <div key={page.id} className="border-t border-border-subtle pt-2 first:border-t-0 first:pt-0">
+                    <p className="text-sm font-medium text-text-primary">{page.title}</p>
+                    <p className="mt-1 text-xs leading-5 text-text-muted">{page.summary}</p>
+                  </div>
+                ))}
               </div>
             </section>
 
             <section className="uc-panel-muted p-3">
-              <h3 className="text-[10px] font-semibold uppercase text-text-muted">Evidence</h3>
-              {evidence.length === 0 ? (
-                <p className="mt-2 text-sm text-text-muted">No evidence records linked.</p>
-              ) : (
+              <h3 className="text-[10px] font-semibold uppercase text-text-muted">代码证据</h3>
+              {evidence.length === 0 ? <p className="mt-2 text-sm text-text-muted">暂无关联证据。</p> : (
                 <ul className="mt-2 space-y-3">
                   {evidence.map((item) => (
                     <li key={item.id}>
-                      <p className="text-sm font-medium text-text-primary">{item.label}</p>
-                      {item.filePath && (
-                        <p className="uc-code-ref mt-1">
-                          {item.filePath}
-                          {item.lineRange ? `:${item.lineRange[0]}-${item.lineRange[1]}` : ""}
-                        </p>
-                      )}
+                      <p className="text-sm font-medium text-text-primary">{item.filePath}</p>
+                      <p className="uc-code-ref mt-1">{item.filePath}:{item.lineRange[0]}-{item.lineRange[1]}</p>
                     </li>
                   ))}
                 </ul>
               )}
             </section>
 
-            <section className="uc-panel-muted p-3">
-              <h3 className="text-[10px] font-semibold uppercase text-text-muted">Gaps</h3>
-              {gaps.length === 0 ? (
-                <p className="mt-2 text-sm text-text-muted">No known documentation gaps.</p>
-              ) : (
-                <ul className="mt-2 space-y-3">
-                  {gaps.map((gap) => (
-                    <li key={gap.id}>
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-medium text-text-primary">{gap.severity}</p>
-                        <span className="rounded border border-border-subtle px-2 py-0.5 text-[11px] text-text-muted">
-                          {gap.id}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-xs leading-5 text-text-muted">{gap.reason}</p>
-                    </li>
-                  ))}
+            {failureReasons.length > 0 && (
+              <section className="uc-panel-muted p-3">
+                <h3 className="text-[10px] font-semibold uppercase text-text-muted">生成状态说明</h3>
+                <ul className="mt-2 list-disc space-y-2 pl-4 text-sm text-text-muted">
+                  {failureReasons.map((reason) => <li key={reason}>{reason}</li>)}
                 </ul>
-              )}
-            </section>
+              </section>
+            )}
           </>
         )}
       </div>

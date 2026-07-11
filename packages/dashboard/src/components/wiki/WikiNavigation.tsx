@@ -10,15 +10,15 @@ interface WikiNavigationProps {
 
 export default function WikiNavigation({ projectName, sections, activePageId, emptyReason, onSelectPage }: WikiNavigationProps) {
   return (
-    <nav aria-label="Wiki navigation" className="flex h-full w-[280px] shrink-0 flex-col border-r border-border-subtle bg-surface max-lg:h-auto max-lg:w-full max-lg:border-b max-lg:border-r-0">
+    <nav aria-label="知识库目录" className="flex h-full w-[280px] shrink-0 flex-col border-r border-border-subtle bg-surface max-lg:h-auto max-lg:w-full max-lg:border-b max-lg:border-r-0">
       <div className="border-b border-border-subtle px-4 py-4">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">Knowledge Base</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">项目知识库</p>
         <h2 className="mt-1 truncate text-base font-semibold text-text-primary">{projectName}</h2>
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-3 py-3">
         {sections.length === 0 ? (
           <p className="uc-panel-muted p-3 text-sm text-text-muted">
-            {emptyReason ?? "No generated wiki metadata is available yet."}
+            {emptyReason ?? "还没有生成可阅读的知识库内容。"}
           </p>
         ) : (
           <div className="space-y-5">

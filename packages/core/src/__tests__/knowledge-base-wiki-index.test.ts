@@ -33,7 +33,7 @@ function writeGenerationFixture(root: string, writeSource: boolean): void {
   }
 }
 
-function runGeneration(sourceRoot: string, outputRoot: string) {
+function runGenerator(sourceRoot: string, outputRoot: string, ...phaseArgs: string[]) {
   return spawnSync(
     "node",
     [
@@ -43,10 +43,39 @@ function runGeneration(sourceRoot: string, outputRoot: string) {
       sourceRoot,
       "--output-root",
       outputRoot,
-      "--deterministic-only",
+      ...phaseArgs,
     ],
     { cwd: repoRoot, encoding: "utf8" },
   );
+}
+
+function runGeneration(sourceRoot: string, outputRoot: string) {
+  return runGenerator(sourceRoot, outputRoot, "--deterministic-only");
+}
+
+const publishedSentinels = {
+  "wiki-index.json": "{\"sentinel\":\"wiki\"}\n",
+  "search-index.json": "{\"sentinel\":\"search\"}\n",
+  ".trace/document-traces.json": "{\"sentinel\":\"traces\"}\n",
+  ".trace/generation-report.json": "{\"sentinel\":\"report\"}\n",
+  "旧知识.md": "# 旧知识\n",
+} as const;
+
+function writePublishedSentinels(outputRoot: string): void {
+  for (const [relativePath, content] of Object.entries(publishedSentinels)) {
+    const path = join(outputRoot, relativePath);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, content);
+  }
+}
+
+function expectPublishedSentinels(outputRoot: string, excluded: string[] = []): void {
+  for (const [relativePath, content] of Object.entries(publishedSentinels)) {
+    if (excluded.includes(relativePath)) continue;
+    const path = join(outputRoot, relativePath);
+    expect(existsSync(path), relativePath).toBe(true);
+    expect(readFileSync(path, "utf8"), relativePath).toBe(content);
+  }
 }
 
 function readJson(path: string): any {
@@ -54,6 +83,54 @@ function readJson(path: string): any {
 }
 
 describe("knowledge base wiki V2 artifact generation", () => {
+  it("preserves the published knowledge base while preparing phased intermediate state", () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), "understand-code-phased-source-"));
+    const outputRoot = mkdtempSync(join(tmpdir(), "understand-code-phased-output-"));
+    try {
+      writeGenerationFixture(sourceRoot, true);
+      writePublishedSentinels(outputRoot);
+      mkdirSync(join(outputRoot, ".intermediate"), { recursive: true });
+      writeFileSync(join(outputRoot, ".intermediate/stale.json"), "{}\n");
+
+      const result = runGenerator(sourceRoot, outputRoot, "--prepare-file-docs");
+
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+      expectPublishedSentinels(outputRoot);
+      expect(existsSync(join(outputRoot, ".intermediate/stale.json"))).toBe(false);
+      expect(existsSync(join(outputRoot, ".intermediate/file-doc-queue.json"))).toBe(true);
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outputRoot, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it("publishes only a diagnostic report when phased prepare reads no source", () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), "understand-code-phased-zero-source-"));
+    const outputRoot = mkdtempSync(join(tmpdir(), "understand-code-phased-zero-output-"));
+    try {
+      writeGenerationFixture(sourceRoot, false);
+      writePublishedSentinels(outputRoot);
+      mkdirSync(join(outputRoot, ".intermediate"), { recursive: true });
+      writeFileSync(join(outputRoot, ".intermediate/sentinel.json"), "{}\n");
+
+      const result = runGenerator(sourceRoot, outputRoot, "--prepare-file-docs");
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("未读取到任何源码，正式知识库未发布");
+      expectPublishedSentinels(outputRoot, [".trace/generation-report.json"]);
+      expect(existsSync(join(outputRoot, ".intermediate/sentinel.json"))).toBe(true);
+      expect(existsSync(join(outputRoot, ".intermediate/file-doc-queue.json"))).toBe(false);
+      expect(existsSync(join(outputRoot, ".intermediate/file-doc-plan.json"))).toBe(false);
+      const report = readJson(join(outputRoot, ".trace/generation-report.json"));
+      expect(report.version).toBe(2);
+      expect(report.sourceRead).toEqual({ covered: 0, total: 1, missingIds: ["file:src/a.ts"] });
+      expect(report.mainReadiness.reasons).toContain("未读取到任何源码文件");
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outputRoot, { recursive: true, force: true });
+    }
+  }, 15_000);
+
   it("publishes all V2 wrappers to an explicit output root", () => {
     const sourceRoot = mkdtempSync(join(tmpdir(), "understand-code-source-"));
     const outputRoot = mkdtempSync(join(tmpdir(), "understand-code-output-"));
@@ -76,6 +153,23 @@ describe("knowledge base wiki V2 artifact generation", () => {
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });
       rmSync(outputRoot, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it("publishes to the default knowledge root when it has no symlink boundary", () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), "understand-code-default-output-"));
+    const outputRoot = join(sourceRoot, ".understand-code/knowledge-base");
+    try {
+      writeGenerationFixture(sourceRoot, true);
+
+      const result = runGeneration(sourceRoot, outputRoot);
+
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+      expect(readJson(join(outputRoot, "wiki-index.json")).version).toBe(2);
+      expect(existsSync(join(sourceRoot, "src/a.ts"))).toBe(true);
+      expect(existsSync(join(sourceRoot, ".understand-code/knowledge-graph.json"))).toBe(true);
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
     }
   }, 15_000);
 
@@ -157,6 +251,52 @@ describe("knowledge base wiki V2 artifact generation", () => {
       expect(existsSync(join(sourceRoot, "src/a.ts"))).toBe(true);
       expect(existsSync(join(sourceRoot, ".understand-code/knowledge-graph.json"))).toBe(true);
       expect(existsSync(join(sourceRoot, "nested-output"))).toBe(false);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a missing output leaf below a symlink to an unrelated external directory", () => {
+    const parent = mkdtempSync(join(tmpdir(), "understand-code-external-ancestor-"));
+    const sourceRoot = join(parent, "source");
+    const externalRoot = join(parent, "external");
+    const linkedOutputBase = join(parent, "linked-output");
+    const outputRoot = join(linkedOutputBase, "new-knowledge-base");
+    mkdirSync(sourceRoot, { recursive: true });
+    mkdirSync(externalRoot, { recursive: true });
+    try {
+      writeGenerationFixture(sourceRoot, true);
+      symlinkSync(externalRoot, linkedOutputBase, "dir");
+
+      const result = runGeneration(sourceRoot, outputRoot);
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("输出目录不能经过符号链接祖先");
+      expect(existsSync(join(externalRoot, "new-knowledge-base"))).toBe(false);
+      expect(existsSync(join(sourceRoot, "src/a.ts"))).toBe(true);
+      expect(existsSync(join(sourceRoot, ".understand-code/knowledge-graph.json"))).toBe(true);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  it("allows a new external output below a trusted real directory reached through a higher alias", () => {
+    const parent = mkdtempSync(join(tmpdir(), "understand-code-deep-external-ancestor-"));
+    const sourceRoot = join(parent, "source");
+    const externalRoot = join(parent, "external");
+    const linkedOutputBase = join(parent, "linked-output");
+    const outputRoot = join(linkedOutputBase, "existing-child/new-knowledge-base");
+    mkdirSync(sourceRoot, { recursive: true });
+    mkdirSync(join(externalRoot, "existing-child"), { recursive: true });
+    try {
+      writeGenerationFixture(sourceRoot, true);
+      symlinkSync(externalRoot, linkedOutputBase, "dir");
+
+      const result = runGeneration(sourceRoot, outputRoot);
+
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+      expect(readJson(join(externalRoot, "existing-child/new-knowledge-base/wiki-index.json")).version).toBe(2);
+      expect(existsSync(join(sourceRoot, "src/a.ts"))).toBe(true);
     } finally {
       rmSync(parent, { recursive: true, force: true });
     }

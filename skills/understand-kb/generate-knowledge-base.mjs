@@ -166,6 +166,52 @@ function assertNoSymlinksInsideOutput(outputRoot) {
   }
 }
 
+function assertNoSymlinkComponents(trustedRoot, targetPath) {
+  const relativePath = relative(resolve(trustedRoot), resolve(targetPath));
+  if (relativePath.startsWith('..') || isAbsolute(relativePath)) {
+    throw new Error('输出目录超出可信发布边界。');
+  }
+  let current = resolve(trustedRoot);
+  for (const segment of relativePath.split(/[\\/]+/).filter(Boolean)) {
+    current = join(current, segment);
+    let stats;
+    try {
+      stats = lstatSync(current);
+    } catch (error) {
+      if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return;
+      throw new Error('无法安全检查输出目录。');
+    }
+    if (stats.isSymbolicLink()) {
+      throw new Error('输出目录不能经过符号链接祖先。');
+    }
+  }
+}
+
+function trustedExistingOutputBoundary(outputRoot) {
+  let current = resolve(outputRoot);
+  while (true) {
+    let stats;
+    try {
+      stats = lstatSync(current);
+    } catch (error) {
+      if (error?.code !== 'ENOENT' && error?.code !== 'ENOTDIR') {
+        throw new Error('无法安全检查输出目录。');
+      }
+      const parent = dirname(current);
+      if (parent === current) throw new Error('无法确定可信输出边界。');
+      current = parent;
+      continue;
+    }
+    if (stats.isSymbolicLink()) {
+      throw new Error('输出目录不能经过符号链接祖先。');
+    }
+    if (!stats.isDirectory()) {
+      throw new Error('输出目录不是可安全发布的目录。');
+    }
+    return current;
+  }
+}
+
 function assertSafeOutputRoot(sourceRoot, outputRoot) {
   const paths = pathsFor(sourceRoot, outputRoot);
   const defaultKnowledgeRoot = join(paths.sourceRoot, '.understand-code', 'knowledge-base');
@@ -206,6 +252,13 @@ function assertSafeOutputRoot(sourceRoot, outputRoot) {
     || (canonicalOutputInsideSource && !canonicalOutputInsideDefaultKnowledgeRoot)
   ) {
     throw new Error('输出目录不能覆盖源码或图谱目录。');
+  }
+
+  if (lexicalOutputInsideSource) {
+    assertNoSymlinkComponents(paths.sourceRoot, paths.outputRoot);
+  } else {
+    const trustedOutputBoundary = trustedExistingOutputBoundary(paths.outputRoot);
+    assertNoSymlinkComponents(trustedOutputBoundary, paths.outputRoot);
   }
 
   if (!lexicalOutputInsideSource && existsSync(paths.outputRoot)) {
@@ -513,36 +566,53 @@ function loadGraph(core, sourceRoot) {
   return validation.data;
 }
 
-function buildArtifacts(core, sourceRoot, kb, config, sourceStats, generationMode) {
+function buildArtifacts(core, {
+  sourceRoot,
+  graph,
+  config,
+  sourceStats,
+  generationMode,
+  fileDocPlan,
+  requiredRouteStages = [],
+  documents = [],
+  warnings = [],
+  errors = [],
+}) {
   return core.buildKnowledgeArtifacts({
-    projectName: kb.profile.graph.project.name,
+    projectName: graph.project.name,
     generatedAt: new Date().toISOString(),
     outputLanguage: config.outputLanguage ?? 'zh-CN',
     generationMode,
-    graphDigest: createHash('sha256').update(JSON.stringify(kb.profile.graph)).digest('hex'),
-    gitCommitHash: kb.profile.graph.project.gitCommitHash,
+    graphDigest: createHash('sha256').update(JSON.stringify(graph)).digest('hex'),
+    gitCommitHash: graph.project.gitCommitHash,
     sourceRootIdentity: resolve(sourceRoot),
     sourceRead: {
       covered: sourceStats.readFiles,
-      total: kb.fileDocPlan.tasks.length,
-      missingIds: kb.fileDocPlan.tasks
+      total: fileDocPlan.tasks.length,
+      missingIds: fileDocPlan.tasks
         .filter((task) => !task.sourceSnapshot.exists)
         .map((task) => task.fileNodeId)
         .sort(),
     },
-    requiredRouteStages: kb.plan.requiredRouteStages,
+    requiredRouteStages,
     businessTerms: config.knowledgeBase?.businessTerms ?? [],
-    nodes: kb.profile.graph.nodes.map((node) => ({
+    nodes: graph.nodes.map((node) => ({
       id: node.id,
       type: node.type,
       name: node.name,
       ...(node.filePath ? { filePath: node.filePath } : {}),
     })),
-    referenceFileNodeIds: kb.fileDocPlan.tasks.map((task) => task.fileNodeId).sort(),
-    documents: kb.documents,
-    warnings: [...kb.validation.warnings, ...kb.coverageReport.warnings],
-    errors: [...kb.validation.errors, ...kb.coverageReport.errors],
+    referenceFileNodeIds: fileDocPlan.tasks.map((task) => task.fileNodeId).sort(),
+    documents,
+    warnings,
+    errors,
   });
+}
+
+function publishZeroSourceReport(outputRoot, artifacts) {
+  writeJsonAtomic(join(outputRoot, '.trace/generation-report.json'), artifacts.generationReport);
+  console.error('未读取到任何源码，正式知识库未发布。');
+  process.exitCode = 1;
 }
 
 function publishKnowledgeBase(outputRoot, kb, artifacts, keepIntermediate = true) {
@@ -555,9 +625,7 @@ function publishKnowledgeBase(outputRoot, kb, artifacts, keepIntermediate = true
   for (const payload of payloads) JSON.stringify(payload);
 
   if (artifacts.generationReport.sourceRead.covered === 0) {
-    writeJsonAtomic(join(outputRoot, '.trace/generation-report.json'), artifacts.generationReport);
-    console.error('未读取到任何源码，正式知识库未发布。');
-    process.exitCode = 1;
+    publishZeroSourceReport(outputRoot, artifacts);
     return false;
   }
 
@@ -583,7 +651,18 @@ function deterministicGenerate(core, sourceRoot, outputRoot, keepIntermediate, a
     knowledgeBaseConfig: config.knowledgeBase ?? {},
     generationMode: 'deterministic',
   });
-  const artifacts = buildArtifacts(core, sourceRoot, kb, config, stats, 'deterministic');
+  const artifacts = buildArtifacts(core, {
+    sourceRoot,
+    graph: kb.profile.graph,
+    config,
+    sourceStats: stats,
+    generationMode: 'deterministic',
+    fileDocPlan: kb.fileDocPlan,
+    requiredRouteStages: kb.plan.requiredRouteStages,
+    documents: kb.documents,
+    warnings: [...kb.validation.warnings, ...kb.coverageReport.warnings],
+    errors: [...kb.validation.errors, ...kb.coverageReport.errors],
+  });
   if (publishKnowledgeBase(outputRoot, kb, artifacts, keepIntermediate)) {
     printCoverage(kb, outputRoot);
   }
@@ -603,7 +682,21 @@ function prepareFileDocs(core, sourceRoot, outputRoot, maxSourceBytes) {
   });
   const { intermediateRoot } = pathsFor(sourceRoot, outputRoot);
 
-  rmSync(outputRoot, { recursive: true, force: true });
+  if (stats.readFiles === 0) {
+    const artifacts = buildArtifacts(core, {
+      sourceRoot,
+      graph,
+      config,
+      sourceStats: stats,
+      generationMode: 'writer',
+      fileDocPlan,
+      warnings: fileDocPlan.warnings,
+    });
+    publishZeroSourceReport(outputRoot, artifacts);
+    return;
+  }
+
+  rmSync(intermediateRoot, { recursive: true, force: true });
   mkdirSync(intermediateRoot, { recursive: true });
   writeJson(join(intermediateRoot, 'kb-profile.json'), {
     project: profile.graph.project,
@@ -827,7 +920,18 @@ function finalizeKnowledgeBase(core, sourceRoot, outputRoot, keepIntermediate, m
   if (graph.project.gitCommitHash !== profile.graph.project.gitCommitHash) {
     console.warn('警告: 生成最终知识库时图谱元数据发生变化。');
   }
-  const artifacts = buildArtifacts(core, sourceRoot, kb, config, sourceStats, 'writer');
+  const artifacts = buildArtifacts(core, {
+    sourceRoot,
+    graph: kb.profile.graph,
+    config,
+    sourceStats,
+    generationMode: 'writer',
+    fileDocPlan: kb.fileDocPlan,
+    requiredRouteStages: kb.plan.requiredRouteStages,
+    documents: kb.documents,
+    warnings: [...kb.validation.warnings, ...kb.coverageReport.warnings],
+    errors: [...kb.validation.errors, ...kb.coverageReport.errors],
+  });
   if (publishKnowledgeBase(outputRoot, kb, artifacts, keepIntermediate)) {
     printCoverage(kb, outputRoot);
   }

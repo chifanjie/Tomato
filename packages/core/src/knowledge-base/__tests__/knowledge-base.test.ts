@@ -497,6 +497,132 @@ describe("graph-to-knowledge-base", () => {
     expect(flow).not.toHaveProperty("route");
   });
 
+  it("keeps six fact-rich deterministic file pages out of repetition quarantine", () => {
+    const fileFacts = [
+      ["account", "核对账户状态并返回准入结果", "读取账户标记并返回是否允许继续处理"],
+      ["inventory", "核对库存水位并返回可售数量", "读取库存快照并返回当前可售数量"],
+      ["pricing", "计算订单价格并返回优惠后金额", "读取价格规则并返回优惠后的订单金额"],
+      ["delivery", "选择配送方案并返回预计到达时间", "读取地址范围并返回可用配送方案"],
+      ["payment", "校验支付状态并返回扣款结果", "读取支付凭证并返回本次扣款状态"],
+      ["notification", "组装通知内容并返回发送结果", "读取通知模板并返回消息发送结果"],
+    ] as const;
+    const nodes: KnowledgeGraph["nodes"] = fileFacts.flatMap(([key, fileSummary, functionSummary]) => [
+      {
+        id: `file:src/${key}.ts`,
+        type: "file" as const,
+        name: `${key}.ts`,
+        filePath: `src/${key}.ts`,
+        summary: fileSummary,
+        tags: [key],
+        complexity: "moderate" as const,
+      },
+      {
+        id: `function:src/${key}.ts:process${key}`,
+        type: "function" as const,
+        name: `process${key}`,
+        filePath: `src/${key}.ts`,
+        lineRange: [1, 1] as [number, number],
+        summary: functionSummary,
+        tags: [key],
+        complexity: "simple" as const,
+      },
+    ]);
+    const graph: KnowledgeGraph = {
+      version: "1.0.0",
+      kind: "codebase",
+      project: {
+        name: "fact-rich-files",
+        languages: ["typescript"],
+        frameworks: [],
+        description: "由六个职责不同的业务文件组成的知识库",
+        analyzedAt: "2026-07-11T00:00:00Z",
+        gitCommitHash: "facts123",
+      },
+      nodes,
+      edges: fileFacts.map(([key]) => ({
+        source: `file:src/${key}.ts`,
+        target: `function:src/${key}.ts:process${key}`,
+        type: "contains" as const,
+        direction: "forward" as const,
+        weight: 1,
+      })),
+      layers: [{
+        id: "layer:business",
+        name: "业务文件层",
+        description: "包含职责不同且均有中文事实摘要的业务文件",
+        nodeIds: nodes.map((node) => node.id),
+      }],
+      tour: [],
+    };
+    const sourceFiles = Object.fromEntries(fileFacts.map(([key]) => [
+      `src/${key}.ts`,
+      `export function process${key}() { return "${key}-result"; }\n`,
+    ]));
+
+    const kb = generateKnowledgeBase(graph, { sourceFiles });
+    const fileDocuments = kb.documents.filter((document) => document.category === "file");
+
+    expect(fileDocuments).toHaveLength(6);
+    expect(fileDocuments.some((document) =>
+      document.qualityIssues.includes("正文包含跨文档重复模板语句"))).toBe(false);
+    expect(fileDocuments.every((document) => document.role === "reference")).toBe(true);
+    expect(fileDocuments.every((document) => document.quality === "generated")).toBe(true);
+  });
+
+  it("keeps six fact-rich zero-symbol file pages out of repetition quarantine", () => {
+    const fileFacts = [
+      ["account-policy", "记录账户准入策略的静态配置内容"],
+      ["inventory-policy", "记录库存售卖策略的静态配置内容"],
+      ["pricing-policy", "记录订单计价策略的静态配置内容"],
+      ["delivery-policy", "记录配送范围策略的静态配置内容"],
+      ["payment-policy", "记录支付渠道策略的静态配置内容"],
+      ["notification-policy", "记录通知模板策略的静态配置内容"],
+    ] as const;
+    const nodes: KnowledgeGraph["nodes"] = fileFacts.map(([key, summary]) => ({
+      id: `file:src/${key}.ts`,
+      type: "file",
+      name: `${key}.ts`,
+      filePath: `src/${key}.ts`,
+      summary,
+      tags: [key],
+      complexity: "simple",
+    }));
+    const graph: KnowledgeGraph = {
+      version: "1.0.0",
+      kind: "codebase",
+      project: {
+        name: "fact-rich-zero-symbol-files",
+        languages: ["typescript"],
+        frameworks: [],
+        description: "由六个没有符号节点但具备真实事实的文件组成",
+        analyzedAt: "2026-07-11T00:00:00Z",
+        gitCommitHash: "zero123",
+      },
+      nodes,
+      edges: [],
+      layers: [{
+        id: "layer:policy",
+        name: "策略文件层",
+        description: "包含六个职责不同的静态策略文件",
+        nodeIds: nodes.map((node) => node.id),
+      }],
+      tour: [],
+    };
+    const sourceFiles = Object.fromEntries(fileFacts.map(([key]) => [
+      `src/${key}.ts`,
+      `export const policyKey = "${key}";\n`,
+    ]));
+
+    const kb = generateKnowledgeBase(graph, { sourceFiles });
+    const fileDocuments = kb.documents.filter((document) => document.category === "file");
+
+    expect(fileDocuments).toHaveLength(6);
+    expect(fileDocuments.some((document) =>
+      document.qualityIssues.includes("正文包含跨文档重复模板语句"))).toBe(false);
+    expect(fileDocuments.every((document) => document.role === "reference")).toBe(true);
+    expect(fileDocuments.every((document) => document.quality === "generated")).toBe(true);
+  });
+
   it("keeps test, dependency, transform, and validation relations in topic coverage", () => {
     const graph = sampleGraph();
     graph.nodes.push(
@@ -768,6 +894,101 @@ describe("graph-to-knowledge-base", () => {
     expect(task!.functionNodeIds.length).toBeGreaterThan(1);
     expect(task!.classNodeIds).toHaveLength(0);
     expect(errors).toEqual([]);
+    const buildFeedEvidence = document.sourceEvidence.find((item) =>
+      item.nodeId === "function:src/service/feed.ts:BuildFeed");
+    expect(buildFeedEvidence?.claim).toContain("函数“BuildFeed”");
+    expect(buildFeedEvidence?.claim).toContain("src/service/feed.ts:1-1");
+    expect(buildFeedEvidence?.claim).toContain("图谱记录了 BuildFeed 节点");
+    expect(buildFeedEvidence?.claim).not.toMatch(/本页|本文|页面|结论|说明/);
+  });
+
+  it("renders stable suffixed anchors for colliding symbol names", () => {
+    const graph: KnowledgeGraph = {
+      version: "1.0.0",
+      kind: "codebase",
+      project: {
+        name: "colliding-symbols",
+        languages: ["typescript"],
+        frameworks: [],
+        description: "验证同名符号锚点",
+        analyzedAt: "2026-07-11T00:00:00Z",
+        gitCommitHash: "anchors123",
+      },
+      nodes: [
+        {
+          id: "file:src/colliding.ts",
+          type: "file",
+          name: "colliding.ts",
+          filePath: "src/colliding.ts",
+          summary: "定义两个作用域中的同名运行函数",
+          tags: ["anchors"],
+          complexity: "moderate",
+        },
+        {
+          id: "function:src/colliding.ts:Alpha.run",
+          type: "function",
+          name: "run",
+          filePath: "src/colliding.ts",
+          lineRange: [1, 1],
+          summary: "运行甲类的处理逻辑并返回甲结果",
+          tags: ["alpha"],
+          complexity: "simple",
+        },
+        {
+          id: "class:src/colliding.ts:Beta.run",
+          type: "class",
+          name: "run",
+          filePath: "src/colliding.ts",
+          lineRange: [2, 2],
+          summary: "运行乙类的处理逻辑并返回乙结果",
+          tags: ["beta"],
+          complexity: "simple",
+        },
+      ],
+      edges: [
+        {
+          source: "file:src/colliding.ts",
+          target: "function:src/colliding.ts:Alpha.run",
+          type: "contains",
+          direction: "forward",
+          weight: 1,
+        },
+        {
+          source: "file:src/colliding.ts",
+          target: "class:src/colliding.ts:Beta.run",
+          type: "contains",
+          direction: "forward",
+          weight: 1,
+        },
+      ],
+      layers: [{
+        id: "layer:source",
+        name: "源码层",
+        description: "同名符号验证层",
+        nodeIds: [
+          "file:src/colliding.ts",
+          "function:src/colliding.ts:Alpha.run",
+          "class:src/colliding.ts:Beta.run",
+        ],
+      }],
+      tour: [],
+    };
+    const profile = buildKnowledgeBaseProfile(graph);
+    const filePlan = buildFileDocPlan(profile, { sourceFiles: {
+      "src/colliding.ts": [
+        "class Alpha { run() { return 'alpha'; } }",
+        "class Beta { run() { return 'beta'; } }",
+      ].join("\n"),
+    } });
+    const task = filePlan.tasks.find((item) => item.filePath === "src/colliding.ts");
+    expect(task).toBeDefined();
+
+    const document = renderDeterministicFileWriterDocument(profile, task!);
+    const anchorCount = (anchor: string): number =>
+      document.markdown.match(new RegExp(`<a id="${anchor}"></a>`, "g"))?.length ?? 0;
+
+    expect(anchorCount("run")).toBe(1);
+    expect(anchorCount("run-2")).toBe(1);
   });
 
   it("reports actual document counts and coverage status", () => {

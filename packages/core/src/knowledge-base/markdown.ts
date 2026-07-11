@@ -28,7 +28,7 @@ import {
   normalizeKnowledgeSourcePath,
   slugPath,
 } from "./paths.js";
-import type { MergeKnowledgeBaseWriterOutputsResult } from "./merge.js";
+import { stableSymbolAnchors, type MergeKnowledgeBaseWriterOutputsResult } from "./merge.js";
 import { TOPIC_WRITER_REQUIRED_SECTIONS } from "./writer-contracts.js";
 import { containsPlaceholderProse, summarizeMarkdownQuality } from "./quality.js";
 import type { MarkdownQualitySummary } from "./quality.js";
@@ -295,44 +295,46 @@ function representedEdgesForTask(profile: ProjectProfile, task: FileDocTask): st
   return [...represented].sort();
 }
 
-function renderFunctionCard(profile: ProjectProfile, task: FileDocTask, nodeId: string): string {
+function renderFunctionCard(profile: ProjectProfile, task: FileDocTask, nodeId: string, anchor: string): string {
   const node = nodeOf(profile, nodeId);
+  const symbolFact = nodeSummary(node);
   const outgoing = profile.indexes.outgoingEdgesByNode.get(nodeId) ?? [];
   const incoming = profile.indexes.incomingEdgesByNode.get(nodeId) ?? [];
   const reads = outgoing.filter((edge) => edge.type === "reads_from");
   const writes = outgoing.filter((edge) => edge.type === "writes_to");
   const stateRelations = outgoing.filter((edge) => edge.type === "transforms" || edge.type === "validates");
   return [
-    `<a id="${slugPath(node?.name ?? nodeId)}"></a>`,
+    `<a id="${anchor}"></a>`,
     `### ${node?.name ?? nodeId}`,
     `- 节点 ID: \`${nodeId}\``,
     `- 位置: ${lineRef(node ?? {}, task.filePath)}`,
     `- 职责: ${nodeSummary(node)}`,
-    `- 输入/依赖: ${incoming.map((edge) => nodeLabel(profile, edge.source)).join(", ") || "图谱未记录明确输入依赖，需结合源码调用点核对。"}`,
-    `- 输出/副作用: ${outgoing.map((edge) => nodeLabel(profile, edge.target)).join(", ") || "图谱未记录明确输出对象，需结合返回值和副作用核对。"}`,
+    `- 输入/依赖: ${incoming.map((edge) => nodeLabel(profile, edge.source)).join(", ") || `${symbolFact}；图谱未记录明确输入依赖，需结合源码调用点核对。`}`,
+    `- 输出/副作用: ${outgoing.map((edge) => nodeLabel(profile, edge.target)).join(", ") || `${symbolFact}；图谱未记录明确输出对象，需结合返回值和副作用核对。`}`,
     `- 上游调用: ${incoming.filter((edge) => edge.type === "calls").map((edge) => nodeLabel(profile, edge.source)).join(", ") || "无"}`,
     `- 下游调用: ${outgoing.filter((edge) => edge.type === "calls").map((edge) => nodeLabel(profile, edge.target)).join(", ") || "无"}`,
-    `- 入口条件: ${incoming.filter((edge) => edge.type === "calls" || edge.type === "triggers").map((edge) => `${nodeLabel(profile, edge.source)} 通过 ${edgeTypeLabel(edge.type)} 进入`).join("；") || "图谱未记录明确入口条件，需从调用点或触发器核对。"}`,
-    `- 字段/资源读取: ${reads.map((edge) => nodeLabel(profile, edge.target)).join(", ") || "图谱未记录 reads_from 关系。"}`,
-    `- 字段/资源写入: ${writes.map((edge) => nodeLabel(profile, edge.target)).join(", ") || "图谱未记录 writes_to 关系。"}`,
-    `- 状态变化/校验: ${stateRelations.map((edge) => `${edgeTypeLabel(edge.type)} ${nodeLabel(profile, edge.target)}`).join("；") || "图谱未记录 transforms 或 validates 关系。"}`,
-    `- 业务含义: 根据名称、标签和调用关系推断，该函数参与 ${node?.tags.join("、") || "当前文件职责"}，真实业务口径需要结合调用场景确认。`,
-    "- 注意事项: 修改前检查调用关系索引和相关测试。",
+    `- 入口条件: ${incoming.filter((edge) => edge.type === "calls" || edge.type === "triggers").map((edge) => `${nodeLabel(profile, edge.source)} 通过 ${edgeTypeLabel(edge.type)} 进入`).join("；") || `${symbolFact}；图谱未记录明确入口条件，需从调用点或触发器核对。`}`,
+    `- 字段/资源读取: ${reads.map((edge) => nodeLabel(profile, edge.target)).join(", ") || `${symbolFact}；图谱未记录 reads_from 关系。`}`,
+    `- 字段/资源写入: ${writes.map((edge) => nodeLabel(profile, edge.target)).join(", ") || `${symbolFact}；图谱未记录 writes_to 关系。`}`,
+    `- 状态变化/校验: ${stateRelations.map((edge) => `${edgeTypeLabel(edge.type)} ${nodeLabel(profile, edge.target)}`).join("；") || `${symbolFact}；图谱未记录 transforms 或 validates 关系。`}`,
+    `- 业务含义: ${symbolFact}；名称、标签和调用关系只用于定位影响范围，真实业务口径需要结合调用场景确认。`,
+    `- 注意事项: 围绕“${symbolFact}”修改实现前，检查调用关系索引和相关测试。`,
     `- 代码证据: ${lineRef(node ?? {}, task.filePath)}`,
   ].join("\n");
 }
 
-function renderClassCard(profile: ProjectProfile, task: FileDocTask, nodeId: string): string {
+function renderClassCard(profile: ProjectProfile, task: FileDocTask, nodeId: string, anchor: string): string {
   const node = nodeOf(profile, nodeId);
+  const symbolFact = nodeSummary(node);
   const outgoing = profile.indexes.outgoingEdgesByNode.get(nodeId) ?? [];
   const incoming = profile.indexes.incomingEdgesByNode.get(nodeId) ?? [];
   return [
-    `<a id="${slugPath(node?.name ?? nodeId)}"></a>`,
+    `<a id="${anchor}"></a>`,
     `### ${node?.name ?? nodeId}`,
     `- 节点 ID: \`${nodeId}\``,
     `- 位置: ${lineRef(node ?? {}, task.filePath)}`,
     `- 职责: ${nodeSummary(node)}`,
-    `- 关联入口/依赖: ${[...incoming, ...outgoing].map((edge) => edge.source === nodeId ? nodeLabel(profile, edge.target) : nodeLabel(profile, edge.source)).join(", ") || "图谱未记录明确关联对象，需结合构造和调用位置核对。"}`,
+    `- 关联入口/依赖: ${[...incoming, ...outgoing].map((edge) => edge.source === nodeId ? nodeLabel(profile, edge.target) : nodeLabel(profile, edge.source)).join(", ") || `${symbolFact}；图谱未记录明确关联对象，需结合构造和调用位置核对。`}`,
     `- 代码证据: ${lineRef(node ?? {}, task.filePath)}`,
   ].join("\n");
 }
@@ -355,6 +357,17 @@ function sourceRangeForNode(task: FileDocTask, node: GraphNode | undefined): [nu
   return [1, task.sourceSnapshot.totalLines];
 }
 
+function concreteSourceClaim(
+  node: GraphNode | undefined,
+  filePath: string,
+  lineRange: [number, number],
+): string {
+  const subject = node?.type === "file"
+    ? `文件“${filePath}”`
+    : `${node ? NODE_TYPE_LABELS[node.type] : "节点"}“${node?.name ?? "未命名"}”`;
+  return `源码范围“${filePath}:${lineRange.join("-")}”记录${subject}的实际内容；${nodeSummary(node, "源码快照保留了该节点的实际内容，但图谱没有提供职责摘要。")}`;
+}
+
 function directEvidenceForTask(profile: ProjectProfile, task: FileDocTask): DirectSourceEvidence[] {
   if (!task.sourceSnapshot.exists || !task.sourceSnapshot.text.trim()) return [];
   return [task.fileNodeId, ...task.functionNodeIds, ...task.classNodeIds].map((nodeId, index) => {
@@ -367,16 +380,13 @@ function directEvidenceForTask(profile: ProjectProfile, task: FileDocTask): Dire
       nodeId,
       lineRange,
       excerpt: excerptForLineRange(task.sourceSnapshot, lineRange),
-      claim: index === 0
-        ? `该文件源码定义“${task.filePath}”中的入口、符号和返回边界。`
-        : `源码中的“${node?.name ?? nodeId}”支持本页对该符号职责、输入输出和风险的说明。`,
+      claim: concreteSourceClaim(node, task.filePath, lineRange),
     };
   });
 }
 
-function specializedFileSections(task: FileDocTask): string[] {
-  const evidence = `\`${task.filePath}:1-${Math.max(1, task.sourceSnapshot.totalLines)}\` 的源码原文支持本页结论。`;
-  const common = "本节只记录可由源码快照核对的结构、读取位置、失败边界和改动影响；运行时值需要外部验证。";
+function specializedFileSections(task: FileDocTask, fileFact: string): string[] {
+  const evidence = `源码范围“${task.filePath}:1-${Math.max(1, task.sourceSnapshot.totalLines)}”记录该文件的实际内容；${fileFact}`;
   const sections = task.referenceKind === "configuration"
     ? ["配置目的与作用域", "配置项、类型与默认值", "读取位置与生效顺序", "缺失、非法值与降级", "测试与改动风险", "源码证据"]
     : task.referenceKind === "schema"
@@ -384,10 +394,21 @@ function specializedFileSections(task: FileDocTask): string[] {
       : task.referenceKind === "documentation"
         ? ["文档目的与读者", "关键结论", "链接与外部依赖", "与代码的对应关系", "过期风险与维护入口", "源码证据"]
         : ["被测行为与范围", "用例、输入与断言", "Fixture、Mock 与外部依赖", "失败分支与回归风险", "尚未覆盖的行为", "与生产代码的对应关系", "源码证据"];
-  return sections.flatMap((section) => [`## ${section}`, section === "源码证据" ? evidence : `${section}：${common}`, ""]);
+  return sections.flatMap((section) => [
+    `## ${section}`,
+    section === "源码证据"
+      ? evidence
+      : `${section}围绕“${fileFact}”核对源码结构、读取位置、失败边界和改动影响；未出现在快照中的运行时值保留为该文件的外部验证项。`,
+    "",
+  ]);
 }
 
 export function renderDeterministicFileWriterDocument(profile: ProjectProfile, task: FileDocTask): FileWriterDocument {
+  const fileFact = nodeSummary(nodeOf(profile, task.fileNodeId), "图谱中存在该文件，但没有摘要。");
+  const primarySymbolFact = nodeSummary(
+    nodeOf(profile, task.functionNodeIds[0] ?? task.classNodeIds[0] ?? task.fileNodeId),
+    fileFact,
+  );
   const representedEdgeIds = representedEdgesForTask(profile, task);
   const localNodeIds = new Set([...task.sourceNodeIds, ...task.functionNodeIds, ...task.classNodeIds]);
   const relatedEdges = profile.graph.edges.filter((edge) => localNodeIds.has(edge.source) || localNodeIds.has(edge.target));
@@ -399,39 +420,42 @@ export function renderDeterministicFileWriterDocument(profile: ProjectProfile, t
   const importantNodeIds = [...task.functionNodeIds, ...task.classNodeIds]
     .filter((nodeId) => nodeOf(profile, nodeId)?.complexity === "complex")
     .sort();
-  const functionCards = task.functionNodeIds.map((nodeId) => renderFunctionCard(profile, task, nodeId));
-  const classCards = task.classNodeIds.map((nodeId) => renderClassCard(profile, task, nodeId));
+  const anchorByNodeId = new Map(stableSymbolAnchors(profile, task).map((item) => [item.nodeId, item.anchor]));
+  const functionCards = task.functionNodeIds.map((nodeId) =>
+    renderFunctionCard(profile, task, nodeId, anchorByNodeId.get(nodeId) ?? slugPath(nodeId)));
+  const classCards = task.classNodeIds.map((nodeId) =>
+    renderClassCard(profile, task, nodeId, anchorByNodeId.get(nodeId) ?? slugPath(nodeId)));
   const codeEvidenceLines = [
-    `- 文件证据: \`${task.filePath}\` 说明本文档覆盖的源码文件位置和模块边界。`,
+    `- 文件证据: 源码快照记录 \`${task.filePath}\`；${fileFact}`,
     ...task.functionNodeIds.map((nodeId) => {
       const node = nodeOf(profile, nodeId);
-      return `- 函数证据: \`${nodeId}\` 位于 ${lineRef(node ?? {}, task.filePath)}，用于核对函数卡片和调用关系。`;
+      return `- 函数证据: \`${nodeId}\` 位于 ${lineRef(node ?? {}, task.filePath)}；${nodeSummary(node)}。`;
     }),
     ...task.classNodeIds.map((nodeId) => {
       const node = nodeOf(profile, nodeId);
-      return `- 类证据: \`${nodeId}\` 位于 ${lineRef(node ?? {}, task.filePath)}，用于核对类卡片和结构说明。`;
+      return `- 类证据: \`${nodeId}\` 位于 ${lineRef(node ?? {}, task.filePath)}；${nodeSummary(node)}。`;
     }),
   ];
   const sourceEvidence = directEvidenceForTask(profile, task);
   const publicationSections = task.referenceKind === "code"
     ? [
         "## 输入、输出与关键字段",
-        `- 输入来自 ${task.incomingEdgeIds.length} 条入站关系以及源码函数参数；输出通过 ${task.outgoingEdgeIds.length} 条出站关系和返回对象传递。`,
-        "- 关键字段只能以源码摘录为准；静态图谱未记录的字段不会被推断为线上业务口径。",
+        `- ${primarySymbolFact}；其输入由 ${task.incomingEdgeIds.length} 条入站关系和源码参数定位，输出由 ${task.outgoingEdgeIds.length} 条出站关系及返回对象定位。`,
+        `- ${fileFact}；关键字段以该文件源码摘录为准，图谱未记录的字段保留为未确认项。`,
         "",
         "## 规则、分支与状态变化",
-        `- 本文件包含 ${task.functionNodeIds.length} 个函数和 ${task.classNodeIds.length} 个类型；分支、校验与状态变化需逐条回到对应源码范围核对。`,
-        "- 缺少显式关系时保留证据缺口，不把静态邻接顺序解释为运行时严格顺序。",
+        `- ${fileFact}；文件内 ${task.functionNodeIds.length} 个函数和 ${task.classNodeIds.length} 个类型的分支、校验与状态变化需回到各自源码范围核对。`,
+        `- ${primarySymbolFact}；没有显式关系的步骤保留证据缺口，不把静态邻接顺序解释为运行时严格顺序。`,
         "",
         "## 配置、依赖与副作用",
-        `- 入站关系 ${task.incomingEdgeIds.length} 条、出站关系 ${task.outgoingEdgeIds.length} 条；读写、配置和外部副作用仅按已建图关系陈述。`,
-        "- 数据库、缓存、消息和线上配置若没有直接证据，将列为待核验项。",
+        `- ${fileFact}；当前记录入站关系 ${task.incomingEdgeIds.length} 条、出站关系 ${task.outgoingEdgeIds.length} 条，读写、配置和外部副作用仅按这些关系陈述。`,
+        `- ${primarySymbolFact}；数据库、缓存、消息和线上配置没有直接证据时，保留为该符号的待核验项。`,
         "",
         "## 异常、测试与改动风险",
-        "- 修改前应运行正常、边界和异常用例，并核对调用方契约、返回字段和配置默认值。",
+        `- 围绕“${fileFact}”修改前，运行正常、边界和异常用例，并核对调用方契约、返回字段和配置默认值。`,
         task.sourceSnapshot.exists
-          ? "- 源码快照可读取；仍需用测试或运行时记录验证动态分支。"
-          : "- 源码快照缺失；当前输出只能保留为失败质量并等待重新生成。",
+          ? `- “${primarySymbolFact}”已有可读取源码快照；动态分支仍需由对应测试或运行时记录验证。`
+          : `- “${fileFact}”缺少源码快照；当前输出保留为失败质量并等待重新生成。`,
         "",
         "## 函数与类型",
         ...[...task.functionNodeIds, ...task.classNodeIds].map((nodeId) => {
@@ -447,7 +471,7 @@ export function renderDeterministicFileWriterDocument(profile: ProjectProfile, t
         ...(sourceEvidence.length === 0 ? ["- 源码快照缺失，当前没有可发布的精确摘录。"] : []),
         "",
       ]
-    : specializedFileSections(task);
+    : specializedFileSections(task, fileFact);
 
   return {
     fileNodeId: task.fileNodeId,
@@ -464,15 +488,15 @@ export function renderDeterministicFileWriterDocument(profile: ProjectProfile, t
       `# ${task.filePath} 文件知识文档`,
       "",
       "## 非技术同学速读",
-      `快速理解: \`${task.filePath}\` 是当前知识库中的文件级文档，重点看它负责什么、包含哪些函数或类，以及改动后会影响哪些调用关系。`,
+      `快速理解: ${fileFact} 本页据此定位 ${task.functionNodeIds.length} 个函数、${task.classNodeIds.length} 个类及其相邻调用关系。`,
       "",
       "## 文件职责",
-      nodeSummary(nodeOf(profile, task.fileNodeId), "图谱中存在该文件，但没有摘要。"),
+      fileFact,
       "",
       "## 业务问题与影响对象",
-      `- 业务问题: \`${task.filePath}\` 需要说明本文件承载的代码职责、结构边界和调用影响，方便业务和工程一起判断改动范围。`,
+      `- 业务问题: \`${task.filePath}\` 的源码事实为“${fileFact}”，用于界定文件职责、结构边界和调用影响。`,
       `- 影响对象: ${[...task.functionNodeIds, ...task.classNodeIds].map((nodeId) => nodeOf(profile, nodeId)?.name ?? nodeId).join(", ") || "当前文件自身和相关调用方"}`,
-      `- 调用影响: 上游关系 ${task.incomingEdgeIds.length} 个，下游关系 ${task.outgoingEdgeIds.length} 个，修改时需要同步核对这些关系是否仍成立。`,
+      `- 调用影响: ${primarySymbolFact} 当前连接 ${task.incomingEdgeIds.length} 个上游关系和 ${task.outgoingEdgeIds.length} 个下游关系，修改时逐条核对这些关系。`,
       "",
       "## 所属位置",
       `- 所属层: ${task.layerId ?? "未分层"}`,
@@ -486,45 +510,45 @@ export function renderDeterministicFileWriterDocument(profile: ProjectProfile, t
       `- 关键函数或类: ${importantNodeIds.map((nodeId) => nodeOf(profile, nodeId)?.name ?? nodeId).join(", ") || "无"}`,
       "",
       "## 关键规则、输入输出与兜底",
-      `- 输入: 来自上游调用、导入或包含关系的请求、数据对象和模块依赖，共 ${task.incomingEdgeIds.length} 条上游关系需要核对。`,
-      `- 输出: 本文件通过函数、类或导出能力影响下游调用对象，共 ${task.outgoingEdgeIds.length} 条下游关系需要核对。`,
+      `- 输入: ${fileFact} 当前有 ${task.incomingEdgeIds.length} 条上游调用、导入或包含关系可用于定位请求、数据对象和模块依赖。`,
+      `- 输出: ${primarySymbolFact} 当前有 ${task.outgoingEdgeIds.length} 条下游关系可用于定位返回对象或导出能力。`,
       task.sourceSnapshot.exists
-        ? "- 兜底: 源文件可读取时，以源码快照、函数卡片和类卡片作为判断依据；线上数据、配置和运行时参数仍需结合实际环境确认。"
-        : "- 兜底: 源文件当前缺失，只能根据图谱关系保留不完整文档，并在恢复源码后重新生成。",
+        ? `- 兜底: ${fileFact} 已有源码快照；函数卡片和类卡片用于核对静态事实，线上数据、配置和运行时参数保留为外部验证项。`
+        : `- 兜底: ${fileFact} 对应源文件缺失，当前只保留图谱事实并等待源码恢复后重新生成。`,
       "",
       "## 入口条件与处理顺序",
-      `- 入口条件: ${incomingRelations.map((edge) => `${nodeLabel(profile, edge.source)} --[${edgeTypeLabel(edge.type)}]--> ${nodeLabel(profile, edge.target)}`).join("；") || `图谱没有记录进入 \`${task.filePath}\` 的显式调用或触发关系，需从导出点和运行时入口核对。`}`,
+      `- 入口条件: ${incomingRelations.map((edge) => `${nodeLabel(profile, edge.source)} --[${edgeTypeLabel(edge.type)}]--> ${nodeLabel(profile, edge.target)}`).join("；") || `${fileFact} 图谱没有记录显式调用或触发关系，需从该文件导出点和运行时入口核对。`}`,
       `- 处理顺序: ${outgoingRelations.slice(0, 12).map((edge) => `${nodeLabel(profile, edge.source)} --[${edgeTypeLabel(edge.type)}]--> ${nodeLabel(profile, edge.target)}`).join("；") || `图谱没有记录 \`${task.filePath}\` 的下游关系。`}`,
-      `- 顺序边界: 上述处理顺序来自静态关系图，只能说明 \`${task.filePath}\` 与相邻节点的关系，不能单独证明异步、并行或条件分支的严格运行时先后。`,
+      `- 顺序边界: ${primarySymbolFact} 上述顺序仅来自静态关系图，不能单独证明异步、并行或条件分支的严格运行时先后。`,
       "",
       "## 字段读写与状态变化",
-      `- 读取: ${readRelations.map((edge) => `${nodeLabel(profile, edge.source)} 读取 ${nodeLabel(profile, edge.target)}`).join("；") || `\`${task.filePath}\` 未检测到 reads_from 关系；函数参数和对象字段仍需结合源码核对。`}`,
-      `- 写入: ${writeRelations.map((edge) => `${nodeLabel(profile, edge.source)} 写入 ${nodeLabel(profile, edge.target)}`).join("；") || `\`${task.filePath}\` 未检测到 writes_to 关系，不能据此断言没有缓存、数据库或内存写入。`}`,
-      `- 状态变化: ${stateRelations.map((edge) => `${nodeLabel(profile, edge.source)} 通过 ${edgeTypeLabel(edge.type)} 作用于 ${nodeLabel(profile, edge.target)}`).join("；") || `\`${task.filePath}\` 未检测到 transforms/validates 关系；返回对象变更和校验失败路径需从源码确认。`}`,
+      `- 读取: ${readRelations.map((edge) => `${nodeLabel(profile, edge.source)} 读取 ${nodeLabel(profile, edge.target)}`).join("；") || `${fileFact} 未检测到 reads_from 关系；函数参数和对象字段仍需结合该文件源码核对。`}`,
+      `- 写入: ${writeRelations.map((edge) => `${nodeLabel(profile, edge.source)} 写入 ${nodeLabel(profile, edge.target)}`).join("；") || `${fileFact} 未检测到 writes_to 关系，不能据此断言没有缓存、数据库或内存写入。`}`,
+      `- 状态变化: ${stateRelations.map((edge) => `${nodeLabel(profile, edge.source)} 通过 ${edgeTypeLabel(edge.type)} 作用于 ${nodeLabel(profile, edge.target)}`).join("；") || `${primarySymbolFact} 未检测到 transforms/validates 关系；返回对象变更和校验失败路径需从源码确认。`}`,
       "",
       "## 函数卡片",
-      functionCards.join("\n\n") || "本文件当前没有图谱函数节点；阅读时应重点核对文件职责、类卡片和调用关系，确认是否存在未被解析的导出函数或动态定义。",
+      functionCards.join("\n\n") || `${fileFact} 当前没有图谱函数节点；结合文件职责、类卡片和调用关系核对是否存在未被解析的导出函数或动态定义。`,
       "",
       "## 类卡片",
-      classCards.join("\n\n") || "本文件当前没有图谱类节点；阅读时应重点核对函数卡片、文件结构和源码导出，确认是否存在未被解析的类或构造对象。",
+      classCards.join("\n\n") || `${fileFact} 当前没有图谱类节点；结合函数卡片和源码导出核对是否存在未被解析的类或构造对象。`,
       "",
       "## 调用关系",
       representedEdgeIds.map((id) => `- ${id}`).join("\n") || "- 图谱未记录调用、导入或包含关系。",
       "",
       "## 风险点与待确认项",
       task.sourceSnapshot.exists
-        ? "- 运行时配置、数据内容和线上流量路径不会完全体现在本地图谱中，修改前需要结合部署环境、调用方和测试结果确认。"
-        : "- 源文件缺失，当前文档只能基于图谱生成，最终状态必须为不完整。",
+        ? `- ${fileFact} 的运行时配置、数据内容和线上流量路径不会完全体现在本地图谱中，修改前结合部署环境、调用方和测试结果确认。`
+        : `- ${fileFact} 对应源文件缺失，当前文档只基于图谱生成并保持不完整状态。`,
       "",
       "## 证据分级",
-      `- 本地代码事实: 文件路径 \`${task.filePath}\`、${task.functionNodeIds.length} 个函数节点、${task.classNodeIds.length} 个类节点和 ${representedEdgeIds.length} 条相邻关系来自源码快照或图谱。`,
-      `- 代码推断: 本文对 \`${task.filePath}\` 的入口、下游影响和状态变化解释由节点名称、摘要及关系类型归纳，不等同于运行时观测。`,
-      `- 外部待核验: \`${task.filePath}\` 使用的真实配置值、数据库内容、流量分支和发布效果需要通过配置平台、日志、指标或调用方契约确认。`,
+      `- 本地代码事实: ${fileFact}；另有 ${task.functionNodeIds.length} 个函数节点、${task.classNodeIds.length} 个类节点和 ${representedEdgeIds.length} 条相邻关系来自源码快照或图谱。`,
+      `- 代码推断: ${primarySymbolFact}；入口、下游影响和状态变化由该节点摘要及关系类型归纳，不等同于运行时观测。`,
+      `- 外部待核验: 围绕“${fileFact}”使用的真实配置值、数据库内容、流量分支和发布效果需通过配置平台、日志、指标或调用方契约确认。`,
       "",
       "## 待核验清单",
-      `- [ ] 核对 \`${task.filePath}\` 的真实入口是否与 ${incomingRelations.length} 条入站关系一致，并补充动态调用或反射入口。`,
-      `- [ ] 核对 \`${task.filePath}\` 的读取、写入和状态变化是否遗漏未建图的字段、缓存、数据库或消息副作用。`,
-      `- [ ] 运行与 \`${task.filePath}\` 相关的单元测试和集成测试，确认兜底、错误路径及关键分支。`,
+      `- [ ] 围绕“${fileFact}”核对真实入口是否与 ${incomingRelations.length} 条入站关系一致，并补充动态调用或反射入口。`,
+      `- [ ] 围绕“${primarySymbolFact}”核对读取、写入和状态变化是否遗漏未建图的字段、缓存、数据库或消息副作用。`,
+      `- [ ] 为“${primarySymbolFact}”运行相关单元测试和集成测试，确认兜底、错误路径及关键分支。`,
       "",
       "## 代码证据",
       codeEvidenceLines.join("\n"),
@@ -596,9 +620,7 @@ export function renderDeterministicTopicWriterDocument(
       lineRange,
       nodeId: item.id,
       excerpt,
-      claim: item.id === topic.topicNodeId
-        ? `该源码摘录证明“${topic.title}”直接讲解的主题入口。`
-        : `该源码摘录支持“${topic.title}”中的依赖、输入输出或状态变化结论。`,
+      claim: concreteSourceClaim(item, filePath, lineRange),
     });
   }
   const sections: Record<string, string> = {
@@ -1766,7 +1788,7 @@ function evidenceForNode(
     lineRange,
     nodeId,
     excerpt,
-    claim: `源码快照在“${normalizedPath}:${lineRange.join("-")}”记录了${subject}的实际内容，本页据此确认该节点的源码位置和静态内容。`,
+    claim: `源码快照在“${normalizedPath}:${lineRange.join("-")}”记录了${subject}的实际内容，该摘录给出该节点的源码位置和静态内容。`,
   };
 }
 
@@ -1807,7 +1829,7 @@ function supportEvidence(
 function sourceEvidenceMarkdown(evidence: SourceEvidence[]): string {
   if (evidence.length === 0) return "- 证据不足：当前源码快照没有可引用的精确位置。";
   return evidence.map((item) =>
-    `- ${item.claim ?? "该源码位置支持本页结论"} 证据：\`${item.filePath}\`${item.lineRange ? `:${item.lineRange.join("-")}` : ""}${item.excerpt ? `；摘录：\`${item.excerpt}\`` : ""}`,
+    `- ${item.claim ?? "该源码位置记录可核对的静态内容"} 证据：\`${item.filePath}\`${item.lineRange ? `:${item.lineRange.join("-")}` : ""}${item.excerpt ? `；摘录：\`${item.excerpt}\`` : ""}`,
   ).join("\n");
 }
 

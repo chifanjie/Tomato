@@ -159,6 +159,13 @@ describe("publication quality", () => {
       "该源码位置只用于支持相关结论。",
       "该源码可仅用于支持本页相关结论。",
       "该代码能仅用于证明本文独立结论。",
+      "源码中的“run”支持本页对该符号职责、输入输出和风险的说明。",
+      "该源码摘录证明“BuildFeed 关键函数专题”直接讲解的主题入口。",
+      "该源码摘录支持“BuildFeed 关键函数专题”中的依赖、输入输出或状态变化结论。",
+      "该源码支撑“BuildFeed”页面中的职责说明。",
+      "该摘录表明本文关于“BuildFeed”的相关结论。",
+      "该代码说明“BuildFeed”直接讲解的主题入口。",
+      "该证据佐证“BuildFeed”页面中的风险说明。",
     ];
 
     for (const claim of metaClaims) {
@@ -176,7 +183,7 @@ describe("publication quality", () => {
 
     const concrete = FILE_EVIDENCE.map((item, index) => ({
       ...item,
-      claim: index === 0 ? "该文件定义运行入口。" : "运行函数在空输入时返回空列表。",
+      claim: index === 0 ? "源码表明登录页面加载失败时返回重试提示。" : "运行函数在空输入时返回空列表。",
     }));
     expect(evaluatePublication(fileDocument(), concrete).quality).toBe("generated");
   });
@@ -316,7 +323,7 @@ describe("publication quality", () => {
         filePath: `src/source-${index}.ts`,
         lineRange: [1, 3] as [number, number],
         excerpt: "export function shared() {\n  return repeatedImplementationLine;\n}",
-        claim: `该源码支持页面 ${index} 的独立结论。`,
+        claim: `源码范围“src/source-${index}.ts:1-3”记录 shared 函数返回重复实现标记。`,
       }],
     }));
 

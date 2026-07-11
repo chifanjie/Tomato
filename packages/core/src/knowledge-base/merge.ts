@@ -50,7 +50,7 @@ function compareByDocumentPath<T extends { documentPath: string; title: string }
   return a.documentPath.localeCompare(b.documentPath) || a.title.localeCompare(b.title);
 }
 
-function stableSymbolAnchors(profile: ProjectProfile, task: FileDocTask): SymbolAnchor[] {
+export function stableSymbolAnchors(profile: ProjectProfile, task: FileDocTask): SymbolAnchor[] {
   const counts = new Map<string, number>();
   return [...new Set([...task.functionNodeIds, ...task.classNodeIds])]
     .sort((left, right) => left.localeCompare(right))

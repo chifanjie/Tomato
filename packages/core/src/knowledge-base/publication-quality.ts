@@ -65,6 +65,8 @@ const NON_CONCRETE_EVIDENCE_CLAIM_PATTERNS = [
   /与该源码位置相邻的结论/u,
   /(?:该)?(?:(?:源码|代码)(?:摘录|位置)?|摘录|位置|证据)(?:仅|只|能|可|用于)*(?:支持|证明)(?:本页|本文|当前页面)?(?:的|中|中的)?(?:相关|独立|相邻)?结论/u,
 ] as const;
+const META_EVIDENCE_PREDICATE = /(?:支持|证明|支撑|表明|说明|佐证)/u;
+const PUBLICATION_ARTIFACT_LANGUAGE = /(?:本页|本文|当前页面|页面中|页面的|直接讲解的主题入口|结论|(?:相关|独立|相邻|职责|风险|主题)的?说明)/u;
 
 const TRADITIONAL_ONLY_CHARACTERS = /[體臺萬與為後發裡這麼說從個還]/u;
 const BEHAVIOR_EDGE_TYPES = new Set([
@@ -158,12 +160,14 @@ export function requiredSectionsForDocument(document: PublicationDocument): read
 export function isValidPublicationEvidence(evidence: PublicationEvidence): boolean {
   const [start, end] = evidence.lineRange ?? [];
   const claim = evidence.claim?.replace(/\s+/g, "") ?? "";
+  const nonConcreteClaim = NON_CONCRETE_EVIDENCE_CLAIM_PATTERNS.some((pattern) => pattern.test(claim))
+    || (META_EVIDENCE_PREDICATE.test(claim) && PUBLICATION_ARTIFACT_LANGUAGE.test(claim));
   return Boolean(
     evidence.nodeId?.trim()
     && evidence.filePath?.trim()
     && evidence.excerpt?.trim()
     && /\p{Script=Han}/u.test(claim)
-    && !NON_CONCRETE_EVIDENCE_CLAIM_PATTERNS.some((pattern) => pattern.test(claim))
+    && !nonConcreteClaim
     && Number.isInteger(start)
     && Number.isInteger(end)
     && start > 0

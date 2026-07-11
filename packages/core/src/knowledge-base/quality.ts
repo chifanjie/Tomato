@@ -363,6 +363,6 @@ function publicationEvidenceForCompatibility(
     filePath: ref,
     lineRange: [1, 1],
     excerpt,
-    claim: "该来源支持兼容质量检查中的页面结论。",
+    claim: `来源“${ref}:1”记录兼容质量检查使用的实际正文摘录。`,
   }];
 }

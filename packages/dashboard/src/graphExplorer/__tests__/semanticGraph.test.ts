@@ -369,8 +369,36 @@ describe("semanticGraph", () => {
     expect(failed?.docs).toMatchObject({
       coverageStatus: "failed",
       pageIds: [],
-      failureReasons: ["存在生成失败节点"],
+      failureReasons: [
+        "节点文档生成失败",
+        "节点缺少源码证据",
+        "节点参考文档尚未锚定",
+      ],
     });
+  });
+
+  it("keeps corpus readiness reasons off complete nodes and derives node-specific notes", () => {
+    const semantic = buildSemanticGraph({
+      graph: graph(),
+      wikiIndex,
+      mode: "global",
+      focusNodeIds: [],
+    });
+
+    const complete = semantic.nodes.find((node) => node.id === "domain:commerce");
+    const failed = semantic.nodes.find((node) => node.id === "file:shared/rate_limit.go");
+
+    expect(wikiIndex.payload?.mainReadiness).toMatchObject({
+      status: "blocked",
+      reasons: ["存在生成失败节点"],
+    });
+    expect(complete?.coverage.status).toBe("complete");
+    expect(complete?.docs.failureReasons).toEqual([]);
+    expect(failed?.docs.failureReasons).toEqual([
+      "节点文档生成失败",
+      "节点缺少源码证据",
+      "节点参考文档尚未锚定",
+    ]);
   });
 
   it("bundles multiple edge types between the same pair and preserves directions", () => {

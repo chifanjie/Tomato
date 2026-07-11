@@ -190,6 +190,20 @@ function clusterForNode(node: GraphNode, group: SemanticNodeGroup): string {
   return node.filePath?.split("/")[0] ?? group;
 }
 
+function failureReasonsForNode(wikiIndex: WikiRuntimeIndex | undefined, nodeId: string): string[] {
+  const documentation = wikiIndex?.nodeDocumentationById.get(nodeId);
+  if (!documentation) return [];
+
+  const reasons: string[] = [];
+  if (documentation.generationStatus === "partial") reasons.push("节点文档仅部分生成");
+  if (documentation.generationStatus === "failed") reasons.push("节点文档生成失败");
+  if (documentation.evidenceHealth === "weak") reasons.push("节点源码证据关联较弱");
+  if (documentation.evidenceHealth === "unreadable") reasons.push("节点源码证据无法读取");
+  if (documentation.evidenceHealth === "missing") reasons.push("节点缺少源码证据");
+  if (documentation.referenceCoverage === "unanchored") reasons.push("节点参考文档尚未锚定");
+  return reasons;
+}
+
 function docsForNode(
   wikiIndex: WikiRuntimeIndex | undefined,
   nodeId: string,
@@ -209,7 +223,7 @@ function docsForNode(
     contextPages,
     evidenceIds: evidence.map((item) => item.id),
     evidence,
-    failureReasons: wikiIndex?.payload?.mainReadiness.reasons ?? [],
+    failureReasons: failureReasonsForNode(wikiIndex, nodeId),
   };
   if (pages[0]) docs.primaryPageId = pages[0].id;
   return docs;

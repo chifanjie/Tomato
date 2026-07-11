@@ -1972,10 +1972,25 @@ export function renderBusinessCapabilityDocuments(
   const examples = facts.filter((fact) => fact.evidenceRole === "example-only");
   const triggers = [...primary, ...supporting].filter((fact) => ["branch", "constant", "config"].includes(fact.kind));
   const evidence = [
-    ...facts.flatMap((fact) => fact.evidence.map((item) => ({
-    ...item,
-    claim: `事实“${fact.title}”支持能力“${capability.title}”中的${fact.businessMeaning || fact.summary}`,
-    }))),
+    ...facts.flatMap((fact) => fact.evidence.flatMap((item) => {
+      const [start, end] = item.lineRange ?? [];
+      const exactEvidence = item.nodeId?.trim()
+        && item.filePath.trim()
+        && item.excerpt?.trim()
+        && Number.isInteger(start)
+        && Number.isInteger(end)
+        && (start ?? 0) > 0
+        && (end ?? 0) >= (start ?? 0)
+        ? item
+        : item.nodeId
+          ? evidenceForNode(profile, fileDocPlan, item.nodeId)
+          : undefined;
+      if (!exactEvidence) return [];
+      return [{
+        ...exactEvidence,
+        claim: `事实“${fact.title}”支持能力“${capability.title}”中的${fact.businessMeaning || fact.summary}`,
+      }];
+    })),
     ...supportEvidence(profile, fileDocPlan, planned, 3),
   ];
   const factsTable = (items: BusinessFact[], empty: string): string => items.length > 0

@@ -8,6 +8,7 @@ export * from "./business-facts.js";
 export * from "./writer-contracts.js";
 export * from "./wiki-contract.js";
 export * from "./wiki-v1-adapter.js";
+export * from "./artifacts.js";
 export * from "./quality.js";
 export * from "./queue.js";
 export * from "./merge.js";

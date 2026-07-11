@@ -80,6 +80,14 @@ function backtickRunLength(value: string, start: number): number {
   return end - start;
 }
 
+function isBackslashEscaped(value: string, index: number): boolean {
+  let backslashes = 0;
+  for (let cursor = index - 1; cursor >= 0 && value[cursor] === "\\"; cursor -= 1) {
+    backslashes += 1;
+  }
+  return backslashes % 2 === 1;
+}
+
 function maskInlineCode(markdown: string): string {
   let result = "";
   let index = 0;
@@ -91,6 +99,11 @@ function maskInlineCode(markdown: string): string {
     }
 
     const openingLength = backtickRunLength(markdown, index);
+    if (isBackslashEscaped(markdown, index)) {
+      result += markdown.slice(index, index + openingLength);
+      index += openingLength;
+      continue;
+    }
     let cursor = index + openingLength;
     let closingEnd = -1;
     while (cursor < markdown.length) {

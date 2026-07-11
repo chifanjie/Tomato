@@ -296,6 +296,13 @@ describe("writer contracts", () => {
     expect(containsPlaceholderProse(markdown)).toBe(false);
   });
 
+  it.each([
+    ["heading", "## \\`TODO\\`"],
+    ["prose", "正文内容：\\`FIXME\\`"],
+  ])("keeps placeholders visible inside backslash-escaped backticks in %s", (_label, markdown) => {
+    expect(containsPlaceholderProse(markdown)).toBe(true);
+  });
+
   it("rejects file documents that have headings but generic filler", () => {
     const output = completeFileOutput();
     output.documents[0].markdown = [

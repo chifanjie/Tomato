@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  containsGenericPublicationPhrase,
   evaluatePublication,
   evaluatePublicationCorpus,
   type PublicationDocument,
@@ -166,6 +167,14 @@ describe("publication quality", () => {
       "该摘录表明本文关于“BuildFeed”的相关结论。",
       "该代码说明“BuildFeed”直接讲解的主题入口。",
       "该证据佐证“BuildFeed”页面中的风险说明。",
+      "该源码摘录印证本页相关结论。",
+      "该源码记录独立结论。",
+      "该源码展示当前页面的职责说明。",
+      "该代码反映本文风险说明。",
+      "该证据对应“BuildFeed”主题入口。",
+      "该源码体现相关结论。",
+      "印证本页相关结论的源码摘录。",
+      "本页相关结论由该源码印证。",
     ];
 
     for (const claim of metaClaims) {
@@ -183,9 +192,96 @@ describe("publication quality", () => {
 
     const concrete = FILE_EVIDENCE.map((item, index) => ({
       ...item,
-      claim: index === 0 ? "源码表明登录页面加载失败时返回重试提示。" : "运行函数在空输入时返回空列表。",
+      claim: index === 0 ? "源码表明登录页面加载失败时返回重试提示。" : "源码记录运行函数在空输入时返回空列表。",
     }));
     expect(evaluatePublication(fileDocument(), concrete).quality).toBe("generated");
+  });
+
+  it("masks mixed and arbitrary-length Markdown code delimiters without hiding escaped prose", () => {
+    const codeOnlySamples = [
+      "说明：``承担核心逻辑\n处理相关能力``",
+      "````markdown\n```ts\n承担核心逻辑\n```\n````",
+      "~~~~markdown\n```ts\n承担核心逻辑\n```\n~~~~",
+      "````ts\n承担核心逻辑\n```\n处理相关能力\n````",
+      "~~~~\n承担核心逻辑\n~~~\n处理相关能力\n~~~~",
+    ];
+
+    for (const markdown of codeOnlySamples) {
+      expect(containsGenericPublicationPhrase(markdown)).toBe(false);
+    }
+    expect(containsGenericPublicationPhrase("普通正文明确承担核心逻辑。")).toBe(true);
+    expect(containsGenericPublicationPhrase("\\`承担核心逻辑\\`")).toBe(true);
+  });
+
+  it("does not count repeated lines inside long mixed fences as corpus prose", () => {
+    const repeatedCodeLine = "return repeatedImplementationLineFromLongFenceWithoutAnyBusinessMeaning;";
+    const entries = Array.from({ length: 5 }, (_, index) => ({
+      document: {
+        path: `文件文档/long-fence-${index}.md`,
+        title: `长围栏页面 ${index}`,
+        category: "other" as const,
+        role: "reference" as const,
+        content: [
+          `# 长围栏页面 ${index}`,
+          "",
+          `页面 ${index} 记录独立的输入、输出、异常边界和改动风险，正文事实足以完成引用质量检查。`,
+          "",
+          "````markdown",
+          "```ts",
+          repeatedCodeLine,
+          "```",
+          "````",
+        ].join("\n"),
+        directNodeIds: [],
+        representedEdgeIds: [],
+        symbolAnchors: [],
+      },
+      evidence: [{
+        nodeId: `file:src/long-fence-${index}.ts`,
+        filePath: `src/long-fence-${index}.ts`,
+        lineRange: [1, 1] as [number, number],
+        excerpt: `export const page${index} = true;`,
+        claim: `源码记录页面 ${index} 的独立布尔配置值。`,
+      }],
+    }));
+
+    const results = evaluatePublicationCorpus(entries);
+
+    expect(results.every((result) =>
+      !result.decision.issues.includes("正文包含跨文档重复模板语句"))).toBe(true);
+  });
+
+  it("counts repeated escaped-backtick literals as corpus prose", () => {
+    const escapedRepeatedLine = "\\`请求进入系统以后依次完成参数校验、策略选择、结果组装、异常记录并输出审计结果。\\`";
+    const entries = Array.from({ length: 5 }, (_, index) => ({
+      document: {
+        path: `文件文档/escaped-literal-${index}.md`,
+        title: `转义字面量页面 ${index}`,
+        category: "other" as const,
+        role: "reference" as const,
+        content: [
+          `# 转义字面量页面 ${index}`,
+          "",
+          `页面 ${index} 记录独立的输入、输出和异常边界，正文事实足以完成引用质量检查。`,
+          escapedRepeatedLine,
+        ].join("\n"),
+        directNodeIds: [],
+        representedEdgeIds: [],
+        symbolAnchors: [],
+      },
+      evidence: [{
+        nodeId: `file:src/escaped-literal-${index}.ts`,
+        filePath: `src/escaped-literal-${index}.ts`,
+        lineRange: [1, 1] as [number, number],
+        excerpt: `export const literal${index} = true;`,
+        claim: `源码记录转义字面量页面 ${index} 的独立布尔配置值。`,
+      }],
+    }));
+
+    const results = evaluatePublicationCorpus(entries);
+
+    expect(results.every((result) =>
+      result.decision.issues.includes("正文包含跨文档重复模板语句"))).toBe(true);
   });
 
   it("requires three distinct evidence groups for a topic", () => {

@@ -61,12 +61,9 @@ const GENERIC_PHRASES = [
   "接收上游传入的业务上下文",
   "主要把处理结果返回给调用方",
 ] as const;
-const NON_CONCRETE_EVIDENCE_CLAIM_PATTERNS = [
-  /与该源码位置相邻的结论/u,
-  /(?:该)?(?:(?:源码|代码)(?:摘录|位置)?|摘录|位置|证据)(?:仅|只|能|可|用于)*(?:支持|证明)(?:本页|本文|当前页面)?(?:的|中|中的)?(?:相关|独立|相邻)?结论/u,
-] as const;
-const META_EVIDENCE_PREDICATE = /(?:支持|证明|支撑|表明|说明|佐证)/u;
-const PUBLICATION_ARTIFACT_LANGUAGE = /(?:本页|本文|当前页面|页面中|页面的|直接讲解的主题入口|结论|(?:相关|独立|相邻|职责|风险|主题)的?说明)/u;
+const EVIDENCE_ARTIFACT_SUBJECT = /(?:该)?(?:源码(?:摘录|位置)?|代码(?:摘录|片段|位置)?|摘录|证据|来源|节点|文件)/u;
+const META_EVIDENCE_PREDICATE = /(?:支持|证明|支撑|表明|说明|佐证|印证|记录|体现|展示|反映|对应)/u;
+const GENERIC_PUBLICATION_OBJECT = /(?:本页|本文|当前页面|页面中|页面的|直接讲解的主题入口|结论|(?:相关|独立|相邻|职责|风险|主题)的?说明|主题入口)/u;
 
 const TRADITIONAL_ONLY_CHARACTERS = /[體臺萬與為後發裡這麼說從個還]/u;
 const BEHAVIOR_EDGE_TYPES = new Set([
@@ -103,20 +100,94 @@ function appendIssue(issues: string[], issue: string): void {
   if (!issues.includes(issue)) issues.push(issue);
 }
 
+function masked(value: string): string {
+  return value.replace(/[^\r\n]/g, " ");
+}
+
 function maskFencedCode(markdown: string): string {
-  let fenced = false;
-  return markdown.split(/\r?\n/).map((line) => {
-    if (/^\s*(```|~~~)/.test(line)) {
-      fenced = !fenced;
-      return "";
+  let fence: { marker: "`" | "~"; length: number } | undefined;
+  return markdown.split(/(\r?\n)/).map((line) => {
+    if (/^\r?\n$/.test(line)) return line;
+
+    if (fence) {
+      const closing = line.match(/^ {0,3}(`+|~+)[ \t]*$/)?.[1];
+      if (closing?.[0] === fence.marker && closing.length >= fence.length) {
+        fence = undefined;
+      }
+      return masked(line);
     }
-    return fenced ? "" : line;
-  }).join("\n");
+
+    const opening = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (!opening) return line;
+    const marker = opening[1][0] as "`" | "~";
+    if (marker === "`" && opening[2].includes("`")) return line;
+    fence = { marker, length: opening[1].length };
+    return masked(line);
+  }).join("");
+}
+
+function backtickRunLength(value: string, start: number): number {
+  let end = start;
+  while (value[end] === "`") end += 1;
+  return end - start;
+}
+
+function isBackslashEscaped(value: string, index: number): boolean {
+  let backslashes = 0;
+  for (let cursor = index - 1; cursor >= 0 && value[cursor] === "\\"; cursor -= 1) {
+    backslashes += 1;
+  }
+  return backslashes % 2 === 1;
+}
+
+function maskInlineCode(markdown: string): string {
+  let result = "";
+  let index = 0;
+  while (index < markdown.length) {
+    if (markdown[index] !== "`") {
+      result += markdown[index];
+      index += 1;
+      continue;
+    }
+
+    const openingLength = backtickRunLength(markdown, index);
+    if (isBackslashEscaped(markdown, index)) {
+      result += markdown.slice(index, index + openingLength);
+      index += openingLength;
+      continue;
+    }
+    let cursor = index + openingLength;
+    let closingEnd = -1;
+    while (cursor < markdown.length) {
+      if (markdown[cursor] !== "`") {
+        cursor += 1;
+        continue;
+      }
+      const closingLength = backtickRunLength(markdown, cursor);
+      if (closingLength === openingLength) {
+        closingEnd = cursor + closingLength;
+        break;
+      }
+      cursor += closingLength;
+    }
+
+    if (closingEnd < 0) {
+      result += markdown.slice(index, index + openingLength);
+      index += openingLength;
+      continue;
+    }
+    result += masked(markdown.slice(index, closingEnd));
+    index = closingEnd;
+  }
+  return result;
+}
+
+export function maskMarkdownCode(markdown: string): string {
+  return maskInlineCode(maskFencedCode(markdown));
 }
 
 function proseWithoutCode(markdown: string): string {
-  return maskFencedCode(markdown)
-    .replace(/`[^`]*`/g, " ")
+  return maskMarkdownCode(markdown)
     .replace(/https?:\/\/\S+/g, " ")
     .replace(/\[[^\]]*\]\([^)]*\)/g, " ")
     .replace(/(?:^|\s)(?:\.{0,2}\/)?(?:[\w.-]+\/)+[\w.-]+(?=\s|$|[,:：，。])/g, " ")
@@ -160,8 +231,11 @@ export function requiredSectionsForDocument(document: PublicationDocument): read
 export function isValidPublicationEvidence(evidence: PublicationEvidence): boolean {
   const [start, end] = evidence.lineRange ?? [];
   const claim = evidence.claim?.replace(/\s+/g, "") ?? "";
-  const nonConcreteClaim = NON_CONCRETE_EVIDENCE_CLAIM_PATTERNS.some((pattern) => pattern.test(claim))
-    || (META_EVIDENCE_PREDICATE.test(claim) && PUBLICATION_ARTIFACT_LANGUAGE.test(claim));
+  const nonConcreteClaim = Boolean(
+    EVIDENCE_ARTIFACT_SUBJECT.test(claim)
+    && META_EVIDENCE_PREDICATE.test(claim)
+    && GENERIC_PUBLICATION_OBJECT.test(claim),
+  );
   return Boolean(
     evidence.nodeId?.trim()
     && evidence.filePath?.trim()
@@ -267,7 +341,6 @@ function normalizedRepeatedLine(line: string): string | null {
   const trimmed = line.trim();
   if (!trimmed || /^(?:#|\||```|~~~)/.test(trimmed)) return null;
   const normalized = trimmed
-    .replace(/`[^`]*`/g, " ")
     .replace(/https?:\/\/\S+/g, " ")
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/[\s`*_#>\-:：,，.。;；、()[\]{}|/\\]/g, "")
@@ -286,8 +359,7 @@ export function evaluatePublicationCorpus(
   const lineDocuments = new Map<string, Set<number>>();
   entries.forEach((entry, index) => {
     const uniqueLines = new Set(
-      maskFencedCode(entry.document.content)
-        .replace(/`[^`]*`/g, "")
+      maskMarkdownCode(entry.document.content)
         .split(/\r?\n/)
         .map(normalizedRepeatedLine)
         .filter((line): line is string => Boolean(line)),

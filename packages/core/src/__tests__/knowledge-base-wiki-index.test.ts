@@ -1,384 +1,234 @@
 import { describe, expect, it } from "vitest";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
+const generatorPath = "skills/understand-kb/generate-knowledge-base.mjs";
 
-describe("knowledge base wiki index generation", () => {
-  it("emits wiki-index.json with page, evidence, and gap metadata", () => {
-    const repo = mkdtempSync(join(tmpdir(), "understand-code-wiki-index-"));
+function writeGenerationFixture(root: string, writeSource: boolean): void {
+  const stateDir = join(root, ".understand-code");
+  mkdirSync(stateDir, { recursive: true });
+  writeFileSync(join(stateDir, "knowledge-graph.json"), JSON.stringify({
+    version: "1.0.0",
+    project: { name: "sample", languages: ["typescript"], frameworks: [], description: "示例项目", analyzedAt: "2026-07-11T00:00:00.000Z", gitCommitHash: "abc" },
+    nodes: [
+      { id: "file:src/a.ts", type: "file", name: "a.ts", filePath: "src/a.ts", summary: "入口文件", tags: ["entry"], complexity: "moderate" },
+      { id: "function:src/a.ts:run", type: "function", name: "run", filePath: "src/a.ts", lineRange: [1, 1], summary: "运行入口", tags: ["entry"], complexity: "complex" },
+    ],
+    edges: [{ source: "file:src/a.ts", target: "function:src/a.ts:run", type: "contains", direction: "forward", weight: 1 }],
+    layers: [{ id: "layer:main", name: "入口层", description: "入口", nodeIds: ["file:src/a.ts"] }],
+    tour: [],
+  }, null, 2));
+  writeFileSync(join(stateDir, "config.json"), JSON.stringify({
+    autoUpdate: false,
+    outputLanguage: "zh-CN",
+    knowledgeBase: { businessTerms: ["运行入口"] },
+  }, null, 2));
+  if (writeSource) {
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src/a.ts"), "export function run() {}\n");
+  }
+}
+
+function runGeneration(sourceRoot: string, outputRoot: string) {
+  return spawnSync(
+    "node",
+    [
+      generatorPath,
+      sourceRoot,
+      "--source-root",
+      sourceRoot,
+      "--output-root",
+      outputRoot,
+      "--deterministic-only",
+    ],
+    { cwd: repoRoot, encoding: "utf8" },
+  );
+}
+
+function readJson(path: string): any {
+  return JSON.parse(readFileSync(path, "utf8"));
+}
+
+describe("knowledge base wiki V2 artifact generation", () => {
+  it("publishes all V2 wrappers to an explicit output root", () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), "understand-code-source-"));
+    const outputRoot = mkdtempSync(join(tmpdir(), "understand-code-output-"));
     try {
-      const outputDir = join(repo, ".understand-code");
-      mkdirSync(outputDir, { recursive: true });
-      writeFileSync(
-        join(outputDir, "knowledge-graph.json"),
-        JSON.stringify({
-          version: "1.0.0",
-          project: {
-            name: "sample",
-            languages: ["go"],
-            frameworks: [],
-            description: "",
-            analyzedAt: "2026-07-09T00:00:00.000Z",
-            gitCommitHash: "local",
-          },
-          nodes: [
-            {
-              id: "file:src/a.go",
-              type: "file",
-              name: "a.go",
-              filePath: "src/a.go",
-              summary: "File A.",
-              tags: [],
-              complexity: "moderate",
-            },
-            {
-              id: "function:src/a.go:Build",
-              type: "function",
-              name: "Build",
-              filePath: "src/a.go",
-              lineRange: [3, 3],
-              summary: "Builds data.",
-              tags: ["entry"],
-              complexity: "complex",
-            },
-            {
-              id: "config:config/app.yaml",
-              type: "config",
-              name: "app.yaml",
-              filePath: "config/app.yaml",
-              summary: "应用配置。",
-              tags: ["config"],
-              complexity: "simple",
-            },
-            {
-              id: "schema:schema/api.json",
-              type: "schema",
-              name: "api.json",
-              filePath: "schema/api.json",
-              summary: "接口结构定义。",
-              tags: ["schema"],
-              complexity: "simple",
-            },
-            {
-              id: "document:docs/guide.md",
-              type: "document",
-              name: "guide.md",
-              filePath: "docs/guide.md",
-              summary: "使用说明。",
-              tags: ["documentation"],
-              complexity: "simple",
-            },
-          ],
-          edges: [
-            {
-              source: "file:src/a.go",
-              target: "function:src/a.go:Build",
-              type: "contains",
-              direction: "forward",
-              weight: 1,
-            },
-          ],
-          layers: [
-            {
-              id: "core",
-              name: "Core",
-              description: "Core layer",
-              nodeIds: ["file:src/a.go"],
-            },
-          ],
-          tour: [],
-        }),
-      );
-      const configuredEntryId = "function:missing:ConfiguredEntry";
-      const projectOverviewPageId = `page:${encodeURIComponent("项目总览.md")}`;
-      writeFileSync(join(outputDir, "config.json"), JSON.stringify({
-        knowledgeBase: {
-          entryNodeIds: [configuredEntryId],
-          route: { hide: [projectOverviewPageId] },
-        },
-      }));
-      mkdirSync(join(repo, "src"), { recursive: true });
-      writeFileSync(join(repo, "src/a.go"), "package src\n\nfunc Build() {}\n");
-      mkdirSync(join(repo, "config"), { recursive: true });
-      writeFileSync(join(repo, "config/app.yaml"), "enabled: true\n");
-      mkdirSync(join(repo, "schema"), { recursive: true });
-      writeFileSync(join(repo, "schema/api.json"), "{\"type\":\"object\"}\n");
-      mkdirSync(join(repo, "docs"), { recursive: true });
-      writeFileSync(join(repo, "docs/guide.md"), "# 使用说明\n");
+      writeGenerationFixture(sourceRoot, true);
 
-      const result = spawnSync(
-        "node",
-        ["skills/understand-kb/generate-knowledge-base.mjs", repo, "--deterministic-only"],
-        {
-          cwd: repoRoot,
-          encoding: "utf8",
-        },
-      );
+      const result = runGeneration(sourceRoot, outputRoot);
 
       expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-      const wikiIndexPath = join(outputDir, "knowledge-base/wiki-index.json");
-      expect(existsSync(wikiIndexPath)).toBe(true);
-
-      const profile = JSON.parse(readFileSync(join(outputDir, "knowledge-base/knowledge-base-profile.json"), "utf8"));
-      expect(profile.coverageReport.sourceReadCoverage).toEqual({ covered: 4, total: 4, missing: [] });
-      expect(profile.topicCandidates).toEqual(expect.any(Array));
-      expect(profile.validation.warnings).toEqual(expect.arrayContaining([
-        `配置入口不存在：${configuredEntryId}`,
-        `主阅读必需页面 ${projectOverviewPageId} 被隐藏，主阅读状态将被阻塞`,
-      ]));
-
-      const wikiIndex = JSON.parse(readFileSync(wikiIndexPath, "utf8"));
-      expect(wikiIndex.version).toBe(1);
-      expect(wikiIndex.projectName).toBe("sample");
-      expect(wikiIndex.source).toEqual(
-        expect.objectContaining({
-          outputLanguage: "zh-Hans",
-          gitCommitHash: "local",
-          generationMode: "deterministic",
-          graphDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
-        }),
-      );
-      expect(wikiIndex.pages.length).toBeGreaterThan(0);
-      const linkedPage = wikiIndex.pages.find((page: { explainedNodeIds: string[] }) => page.explainedNodeIds.length > 0);
-      expect(linkedPage).toBeDefined();
-      expect(linkedPage).toEqual(
-        expect.objectContaining({
-          category: expect.stringMatching(/^(overview|capability|flow|module|file|symbol|gap|quality|other)$/),
-          coverage: expect.stringMatching(/^(complete|partial)$/),
-          quality: expect.stringMatching(/^(verified|generated|low-confidence)$/),
-        }),
-      );
-      expect(linkedPage.markdownPath).toMatch(/^knowledge-base\/.+\.md$/);
-      expect(existsSync(join(outputDir, linkedPage.markdownPath))).toBe(true);
-      expect(linkedPage.explainedNodeIds.length).toBeGreaterThan(0);
-      expect(linkedPage.searchTerms).toEqual(expect.arrayContaining([linkedPage.title]));
-      const overviewPage = wikiIndex.pages.find((page: { title: string }) => page.title === "项目总览");
-      expect(overviewPage).toEqual(expect.objectContaining({ category: "overview", coverage: "partial" }));
-      const topicPage = wikiIndex.pages.find((page: { markdownPath: string }) =>
-        page.markdownPath.includes("关键函数专题"),
-      );
-      expect(topicPage).toBeUndefined();
-      expect(profile.retryPlan.topicBatchIndexes.length).toBeGreaterThan(0);
-      expect(profile.retryPlan.reasons).toEqual(expect.arrayContaining([
-        expect.stringContaining("源码证据数量不足：至少需要 3 组"),
-      ]));
-      expect(profile.coverageReport.requiredTopicCoverage.missing).toContain(
-        "function:src/a.go:Build",
-      );
-      const capabilityPage = wikiIndex.pages.find((page: { markdownPath: string }) =>
-        page.markdownPath.includes("业务能力"),
-      );
-      expect(capabilityPage).toBeUndefined();
-      expect(wikiIndex.pages.every((page: { summary: string }) => !page.summary.includes("generated knowledge-base documentation"))).toBe(true);
-      expect(wikiIndex.evidence.length).toBeGreaterThan(0);
-      expect(wikiIndex.evidence[0]).toEqual(
-        expect.objectContaining({
-          nodeIds: expect.arrayContaining([expect.any(String)]),
-        }),
-      );
-      const buildEvidence = wikiIndex.evidence.find((item: { nodeIds: string[] }) =>
-        item.nodeIds.includes("function:src/a.go:Build"),
-      );
-      expect(buildEvidence).toEqual(
-        expect.objectContaining({
-          filePath: "src/a.go",
-          lineRange: [3, 3],
-        }),
-      );
-      expect(Array.isArray(wikiIndex.gaps)).toBe(true);
-      for (const gap of wikiIndex.gaps) {
-        expect(gap.severity).toMatch(/^(low|medium|high)$/);
-      }
+      const wikiIndex = readJson(join(outputRoot, "wiki-index.json"));
+      const searchIndex = readJson(join(outputRoot, "search-index.json"));
+      const documentTraces = readJson(join(outputRoot, ".trace/document-traces.json"));
+      const report = readJson(join(outputRoot, ".trace/generation-report.json"));
+      expect([wikiIndex.version, searchIndex.version, documentTraces.version, report.version]).toEqual([2, 2, 2, 2]);
+      expect(report.source.outputLanguage).toBe("zh-CN");
+      expect(report.source.sourceRootIdentity).toBe(resolve(sourceRoot));
+      expect(report.sourceRead.covered).toBeGreaterThan(0);
+      expect(report.mainReadiness.status).toBe("blocked");
+      expect(report.mainReadiness.reasons).toContain("确定性诊断稿不能作为正式主干知识发布");
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outputRoot, { recursive: true, force: true });
     }
   }, 15_000);
 
-  it("keeps fallback node pages from hiding gaps and caps related nodes", () => {
-    const repo = mkdtempSync(join(tmpdir(), "understand-code-wiki-index-fallback-"));
+  it("writes only an atomic generation report when no source is readable", () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), "understand-code-zero-source-"));
+    const outputRoot = mkdtempSync(join(tmpdir(), "understand-code-zero-output-"));
     try {
-      const outputDir = join(repo, ".understand-code");
-      mkdirSync(outputDir, { recursive: true });
-      const leafNodes = Array.from({ length: 30 }, (_, index) => ({
-        id: `resource:leaf-${index + 1}`,
-        type: "resource",
-        name: `Leaf ${index + 1}`,
-        summary: `Leaf ${index + 1}.`,
-        tags: [],
-        complexity: "simple",
-      }));
-      const nodes = [
-        {
-          id: "resource:hub",
-          type: "resource",
-          name: "Hub",
-          filePath: "src/hub.go",
-          lineRange: [9, 2],
-          summary: "Hub resource.",
-          tags: [],
-          complexity: "complex",
-        },
-        ...leafNodes,
-      ];
-      writeFileSync(
-        join(outputDir, "knowledge-graph.json"),
-        JSON.stringify({
-          version: "1.0.0",
-          project: {
-            name: "sparse",
-            languages: [],
-            frameworks: [],
-            description: "",
-            analyzedAt: "2026-07-09T00:00:00.000Z",
-            gitCommitHash: "local",
-          },
-          nodes,
-          edges: leafNodes.map((node, index) => ({
-            source: "resource:hub",
-            target: node.id,
-            type: "depends_on",
-            direction: "forward",
-            weight: (index + 1) / 100,
-          })),
-          layers: [],
-          tour: [],
-        }),
-      );
+      writeGenerationFixture(sourceRoot, false);
+      mkdirSync(join(outputRoot, ".intermediate"), { recursive: true });
+      writeFileSync(join(outputRoot, ".intermediate/sentinel.json"), "{}\n");
 
-      const result = spawnSync(
-        "node",
-        ["skills/understand-kb/generate-knowledge-base.mjs", repo, "--deterministic-only"],
-        {
-          cwd: repoRoot,
-          encoding: "utf8",
-        },
-      );
+      const result = runGeneration(sourceRoot, outputRoot);
 
-      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-      const wikiIndex = JSON.parse(
-        readFileSync(join(outputDir, "knowledge-base/wiki-index.json"), "utf8"),
-      );
-      const hubPage = wikiIndex.pages.find((page: { explainedNodeIds: string[] }) =>
-        page.explainedNodeIds.includes("resource:hub"),
-      );
-      const hubEvidence = wikiIndex.evidence.find((item: { nodeIds: string[] }) =>
-        item.nodeIds.includes("resource:hub"),
-      );
-
-      expect(hubPage).toBeDefined();
-      expect(hubPage.relatedNodeIds).toHaveLength(24);
-      expect(hubPage.relatedNodeIds[0]).toBe("resource:leaf-30");
-      expect(hubPage.summary).toContain("尚待补充详细说明");
-      expect(hubPage.quality).toBe("low-confidence");
-      expect(hubEvidence).toEqual(
-        expect.objectContaining({
-          filePath: "src/hub.go",
-        }),
-      );
-      expect(hubEvidence).not.toHaveProperty("lineRange");
-      expect(wikiIndex.gaps.map((gap: { nodeId: string }) => gap.nodeId).sort()).toEqual(
-        nodes.map((node) => node.id).sort(),
-      );
-      expect(wikiIndex.gaps.every((gap: { reason: string }) => gap.reason === "尚未生成能够充分解释该代码对象的 Wiki 页面。")).toBe(true);
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("未读取到任何源码，正式知识库未发布");
+      expect(existsSync(join(outputRoot, "wiki-index.json"))).toBe(false);
+      expect(existsSync(join(outputRoot, "search-index.json"))).toBe(false);
+      expect(existsSync(join(outputRoot, ".trace/document-traces.json"))).toBe(false);
+      expect(existsSync(join(outputRoot, "项目总览.md"))).toBe(false);
+      expect(existsSync(join(outputRoot, ".intermediate/sentinel.json"))).toBe(true);
+      const report = readJson(join(outputRoot, ".trace/generation-report.json"));
+      expect(report.version).toBe(2);
+      expect(report.sourceRead.covered).toBe(0);
+      expect(report.mainReadiness.reasons).toContain("未读取到任何源码文件");
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outputRoot, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it("rejects an output root that could overwrite source or graph state", () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), "understand-code-unsafe-output-"));
+    try {
+      writeGenerationFixture(sourceRoot, true);
+
+      const result = runGeneration(sourceRoot, sourceRoot);
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("输出目录不能覆盖源码或图谱目录");
+      expect(existsSync(join(sourceRoot, "src/a.ts"))).toBe(true);
+      expect(existsSync(join(sourceRoot, ".understand-code/knowledge-graph.json"))).toBe(true);
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
     }
   });
 
-  it("derives quality and coverage per page instead of applying one global status", () => {
-    const repo = mkdtempSync(join(tmpdir(), "understand-code-wiki-index-quality-"));
+  it("rejects an output symlink whose target contains source and graph state", () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), "understand-code-unsafe-symlink-"));
+    const outputRoot = join(sourceRoot, ".understand-code/knowledge-base");
     try {
-      const outputDir = join(repo, ".understand-code");
-      mkdirSync(outputDir, { recursive: true });
-      writeFileSync(
-        join(outputDir, "knowledge-graph.json"),
-        JSON.stringify({
-          version: "1.0.0",
-          project: {
-            name: "quality-sample",
-            languages: ["go"],
-            frameworks: [],
-            description: "质量状态测试项目",
-            analyzedAt: "2026-07-09T00:00:00.000Z",
-            gitCommitHash: "quality-local",
-          },
-          nodes: [
-            {
-              id: "file:src/a.go",
-              type: "file",
-              name: "a.go",
-              filePath: "src/a.go",
-              summary: "提供示例函数并返回固定结果。",
-              tags: [],
-              complexity: "moderate",
-            },
-            {
-              id: "function:src/a.go:TODO",
-              type: "function",
-              name: "TODO",
-              filePath: "src/a.go",
-              lineRange: [3, 3],
-              summary: "返回固定结果的示例函数。",
-              tags: [],
-              complexity: "moderate",
-            },
-          ],
-          edges: [
-            {
-              source: "file:src/a.go",
-              target: "function:src/a.go:TODO",
-              type: "contains",
-              direction: "forward",
-              weight: 1,
-            },
-          ],
-          layers: [
-            {
-              id: "core",
-              name: "核心层",
-              description: "示例核心实现",
-              nodeIds: ["file:src/a.go", "function:src/a.go:TODO"],
-            },
-          ],
-          tour: [],
-        }),
-      );
-      mkdirSync(join(repo, "src"), { recursive: true });
-      writeFileSync(join(repo, "src/a.go"), "package src\n\nfunc TODO() {}\n");
+      writeGenerationFixture(sourceRoot, true);
+      symlinkSync(sourceRoot, outputRoot, "dir");
 
-      const result = spawnSync(
-        "node",
-        ["skills/understand-kb/generate-knowledge-base.mjs", repo, "--deterministic-only"],
-        { cwd: repoRoot, encoding: "utf8" },
-      );
-      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+      const result = runGeneration(sourceRoot, outputRoot);
 
-      const wikiIndex = JSON.parse(
-        readFileSync(join(outputDir, "knowledge-base/wiki-index.json"), "utf8"),
-      );
-      const filePage = wikiIndex.pages.find((page: { category: string }) => page.category === "file");
-      const overviewPage = wikiIndex.pages.find((page: { title: string }) => page.title === "项目总览");
-
-      expect(filePage).toEqual(
-        expect.objectContaining({
-          quality: "low-confidence",
-          coverage: "partial",
-          qualityIssues: expect.arrayContaining(["占位文本校验未通过"]),
-        }),
-      );
-      expect(overviewPage).toEqual(
-        expect.objectContaining({
-          quality: "low-confidence",
-          coverage: "partial",
-          qualityIssues: expect.arrayContaining(["正文质量校验未通过"]),
-        }),
-      );
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("输出目录不能覆盖源码或图谱目录");
+      expect(existsSync(join(sourceRoot, "src/a.ts"))).toBe(true);
+      expect(existsSync(join(sourceRoot, ".understand-code/knowledge-graph.json"))).toBe(true);
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      rmSync(sourceRoot, { recursive: true, force: true });
     }
   });
+
+  it("rejects an output whose nearest existing ancestor links into the source root", () => {
+    const parent = mkdtempSync(join(tmpdir(), "understand-code-unsafe-ancestor-"));
+    const sourceRoot = join(parent, "source");
+    const linkedOutputBase = join(parent, "linked-output");
+    const outputRoot = join(linkedOutputBase, "nested-output");
+    mkdirSync(sourceRoot, { recursive: true });
+    try {
+      writeGenerationFixture(sourceRoot, true);
+      symlinkSync(sourceRoot, linkedOutputBase, "dir");
+
+      const result = runGeneration(sourceRoot, outputRoot);
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("输出目录不能覆盖源码或图谱目录");
+      expect(existsSync(join(sourceRoot, "src/a.ts"))).toBe(true);
+      expect(existsSync(join(sourceRoot, ".understand-code/knowledge-graph.json"))).toBe(true);
+      expect(existsSync(join(sourceRoot, "nested-output"))).toBe(false);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects symlinks already present inside the output root", () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), "understand-code-output-child-source-"));
+    const outputRoot = mkdtempSync(join(tmpdir(), "understand-code-output-child-output-"));
+    try {
+      writeGenerationFixture(sourceRoot, true);
+      symlinkSync(sourceRoot, join(outputRoot, ".intermediate"), "dir");
+
+      const result = runGeneration(sourceRoot, outputRoot);
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("输出目录包含不安全的符号链接");
+      expect(existsSync(join(sourceRoot, "src/a.ts"))).toBe(true);
+      expect(existsSync(join(sourceRoot, ".understand-code/knowledge-graph.json"))).toBe(true);
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outputRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("treats a source symlink that escapes the source root as unreadable", () => {
+    const parent = mkdtempSync(join(tmpdir(), "understand-code-source-symlink-"));
+    const sourceRoot = join(parent, "source");
+    const outputRoot = join(parent, "output");
+    mkdirSync(sourceRoot, { recursive: true });
+    mkdirSync(outputRoot, { recursive: true });
+    try {
+      writeGenerationFixture(sourceRoot, false);
+      mkdirSync(join(sourceRoot, "src"), { recursive: true });
+      writeFileSync(join(parent, "outside.ts"), "export function run() {}\n");
+      symlinkSync(join(parent, "outside.ts"), join(sourceRoot, "src/a.ts"), "file");
+
+      const result = runGeneration(sourceRoot, outputRoot);
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("未读取到任何源码，正式知识库未发布");
+      expect(readFileSync(join(parent, "outside.ts"), "utf8")).toBe("export function run() {}\n");
+      const report = readJson(join(outputRoot, ".trace/generation-report.json"));
+      expect(report.sourceRead).toEqual({ covered: 0, total: 1, missingIds: ["file:src/a.ts"] });
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it("treats a graph path that escapes the source root as unreadable", () => {
+    const parent = mkdtempSync(join(tmpdir(), "understand-code-traversal-"));
+    const sourceRoot = join(parent, "source");
+    const outputRoot = join(parent, "output");
+    mkdirSync(sourceRoot, { recursive: true });
+    mkdirSync(outputRoot, { recursive: true });
+    try {
+      writeGenerationFixture(sourceRoot, false);
+      const graphPath = join(sourceRoot, ".understand-code/knowledge-graph.json");
+      const graph = readJson(graphPath);
+      graph.nodes[0].filePath = "../outside.ts";
+      graph.nodes[1].filePath = "../outside.ts";
+      writeFileSync(graphPath, JSON.stringify(graph, null, 2));
+      writeFileSync(join(parent, "outside.ts"), "export function run() {}\n");
+
+      const result = runGeneration(sourceRoot, outputRoot);
+
+      expect(result.status).not.toBe(0);
+      expect(existsSync(join(parent, "outside.ts"))).toBe(true);
+      const report = readJson(join(outputRoot, ".trace/generation-report.json"));
+      expect(report.sourceRead).toEqual({ covered: 0, total: 1, missingIds: ["file:src/a.ts"] });
+      expect(report.mainReadiness.reasons).toContain("未读取到任何源码文件");
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  }, 15_000);
 });

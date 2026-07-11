@@ -20,13 +20,16 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { dirname, resolve, join } from 'node:path';
+import { basename, dirname, isAbsolute, relative, resolve, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -39,6 +42,8 @@ const require = createRequire(resolve(pluginRoot, 'package.json'));
 function parseArgs(argv) {
   const args = {
     projectRoot: process.cwd(),
+    sourceRoot: null,
+    outputRoot: null,
     phase: 'deterministic',
     keepIntermediate: true,
     deterministicOnly: false,
@@ -70,6 +75,14 @@ function parseArgs(argv) {
       args.workerId = argv[index + 1] ?? '';
       index += 1;
     }
+    else if (arg === '--source-root') {
+      args.sourceRoot = resolve(argv[index + 1] ?? '');
+      index += 1;
+    }
+    else if (arg === '--output-root') {
+      args.outputRoot = resolve(argv[index + 1] ?? '');
+      index += 1;
+    }
     else if (arg === '--batch-index') {
       args.batchIndex = Number(argv[index + 1] ?? 0);
       index += 1;
@@ -89,17 +102,128 @@ function parseArgs(argv) {
     }
     else if (!arg.startsWith('--')) args.projectRoot = resolve(arg);
   }
+  args.sourceRoot = resolve(args.sourceRoot || args.projectRoot);
+  args.outputRoot = resolve(args.outputRoot || join(args.sourceRoot, '.understand-code', 'knowledge-base'));
   return args;
 }
 
-function pathsFor(projectRoot) {
-  const outputRoot = join(projectRoot, '.understand-code', 'knowledge-base');
-  const intermediateRoot = join(outputRoot, '.intermediate');
+function pathsFor(sourceRoot, outputRoot) {
+  const knowledgeRoot = outputRoot || join(sourceRoot, '.understand-code', 'knowledge-base');
   return {
-    graphPath: join(projectRoot, '.understand-code', 'knowledge-graph.json'),
-    outputRoot,
-    intermediateRoot,
+    graphPath: join(sourceRoot, '.understand-code', 'knowledge-graph.json'),
+    configPath: join(sourceRoot, '.understand-code', 'config.json'),
+    sourceRoot,
+    outputRoot: knowledgeRoot,
+    intermediateRoot: join(knowledgeRoot, '.intermediate'),
   };
+}
+
+function isWithin(parent, child) {
+  const relativePath = relative(resolve(parent), resolve(child));
+  return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath));
+}
+
+function canonicalPathFromNearestExisting(path) {
+  let current = resolve(path);
+  const suffix = [];
+  while (true) {
+    try {
+      lstatSync(current);
+    } catch (error) {
+      if (error?.code !== 'ENOENT' && error?.code !== 'ENOTDIR') throw error;
+      const parent = dirname(current);
+      if (parent === current) throw error;
+      suffix.unshift(basename(current));
+      current = parent;
+      continue;
+    }
+    return resolve(realpathSync(current), ...suffix);
+  }
+}
+
+function assertNoSymlinksInsideOutput(outputRoot) {
+  const stack = [resolve(outputRoot)];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    let stats;
+    try {
+      stats = lstatSync(current);
+    } catch (error) {
+      if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') continue;
+      throw new Error('无法安全检查输出目录。');
+    }
+    if (stats.isSymbolicLink()) {
+      throw new Error('输出目录包含不安全的符号链接。');
+    }
+    if (!stats.isDirectory()) continue;
+    let entries;
+    try {
+      entries = readdirSync(current);
+    } catch {
+      throw new Error('无法安全检查输出目录。');
+    }
+    for (const entry of entries) stack.push(join(current, entry));
+  }
+}
+
+function assertSafeOutputRoot(sourceRoot, outputRoot) {
+  const paths = pathsFor(sourceRoot, outputRoot);
+  const defaultKnowledgeRoot = join(paths.sourceRoot, '.understand-code', 'knowledge-base');
+  const lexicalOutputContainsProtectedPath = [paths.sourceRoot, paths.graphPath, paths.configPath]
+    .some((protectedPath) => isWithin(paths.outputRoot, protectedPath));
+  const lexicalOutputInsideSource = isWithin(paths.sourceRoot, paths.outputRoot);
+  const lexicalOutputInsideDefaultKnowledgeRoot = isWithin(defaultKnowledgeRoot, paths.outputRoot);
+
+  let canonicalSourceRoot;
+  let canonicalOutputRoot;
+  let canonicalDefaultKnowledgeRoot;
+  let canonicalGraphPath;
+  let canonicalConfigPath;
+  try {
+    canonicalSourceRoot = canonicalPathFromNearestExisting(paths.sourceRoot);
+    canonicalOutputRoot = canonicalPathFromNearestExisting(paths.outputRoot);
+    canonicalDefaultKnowledgeRoot = canonicalPathFromNearestExisting(defaultKnowledgeRoot);
+    canonicalGraphPath = canonicalPathFromNearestExisting(paths.graphPath);
+    canonicalConfigPath = canonicalPathFromNearestExisting(paths.configPath);
+  } catch {
+    throw new Error('无法安全解析输出目录。');
+  }
+
+  const canonicalOutputContainsProtectedPath = [canonicalSourceRoot, canonicalGraphPath, canonicalConfigPath]
+    .some((protectedPath) => isWithin(canonicalOutputRoot, protectedPath));
+  const canonicalOutputInsideSource = isWithin(canonicalSourceRoot, canonicalOutputRoot);
+  const canonicalOutputInsideDefaultKnowledgeRoot = isWithin(
+    canonicalDefaultKnowledgeRoot,
+    canonicalOutputRoot,
+  );
+  const crossesSourceBoundary = lexicalOutputInsideSource !== canonicalOutputInsideSource;
+
+  if (
+    lexicalOutputContainsProtectedPath
+    || canonicalOutputContainsProtectedPath
+    || crossesSourceBoundary
+    || (lexicalOutputInsideSource && !lexicalOutputInsideDefaultKnowledgeRoot)
+    || (canonicalOutputInsideSource && !canonicalOutputInsideDefaultKnowledgeRoot)
+  ) {
+    throw new Error('输出目录不能覆盖源码或图谱目录。');
+  }
+
+  if (!lexicalOutputInsideSource && existsSync(paths.outputRoot)) {
+    let entries;
+    try {
+      entries = readdirSync(paths.outputRoot);
+    } catch {
+      throw new Error('输出目录不是可安全发布的目录。');
+    }
+    if (
+      entries.length > 0
+      && !existsSync(join(paths.outputRoot, 'wiki-index.json'))
+      && !existsSync(join(paths.outputRoot, '.intermediate'))
+    ) {
+      throw new Error('非空输出目录缺少知识库标记，已拒绝覆盖。');
+    }
+  }
+  assertNoSymlinksInsideOutput(paths.outputRoot);
 }
 
 function latestModifiedTimeMs(rootPath) {
@@ -143,6 +267,17 @@ async function loadCore() {
 function writeJson(path, value) {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(value, null, 2), 'utf-8');
+}
+
+function writeJsonAtomic(path, value) {
+  mkdirSync(dirname(path), { recursive: true });
+  const temporary = `${path}.${process.pid}.tmp`;
+  try {
+    writeFileSync(temporary, JSON.stringify(value, null, 2), 'utf-8');
+    renameSync(temporary, path);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
 }
 
 function readJson(path) {
@@ -237,19 +372,50 @@ function graphStats(graph) {
   };
 }
 
-function sourceFilesForGraph(core, projectRoot, graph, maxSourceBytes) {
+function sourceFilesForGraph(sourceRoot, graph, maxSourceBytes) {
   const sourceFiles = {};
   const omittedFiles = [];
   let readBytes = 0;
   const sourceNodeTypes = new Set(['file', 'config', 'schema', 'document']);
   const sourcePaths = [...new Set(graph.nodes
     .filter((node) => sourceNodeTypes.has(node.type) && node.filePath)
-    .map((node) => core.normalizeKnowledgeSourcePath(node.filePath))
-    .filter(Boolean))].sort(compareStrings);
+    .map((node) => node.filePath
+      .trim()
+      .replace(/\\/g, '/')
+      .replace(/\/{2,}/g, '/')
+      .replace(/^(?:\.\/)+/, '')
+      .replace(/\/\.\//g, '/'))
+    .filter(Boolean))].sort();
+  const root = resolve(sourceRoot);
+  const canonicalRoot = canonicalPathFromNearestExisting(root);
   for (const sourcePath of sourcePaths) {
-    const absolute = join(projectRoot, sourcePath);
-    if (!existsSync(absolute)) continue;
-    const text = readFileSync(absolute, 'utf-8');
+    const absolute = resolve(root, sourcePath);
+    const relativePath = relative(root, absolute);
+    let canonicalAbsolute;
+    try {
+      canonicalAbsolute = canonicalPathFromNearestExisting(absolute);
+    } catch {
+      omittedFiles.push(sourcePath);
+      continue;
+    }
+    const canonicalRelativePath = relative(canonicalRoot, canonicalAbsolute);
+    if (
+      relativePath.startsWith('..')
+      || isAbsolute(relativePath)
+      || canonicalRelativePath.startsWith('..')
+      || isAbsolute(canonicalRelativePath)
+      || !existsSync(absolute)
+    ) {
+      omittedFiles.push(sourcePath);
+      continue;
+    }
+    let text;
+    try {
+      text = readFileSync(absolute, 'utf-8');
+    } catch {
+      omittedFiles.push(sourcePath);
+      continue;
+    }
     const bytes = Buffer.byteLength(text, 'utf-8');
     if (readBytes + bytes > maxSourceBytes) {
       omittedFiles.push(sourcePath);
@@ -275,7 +441,7 @@ function printGraphStats(graph, sourceStats) {
   if (sourceStats) {
     console.log(`已读取源码文件: ${sourceStats.readFiles}；源码字节: ${sourceStats.readBytes} / ${sourceStats.maxSourceBytes}`);
     if (sourceStats.omittedFiles.length > 0) {
-      console.log(`因源码读取上限跳过文件数: ${sourceStats.omittedFiles.length}`);
+      console.log(`未读取源码文件数: ${sourceStats.omittedFiles.length}`);
     }
   }
 }
@@ -304,328 +470,6 @@ function cleanOutputDocuments(outputRoot) {
   }
 }
 
-function wikiId(prefix, value) {
-  return `${prefix}:${encodeURIComponent(String(value || 'unknown'))}`;
-}
-
-function compareStrings(a, b) {
-  if (a < b) return -1;
-  if (a > b) return 1;
-  return 0;
-}
-
-function uniqueSortedStrings(values) {
-  return [...new Set(values.filter((value) => typeof value === 'string' && value.trim().length > 0))]
-    .sort(compareStrings);
-}
-
-const MAX_RELATED_NODE_IDS = 24;
-
-function markdownPathForDocument(doc) {
-  return `knowledge-base/${doc.path.replace(/\\/g, '/').replace(/^\/+/, '')}`;
-}
-
-function wikiPageCategoryForDocument(category) {
-  if (category === 'overview') return 'overview';
-  if (category === 'module') return 'module';
-  if (category === 'file') return 'file';
-  if (category === 'flow') return 'flow';
-  if (category === 'topic') return 'symbol';
-  if (category === 'capability') return 'capability';
-  if (category === 'quality' || category === 'coverage') return 'quality';
-  if (category === 'report') return 'quality';
-  if (category === 'top-level' || category === 'index') return 'overview';
-  return 'other';
-}
-
-function wikiPageCategoryForNode(node) {
-  if (node.type === 'domain') return 'capability';
-  if (node.type === 'flow' || node.type === 'step') return 'flow';
-  if (node.type === 'module') return 'module';
-  if (node.type === 'file' || node.type === 'config' || node.type === 'document') return 'file';
-  if (node.type === 'function' || node.type === 'class') return 'symbol';
-  return 'other';
-}
-
-function relatedNodeIdsFor(graph, explainedNodeIds) {
-  const explained = new Set(explainedNodeIds);
-  const relatedById = new Map();
-  for (const edge of graph.edges) {
-    const relatedId = explained.has(edge.source) && !explained.has(edge.target)
-      ? edge.target
-      : explained.has(edge.target) && !explained.has(edge.source)
-        ? edge.source
-        : null;
-    if (!relatedId) continue;
-    const current = relatedById.get(relatedId);
-    const weight = Number.isFinite(edge.weight) ? edge.weight : 0;
-    if (!current || weight > current.weight) {
-      relatedById.set(relatedId, { nodeId: relatedId, weight, type: edge.type || '' });
-    }
-  }
-  return [...relatedById.values()]
-    .sort((a, b) => b.weight - a.weight || compareStrings(a.type, b.type) || compareStrings(a.nodeId, b.nodeId))
-    .slice(0, MAX_RELATED_NODE_IDS)
-    .map((item) => item.nodeId);
-}
-
-function firstChineseSummaryLine(markdown) {
-  for (const rawLine of String(markdown || '').split(/\r?\n/)) {
-    const trimmedRawLine = rawLine.trim();
-    if (!trimmedRawLine || trimmedRawLine.startsWith('#') || trimmedRawLine.startsWith('|') || trimmedRawLine.startsWith('```')) {
-      continue;
-    }
-    const line = rawLine
-      .trim()
-      .replace(/^[-*+]\s+/, '')
-      .replace(/^\d+[.)]\s+/, '')
-      .replace(/[`*_>#]/g, '')
-      .trim();
-    if (line.length < 12 || !/\p{Script=Han}/u.test(line)) continue;
-    return line.length > 220 ? `${line.slice(0, 219)}…` : line;
-  }
-  return '';
-}
-
-function summaryForDocument(doc, nodes) {
-  const markdownSummary = firstChineseSummaryLine(doc.content);
-  if (markdownSummary) return markdownSummary;
-  const summarizedNode = nodes.find((node) => /\p{Script=Han}/u.test(node?.summary || ''));
-  if (summarizedNode?.summary) return summarizedNode.summary;
-  if (doc.directNodeIds.length > 0) {
-    return `“${doc.title}”直接说明 ${doc.directNodeIds.length} 个代码对象，并把其余对象作为上下文。`;
-  }
-  return `“${doc.title}”是自动生成的知识库页面，用于提供项目说明和阅读导航。`;
-}
-
-function markdownSearchTerms(markdown) {
-  const text = String(markdown || '');
-  const headings = [...text.matchAll(/^#{1,3}\s+(.+)$/gm)]
-    .map((match) => match[1].replace(/[`*_~#]/g, '').trim());
-  const codeTerms = [...text.matchAll(/`([^`\n]{2,120})`/g)]
-    .map((match) => match[1].trim());
-  const aiSection = text.match(/^##\s+AI\s*检索(?:词|索引)\s*$([\s\S]*?)(?=^##\s|\s*$)/m)?.[1] || '';
-  const aiTerms = aiSection
-    .split(/[\n,，;；]+/)
-    .map((value) => value.replace(/^[-*+]\s+/, '').replace(/[`*_~]/g, '').trim());
-  return uniqueSortedStrings([...headings, ...codeTerms, ...aiTerms])
-    .filter((value) => value.length <= 160)
-    .slice(0, 160);
-}
-
-function searchTermsForDocument(doc, nodes) {
-  return uniqueSortedStrings([
-    doc.title,
-    doc.path,
-    ...markdownSearchTerms(doc.content),
-    ...nodes.flatMap((node) => [node?.name, node?.id, node?.filePath, ...(node?.tags || [])]),
-  ]).slice(0, 200);
-}
-
-function evidenceForNode(node) {
-  const evidence = {
-    id: wikiId('evidence', node.id),
-    label: node.name || node.id,
-    nodeIds: [node.id],
-  };
-  if (node.filePath) evidence.filePath = node.filePath;
-  if (validLineRange(node.lineRange)) evidence.lineRange = node.lineRange;
-  return evidence;
-}
-
-function validLineRange(lineRange) {
-  return (
-    Array.isArray(lineRange) &&
-    lineRange.length === 2 &&
-    Number.isInteger(lineRange[0]) &&
-    Number.isInteger(lineRange[1]) &&
-    lineRange[0] > 0 &&
-    lineRange[1] >= lineRange[0]
-  );
-}
-
-function gapSeverityForNode(node) {
-  if (node.complexity === 'complex') return 'high';
-  if (node.complexity === 'moderate') return 'medium';
-  return 'low';
-}
-
-const PARTIAL_COVERAGE_CATEGORIES = new Set([
-  'overview',
-  'module',
-  'quality',
-  'coverage',
-  'other',
-]);
-
-function pageQualityIssues(kb, doc) {
-  const report = kb.coverageReport || {};
-  const issues = [];
-  if ((report.qualityValidation?.failed || []).includes(doc.path)) issues.push('正文质量校验未通过');
-  if ((report.placeholderValidation?.failed || []).includes(doc.path)) issues.push('占位文本校验未通过');
-  if ((report.chineseValidation?.failed || []).includes(doc.path)) issues.push('中文内容校验未通过');
-  if ((kb.validation?.errors || []).some((error) => String(error).includes(doc.path))) {
-    issues.push('文档结构校验未通过');
-  }
-  return uniqueSortedStrings(issues);
-}
-
-function pageQualityFor(doc, issues) {
-  if (issues.length > 0) return 'low-confidence';
-  if (doc.quality === 'verified') return 'verified';
-  return 'generated';
-}
-
-function pageCoverageFor(doc, explainedNodeIds, nodes, quality) {
-  if (explainedNodeIds.length === 0) return 'partial';
-  if (PARTIAL_COVERAGE_CATEGORIES.has(doc.category)) return 'partial';
-  if (quality === 'low-confidence') return 'partial';
-  if (!nodes.some((node) => typeof node?.filePath === 'string' && node.filePath.length > 0)) return 'partial';
-  return 'complete';
-}
-
-function graphDigest(graph) {
-  return createHash('sha256').update(JSON.stringify(graph)).digest('hex');
-}
-
-function fallbackMarkdownPath(kb) {
-  const overview = kb.documents.find((doc) => doc.path === '项目总览.md');
-  const firstMarkdown = kb.documents.find((doc) => doc.path.endsWith('.md'));
-  const fallbackDoc = overview ?? firstMarkdown;
-  return fallbackDoc ? markdownPathForDocument(fallbackDoc) : 'knowledge-base/README.md';
-}
-
-function buildWikiIndexPayload(kb, options = {}) {
-  const graph = kb.profile.graph;
-  const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
-  const evidenceById = new Map();
-  const documentExplainedNodeIds = new Set();
-  const pages = kb.documents.map((doc) => {
-    const explainedNodeIds = uniqueSortedStrings(doc.directNodeIds.filter((nodeId) => nodesById.has(nodeId)));
-    const contextualNodeIds = uniqueSortedStrings(doc.contextNodeIds.filter((nodeId) => nodesById.has(nodeId)));
-    for (const nodeId of explainedNodeIds) documentExplainedNodeIds.add(nodeId);
-    const nodes = explainedNodeIds.map((nodeId) => nodesById.get(nodeId));
-    const qualityIssues = pageQualityIssues(kb, doc);
-    const quality = pageQualityFor(doc, qualityIssues);
-    const evidenceIds = [];
-    for (const node of nodes) {
-      const evidence = evidenceForNode(node);
-      evidenceById.set(evidence.id, evidence);
-      evidenceIds.push(evidence.id);
-    }
-    return {
-      id: wikiId('wiki', doc.path),
-      title: doc.title,
-      category: wikiPageCategoryForDocument(doc.category),
-      summary: summaryForDocument(doc, nodes),
-      markdownPath: markdownPathForDocument(doc),
-      explainedNodeIds,
-      relatedNodeIds: contextualNodeIds.slice(0, MAX_RELATED_NODE_IDS),
-      evidenceIds: uniqueSortedStrings(evidenceIds),
-      coverage: pageCoverageFor(doc, explainedNodeIds, nodes, quality),
-      quality,
-      qualityIssues,
-      searchTerms: searchTermsForDocument(doc, nodes),
-    };
-  });
-
-  if (documentExplainedNodeIds.size === 0) {
-    const markdownPath = fallbackMarkdownPath(kb);
-    for (const node of graph.nodes) {
-      const evidence = evidenceForNode(node);
-      evidenceById.set(evidence.id, evidence);
-      pages.push({
-        id: wikiId('wiki-node', node.id),
-        title: node.name || node.id,
-        category: wikiPageCategoryForNode(node),
-        summary: /\p{Script=Han}/u.test(node.summary || '')
-          ? node.summary
-          : `${node.name || node.id} 是 ${graph.project.name} 中尚待补充详细说明的代码对象。`,
-        markdownPath,
-        explainedNodeIds: [node.id],
-        relatedNodeIds: relatedNodeIdsFor(graph, [node.id]),
-        evidenceIds: [evidence.id],
-        coverage: 'partial',
-        quality: 'low-confidence',
-        qualityIssues: ['尚无专门的 Wiki 正文'],
-        searchTerms: uniqueSortedStrings([
-          node.name,
-          node.id,
-          node.filePath,
-          ...(node.tags || []),
-        ]),
-      });
-    }
-  }
-
-  const gaps = graph.nodes
-    .filter((node) => !documentExplainedNodeIds.has(node.id))
-    .map((node) => ({
-      id: wikiId('gap', node.id),
-      nodeId: node.id,
-      reason: '尚未生成能够充分解释该代码对象的 Wiki 页面。',
-      severity: gapSeverityForNode(node),
-    }));
-
-  const generatedAt = new Date().toISOString();
-  const source = {
-    outputLanguage: 'zh-Hans',
-    graphDigest: graphDigest(graph),
-    generationMode: options.generationMode || 'unknown',
-    coverageStatus: kb.coverageReport?.status || 'unknown',
-  };
-  if (graph.project.gitCommitHash) source.gitCommitHash = graph.project.gitCommitHash;
-  if (graph.project.analyzedAt) source.graphAnalyzedAt = graph.project.analyzedAt;
-
-  return {
-    version: 1,
-    generatedAt,
-    projectName: graph.project.name,
-    source,
-    pages,
-    evidence: [...evidenceById.values()].sort((a, b) => compareStrings(a.id, b.id)),
-    gaps,
-  };
-}
-
-function serializableProfile(kb) {
-  return {
-    project: kb.profile.graph.project,
-    nodeCounts: kb.coverageReport.nodeCounts,
-    edgeCounts: kb.coverageReport.edgeCounts,
-    layerProfiles: kb.profile.layerProfiles,
-    entryCandidates: kb.profile.entryCandidates,
-    topicCandidates: kb.topicPlan.topics.map((topic) => ({
-      nodeId: topic.topicNodeId,
-      reasons: topic.reasons,
-      tier: topic.tier,
-    })),
-    fileDocPlan: {
-      tasks: kb.fileDocPlan.tasks.length,
-      batches: kb.fileDocPlan.batches.length,
-      warnings: kb.fileDocPlan.warnings,
-    },
-    topicPlan: {
-      topics: kb.topicPlan.topics.length,
-      batches: kb.topicPlan.batches.length,
-      warnings: kb.topicPlan.warnings,
-    },
-    businessCapabilityProfile: kb.businessCapabilityProfile ? {
-      facts: kb.businessCapabilityProfile.totalFacts,
-      sourceBackedFacts: kb.businessCapabilityProfile.sourceBackedFacts,
-      capabilities: kb.businessCapabilityProfile.capabilities.length,
-    } : undefined,
-    documentInventory: kb.documents.map((doc) => ({
-      path: doc.path,
-      title: doc.title,
-      category: doc.category,
-    })),
-    coverageReport: kb.coverageReport,
-    validation: kb.validation,
-    retryPlan: kb.retryPlan,
-  };
-}
-
 function statusLabel(status) {
   if (status === 'complete') return '完整';
   if (status === 'complete-with-warnings') return '完整但有警告';
@@ -649,8 +493,8 @@ function printCoverage(kb, outputRoot) {
   if (kb.validation.warnings.length > 0) console.log(`警告数: ${kb.validation.warnings.length}`);
 }
 
-function loadGraph(core, projectRoot) {
-  const { graphPath } = pathsFor(projectRoot);
+function loadGraph(core, sourceRoot) {
+  const { graphPath } = pathsFor(sourceRoot);
   if (!existsSync(graphPath)) {
     console.error(`未找到知识图谱: ${graphPath}`);
     console.error('请先运行 /understand，再重新运行 /understand-kb。');
@@ -669,41 +513,95 @@ function loadGraph(core, projectRoot) {
   return validation.data;
 }
 
-function loadKnowledgeBaseConfig(core, projectRoot) {
-  return core.loadConfig(projectRoot).knowledgeBase ?? {};
+function buildArtifacts(core, sourceRoot, kb, config, sourceStats, generationMode) {
+  return core.buildKnowledgeArtifacts({
+    projectName: kb.profile.graph.project.name,
+    generatedAt: new Date().toISOString(),
+    outputLanguage: config.outputLanguage ?? 'zh-CN',
+    generationMode,
+    graphDigest: createHash('sha256').update(JSON.stringify(kb.profile.graph)).digest('hex'),
+    gitCommitHash: kb.profile.graph.project.gitCommitHash,
+    sourceRootIdentity: resolve(sourceRoot),
+    sourceRead: {
+      covered: sourceStats.readFiles,
+      total: kb.fileDocPlan.tasks.length,
+      missingIds: kb.fileDocPlan.tasks
+        .filter((task) => !task.sourceSnapshot.exists)
+        .map((task) => task.fileNodeId)
+        .sort(),
+    },
+    requiredRouteStages: kb.plan.requiredRouteStages,
+    businessTerms: config.knowledgeBase?.businessTerms ?? [],
+    nodes: kb.profile.graph.nodes.map((node) => ({
+      id: node.id,
+      type: node.type,
+      name: node.name,
+      ...(node.filePath ? { filePath: node.filePath } : {}),
+    })),
+    referenceFileNodeIds: kb.fileDocPlan.tasks.map((task) => task.fileNodeId).sort(),
+    documents: kb.documents,
+    warnings: [...kb.validation.warnings, ...kb.coverageReport.warnings],
+    errors: [...kb.validation.errors, ...kb.coverageReport.errors],
+  });
 }
 
-function writeKnowledgeBase(outputRoot, kb, keepIntermediate = true, generationMode = 'writer-pool') {
+function publishKnowledgeBase(outputRoot, kb, artifacts, keepIntermediate = true) {
+  const payloads = [
+    artifacts.wikiIndex,
+    artifacts.searchIndex,
+    artifacts.documentTraces,
+    artifacts.generationReport,
+  ];
+  for (const payload of payloads) JSON.stringify(payload);
+
+  if (artifacts.generationReport.sourceRead.covered === 0) {
+    writeJsonAtomic(join(outputRoot, '.trace/generation-report.json'), artifacts.generationReport);
+    console.error('未读取到任何源码，正式知识库未发布。');
+    process.exitCode = 1;
+    return false;
+  }
+
   cleanOutputDocuments(outputRoot);
   for (const doc of kb.documents) writeDocument(outputRoot, doc);
-  writeJson(join(outputRoot, 'wiki-index.json'), buildWikiIndexPayload(kb, { generationMode }));
-  writeJson(join(outputRoot, 'knowledge-base-profile.json'), serializableProfile(kb));
+  writeJsonAtomic(join(outputRoot, 'wiki-index.json'), artifacts.wikiIndex);
+  writeJsonAtomic(join(outputRoot, 'search-index.json'), artifacts.searchIndex);
+  writeJsonAtomic(join(outputRoot, '.trace/document-traces.json'), artifacts.documentTraces);
+  writeJsonAtomic(join(outputRoot, '.trace/generation-report.json'), artifacts.generationReport);
   if (!keepIntermediate) rmSync(join(outputRoot, '.intermediate'), { recursive: true, force: true });
+  return true;
 }
 
-function deterministicGenerate(core, projectRoot, keepIntermediate, args) {
-  const graph = loadGraph(core, projectRoot);
+function deterministicGenerate(core, sourceRoot, outputRoot, keepIntermediate, args) {
+  const graph = loadGraph(core, sourceRoot);
   assertDeterministicAllowed(graph, args);
-  const { sourceFiles, stats } = sourceFilesForGraph(core, projectRoot, graph, args.maxSourceBytes);
+  const { sourceFiles, stats } = sourceFilesForGraph(sourceRoot, graph, args.maxSourceBytes);
   printGraphStats(graph, stats);
+  const config = core.loadConfig(sourceRoot);
   const kb = core.generateKnowledgeBase(graph, {
     sourceFiles,
-    knowledgeBaseConfig: loadKnowledgeBaseConfig(core, projectRoot),
+    outputLanguage: config.outputLanguage ?? 'zh-CN',
+    knowledgeBaseConfig: config.knowledgeBase ?? {},
+    generationMode: 'deterministic',
   });
-  const { outputRoot } = pathsFor(projectRoot);
-  rmSync(outputRoot, { recursive: true, force: true });
-  mkdirSync(outputRoot, { recursive: true });
-  writeKnowledgeBase(outputRoot, kb, keepIntermediate, 'deterministic');
-  printCoverage(kb, outputRoot);
+  const artifacts = buildArtifacts(core, sourceRoot, kb, config, stats, 'deterministic');
+  if (publishKnowledgeBase(outputRoot, kb, artifacts, keepIntermediate)) {
+    printCoverage(kb, outputRoot);
+  }
 }
 
-function prepareFileDocs(core, projectRoot, maxSourceBytes) {
-  const graph = loadGraph(core, projectRoot);
-  const { sourceFiles, stats } = sourceFilesForGraph(core, projectRoot, graph, maxSourceBytes);
+function prepareFileDocs(core, sourceRoot, outputRoot, maxSourceBytes) {
+  const graph = loadGraph(core, sourceRoot);
+  const { sourceFiles, stats } = sourceFilesForGraph(sourceRoot, graph, maxSourceBytes);
   printGraphStats(graph, stats);
+  const config = core.loadConfig(sourceRoot);
   const profile = core.buildKnowledgeBaseProfile(graph);
-  const fileDocPlan = core.buildFileDocPlan(profile, { sourceFiles });
-  const { outputRoot, intermediateRoot } = pathsFor(projectRoot);
+  const fileDocPlan = core.buildFileDocPlan(profile, {
+    sourceFiles,
+    outputLanguage: config.outputLanguage ?? 'zh-CN',
+    knowledgeBaseConfig: config.knowledgeBase ?? {},
+    generationMode: 'writer',
+  });
+  const { intermediateRoot } = pathsFor(sourceRoot, outputRoot);
 
   rmSync(outputRoot, { recursive: true, force: true });
   mkdirSync(intermediateRoot, { recursive: true });
@@ -742,17 +640,23 @@ function readBatchOutputs(intermediateRoot, prefix, parser) {
   return outputs.sort((a, b) => a.batchIndex - b.batchIndex);
 }
 
-function loadProfileAndFilePlan(core, projectRoot, maxSourceBytes = 64 * 1024 * 1024) {
-  const graph = loadGraph(core, projectRoot);
-  const { sourceFiles, stats } = sourceFilesForGraph(core, projectRoot, graph, maxSourceBytes);
+function loadProfileAndFilePlan(core, sourceRoot, maxSourceBytes) {
+  const graph = loadGraph(core, sourceRoot);
+  const { sourceFiles, stats } = sourceFilesForGraph(sourceRoot, graph, maxSourceBytes);
   printGraphStats(graph, stats);
+  const config = core.loadConfig(sourceRoot);
   const profile = core.buildKnowledgeBaseProfile(graph);
-  const fileDocPlan = core.buildFileDocPlan(profile, { sourceFiles });
-  return { graph, profile, fileDocPlan };
+  const fileDocPlan = core.buildFileDocPlan(profile, {
+    sourceFiles,
+    outputLanguage: config.outputLanguage ?? 'zh-CN',
+    knowledgeBaseConfig: config.knowledgeBase ?? {},
+    generationMode: 'writer',
+  });
+  return { graph, profile, fileDocPlan, sourceFiles, sourceStats: stats, config };
 }
 
-function leaseBatch(core, projectRoot, queueFileName, options) {
-  const { intermediateRoot } = pathsFor(projectRoot);
+function leaseBatch(core, outputRoot, queueFileName, options) {
+  const intermediateRoot = join(outputRoot, '.intermediate');
   const queuePath = join(intermediateRoot, queueFileName);
   const queue = requireQueue(queuePath, `未找到队列文件: ${queuePath}`);
   const now = new Date().toISOString();
@@ -767,8 +671,8 @@ function leaseBatch(core, projectRoot, queueFileName, options) {
   console.log(JSON.stringify(leased.leased ?? null, null, 2));
 }
 
-function completeBatch(core, projectRoot, queueFileName, args) {
-  const { intermediateRoot } = pathsFor(projectRoot);
+function completeBatch(core, outputRoot, queueFileName, args) {
+  const intermediateRoot = join(outputRoot, '.intermediate');
   const queuePath = join(intermediateRoot, queueFileName);
   const queue = requireQueue(queuePath, `未找到队列文件: ${queuePath}`);
   const now = new Date().toISOString();
@@ -794,9 +698,9 @@ function completeBatch(core, projectRoot, queueFileName, args) {
   invalidateQueueDownstreamArtifacts(intermediateRoot, queueFileName);
 }
 
-function mergeFileDocs(core, projectRoot, maxSourceBytes) {
-  const { profile, fileDocPlan } = loadProfileAndFilePlan(core, projectRoot, maxSourceBytes);
-  const { outputRoot, intermediateRoot } = pathsFor(projectRoot);
+function mergeFileDocs(core, sourceRoot, outputRoot, maxSourceBytes) {
+  const { profile, fileDocPlan } = loadProfileAndFilePlan(core, sourceRoot, maxSourceBytes);
+  const { intermediateRoot } = pathsFor(sourceRoot, outputRoot);
   const fileQueuePath = join(intermediateRoot, 'file-doc-queue.json');
   const fileQueue = requireQueue(fileQueuePath, '未找到文件阶段队列。请先运行 --prepare-file-docs。');
   const fileWriterOutputs = readBatchOutputs(intermediateRoot, 'file-doc-batch', core.parseFileWriterBatchOutput);
@@ -817,9 +721,9 @@ function mergeFileDocs(core, projectRoot, maxSourceBytes) {
   console.log(`需要重试的文件写作批次数: ${merged.retryPlan.fileBatchIndexes.length}`);
 }
 
-function prepareTopics(core, projectRoot, maxSourceBytes, args) {
-  const { profile, fileDocPlan } = loadProfileAndFilePlan(core, projectRoot, maxSourceBytes);
-  const { intermediateRoot } = pathsFor(projectRoot);
+function prepareTopics(core, sourceRoot, outputRoot, maxSourceBytes, args) {
+  const { profile, fileDocPlan } = loadProfileAndFilePlan(core, sourceRoot, maxSourceBytes);
+  const { intermediateRoot } = pathsFor(sourceRoot, outputRoot);
   const acceptedPath = join(intermediateRoot, 'accepted-file-documents.json');
   if (!existsSync(acceptedPath)) {
     console.error('未找到已接受的文件文档。请先运行 --merge-file-docs。');
@@ -848,9 +752,16 @@ function prepareTopics(core, projectRoot, maxSourceBytes, args) {
   console.log(`计划生成专题文档数: ${topicPlan.topics.length}`);
 }
 
-function finalizeKnowledgeBase(core, projectRoot, keepIntermediate, maxSourceBytes) {
-  const { graph, profile, fileDocPlan } = loadProfileAndFilePlan(core, projectRoot, maxSourceBytes);
-  const { outputRoot, intermediateRoot } = pathsFor(projectRoot);
+function finalizeKnowledgeBase(core, sourceRoot, outputRoot, keepIntermediate, maxSourceBytes) {
+  const {
+    graph,
+    profile,
+    fileDocPlan,
+    sourceFiles,
+    sourceStats,
+    config,
+  } = loadProfileAndFilePlan(core, sourceRoot, maxSourceBytes);
+  const { intermediateRoot } = pathsFor(sourceRoot, outputRoot);
   const fileQueuePath = join(intermediateRoot, 'file-doc-queue.json');
   const fileQueue = requireQueue(fileQueuePath, '未找到文件阶段队列。请先运行 --prepare-file-docs。');
   const topicQueuePath = join(intermediateRoot, 'topic-queue.json');
@@ -906,20 +817,24 @@ function finalizeKnowledgeBase(core, projectRoot, keepIntermediate, maxSourceByt
     topicPlan,
     merged,
     options: {
+      sourceFiles,
+      outputLanguage: config.outputLanguage ?? 'zh-CN',
+      knowledgeBaseConfig: config.knowledgeBase ?? {},
       generationMode: 'writer',
-      knowledgeBaseConfig: loadKnowledgeBaseConfig(core, projectRoot),
     },
   });
 
   if (graph.project.gitCommitHash !== profile.graph.project.gitCommitHash) {
     console.warn('警告: 生成最终知识库时图谱元数据发生变化。');
   }
-  writeKnowledgeBase(outputRoot, kb, keepIntermediate);
-  printCoverage(kb, outputRoot);
+  const artifacts = buildArtifacts(core, sourceRoot, kb, config, sourceStats, 'writer');
+  if (publishKnowledgeBase(outputRoot, kb, artifacts, keepIntermediate)) {
+    printCoverage(kb, outputRoot);
+  }
 }
 
-function printRetryPlan(projectRoot) {
-  const { intermediateRoot } = pathsFor(projectRoot);
+function printRetryPlan(outputRoot) {
+  const intermediateRoot = join(outputRoot, '.intermediate');
   const retryFiles = ['file-doc-retry-plan.json', 'topic-retry-plan.json']
     .map((name) => join(intermediateRoot, name))
     .filter((path) => existsSync(path));
@@ -935,28 +850,29 @@ function printRetryPlan(projectRoot) {
 
 async function main() {
   const args = parseArgs(process.argv);
+  assertSafeOutputRoot(args.sourceRoot, args.outputRoot);
   const core = await loadCore();
 
   if (args.deterministicOnly || args.phase === 'deterministic') {
-    deterministicGenerate(core, args.projectRoot, args.keepIntermediate, args);
+    deterministicGenerate(core, args.sourceRoot, args.outputRoot, args.keepIntermediate, args);
   } else if (args.phase === 'prepare-file-docs') {
-    prepareFileDocs(core, args.projectRoot, args.maxSourceBytes);
+    prepareFileDocs(core, args.sourceRoot, args.outputRoot, args.maxSourceBytes);
   } else if (args.phase === 'merge-file-docs') {
-    mergeFileDocs(core, args.projectRoot, args.maxSourceBytes);
+    mergeFileDocs(core, args.sourceRoot, args.outputRoot, args.maxSourceBytes);
   } else if (args.phase === 'prepare-topics') {
-    prepareTopics(core, args.projectRoot, args.maxSourceBytes, args);
+    prepareTopics(core, args.sourceRoot, args.outputRoot, args.maxSourceBytes, args);
   } else if (args.phase === 'lease-file-batch') {
-    leaseBatch(core, args.projectRoot, 'file-doc-queue.json', args);
+    leaseBatch(core, args.outputRoot, 'file-doc-queue.json', args);
   } else if (args.phase === 'lease-topic-batch') {
-    leaseBatch(core, args.projectRoot, 'topic-queue.json', args);
+    leaseBatch(core, args.outputRoot, 'topic-queue.json', args);
   } else if (args.phase === 'complete-file-batch') {
-    completeBatch(core, args.projectRoot, 'file-doc-queue.json', args);
+    completeBatch(core, args.outputRoot, 'file-doc-queue.json', args);
   } else if (args.phase === 'complete-topic-batch') {
-    completeBatch(core, args.projectRoot, 'topic-queue.json', args);
+    completeBatch(core, args.outputRoot, 'topic-queue.json', args);
   } else if (args.phase === 'finalize') {
-    finalizeKnowledgeBase(core, args.projectRoot, args.keepIntermediate, args.maxSourceBytes);
+    finalizeKnowledgeBase(core, args.sourceRoot, args.outputRoot, args.keepIntermediate, args.maxSourceBytes);
   } else if (args.phase === 'retry') {
-    printRetryPlan(args.projectRoot);
+    printRetryPlan(args.outputRoot);
   } else {
     console.error(`未知阶段: ${args.phase}`);
     process.exit(1);

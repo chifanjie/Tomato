@@ -77,6 +77,29 @@ function completeFileMarkdown(): string {
     "- `function:src/service/feed.ts:rankCandidates` 位于 `src/service/feed.ts:92-120`，覆盖排序规则。",
     "- `class:src/service/feed.ts:FeedBuilder` 位于 `src/service/feed.ts:122-180`，覆盖响应对象组装。",
     "",
+    "## 输入、输出与关键字段",
+    "文件读取请求上下文、用户标识和候选分数，输出有序的 Feed 项以及用于排查的排序元数据。",
+    "",
+    "## 规则、分支与状态变化",
+    "候选为空时返回空列表；候选存在时按分数稳定排序，组装状态由原始候选转换为最终响应。",
+    "",
+    "## 配置、依赖与副作用",
+    "排序依赖候选加载结果和分数字段，不写入持久化存储，但会改变客户端观察到的曝光顺序。",
+    "",
+    "## 异常、测试与改动风险",
+    "应覆盖空候选、缺失分数和同分候选；修改比较逻辑会改变曝光顺序并影响调用方断言。",
+    "",
+    "## 函数与类型",
+    '<a id="build-feed"></a>',
+    "`BuildFeed` 读取候选并构建响应。",
+    '<a id="rank-candidates"></a>',
+    "`rankCandidates` 执行稳定排序。",
+    '<a id="feed-builder"></a>',
+    "`FeedBuilder` 保存组装状态并生成返回对象。",
+    "",
+    "## 源码证据",
+    "`src/service/feed.ts:30-180` 展示候选加载、排序调用和响应组装的完整实现。",
+    "",
     "## AI 检索索引",
     "| 检索意图 | 关键词 | 定位 |",
     "|---|---|---|",
@@ -149,6 +172,21 @@ function completeTopicMarkdown(): string {
     "- `function:src/service/feed.ts:BuildFeed` 位于 `src/service/feed.ts:30-120`，覆盖候选加载、排序和响应输出。",
     "- `function:src/service/feed.ts:rankCandidates` 位于 `src/service/feed.ts:92-120`，覆盖排序规则。",
     "",
+    "## 完整条件与跳过规则",
+    "请求完成身份解析且候选加载成功后进入排序；候选为空时跳过比较过程并直接构建空响应。",
+    "",
+    "## 输入输出与状态变化",
+    "输入请求上下文、候选列表和分数，输出稳定排序的 Feed 项；候选状态从召回顺序变为展示顺序。",
+    "",
+    "## 算法、分支与降级",
+    "排序优先比较分数，同分时保留原始顺序；缺失候选时降级为空列表并保留请求元数据。",
+    "",
+    "## 依赖、测试与可观测性",
+    "依赖候选加载和响应构建模块，应覆盖正常、空候选与同分分支，并通过排序元数据定位异常。",
+    "",
+    "## 源码证据",
+    "`src/service/feed.ts:30-90` 支持入口与响应结论，`src/service/feed.ts:92-120` 支持稳定排序结论。",
+    "",
     "## AI 检索索引",
     "| 检索意图 | 关键词 | 定位 |",
     "|---|---|---|",
@@ -178,8 +216,31 @@ function completeFileOutput() {
         sourceEvidence: [
           {
             filePath: "src/service/feed.ts",
+            lineRange: [1, 180],
+            nodeId: "file:src/service/feed.ts",
+            excerpt: "export function BuildFeed(request: FeedRequest): FeedResponse { /* ... */ }",
+            claim: "该文件实现候选加载、排序和 Feed 响应组装。",
+          },
+          {
+            filePath: "src/service/feed.ts",
             lineRange: [30, 90],
             nodeId: "function:src/service/feed.ts:BuildFeed",
+            excerpt: "const candidates = LoadCandidates(request); return builder.build(candidates);",
+            claim: "BuildFeed 读取候选并生成最终响应。",
+          },
+          {
+            filePath: "src/service/feed.ts",
+            lineRange: [92, 120],
+            nodeId: "function:src/service/feed.ts:rankCandidates",
+            excerpt: "return candidates.toSorted(compareScore);",
+            claim: "rankCandidates 根据候选分数稳定调整展示顺序。",
+          },
+          {
+            filePath: "src/service/feed.ts",
+            lineRange: [122, 180],
+            nodeId: "class:src/service/feed.ts:FeedBuilder",
+            excerpt: "export class FeedBuilder { build(items: Item[]) { return { items }; } }",
+            claim: "FeedBuilder 保存候选并构造响应对象。",
           },
         ],
         importantNodeIds: ["function:src/service/feed.ts:BuildFeed"],
@@ -207,7 +268,24 @@ function completeTopicOutput() {
         evidence: [
           {
             filePath: "src/service/feed.ts",
-            lineRange: [30, 120],
+            lineRange: [30, 90],
+            nodeId: "topic:feed-ranking",
+            excerpt: "const candidates = LoadCandidates(request); return builder.build(rankCandidates(candidates));",
+            claim: "Feed 排序主题由候选加载、排序和响应构建三个步骤组成。",
+          },
+          {
+            filePath: "src/service/feed.ts",
+            lineRange: [92, 120],
+            nodeId: "function:src/service/feed.ts:rankCandidates",
+            excerpt: "return candidates.toSorted(compareScore);",
+            claim: "rankCandidates 根据候选分数稳定调整展示顺序。",
+          },
+          {
+            filePath: "src/data/store.ts",
+            lineRange: [10, 35],
+            nodeId: "function:src/data/store.ts:LoadCandidates",
+            excerpt: "export function LoadCandidates(userId: string): Candidate[] { /* ... */ }",
+            claim: "LoadCandidates 为排序链路提供候选集合。",
           },
         ],
         markdown: completeTopicMarkdown(),
@@ -215,6 +293,59 @@ function completeTopicOutput() {
     ],
     warnings: [],
   };
+}
+
+const SPECIALIZED_FILE_SECTIONS = {
+  configuration: [
+    "配置目的与作用域",
+    "配置项、类型与默认值",
+    "读取位置与生效顺序",
+    "缺失、非法值与降级",
+    "测试与改动风险",
+    "源码证据",
+  ],
+  schema: [
+    "数据模型与边界",
+    "字段、类型与约束",
+    "读写方与生命周期",
+    "校验、迁移与兼容性",
+    "测试与改动风险",
+    "源码证据",
+  ],
+  documentation: [
+    "文档目的与读者",
+    "关键结论",
+    "链接与外部依赖",
+    "与代码的对应关系",
+    "过期风险与维护入口",
+    "源码证据",
+  ],
+  test: [
+    "被测行为与范围",
+    "用例、输入与断言",
+    "Fixture、Mock 与外部依赖",
+    "失败分支与回归风险",
+    "尚未覆盖的行为",
+    "与生产代码的对应关系",
+    "源码证据",
+  ],
+} as const;
+
+function completeSpecializedFileOutput(kind: keyof typeof SPECIALIZED_FILE_SECTIONS) {
+  const output = completeFileOutput();
+  output.documents[0].referenceKind = kind;
+  output.documents[0].markdown = [
+    `# ${output.documents[0].filePath}`,
+    "",
+    ...SPECIALIZED_FILE_SECTIONS[kind].flatMap((section) => [
+      `## ${section}`,
+      section === "源码证据"
+        ? "`src/service/feed.ts:1-180` 的原文分别支持文件入口、排序函数和响应构建类型的结论。"
+        : `${section}：这里记录当前文件可由源码核对的字段、约束、调用位置和失败表现，不推测线上业务口径。`,
+      "",
+    ]),
+  ].join("\n");
+  return output;
 }
 
 describe("writer contracts", () => {
@@ -278,6 +409,15 @@ describe("writer contracts", () => {
       "documents[0].referenceKind must be one of: code, configuration, schema, documentation, test",
     );
   });
+
+  it.each(["configuration", "schema", "documentation", "test"] as const)(
+    "accepts the specialized %s file template without code-template headings",
+    (referenceKind) => {
+      const output = completeSpecializedFileOutput(referenceKind);
+
+      expect(parseFileWriterBatchOutput(output)).toEqual({ ok: true, value: output, errors: [] });
+    },
+  );
 
   it("ignores placeholder tokens in code while keeping prose and headings invalid", () => {
     expect(containsPlaceholderProse("## 代码证据\n\n- 行内：`TODO`\n\n```ts\nconst FIXME = true;\n```"))
@@ -398,7 +538,7 @@ describe("writer contracts", () => {
     expect(result.errors).toContain("documents[0].markdown does not explain enough source evidence");
   });
 
-  it("rejects file documents that omit covered function ids from function cards", () => {
+  it("does not require legacy function cards when direct evidence covers every symbol", () => {
     const output = completeFileOutput();
     output.documents[0].markdown = output.documents[0].markdown.replace(
       "`function:src/service/feed.ts:BuildFeed` - `BuildFeed`",
@@ -407,10 +547,7 @@ describe("writer contracts", () => {
 
     const result = parseFileWriterBatchOutput(output);
 
-    expect(result.ok).toBe(false);
-    expect(result.errors).toContain(
-      "documents[0].markdown missing covered function id: function:src/service/feed.ts:BuildFeed",
-    );
+    expect(result).toEqual({ ok: true, value: output, errors: [] });
   });
 
   it("does not reject placeholder-like text in file paths or ids", () => {
@@ -418,6 +555,7 @@ describe("writer contracts", () => {
     output.documents[0].fileNodeId = "file:src/flags/FIXME_FLAG.ts";
     output.documents[0].filePath = "docs/TODO.md";
     output.documents[0].documentPath = "文件文档/TODO.md";
+    output.documents[0].sourceEvidence[0].nodeId = "file:src/flags/FIXME_FLAG.ts";
 
     const result = parseFileWriterBatchOutput(output);
 
@@ -456,6 +594,61 @@ describe("writer contracts", () => {
 
     expect(result.ok).toBe(false);
     expect(result.errors).toContain("documents[0].sourceEvidence[0] must be an object");
+  });
+
+  it("rejects empty file source evidence", () => {
+    const output = completeFileOutput();
+    output.documents[0].sourceEvidence = [];
+
+    const result = parseFileWriterBatchOutput(output);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("documents[0].sourceEvidence must contain at least one evidence item");
+  });
+
+  it.each([
+    ["nodeId", "documents[0].sourceEvidence[0].nodeId must be a non-empty string"],
+    ["excerpt", "documents[0].sourceEvidence[0].excerpt must be a non-empty string"],
+    ["claim", "documents[0].sourceEvidence[0].claim must contain a concrete Chinese conclusion"],
+  ] as const)("rejects file evidence without %s", (field, expectedError) => {
+    const output = completeFileOutput() as { documents: Array<Record<string, unknown>> };
+    const evidence = (output.documents[0].sourceEvidence as Array<Record<string, unknown>>)[0];
+    delete evidence[field];
+
+    const result = parseFileWriterBatchOutput(output);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain(expectedError);
+  });
+
+  it("rejects file evidence whose line range is non-positive or reversed", () => {
+    const nonPositive = completeFileOutput();
+    nonPositive.documents[0].sourceEvidence[0].lineRange = [0, 8];
+    const reversed = completeFileOutput();
+    reversed.documents[0].sourceEvidence[0].lineRange = [9, 8];
+
+    expect(parseFileWriterBatchOutput(nonPositive).errors).toContain(
+      "documents[0].sourceEvidence[0].lineRange must contain positive ordered integers",
+    );
+    expect(parseFileWriterBatchOutput(reversed).errors).toContain(
+      "documents[0].sourceEvidence[0].lineRange must contain positive ordered integers",
+    );
+  });
+
+  it("rejects file evidence that does not cover the file and every covered symbol", () => {
+    const output = completeFileOutput();
+    output.documents[0].sourceEvidence = output.documents[0].sourceEvidence.slice(1, 2);
+
+    const result = parseFileWriterBatchOutput(output);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("documents[0].sourceEvidence missing direct node: file:src/service/feed.ts");
+    expect(result.errors).toContain(
+      "documents[0].sourceEvidence missing direct node: function:src/service/feed.ts:rankCandidates",
+    );
+    expect(result.errors).toContain(
+      "documents[0].sourceEvidence missing direct node: class:src/service/feed.ts:FeedBuilder",
+    );
   });
 
   it("rejects invalid file source evidence line ranges", () => {
@@ -515,6 +708,40 @@ describe("writer contracts", () => {
     expect(result.errors).toContain("topics[0].evidence must be an array");
   });
 
+  it("rejects empty topic evidence arrays", () => {
+    const output = completeTopicOutput();
+    output.topics[0].evidence = [];
+
+    const result = parseTopicWriterBatchOutput(output);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("topics[0].evidence must contain at least one evidence item");
+  });
+
+  it("rejects topic evidence with fewer than three distinct source groups", () => {
+    const output = completeTopicOutput();
+    output.topics[0].evidence = [
+      output.topics[0].evidence[0],
+      { ...output.topics[0].evidence[0], nodeId: "function:src/service/feed.ts:BuildFeed" },
+      { ...output.topics[0].evidence[1], nodeId: "function:src/service/feed.ts:rankCandidates-copy" },
+    ];
+
+    const result = parseTopicWriterBatchOutput(output);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("topics[0].evidence must contain at least three distinct source groups");
+  });
+
+  it("rejects topic evidence that never names the topic node", () => {
+    const output = completeTopicOutput();
+    output.topics[0].evidence[0].nodeId = "function:src/service/feed.ts:BuildFeed";
+
+    const result = parseTopicWriterBatchOutput(output);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("topics[0].evidence must include topic node: topic:feed-ranking");
+  });
+
   it("rejects empty topic-writer topic arrays", () => {
     const output = completeTopicOutput();
     output.topics = [];
@@ -532,7 +759,7 @@ describe("writer contracts", () => {
     const result = parseTopicWriterBatchOutput(output);
 
     expect(result.ok).toBe(false);
-    expect(result.errors).toContain("topics[0].evidence[0].filePath must be a string");
+    expect(result.errors).toContain("topics[0].evidence[0].filePath must be a non-empty string");
   });
 
   it("rejects topic evidence with non-string file paths", () => {
@@ -542,7 +769,7 @@ describe("writer contracts", () => {
     const result = parseTopicWriterBatchOutput(output);
 
     expect(result.ok).toBe(false);
-    expect(result.errors).toContain("topics[0].evidence[0].filePath must be a string");
+    expect(result.errors).toContain("topics[0].evidence[0].filePath must be a non-empty string");
   });
 
   it("summarizes generated document quality from content fields", () => {
@@ -672,7 +899,7 @@ describe("writer contracts", () => {
 
     expect(summary.failed).toEqual(documents.map((document) => document.path));
     expect(summary.warnings).toContain(
-      "document repeats 3 boilerplate lines across corpus: generated/repeated-1.md",
+      "document contains repeated boilerplate across corpus: generated/repeated-1.md",
     );
   });
 });

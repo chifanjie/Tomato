@@ -1,3 +1,18 @@
+import type {
+  KnowledgeDocumentCategory,
+  KnowledgeDocumentRole,
+  ReferenceTemplateKind,
+  SourceEvidence,
+  SymbolAnchor,
+} from "./types.js";
+import {
+  containsGenericPublicationPhrase,
+  evaluatePublicationCorpus,
+  isValidPublicationEvidence,
+  type PublicationCorpusEntry,
+  type PublicationEvidence,
+} from "./publication-quality.js";
+
 export interface MarkdownQualityOptions {
   path: string;
   sections: readonly string[];
@@ -25,27 +40,17 @@ export interface MarkdownQualityDocument {
   sourceEvidenceRefs?: string[];
   coveredFunctionNodeIds?: string[];
   coveredClassNodeIds?: string[];
+  role?: KnowledgeDocumentRole;
+  referenceKind?: ReferenceTemplateKind;
+  directNodeIds?: string[];
+  representedEdgeIds?: string[];
+  symbolAnchors?: SymbolAnchor[];
+  sourceEvidence?: SourceEvidence[];
+  quality?: "verified" | "generated" | "needs-review" | "failed";
+  qualityIssues?: string[];
 }
 
-const GENERIC_FILLER = [
-  "承担核心逻辑",
-  "承担该文件中的一段核心逻辑",
-  "处理相关能力",
-  "未在图谱中识别",
-  "接收上游传入的业务上下文",
-  "同文件内的协作单元",
-  "主要把处理结果返回给调用方",
-  "候选数据为空、配置缺失",
-  "需要重点检查条件分支、排序或过滤规则",
-] as const;
-
 const MIN_SECTION_BODY_CHARS = 16;
-const MAX_UNIQUE_GENERIC_FILLER = 3;
-const MAX_TOTAL_GENERIC_FILLER_OCCURRENCES = 4;
-const MIN_REPEATED_LINE_CHARS = 32;
-const MIN_REPEATED_DOCUMENTS = 5;
-const REPEATED_DOCUMENT_RATIO = 0.2;
-const MAX_REPEATED_LINES_BEFORE_FAILURE = 3;
 const PLACEHOLDER_PROSE_RE = /\b(TBD|TODO|FIXME)\b|待\s*定|占\s*位|后续\s*补充|这里\s*填写/i;
 
 function masked(value: string): string {
@@ -148,26 +153,6 @@ export function sectionBody(markdown: string, section: string): string {
   return (nextHeadingIndex >= 0 ? rest.slice(0, nextHeadingIndex) : rest).trim();
 }
 
-function genericFillerOccurrences(markdown: string): { unique: number; total: number } {
-  let unique = 0;
-  let total = 0;
-  for (const phrase of GENERIC_FILLER) {
-    const matches = markdown.match(new RegExp(escapeRegExp(phrase), "g")) ?? [];
-    if (matches.length > 0) unique += 1;
-    total += matches.length;
-  }
-  return { unique, total };
-}
-
-function hasGenericFillerText(markdown: string): boolean {
-  return genericFillerOccurrences(markdown).total > 0;
-}
-
-function hasTooMuchGenericFiller(markdown: string): boolean {
-  const occurrences = genericFillerOccurrences(markdown);
-  return occurrences.unique >= MAX_UNIQUE_GENERIC_FILLER || occurrences.total >= MAX_TOTAL_GENERIC_FILLER_OCCURRENCES;
-}
-
 function meaningfulCharacterCount(body: string): number {
   return body.replace(/[`*_#>\-\s|:：,，.。;；、()[\]{}]/g, "").length;
 }
@@ -224,7 +209,7 @@ function validateCoveredIds(
 export function validateMarkdownQuality(markdown: string, options: MarkdownQualityOptions): string[] {
   const errors: string[] = [];
 
-  if (hasTooMuchGenericFiller(markdown)) {
+  if (containsGenericPublicationPhrase(markdown)) {
     errors.push(`${options.path} has too much generic filler text`);
   }
 
@@ -236,7 +221,8 @@ export function validateMarkdownQuality(markdown: string, options: MarkdownQuali
 
   const sourceEvidenceRefs = options.sourceEvidenceRefs ?? [];
   if (sourceEvidenceRefs.length > 0) {
-    const evidenceBody = sectionBody(markdown, "## 代码证据");
+    const evidenceSection = /^## 源码证据\s*$/m.test(markdown) ? "## 源码证据" : "## 代码证据";
+    const evidenceBody = sectionBody(markdown, evidenceSection);
     if (!includesSourceEvidencePath(evidenceBody, sourceEvidenceRefs) || !hasEvidenceExplanation(evidenceBody, sourceEvidenceRefs)) {
       errors.push(`${options.path} does not explain enough source evidence`);
     }
@@ -254,17 +240,6 @@ export function validateMarkdownQuality(markdown: string, options: MarkdownQuali
 
 function markdownSections(markdown: string): string[] {
   return [...markdown.matchAll(/^##\s+.+$/gm)].map((match) => match[0].trim());
-}
-
-function repeatedLineCandidates(markdown: string): string[] {
-  const candidates = markdown
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => {
-      if (!line || line.startsWith("#") || line.startsWith("|") || line.startsWith("```")) return false;
-      return meaningfulCharacterCount(line) >= MIN_REPEATED_LINE_CHARS;
-    });
-  return [...new Set(candidates)];
 }
 
 function appendWarning(summary: MarkdownQualitySummary, warning: string): void {
@@ -290,68 +265,104 @@ export function summarizeMarkdownQuality(
     warnings: [],
   };
 
-  documents.forEach((document, index) => {
+  const alreadyEvaluated = documents.every((document, index) => {
+    const path = document.path ?? `documents[${index}]`;
+    return isSideChannelDocument(document, path) || typeof document.quality === "string";
+  });
+  if (alreadyEvaluated) {
+    documents.forEach((document, index) => {
+      summary.checked += 1;
+      const path = document.path ?? `documents[${index}]`;
+      if (isSideChannelDocument(document, path)) return;
+      const issues = document.qualityIssues ?? [];
+      if (issues.includes("正文包含空泛模板语句")) {
+        appendWarning(summary, `document has generic filler text: ${path}`);
+      }
+      if (issues.includes("正文包含跨文档重复模板语句")) {
+        appendWarning(summary, `document contains repeated boilerplate across corpus: ${path}`);
+      }
+      if (document.quality === "failed" || document.quality === "needs-review") {
+        summary.failed.push(path);
+        appendWarning(summary, `document failed quality validation: ${path}`);
+      }
+    });
+    return summary;
+  }
+
+  const categoryValues = new Set<KnowledgeDocumentCategory>([
+    "overview", "capability", "flow", "module", "topic", "file", "quality", "coverage", "other",
+  ]);
+  const proseDocuments = documents.flatMap((document, index) => {
+    const path = document.path ?? `documents[${index}]`;
     summary.checked += 1;
-    const path = document.path ?? `documents[${index}]`;
+    if (isSideChannelDocument(document, path)) return [];
     const markdown = document.content ?? document.markdown ?? "";
-    const sections = document.sections ?? options.sections ?? markdownSections(markdown);
-    const sideChannel = isSideChannelDocument(document, path);
-    const errors = sideChannel
-      ? []
-      : validateMarkdownQuality(markdown, {
-          path,
-          sections,
-          sourceEvidenceRefs: document.sourceEvidenceRefs,
-          coveredFunctionNodeIds: document.coveredFunctionNodeIds,
-          coveredClassNodeIds: document.coveredClassNodeIds,
-        });
-    if (!sideChannel && sections.length === 0) {
-      errors.push(`${path} has no substantive markdown sections`);
-    }
-    if (!sideChannel && hasGenericFillerText(markdown)) {
-      appendWarning(summary, `document has generic filler text: ${path}`);
-    }
-    if (errors.length > 0) {
-      summary.failed.push(path);
-      appendWarning(summary, `document failed quality validation: ${path}`);
-    }
+    const category = categoryValues.has(document.category as KnowledgeDocumentCategory)
+      ? document.category as KnowledgeDocumentCategory
+      : "other";
+    const evidence = publicationEvidenceForCompatibility(document, markdown, path);
+    const entry: PublicationCorpusEntry = {
+      document: {
+        path,
+        title: markdown.match(/^#\s+(.+)$/m)?.[1] ?? path,
+        category,
+        role: document.role ?? "reference",
+        content: markdown,
+        directNodeIds: document.directNodeIds ?? [],
+        representedEdgeIds: document.representedEdgeIds ?? [],
+        symbolAnchors: document.symbolAnchors ?? [],
+        ...(document.referenceKind ? { referenceKind: document.referenceKind } : {}),
+      },
+      evidence,
+    };
+    return [{ document, path, markdown, entry }];
   });
 
-  const repeatedLineDocuments = new Map<string, Set<number>>();
-  documents.forEach((document, index) => {
-    const path = document.path ?? `documents[${index}]`;
-    if (isSideChannelDocument(document, path)) return;
-    const markdown = document.content ?? document.markdown ?? "";
-    for (const line of repeatedLineCandidates(markdown)) {
-      const indexes = repeatedLineDocuments.get(line) ?? new Set<number>();
-      indexes.add(index);
-      repeatedLineDocuments.set(line, indexes);
+  const corpusResults = evaluatePublicationCorpus(proseDocuments.map((item) => item.entry));
+  corpusResults.forEach((result, index) => {
+    const source = proseDocuments[index];
+    const sections = source.document.sections ?? options.sections ?? markdownSections(source.markdown);
+    const structuralErrors = validateMarkdownQuality(source.markdown, {
+      path: source.path,
+      sections,
+      sourceEvidenceRefs: source.document.sourceEvidenceRefs,
+      coveredFunctionNodeIds: source.document.coveredFunctionNodeIds,
+      coveredClassNodeIds: source.document.coveredClassNodeIds,
+    });
+    if (sections.length === 0) structuralErrors.push(`${source.path} has no substantive markdown sections`);
+    if (result.decision.issues.includes("正文包含空泛模板语句")) {
+      appendWarning(summary, `document has generic filler text: ${source.path}`);
+    }
+    if (result.decision.issues.includes("正文包含跨文档重复模板语句")) {
+      appendWarning(summary, `document contains repeated boilerplate across corpus: ${source.path}`);
+    }
+    if (result.decision.quality !== "generated" || structuralErrors.length > 0) {
+      summary.failed.push(source.path);
+      appendWarning(summary, `document failed quality validation: ${source.path}`);
     }
   });
-
-  const proseDocumentCount = documents.filter((document, index) => {
-    const path = document.path ?? `documents[${index}]`;
-    return !isSideChannelDocument(document, path);
-  }).length;
-  const repeatedThreshold = Math.max(
-    MIN_REPEATED_DOCUMENTS,
-    Math.ceil(proseDocumentCount * REPEATED_DOCUMENT_RATIO),
-  );
-  const repeatedLinesByDocument = new Map<number, number>();
-  for (const indexes of repeatedLineDocuments.values()) {
-    if (indexes.size < repeatedThreshold) continue;
-    for (const index of indexes) {
-      repeatedLinesByDocument.set(index, (repeatedLinesByDocument.get(index) ?? 0) + 1);
-    }
-  }
-
-  for (const [index, repeatedLines] of repeatedLinesByDocument) {
-    const path = documents[index]?.path ?? `documents[${index}]`;
-    appendWarning(summary, `document repeats ${repeatedLines} boilerplate lines across corpus: ${path}`);
-    if (repeatedLines < MAX_REPEATED_LINES_BEFORE_FAILURE) continue;
-    if (!summary.failed.includes(path)) summary.failed.push(path);
-    appendWarning(summary, `document failed quality validation: ${path}`);
-  }
 
   return summary;
+}
+
+function publicationEvidenceForCompatibility(
+  document: MarkdownQualityDocument,
+  markdown: string,
+  path: string,
+): PublicationEvidence[] {
+  const direct = (document.sourceEvidence ?? []).flatMap((item) => {
+    const candidate = item as PublicationEvidence;
+    return isValidPublicationEvidence(candidate) ? [candidate] : [];
+  });
+  if (direct.length > 0) return direct;
+  const ref = document.sourceEvidenceRefs?.[0]?.replace(/`/g, "").split(":", 1)[0];
+  const excerpt = markdown.split(/\r?\n/).find((line) => line.trim() && !line.startsWith("#"))?.trim();
+  if (!ref || !excerpt) return [];
+  return [{
+    nodeId: `compat:${path}`,
+    filePath: ref,
+    lineRange: [1, 1],
+    excerpt,
+    claim: "该来源支持兼容质量检查中的页面结论。",
+  }];
 }

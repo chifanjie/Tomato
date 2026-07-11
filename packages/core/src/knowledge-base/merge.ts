@@ -1,19 +1,25 @@
 import type {
   CoverageValidationResult,
+  DirectSourceEvidence,
   FileDocPlan,
   FileDocTask,
   FileWriterBatchOutput,
   FileWriterDocument,
   ProjectProfile,
   RetryPlan,
+  SymbolAnchor,
+  TopicPlan,
   TopicWriterBatchOutput,
   TopicWriterDocument,
 } from "./types.js";
-import { normalizeKnowledgeSourcePath } from "./paths.js";
+import { normalizeKnowledgeSourcePath, slugPath } from "./paths.js";
+import { evaluatePublication } from "./publication-quality.js";
+import { excerptForLineRange } from "./source-snapshot.js";
 
 export interface MergeKnowledgeBaseWriterOutputsInput {
   profile: ProjectProfile;
   fileDocPlan: FileDocPlan;
+  topicPlan?: TopicPlan;
   fileWriterOutputs: FileWriterBatchOutput[];
   topicWriterOutputs?: TopicWriterBatchOutput[];
 }
@@ -22,6 +28,7 @@ export interface MergeKnowledgeBaseWriterOutputsResult {
   validation: CoverageValidationResult;
   retryPlan: RetryPlan;
   acceptedFileWriterDocuments: FileWriterDocument[];
+  maintenanceFileWriterDocuments?: FileWriterDocument[];
   acceptedTopicWriterDocuments: TopicWriterDocument[];
 }
 
@@ -41,6 +48,122 @@ function sortedNumbers(values: Iterable<number>): number[] {
 
 function compareByDocumentPath<T extends { documentPath: string; title: string }>(a: T, b: T): number {
   return a.documentPath.localeCompare(b.documentPath) || a.title.localeCompare(b.title);
+}
+
+function stableSymbolAnchors(profile: ProjectProfile, task: FileDocTask): SymbolAnchor[] {
+  const counts = new Map<string, number>();
+  return [...new Set([...task.functionNodeIds, ...task.classNodeIds])]
+    .sort((left, right) => left.localeCompare(right))
+    .map((nodeId) => {
+      const base = slugPath(profile.indexes.nodesById.get(nodeId)?.name ?? nodeId);
+      const count = (counts.get(base) ?? 0) + 1;
+      counts.set(base, count);
+      return { nodeId, anchor: count === 1 ? base : `${base}-${count}` };
+    });
+}
+
+function validateFilePublication(
+  profile: ProjectProfile,
+  task: FileDocTask,
+  document: FileWriterDocument,
+  errors: string[],
+  retryBatchIndexes: Set<number>,
+): void {
+  const decision = evaluatePublication({
+    path: document.documentPath,
+    title: document.title,
+    category: "file",
+    role: "reference",
+    referenceKind: task.referenceKind,
+    content: document.markdown,
+    directNodeIds: [task.fileNodeId, ...task.functionNodeIds, ...task.classNodeIds],
+    representedEdgeIds: [...document.representedEdgeIds],
+    symbolAnchors: stableSymbolAnchors(profile, task),
+  }, document.sourceEvidence);
+  if (decision.quality !== "failed") return;
+  for (const issue of decision.issues) {
+    pushError(
+      errors,
+      retryBatchIndexes,
+      [task.batchIndex],
+      `file writer document failed publication quality: ${document.documentPath}: ${issue}`,
+    );
+  }
+}
+
+function validateEvidenceAgainstSource(
+  inputs: MergeKnowledgeBaseWriterOutputsInput,
+  evidence: readonly DirectSourceEvidence[],
+  writerKind: "file" | "topic",
+  batchIndex: number,
+  errors: string[],
+  retryBatchIndexes: Set<number>,
+): void {
+  for (const item of evidence) {
+    const node = inputs.profile.indexes.nodesById.get(item.nodeId);
+    const expectedPath = normalizeKnowledgeSourcePath(node?.filePath ?? "");
+    const receivedPath = normalizeKnowledgeSourcePath(item.filePath);
+    if (!node || !expectedPath || expectedPath !== receivedPath) {
+      pushError(
+        errors,
+        retryBatchIndexes,
+        [batchIndex],
+        `${writerKind} writer evidence path does not match graph node: ${item.nodeId}`,
+      );
+      continue;
+    }
+    const task = inputs.fileDocPlan.tasks.find((candidate) =>
+      normalizeKnowledgeSourcePath(candidate.filePath) === receivedPath);
+    if (!task?.sourceSnapshot.exists) {
+      pushError(
+        errors,
+        retryBatchIndexes,
+        [batchIndex],
+        `${writerKind} writer evidence source snapshot is unavailable: ${item.nodeId}`,
+      );
+      continue;
+    }
+    const [start, end] = item.lineRange;
+    if (
+      !Number.isInteger(start)
+      || !Number.isInteger(end)
+      || start <= 0
+      || end < start
+      || end > task.sourceSnapshot.totalLines
+    ) {
+      pushError(
+        errors,
+        retryBatchIndexes,
+        [batchIndex],
+        `${writerKind} writer evidence range is outside source snapshot: ${item.nodeId}`,
+      );
+      continue;
+    }
+    const exactExcerpt = excerptForLineRange(task.sourceSnapshot, item.lineRange);
+    if (item.excerpt !== exactExcerpt) {
+      pushError(
+        errors,
+        retryBatchIndexes,
+        [batchIndex],
+        `${writerKind} writer evidence excerpt does not match source snapshot: ${item.nodeId}`,
+      );
+    }
+    const graphRange = node.lineRange;
+    if (
+      graphRange
+      && graphRange[0] > 0
+      && graphRange[1] >= graphRange[0]
+      && graphRange[1] <= task.sourceSnapshot.totalLines
+      && (start < graphRange[0] || end > graphRange[1])
+    ) {
+      pushError(
+        errors,
+        retryBatchIndexes,
+        [batchIndex],
+        `${writerKind} writer evidence range does not belong to graph node: ${item.nodeId}`,
+      );
+    }
+  }
 }
 
 function pushError(errors: string[], retryBatchIndexes: Set<number>, batchIndexes: Iterable<number>, message: string): void {
@@ -170,48 +293,6 @@ function groupTopicCandidatesByDocumentPath(candidates: TopicDocumentCandidate[]
   return byDocumentPath;
 }
 
-function markdownSection(markdown: string, heading: string): string | undefined {
-  const lines = markdown.split(/\r?\n/);
-  const start = lines.findIndex((line) => line.trim() === heading);
-  if (start < 0) return undefined;
-  const end = lines.findIndex((line, index) => index > start && /^##\s+/.test(line));
-  return lines.slice(start, end < 0 ? lines.length : end).join("\n");
-}
-
-function validateMarkdownSection(
-  task: FileDocTask,
-  document: FileWriterDocument,
-  heading: string,
-  nodeIds: string[],
-  nodeKind: "function" | "class",
-  errors: string[],
-  retryBatchIndexes: Set<number>,
-): void {
-  if (nodeIds.length === 0) return;
-
-  const section = markdownSection(document.markdown, heading);
-  if (!section) {
-    pushError(
-      errors,
-      retryBatchIndexes,
-      [task.batchIndex],
-      `file writer document missing required section: ${heading} in ${document.documentPath}`,
-    );
-    return;
-  }
-
-  for (const nodeId of nodeIds) {
-    if (!section.includes(nodeId)) {
-      pushError(
-        errors,
-        retryBatchIndexes,
-        [task.batchIndex],
-        `${nodeKind} card missing markdown node id in ${heading} section: ${nodeId} in file writer document ${document.documentPath}`,
-      );
-    }
-  }
-}
-
 function validateRequiredNodeCoverage(
   task: FileDocTask,
   document: FileWriterDocument,
@@ -227,17 +308,7 @@ function validateRequiredNodeCoverage(
         `function card missing coveredFunctionNodeIds entry: ${functionNodeId} in file writer document ${document.documentPath}`,
       );
     }
-    if (!document.markdown.includes(functionNodeId)) {
-      pushError(
-        errors,
-        retryBatchIndexes,
-        [task.batchIndex],
-        `function card missing markdown node id: ${functionNodeId} in file writer document ${document.documentPath}`,
-      );
-    }
   }
-
-  validateMarkdownSection(task, document, "## 函数卡片", task.functionNodeIds, "function", errors, retryBatchIndexes);
 
   for (const classNodeId of task.classNodeIds) {
     if (!document.coveredClassNodeIds.includes(classNodeId)) {
@@ -248,17 +319,7 @@ function validateRequiredNodeCoverage(
         `class card missing coveredClassNodeIds entry: ${classNodeId} in file writer document ${document.documentPath}`,
       );
     }
-    if (!document.markdown.includes(classNodeId)) {
-      pushError(
-        errors,
-        retryBatchIndexes,
-        [task.batchIndex],
-        `class card missing markdown node id: ${classNodeId} in file writer document ${document.documentPath}`,
-      );
-    }
   }
-
-  validateMarkdownSection(task, document, "## 类卡片", task.classNodeIds, "class", errors, retryBatchIndexes);
 }
 
 function validateTopicWriterOutputs(
@@ -310,6 +371,16 @@ function validateTopicWriterOutputs(
     const { document } = candidate;
     const errorStart = errors.length;
     const topicNode = inputs.profile.indexes.nodesById.get(document.topicNodeId);
+    const topicPlanItem = inputs.topicPlan?.topics.find((item) => item.topicNodeId === document.topicNodeId);
+
+    if (!topicPlanItem) {
+      pushError(
+        errors,
+        retryTopicBatchIndexes,
+        [candidate.batchIndex],
+        `topic writer document has no planned topic: ${document.topicNodeId}`,
+      );
+    }
 
     if (!topicNode) {
       invalidTopicNodeIds.add(document.topicNodeId);
@@ -363,6 +434,37 @@ function validateTopicWriterOutputs(
           [candidate.batchIndex],
           `topic source file document was not accepted: ${document.sourceFileNodeId} for ${document.documentPath}`,
         );
+      }
+    }
+
+    if (topicPlanItem) {
+      validateEvidenceAgainstSource(
+        inputs,
+        document.evidence,
+        "topic",
+        candidate.batchIndex,
+        errors,
+        retryTopicBatchIndexes,
+      );
+      const decision = evaluatePublication({
+        path: document.documentPath,
+        title: document.title,
+        category: "topic",
+        role: topicPlanItem.tier === "required" ? "featured" : "reference",
+        content: document.markdown,
+        directNodeIds: [document.topicNodeId],
+        representedEdgeIds: [],
+        symbolAnchors: [],
+      }, document.evidence);
+      if (decision.quality === "failed") {
+        for (const issue of decision.issues) {
+          pushError(
+            errors,
+            retryTopicBatchIndexes,
+            [candidate.batchIndex],
+            `topic writer document failed publication quality: ${document.documentPath}: ${issue}`,
+          );
+        }
       }
     }
 
@@ -437,6 +539,7 @@ export function mergeKnowledgeBaseWriterOutputs(
   }
 
   const acceptedFileWriterDocuments: FileWriterDocument[] = [];
+  const maintenanceFileWriterDocuments: FileWriterDocument[] = [];
 
   for (const task of inputs.fileDocPlan.tasks) {
     const matchingCandidates = byFileNodeId.get(task.fileNodeId) ?? [];
@@ -465,6 +568,27 @@ export function mergeKnowledgeBaseWriterOutputs(
       const [{ document }] = matchingCandidates;
       validateFileWriterIdentity(task, document, errors, retryFileBatchIndexes);
       validateRequiredNodeCoverage(task, document, errors, retryFileBatchIndexes);
+      validateEvidenceAgainstSource(
+        inputs,
+        document.sourceEvidence,
+        "file",
+        task.batchIndex,
+        errors,
+        retryFileBatchIndexes,
+      );
+      validateFilePublication(inputs.profile, task, document, errors, retryFileBatchIndexes);
+
+      if (
+        task.sourceSnapshot.exists === false
+        && document.fileNodeId === task.fileNodeId
+        && normalizeKnowledgeSourcePath(document.filePath) === normalizeKnowledgeSourcePath(task.filePath)
+        && document.documentPath === task.documentPath
+        && document.referenceKind === task.referenceKind
+        && !invalidFileNodeIds.has(document.fileNodeId)
+        && !invalidDocumentPaths.has(document.documentPath)
+      ) {
+        maintenanceFileWriterDocuments.push(document);
+      }
 
       const hasDuplicateError =
         invalidFileNodeIds.has(document.fileNodeId) || invalidDocumentPaths.has(document.documentPath);
@@ -499,6 +623,7 @@ export function mergeKnowledgeBaseWriterOutputs(
       reasons: [...errors],
     },
     acceptedFileWriterDocuments,
+    maintenanceFileWriterDocuments: maintenanceFileWriterDocuments.sort(compareByDocumentPath),
     acceptedTopicWriterDocuments,
   };
 }

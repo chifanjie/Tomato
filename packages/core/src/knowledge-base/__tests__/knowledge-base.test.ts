@@ -284,10 +284,9 @@ describe("graph-to-knowledge-base", () => {
 
     expect(kb.validation.errors).toContain("计划文件缺少已接受写作者输出：文件文档/src-api-routes.ts.md");
     expect(kb.documents.some((document) => document.path === "文件文档/src-api-routes.ts.md")).toBe(false);
-    expect(kb.documents.filter((document) => document.role === "maintenance").map((document) => document.path)).toEqual([
-      "引用覆盖.md",
-      "质量状态.md",
-    ]);
+    expect(kb.documents.filter((document) => document.role === "maintenance").map((document) => document.path)).toEqual(
+      expect.arrayContaining(["项目总览.md", "引用覆盖.md", "质量状态.md"]),
+    );
     expect(kb.coverageReport.totalDocuments).toBe(kb.documents.filter((document) => document.role !== "maintenance").length);
   });
 
@@ -385,6 +384,117 @@ describe("graph-to-knowledge-base", () => {
         "calls:function:src/service/feed.ts:BuildFeed->function:src/data/store.ts:LoadCandidates",
       ]),
     );
+  });
+
+  it("does not use unrelated graph nodes to satisfy a flow evidence floor", () => {
+    const nodes: KnowledgeGraph["nodes"] = [
+      {
+        id: "file:src/workflow.ts",
+        type: "file",
+        name: "workflow.ts",
+        filePath: "src/workflow.ts",
+        summary: "Task workflow source",
+        tags: ["workflow"],
+        complexity: "moderate",
+      },
+      ...[
+        ["HandleTask", 1, "HTTP entry handler for a task"],
+        ["ValidateTask", 2, "Validates a task before persistence"],
+        ["SaveTask", 3, "Persists the validated task"],
+      ].map(([name, line, summary]) => ({
+        id: `function:src/workflow.ts:${name}`,
+        type: "function" as const,
+        name: String(name),
+        filePath: "src/workflow.ts",
+        lineRange: [Number(line), Number(line)] as [number, number],
+        summary: String(summary),
+        tags: name === "HandleTask" ? ["entry"] : ["workflow"],
+        complexity: "moderate" as const,
+      })),
+      ...Array.from({ length: 6 }, (_, index) => ({
+        id: `file:src/unrelated-${index}.ts`,
+        type: "file" as const,
+        name: `unrelated-${index}.ts`,
+        filePath: `src/unrelated-${index}.ts`,
+        summary: `Unrelated utility ${index}`,
+        tags: ["unrelated"],
+        complexity: "simple" as const,
+      })),
+    ];
+    const graph: KnowledgeGraph = {
+      version: "1.0.0",
+      kind: "codebase",
+      project: {
+        name: "workflow-service",
+        languages: ["typescript"],
+        frameworks: [],
+        description: "Runs a three-stage task workflow",
+        analyzedAt: "2026-07-11T00:00:00Z",
+        gitCommitHash: "flow123",
+      },
+      nodes,
+      edges: [
+        ...["HandleTask", "ValidateTask", "SaveTask"].map((name) => ({
+          source: "file:src/workflow.ts",
+          target: `function:src/workflow.ts:${name}`,
+          type: "contains" as const,
+          direction: "forward" as const,
+          weight: 1,
+        })),
+        {
+          source: "function:src/workflow.ts:HandleTask",
+          target: "function:src/workflow.ts:ValidateTask",
+          type: "calls",
+          direction: "forward",
+          weight: 1,
+        },
+        {
+          source: "function:src/workflow.ts:ValidateTask",
+          target: "function:src/workflow.ts:SaveTask",
+          type: "validates",
+          direction: "forward",
+          weight: 1,
+        },
+      ],
+      layers: [
+        {
+          id: "layer:workflow",
+          name: "Workflow Layer",
+          description: "Task workflow",
+          nodeIds: nodes.slice(0, 4).map((node) => node.id),
+        },
+        {
+          id: "layer:unrelated",
+          name: "Unrelated Layer",
+          description: "Unrelated utilities",
+          nodeIds: nodes.slice(4).map((node) => node.id),
+        },
+      ],
+      tour: [],
+    };
+    const sourceFiles = {
+      "src/workflow.ts": [
+        "export function HandleTask() { return ValidateTask(); }",
+        "function ValidateTask() { return SaveTask(); }",
+        "function SaveTask() { return true; }",
+      ].join("\n"),
+      ...Object.fromEntries(Array.from({ length: 6 }, (_, index) => [
+        `src/unrelated-${index}.ts`,
+        `export const unrelated${index} = ${index};\n`,
+      ])),
+    };
+
+    const kb = generateKnowledgeBase(graph, { sourceFiles });
+    const flow = kb.documents.find((document) => document.path === "业务流程/HandleTask.md");
+
+    expect(flow).toEqual(expect.objectContaining({
+      role: "maintenance",
+      quality: "failed",
+      qualityIssues: expect.arrayContaining(["源码证据数量不足：至少需要 5 组"]),
+    }));
+    expect(flow?.sourceEvidence).toHaveLength(4);
+    expect(flow?.sourceEvidence.every((evidence) => !evidence.nodeId?.startsWith("file:src/unrelated-"))).toBe(true);
+    expect(flow).not.toHaveProperty("route");
   });
 
   it("keeps test, dependency, transform, and validation relations in topic coverage", () => {
@@ -675,8 +785,13 @@ describe("graph-to-knowledge-base", () => {
     expect(report).toBeDefined();
     expect(report).toMatchObject({ role: "maintenance", category: "coverage" });
     expect(kb.coverageReport.totalDocuments).toBe(nonStatusDocuments.length);
-    expect(kb.documents.length).toBe(kb.coverageReport.totalDocuments + 2);
-    expect(kb.coverageReport.qualityValidation.checked).toBe(kb.coverageReport.totalDocuments);
+    expect(kb.documents.length).toBe(
+      kb.coverageReport.totalDocuments
+      + kb.documents.filter((document) => document.role === "maintenance").length,
+    );
+    expect(kb.coverageReport.qualityValidation.checked).toBe(
+      kb.documents.filter((document) => document.category !== "quality" && document.category !== "coverage").length,
+    );
     expect(kb.coverageReport.qualityValidation.failed).not.toContain("引用覆盖.md");
     expect(kb.coverageReport.documentCounts.file).toBe(4);
     expect(kb.plan.documents.filter((document) => document.role === "featured").length).toBeGreaterThan(0);
@@ -726,6 +841,16 @@ describe("graph-to-knowledge-base", () => {
     expect(kb.coverageReport.status).toBe("incomplete");
     expect(kb.coverageReport.sourceReadCoverage.missing).toContain("file:src/missing.ts");
     expect(kb.retryPlan.fileBatchIndexes.length).toBeGreaterThan(0);
+    const missingDocument = kb.documents.find((document) =>
+      document.directNodeIds.includes("file:src/missing.ts"));
+    expect(missingDocument).toEqual(expect.objectContaining({
+      role: "maintenance",
+      quality: "failed",
+      generationStatus: "partial",
+      qualityIssues: expect.arrayContaining(["源码快照缺失，无法生成可发布的精确证据"]),
+    }));
+    expect(missingDocument).not.toHaveProperty("route");
+    expect(kb.coverageReport.fileDocumentCoverage.missing).toContain("file:src/missing.ts");
   });
 
   it("splits topic planning into required and extended tiers", () => {

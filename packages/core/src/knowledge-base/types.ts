@@ -188,6 +188,13 @@ export interface SourceEvidence {
   claim?: string;
 }
 
+export interface DirectSourceEvidence extends SourceEvidence {
+  nodeId: string;
+  lineRange: [number, number];
+  excerpt: string;
+  claim: string;
+}
+
 export interface FileDocTask {
   batchIndex: number;
   taskIndex: number;
@@ -230,7 +237,7 @@ export interface FileWriterDocument {
   coveredFunctionNodeIds: string[];
   coveredClassNodeIds: string[];
   representedEdgeIds: string[];
-  sourceEvidence: SourceEvidence[];
+  sourceEvidence: DirectSourceEvidence[];
   importantNodeIds: string[];
   markdown: string;
 }
@@ -303,7 +310,7 @@ export interface TopicWriterDocument {
   title: string;
   coveredNodeIds: string[];
   linkedFileDocumentPath: string;
-  evidence: SourceEvidence[];
+  evidence: DirectSourceEvidence[];
   markdown: string;
 }
 

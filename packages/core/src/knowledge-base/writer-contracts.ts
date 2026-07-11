@@ -4,49 +4,28 @@ import type {
   TopicWriterBatchOutput,
   TopicWriterDocument,
 } from "./types.js";
+import { REQUIRED_SECTIONS } from "./publication-quality.js";
 import { containsPlaceholderProse, sectionBody, validateMarkdownQuality } from "./quality.js";
 
 export type ContractParseResult<T> =
   | { ok: true; value: T; errors: [] }
   | { ok: false; value?: undefined; errors: string[] };
 
-export const FILE_WRITER_REQUIRED_SECTIONS = [
-  "## 非技术同学速读",
-  "## 文件职责",
-  "## 业务问题与影响对象",
-  "## 所属位置",
-  "## 文件内结构",
-  "## 关键规则、输入输出与兜底",
-  "## 入口条件与处理顺序",
-  "## 字段读写与状态变化",
-  "## 函数卡片",
-  "## 类卡片",
-  "## 调用关系",
-  "## 风险点与待确认项",
-  "## 证据分级",
-  "## 待核验清单",
-  "## 代码证据",
-  "## AI 检索索引",
-] as const;
+function withHeadingPrefix(sections: readonly string[]): string[] {
+  return sections.map((section) => `## ${section}`);
+}
 
-export const TOPIC_WRITER_REQUIRED_SECTIONS = [
-  "## 非技术同学速读",
-  "## 为什么关键",
-  "## 在业务流程中的位置",
-  "## 主要输入、输出、副作用",
-  "## 关键分支和算法",
-  "## 入口条件与处理顺序",
-  "## 字段读写与状态变化",
-  "## 配置和外部依赖",
-  "## 上游调用者",
-  "## 下游调用对象",
-  "## 修改风险",
-  "## 测试证据",
-  "## 证据分级",
-  "## 待核验清单",
-  "## 代码证据",
-  "## AI 检索索引",
-] as const;
+export const FILE_WRITER_REQUIRED_SECTIONS_BY_KIND = {
+  code: withHeadingPrefix(REQUIRED_SECTIONS["file:code"]),
+  configuration: withHeadingPrefix(REQUIRED_SECTIONS["file:configuration"]),
+  schema: withHeadingPrefix(REQUIRED_SECTIONS["file:schema"]),
+  documentation: withHeadingPrefix(REQUIRED_SECTIONS["file:documentation"]),
+  test: withHeadingPrefix(REQUIRED_SECTIONS["file:test"]),
+} as const;
+
+export const FILE_WRITER_REQUIRED_SECTIONS = FILE_WRITER_REQUIRED_SECTIONS_BY_KIND.code;
+
+export const TOPIC_WRITER_REQUIRED_SECTIONS = withHeadingPrefix(REQUIRED_SECTIONS.topic);
 
 const REFERENCE_TEMPLATE_KINDS = ["code", "configuration", "schema", "documentation", "test"] as const;
 
@@ -69,6 +48,18 @@ function requireString(record: Record<string, unknown>, key: string, path: strin
   const value = record[key];
   if (typeof value !== "string") {
     errors.push(`${fieldPath(path, key)} must be a string`);
+  }
+}
+
+function requireNonEmptyString(
+  record: Record<string, unknown>,
+  key: string,
+  path: string,
+  errors: string[],
+): void {
+  const value = record[key];
+  if (typeof value !== "string" || value.trim().length === 0) {
+    errors.push(`${fieldPath(path, key)} must be a non-empty string`);
   }
 }
 
@@ -183,6 +174,11 @@ function validateLineRange(value: unknown, path: string, errors: string[]): void
     || value.some((item) => typeof item !== "number" || !Number.isFinite(item))
   ) {
     errors.push(`${path} must be a tuple of two finite numbers`);
+    return;
+  }
+  const [start, end] = value;
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start <= 0 || end < start) {
+    errors.push(`${path} must contain positive ordered integers`);
   }
 }
 
@@ -192,16 +188,39 @@ function validateSourceEvidence(value: unknown, path: string, errors: string[]):
     return;
   }
 
-  requireString(value, "filePath", path, errors);
-  if ("nodeId" in value && typeof value.nodeId !== "string") {
-    errors.push(`${path}.nodeId must be a string`);
+  requireNonEmptyString(value, "filePath", path, errors);
+  requireNonEmptyString(value, "nodeId", path, errors);
+  requireNonEmptyString(value, "excerpt", path, errors);
+  if (typeof value.claim !== "string" || !/\p{Script=Han}/u.test(value.claim)) {
+    errors.push(`${path}.claim must contain a concrete Chinese conclusion`);
   }
-  if ("excerpt" in value && typeof value.excerpt !== "string") {
-    errors.push(`${path}.excerpt must be a string`);
+  validateLineRange(value.lineRange, `${path}.lineRange`, errors);
+}
+
+function evidenceNodeIds(value: unknown): Set<string> {
+  if (!Array.isArray(value)) return new Set();
+  return new Set(value.flatMap((item) => isRecord(item) && typeof item.nodeId === "string" ? [item.nodeId] : []));
+}
+
+function validateEvidenceCoverage(
+  evidence: unknown,
+  directNodeIds: readonly string[],
+  path: string,
+  errors: string[],
+): void {
+  const coveredNodeIds = evidenceNodeIds(evidence);
+  for (const nodeId of new Set(directNodeIds)) {
+    if (!coveredNodeIds.has(nodeId)) errors.push(`${path} missing direct node: ${nodeId}`);
   }
-  if ("lineRange" in value) {
-    validateLineRange(value.lineRange, `${path}.lineRange`, errors);
-  }
+}
+
+function distinctEvidenceGroupCount(value: unknown): number {
+  if (!Array.isArray(value)) return 0;
+  return new Set(value.flatMap((item) => {
+    if (!isRecord(item) || typeof item.filePath !== "string" || !Array.isArray(item.lineRange)) return [];
+    const [start, end] = item.lineRange;
+    return [`${item.filePath}:${String(start)}-${String(end)}`];
+  })).size;
 }
 
 function validStringArray(value: unknown): string[] {
@@ -244,20 +263,35 @@ function validateFileWriterDocument(value: unknown, index: number, errors: strin
   requireStringArray(value, "coveredFunctionNodeIds", path, errors);
   requireStringArray(value, "coveredClassNodeIds", path, errors);
   requireStringArray(value, "representedEdgeIds", path, errors);
-  const sourceEvidence = requireArray(value, "sourceEvidence", path, errors);
+  const sourceEvidence = requireNonEmptyArray(value, "sourceEvidence", path, "evidence item", errors);
   sourceEvidence?.forEach((item, evidenceIndex) => {
     validateSourceEvidence(item, `${path}.sourceEvidence[${evidenceIndex}]`, errors);
   });
+  validateEvidenceCoverage(
+    value.sourceEvidence,
+    [
+      ...(typeof value.fileNodeId === "string" ? [value.fileNodeId] : []),
+      ...validStringArray(value.coveredFunctionNodeIds),
+      ...validStringArray(value.coveredClassNodeIds),
+    ],
+    `${path}.sourceEvidence`,
+    errors,
+  );
   requireStringArray(value, "importantNodeIds", path, errors);
   requireString(value, "markdown", path, errors);
-  requireSections(value.markdown, FILE_WRITER_REQUIRED_SECTIONS, `${path}.markdown`, errors);
-  validateStructuredWriterSections(value.markdown, `${path}.markdown`, errors);
+  const requiredSections = FILE_WRITER_REQUIRED_SECTIONS_BY_KIND[
+    value.referenceKind as keyof typeof FILE_WRITER_REQUIRED_SECTIONS_BY_KIND
+  ];
+  requireSections(value.markdown, requiredSections ?? [], `${path}.markdown`, errors);
+  if (typeof value.markdown === "string" && hasExactSection(value.markdown, "## 待核验清单")) {
+    validateStructuredWriterSections(value.markdown, `${path}.markdown`, errors);
+  }
   validateNoPlaceholderText(value.markdown, `${path}.markdown`, errors);
   if (typeof value.markdown === "string") {
     errors.push(
       ...validateMarkdownQuality(value.markdown, {
         path: `${path}.markdown`,
-        sections: FILE_WRITER_REQUIRED_SECTIONS,
+        sections: requiredSections ?? [],
         sourceEvidenceRefs: sourceEvidenceRefs(value.sourceEvidence),
         coveredFunctionNodeIds: validStringArray(value.coveredFunctionNodeIds),
         coveredClassNodeIds: validStringArray(value.coveredClassNodeIds),
@@ -279,13 +313,21 @@ function validateTopicWriterDocument(value: unknown, index: number, errors: stri
   requireString(value, "title", path, errors);
   requireStringArray(value, "coveredNodeIds", path, errors);
   requireString(value, "linkedFileDocumentPath", path, errors);
-  const evidence = requireArray(value, "evidence", path, errors);
+  const evidence = requireNonEmptyArray(value, "evidence", path, "evidence item", errors);
   evidence?.forEach((item, evidenceIndex) => {
     validateSourceEvidence(item, `${path}.evidence[${evidenceIndex}]`, errors);
   });
+  if (evidence && distinctEvidenceGroupCount(evidence) < 3) {
+    errors.push(`${path}.evidence must contain at least three distinct source groups`);
+  }
+  if (typeof value.topicNodeId === "string" && !evidenceNodeIds(evidence).has(value.topicNodeId)) {
+    errors.push(`${path}.evidence must include topic node: ${value.topicNodeId}`);
+  }
   requireString(value, "markdown", path, errors);
   requireSections(value.markdown, TOPIC_WRITER_REQUIRED_SECTIONS, `${path}.markdown`, errors);
-  validateStructuredWriterSections(value.markdown, `${path}.markdown`, errors);
+  if (typeof value.markdown === "string" && hasExactSection(value.markdown, "## 待核验清单")) {
+    validateStructuredWriterSections(value.markdown, `${path}.markdown`, errors);
+  }
   validateNoPlaceholderText(value.markdown, `${path}.markdown`, errors);
   if (typeof value.markdown === "string") {
     errors.push(

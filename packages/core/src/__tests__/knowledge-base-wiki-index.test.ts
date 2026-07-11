@@ -161,7 +161,14 @@ describe("knowledge base wiki index generation", () => {
       const topicPage = wikiIndex.pages.find((page: { markdownPath: string }) =>
         page.markdownPath.includes("关键函数专题"),
       );
-      expect(topicPage).toEqual(expect.objectContaining({ category: "symbol" }));
+      expect(topicPage).toBeUndefined();
+      expect(profile.retryPlan.topicBatchIndexes.length).toBeGreaterThan(0);
+      expect(profile.retryPlan.reasons).toEqual(expect.arrayContaining([
+        expect.stringContaining("源码证据数量不足：至少需要 3 组"),
+      ]));
+      expect(profile.coverageReport.requiredTopicCoverage.missing).toContain(
+        "function:src/a.go:Build",
+      );
       const capabilityPage = wikiIndex.pages.find((page: { markdownPath: string }) =>
         page.markdownPath.includes("业务能力"),
       );
@@ -365,9 +372,9 @@ describe("knowledge base wiki index generation", () => {
       );
       expect(overviewPage).toEqual(
         expect.objectContaining({
-          quality: "generated",
+          quality: "low-confidence",
           coverage: "partial",
-          qualityIssues: [],
+          qualityIssues: expect.arrayContaining(["正文质量校验未通过"]),
         }),
       );
     } finally {

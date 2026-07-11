@@ -61,15 +61,7 @@ export function materializeKnowledgeBase(input: MaterializeKnowledgeBaseInput): 
   };
 
   const qualityEvaluation = summarizeMarkdownQuality(materialized.documents);
-  const failedQualityPaths = new Set(qualityEvaluation.failed);
-  const evaluatedDocuments = materialized.documents.map((document) => failedQualityPaths.has(document.path)
-    ? {
-        ...document,
-        quality: "needs-review" as const,
-        generationStatus: "partial" as const,
-        qualityIssues: ["文档未通过发布质量校验"],
-      }
-    : document);
+  const evaluatedDocuments = materialized.documents;
   const coverageReport = buildCoverageReport(
     profile,
     fileDocPlan,
@@ -122,13 +114,14 @@ export function generateKnowledgeBase(
   const topicPlan = buildTopicPlan(profile, fileDocPlan, fileMerged.acceptedFileWriterDocuments);
   const deterministicTopicOutputs = topicPlan.batches.map((batch) => ({
     batchIndex: batch.batchIndex,
-    topics: batch.topics.map((topic) => renderDeterministicTopicWriterDocument(profile, topic)),
+    topics: batch.topics.map((topic) => renderDeterministicTopicWriterDocument(profile, topic, fileDocPlan)),
     warnings: [],
   }));
   const merged = mergeKnowledgeBaseWriterOutputs({
     profile,
     fileDocPlan,
     fileWriterOutputs: deterministicFileOutputs,
+    topicPlan,
     topicWriterOutputs: deterministicTopicOutputs,
   });
   return materializeKnowledgeBase({

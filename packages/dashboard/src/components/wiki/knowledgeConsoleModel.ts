@@ -1,21 +1,25 @@
-import {
-  categorySections,
-  evidenceForPage,
-  type WikiRuntimeIndex,
-  type WikiTreeSection,
-} from "../../wiki/wikiIndex";
 import type { WikiEvidenceV2, WikiPageV2 } from "@understand-code/core/knowledge-base";
+import {
+  buildWikiNavigation,
+  type WikiNavigationModel,
+} from "../../wiki/navigationModel";
+import { evidenceForPage, type WikiRuntimeIndex } from "../../wiki/wikiIndex";
 
 export interface KnowledgeConsoleView {
+  navigation: WikiNavigationModel;
   activePage: WikiPageV2 | null;
-  sections: WikiTreeSection[];
-  evidence: WikiEvidenceV2[];
-  graphNodeIds: string[];
-  emptyReason: string | null;
+  directGraphNodeIds: readonly string[];
+  contextNodeIds: readonly string[];
+  exactEvidence: readonly WikiEvidenceV2[];
+  homeVisible: boolean;
 }
 
-function activePageFor(index: WikiRuntimeIndex, activePageId: string | null): WikiPageV2 | null {
-  if (activePageId && index.pagesById.has(activePageId)) {
+function activePageFor(
+  index: WikiRuntimeIndex,
+  activePageId: string | null,
+): WikiPageV2 | null {
+  if (activePageId === null) return null;
+  if (index.pagesById.has(activePageId)) {
     return index.pagesById.get(activePageId) ?? null;
   }
   return index.pages[0] ?? null;
@@ -26,14 +30,25 @@ export function buildKnowledgeConsoleView(
   activePageId: string | null,
 ): KnowledgeConsoleView {
   const activePage = activePageFor(index, activePageId);
-  const graphNodeIds = activePage
+  const directGraphNodeIds = activePage
     ? [...new Set(activePage.directNodeIds)]
     : [];
+  const directNodeIds = new Set(directGraphNodeIds);
+  const contextNodeIds = activePage
+    ? [...new Set(activePage.contextNodeIds.filter((nodeId) => !directNodeIds.has(nodeId)))]
+    : [];
+  const exactEvidence = activePage
+    ? evidenceForPage(index, activePage.id).filter((evidence) =>
+      evidence.nodeIds.some((nodeId) => directNodeIds.has(nodeId)),
+    )
+    : [];
+
   return {
+    navigation: buildWikiNavigation(index),
     activePage,
-    sections: categorySections(index),
-    evidence: activePage ? evidenceForPage(index, activePage.id) : [],
-    graphNodeIds,
-    emptyReason: index.pageCount === 0 ? "还没有生成可阅读的知识库内容。" : null,
+    directGraphNodeIds,
+    contextNodeIds,
+    exactEvidence,
+    homeVisible: activePageId === null,
   };
 }

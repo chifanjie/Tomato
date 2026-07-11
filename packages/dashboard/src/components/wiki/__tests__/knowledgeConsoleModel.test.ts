@@ -4,53 +4,73 @@ import { wikiV2Fixture } from "../../../wiki/__tests__/fixtures/wikiV2Fixtures";
 import { buildKnowledgeConsoleView } from "../knowledgeConsoleModel";
 
 describe("knowledgeConsoleModel", () => {
-  it("builds navigation, active page, evidence, and graph node ids from V2", () => {
-    const index = buildWikiRuntimeIndex(wikiV2Fixture());
+  it("separates direct graph focus, context, and exact direct evidence", () => {
+    const payload = wikiV2Fixture();
+    const page = payload.pages.find((item) => item.id === "page:run");
+    if (!page) throw new Error("missing fixture page");
+    page.directNodeIds = [
+      "function:src/a.ts:run",
+      "function:src/a.ts:run",
+    ];
+    page.contextNodeIds = [
+      "function:src/a.ts:run",
+      "file:src/config.ts",
+      "file:src/config.ts",
+    ];
+    page.evidenceIds = ["evidence:run", "evidence:context"];
+    payload.evidence.push({
+      id: "evidence:context",
+      nodeIds: ["file:src/config.ts"],
+      filePath: "src/config.ts",
+      lineRange: [1, 2],
+      excerpt: "export const timeout = 1000;",
+      evidenceType: "configuration",
+    });
 
-    const view = buildKnowledgeConsoleView(index, "page:run");
+    const view = buildKnowledgeConsoleView(
+      buildWikiRuntimeIndex(payload),
+      "page:run",
+    );
 
     expect(view.activePage?.title).toBe("运行流程");
-    expect(view.sections.map((section) => section.category)).toEqual([
-      "overview",
-      "flow",
-      "file",
+    expect(view.navigation.featured.pages.map((item) => item.id)).toEqual([
+      "page:overview",
+      "page:run",
     ]);
-    expect(view.evidence.map((item) => item.filePath)).toEqual(["src/a.ts"]);
-    expect(view.graphNodeIds).toEqual(["function:src/a.ts:run"]);
-    expect(view.emptyReason).toBeNull();
+    expect(view.directGraphNodeIds).toEqual(["function:src/a.ts:run"]);
+    expect(view.contextNodeIds).toEqual(["file:src/config.ts"]);
+    expect(view.exactEvidence.map((item) => item.id)).toEqual(["evidence:run"]);
+    expect(view.homeVisible).toBe(false);
   });
 
-  it("uses the first page when the active page id is missing", () => {
+  it("uses the first page for a missing non-null id without showing home", () => {
     const view = buildKnowledgeConsoleView(
       buildWikiRuntimeIndex(wikiV2Fixture()),
       "page:missing",
     );
 
     expect(view.activePage?.id).toBe("page:overview");
+    expect(view.homeVisible).toBe(false);
   });
 
-  it("keeps graph focus limited to direct page links", () => {
-    const payload = wikiV2Fixture();
-    const filePage = payload.pages.find((page) => page.id === "page:file-a");
-    if (!filePage) throw new Error("missing fixture page");
-    filePage.contextNodeIds = ["file:src/a.ts"];
-    const view = buildKnowledgeConsoleView(
-      buildWikiRuntimeIndex(payload),
-      "page:file-a",
-    );
+  it("keeps the reading home visible only when no page is selected", () => {
+    const view = buildKnowledgeConsoleView(buildWikiRuntimeIndex(wikiV2Fixture()), null);
 
-    expect(view.graphNodeIds).toEqual([
-      "function:src/a.ts:run",
-    ]);
+    expect(view.activePage).toBeNull();
+    expect(view.navigation.featured.pages).toHaveLength(2);
+    expect(view.homeVisible).toBe(true);
   });
 
-  it("returns an empty-state view when no wiki pages exist", () => {
+  it("returns empty navigation and relationship lanes when no wiki exists", () => {
     const view = buildKnowledgeConsoleView(buildWikiRuntimeIndex(null), null);
 
     expect(view.activePage).toBeNull();
-    expect(view.sections).toEqual([]);
-    expect(view.evidence).toEqual([]);
-    expect(view.graphNodeIds).toEqual([]);
-    expect(view.emptyReason).toBe("还没有生成可阅读的知识库内容。");
+    expect(view.navigation.featured.pages).toEqual([]);
+    expect(view.navigation.reference.totalFiles).toBe(0);
+    expect(view.navigation.maintenance.pages).toEqual([]);
+    expect(view.directGraphNodeIds).toEqual([]);
+    expect(view.contextNodeIds).toEqual([]);
+    expect(view.exactEvidence).toEqual([]);
+    expect(view.homeVisible).toBe(true);
   });
 });

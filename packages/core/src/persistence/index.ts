@@ -130,7 +130,18 @@ export function loadFingerprints(projectRoot: string): FingerprintStore | null {
   }
 }
 
-const DEFAULT_CONFIG: ProjectConfig = { autoUpdate: false, outputLanguage: "en" };
+const DEFAULT_CONFIG: ProjectConfig = { autoUpdate: false, outputLanguage: "zh-CN" };
+
+function stringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+
+  return [...new Set(
+    value
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean),
+  )];
+}
 
 export function saveConfig(projectRoot: string, config: ProjectConfig): void {
   const dir = ensureDir(projectRoot);
@@ -141,7 +152,49 @@ export function loadConfig(projectRoot: string): ProjectConfig {
   const filePath = join(projectRoot, UNDERSTAND_CODE_DIR, CONFIG_FILE);
   if (!existsSync(filePath)) return { ...DEFAULT_CONFIG };
   try {
-    return JSON.parse(readFileSync(filePath, "utf-8")) as ProjectConfig;
+    const raw = JSON.parse(readFileSync(filePath, "utf-8")) as unknown;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return { ...DEFAULT_CONFIG };
+    }
+
+    const record = raw as Record<string, unknown>;
+    const knowledgeRecord = record.knowledgeBase
+      && typeof record.knowledgeBase === "object"
+      && !Array.isArray(record.knowledgeBase)
+      ? record.knowledgeBase as Record<string, unknown>
+      : undefined;
+    const routeRecord = knowledgeRecord?.route
+      && typeof knowledgeRecord.route === "object"
+      && !Array.isArray(knowledgeRecord.route)
+      ? knowledgeRecord.route as Record<string, unknown>
+      : undefined;
+
+    const businessTerms = stringArray(knowledgeRecord?.businessTerms);
+    const entryNodeIds = stringArray(knowledgeRecord?.entryNodeIds);
+    const pin = stringArray(routeRecord?.pin);
+    const hide = stringArray(routeRecord?.hide);
+    const order = stringArray(routeRecord?.order);
+    const knowledgeBase = knowledgeRecord ? {
+      ...(businessTerms ? { businessTerms } : {}),
+      ...(entryNodeIds ? { entryNodeIds } : {}),
+      ...(routeRecord ? {
+        route: {
+          ...(pin ? { pin } : {}),
+          ...(hide ? { hide } : {}),
+          ...(order ? { order } : {}),
+        },
+      } : {}),
+    } : undefined;
+
+    return {
+      autoUpdate: typeof record.autoUpdate === "boolean"
+        ? record.autoUpdate
+        : DEFAULT_CONFIG.autoUpdate,
+      outputLanguage: typeof record.outputLanguage === "string"
+        ? record.outputLanguage
+        : DEFAULT_CONFIG.outputLanguage,
+      ...(knowledgeBase ? { knowledgeBase } : {}),
+    };
   } catch {
     return { ...DEFAULT_CONFIG };
   }

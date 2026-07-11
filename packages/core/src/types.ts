@@ -113,10 +113,17 @@ export interface AnalysisMeta {
   theme?: ThemeConfig;
 }
 
-// Project config (for auto-update opt-in and language preference)
+export interface KnowledgeBaseProjectConfig {
+  businessTerms?: string[];
+  entryNodeIds?: string[];
+  route?: { pin?: string[]; hide?: string[]; order?: string[] };
+}
+
+// Project config (for auto-update opt-in, language preference, and knowledge-base guidance)
 export interface ProjectConfig {
   autoUpdate: boolean;
   outputLanguage?: string;
+  knowledgeBase?: KnowledgeBaseProjectConfig;
 }
 
 // Non-code structural sub-interfaces

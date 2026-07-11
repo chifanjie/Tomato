@@ -11,6 +11,7 @@ export * from "./wiki-v1-adapter.js";
 export * from "./quality.js";
 export * from "./queue.js";
 export * from "./merge.js";
+export * from "./route-overrides.js";
 export {
   buildCoverageReport,
   renderBusinessCapabilityDocuments,

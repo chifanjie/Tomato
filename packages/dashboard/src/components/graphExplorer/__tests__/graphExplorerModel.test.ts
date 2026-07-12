@@ -1,225 +1,218 @@
-import { describe, expect, it } from "vitest";
-import type { KnowledgeGraph } from "@understand-code/core/types";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi } from "vitest";
+import { buildHierarchicalSemanticGraph } from "../../../graphExplorer/hierarchicalGraph";
+import {
+  aggregateCoverageFixture,
+  graphFixture,
+  graphWithFiftyNodes,
+  graphWithStructuralOnly,
+  importsOnlyGraphFixture,
+  wikiRuntimeFixture,
+} from "../../../graphExplorer/__tests__/graphFixtures";
+import { buildSemanticGraphModel } from "../../../graphExplorer/semanticGraph";
 import { buildWikiRuntimeIndex } from "../../../wiki/wikiIndex";
-import { wikiV2Fixture } from "../../../wiki/__tests__/fixtures/wikiV2Fixtures";
-import { buildGraphExplorerView } from "../graphExplorerModel";
-
-function graph(): KnowledgeGraph {
-  return {
-    version: "1.0.0",
-    project: {
-      name: "sample",
-      languages: ["go"],
-      frameworks: [],
-      description: "",
-      analyzedAt: "2026-07-09T00:00:00.000Z",
-      gitCommitHash: "local",
-    },
-    nodes: [
-      {
-        id: "file:src/a.go",
-        type: "file",
-        name: "a.go",
-        filePath: "src/a.go",
-        summary: "File A.",
-        tags: [],
-        complexity: "moderate",
-      },
-      {
-        id: "function:src/a.go:Build",
-        type: "function",
-        name: "Build",
-        filePath: "src/a.go",
-        lineRange: [10, 20],
-        summary: "Builds data.",
-        tags: [],
-        complexity: "complex",
-      },
-      {
-        id: "file:src/b.go",
-        type: "file",
-        name: "b.go",
-        filePath: "src/b.go",
-        summary: "File B.",
-        tags: [],
-        complexity: "simple",
-      },
-    ],
-    edges: [
-      {
-        source: "file:src/a.go",
-        target: "function:src/a.go:Build",
-        type: "contains",
-        direction: "forward",
-        weight: 1,
-      },
-    ],
-    layers: [
-      {
-        id: "core",
-        name: "Core",
-        description: "Core layer",
-        nodeIds: ["file:src/a.go", "file:src/b.go"],
-      },
-    ],
-    tour: [],
-  };
-}
-
-const wikiPayload = wikiV2Fixture();
-const buildPage = wikiPayload.pages.find((page) => page.id === "page:run");
-if (!buildPage) throw new Error("missing fixture page");
-wikiPayload.pages = [{
-  ...buildPage,
-  id: "wiki:build",
-  title: "Build Function",
-  markdownPath: "knowledge-base/functions/Build.md",
-  category: "topic",
-  directNodeIds: ["function:src/a.go:Build"],
-  contextNodeIds: ["file:src/a.go"],
-  evidenceIds: ["evidence:build"],
-  route: undefined,
-}];
-wikiPayload.mainReadiness = { status: "blocked", reasons: ["测试夹具"], routePageIds: [] };
-wikiPayload.nodeDocumentation = [{
-  nodeId: "function:src/a.go:Build",
-  relation: "direct",
-  quality: "generated",
-  evidenceHealth: "source-linked",
-  generationStatus: "complete",
-  referenceCoverage: "anchored",
-  directPageIds: ["wiki:build"],
-  contextPageIds: [],
-  evidenceIds: ["evidence:build"],
-  primaryPageId: "wiki:build",
-}, {
-  nodeId: "file:src/a.go",
-  relation: "context",
-  quality: "needs-review",
-  evidenceHealth: "missing",
-  generationStatus: "partial",
-  referenceCoverage: "unanchored",
-  directPageIds: [],
-  contextPageIds: ["wiki:build"],
-  evidenceIds: [],
-}, {
-  nodeId: "file:src/b.go",
-  relation: "none",
-  quality: "failed",
-  evidenceHealth: "missing",
-  generationStatus: "failed",
-  referenceCoverage: "unanchored",
-  directPageIds: [],
-  contextPageIds: [],
-  evidenceIds: [],
-}];
-wikiPayload.evidence = [{
-  id: "evidence:build",
-  filePath: "src/a.go",
-  lineRange: [10, 20],
-  nodeIds: ["function:src/a.go:Build"],
-  excerpt: "func Build() {}",
-  evidenceType: "production",
-}];
-const wikiIndex = buildWikiRuntimeIndex(wikiPayload);
+import {
+  availableGraphModes,
+  buildGraphExplorerView,
+  buildGraphSelectionDetails,
+  coverageBadgeForNode,
+  directionalEndpointPairs,
+  normalizeGraphModeForOptions,
+} from "../graphExplorerModel";
+import GraphCoverageLegend from "../GraphCoverageLegend";
+import GraphModeToolbar from "../GraphModeToolbar";
 
 describe("graphExplorerModel", () => {
-  it("builds full graph explorer view data for a selected node", () => {
-    const view = buildGraphExplorerView({
-      graph: graph(),
-      wikiIndex,
-      mode: "global",
+  it("builds aggregate details without requiring a raw graph node", () => {
+    const fixture = aggregateCoverageFixture();
+    const semanticGraph = buildHierarchicalSemanticGraph({
+      graph: fixture.graph,
+      wikiIndex: fixture.wikiIndex,
+      mode: "architecture",
       focusNodeIds: [],
-      selectedNodeId: "function:src/a.go:Build",
+      selectedNodeId: "scope:layer:core",
+      navigation: { level: "overview" },
     });
 
-    expect(view.semanticGraph.nodes.map((node) => node.id)).toEqual([
-      "file:src/a.go",
-      "function:src/a.go:Build",
-      "file:src/b.go",
-    ]);
-    expect(view.selectedNode?.name).toBe("Build");
-    expect(view.selectedNodeVisible).toBe(true);
-    expect(view.hiddenSelectedNode).toBeNull();
-    expect(view.selectedSemanticNode?.group).toBe("symbol");
-    expect(view.selectedCoverage?.status).toBe("complete");
-    expect(view.selectedPages.map((page) => page.id)).toEqual(["wiki:build"]);
-    expect(view.selectedSemanticNode?.docs.evidenceIds).toEqual(["evidence:build"]);
-    expect(view.canOpenWiki).toBe(true);
+    expect(buildGraphSelectionDetails({
+      graph: fixture.graph,
+      semanticGraph,
+      selectedObjectId: "scope:layer:core",
+    })).toMatchObject({
+      kind: "aggregate",
+      id: "scope:layer:core",
+      responsibility: expect.stringContaining("核心"),
+      documentationCounts: { direct: 8, context: 1, none: 1, problem: 0, total: 10 },
+      primaryDirectPageId: "page:coverage:0",
+      drillTarget: { kind: "scope", scopeId: "layer:core" },
+    });
   });
 
-  it("returns empty selected details when no node is selected", () => {
-    const view = buildGraphExplorerView({
-      graph: graph(),
+  it("keeps exact direct pages, context pages, and evidence for a raw selection", () => {
+    const graph = graphFixture();
+    const wikiIndex = wikiRuntimeFixture();
+    const semanticGraph = buildHierarchicalSemanticGraph({
+      graph,
       wikiIndex,
       mode: "coverage",
       focusNodeIds: [],
-      selectedNodeId: null,
+      selectedNodeId: "function:src/a.ts:run",
+      navigation: { level: "scope", scopeId: "layer:core" },
     });
 
-    expect(view.selectedNode).toBeNull();
-    expect(view.selectedNodeVisible).toBe(false);
-    expect(view.hiddenSelectedNode).toBeNull();
-    expect(view.selectedSemanticNode).toBeNull();
-    expect(view.selectedCoverage).toBeNull();
-    expect(view.selectedPages).toEqual([]);
-    expect(view.canOpenWiki).toBe(false);
+    const details = buildGraphSelectionDetails({
+      graph,
+      semanticGraph,
+      selectedObjectId: "function:src/a.ts:run",
+    });
+
+    expect(details).toMatchObject({
+      kind: "raw",
+      id: "function:src/a.ts:run",
+      primaryDirectPageId: "page:run",
+      drillTarget: null,
+    });
+    expect(details?.directPages.map((page) => page.id)).toEqual(["page:run"]);
+    expect(details?.contextPages.map((page) => page.id)).toEqual(["page:overview"]);
+    expect(details?.evidence.map((item) => item.id)).toEqual(["evidence:run"]);
+    expect(details?.upstream.map((node) => node.id)).toEqual(["file:src/a.ts"]);
+    expect(details?.downstream).toEqual([]);
   });
 
-  it("uses unknown coverage when wiki metadata is unavailable", () => {
+  it("preserves a hidden raw selection while exposing no stale details", () => {
     const view = buildGraphExplorerView({
-      graph: graph(),
+      graph: graphFixture(),
+      wikiIndex: wikiRuntimeFixture(),
+      mode: "architecture",
+      focusNodeIds: [],
+      selectedNodeId: "function:src/a.ts:run",
+      navigation: { level: "overview" },
+    });
+
+    expect(view.selection).toBeNull();
+    expect(view.hiddenSelectedNode?.id).toBe("function:src/a.ts:run");
+    expect(view.semanticGraph.nodes.map((node) => node.id)).toEqual(["scope:layer:core"]);
+  });
+
+  it("returns no details when nothing is selected", () => {
+    const graph = graphFixture();
+    const semanticGraph = buildHierarchicalSemanticGraph({
+      graph,
+      wikiIndex: wikiRuntimeFixture(),
+      mode: "coverage",
+      focusNodeIds: [],
+      selectedNodeId: null,
+      navigation: { level: "overview" },
+    });
+
+    expect(buildGraphSelectionDetails({ graph, semanticGraph, selectedObjectId: null })).toBeNull();
+  });
+
+  it("derives truthful graph modes from observed edges and V2 documentation", () => {
+    const wikiIndex = wikiRuntimeFixture();
+
+    expect(availableGraphModes(importsOnlyGraphFixture(), wikiIndex)).toEqual([
+      { id: "architecture", label: "架构总览", relationshipSource: null },
+      { id: "call", label: "文件依赖", relationshipSource: "imports" },
+      { id: "coverage", label: "文档覆盖", relationshipSource: null },
+    ]);
+    expect(availableGraphModes(graphWithStructuralOnly(), wikiIndex)).toEqual([
+      { id: "architecture", label: "架构总览", relationshipSource: null },
+      { id: "coverage", label: "文档覆盖", relationshipSource: null },
+    ]);
+    expect(availableGraphModes(graphWithStructuralOnly(), buildWikiRuntimeIndex(null)).map(({ id }) => id)).toEqual([
+      "architecture",
+    ]);
+    expect(availableGraphModes(graphWithFiftyNodes(), buildWikiRuntimeIndex(null))).toEqual([
+      { id: "architecture", label: "架构总览", relationshipSource: null },
+      { id: "call", label: "调用关系", relationshipSource: "calls" },
+    ]);
+  });
+
+  it("normalizes an unavailable stored mode and removes fallback notices", () => {
+    const graph = importsOnlyGraphFixture();
+    const wikiIndex = buildWikiRuntimeIndex(null);
+    const options = availableGraphModes(graph, wikiIndex);
+
+    expect(normalizeGraphModeForOptions("coverage", options)).toBe("architecture");
+    expect(normalizeGraphModeForOptions("call", options)).toBe("call");
+    expect(buildGraphExplorerView({
+      graph,
+      wikiIndex,
+      mode: "call",
+      focusNodeIds: [],
+      selectedNodeId: null,
+      navigation: { level: "overview" },
+    }).semanticGraph.presentation.notice).toBeNull();
+  });
+
+  it("renders only the supplied Chinese mode labels and the V2 coverage legend", () => {
+    const toolbar = renderToStaticMarkup(createElement(GraphModeToolbar, {
+      mode: "call",
+      options: [
+        { id: "architecture", label: "架构总览", relationshipSource: null },
+        { id: "call", label: "文件依赖", relationshipSource: "imports" },
+      ],
+      onChangeMode: vi.fn(),
+    }));
+    const legend = renderToStaticMarkup(createElement(GraphCoverageLegend));
+
+    expect(toolbar).toContain("架构总览");
+    expect(toolbar).toContain("文件依赖");
+    expect(toolbar).not.toContain("Global");
+    expect(toolbar).not.toContain("Coverage");
+    expect(legend).toContain("有专门正文");
+    expect(legend).toContain("仅相关资料");
+    expect(legend).toContain("待补正文");
+    expect(legend).toContain("生成或证据异常");
+  });
+
+  it("describes raw and aggregate documentation with compact truthful badges", () => {
+    const aggregateFixture = aggregateCoverageFixture();
+    const aggregateGraph = buildHierarchicalSemanticGraph({
+      graph: aggregateFixture.graph,
+      wikiIndex: aggregateFixture.wikiIndex,
+      mode: "architecture",
+      focusNodeIds: [],
+      selectedNodeId: null,
+      navigation: { level: "overview" },
+    });
+    const rawGraph = buildSemanticGraphModel({
+      graph: graphFixture(),
+      wikiIndex: wikiRuntimeFixture(),
       mode: "global",
       focusNodeIds: [],
-      selectedNodeId: "function:src/a.go:Build",
     });
 
-    expect(view.selectedNode?.id).toBe("function:src/a.go:Build");
-    expect(view.selectedNodeVisible).toBe(true);
-    expect(view.hiddenSelectedNode).toBeNull();
-    expect(view.selectedCoverage).toMatchObject({ status: "unknown", pages: [] });
-    expect(view.selectedPages).toEqual([]);
-    expect(view.canOpenWiki).toBe(false);
+    expect(coverageBadgeForNode(aggregateGraph.nodes[0])).toEqual({
+      label: "8/10 有正文",
+      relation: "direct",
+      problem: false,
+    });
+    expect(coverageBadgeForNode(rawGraph.nodes.find((node) => node.id === "function:src/a.ts:run")!)).toEqual({
+      label: "有专门正文",
+      relation: "direct",
+      problem: false,
+    });
+    expect(coverageBadgeForNode(rawGraph.nodes.find((node) => node.id === "file:context-only.ts")!)).toEqual({
+      label: "仅相关资料",
+      relation: "context",
+      problem: false,
+    });
   });
 
-  it("reports a selected function as hidden when semantic mode filters it out", () => {
-    const view = buildGraphExplorerView({
-      graph: graph(),
-      wikiIndex,
-      mode: "semantic",
-      focusNodeIds: [],
-      selectedNodeId: "function:src/a.go:Build",
-    });
-
-    expect(view.semanticGraph.nodes.map((node) => node.id)).toEqual([
-      "file:src/a.go",
-      "file:src/b.go",
+  it("normalizes backwards and bidirectional edge endpoints", () => {
+    expect(directionalEndpointPairs({ source: "a", target: "b", directions: ["backward"] })).toEqual([
+      { source: "b", target: "a" },
     ]);
-    expect(view.selectedNode).toBeNull();
-    expect(view.selectedNodeVisible).toBe(false);
-    expect(view.selectedSemanticNode).toBeNull();
-    expect(view.hiddenSelectedNode?.id).toBe("function:src/a.go:Build");
-    expect(view.hiddenSelectedNode?.name).toBe("Build");
-    expect(view.selectedCoverage).toBeNull();
-    expect(view.selectedPages.map((page) => page.id)).toEqual(["wiki:build"]);
-    expect(view.canOpenWiki).toBe(true);
-  });
-
-  it("filters the semantic graph by focus node ids", () => {
-    const view = buildGraphExplorerView({
-      graph: graph(),
-      wikiIndex,
-      mode: "focus",
-      focusNodeIds: ["function:src/a.go:Build"],
-      selectedNodeId: "function:src/a.go:Build",
-    });
-
-    expect(view.semanticGraph.nodes.map((node) => node.id).sort()).toEqual([
-      "file:src/a.go",
-      "function:src/a.go:Build",
+    expect(directionalEndpointPairs({ source: "a", target: "b", directions: ["bidirectional"] })).toEqual([
+      { source: "a", target: "b" },
+      { source: "b", target: "a" },
     ]);
-    expect(view.semanticGraph.edges.map((edge) => edge.id)).toEqual([
-      "file:src/a.go->function:src/a.go:Build",
+    expect(directionalEndpointPairs({ source: "a", target: "b", directions: ["forward", "backward"] })).toEqual([
+      { source: "a", target: "b" },
+      { source: "b", target: "a" },
     ]);
   });
 });

@@ -1,65 +1,30 @@
-import type { GraphExplorerMode } from "../../graphExplorer/semanticGraph";
+import type { GraphExplorerDisplayMode } from "../../graphExplorer/hierarchicalGraph";
+import type { GraphModeOption } from "./graphExplorerModel";
 
 interface GraphModeToolbarProps {
-  mode: GraphExplorerMode;
-  focusNodeCount: number;
-  onChangeMode: (mode: GraphExplorerMode) => void;
+  mode: GraphExplorerDisplayMode;
+  options: readonly GraphModeOption[];
+  onChangeMode: (mode: GraphExplorerDisplayMode) => void;
 }
 
-const MODE_LABELS: Record<GraphExplorerMode, string> = {
-  global: "Global",
-  semantic: "Semantic",
-  architecture: "Architecture",
-  call: "Call",
-  coverage: "Coverage",
-  evidence: "Evidence",
-  focus: "Focus",
-};
-
-const MODE_ORDER: GraphExplorerMode[] = [
-  "global",
-  "semantic",
-  "architecture",
-  "call",
-  "coverage",
-  "evidence",
-  "focus",
-];
-
-function focusTitle(focusNodeCount: number): string {
-  if (focusNodeCount === 0) return "Focus mode needs graph focus from a wiki page.";
-  return `Focus mode includes ${focusNodeCount} graph node${focusNodeCount === 1 ? "" : "s"}.`;
-}
-
-export default function GraphModeToolbar({ mode, focusNodeCount, onChangeMode }: GraphModeToolbarProps) {
+export default function GraphModeToolbar({ mode, options, onChangeMode }: GraphModeToolbarProps) {
   return (
-    <div className="uc-panel flex min-w-0 flex-wrap items-center gap-1 p-1">
-      {MODE_ORDER.map((item) => {
-        const isActive = item === mode;
-        const isFocus = item === "focus";
-        const focusUnavailable = isFocus && focusNodeCount === 0;
-        const disabled = focusUnavailable && !isActive;
-
+    <div className="uc-panel flex min-w-0 flex-wrap items-center gap-1 p-1" aria-label="图谱视图">
+      {options.map((option) => {
+        const isActive = option.id === mode;
         return (
           <button
-            key={item}
+            key={option.id}
             type="button"
-            onClick={() => onChangeMode(item)}
+            onClick={() => onChangeMode(option.id)}
             aria-pressed={isActive}
-            disabled={disabled}
-            title={isFocus ? focusTitle(focusNodeCount) : undefined}
-            className={`flex min-h-8 items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-55 ${
+            className={`flex min-h-8 items-center rounded px-3 py-1.5 text-xs font-semibold transition-colors ${
               isActive
                 ? "bg-accent/15 text-accent"
                 : "text-text-muted hover:bg-elevated hover:text-text-primary"
             }`}
           >
-            <span>{MODE_LABELS[item]}</span>
-            {isFocus && (
-              <span className="rounded border border-border-subtle px-1.5 py-0.5 text-[10px] leading-none">
-                {focusNodeCount}
-              </span>
-            )}
+            {option.label}
           </button>
         );
       })}

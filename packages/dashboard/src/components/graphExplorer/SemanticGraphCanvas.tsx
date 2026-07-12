@@ -11,16 +11,19 @@ import {
 import type { Edge, Node, NodeMouseHandler, NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type {
+  DocumentationCounts,
   SemanticGraph,
   SemanticGraphEdge,
   SemanticGraphNode,
   SemanticNodeGroup,
-  GraphDocumentationStatus,
 } from "../../graphExplorer/semanticGraph";
+import type { GraphExplorerDisplayMode } from "../../graphExplorer/hierarchicalGraph";
 import { useDashboardStore } from "../../store";
+import { coverageBadgeForNode } from "./graphExplorerModel";
 
 interface SemanticGraphCanvasProps {
   semanticGraph: SemanticGraph;
+  displayMode: GraphExplorerDisplayMode;
   viewKey: string;
 }
 
@@ -31,10 +34,11 @@ interface SemanticNodeData extends Record<string, unknown> {
   category: SemanticNodeGroup;
   rawType: string;
   cluster: string;
-  coverageStatus: GraphDocumentationStatus;
-  pageCount: number;
-  evidenceCount: number;
-  failedCount: number;
+  coverageLabel: string;
+  coverageRelation: "direct" | "context" | "none";
+  coverageProblem: boolean;
+  documentationCounts?: DocumentationCounts;
+  displayMode: GraphExplorerDisplayMode;
   isSelected: boolean;
 }
 
@@ -70,11 +74,10 @@ const GROUP_COLORS: Record<SemanticNodeGroup, string> = {
   other: "var(--color-text-muted)",
 };
 
-const COVERAGE_COLORS: Record<GraphDocumentationStatus, string> = {
-  complete: "var(--color-accent)",
-  partial: "var(--color-node-module)",
-  failed: "var(--color-complexity-complex)",
-  unknown: "var(--color-text-muted)",
+const RELATION_COLORS: Record<SemanticNodeData["coverageRelation"], string> = {
+  direct: "var(--color-accent)",
+  context: "var(--color-node-module)",
+  none: "var(--color-text-muted)",
 };
 
 const EDGE_COLORS: Record<string, string> = {
@@ -124,8 +127,9 @@ function edgeColor(edge: SemanticGraphEdge): string {
 }
 
 function SemanticNodeCard({ data }: NodeProps<SemanticFlowNode>) {
-  const coverageColor = COVERAGE_COLORS[data.coverageStatus];
   const groupColor = GROUP_COLORS[data.group];
+  const relationColor = RELATION_COLORS[data.coverageRelation];
+  const counts = data.documentationCounts;
 
   return (
     <div
@@ -133,8 +137,8 @@ function SemanticNodeCard({ data }: NodeProps<SemanticFlowNode>) {
         data.isSelected ? "node-glow" : ""
       }`}
       style={{
-        borderColor: data.isSelected ? coverageColor : "var(--color-border-subtle)",
-        boxShadow: data.isSelected ? `0 0 0 2px ${coverageColor}, 0 12px 30px rgba(0,0,0,0.32)` : undefined,
+        borderColor: data.isSelected ? groupColor : "var(--color-border-subtle)",
+        boxShadow: data.isSelected ? `0 0 0 2px ${groupColor}, 0 12px 30px rgba(0,0,0,0.32)` : undefined,
       }}
     >
       <div className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: groupColor }} />
@@ -151,19 +155,30 @@ function SemanticNodeCard({ data }: NodeProps<SemanticFlowNode>) {
           </div>
           <span
             className="shrink-0 rounded border px-2 py-0.5 text-[10px] font-medium text-text-secondary"
-            style={{ borderColor: coverageColor, color: coverageColor }}
+            style={{ borderColor: relationColor, color: relationColor }}
           >
-            {data.coverageStatus}
+            {data.coverageLabel}
           </span>
+          {data.coverageProblem && (
+            <span
+              role="img"
+              aria-label="生成或证据异常"
+              title="生成或证据异常"
+              className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
+              style={{ backgroundColor: "var(--color-complexity-complex)" }}
+            />
+          )}
         </div>
 
         <p className="mt-2 line-clamp-2 text-xs leading-5 text-text-secondary">{data.summary}</p>
 
         <div className="mt-auto flex items-center justify-between gap-3 text-[10px] text-text-muted">
           <span className="min-w-0 truncate">{data.cluster}</span>
-          <span className="shrink-0">
-            {data.pageCount}p / {data.evidenceCount}e / {data.failedCount}f
-          </span>
+          {data.displayMode === "coverage" && counts && (
+            <span className="shrink-0">
+              相关 {counts.context} · 待补 {counts.none} · 异常 {counts.problem}
+            </span>
+          )}
         </div>
       </div>
       <Handle type="source" position={Position.Bottom} className="!h-2 !w-2 !bg-text-muted" />
@@ -175,7 +190,7 @@ const nodeTypes = {
   semantic: memo(SemanticNodeCard),
 };
 
-export default function SemanticGraphCanvas({ semanticGraph, viewKey }: SemanticGraphCanvasProps) {
+export default function SemanticGraphCanvas({ semanticGraph, displayMode, viewKey }: SemanticGraphCanvasProps) {
   const selectedNodeId = useDashboardStore((state) => state.selectedNodeId);
   const selectNode = useDashboardStore((state) => state.selectNode);
   const onNodeClick = useCallback<NodeMouseHandler<SemanticFlowNode>>(
@@ -188,26 +203,30 @@ export default function SemanticGraphCanvas({ semanticGraph, viewKey }: Semantic
     const sortedNodes = [...semanticGraph.nodes].sort(compareSemanticNodes);
     const visibleNodeIds = new Set(sortedNodes.map((node) => node.id));
 
-    const flowNodes: SemanticFlowNode[] = sortedNodes.map((node) => ({
-      id: node.id,
-      type: "semantic",
-      position: semanticNodePosition(node, groupOffsets),
-      data: {
-        label: node.label,
-        summary: node.summary,
-        group: node.group,
-        category: node.category,
-        rawType: node.rawType,
-        cluster: node.cluster,
-        coverageStatus: node.coverage.status,
-        pageCount: node.docs.pageIds.length,
-        evidenceCount: node.docs.evidenceIds.length,
-        failedCount: node.coverage.status === "failed" ? 1 : 0,
-        isSelected: node.id === selectedNodeId,
-      },
-      width: NODE_WIDTH,
-      height: NODE_HEIGHT,
-    }));
+    const flowNodes: SemanticFlowNode[] = sortedNodes.map((node) => {
+      const badge = coverageBadgeForNode(node);
+      return {
+        id: node.id,
+        type: "semantic",
+        position: semanticNodePosition(node, groupOffsets),
+        data: {
+          label: node.label,
+          summary: node.summary,
+          group: node.group,
+          category: node.category,
+          rawType: node.rawType,
+          cluster: node.cluster,
+          coverageLabel: badge.label,
+          coverageRelation: badge.relation,
+          coverageProblem: badge.problem,
+          documentationCounts: node.documentationCounts,
+          displayMode,
+          isSelected: node.id === selectedNodeId,
+        },
+        width: NODE_WIDTH,
+        height: NODE_HEIGHT,
+      };
+    });
 
     const activeId = selectedNodeId && visibleNodeIds.has(selectedNodeId) ? selectedNodeId : null;
     const flowEdges: Edge[] = semanticGraph.edges.map((edge) => {
@@ -240,13 +259,13 @@ export default function SemanticGraphCanvas({ semanticGraph, viewKey }: Semantic
     });
 
     return { nodes: flowNodes, edges: flowEdges };
-  }, [semanticGraph.edges, semanticGraph.nodes, selectedNodeId]);
+  }, [displayMode, semanticGraph.edges, semanticGraph.nodes, selectedNodeId]);
 
   if (semanticGraph.nodes.length === 0) {
     return (
       <div className="uc-graph-frame flex min-h-[420px] flex-1 items-center justify-center overflow-hidden">
         <p className="uc-panel px-4 py-3 text-sm text-text-muted">
-          No graph nodes match this view.
+          当前层级没有可显示的图谱元素。
         </p>
       </div>
     );

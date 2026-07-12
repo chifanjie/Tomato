@@ -1,64 +1,145 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { GraphExplorerDisplayMode, GraphExplorerNavigation } from "../../graphExplorer/hierarchicalGraph";
 import { useDashboardStore } from "../../store";
+import type { WikiTarget } from "../../wiki/wikiContent";
 import GraphCoverageLegend from "./GraphCoverageLegend";
 import GraphDetailsRail from "./GraphDetailsRail";
 import GraphModeToolbar from "./GraphModeToolbar";
 import SemanticGraphCanvas from "./SemanticGraphCanvas";
-import { buildGraphExplorerView } from "./graphExplorerModel";
-import type { WikiTarget } from "../../wiki/wikiContent";
+import {
+  availableGraphModes,
+  buildGraphExplorerView,
+  normalizeGraphModeForOptions,
+} from "./graphExplorerModel";
 
 interface GraphExplorerProps {
   onSelectWikiTarget: (target: WikiTarget) => unknown;
 }
 
+const OVERVIEW_NAVIGATION: GraphExplorerNavigation = { level: "overview" };
+
 export default function GraphExplorer({ onSelectWikiTarget }: GraphExplorerProps) {
   const graph = useDashboardStore((state) => state.graph);
   const wikiIndex = useDashboardStore((state) => state.wikiIndex);
-  const mode = useDashboardStore((state) => state.graphExplorerMode);
+  const storedMode = useDashboardStore((state) => state.graphExplorerMode);
   const setGraphExplorerMode = useDashboardStore((state) => state.setGraphExplorerMode);
   const focusNodeIds = useDashboardStore((state) => state.graphFocusNodeIds);
   const selectedNodeId = useDashboardStore((state) => state.selectedNodeId);
+  const selectNode = useDashboardStore((state) => state.selectNode);
+  const [navigation, setNavigation] = useState<GraphExplorerNavigation>(OVERVIEW_NAVIGATION);
+
+  const modeOptions = useMemo(
+    () => graph ? availableGraphModes(graph, wikiIndex) : [],
+    [graph, wikiIndex],
+  );
+  const effectiveMode = useMemo(
+    () => normalizeGraphModeForOptions(storedMode, modeOptions),
+    [modeOptions, storedMode],
+  );
+
+  useEffect(() => {
+    if (storedMode !== effectiveMode) setGraphExplorerMode(effectiveMode);
+  }, [effectiveMode, setGraphExplorerMode, storedMode]);
 
   const view = useMemo(
-    () =>
-      graph
-        ? buildGraphExplorerView({
-            graph,
-            wikiIndex,
-            mode,
-            focusNodeIds,
-            selectedNodeId,
-          })
-        : null,
-    [focusNodeIds, graph, mode, selectedNodeId, wikiIndex],
+    () => graph
+      ? buildGraphExplorerView({
+          graph,
+          wikiIndex,
+          mode: effectiveMode,
+          focusNodeIds,
+          selectedNodeId,
+          navigation,
+        })
+      : null,
+    [effectiveMode, focusNodeIds, graph, navigation, selectedNodeId, wikiIndex],
   );
+
+  const changeMode = useCallback((mode: GraphExplorerDisplayMode) => {
+    setGraphExplorerMode(mode);
+    setNavigation(OVERVIEW_NAVIGATION);
+    selectNode(null);
+  }, [selectNode, setGraphExplorerMode]);
+
+  const openOverview = useCallback(() => {
+    setNavigation(OVERVIEW_NAVIGATION);
+    selectNode(null);
+  }, [selectNode]);
+
+  const openScope = useCallback((scopeId: string) => {
+    setNavigation({ level: "scope", scopeId });
+    selectNode(null);
+  }, [selectNode]);
+
+  const openFile = useCallback((scopeId: string, fileId: string) => {
+    setNavigation({ level: "file", scopeId, fileId });
+    selectNode(null);
+  }, [selectNode]);
 
   if (!graph || !view) {
     return (
-      <section aria-label="Full graph explorer" className="flex min-h-0 flex-1 items-center justify-center bg-root">
-        <p className="uc-panel p-4 text-sm text-text-muted">
-          No graph has been loaded.
-        </p>
+      <section aria-label="项目图谱" className="flex min-h-0 flex-1 items-center justify-center bg-root">
+        <p className="uc-panel p-4 text-sm text-text-muted">尚未加载项目图谱。</p>
       </section>
     );
   }
 
+  const presentation = view.semanticGraph.presentation;
+
   return (
     <section
-      aria-label="Full graph explorer"
+      aria-label="项目图谱"
       className="flex min-h-0 flex-1 overflow-x-hidden overflow-y-auto bg-root text-text-primary xl:overflow-hidden max-xl:flex-col"
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 p-4 max-xl:min-h-[540px] max-xl:flex-none max-sm:min-h-[480px] max-sm:p-3">
         <div className="flex items-start justify-between gap-3 max-lg:flex-col">
-          <GraphModeToolbar mode={mode} focusNodeCount={focusNodeIds.length} onChangeMode={setGraphExplorerMode} />
+          <GraphModeToolbar mode={effectiveMode} options={modeOptions} onChangeMode={changeMode} />
           <GraphCoverageLegend />
         </div>
+
+        <div className="uc-panel flex min-w-0 flex-wrap items-center justify-between gap-3 px-3 py-2">
+          <nav aria-label="图谱层级" className="flex min-w-0 flex-wrap items-center gap-1 text-xs">
+            {presentation.breadcrumbs.map((item, index) => {
+              const isCurrent = index === presentation.breadcrumbs.length - 1;
+              return (
+                <span key={`${item.level}:${item.scopeId ?? ""}:${item.fileId ?? ""}`} className="flex items-center gap-1">
+                  {index > 0 && <span aria-hidden="true" className="text-text-muted">/</span>}
+                  {isCurrent ? (
+                    <span aria-current="page" className="font-semibold text-text-primary">{item.label}</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => item.level === "overview"
+                        ? openOverview()
+                        : item.scopeId ? openScope(item.scopeId) : undefined}
+                      className="rounded px-1.5 py-1 text-text-muted transition-colors hover:bg-elevated hover:text-text-primary"
+                    >
+                      {item.label}
+                    </button>
+                  )}
+                </span>
+              );
+            })}
+          </nav>
+          <p className="text-[11px] text-text-muted">
+            当前显示 {view.semanticGraph.nodes.length} 个元素
+            {presentation.hiddenNodeCount > 0 ? `，另有 ${presentation.hiddenNodeCount} 个未展开` : ""}
+          </p>
+        </div>
+
         <SemanticGraphCanvas
           semanticGraph={view.semanticGraph}
-          viewKey={`${mode}:${focusNodeIds.join("|")}:${view.semanticGraph.nodes.length}:${view.semanticGraph.edges.length}`}
+          displayMode={effectiveMode}
+          viewKey={`${effectiveMode}:${presentation.level}:${presentation.scopeId ?? ""}:${presentation.fileId ?? ""}:${focusNodeIds.join("|")}:${view.semanticGraph.nodes.length}:${view.semanticGraph.edges.length}`}
         />
       </div>
-      <GraphDetailsRail view={view} onSelectWikiTarget={onSelectWikiTarget} />
+      <GraphDetailsRail
+        view={view}
+        onSelectObject={selectNode}
+        onOpenScope={openScope}
+        onOpenFile={openFile}
+        onSelectWikiTarget={onSelectWikiTarget}
+      />
     </section>
   );
 }

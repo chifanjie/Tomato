@@ -1,22 +1,16 @@
-import type { GraphDocumentationStatus } from "../../graphExplorer/semanticGraph";
-
-const COVERAGE_ITEMS: Array<{
-  status: GraphDocumentationStatus;
-  label: string;
-  className: string;
-}> = [
-  { status: "complete", label: "完整", className: "bg-accent" },
-  { status: "partial", label: "部分覆盖", className: "bg-node-module" },
-  { status: "failed", label: "生成失败", className: "bg-complexity-complex" },
-  { status: "unknown", label: "未评估", className: "bg-text-muted" },
-];
+const COVERAGE_ITEMS = [
+  { label: "有专门正文", color: "var(--color-accent)" },
+  { label: "仅相关资料", color: "var(--color-node-module)" },
+  { label: "待补正文", color: "var(--color-text-muted)" },
+  { label: "生成或证据异常", color: "var(--color-complexity-complex)" },
+] as const;
 
 export default function GraphCoverageLegend() {
   return (
-    <div className="uc-panel flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2">
+    <div className="uc-panel flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2" aria-label="文档覆盖图例">
       {COVERAGE_ITEMS.map((item) => (
-        <div key={item.status} className="flex items-center gap-2 text-xs text-text-secondary">
-          <span className={`h-2.5 w-2.5 rounded-full ${item.className}`} />
+        <div key={item.label} className="flex items-center gap-2 text-xs text-text-secondary">
+          <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
           <span>{item.label}</span>
         </div>
       ))}

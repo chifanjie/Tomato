@@ -1,165 +1,139 @@
 // @vitest-environment happy-dom
 
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
+import { act, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { WikiPageV2 } from "@understand-code/core/knowledge-base";
-import type { GraphNode } from "@understand-code/core/types";
-import { useDashboardStore } from "../../../store";
+import {
+  graphFixture,
+  importsOnlyGraphFixture,
+  wikiRuntimeFixture,
+} from "../../../graphExplorer/__tests__/graphFixtures";
 import type { WikiTarget } from "../../../wiki/wikiContent";
-import * as GraphDetailsRailModule from "../GraphDetailsRail";
-import type { GraphExplorerView } from "../graphExplorerModel";
+import GraphDetailsRail from "../GraphDetailsRail";
+import { buildGraphExplorerView, type GraphExplorerView } from "../graphExplorerModel";
 
-type OpenLinkedWikiForNode = (
-  nodeId: string,
-  openWikiForGraphNode: (nodeId: string) => WikiTarget | null,
-  onSelectWikiTarget: (target: WikiTarget) => unknown,
-) => WikiTarget | null;
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const openLinkedWikiForNode = (
-  GraphDetailsRailModule as unknown as {
-    openLinkedWikiForNode?: OpenLinkedWikiForNode;
+function buttonWithText(container: HTMLElement, text: string): HTMLButtonElement | null {
+  return [...container.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent?.includes(text)) ?? null;
+}
+
+describe("GraphDetailsRail", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  let onSelectObject: ReturnType<typeof vi.fn<(nodeId: string) => void>>;
+  let onOpenScope: ReturnType<typeof vi.fn<(scopeId: string) => void>>;
+  let onOpenFile: ReturnType<typeof vi.fn<(scopeId: string, fileId: string) => void>>;
+  let onSelectWikiTarget: ReturnType<typeof vi.fn<(target: WikiTarget) => unknown>>;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.replaceChildren(container);
+    root = createRoot(container);
+    onSelectObject = vi.fn();
+    onOpenScope = vi.fn();
+    onOpenFile = vi.fn();
+    onSelectWikiTarget = vi.fn();
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    document.body.replaceChildren();
+    vi.restoreAllMocks();
+  });
+
+  async function renderRail(view: GraphExplorerView): Promise<void> {
+    await act(async () => {
+      root.render(createElement(GraphDetailsRail, {
+        view,
+        onSelectObject,
+        onOpenScope,
+        onOpenFile,
+        onSelectWikiTarget,
+      }));
+    });
   }
-).openLinkedWikiForNode;
 
-const directNode: GraphNode = {
-  id: "function:src/a.ts:run",
-  type: "function",
-  name: "run",
-  filePath: "src/a.ts",
-  lineRange: [1, 3],
-  summary: "Runs the core flow.",
-  tags: [],
-  complexity: "moderate",
-};
-
-const contextNode: GraphNode = {
-  id: "function:src/context.ts:helper",
-  type: "function",
-  name: "helper",
-  filePath: "src/context.ts",
-  lineRange: [4, 8],
-  summary: "Provides background context.",
-  tags: [],
-  complexity: "simple",
-};
-
-const page: WikiPageV2 = {
-  id: "page:file-a",
-  title: "a.ts 文件参考",
-  summary: "记录 a.ts 中的实现入口。",
-  markdownPath: "knowledge-base/参考/文件/src/a.ts.md",
-  role: "reference",
-  category: "file",
-  quality: "generated",
-  generationStatus: "complete",
-  directNodeIds: [directNode.id],
-  contextNodeIds: [contextNode.id],
-  evidenceIds: [],
-  searchTerms: ["src/a.ts"],
-};
-
-function viewFor(node: GraphNode, hidden = false): GraphExplorerView {
-  return {
-    semanticGraph: { nodes: [], edges: [] },
-    selectedNode: hidden ? null : node,
-    selectedNodeVisible: !hidden,
-    hiddenSelectedNode: hidden ? node : null,
-    selectedSemanticNode: null,
-    selectedCoverage: hidden ? null : { status: "complete", pages: [page] },
-    selectedPages: [page],
-    canOpenWiki: true,
-  };
-}
-
-function renderRail(view: GraphExplorerView): string {
-  return renderToStaticMarkup(createElement(GraphDetailsRailModule.default, {
-    view,
-    onSelectWikiTarget: vi.fn(),
-  }));
-}
-
-function setGraphWikiNotice(notice: string | null): void {
-  useDashboardStore.setState({ graphWikiNotice: notice });
-  // Zustand intentionally uses getInitialState() as the server snapshot.
-  useDashboardStore.getInitialState().graphWikiNotice = notice;
-}
-
-beforeEach(() => {
-  setGraphWikiNotice(null);
-});
-
-afterEach(() => {
-  setGraphWikiNotice(null);
-  vi.restoreAllMocks();
-});
-
-describe("GraphDetailsRail Wiki navigation", () => {
-  it("delegates a direct destination to the App owner without writing browser history", () => {
-    expect(openLinkedWikiForNode).toBeTypeOf("function");
-    if (!openLinkedWikiForNode) return;
+  it("opens only the exact direct page through the required App callback", async () => {
     const pushState = vi.spyOn(window.history, "pushState");
-    const openWikiForGraphNode = vi.fn(() => ({ pageId: "page:file-a", anchor: "run" }));
-    const onSelectWikiTarget = vi.fn();
+    const view = buildGraphExplorerView({
+      graph: graphFixture(),
+      wikiIndex: wikiRuntimeFixture(),
+      mode: "coverage",
+      focusNodeIds: [],
+      selectedNodeId: "function:src/a.ts:run",
+      navigation: { level: "scope", scopeId: "layer:core" },
+    });
+    await renderRail(view);
 
-    const destination = openLinkedWikiForNode(
-      directNode.id,
-      openWikiForGraphNode,
-      onSelectWikiTarget,
-    );
+    expect(container.textContent).toContain("专门正文");
+    expect(container.textContent).toContain("运行流程");
+    expect(container.textContent).toContain("生产代码");
+    expect(container.textContent).toContain("src/a.ts:10-14");
 
-    expect(openWikiForGraphNode).toHaveBeenCalledWith(directNode.id);
-    expect(destination).toEqual({ pageId: "page:file-a", anchor: "run" });
-    expect(onSelectWikiTarget).toHaveBeenCalledWith({ pageId: "page:file-a", anchor: "run" });
+    await act(async () => buttonWithText(container, "阅读正文")?.click());
+
+    expect(onSelectWikiTarget).toHaveBeenCalledTimes(1);
+    expect(onSelectWikiTarget).toHaveBeenCalledWith({ pageId: "page:run" });
     expect(pushState).not.toHaveBeenCalled();
   });
 
-  it("does not call the App owner or browser history when no direct destination exists", () => {
-    expect(openLinkedWikiForNode).toBeTypeOf("function");
-    if (!openLinkedWikiForNode) return;
+  it("shows context pages as related material without enabling the primary reading action", async () => {
     const pushState = vi.spyOn(window.history, "pushState");
-    const openWikiForGraphNode = vi.fn(() => null);
-    const onSelectWikiTarget = vi.fn();
+    const view = buildGraphExplorerView({
+      graph: graphFixture(),
+      wikiIndex: wikiRuntimeFixture(),
+      mode: "coverage",
+      focusNodeIds: [],
+      selectedNodeId: "file:context-only.ts",
+      navigation: { level: "scope", scopeId: "layer:core" },
+    });
+    await renderRail(view);
 
-    const destination = openLinkedWikiForNode(
-      contextNode.id,
-      openWikiForGraphNode,
-      onSelectWikiTarget,
-    );
-
-    expect(openWikiForGraphNode).toHaveBeenCalledWith(contextNode.id);
-    expect(destination).toBeNull();
+    expect(container.textContent).toContain("相关资料");
+    expect(container.textContent).toContain("项目总览");
+    expect(buttonWithText(container, "阅读正文")).toBeNull();
     expect(onSelectWikiTarget).not.toHaveBeenCalled();
     expect(pushState).not.toHaveBeenCalled();
   });
 
-  it("renders the context-only notice beside the visible selection Wiki control", () => {
-    setGraphWikiNotice("暂无专门正文");
+  it("lets aggregate neighbors and the selected aggregate open their real scopes", async () => {
+    const graph = importsOnlyGraphFixture();
+    const view = buildGraphExplorerView({
+      graph,
+      wikiIndex: wikiRuntimeFixture(),
+      mode: "call",
+      focusNodeIds: [],
+      selectedNodeId: "scope:layer:app",
+      navigation: { level: "overview" },
+    });
+    await renderRail(view);
 
-    const html = renderRail(viewFor(contextNode));
+    expect(container.textContent).toContain("范围概览");
+    const related = buttonWithText(container, "库");
+    expect(related).not.toBeNull();
+    await act(async () => related?.click());
+    expect(onSelectObject).toHaveBeenCalledWith("scope:layer:lib");
 
-    expect(html).toContain(`data-wiki-node-id="${contextNode.id}"`);
-    expect(html).toContain('aria-live="polite"');
-    expect(html).toContain("暂无专门正文");
+    await act(async () => buttonWithText(container, "查看范围")?.click());
+    expect(onOpenScope).toHaveBeenCalledWith("layer:app");
   });
 
-  it("uses the same linked-Wiki path and notice for a hidden selection", () => {
-    setGraphWikiNotice("暂无专门正文");
+  it("explains a hidden selection in Chinese without stale Wiki actions", async () => {
+    const view = buildGraphExplorerView({
+      graph: graphFixture(),
+      wikiIndex: wikiRuntimeFixture(),
+      mode: "architecture",
+      focusNodeIds: [],
+      selectedNodeId: "function:src/a.ts:run",
+      navigation: { level: "overview" },
+    });
+    await renderRail(view);
 
-    const html = renderRail(viewFor(contextNode, true));
-
-    expect(html).toContain("Selection hidden");
-    expect(html).toContain(`data-wiki-node-id="${contextNode.id}"`);
-    expect(html).toContain("Open linked wiki");
-    expect(html).toContain('aria-live="polite"');
-    expect(html).toContain("暂无专门正文");
-  });
-
-  it("does not render a live region when there is no graph-to-Wiki notice", () => {
-    const html = renderRail(viewFor(directNode));
-
-    expect(html).toContain(`data-wiki-node-id="${directNode.id}"`);
-    expect(html).not.toContain('aria-live="polite"');
-    expect(html).not.toContain("暂无专门正文");
+    expect(container.textContent).toContain("当前层级未显示所选节点");
+    expect(container.textContent).toContain("run");
+    expect(buttonWithText(container, "阅读正文")).toBeNull();
+    expect(onSelectWikiTarget).not.toHaveBeenCalled();
   });
 });

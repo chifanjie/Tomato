@@ -6,6 +6,7 @@ import {
   buildWikiRuntimeIndex,
   emptyWikiRuntimeIndex,
 } from "../wiki/wikiIndex";
+import { wikiV2Fixture } from "../wiki/__tests__/fixtures/wikiV2Fixtures";
 
 type PersonaModeStore = ReturnType<typeof useDashboardStore.getState> & {
   activatePersonaMode?: (persona: "non-technical" | "junior" | "experienced") => void;
@@ -167,7 +168,23 @@ describe("dashboard wiki and graph surface state", () => {
     useDashboardStore.getState().setGraphExplorerMode("global");
   });
 
-  it("defaults to wiki surface when wiki pages exist", () => {
+  it("keeps the guided home selected after the first Wiki load", () => {
+    useDashboardStore.setState({
+      activeWikiPageId: null,
+      dashboardSurface: "wiki",
+      graphFocusNodeIds: [],
+    });
+
+    useDashboardStore.getState().setWikiIndex(buildWikiRuntimeIndex(wikiV2Fixture()));
+
+    expect(useDashboardStore.getState()).toMatchObject({
+      dashboardSurface: "wiki",
+      activeWikiPageId: null,
+      graphFocusNodeIds: [],
+    });
+  });
+
+  it("keeps the guided home on the wiki surface when wiki pages exist", () => {
     useDashboardStore.getState().setGraph(sampleGraph());
     useDashboardStore.getState().setWikiIndex(wikiIndexWithPage({
       id: "wiki:overview",
@@ -180,7 +197,7 @@ describe("dashboard wiki and graph surface state", () => {
     }));
 
     expect(useDashboardStore.getState().dashboardSurface).toBe("wiki");
-    expect(useDashboardStore.getState().activeWikiPageId).toBe("wiki:overview");
+    expect(useDashboardStore.getState().activeWikiPageId).toBeNull();
   });
 
   it("focuses graph from wiki page and links graph node back to wiki", () => {
@@ -247,7 +264,7 @@ describe("dashboard wiki and graph surface state", () => {
     }));
 
     expect(useDashboardStore.getState().dashboardSurface).toBe("graph");
-    expect(useDashboardStore.getState().activeWikiPageId).toBe("wiki:overview");
+    expect(useDashboardStore.getState().activeWikiPageId).toBeNull();
   });
 
   it("does not activate a missing wiki page when opening graph", () => {
@@ -265,7 +282,7 @@ describe("dashboard wiki and graph surface state", () => {
     useDashboardStore.getState().openGraphForWikiPage("missing");
 
     expect(useDashboardStore.getState().dashboardSurface).toBe("graph");
-    expect(useDashboardStore.getState().activeWikiPageId).toBe("wiki:overview");
+    expect(useDashboardStore.getState().activeWikiPageId).toBeNull();
     expect(useDashboardStore.getState().activeWikiPageId).not.toBe("missing");
   });
 
@@ -368,7 +385,6 @@ describe("dashboard wiki and graph surface state", () => {
     expect(useDashboardStore.getState().activeWikiPageId).toBe("wiki:function-build");
     expect(useDashboardStore.getState().graphFocusNodeIds).toEqual([
       "file:src/a.go",
-      "class:src/a.go:Worker",
     ]);
   });
 });

@@ -406,16 +406,13 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
       const preservedPage = state.activeWikiPageId
         ? index.pagesById.get(state.activeWikiPageId) ?? null
         : null;
-      const activePage = preservedPage ?? index.pages[0] ?? null;
-      const hadWikiGraphFocus = Boolean(state.activeWikiPageId && state.graphFocusNodeIds.length > 0);
+      const hadWikiGraphFocus = state.graphFocusNodeIds.length > 0;
       return {
         wikiIndex: index,
-        activeWikiPageId: activePage?.id ?? null,
-        ...(hadWikiGraphFocus || !activePage
-          ? {
-              graphFocusNodeIds: activePage ? wikiPageNodeIds(activePage) : [],
-            }
-          : {}),
+        activeWikiPageId: preservedPage?.id ?? null,
+        graphFocusNodeIds: hadWikiGraphFocus && preservedPage
+          ? [...new Set(preservedPage.directNodeIds)]
+          : [],
       };
     }),
 

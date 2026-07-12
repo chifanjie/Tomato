@@ -57,11 +57,11 @@ describe("app surface routing", () => {
     );
   });
 
-  it("declares wiki as the initial peer surface and selects the first loaded page", () => {
+  it("declares wiki as the initial peer surface and keeps the guided home selected", () => {
     expect(useDashboardStore.getInitialState().dashboardSurface).toBe("wiki");
     expect(useDashboardStore.getInitialState().graphExplorerMode).toBe("semantic");
     expect(useDashboardStore.getState().dashboardSurface).toBe("wiki");
-    expect(useDashboardStore.getState().activeWikiPageId).toBe("wiki:overview");
+    expect(useDashboardStore.getState().activeWikiPageId).toBeNull();
   });
 
   it("switches to graph through wiki page focus", () => {

@@ -130,12 +130,15 @@ export default function GlobalWikiSearch({
   const [visibleCount, setVisibleCount] = useState(20);
   const deferredQuery = useDeferredValue(query);
   const previousOpen = useRef(open);
+  const previousLoadStatus = useRef(loadStatus);
   const dialogRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
   const activationFrameRef = useRef<number | null>(null);
   const focusFrameRef = useRef<number | null>(null);
   const containmentFrameRef = useRef<number | null>(null);
+  const readyFocusFrameRef = useRef<number | null>(null);
   onCloseRef.current = onClose;
   const view = useMemo(
     () => buildGlobalWikiSearchView(runtime, deferredQuery, visibleCount),
@@ -151,6 +154,34 @@ export default function GlobalWikiSearch({
     if (previousOpen.current && !open) returnFocusRef.current?.focus();
     previousOpen.current = open;
   }, [open, returnFocusRef]);
+
+  useLayoutEffect(() => {
+    const wasLoading = previousLoadStatus.current === "loading";
+    previousLoadStatus.current = loadStatus;
+    if (
+      !open
+      || !wasLoading
+      || (loadStatus !== "ready" && loadStatus !== "fallback")
+    ) return;
+
+    readyFocusFrameRef.current = window.requestAnimationFrame(() => {
+      readyFocusFrameRef.current = null;
+      const dialog = dialogRef.current;
+      const input = inputRef.current;
+      const active = document.activeElement;
+      if (
+        dialog
+        && input
+        && !input.disabled
+        && (active === dialog || active === closeButtonRef.current)
+      ) input.focus();
+    });
+    return () => {
+      if (readyFocusFrameRef.current === null) return;
+      window.cancelAnimationFrame(readyFocusFrameRef.current);
+      readyFocusFrameRef.current = null;
+    };
+  }, [loadStatus, open]);
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -267,7 +298,7 @@ export default function GlobalWikiSearch({
             className="min-w-0 flex-1 bg-transparent text-base text-text-primary outline-none placeholder:text-text-muted disabled:opacity-60"
           />
           <kbd className="rounded border border-border-subtle bg-elevated px-2 py-1 text-[11px] text-text-muted">Esc</kbd>
-          <button type="button" onClick={onClose} aria-label="关闭搜索" className="rounded p-1.5 text-text-muted hover:bg-elevated hover:text-text-primary">×</button>
+          <button ref={closeButtonRef} type="button" onClick={onClose} aria-label="关闭搜索" className="rounded p-1.5 text-text-muted hover:bg-elevated hover:text-text-primary">×</button>
         </header>
 
         {loadStatus === "fallback" && (

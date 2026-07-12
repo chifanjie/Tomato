@@ -10,6 +10,10 @@ import {
   emptyWikiRuntimeIndex,
 } from "../wiki/wikiIndex";
 import { wikiV2Fixture } from "../wiki/__tests__/fixtures/wikiV2Fixtures";
+import {
+  graphFixture,
+  wikiRuntimeFixture,
+} from "../graphExplorer/__tests__/graphFixtures";
 
 type PersonaModeStore = ReturnType<typeof useDashboardStore.getState> & {
   activatePersonaMode?: (persona: "non-technical" | "junior" | "experienced") => void;
@@ -194,7 +198,8 @@ describe("dashboard store readable navigation", () => {
 describe("dashboard wiki and graph surface state", () => {
   beforeEach(() => {
     useDashboardStore.getState().setDashboardSurface("wiki");
-    useDashboardStore.getState().setWikiIndex(emptyWikiRuntimeIndex());
+    useDashboardStore.getState().setGraph(graphFixture());
+    useDashboardStore.getState().setWikiIndex(wikiRuntimeFixture());
     useDashboardStore.getState().selectWikiPage(null);
     useDashboardStore.getState().setGraphExplorerMode("global");
     useDashboardStore.setState({
@@ -203,7 +208,28 @@ describe("dashboard wiki and graph surface state", () => {
       graphWikiNotice: null,
       pendingWikiAnchor: null,
       selectedNodeId: null,
+      nodeHistory: [],
     });
+  });
+
+  it("selects and clears raw, scope, and boundary graph objects through one value", () => {
+    useDashboardStore.getState().selectNode("scope:layer:core");
+    expect(useDashboardStore.getState().selectedNodeId).toBe("scope:layer:core");
+
+    useDashboardStore.getState().selectNode("boundary:layer:external");
+    expect(useDashboardStore.getState().selectedNodeId).toBe("boundary:layer:external");
+
+    useDashboardStore.getState().selectNode(null);
+    expect(useDashboardStore.getState().selectedNodeId).toBeNull();
+  });
+
+  it("records navigation history only when moving between raw graph nodes", () => {
+    useDashboardStore.getState().selectNode("file:src/a.ts");
+    useDashboardStore.getState().selectNode("scope:layer:core");
+    useDashboardStore.getState().selectNode("function:src/a.ts:run");
+    useDashboardStore.getState().selectNode("file:context-only.ts");
+
+    expect(useDashboardStore.getState().nodeHistory).toEqual(["function:src/a.ts:run"]);
   });
 
   it("keeps the guided home selected after the first Wiki load", () => {
@@ -239,22 +265,22 @@ describe("dashboard wiki and graph surface state", () => {
   });
 
   it("focuses only direct graph nodes and opens the Core primary Wiki target", () => {
-    useDashboardStore.getState().setGraph(sampleGraph());
-    useDashboardStore.getState().setWikiIndex(preciseWikiIndex());
-
     useDashboardStore.getState().openGraphForWikiPage("page:run");
 
     expect(useDashboardStore.getState().dashboardSurface).toBe("graph");
-    expect(useDashboardStore.getState().graphFocusNodeIds).toEqual(["function:src/a.ts:run"]);
+    expect(useDashboardStore.getState().graphFocusNodeIds).toEqual([
+      "file:src/a.ts",
+      "function:src/a.ts:run",
+    ]);
     expect(useDashboardStore.getState().graphFocusPageId).toBe("page:run");
     expect(useDashboardStore.getState().graphExplorerMode).toBe("focus");
 
     const destination = useDashboardStore.getState().openWikiForGraphNode("function:src/a.ts:run");
 
-    expect(destination).toEqual({ pageId: "page:file-a", anchor: "run" });
+    expect(destination).toEqual({ pageId: "page:run", anchor: "run" });
     expect(useDashboardStore.getState().dashboardSurface).toBe("wiki");
     expect(useDashboardStore.getState().selectedNodeId).toBe("function:src/a.ts:run");
-    expect(useDashboardStore.getState().activeWikiPageId).toBe("page:file-a");
+    expect(useDashboardStore.getState().activeWikiPageId).toBe("page:run");
     expect(useDashboardStore.getState().pendingWikiAnchor).toBe("run");
     expect(useDashboardStore.getState().graphWikiNotice).toBeNull();
   });
@@ -423,17 +449,16 @@ describe("dashboard wiki and graph surface state", () => {
   });
 
   it("keeps a context-only graph node on the graph and reports that it has no dedicated body", () => {
-    useDashboardStore.getState().setWikiIndex(preciseWikiIndex());
-    useDashboardStore.getState().openWikiTarget({ pageId: "page:file-a", anchor: "run" });
+    useDashboardStore.getState().openWikiTarget({ pageId: "page:run", anchor: "run" });
     useDashboardStore.getState().setDashboardSurface("graph");
     const before = useDashboardStore.getState();
 
-    const destination = useDashboardStore.getState().openWikiForGraphNode("file:src/context-only.ts");
+    const destination = useDashboardStore.getState().openWikiForGraphNode("file:context-only.ts");
 
     expect(destination).toBeNull();
     expect(useDashboardStore.getState()).toMatchObject({
       dashboardSurface: "graph",
-      selectedNodeId: "file:src/context-only.ts",
+      selectedNodeId: "file:context-only.ts",
       activeWikiPageId: before.activeWikiPageId,
       pendingWikiAnchor: before.pendingWikiAnchor,
       graphFocusPageId: before.graphFocusPageId,
@@ -443,15 +468,14 @@ describe("dashboard wiki and graph surface state", () => {
   });
 
   it("clears a stale graph-to-Wiki notice when selection changes or a graph reloads", () => {
-    useDashboardStore.getState().setWikiIndex(preciseWikiIndex());
     useDashboardStore.getState().setDashboardSurface("graph");
-    useDashboardStore.getState().openWikiForGraphNode("file:src/context-only.ts");
+    useDashboardStore.getState().openWikiForGraphNode("file:context-only.ts");
     expect(useDashboardStore.getState().graphWikiNotice).toBe("暂无专门正文");
 
     useDashboardStore.getState().selectNode("function:src/a.ts:run");
     expect(useDashboardStore.getState().graphWikiNotice).toBeNull();
 
-    useDashboardStore.getState().openWikiForGraphNode("file:src/context-only.ts");
+    useDashboardStore.getState().openWikiForGraphNode("file:context-only.ts");
     useDashboardStore.getState().setGraph(sampleGraph());
     expect(useDashboardStore.getState().graphWikiNotice).toBeNull();
   });

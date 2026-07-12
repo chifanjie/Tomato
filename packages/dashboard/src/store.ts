@@ -532,19 +532,23 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
     });
   },
 
-  selectNode: (nodeId) => {
-    const { selectedNodeId, nodeHistory } = get();
-    if (nodeId && selectedNodeId && nodeId !== selectedNodeId) {
-      // Push current node to history before navigating away
-      set({
-        selectedNodeId: nodeId,
-        graphWikiNotice: null,
-        nodeHistory: [...nodeHistory, selectedNodeId].slice(-MAX_HISTORY),
-      });
-    } else {
-      set({ selectedNodeId: nodeId, graphWikiNotice: null });
-    }
-  },
+  selectNode: (nodeId) => set((state) => {
+    const rawIds = new Set(state.graph?.nodes.map((node) => node.id) ?? []);
+    const shouldRecordRawHistory = Boolean(
+      nodeId
+      && state.selectedNodeId
+      && nodeId !== state.selectedNodeId
+      && rawIds.has(nodeId)
+      && rawIds.has(state.selectedNodeId),
+    );
+    return {
+      selectedNodeId: nodeId,
+      graphWikiNotice: null,
+      nodeHistory: shouldRecordRawHistory
+        ? [...state.nodeHistory, state.selectedNodeId as string].slice(-MAX_HISTORY)
+        : state.nodeHistory,
+    };
+  }),
 
   navigateToNode: (nodeId) => {
     get().navigateToNodeInLayer(nodeId);

@@ -26,6 +26,7 @@ export default function GraphExplorer({ onSelectWikiTarget }: GraphExplorerProps
   const focusNodeIds = useDashboardStore((state) => state.graphFocusNodeIds);
   const selectedNodeId = useDashboardStore((state) => state.selectedNodeId);
   const selectNode = useDashboardStore((state) => state.selectNode);
+  const openWikiForGraphNode = useDashboardStore((state) => state.openWikiForGraphNode);
   const [navigation, setNavigation] = useState<GraphExplorerNavigation>(OVERVIEW_NAVIGATION);
 
   const modeOptions = useMemo(
@@ -75,6 +76,15 @@ export default function GraphExplorer({ onSelectWikiTarget }: GraphExplorerProps
     setNavigation({ level: "file", scopeId, fileId });
     selectNode(null);
   }, [selectNode]);
+
+  const selection = view?.selection;
+  const openSelectionWikiTarget = useCallback((target: WikiTarget) => {
+    if (selection?.kind === "raw") {
+      const destination = openWikiForGraphNode(selection.id);
+      return destination ? onSelectWikiTarget(destination) : null;
+    }
+    return onSelectWikiTarget(target);
+  }, [onSelectWikiTarget, openWikiForGraphNode, selection]);
 
   if (!graph || !view) {
     return (
@@ -131,6 +141,8 @@ export default function GraphExplorer({ onSelectWikiTarget }: GraphExplorerProps
           semanticGraph={view.semanticGraph}
           displayMode={effectiveMode}
           viewKey={`${effectiveMode}:${presentation.level}:${presentation.scopeId ?? ""}:${presentation.fileId ?? ""}:${focusNodeIds.join("|")}:${view.semanticGraph.nodes.length}:${view.semanticGraph.edges.length}`}
+          onOpenScope={openScope}
+          onOpenFile={openFile}
         />
       </div>
       <GraphDetailsRail
@@ -138,7 +150,7 @@ export default function GraphExplorer({ onSelectWikiTarget }: GraphExplorerProps
         onSelectObject={selectNode}
         onOpenScope={openScope}
         onOpenFile={openFile}
-        onSelectWikiTarget={onSelectWikiTarget}
+        onSelectWikiTarget={openSelectionWikiTarget}
       />
     </section>
   );

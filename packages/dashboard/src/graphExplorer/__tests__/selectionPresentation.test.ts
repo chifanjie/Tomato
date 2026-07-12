@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildSelectionPresentation, resolveFlowDirection } from "../selectionPresentation";
+import {
+  buildSelectionPresentation,
+  graphCardKeyAction,
+  resolveFlowDirection,
+} from "../selectionPresentation";
 import { semanticSelectionFixture } from "./graphFixtures";
 
 describe("selection presentation", () => {
@@ -56,5 +60,13 @@ describe("selection presentation", () => {
     expect(resolveFlowDirection(reverse)).toBe("reverse");
     expect(resolveFlowDirection(both)).toBe("both");
     expect(resolveFlowDirection({ ...forward, directions: ["forward", "backward"] })).toBe("both");
+  });
+
+  it("maps card keys to one explicit select-or-drill action", () => {
+    expect(graphCardKeyAction("Enter", true)).toBe("drill");
+    expect(graphCardKeyAction("Enter", false)).toBe("select");
+    expect(graphCardKeyAction(" ", true)).toBe("select");
+    expect(graphCardKeyAction("Spacebar", true)).toBe("select");
+    expect(graphCardKeyAction("Escape", true)).toBeNull();
   });
 });

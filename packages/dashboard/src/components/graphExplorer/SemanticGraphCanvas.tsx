@@ -20,7 +20,10 @@ import type {
   GraphExplorerDisplayMode,
   HierarchicalSemanticGraph,
 } from "../../graphExplorer/hierarchicalGraph";
-import { buildSelectionPresentation } from "../../graphExplorer/selectionPresentation";
+import {
+  buildSelectionPresentation,
+  graphCardKeyAction,
+} from "../../graphExplorer/selectionPresentation";
 import { useReducedMotion } from "../../hooks/useReducedMotion";
 import { useDashboardStore } from "../../store";
 import FlowingSemanticEdge, { type FlowingSemanticEdgeData } from "./FlowingSemanticEdge";
@@ -30,6 +33,8 @@ interface SemanticGraphCanvasProps {
   semanticGraph: HierarchicalSemanticGraph;
   displayMode: GraphExplorerDisplayMode;
   viewKey: string;
+  onOpenScope: (scopeId: string) => void;
+  onOpenFile: (scopeId: string, fileId: string) => void;
 }
 
 interface SemanticNodeData extends Record<string, unknown> {
@@ -47,6 +52,9 @@ interface SemanticNodeData extends Record<string, unknown> {
   isSelected: boolean;
   isNeighbor: boolean;
   isDimmed: boolean;
+  canDrillDown: boolean;
+  onSelect: () => void;
+  onDrillDown?: () => void;
 }
 
 type SemanticFlowNode = Node<SemanticNodeData, "semantic">;
@@ -141,7 +149,21 @@ function SemanticNodeCard({ data }: NodeProps<SemanticFlowNode>) {
 
   return (
     <div
-      className={`relative h-[124px] w-[248px] overflow-hidden rounded-md border bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.24)] transition-[box-shadow,border-color,opacity] ${
+      tabIndex={0}
+      role="group"
+      aria-keyshortcuts="Enter Space"
+      aria-label={data.canDrillDown
+        ? `${data.label}，按 Enter 进入，按空格选择`
+        : `${data.label}，按空格选择`}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        const action = graphCardKeyAction(event.key, data.canDrillDown);
+        if (!action) return;
+        event.preventDefault();
+        if (action === "drill") data.onDrillDown?.();
+        else data.onSelect();
+      }}
+      className={`relative h-[124px] w-[248px] overflow-hidden rounded-md border bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.24)] outline-none transition-[box-shadow,border-color,opacity] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)] ${
         data.isSelected ? "node-glow" : ""
       }`}
       style={{
@@ -180,13 +202,28 @@ function SemanticNodeCard({ data }: NodeProps<SemanticFlowNode>) {
 
         <p className="mt-2 line-clamp-2 text-xs leading-5 text-text-secondary">{data.summary}</p>
 
-        <div className="mt-auto flex items-center justify-between gap-3 text-[10px] text-text-muted">
+        <div className="mt-auto flex items-center justify-between gap-2 text-[10px] text-text-muted">
           <span className="min-w-0 truncate">{data.cluster}</span>
-          {data.displayMode === "coverage" && counts && (
-            <span className="shrink-0">
-              相关 {counts.context} · 待补 {counts.none} · 异常 {counts.problem}
-            </span>
-          )}
+          <span className="flex shrink-0 items-center gap-2">
+            {data.displayMode === "coverage" && counts && (
+              <span>
+                相关 {counts.context} · 待补 {counts.none} · 异常 {counts.problem}
+              </span>
+            )}
+            {data.canDrillDown && (
+              <button
+                type="button"
+                aria-label={`进入 ${data.label}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  data.onDrillDown?.();
+                }}
+                className="rounded border border-border-subtle px-1.5 py-0.5 font-semibold text-text-secondary transition-colors hover:border-accent/35 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-accent)]"
+              >
+                进入
+              </button>
+            )}
+          </span>
         </div>
       </div>
       <Handle type="source" position={Position.Bottom} className="!h-2 !w-2 !bg-text-muted" />
@@ -202,7 +239,13 @@ const edgeTypes = {
   "flowing-semantic": FlowingSemanticEdge,
 };
 
-export default function SemanticGraphCanvas({ semanticGraph, displayMode, viewKey }: SemanticGraphCanvasProps) {
+export default function SemanticGraphCanvas({
+  semanticGraph,
+  displayMode,
+  viewKey,
+  onOpenScope,
+  onOpenFile,
+}: SemanticGraphCanvasProps) {
   const selectedNodeId = useDashboardStore((state) => state.selectedNodeId);
   const selectNode = useDashboardStore((state) => state.selectNode);
   const reducedMotion = useReducedMotion();
@@ -210,6 +253,11 @@ export default function SemanticGraphCanvas({ semanticGraph, displayMode, viewKe
     (_, node) => selectNode(node.id),
     [selectNode],
   );
+  const onNodeDoubleClick = useCallback<NodeMouseHandler<SemanticFlowNode>>(
+    (_, node) => node.data.onDrillDown?.(),
+    [],
+  );
+  const onPaneClick = useCallback(() => selectNode(null), [selectNode]);
 
   const structureKey = [
     semanticGraph.nodes
@@ -239,6 +287,11 @@ export default function SemanticGraphCanvas({ semanticGraph, displayMode, viewKe
     const flowNodes: SemanticFlowNode[] = sortedNodes.map((node) => {
       const badge = coverageBadgeForNode(node);
       const nodePresentation = presentation.nodesById.get(node.id)!;
+      const onDrillDown = node.canDrillDown && node.scopeId
+        ? node.kind === "node"
+          ? () => onOpenFile(node.scopeId!, node.id)
+          : () => onOpenScope(node.scopeId!)
+        : undefined;
       return {
         id: node.id,
         type: "semantic",
@@ -258,6 +311,9 @@ export default function SemanticGraphCanvas({ semanticGraph, displayMode, viewKe
           isSelected: nodePresentation.selected,
           isNeighbor: nodePresentation.neighbor,
           isDimmed: nodePresentation.dimmed,
+          canDrillDown: Boolean(onDrillDown),
+          onSelect: () => selectNode(node.id),
+          ...(onDrillDown ? { onDrillDown } : {}),
         },
         style: { opacity: nodePresentation.opacity },
         width: NODE_WIDTH,
@@ -286,7 +342,7 @@ export default function SemanticGraphCanvas({ semanticGraph, displayMode, viewKe
     });
 
     return { nodes: flowNodes, edges: flowEdges };
-  }, [displayMode, positionsById, reducedMotion, semanticGraph, selectedNodeId]);
+  }, [displayMode, onOpenFile, onOpenScope, positionsById, reducedMotion, selectNode, semanticGraph, selectedNodeId]);
 
   if (semanticGraph.nodes.length === 0) {
     return (
@@ -307,6 +363,9 @@ export default function SemanticGraphCanvas({ semanticGraph, displayMode, viewKe
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodeClick={onNodeClick}
+        onNodeDoubleClick={onNodeDoubleClick}
+        onPaneClick={onPaneClick}
+        nodesFocusable={false}
         fitView
         fitViewOptions={{ padding: 0.16, minZoom: INITIAL_READABLE_ZOOM, maxZoom: 1.05 }}
         minZoom={0.08}

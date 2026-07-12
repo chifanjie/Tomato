@@ -23,6 +23,17 @@ export interface SelectionPresentation {
   edgesById: ReadonlyMap<string, EdgeSelectionPresentation>;
 }
 
+export type GraphCardKeyAction = "select" | "drill";
+
+export function graphCardKeyAction(
+  key: string,
+  canDrillDown: boolean,
+): GraphCardKeyAction | null {
+  if (key === "Enter") return canDrillDown ? "drill" : "select";
+  if (key === " " || key === "Spacebar") return "select";
+  return null;
+}
+
 export function resolveFlowDirection(edge: SemanticGraphEdge): FlowDirection {
   const directions = new Set(edge.directions);
   if (

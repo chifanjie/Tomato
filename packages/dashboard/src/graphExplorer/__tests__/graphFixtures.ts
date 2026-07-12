@@ -9,6 +9,11 @@ import {
 import { validateGraph } from "@understand-code/core/schema";
 import type { GraphEdge, GraphNode, KnowledgeGraph } from "@understand-code/core/types";
 import { buildWikiRuntimeIndex, type WikiRuntimeIndex } from "../../wiki/wikiIndex";
+import type {
+  SemanticGraph,
+  SemanticGraphDocMetadataV2,
+  SemanticGraphNode,
+} from "../semanticGraph";
 
 const GENERATED_AT = "2026-07-11T00:00:00.000Z";
 const ROUTE_STAGE_ORDER: readonly RouteStage[] = ["purpose", "flow", "rule", "implementation", "evidence"];
@@ -624,4 +629,68 @@ export function graphWithStructuralOnly(): KnowledgeGraph {
     layers: [{ id: "core", name: "核心模块", description: "结构层。", nodeIds: [file.id] }],
     tour: [],
   });
+}
+
+function emptySemanticDocs(): SemanticGraphDocMetadataV2 {
+  return {
+    relation: "none",
+    quality: "needs-review",
+    evidenceHealth: "missing",
+    generationStatus: "partial",
+    referenceCoverage: "unanchored",
+    directPageIds: [],
+    contextPageIds: [],
+    directPages: [],
+    contextPages: [],
+    evidenceIds: [],
+    evidence: [],
+  };
+}
+
+function scopeSemanticNode(scopeId: string, label: string): SemanticGraphNode {
+  return {
+    id: `scope:layer:${scopeId}`,
+    label,
+    group: "module",
+    category: "module",
+    cluster: label,
+    importance: 0.85,
+    rawType: "module",
+    summary: `${label}的职责。`,
+    docs: emptySemanticDocs(),
+    documentationCounts: { direct: 0, context: 0, none: 0, problem: 0, total: 0 },
+  };
+}
+
+export function semanticSelectionFixture(): SemanticGraph {
+  const nodes = [
+    scopeSemanticNode("core", "核心模块"),
+    scopeSemanticNode("api", "接口模块"),
+    scopeSemanticNode("data", "数据模块"),
+    scopeSemanticNode("unrelated", "无关模块"),
+  ];
+  const edge = (
+    source: string,
+    target: string,
+    direction: "forward" | "backward" | "bidirectional",
+  ): SemanticGraph["edges"][number] => ({
+    id: `${source}->${target}`,
+    source,
+    target,
+    type: "depends_on",
+    direction,
+    edgeTypes: ["depends_on"],
+    directions: [direction],
+    weight: 1,
+    bundledCount: 1,
+    members: [{ id: `${source}->${target}:0`, source, target, type: "depends_on", direction, weight: 1 }],
+  });
+  return {
+    nodes,
+    edges: [
+      edge("scope:layer:api", "scope:layer:core", "forward"),
+      edge("scope:layer:core", "scope:layer:data", "backward"),
+      edge("scope:layer:unrelated", "scope:layer:data", "bidirectional"),
+    ],
+  };
 }

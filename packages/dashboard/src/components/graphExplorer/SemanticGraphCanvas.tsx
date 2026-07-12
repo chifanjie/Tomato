@@ -12,17 +12,22 @@ import type { Edge, Node, NodeMouseHandler, NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type {
   DocumentationCounts,
-  SemanticGraph,
   SemanticGraphEdge,
   SemanticGraphNode,
   SemanticNodeGroup,
 } from "../../graphExplorer/semanticGraph";
-import type { GraphExplorerDisplayMode } from "../../graphExplorer/hierarchicalGraph";
+import type {
+  GraphExplorerDisplayMode,
+  HierarchicalSemanticGraph,
+} from "../../graphExplorer/hierarchicalGraph";
+import { buildSelectionPresentation } from "../../graphExplorer/selectionPresentation";
+import { useReducedMotion } from "../../hooks/useReducedMotion";
 import { useDashboardStore } from "../../store";
+import FlowingSemanticEdge, { type FlowingSemanticEdgeData } from "./FlowingSemanticEdge";
 import { coverageBadgeForNode } from "./graphExplorerModel";
 
 interface SemanticGraphCanvasProps {
-  semanticGraph: SemanticGraph;
+  semanticGraph: HierarchicalSemanticGraph;
   displayMode: GraphExplorerDisplayMode;
   viewKey: string;
 }
@@ -40,6 +45,8 @@ interface SemanticNodeData extends Record<string, unknown> {
   documentationCounts?: DocumentationCounts;
   displayMode: GraphExplorerDisplayMode;
   isSelected: boolean;
+  isNeighbor: boolean;
+  isDimmed: boolean;
 }
 
 type SemanticFlowNode = Node<SemanticNodeData, "semantic">;
@@ -81,15 +88,16 @@ const RELATION_COLORS: Record<SemanticNodeData["coverageRelation"], string> = {
 };
 
 const EDGE_COLORS: Record<string, string> = {
-  calls: "rgba(103, 185, 143, 0.7)",
-  contains: "rgba(95, 159, 184, 0.65)",
-  depends_on: "rgba(210, 168, 95, 0.65)",
-  documents: "rgba(120, 190, 230, 0.65)",
-  reads_from: "rgba(115, 215, 170, 0.65)",
-  writes_to: "rgba(220, 200, 93, 0.65)",
-  routes: "rgba(229, 166, 101, 0.65)",
-  contains_flow: "rgba(208, 137, 158, 0.65)",
-  flow_step: "rgba(220, 131, 144, 0.65)",
+  calls: "var(--color-node-function)",
+  contains: "var(--color-node-file)",
+  imports: "var(--color-node-module)",
+  depends_on: "var(--color-node-module)",
+  documents: "var(--color-node-document)",
+  reads_from: "var(--color-node-table)",
+  writes_to: "var(--color-node-schema)",
+  routes: "var(--color-node-endpoint)",
+  contains_flow: "var(--color-node-concept)",
+  flow_step: "var(--color-node-pipeline)",
 };
 
 function formatLabel(value: string): string {
@@ -190,25 +198,51 @@ const nodeTypes = {
   semantic: memo(SemanticNodeCard),
 };
 
+const edgeTypes = {
+  "flowing-semantic": FlowingSemanticEdge,
+};
+
 export default function SemanticGraphCanvas({ semanticGraph, displayMode, viewKey }: SemanticGraphCanvasProps) {
   const selectedNodeId = useDashboardStore((state) => state.selectedNodeId);
   const selectNode = useDashboardStore((state) => state.selectNode);
+  const reducedMotion = useReducedMotion();
   const onNodeClick = useCallback<NodeMouseHandler<SemanticFlowNode>>(
     (_, node) => selectNode(node.id),
     [selectNode],
   );
 
-  const { nodes, edges } = useMemo(() => {
+  const structureKey = [
+    semanticGraph.nodes
+      .map((node) => `${node.id}:${node.kind ?? "node"}`)
+      .sort()
+      .join("|"),
+    semanticGraph.edges
+      .map((edge) => `${edge.source}->${edge.target}`)
+      .sort()
+      .join("|"),
+  ].join("::");
+  const positionsById = useMemo(() => {
     const groupOffsets = new Map<SemanticNodeGroup, number>();
+    return new Map(
+      [...semanticGraph.nodes]
+        .sort(compareSemanticNodes)
+        .map((node) => [node.id, semanticNodePosition(node, groupOffsets)]),
+    );
+  }, [structureKey]);
+
+  const { nodes, edges } = useMemo(() => {
     const sortedNodes = [...semanticGraph.nodes].sort(compareSemanticNodes);
     const visibleNodeIds = new Set(sortedNodes.map((node) => node.id));
+    const activeId = selectedNodeId && visibleNodeIds.has(selectedNodeId) ? selectedNodeId : null;
+    const presentation = buildSelectionPresentation(semanticGraph, activeId, reducedMotion);
 
     const flowNodes: SemanticFlowNode[] = sortedNodes.map((node) => {
       const badge = coverageBadgeForNode(node);
+      const nodePresentation = presentation.nodesById.get(node.id)!;
       return {
         id: node.id,
         type: "semantic",
-        position: semanticNodePosition(node, groupOffsets),
+        position: positionsById.get(node.id) ?? { x: 0, y: 0 },
         data: {
           label: node.label,
           summary: node.summary,
@@ -221,45 +255,38 @@ export default function SemanticGraphCanvas({ semanticGraph, displayMode, viewKe
           coverageProblem: badge.problem,
           documentationCounts: node.documentationCounts,
           displayMode,
-          isSelected: node.id === selectedNodeId,
+          isSelected: nodePresentation.selected,
+          isNeighbor: nodePresentation.neighbor,
+          isDimmed: nodePresentation.dimmed,
         },
+        style: { opacity: nodePresentation.opacity },
         width: NODE_WIDTH,
         height: NODE_HEIGHT,
       };
     });
 
-    const activeId = selectedNodeId && visibleNodeIds.has(selectedNodeId) ? selectedNodeId : null;
-    const flowEdges: Edge[] = semanticGraph.edges.map((edge) => {
-      const isConnected = activeId ? edge.source === activeId || edge.target === activeId : false;
-      const opacity = activeId ? (isConnected ? 0.9 : 0.12) : 0.56;
-
+    const flowEdges: Edge<FlowingSemanticEdgeData, "flowing-semantic">[] = semanticGraph.edges.map((edge) => {
+      const edgePresentation = presentation.edgesById.get(edge.id)!;
       return {
         id: edge.id,
         source: edge.source,
         target: edge.target,
-        type: "smoothstep",
+        type: "flowing-semantic",
         label: edge.bundledCount > 1 ? `${formatLabel(edge.type)} x${edge.bundledCount}` : formatLabel(edge.type),
-        style: {
+        data: {
           stroke: edgeColor(edge),
-          strokeWidth: isConnected ? 2.4 : 1.4,
-          opacity,
+          opacity: edgePresentation.opacity,
+          strokeWidth: edgePresentation.strokeWidth,
+          animated: edgePresentation.animated,
+          inlineDirection: edgePresentation.inlineDirection,
+          flowDirection: edgePresentation.flowDirection,
+          dashedFallback: edge.edgeTypes.includes("imports"),
         },
-        labelStyle: {
-          fill: "var(--color-text-muted)",
-          fontSize: 10,
-          opacity: isConnected || !activeId ? 0.85 : 0.3,
-        },
-        labelBgStyle: {
-          fill: "var(--color-root)",
-          fillOpacity: 0.9,
-        },
-        labelBgPadding: [5, 3] as [number, number],
-        labelBgBorderRadius: 3,
       };
     });
 
     return { nodes: flowNodes, edges: flowEdges };
-  }, [displayMode, semanticGraph.edges, semanticGraph.nodes, selectedNodeId]);
+  }, [displayMode, positionsById, reducedMotion, semanticGraph, selectedNodeId]);
 
   if (semanticGraph.nodes.length === 0) {
     return (
@@ -278,6 +305,7 @@ export default function SemanticGraphCanvas({ semanticGraph, displayMode, viewKe
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         onNodeClick={onNodeClick}
         fitView
         fitViewOptions={{ padding: 0.16, minZoom: INITIAL_READABLE_ZOOM, maxZoom: 1.05 }}

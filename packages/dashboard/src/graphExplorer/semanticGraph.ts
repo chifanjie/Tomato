@@ -1,28 +1,32 @@
 import type { GraphEdge, GraphNode, KnowledgeGraph } from "@understand-code/core/types";
-import type { GenerationStatus, WikiEvidenceV2, WikiPageV2 } from "@understand-code/core/knowledge-base";
+import type { WikiEvidenceV2, WikiPageV2 } from "@understand-code/core/knowledge-base";
 import type { WikiRuntimeIndex } from "../wiki/wikiIndex";
 
 export type GraphExplorerMode = "global" | "semantic" | "architecture" | "call" | "coverage" | "evidence" | "focus";
 export type SemanticNodeGroup = "capability" | "flow" | "module" | "file" | "symbol" | "document" | "data" | "infra" | "other";
-export type GraphDocumentationStatus = GenerationStatus | "unknown";
 
-export interface GraphDocumentationCoverage {
-  status: GraphDocumentationStatus;
-  pages: WikiPageV2[];
+export interface DocumentationCounts {
+  direct: number;
+  context: number;
+  none: number;
+  problem: number;
+  total: number;
 }
 
-export interface SemanticGraphDocMetadata {
-  coverageStatus: GraphDocumentationStatus;
+export interface SemanticGraphDocMetadataV2 {
+  relation: "direct" | "context" | "none";
+  quality: "verified" | "generated" | "needs-review" | "failed";
+  evidenceHealth: "source-linked" | "weak" | "unreadable" | "missing";
+  generationStatus: "complete" | "partial" | "failed";
+  referenceCoverage: "anchored" | "unanchored" | "not-applicable";
   primaryPageId?: string;
-  pageIds: string[];
-  pages: WikiPageV2[];
+  anchor?: string;
   directPageIds: string[];
-  directPages: WikiPageV2[];
   contextPageIds: string[];
+  directPages: WikiPageV2[];
   contextPages: WikiPageV2[];
   evidenceIds: string[];
   evidence: WikiEvidenceV2[];
-  failureReasons: string[];
 }
 
 export interface SemanticGraphNode {
@@ -36,10 +40,8 @@ export interface SemanticGraphNode {
   summary: string;
   filePath?: string;
   lineRange?: [number, number];
-  coverage: GraphDocumentationCoverage;
-  wikiPageIds: string[];
-  evidenceIds: string[];
-  docs: SemanticGraphDocMetadata;
+  docs: SemanticGraphDocMetadataV2;
+  documentationCounts?: DocumentationCounts;
 }
 
 export interface SemanticGraphEdgeMember {
@@ -128,16 +130,11 @@ export function semanticGroupForNode(node: GraphNode): SemanticNodeGroup {
   return "other";
 }
 
-function allowedNodeForMode(node: GraphNode, mode: GraphExplorerMode, wikiIndex: WikiRuntimeIndex | undefined): boolean {
+function allowedNodeForMode(node: GraphNode, mode: GraphExplorerMode): boolean {
   if (mode === "semantic") return semanticGroupForNode(node) !== "symbol";
   if (mode === "architecture") return ARCHITECTURE_NODE_TYPES.has(node.type);
   if (mode === "call") return CALL_NODE_TYPES.has(node.type);
-  if (mode === "coverage") return coverageForOptionalWiki(wikiIndex, node.id).status !== "unknown";
-  if (mode === "evidence") {
-    return evidenceIdsForNode(wikiIndex, node.id).length > 0
-      || pagesForOptionalWiki(wikiIndex, node.id).length > 0
-      || coverageForOptionalWiki(wikiIndex, node.id).status === "failed";
-  }
+  if (mode === "coverage" || mode === "evidence") return true;
   return true;
 }
 
@@ -160,73 +157,44 @@ function pushUnique<T>(values: T[], value: T): void {
   if (!values.includes(value)) values.push(value);
 }
 
-export function pagesForOptionalWiki(wikiIndex: WikiRuntimeIndex | undefined, nodeId: string): WikiPageV2[] {
-  if (!wikiIndex) return [];
-  const directPages = wikiIndex.directPagesByNodeId.get(nodeId);
-  return directPages && directPages.length > 0
-    ? [...directPages]
-    : [...(wikiIndex.contextPagesByNodeId.get(nodeId) ?? [])];
-}
-
-export function coverageForOptionalWiki(
-  wikiIndex: WikiRuntimeIndex | undefined,
-  nodeId: string,
-): GraphDocumentationCoverage {
-  return {
-    status: wikiIndex?.nodeDocumentationById.get(nodeId)?.generationStatus ?? "unknown",
-    pages: pagesForOptionalWiki(wikiIndex, nodeId),
-  };
-}
-
-function evidenceForNode(wikiIndex: WikiRuntimeIndex | undefined, nodeId: string): WikiEvidenceV2[] {
-  return [...(wikiIndex?.evidenceByNodeId.get(nodeId) ?? [])];
-}
-
-function evidenceIdsForNode(wikiIndex: WikiRuntimeIndex | undefined, nodeId: string): string[] {
-  return evidenceForNode(wikiIndex, nodeId).map((evidence) => evidence.id);
-}
-
 function clusterForNode(node: GraphNode, group: SemanticNodeGroup): string {
   return node.filePath?.split("/")[0] ?? group;
 }
 
-function failureReasonsForNode(wikiIndex: WikiRuntimeIndex | undefined, nodeId: string): string[] {
-  const documentation = wikiIndex?.nodeDocumentationById.get(nodeId);
-  if (!documentation) return [];
-
-  const reasons: string[] = [];
-  if (documentation.generationStatus === "partial") reasons.push("节点文档仅部分生成");
-  if (documentation.generationStatus === "failed") reasons.push("节点文档生成失败");
-  if (documentation.evidenceHealth === "weak") reasons.push("节点源码证据关联较弱");
-  if (documentation.evidenceHealth === "unreadable") reasons.push("节点源码证据无法读取");
-  if (documentation.evidenceHealth === "missing") reasons.push("节点缺少源码证据");
-  if (documentation.referenceCoverage === "unanchored") reasons.push("节点参考文档尚未锚定");
-  return reasons;
-}
-
 function docsForNode(
-  wikiIndex: WikiRuntimeIndex | undefined,
+  index: WikiRuntimeIndex | undefined,
   nodeId: string,
-  coverage: GraphDocumentationCoverage,
-  pages: WikiPageV2[],
-  evidence: WikiEvidenceV2[],
-): SemanticGraphDocMetadata {
-  const directPages = [...(wikiIndex?.directPagesByNodeId.get(nodeId) ?? [])];
-  const contextPages = [...(wikiIndex?.contextPagesByNodeId.get(nodeId) ?? [])];
-  const docs: SemanticGraphDocMetadata = {
-    coverageStatus: coverage.status,
-    pageIds: pages.map((page) => page.id),
-    pages,
+): SemanticGraphDocMetadataV2 {
+  const record = index?.nodeDocumentationById.get(nodeId);
+  const directPages = record
+    ? record.directPageIds
+      .map((pageId) => index?.pagesById.get(pageId))
+      .filter((page): page is WikiPageV2 => Boolean(page))
+    : [];
+  const contextPages = record
+    ? record.contextPageIds
+      .map((pageId) => index?.pagesById.get(pageId))
+      .filter((page): page is WikiPageV2 => Boolean(page))
+    : [];
+  const allowedEvidenceIds = new Set(record?.evidenceIds ?? []);
+  const evidence = [...(index?.evidenceByNodeId.get(nodeId) ?? [])]
+    .filter((item): item is WikiEvidenceV2 =>
+      item.nodeIds.includes(nodeId) && allowedEvidenceIds.has(item.id));
+  return {
+    relation: record?.relation ?? "none",
+    quality: record?.quality ?? "needs-review",
+    evidenceHealth: record?.evidenceHealth ?? "missing",
+    generationStatus: record?.generationStatus ?? "partial",
+    referenceCoverage: record?.referenceCoverage ?? "unanchored",
+    ...(record?.primaryPageId ? { primaryPageId: record.primaryPageId } : {}),
+    ...(record?.anchor ? { anchor: record.anchor } : {}),
     directPageIds: directPages.map((page) => page.id),
-    directPages,
     contextPageIds: contextPages.map((page) => page.id),
+    directPages,
     contextPages,
     evidenceIds: evidence.map((item) => item.id),
     evidence,
-    failureReasons: failureReasonsForNode(wikiIndex, nodeId),
   };
-  if (pages[0]) docs.primaryPageId = pages[0].id;
-  return docs;
 }
 
 function edgeMember(edge: GraphEdge, index: number): SemanticGraphEdgeMember {
@@ -253,15 +221,12 @@ export function buildSemanticGraphModel({
   const includedByFocus = focusNeighborhood(graph, validFocusNodeIds);
   const focusedNodeIds = new Set(validFocusNodeIds);
   const sourceNodes = graph.nodes.filter(
-    (node) => includedByFocus.has(node.id) && (focusedNodeIds.has(node.id) || allowedNodeForMode(node, mode, wikiIndex)),
+    (node) => includedByFocus.has(node.id) && (focusedNodeIds.has(node.id) || allowedNodeForMode(node, mode)),
   );
   const nodeIds = new Set(sourceNodes.map((node) => node.id));
   const nodes: SemanticGraphNode[] = sourceNodes.map((node) => {
     const group = semanticGroupForNode(node);
-    const coverage = coverageForOptionalWiki(wikiIndex, node.id);
-    const pages = pagesForOptionalWiki(wikiIndex, node.id);
-    const evidence = evidenceForNode(wikiIndex, node.id);
-    const docs = docsForNode(wikiIndex, node.id, coverage, pages, evidence);
+    const docs = docsForNode(wikiIndex, node.id);
 
     return {
       id: node.id,
@@ -274,9 +239,6 @@ export function buildSemanticGraphModel({
       summary: node.summary,
       filePath: node.filePath,
       lineRange: node.lineRange,
-      coverage,
-      wikiPageIds: docs.pageIds,
-      evidenceIds: docs.evidenceIds,
       docs,
     };
   });

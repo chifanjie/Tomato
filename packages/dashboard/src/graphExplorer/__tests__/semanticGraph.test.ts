@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { KnowledgeGraph } from "@understand-code/core/types";
 import { buildWikiRuntimeIndex } from "../../wiki/wikiIndex";
-import { wikiV2Fixture } from "../../wiki/__tests__/fixtures/wikiV2Fixtures";
+import {
+  graphFixture,
+  wikiRuntimeFixture,
+} from "./graphFixtures";
 import {
   buildSemanticGraph,
   semanticGroupForNode,
@@ -28,7 +31,7 @@ const allNodeIds = [
   "file:shared/rate_limit.go",
 ];
 
-function graph(): KnowledgeGraph {
+function richGraph(): KnowledgeGraph {
   return {
     version: "1.0.0",
     project: {
@@ -76,146 +79,120 @@ function graph(): KnowledgeGraph {
       { source: "function:productline/service.go:Recognise", target: "file:shared/rate_limit.go", type: "reads_from", direction: "backward", weight: 0.3 },
     ],
     layers: [
-      { id: "productline", name: "Product Line", description: "Layer.", nodeIds: ["module:productline", "file:productline/service.go"] },
+      { id: "productline", name: "Product Line", description: "Layer.", nodeIds: ["file:productline/service.go"] },
       { id: "shared", name: "Shared", description: "Layer.", nodeIds: ["file:shared/rate_limit.go"] },
     ],
     tour: [],
   };
 }
 
-const wikiPayload = wikiV2Fixture();
-const overviewPage = wikiPayload.pages.find((page) => page.id === "page:overview");
-const runPage = wikiPayload.pages.find((page) => page.id === "page:run");
-if (!overviewPage || !runPage) throw new Error("missing fixture pages");
-wikiPayload.pages = [{
-  ...overviewPage,
-  id: "wiki:architecture",
-  title: "Architecture",
-  category: "capability",
-  summary: "Architecture docs.",
-  markdownPath: "knowledge-base/architecture.md",
-  quality: "generated",
-  generationStatus: "complete",
-  directNodeIds: ["domain:commerce", "service:recognition-api"],
-  contextNodeIds: [],
-  evidenceIds: ["evidence:architecture"],
-  route: undefined,
-}, {
-  ...runPage,
-  id: "wiki:recognise",
-  title: "Recognition",
-  summary: "Recognition docs.",
-  markdownPath: "knowledge-base/flow.md",
-  generationStatus: "partial",
-  directNodeIds: ["function:productline/service.go:Recognise"],
-  contextNodeIds: ["file:productline/service.go"],
-  evidenceIds: ["evidence:recognise", "evidence:file-context"],
-  route: undefined,
-}];
-wikiPayload.mainReadiness = { status: "blocked", reasons: ["存在生成失败节点"], routePageIds: [] };
-wikiPayload.nodeDocumentation = [
-  ...["domain:commerce", "service:recognition-api"].map((nodeId) => ({
-    nodeId,
-    relation: "direct" as const,
-    quality: "generated" as const,
-    evidenceHealth: "source-linked" as const,
-    generationStatus: "complete" as const,
-    referenceCoverage: "anchored" as const,
-    directPageIds: ["wiki:architecture"],
-    contextPageIds: [],
-    evidenceIds: ["evidence:architecture"],
-    primaryPageId: "wiki:architecture",
-  })),
-  {
-    nodeId: "function:productline/service.go:Recognise",
-    relation: "direct",
-    quality: "generated",
-    evidenceHealth: "source-linked",
-    generationStatus: "partial",
-    referenceCoverage: "anchored",
-    directPageIds: ["wiki:recognise"],
-    contextPageIds: [],
-    evidenceIds: ["evidence:recognise"],
-    primaryPageId: "wiki:recognise",
-  },
-  {
-    nodeId: "file:shared/rate_limit.go",
-    relation: "none",
-    quality: "failed",
-    evidenceHealth: "missing",
-    generationStatus: "failed",
-    referenceCoverage: "unanchored",
-    directPageIds: [],
-    contextPageIds: [],
-    evidenceIds: [],
-  },
-];
-wikiPayload.evidence = [{
-  id: "evidence:architecture",
-  filePath: "docs/architecture.md",
-  lineRange: [1, 4],
-  nodeIds: ["domain:commerce", "service:recognition-api"],
-  excerpt: "Architecture",
-  evidenceType: "documentation",
-}, {
-  id: "evidence:recognise",
-  filePath: "productline/service.go",
-  lineRange: [10, 20],
-  nodeIds: ["function:productline/service.go:Recognise"],
-  excerpt: "func Recognise() {}",
-  evidenceType: "production",
-}, {
-  id: "evidence:file-context",
-  filePath: "productline/service.go",
-  lineRange: [1, 9],
-  nodeIds: ["file:productline/service.go"],
-  excerpt: "package productline",
-  evidenceType: "production",
-}];
-const wikiIndex = buildWikiRuntimeIndex(wikiPayload);
-
 function nodeIdsFor(mode: GraphExplorerMode, focusNodeIds: string[] = []): string[] {
   return buildSemanticGraph({
-    graph: graph(),
-    wikiIndex,
+    graph: richGraph(),
+    wikiIndex: wikiRuntimeFixture(),
     mode,
     focusNodeIds,
   }).nodes.map((node) => node.id);
 }
 
 describe("semanticGraph", () => {
-  it("exports a semantic graph model builder that works without wiki metadata", async () => {
+  it("exports explicit V2 defaults when a node-documentation record is absent", async () => {
     const module = await import("../semanticGraph");
     const buildSemanticGraphModel = (module as Record<string, unknown>).buildSemanticGraphModel as typeof buildSemanticGraph;
-    const semantic = buildSemanticGraphModel({
-      graph: graph(),
+    const semantic = buildSemanticGraphModel({ graph: graphFixture(), mode: "global", focusNodeIds: [] });
+    const run = semantic.nodes.find((node) => node.id === "function:src/a.ts:run");
+
+    expect(buildSemanticGraphModel).toBe(buildSemanticGraph);
+    expect(run?.docs).toEqual({
+      relation: "none",
+      quality: "needs-review",
+      evidenceHealth: "missing",
+      generationStatus: "partial",
+      referenceCoverage: "unanchored",
+      directPageIds: [],
+      contextPageIds: [],
+      directPages: [],
+      contextPages: [],
+      evidenceIds: [],
+      evidence: [],
+    });
+    expect(run).not.toHaveProperty("coverage");
+    expect(run).not.toHaveProperty("wikiPageIds");
+    expect(run).not.toHaveProperty("evidenceIds");
+    expect(run?.docs).not.toHaveProperty("coverageStatus");
+    expect(run?.docs).not.toHaveProperty("failureReasons");
+  });
+
+  it("derives precise metadata only from the V2 node record", () => {
+    const semantic = buildSemanticGraph({
+      graph: graphFixture(),
+      wikiIndex: wikiRuntimeFixture(),
       mode: "global",
       focusNodeIds: [],
     });
-    const domain = semantic.nodes.find((node) => node.id === "domain:commerce");
+    const run = semantic.nodes.find((node) => node.id === "function:src/a.ts:run");
+    const contextOnly = semantic.nodes.find((node) => node.id === "file:context-only.ts");
 
-    expect(buildSemanticGraphModel).toBe(buildSemanticGraph);
-    expect(semantic.nodes.map((node) => node.id)).toEqual(allNodeIds);
-    expect(domain?.coverage.status).toBe("unknown");
-    expect(domain?.wikiPageIds).toEqual([]);
-    expect(domain?.evidenceIds).toEqual([]);
-    expect(domain?.docs).toMatchObject({
-      coverageStatus: "unknown",
-      pageIds: [],
-      evidenceIds: [],
-      directPageIds: [],
-      contextPageIds: [],
+    expect(run?.docs).toMatchObject({
+      relation: "direct",
+      quality: "generated",
+      evidenceHealth: "source-linked",
+      generationStatus: "complete",
+      referenceCoverage: "anchored",
+      primaryPageId: "page:run",
+      anchor: "run",
+      directPageIds: ["page:run"],
+      contextPageIds: ["page:overview"],
     });
+    expect(run?.docs.evidence.map((item) => item.id)).toEqual(["evidence:run"]);
+    expect(run?.docs.contextPages.map((page) => page.id)).toEqual(["page:overview"]);
+    expect(contextOnly?.docs).toMatchObject({
+      relation: "context",
+      directPageIds: [],
+      contextPageIds: ["page:overview"],
+      evidenceIds: [],
+    });
+    expect(contextOnly?.docs).not.toHaveProperty("primaryPageId");
+    expect(run).not.toHaveProperty("coverage");
+    expect(run).not.toHaveProperty("wikiPageIds");
+  });
+
+  it("preserves record page order and excludes same-node evidence not allowed by the record", () => {
+    const base = wikiRuntimeFixture().payload;
+    if (!base) throw new Error("missing Task 0 runtime payload");
+    const wikiIndex = buildWikiRuntimeIndex({
+      ...base,
+      nodeDocumentation: base.nodeDocumentation.map((record) => record.nodeId === "file:src/a.ts"
+        ? { ...record, directPageIds: ["page:run", "page:overview"] }
+        : record),
+      evidence: [...base.evidence, {
+        id: "evidence:run-unlisted",
+        nodeIds: ["function:src/a.ts:run"],
+        filePath: "src/a.ts",
+        lineRange: [10, 14],
+        excerpt: "unlisted exact evidence",
+        evidenceType: "production",
+      }],
+    });
+    const semantic = buildSemanticGraph({ graph: graphFixture(), wikiIndex, mode: "global", focusNodeIds: [] });
+    const file = semantic.nodes.find((node) => node.id === "file:src/a.ts");
+    const run = semantic.nodes.find((node) => node.id === "function:src/a.ts:run");
+
+    expect(file?.docs.directPageIds).toEqual(["page:run", "page:overview"]);
+    expect(file?.docs.directPages.map((page) => page.id)).toEqual(["page:run", "page:overview"]);
+    expect(run?.docs.evidenceIds).toEqual(["evidence:run"]);
+    expect(run?.docs.evidence.map((item) => item.id)).toEqual(["evidence:run"]);
   });
 
   it("groups nodes by readable semantic level", () => {
-    expect(semanticGroupForNode(graph().nodes[0])).toBe("capability");
-    expect(semanticGroupForNode(graph().nodes[1])).toBe("flow");
-    expect(semanticGroupForNode(graph().nodes[5])).toBe("file");
-    expect(semanticGroupForNode(graph().nodes[7])).toBe("infra");
-    expect(semanticGroupForNode(graph().nodes[10])).toBe("data");
-    expect(semanticGroupForNode(graph().nodes[13])).toBe("document");
-    expect(semanticGroupForNode(graph().nodes[14])).toBe("symbol");
+    const nodes = richGraph().nodes;
+    expect(semanticGroupForNode(nodes[0])).toBe("capability");
+    expect(semanticGroupForNode(nodes[1])).toBe("flow");
+    expect(semanticGroupForNode(nodes[5])).toBe("file");
+    expect(semanticGroupForNode(nodes[7])).toBe("infra");
+    expect(semanticGroupForNode(nodes[10])).toBe("data");
+    expect(semanticGroupForNode(nodes[13])).toBe("document");
+    expect(semanticGroupForNode(nodes[14])).toBe("symbol");
     expect(semanticGroupForNode({ id: "entity:user", type: "entity", name: "User", summary: "", tags: [], complexity: "simple" })).toBe("document");
     expect(semanticGroupForNode({ id: "topic:search", type: "topic", name: "Search", summary: "", tags: [], complexity: "simple" })).toBe("document");
   });
@@ -260,19 +237,8 @@ describe("semanticGraph", () => {
       "class:productline/service.go:Recognizer",
       "file:shared/rate_limit.go",
     ]);
-    expect(nodeIdsFor("coverage")).toEqual([
-      "domain:commerce",
-      "service:recognition-api",
-      "function:productline/service.go:Recognise",
-      "file:shared/rate_limit.go",
-    ]);
-    expect(nodeIdsFor("evidence")).toEqual([
-      "domain:commerce",
-      "file:productline/service.go",
-      "service:recognition-api",
-      "function:productline/service.go:Recognise",
-      "file:shared/rate_limit.go",
-    ]);
+    expect(nodeIdsFor("coverage")).toEqual(allNodeIds);
+    expect(nodeIdsFor("evidence")).toEqual(allNodeIds);
   });
 
   it("hides low-level symbols in semantic mode while global keeps them", () => {
@@ -284,133 +250,27 @@ describe("semanticGraph", () => {
 
   it("keeps core architecture and structural node types in architecture mode", () => {
     const semantic = buildSemanticGraph({
-      graph: graph(),
-      wikiIndex,
+      graph: richGraph(),
+      wikiIndex: wikiRuntimeFixture(),
       mode: "architecture",
       focusNodeIds: [],
     });
-    const keptTypes = new Set(semantic.nodes.map((node) => node.rawType));
-
-    expect(keptTypes).toEqual(new Set([
-      "config",
-      "domain",
-      "endpoint",
-      "file",
-      "flow",
-      "module",
-      "pipeline",
-      "resource",
-      "schema",
-      "service",
-      "table",
+    expect(new Set(semantic.nodes.map((node) => node.rawType))).toEqual(new Set([
+      "config", "domain", "endpoint", "file", "flow", "module",
+      "pipeline", "resource", "schema", "service", "table",
     ]));
-  });
-
-  it("exposes wiki page and evidence ids on semantic nodes", () => {
-    const semantic = buildSemanticGraph({
-      graph: graph(),
-      wikiIndex,
-      mode: "evidence",
-      focusNodeIds: [],
-    });
-    const recognise = semantic.nodes.find((node) => node.id === "function:productline/service.go:Recognise");
-    const serviceFile = semantic.nodes.find((node) => node.id === "file:productline/service.go");
-    const domain = semantic.nodes.find((node) => node.id === "domain:commerce");
-
-    expect(recognise?.wikiPageIds).toEqual(["wiki:recognise"]);
-    expect(recognise?.evidenceIds).toEqual(["evidence:recognise"]);
-    expect(serviceFile?.wikiPageIds).toEqual(["wiki:recognise"]);
-    expect(serviceFile?.evidenceIds).toEqual(["evidence:file-context"]);
-    expect(recognise?.docs.directPageIds).toEqual(["wiki:recognise"]);
-    expect(recognise?.docs.contextPageIds).toEqual([]);
-    expect(serviceFile?.docs.directPageIds).toEqual([]);
-    expect(serviceFile?.docs.contextPageIds).toEqual(["wiki:recognise"]);
-    expect(domain?.evidenceIds).toEqual(["evidence:architecture"]);
-  });
-
-  it("exposes rendering-oriented category, cluster, importance, and docs metadata", () => {
-    const semantic = buildSemanticGraph({
-      graph: graph(),
-      wikiIndex,
-      mode: "global",
-      focusNodeIds: [],
-    });
-    const domain = semantic.nodes.find((node) => node.id === "domain:commerce");
-    const recognise = semantic.nodes.find((node) => node.id === "function:productline/service.go:Recognise");
-    const failed = semantic.nodes.find((node) => node.id === "file:shared/rate_limit.go");
-
-    expect(domain).toMatchObject({
-      category: "capability",
-      cluster: "capability",
-      importance: 1,
-      docs: {
-        coverageStatus: "complete",
-        primaryPageId: "wiki:architecture",
-        pageIds: ["wiki:architecture"],
-        evidenceIds: ["evidence:architecture"],
-        directPageIds: ["wiki:architecture"],
-        contextPageIds: [],
-      },
-    });
-    expect(domain?.docs.pages[0]).toMatchObject({
-      id: "wiki:architecture",
-      title: "Architecture",
-      markdownPath: "knowledge-base/architecture.md",
-    });
-    expect(domain?.docs.evidence[0]).toMatchObject({
-      id: "evidence:architecture",
-      filePath: "docs/architecture.md",
-    });
-    expect(recognise).toMatchObject({
-      category: "symbol",
-      cluster: "productline",
-      importance: 0.45,
-    });
-    expect(failed?.docs).toMatchObject({
-      coverageStatus: "failed",
-      pageIds: [],
-      failureReasons: [
-        "节点文档生成失败",
-        "节点缺少源码证据",
-        "节点参考文档尚未锚定",
-      ],
-    });
-  });
-
-  it("keeps corpus readiness reasons off complete nodes and derives node-specific notes", () => {
-    const semantic = buildSemanticGraph({
-      graph: graph(),
-      wikiIndex,
-      mode: "global",
-      focusNodeIds: [],
-    });
-
-    const complete = semantic.nodes.find((node) => node.id === "domain:commerce");
-    const failed = semantic.nodes.find((node) => node.id === "file:shared/rate_limit.go");
-
-    expect(wikiIndex.payload?.mainReadiness).toMatchObject({
-      status: "blocked",
-      reasons: ["存在生成失败节点"],
-    });
-    expect(complete?.coverage.status).toBe("complete");
-    expect(complete?.docs.failureReasons).toEqual([]);
-    expect(failed?.docs.failureReasons).toEqual([
-      "节点文档生成失败",
-      "节点缺少源码证据",
-      "节点参考文档尚未锚定",
-    ]);
   });
 
   it("bundles multiple edge types between the same pair and preserves directions", () => {
     const semantic = buildSemanticGraph({
-      graph: graph(),
-      wikiIndex,
+      graph: richGraph(),
+      wikiIndex: wikiRuntimeFixture(),
       mode: "global",
       focusNodeIds: [],
     });
-    const bundled = semantic.edges.find(
-      (edge) => edge.source === "function:productline/service.go:Recognise" && edge.target === "file:shared/rate_limit.go",
-    );
+    const bundled = semantic.edges.find((edge) =>
+      edge.source === "function:productline/service.go:Recognise"
+      && edge.target === "file:shared/rate_limit.go");
 
     expect(bundled).toMatchObject({
       id: "function:productline/service.go:Recognise->file:shared/rate_limit.go",
@@ -455,14 +315,12 @@ describe("semanticGraph", () => {
       "function:productline/service.go:Recognise",
       "file:shared/rate_limit.go",
     ]);
-
     const semantic = buildSemanticGraph({
-      graph: graph(),
-      wikiIndex,
+      graph: richGraph(),
+      wikiIndex: wikiRuntimeFixture(),
       mode: "focus",
       focusNodeIds: ["function:productline/service.go:Recognise"],
     });
-
     expect(semantic.edges.map((edge) => edge.id)).toEqual([
       "file:productline/service.go->function:productline/service.go:Recognise",
       "document:runbook->function:productline/service.go:Recognise",
@@ -483,7 +341,6 @@ describe("semanticGraph", () => {
       "function:productline/service.go:Recognise",
       "file:shared/rate_limit.go",
     ];
-
     expect(nodeIdsFor("focus", ["missing:node", "function:productline/service.go:Recognise"])).toEqual(
       validFocusNeighborhood,
     );

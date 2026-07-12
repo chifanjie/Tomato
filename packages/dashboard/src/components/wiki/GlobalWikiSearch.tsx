@@ -2,6 +2,7 @@ import type { WikiSearchRecordV2 } from "@understand-code/core/knowledge-base";
 import {
   useDeferredValue,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -51,6 +52,22 @@ const GROUPS: ReadonlyArray<{ kind: WikiSearchGroupKind; label: string }> = [
   { kind: "symbol", label: "函数与类型" },
   { kind: "context", label: "相关资料" },
 ];
+
+const SEARCH_FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "summary",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
+
+function searchFocusableElements(dialog: HTMLElement): HTMLElement[] {
+  return [...dialog.querySelectorAll<HTMLElement>(SEARCH_FOCUSABLE_SELECTOR)].filter((element) =>
+    !element.hasAttribute("hidden")
+    && element.getAttribute("aria-hidden") !== "true");
+}
 
 export function searchRelationLabel(
   record: Pick<WikiSearchRecordV2, "relation" | "kind">,
@@ -113,6 +130,13 @@ export default function GlobalWikiSearch({
   const [visibleCount, setVisibleCount] = useState(20);
   const deferredQuery = useDeferredValue(query);
   const previousOpen = useRef(open);
+  const dialogRef = useRef<HTMLElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const onCloseRef = useRef(onClose);
+  const activationFrameRef = useRef<number | null>(null);
+  const focusFrameRef = useRef<number | null>(null);
+  const containmentFrameRef = useRef<number | null>(null);
+  onCloseRef.current = onClose;
   const view = useMemo(
     () => buildGlobalWikiSearchView(runtime, deferredQuery, visibleCount),
     [deferredQuery, runtime, visibleCount],
@@ -128,30 +152,114 @@ export default function GlobalWikiSearch({
     previousOpen.current = open;
   }, [open, returnFocusRef]);
 
+  useLayoutEffect(() => {
+    if (!open) return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const cancelFrame = (frameRef: { current: number | null }) => {
+      if (frameRef.current === null) return;
+      window.cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    };
+    const focusInside = () => {
+      if (dialog.contains(document.activeElement)) return;
+      const input = inputRef.current;
+      const focusTarget = input && !input.disabled
+        ? input
+        : (searchFocusableElements(dialog)[0] ?? dialog);
+      focusTarget.focus();
+    };
+    const scheduleContainment = () => {
+      cancelFrame(activationFrameRef);
+      cancelFrame(focusFrameRef);
+      cancelFrame(containmentFrameRef);
+      containmentFrameRef.current = window.requestAnimationFrame(() => {
+        containmentFrameRef.current = null;
+        focusInside();
+      });
+    };
+    const handleFocusOut = (event: FocusEvent) => {
+      if (event.target instanceof Node && dialog.contains(event.target)) {
+        scheduleContainment();
+      }
+    };
+    const handleFocusIn = (event: FocusEvent) => {
+      if (event.target instanceof Node && dialog.contains(event.target)) {
+        cancelFrame(containmentFrameRef);
+        return;
+      }
+      scheduleContainment();
+    };
+    document.addEventListener("focusout", handleFocusOut);
+    document.addEventListener("focusin", handleFocusIn);
+    focusInside();
+    activationFrameRef.current = window.requestAnimationFrame(() => {
+      activationFrameRef.current = null;
+      focusFrameRef.current = window.requestAnimationFrame(() => {
+        focusFrameRef.current = null;
+        focusInside();
+      });
+    });
+    return () => {
+      document.removeEventListener("focusout", handleFocusOut);
+      document.removeEventListener("focusin", handleFocusIn);
+      cancelFrame(activationFrameRef);
+      cancelFrame(focusFrameRef);
+      cancelFrame(containmentFrameRef);
+    };
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      const focusable = searchFocusableElements(dialog);
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !dialog.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, open]);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
 
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/35 px-4 pt-[10vh] backdrop-blur-sm" onMouseDown={onClose}>
       <section
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="全局搜索知识库"
+        tabIndex={-1}
         className="flex max-h-[78vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border-medium bg-surface shadow-2xl"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="flex items-center gap-3 border-b border-border-subtle px-5 py-4">
           <span aria-hidden="true" className="text-lg text-text-muted">⌕</span>
           <input
-            autoFocus
+            ref={inputRef}
             value={query}
             disabled={loadStatus === "loading"}
             onChange={(event) => setQuery(event.target.value)}

@@ -70,14 +70,14 @@ export default function WikiEvidenceRail({
   const hasGraphNodes = directGraphNodeIds.length > 0;
 
   return (
-    <aside className="flex h-full w-[340px] shrink-0 flex-col border-l border-border-subtle bg-surface max-lg:h-auto max-lg:w-full max-lg:border-l-0 max-lg:border-t">
+    <aside className="flex h-full min-h-0 flex-col bg-surface">
       <header className="border-b border-border-subtle px-4 py-4">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">代码证据</p>
         <h2 className="mt-1 text-base font-semibold text-text-primary">知识库与图谱关联</h2>
       </header>
       <div className="min-h-0 flex-1 space-y-5 overflow-auto px-4 py-4">
         {headings.length > 0 && (
-          <nav aria-label="本文目录" className="border-l border-border-medium pl-3 max-lg:hidden">
+          <nav aria-label="本文目录" className="uc-wiki-outline border-l border-border-medium pl-3">
             <h3 className="text-xs font-semibold text-text-primary">本文目录</h3>
             <div className="mt-2 max-h-56 space-y-0.5 overflow-auto pr-1">
               {headings.map((heading) => (

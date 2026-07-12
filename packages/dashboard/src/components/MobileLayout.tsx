@@ -16,6 +16,7 @@ import WarningBanner from "./WarningBanner";
 import MobileBottomNav from "./MobileBottomNav";
 import type { MobileTab } from "./MobileBottomNav";
 import MobileDrawer from "./MobileDrawer";
+import type { WikiTarget } from "../wiki/wikiContent";
 
 const CodeViewer = lazy(() => import("./CodeViewer"));
 const LearnPanel = lazy(() => import("./LearnPanel"));
@@ -31,6 +32,7 @@ interface Props {
   shortcuts: import("../hooks/useKeyboardShortcuts").KeyboardShortcut[];
   searchButtonRef: RefObject<HTMLButtonElement | null>;
   onOpenGlobalSearch: () => void;
+  onSelectWikiTarget: (target: WikiTarget) => unknown;
 }
 
 export function mobilePrimarySurfaceLabel(surface: "wiki" | "graph"): string {
@@ -63,6 +65,7 @@ export default function MobileLayout({
   shortcuts,
   searchButtonRef,
   onOpenGlobalSearch,
+  onSelectWikiTarget,
 }: Props) {
   const graph = useDashboardStore((s) => s.graph);
   const dashboardSurface = useDashboardStore((s) => s.dashboardSurface);
@@ -238,7 +241,7 @@ export default function MobileLayout({
           {dashboardSurface === "wiki" ? (
             <KnowledgeConsole />
           ) : dashboardSurface === "graph" ? (
-            <GraphExplorer />
+            <GraphExplorer onSelectWikiTarget={onSelectWikiTarget} />
           ) : viewMode === "knowledge" ? (
             <KnowledgeGraphView />
           ) : viewMode === "domain" && domainGraph ? (

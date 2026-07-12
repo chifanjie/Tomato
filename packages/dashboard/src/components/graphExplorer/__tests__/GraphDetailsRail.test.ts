@@ -1,3 +1,5 @@
+// @vitest-environment happy-dom
+
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,10 +13,7 @@ import type { GraphExplorerView } from "../graphExplorerModel";
 type OpenLinkedWikiForNode = (
   nodeId: string,
   openWikiForGraphNode: (nodeId: string) => WikiTarget | null,
-  browser: {
-    location: { pathname: string; search: string };
-    history: { pushState: (data: unknown, unused: string, url?: string | URL | null) => void };
-  } | null,
+  onSelectWikiTarget: (target: WikiTarget) => unknown,
 ) => WikiTarget | null;
 
 const openLinkedWikiForNode = (
@@ -74,7 +73,10 @@ function viewFor(node: GraphNode, hidden = false): GraphExplorerView {
 }
 
 function renderRail(view: GraphExplorerView): string {
-  return renderToStaticMarkup(createElement(GraphDetailsRailModule.default, { view }));
+  return renderToStaticMarkup(createElement(GraphDetailsRailModule.default, {
+    view,
+    onSelectWikiTarget: vi.fn(),
+  }));
 }
 
 function setGraphWikiNotice(notice: string | null): void {
@@ -89,55 +91,46 @@ beforeEach(() => {
 
 afterEach(() => {
   setGraphWikiNotice(null);
+  vi.restoreAllMocks();
 });
 
 describe("GraphDetailsRail Wiki navigation", () => {
-  it("writes the canonical direct page and anchor only after the store returns a destination", () => {
+  it("delegates a direct destination to the App owner without writing browser history", () => {
     expect(openLinkedWikiForNode).toBeTypeOf("function");
     if (!openLinkedWikiForNode) return;
-    let currentUrl = "/graph?token=abc#graph";
-    const pushState = vi.fn((_data: unknown, _unused: string, url?: string | URL | null) => {
-      currentUrl = String(url);
-    });
+    const pushState = vi.spyOn(window.history, "pushState");
     const openWikiForGraphNode = vi.fn(() => ({ pageId: "page:file-a", anchor: "run" }));
+    const onSelectWikiTarget = vi.fn();
 
     const destination = openLinkedWikiForNode(
       directNode.id,
       openWikiForGraphNode,
-      {
-        location: { pathname: "/graph", search: "?token=abc" },
-        history: { pushState },
-      },
+      onSelectWikiTarget,
     );
 
     expect(openWikiForGraphNode).toHaveBeenCalledWith(directNode.id);
     expect(destination).toEqual({ pageId: "page:file-a", anchor: "run" });
-    expect(pushState).toHaveBeenCalledOnce();
-    expect(currentUrl).toBe("/graph?token=abc#wiki=page%3Afile-a&anchor=run");
+    expect(onSelectWikiTarget).toHaveBeenCalledWith({ pageId: "page:file-a", anchor: "run" });
+    expect(pushState).not.toHaveBeenCalled();
   });
 
-  it("leaves the URL untouched when a context-only node has no direct destination", () => {
+  it("does not call the App owner or browser history when no direct destination exists", () => {
     expect(openLinkedWikiForNode).toBeTypeOf("function");
     if (!openLinkedWikiForNode) return;
-    let currentUrl = "/graph?token=abc#graph";
-    const pushState = vi.fn((_data: unknown, _unused: string, url?: string | URL | null) => {
-      currentUrl = String(url);
-    });
+    const pushState = vi.spyOn(window.history, "pushState");
     const openWikiForGraphNode = vi.fn(() => null);
+    const onSelectWikiTarget = vi.fn();
 
     const destination = openLinkedWikiForNode(
       contextNode.id,
       openWikiForGraphNode,
-      {
-        location: { pathname: "/graph", search: "?token=abc" },
-        history: { pushState },
-      },
+      onSelectWikiTarget,
     );
 
     expect(openWikiForGraphNode).toHaveBeenCalledWith(contextNode.id);
     expect(destination).toBeNull();
+    expect(onSelectWikiTarget).not.toHaveBeenCalled();
     expect(pushState).not.toHaveBeenCalled();
-    expect(currentUrl).toBe("/graph?token=abc#graph");
   });
 
   it("renders the context-only notice beside the visible selection Wiki control", () => {

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { KeyboardShortcut } from "../hooks/useKeyboardShortcuts";
 import { formatShortcutKey } from "../hooks/useKeyboardShortcuts";
 import { useI18n } from "../contexts/I18nContext";
@@ -12,6 +13,49 @@ export default function KeyboardShortcutsHelp({
   onClose,
 }: KeyboardShortcutsHelpProps) {
   const { t } = useI18n();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      (closeButtonRef.current ?? dialogRef.current)?.focus();
+    });
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" || event.key === "?") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      const focusable = [...dialog.querySelectorAll<HTMLElement>(
+        "a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex='-1'])",
+      )].filter((element) =>
+        !element.hasAttribute("hidden")
+        && element.getAttribute("aria-hidden") !== "true");
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !dialog.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
 
   // Group shortcuts by category
   const groupedShortcuts = shortcuts.reduce((acc, shortcut) => {
@@ -32,6 +76,11 @@ export default function KeyboardShortcutsHelp({
 
   return (
     <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label="快捷键帮助"
+      tabIndex={-1}
       className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
       onClick={onClose}
     >
@@ -50,6 +99,9 @@ export default function KeyboardShortcutsHelp({
             </p>
           </div>
           <button
+            ref={closeButtonRef}
+            type="button"
+            aria-label="关闭快捷键帮助"
             onClick={onClose}
             className="text-text-muted hover:text-text-primary transition-colors"
           >

@@ -1,4 +1,4 @@
-import { useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   visibleReferenceRows,
   type ReferenceTreeNode,
@@ -8,6 +8,7 @@ import {
 interface WikiNavigationProps {
   model: WikiNavigationModel;
   activePageId: string | null;
+  activeAuxView: "home" | "status" | null;
   referenceExpanded: boolean;
   referenceTriggerRef: RefObject<HTMLButtonElement | null>;
   onReferenceExpandedChange: (expanded: boolean) => void;
@@ -28,9 +29,36 @@ function branchLabel(node: ReferenceTreeNode): string {
   return node.kind === "module" ? node.path || node.label : node.label;
 }
 
+function requiredReferenceBranchIds(
+  model: WikiNavigationModel,
+  activePageId: string | null,
+): ReadonlySet<string> {
+  if (!activePageId) return new Set();
+  const target = [...model.reference.nodesById.values()]
+    .find((node) => node.kind === "file" && node.pageId === activePageId);
+  if (!target) return new Set();
+
+  const parentByChildId = new Map<string, string>();
+  for (const node of model.reference.nodesById.values()) {
+    for (const childId of node.childIds) parentByChildId.set(childId, node.id);
+  }
+  const required = new Set<string>();
+  const visited = new Set<string>([target.id]);
+  let currentId = target.id;
+  while (parentByChildId.has(currentId)) {
+    const parentId = parentByChildId.get(currentId)!;
+    if (visited.has(parentId)) break;
+    visited.add(parentId);
+    required.add(parentId);
+    currentId = parentId;
+  }
+  return required;
+}
+
 export default function WikiNavigation({
   model,
   activePageId,
+  activeAuxView,
   referenceExpanded,
   referenceTriggerRef,
   onReferenceExpandedChange,
@@ -39,9 +67,28 @@ export default function WikiNavigation({
   onSelectPage,
 }: WikiNavigationProps) {
   const [expandedNodeIds, setExpandedNodeIds] = useState<Set<string>>(() => new Set());
+  const activeReferenceButtonRef = useRef<HTMLButtonElement>(null);
+  const requiredExpandedNodeIds = useMemo(
+    () => requiredReferenceBranchIds(model, activePageId),
+    [activePageId, model],
+  );
+  const visibleExpandedNodeIds = useMemo(
+    () => new Set([...expandedNodeIds, ...requiredExpandedNodeIds]),
+    [expandedNodeIds, requiredExpandedNodeIds],
+  );
   const visibleRows = referenceExpanded
-    ? visibleReferenceRows(model, expandedNodeIds)
+    ? visibleReferenceRows(model, visibleExpandedNodeIds)
     : [];
+  const homeActive = activeAuxView === "home";
+  const statusActive = activeAuxView === "status";
+
+  useEffect(() => {
+    if (!referenceExpanded || requiredExpandedNodeIds.size === 0) return;
+    const frame = requestAnimationFrame(() => {
+      activeReferenceButtonRef.current?.scrollIntoView({ block: "nearest" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activePageId, referenceExpanded, requiredExpandedNodeIds]);
 
   const toggleReferenceNode = (nodeId: string) => {
     setExpandedNodeIds((current) => {
@@ -55,7 +102,7 @@ export default function WikiNavigation({
   return (
     <nav
       aria-label="知识库目录"
-      className="flex h-full w-[292px] shrink-0 flex-col border-r border-border-subtle bg-surface max-xl:w-[252px] max-lg:h-[44vh] max-lg:min-h-[300px] max-lg:w-full max-lg:border-b max-lg:border-r-0"
+      className="flex h-full min-h-0 flex-col bg-surface"
     >
       <div className="border-b border-border-subtle px-4 py-4">
         <p className="text-[11px] font-semibold tracking-[0.16em] text-text-muted">
@@ -64,9 +111,9 @@ export default function WikiNavigation({
         <button
           type="button"
           onClick={onSelectHome}
-          aria-current={!activePageId ? "page" : undefined}
+          aria-current={homeActive ? "page" : undefined}
           className={`mt-3 w-full rounded-md px-2.5 py-2 text-left text-sm transition-colors ${
-            !activePageId
+            homeActive
               ? "bg-accent/10 font-medium text-text-primary"
               : "text-text-secondary hover:bg-elevated hover:text-text-primary"
           }`}
@@ -78,15 +125,9 @@ export default function WikiNavigation({
       <div className="min-h-0 flex-1 overflow-auto px-3 py-3">
         <div className="space-y-3">
           <section className="rounded-lg border border-border-subtle/70 bg-root/20">
-            <div
-              aria-expanded="true"
-              className="flex items-center gap-2 px-3 py-3 text-left"
-            >
-              <span aria-hidden="true" className="rotate-90 text-xs text-text-muted">
-                ›
-              </span>
+            <header className="flex items-center gap-2 px-3 py-3 text-left">
               <span className="min-w-0 flex-1">
-                <span className="block text-xs font-semibold text-text-primary">主干阅读</span>
+                <h2 className="text-xs font-semibold text-text-primary">主干阅读</h2>
                 <span className="mt-0.5 block truncate text-[11px] text-text-muted">
                   按推荐顺序理解项目
                 </span>
@@ -94,7 +135,7 @@ export default function WikiNavigation({
               <span className="rounded-full bg-elevated px-2 py-0.5 text-[10px] tabular-nums text-text-muted">
                 {model.featured.pages.length}
               </span>
-            </div>
+            </header>
             <div className="border-t border-border-subtle/70 px-2 py-2">
               {model.featured.pages.length === 0 ? (
                 <p className="px-2.5 py-2 text-xs leading-5 text-text-muted">
@@ -156,6 +197,7 @@ export default function WikiNavigation({
                     return (
                       <button
                         key={node.id}
+                        ref={active ? activeReferenceButtonRef : undefined}
                         type="button"
                         onClick={() => node.pageId && onSelectPage(node.pageId)}
                         aria-current={active ? "page" : undefined}
@@ -167,7 +209,7 @@ export default function WikiNavigation({
                       </button>
                     );
                   }
-                  const expanded = expandedNodeIds.has(node.id);
+                  const expanded = visibleExpandedNodeIds.has(node.id);
                   return (
                     <button
                       key={node.id}
@@ -196,7 +238,12 @@ export default function WikiNavigation({
             <button
               type="button"
               onClick={onSelectStatus}
-              className="flex w-full items-center gap-2 px-3 py-3 text-left"
+              aria-current={statusActive ? "page" : undefined}
+              className={`flex w-full items-center gap-2 px-3 py-3 text-left transition-colors ${
+                statusActive
+                  ? "bg-accent/10 text-text-primary"
+                  : "text-text-secondary hover:bg-elevated hover:text-text-primary"
+              }`}
             >
               <span aria-hidden="true" className="text-xs text-text-muted">·</span>
               <span className="min-w-0 flex-1">

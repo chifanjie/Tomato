@@ -35,6 +35,7 @@ function renderMobileLayout(): string {
     shortcuts: [],
     searchButtonRef,
     onOpenGlobalSearch: vi.fn(),
+    onSelectWikiTarget: vi.fn(),
   });
 
   return renderToString(

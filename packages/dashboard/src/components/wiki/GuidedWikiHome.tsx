@@ -21,7 +21,7 @@ export interface GuidedWikiHomeProps {
   routePages: readonly WikiPageV2[];
   onOpenPage: (pageId: string) => void;
   onOpenGraph: () => void;
-  onOpenReference: () => void;
+  onOpenReference: (opener: HTMLButtonElement) => void;
 }
 
 export default function GuidedWikiHome({
@@ -87,7 +87,7 @@ export default function GuidedWikiHome({
         </button>
         <button
           type="button"
-          onClick={onOpenReference}
+          onClick={(event) => onOpenReference(event.currentTarget)}
           className="rounded-md border border-border-medium px-3 py-2 text-sm font-semibold text-text-secondary transition-colors hover:bg-elevated hover:text-text-primary"
         >
           查找文件或函数

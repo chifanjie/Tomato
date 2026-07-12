@@ -19,9 +19,10 @@ import {
 interface WikiPageViewProps {
   page: WikiPageV2 | null;
   pages?: readonly WikiPageV2[];
-  onSelectPage?: (pageId: string) => void;
+  onSelectTarget?: (target: WikiTarget) => void;
   onHeadingsChange?: (headings: WikiOutlineHeading[]) => void;
   emptyReason?: string | null;
+  navigationRevision?: number;
 }
 
 export interface WikiOutlineHeading {
@@ -243,11 +244,15 @@ export function WikiMarkdownDocument({
 function LoadedWikiPageView({
   page,
   pages,
+  onSelectTarget,
   onHeadingsChange,
+  navigationRevision,
 }: {
   page: WikiPageV2;
   pages: readonly WikiPageV2[];
+  onSelectTarget?: (target: WikiTarget) => void;
   onHeadingsChange: (headings: WikiOutlineHeading[]) => void;
+  navigationRevision: number;
 }) {
   const scrollContainerRef = useRef<HTMLElement>(null);
   const articleRef = useRef<HTMLElement>(null);
@@ -300,12 +305,8 @@ function LoadedWikiPageView({
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    if (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 1024px)").matches) {
-      container.scrollIntoView({ block: "start" });
-    } else {
-      container.scrollTo({ top: 0 });
-    }
-  }, [page.id]);
+    container.scrollTo({ top: 0 });
+  }, [navigationRevision, page.id]);
 
   useEffect(() => {
     setAnchorError(null);
@@ -343,6 +344,10 @@ function LoadedWikiPageView({
   ]);
 
   const selectMarkdownTarget = (target: WikiTarget) => {
+    if (onSelectTarget) {
+      onSelectTarget(target);
+      return;
+    }
     openWikiTarget(target);
     if (typeof window !== "undefined") {
       window.history.pushState(
@@ -356,9 +361,9 @@ function LoadedWikiPageView({
   return (
     <section
       ref={scrollContainerRef}
-      className="uc-doc-surface min-h-0 min-w-0 flex-1 overflow-auto max-lg:flex-none max-lg:overflow-visible"
+      className="uc-doc-surface min-h-0 min-w-0"
     >
-      <article ref={articleRef} aria-label={page.title} className="mx-auto min-w-0 max-w-4xl px-10 py-10 max-lg:px-5 max-lg:py-6">
+      <article ref={articleRef} aria-label={page.title} className="mx-auto min-w-0 max-w-4xl px-10 py-10">
         <header className="border-b border-border-subtle pb-7">
           <p className="text-xs font-semibold tracking-[0.16em] text-accent">{CATEGORY_LABELS[page.category]}</p>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight text-text-primary">{page.title}</h1>
@@ -368,7 +373,7 @@ function LoadedWikiPageView({
             <span className="rounded-full border border-border-subtle px-2.5 py-1">{QUALITY_LABELS[page.quality]}</span>
           </div>
           {currentOutline.length > 0 && (
-            <details className="mt-5 hidden rounded-lg border border-border-subtle bg-elevated max-lg:block">
+            <details className="uc-wiki-mobile-outline mt-5 hidden rounded-lg border border-border-subtle bg-elevated">
               <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-text-primary">
                 本文目录（{currentOutline.length} 节）
               </summary>
@@ -435,13 +440,15 @@ const IGNORE_HEADINGS = () => {};
 export default function WikiPageView({
   page,
   pages,
+  onSelectTarget,
   onHeadingsChange,
   emptyReason,
+  navigationRevision = 0,
 }: WikiPageViewProps) {
   const indexedPages = useDashboardStore((store) => store.wikiIndex.pages);
   if (!page) {
     return (
-      <main className="flex min-h-0 flex-1 items-center justify-center bg-root max-lg:min-h-[240px] max-lg:flex-none">
+      <main className="flex h-full min-h-[240px] items-center justify-center bg-root">
         <div className="uc-panel max-w-md p-6 text-center">
           <h2 className="text-lg font-semibold text-text-primary">尚未选择知识库页面</h2>
           <p className="mt-2 text-sm leading-relaxed text-text-muted">
@@ -455,7 +462,9 @@ export default function WikiPageView({
     <LoadedWikiPageView
       page={page}
       pages={pages ?? indexedPages}
+      onSelectTarget={onSelectTarget}
       onHeadingsChange={onHeadingsChange ?? IGNORE_HEADINGS}
+      navigationRevision={navigationRevision}
     />
   );
 }

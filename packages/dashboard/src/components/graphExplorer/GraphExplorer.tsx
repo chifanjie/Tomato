@@ -5,8 +5,13 @@ import GraphDetailsRail from "./GraphDetailsRail";
 import GraphModeToolbar from "./GraphModeToolbar";
 import SemanticGraphCanvas from "./SemanticGraphCanvas";
 import { buildGraphExplorerView } from "./graphExplorerModel";
+import type { WikiTarget } from "../../wiki/wikiContent";
 
-export default function GraphExplorer() {
+interface GraphExplorerProps {
+  onSelectWikiTarget: (target: WikiTarget) => unknown;
+}
+
+export default function GraphExplorer({ onSelectWikiTarget }: GraphExplorerProps) {
   const graph = useDashboardStore((state) => state.graph);
   const wikiIndex = useDashboardStore((state) => state.wikiIndex);
   const mode = useDashboardStore((state) => state.graphExplorerMode);
@@ -53,7 +58,7 @@ export default function GraphExplorer() {
           viewKey={`${mode}:${focusNodeIds.join("|")}:${view.semanticGraph.nodes.length}:${view.semanticGraph.edges.length}`}
         />
       </div>
-      <GraphDetailsRail view={view} />
+      <GraphDetailsRail view={view} onSelectWikiTarget={onSelectWikiTarget} />
     </section>
   );
 }

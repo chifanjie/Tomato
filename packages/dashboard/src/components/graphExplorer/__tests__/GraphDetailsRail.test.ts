@@ -51,6 +51,7 @@ describe("GraphDetailsRail", () => {
         onOpenScope,
         onOpenFile,
         onSelectWikiTarget,
+        onRequestGlobalSearch: vi.fn(),
       }));
     });
   }
@@ -137,5 +138,66 @@ describe("GraphDetailsRail", () => {
     expect(container.textContent).toContain("run");
     expect(buttonWithText(container, "阅读正文")).toBeNull();
     expect(onSelectWikiTarget).not.toHaveBeenCalled();
+  });
+
+  it("keeps aggregate totals truthful while limiting long page and evidence previews", async () => {
+    const base = buildGraphExplorerView({
+      graph: graphFixture(),
+      wikiIndex: wikiRuntimeFixture(),
+      mode: "coverage",
+      focusNodeIds: [],
+      selectedNodeId: "function:src/a.ts:run",
+      navigation: { level: "scope", scopeId: "layer:core" },
+    });
+    if (!base.selection) throw new Error("missing selection fixture");
+    const directSeed = base.selection.directPages[0];
+    const contextSeed = base.selection.contextPages[0] ?? directSeed;
+    const evidenceSeed = base.selection.evidence[0];
+    if (!directSeed || !contextSeed || !evidenceSeed) throw new Error("missing documentation fixture");
+    const view: GraphExplorerView = {
+      ...base,
+      selection: {
+        ...base.selection,
+        directPages: Array.from({ length: 12 }, (_, index) => ({
+          ...directSeed,
+          id: `page:direct-${index + 1}`,
+          title: `专门正文 ${index + 1}`,
+        })),
+        contextPages: Array.from({ length: 11 }, (_, index) => ({
+          ...contextSeed,
+          id: `page:context-${index + 1}`,
+          title: `相关资料 ${index + 1}`,
+        })),
+        evidence: Array.from({ length: 13 }, (_, index) => ({
+          ...evidenceSeed,
+          id: `evidence:${index + 1}`,
+          filePath: `src/evidence-${index + 1}.ts`,
+        })),
+      },
+    };
+    const requestSearch = vi.fn();
+    await act(async () => {
+      root.render(createElement(GraphDetailsRail, {
+        view,
+        onSelectObject,
+        onOpenScope,
+        onOpenFile,
+        onSelectWikiTarget,
+        onRequestGlobalSearch: requestSearch,
+      }));
+    });
+
+    expect(container.textContent).toContain("专门正文（共 12 篇）");
+    expect(container.textContent).toContain("相关资料（共 11 篇）");
+    expect(container.textContent).toContain("源码证据（共 13 项）");
+    expect(container.textContent).toContain("专门正文 8");
+    expect(container.textContent).not.toContain("专门正文 9");
+    expect(container.textContent).toContain("src/evidence-10.ts");
+    expect(container.textContent).not.toContain("src/evidence-11.ts");
+    expect(container.textContent).toContain("另有 4 篇");
+    expect(container.textContent).toContain("另有 3 项");
+
+    await act(async () => buttonWithText(container, "用全局搜索继续查找")?.click());
+    expect(requestSearch).toHaveBeenCalledOnce();
   });
 });

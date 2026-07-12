@@ -9,7 +9,11 @@ interface GraphDetailsRailProps {
   onOpenScope: (scopeId: string) => void;
   onOpenFile: (scopeId: string, fileId: string) => void;
   onSelectWikiTarget: (target: WikiTarget) => unknown;
+  onRequestGlobalSearch: () => void;
 }
+
+const PAGE_PREVIEW_LIMIT = 8;
+const EVIDENCE_PREVIEW_LIMIT = 10;
 
 const EVIDENCE_LABELS: Record<WikiEvidenceV2["evidenceType"], string> = {
   production: "生产代码",
@@ -56,19 +60,42 @@ function RelatedNodes({
   );
 }
 
-function PageList({ title, pages, emptyText }: {
+function OverflowNotice({ hiddenCount, unit, onRequestGlobalSearch }: {
+  hiddenCount: number;
+  unit: "篇" | "项";
+  onRequestGlobalSearch: () => void;
+}) {
+  if (hiddenCount <= 0) return null;
+  return (
+    <div className="mt-3 border-t border-border-subtle pt-3">
+      <p className="text-xs leading-5 text-text-muted">
+        另有 {hiddenCount} {unit}未在此预览，可前往代码参考或使用全局搜索继续查找。
+      </p>
+      <button
+        type="button"
+        onClick={onRequestGlobalSearch}
+        className="mt-2 rounded-md border border-border-subtle px-2.5 py-1.5 text-xs font-semibold text-text-secondary transition-colors hover:border-accent/35 hover:text-accent"
+      >
+        用全局搜索继续查找
+      </button>
+    </div>
+  );
+}
+
+function PageList({ title, pages, emptyText, onRequestGlobalSearch }: {
   title: string;
   pages: WikiPageV2[];
   emptyText: string;
+  onRequestGlobalSearch: () => void;
 }) {
   return (
     <section className="uc-panel-muted p-3">
-      <h3 className="text-[11px] font-semibold text-text-primary">{title}</h3>
+      <h3 className="text-[11px] font-semibold text-text-primary">{title}（共 {pages.length} 篇）</h3>
       {pages.length === 0 ? (
         <p className="mt-2 text-xs leading-5 text-text-muted">{emptyText}</p>
       ) : (
         <ul className="mt-2 space-y-2">
-          {pages.map((page) => (
+          {pages.slice(0, PAGE_PREVIEW_LIMIT).map((page) => (
             <li key={page.id} className="border-t border-border-subtle pt-2 first:border-t-0 first:pt-0">
               <p className="text-sm font-medium text-text-primary">{page.title}</p>
               <p className="mt-1 text-xs leading-5 text-text-muted">{page.summary}</p>
@@ -77,19 +104,27 @@ function PageList({ title, pages, emptyText }: {
           ))}
         </ul>
       )}
+      <OverflowNotice
+        hiddenCount={pages.length - PAGE_PREVIEW_LIMIT}
+        unit="篇"
+        onRequestGlobalSearch={onRequestGlobalSearch}
+      />
     </section>
   );
 }
 
-function EvidenceList({ evidence }: { evidence: WikiEvidenceV2[] }) {
+function EvidenceList({ evidence, onRequestGlobalSearch }: {
+  evidence: WikiEvidenceV2[];
+  onRequestGlobalSearch: () => void;
+}) {
   return (
     <section className="uc-panel-muted p-3">
-      <h3 className="text-[11px] font-semibold text-text-primary">源码证据</h3>
+      <h3 className="text-[11px] font-semibold text-text-primary">源码证据（共 {evidence.length} 项）</h3>
       {evidence.length === 0 ? (
         <p className="mt-2 text-xs leading-5 text-text-muted">暂无精确证据记录</p>
       ) : (
         <ul className="mt-2 space-y-3">
-          {evidence.map((item) => (
+          {evidence.slice(0, EVIDENCE_PREVIEW_LIMIT).map((item) => (
             <li key={item.id}>
               <div className="flex items-center justify-between gap-2">
                 <p className="min-w-0 truncate text-sm font-medium text-text-primary">{item.filePath}</p>
@@ -107,6 +142,11 @@ function EvidenceList({ evidence }: { evidence: WikiEvidenceV2[] }) {
           ))}
         </ul>
       )}
+      <OverflowNotice
+        hiddenCount={evidence.length - EVIDENCE_PREVIEW_LIMIT}
+        unit="项"
+        onRequestGlobalSearch={onRequestGlobalSearch}
+      />
     </section>
   );
 }
@@ -159,6 +199,7 @@ export default function GraphDetailsRail({
   onOpenScope,
   onOpenFile,
   onSelectWikiTarget,
+  onRequestGlobalSearch,
 }: GraphDetailsRailProps) {
   const { selection, hiddenSelectedNode } = view;
   const heading = hiddenSelectedNode
@@ -229,9 +270,22 @@ export default function GraphDetailsRail({
               <RelatedNodes title="上游" nodes={selection.upstream} onSelectObject={onSelectObject} />
               <RelatedNodes title="下游" nodes={selection.downstream} onSelectObject={onSelectObject} />
             </div>
-            <PageList title="专门正文" pages={selection.directPages} emptyText="暂无专门正文" />
-            <PageList title="相关资料" pages={selection.contextPages} emptyText="暂无相关资料" />
-            <EvidenceList evidence={selection.evidence} />
+            <PageList
+              title="专门正文"
+              pages={selection.directPages}
+              emptyText="暂无专门正文"
+              onRequestGlobalSearch={onRequestGlobalSearch}
+            />
+            <PageList
+              title="相关资料"
+              pages={selection.contextPages}
+              emptyText="暂无相关资料"
+              onRequestGlobalSearch={onRequestGlobalSearch}
+            />
+            <EvidenceList
+              evidence={selection.evidence}
+              onRequestGlobalSearch={onRequestGlobalSearch}
+            />
           </>
         )}
       </div>

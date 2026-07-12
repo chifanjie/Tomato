@@ -1,14 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   loadDashboardKnowledge,
-  loadKnowledgeContextIndex,
   shouldRetryWikiLoad,
   type DashboardKnowledge,
 } from "../knowledgeContextLoader";
-import {
-  resolveKnowledgeContext,
-  type WorkbenchSelection,
-} from "../knowledgeContext";
 import { wikiV2Fixture } from "../../wiki/__tests__/fixtures/wikiV2Fixtures";
 
 function jsonResponse(value: unknown): Response {
@@ -18,7 +16,7 @@ function jsonResponse(value: unknown): Response {
   });
 }
 
-function validWikiPayload(): Record<string, unknown> {
+function v1WikiPayload(): Record<string, unknown> {
   return {
     version: 1,
     generatedAt: "2026-07-09T00:00:00.000Z",
@@ -75,32 +73,26 @@ afterEach(() => {
 });
 
 describe("dashboard knowledge loader", () => {
-  it("loads wiki-index.json as the primary wiki/graph linkage source", async () => {
+  it("contains only the V2 Wiki loader and retry contract", () => {
+    const source = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../knowledgeContextLoader.ts"),
+      "utf8",
+    );
+    expect(source).not.toContain('from "./knowledgeContext"');
+    expect(source).not.toContain("loadKnowledgeContextIndex");
+    expect(source).not.toContain("shouldRetryKnowledgeContextLoad");
+    expect(source).toContain("parseWikiIndexV2");
+    expect(source).not.toMatch(/\bparseWikiIndex\(/);
+    expect(source).toContain("loadDashboardKnowledge");
+    expect(source).toContain("shouldRetryWikiLoad");
+  });
+
+  it("rejects a V1 wiki-index instead of adapting it into the active runtime", async () => {
     const calls: string[] = [];
     const fetcher = async (url: string) => {
       calls.push(url);
       if (url.includes("knowledge-base/wiki-index.json")) {
-        return jsonResponse({
-          version: 1,
-          generatedAt: "2026-07-09T00:00:00.000Z",
-          projectName: "exampleRepository-helper",
-          pages: [
-            {
-              id: "wiki:overview",
-              title: "Project Overview",
-              category: "overview",
-              summary: "Overview.",
-              markdownPath: "knowledge-base/README.md",
-              explainedNodeIds: ["module:productline"],
-              relatedNodeIds: [],
-              evidenceIds: [],
-              coverage: "complete",
-              quality: "verified",
-            },
-          ],
-          evidence: [],
-          gaps: [],
-        });
+        return jsonResponse(v1WikiPayload());
       }
       return new Response("missing", { status: 404 });
     };
@@ -110,9 +102,9 @@ describe("dashboard knowledge loader", () => {
     expect(calls[0]).toContain("knowledge-base/wiki-index.json");
     expect(calls[0]).toContain("token=local-token");
     expect(calls.some((url) => url.includes("document-traces.json"))).toBe(false);
-    expect(result.wikiIndex.pageCount).toBe(1);
-    expect(result.wikiStatus).toBe("ready");
-    expect(result.sourceVersion).toBe(1);
+    expect(result.wikiIndex.pageCount).toBe(0);
+    expect(result.wikiStatus).toBe("invalid");
+    expect(result.sourceVersion).toBeNull();
     expect(result).not.toHaveProperty("contextIndex");
     expect(calls).toHaveLength(1);
   });
@@ -122,35 +114,7 @@ describe("dashboard knowledge loader", () => {
     const fetcher = async (url: string) => {
       calls.push(url);
       if (url.includes("knowledge-base/wiki-index.json")) {
-        return jsonResponse({
-          version: 1,
-          generatedAt: "2026-07-09T00:00:00.000Z",
-          projectName: "exampleRepository-helper",
-          pages: [
-            {
-              id: "wiki:productline",
-              title: "Product Line Recognition",
-              category: "capability",
-              summary: "Explains product line recognition.",
-              markdownPath: "knowledge-base/业务能力/ProductLine.md",
-              explainedNodeIds: ["function:productline/service.go:Recognise"],
-              relatedNodeIds: ["module:productline"],
-              evidenceIds: ["ev:recognise"],
-              coverage: "complete",
-              quality: "verified",
-            },
-          ],
-          evidence: [
-            {
-              id: "ev:recognise",
-              label: "Recognise implementation",
-              filePath: "productline/service.go",
-              lineRange: [10, 20],
-              nodeIds: ["function:productline/service.go:Recognise"],
-            },
-          ],
-          gaps: [],
-        });
+        return jsonResponse(wikiV2Fixture());
       }
       return new Response("missing", { status: 404 });
     };
@@ -161,11 +125,11 @@ describe("dashboard knowledge loader", () => {
     expect(result).not.toHaveProperty("contextIndex");
     expect(
       result.wikiIndex.directPagesByNodeId.get(
-        "function:productline/service.go:Recognise",
+        "function:src/a.ts:run",
       )?.[0]?.id,
-    ).toBe("wiki:productline");
-    expect(result.wikiIndex.evidenceById.get("ev:recognise")?.filePath).toBe(
-      "productline/service.go",
+    ).toBe("page:run");
+    expect(result.wikiIndex.evidenceById.get("evidence:run")?.filePath).toBe(
+      "src/a.ts",
     );
   });
 
@@ -248,15 +212,15 @@ describe("dashboard knowledge loader", () => {
     expect(calls[0]).toContain("knowledge-base/wiki-index.json");
   });
 
-  it("returns invalid without legacy requests when wiki-index.json contains invalid enum values", async () => {
-    const validPayload = validWikiPayload();
-    const [validPage] = validPayload.pages as Record<string, unknown>[];
-    const [validGap] = validPayload.gaps as Record<string, unknown>[];
+  it("returns invalid without fallback requests when V2 enum values are invalid", async () => {
+    const validPayload = wikiV2Fixture();
+    const [validPage] = validPayload.pages;
+    if (!validPage) throw new Error("missing V2 page fixture");
     const invalidPayloads = [
       { field: "category", payload: { ...validPayload, pages: [{ ...validPage, category: "unknown-category" }] } },
-      { field: "coverage", payload: { ...validPayload, pages: [{ ...validPage, coverage: "gap" }] } },
+      { field: "role", payload: { ...validPayload, pages: [{ ...validPage, role: "unknown-role" }] } },
       { field: "quality", payload: { ...validPayload, pages: [{ ...validPage, quality: "unreviewed" }] } },
-      { field: "severity", payload: { ...validPayload, gaps: [{ ...validGap, severity: "critical" }] } },
+      { field: "generationStatus", payload: { ...validPayload, pages: [{ ...validPage, generationStatus: "unknown-status" }] } },
     ];
 
     for (const { field, payload } of invalidPayloads) {
@@ -304,42 +268,4 @@ describe("dashboard knowledge loader", () => {
     expect(shouldRetryWikiLoad("forbidden", 0, 3)).toBe(false);
   });
 
-  it("keeps the legacy context loader available without invoking it from the wiki-first loader", async () => {
-    const fetcher = async (url: string) => {
-      if (url.includes("document-traces.json")) {
-        return jsonResponse({
-          documents: [
-            {
-              documentPath: "knowledge-base/业务能力/ProductLine.md",
-              coveredNodeIds: ["function:productline/service.go:Recognise"],
-              coveredFilePaths: ["productline/service.go"],
-              summary: "Product line docs.",
-            },
-          ],
-        });
-      }
-      if (url.includes("%E4%B8%9A%E5%8A%A1%E8%83%BD%E5%8A%9B") || url.includes("业务能力")) {
-        return new Response("- [ProductLine](knowledge-base/业务能力/ProductLine.md)", { status: 200 });
-      }
-      if (url.includes("%E4%B8%9A%E5%8A%A1%E6%B5%81%E7%A8%8B") || url.includes("业务流程")) {
-        return new Response("", { status: 200 });
-      }
-      return new Response("missing", { status: 404 });
-    };
-
-    const result = await loadKnowledgeContextIndex("local-token", fetcher as typeof fetch);
-
-    const selection: WorkbenchSelection = {
-      nodeId: "function:productline/service.go:Recognise",
-      filePath: "productline/service.go",
-      title: "Recognise",
-      summary: "Recognises product lines.",
-      kind: "function",
-    };
-    const context = resolveKnowledgeContext(result, selection);
-
-    expect(result.traceCount).toBe(2);
-    expect(result.documentCount).toBe(1);
-    expect(context.matchKind).toBe("direct-trace");
-  });
 });

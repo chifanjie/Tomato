@@ -14,11 +14,15 @@ import {
 
 interface GraphExplorerProps {
   onSelectWikiTarget: (target: WikiTarget) => unknown;
+  onRequestGlobalSearch: () => void;
 }
 
 const OVERVIEW_NAVIGATION: GraphExplorerNavigation = { level: "overview" };
 
-export default function GraphExplorer({ onSelectWikiTarget }: GraphExplorerProps) {
+export default function GraphExplorer({
+  onSelectWikiTarget,
+  onRequestGlobalSearch,
+}: GraphExplorerProps) {
   const graph = useDashboardStore((state) => state.graph);
   const wikiIndex = useDashboardStore((state) => state.wikiIndex);
   const storedMode = useDashboardStore((state) => state.graphExplorerMode);
@@ -162,6 +166,7 @@ export default function GraphExplorer({ onSelectWikiTarget }: GraphExplorerProps
         onOpenScope={openScope}
         onOpenFile={openFile}
         onSelectWikiTarget={openSelectionWikiTarget}
+        onRequestGlobalSearch={onRequestGlobalSearch}
       />
     </section>
   );

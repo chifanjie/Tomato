@@ -147,7 +147,7 @@ describe("app surface routing", () => {
     payload.evidence = [];
     const parsed = parseWikiIndexV2(payload);
     if (!parsed.ok) throw new Error(parsed.errors.join("\n"));
-    useDashboardStore.getState().setGraph(graph());
+    useDashboardStore.getState().setConsoleGraph(graph());
     useDashboardStore.getState().setDashboardSurface("wiki");
     useDashboardStore.getState().setWikiIndex(
       buildWikiRuntimeIndex(parsed.value),
@@ -156,7 +156,7 @@ describe("app surface routing", () => {
 
   it("declares wiki as the initial peer surface and keeps the guided home selected", () => {
     expect(useDashboardStore.getInitialState().dashboardSurface).toBe("wiki");
-    expect(useDashboardStore.getInitialState().graphExplorerMode).toBe("semantic");
+    expect(useDashboardStore.getInitialState().graphExplorerMode).toBe("architecture");
     expect(useDashboardStore.getState().dashboardSurface).toBe("wiki");
     expect(useDashboardStore.getState().activeWikiPageId).toBeNull();
   });
@@ -190,7 +190,7 @@ describe("App Wiki availability", () => {
       },
       invalid: {
         title: "知识库索引无效",
-        description: "索引无法通过 V2/兼容校验，因此未展示可能错误的映射；关系图谱仍可使用。请重新生成知识库。",
+        description: "索引无法通过 V2 校验，因此未展示可能错误的映射；关系图谱仍可使用。请重新生成知识库。",
       },
       error: {
         title: "知识库读取失败",
@@ -516,6 +516,24 @@ describe("App global location owner", () => {
 });
 
 describe("App peer shell contracts", () => {
+  it("keeps only the active Wiki, Graph, search, theme, token, warning, and data surfaces", () => {
+    for (const removed of [
+      "DomainGraphView", "KnowledgeGraphView", "FunctionDetailPage", "ReadableViewGraphPage",
+      "ReadingAssistantPanel", "VisualGuidedWorkbench", "NodeInfo", "LayerLegend", "DiffToggle",
+      "FilterPanel", "ExportMenu", "PersonaSelector", "ProjectOverview", "FileExplorer",
+      "CodeViewer", "LearnPanel", "PathFinderModal", "KeyboardShortcutsHelp", "MobileLayout",
+      "I18nProvider", "useI18n", "loadKnowledgeContextIndex", "shouldShowOnboarding",
+    ]) {
+      expect(APP_SOURCE).not.toMatch(new RegExp(`\\b${removed}\\b`));
+    }
+    expect(APP_SOURCE).toContain("setConsoleGraph");
+    expect(APP_SOURCE).toContain("<KnowledgeConsole");
+    expect(APP_SOURCE).toContain("<GlobalWikiSearch");
+    expect(APP_SOURCE).toContain("<ThemePicker");
+    expect(APP_SOURCE).toContain("<TokenGate");
+    expect(APP_SOURCE).toContain("<WarningBanner");
+  });
+
   it("keeps Graph Explorer behind React.lazy", () => {
     expect(lazyGraphProbe.moduleLoads).toBe(0);
     expect(APP_SOURCE).toMatch(
@@ -572,8 +590,9 @@ describe("App peer shell contracts", () => {
   });
 
   it("keeps mobile Wiki and Graph peers in the App-owned shell", () => {
-    expect(APP_SOURCE).toContain("if (isMobile && !isPeerDashboardSurface)");
-    expect(APP_SOURCE).not.toContain("if (isMobile) {");
+    expect(APP_SOURCE).toContain("isMobile ? (");
+    expect(APP_SOURCE).toContain("uc-mobile-header-more");
+    expect(APP_SOURCE).not.toContain("<MobileLayout");
   });
 
   it("routes Markdown page-and-anchor targets through the App owner", () => {
@@ -582,14 +601,10 @@ describe("App peer shell contracts", () => {
     );
   });
 
-  it("gives an open Wiki drawer exclusive ownership of global shortcuts", () => {
-    expect(APP_SOURCE).toMatch(
-      /useKeyboardShortcuts\(\s*shortcuts,\s*!wikiDrawerOpen && !searchOpen && !showKeyboardHelp/s,
-    );
+  it("keeps global search coordinated with the Wiki drawer", () => {
+    expect(APP_SOURCE).toContain("GLOBAL_WIKI_SEARCH_REQUEST_EVENT");
     expect(APP_SOURCE).toContain("onDrawerOpenChange={setWikiDrawerOpen}");
-    expect(APP_SOURCE).toContain("externalModalOpen={searchOpen || showKeyboardHelp}");
-    expect(APP_SOURCE).toContain("onClick={requestKeyboardHelp}");
-    expect(APP_SOURCE).toContain("onClose={closeKeyboardHelp}");
+    expect(APP_SOURCE).toContain("externalModalOpen={searchOpen}");
     expect(APP_SOURCE.match(/setSearchOpen\(true\)/g)).toHaveLength(1);
   });
 

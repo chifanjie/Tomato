@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -28,6 +28,19 @@ import { useReducedMotion } from "../../hooks/useReducedMotion";
 import { useDashboardStore } from "../../store";
 import FlowingSemanticEdge, { type FlowingSemanticEdgeData } from "./FlowingSemanticEdge";
 import { coverageBadgeForNode } from "./graphExplorerModel";
+import {
+  compareSemanticNodes,
+  extendSemanticNodePositions,
+  GRAPH_POINTER_DOUBLE_CLICK_MS,
+  graphEdgeTypeLabel,
+  graphNodeTypeLabel,
+  graphPointerAction,
+  REACT_FLOW_ARIA_LABEL_CONFIG,
+  semanticNodeClusterLabel,
+  semanticNodeGroupLabel,
+  type GraphPointerClick,
+  type SemanticNodePosition,
+} from "./semanticGraphCanvasModel";
 
 interface SemanticGraphCanvasProps {
   semanticGraph: HierarchicalSemanticGraph;
@@ -42,7 +55,7 @@ interface SemanticNodeData extends Record<string, unknown> {
   summary: string;
   group: SemanticNodeGroup;
   category: SemanticNodeGroup;
-  rawType: string;
+  rawType: SemanticGraphNode["rawType"];
   cluster: string;
   coverageLabel: string;
   coverageRelation: "direct" | "context" | "none";
@@ -61,21 +74,7 @@ type SemanticFlowNode = Node<SemanticNodeData, "semantic">;
 
 const NODE_WIDTH = 248;
 const NODE_HEIGHT = 124;
-const GROUP_COLUMN_WIDTH = 310;
-const GROUP_ROW_HEIGHT = 166;
 const INITIAL_READABLE_ZOOM = 0.62;
-
-const GROUP_ORDER: SemanticNodeGroup[] = [
-  "capability",
-  "flow",
-  "module",
-  "infra",
-  "data",
-  "file",
-  "document",
-  "symbol",
-  "other",
-];
 
 const GROUP_COLORS: Record<SemanticNodeGroup, string> = {
   capability: "var(--color-node-concept)",
@@ -108,32 +107,6 @@ const EDGE_COLORS: Record<string, string> = {
   flow_step: "var(--color-node-pipeline)",
 };
 
-function formatLabel(value: string): string {
-  return value.replace(/_/g, " ");
-}
-
-function groupIndex(group: SemanticNodeGroup): number {
-  const index = GROUP_ORDER.indexOf(group);
-  return index === -1 ? GROUP_ORDER.length - 1 : index;
-}
-
-function compareSemanticNodes(a: SemanticGraphNode, b: SemanticGraphNode): number {
-  return groupIndex(a.group) - groupIndex(b.group)
-    || a.cluster.localeCompare(b.cluster)
-    || a.label.localeCompare(b.label)
-    || a.id.localeCompare(b.id);
-}
-
-function semanticNodePosition(node: SemanticGraphNode, groupOffsets: Map<SemanticNodeGroup, number>) {
-  const offset = groupOffsets.get(node.group) ?? 0;
-  groupOffsets.set(node.group, offset + 1);
-
-  return {
-    x: groupIndex(node.group) * GROUP_COLUMN_WIDTH,
-    y: offset * GROUP_ROW_HEIGHT,
-  };
-}
-
 function edgeColor(edge: SemanticGraphEdge): string {
   for (const type of edge.edgeTypes) {
     const color = EDGE_COLORS[type];
@@ -153,7 +126,7 @@ function SemanticNodeCard({ data }: NodeProps<SemanticFlowNode>) {
       role="group"
       aria-keyshortcuts="Enter Space"
       aria-label={data.canDrillDown
-        ? `${data.label}，按 Enter 进入，按空格选择`
+        ? `${data.label}，按回车键进入，按空格键选择`
         : `${data.label}，按空格选择`}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return;
@@ -163,7 +136,7 @@ function SemanticNodeCard({ data }: NodeProps<SemanticFlowNode>) {
         if (action === "drill") data.onDrillDown?.();
         else data.onSelect();
       }}
-      className={`relative h-[124px] w-[248px] overflow-hidden rounded-md border bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.24)] outline-none transition-[box-shadow,border-color,opacity] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)] ${
+      className={`nodrag relative h-[124px] w-[248px] overflow-hidden rounded-md border bg-surface shadow-[0_8px_24px_rgba(0,0,0,0.24)] outline-none transition-[box-shadow,border-color,opacity] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)] ${
         data.isSelected ? "node-glow" : ""
       }`}
       style={{
@@ -177,7 +150,7 @@ function SemanticNodeCard({ data }: NodeProps<SemanticFlowNode>) {
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="truncate text-[10px] font-semibold uppercase text-text-muted">
-              {formatLabel(data.group)} / {formatLabel(data.rawType)}
+              {semanticNodeGroupLabel(data.group)} / {graphNodeTypeLabel(data.rawType)}
             </p>
             <h3 className="mt-1 truncate text-sm font-semibold text-text-primary" title={data.label}>
               {data.label}
@@ -203,7 +176,7 @@ function SemanticNodeCard({ data }: NodeProps<SemanticFlowNode>) {
         <p className="mt-2 line-clamp-2 text-xs leading-5 text-text-secondary">{data.summary}</p>
 
         <div className="mt-auto flex items-center justify-between gap-2 text-[10px] text-text-muted">
-          <span className="min-w-0 truncate">{data.cluster}</span>
+          <span className="min-w-0 truncate">{semanticNodeClusterLabel(data.cluster, data.group)}</span>
           <span className="flex shrink-0 items-center gap-2">
             {data.displayMode === "coverage" && counts && (
               <span>
@@ -218,7 +191,8 @@ function SemanticNodeCard({ data }: NodeProps<SemanticFlowNode>) {
                   event.stopPropagation();
                   data.onDrillDown?.();
                 }}
-                className="rounded border border-border-subtle px-1.5 py-0.5 font-semibold text-text-secondary transition-colors hover:border-accent/35 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-accent)]"
+                onDoubleClick={(event) => event.stopPropagation()}
+                className="nodrag nopan rounded border border-border-subtle px-1.5 py-0.5 font-semibold text-text-secondary transition-colors hover:border-accent/35 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-accent)]"
               >
                 进入
               </button>
@@ -249,15 +223,56 @@ export default function SemanticGraphCanvas({
   const selectedNodeId = useDashboardStore((state) => state.selectedNodeId);
   const selectNode = useDashboardStore((state) => state.selectNode);
   const reducedMotion = useReducedMotion();
+  const lastNodeClickRef = useRef<GraphPointerClick | null>(null);
+  const lastDrillRef = useRef<GraphPointerClick | null>(null);
+  const drillOnce = useCallback((node: SemanticFlowNode, at: number) => {
+    if (!node.data.onDrillDown) return;
+    const previous = lastDrillRef.current;
+    const elapsed = previous ? at - previous.at : Number.POSITIVE_INFINITY;
+    if (
+      previous?.id === node.id
+      && elapsed >= 0
+      && elapsed <= GRAPH_POINTER_DOUBLE_CLICK_MS
+    ) {
+      return;
+    }
+    lastDrillRef.current = { id: node.id, at };
+    lastNodeClickRef.current = null;
+    node.data.onDrillDown?.();
+  }, []);
   const onNodeClick = useCallback<NodeMouseHandler<SemanticFlowNode>>(
-    (_, node) => selectNode(node.id),
-    [selectNode],
+    (event, node) => {
+      const result = graphPointerAction(lastNodeClickRef.current, {
+        id: node.id,
+        at: event.timeStamp,
+        canDrillDown: Boolean(node.data.onDrillDown),
+      });
+      lastNodeClickRef.current = result.nextClick;
+      if (result.action === "drill") drillOnce(node, event.timeStamp);
+      else selectNode(node.id);
+    },
+    [drillOnce, selectNode],
   );
   const onNodeDoubleClick = useCallback<NodeMouseHandler<SemanticFlowNode>>(
-    (_, node) => node.data.onDrillDown?.(),
-    [],
+    (event, node) => drillOnce(node, event.timeStamp),
+    [drillOnce],
   );
-  const onPaneClick = useCallback(() => selectNode(null), [selectNode]);
+  const onPaneClick = useCallback(() => {
+    lastNodeClickRef.current = null;
+    selectNode(null);
+  }, [selectNode]);
+  useEffect(() => {
+    lastNodeClickRef.current = null;
+    lastDrillRef.current = null;
+  }, [viewKey]);
+
+  const layoutCacheRef = useRef<{
+    viewKey: string;
+    positions: Map<string, SemanticNodePosition>;
+  }>({ viewKey: "", positions: new Map() });
+  const cacheForView = layoutCacheRef.current.viewKey === viewKey
+    ? layoutCacheRef.current.positions
+    : new Map<string, SemanticNodePosition>();
 
   const structureKey = [
     semanticGraph.nodes
@@ -269,14 +284,13 @@ export default function SemanticGraphCanvas({
       .sort()
       .join("|"),
   ].join("::");
-  const positionsById = useMemo(() => {
-    const groupOffsets = new Map<SemanticNodeGroup, number>();
-    return new Map(
-      [...semanticGraph.nodes]
-        .sort(compareSemanticNodes)
-        .map((node) => [node.id, semanticNodePosition(node, groupOffsets)]),
-    );
-  }, [structureKey]);
+  const positionsById = useMemo(
+    () => extendSemanticNodePositions(cacheForView, semanticGraph.nodes),
+    [cacheForView, structureKey, viewKey],
+  );
+  useEffect(() => {
+    layoutCacheRef.current = { viewKey, positions: positionsById };
+  }, [positionsById, viewKey]);
 
   const { nodes, edges } = useMemo(() => {
     const sortedNodes = [...semanticGraph.nodes].sort(compareSemanticNodes);
@@ -328,7 +342,9 @@ export default function SemanticGraphCanvas({
         source: edge.source,
         target: edge.target,
         type: "flowing-semantic",
-        label: edge.bundledCount > 1 ? `${formatLabel(edge.type)} x${edge.bundledCount}` : formatLabel(edge.type),
+        label: edge.bundledCount > 1
+          ? `${graphEdgeTypeLabel(edge.type)} × ${edge.bundledCount}`
+          : graphEdgeTypeLabel(edge.type),
         data: {
           stroke: edgeColor(edge),
           opacity: edgePresentation.opacity,
@@ -366,6 +382,9 @@ export default function SemanticGraphCanvas({
         onNodeDoubleClick={onNodeDoubleClick}
         onPaneClick={onPaneClick}
         nodesFocusable={false}
+        nodesDraggable={false}
+        nodesConnectable={false}
+        ariaLabelConfig={REACT_FLOW_ARIA_LABEL_CONFIG}
         fitView
         fitViewOptions={{ padding: 0.16, minZoom: INITIAL_READABLE_ZOOM, maxZoom: 1.05 }}
         minZoom={0.08}
@@ -373,7 +392,10 @@ export default function SemanticGraphCanvas({
         proOptions={{ hideAttribution: true }}
       >
         <Background variant={BackgroundVariant.Dots} gap={26} size={1} color="var(--color-edge-dot)" />
-        <Controls className="!border-border-subtle !bg-surface !text-text-primary" />
+        <Controls
+          showInteractive={false}
+          className="!border-border-subtle !bg-surface !text-text-primary"
+        />
         <MiniMap
           pannable
           zoomable

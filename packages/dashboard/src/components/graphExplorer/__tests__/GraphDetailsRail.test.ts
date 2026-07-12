@@ -71,6 +71,8 @@ describe("GraphDetailsRail", () => {
     expect(container.textContent).toContain("运行流程");
     expect(container.textContent).toContain("生产代码");
     expect(container.textContent).toContain("src/a.ts:10-14");
+    expect(container.textContent).toContain("类型函数");
+    expect(container.textContent).not.toContain("类型function");
 
     await act(async () => buttonWithText(container, "阅读正文")?.click());
 

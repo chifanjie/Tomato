@@ -95,6 +95,17 @@ export default function GraphExplorer({ onSelectWikiTarget }: GraphExplorerProps
   }
 
   const presentation = view.semanticGraph.presentation;
+  const canvasViewKey = JSON.stringify([
+    graph.version,
+    graph.project.name,
+    graph.project.gitCommitHash,
+    graph.project.analyzedAt,
+    effectiveMode,
+    presentation.level,
+    presentation.scopeId ?? "",
+    presentation.fileId ?? "",
+    focusNodeIds.join("|"),
+  ]);
 
   return (
     <section
@@ -140,7 +151,7 @@ export default function GraphExplorer({ onSelectWikiTarget }: GraphExplorerProps
         <SemanticGraphCanvas
           semanticGraph={view.semanticGraph}
           displayMode={effectiveMode}
-          viewKey={`${effectiveMode}:${presentation.level}:${presentation.scopeId ?? ""}:${presentation.fileId ?? ""}:${focusNodeIds.join("|")}:${view.semanticGraph.nodes.length}:${view.semanticGraph.edges.length}`}
+          viewKey={canvasViewKey}
           onOpenScope={openScope}
           onOpenFile={openFile}
         />

@@ -1,6 +1,7 @@
 import type { WikiEvidenceV2, WikiPageV2 } from "@understand-code/core/knowledge-base";
 import type { WikiTarget } from "../../wiki/wikiContent";
 import type { GraphExplorerView, GraphSelectionDetails } from "./graphExplorerModel";
+import { graphNodeTypeLabel } from "./semanticGraphCanvasModel";
 
 interface GraphDetailsRailProps {
   view: GraphExplorerView;
@@ -122,7 +123,7 @@ function Overview({ selection }: { selection: GraphSelectionDetails }) {
           {selection.node.summary || "暂无职责说明"}
         </p>
         <dl className="mt-3 grid gap-2 text-xs">
-          <div><dt className="text-text-muted">类型</dt><dd className="mt-0.5 text-text-primary">{selection.node.type}</dd></div>
+          <div><dt className="text-text-muted">类型</dt><dd className="mt-0.5 text-text-primary">{graphNodeTypeLabel(selection.node.type)}</dd></div>
           {selection.node.filePath && (
             <div><dt className="text-text-muted">路径</dt><dd className="uc-code-ref mt-0.5">{selection.node.filePath}</dd></div>
           )}

@@ -5,11 +5,35 @@ import { largeWikiFixture } from "./fixtures/wikiV2Fixtures";
 import { buildWikiRuntimeIndex } from "../wikiIndex";
 import {
   buildWikiNavigation,
+  canonicalReferenceOwnerPath,
   loadReferenceChildren,
   visibleReferenceRows,
 } from "../navigationModel";
 
 describe("Wiki navigation", () => {
+  it("canonicalizes every reference owner prefix and rejects unsafe paths", () => {
+    expect(canonicalReferenceOwnerPath("file:\\src\\app.ts\\")).toBe("src/app.ts");
+    expect(canonicalReferenceOwnerPath("config:/config/app.yaml/")).toBe("config/app.yaml");
+    expect(canonicalReferenceOwnerPath("schema:\\schemas\\event.json")).toBe("schemas/event.json");
+    expect(canonicalReferenceOwnerPath("document:/docs/run.md")).toBe("docs/run.md");
+
+    for (const ownerId of [
+      "file:",
+      "file:/",
+      "config:.",
+      "schema:..",
+      "document:docs/../secret.md",
+      "file:src/./app.ts",
+      "file:src/\0secret.ts",
+      "file:src/\u0001secret.ts",
+      "schema:schemas/\u0085event.json",
+      "document:docs/\u007fsecret.md",
+      "module:src/app.ts",
+    ]) {
+      expect(canonicalReferenceOwnerPath(ownerId), ownerId).toBeNull();
+    }
+  });
+
   it("keeps 479 symbol anchors out of a 277-file reference tree", () => {
     const payload = largeWikiFixture({ files: 277, symbols: 479, featured: 18 });
     const parsed = parseWikiIndexV2(payload);

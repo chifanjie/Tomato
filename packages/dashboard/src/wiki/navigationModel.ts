@@ -33,22 +33,31 @@ const collator = new Intl.Collator("zh-CN", {
   sensitivity: "base",
 });
 const FILE_OWNER_PREFIXES = ["file:", "config:", "schema:", "document:"] as const;
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f]/u;
 
-function filePathForPage(page: WikiPageV2): string | null {
-  const ownerId = page.directNodeIds.find((id) =>
-    FILE_OWNER_PREFIXES.some((prefix) => id.startsWith(prefix)),
-  );
-  if (!ownerId) return null;
+export function canonicalReferenceOwnerPath(ownerId: string): string | null {
   const prefix = FILE_OWNER_PREFIXES.find((item) => ownerId.startsWith(item));
   if (!prefix) return null;
   const path = ownerId
     .slice(prefix.length)
     .replace(/\\/g, "/")
     .replace(/^\/+|\/+$/g, "");
-  if (!path || path.split("/").some((part) => !part || part === "." || part === "..")) {
+  if (
+    !path
+    || CONTROL_CHARACTER.test(path)
+    || path.split("/").some((part) => !part || part === "." || part === "..")
+  ) {
     return null;
   }
   return path;
+}
+
+function filePathForPage(page: WikiPageV2): string | null {
+  for (const ownerId of page.directNodeIds) {
+    const path = canonicalReferenceOwnerPath(ownerId);
+    if (path) return path;
+  }
+  return null;
 }
 
 function nodeId(kind: ReferenceTreeNode["kind"], path: string): string {

@@ -190,6 +190,62 @@ describe("wikiContent", () => {
     ]);
   });
 
+  it("keeps anchor markers inside CommonMark fences and ignores indented pseudo-fences", () => {
+    const lines = [
+      "```ts",
+      "```not-a-close",
+      '<a id="backtick-hidden-after-info"></a>',
+      "## 代码块内标题一",
+      "``",
+      '<a id="backtick-hidden-after-short"></a>',
+      "## 代码块内标题二",
+      "    ```",
+      '<a id="backtick-hidden-after-indent"></a>',
+      "## 代码块内标题三",
+      "```   ",
+      '<a id="backtick-visible"></a>',
+      "## 反引号围栏后标题",
+      "~~~md",
+      "~~~~not-a-close",
+      '<a id="tilde-hidden-after-info"></a>',
+      "## 波浪围栏内标题一",
+      "~~",
+      '<a id="tilde-hidden-after-short"></a>',
+      "## 波浪围栏内标题二",
+      "    ~~~~",
+      '<a id="tilde-hidden-after-indent"></a>',
+      "## 波浪围栏内标题三",
+      "~~~~\t",
+      '<a id="tilde-visible"></a>',
+      "### 波浪围栏后标题",
+      "    ```",
+      '<a id="after-indented-code"></a>',
+      "#### 四空格伪围栏后标题",
+      "```unclosed",
+      '<a id="unclosed-hidden"></a>',
+      "## 未闭合围栏内标题",
+    ];
+    const markdown = lines.join("\n");
+
+    expect([...extractExplicitAnchors(markdown).entries()]).toEqual([
+      [lines.indexOf("## 反引号围栏后标题") + 1, "backtick-visible"],
+      [lines.indexOf("### 波浪围栏后标题") + 1, "tilde-visible"],
+      [lines.indexOf("#### 四空格伪围栏后标题") + 1, "after-indented-code"],
+    ]);
+
+    const stripped = markdownWithoutExplicitAnchors(markdown);
+    expect(stripped).toContain('<a id="backtick-hidden-after-info"></a>');
+    expect(stripped).toContain('<a id="backtick-hidden-after-short"></a>');
+    expect(stripped).toContain('<a id="backtick-hidden-after-indent"></a>');
+    expect(stripped).toContain('<a id="tilde-hidden-after-info"></a>');
+    expect(stripped).toContain('<a id="tilde-hidden-after-short"></a>');
+    expect(stripped).toContain('<a id="tilde-hidden-after-indent"></a>');
+    expect(stripped).toContain('<a id="unclosed-hidden"></a>');
+    expect(stripped).not.toContain('<a id="backtick-visible"></a>');
+    expect(stripped).not.toContain('<a id="tilde-visible"></a>');
+    expect(stripped).not.toContain('<a id="after-indented-code"></a>');
+  });
+
   it("cancels a pending marker on nonblank prose and removes only safe marker lines", () => {
     const markdown = [
       '<a id="lost"></a>',

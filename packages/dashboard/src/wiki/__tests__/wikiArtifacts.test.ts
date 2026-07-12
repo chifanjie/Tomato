@@ -65,12 +65,14 @@ describe("lazy Wiki search artifact", () => {
     expect(loaded).toEqual({ status: "error", records: [] });
   });
 
-  it("rejects unknown categories and symbols without nonempty anchor and nodeId", async () => {
+  it("rejects unknown categories and malformed symbol-only fields", async () => {
     const valid = searchFixture();
     const invalidPayloads = [
       { version: 2, records: [{ ...valid[0], category: "mystery" }] },
       { version: 2, records: [{ ...valid[3], anchor: "" }] },
       { version: 2, records: [{ ...valid[3], nodeId: "   " }] },
+      { version: 2, records: [{ ...valid[3], content: "不应复制页面正文" }] },
+      { version: 2, records: [{ ...valid[3], businessTerms: ["全局业务词"] }] },
     ];
     for (const payload of invalidPayloads) {
       const loaded = await loadSearchArtifact(

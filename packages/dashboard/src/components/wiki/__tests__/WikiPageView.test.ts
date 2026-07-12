@@ -54,6 +54,51 @@ describe("WikiPageView Markdown and anchors", () => {
     for (const heading of headings) expect(html).toContain(`id="${heading.id}"`);
   });
 
+  it("excludes headings until a valid CommonMark closing fence", () => {
+    const lines = [
+      "```ts",
+      "```not-a-close",
+      "## 反引号后缀伪关闭",
+      "``",
+      "### 反引号短伪关闭",
+      "    ```",
+      "#### 反引号缩进伪关闭",
+      "```",
+      "## 反引号围栏后",
+      "~~~md",
+      "~~~~not-a-close",
+      "## 波浪后缀伪关闭",
+      "~~",
+      "### 波浪短伪关闭",
+      "    ~~~~",
+      "#### 波浪缩进伪关闭",
+      "~~~~",
+      "### 波浪围栏后",
+      "    ```",
+      "#### 四空格伪开启后",
+      "```unclosed",
+      "## 未闭合围栏内",
+    ];
+
+    expect(extractWikiOutline(lines.join("\n"))).toEqual([
+      {
+        id: `wiki-heading-${lines.indexOf("## 反引号围栏后") + 1}`,
+        text: "反引号围栏后",
+        level: 2,
+      },
+      {
+        id: `wiki-heading-${lines.indexOf("### 波浪围栏后") + 1}`,
+        text: "波浪围栏后",
+        level: 3,
+      },
+      {
+        id: `wiki-heading-${lines.indexOf("#### 四空格伪开启后") + 1}`,
+        text: "四空格伪开启后",
+        level: 4,
+      },
+    ]);
+  });
+
   it("keeps GFM rendering while raw script HTML never becomes executable markup", () => {
     const markdown = [
       "| 名称 | 说明 |",

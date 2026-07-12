@@ -250,32 +250,42 @@ export function markdownWithoutDuplicateTitle(markdown: string, pageTitle: strin
 
 const EXPLICIT_ANCHOR = /^\s*<a id="([\p{L}\p{N}_.:-]+)"><\/a>\s*$/u;
 
-interface MarkdownFence {
+export interface MarkdownFenceState {
   character: "`" | "~";
   length: number;
 }
 
-function fenceOnLine(line: string): MarkdownFence | null {
-  const match = line.match(/^\s*(`{3,}|~{3,})/u)?.[1];
-  if (!match) return null;
-  return { character: match[0] as MarkdownFence["character"], length: match.length };
-}
-
-function nextFence(current: MarkdownFence | null, line: string): MarkdownFence | null {
-  const marker = fenceOnLine(line);
+/** Advance CommonMark fenced-code state for one source line. */
+export function nextMarkdownFenceState(
+  current: MarkdownFenceState | null,
+  line: string,
+): MarkdownFenceState | null {
+  const match = line.match(/^( {0,3})(`{3,}|~{3,})(.*)$/u);
+  const marker = match?.[2];
   if (!marker) return current;
-  if (!current) return marker;
-  return marker.character === current.character && marker.length >= current.length ? null : current;
+
+  const character = marker[0] as MarkdownFenceState["character"];
+  const suffix = match?.[3] ?? "";
+  if (current) {
+    const isClosingFence = character === current.character
+      && marker.length >= current.length
+      && /^[\t ]*$/u.test(suffix);
+    return isClosingFence ? null : current;
+  }
+
+  // CommonMark forbids backticks in an opening backtick fence's info string.
+  if (character === "`" && suffix.includes("`")) return null;
+  return { character, length: marker.length };
 }
 
 export function extractExplicitAnchors(markdown: string): ReadonlyMap<number, string> {
   const result = new Map<number, string>();
-  let fence: MarkdownFence | null = null;
+  let fence: MarkdownFenceState | null = null;
   let pending: string | null = null;
 
   markdown.split(/\r?\n/u).forEach((line, index) => {
     const wasFenced = fence !== null;
-    const updatedFence = nextFence(fence, line);
+    const updatedFence = nextMarkdownFenceState(fence, line);
     if (updatedFence !== fence || wasFenced) {
       fence = updatedFence;
       if (!wasFenced && fence !== null && line.trim()) pending = null;
@@ -294,10 +304,10 @@ export function extractExplicitAnchors(markdown: string): ReadonlyMap<number, st
 }
 
 export function markdownWithoutExplicitAnchors(markdown: string): string {
-  let fence: MarkdownFence | null = null;
+  let fence: MarkdownFenceState | null = null;
   return markdown.split(/\r?\n/u).map((line) => {
     const wasFenced = fence !== null;
-    const updatedFence = nextFence(fence, line);
+    const updatedFence = nextMarkdownFenceState(fence, line);
     if (updatedFence !== fence || wasFenced) {
       fence = updatedFence;
       return line;

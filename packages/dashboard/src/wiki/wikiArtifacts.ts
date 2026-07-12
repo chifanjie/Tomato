@@ -71,6 +71,8 @@ function searchRecord(value: unknown): value is WikiSearchRecordV2 {
       && item.anchor.trim().length > 0
       && typeof item.nodeId === "string"
       && item.nodeId.trim().length > 0
+      && item.content === undefined
+      && item.businessTerms.length === 0
     );
 }
 

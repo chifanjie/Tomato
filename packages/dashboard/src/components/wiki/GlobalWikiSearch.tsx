@@ -1,5 +1,6 @@
 import type { WikiSearchRecordV2 } from "@understand-code/core/knowledge-base";
 import {
+  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -110,12 +111,13 @@ export default function GlobalWikiSearch({
 }: GlobalWikiSearchProps) {
   const [query, setQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(20);
+  const deferredQuery = useDeferredValue(query);
   const previousOpen = useRef(open);
   const view = useMemo(
-    () => buildGlobalWikiSearchView(runtime, query, visibleCount),
-    [query, runtime, visibleCount],
+    () => buildGlobalWikiSearchView(runtime, deferredQuery, visibleCount),
+    [deferredQuery, runtime, visibleCount],
   );
-  const statusMessage = globalWikiSearchStatusMessage(loadStatus, query, view.total);
+  const statusMessage = globalWikiSearchStatusMessage(loadStatus, deferredQuery, view.total);
 
   useEffect(() => {
     setVisibleCount(20);

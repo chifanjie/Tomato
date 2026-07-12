@@ -9,8 +9,10 @@ import {
   loadWikiMarkdown,
   markdownWithoutDuplicateTitle,
   markdownWithoutExplicitAnchors,
+  nextMarkdownFenceState,
   resolveWikiMarkdownTarget,
   wikiTargetHash,
+  type MarkdownFenceState,
   type WikiTarget,
 } from "../../wiki/wikiContent";
 
@@ -67,19 +69,14 @@ function outlineHeadingId(line: number, _text: string): string {
 export function extractWikiOutline(markdown: string): WikiOutlineHeading[] {
   const headings: WikiOutlineHeading[] = [];
   const explicitAnchors = extractExplicitAnchors(markdown);
-  let fence: { character: "`" | "~"; length: number } | null = null;
+  let fence: MarkdownFenceState | null = null;
   markdown.split(/\r?\n/).forEach((line, index) => {
-    const fenceMarker = line.match(/^\s*(`{3,}|~{3,})/)?.[1];
-    if (fenceMarker) {
-      const marker = {
-        character: fenceMarker[0] as "`" | "~",
-        length: fenceMarker.length,
-      };
-      if (!fence) fence = marker;
-      else if (marker.character === fence.character && marker.length >= fence.length) fence = null;
+    const wasFenced = fence !== null;
+    const updatedFence = nextMarkdownFenceState(fence, line);
+    if (updatedFence !== fence || wasFenced) {
+      fence = updatedFence;
       return;
     }
-    if (fence) return;
     const match = line.match(/^\s*(#{2,4})(?!#)\s+(.+?)\s*#*\s*$/);
     if (!match) return;
     const level = match[1]?.length as 2 | 3 | 4;

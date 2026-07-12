@@ -15,7 +15,10 @@ import {
   emptyWikiRuntimeIndex,
   type WikiRuntimeIndex,
 } from "./wiki/wikiIndex";
-import type { WikiPageV2 } from "@understand-code/core/knowledge-base";
+import {
+  primaryDestinationForNode,
+  type WikiPageV2,
+} from "@understand-code/core/knowledge-base";
 import type { WikiTarget } from "./wiki/wikiContent";
 
 export type Persona = "non-technical" | "junior" | "experienced";
@@ -59,8 +62,8 @@ const DEFAULT_FILTERS: FilterState = {
   edgeCategories: new Set<EdgeCategory>(ALL_EDGE_CATEGORIES),
 };
 
-function wikiPageNodeIds(page: WikiPageV2): string[] {
-  return [...new Set([...page.directNodeIds, ...page.contextNodeIds])];
+function wikiPageDirectNodeIds(page: WikiPageV2): string[] {
+  return [...new Set(page.directNodeIds)];
 }
 
 /** Categories used for node type filter toggles. Single source of truth for NodeCategory. */
@@ -134,8 +137,11 @@ interface DashboardStore {
   graphExplorerMode: GraphExplorerMode;
   setGraphExplorerMode: (mode: GraphExplorerMode) => void;
   graphFocusNodeIds: string[];
+  graphFocusPageId: string | null;
+  graphWikiNotice: string | null;
+  clearGraphFocus: () => void;
   openGraphForWikiPage: (pageId: string) => void;
-  openWikiForGraphNode: (nodeId: string) => void;
+  openWikiForGraphNode: (nodeId: string) => WikiTarget | null;
   searchQuery: string;
   searchResults: SearchResult[];
   searchEngine: SearchEngine | null;
@@ -333,6 +339,8 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
   pendingWikiAnchor: null,
   graphExplorerMode: "semantic",
   graphFocusNodeIds: [],
+  graphFocusPageId: null,
+  graphWikiNotice: null,
   searchQuery: "",
   searchResults: [],
   searchEngine: null,
@@ -406,7 +414,14 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
 
   setDashboardSurface: (surface) => set({
     dashboardSurface: surface,
-    ...(surface === "graph" ? { pendingWikiAnchor: null } : {}),
+    graphWikiNotice: null,
+    ...(surface === "graph"
+      ? {
+          pendingWikiAnchor: null,
+          graphFocusPageId: null,
+          graphFocusNodeIds: [],
+        }
+      : {}),
   }),
 
   setWikiIndex: (index) =>
@@ -414,18 +429,24 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
       const preservedPage = state.activeWikiPageId
         ? index.pagesById.get(state.activeWikiPageId) ?? null
         : null;
-      const hadWikiGraphFocus = state.graphFocusNodeIds.length > 0;
+      const focusedPage = state.graphFocusPageId
+        ? index.pagesById.get(state.graphFocusPageId) ?? null
+        : null;
       return {
         wikiIndex: index,
         activeWikiPageId: preservedPage?.id ?? null,
         pendingWikiAnchor: preservedPage ? state.pendingWikiAnchor : null,
-        graphFocusNodeIds: hadWikiGraphFocus && preservedPage
-          ? [...new Set(preservedPage.directNodeIds)]
-          : [],
+        graphFocusPageId: focusedPage?.id ?? null,
+        graphFocusNodeIds: focusedPage ? wikiPageDirectNodeIds(focusedPage) : [],
+        graphWikiNotice: null,
       };
     }),
 
-  selectWikiPage: (pageId) => set({ activeWikiPageId: pageId, pendingWikiAnchor: null }),
+  selectWikiPage: (pageId) => set({
+    activeWikiPageId: pageId,
+    pendingWikiAnchor: null,
+    graphWikiNotice: null,
+  }),
 
   openWikiTarget: (target) =>
     set((state) => state.wikiIndex.pagesById.has(target.pageId)
@@ -433,6 +454,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
           dashboardSurface: "wiki",
           activeWikiPageId: target.pageId,
           pendingWikiAnchor: target.anchor ?? null,
+          graphWikiNotice: null,
         }
       : {}),
 
@@ -441,37 +463,40 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
 
   setGraphExplorerMode: (mode) => set({ graphExplorerMode: mode }),
 
+  clearGraphFocus: () => set({
+    graphFocusNodeIds: [],
+    graphFocusPageId: null,
+    graphWikiNotice: null,
+  }),
+
   openGraphForWikiPage: (pageId) =>
     set((state) => {
       const page = state.wikiIndex.pagesById.get(pageId);
-      if (!page) {
-        return {
-          dashboardSurface: "graph",
-          graphFocusNodeIds: [],
-          pendingWikiAnchor: null,
-        };
-      }
+      if (!page) return {};
       return {
         dashboardSurface: "graph",
         activeWikiPageId: pageId,
         pendingWikiAnchor: null,
-        graphFocusNodeIds: wikiPageNodeIds(page),
+        graphFocusNodeIds: wikiPageDirectNodeIds(page),
+        graphFocusPageId: pageId,
+        graphWikiNotice: null,
         graphExplorerMode: "focus",
       };
     }),
 
-  openWikiForGraphNode: (nodeId) =>
-    set((state) => {
-      const page = state.wikiIndex.directPagesByNodeId.get(nodeId)?.[0]
-        ?? state.wikiIndex.contextPagesByNodeId.get(nodeId)?.[0]
-        ?? null;
-      return {
-        dashboardSurface: "wiki",
-        selectedNodeId: nodeId,
-        activeWikiPageId: page?.id ?? state.activeWikiPageId,
-        pendingWikiAnchor: null,
-      };
-    }),
+  openWikiForGraphNode: (nodeId) => {
+    const state = get();
+    const destination = state.wikiIndex.payload
+      ? primaryDestinationForNode(state.wikiIndex.payload, nodeId) ?? null
+      : null;
+    if (!destination) {
+      set({ selectedNodeId: nodeId, graphWikiNotice: "暂无专门正文" });
+      return null;
+    }
+    state.openWikiTarget(destination);
+    set({ selectedNodeId: nodeId, graphWikiNotice: null });
+    return destination;
+  },
 
   setGraph: (graph) => {
     const searchEngine = new SearchEngine(graph.nodes);
@@ -493,6 +518,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
       activeLayerId: null,
       activeFileId: null,
       selectedNodeId: null,
+      graphWikiNotice: null,
       focusNodeId: null,
       nodeHistory: [],
       viewMode: keepDomainView ? "domain" as const : "structural" as const,
@@ -512,10 +538,11 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
       // Push current node to history before navigating away
       set({
         selectedNodeId: nodeId,
+        graphWikiNotice: null,
         nodeHistory: [...nodeHistory, selectedNodeId].slice(-MAX_HISTORY),
       });
     } else {
-      set({ selectedNodeId: nodeId });
+      set({ selectedNodeId: nodeId, graphWikiNotice: null });
     }
   },
 
@@ -548,6 +575,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
         activeLayerId: layerId,
         activeFileId: parentFileId,
         selectedNodeId: nodeId,
+        graphWikiNotice: null,
         focusNodeId: null,
         codeViewerOpen: false,
         codeViewerNodeId: null,
@@ -563,6 +591,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
         activeLayerId: layerId,
         activeFileId: null,
         selectedNodeId: nodeId,
+        graphWikiNotice: null,
         focusNodeId: null,
         codeViewerOpen: false,
         codeViewerNodeId: null,
@@ -572,6 +601,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
     } else {
       set({
         selectedNodeId: nodeId,
+        graphWikiNotice: null,
         nodeHistory: newHistory,
       });
     }
@@ -585,6 +615,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
     const layerId = nodeIdToLayerId.get(targetId) ?? null;
     set({
       selectedNodeId: targetId,
+      graphWikiNotice: null,
       nodeHistory: newHistory,
       activeFileId: null,
       ...(layerId ? { navigationLevel: "layer-detail" as const, activeLayerId: layerId } : {}),
@@ -603,11 +634,13 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
         activeLayerId: layerId,
         activeFileId: null,
         selectedNodeId: prevNodeId,
+        graphWikiNotice: null,
         nodeHistory: newHistory,
       });
     } else {
       set({
         selectedNodeId: prevNodeId,
+        graphWikiNotice: null,
         nodeHistory: newHistory,
       });
     }
@@ -619,6 +652,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
       activeLayerId: layerId,
       activeFileId: null,
       selectedNodeId: null,
+      graphWikiNotice: null,
       focusNodeId: null,
       codeViewerOpen: false,
       codeViewerNodeId: null,
@@ -638,6 +672,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
       activeLayerId: null,
       activeFileId: null,
       selectedNodeId: null,
+      graphWikiNotice: null,
       focusNodeId: null,
       codeViewerOpen: false,
       codeViewerNodeId: null,
@@ -653,6 +688,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
       navigationLevel: "file-detail",
       activeFileId: fileId,
       selectedNodeId: fileId,
+      graphWikiNotice: null,
       focusNodeId: null,
       codeViewerOpen: false,
       codeViewerNodeId: null,
@@ -669,6 +705,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
     set({
       focusNodeId: nodeId,
       selectedNodeId: nodeId,
+      graphWikiNotice: null,
       // Focus mode narrows filteredGraphNodes to focus + 1-hop; the
       // surviving containers have a subset of their original children,
       // and the cache must not return positions for filtered-out ids.
@@ -708,6 +745,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
         persona,
         viewMode: "structural" as const,
         focusNodeId: null,
+        graphWikiNotice: null,
         codeViewerOpen: false,
         codeViewerNodeId: null,
         codeViewerExpanded: false,
@@ -828,6 +866,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
       currentTourStep: 0,
       tourHighlightedNodeIds: sorted[0].nodeIds,
       selectedNodeId: null,
+      graphWikiNotice: null,
       ...layerNav,
       ...layerResetIfChanged(layerNav, activeLayerId),
     });
@@ -903,6 +942,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
     set({
       viewMode: mode,
       selectedNodeId: null,
+      graphWikiNotice: null,
       focusNodeId: null,
       codeViewerOpen: false,
       codeViewerNodeId: null,
@@ -927,6 +967,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
     set({
       activeDomainId: null,
       selectedNodeId: null,
+      graphWikiNotice: null,
       focusNodeId: null,
     });
   },

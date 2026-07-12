@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { parseWikiIndexV2 } from "@understand-code/core/knowledge-base";
 import type { KnowledgeGraph } from "@understand-code/core/types";
 import { useDashboardStore } from "../store";
 import { buildWikiRuntimeIndex } from "../wiki/wikiIndex";
@@ -48,12 +49,25 @@ describe("app surface routing", () => {
       route: undefined,
     }];
     payload.mainReadiness = { status: "blocked", reasons: ["测试夹具"], routePageIds: [] };
-    payload.nodeDocumentation = [];
+    payload.nodeDocumentation = [{
+      nodeId: "file:src/a.go",
+      relation: "direct",
+      quality: "needs-review",
+      evidenceHealth: "missing",
+      generationStatus: "partial",
+      referenceCoverage: "unanchored",
+      directPageIds: ["wiki:overview"],
+      contextPageIds: [],
+      evidenceIds: [],
+      primaryPageId: "wiki:overview",
+    }];
     payload.evidence = [];
+    const parsed = parseWikiIndexV2(payload);
+    if (!parsed.ok) throw new Error(parsed.errors.join("\n"));
     useDashboardStore.getState().setGraph(graph());
     useDashboardStore.getState().setDashboardSurface("wiki");
     useDashboardStore.getState().setWikiIndex(
-      buildWikiRuntimeIndex(payload),
+      buildWikiRuntimeIndex(parsed.value),
     );
   });
 

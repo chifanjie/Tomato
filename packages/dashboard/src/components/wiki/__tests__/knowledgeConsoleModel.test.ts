@@ -17,7 +17,7 @@ describe("knowledgeConsoleModel", () => {
       "file:src/config.ts",
       "file:src/config.ts",
     ];
-    page.evidenceIds = ["evidence:run", "evidence:context"];
+    page.evidenceIds = ["evidence:run", "evidence:context", "evidence:page-only"];
     payload.evidence.push({
       id: "evidence:context",
       nodeIds: ["file:src/config.ts"],
@@ -25,6 +25,14 @@ describe("knowledgeConsoleModel", () => {
       lineRange: [1, 2],
       excerpt: "export const timeout = 1000;",
       evidenceType: "configuration",
+    });
+    payload.evidence.push({
+      id: "evidence:page-only",
+      nodeIds: ["function:src/a.ts:run"],
+      filePath: "src/page-only.ts",
+      lineRange: [8, 9],
+      excerpt: "export const pageOnly = true;",
+      evidenceType: "test",
     });
 
     const view = buildKnowledgeConsoleView(
@@ -39,6 +47,8 @@ describe("knowledgeConsoleModel", () => {
     ]);
     expect(view.directGraphNodeIds).toEqual(["function:src/a.ts:run"]);
     expect(view.contextNodeIds).toEqual(["file:src/config.ts"]);
+    expect(view.directPages.map((item) => item.id)).toEqual(["page:file-a"]);
+    expect(view.contextPages.map((item) => item.id)).toEqual(["page:overview"]);
     expect(view.exactEvidence.map((item) => item.id)).toEqual(["evidence:run"]);
     expect(view.homeVisible).toBe(false);
   });
@@ -70,6 +80,8 @@ describe("knowledgeConsoleModel", () => {
     expect(view.navigation.maintenance.pages).toEqual([]);
     expect(view.directGraphNodeIds).toEqual([]);
     expect(view.contextNodeIds).toEqual([]);
+    expect(view.directPages).toEqual([]);
+    expect(view.contextPages).toEqual([]);
     expect(view.exactEvidence).toEqual([]);
     expect(view.homeVisible).toBe(true);
   });

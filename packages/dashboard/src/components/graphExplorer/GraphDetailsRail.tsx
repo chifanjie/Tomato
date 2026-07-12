@@ -1,8 +1,29 @@
 import { useDashboardStore } from "../../store";
+import { wikiTargetHash, type WikiTarget } from "../../wiki/wikiContent";
 import type { GraphExplorerView } from "./graphExplorerModel";
 
 interface GraphDetailsRailProps {
   view: GraphExplorerView;
+}
+
+interface GraphWikiBrowser {
+  location: Pick<Location, "pathname" | "search">;
+  history: Pick<History, "pushState">;
+}
+
+export function openLinkedWikiForNode(
+  nodeId: string,
+  openWikiForGraphNode: (nodeId: string) => WikiTarget | null,
+  browser: GraphWikiBrowser | null = typeof window === "undefined" ? null : window,
+): WikiTarget | null {
+  const destination = openWikiForGraphNode(nodeId);
+  if (!destination || !browser) return destination;
+  browser.history.pushState(
+    null,
+    "",
+    `${browser.location.pathname}${browser.location.search}${wikiTargetHash(destination)}`,
+  );
+  return destination;
 }
 
 function formatLineRange(lineRange: [number, number] | undefined): string | null {
@@ -17,6 +38,7 @@ function formatCoverage(status: string | undefined): string {
 
 export default function GraphDetailsRail({ view }: GraphDetailsRailProps) {
   const openWikiForGraphNode = useDashboardStore((state) => state.openWikiForGraphNode);
+  const graphWikiNotice = useDashboardStore((state) => state.graphWikiNotice);
   const node = view.selectedNode;
   const hiddenNode = view.hiddenSelectedNode;
   const semanticNode = view.selectedSemanticNode;
@@ -72,11 +94,17 @@ export default function GraphDetailsRail({ view }: GraphDetailsRailProps) {
               {view.canOpenWiki && (
                 <button
                   type="button"
-                  onClick={() => openWikiForGraphNode(hiddenNode.id)}
+                  data-wiki-node-id={hiddenNode.id}
+                  onClick={() => openLinkedWikiForNode(hiddenNode.id, openWikiForGraphNode)}
                   className="mt-3 w-full rounded-md border border-accent/35 bg-accent/10 px-3 py-2 text-sm font-semibold text-accent transition-colors hover:bg-accent/15"
                 >
                   Open linked wiki
                 </button>
+              )}
+              {graphWikiNotice && (
+                <p aria-live="polite" className="mt-2 text-xs leading-5 text-text-muted">
+                  {graphWikiNotice}
+                </p>
               )}
               <div className="mt-3 space-y-2">
                 {view.selectedPages.length === 0 ? (
@@ -142,11 +170,17 @@ export default function GraphDetailsRail({ view }: GraphDetailsRailProps) {
               {view.canOpenWiki && (
                 <button
                   type="button"
-                  onClick={() => openWikiForGraphNode(node.id)}
+                  data-wiki-node-id={node.id}
+                  onClick={() => openLinkedWikiForNode(node.id, openWikiForGraphNode)}
                   className="mt-3 w-full rounded-md border border-accent/35 bg-accent/10 px-3 py-2 text-sm font-semibold text-accent transition-colors hover:bg-accent/15"
                 >
                   Open linked wiki
                 </button>
+              )}
+              {graphWikiNotice && (
+                <p aria-live="polite" className="mt-2 text-xs leading-5 text-text-muted">
+                  {graphWikiNotice}
+                </p>
               )}
               <div className="mt-3 space-y-2">
                 {view.selectedPages.length === 0 ? (

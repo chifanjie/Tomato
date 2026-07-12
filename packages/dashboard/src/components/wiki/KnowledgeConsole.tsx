@@ -1,11 +1,12 @@
 import { useRef, useState } from "react";
 import { useDashboardStore } from "../../store";
+import { wikiPageHash } from "../../wiki/wikiContent";
 import { buildKnowledgeConsoleView } from "./knowledgeConsoleModel";
 import GuidedWikiHome from "./GuidedWikiHome";
 import KnowledgeStatusView from "./KnowledgeStatusView";
 import WikiEvidenceRail from "./WikiEvidenceRail";
 import WikiNavigation from "./WikiNavigation";
-import WikiPageView from "./WikiPageView";
+import WikiPageView, { type WikiOutlineHeading } from "./WikiPageView";
 
 export default function KnowledgeConsole() {
   const wikiIndex = useDashboardStore((state) => state.wikiIndex);
@@ -14,21 +15,31 @@ export default function KnowledgeConsole() {
   const setDashboardSurface = useDashboardStore((state) => state.setDashboardSurface);
   const openGraphForWikiPage = useDashboardStore((state) => state.openGraphForWikiPage);
   const view = buildKnowledgeConsoleView(wikiIndex, activeWikiPageId);
+  const [outlineHeadings, setOutlineHeadings] = useState<WikiOutlineHeading[]>([]);
   const [auxView, setAuxView] = useState<"home" | "status">("home");
   const [referenceExpanded, setReferenceExpanded] = useState(false);
   const referenceTriggerRef = useRef<HTMLButtonElement>(null);
 
+  const navigateWikiPage = (pageId: string | null) => {
+    selectWikiPage(pageId);
+    if (typeof window === "undefined") return;
+    const nextUrl = pageId
+      ? `${window.location.pathname}${window.location.search}${wikiPageHash(pageId)}`
+      : `${window.location.pathname}${window.location.search}`;
+    window.history.pushState(null, "", nextUrl);
+  };
+
   const openPage = (pageId: string) => {
     setAuxView("home");
-    selectWikiPage(pageId);
+    navigateWikiPage(pageId);
   };
   const openHome = () => {
     setAuxView("home");
-    selectWikiPage(null);
+    navigateWikiPage(null);
   };
   const openStatus = () => {
     setAuxView("status");
-    selectWikiPage(null);
+    navigateWikiPage(null);
   };
   const openReference = () => {
     setReferenceExpanded(true);
@@ -62,7 +73,11 @@ export default function KnowledgeConsole() {
         onSelectPage={openPage}
       />
       {view.activePage ? (
-        <WikiPageView page={view.activePage} emptyReason={null} />
+        <WikiPageView
+          page={view.activePage}
+          pages={wikiIndex.pages}
+          onHeadingsChange={setOutlineHeadings}
+        />
       ) : auxView === "status" ? (
         <KnowledgeStatusView
           index={wikiIndex}
@@ -80,8 +95,12 @@ export default function KnowledgeConsole() {
       {view.activePage && (
         <WikiEvidenceRail
           page={view.activePage}
-          evidence={[...view.exactEvidence]}
-          graphNodeIds={[...view.directGraphNodeIds]}
+          directPages={view.directPages}
+          contextPages={view.contextPages}
+          evidence={view.exactEvidence}
+          directGraphNodeIds={view.directGraphNodeIds}
+          headings={outlineHeadings}
+          onOpenPage={openPage}
           onOpenGraph={openGraphForWikiPage}
         />
       )}

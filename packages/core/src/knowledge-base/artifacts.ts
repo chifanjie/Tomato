@@ -544,12 +544,36 @@ function symbolRelation(page: WikiPageV2, nodeId: string): DocumentationRelation
       : "none";
 }
 
+function normalizeSearchText(value: string): string {
+  return value.normalize("NFKC").toLocaleLowerCase("zh-CN").trim();
+}
+
+function businessTermsForPage(
+  businessTerms: readonly string[],
+  document: GeneratedDocument,
+  page: WikiPageV2,
+): string[] {
+  if (page.category === "overview") return [...businessTerms];
+  const searchableText = normalizeSearchText([
+    page.title,
+    page.summary,
+    document.content,
+    ...page.searchTerms,
+  ].join("\n"));
+  return businessTerms.filter((term) => {
+    const normalizedTerm = normalizeSearchText(term);
+    return normalizedTerm.length > 0 && searchableText.includes(normalizedTerm);
+  });
+}
+
 function buildSearchIndex(
   input: KnowledgeArtifactInput,
   builtDocuments: readonly BuiltDocument[],
   nodesById: ReadonlyMap<string, KnowledgeArtifactNode>,
 ): WikiSearchIndexV2 {
-  const businessTerms = uniqueSorted(input.businessTerms);
+  const businessTerms = uniqueSorted(
+    input.businessTerms.filter((term) => normalizeSearchText(term).length > 0),
+  );
   const records = new Map<string, WikiSearchRecordV2>();
 
   builtDocuments.forEach(({ document, page }) => {
@@ -558,12 +582,13 @@ function buildSearchIndex(
       kind: "page",
       title: page.title,
       summary: page.summary,
+      content: document.content,
       pageId: page.id,
       role: page.role,
       category: page.category,
       relation: pageRelation(page),
       terms: uniqueSorted(page.searchTerms),
-      businessTerms: [...businessTerms],
+      businessTerms: businessTermsForPage(businessTerms, document, page),
     };
     records.set(pageRecord.id, pageRecord);
 
@@ -583,7 +608,7 @@ function buildSearchIndex(
         category: page.category,
         relation: symbolRelation(page, symbolAnchor.nodeId),
         terms: uniqueSorted([...(page.searchTerms), node?.name ?? symbolAnchor.nodeId, symbolAnchor.anchor]),
-        businessTerms: [...businessTerms],
+        businessTerms: [],
         ...(node?.filePath === undefined ? {} : { filePath: node.filePath }),
       };
       records.set(id, symbolRecord);

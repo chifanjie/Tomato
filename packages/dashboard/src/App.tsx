@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback, lazy, Suspense } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef, lazy, Suspense } from "react";
 import { validateGraph } from "@understand-code/core/schema";
 import type { GraphIssue } from "@understand-code/core/schema";
 import { useDashboardStore } from "./store";
@@ -9,8 +9,8 @@ import ReadableViewGraphPage from "./components/ReadableViewGraphPage";
 import ReadingAssistantPanel from "./components/ReadingAssistantPanel";
 import VisualGuidedWorkbench from "./components/workbench/VisualGuidedWorkbench";
 import KnowledgeConsole from "./components/wiki/KnowledgeConsole";
+import GlobalWikiSearch from "./components/wiki/GlobalWikiSearch";
 import GraphExplorer from "./components/graphExplorer/GraphExplorer";
-import SearchBar from "./components/SearchBar";
 import NodeInfo from "./components/NodeInfo";
 import LayerLegend from "./components/LayerLegend";
 import DiffToggle from "./components/DiffToggle";
@@ -39,6 +39,16 @@ import {
   loadKnowledgeContextIndex,
   shouldRetryWikiLoad,
 } from "./workbench/knowledgeContextLoader";
+import { buildWikiSearchRuntime, type WikiSearchRuntime } from "./wiki/searchIndex";
+import {
+  wikiTargetFromHash,
+  wikiTargetHash,
+  type WikiTarget,
+} from "./wiki/wikiContent";
+import {
+  createSearchArtifactRequestController,
+  type SearchLoadStatus,
+} from "./wiki/wikiArtifacts";
 
 // Lazy-load heavy / optional components so they ship in separate chunks.
 const CodeViewer = lazy(() => import("./components/CodeViewer"));
@@ -333,6 +343,7 @@ function Dashboard({
       <ThemeProvider metaTheme={metaTheme}>
         <DashboardContent
           accessToken={accessToken}
+          onTokenInvalid={onTokenInvalid}
           loadError={loadError}
           graphIssues={graphIssues}
           knowledgeContextIndex={knowledgeContextIndex}
@@ -344,15 +355,20 @@ function Dashboard({
 
 function DashboardContent(props: {
   accessToken: string;
+  onTokenInvalid: () => void;
   loadError: string | null;
   graphIssues: GraphIssue[];
   knowledgeContextIndex: KnowledgeContextIndex;
 }) {
-  const { accessToken, loadError, graphIssues, knowledgeContextIndex } = props;
+  const { accessToken, onTokenInvalid, loadError, graphIssues, knowledgeContextIndex } = props;
   const graph = useDashboardStore((s) => s.graph);
   const viewGraph = useDashboardStore((s) => s.viewGraph);
   const dashboardSurface = useDashboardStore((s) => s.dashboardSurface);
   const setDashboardSurface = useDashboardStore((s) => s.setDashboardSurface);
+  const wikiIndex = useDashboardStore((s) => s.wikiIndex);
+  const activeWikiPageId = useDashboardStore((s) => s.activeWikiPageId);
+  const selectWikiPage = useDashboardStore((s) => s.selectWikiPage);
+  const openWikiTarget = useDashboardStore((s) => s.openWikiTarget);
   const selectedNodeId = useDashboardStore((s) => s.selectedNodeId);
   const tourActive = useDashboardStore((s) => s.tourActive);
   const persona = useDashboardStore((s) => s.persona);
@@ -369,6 +385,13 @@ function DashboardContent(props: {
   const showFunctionsInClassView = useDashboardStore((s) => s.showFunctionsInClassView);
   const toggleShowFunctionsInClassView = useDashboardStore((s) => s.toggleShowFunctionsInClassView);
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchLoadStatus, setSearchLoadStatus] = useState<SearchLoadStatus>("idle");
+  const [searchRuntime, setSearchRuntime] = useState<WikiSearchRuntime>(() =>
+    buildWikiSearchRuntime([], wikiIndex, "fallback"));
+  const searchButtonRef = useRef<HTMLButtonElement>(null);
+  const searchControllerRef = useRef(createSearchArtifactRequestController());
+  const fullSearchRecordsRef = useRef<Parameters<typeof buildWikiSearchRuntime>[0]>([]);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("info");
   const [showOnboarding, setShowOnboarding] = useState(shouldShowOnboarding);
   const dismissOnboarding = useCallback((remember: boolean) => {
@@ -396,6 +419,127 @@ function DashboardContent(props: {
     () => [...graphIssues, ...layoutIssues],
     [graphIssues, layoutIssues],
   );
+
+  useEffect(() => {
+    searchControllerRef.current.reset(accessToken);
+    fullSearchRecordsRef.current = [];
+    setSearchLoadStatus("idle");
+    setSearchRuntime(buildWikiSearchRuntime([], wikiIndex, "fallback"));
+  }, [accessToken]);
+
+  useEffect(() => {
+    if (searchLoadStatus === "ready") {
+      setSearchRuntime(buildWikiSearchRuntime(fullSearchRecordsRef.current, wikiIndex, "full"));
+    } else if (searchLoadStatus === "fallback" || searchLoadStatus === "idle") {
+      setSearchRuntime(buildWikiSearchRuntime([], wikiIndex, "fallback"));
+    }
+  }, [searchLoadStatus, wikiIndex]);
+
+  useEffect(() => {
+    const controller = searchControllerRef.current;
+    if (!searchOpen) {
+      controller.close();
+      return;
+    }
+    const applyResult = (result: Awaited<ReturnType<typeof controller.open>>) => {
+      if (!controller.isCurrent(accessToken)) return;
+      if (result.status === "forbidden") {
+        onTokenInvalid();
+        return;
+      }
+      if (result.status === "ready") {
+        fullSearchRecordsRef.current = result.records;
+        setSearchRuntime(buildWikiSearchRuntime(result.records, wikiIndex, "full"));
+        setSearchLoadStatus("ready");
+      } else {
+        fullSearchRecordsRef.current = [];
+        setSearchRuntime(buildWikiSearchRuntime([], wikiIndex, "fallback"));
+        setSearchLoadStatus("fallback");
+      }
+    };
+    const cached = controller.snapshot();
+    if (cached.token === accessToken && cached.result) {
+      applyResult(cached.result);
+      return;
+    }
+    setSearchLoadStatus("loading");
+    void controller.open(accessToken).then(applyResult);
+  }, [accessToken, onTokenInvalid, searchOpen, wikiIndex]);
+
+  const selectSearchTarget = useCallback((target: WikiTarget) => {
+    openWikiTarget(target);
+    setSearchOpen(false);
+    window.history.pushState(
+      null,
+      "",
+      `${window.location.pathname}${window.location.search}${wikiTargetHash(target)}`,
+    );
+  }, [openWikiTarget]);
+
+  const selectSurface = useCallback((surface: "wiki" | "graph") => {
+    setDashboardSurface(surface);
+    if (surface === "wiki") selectWikiPage(activeWikiPageId);
+    const hash = surface === "graph" ? "#graph" : activeWikiPageId
+      ? wikiTargetHash({ pageId: activeWikiPageId })
+      : "";
+    window.history.pushState(
+      null,
+      "",
+      `${window.location.pathname}${window.location.search}${hash}`,
+    );
+  }, [activeWikiPageId, selectWikiPage, setDashboardSurface]);
+
+  useEffect(() => {
+    const applyLocation = () => {
+      if (window.location.hash === "#graph") {
+        setDashboardSurface("graph");
+        return;
+      }
+      setDashboardSurface("wiki");
+      const target = wikiTargetFromHash(window.location.hash);
+      if (target) {
+        if (wikiIndex.pagesById.has(target.pageId)) openWikiTarget(target);
+        return;
+      }
+      const simpleFragment = window.location.hash.match(/^#([^&=]+)$/u)?.[1];
+      if (simpleFragment && window.location.hash !== "#wiki") {
+        try {
+          const anchor = decodeURIComponent(simpleFragment);
+          if (activeWikiPageId && anchor) {
+            const fragmentTarget = { pageId: activeWikiPageId, anchor };
+            openWikiTarget(fragmentTarget);
+            window.history.replaceState(
+              null,
+              "",
+              `${window.location.pathname}${window.location.search}${wikiTargetHash(fragmentTarget)}`,
+            );
+          }
+        } catch {
+          // Preserve the current document for malformed in-document fragments.
+        }
+        return;
+      }
+      selectWikiPage(null);
+    };
+    applyLocation();
+    window.addEventListener("popstate", applyLocation);
+    window.addEventListener("hashchange", applyLocation);
+    return () => {
+      window.removeEventListener("popstate", applyLocation);
+      window.removeEventListener("hashchange", applyLocation);
+    };
+  }, [activeWikiPageId, openWikiTarget, selectWikiPage, setDashboardSurface, wikiIndex]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "k") {
+        event.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   useEffect(() => {
     if (selectedNodeId) setSidebarTab("info");
@@ -615,14 +759,26 @@ function DashboardContent(props: {
 
   if (isMobile) {
     return (
-      <MobileLayout
-        accessToken={accessToken}
-        showKeyboardHelp={showKeyboardHelp}
-        setShowKeyboardHelp={setShowKeyboardHelp}
-        loadError={loadError}
-        allIssues={allIssues}
-        shortcuts={shortcuts}
-      />
+      <>
+        <MobileLayout
+          accessToken={accessToken}
+          showKeyboardHelp={showKeyboardHelp}
+          setShowKeyboardHelp={setShowKeyboardHelp}
+          loadError={loadError}
+          allIssues={allIssues}
+          shortcuts={shortcuts}
+          searchButtonRef={searchButtonRef}
+          onOpenGlobalSearch={() => setSearchOpen(true)}
+        />
+        <GlobalWikiSearch
+          open={searchOpen}
+          loadStatus={searchLoadStatus}
+          runtime={searchRuntime}
+          returnFocusRef={searchButtonRef}
+          onClose={() => setSearchOpen(false)}
+          onSelectTarget={selectSearchTarget}
+        />
+      </>
     );
   }
 
@@ -638,7 +794,7 @@ function DashboardContent(props: {
           <div className="flex items-center rounded-md border border-border-subtle bg-elevated p-0.5">
             <button
               type="button"
-              onClick={() => setDashboardSurface("wiki")}
+              onClick={() => selectSurface("wiki")}
               className={`rounded px-3 py-1.5 text-xs font-semibold transition-colors ${
                 dashboardSurface === "wiki" ? "bg-accent/15 text-accent" : "text-text-muted hover:text-text-secondary"
               }`}
@@ -647,7 +803,7 @@ function DashboardContent(props: {
             </button>
             <button
               type="button"
-              onClick={() => setDashboardSurface("graph")}
+              onClick={() => selectSurface("graph")}
               className={`rounded px-3 py-1.5 text-xs font-semibold transition-colors ${
                 dashboardSurface === "graph" ? "bg-accent/15 text-accent" : "text-text-muted hover:text-text-secondary"
               }`}
@@ -811,6 +967,16 @@ function DashboardContent(props: {
               <span className="hidden md:inline">{t.common.path}</span>
             </button>
           )}
+          <button
+            ref={searchButtonRef}
+            type="button"
+            onClick={() => setSearchOpen(true)}
+            className="flex items-center gap-1.5 rounded-lg border border-border-subtle bg-elevated px-2 py-1.5 text-sm text-text-secondary transition-colors hover:text-text-primary"
+            aria-label="搜索知识库"
+          >
+            <span>搜索</span>
+            <kbd className="text-[10px] text-text-muted">⌘K</kbd>
+          </button>
           <ThemePicker />
           <button
             onClick={() => setShowKeyboardHelp(true)}
@@ -833,9 +999,6 @@ function DashboardContent(props: {
           </button>
         </div>
       </header>
-
-      {/* Search */}
-      <SearchBar />
 
       {/* Validation warning banner */}
       {allIssues.length > 0 && !loadError && (
@@ -940,6 +1103,14 @@ function DashboardContent(props: {
           <OnboardingOverlay onDismiss={dismissOnboarding} />
         </Suspense>
       )}
+      <GlobalWikiSearch
+        open={searchOpen}
+        loadStatus={searchLoadStatus}
+        runtime={searchRuntime}
+        returnFocusRef={searchButtonRef}
+        onClose={() => setSearchOpen(false)}
+        onSelectTarget={selectSearchTarget}
+      />
     </div>
   );
 }

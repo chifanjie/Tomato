@@ -322,6 +322,49 @@ describe("knowledge artifacts", () => {
     });
   });
 
+  it("includes the complete Markdown body in page search records without copying it to symbols", () => {
+    const uniqueBodyPhrase = "跨域熔断视窗只出现在正文";
+    const artifacts = buildKnowledgeArtifacts({
+      ...input,
+      documents: input.documents.map((document) => document.id !== "page:file-a"
+        ? document
+        : { ...document, content: `# src/a.ts\n\n${uniqueBodyPhrase}` }),
+    });
+
+    expect(artifacts.searchIndex.records.find((record) => record.id === "page:page%3Afile-a"))
+      .toMatchObject({ kind: "page", content: expect.stringContaining(uniqueBodyPhrase) });
+    expect(artifacts.searchIndex.records.find((record) => record.kind === "symbol"))
+      .not.toHaveProperty("content");
+  });
+
+  it("assigns business terms only to matching pages, with overview fallback, and never to symbols", () => {
+    const artifacts = buildKnowledgeArtifacts({
+      ...input,
+      businessTerms: ["策略执行", "运行内幕词", "全局孤立词", "   "],
+      documents: [
+        ...input.documents.map((document) => document.id !== "page:file-a"
+          ? document
+          : { ...document, content: `${document.content}\n\n运行内幕词` }),
+        {
+          id: "page:maintenance", path: "维护说明.md", title: "维护说明", summary: "普通维护信息。",
+          category: "quality", role: "maintenance", directNodeIds: [], contextNodeIds: [], symbolAnchors: [],
+          representedEdgeIds: [], reason: "maintenance", content: "# 维护说明", searchTerms: ["维护"],
+          quality: "generated", generationStatus: "complete", qualityIssues: [], sourceEvidence: [],
+        },
+      ],
+    });
+
+    const recordByPage = new Map(artifacts.searchIndex.records
+      .filter((record) => record.kind === "page")
+      .map((record) => [record.pageId, record]));
+    expect(recordByPage.get("page:overview")?.businessTerms)
+      .toEqual(["全局孤立词", "策略执行", "运行内幕词"]);
+    expect(recordByPage.get("page:file-a")?.businessTerms).toEqual(["运行内幕词"]);
+    expect(recordByPage.get("page:maintenance")?.businessTerms).toEqual([]);
+    expect(artifacts.searchIndex.records.filter((record) => record.kind === "symbol")
+      .every((record) => record.businessTerms.length === 0)).toBe(true);
+  });
+
   it("rejects an empty symbol anchor instead of reporting false anchored coverage", () => {
     const documentsWithEmptyAnchor = input.documents.map((document) => document.id !== "page:file-a"
       ? document

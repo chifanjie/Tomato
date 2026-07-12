@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState, type RefObject } from "react";
 import type { GraphIssue } from "@understand-code/core/schema";
 import { useDashboardStore } from "../store";
 import { useI18n } from "../contexts/I18nContext";
@@ -29,10 +29,17 @@ interface Props {
   loadError: string | null;
   allIssues: GraphIssue[];
   shortcuts: import("../hooks/useKeyboardShortcuts").KeyboardShortcut[];
+  searchButtonRef: RefObject<HTMLButtonElement | null>;
+  onOpenGlobalSearch: () => void;
 }
 
 export function mobilePrimarySurfaceLabel(surface: "wiki" | "graph"): string {
   return surface === "wiki" ? "Wiki" : "Graph";
+}
+
+export function mobileSearchButtonLabel(isPeerSurface: boolean, searchOpen: boolean): string {
+  if (isPeerSurface) return "搜索知识库";
+  return searchOpen ? "隐藏搜索" : "显示搜索";
 }
 
 export function shouldAutoPivotMobileInfo({
@@ -54,6 +61,8 @@ export default function MobileLayout({
   loadError,
   allIssues,
   shortcuts,
+  searchButtonRef,
+  onOpenGlobalSearch,
 }: Props) {
   const graph = useDashboardStore((s) => s.graph);
   const dashboardSurface = useDashboardStore((s) => s.dashboardSurface);
@@ -106,6 +115,10 @@ export default function MobileLayout({
     if (codeViewerOpen) setSearchOpen(false);
   }, [codeViewerOpen]);
 
+  useEffect(() => {
+    if (isPeerDashboardSurface) setSearchOpen(false);
+  }, [isPeerDashboardSurface]);
+
   const isLearnMode = tourActive || persona === "junior";
   const infoContent = (
     <>
@@ -145,15 +158,18 @@ export default function MobileLayout({
         </h1>
 
         <button
+          ref={isPeerDashboardSurface ? searchButtonRef : undefined}
           type="button"
-          onClick={() => setSearchOpen((prev) => !prev)}
+          onClick={isPeerDashboardSurface
+            ? onOpenGlobalSearch
+            : () => setSearchOpen((prev) => !prev)}
           className={`w-9 h-9 flex items-center justify-center rounded-lg transition-colors -mr-1 ${
-            searchOpen
+            !isPeerDashboardSurface && searchOpen
               ? "text-accent bg-accent/15"
               : "text-text-secondary hover:text-text-primary hover:bg-elevated"
           }`}
-          aria-label={searchOpen ? "Hide search" : "Show search"}
-          aria-pressed={searchOpen}
+          aria-label={mobileSearchButtonLabel(isPeerDashboardSurface, searchOpen)}
+          aria-pressed={isPeerDashboardSurface ? undefined : searchOpen}
         >
           <svg
             className="w-5 h-5"
@@ -199,7 +215,7 @@ export default function MobileLayout({
       </div>
 
       {/* Search (collapsible) */}
-      {searchOpen && <SearchBar />}
+      {!isPeerDashboardSurface && searchOpen && <SearchBar />}
 
       {/* Validation warnings */}
       {allIssues.length > 0 && !loadError && <WarningBanner issues={allIssues} />}

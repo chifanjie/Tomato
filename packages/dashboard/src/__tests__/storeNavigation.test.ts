@@ -387,4 +387,79 @@ describe("dashboard wiki and graph surface state", () => {
       "file:src/a.go",
     ]);
   });
+
+  it("opens a valid full Wiki target and ignores an unknown page", () => {
+    useDashboardStore.getState().setWikiIndex(buildWikiRuntimeIndex(wikiV2Fixture()));
+    useDashboardStore.getState().openWikiTarget({ pageId: "page:file-a", anchor: "run" });
+    expect(useDashboardStore.getState()).toMatchObject({
+      dashboardSurface: "wiki",
+      activeWikiPageId: "page:file-a",
+      pendingWikiAnchor: "run",
+    });
+
+    useDashboardStore.getState().openWikiTarget({ pageId: "page:missing", anchor: "ghost" });
+    expect(useDashboardStore.getState()).toMatchObject({
+      activeWikiPageId: "page:file-a",
+      pendingWikiAnchor: "run",
+    });
+  });
+
+  it("clears an older anchor for a page-only target, normal page selection, and Wiki home", () => {
+    useDashboardStore.getState().setWikiIndex(buildWikiRuntimeIndex(wikiV2Fixture()));
+    useDashboardStore.getState().openWikiTarget({ pageId: "page:file-a", anchor: "run" });
+    useDashboardStore.getState().openWikiTarget({ pageId: "page:run" });
+    expect(useDashboardStore.getState()).toMatchObject({
+      activeWikiPageId: "page:run",
+      pendingWikiAnchor: null,
+    });
+
+    useDashboardStore.getState().openWikiTarget({ pageId: "page:file-a", anchor: "run" });
+    useDashboardStore.getState().selectWikiPage("page:overview");
+    expect(useDashboardStore.getState()).toMatchObject({
+      activeWikiPageId: "page:overview",
+      pendingWikiAnchor: null,
+    });
+
+    useDashboardStore.getState().openWikiTarget({ pageId: "page:file-a", anchor: "run" });
+    useDashboardStore.getState().selectWikiPage(null);
+    expect(useDashboardStore.getState()).toMatchObject({
+      activeWikiPageId: null,
+      pendingWikiAnchor: null,
+    });
+  });
+
+  it("consumes only the exact pending Wiki anchor", () => {
+    useDashboardStore.getState().setWikiIndex(buildWikiRuntimeIndex(wikiV2Fixture()));
+    useDashboardStore.getState().openWikiTarget({ pageId: "page:file-a", anchor: "run" });
+    useDashboardStore.getState().consumePendingWikiAnchor("other");
+    expect(useDashboardStore.getState().pendingWikiAnchor).toBe("run");
+
+    useDashboardStore.getState().consumePendingWikiAnchor("run");
+    expect(useDashboardStore.getState().pendingWikiAnchor).toBeNull();
+  });
+
+  it("clears a pending target when Wiki metadata removes its selected page", () => {
+    useDashboardStore.getState().setWikiIndex(buildWikiRuntimeIndex(wikiV2Fixture()));
+    useDashboardStore.getState().openWikiTarget({ pageId: "page:file-a", anchor: "run" });
+    useDashboardStore.getState().setWikiIndex(emptyWikiRuntimeIndex());
+
+    expect(useDashboardStore.getState()).toMatchObject({
+      activeWikiPageId: null,
+      pendingWikiAnchor: null,
+    });
+  });
+
+  it("clears a pending Wiki anchor when crossing to the graph surface", () => {
+    useDashboardStore.getState().setWikiIndex(buildWikiRuntimeIndex(wikiV2Fixture()));
+    useDashboardStore.getState().openWikiTarget({ pageId: "page:file-a", anchor: "run" });
+    useDashboardStore.getState().setDashboardSurface("graph");
+    expect(useDashboardStore.getState().pendingWikiAnchor).toBeNull();
+
+    useDashboardStore.getState().openWikiTarget({ pageId: "page:file-a", anchor: "run" });
+    useDashboardStore.getState().openGraphForWikiPage("page:file-a");
+    expect(useDashboardStore.getState()).toMatchObject({
+      dashboardSurface: "graph",
+      pendingWikiAnchor: null,
+    });
+  });
 });

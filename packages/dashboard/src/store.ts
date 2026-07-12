@@ -16,6 +16,7 @@ import {
   type WikiRuntimeIndex,
 } from "./wiki/wikiIndex";
 import type { WikiPageV2 } from "@understand-code/core/knowledge-base";
+import type { WikiTarget } from "./wiki/wikiContent";
 
 export type Persona = "non-technical" | "junior" | "experienced";
 export type NavigationLevel = "overview" | "layer-detail" | "file-detail";
@@ -126,7 +127,10 @@ interface DashboardStore {
   wikiIndex: WikiRuntimeIndex;
   setWikiIndex: (index: WikiRuntimeIndex) => void;
   activeWikiPageId: string | null;
+  pendingWikiAnchor: string | null;
   selectWikiPage: (pageId: string | null) => void;
+  openWikiTarget: (target: WikiTarget) => void;
+  consumePendingWikiAnchor: (anchor: string) => void;
   graphExplorerMode: GraphExplorerMode;
   setGraphExplorerMode: (mode: GraphExplorerMode) => void;
   graphFocusNodeIds: string[];
@@ -326,6 +330,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
   dashboardSurface: "wiki",
   wikiIndex: emptyWikiRuntimeIndex(),
   activeWikiPageId: null,
+  pendingWikiAnchor: null,
   graphExplorerMode: "semantic",
   graphFocusNodeIds: [],
   searchQuery: "",
@@ -399,7 +404,10 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
       pendingFocusContainer: null,
     })),
 
-  setDashboardSurface: (surface) => set({ dashboardSurface: surface }),
+  setDashboardSurface: (surface) => set({
+    dashboardSurface: surface,
+    ...(surface === "graph" ? { pendingWikiAnchor: null } : {}),
+  }),
 
   setWikiIndex: (index) =>
     set((state) => {
@@ -410,23 +418,43 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
       return {
         wikiIndex: index,
         activeWikiPageId: preservedPage?.id ?? null,
+        pendingWikiAnchor: preservedPage ? state.pendingWikiAnchor : null,
         graphFocusNodeIds: hadWikiGraphFocus && preservedPage
           ? [...new Set(preservedPage.directNodeIds)]
           : [],
       };
     }),
 
-  selectWikiPage: (pageId) => set({ activeWikiPageId: pageId }),
+  selectWikiPage: (pageId) => set({ activeWikiPageId: pageId, pendingWikiAnchor: null }),
+
+  openWikiTarget: (target) =>
+    set((state) => state.wikiIndex.pagesById.has(target.pageId)
+      ? {
+          dashboardSurface: "wiki",
+          activeWikiPageId: target.pageId,
+          pendingWikiAnchor: target.anchor ?? null,
+        }
+      : {}),
+
+  consumePendingWikiAnchor: (anchor) =>
+    set((state) => state.pendingWikiAnchor === anchor ? { pendingWikiAnchor: null } : {}),
 
   setGraphExplorerMode: (mode) => set({ graphExplorerMode: mode }),
 
   openGraphForWikiPage: (pageId) =>
     set((state) => {
       const page = state.wikiIndex.pagesById.get(pageId);
-      if (!page) return { dashboardSurface: "graph", graphFocusNodeIds: [] };
+      if (!page) {
+        return {
+          dashboardSurface: "graph",
+          graphFocusNodeIds: [],
+          pendingWikiAnchor: null,
+        };
+      }
       return {
         dashboardSurface: "graph",
         activeWikiPageId: pageId,
+        pendingWikiAnchor: null,
         graphFocusNodeIds: wikiPageNodeIds(page),
         graphExplorerMode: "focus",
       };
@@ -441,6 +469,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
         dashboardSurface: "wiki",
         selectedNodeId: nodeId,
         activeWikiPageId: page?.id ?? state.activeWikiPageId,
+        pendingWikiAnchor: null,
       };
     }),
 

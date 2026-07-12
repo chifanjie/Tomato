@@ -92,6 +92,7 @@ export interface WikiSearchRecordV2 {
   kind: "page" | "symbol";
   title: string;
   summary?: string;
+  content?: string;
   pageId: string;
   anchor?: string;
   nodeId?: string;

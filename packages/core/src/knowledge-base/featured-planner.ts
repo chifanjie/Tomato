@@ -585,8 +585,18 @@ export function buildFeaturedPlan(input: BuildFeaturedPlanInput): FeaturedPlan {
   const rankedTopics = topicPlan.topics
     .filter((topic) => topic.tier === "required")
     .sort((left, right) => {
-      const leftRank = left.reasons.length * 10 + (profile.nodeDegrees.get(left.topicNodeId)?.total ?? 0);
-      const rightRank = right.reasons.length * 10 + (profile.nodeDegrees.get(right.topicNodeId)?.total ?? 0);
+      const routeRank = (topic: TopicPlan["topics"][number]): number => {
+        const node = profile.indexes.nodesById.get(topic.topicNodeId);
+        const entryBoost = topic.reasons.some((reason) => reason.includes("entry candidate")) ? 30 : 0;
+        const testPenalty = /(?:^|\/)(?:__tests__|tests?|fixtures?|examples?)(?:\/|$)|\.(?:test|spec)\./iu
+          .test(node?.filePath ?? "") ? 50 : 0;
+        return topic.reasons.length * 10
+          + (profile.nodeDegrees.get(topic.topicNodeId)?.total ?? 0)
+          + entryBoost
+          - testPenalty;
+      };
+      const leftRank = routeRank(left);
+      const rightRank = routeRank(right);
       return rightRank - leftRank || left.topicNodeId.localeCompare(right.topicNodeId);
     });
   for (const [topicIndex, topic] of rankedTopics.entries()) {

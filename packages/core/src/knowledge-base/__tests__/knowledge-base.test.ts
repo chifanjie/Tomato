@@ -352,12 +352,28 @@ describe("graph-to-knowledge-base", () => {
     const quality = kb.documents.find((document) => document.path === "质量状态.md");
     const coverage = kb.documents.find((document) => document.path === "引用覆盖.md");
 
-    expect(overview).toContain("## 项目目的与边界");
-    expect(overview).toContain("## 生命周期与可发布流程");
-    expect(overview).toContain("## 配置、结构与测试边界");
-    expect(overview).toContain("## 推荐阅读");
-    expect(sourceEntry).toContain("## 配置与测试入口");
+    expect(overview).toContain("## 项目目标与边界");
+    expect(overview).toContain("## 完整生命周期");
+    expect(overview).toContain("## 配置、依赖与测试");
+    expect(overview).toContain("## 推荐阅读路线");
+    expect(sourceEntry).toContain("## 配置、依赖与测试");
     expect(sourceEntry).toContain("config/feed.yaml");
+    expect(overview).not.toContain("## 项目目的与边界");
+    expect(overview).not.toContain("## 生命周期与可发布流程");
+    expect(sourceEntry).not.toContain("## 入口文件与函数");
+    expect(sourceEntry).not.toContain("## 配置与测试入口");
+    for (const document of kb.documents.filter((candidate) => candidate.category === "module")) {
+      expect(document.content).not.toContain("## 责任与非责任");
+      expect(document.content).not.toContain("## 核心文件（按关系度，最多十五个）");
+    }
+    for (const document of kb.documents.filter((candidate) => candidate.category === "capability")) {
+      expect(document.content).not.toContain("## 非技术同学速读");
+      expect(document.content).not.toContain("## 主证据事实");
+    }
+    for (const document of kb.documents.filter((candidate) => candidate.role === "featured")) {
+      const headings = [...document.content.matchAll(/^##\s+(.+)$/gm)].map((match) => match[1]);
+      expect(new Set(headings).size, `${document.path} 不应包含重复章节`).toBe(headings.length);
+    }
     expect(quality).toMatchObject({ role: "maintenance", category: "quality", directNodeIds: [], contextNodeIds: [] });
     expect(coverage).toMatchObject({ role: "maintenance", category: "coverage", directNodeIds: [], contextNodeIds: [] });
   });

@@ -71,7 +71,11 @@ describe("featured planning", () => {
         sourceFileNodeId: name === "apply" ? "file:src/service.ts" : "file:src/a.ts",
         documentPath: `关键函数专题/${name}.md`,
         title: `${name} 专题`,
-        reasons: ["required"],
+        reasons: name === "run"
+          ? ["entry candidate: entry-like name or summary"]
+          : name === "helper"
+            ? ["complex", "important", "high degree", "business relevant"]
+            : ["required"],
         coveredNodeIds: [name === "apply" ? "function:src/service.ts:apply" : `function:src/a.ts:${name}`],
         linkedFileDocumentPath: name === "apply" ? "文件文档/src-service.ts.md" : "文件文档/src-a.ts.md",
         tier: "required" as const,
@@ -88,6 +92,7 @@ describe("featured planning", () => {
     expect(topicDocuments.filter((document) => document.role === "featured")).toHaveLength(2);
     expect(topicDocuments.filter((document) => document.role === "reference")).toHaveLength(2);
     expect(topicDocuments.filter((document) => document.role === "reference").every((document) => document.route === undefined)).toBe(true);
+    expect(topicDocuments.find((document) => document.title === "run 专题")?.role).toBe("featured");
   });
 
   it("keeps only production-backed capabilities on the guided route", () => {

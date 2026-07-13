@@ -86,6 +86,22 @@ const RELATION_LABELS: Record<SemanticGraphDocMetadataV2["relation"], string> = 
   none: "待补正文",
 };
 
+export function graphLayoutRevision(graph: KnowledgeGraph): string {
+  const compareText = (left: string, right: string) =>
+    left < right ? -1 : left > right ? 1 : 0;
+  return JSON.stringify({
+    nodes: graph.nodes
+      .map((node) => [node.id, node.type, node.filePath ?? ""])
+      .sort((left, right) => compareText(left[0]!, right[0]!)),
+    edges: graph.edges
+      .map((edge) => [edge.source, edge.target, edge.type, edge.direction])
+      .sort((left, right) => compareText(left.join("\u0000"), right.join("\u0000"))),
+    layers: graph.layers
+      .map((layer) => [layer.id, [...layer.nodeIds].sort().join("\u0000")])
+      .sort((left, right) => compareText(left[0]!, right[0]!)),
+  });
+}
+
 export function directionalEndpointPairs(
   edge: Pick<SemanticGraphEdge, "source" | "target" | "directions">,
 ): Array<{ source: string; target: string }> {

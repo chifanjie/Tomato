@@ -176,32 +176,35 @@ export function extendSemanticNodePositions(
   nodes: SemanticGraphNode[],
 ): Map<string, SemanticNodePosition> {
   const positions = new Map<string, SemanticNodePosition>();
-  const usedOffsetsByColumn = new Map<number, Set<number>>();
+  const usedCoordinates = new Set<string>();
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
   const missingNodes: SemanticGraphNode[] = [];
 
   for (const node of [...nodes].sort(compareSemanticNodes)) {
-    const x = groupIndex(node.group) * GROUP_COLUMN_WIDTH;
     const previousPosition = previous.get(node.id);
-    const offset = previousPosition ? Math.round(previousPosition.y / GROUP_ROW_HEIGHT) : -1;
-    const usedOffsets = usedOffsetsByColumn.get(x) ?? new Set<number>();
-    usedOffsetsByColumn.set(x, usedOffsets);
-
-    if (previousPosition && previousPosition.x === x && !usedOffsets.has(offset)) {
+    const coordinate = previousPosition
+      ? `${previousPosition.x}:${previousPosition.y}`
+      : "";
+    if (previousPosition && !usedCoordinates.has(coordinate)) {
       positions.set(node.id, previousPosition);
-      usedOffsets.add(offset);
+      usedCoordinates.add(coordinate);
     } else {
       missingNodes.push(node);
     }
   }
 
   for (const node of missingNodes) {
-    const x = groupIndex(node.group) * GROUP_COLUMN_WIDTH;
-    const usedOffsets = usedOffsetsByColumn.get(x) ?? new Set<number>();
-    usedOffsetsByColumn.set(x, usedOffsets);
-    let offset = 0;
-    while (usedOffsets.has(offset)) offset += 1;
-    positions.set(node.id, { x, y: offset * GROUP_ROW_HEIGHT });
-    usedOffsets.add(offset);
+    const groupPositions = [...positions]
+      .filter(([id]) => nodesById.get(id)?.group === node.group)
+      .map(([, position]) => position);
+    const x = groupPositions[0]?.x ?? groupIndex(node.group) * GROUP_COLUMN_WIDTH;
+    let y = groupPositions.length > 0
+      ? Math.max(...groupPositions.map((position) => position.y)) + GROUP_ROW_HEIGHT
+      : 0;
+    while (usedCoordinates.has(`${x}:${y}`)) y += GROUP_ROW_HEIGHT;
+    const position = { x, y };
+    positions.set(node.id, position);
+    usedCoordinates.add(`${position.x}:${position.y}`);
   }
 
   return positions;

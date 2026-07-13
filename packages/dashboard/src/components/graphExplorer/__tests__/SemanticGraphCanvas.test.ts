@@ -47,22 +47,23 @@ describe("SemanticGraphCanvas interaction contract", () => {
     expect(source).not.toContain("SelectedNodeFocus");
     expect(source).not.toContain("<SelectedNodeFocus");
     expect(source).toContain("extendSemanticNodePositions");
-    expect(source).toContain("layoutCacheRef");
-    expect(source).toContain("const cacheForView");
-    expect(source).toContain("useEffect(() => {");
-    expect(source).toContain("layoutCacheRef.current = { viewKey, positions: positionsById };");
+    expect(source).toContain("requestSemanticLayout(input, { signal: controller.signal })");
+    expect(source).toContain("const layoutRequestId = useRef(0)");
+    expect(source).toContain("const completedPositions");
+    expect(source).toContain("正在计算图谱布局");
+    expect(source).toContain("Position.Left");
+    expect(source).toContain("Position.Right");
 
-    const renderCacheStart = source.indexOf("const layoutCacheRef");
-    const structureKeyStart = source.indexOf("const structureKey", renderCacheStart);
-    expect(renderCacheStart).toBeGreaterThan(-1);
-    expect(structureKeyStart).toBeGreaterThan(renderCacheStart);
-    expect(source.slice(renderCacheStart, structureKeyStart)).not.toContain("layoutCacheRef.current =");
-
-    const positionMemoStart = source.indexOf("const positionsById", structureKeyStart);
-    const positionEffectStart = source.indexOf("useEffect(() => {", positionMemoStart);
-    expect(positionMemoStart).toBeGreaterThan(structureKeyStart);
-    expect(positionEffectStart).toBeGreaterThan(positionMemoStart);
-    expect(source.slice(positionMemoStart, positionEffectStart)).not.toContain("layoutCacheRef.current");
+    const layoutEffectStart = source.indexOf("useEffect(() => {", source.indexOf("const layoutRequestId"));
+    const completedPositionsStart = source.indexOf("const completedPositions", layoutEffectStart);
+    expect(layoutEffectStart).toBeGreaterThan(-1);
+    expect(completedPositionsStart).toBeGreaterThan(layoutEffectStart);
+    const layoutEffectSource = source.slice(layoutEffectStart, completedPositionsStart);
+    expect(layoutEffectSource).toContain("queueMicrotask");
+    expect(layoutEffectSource).toContain("controller.abort()");
+    expect(layoutEffectSource).toContain("}, [isCompactOverview, viewKey]);");
+    expect(layoutEffectSource).not.toContain("selectedNodeId");
+    expect(layoutEffectSource).not.toContain("structureKey]");
 
     const viewKeyStart = explorerSource.indexOf("const canvasViewKey");
     const viewKeyEnd = explorerSource.indexOf("return (", viewKeyStart);
@@ -76,6 +77,7 @@ describe("SemanticGraphCanvas interaction contract", () => {
     expect(viewKeySource).toContain("graph.project.name");
     expect(viewKeySource).toContain("graph.project.gitCommitHash");
     expect(viewKeySource).toContain("graph.project.analyzedAt");
+    expect(viewKeySource).toContain("layoutRevision");
   });
 
   it("renders graph metadata and React Flow controls in Simplified Chinese", () => {

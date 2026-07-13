@@ -18,12 +18,36 @@ import {
   buildGraphSelectionDetails,
   coverageBadgeForNode,
   directionalEndpointPairs,
+  graphLayoutRevision,
   normalizeGraphModeForOptions,
 } from "../graphExplorerModel";
 import GraphCoverageLegend from "../GraphCoverageLegend";
 import GraphModeToolbar from "../GraphModeToolbar";
 
 describe("graphExplorerModel", () => {
+  it("derives a deterministic layout revision from the graph structure", () => {
+    const graph = graphFixture();
+    const reordered = {
+      ...graph,
+      nodes: [...graph.nodes].reverse(),
+      edges: [...graph.edges].reverse(),
+      layers: graph.layers.map((layer) => ({ ...layer, nodeIds: [...layer.nodeIds].reverse() })).reverse(),
+    };
+    expect(graphLayoutRevision(reordered)).toBe(graphLayoutRevision(graph));
+
+    const changed = {
+      ...graph,
+      edges: [...graph.edges, {
+        source: graph.nodes[0]!.id,
+        target: graph.nodes.at(-1)!.id,
+        type: "depends_on" as const,
+        direction: "forward" as const,
+        weight: 1,
+      }],
+    };
+    expect(graphLayoutRevision(changed)).not.toBe(graphLayoutRevision(graph));
+  });
+
   it("builds aggregate details without requiring a raw graph node", () => {
     const fixture = aggregateCoverageFixture();
     const semanticGraph = buildHierarchicalSemanticGraph({

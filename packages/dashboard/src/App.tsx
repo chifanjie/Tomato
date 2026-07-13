@@ -556,7 +556,6 @@ function DashboardContent({
   const selectWikiPage = useDashboardStore((state) => state.selectWikiPage);
   const openWikiTarget = useDashboardStore((state) => state.openWikiTarget);
   const openGraphForWikiPage = useDashboardStore((state) => state.openGraphForWikiPage);
-  const layoutIssues = useDashboardStore((state) => state.layoutIssues);
   const isMobile = useIsMobile();
   const [searchOpen, setSearchOpen] = useState(false);
   const [wikiDrawerOpen, setWikiDrawerOpen] = useState(false);
@@ -568,10 +567,6 @@ function DashboardContent({
   const searchControllerRef = useRef(createSearchArtifactRequestController());
   const fullSearchRecordsRef = useRef<Parameters<typeof buildWikiSearchRuntime>[0]>([]);
   const recentWikiTargetRef = useRef<WikiTarget | null>(null);
-  const allIssues = useMemo(
-    () => [...graphIssues, ...layoutIssues],
-    [graphIssues, layoutIssues],
-  );
   const noteWikiLocationApplied = useCallback(() => {
     setWikiNavigationRevision((revision) => revision + 1);
   }, []);
@@ -727,7 +722,7 @@ function DashboardContent({
         </div>
       </header>
 
-      {allIssues.length > 0 && !loadError && <WarningBanner issues={allIssues} />}
+      {graphIssues.length > 0 && !loadError && <WarningBanner issues={graphIssues} />}
       {loadError && (
         <div className="border-b border-red-700 bg-red-900/30 px-5 py-3 text-sm text-red-200">
           {loadError}

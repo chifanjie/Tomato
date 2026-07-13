@@ -9,6 +9,7 @@ import SemanticGraphCanvas from "./SemanticGraphCanvas";
 import {
   availableGraphModes,
   buildGraphExplorerView,
+  graphLayoutRevision,
   normalizeGraphModeForOptions,
 } from "./graphExplorerModel";
 
@@ -32,6 +33,10 @@ export default function GraphExplorer({
   const selectNode = useDashboardStore((state) => state.selectNode);
   const openWikiForGraphNode = useDashboardStore((state) => state.openWikiForGraphNode);
   const [navigation, setNavigation] = useState<GraphExplorerNavigation>(OVERVIEW_NAVIGATION);
+  const layoutRevision = useMemo(
+    () => graph ? graphLayoutRevision(graph) : "",
+    [graph],
+  );
 
   const modeOptions = useMemo(
     () => graph ? availableGraphModes(graph, wikiIndex) : [],
@@ -104,6 +109,7 @@ export default function GraphExplorer({
     graph.project.name,
     graph.project.gitCommitHash,
     graph.project.analyzedAt,
+    layoutRevision,
     effectiveMode,
     presentation.level,
     presentation.scopeId ?? "",

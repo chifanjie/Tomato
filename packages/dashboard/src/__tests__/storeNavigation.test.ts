@@ -52,7 +52,6 @@ describe("dashboard wiki and graph surface state", () => {
     state.clearGraphFocus();
     state.selectNode(null);
     state.setGraphExplorerMode("architecture");
-    state.clearLayoutIssues();
   });
 
   it("starts with the two active surfaces and architecture graph mode", () => {
@@ -217,19 +216,6 @@ describe("dashboard wiki and graph surface state", () => {
     });
   });
 
-  it("deduplicates layout issues and clears them explicitly", () => {
-    const issue = {
-      level: "dropped" as const,
-      category: "invalid-layout",
-      message: "布局输入无效",
-    };
-    useDashboardStore.getState().appendLayoutIssues([issue, issue]);
-    useDashboardStore.getState().appendLayoutIssues([issue]);
-    expect(useDashboardStore.getState().layoutIssues).toEqual([issue]);
-
-    useDashboardStore.getState().clearLayoutIssues();
-    expect(useDashboardStore.getState().layoutIssues).toEqual([]);
-  });
 });
 
 describe("active dashboard store source", () => {
@@ -244,9 +230,18 @@ describe("active dashboard store source", () => {
       "persona", "diffMode", "filterPanelOpen", "exportMenuOpen", "pathFinderOpen",
       "reactFlowInstance", "viewMode", "domainGraph", "tourActive", "codeViewerOpen",
       "detailLevel", "nodeTypeFilters", "expandedContainers", "containerLayoutCache",
+      "layoutIssues", "appendLayoutIssues", "clearLayoutIssues",
     ]) {
       expect(source).not.toMatch(new RegExp(`\\b${removed}\\b`));
     }
     expect(source).toContain("setConsoleGraph");
+
+    const appSource = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../App.tsx"),
+      "utf8",
+    );
+    for (const removed of ["layoutIssues", "appendLayoutIssues", "clearLayoutIssues"]) {
+      expect(appSource).not.toMatch(new RegExp(`\\b${removed}\\b`));
+    }
   });
 });

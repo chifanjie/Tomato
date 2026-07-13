@@ -265,16 +265,7 @@ export default defineConfig({
             return "react-vendor";
           }
           if (id.includes("node_modules/@xyflow/")) return "xyflow";
-          // ELK is ~1.6MB raw — split into its own chunk so it doesn't
-          // bloat the main bundle. graphology is similarly large.
-          if (id.includes("node_modules/elkjs/")) return "elk";
-          if (id.includes("node_modules/graphology")) return "graphology";
-          if (
-            id.includes("node_modules/@dagrejs/") ||
-            id.includes("node_modules/d3-force/")
-          ) {
-            return "graph-layout";
-          }
+          if (id.includes("node_modules/@dagrejs/")) return "graph-layout";
           if (
             id.includes("node_modules/react-markdown/") ||
             id.includes("node_modules/hast-util-to-jsx-runtime/") ||

@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -20,12 +20,14 @@ import type {
   GraphExplorerDisplayMode,
   HierarchicalSemanticGraph,
 } from "../../graphExplorer/hierarchicalGraph";
+import { requestSemanticLayout } from "../../graphExplorer/layoutClient.js";
 import {
   buildSelectionPresentation,
   graphCardKeyAction,
 } from "../../graphExplorer/selectionPresentation";
 import { useReducedMotion } from "../../hooks/useReducedMotion";
 import { useDashboardStore } from "../../store";
+import type { LayoutMessage } from "../../utils/layoutAlgorithm.js";
 import FlowingSemanticEdge, { type FlowingSemanticEdgeData } from "./FlowingSemanticEdge";
 import { coverageBadgeForNode } from "./graphExplorerModel";
 import {
@@ -145,7 +147,7 @@ function SemanticNodeCard({ data }: NodeProps<SemanticFlowNode>) {
       }}
     >
       <div className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: groupColor }} />
-      <Handle type="target" position={Position.Top} className="!h-2 !w-2 !bg-text-muted" />
+      <Handle type="target" position={Position.Left} className="!h-2 !w-2 !bg-text-muted" />
       <div className="flex h-full flex-col pl-4 pr-3 py-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
@@ -200,7 +202,7 @@ function SemanticNodeCard({ data }: NodeProps<SemanticFlowNode>) {
           </span>
         </div>
       </div>
-      <Handle type="source" position={Position.Bottom} className="!h-2 !w-2 !bg-text-muted" />
+      <Handle type="source" position={Position.Right} className="!h-2 !w-2 !bg-text-muted" />
     </div>
   );
 }
@@ -266,14 +268,6 @@ export default function SemanticGraphCanvas({
     lastDrillRef.current = null;
   }, [viewKey]);
 
-  const layoutCacheRef = useRef<{
-    viewKey: string;
-    positions: Map<string, SemanticNodePosition>;
-  }>({ viewKey: "", positions: new Map() });
-  const cacheForView = layoutCacheRef.current.viewKey === viewKey
-    ? layoutCacheRef.current.positions
-    : new Map<string, SemanticNodePosition>();
-
   const structureKey = [
     semanticGraph.nodes
       .map((node) => `${node.id}:${node.kind ?? "node"}`)
@@ -284,13 +278,82 @@ export default function SemanticGraphCanvas({
       .sort()
       .join("|"),
   ].join("::");
-  const positionsById = useMemo(
-    () => extendSemanticNodePositions(cacheForView, semanticGraph.nodes),
-    [cacheForView, structureKey, viewKey],
-  );
+
+  const isCompactOverview = semanticGraph.presentation.level === "overview";
+  const [layoutState, setLayoutState] = useState<{
+    viewKey: string;
+    positions: Map<string, SemanticNodePosition>;
+  } | null>(null);
+  const [layoutFailureViewKey, setLayoutFailureViewKey] = useState<string | null>(null);
+  const layoutRequestId = useRef(0);
+
   useEffect(() => {
-    layoutCacheRef.current = { viewKey, positions: positionsById };
-  }, [positionsById, viewKey]);
+    if (isCompactOverview || semanticGraph.nodes.length === 0) return;
+
+    const controller = new AbortController();
+    let active = true;
+    setLayoutFailureViewKey((current) => current === viewKey ? null : current);
+
+    queueMicrotask(() => {
+      if (!active || controller.signal.aborted) return;
+
+      const requestId = ++layoutRequestId.current;
+      const input: LayoutMessage = {
+        requestId,
+        direction: "LR",
+        nodes: [...semanticGraph.nodes]
+          .sort(compareSemanticNodes)
+          .map((node) => ({ id: node.id, width: NODE_WIDTH, height: NODE_HEIGHT })),
+        edges: semanticGraph.edges
+          .map((edge) => ({ source: String(edge.source), target: String(edge.target) }))
+          .sort((left, right) => left.source.localeCompare(right.source)
+            || left.target.localeCompare(right.target)),
+      };
+
+      void requestSemanticLayout(input, { signal: controller.signal })
+        .then((result) => {
+          if (
+            !active
+            || controller.signal.aborted
+            || result.requestId !== requestId
+            || requestId !== layoutRequestId.current
+          ) {
+            return;
+          }
+          setLayoutState({
+            viewKey,
+            positions: new Map(Object.entries(result.positions)),
+          });
+          setLayoutFailureViewKey(null);
+        })
+        .catch((error: unknown) => {
+          if (error instanceof Error && error.name === "AbortError") return;
+          if (!active || requestId !== layoutRequestId.current) return;
+          setLayoutFailureViewKey(viewKey);
+        });
+    });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+    // viewKey is the stable layout revision. Selection may change the visible
+    // capped set without changing this key and must not start another worker.
+  }, [isCompactOverview, viewKey]);
+
+  const completedPositions = layoutState?.viewKey === viewKey
+    ? layoutState.positions
+    : null;
+  const basePositions = useMemo(
+    () => isCompactOverview
+      ? extendSemanticNodePositions(new Map(), semanticGraph.nodes)
+      : completedPositions ?? new Map<string, SemanticNodePosition>(),
+    [completedPositions, isCompactOverview, structureKey],
+  );
+  const positionsById = useMemo(
+    () => extendSemanticNodePositions(basePositions, semanticGraph.nodes),
+    [basePositions, structureKey],
+  );
 
   const { nodes, edges } = useMemo(() => {
     const sortedNodes = [...semanticGraph.nodes].sort(compareSemanticNodes);
@@ -365,6 +428,29 @@ export default function SemanticGraphCanvas({
       <div className="uc-graph-frame flex min-h-[420px] flex-1 items-center justify-center overflow-hidden">
         <p className="uc-panel px-4 py-3 text-sm text-text-muted">
           当前层级没有可显示的图谱元素。
+        </p>
+      </div>
+    );
+  }
+
+  if (!isCompactOverview && completedPositions === null) {
+    if (layoutFailureViewKey === viewKey) {
+      return (
+        <div className="uc-graph-frame flex min-h-[420px] flex-1 items-center justify-center overflow-hidden">
+          <p role="alert" className="uc-panel px-4 py-3 text-sm text-text-muted">
+            图谱布局计算失败，请切换层级后重试。
+          </p>
+        </div>
+      );
+    }
+    return (
+      <div className="uc-graph-frame flex min-h-[420px] flex-1 items-center justify-center overflow-hidden">
+        <p
+          role="status"
+          aria-live="polite"
+          className="uc-panel px-4 py-3 text-sm text-text-muted"
+        >
+          正在计算图谱布局…
         </p>
       </div>
     );

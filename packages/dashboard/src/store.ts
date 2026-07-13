@@ -1,5 +1,4 @@
 import { primaryDestinationForNode } from "@understand-code/core/knowledge-base";
-import type { GraphIssue } from "@understand-code/core/schema";
 import type { KnowledgeGraph } from "@understand-code/core/types";
 import { create } from "zustand";
 import type { WikiTarget } from "./wiki/wikiContent";
@@ -22,7 +21,6 @@ interface DashboardStore {
   graphFocusNodeIds: string[];
   graphFocusPageId: string | null;
   graphWikiNotice: string | null;
-  layoutIssues: GraphIssue[];
   setConsoleGraph: (graph: KnowledgeGraph) => void;
   setDashboardSurface: (surface: DashboardSurface) => void;
   setWikiIndex: (index: WikiRuntimeIndex) => void;
@@ -34,8 +32,6 @@ interface DashboardStore {
   openGraphForWikiPage: (pageId: string) => void;
   clearGraphFocus: () => void;
   openWikiForGraphNode: (nodeId: string) => WikiTarget | null;
-  appendLayoutIssues: (issues: GraphIssue[]) => void;
-  clearLayoutIssues: () => void;
 }
 
 function wikiPageDirectNodeIds(index: WikiRuntimeIndex, pageId: string): string[] {
@@ -54,7 +50,6 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
   graphFocusNodeIds: [],
   graphFocusPageId: null,
   graphWikiNotice: null,
-  layoutIssues: [],
 
   setConsoleGraph: (graph) => set({ graph }),
 
@@ -146,18 +141,4 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
     set({ selectedNodeId: nodeId, graphWikiNotice: null });
     return destination;
   },
-
-  appendLayoutIssues: (issues) => set((state) => {
-    if (issues.length === 0) return {};
-    const seen = new Set(state.layoutIssues.map((issue) => `${issue.level}|${issue.message}`));
-    const fresh = issues.filter((issue) => {
-      const key = `${issue.level}|${issue.message}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    return fresh.length > 0 ? { layoutIssues: [...state.layoutIssues, ...fresh] } : {};
-  }),
-
-  clearLayoutIssues: () => set({ layoutIssues: [] }),
 }));

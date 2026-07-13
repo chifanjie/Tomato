@@ -5,34 +5,13 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
+import { graphFileCandidates, knowledgeBaseRootCandidates } from "./vite.paths";
 
 // Generate a one-time token when the server process starts.
 // This token is printed to the terminal and must be in the URL
 // to fetch knowledge-graph.json or diff-overlay.json.
 const ACCESS_TOKEN = process.env.UNDERSTAND_ACCESS_TOKEN || crypto.randomBytes(16).toString("hex");
 const MAX_SOURCE_FILE_BYTES = 1024 * 1024;
-
-function graphFileCandidates(fileName: string): string[] {
-  const graphDir = process.env.GRAPH_DIR;
-  return [
-    ...(graphDir
-      ? [path.resolve(graphDir, `.understand-code/${fileName}`)]
-      : []),
-    path.resolve(process.cwd(), `.understand-code/${fileName}`),
-    path.resolve(process.cwd(), `../../../.understand-code/${fileName}`),
-  ];
-}
-
-function knowledgeBaseRootCandidates(): string[] {
-  const graphDir = process.env.GRAPH_DIR;
-  return [
-    ...(graphDir
-      ? [path.resolve(graphDir, ".understand-code", "knowledge-base")]
-      : []),
-    path.resolve(process.cwd(), ".understand-code", "knowledge-base"),
-    path.resolve(process.cwd(), "../../../.understand-code/knowledge-base"),
-  ];
-}
 
 function findGraphFile(fileName: string): string | null {
   return graphFileCandidates(fileName).find((candidate) => fs.existsSync(candidate)) ?? null;

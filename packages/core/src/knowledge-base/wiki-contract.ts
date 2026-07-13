@@ -289,6 +289,70 @@ export const WikiIndexV2Schema = WikiIndexInvariantInputV2Schema.extend({
   evidence: z.array(WikiEvidenceV2Schema),
 }) satisfies z.ZodType<WikiIndexV2>;
 
+export const WikiSearchRecordV2Schema = z.strictObject({
+  id: z.string(),
+  kind: z.enum(["page", "symbol"]),
+  title: z.string(),
+  summary: z.string().optional(),
+  content: z.string().optional(),
+  pageId: z.string(),
+  anchor: z.string().optional(),
+  nodeId: z.string().optional(),
+  role: WikiDocumentRoleSchema,
+  category: WikiDocumentCategorySchema,
+  relation: DocumentationRelationSchema,
+  terms: StringArraySchema,
+  businessTerms: StringArraySchema,
+  filePath: z.string().optional(),
+}) satisfies z.ZodType<WikiSearchRecordV2>;
+
+export const WikiSearchIndexV2Schema = z.strictObject({
+  version: z.literal(2),
+  generatedAt: z.string(),
+  records: z.array(WikiSearchRecordV2Schema),
+}) satisfies z.ZodType<WikiSearchIndexV2>;
+
+export const WikiClaimTraceV2Schema = z.strictObject({
+  id: z.string(),
+  text: z.string(),
+  nodeIds: StringArraySchema,
+  evidenceIds: StringArraySchema,
+}) satisfies z.ZodType<WikiClaimTraceV2>;
+
+export const WikiDocumentTraceRecordV2Schema = z.strictObject({
+  pageId: z.string(),
+  directNodeIds: StringArraySchema,
+  contextNodeIds: StringArraySchema,
+  evidenceIds: StringArraySchema,
+  quality: ContentQualitySchema,
+  generationStatus: GenerationStatusSchema,
+  issues: StringArraySchema,
+  claims: z.array(WikiClaimTraceV2Schema),
+}) satisfies z.ZodType<WikiDocumentTraceRecordV2>;
+
+export const WikiDocumentTracesV2Schema = z.strictObject({
+  version: z.literal(2),
+  generatedAt: z.string(),
+  traces: z.array(WikiDocumentTraceRecordV2Schema),
+}) satisfies z.ZodType<WikiDocumentTracesV2>;
+
+export const WikiGenerationReportV2Schema = z.strictObject({
+  version: z.literal(2),
+  generatedAt: z.string(),
+  generationMode: z.string(),
+  source: z.strictObject({
+    outputLanguage: z.string(),
+    sourceRootIdentity: z.string(),
+    graphDigest: z.string().optional(),
+    gitCommitHash: z.string().optional(),
+  }),
+  sourceRead: CountSummaryV2Schema,
+  mainReadiness: MainReadinessSummaryV2Schema,
+  referenceCoverage: ReferenceCoverageSummaryV2Schema,
+  warnings: StringArraySchema,
+  errors: StringArraySchema,
+}) satisfies z.ZodType<WikiGenerationReportV2>;
+
 function addInvariantError(
   errors: string[],
   path: string,
@@ -688,6 +752,25 @@ export function parseWikiIndexV2(value: unknown): WikiParseResult<WikiIndexV2> {
     validateWikiIndexInvariants(invariantInput.data, errors);
   }
   return { ok: false, errors };
+}
+
+function parseWikiContract<T>(schema: z.ZodType<T>, value: unknown): WikiParseResult<T> {
+  const parsed = schema.safeParse(value);
+  return parsed.success
+    ? { ok: true, value: parsed.data, errors: [] }
+    : { ok: false, errors: formatSchemaErrors(parsed.error) };
+}
+
+export function parseWikiSearchIndexV2(value: unknown): WikiParseResult<WikiSearchIndexV2> {
+  return parseWikiContract(WikiSearchIndexV2Schema, value);
+}
+
+export function parseWikiDocumentTracesV2(value: unknown): WikiParseResult<WikiDocumentTracesV2> {
+  return parseWikiContract(WikiDocumentTracesV2Schema, value);
+}
+
+export function parseWikiGenerationReportV2(value: unknown): WikiParseResult<WikiGenerationReportV2> {
+  return parseWikiContract(WikiGenerationReportV2Schema, value);
 }
 
 interface WikiIndexLookups {

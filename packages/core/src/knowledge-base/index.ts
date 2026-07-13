@@ -9,6 +9,7 @@ export * from "./writer-contracts.js";
 export * from "./wiki-contract.js";
 export * from "./wiki-v1-adapter.js";
 export * from "./artifacts.js";
+export * from "./artifact-verifier.js";
 export * from "./quality.js";
 export * from "./queue.js";
 export * from "./merge.js";

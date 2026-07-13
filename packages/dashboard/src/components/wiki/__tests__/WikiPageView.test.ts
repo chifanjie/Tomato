@@ -1,7 +1,11 @@
-import { createElement } from "react";
+// @vitest-environment happy-dom
+
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildWikiMarkdownPageLookup, markdownWithoutExplicitAnchors } from "../../../wiki/wikiContent";
+import { wikiV2Fixture } from "../../../wiki/__tests__/fixtures/wikiV2Fixtures";
 import {
   extractWikiOutline,
   findWikiAnchorTarget,
@@ -11,7 +15,40 @@ import {
 } from "../WikiPageView";
 import WikiPageView from "../WikiPageView";
 
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+afterEach(() => {
+  document.body.replaceChildren();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
 describe("WikiPageView Markdown and anchors", () => {
+  it("shows a fixed Chinese recovery message instead of the raw Markdown transport error", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const fetcher = vi.fn().mockRejectedValue(new Error("Failed to fetch private detail"));
+    vi.stubGlobal("fetch", fetcher);
+    const payload = wikiV2Fixture();
+    const page = payload.pages[0];
+    if (!page) throw new Error("缺少 Wiki 测试页面");
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(createElement(WikiPageView, { page, pages: payload.pages }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("文档加载失败，请检查网络后重试。");
+    expect(container.textContent).not.toContain("Failed to fetch");
+    expect(container.textContent).not.toContain("private detail");
+    expect(warn).toHaveBeenCalledWith("知识库文档加载失败", expect.any(Error));
+
+    await act(async () => root.unmount());
+  });
+
   it("keeps the committed null-page boundary compatible while Markdown props stay optional", () => {
     const html = renderToStaticMarkup(createElement(WikiPageView, {
       page: null,

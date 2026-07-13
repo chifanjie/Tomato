@@ -291,11 +291,12 @@ function LoadedWikiPageView({
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
+        console.warn("知识库文档加载失败", error);
         setState({
           pageId: page.id,
           status: "error",
           markdown: "",
-          error: error instanceof Error ? error.message : "文档加载失败，请稍后重试",
+          error: "文档加载失败，请检查网络后重试。",
         });
       });
 

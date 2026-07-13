@@ -1,5 +1,11 @@
+// @vitest-environment happy-dom
+
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { resolve } from "node:path";
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { HierarchicalSemanticGraph } from "../../../graphExplorer/hierarchicalGraph";
 import type { SemanticGraphNode } from "../../../graphExplorer/semanticGraph";
 import {
   extendSemanticNodePositions,
@@ -11,10 +17,225 @@ import {
   semanticNodeGroupLabel,
 } from "../semanticGraphCanvasModel";
 
-const source = readFileSync(new URL("../SemanticGraphCanvas.tsx", import.meta.url), "utf8");
-const explorerSource = readFileSync(new URL("../GraphExplorer.tsx", import.meta.url), "utf8");
+const flowHarness = vi.hoisted(() => ({
+  props: null as Record<string, unknown> | null,
+  reducedMotion: true,
+  selectedNodeId: "scope:src" as string | null,
+  selectNodeCalls: [] as Array<string | null>,
+}));
+
+vi.mock("@xyflow/react", async () => {
+  const React = await import("react");
+  const element = (name: string) => ({ children }: Record<string, unknown>) =>
+    React.createElement("div", { "data-flow-element": name }, children as React.ReactNode);
+  return {
+    Background: element("background"),
+    BackgroundVariant: { Dots: "dots" },
+    Controls: element("controls"),
+    Handle: element("handle"),
+    MiniMap: element("minimap"),
+    Position: { Top: "top", Bottom: "bottom", Left: "left", Right: "right" },
+    ReactFlow: (props: Record<string, unknown>) => {
+      flowHarness.props = props;
+      const nodes = props.nodes as Array<{
+        id: string;
+        type: string;
+        data: Record<string, unknown>;
+      }>;
+      const nodeTypes = props.nodeTypes as Record<string, React.ComponentType<Record<string, unknown>>>;
+      return React.createElement(
+        "div",
+        { "data-testid": "react-flow" },
+        ...nodes.map((node) => React.createElement(
+          nodeTypes[node.type]!,
+          { key: node.id, id: node.id, data: node.data },
+        )),
+        props.children as React.ReactNode,
+      );
+    },
+  };
+});
+
+vi.mock("../../../hooks/useReducedMotion", () => ({
+  useReducedMotion: () => flowHarness.reducedMotion,
+}));
+
+vi.mock("../../../store", () => ({
+  useDashboardStore: (selector: (state: Record<string, unknown>) => unknown) => selector({
+    selectedNodeId: flowHarness.selectedNodeId,
+    selectNode: (id: string | null) => flowHarness.selectNodeCalls.push(id),
+  }),
+}));
+
+import SemanticGraphCanvas from "../SemanticGraphCanvas";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const source = readFileSync(resolve(process.cwd(), "src/components/graphExplorer/SemanticGraphCanvas.tsx"), "utf8");
+const explorerSource = readFileSync(resolve(process.cwd(), "src/components/graphExplorer/GraphExplorer.tsx"), "utf8");
+
+const emptyDocs: SemanticGraphNode["docs"] = {
+  relation: "none",
+  quality: "needs-review",
+  evidenceHealth: "missing",
+  generationStatus: "partial",
+  referenceCoverage: "unanchored",
+  directPageIds: [],
+  contextPageIds: [],
+  directPages: [],
+  contextPages: [],
+  evidenceIds: [],
+  evidence: [],
+};
+
+const semanticGraphFixture: HierarchicalSemanticGraph = {
+  nodes: [
+    {
+      id: "scope:src",
+      label: "核心模块",
+      group: "module",
+      category: "module",
+      cluster: "module",
+      importance: 1,
+      rawType: "module",
+      summary: "承载核心业务",
+      docs: emptyDocs,
+      kind: "scope",
+      scopeId: "src",
+      canDrillDown: true,
+    },
+    {
+      id: "scope:test",
+      label: "测试模块",
+      group: "module",
+      category: "module",
+      cluster: "module",
+      importance: 0.8,
+      rawType: "module",
+      summary: "验证核心业务",
+      docs: emptyDocs,
+      kind: "scope",
+      scopeId: "test",
+      canDrillDown: true,
+    },
+  ],
+  edges: [{
+    id: "edge:src-test",
+    source: "scope:src",
+    target: "scope:test",
+    type: "imports",
+    direction: "forward",
+    edgeTypes: ["imports"],
+    directions: ["forward"],
+    weight: 1,
+    bundledCount: 1,
+    members: [{
+      id: "raw:src-test",
+      source: "scope:src",
+      target: "scope:test",
+      type: "imports",
+      direction: "forward",
+      weight: 1,
+    }],
+  }],
+  presentation: {
+    displayMode: "architecture",
+    level: "overview",
+    relationshipSource: "imports",
+    scopeId: null,
+    fileId: null,
+    scopeOptions: [],
+    breadcrumbs: [{ level: "overview", label: "全局概览" }],
+    totalNodeCount: 2,
+    hiddenNodeCount: 0,
+    focusApplied: false,
+    notice: null,
+  },
+};
+
+afterEach(() => {
+  document.body.replaceChildren();
+  flowHarness.props = null;
+  flowHarness.reducedMotion = true;
+  flowHarness.selectedNodeId = "scope:src";
+  flowHarness.selectNodeCalls.length = 0;
+  vi.clearAllMocks();
+});
 
 describe("SemanticGraphCanvas interaction contract", () => {
+  it("wires Enter drill, pane clearing, double-click state, and reduced-motion edge data", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const onOpenScope = vi.fn();
+    await act(async () => root.render(createElement(SemanticGraphCanvas, {
+      semanticGraph: semanticGraphFixture,
+      displayMode: "architecture",
+      viewKey: "overview",
+      onOpenScope,
+      onOpenFile: vi.fn(),
+    })));
+
+    const props = flowHarness.props as {
+      nodes: Array<{ id: string; data: Record<string, unknown> }>;
+      edges: Array<{ data: { animated: boolean; inlineDirection: boolean } }>;
+      onNodeClick: (event: { timeStamp: number }, node: { id: string; data: Record<string, unknown> }) => void;
+      onNodeDoubleClick: (event: { timeStamp: number }, node: { id: string; data: Record<string, unknown> }) => void;
+      onPaneClick: () => void;
+      nodeTypes: Record<string, unknown>;
+      ariaLabelConfig: unknown;
+    };
+    expect(props.nodeTypes).toHaveProperty("semantic");
+    expect(props.ariaLabelConfig).toBe(REACT_FLOW_ARIA_LABEL_CONFIG);
+    expect(props.edges[0]?.data).toMatchObject({ animated: false, inlineDirection: true });
+
+    const card = container.querySelector<HTMLElement>('[role="group"][aria-label^="核心模块"]');
+    if (!card) throw new Error("缺少核心模块图谱卡片");
+    await act(async () => card.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+      cancelable: true,
+    })));
+    expect(onOpenScope).toHaveBeenCalledWith("src");
+
+    await act(async () => props.onPaneClick());
+    expect(flowHarness.selectNodeCalls.at(-1)).toBeNull();
+
+    onOpenScope.mockClear();
+    const flowNode = props.nodes.find((node) => node.id === "scope:src");
+    if (!flowNode) throw new Error("缺少核心模块流节点");
+    await act(async () => {
+      props.onNodeClick({ timeStamp: 1_000 }, flowNode);
+      props.onNodeClick({ timeStamp: 1_200 }, flowNode);
+      props.onNodeDoubleClick({ timeStamp: 1_200 }, flowNode);
+    });
+    expect(flowHarness.selectNodeCalls).toContain("scope:src");
+    expect(onOpenScope).toHaveBeenCalledTimes(1);
+
+    await act(async () => root.unmount());
+  });
+
+  it("keeps edge motion enabled when reduced motion is not requested", async () => {
+    flowHarness.reducedMotion = false;
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => root.render(createElement(SemanticGraphCanvas, {
+      semanticGraph: semanticGraphFixture,
+      displayMode: "architecture",
+      viewKey: "overview",
+      onOpenScope: vi.fn(),
+      onOpenFile: vi.fn(),
+    })));
+
+    const props = flowHarness.props as {
+      edges: Array<{ data: { animated: boolean; inlineDirection: boolean } }>;
+    };
+    expect(props.edges[0]?.data).toMatchObject({ animated: true, inlineDirection: false });
+
+    await act(async () => root.unmount());
+  });
+
   it("selects every graph object, clears from the pane, and keeps drilling explicit", () => {
     expect(source).toContain("selectNode(node.id)");
     expect(source).not.toContain('node.data.kind === "node"');

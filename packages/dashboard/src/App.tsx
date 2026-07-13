@@ -436,6 +436,11 @@ function App() {
   return <Dashboard accessToken={accessToken} onTokenInvalid={handleTokenInvalid} />;
 }
 
+export const GRAPH_LOAD_ERROR_COPY = {
+  invalid: "关系图谱无效，请重新生成知识图谱后刷新。",
+  read: "关系图谱读取失败，请检查网络或确认知识库服务正在运行。",
+} as const;
+
 function Dashboard({
   accessToken,
   onTokenInvalid,
@@ -511,12 +516,13 @@ function Dashboard({
           setGraphIssues(result.issues);
           return;
         }
-        const message = result.fatal ?? "未知校验错误";
-        setLoadError(`关系图谱无效：${message}`);
+        console.warn("关系图谱校验失败", result.fatal, result.issues);
+        setLoadError(GRAPH_LOAD_ERROR_COPY.invalid);
       })
       .catch((error: unknown) => {
         if (cancelled || (error instanceof Error && error.message === "TOKEN_INVALID")) return;
-        setLoadError(`关系图谱读取失败：${error instanceof Error ? error.message : String(error)}`);
+        console.warn("关系图谱读取失败", error);
+        setLoadError(GRAPH_LOAD_ERROR_COPY.read);
       });
     return () => {
       cancelled = true;

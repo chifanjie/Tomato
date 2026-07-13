@@ -60,6 +60,10 @@ interface AppRoutingOptions {
 }
 
 const appContracts = AppModule as typeof AppModule & {
+  GRAPH_LOAD_ERROR_COPY?: {
+    invalid: string;
+    read: string;
+  };
   WIKI_AVAILABILITY_COPY?: Record<WikiFailureStatus, AvailabilityCopy>;
   resolveWikiAvailability?: (
     status: "ready" | "missing" | "invalid" | "error",
@@ -516,6 +520,15 @@ describe("App global location owner", () => {
 });
 
 describe("App peer shell contracts", () => {
+  it("never exposes graph validator or transport error details in the visible banner", () => {
+    expect(appContracts.GRAPH_LOAD_ERROR_COPY).toEqual({
+      invalid: "关系图谱无效，请重新生成知识图谱后刷新。",
+      read: "关系图谱读取失败，请检查网络或确认知识库服务正在运行。",
+    });
+    expect(APP_SOURCE).not.toMatch(/setLoadError\([^\n]*(?:error\.message|String\(error\)|result\.fatal)/u);
+    expect(APP_SOURCE).not.toContain("setLoadError(`关系图谱无效：${message}`)");
+  });
+
   it("keeps only the active Wiki, Graph, search, theme, token, warning, and data surfaces", () => {
     for (const removed of [
       "DomainGraphView", "KnowledgeGraphView", "FunctionDetailPage", "ReadableViewGraphPage",

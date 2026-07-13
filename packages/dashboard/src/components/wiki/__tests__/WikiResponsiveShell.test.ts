@@ -238,15 +238,26 @@ describe("WikiResponsiveShell", () => {
     const { container, root } = await mountShell();
     const navigationTrigger = container.querySelector('[aria-label="打开知识目录"]') as HTMLElement;
     const evidenceTrigger = container.querySelector('[aria-label="打开源码证据"]') as HTMLElement;
+    const navigationTargetId = navigationTrigger.getAttribute("aria-controls");
+    const evidenceTargetId = evidenceTrigger.getAttribute("aria-controls");
+    expect(navigationTrigger.getAttribute("aria-expanded")).toBe("false");
+    expect(evidenceTrigger.getAttribute("aria-expanded")).toBe("false");
+    expect(navigationTargetId && container.querySelector(`#${navigationTargetId}`)).not.toBeNull();
+    expect(evidenceTargetId && container.querySelector(`#${evidenceTargetId}`)).not.toBeNull();
 
     await click(navigationTrigger);
+    expect(navigationTrigger.getAttribute("aria-expanded")).toBe("true");
+    expect(evidenceTrigger.getAttribute("aria-expanded")).toBe("false");
     await click(evidenceTrigger);
     await flushAnimationFrames();
+    expect(navigationTrigger.getAttribute("aria-expanded")).toBe("false");
+    expect(evidenceTrigger.getAttribute("aria-expanded")).toBe("true");
     expect(container.querySelector("#wiki-navigation-drawer")?.hasAttribute("inert")).toBe(true);
     expect(container.querySelector("#wiki-evidence-drawer")?.getAttribute("role")).toBe("dialog");
     expect(document.activeElement).toBe(container.querySelector('[aria-label="关闭源码证据"]'));
 
     await keydown("Escape");
+    expect(evidenceTrigger.getAttribute("aria-expanded")).toBe("false");
     expect(document.activeElement).toBe(evidenceTrigger);
     expect(container.querySelector('[aria-label="关闭抽屉遮罩"]')).toBeNull();
 

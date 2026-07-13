@@ -32,16 +32,16 @@ export default function GuidedWikiHome({
   onOpenReference,
 }: GuidedWikiHomeProps) {
   return (
-    <main className="min-w-0 flex-1 overflow-auto px-8 py-10 max-md:px-5">
+    <main className="min-w-0 flex-1 overflow-auto px-8 py-10 max-md:px-5 max-md:py-7">
       <p className="text-xs font-semibold tracking-[0.12em] text-text-muted">推荐起点</p>
-      <h1 className="mt-2 text-3xl font-semibold text-text-primary">先理解项目，再进入代码</h1>
+      <h1 className="mt-2 text-3xl font-semibold text-text-primary max-sm:text-2xl">先理解项目，再进入代码</h1>
       <p className="mt-3 max-w-2xl leading-7 text-text-secondary">
         {projectName} 的知识按同一条路线从业务目标展开到可核验源码。
       </p>
 
-      <ol className="mt-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <ol className="mt-6 flex gap-2 overflow-x-auto pb-2 md:mt-8 md:grid md:grid-cols-5 md:gap-3 md:overflow-visible md:pb-0">
         {STAGE_ORDER.map((stage, index) => (
-          <li key={stage} className="uc-panel p-4">
+          <li key={stage} className="uc-panel min-w-[8.75rem] flex-1 px-3 py-3 md:min-w-0 md:p-4">
             <span className="text-xs text-text-muted">{String(index + 1).padStart(2, "0")}</span>
             <strong className="mt-2 block text-text-primary">{STAGE_LABEL[stage]}</strong>
           </li>

@@ -21,6 +21,8 @@ it("renders the guided route without maintenance metrics", () => {
   expect(html).toContain("有哪些规则");
   expect(html).toContain("代码怎样实现");
   expect(html).toContain("怎样核验源码");
+  expect(html).toContain("overflow-x-auto");
+  expect(html).toContain("min-w-[8.75rem]");
   expect(html).toContain("项目总览");
   expect(html).toContain("运行流程");
   expect(html).not.toContain("a.ts 文件参考");

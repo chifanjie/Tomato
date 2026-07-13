@@ -362,6 +362,25 @@ describe("graph-to-knowledge-base", () => {
     expect(coverage).toMatchObject({ role: "maintenance", category: "coverage", directNodeIds: [], contextNodeIds: [] });
   });
 
+  it("keeps long source snapshots in trace evidence without expanding them into Wiki prose", () => {
+    const longSourceMarker = `LONG_SOURCE_${"x".repeat(900)}`;
+    const kb = generateKnowledgeBase(sampleGraph(), {
+      sourceFiles: {
+        "src/api/routes.ts": `export function HandleFeedRequest() { ${longSourceMarker}; return BuildFeed(); }\n`,
+        "src/service/feed.ts": "export function BuildFeed() { return rankCandidates([]); }\nfunction rankCandidates(items) { return items; }\n",
+        "src/data/store.ts": "export class CandidateStore {}\nexport function LoadCandidates() { return []; }\n",
+        "config/feed.yaml": "ranking: enabled\n",
+      },
+    });
+    const overview = kb.documents.find((document) => document.path === "项目总览.md")!;
+    const originalEvidence = overview.sourceEvidence.find((evidence) => evidence.excerpt?.includes("LONG_SOURCE_"));
+
+    expect(originalEvidence?.excerpt).toContain(longSourceMarker);
+    expect(overview.content).toContain("LONG_SOURCE_");
+    expect(overview.content).not.toContain(longSourceMarker);
+    expect(overview.content).toContain("…");
+  });
+
   it("renders flow graph reachability as a typed relationship path rather than strict execution order", () => {
     const kb = generateKnowledgeBase(sampleGraph(), {
       sourceFiles: {

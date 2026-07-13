@@ -1828,8 +1828,12 @@ function supportEvidence(
 
 function sourceEvidenceMarkdown(evidence: SourceEvidence[]): string {
   if (evidence.length === 0) return "- 证据不足：当前源码快照没有可引用的精确位置。";
+  const compactExcerpt = (value: string): string => {
+    const compact = value.trim().replace(/\s+/g, " ").replace(/`/g, "'");
+    return compact.length <= 240 ? compact : `${compact.slice(0, 239)}…`;
+  };
   return evidence.map((item) =>
-    `- ${item.claim ?? "该源码位置记录可核对的静态内容"} 证据：\`${item.filePath}\`${item.lineRange ? `:${item.lineRange.join("-")}` : ""}${item.excerpt ? `；摘录：\`${item.excerpt}\`` : ""}`,
+    `- ${item.claim ?? "该源码位置记录可核对的静态内容"} 证据：\`${item.filePath}\`${item.lineRange ? `:${item.lineRange.join("-")}` : ""}${item.excerpt ? `；摘录：\`${compactExcerpt(item.excerpt)}\`` : ""}`,
   ).join("\n");
 }
 

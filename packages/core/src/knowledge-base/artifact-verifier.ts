@@ -9,6 +9,7 @@ import {
   type WikiIndexV2,
   type WikiSearchIndexV2,
 } from "./wiki-contract.js";
+import { maskMarkdownCode } from "./publication-quality.js";
 
 export interface KnowledgeArtifactVerificationExpectation {
   outputLanguage: "zh-CN";
@@ -167,6 +168,7 @@ function verifyMappings(input: KnowledgeArtifactSetV2Input, errors: string[]): v
         add(errors, `页面 ${page.id} 与文档追踪记录不一致`);
       }
       if (page.generationStatus === "complete" && ["generated", "verified"].includes(page.quality)
+        && (page.directNodeIds.length > 0 || page.contextNodeIds.length > 0)
         && (trace.claims.length === 0 || !trace.claims.some((claim) => claim.evidenceIds.length > 0))) {
         add(errors, `完整页面 ${page.id} 缺少可回溯声明`);
       }
@@ -245,7 +247,7 @@ function verifyMarkdown(input: KnowledgeArtifactSetV2Input, errors: string[]): v
       add(errors, `页面 ${page.id} 的 Markdown 文件不存在或为空`);
       continue;
     }
-    if (forbidden.test(content)) add(errors, `页面 ${page.id} 包含占位内容`);
+    if (forbidden.test(maskMarkdownCode(content))) add(errors, `页面 ${page.id} 包含占位内容`);
     if (page.role === "featured") {
       const requiredCjk = page.category === "overview" ? 250 : 180;
       const requiredH2 = page.category === "overview" ? 3 : 2;

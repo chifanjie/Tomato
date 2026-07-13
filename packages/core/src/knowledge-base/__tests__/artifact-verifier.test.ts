@@ -75,6 +75,15 @@ describe("validateKnowledgeArtifactSetV2", () => {
     expect(validateKnowledgeArtifactSetV2(validSet())).toEqual({ ok: true, errors: [] });
   });
 
+  it("ignores placeholder keywords inside fenced source code", () => {
+    const set = validSet();
+    set.markdownByPath.set(
+      "knowledge-base/项目总览.md",
+      `${richOverview()}\n\n\`\`\`ts\nconst diagnostic = "TODO 占位";\n\`\`\``,
+    );
+    expect(validateKnowledgeArtifactSetV2(set)).toEqual({ ok: true, errors: [] });
+  });
+
   it.each([
     ["timestamp", (set: ReturnType<typeof validSet>) => { set.searchIndex.generatedAt = "stale"; }],
     ["search reference", (set: ReturnType<typeof validSet>) => { set.searchIndex.records[0]!.pageId = "missing"; }],

@@ -118,6 +118,12 @@ function pathsFor(sourceRoot, outputRoot) {
   };
 }
 
+function knowledgeBaseOutputLanguage(config) {
+  const configured = config.outputLanguage?.trim();
+  if (!configured) return 'zh-CN';
+  return /^(?:zh|zh-cn|zh-hans)$/i.test(configured) ? 'zh-CN' : configured;
+}
+
 function isWithin(parent, child) {
   const relativePath = relative(resolve(parent), resolve(child));
   return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath));
@@ -581,7 +587,7 @@ function buildArtifacts(core, {
   return core.buildKnowledgeArtifacts({
     projectName: graph.project.name,
     generatedAt: new Date().toISOString(),
-    outputLanguage: config.outputLanguage ?? 'zh-CN',
+    outputLanguage: knowledgeBaseOutputLanguage(config),
     generationMode,
     graphDigest: createHash('sha256').update(JSON.stringify(graph)).digest('hex'),
     gitCommitHash: graph.project.gitCommitHash,
@@ -647,7 +653,7 @@ function deterministicGenerate(core, sourceRoot, outputRoot, keepIntermediate, a
   const config = core.loadConfig(sourceRoot);
   const kb = core.generateKnowledgeBase(graph, {
     sourceFiles,
-    outputLanguage: config.outputLanguage ?? 'zh-CN',
+    outputLanguage: knowledgeBaseOutputLanguage(config),
     knowledgeBaseConfig: config.knowledgeBase ?? {},
     generationMode: 'deterministic',
   });
@@ -676,7 +682,7 @@ function prepareFileDocs(core, sourceRoot, outputRoot, maxSourceBytes) {
   const profile = core.buildKnowledgeBaseProfile(graph);
   const fileDocPlan = core.buildFileDocPlan(profile, {
     sourceFiles,
-    outputLanguage: config.outputLanguage ?? 'zh-CN',
+    outputLanguage: knowledgeBaseOutputLanguage(config),
     knowledgeBaseConfig: config.knowledgeBase ?? {},
     generationMode: 'writer',
   });
@@ -741,7 +747,7 @@ function loadProfileAndFilePlan(core, sourceRoot, maxSourceBytes) {
   const profile = core.buildKnowledgeBaseProfile(graph);
   const fileDocPlan = core.buildFileDocPlan(profile, {
     sourceFiles,
-    outputLanguage: config.outputLanguage ?? 'zh-CN',
+    outputLanguage: knowledgeBaseOutputLanguage(config),
     knowledgeBaseConfig: config.knowledgeBase ?? {},
     generationMode: 'writer',
   });
@@ -875,6 +881,7 @@ function finalizeKnowledgeBase(core, sourceRoot, outputRoot, keepIntermediate, m
     profile,
     fileDocPlan,
     fileWriterOutputs,
+    topicPlan,
     topicWriterOutputs,
   });
   const reconciledFileQueue = reconcileQueueFromMergeRetries(fileQueue, fileMerged.retryPlan.fileBatchIndexes, {
@@ -911,7 +918,7 @@ function finalizeKnowledgeBase(core, sourceRoot, outputRoot, keepIntermediate, m
     merged,
     options: {
       sourceFiles,
-      outputLanguage: config.outputLanguage ?? 'zh-CN',
+      outputLanguage: knowledgeBaseOutputLanguage(config),
       knowledgeBaseConfig: config.knowledgeBase ?? {},
       generationMode: 'writer',
     },

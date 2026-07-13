@@ -276,11 +276,30 @@ function capabilitySummary(
 function rankedCapabilities(businessProfile: BusinessCapabilityProfile): BusinessCapability[] {
   const confidenceRank = { high: 0, medium: 1, low: 2 } as const;
   return businessProfile.capabilities
-    .filter((capability) => capability.evidenceRole !== "example-only")
+    .filter((capability) => capability.evidenceRole === "primary"
+      && capability.primaryFactIds.length >= 2
+      && /\p{Script=Han}/u.test(capability.title)
+      && !/[`(){}\[\];=]/u.test(capability.title)
+      && !/^\s*(?:[-#]|if\b|for\b|while\b|return\b|const\b|let\b|function\b)/iu.test(capability.title))
     .sort((left, right) => confidenceRank[left.confidence] - confidenceRank[right.confidence]
       || right.score - left.score
       || left.id.localeCompare(right.id))
     .slice(0, 6);
+}
+
+function rankedLayers(profile: ProjectProfile): ProjectProfile["layerProfiles"] {
+  const layerRank = (layer: ProjectProfile["layerProfiles"][number]): number => {
+    const label = `${layer.id} ${layer.name}`.toLowerCase();
+    if (/(?:界面|ui|view|presentation)/u.test(label)) return 0;
+    if (/(?:核心|core|service|domain)/u.test(label)) return 1;
+    if (/(?:配置|config)/u.test(label)) return 2;
+    if (/(?:工具|utility|shared)/u.test(label)) return 3;
+    if (/(?:测试|test|fixture)/u.test(label)) return 9;
+    return 4;
+  };
+  return [...profile.layerProfiles].sort((left, right) => layerRank(left) - layerRank(right)
+    || right.nodeIds.length - left.nodeIds.length
+    || left.id.localeCompare(right.id));
 }
 
 function fileIdsInLayer(profile: ProjectProfile, layerId: string): string[] {
@@ -448,6 +467,12 @@ export function buildFeaturedPlan(input: BuildFeaturedPlanInput): FeaturedPlan {
     return fileId ? [fileId] : [];
   }));
   const layerFileIds = sortedUnique(profile.layerProfiles.flatMap((layer) => fileIdsInLayer(profile, layer.id)));
+  const fallbackOverviewNodeIds = rankedLayers(profile)
+    .flatMap((layer) => fileIdsInLayer(profile, layer.id))
+    .sort((left, right) => (profile.nodeDegrees.get(right)?.total ?? 0) - (profile.nodeDegrees.get(left)?.total ?? 0)
+      || left.localeCompare(right))
+    .slice(0, 6);
+  const overviewDirectNodeIds = publishableEntryIds.length > 0 ? publishableEntryIds : fallbackOverviewNodeIds;
   const exactPaths = [
     KB_PATHS.projectOverview,
     KB_PATHS.sourceEntry,
@@ -465,15 +490,16 @@ export function buildFeaturedPlan(input: BuildFeaturedPlanInput): FeaturedPlan {
     summary: concreteSummary(profile.graph.project.description, "项目总览"),
     category: "overview",
     role: "featured",
-    directNodeIds: publishableEntryIds,
-    contextNodeIds: sortedUnique([...publishableEntryFileIds, ...layerFileIds]),
+    directNodeIds: overviewDirectNodeIds,
+    contextNodeIds: sortedUnique([...publishableEntryFileIds, ...layerFileIds])
+      .filter((nodeId) => !overviewDirectNodeIds.includes(nodeId)),
     symbolAnchors: [],
     route: { order: 0, stage: "purpose" },
     representedEdgeIds: behaviorEdgesAmong(profile, [...publishableEntryIds, ...publishableEntryFileIds, ...layerFileIds]),
     reason: "项目总览固定承载项目目的、边界与主要入口",
   }));
 
-  for (const capability of rankedCapabilities(businessProfile)) {
+  for (const capability of rankedCapabilities(businessProfile).slice(0, 3)) {
     const directNodeIds = sortedUnique(capability.evidence.flatMap((evidence) => evidence.nodeId ? [evidence.nodeId] : []));
     const contextNodeIds = sortedUnique(capability.relatedNodeIds.filter((nodeId) => !directNodeIds.includes(nodeId)));
     const path = allocateGeneratedPath(
@@ -491,16 +517,16 @@ export function buildFeaturedPlan(input: BuildFeaturedPlanInput): FeaturedPlan {
       symbolAnchors: [],
       route: { order: 0, stage: "rule" },
       representedEdgeIds: behaviorEdgesAmong(profile, [...directNodeIds, ...contextNodeIds]),
-      reason: `按生产证据置信度与能力评分选择最多六个业务能力；能力 ${capability.id}`,
+      reason: `至少两条生产事实且标题可读的核心能力进入主阅读路径；能力 ${capability.id}`,
     }));
   }
 
   const flowNameCounts = new Map<string, number>();
-  for (const flow of publishableFlows) {
+  for (const flow of publishableFlows.slice(0, 3)) {
     const key = slugPath(flow.node.name);
     flowNameCounts.set(key, (flowNameCounts.get(key) ?? 0) + 1);
   }
-  for (const flow of publishableFlows) {
+  for (const flow of publishableFlows.slice(0, 3)) {
     const disambiguator = (flowNameCounts.get(slugPath(flow.node.name)) ?? 0) > 1
       ? flow.node.filePath ?? flow.node.id
       : undefined;
@@ -523,10 +549,20 @@ export function buildFeaturedPlan(input: BuildFeaturedPlanInput): FeaturedPlan {
     }));
   }
 
-  for (const layer of [...profile.layerProfiles].sort((left, right) => left.id.localeCompare(right.id)).slice(0, 8)) {
+  for (const layer of rankedLayers(profile).slice(0, 3)) {
+    const layerFileIds = fileIdsInLayer(profile, layer.id);
+    const rankedLayerFileIds = [...layerFileIds].sort((left, right) =>
+      (profile.nodeDegrees.get(right)?.total ?? 0) - (profile.nodeDegrees.get(left)?.total ?? 0)
+      || left.localeCompare(right));
     const directModule = layer.nodeIds
       .map((nodeId) => profile.indexes.nodesById.get(nodeId))
       .find((node) => node?.type === "module");
+    const directNodeIds = rankedLayerFileIds.slice(0, 5);
+    if (directNodeIds.length === 0 && directModule) directNodeIds.push(directModule.id);
+    const symbolContextNodeIds = directNodeIds.flatMap((nodeId) => [
+      ...(profile.indexes.fileToFunctionIds.get(nodeId) ?? []),
+      ...(profile.indexes.fileToClassIds.get(nodeId) ?? []),
+    ]);
     const title = `${layer.name} 模块概览`;
     documents.push(plannedDocument({
       path: allocateGeneratedPath(moduleDocumentPath(layer.name), layer.id),
@@ -534,8 +570,11 @@ export function buildFeaturedPlan(input: BuildFeaturedPlanInput): FeaturedPlan {
       summary: concreteSummary(layer.description, title),
       category: "module",
       role: "featured",
-      directNodeIds: directModule ? [directModule.id] : [],
-      contextNodeIds: fileIdsInLayer(profile, layer.id),
+      directNodeIds,
+      contextNodeIds: sortedUnique([
+        ...layerFileIds.filter((nodeId) => !directNodeIds.includes(nodeId)),
+        ...symbolContextNodeIds,
+      ]),
       symbolAnchors: [],
       route: { order: 0, stage: "implementation" },
       representedEdgeIds: crossFileLayerEdges(profile, layer.id),
@@ -550,21 +589,22 @@ export function buildFeaturedPlan(input: BuildFeaturedPlanInput): FeaturedPlan {
       const rightRank = right.reasons.length * 10 + (profile.nodeDegrees.get(right.topicNodeId)?.total ?? 0);
       return rightRank - leftRank || left.topicNodeId.localeCompare(right.topicNodeId);
     });
-  for (const topic of rankedTopics) {
+  for (const [topicIndex, topic] of rankedTopics.entries()) {
     const coveredNodeIds = unique(topic.coveredNodeIds);
     const topicNode = profile.indexes.nodesById.get(topic.topicNodeId);
+    const featured = topicIndex < 2;
     documents.push(plannedDocument({
       path: topic.documentPath,
       title: topic.title,
       summary: concreteSummary(topicNode?.summary, topic.title),
       category: "topic",
-      role: "featured",
+      role: featured ? "featured" : "reference",
       directNodeIds: [topic.topicNodeId],
       contextNodeIds: coveredNodeIds.filter((nodeId) => nodeId !== topic.topicNodeId),
       symbolAnchors: [],
-      route: { order: 0, stage: "implementation" },
+      ...(featured ? { route: { order: 0, stage: "implementation" as const } } : {}),
       representedEdgeIds: behaviorEdgesAmong(profile, coveredNodeIds),
-      reason: "必需层级专题进入主阅读路径",
+      reason: featured ? "最高优先级必需专题进入主阅读路径" : "其余必需专题保留在可搜索参考区",
     }));
   }
 

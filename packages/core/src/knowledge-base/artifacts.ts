@@ -213,12 +213,14 @@ function buildDocuments(
 ): BuiltDocument[] {
   return input.documents.map((document) => {
     const pageEvidenceIds: string[] = [];
+    const evidenceNodeIds = new Set<string>();
     const claims: WikiClaimTraceV2[] = [];
 
     document.sourceEvidence.forEach((evidence, sourceIndex) => {
       const resolved = resolveEvidence(evidence, document.id, sourceIndex, nodesById);
       const id = registerEvidence(resolved, evidenceById);
       pageEvidenceIds.push(id);
+      evidenceNodeIds.add(resolved.nodeId);
       if (evidence.claim !== undefined && evidence.claim.trim().length > 0) {
         claims.push({
           id: `claim:${encodeURIComponent(document.id)}:${sourceIndex}`,
@@ -237,6 +239,12 @@ function buildDocuments(
       throw new WikiArtifactBuildError(`文档 ${document.id} 包含直接节点，但没有可追踪的非空声明`);
     }
 
+    const directNodeIds = [...document.directNodeIds];
+    const directNodeIdSet = new Set(directNodeIds);
+    const contextNodeIds = uniqueSorted([
+      ...document.contextNodeIds,
+      ...[...evidenceNodeIds].filter((nodeId) => !directNodeIdSet.has(nodeId)),
+    ]);
     const page: WikiPageV2 = {
       id: document.id,
       title: document.title,
@@ -246,8 +254,8 @@ function buildDocuments(
       category: document.category,
       quality: document.quality,
       generationStatus: document.generationStatus,
-      directNodeIds: [...document.directNodeIds],
-      contextNodeIds: [...document.contextNodeIds],
+      directNodeIds,
+      contextNodeIds,
       evidenceIds: uniqueSorted(pageEvidenceIds),
       searchTerms: [...document.searchTerms],
       ...(document.verification === undefined ? {} : { verification: { ...document.verification } }),
@@ -259,8 +267,8 @@ function buildDocuments(
       page,
       trace: {
         pageId: document.id,
-        directNodeIds: [...document.directNodeIds],
-        contextNodeIds: [...document.contextNodeIds],
+        directNodeIds,
+        contextNodeIds,
         evidenceIds: [...page.evidenceIds],
         quality: document.quality,
         generationStatus: document.generationStatus,

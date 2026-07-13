@@ -110,6 +110,39 @@ describe("knowledge artifacts", () => {
     ]));
   });
 
+  it("adds evidence-only nodes to page context so every claim remains navigable", () => {
+    const artifacts = buildKnowledgeArtifacts({
+      ...input,
+      documents: input.documents.map((document) => document.id === "page:overview"
+        ? {
+            ...document,
+            contextNodeIds: [],
+            sourceEvidence: [
+              {
+                filePath: "src/a.ts",
+                lineRange: [1, 3] as [number, number],
+                nodeId: "function:src/a.ts:run",
+                excerpt: "export function run() {}",
+                claim: "run 是项目运行入口。",
+              },
+              {
+                filePath: "src/a.ts",
+                lineRange: [1, 3] as [number, number],
+                nodeId: "file:src/a.ts",
+                excerpt: "export function run() {}",
+                claim: "入口文件承载运行函数。",
+              },
+            ],
+          }
+        : document),
+    });
+    const page = artifacts.wikiIndex.pages.find((candidate) => candidate.id === "page:overview")!;
+    const trace = artifacts.documentTraces.traces.find((candidate) => candidate.pageId === "page:overview")!;
+
+    expect(page.contextNodeIds).toContain("file:src/a.ts");
+    expect(trace.contextNodeIds).toEqual(page.contextNodeIds);
+  });
+
   it("rejects conflicting evidence instead of choosing an excerpt", () => {
     const conflictingDocuments = input.documents.map((document) => document.id !== "page:file-a"
       ? document

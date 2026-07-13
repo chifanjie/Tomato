@@ -59,8 +59,88 @@ describe("featured planning", () => {
     expect(plan.documents.find((doc) => doc.title.includes("孤立入口") && doc.category === "flow")).toBeUndefined();
     expect(plan.documents.find((doc) => doc.category === "module")?.directNodeIds).not.toContain("function:src/a.ts:helper");
     expect(plan.documents.find((doc) => doc.path === "文件文档/src-a.ts.md")?.symbolAnchors).toContainEqual({ nodeId: "function:src/a.ts:helper", anchor: "helper" });
-    expect(plan.documents.filter((doc) => doc.role === "featured").length).toBeLessThanOrEqual(40);
+    expect(plan.documents.filter((doc) => doc.role === "featured").length).toBeLessThanOrEqual(13);
     expect(plan.warnings).toContain("孤立入口没有至少三个可验证行为阶段，已移入待分析状态");
+  });
+
+  it("keeps the guided route concise while retaining every required topic as searchable reference", () => {
+    const requiredTopics: TopicPlan = {
+      topics: ["run", "helper", "apply", "isolated"].map((name, index) => ({
+        batchIndex: index + 1,
+        topicNodeId: name === "apply" ? "function:src/service.ts:apply" : `function:src/a.ts:${name}`,
+        sourceFileNodeId: name === "apply" ? "file:src/service.ts" : "file:src/a.ts",
+        documentPath: `关键函数专题/${name}.md`,
+        title: `${name} 专题`,
+        reasons: ["required"],
+        coveredNodeIds: [name === "apply" ? "function:src/service.ts:apply" : `function:src/a.ts:${name}`],
+        linkedFileDocumentPath: name === "apply" ? "文件文档/src-service.ts.md" : "文件文档/src-a.ts.md",
+        tier: "required" as const,
+      })),
+      batches: [],
+      warnings: [],
+    };
+    const plan = buildFeaturedPlan({
+      profile: buildKnowledgeBaseProfile(graph), businessProfile, fileDocPlan, topicPlan: requiredTopics, config: {},
+    });
+    const topicDocuments = plan.documents.filter((document) => document.category === "topic");
+
+    expect(topicDocuments).toHaveLength(4);
+    expect(topicDocuments.filter((document) => document.role === "featured")).toHaveLength(2);
+    expect(topicDocuments.filter((document) => document.role === "reference")).toHaveLength(2);
+    expect(topicDocuments.filter((document) => document.role === "reference").every((document) => document.route === undefined)).toBe(true);
+  });
+
+  it("keeps only production-backed capabilities on the guided route", () => {
+    const capability = {
+      title: "生产规则",
+      keywords: ["规则"],
+      factIds: [],
+      relatedNodeIds: ["function:src/a.ts:run"],
+      evidence: [{ filePath: "src/a.ts", nodeId: "function:src/a.ts:run" }],
+      score: 10,
+      confidence: "high" as const,
+      sourceKindCounts: { "production-logic": 1 },
+      primaryFactIds: ["fact:production:1", "fact:production:2"],
+      supportingFactIds: [],
+      exampleOnlyFactIds: [],
+    };
+    const mixedBusinessProfile: BusinessCapabilityProfile = {
+      facts: [],
+      capabilities: [
+        { id: "capability:production", ...capability, evidenceRole: "primary" },
+        {
+          id: "capability:test-only",
+          ...capability,
+          title: "测试样例能力",
+          evidenceRole: "supporting",
+          sourceKindCounts: { test: 1 },
+        },
+        {
+          id: "capability:prompt-only",
+          ...capability,
+          title: "提示词示例能力",
+          evidenceRole: "example-only",
+          sourceKindCounts: { "prompt-or-tooling-example": 1 },
+        },
+      ],
+      totalFacts: 0,
+      sourceBackedFacts: 0,
+    };
+
+    const plan = buildFeaturedPlan({
+      profile: buildKnowledgeBaseProfile(graph),
+      businessProfile: mixedBusinessProfile,
+      fileDocPlan,
+      topicPlan,
+      config: {},
+    });
+
+    const capabilityDocuments = plan.documents.filter((document) => document.category === "capability");
+    expect(capabilityDocuments.map((document) => document.title)).toEqual(["生产规则"]);
+    expect(capabilityDocuments.map((document) => document.title)).not.toContain("测试样例能力");
+    expect(capabilityDocuments.map((document) => document.title)).not.toContain("提示词示例能力");
+    expect(capabilityDocuments.filter((document) => document.role === "featured").map((document) => document.title))
+      .toEqual(["生产规则"]);
   });
 
   it("disambiguates stable page ids when capabilities share a title", () => {
@@ -74,7 +154,7 @@ describe("featured planning", () => {
       evidenceRole: "primary" as const,
       confidence: "high" as const,
       sourceKindCounts: { "production-logic": 1 },
-      primaryFactIds: [],
+      primaryFactIds: ["fact:shared:1", "fact:shared:2"],
       supportingFactIds: [],
       exampleOnlyFactIds: [],
     };
@@ -138,7 +218,7 @@ describe("featured planning", () => {
       evidenceRole: "primary" as const,
       confidence: "high" as const,
       sourceKindCounts: { "production-logic": 1 },
-      primaryFactIds: [],
+      primaryFactIds: ["fact:shared:1", "fact:shared:2"],
       supportingFactIds: [],
       exampleOnlyFactIds: [],
     };
@@ -168,6 +248,41 @@ describe("featured planning", () => {
     expect(generatedPages.filter((document) => document.category === "module")).toHaveLength(3);
     expect(new Set(plan.documents.map((document) => document.path)).size).toBe(plan.documents.length);
     expect(new Set(plan.documents.map((document) => document.id)).size).toBe(plan.documents.length);
+  });
+
+  it("prioritizes interface and production layers ahead of tests", () => {
+    const layeredGraph: KnowledgeGraph = {
+      ...graph,
+      layers: [
+        { id: "layer:test", name: "测试层", description: "测试", nodeIds: ["file:src/a.ts"] },
+        { id: "layer:config", name: "配置层", description: "配置", nodeIds: ["config:config/rule.json"] },
+        { id: "layer:ui", name: "界面层", description: "界面", nodeIds: ["file:src/service.ts"] },
+        { id: "layer:core", name: "核心层", description: "核心", nodeIds: [] },
+      ],
+    };
+    const plan = buildFeaturedPlan({
+      profile: buildKnowledgeBaseProfile(layeredGraph), businessProfile, fileDocPlan, topicPlan, config: {},
+    });
+
+    expect(plan.documents.filter((document) => document.category === "module").map((document) => document.title))
+      .toEqual(["界面层 模块概览", "核心层 模块概览", "配置层 模块概览"]);
+  });
+
+  it("anchors the overview and small modules to concrete files and symbols when flows are absent", () => {
+    const structuralOnlyGraph: KnowledgeGraph = {
+      ...graph,
+      edges: graph.edges.filter((edge) => edge.type === "contains"),
+      layers: [{ id: "layer:ui", name: "界面层", description: "界面", nodeIds: ["file:src/a.ts", "file:src/service.ts"] }],
+    };
+    const plan = buildFeaturedPlan({
+      profile: buildKnowledgeBaseProfile(structuralOnlyGraph), businessProfile, fileDocPlan, topicPlan, config: {},
+    });
+    const overview = plan.documents.find((document) => document.path === KB_PATHS.projectOverview)!;
+    const module = plan.documents.find((document) => document.category === "module")!;
+
+    expect(overview.directNodeIds).toEqual(expect.arrayContaining(["file:src/a.ts", "file:src/service.ts"]));
+    expect(module.directNodeIds).toEqual(expect.arrayContaining(["file:src/a.ts", "file:src/service.ts"]));
+    expect(module.contextNodeIds).toContain("function:src/a.ts:run");
   });
 
   it("builds Source entry from every valid entry before pseudo-flow filtering and the flow cap", () => {
@@ -226,6 +341,7 @@ describe("featured planning", () => {
 
     expect(overview.directNodeIds).toHaveLength(12);
     expect(overview.directNodeIds).not.toContain(entryIds[12]);
+    expect(plan.documents.filter((document) => document.category === "flow")).toHaveLength(3);
     expect(sourceEntry.contextNodeIds).toEqual(expect.arrayContaining([...entryIds, isolatedEntryId]));
     expect(sourceEntry.representedEdgeIds).toContain(`contains:file:src/entries.ts->${isolatedEntryId}`);
     expect(sourceEntry.representedEdgeIds).toContain(`calls:${entryIds[12]}->function:src/entries.ts:shared`);

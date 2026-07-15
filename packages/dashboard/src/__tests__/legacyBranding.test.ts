@@ -102,6 +102,22 @@ describe("legacy brand compatibility", () => {
     ].join("\r\n"));
   });
 
+  it("patches an escaped image alt when no raw legacy literal exists", () => {
+    expect(normalizeLegacyMarkdownBranding(
+      "![understand\\-anything](logo.png)",
+    )).toBe("![Understand Code](logo.png)");
+  });
+
+  it("preserves protected Markdown inside image alt text", () => {
+    const markdown = [
+      "![`understand-anything`](image.png)",
+      "![<https://example.com/understand-anything>](image.png)",
+      "![<span title=\"understand-anything\">x</span>](image.png)",
+    ].join("\r\n");
+
+    expect(normalizeLegacyMarkdownBranding(markdown)).toBe(markdown);
+  });
+
   it("normalizes only graph project display metadata", () => {
     const graph = graphFixture();
     const normalized = normalizeLegacyGraphBranding(graph);

@@ -122,10 +122,21 @@ function markdownTitleRange(
   return undefined;
 }
 
+function parseMarkdown(markdown: string): MarkdownNode | undefined {
+  try {
+    return unified()
+      .use(remarkParse)
+      .use(remarkGfm)
+      .parse(markdown) as unknown as MarkdownNode;
+  } catch {
+    return undefined;
+  }
+}
+
 function collectMarkdownTextRanges(
   node: MarkdownNode,
-  markdown: string,
   ranges: TextRange[],
+  sourceOffset = 0,
   linkUrl?: string,
 ): void {
   const currentLinkUrl = node.type === "link" ? node.url : linkUrl;
@@ -144,34 +155,47 @@ function collectMarkdownTextRanges(
     && typeof start === "number"
     && typeof end === "number"
   ) {
-    ranges.push({ start, end });
+    ranges.push({ start: start + sourceOffset, end: end + sourceOffset });
   }
 
+  for (const child of node.children ?? []) {
+    collectMarkdownTextRanges(child, ranges, sourceOffset, currentLinkUrl);
+  }
+}
+
+function collectMarkdownMetadataRanges(
+  node: MarkdownNode,
+  markdown: string,
+  ranges: TextRange[],
+): void {
   const imageAltRange = markdownImageAltRange(node, markdown);
-  if (imageAltRange !== undefined) ranges.push(imageAltRange);
+  if (imageAltRange !== undefined) {
+    const altTree = parseMarkdown(markdown.slice(imageAltRange.start, imageAltRange.end));
+    if (altTree !== undefined) {
+      collectMarkdownTextRanges(altTree, ranges, imageAltRange.start);
+    }
+  }
+
   const titleRange = markdownTitleRange(node, markdown);
   if (titleRange !== undefined) ranges.push(titleRange);
 
   for (const child of node.children ?? []) {
-    collectMarkdownTextRanges(child, markdown, ranges, currentLinkUrl);
+    collectMarkdownMetadataRanges(child, markdown, ranges);
   }
 }
 
 export function normalizeLegacyMarkdownBranding(markdown: string): string {
-  if (!markdown.includes(LEGACY_BRAND)) return markdown;
+  if (
+    !markdown.includes(LEGACY_BRAND)
+    && !markdown.includes(ESCAPED_LEGACY_BRAND)
+  ) return markdown;
 
-  let tree: MarkdownNode;
-  try {
-    tree = unified()
-      .use(remarkParse)
-      .use(remarkGfm)
-      .parse(markdown) as unknown as MarkdownNode;
-  } catch {
-    return markdown;
-  }
+  const tree = parseMarkdown(markdown);
+  if (tree === undefined) return markdown;
 
   const ranges: TextRange[] = [];
-  collectMarkdownTextRanges(tree, markdown, ranges);
+  collectMarkdownTextRanges(tree, ranges);
+  collectMarkdownMetadataRanges(tree, markdown, ranges);
   let result = markdown;
   for (const { start, end } of ranges.sort((left, right) => right.start - left.start)) {
     const original = result.slice(start, end);

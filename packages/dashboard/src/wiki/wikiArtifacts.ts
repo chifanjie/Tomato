@@ -4,6 +4,7 @@ import type {
   WikiDocumentRole,
   WikiSearchRecordV2,
 } from "@understand-code/core/knowledge-base";
+import { normalizeLegacySearchRecordsBranding } from "../legacyBranding";
 
 export type SearchLoadStatus = "idle" | "loading" | "ready" | "fallback";
 
@@ -111,7 +112,10 @@ export async function loadSearchArtifact(
     ) {
       return { status: "invalid", records: [] };
     }
-    return { status: "ready", records: payload.records };
+    return {
+      status: "ready",
+      records: normalizeLegacySearchRecordsBranding(payload.records),
+    };
   } catch {
     return { status: "error", records: [] };
   }

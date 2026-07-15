@@ -46,6 +46,36 @@ describe("lazy Wiki search artifact", () => {
     expect(searchCalls[0]).toContain("token=token%20with%20space");
   });
 
+  it("normalizes historical search prose without changing record identity", async () => {
+    const records = searchFixture();
+    records[0] = {
+      ...records[0]!,
+      title: "understand-anything 总览",
+      summary: "理解 understand-anything",
+      content: "正文介绍 understand-anything，代码为 `understand-anything`。",
+      terms: ["understand-anything", "docs/understand-anything.md"],
+      businessTerms: ["understand-anything"],
+      filePath: "docs/understand-anything.md",
+    };
+    const loaded = await loadSearchArtifact(
+      "token",
+      vi.fn(async () => jsonResponse({ version: 2, records })) as unknown as typeof fetch,
+    );
+
+    expect(loaded.status).toBe("ready");
+    if (loaded.status !== "ready") return;
+    expect(loaded.records[0]).toMatchObject({
+      id: "search:overview",
+      pageId: "page:overview",
+      title: "Understand Code 总览",
+      summary: "理解 Understand Code",
+      content: "正文介绍 Understand Code，代码为 `understand-anything`。",
+      terms: ["Understand Code", "docs/understand-anything.md"],
+      businessTerms: ["Understand Code"],
+      filePath: "docs/understand-anything.md",
+    });
+  });
+
   it.each([
     ["forbidden", () => new Response("forbidden", { status: 403 })],
     ["missing", () => new Response("missing", { status: 404 })],

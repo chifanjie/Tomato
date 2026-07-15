@@ -55,6 +55,31 @@ describe("wikiContent", () => {
     );
   });
 
+  it("normalizes historical brand prose while preserving code and link destinations", async () => {
+    const markdown = [
+      "# understand-anything",
+      "",
+      "understand-anything 的项目说明。",
+      "",
+      "`understand-anything`",
+      "[主页](https://example.com/understand-anything)",
+    ].join("\n");
+    const fetcher = vi.fn(async () => new Response(markdown, { status: 200 }));
+
+    await expect(loadWikiMarkdown("knowledge-base/项目总览.md", {
+      fetcher,
+      baseUrl: "/",
+      search: "?token=abc",
+    })).resolves.toBe([
+      "# Understand Code",
+      "",
+      "Understand Code 的项目说明。",
+      "",
+      "`understand-anything`",
+      "[主页](https://example.com/understand-anything)",
+    ].join("\n"));
+  });
+
   it("returns actionable Chinese errors for missing and empty documents", async () => {
     const missing = vi.fn(async () => new Response("not found", { status: 404 }));
     const empty = vi.fn(async () => new Response("  \n", { status: 200 }));

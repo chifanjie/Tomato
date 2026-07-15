@@ -1,3 +1,5 @@
+import { normalizeLegacyMarkdownBranding } from "../legacyBranding";
+
 const TOKEN_STORAGE_KEY = "understand-code-token";
 const LEGACY_WIKI_PAGE_HASH_PREFIX = "#wiki-page=";
 
@@ -230,7 +232,7 @@ export async function loadWikiMarkdown(
 
   const markdown = await response.text();
   if (!markdown.trim()) throw new Error("这篇文档目前没有正文内容");
-  return markdown;
+  return normalizeLegacyMarkdownBranding(markdown);
 }
 
 function normalizedTitle(value: string): string {

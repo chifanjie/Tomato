@@ -173,7 +173,11 @@ describe("dashboard knowledge loader", () => {
       title: "Understand Code 总览",
       summary: "理解 Understand Code",
       markdownPath: "knowledge-base/项目总览.md",
-      searchTerms: ["Understand Code", "docs/understand-anything.md"],
+      searchTerms: [
+        "understand-anything",
+        "docs/understand-anything.md",
+        "Understand Code",
+      ],
     });
     expect(result.wikiIndex.directPagesByNodeId.get("function:src/a.ts:run")?.[0]?.id)
       .toBe("page:run");

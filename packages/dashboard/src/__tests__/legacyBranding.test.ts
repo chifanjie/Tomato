@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { KnowledgeGraph } from "@understand-code/core/types";
+import remarkGfm from "remark-gfm";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
 import {
   normalizeLegacyBrandText,
   normalizeLegacyGraphBranding,
@@ -11,6 +14,33 @@ import {
   searchFixture,
   wikiV2Fixture,
 } from "../wiki/__tests__/fixtures/wikiV2Fixtures";
+import {
+  buildFallbackSearchRecords,
+  buildWikiSearchRuntime,
+  searchWiki,
+} from "../wiki/searchIndex";
+import { buildWikiRuntimeIndex } from "../wiki/wikiIndex";
+
+interface ParsedMarkdownNode {
+  type: string;
+  identifier?: string;
+  url?: string;
+  children?: ParsedMarkdownNode[];
+}
+
+function parsedMarkdownNodes(markdown: string): ParsedMarkdownNode[] {
+  const root = unified()
+    .use(remarkParse)
+    .use(remarkGfm)
+    .parse(markdown) as ParsedMarkdownNode;
+  const nodes: ParsedMarkdownNode[] = [];
+  const visit = (node: ParsedMarkdownNode) => {
+    nodes.push(node);
+    node.children?.forEach(visit);
+  };
+  visit(root);
+  return nodes;
+}
 
 function graphFixture(name = "understand-anything"): KnowledgeGraph {
   return {
@@ -118,6 +148,73 @@ describe("legacy brand compatibility", () => {
     expect(normalizeLegacyMarkdownBranding(markdown)).toBe(markdown);
   });
 
+  it("keeps shortcut and collapsed references linked after normalizing their labels", () => {
+    const markdown = [
+      "[understand-anything]",
+      "[understand-anything][]",
+      "![understand-anything]",
+      "![understand-anything][]",
+      "",
+      "[understand-anything]: https://example.com/understand-anything",
+    ].join("\n");
+
+    const normalized = normalizeLegacyMarkdownBranding(markdown);
+    expect(normalized).toBe([
+      "[Understand Code][understand-anything]",
+      "[Understand Code][understand-anything]",
+      "![Understand Code][understand-anything]",
+      "![Understand Code][understand-anything]",
+      "",
+      "[understand-anything]: https://example.com/understand-anything",
+    ].join("\n"));
+
+    const nodes = parsedMarkdownNodes(normalized);
+    expect(nodes.filter((node) => node.type === "linkReference").map((node) => node.identifier))
+      .toEqual(["understand-anything", "understand-anything"]);
+    expect(nodes.filter((node) => node.type === "imageReference").map((node) => node.identifier))
+      .toEqual(["understand-anything", "understand-anything"]);
+    expect(nodes.find((node) => node.type === "definition")).toMatchObject({
+      identifier: "understand-anything",
+      url: "https://example.com/understand-anything",
+    });
+  });
+
+  it("normalizes prose occurrences without rewriting embedded technical tokens", () => {
+    const markdown = [
+      "检查 docs/understand-anything.md:12、src/understand-anything/config.ts 和 www.example.com/understand-anything；产品 understand-anything 仍可阅读。",
+      "",
+      "[www.example.com/understand-anything](https://www.example.com/understand-anything)",
+      "[understand-anything@example.com](mailto:understand-anything@example.com)",
+      "<understand-anything@example.com>",
+    ].join("\n");
+
+    expect(normalizeLegacyMarkdownBranding(markdown)).toBe([
+      "检查 docs/understand-anything.md:12、src/understand-anything/config.ts 和 www.example.com/understand-anything；产品 Understand Code 仍可阅读。",
+      "",
+      "[www.example.com/understand-anything](https://www.example.com/understand-anything)",
+      "[understand-anything@example.com](mailto:understand-anything@example.com)",
+      "<understand-anything@example.com>",
+    ].join("\n"));
+  });
+
+  it("normalizes rendered hyphen references while preserving encoded technical tokens", () => {
+    const markdown = [
+      "使用 understand&#45;anything 与 understand&#x2D;anything。",
+      "",
+      "![understand&#45;anything](assets/understand-anything.png \"understand&#x2d;anything\")",
+      "",
+      "路径 src/understand&#45;anything/config.ts 保持不变，产品 understand&#45;anything 继续可见。",
+    ].join("\n");
+
+    expect(normalizeLegacyMarkdownBranding(markdown)).toBe([
+      "使用 Understand Code 与 Understand Code。",
+      "",
+      "![Understand Code](assets/understand-anything.png \"Understand Code\")",
+      "",
+      "路径 src/understand&#45;anything/config.ts 保持不变，产品 Understand Code 继续可见。",
+    ].join("\n"));
+  });
+
   it("normalizes only graph project display metadata", () => {
     const graph = graphFixture();
     const normalized = normalizeLegacyGraphBranding(graph);
@@ -150,7 +247,12 @@ describe("legacy brand compatibility", () => {
       title: "Understand Code 总览",
       summary: "理解 Understand Code",
       markdownPath: "knowledge-base/项目总览.md",
-      searchTerms: ["Understand Code", "docs/understand-anything.md", "入口"],
+      searchTerms: [
+        "understand-anything",
+        "docs/understand-anything.md",
+        "入口",
+        "Understand Code",
+      ],
     });
     expect(normalizedWiki.evidence).toBe(wiki.evidence);
 
@@ -170,8 +272,74 @@ describe("legacy brand compatibility", () => {
       title: "Understand Code 总览",
       summary: "理解 Understand Code",
       content: "正文介绍 Understand Code，代码为 `understand-anything`。",
-      terms: ["Understand Code", "docs/understand-anything.md"],
+      terms: [
+        "understand-anything",
+        "docs/understand-anything.md",
+        "Understand Code",
+      ],
       businessTerms: ["Understand Code"],
     });
+  });
+
+  it("preserves source symbol records exactly", () => {
+    const symbol = {
+      ...searchFixture().find((record) => record.kind === "symbol")!,
+      id: "symbol:understand-anything",
+      title: "understand-anything",
+      summary: "understand-anything source symbol",
+      content: "understand-anything implementation",
+      pageId: "page:understand-anything",
+      anchor: "understand-anything",
+      nodeId: "function:src/understand-anything.ts:understand-anything",
+      terms: [
+        "understand-anything",
+        "src/understand-anything.ts",
+        "function:src/understand-anything.ts:understand-anything",
+      ],
+      filePath: "src/understand-anything.ts",
+    };
+
+    expect(normalizeLegacySearchRecordsBranding([symbol])).toEqual([symbol]);
+  });
+
+  it("keeps fallback search technical symbols and adds the current brand page alias", () => {
+    const wiki = wikiV2Fixture();
+    wiki.pages[0] = {
+      ...wiki.pages[0]!,
+      searchTerms: ["understand-anything", "入口"],
+    };
+    wiki.nodeDocumentation[0] = {
+      ...wiki.nodeDocumentation[0]!,
+      nodeId: "function:src/understand-anything.ts:understand-anything",
+      primaryPageId: "page:file-a",
+      anchor: "understand-anything",
+    };
+
+    const runtimeIndex = buildWikiRuntimeIndex(normalizeLegacyWikiIndexBranding(wiki));
+    const records = buildFallbackSearchRecords(runtimeIndex);
+    expect(records.find((record) => record.id === "fallback:page:page:overview")?.terms)
+      .toEqual([
+        "understand-anything",
+        "入口",
+        "Understand Code",
+        "knowledge-base/项目总览.md",
+      ]);
+    expect(records.find((record) => record.kind === "symbol")).toMatchObject({
+      title: "understand-anything",
+      nodeId: "function:src/understand-anything.ts:understand-anything",
+      anchor: "understand-anything",
+      filePath: "src/understand-anything.ts",
+      terms: [
+        "function:src/understand-anything.ts:understand-anything",
+        "understand-anything",
+        "src/understand-anything.ts",
+      ],
+    });
+
+    const searchRuntime = buildWikiSearchRuntime([], runtimeIndex, "fallback");
+    expect(searchWiki(searchRuntime, "Understand Code", 1, 10).groups
+      .flatMap((group) => group.items)
+      .map((record) => record.id))
+      .toContain("fallback:page:page:overview");
   });
 });

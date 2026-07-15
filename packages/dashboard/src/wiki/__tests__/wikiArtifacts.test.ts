@@ -70,7 +70,11 @@ describe("lazy Wiki search artifact", () => {
       title: "Understand Code 总览",
       summary: "理解 Understand Code",
       content: "正文介绍 Understand Code，代码为 `understand-anything`。",
-      terms: ["Understand Code", "docs/understand-anything.md"],
+      terms: [
+        "understand-anything",
+        "docs/understand-anything.md",
+        "Understand Code",
+      ],
       businessTerms: ["Understand Code"],
       filePath: "docs/understand-anything.md",
     });

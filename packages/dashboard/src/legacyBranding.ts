@@ -8,8 +8,9 @@ import remarkParse from "remark-parse";
 import { unified } from "unified";
 
 const LEGACY_BRAND = "understand-anything";
-const ESCAPED_LEGACY_BRAND = "understand\\-anything";
 const CURRENT_BRAND = "Understand Code";
+const LEGACY_BRAND_SOURCE_PATTERN = /understand(?:-|\\-|&#0*45;|&#[xX]0*2[dD];)anything/g;
+const HAS_LEGACY_BRAND_SOURCE_PATTERN = /understand(?:-|\\-|&#0*45;|&#[xX]0*2[dD];)anything/;
 
 interface MarkdownNode {
   type: string;
@@ -17,6 +18,8 @@ interface MarkdownNode {
   url?: string;
   alt?: string | null;
   title?: string | null;
+  identifier?: string;
+  referenceType?: "shortcut" | "collapsed" | "full";
   children?: MarkdownNode[];
   position?: {
     start?: { offset?: number };
@@ -29,19 +32,19 @@ interface TextRange {
   end: number;
 }
 
+interface TextEdit extends TextRange {
+  replacement: string;
+}
+
 export function normalizeLegacyBrandText(value: string): string {
   return value.includes(LEGACY_BRAND)
     ? value.split(LEGACY_BRAND).join(CURRENT_BRAND)
     : value;
 }
 
-function normalizeLegacyBrandTerm(value: string): string {
-  return value === LEGACY_BRAND ? CURRENT_BRAND : value;
-}
-
-function normalizeLegacyBrandSource(value: string): string {
-  return normalizeLegacyBrandText(value)
-    .split(ESCAPED_LEGACY_BRAND).join(CURRENT_BRAND);
+function legacyBrandTermsWithAlias(values: string[]): string[] {
+  if (!values.includes(LEGACY_BRAND) || values.includes(CURRENT_BRAND)) return values;
+  return [...values, CURRENT_BRAND];
 }
 
 function isEscaped(source: string, index: number): boolean {
@@ -56,6 +59,50 @@ function previousNonWhitespace(source: string, index: number): number {
   let position = index;
   while (position >= 0 && /\s/.test(source[position]!)) position -= 1;
   return position;
+}
+
+function isAsciiTokenCharacter(character: string | undefined): boolean {
+  return character !== undefined && /[A-Za-z0-9_/@\\?&=#%+~-]/.test(character);
+}
+
+function isTechnicalBrandOccurrence(
+  source: string,
+  start: number,
+  end: number,
+): boolean {
+  const before = source[start - 1];
+  const after = source[end];
+  if (isAsciiTokenCharacter(before) || isAsciiTokenCharacter(after)) return true;
+  if (
+    before === "."
+    && /[A-Za-z0-9]/.test(source[start - 2] ?? "")
+  ) return true;
+  if (
+    after === "."
+    && /[A-Za-z0-9]/.test(source[end + 1] ?? "")
+  ) return true;
+  if (
+    before === ":"
+    && /[A-Za-z0-9]/.test(source[start - 2] ?? "")
+  ) return true;
+  return after === ":" && /[A-Za-z0-9]/.test(source[end + 1] ?? "");
+}
+
+function collectLegacyBrandSourceEdits(
+  source: string,
+  sourceOffset: number,
+  edits: TextEdit[],
+): void {
+  for (const match of source.matchAll(LEGACY_BRAND_SOURCE_PATTERN)) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (isTechnicalBrandOccurrence(source, start, end)) continue;
+    edits.push({
+      start: sourceOffset + start,
+      end: sourceOffset + end,
+      replacement: CURRENT_BRAND,
+    });
+  }
 }
 
 function markdownImageAltRange(
@@ -133,9 +180,10 @@ function parseMarkdown(markdown: string): MarkdownNode | undefined {
   }
 }
 
-function collectMarkdownTextRanges(
+function collectMarkdownTextEdits(
   node: MarkdownNode,
-  ranges: TextRange[],
+  markdown: string,
+  edits: TextEdit[],
   sourceOffset = 0,
   linkUrl?: string,
 ): void {
@@ -150,56 +198,130 @@ function collectMarkdownTextRanges(
   if (
     node.type === "text"
     && typeof node.value === "string"
-    && node.value.includes(LEGACY_BRAND)
     && !isDisplayedUrl
     && typeof start === "number"
     && typeof end === "number"
   ) {
-    ranges.push({ start: start + sourceOffset, end: end + sourceOffset });
+    collectLegacyBrandSourceEdits(
+      markdown.slice(start, end),
+      start + sourceOffset,
+      edits,
+    );
   }
 
   for (const child of node.children ?? []) {
-    collectMarkdownTextRanges(child, ranges, sourceOffset, currentLinkUrl);
+    collectMarkdownTextEdits(
+      child,
+      markdown,
+      edits,
+      sourceOffset,
+      currentLinkUrl,
+    );
   }
 }
 
-function collectMarkdownMetadataRanges(
+function markdownReferenceLabelRange(
   node: MarkdownNode,
   markdown: string,
-  ranges: TextRange[],
+): TextRange | undefined {
+  if (node.type !== "linkReference" && node.type !== "imageReference") {
+    return undefined;
+  }
+  const start = node.position?.start?.offset;
+  const end = node.position?.end?.offset;
+  if (typeof start !== "number" || typeof end !== "number") return undefined;
+  const source = markdown.slice(start, end);
+  const labelStart = node.type === "imageReference" ? 2 : 1;
+  if (!source.startsWith(node.type === "imageReference" ? "![" : "[")) {
+    return undefined;
+  }
+
+  let nestedBrackets = 0;
+  for (let position = labelStart; position < source.length; position += 1) {
+    const character = source[position];
+    if (isEscaped(source, position)) continue;
+    if (character === "[") {
+      nestedBrackets += 1;
+    } else if (character === "]") {
+      if (nestedBrackets === 0) {
+        return { start: start + labelStart, end: start + position };
+      }
+      nestedBrackets -= 1;
+    }
+  }
+  return undefined;
+}
+
+function collectMarkdownReferenceExpansionEdit(
+  node: MarkdownNode,
+  markdown: string,
+  edits: TextEdit[],
+): void {
+  if (node.referenceType !== "shortcut" && node.referenceType !== "collapsed") return;
+  const labelRange = markdownReferenceLabelRange(node, markdown);
+  const end = node.position?.end?.offset;
+  if (labelRange === undefined || typeof end !== "number") return;
+  const labelChanges = edits.some((edit) =>
+    edit.start >= labelRange.start
+    && edit.end <= labelRange.end
+    && edit.replacement === CURRENT_BRAND);
+  if (!labelChanges) return;
+
+  const explicitIdentifier = `[${markdown.slice(labelRange.start, labelRange.end)}]`;
+  if (node.referenceType === "shortcut") {
+    edits.push({ start: end, end, replacement: explicitIdentifier });
+    return;
+  }
+  if (markdown.slice(end - 2, end) === "[]") {
+    edits.push({ start: end - 2, end, replacement: explicitIdentifier });
+  }
+}
+
+function collectMarkdownMetadataEdits(
+  node: MarkdownNode,
+  markdown: string,
+  edits: TextEdit[],
 ): void {
   const imageAltRange = markdownImageAltRange(node, markdown);
   if (imageAltRange !== undefined) {
-    const altTree = parseMarkdown(markdown.slice(imageAltRange.start, imageAltRange.end));
+    const altSource = markdown.slice(imageAltRange.start, imageAltRange.end);
+    const altTree = parseMarkdown(altSource);
     if (altTree !== undefined) {
-      collectMarkdownTextRanges(altTree, ranges, imageAltRange.start);
+      collectMarkdownTextEdits(altTree, altSource, edits, imageAltRange.start);
     }
   }
 
   const titleRange = markdownTitleRange(node, markdown);
-  if (titleRange !== undefined) ranges.push(titleRange);
+  if (titleRange !== undefined) {
+    collectLegacyBrandSourceEdits(
+      markdown.slice(titleRange.start, titleRange.end),
+      titleRange.start,
+      edits,
+    );
+  }
+
+  collectMarkdownReferenceExpansionEdit(node, markdown, edits);
 
   for (const child of node.children ?? []) {
-    collectMarkdownMetadataRanges(child, markdown, ranges);
+    collectMarkdownMetadataEdits(child, markdown, edits);
   }
 }
 
 export function normalizeLegacyMarkdownBranding(markdown: string): string {
   if (
-    !markdown.includes(LEGACY_BRAND)
-    && !markdown.includes(ESCAPED_LEGACY_BRAND)
+    !HAS_LEGACY_BRAND_SOURCE_PATTERN.test(markdown)
   ) return markdown;
 
   const tree = parseMarkdown(markdown);
   if (tree === undefined) return markdown;
 
-  const ranges: TextRange[] = [];
-  collectMarkdownTextRanges(tree, ranges);
-  collectMarkdownMetadataRanges(tree, markdown, ranges);
+  const edits: TextEdit[] = [];
+  collectMarkdownTextEdits(tree, markdown, edits);
+  collectMarkdownMetadataEdits(tree, markdown, edits);
   let result = markdown;
-  for (const { start, end } of ranges.sort((left, right) => right.start - left.start)) {
-    const original = result.slice(start, end);
-    result = `${result.slice(0, start)}${normalizeLegacyBrandSource(original)}${result.slice(end)}`;
+  for (const { start, end, replacement } of edits.sort((left, right) =>
+    right.start - left.start || right.end - left.end)) {
+    result = `${result.slice(0, start)}${replacement}${result.slice(end)}`;
   }
   return result;
 }
@@ -220,10 +342,10 @@ export function normalizeLegacyWikiIndexBranding(index: WikiIndexV2): WikiIndexV
   const pages = index.pages.map((page) => {
     const title = normalizeLegacyBrandText(page.title);
     const summary = normalizeLegacyBrandText(page.summary);
-    const searchTerms = page.searchTerms.map(normalizeLegacyBrandTerm);
+    const searchTerms = legacyBrandTermsWithAlias(page.searchTerms);
     const changed = title !== page.title
       || summary !== page.summary
-      || searchTerms.some((term, position) => term !== page.searchTerms[position]);
+      || searchTerms !== page.searchTerms;
     if (!changed) return page;
     pagesChanged = true;
     return { ...page, title, summary, searchTerms };
@@ -235,16 +357,20 @@ export function normalizeLegacyWikiIndexBranding(index: WikiIndexV2): WikiIndexV
 export function normalizeLegacySearchRecordsBranding(
   records: readonly WikiSearchRecordV2[],
 ): WikiSearchRecordV2[] {
-  return records.map((record) => ({
-    ...record,
-    title: normalizeLegacyBrandText(record.title),
-    ...(record.summary === undefined
-      ? {}
-      : { summary: normalizeLegacyBrandText(record.summary) }),
-    ...(record.content === undefined
-      ? {}
-      : { content: normalizeLegacyMarkdownBranding(record.content) }),
-    terms: record.terms.map(normalizeLegacyBrandTerm),
-    businessTerms: record.businessTerms.map(normalizeLegacyBrandTerm),
-  }));
+  return records.map((record) => {
+    if (record.kind === "symbol") return record;
+    return {
+      ...record,
+      title: normalizeLegacyBrandText(record.title),
+      ...(record.summary === undefined
+        ? {}
+        : { summary: normalizeLegacyBrandText(record.summary) }),
+      ...(record.content === undefined
+        ? {}
+        : { content: normalizeLegacyMarkdownBranding(record.content) }),
+      terms: legacyBrandTermsWithAlias(record.terms),
+      businessTerms: record.businessTerms.map((term) =>
+        term === LEGACY_BRAND ? CURRENT_BRAND : term),
+    };
+  });
 }

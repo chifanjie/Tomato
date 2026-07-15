@@ -19,6 +19,7 @@ import { ThemePicker } from "./components/ThemePicker.tsx";
 import TokenGate from "./components/TokenGate";
 import WarningBanner from "./components/WarningBanner";
 import { useIsMobile } from "./hooks/useIsMobile";
+import { normalizeLegacyGraphBranding } from "./legacyBranding";
 import { useDashboardStore } from "./store";
 import { ThemeProvider, type ThemeConfig } from "./themes/index.ts";
 import {
@@ -512,7 +513,7 @@ function Dashboard({
         if (cancelled) return;
         const result = validateGraph(data);
         if (result.success && result.data) {
-          setConsoleGraph(result.data);
+          setConsoleGraph(normalizeLegacyGraphBranding(result.data));
           setGraphIssues(result.issues);
           return;
         }

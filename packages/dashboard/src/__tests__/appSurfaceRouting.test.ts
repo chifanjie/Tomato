@@ -520,6 +520,12 @@ describe("App global location owner", () => {
 });
 
 describe("App peer shell contracts", () => {
+  it("normalizes a validated graph before publishing it to the store", () => {
+    expect(APP_SOURCE).toContain(
+      "setConsoleGraph(normalizeLegacyGraphBranding(result.data))",
+    );
+  });
+
   it("never exposes graph validator or transport error details in the visible banner", () => {
     expect(appContracts.GRAPH_LOAD_ERROR_COPY).toEqual({
       invalid: "关系图谱无效，请重新生成知识图谱后刷新。",

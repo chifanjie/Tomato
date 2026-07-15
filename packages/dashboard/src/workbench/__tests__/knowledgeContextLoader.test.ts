@@ -151,6 +151,35 @@ describe("dashboard knowledge loader", () => {
     ]);
   });
 
+  it("normalizes historical Wiki branding before building the runtime index", async () => {
+    const payload = wikiV2Fixture();
+    payload.projectName = "understand-anything";
+    payload.pages[0] = {
+      ...payload.pages[0]!,
+      title: "understand-anything 总览",
+      summary: "理解 understand-anything",
+      searchTerms: ["understand-anything", "docs/understand-anything.md"],
+    };
+
+    const result = await loadDashboardKnowledge(
+      "local-token",
+      (async () => jsonResponse(payload)) as typeof fetch,
+    );
+
+    expect(result.wikiStatus).toBe("ready");
+    expect(result.wikiIndex.payload?.projectName).toBe("Understand Code");
+    expect(result.wikiIndex.pages[0]).toMatchObject({
+      id: "page:overview",
+      title: "Understand Code 总览",
+      summary: "理解 Understand Code",
+      markdownPath: "knowledge-base/项目总览.md",
+      searchTerms: ["Understand Code", "docs/understand-anything.md"],
+    });
+    expect(result.wikiIndex.directPagesByNodeId.get("function:src/a.ts:run")?.[0]?.id)
+      .toBe("page:run");
+    expect(result.wikiIndex.evidenceById.get("evidence:run")?.filePath).toBe("src/a.ts");
+  });
+
   it("returns invalid without loading legacy fallback data when wiki-index.json is malformed", async () => {
     const calls: string[] = [];
     const fetcher = async (url: string) => {

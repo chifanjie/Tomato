@@ -3,6 +3,7 @@ import {
   buildWikiRuntimeIndex,
   type WikiRuntimeIndex,
 } from "../wiki/wikiIndex";
+import { normalizeLegacyWikiIndexBranding } from "../legacyBranding";
 
 type Fetcher = typeof fetch;
 
@@ -74,7 +75,7 @@ export async function loadDashboardKnowledge(
   }
 
   return {
-    wikiIndex: buildWikiRuntimeIndex(parsed.value),
+    wikiIndex: buildWikiRuntimeIndex(normalizeLegacyWikiIndexBranding(parsed.value)),
     wikiStatus: "ready",
     sourceVersion: 2,
   };

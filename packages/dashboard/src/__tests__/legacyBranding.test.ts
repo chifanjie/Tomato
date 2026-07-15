@@ -80,6 +80,28 @@ describe("legacy brand compatibility", () => {
     ].join("\r\n"));
   });
 
+  it("patches image alt and titles without changing destinations", () => {
+    const markdown = [
+      "![understand\\-anything](assets/understand-anything.png \"understand-anything\")",
+      "",
+      "[主页](https://example.com/understand-anything \"understand-anything\")",
+      "",
+      "[brand]: https://example.com/understand-anything \"understand-anything\"",
+      "",
+      "[引用][brand]",
+    ].join("\r\n");
+
+    expect(normalizeLegacyMarkdownBranding(markdown)).toBe([
+      "![Understand Code](assets/understand-anything.png \"Understand Code\")",
+      "",
+      "[主页](https://example.com/understand-anything \"Understand Code\")",
+      "",
+      "[brand]: https://example.com/understand-anything \"Understand Code\"",
+      "",
+      "[引用][brand]",
+    ].join("\r\n"));
+  });
+
   it("normalizes only graph project display metadata", () => {
     const graph = graphFixture();
     const normalized = normalizeLegacyGraphBranding(graph);

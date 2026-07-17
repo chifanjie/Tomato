@@ -61,6 +61,8 @@ describe("GraphQuickJump", () => {
   let container: HTMLDivElement;
   let root: Root;
   let onSelect: ReturnType<typeof vi.fn<(intent: GraphQuickJumpItem["intent"]) => void>>;
+  let scrollIntoView: ReturnType<typeof vi.fn>;
+  const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
 
   beforeEach(() => {
     vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
@@ -71,16 +73,29 @@ describe("GraphQuickJump", () => {
     document.body.replaceChildren(container);
     root = createRoot(container);
     onSelect = vi.fn();
+    scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
   });
 
   afterEach(async () => {
     await act(async () => root.unmount());
     document.body.replaceChildren();
+    if (originalScrollIntoView) {
+      Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+        configurable: true,
+        value: originalScrollIntoView,
+      });
+    } else {
+      delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
     vi.restoreAllMocks();
   });
 
-  async function renderJump(): Promise<void> {
-    await act(async () => root.render(createElement(GraphQuickJump, { items: ITEMS, onSelect })));
+  async function renderJump(items: readonly GraphQuickJumpItem[] = ITEMS): Promise<void> {
+    await act(async () => root.render(createElement(GraphQuickJump, { items, onSelect })));
   }
 
   async function click(target: Element | null): Promise<void> {
@@ -155,6 +170,73 @@ describe("GraphQuickJump", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  it("scrolls the active option into view while keyboarding through thirty results", async () => {
+    const manyItems = Array.from({ length: 30 }, (_, index): GraphQuickJumpItem => ({
+      id: `file:src/item-${String(index).padStart(2, "0")}.ts`,
+      kind: "file",
+      label: `文件 ${String(index).padStart(2, "0")}`,
+      path: `src/item-${String(index).padStart(2, "0")}.ts`,
+      typeLabel: "文件",
+      intent: {
+        source: "quick-jump",
+        navigation: { level: "cluster", scopeId: "app", clusterId: "src" },
+        materializedNodeId: `file:src/item-${String(index).padStart(2, "0")}.ts`,
+        selectionId: `file:src/item-${String(index).padStart(2, "0")}.ts`,
+      },
+    }));
+    await renderJump(manyItems);
+    await click(container.querySelector("button"));
+    const input = container.querySelector<HTMLInputElement>('[role="combobox"]')!;
+    scrollIntoView.mockClear();
+
+    for (let index = 0; index < 29; index += 1) await key(input, "ArrowDown");
+
+    const options = [...container.querySelectorAll<HTMLElement>('[role="option"]')];
+    expect(input.getAttribute("aria-activedescendant")).toBe(options[29]!.id);
+    expect(document.activeElement).toBe(input);
+    expect(scrollIntoView).toHaveBeenCalledTimes(29);
+    expect(scrollIntoView).toHaveBeenLastCalledWith({ block: "nearest" });
+  });
+
+  it.each([
+    { label: "Tab", shiftKey: false },
+    { label: "Shift+Tab", shiftKey: true },
+  ])("closes without blocking or stealing focus when $label leaves the popover", async ({ shiftKey }) => {
+    await renderJump();
+    const trigger = container.querySelector<HTMLButtonElement>("button")!;
+    const outside = document.createElement("button");
+    outside.textContent = "外部焦点";
+    document.body.append(outside);
+    await click(trigger);
+    const input = container.querySelector<HTMLInputElement>('[role="combobox"]')!;
+    const bubbled = vi.fn();
+    document.addEventListener("keydown", bubbled);
+    const tab = new KeyboardEvent("keydown", {
+      key: "Tab",
+      shiftKey,
+      bubbles: true,
+      cancelable: true,
+    });
+    let focusOut: FocusEvent;
+    await act(async () => {
+      input.dispatchEvent(tab);
+      focusOut = new FocusEvent("focusout", {
+        bubbles: true,
+        cancelable: true,
+        relatedTarget: outside,
+      });
+      input.dispatchEvent(focusOut);
+      outside.focus();
+    });
+    document.removeEventListener("keydown", bubbled);
+
+    expect(tab.defaultPrevented).toBe(false);
+    expect(bubbled).toHaveBeenCalledTimes(1);
+    expect(focusOut!.defaultPrevented).toBe(false);
+    expect(container.querySelector('[role="combobox"]')).toBeNull();
+    expect(document.activeElement).toBe(outside);
+  });
+
   it("restores trigger focus on Escape but outside click closes without stealing focus", async () => {
     await renderJump();
     const trigger = container.querySelector<HTMLButtonElement>("button")!;
@@ -173,8 +255,10 @@ describe("GraphQuickJump", () => {
     outside.textContent = "外部操作";
     document.body.append(outside);
     await click(trigger);
-    outside.focus();
-    await act(async () => outside.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
+    await act(async () => {
+      outside.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      outside.focus();
+    });
     expect(container.querySelector('[role="combobox"]')).toBeNull();
     expect(document.activeElement).toBe(outside);
   });

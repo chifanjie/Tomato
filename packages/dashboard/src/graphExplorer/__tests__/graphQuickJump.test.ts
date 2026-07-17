@@ -219,6 +219,49 @@ describe("graph Quick Jump model", () => {
     },
   );
 
+  it("rejects ghost portals when a raw endpoint or its exact scope membership is stale", () => {
+    const graph = twoScopeGraph();
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const sourceId = graph.edges[0]!.source;
+    const targetId = graph.edges[0]!.target;
+    const sourceScopeId = hierarchyIndex.nodeLocationById.get(sourceId)!.scopeId;
+    const targetScopeId = hierarchyIndex.nodeLocationById.get(targetId)!.scopeId;
+    const portalIds = [
+      boundaryNodeId(sourceScopeId, targetScopeId),
+      boundaryNodeId(targetScopeId, sourceScopeId),
+    ];
+    const graphWithoutTarget: KnowledgeGraph = {
+      ...graph,
+      nodes: graph.nodes.filter((node) => node.id !== targetId),
+    };
+    const nodeByIdWithoutTarget = new Map(hierarchyIndex.nodeById);
+    nodeByIdWithoutTarget.delete(targetId);
+    const indexWithoutTarget: GraphHierarchyIndex = {
+      ...hierarchyIndex,
+      nodeById: nodeByIdWithoutTarget,
+    };
+    const staleScopes = hierarchyIndex.scopes.map((scope) => scope.id === targetScopeId
+      ? { ...scope, nodeIds: scope.nodeIds.filter((id) => id !== targetId) }
+      : scope);
+    const staleMembershipIndex: GraphHierarchyIndex = {
+      ...hierarchyIndex,
+      scopes: staleScopes,
+      scopeById: new Map(staleScopes.map((scope) => [scope.id, scope])),
+    };
+
+    for (const [candidateGraph, candidateIndex] of [
+      [graphWithoutTarget, hierarchyIndex],
+      [graph, indexWithoutTarget],
+      [graph, staleMembershipIndex],
+    ] as const) {
+      const items = buildGraphQuickJumpItems({ graph: candidateGraph, hierarchyIndex: candidateIndex });
+      expect(items.filter((item) => item.kind === "boundary")).toEqual([]);
+      for (const portalId of portalIds) {
+        expect(resolve(portalId, candidateGraph, candidateIndex)).toBeNull();
+      }
+    }
+  });
+
   it("rejects missing objects and stale ancestor chains instead of inventing routes", () => {
     const graph = workspaceHierarchyFixture();
     const hierarchyIndex = buildGraphHierarchyIndex(graph);

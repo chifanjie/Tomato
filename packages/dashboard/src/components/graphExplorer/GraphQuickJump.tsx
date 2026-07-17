@@ -17,6 +17,7 @@ export function GraphQuickJump({ items, onSelect }: GraphQuickJumpProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const inputId = useId();
   const listboxId = useId();
   const results = useMemo(() => searchGraphQuickJump(items, query), [items, query]);
@@ -51,8 +52,21 @@ export function GraphQuickJump({ items, onSelect }: GraphQuickJumpProps) {
     setActiveIndex(0);
   }, [query, items]);
 
+  useEffect(() => {
+    if (!open || !activeResult) return;
+    optionRefs.current[activeIndex]?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, activeResult, open, results]);
+
   return (
-    <div ref={rootRef} className="uc-graph-quick-jump">
+    <div
+      ref={rootRef}
+      className="uc-graph-quick-jump"
+      onBlur={(event) => {
+        const nextTarget = event.relatedTarget;
+        if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+        setOpen(false);
+      }}
+    >
       <button
         ref={triggerRef}
         type="button"
@@ -117,6 +131,7 @@ export function GraphQuickJump({ items, onSelect }: GraphQuickJumpProps) {
             ) : results.map((item, index) => (
               <button
                 key={item.id}
+                ref={(node) => { optionRefs.current[index] = node; }}
                 id={optionId(index)}
                 type="button"
                 role="option"

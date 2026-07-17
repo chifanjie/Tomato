@@ -92,9 +92,17 @@ function buildQuickJumpContext(
   }
   const boundariesById = new Map<string, BoundaryDescriptor>();
   for (const edge of graph.edges) {
+    if (!graphNodeById.has(edge.source)
+      || !graphNodeById.has(edge.target)
+      || !hierarchyIndex.nodeById.has(edge.source)
+      || !hierarchyIndex.nodeById.has(edge.target)) continue;
     const sourceScopeId = hierarchyIndex.nodeLocationById.get(edge.source)?.scopeId;
     const targetScopeId = hierarchyIndex.nodeLocationById.get(edge.target)?.scopeId;
     if (!sourceScopeId || !targetScopeId || sourceScopeId === targetScopeId) continue;
+    if (!validScopeById.has(sourceScopeId)
+      || !validScopeById.has(targetScopeId)
+      || !scopeNodeIdsById.get(sourceScopeId)?.has(edge.source)
+      || !scopeNodeIdsById.get(targetScopeId)?.has(edge.target)) continue;
     boundariesById.set(boundaryNodeId(sourceScopeId, targetScopeId), {
       currentScopeId: sourceScopeId,
       targetScopeId,

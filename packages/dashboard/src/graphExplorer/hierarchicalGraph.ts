@@ -466,17 +466,35 @@ export function buildGraphHierarchyIndex(graph: KnowledgeGraph): GraphHierarchyI
     stableGraph.layers.map((layer, order) => [`layer:${layer.id}`, order]),
   );
   const explicitlyLayeredNodeIds = new Set(stableGraph.layers.flatMap((layer) => layer.nodeIds));
+  const containingSourceIdsByNode = new Map<string, string[]>();
+  const containingFileIdByNode = new Map<string, string>();
+  for (const edge of stableGraph.edges) {
+    if (edge.type !== "contains") continue;
+    const sources = containingSourceIdsByNode.get(edge.target) ?? [];
+    sources.push(edge.source);
+    containingSourceIdsByNode.set(edge.target, sources);
+    if (!fileNodeIds.has(edge.source)) continue;
+    const currentFileId = containingFileIdByNode.get(edge.target);
+    if (!currentFileId || compareStable(edge.source, currentFileId) < 0) {
+      containingFileIdByNode.set(edge.target, edge.source);
+    }
+  }
+  const compareLayerScopes = (left: string, right: string): number =>
+    (layerScopeOrder.get(left) ?? Number.MAX_SAFE_INTEGER)
+      - (layerScopeOrder.get(right) ?? Number.MAX_SAFE_INTEGER)
+    || compareStable(left, right);
   for (const node of stableGraph.nodes) {
     if (node.filePath !== undefined
       || explicitlyLayeredNodeIds.has(node.id)
       || graphNodePlacementClass(node.type) !== "architecture-context") continue;
-    const containingLayerScope = stableGraph.edges
-      .filter((edge) => edge.type === "contains" && edge.target === node.id)
-      .map((edge) => nodeScopeId.get(edge.source))
-      .filter((scopeId): scopeId is string => scopeId !== undefined && layerScopeOrder.has(scopeId))
-      .sort((left, right) => (layerScopeOrder.get(left) ?? Number.MAX_SAFE_INTEGER)
-        - (layerScopeOrder.get(right) ?? Number.MAX_SAFE_INTEGER)
-        || compareStable(left, right))[0];
+    let containingLayerScope: string | undefined;
+    for (const sourceId of containingSourceIdsByNode.get(node.id) ?? []) {
+      const scopeId = nodeScopeId.get(sourceId);
+      if (!scopeId || !layerScopeOrder.has(scopeId)) continue;
+      if (!containingLayerScope || compareLayerScopes(scopeId, containingLayerScope) < 0) {
+        containingLayerScope = scopeId;
+      }
+    }
     if (containingLayerScope) nodeScopeId.set(node.id, containingLayerScope);
   }
   for (const node of stableGraph.nodes) {
@@ -513,15 +531,6 @@ export function buildGraphHierarchyIndex(graph: KnowledgeGraph): GraphHierarchyI
     rootsByScope.set(scope.id, protectedRoots);
     rootPathByScope.set(scope.id, commonDirectoryRoot(filePaths, protectedRoots));
   }
-
-  const containingFileIdsByNode = new Map<string, string[]>();
-  for (const edge of stableGraph.edges) {
-    if (edge.type !== "contains" || !fileNodeIds.has(edge.source)) continue;
-    const owners = containingFileIdsByNode.get(edge.target) ?? [];
-    owners.push(edge.source);
-    containingFileIdsByNode.set(edge.target, owners);
-  }
-  for (const owners of containingFileIdsByNode.values()) owners.sort(compareStable);
 
   const mutableClusters = new Map<string, MutableHierarchyCluster>();
   const clusterForPath = (scopeId: string, filePath: string): MutableHierarchyCluster => {
@@ -589,7 +598,7 @@ export function buildGraphHierarchyIndex(graph: KnowledgeGraph): GraphHierarchyI
       const normalizedPath = normalizeGraphFilePath(node.filePath);
       const fileId = fileIdByNormalizedPath.get(normalizedPath);
       const canonicalFileLocation = fileId ? fileLocationById.get(fileId) : undefined;
-      const containingFileId = containingFileIdsByNode.get(node.id)?.[0];
+      const containingFileId = containingFileIdByNode.get(node.id);
       const fileLocation = canonicalFileLocation
         ?? (containingFileId ? fileLocationById.get(containingFileId) : undefined);
       if (fileLocation) {
@@ -611,7 +620,7 @@ export function buildGraphHierarchyIndex(graph: KnowledgeGraph): GraphHierarchyI
       nodeLocationById.set(node.id, { scopeId });
       continue;
     }
-    const containingFileId = containingFileIdsByNode.get(node.id)?.[0];
+    const containingFileId = containingFileIdByNode.get(node.id);
     const fileLocation = containingFileId ? fileLocationById.get(containingFileId) : undefined;
     if (fileLocation) {
       scopeId = fileLocation.scopeId;

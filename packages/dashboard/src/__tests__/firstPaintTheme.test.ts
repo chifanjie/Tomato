@@ -96,6 +96,28 @@ describe("first paint theme contract", () => {
     await act(async () => root.unmount());
   });
 
+  it("publishes a valid stored theme immediately without loading meta", async () => {
+    const loadMetaTheme = vi.fn();
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => root.render(createElement(InitialThemeGate, {
+      metaUrl: "/meta.json",
+      readStoredTheme: () => ({ presetId: "night-ink" }),
+      loadMetaTheme,
+      children: (config) => createElement(
+        "div",
+        { "data-content-preset": config.presetId },
+        "知识库主内容",
+      ),
+    })));
+
+    expect(container.querySelector('[data-content-preset="night-ink"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("正在准备阅读界面");
+    expect(loadMetaTheme).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+  });
+
   it("keeps App wired through the tested gate", () => {
     expect(GATE_SOURCE).toContain("正在准备阅读界面");
     expect(APP_SOURCE).toContain("<InitialThemeGate");

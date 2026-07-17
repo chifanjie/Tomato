@@ -422,6 +422,22 @@ body {
 .uc-status-copy:hover { background: color-mix(in srgb, var(--uc-status-color) 8%, transparent); }
 .uc-inline-status { color: var(--uc-status-color); font-size: 13px; }
 
+.uc-wiki-recovery {
+  --uc-status-color: var(--color-graph-status-context);
+  border: 1px solid color-mix(in srgb, var(--uc-status-color) 38%, var(--color-border-subtle));
+  border-radius: var(--radius-panel);
+  background: color-mix(in srgb, var(--uc-status-color) 8%, var(--color-surface));
+}
+
+.uc-wiki-recovery[data-severity="problem"] {
+  --uc-status-color: var(--color-graph-status-problem);
+}
+
+.uc-wiki-recovery button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
 .uc-global-header button:focus-visible,
 .uc-mobile-header-more > summary:focus-visible {
   outline: 2px solid var(--color-accent);

@@ -69,6 +69,7 @@ describe("ThemePicker", () => {
 it("opens a four-item radio menu and restores focus on Escape", async () => {
   const { container, root } = await mountPicker("technical-document");
   const trigger = container.querySelector('[aria-haspopup="menu"]') as HTMLButtonElement;
+  expect(trigger.getAttribute("aria-label")).toBe("主题：技术文档 2.0");
   await click(trigger);
 
   const items = [...container.querySelectorAll('[role="menuitemradio"]')];

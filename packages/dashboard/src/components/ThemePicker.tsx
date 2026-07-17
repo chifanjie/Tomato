@@ -89,6 +89,7 @@ export function ThemePicker({ disabled = false }: ThemePickerProps) {
         ref={triggerRef}
         type="button"
         disabled={disabled}
+        aria-label={`主题：${preset.name}`}
         aria-haspopup="menu"
         aria-expanded={menuOpen}
         aria-controls={menuId}

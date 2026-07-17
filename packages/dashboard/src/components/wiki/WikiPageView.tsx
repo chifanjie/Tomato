@@ -396,7 +396,7 @@ function LoadedWikiPageView({
 
         <section className="uc-prose">
           {anchorError && (
-            <div role="alert" className="mt-5 flex items-center justify-between gap-4 rounded-lg border border-amber-400/30 bg-amber-500/5 px-4 py-3 text-sm text-text-secondary">
+            <div role="alert" data-severity="context" className="uc-wiki-recovery mt-5 flex items-center justify-between gap-4 px-4 py-3 text-sm text-text-secondary">
               <span>{anchorError}</span>
               <button
                 type="button"
@@ -409,7 +409,7 @@ function LoadedWikiPageView({
           )}
           {currentState.status === "loading" && <LoadingDocument />}
           {currentState.status === "error" && (
-            <div role="alert" className="my-9 rounded-xl border border-red-400/25 bg-red-500/5 p-5">
+            <div role="alert" data-severity="problem" className="uc-wiki-recovery my-9 p-5">
               <h2 className="text-base font-semibold text-text-primary">正文暂时无法显示</h2>
               <p className="mt-2 text-sm leading-6 text-text-secondary">{currentState.error}</p>
               <button

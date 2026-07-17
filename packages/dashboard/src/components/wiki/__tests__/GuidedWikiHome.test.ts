@@ -23,8 +23,32 @@ it("renders the guided route without maintenance metrics", () => {
   expect(html).toContain("查找文件或符号");
   expect(html).toContain("项目总览");
   expect(html).toContain("运行流程");
+  expect(html.match(/class="uc-guided-route-item"/g)).toHaveLength(5);
+  const stages = [
+    ["项目做什么", "先确认项目边界与核心价值"],
+    ["怎样流转", "沿主路径理解请求怎样推进"],
+    ["有哪些规则", "识别决定行为的条件与约束"],
+    ["代码怎样实现", "进入承担职责的模块与文件"],
+    ["怎样核验源码", "回到源码位置核验结论"],
+  ] as const;
+  let previousIndex = -1;
+  for (const [label, summary] of stages) {
+    const labelIndex = html.indexOf(label);
+    expect(labelIndex).toBeGreaterThan(previousIndex);
+    expect(html.indexOf(summary)).toBeGreaterThan(labelIndex);
+    previousIndex = labelIndex;
+  }
   expect(html).not.toContain("overflow-x-auto");
   expect(html).not.toContain("min-w-[8.75rem]");
   expect(html).not.toContain("a.ts 文件参考");
   expect(html).not.toMatch(/缺口|覆盖率|生成失败/);
+
+  const emptyHtml = renderToStaticMarkup(createElement(GuidedWikiHome, {
+    projectName: "示例项目",
+    routePages: [],
+    onOpenPage: vi.fn(),
+    onOpenGraph: vi.fn(),
+    onOpenReference: vi.fn(),
+  }));
+  expect(emptyHtml).toMatch(/<button[^>]*disabled=""[^>]*>开始阅读<\/button>/);
 });

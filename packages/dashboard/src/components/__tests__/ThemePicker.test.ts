@@ -1,25 +1,119 @@
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+// @vitest-environment happy-dom
 
-describe("ThemePicker Simplified Chinese contract", () => {
-  it("uses exact local copy without the removed i18n context", () => {
-    const source = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), "../ThemePicker.tsx"),
-      "utf8",
-    );
-    expect(source).not.toContain("useI18n");
-    for (const label of [
-      "切换主题",
-      "主题",
-      "强调色",
-      "标题字体",
-      "衬线",
-      "无衬线",
-      "等宽",
-    ]) {
-      expect(source).toContain(label);
-    }
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { Window } from "happy-dom";
+import { act, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ThemeProvider } from "../../themes/ThemeContext";
+import type { PresetId } from "../../themes/types";
+import { ThemePicker } from "../ThemePicker";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+Object.defineProperty(window, "localStorage", {
+  configurable: true,
+  value: new Window().localStorage,
+});
+
+async function mountPicker(presetId: PresetId): Promise<{
+  container: HTMLDivElement;
+  root: Root;
+}> {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(createElement(
+      ThemeProvider,
+      { initialConfig: { presetId } },
+      createElement(ThemePicker),
+    ));
   });
+  return { container, root };
+}
+
+async function click(target: Element | null): Promise<void> {
+  if (!(target instanceof HTMLElement)) throw new Error("missing click target");
+  await act(async () => target.click());
+}
+
+async function keydown(key: string): Promise<void> {
+  await act(async () => {
+    document.dispatchEvent(new KeyboardEvent("keydown", {
+      key,
+      bubbles: true,
+      cancelable: true,
+    }));
+  });
+}
+
+beforeEach(() => {
+  vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+    callback(16);
+    return 1;
+  });
+});
+
+afterEach(() => {
+  document.body.replaceChildren();
+  localStorage.clear();
+  vi.restoreAllMocks();
+});
+
+describe("ThemePicker", () => {
+it("opens a four-item radio menu and restores focus on Escape", async () => {
+  const { container, root } = await mountPicker("technical-document");
+  const trigger = container.querySelector('[aria-haspopup="menu"]') as HTMLButtonElement;
+  await click(trigger);
+
+  const items = [...container.querySelectorAll('[role="menuitemradio"]')];
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(items).toHaveLength(4);
+  expect(items[0]?.getAttribute("aria-checked")).toBe("true");
+  expect(document.activeElement).toBe(items[0]);
+  expect(items.map((item) => item.getAttribute("tabindex"))).toEqual(["0", "-1", "-1", "-1"]);
+
+  await keydown("ArrowUp");
+  expect(document.activeElement).toBe(items[3]);
+  expect(items.map((item) => item.getAttribute("tabindex"))).toEqual(["-1", "-1", "-1", "0"]);
+  await keydown("Escape");
+  expect(container.querySelector('[role="menu"]')).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+
+  await act(async () => root.unmount());
+});
+
+it("removes arbitrary accent and heading controls", () => {
+  const source = readFileSync(join(process.cwd(), "src/components/ThemePicker.tsx"), "utf8");
+  expect(source).not.toMatch(/强调色|标题字体|衬线|等宽/);
+});
+
+it("chooses the focused theme with Enter", async () => {
+  const { container, root } = await mountPicker("technical-document");
+  const trigger = container.querySelector('[aria-haspopup="menu"]') as HTMLButtonElement;
+  await click(trigger);
+  await keydown("ArrowDown");
+  await keydown("Enter");
+
+  expect(container.querySelector('[role="menu"]')).toBeNull();
+  expect(trigger.textContent).toContain("雾蓝蓝图");
+  expect(document.activeElement).toBe(trigger);
+
+  await act(async () => root.unmount());
+});
+
+it("chooses the focused theme with Space", async () => {
+  const { container, root } = await mountPicker("technical-document");
+  const trigger = container.querySelector('[aria-haspopup="menu"]') as HTMLButtonElement;
+  await click(trigger);
+  await keydown("ArrowUp");
+  await keydown(" ");
+
+  expect(container.querySelector('[role="menu"]')).toBeNull();
+  expect(trigger.textContent).toContain("夜墨");
+  expect(document.activeElement).toBe(trigger);
+  await act(async () => root.unmount());
+});
 });

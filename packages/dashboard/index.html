@@ -1,6 +1,44 @@
 <!doctype html>
-<html lang="en">
+<html
+  lang="zh-CN"
+  data-theme-preset="technical-document"
+  data-theme-scheme="light"
+  data-theme="light"
+>
   <head>
+    <script>
+      (() => {
+        const known = new Set([
+          "technical-document",
+          "mist-blueprint",
+          "sage-paper",
+          "night-ink",
+        ]);
+        try {
+          const raw = localStorage.getItem("uc-theme");
+          if (raw === null) return;
+          const value = JSON.parse(raw);
+          const supported = value
+            && typeof value === "object"
+            && (value.version === 2 || value.version === 3);
+          const candidate = supported
+            ? value.presetId
+            : null;
+          const presetId = candidate === "engineering-workbench"
+            ? "night-ink"
+            : known.has(candidate)
+              ? candidate
+              : "technical-document";
+          const scheme = presetId === "night-ink" ? "dark" : "light";
+          document.documentElement.dataset.themePreset = presetId;
+          document.documentElement.dataset.themeScheme = scheme;
+          document.documentElement.dataset.theme = scheme;
+          document.documentElement.style.colorScheme = scheme;
+        } catch {
+          document.documentElement.dataset.themePreset = "technical-document";
+        }
+      })();
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />

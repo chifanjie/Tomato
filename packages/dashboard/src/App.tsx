@@ -21,7 +21,8 @@ import WarningBanner from "./components/WarningBanner";
 import { useIsMobile } from "./hooks/useIsMobile";
 import { normalizeLegacyGraphBranding } from "./legacyBranding";
 import { useDashboardStore } from "./store";
-import { ThemeProvider, type ThemeConfig } from "./themes/index.ts";
+import { ThemeProvider } from "./themes/index.ts";
+import { InitialThemeGate } from "./themes/InitialThemeGate";
 import {
   loadDashboardKnowledge,
   shouldRetryWikiLoad,
@@ -454,20 +455,6 @@ function Dashboard({
   const [wikiAvailability, setWikiAvailability] = useState<WikiAvailabilityStatus>("loading");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [graphIssues, setGraphIssues] = useState<GraphIssue[]>([]);
-  const [metaTheme, setMetaTheme] = useState<ThemeConfig | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetch(dataUrl("meta.json", accessToken))
-      .then((response) => response.ok ? response.json() as Promise<{ theme?: ThemeConfig }> : null)
-      .then((meta) => {
-        if (!cancelled && meta?.theme) setMetaTheme(meta.theme);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [accessToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -531,15 +518,19 @@ function Dashboard({
   }, [accessToken, onTokenInvalid, setConsoleGraph]);
 
   return (
-    <ThemeProvider metaTheme={metaTheme}>
-      <DashboardContent
-        accessToken={accessToken}
-        onTokenInvalid={onTokenInvalid}
-        loadError={loadError}
-        graphIssues={graphIssues}
-        wikiAvailability={wikiAvailability}
-      />
-    </ThemeProvider>
+    <InitialThemeGate metaUrl={dataUrl("meta.json", accessToken)}>
+      {(initialTheme) => (
+        <ThemeProvider initialConfig={initialTheme}>
+          <DashboardContent
+            accessToken={accessToken}
+            onTokenInvalid={onTokenInvalid}
+            loadError={loadError}
+            graphIssues={graphIssues}
+            wikiAvailability={wikiAvailability}
+          />
+        </ThemeProvider>
+      )}
+    </InitialThemeGate>
   );
 }
 

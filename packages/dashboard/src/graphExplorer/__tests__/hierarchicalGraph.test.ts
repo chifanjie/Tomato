@@ -903,6 +903,174 @@ describe("hierarchicalGraph", () => {
     })).toEqual({ nodes: [], edges: [] });
   });
 
+  it.each([
+    { level: "overview" as const },
+    { level: "scope" as const },
+  ])("keeps a visible service-to-file neighbor selectable across $level rebuilds", (navigation) => {
+    const file = hierarchyNode("file:visible-neighbor", "file", "src/visible.ts");
+    const service = hierarchyNode("service:visible-neighbor", "service", "src/visible.ts");
+    const graph = hierarchyGraph([file, service], [{
+      source: service.id,
+      target: file.id,
+      type: "depends_on",
+      direction: "forward",
+      weight: 1,
+    }], [file.id, service.id]);
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const scope = hierarchyIndex.scopes[0]!;
+    const baseGraph = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      mode: "architecture",
+      navigation: navigation.level === "overview"
+        ? navigation
+        : { ...navigation, scopeId: scope.id },
+      materializedNodeId: null,
+    });
+    const serviceExpansion = buildHierarchySelectionExpansion({
+      graph,
+      hierarchyIndex,
+      baseGraph,
+      mode: "architecture",
+      selectedNodeId: service.id,
+    });
+    const visibleAfterFirstBuild = mergeHierarchySelectionExpansion(baseGraph, serviceExpansion);
+
+    expect(visibleAfterFirstBuild.nodes.map((node) => node.id)).toContain(file.id);
+
+    expect(buildHierarchySelectionExpansion({
+      graph,
+      hierarchyIndex,
+      baseGraph,
+      mode: "architecture",
+      selectedNodeId: file.id,
+    })).toEqual({ nodes: [], edges: [] });
+
+    const fileExpansion = buildHierarchySelectionExpansion({
+      graph,
+      hierarchyIndex,
+      baseGraph,
+      mode: "architecture",
+      selectedNodeId: file.id,
+      selectedNodeWasVisible: true,
+    });
+    expect(fileExpansion.nodes.map((node) => node.id)).toEqual(expect.arrayContaining([
+      file.id,
+      service.id,
+    ]));
+    expect(fileExpansion.edges).toHaveLength(1);
+  });
+
+  it("keeps a visible file-to-symbol neighbor selectable across cluster rebuilds", () => {
+    const file = hierarchyNode("file:cluster-neighbor", "file", "src/cluster.ts");
+    const symbol = hierarchyNode("function:cluster-neighbor", "function", file.filePath);
+    const graph = hierarchyGraph([file, symbol], [{
+      source: file.id,
+      target: symbol.id,
+      type: "contains",
+      direction: "forward",
+      weight: 1,
+    }], [file.id]);
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const scope = hierarchyIndex.scopes[0]!;
+    const clusterId = hierarchyIndex.fileLocationById.get(file.id)!.clusterId;
+    const baseGraph = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      mode: "architecture",
+      navigation: { level: "cluster", scopeId: scope.id, clusterId },
+      materializedNodeId: null,
+    });
+    const fileExpansion = buildHierarchySelectionExpansion({
+      graph,
+      hierarchyIndex,
+      baseGraph,
+      mode: "architecture",
+      selectedNodeId: file.id,
+    });
+    const visibleAfterFirstBuild = mergeHierarchySelectionExpansion(baseGraph, fileExpansion);
+
+    expect(visibleAfterFirstBuild.nodes.map((node) => node.id)).toContain(symbol.id);
+
+    expect(buildHierarchySelectionExpansion({
+      graph,
+      hierarchyIndex,
+      baseGraph,
+      mode: "architecture",
+      selectedNodeId: symbol.id,
+    })).toEqual({ nodes: [], edges: [] });
+
+    const symbolExpansion = buildHierarchySelectionExpansion({
+      graph,
+      hierarchyIndex,
+      baseGraph,
+      mode: "architecture",
+      selectedNodeId: symbol.id,
+      selectedNodeWasVisible: true,
+    });
+    expect(symbolExpansion.nodes.map((node) => node.id)).toEqual(expect.arrayContaining([
+      file.id,
+      symbol.id,
+    ]));
+    expect(symbolExpansion.edges).toHaveLength(1);
+  });
+
+  it("does not naturally own an isolated pathful architecture object at file level", () => {
+    const file = hierarchyNode("file:pathful-service", "file", "src/pathful.ts");
+    const symbol = hierarchyNode("function:pathful-service", "function", file.filePath);
+    const service = hierarchyNode("service:pathful-service", "service", file.filePath);
+    const graph = hierarchyGraph([file, symbol, service], [
+      { source: file.id, target: symbol.id, type: "contains", direction: "forward", weight: 1 },
+    ], [file.id, service.id]);
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const location = hierarchyIndex.fileLocationById.get(file.id)!;
+    const baseGraph = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      mode: "architecture",
+      navigation: { level: "file", ...location },
+      materializedNodeId: null,
+    });
+
+    expect(buildHierarchySelectionExpansion({
+      graph,
+      hierarchyIndex,
+      baseGraph,
+      mode: "architecture",
+      selectedNodeId: service.id,
+    })).toEqual({ nodes: [], edges: [] });
+  });
+
+  it("keeps a mode-allowed pathful architecture neighbor in the file candidate universe", () => {
+    const file = hierarchyNode("file:related-service", "file", "src/related.ts");
+    const symbol = hierarchyNode("function:related-service", "function", file.filePath);
+    const service = hierarchyNode("service:related-service", "service", file.filePath);
+    const graph = hierarchyGraph([file, symbol, service], [
+      { source: file.id, target: symbol.id, type: "contains", direction: "forward", weight: 1 },
+      { source: symbol.id, target: service.id, type: "depends_on", direction: "forward", weight: 1 },
+    ], [file.id, service.id]);
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const location = hierarchyIndex.fileLocationById.get(file.id)!;
+    const baseGraph = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      mode: "architecture",
+      navigation: { level: "file", ...location },
+      materializedNodeId: null,
+    });
+    const expansion = buildHierarchySelectionExpansion({
+      graph,
+      hierarchyIndex,
+      baseGraph,
+      mode: "architecture",
+      selectedNodeId: service.id,
+    });
+    expect(expansion.nodes.map((node) => node.id)).toEqual(expect.arrayContaining([
+      symbol.id,
+      service.id,
+    ]));
+  });
+
   it("projects both evidence-backed overview portal contexts for a cross-scope relation", () => {
     const graph = importOnlyGraph();
     const hierarchyIndex = buildGraphHierarchyIndex(graph);

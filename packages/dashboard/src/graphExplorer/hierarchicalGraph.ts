@@ -1778,8 +1778,17 @@ export function buildHierarchySelectionExpansion(input: {
   wikiIndex?: WikiRuntimeIndex;
   mode: GraphExplorerMode;
   selectedNodeId: string | null;
+  selectedNodeWasVisible?: boolean;
 }): HierarchicalGraphSelectionExpansion {
-  const { graph, hierarchyIndex, baseGraph, wikiIndex, mode, selectedNodeId } = input;
+  const {
+    graph,
+    hierarchyIndex,
+    baseGraph,
+    wikiIndex,
+    mode,
+    selectedNodeId,
+    selectedNodeWasVisible = false,
+  } = input;
   if (!selectedNodeId) return { nodes: [], edges: [] };
 
   const raw = buildSemanticGraph({ graph, wikiIndex, mode: "global", focusNodeIds: [] });
@@ -1932,7 +1941,9 @@ export function buildHierarchySelectionExpansion(input: {
   const fileOwnedIds = new Set(level === "file" && currentFileId
     ? raw.nodes.filter((node) => {
       const location = hierarchyIndex.nodeLocationById.get(node.id);
-      return node.id === currentFileId || location?.fileId === currentFileId;
+      return node.id === currentFileId
+        || (graphNodePlacementClass(node.rawType) === "file-leaf"
+          && location?.fileId === currentFileId);
     }).map((node) => node.id)
     : []);
   const fileCandidateIds = new Set(fileOwnedIds);
@@ -1943,7 +1954,8 @@ export function buildHierarchySelectionExpansion(input: {
     }
   }
   const selectedIsRepresentableRaw = Boolean(rawSelected && (
-    baseNodeById.has(selectedNodeId)
+    selectedNodeWasVisible
+    || baseNodeById.has(selectedNodeId)
     || (level === "overview" && graphNodePlacementClass(rawSelected.rawType) === "architecture-context")
     || (level === "scope" && selectedLocation?.scopeId === currentScopeId
       && graphNodePlacementClass(rawSelected.rawType) === "architecture-context")

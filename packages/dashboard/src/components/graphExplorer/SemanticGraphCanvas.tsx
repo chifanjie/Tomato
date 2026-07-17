@@ -50,6 +50,7 @@ interface SemanticGraphCanvasProps {
   viewKey: string;
   onOpenScope: (scopeId: string) => void;
   onOpenFile: (scopeId: string, fileId: string) => void;
+  onSelectNode?: (nodeId: string | null) => void;
 }
 
 interface SemanticNodeData extends Record<string, unknown> {
@@ -221,9 +222,11 @@ export default function SemanticGraphCanvas({
   viewKey,
   onOpenScope,
   onOpenFile,
+  onSelectNode,
 }: SemanticGraphCanvasProps) {
   const selectedNodeId = useDashboardStore((state) => state.selectedNodeId);
   const selectNode = useDashboardStore((state) => state.selectNode);
+  const selectGraphNode = onSelectNode ?? selectNode;
   const reducedMotion = useReducedMotion();
   const lastNodeClickRef = useRef<GraphPointerClick | null>(null);
   const lastDrillRef = useRef<GraphPointerClick | null>(null);
@@ -251,9 +254,9 @@ export default function SemanticGraphCanvas({
       });
       lastNodeClickRef.current = result.nextClick;
       if (result.action === "drill") drillOnce(node, event.timeStamp);
-      else selectNode(node.id);
+      else selectGraphNode(node.id);
     },
-    [drillOnce, selectNode],
+    [drillOnce, selectGraphNode],
   );
   const onNodeDoubleClick = useCallback<NodeMouseHandler<SemanticFlowNode>>(
     (event, node) => drillOnce(node, event.timeStamp),
@@ -261,8 +264,8 @@ export default function SemanticGraphCanvas({
   );
   const onPaneClick = useCallback(() => {
     lastNodeClickRef.current = null;
-    selectNode(null);
-  }, [selectNode]);
+    selectGraphNode(null);
+  }, [selectGraphNode]);
   useEffect(() => {
     lastNodeClickRef.current = null;
     lastDrillRef.current = null;
@@ -389,7 +392,7 @@ export default function SemanticGraphCanvas({
           isNeighbor: nodePresentation.neighbor,
           isDimmed: nodePresentation.dimmed,
           canDrillDown: Boolean(onDrillDown),
-          onSelect: () => selectNode(node.id),
+          onSelect: () => selectGraphNode(node.id),
           ...(onDrillDown ? { onDrillDown } : {}),
         },
         style: { opacity: nodePresentation.opacity },
@@ -421,7 +424,7 @@ export default function SemanticGraphCanvas({
     });
 
     return { nodes: flowNodes, edges: flowEdges };
-  }, [displayMode, onOpenFile, onOpenScope, positionsById, reducedMotion, selectNode, semanticGraph, selectedNodeId]);
+  }, [displayMode, onOpenFile, onOpenScope, positionsById, reducedMotion, selectGraphNode, semanticGraph, selectedNodeId]);
 
   if (semanticGraph.nodes.length === 0) {
     return (

@@ -237,11 +237,55 @@ describe("SemanticGraphCanvas interaction contract", () => {
     await act(async () => root.unmount());
   });
 
+  it("reports node, keyboard, and pane selections through the injected callback", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const onSelectNode = vi.fn();
+    await act(async () => root.render(createElement(SemanticGraphCanvas, {
+      semanticGraph: semanticGraphFixture,
+      displayMode: "architecture",
+      viewKey: "overview",
+      onOpenScope: vi.fn(),
+      onOpenFile: vi.fn(),
+      onSelectNode,
+    })));
+
+    const props = flowHarness.props as {
+      nodes: Array<{ id: string; data: Record<string, unknown> }>;
+      onNodeClick: (event: { timeStamp: number }, node: { id: string; data: Record<string, unknown> }) => void;
+      onPaneClick: () => void;
+    };
+    const flowNode = props.nodes.find((node) => node.id === "scope:src");
+    if (!flowNode) throw new Error("缺少核心模块流节点");
+    await act(async () => props.onNodeClick({ timeStamp: 1_000 }, flowNode));
+
+    const card = container.querySelector<HTMLElement>('[role="group"][aria-label^="测试模块"]');
+    if (!card) throw new Error("缺少测试模块图谱卡片");
+    await act(async () => card.dispatchEvent(new KeyboardEvent("keydown", {
+      key: " ",
+      bubbles: true,
+      cancelable: true,
+    })));
+    await act(async () => props.onPaneClick());
+
+    expect(onSelectNode.mock.calls).toEqual([
+      ["scope:src"],
+      ["scope:test"],
+      [null],
+    ]);
+    expect(flowHarness.selectNodeCalls).toEqual([]);
+
+    await act(async () => root.unmount());
+  });
+
   it("selects every graph object, clears from the pane, and keeps drilling explicit", () => {
-    expect(source).toContain("selectNode(node.id)");
+    expect(source).toContain("onSelectNode?: (nodeId: string | null) => void");
+    expect(source).toContain("const selectGraphNode = onSelectNode ?? selectNode");
+    expect(source).toContain("selectGraphNode(node.id)");
     expect(source).not.toContain('node.data.kind === "node"');
     expect(source).toContain("onPaneClick={onPaneClick}");
-    expect(source).toContain("selectNode(null)");
+    expect(source).toContain("selectGraphNode(null)");
     expect(source).toContain("onNodeDoubleClick={onNodeDoubleClick}");
     expect(source).toContain("node.data.onDrillDown?.()");
     expect(source).toContain("data.onDrillDown?.()");
@@ -318,6 +362,16 @@ describe("SemanticGraphCanvas interaction contract", () => {
     expect(explorerSource).toContain("openWikiForGraphNode(selection.id)");
     expect(explorerSource).toContain("onSelectWikiTarget(destination)");
     expect(explorerSource).toContain("onSelectWikiTarget(target)");
+  });
+
+  it("records provenance only for currently visible ids and passes it into view rebuilding", () => {
+    expect(explorerSource).toContain("const [visibleSelectedNodeId, setVisibleSelectedNodeId]");
+    expect(explorerSource).toContain("view?.semanticGraph.nodes.some((node) => node.id === nodeId)");
+    expect(explorerSource).toContain("selectedNodeWasVisible");
+    expect(explorerSource).toContain("visibleSelectionContextKey === selectionContextKey");
+    expect(explorerSource).toContain('const focusRevision = focusNodeIds.join("\\u0000")');
+    expect(explorerSource).toContain("onSelectNode={selectVisibleNode}");
+    expect(explorerSource).toContain("onSelectObject={selectVisibleNode}");
   });
 });
 

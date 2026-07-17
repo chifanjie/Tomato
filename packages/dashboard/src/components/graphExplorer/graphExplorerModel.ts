@@ -41,6 +41,8 @@ export interface BuildGraphExplorerViewInput {
   /** Temporary Task 5 call-site shim. Selection expansion never consumes focus ids. */
   focusNodeIds?: string[];
   selectedNodeId: string | null;
+  /** True only when the active surface selected this id from the currently visible graph. */
+  selectedNodeWasVisible?: boolean;
   navigation: GraphExplorerNavigation;
   /** Temporary Task 5 integration shim. */
   materializedNodeId?: string | null;
@@ -254,6 +256,7 @@ export function buildGraphExplorerView({
   wikiIndex,
   mode,
   selectedNodeId,
+  selectedNodeWasVisible = false,
   navigation,
   materializedNodeId = null,
 }: BuildGraphExplorerViewInput): GraphExplorerView {
@@ -273,6 +276,7 @@ export function buildGraphExplorerView({
     wikiIndex,
     mode,
     selectedNodeId,
+    selectedNodeWasVisible,
   });
   const semanticGraph = mergeHierarchySelectionExpansion(baseGraph, selectionExpansion);
   const selection = buildGraphSelectionDetails({

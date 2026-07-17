@@ -33,6 +33,9 @@ export default function GraphExplorer({
   const selectNode = useDashboardStore((state) => state.selectNode);
   const openWikiForGraphNode = useDashboardStore((state) => state.openWikiForGraphNode);
   const [navigation, setNavigation] = useState<GraphExplorerNavigation>(OVERVIEW_NAVIGATION);
+  const [visibleSelectedNodeId, setVisibleSelectedNodeId] = useState<string | null>(null);
+  const [visibleSelectionContextKey, setVisibleSelectionContextKey] = useState<string | null>(null);
+  const focusRevision = focusNodeIds.join("\u0000");
   const layoutRevision = useMemo(
     () => graph ? graphLayoutRevision(graph) : "",
     [graph],
@@ -46,10 +49,37 @@ export default function GraphExplorer({
     () => normalizeGraphModeForOptions(storedMode, modeOptions),
     [modeOptions, storedMode],
   );
+  const selectionContextKey = JSON.stringify([
+    graph?.version ?? "",
+    graph?.project.name ?? "",
+    graph?.project.gitCommitHash ?? "",
+    graph?.project.analyzedAt ?? "",
+    layoutRevision,
+    effectiveMode,
+    navigation,
+    focusRevision,
+  ]);
 
   useEffect(() => {
     if (storedMode !== effectiveMode) setGraphExplorerMode(effectiveMode);
   }, [effectiveMode, setGraphExplorerMode, storedMode]);
+
+  useEffect(() => {
+    setVisibleSelectedNodeId(null);
+    setVisibleSelectionContextKey(null);
+  }, [effectiveMode, focusRevision, graph, navigation]);
+
+  useEffect(() => {
+    if (visibleSelectedNodeId === null || visibleSelectedNodeId === selectedNodeId) return;
+    setVisibleSelectedNodeId(null);
+    setVisibleSelectionContextKey(null);
+  }, [selectedNodeId, visibleSelectedNodeId]);
+
+  const selectedNodeWasVisible = Boolean(
+    selectedNodeId
+    && visibleSelectedNodeId === selectedNodeId
+    && visibleSelectionContextKey === selectionContextKey,
+  );
 
   const view = useMemo(
     () => graph
@@ -59,30 +89,48 @@ export default function GraphExplorer({
           mode: effectiveMode,
           focusNodeIds,
           selectedNodeId,
+          selectedNodeWasVisible,
           navigation,
         })
       : null,
-    [effectiveMode, focusNodeIds, graph, navigation, selectedNodeId, wikiIndex],
+    [effectiveMode, focusNodeIds, graph, navigation, selectedNodeId, selectedNodeWasVisible, wikiIndex],
   );
+
+  const selectVisibleNode = useCallback((nodeId: string | null) => {
+    const isVisible = Boolean(
+      nodeId && view?.semanticGraph.nodes.some((node) => node.id === nodeId),
+    );
+    setVisibleSelectedNodeId(isVisible ? nodeId : null);
+    setVisibleSelectionContextKey(isVisible ? selectionContextKey : null);
+    selectNode(nodeId);
+  }, [selectNode, selectionContextKey, view]);
 
   const changeMode = useCallback((mode: GraphExplorerDisplayMode) => {
     setGraphExplorerMode(mode);
     setNavigation(OVERVIEW_NAVIGATION);
+    setVisibleSelectedNodeId(null);
+    setVisibleSelectionContextKey(null);
     selectNode(null);
   }, [selectNode, setGraphExplorerMode]);
 
   const openOverview = useCallback(() => {
     setNavigation(OVERVIEW_NAVIGATION);
+    setVisibleSelectedNodeId(null);
+    setVisibleSelectionContextKey(null);
     selectNode(null);
   }, [selectNode]);
 
   const openScope = useCallback((scopeId: string) => {
     setNavigation({ level: "scope", scopeId });
+    setVisibleSelectedNodeId(null);
+    setVisibleSelectionContextKey(null);
     selectNode(null);
   }, [selectNode]);
 
   const openFile = useCallback((scopeId: string, fileId: string) => {
     setNavigation({ level: "file", scopeId, fileId });
+    setVisibleSelectedNodeId(null);
+    setVisibleSelectionContextKey(null);
     selectNode(null);
   }, [selectNode]);
 
@@ -164,11 +212,12 @@ export default function GraphExplorer({
           viewKey={canvasViewKey}
           onOpenScope={openScope}
           onOpenFile={openFile}
+          onSelectNode={selectVisibleNode}
         />
       </div>
       <GraphDetailsRail
         view={view}
-        onSelectObject={selectNode}
+        onSelectObject={selectVisibleNode}
         onOpenScope={openScope}
         onOpenFile={openFile}
         onSelectWikiTarget={openSelectionWikiTarget}

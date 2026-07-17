@@ -253,16 +253,22 @@ describe("readable graph viewport", () => {
   });
 
   it("fits complete small bounds without exceeding maxZoom", () => {
-    const result = computeReadableViewport({
+    const input = {
       level: "scope",
       bounds: { x: 20, y: 20, width: 600, height: 320 },
       viewport: quantizeGraphViewport(960, 650),
       padding: 0.12,
       maxZoom: 0.96,
+    } as const;
+    const result = computeReadableViewport(input);
+    const anchoredResult = computeReadableViewport({
+      ...input,
+      focusBounds: { x: 8_000, y: 4_000, width: 228, height: 119 },
     });
     expect(result.fullyFits).toBe(true);
     expect(result.viewport.zoom).toBeLessThanOrEqual(0.96);
     expect(result.viewport.zoom).toBeGreaterThanOrEqual(READABLE_ZOOM_BY_LEVEL.scope);
+    expect(anchoredResult).toEqual(result);
   });
 });
 

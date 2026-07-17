@@ -916,19 +916,30 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
     }
   }, [isCurrentFlowBinding]);
 
+  const defaultViewportAnchorId = baseGraph.nodes[0]?.id;
   const readableViewport = useCallback((focusNodeId?: string) => {
     if (!viewportBucket || !layoutState || layoutState.structureKey !== structureKey) return null;
+    const anchorNodeId = focusNodeId ?? defaultViewportAnchorId;
+    const focusBounds = anchorNodeId
+      ? boundsForNode(anchorNodeId, positionsById, nodeSizeById)
+      : undefined;
     return computeReadableViewport({
       level: navigation.level,
       bounds: layoutState.bounds,
-      ...(focusNodeId
-        ? { focusBounds: boundsForNode(focusNodeId, positionsById, nodeSizeById) }
-        : {}),
+      ...(focusBounds ? { focusBounds } : {}),
       viewport: viewportBucket,
       padding: 0.16,
       maxZoom: 1.12,
     }).viewport;
-  }, [layoutState, navigation.level, nodeSizeById, positionsById, structureKey, viewportBucket]);
+  }, [
+    defaultViewportAnchorId,
+    layoutState,
+    navigation.level,
+    nodeSizeById,
+    positionsById,
+    structureKey,
+    viewportBucket,
+  ]);
 
   useEffect(() => {
     const binding = flowInstanceBindingRef.current;

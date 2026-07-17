@@ -13,6 +13,15 @@ import type { LayoutMessage } from "../../../utils/layoutAlgorithm.js";
 
 const testHarness = vi.hoisted(() => ({
   flowProps: [] as Array<Record<string, unknown>>,
+  flowInstanceSequence: 0,
+  activeFlowInstanceId: null as number | null,
+  deferNextFlowInit: false,
+  pendingFlowInits: [] as Array<() => void>,
+  flowInstanceViewportWrites: [] as Array<{
+    instanceId: number;
+    active: boolean;
+    viewport: { x: number; y: number; zoom: number };
+  }>,
   requestLayout: vi.fn(),
   setViewport: vi.fn(async (_viewport: { x: number; y: number; zoom: number }) => true),
   getViewport: vi.fn(() => ({ x: 12, y: 18, zoom: 0.8 })),
@@ -41,14 +50,39 @@ vi.mock("@xyflow/react", async (importOriginal) => {
     MiniMap: () => null,
     Position: { Bottom: "bottom", Left: "left", Right: "right", Top: "top" },
     ReactFlow: (props: Record<string, unknown>) => {
+      const [instanceId] = React.useState(() => ++testHarness.flowInstanceSequence);
       useEffect(() => {
         const onInit = props.onInit as ((instance: unknown) => void) | undefined;
-        onInit?.({
-          setViewport: testHarness.setViewport,
-          getViewport: testHarness.getViewport,
-          flowToScreenPosition: testHarness.flowToScreenPosition,
-        });
-      }, [props.onInit]);
+        let mounted = true;
+        testHarness.activeFlowInstanceId = instanceId;
+        const initialize = () => {
+          if (!mounted) return;
+          onInit?.({
+            setViewport: (viewport: { x: number; y: number; zoom: number }) => {
+              testHarness.flowInstanceViewportWrites.push({
+                instanceId,
+                active: testHarness.activeFlowInstanceId === instanceId,
+                viewport,
+              });
+              return testHarness.setViewport(viewport);
+            },
+            getViewport: testHarness.getViewport,
+            flowToScreenPosition: testHarness.flowToScreenPosition,
+          });
+        };
+        if (testHarness.deferNextFlowInit) {
+          testHarness.deferNextFlowInit = false;
+          testHarness.pendingFlowInits.push(initialize);
+        } else {
+          initialize();
+        }
+        return () => {
+          mounted = false;
+          if (testHarness.activeFlowInstanceId === instanceId) {
+            testHarness.activeFlowInstanceId = null;
+          }
+        };
+      }, [instanceId, props.onInit]);
       testHarness.flowProps.push(props);
       return React.createElement("div", { "data-testid": "react-flow" }, props.children as React.ReactNode);
     },
@@ -218,6 +252,11 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
       rafCallbacks.delete(id);
     }));
     testHarness.flowProps.length = 0;
+    testHarness.flowInstanceSequence = 0;
+    testHarness.activeFlowInstanceId = null;
+    testHarness.deferNextFlowInit = false;
+    testHarness.pendingFlowInits.length = 0;
+    testHarness.flowInstanceViewportWrites.length = 0;
     testHarness.requestLayout.mockReset();
     testHarness.requestLayout.mockImplementation(async (input: LayoutMessage) => layoutResult(input));
     testHarness.setViewport.mockReset();
@@ -305,6 +344,15 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
     rafCallbacks.clear();
     await act(async () => {
       callbacks.forEach((callback) => callback(performance.now()));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+
+  async function flushFlowInit(): Promise<void> {
+    const pending = testHarness.pendingFlowInits.splice(0);
+    await act(async () => {
+      pending.forEach((initialize) => initialize());
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -746,6 +794,37 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
 
     await render({ baseGraph: graphA, graphRevision: "revision:a" });
     expect(testHarness.setViewport).toHaveBeenCalledTimes(3);
+  });
+
+  it("applies a post-navigation automatic viewport to the newly initialized React Flow instance", async () => {
+    const graphA = semanticGraph("overview", ["a", "b", "c"]);
+    const graphB = semanticGraph("cluster", Array.from({ length: 15 }, (_, index) => `cluster-${index}`));
+    await render({ baseGraph: graphA, graphRevision: "revision:a" });
+    await emitResize(960, 650);
+    const initialInstanceId = testHarness.activeFlowInstanceId;
+    expect(testHarness.flowInstanceViewportWrites.at(-1)).toMatchObject({
+      instanceId: initialInstanceId,
+      active: true,
+    });
+
+    const pendingLayout = deferred<SemanticLayoutResult>();
+    testHarness.requestLayout.mockReturnValueOnce(pendingLayout.promise);
+    testHarness.deferNextFlowInit = true;
+    await render({ baseGraph: graphB, graphRevision: "revision:b" });
+    const layoutInput = testHarness.requestLayout.mock.calls[1]![0] as LayoutMessage;
+    await act(async () => {
+      pendingLayout.resolve(layoutResult(layoutInput));
+      await pendingLayout.promise;
+      await Promise.resolve();
+    });
+    const navigatedInstanceId = testHarness.activeFlowInstanceId;
+    expect(navigatedInstanceId).not.toBe(initialInstanceId);
+
+    await flushFlowInit();
+    expect(testHarness.flowInstanceViewportWrites.at(-1)).toMatchObject({
+      instanceId: navigatedInstanceId,
+      active: true,
+    });
   });
 
   it("rejects a late layout result after a newer structure has committed", async () => {

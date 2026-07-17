@@ -709,11 +709,13 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
   ]);
 
   const flowInstanceRef = useRef<ReactFlowInstance<SemanticFlowNode, SemanticFlowEdge> | null>(null);
+  const flowInstanceStructureKeyRef = useRef<string | null>(null);
   const [flowInstanceRevision, setFlowInstanceRevision] = useState(0);
   const onInit = useCallback((instance: ReactFlowInstance<SemanticFlowNode, SemanticFlowEdge>) => {
     flowInstanceRef.current = instance;
+    flowInstanceStructureKeyRef.current = structureKey;
     setFlowInstanceRevision((current) => current + 1);
-  }, []);
+  }, [structureKey]);
   const lastReportedSelectedScreenBoundsRef = useRef<GraphSelectedScreenBounds | null | undefined>(
     undefined,
   );
@@ -811,7 +813,11 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
 
   useEffect(() => {
     const instance = flowInstanceRef.current;
-    if (!instance || !structureKey || !completedPositions || !viewportBucket) return;
+    if (!instance
+      || flowInstanceStructureKeyRef.current !== structureKey
+      || !structureKey
+      || !completedPositions
+      || !viewportBucket) return;
     const request = explicitFocusRequest;
     const action: AutomaticViewportAction = request
       ? {
@@ -871,12 +877,12 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
   const fitGraph = useCallback(() => {
     const target = readableViewport(activeId ?? undefined);
     const instance = flowInstanceRef.current;
-    if (!target || !instance) return;
+    if (!target || !instance || flowInstanceStructureKeyRef.current !== structureKey) return;
     const transformGeneration = beginViewportTransform(target);
     void instance.setViewport(target).then(() => (
       settleViewportTransform(instance, transformGeneration, target)
     ));
-  }, [activeId, beginViewportTransform, readableViewport, settleViewportTransform]);
+  }, [activeId, beginViewportTransform, readableViewport, settleViewportTransform, structureKey]);
 
   if (semanticGraph.nodes.length === 0) {
     return (

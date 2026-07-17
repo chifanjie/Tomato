@@ -802,6 +802,46 @@ describe("hierarchicalGraph", () => {
     expect(connecting?.members).not.toContainEqual(expect.objectContaining({ source: architecture.id }));
   });
 
+  it("synthesizes a cap-hidden scope with the same raw metadata as its materialized base node", () => {
+    const graph = manyScopesGraph(17);
+    graph.edges = [{
+      source: graph.nodes.at(-1)!.id,
+      target: graph.nodes[0]!.id,
+      type: "calls",
+      direction: "forward",
+      weight: 1,
+    }];
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const selectedScopeId = scopeNodeId(hierarchyIndex.scopes.at(-1)!.id);
+    const baseInput = {
+      graph,
+      hierarchyIndex,
+      mode: "architecture" as const,
+      navigation: { level: "overview" as const },
+    };
+    const baseGraph = buildHierarchicalSemanticGraph({ ...baseInput, materializedNodeId: null });
+    const materializedBase = buildHierarchicalSemanticGraph({
+      ...baseInput,
+      materializedNodeId: selectedScopeId,
+    });
+    const expansion = buildHierarchySelectionExpansion({
+      graph,
+      hierarchyIndex,
+      baseGraph,
+      mode: "architecture",
+      selectedNodeId: selectedScopeId,
+    });
+    const synthesized = expansion.nodes.find((node) => node.id === selectedScopeId);
+    const materialized = materializedBase.nodes.find((node) => node.id === selectedScopeId);
+
+    expect(baseGraph.nodes.map((node) => node.id)).not.toContain(selectedScopeId);
+    expect(materialized?.relationCount).toBe(1);
+    expect(synthesized).toMatchObject({
+      relationCount: materialized?.relationCount,
+      summary: materialized?.summary,
+    });
+  });
+
   it("merges colliding edge ids by raw member identity without mutating base edges", () => {
     const graph = importOnlyGraph();
     const hierarchyIndex = buildGraphHierarchyIndex(graph);
@@ -1134,6 +1174,216 @@ describe("hierarchicalGraph", () => {
     })).toEqual({ nodes: [], edges: [] });
   });
 
+  it("synthesizes a hidden cluster boundary from only current-cluster raw facts", () => {
+    const localA = hierarchyNode("file:boundary-local-a", "file", "a/index.ts");
+    const localB = hierarchyNode("file:boundary-local-b", "file", "b/index.ts");
+    const external = Array.from({ length: 9 }, (_, index) =>
+      hierarchyNode(
+        `file:boundary-external-${String(index).padStart(2, "0")}`,
+        "file",
+        `external-${String(index).padStart(2, "0")}/index.ts`,
+      ));
+    const target = external.at(-1)!;
+    const graph = hierarchyGraph([localA, localB, ...external], [
+      ...external.map((node): GraphEdge => ({
+        source: localA.id,
+        target: node.id,
+        type: "imports",
+        direction: "forward",
+        weight: 1,
+      })),
+      {
+        source: localB.id,
+        target: target.id,
+        type: "imports",
+        direction: "forward",
+        weight: 1,
+      },
+    ]);
+    graph.layers = [
+      { id: "boundary-local", name: "Local", description: "Local.", nodeIds: [localA.id, localB.id] },
+      ...external.map((node, index) => ({
+        id: `boundary-external-${String(index).padStart(2, "0")}`,
+        name: `External ${index}`,
+        description: "External.",
+        nodeIds: [node.id],
+      })),
+    ];
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const currentScopeId = "layer:boundary-local";
+    const currentClusterId = hierarchyIndex.fileLocationById.get(localA.id)!.clusterId;
+    const targetScopeId = hierarchyIndex.nodeLocationById.get(target.id)!.scopeId;
+    const portalId = boundaryNodeId(currentScopeId, targetScopeId);
+    const navigation = {
+      level: "cluster" as const,
+      scopeId: currentScopeId,
+      clusterId: currentClusterId,
+    };
+    const baseGraph = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      mode: "architecture",
+      navigation,
+      materializedNodeId: null,
+    });
+    const materializedBase = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      mode: "architecture",
+      navigation,
+      materializedNodeId: portalId,
+    });
+    const expansion = buildHierarchySelectionExpansion({
+      graph,
+      hierarchyIndex,
+      baseGraph,
+      mode: "architecture",
+      selectedNodeId: portalId,
+    });
+    const synthesized = expansion.nodes.find((node) => node.id === portalId);
+    const materialized = materializedBase.nodes.find((node) => node.id === portalId);
+
+    expect(baseGraph.nodes.map((node) => node.id)).not.toContain(portalId);
+    expect(materialized?.relationCount).toBe(1);
+    expect(synthesized).toMatchObject({
+      relationCount: materialized?.relationCount,
+      summary: materialized?.summary,
+    });
+  });
+
+  it("rejects a cluster portal supported only by a pathful architecture object", () => {
+    const localFiles = Array.from({ length: 31 }, (_, index) =>
+      hierarchyNode(
+        `file:architecture-portal-${String(index).padStart(2, "0")}`,
+        "file",
+        `local/file-${String(index).padStart(2, "0")}.ts`,
+      ));
+    const localService = hierarchyNode(
+      "service:architecture-portal",
+      "service",
+      localFiles.at(-1)!.filePath,
+    );
+    const external = hierarchyNode("file:architecture-portal-external", "file", "external/index.ts");
+    const graph = hierarchyGraph([...localFiles, localService, external], [{
+      source: localService.id,
+      target: external.id,
+      type: "imports",
+      direction: "forward",
+      weight: 1,
+    }]);
+    graph.layers = [
+      {
+        id: "architecture-local",
+        name: "Local",
+        description: "Local.",
+        nodeIds: [...localFiles.map((node) => node.id), localService.id],
+      },
+      { id: "architecture-external", name: "External", description: "External.", nodeIds: [external.id] },
+    ];
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const scopeId = "layer:architecture-local";
+    const clusterId = hierarchyIndex.fileLocationById.get(localFiles[0]!.id)!.clusterId;
+    const portalId = boundaryNodeId(scopeId, "layer:architecture-external");
+    const navigation = { level: "cluster" as const, scopeId, clusterId };
+    const baseGraph = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      mode: "architecture",
+      navigation,
+      materializedNodeId: null,
+    });
+    const materializedBase = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      mode: "architecture",
+      navigation,
+      materializedNodeId: portalId,
+    });
+
+    expect(materializedBase.nodes.map((node) => node.id)).not.toContain(portalId);
+    expect(materializedBase.nodes.map((node) => node.id)).toEqual(baseGraph.nodes.map((node) => node.id));
+    expect(buildHierarchySelectionExpansion({
+      graph,
+      hierarchyIndex,
+      baseGraph,
+      mode: "architecture",
+      selectedNodeId: portalId,
+    })).toEqual({ nodes: [], edges: [] });
+  });
+
+  it("matches synthesized and materialized overview metadata across mixed raw facts", () => {
+    const graph = manyBoundariesGraph(9);
+    graph.edges.push(...graph.nodes.slice(1).map((node): GraphEdge => ({
+      source: graph.nodes[0]!.id,
+      target: node.id,
+      type: "calls",
+      direction: "forward",
+      weight: 1,
+    })));
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const portalId = boundaryNodeId("layer:center", "layer:external-08");
+    const baseInput = {
+      graph,
+      hierarchyIndex,
+      mode: "architecture" as const,
+      navigation: { level: "overview" as const },
+    };
+    const baseGraph = buildHierarchicalSemanticGraph({ ...baseInput, materializedNodeId: null });
+    const materializedBase = buildHierarchicalSemanticGraph({
+      ...baseInput,
+      materializedNodeId: portalId,
+    });
+    const expansion = buildHierarchySelectionExpansion({
+      graph,
+      hierarchyIndex,
+      baseGraph,
+      mode: "architecture",
+      selectedNodeId: portalId,
+    });
+    const materialized = materializedBase.nodes.find((node) => node.id === portalId);
+    const synthesized = expansion.nodes.find((node) => node.id === portalId);
+
+    expect(baseGraph.nodes.map((node) => node.id)).not.toContain(portalId);
+    expect(materialized?.relationCount).toBe(2);
+    expect(synthesized).toMatchObject({
+      relationCount: materialized?.relationCount,
+      summary: materialized?.summary,
+    });
+  });
+
+  it("materializes both ordered overview portal directions from a raw call-only fact", () => {
+    const left = hierarchyNode("file:overview-call-left", "file", "left/index.ts");
+    const right = hierarchyNode("file:overview-call-right", "file", "right/index.ts");
+    const graph = hierarchyGraph([left, right], [{
+      source: left.id,
+      target: right.id,
+      type: "calls",
+      direction: "forward",
+      weight: 1,
+    }]);
+    graph.layers = [
+      { id: "overview-left", name: "Left", description: "Left.", nodeIds: [left.id] },
+      { id: "overview-right", name: "Right", description: "Right.", nodeIds: [right.id] },
+    ];
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+
+    for (const portalId of [
+      boundaryNodeId("layer:overview-left", "layer:overview-right"),
+      boundaryNodeId("layer:overview-right", "layer:overview-left"),
+    ]) {
+      const materialized = buildHierarchicalSemanticGraph({
+        graph,
+        hierarchyIndex,
+        mode: "architecture",
+        navigation: { level: "overview" },
+        materializedNodeId: portalId,
+      });
+      expect(materialized.nodes.find((node) => node.id === portalId)?.relationCount).toBe(1);
+      expect(materialized.edges.flatMap((edge) => edge.members).map((member) => member.type))
+        .not.toContain("calls");
+    }
+  });
+
   it("materializes a real call-only portal in architecture mode without leaking its call edge", () => {
     const left = hierarchyNode("file:call-only-left", "file", "left/index.ts");
     const right = hierarchyNode("file:call-only-right", "file", "right/index.ts");
@@ -1167,9 +1417,11 @@ describe("hierarchicalGraph", () => {
     });
 
     expect(materializedBase.nodes.map((node) => node.id)).toContain(portalId);
+    expect(materializedBase.nodes.find((node) => node.id === portalId)?.relationCount).toBe(1);
     expect(materializedBase.edges.flatMap((edge) => edge.members).map((member) => member.type))
       .not.toContain("calls");
     expect(expansion.nodes.map((node) => node.id)).toContain(portalId);
+    expect(expansion.nodes.find((node) => node.id === portalId)?.relationCount).toBe(1);
     expect(expansion.edges).toEqual([]);
   });
 
@@ -1232,13 +1484,20 @@ describe("hierarchicalGraph", () => {
       materializedNodeId: null,
     });
 
-    expect(view.edges).toHaveLength(3);
-    expect(new Set(view.edges.map((edge) => edge.id)).size).toBe(3);
+    expect(view.edges).toHaveLength(6);
+    expect(new Set(view.edges.map((edge) => edge.id)).size).toBe(6);
     expect(view.edges.map((edge) => [edge.type, edge.direction]).sort()).toEqual([
       ["calls", "forward"],
+      ["calls", "forward"],
+      ["imports", "backward"],
       ["imports", "backward"],
       ["imports", "forward"],
+      ["imports", "forward"],
     ]);
+    expect(new Set(view.edges.map((edge) => edge.boundaryContext?.currentScopeId))).toEqual(new Set([
+      "layer:left",
+      "layer:right",
+    ]));
   });
 
   it("bundles equal projected relationships without changing any raw member", () => {

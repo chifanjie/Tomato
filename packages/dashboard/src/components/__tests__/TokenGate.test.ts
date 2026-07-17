@@ -79,6 +79,33 @@ describe("TokenGate 简体中文交互", () => {
     await act(async () => root.unmount());
   });
 
+  it("在成功响应前保持加载状态并传递规整后的令牌", async () => {
+    let resolveResponse: ((response: Response) => void) | undefined;
+    const response = new Promise<Response>((resolve) => {
+      resolveResponse = resolve;
+    });
+    vi.mocked(fetch).mockReturnValue(response);
+    const { container, root, onTokenValid } = await mountTokenGate();
+
+    await enterTokenAndSubmit(container, "  token / with ?  ");
+
+    const submit = container.querySelector<HTMLButtonElement>('button[type="submit"]');
+    expect(fetch).toHaveBeenCalledWith("/knowledge-graph.json?token=token%20%2F%20with%20%3F");
+    expect(submit?.disabled).toBe(true);
+    expect(submit?.textContent).toBe("正在验证…");
+    expect(onTokenValid).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveResponse?.(new Response(null, { status: 200 }));
+      await response;
+    });
+    expect(onTokenValid).toHaveBeenCalledWith("token / with ?");
+    expect(submit?.disabled).toBe(false);
+    expect(submit?.textContent).toBe("继续");
+
+    await act(async () => root.unmount());
+  });
+
   it("使用中文反馈服务器异常和连接失败", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.mocked(fetch)

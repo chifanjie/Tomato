@@ -295,6 +295,26 @@ body {
   border-top: 1px solid var(--color-border-subtle);
 }
 
+.uc-global-search-results a {
+  min-height: 44px;
+}
+
+.uc-global-search-more {
+  min-height: 44px;
+}
+
+.uc-global-search-hint {
+  font-size: 12px;
+}
+
+.uc-global-search-relation {
+  font-size: 12px;
+}
+
+.uc-global-search-metadata {
+  font-size: 13px;
+}
+
 .uc-global-search-results a:focus-visible,
 .uc-global-search-results button:focus-visible,
 .uc-global-search-header input:focus-visible,

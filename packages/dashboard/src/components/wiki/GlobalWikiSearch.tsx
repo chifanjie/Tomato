@@ -298,7 +298,7 @@ export default function GlobalWikiSearch({
             placeholder="搜索文档、流程、文件或函数…"
             className="min-w-0 flex-1 bg-transparent text-base text-text-primary outline-none placeholder:text-text-muted disabled:opacity-60"
           />
-          <kbd className="rounded border border-border-subtle bg-elevated px-2 py-1 text-[11px] text-text-muted">Esc</kbd>
+          <kbd className="uc-global-search-hint rounded border border-border-subtle bg-elevated px-2 py-1 text-text-muted">Esc</kbd>
           <button ref={closeButtonRef} type="button" onClick={onClose} aria-label="关闭搜索" className="rounded p-1.5 text-text-muted hover:bg-elevated hover:text-text-primary">×</button>
         </header>
 
@@ -337,12 +337,12 @@ export default function GlobalWikiSearch({
                               <span className="min-w-0">
                                 <span className="block truncate text-sm font-semibold text-text-primary">{item.record.title}</span>
                                 {(item.record.summary || item.record.filePath) && (
-                                  <span className="mt-1 block line-clamp-2 text-xs leading-5 text-text-muted">
+                                  <span className="uc-global-search-metadata mt-1 block line-clamp-2 leading-5 text-text-muted">
                                     {item.record.summary ?? item.record.filePath}
                                   </span>
                                 )}
                               </span>
-                              <span className="shrink-0 rounded-full border border-border-subtle px-2 py-0.5 text-[10px] text-text-muted">
+                              <span className="uc-global-search-relation shrink-0 rounded-full border border-border-subtle px-2 py-0.5 text-text-muted">
                                 {item.relationLabel}
                               </span>
                             </span>
@@ -357,7 +357,7 @@ export default function GlobalWikiSearch({
                 <button
                   type="button"
                   onClick={() => setVisibleCount((count) => count + 20)}
-                  className="w-full rounded-lg border border-border-medium px-4 py-2 text-sm font-medium text-accent hover:bg-accent/10"
+                  className="uc-global-search-more w-full rounded-lg border border-border-medium px-4 py-2 text-sm font-medium text-accent hover:bg-accent/10"
                 >
                   继续显示
                 </button>

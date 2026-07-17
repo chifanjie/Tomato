@@ -159,6 +159,32 @@ it("closes when reverse tabbing from a menu item back to the trigger", async () 
   await act(async () => root.unmount());
 });
 
+it("does not reopen when a pointer click moves focus from the menu to the trigger", async () => {
+  const { container, root } = await mountPicker("technical-document");
+  const trigger = container.querySelector('[aria-haspopup="menu"]') as HTMLButtonElement;
+  await click(trigger);
+  expect(document.activeElement).toBe(container.querySelector('[role="menuitemradio"]'));
+
+  await act(async () => {
+    trigger.dispatchEvent(new MouseEvent("mousedown", {
+      bubbles: true,
+      button: 0,
+      detail: 1,
+    }));
+    trigger.focus();
+    trigger.dispatchEvent(new MouseEvent("click", {
+      bubbles: true,
+      button: 0,
+      detail: 1,
+    }));
+  });
+
+  expect(container.querySelector('[role="menu"]')).toBeNull();
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(document.activeElement).toBe(trigger);
+  await act(async () => root.unmount());
+});
+
 it("removes the open menu while the surrounding header is inert", async () => {
   const { container, root } = await mountPicker("technical-document");
   const trigger = container.querySelector('[aria-haspopup="menu"]') as HTMLButtonElement;

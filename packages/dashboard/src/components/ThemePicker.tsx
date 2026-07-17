@@ -13,6 +13,7 @@ export function ThemePicker({ disabled = false }: ThemePickerProps) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const triggerPointerDownWhileOpenRef = useRef(false);
   const menuId = useId();
   const menuOpen = open && !disabled;
 
@@ -94,7 +95,19 @@ export function ThemePicker({ disabled = false }: ThemePickerProps) {
         aria-expanded={menuOpen}
         aria-controls={menuId}
         className="uc-theme-trigger"
-        onClick={() => setOpen((value) => !value)}
+        onMouseDown={() => {
+          triggerPointerDownWhileOpenRef.current = menuOpen;
+        }}
+        onClick={(event) => {
+          const wasOpenBeforePointerFocus = event.detail > 0
+            && triggerPointerDownWhileOpenRef.current;
+          triggerPointerDownWhileOpenRef.current = false;
+          if (wasOpenBeforePointerFocus) {
+            setOpen(false);
+            return;
+          }
+          setOpen((value) => !value);
+        }}
       >
         <span>主题</span>
         <span className="uc-theme-trigger-current">{preset.name}</span>

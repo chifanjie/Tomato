@@ -14,6 +14,7 @@ import {
 import { buildGraphHierarchyIndex } from "../../../graphExplorer/hierarchicalGraph";
 import type { GraphNavigationIntent } from "../../../graphExplorer/graphQuickJump";
 import { useDashboardStore } from "../../../store";
+import { quantizeGraphViewport } from "../../../utils/layoutAlgorithm.js";
 import { emptyWikiRuntimeIndex } from "../../../wiki/wikiIndex";
 import {
   buildCanvasViewKey,
@@ -83,6 +84,13 @@ vi.mock("../SemanticGraphCanvas", async () => {
       onBaseLayoutReady: (ready: { requestId: number; structureKey: string; materializedNodeId: string }) => void;
       onSelectNode?: (id: string | null) => void;
       onClearSelection?: () => void;
+      onFrameWidthChange?: (width: number) => void;
+      onSelectedScreenBoundsChange?: (bounds: {
+        left: number;
+        right: number;
+        top: number;
+        bottom: number;
+      } | null) => void;
     }) => {
       const {
         baseGraph,
@@ -483,6 +491,14 @@ describe("GraphExplorer progressive navigation integration", () => {
     semanticGraph: { nodes: Array<{ id: string }> };
     explicitFocusRequest: { requestId: number; materializedNodeId: string } | null;
     onBaseLayoutReady: (ready: { requestId: number; structureKey: string; materializedNodeId: string }) => void;
+    onFrameWidthChange?: (width: number) => void;
+    onSelectedScreenBoundsChange?: (bounds: {
+      left: number;
+      right: number;
+      top: number;
+      bottom: number;
+    } | null) => void;
+    showMinimap?: boolean;
   } {
     const props = graphExplorerHarness.canvasProps.at(-1);
     if (!props) throw new Error("缺少 Canvas props");
@@ -736,6 +752,59 @@ describe("GraphExplorer progressive navigation integration", () => {
     expect(useDashboardStore.getState().selectedNodeId).toBeNull();
     expect(frame.querySelector(':scope > aside[aria-label="图谱详情"]')).toBeNull();
     expect(canvas.dataset.viewKey).toBe(viewKey);
+  });
+
+  it("switches inspector side from raw same-bucket frame width without changing Canvas inputs", async () => {
+    await renderExplorer();
+    const node = container.querySelector<HTMLButtonElement>("[data-canvas-node]");
+    if (!node) throw new Error("缺少可选择图谱节点");
+    await act(async () => node.click());
+
+    const initialProps = latestCanvasProps();
+    expect(initialProps.onFrameWidthChange).toEqual(expect.any(Function));
+    expect(initialProps.onSelectedScreenBoundsChange).toEqual(expect.any(Function));
+    await act(async () => {
+      initialProps.onSelectedScreenBoundsChange?.({ left: 510, right: 626, top: 80, bottom: 180 });
+      initialProps.onFrameWidthChange?.(1_030);
+    });
+    const inspector = container.querySelector<HTMLElement>('aside[aria-label="图谱详情"]');
+    expect(inspector?.dataset.side).toBe("right");
+
+    const initialBaseGraph = initialProps.baseGraph;
+    const initialSemanticGraph = initialProps.semanticGraph;
+    expect(quantizeGraphViewport(1_030, 650)).toEqual(quantizeGraphViewport(990, 650));
+    await act(async () => initialProps.onFrameWidthChange?.(990));
+
+    expect(inspector?.dataset.side).toBe("left");
+    const resizedProps = latestCanvasProps();
+    expect(resizedProps.baseGraph).toBe(initialBaseGraph);
+    expect(resizedProps.semanticGraph).toBe(initialSemanticGraph);
+    expect(resizedProps.explicitFocusRequest).toBe(initialProps.explicitFocusRequest);
+  });
+
+  it("keeps the tablet tools disclosure and MiniMap toggle visible and operable", async () => {
+    vi.mocked(window.matchMedia).mockImplementation((query: string) => ({
+      matches: query === "(max-width: 1279px)",
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    } as unknown as MediaQueryList));
+    await renderExplorer();
+
+    const tools = container.querySelector<HTMLDetailsElement>(".uc-graph-tools");
+    if (!tools) throw new Error("1024–1279px 未显示更多图谱工具");
+    await act(async () => {
+      tools.open = true;
+      tools.dispatchEvent(new Event("toggle"));
+    });
+    const toggle = [...tools.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "显示缩略图");
+    if (!toggle) throw new Error("更多图谱工具内缺少缩略图开关");
+    expect(latestCanvasProps().showMinimap).toBe(false);
+
+    await act(async () => toggle.click());
+    expect(latestCanvasProps().showMinimap).toBe(true);
+    expect(tools.textContent).toContain("隐藏缩略图");
   });
 
   it("keeps an expansion-only ordinary selection across the post-pending effect rerender", async () => {

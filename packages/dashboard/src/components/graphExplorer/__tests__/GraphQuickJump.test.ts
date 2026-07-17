@@ -291,4 +291,19 @@ describe("GraphQuickJump", () => {
     expect(compactRule).toMatch(/width:\s*100%;/);
     expect(compactRule).toMatch(/max-width:\s*360px;/);
   });
+
+  it("right-anchors the 1024–1279 tools panel without changing compact Quick Jump geometry", () => {
+    const cssSource = readFileSync(join(process.cwd(), "src/index.css"), "utf8");
+    const tabletStart = cssSource.indexOf("@media (min-width: 1024px) and (max-width: 1279px)");
+    const compactStart = cssSource.indexOf("@media (max-width: 1023px)", tabletStart);
+    expect(tabletStart).toBeGreaterThan(-1);
+    expect(compactStart).toBeGreaterThan(tabletStart);
+
+    const tabletRule = cssSource.slice(tabletStart, compactStart);
+    expect(tabletRule).toMatch(/\.uc-graph-tools__panel\s*\{[^}]*right:\s*0;[^}]*left:\s*auto;/s);
+
+    const compactRule = cssSource.slice(compactStart);
+    expect(compactRule).toMatch(/\.uc-graph-tools__panel\s*\{[^}]*max-width:\s*360px;/s);
+    expect(compactRule).toMatch(/\.uc-graph-quick-jump-popover\s*\{[^}]*left:\s*0;[^}]*right:\s*auto;[^}]*width:\s*100%;[^}]*max-width:\s*360px;/s);
+  });
 });

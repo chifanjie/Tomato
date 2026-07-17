@@ -108,6 +108,7 @@ interface SemanticGraphCanvasProps extends SemanticGraphCanvasIntentProps {
   onOpenFile: (scopeId: string, clusterId: string, fileId: string) => void;
   onSelectNode?: (nodeId: string | null) => void;
   onClearSelection?: () => void;
+  onFrameWidthChange?: (width: number) => void;
   onSelectedScreenBoundsChange?: (bounds: GraphSelectedScreenBounds | null) => void;
   showMinimap?: boolean;
   showControls?: boolean;
@@ -321,6 +322,7 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
     onOpenFile,
     onSelectNode,
     onClearSelection,
+    onFrameWidthChange,
     onSelectedScreenBoundsChange,
     showMinimap = true,
     showControls = true,
@@ -370,6 +372,7 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
       const entry = entries.at(-1);
       const width = entry?.contentRect.width ?? 0;
       const height = entry?.contentRect.height ?? 0;
+      onFrameWidthChange?.(width);
       if (width <= 0 || height <= 0) {
         latestRawSize = null;
         cancelCandidate();
@@ -420,7 +423,7 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
       cancelCandidate();
       observer.disconnect();
     };
-  }, [frameRef]);
+  }, [frameRef, onFrameWidthChange]);
 
   const nodeSizeById = useMemo(() => new Map(
     semanticGraph.nodes.map((node) => [node.id, graphNodeSize(navigation.level, node)]),

@@ -235,7 +235,7 @@ export default function GraphExplorer({
   const [inspectorOpen, setInspectorOpen] = useState(() => selectedNodeId !== null);
   const [selectedScreenBounds, setReportedSelectedScreenBounds] =
     useState<GraphSelectedScreenBounds | null>(null);
-  const [frameWidth, setFrameWidth] = useState(0);
+  const [rawFrameWidth, setRawFrameWidth] = useState(0);
   const frameRef = useRef<HTMLDivElement>(null);
   const minimapUserPreferenceRef = useRef(false);
   const previousSelectedNodeIdRef = useRef(selectedNodeId);
@@ -564,13 +564,9 @@ export default function GraphExplorer({
     selectNode(null);
   }, [selectNode]);
 
-  const setSelectedScreenBounds = useCallback(
-    (bounds: GraphSelectedScreenBounds | null) => {
-      setReportedSelectedScreenBounds(bounds);
-      setFrameWidth(frameRef.current?.getBoundingClientRect().width ?? 0);
-    },
-    [],
-  );
+  const setSelectedScreenBounds = useCallback((bounds: GraphSelectedScreenBounds | null) => {
+    setReportedSelectedScreenBounds(bounds);
+  }, []);
 
   const transitionNavigation = useCallback((
     nextNavigation: GraphExplorerNavigation,
@@ -689,7 +685,7 @@ export default function GraphExplorer({
     && modeOptions.some((option) => option.id === "coverage");
   const inspectorSide = resolveGraphInspectorSide({
     selectedScreenBounds,
-    frameWidth,
+    frameWidth: rawFrameWidth,
     inspectorWidth: 360,
     gap: 12,
     compact,
@@ -795,6 +791,7 @@ export default function GraphExplorer({
           onOpenFile={openFile}
           onSelectNode={selectVisibleNode}
           onClearSelection={clearSelection}
+          onFrameWidthChange={setRawFrameWidth}
           onSelectedScreenBoundsChange={setSelectedScreenBounds}
           showMinimap={showMinimap}
           showControls={!phone || toolsOpen}

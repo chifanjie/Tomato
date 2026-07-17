@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { act, createElement, Fragment, StrictMode, useEffect } from "react";
+import { act, createElement, Fragment, StrictMode, useEffect, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -56,6 +56,7 @@ vi.mock("@xyflow/react", async (importOriginal) => {
 });
 
 import SemanticGraphCanvas from "../SemanticGraphCanvas";
+import { resolveGraphInspectorSide } from "../GraphDetailsRail";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -431,21 +432,105 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
     expect(testHarness.getViewport()).toEqual(initialViewport);
   });
 
+  it("switches inspector side on a raw same-bucket resize without changing layout or viewport", async () => {
+    const base = semanticGraph("scope", ["a", "b"]);
+    const responsiveFrameRef = { current: frame };
+    useDashboardStore.getState().selectNode("a");
+
+    function ResponsiveInspectorHarness() {
+      const [frameWidth, setFrameWidth] = useState(0);
+      const side = resolveGraphInspectorSide({
+        selectedScreenBounds: { left: 510, right: 626, top: 80, bottom: 180 },
+        frameWidth,
+        inspectorWidth: 360,
+        gap: 12,
+        compact: false,
+      });
+      return createElement(Fragment, null,
+        createElement(SemanticGraphCanvas, {
+          frameRef: responsiveFrameRef,
+          baseGraph: base,
+          semanticGraph: base,
+          graphRevision: "revision:1",
+          navigation: navigation("scope"),
+          displayMode: "architecture",
+          explicitFocusRequest: null,
+          onBaseLayoutReady: ready,
+          onFrameWidthChange: setFrameWidth,
+          onSelectedScreenBoundsChange: selectedBoundsChanged,
+          emptyNotice: null,
+          onOpenScope: vi.fn(),
+          onOpenCluster: vi.fn(),
+          onOpenFile: vi.fn(),
+        }),
+        createElement("aside", { "data-testid": "responsive-inspector", "data-side": side }),
+      );
+    }
+
+    await act(async () => {
+      root.render(createElement(ResponsiveInspectorHarness));
+      await Promise.resolve();
+    });
+    await emitResize(1_030, 650);
+    const inspector = frame.querySelector<HTMLElement>('[data-testid="responsive-inspector"]')!;
+    expect(inspector.dataset.side).toBe("right");
+    const initialCanvas = frame.querySelector<HTMLElement>(".uc-semantic-canvas")!;
+    const initialStructureKey = initialCanvas.dataset.graphStructureKey;
+    const initialProps = testHarness.flowProps.at(-1)!;
+    const initialNodes = initialProps.nodes as Array<{
+      id: string;
+      position: { x: number; y: number };
+    }>;
+    const initialPositions = new Map(initialNodes.map((node) => [node.id, node.position]));
+    const initialViewport = testHarness.getViewport();
+    const initialTransform = testHarness.setViewport.mock.calls.at(-1)?.[0];
+    const layoutRequests = testHarness.requestLayout.mock.calls.length;
+    const viewportWrites = testHarness.setViewport.mock.calls.length;
+
+    await emitResize(990, 650);
+
+    expect(inspector.dataset.side).toBe("left");
+    expect(testHarness.requestLayout).toHaveBeenCalledTimes(layoutRequests);
+    expect(testHarness.setViewport).toHaveBeenCalledTimes(viewportWrites);
+    expect(testHarness.setViewport.mock.calls.at(-1)?.[0]).toEqual(initialTransform);
+    expect(testHarness.getViewport()).toEqual(initialViewport);
+    expect(frame.querySelector<HTMLElement>(".uc-semantic-canvas")?.dataset.graphStructureKey)
+      .toBe(initialStructureKey);
+    const resizedProps = testHarness.flowProps.at(-1)!;
+    const resizedNodes = resizedProps.nodes as typeof initialNodes;
+    expect(resizedNodes.find((node) => node.id === "a")?.position).toBe(initialPositions.get("a"));
+    expect(resizedNodes.find((node) => node.id === "b")?.position).toBe(initialPositions.get("b"));
+    expect(resizedProps.fitView).toBeUndefined();
+    expect(resizedProps.fitViewOptions).toBeUndefined();
+  });
+
   it("recomputes selected screen bounds at every geometry boundary without moving the viewport", async () => {
     const base = semanticGraph("scope", ["a", "b"]);
+    const pendingLayout = deferred<SemanticLayoutResult>();
+    testHarness.requestLayout.mockReturnValueOnce(pendingLayout.promise);
     await render({ baseGraph: base });
     await emitResize(960, 650);
-    const automaticViewportCalls = testHarness.setViewport.mock.calls.length;
-    const afterFinalPositions = testHarness.flowToScreenPosition.mock.calls.length;
-
     await act(async () => useDashboardStore.getState().selectNode("a"));
-    expect(testHarness.flowToScreenPosition.mock.calls.length).toBe(afterFinalPositions + 2);
-    expect(selectedBoundsChanged).toHaveBeenLastCalledWith({
-      left: expect.any(Number),
-      right: expect.any(Number),
-      top: expect.any(Number),
-      bottom: expect.any(Number),
+    expect(testHarness.flowToScreenPosition).not.toHaveBeenCalled();
+
+    const layoutInput = testHarness.requestLayout.mock.calls[0]![0] as LayoutMessage;
+    await act(async () => {
+      pendingLayout.resolve(layoutResult(layoutInput));
+      await pendingLayout.promise;
+      await Promise.resolve();
     });
+    expect(testHarness.flowToScreenPosition.mock.calls.slice(-2)).toEqual([
+      [{ x: 48, y: 48 }],
+      [{ x: 276, y: 167 }],
+    ]);
+    expect(selectedBoundsChanged).toHaveBeenLastCalledWith({
+      left: 138,
+      right: 366,
+      top: 228,
+      bottom: 347,
+    });
+    const automaticViewportCalls = testHarness.setViewport.mock.calls.length;
+    expect(automaticViewportCalls).toBe(1);
     expect(testHarness.setViewport).toHaveBeenCalledTimes(automaticViewportCalls);
 
     let props = testHarness.flowProps.at(-1)!;

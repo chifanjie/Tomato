@@ -445,8 +445,11 @@ export function buildGraphHierarchyIndex(graph: KnowledgeGraph): GraphHierarchyI
   const layerScopeOrder = new Map(
     stableGraph.layers.map((layer, order) => [`layer:${layer.id}`, order]),
   );
+  const explicitlyLayeredNodeIds = new Set(stableGraph.layers.flatMap((layer) => layer.nodeIds));
   for (const node of stableGraph.nodes) {
-    if (node.filePath !== undefined || graphNodePlacementClass(node.type) !== "architecture-context") continue;
+    if (node.filePath !== undefined
+      || explicitlyLayeredNodeIds.has(node.id)
+      || graphNodePlacementClass(node.type) !== "architecture-context") continue;
     const containingLayerScope = stableGraph.edges
       .filter((edge) => edge.type === "contains" && edge.target === node.id)
       .map((edge) => nodeScopeId.get(edge.source))
@@ -458,6 +461,8 @@ export function buildGraphHierarchyIndex(graph: KnowledgeGraph): GraphHierarchyI
   }
   for (const node of stableGraph.nodes) {
     if (node.type === "file" || node.filePath === undefined) continue;
+    const currentScopeId = nodeScopeId.get(node.id);
+    if (currentScopeId && layerScopeOrder.has(currentScopeId)) continue;
     const normalizedPath = normalizeGraphFilePath(node.filePath);
     const matchingFileId = fileIdByNormalizedPath.get(normalizedPath);
     const matchingFileScope = matchingFileId ? nodeScopeId.get(matchingFileId) : null;
@@ -476,14 +481,17 @@ export function buildGraphHierarchyIndex(graph: KnowledgeGraph): GraphHierarchyI
   }
   const rootsByScope = new Map<string, GraphProtectedRoot[]>();
   const rootPathByScope = new Map<string, string>();
+  const graphProtectedRoots = protectedRootsForNodes(stableGraph.nodes);
   for (const scope of scopes) {
     const nodes = scopeNodes.get(scope.id) ?? [];
-    const protectedRoots = protectedRootsForNodes(nodes);
+    const filePaths = nodes
+      .filter((node) => node.type === "file" && node.filePath !== undefined)
+      .map((node) => normalizeGraphFilePath(node.filePath!));
+    const protectedRoots = graphProtectedRoots.filter((root) => root.kind === "workspace"
+      ? filePaths.length > 0
+      : filePaths.some((filePath) => isAtOrBelowPath(filePath, root.normalizedPath)));
     rootsByScope.set(scope.id, protectedRoots);
-    rootPathByScope.set(scope.id, commonDirectoryRoot(
-      nodes.filter((node) => node.type === "file" && node.filePath !== undefined).map((node) => node.filePath!),
-      protectedRoots,
-    ));
+    rootPathByScope.set(scope.id, commonDirectoryRoot(filePaths, protectedRoots));
   }
 
   const containingFileIdsByNode = new Map<string, string[]>();
@@ -560,7 +568,12 @@ export function buildGraphHierarchyIndex(graph: KnowledgeGraph): GraphHierarchyI
     if (node.filePath !== undefined) {
       const normalizedPath = normalizeGraphFilePath(node.filePath);
       const fileId = fileIdByNormalizedPath.get(normalizedPath);
-      const fileLocation = fileId ? fileLocationById.get(fileId) : undefined;
+      const canonicalFileLocation = fileId ? fileLocationById.get(fileId) : undefined;
+      const containingFileId = placement === "file-leaf"
+        ? containingFileIdsByNode.get(node.id)?.[0]
+        : undefined;
+      const fileLocation = canonicalFileLocation
+        ?? (containingFileId ? fileLocationById.get(containingFileId) : undefined);
       if (fileLocation) {
         scopeId = fileLocation.scopeId;
         const location = { ...fileLocation };

@@ -267,6 +267,34 @@ describe("hierarchicalGraph", () => {
     ]);
   });
 
+  it("applies package manifest evidence across layer boundaries", () => {
+    const workspace = hierarchyNode("file:workspace-manifest", "file", "pnpm-workspace.yaml");
+    const manifest = hierarchyNode("file:api-manifest", "file", "packages/api/package.json");
+    const entry = hierarchyNode("file:api-entry", "file", "packages/api/src/index.ts");
+    const route = hierarchyNode("file:api-route", "file", "packages/api/src/routes/user.ts");
+    const graph: KnowledgeGraph = {
+      ...hierarchyGraph([workspace, manifest, entry, route]),
+      layers: [
+        { id: "manifests", name: "清单", description: "Manifests.", nodeIds: [workspace.id, manifest.id] },
+        { id: "api", name: "API", description: "API sources.", nodeIds: [entry.id, route.id] },
+      ],
+    };
+    const index = buildGraphHierarchyIndex(graph);
+    const api = index.scopeById.get("layer:api")!;
+    const packageCluster = index.clusterById.get(clusterNodeId(api.id, "packages/api", "package"));
+
+    expect(api.protectedRoots).toEqual([
+      { kind: "workspace", normalizedPath: "", manifestNodeId: workspace.id },
+      { kind: "package", normalizedPath: "packages/api", manifestNodeId: manifest.id },
+    ]);
+    expect(api.normalizedRoot).toBe("packages");
+    expect(packageCluster).toMatchObject({
+      kind: "package",
+      normalizedRelativePath: "packages/api",
+      fileIds: [entry.id, route.id],
+    });
+  });
+
   it("uses exact rendered ids and rejects a pathless package cluster", () => {
     expect(scopeNodeId("layer:API / routes")).toBe("scope:layer%3AAPI%20%2F%20routes");
     expect(clusterNodeId("layer:api", null, "directory")).toBe("cluster:layer%3Aapi:__root__");
@@ -383,6 +411,24 @@ describe("hierarchicalGraph", () => {
       .toEqual(index.fileLocationById.get("file:a"));
   });
 
+  it("uses file containment when pathful symbols have no canonical file", () => {
+    const graph = hierarchyGraph([
+      hierarchyNode("file:owner", "file", "src/owner.ts"),
+      hierarchyNode("function:stale", "function", "legacy/run.ts"),
+      hierarchyNode("class:stale", "class", "removed/model.ts"),
+    ], [
+      { source: "file:owner", target: "function:stale", type: "contains", direction: "forward", weight: 1 },
+      { source: "file:owner", target: "class:stale", type: "contains", direction: "forward", weight: 1 },
+    ]);
+    const index = buildGraphHierarchyIndex(graph);
+    const owner = index.fileLocationById.get("file:owner");
+
+    expect(index.nodeLocationById.get("function:stale")).toEqual(owner);
+    expect(index.nodeLocationById.get("class:stale")).toEqual(owner);
+    expect(index.symbolLocationById.get("function:stale")).toEqual(owner);
+    expect(index.symbolLocationById.get("class:stale")).toEqual(owner);
+  });
+
   it("resolves pathless file leaves through file containment", () => {
     const graph = hierarchyGraph([
       hierarchyNode("file:owner", "file", "src/owner.ts"),
@@ -432,6 +478,24 @@ describe("hierarchicalGraph", () => {
 
     expect(buildGraphHierarchyIndex(graph).nodeLocationById.get(service.id))
       .toEqual({ scopeId: "layer:first" });
+  });
+
+  it("preserves explicit layer ownership for a pathful orphan", () => {
+    const app = hierarchyNode("file:app", "file", "app/index.ts");
+    const shared = hierarchyNode("file:shared", "file", "packages/shared/index.ts");
+    const orphan = hierarchyNode("function:orphan", "function", "packages/shared/missing.ts");
+    const graph: KnowledgeGraph = {
+      ...hierarchyGraph([app, shared, orphan]),
+      layers: [
+        { id: "app", name: "应用", description: "App.", nodeIds: [app.id, orphan.id] },
+        { id: "shared", name: "共享", description: "Shared.", nodeIds: [shared.id] },
+      ],
+    };
+    const index = buildGraphHierarchyIndex(graph);
+
+    expect(index.nodeLocationById.get(orphan.id)?.scopeId).toBe("layer:app");
+    expect(index.scopeById.get("layer:app")?.nodeIds).toContain(orphan.id);
+    expect(index.scopeById.get("layer:shared")?.nodeIds).not.toContain(orphan.id);
   });
 
   it("indexes one fixture node of every NodeType", () => {

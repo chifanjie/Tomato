@@ -248,4 +248,19 @@ describe("layout result validation", () => {
   ] as const)("rejects %s", (_label, result) => {
     expect(isValidLayoutResult(message, result)).toBe(false);
   });
+
+  it.each([
+    ["null result", null],
+    ["missing payload fields", {}],
+    ["null bounds", { ...valid, bounds: null }],
+    ["null positions", { ...valid, positions: null }],
+    ["wrong bounds value types", { ...valid, bounds: { ...valid.bounds, width: "wide" } }],
+    ["wrong position value types", {
+      ...valid,
+      positions: { ...valid.positions, a: { x: "left", y: 2 } },
+    }],
+  ] as const)("returns false for malformed runtime payload: %s", (_label, result) => {
+    expect(() => isValidLayoutResult(message, result)).not.toThrow();
+    expect(isValidLayoutResult(message, result)).toBe(false);
+  });
 });

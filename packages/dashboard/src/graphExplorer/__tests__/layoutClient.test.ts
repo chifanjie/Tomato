@@ -59,7 +59,7 @@ class ControlledWorker {
     this.terminateCalls += 1;
   }
 
-  emitResult(result = computeLayout(this.posted[0] ?? message())): void {
+  emitResult(result: unknown = computeLayout(this.posted[0] ?? message())): void {
     this.onmessage?.({ data: result } as MessageEvent<LayoutResult>);
   }
 
@@ -128,6 +128,33 @@ describe("semantic layout fallback pipeline", () => {
 
     await expect(pending).resolves.toMatchObject({ execution: "synchronous", degraded: false });
     expect(compute).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls through malformed worker and synchronous payloads to the stable grid", async () => {
+    const input = message();
+    const malformed = {
+      requestId: input.requestId,
+      positions: null,
+      bounds: null,
+    };
+    const worker = new ControlledWorker();
+    const compute = vi.fn(() => malformed as unknown as LayoutResult);
+    const computeGrid = vi.fn(computeStableGridLayout);
+    const pending = requestSemanticLayout(input, {
+      createWorker: () => worker,
+      compute,
+      computeGrid,
+    });
+
+    worker.emitResult(malformed);
+
+    await expect(pending).resolves.toEqual({
+      ...computeStableGridLayout(input),
+      execution: "grid",
+      degraded: true,
+    });
+    expect(compute).toHaveBeenCalledTimes(1);
+    expect(computeGrid).toHaveBeenCalledTimes(1);
   });
 
   it("uses a degraded stable grid when synchronous output is invalid", async () => {

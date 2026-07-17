@@ -969,6 +969,13 @@ body {
   border-radius: var(--radius-panel);
 }
 
+@media (max-width: 1279px) {
+  .uc-graph-frame {
+    aspect-ratio: 4 / 3;
+    flex: none;
+  }
+}
+
 .uc-semantic-canvas {
   position: relative;
   width: 100%;

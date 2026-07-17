@@ -372,6 +372,23 @@ describe("GraphExplorer progressive navigation helpers", () => {
     expect(componentSource).toContain("navigationIntentById");
     expect(componentSource).not.toContain("resolveGraphNavigationIntent({");
   });
+
+  it("keeps a nonzero intrinsic graph frame below xl without pixel min-height fallbacks", () => {
+    const source = readFileSync(resolve(
+      process.cwd(),
+      "src/components/graphExplorer/GraphExplorer.tsx",
+    ), "utf8");
+    const css = readFileSync(resolve(process.cwd(), "src/index.css"), "utf8");
+    const componentSource = source.slice(source.indexOf("export default function GraphExplorer"));
+    const responsiveFrameRule = css.match(
+      /@media \(max-width: 1279px\) \{[\s\S]*?\.uc-graph-frame \{[\s\S]*?\}[\s\S]*?\}/,
+    )?.[0] ?? "";
+
+    expect(componentSource).toMatch(/className="[^"]*max-xl:flex-none[^"]*"/);
+    expect(responsiveFrameRule).toContain("aspect-ratio: 4 / 3;");
+    expect(responsiveFrameRule).toContain("flex: none;");
+    expect(`${componentSource}\n${css}`).not.toMatch(/min-h-\[(?:420|480|540)px\]/);
+  });
 });
 
 describe("GraphExplorer progressive navigation integration", () => {
@@ -560,6 +577,58 @@ describe("GraphExplorer progressive navigation integration", () => {
     await act(async () => useDashboardStore.getState().setWikiIndex(wikiRuntimeFixture()));
     expect(latestCanvasProps().explicitFocusRequest).toBeNull();
     expect(graphExplorerHarness.canvasProps.length).toBeGreaterThanOrEqual(propsCount);
+    expect(useDashboardStore.getState().selectedNodeId).toBeNull();
+  });
+
+  it("handles a pending target removed by graph refresh once and retains its nearest ancestor", async () => {
+    const graph = workspaceHierarchyFixture();
+    useDashboardStore.getState().setConsoleGraph(graph);
+    await renderExplorer(true);
+    const symbolId = "function:packages/api/src/routes/user.ts:loadUser";
+    const symbolJump = container.querySelector<HTMLButtonElement>(`[data-jump-id="${symbolId}"]`);
+    if (!symbolJump) throw new Error("缺少工作区符号快速定位项");
+    await act(async () => symbolJump.click());
+    const pendingProps = latestCanvasProps();
+    expect(pendingProps.explicitFocusRequest).toEqual({
+      requestId: 1,
+      materializedNodeId: symbolId,
+    });
+    expect(container.querySelector('[data-testid="semantic-canvas"]')?.getAttribute("data-level"))
+      .toBe("file");
+
+    const refreshed = {
+      ...graph,
+      nodes: graph.nodes.filter((node) => node.id !== symbolId),
+      edges: graph.edges.filter((edge) => edge.source !== symbolId && edge.target !== symbolId),
+      layers: graph.layers.map((layer) => ({
+        ...layer,
+        nodeIds: layer.nodeIds.filter((id) => id !== symbolId),
+      })),
+    };
+    await act(async () => useDashboardStore.getState().setConsoleGraph(refreshed));
+
+    expect(container.querySelector('[data-testid="semantic-canvas"]')?.getAttribute("data-level"))
+      .toBe("file");
+    expect(latestCanvasProps().explicitFocusRequest).toBeNull();
+    expect(useDashboardStore.getState().selectedNodeId).toBeNull();
+    expect([...container.querySelectorAll('[role="status"]')]
+      .filter((node) => node.textContent === "未找到可定位的图谱对象，已保留最近层级。"))
+      .toHaveLength(1);
+
+    await act(async () => pendingProps.onBaseLayoutReady({
+      requestId: 1,
+      structureKey: "removed-target",
+      materializedNodeId: symbolId,
+    }));
+    expect(useDashboardStore.getState().selectedNodeId).toBeNull();
+
+    const breadcrumbButtons = container.querySelectorAll<HTMLButtonElement>(
+      'nav[aria-label="图谱层级"] button',
+    );
+    await act(async () => breadcrumbButtons.item(breadcrumbButtons.length - 1).click());
+    expect(container.textContent).not.toContain("未找到可定位的图谱对象，已保留最近层级。");
+    await act(async () => useDashboardStore.getState().setWikiIndex(wikiRuntimeFixture()));
+    expect(container.textContent).not.toContain("未找到可定位的图谱对象，已保留最近层级。");
     expect(useDashboardStore.getState().selectedNodeId).toBeNull();
   });
 

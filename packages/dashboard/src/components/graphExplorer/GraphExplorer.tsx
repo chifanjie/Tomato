@@ -338,18 +338,13 @@ export default function GraphExplorer({
     if (!hierarchyIndex) return;
     if (!sameNavigation(navigation, safeNavigation)) setNavigation(safeNavigation);
     if (materializedNodeId !== safeMaterializedNodeId) setMaterializedNodeId(safeMaterializedNodeId);
-    if (pendingNavigationRequest !== safePendingNavigationRequest) {
-      setPendingNavigationRequest(safePendingNavigationRequest);
-    }
     if (!selectedNodeStillExists) selectNode(null);
   }, [
     hierarchyIndex,
     materializedNodeId,
     navigation,
-    pendingNavigationRequest,
     safeMaterializedNodeId,
     safeNavigation,
-    safePendingNavigationRequest,
     selectNode,
     selectedNodeStillExists,
   ]);
@@ -417,9 +412,14 @@ export default function GraphExplorer({
   };
 
   useEffect(() => {
-    if (!view || !safePendingNavigationRequest) return;
-    const { requestId, intent } = safePendingNavigationRequest;
-    if (view.semanticGraph.nodes.some((node) => node.id === intent.materializedNodeId)) return;
+    if (!view || !pendingNavigationRequest) return;
+    const { requestId, intent } = pendingNavigationRequest;
+    if (view.semanticGraph.nodes.some((node) => node.id === intent.materializedNodeId)) {
+      if (!safePendingNavigationRequest) {
+        setPendingNavigationRequest((current) => current?.requestId === requestId ? null : current);
+      }
+      return;
+    }
     if (failedMaterializationRequestIdRef.current === requestId) return;
 
     failedMaterializationRequestIdRef.current = requestId;
@@ -429,7 +429,7 @@ export default function GraphExplorer({
     setVisibleSelectedNodeId(null);
     setVisibleSelectionContextKey(null);
     selectNode(null);
-  }, [safePendingNavigationRequest, selectNode, view]);
+  }, [pendingNavigationRequest, safePendingNavigationRequest, selectNode, view]);
 
   const explicitFocusRequest = useMemo(() => safePendingNavigationRequest
     ? {
@@ -604,7 +604,7 @@ export default function GraphExplorer({
       aria-label="项目图谱"
       className="flex min-h-0 flex-1 overflow-x-hidden overflow-y-auto bg-root text-text-primary xl:overflow-hidden max-xl:flex-col"
     >
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 p-4 max-sm:p-3">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 p-4 max-sm:p-3 max-xl:flex-none">
         <div className="flex items-start justify-between gap-3 max-lg:flex-col">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <GraphModeToolbar mode={effectiveMode} options={modeOptions} onChangeMode={changeMode} />

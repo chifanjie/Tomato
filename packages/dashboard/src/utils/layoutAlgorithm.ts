@@ -377,29 +377,45 @@ export function computeStableGridLayout(input: LayoutMessage): LayoutResult {
   return paddedResult(input.requestId, nodes, positions);
 }
 
-export function isValidLayoutResult(input: LayoutMessage, result: LayoutResult): boolean {
+function isRuntimeRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+export function isValidLayoutResult(input: LayoutMessage, result: unknown): boolean {
+  if (!isRuntimeRecord(result)) return false;
   if (result.requestId !== input.requestId) return false;
   const bounds = result.bounds;
-  if (![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)) return false;
-  if (bounds.width < 0 || bounds.height < 0) return false;
+  if (!isRuntimeRecord(bounds)) return false;
+  if (!isFiniteNumber(bounds.x) || !isFiniteNumber(bounds.y)
+    || !isFiniteNumber(bounds.width) || !isFiniteNumber(bounds.height)) return false;
+  const { x: boundsX, y: boundsY, width: boundsWidth, height: boundsHeight } = bounds;
+  if (boundsWidth < 0 || boundsHeight < 0) return false;
+
+  const positions = result.positions;
+  if (!isRuntimeRecord(positions)) return false;
 
   const expectedIds = [...input.nodes].map((node) => node.id).sort(compareText);
-  const actualIds = Object.keys(result.positions).sort(compareText);
+  const actualIds = Object.keys(positions).sort(compareText);
   if (expectedIds.length !== actualIds.length) return false;
   if (expectedIds.some((id, index) => id !== actualIds[index])) return false;
 
   const occupied = new Set<string>();
   const nodeById = new Map(input.nodes.map((node) => [node.id, node]));
   for (const id of expectedIds) {
-    const position = result.positions[id];
+    const position = positions[id];
     const node = nodeById.get(id);
-    if (!position || !node || !Number.isFinite(position.x) || !Number.isFinite(position.y)) return false;
+    if (!isRuntimeRecord(position) || !node
+      || !isFiniteNumber(position.x) || !isFiniteNumber(position.y)) return false;
     const positionKey = `${position.x}\u0000${position.y}`;
     if (occupied.has(positionKey)) return false;
     occupied.add(positionKey);
-    if (position.x < bounds.x || position.y < bounds.y) return false;
-    if (position.x + node.width > bounds.x + bounds.width) return false;
-    if (position.y + node.height > bounds.y + bounds.height) return false;
+    if (position.x < boundsX || position.y < boundsY) return false;
+    if (position.x + node.width > boundsX + boundsWidth) return false;
+    if (position.y + node.height > boundsY + boundsHeight) return false;
   }
   return true;
 }

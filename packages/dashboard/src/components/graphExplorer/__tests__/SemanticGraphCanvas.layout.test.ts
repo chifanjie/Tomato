@@ -53,10 +53,8 @@ vi.mock("@xyflow/react", async (importOriginal) => {
       const [instanceId] = React.useState(() => ++testHarness.flowInstanceSequence);
       useEffect(() => {
         const onInit = props.onInit as ((instance: unknown) => void) | undefined;
-        let mounted = true;
         testHarness.activeFlowInstanceId = instanceId;
         const initialize = () => {
-          if (!mounted) return;
           onInit?.({
             setViewport: (viewport: { x: number; y: number; zoom: number }) => {
               testHarness.flowInstanceViewportWrites.push({
@@ -77,7 +75,6 @@ vi.mock("@xyflow/react", async (importOriginal) => {
           initialize();
         }
         return () => {
-          mounted = false;
           if (testHarness.activeFlowInstanceId === instanceId) {
             testHarness.activeFlowInstanceId = null;
           }
@@ -825,6 +822,105 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
       instanceId: navigatedInstanceId,
       active: true,
     });
+  });
+
+  it("reapplies A on its replacement mount when B initialization is still pending", async () => {
+    const graphA = semanticGraph("overview", ["a", "b", "c"]);
+    const graphB = semanticGraph("cluster", Array.from({ length: 15 }, (_, index) => `cluster-${index}`));
+    await render({ baseGraph: graphA, graphRevision: "revision:a" });
+    await emitResize(960, 650);
+    const initialAInstanceId = testHarness.activeFlowInstanceId;
+    expect(testHarness.flowInstanceViewportWrites).toHaveLength(1);
+
+    const pendingBLayout = deferred<SemanticLayoutResult>();
+    testHarness.requestLayout.mockReturnValueOnce(pendingBLayout.promise);
+    testHarness.deferNextFlowInit = true;
+    await render({ baseGraph: graphB, graphRevision: "revision:b" });
+    const layoutInput = testHarness.requestLayout.mock.calls[1]![0] as LayoutMessage;
+    await act(async () => {
+      pendingBLayout.resolve(layoutResult(layoutInput));
+      await pendingBLayout.promise;
+      await Promise.resolve();
+    });
+    expect(testHarness.pendingFlowInits).toHaveLength(1);
+    expect(testHarness.flowInstanceViewportWrites).toHaveLength(1);
+
+    const writesBeforeReturningToA = testHarness.flowInstanceViewportWrites.length;
+    await render({ baseGraph: graphA, graphRevision: "revision:a" });
+    const replacementAInstanceId = testHarness.activeFlowInstanceId;
+    expect(replacementAInstanceId).not.toBe(initialAInstanceId);
+    expect(testHarness.flowInstanceViewportWrites.slice(writesBeforeReturningToA)).toEqual([
+      expect.objectContaining({
+        instanceId: replacementAInstanceId,
+        active: true,
+      }),
+    ]);
+
+    await flushFlowInit();
+    expect(testHarness.flowInstanceViewportWrites.slice(writesBeforeReturningToA))
+      .toHaveLength(1);
+    const writesAfterStaleBInit = testHarness.flowInstanceViewportWrites.length;
+    await render({
+      baseGraph: graphA,
+      graphRevision: "revision:a",
+      explicitFocusRequest: { requestId: 17, materializedNodeId: "a" },
+    });
+    expect(testHarness.flowInstanceViewportWrites.slice(writesAfterStaleBInit)).toEqual([
+      expect.objectContaining({
+        instanceId: replacementAInstanceId,
+        active: true,
+      }),
+    ]);
+    expect(testHarness.flowInstanceViewportWrites.slice(writesBeforeReturningToA))
+      .not.toContainEqual(expect.objectContaining({ active: false }));
+  });
+
+  it("does not replay or complete B through its inactive instance after C finishes", async () => {
+    const pendingBViewport = deferred<boolean>();
+    testHarness.setViewport
+      .mockReturnValueOnce(pendingBViewport.promise)
+      .mockResolvedValue(true);
+    const graphB = semanticGraph("overview", ["b-a", "b-b", "b-c"]);
+    const graphC = semanticGraph("cluster", Array.from({ length: 15 }, (_, index) => `c-${index}`));
+
+    await render({ baseGraph: graphB, graphRevision: "revision:b" });
+    await emitResize(960, 650);
+    const bInstanceId = testHarness.activeFlowInstanceId;
+    const bTarget = testHarness.setViewport.mock.calls[0]![0];
+
+    await render({ baseGraph: graphC, graphRevision: "revision:c" });
+    const cInstanceId = testHarness.activeFlowInstanceId;
+    const cTarget = testHarness.setViewport.mock.calls[1]![0];
+    expect(cInstanceId).not.toBe(bInstanceId);
+    expect(cTarget).not.toEqual(bTarget);
+    expect(testHarness.flowInstanceViewportWrites.at(-1)).toMatchObject({
+      instanceId: cInstanceId,
+      active: true,
+      viewport: cTarget,
+    });
+
+    const writesAfterCCompleted = testHarness.flowInstanceViewportWrites.length;
+    await act(async () => {
+      pendingBViewport.resolve(true);
+      await pendingBViewport.promise;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(testHarness.flowInstanceViewportWrites).toHaveLength(writesAfterCCompleted);
+    expect(testHarness.flowInstanceViewportWrites)
+      .not.toContainEqual(expect.objectContaining({ instanceId: bInstanceId, active: false }));
+
+    const writesBeforeReturningToB = testHarness.flowInstanceViewportWrites.length;
+    await render({ baseGraph: graphB, graphRevision: "revision:b" });
+    const replacementBInstanceId = testHarness.activeFlowInstanceId;
+    expect(replacementBInstanceId).not.toBe(bInstanceId);
+    expect(testHarness.flowInstanceViewportWrites.slice(writesBeforeReturningToB)).toEqual([
+      expect.objectContaining({
+        instanceId: replacementBInstanceId,
+        active: true,
+        viewport: bTarget,
+      }),
+    ]);
   });
 
   it("rejects a late layout result after a newer structure has committed", async () => {

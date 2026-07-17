@@ -2,9 +2,11 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type ReactNode,
   type RefObject,
 } from "react";
 import {
@@ -305,11 +307,66 @@ interface AutomaticViewportAction {
   kind: "normal" | "explicit";
   structureKey: string;
   actionKey: string;
+  flowGeneration: number;
 }
 
 interface AuthoritativeViewportIntent {
   generation: number;
   target: { x: number; y: number; zoom: number };
+}
+
+interface FlowMountDescriptor {
+  generation: number;
+  structureKey: string;
+}
+
+interface FlowInstanceBinding extends FlowMountDescriptor {
+  instance: ReactFlowInstance<SemanticFlowNode, SemanticFlowEdge>;
+}
+
+interface FlowMountBoundaryProps {
+  structureKey: string;
+  createGeneration: () => number;
+  onActivate: (generation: number, structureKey: string) => void;
+  onStructureChange: (generation: number, structureKey: string) => void;
+  onDeactivate: (generation: number) => void;
+  onInit: (
+    generation: number,
+    instance: ReactFlowInstance<SemanticFlowNode, SemanticFlowEdge>,
+  ) => void;
+  children: (
+    onInit: (instance: ReactFlowInstance<SemanticFlowNode, SemanticFlowEdge>) => void,
+  ) => ReactNode;
+}
+
+function FlowMountBoundary(props: FlowMountBoundaryProps) {
+  const {
+    structureKey,
+    createGeneration,
+    onActivate,
+    onStructureChange,
+    onDeactivate,
+    onInit,
+    children,
+  } = props;
+  const [generation] = useState(createGeneration);
+
+  // React Flow schedules onInit after mounting without cancelling that callback on unmount.
+  // Commit the mount token first so late callbacks can never replace the active binding.
+  useLayoutEffect(() => {
+    onActivate(generation, structureKey);
+    return () => onDeactivate(generation);
+  }, [generation, onActivate, onDeactivate]);
+
+  useLayoutEffect(() => {
+    onStructureChange(generation, structureKey);
+  }, [generation, onStructureChange, structureKey]);
+
+  const handleInit = useCallback((
+    instance: ReactFlowInstance<SemanticFlowNode, SemanticFlowEdge>,
+  ) => onInit(generation, instance), [generation, onInit]);
+
+  return <>{children(handleInit)}</>;
 }
 
 export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
@@ -708,20 +765,71 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
     zoomBand,
   ]);
 
-  const flowInstanceRef = useRef<ReactFlowInstance<SemanticFlowNode, SemanticFlowEdge> | null>(null);
-  const flowInstanceStructureKeyRef = useRef<string | null>(null);
+  const flowMountGenerationRef = useRef(0);
+  const activeFlowMountRef = useRef<FlowMountDescriptor | null>(null);
+  const flowInstanceBindingRef = useRef<FlowInstanceBinding | null>(null);
   const [flowInstanceRevision, setFlowInstanceRevision] = useState(0);
-  const onInit = useCallback((instance: ReactFlowInstance<SemanticFlowNode, SemanticFlowEdge>) => {
-    flowInstanceRef.current = instance;
-    flowInstanceStructureKeyRef.current = structureKey;
+  const createFlowMountGeneration = useCallback(() => ++flowMountGenerationRef.current, []);
+  const activateFlowMount = useCallback((generation: number, mountedStructureKey: string) => {
+    activeFlowMountRef.current = { generation, structureKey: mountedStructureKey };
+    if (flowInstanceBindingRef.current?.generation !== generation) {
+      flowInstanceBindingRef.current = null;
+    }
+  }, []);
+  const updateFlowMountStructure = useCallback((
+    generation: number,
+    mountedStructureKey: string,
+  ) => {
+    const activeMount = activeFlowMountRef.current;
+    if (!activeMount || activeMount.generation !== generation) return;
+    activeFlowMountRef.current = { generation, structureKey: mountedStructureKey };
+    const binding = flowInstanceBindingRef.current;
+    if (binding?.generation === generation && binding.structureKey !== mountedStructureKey) {
+      flowInstanceBindingRef.current = {
+        instance: binding.instance,
+        generation,
+        structureKey: mountedStructureKey,
+      };
+    }
+  }, []);
+  const deactivateFlowMount = useCallback((generation: number) => {
+    if (activeFlowMountRef.current?.generation === generation) {
+      activeFlowMountRef.current = null;
+    }
+    if (flowInstanceBindingRef.current?.generation === generation) {
+      flowInstanceBindingRef.current = null;
+    }
+  }, []);
+  const bindFlowInstance = useCallback((
+    generation: number,
+    instance: ReactFlowInstance<SemanticFlowNode, SemanticFlowEdge>,
+  ) => {
+    const activeMount = activeFlowMountRef.current;
+    if (!activeMount || activeMount.generation !== generation) return;
+    const current = flowInstanceBindingRef.current;
+    if (current?.instance === instance
+      && current.generation === generation
+      && current.structureKey === activeMount.structureKey) return;
+    flowInstanceBindingRef.current = {
+      instance,
+      generation,
+      structureKey: activeMount.structureKey,
+    };
     setFlowInstanceRevision((current) => current + 1);
-  }, [structureKey]);
+  }, []);
+  const isCurrentFlowBinding = useCallback((binding: FlowInstanceBinding) => {
+    const current = flowInstanceBindingRef.current;
+    return current?.instance === binding.instance
+      && current.generation === binding.generation
+      && current.structureKey === binding.structureKey;
+  }, []);
   const lastReportedSelectedScreenBoundsRef = useRef<GraphSelectedScreenBounds | null | undefined>(
     undefined,
   );
   const reportSelectedScreenBounds = useCallback(() => {
     if (!onSelectedScreenBoundsChange) return;
-    const instance = flowInstanceRef.current;
+    const binding = flowInstanceBindingRef.current;
+    const instance = binding?.structureKey === structureKey ? binding.instance : null;
     const frame = frameRef.current;
     const position = selectedNodeId ? positionsById.get(selectedNodeId) : undefined;
     const size = selectedNodeId ? nodeSizeById.get(selectedNodeId) : undefined;
@@ -749,7 +857,14 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
       && previous.bottom === next.bottom) return;
     lastReportedSelectedScreenBoundsRef.current = next;
     onSelectedScreenBoundsChange(next);
-  }, [frameRef, nodeSizeById, onSelectedScreenBoundsChange, positionsById, selectedNodeId]);
+  }, [
+    frameRef,
+    nodeSizeById,
+    onSelectedScreenBoundsChange,
+    positionsById,
+    selectedNodeId,
+    structureKey,
+  ]);
 
   useEffect(() => {
     reportSelectedScreenBounds();
@@ -774,12 +889,14 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
   }, []);
 
   const settleViewportTransform = useCallback(async (
-    instance: ReactFlowInstance<SemanticFlowNode, SemanticFlowEdge>,
+    binding: FlowInstanceBinding,
     generation: number,
     target: { x: number; y: number; zoom: number },
   ) => {
+    if (!isCurrentFlowBinding(binding)) return;
     const latestIntent = latestViewportIntentRef.current;
     if (latestIntent?.generation === generation) {
+      if (!isCurrentFlowBinding(binding)) return;
       completedViewportGenerationRef.current = generation;
       return;
     }
@@ -788,14 +905,16 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
 
     let replayedGeneration: number | null = null;
     while (true) {
+      if (!isCurrentFlowBinding(binding)) return;
       const authoritative = latestViewportIntentRef.current;
       if (!authoritative || authoritative.generation === replayedGeneration) return;
       if (completedViewportGenerationRef.current !== authoritative.generation) return;
       replayedGeneration = authoritative.generation;
-      await instance.setViewport(authoritative.target);
+      await binding.instance.setViewport(authoritative.target);
+      if (!isCurrentFlowBinding(binding)) return;
       if (latestViewportIntentRef.current?.generation === replayedGeneration) return;
     }
-  }, []);
+  }, [isCurrentFlowBinding]);
 
   const readableViewport = useCallback((focusNodeId?: string) => {
     if (!viewportBucket || !layoutState || layoutState.structureKey !== structureKey) return null;
@@ -812,40 +931,57 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
   }, [layoutState, navigation.level, nodeSizeById, positionsById, structureKey, viewportBucket]);
 
   useEffect(() => {
-    const instance = flowInstanceRef.current;
-    if (!instance
-      || flowInstanceStructureKeyRef.current !== structureKey
+    const binding = flowInstanceBindingRef.current;
+    if (!binding
+      || binding.structureKey !== structureKey
       || !structureKey
       || !completedPositions
       || !viewportBucket) return;
+    if (!isCurrentFlowBinding(binding)) return;
     const request = explicitFocusRequest;
     const action: AutomaticViewportAction = request
       ? {
           kind: "explicit",
           structureKey,
           actionKey: `${structureKey}:intent:${request.requestId}:${request.materializedNodeId}`,
+          flowGeneration: binding.generation,
         }
-      : { kind: "normal", structureKey, actionKey: structureKey };
+      : {
+          kind: "normal",
+          structureKey,
+          actionKey: structureKey,
+          flowGeneration: binding.generation,
+        };
+    const isActionForBinding = (candidate: AutomaticViewportAction | null) => candidate
+      ? candidate.flowGeneration === binding.generation
+        && candidate.structureKey === binding.structureKey
+      : false;
 
     if (!request) {
       const previous = lastCompletedViewportActionRef.current;
       const inFlight = inFlightViewportActionRef.current;
-      if ((previous?.kind === "explicit" && previous.structureKey === structureKey)
-        || (inFlight?.kind === "explicit" && inFlight.structureKey === structureKey)) return;
+      if ((isActionForBinding(previous) && previous?.kind === "explicit")
+        || (isActionForBinding(inFlight) && inFlight?.kind === "explicit")) return;
     }
-    if (lastCompletedViewportActionRef.current?.actionKey === action.actionKey
-      || inFlightViewportActionRef.current?.actionKey === action.actionKey) return;
+    const completedAction = lastCompletedViewportActionRef.current;
+    const inFlightAction = inFlightViewportActionRef.current;
+    if ((isActionForBinding(completedAction) && completedAction?.actionKey === action.actionKey)
+      || (isActionForBinding(inFlightAction) && inFlightAction?.actionKey === action.actionKey)) return;
     const target = readableViewport(request?.materializedNodeId);
     if (!target) return;
+    if (!isCurrentFlowBinding(binding)) return;
     const transformGeneration = beginViewportTransform(target);
     const automaticGeneration = ++automaticActionGenerationRef.current;
     latestAutomaticActionGenerationRef.current = automaticGeneration;
     inFlightViewportActionRef.current = action;
 
-    void instance.setViewport(target).then(async () => {
-      await settleViewportTransform(instance, transformGeneration, target);
+    void binding.instance.setViewport(target).then(async () => {
+      if (!isCurrentFlowBinding(binding)) return;
+      await settleViewportTransform(binding, transformGeneration, target);
+      if (!isCurrentFlowBinding(binding)) return;
       if (latestAutomaticActionGenerationRef.current !== automaticGeneration) return;
-      if (inFlightViewportActionRef.current?.actionKey === action.actionKey) {
+      if (isActionForBinding(inFlightViewportActionRef.current)
+        && inFlightViewportActionRef.current?.actionKey === action.actionKey) {
         inFlightViewportActionRef.current = null;
       }
       lastCompletedViewportActionRef.current = action;
@@ -868,6 +1004,7 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
     beginViewportTransform,
     explicitFocusRequest,
     flowInstanceRevision,
+    isCurrentFlowBinding,
     readableViewport,
     settleViewportTransform,
     structureKey,
@@ -876,13 +1013,23 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
 
   const fitGraph = useCallback(() => {
     const target = readableViewport(activeId ?? undefined);
-    const instance = flowInstanceRef.current;
-    if (!target || !instance || flowInstanceStructureKeyRef.current !== structureKey) return;
+    const binding = flowInstanceBindingRef.current;
+    if (!target
+      || !binding
+      || binding.structureKey !== structureKey
+      || !isCurrentFlowBinding(binding)) return;
     const transformGeneration = beginViewportTransform(target);
-    void instance.setViewport(target).then(() => (
-      settleViewportTransform(instance, transformGeneration, target)
+    void binding.instance.setViewport(target).then(() => (
+      settleViewportTransform(binding, transformGeneration, target)
     ));
-  }, [activeId, beginViewportTransform, readableViewport, settleViewportTransform, structureKey]);
+  }, [
+    activeId,
+    beginViewportTransform,
+    isCurrentFlowBinding,
+    readableViewport,
+    settleViewportTransform,
+    structureKey,
+  ]);
 
   if (semanticGraph.nodes.length === 0) {
     return (
@@ -915,49 +1062,60 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
       data-graph-structure-key={structureKey}
       data-zoom-band={zoomBand}
     >
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        onInit={onInit}
-        onMoveEnd={(_, viewport) => {
-          setZoomBand(graphSemanticZoomBand(viewport.zoom));
-          reportSelectedScreenBounds();
-        }}
-        onNodeClick={onNodeClick}
-        onNodeDoubleClick={onNodeDoubleClick}
-        onPaneClick={onPaneClick}
-        onEdgeMouseEnter={(_, edge) => setHoveredEdgeId(edge.id)}
-        onEdgeMouseLeave={(_, edge) => setHoveredEdgeId((current) => current === edge.id ? null : current)}
-        nodesFocusable={false}
-        nodesDraggable={false}
-        nodesConnectable={false}
-        ariaLabelConfig={REACT_FLOW_ARIA_LABEL_CONFIG}
-        minZoom={0.08}
-        maxZoom={1.7}
-        proOptions={{ hideAttribution: true }}
+      <FlowMountBoundary
+        structureKey={structureKey}
+        createGeneration={createFlowMountGeneration}
+        onActivate={activateFlowMount}
+        onStructureChange={updateFlowMountStructure}
+        onDeactivate={deactivateFlowMount}
+        onInit={bindFlowInstance}
       >
-        <Background variant={BackgroundVariant.Dots} gap={26} size={1} color="var(--color-graph-grid)" />
-        {showControls && (
-          <Controls showFitView={false} showInteractive={false}>
-            <ControlButton onClick={fitGraph} title="适应视图" aria-label="适应视图">
-              适
-            </ControlButton>
-          </Controls>
-        )}
-        {showMinimap && (
-          <MiniMap
-            pannable
-            zoomable
-            nodeColor={(node) => {
-              const data = node.data as SemanticNodeData | undefined;
-              return data ? GROUP_COLORS[data.group] : "var(--color-text-muted)";
+        {(onInit) => (
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            onInit={onInit}
+            onMoveEnd={(_, viewport) => {
+              setZoomBand(graphSemanticZoomBand(viewport.zoom));
+              reportSelectedScreenBounds();
             }}
-            maskColor="var(--color-graph-minimap-mask)"
-          />
+            onNodeClick={onNodeClick}
+            onNodeDoubleClick={onNodeDoubleClick}
+            onPaneClick={onPaneClick}
+            onEdgeMouseEnter={(_, edge) => setHoveredEdgeId(edge.id)}
+            onEdgeMouseLeave={(_, edge) => setHoveredEdgeId((current) => current === edge.id ? null : current)}
+            nodesFocusable={false}
+            nodesDraggable={false}
+            nodesConnectable={false}
+            ariaLabelConfig={REACT_FLOW_ARIA_LABEL_CONFIG}
+            minZoom={0.08}
+            maxZoom={1.7}
+            proOptions={{ hideAttribution: true }}
+          >
+            <Background variant={BackgroundVariant.Dots} gap={26} size={1} color="var(--color-graph-grid)" />
+            {showControls && (
+              <Controls showFitView={false} showInteractive={false}>
+                <ControlButton onClick={fitGraph} title="适应视图" aria-label="适应视图">
+                  适
+                </ControlButton>
+              </Controls>
+            )}
+            {showMinimap && (
+              <MiniMap
+                pannable
+                zoomable
+                nodeColor={(node) => {
+                  const data = node.data as SemanticNodeData | undefined;
+                  return data ? GROUP_COLORS[data.group] : "var(--color-text-muted)";
+                }}
+                maskColor="var(--color-graph-minimap-mask)"
+              />
+            )}
+          </ReactFlow>
         )}
-      </ReactFlow>
+      </FlowMountBoundary>
       {layoutState?.degraded && (
         <p role="status" aria-live="polite" className="uc-graph-layout-status">
           图谱布局已降级为稳定网格

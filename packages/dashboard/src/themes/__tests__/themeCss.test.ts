@@ -45,8 +45,13 @@ function tokenHex(block: string, token: string): string {
 }
 
 function contrastRatio(foreground: string, background: string): number {
-  const luminance = (hex: string) => {
-    const values = [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255);
+  const valuesFor = (hex: string) =>
+    [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255);
+  return contrastRatioForRgb(valuesFor(foreground), valuesFor(background));
+}
+
+function contrastRatioForRgb(foreground: readonly number[], background: readonly number[]): number {
+  const luminance = (values: readonly number[]) => {
     const [r, g, b] = values.map((value) => value <= 0.03928
       ? value / 12.92
       : ((value + 0.055) / 1.055) ** 2.4);
@@ -55,6 +60,15 @@ function contrastRatio(foreground: string, background: string): number {
   const a = luminance(foreground);
   const b = luminance(background);
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
+function compositedRgb(foreground: string, background: string, opacity: number): number[] {
+  const channels = (hex: string) =>
+    [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255);
+  const foregroundChannels = channels(foreground);
+  const backgroundChannels = channels(background);
+  return foregroundChannels.map((channel, index) =>
+    channel * opacity + backgroundChannels[index]! * (1 - opacity));
 }
 
 describe("theme preset CSS", () => {
@@ -86,5 +100,24 @@ describe("theme preset CSS", () => {
     expect(PRESET_CSS).not.toContain("--glow-accent");
     expect(PRESET_CSS).not.toContain("#000000");
     expect(PRESET_CSS).toContain("--color-complexity-complex: var(--color-graph-status-problem)");
+  });
+
+  it("keeps primary node text readable after real 0.64 whole-node dimming", () => {
+    for (const id of [
+      "technical-document",
+      "mist-blueprint",
+      "sage-paper",
+      "night-ink",
+    ]) {
+      const block = presetBlock(id);
+      const canvas = tokenHex(block, "color-graph-canvas");
+      const compositedText = compositedRgb(tokenHex(block, "uc-text-primary"), canvas, 0.64);
+      const compositedNode = compositedRgb(tokenHex(block, "color-graph-node-bg"), canvas, 0.64);
+      expect(contrastRatioForRgb(compositedText, compositedNode), id).toBeGreaterThanOrEqual(4.5);
+    }
+
+    expect(INDEX_CSS).toMatch(/\.uc-semantic-node\[data-dimmed="true"\]\s*\{[^}]*opacity:\s*0\.64/u);
+    expect(INDEX_CSS).toMatch(/\.uc-semantic-node__title\s*\{[^}]*color:\s*var\(--color-text-primary\)/u);
+    expect(INDEX_CSS).not.toMatch(/data-dimmed="true"\]\s+[^\s,{][^{]*\{[^}]*opacity/u);
   });
 });

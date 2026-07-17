@@ -104,15 +104,17 @@ export function graphLayoutRevision(graph: KnowledgeGraph): string {
   const compareText = (left: string, right: string) =>
     left < right ? -1 : left > right ? 1 : 0;
   return JSON.stringify({
+    format: 2,
+    graphVersion: graph.version,
+    graphKind: graph.kind ?? "codebase",
     nodes: graph.nodes
       .map((node) => [node.id, node.type, node.filePath ?? ""])
       .sort((left, right) => compareText(left[0]!, right[0]!)),
     edges: graph.edges
-      .map((edge) => [edge.source, edge.target, edge.type, edge.direction])
+      .map((edge) => [edge.source, edge.target, edge.type, edge.direction, edge.weight])
       .sort((left, right) => compareText(left.join("\u0000"), right.join("\u0000"))),
     layers: graph.layers
-      .map((layer) => [layer.id, [...layer.nodeIds].sort().join("\u0000")])
-      .sort((left, right) => compareText(left[0]!, right[0]!)),
+      .map((layer) => [layer.id, [...layer.nodeIds].sort().join("\u0000")]),
   });
 }
 

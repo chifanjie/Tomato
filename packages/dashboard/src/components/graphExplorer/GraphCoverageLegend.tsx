@@ -1,8 +1,8 @@
 const COVERAGE_ITEMS = [
-  { label: "有专门正文", color: "var(--color-accent)" },
-  { label: "仅相关资料", color: "var(--color-node-module)" },
-  { label: "待补正文", color: "var(--color-text-muted)" },
-  { label: "生成或证据异常", color: "var(--color-complexity-complex)" },
+  { label: "有专门正文", color: "var(--color-graph-status-direct)" },
+  { label: "仅相关资料", color: "var(--color-graph-status-context)" },
+  { label: "待补正文", color: "var(--color-graph-status-missing)" },
+  { label: "生成或证据异常", color: "var(--color-graph-status-problem)" },
 ] as const;
 
 export default function GraphCoverageLegend() {

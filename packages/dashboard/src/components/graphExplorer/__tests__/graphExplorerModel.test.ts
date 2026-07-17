@@ -37,7 +37,7 @@ describe("graphExplorerModel", () => {
       ...graph,
       nodes: [...graph.nodes].reverse(),
       edges: [...graph.edges].reverse(),
-      layers: graph.layers.map((layer) => ({ ...layer, nodeIds: [...layer.nodeIds].reverse() })).reverse(),
+      layers: graph.layers.map((layer) => ({ ...layer, nodeIds: [...layer.nodeIds].reverse() })),
     };
     expect(graphLayoutRevision(reordered)).toBe(graphLayoutRevision(graph));
 
@@ -52,6 +52,64 @@ describe("graphExplorerModel", () => {
       }],
     };
     expect(graphLayoutRevision(changed)).not.toBe(graphLayoutRevision(graph));
+  });
+
+  it("versions every structural graph fact while excluding prose-only metadata", () => {
+    const graph = graphFixture();
+    const revision = graphLayoutRevision(graph);
+    const proseOnly = {
+      ...graph,
+      nodes: graph.nodes.map((node) => ({
+        ...node,
+        name: `renamed ${node.id}`,
+        summary: `rewritten ${node.id}`,
+      })),
+      layers: graph.layers.map((layer) => ({
+        ...layer,
+        name: `renamed ${layer.id}`,
+        description: `rewritten ${layer.id}`,
+      })),
+    };
+    expect(graphLayoutRevision(proseOnly)).toBe(revision);
+
+    const structuralVariants = [
+      { ...graph, version: `${graph.version}:next` },
+      { ...graph, kind: "knowledge" as const },
+      { ...graph, nodes: graph.nodes.map((node, index) => index === 0 ? { ...node, id: `${node.id}:next` } : node) },
+      { ...graph, nodes: graph.nodes.map((node, index) => index === 0 ? { ...node, type: "config" as const } : node) },
+      { ...graph, nodes: graph.nodes.map((node, index) => index === 0 ? { ...node, filePath: "changed/path.ts" } : node) },
+      { ...graph, edges: graph.edges.map((edge, index) => index === 0 ? { ...edge, source: graph.nodes.at(-1)!.id } : edge) },
+      { ...graph, edges: graph.edges.map((edge, index) => index === 0 ? { ...edge, target: graph.nodes[0]!.id } : edge) },
+      { ...graph, edges: graph.edges.map((edge, index) => index === 0 ? { ...edge, type: "calls" as const } : edge) },
+      { ...graph, edges: graph.edges.map((edge, index) => index === 0 ? { ...edge, direction: "backward" as const } : edge) },
+      { ...graph, edges: graph.edges.map((edge, index) => index === 0 ? { ...edge, weight: 0.25 } : edge) },
+      { ...graph, layers: graph.layers.map((layer, index) => index === 0
+        ? { ...layer, id: `${layer.id}:next` }
+        : layer) },
+      { ...graph, layers: graph.layers.map((layer, index) => index === 0
+        ? { ...layer, nodeIds: layer.nodeIds.slice(1) }
+        : layer) },
+    ];
+    for (const variant of structuralVariants) {
+      expect(graphLayoutRevision(variant)).not.toBe(revision);
+    }
+
+    const orderedLayers = {
+      ...graph,
+      layers: [{
+        id: "first",
+        name: "第一层",
+        description: "第一层",
+        nodeIds: [graph.nodes[0]!.id],
+      }, {
+        id: "second",
+        name: "第二层",
+        description: "第二层",
+        nodeIds: [graph.nodes[1]!.id],
+      }],
+    };
+    expect(graphLayoutRevision({ ...orderedLayers, layers: [...orderedLayers.layers].reverse() }))
+      .not.toBe(graphLayoutRevision(orderedLayers));
   });
 
   it("builds aggregate details without requiring a raw graph node", () => {
@@ -338,6 +396,11 @@ describe("graphExplorerModel", () => {
     expect(legend).toContain("仅相关资料");
     expect(legend).toContain("待补正文");
     expect(legend).toContain("生成或证据异常");
+    expect(legend).toContain("--color-graph-status-direct");
+    expect(legend).toContain("--color-graph-status-context");
+    expect(legend).toContain("--color-graph-status-missing");
+    expect(legend).toContain("--color-graph-status-problem");
+    expect(legend).not.toContain("--color-node-");
   });
 
   it("describes raw and aggregate documentation with compact truthful badges", () => {

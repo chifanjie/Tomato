@@ -15,20 +15,38 @@ export interface FlowingSemanticEdgeData extends Record<string, unknown> {
   inlineDirection: boolean;
   flowDirection: FlowDirection;
   dashedFallback: boolean;
+  showLabel: boolean;
+  labelOpacity: number;
+  sourceLabel: string;
+  targetLabel: string;
 }
 
 type FlowingSemanticEdgeType = Edge<FlowingSemanticEdgeData, "flowing-semantic">;
 
-export function directionIndicator(
-  sourceX: number,
-  sourceY: number,
-  targetX: number,
-  targetY: number,
+function clampEndpointLabel(label: string): string {
+  const characters = Array.from(label);
+  return characters.length > 10 ? `${characters.slice(0, 10).join("")}…` : label;
+}
+
+export function edgeDirectionCopy(
+  sourceLabel: string,
+  targetLabel: string,
   direction: FlowDirection,
-): { glyph: "›" | "↔"; angle: number } {
-  const base = Math.atan2(targetY - sourceY, targetX - sourceX) * 180 / Math.PI;
-  if (direction === "both") return { glyph: "↔", angle: base };
-  return { glyph: "›", angle: direction === "reverse" ? base + 180 : base };
+): { visible: string; ariaLabel: string } {
+  const fullSource = direction === "reverse" ? targetLabel : sourceLabel;
+  const fullTarget = direction === "reverse" ? sourceLabel : targetLabel;
+  const visibleSource = clampEndpointLabel(fullSource);
+  const visibleTarget = clampEndpointLabel(fullTarget);
+  if (direction === "both") {
+    return {
+      visible: `「${clampEndpointLabel(sourceLabel)}」与「${clampEndpointLabel(targetLabel)}」双向`,
+      ariaLabel: `「${sourceLabel}」与「${targetLabel}」双向`,
+    };
+  }
+  return {
+    visible: `从「${visibleSource}」到「${visibleTarget}」`,
+    ariaLabel: `从「${fullSource}」到「${fullTarget}」`,
+  };
 }
 
 export default function FlowingSemanticEdge({
@@ -51,7 +69,11 @@ export default function FlowingSemanticEdge({
   });
   if (!data) return null;
 
-  const indicator = directionIndicator(sourceX, sourceY, targetX, targetY, data.flowDirection);
+  const directionCopy = edgeDirectionCopy(
+    data.sourceLabel,
+    data.targetLabel,
+    data.flowDirection,
+  );
   const overlayStyle = {
     stroke: data.stroke,
     strokeWidth: Math.max(2, data.strokeWidth),
@@ -94,15 +116,15 @@ export default function FlowingSemanticEdge({
           )}
         </>
       )}
-      {(data.inlineDirection || label) && (
+      {(data.inlineDirection || (data.showLabel && label)) && (
         <EdgeLabelRenderer>
-          {label && (
+          {data.showLabel && label && (
             <div
               className="uc-semantic-edge-label"
               style={{
                 left: labelX,
                 top: labelY - 14,
-                opacity: data.opacity,
+                opacity: data.labelOpacity,
                 transform: "translate(-50%, -50%)",
               }}
             >
@@ -111,17 +133,17 @@ export default function FlowingSemanticEdge({
           )}
           {data.inlineDirection && (
             <div
-              aria-hidden="true"
+              role="img"
+              aria-label={directionCopy.ariaLabel}
               className="uc-semantic-edge-direction"
               style={{
                 left: labelX,
-                top: labelY,
-                color: data.stroke,
-                opacity: data.opacity,
-                transform: `translate(-50%, -50%) rotate(${indicator.angle}deg)`,
+                top: labelY + 12,
+                opacity: data.labelOpacity,
+                transform: "translate(-50%, -50%)",
               }}
             >
-              {indicator.glyph}
+              {directionCopy.visible}
             </div>
           )}
         </EdgeLabelRenderer>

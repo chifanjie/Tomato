@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HierarchicalSemanticGraph } from "../../../graphExplorer/hierarchicalGraph";
 import type { SemanticGraphNode } from "../../../graphExplorer/semanticGraph";
 import {
@@ -31,6 +31,8 @@ vi.mock("@xyflow/react", async () => {
   return {
     Background: element("background"),
     BackgroundVariant: { Dots: "dots" },
+    ControlButton: ({ children, ...props }: Record<string, unknown>) =>
+      React.createElement("button", props, children as React.ReactNode),
     Controls: element("controls"),
     Handle: element("handle"),
     MiniMap: element("minimap"),
@@ -99,6 +101,7 @@ const semanticGraphFixture: HierarchicalSemanticGraph = {
       importance: 1,
       rawType: "module",
       summary: "承载核心业务",
+      filePath: "src/core",
       docs: emptyDocs,
       kind: "scope",
       scopeId: "src",
@@ -154,6 +157,44 @@ const semanticGraphFixture: HierarchicalSemanticGraph = {
   },
 };
 
+class ImmediateResizeObserver {
+  constructor(private readonly callback: ResizeObserverCallback) {}
+
+  observe(): void {
+    this.callback([{
+      contentRect: { width: 960, height: 650 } as DOMRectReadOnly,
+    } as ResizeObserverEntry], this as unknown as ResizeObserver);
+  }
+
+  disconnect(): void {}
+  unobserve(): void {}
+}
+
+function canvasIntentProps(
+  graph: HierarchicalSemanticGraph,
+  frame: HTMLDivElement,
+  graphRevision: string,
+) {
+  const presentation = graph.presentation;
+  return {
+    frameRef: { current: frame },
+    baseGraph: graph,
+    graphRevision,
+    navigation: {
+      level: presentation.level,
+      ...(presentation.scopeId ? { scopeId: presentation.scopeId } : {}),
+      ...(presentation.clusterId ? { clusterId: presentation.clusterId } : {}),
+      ...(presentation.fileId ? { fileId: presentation.fileId } : {}),
+    },
+    explicitFocusRequest: null,
+    onBaseLayoutReady: vi.fn(),
+  };
+}
+
+beforeEach(() => {
+  vi.stubGlobal("ResizeObserver", ImmediateResizeObserver);
+});
+
 afterEach(() => {
   document.body.replaceChildren();
   flowHarness.props = null;
@@ -161,18 +202,31 @@ afterEach(() => {
   flowHarness.selectedNodeId = "scope:src";
   flowHarness.selectNodeCalls.length = 0;
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("SemanticGraphCanvas interaction contract", () => {
+  it("exports the permanent base/render graph intent API", () => {
+    expect(source).toContain("export interface SemanticGraphCanvasIntentProps");
+    expect(source).toContain(
+      "interface SemanticGraphCanvasProps extends SemanticGraphCanvasIntentProps",
+    );
+    expect(source).toContain("frameRef: RefObject<HTMLDivElement | null>");
+    expect(source).toContain("baseGraph: HierarchicalSemanticGraph");
+    expect(source).toContain("semanticGraph: HierarchicalSemanticGraph");
+    expect(source).toContain("explicitFocusRequest: GraphExplicitFocusRequest | null");
+    expect(source).toContain("onBaseLayoutReady: (ready: GraphBaseLayoutReady) => void");
+  });
+
   it("wires Enter drill, pane clearing, double-click state, and reduced-motion edge data", async () => {
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
     const onOpenScope = vi.fn();
     await act(async () => root.render(createElement(SemanticGraphCanvas, {
+      ...canvasIntentProps(semanticGraphFixture, container, "overview"),
       semanticGraph: semanticGraphFixture,
       displayMode: "architecture",
-      viewKey: "overview",
       emptyNotice: null,
       onOpenScope,
       onOpenCluster: vi.fn(),
@@ -194,6 +248,8 @@ describe("SemanticGraphCanvas interaction contract", () => {
 
     const card = container.querySelector<HTMLElement>('[role="group"][aria-label^="核心模块"]');
     if (!card) throw new Error("缺少核心模块图谱卡片");
+    expect(card.querySelector(".uc-semantic-node__summary")).toBeNull();
+    expect(card.querySelector(".uc-semantic-node__path")?.textContent).toBe("src/core");
     const drillButton = card.querySelector<HTMLButtonElement>('button[aria-label^="进入"]');
     expect(drillButton?.className).toContain("min-h-11");
     expect(drillButton?.className).toContain("min-w-11");
@@ -227,9 +283,9 @@ describe("SemanticGraphCanvas interaction contract", () => {
     document.body.append(container);
     const root = createRoot(container);
     await act(async () => root.render(createElement(SemanticGraphCanvas, {
+      ...canvasIntentProps(semanticGraphFixture, container, "overview"),
       semanticGraph: semanticGraphFixture,
       displayMode: "architecture",
-      viewKey: "overview",
       emptyNotice: null,
       onOpenScope: vi.fn(),
       onOpenCluster: vi.fn(),
@@ -250,9 +306,9 @@ describe("SemanticGraphCanvas interaction contract", () => {
     const root = createRoot(container);
     const onSelectNode = vi.fn();
     await act(async () => root.render(createElement(SemanticGraphCanvas, {
+      ...canvasIntentProps(semanticGraphFixture, container, "overview"),
       semanticGraph: semanticGraphFixture,
       displayMode: "architecture",
-      viewKey: "overview",
       emptyNotice: null,
       onOpenScope: vi.fn(),
       onOpenCluster: vi.fn(),
@@ -319,9 +375,9 @@ describe("SemanticGraphCanvas interaction contract", () => {
       },
     };
     await act(async () => root.render(createElement(SemanticGraphCanvas, {
+      ...canvasIntentProps(drillGraph, container, "scope"),
       semanticGraph: drillGraph,
       displayMode: "architecture",
-      viewKey: "scope",
       emptyNotice: null,
       onOpenScope: vi.fn(),
       onOpenCluster,
@@ -342,15 +398,16 @@ describe("SemanticGraphCanvas interaction contract", () => {
     document.body.append(container);
     const root = createRoot(container);
     const exactNotice = "当前目录没有可展示的文件。";
+    const emptyGraph: HierarchicalSemanticGraph = {
+      ...semanticGraphFixture,
+      nodes: [],
+      edges: [],
+      presentation: { ...semanticGraphFixture.presentation, notice: exactNotice },
+    };
     await act(async () => root.render(createElement(SemanticGraphCanvas, {
-      semanticGraph: {
-        ...semanticGraphFixture,
-        nodes: [],
-        edges: [],
-        presentation: { ...semanticGraphFixture.presentation, notice: exactNotice },
-      },
+      ...canvasIntentProps(emptyGraph, container, "empty"),
+      semanticGraph: emptyGraph,
       displayMode: "architecture",
-      viewKey: "empty",
       emptyNotice: exactNotice,
       onOpenScope: vi.fn(),
       onOpenCluster: vi.fn(),
@@ -394,16 +451,20 @@ describe("SemanticGraphCanvas interaction contract", () => {
     expect(source.slice(cardStart, cardEnd)).not.toContain("onDoubleClick={(event) => {");
   });
 
-  it("does not fit or relayout merely because selection changed", () => {
+  it("keeps base layout and automatic viewport independent from ordinary selection", () => {
     expect(source).not.toContain("SelectedNodeFocus");
     expect(source).not.toContain("<SelectedNodeFocus");
-    expect(source).toContain("extendSemanticNodePositions");
+    expect(source).toContain("placeSelectionExpansion");
+    expect(source).toContain("buildGraphStructureKey");
     expect(source).toContain("requestSemanticLayout(input, { signal: controller.signal })");
     expect(source).toContain("const layoutRequestId = useRef(0)");
     expect(source).toContain("const completedPositions");
     expect(source).toContain("正在计算图谱布局");
     expect(source).toContain("Position.Left");
     expect(source).toContain("Position.Right");
+    expect(source).not.toContain("fitViewOptions=");
+    expect(source).not.toContain("fitView\n");
+    expect(source).not.toContain("key={viewKey}");
 
     const layoutEffectStart = source.indexOf("useEffect(() => {", source.indexOf("const layoutRequestId"));
     const completedPositionsStart = source.indexOf("const completedPositions", layoutEffectStart);
@@ -412,23 +473,9 @@ describe("SemanticGraphCanvas interaction contract", () => {
     const layoutEffectSource = source.slice(layoutEffectStart, completedPositionsStart);
     expect(layoutEffectSource).toContain("queueMicrotask");
     expect(layoutEffectSource).toContain("controller.abort()");
-    expect(layoutEffectSource).toContain("}, [isCompactOverview, viewKey]);");
+    expect(layoutEffectSource).toContain("structureKey");
+    expect(layoutEffectSource).toContain("viewportBucket");
     expect(layoutEffectSource).not.toContain("selectedNodeId");
-    expect(layoutEffectSource).not.toContain("structureKey]");
-
-    const viewKeyStart = explorerSource.indexOf("const canvasViewKey");
-    const viewKeyEnd = explorerSource.indexOf("return (", viewKeyStart);
-    expect(viewKeyStart).toBeGreaterThan(-1);
-    expect(viewKeyEnd).toBeGreaterThan(viewKeyStart);
-    const viewKeySource = explorerSource.slice(viewKeyStart, viewKeyEnd);
-    expect(viewKeySource).not.toContain("selectedNodeId");
-    expect(viewKeySource).not.toContain("nodes.length");
-    expect(viewKeySource).not.toContain("edges.length");
-    expect(viewKeySource).toContain("graphInstanceToken");
-    expect(viewKeySource).toContain("layoutRevision");
-    expect(viewKeySource).toContain("safeNavigation");
-    expect(viewKeySource).toContain("safeMaterializedNodeId");
-    expect(viewKeySource).not.toContain("pendingNavigationRequest");
   });
 
   it("renders graph metadata and React Flow controls in Simplified Chinese", () => {

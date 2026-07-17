@@ -19,7 +19,7 @@ import GraphCoverageLegend from "./GraphCoverageLegend";
 import GraphDetailsRail from "./GraphDetailsRail";
 import GraphModeToolbar from "./GraphModeToolbar";
 import { GraphQuickJump } from "./GraphQuickJump";
-import SemanticGraphCanvas from "./SemanticGraphCanvas";
+import SemanticGraphCanvas, { type GraphBaseLayoutReady } from "./SemanticGraphCanvas";
 import {
   availableGraphModes,
   buildGraphExplorerView,
@@ -39,6 +39,12 @@ let graphInstanceSequence = 0;
 export interface PendingGraphNavigationRequest {
   requestId: number;
   intent: GraphNavigationIntent;
+}
+
+interface LatestGraphLayoutReadyState {
+  pending: PendingGraphNavigationRequest | null;
+  semanticNodeIds: ReadonlySet<string>;
+  clearedSelectionContextKey: string;
 }
 
 function sameNavigation(
@@ -217,7 +223,10 @@ export default function GraphExplorer({
   const [wikiFocusNotice, setWikiFocusNotice] = useState<string | null>(null);
   const [visibleSelectedNodeId, setVisibleSelectedNodeId] = useState<string | null>(null);
   const [visibleSelectionContextKey, setVisibleSelectionContextKey] = useState<string | null>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
   const navigationRequestSequence = useRef(0);
+  const handledLayoutReadyRequestIdRef = useRef<number | null>(null);
+  const failedMaterializationRequestIdRef = useRef<number | null>(null);
   const lastAppliedGraphFocusRevisionRef = useRef(0);
   const previousGraphFocusPageIdRef = useRef<string | null>(null);
   const previousEffectiveModeRef = useRef<GraphExplorerDisplayMode | null>(null);
@@ -396,6 +405,58 @@ export default function GraphExplorer({
       wikiIndex,
     ],
   );
+  const latestLayoutReadyStateRef = useRef<LatestGraphLayoutReadyState>({
+    pending: null,
+    semanticNodeIds: new Set(),
+    clearedSelectionContextKey: selectionContextKeyFor(null),
+  });
+  latestLayoutReadyStateRef.current = {
+    pending: safePendingNavigationRequest,
+    semanticNodeIds: new Set(view?.semanticGraph.nodes.map((node) => node.id) ?? []),
+    clearedSelectionContextKey: selectionContextKeyFor(null),
+  };
+
+  useEffect(() => {
+    if (!view || !safePendingNavigationRequest) return;
+    const { requestId, intent } = safePendingNavigationRequest;
+    if (view.semanticGraph.nodes.some((node) => node.id === intent.materializedNodeId)) return;
+    if (failedMaterializationRequestIdRef.current === requestId) return;
+
+    failedMaterializationRequestIdRef.current = requestId;
+    setPendingNavigationRequest((current) => current?.requestId === requestId ? null : current);
+    setMaterializedNodeId((current) => current === intent.materializedNodeId ? null : current);
+    setWikiFocusNotice(MISSING_WIKI_FOCUS_NOTICE);
+    setVisibleSelectedNodeId(null);
+    setVisibleSelectionContextKey(null);
+    selectNode(null);
+  }, [safePendingNavigationRequest, selectNode, view]);
+
+  const explicitFocusRequest = useMemo(() => safePendingNavigationRequest
+    ? {
+        requestId: safePendingNavigationRequest.requestId,
+        materializedNodeId: safePendingNavigationRequest.intent.materializedNodeId,
+      }
+    : null, [safePendingNavigationRequest]);
+
+  const handleBaseLayoutReady = useCallback((ready: GraphBaseLayoutReady) => {
+    const current = latestLayoutReadyStateRef.current;
+    const pending = current.pending;
+    if (!pending) return;
+    if (handledLayoutReadyRequestIdRef.current === ready.requestId) return;
+    if (
+      ready.requestId !== pending.requestId
+      || ready.materializedNodeId !== pending.intent.materializedNodeId
+    ) return;
+    if (!current.semanticNodeIds.has(ready.materializedNodeId)) return;
+    if (!current.semanticNodeIds.has(pending.intent.selectionId)) return;
+
+    handledLayoutReadyRequestIdRef.current = ready.requestId;
+    setPendingNavigationRequest((current) => current?.requestId === ready.requestId ? null : current);
+    setWikiFocusNotice(null);
+    setVisibleSelectedNodeId(pending.intent.selectionId);
+    setVisibleSelectionContextKey(current.clearedSelectionContextKey);
+    selectNode(pending.intent.selectionId);
+  }, [selectNode]);
 
   const clearVisibleSelectionProvenance = useCallback(() => {
     setVisibleSelectedNodeId(null);
@@ -536,13 +597,6 @@ export default function GraphExplorer({
   }
 
   const presentation = view.semanticGraph.presentation;
-  const canvasViewKey = buildCanvasViewKey({
-    graphInstanceToken,
-    layoutRevision,
-    mode: effectiveMode,
-    navigation: safeNavigation,
-    materializedNodeId: safeMaterializedNodeId,
-  });
   const notice = wikiFocusNotice ?? presentation.notice;
 
   return (
@@ -550,7 +604,7 @@ export default function GraphExplorer({
       aria-label="项目图谱"
       className="flex min-h-0 flex-1 overflow-x-hidden overflow-y-auto bg-root text-text-primary xl:overflow-hidden max-xl:flex-col"
     >
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 p-4 max-xl:min-h-[540px] max-xl:flex-none max-sm:min-h-[480px] max-sm:p-3">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 p-4 max-sm:p-3">
         <div className="flex items-start justify-between gap-3 max-lg:flex-col">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <GraphModeToolbar mode={effectiveMode} options={modeOptions} onChangeMode={changeMode} />
@@ -603,16 +657,23 @@ export default function GraphExplorer({
           </p>
         )}
 
-        <SemanticGraphCanvas
-          semanticGraph={view.semanticGraph}
-          displayMode={effectiveMode}
-          viewKey={canvasViewKey}
-          emptyNotice={notice}
-          onOpenScope={openScope}
-          onOpenCluster={openCluster}
-          onOpenFile={openFile}
-          onSelectNode={selectVisibleNode}
-        />
+        <div className="uc-graph-frame" ref={frameRef}>
+          <SemanticGraphCanvas
+            frameRef={frameRef}
+            baseGraph={view.baseGraph}
+            semanticGraph={view.semanticGraph}
+            graphRevision={layoutRevision}
+            navigation={safeNavigation}
+            displayMode={effectiveMode}
+            explicitFocusRequest={explicitFocusRequest}
+            onBaseLayoutReady={handleBaseLayoutReady}
+            emptyNotice={notice}
+            onOpenScope={openScope}
+            onOpenCluster={openCluster}
+            onOpenFile={openFile}
+            onSelectNode={selectVisibleNode}
+          />
+        </div>
       </div>
       <GraphDetailsRail
         view={view}

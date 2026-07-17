@@ -15,12 +15,13 @@ describe("selection presentation", () => {
     expect(view.nodesById.get(selectedId)).toEqual({ selected: true, neighbor: false, dimmed: false, opacity: 1 });
     expect(view.nodesById.get("scope:layer:api")).toEqual({ selected: false, neighbor: true, dimmed: false, opacity: 1 });
     expect(view.nodesById.get("scope:layer:data")).toEqual({ selected: false, neighbor: true, dimmed: false, opacity: 1 });
-    expect(view.nodesById.get("scope:layer:unrelated")).toEqual({ selected: false, neighbor: false, dimmed: true, opacity: 0.2 });
+    expect(view.nodesById.get("scope:layer:unrelated")).toEqual({ selected: false, neighbor: false, dimmed: true, opacity: 0.64 });
     expect(view.edgesById.get("scope:layer:api->scope:layer:core")).toMatchObject({
       connected: true,
       animated: true,
       inlineDirection: false,
-      opacity: 0.95,
+      opacity: 0.96,
+      strokeWidth: 2.6,
       flowDirection: "forward",
     });
     expect(view.edgesById.get("scope:layer:core->scope:layer:data")).toMatchObject({
@@ -32,7 +33,7 @@ describe("selection presentation", () => {
       connected: false,
       animated: false,
       inlineDirection: false,
-      opacity: 0.16,
+      opacity: 0.1,
       strokeWidth: 1,
       flowDirection: "both",
     });
@@ -51,6 +52,10 @@ describe("selection presentation", () => {
       animated: false,
       inlineDirection: true,
       flowDirection: "reverse",
+    });
+    expect(reduced.edgesById.get("scope:layer:unrelated->scope:layer:data")).toMatchObject({
+      animated: false,
+      inlineDirection: false,
     });
   });
 

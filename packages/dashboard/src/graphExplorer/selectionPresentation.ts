@@ -68,7 +68,7 @@ export function buildSelectionPresentation(
         selected,
         neighbor,
         dimmed,
-        opacity: dimmed ? 0.2 : 1,
+        opacity: dimmed ? 0.64 : 1,
       }];
     })),
     edgesById: new Map(graph.edges.map((edge) => {
@@ -79,8 +79,8 @@ export function buildSelectionPresentation(
         connected,
         animated: connected && !reducedMotion,
         inlineDirection: connected && reducedMotion,
-        opacity: selectedId ? (connected ? 0.95 : 0.16) : 0.62,
-        strokeWidth: selectedId ? (connected ? Math.max(2.8, baseWidth + 0.8) : 1) : baseWidth,
+        opacity: selectedId ? (connected ? 0.96 : 0.1) : 0.62,
+        strokeWidth: selectedId ? (connected ? 2.6 : 1) : baseWidth,
         flowDirection: resolveFlowDirection(edge),
       }];
     })),

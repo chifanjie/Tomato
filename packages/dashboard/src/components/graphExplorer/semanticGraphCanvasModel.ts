@@ -1,11 +1,29 @@
 import type { GraphEdge, GraphNode } from "@understand-code/core/types";
-import type { AriaLabelConfig } from "@xyflow/react";
+import { getViewportForBounds, type AriaLabelConfig } from "@xyflow/react";
+import type {
+  GraphExplorerDisplayMode,
+  GraphExplorerNavigation,
+  GraphNavigationLevel,
+  HierarchicalGraphSelectionExpansion,
+  HierarchicalSemanticGraph,
+  HierarchicalSemanticGraphNode,
+} from "../../graphExplorer/hierarchicalGraph";
 import type { SemanticGraphNode, SemanticNodeGroup } from "../../graphExplorer/semanticGraph";
+import type { GraphViewportBucket, LayoutBounds } from "../../utils/layoutAlgorithm.js";
 
 export interface SemanticNodePosition {
   x: number;
   y: number;
 }
+
+export const READABLE_ZOOM_BY_LEVEL: Readonly<Record<GraphNavigationLevel, number>> = {
+  overview: 0.54,
+  scope: 0.62,
+  cluster: 0.70,
+  file: 0.78,
+};
+
+export type GraphSemanticZoomBand = "full" | "compact" | "minimal";
 
 export interface GraphPointerClick {
   id: string;
@@ -208,4 +226,230 @@ export function extendSemanticNodePositions(
   }
 
   return positions;
+}
+
+export function graphNodeSize(
+  level: GraphNavigationLevel,
+  node: HierarchicalSemanticGraphNode,
+): { width: number; height: number } {
+  const contentHeight = graphNodeContentHeight(node, "full");
+  if (node.kind === "scope" || node.kind === "boundary") {
+    return { width: 264, height: Math.max(132, contentHeight) };
+  }
+  if (node.kind === "cluster") return { width: 236, height: Math.max(108, contentHeight) };
+  if (node.rawType === "file") return { width: 228, height: Math.max(92, contentHeight) };
+  if (node.rawType === "function" || node.rawType === "class" || level === "file") {
+    return { width: 208, height: Math.max(76, contentHeight) };
+  }
+  return { width: 224, height: Math.max(88, contentHeight) };
+}
+
+/**
+ * Mirrors the fixed CSS line-height budget used by SemanticNodeCard. Reserving
+ * the summary rows in full mode keeps layout size independent from prose.
+ */
+export function graphNodeContentHeight(
+  node: HierarchicalSemanticGraphNode,
+  zoomBand: GraphSemanticZoomBand,
+): number {
+  const verticalChrome = 17;
+  const heading = 36;
+  if (zoomBand === "minimal") return verticalChrome + heading;
+
+  const summary = zoomBand === "full" ? 42 : 0;
+  const path = node.filePath ? 25 : 0;
+  const footer = node.canDrillDown ? 52 : 24;
+  return verticalChrome + heading + summary + path + footer;
+}
+
+function compareStable(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+export function buildGraphStructureKey(input: {
+  graphRevision: string;
+  displayMode: GraphExplorerDisplayMode;
+  navigation: GraphExplorerNavigation;
+  viewport: GraphViewportBucket;
+  baseGraph: HierarchicalSemanticGraph;
+  nodeSizeById: ReadonlyMap<string, { width: number; height: number }>;
+  algorithmVersion: number;
+  densityVersion: number;
+}): string {
+  return JSON.stringify({
+    format: 1,
+    graphRevision: input.graphRevision,
+    displayMode: input.displayMode,
+    navigation: [
+      input.navigation.level,
+      input.navigation.scopeId ?? "",
+      input.navigation.clusterId ?? "",
+      input.navigation.fileId ?? "",
+    ],
+    viewport: [
+      input.viewport.width,
+      input.viewport.height,
+      input.viewport.widthBucket,
+      input.viewport.heightBucket,
+      input.viewport.aspectBucket,
+    ],
+    algorithmVersion: input.algorithmVersion,
+    densityVersion: input.densityVersion,
+    nodes: input.baseGraph.nodes
+      .map((node) => {
+        const size = input.nodeSizeById.get(node.id) ?? graphNodeSize(input.navigation.level, node);
+        return [node.id, node.kind ?? "node", size.width, size.height] as const;
+      })
+      .sort((left, right) => compareStable(left[0], right[0])),
+    edges: input.baseGraph.edges
+      .map((edge) => [
+        edge.source,
+        edge.target,
+        edge.type,
+        [...edge.edgeTypes].sort(compareStable),
+        edge.direction,
+        [...edge.directions].sort(compareStable),
+        edge.bundledCount,
+        edge.weight,
+      ] as const)
+      .sort((left, right) => compareStable(JSON.stringify(left), JSON.stringify(right))),
+  });
+}
+
+function allPlacementEdges(
+  baseGraph: HierarchicalSemanticGraph,
+  expansion: HierarchicalGraphSelectionExpansion,
+): Array<{ source: string; target: string }> {
+  const byIdentity = new Map<string, { source: string; target: string }>();
+  for (const edge of [...baseGraph.edges, ...expansion.edges]) {
+    const identity = `${edge.source}\u0000${edge.target}`;
+    if (!byIdentity.has(identity)) byIdentity.set(identity, { source: edge.source, target: edge.target });
+  }
+  return [...byIdentity.values()];
+}
+
+export function placeSelectionExpansion(input: {
+  baseGraph: HierarchicalSemanticGraph;
+  expansion: HierarchicalGraphSelectionExpansion;
+  basePositions: ReadonlyMap<string, SemanticNodePosition>;
+  selectedNodeId: string | null;
+  nodeSizeById: ReadonlyMap<string, { width: number; height: number }>;
+  viewport: GraphViewportBucket;
+}): Map<string, SemanticNodePosition> {
+  const result = new Map(input.basePositions);
+  const allNodes = new Map(
+    [...input.baseGraph.nodes, ...input.expansion.nodes].map((node) => [node.id, node]),
+  );
+  const adjacency = new Map<string, Set<string>>();
+  for (const id of allNodes.keys()) adjacency.set(id, new Set());
+  for (const edge of allPlacementEdges(input.baseGraph, input.expansion)) {
+    if (!allNodes.has(edge.source) || !allNodes.has(edge.target)) continue;
+    adjacency.get(edge.source)?.add(edge.target);
+    adjacency.get(edge.target)?.add(edge.source);
+  }
+
+  const anchorById = new Map<string, string>();
+  let frontier = [...input.basePositions.keys()]
+    .filter((id) => allNodes.has(id))
+    .sort(compareStable);
+  for (const id of frontier) anchorById.set(id, id);
+  while (frontier.length > 0) {
+    const next: string[] = [];
+    for (const id of frontier) {
+      const anchor = anchorById.get(id)!;
+      for (const neighbor of adjacency.get(id) ?? []) {
+        if (anchorById.has(neighbor)) continue;
+        anchorById.set(neighbor, anchor);
+        next.push(neighbor);
+      }
+    }
+    frontier = next.sort((left, right) => (
+      compareStable(anchorById.get(left) ?? "", anchorById.get(right) ?? "")
+      || compareStable(left, right)
+    ));
+  }
+
+  const defaultAnchor = [...input.basePositions.keys()].sort(compareStable)[0] ?? null;
+  const missing = input.expansion.nodes
+    .filter((node) => !result.has(node.id))
+    .sort((left, right) => (
+      Number(right.id === input.selectedNodeId) - Number(left.id === input.selectedNodeId)
+      || compareStable(left.id, right.id)
+    ));
+  const groups = new Map<string, HierarchicalSemanticGraphNode[]>();
+  for (const node of missing) {
+    const anchor = anchorById.get(node.id) ?? defaultAnchor ?? "__viewport__";
+    const group = groups.get(anchor) ?? [];
+    group.push(node);
+    groups.set(anchor, group);
+  }
+
+  for (const [anchorId, nodes] of [...groups.entries()].sort(([left], [right]) => compareStable(left, right))) {
+    const anchorPosition = anchorId === "__viewport__" ? undefined : input.basePositions.get(anchorId);
+    const anchorSize = anchorId === "__viewport__" ? undefined : input.nodeSizeById.get(anchorId);
+    const anchorCenter = anchorPosition && anchorSize
+      ? {
+          x: anchorPosition.x + anchorSize.width / 2,
+          y: anchorPosition.y + anchorSize.height / 2,
+        }
+      : { x: input.viewport.width / 2, y: input.viewport.height / 2 };
+    const anchorRadius = anchorSize
+      ? Math.hypot(anchorSize.width, anchorSize.height) / 2
+      : 0;
+    const maxNodeRadius = Math.max(44, ...nodes.map((node) => {
+      const size = input.nodeSizeById.get(node.id) ?? graphNodeSize(input.baseGraph.presentation.level, node);
+      return Math.hypot(size.width, size.height) / 2;
+    }));
+
+    nodes.forEach((node, index) => {
+      const ring = Math.floor(index / 8);
+      const slot = index % 8;
+      const size = input.nodeSizeById.get(node.id) ?? graphNodeSize(input.baseGraph.presentation.level, node);
+      const radius = anchorRadius + maxNodeRadius * 1.1 + 56
+        + ring * (maxNodeRadius * 2.2 + 40);
+      const angle = -Math.PI / 2 + slot * (Math.PI * 2 / 8);
+      result.set(node.id, {
+        x: anchorCenter.x + Math.cos(angle) * radius - size.width / 2,
+        y: anchorCenter.y + Math.sin(angle) * radius - size.height / 2,
+      });
+    });
+  }
+  return result;
+}
+
+export function computeReadableViewport(input: {
+  level: GraphNavigationLevel;
+  bounds: LayoutBounds;
+  focusBounds?: LayoutBounds;
+  viewport: GraphViewportBucket;
+  padding: number;
+  maxZoom: number;
+}): { viewport: { x: number; y: number; zoom: number }; fullyFits: boolean } {
+  const fullViewport = getViewportForBounds(
+    input.bounds,
+    input.viewport.width,
+    input.viewport.height,
+    0.01,
+    input.maxZoom,
+    input.padding,
+  );
+  const floor = Math.min(READABLE_ZOOM_BY_LEVEL[input.level], input.maxZoom);
+  if (fullViewport.zoom >= floor) {
+    return { viewport: fullViewport, fullyFits: true };
+  }
+  const focusViewport = getViewportForBounds(
+    input.focusBounds ?? input.bounds,
+    input.viewport.width,
+    input.viewport.height,
+    floor,
+    floor,
+    input.padding,
+  );
+  return { viewport: focusViewport, fullyFits: false };
+}
+
+export function graphSemanticZoomBand(zoom: number): GraphSemanticZoomBand {
+  if (zoom >= 0.85) return "full";
+  if (zoom >= 0.62) return "compact";
+  return "minimal";
 }

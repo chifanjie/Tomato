@@ -30,6 +30,8 @@ import {
 
 const graphExplorerHarness = vi.hoisted(() => ({
   semanticGraphs: [] as unknown[],
+  canvasProps: [] as Array<Record<string, unknown>>,
+  omitMaterializedNode: false,
 }));
 
 vi.mock("../GraphQuickJump", async () => {
@@ -54,18 +56,30 @@ vi.mock("../GraphQuickJump", async () => {
 vi.mock("../SemanticGraphCanvas", async () => {
   const React = await import("react");
   return {
-    default: ({ semanticGraph, viewKey, onSelectNode }: {
+    default: (props: {
+      baseGraph: { presentation: { level: string }; nodes: Array<{ id: string }> };
       semanticGraph: { presentation: { level: string }; nodes: Array<{ id: string }> };
-      viewKey: string;
+      graphRevision: string;
+      navigation: Record<string, unknown>;
+      explicitFocusRequest: { requestId: number; materializedNodeId: string } | null;
+      onBaseLayoutReady: (ready: { requestId: number; structureKey: string; materializedNodeId: string }) => void;
       onSelectNode?: (id: string | null) => void;
     }) => {
+      const { baseGraph, semanticGraph, graphRevision, navigation, explicitFocusRequest, onSelectNode } = props;
+      graphExplorerHarness.canvasProps.push(props);
       graphExplorerHarness.semanticGraphs.push(semanticGraph);
       return React.createElement(
         "div",
         {
           "data-testid": "semantic-canvas",
           "data-level": semanticGraph.presentation.level,
-          "data-view-key": viewKey,
+          "data-view-key": JSON.stringify([
+            graphRevision,
+            navigation,
+            baseGraph.nodes.map((node) => node.id).sort(),
+            explicitFocusRequest?.materializedNodeId ?? "",
+          ]),
+          className: "uc-semantic-canvas",
         },
         ...semanticGraph.nodes.map((node) => React.createElement("button", {
           key: node.id,
@@ -79,6 +93,28 @@ vi.mock("../SemanticGraphCanvas", async () => {
           onClick: () => onSelectNode?.(null),
         }, "clear"),
       );
+    },
+  };
+});
+
+vi.mock("../graphExplorerModel", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../graphExplorerModel")>();
+  return {
+    ...actual,
+    buildGraphExplorerView: (input: Parameters<typeof actual.buildGraphExplorerView>[0]) => {
+      const view = actual.buildGraphExplorerView(input);
+      if (!graphExplorerHarness.omitMaterializedNode || !input.materializedNodeId) return view;
+      const semanticGraph = {
+        ...view.semanticGraph,
+        nodes: view.semanticGraph.nodes.filter((node) => node.id !== input.materializedNodeId),
+        edges: view.semanticGraph.edges.filter((edge) =>
+          edge.source !== input.materializedNodeId && edge.target !== input.materializedNodeId),
+      };
+      return {
+        ...view,
+        semanticGraph,
+        selection: null,
+      };
     },
   };
 });
@@ -306,7 +342,7 @@ describe("GraphExplorer progressive navigation helpers", () => {
     expect(shouldClearVisibleSelectionProvenance("previous", "next")).toBe(true);
   });
 
-  it("keeps the intermediate Canvas API single-graph while wiring progressive state", () => {
+  it("uses the permanent base/render graph Canvas API inside one owned frame", () => {
     const source = readFileSync(resolve(
       process.cwd(),
       "src/components/graphExplorer/GraphExplorer.tsx",
@@ -321,8 +357,14 @@ describe("GraphExplorer progressive navigation helpers", () => {
     expect(source).toContain("pendingNavigationRequest");
     expect(source).toContain("materializedNodeId");
     expect(source).toContain("graphFocusRevision");
+    expect(source).toContain("baseGraph={view.baseGraph}");
     expect(source).toContain("semanticGraph={view.semanticGraph}");
-    expect(source).not.toContain("baseGraph={view.baseGraph}");
+    expect(source).toContain("frameRef={frameRef}");
+    expect(source).toContain("graphRevision={layoutRevision}");
+    expect(source).toContain("navigation={safeNavigation}");
+    expect(source).toContain("explicitFocusRequest=");
+    expect(source).toContain("onBaseLayoutReady={handleBaseLayoutReady}");
+    expect(source.match(/className="uc-graph-frame/g)).toHaveLength(1);
     expect(modelSource).not.toContain("focusNodeIds?:");
     expect(modelSource).not.toContain("hierarchyIndex?:");
     expect(modelSource).not.toContain("materializedNodeId?:");
@@ -341,6 +383,8 @@ describe("GraphExplorer progressive navigation integration", () => {
     document.body.replaceChildren(container);
     root = createRoot(container);
     graphExplorerHarness.semanticGraphs.length = 0;
+    graphExplorerHarness.canvasProps.length = 0;
+    graphExplorerHarness.omitMaterializedNode = false;
     useDashboardStore.setState({
       graphFocusRevision: 0,
       graphFocusNodeIds: [],
@@ -356,6 +400,7 @@ describe("GraphExplorer progressive navigation integration", () => {
 
   afterEach(async () => {
     await act(async () => root.unmount());
+    graphExplorerHarness.omitMaterializedNode = false;
     document.body.replaceChildren();
   });
 
@@ -368,6 +413,17 @@ describe("GraphExplorer progressive navigation integration", () => {
       root.render(strict ? createElement(StrictMode, null, explorer) : explorer);
       await Promise.resolve();
     });
+  }
+
+  function latestCanvasProps(): {
+    baseGraph: { nodes: Array<{ id: string }> };
+    semanticGraph: { nodes: Array<{ id: string }> };
+    explicitFocusRequest: { requestId: number; materializedNodeId: string } | null;
+    onBaseLayoutReady: (ready: { requestId: number; structureKey: string; materializedNodeId: string }) => void;
+  } {
+    const props = graphExplorerHarness.canvasProps.at(-1);
+    if (!props) throw new Error("缺少 Canvas props");
+    return props as ReturnType<typeof latestCanvasProps>;
   }
 
   it("applies file and symbol Quick Jump intents without selecting before layout readiness", async () => {
@@ -423,6 +479,95 @@ describe("GraphExplorer progressive navigation integration", () => {
     const clearedKey = container.querySelector('[data-testid="semantic-canvas"]')
       ?.getAttribute("data-view-key") ?? "[]";
     expect(JSON.parse(clearedKey).at(-1)).toBe("");
+  });
+
+  it("commits only the latest matching layout-ready request exactly once", async () => {
+    const selectedTransitions: Array<string | null> = [];
+    const unsubscribe = useDashboardStore.subscribe((state, previous) => {
+      if (state.selectedNodeId !== previous.selectedNodeId) selectedTransitions.push(state.selectedNodeId);
+    });
+    await renderExplorer(true);
+
+    const fileJump = container.querySelector<HTMLButtonElement>('[data-jump-id="file:src/a.ts"]');
+    await act(async () => fileJump?.click());
+    const request1 = latestCanvasProps();
+    expect(request1.explicitFocusRequest).toEqual({
+      requestId: 1,
+      materializedNodeId: "file:src/a.ts",
+    });
+
+    const symbolJump = container.querySelector<HTMLButtonElement>(
+      '[data-jump-id="function:src/a.ts:run"]',
+    );
+    await act(async () => symbolJump?.click());
+    const request2 = latestCanvasProps();
+    expect(request2.explicitFocusRequest).toEqual({
+      requestId: 2,
+      materializedNodeId: "function:src/a.ts:run",
+    });
+
+    await act(async () => request1.onBaseLayoutReady({
+      requestId: 1,
+      structureKey: "stale-structure",
+      materializedNodeId: "file:src/a.ts",
+    }));
+    expect(useDashboardStore.getState().selectedNodeId).toBeNull();
+
+    await act(async () => request2.onBaseLayoutReady({
+      requestId: 2,
+      structureKey: "current-structure",
+      materializedNodeId: "file:src/a.ts",
+    }));
+    expect(useDashboardStore.getState().selectedNodeId).toBeNull();
+    expect(latestCanvasProps().explicitFocusRequest).toEqual({
+      requestId: 2,
+      materializedNodeId: "function:src/a.ts:run",
+    });
+
+    const ready2 = {
+      requestId: 2,
+      structureKey: "current-structure",
+      materializedNodeId: "function:src/a.ts:run",
+    };
+    await act(async () => request2.onBaseLayoutReady(ready2));
+    expect(useDashboardStore.getState().selectedNodeId).toBe("function:src/a.ts:run");
+    expect(latestCanvasProps().explicitFocusRequest).toBeNull();
+
+    await act(async () => request2.onBaseLayoutReady(ready2));
+    expect(selectedTransitions).toEqual(["function:src/a.ts:run"]);
+    unsubscribe();
+  });
+
+  it("clears one failed materialization request, preserves its ancestor, and never retries it", async () => {
+    await renderExplorer(true);
+    graphExplorerHarness.omitMaterializedNode = true;
+    const fileJump = container.querySelector<HTMLButtonElement>('[data-jump-id="file:src/a.ts"]');
+    await act(async () => {
+      fileJump?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('[data-testid="semantic-canvas"]')?.getAttribute("data-level"))
+      .toBe("cluster");
+    expect(latestCanvasProps().explicitFocusRequest).toBeNull();
+    expect(useDashboardStore.getState().selectedNodeId).toBeNull();
+    expect([...container.querySelectorAll('[role="status"]')]
+      .filter((node) => node.textContent === "未找到可定位的图谱对象，已保留最近层级。"))
+      .toHaveLength(1);
+
+    const propsCount = graphExplorerHarness.canvasProps.length;
+    await act(async () => useDashboardStore.getState().setWikiIndex(wikiRuntimeFixture()));
+    expect(latestCanvasProps().explicitFocusRequest).toBeNull();
+    expect(graphExplorerHarness.canvasProps.length).toBeGreaterThanOrEqual(propsCount);
+    expect(useDashboardStore.getState().selectedNodeId).toBeNull();
+  });
+
+  it("owns exactly one graph frame around the fill-sized Canvas", async () => {
+    await renderExplorer();
+    expect(container.querySelectorAll(".uc-graph-frame")).toHaveLength(1);
+    const frame = container.querySelector(".uc-graph-frame");
+    expect(frame?.querySelector(":scope > .uc-semantic-canvas")).not.toBeNull();
   });
 
   it("keeps an expansion-only ordinary selection across the post-pending effect rerender", async () => {

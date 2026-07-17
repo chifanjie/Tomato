@@ -134,21 +134,31 @@ body {
 }
 
 .uc-semantic-edge-label {
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 3px;
-  padding: 1px 4px;
-  background: var(--color-root);
-  color: var(--color-text-muted);
-  font-size: 10px;
-  line-height: 1.25;
+  max-width: 16rem;
+  overflow: hidden;
+  border: 1px solid var(--color-graph-control-border);
+  border-radius: var(--radius-control);
+  padding: 3px 7px;
+  background: var(--color-graph-edge-label-bg);
+  color: var(--color-graph-edge-label-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .uc-semantic-edge-direction {
-  font-family: var(--font-sans);
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 1;
+  border: 1px solid var(--color-graph-control-border);
+  border-radius: var(--radius-control);
+  background: var(--color-graph-edge-label-bg);
+  padding: 3px 7px;
+  color: var(--color-graph-edge-label-text);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -156,6 +166,11 @@ body {
   .uc-edge-flow-reverse {
     animation: none !important;
     stroke-dasharray: none;
+  }
+
+  .uc-semantic-node,
+  .uc-graph-layout-status {
+    transition: none !important;
   }
 }
 
@@ -943,9 +958,344 @@ body {
 }
 
 .uc-graph-frame {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
   background: var(--color-graph-canvas);
   border: 1px solid var(--color-graph-node-border);
-  border-radius: 10px;
+  border-radius: var(--radius-panel);
+}
+
+.uc-semantic-canvas {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  background: var(--color-graph-canvas);
+  color: var(--color-text-secondary);
+}
+
+.uc-semantic-canvas > .react-flow {
+  width: 100%;
+  height: 100%;
+  background: var(--color-graph-canvas);
+}
+
+.uc-semantic-canvas__status {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  background: var(--color-graph-canvas);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.uc-semantic-canvas__status > * {
+  max-width: min(32rem, calc(100% - 32px));
+  border: 1px solid var(--color-graph-node-border);
+  border-radius: var(--radius-control);
+  background: var(--color-graph-node-bg);
+  padding: 10px 14px;
+}
+
+.uc-semantic-canvas--state {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.uc-semantic-canvas--state > .uc-panel {
+  max-width: 32rem;
+  border-color: var(--color-graph-node-border);
+  background: var(--color-graph-node-bg);
+  color: var(--color-graph-edge-label-text);
+  text-align: center;
+}
+
+.uc-semantic-node {
+  --uc-graph-node-marker: var(--color-graph-marker-raw);
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--color-graph-node-border);
+  border-radius: 9px;
+  background: var(--color-graph-node-bg);
+  padding: 8px 10px 7px 14px;
+  color: var(--color-text-secondary);
+  box-shadow: none;
+  outline: none;
+  transition: border-color 140ms ease, background-color 140ms ease, opacity 140ms ease;
+}
+
+.uc-semantic-node::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: var(--uc-graph-node-marker);
+  content: "";
+}
+
+.uc-semantic-node[data-kind="scope"] {
+  --uc-graph-node-marker: var(--color-graph-marker-scope);
+}
+
+.uc-semantic-node[data-kind="module"] {
+  --uc-graph-node-marker: var(--color-graph-marker-scope);
+}
+
+.uc-semantic-node[data-kind="cluster"] {
+  --uc-graph-node-marker: var(--color-graph-marker-cluster);
+}
+
+.uc-semantic-node[data-kind="config"] {
+  --uc-graph-node-marker: var(--color-graph-marker-cluster);
+}
+
+.uc-semantic-node[data-kind="file"] {
+  --uc-graph-node-marker: var(--color-graph-marker-file);
+}
+
+.uc-semantic-node[data-kind="symbol"] {
+  --uc-graph-node-marker: var(--color-graph-marker-symbol);
+}
+
+.uc-semantic-node[data-kind="function"],
+.uc-semantic-node[data-kind="class"] {
+  --uc-graph-node-marker: var(--color-graph-marker-symbol);
+}
+
+.uc-semantic-node[data-kind="boundary"] {
+  --uc-graph-node-marker: var(--color-graph-marker-boundary);
+}
+
+.uc-semantic-node[data-kind="service"],
+.uc-semantic-node[data-kind="endpoint"],
+.uc-semantic-node[data-kind="resource"] {
+  --uc-graph-node-marker: var(--color-graph-marker-boundary);
+}
+
+.uc-semantic-node[data-kind="raw"] {
+  --uc-graph-node-marker: var(--color-graph-marker-raw);
+}
+
+.uc-semantic-node[data-selected="true"] {
+  border-color: var(--color-graph-node-selected-border);
+  background: var(--color-graph-node-selected-bg);
+}
+
+.uc-semantic-node[data-neighbor="true"] {
+  border-color: var(--color-graph-node-neighbor-border);
+}
+
+.uc-semantic-node[data-dimmed="true"] {
+  opacity: 0.64;
+}
+
+.uc-semantic-node:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 3px;
+}
+
+.uc-semantic-node__body {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.uc-semantic-node__header,
+.uc-semantic-node__heading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.uc-semantic-node__kind,
+.uc-semantic-node__type,
+.uc-semantic-node__eyebrow {
+  overflow: hidden;
+  color: var(--uc-graph-node-marker);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.uc-semantic-node__title {
+  overflow: hidden;
+  margin: 2px 0 0;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 680;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uc-semantic-node__summary {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 7px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.uc-semantic-node__path {
+  overflow: hidden;
+  margin-top: 7px;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uc-semantic-node__meta,
+.uc-semantic-node__footer {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 7px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.uc-semantic-node__footer > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uc-semantic-node__badge {
+  max-width: 9rem;
+  overflow: hidden;
+  border: 1px solid var(--color-graph-node-border);
+  border-radius: var(--radius-control);
+  padding: 2px 5px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uc-semantic-node__badge[data-relation="direct"] {
+  border-color: color-mix(in srgb, var(--color-graph-status-direct) 55%, var(--color-graph-node-border));
+  color: var(--color-graph-status-direct);
+}
+
+.uc-semantic-node__badge[data-relation="context"] {
+  border-color: color-mix(in srgb, var(--color-graph-status-context) 55%, var(--color-graph-node-border));
+  color: var(--color-graph-status-context);
+}
+
+.uc-semantic-node__badge[data-relation="missing"] {
+  border-color: color-mix(in srgb, var(--color-graph-status-missing) 55%, var(--color-graph-node-border));
+  color: var(--color-graph-status-missing);
+}
+
+.uc-semantic-node__badge[data-relation="none"] {
+  border-color: color-mix(in srgb, var(--color-graph-status-missing) 55%, var(--color-graph-node-border));
+  color: var(--color-graph-status-missing);
+}
+
+.uc-semantic-node__badge[data-relation="problem"],
+.uc-semantic-node__problem {
+  color: var(--color-graph-status-problem);
+}
+
+.uc-semantic-node__problem {
+  flex: none;
+  font-weight: 650;
+}
+
+.uc-semantic-node__drill {
+  display: inline-grid;
+  flex: none;
+  border: 1px solid var(--color-graph-node-border);
+  border-radius: var(--radius-control);
+  background: var(--color-graph-node-bg);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+  place-items: center;
+}
+
+.uc-semantic-node__drill:hover {
+  border-color: var(--color-graph-node-selected-border);
+  color: var(--color-graph-node-selected-border);
+}
+
+.uc-semantic-node__drill:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.uc-semantic-node .react-flow__handle,
+.uc-semantic-node__handle {
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--color-graph-node-bg);
+  background: var(--uc-graph-node-marker);
+}
+
+.uc-semantic-node[data-zoom-band="compact"] .uc-semantic-node__summary {
+  display: none;
+}
+
+.uc-semantic-node[data-zoom-band="minimal"] .uc-semantic-node__summary,
+.uc-semantic-node[data-zoom-band="minimal"] .uc-semantic-node__path,
+.uc-semantic-node[data-zoom-band="minimal"] .uc-semantic-node__footer,
+.uc-semantic-node[data-zoom-band="minimal"] .uc-semantic-node__badge {
+  display: none;
+}
+
+.uc-graph-layout-status {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 6;
+  max-width: min(34rem, calc(100% - 32px));
+  transform: translateX(-50%);
+  border: 1px solid color-mix(in srgb, var(--color-graph-status-context) 48%, var(--color-graph-node-border));
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--color-graph-status-context) 9%, var(--color-graph-node-bg));
+  padding: 7px 10px;
+  color: var(--color-graph-edge-label-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  text-align: center;
 }
 
 .uc-code-ref {
@@ -1181,9 +1531,81 @@ body {
   background: var(--scrollbar-thumb-hover);
 }
 
-/* React Flow canvas follows the active preset. */
+/* React Flow graph chrome follows the active graph palette. */
 .react-flow__background {
-  background-color: var(--color-root) !important;
+  background-color: var(--color-graph-canvas) !important;
+}
+
+.uc-semantic-canvas .react-flow__controls {
+  overflow: hidden;
+  border: 1px solid var(--color-graph-control-border);
+  border-radius: var(--radius-control);
+  background: var(--color-graph-control-bg);
+  box-shadow: none;
+}
+
+.uc-semantic-canvas .react-flow__controls-button {
+  display: grid;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  border: 0;
+  border-bottom: 1px solid var(--color-graph-control-border);
+  background: var(--color-graph-control-bg);
+  color: var(--color-graph-control-fg);
+  place-items: center;
+}
+
+.uc-semantic-canvas .react-flow__controls-button:last-child {
+  border-bottom: 0;
+}
+
+.uc-semantic-canvas .react-flow__controls-button:hover {
+  background: color-mix(in srgb, var(--color-graph-control-fg) 7%, var(--color-graph-control-bg));
+}
+
+.uc-semantic-canvas .react-flow__controls-button:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--color-focus);
+  outline-offset: -3px;
+}
+
+.uc-semantic-canvas .react-flow__controls-button svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+}
+
+.uc-semantic-canvas .react-flow__minimap {
+  overflow: hidden;
+  border: 1px solid var(--color-graph-control-border);
+  border-radius: var(--radius-control);
+  background: var(--color-graph-minimap-bg);
+  box-shadow: none;
+}
+
+.uc-semantic-canvas .react-flow__minimap svg {
+  background: var(--color-graph-minimap-bg);
+}
+
+.uc-semantic-canvas .react-flow__minimap-mask {
+  fill: var(--color-graph-minimap-mask);
+}
+
+.uc-semantic-canvas .react-flow__edge-path {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.uc-semantic-canvas .react-flow__attribution {
+  background: var(--color-graph-control-bg);
+  color: var(--color-graph-control-fg);
+}
+
+.uc-semantic-canvas .react-flow__attribution a {
+  color: inherit;
 }
 
 .uc-theme-picker { position: relative; }

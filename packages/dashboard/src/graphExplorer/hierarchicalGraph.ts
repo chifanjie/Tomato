@@ -736,20 +736,26 @@ function deriveScopes(graph: KnowledgeGraph): {
     });
   }
 
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const edge of graph.edges) {
-      if (edge.type !== "contains") continue;
-      const sourceScope = nodeToScopeId.get(edge.source);
-      const targetScope = nodeToScopeId.get(edge.target);
-      if (sourceScope && !targetScope) {
-        nodeToScopeId.set(edge.target, sourceScope);
-        changed = true;
-      } else if (!sourceScope && targetScope) {
-        nodeToScopeId.set(edge.source, targetScope);
-        changed = true;
-      }
+  const containmentNeighborsByNode = new Map<string, string[]>();
+  for (const edge of graph.edges) {
+    if (edge.type !== "contains") continue;
+    const sourceNeighbors = containmentNeighborsByNode.get(edge.source) ?? [];
+    sourceNeighbors.push(edge.target);
+    containmentNeighborsByNode.set(edge.source, sourceNeighbors);
+    const targetNeighbors = containmentNeighborsByNode.get(edge.target) ?? [];
+    targetNeighbors.push(edge.source);
+    containmentNeighborsByNode.set(edge.target, targetNeighbors);
+  }
+
+  const scopeQueue = scopes.flatMap((scope) => scope.nodeIds);
+  for (let cursor = 0; cursor < scopeQueue.length; cursor += 1) {
+    const nodeId = scopeQueue[cursor]!;
+    const scopeId = nodeToScopeId.get(nodeId);
+    if (!scopeId) continue;
+    for (const neighborId of containmentNeighborsByNode.get(nodeId) ?? []) {
+      if (nodeToScopeId.has(neighborId)) continue;
+      nodeToScopeId.set(neighborId, scopeId);
+      scopeQueue.push(neighborId);
     }
   }
 

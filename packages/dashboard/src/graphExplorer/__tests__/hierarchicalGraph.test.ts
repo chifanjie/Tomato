@@ -250,6 +250,44 @@ function countLargeGraphEdgeFilterVisits(
   return visits;
 }
 
+function countLargeGraphEdgeIterationVisits(
+  minimumEdgeCount: number,
+  run: () => void,
+): number {
+  const originalIterator = Array.prototype[Symbol.iterator];
+  let visits = 0;
+  const iterator = vi.spyOn(Array.prototype, Symbol.iterator).mockImplementation(function (
+    this: unknown[],
+  ) {
+    const delegate = originalIterator.call(this);
+    const first = this[0];
+    const isLargeGraphEdgeArray = this.length >= minimumEdgeCount
+      && typeof first === "object"
+      && first !== null
+      && "source" in first
+      && "target" in first
+      && "type" in first
+      && "direction" in first;
+    if (!isLargeGraphEdgeArray) return delegate;
+    return {
+      next() {
+        const result = delegate.next();
+        if (!result.done) visits += 1;
+        return result;
+      },
+      [Symbol.iterator]() {
+        return this;
+      },
+    } as ArrayIterator<unknown>;
+  });
+  try {
+    run();
+  } finally {
+    iterator.mockRestore();
+  }
+  return visits;
+}
+
 describe("hierarchicalGraph", () => {
   it("normalizes separators and dot segments without escaping the graph root", () => {
     expect(normalizeGraphFilePath("./packages\\api//src/./index.ts")).toBe("packages/api/src/index.ts");
@@ -600,6 +638,39 @@ describe("hierarchicalGraph", () => {
     expect(architectureNodes.every((node) =>
       hierarchyIndex!.nodeLocationById.get(node.id)?.scopeId === "layer:first")).toBe(true);
     expect(graphEdgeFilterVisits).toBeLessThanOrEqual(graph.edges.length);
+  });
+
+  it("propagates a reverse lexical pathless containment chain within a linear edge-visit budget", () => {
+    const architectureCount = 2_000;
+    const architectureNodes = Array.from({ length: architectureCount }, (_, index) =>
+      hierarchyNode(`service:chain-${String(index).padStart(4, "0")}`, "service"));
+    const graph: KnowledgeGraph = {
+      ...hierarchyGraph(
+        architectureNodes,
+        architectureNodes.slice(1).map((node, index): GraphEdge => ({
+          source: node.id,
+          target: architectureNodes[index]!.id,
+          type: "contains",
+          direction: "forward",
+          weight: 1,
+        })),
+      ),
+      layers: [{
+        id: "root",
+        name: "根层",
+        description: "Root.",
+        nodeIds: [architectureNodes.at(-1)!.id],
+      }],
+    };
+    let hierarchyIndex: ReturnType<typeof buildGraphHierarchyIndex> | null = null;
+
+    const graphEdgeIterationVisits = countLargeGraphEdgeIterationVisits(graph.edges.length, () => {
+      hierarchyIndex = buildGraphHierarchyIndex(graph);
+    });
+
+    expect(architectureNodes.every((node) =>
+      hierarchyIndex!.nodeLocationById.get(node.id)?.scopeId === "layer:root")).toBe(true);
+    expect(graphEdgeIterationVisits).toBeLessThanOrEqual(graph.edges.length * 4);
   });
 
   it("preserves explicit layer ownership for a pathful orphan", () => {

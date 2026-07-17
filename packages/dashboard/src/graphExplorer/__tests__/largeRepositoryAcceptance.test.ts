@@ -1,4 +1,5 @@
 import { parseWikiIndexV2 } from "@understand-code/core";
+import type { KnowledgeGraph } from "@understand-code/core/types";
 import { describe, expect, it } from "vitest";
 import { buildGraphExplorerView } from "../../components/graphExplorer/graphExplorerModel.js";
 import { buildWikiNavigation } from "../../wiki/navigationModel.js";
@@ -9,10 +10,16 @@ import {
   boundaryNodeId,
   buildGraphHierarchyIndex,
   buildHierarchicalSemanticGraph,
+  buildHierarchySelectionExpansion,
   graphNodePlacementClass,
+  mergeHierarchySelectionExpansion,
   scopeNodeId,
   type HierarchicalSemanticGraph,
 } from "../hierarchicalGraph.js";
+import {
+  buildGraphQuickJumpItems,
+  resolveGraphNavigationIntent,
+} from "../graphQuickJump.js";
 
 describe("large repository acceptance", () => {
   it("keeps the main route bounded and every file or symbol reference reachable", () => {
@@ -331,5 +338,125 @@ describe("large repository acceptance", () => {
     expect([...reachable].sort()).toEqual([...expectedReachable].sort());
     expect([...fileClusterVisits.entries()].every(([, clusters]) => clusters.size === 1)).toBe(true);
     expect(fileClusterVisits.size).toBe(277);
+  });
+
+  it("makes every hierarchy object reachable through a deterministic Quick Jump intent", () => {
+    const { graph } = largeRepositoryFixture();
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const quickItems = buildGraphQuickJumpItems({ graph, hierarchyIndex });
+    const reachableIds = new Set(quickItems.map((item) => item.id));
+    const expectedBoundaryIds = new Set<string>();
+    for (const edge of graph.edges) {
+      const sourceScope = hierarchyIndex.nodeLocationById.get(edge.source)?.scopeId;
+      const targetScope = hierarchyIndex.nodeLocationById.get(edge.target)?.scopeId;
+      if (!sourceScope || !targetScope || sourceScope === targetScope) continue;
+      expectedBoundaryIds.add(boundaryNodeId(sourceScope, targetScope));
+      expectedBoundaryIds.add(boundaryNodeId(targetScope, sourceScope));
+    }
+    expect(new Set(
+      quickItems.filter((item) => item.kind === "boundary").map((item) => item.id),
+    )).toEqual(expectedBoundaryIds);
+    expect([...hierarchyIndex.scopeById.keys()].every((id) => reachableIds.has(scopeNodeId(id)))).toBe(true);
+    expect([...hierarchyIndex.clusterById.keys()].every((id) => reachableIds.has(id))).toBe(true);
+    expect(graph.nodes.every((node) => reachableIds.has(node.id))).toBe(true);
+    for (const item of quickItems) {
+      const intent = resolveGraphNavigationIntent({
+        objectId: item.id,
+        source: "quick-jump",
+        graph,
+        hierarchyIndex,
+      });
+      expect(intent).toEqual(item.intent);
+      if (!intent) throw new Error(`missing intent for ${item.id}`);
+      const baseGraph = buildHierarchicalSemanticGraph({
+        graph,
+        hierarchyIndex,
+        mode: "architecture",
+        navigation: intent.navigation,
+        materializedNodeId: intent.materializedNodeId,
+      });
+      expect(baseGraph.nodes.some((node) => node.id === intent.materializedNodeId)).toBe(true);
+      const expansion = buildHierarchySelectionExpansion({
+        graph,
+        hierarchyIndex,
+        baseGraph,
+        mode: "architecture",
+        selectedNodeId: intent.selectionId,
+      });
+      const rendered = mergeHierarchySelectionExpansion(baseGraph, expansion);
+      expect(rendered.nodes.some((node) => node.id === intent.selectionId)).toBe(true);
+      expect(rendered.presentation.breadcrumbs.map((item) => item.level) as string[])
+        .not.toContain("symbol");
+    }
+  });
+
+  it("materializes a call-only boundary before selection without leaking a calls edge in architecture mode", () => {
+    const graph: KnowledgeGraph = {
+      version: "1.0.0",
+      project: {
+        name: "boundary-quick-jump",
+        languages: ["typescript"],
+        frameworks: [],
+        description: "边界快速定位夹具。",
+        analyzedAt: "2026-07-17T00:00:00.000Z",
+        gitCommitHash: "fixture",
+      },
+      nodes: [
+        {
+          id: "file:app.ts", type: "file", name: "app.ts", filePath: "app.ts",
+          summary: "应用。", tags: [], complexity: "simple",
+        },
+        {
+          id: "file:lib.ts", type: "file", name: "lib.ts", filePath: "lib.ts",
+          summary: "库。", tags: [], complexity: "simple",
+        },
+      ],
+      edges: [{
+        source: "file:app.ts", target: "file:lib.ts", type: "calls",
+        direction: "backward", weight: 1,
+      }],
+      layers: [
+        { id: "app", name: "应用", description: "应用。", nodeIds: ["file:app.ts"] },
+        { id: "lib", name: "库", description: "库。", nodeIds: ["file:lib.ts"] },
+      ],
+      tour: [],
+    };
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const appScopeId = hierarchyIndex.nodeLocationById.get("file:app.ts")!.scopeId;
+    const libScopeId = hierarchyIndex.nodeLocationById.get("file:lib.ts")!.scopeId;
+    for (const [currentScopeId, targetScopeId] of [[appScopeId, libScopeId], [libScopeId, appScopeId]] as const) {
+      const portalId = boundaryNodeId(currentScopeId, targetScopeId);
+      const intent = resolveGraphNavigationIntent({
+        objectId: portalId,
+        source: "quick-jump",
+        graph,
+        hierarchyIndex,
+      });
+      expect(intent).not.toBeNull();
+      if (!intent) throw new Error("missing boundary intent");
+
+      const baseGraph = buildHierarchicalSemanticGraph({
+        graph,
+        hierarchyIndex,
+        mode: "architecture",
+        navigation: intent.navigation,
+        materializedNodeId: intent.materializedNodeId,
+      });
+      const boundary = baseGraph.nodes.find((node) => node.id === intent.materializedNodeId);
+      expect(boundary?.relationCount).toBe(1);
+      expect(baseGraph.edges.flatMap((edge) => edge.members).some((member) => member.type === "calls")).toBe(false);
+
+      const expansion = buildHierarchySelectionExpansion({
+        graph,
+        hierarchyIndex,
+        baseGraph,
+        mode: "architecture",
+        selectedNodeId: intent.selectionId,
+      });
+      const rendered = mergeHierarchySelectionExpansion(baseGraph, expansion);
+      expect(rendered.nodes.some((node) => node.id === portalId)).toBe(true);
+      expect(rendered.nodes.find((node) => node.id === portalId)?.relationCount).toBe(1);
+      expect(rendered.edges.flatMap((edge) => edge.members).some((member) => member.type === "calls")).toBe(false);
+    }
   });
 });

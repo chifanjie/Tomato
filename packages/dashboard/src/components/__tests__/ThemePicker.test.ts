@@ -17,7 +17,7 @@ Object.defineProperty(window, "localStorage", {
   value: new Window().localStorage,
 });
 
-async function mountPicker(presetId: PresetId): Promise<{
+async function mountPicker(presetId: PresetId, disabled = false): Promise<{
   container: HTMLDivElement;
   root: Root;
 }> {
@@ -28,7 +28,7 @@ async function mountPicker(presetId: PresetId): Promise<{
     root.render(createElement(
       ThemeProvider,
       { initialConfig: { presetId } },
-      createElement(ThemePicker),
+      createElement(ThemePicker, { disabled }),
     ));
   });
   return { container, root };
@@ -41,7 +41,10 @@ async function click(target: Element | null): Promise<void> {
 
 async function keydown(key: string): Promise<void> {
   await act(async () => {
-    document.dispatchEvent(new KeyboardEvent("keydown", {
+    const target = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : document;
+    target.dispatchEvent(new KeyboardEvent("keydown", {
       key,
       bubbles: true,
       cancelable: true,
@@ -114,6 +117,49 @@ it("chooses the focused theme with Space", async () => {
   expect(container.querySelector('[role="menu"]')).toBeNull();
   expect(trigger.textContent).toContain("夜墨");
   expect(document.activeElement).toBe(trigger);
+  await act(async () => root.unmount());
+});
+
+it("ignores keys from outside the menu and closes when focus leaves", async () => {
+  const { container, root } = await mountPicker("technical-document");
+  const trigger = container.querySelector('[aria-haspopup="menu"]') as HTMLButtonElement;
+  const outside = document.createElement("button");
+  document.body.append(outside);
+  await click(trigger);
+
+  const items = [...container.querySelectorAll<HTMLElement>('[role="menuitemradio"]')];
+  expect(document.activeElement).toBe(items[0]);
+  await act(async () => {
+    outside.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "ArrowDown",
+      bubbles: true,
+      cancelable: true,
+    }));
+  });
+  expect(document.activeElement).toBe(items[0]);
+
+  await act(async () => outside.focus());
+  expect(container.querySelector('[role="menu"]')).toBeNull();
+
+  await act(async () => root.unmount());
+});
+
+it("removes the open menu while the surrounding header is inert", async () => {
+  const { container, root } = await mountPicker("technical-document");
+  const trigger = container.querySelector('[aria-haspopup="menu"]') as HTMLButtonElement;
+  await click(trigger);
+  expect(container.querySelector('[role="menu"]')).not.toBeNull();
+
+  await act(async () => {
+    root.render(createElement(
+      ThemeProvider,
+      { initialConfig: { presetId: "technical-document" } },
+      createElement(ThemePicker, { disabled: true }),
+    ));
+  });
+  expect(container.querySelector('[role="menu"]')).toBeNull();
+  expect(trigger.disabled).toBe(true);
+
   await act(async () => root.unmount());
 });
 });

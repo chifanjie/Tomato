@@ -663,7 +663,7 @@ function DashboardContent({
         projectName={graph?.project.name ?? "代码知识库"}
         activeSurface={dashboardSurface}
         searchButtonRef={searchButtonRef}
-        themeInert={wikiDrawerOpen}
+        themeInert={wikiDrawerOpen || searchOpen}
         onSelectSurface={routingController.selectSurface}
         onRequestSearch={requestGlobalSearch}
       />

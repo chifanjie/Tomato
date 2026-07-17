@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { PRESETS, useTheme } from "../themes";
 
-export function ThemePicker() {
+interface ThemePickerProps {
+  disabled?: boolean;
+}
+
+export function ThemePicker({ disabled = false }: ThemePickerProps) {
   const { config, preset, setPreset } = useTheme();
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -10,6 +14,7 @@ export function ThemePicker() {
   const menuRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const menuId = useId();
+  const menuOpen = open && !disabled;
 
   const closeAndRestore = useCallback(() => {
     setOpen(false);
@@ -17,7 +22,11 @@ export function ThemePicker() {
   }, []);
 
   useEffect(() => {
-    if (!open) return;
+    if (disabled) setOpen(false);
+  }, [disabled]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
     const currentIndex = Math.max(
       0,
       PRESETS.findIndex((item) => item.id === config.presetId),
@@ -25,6 +34,7 @@ export function ThemePicker() {
     setActiveIndex(currentIndex);
     const frame = requestAnimationFrame(() => itemRefs.current[currentIndex]?.focus());
     const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.target instanceof Node) || !pickerRef.current?.contains(event.target)) return;
       if (event.key === "Escape") {
         event.preventDefault();
         closeAndRestore();
@@ -51,10 +61,10 @@ export function ThemePicker() {
       cancelAnimationFrame(frame);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [closeAndRestore, config.presetId, open, setPreset]);
+  }, [closeAndRestore, config.presetId, menuOpen, setPreset]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!menuOpen) return;
     const onPointerDown = (event: MouseEvent) => {
       if (event.target instanceof Node && !pickerRef.current?.contains(event.target)) {
         setOpen(false);
@@ -62,15 +72,25 @@ export function ThemePicker() {
     };
     document.addEventListener("mousedown", onPointerDown);
     return () => document.removeEventListener("mousedown", onPointerDown);
-  }, [open]);
+  }, [menuOpen]);
 
   return (
-    <div ref={pickerRef} className="uc-theme-picker">
+    <div
+      ref={pickerRef}
+      className="uc-theme-picker"
+      onBlur={(event) => {
+        const nextTarget = event.relatedTarget;
+        if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
+          setOpen(false);
+        }
+      }}
+    >
       <button
         ref={triggerRef}
         type="button"
+        disabled={disabled}
         aria-haspopup="menu"
-        aria-expanded={open}
+        aria-expanded={menuOpen}
         aria-controls={menuId}
         className="uc-theme-trigger"
         onClick={() => setOpen((value) => !value)}
@@ -79,7 +99,7 @@ export function ThemePicker() {
         <span className="uc-theme-trigger-current">{preset.name}</span>
       </button>
 
-      {open && (
+      {menuOpen && (
         <div
           ref={menuRef}
           id={menuId}

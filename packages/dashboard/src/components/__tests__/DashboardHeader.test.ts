@@ -1,10 +1,15 @@
+// @vitest-environment happy-dom
+
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { createElement, createRef } from "react";
+import { act, createElement, createRef } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { ThemeProvider } from "../../themes/ThemeContext";
 import DashboardHeader from "../DashboardHeader";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const CSS = readFileSync(join(process.cwd(), "src/index.css"), "utf8");
 
@@ -55,5 +60,42 @@ describe("DashboardHeader", () => {
       const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       expect(CSS).toMatch(new RegExp(escaped + "\\s*\\{[^}]*min-width:\\s*44px[^}]*min-height:\\s*44px", "s"));
     }
+  });
+
+  it("closes header disclosures when a modal makes the header inert", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const searchButtonRef = createRef<HTMLButtonElement>();
+    const render = async (themeInert: boolean) => {
+      await act(async () => root.render(createElement(
+        ThemeProvider,
+        { initialConfig: { presetId: "technical-document" } },
+        createElement(DashboardHeader, {
+          projectName: "测试项目",
+          activeSurface: "wiki",
+          searchButtonRef,
+          themeInert,
+          onSelectSurface: vi.fn(),
+          onRequestSearch: vi.fn(),
+        }),
+      )));
+    };
+    await render(false);
+    const details = container.querySelector<HTMLDetailsElement>(".uc-mobile-header-more");
+    const themeTrigger = container.querySelector<HTMLButtonElement>(".uc-theme-trigger");
+    if (!details || !themeTrigger) throw new Error("missing header disclosure controls");
+    details.open = true;
+    await act(async () => themeTrigger.click());
+    expect(container.querySelector('[role="menu"]')).not.toBeNull();
+
+    await render(true);
+    expect(details.open).toBe(false);
+    expect(details.hasAttribute("inert")).toBe(true);
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+    expect(themeTrigger.disabled).toBe(true);
+
+    await act(async () => root.unmount());
+    container.remove();
   });
 });

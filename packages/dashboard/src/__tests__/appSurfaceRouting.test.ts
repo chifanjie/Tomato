@@ -634,6 +634,8 @@ describe("App peer shell contracts", () => {
     expect(APP_SOURCE).toContain("GLOBAL_WIKI_SEARCH_REQUEST_EVENT");
     expect(APP_SOURCE).toContain("onDrawerOpenChange={setWikiDrawerOpen}");
     expect(APP_SOURCE).toContain("externalModalOpen={searchOpen}");
+    expect(APP_SOURCE).toContain("themeInert={wikiDrawerOpen || searchOpen}");
+    expect(APP_CSS).toMatch(/\.uc-global-search-backdrop\s*\{[^}]*z-index:\s*80/s);
     expect(APP_SOURCE.match(/setSearchOpen\(true\)/g)).toHaveLength(1);
   });
 

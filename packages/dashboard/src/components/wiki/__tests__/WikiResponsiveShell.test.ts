@@ -467,6 +467,9 @@ describe("WikiResponsiveShell", () => {
     expect(css).toMatch(/\.uc-wiki-shell\s*\{[^}]*height:\s*100%/s);
     expect(css).not.toMatch(/\.uc-wiki-shell\s*\{[^}]*calc\(100dvh - var\(--uc-global-header-height\)\)/s);
     expect(css).toContain("var(--uc-global-header-height)");
+    expect(css).toMatch(
+      /\.uc-wiki-toolbar button,\s*\.uc-wiki-drawer-close\s*\{[^}]*min-width:\s*44px[^}]*min-height:\s*44px/s,
+    );
     expect(css).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*\.uc-wiki-navigation[\s\S]*transition:\s*none/);
   });
 });

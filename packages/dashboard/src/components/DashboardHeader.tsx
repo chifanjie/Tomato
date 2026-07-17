@@ -1,4 +1,4 @@
-import type { RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import { ThemePicker } from "./ThemePicker";
 
 export interface DashboardHeaderProps {
@@ -18,10 +18,16 @@ export default function DashboardHeader({
   onSelectSurface,
   onRequestSearch,
 }: DashboardHeaderProps) {
+  const mobileMoreRef = useRef<HTMLDetailsElement>(null);
+
+  useEffect(() => {
+    if (themeInert && mobileMoreRef.current) mobileMoreRef.current.open = false;
+  }, [themeInert]);
+
   return (
     <header className="uc-global-header">
       <h1 className="uc-global-header-project" title={projectName}>{projectName}</h1>
-      <details className="uc-mobile-header-more" inert={themeInert || undefined}>
+      <details ref={mobileMoreRef} className="uc-mobile-header-more" inert={themeInert || undefined}>
         <summary aria-label="更多项目与搜索信息">更多</summary>
         <section className="uc-mobile-header-more-panel" aria-label="项目与搜索信息">
           <strong title={projectName}>{projectName}</strong>
@@ -51,7 +57,7 @@ export default function DashboardHeader({
           <span>搜索</span><kbd aria-hidden="true">⌘K</kbd>
         </button>
         <div className="uc-theme-slot" inert={themeInert || undefined}>
-          <ThemePicker />
+          <ThemePicker disabled={themeInert} />
         </div>
       </div>
     </header>

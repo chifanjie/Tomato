@@ -1046,6 +1046,146 @@ describe("hierarchicalGraph", () => {
       || edge.target === contextualBoundaryId)?.boundaryContext).toEqual({ currentScopeId, targetScopeId });
   });
 
+  it("renders contextual cross-scope boundaries at overview", () => {
+    const graph = importOnlyGraph();
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const boundaryId = boundaryNodeId("layer:app", "layer:lib");
+    const overview = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      mode: "architecture",
+      navigation: { level: "overview" },
+      materializedNodeId: null,
+    });
+
+    expect(overview.nodes.map((node) => node.id)).toContain(boundaryId);
+    expect(overview.edges.find((edge) => edge.source === scopeNodeId("layer:app")
+      && edge.target === boundaryId)).toMatchObject({
+      type: "imports",
+      boundaryContext: { currentScopeId: "layer:app", targetScopeId: "layer:lib" },
+    });
+  });
+
+  it("does not apply the overview architecture cap inside a scope", () => {
+    const file = hierarchyNode("file:scope-architecture", "file", "src/index.ts");
+    const architecture = Array.from({ length: 27 }, (_, index) =>
+      hierarchyNode(`service:scope-${String(index).padStart(2, "0")}`, "service"));
+    const graph = hierarchyGraph([file, ...architecture], [], [file.id, ...architecture.map((node) => node.id)]);
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const scope = hierarchyIndex.scopes[0]!;
+    const scopeView = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      mode: "architecture",
+      navigation: { level: "scope", scopeId: scope.id },
+      materializedNodeId: null,
+    });
+
+    expect(scopeView.nodes.filter((node) => node.kind === "node"
+      && graphNodePlacementClass(node.rawType) === "architecture-context")).toHaveLength(27);
+  });
+
+  it("keeps a pathful architecture object at scope level when it is materialized", () => {
+    const files = Array.from({ length: 25 }, (_, index) =>
+      hierarchyNode(`file:path-${index}`, "file", `dir-${String(index).padStart(2, "0")}/index.ts`));
+    const architecture = hierarchyNode("service:pathful", "service", "dir-24/service.ts");
+    const graph = hierarchyGraph([...files, architecture], [], [...files, architecture].map((node) => node.id));
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const scope = hierarchyIndex.scopes[0]!;
+    const expectedBaseClusterIds = scope.clusterIds.slice(0, 24);
+    const scopeView = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      mode: "architecture",
+      navigation: { level: "scope", scopeId: scope.id },
+      materializedNodeId: architecture.id,
+    });
+
+    expect(scopeView.nodes.filter((node) => node.kind === "cluster").map((node) => node.id))
+      .toEqual(expectedBaseClusterIds);
+    expect(scopeView.nodes.map((node) => node.id)).toContain(architecture.id);
+  });
+
+  it("materializes a boundary and its connecting cluster from uncapped raw members", () => {
+    const localFiles = Array.from({ length: 25 }, (_, index) =>
+      hierarchyNode(`file:local-${index}`, "file", `local-${String(index).padStart(2, "0")}/index.ts`));
+    const external = hierarchyNode("file:external", "file", "external/index.ts");
+    const graph = hierarchyGraph([...localFiles, external], [{
+      source: localFiles.at(-1)!.id,
+      target: external.id,
+      type: "imports",
+      direction: "forward",
+      weight: 1,
+    }]);
+    graph.layers = [
+      { id: "local", name: "Local", description: "Local.", nodeIds: localFiles.map((node) => node.id) },
+      { id: "external", name: "External", description: "External.", nodeIds: [external.id] },
+    ];
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const localScope = hierarchyIndex.scopeById.get("layer:local")!;
+    const hiddenClusterId = hierarchyIndex.fileLocationById.get(localFiles.at(-1)!.id)!.clusterId;
+    const portalId = boundaryNodeId(localScope.id, "layer:external");
+    const scopeView = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      mode: "call",
+      navigation: { level: "scope", scopeId: localScope.id },
+      materializedNodeId: portalId,
+    });
+
+    expect(scopeView.nodes.map((node) => node.id)).toContain(portalId);
+    expect(scopeView.nodes.map((node) => node.id)).toContain(hiddenClusterId);
+    expect(scopeView.edges.find((edge) => edge.target === portalId)?.boundaryContext)
+      .toEqual({ currentScopeId: localScope.id, targetScopeId: "layer:external" });
+  });
+
+  it("falls back to the owning scope when file navigation supplies an alien file", () => {
+    const graph = importOnlyGraph();
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const app = hierarchyIndex.scopeById.get("layer:app")!;
+    const appCluster = hierarchyIndex.clusterById.get(app.clusterIds[0]!)!;
+    const view = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      mode: "architecture",
+      navigation: {
+        level: "file",
+        scopeId: app.id,
+        clusterId: appCluster.id,
+        fileId: "file:lib/b.ts",
+      },
+      materializedNodeId: null,
+    });
+
+    expect(view.presentation.level).toBe("scope");
+    expect(view.nodes.map((node) => node.id)).not.toContain("file:lib/b.ts");
+  });
+
+  it("keeps overview containment and documentation relations auditable", () => {
+    const file = hierarchyNode("file:relations", "file", "src/index.ts");
+    const document = hierarchyNode("document:guide", "document");
+    const service = hierarchyNode("service:relations", "service");
+    const graph = hierarchyGraph([file, document, service], [
+      { source: file.id, target: document.id, type: "documents", direction: "forward", weight: 0.6 },
+      { source: file.id, target: service.id, type: "contains", direction: "forward", weight: 1 },
+    ], [file.id, document.id, service.id]);
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const overview = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      mode: "architecture",
+      navigation: { level: "overview" },
+      materializedNodeId: null,
+    });
+
+    expect(overview.edges.map((edge) => edge.type).sort()).toEqual(["contains", "documents"]);
+    expect(overview.edges.flatMap((edge) => edge.members).map(({ source, target, type }) => ({ source, target, type })))
+      .toEqual(expect.arrayContaining([
+        { source: file.id, target: document.id, type: "documents" },
+        { source: file.id, target: service.id, type: "contains" },
+      ]));
+  });
+
   it("shows every architecture-context type at overview and scope levels", () => {
     const architectureTypes = [
       "module", "concept", "document", "service", "table", "endpoint", "pipeline", "schema",

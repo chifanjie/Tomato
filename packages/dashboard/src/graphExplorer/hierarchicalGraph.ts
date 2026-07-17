@@ -1374,7 +1374,7 @@ function progressiveMemberAllowed(
     if (relationshipSource === "imports") return member.type === "imports";
     return DEPENDENCY_EDGE_TYPES.has(member.type);
   }
-  return member.type !== "calls" && member.type !== "documents";
+  return member.type !== "calls";
 }
 
 function cappedWithMaterialized<T extends { id: string }>(
@@ -1545,6 +1545,8 @@ function materializedClusterId(
 ): string | null {
   if (!materializedNodeId) return null;
   if (hierarchyIndex.clusterById.has(materializedNodeId)) return materializedNodeId;
+  const node = hierarchyIndex.nodeById.get(materializedNodeId);
+  if (node && graphNodePlacementClass(node.type) === "architecture-context") return null;
   return hierarchyIndex.nodeLocationById.get(materializedNodeId)?.clusterId ?? null;
 }
 
@@ -1561,10 +1563,26 @@ function progressiveOverview(input: {
     hierarchyIndex, rawNodes, members, displayMode, relationshipSource, options, materializedNodeId,
   } = input;
   const rawNodesById = new Map(rawNodes.map((node) => [node.id, node]));
+  const allowedMembers = members.filter((member) =>
+    progressiveMemberAllowed(member, displayMode, relationshipSource, true));
+  const crossScopeCounts = new Map<string, { currentScopeId: string; targetScopeId: string; count: number }>();
+  for (const member of allowedMembers) {
+    const currentScopeId = hierarchyIndex.nodeLocationById.get(member.source)?.scopeId;
+    const targetScopeId = hierarchyIndex.nodeLocationById.get(member.target)?.scopeId;
+    if (!currentScopeId || !targetScopeId || currentScopeId === targetScopeId) continue;
+    const id = boundaryNodeId(currentScopeId, targetScopeId);
+    const current = crossScopeCounts.get(id);
+    crossScopeCounts.set(id, {
+      currentScopeId,
+      targetScopeId,
+      count: (current?.count ?? 0) + 1,
+    });
+  }
+  const materializedBoundary = materializedNodeId ? crossScopeCounts.get(materializedNodeId) : undefined;
   const visibleScopes = cappedWithMaterialized(
     hierarchyIndex.scopes,
     MAX_OVERVIEW_SCOPES,
-    materializedScopeId(materializedNodeId, hierarchyIndex),
+    materializedBoundary?.currentScopeId ?? materializedScopeId(materializedNodeId, hierarchyIndex),
   );
   const architecture = rawNodes
     .filter((node) => graphNodePlacementClass(node.rawType) === "architecture-context")
@@ -1574,9 +1592,28 @@ function progressiveOverview(input: {
     MAX_OVERVIEW_ARCHITECTURE,
     architecture.some((node) => node.id === materializedNodeId) ? materializedNodeId : null,
   );
+  const visibleScopeIds = new Set(visibleScopes.map((scope) => scope.id));
+  const boundaryCandidates = [...crossScopeCounts.entries()]
+    .filter(([, boundary]) => visibleScopeIds.has(boundary.currentScopeId))
+    .sort((left, right) => right[1].count - left[1].count || compareStable(left[0], right[0]));
+  const visibleBoundaries = cappedWithMaterialized(
+    boundaryCandidates.map(([id]) => ({ id })),
+    MAX_BOUNDARY_SCOPES,
+    materializedBoundary ? materializedNodeId : null,
+  ).map(({ id }) => crossScopeCounts.get(id)!);
   const nodes: HierarchicalSemanticGraphNode[] = [
     ...visibleScopes.map((scope) => hierarchyScopeNode(scope, rawNodesById, members, displayMode)),
     ...visibleArchitecture.map((node) => progressiveRawNode(node, hierarchyIndex)),
+    ...visibleBoundaries.flatMap((boundary) => {
+      const target = hierarchyIndex.scopeById.get(boundary.targetScopeId);
+      return target ? [hierarchyBoundaryNode(
+        boundary.currentScopeId,
+        target,
+        rawNodesById,
+        boundary.count,
+        displayMode,
+      )] : [];
+    }),
   ];
   const visibleIds = new Set(nodes.map((node) => node.id));
   const visibleArchitectureIds = new Set(visibleArchitecture.map((node) => node.id));
@@ -1590,15 +1627,42 @@ function progressiveOverview(input: {
     const scopeId = scopeNodeId(location.scopeId);
     return visibleIds.has(scopeId) ? scopeId : null;
   };
-  const projected = members
-    .filter((member) => progressiveMemberAllowed(member, displayMode, relationshipSource, false))
-    .flatMap((member): ProjectedEdgeMember[] => {
-      const source = mappedEndpoint(member.source);
-      const target = mappedEndpoint(member.target);
-      return source && target ? [{ source, target, member }] : [];
-    });
+  const visibleBoundaryIds = new Set(visibleBoundaries.map((boundary) =>
+    boundaryNodeId(boundary.currentScopeId, boundary.targetScopeId)));
+  const projected = allowedMembers.flatMap((member): ProjectedEdgeMember[] => {
+    const sourceScopeId = hierarchyIndex.nodeLocationById.get(member.source)?.scopeId;
+    const targetScopeId = hierarchyIndex.nodeLocationById.get(member.target)?.scopeId;
+    if (!sourceScopeId || !targetScopeId) return [];
+    if (sourceScopeId !== targetScopeId) {
+      const outgoingBoundaryId = boundaryNodeId(sourceScopeId, targetScopeId);
+      if (visibleBoundaryIds.has(outgoingBoundaryId)) {
+        const source = mappedEndpoint(member.source);
+        return source ? [{
+          source,
+          target: outgoingBoundaryId,
+          member,
+          boundaryContext: { currentScopeId: sourceScopeId, targetScopeId },
+        }] : [];
+      }
+      const incomingBoundaryId = boundaryNodeId(targetScopeId, sourceScopeId);
+      if (visibleBoundaryIds.has(incomingBoundaryId)) {
+        const target = mappedEndpoint(member.target);
+        return target ? [{
+          source: incomingBoundaryId,
+          target,
+          member,
+          boundaryContext: { currentScopeId: targetScopeId, targetScopeId: sourceScopeId },
+        }] : [];
+      }
+      return [];
+    }
+    const source = mappedEndpoint(member.source);
+    const target = mappedEndpoint(member.target);
+    return source && target ? [{ source, target, member }] : [];
+  });
   const hidden = (hierarchyIndex.scopes.length - visibleScopes.length)
-    + (architecture.length - visibleArchitecture.length);
+    + (architecture.length - visibleArchitecture.length)
+    + (crossScopeCounts.size - visibleBoundaries.length);
   const empty = nodes.length === 0 ? "当前图谱没有可展示的范围或架构对象。" : null;
   return {
     nodes,
@@ -1609,10 +1673,11 @@ function progressiveOverview(input: {
       "overview",
       options,
       [{ level: "overview", label: "全局概览" }],
-      hierarchyIndex.scopes.length + architecture.length,
+      hierarchyIndex.scopes.length + architecture.length + crossScopeCounts.size,
       hidden,
       Boolean(materializedNodeId && (hierarchyIndex.nodeById.has(materializedNodeId)
-        || hierarchyIndex.clusterById.has(materializedNodeId))),
+        || hierarchyIndex.clusterById.has(materializedNodeId)
+        || crossScopeCounts.has(materializedNodeId))),
       null,
       null,
       null,
@@ -1625,18 +1690,18 @@ function boundaryScopeIdsForView(input: {
   currentScopeId: string;
   members: readonly SemanticGraphEdgeMember[];
   hierarchyIndex: GraphHierarchyIndex;
-  mapInternal: (nodeId: string) => string | null;
+  ownsInternal: (nodeId: string) => boolean;
   materializedNodeId: string | null;
 }): { visible: string[]; counts: Map<string, number> } {
-  const { currentScopeId, members, hierarchyIndex, mapInternal, materializedNodeId } = input;
+  const { currentScopeId, members, hierarchyIndex, ownsInternal, materializedNodeId } = input;
   const counts = new Map<string, number>();
   for (const member of members) {
     const sourceScope = hierarchyIndex.nodeLocationById.get(member.source)?.scopeId;
     const targetScope = hierarchyIndex.nodeLocationById.get(member.target)?.scopeId;
     if (!sourceScope || !targetScope || sourceScope === targetScope) continue;
-    if (sourceScope === currentScopeId && mapInternal(member.source)) {
+    if (sourceScope === currentScopeId && ownsInternal(member.source)) {
       counts.set(targetScope, (counts.get(targetScope) ?? 0) + 1);
-    } else if (targetScope === currentScopeId && mapInternal(member.target)) {
+    } else if (targetScope === currentScopeId && ownsInternal(member.target)) {
       counts.set(sourceScope, (counts.get(sourceScope) ?? 0) + 1);
     }
   }
@@ -1710,20 +1775,38 @@ function progressiveScope(input: {
   const clusters = scope.clusterIds
     .map((clusterId) => hierarchyIndex.clusterById.get(clusterId))
     .filter((cluster): cluster is GraphHierarchyCluster => Boolean(cluster));
-  const visibleClusters = cappedWithMaterialized(
-    clusters,
-    MAX_SCOPE_CLUSTERS,
-    materializedClusterId(materializedNodeId, hierarchyIndex),
-  );
   const architecture = scope.nodeIds
     .map((nodeId) => rawNodesById.get(nodeId))
     .filter((node): node is SemanticGraphNode =>
       Boolean(node && graphNodePlacementClass(node.rawType) === "architecture-context"))
     .sort((left, right) => compareStable(left.id, right.id));
-  const visibleArchitecture = cappedWithMaterialized(
-    architecture,
-    MAX_OVERVIEW_ARCHITECTURE,
-    architecture.some((node) => node.id === materializedNodeId) ? materializedNodeId : null,
+  const visibleArchitecture = architecture;
+  const allowedMembers = members.filter((member) =>
+    progressiveMemberAllowed(member, displayMode, relationshipSource, true));
+  const materializedBoundaryTarget = hierarchyIndex.scopes.find((target) =>
+    target.id !== scope.id && boundaryNodeId(scope.id, target.id) === materializedNodeId)?.id;
+  const connectingClusterId = materializedBoundaryTarget
+    ? allowedMembers.flatMap((member): string[] => {
+      const sourceLocation = hierarchyIndex.nodeLocationById.get(member.source);
+      const targetLocation = hierarchyIndex.nodeLocationById.get(member.target);
+      const internalNodeId = sourceLocation?.scopeId === scope.id
+        && targetLocation?.scopeId === materializedBoundaryTarget
+        ? member.source
+        : targetLocation?.scopeId === scope.id
+          && sourceLocation?.scopeId === materializedBoundaryTarget
+          ? member.target
+          : null;
+      if (!internalNodeId) return [];
+      const internalNode = hierarchyIndex.nodeById.get(internalNodeId);
+      if (!internalNode || graphNodePlacementClass(internalNode.type) === "architecture-context") return [];
+      const clusterId = hierarchyIndex.nodeLocationById.get(internalNodeId)?.clusterId;
+      return clusterId ? [clusterId] : [];
+    }).sort(compareStable)[0] ?? null
+    : null;
+  const visibleClusters = cappedWithMaterialized(
+    clusters,
+    MAX_SCOPE_CLUSTERS,
+    materializedClusterId(materializedNodeId, hierarchyIndex) ?? connectingClusterId,
   );
   const clusterIds = new Set(visibleClusters.map((cluster) => cluster.id));
   const architectureIds = new Set(visibleArchitecture.map((node) => node.id));
@@ -1736,13 +1819,11 @@ function progressiveScope(input: {
     }
     return location.clusterId && clusterIds.has(location.clusterId) ? location.clusterId : null;
   };
-  const allowedMembers = members.filter((member) =>
-    progressiveMemberAllowed(member, displayMode, relationshipSource, true));
   const boundaries = boundaryScopeIdsForView({
     currentScopeId: scope.id,
     members: allowedMembers,
     hierarchyIndex,
-    mapInternal,
+    ownsInternal: (nodeId) => hierarchyIndex.nodeLocationById.get(nodeId)?.scopeId === scope.id,
     materializedNodeId,
   });
   const boundaryIds = new Set(boundaries.visible);
@@ -1810,13 +1891,41 @@ function progressiveCluster(input: {
   const files = cluster.fileIds
     .map((fileId) => rawNodesById.get(fileId))
     .filter((node): node is SemanticGraphNode => Boolean(node));
+  const allowedMembers = members.filter((member) =>
+    progressiveMemberAllowed(member, displayMode, relationshipSource, true));
   const materializedLocation = materializedNodeId
     ? hierarchyIndex.nodeLocationById.get(materializedNodeId)
     : undefined;
-  const materializedFileId = materializedLocation?.clusterId === cluster.id
+  const directMaterializedFileId = materializedLocation?.clusterId === cluster.id
     ? materializedLocation.fileId ?? null
     : null;
-  const visibleFiles = cappedWithMaterialized(files, MAX_CLUSTER_FILES, materializedFileId);
+  const materializedBoundaryTarget = hierarchyIndex.scopes.find((target) =>
+    target.id !== scope.id && boundaryNodeId(scope.id, target.id) === materializedNodeId)?.id;
+  const boundaryInternalNodeId = materializedBoundaryTarget
+    ? allowedMembers.flatMap((member): string[] => {
+      const sourceLocation = hierarchyIndex.nodeLocationById.get(member.source);
+      const targetLocation = hierarchyIndex.nodeLocationById.get(member.target);
+      if (sourceLocation?.scopeId === scope.id && sourceLocation.clusterId === cluster.id
+        && targetLocation?.scopeId === materializedBoundaryTarget) return [member.source];
+      if (targetLocation?.scopeId === scope.id && targetLocation.clusterId === cluster.id
+        && sourceLocation?.scopeId === materializedBoundaryTarget) return [member.target];
+      return [];
+    }).sort(compareStable)[0]
+    : undefined;
+  const boundaryInternalLocation = boundaryInternalNodeId
+    ? hierarchyIndex.nodeLocationById.get(boundaryInternalNodeId)
+    : undefined;
+  const boundaryInternalNode = boundaryInternalNodeId
+    ? hierarchyIndex.nodeById.get(boundaryInternalNodeId)
+    : undefined;
+  const connectingFileId = boundaryInternalNode?.type === "file"
+    ? boundaryInternalNode.id
+    : boundaryInternalLocation?.fileId ?? null;
+  const visibleFiles = cappedWithMaterialized(
+    files,
+    MAX_CLUSTER_FILES,
+    directMaterializedFileId ?? connectingFileId,
+  );
   const directLeaves = cluster.nodeIds
     .map((nodeId) => rawNodesById.get(nodeId))
     .filter((node): node is SemanticGraphNode => {
@@ -1830,7 +1939,9 @@ function progressiveCluster(input: {
     MAX_CLUSTER_FILELESS_LEAVES,
     materializedLocation?.clusterId === cluster.id && !materializedLocation.fileId
       ? materializedNodeId
-      : null,
+      : boundaryInternalLocation?.clusterId === cluster.id && !boundaryInternalLocation.fileId
+        ? boundaryInternalNodeId ?? null
+        : null,
   );
   const fileIds = new Set(visibleFiles.map((node) => node.id));
   const leafIds = new Set(visibleLeaves.map((node) => node.id));
@@ -1845,13 +1956,16 @@ function progressiveCluster(input: {
     }
     return null;
   };
-  const allowedMembers = members.filter((member) =>
-    progressiveMemberAllowed(member, displayMode, relationshipSource, true));
   const boundaries = boundaryScopeIdsForView({
     currentScopeId: scope.id,
     members: allowedMembers,
     hierarchyIndex,
-    mapInternal,
+    ownsInternal: (nodeId) => {
+      const node = hierarchyIndex.nodeById.get(nodeId);
+      const location = hierarchyIndex.nodeLocationById.get(nodeId);
+      return Boolean(node && location?.clusterId === cluster.id
+        && (node.type === "file" || graphNodePlacementClass(node.type) === "file-leaf"));
+    },
     materializedNodeId,
   });
   const nodes: HierarchicalSemanticGraphNode[] = [
@@ -1919,7 +2033,10 @@ function progressiveFile(input: {
   } = input;
   const rawNodesById = new Map(rawNodes.map((node) => [node.id, node]));
   const file = rawNodesById.get(fileId);
-  if (!file || file.rawType !== "file") return null;
+  const fileLocation = hierarchyIndex.fileLocationById.get(fileId);
+  if (!file || file.rawType !== "file"
+    || fileLocation?.scopeId !== scope.id
+    || fileLocation.clusterId !== cluster.id) return null;
   const ownedLeaves = rawNodes
     .filter((node) => hierarchyIndex.nodeLocationById.get(node.id)?.fileId === fileId
       && graphNodePlacementClass(node.rawType) === "file-leaf")

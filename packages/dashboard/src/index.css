@@ -176,16 +176,69 @@ body {
 }
 
 :root {
-  --uc-global-header-height: 64px;
+  --uc-global-header-height: 60px;
 }
 
 .uc-global-header {
+  display: grid;
+  grid-template-columns: minmax(9rem, 1fr) auto minmax(9rem, 1fr);
+  align-items: center;
   height: var(--uc-global-header-height);
   min-width: 0;
+  gap: 16px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-surface);
+  padding: 0 20px;
 }
 
-.uc-mobile-header-more {
-  display: none;
+.uc-global-header-project {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font: 600 15px/1.3 var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uc-surface-switcher {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  gap: 24px;
+}
+
+.uc-surface-switcher button {
+  min-width: 44px;
+  min-height: 44px;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.uc-surface-switcher button[aria-current="page"] {
+  border-bottom-color: var(--color-accent);
+  color: var(--color-text-primary);
+}
+
+.uc-global-header-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.uc-mobile-header-more { display: none; }
+.uc-global-search-trigger {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.uc-global-header button:focus-visible,
+.uc-mobile-header-more > summary:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 .uc-wiki-shell {
@@ -301,10 +354,6 @@ body {
 }
 
 @media (max-width: 1023px) {
-  :root {
-    --uc-global-header-height: 54px;
-  }
-
   .uc-wiki-shell,
   .uc-wiki-shell[data-has-evidence="false"] {
     grid-template-columns: minmax(0, 1fr);
@@ -407,56 +456,37 @@ body {
 }
 
 @media (max-width: 767px) {
-  .uc-global-header {
-    height: var(--uc-global-header-height);
-    gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
-  }
+  :root { --uc-global-header-height: 104px; }
 
-  .uc-global-header-left {
-    min-width: 0;
-    flex: 1 1 auto;
-    gap: 0.5rem;
+  .uc-global-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: 48px 56px;
+    gap: 0 10px;
+    padding: 0 12px;
   }
 
   .uc-global-header-project {
-    max-width: clamp(3.25rem, 18vw, 5rem);
-    flex: 0 1 auto;
-  }
-
-  .uc-global-header-middle {
-    display: none;
-  }
-
-  .uc-global-header-actions {
-    flex: 0 0 auto;
-    gap: 0.375rem;
-  }
-
-  .uc-global-search-trigger {
-    gap: 0;
-    padding: 0.375rem 0.5rem;
-  }
-
-  .uc-global-search-trigger kbd {
-    display: none;
+    grid-column: 1;
+    grid-row: 1;
+    max-width: calc(100vw - 88px);
   }
 
   .uc-mobile-header-more {
     position: relative;
     display: block;
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
   }
 
   .uc-mobile-header-more > summary {
+    display: grid;
+    min-width: 44px;
+    min-height: 44px;
     cursor: pointer;
     list-style: none;
-    border: 1px solid var(--color-border-subtle);
-    border-radius: 0.375rem;
-    background: var(--color-elevated);
-    padding: 0.375rem 0.5rem;
+    place-items: center;
     color: var(--color-text-secondary);
-    font-size: 0.75rem;
-    font-weight: 600;
   }
 
   .uc-mobile-header-more > summary::-webkit-details-marker {
@@ -464,19 +494,34 @@ body {
   }
 
   .uc-mobile-header-more-panel {
-    position: fixed;
-    top: var(--uc-global-header-height);
-    right: 0.75rem;
-    z-index: 45;
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 65;
     display: grid;
-    width: min(18rem, calc(100vw - 1.5rem));
-    gap: 0.75rem;
-    border: 1px solid var(--color-border-medium);
-    border-radius: 0.75rem;
+    width: min(300px, calc(100vw - 24px));
+    gap: 6px;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-panel);
     background: var(--color-surface);
-    padding: 0.875rem;
-    box-shadow: 0 16px 40px rgb(0 0 0 / 28%);
+    padding: 12px;
+    box-shadow: var(--shadow-overlay);
   }
+
+  .uc-surface-switcher {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: start;
+    gap: 12px;
+  }
+
+  .uc-global-header-actions {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .uc-global-search-trigger kbd,
+  .uc-theme-trigger-current { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

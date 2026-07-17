@@ -24,6 +24,21 @@ afterEach(() => {
 });
 
 describe("WikiPageView Markdown and anchors", () => {
+  it("uses a publication article shell with a stable accessible name", () => {
+    const payload = wikiV2Fixture();
+    const page = payload.pages[0];
+    if (!page) throw new Error("缺少 Wiki 测试页面");
+    const html = renderToStaticMarkup(createElement(WikiPageView, {
+      page,
+      pages: payload.pages,
+    }));
+
+    expect(html).toContain("uc-article-page");
+    expect(html).toContain("uc-article-header");
+    expect(html).toContain('<article aria-label="文档正文"');
+    expect(html).not.toContain("max-w-4xl");
+  });
+
   it("shows a fixed Chinese recovery message instead of the raw Markdown transport error", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const fetcher = vi.fn().mockRejectedValue(new Error("Failed to fetch private detail"));

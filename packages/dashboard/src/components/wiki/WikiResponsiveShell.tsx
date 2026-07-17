@@ -93,6 +93,7 @@ export default function WikiResponsiveShell({
 }: WikiResponsiveShellProps) {
   const narrow = useNarrowWikiLayout();
   const [drawer, dispatch] = useReducer(reduceDrawerState, "closed");
+  const [desktopEvidenceExpanded, setDesktopEvidenceExpanded] = useState(true);
   const navigationTriggerRef = useRef<HTMLButtonElement>(null);
   const evidenceTriggerRef = useRef<HTMLButtonElement>(null);
   const navigationDrawerRef = useRef<HTMLDivElement>(null);
@@ -274,6 +275,7 @@ export default function WikiResponsiveShell({
       className="uc-wiki-shell"
       data-drawer={drawer}
       data-has-evidence={hasEvidence ? "true" : "false"}
+      data-desktop-evidence={desktopEvidenceExpanded ? "expanded" : "collapsed"}
     >
       <div
         className="uc-wiki-toolbar"
@@ -336,9 +338,19 @@ export default function WikiResponsiveShell({
         inert={articleInert ? true : undefined}
       >
         {article}
+        {hasEvidence && !narrow && !desktopEvidenceExpanded && (
+          <button
+            type="button"
+            aria-label="展开源码证据"
+            className="uc-wiki-desktop-evidence-toggle uc-wiki-desktop-evidence-expand"
+            onClick={() => setDesktopEvidenceExpanded(true)}
+          >
+            展开源码证据
+          </button>
+        )}
       </div>
 
-      {hasEvidence && (
+      {hasEvidence && (narrow || desktopEvidenceExpanded) && (
         <div
           ref={evidenceDrawerRef}
           id="wiki-evidence-drawer"
@@ -351,6 +363,16 @@ export default function WikiResponsiveShell({
           inert={evidenceInert ? true : undefined}
           tabIndex={-1}
         >
+          {!narrow && (
+            <button
+              type="button"
+              aria-label="收起源码证据"
+              className="uc-wiki-desktop-evidence-toggle uc-wiki-desktop-evidence-collapse"
+              onClick={() => setDesktopEvidenceExpanded(false)}
+            >
+              收起源码证据
+            </button>
+          )}
           {narrow && (
             <button
               type="button"

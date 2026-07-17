@@ -487,7 +487,7 @@ describe("GraphExplorer progressive navigation integration", () => {
   }
 
   function latestCanvasProps(): {
-    baseGraph: { nodes: Array<{ id: string }> };
+    baseGraph: { nodes: Array<{ id: string; scopeId?: string }> };
     semanticGraph: { nodes: Array<{ id: string }> };
     explicitFocusRequest: { requestId: number; materializedNodeId: string } | null;
     onBaseLayoutReady: (ready: { requestId: number; structureKey: string; materializedNodeId: string }) => void;
@@ -498,6 +498,9 @@ describe("GraphExplorer progressive navigation integration", () => {
       top: number;
       bottom: number;
     } | null) => void;
+    onOpenScope?: (scopeId: string) => void;
+    onOpenCluster?: (scopeId: string, clusterId: string) => void;
+    onOpenFile?: (scopeId: string, clusterId: string, fileId: string) => void;
     showMinimap?: boolean;
   } {
     const props = graphExplorerHarness.canvasProps.at(-1);
@@ -699,6 +702,33 @@ describe("GraphExplorer progressive navigation integration", () => {
     expect(container.querySelectorAll(".uc-graph-frame")).toHaveLength(1);
     const frame = container.querySelector(".uc-graph-frame");
     expect(frame?.querySelector(":scope > .uc-semantic-canvas")).not.toBeNull();
+  });
+
+  it("moves focus to the current breadcrumb after Canvas drill-down and ancestor navigation", async () => {
+    await renderExplorer();
+    const node = container.querySelector<HTMLButtonElement>("[data-canvas-node]");
+    const canvasProps = latestCanvasProps();
+    const scopeId = canvasProps.baseGraph.nodes[0]?.scopeId;
+    if (!node || !scopeId || !canvasProps.onOpenScope) {
+      throw new Error("缺少可下钻范围或 Canvas 导航回调");
+    }
+    node.focus();
+    expect(document.activeElement).toBe(node);
+
+    await act(async () => canvasProps.onOpenScope?.(scopeId));
+    const scopeCurrent = container.querySelector<HTMLElement>('[data-current-graph-level="true"]');
+    expect(scopeCurrent).not.toBeNull();
+    expect(scopeCurrent?.textContent).toContain("核心模块");
+    expect(document.activeElement).toBe(scopeCurrent);
+
+    const overview = container.querySelector<HTMLButtonElement>('nav[aria-label="图谱层级"] button');
+    if (!overview) throw new Error("下钻后缺少全局概览面包屑");
+    overview.focus();
+    await act(async () => overview.click());
+    const overviewCurrent = container.querySelector<HTMLElement>('[data-current-graph-level="true"]');
+    expect(overviewCurrent).not.toBeNull();
+    expect(overviewCurrent?.textContent).toContain("全局概览");
+    expect(document.activeElement).toBe(overviewCurrent);
   });
 
   it("dismisses and reopens the overlay inspector without disturbing selection or Canvas geometry", async () => {

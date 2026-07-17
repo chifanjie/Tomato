@@ -241,6 +241,9 @@ export default function GraphExplorer({
   const previousSelectedNodeIdRef = useRef(selectedNodeId);
   const latestSelectedNodeIdRef = useRef<string | null>(selectedNodeId);
   const focusRestoreFrameRef = useRef<number | null>(null);
+  const navigationFocusFrameRef = useRef<number | null>(null);
+  const pendingNavigationFocusRef = useRef(false);
+  const currentBreadcrumbRef = useRef<HTMLSpanElement>(null);
   const navigationRequestSequence = useRef(0);
   const handledLayoutReadyRequestIdRef = useRef<number | null>(null);
   const failedMaterializationRequestIdRef = useRef<number | null>(null);
@@ -386,6 +389,9 @@ export default function GraphExplorer({
   useEffect(() => () => {
     if (focusRestoreFrameRef.current !== null) {
       cancelAnimationFrame(focusRestoreFrameRef.current);
+    }
+    if (navigationFocusFrameRef.current !== null) {
+      cancelAnimationFrame(navigationFocusFrameRef.current);
     }
   }, []);
 
@@ -602,6 +608,23 @@ export default function GraphExplorer({
     wikiIndex,
   ]);
 
+  const transitionNavigationAndFocus = useCallback((nextNavigation: GraphExplorerNavigation) => {
+    pendingNavigationFocusRef.current = true;
+    transitionNavigation(nextNavigation);
+  }, [transitionNavigation]);
+
+  useEffect(() => {
+    if (!pendingNavigationFocusRef.current) return;
+    pendingNavigationFocusRef.current = false;
+    if (navigationFocusFrameRef.current !== null) {
+      cancelAnimationFrame(navigationFocusFrameRef.current);
+    }
+    navigationFocusFrameRef.current = requestAnimationFrame(() => {
+      navigationFocusFrameRef.current = null;
+      currentBreadcrumbRef.current?.focus({ preventScroll: true });
+    });
+  }, [safeNavigation]);
+
   const changeMode = useCallback((mode: GraphExplorerDisplayMode) => {
     previousEffectiveModeRef.current = mode;
     setGraphExplorerMode(mode);
@@ -651,20 +674,20 @@ export default function GraphExplorer({
   ]);
 
   const openOverview = useCallback(() => {
-    transitionNavigation(OVERVIEW_NAVIGATION);
-  }, [transitionNavigation]);
+    transitionNavigationAndFocus(OVERVIEW_NAVIGATION);
+  }, [transitionNavigationAndFocus]);
 
   const openScope = useCallback((scopeId: string) => {
-    transitionNavigation({ level: "scope", scopeId });
-  }, [transitionNavigation]);
+    transitionNavigationAndFocus({ level: "scope", scopeId });
+  }, [transitionNavigationAndFocus]);
 
   const openCluster = useCallback((scopeId: string, clusterId: string) => {
-    transitionNavigation({ level: "cluster", scopeId, clusterId });
-  }, [transitionNavigation]);
+    transitionNavigationAndFocus({ level: "cluster", scopeId, clusterId });
+  }, [transitionNavigationAndFocus]);
 
   const openFile = useCallback((scopeId: string, clusterId: string, fileId: string) => {
-    transitionNavigation({ level: "file", scopeId, clusterId, fileId });
-  }, [transitionNavigation]);
+    transitionNavigationAndFocus({ level: "file", scopeId, clusterId, fileId });
+  }, [transitionNavigationAndFocus]);
 
   const selection = view?.selection;
   const openSelectionWikiTarget = useCallback((target: WikiTarget) => {
@@ -745,7 +768,15 @@ export default function GraphExplorer({
               <span key={`${item.level}:${item.scopeId ?? ""}:${item.clusterId ?? ""}:${item.fileId ?? ""}`} className="flex shrink-0 items-center gap-1">
                 {index > 0 && <span aria-hidden="true" className="text-text-muted">/</span>}
                 {isCurrent ? (
-                  <span aria-current="page" className="font-semibold text-text-primary">{item.label}</span>
+                  <span
+                    ref={currentBreadcrumbRef}
+                    tabIndex={-1}
+                    aria-current="page"
+                    data-current-graph-level="true"
+                    className="rounded font-semibold text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]"
+                  >
+                    {item.label}
+                  </span>
                 ) : (
                   <button
                     type="button"

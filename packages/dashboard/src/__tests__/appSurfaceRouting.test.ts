@@ -323,6 +323,31 @@ describe("App global location owner", () => {
     stop();
   });
 
+  it("applies a popstate and hashchange pair for one traversal only once", () => {
+    window.history.replaceState(null, "", "/docs?mode=test#wiki=page%3Aoverview");
+    const harness = routingHarness();
+    const stop = harness.controller.start();
+
+    window.history.replaceState(
+      null,
+      "",
+      "/docs?mode=test#wiki=page%3Arun&anchor=implementation",
+    );
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    window.dispatchEvent(new Event("hashchange"));
+
+    expect(harness.openedTargets).toEqual([
+      { pageId: "page:overview" },
+      { pageId: "page:run", anchor: "implementation" },
+    ]);
+    expect(harness.appliedWikiLocations).toEqual([
+      { pageId: "page:overview" },
+      { pageId: "page:run", anchor: "implementation" },
+    ]);
+
+    stop();
+  });
+
   it("keeps an in-document hash fragment instead of clearing the active Wiki page", () => {
     window.history.replaceState(null, "", "/docs?mode=test#implementation");
     const harness = routingHarness("page:overview");

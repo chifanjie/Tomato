@@ -336,11 +336,32 @@ export function createAppRoutingController(
   };
 
   const start = () => {
-    const onLocation = () => applyLocation();
+    let recentLocationEvent: { type: string; signature: string } | null = null;
+    let recentLocationReset: ReturnType<typeof setTimeout> | null = null;
+    const onLocation = (event: Event) => {
+      const signature = appLocation(browser, browser.location.hash);
+      const isPairedTraversalEvent = recentLocationEvent?.signature === signature
+        && recentLocationEvent.type !== event.type;
+      if (recentLocationReset !== null) {
+        clearTimeout(recentLocationReset);
+        recentLocationReset = null;
+      }
+      if (isPairedTraversalEvent) {
+        recentLocationEvent = null;
+        return;
+      }
+      recentLocationEvent = { type: event.type, signature };
+      recentLocationReset = setTimeout(() => {
+        recentLocationEvent = null;
+        recentLocationReset = null;
+      }, 0);
+      applyLocation();
+    };
     applyLocation();
     browser.addEventListener("popstate", onLocation);
     browser.addEventListener("hashchange", onLocation);
     return () => {
+      if (recentLocationReset !== null) clearTimeout(recentLocationReset);
       browser.removeEventListener("popstate", onLocation);
       browser.removeEventListener("hashchange", onLocation);
     };

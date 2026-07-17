@@ -270,6 +270,30 @@ describe("readable graph viewport", () => {
     expect(result.viewport.zoom).toBeGreaterThanOrEqual(READABLE_ZOOM_BY_LEVEL.scope);
     expect(anchoredResult).toEqual(result);
   });
+
+  it("keeps the real desktop overview centered at the floor when padding narrowly misses readability", () => {
+    const input = {
+      level: "overview" as const,
+      bounds: { x: 0, y: 0, width: 1_636, height: 1_032 },
+      viewport: quantizeGraphViewport(1_440, 640),
+      padding: 0.16,
+      maxZoom: 1.12,
+    };
+    const centered = computeReadableViewport(input);
+    const anchored = computeReadableViewport({
+      ...input,
+      focusBounds: { x: 48, y: 48, width: 264, height: 147 },
+    });
+
+    expect(centered.fullyFits).toBe(false);
+    expect(centered.viewport.x).toBeCloseTo(278.28, 8);
+    expect(centered.viewport.y).toBeCloseTo(41.36, 8);
+    expect(centered.viewport.zoom).toBe(0.54);
+    expect(anchored.fullyFits).toBe(false);
+    expect(anchored.viewport.x).toBeCloseTo(622.8, 8);
+    expect(anchored.viewport.y).toBeCloseTo(254.39, 8);
+    expect(anchored.viewport.zoom).toBe(0.54);
+  });
 });
 
 describe("graph node silhouettes", () => {

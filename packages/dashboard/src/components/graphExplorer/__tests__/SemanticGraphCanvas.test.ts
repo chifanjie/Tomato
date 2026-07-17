@@ -474,6 +474,8 @@ describe("SemanticGraphCanvas interaction contract", () => {
     expect(source).not.toContain("fitViewOptions=");
     expect(source).not.toContain("fitView\n");
     expect(source).not.toContain("key={viewKey}");
+    expect(source).toContain("narrowViewport?: boolean");
+    expect(explorerSource).toContain("narrowViewport={phone}");
 
     const layoutEffectStart = source.indexOf("useEffect(() => {", source.indexOf("const layoutRequestId"));
     const completedPositionsStart = source.indexOf("const completedPositions", layoutEffectStart);

@@ -795,6 +795,7 @@ export default function GraphExplorer({
           onSelectedScreenBoundsChange={setSelectedScreenBounds}
           showMinimap={showMinimap}
           showControls={!phone || toolsOpen}
+          narrowViewport={phone}
         />
         <GraphDetailsRail
           view={view}

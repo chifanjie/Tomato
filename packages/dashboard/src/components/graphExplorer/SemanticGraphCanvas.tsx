@@ -114,6 +114,7 @@ interface SemanticGraphCanvasProps extends SemanticGraphCanvasIntentProps {
   onSelectedScreenBoundsChange?: (bounds: GraphSelectedScreenBounds | null) => void;
   showMinimap?: boolean;
   showControls?: boolean;
+  narrowViewport?: boolean;
 }
 
 interface SemanticNodeData extends Record<string, unknown> {
@@ -383,6 +384,7 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
     onSelectedScreenBoundsChange,
     showMinimap = true,
     showControls = true,
+    narrowViewport = false,
     baseGraph,
     navigation,
     graphRevision,
@@ -919,7 +921,7 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
   const defaultViewportAnchorId = baseGraph.nodes[0]?.id;
   const readableViewport = useCallback((focusNodeId?: string) => {
     if (!viewportBucket || !layoutState || layoutState.structureKey !== structureKey) return null;
-    const anchorNodeId = focusNodeId ?? defaultViewportAnchorId;
+    const anchorNodeId = focusNodeId ?? (narrowViewport ? defaultViewportAnchorId : undefined);
     const focusBounds = anchorNodeId
       ? boundsForNode(anchorNodeId, positionsById, nodeSizeById)
       : undefined;
@@ -934,6 +936,7 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
   }, [
     defaultViewportAnchorId,
     layoutState,
+    narrowViewport,
     navigation.level,
     nodeSizeById,
     positionsById,

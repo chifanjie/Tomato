@@ -289,6 +289,7 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
     explicitFocusRequest?: { requestId: number; materializedNodeId: string } | null;
     graphRevision?: string;
     inspectorOpen?: boolean;
+    narrowViewport?: boolean;
     onSelectedScreenBoundsChange?: (bounds: {
       left: number;
       right: number;
@@ -313,6 +314,7 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
         onOpenScope: vi.fn(),
         onOpenCluster: vi.fn(),
         onOpenFile: vi.fn(),
+        narrowViewport: input.narrowViewport ?? false,
       }),
       input.inspectorOpen
         ? createElement("aside", { "data-testid": "inspector-sibling" })
@@ -457,7 +459,7 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
       bounds: { x: 0, y: 0, width: 5_000, height: 4_400 },
     }));
 
-    await render({ baseGraph: base, semanticGraph: expanded });
+    await render({ baseGraph: base, semanticGraph: expanded, narrowViewport: true });
     await emitResize(390, 613);
 
     const automaticTarget = testHarness.setViewport.mock.calls[0]![0] as {
@@ -490,6 +492,54 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
     await act(async () => useDashboardStore.getState().selectNode("selection-expansion"));
     await act(async () => useDashboardStore.getState().selectNode(null));
     expect(testHarness.setViewport).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["desktop", 1_440, { x: 278.28, y: 41.36, zoom: 0.54 }],
+    ["tablet", 820, { x: -41.72, y: 41.36, zoom: 0.54 }],
+  ])("keeps real overview floor framing on %s when full fit misses the floor by padding", async (
+    _label,
+    width,
+    expectedTarget,
+  ) => {
+    const raw = semanticGraph("overview", Array.from({ length: 19 }, (_, index) => `scope-${index}`));
+    const base: HierarchicalSemanticGraph = {
+      ...raw,
+      nodes: raw.nodes.map((node) => ({
+        ...node,
+        kind: "scope" as const,
+        rawType: "module" as const,
+        group: "module" as const,
+        category: "module" as const,
+        scopeId: node.id,
+        canDrillDown: true,
+      })),
+    };
+    testHarness.requestLayout.mockImplementation(async (input: LayoutMessage) => ({
+      ...layoutResult(input),
+      positions: Object.fromEntries(input.nodes.map((node, index) => [
+        node.id,
+        index === 0
+          ? { x: 48, y: 48 }
+          : { x: 48 + (index % 5) * 320, y: 48 + Math.floor(index / 5) * 240 },
+      ])),
+      bounds: { x: 0, y: 0, width: 1_636, height: 1_032 },
+    }));
+
+    await render({ baseGraph: base, narrowViewport: false });
+    await emitResize(width, 640);
+
+    const automaticTarget = testHarness.setViewport.mock.calls[0]![0] as {
+      x: number;
+      y: number;
+      zoom: number;
+    };
+    expect(automaticTarget.x).toBeCloseTo(expectedTarget.x, 8);
+    expect(automaticTarget.y).toBeCloseTo(expectedTarget.y, 8);
+    expect(automaticTarget.zoom).toBe(expectedTarget.zoom);
+    const fitButton = frame.querySelector<HTMLButtonElement>('button[aria-label="适应视图"]');
+    await act(async () => fitButton?.click());
+    expect(testHarness.setViewport.mock.calls[1]![0]).toEqual(automaticTarget);
   });
 
   it("keeps layout, base positions, and viewport invariant while the inspector sibling opens and closes", async () => {

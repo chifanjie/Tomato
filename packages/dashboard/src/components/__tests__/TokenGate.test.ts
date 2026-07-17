@@ -54,8 +54,12 @@ describe("TokenGate 简体中文交互", () => {
     const { container, root } = await mountTokenGate();
 
     expect(container.textContent).toContain("需要访问令牌");
-    expect(container.textContent).toContain("请粘贴终端中显示的访问令牌");
-    expect(container.querySelector('span[role="img"]')?.getAttribute("aria-label")).toBe("钥匙");
+    expect(container.textContent).toContain("令牌会显示在知识库服务的启动输出中");
+    expect(container.textContent).not.toContain("请粘贴终端中显示的访问令牌");
+    expect(container.querySelector('[role="img"]')).toBeNull();
+    expect(container.querySelector(".uc-token-gate")).not.toBeNull();
+    expect(container.querySelector(".uc-token-card")).not.toBeNull();
+    expect(container.innerHTML).not.toMatch(/noise-overlay|shadow-2xl|text-red-/);
     expect(container.querySelector("input")?.getAttribute("placeholder")).toBe("在此粘贴访问令牌…");
     expect(container.querySelector('button[type="submit"]')?.textContent).toBe("继续");
 

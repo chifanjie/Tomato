@@ -1,10 +1,15 @@
 // @vitest-environment happy-dom
 
 import type { GraphIssue } from "@understand-code/core/schema";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import WarningBanner from "../WarningBanner";
+
+const WARNING_SOURCE = readFileSync(join(process.cwd(), "src/components/WarningBanner.tsx"), "utf8");
+const APP_SOURCE = readFileSync(join(process.cwd(), "src/App.tsx"), "utf8");
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -25,6 +30,18 @@ afterEach(() => {
 });
 
 describe("WarningBanner 简体中文交互", () => {
+  it("uses shared status tokens without hard-coded dark slabs or inline icon art", async () => {
+    const { container, root } = await mountBanner([
+      { level: "fatal", category: "elk-layout-failed", message: "hidden" },
+    ]);
+    expect(container.querySelector('[data-severity="problem"].uc-status-banner')).not.toBeNull();
+    expect(WARNING_SOURCE).not.toMatch(/bg-(?:red|amber|orange)-|text-(?:red|amber|orange)-/);
+    expect(WARNING_SOURCE).not.toContain("<svg");
+    expect(APP_SOURCE).toContain('className="uc-status-banner"');
+    expect(APP_SOURCE).toContain('data-severity="problem"');
+    await act(async () => root.unmount());
+  });
+
   it("用中文汇总、展开并复制致命问题", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {

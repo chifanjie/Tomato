@@ -670,7 +670,7 @@ function DashboardContent({
 
       {graphIssues.length > 0 && !loadError && <WarningBanner issues={graphIssues} />}
       {loadError && (
-        <div className="border-b border-red-700 bg-red-900/30 px-5 py-3 text-sm text-red-200">
+        <div className="uc-status-banner" data-severity="problem" role="alert">
           {loadError}
         </div>
       )}

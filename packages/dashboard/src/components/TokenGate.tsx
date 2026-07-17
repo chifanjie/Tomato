@@ -35,14 +35,13 @@ export default function TokenGate({ onTokenValid }: TokenGateProps) {
   };
 
   return (
-    <div className="h-screen w-screen flex items-center justify-center bg-root noise-overlay">
-      <div className="w-full max-w-md px-8 py-10 bg-surface border border-border-subtle rounded-lg shadow-2xl">
+    <div className="uc-token-gate">
+      <div className="uc-token-card">
         <h1 className="font-heading text-2xl text-text-primary tracking-wide text-center mb-2">
           需要访问令牌
         </h1>
         <p className="text-text-muted text-sm text-center mb-8">
-          请粘贴终端中显示的访问令牌。请查找带有{" "}
-          <span role="img" aria-label="钥匙">&#x1F511;</span> 的那一行。
+          令牌会显示在知识库服务的启动输出中，请复制后粘贴到这里。
         </p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -60,7 +59,7 @@ export default function TokenGate({ onTokenValid }: TokenGateProps) {
           />
 
           {error && (
-            <p role="alert" className="text-red-400 text-sm">{error}</p>
+            <p role="alert" className="uc-inline-status" data-severity="problem">{error}</p>
           )}
 
           <button

@@ -277,19 +277,20 @@ export default function GlobalWikiSearch({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/35 px-4 pt-[10vh] backdrop-blur-sm" onMouseDown={onClose}>
+    <div className="uc-global-search-backdrop" onMouseDown={onClose}>
       <section
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="全局搜索知识库"
         tabIndex={-1}
-        className="flex max-h-[78vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border-medium bg-surface shadow-2xl"
+        className="uc-global-search-dialog"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <header className="flex items-center gap-3 border-b border-border-subtle px-5 py-4">
-          <span aria-hidden="true" className="text-lg text-text-muted">⌕</span>
+        <header className="uc-global-search-header">
+          <label htmlFor="global-wiki-search-input">全局搜索</label>
           <input
+            id="global-wiki-search-input"
             ref={inputRef}
             value={query}
             disabled={loadStatus === "loading"}
@@ -302,15 +303,15 @@ export default function GlobalWikiSearch({
         </header>
 
         {loadStatus === "fallback" && (
-          <p className="border-b border-amber-400/25 bg-amber-500/5 px-5 py-3 text-sm text-text-secondary">
+          <p className="uc-global-search-fallback">
             搜索索引不可用，当前仅搜索标题、路径和符号。
           </p>
         )}
 
-        <div className="overflow-y-auto px-5 py-4">
-          {statusMessage ? (
+        <div className="uc-global-search-results">
+          {statusMessage && view.total === 0 ? (
             <p role="status" className="py-10 text-center text-sm text-text-muted">{statusMessage}</p>
-          ) : (
+          ) : view.total > 0 ? (
             <div className="space-y-6">
               {view.groups.map((group) => (
                 <section key={group.kind} aria-label={group.label}>
@@ -321,7 +322,7 @@ export default function GlobalWikiSearch({
                   {group.items.length === 0 ? (
                     <p className="rounded-lg border border-dashed border-border-subtle px-3 py-2 text-xs text-text-muted">本组暂无匹配</p>
                   ) : (
-                    <ul className="space-y-1.5">
+                    <ul>
                       {group.items.map((item) => (
                         <li key={item.record.id}>
                           <a
@@ -330,7 +331,7 @@ export default function GlobalWikiSearch({
                               event.preventDefault();
                               onSelectTarget(item.target);
                             }}
-                            className="block rounded-xl border border-transparent px-3 py-2.5 transition-colors hover:border-border-subtle hover:bg-elevated"
+                            className="block px-3 py-2.5 transition-colors hover:bg-elevated focus-visible:bg-elevated"
                           >
                             <span className="flex items-start justify-between gap-3">
                               <span className="min-w-0">
@@ -362,7 +363,7 @@ export default function GlobalWikiSearch({
                 </button>
               )}
             </div>
-          )}
+          ) : null}
         </div>
       </section>
     </div>

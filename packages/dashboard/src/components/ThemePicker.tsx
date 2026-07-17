@@ -80,7 +80,7 @@ export function ThemePicker({ disabled = false }: ThemePickerProps) {
       className="uc-theme-picker"
       onBlur={(event) => {
         const nextTarget = event.relatedTarget;
-        if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
+        if (!(nextTarget instanceof Node) || !menuRef.current?.contains(nextTarget)) {
           setOpen(false);
         }
       }}

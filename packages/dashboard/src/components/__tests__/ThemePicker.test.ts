@@ -145,6 +145,20 @@ it("ignores keys from outside the menu and closes when focus leaves", async () =
   await act(async () => root.unmount());
 });
 
+it("closes when reverse tabbing from a menu item back to the trigger", async () => {
+  const { container, root } = await mountPicker("technical-document");
+  const trigger = container.querySelector('[aria-haspopup="menu"]') as HTMLButtonElement;
+  await click(trigger);
+  expect(document.activeElement).toBe(container.querySelector('[role="menuitemradio"]'));
+
+  await act(async () => trigger.focus());
+
+  expect(container.querySelector('[role="menu"]')).toBeNull();
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(document.activeElement).toBe(trigger);
+  await act(async () => root.unmount());
+});
+
 it("removes the open menu while the surrounding header is inert", async () => {
   const { container, root } = await mountPicker("technical-document");
   const trigger = container.querySelector('[aria-haspopup="menu"]') as HTMLButtonElement;

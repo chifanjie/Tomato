@@ -257,9 +257,12 @@ export default function GraphExplorer({
     () => new Map(quickJumpItems.map((item) => [item.id, item.intent])),
     [quickJumpItems],
   );
-  const safeNavigation = hierarchyIndex
-    ? nearestValidNavigation(hierarchyIndex, navigation)
-    : OVERVIEW_NAVIGATION;
+  const safeNavigation = useMemo(
+    () => hierarchyIndex
+      ? nearestValidNavigation(hierarchyIndex, navigation)
+      : OVERVIEW_NAVIGATION,
+    [hierarchyIndex, navigation],
+  );
   const materializedIntent = materializedNodeId
     ? navigationIntentById.get(materializedNodeId)
     : null;
@@ -579,7 +582,7 @@ export default function GraphExplorer({
                             : item.scopeId && item.clusterId && item.fileId
                               ? openFile(item.scopeId, item.clusterId, item.fileId)
                               : undefined}
-                      className="min-h-11 rounded px-2.5 py-1.5 text-text-muted transition-colors hover:bg-elevated hover:text-text-primary"
+                      className="min-h-11 min-w-11 rounded px-2.5 py-1.5 text-text-muted transition-colors hover:bg-elevated hover:text-text-primary"
                     >
                       {item.label}
                     </button>

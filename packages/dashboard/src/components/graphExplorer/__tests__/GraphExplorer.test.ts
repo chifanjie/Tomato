@@ -28,6 +28,10 @@ import {
   default as GraphExplorer,
 } from "../GraphExplorer";
 
+const graphExplorerHarness = vi.hoisted(() => ({
+  semanticGraphs: [] as unknown[],
+}));
+
 vi.mock("../GraphQuickJump", async () => {
   const React = await import("react");
   return {
@@ -54,25 +58,28 @@ vi.mock("../SemanticGraphCanvas", async () => {
       semanticGraph: { presentation: { level: string }; nodes: Array<{ id: string }> };
       viewKey: string;
       onSelectNode?: (id: string | null) => void;
-    }) => React.createElement(
-      "div",
-      {
-        "data-testid": "semantic-canvas",
-        "data-level": semanticGraph.presentation.level,
-        "data-view-key": viewKey,
-      },
-      ...semanticGraph.nodes.map((node) => React.createElement("button", {
-        key: node.id,
-        type: "button",
-        "data-canvas-node": node.id,
-        onClick: () => onSelectNode?.(node.id),
-      }, node.id)),
-      React.createElement("button", {
-        type: "button",
-        "data-pane-clear": "true",
-        onClick: () => onSelectNode?.(null),
-      }, "clear"),
-    ),
+    }) => {
+      graphExplorerHarness.semanticGraphs.push(semanticGraph);
+      return React.createElement(
+        "div",
+        {
+          "data-testid": "semantic-canvas",
+          "data-level": semanticGraph.presentation.level,
+          "data-view-key": viewKey,
+        },
+        ...semanticGraph.nodes.map((node) => React.createElement("button", {
+          key: node.id,
+          type: "button",
+          "data-canvas-node": node.id,
+          onClick: () => onSelectNode?.(node.id),
+        }, node.id)),
+        React.createElement("button", {
+          type: "button",
+          "data-pane-clear": "true",
+          onClick: () => onSelectNode?.(null),
+        }, "clear"),
+      );
+    },
   };
 });
 
@@ -333,6 +340,7 @@ describe("GraphExplorer progressive navigation integration", () => {
     container = document.createElement("div");
     document.body.replaceChildren(container);
     root = createRoot(container);
+    graphExplorerHarness.semanticGraphs.length = 0;
     useDashboardStore.setState({
       graphFocusRevision: 0,
       graphFocusNodeIds: [],
@@ -383,6 +391,10 @@ describe("GraphExplorer progressive navigation integration", () => {
     expect(container.querySelector('[data-canvas-node="function:src/a.ts:run"]')).not.toBeNull();
     expect(useDashboardStore.getState().selectedNodeId).toBeNull();
 
+    const semanticGraphBeforeUnrelatedRerender = graphExplorerHarness.semanticGraphs.at(-1);
+    await renderExplorer();
+    expect(graphExplorerHarness.semanticGraphs.at(-1)).toBe(semanticGraphBeforeUnrelatedRerender);
+
     const visibleSymbol = container.querySelector<HTMLButtonElement>(
       '[data-canvas-node="function:src/a.ts:run"]',
     );
@@ -401,6 +413,10 @@ describe("GraphExplorer progressive navigation integration", () => {
       .toBe(materializedKey);
 
     const breadcrumbButtons = container.querySelectorAll<HTMLButtonElement>('nav[aria-label="图谱层级"] button');
+    for (const breadcrumb of breadcrumbButtons) {
+      expect(breadcrumb.className).toContain("min-h-11");
+      expect(breadcrumb.className).toContain("min-w-11");
+    }
     await act(async () => breadcrumbButtons.item(breadcrumbButtons.length - 1).click());
     expect(container.querySelector('[data-testid="semantic-canvas"]')?.getAttribute("data-level"))
       .toBe("cluster");

@@ -569,9 +569,7 @@ export function buildGraphHierarchyIndex(graph: KnowledgeGraph): GraphHierarchyI
       const normalizedPath = normalizeGraphFilePath(node.filePath);
       const fileId = fileIdByNormalizedPath.get(normalizedPath);
       const canonicalFileLocation = fileId ? fileLocationById.get(fileId) : undefined;
-      const containingFileId = placement === "file-leaf"
-        ? containingFileIdsByNode.get(node.id)?.[0]
-        : undefined;
+      const containingFileId = containingFileIdsByNode.get(node.id)?.[0];
       const fileLocation = canonicalFileLocation
         ?? (containingFileId ? fileLocationById.get(containingFileId) : undefined);
       if (fileLocation) {

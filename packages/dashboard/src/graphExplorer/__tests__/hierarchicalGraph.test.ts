@@ -429,6 +429,24 @@ describe("hierarchicalGraph", () => {
     expect(index.symbolLocationById.get("class:stale")).toEqual(owner);
   });
 
+  it("uses file containment when a pathful architecture object has no canonical file", () => {
+    const graph = hierarchyGraph([
+      hierarchyNode("file:owner", "file", "src/owner.ts"),
+      hierarchyNode("service:stale", "service", "legacy/gateway.ts"),
+    ], [{
+      source: "file:owner",
+      target: "service:stale",
+      type: "contains",
+      direction: "forward",
+      weight: 1,
+    }]);
+    const index = buildGraphHierarchyIndex(graph);
+    const owner = index.fileLocationById.get("file:owner");
+
+    expect(index.nodeLocationById.get("service:stale")).toEqual(owner);
+    expect(index.symbolLocationById.has("service:stale")).toBe(false);
+  });
+
   it("resolves pathless file leaves through file containment", () => {
     const graph = hierarchyGraph([
       hierarchyNode("file:owner", "file", "src/owner.ts"),

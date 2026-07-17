@@ -1270,11 +1270,14 @@ function progressiveOverview(input: {
 function boundaryScopeIdsForView(input: {
   currentScopeId: string;
   members: readonly SemanticGraphEdgeMember[];
+  materializationMembers: readonly SemanticGraphEdgeMember[];
   hierarchyIndex: GraphHierarchyIndex;
   ownsInternal: (nodeId: string) => boolean;
   materializedNodeId: string | null;
 }): { visible: string[]; counts: Map<string, number> } {
-  const { currentScopeId, members, hierarchyIndex, ownsInternal, materializedNodeId } = input;
+  const {
+    currentScopeId, members, materializationMembers, hierarchyIndex, ownsInternal, materializedNodeId,
+  } = input;
   const counts = new Map<string, number>();
   for (const member of members) {
     const sourceScope = hierarchyIndex.nodeLocationById.get(member.source)?.scopeId;
@@ -1286,6 +1289,17 @@ function boundaryScopeIdsForView(input: {
       counts.set(sourceScope, (counts.get(sourceScope) ?? 0) + 1);
     }
   }
+  const materializedScopeId = materializationMembers.flatMap((member): string[] => {
+    const sourceScope = hierarchyIndex.nodeLocationById.get(member.source)?.scopeId;
+    const targetScope = hierarchyIndex.nodeLocationById.get(member.target)?.scopeId;
+    if (!sourceScope || !targetScope || sourceScope === targetScope) return [];
+    if (sourceScope === currentScopeId && ownsInternal(member.source)
+      && boundaryNodeId(currentScopeId, targetScope) === materializedNodeId) return [targetScope];
+    if (targetScope === currentScopeId && ownsInternal(member.target)
+      && boundaryNodeId(currentScopeId, sourceScope) === materializedNodeId) return [sourceScope];
+    return [];
+  }).sort(compareStable)[0] ?? null;
+  if (materializedScopeId && !counts.has(materializedScopeId)) counts.set(materializedScopeId, 0);
   const ordered = [...counts].sort((left, right) => right[1] - left[1]
     || compareStable(left[0], right[0])).map(([scopeId]) => scopeId);
   const materializedBoundary = ordered.find((scopeId) =>
@@ -1403,6 +1417,7 @@ function progressiveScope(input: {
   const boundaries = boundaryScopeIdsForView({
     currentScopeId: scope.id,
     members: allowedMembers,
+    materializationMembers: members,
     hierarchyIndex,
     ownsInternal: (nodeId) => hierarchyIndex.nodeLocationById.get(nodeId)?.scopeId === scope.id,
     materializedNodeId,
@@ -1540,6 +1555,7 @@ function progressiveCluster(input: {
   const boundaries = boundaryScopeIdsForView({
     currentScopeId: scope.id,
     members: allowedMembers,
+    materializationMembers: members,
     hierarchyIndex,
     ownsInternal: (nodeId) => {
       const node = hierarchyIndex.nodeById.get(nodeId);

@@ -981,22 +981,26 @@ describe("hierarchicalGraph", () => {
       { id: "right", name: "Right", description: "Right.", nodeIds: [right.id] },
     ];
     const hierarchyIndex = buildGraphHierarchyIndex(graph);
-    const baseGraph = buildHierarchicalSemanticGraph({
+    const portalId = boundaryNodeId("layer:left", "layer:right");
+    const leftScope = hierarchyIndex.scopeById.get("layer:left")!;
+    const materializedBase = buildHierarchicalSemanticGraph({
       graph,
       hierarchyIndex,
       mode: "architecture",
-      navigation: { level: "overview" },
-      materializedNodeId: null,
+      navigation: { level: "scope", scopeId: leftScope.id },
+      materializedNodeId: portalId,
     });
-    const portalId = boundaryNodeId("layer:left", "layer:right");
     const expansion = buildHierarchySelectionExpansion({
       graph,
       hierarchyIndex,
-      baseGraph,
+      baseGraph: materializedBase,
       mode: "architecture",
       selectedNodeId: portalId,
     });
 
+    expect(materializedBase.nodes.map((node) => node.id)).toContain(portalId);
+    expect(materializedBase.edges.flatMap((edge) => edge.members).map((member) => member.type))
+      .not.toContain("calls");
     expect(expansion.nodes.map((node) => node.id)).toContain(portalId);
     expect(expansion.edges).toEqual([]);
   });

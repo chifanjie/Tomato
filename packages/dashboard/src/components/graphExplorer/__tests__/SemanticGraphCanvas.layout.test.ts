@@ -542,6 +542,88 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
     expect(testHarness.setViewport.mock.calls[1]![0]).toEqual(automaticTarget);
   });
 
+  it.each([
+    [
+      "phone to tablet",
+      760,
+      true,
+      { x: 302.8, y: 254.39, zoom: 0.54 },
+      820,
+      false,
+      { x: -41.72, y: 41.36, zoom: 0.54 },
+    ],
+    [
+      "tablet to phone",
+      820,
+      false,
+      { x: -41.72, y: 41.36, zoom: 0.54 },
+      760,
+      true,
+      { x: 302.8, y: 254.39, zoom: 0.54 },
+    ],
+  ])("switches %s framing once inside the shared 800px layout bucket", async (
+    _label,
+    initialWidth,
+    initialNarrowViewport,
+    initialTarget,
+    nextWidth,
+    nextNarrowViewport,
+    nextTarget,
+  ) => {
+    const raw = semanticGraph("overview", Array.from({ length: 19 }, (_, index) => `scope-${index}`));
+    const base: HierarchicalSemanticGraph = {
+      ...raw,
+      nodes: raw.nodes.map((node) => ({
+        ...node,
+        kind: "scope" as const,
+        rawType: "module" as const,
+        group: "module" as const,
+        category: "module" as const,
+        scopeId: node.id,
+        canDrillDown: true,
+      })),
+    };
+    testHarness.requestLayout.mockImplementation(async (input: LayoutMessage) => ({
+      ...layoutResult(input),
+      positions: Object.fromEntries(input.nodes.map((node, index) => [
+        node.id,
+        index === 0
+          ? { x: 48, y: 48 }
+          : { x: 48 + (index % 5) * 320, y: 48 + Math.floor(index / 5) * 240 },
+      ])),
+      bounds: { x: 0, y: 0, width: 1_636, height: 1_032 },
+    }));
+
+    await render({ baseGraph: base, narrowViewport: initialNarrowViewport });
+    await emitResize(initialWidth, 640);
+    expect(testHarness.requestLayout.mock.calls[0]![0].viewport.width).toBe(800);
+    expect(testHarness.setViewport).toHaveBeenCalledTimes(1);
+    const initialViewport = testHarness.setViewport.mock.calls[0]![0] as {
+      x: number;
+      y: number;
+      zoom: number;
+    };
+    expect(initialViewport.x).toBeCloseTo(initialTarget.x, 8);
+    expect(initialViewport.y).toBeCloseTo(initialTarget.y, 8);
+    expect(initialViewport.zoom).toBe(initialTarget.zoom);
+    const layoutRequests = testHarness.requestLayout.mock.calls.length;
+
+    await render({ baseGraph: base, narrowViewport: nextNarrowViewport });
+    await emitResize(nextWidth, 640);
+
+    expect(testHarness.requestLayout).toHaveBeenCalledTimes(layoutRequests);
+    expect(testHarness.requestLayout.mock.calls[0]![0].viewport.width).toBe(800);
+    expect(testHarness.setViewport).toHaveBeenCalledTimes(2);
+    const switchedViewport = testHarness.setViewport.mock.calls[1]![0] as {
+      x: number;
+      y: number;
+      zoom: number;
+    };
+    expect(switchedViewport.x).toBeCloseTo(nextTarget.x, 8);
+    expect(switchedViewport.y).toBeCloseTo(nextTarget.y, 8);
+    expect(switchedViewport.zoom).toBe(nextTarget.zoom);
+  });
+
   it("keeps layout, base positions, and viewport invariant while the inspector sibling opens and closes", async () => {
     const base = semanticGraph("scope", ["a", "b"]);
     await render({ baseGraph: base, inspectorOpen: false });

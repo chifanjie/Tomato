@@ -963,7 +963,7 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
       : {
           kind: "normal",
           structureKey,
-          actionKey: structureKey,
+          actionKey: `${structureKey}:viewport:${narrowViewport ? "narrow" : "full"}`,
           flowGeneration: binding.generation,
         };
     const isActionForBinding = (candidate: AutomaticViewportAction | null) => candidate
@@ -1019,6 +1019,7 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
     explicitFocusRequest,
     flowInstanceRevision,
     isCurrentFlowBinding,
+    narrowViewport,
     readableViewport,
     settleViewportTransform,
     structureKey,

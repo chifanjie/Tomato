@@ -173,7 +173,9 @@ describe("SemanticGraphCanvas interaction contract", () => {
       semanticGraph: semanticGraphFixture,
       displayMode: "architecture",
       viewKey: "overview",
+      emptyNotice: null,
       onOpenScope,
+      onOpenCluster: vi.fn(),
       onOpenFile: vi.fn(),
     })));
 
@@ -192,6 +194,9 @@ describe("SemanticGraphCanvas interaction contract", () => {
 
     const card = container.querySelector<HTMLElement>('[role="group"][aria-label^="核心模块"]');
     if (!card) throw new Error("缺少核心模块图谱卡片");
+    const drillButton = card.querySelector<HTMLButtonElement>('button[aria-label^="进入"]');
+    expect(drillButton?.className).toContain("min-h-11");
+    expect(drillButton?.className).toContain("min-w-11");
     await act(async () => card.dispatchEvent(new KeyboardEvent("keydown", {
       key: "Enter",
       bubbles: true,
@@ -225,7 +230,9 @@ describe("SemanticGraphCanvas interaction contract", () => {
       semanticGraph: semanticGraphFixture,
       displayMode: "architecture",
       viewKey: "overview",
+      emptyNotice: null,
       onOpenScope: vi.fn(),
+      onOpenCluster: vi.fn(),
       onOpenFile: vi.fn(),
     })));
 
@@ -246,7 +253,9 @@ describe("SemanticGraphCanvas interaction contract", () => {
       semanticGraph: semanticGraphFixture,
       displayMode: "architecture",
       viewKey: "overview",
+      emptyNotice: null,
       onOpenScope: vi.fn(),
+      onOpenCluster: vi.fn(),
       onOpenFile: vi.fn(),
       onSelectNode,
     })));
@@ -276,6 +285,82 @@ describe("SemanticGraphCanvas interaction contract", () => {
     ]);
     expect(flowHarness.selectNodeCalls).toEqual([]);
 
+    await act(async () => root.unmount());
+  });
+
+  it("dispatches cluster and file drill callbacks with their full ancestor chain", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const onOpenCluster = vi.fn();
+    const onOpenFile = vi.fn();
+    const drillGraph: HierarchicalSemanticGraph = {
+      ...semanticGraphFixture,
+      nodes: [{
+        ...semanticGraphFixture.nodes[0]!,
+        id: "cluster:src",
+        kind: "cluster",
+        clusterId: "cluster:src",
+      }, {
+        ...semanticGraphFixture.nodes[0]!,
+        id: "file:src/a.ts",
+        kind: "node",
+        rawType: "file",
+        clusterId: "cluster:src",
+      }],
+      edges: [],
+      presentation: {
+        ...semanticGraphFixture.presentation,
+        scopeId: "src",
+        breadcrumbs: [
+          { level: "overview", label: "全局概览" },
+          { level: "scope", label: "核心模块", scopeId: "src" },
+        ],
+      },
+    };
+    await act(async () => root.render(createElement(SemanticGraphCanvas, {
+      semanticGraph: drillGraph,
+      displayMode: "architecture",
+      viewKey: "scope",
+      emptyNotice: null,
+      onOpenScope: vi.fn(),
+      onOpenCluster,
+      onOpenFile,
+    })));
+
+    const props = flowHarness.props as { nodes: Array<{ id: string; data: { onDrillDown?: () => void } }> };
+    await act(async () => props.nodes.find((node) => node.id === "cluster:src")?.data.onDrillDown?.());
+    await act(async () => props.nodes.find((node) => node.id === "file:src/a.ts")?.data.onDrillDown?.());
+    expect(onOpenCluster).toHaveBeenCalledWith("src", "cluster:src");
+    expect(onOpenFile).toHaveBeenCalledWith("src", "cluster:src", "file:src/a.ts");
+
+    await act(async () => root.unmount());
+  });
+
+  it("renders the supplied presentation notice as the only empty-graph message", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const exactNotice = "当前目录没有可展示的文件。";
+    await act(async () => root.render(createElement(SemanticGraphCanvas, {
+      semanticGraph: {
+        ...semanticGraphFixture,
+        nodes: [],
+        edges: [],
+        presentation: { ...semanticGraphFixture.presentation, notice: exactNotice },
+      },
+      displayMode: "architecture",
+      viewKey: "empty",
+      emptyNotice: exactNotice,
+      onOpenScope: vi.fn(),
+      onOpenCluster: vi.fn(),
+      onOpenFile: vi.fn(),
+    })));
+
+    expect(container.textContent).toBe(exactNotice);
+    expect(container.textContent).not.toContain("当前层级没有可显示的图谱元素");
+    expect(container.querySelector('[role="status"][aria-live="polite"]')?.textContent)
+      .toBe(exactNotice);
     await act(async () => root.unmount());
   });
 
@@ -339,11 +424,11 @@ describe("SemanticGraphCanvas interaction contract", () => {
     expect(viewKeySource).not.toContain("selectedNodeId");
     expect(viewKeySource).not.toContain("nodes.length");
     expect(viewKeySource).not.toContain("edges.length");
-    expect(viewKeySource).toContain("graph.version");
-    expect(viewKeySource).toContain("graph.project.name");
-    expect(viewKeySource).toContain("graph.project.gitCommitHash");
-    expect(viewKeySource).toContain("graph.project.analyzedAt");
+    expect(viewKeySource).toContain("graphInstanceToken");
     expect(viewKeySource).toContain("layoutRevision");
+    expect(viewKeySource).toContain("safeNavigation");
+    expect(viewKeySource).toContain("safeMaterializedNodeId");
+    expect(viewKeySource).not.toContain("pendingNavigationRequest");
   });
 
   it("renders graph metadata and React Flow controls in Simplified Chinese", () => {
@@ -369,7 +454,9 @@ describe("SemanticGraphCanvas interaction contract", () => {
     expect(explorerSource).toContain("view?.semanticGraph.nodes.some((node) => node.id === nodeId)");
     expect(explorerSource).toContain("selectedNodeWasVisible");
     expect(explorerSource).toContain("visibleSelectionContextKey === selectionContextKey");
-    expect(explorerSource).toContain('const focusRevision = focusNodeIds.join("\\u0000")');
+    expect(explorerSource).toContain("graphFocusRevision");
+    expect(explorerSource).toContain("graphFocusPageId");
+    expect(explorerSource).toContain("shouldClearVisibleSelectionProvenance");
     expect(explorerSource).toContain("onSelectNode={selectVisibleNode}");
     expect(explorerSource).toContain("onSelectObject={selectVisibleNode}");
   });

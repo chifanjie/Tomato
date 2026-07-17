@@ -81,6 +81,54 @@ describe("graphExplorerModel", () => {
     });
   });
 
+  it("returns exact scope, cluster, file, and symbol drill targets", () => {
+    const graph = graphFixture();
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const location = hierarchyIndex.fileLocationById.get("file:src/a.ts")!;
+    const cluster = hierarchyIndex.clusterById.get(location.clusterId)!;
+    const build = (
+      navigation: Parameters<typeof buildHierarchicalSemanticGraph>[0]["navigation"],
+      selectedObjectId: string,
+    ) => buildGraphSelectionDetails({
+      graph,
+      semanticGraph: buildHierarchicalSemanticGraph({
+        graph,
+        hierarchyIndex,
+        wikiIndex: wikiRuntimeFixture(),
+        mode: "architecture",
+        navigation,
+        materializedNodeId: selectedObjectId,
+      }),
+      selectedObjectId,
+    });
+
+    expect(build({ level: "overview" }, scopeNodeId(location.scopeId))?.drillTarget).toEqual({
+      kind: "scope",
+      scopeId: location.scopeId,
+    });
+    expect(build({ level: "scope", scopeId: location.scopeId }, cluster.id)?.drillTarget).toEqual({
+      kind: "cluster",
+      scopeId: location.scopeId,
+      clusterId: cluster.id,
+    });
+    expect(build({
+      level: "cluster",
+      scopeId: location.scopeId,
+      clusterId: cluster.id,
+    }, "file:src/a.ts")?.drillTarget).toEqual({
+      kind: "file",
+      scopeId: location.scopeId,
+      clusterId: cluster.id,
+      fileId: "file:src/a.ts",
+    });
+    expect(build({
+      level: "file",
+      scopeId: location.scopeId,
+      clusterId: cluster.id,
+      fileId: "file:src/a.ts",
+    }, "function:src/a.ts:run")?.drillTarget).toBeNull();
+  });
+
   it("keeps exact direct pages, context pages, and evidence for a raw selection", () => {
     const graph = graphFixture();
     const hierarchyIndex = buildGraphHierarchyIndex(graph);
@@ -283,6 +331,7 @@ describe("graphExplorerModel", () => {
 
     expect(toolbar).toContain("架构总览");
     expect(toolbar).toContain("文件依赖");
+    expect(toolbar).toContain("min-h-11");
     expect(toolbar).not.toContain("Global");
     expect(toolbar).not.toContain("Coverage");
     expect(legend).toContain("有专门正文");

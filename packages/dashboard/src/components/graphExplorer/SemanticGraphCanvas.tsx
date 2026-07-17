@@ -48,8 +48,10 @@ interface SemanticGraphCanvasProps {
   semanticGraph: HierarchicalSemanticGraph;
   displayMode: GraphExplorerDisplayMode;
   viewKey: string;
+  emptyNotice: string | null;
   onOpenScope: (scopeId: string) => void;
-  onOpenFile: (scopeId: string, fileId: string) => void;
+  onOpenCluster: (scopeId: string, clusterId: string) => void;
+  onOpenFile: (scopeId: string, clusterId: string, fileId: string) => void;
   onSelectNode?: (nodeId: string | null) => void;
 }
 
@@ -195,7 +197,7 @@ function SemanticNodeCard({ data }: NodeProps<SemanticFlowNode>) {
                   data.onDrillDown?.();
                 }}
                 onDoubleClick={(event) => event.stopPropagation()}
-                className="nodrag nopan rounded border border-border-subtle px-1.5 py-0.5 font-semibold text-text-secondary transition-colors hover:border-accent/35 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-accent)]"
+                className="nodrag nopan min-h-11 min-w-11 rounded border border-border-subtle px-2 py-1 font-semibold text-text-secondary transition-colors hover:border-accent/35 hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-accent)]"
               >
                 进入
               </button>
@@ -220,7 +222,9 @@ export default function SemanticGraphCanvas({
   semanticGraph,
   displayMode,
   viewKey,
+  emptyNotice,
   onOpenScope,
+  onOpenCluster,
   onOpenFile,
   onSelectNode,
 }: SemanticGraphCanvasProps) {
@@ -368,9 +372,13 @@ export default function SemanticGraphCanvas({
       const badge = coverageBadgeForNode(node);
       const nodePresentation = presentation.nodesById.get(node.id)!;
       const onDrillDown = node.canDrillDown && node.scopeId
-        ? node.kind === "node"
-          ? () => onOpenFile(node.scopeId!, node.id)
-          : () => onOpenScope(node.scopeId!)
+        ? node.kind === "cluster" && node.clusterId
+          ? () => onOpenCluster(node.scopeId!, node.clusterId!)
+          : node.kind === "node" && node.rawType === "file" && node.clusterId
+            ? () => onOpenFile(node.scopeId!, node.clusterId!, node.id)
+            : node.kind === "scope" || node.kind === "boundary"
+              ? () => onOpenScope(node.scopeId!)
+              : undefined
         : undefined;
       return {
         id: node.id,
@@ -424,13 +432,13 @@ export default function SemanticGraphCanvas({
     });
 
     return { nodes: flowNodes, edges: flowEdges };
-  }, [displayMode, onOpenFile, onOpenScope, positionsById, reducedMotion, selectGraphNode, semanticGraph, selectedNodeId]);
+  }, [displayMode, onOpenCluster, onOpenFile, onOpenScope, positionsById, reducedMotion, selectGraphNode, semanticGraph, selectedNodeId]);
 
   if (semanticGraph.nodes.length === 0) {
     return (
       <div className="uc-graph-frame flex min-h-[420px] flex-1 items-center justify-center overflow-hidden">
-        <p className="uc-panel px-4 py-3 text-sm text-text-muted">
-          当前层级没有可显示的图谱元素。
+        <p role="status" aria-live="polite" className="uc-panel px-4 py-3 text-sm text-text-muted">
+          {emptyNotice ?? "当前层级没有可显示的图谱元素。"}
         </p>
       </div>
     );

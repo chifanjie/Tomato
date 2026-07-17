@@ -20,6 +20,7 @@ interface DashboardStore {
   graphExplorerMode: GraphExplorerMode;
   graphFocusNodeIds: string[];
   graphFocusPageId: string | null;
+  graphFocusRevision: number;
   graphWikiNotice: string | null;
   setConsoleGraph: (graph: KnowledgeGraph) => void;
   setDashboardSurface: (surface: DashboardSurface) => void;
@@ -49,6 +50,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
   graphExplorerMode: "architecture",
   graphFocusNodeIds: [],
   graphFocusPageId: null,
+  graphFocusRevision: 0,
   graphWikiNotice: null,
 
   setConsoleGraph: (graph) => set({ graph }),
@@ -80,6 +82,9 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
       graphFocusNodeIds: focusedPageExists && state.graphFocusPageId
         ? wikiPageDirectNodeIds(index, state.graphFocusPageId)
         : [],
+      graphFocusRevision: focusedPageExists
+        ? state.graphFocusRevision + 1
+        : state.graphFocusRevision,
       graphWikiNotice: null,
     };
   }),
@@ -118,6 +123,7 @@ export const useDashboardStore = create<DashboardStore>()((set, get) => ({
       graphExplorerMode: "architecture" as const,
       graphFocusNodeIds: wikiPageDirectNodeIds(state.wikiIndex, pageId),
       graphFocusPageId: pageId,
+      graphFocusRevision: state.graphFocusRevision + 1,
       graphWikiNotice: null,
     };
   }),

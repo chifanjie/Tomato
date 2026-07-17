@@ -7,7 +7,8 @@ interface GraphDetailsRailProps {
   view: GraphExplorerView;
   onSelectObject: (nodeId: string) => void;
   onOpenScope: (scopeId: string) => void;
-  onOpenFile: (scopeId: string, fileId: string) => void;
+  onOpenCluster: (scopeId: string, clusterId: string) => void;
+  onOpenFile: (scopeId: string, clusterId: string, fileId: string) => void;
   onSelectWikiTarget: (target: WikiTarget) => unknown;
   onRequestGlobalSearch: () => void;
 }
@@ -197,6 +198,7 @@ export default function GraphDetailsRail({
   view,
   onSelectObject,
   onOpenScope,
+  onOpenCluster,
   onOpenFile,
   onSelectWikiTarget,
   onRequestGlobalSearch,
@@ -240,7 +242,7 @@ export default function GraphDetailsRail({
                   <button
                     type="button"
                     onClick={() => onOpenScope(drillTarget.scopeId)}
-                    className="w-full rounded-md border border-border-subtle px-3 py-2 text-sm font-semibold text-text-primary transition-colors hover:border-accent/35 hover:bg-accent/5"
+                    className="min-h-11 w-full rounded-md border border-border-subtle px-3 py-2 text-sm font-semibold text-text-primary transition-colors hover:border-accent/35 hover:bg-accent/5"
                   >
                     {selection.kind === "boundary" ? "进入范围" : "查看范围"}
                   </button>
@@ -248,10 +250,23 @@ export default function GraphDetailsRail({
                 {drillTarget?.kind === "file" && (
                   <button
                     type="button"
-                    onClick={() => onOpenFile(drillTarget.scopeId, drillTarget.fileId)}
-                    className="w-full rounded-md border border-border-subtle px-3 py-2 text-sm font-semibold text-text-primary transition-colors hover:border-accent/35 hover:bg-accent/5"
+                    onClick={() => onOpenFile(
+                      drillTarget.scopeId,
+                      drillTarget.clusterId,
+                      drillTarget.fileId,
+                    )}
+                    className="min-h-11 w-full rounded-md border border-border-subtle px-3 py-2 text-sm font-semibold text-text-primary transition-colors hover:border-accent/35 hover:bg-accent/5"
                   >
                     查看文件关系
+                  </button>
+                )}
+                {drillTarget?.kind === "cluster" && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenCluster(drillTarget.scopeId, drillTarget.clusterId)}
+                    className="min-h-11 w-full rounded-md border border-border-subtle px-3 py-2 text-sm font-semibold text-text-primary transition-colors hover:border-accent/35 hover:bg-accent/5"
+                  >
+                    查看目录
                   </button>
                 )}
                 {primaryDirectPageId && (

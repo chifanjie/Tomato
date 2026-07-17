@@ -2,7 +2,6 @@ import type { WikiEvidenceV2, WikiPageV2 } from "@understand-code/core/knowledge
 import type { GraphNode, KnowledgeGraph } from "@understand-code/core/types";
 import {
   buildHierarchySelectionExpansion,
-  buildGraphHierarchyIndex,
   buildHierarchicalSemanticGraph,
   hasDocumentationProblem,
   mergeHierarchySelectionExpansion,
@@ -34,18 +33,14 @@ export interface GraphExplorerView {
 
 export interface BuildGraphExplorerViewInput {
   graph: KnowledgeGraph;
-  /** Temporary Task 5 integration shim; the deterministic base builder remains strict. */
-  hierarchyIndex?: GraphHierarchyIndex;
+  hierarchyIndex: GraphHierarchyIndex;
   wikiIndex?: WikiRuntimeIndex;
   mode: GraphExplorerMode;
-  /** Temporary Task 5 call-site shim. Selection expansion never consumes focus ids. */
-  focusNodeIds?: string[];
   selectedNodeId: string | null;
   /** True only when the active surface selected this id from the currently visible graph. */
   selectedNodeWasVisible?: boolean;
   navigation: GraphExplorerNavigation;
-  /** Temporary Task 5 integration shim. */
-  materializedNodeId?: string | null;
+  materializedNodeId: string | null;
 }
 
 export interface SelectionDetailsInput {
@@ -53,6 +48,11 @@ export interface SelectionDetailsInput {
   semanticGraph: SemanticGraph;
   selectedObjectId: string | null;
 }
+
+export type GraphDrillTarget =
+  | { kind: "scope"; scopeId: string }
+  | { kind: "cluster"; scopeId: string; clusterId: string }
+  | { kind: "file"; scopeId: string; clusterId: string; fileId: string };
 
 interface SelectionDocumentation {
   upstream: SemanticGraphNode[];
@@ -69,7 +69,7 @@ export type GraphSelectionDetails =
       id: string;
       node: GraphNode;
       semantic: HierarchicalSemanticGraphNode;
-      drillTarget: { kind: "file"; scopeId: string; fileId: string } | null;
+      drillTarget: GraphDrillTarget | null;
     })
   | (SelectionDocumentation & {
       kind: "aggregate" | "boundary";
@@ -77,7 +77,7 @@ export type GraphSelectionDetails =
       node: HierarchicalSemanticGraphNode;
       responsibility: string;
       documentationCounts: DocumentationCounts;
-      drillTarget: { kind: "scope"; scopeId: string } | null;
+      drillTarget: GraphDrillTarget | null;
     });
 
 export interface GraphModeOption {
@@ -189,8 +189,8 @@ export function buildGraphSelectionDetails({
       node: raw,
       semantic,
       ...documentation,
-      drillTarget: semantic.canDrillDown && semantic.scopeId
-        ? { kind: "file", scopeId: semantic.scopeId, fileId: semantic.id }
+      drillTarget: semantic.canDrillDown && semantic.scopeId && semantic.clusterId
+        ? { kind: "file", scopeId: semantic.scopeId, clusterId: semantic.clusterId, fileId: semantic.id }
         : null,
     };
   }
@@ -203,7 +203,9 @@ export function buildGraphSelectionDetails({
     documentationCounts: semantic.documentationCounts ?? EMPTY_DOCUMENTATION_COUNTS,
     ...documentation,
     drillTarget: semantic.canDrillDown && semantic.scopeId
-      ? { kind: "scope", scopeId: semantic.scopeId }
+      ? semantic.kind === "cluster" && semantic.clusterId
+        ? { kind: "cluster", scopeId: semantic.scopeId, clusterId: semantic.clusterId }
+        : { kind: "scope", scopeId: semantic.scopeId }
       : null,
   };
 }
@@ -258,12 +260,11 @@ export function buildGraphExplorerView({
   selectedNodeId,
   selectedNodeWasVisible = false,
   navigation,
-  materializedNodeId = null,
+  materializedNodeId,
 }: BuildGraphExplorerViewInput): GraphExplorerView {
-  const resolvedHierarchyIndex = hierarchyIndex ?? buildGraphHierarchyIndex(graph);
   const baseGraph = buildHierarchicalSemanticGraph({
     graph,
-    hierarchyIndex: resolvedHierarchyIndex,
+    hierarchyIndex,
     wikiIndex,
     mode,
     navigation,
@@ -271,7 +272,7 @@ export function buildGraphExplorerView({
   });
   const selectionExpansion = buildHierarchySelectionExpansion({
     graph,
-    hierarchyIndex: resolvedHierarchyIndex,
+    hierarchyIndex,
     baseGraph,
     wikiIndex,
     mode,

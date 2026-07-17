@@ -29,7 +29,8 @@ describe("GraphDetailsRail", () => {
   let root: Root;
   let onSelectObject: ReturnType<typeof vi.fn<(nodeId: string) => void>>;
   let onOpenScope: ReturnType<typeof vi.fn<(scopeId: string) => void>>;
-  let onOpenFile: ReturnType<typeof vi.fn<(scopeId: string, fileId: string) => void>>;
+  let onOpenCluster: ReturnType<typeof vi.fn<(scopeId: string, clusterId: string) => void>>;
+  let onOpenFile: ReturnType<typeof vi.fn<(scopeId: string, clusterId: string, fileId: string) => void>>;
   let onSelectWikiTarget: ReturnType<typeof vi.fn<(target: WikiTarget) => unknown>>;
 
   beforeEach(() => {
@@ -38,6 +39,7 @@ describe("GraphDetailsRail", () => {
     root = createRoot(container);
     onSelectObject = vi.fn();
     onOpenScope = vi.fn();
+    onOpenCluster = vi.fn();
     onOpenFile = vi.fn();
     onSelectWikiTarget = vi.fn();
   });
@@ -54,6 +56,7 @@ describe("GraphDetailsRail", () => {
         view,
         onSelectObject,
         onOpenScope,
+        onOpenCluster,
         onOpenFile,
         onSelectWikiTarget,
         onRequestGlobalSearch: vi.fn(),
@@ -138,6 +141,27 @@ describe("GraphDetailsRail", () => {
     expect(onOpenScope).toHaveBeenCalledWith("layer:app");
   });
 
+  it("opens selected clusters through the exact scope and cluster chain", async () => {
+    const graph = graphFixture();
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const location = hierarchyIndex.fileLocationById.get("file:src/a.ts")!;
+    const view = buildGraphExplorerView({
+      graph,
+      hierarchyIndex,
+      wikiIndex: wikiRuntimeFixture(),
+      mode: "architecture",
+      selectedNodeId: location.clusterId,
+      navigation: { level: "scope", scopeId: location.scopeId },
+      materializedNodeId: location.clusterId,
+    });
+    await renderRail(view);
+
+    const drillButton = buttonWithText(container, "查看目录");
+    expect(drillButton?.className).toContain("min-h-11");
+    await act(async () => drillButton?.click());
+    expect(onOpenCluster).toHaveBeenCalledWith(location.scopeId, location.clusterId);
+  });
+
   it("explains a hidden selection in Chinese without stale Wiki actions", async () => {
     const graph = graphFixture();
     const view = buildGraphExplorerView({
@@ -202,6 +226,7 @@ describe("GraphDetailsRail", () => {
         view,
         onSelectObject,
         onOpenScope,
+        onOpenCluster,
         onOpenFile,
         onSelectWikiTarget,
         onRequestGlobalSearch: requestSearch,

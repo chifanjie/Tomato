@@ -149,7 +149,9 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
       semanticGraph: graph,
       displayMode: "architecture",
       viewKey,
+      emptyNotice: null,
       onOpenScope: vi.fn(),
+      onOpenCluster: vi.fn(),
       onOpenFile: vi.fn(),
     });
   }

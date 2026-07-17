@@ -96,6 +96,8 @@ export default function WikiResponsiveShell({
   const [desktopEvidenceExpanded, setDesktopEvidenceExpanded] = useState(true);
   const navigationTriggerRef = useRef<HTMLButtonElement>(null);
   const evidenceTriggerRef = useRef<HTMLButtonElement>(null);
+  const desktopEvidenceCollapseRef = useRef<HTMLButtonElement>(null);
+  const desktopEvidenceExpandRef = useRef<HTMLButtonElement>(null);
   const navigationDrawerRef = useRef<HTMLDivElement>(null);
   const evidenceDrawerRef = useRef<HTMLDivElement>(null);
   const drawerFocusFrameRef = useRef<number | null>(null);
@@ -120,6 +122,14 @@ export default function WikiResponsiveShell({
     requestedNavigationInitialFocusRef.current = null;
     returnFocusRef.current = evidenceTriggerRef.current;
     dispatch({ type: "open-evidence" });
+  };
+  const collapseDesktopEvidence = () => {
+    setDesktopEvidenceExpanded(false);
+    queueMicrotask(() => desktopEvidenceExpandRef.current?.focus());
+  };
+  const expandDesktopEvidence = () => {
+    setDesktopEvidenceExpanded(true);
+    queueMicrotask(() => desktopEvidenceCollapseRef.current?.focus());
   };
   const closeDrawer = useCallback((type: "close" | "escape") => {
     const returnTarget = returnFocusRef.current;
@@ -193,10 +203,13 @@ export default function WikiResponsiveShell({
     const survivingPanel = drawer === "navigation"
       ? navigationDrawerRef.current
       : evidenceDrawerRef.current;
+    const fallback = drawer === "evidence" && !desktopEvidenceExpanded
+      ? desktopEvidenceExpandRef.current
+      : null;
     returnFocusRef.current = null;
     dispatch({ type: "close" });
-    queueMicrotask(() => survivingPanel?.focus());
-  }, [drawer, narrow]);
+    queueMicrotask(() => (survivingPanel ?? fallback)?.focus());
+  }, [desktopEvidenceExpanded, drawer, narrow]);
 
   useEffect(() => {
     if (hasEvidence || drawer !== "evidence") return;
@@ -340,10 +353,11 @@ export default function WikiResponsiveShell({
         {article}
         {hasEvidence && !narrow && !desktopEvidenceExpanded && (
           <button
+            ref={desktopEvidenceExpandRef}
             type="button"
             aria-label="展开源码证据"
             className="uc-wiki-desktop-evidence-toggle uc-wiki-desktop-evidence-expand"
-            onClick={() => setDesktopEvidenceExpanded(true)}
+            onClick={expandDesktopEvidence}
           >
             展开源码证据
           </button>
@@ -365,10 +379,11 @@ export default function WikiResponsiveShell({
         >
           {!narrow && (
             <button
+              ref={desktopEvidenceCollapseRef}
               type="button"
               aria-label="收起源码证据"
               className="uc-wiki-desktop-evidence-toggle uc-wiki-desktop-evidence-collapse"
-              onClick={() => setDesktopEvidenceExpanded(false)}
+              onClick={collapseDesktopEvidence}
             >
               收起源码证据
             </button>

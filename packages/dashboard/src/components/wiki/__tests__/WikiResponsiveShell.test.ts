@@ -418,6 +418,47 @@ describe("WikiResponsiveShell", () => {
     await act(async () => root.unmount());
   });
 
+  it("moves focus between the desktop evidence toggle controls", async () => {
+    installMatchMedia(false);
+    const { container, root } = await mountShell();
+    const collapse = container.querySelector<HTMLElement>('[aria-label="收起源码证据"]');
+    if (!collapse) throw new Error("missing desktop evidence collapse control");
+
+    collapse.focus();
+    await click(collapse);
+    const expand = container.querySelector<HTMLElement>('[aria-label="展开源码证据"]');
+    expect(document.activeElement).toBe(expand);
+
+    await click(expand);
+    expect(document.activeElement).toBe(
+      container.querySelector('[aria-label="收起源码证据"]'),
+    );
+
+    await act(async () => root.unmount());
+  });
+
+  it("focuses desktop evidence expansion when an open narrow drawer returns collapsed", async () => {
+    const media = installMatchMedia(false);
+    const { container, root } = await mountShell();
+    await click(container.querySelector('[aria-label="收起源码证据"]'));
+
+    await act(async () => media.setMatches(true));
+    await click(container.querySelector('[aria-label="打开源码证据"]'));
+    await flushAnimationFrames();
+    expect(document.activeElement).toBe(container.querySelector('[aria-label="关闭源码证据"]'));
+
+    await act(async () => {
+      media.setMatches(false);
+      await Promise.resolve();
+    });
+    expect(document.activeElement).toBe(
+      container.querySelector('[aria-label="展开源码证据"]'),
+    );
+    expect(container.querySelector('[aria-modal="true"]')).toBeNull();
+
+    await act(async () => root.unmount());
+  });
+
   it("owns the desktop grid, narrow drawers, header offset, and reduced motion contract", () => {
     const css = readFileSync(resolve(process.cwd(), "src/index.css"), "utf8");
     expect(css).toMatch(/\.uc-wiki-shell\s*\{[^}]*display:\s*grid/s);

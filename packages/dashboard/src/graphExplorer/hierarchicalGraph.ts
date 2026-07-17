@@ -93,8 +93,7 @@ export interface HierarchicalGraphPresentation {
   level: GraphNavigationLevel;
   relationshipSource: GraphRelationshipSource;
   scopeId: string | null;
-  /** Optional only for compatibility with Task 3-owned presentation fixtures. Builders always set it. */
-  clusterId?: string | null;
+  clusterId: string | null;
   fileId: string | null;
   scopeOptions: GraphScopeOption[];
   breadcrumbs: GraphBreadcrumbItem[];
@@ -129,17 +128,18 @@ export interface HierarchicalSemanticGraph extends Omit<SemanticGraph, "nodes" |
   presentation: HierarchicalGraphPresentation;
 }
 
+export interface HierarchicalGraphSelectionExpansion {
+  nodes: HierarchicalSemanticGraphNode[];
+  edges: HierarchicalSemanticGraphEdge[];
+}
+
 export interface BuildHierarchicalGraphInput {
   graph: KnowledgeGraph;
-  hierarchyIndex?: GraphHierarchyIndex;
+  hierarchyIndex: GraphHierarchyIndex;
   wikiIndex?: WikiRuntimeIndex;
   mode: GraphExplorerMode;
   navigation: GraphExplorerNavigation;
-  materializedNodeId?: string | null;
-  /** Compatibility shim for Task 3-owned callers. Ignored by the progressive base builder. */
-  focusNodeIds?: string[];
-  /** Compatibility shim for Task 3-owned callers. Ignored by the progressive base builder. */
-  selectedNodeId?: string | null;
+  materializedNodeId: string | null;
 }
 
 interface InternalScope {
@@ -155,7 +155,6 @@ const MAX_OVERVIEW_ARCHITECTURE = 24;
 const MAX_SCOPE_CLUSTERS = 24;
 const MAX_CLUSTER_FILES = 30;
 const MAX_CLUSTER_FILELESS_LEAVES = 12;
-const MAX_SCOPE_NODES = 30;
 const MAX_FILE_NODES = 38;
 const MAX_BOUNDARY_SCOPES = 8;
 const MAX_VISIBLE_EDGES = 100;
@@ -779,38 +778,6 @@ function graphMembers(graph: SemanticGraph): SemanticGraphEdgeMember[] {
   return graph.edges.flatMap((edge) => edge.members);
 }
 
-function memberAllowed(
-  member: SemanticGraphEdgeMember,
-  mode: GraphExplorerDisplayMode,
-  relationshipSource: GraphRelationshipSource,
-  includeContainment: boolean,
-): boolean {
-  if (includeContainment && member.type === "contains") return true;
-  if (mode === "call") {
-    if (relationshipSource === "calls") return member.type === "calls";
-    if (relationshipSource === "imports") return member.type === "imports";
-    return DEPENDENCY_EDGE_TYPES.has(member.type);
-  }
-  if (mode === "coverage") return member.type !== "calls";
-  return member.type !== "calls" && member.type !== "documents";
-}
-
-function nodeAllowed(
-  node: SemanticGraphNode,
-  mode: GraphExplorerDisplayMode,
-  relationshipSource: GraphRelationshipSource,
-): boolean {
-  if (mode === "call") {
-    if (relationshipSource === "calls") {
-      return node.rawType === "file" || node.rawType === "function" || node.rawType === "class";
-    }
-    if (relationshipSource === "imports") return node.rawType === "file" || node.rawType === "config";
-    return node.group !== "document" && node.group !== "symbol";
-  }
-  if (mode === "coverage") return true;
-  return node.group !== "symbol" && node.group !== "document";
-}
-
 function documentationSubjects(
   nodes: SemanticGraphNode[],
   mode: GraphExplorerDisplayMode,
@@ -885,157 +852,6 @@ function aggregateDocumentation(
   };
 }
 
-function scopeNode(
-  scope: InternalScope,
-  nodes: SemanticGraphNode[],
-  relationCount: number,
-  displayMode: GraphExplorerDisplayMode,
-  kind: "scope" | "boundary" = "scope",
-): HierarchicalSemanticGraphNode {
-  const { docs, documentationCounts: counts } = aggregateDocumentation(nodes, displayMode);
-  const fileCount = nodes.filter((node) => node.rawType === "file").length;
-  return {
-    id: `${kind === "boundary" ? "boundary" : "scope"}:${scope.id}`,
-    kind,
-    label: scope.label,
-    group: kind === "boundary" ? "other" : "module",
-    category: kind === "boundary" ? "other" : "module",
-    cluster: scope.label,
-    importance: kind === "boundary" ? 0.5 : 0.85,
-    rawType: "module",
-    summary: `${scope.description}。包含 ${nodes.length} 个节点、${fileCount} 个文件、${relationCount} 条跨范围关系。`,
-    docs,
-    documentationCounts: counts,
-    scopeId: scope.id,
-    containedNodeIds: nodes.map((node) => node.id),
-    childCount: nodes.length,
-    fileCount,
-    relationCount,
-    canDrillDown: true,
-  };
-}
-
-function remapMember(
-  member: SemanticGraphEdgeMember,
-  source: string,
-  target: string,
-): SemanticGraphEdgeMember {
-  return { ...member, id: `${member.id}:${source}->${target}`, source, target };
-}
-
-function bundleMembers(
-  members: SemanticGraphEdgeMember[],
-  selectedNodeId: string | null,
-): SemanticGraphEdge[] {
-  const bundled = new Map<string, SemanticGraphEdge>();
-  for (const member of members) {
-    if (member.source === member.target) continue;
-    const key = `${member.source}->${member.target}`;
-    const current = bundled.get(key);
-    if (current) {
-      current.bundledCount += 1;
-      current.weight = Math.max(current.weight, member.weight);
-      if (!current.edgeTypes.includes(member.type)) current.edgeTypes.push(member.type);
-      if (!current.directions.includes(member.direction)) current.directions.push(member.direction);
-      current.members.push(member);
-      continue;
-    }
-    bundled.set(key, {
-      id: key,
-      source: member.source,
-      target: member.target,
-      type: member.type,
-      direction: member.direction,
-      edgeTypes: [member.type],
-      directions: [member.direction],
-      weight: member.weight,
-      bundledCount: 1,
-      members: [member],
-    });
-  }
-  const ordered = [...bundled.values()]
-    .sort((a, b) => b.bundledCount - a.bundledCount || b.weight - a.weight || a.id.localeCompare(b.id));
-  if (!selectedNodeId) return ordered.slice(0, MAX_VISIBLE_EDGES);
-  const incident = ordered.filter((edge) => edge.source === selectedNodeId || edge.target === selectedNodeId);
-  const unrelated = ordered.filter((edge) => edge.source !== selectedNodeId && edge.target !== selectedNodeId);
-  return [...incident, ...unrelated.slice(0, Math.max(0, MAX_VISIBLE_EDGES - incident.length))];
-}
-
-function degreeByNode(members: SemanticGraphEdgeMember[]): Map<string, number> {
-  const degree = new Map<string, number>();
-  for (const member of members) {
-    degree.set(member.source, (degree.get(member.source) ?? 0) + 1);
-    degree.set(member.target, (degree.get(member.target) ?? 0) + 1);
-  }
-  return degree;
-}
-
-function pinnedNodeIds(
-  selectedNodeId: string | null,
-  candidates: SemanticGraphNode[],
-  members: SemanticGraphEdgeMember[],
-): Set<string> {
-  const candidateIds = new Set(candidates.map((node) => node.id));
-  const pinned = new Set<string>();
-  if (!selectedNodeId || !candidateIds.has(selectedNodeId)) return pinned;
-  pinned.add(selectedNodeId);
-  for (const member of members) {
-    if (member.source === selectedNodeId && candidateIds.has(member.target)) pinned.add(member.target);
-    if (member.target === selectedNodeId && candidateIds.has(member.source)) pinned.add(member.source);
-  }
-  return pinned;
-}
-
-function rankedNodes(
-  nodes: SemanticGraphNode[],
-  members: SemanticGraphEdgeMember[],
-  limit: number,
-  selectedNodeId: string | null,
-): SemanticGraphNode[] {
-  const pinned = pinnedNodeIds(selectedNodeId, nodes, members);
-  const degree = degreeByNode(members);
-  const relationScore = (node: SemanticGraphNode): number =>
-    node.docs.relation === "direct" ? 2 : node.docs.relation === "context" ? 1 : 0;
-  const sortByRank = (a: SemanticGraphNode, b: SemanticGraphNode): number => {
-    const problemOrder = Number(hasDocumentationProblem(a.docs)) - Number(hasDocumentationProblem(b.docs));
-    if (problemOrder !== 0) return problemOrder;
-    const aScore = a.importance * 10 + (degree.get(a.id) ?? 0) + relationScore(a);
-    const bScore = b.importance * 10 + (degree.get(b.id) ?? 0) + relationScore(b);
-    return bScore - aScore || a.label.localeCompare(b.label) || a.id.localeCompare(b.id);
-  };
-  const selected = nodes.filter((node) => node.id === selectedNodeId);
-  const neighbors = nodes
-    .filter((node) => node.id !== selectedNodeId && pinned.has(node.id))
-    .sort(sortByRank);
-  const required = [...selected, ...neighbors];
-  const remaining = nodes.filter((node) => !pinned.has(node.id)).sort(sortByRank);
-  return [...required, ...remaining.slice(0, Math.max(0, limit - required.length))];
-}
-
-function scopeOptions(
-  scopes: InternalScope[],
-  rawNodesById: Map<string, SemanticGraphNode>,
-  availableNodeIds: Set<string>,
-  displayMode: GraphExplorerDisplayMode,
-): GraphScopeOption[] {
-  return scopes
-    .map((scope) => {
-      const nodes = scope.nodeIds
-        .filter((nodeId) => availableNodeIds.has(nodeId))
-        .map((nodeId) => rawNodesById.get(nodeId))
-        .filter((node): node is SemanticGraphNode => Boolean(node));
-      return {
-        id: scope.id,
-        label: scope.label,
-        description: scope.description,
-        nodeCount: nodes.length,
-        fileCount: nodes.filter((node) => node.rawType === "file").length,
-        documentationCounts: aggregateDocumentation(nodes, displayMode).documentationCounts,
-      };
-    })
-    .filter((scope) => scope.nodeCount > 0)
-    .sort((a, b) => b.nodeCount - a.nodeCount || a.label.localeCompare(b.label));
-}
 
 function fallbackNotice(source: GraphRelationshipSource, mode: GraphExplorerDisplayMode): string | null {
   if (mode !== "call") return null;
@@ -1074,244 +890,6 @@ function presentation(
   };
 }
 
-function buildOverview(
-  displayMode: GraphExplorerDisplayMode,
-  relationshipSource: GraphRelationshipSource,
-  scopes: InternalScope[],
-  rawNodes: SemanticGraphNode[],
-  members: SemanticGraphEdgeMember[],
-  nodeToScopeId: Map<string, string>,
-  options: GraphScopeOption[],
-  focusApplied: boolean,
-  selectedNodeId: string | null,
-): HierarchicalSemanticGraph {
-  const rawNodesById = new Map(rawNodes.map((node) => [node.id, node]));
-  const visibleScopeIds = new Set(options.slice(0, MAX_OVERVIEW_SCOPES).map((scope) => scope.id));
-  const selectedScope = options.find((scope) => `scope:${scope.id}` === selectedNodeId);
-  if (selectedScope) visibleScopeIds.add(selectedScope.id);
-  const allowedMembers = members.filter((member) => memberAllowed(member, displayMode, relationshipSource, false));
-  const crossCount = new Map<string, number>();
-  for (const member of allowedMembers) {
-    const sourceScope = nodeToScopeId.get(member.source);
-    const targetScope = nodeToScopeId.get(member.target);
-    if (!sourceScope || !targetScope || sourceScope === targetScope) continue;
-    crossCount.set(sourceScope, (crossCount.get(sourceScope) ?? 0) + 1);
-    crossCount.set(targetScope, (crossCount.get(targetScope) ?? 0) + 1);
-  }
-  const nodes = scopes
-    .filter((scope) => visibleScopeIds.has(scope.id))
-    .map((scope) => {
-      const children = scope.nodeIds
-        .map((nodeId) => rawNodesById.get(nodeId))
-        .filter((node): node is SemanticGraphNode => Boolean(node));
-      return scopeNode(scope, children, crossCount.get(scope.id) ?? 0, displayMode);
-    })
-    .sort((a, b) => (b.childCount ?? 0) - (a.childCount ?? 0) || a.label.localeCompare(b.label));
-  const visibleIds = new Set(nodes.map((node) => node.scopeId));
-  const remapped = allowedMembers.flatMap((member) => {
-    const sourceScope = nodeToScopeId.get(member.source);
-    const targetScope = nodeToScopeId.get(member.target);
-    if (!sourceScope || !targetScope || sourceScope === targetScope) return [];
-    if (!visibleIds.has(sourceScope) || !visibleIds.has(targetScope)) return [];
-    return [remapMember(member, `scope:${sourceScope}`, `scope:${targetScope}`)];
-  });
-  return {
-    nodes,
-    edges: bundleMembers(remapped, selectedNodeId),
-    presentation: presentation(
-      displayMode,
-      relationshipSource,
-      "overview",
-      options,
-      [{ level: "overview", label: "全局概览" }],
-      options.length,
-      Math.max(0, options.length - nodes.length),
-      focusApplied,
-    ),
-  };
-}
-
-function buildScopeDetail(
-  displayMode: GraphExplorerDisplayMode,
-  relationshipSource: GraphRelationshipSource,
-  selectedScope: InternalScope,
-  scopes: InternalScope[],
-  rawNodes: SemanticGraphNode[],
-  members: SemanticGraphEdgeMember[],
-  nodeToScopeId: Map<string, string>,
-  options: GraphScopeOption[],
-  focusApplied: boolean,
-  selectedNodeId: string | null,
-): HierarchicalSemanticGraph {
-  const rawNodesById = new Map(rawNodes.map((node) => [node.id, node]));
-  const allowedMembers = members.filter((member) => memberAllowed(member, displayMode, relationshipSource, true));
-  const candidates = selectedScope.nodeIds
-    .map((nodeId) => rawNodesById.get(nodeId))
-    .filter((node): node is SemanticGraphNode => Boolean(node))
-    .filter((node) => nodeAllowed(node, displayMode, relationshipSource));
-  const visibleInternal = rankedNodes(candidates, allowedMembers, MAX_SCOPE_NODES, selectedNodeId).map((node) => ({
-    ...node,
-    kind: "node" as const,
-    scopeId: selectedScope.id,
-    canDrillDown: node.rawType === "file",
-  }));
-  const visibleInternalIds = new Set(visibleInternal.map((node) => node.id));
-
-  const boundaryCounts = new Map<string, number>();
-  for (const member of allowedMembers) {
-    const sourceInside = visibleInternalIds.has(member.source);
-    const targetInside = visibleInternalIds.has(member.target);
-    if (sourceInside === targetInside) continue;
-    const externalId = sourceInside ? member.target : member.source;
-    const boundaryScope = nodeToScopeId.get(externalId);
-    if (!boundaryScope || boundaryScope === selectedScope.id) continue;
-    boundaryCounts.set(boundaryScope, (boundaryCounts.get(boundaryScope) ?? 0) + 1);
-  }
-  const orderedBoundaryIds = [...boundaryCounts.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([scopeId]) => scopeId);
-  const boundaryScopeIds = new Set(orderedBoundaryIds.slice(0, MAX_BOUNDARY_SCOPES));
-  if (selectedNodeId && visibleInternalIds.has(selectedNodeId)) {
-    for (const member of allowedMembers) {
-      const externalId = member.source === selectedNodeId
-        ? member.target
-        : member.target === selectedNodeId ? member.source : null;
-      if (!externalId) continue;
-      const boundaryScopeId = nodeToScopeId.get(externalId);
-      if (boundaryScopeId && boundaryScopeId !== selectedScope.id && boundaryCounts.has(boundaryScopeId)) {
-        boundaryScopeIds.add(boundaryScopeId);
-      }
-    }
-  }
-  const selectedBoundaryId = selectedNodeId?.startsWith("boundary:")
-    ? selectedNodeId.slice("boundary:".length)
-    : null;
-  if (selectedBoundaryId && boundaryCounts.has(selectedBoundaryId)) boundaryScopeIds.add(selectedBoundaryId);
-  const boundaries = scopes
-    .filter((scope) => boundaryScopeIds.has(scope.id))
-    .map((scope) => scopeNode(
-      scope,
-      scope.nodeIds
-        .map((nodeId) => rawNodesById.get(nodeId))
-        .filter((node): node is SemanticGraphNode => Boolean(node)),
-      boundaryCounts.get(scope.id) ?? 0,
-      displayMode,
-      "boundary",
-    ));
-
-  const remapped = allowedMembers.flatMap((member) => {
-    const sourceInside = visibleInternalIds.has(member.source);
-    const targetInside = visibleInternalIds.has(member.target);
-    if (sourceInside && targetInside) return [member];
-    if (sourceInside === targetInside) return [];
-    const externalId = sourceInside ? member.target : member.source;
-    const boundaryScope = nodeToScopeId.get(externalId);
-    if (!boundaryScope || !boundaryScopeIds.has(boundaryScope)) return [];
-    return [sourceInside
-      ? remapMember(member, member.source, `boundary:${boundaryScope}`)
-      : remapMember(member, `boundary:${boundaryScope}`, member.target)];
-  });
-  return {
-    nodes: [...visibleInternal, ...boundaries],
-    edges: bundleMembers(remapped, selectedNodeId),
-    presentation: presentation(
-      displayMode,
-      relationshipSource,
-      "scope",
-      options,
-      [
-        { level: "overview", label: "全局概览" },
-        { level: "scope", label: selectedScope.label, scopeId: selectedScope.id },
-      ],
-      candidates.length + boundaries.length,
-      Math.max(0, candidates.length - visibleInternal.length),
-      focusApplied,
-      selectedScope.id,
-    ),
-  };
-}
-
-function parentFileId(graph: KnowledgeGraph, nodeId: string): string | null {
-  const contains = graph.edges.find((edge) => edge.type === "contains" && edge.target === nodeId);
-  return contains?.source ?? null;
-}
-
-function buildFileDetail(
-  graph: KnowledgeGraph,
-  displayMode: GraphExplorerDisplayMode,
-  relationshipSource: GraphRelationshipSource,
-  selectedScope: InternalScope,
-  fileId: string,
-  rawNodes: SemanticGraphNode[],
-  members: SemanticGraphEdgeMember[],
-  options: GraphScopeOption[],
-  focusApplied: boolean,
-  selectedNodeId: string | null,
-): HierarchicalSemanticGraph | null {
-  const rawNodesById = new Map(rawNodes.map((node) => [node.id, node]));
-  const file = rawNodesById.get(fileId);
-  if (!file || file.rawType !== "file") return null;
-  const allowedMembers = members.filter((member) => memberAllowed(member, displayMode, relationshipSource, true));
-  const candidateIds = new Set<string>([fileId]);
-  for (const member of allowedMembers) {
-    if (member.type === "contains" && member.source === fileId) candidateIds.add(member.target);
-  }
-
-  if (displayMode === "call" && relationshipSource === "calls") {
-    const ownedSymbols = new Set(candidateIds);
-    for (const member of allowedMembers) {
-      if (member.type !== "calls") continue;
-      if (ownedSymbols.has(member.source)) candidateIds.add(member.target);
-      if (ownedSymbols.has(member.target)) candidateIds.add(member.source);
-    }
-    for (const nodeId of [...candidateIds]) {
-      const parentId = parentFileId(graph, nodeId);
-      if (parentId && rawNodesById.has(parentId)) candidateIds.add(parentId);
-    }
-  } else {
-    for (const member of allowedMembers) {
-      if (member.source === fileId) candidateIds.add(member.target);
-      if (member.target === fileId) candidateIds.add(member.source);
-    }
-  }
-
-  const candidates = [...candidateIds]
-    .map((nodeId) => rawNodesById.get(nodeId))
-    .filter((node): node is SemanticGraphNode => Boolean(node));
-  const ranked = rankedNodes(candidates, allowedMembers, MAX_FILE_NODES, selectedNodeId);
-  const ordered = [file, ...ranked.filter((node) => node.id !== fileId)];
-  const nodes: HierarchicalSemanticGraphNode[] = ordered.map((node) => ({
-    ...node,
-    kind: "node",
-    scopeId: selectedScope.id,
-    canDrillDown: false,
-  }));
-  const visibleIds = new Set(nodes.map((node) => node.id));
-  const visibleMembers = allowedMembers.filter((member) =>
-    visibleIds.has(member.source) && visibleIds.has(member.target));
-  return {
-    nodes,
-    edges: bundleMembers(visibleMembers, selectedNodeId),
-    presentation: presentation(
-      displayMode,
-      relationshipSource,
-      "file",
-      options,
-      [
-        { level: "overview", label: "全局概览" },
-        { level: "scope", label: selectedScope.label, scopeId: selectedScope.id },
-        { level: "file", label: file.label, scopeId: selectedScope.id, fileId },
-      ],
-      candidates.length,
-      Math.max(0, candidates.length - nodes.length),
-      focusApplied,
-      selectedScope.id,
-      null,
-      fileId,
-    ),
-  };
-}
-
 interface ProjectedEdgeMember {
   source: string;
   target: string;
@@ -1327,7 +905,10 @@ function aggregateEdgeKey(
   return [source, target, member.type, member.direction].join("\u0000");
 }
 
-function bundleProjectedMembers(projected: ProjectedEdgeMember[]): HierarchicalSemanticGraphEdge[] {
+function bundleProjectedMembers(
+  projected: ProjectedEdgeMember[],
+  limit: number | null = MAX_VISIBLE_EDGES,
+): HierarchicalSemanticGraphEdge[] {
   const bundled = new Map<string, HierarchicalSemanticGraphEdge>();
   for (const projection of projected) {
     if (projection.source === projection.target) continue;
@@ -1353,12 +934,12 @@ function bundleProjectedMembers(projected: ProjectedEdgeMember[]): HierarchicalS
       ...(projection.boundaryContext ? { boundaryContext: projection.boundaryContext } : {}),
     });
   }
-  return [...bundled.values()]
+  const ordered = [...bundled.values()]
     .sort((left, right) => right.bundledCount - left.bundledCount
       || right.weight - left.weight
       || compareStable(left.id, right.id))
-    .slice(0, MAX_VISIBLE_EDGES)
     .map((edge) => ({ ...edge, bundledCount: edge.members.length }));
+  return limit === null ? ordered : ordered.slice(0, limit);
 }
 
 function progressiveMemberAllowed(
@@ -2157,89 +1738,305 @@ export function buildHierarchicalSemanticGraph({
   hierarchyIndex,
   wikiIndex,
   mode,
-  focusNodeIds = [],
-  selectedNodeId = null,
   navigation,
-  materializedNodeId = null,
+  materializedNodeId,
 }: BuildHierarchicalGraphInput): HierarchicalSemanticGraph {
-  if (hierarchyIndex) {
-    return buildProgressiveHierarchicalSemanticGraph({
-      graph,
-      hierarchyIndex,
-      wikiIndex,
-      mode,
-      navigation,
-      materializedNodeId,
+  return buildProgressiveHierarchicalSemanticGraph({
+    graph,
+    hierarchyIndex,
+    wikiIndex,
+    mode,
+    navigation,
+    materializedNodeId,
+  });
+}
+
+function semanticMemberIdentity(member: SemanticGraphEdgeMember): string {
+  return member.id || [member.source, member.target, member.type, member.direction, member.weight].join("\u0000");
+}
+
+export function buildHierarchySelectionExpansion(input: {
+  graph: KnowledgeGraph;
+  hierarchyIndex: GraphHierarchyIndex;
+  baseGraph: HierarchicalSemanticGraph;
+  wikiIndex?: WikiRuntimeIndex;
+  mode: GraphExplorerMode;
+  selectedNodeId: string | null;
+}): HierarchicalGraphSelectionExpansion {
+  const { graph, hierarchyIndex, baseGraph, wikiIndex, mode, selectedNodeId } = input;
+  if (!selectedNodeId) return { nodes: [], edges: [] };
+
+  const raw = buildSemanticGraph({ graph, wikiIndex, mode: "global", focusNodeIds: [] });
+  const rawNodesById = new Map(raw.nodes.map((node) => [node.id, node]));
+  const displayMode = normalizeGraphExplorerMode(mode);
+  const relationshipSource = baseGraph.presentation.relationshipSource;
+  const rawMembers = graphMembers(raw);
+  const members = rawMembers.filter((member) =>
+    progressiveMemberAllowed(member, displayMode, relationshipSource, true));
+  const level = baseGraph.presentation.level;
+  const currentScopeId = baseGraph.presentation.scopeId;
+  const currentClusterId = baseGraph.presentation.clusterId;
+  const currentFileId = baseGraph.presentation.fileId;
+  const portalDescriptors = new Map<string, { currentScopeId: string; targetScopeId: string }>();
+  for (const member of rawMembers) {
+    const sourceScopeId = hierarchyIndex.nodeLocationById.get(member.source)?.scopeId;
+    const targetScopeId = hierarchyIndex.nodeLocationById.get(member.target)?.scopeId;
+    if (!sourceScopeId || !targetScopeId || sourceScopeId === targetScopeId) continue;
+    portalDescriptors.set(boundaryNodeId(sourceScopeId, targetScopeId), {
+      currentScopeId: sourceScopeId,
+      targetScopeId,
+    });
+    portalDescriptors.set(boundaryNodeId(targetScopeId, sourceScopeId), {
+      currentScopeId: targetScopeId,
+      targetScopeId: sourceScopeId,
     });
   }
-  const displayMode = normalizeGraphExplorerMode(mode);
-  const relationshipSource = resolveGraphRelationshipSource(graph);
-  const raw = buildSemanticGraph({ graph, wikiIndex, mode: "global", focusNodeIds });
-  const rawNodesById = new Map(raw.nodes.map((node) => [node.id, node]));
-  const availableNodeIds = new Set(raw.nodes.map((node) => node.id));
-  const members = graphMembers(raw);
-  const { scopes, nodeToScopeId } = deriveScopes(graph);
-  const options = scopeOptions(scopes, rawNodesById, availableNodeIds, displayMode);
-  const availableScopeIds = new Set(options.map((scope) => scope.id));
-  const focusApplied = focusNodeIds.some((nodeId) => availableNodeIds.has(nodeId));
-  const selectedScope = navigation.scopeId && availableScopeIds.has(navigation.scopeId)
-    ? scopes.find((scope) => scope.id === navigation.scopeId) ?? null
-    : null;
 
-  if (navigation.level === "file" && selectedScope && navigation.fileId) {
-    const fileDetail = buildFileDetail(
-      graph,
-      displayMode,
-      relationshipSource,
-      selectedScope,
-      navigation.fileId,
-      raw.nodes,
-      members,
-      options,
-      focusApplied,
-      selectedNodeId,
-    );
-    if (fileDetail) return fileDetail;
+  const mapOverviewEndpoint = (nodeId: string): string | null => {
+    const node = rawNodesById.get(nodeId);
+    const location = hierarchyIndex.nodeLocationById.get(nodeId);
+    if (!node || !location) return null;
+    return graphNodePlacementClass(node.rawType) === "architecture-context"
+      ? nodeId
+      : scopeNodeId(location.scopeId);
+  };
+  const mapScopeEndpoint = (nodeId: string): string | null => {
+    const node = rawNodesById.get(nodeId);
+    const location = hierarchyIndex.nodeLocationById.get(nodeId);
+    if (!node || !currentScopeId || location?.scopeId !== currentScopeId) return null;
+    if (graphNodePlacementClass(node.rawType) === "architecture-context") return nodeId;
+    return location.clusterId ?? null;
+  };
+  const mapClusterEndpoint = (nodeId: string): string | null => {
+    const node = rawNodesById.get(nodeId);
+    const location = hierarchyIndex.nodeLocationById.get(nodeId);
+    if (!node || !currentScopeId || !currentClusterId
+      || location?.scopeId !== currentScopeId || location.clusterId !== currentClusterId) return null;
+    if (node.rawType === "file") return node.id;
+    if (graphNodePlacementClass(node.rawType) !== "file-leaf") return null;
+    return location.fileId ?? node.id;
+  };
+  const projectMember = (member: SemanticGraphEdgeMember): ProjectedEdgeMember[] => {
+    const sourceLocation = hierarchyIndex.nodeLocationById.get(member.source);
+    const targetLocation = hierarchyIndex.nodeLocationById.get(member.target);
+    if (level === "file") {
+      return rawNodesById.has(member.source) && rawNodesById.has(member.target)
+        ? [{ source: member.source, target: member.target, member }]
+        : [];
+    }
+    if (!sourceLocation?.scopeId || !targetLocation?.scopeId) return [];
+    if (level === "overview") {
+      if (sourceLocation.scopeId !== targetLocation.scopeId) {
+        const source = mapOverviewEndpoint(member.source);
+        const target = mapOverviewEndpoint(member.target);
+        const outgoingPortal = boundaryNodeId(sourceLocation.scopeId, targetLocation.scopeId);
+        const incomingPortal = boundaryNodeId(targetLocation.scopeId, sourceLocation.scopeId);
+        return [
+          ...(source ? [{
+            source,
+            target: outgoingPortal,
+            member,
+            boundaryContext: {
+              currentScopeId: sourceLocation.scopeId,
+              targetScopeId: targetLocation.scopeId,
+            },
+          }] : []),
+          ...(target ? [{
+            source: incomingPortal,
+            target,
+            member,
+            boundaryContext: {
+              currentScopeId: targetLocation.scopeId,
+              targetScopeId: sourceLocation.scopeId,
+            },
+          }] : []),
+        ];
+      }
+      const source = mapOverviewEndpoint(member.source);
+      const target = mapOverviewEndpoint(member.target);
+      return source && target ? [{ source, target, member }] : [];
+    }
+    if (!currentScopeId) return [];
+    const mapInternal = level === "scope" ? mapScopeEndpoint : mapClusterEndpoint;
+    if (sourceLocation.scopeId === currentScopeId && targetLocation.scopeId === currentScopeId) {
+      const source = mapInternal(member.source);
+      const target = mapInternal(member.target);
+      return source && target ? [{ source, target, member }] : [];
+    }
+    if (sourceLocation.scopeId === currentScopeId) {
+      const source = mapInternal(member.source);
+      return source ? [{
+        source,
+        target: boundaryNodeId(currentScopeId, targetLocation.scopeId),
+        member,
+        boundaryContext: { currentScopeId, targetScopeId: targetLocation.scopeId },
+      }] : [];
+    }
+    if (targetLocation.scopeId === currentScopeId) {
+      const target = mapInternal(member.target);
+      return target ? [{
+        source: boundaryNodeId(currentScopeId, sourceLocation.scopeId),
+        target,
+        member,
+        boundaryContext: { currentScopeId, targetScopeId: sourceLocation.scopeId },
+      }] : [];
+    }
+    return [];
+  };
+
+  const projected = members.flatMap(projectMember).filter(({ source, target }) => source !== target);
+  const baseNodeById = new Map(baseGraph.nodes.map((node) => [node.id, node]));
+  const rawSelected = rawNodesById.get(selectedNodeId);
+  const selectedLocation = hierarchyIndex.nodeLocationById.get(selectedNodeId);
+  const selectedBoundaryCandidate = portalDescriptors.get(selectedNodeId);
+  const boundaryHasCurrentContext = (boundary: { currentScopeId: string; targetScopeId: string }): boolean => {
+    if (level === "overview") return true;
+    if (level === "file" || boundary.currentScopeId !== currentScopeId) return false;
+    if (level === "scope") return true;
+    return rawMembers.some((member) => {
+      const sourceLocation = hierarchyIndex.nodeLocationById.get(member.source);
+      const targetLocation = hierarchyIndex.nodeLocationById.get(member.target);
+      if (sourceLocation?.scopeId === boundary.currentScopeId
+        && targetLocation?.scopeId === boundary.targetScopeId) {
+        return sourceLocation.clusterId === currentClusterId;
+      }
+      if (targetLocation?.scopeId === boundary.currentScopeId
+        && sourceLocation?.scopeId === boundary.targetScopeId) {
+        return targetLocation.clusterId === currentClusterId;
+      }
+      return false;
+    });
+  };
+  const selectedBoundary = selectedBoundaryCandidate
+    && boundaryHasCurrentContext(selectedBoundaryCandidate)
+    ? selectedBoundaryCandidate
+    : null;
+  const selectedScope = hierarchyIndex.scopes.find((scope) => scopeNodeId(scope.id) === selectedNodeId);
+  const selectedCluster = hierarchyIndex.clusterById.get(selectedNodeId);
+  const fileOwnedIds = new Set(level === "file" && currentFileId
+    ? raw.nodes.filter((node) => {
+      const location = hierarchyIndex.nodeLocationById.get(node.id);
+      return node.id === currentFileId || location?.fileId === currentFileId;
+    }).map((node) => node.id)
+    : []);
+  const fileCandidateIds = new Set(fileOwnedIds);
+  if (level === "file") {
+    for (const member of members) {
+      if (fileOwnedIds.has(member.source)) fileCandidateIds.add(member.target);
+      if (fileOwnedIds.has(member.target)) fileCandidateIds.add(member.source);
+    }
   }
-  if ((navigation.level === "scope" || navigation.level === "file") && selectedScope) {
-    return buildScopeDetail(
-      displayMode,
-      relationshipSource,
-      selectedScope,
-      scopes,
-      raw.nodes,
-      members,
-      nodeToScopeId,
-      options,
-      focusApplied,
-      selectedNodeId,
-    );
-  }
-  if (options.length === 0) {
-    return {
-      nodes: [],
-      edges: [],
-      presentation: presentation(
-        displayMode,
-        relationshipSource,
-        "overview",
-        [],
-        [{ level: "overview", label: "全局概览" }],
-        0,
-        0,
-        focusApplied,
-      ),
-    };
-  }
-  return buildOverview(
-    displayMode,
-    relationshipSource,
-    scopes,
-    raw.nodes,
-    members,
-    nodeToScopeId,
-    options,
-    focusApplied,
-    selectedNodeId,
+  const selectedIsRepresentableRaw = Boolean(rawSelected && (
+    baseNodeById.has(selectedNodeId)
+    || (level === "overview" && graphNodePlacementClass(rawSelected.rawType) === "architecture-context")
+    || (level === "scope" && selectedLocation?.scopeId === currentScopeId
+      && graphNodePlacementClass(rawSelected.rawType) === "architecture-context")
+    || (level === "cluster" && selectedLocation?.clusterId === currentClusterId
+      && (rawSelected.rawType === "file"
+        || (graphNodePlacementClass(rawSelected.rawType) === "file-leaf" && !selectedLocation.fileId)))
+    || (level === "file" && fileCandidateIds.has(selectedNodeId))
+  ));
+  const selectedIsRepresentableAggregate = Boolean(
+    (selectedScope && level === "overview")
+    || (selectedCluster && level === "scope" && selectedCluster.scopeId === currentScopeId)
+    || selectedBoundary,
   );
+  if (!selectedIsRepresentableRaw && !selectedIsRepresentableAggregate) {
+    return { nodes: [], edges: [] };
+  }
+
+  const incidentProjected = selectedIsRepresentableRaw
+    ? members.flatMap((member): ProjectedEdgeMember[] =>
+      member.source === selectedNodeId || member.target === selectedNodeId
+        ? [{ source: member.source, target: member.target, member }]
+        : [])
+    : projected.filter(({ source, target }) => source === selectedNodeId || target === selectedNodeId);
+  const requiredIds = new Set<string>([
+    selectedNodeId,
+    ...incidentProjected.flatMap(({ source, target }) => [source, target]),
+  ]);
+  const nodeForId = (id: string): HierarchicalSemanticGraphNode | null => {
+    const base = baseNodeById.get(id);
+    if (base) return base;
+    const rawNode = rawNodesById.get(id);
+    if (rawNode) return progressiveRawNode(rawNode, hierarchyIndex, rawNode.rawType === "file");
+    const scope = hierarchyIndex.scopes.find((candidate) => scopeNodeId(candidate.id) === id);
+    if (scope) return hierarchyScopeNode(scope, rawNodesById, members, displayMode);
+    const cluster = hierarchyIndex.clusterById.get(id);
+    if (cluster) return hierarchyClusterNode(cluster, rawNodesById, members, displayMode);
+    const boundaryCandidate = portalDescriptors.get(id);
+    const boundary = boundaryCandidate
+      && boundaryHasCurrentContext(boundaryCandidate)
+      ? boundaryCandidate
+      : null;
+    const targetScope = boundary ? hierarchyIndex.scopeById.get(boundary.targetScopeId) : undefined;
+    if (!boundary || !targetScope) return null;
+    const relationCount = rawMembers.filter((member) => {
+      const sourceScope = hierarchyIndex.nodeLocationById.get(member.source)?.scopeId;
+      const targetScopeId = hierarchyIndex.nodeLocationById.get(member.target)?.scopeId;
+      return (sourceScope === boundary.currentScopeId && targetScopeId === boundary.targetScopeId)
+        || (sourceScope === boundary.targetScopeId && targetScopeId === boundary.currentScopeId);
+    }).length;
+    return hierarchyBoundaryNode(
+      boundary.currentScopeId,
+      targetScope,
+      rawNodesById,
+      relationCount,
+      displayMode,
+    );
+  };
+  const nodes = [...requiredIds]
+    .sort(compareStable)
+    .map(nodeForId)
+    .filter((node): node is HierarchicalSemanticGraphNode => Boolean(node));
+  const edges = bundleProjectedMembers(incidentProjected, null);
+  return { nodes, edges };
+}
+
+export function mergeHierarchySelectionExpansion(
+  baseGraph: HierarchicalSemanticGraph,
+  expansion: HierarchicalGraphSelectionExpansion,
+): HierarchicalSemanticGraph {
+  const baseNodeIds = new Set(baseGraph.nodes.map((node) => node.id));
+  const missingNodes = expansion.nodes
+    .filter((node) => !baseNodeIds.has(node.id))
+    .sort((left, right) => compareStable(left.id, right.id));
+  const edgesById = new Map(baseGraph.edges.map((edge) => [edge.id, edge]));
+  const appendedEdges: HierarchicalSemanticGraphEdge[] = [];
+  for (const expansionEdge of expansion.edges) {
+    const baseEdge = edgesById.get(expansionEdge.id);
+    if (!baseEdge) {
+      appendedEdges.push(expansionEdge);
+      edgesById.set(expansionEdge.id, expansionEdge);
+      continue;
+    }
+    const membersById = new Map(baseEdge.members.map((member) => [semanticMemberIdentity(member), member]));
+    for (const member of expansionEdge.members) {
+      const identity = semanticMemberIdentity(member);
+      if (!membersById.has(identity)) membersById.set(identity, member);
+    }
+    const members = [...membersById.values()];
+    const merged: HierarchicalSemanticGraphEdge = {
+      ...baseEdge,
+      weight: Math.max(baseEdge.weight, expansionEdge.weight, ...members.map((member) => member.weight)),
+      bundledCount: members.length,
+      members,
+      edgeTypes: [...new Set(members.map((member) => member.type))],
+      directions: [...new Set(members.map((member) => member.direction))],
+      ...(baseEdge.boundaryContext || expansionEdge.boundaryContext
+        ? { boundaryContext: baseEdge.boundaryContext ?? expansionEdge.boundaryContext }
+        : {}),
+    };
+    edgesById.set(merged.id, merged);
+  }
+  const edges = [
+    ...baseGraph.edges.map((edge) => edgesById.get(edge.id)!),
+    ...appendedEdges.sort((left, right) => compareStable(left.id, right.id)),
+  ];
+  return {
+    ...baseGraph,
+    nodes: [...baseGraph.nodes, ...missingNodes],
+    edges,
+    presentation: baseGraph.presentation,
+  };
 }

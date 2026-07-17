@@ -117,35 +117,47 @@ describe("large repository acceptance", () => {
     }
   });
 
-  it("keeps selected and one-hop nodes after scope caps", () => {
+  it("keeps a selected file and its exact neighborhood outside cluster caps without changing the base", () => {
     const fixture = largeRepositoryFixture();
     const runtime = buildWikiRuntimeIndex(fixture.wiki);
+    const hierarchyIndex = buildGraphHierarchyIndex(fixture.graph);
+    const scope = hierarchyIndex.scopes[0]!;
+    const cluster = hierarchyIndex.clusterById.get(scope.clusterIds[0]!)!;
+    const navigation = { level: "cluster" as const, scopeId: scope.id, clusterId: cluster.id };
     const cappedView = buildGraphExplorerView({
       graph: fixture.graph,
+      hierarchyIndex,
       wikiIndex: runtime,
       mode: "call",
-      focusNodeIds: [],
       selectedNodeId: null,
-      navigation: { level: "scope", scopeId: "layer:scope:src" },
+      navigation,
+      materializedNodeId: null,
     });
-    const cappedIds = new Set(cappedView.semanticGraph.nodes.map((node) => node.id));
-    expect(cappedIds.has(fixture.selectedId)).toBe(false);
-    expect(cappedIds.has(fixture.neighborId)).toBe(false);
-    expect(cappedView.semanticGraph.presentation.hiddenNodeCount).toBeGreaterThan(0);
+    const cappedIds = new Set(cappedView.baseGraph.nodes.map((node) => node.id));
+    const selectedId = cluster.fileIds.find((fileId) => !cappedIds.has(fileId))!;
+    const oneHopIds = fixture.graph.edges.flatMap((edge) =>
+      edge.source === selectedId ? [edge.target] : edge.target === selectedId ? [edge.source] : []);
+    expect(selectedId).toBeDefined();
+    expect(cappedView.baseGraph.presentation.hiddenNodeCount).toBeGreaterThan(0);
 
     const view = buildGraphExplorerView({
       graph: fixture.graph,
+      hierarchyIndex,
       wikiIndex: runtime,
       mode: "call",
-      focusNodeIds: [],
-      selectedNodeId: fixture.selectedId,
-      navigation: { level: "scope", scopeId: "layer:scope:src" },
+      selectedNodeId: selectedId,
+      navigation,
+      materializedNodeId: null,
     });
 
     const ids = new Set(view.semanticGraph.nodes.map((node) => node.id));
-    expect(ids.has(fixture.selectedId)).toBe(true);
-    expect(ids.has(fixture.neighborId)).toBe(true);
-    expect(view.semanticGraph.nodes.length).toBeLessThan(100);
+    expect(view.baseGraph.nodes.map((node) => node.id)).toEqual(cappedView.baseGraph.nodes.map((node) => node.id));
+    expect(ids.has(selectedId)).toBe(true);
+    for (const oneHopId of oneHopIds) expect(ids.has(oneHopId)).toBe(true);
+    expect(view.semanticGraph.nodes.length).toBeGreaterThan(view.baseGraph.nodes.length);
+    expect(view.semanticGraph.presentation).toBe(view.baseGraph.presentation);
+    expect(view.selection?.primaryDirectPageId).toMatch(/^page:file-/);
+    expect(view.hiddenSelectedNode).toBeNull();
   });
 
   it("keeps the complete repository reachable through capped progressive graph levels", () => {

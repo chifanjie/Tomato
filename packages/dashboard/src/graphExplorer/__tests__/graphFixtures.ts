@@ -118,7 +118,6 @@ function finalizeGraph(graph: KnowledgeGraph): KnowledgeGraph {
     for (const nodeId of layer.nodeIds) {
       const node = nodesById.get(nodeId);
       if (!node) throw new Error(`层 ${layer.id} 引用了不存在的节点：${nodeId}`);
-      if (node.type !== "file") throw new Error(`层 ${layer.id} 只能包含文件节点：${nodeId}`);
       const previousLayer = layerByNodeId.get(nodeId);
       if (previousLayer) throw new Error(`节点 ${nodeId} 同时属于层 ${previousLayer} 与 ${layer.id}`);
       layerByNodeId.set(nodeId, layer.id);
@@ -670,6 +669,7 @@ export function graphWithDenseSelection(edgeCount = 110): KnowledgeGraph {
   if (!Number.isSafeInteger(edgeCount) || edgeCount < 1) {
     throw new Error(`密集关系数量必须是正安全整数：${edgeCount}`);
   }
+  const file = fileNode("file:src/dense.ts", "src/dense.ts");
   const selected = functionNode("function:dense:selected", "src/dense.ts", "selected", 1);
   const neighbors = Array.from({ length: edgeCount }, (_, index) =>
     functionNode(`function:dense:n-${index}`, "src/dense.ts", `n${index}`, 10 + index * 5));
@@ -683,15 +683,29 @@ export function graphWithDenseSelection(edgeCount = 110): KnowledgeGraph {
       analyzedAt: GENERATED_AT,
       gitCommitHash: "fixture",
     },
-    nodes: [selected, ...neighbors],
-    edges: neighbors.map((node): GraphEdge => ({
-      source: selected.id,
-      target: node.id,
-      type: "calls",
-      direction: "forward",
-      weight: 1,
-    })),
-    layers: [],
+    nodes: [file, selected, ...neighbors],
+    edges: [
+      ...[selected, ...neighbors].map((node): GraphEdge => ({
+        source: file.id,
+        target: node.id,
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      })),
+      ...neighbors.map((node): GraphEdge => ({
+        source: selected.id,
+        target: node.id,
+        type: "calls",
+        direction: "forward",
+        weight: 1,
+      })),
+    ],
+    layers: [{
+      id: "dense",
+      name: "密集模块",
+      description: "密集选择夹具。",
+      nodeIds: [file.id, selected.id, ...neighbors.map((node) => node.id)],
+    }],
     tour: [],
   });
 }

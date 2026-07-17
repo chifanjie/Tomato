@@ -143,6 +143,7 @@ const semanticGraphFixture: HierarchicalSemanticGraph = {
     level: "overview",
     relationshipSource: "imports",
     scopeId: null,
+    clusterId: null,
     fileId: null,
     scopeOptions: [],
     breadcrumbs: [{ level: "overview", label: "全局概览" }],

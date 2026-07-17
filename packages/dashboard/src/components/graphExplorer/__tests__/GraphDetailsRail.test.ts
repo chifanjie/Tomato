@@ -8,6 +8,11 @@ import {
   importsOnlyGraphFixture,
   wikiRuntimeFixture,
 } from "../../../graphExplorer/__tests__/graphFixtures";
+import {
+  boundaryNodeId,
+  buildGraphHierarchyIndex,
+  scopeNodeId,
+} from "../../../graphExplorer/hierarchicalGraph";
 import type { WikiTarget } from "../../../wiki/wikiContent";
 import GraphDetailsRail from "../GraphDetailsRail";
 import { buildGraphExplorerView, type GraphExplorerView } from "../graphExplorerModel";
@@ -58,13 +63,17 @@ describe("GraphDetailsRail", () => {
 
   it("opens only the exact direct page through the required App callback", async () => {
     const pushState = vi.spyOn(window.history, "pushState");
+    const graph = graphFixture();
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const location = hierarchyIndex.fileLocationById.get("file:src/a.ts")!;
     const view = buildGraphExplorerView({
-      graph: graphFixture(),
+      graph,
+      hierarchyIndex,
       wikiIndex: wikiRuntimeFixture(),
       mode: "coverage",
-      focusNodeIds: [],
       selectedNodeId: "function:src/a.ts:run",
-      navigation: { level: "scope", scopeId: "layer:core" },
+      navigation: { level: "file", ...location },
+      materializedNodeId: null,
     });
     await renderRail(view);
 
@@ -84,13 +93,17 @@ describe("GraphDetailsRail", () => {
 
   it("shows context pages as related material without enabling the primary reading action", async () => {
     const pushState = vi.spyOn(window.history, "pushState");
+    const graph = graphFixture();
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const location = hierarchyIndex.fileLocationById.get("file:context-only.ts")!;
     const view = buildGraphExplorerView({
-      graph: graphFixture(),
+      graph,
+      hierarchyIndex,
       wikiIndex: wikiRuntimeFixture(),
       mode: "coverage",
-      focusNodeIds: [],
       selectedNodeId: "file:context-only.ts",
-      navigation: { level: "scope", scopeId: "layer:core" },
+      navigation: { level: "cluster", scopeId: location.scopeId, clusterId: location.clusterId },
+      materializedNodeId: null,
     });
     await renderRail(view);
 
@@ -103,13 +116,15 @@ describe("GraphDetailsRail", () => {
 
   it("lets aggregate neighbors and the selected aggregate open their real scopes", async () => {
     const graph = importsOnlyGraphFixture();
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
     const view = buildGraphExplorerView({
       graph,
+      hierarchyIndex,
       wikiIndex: wikiRuntimeFixture(),
       mode: "call",
-      focusNodeIds: [],
-      selectedNodeId: "scope:layer:app",
+      selectedNodeId: scopeNodeId("layer:app"),
       navigation: { level: "overview" },
+      materializedNodeId: null,
     });
     await renderRail(view);
 
@@ -117,20 +132,22 @@ describe("GraphDetailsRail", () => {
     const related = buttonWithText(container, "库");
     expect(related).not.toBeNull();
     await act(async () => related?.click());
-    expect(onSelectObject).toHaveBeenCalledWith("scope:layer:lib");
+    expect(onSelectObject).toHaveBeenCalledWith(boundaryNodeId("layer:app", "layer:lib"));
 
     await act(async () => buttonWithText(container, "查看范围")?.click());
     expect(onOpenScope).toHaveBeenCalledWith("layer:app");
   });
 
   it("explains a hidden selection in Chinese without stale Wiki actions", async () => {
+    const graph = graphFixture();
     const view = buildGraphExplorerView({
-      graph: graphFixture(),
+      graph,
+      hierarchyIndex: buildGraphHierarchyIndex(graph),
       wikiIndex: wikiRuntimeFixture(),
       mode: "architecture",
-      focusNodeIds: [],
       selectedNodeId: "function:src/a.ts:run",
       navigation: { level: "overview" },
+      materializedNodeId: null,
     });
     await renderRail(view);
 
@@ -141,13 +158,17 @@ describe("GraphDetailsRail", () => {
   });
 
   it("keeps aggregate totals truthful while limiting long page and evidence previews", async () => {
+    const graph = graphFixture();
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const location = hierarchyIndex.fileLocationById.get("file:src/a.ts")!;
     const base = buildGraphExplorerView({
-      graph: graphFixture(),
+      graph,
+      hierarchyIndex,
       wikiIndex: wikiRuntimeFixture(),
       mode: "coverage",
-      focusNodeIds: [],
       selectedNodeId: "function:src/a.ts:run",
-      navigation: { level: "scope", scopeId: "layer:core" },
+      navigation: { level: "file", ...location },
+      materializedNodeId: null,
     });
     if (!base.selection) throw new Error("missing selection fixture");
     const directSeed = base.selection.directPages[0];

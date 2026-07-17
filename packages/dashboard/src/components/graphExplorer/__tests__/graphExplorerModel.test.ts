@@ -1,10 +1,16 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { buildHierarchicalSemanticGraph } from "../../../graphExplorer/hierarchicalGraph";
+import {
+  buildGraphHierarchyIndex,
+  buildHierarchicalSemanticGraph,
+  mergeHierarchySelectionExpansion,
+  scopeNodeId,
+} from "../../../graphExplorer/hierarchicalGraph";
 import {
   aggregateCoverageFixture,
   graphFixture,
+  graphWithDenseSelection,
   graphWithFiftyNodes,
   graphWithStructuralOnly,
   importsOnlyGraphFixture,
@@ -50,22 +56,24 @@ describe("graphExplorerModel", () => {
 
   it("builds aggregate details without requiring a raw graph node", () => {
     const fixture = aggregateCoverageFixture();
+    const hierarchyIndex = buildGraphHierarchyIndex(fixture.graph);
     const semanticGraph = buildHierarchicalSemanticGraph({
       graph: fixture.graph,
+      hierarchyIndex,
       wikiIndex: fixture.wikiIndex,
       mode: "architecture",
-      focusNodeIds: [],
-      selectedNodeId: "scope:layer:core",
       navigation: { level: "overview" },
+      materializedNodeId: null,
     });
 
+    const selectedScopeId = scopeNodeId("layer:core");
     expect(buildGraphSelectionDetails({
       graph: fixture.graph,
       semanticGraph,
-      selectedObjectId: "scope:layer:core",
+      selectedObjectId: selectedScopeId,
     })).toMatchObject({
       kind: "aggregate",
-      id: "scope:layer:core",
+      id: selectedScopeId,
       responsibility: expect.stringContaining("核心"),
       documentationCounts: { direct: 8, context: 1, none: 1, problem: 0, total: 10 },
       primaryDirectPageId: "page:coverage:0",
@@ -75,14 +83,16 @@ describe("graphExplorerModel", () => {
 
   it("keeps exact direct pages, context pages, and evidence for a raw selection", () => {
     const graph = graphFixture();
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
     const wikiIndex = wikiRuntimeFixture();
+    const location = hierarchyIndex.fileLocationById.get("file:src/a.ts")!;
     const semanticGraph = buildHierarchicalSemanticGraph({
       graph,
+      hierarchyIndex,
       wikiIndex,
       mode: "coverage",
-      focusNodeIds: [],
-      selectedNodeId: "function:src/a.ts:run",
-      navigation: { level: "scope", scopeId: "layer:core" },
+      navigation: { level: "file", ...location },
+      materializedNodeId: null,
     });
 
     const details = buildGraphSelectionDetails({
@@ -105,29 +115,117 @@ describe("graphExplorerModel", () => {
   });
 
   it("preserves a hidden raw selection while exposing no stale details", () => {
+    const graph = graphFixture();
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
     const view = buildGraphExplorerView({
-      graph: graphFixture(),
+      graph,
+      hierarchyIndex,
       wikiIndex: wikiRuntimeFixture(),
       mode: "architecture",
-      focusNodeIds: [],
       selectedNodeId: "function:src/a.ts:run",
       navigation: { level: "overview" },
+      materializedNodeId: null,
     });
 
     expect(view.selection).toBeNull();
     expect(view.hiddenSelectedNode?.id).toBe("function:src/a.ts:run");
-    expect(view.semanticGraph.nodes.map((node) => node.id)).toEqual(["scope:layer:core"]);
+    expect(view.semanticGraph.nodes.map((node) => node.id)).toEqual([scopeNodeId("layer:core")]);
+  });
+
+  it("builds selection details from the merged dense neighborhood without changing the base", () => {
+    const graph = graphWithDenseSelection(110);
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const location = hierarchyIndex.fileLocationById.get("file:src/dense.ts")!;
+    const view = buildGraphExplorerView({
+      graph,
+      hierarchyIndex,
+      wikiIndex: buildWikiRuntimeIndex(null),
+      mode: "call",
+      selectedNodeId: "function:dense:selected",
+      navigation: { level: "file", ...location },
+      materializedNodeId: null,
+    });
+
+    expect(view.baseGraph.nodes.map((node) => node.id)).not.toContain("function:dense:selected");
+    expect(view.semanticGraph).toEqual(mergeHierarchySelectionExpansion(
+      view.baseGraph,
+      view.selectionExpansion,
+    ));
+    expect(view.semanticGraph.presentation).toBe(view.baseGraph.presentation);
+    expect(view.selection?.id).toBe("function:dense:selected");
+    expect(view.selection?.upstream.map((node) => node.id)).toEqual(["file:src/dense.ts"]);
+    expect(view.selection?.downstream).toHaveLength(110);
+    expect(view.hiddenSelectedNode).toBeNull();
+  });
+
+  it("preserves wiki metadata for a synthesized capped node and does not conflate materialization", () => {
+    const original = graphFixture();
+    const padding = Array.from({ length: 45 }, (_, index) => ({
+      id: `function:000-padding-${String(index).padStart(2, "0")}`,
+      type: "function" as const,
+      name: `padding${index}`,
+      filePath: "src/a.ts",
+      lineRange: [100 + index, 100 + index] as [number, number],
+      summary: "Padding symbol.",
+      tags: [],
+      complexity: "simple" as const,
+    }));
+    const graph = {
+      ...original,
+      nodes: [...original.nodes, ...padding],
+      edges: [
+        ...original.edges,
+        ...padding.map((node) => ({
+          source: "file:src/a.ts",
+          target: node.id,
+          type: "contains" as const,
+          direction: "forward" as const,
+          weight: 1,
+        })),
+      ],
+    };
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const location = hierarchyIndex.fileLocationById.get("file:src/a.ts")!;
+    const wikiIndex = wikiRuntimeFixture();
+    const selectedView = buildGraphExplorerView({
+      graph,
+      hierarchyIndex,
+      wikiIndex,
+      mode: "coverage",
+      selectedNodeId: "function:src/a.ts:run",
+      navigation: { level: "file", ...location },
+      materializedNodeId: null,
+    });
+    const materializedOnly = buildGraphExplorerView({
+      graph,
+      hierarchyIndex,
+      wikiIndex,
+      mode: "coverage",
+      selectedNodeId: null,
+      navigation: { level: "file", ...location },
+      materializedNodeId: "function:src/a.ts:run",
+    });
+
+    expect(selectedView.baseGraph.nodes.map((node) => node.id)).not.toContain("function:src/a.ts:run");
+    expect(selectedView.selectionExpansion.nodes.find((node) => node.id === "function:src/a.ts:run")?.docs)
+      .toMatchObject({ relation: "direct", directPageIds: ["page:run"] });
+    expect(selectedView.selection?.primaryDirectPageId).toBe("page:run");
+    expect(selectedView.hiddenSelectedNode).toBeNull();
+    expect(materializedOnly.baseGraph.nodes.map((node) => node.id)).toContain("function:src/a.ts:run");
+    expect(materializedOnly.selectionExpansion).toEqual({ nodes: [], edges: [] });
+    expect(materializedOnly.selection).toBeNull();
   });
 
   it("returns no details when nothing is selected", () => {
     const graph = graphFixture();
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
     const semanticGraph = buildHierarchicalSemanticGraph({
       graph,
+      hierarchyIndex,
       wikiIndex: wikiRuntimeFixture(),
       mode: "coverage",
-      focusNodeIds: [],
-      selectedNodeId: null,
       navigation: { level: "overview" },
+      materializedNodeId: null,
     });
 
     expect(buildGraphSelectionDetails({ graph, semanticGraph, selectedObjectId: null })).toBeNull();
@@ -154,7 +252,7 @@ describe("graphExplorerModel", () => {
     ]);
   });
 
-  it("normalizes an unavailable stored mode and removes fallback notices", () => {
+  it("normalizes an unavailable stored mode and preserves base fallback notices", () => {
     const graph = importsOnlyGraphFixture();
     const wikiIndex = buildWikiRuntimeIndex(null);
     const options = availableGraphModes(graph, wikiIndex);
@@ -163,12 +261,13 @@ describe("graphExplorerModel", () => {
     expect(normalizeGraphModeForOptions("call", options)).toBe("call");
     expect(buildGraphExplorerView({
       graph,
+      hierarchyIndex: buildGraphHierarchyIndex(graph),
       wikiIndex,
       mode: "call",
-      focusNodeIds: [],
       selectedNodeId: null,
       navigation: { level: "overview" },
-    }).semanticGraph.presentation.notice).toBeNull();
+      materializedNodeId: null,
+    }).semanticGraph.presentation.notice).toContain("自动降级为文件导入关系");
   });
 
   it("renders only the supplied Chinese mode labels and the V2 coverage legend", () => {
@@ -194,13 +293,14 @@ describe("graphExplorerModel", () => {
 
   it("describes raw and aggregate documentation with compact truthful badges", () => {
     const aggregateFixture = aggregateCoverageFixture();
+    const aggregateHierarchy = buildGraphHierarchyIndex(aggregateFixture.graph);
     const aggregateGraph = buildHierarchicalSemanticGraph({
       graph: aggregateFixture.graph,
+      hierarchyIndex: aggregateHierarchy,
       wikiIndex: aggregateFixture.wikiIndex,
       mode: "architecture",
-      focusNodeIds: [],
-      selectedNodeId: null,
       navigation: { level: "overview" },
+      materializedNodeId: null,
     });
     const rawGraph = buildSemanticGraphModel({
       graph: graphFixture(),

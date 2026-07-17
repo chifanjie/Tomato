@@ -1,11 +1,16 @@
 import type { WikiEvidenceV2, WikiPageV2 } from "@understand-code/core/knowledge-base";
 import type { GraphNode, KnowledgeGraph } from "@understand-code/core/types";
 import {
+  buildHierarchySelectionExpansion,
+  buildGraphHierarchyIndex,
   buildHierarchicalSemanticGraph,
   hasDocumentationProblem,
+  mergeHierarchySelectionExpansion,
   normalizeGraphExplorerMode,
   type GraphExplorerDisplayMode,
   type GraphExplorerNavigation,
+  type GraphHierarchyIndex,
+  type HierarchicalGraphSelectionExpansion,
   type HierarchicalSemanticGraph,
   type HierarchicalSemanticGraphNode,
 } from "../../graphExplorer/hierarchicalGraph";
@@ -20,6 +25,8 @@ import type {
 import type { WikiRuntimeIndex } from "../../wiki/wikiIndex";
 
 export interface GraphExplorerView {
+  baseGraph: HierarchicalSemanticGraph;
+  selectionExpansion: HierarchicalGraphSelectionExpansion;
   semanticGraph: HierarchicalSemanticGraph;
   selection: GraphSelectionDetails | null;
   hiddenSelectedNode: GraphNode | null;
@@ -27,11 +34,16 @@ export interface GraphExplorerView {
 
 export interface BuildGraphExplorerViewInput {
   graph: KnowledgeGraph;
+  /** Temporary Task 5 integration shim; the deterministic base builder remains strict. */
+  hierarchyIndex?: GraphHierarchyIndex;
   wikiIndex?: WikiRuntimeIndex;
   mode: GraphExplorerMode;
-  focusNodeIds: string[];
+  /** Temporary Task 5 call-site shim. Selection expansion never consumes focus ids. */
+  focusNodeIds?: string[];
   selectedNodeId: string | null;
   navigation: GraphExplorerNavigation;
+  /** Temporary Task 5 integration shim. */
+  materializedNodeId?: string | null;
 }
 
 export interface SelectionDetailsInput {
@@ -238,24 +250,31 @@ export function coverageBadgeForNode(node: SemanticGraphNode): {
 
 export function buildGraphExplorerView({
   graph,
+  hierarchyIndex,
   wikiIndex,
   mode,
-  focusNodeIds,
   selectedNodeId,
   navigation,
+  materializedNodeId = null,
 }: BuildGraphExplorerViewInput): GraphExplorerView {
-  const builtGraph = buildHierarchicalSemanticGraph({
+  const resolvedHierarchyIndex = hierarchyIndex ?? buildGraphHierarchyIndex(graph);
+  const baseGraph = buildHierarchicalSemanticGraph({
     graph,
+    hierarchyIndex: resolvedHierarchyIndex,
     wikiIndex,
     mode,
-    focusNodeIds,
-    selectedNodeId,
     navigation,
+    materializedNodeId,
   });
-  const semanticGraph: HierarchicalSemanticGraph = {
-    ...builtGraph,
-    presentation: { ...builtGraph.presentation, notice: null },
-  };
+  const selectionExpansion = buildHierarchySelectionExpansion({
+    graph,
+    hierarchyIndex: resolvedHierarchyIndex,
+    baseGraph,
+    wikiIndex,
+    mode,
+    selectedNodeId,
+  });
+  const semanticGraph = mergeHierarchySelectionExpansion(baseGraph, selectionExpansion);
   const selection = buildGraphSelectionDetails({
     graph,
     semanticGraph,
@@ -266,6 +285,8 @@ export function buildGraphExplorerView({
     : null;
 
   return {
+    baseGraph,
+    selectionExpansion,
     semanticGraph,
     selection,
     hiddenSelectedNode: selectedRawNode && !selection ? selectedRawNode : null,

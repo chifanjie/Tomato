@@ -107,6 +107,7 @@ function semanticGraph(
       level,
       relationshipSource: "imports",
       scopeId: level === "overview" ? null : "scope:core",
+      clusterId: null,
       fileId: level === "file" ? nodeIds[0] ?? null : null,
       scopeOptions: [],
       breadcrumbs: [],

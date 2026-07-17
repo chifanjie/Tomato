@@ -710,6 +710,57 @@ export function graphWithDenseSelection(edgeCount = 110): KnowledgeGraph {
   });
 }
 
+export function graphWithHighFanoutClusters(clusterCount = 512): KnowledgeGraph {
+  if (!Number.isSafeInteger(clusterCount) || clusterCount < 2) {
+    throw new Error(`高扇出聚类数量必须是至少为 2 的安全整数：${clusterCount}`);
+  }
+  const suffix = (index: number) => String(index).padStart(3, "0");
+  const files = Array.from({ length: clusterCount }, (_, index) =>
+    fileNode(`file:fanout-${suffix(index)}`, `fanout-${suffix(index)}/index.ts`));
+  const symbols = files.map((file, index) =>
+    functionNode(
+      `function:fanout-${suffix(index)}`,
+      file.filePath!,
+      `fanout${suffix(index)}`,
+      1,
+    ));
+  return finalizeGraph({
+    version: "1.0.0",
+    project: {
+      name: "high-fanout-clusters",
+      languages: ["typescript"],
+      frameworks: [],
+      description: "高扇出聚类选择夹具。",
+      analyzedAt: GENERATED_AT,
+      gitCommitHash: "fixture",
+    },
+    nodes: [...files, ...symbols],
+    edges: [
+      ...files.map((file, index): GraphEdge => ({
+        source: file.id,
+        target: symbols[index]!.id,
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      })),
+      ...symbols.slice(1).map((symbol): GraphEdge => ({
+        source: symbols[0]!.id,
+        target: symbol.id,
+        type: "calls",
+        direction: "forward",
+        weight: 1,
+      })),
+    ],
+    layers: [{
+      id: "fanout",
+      name: "高扇出模块",
+      description: "高扇出聚类选择夹具。",
+      nodeIds: files.map((file) => file.id),
+    }],
+    tour: [],
+  });
+}
+
 export function oneHopIds(graph: KnowledgeGraph, selectedId: string): string[] {
   const ids = new Set<string>();
   for (const edge of graph.edges) {

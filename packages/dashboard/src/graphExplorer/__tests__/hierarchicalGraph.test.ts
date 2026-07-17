@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { GraphEdge, GraphNode, KnowledgeGraph, NodeType } from "@understand-code/core/types";
 import {
   aggregateCoverageFixture,
   graphWithDenseSelection,
   graphWithFiftyNodes,
+  graphWithHighFanoutClusters,
   oneHopIds,
   workspaceHierarchyFixture,
 } from "./graphFixtures";
@@ -177,6 +178,41 @@ function manyBoundariesGraph(boundaryCount = 9): KnowledgeGraph {
     ],
     tour: [],
   };
+}
+
+function countLargeSemanticMemberFilterVisits(
+  minimumMemberCount: number,
+  run: () => void,
+): number {
+  const originalFilter = Array.prototype.filter;
+  let visits = 0;
+  const filter = vi.spyOn(Array.prototype, "filter").mockImplementation(function (
+    this: unknown[],
+    predicate: (value: unknown, index: number, array: unknown[]) => unknown,
+    thisArg?: unknown,
+  ) {
+    const first = this[0];
+    const isLargeSemanticMemberArray = this.length >= minimumMemberCount
+      && typeof first === "object"
+      && first !== null
+      && "id" in first
+      && "source" in first
+      && "target" in first
+      && "direction" in first;
+    if (!isLargeSemanticMemberArray) {
+      return originalFilter.call(this, predicate, thisArg);
+    }
+    return originalFilter.call(this, (value, index, array) => {
+      visits += 1;
+      return predicate.call(thisArg, value, index, array);
+    });
+  });
+  try {
+    run();
+  } finally {
+    filter.mockRestore();
+  }
+  return visits;
 }
 
 describe("hierarchicalGraph", () => {
@@ -800,6 +836,77 @@ describe("hierarchicalGraph", () => {
       direction: "forward",
     }));
     expect(connecting?.members).not.toContainEqual(expect.objectContaining({ source: architecture.id }));
+  });
+
+  it("keeps uncapped high-fanout cluster synthesis within a linear semantic-member filter budget", () => {
+    const clusterCount = 512;
+    const graph = graphWithHighFanoutClusters(clusterCount);
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const scope = hierarchyIndex.scopes[0]!;
+    const selectedClusterId = hierarchyIndex.fileLocationById.get("file:fanout-000")!.clusterId;
+    const baseGraph = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      mode: "call",
+      navigation: { level: "scope", scopeId: scope.id },
+      materializedNodeId: null,
+    });
+    let expansion: ReturnType<typeof buildHierarchySelectionExpansion> | null = null;
+    const semanticMemberFilterVisits = countLargeSemanticMemberFilterVisits(graph.edges.length, () => {
+      expansion = buildHierarchySelectionExpansion({
+        graph,
+        hierarchyIndex,
+        baseGraph,
+        mode: "call",
+        selectedNodeId: selectedClusterId,
+      });
+    });
+
+    expect(expansion!.nodes.filter((node) => node.kind === "cluster")).toHaveLength(clusterCount);
+    expect(new Set(expansion!.nodes.map((node) => node.id)))
+      .toEqual(new Set(hierarchyIndex.scopes[0]!.clusterIds));
+    expect(expansion!.edges).toHaveLength(clusterCount - 1);
+    expect(new Set(expansion!.edges.flatMap((edge) => [edge.source, edge.target])))
+      .toEqual(new Set(hierarchyIndex.scopes[0]!.clusterIds));
+    expect(semanticMemberFilterVisits).toBeLessThanOrEqual(graph.edges.length * 3);
+  });
+
+  it("keeps uncapped high-fanout boundary synthesis within one rendered-scope pass", () => {
+    const boundaryCount = 512;
+    const graph = manyBoundariesGraph(boundaryCount);
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const baseGraph = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      mode: "architecture",
+      navigation: { level: "overview" },
+      materializedNodeId: null,
+    });
+    let renderedScopeCandidateVisits = 0;
+    const countedScopes = new Proxy(hierarchyIndex.scopes, {
+      get(target, property, receiver) {
+        if (property !== "find") return Reflect.get(target, property, receiver);
+        return (predicate: Parameters<typeof target.find>[0], thisArg?: unknown) =>
+          target.find((scope, index, scopes) => {
+            renderedScopeCandidateVisits += 1;
+            return predicate.call(thisArg, scope, index, scopes);
+          });
+      },
+    });
+    const expansion = buildHierarchySelectionExpansion({
+      graph,
+      hierarchyIndex: { ...hierarchyIndex, scopes: countedScopes },
+      baseGraph,
+      mode: "architecture",
+      selectedNodeId: scopeNodeId("layer:center"),
+    });
+
+    expect(expansion.nodes.filter((node) => node.kind === "boundary")).toHaveLength(boundaryCount);
+    expect(expansion.edges).toHaveLength(boundaryCount);
+    expect(new Set(expansion.edges.map((edge) => edge.target))).toEqual(new Set(
+      graph.layers.slice(1).map((layer) => boundaryNodeId("layer:center", `layer:${layer.id}`)),
+    ));
+    expect(renderedScopeCandidateVisits).toBeLessThanOrEqual(hierarchyIndex.scopes.length);
   });
 
   it("synthesizes a cap-hidden scope with the same raw metadata as its materialized base node", () => {

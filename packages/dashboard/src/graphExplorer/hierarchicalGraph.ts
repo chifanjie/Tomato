@@ -993,17 +993,12 @@ function progressiveScopeOptions(
 function hierarchyScopeNode(
   scope: GraphHierarchyScope,
   rawNodesById: ReadonlyMap<string, SemanticGraphNode>,
-  members: readonly SemanticGraphEdgeMember[],
+  relationCount: number,
   displayMode: GraphExplorerDisplayMode,
 ): HierarchicalSemanticGraphNode {
   const children = scope.nodeIds
     .map((nodeId) => rawNodesById.get(nodeId))
     .filter((node): node is SemanticGraphNode => Boolean(node));
-  const relationCount = members.filter((member) => {
-    const sourceInside = scope.nodeIds.includes(member.source);
-    const targetInside = scope.nodeIds.includes(member.target);
-    return sourceInside !== targetInside;
-  }).length;
   const { docs, documentationCounts: counts } = aggregateDocumentation(children, displayMode);
   const fileCount = children.filter((node) => node.rawType === "file").length;
   return {
@@ -1063,15 +1058,12 @@ function hierarchyBoundaryNode(
 function hierarchyClusterNode(
   cluster: GraphHierarchyCluster,
   rawNodesById: ReadonlyMap<string, SemanticGraphNode>,
-  members: readonly SemanticGraphEdgeMember[],
+  relationCount: number,
   displayMode: GraphExplorerDisplayMode,
 ): HierarchicalSemanticGraphNode {
   const children = cluster.nodeIds
     .map((nodeId) => rawNodesById.get(nodeId))
     .filter((node): node is SemanticGraphNode => Boolean(node));
-  const childIds = new Set(cluster.nodeIds);
-  const relationCount = members.filter((member) =>
-    childIds.has(member.source) || childIds.has(member.target)).length;
   const { docs, documentationCounts: counts } = aggregateDocumentation(children, displayMode);
   return {
     id: cluster.id,
@@ -1094,6 +1086,35 @@ function hierarchyClusterNode(
     relationCount,
     canDrillDown: true,
   };
+}
+
+interface HierarchyRelationCounts {
+  scopeById: ReadonlyMap<string, number>;
+  clusterById: ReadonlyMap<string, number>;
+}
+
+function hierarchyRelationCounts(
+  members: readonly SemanticGraphEdgeMember[],
+  hierarchyIndex: GraphHierarchyIndex,
+): HierarchyRelationCounts {
+  const scopeById = new Map<string, number>();
+  const clusterById = new Map<string, number>();
+  const increment = (counts: Map<string, number>, id: string | undefined) => {
+    if (id) counts.set(id, (counts.get(id) ?? 0) + 1);
+  };
+  for (const member of members) {
+    const sourceLocation = hierarchyIndex.nodeLocationById.get(member.source);
+    const targetLocation = hierarchyIndex.nodeLocationById.get(member.target);
+    if (sourceLocation?.scopeId !== targetLocation?.scopeId) {
+      increment(scopeById, sourceLocation?.scopeId);
+      increment(scopeById, targetLocation?.scopeId);
+    }
+    increment(clusterById, sourceLocation?.clusterId);
+    if (targetLocation?.clusterId !== sourceLocation?.clusterId) {
+      increment(clusterById, targetLocation?.clusterId);
+    }
+  }
+  return { scopeById, clusterById };
 }
 
 function progressiveRawNode(
@@ -1177,6 +1198,7 @@ function progressiveOverview(input: {
   const rawNodesById = new Map(rawNodes.map((node) => [node.id, node]));
   const allowedMembers = members.filter((member) =>
     progressiveMemberAllowed(member, displayMode, relationshipSource, true));
+  const relationCounts = hierarchyRelationCounts(members, hierarchyIndex);
   const displayBoundaryFacts = overviewBoundaryFacts(allowedMembers, hierarchyIndex);
   const rawBoundaryFacts = overviewBoundaryFacts(members, hierarchyIndex);
   const materializedBoundary = materializedNodeId ? rawBoundaryFacts.get(materializedNodeId) : undefined;
@@ -1213,7 +1235,12 @@ function progressiveOverview(input: {
     .map((id) => rawBoundaryFacts.get(id))
     .filter((boundary): boundary is OverviewBoundaryFacts => Boolean(boundary));
   const nodes: HierarchicalSemanticGraphNode[] = [
-    ...visibleScopes.map((scope) => hierarchyScopeNode(scope, rawNodesById, members, displayMode)),
+    ...visibleScopes.map((scope) => hierarchyScopeNode(
+      scope,
+      rawNodesById,
+      relationCounts.scopeById.get(scope.id) ?? 0,
+      displayMode,
+    )),
     ...visibleArchitecture.map((node) => progressiveRawNode(node, hierarchyIndex)),
     ...visibleBoundaries.flatMap((boundary) => {
       const target = hierarchyIndex.scopeById.get(boundary.targetScopeId);
@@ -1440,6 +1467,7 @@ function progressiveScope(input: {
   const visibleArchitecture = architecture;
   const allowedMembers = members.filter((member) =>
     progressiveMemberAllowed(member, displayMode, relationshipSource, true));
+  const relationCounts = hierarchyRelationCounts(allowedMembers, hierarchyIndex);
   const materializedBoundaryTarget = hierarchyIndex.scopes.find((target) =>
     target.id !== scope.id && boundaryNodeId(scope.id, target.id) === materializedNodeId)?.id;
   const connectingClusterId = materializedBoundaryTarget
@@ -1486,7 +1514,12 @@ function progressiveScope(input: {
   });
   const boundaryIds = new Set(boundaries.visible);
   const nodes: HierarchicalSemanticGraphNode[] = [
-    ...visibleClusters.map((cluster) => hierarchyClusterNode(cluster, rawNodesById, allowedMembers, displayMode)),
+    ...visibleClusters.map((cluster) => hierarchyClusterNode(
+      cluster,
+      rawNodesById,
+      relationCounts.clusterById.get(cluster.id) ?? 0,
+      displayMode,
+    )),
     ...visibleArchitecture.map((node) => progressiveRawNode(node, hierarchyIndex)),
     ...boundaries.visible.flatMap((scopeId) => {
       const target = hierarchyIndex.scopeById.get(scopeId);
@@ -1999,6 +2032,9 @@ export function buildHierarchySelectionExpansion(input: {
 
   const projected = members.flatMap(projectMember).filter(({ source, target }) => source !== target);
   const baseNodeById = new Map(baseGraph.nodes.map((node) => [node.id, node]));
+  const scopeByRenderedNodeId = new Map(
+    hierarchyIndex.scopes.map((scope) => [scopeNodeId(scope.id), scope]),
+  );
   const rawSelected = rawNodesById.get(selectedNodeId);
   const selectedLocation = hierarchyIndex.nodeLocationById.get(selectedNodeId);
   const selectedBoundaryCandidate = portalDescriptors.get(selectedNodeId);
@@ -2011,7 +2047,7 @@ export function buildHierarchySelectionExpansion(input: {
     && boundaryHasCurrentContext(selectedBoundaryCandidate)
     ? selectedBoundaryCandidate
     : null;
-  const selectedScope = hierarchyIndex.scopes.find((scope) => scopeNodeId(scope.id) === selectedNodeId);
+  const selectedScope = scopeByRenderedNodeId.get(selectedNodeId);
   const selectedCluster = hierarchyIndex.clusterById.get(selectedNodeId);
   const fileOwnedIds = new Set(level === "file" && currentFileId
     ? raw.nodes.filter((node) => {
@@ -2058,15 +2094,35 @@ export function buildHierarchySelectionExpansion(input: {
     selectedNodeId,
     ...incidentProjected.flatMap(({ source, target }) => [source, target]),
   ]);
+  let rawRelationCounts: HierarchyRelationCounts | null = null;
+  let displayRelationCounts: HierarchyRelationCounts | null = null;
+  const rawRelationCountForScope = (scopeId: string): number => {
+    rawRelationCounts ??= hierarchyRelationCounts(rawMembers, hierarchyIndex);
+    return rawRelationCounts.scopeById.get(scopeId) ?? 0;
+  };
+  const displayRelationCountForCluster = (clusterId: string): number => {
+    displayRelationCounts ??= hierarchyRelationCounts(members, hierarchyIndex);
+    return displayRelationCounts.clusterById.get(clusterId) ?? 0;
+  };
   const nodeForId = (id: string): HierarchicalSemanticGraphNode | null => {
     const base = baseNodeById.get(id);
     if (base) return base;
     const rawNode = rawNodesById.get(id);
     if (rawNode) return progressiveRawNode(rawNode, hierarchyIndex, rawNode.rawType === "file");
-    const scope = hierarchyIndex.scopes.find((candidate) => scopeNodeId(candidate.id) === id);
-    if (scope) return hierarchyScopeNode(scope, rawNodesById, rawMembers, displayMode);
+    const scope = scopeByRenderedNodeId.get(id);
+    if (scope) return hierarchyScopeNode(
+      scope,
+      rawNodesById,
+      rawRelationCountForScope(scope.id),
+      displayMode,
+    );
     const cluster = hierarchyIndex.clusterById.get(id);
-    if (cluster) return hierarchyClusterNode(cluster, rawNodesById, members, displayMode);
+    if (cluster) return hierarchyClusterNode(
+      cluster,
+      rawNodesById,
+      displayRelationCountForCluster(cluster.id),
+      displayMode,
+    );
     const boundaryCandidate = portalDescriptors.get(id);
     const boundary = boundaryCandidate
       && boundaryHasCurrentContext(boundaryCandidate)

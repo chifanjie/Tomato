@@ -103,7 +103,7 @@ describe("first paint theme contract", () => {
     const root = createRoot(container);
     await act(async () => root.render(createElement(InitialThemeGate, {
       metaUrl: "/meta.json",
-      readStoredTheme: () => ({ presetId: "night-ink" }),
+      readStoredTheme: (): ThemeConfig => ({ presetId: "night-ink" }),
       loadMetaTheme,
       children: (config) => createElement(
         "div",

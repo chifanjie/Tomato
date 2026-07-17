@@ -15,16 +15,16 @@ it("renders the guided route without maintenance metrics", () => {
     onOpenReference: vi.fn(),
   }));
 
+  expect(html).toContain('class="uc-guided-route"');
+  expect(html).toContain('class="uc-guided-route-item"');
   expect(html).toContain("先理解项目，再进入代码");
-  expect(html).toContain("项目做什么");
-  expect(html).toContain("怎样流转");
-  expect(html).toContain("有哪些规则");
-  expect(html).toContain("代码怎样实现");
-  expect(html).toContain("怎样核验源码");
-  expect(html).toContain("overflow-x-auto");
-  expect(html).toContain("min-w-[8.75rem]");
+  expect(html).toContain("开始阅读");
+  expect(html).toContain("查看关系图谱");
+  expect(html).toContain("查找文件或符号");
   expect(html).toContain("项目总览");
   expect(html).toContain("运行流程");
+  expect(html).not.toContain("overflow-x-auto");
+  expect(html).not.toContain("min-w-[8.75rem]");
   expect(html).not.toContain("a.ts 文件参考");
   expect(html).not.toMatch(/缺口|覆盖率|生成失败/);
 });

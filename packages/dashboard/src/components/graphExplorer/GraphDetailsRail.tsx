@@ -57,7 +57,7 @@ function RelatedNodes({
 }) {
   return (
     <section className="uc-graph-inspector__section">
-      <h3 className="text-[11px] font-semibold text-text-primary">{title}</h3>
+      <h3 className="text-xs font-semibold text-text-primary">{title}</h3>
       {nodes.length === 0 ? (
         <p className="mt-2 text-xs leading-5 text-text-muted">暂无可见关系</p>
       ) : (
@@ -70,7 +70,7 @@ function RelatedNodes({
                 className="w-full rounded-md border border-border-subtle px-2.5 py-2 text-left transition-colors hover:border-accent/35 hover:bg-accent/5"
               >
                 <span className="block truncate text-xs font-medium text-text-primary">{node.label}</span>
-                <span className="mt-0.5 block truncate text-[10px] text-text-muted">{node.summary}</span>
+                <span className="mt-0.5 block truncate text-xs text-text-muted">{node.summary}</span>
               </button>
             </li>
           ))}
@@ -110,7 +110,7 @@ function PageList({ title, pages, emptyText, onRequestGlobalSearch }: {
 }) {
   return (
     <section className="uc-graph-inspector__section">
-      <h3 className="text-[11px] font-semibold text-text-primary">{title}（共 {pages.length} 篇）</h3>
+      <h3 className="text-xs font-semibold text-text-primary">{title}（共 {pages.length} 篇）</h3>
       {pages.length === 0 ? (
         <p className="mt-2 text-xs leading-5 text-text-muted">{emptyText}</p>
       ) : (
@@ -139,7 +139,7 @@ function EvidenceList({ evidence, onRequestGlobalSearch }: {
 }) {
   return (
     <section className="uc-graph-inspector__section">
-      <h3 className="text-[11px] font-semibold text-text-primary">源码证据（共 {evidence.length} 项）</h3>
+      <h3 className="text-xs font-semibold text-text-primary">源码证据（共 {evidence.length} 项）</h3>
       {evidence.length === 0 ? (
         <p className="mt-2 text-xs leading-5 text-text-muted">暂无精确证据记录</p>
       ) : (
@@ -148,13 +148,13 @@ function EvidenceList({ evidence, onRequestGlobalSearch }: {
             <li key={item.id}>
               <div className="flex items-center justify-between gap-2">
                 <p className="min-w-0 truncate text-sm font-medium text-text-primary">{item.filePath}</p>
-                <span className="shrink-0 rounded border border-border-subtle px-1.5 py-0.5 text-[10px] text-text-muted">
+                <span className="shrink-0 rounded border border-border-subtle px-1.5 py-0.5 text-xs text-text-muted">
                   {EVIDENCE_LABELS[item.evidenceType]}
                 </span>
               </div>
               <p className="uc-code-ref mt-1">{item.filePath}:{item.lineRange[0]}-{item.lineRange[1]}</p>
               {item.excerpt && (
-                <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded bg-root/70 px-2 py-1.5 text-[10px] leading-4 text-text-secondary">
+                <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded bg-root/70 px-2 py-1.5 text-[13px] leading-5 text-text-secondary">
                   {item.excerpt}
                 </pre>
               )}
@@ -178,7 +178,7 @@ function Overview({ selection }: { selection: GraphSelectionDetails }) {
       : null;
     return (
       <section className="uc-graph-inspector__section">
-        <h3 className="text-[11px] font-semibold text-text-primary">节点职责</h3>
+        <h3 className="text-xs font-semibold text-text-primary">节点职责</h3>
         <p className="mt-2 text-sm leading-6 text-text-secondary">
           {selection.node.summary || "暂无职责说明"}
         </p>
@@ -188,7 +188,7 @@ function Overview({ selection }: { selection: GraphSelectionDetails }) {
             <div><dt className="text-text-muted">路径</dt><dd className="uc-code-ref mt-0.5">{selection.node.filePath}</dd></div>
           )}
           {lineRange && (
-            <div><dt className="text-text-muted">行号</dt><dd className="mt-0.5 font-mono text-[11px] text-text-primary">{lineRange}</dd></div>
+            <div><dt className="text-text-muted">行号</dt><dd className="mt-0.5 font-mono text-[13px] text-text-primary">{lineRange}</dd></div>
           )}
           <div><dt className="text-text-muted">节点 ID</dt><dd className="uc-code-ref mt-0.5">{selection.id}</dd></div>
         </dl>
@@ -199,7 +199,7 @@ function Overview({ selection }: { selection: GraphSelectionDetails }) {
   const counts = selection.documentationCounts;
   return (
     <section className="uc-graph-inspector__section">
-      <h3 className="text-[11px] font-semibold text-text-primary">
+      <h3 className="text-xs font-semibold text-text-primary">
         {selection.kind === "boundary" ? "外部范围" : "范围概览"}
       </h3>
       <p className="mt-2 text-sm leading-6 text-text-secondary">{selection.responsibility}</p>
@@ -253,7 +253,7 @@ export default function GraphDetailsRail({
     >
       <header className="flex items-start justify-between gap-3 border-b border-border-subtle px-4 py-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold text-text-muted">图谱详情</p>
+          <p className="text-xs font-semibold text-text-muted">图谱详情</p>
           <h2 className="mt-1 truncate text-base font-semibold text-text-primary">{heading}</h2>
         </div>
         <div className="flex shrink-0 items-center gap-1">

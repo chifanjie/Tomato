@@ -378,6 +378,11 @@ export default function GraphExplorer({
     });
   }, []);
 
+  const closeInspector = useCallback(() => {
+    setInspectorOpen(false);
+    restoreSelectedNodeFocus();
+  }, [restoreSelectedNodeFocus]);
+
   useEffect(() => () => {
     if (focusRestoreFrameRef.current !== null) {
       cancelAnimationFrame(focusRestoreFrameRef.current);
@@ -390,12 +395,11 @@ export default function GraphExplorer({
       if (event.key !== "Escape" || event.defaultPrevented) return;
       if (event.target instanceof Element && event.target.closest(".uc-graph-quick-jump")) return;
       event.preventDefault();
-      setInspectorOpen(false);
-      restoreSelectedNodeFocus();
+      closeInspector();
     };
     document.addEventListener("keydown", onDocumentKeyDown);
     return () => document.removeEventListener("keydown", onDocumentKeyDown);
-  }, [inspectorOpen, restoreSelectedNodeFocus]);
+  }, [closeInspector, inspectorOpen]);
 
   useEffect(() => {
     if (storedMode !== effectiveMode) setGraphExplorerMode(effectiveMode);
@@ -763,7 +767,7 @@ export default function GraphExplorer({
             );
           })}
         </nav>
-        <p className="text-[11px] text-text-muted">
+        <p className="text-xs text-text-muted">
           当前显示 {view.semanticGraph.nodes.length} 个元素
           {presentation.hiddenNodeCount > 0 ? `，另有 ${presentation.hiddenNodeCount} 个未展开` : ""}
         </p>
@@ -801,7 +805,7 @@ export default function GraphExplorer({
           view={view}
           open={inspectorOpen && safeSelectedNodeId !== null}
           side={inspectorSide}
-          onClose={() => setInspectorOpen(false)}
+          onClose={closeInspector}
           onSelectObject={selectVisibleNode}
           onOpenScope={openScope}
           onOpenCluster={openCluster}

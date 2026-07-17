@@ -127,6 +127,23 @@ describe("GraphDetailsRail", () => {
     expect(container.querySelector<HTMLElement>("aside")?.dataset.side).toBe("right");
   });
 
+  it("keeps weak labels at 12px and paths or key metadata at 13px", () => {
+    const railSource = readFileSync(resolve(
+      process.cwd(),
+      "src/components/graphExplorer/GraphDetailsRail.tsx",
+    ), "utf8");
+    const explorerSource = readFileSync(resolve(
+      process.cwd(),
+      "src/components/graphExplorer/GraphExplorer.tsx",
+    ), "utf8");
+    const css = readFileSync(resolve(process.cwd(), "src/index.css"), "utf8");
+
+    expect(`${railSource}\n${explorerSource}`).not.toMatch(/text-\[(?:10|11)px\]/);
+    expect(css).toMatch(/\.uc-code-ref\s*\{[^}]*font-size:\s*13px/s);
+    expect(css).toMatch(/\.uc-graph-quick-jump-type\s*\{[^}]*font-size:\s*12px/s);
+    expect(css).toMatch(/\.uc-graph-quick-jump-copy span\s*\{[^}]*font-size:\s*13px/s);
+  });
+
   it("places the desktop inspector away from a selected node and always uses the right sheet on compact screens", () => {
     const common = {
       frameWidth: 1_000,

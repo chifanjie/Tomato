@@ -741,9 +741,14 @@ describe("GraphExplorer progressive navigation integration", () => {
     expect(container.querySelector('[aria-label="搜索图谱对象"]')).toBeNull();
     expect(frame.querySelector(':scope > aside[aria-label="图谱详情"]')).not.toBeNull();
 
-    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="关闭图谱详情"]')?.click());
+    const closeInspector = container.querySelector<HTMLButtonElement>('[aria-label="关闭图谱详情"]');
+    if (!closeInspector) throw new Error("图谱详情缺少关闭按钮");
+    closeInspector.focus();
+    expect(document.activeElement).toBe(closeInspector);
+    await act(async () => closeInspector.click());
     expect(frame.querySelector(':scope > aside[aria-label="图谱详情"]')).toBeNull();
     expect(useDashboardStore.getState().selectedNodeId).toBe(nodeId);
+    expect(document.activeElement).toBe(node);
     expect(canvas.dataset.viewKey).toBe(viewKey);
 
     await act(async () => node.click());

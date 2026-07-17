@@ -1436,7 +1436,7 @@ body {
 .uc-code-ref {
   overflow-wrap: anywhere;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.55;
   color: var(--color-text-muted);
 }
@@ -1914,7 +1914,7 @@ body {
   background: var(--color-panel);
   padding: 3px 7px;
   color: var(--color-text-secondary);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 650;
   white-space: nowrap;
 }
@@ -1941,7 +1941,7 @@ body {
   margin-top: 2px;
   color: var(--color-text-muted);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .uc-graph-quick-jump-empty {

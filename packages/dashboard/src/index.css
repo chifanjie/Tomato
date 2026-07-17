@@ -1829,7 +1829,8 @@ body {
 .uc-graph-quick-jump-popover {
   position: absolute;
   top: calc(100% + 8px);
-  right: 0;
+  right: auto;
+  left: 0;
   z-index: 60;
   display: grid;
   width: min(360px, calc(100vw - 24px));

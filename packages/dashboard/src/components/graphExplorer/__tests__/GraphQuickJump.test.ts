@@ -281,9 +281,11 @@ describe("GraphQuickJump", () => {
     const componentSource = readFileSync(join(process.cwd(), "src/components/graphExplorer/GraphQuickJump.tsx"), "utf8");
     const cssSource = readFileSync(join(process.cwd(), "src/index.css"), "utf8");
     expect(componentSource).not.toContain("<svg");
-    expect(cssSource).toContain(".uc-graph-quick-jump-popover");
-    expect(cssSource).toMatch(/width:\s*min\(360px,\s*calc\(100vw - 24px\)\)/);
-    expect(cssSource).toMatch(/max-height:\s*70dvh/);
+    const basePopoverRule = cssSource.match(/\.uc-graph-quick-jump-popover\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(basePopoverRule).toMatch(/left:\s*0;/);
+    expect(basePopoverRule).toMatch(/right:\s*auto;/);
+    expect(basePopoverRule).toMatch(/width:\s*min\(360px,\s*calc\(100vw - 24px\)\)/);
+    expect(basePopoverRule).toMatch(/max-height:\s*70dvh/);
     const compactRule = cssSource.slice(cssSource.lastIndexOf("@media (max-width: 1023px)"));
     expect(compactRule).toMatch(/\.uc-graph-quick-jump\s*\{[^}]*width:\s*100%;/s);
     expect(compactRule).toMatch(/left:\s*0;/);

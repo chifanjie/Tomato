@@ -299,7 +299,7 @@ export default function GlobalWikiSearch({
             className="min-w-0 flex-1 bg-transparent text-base text-text-primary outline-none placeholder:text-text-muted disabled:opacity-60"
           />
           <kbd className="uc-global-search-hint rounded border border-border-subtle bg-elevated px-2 py-1 text-text-muted">Esc</kbd>
-          <button ref={closeButtonRef} type="button" onClick={onClose} aria-label="关闭搜索" className="rounded p-1.5 text-text-muted hover:bg-elevated hover:text-text-primary">×</button>
+          <button ref={closeButtonRef} type="button" onClick={onClose} aria-label="关闭搜索" className="rounded p-1.5 text-text-muted hover:bg-elevated hover:text-text-primary">关闭</button>
         </header>
 
         {loadStatus === "fallback" && (

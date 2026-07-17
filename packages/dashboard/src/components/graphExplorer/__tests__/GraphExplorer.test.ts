@@ -2,7 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { act, createElement, StrictMode } from "react";
+import { act, createElement, StrictMode, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -40,16 +40,34 @@ vi.mock("../GraphQuickJump", async () => {
     GraphQuickJump: ({ items, onSelect }: {
       items: Array<{ id: string; intent: GraphNavigationIntent }>;
       onSelect: (intent: GraphNavigationIntent) => void;
-    }) => React.createElement(
-      "div",
-      { "data-testid": "quick-jump" },
-      ...items.map((item) => React.createElement("button", {
-        key: item.id,
-        type: "button",
-        "data-jump-id": item.id,
-        onClick: () => onSelect(item.intent),
-      }, item.id)),
-    ),
+    }) => {
+      const [open, setOpen] = React.useState(false);
+      return React.createElement(
+        "div",
+        { "data-testid": "quick-jump", className: "uc-graph-quick-jump" },
+        React.createElement("button", {
+          type: "button",
+          "data-quick-open": "true",
+          onClick: () => setOpen(true),
+        }, "快速定位"),
+        ...(open ? [React.createElement("input", {
+          key: "quick-input",
+          "aria-label": "搜索图谱对象",
+          onKeyDown: (event: ReactKeyboardEvent) => {
+            if (event.key !== "Escape") return;
+            event.preventDefault();
+            event.stopPropagation();
+            setOpen(false);
+          },
+        })] : []),
+        ...items.map((item) => React.createElement("button", {
+          key: item.id,
+          type: "button",
+          "data-jump-id": item.id,
+          onClick: () => onSelect(item.intent),
+        }, item.id)),
+      );
+    },
   };
 });
 
@@ -64,8 +82,17 @@ vi.mock("../SemanticGraphCanvas", async () => {
       explicitFocusRequest: { requestId: number; materializedNodeId: string } | null;
       onBaseLayoutReady: (ready: { requestId: number; structureKey: string; materializedNodeId: string }) => void;
       onSelectNode?: (id: string | null) => void;
+      onClearSelection?: () => void;
     }) => {
-      const { baseGraph, semanticGraph, graphRevision, navigation, explicitFocusRequest, onSelectNode } = props;
+      const {
+        baseGraph,
+        semanticGraph,
+        graphRevision,
+        navigation,
+        explicitFocusRequest,
+        onSelectNode,
+        onClearSelection,
+      } = props;
       graphExplorerHarness.canvasProps.push(props);
       graphExplorerHarness.semanticGraphs.push(semanticGraph);
       return React.createElement(
@@ -79,18 +106,22 @@ vi.mock("../SemanticGraphCanvas", async () => {
             baseGraph.nodes.map((node) => node.id).sort(),
             explicitFocusRequest?.materializedNodeId ?? "",
           ]),
+          "data-canvas-width": "960",
+          "data-canvas-height": "650",
           className: "uc-semantic-canvas",
+          style: { width: "100%", height: "100%" },
         },
         ...semanticGraph.nodes.map((node) => React.createElement("button", {
           key: node.id,
           type: "button",
           "data-canvas-node": node.id,
+          "data-graph-node-id": node.id,
           onClick: () => onSelectNode?.(node.id),
         }, node.id)),
         React.createElement("button", {
           type: "button",
           "data-pane-clear": "true",
-          onClick: () => onSelectNode?.(null),
+          onClick: () => onClearSelection?.(),
         }, "clear"),
       );
     },
@@ -342,7 +373,7 @@ describe("GraphExplorer progressive navigation helpers", () => {
     expect(shouldClearVisibleSelectionProvenance("previous", "next")).toBe(true);
   });
 
-  it("uses the permanent base/render graph Canvas API inside one owned frame", () => {
+  it("uses the permanent base/render graph Canvas API inside one owned overlay frame", () => {
     const source = readFileSync(resolve(
       process.cwd(),
       "src/components/graphExplorer/GraphExplorer.tsx",
@@ -364,6 +395,8 @@ describe("GraphExplorer progressive navigation helpers", () => {
     expect(source).toContain("navigation={safeNavigation}");
     expect(source).toContain("explicitFocusRequest=");
     expect(source).toContain("onBaseLayoutReady={handleBaseLayoutReady}");
+    expect(source).toContain("onClearSelection={clearSelection}");
+    expect(source).toContain("onSelectedScreenBoundsChange={setSelectedScreenBounds}");
     expect(source.match(/className="uc-graph-frame/g)).toHaveLength(1);
     expect(modelSource).not.toContain("focusNodeIds?:");
     expect(modelSource).not.toContain("hierarchyIndex?:");
@@ -373,20 +406,19 @@ describe("GraphExplorer progressive navigation helpers", () => {
     expect(componentSource).not.toContain("resolveGraphNavigationIntent({");
   });
 
-  it("keeps a nonzero intrinsic graph frame below xl without pixel min-height fallbacks", () => {
+  it("keeps the graph frame as the flex remainder without responsive aspect-ratio fallbacks", () => {
     const source = readFileSync(resolve(
       process.cwd(),
       "src/components/graphExplorer/GraphExplorer.tsx",
     ), "utf8");
     const css = readFileSync(resolve(process.cwd(), "src/index.css"), "utf8");
     const componentSource = source.slice(source.indexOf("export default function GraphExplorer"));
-    const responsiveFrameRule = css.match(
-      /@media \(max-width: 1279px\) \{[\s\S]*?\.uc-graph-frame \{[\s\S]*?\}[\s\S]*?\}/,
-    )?.[0] ?? "";
-
-    expect(componentSource).toMatch(/className="[^"]*max-xl:flex-none[^"]*"/);
-    expect(responsiveFrameRule).toContain("aspect-ratio: 4 / 3;");
-    expect(responsiveFrameRule).toContain("flex: none;");
+    expect(componentSource).toContain("uc-graph-explorer");
+    expect(componentSource).toContain("uc-graph-toolbar");
+    expect(css).toMatch(/\.uc-graph-explorer\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*min-height:\s*0;[^}]*height:\s*100%;/s);
+    expect(css).toMatch(/\.uc-graph-toolbar\s*\{[^}]*flex:\s*0 0 auto;/s);
+    expect(css).toMatch(/\.uc-graph-frame\s*\{[^}]*position:\s*relative;[^}]*flex:\s*1;[^}]*min-height:\s*0;/s);
+    expect(css).not.toMatch(/\.uc-graph-frame\s*\{[^}]*aspect-ratio:/s);
     expect(`${componentSource}\n${css}`).not.toMatch(/min-h-\[(?:420|480|540)px\]/);
   });
 });
@@ -396,6 +428,19 @@ describe("GraphExplorer progressive navigation integration", () => {
   let root: Root;
 
   beforeEach(() => {
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      callback(16);
+      return 1;
+    });
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn((query: string) => ({
+        matches: false,
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    });
     container = document.createElement("div");
     document.body.replaceChildren(container);
     root = createRoot(container);
@@ -419,6 +464,7 @@ describe("GraphExplorer progressive navigation integration", () => {
     await act(async () => root.unmount());
     graphExplorerHarness.omitMaterializedNode = false;
     document.body.replaceChildren();
+    vi.restoreAllMocks();
   });
 
   async function renderExplorer(strict = false): Promise<void> {
@@ -637,6 +683,59 @@ describe("GraphExplorer progressive navigation integration", () => {
     expect(container.querySelectorAll(".uc-graph-frame")).toHaveLength(1);
     const frame = container.querySelector(".uc-graph-frame");
     expect(frame?.querySelector(":scope > .uc-semantic-canvas")).not.toBeNull();
+  });
+
+  it("dismisses and reopens the overlay inspector without disturbing selection or Canvas geometry", async () => {
+    await renderExplorer();
+    const node = container.querySelector<HTMLButtonElement>("[data-canvas-node]");
+    if (!node?.dataset.canvasNode) throw new Error("缺少可选择图谱节点");
+    const nodeId = node.dataset.canvasNode;
+    const canvas = container.querySelector<HTMLElement>('[data-testid="semantic-canvas"]')!;
+    const frame = container.querySelector<HTMLElement>(".uc-graph-frame")!;
+    const viewKey = canvas.dataset.viewKey;
+    const dimensions = [canvas.dataset.canvasWidth, canvas.dataset.canvasHeight];
+
+    await act(async () => node.click());
+    expect(useDashboardStore.getState().selectedNodeId).toBe(nodeId);
+    expect(frame.querySelector(':scope > aside[aria-label="图谱详情"]')).not.toBeNull();
+
+    await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    })));
+    expect(frame.querySelector(':scope > aside[aria-label="图谱详情"]')).toBeNull();
+    expect(useDashboardStore.getState().selectedNodeId).toBe(nodeId);
+    expect(document.activeElement).toBe(node);
+    expect(container.querySelector('[data-testid="semantic-canvas"]')).toBe(canvas);
+    expect(canvas.dataset.viewKey).toBe(viewKey);
+    expect([canvas.dataset.canvasWidth, canvas.dataset.canvasHeight]).toEqual(dimensions);
+
+    await act(async () => node.click());
+    expect(frame.querySelector(':scope > aside[aria-label="图谱详情"]')).not.toBeNull();
+
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-quick-open="true"]')?.click());
+    const quickInput = container.querySelector<HTMLInputElement>('[aria-label="搜索图谱对象"]');
+    if (!quickInput) throw new Error("快速定位未打开");
+    await act(async () => quickInput.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    })));
+    expect(container.querySelector('[aria-label="搜索图谱对象"]')).toBeNull();
+    expect(frame.querySelector(':scope > aside[aria-label="图谱详情"]')).not.toBeNull();
+
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="关闭图谱详情"]')?.click());
+    expect(frame.querySelector(':scope > aside[aria-label="图谱详情"]')).toBeNull();
+    expect(useDashboardStore.getState().selectedNodeId).toBe(nodeId);
+    expect(canvas.dataset.viewKey).toBe(viewKey);
+
+    await act(async () => node.click());
+    expect(frame.querySelector(':scope > aside[aria-label="图谱详情"]')).not.toBeNull();
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-pane-clear="true"]')?.click());
+    expect(useDashboardStore.getState().selectedNodeId).toBeNull();
+    expect(frame.querySelector(':scope > aside[aria-label="图谱详情"]')).toBeNull();
+    expect(canvas.dataset.viewKey).toBe(viewKey);
   });
 
   it("keeps an expansion-only ordinary selection across the post-pending effect rerender", async () => {

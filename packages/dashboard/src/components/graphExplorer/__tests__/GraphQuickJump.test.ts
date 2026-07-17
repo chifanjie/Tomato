@@ -284,6 +284,11 @@ describe("GraphQuickJump", () => {
     expect(cssSource).toContain(".uc-graph-quick-jump-popover");
     expect(cssSource).toMatch(/width:\s*min\(360px,\s*calc\(100vw - 24px\)\)/);
     expect(cssSource).toMatch(/max-height:\s*70dvh/);
-    expect(cssSource).toMatch(/@media \(max-width: 390px\)/);
+    const compactRule = cssSource.slice(cssSource.lastIndexOf("@media (max-width: 1023px)"));
+    expect(compactRule).toMatch(/\.uc-graph-quick-jump\s*\{[^}]*width:\s*100%;/s);
+    expect(compactRule).toMatch(/left:\s*0;/);
+    expect(compactRule).toMatch(/right:\s*auto;/);
+    expect(compactRule).toMatch(/width:\s*100%;/);
+    expect(compactRule).toMatch(/max-width:\s*360px;/);
   });
 });

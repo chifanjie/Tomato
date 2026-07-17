@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,7 +16,7 @@ import {
   scopeNodeId,
 } from "../../../graphExplorer/hierarchicalGraph";
 import type { WikiTarget } from "../../../wiki/wikiContent";
-import GraphDetailsRail from "../GraphDetailsRail";
+import GraphDetailsRail, { resolveGraphInspectorSide } from "../GraphDetailsRail";
 import { buildGraphExplorerView, type GraphExplorerView } from "../graphExplorerModel";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -27,6 +29,7 @@ function buttonWithText(container: HTMLElement, text: string): HTMLButtonElement
 describe("GraphDetailsRail", () => {
   let container: HTMLDivElement;
   let root: Root;
+  let onClose: ReturnType<typeof vi.fn<() => void>>;
   let onSelectObject: ReturnType<typeof vi.fn<(nodeId: string) => void>>;
   let onOpenScope: ReturnType<typeof vi.fn<(scopeId: string) => void>>;
   let onOpenCluster: ReturnType<typeof vi.fn<(scopeId: string, clusterId: string) => void>>;
@@ -37,11 +40,21 @@ describe("GraphDetailsRail", () => {
     container = document.createElement("div");
     document.body.replaceChildren(container);
     root = createRoot(container);
+    onClose = vi.fn();
     onSelectObject = vi.fn();
     onOpenScope = vi.fn();
     onOpenCluster = vi.fn();
     onOpenFile = vi.fn();
     onSelectWikiTarget = vi.fn();
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn(() => ({
+        matches: false,
+        media: "(max-width: 1023px)",
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    });
   });
 
   afterEach(async () => {
@@ -50,10 +63,16 @@ describe("GraphDetailsRail", () => {
     vi.restoreAllMocks();
   });
 
-  async function renderRail(view: GraphExplorerView): Promise<void> {
+  async function renderRail(
+    view: GraphExplorerView,
+    options: { open?: boolean; side?: "left" | "right" } = {},
+  ): Promise<void> {
     await act(async () => {
       root.render(createElement(GraphDetailsRail, {
         view,
+        open: options.open ?? true,
+        side: options.side ?? "right",
+        onClose,
         onSelectObject,
         onOpenScope,
         onOpenCluster,
@@ -63,6 +82,133 @@ describe("GraphDetailsRail", () => {
       }));
     });
   }
+
+  function setCompactViewport(compact: boolean): void {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn(() => ({
+        matches: compact,
+        media: "(max-width: 1023px)",
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    });
+  }
+
+  it("renders only while open with complementary semantics and the requested side", async () => {
+    const graph = graphFixture();
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const location = hierarchyIndex.fileLocationById.get("file:src/a.ts")!;
+    const view = buildGraphExplorerView({
+      graph,
+      hierarchyIndex,
+      wikiIndex: wikiRuntimeFixture(),
+      mode: "coverage",
+      selectedNodeId: "function:src/a.ts:run",
+      navigation: { level: "file", ...location },
+      materializedNodeId: null,
+    });
+
+    await renderRail(view, { open: false });
+    expect(container.querySelector("aside")).toBeNull();
+
+    await renderRail(view, { open: true, side: "left" });
+    const inspector = container.querySelector<HTMLElement>('[role="complementary"][aria-label="图谱详情"]');
+    expect(inspector?.dataset.side).toBe("left");
+    expect(buttonWithText(container, "关闭图谱详情")).not.toBeNull();
+    expect(container.textContent).toContain("节点职责");
+    expect(container.textContent).toContain("上游");
+    expect(container.textContent).toContain("下游");
+    expect(container.textContent).toContain("专门正文");
+    expect(container.textContent).toContain("相关资料");
+    expect(container.textContent).toContain("源码证据");
+
+    await renderRail(view, { side: "right" });
+    expect(container.querySelector<HTMLElement>("aside")?.dataset.side).toBe("right");
+  });
+
+  it("places the desktop inspector away from a selected node and always uses the right sheet on compact screens", () => {
+    const common = {
+      frameWidth: 1_000,
+      inspectorWidth: 360,
+      gap: 12,
+      compact: false,
+    };
+    expect(resolveGraphInspectorSide({
+      ...common,
+      selectedScreenBounds: { left: 700, right: 820, top: 80, bottom: 160 },
+    })).toBe("left");
+    expect(resolveGraphInspectorSide({
+      ...common,
+      selectedScreenBounds: { left: 120, right: 260, top: 80, bottom: 160 },
+    })).toBe("right");
+    expect(resolveGraphInspectorSide({
+      ...common,
+      selectedScreenBounds: { left: 700, right: 820, top: 80, bottom: 160 },
+      compact: true,
+    })).toBe("right");
+    expect(resolveGraphInspectorSide({ ...common, selectedScreenBounds: null })).toBe("right");
+  });
+
+  it("closes without selecting a graph object", async () => {
+    const graph = graphFixture();
+    const view = buildGraphExplorerView({
+      graph,
+      hierarchyIndex: buildGraphHierarchyIndex(graph),
+      wikiIndex: wikiRuntimeFixture(),
+      mode: "architecture",
+      selectedNodeId: scopeNodeId("layer:app"),
+      navigation: { level: "overview" },
+      materializedNodeId: null,
+    });
+    await renderRail(view);
+
+    await act(async () => buttonWithText(container, "关闭图谱详情")?.click());
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(onSelectObject).not.toHaveBeenCalled();
+  });
+
+  it("toggles compact sheet size and resets to half after reopening", async () => {
+    setCompactViewport(true);
+    const graph = graphFixture();
+    const view = buildGraphExplorerView({
+      graph,
+      hierarchyIndex: buildGraphHierarchyIndex(graph),
+      wikiIndex: wikiRuntimeFixture(),
+      mode: "architecture",
+      selectedNodeId: scopeNodeId("layer:app"),
+      navigation: { level: "overview" },
+      materializedNodeId: null,
+    });
+    await renderRail(view);
+    expect(container.querySelector<HTMLElement>("aside")?.dataset.sheetSize).toBe("half");
+
+    await act(async () => buttonWithText(container, "展开全屏图谱详情")?.click());
+    expect(container.querySelector<HTMLElement>("aside")?.dataset.sheetSize).toBe("full");
+    expect(buttonWithText(container, "收起半屏图谱详情")).not.toBeNull();
+
+    await renderRail(view, { open: false });
+    await renderRail(view, { open: true });
+    expect(container.querySelector<HTMLElement>("aside")?.dataset.sheetSize).toBe("half");
+  });
+
+  it("keeps inspector scrolling, single-column relations, and every action target at least 44px", () => {
+    const componentSource = readFileSync(resolve(
+      process.cwd(),
+      "src/components/graphExplorer/GraphDetailsRail.tsx",
+    ), "utf8");
+    const css = readFileSync(resolve(process.cwd(), "src/index.css"), "utf8");
+    const compactCss = css.match(/@media \(max-width: 1023px\) \{[\s\S]*?\.uc-graph-inspector[\s\S]*?\n\}/)?.[0] ?? "";
+
+    expect(componentSource).toContain("uc-graph-inspector__scroll");
+    expect(componentSource).not.toContain("sm:grid-cols-2");
+    expect(componentSource).not.toContain("max-xl:overflow-visible");
+    expect(css).toMatch(/\.uc-graph-inspector__scroll\s*\{[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/s);
+    expect(compactCss).not.toMatch(/overflow:\s*visible/);
+    expect(css).toMatch(/\.uc-graph-inspector button\s*\{[^}]*min-width:\s*44px;[^}]*min-height:\s*44px;/s);
+    expect(css).toMatch(/\.uc-semantic-canvas \.react-flow__controls-button\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;/s);
+  });
 
   it("opens only the exact direct page through the required App callback", async () => {
     const pushState = vi.spyOn(window.history, "pushState");
@@ -224,6 +370,9 @@ describe("GraphDetailsRail", () => {
     await act(async () => {
       root.render(createElement(GraphDetailsRail, {
         view,
+        open: true,
+        side: "right",
+        onClose,
         onSelectObject,
         onOpenScope,
         onOpenCluster,

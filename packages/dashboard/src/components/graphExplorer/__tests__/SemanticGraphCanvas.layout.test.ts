@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { act, createElement, StrictMode, useEffect } from "react";
+import { act, createElement, Fragment, StrictMode, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -16,6 +16,10 @@ const testHarness = vi.hoisted(() => ({
   requestLayout: vi.fn(),
   setViewport: vi.fn(async (_viewport: { x: number; y: number; zoom: number }) => true),
   getViewport: vi.fn(() => ({ x: 12, y: 18, zoom: 0.8 })),
+  flowToScreenPosition: vi.fn((position: { x: number; y: number }) => ({
+    x: position.x + 100,
+    y: position.y + 200,
+  })),
 }));
 
 vi.mock("../../../graphExplorer/layoutClient.js", () => ({
@@ -42,6 +46,7 @@ vi.mock("@xyflow/react", async (importOriginal) => {
         onInit?.({
           setViewport: testHarness.setViewport,
           getViewport: testHarness.getViewport,
+          flowToScreenPosition: testHarness.flowToScreenPosition,
         });
       }, [props.onInit]);
       testHarness.flowProps.push(props);
@@ -180,15 +185,28 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
   let rafSequence: number;
   let rafCallbacks: Map<number, FrameRequestCallback>;
   let ready: ReturnType<typeof vi.fn>;
+  let selectedBoundsChanged: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     frame = document.createElement("div");
     frame.className = "uc-graph-frame";
     document.body.replaceChildren(frame);
     root = createRoot(frame);
+    vi.spyOn(frame, "getBoundingClientRect").mockReturnValue({
+      left: 10,
+      top: 20,
+      right: 970,
+      bottom: 670,
+      width: 960,
+      height: 650,
+      x: 10,
+      y: 20,
+      toJSON: () => ({}),
+    });
     rafSequence = 0;
     rafCallbacks = new Map();
     ready = vi.fn();
+    selectedBoundsChanged = vi.fn();
     vi.stubGlobal("ResizeObserver", TestResizeObserver);
     vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
       const id = ++rafSequence;
@@ -205,6 +223,7 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
     testHarness.setViewport.mockResolvedValue(true);
     testHarness.getViewport.mockReset();
     testHarness.getViewport.mockReturnValue({ x: 12, y: 18, zoom: 0.8 });
+    testHarness.flowToScreenPosition.mockClear();
     useDashboardStore.setState({ selectedNodeId: null });
   });
 
@@ -232,22 +251,36 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
     semanticGraph?: HierarchicalSemanticGraph;
     explicitFocusRequest?: { requestId: number; materializedNodeId: string } | null;
     graphRevision?: string;
+    inspectorOpen?: boolean;
+    onSelectedScreenBoundsChange?: (bounds: {
+      left: number;
+      right: number;
+      top: number;
+      bottom: number;
+    } | null) => void;
   } = {}) {
     const baseGraph = input.baseGraph ?? semanticGraph("scope", ["a", "b"]);
-    return createElement(SemanticGraphCanvas, {
-      frameRef: { current: frame },
-      baseGraph,
-      semanticGraph: input.semanticGraph ?? baseGraph,
-      graphRevision: input.graphRevision ?? "revision:1",
-      navigation: navigation(baseGraph.presentation.level),
-      displayMode: "architecture",
-      explicitFocusRequest: input.explicitFocusRequest ?? null,
-      onBaseLayoutReady: ready,
-      emptyNotice: null,
-      onOpenScope: vi.fn(),
-      onOpenCluster: vi.fn(),
-      onOpenFile: vi.fn(),
-    });
+    return createElement(Fragment, null,
+      createElement(SemanticGraphCanvas, {
+        frameRef: { current: frame },
+        baseGraph,
+        semanticGraph: input.semanticGraph ?? baseGraph,
+        graphRevision: input.graphRevision ?? "revision:1",
+        navigation: navigation(baseGraph.presentation.level),
+        displayMode: "architecture",
+        explicitFocusRequest: input.explicitFocusRequest ?? null,
+        onBaseLayoutReady: ready,
+        onSelectedScreenBoundsChange:
+          input.onSelectedScreenBoundsChange ?? selectedBoundsChanged,
+        emptyNotice: null,
+        onOpenScope: vi.fn(),
+        onOpenCluster: vi.fn(),
+        onOpenFile: vi.fn(),
+      }),
+      input.inspectorOpen
+        ? createElement("aside", { "data-testid": "inspector-sibling" })
+        : null,
+    );
   }
 
   async function render(input: Parameters<typeof canvas>[0] = {}, strict = false): Promise<void> {
@@ -355,6 +388,92 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
     expect(expandedNodes.find((node) => node.id === "b")?.position)
       .toEqual(initialNodes.find((node) => node.id === "b")?.position);
     expect(expandedNodes.find((node) => node.id === "selected")?.position).toBeDefined();
+    expect(testHarness.getViewport()).toEqual({ x: 12, y: 18, zoom: 0.8 });
+  });
+
+  it("keeps layout, base positions, and viewport invariant while the inspector sibling opens and closes", async () => {
+    const base = semanticGraph("scope", ["a", "b"]);
+    await render({ baseGraph: base, inspectorOpen: false });
+    await emitResize(960, 650);
+    const initialCanvas = frame.querySelector<HTMLElement>(".uc-semantic-canvas")!;
+    const initialStructureKey = initialCanvas.dataset.graphStructureKey;
+    const initialProps = testHarness.flowProps.at(-1)!;
+    const initialNodes = initialProps.nodes as Array<{
+      id: string;
+      position: { x: number; y: number };
+    }>;
+    const initialPositions = new Map(initialNodes.map((node) => [node.id, node.position]));
+    const initialViewport = testHarness.getViewport();
+    expect(testHarness.requestLayout).toHaveBeenCalledTimes(1);
+    expect(testHarness.setViewport).toHaveBeenCalledTimes(1);
+
+    await render({ baseGraph: base, inspectorOpen: true });
+    expect(frame.querySelector('[data-testid="inspector-sibling"]')).not.toBeNull();
+    let currentProps = testHarness.flowProps.at(-1)!;
+    let currentNodes = currentProps.nodes as typeof initialNodes;
+    expect(testHarness.requestLayout).toHaveBeenCalledTimes(1);
+    expect(testHarness.setViewport).toHaveBeenCalledTimes(1);
+    expect(frame.querySelector<HTMLElement>(".uc-semantic-canvas")?.dataset.graphStructureKey)
+      .toBe(initialStructureKey);
+    expect(currentNodes.find((node) => node.id === "a")?.position).toBe(initialPositions.get("a"));
+    expect(currentNodes.find((node) => node.id === "b")?.position).toBe(initialPositions.get("b"));
+    expect(testHarness.getViewport()).toEqual(initialViewport);
+
+    await render({ baseGraph: base, inspectorOpen: false });
+    currentProps = testHarness.flowProps.at(-1)!;
+    currentNodes = currentProps.nodes as typeof initialNodes;
+    expect(testHarness.requestLayout).toHaveBeenCalledTimes(1);
+    expect(testHarness.setViewport).toHaveBeenCalledTimes(1);
+    expect(frame.querySelector<HTMLElement>(".uc-semantic-canvas")?.dataset.graphStructureKey)
+      .toBe(initialStructureKey);
+    expect(currentNodes.find((node) => node.id === "a")?.position).toBe(initialPositions.get("a"));
+    expect(currentNodes.find((node) => node.id === "b")?.position).toBe(initialPositions.get("b"));
+    expect(testHarness.getViewport()).toEqual(initialViewport);
+  });
+
+  it("recomputes selected screen bounds at every geometry boundary without moving the viewport", async () => {
+    const base = semanticGraph("scope", ["a", "b"]);
+    await render({ baseGraph: base });
+    await emitResize(960, 650);
+    const automaticViewportCalls = testHarness.setViewport.mock.calls.length;
+    const afterFinalPositions = testHarness.flowToScreenPosition.mock.calls.length;
+
+    await act(async () => useDashboardStore.getState().selectNode("a"));
+    expect(testHarness.flowToScreenPosition.mock.calls.length).toBe(afterFinalPositions + 2);
+    expect(selectedBoundsChanged).toHaveBeenLastCalledWith({
+      left: expect.any(Number),
+      right: expect.any(Number),
+      top: expect.any(Number),
+      bottom: expect.any(Number),
+    });
+    expect(testHarness.setViewport).toHaveBeenCalledTimes(automaticViewportCalls);
+
+    let props = testHarness.flowProps.at(-1)!;
+    const beforeMoveProjectionCalls = testHarness.flowToScreenPosition.mock.calls.length;
+    const emittedBoundsCount = selectedBoundsChanged.mock.calls.length;
+    await act(async () => (props.onMoveEnd as Function)(null, { x: 12, y: 18, zoom: 0.8 }));
+    expect(testHarness.flowToScreenPosition.mock.calls.length).toBe(beforeMoveProjectionCalls + 2);
+    expect(selectedBoundsChanged).toHaveBeenCalledTimes(emittedBoundsCount);
+    expect(testHarness.setViewport).toHaveBeenCalledTimes(automaticViewportCalls);
+
+    const beforeInitProjectionCalls = testHarness.flowToScreenPosition.mock.calls.length;
+    await act(async () => (props.onInit as Function)({
+      setViewport: testHarness.setViewport,
+      getViewport: testHarness.getViewport,
+      flowToScreenPosition: testHarness.flowToScreenPosition,
+    }));
+    expect(testHarness.flowToScreenPosition.mock.calls.length).toBe(beforeInitProjectionCalls + 2);
+    expect(testHarness.setViewport).toHaveBeenCalledTimes(automaticViewportCalls);
+
+    await emitResize(1_360, 780);
+    await flushRaf();
+    await flushRaf();
+    expect(testHarness.requestLayout).toHaveBeenCalledTimes(2);
+    expect(testHarness.flowToScreenPosition.mock.calls.length).toBeGreaterThan(beforeInitProjectionCalls + 2);
+    expect(testHarness.setViewport).toHaveBeenCalledTimes(automaticViewportCalls + 1);
+    props = testHarness.flowProps.at(-1)!;
+    expect(props.fitView).toBeUndefined();
+    expect(props.fitViewOptions).toBeUndefined();
     expect(testHarness.getViewport()).toEqual({ x: 12, y: 18, zoom: 0.8 });
   });
 

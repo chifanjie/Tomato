@@ -957,23 +957,28 @@ body {
   border-radius: 6px;
 }
 
+.uc-graph-explorer {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  gap: 12px;
+}
+
+.uc-graph-toolbar {
+  flex: 0 0 auto;
+}
+
 .uc-graph-frame {
   position: relative;
+  flex: 1;
+  min-height: 0;
   display: flex;
   min-width: 0;
-  min-height: 0;
-  flex: 1 1 auto;
   overflow: hidden;
   background: var(--color-graph-canvas);
   border: 1px solid var(--color-graph-node-border);
   border-radius: var(--radius-panel);
-}
-
-@media (max-width: 1279px) {
-  .uc-graph-frame {
-    aspect-ratio: 4 / 3;
-    flex: none;
-  }
 }
 
 .uc-semantic-canvas {
@@ -986,6 +991,113 @@ body {
   overflow: hidden;
   background: var(--color-graph-canvas);
   color: var(--color-text-secondary);
+}
+
+.uc-graph-inspector {
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  z-index: 20;
+  display: flex;
+  width: min(360px, calc(100% - 24px));
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--color-graph-control-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-overlay);
+}
+
+.uc-graph-inspector[data-side="left"] { left: 12px; }
+.uc-graph-inspector[data-side="right"] { right: 12px; }
+
+.uc-graph-inspector__scroll {
+  min-height: 0;
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 16px;
+}
+
+.uc-graph-inspector__section {
+  min-width: 0;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.uc-graph-inspector__section:last-child {
+  border-bottom: 0;
+}
+
+.uc-graph-inspector button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.uc-graph-inspector pre,
+.uc-graph-inspector code,
+.uc-graph-inspector .uc-code-ref {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.uc-graph-inspector pre {
+  overflow-x: auto;
+}
+
+.uc-graph-breadcrumbs {
+  max-width: 100%;
+}
+
+.uc-graph-tools {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.uc-graph-tools > summary {
+  display: grid;
+  min-width: 44px;
+  min-height: 44px;
+  cursor: pointer;
+  list-style: none;
+  place-items: center;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  padding: 0 14px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.uc-graph-tools > summary::-webkit-details-marker { display: none; }
+
+.uc-graph-tools__panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 45;
+  display: grid;
+  width: min(360px, calc(100vw - 24px));
+  gap: 8px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  padding: 10px;
+  box-shadow: var(--shadow-overlay);
+}
+
+.uc-graph-tools__panel > button {
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-control);
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 650;
 }
 
 .uc-semantic-canvas > .react-flow {
@@ -1821,16 +1933,57 @@ body {
   text-align: center;
 }
 
+@media (max-width: 1023px) {
+  .uc-graph-inspector[data-side="left"],
+  .uc-graph-inspector[data-side="right"] {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    max-width: 100%;
+    border-radius: 14px 14px 0 0;
+  }
+
+  .uc-graph-inspector[data-sheet-size="half"] {
+    max-height: min(56dvh, 100%);
+  }
+
+  .uc-graph-inspector[data-sheet-size="full"] {
+    max-height: min(88dvh, 100%);
+  }
+
+  .uc-graph-toolbar,
+  .uc-graph-tools,
+  .uc-graph-tools__panel,
+  .uc-graph-quick-jump {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .uc-graph-tools__panel {
+    max-width: 360px;
+  }
+
+  .uc-graph-breadcrumbs {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+
+  .uc-graph-quick-jump-popover {
+    left: 0;
+    right: auto;
+    width: 100%;
+    max-width: 360px;
+  }
+}
+
 @media (max-width: 767px) {
   .uc-theme-menu { width: min(360px, calc(100vw - 24px)); }
   .uc-theme-option { min-height: 64px; padding: 12px; }
 }
 
 @media (max-width: 390px) {
-  .uc-graph-quick-jump-popover {
-    width: min(360px, calc(100vw - 24px));
-  }
-
   .uc-graph-quick-jump-option {
     min-height: 56px;
   }

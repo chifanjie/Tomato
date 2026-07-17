@@ -13,13 +13,17 @@ import {
   type GraphNavigationIntent,
 } from "../../graphExplorer/graphQuickJump";
 import { useDashboardStore } from "../../store";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import type { WikiTarget } from "../../wiki/wikiContent";
 import type { WikiRuntimeIndex } from "../../wiki/wikiIndex";
 import GraphCoverageLegend from "./GraphCoverageLegend";
-import GraphDetailsRail from "./GraphDetailsRail";
+import GraphDetailsRail, { resolveGraphInspectorSide } from "./GraphDetailsRail";
 import GraphModeToolbar from "./GraphModeToolbar";
 import { GraphQuickJump } from "./GraphQuickJump";
-import SemanticGraphCanvas, { type GraphBaseLayoutReady } from "./SemanticGraphCanvas";
+import SemanticGraphCanvas, {
+  type GraphBaseLayoutReady,
+  type GraphSelectedScreenBounds,
+} from "./SemanticGraphCanvas";
 import {
   availableGraphModes,
   buildGraphExplorerView,
@@ -223,7 +227,20 @@ export default function GraphExplorer({
   const [wikiFocusNotice, setWikiFocusNotice] = useState<string | null>(null);
   const [visibleSelectedNodeId, setVisibleSelectedNodeId] = useState<string | null>(null);
   const [visibleSelectionContextKey, setVisibleSelectionContextKey] = useState<string | null>(null);
+  const compact = useIsMobile(1024);
+  const belowDesktop = useIsMobile(1280);
+  const phone = useIsMobile(768);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [showMinimap, setShowMinimap] = useState(() => !belowDesktop);
+  const [inspectorOpen, setInspectorOpen] = useState(() => selectedNodeId !== null);
+  const [selectedScreenBounds, setReportedSelectedScreenBounds] =
+    useState<GraphSelectedScreenBounds | null>(null);
+  const [frameWidth, setFrameWidth] = useState(0);
   const frameRef = useRef<HTMLDivElement>(null);
+  const minimapUserPreferenceRef = useRef(false);
+  const previousSelectedNodeIdRef = useRef(selectedNodeId);
+  const latestSelectedNodeIdRef = useRef<string | null>(selectedNodeId);
+  const focusRestoreFrameRef = useRef<number | null>(null);
   const navigationRequestSequence = useRef(0);
   const handledLayoutReadyRequestIdRef = useRef<number | null>(null);
   const failedMaterializationRequestIdRef = useRef<number | null>(null);
@@ -329,6 +346,56 @@ export default function GraphExplorer({
     safeNavigation,
   ]);
   const selectionContextKey = selectionContextKeyFor(safePendingNavigationRequest);
+  latestSelectedNodeIdRef.current = safeSelectedNodeId;
+
+  useEffect(() => {
+    if (!minimapUserPreferenceRef.current) setShowMinimap(!belowDesktop);
+  }, [belowDesktop]);
+
+  useEffect(() => {
+    const previous = previousSelectedNodeIdRef.current;
+    previousSelectedNodeIdRef.current = safeSelectedNodeId;
+    if (safeSelectedNodeId === null) {
+      setInspectorOpen(false);
+      setReportedSelectedScreenBounds(null);
+    } else if (safeSelectedNodeId !== previous) {
+      setInspectorOpen(true);
+    }
+  }, [safeSelectedNodeId]);
+
+  const restoreSelectedNodeFocus = useCallback(() => {
+    if (focusRestoreFrameRef.current !== null) {
+      cancelAnimationFrame(focusRestoreFrameRef.current);
+    }
+    const expectedNodeId = latestSelectedNodeIdRef.current;
+    if (!expectedNodeId) return;
+    focusRestoreFrameRef.current = requestAnimationFrame(() => {
+      focusRestoreFrameRef.current = null;
+      if (latestSelectedNodeIdRef.current !== expectedNodeId) return;
+      const graphNode = [...document.querySelectorAll<HTMLElement>("[data-graph-node-id]")]
+        .find((candidate) => candidate.dataset.graphNodeId === expectedNodeId);
+      graphNode?.focus({ preventScroll: true });
+    });
+  }, []);
+
+  useEffect(() => () => {
+    if (focusRestoreFrameRef.current !== null) {
+      cancelAnimationFrame(focusRestoreFrameRef.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!inspectorOpen) return;
+    const onDocumentKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (event.target instanceof Element && event.target.closest(".uc-graph-quick-jump")) return;
+      event.preventDefault();
+      setInspectorOpen(false);
+      restoreSelectedNodeFocus();
+    };
+    document.addEventListener("keydown", onDocumentKeyDown);
+    return () => document.removeEventListener("keydown", onDocumentKeyDown);
+  }, [inspectorOpen, restoreSelectedNodeFocus]);
 
   useEffect(() => {
     if (storedMode !== effectiveMode) setGraphExplorerMode(effectiveMode);
@@ -455,6 +522,7 @@ export default function GraphExplorer({
     setWikiFocusNotice(null);
     setVisibleSelectedNodeId(pending.intent.selectionId);
     setVisibleSelectionContextKey(current.clearedSelectionContextKey);
+    setInspectorOpen(true);
     selectNode(pending.intent.selectionId);
   }, [selectNode]);
 
@@ -482,8 +550,27 @@ export default function GraphExplorer({
     setWikiFocusNotice(null);
     setVisibleSelectedNodeId(isVisible ? nodeId : null);
     setVisibleSelectionContextKey(isVisible ? selectionContextKeyFor(null) : null);
+    setInspectorOpen(nodeId !== null);
     selectNode(nodeId);
   }, [selectNode, selectionContextKeyFor, view]);
+
+  const clearSelection = useCallback(() => {
+    setPendingNavigationRequest(null);
+    setWikiFocusNotice(null);
+    setVisibleSelectedNodeId(null);
+    setVisibleSelectionContextKey(null);
+    setReportedSelectedScreenBounds(null);
+    setInspectorOpen(false);
+    selectNode(null);
+  }, [selectNode]);
+
+  const setSelectedScreenBounds = useCallback(
+    (bounds: GraphSelectedScreenBounds | null) => {
+      setReportedSelectedScreenBounds(bounds);
+      setFrameWidth(frameRef.current?.getBoundingClientRect().width ?? 0);
+    },
+    [],
+  );
 
   const transitionNavigation = useCallback((
     nextNavigation: GraphExplorerNavigation,
@@ -598,92 +685,133 @@ export default function GraphExplorer({
 
   const presentation = view.semanticGraph.presentation;
   const notice = wikiFocusNotice ?? presentation.notice;
+  const coverageAvailable = effectiveMode === "coverage"
+    && modeOptions.some((option) => option.id === "coverage");
+  const inspectorSide = resolveGraphInspectorSide({
+    selectedScreenBounds,
+    frameWidth,
+    inspectorWidth: 360,
+    gap: 12,
+    compact,
+  });
 
   return (
     <section
       aria-label="项目图谱"
-      className="flex min-h-0 flex-1 overflow-x-hidden overflow-y-auto bg-root text-text-primary xl:overflow-hidden max-xl:flex-col"
+      className="uc-graph-explorer min-h-0 min-w-0 flex-1 overflow-x-hidden bg-root p-4 text-text-primary max-sm:p-3"
     >
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 p-4 max-sm:p-3 max-xl:flex-none">
-        <div className="flex items-start justify-between gap-3 max-lg:flex-col">
+      <div className="uc-graph-toolbar flex items-start justify-between gap-3 max-lg:flex-col">
+        {!compact && (
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <GraphModeToolbar mode={effectiveMode} options={modeOptions} onChangeMode={changeMode} />
             <GraphQuickJump items={quickJumpItems} onSelect={applyNavigationIntent} />
           </div>
-          {effectiveMode === "coverage" && modeOptions.some((option) => option.id === "coverage") && (
-            <GraphCoverageLegend />
-          )}
-        </div>
-
-        <div className="uc-panel flex min-w-0 flex-wrap items-center justify-between gap-3 px-3 py-2">
-          <nav aria-label="图谱层级" className="flex min-w-0 flex-wrap items-center gap-1 text-xs">
-            {presentation.breadcrumbs.map((item, index) => {
-              const isCurrent = index === presentation.breadcrumbs.length - 1;
-              return (
-                <span key={`${item.level}:${item.scopeId ?? ""}:${item.clusterId ?? ""}:${item.fileId ?? ""}`} className="flex items-center gap-1">
-                  {index > 0 && <span aria-hidden="true" className="text-text-muted">/</span>}
-                  {isCurrent ? (
-                    <span aria-current="page" className="font-semibold text-text-primary">{item.label}</span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => item.level === "overview"
-                        ? openOverview()
-                        : item.level === "scope" && item.scopeId
-                          ? openScope(item.scopeId)
-                          : item.level === "cluster" && item.scopeId && item.clusterId
-                            ? openCluster(item.scopeId, item.clusterId)
-                            : item.scopeId && item.clusterId && item.fileId
-                              ? openFile(item.scopeId, item.clusterId, item.fileId)
-                              : undefined}
-                      className="min-h-11 min-w-11 rounded px-2.5 py-1.5 text-text-muted transition-colors hover:bg-elevated hover:text-text-primary"
-                    >
-                      {item.label}
-                    </button>
-                  )}
-                </span>
-              );
-            })}
-          </nav>
-          <p className="text-[11px] text-text-muted">
-            当前显示 {view.semanticGraph.nodes.length} 个元素
-            {presentation.hiddenNodeCount > 0 ? `，另有 ${presentation.hiddenNodeCount} 个未展开` : ""}
-          </p>
-        </div>
-
-        {notice && view.semanticGraph.nodes.length > 0 && (
-          <p role="status" aria-live="polite" className="uc-panel-muted px-3 py-2 text-sm text-text-muted">
-            {notice}
-          </p>
         )}
-
-        <div className="uc-graph-frame" ref={frameRef}>
-          <SemanticGraphCanvas
-            frameRef={frameRef}
-            baseGraph={view.baseGraph}
-            semanticGraph={view.semanticGraph}
-            graphRevision={layoutRevision}
-            navigation={safeNavigation}
-            displayMode={effectiveMode}
-            explicitFocusRequest={explicitFocusRequest}
-            onBaseLayoutReady={handleBaseLayoutReady}
-            emptyNotice={notice}
-            onOpenScope={openScope}
-            onOpenCluster={openCluster}
-            onOpenFile={openFile}
-            onSelectNode={selectVisibleNode}
-          />
-        </div>
+        {belowDesktop && (
+          <details
+            className="uc-graph-tools"
+            open={toolsOpen}
+            onToggle={(event) => setToolsOpen(event.currentTarget.open)}
+          >
+            <summary>更多图谱工具</summary>
+            <div className="uc-graph-tools__panel">
+              {compact && (
+                <div className="grid min-w-0 gap-2">
+                  <GraphModeToolbar mode={effectiveMode} options={modeOptions} onChangeMode={changeMode} />
+                  <GraphQuickJump items={quickJumpItems} onSelect={applyNavigationIntent} />
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  minimapUserPreferenceRef.current = true;
+                  setShowMinimap((current) => !current);
+                }}
+              >
+                {showMinimap ? "隐藏缩略图" : "显示缩略图"}
+              </button>
+              {phone && coverageAvailable && <GraphCoverageLegend />}
+            </div>
+          </details>
+        )}
+        {!phone && coverageAvailable && <GraphCoverageLegend />}
       </div>
-      <GraphDetailsRail
-        view={view}
-        onSelectObject={selectVisibleNode}
-        onOpenScope={openScope}
-        onOpenCluster={openCluster}
-        onOpenFile={openFile}
-        onSelectWikiTarget={openSelectionWikiTarget}
-        onRequestGlobalSearch={onRequestGlobalSearch}
-      />
+
+      <div className="uc-panel flex min-w-0 flex-wrap items-center justify-between gap-3 px-3 py-2">
+        <nav aria-label="图谱层级" className="uc-graph-breadcrumbs flex min-w-0 items-center gap-1 text-xs">
+          {presentation.breadcrumbs.map((item, index) => {
+            const isCurrent = index === presentation.breadcrumbs.length - 1;
+            return (
+              <span key={`${item.level}:${item.scopeId ?? ""}:${item.clusterId ?? ""}:${item.fileId ?? ""}`} className="flex shrink-0 items-center gap-1">
+                {index > 0 && <span aria-hidden="true" className="text-text-muted">/</span>}
+                {isCurrent ? (
+                  <span aria-current="page" className="font-semibold text-text-primary">{item.label}</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => item.level === "overview"
+                      ? openOverview()
+                      : item.level === "scope" && item.scopeId
+                        ? openScope(item.scopeId)
+                        : item.level === "cluster" && item.scopeId && item.clusterId
+                          ? openCluster(item.scopeId, item.clusterId)
+                          : item.scopeId && item.clusterId && item.fileId
+                            ? openFile(item.scopeId, item.clusterId, item.fileId)
+                            : undefined}
+                    className="min-h-11 min-w-11 rounded px-2.5 py-1.5 text-text-muted transition-colors hover:bg-elevated hover:text-text-primary"
+                  >
+                    {item.label}
+                  </button>
+                )}
+              </span>
+            );
+          })}
+        </nav>
+        <p className="text-[11px] text-text-muted">
+          当前显示 {view.semanticGraph.nodes.length} 个元素
+          {presentation.hiddenNodeCount > 0 ? `，另有 ${presentation.hiddenNodeCount} 个未展开` : ""}
+        </p>
+      </div>
+
+      {notice && view.semanticGraph.nodes.length > 0 && (
+        <p role="status" aria-live="polite" className="uc-panel-muted px-3 py-2 text-sm text-text-muted">
+          {notice}
+        </p>
+      )}
+
+      <div className="uc-graph-frame" ref={frameRef}>
+        <SemanticGraphCanvas
+          frameRef={frameRef}
+          baseGraph={view.baseGraph}
+          semanticGraph={view.semanticGraph}
+          graphRevision={layoutRevision}
+          navigation={safeNavigation}
+          displayMode={effectiveMode}
+          explicitFocusRequest={explicitFocusRequest}
+          onBaseLayoutReady={handleBaseLayoutReady}
+          emptyNotice={notice}
+          onOpenScope={openScope}
+          onOpenCluster={openCluster}
+          onOpenFile={openFile}
+          onSelectNode={selectVisibleNode}
+          onClearSelection={clearSelection}
+          onSelectedScreenBoundsChange={setSelectedScreenBounds}
+          showMinimap={showMinimap}
+          showControls={!phone || toolsOpen}
+        />
+        <GraphDetailsRail
+          view={view}
+          open={inspectorOpen && safeSelectedNodeId !== null}
+          side={inspectorSide}
+          onClose={() => setInspectorOpen(false)}
+          onSelectObject={selectVisibleNode}
+          onOpenScope={openScope}
+          onOpenCluster={openCluster}
+          onOpenFile={openFile}
+          onSelectWikiTarget={openSelectionWikiTarget}
+          onRequestGlobalSearch={onRequestGlobalSearch}
+        />
+      </div>
     </section>
   );
 }

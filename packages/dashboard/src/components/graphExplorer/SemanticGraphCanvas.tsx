@@ -83,6 +83,13 @@ export interface GraphBaseLayoutReady {
   materializedNodeId: string;
 }
 
+export interface GraphSelectedScreenBounds {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
 export interface SemanticGraphCanvasIntentProps {
   frameRef: RefObject<HTMLDivElement | null>;
   baseGraph: HierarchicalSemanticGraph;
@@ -100,9 +107,14 @@ interface SemanticGraphCanvasProps extends SemanticGraphCanvasIntentProps {
   onOpenCluster: (scopeId: string, clusterId: string) => void;
   onOpenFile: (scopeId: string, clusterId: string, fileId: string) => void;
   onSelectNode?: (nodeId: string | null) => void;
+  onClearSelection?: () => void;
+  onSelectedScreenBoundsChange?: (bounds: GraphSelectedScreenBounds | null) => void;
+  showMinimap?: boolean;
+  showControls?: boolean;
 }
 
 interface SemanticNodeData extends Record<string, unknown> {
+  nodeId: string;
   label: string;
   summary: string;
   path: string | null;
@@ -206,6 +218,7 @@ function SemanticNodeCard({ data }: NodeProps<SemanticFlowNode>) {
     <div
       tabIndex={0}
       role="group"
+      data-graph-node-id={data.nodeId}
       data-kind={data.kind === "node" ? data.rawType : data.kind}
       data-selected={String(data.isSelected)}
       data-neighbor={String(data.isNeighbor)}
@@ -307,6 +320,10 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
     onOpenCluster,
     onOpenFile,
     onSelectNode,
+    onClearSelection,
+    onSelectedScreenBoundsChange,
+    showMinimap = true,
+    showControls = true,
     baseGraph,
     navigation,
     graphRevision,
@@ -580,8 +597,9 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
   );
   const onPaneClick = useCallback(() => {
     lastNodeClickRef.current = null;
-    selectGraphNode(null);
-  }, [selectGraphNode]);
+    if (onClearSelection) onClearSelection?.();
+    else selectGraphNode(null);
+  }, [onClearSelection, selectGraphNode]);
   useEffect(() => {
     lastNodeClickRef.current = null;
     lastDrillRef.current = null;
@@ -620,6 +638,7 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
           position: positionsById.get(node.id) ?? { x: 0, y: 0 },
           style: { width: size.width, height: size.height },
           data: {
+            nodeId: node.id,
             label: node.label,
             summary: node.summary,
             path: node.filePath ?? null,
@@ -692,6 +711,44 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
     flowInstanceRef.current = instance;
     setFlowInstanceRevision((current) => current + 1);
   }, []);
+  const lastReportedSelectedScreenBoundsRef = useRef<GraphSelectedScreenBounds | null | undefined>(
+    undefined,
+  );
+  const reportSelectedScreenBounds = useCallback(() => {
+    if (!onSelectedScreenBoundsChange) return;
+    const instance = flowInstanceRef.current;
+    const frame = frameRef.current;
+    const position = selectedNodeId ? positionsById.get(selectedNodeId) : undefined;
+    const size = selectedNodeId ? nodeSizeById.get(selectedNodeId) : undefined;
+    let next: GraphSelectedScreenBounds | null = null;
+    if (instance && frame && position && size) {
+      const topLeft = instance.flowToScreenPosition(position);
+      const bottomRight = instance.flowToScreenPosition({
+        x: position.x + size.width,
+        y: position.y + size.height,
+      });
+      const frameRect = frame.getBoundingClientRect();
+      next = {
+        left: topLeft.x - frameRect.left,
+        right: bottomRight.x - frameRect.left,
+        top: topLeft.y - frameRect.top,
+        bottom: bottomRight.y - frameRect.top,
+      };
+    }
+    const previous = lastReportedSelectedScreenBoundsRef.current;
+    if (previous === null && next === null) return;
+    if (previous && next
+      && previous.left === next.left
+      && previous.right === next.right
+      && previous.top === next.top
+      && previous.bottom === next.bottom) return;
+    lastReportedSelectedScreenBoundsRef.current = next;
+    onSelectedScreenBoundsChange(next);
+  }, [frameRef, nodeSizeById, onSelectedScreenBoundsChange, positionsById, selectedNodeId]);
+
+  useEffect(() => {
+    reportSelectedScreenBounds();
+  }, [flowInstanceRevision, reportSelectedScreenBounds, viewportBucket]);
   const latestExplicitRequestRef = useRef(explicitFocusRequest);
   latestExplicitRequestRef.current = explicitFocusRequest;
   const latestReadyCallbackRef = useRef(onBaseLayoutReady);
@@ -844,14 +901,21 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
   }
 
   return (
-    <div className="uc-semantic-canvas" data-zoom-band={zoomBand}>
+    <div
+      className="uc-semantic-canvas"
+      data-graph-structure-key={structureKey}
+      data-zoom-band={zoomBand}
+    >
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onInit={onInit}
-        onMoveEnd={(_, viewport) => setZoomBand(graphSemanticZoomBand(viewport.zoom))}
+        onMoveEnd={(_, viewport) => {
+          setZoomBand(graphSemanticZoomBand(viewport.zoom));
+          reportSelectedScreenBounds();
+        }}
         onNodeClick={onNodeClick}
         onNodeDoubleClick={onNodeDoubleClick}
         onPaneClick={onPaneClick}
@@ -866,20 +930,24 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
         proOptions={{ hideAttribution: true }}
       >
         <Background variant={BackgroundVariant.Dots} gap={26} size={1} color="var(--color-graph-grid)" />
-        <Controls showFitView={false} showInteractive={false}>
-          <ControlButton onClick={fitGraph} title="适应视图" aria-label="适应视图">
-            适
-          </ControlButton>
-        </Controls>
-        <MiniMap
-          pannable
-          zoomable
-          nodeColor={(node) => {
-            const data = node.data as SemanticNodeData | undefined;
-            return data ? GROUP_COLORS[data.group] : "var(--color-text-muted)";
-          }}
-          maskColor="var(--color-graph-minimap-mask)"
-        />
+        {showControls && (
+          <Controls showFitView={false} showInteractive={false}>
+            <ControlButton onClick={fitGraph} title="适应视图" aria-label="适应视图">
+              适
+            </ControlButton>
+          </Controls>
+        )}
+        {showMinimap && (
+          <MiniMap
+            pannable
+            zoomable
+            nodeColor={(node) => {
+              const data = node.data as SemanticNodeData | undefined;
+              return data ? GROUP_COLORS[data.group] : "var(--color-text-muted)";
+            }}
+            maskColor="var(--color-graph-minimap-mask)"
+          />
+        )}
       </ReactFlow>
       {layoutState?.degraded && (
         <p role="status" aria-live="polite" className="uc-graph-layout-status">

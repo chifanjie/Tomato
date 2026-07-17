@@ -216,6 +216,8 @@ describe("SemanticGraphCanvas interaction contract", () => {
     expect(source).toContain("semanticGraph: HierarchicalSemanticGraph");
     expect(source).toContain("explicitFocusRequest: GraphExplicitFocusRequest | null");
     expect(source).toContain("onBaseLayoutReady: (ready: GraphBaseLayoutReady) => void");
+    expect(source).toContain("onClearSelection?: () => void");
+    expect(source).toContain("onSelectedScreenBoundsChange?:");
   });
 
   it("wires Enter drill, pane clearing, double-click state, and reduced-motion edge data", async () => {
@@ -300,11 +302,12 @@ describe("SemanticGraphCanvas interaction contract", () => {
     await act(async () => root.unmount());
   });
 
-  it("reports node, keyboard, and pane selections through the injected callback", async () => {
+  it("reports node and keyboard selections separately from pane clearing", async () => {
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
     const onSelectNode = vi.fn();
+    const onClearSelection = vi.fn();
     await act(async () => root.render(createElement(SemanticGraphCanvas, {
       ...canvasIntentProps(semanticGraphFixture, container, "overview"),
       semanticGraph: semanticGraphFixture,
@@ -314,6 +317,7 @@ describe("SemanticGraphCanvas interaction contract", () => {
       onOpenCluster: vi.fn(),
       onOpenFile: vi.fn(),
       onSelectNode,
+      onClearSelection,
     })));
 
     const props = flowHarness.props as {
@@ -324,6 +328,7 @@ describe("SemanticGraphCanvas interaction contract", () => {
     const flowNode = props.nodes.find((node) => node.id === "scope:src");
     if (!flowNode) throw new Error("缺少核心模块流节点");
     await act(async () => props.onNodeClick({ timeStamp: 1_000 }, flowNode));
+    expect(onClearSelection).not.toHaveBeenCalled();
 
     const card = container.querySelector<HTMLElement>('[role="group"][aria-label^="测试模块"]');
     if (!card) throw new Error("缺少测试模块图谱卡片");
@@ -337,9 +342,12 @@ describe("SemanticGraphCanvas interaction contract", () => {
     expect(onSelectNode.mock.calls).toEqual([
       ["scope:src"],
       ["scope:test"],
-      [null],
     ]);
+    expect(onClearSelection).toHaveBeenCalledOnce();
     expect(flowHarness.selectNodeCalls).toEqual([]);
+
+    const cards = [...container.querySelectorAll<HTMLElement>("[data-graph-node-id]")];
+    expect(cards.map((card) => card.dataset.graphNodeId)).toEqual(["scope:src", "scope:test"]);
 
     await act(async () => root.unmount());
   });
@@ -423,11 +431,12 @@ describe("SemanticGraphCanvas interaction contract", () => {
 
   it("selects every graph object, clears from the pane, and keeps drilling explicit", () => {
     expect(source).toContain("onSelectNode?: (nodeId: string | null) => void");
+    expect(source).toContain("onClearSelection?: () => void");
     expect(source).toContain("const selectGraphNode = onSelectNode ?? selectNode");
     expect(source).toContain("selectGraphNode(node.id)");
     expect(source).not.toContain('node.data.kind === "node"');
     expect(source).toContain("onPaneClick={onPaneClick}");
-    expect(source).toContain("selectGraphNode(null)");
+    expect(source).toContain("onClearSelection?.()");
     expect(source).toContain("onNodeDoubleClick={onNodeDoubleClick}");
     expect(source).toContain("node.data.onDrillDown?.()");
     expect(source).toContain("data.onDrillDown?.()");

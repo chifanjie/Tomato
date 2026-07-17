@@ -337,6 +337,123 @@ export function graphFixture(): KnowledgeGraph {
   });
 }
 
+export function workspaceHierarchyFixture(): KnowledgeGraph {
+  const paths = [
+    "package.json",
+    "pnpm-workspace.yaml",
+    "packages/api/package.json",
+    "packages/api/src/index.ts",
+    "packages/api/src/routes/user.ts",
+    "packages/shared/package.json",
+    "packages/shared/src/id.ts",
+    "scripts/release.ts",
+  ] as const;
+  const files = paths.map((filePath) => fileNode(`file:${filePath}`, filePath));
+  const loadUser = functionNode(
+    "function:packages/api/src/routes/user.ts:loadUser",
+    "packages/api/src/routes/user.ts",
+    "loadUser",
+    10,
+  );
+  const containedWithoutPath: GraphNode = {
+    id: "function:contained-without-path",
+    type: "function",
+    name: "containedWithoutPath",
+    summary: "仅通过包含关系定位的函数。",
+    tags: [],
+    complexity: "simple",
+  };
+  const pathfulWithoutFile: GraphNode = {
+    id: "config:pathful-without-file",
+    type: "config",
+    name: "feature.flags.ts",
+    filePath: "packages/api/src/feature.flags.ts",
+    summary: "没有规范文件节点的配置对象。",
+    tags: [],
+    complexity: "simple",
+  };
+  const gateway: GraphNode = {
+    id: "service:gateway",
+    type: "service",
+    name: "gateway",
+    summary: "API 网关架构对象。",
+    tags: [],
+    complexity: "simple",
+  };
+  const detached: GraphNode = {
+    id: "function:detached",
+    type: "function",
+    name: "detached",
+    summary: "没有文件归属的结构对象。",
+    tags: [],
+    complexity: "simple",
+  };
+
+  return finalizeGraph({
+    version: "1.0.0",
+    project: {
+      name: "workspace-hierarchy",
+      languages: ["typescript"],
+      frameworks: [],
+      description: "工作区层级夹具。",
+      analyzedAt: GENERATED_AT,
+      gitCommitHash: "fixture",
+    },
+    nodes: [
+      ...files,
+      loadUser,
+      containedWithoutPath,
+      pathfulWithoutFile,
+      gateway,
+      detached,
+    ],
+    edges: [
+      {
+        source: "file:packages/api/src/routes/user.ts",
+        target: loadUser.id,
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      },
+      {
+        source: "file:packages/api/src/routes/user.ts",
+        target: containedWithoutPath.id,
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      },
+      {
+        source: "file:packages/api/src/index.ts",
+        target: gateway.id,
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      },
+      {
+        source: gateway.id,
+        target: detached.id,
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      },
+      {
+        source: "file:packages/api/src/index.ts",
+        target: "file:packages/shared/src/id.ts",
+        type: "imports",
+        direction: "forward",
+        weight: 1,
+      },
+    ],
+    layers: [{
+      id: "workspace",
+      name: "工作区",
+      description: "单仓库工作区。",
+      nodeIds: files.map((node) => node.id),
+    }],
+    tour: [],
+  });
+}
+
 export function wikiRuntimeFixture(): WikiRuntimeIndex {
   const graph = graphFixture();
   const runEvidence: WikiEvidenceV2 = {

@@ -1,4 +1,4 @@
-import type { GraphNode, KnowledgeGraph } from "@understand-code/core/types";
+import type { GraphNode, KnowledgeGraph, NodeType } from "@understand-code/core/types";
 import type { WikiRuntimeIndex } from "../wiki/wikiIndex";
 import {
   buildSemanticGraph,
@@ -15,12 +15,60 @@ import {
 
 export type GraphExplorerDisplayMode = "architecture" | "call" | "coverage";
 export type GraphRelationshipSource = "calls" | "imports" | "dependencies";
-export type GraphNavigationLevel = "overview" | "scope" | "file";
+export type GraphNavigationLevel = "overview" | "scope" | "cluster" | "file";
 
 export interface GraphExplorerNavigation {
   level: GraphNavigationLevel;
   scopeId?: string;
+  clusterId?: string;
   fileId?: string;
+}
+
+export type GraphClusterKind = "directory" | "package" | "unlocated";
+export type GraphNodePlacementClass = "file" | "file-leaf" | "architecture-context";
+
+export interface GraphProtectedRoot {
+  kind: "package" | "workspace";
+  normalizedPath: string;
+  manifestNodeId: string;
+}
+
+export interface GraphHierarchyScope {
+  id: string;
+  label: string;
+  description: string;
+  normalizedRoot: string;
+  protectedRoots: readonly GraphProtectedRoot[];
+  clusterIds: readonly string[];
+  nodeIds: readonly string[];
+  order: number;
+}
+
+export interface GraphHierarchyCluster {
+  id: string;
+  scopeId: string;
+  kind: GraphClusterKind;
+  normalizedRelativePath: string | null;
+  label: string;
+  fileIds: readonly string[];
+  nodeIds: readonly string[];
+}
+
+export interface GraphHierarchyLocation {
+  scopeId: string;
+  clusterId?: string;
+  fileId?: string;
+}
+
+export interface GraphHierarchyIndex {
+  scopes: readonly GraphHierarchyScope[];
+  scopeById: ReadonlyMap<string, GraphHierarchyScope>;
+  clusterById: ReadonlyMap<string, GraphHierarchyCluster>;
+  nodeLocationById: ReadonlyMap<string, GraphHierarchyLocation>;
+  fileLocationById: ReadonlyMap<string, GraphHierarchyLocation & { clusterId: string; fileId: string }>;
+  symbolLocationById: ReadonlyMap<string, GraphHierarchyLocation>;
+  fileIdByNormalizedPath: ReadonlyMap<string, string>;
+  nodeById: ReadonlyMap<string, GraphNode>;
 }
 
 export interface GraphScopeOption {
@@ -128,6 +176,475 @@ const GROUP_LABELS: Record<SemanticNodeGroup, string> = {
   infra: "服务与基础设施",
   other: "其他",
 };
+
+const NODE_PLACEMENT_CLASS = {
+  file: "file",
+  function: "file-leaf",
+  class: "file-leaf",
+  config: "file-leaf",
+  module: "architecture-context",
+  concept: "architecture-context",
+  document: "architecture-context",
+  service: "architecture-context",
+  table: "architecture-context",
+  endpoint: "architecture-context",
+  pipeline: "architecture-context",
+  schema: "architecture-context",
+  resource: "architecture-context",
+  domain: "architecture-context",
+  flow: "architecture-context",
+  step: "architecture-context",
+  article: "architecture-context",
+  entity: "architecture-context",
+  topic: "architecture-context",
+  claim: "architecture-context",
+  source: "architecture-context",
+} as const satisfies Record<NodeType, GraphNodePlacementClass>;
+
+const PACKAGE_MANIFEST_NAMES = [
+  "package.json",
+  "go.mod",
+  "Cargo.toml",
+  "pyproject.toml",
+  "pom.xml",
+  "build.gradle",
+  "build.gradle.kts",
+] as const;
+const PACKAGE_MANIFEST_PRIORITY = new Map<string, number>(
+  PACKAGE_MANIFEST_NAMES.map((name, index) => [name, index]),
+);
+const WORKSPACE_MANIFEST_NAMES = new Set([
+  "pnpm-workspace.yaml",
+  "pnpm-workspace.yml",
+  "lerna.json",
+  "rush.json",
+  "nx.json",
+]);
+
+interface MutableHierarchyCluster {
+  id: string;
+  scopeId: string;
+  kind: GraphClusterKind;
+  normalizedRelativePath: string | null;
+  label: string;
+  fileIds: Set<string>;
+  nodeIds: Set<string>;
+}
+
+function compareStable(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+export function normalizeGraphFilePath(filePath: string): string {
+  const segments: string[] = [];
+  for (const segment of filePath.replace(/\\/g, "/").split("/")) {
+    if (!segment || segment === ".") continue;
+    if (segment === "..") {
+      if (segments.length > 0) segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+  return segments.join("/");
+}
+
+export function graphNodePlacementClass(type: NodeType): GraphNodePlacementClass {
+  return NODE_PLACEMENT_CLASS[type];
+}
+
+export function scopeNodeId(scopeId: string): string {
+  return `scope:${encodeURIComponent(scopeId)}`;
+}
+
+export function clusterNodeId(
+  scopeId: string,
+  relativePath: string | null,
+  kind: GraphClusterKind,
+): string {
+  if (relativePath === null) {
+    if (kind === "package") throw new Error("package cluster requires a normalized path");
+    return `cluster:${encodeURIComponent(scopeId)}:${kind === "directory" ? "__root__" : "__unlocated__"}`;
+  }
+  return `cluster:${encodeURIComponent(scopeId)}:${encodeURIComponent(normalizeGraphFilePath(relativePath))}`;
+}
+
+export function boundaryNodeId(currentScopeId: string, targetScopeId: string): string {
+  return `boundary:${encodeURIComponent(currentScopeId)}:${encodeURIComponent(targetScopeId)}`;
+}
+
+function normalizedDirname(filePath: string): string {
+  const normalized = normalizeGraphFilePath(filePath);
+  const separator = normalized.lastIndexOf("/");
+  return separator < 0 ? "" : normalized.slice(0, separator);
+}
+
+function normalizedBasename(filePath: string): string {
+  const normalized = normalizeGraphFilePath(filePath);
+  const separator = normalized.lastIndexOf("/");
+  return separator < 0 ? normalized : normalized.slice(separator + 1);
+}
+
+function isAtOrBelowPath(filePath: string, rootPath: string): boolean {
+  return rootPath === "" || filePath === rootPath || filePath.startsWith(`${rootPath}/`);
+}
+
+function commonPathSegmentCount(left: string, right: string): number {
+  const leftSegments = left.split("/").filter(Boolean);
+  const rightSegments = right.split("/").filter(Boolean);
+  let index = 0;
+  while (index < leftSegments.length && leftSegments[index] === rightSegments[index]) index += 1;
+  return index;
+}
+
+function commonDirectoryRoot(filePaths: readonly string[], protectedRoots: readonly GraphProtectedRoot[]): string {
+  if (filePaths.length === 0) return "";
+  const directories = filePaths.map(normalizedDirname);
+  const first = directories[0].split("/").filter(Boolean);
+  let prefixLength = first.length;
+  for (const directory of directories.slice(1)) {
+    const segments = directory.split("/").filter(Boolean);
+    prefixLength = Math.min(prefixLength, commonPathSegmentCount(first.join("/"), segments.join("/")));
+  }
+  let root = first.slice(0, prefixLength).join("/");
+  const containingPackage = protectedRoots
+    .filter((item) => item.kind === "package" && isAtOrBelowPath(root, item.normalizedPath))
+    .sort((left, right) => left.normalizedPath.length - right.normalizedPath.length
+      || compareStable(left.normalizedPath, right.normalizedPath))[0];
+  if (containingPackage) root = normalizedDirname(containingPackage.normalizedPath);
+  return root;
+}
+
+function protectedRootsForNodes(nodes: readonly GraphNode[]): GraphProtectedRoot[] {
+  const evidence = nodes
+    .filter((node) => node.filePath !== undefined)
+    .map((node) => ({
+      nodeId: node.id,
+      path: normalizeGraphFilePath(node.filePath!),
+      dirname: normalizedDirname(node.filePath!),
+      basename: normalizedBasename(node.filePath!),
+    }));
+  const explicitWorkspace = evidence
+    .filter((item) => WORKSPACE_MANIFEST_NAMES.has(item.basename))
+    .sort((left, right) => compareStable(left.nodeId, right.nodeId))[0];
+  const rootPackage = evidence
+    .filter((item) => item.dirname === "" && PACKAGE_MANIFEST_PRIORITY.has(item.basename))
+    .sort((left, right) => compareStable(left.nodeId, right.nodeId))[0];
+  const roots: GraphProtectedRoot[] = [];
+  const workspaceEvidence = explicitWorkspace ?? rootPackage;
+  if (workspaceEvidence) {
+    roots.push({ kind: "workspace", normalizedPath: "", manifestNodeId: workspaceEvidence.nodeId });
+  }
+
+  const packages = new Map<string, typeof evidence>();
+  for (const item of evidence) {
+    if (item.dirname === "" || !PACKAGE_MANIFEST_PRIORITY.has(item.basename)) continue;
+    const current = packages.get(item.dirname) ?? [];
+    current.push(item);
+    packages.set(item.dirname, current);
+  }
+  for (const [normalizedPath, candidates] of [...packages.entries()].sort(([left], [right]) => compareStable(left, right))) {
+    const manifest = candidates.sort((left, right) =>
+      (PACKAGE_MANIFEST_PRIORITY.get(left.basename) ?? Number.MAX_SAFE_INTEGER)
+      - (PACKAGE_MANIFEST_PRIORITY.get(right.basename) ?? Number.MAX_SAFE_INTEGER)
+      || compareStable(left.nodeId, right.nodeId))[0];
+    roots.push({ kind: "package", normalizedPath, manifestNodeId: manifest.nodeId });
+  }
+  return roots;
+}
+
+function stableHierarchyInput(graph: KnowledgeGraph): KnowledgeGraph {
+  return {
+    ...graph,
+    nodes: [...graph.nodes].sort((left, right) => compareStable(left.id, right.id)),
+    edges: [...graph.edges].sort((left, right) =>
+      compareStable(`${left.source}\u0000${left.type}\u0000${left.target}`, `${right.source}\u0000${right.type}\u0000${right.target}`)),
+    layers: graph.layers.map((layer) => ({
+      ...layer,
+      nodeIds: [...layer.nodeIds].sort(compareStable),
+    })),
+  };
+}
+
+function bestScopeForPath(
+  filePath: string,
+  scopes: readonly InternalScope[],
+  filePathsByScope: ReadonlyMap<string, readonly string[]>,
+): string | null {
+  const directory = normalizedDirname(filePath);
+  const ranked = scopes.map((scope) => ({
+    scope,
+    score: Math.max(0, ...(filePathsByScope.get(scope.id) ?? []).map((path) =>
+      normalizedDirname(path) === "" ? 0.5 : commonPathSegmentCount(directory, normalizedDirname(path)))),
+  })).sort((left, right) => right.score - left.score
+    || left.scope.order - right.scope.order
+    || compareStable(left.scope.id, right.scope.id));
+  return ranked[0] && ranked[0].score > 0 ? ranked[0].scope.id : null;
+}
+
+function clusterPathForFile(
+  filePath: string,
+  scopeRoot: string,
+  protectedRoots: readonly GraphProtectedRoot[],
+): { kind: "directory" | "package"; relativePath: string | null } {
+  const packageRoot = protectedRoots
+    .filter((root) => root.kind === "package" && isAtOrBelowPath(filePath, root.normalizedPath))
+    .sort((left, right) => right.normalizedPath.length - left.normalizedPath.length
+      || compareStable(left.normalizedPath, right.normalizedPath))[0];
+  if (packageRoot) return { kind: "package", relativePath: packageRoot.normalizedPath };
+
+  const directory = normalizedDirname(filePath);
+  if (directory === scopeRoot) return { kind: "directory", relativePath: null };
+  const rootSegments = scopeRoot.split("/").filter(Boolean);
+  const directorySegments = directory.split("/").filter(Boolean);
+  const child = directorySegments.slice(0, rootSegments.length + 1).join("/");
+  return { kind: "directory", relativePath: child || null };
+}
+
+function hierarchyClusterLabel(kind: GraphClusterKind, relativePath: string | null): string {
+  if (kind === "unlocated") return "未定位结构对象";
+  if (relativePath === null) return "根目录文件";
+  return normalizedBasename(relativePath);
+}
+
+function compareHierarchyClusters(left: MutableHierarchyCluster, right: MutableHierarchyCluster): number {
+  const rank = (cluster: MutableHierarchyCluster): number => {
+    if (cluster.kind === "directory" && cluster.normalizedRelativePath === null) return 0;
+    if (cluster.kind === "package") return 1;
+    if (cluster.kind === "directory") return 2;
+    return 3;
+  };
+  return rank(left) - rank(right)
+    || compareStable(left.normalizedRelativePath ?? "", right.normalizedRelativePath ?? "")
+    || compareStable(left.id, right.id);
+}
+
+export function buildGraphHierarchyIndex(graph: KnowledgeGraph): GraphHierarchyIndex {
+  const stableGraph = stableHierarchyInput(graph);
+  const nodeById = new Map(stableGraph.nodes.map((node) => [node.id, node]));
+  const fileNodes = stableGraph.nodes.filter((node) => node.type === "file");
+  const fileNodeIds = new Set(fileNodes.map((node) => node.id));
+  const fileIdByNormalizedPath = new Map<string, string>();
+  for (const file of fileNodes) {
+    if (file.filePath === undefined) continue;
+    const path = normalizeGraphFilePath(file.filePath);
+    if (!fileIdByNormalizedPath.has(path)) fileIdByNormalizedPath.set(path, file.id);
+  }
+
+  const { scopes: derivedScopes, nodeToScopeId: derivedNodeToScopeId } = deriveScopes(stableGraph);
+  const scopes = [...derivedScopes].sort((left, right) => left.order - right.order || compareStable(left.id, right.id));
+  const filePathsByScope = new Map<string, string[]>();
+  for (const file of fileNodes) {
+    const scopeId = derivedNodeToScopeId.get(file.id);
+    if (!scopeId || file.filePath === undefined) continue;
+    const paths = filePathsByScope.get(scopeId) ?? [];
+    paths.push(normalizeGraphFilePath(file.filePath));
+    filePathsByScope.set(scopeId, paths);
+  }
+
+  const nodeScopeId = new Map(derivedNodeToScopeId);
+  const layerScopeOrder = new Map(
+    stableGraph.layers.map((layer, order) => [`layer:${layer.id}`, order]),
+  );
+  for (const node of stableGraph.nodes) {
+    if (node.filePath !== undefined || graphNodePlacementClass(node.type) !== "architecture-context") continue;
+    const containingLayerScope = stableGraph.edges
+      .filter((edge) => edge.type === "contains" && edge.target === node.id)
+      .map((edge) => nodeScopeId.get(edge.source))
+      .filter((scopeId): scopeId is string => scopeId !== undefined && layerScopeOrder.has(scopeId))
+      .sort((left, right) => (layerScopeOrder.get(left) ?? Number.MAX_SAFE_INTEGER)
+        - (layerScopeOrder.get(right) ?? Number.MAX_SAFE_INTEGER)
+        || compareStable(left, right))[0];
+    if (containingLayerScope) nodeScopeId.set(node.id, containingLayerScope);
+  }
+  for (const node of stableGraph.nodes) {
+    if (node.type === "file" || node.filePath === undefined) continue;
+    const normalizedPath = normalizeGraphFilePath(node.filePath);
+    const matchingFileId = fileIdByNormalizedPath.get(normalizedPath);
+    const matchingFileScope = matchingFileId ? nodeScopeId.get(matchingFileId) : null;
+    const pathScope = matchingFileScope
+      ?? bestScopeForPath(normalizedPath, scopes, filePathsByScope);
+    if (pathScope) nodeScopeId.set(node.id, pathScope);
+  }
+
+  const scopeNodes = new Map<string, GraphNode[]>();
+  for (const node of stableGraph.nodes) {
+    const scopeId = nodeScopeId.get(node.id);
+    if (!scopeId) continue;
+    const nodes = scopeNodes.get(scopeId) ?? [];
+    nodes.push(node);
+    scopeNodes.set(scopeId, nodes);
+  }
+  const rootsByScope = new Map<string, GraphProtectedRoot[]>();
+  const rootPathByScope = new Map<string, string>();
+  for (const scope of scopes) {
+    const nodes = scopeNodes.get(scope.id) ?? [];
+    const protectedRoots = protectedRootsForNodes(nodes);
+    rootsByScope.set(scope.id, protectedRoots);
+    rootPathByScope.set(scope.id, commonDirectoryRoot(
+      nodes.filter((node) => node.type === "file" && node.filePath !== undefined).map((node) => node.filePath!),
+      protectedRoots,
+    ));
+  }
+
+  const containingFileIdsByNode = new Map<string, string[]>();
+  for (const edge of stableGraph.edges) {
+    if (edge.type !== "contains" || !fileNodeIds.has(edge.source)) continue;
+    const owners = containingFileIdsByNode.get(edge.target) ?? [];
+    owners.push(edge.source);
+    containingFileIdsByNode.set(edge.target, owners);
+  }
+  for (const owners of containingFileIdsByNode.values()) owners.sort(compareStable);
+
+  const mutableClusters = new Map<string, MutableHierarchyCluster>();
+  const clusterForPath = (scopeId: string, filePath: string): MutableHierarchyCluster => {
+    const placement = clusterPathForFile(
+      normalizeGraphFilePath(filePath),
+      rootPathByScope.get(scopeId) ?? "",
+      rootsByScope.get(scopeId) ?? [],
+    );
+    const id = clusterNodeId(scopeId, placement.relativePath, placement.kind);
+    let cluster = mutableClusters.get(id);
+    if (!cluster) {
+      cluster = {
+        id,
+        scopeId,
+        kind: placement.kind,
+        normalizedRelativePath: placement.relativePath,
+        label: hierarchyClusterLabel(placement.kind, placement.relativePath),
+        fileIds: new Set(),
+        nodeIds: new Set(),
+      };
+      mutableClusters.set(id, cluster);
+    }
+    return cluster;
+  };
+  const unlocatedCluster = (scopeId: string): MutableHierarchyCluster => {
+    const id = clusterNodeId(scopeId, null, "unlocated");
+    let cluster = mutableClusters.get(id);
+    if (!cluster) {
+      cluster = {
+        id,
+        scopeId,
+        kind: "unlocated",
+        normalizedRelativePath: null,
+        label: hierarchyClusterLabel("unlocated", null),
+        fileIds: new Set(),
+        nodeIds: new Set(),
+      };
+      mutableClusters.set(id, cluster);
+    }
+    return cluster;
+  };
+
+  const nodeLocationById = new Map<string, GraphHierarchyLocation>();
+  const fileLocationById = new Map<string, GraphHierarchyLocation & { clusterId: string; fileId: string }>();
+  const symbolLocationById = new Map<string, GraphHierarchyLocation>();
+  const placementNodes = [
+    ...fileNodes,
+    ...stableGraph.nodes.filter((node) => node.type !== "file"),
+  ];
+  for (const node of placementNodes) {
+    let scopeId = nodeScopeId.get(node.id) ?? scopes[0]?.id;
+    if (!scopeId) continue;
+    if (node.type === "file") {
+      const cluster = clusterForPath(scopeId, node.filePath ?? "");
+      const location = { scopeId, clusterId: cluster.id, fileId: node.id };
+      cluster.fileIds.add(node.id);
+      cluster.nodeIds.add(node.id);
+      nodeLocationById.set(node.id, location);
+      fileLocationById.set(node.id, location);
+      continue;
+    }
+
+    const placement = graphNodePlacementClass(node.type);
+    if (node.filePath !== undefined) {
+      const normalizedPath = normalizeGraphFilePath(node.filePath);
+      const fileId = fileIdByNormalizedPath.get(normalizedPath);
+      const fileLocation = fileId ? fileLocationById.get(fileId) : undefined;
+      if (fileLocation) {
+        scopeId = fileLocation.scopeId;
+        const location = { ...fileLocation };
+        nodeLocationById.set(node.id, location);
+        mutableClusters.get(fileLocation.clusterId)?.nodeIds.add(node.id);
+        if (node.type === "function" || node.type === "class") symbolLocationById.set(node.id, location);
+      } else {
+        const cluster = clusterForPath(scopeId, normalizedPath);
+        const location = { scopeId, clusterId: cluster.id };
+        cluster.nodeIds.add(node.id);
+        nodeLocationById.set(node.id, location);
+      }
+      continue;
+    }
+
+    if (placement === "architecture-context") {
+      nodeLocationById.set(node.id, { scopeId });
+      continue;
+    }
+    const containingFileId = containingFileIdsByNode.get(node.id)?.[0];
+    const fileLocation = containingFileId ? fileLocationById.get(containingFileId) : undefined;
+    if (fileLocation) {
+      scopeId = fileLocation.scopeId;
+      const location = { ...fileLocation };
+      nodeLocationById.set(node.id, location);
+      mutableClusters.get(fileLocation.clusterId)?.nodeIds.add(node.id);
+      if (node.type === "function" || node.type === "class") symbolLocationById.set(node.id, location);
+    } else {
+      const cluster = unlocatedCluster(scopeId);
+      cluster.nodeIds.add(node.id);
+      nodeLocationById.set(node.id, { scopeId, clusterId: cluster.id });
+    }
+  }
+
+  const orderedMutableClusters = [...mutableClusters.values()].sort((left, right) => {
+    const leftScope = scopes.findIndex((scope) => scope.id === left.scopeId);
+    const rightScope = scopes.findIndex((scope) => scope.id === right.scopeId);
+    return leftScope - rightScope || compareHierarchyClusters(left, right);
+  });
+  const clusterById = new Map<string, GraphHierarchyCluster>(orderedMutableClusters.map((cluster) => [
+    cluster.id,
+    {
+      id: cluster.id,
+      scopeId: cluster.scopeId,
+      kind: cluster.kind,
+      normalizedRelativePath: cluster.normalizedRelativePath,
+      label: cluster.label,
+      fileIds: [...cluster.fileIds].sort(compareStable),
+      nodeIds: [...cluster.nodeIds].sort(compareStable),
+    },
+  ]));
+
+  const hierarchyScopes = scopes.map((scope): GraphHierarchyScope => {
+    const nodeIds = [...nodeLocationById.entries()]
+      .filter(([, location]) => location.scopeId === scope.id)
+      .map(([nodeId]) => nodeId)
+      .sort(compareStable);
+    const clusterIds = orderedMutableClusters
+      .filter((cluster) => cluster.scopeId === scope.id)
+      .sort(compareHierarchyClusters)
+      .map((cluster) => cluster.id);
+    return {
+      id: scope.id,
+      label: scope.label,
+      description: scope.description,
+      normalizedRoot: rootPathByScope.get(scope.id) ?? "",
+      protectedRoots: rootsByScope.get(scope.id) ?? [],
+      clusterIds,
+      nodeIds,
+      order: scope.order,
+    };
+  }).filter((scope) => scope.nodeIds.length > 0);
+
+  return {
+    scopes: hierarchyScopes,
+    scopeById: new Map(hierarchyScopes.map((scope) => [scope.id, scope])),
+    clusterById,
+    nodeLocationById: new Map([...nodeLocationById.entries()].sort(([left], [right]) => compareStable(left, right))),
+    fileLocationById: new Map([...fileLocationById.entries()].sort(([left], [right]) => compareStable(left, right))),
+    symbolLocationById: new Map([...symbolLocationById.entries()].sort(([left], [right]) => compareStable(left, right))),
+    fileIdByNormalizedPath: new Map([...fileIdByNormalizedPath.entries()].sort(([left], [right]) => compareStable(left, right))),
+    nodeById,
+  };
+}
 
 export function normalizeGraphExplorerMode(mode: GraphExplorerMode): GraphExplorerDisplayMode {
   if (mode === "call") return "call";

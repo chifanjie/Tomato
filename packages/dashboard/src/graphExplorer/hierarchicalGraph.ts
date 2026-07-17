@@ -84,6 +84,7 @@ export interface GraphBreadcrumbItem {
   level: GraphNavigationLevel;
   label: string;
   scopeId?: string;
+  clusterId?: string;
   fileId?: string;
 }
 
@@ -92,6 +93,8 @@ export interface HierarchicalGraphPresentation {
   level: GraphNavigationLevel;
   relationshipSource: GraphRelationshipSource;
   scopeId: string | null;
+  /** Optional only for compatibility with Task 3-owned presentation fixtures. Builders always set it. */
+  clusterId?: string | null;
   fileId: string | null;
   scopeOptions: GraphScopeOption[];
   breadcrumbs: GraphBreadcrumbItem[];
@@ -102,8 +105,10 @@ export interface HierarchicalGraphPresentation {
 }
 
 export interface HierarchicalSemanticGraphNode extends SemanticGraphNode {
-  kind?: "node" | "scope" | "boundary";
+  kind?: "node" | "scope" | "boundary" | "cluster";
   scopeId?: string;
+  clusterId?: string;
+  clusterKind?: GraphClusterKind;
   containedNodeIds?: string[];
   childCount?: number;
   fileCount?: number;
@@ -111,18 +116,30 @@ export interface HierarchicalSemanticGraphNode extends SemanticGraphNode {
   canDrillDown?: boolean;
 }
 
-export interface HierarchicalSemanticGraph extends Omit<SemanticGraph, "nodes"> {
+export interface HierarchicalSemanticGraphEdge extends SemanticGraphEdge {
+  boundaryContext?: {
+    currentScopeId: string;
+    targetScopeId: string;
+  };
+}
+
+export interface HierarchicalSemanticGraph extends Omit<SemanticGraph, "nodes" | "edges"> {
   nodes: HierarchicalSemanticGraphNode[];
+  edges: HierarchicalSemanticGraphEdge[];
   presentation: HierarchicalGraphPresentation;
 }
 
 export interface BuildHierarchicalGraphInput {
   graph: KnowledgeGraph;
+  hierarchyIndex?: GraphHierarchyIndex;
   wikiIndex?: WikiRuntimeIndex;
   mode: GraphExplorerMode;
-  focusNodeIds: string[];
-  selectedNodeId: string | null;
   navigation: GraphExplorerNavigation;
+  materializedNodeId?: string | null;
+  /** Compatibility shim for Task 3-owned callers. Ignored by the progressive base builder. */
+  focusNodeIds?: string[];
+  /** Compatibility shim for Task 3-owned callers. Ignored by the progressive base builder. */
+  selectedNodeId?: string | null;
 }
 
 interface InternalScope {
@@ -134,6 +151,10 @@ interface InternalScope {
 }
 
 const MAX_OVERVIEW_SCOPES = 16;
+const MAX_OVERVIEW_ARCHITECTURE = 24;
+const MAX_SCOPE_CLUSTERS = 24;
+const MAX_CLUSTER_FILES = 30;
+const MAX_CLUSTER_FILELESS_LEAVES = 12;
 const MAX_SCOPE_NODES = 30;
 const MAX_FILE_NODES = 38;
 const MAX_BOUNDARY_SCOPES = 8;
@@ -1033,20 +1054,23 @@ function presentation(
   hiddenNodeCount: number,
   focusApplied: boolean,
   scopeId: string | null = null,
+  clusterId: string | null = null,
   fileId: string | null = null,
+  notice: string | null = null,
 ): HierarchicalGraphPresentation {
   return {
     displayMode,
     level,
     relationshipSource,
     scopeId,
+    clusterId,
     fileId,
     scopeOptions: options,
     breadcrumbs,
     totalNodeCount,
     hiddenNodeCount,
     focusApplied,
-    notice: fallbackNotice(relationshipSource, displayMode),
+    notice: notice ?? fallbackNotice(relationshipSource, displayMode),
   };
 }
 
@@ -1282,19 +1306,755 @@ function buildFileDetail(
       Math.max(0, candidates.length - nodes.length),
       focusApplied,
       selectedScope.id,
+      null,
       fileId,
     ),
   };
 }
 
+interface ProjectedEdgeMember {
+  source: string;
+  target: string;
+  member: SemanticGraphEdgeMember;
+  boundaryContext?: HierarchicalSemanticGraphEdge["boundaryContext"];
+}
+
+function aggregateEdgeKey(
+  source: string,
+  target: string,
+  member: SemanticGraphEdgeMember,
+): string {
+  return [source, target, member.type, member.direction].join("\u0000");
+}
+
+function bundleProjectedMembers(projected: ProjectedEdgeMember[]): HierarchicalSemanticGraphEdge[] {
+  const bundled = new Map<string, HierarchicalSemanticGraphEdge>();
+  for (const projection of projected) {
+    if (projection.source === projection.target) continue;
+    const key = aggregateEdgeKey(projection.source, projection.target, projection.member);
+    const current = bundled.get(key);
+    if (current) {
+      current.weight = Math.max(current.weight, projection.member.weight);
+      current.members.push(projection.member);
+      current.bundledCount = current.members.length;
+      continue;
+    }
+    bundled.set(key, {
+      id: key,
+      source: projection.source,
+      target: projection.target,
+      type: projection.member.type,
+      direction: projection.member.direction,
+      edgeTypes: [projection.member.type],
+      directions: [projection.member.direction],
+      weight: projection.member.weight,
+      bundledCount: 1,
+      members: [projection.member],
+      ...(projection.boundaryContext ? { boundaryContext: projection.boundaryContext } : {}),
+    });
+  }
+  return [...bundled.values()]
+    .sort((left, right) => right.bundledCount - left.bundledCount
+      || right.weight - left.weight
+      || compareStable(left.id, right.id))
+    .slice(0, MAX_VISIBLE_EDGES)
+    .map((edge) => ({ ...edge, bundledCount: edge.members.length }));
+}
+
+function progressiveMemberAllowed(
+  member: SemanticGraphEdgeMember,
+  mode: GraphExplorerDisplayMode,
+  relationshipSource: GraphRelationshipSource,
+  includeContainment: boolean,
+): boolean {
+  if (member.type === "contains") return includeContainment;
+  if (mode === "coverage") return true;
+  if (mode === "call") {
+    if (relationshipSource === "calls") return member.type === "calls";
+    if (relationshipSource === "imports") return member.type === "imports";
+    return DEPENDENCY_EDGE_TYPES.has(member.type);
+  }
+  return member.type !== "calls" && member.type !== "documents";
+}
+
+function cappedWithMaterialized<T extends { id: string }>(
+  values: readonly T[],
+  limit: number,
+  materializedId: string | null,
+): T[] {
+  const base = values.slice(0, limit);
+  if (!materializedId || base.some((value) => value.id === materializedId)) return [...base];
+  const materialized = values.find((value) => value.id === materializedId);
+  if (!materialized) return [...base];
+  return [...values.slice(0, Math.max(0, limit - 1)), materialized];
+}
+
+function progressiveScopeOptions(
+  hierarchyIndex: GraphHierarchyIndex,
+  rawNodesById: ReadonlyMap<string, SemanticGraphNode>,
+  displayMode: GraphExplorerDisplayMode,
+): GraphScopeOption[] {
+  return hierarchyIndex.scopes.map((scope) => {
+    const nodes = scope.nodeIds
+      .map((nodeId) => rawNodesById.get(nodeId))
+      .filter((node): node is SemanticGraphNode => Boolean(node));
+    return {
+      id: scope.id,
+      label: scope.label,
+      description: scope.description,
+      nodeCount: nodes.length,
+      fileCount: nodes.filter((node) => node.rawType === "file").length,
+      documentationCounts: aggregateDocumentation(nodes, displayMode).documentationCounts,
+    };
+  });
+}
+
+function hierarchyScopeNode(
+  scope: GraphHierarchyScope,
+  rawNodesById: ReadonlyMap<string, SemanticGraphNode>,
+  members: readonly SemanticGraphEdgeMember[],
+  displayMode: GraphExplorerDisplayMode,
+): HierarchicalSemanticGraphNode {
+  const children = scope.nodeIds
+    .map((nodeId) => rawNodesById.get(nodeId))
+    .filter((node): node is SemanticGraphNode => Boolean(node));
+  const relationCount = members.filter((member) => {
+    const sourceInside = scope.nodeIds.includes(member.source);
+    const targetInside = scope.nodeIds.includes(member.target);
+    return sourceInside !== targetInside;
+  }).length;
+  const { docs, documentationCounts: counts } = aggregateDocumentation(children, displayMode);
+  const fileCount = children.filter((node) => node.rawType === "file").length;
+  return {
+    id: scopeNodeId(scope.id),
+    kind: "scope",
+    label: scope.label,
+    group: "module",
+    category: "module",
+    cluster: scope.label,
+    importance: 0.85,
+    rawType: "module",
+    summary: `${scope.description}。包含 ${children.length} 个节点、${fileCount} 个文件、${relationCount} 条跨范围关系。`,
+    docs,
+    documentationCounts: counts,
+    scopeId: scope.id,
+    containedNodeIds: [...scope.nodeIds],
+    childCount: children.length,
+    fileCount,
+    relationCount,
+    canDrillDown: true,
+  };
+}
+
+function hierarchyBoundaryNode(
+  currentScopeId: string,
+  targetScope: GraphHierarchyScope,
+  rawNodesById: ReadonlyMap<string, SemanticGraphNode>,
+  relationCount: number,
+  displayMode: GraphExplorerDisplayMode,
+): HierarchicalSemanticGraphNode {
+  const children = targetScope.nodeIds
+    .map((nodeId) => rawNodesById.get(nodeId))
+    .filter((node): node is SemanticGraphNode => Boolean(node));
+  const { docs, documentationCounts: counts } = aggregateDocumentation(children, displayMode);
+  const fileCount = children.filter((node) => node.rawType === "file").length;
+  return {
+    id: boundaryNodeId(currentScopeId, targetScope.id),
+    kind: "boundary",
+    label: targetScope.label,
+    group: "other",
+    category: "other",
+    cluster: targetScope.label,
+    importance: 0.5,
+    rawType: "module",
+    summary: `${targetScope.description}。通过 ${relationCount} 条关系连接当前范围。`,
+    docs,
+    documentationCounts: counts,
+    scopeId: targetScope.id,
+    containedNodeIds: [...targetScope.nodeIds],
+    childCount: children.length,
+    fileCount,
+    relationCount,
+    canDrillDown: true,
+  };
+}
+
+function hierarchyClusterNode(
+  cluster: GraphHierarchyCluster,
+  rawNodesById: ReadonlyMap<string, SemanticGraphNode>,
+  members: readonly SemanticGraphEdgeMember[],
+  displayMode: GraphExplorerDisplayMode,
+): HierarchicalSemanticGraphNode {
+  const children = cluster.nodeIds
+    .map((nodeId) => rawNodesById.get(nodeId))
+    .filter((node): node is SemanticGraphNode => Boolean(node));
+  const childIds = new Set(cluster.nodeIds);
+  const relationCount = members.filter((member) =>
+    childIds.has(member.source) || childIds.has(member.target)).length;
+  const { docs, documentationCounts: counts } = aggregateDocumentation(children, displayMode);
+  return {
+    id: cluster.id,
+    kind: "cluster",
+    label: cluster.label,
+    group: "module",
+    category: "module",
+    cluster: cluster.label,
+    importance: 0.75,
+    rawType: "module",
+    summary: `${cluster.label}。包含 ${children.length} 个节点、${cluster.fileIds.length} 个文件、${relationCount} 条关系。`,
+    docs,
+    documentationCounts: counts,
+    scopeId: cluster.scopeId,
+    clusterId: cluster.id,
+    clusterKind: cluster.kind,
+    containedNodeIds: [...cluster.nodeIds],
+    childCount: children.length,
+    fileCount: cluster.fileIds.length,
+    relationCount,
+    canDrillDown: true,
+  };
+}
+
+function progressiveRawNode(
+  node: SemanticGraphNode,
+  hierarchyIndex: GraphHierarchyIndex,
+  canDrillDown = false,
+): HierarchicalSemanticGraphNode {
+  const location = hierarchyIndex.nodeLocationById.get(node.id);
+  return {
+    ...node,
+    kind: "node",
+    ...(location?.scopeId ? { scopeId: location.scopeId } : {}),
+    ...(location?.clusterId ? { clusterId: location.clusterId } : {}),
+    canDrillDown,
+  };
+}
+
+function materializedScopeId(
+  materializedNodeId: string | null,
+  hierarchyIndex: GraphHierarchyIndex,
+): string | null {
+  if (!materializedNodeId) return null;
+  const exact = hierarchyIndex.scopes.find((scope) => scopeNodeId(scope.id) === materializedNodeId);
+  return exact?.id ?? hierarchyIndex.nodeLocationById.get(materializedNodeId)?.scopeId ?? null;
+}
+
+function materializedClusterId(
+  materializedNodeId: string | null,
+  hierarchyIndex: GraphHierarchyIndex,
+): string | null {
+  if (!materializedNodeId) return null;
+  if (hierarchyIndex.clusterById.has(materializedNodeId)) return materializedNodeId;
+  return hierarchyIndex.nodeLocationById.get(materializedNodeId)?.clusterId ?? null;
+}
+
+function progressiveOverview(input: {
+  hierarchyIndex: GraphHierarchyIndex;
+  rawNodes: SemanticGraphNode[];
+  members: SemanticGraphEdgeMember[];
+  displayMode: GraphExplorerDisplayMode;
+  relationshipSource: GraphRelationshipSource;
+  options: GraphScopeOption[];
+  materializedNodeId: string | null;
+}): HierarchicalSemanticGraph {
+  const {
+    hierarchyIndex, rawNodes, members, displayMode, relationshipSource, options, materializedNodeId,
+  } = input;
+  const rawNodesById = new Map(rawNodes.map((node) => [node.id, node]));
+  const visibleScopes = cappedWithMaterialized(
+    hierarchyIndex.scopes,
+    MAX_OVERVIEW_SCOPES,
+    materializedScopeId(materializedNodeId, hierarchyIndex),
+  );
+  const architecture = rawNodes
+    .filter((node) => graphNodePlacementClass(node.rawType) === "architecture-context")
+    .sort((left, right) => compareStable(left.id, right.id));
+  const visibleArchitecture = cappedWithMaterialized(
+    architecture,
+    MAX_OVERVIEW_ARCHITECTURE,
+    architecture.some((node) => node.id === materializedNodeId) ? materializedNodeId : null,
+  );
+  const nodes: HierarchicalSemanticGraphNode[] = [
+    ...visibleScopes.map((scope) => hierarchyScopeNode(scope, rawNodesById, members, displayMode)),
+    ...visibleArchitecture.map((node) => progressiveRawNode(node, hierarchyIndex)),
+  ];
+  const visibleIds = new Set(nodes.map((node) => node.id));
+  const visibleArchitectureIds = new Set(visibleArchitecture.map((node) => node.id));
+  const mappedEndpoint = (nodeId: string): string | null => {
+    const node = rawNodesById.get(nodeId);
+    const location = hierarchyIndex.nodeLocationById.get(nodeId);
+    if (!node || !location) return null;
+    if (graphNodePlacementClass(node.rawType) === "architecture-context" && visibleArchitectureIds.has(nodeId)) {
+      return nodeId;
+    }
+    const scopeId = scopeNodeId(location.scopeId);
+    return visibleIds.has(scopeId) ? scopeId : null;
+  };
+  const projected = members
+    .filter((member) => progressiveMemberAllowed(member, displayMode, relationshipSource, false))
+    .flatMap((member): ProjectedEdgeMember[] => {
+      const source = mappedEndpoint(member.source);
+      const target = mappedEndpoint(member.target);
+      return source && target ? [{ source, target, member }] : [];
+    });
+  const hidden = (hierarchyIndex.scopes.length - visibleScopes.length)
+    + (architecture.length - visibleArchitecture.length);
+  const empty = nodes.length === 0 ? "当前图谱没有可展示的范围或架构对象。" : null;
+  return {
+    nodes,
+    edges: bundleProjectedMembers(projected),
+    presentation: presentation(
+      displayMode,
+      relationshipSource,
+      "overview",
+      options,
+      [{ level: "overview", label: "全局概览" }],
+      hierarchyIndex.scopes.length + architecture.length,
+      hidden,
+      Boolean(materializedNodeId && (hierarchyIndex.nodeById.has(materializedNodeId)
+        || hierarchyIndex.clusterById.has(materializedNodeId))),
+      null,
+      null,
+      null,
+      empty,
+    ),
+  };
+}
+
+function boundaryScopeIdsForView(input: {
+  currentScopeId: string;
+  members: readonly SemanticGraphEdgeMember[];
+  hierarchyIndex: GraphHierarchyIndex;
+  mapInternal: (nodeId: string) => string | null;
+  materializedNodeId: string | null;
+}): { visible: string[]; counts: Map<string, number> } {
+  const { currentScopeId, members, hierarchyIndex, mapInternal, materializedNodeId } = input;
+  const counts = new Map<string, number>();
+  for (const member of members) {
+    const sourceScope = hierarchyIndex.nodeLocationById.get(member.source)?.scopeId;
+    const targetScope = hierarchyIndex.nodeLocationById.get(member.target)?.scopeId;
+    if (!sourceScope || !targetScope || sourceScope === targetScope) continue;
+    if (sourceScope === currentScopeId && mapInternal(member.source)) {
+      counts.set(targetScope, (counts.get(targetScope) ?? 0) + 1);
+    } else if (targetScope === currentScopeId && mapInternal(member.target)) {
+      counts.set(sourceScope, (counts.get(sourceScope) ?? 0) + 1);
+    }
+  }
+  const ordered = [...counts].sort((left, right) => right[1] - left[1]
+    || compareStable(left[0], right[0])).map(([scopeId]) => scopeId);
+  const materializedBoundary = ordered.find((scopeId) =>
+    boundaryNodeId(currentScopeId, scopeId) === materializedNodeId) ?? null;
+  const visible = cappedWithMaterialized(
+    ordered.map((id) => ({ id })),
+    MAX_BOUNDARY_SCOPES,
+    materializedBoundary,
+  ).map(({ id }) => id);
+  return { visible, counts };
+}
+
+function projectContextualMembers(input: {
+  currentScopeId: string;
+  members: readonly SemanticGraphEdgeMember[];
+  hierarchyIndex: GraphHierarchyIndex;
+  mapInternal: (nodeId: string) => string | null;
+  boundaryScopeIds: ReadonlySet<string>;
+}): ProjectedEdgeMember[] {
+  const { currentScopeId, members, hierarchyIndex, mapInternal, boundaryScopeIds } = input;
+  return members.flatMap((member): ProjectedEdgeMember[] => {
+    const sourceScope = hierarchyIndex.nodeLocationById.get(member.source)?.scopeId;
+    const targetScope = hierarchyIndex.nodeLocationById.get(member.target)?.scopeId;
+    if (!sourceScope || !targetScope) return [];
+    if (sourceScope === currentScopeId && targetScope === currentScopeId) {
+      const source = mapInternal(member.source);
+      const target = mapInternal(member.target);
+      return source && target ? [{ source, target, member }] : [];
+    }
+    if (sourceScope === currentScopeId && boundaryScopeIds.has(targetScope)) {
+      const source = mapInternal(member.source);
+      if (!source) return [];
+      return [{
+        source,
+        target: boundaryNodeId(currentScopeId, targetScope),
+        member,
+        boundaryContext: { currentScopeId, targetScopeId: targetScope },
+      }];
+    }
+    if (targetScope === currentScopeId && boundaryScopeIds.has(sourceScope)) {
+      const target = mapInternal(member.target);
+      if (!target) return [];
+      return [{
+        source: boundaryNodeId(currentScopeId, sourceScope),
+        target,
+        member,
+        boundaryContext: { currentScopeId, targetScopeId: sourceScope },
+      }];
+    }
+    return [];
+  });
+}
+
+function progressiveScope(input: {
+  hierarchyIndex: GraphHierarchyIndex;
+  scope: GraphHierarchyScope;
+  rawNodes: SemanticGraphNode[];
+  members: SemanticGraphEdgeMember[];
+  displayMode: GraphExplorerDisplayMode;
+  relationshipSource: GraphRelationshipSource;
+  options: GraphScopeOption[];
+  materializedNodeId: string | null;
+}): HierarchicalSemanticGraph {
+  const {
+    hierarchyIndex, scope, rawNodes, members, displayMode, relationshipSource, options, materializedNodeId,
+  } = input;
+  const rawNodesById = new Map(rawNodes.map((node) => [node.id, node]));
+  const clusters = scope.clusterIds
+    .map((clusterId) => hierarchyIndex.clusterById.get(clusterId))
+    .filter((cluster): cluster is GraphHierarchyCluster => Boolean(cluster));
+  const visibleClusters = cappedWithMaterialized(
+    clusters,
+    MAX_SCOPE_CLUSTERS,
+    materializedClusterId(materializedNodeId, hierarchyIndex),
+  );
+  const architecture = scope.nodeIds
+    .map((nodeId) => rawNodesById.get(nodeId))
+    .filter((node): node is SemanticGraphNode =>
+      Boolean(node && graphNodePlacementClass(node.rawType) === "architecture-context"))
+    .sort((left, right) => compareStable(left.id, right.id));
+  const visibleArchitecture = cappedWithMaterialized(
+    architecture,
+    MAX_OVERVIEW_ARCHITECTURE,
+    architecture.some((node) => node.id === materializedNodeId) ? materializedNodeId : null,
+  );
+  const clusterIds = new Set(visibleClusters.map((cluster) => cluster.id));
+  const architectureIds = new Set(visibleArchitecture.map((node) => node.id));
+  const mapInternal = (nodeId: string): string | null => {
+    const node = rawNodesById.get(nodeId);
+    const location = hierarchyIndex.nodeLocationById.get(nodeId);
+    if (!node || location?.scopeId !== scope.id) return null;
+    if (graphNodePlacementClass(node.rawType) === "architecture-context") {
+      return architectureIds.has(nodeId) ? nodeId : null;
+    }
+    return location.clusterId && clusterIds.has(location.clusterId) ? location.clusterId : null;
+  };
+  const allowedMembers = members.filter((member) =>
+    progressiveMemberAllowed(member, displayMode, relationshipSource, true));
+  const boundaries = boundaryScopeIdsForView({
+    currentScopeId: scope.id,
+    members: allowedMembers,
+    hierarchyIndex,
+    mapInternal,
+    materializedNodeId,
+  });
+  const boundaryIds = new Set(boundaries.visible);
+  const nodes: HierarchicalSemanticGraphNode[] = [
+    ...visibleClusters.map((cluster) => hierarchyClusterNode(cluster, rawNodesById, allowedMembers, displayMode)),
+    ...visibleArchitecture.map((node) => progressiveRawNode(node, hierarchyIndex)),
+    ...boundaries.visible.flatMap((scopeId) => {
+      const target = hierarchyIndex.scopeById.get(scopeId);
+      return target ? [hierarchyBoundaryNode(
+        scope.id,
+        target,
+        rawNodesById,
+        boundaries.counts.get(scopeId) ?? 0,
+        displayMode,
+      )] : [];
+    }),
+  ];
+  const projected = projectContextualMembers({
+    currentScopeId: scope.id,
+    members: allowedMembers,
+    hierarchyIndex,
+    mapInternal,
+    boundaryScopeIds: boundaryIds,
+  });
+  const total = clusters.length + architecture.length + boundaries.counts.size;
+  const empty = nodes.length === 0 ? "当前范围没有可展示的聚类或架构对象。" : null;
+  return {
+    nodes,
+    edges: bundleProjectedMembers(projected),
+    presentation: presentation(
+      displayMode,
+      relationshipSource,
+      "scope",
+      options,
+      [
+        { level: "overview", label: "全局概览" },
+        { level: "scope", label: scope.label, scopeId: scope.id },
+      ],
+      total,
+      total - nodes.length,
+      Boolean(materializedNodeId),
+      scope.id,
+      null,
+      null,
+      empty,
+    ),
+  };
+}
+
+function progressiveCluster(input: {
+  hierarchyIndex: GraphHierarchyIndex;
+  scope: GraphHierarchyScope;
+  cluster: GraphHierarchyCluster;
+  rawNodes: SemanticGraphNode[];
+  members: SemanticGraphEdgeMember[];
+  displayMode: GraphExplorerDisplayMode;
+  relationshipSource: GraphRelationshipSource;
+  options: GraphScopeOption[];
+  materializedNodeId: string | null;
+}): HierarchicalSemanticGraph {
+  const {
+    hierarchyIndex, scope, cluster, rawNodes, members, displayMode, relationshipSource, options, materializedNodeId,
+  } = input;
+  const rawNodesById = new Map(rawNodes.map((node) => [node.id, node]));
+  const files = cluster.fileIds
+    .map((fileId) => rawNodesById.get(fileId))
+    .filter((node): node is SemanticGraphNode => Boolean(node));
+  const materializedLocation = materializedNodeId
+    ? hierarchyIndex.nodeLocationById.get(materializedNodeId)
+    : undefined;
+  const materializedFileId = materializedLocation?.clusterId === cluster.id
+    ? materializedLocation.fileId ?? null
+    : null;
+  const visibleFiles = cappedWithMaterialized(files, MAX_CLUSTER_FILES, materializedFileId);
+  const directLeaves = cluster.nodeIds
+    .map((nodeId) => rawNodesById.get(nodeId))
+    .filter((node): node is SemanticGraphNode => {
+      if (!node || graphNodePlacementClass(node.rawType) !== "file-leaf") return false;
+      const location = hierarchyIndex.nodeLocationById.get(node.id);
+      return location?.clusterId === cluster.id && !location.fileId;
+    })
+    .sort((left, right) => compareStable(left.id, right.id));
+  const visibleLeaves = cappedWithMaterialized(
+    directLeaves,
+    MAX_CLUSTER_FILELESS_LEAVES,
+    materializedLocation?.clusterId === cluster.id && !materializedLocation.fileId
+      ? materializedNodeId
+      : null,
+  );
+  const fileIds = new Set(visibleFiles.map((node) => node.id));
+  const leafIds = new Set(visibleLeaves.map((node) => node.id));
+  const mapInternal = (nodeId: string): string | null => {
+    const node = rawNodesById.get(nodeId);
+    const location = hierarchyIndex.nodeLocationById.get(nodeId);
+    if (!node || location?.scopeId !== scope.id || location.clusterId !== cluster.id) return null;
+    if (node.rawType === "file") return fileIds.has(nodeId) ? nodeId : null;
+    if (graphNodePlacementClass(node.rawType) === "file-leaf") {
+      if (location.fileId) return fileIds.has(location.fileId) ? location.fileId : null;
+      return leafIds.has(nodeId) ? nodeId : null;
+    }
+    return null;
+  };
+  const allowedMembers = members.filter((member) =>
+    progressiveMemberAllowed(member, displayMode, relationshipSource, true));
+  const boundaries = boundaryScopeIdsForView({
+    currentScopeId: scope.id,
+    members: allowedMembers,
+    hierarchyIndex,
+    mapInternal,
+    materializedNodeId,
+  });
+  const nodes: HierarchicalSemanticGraphNode[] = [
+    ...visibleFiles.map((node) => progressiveRawNode(node, hierarchyIndex, true)),
+    ...visibleLeaves.map((node) => progressiveRawNode(node, hierarchyIndex)),
+    ...boundaries.visible.flatMap((scopeId) => {
+      const target = hierarchyIndex.scopeById.get(scopeId);
+      return target ? [hierarchyBoundaryNode(
+        scope.id,
+        target,
+        rawNodesById,
+        boundaries.counts.get(scopeId) ?? 0,
+        displayMode,
+      )] : [];
+    }),
+  ];
+  const projected = projectContextualMembers({
+    currentScopeId: scope.id,
+    members: allowedMembers,
+    hierarchyIndex,
+    mapInternal,
+    boundaryScopeIds: new Set(boundaries.visible),
+  });
+  const total = files.length + directLeaves.length + boundaries.counts.size;
+  const empty = nodes.length === 0 ? "当前聚类没有可展示的文件或结构对象。" : null;
+  return {
+    nodes,
+    edges: bundleProjectedMembers(projected),
+    presentation: presentation(
+      displayMode,
+      relationshipSource,
+      "cluster",
+      options,
+      [
+        { level: "overview", label: "全局概览" },
+        { level: "scope", label: scope.label, scopeId: scope.id },
+        { level: "cluster", label: cluster.label, scopeId: scope.id, clusterId: cluster.id },
+      ],
+      total,
+      total - nodes.length,
+      Boolean(materializedNodeId),
+      scope.id,
+      cluster.id,
+      null,
+      empty,
+    ),
+  };
+}
+
+function progressiveFile(input: {
+  hierarchyIndex: GraphHierarchyIndex;
+  scope: GraphHierarchyScope;
+  cluster: GraphHierarchyCluster;
+  fileId: string;
+  rawNodes: SemanticGraphNode[];
+  members: SemanticGraphEdgeMember[];
+  displayMode: GraphExplorerDisplayMode;
+  relationshipSource: GraphRelationshipSource;
+  options: GraphScopeOption[];
+  materializedNodeId: string | null;
+}): HierarchicalSemanticGraph | null {
+  const {
+    hierarchyIndex, scope, cluster, fileId, rawNodes, members, displayMode, relationshipSource, options,
+    materializedNodeId,
+  } = input;
+  const rawNodesById = new Map(rawNodes.map((node) => [node.id, node]));
+  const file = rawNodesById.get(fileId);
+  if (!file || file.rawType !== "file") return null;
+  const ownedLeaves = rawNodes
+    .filter((node) => hierarchyIndex.nodeLocationById.get(node.id)?.fileId === fileId
+      && graphNodePlacementClass(node.rawType) === "file-leaf")
+    .sort((left, right) => compareStable(left.id, right.id));
+  const ownedIds = new Set([fileId, ...ownedLeaves.map((node) => node.id)]);
+  const allowedMembers = members.filter((member) =>
+    progressiveMemberAllowed(member, displayMode, relationshipSource, true));
+  const relatedIds = new Set<string>();
+  for (const member of allowedMembers) {
+    if (ownedIds.has(member.source) && !ownedIds.has(member.target)) relatedIds.add(member.target);
+    if (ownedIds.has(member.target) && !ownedIds.has(member.source)) relatedIds.add(member.source);
+  }
+  const related = [...relatedIds]
+    .map((nodeId) => rawNodesById.get(nodeId))
+    .filter((node): node is SemanticGraphNode => Boolean(node))
+    .sort((left, right) => compareStable(left.id, right.id));
+  const candidates = [...ownedLeaves, ...related.filter((node) => !ownedIds.has(node.id))];
+  const visibleRest = cappedWithMaterialized(candidates, MAX_FILE_NODES - 1, materializedNodeId);
+  const nodes = [file, ...visibleRest].map((node) => progressiveRawNode(node, hierarchyIndex));
+  const visibleIds = new Set(nodes.map((node) => node.id));
+  const projected = allowedMembers.flatMap((member): ProjectedEdgeMember[] =>
+    visibleIds.has(member.source) && visibleIds.has(member.target)
+      ? [{ source: member.source, target: member.target, member }]
+      : []);
+  const empty = ownedLeaves.length === 0 ? "当前文件没有可展示的符号。" : null;
+  return {
+    nodes,
+    edges: bundleProjectedMembers(projected),
+    presentation: presentation(
+      displayMode,
+      relationshipSource,
+      "file",
+      options,
+      [
+        { level: "overview", label: "全局概览" },
+        { level: "scope", label: scope.label, scopeId: scope.id },
+        { level: "cluster", label: cluster.label, scopeId: scope.id, clusterId: cluster.id },
+        { level: "file", label: file.label, scopeId: scope.id, clusterId: cluster.id, fileId },
+      ],
+      1 + candidates.length,
+      Math.max(0, 1 + candidates.length - nodes.length),
+      Boolean(materializedNodeId),
+      scope.id,
+      cluster.id,
+      fileId,
+      empty,
+    ),
+  };
+}
+
+function buildProgressiveHierarchicalSemanticGraph(input: BuildHierarchicalGraphInput & {
+  hierarchyIndex: GraphHierarchyIndex;
+}): HierarchicalSemanticGraph {
+  const {
+    graph, hierarchyIndex, wikiIndex, mode, navigation, materializedNodeId = null,
+  } = input;
+  const displayMode = normalizeGraphExplorerMode(mode);
+  const relationshipSource = resolveGraphRelationshipSource(graph);
+  const raw = buildSemanticGraph({ graph, wikiIndex, mode: "global", focusNodeIds: [] });
+  const members = graphMembers(raw);
+  const options = progressiveScopeOptions(hierarchyIndex, new Map(raw.nodes.map((node) => [node.id, node])), displayMode);
+  const scope = navigation.scopeId ? hierarchyIndex.scopeById.get(navigation.scopeId) : undefined;
+  const cluster = navigation.clusterId ? hierarchyIndex.clusterById.get(navigation.clusterId) : undefined;
+
+  if (navigation.level === "file" && scope && cluster && cluster.scopeId === scope.id && navigation.fileId) {
+    const file = progressiveFile({
+      hierarchyIndex,
+      scope,
+      cluster,
+      fileId: navigation.fileId,
+      rawNodes: raw.nodes,
+      members,
+      displayMode,
+      relationshipSource,
+      options,
+      materializedNodeId,
+    });
+    if (file) return file;
+  }
+  if (navigation.level === "cluster" && scope && cluster && cluster.scopeId === scope.id) {
+    return progressiveCluster({
+      hierarchyIndex,
+      scope,
+      cluster,
+      rawNodes: raw.nodes,
+      members,
+      displayMode,
+      relationshipSource,
+      options,
+      materializedNodeId,
+    });
+  }
+  if ((navigation.level === "scope" || navigation.level === "cluster" || navigation.level === "file") && scope) {
+    return progressiveScope({
+      hierarchyIndex,
+      scope,
+      rawNodes: raw.nodes,
+      members,
+      displayMode,
+      relationshipSource,
+      options,
+      materializedNodeId,
+    });
+  }
+  return progressiveOverview({
+    hierarchyIndex,
+    rawNodes: raw.nodes,
+    members,
+    displayMode,
+    relationshipSource,
+    options,
+    materializedNodeId,
+  });
+}
+
 export function buildHierarchicalSemanticGraph({
   graph,
+  hierarchyIndex,
   wikiIndex,
   mode,
-  focusNodeIds,
-  selectedNodeId,
+  focusNodeIds = [],
+  selectedNodeId = null,
   navigation,
+  materializedNodeId = null,
 }: BuildHierarchicalGraphInput): HierarchicalSemanticGraph {
+  if (hierarchyIndex) {
+    return buildProgressiveHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      wikiIndex,
+      mode,
+      navigation,
+      materializedNodeId,
+    });
+  }
   const displayMode = normalizeGraphExplorerMode(mode);
   const relationshipSource = resolveGraphRelationshipSource(graph);
   const raw = buildSemanticGraph({ graph, wikiIndex, mode: "global", focusNodeIds });

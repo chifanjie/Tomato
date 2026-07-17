@@ -797,4 +797,330 @@ describe("hierarchicalGraph", () => {
     expect(detail.edges.filter((edge) => edge.source === selectedNodeId || edge.target === selectedNodeId)).toHaveLength(9);
     expect(detail.presentation.hiddenNodeCount).toBe(0);
   });
+
+  it("builds overview, scope, cluster, and file levels from one hierarchy index", () => {
+    const graph = workspaceHierarchyFixture();
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const scope = hierarchyIndex.scopes[0]!;
+    const cluster = hierarchyIndex.clusterById.get(scope.clusterIds[0]!)!;
+    const fileId = cluster.fileIds[0]!;
+    const base = { graph, hierarchyIndex, mode: "architecture" as const, materializedNodeId: null };
+
+    const overview = buildHierarchicalSemanticGraph({
+      ...base,
+      navigation: { level: "overview" },
+    });
+    const scopeView = buildHierarchicalSemanticGraph({
+      ...base,
+      navigation: { level: "scope", scopeId: scope.id },
+    });
+    const clusterView = buildHierarchicalSemanticGraph({
+      ...base,
+      navigation: { level: "cluster", scopeId: scope.id, clusterId: cluster.id },
+    });
+    const fileView = buildHierarchicalSemanticGraph({
+      ...base,
+      navigation: { level: "file", scopeId: scope.id, clusterId: cluster.id, fileId },
+    });
+
+    expect(overview.presentation.level).toBe("overview");
+    expect(scopeView.nodes.filter((node) => node.kind === "cluster").map((node) => node.clusterId))
+      .toEqual(scope.clusterIds);
+    expect(clusterView.nodes.filter((node) => node.rawType === "file").map((node) => node.id))
+      .toEqual(cluster.fileIds.slice(0, 30));
+    expect(fileView.presentation.level).toBe("file");
+    expect(scopeView.presentation.breadcrumbs.map((item) => item.level)).toEqual(["overview", "scope"]);
+    expect(clusterView.presentation.breadcrumbs.map((item) => item.level)).toEqual(["overview", "scope", "cluster"]);
+    expect(fileView.presentation.breadcrumbs.map((item) => item.level)).toEqual(["overview", "scope", "cluster", "file"]);
+    expect(overview.nodes.some((node) => node.id === "service:gateway")).toBe(true);
+  });
+
+  it("keeps aggregate edge identity distinct by mapped endpoints, type, and direction", () => {
+    const left = hierarchyNode("file:left", "file", "left/a.ts");
+    const right = hierarchyNode("file:right", "file", "right/b.ts");
+    const graph = hierarchyGraph([left, right], [
+      { source: left.id, target: right.id, type: "calls", direction: "forward", weight: 0.2 },
+      { source: left.id, target: right.id, type: "imports", direction: "forward", weight: 0.4 },
+      { source: left.id, target: right.id, type: "imports", direction: "backward", weight: 0.8 },
+    ]);
+    graph.layers = [
+      { id: "left", name: "Left", description: "Left.", nodeIds: [left.id] },
+      { id: "right", name: "Right", description: "Right.", nodeIds: [right.id] },
+    ];
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+
+    const view = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      mode: "coverage",
+      navigation: { level: "overview" },
+      materializedNodeId: null,
+    });
+
+    expect(view.edges).toHaveLength(3);
+    expect(new Set(view.edges.map((edge) => edge.id)).size).toBe(3);
+    expect(view.edges.map((edge) => [edge.type, edge.direction]).sort()).toEqual([
+      ["calls", "forward"],
+      ["imports", "backward"],
+      ["imports", "forward"],
+    ]);
+  });
+
+  it("bundles equal projected relationships without changing any raw member", () => {
+    const graph = hierarchyGraph([
+      hierarchyNode("file:a", "file", "src/a.ts"),
+      hierarchyNode("file:c", "file", "src/c.ts"),
+      hierarchyNode("file:b", "file", "lib/b.ts"),
+      hierarchyNode("file:d", "file", "lib/d.ts"),
+    ], [
+      { source: "file:a", target: "file:b", type: "imports", direction: "forward", weight: 0.4 },
+      { source: "file:c", target: "file:d", type: "imports", direction: "forward", weight: 0.8 },
+    ]);
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const scope = hierarchyIndex.scopes[0]!;
+
+    const view = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      mode: "architecture",
+      navigation: { level: "scope", scopeId: scope.id },
+      materializedNodeId: null,
+    });
+    const edge = view.edges.find((candidate) => candidate.type === "imports")!;
+    const tuples = edge.members.map(({ source, target, type, direction, weight }) => ({
+      source,
+      target,
+      type,
+      direction,
+      weight,
+    })).sort((leftMember, rightMember) => leftMember.source.localeCompare(rightMember.source)
+      || leftMember.target.localeCompare(rightMember.target)
+      || leftMember.type.localeCompare(rightMember.type)
+      || leftMember.direction.localeCompare(rightMember.direction)
+      || leftMember.weight - rightMember.weight);
+
+    expect(edge.bundledCount).toBe(2);
+    expect(edge.members).toHaveLength(2);
+    expect(tuples).toEqual([
+      { source: "file:a", target: "file:b", type: "imports", direction: "forward", weight: 0.4 },
+      { source: "file:c", target: "file:d", type: "imports", direction: "forward", weight: 0.8 },
+    ]);
+  });
+
+  it("annotates contextual boundary edges while preserving raw endpoints", () => {
+    const graph = importOnlyGraph();
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const app = hierarchyIndex.scopeById.get("layer:app")!;
+    const cluster = hierarchyIndex.clusterById.get(app.clusterIds[0]!)!;
+    const expectedMember = graph.edges.find((edge) => edge.type === "imports")!;
+
+    for (const navigation of [
+      { level: "scope" as const, scopeId: app.id },
+      { level: "cluster" as const, scopeId: app.id, clusterId: cluster.id },
+    ]) {
+      const view = buildHierarchicalSemanticGraph({
+        graph,
+        hierarchyIndex,
+        mode: "call",
+        navigation,
+        materializedNodeId: null,
+      });
+      const edge = view.edges.find((candidate) => candidate.boundaryContext)!;
+      expect(edge.boundaryContext).toEqual({ currentScopeId: "layer:app", targetScopeId: "layer:lib" });
+      expect(edge.members.map(({ source, target, type, direction, weight }) => ({
+        source,
+        target,
+        type,
+        direction,
+        weight,
+      }))).toContainEqual({
+        source: expectedMember.source,
+        target: expectedMember.target,
+        type: expectedMember.type,
+        direction: expectedMember.direction,
+        weight: expectedMember.weight,
+      });
+    }
+  });
+
+  it("applies independent caps and materializes hidden architecture, file, fileless, and symbol objects", () => {
+    const files = Array.from({ length: 35 }, (_, index) =>
+      hierarchyNode(`file:${index}`, "file", `src/file-${String(index).padStart(2, "0")}.ts`));
+    const fileless = Array.from({ length: 15 }, (_, index) =>
+      hierarchyNode(`config:${index}`, "config", `src/config-${String(index).padStart(2, "0")}.json`));
+    const architecture = Array.from({ length: 27 }, (_, index) =>
+      hierarchyNode(`service:${index}`, "service"));
+    const symbols = Array.from({ length: 45 }, (_, index) =>
+      hierarchyNode(`function:${index}`, "function", files[0]!.filePath));
+    const graph = hierarchyGraph(
+      [...files, ...fileless, ...architecture, ...symbols],
+      symbols.map((symbol) => ({
+        source: files[0]!.id,
+        target: symbol.id,
+        type: "contains" as const,
+        direction: "forward" as const,
+        weight: 1,
+      })),
+      [...files, ...architecture].map((node) => node.id),
+    );
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const scope = hierarchyIndex.scopes[0]!;
+    const cluster = hierarchyIndex.clusterById.get(scope.clusterIds.find((id) =>
+      hierarchyIndex.clusterById.get(id)?.fileIds.includes(files[0]!.id))!)!;
+    const build = (navigation: Parameters<typeof buildHierarchicalSemanticGraph>[0]["navigation"], materializedNodeId: string | null) =>
+      buildHierarchicalSemanticGraph({ graph, hierarchyIndex, mode: "coverage", navigation, materializedNodeId });
+
+    const overview = build({ level: "overview" }, null);
+    const overviewMaterialized = build({ level: "overview" }, architecture.at(-1)!.id);
+    const clusterView = build({ level: "cluster", scopeId: scope.id, clusterId: cluster.id }, null);
+    const clusterMaterializedFile = build(
+      { level: "cluster", scopeId: scope.id, clusterId: cluster.id },
+      files.at(-1)!.id,
+    );
+    const clusterMaterializedLeaf = build(
+      { level: "cluster", scopeId: scope.id, clusterId: cluster.id },
+      fileless.at(-1)!.id,
+    );
+    const fileView = build(
+      { level: "file", scopeId: scope.id, clusterId: cluster.id, fileId: files[0]!.id },
+      symbols.at(-1)!.id,
+    );
+
+    expect(overview.nodes.filter((node) => node.kind === "node"
+      && graphNodePlacementClass(node.rawType) === "architecture-context"))
+      .toHaveLength(24);
+    expect(overviewMaterialized.nodes.map((node) => node.id)).toContain(architecture.at(-1)!.id);
+    expect(clusterView.nodes.filter((node) => node.rawType === "file")).toHaveLength(30);
+    expect(clusterView.nodes.filter((node) => node.rawType === "config")).toHaveLength(12);
+    expect(clusterMaterializedFile.nodes.map((node) => node.id)).toContain(files.at(-1)!.id);
+    expect(clusterMaterializedLeaf.nodes.map((node) => node.id)).toContain(fileless.at(-1)!.id);
+    expect(fileView.nodes).toHaveLength(38);
+    expect(fileView.nodes.map((node) => node.id)).toContain(symbols.at(-1)!.id);
+  });
+
+  it("materializes encoded scope, cluster, and contextual boundary ids without exceeding their caps", () => {
+    const scopesGraph = manyScopesGraph();
+    const scopesIndex = buildGraphHierarchyIndex(scopesGraph);
+    const lastScope = scopesIndex.scopes.at(-1)!;
+    const scopesView = buildHierarchicalSemanticGraph({
+      graph: scopesGraph,
+      hierarchyIndex: scopesIndex,
+      mode: "architecture",
+      navigation: { level: "overview" },
+      materializedNodeId: scopeNodeId(lastScope.id),
+    });
+    expect(scopesView.nodes.filter((node) => node.kind === "scope")).toHaveLength(16);
+    expect(scopesView.nodes.map((node) => node.id)).toContain(scopeNodeId(lastScope.id));
+
+    const clusterFiles = Array.from({ length: 26 }, (_, index) =>
+      hierarchyNode(`file:cluster-${index}`, "file", `dir-${String(index).padStart(2, "0")}/index.ts`));
+    const clustersGraph = hierarchyGraph(clusterFiles, [], clusterFiles.map((node) => node.id));
+    const clustersIndex = buildGraphHierarchyIndex(clustersGraph);
+    const clusterScope = clustersIndex.scopes[0]!;
+    const lastClusterId = clusterScope.clusterIds.at(-1)!;
+    const clustersView = buildHierarchicalSemanticGraph({
+      graph: clustersGraph,
+      hierarchyIndex: clustersIndex,
+      mode: "architecture",
+      navigation: { level: "scope", scopeId: clusterScope.id },
+      materializedNodeId: lastClusterId,
+    });
+    expect(clustersView.nodes.filter((node) => node.kind === "cluster")).toHaveLength(24);
+    expect(clustersView.nodes.map((node) => node.id)).toContain(lastClusterId);
+
+    const boundariesGraph = manyBoundariesGraph();
+    const boundariesIndex = buildGraphHierarchyIndex(boundariesGraph);
+    const currentScopeId = "layer:center";
+    const targetScopeId = "layer:external-08";
+    const contextualBoundaryId = boundaryNodeId(currentScopeId, targetScopeId);
+    const boundariesView = buildHierarchicalSemanticGraph({
+      graph: boundariesGraph,
+      hierarchyIndex: boundariesIndex,
+      mode: "call",
+      navigation: { level: "scope", scopeId: currentScopeId },
+      materializedNodeId: contextualBoundaryId,
+    });
+    expect(boundariesView.nodes.filter((node) => node.kind === "boundary")).toHaveLength(8);
+    expect(boundariesView.nodes.map((node) => node.id)).toContain(contextualBoundaryId);
+    expect(boundariesView.edges.find((edge) => edge.source === contextualBoundaryId
+      || edge.target === contextualBoundaryId)?.boundaryContext).toEqual({ currentScopeId, targetScopeId });
+  });
+
+  it("shows every architecture-context type at overview and scope levels", () => {
+    const architectureTypes = [
+      "module", "concept", "document", "service", "table", "endpoint", "pipeline", "schema",
+      "resource", "domain", "flow", "step", "article", "entity", "topic", "claim", "source",
+    ] as const satisfies readonly NodeType[];
+    const file = hierarchyNode("file:architecture", "file", "src/architecture.ts");
+    const architectureNodes = architectureTypes.map((type) => hierarchyNode(`architecture:${type}`, type));
+    const graph = hierarchyGraph([file, ...architectureNodes], [], [file.id, ...architectureNodes.map((node) => node.id)]);
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const scope = hierarchyIndex.scopes[0]!;
+    const input = { graph, hierarchyIndex, mode: "coverage" as const, materializedNodeId: null };
+    const overview = buildHierarchicalSemanticGraph({ ...input, navigation: { level: "overview" } });
+    const scopeView = buildHierarchicalSemanticGraph({
+      ...input,
+      navigation: { level: "scope", scopeId: scope.id },
+    });
+    const ids = architectureNodes.map((node) => node.id).sort();
+
+    expect(overview.nodes.filter((node) => node.kind === "node"
+      && graphNodePlacementClass(node.rawType) === "architecture-context")
+      .map((node) => node.id).sort()).toEqual(ids);
+    expect(scopeView.nodes.filter((node) => node.kind === "node"
+      && graphNodePlacementClass(node.rawType) === "architecture-context")
+      .map((node) => node.id).sort()).toEqual(ids);
+  });
+
+  it("returns explicit Chinese empty-state notices for empty overview, scope, cluster, and symbol-free file", () => {
+    const emptyGraph = hierarchyGraph([], [], []);
+    const emptyIndex = buildGraphHierarchyIndex(emptyGraph);
+    const emptyOverview = buildHierarchicalSemanticGraph({
+      graph: emptyGraph,
+      hierarchyIndex: emptyIndex,
+      mode: "architecture",
+      navigation: { level: "overview" },
+      materializedNodeId: null,
+    });
+    const graph = hierarchyGraph([hierarchyNode("file:empty", "file", "src/empty.ts")]);
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const scope = hierarchyIndex.scopes[0]!;
+    const cluster = hierarchyIndex.clusterById.get(scope.clusterIds[0]!)!;
+    const syntheticScope = { ...scope, id: "scope:empty", clusterIds: [], nodeIds: [] };
+    const scopeIndex = {
+      ...hierarchyIndex,
+      scopes: [syntheticScope],
+      scopeById: new Map([[syntheticScope.id, syntheticScope]]),
+    };
+    const emptyScope = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex: scopeIndex,
+      mode: "architecture",
+      navigation: { level: "scope", scopeId: syntheticScope.id },
+      materializedNodeId: null,
+    });
+    const clusterIndex = {
+      ...hierarchyIndex,
+      clusterById: new Map(hierarchyIndex.clusterById).set(cluster.id, { ...cluster, fileIds: [], nodeIds: [] }),
+    };
+    const emptyCluster = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex: clusterIndex,
+      mode: "architecture",
+      navigation: { level: "cluster", scopeId: scope.id, clusterId: cluster.id },
+      materializedNodeId: null,
+    });
+    const emptyFile = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      mode: "architecture",
+      navigation: { level: "file", scopeId: scope.id, clusterId: cluster.id, fileId: "file:empty" },
+      materializedNodeId: null,
+    });
+
+    expect(emptyOverview).toMatchObject({ nodes: [], edges: [], presentation: { notice: "当前图谱没有可展示的范围或架构对象。" } });
+    expect(emptyScope).toMatchObject({ nodes: [], edges: [], presentation: { notice: "当前范围没有可展示的聚类或架构对象。" } });
+    expect(emptyCluster).toMatchObject({ nodes: [], edges: [], presentation: { notice: "当前聚类没有可展示的文件或结构对象。" } });
+    expect(emptyFile.presentation.notice).toBe("当前文件没有可展示的符号。");
+  });
 });

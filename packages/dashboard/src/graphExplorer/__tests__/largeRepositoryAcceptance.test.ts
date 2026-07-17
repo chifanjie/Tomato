@@ -5,6 +5,14 @@ import { buildWikiNavigation } from "../../wiki/navigationModel.js";
 import { buildWikiSearchRuntime, searchWiki } from "../../wiki/searchIndex.js";
 import { buildWikiRuntimeIndex } from "../../wiki/wikiIndex.js";
 import { largeRepositoryFixture } from "./largeRepositoryFixture.js";
+import {
+  boundaryNodeId,
+  buildGraphHierarchyIndex,
+  buildHierarchicalSemanticGraph,
+  graphNodePlacementClass,
+  scopeNodeId,
+  type HierarchicalSemanticGraph,
+} from "../hierarchicalGraph.js";
 
 describe("large repository acceptance", () => {
   it("keeps the main route bounded and every file or symbol reference reachable", () => {
@@ -138,5 +146,178 @@ describe("large repository acceptance", () => {
     expect(ids.has(fixture.selectedId)).toBe(true);
     expect(ids.has(fixture.neighborId)).toBe(true);
     expect(view.semanticGraph.nodes.length).toBeLessThan(100);
+  });
+
+  it("keeps the complete repository reachable through capped progressive graph levels", () => {
+    const fixture = largeRepositoryFixture();
+    const runtime = buildWikiRuntimeIndex(fixture.wiki);
+    const hierarchyIndex = buildGraphHierarchyIndex(fixture.graph);
+    const reachable = new Set<string>();
+    const memberKeys = new Set<string>();
+    const fileClusterVisits = new Map<string, Set<string>>();
+    const memberKey = (member: {
+      source: string;
+      target: string;
+      type: string;
+      direction: string;
+      weight: number;
+    }) => JSON.stringify([member.source, member.target, member.type, member.direction, member.weight]);
+    const observe = (view: HierarchicalSemanticGraph): void => {
+      for (const node of view.nodes) reachable.add(node.id);
+      for (const edge of view.edges) {
+        expect(edge.bundledCount).toBe(edge.members.length);
+        for (const member of edge.members) memberKeys.add(memberKey(member));
+      }
+      expect(view.edges.length).toBeLessThanOrEqual(100);
+    };
+
+    for (const mode of ["architecture", "call"] as const) {
+      const overview = buildHierarchicalSemanticGraph({
+        graph: fixture.graph,
+        hierarchyIndex,
+        wikiIndex: runtime,
+        mode,
+        navigation: { level: "overview" },
+        materializedNodeId: null,
+      });
+      observe(overview);
+      expect(overview.nodes.filter((node) => node.kind === "scope").length).toBeLessThanOrEqual(16);
+      expect(overview.nodes.filter((node) => graphNodePlacementClass(node.rawType) === "architecture-context").length)
+        .toBeLessThanOrEqual(24);
+
+      for (const scope of hierarchyIndex.scopes) {
+        const scopeView = buildHierarchicalSemanticGraph({
+          graph: fixture.graph,
+          hierarchyIndex,
+          wikiIndex: runtime,
+          mode,
+          navigation: { level: "scope", scopeId: scope.id },
+          materializedNodeId: null,
+        });
+        observe(scopeView);
+        expect(scopeView.nodes.filter((node) => node.kind === "cluster").length).toBeLessThanOrEqual(24);
+        expect(scopeView.nodes.filter((node) => node.kind === "boundary").length).toBeLessThanOrEqual(8);
+
+        for (const clusterId of scope.clusterIds) {
+          const cluster = hierarchyIndex.clusterById.get(clusterId)!;
+          const navigation = { level: "cluster" as const, scopeId: scope.id, clusterId };
+          const clusterView = buildHierarchicalSemanticGraph({
+            graph: fixture.graph,
+            hierarchyIndex,
+            wikiIndex: runtime,
+            mode,
+            navigation,
+            materializedNodeId: null,
+          });
+          observe(clusterView);
+          expect(clusterView.nodes.filter((node) => node.rawType === "file").length).toBeLessThanOrEqual(30);
+          expect(clusterView.nodes.filter((node) => node.kind === "boundary").length).toBeLessThanOrEqual(8);
+          expect(clusterView.nodes.filter((node) =>
+            graphNodePlacementClass(node.rawType) === "file-leaf"
+              && !hierarchyIndex.nodeLocationById.get(node.id)?.fileId).length).toBeLessThanOrEqual(12);
+
+          for (const fileId of cluster.fileIds) {
+            let parentView = clusterView;
+            if (!parentView.nodes.some((node) => node.id === fileId)) {
+              parentView = buildHierarchicalSemanticGraph({
+                graph: fixture.graph,
+                hierarchyIndex,
+                wikiIndex: runtime,
+                mode,
+                navigation,
+                materializedNodeId: fileId,
+              });
+              observe(parentView);
+            }
+            expect(parentView.nodes.map((node) => node.id)).toContain(fileId);
+            const visitedClusters = fileClusterVisits.get(fileId) ?? new Set<string>();
+            visitedClusters.add(clusterId);
+            fileClusterVisits.set(fileId, visitedClusters);
+
+            const fileNavigation = { level: "file" as const, scopeId: scope.id, clusterId, fileId };
+            const ownedSymbols = fixture.graph.nodes.filter((node) =>
+              hierarchyIndex.symbolLocationById.get(node.id)?.fileId === fileId);
+            const fileView = buildHierarchicalSemanticGraph({
+              graph: fixture.graph,
+              hierarchyIndex,
+              wikiIndex: runtime,
+              mode,
+              navigation: fileNavigation,
+              materializedNodeId: null,
+            });
+            observe(fileView);
+            expect(fileView.nodes.length).toBeLessThanOrEqual(38);
+            for (const symbol of ownedSymbols) {
+              let symbolView = fileView;
+              if (!symbolView.nodes.some((node) => node.id === symbol.id)) {
+                symbolView = buildHierarchicalSemanticGraph({
+                  graph: fixture.graph,
+                  hierarchyIndex,
+                  wikiIndex: runtime,
+                  mode,
+                  navigation: fileNavigation,
+                  materializedNodeId: symbol.id,
+                });
+                observe(symbolView);
+              }
+              expect(symbolView.nodes.map((node) => node.id)).toContain(symbol.id);
+            }
+          }
+
+          for (const nodeId of cluster.nodeIds) {
+            const node = hierarchyIndex.nodeById.get(nodeId)!;
+            const location = hierarchyIndex.nodeLocationById.get(nodeId)!;
+            if (node.type === "file" || location.fileId || graphNodePlacementClass(node.type) !== "file-leaf") continue;
+            if (clusterView.nodes.some((candidate) => candidate.id === nodeId)) continue;
+            const materialized = buildHierarchicalSemanticGraph({
+              graph: fixture.graph,
+              hierarchyIndex,
+              wikiIndex: runtime,
+              mode,
+              navigation,
+              materializedNodeId: nodeId,
+            });
+            observe(materialized);
+            expect(materialized.nodes.map((candidate) => candidate.id)).toContain(nodeId);
+          }
+        }
+      }
+
+      for (const node of fixture.graph.nodes.filter((candidate) =>
+        graphNodePlacementClass(candidate.type) === "architecture-context")) {
+        if (reachable.has(node.id)) continue;
+        const location = hierarchyIndex.nodeLocationById.get(node.id)!;
+        const materialized = buildHierarchicalSemanticGraph({
+          graph: fixture.graph,
+          hierarchyIndex,
+          wikiIndex: runtime,
+          mode,
+          navigation: location.scopeId
+            ? { level: "scope", scopeId: location.scopeId }
+            : { level: "overview" },
+          materializedNodeId: node.id,
+        });
+        observe(materialized);
+        expect(materialized.nodes.map((candidate) => candidate.id)).toContain(node.id);
+      }
+    }
+
+    const expectedReachable = new Set<string>([
+      ...hierarchyIndex.scopes.map((scope) => scopeNodeId(scope.id)),
+      ...hierarchyIndex.clusterById.keys(),
+      ...fixture.graph.nodes.map((node) => node.id),
+    ]);
+    for (const edge of fixture.graph.edges) {
+      const sourceScope = hierarchyIndex.nodeLocationById.get(edge.source)?.scopeId;
+      const targetScope = hierarchyIndex.nodeLocationById.get(edge.target)?.scopeId;
+      if (sourceScope && targetScope && sourceScope !== targetScope) {
+        expectedReachable.add(boundaryNodeId(sourceScope, targetScope));
+        expectedReachable.add(boundaryNodeId(targetScope, sourceScope));
+      }
+      expect(memberKeys, `missing raw edge ${memberKey(edge)}`).toContain(memberKey(edge));
+    }
+    expect([...reachable].sort()).toEqual([...expectedReachable].sort());
+    expect([...fileClusterVisits.entries()].every(([, clusters]) => clusters.size === 1)).toBe(true);
+    expect(fileClusterVisits.size).toBe(277);
   });
 });

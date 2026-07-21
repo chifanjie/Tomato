@@ -550,14 +550,16 @@ export function buildFeaturedPlan(input: BuildFeaturedPlanInput): FeaturedPlan {
   }
 
   for (const layer of rankedLayers(profile).slice(0, 3)) {
-    const layerFileIds = fileIdsInLayer(profile, layer.id);
-    const rankedLayerFileIds = [...layerFileIds].sort((left, right) =>
+    const layerSourceNodeIds = sortedUnique(fileDocPlan.tasks
+      .filter((task) => profile.indexes.nodeToLayerId.get(task.fileNodeId) === layer.id && task.sourceSnapshot.exists)
+      .map((task) => task.fileNodeId));
+    const rankedLayerSourceNodeIds = [...layerSourceNodeIds].sort((left, right) =>
       (profile.nodeDegrees.get(right)?.total ?? 0) - (profile.nodeDegrees.get(left)?.total ?? 0)
       || left.localeCompare(right));
     const directModule = layer.nodeIds
       .map((nodeId) => profile.indexes.nodesById.get(nodeId))
       .find((node) => node?.type === "module");
-    const directNodeIds = rankedLayerFileIds.slice(0, 5);
+    const directNodeIds = rankedLayerSourceNodeIds.slice(0, 5);
     if (directNodeIds.length === 0 && directModule) directNodeIds.push(directModule.id);
     const symbolContextNodeIds = directNodeIds.flatMap((nodeId) => [
       ...(profile.indexes.fileToFunctionIds.get(nodeId) ?? []),
@@ -572,7 +574,7 @@ export function buildFeaturedPlan(input: BuildFeaturedPlanInput): FeaturedPlan {
       role: "featured",
       directNodeIds,
       contextNodeIds: sortedUnique([
-        ...layerFileIds.filter((nodeId) => !directNodeIds.includes(nodeId)),
+        ...layer.nodeIds.filter((nodeId) => !directNodeIds.includes(nodeId)),
         ...symbolContextNodeIds,
       ]),
       symbolAnchors: [],

@@ -265,12 +265,40 @@ describe("featured planning", () => {
         { id: "layer:core", name: "核心层", description: "核心", nodeIds: [] },
       ],
     };
+    const layeredFileDocPlan: FileDocPlan = {
+      ...fileDocPlan,
+      tasks: [
+        ...fileDocPlan.tasks,
+        {
+          ...fileDocPlan.tasks[0],
+          batchIndex: 3,
+          taskIndex: 2,
+          fileNodeId: "config:config/rule.json",
+          filePath: "config/rule.json",
+          layerId: "layer:config",
+          documentPath: "文件文档/config-rule.json.md",
+          sourceNodeIds: ["config:config/rule.json"],
+          referenceKind: "configuration",
+          functionNodeIds: [],
+          classNodeIds: [],
+          sourceSnapshot: {
+            filePath: "config/rule.json",
+            exists: true,
+            text: "{\"enabled\":true}",
+            totalLines: 1,
+            nonEmptyLines: 1,
+          },
+        },
+      ],
+    };
     const plan = buildFeaturedPlan({
-      profile: buildKnowledgeBaseProfile(layeredGraph), businessProfile, fileDocPlan, topicPlan, config: {},
+      profile: buildKnowledgeBaseProfile(layeredGraph), businessProfile, fileDocPlan: layeredFileDocPlan, topicPlan, config: {},
     });
 
     expect(plan.documents.filter((document) => document.category === "module").map((document) => document.title))
       .toEqual(["界面层 模块概览", "核心层 模块概览", "配置层 模块概览"]);
+    expect(plan.documents.find((document) => document.title === "配置层 模块概览")?.directNodeIds)
+      .toContain("config:config/rule.json");
   });
 
   it("anchors the overview and small modules to concrete files and symbols when flows are absent", () => {

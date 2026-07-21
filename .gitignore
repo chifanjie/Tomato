@@ -17,3 +17,6 @@ coverage/
 .superpowers/
 .learnings/
 .worktrees/
+.idea/
+.codebase-memory/
+.understand-code/

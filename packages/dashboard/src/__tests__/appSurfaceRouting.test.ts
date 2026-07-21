@@ -90,6 +90,10 @@ const appContracts = AppModule as typeof AppModule & {
 
 const APP_SOURCE = readFileSync(join(process.cwd(), "src/App.tsx"), "utf8");
 const APP_CSS = readFileSync(join(process.cwd(), "src/index.css"), "utf8");
+const HEADER_SOURCE = readFileSync(
+  join(process.cwd(), "src/components/DashboardHeader.tsx"),
+  "utf8",
+);
 
 function graph(): KnowledgeGraph {
   return {
@@ -315,6 +319,31 @@ describe("App global location owner", () => {
     window.history.pushState(null, "", "/docs?mode=test#graph");
     window.dispatchEvent(new Event("hashchange"));
     expect(harness.surfaces.at(-1)).toBe("graph");
+
+    stop();
+  });
+
+  it("applies a popstate and hashchange pair for one traversal only once", () => {
+    window.history.replaceState(null, "", "/docs?mode=test#wiki=page%3Aoverview");
+    const harness = routingHarness();
+    const stop = harness.controller.start();
+
+    window.history.replaceState(
+      null,
+      "",
+      "/docs?mode=test#wiki=page%3Arun&anchor=implementation",
+    );
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    window.dispatchEvent(new Event("hashchange"));
+
+    expect(harness.openedTargets).toEqual([
+      { pageId: "page:overview" },
+      { pageId: "page:run", anchor: "implementation" },
+    ]);
+    expect(harness.appliedWikiLocations).toEqual([
+      { pageId: "page:overview" },
+      { pageId: "page:run", anchor: "implementation" },
+    ]);
 
     stop();
   });
@@ -548,7 +577,9 @@ describe("App peer shell contracts", () => {
     expect(APP_SOURCE).toContain("setConsoleGraph");
     expect(APP_SOURCE).toContain("<KnowledgeConsole");
     expect(APP_SOURCE).toContain("<GlobalWikiSearch");
-    expect(APP_SOURCE).toContain("<ThemePicker");
+    expect(APP_SOURCE).toContain("<DashboardHeader");
+    expect(APP_SOURCE).not.toContain("<ThemePicker");
+    expect(HEADER_SOURCE).toContain("<ThemePicker");
     expect(APP_SOURCE).toContain("<TokenGate");
     expect(APP_SOURCE).toContain("<WarningBanner");
   });
@@ -600,17 +631,21 @@ describe("App peer shell contracts", () => {
   });
 
   it("keeps the global knowledge search trigger outside the Wiki/Graph content branch", () => {
-    const triggerIndex = APP_SOURCE.indexOf('aria-label="搜索知识库"');
+    const headerIndex = APP_SOURCE.indexOf("<DashboardHeader");
     const peerContentIndex = APP_SOURCE.indexOf('{dashboardSurface === "wiki" ? (');
-    expect(triggerIndex).toBeGreaterThanOrEqual(0);
+    expect(headerIndex).toBeGreaterThanOrEqual(0);
     expect(peerContentIndex).toBeGreaterThanOrEqual(0);
-    expect(triggerIndex).toBeLessThan(peerContentIndex);
+    expect(headerIndex).toBeLessThan(peerContentIndex);
+    expect(HEADER_SOURCE).toContain('aria-label="搜索知识库"');
     expect(APP_SOURCE).toContain("<GlobalWikiSearch");
   });
 
   it("keeps mobile Wiki and Graph peers in the App-owned shell", () => {
-    expect(APP_SOURCE).toContain("isMobile ? (");
-    expect(APP_SOURCE).toContain("uc-mobile-header-more");
+    expect(APP_SOURCE).not.toContain("isMobile ? (");
+    expect(HEADER_SOURCE).toContain('className="uc-mobile-header-more"');
+    expect(HEADER_SOURCE).toContain("更多项目与搜索信息");
+    expect(HEADER_SOURCE).toContain('className="uc-surface-switcher"');
+    expect(HEADER_SOURCE).toContain('className="uc-global-header-actions"');
     expect(APP_SOURCE).not.toContain("<MobileLayout");
   });
 
@@ -624,18 +659,20 @@ describe("App peer shell contracts", () => {
     expect(APP_SOURCE).toContain("GLOBAL_WIKI_SEARCH_REQUEST_EVENT");
     expect(APP_SOURCE).toContain("onDrawerOpenChange={setWikiDrawerOpen}");
     expect(APP_SOURCE).toContain("externalModalOpen={searchOpen}");
+    expect(APP_SOURCE).toContain("themeInert={wikiDrawerOpen || searchOpen}");
+    expect(APP_CSS).toMatch(/\.uc-global-search-backdrop\s*\{[^}]*z-index:\s*80/s);
     expect(APP_SOURCE.match(/setSearchOpen\(true\)/g)).toHaveLength(1);
   });
 
   it("keeps the 320px peer header compact while project, surface, and search remain reachable", () => {
-    expect(APP_SOURCE).toContain('className="uc-global-header');
-    expect(APP_SOURCE).toContain('className="uc-global-header-project');
-    expect(APP_SOURCE).toContain('className="uc-global-search-trigger');
-    expect(APP_SOURCE).toContain("uc-mobile-header-more");
-    expect(APP_SOURCE).toContain("更多工具");
-    expect(APP_CSS).toMatch(/@media\s*\(max-width:\s*767px\)[\s\S]*\.uc-global-header\s*\{[\s\S]*height:\s*var\(--uc-global-header-height\)/);
+    expect(HEADER_SOURCE).toContain('className="uc-global-header"');
+    expect(HEADER_SOURCE).toContain('className="uc-global-header-project"');
+    expect(HEADER_SOURCE).toContain('className="uc-global-search-trigger"');
+    expect(HEADER_SOURCE).toContain("搜索快捷键：⌘K / 控制键+K");
     expect(APP_CSS).toMatch(/\.uc-global-header-project\s*\{[^}]*max-width:/s);
-    expect(APP_CSS).toMatch(/\.uc-global-search-trigger\s+kbd\s*\{[^}]*display:\s*none/s);
+    expect(APP_CSS).toMatch(
+      /\.uc-global-search-trigger\s+kbd,\s*\.uc-theme-trigger-current\s*\{[^}]*display:\s*none/s,
+    );
   });
 
   it("does not mount the legacy onboarding overlay", () => {

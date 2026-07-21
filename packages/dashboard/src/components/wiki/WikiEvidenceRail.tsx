@@ -41,13 +41,13 @@ function PageRows({
   }
 
   return (
-    <div className="mt-3 space-y-2">
+    <div className="uc-evidence-page-list">
       {pages.map((relatedPage) => (
         <button
           key={relatedPage.id}
           type="button"
           onClick={() => onOpenPage(relatedPage.id)}
-          className="block w-full rounded border border-border-subtle bg-surface px-3 py-2 text-left transition-colors hover:border-accent/35 hover:bg-accent/5"
+          className="uc-evidence-page"
         >
           <span className="block text-sm font-medium text-text-primary">{relatedPage.title}</span>
           <span className="mt-1 block text-xs leading-5 text-text-muted">{relatedPage.summary}</span>
@@ -72,7 +72,7 @@ export default function WikiEvidenceRail({
   return (
     <aside className="flex h-full min-h-0 flex-col bg-surface">
       <header className="border-b border-border-subtle px-4 py-4">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">代码证据</p>
+        <p className="text-xs font-semibold tracking-wider text-text-muted">代码证据</p>
         <h2 className="mt-1 text-base font-semibold text-text-primary">知识库与图谱关联</h2>
       </header>
       <div className="min-h-0 flex-1 space-y-5 overflow-auto px-4 py-4">
@@ -103,44 +103,49 @@ export default function WikiEvidenceRail({
           {hasGraphNodes ? "在图谱中查看本文节点" : "本文暂无图谱节点"}
         </button>
 
-        <section aria-labelledby="wiki-direct-pages-heading" className="uc-panel-muted p-3">
-          <h3 id="wiki-direct-pages-heading" className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">
-            直接讲解
-          </h3>
-          <PageRows pages={directPages} emptyText="暂无其他直接讲解本文节点的文档。" onOpenPage={onOpenPage} />
-        </section>
+        <details className="uc-evidence-section">
+          <summary>
+            <span id="wiki-direct-pages-heading">直接讲解</span>
+            <span aria-label={"共 " + directPages.length + " 篇"}>{directPages.length}</span>
+          </summary>
+          <PageRows
+            pages={directPages}
+            emptyText="暂无其他直接讲解本文节点的文档。"
+            onOpenPage={onOpenPage}
+          />
+        </details>
 
-        <section aria-labelledby="wiki-context-pages-heading" className="uc-panel-muted p-3">
-          <h3 id="wiki-context-pages-heading" className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">
-            相关资料
-          </h3>
-          <PageRows pages={contextPages} emptyText="暂无补充背景资料。" onOpenPage={onOpenPage} />
-        </section>
+        <details className="uc-evidence-section">
+          <summary>
+            <span id="wiki-context-pages-heading">相关资料</span>
+            <span aria-label={"共 " + contextPages.length + " 篇"}>{contextPages.length}</span>
+          </summary>
+          <PageRows
+            pages={contextPages}
+            emptyText="暂无补充背景资料。"
+            onOpenPage={onOpenPage}
+          />
+        </details>
 
-        <section aria-labelledby="wiki-source-evidence-heading" className="uc-panel-muted p-3">
-          <h3 id="wiki-source-evidence-heading" className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">
-            源码证据
-          </h3>
-          <div className="mt-3 space-y-2">
+        <details className="uc-evidence-section">
+          <summary>
+            <span id="wiki-source-evidence-heading">源码证据</span>
+            <span aria-label={"共 " + evidence.length + " 条"}>{evidence.length}</span>
+          </summary>
+          <div className="uc-source-evidence-list">
             {evidence.length === 0 ? (
               <p className="text-sm text-text-muted">本文尚未绑定源码证据。</p>
             ) : evidence.map((item) => (
-              <details key={item.id} className="uc-panel">
-                <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-text-primary">
-                  {evidenceLocation(item)}
-                </summary>
-                <div className="border-t border-border-subtle px-3 py-3">
-                  <p className="text-xs font-semibold text-text-muted">
-                    {EVIDENCE_TYPE_LABELS[item.evidenceType]}
-                  </p>
-                  <pre className="mt-2 whitespace-pre-wrap break-words font-mono text-xs leading-5 text-text-secondary">
-                    {item.excerpt ?? "未提供代码片段"}
-                  </pre>
+              <details key={item.id} className="uc-source-evidence-item">
+                <summary>{evidenceLocation(item)}</summary>
+                <div>
+                  <p>{EVIDENCE_TYPE_LABELS[item.evidenceType]}</p>
+                  <pre>{item.excerpt ?? "未提供代码片段"}</pre>
                 </div>
               </details>
             ))}
           </div>
-        </section>
+        </details>
       </div>
     </aside>
   );

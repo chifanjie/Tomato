@@ -1,176 +1,152 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useTheme, PRESETS } from "../themes/index.ts";
-import type { HeadingFont } from "../themes/index.ts";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { PRESETS, useTheme } from "../themes";
 
-export function ThemePicker() {
-  const { config, preset, setPreset, setAccent, setHeadingFont } = useTheme();
+interface ThemePickerProps {
+  disabled?: boolean;
+}
+
+export function ThemePicker({ disabled = false }: ThemePickerProps) {
+  const { config, preset, setPreset } = useTheme();
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const triggerPointerDownWhileOpenRef = useRef(false);
+  const menuId = useId();
+  const menuOpen = open && !disabled;
 
-  // Close on outside click
+  const closeAndRestore = useCallback(() => {
+    setOpen(false);
+    queueMicrotask(() => triggerRef.current?.focus());
+  }, []);
+
   useEffect(() => {
-    if (!open) return;
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+    if (disabled) setOpen(false);
+  }, [disabled]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const currentIndex = Math.max(
+      0,
+      PRESETS.findIndex((item) => item.id === config.presetId),
+    );
+    setActiveIndex(currentIndex);
+    const frame = requestAnimationFrame(() => itemRefs.current[currentIndex]?.focus());
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.target instanceof Node) || !pickerRef.current?.contains(event.target)) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeAndRestore();
+        return;
+      }
+      const activeIndex = itemRefs.current.findIndex(
+        (item) => item === document.activeElement,
+      );
+      if ((event.key === "Enter" || event.key === " ") && activeIndex >= 0) {
+        event.preventDefault();
+        setPreset(PRESETS[activeIndex]!.id);
+        closeAndRestore();
+        return;
+      }
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      event.preventDefault();
+      const delta = event.key === "ArrowDown" ? 1 : -1;
+      const next = (activeIndex + delta + PRESETS.length) % PRESETS.length;
+      setActiveIndex(next);
+      itemRefs.current[next]?.focus();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [closeAndRestore, config.presetId, menuOpen, setPreset]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (event.target instanceof Node && !pickerRef.current?.contains(event.target)) {
         setOpen(false);
       }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [open]);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!open) return;
-    function handleKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
-  }, [open]);
-
-  const handlePreset = useCallback(
-    (id: string) => {
-      setPreset(id as Parameters<typeof setPreset>[0]);
-    },
-    [setPreset],
-  );
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [menuOpen]);
 
   return (
-    <div ref={ref} className="relative">
+    <div
+      ref={pickerRef}
+      className="uc-theme-picker"
+      onBlur={(event) => {
+        const nextTarget = event.relatedTarget;
+        if (!(nextTarget instanceof Node) || !menuRef.current?.contains(nextTarget)) {
+          setOpen(false);
+        }
+      }}
+    >
       <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-text-secondary hover:text-text-primary transition-colors"
-        title="切换主题"
+        ref={triggerRef}
+        type="button"
+        disabled={disabled}
+        aria-label={`主题：${preset.name}`}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        aria-controls={menuId}
+        className="uc-theme-trigger"
+        onMouseDown={() => {
+          triggerPointerDownWhileOpenRef.current = menuOpen;
+        }}
+        onClick={(event) => {
+          const wasOpenBeforePointerFocus = event.detail > 0
+            && triggerPointerDownWhileOpenRef.current;
+          triggerPointerDownWhileOpenRef.current = false;
+          if (wasOpenBeforePointerFocus) {
+            setOpen(false);
+            return;
+          }
+          setOpen((value) => !value);
+        }}
       >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <circle cx="12" cy="12" r="10" />
-          <path d="M12 2a7 7 0 0 0 0 14 4 4 0 0 1 0 8 10 10 0 0 0 0-20z" />
-          <circle cx="8" cy="10" r="1.5" fill="currentColor" />
-          <circle cx="12" cy="7" r="1.5" fill="currentColor" />
-          <circle cx="16" cy="10" r="1.5" fill="currentColor" />
-        </svg>
-        <span className="hidden sm:inline">主题</span>
+        <span>主题</span>
+        <span className="uc-theme-trigger-current">{preset.name}</span>
       </button>
 
-      {open && (
-        <div className="absolute right-0 top-full mt-2 w-64 rounded-lg glass-heavy shadow-xl z-50 p-3 space-y-3">
-          {/* Presets */}
-          <div>
-            <div className="text-[10px] font-semibold text-text-muted uppercase tracking-wider mb-2">
-              主题
-            </div>
-            <div className="space-y-1">
-              {PRESETS.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => handlePreset(p.id)}
-                  className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded text-xs transition-colors ${
-                    p.id === config.presetId
-                      ? "bg-accent/15 text-accent"
-                      : "text-text-secondary hover:text-text-primary hover:bg-elevated"
-                  }`}
-                >
-                  {/* Color preview dots */}
-                  <div className="flex gap-1">
-                    <span
-                      className="w-3 h-3 rounded-full border border-border-subtle"
-                      style={{ backgroundColor: p.colors.root }}
-                    />
-                    <span
-                      className="w-3 h-3 rounded-full border border-border-subtle"
-                      style={{ backgroundColor: p.colors.surface }}
-                    />
-                    <span
-                      className="w-3 h-3 rounded-full border border-border-subtle"
-                      style={{
-                        backgroundColor:
-                          p.accentSwatches.find((s) => s.id === p.defaultAccentId)?.accent ??
-                          p.accentSwatches[0].accent,
-                      }}
-                    />
-                  </div>
-                  <span>{p.name}</span>
-                  {p.id === config.presetId && (
-                    <svg
-                      className="ml-auto w-3.5 h-3.5 text-accent"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                    >
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Accent swatches */}
-          <div>
-            <div className="text-[10px] font-semibold text-text-muted uppercase tracking-wider mb-2">
-              强调色
-            </div>
-            <div className="flex gap-2 flex-wrap">
-              {preset.accentSwatches.map((swatch) => (
-                <button
-                  key={swatch.id}
-                  onClick={() => setAccent(swatch.id)}
-                  className={`w-6 h-6 rounded-full transition-transform hover:scale-110 ${
-                    swatch.id === config.accentId
-                      ? "ring-2 ring-text-primary ring-offset-1 ring-offset-root"
-                      : ""
-                  }`}
-                  style={{ backgroundColor: swatch.accent }}
-                  title={swatch.name}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* Heading font */}
-          <div>
-            <div className="text-[10px] font-semibold text-text-muted uppercase tracking-wider mb-2">
-              标题字体
-            </div>
-            <div className="flex gap-1">
-              {([
-                { id: "serif" as HeadingFont, label: "衬线" },
-                { id: "sans" as HeadingFont, label: "无衬线" },
-                { id: "mono" as HeadingFont, label: "等宽" },
-              ]).map((opt) => (
-                <button
-                  key={opt.id}
-                  onClick={() => setHeadingFont(opt.id)}
-                  className={`flex-1 px-2 py-1.5 rounded text-xs transition-colors ${
-                    (config.headingFont ?? "serif") === opt.id
-                      ? "bg-accent/15 text-accent"
-                      : "text-text-secondary hover:text-text-primary hover:bg-elevated"
-                  }`}
-                  style={{
-                    fontFamily:
-                      opt.id === "serif"
-                        ? "var(--font-serif)"
-                        : opt.id === "mono"
-                          ? "var(--font-mono)"
-                          : "var(--font-sans)",
-                  }}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
+      {menuOpen && (
+        <div
+          ref={menuRef}
+          id={menuId}
+          role="menu"
+          aria-label="选择主题"
+          className="uc-theme-menu"
+        >
+          {PRESETS.map((item, index) => (
+            <button
+              key={item.id}
+              ref={(node) => { itemRefs.current[index] = node; }}
+              type="button"
+              role="menuitemradio"
+              aria-checked={item.id === config.presetId}
+              tabIndex={index === activeIndex ? 0 : -1}
+              data-theme-preview={item.id}
+              className="uc-theme-option"
+              onClick={() => {
+                setPreset(item.id);
+                closeAndRestore();
+              }}
+            >
+              <span className="uc-theme-option-copy">
+                <strong>{item.name}</strong>
+                <span>{item.description}</span>
+              </span>
+              <span className="uc-theme-swatches" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+            </button>
+          ))}
         </div>
       )}
     </div>

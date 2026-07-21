@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -17,6 +19,9 @@ import WikiPageView from "../WikiPageView";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+const PAGE_SOURCE = readFileSync(join(process.cwd(), "src/components/wiki/WikiPageView.tsx"), "utf8");
+const CSS = readFileSync(join(process.cwd(), "src/index.css"), "utf8");
+
 afterEach(() => {
   document.body.replaceChildren();
   vi.unstubAllGlobals();
@@ -24,6 +29,21 @@ afterEach(() => {
 });
 
 describe("WikiPageView Markdown and anchors", () => {
+  it("uses a publication article shell with a stable accessible name", () => {
+    const payload = wikiV2Fixture();
+    const page = payload.pages[0];
+    if (!page) throw new Error("缺少 Wiki 测试页面");
+    const html = renderToStaticMarkup(createElement(WikiPageView, {
+      page,
+      pages: payload.pages,
+    }));
+
+    expect(html).toContain("uc-article-page");
+    expect(html).toContain("uc-article-header");
+    expect(html).toContain('<article aria-label="文档正文"');
+    expect(html).not.toContain("max-w-4xl");
+  });
+
   it("shows a fixed Chinese recovery message instead of the raw Markdown transport error", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const fetcher = vi.fn().mockRejectedValue(new Error("Failed to fetch private detail"));
@@ -45,8 +65,23 @@ describe("WikiPageView Markdown and anchors", () => {
     expect(container.textContent).not.toContain("Failed to fetch");
     expect(container.textContent).not.toContain("private detail");
     expect(warn).toHaveBeenCalledWith("知识库文档加载失败", expect.any(Error));
+    const recovery = container.querySelector('[role="alert"][data-severity="problem"]');
+    expect(recovery?.classList.contains("uc-wiki-recovery")).toBe(true);
 
     await act(async () => root.unmount());
+  });
+
+  it("uses preset status tokens for both Wiki recovery states", () => {
+    expect(PAGE_SOURCE).not.toMatch(/(?:border|bg)-(?:amber|red)-/);
+    expect(PAGE_SOURCE.match(/uc-wiki-recovery/g)).toHaveLength(2);
+    expect(PAGE_SOURCE).toContain('data-severity="context"');
+    expect(PAGE_SOURCE).toContain('data-severity="problem"');
+    expect(CSS).toMatch(
+      /\.uc-wiki-recovery\s*\{[^}]*--uc-status-color:\s*var\(--color-graph-status-context\)[^}]*border:[^}]*var\(--uc-status-color\)[^}]*background:[^}]*var\(--uc-status-color\)/s,
+    );
+    expect(CSS).toMatch(
+      /\.uc-wiki-recovery\[data-severity="problem"\]\s*\{[^}]*--uc-status-color:\s*var\(--color-graph-status-problem\)/s,
+    );
   });
 
   it("keeps the committed null-page boundary compatible while Markdown props stay optional", () => {

@@ -44,7 +44,7 @@ function expectValidGraph(graph: KnowledgeGraph): void {
   for (const layer of graph.layers) {
     expectUnique(layer.nodeIds);
     for (const nodeId of layer.nodeIds) {
-      expect(nodesById.get(nodeId)?.type).toBe("file");
+      expect(nodesById.has(nodeId)).toBe(true);
       expect(layerByNodeId.has(nodeId)).toBe(false);
       layerByNodeId.set(nodeId, layer.id);
     }
@@ -156,9 +156,15 @@ describe("deterministic V2 graph fixtures", () => {
       "function:src/large.ts:fn-47",
       "function:src/large.ts:fn-48",
     ]);
-    expect(dense.nodes).toHaveLength(111);
-    expect(dense.edges).toHaveLength(110);
-    expect(dense.layers).toEqual([]);
+    expect(dense.nodes).toHaveLength(112);
+    expect(dense.edges.filter((edge) => edge.type === "contains")).toHaveLength(111);
+    expect(dense.edges.filter((edge) => edge.type === "calls")).toHaveLength(110);
+    expect(dense.layers).toEqual([{
+      id: "dense",
+      name: "密集模块",
+      description: "密集选择夹具。",
+      nodeIds: dense.nodes.map((node) => node.id),
+    }]);
     expect(dense.nodes.every((node) => node.filePath === "src/dense.ts")).toBe(true);
   });
 

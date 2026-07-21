@@ -296,7 +296,11 @@ export function evaluatePublication(
     }
   }
 
-  const evidenceMinimum = EVIDENCE_MINIMUM[document.category] ?? 0;
+  const configuredEvidenceMinimum = EVIDENCE_MINIMUM[document.category] ?? 0;
+  const directNodeCount = new Set(document.directNodeIds).size;
+  const evidenceMinimum = document.category === "module" && directNodeCount > 0
+    ? Math.min(configuredEvidenceMinimum, directNodeCount)
+    : configuredEvidenceMinimum;
   if (evidenceMinimum > 0 && distinctEvidenceGroupCount(validEvidence) < evidenceMinimum) {
     appendIssue(issues, `源码证据数量不足：至少需要 ${evidenceMinimum} 组`);
   }

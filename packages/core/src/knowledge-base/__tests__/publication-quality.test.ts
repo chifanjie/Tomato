@@ -26,6 +26,15 @@ const TOPIC_SECTIONS = [
   "源码证据",
 ];
 
+const MODULE_SECTIONS = [
+  "职责与非职责",
+  "入口、输出与核心文件",
+  "依赖与主要流程",
+  "状态、配置与测试边界",
+  "风险与排查入口",
+  "源码证据",
+];
+
 function markdown(title: string, sections: readonly string[], sentence: string): string {
   return [
     `# ${title}`,
@@ -304,6 +313,33 @@ describe("publication quality", () => {
     expect(evaluatePublication(document, repeated).issues).toContain(
       "源码证据数量不足：至少需要 3 组",
     );
+  });
+
+  it("accepts a small module when exact evidence covers every direct node", () => {
+    const directNodeIds = ["file:get_dependency.sh", "config:go.mod", "config:go.sum"];
+    const document: PublicationDocument = {
+      path: "模块总览/项目配置层.md",
+      title: "项目配置层 模块概览",
+      category: "module",
+      role: "featured",
+      content: markdown(
+        "项目配置层 模块概览",
+        MODULE_SECTIONS,
+        "该层由依赖维护脚本、模块声明和校验摘要组成，修改时需要同时核对三份源码配置。",
+      ),
+      directNodeIds,
+      representedEdgeIds: [],
+      symbolAnchors: [],
+    };
+    const records = directNodeIds.map((nodeId, index) =>
+      evidence(nodeId, ["get_dependency.sh", "go.mod", "go.sum"][index], [1, 5], `第${index + 1}个配置节点记录可核对的依赖事实。`),
+    );
+
+    expect(evaluatePublication(document, records)).toEqual({
+      quality: "generated",
+      publishAsFeatured: true,
+      issues: [],
+    });
   });
 
   it("requires three stages and two behavior edges for a flow", () => {

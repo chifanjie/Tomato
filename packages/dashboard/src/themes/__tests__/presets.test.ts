@@ -1,44 +1,39 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_THEME_CONFIG } from "../types";
-import { getAccent, getPreset, PRESETS } from "../presets";
-
-const REQUIRED_COLOR_KEYS = [
-  "root",
-  "surface",
-  "elevated",
-  "panel",
-  "text-primary",
-  "text-secondary",
-  "text-muted",
-  "node-file",
-  "node-function",
-  "node-class",
-  "node-module",
-  "node-concept",
-] as const;
+import {
+  PRESETS,
+  getPreset,
+  isPresetId,
+  normalizePresetId,
+} from "../presets";
 
 describe("dashboard theme presets", () => {
-  it("includes engineering workbench and technical document presets", () => {
+  it("publishes the curated packs in a stable order", () => {
     expect(PRESETS.map((preset) => preset.id)).toEqual([
-      "engineering-workbench",
       "technical-document",
+      "mist-blueprint",
+      "sage-paper",
+      "night-ink",
     ]);
+    expect(PRESETS.map((preset) => preset.name)).toEqual([
+      "技术文档 2.0",
+      "雾蓝蓝图",
+      "鼠尾草纸",
+      "夜墨",
+    ]);
+    expect(PRESETS.every((preset) => /\p{Script=Han}/u.test(preset.description))).toBe(true);
   });
 
-  it("uses engineering workbench as the default theme", () => {
-    expect(DEFAULT_THEME_CONFIG).toMatchObject({
-      presetId: "engineering-workbench",
-      accentId: "teal",
-    });
+  it("uses technical document as the default", () => {
+    expect(DEFAULT_THEME_CONFIG).toEqual({ presetId: "technical-document" });
   });
 
-  it("defines all required color tokens for the new presets", () => {
-    for (const id of ["engineering-workbench", "technical-document"] as const) {
-      const preset = getPreset(id);
-      for (const key of REQUIRED_COLOR_KEYS) {
-        expect(preset.colors[key], `${id} missing ${key}`).toBeTruthy();
-      }
-      expect(getAccent(preset, preset.defaultAccentId).id).toBe(preset.defaultAccentId);
-    }
+  it("normalizes retired and unknown ids", () => {
+    expect(normalizePresetId("engineering-workbench")).toBe("night-ink");
+    expect(normalizePresetId("technical-document")).toBe("technical-document");
+    expect(normalizePresetId("unknown")).toBe("technical-document");
+    expect(isPresetId("sage-paper")).toBe(true);
+    expect(isPresetId("engineering-workbench")).toBe(false);
+    expect(getPreset("missing").id).toBe("technical-document");
   });
 });

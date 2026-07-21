@@ -174,13 +174,13 @@ describe("KnowledgeConsole interactions", () => {
   });
 
   it("opens Reference with focus and routes the graph shortcut to #graph", async () => {
-    await act(async () => buttonWithText("查找文件或函数").click());
+    await act(async () => buttonWithText("查找文件或符号").click());
     const reference = buttonWithText("代码参考");
     expect(reference.getAttribute("aria-expanded")).toBe("true");
     expect(document.activeElement).toBe(reference);
     expect(document.querySelector('#wiki-navigation-drawer[role="dialog"]')).toBeNull();
 
-    await act(async () => buttonWithText("查看项目图谱").click());
+    await act(async () => buttonWithText("查看关系图谱").click());
     expect(useDashboardStore.getState().dashboardSurface).toBe("graph");
     expect(window.location.hash).toBe("#graph");
   });
@@ -203,7 +203,7 @@ describe("KnowledgeConsole interactions", () => {
     root = createRoot(container);
     await act(async () => root.render(createElement(KnowledgeConsole)));
 
-    const cta = buttonWithText("查找文件或函数");
+    const cta = buttonWithText("查找文件或符号");
     await act(async () => cta.click());
     const reference = buttonWithText("代码参考");
     expect(reference.getAttribute("aria-expanded")).toBe("true");
@@ -224,6 +224,13 @@ describe("KnowledgeConsole interactions", () => {
     expect(currentDestinations()[0]?.textContent).toContain("项目总览");
     expect(document.querySelector('button[aria-label="打开源码证据"]')).not.toBeNull();
     expect(document.body.textContent).toContain("知识库与图谱关联");
+  });
+
+  it("starts reading from the first recommended route page", async () => {
+    await act(async () => buttonWithText("开始阅读").click());
+
+    expect(document.querySelector("article h1")?.textContent).toBe("项目总览");
+    expect(useDashboardStore.getState().activeWikiPageId).toBe("page:overview");
   });
 
   it("resets the real article scroller when a narrow reader changes pages", async () => {
@@ -402,7 +409,7 @@ describe("KnowledgeConsole interactions", () => {
 
     await act(async () => buttonWithText("阅读首页").click());
     expect(onSelectWikiPage).toHaveBeenLastCalledWith(null);
-    await act(async () => buttonWithText("查看项目图谱").click());
+    await act(async () => buttonWithText("查看关系图谱").click());
     expect(onOpenGraphHome).toHaveBeenCalledOnce();
   });
 

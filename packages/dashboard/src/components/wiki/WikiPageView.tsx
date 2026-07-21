@@ -176,26 +176,26 @@ export function WikiMarkdownDocument({
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
-        h1: ({ children }) => <h1 className="mb-5 mt-10 text-2xl font-semibold tracking-tight text-text-primary first:mt-0">{children}</h1>,
+        h1: ({ children }) => <h1 className="uc-prose-h1">{children}</h1>,
         h2: ({ node, children }) => {
           const text = reactNodeText(children);
           const line = node?.position?.start.line ?? 0;
           const id = headingIdAt(headings, line, 2, text);
-          return <h2 id={id} className="mb-4 mt-10 scroll-mt-4 border-b border-border-subtle pb-2 text-xl font-semibold tracking-tight text-text-primary">{children}</h2>;
+          return <h2 id={id} className="uc-prose-h2 scroll-mt-4">{children}</h2>;
         },
         h3: ({ node, children }) => {
           const text = reactNodeText(children);
           const line = node?.position?.start.line ?? 0;
           const id = headingIdAt(headings, line, 3, text);
-          return <h3 id={id} className="mb-3 mt-8 scroll-mt-4 text-lg font-semibold text-text-primary">{children}</h3>;
+          return <h3 id={id} className="uc-prose-h3 scroll-mt-4">{children}</h3>;
         },
         h4: ({ node, children }) => {
           const text = reactNodeText(children);
           const line = node?.position?.start.line ?? 0;
           const id = headingIdAt(headings, line, 4, text);
-          return <h4 id={id} className="mb-2 mt-6 scroll-mt-4 text-base font-semibold text-text-primary">{children}</h4>;
+          return <h4 id={id} className="uc-prose-h4 scroll-mt-4">{children}</h4>;
         },
-        p: ({ children }) => <p className="my-4 break-words text-[15px] leading-7 text-text-secondary [overflow-wrap:anywhere]">{children}</p>,
+        p: ({ children }) => <p className="uc-prose-paragraph">{children}</p>,
         a: ({ href, children }) => {
           const external = /^(?:https?:)?\/\//i.test(href ?? "");
           const target = resolveWikiPageViewLinkTarget(currentMarkdownPath, href, pageIdByMarkdownPath);
@@ -208,32 +208,32 @@ export function WikiMarkdownDocument({
               } : undefined}
               target={external ? "_blank" : undefined}
               rel={external ? "noreferrer" : undefined}
-              className="font-medium text-accent underline decoration-accent/30 underline-offset-4 hover:decoration-accent"
+              className="uc-prose-link"
             >
               {children}
             </a>
           );
         },
-        strong: ({ children }) => <strong className="font-semibold text-text-primary">{children}</strong>,
-        ul: ({ children }) => <ul className="my-4 list-disc space-y-2 pl-6 text-[15px] leading-7 text-text-secondary">{children}</ul>,
-        ol: ({ children }) => <ol className="my-4 list-decimal space-y-2 pl-6 text-[15px] leading-7 text-text-secondary">{children}</ol>,
-        li: ({ children }) => <li className="pl-1 marker:text-text-muted">{children}</li>,
-        blockquote: ({ children }) => <blockquote className="my-6 border-l-2 border-accent/50 bg-accent/5 px-5 py-1 text-text-secondary">{children}</blockquote>,
-        hr: () => <hr className="my-9 border-border-subtle" />,
-        pre: ({ children }) => <pre className="my-5 overflow-x-auto rounded-lg border border-border-subtle bg-elevated p-4 text-[13px] leading-6 text-text-primary">{children}</pre>,
+        strong: ({ children }) => <strong className="uc-prose-strong">{children}</strong>,
+        ul: ({ children }) => <ul className="uc-prose-list uc-prose-list-unordered">{children}</ul>,
+        ol: ({ children }) => <ol className="uc-prose-list uc-prose-list-ordered">{children}</ol>,
+        li: ({ children }) => <li className="uc-prose-list-item">{children}</li>,
+        blockquote: ({ children }) => <blockquote className="uc-prose-blockquote">{children}</blockquote>,
+        hr: () => <hr className="uc-prose-rule" />,
+        pre: ({ children }) => <pre className="uc-prose-pre">{children}</pre>,
         code: ({ className, children }) => className ? (
-          <code className={`${className} font-mono text-[13px]`}>{children}</code>
+          <code className={`${className} uc-prose-code-block`}>{children}</code>
         ) : (
-          <code className="break-words rounded bg-elevated px-1.5 py-0.5 font-mono text-[0.9em] text-text-primary [overflow-wrap:anywhere]">{children}</code>
+          <code className="uc-prose-code-inline">{children}</code>
         ),
         table: ({ children }) => (
-          <div className="my-6 overflow-x-auto rounded-lg border border-border-subtle">
-            <table className="w-full border-collapse text-left text-sm">{children}</table>
+          <div className="uc-prose-table-wrap">
+            <table className="uc-prose-table">{children}</table>
           </div>
         ),
-        thead: ({ children }) => <thead className="bg-elevated text-text-primary">{children}</thead>,
-        th: ({ children }) => <th className="border-b border-r border-border-subtle px-4 py-3 font-semibold last:border-r-0">{children}</th>,
-        td: ({ children }) => <td className="border-b border-r border-border-subtle px-4 py-3 align-top leading-6 text-text-secondary last:border-r-0">{children}</td>,
+        thead: ({ children }) => <thead className="uc-prose-table-head">{children}</thead>,
+        th: ({ children }) => <th className="uc-prose-table-heading">{children}</th>,
+        td: ({ children }) => <td className="uc-prose-table-cell">{children}</td>,
       }}
     >
       {markdown}
@@ -364,8 +364,8 @@ function LoadedWikiPageView({
       ref={scrollContainerRef}
       className="uc-doc-surface min-h-0 min-w-0"
     >
-      <article ref={articleRef} aria-label={page.title} className="mx-auto min-w-0 max-w-4xl px-10 py-10">
-        <header className="border-b border-border-subtle pb-7">
+      <article ref={articleRef} aria-label="文档正文" className="uc-article-page">
+        <header className="uc-article-header">
           <p className="text-xs font-semibold tracking-[0.16em] text-accent">{CATEGORY_LABELS[page.category]}</p>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight text-text-primary">{page.title}</h1>
           <p className="mt-4 max-w-3xl break-words text-base leading-7 text-text-secondary [overflow-wrap:anywhere]">{chineseSummary(page.summary)}</p>
@@ -394,9 +394,9 @@ function LoadedWikiPageView({
           )}
         </header>
 
-        <section className="py-1" aria-label="文档正文">
+        <section className="uc-prose">
           {anchorError && (
-            <div role="alert" className="mt-5 flex items-center justify-between gap-4 rounded-lg border border-amber-400/30 bg-amber-500/5 px-4 py-3 text-sm text-text-secondary">
+            <div role="alert" data-severity="context" className="uc-wiki-recovery mt-5 flex items-center justify-between gap-4 px-4 py-3 text-sm text-text-secondary">
               <span>{anchorError}</span>
               <button
                 type="button"
@@ -409,7 +409,7 @@ function LoadedWikiPageView({
           )}
           {currentState.status === "loading" && <LoadingDocument />}
           {currentState.status === "error" && (
-            <div role="alert" className="my-9 rounded-xl border border-red-400/25 bg-red-500/5 p-5">
+            <div role="alert" data-severity="problem" className="uc-wiki-recovery my-9 p-5">
               <h2 className="text-base font-semibold text-text-primary">正文暂时无法显示</h2>
               <p className="mt-2 text-sm leading-6 text-text-secondary">{currentState.error}</p>
               <button

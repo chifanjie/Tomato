@@ -118,7 +118,6 @@ function finalizeGraph(graph: KnowledgeGraph): KnowledgeGraph {
     for (const nodeId of layer.nodeIds) {
       const node = nodesById.get(nodeId);
       if (!node) throw new Error(`层 ${layer.id} 引用了不存在的节点：${nodeId}`);
-      if (node.type !== "file") throw new Error(`层 ${layer.id} 只能包含文件节点：${nodeId}`);
       const previousLayer = layerByNodeId.get(nodeId);
       if (previousLayer) throw new Error(`节点 ${nodeId} 同时属于层 ${previousLayer} 与 ${layer.id}`);
       layerByNodeId.set(nodeId, layer.id);
@@ -332,6 +331,123 @@ export function graphFixture(): KnowledgeGraph {
       name: "核心模块",
       description: "负责核心执行。",
       nodeIds: ["file:src/a.ts", "file:context-only.ts"],
+    }],
+    tour: [],
+  });
+}
+
+export function workspaceHierarchyFixture(): KnowledgeGraph {
+  const paths = [
+    "package.json",
+    "pnpm-workspace.yaml",
+    "packages/api/package.json",
+    "packages/api/src/index.ts",
+    "packages/api/src/routes/user.ts",
+    "packages/shared/package.json",
+    "packages/shared/src/id.ts",
+    "scripts/release.ts",
+  ] as const;
+  const files = paths.map((filePath) => fileNode(`file:${filePath}`, filePath));
+  const loadUser = functionNode(
+    "function:packages/api/src/routes/user.ts:loadUser",
+    "packages/api/src/routes/user.ts",
+    "loadUser",
+    10,
+  );
+  const containedWithoutPath: GraphNode = {
+    id: "function:contained-without-path",
+    type: "function",
+    name: "containedWithoutPath",
+    summary: "仅通过包含关系定位的函数。",
+    tags: [],
+    complexity: "simple",
+  };
+  const pathfulWithoutFile: GraphNode = {
+    id: "config:pathful-without-file",
+    type: "config",
+    name: "feature.flags.ts",
+    filePath: "packages/api/src/feature.flags.ts",
+    summary: "没有规范文件节点的配置对象。",
+    tags: [],
+    complexity: "simple",
+  };
+  const gateway: GraphNode = {
+    id: "service:gateway",
+    type: "service",
+    name: "gateway",
+    summary: "API 网关架构对象。",
+    tags: [],
+    complexity: "simple",
+  };
+  const detached: GraphNode = {
+    id: "function:detached",
+    type: "function",
+    name: "detached",
+    summary: "没有文件归属的结构对象。",
+    tags: [],
+    complexity: "simple",
+  };
+
+  return finalizeGraph({
+    version: "1.0.0",
+    project: {
+      name: "workspace-hierarchy",
+      languages: ["typescript"],
+      frameworks: [],
+      description: "工作区层级夹具。",
+      analyzedAt: GENERATED_AT,
+      gitCommitHash: "fixture",
+    },
+    nodes: [
+      ...files,
+      loadUser,
+      containedWithoutPath,
+      pathfulWithoutFile,
+      gateway,
+      detached,
+    ],
+    edges: [
+      {
+        source: "file:packages/api/src/routes/user.ts",
+        target: loadUser.id,
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      },
+      {
+        source: "file:packages/api/src/routes/user.ts",
+        target: containedWithoutPath.id,
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      },
+      {
+        source: "file:packages/api/src/index.ts",
+        target: gateway.id,
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      },
+      {
+        source: gateway.id,
+        target: detached.id,
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      },
+      {
+        source: "file:packages/api/src/index.ts",
+        target: "file:packages/shared/src/id.ts",
+        type: "imports",
+        direction: "forward",
+        weight: 1,
+      },
+    ],
+    layers: [{
+      id: "workspace",
+      name: "工作区",
+      description: "单仓库工作区。",
+      nodeIds: files.map((node) => node.id),
     }],
     tour: [],
   });
@@ -553,6 +669,7 @@ export function graphWithDenseSelection(edgeCount = 110): KnowledgeGraph {
   if (!Number.isSafeInteger(edgeCount) || edgeCount < 1) {
     throw new Error(`密集关系数量必须是正安全整数：${edgeCount}`);
   }
+  const file = fileNode("file:src/dense.ts", "src/dense.ts");
   const selected = functionNode("function:dense:selected", "src/dense.ts", "selected", 1);
   const neighbors = Array.from({ length: edgeCount }, (_, index) =>
     functionNode(`function:dense:n-${index}`, "src/dense.ts", `n${index}`, 10 + index * 5));
@@ -566,15 +683,80 @@ export function graphWithDenseSelection(edgeCount = 110): KnowledgeGraph {
       analyzedAt: GENERATED_AT,
       gitCommitHash: "fixture",
     },
-    nodes: [selected, ...neighbors],
-    edges: neighbors.map((node): GraphEdge => ({
-      source: selected.id,
-      target: node.id,
-      type: "calls",
-      direction: "forward",
-      weight: 1,
-    })),
-    layers: [],
+    nodes: [file, selected, ...neighbors],
+    edges: [
+      ...[selected, ...neighbors].map((node): GraphEdge => ({
+        source: file.id,
+        target: node.id,
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      })),
+      ...neighbors.map((node): GraphEdge => ({
+        source: selected.id,
+        target: node.id,
+        type: "calls",
+        direction: "forward",
+        weight: 1,
+      })),
+    ],
+    layers: [{
+      id: "dense",
+      name: "密集模块",
+      description: "密集选择夹具。",
+      nodeIds: [file.id, selected.id, ...neighbors.map((node) => node.id)],
+    }],
+    tour: [],
+  });
+}
+
+export function graphWithHighFanoutClusters(clusterCount = 512): KnowledgeGraph {
+  if (!Number.isSafeInteger(clusterCount) || clusterCount < 2) {
+    throw new Error(`高扇出聚类数量必须是至少为 2 的安全整数：${clusterCount}`);
+  }
+  const suffix = (index: number) => String(index).padStart(3, "0");
+  const files = Array.from({ length: clusterCount }, (_, index) =>
+    fileNode(`file:fanout-${suffix(index)}`, `fanout-${suffix(index)}/index.ts`));
+  const symbols = files.map((file, index) =>
+    functionNode(
+      `function:fanout-${suffix(index)}`,
+      file.filePath!,
+      `fanout${suffix(index)}`,
+      1,
+    ));
+  return finalizeGraph({
+    version: "1.0.0",
+    project: {
+      name: "high-fanout-clusters",
+      languages: ["typescript"],
+      frameworks: [],
+      description: "高扇出聚类选择夹具。",
+      analyzedAt: GENERATED_AT,
+      gitCommitHash: "fixture",
+    },
+    nodes: [...files, ...symbols],
+    edges: [
+      ...files.map((file, index): GraphEdge => ({
+        source: file.id,
+        target: symbols[index]!.id,
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      })),
+      ...symbols.slice(1).map((symbol): GraphEdge => ({
+        source: symbols[0]!.id,
+        target: symbol.id,
+        type: "calls",
+        direction: "forward",
+        weight: 1,
+      })),
+    ],
+    layers: [{
+      id: "fanout",
+      name: "高扇出模块",
+      description: "高扇出聚类选择夹具。",
+      nodeIds: files.map((file) => file.id),
+    }],
     tour: [],
   });
 }

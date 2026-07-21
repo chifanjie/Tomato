@@ -292,7 +292,7 @@ describe("WikiResponsiveShell", () => {
     await click(container.querySelector('[aria-label="打开源码证据"]'));
     await flushAnimationFrames();
     const closeButton = container.querySelector('[aria-label="关闭源码证据"]');
-    const summary = container.querySelector(".uc-wiki-evidence summary");
+    const summary = container.querySelector(".uc-source-evidence-item > summary");
     expect(document.activeElement).toBe(closeButton);
 
     await keydown("Tab", true);
@@ -326,16 +326,18 @@ describe("WikiResponsiveShell", () => {
     await click(container.querySelector('[aria-label="打开源码证据"]'));
     await flushAnimationFrames();
     const closeButton = container.querySelector('[aria-label="关闭源码证据"]');
+    const finalSummary = container.querySelector(".uc-evidence-section:last-of-type > summary");
     expect(document.activeElement).toBe(closeButton);
 
     const tabEvent = new KeyboardEvent("keydown", {
       key: "Tab",
+      shiftKey: true,
       bubbles: true,
       cancelable: true,
     });
     await act(async () => document.dispatchEvent(tabEvent));
     expect(tabEvent.defaultPrevented).toBe(true);
-    expect(document.activeElement).toBe(closeButton);
+    expect(document.activeElement).toBe(finalSummary);
 
     await act(async () => root.unmount());
   });
@@ -397,12 +399,77 @@ describe("WikiResponsiveShell", () => {
     await act(async () => root.unmount());
   });
 
+  it("collapses desktop evidence without adding modal semantics", async () => {
+    installMatchMedia(false);
+    const { container, root } = await mountShell();
+
+    await click(container.querySelector('[aria-label="收起源码证据"]'));
+    expect(container.querySelector(".uc-wiki-shell")?.getAttribute("data-desktop-evidence"))
+      .toBe("collapsed");
+    expect(container.querySelector("#wiki-evidence-drawer")).toBeNull();
+    expect(container.querySelector('[aria-label="展开源码证据"]')).not.toBeNull();
+    expect(container.querySelector('[aria-modal="true"]')).toBeNull();
+
+    await click(container.querySelector('[aria-label="展开源码证据"]'));
+    expect(container.querySelector("#wiki-evidence-drawer")).not.toBeNull();
+    expect(container.querySelector(".uc-wiki-shell")?.getAttribute("data-desktop-evidence"))
+      .toBe("expanded");
+
+    await act(async () => root.unmount());
+  });
+
+  it("moves focus between the desktop evidence toggle controls", async () => {
+    installMatchMedia(false);
+    const { container, root } = await mountShell();
+    const collapse = container.querySelector<HTMLElement>('[aria-label="收起源码证据"]');
+    if (!collapse) throw new Error("missing desktop evidence collapse control");
+
+    collapse.focus();
+    await click(collapse);
+    const expand = container.querySelector<HTMLElement>('[aria-label="展开源码证据"]');
+    expect(document.activeElement).toBe(expand);
+
+    await click(expand);
+    expect(document.activeElement).toBe(
+      container.querySelector('[aria-label="收起源码证据"]'),
+    );
+
+    await act(async () => root.unmount());
+  });
+
+  it("focuses desktop evidence expansion when an open narrow drawer returns collapsed", async () => {
+    const media = installMatchMedia(false);
+    const { container, root } = await mountShell();
+    await click(container.querySelector('[aria-label="收起源码证据"]'));
+
+    await act(async () => media.setMatches(true));
+    await click(container.querySelector('[aria-label="打开源码证据"]'));
+    await flushAnimationFrames();
+    expect(document.activeElement).toBe(container.querySelector('[aria-label="关闭源码证据"]'));
+
+    await act(async () => {
+      media.setMatches(false);
+      await Promise.resolve();
+    });
+    expect(document.activeElement).toBe(
+      container.querySelector('[aria-label="展开源码证据"]'),
+    );
+    expect(container.querySelector('[aria-modal="true"]')).toBeNull();
+
+    await act(async () => root.unmount());
+  });
+
   it("owns the desktop grid, narrow drawers, header offset, and reduced motion contract", () => {
     const css = readFileSync(resolve(process.cwd(), "src/index.css"), "utf8");
     expect(css).toMatch(/\.uc-wiki-shell\s*\{[^}]*display:\s*grid/s);
-    expect(css).toContain("grid-template-columns: minmax(240px, 292px) minmax(0, 1fr) minmax(268px, 320px)");
-    expect(css).toContain("width: min(88vw, 360px)");
+    expect(css).toContain("grid-template-columns: minmax(232px, 272px) minmax(0, 1fr) minmax(252px, 292px)");
+    expect(css).toContain("width: min(92vw, 380px)");
+    expect(css).toMatch(/\.uc-wiki-shell\s*\{[^}]*height:\s*100%/s);
+    expect(css).not.toMatch(/\.uc-wiki-shell\s*\{[^}]*calc\(100dvh - var\(--uc-global-header-height\)\)/s);
     expect(css).toContain("var(--uc-global-header-height)");
+    expect(css).toMatch(
+      /\.uc-wiki-toolbar button,\s*\.uc-wiki-drawer-close\s*\{[^}]*min-width:\s*44px[^}]*min-height:\s*44px/s,
+    );
     expect(css).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*\.uc-wiki-navigation[\s\S]*transition:\s*none/);
   });
 });

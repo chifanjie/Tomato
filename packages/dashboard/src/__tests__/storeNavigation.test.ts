@@ -44,14 +44,33 @@ function preciseWikiIndex() {
 
 describe("dashboard wiki and graph surface state", () => {
   beforeEach(() => {
+    useDashboardStore.setState({ graphFocusRevision: 0 });
     const state = useDashboardStore.getState();
+    state.clearGraphFocus();
     state.setConsoleGraph(graphFixture());
     state.setWikiIndex(wikiRuntimeFixture());
     state.setDashboardSurface("wiki");
     state.selectWikiPage(null);
-    state.clearGraphFocus();
     state.selectNode(null);
     state.setGraphExplorerMode("architecture");
+  });
+
+  it("increments graph focus revision for repeated successful opens of the same page", () => {
+    useDashboardStore.getState().openGraphForWikiPage("page:run");
+    expect(useDashboardStore.getState().graphFocusRevision).toBe(1);
+
+    useDashboardStore.getState().openGraphForWikiPage("page:run");
+    expect(useDashboardStore.getState().graphFocusRevision).toBe(2);
+  });
+
+  it("advances focus revision on focused Wiki recompute without resetting it on clear", () => {
+    const index = wikiRuntimeFixture();
+    useDashboardStore.getState().openGraphForWikiPage("page:run");
+    useDashboardStore.getState().setWikiIndex(index);
+    expect(useDashboardStore.getState().graphFocusRevision).toBe(2);
+
+    useDashboardStore.getState().clearGraphFocus();
+    expect(useDashboardStore.getState().graphFocusRevision).toBe(2);
   });
 
   it("starts with the two active surfaces and architecture graph mode", () => {
@@ -102,6 +121,7 @@ describe("dashboard wiki and graph surface state", () => {
       pendingWikiAnchor: "run",
       selectedNodeId: "function:src/a.ts:run",
       graphWikiNotice: null,
+      graphFocusRevision: 1,
     });
   });
 
@@ -132,6 +152,7 @@ describe("dashboard wiki and graph surface state", () => {
       graphFocusPageId: null,
       graphFocusNodeIds: [],
       graphWikiNotice: null,
+      graphFocusRevision: 1,
     });
   });
 
@@ -147,6 +168,7 @@ describe("dashboard wiki and graph surface state", () => {
       graphFocusPageId: before.graphFocusPageId,
       graphFocusNodeIds: before.graphFocusNodeIds,
       graphExplorerMode: before.graphExplorerMode,
+      graphFocusRevision: before.graphFocusRevision,
     });
   });
 
@@ -170,6 +192,7 @@ describe("dashboard wiki and graph surface state", () => {
       activeWikiPageId: null,
       graphFocusPageId: null,
       graphFocusNodeIds: [],
+      graphFocusRevision: 2,
     });
   });
 

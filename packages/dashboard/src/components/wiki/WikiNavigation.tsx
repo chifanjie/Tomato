@@ -18,11 +18,7 @@ interface WikiNavigationProps {
 }
 
 function pageButtonClass(active: boolean): string {
-  return `my-0.5 block w-full rounded-md px-2.5 py-2 text-left text-[13px] leading-5 transition-colors ${
-    active
-      ? "bg-accent/10 font-medium text-text-primary"
-      : "text-text-secondary hover:bg-elevated hover:text-text-primary"
-  }`;
+  return `uc-wiki-nav-item${active ? " uc-wiki-nav-item-active" : ""}`;
 }
 
 function branchLabel(node: ReferenceTreeNode): string {
@@ -105,7 +101,7 @@ export default function WikiNavigation({
       className="flex h-full min-h-0 flex-col bg-surface"
     >
       <div className="border-b border-border-subtle px-4 py-4">
-        <p className="text-[11px] font-semibold tracking-[0.16em] text-text-muted">
+        <p className="text-xs font-semibold tracking-[0.16em] text-text-muted">
           项目知识库
         </p>
         <button
@@ -122,25 +118,19 @@ export default function WikiNavigation({
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto px-3 py-3">
-        <div className="space-y-3">
-          <section className="rounded-lg border border-border-subtle/70 bg-root/20">
-            <header className="flex items-center gap-2 px-3 py-3 text-left">
-              <span className="min-w-0 flex-1">
-                <h2 className="text-xs font-semibold text-text-primary">主干阅读</h2>
-                <span className="mt-0.5 block truncate text-[11px] text-text-muted">
-                  按推荐顺序理解项目
-                </span>
-              </span>
-              <span className="rounded-full bg-elevated px-2 py-0.5 text-[10px] tabular-nums text-text-muted">
-                {model.featured.pages.length}
-              </span>
+      <div className="min-h-0 flex-1 overflow-auto">
+        <div className="uc-wiki-nav-sections">
+          <section className="uc-wiki-nav-section" aria-labelledby="wiki-featured-heading">
+            <header>
+              <div>
+                <h2 id="wiki-featured-heading">主干阅读</h2>
+                <small>按推荐顺序理解项目</small>
+              </div>
+              <span className="uc-count">{model.featured.pages.length}</span>
             </header>
-            <div className="border-t border-border-subtle/70 px-2 py-2">
+            <div className="uc-wiki-nav-list">
               {model.featured.pages.length === 0 ? (
-                <p className="px-2.5 py-2 text-xs leading-5 text-text-muted">
-                  暂无可发布的主干文档。
-                </p>
+                <p>暂无可发布的主干文档。</p>
               ) : model.featured.pages.map((page) => (
                 <button
                   key={page.id}
@@ -149,48 +139,34 @@ export default function WikiNavigation({
                   aria-current={activePageId === page.id ? "page" : undefined}
                   className={pageButtonClass(activePageId === page.id)}
                 >
-                  <span className="block line-clamp-2">{page.title}</span>
+                  <span>{page.title}</span>
                   {activePageId === page.id && page.summary && (
-                    <span className="mt-1 block line-clamp-2 text-[11px] font-normal leading-4 text-text-muted">
-                      {page.summary}
-                    </span>
+                    <small>{page.summary}</small>
                   )}
                 </button>
               ))}
             </div>
           </section>
 
-          <section className="rounded-lg border border-border-subtle/70 bg-root/20">
+          <section className="uc-wiki-nav-section">
             <button
               ref={referenceTriggerRef}
               type="button"
               onClick={() => onReferenceExpandedChange(!referenceExpanded)}
               aria-expanded={referenceExpanded}
-              className="flex w-full items-center gap-2 px-3 py-3 text-left"
+              className="uc-wiki-nav-section-trigger"
             >
-              <span
-                aria-hidden="true"
-                className={`text-xs text-text-muted transition-transform ${referenceExpanded ? "rotate-90" : ""}`}
-              >
-                ›
+              <span>
+                <strong>代码参考</strong>
+                <small>按目录查找文件文档</small>
               </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-xs font-semibold text-text-primary">代码参考</span>
-                <span className="mt-0.5 block truncate text-[11px] text-text-muted">
-                  按目录查找文件文档
-                </span>
-              </span>
-              <span className="rounded-full bg-elevated px-2 py-0.5 text-[10px] tabular-nums text-text-muted">
-                {model.reference.totalFiles}
-              </span>
+              <span className="uc-count">{model.reference.totalFiles}</span>
             </button>
 
             {referenceExpanded && (
-              <div className="border-t border-border-subtle/70 px-2 py-2">
+              <div className="uc-wiki-nav-list">
                 {visibleRows.length === 0 ? (
-                  <p className="px-2.5 py-2 text-xs leading-5 text-text-muted">
-                    暂无可浏览的文件参考。
-                  </p>
+                  <p>暂无可浏览的文件参考。</p>
                 ) : visibleRows.map(({ node, depth }) => {
                   const active = node.pageId === activePageId;
                   if (node.kind === "file") {
@@ -205,7 +181,7 @@ export default function WikiNavigation({
                         className={pageButtonClass(active)}
                         style={{ paddingLeft: `${depth * 14 + 24}px` }}
                       >
-                        <span className="block truncate">{node.label}</span>
+                        <span className="uc-wiki-path">{node.path || node.label}</span>
                       </button>
                     );
                   }
@@ -217,16 +193,11 @@ export default function WikiNavigation({
                       onClick={() => toggleReferenceNode(node.id)}
                       aria-expanded={expanded}
                       title={node.path || node.label}
-                      className="flex w-full items-center gap-2 rounded-md py-2 pr-2 text-left text-[13px] text-text-secondary transition-colors hover:bg-elevated hover:text-text-primary"
+                      className="uc-wiki-branch"
                       style={{ paddingLeft: `${depth * 14 + 10}px` }}
                     >
-                      <span
-                        aria-hidden="true"
-                        className={`text-[10px] text-text-muted transition-transform ${expanded ? "rotate-90" : ""}`}
-                      >
-                        ›
-                      </span>
-                      <span className="min-w-0 flex-1 truncate">{branchLabel(node)}</span>
+                      <span>{branchLabel(node)}</span>
+                      <small>{expanded ? "收起" : "展开"}</small>
                     </button>
                   );
                 })}
@@ -234,25 +205,16 @@ export default function WikiNavigation({
             )}
           </section>
 
-          <section className="rounded-lg border border-border-subtle/70 bg-root/20">
+          <section className="uc-wiki-nav-section uc-wiki-status-destination">
             <button
               type="button"
               onClick={onSelectStatus}
               aria-current={statusActive ? "page" : undefined}
-              className={`flex w-full items-center gap-2 px-3 py-3 text-left transition-colors ${
-                statusActive
-                  ? "bg-accent/10 text-text-primary"
-                  : "text-text-secondary hover:bg-elevated hover:text-text-primary"
-              }`}
+              className={pageButtonClass(statusActive)}
             >
-              <span aria-hidden="true" className="text-xs text-text-muted">·</span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-xs font-semibold text-text-primary">知识库状态</span>
-                <span className="mt-0.5 block truncate text-[11px] text-text-muted">
-                  查看覆盖缺口与生成质量
-                </span>
-              </span>
-              <span className="rounded-full bg-elevated px-2 py-0.5 text-[10px] tabular-nums text-text-muted">
+              <span>知识库状态</span>
+              <small>查看覆盖缺口与生成质量</small>
+              <span className="uc-count">
                 {model.maintenance.pages.length + model.reference.orphanPageIds.length}
               </span>
             </button>

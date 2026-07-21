@@ -15,13 +15,13 @@ import { validateGraph } from "@understand-code/core/schema";
 import GlobalWikiSearch from "./components/wiki/GlobalWikiSearch";
 import KnowledgeConsole from "./components/wiki/KnowledgeConsole";
 import { GLOBAL_WIKI_SEARCH_REQUEST_EVENT } from "./components/wiki/WikiResponsiveShell";
-import { ThemePicker } from "./components/ThemePicker.tsx";
+import DashboardHeader from "./components/DashboardHeader";
 import TokenGate from "./components/TokenGate";
 import WarningBanner from "./components/WarningBanner";
-import { useIsMobile } from "./hooks/useIsMobile";
 import { normalizeLegacyGraphBranding } from "./legacyBranding";
 import { useDashboardStore } from "./store";
-import { ThemeProvider, type ThemeConfig } from "./themes/index.ts";
+import { ThemeProvider } from "./themes/index.ts";
+import { InitialThemeGate } from "./themes/InitialThemeGate";
 import {
   loadDashboardKnowledge,
   shouldRetryWikiLoad,
@@ -336,11 +336,32 @@ export function createAppRoutingController(
   };
 
   const start = () => {
-    const onLocation = () => applyLocation();
+    let recentLocationEvent: { type: string; signature: string } | null = null;
+    let recentLocationReset: ReturnType<typeof setTimeout> | null = null;
+    const onLocation = (event: Event) => {
+      const signature = appLocation(browser, browser.location.hash);
+      const isPairedTraversalEvent = recentLocationEvent?.signature === signature
+        && recentLocationEvent.type !== event.type;
+      if (recentLocationReset !== null) {
+        clearTimeout(recentLocationReset);
+        recentLocationReset = null;
+      }
+      if (isPairedTraversalEvent) {
+        recentLocationEvent = null;
+        return;
+      }
+      recentLocationEvent = { type: event.type, signature };
+      recentLocationReset = setTimeout(() => {
+        recentLocationEvent = null;
+        recentLocationReset = null;
+      }, 0);
+      applyLocation();
+    };
     applyLocation();
     browser.addEventListener("popstate", onLocation);
     browser.addEventListener("hashchange", onLocation);
     return () => {
+      if (recentLocationReset !== null) clearTimeout(recentLocationReset);
       browser.removeEventListener("popstate", onLocation);
       browser.removeEventListener("hashchange", onLocation);
     };
@@ -454,20 +475,6 @@ function Dashboard({
   const [wikiAvailability, setWikiAvailability] = useState<WikiAvailabilityStatus>("loading");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [graphIssues, setGraphIssues] = useState<GraphIssue[]>([]);
-  const [metaTheme, setMetaTheme] = useState<ThemeConfig | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetch(dataUrl("meta.json", accessToken))
-      .then((response) => response.ok ? response.json() as Promise<{ theme?: ThemeConfig }> : null)
-      .then((meta) => {
-        if (!cancelled && meta?.theme) setMetaTheme(meta.theme);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [accessToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -531,15 +538,19 @@ function Dashboard({
   }, [accessToken, onTokenInvalid, setConsoleGraph]);
 
   return (
-    <ThemeProvider metaTheme={metaTheme}>
-      <DashboardContent
-        accessToken={accessToken}
-        onTokenInvalid={onTokenInvalid}
-        loadError={loadError}
-        graphIssues={graphIssues}
-        wikiAvailability={wikiAvailability}
-      />
-    </ThemeProvider>
+    <InitialThemeGate metaUrl={dataUrl("meta.json", accessToken)}>
+      {(initialTheme) => (
+        <ThemeProvider initialConfig={initialTheme}>
+          <DashboardContent
+            accessToken={accessToken}
+            onTokenInvalid={onTokenInvalid}
+            loadError={loadError}
+            graphIssues={graphIssues}
+            wikiAvailability={wikiAvailability}
+          />
+        </ThemeProvider>
+      )}
+    </InitialThemeGate>
   );
 }
 
@@ -563,7 +574,6 @@ function DashboardContent({
   const selectWikiPage = useDashboardStore((state) => state.selectWikiPage);
   const openWikiTarget = useDashboardStore((state) => state.openWikiTarget);
   const openGraphForWikiPage = useDashboardStore((state) => state.openGraphForWikiPage);
-  const isMobile = useIsMobile();
   const [searchOpen, setSearchOpen] = useState(false);
   const [wikiDrawerOpen, setWikiDrawerOpen] = useState(false);
   const [wikiNavigationRevision, setWikiNavigationRevision] = useState(0);
@@ -669,69 +679,19 @@ function DashboardContent({
   }, [routingController]);
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-root text-text-primary noise-overlay">
-      <header className="uc-global-header flex items-center gap-2 border-b border-border-subtle bg-surface px-3 py-3 sm:gap-4 sm:px-5">
-        <div className="uc-global-header-left flex min-w-0 shrink-0 items-center gap-3 sm:gap-5">
-          <h1 className="uc-global-header-project max-w-[160px] truncate font-heading text-base tracking-wide text-text-primary sm:max-w-[220px] sm:text-lg lg:max-w-none">
-            {graph?.project.name ?? "代码知识库"}
-          </h1>
-          <div className="flex items-center rounded-md border border-border-subtle bg-elevated p-0.5">
-            <button
-              type="button"
-              onClick={() => routingController.selectSurface("wiki")}
-              className={`rounded px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-                dashboardSurface === "wiki"
-                  ? "bg-accent/15 text-accent"
-                  : "text-text-muted hover:text-text-secondary"
-              }`}
-            >
-              知识库
-            </button>
-            <button
-              type="button"
-              onClick={() => routingController.selectSurface("graph")}
-              className={`rounded px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-                dashboardSurface === "graph"
-                  ? "bg-accent/15 text-accent"
-                  : "text-text-muted hover:text-text-secondary"
-              }`}
-            >
-              关系图谱
-            </button>
-          </div>
-        </div>
-
-        <div className="uc-global-header-middle min-w-0 flex-1" />
-
-        <div className="uc-global-header-actions flex shrink-0 items-center gap-2 sm:gap-4">
-          <button
-            ref={searchButtonRef}
-            type="button"
-            onClick={requestGlobalSearch}
-            className="uc-global-search-trigger flex items-center gap-1.5 rounded-lg border border-border-subtle bg-elevated px-2 py-1.5 text-sm text-text-secondary transition-colors hover:text-text-primary"
-            aria-label="搜索知识库"
-          >
-            <span>搜索</span>
-            <kbd className="text-[10px] text-text-muted">⌘K</kbd>
-          </button>
-          {isMobile ? (
-            <details className="uc-mobile-header-more" inert={wikiDrawerOpen ? true : undefined}>
-              <summary aria-label="更多工具">更多</summary>
-              <section aria-label="更多工具" className="uc-mobile-header-more-panel">
-                <ThemePicker />
-              </section>
-            </details>
-          ) : (
-            <div inert={wikiDrawerOpen ? true : undefined}>
-              <ThemePicker />
-            </div>
-          )}
-        </div>
-      </header>
+    <div className="h-screen w-screen flex flex-col bg-root text-text-primary">
+      <DashboardHeader
+        projectName={graph?.project.name ?? "代码知识库"}
+        activeSurface={dashboardSurface}
+        searchButtonRef={searchButtonRef}
+        themeInert={wikiDrawerOpen || searchOpen}
+        onSelectSurface={routingController.selectSurface}
+        onRequestSearch={requestGlobalSearch}
+      />
 
       {graphIssues.length > 0 && !loadError && <WarningBanner issues={graphIssues} />}
       {loadError && (
-        <div className="border-b border-red-700 bg-red-900/30 px-5 py-3 text-sm text-red-200">
+        <div className="uc-status-banner" data-severity="problem" role="alert">
           {loadError}
         </div>
       )}

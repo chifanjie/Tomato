@@ -1,44 +1,35 @@
 import { describe, expect, it } from "vitest";
 import {
+  normalizeThemePreference,
   parseStoredThemeConfig,
   serializeThemeConfig,
   THEME_STORAGE_VERSION,
-} from "../ThemeContext";
+} from "../themeStorage";
 
-describe("theme storage migration", () => {
-  it("ignores legacy stored themes without a storage version", () => {
-    expect(parseStoredThemeConfig('{"presetId":"dark-gold","accentId":"gold"}')).toBeNull();
+describe("theme storage v3", () => {
+  it.each([
+    [{ version: 2, presetId: "engineering-workbench", accentId: "rose" }, "night-ink"],
+    [{ version: 2, presetId: "technical-document", headingFont: "mono" }, "technical-document"],
+    [{ version: 3, presetId: "sage-paper" }, "sage-paper"],
+    [{ presetId: "engineering-workbench", accentId: "teal" }, "night-ink"],
+    [{ presetId: "unknown" }, "technical-document"],
+    [{ version: 99, presetId: "night-ink" }, "technical-document"],
+  ] as const)("normalizes %j", (input, presetId) => {
+    expect(normalizeThemePreference(input)).toEqual({ presetId });
   });
 
-  it("loads current-version stored themes", () => {
-    const raw = JSON.stringify({
-      version: THEME_STORAGE_VERSION,
-      presetId: "technical-document",
-      accentId: "teal",
-      headingFont: "sans",
-    });
-
-    expect(parseStoredThemeConfig(raw)).toEqual({
-      presetId: "technical-document",
-      accentId: "teal",
-      headingFont: "sans",
-    });
+  it("distinguishes a missing key from invalid saved content", () => {
+    expect(parseStoredThemeConfig(null)).toBeNull();
+    expect(parseStoredThemeConfig("{")).toEqual({ presetId: "technical-document" });
+    expect(parseStoredThemeConfig(JSON.stringify({ presetId: "night-ink" })))
+      .toEqual({ presetId: "technical-document" });
   });
 
-  it("serializes themes with the current storage version", () => {
-    expect(
-      JSON.parse(
-        serializeThemeConfig({
-          presetId: "engineering-workbench",
-          accentId: "teal",
-          headingFont: "sans",
-        }),
-      ),
-    ).toMatchObject({
-      version: THEME_STORAGE_VERSION,
-      presetId: "engineering-workbench",
-      accentId: "teal",
-      headingFont: "sans",
+  it("serializes only the v3 preset", () => {
+    expect(THEME_STORAGE_VERSION).toBe(3);
+    expect(JSON.parse(serializeThemeConfig({ presetId: "mist-blueprint" }))).toEqual({
+      version: 3,
+      presetId: "mist-blueprint",
     });
   });
 });

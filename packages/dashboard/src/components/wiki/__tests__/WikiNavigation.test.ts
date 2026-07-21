@@ -43,6 +43,15 @@ describe("WikiNavigation", () => {
     expect(markup).not.toContain(">src<");
   });
 
+  it("uses a flat publication index without nested dashboard cards", () => {
+    const markup = renderNavigation(false);
+
+    expect(markup).toContain("uc-wiki-nav-section");
+    expect(markup).not.toContain("bg-root/20");
+    expect(markup).not.toContain("rounded-lg border");
+    expect(markup.match(/aria-expanded="false"/g)).toHaveLength(1);
+  });
+
   it("marks Home, Status, or a page as the only current destination", () => {
     const pageId = model.featured.pages[0]?.id;
     if (!pageId) throw new Error("missing featured fixture page");

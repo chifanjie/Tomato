@@ -1,11 +1,15 @@
 import type { WikiEvidenceV2, WikiPageV2 } from "@understand-code/core/knowledge-base";
 import type { GraphNode, KnowledgeGraph } from "@understand-code/core/types";
 import {
+  buildHierarchySelectionExpansion,
   buildHierarchicalSemanticGraph,
   hasDocumentationProblem,
+  mergeHierarchySelectionExpansion,
   normalizeGraphExplorerMode,
   type GraphExplorerDisplayMode,
   type GraphExplorerNavigation,
+  type GraphHierarchyIndex,
+  type HierarchicalGraphSelectionExpansion,
   type HierarchicalSemanticGraph,
   type HierarchicalSemanticGraphNode,
 } from "../../graphExplorer/hierarchicalGraph";
@@ -20,6 +24,8 @@ import type {
 import type { WikiRuntimeIndex } from "../../wiki/wikiIndex";
 
 export interface GraphExplorerView {
+  baseGraph: HierarchicalSemanticGraph;
+  selectionExpansion: HierarchicalGraphSelectionExpansion;
   semanticGraph: HierarchicalSemanticGraph;
   selection: GraphSelectionDetails | null;
   hiddenSelectedNode: GraphNode | null;
@@ -27,11 +33,14 @@ export interface GraphExplorerView {
 
 export interface BuildGraphExplorerViewInput {
   graph: KnowledgeGraph;
+  hierarchyIndex: GraphHierarchyIndex;
   wikiIndex?: WikiRuntimeIndex;
   mode: GraphExplorerMode;
-  focusNodeIds: string[];
   selectedNodeId: string | null;
+  /** True only when the active surface selected this id from the currently visible graph. */
+  selectedNodeWasVisible?: boolean;
   navigation: GraphExplorerNavigation;
+  materializedNodeId: string | null;
 }
 
 export interface SelectionDetailsInput {
@@ -39,6 +48,11 @@ export interface SelectionDetailsInput {
   semanticGraph: SemanticGraph;
   selectedObjectId: string | null;
 }
+
+export type GraphDrillTarget =
+  | { kind: "scope"; scopeId: string }
+  | { kind: "cluster"; scopeId: string; clusterId: string }
+  | { kind: "file"; scopeId: string; clusterId: string; fileId: string };
 
 interface SelectionDocumentation {
   upstream: SemanticGraphNode[];
@@ -55,7 +69,7 @@ export type GraphSelectionDetails =
       id: string;
       node: GraphNode;
       semantic: HierarchicalSemanticGraphNode;
-      drillTarget: { kind: "file"; scopeId: string; fileId: string } | null;
+      drillTarget: GraphDrillTarget | null;
     })
   | (SelectionDocumentation & {
       kind: "aggregate" | "boundary";
@@ -63,7 +77,7 @@ export type GraphSelectionDetails =
       node: HierarchicalSemanticGraphNode;
       responsibility: string;
       documentationCounts: DocumentationCounts;
-      drillTarget: { kind: "scope"; scopeId: string } | null;
+      drillTarget: GraphDrillTarget | null;
     });
 
 export interface GraphModeOption {
@@ -90,15 +104,17 @@ export function graphLayoutRevision(graph: KnowledgeGraph): string {
   const compareText = (left: string, right: string) =>
     left < right ? -1 : left > right ? 1 : 0;
   return JSON.stringify({
+    format: 2,
+    graphVersion: graph.version,
+    graphKind: graph.kind ?? "codebase",
     nodes: graph.nodes
       .map((node) => [node.id, node.type, node.filePath ?? ""])
       .sort((left, right) => compareText(left[0]!, right[0]!)),
     edges: graph.edges
-      .map((edge) => [edge.source, edge.target, edge.type, edge.direction])
+      .map((edge) => [edge.source, edge.target, edge.type, edge.direction, edge.weight])
       .sort((left, right) => compareText(left.join("\u0000"), right.join("\u0000"))),
     layers: graph.layers
-      .map((layer) => [layer.id, [...layer.nodeIds].sort().join("\u0000")])
-      .sort((left, right) => compareText(left[0]!, right[0]!)),
+      .map((layer) => [layer.id, [...layer.nodeIds].sort().join("\u0000")]),
   });
 }
 
@@ -175,8 +191,8 @@ export function buildGraphSelectionDetails({
       node: raw,
       semantic,
       ...documentation,
-      drillTarget: semantic.canDrillDown && semantic.scopeId
-        ? { kind: "file", scopeId: semantic.scopeId, fileId: semantic.id }
+      drillTarget: semantic.canDrillDown && semantic.scopeId && semantic.clusterId
+        ? { kind: "file", scopeId: semantic.scopeId, clusterId: semantic.clusterId, fileId: semantic.id }
         : null,
     };
   }
@@ -189,7 +205,9 @@ export function buildGraphSelectionDetails({
     documentationCounts: semantic.documentationCounts ?? EMPTY_DOCUMENTATION_COUNTS,
     ...documentation,
     drillTarget: semantic.canDrillDown && semantic.scopeId
-      ? { kind: "scope", scopeId: semantic.scopeId }
+      ? semantic.kind === "cluster" && semantic.clusterId
+        ? { kind: "cluster", scopeId: semantic.scopeId, clusterId: semantic.clusterId }
+        : { kind: "scope", scopeId: semantic.scopeId }
       : null,
   };
 }
@@ -238,24 +256,32 @@ export function coverageBadgeForNode(node: SemanticGraphNode): {
 
 export function buildGraphExplorerView({
   graph,
+  hierarchyIndex,
   wikiIndex,
   mode,
-  focusNodeIds,
   selectedNodeId,
+  selectedNodeWasVisible = false,
   navigation,
+  materializedNodeId,
 }: BuildGraphExplorerViewInput): GraphExplorerView {
-  const builtGraph = buildHierarchicalSemanticGraph({
+  const baseGraph = buildHierarchicalSemanticGraph({
     graph,
+    hierarchyIndex,
     wikiIndex,
     mode,
-    focusNodeIds,
-    selectedNodeId,
     navigation,
+    materializedNodeId,
   });
-  const semanticGraph: HierarchicalSemanticGraph = {
-    ...builtGraph,
-    presentation: { ...builtGraph.presentation, notice: null },
-  };
+  const selectionExpansion = buildHierarchySelectionExpansion({
+    graph,
+    hierarchyIndex,
+    baseGraph,
+    wikiIndex,
+    mode,
+    selectedNodeId,
+    selectedNodeWasVisible,
+  });
+  const semanticGraph = mergeHierarchySelectionExpansion(baseGraph, selectionExpansion);
   const selection = buildGraphSelectionDetails({
     graph,
     semanticGraph,
@@ -266,6 +292,8 @@ export function buildGraphExplorerView({
     : null;
 
   return {
+    baseGraph,
+    selectionExpansion,
     semanticGraph,
     selection,
     hiddenSelectedNode: selectedRawNode && !selection ? selectedRawNode : null,

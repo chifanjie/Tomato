@@ -71,6 +71,13 @@ describe("WikiEvidenceRail", () => {
     expect(props.evidence.map((item) => item.id)).toEqual(["evidence:run"]);
     const html = renderToStaticMarkup(createElement(WikiEvidenceRail, props));
 
+    expect(html).toContain("uc-evidence-section");
+    expect(html).toContain("知识库与图谱关联");
+    expect(html).not.toContain("uc-panel-muted");
+    expect(html).not.toContain("uppercase");
+    expect(html.match(/<details[^>]*class="uc-evidence-section"/g)).toHaveLength(3);
+    expect(html).not.toMatch(/<details[^>]*class="uc-evidence-section"[^>]*open/);
+
     const directStart = html.indexOf("直接讲解");
     const contextStart = html.indexOf("相关资料");
     const evidenceStart = html.indexOf("源码证据");

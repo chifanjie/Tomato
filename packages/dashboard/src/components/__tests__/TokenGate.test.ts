@@ -54,8 +54,12 @@ describe("TokenGate 简体中文交互", () => {
     const { container, root } = await mountTokenGate();
 
     expect(container.textContent).toContain("需要访问令牌");
-    expect(container.textContent).toContain("请粘贴终端中显示的访问令牌");
-    expect(container.querySelector('span[role="img"]')?.getAttribute("aria-label")).toBe("钥匙");
+    expect(container.textContent).toContain("令牌会显示在知识库服务的启动输出中");
+    expect(container.textContent).not.toContain("请粘贴终端中显示的访问令牌");
+    expect(container.querySelector('[role="img"]')).toBeNull();
+    expect(container.querySelector(".uc-token-gate")).not.toBeNull();
+    expect(container.querySelector(".uc-token-card")).not.toBeNull();
+    expect(container.innerHTML).not.toMatch(/noise-overlay|shadow-2xl|text-red-/);
     expect(container.querySelector("input")?.getAttribute("placeholder")).toBe("在此粘贴访问令牌…");
     expect(container.querySelector('button[type="submit"]')?.textContent).toBe("继续");
 
@@ -71,6 +75,33 @@ describe("TokenGate 简体中文交互", () => {
     expect(fetch).toHaveBeenCalledWith("/knowledge-graph.json?token=invalid-token");
     expect(container.textContent).toContain("访问令牌无效，请检查后重试。");
     expect(onTokenValid).not.toHaveBeenCalled();
+
+    await act(async () => root.unmount());
+  });
+
+  it("在成功响应前保持加载状态并传递规整后的令牌", async () => {
+    let resolveResponse: ((response: Response) => void) | undefined;
+    const response = new Promise<Response>((resolve) => {
+      resolveResponse = resolve;
+    });
+    vi.mocked(fetch).mockReturnValue(response);
+    const { container, root, onTokenValid } = await mountTokenGate();
+
+    await enterTokenAndSubmit(container, "  token / with ?  ");
+
+    const submit = container.querySelector<HTMLButtonElement>('button[type="submit"]');
+    expect(fetch).toHaveBeenCalledWith("/knowledge-graph.json?token=token%20%2F%20with%20%3F");
+    expect(submit?.disabled).toBe(true);
+    expect(submit?.textContent).toBe("正在验证…");
+    expect(onTokenValid).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveResponse?.(new Response(null, { status: 200 }));
+      await response;
+    });
+    expect(onTokenValid).toHaveBeenCalledWith("token / with ?");
+    expect(submit?.disabled).toBe(false);
+    expect(submit?.textContent).toBe("继续");
 
     await act(async () => root.unmount());
   });

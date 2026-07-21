@@ -1,15 +1,35 @@
+import { useEffect, useState } from "react";
 import type { WikiEvidenceV2, WikiPageV2 } from "@understand-code/core/knowledge-base";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import type { WikiTarget } from "../../wiki/wikiContent";
 import type { GraphExplorerView, GraphSelectionDetails } from "./graphExplorerModel";
 import { graphNodeTypeLabel } from "./semanticGraphCanvasModel";
 
-interface GraphDetailsRailProps {
+export type GraphInspectorSide = "left" | "right";
+
+export interface GraphDetailsRailProps {
   view: GraphExplorerView;
+  open: boolean;
+  side: GraphInspectorSide;
+  onClose: () => void;
   onSelectObject: (nodeId: string) => void;
   onOpenScope: (scopeId: string) => void;
-  onOpenFile: (scopeId: string, fileId: string) => void;
+  onOpenCluster: (scopeId: string, clusterId: string) => void;
+  onOpenFile: (scopeId: string, clusterId: string, fileId: string) => void;
   onSelectWikiTarget: (target: WikiTarget) => unknown;
   onRequestGlobalSearch: () => void;
+}
+
+export function resolveGraphInspectorSide(input: {
+  selectedScreenBounds: { left: number; right: number; top: number; bottom: number } | null;
+  frameWidth: number;
+  inspectorWidth: number;
+  gap: number;
+  compact: boolean;
+}): GraphInspectorSide {
+  if (input.compact || !input.selectedScreenBounds) return "right";
+  const rightOverlayLeft = input.frameWidth - input.inspectorWidth - input.gap;
+  return input.selectedScreenBounds.right + input.gap > rightOverlayLeft ? "left" : "right";
 }
 
 const PAGE_PREVIEW_LIMIT = 8;
@@ -36,8 +56,8 @@ function RelatedNodes({
   onSelectObject: (nodeId: string) => void;
 }) {
   return (
-    <section className="uc-panel-muted p-3">
-      <h3 className="text-[11px] font-semibold text-text-primary">{title}</h3>
+    <section className="uc-graph-inspector__section">
+      <h3 className="text-xs font-semibold text-text-primary">{title}</h3>
       {nodes.length === 0 ? (
         <p className="mt-2 text-xs leading-5 text-text-muted">暂无可见关系</p>
       ) : (
@@ -50,7 +70,7 @@ function RelatedNodes({
                 className="w-full rounded-md border border-border-subtle px-2.5 py-2 text-left transition-colors hover:border-accent/35 hover:bg-accent/5"
               >
                 <span className="block truncate text-xs font-medium text-text-primary">{node.label}</span>
-                <span className="mt-0.5 block truncate text-[10px] text-text-muted">{node.summary}</span>
+                <span className="mt-0.5 block truncate text-xs text-text-muted">{node.summary}</span>
               </button>
             </li>
           ))}
@@ -89,8 +109,8 @@ function PageList({ title, pages, emptyText, onRequestGlobalSearch }: {
   onRequestGlobalSearch: () => void;
 }) {
   return (
-    <section className="uc-panel-muted p-3">
-      <h3 className="text-[11px] font-semibold text-text-primary">{title}（共 {pages.length} 篇）</h3>
+    <section className="uc-graph-inspector__section">
+      <h3 className="text-xs font-semibold text-text-primary">{title}（共 {pages.length} 篇）</h3>
       {pages.length === 0 ? (
         <p className="mt-2 text-xs leading-5 text-text-muted">{emptyText}</p>
       ) : (
@@ -118,8 +138,8 @@ function EvidenceList({ evidence, onRequestGlobalSearch }: {
   onRequestGlobalSearch: () => void;
 }) {
   return (
-    <section className="uc-panel-muted p-3">
-      <h3 className="text-[11px] font-semibold text-text-primary">源码证据（共 {evidence.length} 项）</h3>
+    <section className="uc-graph-inspector__section">
+      <h3 className="text-xs font-semibold text-text-primary">源码证据（共 {evidence.length} 项）</h3>
       {evidence.length === 0 ? (
         <p className="mt-2 text-xs leading-5 text-text-muted">暂无精确证据记录</p>
       ) : (
@@ -128,13 +148,13 @@ function EvidenceList({ evidence, onRequestGlobalSearch }: {
             <li key={item.id}>
               <div className="flex items-center justify-between gap-2">
                 <p className="min-w-0 truncate text-sm font-medium text-text-primary">{item.filePath}</p>
-                <span className="shrink-0 rounded border border-border-subtle px-1.5 py-0.5 text-[10px] text-text-muted">
+                <span className="shrink-0 rounded border border-border-subtle px-1.5 py-0.5 text-xs text-text-muted">
                   {EVIDENCE_LABELS[item.evidenceType]}
                 </span>
               </div>
               <p className="uc-code-ref mt-1">{item.filePath}:{item.lineRange[0]}-{item.lineRange[1]}</p>
               {item.excerpt && (
-                <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded bg-root/70 px-2 py-1.5 text-[10px] leading-4 text-text-secondary">
+                <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded bg-root/70 px-2 py-1.5 text-[13px] leading-5 text-text-secondary">
                   {item.excerpt}
                 </pre>
               )}
@@ -157,8 +177,8 @@ function Overview({ selection }: { selection: GraphSelectionDetails }) {
       ? `${selection.node.lineRange[0]}-${selection.node.lineRange[1]}`
       : null;
     return (
-      <section className="uc-panel-muted p-3">
-        <h3 className="text-[11px] font-semibold text-text-primary">节点职责</h3>
+      <section className="uc-graph-inspector__section">
+        <h3 className="text-xs font-semibold text-text-primary">节点职责</h3>
         <p className="mt-2 text-sm leading-6 text-text-secondary">
           {selection.node.summary || "暂无职责说明"}
         </p>
@@ -168,7 +188,7 @@ function Overview({ selection }: { selection: GraphSelectionDetails }) {
             <div><dt className="text-text-muted">路径</dt><dd className="uc-code-ref mt-0.5">{selection.node.filePath}</dd></div>
           )}
           {lineRange && (
-            <div><dt className="text-text-muted">行号</dt><dd className="mt-0.5 font-mono text-[11px] text-text-primary">{lineRange}</dd></div>
+            <div><dt className="text-text-muted">行号</dt><dd className="mt-0.5 font-mono text-[13px] text-text-primary">{lineRange}</dd></div>
           )}
           <div><dt className="text-text-muted">节点 ID</dt><dd className="uc-code-ref mt-0.5">{selection.id}</dd></div>
         </dl>
@@ -178,8 +198,8 @@ function Overview({ selection }: { selection: GraphSelectionDetails }) {
 
   const counts = selection.documentationCounts;
   return (
-    <section className="uc-panel-muted p-3">
-      <h3 className="text-[11px] font-semibold text-text-primary">
+    <section className="uc-graph-inspector__section">
+      <h3 className="text-xs font-semibold text-text-primary">
         {selection.kind === "boundary" ? "外部范围" : "范围概览"}
       </h3>
       <p className="mt-2 text-sm leading-6 text-text-secondary">{selection.responsibility}</p>
@@ -195,12 +215,25 @@ function Overview({ selection }: { selection: GraphSelectionDetails }) {
 
 export default function GraphDetailsRail({
   view,
+  open,
+  side,
+  onClose,
   onSelectObject,
   onOpenScope,
+  onOpenCluster,
   onOpenFile,
   onSelectWikiTarget,
   onRequestGlobalSearch,
 }: GraphDetailsRailProps) {
+  const compact = useIsMobile(1024);
+  const [sheetSize, setSheetSize] = useState<"half" | "full">("half");
+
+  useEffect(() => {
+    if (!open) setSheetSize("half");
+  }, [open]);
+
+  if (!open) return null;
+
   const { selection, hiddenSelectedNode } = view;
   const heading = hiddenSelectedNode
     ? "当前层级未显示所选节点"
@@ -211,15 +244,47 @@ export default function GraphDetailsRail({
   const primaryDirectPageId = selection?.primaryDirectPageId ?? null;
 
   return (
-    <aside className="flex w-[360px] shrink-0 flex-col border-l border-border-subtle bg-surface xl:h-full max-xl:h-auto max-xl:w-full max-xl:border-l-0 max-xl:border-t">
-      <header className="border-b border-border-subtle px-4 py-4">
-        <p className="text-[11px] font-semibold text-text-muted">图谱详情</p>
-        <h2 className="mt-1 truncate text-base font-semibold text-text-primary">{heading}</h2>
+    <aside
+      role="complementary"
+      aria-label="图谱详情"
+      data-side={side}
+      data-sheet-size={compact ? sheetSize : undefined}
+      className="uc-graph-inspector"
+    >
+      <header className="flex items-start justify-between gap-3 border-b border-border-subtle px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-text-muted">图谱详情</p>
+          <h2 className="mt-1 truncate text-base font-semibold text-text-primary">{heading}</h2>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {compact && (
+            <button
+              type="button"
+              aria-label={sheetSize === "half" ? "展开全屏图谱详情" : "收起半屏图谱详情"}
+              onClick={() => setSheetSize((current) => current === "half" ? "full" : "half")}
+              className="rounded-md px-2 text-xs font-semibold text-text-secondary hover:bg-elevated hover:text-text-primary"
+            >
+              <span aria-hidden="true">{sheetSize === "half" ? "全屏" : "半屏"}</span>
+              <span className="sr-only">
+                {sheetSize === "half" ? "展开全屏图谱详情" : "收起半屏图谱详情"}
+              </span>
+            </button>
+          )}
+          <button
+            type="button"
+            aria-label="关闭图谱详情"
+            onClick={onClose}
+            className="grid rounded-md text-text-secondary hover:bg-elevated hover:text-text-primary"
+          >
+            <span aria-hidden="true" className="text-lg leading-none">×</span>
+            <span className="sr-only">关闭图谱详情</span>
+          </button>
+        </div>
       </header>
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-auto px-4 py-4 max-xl:flex-none max-xl:overflow-visible">
+      <div className="uc-graph-inspector__scroll">
         {hiddenSelectedNode ? (
-          <section className="uc-panel-muted p-3">
+          <section className="uc-graph-inspector__section">
             <p className="text-sm font-medium text-text-primary">{hiddenSelectedNode.name}</p>
             <p className="mt-2 text-sm leading-6 text-text-secondary">
               当前层级或模式没有显示这个节点。请返回包含它的范围，或切换到可用的关系视图后继续查看。
@@ -227,7 +292,7 @@ export default function GraphDetailsRail({
             <p className="uc-code-ref mt-3">{hiddenSelectedNode.id}</p>
           </section>
         ) : !selection ? (
-          <p className="uc-panel-muted p-3 text-sm leading-6 text-text-muted">
+          <p className="uc-graph-inspector__section text-sm leading-6 text-text-muted">
             选择节点、范围或外部入口后，可查看职责、上下游、正文与源码证据。
           </p>
         ) : (
@@ -235,12 +300,12 @@ export default function GraphDetailsRail({
             <Overview selection={selection} />
 
             {(drillTarget || primaryDirectPageId) && (
-              <section className="uc-panel-muted space-y-2 p-3">
+              <section className="uc-graph-inspector__section space-y-2">
                 {drillTarget?.kind === "scope" && (
                   <button
                     type="button"
                     onClick={() => onOpenScope(drillTarget.scopeId)}
-                    className="w-full rounded-md border border-border-subtle px-3 py-2 text-sm font-semibold text-text-primary transition-colors hover:border-accent/35 hover:bg-accent/5"
+                    className="min-h-11 w-full rounded-md border border-border-subtle px-3 py-2 text-sm font-semibold text-text-primary transition-colors hover:border-accent/35 hover:bg-accent/5"
                   >
                     {selection.kind === "boundary" ? "进入范围" : "查看范围"}
                   </button>
@@ -248,10 +313,23 @@ export default function GraphDetailsRail({
                 {drillTarget?.kind === "file" && (
                   <button
                     type="button"
-                    onClick={() => onOpenFile(drillTarget.scopeId, drillTarget.fileId)}
-                    className="w-full rounded-md border border-border-subtle px-3 py-2 text-sm font-semibold text-text-primary transition-colors hover:border-accent/35 hover:bg-accent/5"
+                    onClick={() => onOpenFile(
+                      drillTarget.scopeId,
+                      drillTarget.clusterId,
+                      drillTarget.fileId,
+                    )}
+                    className="min-h-11 w-full rounded-md border border-border-subtle px-3 py-2 text-sm font-semibold text-text-primary transition-colors hover:border-accent/35 hover:bg-accent/5"
                   >
                     查看文件关系
+                  </button>
+                )}
+                {drillTarget?.kind === "cluster" && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenCluster(drillTarget.scopeId, drillTarget.clusterId)}
+                    className="min-h-11 w-full rounded-md border border-border-subtle px-3 py-2 text-sm font-semibold text-text-primary transition-colors hover:border-accent/35 hover:bg-accent/5"
+                  >
+                    查看目录
                   </button>
                 )}
                 {primaryDirectPageId && (
@@ -266,7 +344,7 @@ export default function GraphDetailsRail({
               </section>
             )}
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+            <div className="grid">
               <RelatedNodes title="上游" nodes={selection.upstream} onSelectObject={onSelectObject} />
               <RelatedNodes title="下游" nodes={selection.downstream} onSelectObject={onSelectObject} />
             </div>

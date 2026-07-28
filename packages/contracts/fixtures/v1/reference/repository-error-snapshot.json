@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "snapshotId": "snapshot:actual",
+  "repositoryId": "repository:fixture",
+  "worktreeId": "worktree:fixture",
+  "rootIdentity": "root:fixture",
+  "branch": "feature/reference-fixture",
+  "indexDigest": "sha256:602e35a92eec4bc0a2ec6ae113f07bfc6933322fb69fe8dee416e5a67217e2a2",
+  "worktreeDigest": "sha256:a64d87c20dc6650d6e1f04be81eddfec8e8d257ed0505bb10de3c71ce490260a",
+  "untrackedDigest": "sha256:602e35a92eec4bc0a2ec6ae113f07bfc6933322fb69fe8dee416e5a67217e2a2",
+  "ignoreDigest": "sha256:ffd75001520442e898ec4b9742affe52e04d66d5ef7565172f5e503d393f5ca1",
+  "createdAt": "2026-07-28T08:12:00Z",
+  "captureStatus": "error",
+  "limitations": [
+    "Git repository state is unavailable."
+  ],
+  "changes": []
+}

@@ -41,6 +41,7 @@
     "vitest": "^3.1.0"
   },
   "dependencies": {
+    "@understand-code/contracts": "workspace:*",
     "fuse.js": "^7.1.0",
     "ignore": "^7.0.5",
     "tree-sitter-c-sharp": "^0.23.1",

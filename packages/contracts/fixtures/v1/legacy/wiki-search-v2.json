@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "generatedAt": "2026-07-28T08:00:00Z",
+  "records": [
+    {
+      "id": "page:page%3Aoverview",
+      "kind": "page",
+      "title": "项目总览",
+      "summary": "Legacy Wiki V2 search fixture.",
+      "content": "# 项目总览",
+      "pageId": "page:overview",
+      "role": "featured",
+      "category": "overview",
+      "relation": "direct",
+      "terms": [
+        "task"
+      ],
+      "businessTerms": [
+        "任务"
+      ]
+    }
+  ]
+}

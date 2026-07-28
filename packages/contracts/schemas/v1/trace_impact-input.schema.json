@@ -1,0 +1,63 @@
+{
+  "$id": "urn:understand-code:schema:v1:trace_impact-input",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "taskId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "sourceNodeIds": {
+      "minItems": 1,
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      }
+    },
+    "targetNodeIds": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      }
+    },
+    "direction": {
+      "type": "string",
+      "enum": [
+        "upstream",
+        "downstream",
+        "both"
+      ]
+    },
+    "maxDepth": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 20
+    },
+    "maxPaths": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500
+    },
+    "cursor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "pageSize": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200
+    }
+  },
+  "required": [
+    "sourceNodeIds",
+    "direction"
+  ],
+  "additionalProperties": false
+}

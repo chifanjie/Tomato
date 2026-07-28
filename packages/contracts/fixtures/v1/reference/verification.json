@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "verification",
+  "artifactId": "artifact:verification",
+  "repositoryId": "repository:fixture",
+  "worktreeId": "worktree:fixture",
+  "sourceSnapshotId": "snapshot:actual",
+  "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "revision": 12,
+  "producerVersion": "3.0.0-alpha.1",
+  "createdAt": "2026-07-28T08:12:00Z",
+  "contentDigest": "sha256:8889847bf05b7edfc1383b9576067de47e475780c20fae97b47f7736025cf9d0",
+  "payload": {
+    "records": [
+      {
+        "id": "verification:test",
+        "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "verificationPlanEntryId": "verification-plan:contracts",
+        "attempt": 1,
+        "kind": "test",
+        "status": "passed",
+        "command": "pnpm --filter @understand-code/contracts test",
+        "exitCode": 0,
+        "durationMs": 950,
+        "outputDigest": "sha256:cfdc2a9c5fae1255cc731e4ca135cd3de805e61d961eb872e0880b3da8df74e6",
+        "summary": "Shared contract tests passed.",
+        "claimIds": [
+          "claim:acceptance"
+        ],
+        "snapshotId": "snapshot:actual",
+        "recordedAt": "2026-07-28T08:10:00Z",
+        "actor": "developer"
+      }
+    ]
+  }
+}

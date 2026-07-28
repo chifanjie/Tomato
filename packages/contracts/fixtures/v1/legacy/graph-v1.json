@@ -1,0 +1,29 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "name": "contract-fixture",
+    "languages": [
+      "TypeScript"
+    ],
+    "frameworks": [],
+    "description": "Minimal legacy graph fixture.",
+    "analyzedAt": "2026-07-28T08:00:00Z",
+    "gitCommitHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "nodes": [
+    {
+      "id": "file:src/task.ts",
+      "type": "file",
+      "name": "task.ts",
+      "filePath": "src/task.ts",
+      "summary": "Fixture task implementation.",
+      "tags": [
+        "fixture"
+      ],
+      "complexity": "simple"
+    }
+  ],
+  "edges": [],
+  "layers": [],
+  "tour": []
+}

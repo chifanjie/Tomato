@@ -1,0 +1,238 @@
+{
+  "$id": "urn:understand-code:schema:v1:claim",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "taskId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "goal",
+        "non_goal",
+        "acceptance",
+        "assumption",
+        "recommendation",
+        "risk",
+        "unknown",
+        "finding",
+        "conclusion"
+      ]
+    },
+    "statement": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16384
+    },
+    "epistemicStatus": {
+      "type": "string",
+      "enum": [
+        "observed",
+        "inferred",
+        "unknown",
+        "human_confirmed"
+      ]
+    },
+    "lifecycleStatus": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "supported",
+        "contested",
+        "invalidated"
+      ]
+    },
+    "freshness": {
+      "type": "string",
+      "enum": [
+        "current",
+        "changed",
+        "stale",
+        "invalid"
+      ]
+    },
+    "sourceSnapshotId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "evidenceIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      }
+    },
+    "findingIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      }
+    },
+    "verificationRecordIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      }
+    },
+    "boundaryReason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16384
+    },
+    "derivationPath": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "evidence"
+              },
+              "evidenceId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16384
+              }
+            },
+            "required": [
+              "kind",
+              "evidenceId",
+              "description"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "graph_relation"
+              },
+              "relationId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16384
+              }
+            },
+            "required": [
+              "kind",
+              "relationId",
+              "description"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "rule"
+              },
+              "ruleId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16384
+              }
+            },
+            "required": [
+              "kind",
+              "ruleId",
+              "description"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "assumption"
+              },
+              "claimId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16384
+              }
+            },
+            "required": [
+              "kind",
+              "claimId",
+              "description"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "confirmationEventId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "supersedesClaimId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "createdAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+    },
+    "updatedAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+    }
+  },
+  "required": [
+    "id",
+    "taskId",
+    "kind",
+    "statement",
+    "epistemicStatus",
+    "lifecycleStatus",
+    "freshness",
+    "sourceSnapshotId",
+    "evidenceIds",
+    "findingIds",
+    "verificationRecordIds",
+    "createdAt",
+    "updatedAt"
+  ],
+  "additionalProperties": false
+}

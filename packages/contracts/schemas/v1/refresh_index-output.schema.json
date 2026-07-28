@@ -1,0 +1,218 @@
+{
+  "$id": "urn:understand-code:schema:v1:refresh_index-output",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "isError": {
+      "type": "boolean",
+      "const": false
+    },
+    "content": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "text"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "type",
+          "text"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "structuredContent": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "number",
+          "const": 1
+        },
+        "meta": {
+          "type": "object",
+          "properties": {
+            "repositoryId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "worktreeId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "sourceSnapshotId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "headCommit": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "worktreeFingerprint": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "freshness": {
+              "type": "string",
+              "enum": [
+                "not_ready",
+                "fresh",
+                "partial",
+                "stale",
+                "unknown",
+                "rebuilding",
+                "error"
+              ]
+            },
+            "durationMs": {
+              "type": "number",
+              "minimum": 0
+            },
+            "cacheHit": {
+              "type": "boolean"
+            },
+            "truncated": {
+              "type": "boolean"
+            },
+            "truncatedCategories": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16384
+              }
+            }
+          },
+          "required": [
+            "repositoryId",
+            "worktreeId",
+            "sourceSnapshotId",
+            "headCommit",
+            "worktreeFingerprint",
+            "freshness",
+            "durationMs",
+            "cacheHit",
+            "truncated",
+            "truncatedCategories"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "operation": {
+              "type": "object",
+              "properties": {
+                "operationId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "incremental",
+                    "full"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "const": "completed"
+                },
+                "sourceSnapshotId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "finalSnapshotId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "startedAt": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+                },
+                "completedAt": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+                },
+                "previousSnapshotPreservedUntilCommit": {
+                  "type": "boolean",
+                  "const": true
+                },
+                "cancellation": {
+                  "type": "object",
+                  "properties": {
+                    "mechanism": {
+                      "type": "string",
+                      "const": "mcp_request_cancellation"
+                    },
+                    "notificationMethod": {
+                      "type": "string",
+                      "const": "notifications/cancelled"
+                    },
+                    "effect": {
+                      "type": "string",
+                      "const": "cooperative_stop_preserve_last_snapshot"
+                    }
+                  },
+                  "required": [
+                    "mechanism",
+                    "notificationMethod",
+                    "effect"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "operationId",
+                "mode",
+                "status",
+                "finalSnapshotId",
+                "startedAt",
+                "completedAt",
+                "previousSnapshotPreservedUntilCommit",
+                "cancellation"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "operation"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "meta",
+        "result"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "content",
+    "structuredContent"
+  ],
+  "additionalProperties": false
+}

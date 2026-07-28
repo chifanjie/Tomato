@@ -1,0 +1,321 @@
+{
+  "$id": "urn:understand-code:schema:v1:update_task-input",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "taskId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "action": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "confirm_goal"
+            },
+            "claimId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "type",
+            "claimId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "confirm_acceptance_criteria"
+            },
+            "claimIds": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            }
+          },
+          "required": [
+            "type",
+            "claimIds"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "confirm_plan"
+            },
+            "plannedChangeIds": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            }
+          },
+          "required": [
+            "type",
+            "plannedChangeIds"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "record_assumption"
+            },
+            "claimId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "type",
+            "claimId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "confirm_unknown"
+            },
+            "claimId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "type",
+            "claimId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "transition_status"
+            },
+            "to": {
+              "type": "string",
+              "enum": [
+                "context_ready",
+                "planned",
+                "in_progress",
+                "check_required",
+                "verification_required",
+                "verified"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "to"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "accept_finding"
+            },
+            "findingId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16384
+            }
+          },
+          "required": [
+            "type",
+            "findingId",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "block_task"
+            },
+            "reasonCode": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16384
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16384
+            }
+          },
+          "required": [
+            "type",
+            "reasonCode",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "resume_task"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "refresh_task_context"
+            },
+            "targetSnapshotId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": [
+            "type",
+            "targetSnapshotId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "rebase_task"
+            },
+            "newBaselineSnapshotId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16384
+            }
+          },
+          "required": [
+            "type",
+            "newBaselineSnapshotId",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "supersede_task"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16384
+            },
+            "replacementTaskId": {
+              "type": "string",
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+            }
+          },
+          "required": [
+            "type",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "accept_verification_skip"
+            },
+            "verificationRecordId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16384
+            }
+          },
+          "required": [
+            "type",
+            "verificationRecordId",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "expectedRevision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "actor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    }
+  },
+  "required": [
+    "taskId",
+    "action",
+    "expectedRevision",
+    "idempotencyKey",
+    "actor"
+  ],
+  "additionalProperties": false
+}

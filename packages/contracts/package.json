@@ -1,0 +1,108 @@
+{
+  "name": "@understand-code/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "schemas",
+    "fixtures",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./primitives": {
+      "types": "./dist/primitives.d.ts",
+      "import": "./dist/primitives.js",
+      "default": "./dist/primitives.js"
+    },
+    "./canonical-json": {
+      "types": "./dist/canonical-json.d.ts",
+      "import": "./dist/canonical-json.js",
+      "default": "./dist/canonical-json.js"
+    },
+    "./artifact-envelope": {
+      "types": "./dist/artifact-envelope.d.ts",
+      "import": "./dist/artifact-envelope.js",
+      "default": "./dist/artifact-envelope.js"
+    },
+    "./repository": {
+      "types": "./dist/repository.d.ts",
+      "import": "./dist/repository.js",
+      "default": "./dist/repository.js"
+    },
+    "./descriptors": {
+      "types": "./dist/descriptors.d.ts",
+      "import": "./dist/descriptors.js",
+      "default": "./dist/descriptors.js"
+    },
+    "./compatibility": {
+      "types": "./dist/compatibility.d.ts",
+      "import": "./dist/compatibility.js",
+      "default": "./dist/compatibility.js"
+    },
+    "./migration": {
+      "types": "./dist/migration.d.ts",
+      "import": "./dist/migration.js",
+      "default": "./dist/migration.js"
+    },
+    "./task": {
+      "types": "./dist/task.d.ts",
+      "import": "./dist/task.js",
+      "default": "./dist/task.js"
+    },
+    "./evidence": {
+      "types": "./dist/evidence.d.ts",
+      "import": "./dist/evidence.js",
+      "default": "./dist/evidence.js"
+    },
+    "./change": {
+      "types": "./dist/change.d.ts",
+      "import": "./dist/change.js",
+      "default": "./dist/change.js"
+    },
+    "./invariants": {
+      "types": "./dist/invariants.d.ts",
+      "import": "./dist/invariants.js",
+      "default": "./dist/invariants.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp.d.ts",
+      "import": "./dist/mcp.js",
+      "default": "./dist/mcp.js"
+    },
+    "./json-schema": {
+      "types": "./dist/json-schema.d.ts",
+      "import": "./dist/json-schema.js",
+      "default": "./dist/json-schema.js"
+    },
+    "./schemas/*": "./schemas/*",
+    "./fixtures/*": "./fixtures/*"
+  },
+  "scripts": {
+    "build": "tsc",
+    "generate:fixtures": "pnpm run build && node scripts/generate-fixtures.mjs",
+    "generate:schemas": "pnpm run build && node scripts/generate-json-schemas.mjs",
+    "prepack": "npm run build && npm run verify:schemas && npm run verify:fixtures",
+    "test:distribution": "node scripts/test-distribution.mjs",
+    "verify:fixtures": "node scripts/generate-fixtures.mjs --check",
+    "verify:schemas": "node scripts/generate-json-schemas.mjs --check",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm run build && pnpm run verify:schemas && pnpm run verify:fixtures && vitest run && pnpm run test:distribution"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1",
+    "typescript": "^5.7.0",
+    "vitest": "^3.1.0"
+  }
+}

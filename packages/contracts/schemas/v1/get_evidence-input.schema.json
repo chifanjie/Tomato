@@ -1,0 +1,41 @@
+{
+  "$id": "urn:understand-code:schema:v1:get_evidence-input",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "taskId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "evidenceIds": {
+      "minItems": 1,
+      "maxItems": 200,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      }
+    },
+    "maxExcerptChars": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 8192
+    },
+    "cursor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "pageSize": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200
+    }
+  },
+  "required": [
+    "taskId",
+    "evidenceIds"
+  ],
+  "additionalProperties": false
+}

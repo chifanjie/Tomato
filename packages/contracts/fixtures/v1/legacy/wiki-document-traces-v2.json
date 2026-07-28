@@ -1,0 +1,31 @@
+{
+  "version": 2,
+  "generatedAt": "2026-07-28T08:00:00Z",
+  "traces": [
+    {
+      "pageId": "page:overview",
+      "directNodeIds": [
+        "file:src/task.ts"
+      ],
+      "contextNodeIds": [],
+      "evidenceIds": [
+        "wiki-evidence:task"
+      ],
+      "quality": "generated",
+      "generationStatus": "complete",
+      "issues": [],
+      "claims": [
+        {
+          "id": "wiki-claim:task",
+          "text": "Task fixture documents the task implementation.",
+          "nodeIds": [
+            "file:src/task.ts"
+          ],
+          "evidenceIds": [
+            "wiki-evidence:task"
+          ]
+        }
+      ]
+    }
+  ]
+}

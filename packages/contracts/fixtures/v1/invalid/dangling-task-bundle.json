@@ -1,0 +1,751 @@
+{
+  "manifest": {
+    "schemaVersion": 1,
+    "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    "title": "Preserve evidence across Agent handoffs",
+    "originalIntent": "Keep task evidence stable when Codex and Claude continue the same change.",
+    "status": "verified",
+    "repositoryId": "repository:fixture",
+    "worktreeId": "worktree:fixture",
+    "baselineSnapshotId": "snapshot:baseline",
+    "latestSnapshotId": "snapshot:actual",
+    "currentChangeCheckId": "change-check:final",
+    "currentChangeCheckRevision": 9,
+    "createdAt": "2026-07-28T08:00:00Z",
+    "updatedAt": "2026-07-28T08:12:00Z",
+    "producerVersion": "3.0.0-alpha.1",
+    "revision": 12
+  },
+  "brief": {
+    "originalIntent": "Keep task evidence stable when Codex and Claude continue the same change.",
+    "goalClaimId": "claim:goal",
+    "nonGoalClaimIds": [],
+    "acceptanceClaimIds": [
+      "claim:acceptance"
+    ],
+    "readingPath": [
+      {
+        "id": "reading:task",
+        "order": 0,
+        "kind": "symbol",
+        "filePath": "src/task.ts",
+        "symbolId": "symbol:task-handler",
+        "claimIds": [
+          "claim:recommendation"
+        ],
+        "evidenceIds": [
+          "evidence:source"
+        ]
+      }
+    ],
+    "plannedChanges": [
+      {
+        "id": "planned-change:task",
+        "candidateLevel": "likely_change",
+        "filePath": "src/task.ts",
+        "symbolId": "symbol:task-handler",
+        "intent": "Use stable Claim and Evidence identifiers.",
+        "claimIds": [
+          "claim:recommendation"
+        ],
+        "impactPathIds": [
+          "impact:task-to-consumer"
+        ]
+      }
+    ],
+    "assumptionClaimIds": [],
+    "riskClaimIds": [],
+    "unknownClaimIds": [],
+    "verificationPlan": [
+      {
+        "id": "verification-plan:contracts",
+        "acceptanceClaimIds": [
+          "claim:acceptance"
+        ],
+        "method": "test",
+        "description": "Run the shared contract suite.",
+        "required": true
+      }
+    ]
+  },
+  "claims": [
+    {
+      "id": "claim:goal",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "kind": "goal",
+      "statement": "Agent handoffs preserve one task context.",
+      "epistemicStatus": "human_confirmed",
+      "lifecycleStatus": "supported",
+      "freshness": "current",
+      "sourceSnapshotId": "snapshot:actual",
+      "evidenceIds": [
+        "evidence:goal"
+      ],
+      "findingIds": [],
+      "verificationRecordIds": [],
+      "confirmationEventId": "event:3",
+      "createdAt": "2026-07-28T08:00:00Z",
+      "updatedAt": "2026-07-28T08:12:00Z"
+    },
+    {
+      "id": "claim:acceptance",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "kind": "acceptance",
+      "statement": "The same artifact parses in every supported consumer.",
+      "epistemicStatus": "human_confirmed",
+      "lifecycleStatus": "supported",
+      "freshness": "current",
+      "sourceSnapshotId": "snapshot:actual",
+      "evidenceIds": [
+        "evidence:acceptance"
+      ],
+      "findingIds": [],
+      "verificationRecordIds": [
+        "verification:test"
+      ],
+      "confirmationEventId": "event:4",
+      "createdAt": "2026-07-28T08:00:00Z",
+      "updatedAt": "2026-07-28T08:12:00Z"
+    },
+    {
+      "id": "claim:recommendation",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "kind": "recommendation",
+      "statement": "Change the task handler while preserving stable IDs.",
+      "epistemicStatus": "observed",
+      "lifecycleStatus": "supported",
+      "freshness": "current",
+      "sourceSnapshotId": "snapshot:actual",
+      "evidenceIds": [
+        "evidence:missing"
+      ],
+      "findingIds": [
+        "finding:planned-completed"
+      ],
+      "verificationRecordIds": [],
+      "createdAt": "2026-07-28T08:00:00Z",
+      "updatedAt": "2026-07-28T08:12:00Z"
+    },
+    {
+      "id": "claim:finding-planned-completed",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "kind": "finding",
+      "statement": "The planned task-handler change is present in the final Snapshot.",
+      "epistemicStatus": "observed",
+      "lifecycleStatus": "supported",
+      "freshness": "current",
+      "sourceSnapshotId": "snapshot:actual",
+      "evidenceIds": [
+        "evidence:source"
+      ],
+      "findingIds": [
+        "finding:planned-completed"
+      ],
+      "verificationRecordIds": [],
+      "createdAt": "2026-07-28T08:00:00Z",
+      "updatedAt": "2026-07-28T08:12:00Z"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "evidence:goal",
+      "kind": "human",
+      "epistemicStatus": "human_confirmed",
+      "freshness": "current",
+      "claimIds": [
+        "claim:goal"
+      ],
+      "nodeIds": [],
+      "producedBy": "codex",
+      "createdAt": "2026-07-28T08:00:00Z",
+      "observedAtSnapshotId": "snapshot:actual",
+      "confirmation": {
+        "actor": "developer",
+        "input": "Preserve one task context across Agent handoffs.",
+        "confirmedAt": "2026-07-28T08:02:00Z"
+      }
+    },
+    {
+      "id": "evidence:acceptance",
+      "kind": "human",
+      "epistemicStatus": "human_confirmed",
+      "freshness": "current",
+      "claimIds": [
+        "claim:acceptance"
+      ],
+      "nodeIds": [],
+      "producedBy": "codex",
+      "createdAt": "2026-07-28T08:00:00Z",
+      "observedAtSnapshotId": "snapshot:actual",
+      "confirmation": {
+        "actor": "developer",
+        "input": "Require cross-consumer parsing.",
+        "confirmedAt": "2026-07-28T08:03:00Z"
+      }
+    },
+    {
+      "id": "evidence:source",
+      "kind": "source",
+      "epistemicStatus": "observed",
+      "freshness": "current",
+      "claimIds": [
+        "claim:recommendation",
+        "claim:finding-planned-completed"
+      ],
+      "nodeIds": [
+        "symbol:task-handler"
+      ],
+      "producedBy": "core",
+      "createdAt": "2026-07-28T08:00:00Z",
+      "observedAtSnapshotId": "snapshot:actual",
+      "filePath": "src/task.ts",
+      "lineRange": [
+        10,
+        24
+      ],
+      "excerpt": "export function updateTask() { /* fixture */ }",
+      "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "contentHash": "sha256:13f49e7fbb0cabd0ecd0bf679bacdcc0ab50375a07d36fb81fa15fc9e6aa0bd6"
+    }
+  ],
+  "impactPaths": [
+    {
+      "id": "impact:task-to-consumer",
+      "sourceNodeId": "symbol:task-handler",
+      "targetNodeId": "symbol:agent-consumer",
+      "classification": "observed",
+      "claimIds": [
+        "claim:recommendation"
+      ],
+      "steps": [
+        {
+          "source": "symbol:task-handler",
+          "edgeType": "calls",
+          "target": "symbol:agent-consumer",
+          "direction": "downstream",
+          "evidenceId": "evidence:source",
+          "confidence": "exact"
+        }
+      ]
+    }
+  ],
+  "changeChecks": [
+    {
+      "schemaVersion": 1,
+      "id": "change-check:final",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "taskRevision": 9,
+      "baselineSnapshotId": "snapshot:baseline",
+      "actualSnapshotId": "snapshot:actual",
+      "findings": [
+        {
+          "id": "finding:planned-completed",
+          "type": "planned_completed",
+          "severity": "info",
+          "blocking": false,
+          "summary": "The planned task handler changed.",
+          "claimIds": [
+            "claim:recommendation",
+            "claim:finding-planned-completed"
+          ],
+          "plannedChangeIds": [
+            "planned-change:task"
+          ],
+          "actualChangeIds": [
+            "change:implementation"
+          ],
+          "evidenceIds": [
+            "evidence:source"
+          ],
+          "impactPathIds": [
+            "impact:task-to-consumer"
+          ]
+        }
+      ],
+      "generatedAt": "2026-07-28T08:08:00Z"
+    }
+  ],
+  "verificationRecords": [
+    {
+      "id": "verification:test",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "verificationPlanEntryId": "verification-plan:contracts",
+      "attempt": 1,
+      "kind": "test",
+      "status": "passed",
+      "command": "pnpm --filter @understand-code/contracts test",
+      "exitCode": 0,
+      "durationMs": 950,
+      "outputDigest": "sha256:cfdc2a9c5fae1255cc731e4ca135cd3de805e61d961eb872e0880b3da8df74e6",
+      "summary": "Shared contract tests passed.",
+      "claimIds": [
+        "claim:acceptance"
+      ],
+      "snapshotId": "snapshot:actual",
+      "recordedAt": "2026-07-28T08:10:00Z",
+      "actor": "developer"
+    }
+  ],
+  "events": [
+    {
+      "schemaVersion": 1,
+      "eventId": "event:1",
+      "repositoryId": "repository:fixture",
+      "worktreeId": "worktree:fixture",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "previousRevision": 0,
+      "revision": 1,
+      "actor": "codex",
+      "idempotencyKey": "fixture-request-1",
+      "requestDigest": "sha256:72475d3cb9c446f89469c8ff49e2e791ff9ad7c65db3253fcb93b5034ed5e9eb",
+      "sourceSnapshotId": "snapshot:actual",
+      "occurredAt": "2026-07-28T08:00:00Z",
+      "resultingStatus": "created",
+      "action": {
+        "type": "task_created"
+      },
+      "eventDigest": "sha256:a8a7c944f621fcfc86b7e7d1a4dab8169452cb34c0b7cc74477ce36a71e7377e"
+    },
+    {
+      "schemaVersion": 1,
+      "eventId": "event:2",
+      "repositoryId": "repository:fixture",
+      "worktreeId": "worktree:fixture",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "previousRevision": 1,
+      "revision": 2,
+      "actor": "developer",
+      "idempotencyKey": "fixture-request-2",
+      "requestDigest": "sha256:0d2ddb812e5e4c9ee6739b550f2dcd9adf31d82caf354bee1bff601bb2190d62",
+      "sourceSnapshotId": "snapshot:actual",
+      "occurredAt": "2026-07-28T08:01:00Z",
+      "previousStatus": "created",
+      "resultingStatus": "context_ready",
+      "action": {
+        "type": "transition_status",
+        "to": "context_ready"
+      },
+      "previousEventDigest": "sha256:a8a7c944f621fcfc86b7e7d1a4dab8169452cb34c0b7cc74477ce36a71e7377e",
+      "eventDigest": "sha256:de1f3da508ad24875cd720c9c0167c69a12e7fc663bd262f65f3be5a6c6244f0"
+    },
+    {
+      "schemaVersion": 1,
+      "eventId": "event:3",
+      "repositoryId": "repository:fixture",
+      "worktreeId": "worktree:fixture",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "previousRevision": 2,
+      "revision": 3,
+      "actor": "developer",
+      "idempotencyKey": "fixture-request-3",
+      "requestDigest": "sha256:8930cb575f1d292fe1c0d3e64a07397ed6e55fdec647419b3a3731a61716c5cf",
+      "sourceSnapshotId": "snapshot:actual",
+      "occurredAt": "2026-07-28T08:02:00Z",
+      "previousStatus": "context_ready",
+      "resultingStatus": "context_ready",
+      "action": {
+        "type": "confirm_goal",
+        "claimId": "claim:goal"
+      },
+      "previousEventDigest": "sha256:de1f3da508ad24875cd720c9c0167c69a12e7fc663bd262f65f3be5a6c6244f0",
+      "eventDigest": "sha256:404e439149b3c234f8d79a4da55824e8497640b29a9aaa9a58733302efda663d"
+    },
+    {
+      "schemaVersion": 1,
+      "eventId": "event:4",
+      "repositoryId": "repository:fixture",
+      "worktreeId": "worktree:fixture",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "previousRevision": 3,
+      "revision": 4,
+      "actor": "developer",
+      "idempotencyKey": "fixture-request-4",
+      "requestDigest": "sha256:e363ab3d73f50b44c2d2088390b7c1cd1cfea1fe113d2e79ed21d2cbf1c7e52f",
+      "sourceSnapshotId": "snapshot:actual",
+      "occurredAt": "2026-07-28T08:03:00Z",
+      "previousStatus": "context_ready",
+      "resultingStatus": "context_ready",
+      "action": {
+        "type": "confirm_acceptance_criteria",
+        "claimIds": [
+          "claim:acceptance"
+        ]
+      },
+      "previousEventDigest": "sha256:404e439149b3c234f8d79a4da55824e8497640b29a9aaa9a58733302efda663d",
+      "eventDigest": "sha256:077afa7b496964dcf23ee9b5d04f689e29052ba7d4a739f25bae5881162ad0c3"
+    },
+    {
+      "schemaVersion": 1,
+      "eventId": "event:5",
+      "repositoryId": "repository:fixture",
+      "worktreeId": "worktree:fixture",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "previousRevision": 4,
+      "revision": 5,
+      "actor": "developer",
+      "idempotencyKey": "fixture-request-5",
+      "requestDigest": "sha256:c60bbc4ef673290a2d7bd19a096dd5ced620c4e1c5fecb6b0d5f91bea341670d",
+      "sourceSnapshotId": "snapshot:actual",
+      "occurredAt": "2026-07-28T08:04:00Z",
+      "previousStatus": "context_ready",
+      "resultingStatus": "context_ready",
+      "action": {
+        "type": "confirm_plan",
+        "plannedChangeIds": [
+          "planned-change:task"
+        ]
+      },
+      "previousEventDigest": "sha256:077afa7b496964dcf23ee9b5d04f689e29052ba7d4a739f25bae5881162ad0c3",
+      "eventDigest": "sha256:81ac6a2264e123268d906103e87f8615d6818cd34a92f38fae2acf0a55af2a27"
+    },
+    {
+      "schemaVersion": 1,
+      "eventId": "event:6",
+      "repositoryId": "repository:fixture",
+      "worktreeId": "worktree:fixture",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "previousRevision": 5,
+      "revision": 6,
+      "actor": "developer",
+      "idempotencyKey": "fixture-request-6",
+      "requestDigest": "sha256:55ca5696cd9a5a2c892ee786cf29f4b2bca92818cab63cc9a0e00271cf73d442",
+      "sourceSnapshotId": "snapshot:actual",
+      "occurredAt": "2026-07-28T08:05:00Z",
+      "previousStatus": "context_ready",
+      "resultingStatus": "planned",
+      "action": {
+        "type": "transition_status",
+        "to": "planned"
+      },
+      "previousEventDigest": "sha256:81ac6a2264e123268d906103e87f8615d6818cd34a92f38fae2acf0a55af2a27",
+      "eventDigest": "sha256:b2ac3844e7ef01405e8f69e3d29ea6f78c2515a27054fee1cf4ca42ec9d9019e"
+    },
+    {
+      "schemaVersion": 1,
+      "eventId": "event:7",
+      "repositoryId": "repository:fixture",
+      "worktreeId": "worktree:fixture",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "previousRevision": 6,
+      "revision": 7,
+      "actor": "developer",
+      "idempotencyKey": "fixture-request-7",
+      "requestDigest": "sha256:4629a0a6cb97f1ca3fcde7dbff33f98863040f4de550ce2db049964113f3f44d",
+      "sourceSnapshotId": "snapshot:actual",
+      "occurredAt": "2026-07-28T08:06:00Z",
+      "previousStatus": "planned",
+      "resultingStatus": "in_progress",
+      "action": {
+        "type": "transition_status",
+        "to": "in_progress"
+      },
+      "previousEventDigest": "sha256:b2ac3844e7ef01405e8f69e3d29ea6f78c2515a27054fee1cf4ca42ec9d9019e",
+      "eventDigest": "sha256:d9b86ca99d3b5bc02cd3769b85befd9d8de219f06df3b82ea9092879afb153be"
+    },
+    {
+      "schemaVersion": 1,
+      "eventId": "event:8",
+      "repositoryId": "repository:fixture",
+      "worktreeId": "worktree:fixture",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "previousRevision": 7,
+      "revision": 8,
+      "actor": "developer",
+      "idempotencyKey": "fixture-request-8",
+      "requestDigest": "sha256:ae679a6f92c6e0e5386804ccfbeb6c665d15c54bada80469564ebe42f7712fe9",
+      "sourceSnapshotId": "snapshot:actual",
+      "occurredAt": "2026-07-28T08:07:00Z",
+      "previousStatus": "in_progress",
+      "resultingStatus": "check_required",
+      "action": {
+        "type": "transition_status",
+        "to": "check_required"
+      },
+      "previousEventDigest": "sha256:d9b86ca99d3b5bc02cd3769b85befd9d8de219f06df3b82ea9092879afb153be",
+      "eventDigest": "sha256:27d0328eac7c71145ec9106bfc52751c99202c17e3ac8af4fdc1efb975893544"
+    },
+    {
+      "schemaVersion": 1,
+      "eventId": "event:9",
+      "repositoryId": "repository:fixture",
+      "worktreeId": "worktree:fixture",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "previousRevision": 8,
+      "revision": 9,
+      "actor": "developer",
+      "idempotencyKey": "fixture-request-9",
+      "requestDigest": "sha256:6d0f729d186da2861bc894a827814dd18df9bb6bc34fd806230c69d214e9702d",
+      "sourceSnapshotId": "snapshot:actual",
+      "occurredAt": "2026-07-28T08:08:00Z",
+      "previousStatus": "check_required",
+      "resultingStatus": "check_required",
+      "action": {
+        "type": "change_checked",
+        "changeCheckArtifactId": "artifact:change-check",
+        "changeCheckId": "change-check:final"
+      },
+      "previousEventDigest": "sha256:27d0328eac7c71145ec9106bfc52751c99202c17e3ac8af4fdc1efb975893544",
+      "eventDigest": "sha256:29b3c9424eebec2c048008cc058cf45d48030876ab21fb98f1a72905fa723b86"
+    },
+    {
+      "schemaVersion": 1,
+      "eventId": "event:10",
+      "repositoryId": "repository:fixture",
+      "worktreeId": "worktree:fixture",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "previousRevision": 9,
+      "revision": 10,
+      "actor": "developer",
+      "idempotencyKey": "fixture-request-10",
+      "requestDigest": "sha256:f4e738a446e905f86a3386050484b65d7bffad17c8ca611505aa477c0ad3e154",
+      "sourceSnapshotId": "snapshot:actual",
+      "occurredAt": "2026-07-28T08:09:00Z",
+      "previousStatus": "check_required",
+      "resultingStatus": "verification_required",
+      "action": {
+        "type": "transition_status",
+        "to": "verification_required"
+      },
+      "previousEventDigest": "sha256:29b3c9424eebec2c048008cc058cf45d48030876ab21fb98f1a72905fa723b86",
+      "eventDigest": "sha256:12b2b7eb88924a68acdd58c26c2e7564ca2fb58fae0a7116c40c4d180e71c0c8"
+    },
+    {
+      "schemaVersion": 1,
+      "eventId": "event:11",
+      "repositoryId": "repository:fixture",
+      "worktreeId": "worktree:fixture",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "previousRevision": 10,
+      "revision": 11,
+      "actor": "developer",
+      "idempotencyKey": "fixture-request-11",
+      "requestDigest": "sha256:153fb2e6fd8ec661e8e5d7a4f485bb95cc78abb80891d836ae10c109d0e77ec4",
+      "sourceSnapshotId": "snapshot:actual",
+      "occurredAt": "2026-07-28T08:10:00Z",
+      "previousStatus": "verification_required",
+      "resultingStatus": "verification_required",
+      "action": {
+        "type": "verification_recorded",
+        "verificationRecordId": "verification:test"
+      },
+      "previousEventDigest": "sha256:12b2b7eb88924a68acdd58c26c2e7564ca2fb58fae0a7116c40c4d180e71c0c8",
+      "eventDigest": "sha256:bac5714f2fe6a82d478f71ea10d522fa845b7376cee01428dae74bb95c4f52ff"
+    },
+    {
+      "schemaVersion": 1,
+      "eventId": "event:12",
+      "repositoryId": "repository:fixture",
+      "worktreeId": "worktree:fixture",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "previousRevision": 11,
+      "revision": 12,
+      "actor": "developer",
+      "idempotencyKey": "fixture-request-12",
+      "requestDigest": "sha256:a827dce591f857e2d099e98926f526114ac1d5fcf7bdc0cc627222570a712880",
+      "sourceSnapshotId": "snapshot:actual",
+      "occurredAt": "2026-07-28T08:11:00Z",
+      "previousStatus": "verification_required",
+      "resultingStatus": "verified",
+      "action": {
+        "type": "transition_status",
+        "to": "verified"
+      },
+      "previousEventDigest": "sha256:bac5714f2fe6a82d478f71ea10d522fa845b7376cee01428dae74bb95c4f52ff",
+      "eventDigest": "sha256:5478d445e1fa540cdcdca25c09b632927274f2479bd9557170ff4d27aa1a2cea"
+    }
+  ],
+  "idempotencyRecords": [
+    {
+      "schemaVersion": 1,
+      "worktreeId": "worktree:fixture",
+      "scope": {
+        "kind": "task_create",
+        "createScope": "build_task_brief"
+      },
+      "idempotencyKey": "fixture-request-1",
+      "actor": "codex",
+      "requestDigest": "sha256:72475d3cb9c446f89469c8ff49e2e791ff9ad7c65db3253fcb93b5034ed5e9eb",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "resultRevision": 1,
+      "eventId": "event:1",
+      "resultDigest": "sha256:84e737584584f8cf3f94993aee5fb7eac0c3225b098341b45b94dff09abb7319",
+      "createdAt": "2026-07-28T08:00:00Z"
+    },
+    {
+      "schemaVersion": 1,
+      "worktreeId": "worktree:fixture",
+      "scope": {
+        "kind": "task",
+        "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+      },
+      "idempotencyKey": "fixture-request-2",
+      "actor": "developer",
+      "requestDigest": "sha256:0d2ddb812e5e4c9ee6739b550f2dcd9adf31d82caf354bee1bff601bb2190d62",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "resultRevision": 2,
+      "eventId": "event:2",
+      "resultDigest": "sha256:ae55f1139caabbfa22f5ff86e44da50c4b33cfec04a1edb157d3f82ff6e7e74c",
+      "createdAt": "2026-07-28T08:01:00Z"
+    },
+    {
+      "schemaVersion": 1,
+      "worktreeId": "worktree:fixture",
+      "scope": {
+        "kind": "task",
+        "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+      },
+      "idempotencyKey": "fixture-request-3",
+      "actor": "developer",
+      "requestDigest": "sha256:8930cb575f1d292fe1c0d3e64a07397ed6e55fdec647419b3a3731a61716c5cf",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "resultRevision": 3,
+      "eventId": "event:3",
+      "resultDigest": "sha256:c73e603cb05d4ce78f3935331e1adffa6282e08fa992fd4d233d5dd0faea62d3",
+      "createdAt": "2026-07-28T08:02:00Z"
+    },
+    {
+      "schemaVersion": 1,
+      "worktreeId": "worktree:fixture",
+      "scope": {
+        "kind": "task",
+        "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+      },
+      "idempotencyKey": "fixture-request-4",
+      "actor": "developer",
+      "requestDigest": "sha256:e363ab3d73f50b44c2d2088390b7c1cd1cfea1fe113d2e79ed21d2cbf1c7e52f",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "resultRevision": 4,
+      "eventId": "event:4",
+      "resultDigest": "sha256:3d7d7c85b532981404ad22505d1e6f503c95a5f2a02b0a89ffc41d36808ca975",
+      "createdAt": "2026-07-28T08:03:00Z"
+    },
+    {
+      "schemaVersion": 1,
+      "worktreeId": "worktree:fixture",
+      "scope": {
+        "kind": "task",
+        "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+      },
+      "idempotencyKey": "fixture-request-5",
+      "actor": "developer",
+      "requestDigest": "sha256:c60bbc4ef673290a2d7bd19a096dd5ced620c4e1c5fecb6b0d5f91bea341670d",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "resultRevision": 5,
+      "eventId": "event:5",
+      "resultDigest": "sha256:99a2ccb39f8613c991a8a7c720b743e5a27aa4c293a17c482391dc348f7aed32",
+      "createdAt": "2026-07-28T08:04:00Z"
+    },
+    {
+      "schemaVersion": 1,
+      "worktreeId": "worktree:fixture",
+      "scope": {
+        "kind": "task",
+        "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+      },
+      "idempotencyKey": "fixture-request-6",
+      "actor": "developer",
+      "requestDigest": "sha256:55ca5696cd9a5a2c892ee786cf29f4b2bca92818cab63cc9a0e00271cf73d442",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "resultRevision": 6,
+      "eventId": "event:6",
+      "resultDigest": "sha256:7567ca10c1bc109581045065eedec295da8f32e678730786ce7fbec3b672dfbd",
+      "createdAt": "2026-07-28T08:05:00Z"
+    },
+    {
+      "schemaVersion": 1,
+      "worktreeId": "worktree:fixture",
+      "scope": {
+        "kind": "task",
+        "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+      },
+      "idempotencyKey": "fixture-request-7",
+      "actor": "developer",
+      "requestDigest": "sha256:4629a0a6cb97f1ca3fcde7dbff33f98863040f4de550ce2db049964113f3f44d",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "resultRevision": 7,
+      "eventId": "event:7",
+      "resultDigest": "sha256:28106dbbc42e9ff357f39f2a0460c9314e5403553b7ca773e8669d65d77ac4d9",
+      "createdAt": "2026-07-28T08:06:00Z"
+    },
+    {
+      "schemaVersion": 1,
+      "worktreeId": "worktree:fixture",
+      "scope": {
+        "kind": "task",
+        "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+      },
+      "idempotencyKey": "fixture-request-8",
+      "actor": "developer",
+      "requestDigest": "sha256:ae679a6f92c6e0e5386804ccfbeb6c665d15c54bada80469564ebe42f7712fe9",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "resultRevision": 8,
+      "eventId": "event:8",
+      "resultDigest": "sha256:635d12149087f05cf727df1783a9fdc7c0854277cd32ed8d36fe96214b3364af",
+      "createdAt": "2026-07-28T08:07:00Z"
+    },
+    {
+      "schemaVersion": 1,
+      "worktreeId": "worktree:fixture",
+      "scope": {
+        "kind": "task",
+        "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+      },
+      "idempotencyKey": "fixture-request-9",
+      "actor": "developer",
+      "requestDigest": "sha256:6d0f729d186da2861bc894a827814dd18df9bb6bc34fd806230c69d214e9702d",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "resultRevision": 9,
+      "eventId": "event:9",
+      "resultDigest": "sha256:2bdfd688b5c213f8f9ae06d8c5313a87bb0498bbd5a417ce48ca9b05ea1d28ef",
+      "createdAt": "2026-07-28T08:08:00Z"
+    },
+    {
+      "schemaVersion": 1,
+      "worktreeId": "worktree:fixture",
+      "scope": {
+        "kind": "task",
+        "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+      },
+      "idempotencyKey": "fixture-request-10",
+      "actor": "developer",
+      "requestDigest": "sha256:f4e738a446e905f86a3386050484b65d7bffad17c8ca611505aa477c0ad3e154",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "resultRevision": 10,
+      "eventId": "event:10",
+      "resultDigest": "sha256:8239b8e3fd3b45a90d67f7983311ab547b4650ab0f5b7d60a3aa65ff71807167",
+      "createdAt": "2026-07-28T08:09:00Z"
+    },
+    {
+      "schemaVersion": 1,
+      "worktreeId": "worktree:fixture",
+      "scope": {
+        "kind": "task",
+        "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+      },
+      "idempotencyKey": "fixture-request-11",
+      "actor": "developer",
+      "requestDigest": "sha256:153fb2e6fd8ec661e8e5d7a4f485bb95cc78abb80891d836ae10c109d0e77ec4",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "resultRevision": 11,
+      "eventId": "event:11",
+      "resultDigest": "sha256:ab1be9d4195edbdd4f122873ec98f0e0bc45f082f0e4d754e758efc4e9bba54b",
+      "createdAt": "2026-07-28T08:10:00Z"
+    },
+    {
+      "schemaVersion": 1,
+      "worktreeId": "worktree:fixture",
+      "scope": {
+        "kind": "task",
+        "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+      },
+      "idempotencyKey": "fixture-request-12",
+      "actor": "developer",
+      "requestDigest": "sha256:a827dce591f857e2d099e98926f526114ac1d5fcf7bdc0cc627222570a712880",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "resultRevision": 12,
+      "eventId": "event:12",
+      "resultDigest": "sha256:96b7335b0aaa8dc4b8a50d8bd5e3e127937897e8357e6e0535ca0d2464d13343",
+      "createdAt": "2026-07-28T08:11:00Z"
+    }
+  ]
+}

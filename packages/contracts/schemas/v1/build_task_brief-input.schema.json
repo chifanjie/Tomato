@@ -1,0 +1,62 @@
+{
+  "$id": "urn:understand-code:schema:v1:build_task_brief-input",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "task": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16384
+    },
+    "expectedRevision": {
+      "type": "number",
+      "const": 0
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "actor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "baseRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "scope": {
+      "maxItems": 200,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      }
+    },
+    "tokenBudget": {
+      "type": "integer",
+      "minimum": 256,
+      "maximum": 100000
+    },
+    "maxCandidates": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500
+    },
+    "maxImpactDepth": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 20
+    }
+  },
+  "required": [
+    "task",
+    "expectedRevision",
+    "idempotencyKey",
+    "actor"
+  ],
+  "additionalProperties": false
+}

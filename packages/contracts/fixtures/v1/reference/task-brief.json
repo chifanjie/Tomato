@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "task_brief",
+  "artifactId": "artifact:task-brief",
+  "repositoryId": "repository:fixture",
+  "worktreeId": "worktree:fixture",
+  "sourceSnapshotId": "snapshot:actual",
+  "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "revision": 12,
+  "producerVersion": "3.0.0-alpha.1",
+  "createdAt": "2026-07-28T08:12:00Z",
+  "contentDigest": "sha256:1842f61ef3e0ddb3dbd29ba9b7141413aa11d69d59ac449ec0c26ceab7bfa6ec",
+  "payload": {
+    "originalIntent": "Keep task evidence stable when Codex and Claude continue the same change.",
+    "goalClaimId": "claim:goal",
+    "nonGoalClaimIds": [],
+    "acceptanceClaimIds": [
+      "claim:acceptance"
+    ],
+    "readingPath": [
+      {
+        "id": "reading:task",
+        "order": 0,
+        "kind": "symbol",
+        "filePath": "src/task.ts",
+        "symbolId": "symbol:task-handler",
+        "claimIds": [
+          "claim:recommendation"
+        ],
+        "evidenceIds": [
+          "evidence:source"
+        ]
+      }
+    ],
+    "plannedChanges": [
+      {
+        "id": "planned-change:task",
+        "candidateLevel": "likely_change",
+        "filePath": "src/task.ts",
+        "symbolId": "symbol:task-handler",
+        "intent": "Use stable Claim and Evidence identifiers.",
+        "claimIds": [
+          "claim:recommendation"
+        ],
+        "impactPathIds": [
+          "impact:task-to-consumer"
+        ]
+      }
+    ],
+    "assumptionClaimIds": [],
+    "riskClaimIds": [],
+    "unknownClaimIds": [],
+    "verificationPlan": [
+      {
+        "id": "verification-plan:contracts",
+        "acceptanceClaimIds": [
+          "claim:acceptance"
+        ],
+        "method": "test",
+        "description": "Run the shared contract suite.",
+        "required": true
+      }
+    ]
+  }
+}

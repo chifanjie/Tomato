@@ -1,0 +1,60 @@
+{
+  "$id": "urn:understand-code:schema:v1:open_workbench-input",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "route": {
+      "type": "object",
+      "properties": {
+        "view": {
+          "type": "string",
+          "enum": [
+            "tasks",
+            "knowledge",
+            "graph"
+          ]
+        },
+        "taskId": {
+          "type": "string",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "section": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "findingId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "evidenceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "impactPathId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "focus": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "view"
+      ],
+      "additionalProperties": false
+    },
+    "openBrowser": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "route"
+  ],
+  "additionalProperties": false
+}

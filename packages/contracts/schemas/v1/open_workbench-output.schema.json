@@ -1,0 +1,235 @@
+{
+  "$id": "urn:understand-code:schema:v1:open_workbench-output",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "isError": {
+      "type": "boolean",
+      "const": false
+    },
+    "content": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "text"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "type",
+          "text"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "structuredContent": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "number",
+          "const": 1
+        },
+        "meta": {
+          "type": "object",
+          "properties": {
+            "repositoryId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "worktreeId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "sourceSnapshotId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "headCommit": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "worktreeFingerprint": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "freshness": {
+              "type": "string",
+              "enum": [
+                "not_ready",
+                "fresh",
+                "partial",
+                "stale",
+                "unknown",
+                "rebuilding",
+                "error"
+              ]
+            },
+            "durationMs": {
+              "type": "number",
+              "minimum": 0
+            },
+            "cacheHit": {
+              "type": "boolean"
+            },
+            "truncated": {
+              "type": "boolean"
+            },
+            "truncatedCategories": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16384
+              }
+            }
+          },
+          "required": [
+            "repositoryId",
+            "worktreeId",
+            "sourceSnapshotId",
+            "headCommit",
+            "worktreeFingerprint",
+            "freshness",
+            "durationMs",
+            "cacheHit",
+            "truncated",
+            "truncatedCategories"
+          ],
+          "additionalProperties": false
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "route": {
+              "type": "object",
+              "properties": {
+                "view": {
+                  "type": "string",
+                  "enum": [
+                    "tasks",
+                    "knowledge",
+                    "graph"
+                  ]
+                },
+                "taskId": {
+                  "type": "string",
+                  "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                },
+                "section": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "findingId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "evidenceId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "impactPathId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "focus": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "view"
+              ],
+              "additionalProperties": false
+            },
+            "deepLink": {
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^http:\\/\\/127\\.0\\.0\\.1:([1-9]\\d{0,4})\\/[^#\\s]*#[^\\s]+$"
+            },
+            "launchTokenExpiresAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+            },
+            "runtime": {
+              "type": "object",
+              "properties": {
+                "identity": {
+                  "type": "object",
+                  "properties": {
+                    "productVersion": {
+                      "type": "string",
+                      "pattern": "^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+                    },
+                    "worktreeId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  },
+                  "required": [
+                    "productVersion",
+                    "worktreeId"
+                  ],
+                  "additionalProperties": false
+                },
+                "disposition": {
+                  "type": "string",
+                  "enum": [
+                    "started",
+                    "reused"
+                  ]
+                }
+              },
+              "required": [
+                "identity",
+                "disposition"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "route",
+            "deepLink",
+            "launchTokenExpiresAt",
+            "runtime"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "meta",
+        "result"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "content",
+    "structuredContent"
+  ],
+  "additionalProperties": false
+}

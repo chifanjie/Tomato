@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "task_manifest",
+  "artifactId": "artifact:task-manifest",
+  "repositoryId": "repository:fixture",
+  "worktreeId": "worktree:fixture",
+  "sourceSnapshotId": "snapshot:actual",
+  "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "revision": 12,
+  "producerVersion": "3.0.0-alpha.1",
+  "createdAt": "2026-07-28T08:12:00Z",
+  "contentDigest": "sha256:8fa8cc442091ce5357f3326099d3107a87c3a7fae22fd1da928d0a377a95c701",
+  "payload": {
+    "schemaVersion": 1,
+    "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    "title": "Preserve evidence across Agent handoffs",
+    "originalIntent": "Keep task evidence stable when Codex and Claude continue the same change.",
+    "status": "verified",
+    "repositoryId": "repository:fixture",
+    "worktreeId": "worktree:fixture",
+    "baselineSnapshotId": "snapshot:baseline",
+    "latestSnapshotId": "snapshot:actual",
+    "currentChangeCheckId": "change-check:final",
+    "currentChangeCheckRevision": 9,
+    "createdAt": "2026-07-28T08:00:00Z",
+    "updatedAt": "2026-07-28T08:12:00Z",
+    "producerVersion": "3.0.0-alpha.1",
+    "revision": 12
+  }
+}

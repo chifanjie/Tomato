@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "repository_snapshot",
+  "artifactId": "artifact:repository-snapshot",
+  "repositoryId": "repository:fixture",
+  "worktreeId": "worktree:fixture",
+  "sourceSnapshotId": "snapshot:actual",
+  "revision": 0,
+  "producerVersion": "3.0.0-alpha.1",
+  "createdAt": "2026-07-28T08:12:00Z",
+  "contentDigest": "sha256:1b58264b1bbaef31b008cfe5b69f8a0ec20c070b199bcd8de4f8d3f78c2be819",
+  "payload": {
+    "schemaVersion": 1,
+    "snapshotId": "snapshot:actual",
+    "repositoryId": "repository:fixture",
+    "worktreeId": "worktree:fixture",
+    "rootIdentity": "root:fixture",
+    "branch": "feature/reference-fixture",
+    "headCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "baseCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "mergeBase": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "indexDigest": "sha256:602e35a92eec4bc0a2ec6ae113f07bfc6933322fb69fe8dee416e5a67217e2a2",
+    "worktreeDigest": "sha256:a64d87c20dc6650d6e1f04be81eddfec8e8d257ed0505bb10de3c71ce490260a",
+    "untrackedDigest": "sha256:602e35a92eec4bc0a2ec6ae113f07bfc6933322fb69fe8dee416e5a67217e2a2",
+    "ignoreDigest": "sha256:ffd75001520442e898ec4b9742affe52e04d66d5ef7565172f5e503d393f5ca1",
+    "createdAt": "2026-07-28T08:12:00Z",
+    "captureStatus": "complete",
+    "limitations": [],
+    "changes": [
+      {
+        "id": "change:implementation",
+        "path": "src/task.ts",
+        "source": "unstaged",
+        "kind": "modified",
+        "contentDigest": "sha256:034be1c7304cd2d721eb758d60ae69c6115f11f1edca7b939e2dd0cebfbe3bc0",
+        "previousContentDigest": "sha256:bb103bae86db4b319ce6ec4b17e5c4547d061a07a3b4a08e49308579dcaa4864"
+      }
+    ]
+  }
+}

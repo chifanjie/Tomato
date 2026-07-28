@@ -698,7 +698,7 @@ P0 默认不在 MCP Server 内再嵌入一个独立 LLM。
 - 不再把临时 Worktree 的 Task 状态重定向到主 Checkout。
 - 跨 Worktree 继续任务必须执行显式 migrate/rebase。
 
-所有 JSON：
+所有新 V1 事实 Artifact JSON：
 
 - 必须有 `schemaVersion`。
 - 必须记录 repositoryId、worktreeId、snapshotId、producerVersion。
@@ -706,6 +706,12 @@ P0 默认不在 MCP Server 内再嵌入一个独立 LLM。
 - 必须有校验和。
 - 必须可识别 stale/superseded。
 - 必须有向前迁移和不兼容时的清晰错误。
+
+例外边界已经在 WP1 冻结：`artifact-manifest.json` 是严格的 Worktree
+控制索引，不伪装成第十种 Envelope Artifact；`events.jsonl` 的每一行验证为
+`TaskEventV1`，文件本身由 `task_event_log` Descriptor 管理。现有
+Graph/Meta/Fingerprint/Wiki/Diff 保持显式 `legacy_raw` 格式，不能在没有迁移
+决策的情况下静默套入 V1 Envelope。
 
 ---
 
@@ -849,21 +855,37 @@ interface ArtifactManifestV1 {
   schemaVersion: 1;
   repositoryId: string;
   worktreeId: string;
-  latestSnapshotId: string;
+  status: "ready" | "cold" | "error";
+  latestSnapshotId?: string;
   producerVersion: string;
+  updatedAt: string;
+  reasons: string[];
   artifacts: Array<{
-    kind: "graph" | "wiki" | "evidence" | "diff" | "task";
+    artifactId: string;
+    artifactType: string;
+    storageFormat: "enveloped_v1" | "legacy_raw" | "jsonl_v1";
     path: string;
     generatedAt: string;
     sourceSnapshotId: string;
     contentDigest: string;
-    status: "fresh" | "partial" | "stale" | "invalid";
-    dependencies: string[];
+    state: "current" | "historical" | "read_only_recovery" | "corrupt";
+    freshness: "fresh" | "partial" | "stale" | "invalid";
+    dependencies: Array<{
+      artifactId: string;
+      relation: "derived_from" | "requires" | "indexes" | "projects";
+      requiredDigest?: string;
+      requiredSnapshotId?: string;
+    }>;
   }>;
 }
 ```
 
-Manifest 本身只描述当前 canonical Worktree；多 Worktree 不共享可变 Manifest。Artifact 依赖变化时必须传播失效状态。
+Manifest 本身只描述当前 canonical Worktree；多 Worktree 不共享可变
+Manifest。`ready` 必须指向一个 `enveloped_v1 + schemaVersion=1 +
+state=current + freshness=fresh|partial` 的 Repository Snapshot Descriptor；
+Artifact Store 还必须验证对应文件存在、typed parser 通过且 payload digest
+与 Descriptor 一致。`cold/error` 必须给出原因。Artifact 依赖变化时必须传播
+失效状态，标记为 fresh 的 Artifact 不能依赖 partial/stale/invalid 上游。
 
 ### 7.2 Repo Pulse
 
@@ -994,6 +1016,7 @@ interface ClaimV1 {
     | "goal"
     | "non_goal"
     | "acceptance"
+    | "assumption"
     | "recommendation"
     | "risk"
     | "unknown"
@@ -1007,6 +1030,12 @@ interface ClaimV1 {
   evidenceIds: string[];
   findingIds: string[];
   verificationRecordIds: string[];
+  derivationPath?: Array<
+    | { kind: "evidence"; evidenceId: string; description: string }
+    | { kind: "graph_relation"; relationId: string; description: string }
+    | { kind: "rule"; ruleId: string; description: string }
+    | { kind: "assumption"; claimId: string; description: string }
+  >;
   confirmationEventId?: string;
   supersedesClaimId?: string;
   createdAt: string;
@@ -1021,7 +1050,7 @@ interface EvidenceV1 {
   id: string;
   epistemicStatus: "observed" | "inferred" | "unknown" | "human_confirmed";
   freshness: "current" | "changed" | "stale" | "invalid";
-  kind: "source" | "config" | "test" | "git" | "graph_path" | "document" | "human";
+  kind: "source" | "config" | "test" | "git" | "graph_path" | "document" | "human" | "analysis_boundary";
   claimIds: string[];
   nodeIds: string[];
   filePath?: string;
@@ -1033,6 +1062,12 @@ interface EvidenceV1 {
   producedBy: string;
   createdAt: string;
   observedAtSnapshotId: string;
+  derivationPath?: Array<
+    | { kind: "evidence"; evidenceId: string; description: string }
+    | { kind: "graph_relation"; relationId: string; description: string }
+    | { kind: "rule"; ruleId: string; description: string }
+    | { kind: "assumption"; claimId: string; description: string }
+  >;
   confirmation?: {
     actor: string;
     input: string;
@@ -1159,6 +1194,7 @@ record_assumption
 confirm_unknown
 transition_status
 accept_finding
+accept_verification_skip
 block_task
 resume_task
 refresh_task_context
@@ -1282,13 +1318,26 @@ P0 采用“一 MCP 进程绑定一个 immutable canonical Worktree Root”。�
 | `root_not_allowed` | 显式 Root 已成功 canonicalize，但成功返回的 advertised Roots 为空、没有任何一项覆盖 canonical root，或运行中失去该 membership |
 | `secondary_session_required` | 进程已经成功绑定后，请求引用另一个 worktree/repository 的 Task、Artifact 或 additional Root |
 
+Task Mutation 额外冻结三个互不混用的稳定错误码：
+`task_transition_rejected` 表示状态机不允许该迁移，
+`task_gate_unsatisfied` 表示迁移合法但当前 Guard 未满足，
+`action_not_authorized` 表示 Actor 无权执行该动作。Schema 校验、CAS 冲突、
+状态机、Guard 与权限错误不得折叠成 `invalid_arguments` 或
+`internal_error`；`details` 应分别给出当前状态、失败 Guard、允许动作或不含敏感信息的
+授权原因。所有公开 `text` 和 `details` 字符串都必须经过统一路径脱敏，并用带引号的
+POSIX 路径、Windows Drive Path、UNC Path 与 `file:` URI 对抗样例验证。
+
 只有 malformed JSON-RPC、未知方法等协议问题使用 JSON-RPC error。`binding_error` 下 `initialize`、`tools/list` 和无源码诊断可成功，所有 Repository/Task/`open_workbench`/`refresh_index` 调用返回上述 Tool Error，且不得创建 Artifact。CLI 参数解析本身无法启动 stdio 时只允许输出不含路径的 stderr 诊断并非 MCP Envelope，该情况不能计作 Tool Error E2E 通过。
 
 M0 必须分别记录 Codex App/CLI Plugin、Codex IDE Direct MCP 与 Claude Plugin 的证据等级；`provisional observed` 不能替代另一个 Surface 的 E2E，也不能出现在“已支持”文案中。
 
 `open_workbench` 生命周期：
 
-- `runtimeIdentity = productVersion + worktreeId`；rendezvous、startup lock、owner lock 和 control channel 位于 OS 用户级私有 runtime 目录，不写目标仓库或 Host Plugin cache。目录权限必须仅当前 OS 用户可访问。
+- `runtimeIdentity = productVersion + worktreeId`；MCP 输出以
+  `{ productVersion, worktreeId }` 强类型对象表达，返回的 `worktreeId` 必须与
+  Success Meta 完全一致。rendezvous、startup lock、owner lock 和 control
+  channel 位于 OS 用户级私有 runtime 目录，不写目标仓库或 Host Plugin
+  cache。目录权限必须仅当前 OS 用户可访问。
 - rendezvous 记录 protocol/product version、worktree ID、root digest、PID、loopback port、control endpoint、control capability digest、instance nonce 和 ready time，不记录源码、Task 正文、Browser Session 或长期 Token。实际 control capability 是 Runtime 生命周期内的 256-bit 随机值，单独保存在当前用户独占的文件/命名管道凭据中。
 - `open_workbench` 先验证 rendezvous 所有权与权限，再通过 control channel 完成 identity + nonce + capability handshake；不能只根据 PID/port 复用。
 - control channel 只接受 `health`、`mint_launch_token` 和 `stop` 三类强类型操作。复用已有 Runtime 时，新 MCP 必须请求 Runtime 为目标 task/view/section 签发新的 Launch Token，不能自行生成、复用旧 Token，Browser HTTP API 也不能暴露 mint 能力。
@@ -1590,7 +1639,8 @@ Knowledge 与 Graph 继续使用现有页面，但必须继承相同的 loading/
 
 ### 9.0 顶层 Artifact Envelope
 
-所有持久 JSON 都使用统一 Envelope，不允许只把 Item Array 直接写入文件：
+所有新的 V1 事实 JSON 使用统一 Envelope，不允许只把 Item Array 直接写入
+文件。Manifest、Task Event JSONL 与显式 Legacy Raw 的边界按第 5.4 节处理：
 
 ```ts
 interface ArtifactEnvelopeV1<T> {
@@ -1628,7 +1678,16 @@ interface TaskBriefV1 {
   goalClaimId: string;
   nonGoalClaimIds: string[];
   acceptanceClaimIds: string[];
-  readingPath: string[];
+  readingPath: Array<{
+    id: string;
+    order: number;
+    kind: "file" | "symbol" | "impact_path";
+    filePath?: string;
+    symbolId?: string;
+    impactPathId?: string;
+    claimIds: string[];
+    evidenceIds: string[];
+  }>;
   plannedChanges: PlannedChangeV1[];
   assumptionClaimIds: string[];
   riskClaimIds: string[];
@@ -1678,7 +1737,7 @@ interface RepositorySnapshotV1 {
   worktreeId: string;
   rootIdentity: string;
   branch?: string;
-  headCommit: string;
+  headCommit?: string;
   baseCommit?: string;
   mergeBase?: string;
   indexDigest: string;
@@ -1692,6 +1751,9 @@ interface RepositorySnapshotV1 {
 }
 ```
 
+`headCommit` 在 `captureStatus=complete|partial` 时必填；Git 完全不可用且
+`captureStatus=error` 时可以缺失，但必须记录 limitation，不能伪造 Commit。
+
 Snapshot 是某次采集的不可变事实，不保存相对于“现在”的 fresh/stale。相对新鲜度只存在于 Repo Pulse 或 Artifact Manifest：
 
 ```ts
@@ -1699,11 +1761,44 @@ interface RepoPulseV1 {
   evaluatedSnapshotId: string;
   baselineSnapshotId?: string;
   status: "not_ready" | "fresh" | "partial" | "stale" | "unknown" | "rebuilding" | "error";
-  artifactFreshness: Record<string, "fresh" | "partial" | "stale" | "missing" | "error">;
+  artifactFreshness: Record<
+    "graph" | "wiki" | "evidence" | "diff" | "task",
+    "fresh" | "partial" | "stale" | "missing" | "error"
+  >;
+  repositoryState?: {
+    rootIdentity: string;
+    branch?: string;
+    baselineCommit?: string;
+    headCommit?: string;
+    mergeBase?: string;
+    ahead?: number;
+    behind?: number;
+    captureStatus: "complete" | "partial" | "error";
+    limitations: string[];
+  };
+  changeSummary?: {
+    total: number;
+    bySource: Record<"committed" | "staged" | "unstaged" | "untracked" | "conflict", number>;
+    byKind: Record<"added" | "modified" | "deleted" | "renamed" | "copied" | "type_changed", number>;
+  };
+  completeness?: {
+    parser: { status: "complete" | "partial" | "unknown" | "unsupported"; coverage?: number; reasons: string[] };
+    callGraph: { status: "complete" | "partial" | "unknown" | "unsupported"; coverage?: number; reasons: string[] };
+  };
+  recommendedRefresh?: "none" | "incremental" | "full";
+  errors?: Array<{ code: string; scope: string; message: string }>;
+  unknowns?: Array<{ code: string; scope: string; message: string }>;
   reasons: string[];
   evaluatedAt: string;
 }
 ```
+
+`fresh` 必须携带上述六组结构化字段，并显式上报
+Graph/Wiki/Evidence/Diff/Task 五类 Artifact；五类均为 fresh、Repository
+capture 与 Parser/Call Graph completeness 为 complete、刷新建议为 none，并且
+errors/unknowns/reasons 均为空。缺失 Artifact 只能显式标为 `missing`，不能通过
+省略 Key 伪装为 fresh。降级状态可以省略无法可靠计算的分组，但必须在 reasons
+或结构化 diagnostic 中说明边界。
 
 ```ts
 interface RepositoryChangeV1 {
@@ -1744,6 +1839,8 @@ interface TaskManifestV1 {
   worktreeId: string;
   baselineSnapshotId: string;
   latestSnapshotId: string;
+  currentChangeCheckId?: string;
+  currentChangeCheckRevision?: number;
   blockedState?: {
     resumeStatus: TaskNormalStatusV1;
     reasonCode: string;
@@ -1758,6 +1855,7 @@ interface TaskManifestV1 {
     detectedAt: string;
   };
   supersession?: {
+    supersededFromStatus: TaskNormalStatusV1 | "blocked" | "stale";
     reason: string;
     replacementTaskId?: string;
     actor: string;
@@ -1770,7 +1868,26 @@ interface TaskManifestV1 {
 }
 ```
 
-`originalIntent` 必须非空。`blockedState`、`staleState`、`supersession` 分别在对应状态下必填且互斥；恢复后当前 Manifest 移除异常态字段，历史原因保留在 append-only Event。Schema 必须拒绝缺少 `resumeStatus` 的 blocked Task、缺少失效 Snapshot 的 stale Task，以及 replacement self-loop。
+`originalIntent` 必须非空。`blockedState`、`staleState`、`supersession` 分别在
+对应状态下必填且互斥；恢复后当前 Manifest 移除异常态字段，历史原因保留在
+append-only Event。Schema 必须拒绝缺少 `resumeStatus` 的 blocked Task、缺少
+失效 Snapshot 的 stale Task，以及 replacement self-loop。
+`verification_required/verified` 必须同时保存 canonical
+`currentChangeCheckId/currentChangeCheckRevision`；其他状态不得把旧 Check
+冒充 current。Context 尚未成功构建的 `created` Task 使用最小 recovery
+bundle，不伪造 Brief/Claim/Evidence。
+
+Append-only `TaskEventV1` 除 revision/digest chain 外必须记录
+`previousStatus?: TaskStatusV1` 与 `resultingStatus: TaskStatusV1`。第一条
+且唯一一条 `task_created` 必须是 revision=1/previousRevision=0、无
+previousStatus/previousEventDigest，并进入 created；后续 Event 的
+previousStatus 必须等于前一条 resultingStatus。普通 transition 必须逐步回放
+冻结表，block/resume/refresh/rebase/supersede 使用各自强类型 Action，自动失效
+使用 `task_context_staled`。最终 Event 的 revision/status 必须与 Manifest
+一致，verified/superseded 后不得再追加 Event。结构解析不能替代完整性验证：
+可信读取必须以“移除当前 `eventDigest` 后的 canonical Event JSON”为输入，
+通过 Host 注入的 SHA-256 重算每条 Digest，并验证 `previousEventDigest`
+链；篡改正文或截断 Genesis 必须 fail closed。
 
 ### 9.3 Impact Path V1
 
@@ -1796,12 +1913,17 @@ interface ImpactPathV1 {
 }
 ```
 
+`classification=observed` 的每一条边都必须绑定 `freshness=current` 且
+`epistemicStatus=observed` 的 Evidence；推断或陈旧证据不能伪装成观察事实。
+
 ### 9.4 Change Check V1
 
 ```ts
 interface ChangeCheckV1 {
   schemaVersion: 1;
+  id: string;
   taskId: string;
+  taskRevision: number;
   baselineSnapshotId: string;
   actualSnapshotId: string;
   findings: Array<{
@@ -1813,17 +1935,26 @@ interface ChangeCheckV1 {
       | "possible_omission"
       | "verification_gap"
       | "cannot_determine";
+    severity: "info" | "warning" | "error" | "critical";
+    blocking: boolean;
     summary: string;
-    claimIds: string[];
+    claimIds: [string, ...string[]];
     plannedChangeIds: string[];
     actualChangeIds: string[];
     evidenceIds: string[];
     impactPathIds: string[];
-    accepted?: { actor: string; reason: string; at: string };
+    resolution?:
+      | { kind: "fixed"; resolvedAt: string; snapshotId: string; evidenceIds: string[] }
+      | { kind: "accepted"; actor: string; reason: string; at: string; eventId: string };
   }>;
   generatedAt: string;
 }
 ```
+
+每个 Finding 至少链接一个 `kind=finding` 的稳定 Claim。进入
+`verification_required/verified` 时，Task 指向的 canonical Check 必须绑定当前
+Snapshot 与记录它的 Task revision；blocking Finding 必须已在当前 Snapshot
+修复，或由授权 Actor 通过强类型 `accept_finding` Event 接受。
 
 ### 9.5 Verification V1
 
@@ -1833,6 +1964,9 @@ P0 只定义契约并支持记录，不主动执行任意命令：
 interface VerificationRecordV1 {
   id: string;
   taskId: string;
+  verificationPlanEntryId: string;
+  attempt: number;
+  supersedesVerificationRecordId?: string;
   kind: "test" | "build" | "lint" | "manual" | "runtime";
   status: "passed" | "failed" | "skipped" | "blocked" | "flaky";
   command?: string;
@@ -1844,13 +1978,22 @@ interface VerificationRecordV1 {
   snapshotId: string;
   recordedAt: string;
   actor: string;
+  skipAcceptance?: {
+    actor: string;
+    reason: string;
+    acceptedAt: string;
+    eventId: string;
+  };
 }
 ```
 
 ```ts
 interface RecordVerificationInput {
   taskId: string;
-  record: Omit<VerificationRecordV1, "id" | "taskId" | "recordedAt" | "actor">;
+  record: Omit<
+    VerificationRecordV1,
+    "id" | "taskId" | "attempt" | "recordedAt" | "actor" | "skipAcceptance"
+  >;
   expectedRevision: number;
   idempotencyKey: string;
   actor: string;
@@ -1858,6 +2001,13 @@ interface RecordVerificationInput {
 ```
 
 P1 才增加受权限控制的命令执行和 Runtime Trace。
+
+`status=skipped` 可以先作为未接受记录写入；它不能让 Task 进入 `verified`。
+授权 Actor 必须随后使用 `accept_verification_skip` 强类型 Action 写入
+`skipAcceptance`，Verified Gate 才能把该记录视为满足对应验收项。
+每条 Verification 绑定一个 `verificationPlanEntryId`；同 Snapshot 重跑时由
+Task Engine 递增 attempt 并记录被替代 Record。Gate 只读取每个 Plan Entry
+的最新 attempt，历史失败不会永久污染已经成功的重跑。
 
 ### 9.6 Worktree 与 Cache 模型
 
@@ -1995,6 +2145,10 @@ WP0 只关闭 **Contract Freeze Gate**：冻结产品范围、Root/Error/Rendezv
 - 为现有 Graph、Meta、Fingerprint、Wiki、Diff 建 Artifact Descriptor。
 - 定义 V1 migration 和 compatibility policy。
 - 建立 JSON Schema/Zod round-trip tests。
+- 建立 Typed Artifact Dispatcher、Host 注入式 Digest Verifier 与浏览器可移植
+  Runtime Boundary。
+- 用真实 tarball 冷安装验证根入口、全部子路径、Schema/Fixture 静态资产、
+  TypeScript declarations 与 Browser Bundle。
 
 交付物：
 
@@ -2002,12 +2156,19 @@ WP0 只关闭 **Contract Freeze Gate**：冻结产品范围、Root/Error/Rendezv
 - Schema 文档。
 - Fixture Artifacts。
 - Migration Harness。
+- Contract Matrix、版本策略与 clean-checkout distribution smoke。
 
 退出条件：
 
-- 所有 Schema 有正反例。
-- 相同 Artifact 能被 Core、MCP 和 Dashboard 同时解析。
-- 旧 Graph/Wiki 能被兼容读取或明确标记不兼容。
+- 所有公开 Schema 有结构正例和 unknown-field 反例，跨记录语义由 Zod
+  Fixture 覆盖。
+- 相同 tracked reference Artifact 能被 Core、MCP DTO 和 Dashboard 同时解析；
+  错版本、悬空引用与 Digest mismatch 在消费者侧 fail closed。
+- 9 个注册 Legacy Descriptor 都有精确 Fixture；旧 Graph/Wiki 能被真实 Core
+  Reader 兼容读取或明确标记不兼容。
+- Task Event 可重放至最终状态；当前 Change Check、blocking Finding、Evidence
+  强度、Verification latest-attempt/retry 语义不可绕过。
+- Contracts 包能从无 `dist` 的干净副本完成 pack、冷安装、声明编译和浏览器打包。
 
 依赖：WP0。
 估算：1.5 周，3 person-weeks。

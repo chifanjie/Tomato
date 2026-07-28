@@ -1,0 +1,297 @@
+{
+  "schemaVersion": 1,
+  "repositoryId": "repository:fixture",
+  "worktreeId": "worktree:fixture",
+  "status": "ready",
+  "latestSnapshotId": "snapshot:actual",
+  "producerVersion": "3.0.0-alpha.1",
+  "updatedAt": "2026-07-28T08:12:00Z",
+  "reasons": [],
+  "artifacts": [
+    {
+      "descriptorVersion": 1,
+      "artifactId": "artifact:repository-snapshot",
+      "artifactType": "repository_snapshot",
+      "storageFormat": "enveloped_v1",
+      "path": ".understand-code/snapshots/snapshot:actual.json",
+      "schemaVersion": 1,
+      "producerVersion": "3.0.0-alpha.1",
+      "sourceSnapshotId": "snapshot:actual",
+      "revision": 0,
+      "contentDigest": "sha256:1b58264b1bbaef31b008cfe5b69f8a0ec20c070b199bcd8de4f8d3f78c2be819",
+      "state": "current",
+      "freshness": "fresh",
+      "generatedAt": "2026-07-28T08:12:00Z",
+      "dependencies": []
+    },
+    {
+      "descriptorVersion": 1,
+      "artifactId": "artifact:repo-pulse",
+      "artifactType": "repo_pulse",
+      "storageFormat": "enveloped_v1",
+      "path": ".understand-code/repo-pulse.json",
+      "schemaVersion": 1,
+      "producerVersion": "3.0.0-alpha.1",
+      "sourceSnapshotId": "snapshot:actual",
+      "revision": 0,
+      "contentDigest": "sha256:d1514c0b959dcf598607c730c0ce10998e513487f17c573f6bce58c0006dd8c0",
+      "state": "current",
+      "freshness": "fresh",
+      "generatedAt": "2026-07-28T08:12:00Z",
+      "dependencies": [
+        {
+          "artifactId": "artifact:repository-snapshot",
+          "relation": "requires",
+          "requiredDigest": "sha256:1b58264b1bbaef31b008cfe5b69f8a0ec20c070b199bcd8de4f8d3f78c2be819",
+          "requiredSnapshotId": "snapshot:actual"
+        }
+      ]
+    },
+    {
+      "descriptorVersion": 1,
+      "artifactId": "artifact:task-manifest",
+      "artifactType": "task_manifest",
+      "storageFormat": "enveloped_v1",
+      "path": ".understand-code/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAV/task.json",
+      "schemaVersion": 1,
+      "producerVersion": "3.0.0-alpha.1",
+      "sourceSnapshotId": "snapshot:actual",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "revision": 12,
+      "contentDigest": "sha256:8fa8cc442091ce5357f3326099d3107a87c3a7fae22fd1da928d0a377a95c701",
+      "state": "current",
+      "freshness": "fresh",
+      "generatedAt": "2026-07-28T08:12:00Z",
+      "dependencies": [
+        {
+          "artifactId": "artifact:repository-snapshot",
+          "relation": "requires",
+          "requiredDigest": "sha256:1b58264b1bbaef31b008cfe5b69f8a0ec20c070b199bcd8de4f8d3f78c2be819",
+          "requiredSnapshotId": "snapshot:actual"
+        },
+        {
+          "artifactId": "artifact:repo-pulse",
+          "relation": "requires",
+          "requiredDigest": "sha256:d1514c0b959dcf598607c730c0ce10998e513487f17c573f6bce58c0006dd8c0",
+          "requiredSnapshotId": "snapshot:actual"
+        }
+      ]
+    },
+    {
+      "descriptorVersion": 1,
+      "artifactId": "artifact:claim-ledger",
+      "artifactType": "claim_ledger",
+      "storageFormat": "enveloped_v1",
+      "path": ".understand-code/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAV/claims.json",
+      "schemaVersion": 1,
+      "producerVersion": "3.0.0-alpha.1",
+      "sourceSnapshotId": "snapshot:actual",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "revision": 12,
+      "contentDigest": "sha256:56f1e3a1d8c7378489879810c98c16b663dd1c24ce23917fedb6a3616cc271ff",
+      "state": "current",
+      "freshness": "fresh",
+      "generatedAt": "2026-07-28T08:12:00Z",
+      "dependencies": [
+        {
+          "artifactId": "artifact:task-manifest",
+          "relation": "requires",
+          "requiredDigest": "sha256:8fa8cc442091ce5357f3326099d3107a87c3a7fae22fd1da928d0a377a95c701",
+          "requiredSnapshotId": "snapshot:actual"
+        }
+      ]
+    },
+    {
+      "descriptorVersion": 1,
+      "artifactId": "artifact:evidence-ledger",
+      "artifactType": "evidence_ledger",
+      "storageFormat": "enveloped_v1",
+      "path": ".understand-code/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAV/evidence.json",
+      "schemaVersion": 1,
+      "producerVersion": "3.0.0-alpha.1",
+      "sourceSnapshotId": "snapshot:actual",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "revision": 12,
+      "contentDigest": "sha256:a79b30aa344456717c43be70d909d74f2859416e11e9f8a91c686a71516c219b",
+      "state": "current",
+      "freshness": "fresh",
+      "generatedAt": "2026-07-28T08:12:00Z",
+      "dependencies": [
+        {
+          "artifactId": "artifact:task-manifest",
+          "relation": "requires",
+          "requiredDigest": "sha256:8fa8cc442091ce5357f3326099d3107a87c3a7fae22fd1da928d0a377a95c701",
+          "requiredSnapshotId": "snapshot:actual"
+        },
+        {
+          "artifactId": "artifact:claim-ledger",
+          "relation": "requires",
+          "requiredDigest": "sha256:56f1e3a1d8c7378489879810c98c16b663dd1c24ce23917fedb6a3616cc271ff",
+          "requiredSnapshotId": "snapshot:actual"
+        }
+      ]
+    },
+    {
+      "descriptorVersion": 1,
+      "artifactId": "artifact:impact",
+      "artifactType": "impact",
+      "storageFormat": "enveloped_v1",
+      "path": ".understand-code/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAV/impact.json",
+      "schemaVersion": 1,
+      "producerVersion": "3.0.0-alpha.1",
+      "sourceSnapshotId": "snapshot:actual",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "revision": 12,
+      "contentDigest": "sha256:ec9119e476909cc1a0f7dd71f62214fb0b8c6d119fdd768d2de0627836675009",
+      "state": "current",
+      "freshness": "fresh",
+      "generatedAt": "2026-07-28T08:12:00Z",
+      "dependencies": [
+        {
+          "artifactId": "artifact:claim-ledger",
+          "relation": "requires",
+          "requiredDigest": "sha256:56f1e3a1d8c7378489879810c98c16b663dd1c24ce23917fedb6a3616cc271ff",
+          "requiredSnapshotId": "snapshot:actual"
+        },
+        {
+          "artifactId": "artifact:evidence-ledger",
+          "relation": "requires",
+          "requiredDigest": "sha256:a79b30aa344456717c43be70d909d74f2859416e11e9f8a91c686a71516c219b",
+          "requiredSnapshotId": "snapshot:actual"
+        }
+      ]
+    },
+    {
+      "descriptorVersion": 1,
+      "artifactId": "artifact:task-brief",
+      "artifactType": "task_brief",
+      "storageFormat": "enveloped_v1",
+      "path": ".understand-code/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAV/task-brief.json",
+      "schemaVersion": 1,
+      "producerVersion": "3.0.0-alpha.1",
+      "sourceSnapshotId": "snapshot:actual",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "revision": 12,
+      "contentDigest": "sha256:1842f61ef3e0ddb3dbd29ba9b7141413aa11d69d59ac449ec0c26ceab7bfa6ec",
+      "state": "current",
+      "freshness": "fresh",
+      "generatedAt": "2026-07-28T08:12:00Z",
+      "dependencies": [
+        {
+          "artifactId": "artifact:task-manifest",
+          "relation": "requires",
+          "requiredDigest": "sha256:8fa8cc442091ce5357f3326099d3107a87c3a7fae22fd1da928d0a377a95c701",
+          "requiredSnapshotId": "snapshot:actual"
+        },
+        {
+          "artifactId": "artifact:claim-ledger",
+          "relation": "requires",
+          "requiredDigest": "sha256:56f1e3a1d8c7378489879810c98c16b663dd1c24ce23917fedb6a3616cc271ff",
+          "requiredSnapshotId": "snapshot:actual"
+        },
+        {
+          "artifactId": "artifact:evidence-ledger",
+          "relation": "requires",
+          "requiredDigest": "sha256:a79b30aa344456717c43be70d909d74f2859416e11e9f8a91c686a71516c219b",
+          "requiredSnapshotId": "snapshot:actual"
+        },
+        {
+          "artifactId": "artifact:impact",
+          "relation": "requires",
+          "requiredDigest": "sha256:ec9119e476909cc1a0f7dd71f62214fb0b8c6d119fdd768d2de0627836675009",
+          "requiredSnapshotId": "snapshot:actual"
+        }
+      ]
+    },
+    {
+      "descriptorVersion": 1,
+      "artifactId": "artifact:change-check",
+      "artifactType": "change_check",
+      "storageFormat": "enveloped_v1",
+      "path": ".understand-code/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAV/change-check.json",
+      "schemaVersion": 1,
+      "producerVersion": "3.0.0-alpha.1",
+      "sourceSnapshotId": "snapshot:actual",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "revision": 12,
+      "contentDigest": "sha256:cd3320d507e319e3763b1de45d88250b1e0386765e0a670614e5d2126a138ec5",
+      "state": "current",
+      "freshness": "fresh",
+      "generatedAt": "2026-07-28T08:12:00Z",
+      "dependencies": [
+        {
+          "artifactId": "artifact:task-brief",
+          "relation": "requires",
+          "requiredDigest": "sha256:1842f61ef3e0ddb3dbd29ba9b7141413aa11d69d59ac449ec0c26ceab7bfa6ec",
+          "requiredSnapshotId": "snapshot:actual"
+        },
+        {
+          "artifactId": "artifact:evidence-ledger",
+          "relation": "requires",
+          "requiredDigest": "sha256:a79b30aa344456717c43be70d909d74f2859416e11e9f8a91c686a71516c219b",
+          "requiredSnapshotId": "snapshot:actual"
+        },
+        {
+          "artifactId": "artifact:impact",
+          "relation": "requires",
+          "requiredDigest": "sha256:ec9119e476909cc1a0f7dd71f62214fb0b8c6d119fdd768d2de0627836675009",
+          "requiredSnapshotId": "snapshot:actual"
+        }
+      ]
+    },
+    {
+      "descriptorVersion": 1,
+      "artifactId": "artifact:verification",
+      "artifactType": "verification",
+      "storageFormat": "enveloped_v1",
+      "path": ".understand-code/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAV/verification.json",
+      "schemaVersion": 1,
+      "producerVersion": "3.0.0-alpha.1",
+      "sourceSnapshotId": "snapshot:actual",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "revision": 12,
+      "contentDigest": "sha256:8889847bf05b7edfc1383b9576067de47e475780c20fae97b47f7736025cf9d0",
+      "state": "current",
+      "freshness": "fresh",
+      "generatedAt": "2026-07-28T08:12:00Z",
+      "dependencies": [
+        {
+          "artifactId": "artifact:change-check",
+          "relation": "requires",
+          "requiredDigest": "sha256:cd3320d507e319e3763b1de45d88250b1e0386765e0a670614e5d2126a138ec5",
+          "requiredSnapshotId": "snapshot:actual"
+        },
+        {
+          "artifactId": "artifact:claim-ledger",
+          "relation": "requires",
+          "requiredDigest": "sha256:56f1e3a1d8c7378489879810c98c16b663dd1c24ce23917fedb6a3616cc271ff",
+          "requiredSnapshotId": "snapshot:actual"
+        }
+      ]
+    },
+    {
+      "descriptorVersion": 1,
+      "artifactId": "artifact:task-events",
+      "artifactType": "task_event_log",
+      "storageFormat": "jsonl_v1",
+      "path": ".understand-code/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAV/events.jsonl",
+      "schemaVersion": 1,
+      "producerVersion": "3.0.0-alpha.1",
+      "sourceSnapshotId": "snapshot:actual",
+      "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "revision": 12,
+      "contentDigest": "sha256:919b33b4f9a3f4063995732affa0b41b2cca0ccf3277b5b4ab64b64b8b94079a",
+      "state": "current",
+      "freshness": "fresh",
+      "generatedAt": "2026-07-28T08:12:00Z",
+      "dependencies": [
+        {
+          "artifactId": "artifact:task-manifest",
+          "relation": "requires",
+          "requiredDigest": "sha256:8fa8cc442091ce5357f3326099d3107a87c3a7fae22fd1da928d0a377a95c701",
+          "requiredSnapshotId": "snapshot:actual"
+        }
+      ]
+    }
+  ]
+}

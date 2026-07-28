@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "claim_ledger",
+  "artifactId": "artifact:claim-ledger",
+  "repositoryId": "repository:fixture",
+  "worktreeId": "worktree:fixture",
+  "sourceSnapshotId": "snapshot:actual",
+  "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "revision": 12,
+  "producerVersion": "3.0.0-alpha.1",
+  "createdAt": "2026-07-28T08:12:00Z",
+  "contentDigest": "sha256:56f1e3a1d8c7378489879810c98c16b663dd1c24ce23917fedb6a3616cc271ff",
+  "payload": {
+    "claims": [
+      {
+        "id": "claim:goal",
+        "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "kind": "goal",
+        "statement": "Agent handoffs preserve one task context.",
+        "epistemicStatus": "human_confirmed",
+        "lifecycleStatus": "supported",
+        "freshness": "current",
+        "sourceSnapshotId": "snapshot:actual",
+        "evidenceIds": [
+          "evidence:goal"
+        ],
+        "findingIds": [],
+        "verificationRecordIds": [],
+        "confirmationEventId": "event:3",
+        "createdAt": "2026-07-28T08:00:00Z",
+        "updatedAt": "2026-07-28T08:12:00Z"
+      },
+      {
+        "id": "claim:acceptance",
+        "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "kind": "acceptance",
+        "statement": "The same artifact parses in every supported consumer.",
+        "epistemicStatus": "human_confirmed",
+        "lifecycleStatus": "supported",
+        "freshness": "current",
+        "sourceSnapshotId": "snapshot:actual",
+        "evidenceIds": [
+          "evidence:acceptance"
+        ],
+        "findingIds": [],
+        "verificationRecordIds": [
+          "verification:test"
+        ],
+        "confirmationEventId": "event:4",
+        "createdAt": "2026-07-28T08:00:00Z",
+        "updatedAt": "2026-07-28T08:12:00Z"
+      },
+      {
+        "id": "claim:recommendation",
+        "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "kind": "recommendation",
+        "statement": "Change the task handler while preserving stable IDs.",
+        "epistemicStatus": "observed",
+        "lifecycleStatus": "supported",
+        "freshness": "current",
+        "sourceSnapshotId": "snapshot:actual",
+        "evidenceIds": [
+          "evidence:source"
+        ],
+        "findingIds": [
+          "finding:planned-completed"
+        ],
+        "verificationRecordIds": [],
+        "createdAt": "2026-07-28T08:00:00Z",
+        "updatedAt": "2026-07-28T08:12:00Z"
+      },
+      {
+        "id": "claim:finding-planned-completed",
+        "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "kind": "finding",
+        "statement": "The planned task-handler change is present in the final Snapshot.",
+        "epistemicStatus": "observed",
+        "lifecycleStatus": "supported",
+        "freshness": "current",
+        "sourceSnapshotId": "snapshot:actual",
+        "evidenceIds": [
+          "evidence:source"
+        ],
+        "findingIds": [
+          "finding:planned-completed"
+        ],
+        "verificationRecordIds": [],
+        "createdAt": "2026-07-28T08:00:00Z",
+        "updatedAt": "2026-07-28T08:12:00Z"
+      }
+    ]
+  }
+}

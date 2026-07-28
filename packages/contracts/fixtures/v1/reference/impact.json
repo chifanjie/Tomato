@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "impact",
+  "artifactId": "artifact:impact",
+  "repositoryId": "repository:fixture",
+  "worktreeId": "worktree:fixture",
+  "sourceSnapshotId": "snapshot:actual",
+  "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "revision": 12,
+  "producerVersion": "3.0.0-alpha.1",
+  "createdAt": "2026-07-28T08:12:00Z",
+  "contentDigest": "sha256:ec9119e476909cc1a0f7dd71f62214fb0b8c6d119fdd768d2de0627836675009",
+  "payload": {
+    "paths": [
+      {
+        "id": "impact:task-to-consumer",
+        "sourceNodeId": "symbol:task-handler",
+        "targetNodeId": "symbol:agent-consumer",
+        "classification": "observed",
+        "claimIds": [
+          "claim:recommendation"
+        ],
+        "steps": [
+          {
+            "source": "symbol:task-handler",
+            "edgeType": "calls",
+            "target": "symbol:agent-consumer",
+            "direction": "downstream",
+            "evidenceId": "evidence:source",
+            "confidence": "exact"
+          }
+        ]
+      }
+    ]
+  }
+}

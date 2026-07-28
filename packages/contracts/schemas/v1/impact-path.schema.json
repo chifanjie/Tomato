@@ -1,0 +1,127 @@
+{
+  "$id": "urn:understand-code:schema:v1:impact-path",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "sourceNodeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "targetNodeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "classification": {
+      "type": "string",
+      "enum": [
+        "observed",
+        "inferred",
+        "unknown_boundary"
+      ]
+    },
+    "claimIds": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      }
+    },
+    "steps": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "edgeType": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16384
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "upstream",
+              "downstream"
+            ]
+          },
+          "evidenceId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "same-file",
+              "imported-package",
+              "heuristic"
+            ]
+          }
+        },
+        "required": [
+          "source",
+          "edgeType",
+          "target",
+          "direction"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "boundaryReason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16384
+    },
+    "truncatedAt": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string",
+          "enum": [
+            "depth",
+            "node_budget",
+            "unsupported_dynamic_edge"
+          ]
+        },
+        "hiddenCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "id",
+    "sourceNodeId",
+    "targetNodeId",
+    "classification",
+    "claimIds",
+    "steps"
+  ],
+  "additionalProperties": false
+}

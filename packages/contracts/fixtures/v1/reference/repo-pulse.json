@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "repo_pulse",
+  "artifactId": "artifact:repo-pulse",
+  "repositoryId": "repository:fixture",
+  "worktreeId": "worktree:fixture",
+  "sourceSnapshotId": "snapshot:actual",
+  "revision": 0,
+  "producerVersion": "3.0.0-alpha.1",
+  "createdAt": "2026-07-28T08:12:00Z",
+  "contentDigest": "sha256:d1514c0b959dcf598607c730c0ce10998e513487f17c573f6bce58c0006dd8c0",
+  "payload": {
+    "evaluatedSnapshotId": "snapshot:actual",
+    "baselineSnapshotId": "snapshot:baseline",
+    "status": "fresh",
+    "artifactFreshness": {
+      "graph": "fresh",
+      "wiki": "fresh",
+      "evidence": "fresh",
+      "diff": "fresh",
+      "task": "fresh"
+    },
+    "repositoryState": {
+      "rootIdentity": "root:fixture",
+      "branch": "feature/reference-fixture",
+      "baselineCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "headCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "mergeBase": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ahead": 0,
+      "behind": 0,
+      "captureStatus": "complete",
+      "limitations": []
+    },
+    "changeSummary": {
+      "total": 1,
+      "bySource": {
+        "committed": 0,
+        "staged": 0,
+        "unstaged": 1,
+        "untracked": 0,
+        "conflict": 0
+      },
+      "byKind": {
+        "added": 0,
+        "modified": 1,
+        "deleted": 0,
+        "renamed": 0,
+        "copied": 0,
+        "type_changed": 0
+      }
+    },
+    "completeness": {
+      "parser": {
+        "status": "complete",
+        "coverage": 1,
+        "reasons": []
+      },
+      "callGraph": {
+        "status": "complete",
+        "coverage": 1,
+        "reasons": []
+      }
+    },
+    "recommendedRefresh": "none",
+    "errors": [],
+    "unknowns": [],
+    "reasons": [],
+    "evaluatedAt": "2026-07-28T08:12:00Z"
+  }
+}

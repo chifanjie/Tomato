@@ -1,0 +1,43 @@
+{
+  "version": 2,
+  "generatedAt": "2026-07-28T08:00:00Z",
+  "generationMode": "writer",
+  "source": {
+    "outputLanguage": "zh-CN",
+    "sourceRootIdentity": "fixture-root",
+    "graphDigest": "sha256:d0424eb278974a582488c9f46d5ab949138de13e5fd90ee367dc6e3878bedbe9",
+    "gitCommitHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "sourceRead": {
+    "covered": 1,
+    "total": 1,
+    "missingIds": []
+  },
+  "mainReadiness": {
+    "status": "ready",
+    "reasons": [],
+    "routePageIds": [
+      "page:overview"
+    ]
+  },
+  "referenceCoverage": {
+    "status": "complete",
+    "files": {
+      "covered": 1,
+      "total": 1,
+      "missingIds": []
+    },
+    "functions": {
+      "covered": 0,
+      "total": 0,
+      "missingIds": []
+    },
+    "types": {
+      "covered": 0,
+      "total": 0,
+      "missingIds": []
+    }
+  },
+  "warnings": [],
+  "errors": []
+}

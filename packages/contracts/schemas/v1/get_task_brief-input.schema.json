@@ -1,0 +1,39 @@
+{
+  "$id": "urn:understand-code:schema:v1:get_task_brief-input",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "taskId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "section": {
+      "type": "string",
+      "enum": [
+        "summary",
+        "goals",
+        "reading_path",
+        "planned_changes",
+        "assumptions",
+        "risks",
+        "unknowns",
+        "verification_plan"
+      ]
+    },
+    "cursor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "pageSize": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200
+    }
+  },
+  "required": [
+    "taskId",
+    "section"
+  ],
+  "additionalProperties": false
+}

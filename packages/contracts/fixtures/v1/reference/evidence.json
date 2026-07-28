@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "evidence_ledger",
+  "artifactId": "artifact:evidence-ledger",
+  "repositoryId": "repository:fixture",
+  "worktreeId": "worktree:fixture",
+  "sourceSnapshotId": "snapshot:actual",
+  "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "revision": 12,
+  "producerVersion": "3.0.0-alpha.1",
+  "createdAt": "2026-07-28T08:12:00Z",
+  "contentDigest": "sha256:a79b30aa344456717c43be70d909d74f2859416e11e9f8a91c686a71516c219b",
+  "payload": {
+    "evidence": [
+      {
+        "id": "evidence:goal",
+        "kind": "human",
+        "epistemicStatus": "human_confirmed",
+        "freshness": "current",
+        "claimIds": [
+          "claim:goal"
+        ],
+        "nodeIds": [],
+        "producedBy": "codex",
+        "createdAt": "2026-07-28T08:00:00Z",
+        "observedAtSnapshotId": "snapshot:actual",
+        "confirmation": {
+          "actor": "developer",
+          "input": "Preserve one task context across Agent handoffs.",
+          "confirmedAt": "2026-07-28T08:02:00Z"
+        }
+      },
+      {
+        "id": "evidence:acceptance",
+        "kind": "human",
+        "epistemicStatus": "human_confirmed",
+        "freshness": "current",
+        "claimIds": [
+          "claim:acceptance"
+        ],
+        "nodeIds": [],
+        "producedBy": "codex",
+        "createdAt": "2026-07-28T08:00:00Z",
+        "observedAtSnapshotId": "snapshot:actual",
+        "confirmation": {
+          "actor": "developer",
+          "input": "Require cross-consumer parsing.",
+          "confirmedAt": "2026-07-28T08:03:00Z"
+        }
+      },
+      {
+        "id": "evidence:source",
+        "kind": "source",
+        "epistemicStatus": "observed",
+        "freshness": "current",
+        "claimIds": [
+          "claim:recommendation",
+          "claim:finding-planned-completed"
+        ],
+        "nodeIds": [
+          "symbol:task-handler"
+        ],
+        "producedBy": "core",
+        "createdAt": "2026-07-28T08:00:00Z",
+        "observedAtSnapshotId": "snapshot:actual",
+        "filePath": "src/task.ts",
+        "lineRange": [
+          10,
+          24
+        ],
+        "excerpt": "export function updateTask() { /* fixture */ }",
+        "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "contentHash": "sha256:13f49e7fbb0cabd0ecd0bf679bacdcc0ab50375a07d36fb81fa15fc9e6aa0bd6"
+      }
+    ]
+  }
+}

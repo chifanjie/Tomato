@@ -1,0 +1,97 @@
+{
+  "version": 2,
+  "generatedAt": "2026-07-28T08:00:00Z",
+  "projectName": "contract-fixture",
+  "source": {
+    "outputLanguage": "zh-CN",
+    "generationMode": "writer",
+    "graphDigest": "sha256:d0424eb278974a582488c9f46d5ab949138de13e5fd90ee367dc6e3878bedbe9",
+    "gitCommitHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sourceRootIdentity": "fixture-root"
+  },
+  "mainReadiness": {
+    "status": "ready",
+    "reasons": [],
+    "routePageIds": [
+      "page:overview"
+    ]
+  },
+  "referenceCoverage": {
+    "status": "complete",
+    "files": {
+      "covered": 1,
+      "total": 1,
+      "missingIds": []
+    },
+    "functions": {
+      "covered": 0,
+      "total": 0,
+      "missingIds": []
+    },
+    "types": {
+      "covered": 0,
+      "total": 0,
+      "missingIds": []
+    }
+  },
+  "pages": [
+    {
+      "id": "page:overview",
+      "title": "项目总览",
+      "summary": "Legacy Wiki V2 fixture.",
+      "markdownPath": "knowledge-base/overview.md",
+      "role": "featured",
+      "category": "overview",
+      "quality": "generated",
+      "generationStatus": "complete",
+      "directNodeIds": [
+        "file:src/task.ts"
+      ],
+      "contextNodeIds": [],
+      "evidenceIds": [
+        "wiki-evidence:task"
+      ],
+      "searchTerms": [
+        "task"
+      ],
+      "route": {
+        "order": 0,
+        "stage": "purpose"
+      }
+    }
+  ],
+  "nodeDocumentation": [
+    {
+      "nodeId": "file:src/task.ts",
+      "relation": "direct",
+      "quality": "generated",
+      "evidenceHealth": "source-linked",
+      "generationStatus": "complete",
+      "referenceCoverage": "anchored",
+      "directPageIds": [
+        "page:overview"
+      ],
+      "contextPageIds": [],
+      "evidenceIds": [
+        "wiki-evidence:task"
+      ],
+      "primaryPageId": "page:overview",
+      "anchor": "task"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "wiki-evidence:task",
+      "nodeIds": [
+        "file:src/task.ts"
+      ],
+      "filePath": "src/task.ts",
+      "lineRange": [
+        1,
+        1
+      ],
+      "excerpt": "export const task = true;",
+      "evidenceType": "production"
+    }
+  ]
+}

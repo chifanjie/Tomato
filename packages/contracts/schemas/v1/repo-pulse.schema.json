@@ -1,0 +1,375 @@
+{
+  "$id": "urn:understand-code:schema:v1:repo-pulse",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "evaluatedSnapshotId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "baselineSnapshotId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "not_ready",
+        "fresh",
+        "partial",
+        "stale",
+        "unknown",
+        "rebuilding",
+        "error"
+      ]
+    },
+    "artifactFreshness": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "type": "string",
+        "enum": [
+          "fresh",
+          "partial",
+          "stale",
+          "missing",
+          "error"
+        ]
+      }
+    },
+    "repositoryState": {
+      "type": "object",
+      "properties": {
+        "rootIdentity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "baselineCommit": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "headCommit": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "mergeBase": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "ahead": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "behind": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "captureStatus": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "partial",
+            "error"
+          ]
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        }
+      },
+      "required": [
+        "rootIdentity",
+        "captureStatus",
+        "limitations"
+      ],
+      "additionalProperties": false
+    },
+    "changeSummary": {
+      "type": "object",
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bySource": {
+          "type": "object",
+          "properties": {
+            "committed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "staged": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "unstaged": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "untracked": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "conflict": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "committed",
+            "staged",
+            "unstaged",
+            "untracked",
+            "conflict"
+          ],
+          "additionalProperties": false
+        },
+        "byKind": {
+          "type": "object",
+          "properties": {
+            "added": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "modified": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "deleted": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "renamed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "copied": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "type_changed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "added",
+            "modified",
+            "deleted",
+            "renamed",
+            "copied",
+            "type_changed"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "total",
+        "bySource",
+        "byKind"
+      ],
+      "additionalProperties": false
+    },
+    "completeness": {
+      "type": "object",
+      "properties": {
+        "parser": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "complete",
+                "partial",
+                "unknown",
+                "unsupported"
+              ]
+            },
+            "coverage": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "reasons": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            }
+          },
+          "required": [
+            "status",
+            "reasons"
+          ],
+          "additionalProperties": false
+        },
+        "callGraph": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "complete",
+                "partial",
+                "unknown",
+                "unsupported"
+              ]
+            },
+            "coverage": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "reasons": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            }
+          },
+          "required": [
+            "status",
+            "reasons"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "parser",
+        "callGraph"
+      ],
+      "additionalProperties": false
+    },
+    "recommendedRefresh": {
+      "type": "string",
+      "enum": [
+        "none",
+        "incremental",
+        "full"
+      ]
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "repository",
+              "git",
+              "artifact",
+              "parser",
+              "call_graph",
+              "refresh"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "code",
+          "scope",
+          "message"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "repository",
+              "git",
+              "artifact",
+              "parser",
+              "call_graph",
+              "refresh"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "code",
+          "scope",
+          "message"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "reasons": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      }
+    },
+    "evaluatedAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+    }
+  },
+  "required": [
+    "evaluatedSnapshotId",
+    "status",
+    "artifactFreshness",
+    "reasons",
+    "evaluatedAt"
+  ],
+  "additionalProperties": false
+}

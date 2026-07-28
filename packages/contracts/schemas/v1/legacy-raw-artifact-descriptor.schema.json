@@ -1,0 +1,74 @@
+{
+  "$id": "urn:understand-code:schema:v1:legacy-raw-artifact-descriptor",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "descriptorVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "storageFormat": {
+      "type": "string",
+      "const": "legacy_raw"
+    },
+    "artifactType": {
+      "type": "string",
+      "enum": [
+        "graph",
+        "graph_meta",
+        "fingerprint",
+        "wiki_index",
+        "wiki_search_index",
+        "wiki_document_traces",
+        "wiki_generation_report",
+        "diff_overlay"
+      ]
+    },
+    "format": {
+      "type": "string",
+      "enum": [
+        "graph_v1",
+        "graph_meta_v1",
+        "fingerprint_v1",
+        "wiki_v1",
+        "wiki_v2",
+        "wiki_search_v2",
+        "wiki_document_traces_v2",
+        "wiki_generation_report_v2",
+        "diff_overlay_v1"
+      ]
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "schemaVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "readPolicy": {
+      "type": "string",
+      "enum": [
+        "legacy_read_write",
+        "legacy_read_only",
+        "historical_read_only"
+      ]
+    },
+    "producerVersion": {
+      "type": "string",
+      "pattern": "^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    }
+  },
+  "required": [
+    "descriptorVersion",
+    "storageFormat",
+    "artifactType",
+    "format",
+    "path",
+    "schemaVersion",
+    "readPolicy"
+  ],
+  "additionalProperties": false
+}

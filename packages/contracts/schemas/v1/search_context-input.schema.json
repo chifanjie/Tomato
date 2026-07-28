@@ -1,0 +1,58 @@
+{
+  "$id": "urn:understand-code:schema:v1:search_context-input",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192
+    },
+    "taskId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "scopes": {
+      "minItems": 1,
+      "maxItems": 4,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "file",
+          "symbol",
+          "wiki",
+          "graph"
+        ]
+      }
+    },
+    "pathPrefixes": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      }
+    },
+    "tokenBudget": {
+      "type": "integer",
+      "minimum": 128,
+      "maximum": 100000
+    },
+    "cursor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "pageSize": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200
+    }
+  },
+  "required": [
+    "query"
+  ],
+  "additionalProperties": false
+}

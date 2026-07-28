@@ -1,0 +1,35 @@
+{
+  "$id": "urn:understand-code:schema:v1:refresh_index-input",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "mode": {
+      "type": "string",
+      "enum": [
+        "incremental",
+        "full"
+      ]
+    },
+    "expectedSourceSnapshotId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "actor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    }
+  },
+  "required": [
+    "mode",
+    "idempotencyKey",
+    "actor"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,159 @@
+{
+  "$id": "urn:understand-code:schema:v1:repository-snapshot",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "snapshotId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "repositoryId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "worktreeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "rootIdentity": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "branch": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "headCommit": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "baseCommit": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "mergeBase": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "indexDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "worktreeDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "untrackedDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "ignoreDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "createdAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+    },
+    "captureStatus": {
+      "type": "string",
+      "enum": [
+        "complete",
+        "partial",
+        "error"
+      ]
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      }
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "oldPath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "committed",
+              "staged",
+              "unstaged",
+              "untracked",
+              "conflict"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "added",
+              "modified",
+              "deleted",
+              "renamed",
+              "copied",
+              "type_changed"
+            ]
+          },
+          "contentDigest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "previousContentDigest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "id",
+          "path",
+          "source",
+          "kind"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "snapshotId",
+    "repositoryId",
+    "worktreeId",
+    "rootIdentity",
+    "indexDigest",
+    "worktreeDigest",
+    "untrackedDigest",
+    "ignoreDigest",
+    "createdAt",
+    "captureStatus",
+    "limitations",
+    "changes"
+  ],
+  "additionalProperties": false
+}

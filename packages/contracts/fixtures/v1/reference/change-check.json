@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "change_check",
+  "artifactId": "artifact:change-check",
+  "repositoryId": "repository:fixture",
+  "worktreeId": "worktree:fixture",
+  "sourceSnapshotId": "snapshot:actual",
+  "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "revision": 12,
+  "producerVersion": "3.0.0-alpha.1",
+  "createdAt": "2026-07-28T08:12:00Z",
+  "contentDigest": "sha256:cd3320d507e319e3763b1de45d88250b1e0386765e0a670614e5d2126a138ec5",
+  "payload": {
+    "schemaVersion": 1,
+    "id": "change-check:final",
+    "taskId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+    "taskRevision": 9,
+    "baselineSnapshotId": "snapshot:baseline",
+    "actualSnapshotId": "snapshot:actual",
+    "findings": [
+      {
+        "id": "finding:planned-completed",
+        "type": "planned_completed",
+        "severity": "info",
+        "blocking": false,
+        "summary": "The planned task handler changed.",
+        "claimIds": [
+          "claim:recommendation",
+          "claim:finding-planned-completed"
+        ],
+        "plannedChangeIds": [
+          "planned-change:task"
+        ],
+        "actualChangeIds": [
+          "change:implementation"
+        ],
+        "evidenceIds": [
+          "evidence:source"
+        ],
+        "impactPathIds": [
+          "impact:task-to-consumer"
+        ]
+      }
+    ],
+    "generatedAt": "2026-07-28T08:08:00Z"
+  }
+}

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 export const BUILD_ARTIFACT_PATHS = Object.freeze([
   "dist",
+  "packages/contracts/dist",
   "packages/core/dist",
   "packages/dashboard/dist",
   "packages/dashboard/node_modules/.tmp/tsconfig.app.tsBuildInfoFile",

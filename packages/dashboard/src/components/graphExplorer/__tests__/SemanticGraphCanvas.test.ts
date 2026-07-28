@@ -79,6 +79,10 @@ import SemanticGraphCanvas from "../SemanticGraphCanvas";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const source = readFileSync(resolve(process.cwd(), "src/components/graphExplorer/SemanticGraphCanvas.tsx"), "utf8");
+const canvasModelSource = readFileSync(
+  resolve(process.cwd(), "src/components/graphExplorer/semanticGraphCanvasModel.ts"),
+  "utf8",
+);
 const explorerSource = readFileSync(resolve(process.cwd(), "src/components/graphExplorer/GraphExplorer.tsx"), "utf8");
 const cssSource = readFileSync(resolve(process.cwd(), "src/index.css"), "utf8");
 
@@ -593,7 +597,10 @@ describe("SemanticGraphCanvas interaction contract", () => {
     expect(source).toContain('readableViewport(undefined, "visible", 0.08, {');
     expect(source).toContain("MINIMAP_RIGHT_SAFE_INSET");
     expect(source).toContain("fitViewportInsets");
-    expect(source).toContain("role: layoutEdgeRole(edge, inputNavigation.level)");
+    expect(source).toContain("buildGraphLayoutMessage({");
+    expect(canvasModelSource).toContain(
+      "role: graphLayoutEdgeRole(edge, input.navigation.level)",
+    );
     expect(source).not.toContain("fitViewOptions=");
     expect(source).not.toContain("fitView\n");
     expect(source).not.toContain("key={viewKey}");

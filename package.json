@@ -5,6 +5,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
+    "benchmark:large-repository": "pnpm --filter @understand-code/dashboard --fail-if-no-match benchmark:large-repository",
     "build": "tsc",
     "build:all": "pnpm run clean:build && pnpm --filter @understand-code/core --fail-if-no-match build && pnpm run build && pnpm --filter @understand-code/dashboard --fail-if-no-match build",
     "clean:build": "node scripts/clean-build-artifacts.mjs",

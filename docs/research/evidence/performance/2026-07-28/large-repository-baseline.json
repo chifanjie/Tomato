@@ -1,0 +1,479 @@
+{
+  "capturedAt": "2026-07-28T06:29:59.857Z",
+  "product": {
+    "name": "@understand-code/skill",
+    "version": "2.7.5",
+    "gitCommit": "e6d8ae56a30201c11a9c963fd9aaa82c3e6489bd",
+    "gitDirty": true
+  },
+  "runtime": {
+    "node": "v26.0.0",
+    "v8": "14.6.202.33-node.19",
+    "pnpm": "11.2.2"
+  },
+  "machine": {
+    "platform": "darwin",
+    "release": "25.5.0",
+    "architecture": "arm64",
+    "cpuModel": "Apple M3",
+    "logicalCpuCount": 8,
+    "totalMemoryBytes": 17179869184
+  },
+  "implementation": {
+    "lockfileSha256": "6860b4988f34f7d2259a94948abdefbdc3c37be03ea1e38d8c51b9ad33dcec87",
+    "sourceSha256": {
+      "packages/dashboard/src/graphExplorer/benchmarks/largeRepositoryPerformanceFixture.ts": "d65ba611483725526256c823e5648e74989322fe6a96bb89a4ba9f1c818deb2f",
+      "packages/dashboard/src/graphExplorer/benchmarks/largeRepositoryBenchmark.ts": "a4677f3a52187129504bed40b883601828163e4ec7727beb119a6cacc49db641",
+      "packages/dashboard/src/graphExplorer/hierarchicalGraph.ts": "dce6aec93cdcfadab7a925fba630e9edfa9fe78d72b6754fa8a8a004538caffc",
+      "packages/dashboard/src/graphExplorer/graphQuickJump.ts": "871b653050d6228807a59e7471b0f73852703ccbcf6e8cc3cc00827e6f81a649",
+      "packages/dashboard/src/components/graphExplorer/semanticGraphCanvasModel.ts": "9418f58ba69ddeae0844531f7f3f853eb712b0fe0a0dbb25de6dce463ff789bc",
+      "packages/dashboard/src/utils/layoutAlgorithm.ts": "3a4e3ea752ac5e921a89fddda36d1bf4f04b6e3993c6e7b57d31fc576992500a"
+    }
+  },
+  "benchmark": {
+    "schemaVersion": 2,
+    "protocol": {
+      "version": 2,
+      "coldSamples": 10,
+      "warmupSamples": 5,
+      "warmSamples": 30
+    },
+    "corpora": [
+      {
+        "corpus": {
+          "id": "self-host-shape",
+          "label": "Understand Code self-host shape",
+          "fixtureVersion": "large-repository-v1",
+          "source": {
+            "kind": "self-host-snapshot",
+            "graphCommit": "1bd770581e16db58e763216bfeff2db34dd29711",
+            "capturedAt": "2026-07-24T02:59:07.611Z"
+          },
+          "expectedChecksum": "fnv1a32:df6768af",
+          "expectedIntegrity": {
+            "hierarchyClusterCount": 307,
+            "quickJumpItemCount": 1652,
+            "minimumRenderedNodeCount": 1,
+            "maximumRenderedNodeCount": 33,
+            "maximumRenderedEdgeCount": 100,
+            "workloadChecksum": 176581
+          },
+          "scopeCount": 9,
+          "nodeTypeCounts": {
+            "file": 325,
+            "function": 795,
+            "class": 33,
+            "config": 12,
+            "document": 98,
+            "service": 1
+          },
+          "edgeTypeCounts": {
+            "contains": 828,
+            "calls": 614,
+            "exports": 414,
+            "imports": 215,
+            "tested_by": 119,
+            "documents": 79,
+            "related": 20,
+            "configures": 8,
+            "depends_on": 2
+          },
+          "budgetsMs": {
+            "coldCacheBootstrapP95": 2000,
+            "warmViewProjectionP95": 500,
+            "warmLayoutP95": 500
+          },
+          "nodeCount": 1264,
+          "edgeCount": 2299
+        },
+        "measurements": [
+          {
+            "operation": "graph-model-bootstrap",
+            "cacheState": "cold",
+            "warmupSamples": 0,
+            "sampleCount": 10,
+            "samplesMs": [
+              37.752,
+              21.139,
+              17.077,
+              16.866,
+              17.88,
+              17.176,
+              15.701,
+              15.163,
+              16.669,
+              18.923
+            ],
+            "statistics": {
+              "minimumMs": 15.163,
+              "p50Ms": 17.077,
+              "p95Ms": 37.752,
+              "maximumMs": 37.752
+            },
+            "budget": {
+              "percentile": "p95",
+              "limitMs": 2000,
+              "source": "P0 Task Graph initial overlay (Graph pipeline slice)"
+            },
+            "passed": true
+          },
+          {
+            "operation": "graph-view-projection",
+            "cacheState": "warm",
+            "warmupSamples": 5,
+            "sampleCount": 30,
+            "samplesMs": [
+              0.919,
+              0.992,
+              1.163,
+              2.164,
+              1.789,
+              0.865,
+              0.712,
+              0.865,
+              0.648,
+              1.135,
+              1.902,
+              2.017,
+              0.731,
+              0.762,
+              0.878,
+              0.889,
+              0.629,
+              0.596,
+              1.61,
+              2.831,
+              0.735,
+              0.87,
+              0.683,
+              0.626,
+              0.772,
+              1.963,
+              1.565,
+              0.711,
+              0.644,
+              0.796
+            ],
+            "statistics": {
+              "minimumMs": 0.596,
+              "p50Ms": 0.865,
+              "p95Ms": 2.164,
+              "maximumMs": 2.831
+            },
+            "budget": {
+              "percentile": "p95",
+              "limitMs": 500,
+              "source": "WP0 large-repository hard ceiling"
+            },
+            "passed": true
+          },
+          {
+            "operation": "graph-layout",
+            "cacheState": "warm",
+            "warmupSamples": 5,
+            "sampleCount": 30,
+            "samplesMs": [
+              0.416,
+              0.154,
+              1.192,
+              1.264,
+              0.984,
+              44.764,
+              40.829,
+              0.192,
+              0.326,
+              0.838,
+              1.358,
+              0.718,
+              1.843,
+              43.772,
+              44.622,
+              0.154,
+              1.79,
+              1.024,
+              0.681,
+              1.031,
+              37.205,
+              44.007,
+              0.281,
+              0.13,
+              2.788,
+              0.929,
+              0.708,
+              23.5,
+              42.4,
+              0.173
+            ],
+            "statistics": {
+              "minimumMs": 0.13,
+              "p50Ms": 1.024,
+              "p95Ms": 44.622,
+              "maximumMs": 44.764
+            },
+            "budget": {
+              "percentile": "p95",
+              "limitMs": 500,
+              "source": "WP0 large-repository hard ceiling"
+            },
+            "passed": true
+          }
+        ],
+        "integrity": {
+          "fixtureChecksum": "fnv1a32:df6768af",
+          "expectedFixtureChecksum": "fnv1a32:df6768af",
+          "fixtureChecksumMatches": true,
+          "hierarchyScopeCount": 9,
+          "hierarchyClusterCount": 307,
+          "expectedHierarchyClusterCount": 307,
+          "hierarchyClusterCountMatches": true,
+          "quickJumpItemCount": 1652,
+          "expectedQuickJumpItemCount": 1652,
+          "quickJumpItemCountMatches": true,
+          "quickJumpCoversEveryGraphNode": true,
+          "minimumRenderedNodeCount": 1,
+          "expectedMinimumRenderedNodeCount": 1,
+          "maximumRenderedNodeCount": 33,
+          "expectedMaximumRenderedNodeCount": 33,
+          "renderedNodeRangeMatches": true,
+          "maximumRenderedEdgeCount": 100,
+          "expectedMaximumRenderedEdgeCount": 100,
+          "renderedEdgeCountMatches": true,
+          "navigationLevelsCovered": [
+            "cluster",
+            "file",
+            "overview",
+            "scope"
+          ],
+          "navigationCoveragePassed": true,
+          "renderedNodeLimit": 38,
+          "renderedEdgeLimit": 100,
+          "renderedBoundsPassed": true,
+          "layoutResultsValid": true,
+          "workloadChecksum": 176581,
+          "expectedWorkloadChecksum": 176581,
+          "workloadChecksumMatches": true,
+          "passed": true
+        },
+        "passed": true
+      },
+      {
+        "corpus": {
+          "id": "synthetic-10k",
+          "label": "Deterministic 10k-node graph",
+          "fixtureVersion": "large-repository-v1",
+          "source": {
+            "kind": "synthetic",
+            "graphCommit": "fixture:large-repository-v1",
+            "capturedAt": "2026-07-24T02:59:07.611Z"
+          },
+          "expectedChecksum": "fnv1a32:21f92de3",
+          "expectedIntegrity": {
+            "hierarchyClusterCount": 552,
+            "quickJumpItemCount": 10808,
+            "minimumRenderedNodeCount": 6,
+            "maximumRenderedNodeCount": 33,
+            "maximumRenderedEdgeCount": 100,
+            "workloadChecksum": 305843
+          },
+          "scopeCount": 16,
+          "nodeTypeCounts": {
+            "file": 2571,
+            "function": 6290,
+            "class": 261,
+            "config": 95,
+            "document": 775,
+            "service": 8
+          },
+          "edgeTypeCounts": {
+            "contains": 6551,
+            "calls": 4858,
+            "exports": 3275,
+            "imports": 1701,
+            "tested_by": 941,
+            "documents": 625,
+            "related": 158,
+            "configures": 63,
+            "depends_on": 16
+          },
+          "budgetsMs": {
+            "coldCacheBootstrapP95": 4000,
+            "warmViewProjectionP95": 500,
+            "warmLayoutP95": 500
+          },
+          "nodeCount": 10000,
+          "edgeCount": 18188
+        },
+        "measurements": [
+          {
+            "operation": "graph-model-bootstrap",
+            "cacheState": "cold",
+            "warmupSamples": 0,
+            "sampleCount": 10,
+            "samplesMs": [
+              179.413,
+              135.544,
+              132.998,
+              135.796,
+              146.739,
+              136.174,
+              140.865,
+              128.883,
+              123.666,
+              133.994
+            ],
+            "statistics": {
+              "minimumMs": 123.666,
+              "p50Ms": 135.544,
+              "p95Ms": 179.413,
+              "maximumMs": 179.413
+            },
+            "budget": {
+              "percentile": "p95",
+              "limitMs": 4000,
+              "source": "P0 Task Graph initial overlay (Graph pipeline slice)"
+            },
+            "passed": true
+          },
+          {
+            "operation": "graph-view-projection",
+            "cacheState": "warm",
+            "warmupSamples": 5,
+            "sampleCount": 30,
+            "samplesMs": [
+              6.431,
+              16.708,
+              6.76,
+              6.595,
+              6.503,
+              5.233,
+              13.491,
+              15.525,
+              5.958,
+              7.32,
+              4.607,
+              5.069,
+              12.874,
+              7.014,
+              6.527,
+              7.319,
+              4.484,
+              14.941,
+              13.581,
+              6.426,
+              6.316,
+              4.419,
+              4.031,
+              13.721,
+              5.758,
+              7.051,
+              6.512,
+              4.472,
+              11.606,
+              6.789
+            ],
+            "statistics": {
+              "minimumMs": 4.031,
+              "p50Ms": 6.527,
+              "p95Ms": 15.525,
+              "maximumMs": 16.708
+            },
+            "budget": {
+              "percentile": "p95",
+              "limitMs": 500,
+              "source": "WP0 large-repository hard ceiling"
+            },
+            "passed": true
+          },
+          {
+            "operation": "graph-layout",
+            "cacheState": "warm",
+            "warmupSamples": 5,
+            "sampleCount": 30,
+            "samplesMs": [
+              1.16,
+              29.271,
+              28.84,
+              0.373,
+              4.743,
+              0.789,
+              1.091,
+              38.459,
+              0.977,
+              1.653,
+              3.907,
+              0.761,
+              30.762,
+              37.99,
+              0.352,
+              3.431,
+              1.336,
+              0.92,
+              36.676,
+              0.367,
+              4.146,
+              1.868,
+              1.275,
+              36.64,
+              0.936,
+              0.351,
+              4.519,
+              2.831,
+              43.898,
+              34.925
+            ],
+            "statistics": {
+              "minimumMs": 0.351,
+              "p50Ms": 1.868,
+              "p95Ms": 38.459,
+              "maximumMs": 43.898
+            },
+            "budget": {
+              "percentile": "p95",
+              "limitMs": 500,
+              "source": "WP0 large-repository hard ceiling"
+            },
+            "passed": true
+          }
+        ],
+        "integrity": {
+          "fixtureChecksum": "fnv1a32:21f92de3",
+          "expectedFixtureChecksum": "fnv1a32:21f92de3",
+          "fixtureChecksumMatches": true,
+          "hierarchyScopeCount": 16,
+          "hierarchyClusterCount": 552,
+          "expectedHierarchyClusterCount": 552,
+          "hierarchyClusterCountMatches": true,
+          "quickJumpItemCount": 10808,
+          "expectedQuickJumpItemCount": 10808,
+          "quickJumpItemCountMatches": true,
+          "quickJumpCoversEveryGraphNode": true,
+          "minimumRenderedNodeCount": 6,
+          "expectedMinimumRenderedNodeCount": 6,
+          "maximumRenderedNodeCount": 33,
+          "expectedMaximumRenderedNodeCount": 33,
+          "renderedNodeRangeMatches": true,
+          "maximumRenderedEdgeCount": 100,
+          "expectedMaximumRenderedEdgeCount": 100,
+          "renderedEdgeCountMatches": true,
+          "navigationLevelsCovered": [
+            "cluster",
+            "file",
+            "overview",
+            "scope"
+          ],
+          "navigationCoveragePassed": true,
+          "renderedNodeLimit": 38,
+          "renderedEdgeLimit": 100,
+          "renderedBoundsPassed": true,
+          "layoutResultsValid": true,
+          "workloadChecksum": 305843,
+          "expectedWorkloadChecksum": 305843,
+          "workloadChecksumMatches": true,
+          "passed": true
+        },
+        "passed": true
+      }
+    ],
+    "passed": true
+  }
+}

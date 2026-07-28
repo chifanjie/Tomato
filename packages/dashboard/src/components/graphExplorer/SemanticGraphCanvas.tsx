@@ -56,6 +56,7 @@ import {
 import FlowingSemanticEdge, { type FlowingSemanticEdgeData } from "./FlowingSemanticEdge";
 import { coverageBadgeForNode } from "./graphExplorerModel";
 import {
+  buildGraphLayoutMessage,
   buildGraphStructureKey,
   compareSemanticNodes,
   computeReadableViewport,
@@ -189,37 +190,6 @@ function edgeColor(edge: SemanticGraphEdge): string {
     if (color) return color;
   }
   return "var(--color-graph-edge)";
-}
-
-function layoutKind(node: HierarchicalSemanticGraphNode): LayoutMessage["nodes"][number]["kind"] {
-  if (node.kind === "scope" || node.kind === "boundary" || node.kind === "cluster") {
-    return node.kind;
-  }
-  if (node.rawType === "file") return "file";
-  if (node.rawType === "function" || node.rawType === "class") return "symbol";
-  return "raw";
-}
-
-function layoutEdgeRole(
-  edge: HierarchicalSemanticGraph["edges"][number],
-  level: GraphExplorerNavigation["level"],
-): NonNullable<LayoutMessage["edges"][number]["role"]> {
-  if (["calls", "imports", "depends_on", "cross_domain", "flow_step"].includes(edge.type)) {
-    return "backbone";
-  }
-  if (edge.type === "contains" || edge.type === "contains_flow") {
-    return level === "file" ? "backbone" : "secondary";
-  }
-  if ([
-    "tested_by",
-    "documents",
-    "cites",
-    "authored_by",
-    "categorized_under",
-    "exemplifies",
-  ].includes(edge.type)) return "context";
-  if (["related", "similar_to", "builds_on"].includes(edge.type)) return "secondary";
-  return "primary";
 }
 
 function sameViewportBucket(
@@ -654,36 +624,14 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
     queueMicrotask(() => {
       if (!active || controller.signal.aborted) return;
       const requestId = ++layoutRequestId.current;
-      const input: LayoutMessage = {
+      const input: LayoutMessage = buildGraphLayoutMessage({
         requestId,
         structureKey,
-        level: inputNavigation.level,
+        navigation: inputNavigation,
         viewport: inputViewport,
-        nodes: [...inputBaseGraph.nodes]
-          .sort(compareSemanticNodes)
-          .map((node) => {
-            const size = inputNodeSizeById.get(node.id) ?? graphNodeSize(inputNavigation.level, node);
-            return {
-              id: node.id,
-              width: size.width,
-              height: size.height,
-              kind: layoutKind(node),
-              importance: node.importance,
-              ...(node.clusterId ? { clusterId: node.clusterId } : {}),
-            };
-          }),
-        edges: [...inputBaseGraph.edges]
-          .sort((left, right) => left.id.localeCompare(right.id))
-          .map((edge) => ({
-            source: edge.source,
-            target: edge.target,
-            relationType: edge.type,
-            directions: [...edge.directions],
-            weight: edge.weight,
-            count: edge.bundledCount,
-            role: layoutEdgeRole(edge, inputNavigation.level),
-          })),
-      };
+        baseGraph: inputBaseGraph,
+        nodeSizeById: inputNodeSizeById,
+      });
 
       void requestSemanticLayout(input, { signal: controller.signal })
         .then((result) => {

@@ -9,7 +9,11 @@ import type {
   HierarchicalSemanticGraphNode,
 } from "../../graphExplorer/hierarchicalGraph";
 import type { SemanticGraphNode, SemanticNodeGroup } from "../../graphExplorer/semanticGraph";
-import type { GraphViewportBucket, LayoutBounds } from "../../utils/layoutAlgorithm.js";
+import type {
+  GraphViewportBucket,
+  LayoutBounds,
+  LayoutMessage,
+} from "../../utils/layoutAlgorithm.js";
 
 export interface SemanticNodePosition {
   x: number;
@@ -257,6 +261,80 @@ export function graphNodeSize(
     return { width: 208, height: Math.max(76, contentHeight) };
   }
   return { width: 224, height: Math.max(88, contentHeight) };
+}
+
+export function graphLayoutNodeKind(
+  node: HierarchicalSemanticGraphNode,
+): LayoutMessage["nodes"][number]["kind"] {
+  if (node.kind === "scope" || node.kind === "boundary" || node.kind === "cluster") {
+    return node.kind;
+  }
+  if (node.rawType === "file") return "file";
+  if (node.rawType === "function" || node.rawType === "class") return "symbol";
+  return "raw";
+}
+
+export function graphLayoutEdgeRole(
+  edge: HierarchicalSemanticGraph["edges"][number],
+  level: GraphExplorerNavigation["level"],
+): NonNullable<LayoutMessage["edges"][number]["role"]> {
+  if (["calls", "imports", "depends_on", "cross_domain", "flow_step"].includes(edge.type)) {
+    return "backbone";
+  }
+  if (edge.type === "contains" || edge.type === "contains_flow") {
+    return level === "file" ? "backbone" : "secondary";
+  }
+  if ([
+    "tested_by",
+    "documents",
+    "cites",
+    "authored_by",
+    "categorized_under",
+    "exemplifies",
+  ].includes(edge.type)) return "context";
+  if (["related", "similar_to", "builds_on"].includes(edge.type)) return "secondary";
+  return "primary";
+}
+
+export function buildGraphLayoutMessage(input: {
+  requestId: number;
+  structureKey: string;
+  navigation: GraphExplorerNavigation;
+  viewport: GraphViewportBucket;
+  baseGraph: HierarchicalSemanticGraph;
+  nodeSizeById: ReadonlyMap<string, { width: number; height: number }>;
+}): LayoutMessage {
+  return {
+    requestId: input.requestId,
+    structureKey: input.structureKey,
+    level: input.navigation.level,
+    viewport: input.viewport,
+    nodes: [...input.baseGraph.nodes]
+      .sort(compareSemanticNodes)
+      .map((node) => {
+        const size = input.nodeSizeById.get(node.id)
+          ?? graphNodeSize(input.navigation.level, node);
+        return {
+          id: node.id,
+          width: size.width,
+          height: size.height,
+          kind: graphLayoutNodeKind(node),
+          importance: node.importance,
+          ...(node.clusterId ? { clusterId: node.clusterId } : {}),
+        };
+      }),
+    edges: [...input.baseGraph.edges]
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .map((edge) => ({
+        source: edge.source,
+        target: edge.target,
+        relationType: edge.type,
+        directions: [...edge.directions],
+        weight: edge.weight,
+        count: edge.bundledCount,
+        role: graphLayoutEdgeRole(edge, input.navigation.level),
+      })),
+  };
 }
 
 /**

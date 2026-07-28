@@ -6,7 +6,13 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "test": "node -e \"console.log('skill tests live at <repo-root>/tests/skill — run via root \\`pnpm test\\`')\""
+    "build:all": "pnpm run clean:build && pnpm --filter @understand-code/core --fail-if-no-match build && pnpm run build && pnpm --filter @understand-code/dashboard --fail-if-no-match build",
+    "clean:build": "node scripts/clean-build-artifacts.mjs",
+    "typecheck": "pnpm --filter @understand-code/core --fail-if-no-match build && pnpm run typecheck:skill && pnpm --filter @understand-code/core --fail-if-no-match exec tsc --noEmit && pnpm --filter @understand-code/dashboard --fail-if-no-match exec tsc -b --pretty false",
+    "typecheck:skill": "tsc --noEmit",
+    "test": "pnpm --filter @understand-code/core --fail-if-no-match build && pnpm run test:skill && pnpm --filter @understand-code/core --fail-if-no-match test && pnpm --filter @understand-code/dashboard --fail-if-no-match test",
+    "test:skill": "vitest run",
+    "quality": "pnpm run build:all && pnpm run typecheck && pnpm run test"
   },
   "dependencies": {
     "@understand-code/core": "workspace:*",

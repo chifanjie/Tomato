@@ -1,8 +1,10 @@
 # Understand Code：Agent-native Code Change Intelligence 项目研制计划
 
-> 文档状态：Draft v1.0
+> 文档状态：Approved / Contract Frozen v1.0
 >
 > 日期：2026-07-27
+>
+> Contract Freeze：2026-07-28，见 `docs/research/2026-07-28-g0-contract-freeze-record.md`
 >
 > 适用范围：`understand-code` 产品、Core、Agent 插件、MCP、本地服务与 Dashboard
 >
@@ -121,7 +123,7 @@ P0 不追求一次性增加很多独立功能页，而是先打通一条完整�
 
 ## 2. 当前项目基线与审计结论
 
-### 2.1 代码与产物基线
+### 2.1 初始代码与产物基线
 
 截至 2026-07-27：
 
@@ -137,6 +139,19 @@ P0 不追求一次性增加很多独立功能页，而是先打通一条完整�
 | Dashboard 测试 | 48 files 中 47 通过；535 tests 中 534 通过 |
 | 当前 Dashboard 失败项 | `largeRepositoryAcceptance` 的完整可达性用例超过 5 秒 |
 | 当前工作区 | 存在未提交的 Graph/Layout 相关修改 |
+
+以上表格保留 2026-07-27 的问题发现现场。M0 在 2026-07-28 已形成新的可复现 Closeout：
+
+| 项目 | M0 Closeout |
+|---|---|
+| 基线 Commit | `34da354968a6071d914e4e4a4fca738e6c2d8a29` |
+| Graph/Layout | 有界性、全对象可达性和生产 Dagre 输入链路已收口 |
+| 大仓性能 | self-host 1,264 nodes / 2,299 edges 与 synthetic 10k / 18,188 edges 基线通过 |
+| 根质量 | Root 94、Core 920、Dashboard 558 tests；build/typecheck/test 全绿 |
+| 远端 CI | Run `30335147523`，Ubuntu / Node 22 / pnpm 9，成功 |
+| Host Contract | Root Binding V1 与 Runtime Rendezvous V1 已冻结；所有发布 Surface 仍按独立 Gate 取证 |
+| 当前工作区 | Tracked clean；用户未跟踪 QA/历史 PRD/site 文件明确排除在本分支之外 |
+| G0 状态 | Contract Freeze `closed_for_implementation`；Surface Release Gate `open` |
 
 当前图谱已经具备比较完整的代码结构与调用关系，说明底层不是原型级数据。
 
@@ -393,7 +408,7 @@ flowchart LR
 
 Task Brief 不是一段临时回答，而是 Agent、MCP、Workbench 和人之间共享的任务契约。
 
-建议状态机：
+P0 状态机已在 D-21 / G0 冻结：
 
 ```text
 created
@@ -404,9 +419,23 @@ created
   → verification_required
   → verified
 
-任意阶段可进入：
+created 至 verification_required 的正常状态可进入：
   blocked / stale / superseded
+
+blocked 只能：
+  → resumeStatus / stale / superseded
+
+stale 只能：
+  → context_ready / superseded
 ```
+
+其中：
+
+- `verified` 与 `superseded` 是终态；后续工作必须创建新 Task 并建立 parent/replacement link。
+- `blocked` 必须保存 `resumeStatus`；只有依赖解除且上下文仍 fresh 时才能恢复，否则进入 `stale`。
+- `stale` 只能通过强类型 `refresh_task_context` 或 `rebase_task` 回到 `context_ready`，不能直接恢复旧 Plan/Check/Verification。
+- 每次 Mutation 使用 revision/CAS、idempotency key 和 append-only Event；失败、冲突与重放不产生重复 revision/Event。
+- 完整 Guard、幂等与恢复规则以 `docs/research/2026-07-28-g0-contract-freeze-record.md` 第 5 节为准，WP1/WP4 不得自行增加状态或跨阶段跳转。
 
 ### 4.3 Task Brief 必备内容
 
@@ -648,7 +677,7 @@ P0 默认不在 MCP Server 内再嵌入一个独立 LLM。
 ├── fingerprints.json
 ├── knowledge-base/
 └── tasks/
-    └── UC-000042/
+    └── <task-ulid>/
         ├── task.json
         ├── task-brief.json
         ├── task-brief.md
@@ -1130,11 +1159,14 @@ record_assumption
 confirm_unknown
 transition_status
 accept_finding
+block_task
+resume_task
+refresh_task_context
 rebase_task
 supersede_task
 ```
 
-它不接受任意 JSON Patch。每次更新都增加 revision 并追加 Event；revision 冲突返回可恢复的 conflict，不允许 last-write-wins。
+它不接受任意 JSON Patch。`transition_status` 只允许 Lifecycle V1 表内的普通阶段转移；`blocked`、恢复、Context refresh/rebase 与 supersede 必须使用对应强类型 Action。`refresh_task_context` 在同一 baseline 上重建 Pulse/Brief 引用；`rebase_task` 改变 baseline，两者成功后都进入 `context_ready` 并显式失效旧 Plan/Check/Verification。每次成功更新都增加 revision 并追加 Event；revision 冲突返回可恢复的 conflict，不允许 last-write-wins。
 
 可选 Resources：
 
@@ -1688,31 +1720,57 @@ interface RepositoryChangeV1 {
 ### 9.2 Task Manifest V1
 
 ```ts
+type TaskNormalStatusV1 =
+  | "created"
+  | "context_ready"
+  | "planned"
+  | "in_progress"
+  | "check_required"
+  | "verification_required";
+
 interface TaskManifestV1 {
   schemaVersion: 1;
   taskId: string;
   title: string;
+  originalIntent: string;
   status:
-    | "created"
-    | "context_ready"
-    | "planned"
-    | "in_progress"
-    | "check_required"
-    | "verification_required"
+    | TaskNormalStatusV1
     | "verified"
     | "blocked"
     | "stale"
     | "superseded";
+  parentTaskId?: string;
   repositoryId: string;
   worktreeId: string;
   baselineSnapshotId: string;
   latestSnapshotId: string;
+  blockedState?: {
+    resumeStatus: TaskNormalStatusV1;
+    reasonCode: string;
+    message: string;
+    actor: string;
+    blockedAt: string;
+  };
+  staleState?: {
+    staleFromStatus: TaskNormalStatusV1 | "blocked";
+    reasonCodes: string[];
+    detectedAtSnapshotId: string;
+    detectedAt: string;
+  };
+  supersession?: {
+    reason: string;
+    replacementTaskId?: string;
+    actor: string;
+    supersededAt: string;
+  };
   createdAt: string;
   updatedAt: string;
   producerVersion: string;
   revision: number;
 }
 ```
+
+`originalIntent` 必须非空。`blockedState`、`staleState`、`supersession` 分别在对应状态下必填且互斥；恢复后当前 Manifest 移除异常态字段，历史原因保留在 append-only Event。Schema 必须拒绝缺少 `resumeStatus` 的 blocked Task、缺少失效 Snapshot 的 stale Task，以及 replacement self-loop。
 
 ### 9.3 Impact Path V1
 
@@ -1882,6 +1940,8 @@ P2 的阻断规则必须确定性执行：
 
 **目标**：在新主轴开发前，结束当前 Graph/Layout 未完成状态，建立可信基线。
 
+状态：**Completed on 2026-07-28**。版本化结果见 `docs/research/2026-07-28-g0-contract-freeze-record.md`；Surface Release Gate 仍保持开放。
+
 Graph/Layout 属于 G0 遗留稳定任务，严格时间盒在 WP0 内；除修复现有回归、可达性和性能门禁外，不在本阶段继续扩展新的布局能力。
 
 WP0 只关闭 **Contract Freeze Gate**：冻结产品范围、Root/Error/Rendezvous 语义和各 Surface 的证据状态。正式发布支持使用独立的 **Surface Release Gate**，由 WP6 的 Surface E2E 与 WP8 的 RC 验证关闭。`pending-e2e` 可以带着明确 Owner 进入 WP1，但不能被写成 supported；Surface Release Gate 未关闭不反向阻塞 WP1。
@@ -1909,11 +1969,12 @@ WP0 只关闭 **Contract Freeze Gate**：冻结产品范围、Root/Error/Rendezv
 - Root Binding Contract V1。
 - Workbench Runtime Rendezvous Contract V1。
 - P0 Decision Log。
+- G0 Contract Freeze Record、Owner Matrix 与 Quality Closeout。
 
 退出条件：
 
 - 当前用户工作区改动已由 Owner 明确处理。
-- 没有已知 P0 回归被带入新分支。
+- 没有已启用的 P0 能力带着已知回归进入新分支；尚未实现的 G0 capability gap 有 Owner、关闭 Gate 和“不得提前声明支持”的 capability lock。
 - 根目录一条命令可执行 build、typecheck 和 test。
 - 每个 Surface 的分发方式、权威 Root 来源、证据等级和 WP6 Gate 唯一；不存在“一个 Codex Plugin 覆盖 IDE”的描述。
 - `binding_error` 的 MCP 传输方式与六个 reason 触发表唯一；advertised Root 不会通过 Git top-level 归一化扩大。
@@ -2183,7 +2244,8 @@ P0 Beta 的 mandatory Surface 固定为 **Codex CLI Plugin** 与 **Claude Code C
 - 在 WP6 最小 CLI/bin 基础上补齐 Doctor、Serve 管理和发布命令。
 - 预编译和打包 Server/Dashboard。
 - 建立版本联动。
-- 增加 package file allowlist、engines 和 SBOM。
+- 增加 package file allowlist、engines、SBOM、构建 provenance/attestation。
+- 为发布的平台二进制建立签名策略；macOS 发布物完成 code signing/notarization，Linux 发布物提供可验证签名与 checksum。
 - 实现 install/upgrade/uninstall/doctor。
 - 建立 CI、release candidate、rollback。
 - 执行安全、性能、跨 Agent、迁移和故障注入测试。
@@ -2201,6 +2263,7 @@ P0 Beta 的 mandatory Surface 固定为 **Codex CLI Plugin** 与 **Claude Code C
 
 - 冷安装无需目标仓库 `pnpm install/build`。
 - 所有包和 Plugin 版本可追溯。
+- Release Artifact 的 checksum、SBOM、provenance 与平台签名可验证。
 - Clean/Dirty/Worktree/Corrupt Artifact 场景通过。
 - P0 Quality Gate 全部通过。
 - mandatory Surface Release Gate 全部关闭；每个 conditional Surface 要么有完整 supported 证据，要么明确保持 `pending-e2e` 且不出现在支持文案中。
@@ -2214,7 +2277,9 @@ P0 Beta 的 mandatory Surface 固定为 **Codex CLI Plugin** 与 **Claude Code C
 
 阶段门使用一个在 M1 结束前冻结的 **Alpha Gold Set（24 个 Task）**：
 
-- Understand Code 自举仓库 12 个，真实 Go/TypeScript 试点仓库各 6 个。
+- `ALPHA-A` TypeScript self-host / TS stratum 共 18 个，`ALPHA-B` 大型 Go stratum 6 个；二者使用 G0 固定 Commit 的 clean、commit-only Snapshot。
+- `ALPHA-A` 的 self-host 与 TypeScript stratum 来自同一仓库，不把它宣传为独立 TypeScript 仓库多样性；Beta Corpus 仍须扩展仓库形态。
+- `ALPHA-B` 在仓库 Owner 明确授权前只作为 local-only candidate，不复制源码或私有 Evidence，不阻塞 WP1/WP2 的 Fixture 实现。
 - 至少 8 个跨文件、6 个包含测试影响、4 个包含计划外修改、4 个包含已知 Unknown Boundary；类别可以重叠。
 - 每个 Task 双人复核 reading path、Top candidates、Evidence anchors、关键影响路径和期望 Finding。
 - M2 至少跑通其中 12 个；M3 在 Codex 与 Claude 上跑完全部 24 个。
@@ -2239,6 +2304,8 @@ P0 Beta 的 mandatory Surface 固定为 **Codex CLI Plugin** 与 **Claude Code C
 - 根目录 build、typecheck、test 一条命令全绿，大仓库性能基线有可复现报告。
 - explicit root、`binding_error` Tool Envelope、Roots membership 和 Workbench control/lock/timeout 语义没有未决分支。
 - 每个 Host Surface 均有 evidence level、mandatory/conditional 状态、后续 Gate 与 Owner；没有把 `pending-e2e` 写成 supported。
+
+G0 结果：`closed_for_implementation`。关闭记录为 `docs/research/2026-07-28-g0-contract-freeze-record.md`；该结果允许进入 M1/WP1，不代表任一 Host Surface 已通过发布门。
 
 ### M1：Trustworthy Repository Foundation
 
@@ -2685,9 +2752,10 @@ Hard Deny 不允许用户 Ignore Negation 覆盖：
 
 当前 Root/Claude Plugin 为 `2.7.5`，Core/Dashboard 为 `0.1.0`，需要统一可追踪版本。
 
-建议：
+G0 已冻结：
 
 - 产品 Release 使用一个 `productVersion`。
+- Agent-native 产品从 `3.0.0-alpha.1` 开始统一发布列车；当前 `2.7.5` 只作为兼容包装版本。
 - 每个 Artifact 额外记录 `schemaVersion`。
 - Plugin Manifest、MCP Server、Local Server 和 Dashboard 在 RC/GA 中版本联动。
 - Schema 独立演进，不与 npm patch 版本等价。
@@ -2699,18 +2767,20 @@ Hard Deny 不允许用户 Ignore Negation 覆盖：
 - `beta`：真实用户，允许 Schema 迁移但必须可回滚。
 - `stable`：兼容策略冻结。
 
+Canonical slug、CLI command 与两端 Plugin name 均为 `understand-code`；目标 CLI 包为 `@understand-code/cli`。外部 Registry 名称当前未被证明已保留，namespace control 属于 WP8 发布 Gate，不改变内部逻辑标识。
+
 ### 16.3 安装验证
 
 Host Surface 分发矩阵：
 
-| Surface | P0 状态 | 分发/注册方式 | 权威 Root 来源 | cwd / Roots 语义 | 发布门禁 |
-|---|---|---|---|---|---|
-| Codex CLI | Mandatory | Codex Plugin + bundled MCP | CLI Adapter 经该 Surface E2E 验证的信号 → `--root` | 不继承 App Server 结论；不假定 Roots | CLI clean-install、真实 Tool、子目录/worktree、upgrade/downgrade/reload/uninstall |
-| Claude Code CLI | Mandatory | Claude Plugin + bundled MCP | `${CLAUDE_PROJECT_DIR}` → `--root` | cwd 非权威；Roots 仅做 scope/membership；dynamic Roots 测试版本 `>=2.1.203` | authenticated Tool E2E、cwd divergence、advertised subdir、additional root |
-| Codex Desktop App | Conditional | Codex Plugin + bundled MCP | Desktop Adapter 经该 Surface UI E2E 验证的信号 → `--root` | App Server cwd 仅 provisional；不假定 Roots | Desktop clean-install、真实 Tool、Root Fixture、完整安装生命周期 |
-| Codex IDE Extension | Conditional | trusted project-scoped `.codex/config.toml` + repo `.agents/skills/**` | 安装时声明的 project binding → `--root` | inherited cwd 非权威；IDE 不支持 Plugin；P0 无固定 Root user config | 独立 config/Skill install、Doctor、reload、upgrade、remove |
-| Claude VS Code | Conditional | VS Code 官方 Plugin 安装流 + bundled MCP | `${CLAUDE_PROJECT_DIR}` → `--root` | cwd 非权威；Roots 仅做 scope/membership | VS Code UI clean-install、真实 Tool、Root Fixture、remove |
-| Claude Desktop local | Conditional | Desktop 官方 Plugin 安装流 + bundled MCP | `${CLAUDE_PROJECT_DIR}` → `--root` | cwd 非权威；Roots 仅做 scope/membership | Desktop UI clean-install、真实 Tool、Root Fixture、remove |
+| Surface | P0 状态 | 分发/注册方式 | 权威 Root 来源 | cwd / Roots 语义 | 发布门禁 | Contract / Delivery / Evidence Owner |
+|---|---|---|---|---|---|---|
+| Codex CLI | Mandatory | Codex Plugin + bundled MCP | CLI Adapter 经该 Surface E2E 验证的信号 → `--root` | 不继承 App Server 结论；不假定 Roots | CLI clean-install、真实 Tool、子目录/worktree、upgrade/downgrade/reload/uninstall | Tech Lead / Platform / QA |
+| Claude Code CLI | Mandatory | Claude Plugin + bundled MCP | `${CLAUDE_PROJECT_DIR}` → `--root` | cwd 非权威；Roots 仅做 scope/membership；dynamic Roots 测试版本 `>=2.1.203` | authenticated Tool E2E、cwd divergence、advertised subdir、additional root | Tech Lead / Platform / QA |
+| Codex Desktop App | Conditional | Codex Plugin + bundled MCP | Desktop Adapter 经该 Surface UI E2E 验证的信号 → `--root` | App Server cwd 仅 provisional；不假定 Roots | Desktop clean-install、真实 Tool、Root Fixture、完整安装生命周期 | Tech Lead / Platform + Frontend / QA |
+| Codex IDE Extension | Conditional | trusted project-scoped `.codex/config.toml` + repo `.agents/skills/**` | 安装时声明的 project binding → `--root` | inherited cwd 非权威；IDE 不支持 Plugin；P0 无固定 Root user config | 独立 config/Skill install、Doctor、reload、upgrade、remove | Tech Lead / Platform / QA |
+| Claude VS Code | Conditional | VS Code 官方 Plugin 安装流 + bundled MCP | `${CLAUDE_PROJECT_DIR}` → `--root` | cwd 非权威；Roots 仅做 scope/membership | VS Code UI clean-install、真实 Tool、Root Fixture、remove | Tech Lead / Platform + Frontend / QA |
+| Claude Desktop local | Conditional | Desktop 官方 Plugin 安装流 + bundled MCP | `${CLAUDE_PROJECT_DIR}` → `--root` | cwd 非权威；Roots 仅做 scope/membership | Desktop UI clean-install、真实 Tool、Root Fixture、remove | Tech Lead / Platform + Frontend / QA |
 
 Mandatory 两行全部通过才关闭 P0 Beta 的 Surface Release Gate。Conditional 行逐行独立 promoted；未通过只保持 `pending-e2e`，不阻塞 P0 Beta。`provisional observed` 只证明某版本某路径的行为，不能自动升级为另一 Surface 的支持声明。每个 promoted Surface 必须独立完成对应 install、Root、Tool、upgrade/reload/remove 验证；一行结果不得代替另一行。
 
@@ -3003,20 +3073,91 @@ Unknown 是产品能力，不是失败状态。
 - MCP 生命周期与有效 Browser Session 解耦；每次 `open_workbench` 都由 Runtime 签发新 Launch Token，旧 deep link 不复活。
 - startup lock 2 秒、health/control 1 秒、ready 15 秒、单次 open 总计 20 秒以及 Launch Token、Session、idle TTL 使用冻结 Alpha 默认值。
 
+### D-13：P0 平台为 macOS 与 Linux
+
+状态：Accepted。
+
+- Windows Native、Windows named pipe 与 WSL 不进入 P0 Beta。
+- 最低 OS、发行版、架构与 libc 组合由 WP8 RC Evidence 冻结。
+
+### D-14：统一产品与发布逻辑标识
+
+状态：Accepted。
+
+- Product slug、CLI command、Codex/Claude Plugin name 均为 `understand-code`。
+- 目标 CLI Package 为 `@understand-code/cli`，Agent-native release train 从 `3.0.0-alpha.1` 开始。
+- `@understand-code/skill@2.7.5` 保留为兼容包装，不再代表最终安装合同。
+- npm Scope 与 Marketplace 名称未被声称已保留；namespace control、License、Release Repository 与公开渠道由 WP8 关闭。
+
+### D-15：Task Artifact 默认本地私有
+
+状态：Accepted。
+
+- `.understand-code/tasks/**` 默认被忽略，不自动提交完整 Task、Evidence 或源码摘录。
+- 工具不得静默改写用户 `.gitignore`。
+- 只有显式 export 且完成路径、源码、凭据和主机元数据脱敏的 Artifact 才可进入版本控制。
+
+### D-16：Canonical Task ID 使用 ULID
+
+状态：Accepted。
+
+- ULID 是持久化主键；本地递增 ID 不进入 Contract。
+- `UC-xxxxxx` 仅可作为 UI 短显示。
+
+### D-17：P0 不发布 Embedding Provider
+
+状态：Accepted。
+
+- lexical、symbol、graph 与 deterministic evidence 必须独立完成 P0 闭环。
+- Embedding 属于 P1，并需单独的数据外发与 Provider 权限评审。
+
+### D-18：P0 不允许手工空 Task
+
+状态：Accepted。
+
+- `created` 已包含非空 `originalIntent`、repo/worktree identity 和 baseline。
+- Task 只通过 `build_task_brief` 或受支持的 resume/migrate/rebase Action 创建与续接。
+
+### D-19：Alpha Pilot 使用两个固定 Commit Corpus
+
+状态：Accepted；Activation Gate Open。
+
+- `ALPHA-A` 为 TypeScript self-host / TS stratum，18 个 Task。
+- `ALPHA-B` 为大型 Go domain stratum，6 个 Task。
+- 两者都只从固定 Commit 构造 clean、commit-only Snapshot，不包含当前 index/worktree/untracked。
+- `ALPHA-B` 在仓库 Owner 授权前是 local-only candidate，不对外复制源码或私有 Evidence。
+- 具体 Pin、限制与数据策略见 G0 Contract Freeze Record。
+
+### D-20：Host 最低版本延后到 Surface Release Gate
+
+状态：Deferred to WP6/WP8。
+
+- 每个 Surface 根据独立 clean-install E2E 确定最低版本。
+- 当前本机版本不自动成为支持下限。
+- Claude dynamic Roots 若进入支持承诺，最低版本不得低于 `2.1.203`。
+
+### D-21：Task Lifecycle V1
+
+状态：Accepted。
+
+- 状态固定为 `created / context_ready / planned / in_progress / check_required / verification_required / verified / blocked / stale / superseded`。
+- `verified`、`superseded` 是终态；`blocked` 保存 `resumeStatus`；`stale` 必须通过强类型 Context refresh/rebase 恢复。
+- 所有 Mutation 受 revision/CAS、idempotency key、状态 Guard 与 append-only Event 约束。
+- 完整允许转移、Guard、重试和恢复规则见 G0 Contract Freeze Record 第 5 节。
+
 ---
 
-## 20. 仍需在 M0 确认的有限决策
+## 20. M0 冻结结果与延后决策
 
-这些问题不阻塞本文作为总计划。第 1–7 项必须在 WP1 前冻结；第 8 项按 Surface 在 WP6 取证后、进入对应 Surface Release Gate 前冻结：
+原 M0 第 1–7 项已经分别由 D-13～D-19 冻结；Task Lifecycle 由 D-21 冻结。完整证据、Owner、试点 Pin 和 capability lock 见 `docs/research/2026-07-28-g0-contract-freeze-record.md`。
 
-1. P0 正式支持的平台范围：macOS/Linux，Windows 是否 Beta。
-2. Plugin/CLI 的发布渠道和包名。
-3. `.understand-code/tasks/**` 默认是否进入 `.gitignore`。
-4. Task ID 使用本地递增还是 UUID/ULID。
-5. Beta 是否允许可选 Embedding Provider。
-6. Workbench 是否允许手动创建空 Task；建议 P0 不做。
-7. Alpha 的两个真实试点仓库；Alpha Gold Set 已固定为 24 条，Beta 前扩展到至少 100 条。
-8. Codex/Claude 每个声明支持 Surface 的最低版本；这由 WP6 evidence 决定，不以当前本机版本自动冻结。Claude Surface 若声明 dynamic Roots 支持，最低版本不得低于 `2.1.203`。
+当前唯一按设计延后的 M0 决策是 D-20：
+
+1. Codex/Claude 每个声明支持 Surface 的最低版本由 WP6/WP8 的独立 Evidence 决定。
+2. Claude Surface 若声明 dynamic Roots 支持，最低版本不得低于 `2.1.203`。
+3. 未完成 clean-install、Root/Error、真实 Tool、升级与清理矩阵的 Surface 保持 `pending-e2e`。
+
+另外，npm Scope 所有权、公开 License/归属、Marketplace 坐标和 Release Repository 是发布 Gate，不是重新打开 Product Contract 的理由；外部名称冲突只允许调整分发坐标。
 
 决策原则：
 

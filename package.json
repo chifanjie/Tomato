@@ -7,11 +7,11 @@
   "scripts": {
     "benchmark:large-repository": "pnpm --filter @understand-code/dashboard --fail-if-no-match benchmark:large-repository",
     "build": "tsc",
-    "build:all": "pnpm run clean:build && pnpm --filter @understand-code/contracts --fail-if-no-match build && pnpm --filter @understand-code/core --fail-if-no-match build && pnpm run build && pnpm --filter @understand-code/dashboard --fail-if-no-match build",
+    "build:all": "pnpm run clean:build && pnpm --filter @understand-code/contracts --fail-if-no-match build && pnpm --filter @understand-code/repository-state --fail-if-no-match build && pnpm --filter @understand-code/core --fail-if-no-match build && pnpm run build && pnpm --filter @understand-code/dashboard --fail-if-no-match build",
     "clean:build": "node scripts/clean-build-artifacts.mjs",
-    "typecheck": "pnpm --filter @understand-code/contracts --fail-if-no-match build && pnpm --filter @understand-code/core --fail-if-no-match build && pnpm --filter @understand-code/contracts --fail-if-no-match exec tsc --noEmit && pnpm run typecheck:skill && pnpm --filter @understand-code/core --fail-if-no-match exec tsc --noEmit && pnpm --filter @understand-code/dashboard --fail-if-no-match exec tsc -b --pretty false",
+    "typecheck": "pnpm --filter @understand-code/contracts --fail-if-no-match build && pnpm --filter @understand-code/repository-state --fail-if-no-match build && pnpm --filter @understand-code/core --fail-if-no-match build && pnpm --filter @understand-code/contracts --fail-if-no-match exec tsc --noEmit && pnpm --filter @understand-code/repository-state --fail-if-no-match exec tsc --noEmit && pnpm run typecheck:skill && pnpm --filter @understand-code/core --fail-if-no-match exec tsc --noEmit && pnpm --filter @understand-code/dashboard --fail-if-no-match exec tsc -b --pretty false",
     "typecheck:skill": "tsc --noEmit",
-    "test": "pnpm --filter @understand-code/contracts --fail-if-no-match build && pnpm --filter @understand-code/core --fail-if-no-match build && pnpm --filter @understand-code/contracts --fail-if-no-match test && pnpm run test:skill && pnpm --filter @understand-code/core --fail-if-no-match test && pnpm --filter @understand-code/dashboard --fail-if-no-match test",
+    "test": "pnpm --filter @understand-code/contracts --fail-if-no-match build && pnpm --filter @understand-code/repository-state --fail-if-no-match build && pnpm --filter @understand-code/core --fail-if-no-match build && pnpm --filter @understand-code/contracts --fail-if-no-match test && pnpm --filter @understand-code/repository-state --fail-if-no-match test && pnpm run test:skill && pnpm --filter @understand-code/core --fail-if-no-match test && pnpm --filter @understand-code/dashboard --fail-if-no-match test",
     "test:skill": "vitest run",
     "quality": "pnpm run build:all && pnpm run typecheck && pnpm run test"
   },

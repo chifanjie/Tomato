@@ -1,0 +1,53 @@
+{
+  "name": "@understand-code/repository-state",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./snapshot": {
+      "types": "./dist/snapshot.d.ts",
+      "import": "./dist/snapshot.js",
+      "default": "./dist/snapshot.js"
+    },
+    "./taxonomy": {
+      "types": "./dist/taxonomy.d.ts",
+      "import": "./dist/taxonomy.js",
+      "default": "./dist/taxonomy.js"
+    },
+    "./freshness": {
+      "types": "./dist/freshness.d.ts",
+      "import": "./dist/freshness.js",
+      "default": "./dist/freshness.js"
+    },
+    "./pulse": {
+      "types": "./dist/pulse.d.ts",
+      "import": "./dist/pulse.js",
+      "default": "./dist/pulse.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@understand-code/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.1.0"
+  }
+}

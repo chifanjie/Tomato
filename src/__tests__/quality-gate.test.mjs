@@ -39,6 +39,9 @@ describe("root quality gate", () => {
       "pnpm --filter @understand-code/contracts --fail-if-no-match test",
     );
     expect(scripts.test).toContain(
+      "pnpm --filter @understand-code/repository-state --fail-if-no-match test",
+    );
+    expect(scripts.test).toContain(
       "pnpm --filter @understand-code/core --fail-if-no-match test",
     );
     expect(scripts.test).toContain(
@@ -52,19 +55,19 @@ describe("root quality gate", () => {
     );
   });
 
-  it("cleans stale artifacts and builds contracts and core before their consumers", () => {
+  it("cleans stale artifacts and builds foundation packages before their consumers", () => {
     expect(scripts["build:all"]).toBe(
-      "pnpm run clean:build && pnpm --filter @understand-code/contracts --fail-if-no-match build && pnpm --filter @understand-code/core --fail-if-no-match build && pnpm run build && pnpm --filter @understand-code/dashboard --fail-if-no-match build",
+      "pnpm run clean:build && pnpm --filter @understand-code/contracts --fail-if-no-match build && pnpm --filter @understand-code/repository-state --fail-if-no-match build && pnpm --filter @understand-code/core --fail-if-no-match build && pnpm run build && pnpm --filter @understand-code/dashboard --fail-if-no-match build",
     );
     expect(scripts["clean:build"]).toBe("node scripts/clean-build-artifacts.mjs");
     expect(scripts.test).toMatch(
-      /^pnpm --filter @understand-code\/contracts --fail-if-no-match build && pnpm --filter @understand-code\/core --fail-if-no-match build && /,
+      /^pnpm --filter @understand-code\/contracts --fail-if-no-match build && pnpm --filter @understand-code\/repository-state --fail-if-no-match build && pnpm --filter @understand-code\/core --fail-if-no-match build && /,
     );
     expect(scripts.typecheck).toMatch(
-      /^pnpm --filter @understand-code\/contracts --fail-if-no-match build && pnpm --filter @understand-code\/core --fail-if-no-match build && /,
+      /^pnpm --filter @understand-code\/contracts --fail-if-no-match build && pnpm --filter @understand-code\/repository-state --fail-if-no-match build && pnpm --filter @understand-code\/core --fail-if-no-match build && /,
     );
     expect(scripts.typecheck).toBe(
-      "pnpm --filter @understand-code/contracts --fail-if-no-match build && pnpm --filter @understand-code/core --fail-if-no-match build && pnpm --filter @understand-code/contracts --fail-if-no-match exec tsc --noEmit && pnpm run typecheck:skill && pnpm --filter @understand-code/core --fail-if-no-match exec tsc --noEmit && pnpm --filter @understand-code/dashboard --fail-if-no-match exec tsc -b --pretty false",
+      "pnpm --filter @understand-code/contracts --fail-if-no-match build && pnpm --filter @understand-code/repository-state --fail-if-no-match build && pnpm --filter @understand-code/core --fail-if-no-match build && pnpm --filter @understand-code/contracts --fail-if-no-match exec tsc --noEmit && pnpm --filter @understand-code/repository-state --fail-if-no-match exec tsc --noEmit && pnpm run typecheck:skill && pnpm --filter @understand-code/core --fail-if-no-match exec tsc --noEmit && pnpm --filter @understand-code/dashboard --fail-if-no-match exec tsc -b --pretty false",
     );
   });
 
@@ -72,6 +75,7 @@ describe("root quality gate", () => {
     expect(BUILD_ARTIFACT_PATHS).toEqual([
       "dist",
       "packages/contracts/dist",
+      "packages/repository-state/dist",
       "packages/core/dist",
       "packages/dashboard/dist",
       "packages/dashboard/node_modules/.tmp/tsconfig.app.tsBuildInfoFile",

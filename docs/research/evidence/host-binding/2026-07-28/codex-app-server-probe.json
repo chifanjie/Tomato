@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-07-28T05:40:38.381Z",
+  "pid": 36498,
+  "cwd": "/Users/example/understand-code",
+  "explicitRoot": "/Users/example/understand-code",
+  "invocation": {
+    "outputConfigured": true,
+    "explicitRootConfigured": true
+  },
+  "environment": {},
+  "lifecycle": "initialized",
+  "initialize": {
+    "requestedProtocolVersion": "2025-06-18",
+    "protocolVersion": "2025-06-18",
+    "clientInfo": {
+      "name": "codex-mcp-client",
+      "title": "Codex",
+      "version": "0.146.0-alpha.3.1"
+    },
+    "capabilities": {
+      "roots": false,
+      "rootsListChanged": false,
+      "elicitation": true,
+      "sampling": false
+    }
+  },
+  "roots": {
+    "advertisedByClient": false,
+    "listChanged": false,
+    "requested": false,
+    "pending": false,
+    "result": null,
+    "error": null
+  },
+  "protocolErrors": [],
+  "calls": [
+    {
+      "method": "initialize",
+      "at": "2026-07-28T05:40:38.421Z"
+    },
+    {
+      "method": "notifications/initialized",
+      "at": "2026-07-28T05:40:38.424Z"
+    },
+    {
+      "method": "tools/list",
+      "at": "2026-07-28T05:40:38.425Z"
+    },
+    {
+      "method": "tools/call",
+      "at": "2026-07-28T05:40:38.431Z"
+    }
+  ]
+}

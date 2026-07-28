@@ -480,7 +480,8 @@ created
 ```mermaid
 flowchart TB
     subgraph Hosts["Agent Hosts"]
-        CX["Codex Plugin / Skills"]
+        CX["Codex App / CLI Plugin"]
+        CXI["Codex IDE Direct MCP / Standalone Skill"]
         CL["Claude Plugin / Skills"]
         OT["其他 MCP Client"]
     end
@@ -506,6 +507,7 @@ flowchart TB
     REPO["Current Repository"]
 
     CX --> MCP
+    CXI --> MCP
     CL --> MCP
     OT --> MCP
     MCP --> CORE
@@ -523,6 +525,7 @@ flowchart TB
     LS --> STORE
     LS --> WB
     CX -->|"摘要与深链"| WB
+    CXI -->|"摘要与深链"| WB
     CL -->|"摘要与深链"| WB
 ```
 
@@ -550,11 +553,18 @@ understand-code/
 │   │   ├── mcp-config.template.json
 │   │   └── install-fixture/
 │   └── codex/
-│       ├── mcp-config.template.json
-│       └── install-fixture/
+│       ├── plugin/
+│       │   ├── mcp-config.template.json
+│       │   └── install-fixture/
+│       └── ide/
+│           ├── config.template.toml
+│           ├── standalone-skills/
+│           └── install-fixture/
 └── dist/
     ├── server/
     ├── dashboard/
+    ├── adapters/
+    │   └── codex-ide/
     └── plugins/
         ├── claude/
         │   ├── .claude-plugin/
@@ -574,8 +584,9 @@ understand-code/
 - Local Server 负责静态前端、只读数据 API，以及严格受限的 Task Mutation API、Token、SSE/轮询和深链。
 - CLI 提供 `analyze`、`mcp`、`serve`、`doctor`，用于安装检查、CI 和不支持 MCP 的降级场景。
 - 生产包必须包含预编译 Core、MCP 和 Dashboard，不在用户项目中运行 `pnpm install` 或 Vite Dev Server。
-- Codex 与 Claude 共享的是 MCP Server 二进制、Tool Schema 和 Skills 内容模型，不是假定共用同一个 `.mcp.json`；构建阶段分别生成符合各 Host 约定的 Plugin Root、Manifest 和 MCP 配置。
-- 两套 Host Adapter 都必须有完全空白环境安装 Fixture，禁止只在源码仓库根目录中验证。
+- Codex 与 Claude 共享的是 MCP Server 二进制、Tool Schema、Artifact 和 Skills 内容模型，不是假定共用一个 Manifest 或 `.mcp.json`。
+- Codex App/CLI 使用 `.codex-plugin/plugin.json` + bundled `.mcp.json`；Codex IDE 当前不支持 Plugin，P0 只使用 trusted project-scoped `.codex/config.toml` 直连同版本 MCP，并把 standalone Skill 安装到该仓库的 `.agents/skills/**`。
+- Codex Plugin、Codex IDE Direct MCP、Claude Plugin 三条安装路径都必须有完全空白环境 Fixture，禁止只在源码仓库根目录中验证。
 
 上述依赖边界是 P0 强约束，但不要求第一天就发布七个独立 npm 包：
 
@@ -604,7 +615,7 @@ mcp-server + local-server
   └──→ cli/runtime-manager
 
 cli/runtime-manager
-  └──→ Codex/Claude adapters
+  └──→ Codex App/CLI Plugin + Codex IDE Direct MCP + Claude adapters
 ```
 
 Agent Plugin 不得自行解析 Graph JSON、执行 Git 或写 Task 文件。
@@ -682,7 +693,7 @@ P0 默认不在 MCP Server 内再嵌入一个独立 LLM。
 | Task Brief | 极高 | Chat/Explain/Search 可复用 | 任务目标、路径、候选、影响、未知和验证 |
 | Change Check | 极高 | Diff Analyzer/Overlay 可复用 | 计划内、计划外、遗漏、未知和验证状态 |
 | MCP Server | 极高 | 无 | 统一跨 Agent 工具层 |
-| Codex/Claude Adapter | 极高 | Claude Plugin + Skills | 双 Manifest、共享 MCP、薄 Skill |
+| Host Surface Adapter | 极高 | Claude Plugin + Skills | Codex App/CLI Plugin、Codex IDE Direct MCP、Claude Plugin；共享 MCP/Artifact、薄 Skill |
 | Artifact Store | 极高 | `.understand-code` 持久化 | 原子写、锁、迁移、事件日志 |
 | Local Server | 高 | Vite middleware | 成品静态服务、Token、Deep Link |
 | Task-first Workbench | 高 | Wiki/Graph 双 Surface | Tasks 默认页、Brief、Evidence、Check、Overlay |
@@ -1093,6 +1104,7 @@ P1 再增加：
 - 所有返回结构版本化。
 - 大结果通过 cursor/pageSize 分页。
 - 每次返回 repo commit、worktree fingerprint、freshness 和 truncated。
+- 共享 Server 必须收到显式 `--root <path>`，缺失时 fail closed；它不直接读取 Host 环境变量，也不把通用 cwd/Roots 当 fallback。
 - Root 在启动时绑定；Handler 不接受任意绝对路径。
 - 只暴露面向任务的稳定工具，不把所有内部函数直接映射为 MCP Tool。
 
@@ -1141,22 +1153,36 @@ understand://tasks/{taskId}/check
 - Skill 只定义何时调用、调用顺序和怎样向用户表达。
 - 两个 Agent 输出同一 Artifact Schema。
 - Agent 不支持富 UI 时使用 Markdown 摘要和文本 URL。
+- 共用的是 MCP Runtime、Tool Schema、Error Envelope、Artifact 与 Skill 内容模型，不是安装外壳。
+- Host Adapter 只从当前 Surface 已验证的权威信号生成显式 `--root`；信号缺失、无效或未验证时进入 `binding_error`，所有 Repository/Task/Workbench Tool 以稳定 `workspace_binding_required` Envelope fail closed。
 
-#### Codex
+#### Codex App / CLI Plugin
 
 - 新增 `.codex-plugin/plugin.json`。
 - Codex 分发根生成专用 `.mcp.json`，指向随 Plugin 发布的本地 stdio Server。
 - 打包共享 Skills。
-- 验证 CLI、Desktop、IDE 能力差异；不能假定所有 Surface 相同。
+- Codex Desktop App 与 CLI 分别通过 clean-install E2E 后才能声明支持。
+- 当前 App Server 中“stdio 进程 cwd 跟随 thread cwd”只属于固定版本、固定路径的 `provisional observed` 证据，不得推广为 CLI 或 Desktop 契约。
+- 在某个 Surface 不能产生可验证显式 Root 时保持 `pending-e2e`，不得静默猜测。
+
+#### Codex IDE Direct MCP
+
+- Codex IDE 当前不支持 Codex Plugin，不读取 `.codex-plugin`、Plugin cache 或 bundled `.mcp.json`。
+- P0 只通过 trusted project-scoped `.codex/config.toml` 注册同版本 stdio executable；不生成带固定项目 Root 的 user-scoped `~/.codex/config.toml`。
+- project config generator 在安装时把已归一化项目目录写成显式 `--root`，并把 `understand-task`、`understand-check` 安装到该仓库 `.agents/skills/**`；继承的任意 process cwd 非权威。
+- Installer/Doctor 必须验证项目已受 Codex 信任、配置与 Skill 的 scope 一致，且 remove 只删除本产品拥有且内容未被用户修改的条目。
+- IDE 配置模板、Doctor、reload、upgrade 和 remove 使用独立 Fixture。
+- App/CLI Plugin 仍是一键安装主路径；Direct MCP 是三端兼容基线，不等于删除 Plugin。
 
 #### Claude Code
 
 - 保留 `.claude-plugin/plugin.json`。
 - Claude 分发根增加符合 Claude Plugin 约定的 bundled `.mcp.json`。
-- 逐步移除 `${CLAUDE_PLUGIN_ROOT}` 之外的手工路径猜测。
+- 使用 `${CLAUDE_PROJECT_DIR}` 生成显式 `--root`；process cwd 只做诊断，即使不同也不重选 Root 或报冲突。
 - 现有 Skills 改为调用 MCP，不再让 Agent 自己 grep 大 JSON。
+- `roots/list` 只校验显式 canonical root 仍在 Host 允许集合中，不参与 Root 选择，也不扩大分析边界。
 
-两套 `.mcp.json` 由独立 Adapter Template 生成并分别做 Schema/启动测试；它们可以指向同一版本 Server，但不能互相复制配置外层结构或把源码仓库根配置当成发布物。
+Codex Plugin `.mcp.json`、Codex IDE `config.toml` 与 Claude `.mcp.json` 由独立 Adapter Template 生成并分别做 Schema/启动测试；它们可以指向同一版本 Server，但不能互相复制配置外层结构或把源码仓库根配置当成发布物。
 
 #### P0 Skills
 
@@ -1172,24 +1198,76 @@ understand://tasks/{taskId}/check
 
 #### Workspace Binding 与进程生命周期
 
-P0 采用“一 MCP 进程绑定一个 canonical Worktree Root”：
+P0 采用“一 MCP 进程绑定一个 immutable canonical Worktree Root”。共享 Server 必须收到显式 `--root`；缺失或校验失败时不得读取 Repository、Artifact 或 Task 数据，但仍完成 MCP initialize 和 `tools/list`，进入只允许返回诊断的 `binding_error` 状态：
 
-1. 优先读取 MCP Client 在初始化阶段提供的 Roots。
-2. 只有一个合法 Root 时完成绑定。
-3. Host 不提供 Roots 时，由 Codex/Claude Adapter 使用各自已验证的 Workspace 变量或启动 cwd 传给 `--root`。
-4. Root 缺失、多个 Root 或 cwd 与 Git Root 冲突时，返回 `workspace_binding_required`，不得猜测主 Checkout。
-5. 绑定后同一进程不可重绑；多 Root 使用独立进程。
+1. Adapter 只从当前 Surface 已验证的权威信号生成 `--root`：
+   - Claude：`${CLAUDE_PROJECT_DIR}`。
+   - Codex IDE：trusted project-scoped `.codex/config.toml` 在安装时声明的 project binding。
+   - Codex Desktop App/CLI：分别由对应 Surface E2E 验证；App Server startup cwd 仅为当前版本 provisional candidate。
+2. 显式 Root 依次执行存在性、目录、`realpath` 和 Git worktree top-level 归一化；linked worktree 必须绑定自身 top-level，不得跳到 common dir 或主 checkout。
+3. 通用 process cwd 不是共享 Server fallback。Claude cwd 永远非权威；Codex cwd 只有在固定版本、已通过该 Surface Fixture 的 Adapter 内才能使用。
+4. MCP Roots 不是 selector。若 Client 支持 Roots，每个 `file:` URI 只执行 decode、目录校验和 `realpath`，**不得**向上提升到 Git top-level；只有显式 Root 可以按第 2 条归一化为 worktree top-level。
+5. membership 使用路径组件感知的 containment：canonical worktree root 必须等于某个 advertised Root，或完整位于其目录范围内。若 Host 只 advertise worktree 的子目录，不得借 Git 归一化扩大到整个 worktree，必须返回 `root_not_allowed`。
+6. Client 不支持 Roots 时，有效显式 Root 可继续；支持 Roots 但成功返回的集合为空或不再包含 canonical root 时，后续仓库 Tool fail closed。Client 已 advertise Roots 但 `roots/list` 调用失败时使用 `root_unavailable`。
+7. 多个 Roots 本身合法。additional roots 只表示 Host scope/membership，不进入索引、Artifact、源码读取或 Root Guard allowlist，也不能视作操作系统级权限证明。
+8. `roots/list_changed` 新增 Root 只更新诊断；移除覆盖 canonical root 的 Root 时进入 `binding_error`，不重绑。
+9. 绑定后同一进程不可重绑；分析第二个仓库必须使用独立 Agent session、MCP 进程、Store identity 与 Workbench Runtime。
+10. cwd、additional roots、Plugin 目录和 sibling checkout 均不得覆盖显式 canonical root。
 
-M0 必须用 Codex CLI/Desktop/IDE 和 Claude Code 做技术 Spike，冻结各 Host 的实际 Root 传递方式；未验证的环境变量不能写入正式安装契约。
+一旦进入 `binding_error`，同一 MCP 进程不得因 cwd、Roots 或文件系统状态随后恢复而解封；修复配置并重启独立 MCP 进程是唯一恢复方式。
+
+绑定错误统一通过 MCP `tools/call` 的 Tool Error 返回，而不是把业务错误伪装成 JSON-RPC 协议错误：
+
+```json
+{
+  "isError": true,
+  "content": [
+    {
+      "type": "text",
+      "text": "Workspace binding is required."
+    }
+  ],
+  "structuredContent": {
+    "error": {
+      "schemaVersion": 1,
+      "code": "workspace_binding_required",
+      "details": {
+        "reason": "root_missing | root_not_directory | root_not_allowed | root_unavailable | root_conflict | secondary_session_required"
+      }
+    }
+  }
+}
+```
+
+`structuredContent.error` 是唯一机器可读 Error Envelope；P0 不暴露容易误导的统一 `retryable` 布尔值，调用方按 `reason` 给出修复动作。`code` 与 `reason` 是跨 Host 稳定字段；`text` 可以本地化，但不得包含绝对路径。六个 `reason` 按下表自上而下判定，命中即停止，因此触发条件互斥：
+
+| reason | 唯一触发条件 |
+|---|---|
+| `root_conflict` | Adapter 同一次启动取得两个及以上已验证权威 Root 候选，且各自 canonicalize 后不相同；process cwd 差异不属于 conflict，Adapter 不得择一 |
+| `root_missing` | Adapter 没有任何权威 Root 候选、未提供 `--root`，或参数为空 |
+| `root_not_directory` | 显式 Root 可成功 `stat`，但对象不是目录 |
+| `root_unavailable` | 显式 Root 不存在、不可读、为 broken symlink，或 `stat`/`realpath` 失败；或 Client 已 advertise Roots 但 `roots/list` 请求失败/暂不可用 |
+| `root_not_allowed` | 显式 Root 已成功 canonicalize，但成功返回的 advertised Roots 为空、没有任何一项覆盖 canonical root，或运行中失去该 membership |
+| `secondary_session_required` | 进程已经成功绑定后，请求引用另一个 worktree/repository 的 Task、Artifact 或 additional Root |
+
+只有 malformed JSON-RPC、未知方法等协议问题使用 JSON-RPC error。`binding_error` 下 `initialize`、`tools/list` 和无源码诊断可成功，所有 Repository/Task/`open_workbench`/`refresh_index` 调用返回上述 Tool Error，且不得创建 Artifact。CLI 参数解析本身无法启动 stdio 时只允许输出不含路径的 stderr 诊断并非 MCP Envelope，该情况不能计作 Tool Error E2E 通过。
+
+M0 必须分别记录 Codex App/CLI Plugin、Codex IDE Direct MCP 与 Claude Plugin 的证据等级；`provisional observed` 不能替代另一个 Surface 的 E2E，也不能出现在“已支持”文案中。
 
 `open_workbench` 生命周期：
 
-- 委托 Runtime Manager 按 worktreeId 查找现有 Local Server。
-- 不存在时启动同版本 Local Server；存在则复用。
-- 返回一次性 Token 和指定 Task Deep Link。
-- Token 兑换后失效；Session 有固定过期与撤销能力。
-- Server 在无客户端/无活动请求达到 idle timeout 后退出，也可由 CLI 显式停止。
-- MCP 退出不强制杀死仍有活动浏览器 Session 的 Workbench。
+- `runtimeIdentity = productVersion + worktreeId`；rendezvous、startup lock、owner lock 和 control channel 位于 OS 用户级私有 runtime 目录，不写目标仓库或 Host Plugin cache。目录权限必须仅当前 OS 用户可访问。
+- rendezvous 记录 protocol/product version、worktree ID、root digest、PID、loopback port、control endpoint、control capability digest、instance nonce 和 ready time，不记录源码、Task 正文、Browser Session 或长期 Token。实际 control capability 是 Runtime 生命周期内的 256-bit 随机值，单独保存在当前用户独占的文件/命名管道凭据中。
+- `open_workbench` 先验证 rendezvous 所有权与权限，再通过 control channel 完成 identity + nonce + capability handshake；不能只根据 PID/port 复用。
+- control channel 只接受 `health`、`mint_launch_token` 和 `stop` 三类强类型操作。复用已有 Runtime 时，新 MCP 必须请求 Runtime 为目标 task/view/section 签发新的 Launch Token，不能自行生成、复用旧 Token，Browser HTTP API 也不能暴露 mint 能力。
+- startup lock 只保护选主和 ready publication；新 Runtime 在启动后取得并持有 owner lock 直到退出。Local Server ready 后以临时文件、file fsync、原子 rename 和目录 fsync 发布 rendezvous，再释放 startup lock。
+- startup lock 单次取得最多等待 2 秒，health/control 单次超时 1 秒，Runtime ready 超时 15 秒，单次 `open_workbench` 总等待上限 20 秒；竞争者使用 50–200 ms jitter 轮询 ready record。每次调用最多进行一次 stale recovery 和一次新 Runtime election，所有分支均受 20 秒总预算约束，不得无限等待。锁竞争耗尽返回 `workbench_busy`，Runtime 未 ready 返回 `workbench_start_timeout`，control channel 失败返回 `workbench_control_unavailable`，identity/nonce/capability 不匹配返回 `workbench_identity_mismatch`。
+- 只有在取得 startup lock、确认 health 失败且 owner lock 可取得后，才可 compare-and-delete nonce 仍匹配的 stale record。owner lock 仍被持有、PID reuse、陌生端口或 nonce/capability 不一致均视为 foreign/unknown process，不得 kill 或覆盖记录。
+- ready 前崩溃释放 OS owner lock，后续调用可重新竞选，本次调用仍不得超过一次 election；ready 后崩溃使旧 Browser Session fail closed。恢复相同 task/view 路由必须再次调用 `open_workbench` 获取新 Token/新 deep link，原链接永不重新生效。
+- Launch Token 一次性、60 秒 TTL，通过 URL fragment 传输，兑换后立即清除。
+- Browser Session 绝对 TTL 8 小时、空闲 TTL 30 分钟；Runtime 无有效 Session、无活动请求 5 分钟后退出。
+- explicit stop 只通过认证后的 control channel 请求 identity + nonce 验证通过的实例自行撤销 Session 并退出；Runtime 正常退出只 compare-and-delete nonce 匹配的自身 rendezvous，然后释放 owner lock。
+- MCP 退出不强制杀死仍有活动 Browser Session 的 Workbench。
 
 ### 7.8 Local Server
 
@@ -1806,14 +1884,18 @@ P2 的阻断规则必须确定性执行：
 
 Graph/Layout 属于 G0 遗留稳定任务，严格时间盒在 WP0 内；除修复现有回归、可达性和性能门禁外，不在本阶段继续扩展新的布局能力。
 
+WP0 只关闭 **Contract Freeze Gate**：冻结产品范围、Root/Error/Rendezvous 语义和各 Surface 的证据状态。正式发布支持使用独立的 **Surface Release Gate**，由 WP6 的 Surface E2E 与 WP8 的 RC 验证关闭。`pending-e2e` 可以带着明确 Owner 进入 WP1，但不能被写成 supported；Surface Release Gate 未关闭不反向阻塞 WP1。
+
 任务：
 
 - 完成或明确拆出当前 Graph/Layout 修改。
 - 修复 `largeRepositoryAcceptance` 当前 5 秒超时，不以单纯放宽超时作为最终方案。
 - 确认当前有界展开和全对象可达性。
 - 冻结本文中的 Product Mission、P0 Scope 和 Non-goals。
-- 完成 Codex CLI/Desktop/IDE 与 Claude Code 的 Workspace Root / MCP 启动技术 Spike。
-- 冻结单 Root 绑定、Workbench 启动复用、Token 和进程退出契约。
+- 分开完成 Codex App/CLI Plugin、Codex IDE trusted project-scoped Direct MCP、Claude Plugin 的 Workspace Root / MCP 启动技术 Spike。
+- 将 Codex App Server cwd 记录为 `provisional observed`，不视作 CLI/Desktop/IDE 的跨 Surface 契约。
+- 冻结 explicit-root、`binding_error` Tool Envelope、advertised Roots 不上提、membership-only 与 additional roots 不扩权规则。
+- 冻结 Workbench runtime identity、用户级 rendezvous、control channel、startup/owner lock、原子 ready publication、health handshake、stale recovery、确定性 timeout、Token/Session TTL 和进程退出契约。
 - 建立真实根级质量命令，替换当前只输出提示的根 `pnpm test`。
 - 增加 CI 基线。
 
@@ -1823,6 +1905,9 @@ Graph/Layout 属于 G0 遗留稳定任务，严格时间盒在 WP0 内；除修�
 - Core/Dashboard 全绿测试。
 - 大仓库性能报告。
 - Host Binding Spike 报告。
+- Host Distribution / Root Evidence Matrix。
+- Root Binding Contract V1。
+- Workbench Runtime Rendezvous Contract V1。
 - P0 Decision Log。
 
 退出条件：
@@ -1830,6 +1915,10 @@ Graph/Layout 属于 G0 遗留稳定任务，严格时间盒在 WP0 内；除修�
 - 当前用户工作区改动已由 Owner 明确处理。
 - 没有已知 P0 回归被带入新分支。
 - 根目录一条命令可执行 build、typecheck 和 test。
+- 每个 Surface 的分发方式、权威 Root 来源、证据等级和 WP6 Gate 唯一；不存在“一个 Codex Plugin 覆盖 IDE”的描述。
+- `binding_error` 的 MCP 传输方式与六个 reason 触发表唯一；advertised Root 不会通过 Git top-level 归一化扩大。
+- Runtime 的 control channel、startup/owner lock、Token mint、timeout、崩溃恢复和原子清理状态机无未决语义。
+- Contract Freeze Gate 已关闭；Surface Release Gate 的 mandatory/conditional 清单、Owner 和 WP6/WP8 证据任务明确，`pending-e2e` 未被产品文案称为“受支持”。
 
 估算：1–1.5 周，2–3 person-weeks。
 
@@ -1995,29 +2084,38 @@ Graph/Layout 属于 G0 遗留稳定任务，严格时间盒在 WP0 内；除修�
 依赖：WP2 与 WP4 Draft；Diff→Symbol 和 Matching 可在 Week 4 并行，写入正式 Store 前接入 WP3。
 估算：2.5 周，5–6 person-weeks。
 
-### WP6：MCP Server 与双 Agent Adapter
+### WP6：MCP Server 与 Host Surface Adapter
 
-**目标**：让同一能力在 Codex 和 Claude 中成立。
+**目标**：让同一能力经 Codex App/CLI Plugin、Codex IDE Direct MCP 和 Claude Plugin 成立。
+
+P0 Beta 的 mandatory Surface 固定为 **Codex CLI Plugin** 与 **Claude Code CLI Plugin**，它们共同构成“双 Agent”发布承诺。Codex Desktop App、Codex IDE Extension、Claude VS Code 和 Claude Desktop local 是 conditional Surface：可以并行实现和取证，但只有各自 Surface Release Gate 通过后才进入 supported 列表；未通过不阻塞 P0 Beta，也不得借用 CLI 结果宣传支持。
 
 任务：
 
 - Week 2 在 Contracts 冻结后先新建 `packages/mcp-server` 和最小 CLI/bin scaffold。
-- 先完成 initialize、Root Binding、Error Envelope 和 Mock Tool，随后逐步接入 Task/Change Handler。
+- 先完成 initialize、`binding_error`、Tool Error Envelope 和 Mock Tool，随后逐步接入 Task/Change Handler。
 - 实现 P0 Tools、Resources、Pagination 和 Error Envelope。
-- Root 绑定、Secret Redaction、stderr logging。
-- 分别生成 Codex Plugin Root 与 Host-specific `.mcp.json`。
+- 共享 Server 强制显式 `--root`；绑定失败时只允许 initialize、tool list 和无源码诊断，所有仓库 Tool 返回稳定 Envelope。实现 Root Guard、Secret Redaction、stdout 纯协议与 stderr logging。
+- 生成 Codex App/CLI Plugin Root 与 Host-specific `.mcp.json`。
+- 实现 Codex IDE trusted project-scoped `.codex/config.toml` generator、repo-scoped `.agents/skills/**`、Doctor 与独立 remove；P0 不生成带固定 Root 的 user config。
 - 重构 Claude Plugin 使用同版本 MCP Server，并生成独立 Claude `.mcp.json`。
-- 建 Codex/Claude 两套干净安装 Fixture，验证配置格式、路径展开、Root 绑定和卸载残留。
+- 建 Codex Plugin、Codex IDE Direct MCP、Claude Plugin 三套干净安装 Fixture，验证配置格式、路径展开、Root 绑定和卸载残留。
 - 新增 `understand-task`、`understand-check`。
 - 现有 Skills 逐步改为薄 Adapter。
-- 建 Codex/Claude Contract E2E。
+- Codex Desktop App、CLI、IDE 和 Claude CLI、VS Code、Desktop local 分别维护证据状态，不能用一个 Surface 的结果替代另一个。
+- Root E2E 覆盖 repo root、子目录、symlink、linked worktree、含空格/中文路径、显式 Root 缺失、六种 binding reason、Roots membership 变化、advertised 子目录不向上扩权和 additional root 不扩权。
+- Claude Fixture 故意让 process cwd 与 `${CLAUDE_PROJECT_DIR}` 不同，并断言始终绑定后者。
+- `roots/list_changed` Surface E2E 只对 advertise `roots.listChanged=true` 的 Client 执行；Claude 动态 additional roots Fixture 使用 `>=2.1.203`。未 advertise Roots 的 Surface 记录 `N/A`，其通用状态机由 Mock Client Contract Test 覆盖。
+- 建 Host Surface Contract E2E：handshake、tool list、`get_repo_pulse`、真实只读 Tool Call、upgrade/reload/remove。
 
 交付物：
 
 - `understand-code mcp --stdio`。
-- Codex Plugin。
+- Codex App/CLI Plugin。
+- Codex IDE MCP Config Adapter。
 - Claude Plugin。
 - Agent Interaction Samples。
+- Host Surface Contract E2E Report。
 
 退出条件：
 
@@ -2026,6 +2124,10 @@ Graph/Layout 属于 G0 遗留稳定任务，严格时间盒在 WP0 内；除修�
 - MCP 无法越过 Root。
 - MCP 不写用户源码、不运行任意 Shell。
 - 大结果正确分页并返回 truncated。
+- IDE Fixture 不读取 `.codex-plugin`、Plugin cache 或 Codex Plugin `.mcp.json`。
+- Claude cwd 改变不影响 canonical root；multiple/additional roots 不重绑、不扩权。
+- 两个 mandatory CLI Surface 都有独立 clean-install、真实 Tool Call、Root/Error、upgrade/reload/remove 与清理证据，双 Agent Artifact 兼容通过。
+- 每个 conditional Surface 保持独立 evidence 状态；只有同等级证据齐备时才可 promoted 为 supported，未 promoted 不阻塞 WP6 的 mandatory Alpha/Beta 路径。
 
 依赖：WP1 启动 MCP/CLI Skeleton；业务 Handler 分别依赖 WP2–WP5。
 估算：2 周，4 person-weeks。
@@ -2037,7 +2139,9 @@ Graph/Layout 属于 G0 遗留稳定任务，严格时间盒在 WP0 内；除修�
 任务：
 
 - 新建 `packages/local-server`。
+- 实现 Runtime Manager：用户级 rendezvous、认证 control channel、分离的 startup/owner lock、nonce/capability health handshake、原子 ready publication、stale recovery、20 秒总启动上限和 Token/Session TTL。
 - Week 3 可在 Contracts 与 Fixture 上先实现 Task 页面壳和 Deep Link，正式数据写入依赖 Task Engine/Store。
+- 使用 Product Design 流程先审计现有 Dashboard 设计系统与交互，再完成 Task-first Workbench 视觉目标；实现不得另起不一致的颜色、间距、字体或组件体系。
 - 静态提供预编译 Dashboard。
 - Dashboard Surface 扩展为 `tasks | knowledge | graph`。
 - 新增 Task Home、Task Brief、Change Check、Evidence Ledger。
@@ -2064,6 +2168,8 @@ Graph/Layout 属于 G0 遗留稳定任务，严格时间盒在 WP0 内；除修�
 - Knowledge/Graph 现有核心能力不回归。
 - Workbench 不含重复 Chat/Editor/Terminal。
 - Server 与 Dashboard 版本错误可诊断。
+- 复用 Runtime 时通过 control channel 签发新的单次 Launch Token；旧 deep link 在兑换、过期或 Runtime 崩溃后永不复活，相同 task/view 通过再次 `open_workbench` 恢复。
+- 20 路并发 `open_workbench` 对同 identity 只产生一个健康 Runtime；owner lock、PID reuse、foreign port/nonce/capability、ready 前后崩溃和 timeout 均可安全恢复且不误杀进程。
 
 依赖：WP1 可启动 UI/Router；正式数据与 Mutation 依赖 WP3–WP5；可与 WP6 后半并行。
 估算：3 周，6–7 person-weeks。
@@ -2081,6 +2187,7 @@ Graph/Layout 属于 G0 遗留稳定任务，严格时间盒在 WP0 内；除修�
 - 实现 install/upgrade/uninstall/doctor。
 - 建立 CI、release candidate、rollback。
 - 执行安全、性能、跨 Agent、迁移和故障注入测试。
+- 关闭 mandatory Codex CLI 与 Claude Code CLI 的 Surface Release Gate；conditional Surface 只有在本 RC 中通过各自完整矩阵后才 promoted。
 
 交付物：
 
@@ -2096,6 +2203,7 @@ Graph/Layout 属于 G0 遗留稳定任务，严格时间盒在 WP0 内；除修�
 - 所有包和 Plugin 版本可追溯。
 - Clean/Dirty/Worktree/Corrupt Artifact 场景通过。
 - P0 Quality Gate 全部通过。
+- mandatory Surface Release Gate 全部关闭；每个 conditional Surface 要么有完整 supported 证据，要么明确保持 `pending-e2e` 且不出现在支持文案中。
 
 依赖：WP0–WP7。
 估算：2 周，4–5 person-weeks。
@@ -2121,11 +2229,16 @@ Graph/Layout 属于 G0 遗留稳定任务，严格时间盒在 WP0 内；除修�
 - 当前 Graph/Layout 改动收口。
 - 全量测试基线稳定。
 - Product Mission、P0 Scope 与 Contract RFC 目录/原则冻结；完整 V1 Schema、Fixture 和迁移契约在 M1/WP1 冻结。
+- Host Distribution / Root Evidence Matrix 完成，Root Binding Contract V1 与 Workbench Runtime Rendezvous Contract V1 通过评审。
+- Contract Freeze Gate 与 Surface Release Gate 分离；后者保留给 WP6/WP8，不阻塞 WP1。
 
 阶段门 G0：
 
 - Mission、P0、Non-goals 无冲突。
 - 当前已知回归有 Owner 和处理结果。
+- 根目录 build、typecheck、test 一条命令全绿，大仓库性能基线有可复现报告。
+- explicit root、`binding_error` Tool Envelope、Roots membership 和 Workbench control/lock/timeout 语义没有未决分支。
+- 每个 Host Surface 均有 evidence level、mandatory/conditional 状态、后续 Gate 与 Owner；没有把 `pending-e2e` 写成 supported。
 
 ### M1：Trustworthy Repository Foundation
 
@@ -2162,7 +2275,8 @@ Graph/Layout 属于 G0 遗留稳定任务，严格时间盒在 WP0 内；除修�
 - Git changed-file discovery recall = 100%，Evidence 文件/行号可解析率 ≥95%。
 - Top-5 candidate recall ≥70%、precision ≥50%；计划外修改 recall ≥70%。
 - 相同 Snapshot/输入重复运行时，确定性 Artifact payload digest 和 revision 结果一致率 = 100%。
-- 通过第 22 章场景 A、C、D、E、G；任何 Unknown 不得被显示成已验证事实。
+- 通过第 22 章场景 C、D、E；Root/`binding_error` 六 reason 使用 Mock Client 完成 Contract Test。G2 不要求 Workbench、Surface 安装生命周期或场景 F/G。
+- 任何 Unknown 不得被显示成已验证事实。
 
 ### M3：Dual-Agent + Workbench Alpha
 
@@ -2170,7 +2284,7 @@ Graph/Layout 属于 G0 遗留稳定任务，严格时间盒在 WP0 内；除修�
 
 成果：
 
-- Codex/Claude 双 Adapter。
+- mandatory Codex CLI / Claude Code CLI 双 Adapter。
 - Task Home。
 - Task Brief View。
 - Change Check View。
@@ -2183,7 +2297,10 @@ Graph/Layout 属于 G0 遗留稳定任务，严格时间盒在 WP0 内；除修�
 - 排除 Host 展示文案后，同 Task/Snapshot 的 Artifact payload digest、Task ID 和 revision 一致率 = 100%。
 - Agent 与 Workbench 的 Claim → Evidence → Source → Graph Deep Link 成功率 ≥95%。
 - 四个新增页面通过 desktop/tablet/mobile 核心路径，以及 refresh、stale、revision conflict、token expired E2E。
-- 通过第 22 章全部 P0 场景；跨 Agent 续接不丢 Task Event。
+- 通过第 22 章场景 A–E。
+- 通过场景 F 的 Alpha 子集：仅 mandatory CLI Surface 的构建产物安装、initialize、tool list、Root Binding 和真实只读 Tool；不要求 conditional UI Surface、upgrade/downgrade/uninstall。
+- 通过场景 G 的 Alpha 子集：单 Runtime 启动/复用、control channel 新 Token、一次性 deep link、Session 过期和 revision conflict；20 路竞争与完整崩溃矩阵保留给 G4。
+- 跨 Agent 续接不丢 Task Event；conditional Surface 未通过不得出现在 Alpha 支持声明中。
 
 ### M4：P0 Beta
 
@@ -2195,12 +2312,15 @@ Graph/Layout 属于 G0 遗留稳定任务，严格时间盒在 WP0 内；除修�
 - CLI/Doctor。
 - 安装和升级。
 - 安全、性能、迁移和 E2E 门禁。
+- mandatory Surface Release Gate 关闭；conditional Surface 按独立证据决定是否 promoted。
 - 真实用户 Beta。
 
 阶段门 G4：
 
 - 冷安装成功。
 - 核心准确性、可靠性和安全指标达标。
+- 第 22 章场景 F、G 完整矩阵通过 mandatory Surface；所有被 promoted 的 conditional Surface 也分别通过完整 F/G，不共享证据。
+- mandatory Codex CLI 与 Claude Code CLI install/upgrade/downgrade/reload/remove 均只依赖发布物；conditional Surface 未 promoted 时明确保持 `pending-e2e`。
 - 没有 P0/P1 级未处理缺陷。
 
 ### M5：P1 决策
@@ -2426,8 +2546,12 @@ Beta 前 Gold Set 至少包含 100 个已人工标注 Task，并覆盖不少于 
 - Wiki 缺失。
 - Evidence 行号失效。
 - MCP 客户端取消。
+- Roots 集合变化、multiple/additional roots 和 canonical root membership 丢失。
+- Claude process cwd 与 `${CLAUDE_PROJECT_DIR}` 指向不同目录。
 - 两个 Agent 同时写同一 Task。
 - Local Server 端口冲突。
+- 20 个 MCP 进程并发启动同一 Workbench Runtime。
+- Runtime ready 前/后崩溃、stale rendezvous、PID reuse、foreign port 和 instance nonce 不一致。
 - Browser Token 过期。
 - Workspace symlink 指向外部。
 
@@ -2471,6 +2595,8 @@ Beta 前 Gold Set 至少包含 100 个已人工标注 Task，并覆盖不少于 
 7. 拒绝 symlink escape。
 
 不得使用字符串 `startsWith(projectRoot)` 判断目录归属。
+
+Root Guard 唯一源码允许边界是当前进程绑定的 canonical root；MCP advertised roots、additional roots、cwd、Plugin 目录和 sibling checkout 都不得加入源码访问 allowlist。
 
 ### 15.3 Secret Protection
 
@@ -2575,24 +2701,30 @@ Hard Deny 不允许用户 Ignore Negation 覆盖：
 
 ### 16.3 安装验证
 
-Host 分发矩阵：
+Host Surface 分发矩阵：
 
-| Host | 独立发布物 | MCP 配置来源 | 必测启动面 | 兼容断言 |
-|---|---|---|---|---|
-| Codex | Codex Plugin Root、`.codex-plugin/plugin.json`、Codex `.mcp.json` | `integrations/codex/mcp-config.template.json` | CLI、Desktop、IDE（以 M0 Spike 结果为准） | Tool Schema、Root、分页、错误和 Artifact Digest 与 Server V1 一致 |
-| Claude Code | Claude Plugin Root、`.claude-plugin/plugin.json`、Claude `.mcp.json` | `integrations/claude/mcp-config.template.json` | Claude Code Plugin 安装与本地 stdio MCP | 同版本 Server/Schema；Host 外层字段按 Claude 契约独立验证 |
+| Surface | P0 状态 | 分发/注册方式 | 权威 Root 来源 | cwd / Roots 语义 | 发布门禁 |
+|---|---|---|---|---|---|
+| Codex CLI | Mandatory | Codex Plugin + bundled MCP | CLI Adapter 经该 Surface E2E 验证的信号 → `--root` | 不继承 App Server 结论；不假定 Roots | CLI clean-install、真实 Tool、子目录/worktree、upgrade/downgrade/reload/uninstall |
+| Claude Code CLI | Mandatory | Claude Plugin + bundled MCP | `${CLAUDE_PROJECT_DIR}` → `--root` | cwd 非权威；Roots 仅做 scope/membership；dynamic Roots 测试版本 `>=2.1.203` | authenticated Tool E2E、cwd divergence、advertised subdir、additional root |
+| Codex Desktop App | Conditional | Codex Plugin + bundled MCP | Desktop Adapter 经该 Surface UI E2E 验证的信号 → `--root` | App Server cwd 仅 provisional；不假定 Roots | Desktop clean-install、真实 Tool、Root Fixture、完整安装生命周期 |
+| Codex IDE Extension | Conditional | trusted project-scoped `.codex/config.toml` + repo `.agents/skills/**` | 安装时声明的 project binding → `--root` | inherited cwd 非权威；IDE 不支持 Plugin；P0 无固定 Root user config | 独立 config/Skill install、Doctor、reload、upgrade、remove |
+| Claude VS Code | Conditional | VS Code 官方 Plugin 安装流 + bundled MCP | `${CLAUDE_PROJECT_DIR}` → `--root` | cwd 非权威；Roots 仅做 scope/membership | VS Code UI clean-install、真实 Tool、Root Fixture、remove |
+| Claude Desktop local | Conditional | Desktop 官方 Plugin 安装流 + bundled MCP | `${CLAUDE_PROJECT_DIR}` → `--root` | cwd 非权威；Roots 仅做 scope/membership | Desktop UI clean-install、真实 Tool、Root Fixture、remove |
 
-干净安装 Fixture 必须只包含发布产物和一个测试仓库，不能访问本源码仓库的 `node_modules`、根 `.mcp.json` 或未打包文件。Host-specific 配置只负责启动和 Root 传递，不承载业务规则。
+Mandatory 两行全部通过才关闭 P0 Beta 的 Surface Release Gate。Conditional 行逐行独立 promoted；未通过只保持 `pending-e2e`，不阻塞 P0 Beta。`provisional observed` 只证明某版本某路径的行为，不能自动升级为另一 Surface 的支持声明。每个 promoted Surface 必须独立完成对应 install、Root、Tool、upgrade/reload/remove 验证；一行结果不得代替另一行。
+
+干净安装 Fixture 必须只包含发布产物和一个测试仓库，不能访问本源码仓库的 `node_modules`、根 `.mcp.json` 或未打包文件。Codex Plugin、Codex IDE Direct MCP、Claude Plugin 使用独立包装 Fixture；上表六个 Surface 再各自使用独立 Host Harness。Host-specific 配置只负责启动和 Root 传递，不承载业务规则。
 
 每个 Release Candidate 在干净环境验证：
 
-- Codex install。
-- Claude install。
+- Mandatory Codex CLI Plugin install/upgrade/downgrade/reload/uninstall。
+- Mandatory Claude Code CLI Plugin install/upgrade/downgrade/reload/uninstall。
+- 每个准备 promoted 或已 supported 的 Conditional Surface 完整重跑其独立 UI/config 生命周期；未 promoted 的 Surface 不进入支持文案。
 - 无全局 pnpm。
 - 无仓库 node_modules。
 - Offline。
 - macOS/Linux；Windows 在 GA 前决定支持范围。
-- install/upgrade/downgrade/uninstall。
 
 ### 16.4 Artifact Migration
 
@@ -2715,6 +2847,8 @@ Stable 后：
 | R-13 | Skill、CLI、Core 重复实现 | 高 | 高 | 所有确定性逻辑下沉 Core | 删除重复脚本并加边界测试 |
 | R-14 | Beta 准确性没有客观数据 | 中 | 高 | Gold Set 与对照评测 | 暂停 GA，扩大样本 |
 | R-15 | 打包后与开发仓库行为不同 | 中 | 高 | RC 在干净环境安装测试 | 阻断发布 |
+| R-16 | 把一个 Host/Surface 的 Root 行为推广到另一 Surface | 高 | 极高 | Surface Evidence Matrix、显式 Root、pending-e2e gate | 关闭支持声明，回退 Direct MCP/CLI |
+| R-17 | 并发启动或 stale rendezvous 复用错误 Workbench Runtime | 中 | 极高 | identity lock、nonce health、原子 ready、stale recovery | 撤销 Session，不 kill foreign process，重建 Runtime |
 
 ### 18.1 最高优先风险
 
@@ -2724,6 +2858,8 @@ Stable 后：
 - R-06 并发覆盖。
 - R-08 敏感文件暴露。
 - R-15 成品安装不可复现。
+- R-16 Surface Root 误绑定。
+- R-17 Runtime 错误复用。
 
 ### 18.2 静态分析的诚实边界
 
@@ -2832,11 +2968,46 @@ Unknown 是产品能力，不是失败状态。
 - 命令执行引入权限、Shell、超时和跨平台边界，应作为 P1 的独立受控能力。
 - `record_verification` 只接收结构化记录和输出摘要，不在 Server 内执行传入命令。
 
+### D-10：Host 分发按 Surface 拆分
+
+状态：Accepted。
+
+原因：
+
+- Codex Desktop/CLI 使用 Plugin；Codex IDE 当前不支持 Plugin，P0 只使用 trusted project-scoped Direct MCP + repo-scoped `.agents/skills/**`。
+- Claude Code 使用 Claude Plugin + bundled MCP。
+- 共用的是 Server、Schema、Artifact 和 Skill 内容模型，不是安装外壳。
+- P0 Beta mandatory Surface 是 Codex CLI 与 Claude Code CLI；Desktop/IDE Surface 均为 conditional。
+- 每个 Surface 独立通过 clean-install E2E 后才能声明支持；conditional 结果不阻塞 mandatory Beta，也不能借用 CLI 证据。
+
+### D-11：Root 必须显式、单一且 fail closed
+
+状态：Accepted；Codex 各 Surface 的具体 Root 载体是 verification gate，不是开放产品决策。
+
+原因：
+
+- 共享 Server 只接受显式 `--root`；Host 环境变量、cwd 和 Roots 不在共享层做隐式 fallback。绑定失败时进入 `binding_error`，只允许协议握手和无源码诊断。
+- Claude `${CLAUDE_PROJECT_DIR}` 权威，process cwd 非权威；Codex App Server cwd 只属于 provisional observed。
+- Advertised Roots 只做 scope/membership 诊断，不向上归一化到 Git top-level；multiple/additional roots 不扩大事实或安全边界。
+- 一个进程只绑定一个 immutable canonical worktree，失去 membership 后 fail closed 且不重绑。
+
+### D-12：Workbench 使用可恢复的用户级 Runtime Singleton
+
+状态：Accepted。
+
+原因：
+
+- Runtime identity 为 `productVersion + worktreeId`。
+- 用户级 rendezvous、认证 control channel、分离的 startup/owner lock、原子 ready publication 和 nonce/capability health validation 可以跨 MCP 进程安全复用。
+- PID/port 本身不足以复用或终止进程；stale 状态可恢复且不误杀 foreign process。
+- MCP 生命周期与有效 Browser Session 解耦；每次 `open_workbench` 都由 Runtime 签发新 Launch Token，旧 deep link 不复活。
+- startup lock 2 秒、health/control 1 秒、ready 15 秒、单次 open 总计 20 秒以及 Launch Token、Session、idle TTL 使用冻结 Alpha 默认值。
+
 ---
 
 ## 20. 仍需在 M0 确认的有限决策
 
-这些问题不阻塞本文作为总计划，但必须在 WP1 前冻结：
+这些问题不阻塞本文作为总计划。第 1–7 项必须在 WP1 前冻结；第 8 项按 Surface 在 WP6 取证后、进入对应 Surface Release Gate 前冻结：
 
 1. P0 正式支持的平台范围：macOS/Linux，Windows 是否 Beta。
 2. Plugin/CLI 的发布渠道和包名。
@@ -2845,6 +3016,7 @@ Unknown 是产品能力，不是失败状态。
 5. Beta 是否允许可选 Embedding Provider。
 6. Workbench 是否允许手动创建空 Task；建议 P0 不做。
 7. Alpha 的两个真实试点仓库；Alpha Gold Set 已固定为 24 条，Beta 前扩展到至少 100 条。
+8. Codex/Claude 每个声明支持 Surface 的最低版本；这由 WP6 evidence 决定，不以当前本机版本自动冻结。Claude Surface 若声明 dynamic Roots 支持，最低版本不得低于 `2.1.203`。
 
 决策原则：
 
@@ -2962,31 +3134,56 @@ Required action: incremental refresh before task analysis
 - 返回稳定安全错误。
 - 日志和 Artifact 不出现 Secret。
 
-### 场景 F：两套 Host 干净安装
+### 场景 F：Host Surface 分发与 Root Binding
 
-1. 在不包含 Understand Code 源码和 `node_modules` 的临时环境安装 Codex 发布物。
-2. 对同一 Fixture 重复安装 Claude 发布物。
-3. 分别完成 initialize、Root Binding、`get_repo_pulse` 和卸载。
+完整场景 F 属于 G4。G3 只执行 mandatory CLI Surface 的 Alpha 子集，不以 Alpha 结果替代发布生命周期：
 
-通过标准：
-
-- 两套 Host 使用各自生成的 Manifest/MCP 配置，不读取另一套配置。
-- Server 二进制版本与 Tool Schema 相同，同输入的确定性 Artifact digest 相同。
-- 安装、升级、降级和卸载不依赖源码仓库路径，不遗留长期 Token。
-
-### 场景 G：Workbench 恢复与并发
-
-1. 打开 Task Brief Deep Link。
-2. 启动一次可取消刷新，同时在另一个 Agent 更新同一 Task revision。
-3. 在 Workbench 提交基于旧 revision 的确认 Action。
-4. 模拟 Token 过期后重新由 Agent 打开。
+1. 从发布物安装 mandatory Codex CLI Plugin 与 Claude Code CLI Plugin；对每个准备 promoted 的 conditional Surface 另建独立安装 Session。
+2. Codex IDE 只安装 trusted project-scoped `.codex/config.toml` 与 repo-scoped `.agents/skills/**`，确认 Fixture 不存在固定 Root user config，也不读取 Codex Plugin Root。
+3. 每个目标 Surface 完成 initialize、tool list、`get_repo_pulse` 和一次真实只读 Tool Call。
+4. 分别从 repo root、子目录、symlink、linked worktree、含空格/中文路径启动。
+5. 对 `root_missing`、`root_not_directory`、`root_unavailable`、`root_not_allowed`、`root_conflict`、`secondary_session_required` 逐项触发并核对 Tool Error Envelope。
+6. Claude Fixture 将 process cwd 设为与 `${CLAUDE_PROJECT_DIR}` 不同。
+7. 对 advertise `roots.listChanged=true` 的 Host 添加第二个 additional root 并触发 `roots/list_changed`；Claude 使用 `>=2.1.203`。不支持 Roots 的 Surface 明确记录 `N/A`。
+8. Advertise worktree 子目录而显式 Root canonicalize 到 worktree top-level，断言返回 `root_not_allowed`，不能把 advertised Root 向上扩大。
+9. 执行 upgrade、downgrade、reload 和 uninstall/remove；Direct MCP 使用 config/Skill 对应生命周期。
 
 通过标准：
 
-- 刷新进度、取消和最后可用 Snapshot 清晰可见。
-- 旧 revision 写入返回 conflict，本地意图可重放但不会覆盖最新状态。
-- Token 失效时不泄露 Task 数据；重新打开后恢复同一 task/section/finding。
-- Desktop、Tablet 和 Mobile 折叠不丢 Deep Link 上下文。
+- 每个 Surface 只读取自己的配置和发布物；IDE 不读取 `.codex-plugin`、Plugin cache 或 bundled `.mcp.json`。
+- Mandatory Codex CLI 与 Claude Code CLI 全部通过才关闭 P0 Beta Surface Release Gate；conditional Surface 逐项 promoted，失败或未测不阻塞 mandatory Beta，也不进入支持文案。
+- Claude 始终绑定 `${CLAUDE_PROJECT_DIR}` 对应的 canonical worktree；cwd 不影响结果。
+- Codex App Server cwd 证据不用于推导 CLI、Desktop 或 IDE。
+- multiple Roots 不报“多工作区错误”，additional root 不进入分析、搜索、Evidence、Artifact 或 Root Guard；advertised 子目录不能扩权到 Git top-level。
+- Root 丢失或失去 membership 时进入 `binding_error`，后续仓库 Tool 返回稳定 `workspace_binding_required`，不静默重绑、不创建 Artifact。
+- 同 Server/Schema 对相同输入生成相同确定性 Artifact digest。
+- 安装/卸载不依赖源码路径，不遗留配置、进程或长期 Token。
+
+### 场景 G：Workbench Rendezvous、恢复与并发
+
+完整场景 G 属于 G4；G3 先完成单实例、Token 和 revision 的 Alpha 子集：
+
+1. 两个 Agent/MCP 进程同时对相同 `productVersion + worktreeId` 发起至少 20 次 `open_workbench`。
+2. 验证 startup lock 只覆盖选主/ready publication，Runtime 在全生命周期持有 owner lock；分别模拟 ready 前和 ready 后崩溃。
+3. 通过认证 control channel 执行 `health`、`mint_launch_token`、`stop`，并注入错误 nonce、错误 capability、权限不安全的 rendezvous/control credential。
+4. 写入 stale rendezvous，并覆盖 PID reuse、陌生进程占用旧端口、nonce/capability 不一致和 owner lock 仍被占用。
+5. 同时请求不同 productVersion 和不同 worktreeId。
+6. MCP 退出但保留活动 Browser Session。
+7. 测试 Launch Token 重放/过期、Browser Session idle/absolute TTL；对相同 task/view 再次调用 `open_workbench`。
+8. 使用可控时钟验证 startup lock 2 秒、health/control 1 秒、ready 15 秒、总 open 20 秒、50–200 ms jitter 与最多一次 stale recovery/election。
+9. 启动一次可取消刷新，同时在另一个 Agent 更新 Task，再提交旧 revision Action。
+
+通过标准：
+
+- 相同 identity 最终只有一个健康 Runtime，所有成功调用返回相同 instance identity；不同版本/worktree 不复用。
+- 每次成功 `open_workbench` 都由获胜 Runtime 经 control channel 签发不同的一次性 Token；Browser HTTP API 无 mint 能力。
+- stale/竞争状态在冻结 timeout 内恢复，否则严格按第 7.7 节映射错误：startup lock 竞争耗尽为 `workbench_busy`，Runtime 未 ready 为 `workbench_start_timeout`，control channel 失败为 `workbench_control_unavailable`，identity/nonce/capability 不匹配为 `workbench_identity_mismatch`；不得用单一错误吞并分支，也不 kill 未经 identity + nonce + capability health 验证的进程。
+- ready 前崩溃不留下永久 owner/startup lock；ready 后崩溃使旧 Session 与旧 deep link 永久 fail closed。恢复同一 task/view 必须再次调用 `open_workbench`，获得新 Token 和新 deep link。
+- MCP 退出不终止活动 Browser Session；空闲 Runtime 按 5 分钟规则退出。
+- Launch Token 只可兑换一次，过期/重放不泄露 Task 数据。
+- 旧 revision 写入返回 conflict，本地意图可重放但不覆盖最新状态。
+- 刷新进度、取消和最后可用 Snapshot 清晰可见；响应式折叠不丢 deep-link context。
+- 正常退出只 compare-and-delete nonce 匹配的自身 rendezvous，再释放 owner lock；记录不含源码、Task 正文、Browser Session 或长期 Token，control credential 仅当前 OS 用户可读。
 
 ---
 
@@ -3033,7 +3230,8 @@ Required action: incremental refresh before task analysis
 - `packages/local-server/**`
 - `packages/cli/**`
 - `packages/dashboard/src/components/tasks/**`
-- `integrations/codex/**`
+- `integrations/codex/plugin/**`
+- `integrations/codex/ide/**`
 - `integrations/claude/**`
 
 ---
@@ -3044,6 +3242,12 @@ Required action: incremental refresh before task analysis
 
 - OpenAI Plugin 可以将 Skills、MCP Server 连接和相关资源打包到 `.codex-plugin/plugin.json` 中：
   <https://developers.openai.com/plugins/build/plugins>
+- OpenAI 当前 Plugin Surface 包括 Codex Desktop 与 CLI，但不包括 IDE extension：
+  <https://learn.chatgpt.com/docs/plugins>
+- Codex Desktop、CLI 与 IDE 可通过共享 `config.toml` 直连同一 MCP；IDE 的 P0 安装基线采用该路径：
+  <https://learn.chatgpt.com/docs/extend/mcp>
+- Codex 可从仓库级 `.agents/skills` 发现 standalone Skill，IDE 也支持 Skills：
+  <https://learn.chatgpt.com/docs/build-skills>
 - OpenAI Plugin Architecture 将 MCP 作为工具和结构化数据层，UI 是可选能力：
   <https://developers.openai.com/plugins/concepts/plugins>
 - Claude Code Plugin 支持 Skills、Agents、Hooks 和 MCP：

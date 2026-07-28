@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-07-28T05:40:38.435Z",
+  "launcherCwd": "/tmp",
+  "threadCwd": "/Users/example/understand-code",
+  "threadIdPresent": true,
+  "server": "host_probe",
+  "startupStatus": "ready",
+  "toolCall": {
+    "isError": false,
+    "structuredContent": {
+      "schemaVersion": 1,
+      "cwd": "/Users/example/understand-code",
+      "explicitRoot": "/Users/example/understand-code",
+      "environment": {},
+      "clientInfo": {
+        "name": "codex-mcp-client",
+        "title": "Codex",
+        "version": "0.146.0-alpha.3.1"
+      },
+      "protocolVersion": "2025-06-18",
+      "roots": {
+        "advertisedByClient": false,
+        "listChanged": false,
+        "requested": false,
+        "pending": false,
+        "result": null,
+        "error": null
+      }
+    }
+  },
+  "stderrHadOutput": true
+}

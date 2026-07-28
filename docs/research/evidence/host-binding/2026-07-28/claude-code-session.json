@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-07-28T05:40:40.398Z",
+  "captureProfile": "claude_code_cli_primary_workspace",
+  "launcherCwd": "/Users/example/understand-code",
+  "exitCode": 1,
+  "signal": null,
+  "authenticationAvailable": false,
+  "failureReason": "not_logged_in",
+  "authenticatedToolCallCompleted": false,
+  "stdoutHadOutput": true,
+  "stderrHadOutput": false
+}

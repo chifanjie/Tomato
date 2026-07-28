@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-07-28T05:40:38.967Z",
+  "pid": 36565,
+  "cwd": "/Users/example/understand-code",
+  "explicitRoot": "/Users/example/understand-code",
+  "invocation": {
+    "outputConfigured": true,
+    "explicitRootConfigured": true
+  },
+  "environment": {
+    "CLAUDE_PROJECT_DIR": "/Users/example/understand-code"
+  },
+  "lifecycle": "initialized",
+  "initialize": {
+    "requestedProtocolVersion": "2025-11-25",
+    "protocolVersion": "2025-11-25",
+    "clientInfo": {
+      "name": "claude-code",
+      "title": "Claude Code",
+      "version": "2.1.202"
+    },
+    "capabilities": {
+      "roots": true,
+      "rootsListChanged": false,
+      "elicitation": true,
+      "sampling": false
+    }
+  },
+  "roots": {
+    "advertisedByClient": true,
+    "listChanged": false,
+    "requested": true,
+    "pending": false,
+    "result": [
+      {
+        "uri": "file:///Users/example/understand-code"
+      }
+    ],
+    "error": null
+  },
+  "protocolErrors": [],
+  "calls": [
+    {
+      "method": "initialize",
+      "at": "2026-07-28T05:40:38.987Z"
+    },
+    {
+      "method": "notifications/initialized",
+      "at": "2026-07-28T05:40:39.002Z"
+    },
+    {
+      "method": "tools/list",
+      "at": "2026-07-28T05:40:39.019Z"
+    },
+    {
+      "method": "resources/list",
+      "at": "2026-07-28T05:40:39.024Z"
+    }
+  ]
+}

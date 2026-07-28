@@ -1,6 +1,6 @@
 # WP1 Contract Matrix and Version Policy
 
-> Status: local contract gate closed; remote CI evidence pending
+> Status: WP1 contract gate closed
 >
 > Product release train: `3.0.0-alpha.1`
 >
@@ -234,6 +234,7 @@ Evidence captured on 2026-07-28 with the frozen workspace lockfile:
 | Dashboard | 50 files, 560 tests passed, including trusted Task Event digests, shared reference, digest mismatch, and negative artifacts |
 | Root quality | Clean build, typecheck, and every maintained suite passed |
 | Independent adversarial audit | Three rounds completed; final result `0 P0 / 0 P1` |
+| Remote CI | GitHub Actions [run 30355180068](https://github.com/chifanjie/Tomato/actions/runs/30355180068) passed the quality and active-surface gates |
 
 Core, the MCP DTO suite, and Dashboard parse the exact tracked Snapshot, Task,
 and Task Bundle; all three use the trusted Event-digest parser and reject body
@@ -254,7 +255,7 @@ consumer evidence; the executable MCP Server remains a WP6 delivery.
       invalid lifecycle, stale Check, blocking Finding, and retry fixtures fail
       or recover with their frozen semantics.
 - [x] Root `quality` passes on the frozen toolchain.
-- [ ] Remote CI passes the pushed WP1 commit.
+- [x] Remote CI passes the pushed WP1 commit.
 
 This closes the WP1-local contract/schema gate. It does not close the full M1
 G1 product gate: WP2 must still prove that arbitrary worktree changes cannot be

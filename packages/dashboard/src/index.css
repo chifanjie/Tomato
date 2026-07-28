@@ -1415,6 +1415,27 @@ body {
   display: none;
 }
 
+.uc-semantic-node[data-zoom-band="minimal"] .uc-semantic-node__badge--minimal-coverage {
+  display: inline-block;
+}
+
+.uc-semantic-node[data-zoom-band="compact"] .uc-semantic-node__summary--aggregate,
+.uc-semantic-node[data-zoom-band="minimal"] .uc-semantic-node__summary--aggregate {
+  display: -webkit-box;
+  margin-top: 4px;
+  -webkit-line-clamp: 1;
+}
+
+.uc-semantic-node__aggregate-meta {
+  overflow: hidden;
+  margin-top: auto;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .uc-graph-layout-status {
   position: absolute;
   top: 12px;

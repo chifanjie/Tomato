@@ -8,9 +8,16 @@ import {
 export interface GraphQuickJumpProps {
   items: readonly GraphQuickJumpItem[];
   onSelect: (intent: GraphNavigationIntent) => void;
+  openRequestId?: number;
+  onOpenRequestHandled?: (requestId: number) => void;
 }
 
-export function GraphQuickJump({ items, onSelect }: GraphQuickJumpProps) {
+export function GraphQuickJump({
+  items,
+  onSelect,
+  openRequestId = 0,
+  onOpenRequestHandled,
+}: GraphQuickJumpProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -51,6 +58,14 @@ export function GraphQuickJump({ items, onSelect }: GraphQuickJumpProps) {
   useEffect(() => {
     setActiveIndex(0);
   }, [query, items]);
+
+  useEffect(() => {
+    if (openRequestId <= 0) return;
+    setQuery("");
+    setActiveIndex(0);
+    setOpen(true);
+    onOpenRequestHandled?.(openRequestId);
+  }, [onOpenRequestHandled, openRequestId]);
 
   useEffect(() => {
     if (!open || !activeResult) return;

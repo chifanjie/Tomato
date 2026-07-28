@@ -34,7 +34,12 @@ vi.mock("@xyflow/react", async () => {
     ControlButton: ({ children, ...props }: Record<string, unknown>) =>
       React.createElement("button", props, children as React.ReactNode),
     Controls: element("controls"),
-    Handle: element("handle"),
+    Handle: ({ id, type, position }: Record<string, unknown>) => React.createElement("div", {
+      "data-flow-element": "handle",
+      "data-handle-id": id,
+      "data-handle-type": type,
+      "data-handle-position": position,
+    }),
     MiniMap: element("minimap"),
     Position: { Top: "top", Bottom: "bottom", Left: "left", Right: "right" },
     ReactFlow: (props: Record<string, unknown>) => {
@@ -75,6 +80,7 @@ import SemanticGraphCanvas from "../SemanticGraphCanvas";
 
 const source = readFileSync(resolve(process.cwd(), "src/components/graphExplorer/SemanticGraphCanvas.tsx"), "utf8");
 const explorerSource = readFileSync(resolve(process.cwd(), "src/components/graphExplorer/GraphExplorer.tsx"), "utf8");
+const cssSource = readFileSync(resolve(process.cwd(), "src/index.css"), "utf8");
 
 const emptyDocs: SemanticGraphNode["docs"] = {
   relation: "none",
@@ -105,6 +111,8 @@ const semanticGraphFixture: HierarchicalSemanticGraph = {
       docs: emptyDocs,
       kind: "scope",
       scopeId: "src",
+      fileCount: 12,
+      relationCount: 7,
       canDrillDown: true,
     },
     {
@@ -119,6 +127,8 @@ const semanticGraphFixture: HierarchicalSemanticGraph = {
       docs: emptyDocs,
       kind: "scope",
       scopeId: "test",
+      fileCount: 8,
+      relationCount: 5,
       canDrillDown: true,
     },
   ],
@@ -250,11 +260,27 @@ describe("SemanticGraphCanvas interaction contract", () => {
 
     const card = container.querySelector<HTMLElement>('[role="group"][aria-label^="核心模块"]');
     if (!card) throw new Error("缺少核心模块图谱卡片");
-    expect(card.querySelector(".uc-semantic-node__summary")).toBeNull();
-    expect(card.querySelector(".uc-semantic-node__path")?.textContent).toBe("src/core");
+    expect(card.querySelector(".uc-semantic-node__summary")?.textContent).toContain("承载核心业务");
+    expect(card.querySelector(".uc-semantic-node__aggregate-meta")?.textContent)
+      .toBe("12 个文件 · 7 条关系");
+    expect(card.querySelector(".uc-semantic-node__path")).toBeNull();
     const drillButton = card.querySelector<HTMLButtonElement>('button[aria-label^="进入"]');
     expect(drillButton?.className).toContain("min-h-11");
     expect(drillButton?.className).toContain("min-w-11");
+    expect([...card.querySelectorAll<HTMLElement>('[data-flow-element="handle"]')].map((handle) => ({
+      id: handle.dataset.handleId,
+      type: handle.dataset.handleType,
+      position: handle.dataset.handlePosition,
+    }))).toEqual([
+      { id: "target-left", type: "target", position: "left" },
+      { id: "target-right", type: "target", position: "right" },
+      { id: "source-left", type: "source", position: "left" },
+      { id: "source-right", type: "source", position: "right" },
+    ]);
+    expect(props.edges[0]).toMatchObject({
+      sourceHandle: "source-right",
+      targetHandle: "target-left",
+    });
     await act(async () => card.dispatchEvent(new KeyboardEvent("keydown", {
       key: "Enter",
       bubbles: true,
@@ -298,6 +324,94 @@ describe("SemanticGraphCanvas interaction contract", () => {
       edges: Array<{ data: { animated: boolean; inlineDirection: boolean } }>;
     };
     expect(props.edges[0]?.data).toMatchObject({ animated: true, inlineDirection: false });
+
+    await act(async () => root.unmount());
+  });
+
+  it("keeps coverage counts and evidence problems visible on minimal overview cards", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const coverageGraph: HierarchicalSemanticGraph = {
+      ...semanticGraphFixture,
+      nodes: semanticGraphFixture.nodes.map((node, index) => ({
+        ...node,
+        documentationCounts: index === 0
+          ? { direct: 3, context: 1, none: 1, problem: 1, total: 5 }
+          : { direct: 0, context: 0, none: 2, problem: 0, total: 2 },
+      })),
+      presentation: { ...semanticGraphFixture.presentation, displayMode: "coverage" },
+    };
+    await act(async () => root.render(createElement(SemanticGraphCanvas, {
+      ...canvasIntentProps(coverageGraph, container, "overview-coverage"),
+      semanticGraph: coverageGraph,
+      displayMode: "coverage",
+      emptyNotice: null,
+      onOpenScope: vi.fn(),
+      onOpenCluster: vi.fn(),
+      onOpenFile: vi.fn(),
+    })));
+
+    const card = container.querySelector<HTMLElement>('[data-graph-node-id="scope:src"]');
+    const coverageBadge = card?.querySelector<HTMLElement>(
+      ".uc-semantic-node__badge--minimal-coverage",
+    );
+    expect(card?.dataset.zoomBand).toBe("minimal");
+    expect(coverageBadge?.textContent).toBe("3/5 有正文 · 异常");
+    expect(coverageBadge?.dataset.relation).toBe("problem");
+    expect(card?.querySelector('button[aria-label="进入 核心模块"]')).not.toBeNull();
+    expect(cssSource).toMatch(
+      /\.uc-semantic-node\[data-zoom-band="minimal"\] \.uc-semantic-node__badge--minimal-coverage\s*\{\s*display:\s*inline-block;/,
+    );
+
+    await act(async () => root.unmount());
+  });
+
+  it("keeps cluster file and relationship context visible in compact scope cards", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const clusterGraph: HierarchicalSemanticGraph = {
+      ...semanticGraphFixture,
+      nodes: [{
+        ...semanticGraphFixture.nodes[0]!,
+        id: "cluster:src:graph",
+        kind: "cluster",
+        label: "graphExplorer",
+        summary: "图谱交互与分层投影。包含 21 个节点、9 个文件、14 条关系。",
+        cluster: "graphExplorer",
+        clusterId: "cluster:src:graph",
+        fileCount: 9,
+        relationCount: 14,
+      }],
+      edges: [],
+      presentation: {
+        ...semanticGraphFixture.presentation,
+        level: "scope",
+        scopeId: "src",
+        breadcrumbs: [
+          { level: "overview", label: "全局概览" },
+          { level: "scope", scopeId: "src", label: "核心模块" },
+        ],
+        totalNodeCount: 1,
+      },
+    };
+    await act(async () => root.render(createElement(SemanticGraphCanvas, {
+      ...canvasIntentProps(clusterGraph, container, "scope-aggregate-context"),
+      semanticGraph: clusterGraph,
+      displayMode: "architecture",
+      emptyNotice: null,
+      onOpenScope: vi.fn(),
+      onOpenCluster: vi.fn(),
+      onOpenFile: vi.fn(),
+    })));
+
+    const card = container.querySelector<HTMLElement>('[data-graph-node-id="cluster:src:graph"]');
+    expect(card?.dataset.zoomBand).toBe("compact");
+    expect(card?.querySelector(".uc-semantic-node__summary")?.textContent)
+      .toContain("图谱交互与分层投影");
+    expect(card?.querySelector(".uc-semantic-node__footer")?.textContent)
+      .toContain("9 个文件 · 14 条关系");
 
     await act(async () => root.unmount());
   });
@@ -471,6 +585,15 @@ describe("SemanticGraphCanvas interaction contract", () => {
     expect(source).toContain("正在计算图谱布局");
     expect(source).toContain("Position.Left");
     expect(source).toContain("Position.Right");
+    expect(source).toContain("Position.Top");
+    expect(source).toContain("Position.Bottom");
+    expect(source).toContain("graphLayoutOrientation(viewportBucket)");
+    expect(source).toContain("graphNodeDisplayBand(navigation.level, zoomBand)");
+    expect(source).toContain("visibleGraphBounds({");
+    expect(source).toContain('readableViewport(undefined, "visible", 0.08, {');
+    expect(source).toContain("MINIMAP_RIGHT_SAFE_INSET");
+    expect(source).toContain("fitViewportInsets");
+    expect(source).toContain("role: layoutEdgeRole(edge, inputNavigation.level)");
     expect(source).not.toContain("fitViewOptions=");
     expect(source).not.toContain("fitView\n");
     expect(source).not.toContain("key={viewKey}");

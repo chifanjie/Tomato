@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildGraphHierarchyIndex,
   buildHierarchicalSemanticGraph,
+  createHierarchicalGraphProjectionContext,
   mergeHierarchySelectionExpansion,
   scopeNodeId,
 } from "../../../graphExplorer/hierarchicalGraph";
@@ -238,7 +239,7 @@ describe("graphExplorerModel", () => {
     expect(view.semanticGraph.nodes.map((node) => node.id)).toEqual([scopeNodeId("layer:core")]);
   });
 
-  it("builds selection details from the merged dense neighborhood without changing the base", () => {
+  it("builds capped dense selection details from the ranked base plus expansion", () => {
     const graph = graphWithDenseSelection(110);
     const hierarchyIndex = buildGraphHierarchyIndex(graph);
     const location = hierarchyIndex.fileLocationById.get("file:src/dense.ts")!;
@@ -252,7 +253,9 @@ describe("graphExplorerModel", () => {
       materializedNodeId: null,
     });
 
-    expect(view.baseGraph.nodes.map((node) => node.id)).not.toContain("function:dense:selected");
+    const baseNodeIds = new Set(view.baseGraph.nodes.map((node) => node.id));
+    expect(baseNodeIds).toContain("function:dense:selected");
+    expect(view.selectionExpansion.nodes.filter((node) => !baseNodeIds.has(node.id))).toHaveLength(20);
     expect(view.semanticGraph).toEqual(mergeHierarchySelectionExpansion(
       view.baseGraph,
       view.selectionExpansion,
@@ -260,7 +263,40 @@ describe("graphExplorerModel", () => {
     expect(view.semanticGraph.presentation).toBe(view.baseGraph.presentation);
     expect(view.selection?.id).toBe("function:dense:selected");
     expect(view.selection?.upstream.map((node) => node.id)).toEqual(["file:src/dense.ts"]);
-    expect(view.selection?.downstream).toHaveLength(110);
+    expect(view.selection?.downstream).toHaveLength(56);
+    expect(view.selectionExpansion.hiddenNeighborCount).toBe(54);
+    expect(view.hiddenSelectedNode).toBeNull();
+  });
+
+  it("shares one supplied projection context between the base and selection builds", () => {
+    const graph = graphFixture();
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const wikiIndex = wikiRuntimeFixture();
+    const location = hierarchyIndex.fileLocationById.get("file:src/a.ts")!;
+    const createdContext = createHierarchicalGraphProjectionContext({ graph, wikiIndex });
+    let projectionReads = 0;
+    const projectionContext = {
+      graph,
+      wikiIndex,
+      get projection() {
+        projectionReads += 1;
+        return createdContext.projection;
+      },
+    };
+
+    const view = buildGraphExplorerView({
+      graph,
+      hierarchyIndex,
+      wikiIndex,
+      projectionContext,
+      mode: "call",
+      selectedNodeId: "function:src/a.ts:run",
+      navigation: { level: "file", ...location },
+      materializedNodeId: null,
+    });
+
+    expect(projectionReads).toBe(2);
+    expect(view.selection?.id).toBe("function:src/a.ts:run");
     expect(view.hiddenSelectedNode).toBeNull();
   });
 
@@ -318,7 +354,11 @@ describe("graphExplorerModel", () => {
     expect(selectedView.selection?.primaryDirectPageId).toBe("page:run");
     expect(selectedView.hiddenSelectedNode).toBeNull();
     expect(materializedOnly.baseGraph.nodes.map((node) => node.id)).toContain("function:src/a.ts:run");
-    expect(materializedOnly.selectionExpansion).toEqual({ nodes: [], edges: [] });
+    expect(materializedOnly.selectionExpansion).toEqual({
+      nodes: [],
+      edges: [],
+      hiddenNeighborCount: 0,
+    });
     expect(materializedOnly.selection).toBeNull();
   });
 

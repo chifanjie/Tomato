@@ -7,11 +7,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   graphFixture,
+  graphWithDenseSelection,
   importsOnlyGraphFixture,
   wikiRuntimeFixture,
 } from "../../../graphExplorer/__tests__/graphFixtures";
 import {
-  boundaryNodeId,
   buildGraphHierarchyIndex,
   scopeNodeId,
 } from "../../../graphExplorer/hierarchicalGraph";
@@ -35,6 +35,8 @@ describe("GraphDetailsRail", () => {
   let onOpenCluster: ReturnType<typeof vi.fn<(scopeId: string, clusterId: string) => void>>;
   let onOpenFile: ReturnType<typeof vi.fn<(scopeId: string, clusterId: string, fileId: string) => void>>;
   let onSelectWikiTarget: ReturnType<typeof vi.fn<(target: WikiTarget) => unknown>>;
+  let onRequestGlobalSearch: ReturnType<typeof vi.fn<() => void>>;
+  let onRequestGraphQuickJump: ReturnType<typeof vi.fn<() => void>>;
 
   beforeEach(() => {
     container = document.createElement("div");
@@ -46,6 +48,8 @@ describe("GraphDetailsRail", () => {
     onOpenCluster = vi.fn();
     onOpenFile = vi.fn();
     onSelectWikiTarget = vi.fn();
+    onRequestGlobalSearch = vi.fn();
+    onRequestGraphQuickJump = vi.fn();
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
       value: vi.fn(() => ({
@@ -78,7 +82,8 @@ describe("GraphDetailsRail", () => {
         onOpenCluster,
         onOpenFile,
         onSelectWikiTarget,
-        onRequestGlobalSearch: vi.fn(),
+        onRequestGlobalSearch,
+        onRequestGraphQuickJump,
       }));
     });
   }
@@ -298,7 +303,7 @@ describe("GraphDetailsRail", () => {
     const related = buttonWithText(container, "库");
     expect(related).not.toBeNull();
     await act(async () => related?.click());
-    expect(onSelectObject).toHaveBeenCalledWith(boundaryNodeId("layer:app", "layer:lib"));
+    expect(onSelectObject).toHaveBeenCalledWith(scopeNodeId("layer:lib"));
 
     await act(async () => buttonWithText(container, "查看范围")?.click());
     expect(onOpenScope).toHaveBeenCalledWith("layer:app");
@@ -396,6 +401,7 @@ describe("GraphDetailsRail", () => {
         onOpenFile,
         onSelectWikiTarget,
         onRequestGlobalSearch: requestSearch,
+        onRequestGraphQuickJump,
       }));
     });
 
@@ -411,5 +417,26 @@ describe("GraphDetailsRail", () => {
 
     await act(async () => buttonWithText(container, "用全局搜索继续查找")?.click());
     expect(requestSearch).toHaveBeenCalledOnce();
+  });
+
+  it("discloses capped one-hop relationships and offers a continuation action", async () => {
+    const graph = graphWithDenseSelection(110);
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const location = hierarchyIndex.fileLocationById.get("file:src/dense.ts")!;
+    const view = buildGraphExplorerView({
+      graph,
+      hierarchyIndex,
+      mode: "call",
+      selectedNodeId: "function:dense:selected",
+      navigation: { level: "file", ...location },
+      materializedNodeId: null,
+    });
+    await renderRail(view);
+
+    expect(view.selectionExpansion.hiddenNeighborCount).toBe(54);
+    expect(container.textContent).toContain("另有 54 个一跳关联对象未在画布和详情中展开");
+    await act(async () => buttonWithText(container, "打开图谱快速定位")?.click());
+    expect(onRequestGraphQuickJump).toHaveBeenCalledOnce();
+    expect(onRequestGlobalSearch).not.toHaveBeenCalled();
   });
 });

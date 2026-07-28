@@ -32,17 +32,30 @@ import {
 const graphExplorerHarness = vi.hoisted(() => ({
   semanticGraphs: [] as unknown[],
   canvasProps: [] as Array<Record<string, unknown>>,
+  projectionContexts: [] as unknown[],
   omitMaterializedNode: false,
 }));
 
 vi.mock("../GraphQuickJump", async () => {
   const React = await import("react");
   return {
-    GraphQuickJump: ({ items, onSelect }: {
+    GraphQuickJump: ({
+      items,
+      onSelect,
+      openRequestId = 0,
+      onOpenRequestHandled,
+    }: {
       items: Array<{ id: string; intent: GraphNavigationIntent }>;
       onSelect: (intent: GraphNavigationIntent) => void;
+      openRequestId?: number;
+      onOpenRequestHandled?: (requestId: number) => void;
     }) => {
       const [open, setOpen] = React.useState(false);
+      React.useEffect(() => {
+        if (openRequestId <= 0) return;
+        setOpen(true);
+        onOpenRequestHandled?.(openRequestId);
+      }, [onOpenRequestHandled, openRequestId]);
       return React.createElement(
         "div",
         { "data-testid": "quick-jump", className: "uc-graph-quick-jump" },
@@ -141,6 +154,7 @@ vi.mock("../graphExplorerModel", async (importOriginal) => {
   return {
     ...actual,
     buildGraphExplorerView: (input: Parameters<typeof actual.buildGraphExplorerView>[0]) => {
+      graphExplorerHarness.projectionContexts.push(input.projectionContext);
       const view = actual.buildGraphExplorerView(input);
       if (!graphExplorerHarness.omitMaterializedNode || !input.materializedNodeId) return view;
       const semanticGraph = {
@@ -454,6 +468,7 @@ describe("GraphExplorer progressive navigation integration", () => {
     root = createRoot(container);
     graphExplorerHarness.semanticGraphs.length = 0;
     graphExplorerHarness.canvasProps.length = 0;
+    graphExplorerHarness.projectionContexts.length = 0;
     graphExplorerHarness.omitMaterializedNode = false;
     useDashboardStore.setState({
       graphFocusRevision: 0,
@@ -492,6 +507,7 @@ describe("GraphExplorer progressive navigation integration", () => {
     explicitFocusRequest: { requestId: number; materializedNodeId: string } | null;
     onBaseLayoutReady: (ready: { requestId: number; structureKey: string; materializedNodeId: string }) => void;
     onFrameWidthChange?: (width: number) => void;
+    showControls?: boolean;
     onSelectedScreenBoundsChange?: (bounds: {
       left: number;
       right: number;
@@ -502,6 +518,7 @@ describe("GraphExplorer progressive navigation integration", () => {
     onOpenCluster?: (scopeId: string, clusterId: string) => void;
     onOpenFile?: (scopeId: string, clusterId: string, fileId: string) => void;
     showMinimap?: boolean;
+    fitViewportInsets?: { left?: number; right?: number };
   } {
     const props = graphExplorerHarness.canvasProps.at(-1);
     if (!props) throw new Error("缺少 Canvas props");
@@ -704,6 +721,17 @@ describe("GraphExplorer progressive navigation integration", () => {
     expect(frame?.querySelector(":scope > .uc-semantic-canvas")).not.toBeNull();
   });
 
+  it("transitions from an unloaded graph to the explorer without changing hook order", async () => {
+    useDashboardStore.setState({ graph: null });
+    await renderExplorer();
+    expect(container.textContent).toContain("尚未加载项目图谱");
+
+    await act(async () => useDashboardStore.getState().setConsoleGraph(graphFixture()));
+
+    expect(container.querySelectorAll(".uc-graph-frame")).toHaveLength(1);
+    expect(container.querySelector('[data-testid="semantic-canvas"]')).not.toBeNull();
+  });
+
   it("moves focus to the current breadcrumb after Canvas drill-down and ancestor navigation", async () => {
     await renderExplorer();
     const node = container.querySelector<HTMLButtonElement>("[data-canvas-node]");
@@ -789,6 +817,20 @@ describe("GraphExplorer progressive navigation integration", () => {
     expect(canvas.dataset.viewKey).toBe(viewKey);
   });
 
+  it("reuses the graph projection across selection rerenders and refreshes it for a new Wiki snapshot", async () => {
+    await renderExplorer();
+    const initialContext = graphExplorerHarness.projectionContexts.at(-1);
+    expect(initialContext).toBeTruthy();
+    const node = container.querySelector<HTMLButtonElement>("[data-canvas-node]");
+    if (!node) throw new Error("缺少可选择图谱节点");
+
+    await act(async () => node.click());
+    expect(graphExplorerHarness.projectionContexts.at(-1)).toBe(initialContext);
+
+    await act(async () => useDashboardStore.getState().setWikiIndex(emptyWikiRuntimeIndex()));
+    expect(graphExplorerHarness.projectionContexts.at(-1)).not.toBe(initialContext);
+  });
+
   it("switches inspector side from raw same-bucket frame width without changing Canvas inputs", async () => {
     await renderExplorer();
     const node = container.querySelector<HTMLButtonElement>("[data-canvas-node]");
@@ -804,6 +846,7 @@ describe("GraphExplorer progressive navigation integration", () => {
     });
     const inspector = container.querySelector<HTMLElement>('aside[aria-label="图谱详情"]');
     expect(inspector?.dataset.side).toBe("right");
+    expect(latestCanvasProps().fitViewportInsets).toEqual({ right: 384 });
 
     const initialBaseGraph = initialProps.baseGraph;
     const initialSemanticGraph = initialProps.semanticGraph;
@@ -812,6 +855,7 @@ describe("GraphExplorer progressive navigation integration", () => {
 
     expect(inspector?.dataset.side).toBe("left");
     const resizedProps = latestCanvasProps();
+    expect(resizedProps.fitViewportInsets).toEqual({ left: 384 });
     expect(resizedProps.baseGraph).toBe(initialBaseGraph);
     expect(resizedProps.semanticGraph).toBe(initialSemanticGraph);
     expect(resizedProps.explicitFocusRequest).toBe(initialProps.explicitFocusRequest);
@@ -842,6 +886,28 @@ describe("GraphExplorer progressive navigation integration", () => {
     expect(tools.textContent).toContain("隐藏缩略图");
   });
 
+  it("removes covered Canvas controls from compact Inspector focus order", async () => {
+    vi.mocked(window.matchMedia).mockImplementation((query: string) => ({
+      matches: query === "(max-width: 1279px)" || query === "(max-width: 1023px)",
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    } as unknown as MediaQueryList));
+    await renderExplorer();
+    expect(latestCanvasProps().showControls).toBe(true);
+    const node = container.querySelector<HTMLButtonElement>("[data-canvas-node]");
+    if (!node) throw new Error("缺少可选择图谱节点");
+
+    await act(async () => node.click());
+    expect(container.querySelector('aside[aria-label="图谱详情"]')).not.toBeNull();
+    expect(latestCanvasProps().showControls).toBe(false);
+
+    const close = container.querySelector<HTMLButtonElement>('[aria-label="关闭图谱详情"]');
+    if (!close) throw new Error("紧凑图谱详情缺少关闭按钮");
+    await act(async () => close.click());
+    expect(latestCanvasProps().showControls).toBe(true);
+  });
+
   it("keeps an expansion-only ordinary selection across the post-pending effect rerender", async () => {
     useDashboardStore.getState().setConsoleGraph(graphWithDenseSelection(110));
     useDashboardStore.getState().setGraphExplorerMode("call");
@@ -854,7 +920,14 @@ describe("GraphExplorer progressive navigation integration", () => {
     const selectedButton = container.querySelector<HTMLButtonElement>(`[data-canvas-node="${selectedId}"]`);
     if (!selectedButton) throw new Error("物化节点未进入画布");
     await act(async () => selectedButton.click());
-    const expansionOnlyId = "function:dense:n-99";
+    expect(container.textContent).toContain("另有 54 个一跳关联对象未在画布和详情中展开");
+    const continueWithQuickJump = [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent?.includes("打开图谱快速定位"));
+    if (!continueWithQuickJump) throw new Error("关联截断提示缺少图谱快速定位动作");
+    await act(async () => continueWithQuickJump.click());
+    expect(container.querySelector('[aria-label="搜索图谱对象"]')).not.toBeNull();
+
+    const expansionOnlyId = "function:dense:n-32";
     const expansionButton = container.querySelector<HTMLButtonElement>(
       `[data-canvas-node="${expansionOnlyId}"]`,
     );

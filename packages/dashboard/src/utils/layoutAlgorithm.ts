@@ -2,11 +2,12 @@ import dagre from "@dagrejs/dagre";
 import type { GraphEdge } from "@understand-code/core";
 import type { GraphNavigationLevel } from "../graphExplorer/hierarchicalGraph.js";
 
-export const GRAPH_LAYOUT_ALGORITHM_VERSION = 2;
-export const GRAPH_LAYOUT_DENSITY_VERSION = 1;
+export const GRAPH_LAYOUT_ALGORITHM_VERSION = 3;
+export const GRAPH_LAYOUT_DENSITY_VERSION = 2;
 
 export type GraphAspectBucket = "portrait" | "balanced" | "landscape" | "wide";
 export type GraphLayoutNodeKind = "scope" | "boundary" | "cluster" | "file" | "symbol" | "raw";
+export type GraphLayoutEdgeRole = "backbone" | "primary" | "secondary" | "context";
 
 export interface GraphViewportBucket {
   width: number;
@@ -27,6 +28,7 @@ export interface LayoutMessage {
     height: number;
     kind: GraphLayoutNodeKind;
     clusterId?: string;
+    importance?: number;
   }>;
   edges: Array<{
     source: string;
@@ -35,6 +37,7 @@ export interface LayoutMessage {
     directions: readonly GraphEdge["direction"][];
     weight: number;
     count: number;
+    role?: GraphLayoutEdgeRole;
   }>;
 }
 
@@ -54,6 +57,14 @@ export interface LayoutResult {
 const VIEWPORT_STEP = 160;
 const MIN_VIEWPORT = 320;
 const OUTER_PADDING = 48;
+const IMPORTANCE_HALO = 14;
+const CLUSTER_GAP = 24;
+const EDGE_ROLE_WEIGHT: Readonly<Record<GraphLayoutEdgeRole, number>> = {
+  backbone: 8,
+  primary: 2,
+  secondary: 1,
+  context: 0.5,
+};
 const KIND_ORDER: Readonly<Record<GraphLayoutNodeKind, number>> = {
   scope: 0,
   boundary: 1,
@@ -72,6 +83,7 @@ type DirectionalEdge = {
   direction: GraphEdge["direction"];
   weight: number;
   count: number;
+  role?: GraphLayoutEdgeRole;
 };
 
 function compareText(left: string, right: string): number {
@@ -82,8 +94,35 @@ function compareNumber(left: number, right: number): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
+function finiteNonNegative(value: number | undefined): number {
+  return Number.isFinite(value) ? Math.max(0, value ?? 0) : 0;
+}
+
+function nodeImportance(node: LayoutNode): number {
+  return Math.min(1, finiteNonNegative(node.importance));
+}
+
+function nodeHalo(node: LayoutNode): number {
+  return nodeImportance(node) * IMPORTANCE_HALO;
+}
+
+function layoutNodeSize(node: LayoutNode): { width: number; height: number; halo: number } {
+  const halo = nodeHalo(node);
+  return {
+    width: node.width + halo * 2,
+    height: node.height + halo * 2,
+    halo,
+  };
+}
+
+function clusterKey(node: LayoutNode): string {
+  return node.clusterId ?? "\uffff";
+}
+
 function compareNodes(left: LayoutNode, right: LayoutNode): number {
   return compareNumber(KIND_ORDER[left.kind], KIND_ORDER[right.kind])
+    || compareText(clusterKey(left), clusterKey(right))
+    || compareNumber(nodeImportance(right), nodeImportance(left))
     || compareText(left.id, right.id);
 }
 
@@ -96,8 +135,27 @@ function compareEdges(left: LayoutEdge, right: LayoutEdge): number {
     || compareText(left.target, right.target)
     || compareText(left.relationType, right.relationType)
     || compareText(normalizedDirections(left).join("\u0000"), normalizedDirections(right).join("\u0000"))
+    || compareText(left.role ?? "primary", right.role ?? "primary")
     || compareNumber(left.weight, right.weight)
     || compareNumber(left.count, right.count);
+}
+
+function edgeLayoutWeight(
+  edge: DirectionalEdge,
+  nodeById: ReadonlyMap<string, LayoutNode>,
+): number {
+  const source = nodeById.get(edge.source);
+  const target = nodeById.get(edge.target);
+  const roleWeight = EDGE_ROLE_WEIGHT[edge.role ?? "primary"] ?? EDGE_ROLE_WEIGHT.primary;
+  const countWeight = 1 + Math.log2(Math.max(1, finiteNonNegative(edge.count)));
+  const semanticWeight = 1 + Math.min(4, finiteNonNegative(edge.weight)) * 2;
+  const importanceWeight = 1 + ((source ? nodeImportance(source) : 0)
+    + (target ? nodeImportance(target) : 0)) * 0.25;
+  const clusterWeight = source?.clusterId && source.clusterId === target?.clusterId ? 1.35 : 1;
+  return Math.max(
+    1,
+    Math.round(roleWeight * countWeight * semanticWeight * importanceWeight * clusterWeight * 100) / 100,
+  );
 }
 
 function directionalEdges(input: LayoutMessage, nodeIds: ReadonlySet<string>): DirectionalEdge[] {
@@ -152,8 +210,19 @@ function dagreGraph(
 ): dagre.graphlib.Graph {
   const graph = new dagre.graphlib.Graph({ multigraph: true });
   graph.setDefaultEdgeLabel(() => ({}));
-  graph.setGraph({ rankdir: direction, nodesep, ranksep, marginx: 0, marginy: 0 });
-  for (const node of nodes) graph.setNode(node.id, { width: node.width, height: node.height });
+  graph.setGraph({
+    rankdir: direction,
+    ranker: "longest-path",
+    nodesep,
+    ranksep,
+    marginx: 0,
+    marginy: 0,
+  });
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  for (const node of nodes) {
+    const size = layoutNodeSize(node);
+    graph.setNode(node.id, { width: size.width, height: size.height });
+  }
 
   const occurrences = new Map<string, number>();
   for (const edge of edges) {
@@ -164,13 +233,14 @@ function dagreGraph(
       edge.direction,
       edge.weight,
       edge.count,
+      edge.role ?? "primary",
     ].join("\u0000");
     const occurrence = occurrences.get(baseName) ?? 0;
     occurrences.set(baseName, occurrence + 1);
     graph.setEdge(
       edge.source,
       edge.target,
-      { weight: Math.max(1, edge.count) },
+      { weight: edgeLayoutWeight(edge, nodeById) },
       `${baseName}\u0000${occurrence}`,
     );
   }
@@ -224,7 +294,7 @@ function lowerLevelLayout(input: LayoutMessage): LayoutResult {
   const horizontal = input.viewport.aspectBucket === "landscape"
     || input.viewport.aspectBucket === "wide";
   const spacingByLevel = {
-    scope: { nodesep: horizontal ? 64 : 52, ranksep: horizontal ? 132 : 112 },
+    scope: { nodesep: 40, ranksep: horizontal ? 132 : 112 },
     cluster: { nodesep: horizontal ? 52 : 44, ranksep: horizontal ? 116 : 102 },
     file: { nodesep: horizontal ? 42 : 36, ranksep: horizontal ? 98 : 88 },
   } as const;
@@ -233,8 +303,12 @@ function lowerLevelLayout(input: LayoutMessage): LayoutResult {
   const positions = new Map<string, { x: number; y: number }>();
   for (const node of nodes) {
     const point = graph.node(node.id) as { x: number; y: number } | undefined;
+    const size = layoutNodeSize(node);
     positions.set(node.id, point
-      ? { x: point.x - node.width / 2, y: point.y - node.height / 2 }
+      ? {
+          x: point.x - size.width / 2 + size.halo,
+          y: point.y - size.height / 2 + size.halo,
+        }
       : { x: 0, y: 0 });
   }
   return paddedResult(input.requestId, nodes, positions);
@@ -251,21 +325,30 @@ function packRank(
   let crossOffset = 0;
   let laneMainExtent = 0;
   let crossExtent = 0;
+  let previousNode: LayoutNode | undefined;
 
   for (const node of nodes) {
-    const mainSize = horizontal ? node.width : node.height;
-    const crossSize = horizontal ? node.height : node.width;
-    if (crossOffset > 0 && crossOffset + crossSize > crossLimit) {
+    const size = layoutNodeSize(node);
+    const mainSize = horizontal ? size.width : size.height;
+    const crossSize = horizontal ? size.height : size.width;
+    const clusterGap = previousNode && clusterKey(previousNode) !== clusterKey(node)
+      ? CLUSTER_GAP
+      : 0;
+    let crossStart = crossOffset + (crossOffset > 0 ? gap + clusterGap : 0);
+    if (crossOffset > 0 && crossStart + crossSize > crossLimit) {
       mainOffset += laneMainExtent + gap;
       crossOffset = 0;
       laneMainExtent = 0;
+      previousNode = undefined;
+      crossStart = 0;
     }
     positions.set(node.id, horizontal
-      ? { x: mainOffset, y: crossOffset }
-      : { x: crossOffset, y: mainOffset });
-    crossOffset += crossSize + gap;
+      ? { x: mainOffset + size.halo, y: crossStart + size.halo }
+      : { x: crossStart + size.halo, y: mainOffset + size.halo });
+    crossOffset = crossStart + crossSize;
     laneMainExtent = Math.max(laneMainExtent, mainSize);
-    crossExtent = Math.max(crossExtent, crossOffset - gap);
+    crossExtent = Math.max(crossExtent, crossOffset);
+    previousNode = node;
   }
   return {
     positions,
@@ -296,9 +379,11 @@ function overviewLayout(input: LayoutMessage): LayoutResult {
     const connectedIds = new Set(connected.map((node) => node.id));
     const connectedEdges = edges.filter((edge) => connectedIds.has(edge.source) && connectedIds.has(edge.target));
     const graph = dagreGraph(connected, connectedEdges, horizontal ? "LR" : "TB", 64, 156);
+    const dagrePoints = new Map<string, { x: number; y: number }>();
     const ranks = new Map<number, LayoutNode[]>();
     for (const node of connected) {
       const point = graph.node(node.id) as { x: number; y: number } | undefined;
+      if (point) dagrePoints.set(node.id, point);
       const rankCoordinate = Math.round((horizontal ? point?.x : point?.y) ?? 0);
       const group = ranks.get(rankCoordinate) ?? [];
       group.push(node);
@@ -313,9 +398,11 @@ function overviewLayout(input: LayoutMessage): LayoutResult {
     );
     for (const [, rankNodes] of [...ranks.entries()].sort(([left], [right]) => left - right)) {
       rankNodes.sort((left, right) => (
-        compareNumber(KIND_ORDER[left.kind], KIND_ORDER[right.kind])
-        || compareNumber(degree.get(right.id) ?? 0, degree.get(left.id) ?? 0)
-        || compareText(left.id, right.id)
+        compareNumber(
+          horizontal ? (dagrePoints.get(left.id)?.y ?? 0) : (dagrePoints.get(left.id)?.x ?? 0),
+          horizontal ? (dagrePoints.get(right.id)?.y ?? 0) : (dagrePoints.get(right.id)?.x ?? 0),
+        )
+        || compareNodes(left, right)
       ));
       const packed = packRank(rankNodes, horizontal, crossLimit);
       for (const node of rankNodes) {
@@ -331,10 +418,7 @@ function overviewLayout(input: LayoutMessage): LayoutResult {
   }
 
   if (isolates.length > 0) {
-    const sortedIsolates = [...isolates].sort((left, right) => (
-      compareNumber(KIND_ORDER[left.kind], KIND_ORDER[right.kind])
-      || compareText(left.id, right.id)
-    ));
+    const sortedIsolates = [...isolates].sort(compareNodes);
     const isolateStart = connectedCrossExtent + (connected.length > 0 ? 96 : 0);
     const crossLimit = Math.max(
       240,
@@ -362,16 +446,17 @@ export function computeStableGridLayout(input: LayoutMessage): LayoutResult {
     return { requestId: input.requestId, positions: {}, bounds: { x: 0, y: 0, width: 0, height: 0 } };
   }
   const gap = 48;
-  const maxWidth = Math.max(...nodes.map((node) => node.width));
-  const maxHeight = Math.max(...nodes.map((node) => node.height));
+  const maxWidth = Math.max(...nodes.map((node) => layoutNodeSize(node).width));
+  const maxHeight = Math.max(...nodes.map((node) => layoutNodeSize(node).height));
   const cellWidth = maxWidth + gap;
   const cellHeight = maxHeight + gap;
   const columns = Math.max(1, Math.floor((input.viewport.width - OUTER_PADDING * 2 + gap) / cellWidth));
   const positions = new Map<string, { x: number; y: number }>();
   nodes.forEach((node, index) => {
+    const { halo } = layoutNodeSize(node);
     positions.set(node.id, {
-      x: (index % columns) * cellWidth,
-      y: Math.floor(index / columns) * cellHeight,
+      x: (index % columns) * cellWidth + halo,
+      y: Math.floor(index / columns) * cellHeight + halo,
     });
   });
   return paddedResult(input.requestId, nodes, positions);
@@ -405,17 +490,46 @@ export function isValidLayoutResult(input: LayoutMessage, result: unknown): bool
 
   const occupied = new Set<string>();
   const nodeById = new Map(input.nodes.map((node) => [node.id, node]));
+  const rectangles: Array<{
+    id: string;
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+  }> = [];
   for (const id of expectedIds) {
     const position = positions[id];
     const node = nodeById.get(id);
     if (!isRuntimeRecord(position) || !node
       || !isFiniteNumber(position.x) || !isFiniteNumber(position.y)) return false;
+    if (!isFiniteNumber(node.width) || !isFiniteNumber(node.height)
+      || node.width < 0 || node.height < 0) return false;
     const positionKey = `${position.x}\u0000${position.y}`;
     if (occupied.has(positionKey)) return false;
     occupied.add(positionKey);
     if (position.x < boundsX || position.y < boundsY) return false;
     if (position.x + node.width > boundsX + boundsWidth) return false;
     if (position.y + node.height > boundsY + boundsHeight) return false;
+    rectangles.push({
+      id,
+      left: position.x,
+      top: position.y,
+      right: position.x + node.width,
+      bottom: position.y + node.height,
+    });
+  }
+
+  rectangles.sort((left, right) => compareNumber(left.left, right.left) || compareText(left.id, right.id));
+  let active: typeof rectangles = [];
+  for (const rectangle of rectangles) {
+    active = active.filter((candidate) => candidate.right > rectangle.left);
+    for (const candidate of active) {
+      const hasArea = candidate.left < candidate.right && candidate.top < candidate.bottom
+        && rectangle.left < rectangle.right && rectangle.top < rectangle.bottom;
+      const verticalOverlap = candidate.top < rectangle.bottom && rectangle.top < candidate.bottom;
+      if (hasArea && verticalOverlap) return false;
+    }
+    active.push(rectangle);
   }
   return true;
 }

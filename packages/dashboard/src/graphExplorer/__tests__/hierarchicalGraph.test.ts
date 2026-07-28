@@ -14,6 +14,7 @@ import {
   buildHierarchicalSemanticGraph,
   buildHierarchySelectionExpansion,
   clusterNodeId,
+  createHierarchicalGraphProjectionContext,
   graphNodePlacementClass,
   hasDocumentationProblem,
   normalizeGraphFilePath,
@@ -728,6 +729,100 @@ describe("hierarchicalGraph", () => {
     expect(normalizeGraphExplorerMode("call")).toBe("call");
   });
 
+  it("keeps an explicit projection context equivalent to the legacy hierarchy APIs", () => {
+    const graph = importOnlyGraph();
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const input = {
+      graph,
+      hierarchyIndex,
+      mode: "call" as const,
+      navigation: { level: "overview" as const },
+      materializedNodeId: null,
+    };
+    const projectionContext = createHierarchicalGraphProjectionContext({ graph });
+    const legacyBase = buildHierarchicalSemanticGraph(input);
+    const contextualBase = buildHierarchicalSemanticGraph({ ...input, projectionContext });
+    const selectedNodeId = contextualBase.nodes.find((node) => node.kind === "scope")!.id;
+
+    const legacyExpansion = buildHierarchySelectionExpansion({
+      graph,
+      hierarchyIndex,
+      baseGraph: legacyBase,
+      mode: "call",
+      selectedNodeId,
+    });
+    const contextualExpansion = buildHierarchySelectionExpansion({
+      graph,
+      hierarchyIndex,
+      baseGraph: contextualBase,
+      projectionContext,
+      mode: "call",
+      selectedNodeId,
+    });
+
+    expect(contextualBase).toEqual(legacyBase);
+    expect(contextualExpansion).toEqual(legacyExpansion);
+  });
+
+  it("reuses one projection deterministically without mutating its snapshot", () => {
+    const graph = importOnlyGraph();
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const projectionContext = createHierarchicalGraphProjectionContext({ graph });
+    const projectionSnapshot = structuredClone(projectionContext.projection);
+    const build = () => buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      projectionContext,
+      mode: "architecture",
+      navigation: { level: "scope" as const, scopeId: hierarchyIndex.scopes[0]!.id },
+      materializedNodeId: null,
+    });
+
+    const first = build();
+    const second = build();
+
+    expect(second).toEqual(first);
+    expect(projectionContext.projection).toEqual(projectionSnapshot);
+  });
+
+  it("rejects projection contexts from a different graph or wiki snapshot", () => {
+    const fixture = aggregateCoverageFixture();
+    const hierarchyIndex = buildGraphHierarchyIndex(fixture.graph);
+    const projectionContext = createHierarchicalGraphProjectionContext({
+      graph: fixture.graph,
+      wikiIndex: fixture.wikiIndex,
+    });
+    const input = {
+      graph: fixture.graph,
+      hierarchyIndex,
+      wikiIndex: fixture.wikiIndex,
+      projectionContext,
+      mode: "coverage" as const,
+      navigation: { level: "overview" as const },
+      materializedNodeId: null,
+    };
+
+    const documented = buildHierarchicalSemanticGraph(input);
+    expect(documented.nodes.find((node) => node.kind === "scope")?.documentationCounts?.direct)
+      .toBeGreaterThan(0);
+    expect(() => buildHierarchicalSemanticGraph({
+      ...input,
+      graph: { ...fixture.graph },
+    })).toThrow("different graph snapshot");
+    expect(() => buildHierarchicalSemanticGraph({
+      ...input,
+      wikiIndex: undefined,
+    })).toThrow("different wiki index snapshot");
+    expect(() => buildHierarchySelectionExpansion({
+      graph: fixture.graph,
+      hierarchyIndex,
+      baseGraph: documented,
+      projectionContext,
+      mode: "coverage",
+      selectedNodeId: documented.nodes[0]!.id,
+    })).toThrow("different wiki index snapshot");
+  });
+
   it("starts from aggregated scopes and drills through scope and file levels", () => {
     const graph = importOnlyGraph();
     const hierarchyIndex = buildGraphHierarchyIndex(graph);
@@ -844,7 +939,7 @@ describe("hierarchicalGraph", () => {
       .toEqual({ direct: 0, context: 0, none: 50, problem: 0, total: 50 });
   });
 
-  it("keeps dense file-level selection expansion outside deterministic base caps", () => {
+  it("caps dense file-level selection expansion to 20 new neighbors without changing the base", () => {
     const graph = graphWithDenseSelection(110);
     const hierarchyIndex = buildGraphHierarchyIndex(graph);
     const selectedNodeId = "function:dense:selected";
@@ -866,13 +961,18 @@ describe("hierarchicalGraph", () => {
       selectedNodeId,
     });
     const merged = mergeHierarchySelectionExpansion(baseBefore, expansion);
+    const baseIds = new Set(baseBefore.nodes.map((node) => node.id));
+    const addedNeighborIds = expansion.nodes
+      .map((node) => node.id)
+      .filter((id) => id !== selectedNodeId && !baseIds.has(id));
 
-    expect(baseBefore.nodes.some((node) => node.id === selectedNodeId)).toBe(false);
-    expect(expansion.nodes.map((node) => node.id)).toEqual(expect.arrayContaining([
-      selectedNodeId,
-      ...oneHopIds(graph, selectedNodeId),
-    ]));
-    expect(expansion.edges).toHaveLength(111);
+    expect(baseBefore.nodes.some((node) => node.id === selectedNodeId)).toBe(true);
+    expect(expansion.nodes.map((node) => node.id)).toContain(selectedNodeId);
+    expect(addedNeighborIds).toHaveLength(20);
+    expect(expansion.hiddenNeighborCount).toBe(54);
+    expect(oneHopIds(graph, selectedNodeId)).toEqual(expect.arrayContaining(addedNeighborIds));
+    expect(expansion.edges.every((edge) => edge.source === selectedNodeId
+      || edge.target === selectedNodeId)).toBe(true);
     expect(merged.nodes.some((node) => node.id === selectedNodeId)).toBe(true);
     expect(baseBefore.nodes.map((node) => node.id)).toEqual(
       buildHierarchicalSemanticGraph(baseInput).nodes.map((node) => node.id),
@@ -882,6 +982,51 @@ describe("hierarchicalGraph", () => {
     expect(merged.nodes.length).toBeGreaterThan(baseBefore.nodes.length);
     expect(merged.presentation.hiddenNodeCount).toBe(baseBefore.presentation.hiddenNodeCount);
     expect(merged.presentation.totalNodeCount).toBe(baseBefore.presentation.totalNodeCount);
+  });
+
+  it("ranks capped selection neighbors by relationship weight, count, and stable id", () => {
+    const selectedNodeId = "function:dense:selected";
+    const weightedNeighborId = "function:dense:n-21";
+    const repeatedNeighborId = "function:dense:n-20";
+    const graph = graphWithDenseSelection(22);
+    graph.edges = graph.edges.map((edge) => edge.type === "calls"
+      ? { ...edge, weight: edge.target === weightedNeighborId ? 0.9 : 0.2 }
+      : edge);
+    graph.edges.push({
+      source: selectedNodeId,
+      target: repeatedNeighborId,
+      type: "depends_on",
+      direction: "forward",
+      weight: 0.8,
+    });
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const location = hierarchyIndex.fileLocationById.get("file:src/dense.ts")!;
+    const builtBase = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      mode: "coverage",
+      navigation: { level: "file", ...location },
+      materializedNodeId: null,
+    });
+    const selected = builtBase.nodes.find((node) => node.id === selectedNodeId)!;
+    const baseGraph = { ...builtBase, nodes: [selected], edges: [] };
+    const buildExpansion = () => buildHierarchySelectionExpansion({
+      graph,
+      hierarchyIndex,
+      baseGraph,
+      mode: "coverage" as const,
+      selectedNodeId,
+    });
+    const expansion = buildExpansion();
+    const neighborIds = expansion.nodes
+      .map((node) => node.id)
+      .filter((id) => id !== selectedNodeId);
+
+    expect(neighborIds).toHaveLength(20);
+    expect(expansion.hiddenNeighborCount).toBe(3);
+    expect(neighborIds).toEqual(expect.arrayContaining([weightedNeighborId, repeatedNeighborId]));
+    expect(expansion.nodes.map((node) => node.id)).toContain(selectedNodeId);
+    expect(buildExpansion()).toEqual(expansion);
   });
 
   it("reuses visible base nodes by identity and keeps materialization separate from selection", () => {
@@ -963,7 +1108,11 @@ describe("hierarchicalGraph", () => {
       selectedClusterId,
       hiddenClusterId,
     ]));
-    expect(expansion.edges.length).toBeGreaterThan(100);
+    expect(expansion.nodes.filter((node) => node.kind === "cluster" && !baseIds.has(node.id)))
+      .toHaveLength(20);
+    expect(expansion.edges.length).toBeLessThanOrEqual(
+      baseGraph.nodes.filter((node) => node.kind === "cluster").length - 1 + 20,
+    );
     const connecting = expansion.edges.find((edge) =>
       edge.source === selectedClusterId && edge.target === hiddenClusterId);
     expect(connecting?.members).toContainEqual(expect.objectContaining({
@@ -975,7 +1124,7 @@ describe("hierarchicalGraph", () => {
     expect(connecting?.members).not.toContainEqual(expect.objectContaining({ source: architecture.id }));
   });
 
-  it("keeps uncapped high-fanout cluster synthesis within a linear semantic-member filter budget", () => {
+  it("keeps capped high-fanout cluster synthesis within a linear semantic-member filter budget", () => {
     const clusterCount = 512;
     const graph = graphWithHighFanoutClusters(clusterCount);
     const hierarchyIndex = buildGraphHierarchyIndex(graph);
@@ -999,16 +1148,21 @@ describe("hierarchicalGraph", () => {
       });
     });
 
-    expect(expansion!.nodes.filter((node) => node.kind === "cluster")).toHaveLength(clusterCount);
-    expect(new Set(expansion!.nodes.map((node) => node.id)))
-      .toEqual(new Set(hierarchyIndex.scopes[0]!.clusterIds));
-    expect(expansion!.edges).toHaveLength(clusterCount - 1);
+    const baseClusterIds = new Set(baseGraph.nodes
+      .filter((node) => node.kind === "cluster")
+      .map((node) => node.id));
+    const expansionClusterIds = expansion!.nodes
+      .filter((node) => node.kind === "cluster")
+      .map((node) => node.id);
+    expect(expansionClusterIds).toContain(selectedClusterId);
+    expect(expansionClusterIds.filter((id) => !baseClusterIds.has(id))).toHaveLength(20);
+    expect(expansion!.edges).toHaveLength(baseClusterIds.size - 1 + 20);
     expect(new Set(expansion!.edges.flatMap((edge) => [edge.source, edge.target])))
-      .toEqual(new Set(hierarchyIndex.scopes[0]!.clusterIds));
+      .toEqual(new Set(expansionClusterIds));
     expect(semanticMemberFilterVisits).toBeLessThanOrEqual(graph.edges.length * 3);
   });
 
-  it("keeps uncapped high-fanout boundary synthesis within one rendered-scope pass", () => {
+  it("keeps capped high-fanout boundary synthesis within one rendered-scope pass", () => {
     const boundaryCount = 512;
     const graph = manyBoundariesGraph(boundaryCount);
     const hierarchyIndex = buildGraphHierarchyIndex(graph);
@@ -1038,11 +1192,19 @@ describe("hierarchicalGraph", () => {
       selectedNodeId: scopeNodeId("layer:center"),
     });
 
-    expect(expansion.nodes.filter((node) => node.kind === "boundary")).toHaveLength(boundaryCount);
-    expect(expansion.edges).toHaveLength(boundaryCount);
-    expect(new Set(expansion.edges.map((edge) => edge.target))).toEqual(new Set(
-      graph.layers.slice(1).map((layer) => boundaryNodeId("layer:center", `layer:${layer.id}`)),
-    ));
+    const baseBoundaryIds = new Set(baseGraph.nodes
+      .filter((node) => node.kind === "boundary")
+      .map((node) => node.id));
+    const expansionBoundaryIds = expansion.nodes
+      .filter((node) => node.kind === "boundary")
+      .map((node) => node.id);
+    const baseScopeNeighborIds = new Set(baseGraph.nodes
+      .filter((node) => node.kind === "scope" && node.id !== scopeNodeId("layer:center"))
+      .map((node) => node.id));
+    expect(expansionBoundaryIds.filter((id) => !baseBoundaryIds.has(id))).toHaveLength(20);
+    expect(expansion.edges).toHaveLength(expansionBoundaryIds.length + baseScopeNeighborIds.size);
+    expect(new Set(expansion.edges.map((edge) => edge.target)))
+      .toEqual(new Set([...expansionBoundaryIds, ...baseScopeNeighborIds]));
     expect(renderedScopeCandidateVisits).toBeLessThanOrEqual(hierarchyIndex.scopes.length);
   });
 
@@ -1102,6 +1264,7 @@ describe("hierarchicalGraph", () => {
     const merged = mergeHierarchySelectionExpansion(baseGraph, {
       nodes: [],
       edges: [{ ...baseEdge, members: [extraMember], bundledCount: 1 }],
+      hiddenNeighborCount: 0,
     });
     const mergedEdge = merged.edges.find((edge) => edge.id === baseEdge.id)!;
 
@@ -1163,7 +1326,7 @@ describe("hierarchicalGraph", () => {
       baseGraph,
       mode: "architecture",
       selectedNodeId: staleBoundaryId,
-    })).toEqual({ nodes: [], edges: [] });
+    })).toEqual({ nodes: [], edges: [], hiddenNeighborCount: 0 });
   });
 
   it("does not expand an unrelated raw node into the current file universe", () => {
@@ -1184,7 +1347,7 @@ describe("hierarchicalGraph", () => {
       baseGraph,
       mode: "call",
       selectedNodeId: "function:lib/b.ts:load",
-    })).toEqual({ nodes: [], edges: [] });
+    })).toEqual({ nodes: [], edges: [], hiddenNeighborCount: 0 });
   });
 
   it.each([
@@ -1228,7 +1391,7 @@ describe("hierarchicalGraph", () => {
       baseGraph,
       mode: "architecture",
       selectedNodeId: file.id,
-    })).toEqual({ nodes: [], edges: [] });
+    })).toEqual({ nodes: [], edges: [], hiddenNeighborCount: 0 });
 
     const fileExpansion = buildHierarchySelectionExpansion({
       graph,
@@ -1282,7 +1445,7 @@ describe("hierarchicalGraph", () => {
       baseGraph,
       mode: "architecture",
       selectedNodeId: symbol.id,
-    })).toEqual({ nodes: [], edges: [] });
+    })).toEqual({ nodes: [], edges: [], hiddenNeighborCount: 0 });
 
     const symbolExpansion = buildHierarchySelectionExpansion({
       graph,
@@ -1322,7 +1485,7 @@ describe("hierarchicalGraph", () => {
       baseGraph,
       mode: "architecture",
       selectedNodeId: service.id,
-    })).toEqual({ nodes: [], edges: [] });
+    })).toEqual({ nodes: [], edges: [], hiddenNeighborCount: 0 });
   });
 
   it("keeps a mode-allowed pathful architecture neighbor in the file candidate universe", () => {
@@ -1415,7 +1578,7 @@ describe("hierarchicalGraph", () => {
       baseGraph,
       mode: "call",
       selectedNodeId: boundaryNodeId(localScope.id, "layer:external"),
-    })).toEqual({ nodes: [], edges: [] });
+    })).toEqual({ nodes: [], edges: [], hiddenNeighborCount: 0 });
   });
 
   it("synthesizes a hidden cluster boundary from only current-cluster raw facts", () => {
@@ -1552,7 +1715,7 @@ describe("hierarchicalGraph", () => {
       baseGraph,
       mode: "architecture",
       selectedNodeId: portalId,
-    })).toEqual({ nodes: [], edges: [] });
+    })).toEqual({ nodes: [], edges: [], hiddenNeighborCount: 0 });
   });
 
   it("matches synthesized and materialized overview metadata across mixed raw facts", () => {
@@ -1695,10 +1858,10 @@ describe("hierarchicalGraph", () => {
     });
 
     expect(overview.presentation.level).toBe("overview");
-    expect(scopeView.nodes.filter((node) => node.kind === "cluster").map((node) => node.clusterId))
-      .toEqual(scope.clusterIds);
-    expect(clusterView.nodes.filter((node) => node.rawType === "file").map((node) => node.id))
-      .toEqual(cluster.fileIds.slice(0, 30));
+    expect(new Set(scopeView.nodes.filter((node) => node.kind === "cluster").map((node) => node.clusterId)))
+      .toEqual(new Set(scope.clusterIds));
+    expect(new Set(clusterView.nodes.filter((node) => node.rawType === "file").map((node) => node.id)))
+      .toEqual(new Set(cluster.fileIds.slice(0, 30)));
     expect(fileView.presentation.level).toBe("file");
     expect(scopeView.presentation.breadcrumbs.map((item) => item.level)).toEqual(["overview", "scope"]);
     expect(clusterView.presentation.breadcrumbs.map((item) => item.level)).toEqual(["overview", "scope", "cluster"]);
@@ -1728,20 +1891,16 @@ describe("hierarchicalGraph", () => {
       materializedNodeId: null,
     });
 
-    expect(view.edges).toHaveLength(6);
-    expect(new Set(view.edges.map((edge) => edge.id)).size).toBe(6);
+    expect(view.edges).toHaveLength(3);
+    expect(new Set(view.edges.map((edge) => edge.id)).size).toBe(3);
     expect(view.edges.map((edge) => [edge.type, edge.direction]).sort()).toEqual([
       ["calls", "forward"],
-      ["calls", "forward"],
       ["imports", "backward"],
-      ["imports", "backward"],
-      ["imports", "forward"],
       ["imports", "forward"],
     ]);
-    expect(new Set(view.edges.map((edge) => edge.boundaryContext?.currentScopeId))).toEqual(new Set([
-      "layer:left",
-      "layer:right",
-    ]));
+    expect(view.edges.every((edge) => edge.source === scopeNodeId("layer:left")
+      && edge.target === scopeNodeId("layer:right")
+      && edge.boundaryContext === undefined)).toBe(true);
   });
 
   it("bundles equal projected relationships without changing any raw member", () => {
@@ -1821,6 +1980,138 @@ describe("hierarchicalGraph", () => {
     }
   });
 
+  it("prioritizes relationship-covering objects before every progressive node cap", () => {
+    const scopesGraph = manyScopesGraph(17);
+    const rankedScopeFile = scopesGraph.nodes.at(-1)!;
+    scopesGraph.edges = [{
+      source: rankedScopeFile.id,
+      target: scopesGraph.nodes[0]!.id,
+      type: "imports",
+      direction: "forward",
+      weight: 1,
+    }];
+    const scopesIndex = buildGraphHierarchyIndex(scopesGraph);
+    const scopesView = buildHierarchicalSemanticGraph({
+      graph: scopesGraph,
+      hierarchyIndex: scopesIndex,
+      mode: "architecture",
+      navigation: { level: "overview" },
+      materializedNodeId: null,
+    });
+    expect(scopesView.nodes.map((node) => node.id)).toContain(scopeNodeId(
+      scopesIndex.nodeLocationById.get(rankedScopeFile.id)!.scopeId,
+    ));
+
+    const architectureFile = hierarchyNode("file:rank-architecture", "file", "src/index.ts");
+    const architectureNodes = Array.from({ length: 25 }, (_, index) =>
+      hierarchyNode(`service:rank-${String(index).padStart(2, "0")}`, "service"));
+    const rankedArchitecture = architectureNodes.at(-1)!;
+    const architectureGraph = hierarchyGraph(
+      [architectureFile, ...architectureNodes],
+      [{
+        source: rankedArchitecture.id,
+        target: architectureFile.id,
+        type: "depends_on",
+        direction: "forward",
+        weight: 1,
+      }],
+      [architectureFile.id, ...architectureNodes.map((node) => node.id)],
+    );
+    const architectureIndex = buildGraphHierarchyIndex(architectureGraph);
+    const architectureScope = architectureIndex.scopes[0]!;
+    for (const navigation of [
+      { level: "overview" as const },
+      { level: "scope" as const, scopeId: architectureScope.id },
+    ]) {
+      const view = buildHierarchicalSemanticGraph({
+        graph: architectureGraph,
+        hierarchyIndex: architectureIndex,
+        mode: "architecture",
+        navigation,
+        materializedNodeId: null,
+      });
+      expect(view.nodes.map((node) => node.id)).toContain(rankedArchitecture.id);
+    }
+
+    const clusterFiles = Array.from({ length: 25 }, (_, index) =>
+      hierarchyNode(
+        `file:rank-cluster-${String(index).padStart(2, "0")}`,
+        "file",
+        `dir-${String(index).padStart(2, "0")}/index.ts`,
+      ));
+    const rankedClusterFile = clusterFiles.at(-1)!;
+    const clustersGraph = hierarchyGraph(clusterFiles, [{
+      source: rankedClusterFile.id,
+      target: clusterFiles[0]!.id,
+      type: "imports",
+      direction: "forward",
+      weight: 1,
+    }]);
+    const clustersIndex = buildGraphHierarchyIndex(clustersGraph);
+    const clustersScope = clustersIndex.scopes[0]!;
+    const clustersView = buildHierarchicalSemanticGraph({
+      graph: clustersGraph,
+      hierarchyIndex: clustersIndex,
+      mode: "architecture",
+      navigation: { level: "scope", scopeId: clustersScope.id },
+      materializedNodeId: null,
+    });
+    expect(clustersView.nodes.map((node) => node.id)).toContain(
+      clustersIndex.fileLocationById.get(rankedClusterFile.id)!.clusterId,
+    );
+
+    const files = Array.from({ length: 31 }, (_, index) =>
+      hierarchyNode(`file:rank-file-${String(index).padStart(2, "0")}`, "file", `src/file-${index}.ts`));
+    const fileless = Array.from({ length: 13 }, (_, index) =>
+      hierarchyNode(`config:rank-${String(index).padStart(2, "0")}`, "config", `src/config-${index}.json`));
+    const rankedFile = files.at(-1)!;
+    const rankedFileless = fileless.at(-1)!;
+    const filesGraph = hierarchyGraph([...files, ...fileless], [
+      { source: rankedFile.id, target: files[0]!.id, type: "imports", direction: "forward", weight: 1 },
+      { source: rankedFileless.id, target: files[0]!.id, type: "configures", direction: "forward", weight: 1 },
+    ]);
+    const filesIndex = buildGraphHierarchyIndex(filesGraph);
+    const filesScope = filesIndex.scopes[0]!;
+    const filesCluster = filesIndex.clusterById.get(filesIndex.fileLocationById.get(files[0]!.id)!.clusterId)!;
+    const filesView = buildHierarchicalSemanticGraph({
+      graph: filesGraph,
+      hierarchyIndex: filesIndex,
+      mode: "coverage",
+      navigation: { level: "cluster", scopeId: filesScope.id, clusterId: filesCluster.id },
+      materializedNodeId: null,
+    });
+    expect(filesView.nodes.map((node) => node.id)).toEqual(expect.arrayContaining([
+      rankedFile.id,
+      rankedFileless.id,
+    ]));
+
+    const symbolFile = hierarchyNode("file:rank-symbol", "file", "src/symbol.ts");
+    const symbols = Array.from({ length: 39 }, (_, index) =>
+      hierarchyNode(`function:rank-${String(index).padStart(2, "0")}`, "function", symbolFile.filePath));
+    const rankedSymbol = symbols.at(-1)!;
+    const symbolsGraph = hierarchyGraph([symbolFile, ...symbols], [
+      ...symbols.map((symbol): GraphEdge => ({
+        source: symbolFile.id,
+        target: symbol.id,
+        type: "contains",
+        direction: "forward",
+        weight: 1,
+      })),
+      { source: rankedSymbol.id, target: symbols[0]!.id, type: "calls", direction: "forward", weight: 1 },
+    ]);
+    const symbolsIndex = buildGraphHierarchyIndex(symbolsGraph);
+    const symbolLocation = symbolsIndex.fileLocationById.get(symbolFile.id)!;
+    const symbolsView = buildHierarchicalSemanticGraph({
+      graph: symbolsGraph,
+      hierarchyIndex: symbolsIndex,
+      mode: "call",
+      navigation: { level: "file", ...symbolLocation },
+      materializedNodeId: null,
+    });
+    expect(symbolsView.nodes).toHaveLength(38);
+    expect(symbolsView.nodes.map((node) => node.id)).toContain(rankedSymbol.id);
+  });
+
   it("applies independent caps and materializes hidden architecture, file, fileless, and symbol objects", () => {
     const files = Array.from({ length: 35 }, (_, index) =>
       hierarchyNode(`file:${index}`, "file", `src/file-${String(index).padStart(2, "0")}.ts`));
@@ -1850,6 +2141,11 @@ describe("hierarchicalGraph", () => {
 
     const overview = build({ level: "overview" }, null);
     const overviewMaterialized = build({ level: "overview" }, architecture.at(-1)!.id);
+    const scopeView = build({ level: "scope", scopeId: scope.id }, null);
+    const scopeMaterialized = build(
+      { level: "scope", scopeId: scope.id },
+      architecture.at(-1)!.id,
+    );
     const clusterView = build({ level: "cluster", scopeId: scope.id, clusterId: cluster.id }, null);
     const clusterMaterializedFile = build(
       { level: "cluster", scopeId: scope.id, clusterId: cluster.id },
@@ -1866,8 +2162,15 @@ describe("hierarchicalGraph", () => {
 
     expect(overview.nodes.filter((node) => node.kind === "node"
       && graphNodePlacementClass(node.rawType) === "architecture-context"))
-      .toHaveLength(24);
+      .toHaveLength(12);
+    expect(overviewMaterialized.nodes.filter((node) => node.kind === "node"
+      && graphNodePlacementClass(node.rawType) === "architecture-context"))
+      .toHaveLength(12);
     expect(overviewMaterialized.nodes.map((node) => node.id)).toContain(architecture.at(-1)!.id);
+    expect(scopeView.nodes.filter((node) => node.kind === "node"
+      && graphNodePlacementClass(node.rawType) === "architecture-context"))
+      .toHaveLength(16);
+    expect(scopeMaterialized.nodes.map((node) => node.id)).toContain(architecture.at(-1)!.id);
     expect(clusterView.nodes.filter((node) => node.rawType === "file")).toHaveLength(30);
     expect(clusterView.nodes.filter((node) => node.rawType === "config")).toHaveLength(12);
     expect(clusterMaterializedFile.nodes.map((node) => node.id)).toContain(files.at(-1)!.id);
@@ -1924,7 +2227,7 @@ describe("hierarchicalGraph", () => {
       || edge.target === contextualBoundaryId)?.boundaryContext).toEqual({ currentScopeId, targetScopeId });
   });
 
-  it("renders contextual cross-scope boundaries at overview", () => {
+  it("projects cross-scope relations directly when both overview scopes are visible", () => {
     const graph = importOnlyGraph();
     const hierarchyIndex = buildGraphHierarchyIndex(graph);
     const boundaryId = boundaryNodeId("layer:app", "layer:lib");
@@ -1936,15 +2239,14 @@ describe("hierarchicalGraph", () => {
       materializedNodeId: null,
     });
 
-    expect(overview.nodes.map((node) => node.id)).toContain(boundaryId);
-    expect(overview.edges.find((edge) => edge.source === scopeNodeId("layer:app")
-      && edge.target === boundaryId)).toMatchObject({
-      type: "imports",
-      boundaryContext: { currentScopeId: "layer:app", targetScopeId: "layer:lib" },
-    });
+    expect(overview.nodes.map((node) => node.id)).not.toContain(boundaryId);
+    const directEdge = overview.edges.find((edge) => edge.source === scopeNodeId("layer:app")
+      && edge.target === scopeNodeId("layer:lib"));
+    expect(directEdge).toMatchObject({ type: "imports" });
+    expect(directEdge?.boundaryContext).toBeUndefined();
   });
 
-  it("does not apply the overview architecture cap inside a scope", () => {
+  it("caps scope architecture context at 16 while retaining a materialized target", () => {
     const file = hierarchyNode("file:scope-architecture", "file", "src/index.ts");
     const architecture = Array.from({ length: 27 }, (_, index) =>
       hierarchyNode(`service:scope-${String(index).padStart(2, "0")}`, "service"));
@@ -1958,9 +2260,96 @@ describe("hierarchicalGraph", () => {
       navigation: { level: "scope", scopeId: scope.id },
       materializedNodeId: null,
     });
+    const materializedId = architecture.at(-1)!.id;
+    const materializedScopeView = buildHierarchicalSemanticGraph({
+      graph,
+      hierarchyIndex,
+      mode: "architecture",
+      navigation: { level: "scope", scopeId: scope.id },
+      materializedNodeId: materializedId,
+    });
 
     expect(scopeView.nodes.filter((node) => node.kind === "node"
-      && graphNodePlacementClass(node.rawType) === "architecture-context")).toHaveLength(27);
+      && graphNodePlacementClass(node.rawType) === "architecture-context")).toHaveLength(16);
+    expect(materializedScopeView.nodes.filter((node) => node.kind === "node"
+      && graphNodePlacementClass(node.rawType) === "architecture-context")).toHaveLength(16);
+    expect(materializedScopeView.nodes.map((node) => node.id)).toContain(materializedId);
+  });
+
+  it("keeps document objects out of the architecture scope wall but makes an exact target reachable", () => {
+    const file = hierarchyNode("file:document-wall", "file", "src/index.ts");
+    const services = [
+      hierarchyNode("service:document-wall-a", "service"),
+      hierarchyNode("service:document-wall-b", "service"),
+    ];
+    const documents = Array.from({ length: 20 }, (_, index) =>
+      hierarchyNode(`document:wall-${String(index).padStart(2, "0")}`, "document"));
+    const graph = hierarchyGraph(
+      [file, ...services, ...documents],
+      [],
+      [file, ...services, ...documents].map((node) => node.id),
+    );
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const scope = hierarchyIndex.scopes[0]!;
+    const build = (mode: "architecture" | "call" | "coverage", materializedNodeId: string | null) =>
+      buildHierarchicalSemanticGraph({
+        graph,
+        hierarchyIndex,
+        mode,
+        navigation: { level: "scope", scopeId: scope.id },
+        materializedNodeId,
+      });
+    const architectureView = build("architecture", null);
+    const targetedDocumentId = documents.at(-1)!.id;
+    const targetedView = build("architecture", targetedDocumentId);
+    const callView = build("call", null);
+    const coverageView = build("coverage", null);
+
+    expect(architectureView.nodes.filter((node) => node.kind === "node").map((node) => node.id).sort())
+      .toEqual(services.map((node) => node.id).sort());
+    expect(targetedView.nodes.map((node) => node.id)).toContain(targetedDocumentId);
+    expect(callView.nodes.filter((node) => node.kind === "node").map((node) => node.id).sort())
+      .toEqual(services.map((node) => node.id).sort());
+    expect(coverageView.nodes.filter((node) => node.kind === "node")).toHaveLength(16);
+    expect(coverageView.nodes.map((node) => node.id)).toEqual(expect.arrayContaining(
+      services.map((node) => node.id),
+    ));
+  });
+
+  it("keeps document objects out of the architecture overview wall but preserves coverage and exact targeting", () => {
+    const file = hierarchyNode("file:overview-document-wall", "file", "src/index.ts");
+    const service = hierarchyNode("service:overview-document-wall", "service");
+    const documents = Array.from({ length: 20 }, (_, index) =>
+      hierarchyNode(`document:overview-wall-${String(index).padStart(2, "0")}`, "document"));
+    const graph = hierarchyGraph(
+      [file, service, ...documents],
+      [],
+      [file, service, ...documents].map((node) => node.id),
+    );
+    const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const build = (mode: "architecture" | "call" | "coverage", materializedNodeId: string | null) =>
+      buildHierarchicalSemanticGraph({
+        graph,
+        hierarchyIndex,
+        mode,
+        navigation: { level: "overview" },
+        materializedNodeId,
+      });
+    const architectureView = build("architecture", null);
+    const targetedDocumentId = documents.at(-1)!.id;
+    const targetedView = build("architecture", targetedDocumentId);
+    const callView = build("call", null);
+    const coverageView = build("coverage", null);
+
+    expect(architectureView.nodes.filter((node) => node.kind === "node").map((node) => node.id))
+      .toEqual([service.id]);
+    expect(targetedView.nodes.map((node) => node.id)).toContain(targetedDocumentId);
+    expect(callView.nodes.filter((node) => node.kind === "node").map((node) => node.id))
+      .toEqual([service.id]);
+    expect(coverageView.nodes.filter((node) => node.kind === "node")).toHaveLength(12);
+    expect(architectureView.presentation.hiddenNodeCount).toBe(20);
+    expect(callView.presentation.hiddenNodeCount).toBe(20);
+    expect(coverageView.presentation.hiddenNodeCount).toBe(9);
   });
 
   it("keeps a pathful architecture object at scope level when it is materialized", () => {
@@ -2039,7 +2428,7 @@ describe("hierarchicalGraph", () => {
     expect(view.nodes.map((node) => node.id)).not.toContain("file:lib/b.ts");
   });
 
-  it("keeps overview containment and documentation relations auditable", () => {
+  it("keeps overview containment and documentation relations auditable in coverage mode", () => {
     const file = hierarchyNode("file:relations", "file", "src/index.ts");
     const document = hierarchyNode("document:guide", "document");
     const service = hierarchyNode("service:relations", "service");
@@ -2051,7 +2440,7 @@ describe("hierarchicalGraph", () => {
     const overview = buildHierarchicalSemanticGraph({
       graph,
       hierarchyIndex,
-      mode: "architecture",
+      mode: "coverage",
       navigation: { level: "overview" },
       materializedNodeId: null,
     });
@@ -2064,7 +2453,7 @@ describe("hierarchicalGraph", () => {
       ]));
   });
 
-  it("shows every architecture-context type at overview and scope levels", () => {
+  it("shows every architecture-context type at overview and keeps capped scope types reachable", () => {
     const architectureTypes = [
       "module", "concept", "document", "service", "table", "endpoint", "pipeline", "schema",
       "resource", "domain", "flow", "step", "article", "entity", "topic", "claim", "source",
@@ -2081,13 +2470,37 @@ describe("hierarchicalGraph", () => {
       navigation: { level: "scope", scopeId: scope.id },
     });
     const ids = architectureNodes.map((node) => node.id).sort();
+    const overviewIds = overview.nodes.filter((node) => node.kind === "node"
+      && graphNodePlacementClass(node.rawType) === "architecture-context")
+      .map((node) => node.id)
+      .sort();
+    const scopeIds = scopeView.nodes.filter((node) => node.kind === "node"
+      && graphNodePlacementClass(node.rawType) === "architecture-context")
+      .map((node) => node.id)
+      .sort();
+    const hiddenId = ids.find((id) => !scopeIds.includes(id))!;
+    const hiddenOverviewId = ids.find((id) => !overviewIds.includes(id))!;
+    const materializedOverview = buildHierarchicalSemanticGraph({
+      ...input,
+      navigation: { level: "overview" },
+      materializedNodeId: hiddenOverviewId,
+    });
+    const materializedScope = buildHierarchicalSemanticGraph({
+      ...input,
+      navigation: { level: "scope", scopeId: scope.id },
+      materializedNodeId: hiddenId,
+    });
 
-    expect(overview.nodes.filter((node) => node.kind === "node"
-      && graphNodePlacementClass(node.rawType) === "architecture-context")
-      .map((node) => node.id).sort()).toEqual(ids);
-    expect(scopeView.nodes.filter((node) => node.kind === "node"
-      && graphNodePlacementClass(node.rawType) === "architecture-context")
-      .map((node) => node.id).sort()).toEqual(ids);
+    expect(overviewIds).toHaveLength(12);
+    expect(ids).toEqual(expect.arrayContaining(overviewIds));
+    expect(materializedOverview.nodes.filter((node) => node.kind === "node"
+      && graphNodePlacementClass(node.rawType) === "architecture-context")).toHaveLength(12);
+    expect(materializedOverview.nodes.map((node) => node.id)).toContain(hiddenOverviewId);
+    expect(scopeIds).toHaveLength(16);
+    expect(ids).toEqual(expect.arrayContaining(scopeIds));
+    expect(materializedScope.nodes.filter((node) => node.kind === "node"
+      && graphNodePlacementClass(node.rawType) === "architecture-context")).toHaveLength(16);
+    expect(materializedScope.nodes.map((node) => node.id)).toContain(hiddenId);
   });
 
   it("returns explicit Chinese empty-state notices for empty overview, scope, cluster, and symbol-free file", () => {

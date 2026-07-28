@@ -60,7 +60,10 @@ import {
   compareSemanticNodes,
   computeReadableViewport,
   GRAPH_POINTER_DOUBLE_CLICK_MS,
+  graphEdgeHandleIds,
   graphEdgeTypeLabel,
+  graphLayoutOrientation,
+  graphNodeDisplayBand,
   graphNodeSize,
   graphNodeTypeLabel,
   graphPointerAction,
@@ -69,8 +72,11 @@ import {
   REACT_FLOW_ARIA_LABEL_CONFIG,
   semanticNodeClusterLabel,
   semanticNodeGroupLabel,
+  visibleGraphBounds,
+  type GraphLayoutOrientation,
   type GraphPointerClick,
   type GraphSemanticZoomBand,
+  type GraphViewportInsets,
   type SemanticNodePosition,
 } from "./semanticGraphCanvasModel";
 
@@ -115,6 +121,7 @@ interface SemanticGraphCanvasProps extends SemanticGraphCanvasIntentProps {
   showMinimap?: boolean;
   showControls?: boolean;
   narrowViewport?: boolean;
+  fitViewportInsets?: Partial<GraphViewportInsets>;
 }
 
 interface SemanticNodeData extends Record<string, unknown> {
@@ -131,8 +138,11 @@ interface SemanticNodeData extends Record<string, unknown> {
   coverageRelation: "direct" | "context" | "none";
   coverageProblem: boolean;
   documentationCounts?: DocumentationCounts;
+  fileCount?: number;
+  relationCount?: number;
   displayMode: GraphExplorerDisplayMode;
   zoomBand: GraphSemanticZoomBand;
+  layoutOrientation: GraphLayoutOrientation;
   isSelected: boolean;
   isNeighbor: boolean;
   isDimmed: boolean;
@@ -169,6 +179,10 @@ const EDGE_COLORS: Record<string, string> = {
   flow_step: "var(--color-node-pipeline)",
 };
 
+const NARROW_DEFAULT_TOP_INSET = 40;
+const MINIMAP_RIGHT_SAFE_INSET = 224;
+const NARROW_MINIMAP_BOTTOM_SAFE_INSET = 176;
+
 function edgeColor(edge: SemanticGraphEdge): string {
   for (const type of edge.edgeTypes) {
     const color = EDGE_COLORS[type];
@@ -184,6 +198,28 @@ function layoutKind(node: HierarchicalSemanticGraphNode): LayoutMessage["nodes"]
   if (node.rawType === "file") return "file";
   if (node.rawType === "function" || node.rawType === "class") return "symbol";
   return "raw";
+}
+
+function layoutEdgeRole(
+  edge: HierarchicalSemanticGraph["edges"][number],
+  level: GraphExplorerNavigation["level"],
+): NonNullable<LayoutMessage["edges"][number]["role"]> {
+  if (["calls", "imports", "depends_on", "cross_domain", "flow_step"].includes(edge.type)) {
+    return "backbone";
+  }
+  if (edge.type === "contains" || edge.type === "contains_flow") {
+    return level === "file" ? "backbone" : "secondary";
+  }
+  if ([
+    "tested_by",
+    "documents",
+    "cites",
+    "authored_by",
+    "categorized_under",
+    "exemplifies",
+  ].includes(edge.type)) return "context";
+  if (["related", "similar_to", "builds_on"].includes(edge.type)) return "secondary";
+  return "primary";
 }
 
 function sameViewportBucket(
@@ -209,6 +245,16 @@ function boundsForNode(
   return { x: position.x, y: position.y, width: size.width, height: size.height };
 }
 
+function unionLayoutBounds(left: LayoutBounds, right: LayoutBounds): LayoutBounds {
+  if (left.width <= 0 || left.height <= 0) return right;
+  if (right.width <= 0 || right.height <= 0) return left;
+  const x = Math.min(left.x, right.x);
+  const y = Math.min(left.y, right.y);
+  const rightEdge = Math.max(left.x + left.width, right.x + right.width);
+  const bottomEdge = Math.max(left.y + left.height, right.y + right.height);
+  return { x, y, width: rightEdge - x, height: bottomEdge - y };
+}
+
 function sameViewportTransform(
   left: { x: number; y: number; zoom: number },
   right: { x: number; y: number; zoom: number },
@@ -218,6 +264,15 @@ function sameViewportTransform(
 
 function SemanticNodeCard({ data }: NodeProps<SemanticFlowNode>) {
   const counts = data.documentationCounts;
+  const aggregateMetadata = data.fileCount !== undefined || data.relationCount !== undefined
+    ? [
+        data.fileCount === undefined ? null : `${data.fileCount} 个文件`,
+        data.relationCount === undefined ? null : `${data.relationCount} 条关系`,
+      ].filter((item): item is string => item !== null).join(" · ")
+    : "";
+  const showSummary = Boolean(
+    data.summary && (data.zoomBand === "full" || aggregateMetadata),
+  );
   return (
     <div
       tabIndex={0}
@@ -244,7 +299,21 @@ function SemanticNodeCard({ data }: NodeProps<SemanticFlowNode>) {
         data.isSelected ? "is-selected" : ""
       }`}
     >
-      <Handle type="target" position={Position.Left} className="uc-semantic-node__handle" />
+      {data.layoutOrientation === "vertical" ? (
+        <>
+          <Handle id="target-top" type="target" position={Position.Top} className="uc-semantic-node__handle" />
+          <Handle id="target-bottom" type="target" position={Position.Bottom} className="uc-semantic-node__handle" />
+          <Handle id="source-top" type="source" position={Position.Top} className="uc-semantic-node__handle" />
+          <Handle id="source-bottom" type="source" position={Position.Bottom} className="uc-semantic-node__handle" />
+        </>
+      ) : (
+        <>
+          <Handle id="target-left" type="target" position={Position.Left} className="uc-semantic-node__handle" />
+          <Handle id="target-right" type="target" position={Position.Right} className="uc-semantic-node__handle" />
+          <Handle id="source-left" type="source" position={Position.Left} className="uc-semantic-node__handle" />
+          <Handle id="source-right" type="source" position={Position.Right} className="uc-semantic-node__handle" />
+        </>
+      )}
       <div className="uc-semantic-node__body">
         <div className="uc-semantic-node__heading">
           <div className="min-w-0">
@@ -253,20 +322,55 @@ function SemanticNodeCard({ data }: NodeProps<SemanticFlowNode>) {
             </p>
             <h3 className="uc-semantic-node__title" title={data.label}>{data.label}</h3>
           </div>
+          {data.zoomBand === "minimal" && data.displayMode === "coverage" && (
+            <span
+              className="uc-semantic-node__badge uc-semantic-node__badge--minimal-coverage"
+              data-relation={data.coverageProblem ? "problem" : data.coverageRelation}
+              title={data.coverageProblem
+                ? `${data.coverageLabel}，证据异常`
+                : data.coverageLabel}
+            >
+              {data.coverageProblem ? `${data.coverageLabel} · 异常` : data.coverageLabel}
+            </span>
+          )}
+          {data.zoomBand === "minimal" && data.canDrillDown && (
+            <button
+              type="button"
+              aria-label={`进入 ${data.label}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                data.onDrillDown?.();
+              }}
+              onDoubleClick={(event) => event.stopPropagation()}
+              className="nodrag nopan uc-semantic-node__drill min-h-11 min-w-11"
+            >
+              进入
+            </button>
+          )}
           {data.zoomBand !== "minimal" && (
             <span className="uc-semantic-node__badge" data-relation={data.coverageRelation}>
               {data.coverageLabel}
             </span>
           )}
         </div>
-        {data.zoomBand === "full" && data.summary && (
-          <p className="uc-semantic-node__summary">{data.summary}</p>
+        {showSummary && (
+          <p
+            className={`uc-semantic-node__summary ${
+              aggregateMetadata ? "uc-semantic-node__summary--aggregate" : ""
+            }`}
+            title={data.summary}
+          >
+            {data.summary}
+          </p>
+        )}
+        {data.zoomBand === "minimal" && aggregateMetadata && (
+          <p className="uc-semantic-node__aggregate-meta">{aggregateMetadata}</p>
         )}
         {data.zoomBand !== "minimal" && data.path && (
           <p className="uc-semantic-node__path" title={data.path}>{data.path}</p>
         )}
         {data.zoomBand !== "minimal" && <div className="uc-semantic-node__footer">
-          <span>{semanticNodeClusterLabel(data.cluster, data.group)}</span>
+          <span>{aggregateMetadata || semanticNodeClusterLabel(data.cluster, data.group)}</span>
           {data.displayMode === "coverage" && counts && data.zoomBand === "full" && (
             <span>相关 {counts.context} · 待补 {counts.none} · 异常 {counts.problem}</span>
           )}
@@ -289,7 +393,6 @@ function SemanticNodeCard({ data }: NodeProps<SemanticFlowNode>) {
           )}
         </div>}
       </div>
-      <Handle type="source" position={Position.Right} className="uc-semantic-node__handle" />
     </div>
   );
 }
@@ -385,6 +488,7 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
     showMinimap = true,
     showControls = true,
     narrowViewport = false,
+    fitViewportInsets,
     baseGraph,
     navigation,
     graphRevision,
@@ -406,6 +510,7 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
   const [viewportBucket, setViewportBucket] = useState<GraphViewportBucket | null>(null);
   const currentViewportBucketRef = useRef(viewportBucket);
   currentViewportBucketRef.current = viewportBucket;
+  const rawViewportSizeRef = useRef<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
     const frame = frameRef.current;
@@ -433,10 +538,12 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
       const height = entry?.contentRect.height ?? 0;
       onFrameWidthChange?.(width);
       if (width <= 0 || height <= 0) {
+        rawViewportSizeRef.current = null;
         latestRawSize = null;
         cancelCandidate();
         return;
       }
+      rawViewportSizeRef.current = { width, height };
       latestRawSize = { width, height };
       const next = quantizeGraphViewport(width, height);
       if (sameViewportBucket(currentViewportBucketRef.current, next)) {
@@ -490,6 +597,8 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
   const baseNodeSizeById = useMemo(() => new Map(
     baseGraph.nodes.map((node) => [node.id, graphNodeSize(navigation.level, node)]),
   ), [baseGraph.nodes, navigation.level]);
+  const layoutOrientation = graphLayoutOrientation(viewportBucket);
+  const nodeDisplayBand = graphNodeDisplayBand(navigation.level, zoomBand);
   const structureKey = useMemo(() => viewportBucket
     ? buildGraphStructureKey({
         graphRevision,
@@ -559,6 +668,7 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
               width: size.width,
               height: size.height,
               kind: layoutKind(node),
+              importance: node.importance,
               ...(node.clusterId ? { clusterId: node.clusterId } : {}),
             };
           }),
@@ -571,6 +681,7 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
             directions: [...edge.directions],
             weight: edge.weight,
             count: edge.bundledCount,
+            role: layoutEdgeRole(edge, inputNavigation.level),
           })),
       };
 
@@ -615,6 +726,7 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
   const selectionExpansion = useMemo<HierarchicalGraphSelectionExpansion>(() => ({
     nodes: semanticGraph.nodes.filter((node) => !baseNodeIds.has(node.id)),
     edges: semanticGraph.edges.filter((edge) => !baseEdgeIds.has(edge.id)),
+    hiddenNeighborCount: 0,
   }), [baseEdgeIds, baseNodeIds, semanticGraph.edges, semanticGraph.nodes]);
   const positionsById = useMemo(() => completedPositions && viewportBucket
     ? placeSelectionExpansion({
@@ -633,6 +745,11 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
       selectionExpansion,
       viewportBucket,
     ]);
+  const visibleBounds = useMemo(() => visibleGraphBounds({
+    nodes: semanticGraph.nodes,
+    positions: positionsById,
+    nodeSizeById,
+  }), [nodeSizeById, positionsById, semanticGraph.nodes]);
 
   const drillOnce = useCallback((node: SemanticFlowNode, at: number) => {
     if (!node.data.onDrillDown) return;
@@ -713,8 +830,11 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
             coverageRelation: badge.relation,
             coverageProblem: badge.problem,
             documentationCounts: node.documentationCounts,
+            fileCount: node.fileCount,
+            relationCount: node.relationCount,
             displayMode,
-            zoomBand,
+            zoomBand: nodeDisplayBand,
+            layoutOrientation,
             isSelected: nodePresentation.selected,
             isNeighbor: nodePresentation.neighbor,
             isDimmed: nodePresentation.dimmed,
@@ -727,10 +847,16 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
     const flowEdges: SemanticFlowEdge[] = semanticGraph.edges.map((edge) => {
       const edgePresentation = presentation.edgesById.get(edge.id)!;
       const showLabel = edgePresentation.connected || hoveredEdgeId === edge.id;
+      const handles = graphEdgeHandleIds(
+        layoutOrientation,
+        positionsById.get(edge.source),
+        positionsById.get(edge.target),
+      );
       return {
         id: edge.id,
         source: edge.source,
         target: edge.target,
+        ...handles,
         type: "flowing-semantic",
         label: edge.bundledCount > 1
           ? `${graphEdgeTypeLabel(edge.type)} × ${edge.bundledCount}`
@@ -764,7 +890,8 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
     reducedMotion,
     selectGraphNode,
     semanticGraph,
-    zoomBand,
+    layoutOrientation,
+    nodeDisplayBand,
   ]);
 
   const flowMountGenerationRef = useRef(0);
@@ -919,20 +1046,43 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
   }, [isCurrentFlowBinding]);
 
   const defaultViewportAnchorId = baseGraph.nodes[0]?.id;
-  const readableViewport = useCallback((focusNodeId?: string) => {
+  const readableViewport = useCallback((
+    focusNodeId?: string,
+    boundsMode: "base" | "visible" | "union" = "base",
+    minReadableZoom?: number,
+    viewportInsets?: Partial<GraphViewportInsets>,
+    viewportSize?: { width: number; height: number },
+  ) => {
     if (!viewportBucket || !layoutState || layoutState.structureKey !== structureKey) return null;
     const anchorNodeId = focusNodeId ?? (narrowViewport ? defaultViewportAnchorId : undefined);
     const focusBounds = anchorNodeId
       ? boundsForNode(anchorNodeId, positionsById, nodeSizeById)
       : undefined;
-    return computeReadableViewport({
+    const readable = computeReadableViewport({
       level: navigation.level,
-      bounds: layoutState.bounds,
+      bounds: boundsMode === "visible"
+        ? visibleBounds
+        : boundsMode === "union"
+          ? unionLayoutBounds(layoutState.bounds, visibleBounds)
+          : layoutState.bounds,
       ...(focusBounds ? { focusBounds } : {}),
-      viewport: viewportBucket,
+      viewport: viewportSize ?? viewportBucket,
+      ...(viewportInsets ? { viewportInsets } : {}),
       padding: 0.16,
       maxZoom: 1.12,
-    }).viewport;
+      ...(minReadableZoom === undefined ? {} : { minReadableZoom }),
+    });
+    if (narrowViewport
+      && focusNodeId === undefined
+      && boundsMode === "base"
+      && !readable.fullyFits
+      && focusBounds) {
+      return {
+        ...readable.viewport,
+        y: NARROW_DEFAULT_TOP_INSET - focusBounds.y * readable.viewport.zoom,
+      };
+    }
+    return readable.viewport;
   }, [
     defaultViewportAnchorId,
     layoutState,
@@ -941,6 +1091,7 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
     nodeSizeById,
     positionsById,
     structureKey,
+    visibleBounds,
     viewportBucket,
   ]);
 
@@ -981,7 +1132,7 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
     const inFlightAction = inFlightViewportActionRef.current;
     if ((isActionForBinding(completedAction) && completedAction?.actionKey === action.actionKey)
       || (isActionForBinding(inFlightAction) && inFlightAction?.actionKey === action.actionKey)) return;
-    const target = readableViewport(request?.materializedNodeId);
+    const target = readableViewport(request?.materializedNodeId, request ? "union" : "base");
     if (!target) return;
     if (!isCurrentFlowBinding(binding)) return;
     const transformGeneration = beginViewportTransform(target);
@@ -1027,7 +1178,18 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
   ]);
 
   const fitGraph = useCallback(() => {
-    const target = readableViewport(activeId ?? undefined);
+    const target = readableViewport(undefined, "visible", 0.08, {
+      top: fitViewportInsets?.top ?? 0,
+      right: Math.max(
+        fitViewportInsets?.right ?? 0,
+        showMinimap && !narrowViewport ? MINIMAP_RIGHT_SAFE_INSET : 0,
+      ),
+      bottom: Math.max(
+        fitViewportInsets?.bottom ?? 0,
+        showMinimap && narrowViewport ? NARROW_MINIMAP_BOTTOM_SAFE_INSET : 0,
+      ),
+      left: fitViewportInsets?.left ?? 0,
+    }, rawViewportSizeRef.current ?? undefined);
     const binding = flowInstanceBindingRef.current;
     if (!target
       || !binding
@@ -1038,11 +1200,13 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
       settleViewportTransform(binding, transformGeneration, target)
     ));
   }, [
-    activeId,
     beginViewportTransform,
+    fitViewportInsets,
     isCurrentFlowBinding,
+    narrowViewport,
     readableViewport,
     settleViewportTransform,
+    showMinimap,
     structureKey,
   ]);
 
@@ -1075,7 +1239,8 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
     <div
       className="uc-semantic-canvas"
       data-graph-structure-key={structureKey}
-      data-zoom-band={zoomBand}
+      data-zoom-band={nodeDisplayBand}
+      data-layout-orientation={layoutOrientation}
     >
       <FlowMountBoundary
         structureKey={structureKey}
@@ -1111,7 +1276,11 @@ export default function SemanticGraphCanvas(props: SemanticGraphCanvasProps) {
           >
             <Background variant={BackgroundVariant.Dots} gap={26} size={1} color="var(--color-graph-grid)" />
             {showControls && (
-              <Controls showFitView={false} showInteractive={false}>
+              <Controls
+                position={(fitViewportInsets?.left ?? 0) > 0 ? "top-right" : "bottom-left"}
+                showFitView={false}
+                showInteractive={false}
+              >
                 <ControlButton onClick={fitGraph} title="适应视图" aria-label="适应视图">
                   适
                 </ControlButton>

@@ -131,15 +131,42 @@ export interface HierarchicalSemanticGraph extends Omit<SemanticGraph, "nodes" |
 export interface HierarchicalGraphSelectionExpansion {
   nodes: HierarchicalSemanticGraphNode[];
   edges: HierarchicalSemanticGraphEdge[];
+  hiddenNeighborCount: number;
 }
 
 export interface BuildHierarchicalGraphInput {
   graph: KnowledgeGraph;
   hierarchyIndex: GraphHierarchyIndex;
   wikiIndex?: WikiRuntimeIndex;
+  projectionContext?: HierarchicalGraphProjectionContext;
   mode: GraphExplorerMode;
   navigation: GraphExplorerNavigation;
   materializedNodeId: string | null;
+}
+
+/**
+ * An explicit snapshot of the expensive graph/wiki projection shared by related
+ * hierarchy builds. The context is bound to the exact graph and wiki index
+ * references supplied at creation time. Graph and Wiki inputs follow the
+ * application's immutable-snapshot contract: callers must replace the input
+ * reference and create a new context instead of mutating either snapshot.
+ */
+export interface HierarchicalGraphProjectionContext {
+  readonly graph: KnowledgeGraph;
+  readonly wikiIndex: WikiRuntimeIndex | undefined;
+  readonly projection: SemanticGraph;
+}
+
+export function createHierarchicalGraphProjectionContext(input: {
+  graph: KnowledgeGraph;
+  wikiIndex?: WikiRuntimeIndex;
+}): HierarchicalGraphProjectionContext {
+  const { graph, wikiIndex } = input;
+  return Object.freeze({
+    graph,
+    wikiIndex,
+    projection: buildSemanticGraph({ graph, wikiIndex, mode: "global", focusNodeIds: [] }),
+  });
 }
 
 interface InternalScope {
@@ -151,13 +178,15 @@ interface InternalScope {
 }
 
 const MAX_OVERVIEW_SCOPES = 16;
-const MAX_OVERVIEW_ARCHITECTURE = 24;
+const MAX_OVERVIEW_ARCHITECTURE = 12;
 const MAX_SCOPE_CLUSTERS = 24;
+const MAX_SCOPE_ARCHITECTURE = 16;
 const MAX_CLUSTER_FILES = 30;
 const MAX_CLUSTER_FILELESS_LEAVES = 12;
 const MAX_FILE_NODES = 38;
 const MAX_BOUNDARY_SCOPES = 8;
 const MAX_VISIBLE_EDGES = 100;
+const MAX_SELECTION_EXPANSION_NEIGHBORS = 20;
 
 const DEPENDENCY_EDGE_TYPES = new Set<SemanticGraphEdgeMember["type"]>([
   "imports",
@@ -985,6 +1014,69 @@ function cappedWithMaterialized<T extends { id: string }>(
   return [...values.slice(0, Math.max(0, limit - 1)), materialized];
 }
 
+interface RelationImportance {
+  count: number;
+  weight: number;
+}
+
+function relationImportanceByProjectedId(
+  members: readonly SemanticGraphEdgeMember[],
+  projectedId: (nodeId: string) => string | null,
+): ReadonlyMap<string, RelationImportance> {
+  const importanceById = new Map<string, RelationImportance>();
+  const increment = (id: string, member: SemanticGraphEdgeMember) => {
+    const current = importanceById.get(id) ?? { count: 0, weight: 0 };
+    current.count += 1;
+    current.weight += Number.isFinite(member.weight) ? Math.max(0, member.weight) : 0;
+    importanceById.set(id, current);
+  };
+  for (const member of members) {
+    const source = projectedId(member.source);
+    const target = projectedId(member.target);
+    if (!source || !target || source === target) continue;
+    increment(source, member);
+    increment(target, member);
+  }
+  return importanceById;
+}
+
+function compareRelationImportance(
+  leftId: string,
+  rightId: string,
+  importanceById: ReadonlyMap<string, RelationImportance>,
+): number {
+  const left = importanceById.get(leftId);
+  const right = importanceById.get(rightId);
+  return (right?.count ?? 0) - (left?.count ?? 0)
+    || (right?.weight ?? 0) - (left?.weight ?? 0)
+    || compareStable(leftId, rightId);
+}
+
+function rankByRelationImportance<T>(
+  values: readonly T[],
+  idForValue: (value: T) => string,
+  importanceById: ReadonlyMap<string, RelationImportance>,
+): T[] {
+  return [...values].sort((left, right) =>
+    compareRelationImportance(idForValue(left), idForValue(right), importanceById));
+}
+
+function rankSemanticNodes(
+  nodes: readonly SemanticGraphNode[],
+  importanceById: ReadonlyMap<string, RelationImportance>,
+): SemanticGraphNode[] {
+  return [...nodes].sort((left, right) => {
+    const relationshipOrder = compareRelationImportance(left.id, right.id, importanceById);
+    const leftRelationship = importanceById.get(left.id);
+    const rightRelationship = importanceById.get(right.id);
+    if ((leftRelationship?.count ?? 0) !== (rightRelationship?.count ?? 0)
+      || (leftRelationship?.weight ?? 0) !== (rightRelationship?.weight ?? 0)) {
+      return relationshipOrder;
+    }
+    return right.importance - left.importance || compareStable(left.id, right.id);
+  });
+}
+
 function progressiveScopeOptions(
   hierarchyIndex: GraphHierarchyIndex,
   rawNodesById: ReadonlyMap<string, SemanticGraphNode>,
@@ -1214,26 +1306,39 @@ function progressiveOverview(input: {
   const allowedMembers = members.filter((member) =>
     progressiveMemberAllowed(member, displayMode, relationshipSource, true));
   const relationCounts = hierarchyRelationCounts(members, hierarchyIndex);
+  const scopeImportance = relationImportanceByProjectedId(
+    allowedMembers,
+    (nodeId) => hierarchyIndex.nodeLocationById.get(nodeId)?.scopeId ?? null,
+  );
+  const nodeImportance = relationImportanceByProjectedId(
+    allowedMembers,
+    (nodeId) => rawNodesById.has(nodeId) ? nodeId : null,
+  );
   const displayBoundaryFacts = overviewBoundaryFacts(allowedMembers, hierarchyIndex);
   const rawBoundaryFacts = overviewBoundaryFacts(members, hierarchyIndex);
   const materializedBoundary = materializedNodeId ? rawBoundaryFacts.get(materializedNodeId) : undefined;
   const visibleScopes = cappedWithMaterialized(
-    hierarchyIndex.scopes,
+    rankByRelationImportance(hierarchyIndex.scopes, (scope) => scope.id, scopeImportance),
     MAX_OVERVIEW_SCOPES,
     materializedBoundary?.currentScopeId ?? materializedScopeId(materializedNodeId, hierarchyIndex),
   );
   const architecture = rawNodes
-    .filter((node) => graphNodePlacementClass(node.rawType) === "architecture-context")
-    .sort((left, right) => compareStable(left.id, right.id));
+    .filter((node) => graphNodePlacementClass(node.rawType) === "architecture-context");
+  const architectureCandidates = displayMode !== "coverage"
+    ? architecture.filter((node) => node.group !== "document" || node.id === materializedNodeId)
+    : architecture;
   const visibleArchitecture = cappedWithMaterialized(
-    architecture,
+    rankSemanticNodes(architectureCandidates, nodeImportance),
     MAX_OVERVIEW_ARCHITECTURE,
-    architecture.some((node) => node.id === materializedNodeId) ? materializedNodeId : null,
+    architectureCandidates.some((node) => node.id === materializedNodeId) ? materializedNodeId : null,
   );
   const visibleScopeIds = new Set(visibleScopes.map((scope) => scope.id));
   const boundaryCandidates = [...displayBoundaryFacts.entries()]
-    .filter(([, boundary]) => visibleScopeIds.has(boundary.currentScopeId))
+    .filter(([id, boundary]) => visibleScopeIds.has(boundary.currentScopeId)
+      && (!visibleScopeIds.has(boundary.targetScopeId) || id === materializedNodeId))
     .sort((left, right) => right[1].members.length - left[1].members.length
+      || right[1].members.reduce((sum, member) => sum + member.weight, 0)
+        - left[1].members.reduce((sum, member) => sum + member.weight, 0)
       || compareStable(left[0], right[0]));
   const boundaryCandidateIds = boundaryCandidates.map(([id]) => ({ id }));
   if (materializedBoundary
@@ -1241,6 +1346,7 @@ function progressiveOverview(input: {
     && !displayBoundaryFacts.has(materializedNodeId!)) {
     boundaryCandidateIds.push({ id: materializedNodeId! });
   }
+  const totalBoundaryIds = new Set(boundaryCandidateIds.map(({ id }) => id));
   const visibleBoundaryIdsInOrder = cappedWithMaterialized(
     boundaryCandidateIds,
     MAX_BOUNDARY_SCOPES,
@@ -1308,13 +1414,18 @@ function progressiveOverview(input: {
           boundaryContext: { currentScopeId: targetScopeId, targetScopeId: sourceScopeId },
         });
       }
-      return contextual;
+      if (contextual.length > 0) return contextual;
+      if (visibleScopeIds.has(sourceScopeId) && visibleScopeIds.has(targetScopeId)) {
+        const source = mappedEndpoint(member.source);
+        const target = mappedEndpoint(member.target);
+        return source && target ? [{ source, target, member }] : [];
+      }
+      return [];
     }
     const source = mappedEndpoint(member.source);
     const target = mappedEndpoint(member.target);
     return source && target ? [{ source, target, member }] : [];
   });
-  const totalBoundaryIds = new Set([...displayBoundaryFacts.keys(), ...visibleBoundaryIdsInOrder]);
   const hidden = (hierarchyIndex.scopes.length - visibleScopes.length)
     + (architecture.length - visibleArchitecture.length)
     + (totalBoundaryIds.size - visibleBoundaries.length);
@@ -1402,10 +1513,15 @@ function boundaryScopeIdsForView(input: {
     ownsInternal,
   });
   const counts = new Map([...displayContext].map(([scopeId, contextual]) => [scopeId, contextual.length]));
+  const weights = new Map([...displayContext].map(([scopeId, contextual]) => [
+    scopeId,
+    contextual.reduce((sum, member) => sum + member.weight, 0),
+  ]));
   const rawCounts = new Map([...rawContext].map(([scopeId, contextual]) => [scopeId, contextual.length]));
   const materializedScopeId = [...rawContext.keys()].find((scopeId) =>
     boundaryNodeId(currentScopeId, scopeId) === materializedNodeId) ?? null;
   const ordered = [...counts].sort((left, right) => right[1] - left[1]
+    || (weights.get(right[0]) ?? 0) - (weights.get(left[0]) ?? 0)
     || compareStable(left[0], right[0])).map(([scopeId]) => scopeId);
   if (materializedScopeId && !counts.has(materializedScopeId)) ordered.push(materializedScopeId);
   const visible = cappedWithMaterialized(
@@ -1477,11 +1593,29 @@ function progressiveScope(input: {
   const architecture = scope.nodeIds
     .map((nodeId) => rawNodesById.get(nodeId))
     .filter((node): node is SemanticGraphNode =>
-      Boolean(node && graphNodePlacementClass(node.rawType) === "architecture-context"))
-    .sort((left, right) => compareStable(left.id, right.id));
-  const visibleArchitecture = architecture;
+      Boolean(node && graphNodePlacementClass(node.rawType) === "architecture-context"));
   const allowedMembers = members.filter((member) =>
     progressiveMemberAllowed(member, displayMode, relationshipSource, true));
+  const clusterImportance = relationImportanceByProjectedId(allowedMembers, (nodeId) => {
+    const node = rawNodesById.get(nodeId);
+    const location = hierarchyIndex.nodeLocationById.get(nodeId);
+    if (!node || !location) return null;
+    if (location.scopeId !== scope.id) return scopeNodeId(location.scopeId);
+    if (graphNodePlacementClass(node.rawType) === "architecture-context") return node.id;
+    return location.clusterId ?? null;
+  });
+  const architectureImportance = relationImportanceByProjectedId(
+    allowedMembers,
+    (nodeId) => rawNodesById.has(nodeId) ? nodeId : null,
+  );
+  const architectureCandidates = displayMode !== "coverage"
+    ? architecture.filter((node) => node.group !== "document" || node.id === materializedNodeId)
+    : architecture;
+  const visibleArchitecture = cappedWithMaterialized(
+    rankSemanticNodes(architectureCandidates, architectureImportance),
+    MAX_SCOPE_ARCHITECTURE,
+    architectureCandidates.some((node) => node.id === materializedNodeId) ? materializedNodeId : null,
+  );
   const relationCounts = hierarchyRelationCounts(allowedMembers, hierarchyIndex);
   const materializedBoundaryTarget = hierarchyIndex.scopes.find((target) =>
     target.id !== scope.id && boundaryNodeId(scope.id, target.id) === materializedNodeId)?.id;
@@ -1504,7 +1638,7 @@ function progressiveScope(input: {
     }).sort(compareStable)[0] ?? null
     : null;
   const visibleClusters = cappedWithMaterialized(
-    clusters,
+    rankByRelationImportance(clusters, (cluster) => cluster.id, clusterImportance),
     MAX_SCOPE_CLUSTERS,
     materializedClusterId(materializedNodeId, hierarchyIndex) ?? connectingClusterId,
   );
@@ -1600,6 +1734,16 @@ function progressiveCluster(input: {
     .filter((node): node is SemanticGraphNode => Boolean(node));
   const allowedMembers = members.filter((member) =>
     progressiveMemberAllowed(member, displayMode, relationshipSource, true));
+  const clusterNodeImportance = relationImportanceByProjectedId(allowedMembers, (nodeId) => {
+    const node = rawNodesById.get(nodeId);
+    const location = hierarchyIndex.nodeLocationById.get(nodeId);
+    if (!node || !location) return null;
+    if (location.scopeId === scope.id && location.clusterId === cluster.id) {
+      if (node.rawType === "file") return node.id;
+      if (graphNodePlacementClass(node.rawType) === "file-leaf") return location.fileId ?? node.id;
+    }
+    return node.id;
+  });
   const materializedLocation = materializedNodeId
     ? hierarchyIndex.nodeLocationById.get(materializedNodeId)
     : undefined;
@@ -1638,7 +1782,7 @@ function progressiveCluster(input: {
     ? boundaryInternalNode.id
     : boundaryInternalLocation?.fileId ?? null;
   const visibleFiles = cappedWithMaterialized(
-    files,
+    rankSemanticNodes(files, clusterNodeImportance),
     MAX_CLUSTER_FILES,
     directMaterializedFileId ?? connectingFileId,
   );
@@ -1648,10 +1792,9 @@ function progressiveCluster(input: {
       if (!node || graphNodePlacementClass(node.rawType) !== "file-leaf") return false;
       const location = hierarchyIndex.nodeLocationById.get(node.id);
       return location?.clusterId === cluster.id && !location.fileId;
-    })
-    .sort((left, right) => compareStable(left.id, right.id));
+    });
   const visibleLeaves = cappedWithMaterialized(
-    directLeaves,
+    rankSemanticNodes(directLeaves, clusterNodeImportance),
     MAX_CLUSTER_FILELESS_LEAVES,
     materializedLocation?.clusterId === cluster.id && !materializedLocation.fileId
       ? materializedNodeId
@@ -1757,6 +1900,10 @@ function progressiveFile(input: {
   const ownedIds = new Set([fileId, ...ownedLeaves.map((node) => node.id)]);
   const allowedMembers = members.filter((member) =>
     progressiveMemberAllowed(member, displayMode, relationshipSource, true));
+  const nodeImportance = relationImportanceByProjectedId(
+    allowedMembers,
+    (nodeId) => rawNodesById.has(nodeId) ? nodeId : null,
+  );
   const relatedIds = new Set<string>();
   for (const member of allowedMembers) {
     if (ownedIds.has(member.source) && !ownedIds.has(member.target)) relatedIds.add(member.target);
@@ -1764,10 +1911,13 @@ function progressiveFile(input: {
   }
   const related = [...relatedIds]
     .map((nodeId) => rawNodesById.get(nodeId))
-    .filter((node): node is SemanticGraphNode => Boolean(node))
-    .sort((left, right) => compareStable(left.id, right.id));
+    .filter((node): node is SemanticGraphNode => Boolean(node));
   const candidates = [...ownedLeaves, ...related.filter((node) => !ownedIds.has(node.id))];
-  const visibleRest = cappedWithMaterialized(candidates, MAX_FILE_NODES - 1, materializedNodeId);
+  const visibleRest = cappedWithMaterialized(
+    rankSemanticNodes(candidates, nodeImportance),
+    MAX_FILE_NODES - 1,
+    materializedNodeId,
+  );
   const nodes = [file, ...visibleRest].map((node) => progressiveRawNode(node, hierarchyIndex));
   const visibleIds = new Set(nodes.map((node) => node.id));
   const projected = allowedMembers.flatMap((member): ProjectedEdgeMember[] =>
@@ -1804,11 +1954,17 @@ function buildProgressiveHierarchicalSemanticGraph(input: BuildHierarchicalGraph
   hierarchyIndex: GraphHierarchyIndex;
 }): HierarchicalSemanticGraph {
   const {
-    graph, hierarchyIndex, wikiIndex, mode, navigation, materializedNodeId = null,
+    graph,
+    hierarchyIndex,
+    wikiIndex,
+    projectionContext,
+    mode,
+    navigation,
+    materializedNodeId = null,
   } = input;
   const displayMode = normalizeGraphExplorerMode(mode);
   const relationshipSource = resolveGraphRelationshipSource(graph);
-  const raw = buildSemanticGraph({ graph, wikiIndex, mode: "global", focusNodeIds: [] });
+  const raw = resolveHierarchicalGraphProjection({ graph, wikiIndex, projectionContext });
   const members = graphMembers(raw);
   const options = progressiveScopeOptions(hierarchyIndex, new Map(raw.nodes.map((node) => [node.id, node])), displayMode);
   const scope = navigation.scopeId ? hierarchyIndex.scopeById.get(navigation.scopeId) : undefined;
@@ -1869,6 +2025,7 @@ export function buildHierarchicalSemanticGraph({
   graph,
   hierarchyIndex,
   wikiIndex,
+  projectionContext,
   mode,
   navigation,
   materializedNodeId,
@@ -1877,10 +2034,29 @@ export function buildHierarchicalSemanticGraph({
     graph,
     hierarchyIndex,
     wikiIndex,
+    projectionContext,
     mode,
     navigation,
     materializedNodeId,
   });
+}
+
+function resolveHierarchicalGraphProjection(input: {
+  graph: KnowledgeGraph;
+  wikiIndex?: WikiRuntimeIndex;
+  projectionContext?: HierarchicalGraphProjectionContext;
+}): SemanticGraph {
+  const { graph, wikiIndex, projectionContext } = input;
+  if (!projectionContext) {
+    return buildSemanticGraph({ graph, wikiIndex, mode: "global", focusNodeIds: [] });
+  }
+  if (projectionContext.graph !== graph) {
+    throw new Error("Hierarchical graph projection context belongs to a different graph snapshot.");
+  }
+  if (projectionContext.wikiIndex !== wikiIndex) {
+    throw new Error("Hierarchical graph projection context belongs to a different wiki index snapshot.");
+  }
+  return projectionContext.projection;
 }
 
 function semanticMemberIdentity(member: SemanticGraphEdgeMember): string {
@@ -1892,6 +2068,7 @@ export function buildHierarchySelectionExpansion(input: {
   hierarchyIndex: GraphHierarchyIndex;
   baseGraph: HierarchicalSemanticGraph;
   wikiIndex?: WikiRuntimeIndex;
+  projectionContext?: HierarchicalGraphProjectionContext;
   mode: GraphExplorerMode;
   selectedNodeId: string | null;
   selectedNodeWasVisible?: boolean;
@@ -1901,13 +2078,14 @@ export function buildHierarchySelectionExpansion(input: {
     hierarchyIndex,
     baseGraph,
     wikiIndex,
+    projectionContext,
     mode,
     selectedNodeId,
     selectedNodeWasVisible = false,
   } = input;
-  if (!selectedNodeId) return { nodes: [], edges: [] };
+  if (!selectedNodeId) return { nodes: [], edges: [], hiddenNeighborCount: 0 };
 
-  const raw = buildSemanticGraph({ graph, wikiIndex, mode: "global", focusNodeIds: [] });
+  const raw = resolveHierarchicalGraphProjection({ graph, wikiIndex, projectionContext });
   const rawNodesById = new Map(raw.nodes.map((node) => [node.id, node]));
   const displayMode = normalizeGraphExplorerMode(mode);
   const relationshipSource = baseGraph.presentation.relationshipSource;
@@ -1952,12 +2130,13 @@ export function buildHierarchySelectionExpansion(input: {
       targetScopeId: sourceScopeId,
     });
   }
+  const baseNodeById = new Map(baseGraph.nodes.map((node) => [node.id, node]));
 
   const mapOverviewEndpoint = (nodeId: string): string | null => {
     const node = rawNodesById.get(nodeId);
     const location = hierarchyIndex.nodeLocationById.get(nodeId);
     if (!node || !location) return null;
-    return graphNodePlacementClass(node.rawType) === "architecture-context"
+    return graphNodePlacementClass(node.rawType) === "architecture-context" && baseNodeById.has(nodeId)
       ? nodeId
       : scopeNodeId(location.scopeId);
   };
@@ -1992,6 +2171,32 @@ export function buildHierarchySelectionExpansion(input: {
         const target = mapOverviewEndpoint(member.target);
         const outgoingPortal = boundaryNodeId(sourceLocation.scopeId, targetLocation.scopeId);
         const incomingPortal = boundaryNodeId(targetLocation.scopeId, sourceLocation.scopeId);
+        const contextual = [
+          ...(source && (baseNodeById.has(outgoingPortal) || selectedNodeId === outgoingPortal) ? [{
+            source,
+            target: outgoingPortal,
+            member,
+            boundaryContext: {
+              currentScopeId: sourceLocation.scopeId,
+              targetScopeId: targetLocation.scopeId,
+            },
+          }] : []),
+          ...(target && (baseNodeById.has(incomingPortal) || selectedNodeId === incomingPortal) ? [{
+            source: incomingPortal,
+            target,
+            member,
+            boundaryContext: {
+              currentScopeId: targetLocation.scopeId,
+              targetScopeId: sourceLocation.scopeId,
+            },
+          }] : []),
+        ];
+        if (contextual.length > 0) return contextual;
+        const sourceScopeNode = scopeNodeId(sourceLocation.scopeId);
+        const targetScopeNode = scopeNodeId(targetLocation.scopeId);
+        if (baseNodeById.has(sourceScopeNode) && baseNodeById.has(targetScopeNode)) {
+          return source && target ? [{ source, target, member }] : [];
+        }
         return [
           ...(source ? [{
             source,
@@ -2046,7 +2251,6 @@ export function buildHierarchySelectionExpansion(input: {
   };
 
   const projected = members.flatMap(projectMember).filter(({ source, target }) => source !== target);
-  const baseNodeById = new Map(baseGraph.nodes.map((node) => [node.id, node]));
   const scopeByRenderedNodeId = new Map(
     hierarchyIndex.scopes.map((scope) => [scopeNodeId(scope.id), scope]),
   );
@@ -2096,7 +2300,7 @@ export function buildHierarchySelectionExpansion(input: {
     || selectedBoundary,
   );
   if (!selectedIsRepresentableRaw && !selectedIsRepresentableAggregate) {
-    return { nodes: [], edges: [] };
+    return { nodes: [], edges: [], hiddenNeighborCount: 0 };
   }
 
   const incidentProjected = selectedIsRepresentableRaw
@@ -2105,9 +2309,44 @@ export function buildHierarchySelectionExpansion(input: {
         ? [{ source: member.source, target: member.target, member }]
         : [])
     : projected.filter(({ source, target }) => source === selectedNodeId || target === selectedNodeId);
+  const neighborImportance = new Map<string, RelationImportance>();
+  const neighborIdForProjection = ({ source, target }: ProjectedEdgeMember): string | null => {
+    if (source === selectedNodeId && target !== selectedNodeId) return target;
+    if (target === selectedNodeId && source !== selectedNodeId) return source;
+    return null;
+  };
+  for (const projection of incidentProjected) {
+    const neighborId = neighborIdForProjection(projection);
+    if (!neighborId) continue;
+    const current = neighborImportance.get(neighborId) ?? { count: 0, weight: 0 };
+    current.count += 1;
+    current.weight += Number.isFinite(projection.member.weight)
+      ? Math.max(0, projection.member.weight)
+      : 0;
+    neighborImportance.set(neighborId, current);
+  }
+  const compareSelectionNeighbor = (leftId: string, rightId: string): number => {
+    const left = neighborImportance.get(leftId)!;
+    const right = neighborImportance.get(rightId)!;
+    return right.weight - left.weight
+      || right.count - left.count
+      || compareStable(leftId, rightId);
+  };
+  const rankedNeighborIds = [...neighborImportance.keys()].sort(compareSelectionNeighbor);
+  const retainedNeighborIds = new Set([
+    ...rankedNeighborIds.filter((id) => baseNodeById.has(id)),
+    ...rankedNeighborIds
+      .filter((id) => !baseNodeById.has(id))
+      .slice(0, MAX_SELECTION_EXPANSION_NEIGHBORS),
+  ]);
+  const hiddenNeighborCount = rankedNeighborIds.length - retainedNeighborIds.size;
+  const retainedIncidentProjected = incidentProjected.filter((projection) => {
+    const neighborId = neighborIdForProjection(projection);
+    return Boolean(neighborId && retainedNeighborIds.has(neighborId));
+  });
   const requiredIds = new Set<string>([
     selectedNodeId,
-    ...incidentProjected.flatMap(({ source, target }) => [source, target]),
+    ...retainedIncidentProjected.flatMap(({ source, target }) => [source, target]),
   ]);
   let rawRelationCounts: HierarchyRelationCounts | null = null;
   let displayRelationCounts: HierarchyRelationCounts | null = null;
@@ -2159,8 +2398,8 @@ export function buildHierarchySelectionExpansion(input: {
     .sort(compareStable)
     .map(nodeForId)
     .filter((node): node is HierarchicalSemanticGraphNode => Boolean(node));
-  const edges = bundleProjectedMembers(incidentProjected, null);
-  return { nodes, edges };
+  const edges = bundleProjectedMembers(retainedIncidentProjected, null);
+  return { nodes, edges, hiddenNeighborCount };
 }
 
 export function mergeHierarchySelectionExpansion(

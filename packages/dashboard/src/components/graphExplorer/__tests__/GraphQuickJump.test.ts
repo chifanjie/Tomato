@@ -94,8 +94,17 @@ describe("GraphQuickJump", () => {
     vi.restoreAllMocks();
   });
 
-  async function renderJump(items: readonly GraphQuickJumpItem[] = ITEMS): Promise<void> {
-    await act(async () => root.render(createElement(GraphQuickJump, { items, onSelect })));
+  async function renderJump(
+    items: readonly GraphQuickJumpItem[] = ITEMS,
+    openRequestId = 0,
+    onOpenRequestHandled?: (requestId: number) => void,
+  ): Promise<void> {
+    await act(async () => root.render(createElement(GraphQuickJump, {
+      items,
+      onSelect,
+      openRequestId,
+      onOpenRequestHandled,
+    })));
   }
 
   async function click(target: Element | null): Promise<void> {
@@ -146,6 +155,33 @@ describe("GraphQuickJump", () => {
     document.removeEventListener("keydown", bubbled);
     expect(onSelect).toHaveBeenCalledTimes(1);
     expect(onSelect).toHaveBeenCalledWith(ITEMS[2]!.intent);
+    expect(container.querySelector('[role="combobox"]')).toBeNull();
+  });
+
+  it("opens and focuses the combobox when a parent issues a continuation request", async () => {
+    const onOpenRequestHandled = vi.fn();
+    await renderJump(ITEMS, 0);
+    expect(container.querySelector('[role="combobox"]')).toBeNull();
+
+    await renderJump(ITEMS, 1, onOpenRequestHandled);
+
+    const input = container.querySelector<HTMLInputElement>(
+      '[role="combobox"][aria-label="搜索图谱对象"]',
+    );
+    expect(input).not.toBeNull();
+    expect(document.activeElement).toBe(input);
+    expect(onOpenRequestHandled).toHaveBeenCalledWith(1);
+
+    await renderJump(ITEMS, 0, onOpenRequestHandled);
+    await click(container.querySelector(".uc-graph-quick-jump-trigger"));
+    expect(container.querySelector('[role="combobox"]')).toBeNull();
+    await act(async () => root.render(createElement(GraphQuickJump, {
+      key: "responsive-remount",
+      items: ITEMS,
+      onSelect,
+      openRequestId: 0,
+      onOpenRequestHandled,
+    })));
     expect(container.querySelector('[role="combobox"]')).toBeNull();
   });
 

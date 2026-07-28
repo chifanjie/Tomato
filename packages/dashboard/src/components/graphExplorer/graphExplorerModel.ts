@@ -3,6 +3,7 @@ import type { GraphNode, KnowledgeGraph } from "@understand-code/core/types";
 import {
   buildHierarchySelectionExpansion,
   buildHierarchicalSemanticGraph,
+  createHierarchicalGraphProjectionContext,
   hasDocumentationProblem,
   mergeHierarchySelectionExpansion,
   normalizeGraphExplorerMode,
@@ -10,6 +11,7 @@ import {
   type GraphExplorerNavigation,
   type GraphHierarchyIndex,
   type HierarchicalGraphSelectionExpansion,
+  type HierarchicalGraphProjectionContext,
   type HierarchicalSemanticGraph,
   type HierarchicalSemanticGraphNode,
 } from "../../graphExplorer/hierarchicalGraph";
@@ -35,6 +37,7 @@ export interface BuildGraphExplorerViewInput {
   graph: KnowledgeGraph;
   hierarchyIndex: GraphHierarchyIndex;
   wikiIndex?: WikiRuntimeIndex;
+  projectionContext?: HierarchicalGraphProjectionContext;
   mode: GraphExplorerMode;
   selectedNodeId: string | null;
   /** True only when the active surface selected this id from the currently visible graph. */
@@ -258,16 +261,20 @@ export function buildGraphExplorerView({
   graph,
   hierarchyIndex,
   wikiIndex,
+  projectionContext: suppliedProjectionContext,
   mode,
   selectedNodeId,
   selectedNodeWasVisible = false,
   navigation,
   materializedNodeId,
 }: BuildGraphExplorerViewInput): GraphExplorerView {
+  const projectionContext = suppliedProjectionContext
+    ?? createHierarchicalGraphProjectionContext({ graph, wikiIndex });
   const baseGraph = buildHierarchicalSemanticGraph({
     graph,
     hierarchyIndex,
     wikiIndex,
+    projectionContext,
     mode,
     navigation,
     materializedNodeId,
@@ -277,6 +284,7 @@ export function buildGraphExplorerView({
     hierarchyIndex,
     baseGraph,
     wikiIndex,
+    projectionContext,
     mode,
     selectedNodeId,
     selectedNodeWasVisible,

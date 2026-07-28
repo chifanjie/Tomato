@@ -7,13 +7,18 @@ import type {
 } from "../../../graphExplorer/hierarchicalGraph.js";
 import { quantizeGraphViewport } from "../../../utils/layoutAlgorithm.js";
 import {
+  GRAPH_NODE_DETAIL_BY_LEVEL,
   READABLE_ZOOM_BY_LEVEL,
   buildGraphStructureKey,
   computeReadableViewport,
+  graphEdgeHandleIds,
+  graphLayoutOrientation,
   graphNodeContentHeight,
+  graphNodeDisplayBand,
   graphNodeSize,
   graphSemanticZoomBand,
   placeSelectionExpansion,
+  visibleGraphBounds,
 } from "../semanticGraphCanvasModel.js";
 
 const EMPTY_DOCS = {
@@ -126,6 +131,8 @@ describe("graph structure key", () => {
       structureKey({ densityVersion: 2 }),
       structureKey({ baseGraph: { ...graph, nodes: [{ ...graph.nodes[0]!, id: "base:changed" }, graph.nodes[1]!] } }),
       structureKey({ baseGraph: { ...graph, nodes: [{ ...graph.nodes[0]!, kind: "scope" }, graph.nodes[1]!] } }),
+      structureKey({ baseGraph: { ...graph, nodes: [{ ...graph.nodes[0]!, clusterId: "cluster:changed" }, graph.nodes[1]!] } }),
+      structureKey({ baseGraph: { ...graph, nodes: [{ ...graph.nodes[0]!, importance: 0.25 }, graph.nodes[1]!] } }),
       structureKey({ nodeSizeById: new Map([
         ["base:a", { ...graphNodeSize("scope", graph.nodes[0]!), width: 999 }],
         ["base:b", graphNodeSize("scope", graph.nodes[1]!)],
@@ -165,6 +172,7 @@ describe("local selection placement", () => {
     const expansion: HierarchicalGraphSelectionExpansion = {
       nodes: [graphNode("selected", "node", "function"), graphNode("neighbor", "node", "function")],
       edges: [graphEdge("base:b", "selected"), graphEdge("selected", "neighbor")],
+      hiddenNeighborCount: 0,
     };
     const a = { x: 40, y: 60 };
     const b = { x: 420, y: 60 };
@@ -182,7 +190,11 @@ describe("local selection placement", () => {
     });
     const second = placeSelectionExpansion({
       baseGraph: graph,
-      expansion: { nodes: [...expansion.nodes].reverse(), edges: [...expansion.edges].reverse() },
+      expansion: {
+        nodes: [...expansion.nodes].reverse(),
+        edges: [...expansion.edges].reverse(),
+        hiddenNeighborCount: 0,
+      },
       basePositions,
       selectedNodeId: "selected",
       nodeSizeById: sizes,
@@ -210,6 +222,7 @@ describe("local selection placement", () => {
     const expansion: HierarchicalGraphSelectionExpansion = {
       nodes: [graphNode("selected", "node", "function")],
       edges: [],
+      hiddenNeighborCount: 0,
     };
     const result = placeSelectionExpansion({
       baseGraph: { ...baseGraph(), nodes: [], edges: [] },
@@ -222,6 +235,47 @@ describe("local selection placement", () => {
     expect(result.get("selected")).toMatchObject({ x: expect.any(Number), y: expect.any(Number) });
     expect(Number.isFinite(result.get("selected")!.x)).toBe(true);
     expect(Number.isFinite(result.get("selected")!.y)).toBe(true);
+  });
+
+  it("avoids rectangle collisions while placing a dense temporary neighbor ring", () => {
+    const graph = baseGraph();
+    const expansionNodes = Array.from({ length: 12 }, (_, index) => (
+      graphNode(`neighbor:${String(index).padStart(2, "0")}`, "node", "function")
+    ));
+    const expansion: HierarchicalGraphSelectionExpansion = {
+      nodes: expansionNodes,
+      edges: expansionNodes.map((node) => graphEdge("base:b", node.id)),
+      hiddenNeighborCount: 0,
+    };
+    const allNodes = [...graph.nodes, ...expansionNodes];
+    const sizes = new Map(allNodes.map((node) => [node.id, graphNodeSize("scope", node)]));
+    const positions = placeSelectionExpansion({
+      baseGraph: graph,
+      expansion,
+      basePositions: new Map([
+        ["base:a", { x: 40, y: 60 }],
+        ["base:b", { x: 320, y: 60 }],
+      ]),
+      selectedNodeId: expansionNodes[0]!.id,
+      nodeSizeById: sizes,
+      viewport: quantizeGraphViewport(960, 650),
+    });
+    const rectangles = allNodes.map((node) => ({
+      id: node.id,
+      ...positions.get(node.id)!,
+      ...sizes.get(node.id)!,
+    }));
+    for (let leftIndex = 0; leftIndex < rectangles.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < rectangles.length; rightIndex += 1) {
+        const left = rectangles[leftIndex]!;
+        const right = rectangles[rightIndex]!;
+        const overlaps = left.x < right.x + right.width
+          && left.x + left.width > right.x
+          && left.y < right.y + right.height
+          && left.y + left.height > right.y;
+        expect(overlaps, `${left.id} overlaps ${right.id}`).toBe(false);
+      }
+    }
   });
 });
 
@@ -271,6 +325,52 @@ describe("readable graph viewport", () => {
     expect(anchoredResult).toEqual(result);
   });
 
+  it("allows the explicit fit action to use the complete visible bounds below the semantic floor", () => {
+    const result = computeReadableViewport({
+      level: "overview",
+      bounds: { x: -400, y: -300, width: 4_800, height: 2_800 },
+      viewport: quantizeGraphViewport(960, 650),
+      padding: 0.12,
+      maxZoom: 1.12,
+      minReadableZoom: 0.08,
+    });
+    expect(result.fullyFits).toBe(true);
+    expect(result.viewport.zoom).toBeGreaterThanOrEqual(0.08);
+    expect(result.viewport.zoom).toBeLessThan(READABLE_ZOOM_BY_LEVEL.overview);
+  });
+
+  it("fits graph bounds inside left and right overlay-safe viewport insets", () => {
+    const input = {
+      level: "scope" as const,
+      bounds: { x: 40, y: 20, width: 1_100, height: 440 },
+      viewport: quantizeGraphViewport(960, 640),
+      padding: 0.12,
+      maxZoom: 1.12,
+      minReadableZoom: 0.08,
+    };
+    const rightSafe = computeReadableViewport({
+      ...input,
+      viewportInsets: { right: 240 },
+    });
+    const leftSafe = computeReadableViewport({
+      ...input,
+      viewportInsets: { left: 240 },
+    });
+    const projectHorizontalBounds = (viewport: typeof rightSafe.viewport) => ({
+      left: viewport.x + input.bounds.x * viewport.zoom,
+      right: viewport.x + (input.bounds.x + input.bounds.width) * viewport.zoom,
+    });
+
+    const rightSafeBounds = projectHorizontalBounds(rightSafe.viewport);
+    const leftSafeBounds = projectHorizontalBounds(leftSafe.viewport);
+    expect(rightSafeBounds.left).toBeGreaterThanOrEqual(0);
+    expect(rightSafeBounds.right).toBeLessThanOrEqual(input.viewport.width - 240);
+    expect(leftSafeBounds.left).toBeGreaterThanOrEqual(240);
+    expect(leftSafeBounds.right).toBeLessThanOrEqual(input.viewport.width);
+    expect(leftSafe.viewport.zoom).toBe(rightSafe.viewport.zoom);
+    expect(leftSafe.viewport.x - rightSafe.viewport.x).toBeCloseTo(240, 8);
+  });
+
   it("keeps the real desktop overview centered at the floor when padding narrowly misses readability", () => {
     const input = {
       level: "overview" as const,
@@ -297,6 +397,44 @@ describe("readable graph viewport", () => {
 });
 
 describe("graph node silhouettes", () => {
+  it("uses vertical ports on narrow canvases and caps detail by hierarchy level", () => {
+    expect(graphLayoutOrientation(quantizeGraphViewport(390, 844))).toBe("vertical");
+    expect(graphLayoutOrientation(quantizeGraphViewport(1_440, 900))).toBe("horizontal");
+    expect(graphEdgeHandleIds("vertical", { x: 0, y: 200 }, { x: 0, y: 0 })).toEqual({
+      sourceHandle: "source-top",
+      targetHandle: "target-bottom",
+    });
+    expect(graphEdgeHandleIds("horizontal", { x: 300, y: 0 }, { x: 0, y: 0 })).toEqual({
+      sourceHandle: "source-left",
+      targetHandle: "target-right",
+    });
+    expect(GRAPH_NODE_DETAIL_BY_LEVEL).toEqual({
+      overview: "minimal",
+      scope: "compact",
+      cluster: "compact",
+      file: "full",
+    });
+    expect(graphNodeDisplayBand("overview", "full")).toBe("minimal");
+    expect(graphNodeDisplayBand("scope", "full")).toBe("compact");
+    expect(graphNodeDisplayBand("file", "full")).toBe("full");
+    expect(graphNodeDisplayBand("file", "minimal")).toBe("minimal");
+  });
+
+  it("computes fit bounds from base and temporary expansion nodes", () => {
+    const nodes = [graphNode("base"), graphNode("expanded", "node", "function")];
+    const positions = new Map([
+      ["base", { x: 48, y: 48 }],
+      ["expanded", { x: -240, y: 420 }],
+    ]);
+    const sizes = new Map(nodes.map((node) => [node.id, graphNodeSize("scope", node)]));
+    expect(visibleGraphBounds({ nodes, positions, nodeSizeById: sizes, padding: 48 })).toEqual({
+      x: -288,
+      y: 0,
+      width: 612,
+      height: 545,
+    });
+  });
+
   it("keeps restrained distinct sizes and 44px minimum targets", () => {
     const scope = graphNodeSize("overview", graphNode("scope", "scope"));
     const cluster = graphNodeSize("scope", graphNode("cluster", "cluster"));
@@ -309,7 +447,7 @@ describe("graph node silhouettes", () => {
     }
   });
 
-  it("budgets enough fixed node height for worst-case full and compact content", () => {
+  it("budgets fixed node height according to hierarchy density", () => {
     for (const [kind, rawType] of [
       ["scope", "module"],
       ["boundary", "service"],
@@ -325,13 +463,29 @@ describe("graph node silhouettes", () => {
       };
       const fullBudget = graphNodeContentHeight(worstCase, "full");
       const compactBudget = graphNodeContentHeight(worstCase, "compact");
-      const size = graphNodeSize("file", worstCase);
+      const overviewSize = graphNodeSize("overview", worstCase);
+      const scopeSize = graphNodeSize("scope", worstCase);
+      const fileSize = graphNodeSize("file", worstCase);
 
       expect(fullBudget).toBe(172);
-      expect(compactBudget).toBe(130);
+      expect(compactBudget).toBe(
+        kind === "scope" || kind === "boundary" || kind === "cluster" ? 154 : 130,
+      );
       expect(fullBudget).toBeGreaterThan(compactBudget);
-      expect(size.height).toBeGreaterThanOrEqual(fullBudget);
-      expect(size.height).toBeGreaterThanOrEqual(compactBudget);
+      expect(overviewSize.height).toBeLessThan(fullBudget);
+      expect(scopeSize.height).toBeGreaterThanOrEqual(compactBudget);
+      expect(scopeSize.height).toBeLessThan(fullBudget);
+      expect(fileSize.height).toBeGreaterThanOrEqual(fullBudget);
     }
+
+    const compactCluster = {
+      ...graphNode("cluster:graph", "cluster", "module"),
+      summary: "图谱交互与分层投影",
+      fileCount: 9,
+      relationCount: 14,
+      canDrillDown: true,
+    };
+    expect(graphNodeContentHeight(compactCluster, "compact")).toBe(129);
+    expect(graphNodeSize("scope", compactCluster).height).toBe(129);
   });
 });

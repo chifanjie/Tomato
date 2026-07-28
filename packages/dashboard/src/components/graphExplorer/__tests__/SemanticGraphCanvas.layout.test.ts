@@ -44,8 +44,11 @@ vi.mock("@xyflow/react", async (importOriginal) => {
     BackgroundVariant: { Dots: "dots" },
     ControlButton: ({ children, ...props }: Record<string, unknown>) =>
       React.createElement("button", props, children as React.ReactNode),
-    Controls: ({ children }: { children?: React.ReactNode }) =>
-      React.createElement("div", { "data-testid": "controls" }, children),
+    Controls: ({ children, position }: { children?: React.ReactNode; position?: string }) =>
+      React.createElement("div", {
+        "data-testid": "controls",
+        "data-position": position,
+      }, children),
     Handle: () => null,
     MiniMap: () => null,
     Position: { Bottom: "bottom", Left: "left", Right: "right", Top: "top" },
@@ -290,6 +293,8 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
     graphRevision?: string;
     inspectorOpen?: boolean;
     narrowViewport?: boolean;
+    showMinimap?: boolean;
+    fitViewportInsets?: { top?: number; right?: number; bottom?: number; left?: number };
     onSelectedScreenBoundsChange?: (bounds: {
       left: number;
       right: number;
@@ -315,6 +320,8 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
         onOpenCluster: vi.fn(),
         onOpenFile: vi.fn(),
         narrowViewport: input.narrowViewport ?? false,
+        ...(input.showMinimap === undefined ? {} : { showMinimap: input.showMinimap }),
+        ...(input.fitViewportInsets ? { fitViewportInsets: input.fitViewportInsets } : {}),
       }),
       input.inspectorOpen
         ? createElement("aside", { "data-testid": "inspector-sibling" })
@@ -403,7 +410,10 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
     await emitResize(960, 650);
 
     expect(testHarness.requestLayout).toHaveBeenCalledTimes(1);
-    expect(testHarness.requestLayout.mock.calls[0]![0]).toMatchObject({ level: "overview" });
+    const request = testHarness.requestLayout.mock.calls[0]![0] as LayoutMessage;
+    expect(request).toMatchObject({ level: "overview" });
+    expect(request.nodes.every((node) => node.importance === 1)).toBe(true);
+    expect(request.edges.every((edge) => edge.role === "backbone")).toBe(true);
     expect(document.querySelectorAll(".uc-graph-frame")).toHaveLength(1);
     expect(frame.querySelector(":scope > .uc-semantic-canvas")).not.toBeNull();
     expect(frame.querySelector(".uc-semantic-canvas .uc-graph-frame")).toBeNull();
@@ -439,7 +449,7 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
     expect(testHarness.getViewport()).toEqual({ x: 12, y: 18, zoom: 0.8 });
   });
 
-  it("anchors an unreadable narrow normal viewport to the first base node and keeps no-active manual fit equivalent", async () => {
+  it("anchors narrow automatic framing to the base graph while manual fit includes temporary nodes", async () => {
     const base = semanticGraph("overview", Array.from({ length: 19 }, (_, index) => `base-${index}`));
     const expanded: HierarchicalSemanticGraph = {
       ...base,
@@ -453,10 +463,10 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
         index === 0
           ? { x: 48, y: 48 }
           : index < 10
-            ? { x: 720 + index * 440, y: 48 }
-            : { x: 48, y: 720 + (index - 9) * 400 },
+            ? { x: 450 + index * 220, y: 48 }
+            : { x: 48, y: 450 + (index - 9) * 170 },
       ])),
-      bounds: { x: 0, y: 0, width: 5_000, height: 4_400 },
+      bounds: { x: 0, y: 0, width: 2_700, height: 2_200 },
     }));
 
     await render({ baseGraph: base, semanticGraph: expanded, narrowViewport: true });
@@ -482,12 +492,25 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
     expect(automaticTarget.zoom).toBe(0.54);
     expect(anchorScreenBounds.left).toBeGreaterThanOrEqual(0);
     expect(anchorScreenBounds.right).toBeLessThanOrEqual(320);
-    expect(anchorScreenBounds.top).toBeGreaterThanOrEqual(0);
+    expect(anchorScreenBounds.top).toBeCloseTo(40, 8);
     expect(anchorScreenBounds.bottom).toBeLessThanOrEqual(640);
 
     const fitButton = frame.querySelector<HTMLButtonElement>('button[aria-label="适应视图"]');
     await act(async () => fitButton?.click());
-    expect(testHarness.setViewport.mock.calls[1]![0]).toEqual(automaticTarget);
+    const manualTarget = testHarness.setViewport.mock.calls[1]![0] as typeof automaticTarget;
+    expect(manualTarget.zoom).toBeGreaterThanOrEqual(0.08);
+    expect(manualTarget).not.toEqual(automaticTarget);
+    const expansion = flowNodes.find((node) => node.id === "selection-expansion")!;
+    const expansionScreenBounds = {
+      left: manualTarget.x + expansion.position.x * manualTarget.zoom,
+      right: manualTarget.x + (expansion.position.x + expansion.style.width) * manualTarget.zoom,
+      top: manualTarget.y + expansion.position.y * manualTarget.zoom,
+      bottom: manualTarget.y + (expansion.position.y + expansion.style.height) * manualTarget.zoom,
+    };
+    expect(expansionScreenBounds.left).toBeGreaterThanOrEqual(0);
+    expect(expansionScreenBounds.right).toBeLessThanOrEqual(320);
+    expect(expansionScreenBounds.top).toBeGreaterThanOrEqual(0);
+    expect(expansionScreenBounds.bottom).toBeLessThanOrEqual(640);
 
     await act(async () => useDashboardStore.getState().selectNode("selection-expansion"));
     await act(async () => useDashboardStore.getState().selectNode(null));
@@ -539,7 +562,9 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
     expect(automaticTarget.zoom).toBe(expectedTarget.zoom);
     const fitButton = frame.querySelector<HTMLButtonElement>('button[aria-label="适应视图"]');
     await act(async () => fitButton?.click());
-    expect(testHarness.setViewport.mock.calls[1]![0]).toEqual(automaticTarget);
+    const manualTarget = testHarness.setViewport.mock.calls[1]![0] as typeof automaticTarget;
+    expect(manualTarget.zoom).toBeGreaterThanOrEqual(0.08);
+    expect(manualTarget).not.toEqual(automaticTarget);
   });
 
   it.each([
@@ -547,7 +572,7 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
       "phone to tablet",
       760,
       true,
-      { x: 302.8, y: 254.39, zoom: 0.54 },
+      { x: 302.8, y: 14.08, zoom: 0.54 },
       820,
       false,
       { x: -41.72, y: 41.36, zoom: 0.54 },
@@ -559,7 +584,7 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
       { x: -41.72, y: 41.36, zoom: 0.54 },
       760,
       true,
-      { x: 302.8, y: 254.39, zoom: 0.54 },
+      { x: 302.8, y: 14.08, zoom: 0.54 },
     ],
   ])("switches %s framing once inside the shared 800px layout bucket", async (
     _label,
@@ -664,6 +689,71 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
     expect(testHarness.getViewport()).toEqual(initialViewport);
   });
 
+  it("keeps manual fit outside a left inspector and the bottom-right MiniMap safe areas", async () => {
+    const base = semanticGraph("scope", ["a", "b"]);
+    await render({
+      baseGraph: base,
+      showMinimap: true,
+      fitViewportInsets: { left: 384 },
+    });
+    await emitResize(1_440, 650);
+    const automaticTarget = testHarness.setViewport.mock.calls[0]![0] as {
+      x: number;
+      y: number;
+      zoom: number;
+    };
+    const fitButton = frame.querySelector<HTMLButtonElement>('button[aria-label="适应视图"]');
+    await act(async () => fitButton?.click());
+    const manualTarget = testHarness.setViewport.mock.calls[1]![0] as typeof automaticTarget;
+    const flowNodes = testHarness.flowProps.at(-1)!.nodes as Array<{
+      position: { x: number; y: number };
+      style: { width: number; height: number };
+    }>;
+    const screenBounds = flowNodes.map((node) => ({
+      left: manualTarget.x + node.position.x * manualTarget.zoom,
+      right: manualTarget.x + (node.position.x + node.style.width) * manualTarget.zoom,
+    }));
+
+    expect(manualTarget).not.toEqual(automaticTarget);
+    expect(frame.querySelector('[data-testid="controls"]')?.getAttribute("data-position"))
+      .toBe("top-right");
+    expect(Math.min(...screenBounds.map((bounds) => bounds.left))).toBeGreaterThanOrEqual(384);
+    expect(Math.max(...screenBounds.map((bounds) => bounds.right))).toBeLessThanOrEqual(1_440 - 224);
+    expect(testHarness.requestLayout).toHaveBeenCalledTimes(1);
+    expect(testHarness.setViewport).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses the raw frame dimensions for manual fit inside a wider quantized bucket", async () => {
+    const base = semanticGraph("scope", ["a", "b"]);
+    testHarness.requestLayout.mockImplementation(async (input: LayoutMessage) => ({
+      ...layoutResult(input),
+      positions: {
+        a: { x: 48, y: 48 },
+        b: { x: 2_548, y: 48 },
+      },
+      bounds: { x: 0, y: 0, width: 2_860, height: 420 },
+    }));
+    await render({ baseGraph: base, showMinimap: false });
+    await emitResize(400, 600);
+    const fitButton = frame.querySelector<HTMLButtonElement>('button[aria-label="适应视图"]');
+    await act(async () => fitButton?.click());
+    const manualTarget = testHarness.setViewport.mock.calls[1]![0] as {
+      x: number;
+      y: number;
+      zoom: number;
+    };
+    const flowNodes = testHarness.flowProps.at(-1)!.nodes as Array<{
+      position: { x: number; y: number };
+      style: { width: number; height: number };
+    }>;
+    const rightEdge = Math.max(...flowNodes.map((node) => (
+      manualTarget.x + (node.position.x + node.style.width) * manualTarget.zoom
+    )));
+
+    expect(testHarness.requestLayout.mock.calls[0]![0].viewport.width).toBe(480);
+    expect(rightEdge).toBeLessThanOrEqual(400);
+  });
+
   it("switches inspector side on a raw same-bucket resize without changing layout or viewport", async () => {
     const base = semanticGraph("scope", ["a", "b"]);
     const responsiveFrameRef = { current: frame };
@@ -753,13 +843,13 @@ describe("SemanticGraphCanvas layout lifecycle", () => {
     });
     expect(testHarness.flowToScreenPosition.mock.calls.slice(-2)).toEqual([
       [{ x: 48, y: 48 }],
-      [{ x: 276, y: 167 }],
+      [{ x: 276, y: 140 }],
     ]);
     expect(selectedBoundsChanged).toHaveBeenLastCalledWith({
       left: 138,
       right: 366,
       top: 228,
-      bottom: 347,
+      bottom: 320,
     });
     const automaticViewportCalls = testHarness.setViewport.mock.calls.length;
     expect(automaticViewportCalls).toBe(1);

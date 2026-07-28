@@ -18,6 +18,7 @@ export interface GraphDetailsRailProps {
   onOpenFile: (scopeId: string, clusterId: string, fileId: string) => void;
   onSelectWikiTarget: (target: WikiTarget) => unknown;
   onRequestGlobalSearch: () => void;
+  onRequestGraphQuickJump: () => void;
 }
 
 export function resolveGraphInspectorSide(input: {
@@ -76,6 +77,31 @@ function RelatedNodes({
           ))}
         </ul>
       )}
+    </section>
+  );
+}
+
+function RelationshipOverflowNotice({
+  hiddenCount,
+  onRequestGraphQuickJump,
+}: {
+  hiddenCount: number;
+  onRequestGraphQuickJump: () => void;
+}) {
+  if (hiddenCount <= 0) return null;
+  return (
+    <section className="uc-graph-inspector__section">
+      <h3 className="text-xs font-semibold text-text-primary">未展开关联</h3>
+      <p className="mt-2 text-xs leading-5 text-text-muted">
+        为保持图谱可读，另有 {hiddenCount} 个一跳关联对象未在画布和详情中展开。
+      </p>
+      <button
+        type="button"
+        onClick={onRequestGraphQuickJump}
+        className="mt-2 rounded-md border border-border-subtle px-2.5 py-1.5 text-xs font-semibold text-text-secondary transition-colors hover:border-accent/35 hover:text-accent"
+      >
+        打开图谱快速定位
+      </button>
     </section>
   );
 }
@@ -224,6 +250,7 @@ export default function GraphDetailsRail({
   onOpenFile,
   onSelectWikiTarget,
   onRequestGlobalSearch,
+  onRequestGraphQuickJump,
 }: GraphDetailsRailProps) {
   const compact = useIsMobile(1024);
   const [sheetSize, setSheetSize] = useState<"half" | "full">("half");
@@ -348,6 +375,10 @@ export default function GraphDetailsRail({
               <RelatedNodes title="上游" nodes={selection.upstream} onSelectObject={onSelectObject} />
               <RelatedNodes title="下游" nodes={selection.downstream} onSelectObject={onSelectObject} />
             </div>
+            <RelationshipOverflowNotice
+              hiddenCount={view.selectionExpansion.hiddenNeighborCount}
+              onRequestGraphQuickJump={onRequestGraphQuickJump}
+            />
             <PageList
               title="专门正文"
               pages={selection.directPages}

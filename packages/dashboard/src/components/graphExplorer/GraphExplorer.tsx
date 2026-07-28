@@ -3,6 +3,7 @@ import type { KnowledgeGraph } from "@understand-code/core/types";
 import {
   buildHierarchicalSemanticGraph,
   buildGraphHierarchyIndex,
+  createHierarchicalGraphProjectionContext,
   type GraphExplorerDisplayMode,
   type GraphExplorerNavigation,
   type GraphHierarchyIndex,
@@ -38,6 +39,8 @@ interface GraphExplorerProps {
 
 const OVERVIEW_NAVIGATION: GraphExplorerNavigation = { level: "overview" };
 const MISSING_WIKI_FOCUS_NOTICE = "未找到可定位的图谱对象，已保留最近层级。";
+const GRAPH_INSPECTOR_WIDTH = 360;
+const GRAPH_INSPECTOR_SAFE_INSET = 384;
 let graphInstanceSequence = 0;
 
 export interface PendingGraphNavigationRequest {
@@ -231,6 +234,7 @@ export default function GraphExplorer({
   const belowDesktop = useIsMobile(1280);
   const phone = useIsMobile(768);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [quickJumpOpenRequestId, setQuickJumpOpenRequestId] = useState(0);
   const [showMinimap, setShowMinimap] = useState(() => !belowDesktop);
   const [inspectorOpen, setInspectorOpen] = useState(() => selectedNodeId !== null);
   const [selectedScreenBounds, setReportedSelectedScreenBounds] =
@@ -266,6 +270,10 @@ export default function GraphExplorer({
   const hierarchyIndex = useMemo(
     () => graph ? buildGraphHierarchyIndex(graph) : null,
     [graph, layoutRevision],
+  );
+  const projectionContext = useMemo(
+    () => graph ? createHierarchicalGraphProjectionContext({ graph, wikiIndex }) : null,
+    [graph, layoutRevision, wikiIndex],
   );
 
   const modeOptions = useMemo(
@@ -459,6 +467,7 @@ export default function GraphExplorer({
           graph,
           hierarchyIndex,
           wikiIndex,
+          projectionContext: projectionContext ?? undefined,
           mode: effectiveMode,
           selectedNodeId: safeSelectedNodeId,
           selectedNodeWasVisible,
@@ -470,6 +479,7 @@ export default function GraphExplorer({
       effectiveMode,
       graph,
       hierarchyIndex,
+      projectionContext,
       safeMaterializedNodeId,
       safeNavigation,
       safeSelectedNodeId,
@@ -573,6 +583,10 @@ export default function GraphExplorer({
     setInspectorOpen(false);
     selectNode(null);
   }, [selectNode]);
+  const handleGraphQuickJumpOpenRequest = useCallback((handledRequestId: number) => {
+    setQuickJumpOpenRequestId((currentRequestId) =>
+      currentRequestId === handledRequestId ? 0 : currentRequestId);
+  }, []);
 
   const setSelectedScreenBounds = useCallback((bounds: GraphSelectedScreenBounds | null) => {
     setReportedSelectedScreenBounds(bounds);
@@ -710,13 +724,25 @@ export default function GraphExplorer({
   const notice = wikiFocusNotice ?? presentation.notice;
   const coverageAvailable = effectiveMode === "coverage"
     && modeOptions.some((option) => option.id === "coverage");
+  const inspectorVisible = inspectorOpen && safeSelectedNodeId !== null;
   const inspectorSide = resolveGraphInspectorSide({
     selectedScreenBounds,
     frameWidth: rawFrameWidth,
-    inspectorWidth: 360,
+    inspectorWidth: GRAPH_INSPECTOR_WIDTH,
     gap: 12,
     compact,
   });
+  const fitViewportInsets = (
+    inspectorVisible && !compact
+      ? inspectorSide === "left"
+        ? { left: GRAPH_INSPECTOR_SAFE_INSET }
+        : { right: GRAPH_INSPECTOR_SAFE_INSET }
+      : undefined
+  );
+  const requestGraphQuickJump = () => {
+    if (compact) setToolsOpen(true);
+    setQuickJumpOpenRequestId((requestId) => requestId + 1);
+  };
 
   return (
     <section
@@ -727,7 +753,12 @@ export default function GraphExplorer({
         {!compact && (
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <GraphModeToolbar mode={effectiveMode} options={modeOptions} onChangeMode={changeMode} />
-            <GraphQuickJump items={quickJumpItems} onSelect={applyNavigationIntent} />
+            <GraphQuickJump
+              items={quickJumpItems}
+              onSelect={applyNavigationIntent}
+              openRequestId={quickJumpOpenRequestId}
+              onOpenRequestHandled={handleGraphQuickJumpOpenRequest}
+            />
           </div>
         )}
         {belowDesktop && (
@@ -741,7 +772,12 @@ export default function GraphExplorer({
               {compact && (
                 <div className="grid min-w-0 gap-2">
                   <GraphModeToolbar mode={effectiveMode} options={modeOptions} onChangeMode={changeMode} />
-                  <GraphQuickJump items={quickJumpItems} onSelect={applyNavigationIntent} />
+                  <GraphQuickJump
+                    items={quickJumpItems}
+                    onSelect={applyNavigationIntent}
+                    openRequestId={quickJumpOpenRequestId}
+                    onOpenRequestHandled={handleGraphQuickJumpOpenRequest}
+                  />
                 </div>
               )}
               <button
@@ -829,12 +865,13 @@ export default function GraphExplorer({
           onFrameWidthChange={setRawFrameWidth}
           onSelectedScreenBoundsChange={setSelectedScreenBounds}
           showMinimap={showMinimap}
-          showControls={!phone || toolsOpen}
+          showControls={(!phone || toolsOpen) && !(compact && inspectorVisible)}
           narrowViewport={phone}
+          fitViewportInsets={fitViewportInsets}
         />
         <GraphDetailsRail
           view={view}
-          open={inspectorOpen && safeSelectedNodeId !== null}
+          open={inspectorVisible}
           side={inspectorSide}
           onClose={closeInspector}
           onSelectObject={selectVisibleNode}
@@ -843,6 +880,7 @@ export default function GraphExplorer({
           onOpenFile={openFile}
           onSelectWikiTarget={openSelectionWikiTarget}
           onRequestGlobalSearch={onRequestGlobalSearch}
+          onRequestGraphQuickJump={requestGraphQuickJump}
         />
       </div>
     </section>

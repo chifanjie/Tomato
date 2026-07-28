@@ -16,6 +16,13 @@ export interface SemanticNodePosition {
   y: number;
 }
 
+export interface GraphViewportInsets {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
 export const READABLE_ZOOM_BY_LEVEL: Readonly<Record<GraphNavigationLevel, number>> = {
   overview: 0.54,
   scope: 0.62,
@@ -24,6 +31,14 @@ export const READABLE_ZOOM_BY_LEVEL: Readonly<Record<GraphNavigationLevel, numbe
 };
 
 export type GraphSemanticZoomBand = "full" | "compact" | "minimal";
+export type GraphLayoutOrientation = "horizontal" | "vertical";
+
+export const GRAPH_NODE_DETAIL_BY_LEVEL: Readonly<Record<GraphNavigationLevel, GraphSemanticZoomBand>> = {
+  overview: "minimal",
+  scope: "compact",
+  cluster: "compact",
+  file: "full",
+};
 
 export interface GraphPointerClick {
   id: string;
@@ -232,7 +247,7 @@ export function graphNodeSize(
   level: GraphNavigationLevel,
   node: HierarchicalSemanticGraphNode,
 ): { width: number; height: number } {
-  const contentHeight = graphNodeContentHeight(node, "full");
+  const contentHeight = graphNodeContentHeight(node, GRAPH_NODE_DETAIL_BY_LEVEL[level]);
   if (node.kind === "scope" || node.kind === "boundary") {
     return { width: 264, height: Math.max(132, contentHeight) };
   }
@@ -245,8 +260,9 @@ export function graphNodeSize(
 }
 
 /**
- * Mirrors the fixed CSS line-height budget used by SemanticNodeCard. Reserving
- * the summary rows in full mode keeps layout size independent from prose.
+ * Mirrors the fixed CSS line-height budget used by SemanticNodeCard. Aggregate
+ * scope/cluster/boundary nodes preserve one responsibility line at every
+ * density, while full mode reserves two lines for all summaries.
  */
 export function graphNodeContentHeight(
   node: HierarchicalSemanticGraphNode,
@@ -254,9 +270,10 @@ export function graphNodeContentHeight(
 ): number {
   const verticalChrome = 17;
   const heading = 36;
-  if (zoomBand === "minimal") return verticalChrome + heading;
-
-  const summary = zoomBand === "full" ? 42 : 0;
+  const aggregate = node.kind === "scope" || node.kind === "boundary" || node.kind === "cluster";
+  const summary = zoomBand === "full" ? 42 : aggregate && node.summary ? 24 : 0;
+  const aggregateMeta = zoomBand === "minimal" && aggregate ? 20 : 0;
+  if (zoomBand === "minimal") return verticalChrome + heading + summary + aggregateMeta;
   const path = node.filePath ? 25 : 0;
   const footer = node.canDrillDown ? 52 : 24;
   return verticalChrome + heading + summary + path + footer;
@@ -277,7 +294,7 @@ export function buildGraphStructureKey(input: {
   densityVersion: number;
 }): string {
   return JSON.stringify({
-    format: 1,
+    format: 2,
     graphRevision: input.graphRevision,
     displayMode: input.displayMode,
     navigation: [
@@ -298,7 +315,14 @@ export function buildGraphStructureKey(input: {
     nodes: input.baseGraph.nodes
       .map((node) => {
         const size = input.nodeSizeById.get(node.id) ?? graphNodeSize(input.navigation.level, node);
-        return [node.id, node.kind ?? "node", size.width, size.height] as const;
+        return [
+          node.id,
+          node.kind ?? "node",
+          node.clusterId ?? "",
+          node.importance,
+          size.width,
+          size.height,
+        ] as const;
       })
       .sort((left, right) => compareStable(left[0], right[0])),
     edges: input.baseGraph.edges
@@ -328,6 +352,24 @@ function allPlacementEdges(
   return [...byIdentity.values()];
 }
 
+interface PlacementRectangle {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function placementRectanglesOverlap(
+  left: PlacementRectangle,
+  right: PlacementRectangle,
+  gap = 16,
+): boolean {
+  return left.x < right.x + right.width + gap
+    && left.x + left.width + gap > right.x
+    && left.y < right.y + right.height + gap
+    && left.y + left.height + gap > right.y;
+}
+
 export function placeSelectionExpansion(input: {
   baseGraph: HierarchicalSemanticGraph;
   expansion: HierarchicalGraphSelectionExpansion;
@@ -340,6 +382,12 @@ export function placeSelectionExpansion(input: {
   const allNodes = new Map(
     [...input.baseGraph.nodes, ...input.expansion.nodes].map((node) => [node.id, node]),
   );
+  const occupied: PlacementRectangle[] = [...input.basePositions]
+    .map(([id, position]) => {
+      const size = input.nodeSizeById.get(id);
+      return size ? { ...position, ...size } : null;
+    })
+    .filter((rect): rect is PlacementRectangle => Boolean(rect));
   const adjacency = new Map<string, Set<string>>();
   for (const id of allNodes.keys()) adjacency.set(id, new Set());
   for (const edge of allPlacementEdges(input.baseGraph, input.expansion)) {
@@ -402,16 +450,32 @@ export function placeSelectionExpansion(input: {
     }));
 
     nodes.forEach((node, index) => {
-      const ring = Math.floor(index / 8);
-      const slot = index % 8;
       const size = input.nodeSizeById.get(node.id) ?? graphNodeSize(input.baseGraph.presentation.level, node);
-      const radius = anchorRadius + maxNodeRadius * 1.1 + 56
-        + ring * (maxNodeRadius * 2.2 + 40);
-      const angle = -Math.PI / 2 + slot * (Math.PI * 2 / 8);
-      result.set(node.id, {
-        x: anchorCenter.x + Math.cos(angle) * radius - size.width / 2,
-        y: anchorCenter.y + Math.sin(angle) * radius - size.height / 2,
-      });
+      let position: SemanticNodePosition | null = null;
+      for (let attempt = index; attempt < index + 256; attempt += 1) {
+        const ring = Math.floor(attempt / 8);
+        const slot = attempt % 8;
+        const radius = anchorRadius + maxNodeRadius * 1.1 + 56
+          + ring * (maxNodeRadius * 2.2 + 40);
+        const angle = -Math.PI / 2 + slot * (Math.PI * 2 / 8);
+        const candidate = {
+          x: anchorCenter.x + Math.cos(angle) * radius - size.width / 2,
+          y: anchorCenter.y + Math.sin(angle) * radius - size.height / 2,
+        };
+        const candidateRect = { ...candidate, ...size };
+        if (occupied.every((rect) => !placementRectanglesOverlap(candidateRect, rect))) {
+          position = candidate;
+          break;
+        }
+      }
+      // The bounded search is deliberately deterministic; this fallback is
+      // only reachable for pathological, manually constructed fixtures.
+      position ??= {
+        x: anchorCenter.x + anchorRadius + 80 + index * (size.width + 32),
+        y: anchorCenter.y + anchorRadius + 80,
+      };
+      result.set(node.id, position);
+      occupied.push({ ...position, ...size });
     });
   }
   return result;
@@ -421,31 +485,133 @@ export function computeReadableViewport(input: {
   level: GraphNavigationLevel;
   bounds: LayoutBounds;
   focusBounds?: LayoutBounds;
-  viewport: GraphViewportBucket;
+  viewport: Pick<GraphViewportBucket, "width" | "height">;
+  viewportInsets?: Partial<GraphViewportInsets>;
   padding: number;
   maxZoom: number;
+  minReadableZoom?: number;
 }): { viewport: { x: number; y: number; zoom: number }; fullyFits: boolean } {
-  const fullViewport = getViewportForBounds(
-    input.bounds,
-    input.viewport.width,
-    input.viewport.height,
-    0.01,
-    input.maxZoom,
-    input.padding,
+  const finiteInset = (value: number | undefined) => (
+    Number.isFinite(value) ? Math.max(0, value ?? 0) : 0
   );
-  const floor = Math.min(READABLE_ZOOM_BY_LEVEL[input.level], input.maxZoom);
+  let left = finiteInset(input.viewportInsets?.left);
+  let right = finiteInset(input.viewportInsets?.right);
+  let top = finiteInset(input.viewportInsets?.top);
+  let bottom = finiteInset(input.viewportInsets?.bottom);
+  const horizontalInset = left + right;
+  const verticalInset = top + bottom;
+  if (horizontalInset >= input.viewport.width) {
+    const scale = Math.max(0, input.viewport.width - 1) / Math.max(1, horizontalInset);
+    left *= scale;
+    right *= scale;
+  }
+  if (verticalInset >= input.viewport.height) {
+    const scale = Math.max(0, input.viewport.height - 1) / Math.max(1, verticalInset);
+    top *= scale;
+    bottom *= scale;
+  }
+  const viewportWidth = Math.max(1, input.viewport.width - left - right);
+  const viewportHeight = Math.max(1, input.viewport.height - top - bottom);
+  const viewportForBounds = (
+    bounds: LayoutBounds,
+    minZoom: number,
+    maxZoom: number,
+  ) => {
+    const viewport = getViewportForBounds(
+      bounds,
+      viewportWidth,
+      viewportHeight,
+      minZoom,
+      maxZoom,
+      input.padding,
+    );
+    return {
+      ...viewport,
+      x: viewport.x + left,
+      y: viewport.y + top,
+    };
+  };
+  const fullViewport = viewportForBounds(input.bounds, 0.01, input.maxZoom);
+  const floor = Math.min(input.minReadableZoom ?? READABLE_ZOOM_BY_LEVEL[input.level], input.maxZoom);
   if (fullViewport.zoom >= floor) {
     return { viewport: fullViewport, fullyFits: true };
   }
-  const focusViewport = getViewportForBounds(
+  const focusViewport = viewportForBounds(
     input.focusBounds ?? input.bounds,
-    input.viewport.width,
-    input.viewport.height,
     floor,
     floor,
-    input.padding,
   );
   return { viewport: focusViewport, fullyFits: false };
+}
+
+export function graphLayoutOrientation(
+  viewport: Pick<GraphViewportBucket, "aspectBucket"> | null,
+): GraphLayoutOrientation {
+  return viewport?.aspectBucket === "landscape" || viewport?.aspectBucket === "wide"
+    ? "horizontal"
+    : "vertical";
+}
+
+export function graphEdgeHandleIds(
+  orientation: GraphLayoutOrientation,
+  source: SemanticNodePosition | undefined,
+  target: SemanticNodePosition | undefined,
+): { sourceHandle: string; targetHandle: string } {
+  if (orientation === "horizontal") {
+    const forward = !source || !target || target.x >= source.x;
+    return forward
+      ? { sourceHandle: "source-right", targetHandle: "target-left" }
+      : { sourceHandle: "source-left", targetHandle: "target-right" };
+  }
+  const forward = !source || !target || target.y >= source.y;
+  return forward
+    ? { sourceHandle: "source-bottom", targetHandle: "target-top" }
+    : { sourceHandle: "source-top", targetHandle: "target-bottom" };
+}
+
+const ZOOM_BAND_DETAIL: Readonly<Record<GraphSemanticZoomBand, number>> = {
+  minimal: 0,
+  compact: 1,
+  full: 2,
+};
+
+export function graphNodeDisplayBand(
+  level: GraphNavigationLevel,
+  zoomBand: GraphSemanticZoomBand,
+): GraphSemanticZoomBand {
+  const levelBand = GRAPH_NODE_DETAIL_BY_LEVEL[level];
+  return ZOOM_BAND_DETAIL[zoomBand] <= ZOOM_BAND_DETAIL[levelBand] ? zoomBand : levelBand;
+}
+
+export function visibleGraphBounds(input: {
+  nodes: readonly HierarchicalSemanticGraphNode[];
+  positions: ReadonlyMap<string, SemanticNodePosition>;
+  nodeSizeById: ReadonlyMap<string, { width: number; height: number }>;
+  padding?: number;
+}): LayoutBounds {
+  const padding = Math.max(0, input.padding ?? 48);
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  let count = 0;
+  for (const node of input.nodes) {
+    const position = input.positions.get(node.id);
+    const size = input.nodeSizeById.get(node.id);
+    if (!position || !size) continue;
+    minX = Math.min(minX, position.x);
+    minY = Math.min(minY, position.y);
+    maxX = Math.max(maxX, position.x + size.width);
+    maxY = Math.max(maxY, position.y + size.height);
+    count += 1;
+  }
+  if (count === 0) return { x: 0, y: 0, width: 0, height: 0 };
+  return {
+    x: minX - padding,
+    y: minY - padding,
+    width: maxX - minX + padding * 2,
+    height: maxY - minY + padding * 2,
+  };
 }
 
 export function graphSemanticZoomBand(zoom: number): GraphSemanticZoomBand {

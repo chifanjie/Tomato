@@ -18,8 +18,12 @@ const dimensions = {
   raw: { width: 196, height: 80 },
 } satisfies Record<GraphLayoutNodeKind, { width: number; height: number }>;
 
-function node(id: string, kind: GraphLayoutNodeKind = "scope"): LayoutMessage["nodes"][number] {
-  return { id, kind, ...dimensions[kind] };
+function node(
+  id: string,
+  kind: GraphLayoutNodeKind = "scope",
+  overrides: Partial<Omit<LayoutMessage["nodes"][number], "id" | "kind">> = {},
+): LayoutMessage["nodes"][number] {
+  return { id, kind, ...dimensions[kind], ...overrides };
 }
 
 function edge(
@@ -27,8 +31,9 @@ function edge(
   target: string,
   directions: LayoutMessage["edges"][number]["directions"] = ["forward"],
   relationType: LayoutMessage["edges"][number]["relationType"] = "depends_on",
+  overrides: Partial<Omit<LayoutMessage["edges"][number], "source" | "target" | "directions" | "relationType">> = {},
 ): LayoutMessage["edges"][number] {
-  return { source, target, relationType, directions, weight: 0.8, count: 1 };
+  return { source, target, relationType, directions, weight: 0.8, count: 1, ...overrides };
 }
 
 function input(overrides: Partial<LayoutMessage> = {}): LayoutMessage {
@@ -124,6 +129,70 @@ describe("semantic layout algorithm", () => {
     expect(second).toEqual(first);
   });
 
+  it("preserves Dagre's crossing-minimized order within overview ranks", () => {
+    const nodes = [
+      node("a-source"),
+      node("b-source"),
+      node("a-target"),
+      node("b-target"),
+    ];
+    const edges = [edge("a-source", "b-target"), edge("b-source", "a-target")];
+    const first = computeLayout(input({ nodes, edges }));
+    const reversed = computeLayout(input({ nodes: [...nodes].reverse(), edges: [...edges].reverse() }));
+    const sourceOrder = first.positions["a-source"]!.y - first.positions["b-source"]!.y;
+    const targetOrder = first.positions["b-target"]!.y - first.positions["a-target"]!.y;
+
+    expect(sourceOrder * targetOrder).toBeGreaterThan(0);
+    expect(reversed).toEqual(first);
+  });
+
+  it("groups overview isolates by cluster and orders important peers first", () => {
+    const nodes = [
+      node("a-low", "scope", { clusterId: "alpha", importance: 0 }),
+      node("z-high", "scope", { clusterId: "alpha", importance: 1 }),
+      node("0-beta", "scope", { clusterId: "beta", importance: 0.5 }),
+      node("00-unclustered", "scope", { importance: 0.25 }),
+    ];
+    const message = input({
+      viewport: quantizeGraphViewport(1840, 720),
+      nodes,
+      edges: [],
+    });
+    const result = computeLayout(message);
+    const high = result.positions["z-high"]!;
+    const low = result.positions["a-low"]!;
+    const beta = result.positions["0-beta"]!;
+    const unclustered = result.positions["00-unclustered"]!;
+
+    expect(high.x).toBeLessThan(low.x);
+    expect(low.x).toBeLessThan(beta.x);
+    expect(beta.x).toBeLessThan(unclustered.x);
+    expect(beta.x - (low.x + dimensions.scope.width))
+      .toBeGreaterThan(low.x - (high.x + dimensions.scope.width));
+    expect(computeLayout({ ...message, nodes: [...nodes].reverse() })).toEqual(result);
+    expectNodeRectanglesDoNotOverlap(message, result);
+  });
+
+  it("uses edge count, semantic weight, and role as independent Dagre layout signals", () => {
+    const nodes = ["a", "b", "c", "d", "e", "f"].map((id) => node(id));
+    const layoutFor = (overrides: Parameters<typeof edge>[4]): LayoutResult => computeLayout(input({
+      nodes,
+      edges: [
+        edge("a", "c", ["forward"], "depends_on", overrides),
+        edge("a", "d"),
+        edge("a", "e"),
+        edge("a", "f"),
+        edge("b", "c"),
+      ],
+    }));
+
+    expect(layoutFor({ count: 64 }).positions).not.toEqual(layoutFor({ count: 1 }).positions);
+    expect(layoutFor({ weight: 4 }).positions).not.toEqual(layoutFor({ weight: 0 }).positions);
+    expect(layoutFor({ role: "backbone" }).positions).not.toEqual(
+      layoutFor({ role: "context" }).positions,
+    );
+  });
+
   it("ranks backward relationships from target to source", () => {
     const result = computeLayout(input({
       nodes: [node("source"), node("target")],
@@ -190,6 +259,36 @@ describe("semantic layout algorithm", () => {
     expectBoundsContainNodes(input({ level, viewport, nodes, edges }), first);
   });
 
+  it("lays out lower-level projected boundary cycles without falling back to the grid", () => {
+    const nodes = [
+      node("src", "cluster"),
+      node("skills", "cluster"),
+      node("boundary:test", "boundary"),
+      node("boundary:docs", "boundary"),
+      node("boundary:project", "boundary"),
+    ];
+    const edges = [
+      edge("src", "boundary:test"),
+      edge("boundary:project", "src"),
+      edge("skills", "boundary:test"),
+      edge("boundary:test", "skills"),
+      edge("boundary:docs", "skills"),
+    ];
+    const message = input({
+      level: "scope",
+      viewport: quantizeGraphViewport(1_248, 486),
+      nodes,
+      edges,
+    });
+
+    const result = computeLayout(message);
+
+    expect(isValidLayoutResult(message, result)).toBe(true);
+    expectNodeRectanglesDoNotOverlap(message, result);
+    expect(computeLayout({ ...message, nodes: [...nodes].reverse(), edges: [...edges].reverse() }))
+      .toEqual(result);
+  });
+
   it.each([
     ["scope", "portrait", 390, 780, "y"],
     ["cluster", "balanced", 800, 640, "y"],
@@ -228,6 +327,34 @@ describe("semantic layout algorithm", () => {
     expectBoundsContainNodes(message, result);
     expect(computeStableGridLayout({ ...message, nodes: [...message.nodes].reverse() })).toEqual(result);
   });
+
+  it.each(["overview", "cluster"] as const)(
+    "keeps dense mixed-importance %s layouts deterministic and non-overlapping",
+    (level) => {
+      const nodes = Array.from({ length: 12 }, (_, index) => node(
+        `node:${String(index).padStart(2, "0")}`,
+        level === "overview" ? "scope" : "file",
+        { clusterId: `cluster:${index % 3}`, importance: (index % 5) / 4 },
+      ));
+      const edges = nodes.slice(1).map((item, index) => edge(nodes[Math.floor(index / 2)]!.id, item.id, ["forward"], "calls", {
+        count: index + 1,
+        weight: (index % 4) + 0.5,
+        role: index % 3 === 0 ? "backbone" : "secondary",
+      }));
+      const message = input({ level, nodes, edges });
+      const result = computeLayout(message);
+      const reversed = computeLayout({
+        ...message,
+        nodes: [...nodes].reverse(),
+        edges: [...edges].reverse(),
+      });
+
+      expect(reversed).toEqual(result);
+      expect(isValidLayoutResult(message, result)).toBe(true);
+      expectNodeRectanglesDoNotOverlap(message, result);
+      expectBoundsContainNodes(message, result);
+    },
+  );
 });
 
 describe("layout result validation", () => {
@@ -245,6 +372,14 @@ describe("layout result validation", () => {
     ["non-finite position", { ...valid, positions: { ...valid.positions, a: { x: Number.NaN, y: 2 } } }],
     ["duplicate position", { ...valid, positions: { a: { x: 10, y: 10 }, b: { x: 10, y: 10 } } }],
     ["non-finite bounds", { ...valid, bounds: { ...valid.bounds, width: Number.POSITIVE_INFINITY } }],
+    ["partially overlapping rectangles", {
+      ...valid,
+      positions: {
+        a: { x: 48, y: 48 },
+        b: { x: 48 + dimensions.scope.width - 1, y: 58 },
+      },
+      bounds: { x: 0, y: 0, width: 800, height: 400 },
+    }],
   ] as const)("rejects %s", (_label, result) => {
     expect(isValidLayoutResult(message, result)).toBe(false);
   });

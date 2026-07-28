@@ -11,6 +11,7 @@ import {
   buildGraphHierarchyIndex,
   buildHierarchicalSemanticGraph,
   buildHierarchySelectionExpansion,
+  createHierarchicalGraphProjectionContext,
   graphNodePlacementClass,
   mergeHierarchySelectionExpansion,
   scopeNodeId,
@@ -128,6 +129,10 @@ describe("large repository acceptance", () => {
     const fixture = largeRepositoryFixture();
     const runtime = buildWikiRuntimeIndex(fixture.wiki);
     const hierarchyIndex = buildGraphHierarchyIndex(fixture.graph);
+    const projectionContext = createHierarchicalGraphProjectionContext({
+      graph: fixture.graph,
+      wikiIndex: runtime,
+    });
     const scope = hierarchyIndex.scopes[0]!;
     const cluster = hierarchyIndex.clusterById.get(scope.clusterIds[0]!)!;
     const navigation = { level: "cluster" as const, scopeId: scope.id, clusterId: cluster.id };
@@ -135,6 +140,7 @@ describe("large repository acceptance", () => {
       graph: fixture.graph,
       hierarchyIndex,
       wikiIndex: runtime,
+      projectionContext,
       mode: "call",
       selectedNodeId: null,
       navigation,
@@ -151,6 +157,7 @@ describe("large repository acceptance", () => {
       graph: fixture.graph,
       hierarchyIndex,
       wikiIndex: runtime,
+      projectionContext,
       mode: "call",
       selectedNodeId: selectedId,
       navigation,
@@ -171,6 +178,10 @@ describe("large repository acceptance", () => {
     const fixture = largeRepositoryFixture();
     const runtime = buildWikiRuntimeIndex(fixture.wiki);
     const hierarchyIndex = buildGraphHierarchyIndex(fixture.graph);
+    const projectionContext = createHierarchicalGraphProjectionContext({
+      graph: fixture.graph,
+      wikiIndex: runtime,
+    });
     const reachable = new Set<string>();
     const memberKeys = new Set<string>();
     const fileClusterVisits = new Map<string, Set<string>>();
@@ -195,6 +206,7 @@ describe("large repository acceptance", () => {
         graph: fixture.graph,
         hierarchyIndex,
         wikiIndex: runtime,
+        projectionContext,
         mode,
         navigation: { level: "overview" },
         materializedNodeId: null,
@@ -209,6 +221,7 @@ describe("large repository acceptance", () => {
           graph: fixture.graph,
           hierarchyIndex,
           wikiIndex: runtime,
+          projectionContext,
           mode,
           navigation: { level: "scope", scopeId: scope.id },
           materializedNodeId: null,
@@ -224,6 +237,7 @@ describe("large repository acceptance", () => {
             graph: fixture.graph,
             hierarchyIndex,
             wikiIndex: runtime,
+            projectionContext,
             mode,
             navigation,
             materializedNodeId: null,
@@ -242,6 +256,7 @@ describe("large repository acceptance", () => {
                 graph: fixture.graph,
                 hierarchyIndex,
                 wikiIndex: runtime,
+                projectionContext,
                 mode,
                 navigation,
                 materializedNodeId: fileId,
@@ -260,6 +275,7 @@ describe("large repository acceptance", () => {
               graph: fixture.graph,
               hierarchyIndex,
               wikiIndex: runtime,
+              projectionContext,
               mode,
               navigation: fileNavigation,
               materializedNodeId: null,
@@ -273,6 +289,7 @@ describe("large repository acceptance", () => {
                   graph: fixture.graph,
                   hierarchyIndex,
                   wikiIndex: runtime,
+                  projectionContext,
                   mode,
                   navigation: fileNavigation,
                   materializedNodeId: symbol.id,
@@ -292,6 +309,7 @@ describe("large repository acceptance", () => {
               graph: fixture.graph,
               hierarchyIndex,
               wikiIndex: runtime,
+              projectionContext,
               mode,
               navigation,
               materializedNodeId: nodeId,
@@ -310,6 +328,7 @@ describe("large repository acceptance", () => {
           graph: fixture.graph,
           hierarchyIndex,
           wikiIndex: runtime,
+          projectionContext,
           mode,
           navigation: location.scopeId
             ? { level: "scope", scopeId: location.scopeId }
@@ -343,6 +362,7 @@ describe("large repository acceptance", () => {
   it("makes every hierarchy object reachable through a deterministic Quick Jump intent", () => {
     const { graph } = largeRepositoryFixture();
     const hierarchyIndex = buildGraphHierarchyIndex(graph);
+    const projectionContext = createHierarchicalGraphProjectionContext({ graph });
     const quickJumpIndex = buildGraphQuickJumpIndex({ graph, hierarchyIndex });
     const quickItems = quickJumpIndex.items;
     const reachableIds = new Set(quickItems.map((item) => item.id));
@@ -361,6 +381,7 @@ describe("large repository acceptance", () => {
         naturalBaseGraph = buildHierarchicalSemanticGraph({
           graph,
           hierarchyIndex,
+          projectionContext,
           mode: "architecture",
           navigation: intent.navigation,
           materializedNodeId: null,
@@ -375,6 +396,7 @@ describe("large repository acceptance", () => {
       return buildHierarchicalSemanticGraph({
         graph,
         hierarchyIndex,
+        projectionContext,
         mode: "architecture",
         navigation: intent.navigation,
         materializedNodeId: intent.materializedNodeId,
@@ -406,6 +428,7 @@ describe("large repository acceptance", () => {
         graph,
         hierarchyIndex,
         baseGraph,
+        projectionContext,
         mode: "architecture",
         selectedNodeId: intent.selectionId,
       });

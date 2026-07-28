@@ -38,6 +38,14 @@ export interface GraphQuickJumpItem {
   intent: GraphNavigationIntent;
 }
 
+export interface GraphQuickJumpIndex {
+  items: readonly GraphQuickJumpItem[];
+  resolve(input: {
+    objectId: string;
+    source: GraphNavigationIntent["source"];
+  }): GraphNavigationIntent | null;
+}
+
 interface BoundaryDescriptor {
   currentScopeId: string;
   targetScopeId: string;
@@ -264,12 +272,12 @@ function rawKind(node: GraphNode): GraphQuickJumpKind {
   return "raw";
 }
 
-export function buildGraphQuickJumpItems(input: {
+function buildGraphQuickJumpItemsFromContext(input: {
   graph: KnowledgeGraph;
   hierarchyIndex: GraphHierarchyIndex;
+  context: QuickJumpContext;
 }): GraphQuickJumpItem[] {
-  const { graph, hierarchyIndex } = input;
-  const context = buildQuickJumpContext(graph, hierarchyIndex);
+  const { graph, hierarchyIndex, context } = input;
   const items: GraphQuickJumpItem[] = [];
   const push = (
     item: Omit<GraphQuickJumpItem, "intent">,
@@ -321,6 +329,26 @@ export function buildGraphQuickJumpItems(input: {
   const unique = new Map<string, GraphQuickJumpItem>();
   for (const item of items) if (!unique.has(item.id)) unique.set(item.id, item);
   return [...unique.values()].sort(compareItems);
+}
+
+export function buildGraphQuickJumpIndex(input: {
+  graph: KnowledgeGraph;
+  hierarchyIndex: GraphHierarchyIndex;
+}): GraphQuickJumpIndex {
+  const { graph, hierarchyIndex } = input;
+  const context = buildQuickJumpContext(graph, hierarchyIndex);
+  return {
+    items: buildGraphQuickJumpItemsFromContext({ graph, hierarchyIndex, context }),
+    resolve: ({ objectId, source }) =>
+      intentForObject(objectId, source, hierarchyIndex, context),
+  };
+}
+
+export function buildGraphQuickJumpItems(input: {
+  graph: KnowledgeGraph;
+  hierarchyIndex: GraphHierarchyIndex;
+}): GraphQuickJumpItem[] {
+  return [...buildGraphQuickJumpIndex(input).items];
 }
 
 function normalizeSearchValue(value: string): string {

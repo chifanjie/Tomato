@@ -17,7 +17,7 @@ import {
   type HierarchicalSemanticGraph,
 } from "../hierarchicalGraph.js";
 import {
-  buildGraphQuickJumpItems,
+  buildGraphQuickJumpIndex,
   resolveGraphNavigationIntent,
 } from "../graphQuickJump.js";
 
@@ -343,9 +343,43 @@ describe("large repository acceptance", () => {
   it("makes every hierarchy object reachable through a deterministic Quick Jump intent", () => {
     const { graph } = largeRepositoryFixture();
     const hierarchyIndex = buildGraphHierarchyIndex(graph);
-    const quickItems = buildGraphQuickJumpItems({ graph, hierarchyIndex });
+    const quickJumpIndex = buildGraphQuickJumpIndex({ graph, hierarchyIndex });
+    const quickItems = quickJumpIndex.items;
     const reachableIds = new Set(quickItems.map((item) => item.id));
     const expectedBoundaryIds = new Set<string>();
+    const naturalBaseGraphByNavigation = new Map<string, HierarchicalSemanticGraph>();
+    let baseProjectionBuildCount = 0;
+    const baseGraphFor = (intent: (typeof quickItems)[number]["intent"]): HierarchicalSemanticGraph => {
+      const navigationKey = JSON.stringify([
+        intent.navigation.level,
+        intent.navigation.scopeId ?? "",
+        intent.navigation.clusterId ?? "",
+        intent.navigation.fileId ?? "",
+      ]);
+      let naturalBaseGraph = naturalBaseGraphByNavigation.get(navigationKey);
+      if (!naturalBaseGraph) {
+        naturalBaseGraph = buildHierarchicalSemanticGraph({
+          graph,
+          hierarchyIndex,
+          mode: "architecture",
+          navigation: intent.navigation,
+          materializedNodeId: null,
+        });
+        naturalBaseGraphByNavigation.set(navigationKey, naturalBaseGraph);
+        baseProjectionBuildCount += 1;
+      }
+      if (naturalBaseGraph.nodes.some((node) => node.id === intent.materializedNodeId)) {
+        return naturalBaseGraph;
+      }
+      baseProjectionBuildCount += 1;
+      return buildHierarchicalSemanticGraph({
+        graph,
+        hierarchyIndex,
+        mode: "architecture",
+        navigation: intent.navigation,
+        materializedNodeId: intent.materializedNodeId,
+      });
+    };
     for (const edge of graph.edges) {
       const sourceScope = hierarchyIndex.nodeLocationById.get(edge.source)?.scopeId;
       const targetScope = hierarchyIndex.nodeLocationById.get(edge.target)?.scopeId;
@@ -360,21 +394,13 @@ describe("large repository acceptance", () => {
     expect([...hierarchyIndex.clusterById.keys()].every((id) => reachableIds.has(id))).toBe(true);
     expect(graph.nodes.every((node) => reachableIds.has(node.id))).toBe(true);
     for (const item of quickItems) {
-      const intent = resolveGraphNavigationIntent({
+      const intent = quickJumpIndex.resolve({
         objectId: item.id,
         source: "quick-jump",
-        graph,
-        hierarchyIndex,
       });
       expect(intent).toEqual(item.intent);
       if (!intent) throw new Error(`missing intent for ${item.id}`);
-      const baseGraph = buildHierarchicalSemanticGraph({
-        graph,
-        hierarchyIndex,
-        mode: "architecture",
-        navigation: intent.navigation,
-        materializedNodeId: intent.materializedNodeId,
-      });
+      const baseGraph = baseGraphFor(intent);
       expect(baseGraph.nodes.some((node) => node.id === intent.materializedNodeId)).toBe(true);
       const expansion = buildHierarchySelectionExpansion({
         graph,
@@ -388,6 +414,7 @@ describe("large repository acceptance", () => {
       expect(rendered.presentation.breadcrumbs.map((item) => item.level) as string[])
         .not.toContain("symbol");
     }
+    expect(baseProjectionBuildCount).toBeLessThan(quickItems.length * 0.8);
   });
 
   it("materializes a call-only boundary before selection without leaking a calls edge in architecture mode", () => {

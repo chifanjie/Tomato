@@ -8,6 +8,7 @@ import {
   type GraphHierarchyIndex,
 } from "../hierarchicalGraph.js";
 import {
+  buildGraphQuickJumpIndex,
   buildGraphQuickJumpItems,
   resolveGraphNavigationIntent,
   searchGraphQuickJump,
@@ -74,11 +75,20 @@ function resolve(
   });
 }
 
-function rejectLinearMembershipReads<T>(values: readonly T[]): readonly T[] {
+function trackHierarchyReads<T>(
+  values: readonly T[],
+  onIterate: () => void,
+): T[] {
   return new Proxy([...values], {
     get(target, property, receiver) {
       if (property === "includes" || property === "some" || property === "find") {
         throw new Error(`unexpected per-item hierarchy scan through ${String(property)}`);
+      }
+      if (property === Symbol.iterator) {
+        return () => {
+          onIterate();
+          return target[Symbol.iterator]();
+        };
       }
       return Reflect.get(target, property, receiver);
     },
@@ -318,26 +328,47 @@ describe("graph Quick Jump model", () => {
       .toEqual(items.slice(0, 30).map((item) => item.id));
   });
 
-  it("resolves all items from preindexed hierarchy membership without per-item array scans", () => {
-    const graph = workspaceHierarchyFixture();
+  it("reuses one preindexed hierarchy context for every item without per-item array scans", () => {
+    const fixture = workspaceHierarchyFixture();
+    let hierarchyIterationCount = 0;
+    const track = <T>(values: readonly T[]): T[] =>
+      trackHierarchyReads(values, () => {
+        hierarchyIterationCount += 1;
+      });
+    const graph: KnowledgeGraph = {
+      ...fixture,
+      edges: track(fixture.edges),
+    };
     const original = buildGraphHierarchyIndex(graph);
     const scopes = original.scopes.map((scope) => ({
       ...scope,
-      clusterIds: rejectLinearMembershipReads(scope.clusterIds),
-      nodeIds: rejectLinearMembershipReads(scope.nodeIds),
+      clusterIds: track(scope.clusterIds),
+      nodeIds: track(scope.nodeIds),
     }));
     const clusters = [...original.clusterById.values()].map((cluster) => ({
       ...cluster,
-      fileIds: rejectLinearMembershipReads(cluster.fileIds),
-      nodeIds: rejectLinearMembershipReads(cluster.nodeIds),
+      fileIds: track(cluster.fileIds),
+      nodeIds: track(cluster.nodeIds),
     }));
     const hierarchyIndex: GraphHierarchyIndex = {
       ...original,
-      scopes: rejectLinearMembershipReads(scopes),
+      scopes: track(scopes),
       scopeById: new Map(scopes.map((scope) => [scope.id, scope])),
       clusterById: new Map(clusters.map((cluster) => [cluster.id, cluster])),
     };
 
-    expect(() => buildGraphQuickJumpItems({ graph, hierarchyIndex })).not.toThrow();
+    const quickJumpIndex = buildGraphQuickJumpIndex({ graph, hierarchyIndex });
+    const iterationsAfterBuild = hierarchyIterationCount;
+    for (const item of quickJumpIndex.items) {
+      expect(quickJumpIndex.resolve({
+        objectId: item.id,
+        source: "quick-jump",
+      })).toEqual(item.intent);
+      expect(quickJumpIndex.resolve({
+        objectId: item.id,
+        source: "wiki-focus",
+      })).toEqual({ ...item.intent, source: "wiki-focus" });
+    }
+    expect(hierarchyIterationCount).toBe(iterationsAfterBuild);
   });
 });

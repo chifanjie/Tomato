@@ -1,7 +1,7 @@
 ---
 name: understand-full
-description: Run the full Understand Code workflow: generate graph, launch dashboard, generate knowledge base, and link the dashboard to the generated knowledge base
-argument-hint: [project-path] [--full] [--review] [--language <lang>] [--parallel 1|2] [--resume] [--deterministic-kb] [--include-extended-topics] [--no-dashboard]
+description: "Run the full Understand Code workflow: generate graph, launch dashboard, generate knowledge base, and link the dashboard to the generated knowledge base"
+argument-hint: "[project-path] [--full] [--review] [--language <lang>] [--parallel 1|2] [--resume] [--deterministic-kb] [--include-extended-topics] [--no-dashboard]"
 ---
 
 # /understand-full

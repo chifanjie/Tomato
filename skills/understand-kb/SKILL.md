@@ -1,7 +1,7 @@
 ---
 name: understand-kb
 description: Generate a complete Markdown knowledge base from an existing understand-code code knowledge graph
-argument-hint: [project-path] [--parallel 1|2] [--resume] [--include-extended-topics] [--deterministic-only]
+argument-hint: "[project-path] [--parallel 1|2] [--resume] [--include-extended-topics] [--deterministic-only]"
 ---
 
 # /understand-kb

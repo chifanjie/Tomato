@@ -1,7 +1,7 @@
 # WP2 Repository State and Repo Pulse Matrix
 
-> Status: local implementation and exact-tree root gates passed; independent
-> feature push and remote CI remain required before WP2 closure.
+> Status: closed. Local implementation, exact-tree root verification,
+> independent feature push, and remote CI all passed.
 
 ## 1. Purpose
 
@@ -232,6 +232,16 @@ Exact staged-tree verification:
 - root `pnpm quality`: passed;
 - temporary worktree removed after verification.
 
+Remote verification:
+
+- feature commit: `0e59237516409a46842995aab195d0fcac0bb968`;
+- branch: `feature/agent-native-change-intelligence`;
+- GitHub Actions workflow: `CI`;
+- run: `30366487231`;
+- result: passed;
+- URL:
+  `https://github.com/chifanjie/Tomato/actions/runs/30366487231`.
+
 ## 11. Residual boundaries
 
 - Raw non-UTF-8 Git path behavior is exercised only on Linux.
@@ -257,7 +267,8 @@ Exact staged-tree verification:
 - [x] Local performance probe recorded.
 - [x] Exact staged tree installs with `pnpm install --frozen-lockfile`.
 - [x] Exact staged tree passes the root `pnpm quality` gate.
-- [ ] WP2 feature commit is pushed independently.
-- [ ] Remote GitHub Actions quality gate passes that commit.
+- [x] WP2 feature commit is pushed independently.
+- [x] Remote GitHub Actions quality gate passes that commit.
 
-WP2 is not closed until the two remaining items are recorded.
+WP2 is closed. Its repository-state and Repo Pulse boundary is ready for WP3
+Artifact Store integration.

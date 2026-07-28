@@ -12,15 +12,7 @@ const skillFiles = readdirSync(skillsRoot, { withFileTypes: true })
   .map((entry) => ({
     directoryName: entry.name,
     path: join(skillsRoot, entry.name, "SKILL.md"),
-  }))
-  .filter(({ path }) => {
-    try {
-      readFileSync(path);
-      return true;
-    } catch {
-      return false;
-    }
-  });
+  }));
 
 describe("skill frontmatter", () => {
   it.each(skillFiles)(

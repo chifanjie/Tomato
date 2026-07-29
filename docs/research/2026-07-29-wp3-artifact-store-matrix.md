@@ -1,7 +1,7 @@
 # WP3 Artifact Store, Evidence, and Recovery Matrix
 
-> Status: local implementation and exact staged-tree verification complete;
-> feature push and remote CI are pending.
+> Status: WP3 implementation, exact staged-tree verification, independent
+> audit, feature push, and remote CI are complete.
 
 ## 1. Purpose
 
@@ -190,7 +190,10 @@ Current package verification:
 - exact staged-tree `pnpm install --frozen-lockfile`: passed;
 - exact staged-tree root `pnpm quality`: passed (1,846 tests passed and one
   platform-conditional Repository State test skipped);
-- remote GitHub Actions: pending.
+- feature commit:
+  `11ef2374ce7ec2f828f94008fb926add46c6b12d`;
+- remote GitHub Actions CI run
+  `30426962180`: passed (`Quality gate`, 4m28s).
 
 ## 10. Residual threat boundary
 
@@ -219,5 +222,20 @@ ownership and risking a newer generation.
 - [x] Independent final re-audit passes.
 - [x] Exact staged tree installs with `pnpm install --frozen-lockfile`.
 - [x] Exact staged tree passes root `pnpm quality`.
-- [ ] WP3 feature commit is pushed independently.
-- [ ] Remote GitHub Actions quality gate passes that commit.
+- [x] WP3 feature commit is pushed independently.
+- [x] Remote GitHub Actions quality gate passes that commit.
+
+## 12. Closure evidence
+
+- Branch: `feature/agent-native-change-intelligence`
+- Exact final staged tree:
+  `f6df4c967f1ae558ddc00dc3556ce82447f56ac2`
+- Feature commit:
+  `11ef2374ce7ec2f828f94008fb926add46c6b12d`
+- CI workflow/run: `CI` / `30426962180`
+- CI result: `success`
+
+WP3 is closed. WP4 may build its persistent Task lifecycle only through the
+high-level Store transaction boundary. Whole-Task recovery and full
+idempotency-record reconstruction remain explicit WP4 contract work; no WP4
+caller may compose Task state from single-file recovery.

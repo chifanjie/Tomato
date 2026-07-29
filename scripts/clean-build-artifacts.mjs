@@ -6,6 +6,7 @@ export const BUILD_ARTIFACT_PATHS = Object.freeze([
   "dist",
   "packages/contracts/dist",
   "packages/repository-state/dist",
+  "packages/artifact-store/dist",
   "packages/core/dist",
   "packages/dashboard/dist",
   "packages/dashboard/node_modules/.tmp/tsconfig.app.tsBuildInfoFile",

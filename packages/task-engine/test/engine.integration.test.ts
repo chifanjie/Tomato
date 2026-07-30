@@ -264,6 +264,20 @@ function engine(
   });
 }
 
+async function expectStoreLocksReleased(
+  store: ArtifactStore,
+  taskId: string,
+): Promise<void> {
+  await Promise.all([
+    expect(lstat(store.layout.taskLock(taskId))).rejects.toMatchObject({
+      code: "ENOENT",
+    }),
+    expect(lstat(store.layout.repositoryLock)).rejects.toMatchObject({
+      code: "ENOENT",
+    }),
+  ]);
+}
+
 async function reopenStore(root: string): Promise<ArtifactStore> {
   const store = await ArtifactStore.open(root, {
     repositoryId: REPOSITORY_ID,
@@ -977,14 +991,7 @@ describe("TaskEngine persistent integration", () => {
     expect(
       results.filter((result) => result.mutation.idempotentReplay).length,
     ).toBeGreaterThan(0);
-    await Promise.all([
-      expect(lstat(store.layout.taskLock(taskId))).rejects.toMatchObject({
-        code: "ENOENT",
-      }),
-      expect(lstat(store.layout.repositoryLock)).rejects.toMatchObject({
-        code: "ENOENT",
-      }),
-    ]);
+    await expectStoreLocksReleased(store, taskId);
   }, CONCURRENT_BUILD_LOCK_TIMEOUT_MS + 5_000);
 
   it("builds deterministic Task identities and persisted payload digests across Stores", async () => {
@@ -2275,7 +2282,10 @@ describe("TaskEngine persistent integration", () => {
       { type: "transition_status", to: "verified" },
       "full-transition-verified",
     );
-    expect(terminal.task.status).toBe("verified");
+    expect(terminal.task).toMatchObject({
+      status: "verified",
+      revision: 16,
+    });
 
     const persisted = await store.readTaskBundle(built.task.taskId);
     if (!("brief" in persisted.bundle)) {
@@ -2298,6 +2308,8 @@ describe("TaskEngine persistent integration", () => {
         "accept_verification_skip",
       ]),
     );
+    expect(persisted.bundle.events).toHaveLength(16);
+    expect(persisted.receipts).toHaveLength(16);
 
     await expect(
       taskEngine.updateTask(
@@ -2314,7 +2326,8 @@ describe("TaskEngine persistent integration", () => {
         auth(["task:supersede"]),
       ),
     ).rejects.toMatchObject({ code: "task_transition_rejected" });
-  });
+    await expectStoreLocksReleased(store, built.task.taskId);
+  }, 15_000);
 
   it("supersedes a stale read on the current Repository Snapshot without a new Pulse", async () => {
     const { store } = await openStore();
@@ -2692,7 +2705,10 @@ describe("TaskEngine persistent integration", () => {
     expect(persisted.receipts.map((receipt) => receipt.operation)).toEqual(
       expect.arrayContaining(["check_change", "record_verification"]),
     );
-  });
+    expect(persisted.bundle.events).toHaveLength(12);
+    expect(persisted.receipts).toHaveLength(12);
+    await expectStoreLocksReleased(store, taskId);
+  }, 15_000);
 
   it("invalidates a page cursor after a Task revision changes", async () => {
     const { store } = await openStore();

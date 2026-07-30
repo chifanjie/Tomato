@@ -1,10 +1,12 @@
 # Understand Code：Agent-native Code Change Intelligence 项目研制计划
 
-> 文档状态：Approved / Contract Frozen v1.0
+> 文档状态：Approved / Contract Frozen v1.2（含 WP4 Decision Amendment D-22～D-23）
 >
 > 日期：2026-07-27
 >
 > Contract Freeze：2026-07-28，见 `docs/research/2026-07-28-g0-contract-freeze-record.md`
+>
+> WP4 Contract Amendment：2026-07-29；`build_task_brief` 的可恢复两阶段编排与可信 Operation Journal 见 D-22，Repo Pulse 不可变历史与原子切换见 D-23
 >
 > 适用范围：`understand-code` 产品、Core、Agent 插件、MCP、本地服务与 Dashboard
 >
@@ -437,6 +439,39 @@ stale 只能：
 - 每次 Mutation 使用 revision/CAS、idempotency key 和 append-only Event；失败、冲突与重放不产生重复 revision/Event。
 - 完整 Guard、幂等与恢复规则以 `docs/research/2026-07-28-g0-contract-freeze-record.md` 第 5 节为准，WP1/WP4 不得自行增加状态或跨阶段跳转。
 
+#### 4.2.1 `build_task_brief` 可恢复两阶段编排
+
+`build_task_brief` 是一个对 Host 暴露的编排操作，不等同于一次底层 Mutation。
+公开输入仍使用 `expectedRevision=0`，并由
+`(worktreeId, createScope, idempotencyKey)` 稳定映射到同一个 Task ID；内部必须
+按以下两阶段持久化：
+
+1. `created@1`：先保存非空 intent、repo/worktree identity、baseline、唯一
+   `task_created` Genesis Event，以及对应的 Idempotency Record/Operation
+   Receipt。此阶段不伪造 Brief、Claim、Evidence、Impact、Check 或
+   Verification。
+2. `context_ready@2`：仅在 Repo Pulse 可用、Context 构建成功且所有引用通过
+   校验后，原子发布 Brief、Claim、Evidence、Impact 和第二条 Event，并保存
+   `build_task_brief` 的完整 Operation Receipt。
+
+每个阶段都严格满足 `revision = previousRevision + 1`，并且恰好追加一条
+Event；两阶段编排不能被实现成一次从 revision 0 直接写入 `context_ready@1`
+的跨状态捷径。若进程在第一阶段后中断，重试原 idempotency key 必须读取
+`created@1` 的可信事实并继续第二阶段，而不是创建第二个 Task；若 Context 仍
+不可用，则保留可恢复的 `created@1` 并返回明确 Gate 失败。
+
+`context_ready@2` 是没有中间 Lifecycle 操作时的标准结果。若 Stage 1 后 Agent
+合法执行了 `block_task → resume_task`，Task 会恢复为较高 revision 的
+`created@N`；此时 Stage 2 必须以当前 revision 做 CAS，并提交
+`context_ready@(N+1)`，不得把 revision 硬编码为 2、倒退历史或创建第二个
+Task。处于 `blocked`、`stale` 或 `superseded` 时不得直接发布 Context。
+
+该修订解决了“Genesis 必须是 `created@1`”“`created → context_ready` 必须是
+独立合法转移”和“每次成功 Mutation 只能 `+1 revision/+1 Event`”与公开
+`build_task_brief(expectedRevision=0)` 之间的组合歧义，不改变 Lifecycle V1
+的状态集合、允许转移或 Guard。完整修订与验收规则见 D-22 和
+`docs/research/2026-07-29-wp4-task-intelligence-matrix.md`。
+
 ### 4.3 Task Brief 必备内容
 
 - Task ID、标题、创建时间、更新时间和状态。
@@ -684,6 +719,7 @@ P0 默认不在 MCP Server 内再嵌入一个独立 LLM。
         ├── claims.json
         ├── evidence.json
         ├── impact.json
+        ├── operation-journal.json
         ├── change-check.json
         ├── verification.json
         └── events.jsonl
@@ -1653,6 +1689,7 @@ interface ArtifactEnvelopeV1<T> {
     | "claim_ledger"
     | "evidence_ledger"
     | "impact"
+    | "task_operation_journal"
     | "change_check"
     | "verification";
   artifactId: string;
@@ -1726,6 +1763,22 @@ type VerificationArtifactV1 = ArtifactEnvelopeV1<{ records: VerificationRecordV1
 ```
 
 `TaskBriefV1` 中涉及目标、验收、建议、风险和未知的字段只保存 Claim ID；Markdown 与 UI 再解析 `statement`。Artifact Store 必须拒绝 dangling Claim/Evidence/Finding/Verification 引用。`repository_snapshot` 是自描述 Artifact，其 Envelope `sourceSnapshotId` 必须等于 payload `snapshotId`。
+
+`task_operation_journal` 是 Task Mutation 的可信持久化事实，不是可丢弃的性能
+缓存。它必须保存从 Genesis 开始的完整 `IdempotencyRecordV1[]` 与
+`TaskOperationReceiptV1[]`，二者按 Event 一一对应；每个 Receipt 保存首次提交
+时的完整结构化结果及其 canonical digest。可信读取必须校验 Envelope、Task
+identity、Event identity、result revision、Record/Receipt 双向映射与结果
+digest。内存映射、只保留最近结果的缓存、`.idempotency.json` 或调用方拼接的
+单文件不能替代该 Journal。
+
+因此，同 key、同 Actor、同 request digest 的历史重试，即使 Task 已前进到更高
+revision，也必须从 Journal 返回首次持久化结果并标记 replay，不新增
+revision/Event；同 key 不同 payload 或 Actor 必须返回
+`idempotency_conflict`。Journal、Task Artifact、Event 与 Manifest 由同一
+revision CAS 原子提交；任何一个无法验证时，整个 Task Bundle fail closed。
+`change_check` 与 `verification` 是后续 Lifecycle Artifact，
+`context_ready@2` 不得为了满足 Store 读取而伪造空 Check/Verification。
 
 ### 9.1 RepositorySnapshot V1
 
@@ -2254,6 +2307,14 @@ WP0 只关闭 **Contract Freeze Gate**：冻结产品范围、Root/Error/Rendezv
 - 将 Goal/Acceptance/Recommendation/Risk/Unknown 生成稳定 Claim，并支持强类型确认 Action。
 - 实现 tokenBudget、cursor、maxDepth、maxCandidates。
 - 增加任务状态机。
+- 将 `buildTaskBrief()` 实现为可恢复的
+  `created@1 → context_ready@2` 标准两阶段编排，每阶段严格
+  `+1 revision/+1 Event`；若阶段间发生合法 Lifecycle 操作，Stage 2 从当前
+  `created@N` 推进到 `context_ready@(N+1)`。
+- 持久化完整 `task_operation_journal` 与 Operation Receipt；历史重试从可信
+  Journal 回放首次结果，不依赖进程内缓存。
+- 将旧 Repo Pulse 归档为不可变、可寻址历史版本，并以 Manifest 为 commit
+  point 原子切换新的 canonical Pulse，保证存量与终态 Task 的精确 Pin 可验证。
 
 交付物：
 
@@ -2270,6 +2331,15 @@ WP0 只关闭 **Contract Freeze Gate**：冻结产品范围、Root/Error/Rendezv
 - 影响路径有方向、原因、截断说明。
 - stale 数据不会静默参与。
 - 无 Embedding 时仍完整工作。
+- Context 构建失败或阶段间崩溃后保留可恢复的 `created@1`；原 key 重试只产生
+  一个 Task，并在无中间操作时继续到 `context_ready@2`；阶段间
+  block/resume 后从当前 revision 严格 `+1`。
+- `context_ready@2` 的可信 Bundle 不要求伪造 Change Check/Verification；
+  Journal、Artifact、Manifest 与两条 Event 必须通过完整性校验。
+- 同 key 同请求在任意后续 revision 都重放首次结果；同 key 不同
+  payload/Actor 拒绝；20 路并发创建不产生重复 Task、revision 或 Event。
+- 新 Snapshot/Pulse 可在已有 Task 后持续发布；新旧 Task 分别解析到其精确
+  Pulse 版本，故障恢复只标坏实际损坏的 canonical 版本。
 
 依赖：WP1 与 WP2/WP3 的最小可用接口；Week 3 可先基于 Fixture/In-memory Store 开发，Alpha 前切换正式实现。
 估算：2.5 周，5–6 person-weeks。
@@ -3306,11 +3376,79 @@ Unknown 是产品能力，不是失败状态。
 - 所有 Mutation 受 revision/CAS、idempotency key、状态 Guard 与 append-only Event 约束。
 - 完整允许转移、Guard、重试和恢复规则见 G0 Contract Freeze Record 第 5 节。
 
+### D-22：`build_task_brief` 使用可恢复两阶段编排与可信 Operation Journal
+
+状态：Accepted（2026-07-29 Contract Amendment）。
+
+- `build_task_brief(expectedRevision=0)` 是公开编排入口，不把两次底层状态提交
+  伪装成一次 Mutation。
+- 第一阶段原子持久化最小 recovery bundle：`created@1`、唯一
+  `task_created` Genesis Event、内部创建 Receipt 和完整 Idempotency Record。
+- 第二阶段在 Pulse/Context/引用全部可用后原子持久化完整 Context bundle：
+  `context_ready@2`、第二条 Event 与公开 `build_task_brief` Receipt。
+- 每个阶段分别且只增加一次 revision、追加一次 Event；失败阶段不预发布后续
+  Artifact，不跨过 `created → context_ready`。
+- `task_operation_journal` 保存所有 Idempotency Record 与完整历史 Receipt，是
+  跨进程恢复和历史 replay 的可信事实；最近结果缓存不具备该地位。
+- 同 key 重试必须稳定命中同一 Task。若只完成第一阶段，则继续第二阶段；若已
+  完成第二阶段，则返回首次结果；payload/Actor 不同则 fail closed。
+- `context_ready@2` 是标准无中间操作路径；Stage 1 后若发生合法
+  `block_task → resume_task`，第二阶段从恢复后的 `created@N` 以 CAS 提交
+  `context_ready@(N+1)`，不得硬编码 revision 2。
+- 新 live writer 必须随每次 Task revision 提交完整 Journal；只有显式 legacy
+  history import/migration 可接受无 Journal 历史。Receipt 除 result digest
+  外还必须与对应 Event 的 action、resultingStatus、Snapshot、repo/worktree
+  和 immutable Task identity 交叉一致。
+- 本修订不改变 D-21 的状态集合、允许转移和 Guard，只明确公开编排与底层
+  Mutation 的边界。旧的无 Journal Task 只能通过显式兼容读取/迁移处理，不能
+  被新 writer 静默提升为具备历史 replay 保证。
+
+修订原因：
+
+- `TaskEventV1` 已要求唯一 Genesis 为 `created@1`。
+- Lifecycle 已要求 `created → context_ready` 是独立合法转移。
+- Revision Contract 已要求每次成功 Mutation 恰好 `+1 revision/+1 Event`。
+- 因此直接把公开 `expectedRevision=0` 写成 `context_ready@1`，或让一次 Event
+  同时代表创建与 Context 就绪，都会违反已冻结契约。
+
+验收证据以
+`docs/research/2026-07-29-wp4-task-intelligence-matrix.md` 为准；至少覆盖阶段间
+崩溃恢复、旧 key 历史 replay、payload/Actor 冲突、20 路并发、进程重启可信
+读取以及非法 `resume_task` 状态恢复拒绝。
+
+### D-23：Repo Pulse 使用不可变历史版本与原子 canonical 切换
+
+状态：Accepted（2026-07-29 Contract Amendment）。
+
+- `.understand-code/repo-pulse.json` 只保存当前 canonical Pulse；每次生产写入
+  替换它之前，旧 envelope 必须按内容身份归档到
+  `.understand-code/pulses/<version-key>.json`，旧 descriptor 改为
+  `historical/stale`。
+- 已发布 Task 对 Pulse 的 `artifactId + contentDigest + sourceSnapshotId` 精确
+  Pin 永久保持可寻址；新 Pulse 不得删除、改写或复用旧身份。调用方复用旧逻辑
+  ID 时，Store 为新 current Pulse 确定性派生版本身份，并让返回值、descriptor
+  与幂等记录使用同一身份。
+- Pulse 切换使用 durable transaction marker，写入顺序为
+  `marker → history → canonical → Manifest`；Manifest 是 commit point。所有
+  可能修改 Manifest 的入口必须先恢复 Pulse/Task marker，marker 目录即使为空
+  也必须完成 fsync 后才能继续。
+- 旧 Pulse 变为 historical 后，依赖它的 Task/Artifact 递归变为 stale，但仍
+  可验证和读取；损坏或恢复失败只允许精确标坏实际 canonical descriptor，不得
+  污染完整的历史版本。
+- 本修订不新增 Artifact Type，也不改变 D-21 Lifecycle。显式 `migrateJson`
+  尚未统一到历史事务，WP8 Migration Gate 关闭前不得用它替换已有 Task Pin 的
+  Repo Pulse。
+
+修订原因：Task descriptor 必须精确 Pin 构建 Context 时使用的 Pulse。若只保留
+单一 canonical descriptor，任一存量或终态 Task 都会使后续 Pulse 发布永久
+冲突；若覆盖旧身份，则历史 Task 又无法验证。不可变历史版本是同时满足持续发布
+和历史可验证性的最小存储语义。
+
 ---
 
 ## 20. M0 冻结结果与延后决策
 
-原 M0 第 1–7 项已经分别由 D-13～D-19 冻结；Task Lifecycle 由 D-21 冻结。完整证据、Owner、试点 Pin 和 capability lock 见 `docs/research/2026-07-28-g0-contract-freeze-record.md`。
+原 M0 第 1–7 项已经分别由 D-13～D-19 冻结；Task Lifecycle 与 WP4 持久化修订由 D-21～D-23 冻结。完整证据、Owner、试点 Pin 和 capability lock 见 `docs/research/2026-07-28-g0-contract-freeze-record.md`。
 
 当前唯一按设计延后的 M0 决策是 D-20：
 

@@ -377,12 +377,7 @@
                       "type": "string",
                       "enum": [
                         "transition_not_allowed",
-                        "terminal_state",
-                        "context_not_ready",
-                        "current_check_required",
-                        "blocking_finding",
-                        "verification_required",
-                        "stale_context"
+                        "terminal_state"
                       ]
                     },
                     "allowedActions": {
@@ -434,6 +429,8 @@
                       "enum": [
                         "context_ready",
                         "planned",
+                        "in_progress",
+                        "check_required",
                         "verification_required",
                         "verified"
                       ]
@@ -446,8 +443,22 @@
                         "properties": {
                           "code": {
                             "type": "string",
-                            "minLength": 1,
-                            "maxLength": 256
+                            "enum": [
+                              "context_not_ready",
+                              "goal_not_confirmed",
+                              "acceptance_not_confirmed",
+                              "plan_not_confirmed",
+                              "worktree_binding_invalid",
+                              "snapshot_not_current",
+                              "current_check_required",
+                              "blocking_finding",
+                              "verification_required",
+                              "verification_failed",
+                              "verification_blocked",
+                              "verification_flaky",
+                              "freshness_invalid",
+                              "blocker_unresolved"
+                            ]
                           },
                           "resourceId": {
                             "type": "string",

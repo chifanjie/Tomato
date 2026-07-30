@@ -20,6 +20,11 @@ import {
 } from "./evidence.js";
 import { TaskArtifactBundleV1Schema } from "./invariants.js";
 import {
+  TaskOperationJournalArtifactV1Schema,
+  TaskOperationJournalPayloadV1Schema,
+  TaskOperationReceiptV1Schema,
+} from "./operation-journal.js";
+import {
   McpToolErrorResultV1Schema,
   P0_MCP_TOOL_CONTRACTS_V1,
   ToolErrorEnvelopeV1Schema,
@@ -68,6 +73,9 @@ export const CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
   "verification-record": VerificationRecordV1Schema,
   "verification-artifact": VerificationArtifactV1Schema,
   "task-event": TaskEventV1Schema,
+  "task-operation-receipt": TaskOperationReceiptV1Schema,
+  "task-operation-journal": TaskOperationJournalPayloadV1Schema,
+  "task-operation-journal-artifact": TaskOperationJournalArtifactV1Schema,
   "task-artifact-bundle": TaskArtifactBundleV1Schema,
   "tool-error-envelope": ToolErrorEnvelopeV1Schema,
   "mcp-tool-error-result": McpToolErrorResultV1Schema,

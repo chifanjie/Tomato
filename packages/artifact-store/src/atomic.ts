@@ -49,7 +49,7 @@ async function inject(
   await faultInjector?.({ stage, targetPath, temporaryPath });
 }
 
-async function fsyncDirectory(directory: string): Promise<void> {
+export async function fsyncDirectory(directory: string): Promise<void> {
   const handle = await open(directory, constants.O_RDONLY);
   try {
     await handle.sync();
@@ -83,6 +83,7 @@ export async function atomicWriteFile(
   );
   let temporaryExists = false;
   let renamed = false;
+  let durabilityConfirmed = false;
   let handle;
 
   try {
@@ -144,6 +145,7 @@ export async function atomicWriteFile(
     );
     await assertManagedParentStable(canonicalWorktreeRoot, targetPath);
     await fsyncDirectory(path.dirname(targetPath));
+    durabilityConfirmed = true;
     await inject(
       options.faultInjector,
       "after_directory_fsync",
@@ -158,7 +160,7 @@ export async function atomicWriteFile(
       await unlink(temporaryPath).catch(() => undefined);
     }
     if (error instanceof ArtifactStoreError) {
-      if (!renamed || error.details?.committed === true) throw error;
+      if (!renamed) throw error;
       throw new ArtifactStoreError(
         error.code,
         error.message,
@@ -166,6 +168,7 @@ export async function atomicWriteFile(
           ...error.details,
           targetPath,
           committed: true,
+          durabilityConfirmed,
         },
         { cause: error },
       );
@@ -173,9 +176,11 @@ export async function atomicWriteFile(
     throw new ArtifactStoreError(
       "artifact_corrupt",
       renamed
-        ? "Atomic write committed a complete file, but durability confirmation failed."
+        ? durabilityConfirmed
+          ? "Atomic write committed a durable file, but a post-commit hook failed."
+          : "Atomic write committed a complete file, but durability confirmation failed."
         : "Atomic write failed before the destination was replaced.",
-      { targetPath, committed: renamed },
+      { targetPath, committed: renamed, durabilityConfirmed },
       { cause: error },
     );
   }

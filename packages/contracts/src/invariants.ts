@@ -18,6 +18,7 @@ import {
   RepoPulseArtifactV1Schema,
   RepositorySnapshotArtifactV1Schema,
 } from "./repository.js";
+import { TaskOperationJournalArtifactV1Schema } from "./operation-journal.js";
 import {
   IdempotencyRecordV1Schema,
   TaskBriefArtifactV1Schema,
@@ -106,6 +107,71 @@ const validateTaskEventGenesisV1 = (
   }
 };
 
+const validateTaskExceptionalLifecycleV1 = (
+  events: readonly TaskEventV1[],
+  context: z.RefinementCtx,
+): void => {
+  events.forEach((event, eventIndex) => {
+    const actionType = event.action.type;
+    if (
+      event.previousStatus === "blocked" &&
+      !["resume_task", "task_context_staled", "supersede_task"].includes(
+        actionType,
+      )
+    ) {
+      addIssue(
+        context,
+        ["events", eventIndex, "action", "type"],
+        "blocked Tasks only allow resume_task, task_context_staled, or supersede_task",
+      );
+    }
+    if (
+      event.previousStatus === "stale" &&
+      !["refresh_task_context", "rebase_task", "supersede_task"].includes(
+        actionType,
+      )
+    ) {
+      addIssue(
+        context,
+        ["events", eventIndex, "action", "type"],
+        "stale Tasks only allow refresh_task_context, rebase_task, or supersede_task",
+      );
+    }
+    if (
+      (event.previousStatus === "verified" ||
+        event.previousStatus === "superseded")
+    ) {
+      addIssue(
+        context,
+        ["events", eventIndex, "previousStatus"],
+        "verified and superseded Tasks are terminal",
+      );
+    }
+    if (actionType !== "resume_task") return;
+    if (event.previousStatus !== "blocked") {
+      addIssue(
+        context,
+        ["events", eventIndex, "previousStatus"],
+        "resume_task requires blocked as its previous status",
+      );
+    }
+    const blockEvent = [...events.slice(0, eventIndex)]
+      .reverse()
+      .find((candidate) => candidate.action.type === "block_task");
+    if (
+      blockEvent === undefined ||
+      blockEvent.previousStatus === undefined ||
+      event.resultingStatus !== blockEvent.previousStatus
+    ) {
+      addIssue(
+        context,
+        ["events", eventIndex, "resultingStatus"],
+        "resume_task must restore the exact status captured by the matching block_task Event",
+      );
+    }
+  });
+};
+
 const FullTaskArtifactBundleV1Schema = z.strictObject({
   manifest: TaskManifestV1Schema,
   brief: TaskBriefV1Schema,
@@ -118,6 +184,7 @@ const FullTaskArtifactBundleV1Schema = z.strictObject({
   idempotencyRecords: z.array(IdempotencyRecordV1Schema).min(1),
 }).superRefine((bundle, context) => {
   validateTaskEventGenesisV1(bundle.events, context);
+  validateTaskExceptionalLifecycleV1(bundle.events, context);
   const lacksSuccessfulContext =
     bundle.manifest.status === "created" ||
     (bundle.manifest.status === "blocked" &&
@@ -841,7 +908,7 @@ const FullTaskArtifactBundleV1Schema = z.strictObject({
       );
     } else if (
       recordedEvent.sourceSnapshotId !== record.snapshotId ||
-      Date.parse(recordedEvent.occurredAt) < Date.parse(record.recordedAt) ||
+      recordedEvent.occurredAt !== record.recordedAt ||
       recordedEvent.actor !== record.actor
     ) {
       addIssue(
@@ -1086,12 +1153,13 @@ const FullTaskArtifactBundleV1Schema = z.strictObject({
       event.idempotencyKey !== record.idempotencyKey ||
       event.actor !== record.actor ||
       event.requestDigest !== record.requestDigest ||
-      event.revision !== record.resultRevision
+      event.revision !== record.resultRevision ||
+      event.occurredAt !== record.createdAt
     ) {
       addIssue(
         context,
         ["idempotencyRecords", recordIndex],
-        "Idempotency record must match its committed Event result",
+        "Idempotency record must match its committed Event identity, result, and audit time",
       );
     }
   });
@@ -1240,6 +1308,7 @@ const ContextlessTaskArtifactBundleV1Schema = z.strictObject({
   idempotencyRecords: z.array(IdempotencyRecordV1Schema).min(1),
 }).superRefine((bundle, context) => {
   validateTaskEventGenesisV1(bundle.events, context);
+  validateTaskExceptionalLifecycleV1(bundle.events, context);
   const contextlessStatus =
     bundle.manifest.status === "created" ||
     (bundle.manifest.status === "blocked" &&
@@ -1344,12 +1413,13 @@ const ContextlessTaskArtifactBundleV1Schema = z.strictObject({
       event.idempotencyKey !== record.idempotencyKey ||
       event.actor !== record.actor ||
       event.requestDigest !== record.requestDigest ||
-      event.revision !== record.resultRevision
+      event.revision !== record.resultRevision ||
+      event.occurredAt !== record.createdAt
     ) {
       addIssue(
         context,
         ["idempotencyRecords", recordIndex],
-        "contextless idempotency record must match its Task Event",
+        "contextless idempotency record must match its Task Event identity, result, and audit time",
       );
     }
   });
@@ -1377,6 +1447,7 @@ export const PersistedArtifactV1Schema = z.union([
   ClaimLedgerArtifactV1Schema,
   EvidenceLedgerArtifactV1Schema,
   ImpactArtifactV1Schema,
+  TaskOperationJournalArtifactV1Schema,
   ChangeCheckArtifactV1Schema,
   VerificationArtifactV1Schema,
 ]);

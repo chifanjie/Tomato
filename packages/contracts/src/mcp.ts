@@ -40,6 +40,7 @@ import {
   ReadingPathEntryV1Schema,
   TaskBriefV1Schema,
   TaskManifestV1Schema,
+  TaskTransitionTargetV1Schema,
   UpdateTaskInputV1Schema,
   VerificationPlanEntryV1Schema,
 } from "./task.js";
@@ -360,11 +361,6 @@ const TaskTransitionRejectedErrorV1Schema = z.strictObject({
     guard: z.enum([
       "transition_not_allowed",
       "terminal_state",
-      "context_not_ready",
-      "current_check_required",
-      "blocking_finding",
-      "verification_required",
-      "stale_context",
     ]),
     allowedActions: z.array(OpaqueIdentifierSchema),
   }),
@@ -375,11 +371,26 @@ const TaskGateUnsatisfiedErrorV1Schema = z.strictObject({
   code: z.literal("task_gate_unsatisfied"),
   details: z.strictObject({
     taskId: TaskIdSchema,
-    targetStatus: z.enum(["context_ready", "planned", "verification_required", "verified"]),
+    targetStatus: TaskTransitionTargetV1Schema,
     failedGuards: z
       .array(
         z.strictObject({
-          code: OpaqueIdentifierSchema,
+          code: z.enum([
+            "context_not_ready",
+            "goal_not_confirmed",
+            "acceptance_not_confirmed",
+            "plan_not_confirmed",
+            "worktree_binding_invalid",
+            "snapshot_not_current",
+            "current_check_required",
+            "blocking_finding",
+            "verification_required",
+            "verification_failed",
+            "verification_blocked",
+            "verification_flaky",
+            "freshness_invalid",
+            "blocker_unresolved",
+          ]),
           resourceId: OpaqueIdentifierSchema.optional(),
         }),
       )

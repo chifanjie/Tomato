@@ -22,6 +22,7 @@ export interface TaskDirectoryLayout {
   readonly claims: string;
   readonly evidence: string;
   readonly impact: string;
+  readonly operationJournal: string;
   readonly changeCheck: string;
   readonly verification: string;
   readonly events: string;
@@ -34,6 +35,7 @@ export interface ArtifactStoreLayout {
   readonly repository: string;
   readonly manifest: string;
   readonly repoPulse: string;
+  readonly repoPulseHistory: string;
   readonly snapshots: string;
   readonly knowledgeGraph: string;
   readonly fingerprints: string;
@@ -44,9 +46,14 @@ export interface ArtifactStoreLayout {
   readonly backups: string;
   readonly quarantine: string;
   readonly migrations: string;
+  readonly pulseTransactions: string;
+  readonly taskTransactions: string;
   readonly repositoryLock: string;
   task(taskId: string): TaskDirectoryLayout;
   taskLock(taskId: string): string;
+  repoPulseHistoryVersion(versionKey: string): string;
+  readonly repoPulseTransactionMarker: string;
+  taskTransactionMarker(taskId: string): string;
   snapshot(snapshotId: string): string;
   artifact(artifactType: ArtifactTypeV1, options?: {
     taskId?: string;
@@ -65,6 +72,7 @@ function buildTaskLayout(tasksRoot: string, taskIdInput: string): TaskDirectoryL
     claims: path.join(root, "claims.json"),
     evidence: path.join(root, "evidence.json"),
     impact: path.join(root, "impact.json"),
+    operationJournal: path.join(root, "operation-journal.json"),
     changeCheck: path.join(root, "change-check.json"),
     verification: path.join(root, "verification.json"),
     events: path.join(root, "events.jsonl"),
@@ -81,6 +89,8 @@ export async function createArtifactStoreLayout(
   const locks = path.join(storeRoot, ".locks");
   const recovery = path.join(storeRoot, ".recovery");
   const snapshots = path.join(storeRoot, "snapshots");
+  const repoPulseHistory = path.join(storeRoot, "pulses");
+  const pulseTransactions = path.join(recovery, "pulse-transactions");
 
   const layout: ArtifactStoreLayout = {
     worktreeRoot: canonicalRoot,
@@ -88,6 +98,7 @@ export async function createArtifactStoreLayout(
     repository: path.join(storeRoot, "repository.json"),
     manifest: path.join(storeRoot, "artifact-manifest.json"),
     repoPulse: path.join(storeRoot, "repo-pulse.json"),
+    repoPulseHistory,
     snapshots,
     knowledgeGraph: path.join(storeRoot, "knowledge-graph.json"),
     fingerprints: path.join(storeRoot, "fingerprints.json"),
@@ -98,6 +109,8 @@ export async function createArtifactStoreLayout(
     backups: path.join(recovery, "backups"),
     quarantine: path.join(recovery, "quarantine"),
     migrations: path.join(recovery, "migrations"),
+    pulseTransactions,
+    taskTransactions: path.join(recovery, "task-transactions"),
     repositoryLock: path.join(locks, "repository.lock"),
     task(taskId: string): TaskDirectoryLayout {
       return buildTaskLayout(tasks, taskId);
@@ -105,6 +118,21 @@ export async function createArtifactStoreLayout(
     taskLock(taskId: string): string {
       const validated = TaskIdSchema.parse(taskId);
       return path.join(locks, "tasks", `${validated}.lock`);
+    },
+    repoPulseHistoryVersion(versionKey: string): string {
+      const validated = assertSafeIdentifierSegment(
+        versionKey,
+        "Repo Pulse version key",
+      );
+      return path.join(repoPulseHistory, `${validated}.json`);
+    },
+    repoPulseTransactionMarker: path.join(
+      pulseTransactions,
+      "current.json",
+    ),
+    taskTransactionMarker(taskId: string): string {
+      const validated = TaskIdSchema.parse(taskId);
+      return path.join(recovery, "task-transactions", `${validated}.json`);
     },
     snapshot(snapshotId: string): string {
       const safeSnapshotId = assertSafeIdentifierSegment(
@@ -135,6 +163,7 @@ export async function createArtifactStoreLayout(
         claim_ledger: taskLayout.claims,
         evidence_ledger: taskLayout.evidence,
         impact: taskLayout.impact,
+        task_operation_journal: taskLayout.operationJournal,
         change_check: taskLayout.changeCheck,
         verification: taskLayout.verification,
       };

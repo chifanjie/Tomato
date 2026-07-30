@@ -5,16 +5,18 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   ArtifactManifestV1Schema,
   RepoPulseArtifactV1Schema,
   RepositorySnapshotArtifactV1Schema,
   TaskManifestArtifactV1Schema,
+  TaskOperationJournalArtifactV1Schema,
   type IdempotencyRecordV1,
   type PersistedArtifactV1,
   type TaskArtifactBundleV1,
+  type TaskOperationReceiptV1,
 } from "@understand-code/contracts";
 
 import {
@@ -48,7 +50,70 @@ import {
   openFixtureStore,
 } from "./helpers.js";
 
-afterEach(cleanupTemporaryWorktrees);
+const markerDirectoryFsyncFault = vi.hoisted(() => ({
+  enabled: false,
+  markerPath: undefined as string | undefined,
+  directoryPath: undefined as string | undefined,
+  markerWasUnlinked: false,
+  failuresRemaining: 0,
+  syncAttempts: 0,
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...original,
+    async unlink(...args: Parameters<typeof original.unlink>) {
+      const result = await original.unlink(...args);
+      if (
+        markerDirectoryFsyncFault.enabled &&
+        String(args[0]) === markerDirectoryFsyncFault.markerPath
+      ) {
+        markerDirectoryFsyncFault.markerWasUnlinked = true;
+      }
+      return result;
+    },
+    async open(...args: Parameters<typeof original.open>) {
+      const handle = await original.open(...args);
+      if (
+        !markerDirectoryFsyncFault.enabled ||
+        !markerDirectoryFsyncFault.markerWasUnlinked ||
+        String(args[0]) !== markerDirectoryFsyncFault.directoryPath
+      ) {
+        return handle;
+      }
+      return new Proxy(handle, {
+        get(target, property) {
+          if (property === "sync") {
+            return async () => {
+              markerDirectoryFsyncFault.syncAttempts += 1;
+              if (markerDirectoryFsyncFault.failuresRemaining > 0) {
+                markerDirectoryFsyncFault.failuresRemaining -= 1;
+                throw new Error(
+                  "injected marker-directory fsync failure",
+                );
+              }
+              await target.sync();
+            };
+          }
+          const value = Reflect.get(target, property, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    },
+  };
+});
+
+afterEach(async () => {
+  markerDirectoryFsyncFault.enabled = false;
+  markerDirectoryFsyncFault.markerPath = undefined;
+  markerDirectoryFsyncFault.directoryPath = undefined;
+  markerDirectoryFsyncFault.markerWasUnlinked = false;
+  markerDirectoryFsyncFault.failuresRemaining = 0;
+  markerDirectoryFsyncFault.syncAttempts = 0;
+  await cleanupTemporaryWorktrees();
+});
 
 async function openControlledClockStore(root: string): Promise<{
   store: ArtifactStore;
@@ -1184,6 +1249,72 @@ describe("trusted Task bundles", () => {
     );
   }
 
+  async function stageAmbiguousTaskMarker(store: ArtifactStore): Promise<{
+    input: {
+      artifacts: PersistedArtifactV1[];
+      events: TaskArtifactBundleV1["events"];
+      idempotencyRecords: TaskArtifactBundleV1["idempotencyRecords"];
+    };
+    options: {
+      expectedRevision: 0;
+      historyImport: true;
+      idempotencyKey: string;
+      requestDigest: string;
+    };
+    oldManifestBytes: Buffer;
+  }> {
+    const bundle = await loadContractFixture<TaskArtifactBundleV1>(
+      "reference/task-bundle.json",
+    );
+    const artifacts = await loadTaskArtifacts();
+    const control = bundle.idempotencyRecords.at(-1)!;
+    const input = {
+      artifacts,
+      events: bundle.events,
+      idempotencyRecords: bundle.idempotencyRecords,
+    };
+    const options = {
+      expectedRevision: 0 as const,
+      historyImport: true as const,
+      idempotencyKey: control.idempotencyKey,
+      requestDigest: control.requestDigest,
+    };
+    await expect(
+      store.persistTaskBundle(input, {
+        ...options,
+        manifestWrite: {
+          faultInjector({ stage }) {
+            if (stage === "after_rename") {
+              throw new Error("Task Manifest durability is ambiguous");
+            }
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      details: {
+        committed: true,
+        durabilityConfirmed: false,
+        targetPath: store.layout.manifest,
+      },
+    });
+    const marker = JSON.parse(
+      await readFile(
+        store.layout.taskTransactionMarker(FIXTURE_TASK_ID),
+        "utf8",
+      ),
+    ) as {
+      oldManifest: { contentBase64: string };
+    };
+    return {
+      input,
+      options,
+      oldManifestBytes: Buffer.from(
+        marker.oldManifest.contentBase64,
+        "base64",
+      ),
+    };
+  }
+
   async function loadContextlessTaskTransaction() {
     const fullBundle = await loadContractFixture<TaskArtifactBundleV1>(
       "reference/task-bundle.json",
@@ -1200,7 +1331,7 @@ describe("trusted Task bundles", () => {
       ...basePayload
     } = reference.payload;
     const event = fullBundle.events[0]!;
-    const idempotencyRecord = fullBundle.idempotencyRecords[0]!;
+    const referenceRecord = fullBundle.idempotencyRecords[0]!;
     const payload = {
       ...basePayload,
       status: "created" as const,
@@ -1214,12 +1345,56 @@ describe("trusted Task bundles", () => {
       contentDigest: sha256CanonicalJson(payload),
       payload,
     });
+    const result = {
+      task: payload,
+      mutation: {
+        taskId: payload.taskId,
+        revision: 1,
+        eventId: event.eventId,
+        artifactIds: [
+          artifact.artifactId,
+          "artifact:task-operation-journal:contextless",
+        ],
+        idempotentReplay: false,
+      },
+    };
+    const receipt = {
+      schemaVersion: 1 as const,
+      operation: "task_created" as const,
+      taskId: payload.taskId,
+      eventId: event.eventId,
+      resultDigest: sha256CanonicalJson(result),
+      result,
+    } satisfies TaskOperationReceiptV1;
+    const idempotencyRecord: IdempotencyRecordV1 = {
+      ...referenceRecord,
+      resultDigest: receipt.resultDigest,
+    };
+    const journalPayload = {
+      idempotencyRecords: [idempotencyRecord],
+      receipts: [receipt],
+    };
+    const journal = TaskOperationJournalArtifactV1Schema.parse({
+      schemaVersion: 1,
+      artifactType: "task_operation_journal",
+      artifactId: "artifact:task-operation-journal:contextless",
+      repositoryId: artifact.repositoryId,
+      worktreeId: artifact.worktreeId,
+      sourceSnapshotId: artifact.sourceSnapshotId,
+      taskId: artifact.taskId,
+      revision: artifact.revision,
+      producerVersion: artifact.producerVersion,
+      createdAt: artifact.createdAt,
+      contentDigest: sha256CanonicalJson(journalPayload),
+      payload: journalPayload,
+    });
     return {
       artifact,
+      journal,
       event,
       idempotencyRecord,
       input: {
-        artifacts: [artifact],
+        artifacts: [artifact, journal],
         events: [event],
         idempotencyRecords: [idempotencyRecord],
       },
@@ -1248,6 +1423,7 @@ describe("trusted Task bundles", () => {
     };
     const options = {
       expectedRevision: 0,
+      historyImport: true,
       idempotencyKey: control.idempotencyKey,
       requestDigest: control.requestDigest,
     };
@@ -1313,10 +1489,11 @@ describe("trusted Task bundles", () => {
     }
   });
 
-  it("keeps a Task revision published after a committed Manifest ambiguity and reconciles the retry", async () => {
+  it("drains an ambiguous Task marker before another Manifest mutation and never rolls back either commit", async () => {
     const root = await createTemporaryWorktree();
     const store = await openFixtureStore(root);
-    await store.persistArtifact(await loadRepositorySnapshot());
+    const initialSnapshot = await loadRepositorySnapshot();
+    await store.persistArtifact(initialSnapshot);
     await store.persistArtifact(await loadRepoPulse());
     const bundle = await loadContractFixture<TaskArtifactBundleV1>(
       "reference/task-bundle.json",
@@ -1330,6 +1507,7 @@ describe("trusted Task bundles", () => {
     };
     const options = {
       expectedRevision: 0,
+      historyImport: true,
       idempotencyKey: control.idempotencyKey,
       requestDigest: control.requestDigest,
       manifestWrite: {
@@ -1346,8 +1524,50 @@ describe("trusted Task bundles", () => {
     ).rejects.toMatchObject({
       details: {
         committed: true,
+        durabilityConfirmed: false,
         targetPath: store.layout.manifest,
       },
+    });
+    await expect(readdir(store.layout.taskTransactions)).resolves.toEqual([
+      `${FIXTURE_TASK_ID}.json`,
+    ]);
+
+    const nextSnapshotPayload = {
+      ...initialSnapshot.payload,
+      snapshotId: "snapshot:after-ambiguous-task",
+      createdAt: "2026-07-30T09:00:00Z",
+      limitations: ["published after an ambiguous Task commit"],
+    };
+    const nextSnapshot = RepositorySnapshotArtifactV1Schema.parse({
+      ...initialSnapshot,
+      artifactId: "artifact:repository-snapshot:after-ambiguous-task",
+      sourceSnapshotId: nextSnapshotPayload.snapshotId,
+      createdAt: nextSnapshotPayload.createdAt,
+      contentDigest: sha256CanonicalJson(nextSnapshotPayload),
+      payload: nextSnapshotPayload,
+    });
+    await store.persistArtifact(nextSnapshot);
+    await expect(readdir(store.layout.taskTransactions)).resolves.toEqual([]);
+
+    const afterSnapshot = await store.readManifest();
+    expect(afterSnapshot.latestSnapshotId).toBe(
+      nextSnapshot.sourceSnapshotId,
+    );
+    expect(
+      afterSnapshot.artifacts.find(
+        (descriptor) =>
+          descriptor.artifactType === "task_manifest" &&
+          descriptor.taskId === FIXTURE_TASK_ID,
+      ),
+    ).toMatchObject({
+      revision: 12,
+      freshness: "stale",
+    });
+
+    await store.initialize();
+    await expect(readdir(store.layout.taskTransactions)).resolves.toEqual([]);
+    await expect(store.readManifest()).resolves.toMatchObject({
+      latestSnapshotId: nextSnapshot.sourceSnapshotId,
     });
     await expect(
       store.readArtifact("task_manifest", { taskId: FIXTURE_TASK_ID }),
@@ -1355,11 +1575,353 @@ describe("trusted Task bundles", () => {
       artifact: { revision: 12 },
       state: "current",
     });
+  });
+
+  it("retries the marker parent fsync when cleanup retry observes ENOENT", async () => {
+    const root = await createTemporaryWorktree(
+      "artifact-store-marker-fsync-retry-",
+    );
+    const store = await openFixtureStore(root);
+    await store.persistArtifact(await loadRepositorySnapshot());
+    await store.persistArtifact(await loadRepoPulse());
+    const bundle = await loadContractFixture<TaskArtifactBundleV1>(
+      "reference/task-bundle.json",
+    );
+    const artifacts = await loadTaskArtifacts();
+    const control = bundle.idempotencyRecords.at(-1)!;
+    const input = {
+      artifacts,
+      events: bundle.events,
+      idempotencyRecords: bundle.idempotencyRecords,
+    };
+    const options = {
+      expectedRevision: 0,
+      historyImport: true,
+      idempotencyKey: control.idempotencyKey,
+      requestDigest: control.requestDigest,
+    } as const;
+    const markerPath =
+      store.layout.taskTransactionMarker(FIXTURE_TASK_ID);
+    markerDirectoryFsyncFault.enabled = true;
+    markerDirectoryFsyncFault.markerPath = markerPath;
+    markerDirectoryFsyncFault.directoryPath = path.dirname(markerPath);
+    markerDirectoryFsyncFault.failuresRemaining = 1;
+
+    await expect(
+      store.persistTaskBundle(input, options),
+    ).rejects.toThrow("injected marker-directory fsync failure");
+    expect(markerDirectoryFsyncFault.markerWasUnlinked).toBe(true);
+    expect(markerDirectoryFsyncFault.syncAttempts).toBe(2);
+    await expect(readdir(store.layout.taskTransactions)).resolves.toEqual([]);
+
+    markerDirectoryFsyncFault.enabled = false;
     await expect(
       store.persistTaskBundle(input, options),
     ).resolves.toMatchObject({
-      bundle: { manifest: { revision: 12 } },
       replayed: true,
+      bundle: { manifest: { revision: 12 } },
+    });
+  });
+
+  it("resyncs an empty transaction directory before a later Manifest mutation", async () => {
+    const root = await createTemporaryWorktree(
+      "artifact-store-empty-marker-directory-resync-",
+    );
+    const store = await openFixtureStore(root);
+    const initialSnapshot = await loadRepositorySnapshot();
+    await store.persistArtifact(initialSnapshot);
+    await store.persistArtifact(await loadRepoPulse());
+    const bundle = await loadContractFixture<TaskArtifactBundleV1>(
+      "reference/task-bundle.json",
+    );
+    const artifacts = await loadTaskArtifacts();
+    const control = bundle.idempotencyRecords.at(-1)!;
+    const markerPath =
+      store.layout.taskTransactionMarker(FIXTURE_TASK_ID);
+    markerDirectoryFsyncFault.enabled = true;
+    markerDirectoryFsyncFault.markerPath = markerPath;
+    markerDirectoryFsyncFault.directoryPath = path.dirname(markerPath);
+    markerDirectoryFsyncFault.failuresRemaining = 3;
+
+    await expect(
+      store.persistTaskBundle(
+        {
+          artifacts,
+          events: bundle.events,
+          idempotencyRecords: bundle.idempotencyRecords,
+        },
+        {
+          expectedRevision: 0,
+          historyImport: true,
+          idempotencyKey: control.idempotencyKey,
+          requestDigest: control.requestDigest,
+        },
+      ),
+    ).rejects.toThrow("injected marker-directory fsync failure");
+    expect(markerDirectoryFsyncFault.syncAttempts).toBe(2);
+    await expect(readdir(store.layout.taskTransactions)).resolves.toEqual([]);
+
+    const nextPayload = {
+      ...initialSnapshot.payload,
+      snapshotId: "snapshot:after-empty-marker-resync",
+      createdAt: "2026-07-30T09:05:00Z",
+      limitations: ["published only after marker deletion is durable"],
+    };
+    const nextSnapshot = RepositorySnapshotArtifactV1Schema.parse({
+      ...initialSnapshot,
+      artifactId: "artifact:repository-snapshot:after-marker-resync",
+      sourceSnapshotId: nextPayload.snapshotId,
+      createdAt: nextPayload.createdAt,
+      contentDigest: sha256CanonicalJson(nextPayload),
+      payload: nextPayload,
+    });
+
+    await expect(store.persistArtifact(nextSnapshot)).rejects.toThrow(
+      "injected marker-directory fsync failure",
+    );
+    expect(markerDirectoryFsyncFault.syncAttempts).toBe(3);
+    await expect(store.readManifest()).resolves.toMatchObject({
+      latestSnapshotId: initialSnapshot.sourceSnapshotId,
+    });
+
+    await expect(store.persistArtifact(nextSnapshot)).resolves.toMatchObject({
+      artifact: { sourceSnapshotId: nextSnapshot.sourceSnapshotId },
+      replayed: false,
+    });
+    expect(markerDirectoryFsyncFault.syncAttempts).toBeGreaterThanOrEqual(4);
+    await expect(store.readManifest()).resolves.toMatchObject({
+      latestSnapshotId: nextSnapshot.sourceSnapshotId,
+    });
+  });
+
+  it("rolls back an uncommitted Task marker before publishing another Repository Snapshot", async () => {
+    const root = await createTemporaryWorktree(
+      "artifact-store-marker-before-snapshot-",
+    );
+    const store = await openFixtureStore(root);
+    const initialSnapshot = await loadRepositorySnapshot();
+    await store.persistArtifact(initialSnapshot);
+    await store.persistArtifact(await loadRepoPulse());
+    const pending = await stageAmbiguousTaskMarker(store);
+    await atomicWriteFile(
+      store.layout.worktreeRoot,
+      store.layout.manifest,
+      pending.oldManifestBytes,
+    );
+
+    const nextPayload = {
+      ...initialSnapshot.payload,
+      snapshotId: "snapshot:after-uncommitted-task",
+      createdAt: "2026-07-30T09:10:00Z",
+      limitations: ["published after Task rollback"],
+    };
+    const nextSnapshot = RepositorySnapshotArtifactV1Schema.parse({
+      ...initialSnapshot,
+      artifactId: "artifact:repository-snapshot:after-uncommitted-task",
+      sourceSnapshotId: nextPayload.snapshotId,
+      createdAt: nextPayload.createdAt,
+      contentDigest: sha256CanonicalJson(nextPayload),
+      payload: nextPayload,
+    });
+    await store.persistArtifact(nextSnapshot);
+
+    await expect(readdir(store.layout.taskTransactions)).resolves.toEqual([]);
+    const manifest = await store.readManifest();
+    expect(manifest.latestSnapshotId).toBe(nextSnapshot.sourceSnapshotId);
+    expect(
+      manifest.artifacts.some(
+        (descriptor) => descriptor.taskId === FIXTURE_TASK_ID,
+      ),
+    ).toBe(false);
+    await expect(
+      readFile(store.layout.task(FIXTURE_TASK_ID).taskManifest),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+
+    await store.initialize();
+    await expect(store.readManifest()).resolves.toMatchObject({
+      latestSnapshotId: nextSnapshot.sourceSnapshotId,
+    });
+  });
+
+  it("drains an uncommitted Task marker before Artifact backup recovery mutates the Manifest", async () => {
+    const root = await createTemporaryWorktree(
+      "artifact-store-marker-before-artifact-recovery-",
+    );
+    const store = await openFixtureStore(root);
+    await store.persistArtifact(await loadRepositorySnapshot());
+    await store.persistArtifact(
+      await makeRepoPulseArtifact(1, "recovery revision one"),
+      { expectedRevision: 0 },
+    );
+    await store.persistArtifact(
+      await makeRepoPulseArtifact(2, "recovery revision two"),
+      { expectedRevision: 1 },
+    );
+    await store.persistArtifact(
+      await makeRepoPulseArtifact(3, "recovery revision three"),
+      { expectedRevision: 2 },
+    );
+    const pending = await stageAmbiguousTaskMarker(store);
+    await atomicWriteFile(
+      store.layout.worktreeRoot,
+      store.layout.manifest,
+      pending.oldManifestBytes,
+    );
+    await atomicWriteFile(
+      store.layout.worktreeRoot,
+      store.layout.artifact("repo_pulse"),
+      '{"broken":',
+    );
+
+    const recovered = await store.readArtifact(
+      "repo_pulse",
+      {},
+      { recover: true },
+    );
+    expect(recovered).toMatchObject({
+      artifact: { revision: 2 },
+      recoveryState: "read_only_recovery",
+    });
+    await expect(readdir(store.layout.taskTransactions)).resolves.toEqual([]);
+    const manifest = await store.readManifest();
+    expect(
+      manifest.artifacts.some(
+        (descriptor) => descriptor.taskId === FIXTURE_TASK_ID,
+      ),
+    ).toBe(false);
+    await store.initialize();
+    await expect(store.readArtifact("repo_pulse")).resolves.toMatchObject({
+      artifact: { revision: 2 },
+      recoveryState: "read_only_recovery",
+    });
+  });
+
+  it("drains an uncommitted Task marker before a published migration mutates the Manifest", async () => {
+    const root = await createTemporaryWorktree(
+      "artifact-store-marker-before-migration-",
+    );
+    const store = await openFixtureStore(root);
+    await store.persistArtifact(await loadRepositorySnapshot());
+    await store.persistArtifact(
+      await makeRepoPulseArtifact(1, "before marker migration"),
+      { expectedRevision: 0 },
+    );
+    const pending = await stageAmbiguousTaskMarker(store);
+    await atomicWriteFile(
+      store.layout.worktreeRoot,
+      store.layout.manifest,
+      pending.oldManifestBytes,
+    );
+    const migratedPulse = await makeRepoPulseArtifact(
+      2,
+      "after marker migration",
+    );
+
+    await expect(
+      store.migrateJson({
+        relativePath: ".understand-code/repo-pulse.json",
+        format: "repo-pulse-marker-fixture",
+        fromVersion: "1",
+        toVersion: "2",
+        steps: [
+          {
+            format: "repo-pulse-marker-fixture",
+            fromVersion: "1",
+            toVersion: "2",
+            migrate() {
+              return migratedPulse;
+            },
+          },
+        ],
+        validate(value) {
+          RepoPulseArtifactV1Schema.parse(value);
+        },
+      }),
+    ).resolves.toMatchObject({
+      migrated: true,
+      appliedVersions: ["2"],
+    });
+
+    await expect(readdir(store.layout.taskTransactions)).resolves.toEqual([]);
+    await expect(store.readArtifact("repo_pulse")).resolves.toMatchObject({
+      artifact: { revision: 2 },
+      recoveryState: "current",
+    });
+    const manifest = await store.readManifest();
+    expect(
+      manifest.artifacts.some(
+        (descriptor) => descriptor.taskId === FIXTURE_TASK_ID,
+      ),
+    ).toBe(false);
+    await store.initialize();
+    await expect(store.readArtifact("repo_pulse")).resolves.toMatchObject({
+      artifact: { revision: 2 },
+    });
+  });
+
+  it("rolls back an ambiguous Task Manifest rename when recovery observes the old Manifest", async () => {
+    const root = await createTemporaryWorktree();
+    const store = await openFixtureStore(root);
+    await store.persistArtifact(await loadRepositorySnapshot());
+    await store.persistArtifact(await loadRepoPulse());
+    const bundle = await loadContractFixture<TaskArtifactBundleV1>(
+      "reference/task-bundle.json",
+    );
+    const artifacts = await loadTaskArtifacts();
+    const control = bundle.idempotencyRecords.at(-1)!;
+    const input = {
+      artifacts,
+      events: bundle.events,
+      idempotencyRecords: bundle.idempotencyRecords,
+    };
+    const controlOptions = {
+      expectedRevision: 0,
+      historyImport: true,
+      idempotencyKey: control.idempotencyKey,
+      requestDigest: control.requestDigest,
+    } as const;
+
+    await expect(
+      store.persistTaskBundle(input, {
+        ...controlOptions,
+        manifestWrite: {
+          faultInjector({ stage }) {
+            if (stage === "after_rename") {
+              throw new Error("Task Manifest durability is ambiguous");
+            }
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      details: {
+        committed: true,
+        durabilityConfirmed: false,
+        targetPath: store.layout.manifest,
+      },
+    });
+
+    const markerPath = store.layout.taskTransactionMarker(FIXTURE_TASK_ID);
+    const marker = JSON.parse(
+      await readFile(markerPath, "utf8"),
+    ) as {
+      oldManifest: { contentBase64: string };
+    };
+    await atomicWriteFile(
+      store.layout.worktreeRoot,
+      store.layout.manifest,
+      Buffer.from(marker.oldManifest.contentBase64, "base64"),
+    );
+
+    await store.initialize();
+    await expect(readdir(store.layout.taskTransactions)).resolves.toEqual([]);
+    await expect(
+      store.readTaskBundle(FIXTURE_TASK_ID),
+    ).rejects.toMatchObject({ code: "reference_integrity_failed" });
+    await expect(
+      store.persistTaskBundle(input, controlOptions),
+    ).resolves.toMatchObject({
+      replayed: false,
+      bundle: { manifest: { revision: 12 } },
     });
   });
 
@@ -1381,6 +1943,7 @@ describe("trusted Task bundles", () => {
     };
     const options = {
       expectedRevision: 0,
+      historyImport: true,
       idempotencyKey: control.idempotencyKey,
       requestDigest: control.requestDigest,
     };
@@ -1432,6 +1995,7 @@ describe("trusted Task bundles", () => {
       },
       {
         expectedRevision: 0,
+        historyImport: true,
         idempotencyKey: control.idempotencyKey,
         requestDigest: control.requestDigest,
       },
@@ -1526,6 +2090,7 @@ describe("trusted Task bundles", () => {
         },
         {
           expectedRevision: 0,
+          historyImport: true,
           idempotencyKey: control.idempotencyKey,
           requestDigest: control.requestDigest,
         },
@@ -1564,6 +2129,7 @@ describe("trusted Task bundles", () => {
         },
         {
           expectedRevision: 0,
+          historyImport: true,
           idempotencyKey: control.idempotencyKey,
           requestDigest: control.requestDigest,
         },
@@ -1599,7 +2165,7 @@ describe("trusted Task bundles", () => {
     const taskDescriptors = manifest.artifacts.filter(
       (descriptor) => descriptor.taskId === FIXTURE_TASK_ID,
     );
-    expect(taskDescriptors).toHaveLength(2);
+    expect(taskDescriptors).toHaveLength(3);
     expect(
       taskDescriptors.map((descriptor) => [
         descriptor.artifactType,
@@ -1607,6 +2173,7 @@ describe("trusted Task bundles", () => {
       ]),
     ).toEqual([
       ["task_manifest", "partial"],
+      ["task_operation_journal", "partial"],
       ["task_event_log", "partial"],
     ]);
 
@@ -1675,6 +2242,7 @@ describe("trusted Task bundles", () => {
           },
           {
             expectedRevision: 0,
+            historyImport: true,
             idempotencyKey: control.idempotencyKey,
             requestDigest: control.requestDigest,
           },

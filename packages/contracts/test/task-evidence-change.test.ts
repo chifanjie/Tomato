@@ -1437,6 +1437,68 @@ describe("Task Event and idempotency invariants", () => {
     }
   });
 
+  it.each([
+    [
+      "change_checked",
+      {
+        type: "change_checked",
+        changeCheckArtifactId: "change-check-artifact-1",
+        changeCheckId: "change-check-1",
+      },
+      "context_ready",
+      "check_required",
+    ],
+    [
+      "verification_recorded",
+      {
+        type: "verification_recorded",
+        verificationRecordId: "verification-1",
+      },
+      "check_required",
+      "verification_required",
+    ],
+  ] as const)(
+    "requires the frozen lifecycle source for %s",
+    (actionType, action, invalidStatus, validStatus) => {
+      const invalid = TaskEventV1Schema.safeParse(
+        event(9, action, "9", invalidStatus, invalidStatus),
+      );
+      expect(invalid.success).toBe(false);
+      if (!invalid.success) {
+        expect(
+          invalid.error.issues.some((issue) =>
+            issue.message.includes(`${actionType} requires`),
+          ),
+        ).toBe(true);
+      }
+      expect(
+        TaskEventV1Schema.safeParse(
+          event(9, action, "9", validStatus, validStatus),
+        ).success,
+      ).toBe(true);
+    },
+  );
+
+  it.each([
+    "2026-07-28T07:59:59Z",
+    "2026-07-28T08:00:01Z",
+  ])(
+    "requires Verification recordedAt to equal its Event time (%s)",
+    (recordedAt) => {
+      const malformed = structuredClone(verifiedBundle(true));
+      malformed.verificationRecords[0]!.recordedAt = recordedAt;
+      const result = TaskArtifactBundleV1Schema.safeParse(malformed);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(
+          result.error.issues.some((issue) =>
+            issue.message.includes("snapshot, time, and actor"),
+          ),
+        ).toBe(true);
+      }
+    },
+  );
+
   it("rejects a created-to-verified Event jump during lifecycle replay", () => {
     const jump = event(
       2,

@@ -17,6 +17,7 @@
         "claim_ledger",
         "evidence_ledger",
         "impact",
+        "task_operation_journal",
         "change_check",
         "verification"
       ]

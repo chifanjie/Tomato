@@ -43,7 +43,8 @@ function verifyLifecycleContinuity(events: readonly TaskEventV1[]): void {
         event.revision !== 1 ||
         event.previousRevision !== 0 ||
         event.previousStatus !== undefined ||
-        event.resultingStatus !== "created"
+        event.resultingStatus !== "created" ||
+        event.action.type !== "task_created"
       ) {
         throw new ArtifactStoreError(
           "artifact_corrupt",
@@ -69,11 +70,10 @@ function verifyLifecycleContinuity(events: readonly TaskEventV1[]): void {
   });
 }
 
-function verifyEventIdentityUniqueness(
+function verifyEventIdUniqueness(
   events: readonly TaskEventV1[],
 ): void {
   const eventIds = new Set<string>();
-  const idempotencyKeys = new Set<string>();
   events.forEach((event, eventIndex) => {
     if (eventIds.has(event.eventId)) {
       throw new ArtifactStoreError(
@@ -82,15 +82,7 @@ function verifyEventIdentityUniqueness(
         { eventId: event.eventId, eventIndex },
       );
     }
-    if (idempotencyKeys.has(event.idempotencyKey)) {
-      throw new ArtifactStoreError(
-        "artifact_corrupt",
-        "Task event log contains a duplicate idempotencyKey.",
-        { idempotencyKey: event.idempotencyKey, eventIndex },
-      );
-    }
     eventIds.add(event.eventId);
-    idempotencyKeys.add(event.idempotencyKey);
   });
 }
 
@@ -162,7 +154,7 @@ export function parseTaskEventLogText(text: string): ParsedTaskEventLog {
       { issues: integrity.issues },
     );
   }
-  verifyEventIdentityUniqueness(events);
+  verifyEventIdUniqueness(events);
   verifyLifecycleContinuity(events);
   const serializedCompleteLog =
     events.length === 0
@@ -224,24 +216,6 @@ export async function appendTaskEvent(
 
   const appendWhileLocked = async (): Promise<AppendTaskEventResult> => {
       const current = await readTaskEventLog(layout, taskId);
-      const existingIdempotency = current.events.find(
-        (candidate) =>
-          candidate.idempotencyKey === event.idempotencyKey,
-      );
-      if (
-        existingIdempotency !== undefined &&
-        existingIdempotency.eventId !== event.eventId
-      ) {
-        throw new ArtifactStoreError(
-          "idempotency_conflict",
-          "The same Task Event idempotency key cannot produce a different eventId.",
-          {
-            idempotencyKey: event.idempotencyKey,
-            existingEventId: existingIdempotency.eventId,
-            attemptedEventId: event.eventId,
-          },
-        );
-      }
       const existing = current.events.find(
         (candidate) => candidate.eventId === event.eventId,
       );

@@ -6,6 +6,7 @@ export * from "./descriptors.js";
 export * from "./compatibility.js";
 export * from "./migration.js";
 export * from "./task.js";
+export * from "./operation-journal.js";
 export * from "./evidence.js";
 export * from "./change.js";
 export * from "./invariants.js";

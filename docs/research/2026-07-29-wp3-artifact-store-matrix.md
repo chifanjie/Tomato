@@ -239,3 +239,27 @@ WP3 is closed. WP4 may build its persistent Task lifecycle only through the
 high-level Store transaction boundary. Whole-Task recovery and full
 idempotency-record reconstruction remain explicit WP4 contract work; no WP4
 caller may compose Task state from single-file recovery.
+
+## 13. WP4-discovered post-closeout amendment: immutable Repo Pulse history
+
+WP4 exposed one storage invariant that the original WP3 closeout did not have
+enough Persistent Task state to exercise: a Task descriptor pins the exact Repo
+Pulse `artifactId`, digest, and Snapshot used to build its Context. Replacing
+the only canonical Pulse descriptor either blocks every later Pulse or breaks
+historical Task verification.
+
+D-23 therefore extends the Store without rewriting the original WP3 evidence:
+
+- the old canonical Pulse is copied byte-for-byte to an immutable version path;
+- its descriptor remains addressable as `historical/stale`;
+- a durable marker covers history, canonical bytes, and the Manifest commit
+  point;
+- dependent descriptors become stale transitively without losing their exact
+  pins;
+- recovery of a corrupt current Pulse marks only that exact descriptor.
+
+The amendment is implemented and verified in WP4 by
+`repo-pulse-history.test.ts`, the recovery/migration suite, the full Artifact
+Store suite, and the root quality gate. Its feature commit and remote CI belong
+to the WP4 closeout record; the already-published WP3 commit and CI evidence
+above remain unchanged.

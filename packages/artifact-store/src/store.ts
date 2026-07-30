@@ -8,20 +8,25 @@ import {
 import path from "node:path";
 
 import {
+  ActorSchema,
   ArtifactDependencyV1Schema,
   ArtifactDescriptorV1Schema,
   ArtifactManifestV1Schema,
   ArtifactTypeV1Schema,
   ContentDigestSchema,
+  IdempotencyScopeV1Schema,
   IdempotencyKeySchema,
   IsoTimestampSchema,
   ProducerVersionSchema,
   RepositoryIdSchema,
   TaskIdSchema,
+  TaskManifestV1Schema,
   WorktreeIdSchema,
   canonicalizeJson,
   migrateArtifactValueV1,
   parsePersistedArtifactV1,
+  verifyTaskOperationReceiptV1,
+  type Actor,
   verifyArtifactContentDigestV1,
   type ArtifactDependencyV1,
   type ArtifactDescriptorFreshnessV1,
@@ -31,10 +36,13 @@ import {
   type ContentDigest,
   type JsonValue,
   type IdempotencyRecordV1,
+  type IdempotencyScopeV1,
   type MigrationStepV1,
   type PersistedArtifactV1,
   type TaskArtifactBundleV1,
   type TaskEventV1,
+  type TaskManifestV1,
+  type TaskOperationReceiptV1,
 } from "@understand-code/contracts";
 
 import {
@@ -48,11 +56,16 @@ import {
 import {
   atomicWriteFile,
   atomicWriteJson,
+  fsyncDirectory,
   readManagedFile,
   readManagedJson,
   type AtomicWriteOptions,
 } from "./atomic.js";
-import { digestCanonicalJson, sha256Bytes } from "./digest.js";
+import {
+  digestCanonicalJson,
+  sha256Bytes,
+  sha256CanonicalJson,
+} from "./digest.js";
 import { ArtifactStoreError } from "./errors.js";
 import {
   createArtifactStoreLayout,
@@ -63,6 +76,7 @@ import {
   type LockAcquireOptions,
 } from "./lock.js";
 import {
+  assertManagedParentStable,
   ensureManagedDirectory,
   repositoryRelativePathFromAbsolute,
   resolveManagedPath,
@@ -71,6 +85,14 @@ import {
 interface StoreIdempotencyRecord {
   key: string;
   requestDigest: ContentDigest;
+  /**
+   * Legacy compact indexes did not persist the operation scope. New Task
+   * transaction entries always persist scope and actor together; unscoped
+   * entries remain valid for backwards compatibility and standalone Artifact
+   * mutations.
+   */
+  scope?: IdempotencyScopeV1;
+  actor?: Actor;
   artifactType: ArtifactTypeV1;
   artifactId: string;
   resultRevision: number;
@@ -82,6 +104,14 @@ interface StoreIdempotencyIndex {
   version: 1;
   records: StoreIdempotencyRecord[];
 }
+
+type StoreIdempotencyControl = {
+  key: string;
+  requestDigest: ContentDigest;
+} & (
+  | { scope?: never; actor?: never }
+  | { scope: IdempotencyScopeV1; actor: Actor }
+);
 
 export interface ArtifactStoreOptions {
   repositoryId: string;
@@ -99,6 +129,11 @@ export interface PersistArtifactOptions {
   state?: ArtifactDescriptorStateV1;
   freshness?: ArtifactDescriptorFreshnessV1;
   artifactWrite?: AtomicWriteOptions;
+  /**
+   * Fault-injection and durability control for the immutable history copy
+   * created before a canonical Repo Pulse is replaced.
+   */
+  historyWrite?: AtomicWriteOptions;
   manifestWrite?: AtomicWriteOptions;
   promoteRecovery?: boolean;
 }
@@ -159,6 +194,11 @@ export interface PersistTaskBundleOptions {
   expectedRevision: number;
   idempotencyKey: string;
   requestDigest: ContentDigest;
+  /**
+   * Compatibility-only import of a previously validated, contiguous Event
+   * history into an empty Store. Live Task mutations must leave this false.
+   */
+  historyImport?: boolean;
   dependenciesByArtifactId?: Readonly<
     Record<string, readonly ArtifactDependencyV1[]>
   >;
@@ -173,11 +213,262 @@ export interface PersistTaskBundleResult {
   replayed: boolean;
 }
 
+export interface ReadTaskBundleResult {
+  bundle: TaskArtifactBundleV1;
+  artifacts: PersistedArtifactV1[];
+  receipts: TaskOperationReceiptV1[];
+  state: ArtifactDescriptorStateV1;
+  freshness: ArtifactDescriptorFreshnessV1;
+  latestSnapshotId?: string;
+  recoveryState: "current" | "read_only_recovery";
+}
+
+export interface TaskOperationReceiptLookupResult {
+  record: IdempotencyRecordV1;
+  receipt: TaskOperationReceiptV1;
+}
+
 interface PreparedTaskBundle {
   bundle: TaskArtifactBundleV1;
   artifacts: PersistedArtifactV1[];
   taskId: string;
   revision: number;
+  contextual: boolean;
+}
+
+interface TaskTransactionBytesV1 {
+  contentBase64: string;
+  contentDigest: ContentDigest;
+}
+
+interface TaskTransactionFileBackupV1 {
+  relativePath: string;
+  existed: boolean;
+  contentBase64?: string;
+  contentDigest?: ContentDigest;
+}
+
+interface PendingTaskTransactionMarkerV1 {
+  version: 1;
+  repositoryId: string;
+  worktreeId: string;
+  taskId: string;
+  expectedRevision: number;
+  targetRevision: number;
+  createdAt: string;
+  oldManifest: TaskTransactionBytesV1;
+  oldFiles: TaskTransactionFileBackupV1[];
+  targetDescriptors: ReturnType<typeof ArtifactDescriptorV1Schema.parse>[];
+}
+
+interface PendingRepoPulseTransactionMarkerV1 {
+  version: 1;
+  repositoryId: string;
+  worktreeId: string;
+  createdAt: string;
+  oldManifest: TaskTransactionBytesV1;
+  oldPulse: TaskTransactionBytesV1;
+  historyExisted: boolean;
+  historyDescriptor: ReturnType<typeof ArtifactDescriptorV1Schema.parse>;
+  targetDescriptor: ReturnType<typeof ArtifactDescriptorV1Schema.parse>;
+}
+
+interface RepoPulseHistoryPublication {
+  historyDescriptor: ReturnType<typeof ArtifactDescriptorV1Schema.parse>;
+}
+
+interface TaskBundleWrite {
+  path: string;
+  content: string;
+}
+
+function idempotencyScopeKey(scope: IdempotencyScopeV1): string {
+  return scope.kind === "task"
+    ? `task:${scope.taskId}`
+    : `task_create:${scope.createScope}`;
+}
+
+function storeIdempotencyIdentity(
+  record: Pick<StoreIdempotencyRecord, "key" | "scope">,
+): string {
+  return record.scope === undefined
+    ? `legacy\u0000${record.key}`
+    : `scoped\u0000${idempotencyScopeKey(record.scope)}\u0000${record.key}`;
+}
+
+const TASK_CONTEXT_PAYLOAD_TYPES = [
+  "task_brief",
+  "claim_ledger",
+  "evidence_ledger",
+  "impact",
+] as const satisfies readonly ArtifactTypeV1[];
+
+const TASK_GUARDED_PAYLOAD_TYPES = [
+  ...TASK_CONTEXT_PAYLOAD_TYPES,
+  "change_check",
+  "verification",
+] as const satisfies readonly ArtifactTypeV1[];
+
+const TASK_TRANSACTION_FILE_NAMES = new Set([
+  "task.json",
+  "task-brief.json",
+  "claims.json",
+  "evidence.json",
+  "impact.json",
+  "operation-journal.json",
+  "change-check.json",
+  "verification.json",
+  "events.jsonl",
+]);
+
+interface TaskPayloadMutationPolicy {
+  mutable: ReadonlySet<ArtifactTypeV1>;
+  removable: ReadonlySet<ArtifactTypeV1>;
+}
+
+function taskPayloadMutationPolicy(
+  previous: TaskManifestV1,
+  event: TaskEventV1,
+): TaskPayloadMutationPolicy {
+  const mutable = new Set<ArtifactTypeV1>();
+  const removable = new Set<ArtifactTypeV1>();
+  const action = event.action;
+  switch (action.type) {
+    case "transition_status":
+      if (
+        previous.status === "created" &&
+        action.to === "context_ready"
+      ) {
+        TASK_CONTEXT_PAYLOAD_TYPES.forEach((type) => mutable.add(type));
+      } else if (
+        (previous.status === "in_progress" ||
+          previous.status === "verification_required") &&
+        action.to === "check_required" &&
+        previous.latestSnapshotId !== event.sourceSnapshotId
+      ) {
+        removable.add("change_check");
+        removable.add("verification");
+        mutable.add("claim_ledger");
+      }
+      break;
+    case "refresh_task_context":
+    case "rebase_task":
+      TASK_CONTEXT_PAYLOAD_TYPES.forEach((type) => mutable.add(type));
+      removable.add("change_check");
+      removable.add("verification");
+      break;
+    case "confirm_goal":
+    case "confirm_acceptance_criteria":
+    case "record_assumption":
+    case "confirm_unknown":
+      // Human-confirmed Claims are required to backlink the newly produced
+      // human Evidence, so these two ledgers form one semantic mutation.
+      mutable.add("claim_ledger");
+      mutable.add("evidence_ledger");
+      break;
+    case "accept_finding":
+      mutable.add("change_check");
+      break;
+    case "change_checked":
+      mutable.add("change_check");
+      // New Findings require symmetric Finding Claims/backlinks.
+      mutable.add("claim_ledger");
+      // Findings may introduce diff Evidence and observed Impact paths while
+      // the confirmed Task Brief remains immutable.
+      mutable.add("evidence_ledger");
+      mutable.add("impact");
+      break;
+    case "verification_recorded":
+      // New Verification records require symmetric Claim backlinks.
+      mutable.add("claim_ledger");
+      mutable.add("verification");
+      break;
+    case "accept_verification_skip":
+      mutable.add("verification");
+      break;
+    case "task_created":
+    case "confirm_plan":
+    case "block_task":
+    case "resume_task":
+      break;
+    case "task_context_staled":
+      removable.add("change_check");
+      removable.add("verification");
+      mutable.add("claim_ledger");
+      break;
+    case "supersede_task":
+      if (previous.latestSnapshotId !== event.sourceSnapshotId) {
+        removable.add("change_check");
+        removable.add("verification");
+        mutable.add("claim_ledger");
+      }
+      break;
+  }
+  return { mutable, removable };
+}
+
+function taskTransactionBytes(bytes: Uint8Array): TaskTransactionBytesV1 {
+  return {
+    contentBase64: Buffer.from(bytes).toString("base64"),
+    contentDigest: sha256Bytes(bytes),
+  };
+}
+
+function decodeTaskTransactionBytes(
+  contentBase64: unknown,
+  contentDigest: unknown,
+  label: string,
+): Buffer {
+  if (
+    typeof contentBase64 !== "string" ||
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u
+      .test(contentBase64)
+  ) {
+    throw new ArtifactStoreError(
+      "artifact_corrupt",
+      `${label} is not canonical base64.`,
+    );
+  }
+  const bytes = Buffer.from(contentBase64, "base64");
+  if (bytes.toString("base64") !== contentBase64) {
+    throw new ArtifactStoreError(
+      "artifact_corrupt",
+      `${label} is not canonical base64.`,
+    );
+  }
+  const digest = ContentDigestSchema.parse(contentDigest);
+  if (sha256Bytes(bytes) !== digest) {
+    throw new ArtifactStoreError(
+      "artifact_corrupt",
+      `${label} does not match its durable digest.`,
+      { expectedDigest: digest, actualDigest: sha256Bytes(bytes) },
+    );
+  }
+  return bytes;
+}
+
+function compareCodeUnits(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function canonicalTaskDescriptors(
+  descriptors: readonly ReturnType<
+    typeof ArtifactDescriptorV1Schema.parse
+  >[],
+): string {
+  return canonicalizeJson(
+    [...descriptors].sort((left, right) => {
+      const typeOrder = compareCodeUnits(
+        left.artifactType,
+        right.artifactType,
+      );
+      if (typeOrder !== 0) return typeOrder;
+      const idOrder = compareCodeUnits(left.artifactId, right.artifactId);
+      return idOrder !== 0
+        ? idOrder
+        : compareCodeUnits(left.path, right.path);
+    }),
+  );
 }
 
 function parseIdempotencyIndex(input: unknown): StoreIdempotencyIndex {
@@ -210,6 +501,19 @@ function parseIdempotencyIndex(input: unknown): StoreIdempotencyIndex {
     const requestDigest = ContentDigestSchema.parse(value.requestDigest);
     const resultDigest = ContentDigestSchema.parse(value.resultDigest);
     const recordedAt = IsoTimestampSchema.parse(value.recordedAt);
+    const scope =
+      value.scope === undefined
+        ? undefined
+        : IdempotencyScopeV1Schema.parse(value.scope);
+    const actor =
+      value.actor === undefined ? undefined : ActorSchema.parse(value.actor);
+    if ((scope === undefined) !== (actor === undefined)) {
+      throw new ArtifactStoreError(
+        "artifact_corrupt",
+        "Scoped Store idempotency records must persist scope and actor together.",
+        { index },
+      );
+    }
     if (
       typeof value.artifactType !== "string" ||
       typeof value.artifactId !== "string" ||
@@ -226,6 +530,7 @@ function parseIdempotencyIndex(input: unknown): StoreIdempotencyIndex {
     return {
       key,
       requestDigest,
+      ...(scope === undefined ? {} : { scope, actor: actor! }),
       artifactType: ArtifactTypeV1Schema.parse(value.artifactType),
       artifactId: value.artifactId,
       resultRevision: value.resultRevision,
@@ -233,10 +538,12 @@ function parseIdempotencyIndex(input: unknown): StoreIdempotencyIndex {
       recordedAt,
     };
   });
-  if (new Set(records.map((record) => record.key)).size !== records.length) {
+  if (
+    new Set(records.map(storeIdempotencyIdentity)).size !== records.length
+  ) {
     throw new ArtifactStoreError(
       "artifact_corrupt",
-      "Store idempotency index contains duplicate keys.",
+      "Store idempotency index contains duplicate scope/key identities.",
     );
   }
   return { version: 1, records };
@@ -247,6 +554,399 @@ function compareArtifacts(
   right: PersistedArtifactV1,
 ): boolean {
   return canonicalizeJson(left) === canonicalizeJson(right);
+}
+
+const UPDATE_TASK_ACTION_TYPES = new Set<TaskEventV1["action"]["type"]>([
+  "confirm_goal",
+  "confirm_acceptance_criteria",
+  "confirm_plan",
+  "record_assumption",
+  "confirm_unknown",
+  "transition_status",
+  "accept_finding",
+  "block_task",
+  "resume_task",
+  "task_context_staled",
+  "refresh_task_context",
+  "rebase_task",
+  "supersede_task",
+  "accept_verification_skip",
+]);
+
+function taskOperationReceiptEventIssue(
+  receipt: TaskOperationReceiptV1,
+  event: TaskEventV1,
+): string | undefined {
+  if (
+    receipt.taskId !== event.taskId ||
+    receipt.eventId !== event.eventId ||
+    receipt.result.mutation.revision !== event.revision
+  ) {
+    return "operation receipt identity and revision must match its Task Event";
+  }
+  if (receipt.result.mutation.idempotentReplay) {
+    return "persisted operation receipts must record the original non-replay mutation result";
+  }
+  if (
+    receipt.operation === "task_created" ||
+    receipt.operation === "build_task_brief" ||
+    receipt.operation === "update_task"
+  ) {
+    const task = receipt.result.task;
+    if (
+      task.repositoryId !== event.repositoryId ||
+      task.worktreeId !== event.worktreeId ||
+      task.taskId !== event.taskId ||
+      task.revision !== event.revision ||
+      task.status !== event.resultingStatus ||
+      task.latestSnapshotId !== event.sourceSnapshotId
+    ) {
+      return "operation receipt Task result must match the Event repository, worktree, snapshot, revision, and resulting status";
+    }
+  }
+  switch (receipt.operation) {
+    case "task_created":
+      return event.action.type === "task_created"
+        ? undefined
+        : "task_created receipt requires a task_created Event";
+    case "build_task_brief":
+      return event.action.type === "transition_status" &&
+          event.action.to === "context_ready"
+        ? undefined
+        : "build_task_brief receipt requires a transition_status Event to context_ready";
+    case "update_task":
+      return UPDATE_TASK_ACTION_TYPES.has(event.action.type)
+        ? undefined
+        : "update_task receipt requires an update_task action Event";
+    case "check_change":
+      if (
+        event.action.type !== "change_checked" ||
+        event.previousStatus !== "check_required" ||
+        event.resultingStatus !== "check_required" ||
+        event.action.changeCheckId !== receipt.result.changeCheck.id ||
+        receipt.result.changeCheck.actualSnapshotId !==
+          event.sourceSnapshotId
+      ) {
+        return "check_change receipt must match its change_checked Event and actual Snapshot";
+      }
+      return undefined;
+    case "record_verification":
+      if (
+        event.action.type !== "verification_recorded" ||
+        event.previousStatus !== "verification_required" ||
+        event.resultingStatus !== "verification_required" ||
+        event.action.verificationRecordId !==
+          receipt.result.verification.id ||
+        receipt.result.verification.snapshotId !== event.sourceSnapshotId ||
+        receipt.result.verification.recordedAt !== event.occurredAt ||
+        receipt.result.verification.actor !== event.actor
+      ) {
+        return "record_verification receipt must match its verification_recorded Event status, Snapshot, actor, and audit time";
+      }
+      return undefined;
+  }
+}
+
+function taskIdempotencyRecordEventIssue(
+  record: IdempotencyRecordV1,
+  event: TaskEventV1,
+): string | undefined {
+  return record.taskId !== event.taskId ||
+    record.worktreeId !== event.worktreeId ||
+    record.eventId !== event.eventId ||
+    record.idempotencyKey !== event.idempotencyKey ||
+    record.actor !== event.actor ||
+    record.requestDigest !== event.requestDigest ||
+    record.resultRevision !== event.revision ||
+    record.createdAt !== event.occurredAt
+    ? "idempotency record identity, actor, request, revision, and audit time must match its Task Event"
+    : undefined;
+}
+
+function taskManifestFromOperationReceipt(
+  receipt: TaskOperationReceiptV1,
+): TaskManifestV1 | undefined {
+  switch (receipt.operation) {
+    case "task_created":
+    case "build_task_brief":
+    case "update_task":
+      return receipt.result.task;
+    case "check_change":
+    case "record_verification":
+      return undefined;
+  }
+}
+
+function taskOperationHistoryIssue(
+  receipts: readonly TaskOperationReceiptV1[],
+  events: readonly TaskEventV1[],
+  finalTask: TaskManifestV1,
+): string | undefined {
+  if (receipts.length !== events.length || receipts.length === 0) {
+    return "operation history must contain exactly one Receipt per Task Event";
+  }
+  let previous: TaskManifestV1 | undefined;
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index]!;
+    const receipt = receipts[index]!;
+    const receiptTask = taskManifestFromOperationReceipt(receipt);
+    let candidate: TaskManifestV1;
+    if (previous === undefined) {
+      if (
+        event.action.type !== "task_created" ||
+        receipt.operation !== "task_created" ||
+        receiptTask === undefined
+      ) {
+        return "operation history must begin with the complete task_created result";
+      }
+      candidate = receiptTask;
+      if (candidate.updatedAt !== event.occurredAt) {
+        return "task_created result update time must equal its Genesis Event time";
+      }
+    } else if (receiptTask !== undefined) {
+      candidate = receiptTask;
+      const transitionIssue = taskManifestTransitionIssue(
+        previous,
+        candidate,
+        event,
+      );
+      if (transitionIssue !== undefined) {
+        return `historical Task result is inconsistent at revision ${event.revision}: ${transitionIssue}`;
+      }
+    } else {
+      const derived = TaskManifestV1Schema.safeParse({
+        ...previous,
+        revision: event.revision,
+        updatedAt: event.occurredAt,
+        status: event.resultingStatus,
+        ...(event.sourceSnapshotId === undefined
+          ? {}
+          : { latestSnapshotId: event.sourceSnapshotId }),
+      });
+      if (!derived.success) {
+        return `historical non-Task receipt cannot derive a valid Task projection at revision ${event.revision}`;
+      }
+      candidate = derived.data;
+      const transitionIssue = taskManifestTransitionIssue(
+        previous,
+        candidate,
+        event,
+      );
+      if (transitionIssue !== undefined) {
+        return `historical non-Task result is inconsistent at revision ${event.revision}: ${transitionIssue}`;
+      }
+    }
+    if (candidate.parentTaskId !== finalTask.parentTaskId) {
+      return "historical Task result changed immutable parentTaskId";
+    }
+    previous = candidate;
+  }
+  return previous === undefined ||
+    canonicalizeJson(previous) !== canonicalizeJson(finalTask)
+      ? "operation history does not reconstruct the final committed Task Manifest"
+      : undefined;
+}
+
+function taskSnapshotChangeAllowed(
+  previous: TaskManifestV1,
+  next: TaskManifestV1,
+  event: TaskEventV1,
+): boolean {
+  const action = event.action;
+  switch (action.type) {
+    case "transition_status":
+      return (
+        (previous.status === "created" &&
+          next.status === "context_ready" &&
+          action.to === "context_ready") ||
+        ((previous.status === "in_progress" ||
+          previous.status === "verification_required") &&
+          next.status === "check_required" &&
+          action.to === "check_required")
+      );
+    case "task_context_staled":
+      return (
+        next.status === "stale" &&
+        previous.status !== "stale" &&
+        previous.status !== "verified" &&
+        previous.status !== "superseded"
+      );
+    case "refresh_task_context":
+    case "rebase_task":
+      return previous.status === "stale" && next.status === "context_ready";
+    case "supersede_task":
+      return (
+        next.status === "superseded" &&
+        previous.status !== "verified" &&
+        previous.status !== "superseded"
+      );
+    case "task_created":
+    case "confirm_goal":
+    case "confirm_acceptance_criteria":
+    case "confirm_plan":
+    case "record_assumption":
+    case "confirm_unknown":
+    case "accept_finding":
+    case "accept_verification_skip":
+    case "block_task":
+    case "resume_task":
+    case "change_checked":
+    case "verification_recorded":
+      return false;
+  }
+}
+
+function taskManifestTransitionIssue(
+  previous: TaskManifestV1,
+  next: TaskManifestV1,
+  event: TaskEventV1,
+): string | undefined {
+  if (
+    next.taskId !== previous.taskId ||
+    next.repositoryId !== previous.repositoryId ||
+    next.worktreeId !== previous.worktreeId ||
+    next.title !== previous.title ||
+    next.originalIntent !== previous.originalIntent ||
+    next.parentTaskId !== previous.parentTaskId ||
+    next.createdAt !== previous.createdAt ||
+    next.producerVersion !== previous.producerVersion
+  ) {
+    return "a live Task mutation changed immutable Task identity fields";
+  }
+  if (
+    next.revision !== previous.revision + 1 ||
+    next.revision !== event.revision ||
+    next.updatedAt !== event.occurredAt ||
+    event.previousStatus !== previous.status ||
+    event.resultingStatus !== next.status ||
+    event.sourceSnapshotId !== next.latestSnapshotId
+  ) {
+    return "Task Manifest revision, time, status, or Snapshot does not match its appended Event";
+  }
+  const action = event.action;
+  if (
+    next.latestSnapshotId !== previous.latestSnapshotId &&
+    !taskSnapshotChangeAllowed(previous, next, event)
+  ) {
+    return `${event.action.type} cannot change the Task Snapshot across this Lifecycle transition`;
+  }
+  if (
+    action.type === "transition_status" &&
+    previous.status === "verification_required" &&
+    next.status === "check_required" &&
+    next.latestSnapshotId === previous.latestSnapshotId
+  ) {
+    return "verification_required can return to check_required only after the actual Repository Snapshot changes";
+  }
+  if (
+    previous.status === "blocked" &&
+    !["resume_task", "task_context_staled", "supersede_task"].includes(
+      action.type,
+    )
+  ) {
+    return "blocked Tasks only allow resume_task, task_context_staled, or supersede_task";
+  }
+  if (
+    previous.status === "stale" &&
+    !["refresh_task_context", "rebase_task", "supersede_task"].includes(
+      action.type,
+    )
+  ) {
+    return "stale Tasks only allow refresh_task_context, rebase_task, or supersede_task";
+  }
+  if (
+    previous.status === "verified" ||
+    previous.status === "superseded"
+  ) {
+    return "verified and superseded Tasks are terminal";
+  }
+
+  if (action.type === "rebase_task") {
+    if (next.baselineSnapshotId !== action.newBaselineSnapshotId) {
+      return "rebase_task must set the declared new baseline Snapshot";
+    }
+    if (next.baselineSnapshotId === previous.baselineSnapshotId) {
+      return "rebase_task must change the Task baseline Snapshot";
+    }
+  } else if (next.baselineSnapshotId !== previous.baselineSnapshotId) {
+    return "baselineSnapshotId may change only through rebase_task";
+  }
+
+  switch (action.type) {
+    case "task_created":
+      return "task_created is valid only for the revision-1 Genesis";
+    case "transition_status":
+      return next.status === action.to
+        ? undefined
+        : "transition_status must produce its declared target status";
+    case "block_task":
+      return next.status === "blocked" &&
+          next.blockedState?.resumeStatus === previous.status &&
+          next.blockedState.reasonCode === action.reasonCode &&
+          next.blockedState.message === action.message &&
+          next.blockedState.actor === event.actor &&
+          next.blockedState.blockedAt === event.occurredAt
+        ? undefined
+        : "block_task must persist the exact resumable blocked state";
+    case "resume_task":
+      return previous.status === "blocked" &&
+          previous.blockedState !== undefined &&
+          next.status === previous.blockedState.resumeStatus &&
+          next.blockedState === undefined
+        ? undefined
+        : "resume_task must restore and clear the exact blocked state";
+    case "task_context_staled":
+      return next.status === "stale" &&
+          next.staleState?.staleFromStatus === previous.status &&
+          canonicalizeJson(next.staleState.reasonCodes) ===
+            canonicalizeJson(action.reasonCodes) &&
+          next.staleState.detectedAtSnapshotId ===
+            action.detectedAtSnapshotId &&
+          action.detectedAtSnapshotId === next.latestSnapshotId &&
+          next.staleState.detectedAt === event.occurredAt
+        ? undefined
+        : "task_context_staled must persist the exact stale state";
+    case "refresh_task_context":
+      return next.status === "context_ready" &&
+          next.latestSnapshotId === action.targetSnapshotId &&
+          next.staleState === undefined
+        ? undefined
+        : "refresh_task_context must publish context_ready on its target Snapshot";
+    case "rebase_task":
+      return next.status === "context_ready" &&
+          next.staleState === undefined
+        ? undefined
+        : "rebase_task must return a stale Task to context_ready";
+    case "supersede_task":
+      return next.status === "superseded" &&
+          next.supersession?.supersededFromStatus === previous.status &&
+          next.supersession.reason === action.reason &&
+          next.supersession.replacementTaskId === action.replacementTaskId &&
+          next.supersession.actor === event.actor &&
+          next.supersession.supersededAt === event.occurredAt
+        ? undefined
+        : "supersede_task must persist the exact supersession state";
+    case "confirm_goal":
+    case "confirm_acceptance_criteria":
+    case "confirm_plan":
+    case "record_assumption":
+    case "confirm_unknown":
+    case "accept_finding":
+    case "accept_verification_skip":
+      return next.status === previous.status
+        ? undefined
+        : `${action.type} must not change Task status`;
+    case "change_checked":
+      return previous.status === "check_required" &&
+          next.status === "check_required"
+        ? undefined
+        : "change_checked requires and preserves check_required";
+    case "verification_recorded":
+      return previous.status === "verification_required" &&
+          next.status === "verification_required"
+        ? undefined
+        : "verification_recorded requires and preserves verification_required";
+  }
 }
 
 function isArtifactIntegrityFailure(
@@ -269,6 +969,16 @@ function isCommittedAtomicWriteError(
     error instanceof ArtifactStoreError &&
     error.details?.committed === true &&
     error.details?.targetPath === targetPath
+  );
+}
+
+function isDurablyCommittedAtomicWriteError(
+  error: unknown,
+  targetPath: string,
+): error is ArtifactStoreError {
+  return (
+    isCommittedAtomicWriteError(error, targetPath) &&
+    error.details?.durabilityConfirmed === true
   );
 }
 
@@ -728,6 +1438,7 @@ export class ArtifactStore {
       descriptor.taskId === undefined ||
       descriptor.freshness !== "partial" ||
       (descriptor.artifactType !== "task_manifest" &&
+        descriptor.artifactType !== "task_operation_journal" &&
         descriptor.artifactType !== "task_event_log")
     ) {
       return false;
@@ -742,6 +1453,7 @@ export class ArtifactStore {
       taskDescriptors.every(
         (candidate) =>
           candidate.artifactType === "task_manifest" ||
+          candidate.artifactType === "task_operation_journal" ||
           candidate.artifactType === "task_event_log",
       )
     );
@@ -855,22 +1567,96 @@ export class ArtifactStore {
     return descriptor;
   }
 
+  async #assertTaskBaselineAuthority(
+    manifest: ArtifactManifestV1,
+    prepared: PreparedTaskBundle,
+  ): Promise<void> {
+    const task = prepared.bundle.manifest;
+    if (task.baselineSnapshotId === task.latestSnapshotId) return;
+    const event = prepared.bundle.events.at(-1);
+    if (event === undefined) return;
+    const isContextBuild =
+      event.previousStatus === "created" &&
+      event.action.type === "transition_status" &&
+      event.action.to === "context_ready";
+    const requiresDeclaredBaseline =
+      event.action.type === "task_created" ||
+      event.action.type === "rebase_task" ||
+      isContextBuild;
+    if (!requiresDeclaredBaseline) return;
+    const pulseDescriptor = manifest.artifacts.find(
+      (descriptor) =>
+        descriptor.artifactType === "repo_pulse" &&
+        descriptor.state === "current" &&
+        descriptor.sourceSnapshotId === task.latestSnapshotId,
+    );
+    if (pulseDescriptor === undefined) {
+      // Stage 1 deliberately persists user intent before Repo Pulse is ready;
+      // Stage 2 must bind the baseline to authoritative Pulse bytes.
+      if (event.action.type === "task_created") return;
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        "Task context/rebase requires a current Repo Pulse that declares its logical baseline.",
+        {
+          taskId: prepared.taskId,
+          baselineSnapshotId: task.baselineSnapshotId,
+          latestSnapshotId: task.latestSnapshotId,
+        },
+      );
+    }
+    await this.#requireCurrentRepoPulse(manifest, task.latestSnapshotId);
+    const pulse = await this.#readArtifactPath(this.layout.repoPulse);
+    if (
+      pulse.artifactType !== "repo_pulse" ||
+      pulse.payload.baselineSnapshotId !== task.baselineSnapshotId
+    ) {
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        "Task baselineSnapshotId is not declared by the current trusted Repo Pulse.",
+        {
+          taskId: prepared.taskId,
+          baselineSnapshotId: task.baselineSnapshotId,
+          pulseBaselineSnapshotId:
+            pulse.artifactType === "repo_pulse"
+              ? pulse.payload.baselineSnapshotId
+              : undefined,
+        },
+      );
+    }
+  }
+
   async #taskBundleFreshness(
     manifest: ArtifactManifestV1,
     prepared: PreparedTaskBundle,
   ): Promise<"fresh" | "partial"> {
-    const contextless = prepared.artifacts.length === 1;
+    const contextless = !prepared.contextual;
+    const latestEvent = prepared.bundle.events.at(-1);
+    const previousEvent = prepared.bundle.events.at(-2);
+    const latestAction = latestEvent?.action.type;
+    const snapshotCheckAlignment =
+      (latestEvent?.previousStatus === "in_progress" ||
+        latestEvent?.previousStatus === "verification_required") &&
+      latestEvent.action.type === "transition_status" &&
+      latestEvent.action.to === "check_required" &&
+      previousEvent?.sourceSnapshotId !== latestEvent.sourceSnapshotId;
+    const lifecycleControlOnly =
+      latestAction === "task_context_staled" ||
+      latestAction === "supersede_task" ||
+      snapshotCheckAlignment;
     const snapshotDescriptor = await this.#usableSnapshotDescriptor(
       manifest,
       prepared.bundle.manifest.latestSnapshotId,
     );
     if (snapshotDescriptor !== undefined) {
+      await this.#assertTaskBaselineAuthority(manifest, prepared);
+      if (contextless || lifecycleControlOnly) {
+        return "partial";
+      }
       const pulseDescriptor = await this.#requireCurrentRepoPulse(
         manifest,
         prepared.bundle.manifest.latestSnapshotId,
       );
-      return !contextless &&
-        snapshotDescriptor.state === "current" &&
+      return snapshotDescriptor.state === "current" &&
         snapshotDescriptor.freshness === "fresh" &&
         pulseDescriptor.freshness === "fresh"
         ? "fresh"
@@ -878,7 +1664,9 @@ export class ArtifactStore {
     }
     if (
       contextless &&
-      prepared.artifacts[0]?.artifactType === "task_manifest" &&
+      prepared.artifacts.some(
+        (artifact) => artifact.artifactType === "task_manifest",
+      ) &&
       manifest.status === "cold" &&
       manifest.latestSnapshotId === undefined
     ) {
@@ -895,9 +1683,1527 @@ export class ArtifactStore {
     );
   }
 
+  async #publishedTaskArtifact(
+    manifest: ArtifactManifestV1,
+    taskId: string,
+    artifactType: ArtifactTypeV1,
+  ): Promise<PersistedArtifactV1 | undefined> {
+    const descriptor = manifest.artifacts.find(
+      (candidate) =>
+        candidate.taskId === taskId &&
+        candidate.artifactType === artifactType,
+    );
+    if (descriptor === undefined) return undefined;
+    const targetPath = this.layout.artifact(artifactType, { taskId });
+    const artifact = await this.#readArtifactPath(targetPath);
+    if (artifact.artifactType !== artifactType) {
+      throw new ArtifactStoreError(
+        "manifest_inconsistent",
+        `The published ${artifactType} path resolved another Artifact type.`,
+        { taskId, artifactType },
+      );
+    }
+    await this.#requirePublishedDescriptor(
+      artifact,
+      targetPath,
+      manifest,
+    );
+    return artifact;
+  }
+
+  async #assertConfirmPayloadDelta(
+    manifest: ArtifactManifestV1,
+    prepared: PreparedTaskBundle,
+    event: TaskEventV1,
+  ): Promise<void> {
+    const action = event.action;
+    const targetKinds = new Map<string, string>();
+    switch (action.type) {
+      case "confirm_goal":
+        targetKinds.set(action.claimId, "goal");
+        break;
+      case "confirm_acceptance_criteria":
+        action.claimIds.forEach((claimId) =>
+          targetKinds.set(claimId, "acceptance"),
+        );
+        break;
+      case "record_assumption":
+        targetKinds.set(action.claimId, "assumption");
+        break;
+      case "confirm_unknown":
+        targetKinds.set(action.claimId, "unknown");
+        break;
+      default:
+        return;
+    }
+    const currentClaims = await this.#publishedTaskArtifact(
+      manifest,
+      prepared.taskId,
+      "claim_ledger",
+    );
+    const currentEvidence = await this.#publishedTaskArtifact(
+      manifest,
+      prepared.taskId,
+      "evidence_ledger",
+    );
+    const candidateClaims = prepared.artifacts.find(
+      (artifact) => artifact.artifactType === "claim_ledger",
+    );
+    const candidateEvidence = prepared.artifacts.find(
+      (artifact) => artifact.artifactType === "evidence_ledger",
+    );
+    if (
+      currentClaims?.artifactType !== "claim_ledger" ||
+      currentEvidence?.artifactType !== "evidence_ledger" ||
+      candidateClaims?.artifactType !== "claim_ledger" ||
+      candidateEvidence?.artifactType !== "evidence_ledger"
+    ) {
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        `${action.type} requires current and candidate Claim/Evidence ledgers.`,
+        { taskId: prepared.taskId, action: action.type },
+      );
+    }
+    const beforeClaims = currentClaims.payload.claims;
+    const afterClaims = candidateClaims.payload.claims;
+    const beforeEvidence = currentEvidence.payload.evidence;
+    const afterEvidence = candidateEvidence.payload.evidence;
+    if (
+      beforeClaims.length !== afterClaims.length ||
+      canonicalizeJson(
+        afterEvidence.slice(0, beforeEvidence.length),
+      ) !== canonicalizeJson(beforeEvidence) ||
+      afterEvidence.length !== beforeEvidence.length + targetKinds.size
+    ) {
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        `${action.type} must preserve existing Claim/Evidence facts and append one human Evidence per target Claim.`,
+        { taskId: prepared.taskId, action: action.type },
+      );
+    }
+    const appendedEvidence = afterEvidence.slice(beforeEvidence.length);
+    const usedEvidenceIds = new Set<string>();
+    for (let index = 0; index < beforeClaims.length; index += 1) {
+      const before = beforeClaims[index]!;
+      const after = afterClaims[index]!;
+      if (before.id !== after.id) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          `${action.type} cannot reorder or replace Claims.`,
+          { taskId: prepared.taskId, action: action.type, claimId: before.id },
+        );
+      }
+      const expectedKind = targetKinds.get(before.id);
+      if (expectedKind === undefined) {
+        if (canonicalizeJson(before) !== canonicalizeJson(after)) {
+          throw new ArtifactStoreError(
+            "reference_integrity_failed",
+            `${action.type} cannot mutate a non-target Claim.`,
+            {
+              taskId: prepared.taskId,
+              action: action.type,
+              claimId: before.id,
+            },
+          );
+        }
+        continue;
+      }
+      if (before.kind !== expectedKind) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          `${action.type} target Claim has the wrong kind.`,
+          {
+            taskId: prepared.taskId,
+            action: action.type,
+            claimId: before.id,
+            expectedKind,
+            actualKind: before.kind,
+          },
+        );
+      }
+      const humanEvidence = appendedEvidence.filter(
+        (item) =>
+          item.kind === "human" &&
+          item.claimIds.length === 1 &&
+          item.claimIds[0] === before.id,
+      );
+      if (humanEvidence.length !== 1) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          `${action.type} requires exactly one appended human Evidence for each target Claim.`,
+          { taskId: prepared.taskId, action: action.type, claimId: before.id },
+        );
+      }
+      const evidence = humanEvidence[0]!;
+      if (
+        usedEvidenceIds.has(evidence.id) ||
+        evidence.epistemicStatus !== "human_confirmed" ||
+        evidence.freshness !== "current" ||
+        evidence.nodeIds.length !== 0 ||
+        evidence.producedBy !== "task-engine" ||
+        evidence.createdAt !== event.occurredAt ||
+        evidence.observedAtSnapshotId !== event.sourceSnapshotId ||
+        evidence.confirmation.actor !== event.actor ||
+        evidence.confirmation.input !== before.statement ||
+        evidence.confirmation.confirmedAt !== event.occurredAt
+      ) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          `${action.type} human Evidence must match its Event actor, time, Snapshot, and Claim statement.`,
+          { taskId: prepared.taskId, action: action.type, claimId: before.id },
+        );
+      }
+      usedEvidenceIds.add(evidence.id);
+      const {
+        boundaryReason,
+        derivationPath: _derivationPath,
+        ...base
+      } = before;
+      const expectedClaim = {
+        ...base,
+        epistemicStatus: "human_confirmed",
+        lifecycleStatus: "supported",
+        freshness: "current",
+        evidenceIds: [...new Set([...before.evidenceIds, evidence.id])],
+        confirmationEventId: event.eventId,
+        ...(before.kind === "unknown" && boundaryReason !== undefined
+          ? { boundaryReason }
+          : {}),
+        updatedAt: event.occurredAt,
+      };
+      if (canonicalizeJson(expectedClaim) !== canonicalizeJson(after)) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          `${action.type} may update only the target Claim confirmation fields.`,
+          { taskId: prepared.taskId, action: action.type, claimId: before.id },
+        );
+      }
+    }
+    if (
+      usedEvidenceIds.size !== targetKinds.size ||
+      [...targetKinds.keys()].some(
+        (claimId) => !beforeClaims.some((claim) => claim.id === claimId),
+      )
+    ) {
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        `${action.type} target Claims and appended human Evidence are incomplete.`,
+        { taskId: prepared.taskId, action: action.type },
+      );
+    }
+  }
+
+  async #assertTargetedResolutionDelta(
+    manifest: ArtifactManifestV1,
+    prepared: PreparedTaskBundle,
+    event: TaskEventV1,
+  ): Promise<void> {
+    const action = event.action;
+    if (action.type === "accept_finding") {
+      const current = await this.#publishedTaskArtifact(
+        manifest,
+        prepared.taskId,
+        "change_check",
+      );
+      const candidate = prepared.artifacts.find(
+        (artifact) => artifact.artifactType === "change_check",
+      );
+      if (
+        current?.artifactType !== "change_check" ||
+        candidate?.artifactType !== "change_check"
+      ) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          "accept_finding requires current and candidate Change Checks.",
+          { taskId: prepared.taskId, findingId: action.findingId },
+        );
+      }
+      const target = current.payload.findings.find(
+        (finding) => finding.id === action.findingId,
+      );
+      if (target === undefined || target.resolution !== undefined) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          "accept_finding requires one unresolved target Finding.",
+          { taskId: prepared.taskId, findingId: action.findingId },
+        );
+      }
+      const expected = {
+        ...current.payload,
+        findings: current.payload.findings.map((finding) =>
+          finding.id === action.findingId
+            ? {
+                ...finding,
+                resolution: {
+                  kind: "accepted" as const,
+                  actor: event.actor,
+                  reason: action.reason,
+                  at: event.occurredAt,
+                  eventId: event.eventId,
+                },
+              }
+            : finding,
+        ),
+      };
+      if (canonicalizeJson(expected) !== canonicalizeJson(candidate.payload)) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          "accept_finding may mutate only the target Finding resolution.",
+          { taskId: prepared.taskId, findingId: action.findingId },
+        );
+      }
+    }
+    if (action.type === "accept_verification_skip") {
+      const current = await this.#publishedTaskArtifact(
+        manifest,
+        prepared.taskId,
+        "verification",
+      );
+      const candidate = prepared.artifacts.find(
+        (artifact) => artifact.artifactType === "verification",
+      );
+      if (
+        current?.artifactType !== "verification" ||
+        candidate?.artifactType !== "verification"
+      ) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          "accept_verification_skip requires current and candidate Verification records.",
+          {
+            taskId: prepared.taskId,
+            verificationRecordId: action.verificationRecordId,
+          },
+        );
+      }
+      const target = current.payload.records.find(
+        (record) => record.id === action.verificationRecordId,
+      );
+      if (
+        target === undefined ||
+        target.status !== "skipped" ||
+        target.skipAcceptance !== undefined
+      ) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          "accept_verification_skip requires one unaccepted skipped target record.",
+          {
+            taskId: prepared.taskId,
+            verificationRecordId: action.verificationRecordId,
+          },
+        );
+      }
+      const expected = {
+        records: current.payload.records.map((record) =>
+          record.id === action.verificationRecordId
+            ? {
+                ...record,
+                skipAcceptance: {
+                  actor: event.actor,
+                  reason: action.reason,
+                  acceptedAt: event.occurredAt,
+                  eventId: event.eventId,
+                },
+              }
+            : record,
+        ),
+      };
+      if (canonicalizeJson(expected) !== canonicalizeJson(candidate.payload)) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          "accept_verification_skip may mutate only the target record acceptance.",
+          {
+            taskId: prepared.taskId,
+            verificationRecordId: action.verificationRecordId,
+          },
+        );
+      }
+    }
+  }
+
+  async #assertSnapshotCleanupClaimDelta(
+    manifest: ArtifactManifestV1,
+    prepared: PreparedTaskBundle,
+    previousTask: TaskManifestV1,
+    event: TaskEventV1,
+  ): Promise<void> {
+    const action = event.action;
+    const isSnapshotCleanup =
+      action.type === "task_context_staled" ||
+      (action.type === "supersede_task" &&
+        previousTask.latestSnapshotId !== event.sourceSnapshotId) ||
+      (action.type === "transition_status" &&
+        (previousTask.status === "in_progress" ||
+          previousTask.status === "verification_required") &&
+        action.to === "check_required" &&
+        previousTask.latestSnapshotId !== event.sourceSnapshotId);
+    if (!isSnapshotCleanup) return;
+    const currentClaims = await this.#publishedTaskArtifact(
+      manifest,
+      prepared.taskId,
+      "claim_ledger",
+    );
+    const candidateClaims = prepared.artifacts.find(
+      (artifact) => artifact.artifactType === "claim_ledger",
+    );
+    if (
+      currentClaims === undefined &&
+      candidateClaims === undefined
+    ) {
+      return;
+    }
+    if (
+      currentClaims?.artifactType !== "claim_ledger" ||
+      candidateClaims?.artifactType !== "claim_ledger"
+    ) {
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        `${action.type} Snapshot cleanup must preserve the Claim ledger.`,
+        { taskId: prepared.taskId, action: action.type },
+      );
+    }
+    const currentCheck = await this.#publishedTaskArtifact(
+      manifest,
+      prepared.taskId,
+      "change_check",
+    );
+    const currentVerification = await this.#publishedTaskArtifact(
+      manifest,
+      prepared.taskId,
+      "verification",
+    );
+    const candidateCheck = prepared.artifacts.find(
+      (artifact) => artifact.artifactType === "change_check",
+    );
+    const candidateVerification = prepared.artifacts.find(
+      (artifact) => artifact.artifactType === "verification",
+    );
+    if (candidateCheck !== undefined || candidateVerification !== undefined) {
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        `${action.type} Snapshot cleanup must remove canonical Check and Verification projections.`,
+        { taskId: prepared.taskId, action: action.type },
+      );
+    }
+    const removedFindingIds =
+      currentCheck?.artifactType === "change_check"
+        ? new Set(
+            currentCheck.payload.findings.map((finding) => finding.id),
+          )
+        : new Set<string>();
+    const removedVerificationIds =
+      currentVerification?.artifactType === "verification"
+        ? new Set(
+            currentVerification.payload.records.map((record) => record.id),
+          )
+        : new Set<string>();
+    const expected = {
+      claims: currentClaims.payload.claims.map((claim) => ({
+        ...claim,
+        findingIds: claim.findingIds.filter(
+          (findingId) => !removedFindingIds.has(findingId),
+        ),
+        verificationRecordIds: claim.verificationRecordIds.filter(
+          (recordId) => !removedVerificationIds.has(recordId),
+        ),
+      })),
+    };
+    if (
+      canonicalizeJson(expected) !==
+      canonicalizeJson(candidateClaims.payload)
+    ) {
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        `${action.type} may change Claims only by removing backlinks to deleted Check/Verification facts.`,
+        { taskId: prepared.taskId, action: action.type },
+      );
+    }
+  }
+
+  async #assertChangeCheckedPayloadDelta(
+    manifest: ArtifactManifestV1,
+    prepared: PreparedTaskBundle,
+    event: TaskEventV1,
+  ): Promise<void> {
+    if (event.action.type !== "change_checked") return;
+    const [
+      currentClaims,
+      currentEvidence,
+      currentImpact,
+      currentVerification,
+    ] = await Promise.all([
+      this.#publishedTaskArtifact(
+        manifest,
+        prepared.taskId,
+        "claim_ledger",
+      ),
+      this.#publishedTaskArtifact(
+        manifest,
+        prepared.taskId,
+        "evidence_ledger",
+      ),
+      this.#publishedTaskArtifact(manifest, prepared.taskId, "impact"),
+      this.#publishedTaskArtifact(
+        manifest,
+        prepared.taskId,
+        "verification",
+      ),
+    ]);
+    const candidateClaims = prepared.artifacts.find(
+      (artifact) => artifact.artifactType === "claim_ledger",
+    );
+    const candidateEvidence = prepared.artifacts.find(
+      (artifact) => artifact.artifactType === "evidence_ledger",
+    );
+    const candidateImpact = prepared.artifacts.find(
+      (artifact) => artifact.artifactType === "impact",
+    );
+    const candidateCheck = prepared.artifacts.find(
+      (artifact) => artifact.artifactType === "change_check",
+    );
+    const candidateVerification = prepared.artifacts.find(
+      (artifact) => artifact.artifactType === "verification",
+    );
+    if (
+      currentClaims?.artifactType !== "claim_ledger" ||
+      currentEvidence?.artifactType !== "evidence_ledger" ||
+      currentImpact?.artifactType !== "impact" ||
+      candidateClaims?.artifactType !== "claim_ledger" ||
+      candidateEvidence?.artifactType !== "evidence_ledger" ||
+      candidateImpact?.artifactType !== "impact" ||
+      candidateCheck?.artifactType !== "change_check"
+    ) {
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        "change_checked requires current and candidate Claim, Evidence, and Impact ledgers plus its candidate Change Check.",
+        { taskId: prepared.taskId },
+      );
+    }
+    if (
+      candidateCheck.payload.id !== event.action.changeCheckId ||
+      candidateCheck.artifactId !==
+        event.action.changeCheckArtifactId
+    ) {
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        "change_checked must publish the exact Change Check identified by its Event.",
+        { taskId: prepared.taskId },
+      );
+    }
+
+    if (
+      (currentVerification === undefined) !==
+        (candidateVerification === undefined) ||
+      (currentVerification?.artifactType === "verification" &&
+        candidateVerification?.artifactType === "verification" &&
+        canonicalizeJson(currentVerification.payload) !==
+          canonicalizeJson(candidateVerification.payload))
+    ) {
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        "change_checked cannot add, remove, or rewrite Verification history.",
+        { taskId: prepared.taskId },
+      );
+    }
+
+    const findings = candidateCheck.payload.findings;
+    const beforeClaims = currentClaims.payload.claims;
+    const afterClaims = candidateClaims.payload.claims;
+    if (afterClaims.length < beforeClaims.length) {
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        "change_checked cannot delete historical Claims.",
+        { taskId: prepared.taskId },
+      );
+    }
+    for (let index = 0; index < beforeClaims.length; index += 1) {
+      const before = beforeClaims[index]!;
+      const after = afterClaims[index]!;
+      const appendedFindingIds = findings
+        .filter(
+          (finding) =>
+            finding.claimIds.includes(before.id) &&
+            !before.findingIds.includes(finding.id),
+        )
+        .map((finding) => finding.id);
+      const expected = {
+        ...before,
+        findingIds: [...before.findingIds, ...appendedFindingIds],
+      };
+      if (canonicalizeJson(expected) !== canonicalizeJson(after)) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          "change_checked may mutate an existing Claim only by appending backlinks to Findings in this Check.",
+          { taskId: prepared.taskId, claimId: before.id },
+        );
+      }
+    }
+    const appendedClaims = afterClaims.slice(beforeClaims.length);
+    for (const claim of appendedClaims) {
+      const linkedFindingIds = findings
+        .filter((finding) => finding.claimIds.includes(claim.id))
+        .map((finding) => finding.id);
+      if (
+        claim.kind !== "finding" ||
+        linkedFindingIds.length === 0 ||
+        canonicalizeJson(claim.findingIds) !==
+          canonicalizeJson(linkedFindingIds)
+      ) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          "change_checked may append only Finding Claims exactly linked to this Check.",
+          { taskId: prepared.taskId, claimId: claim.id },
+        );
+      }
+    }
+
+    const beforeEvidence = currentEvidence.payload.evidence;
+    const afterEvidence = candidateEvidence.payload.evidence;
+    if (afterEvidence.length < beforeEvidence.length) {
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        "change_checked cannot delete historical Evidence.",
+        { taskId: prepared.taskId },
+      );
+    }
+    for (let index = 0; index < beforeEvidence.length; index += 1) {
+      const before = beforeEvidence[index]!;
+      const after = afterEvidence[index]!;
+      const appendedClaimIds = appendedClaims
+        .filter(
+          (claim) =>
+            claim.evidenceIds.includes(before.id) &&
+            findings.some(
+              (finding) =>
+                finding.claimIds.includes(claim.id) &&
+                finding.evidenceIds.includes(before.id),
+            ) &&
+            !before.claimIds.includes(claim.id),
+        )
+        .map((claim) => claim.id);
+      const expected = {
+        ...before,
+        claimIds: [...before.claimIds, ...appendedClaimIds],
+      };
+      if (canonicalizeJson(expected) !== canonicalizeJson(after)) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          "change_checked may mutate existing Evidence only by appending backlinks to new Finding Claims in this Check.",
+          { taskId: prepared.taskId, evidenceId: before.id },
+        );
+      }
+    }
+    for (const evidence of afterEvidence.slice(beforeEvidence.length)) {
+      if (
+        !findings.some((finding) =>
+          finding.evidenceIds.includes(evidence.id),
+        )
+      ) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          "change_checked may append only Evidence referenced by this Check.",
+          { taskId: prepared.taskId, evidenceId: evidence.id },
+        );
+      }
+    }
+
+    const beforePaths = currentImpact.payload.paths;
+    const afterPaths = candidateImpact.payload.paths;
+    if (afterPaths.length < beforePaths.length) {
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        "change_checked cannot delete historical Impact paths.",
+        { taskId: prepared.taskId },
+      );
+    }
+    for (let index = 0; index < beforePaths.length; index += 1) {
+      const before = beforePaths[index]!;
+      const after = afterPaths[index]!;
+      const appendedClaimIds = appendedClaims
+        .filter(
+          (claim) =>
+            findings.some(
+              (finding) =>
+                finding.claimIds.includes(claim.id) &&
+                finding.impactPathIds.includes(before.id),
+            ) &&
+            !before.claimIds.includes(claim.id),
+        )
+        .map((claim) => claim.id);
+      const expected = {
+        ...before,
+        claimIds: [...before.claimIds, ...appendedClaimIds],
+      };
+      if (canonicalizeJson(expected) !== canonicalizeJson(after)) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          "change_checked may mutate existing Impact only by appending backlinks to new Finding Claims in this Check.",
+          { taskId: prepared.taskId, impactPathId: before.id },
+        );
+      }
+    }
+    for (const impactPath of afterPaths.slice(beforePaths.length)) {
+      if (
+        !findings.some((finding) =>
+          finding.impactPathIds.includes(impactPath.id),
+        )
+      ) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          "change_checked may append only Impact paths referenced by this Check.",
+          { taskId: prepared.taskId, impactPathId: impactPath.id },
+        );
+      }
+    }
+  }
+
+  async #assertVerificationRecordedPayloadDelta(
+    manifest: ArtifactManifestV1,
+    prepared: PreparedTaskBundle,
+    event: TaskEventV1,
+  ): Promise<void> {
+    if (event.action.type !== "verification_recorded") return;
+    const currentClaims = await this.#publishedTaskArtifact(
+      manifest,
+      prepared.taskId,
+      "claim_ledger",
+    );
+    const currentVerification = await this.#publishedTaskArtifact(
+      manifest,
+      prepared.taskId,
+      "verification",
+    );
+    const candidateClaims = prepared.artifacts.find(
+      (artifact) => artifact.artifactType === "claim_ledger",
+    );
+    const candidateVerification = prepared.artifacts.find(
+      (artifact) => artifact.artifactType === "verification",
+    );
+    if (
+      currentClaims?.artifactType !== "claim_ledger" ||
+      candidateClaims?.artifactType !== "claim_ledger" ||
+      candidateVerification?.artifactType !== "verification"
+    ) {
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        "verification_recorded requires current/candidate Claims and a candidate Verification ledger.",
+        { taskId: prepared.taskId },
+      );
+    }
+    const beforeRecords =
+      currentVerification?.artifactType === "verification"
+        ? currentVerification.payload.records
+        : [];
+    const afterRecords = candidateVerification.payload.records;
+    if (
+      afterRecords.length !== beforeRecords.length + 1 ||
+      canonicalizeJson(afterRecords.slice(0, beforeRecords.length)) !==
+        canonicalizeJson(beforeRecords)
+    ) {
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        "verification_recorded must preserve Verification history and append exactly one record.",
+        { taskId: prepared.taskId },
+      );
+    }
+    const appendedRecord = afterRecords.at(-1)!;
+    if (appendedRecord.id !== event.action.verificationRecordId) {
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        "verification_recorded appended a record other than the Event target.",
+        {
+          taskId: prepared.taskId,
+          verificationRecordId: event.action.verificationRecordId,
+        },
+      );
+    }
+
+    const beforeClaims = currentClaims.payload.claims;
+    const afterClaims = candidateClaims.payload.claims;
+    if (afterClaims.length !== beforeClaims.length) {
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        "verification_recorded cannot add or delete Claims.",
+        { taskId: prepared.taskId },
+      );
+    }
+    for (let index = 0; index < beforeClaims.length; index += 1) {
+      const before = beforeClaims[index]!;
+      const after = afterClaims[index]!;
+      const expected = appendedRecord.claimIds.includes(before.id)
+        ? {
+            ...before,
+            verificationRecordIds: [
+              ...before.verificationRecordIds,
+              appendedRecord.id,
+            ],
+          }
+        : before;
+      if (canonicalizeJson(expected) !== canonicalizeJson(after)) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          "verification_recorded may mutate a Claim only by appending the new Verification backlink.",
+          { taskId: prepared.taskId, claimId: before.id },
+        );
+      }
+    }
+  }
+
+  async #assertTaskPayloadMutationPolicy(
+    manifest: ArtifactManifestV1,
+    prepared: PreparedTaskBundle,
+    previousTask: TaskManifestV1,
+    event: TaskEventV1,
+  ): Promise<void> {
+    await this.#assertConfirmPayloadDelta(
+      manifest,
+      prepared,
+      event,
+    );
+    await this.#assertTargetedResolutionDelta(
+      manifest,
+      prepared,
+      event,
+    );
+    await this.#assertSnapshotCleanupClaimDelta(
+      manifest,
+      prepared,
+      previousTask,
+      event,
+    );
+    await this.#assertChangeCheckedPayloadDelta(
+      manifest,
+      prepared,
+      event,
+    );
+    await this.#assertVerificationRecordedPayloadDelta(
+      manifest,
+      prepared,
+      event,
+    );
+    const policy = taskPayloadMutationPolicy(previousTask, event);
+    for (const artifactType of TASK_GUARDED_PAYLOAD_TYPES) {
+      const currentDescriptor = manifest.artifacts.find(
+        (descriptor) =>
+          descriptor.taskId === prepared.taskId &&
+          descriptor.artifactType === artifactType,
+      );
+      const candidate = prepared.artifacts.find(
+        (artifact) => artifact.artifactType === artifactType,
+      );
+      if (policy.mutable.has(artifactType)) continue;
+      if (
+        policy.removable.has(artifactType) &&
+        currentDescriptor !== undefined &&
+        candidate === undefined
+      ) {
+        continue;
+      }
+      if (
+        (currentDescriptor === undefined) !== (candidate === undefined)
+      ) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          `Task action ${event.action.type} cannot add or remove ${artifactType} payload state.`,
+          {
+            taskId: prepared.taskId,
+            action: event.action.type,
+            artifactType,
+          },
+        );
+      }
+      if (currentDescriptor === undefined || candidate === undefined) {
+        continue;
+      }
+      const current = await this.#publishedTaskArtifact(
+        manifest,
+        prepared.taskId,
+        artifactType,
+      );
+      if (current === undefined) {
+        throw new ArtifactStoreError(
+          "manifest_inconsistent",
+          `The published ${artifactType} descriptor has no readable Artifact.`,
+          { taskId: prepared.taskId, artifactType },
+        );
+      }
+      if (
+        canonicalizeJson(current.payload) !==
+        canonicalizeJson(candidate.payload)
+      ) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          `Task action ${event.action.type} cannot mutate ${artifactType} payload state.`,
+          {
+            taskId: prepared.taskId,
+            action: event.action.type,
+            artifactType,
+          },
+        );
+      }
+    }
+  }
+
+  #parsePendingTaskTransactionMarker(
+    input: unknown,
+  ): PendingTaskTransactionMarkerV1 {
+    try {
+      if (typeof input !== "object" || input === null) {
+        throw new ArtifactStoreError(
+          "artifact_corrupt",
+          "Pending Task transaction marker is not an object.",
+        );
+      }
+      const candidate = input as Record<string, unknown>;
+      if (candidate.version !== 1) {
+        throw new ArtifactStoreError(
+          "artifact_corrupt",
+          "Pending Task transaction marker has an unsupported version.",
+        );
+      }
+      const repositoryId = RepositoryIdSchema.parse(candidate.repositoryId);
+      const worktreeId = WorktreeIdSchema.parse(candidate.worktreeId);
+      const taskId = TaskIdSchema.parse(candidate.taskId);
+      const createdAt = IsoTimestampSchema.parse(candidate.createdAt);
+      const expectedRevision = candidate.expectedRevision;
+      const targetRevision = candidate.targetRevision;
+      if (
+        !Number.isSafeInteger(expectedRevision) ||
+        (expectedRevision as number) < 0 ||
+        !Number.isSafeInteger(targetRevision) ||
+        (targetRevision as number) < 1 ||
+        ((expectedRevision as number) > 0 &&
+          targetRevision !== (expectedRevision as number) + 1)
+      ) {
+        throw new ArtifactStoreError(
+          "artifact_corrupt",
+          "Pending Task transaction marker has an invalid revision boundary.",
+          { taskId, expectedRevision, targetRevision },
+        );
+      }
+      if (
+        repositoryId !== this.repositoryId ||
+        worktreeId !== this.worktreeId
+      ) {
+        throw new ArtifactStoreError(
+          "manifest_inconsistent",
+          "Pending Task transaction marker belongs to another Store.",
+          { repositoryId, worktreeId, taskId },
+        );
+      }
+
+      if (
+        typeof candidate.oldManifest !== "object" ||
+        candidate.oldManifest === null
+      ) {
+        throw new ArtifactStoreError(
+          "artifact_corrupt",
+          "Pending Task transaction marker has no durable old Manifest.",
+          { taskId },
+        );
+      }
+      const oldManifestValue = candidate.oldManifest as Record<
+        string,
+        unknown
+      >;
+      const oldManifestBytes = decodeTaskTransactionBytes(
+        oldManifestValue.contentBase64,
+        oldManifestValue.contentDigest,
+        "Pending Task transaction old Manifest",
+      );
+      const oldManifest = ArtifactManifestV1Schema.parse(
+        JSON.parse(oldManifestBytes.toString("utf8")) as unknown,
+      );
+      if (
+        oldManifest.repositoryId !== repositoryId ||
+        oldManifest.worktreeId !== worktreeId
+      ) {
+        throw new ArtifactStoreError(
+          "artifact_corrupt",
+          "Pending Task transaction old Manifest identity is invalid.",
+          { taskId },
+        );
+      }
+      const oldTaskDescriptors = oldManifest.artifacts.filter(
+        (descriptor) => descriptor.taskId === taskId,
+      );
+      const oldTaskManifest = oldTaskDescriptors.find(
+        (descriptor) => descriptor.artifactType === "task_manifest",
+      );
+      if (
+        ((expectedRevision as number) === 0 &&
+          oldTaskDescriptors.length !== 0) ||
+        ((expectedRevision as number) > 0 &&
+          (oldTaskManifest?.revision !== expectedRevision ||
+            oldTaskDescriptors.some(
+              (descriptor) => descriptor.revision !== expectedRevision,
+            )))
+      ) {
+        throw new ArtifactStoreError(
+          "artifact_corrupt",
+          "Pending Task transaction old Manifest does not match expectedRevision.",
+          { taskId, expectedRevision },
+        );
+      }
+
+      if (!Array.isArray(candidate.oldFiles)) {
+        throw new ArtifactStoreError(
+          "artifact_corrupt",
+          "Pending Task transaction marker has no old file set.",
+          { taskId },
+        );
+      }
+      const taskPrefix = `.understand-code/tasks/${taskId}/`;
+      const seenPaths = new Set<string>();
+      const oldFiles = candidate.oldFiles.map((value, index) => {
+        if (typeof value !== "object" || value === null) {
+          throw new ArtifactStoreError(
+            "artifact_corrupt",
+            "Pending Task transaction file backup is invalid.",
+            { taskId, index },
+          );
+        }
+        const file = value as Record<string, unknown>;
+        const relativePath = file.relativePath;
+        const existed = file.existed;
+        if (
+          typeof relativePath !== "string" ||
+          !relativePath.startsWith(taskPrefix) ||
+          relativePath.slice(taskPrefix.length).includes("/") ||
+          !TASK_TRANSACTION_FILE_NAMES.has(path.posix.basename(relativePath)) ||
+          seenPaths.has(relativePath) ||
+          typeof existed !== "boolean"
+        ) {
+          throw new ArtifactStoreError(
+            "artifact_corrupt",
+            "Pending Task transaction file identity is invalid.",
+            { taskId, index, relativePath },
+          );
+        }
+        seenPaths.add(relativePath);
+        if (!existed) {
+          if (
+            file.contentBase64 !== undefined ||
+            file.contentDigest !== undefined
+          ) {
+            throw new ArtifactStoreError(
+              "artifact_corrupt",
+              "A missing old Task file cannot contain backup bytes.",
+              { taskId, relativePath },
+            );
+          }
+          return { relativePath, existed: false };
+        }
+        decodeTaskTransactionBytes(
+          file.contentBase64,
+          file.contentDigest,
+          `Pending Task transaction file ${relativePath}`,
+        );
+        return {
+          relativePath,
+          existed: true,
+          contentBase64: file.contentBase64 as string,
+          contentDigest: ContentDigestSchema.parse(file.contentDigest),
+        };
+      });
+
+      if (!Array.isArray(candidate.targetDescriptors)) {
+        throw new ArtifactStoreError(
+          "artifact_corrupt",
+          "Pending Task transaction marker has no target descriptor set.",
+          { taskId },
+        );
+      }
+      const targetDescriptors = candidate.targetDescriptors.map(
+        (descriptor, index) => {
+          const parsed = ArtifactDescriptorV1Schema.parse(descriptor);
+          if (
+            parsed.taskId !== taskId ||
+            parsed.revision !== targetRevision ||
+            !parsed.path.startsWith(taskPrefix) ||
+            parsed.path.slice(taskPrefix.length).includes("/") ||
+            !TASK_TRANSACTION_FILE_NAMES.has(
+              path.posix.basename(parsed.path),
+            )
+          ) {
+            throw new ArtifactStoreError(
+              "artifact_corrupt",
+              "Pending Task transaction target descriptor is invalid.",
+              { taskId, index, artifactType: parsed.artifactType },
+            );
+          }
+          return parsed;
+        },
+      );
+      const targetPaths = new Set(
+        targetDescriptors.map((descriptor) => descriptor.path),
+      );
+      if (
+        targetDescriptors.length !== targetPaths.size ||
+        !targetDescriptors.some(
+          (descriptor) => descriptor.artifactType === "task_manifest",
+        ) ||
+        !targetDescriptors.some(
+          (descriptor) => descriptor.artifactType === "task_event_log",
+        ) ||
+        targetPaths.size !== seenPaths.size ||
+        [...targetPaths].some((targetPath) => !seenPaths.has(targetPath))
+      ) {
+        throw new ArtifactStoreError(
+          "artifact_corrupt",
+          "Pending Task transaction marker does not describe one complete target file set.",
+          { taskId },
+        );
+      }
+
+      return {
+        version: 1,
+        repositoryId,
+        worktreeId,
+        taskId,
+        expectedRevision: expectedRevision as number,
+        targetRevision: targetRevision as number,
+        createdAt,
+        oldManifest: {
+          contentBase64: oldManifestValue.contentBase64 as string,
+          contentDigest: ContentDigestSchema.parse(
+            oldManifestValue.contentDigest,
+          ),
+        },
+        oldFiles,
+        targetDescriptors,
+      };
+    } catch (error) {
+      if (error instanceof ArtifactStoreError) throw error;
+      throw new ArtifactStoreError(
+        "artifact_corrupt",
+        "Pending Task transaction marker failed validation.",
+        undefined,
+        { cause: error },
+      );
+    }
+  }
+
+  async #durablyUnlinkManagedFile(targetPath: string): Promise<void> {
+    const relativePath = repositoryRelativePathFromAbsolute(
+      this.layout.worktreeRoot,
+      targetPath,
+    );
+    await resolveManagedPath(this.layout.worktreeRoot, relativePath, {
+      allowMissing: true,
+    });
+    await assertManagedParentStable(
+      this.layout.worktreeRoot,
+      targetPath,
+    );
+    try {
+      await unlink(targetPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        // A prior unlink may have reached the namespace but failed its
+        // directory fsync. Re-sync even when the retry no longer sees the
+        // marker so its absence is actually durable before we proceed.
+        await fsyncDirectory(path.dirname(targetPath));
+        return;
+      }
+      throw error;
+    }
+    await fsyncDirectory(path.dirname(targetPath));
+  }
+
+  #manifestPublishesTaskTransaction(
+    manifest: ArtifactManifestV1,
+    marker: PendingTaskTransactionMarkerV1,
+  ): boolean {
+    const published = manifest.artifacts.filter(
+      (descriptor) => descriptor.taskId === marker.taskId,
+    );
+    return (
+      published.length === marker.targetDescriptors.length &&
+      canonicalTaskDescriptors(published) ===
+        canonicalTaskDescriptors(marker.targetDescriptors)
+    );
+  }
+
+  async #rollbackPendingTaskTransaction(
+    marker: PendingTaskTransactionMarkerV1,
+  ): Promise<void> {
+    const oldManifestBytes = decodeTaskTransactionBytes(
+      marker.oldManifest.contentBase64,
+      marker.oldManifest.contentDigest,
+      "Pending Task transaction old Manifest",
+    );
+    const restorations = marker.oldFiles.map((file) => ({
+      targetPath: path.join(
+        this.layout.worktreeRoot,
+        ...file.relativePath.split("/"),
+      ),
+      ...(file.existed
+        ? {
+            bytes: decodeTaskTransactionBytes(
+              file.contentBase64,
+              file.contentDigest,
+              `Pending Task transaction file ${file.relativePath}`,
+            ),
+          }
+        : {}),
+    }));
+    for (const restoration of restorations) {
+      if (restoration.bytes === undefined) {
+        await this.#durablyUnlinkManagedFile(restoration.targetPath);
+      } else {
+        await atomicWriteFile(
+          this.layout.worktreeRoot,
+          restoration.targetPath,
+          restoration.bytes,
+        );
+      }
+    }
+    await atomicWriteFile(
+      this.layout.worktreeRoot,
+      this.layout.manifest,
+      oldManifestBytes,
+    );
+  }
+
+  #parsePendingRepoPulseTransactionMarker(
+    input: unknown,
+  ): PendingRepoPulseTransactionMarkerV1 {
+    try {
+      if (typeof input !== "object" || input === null) {
+        throw new ArtifactStoreError(
+          "artifact_corrupt",
+          "Pending Repo Pulse transaction marker is not an object.",
+        );
+      }
+      const candidate = input as Record<string, unknown>;
+      if (candidate.version !== 1) {
+        throw new ArtifactStoreError(
+          "artifact_corrupt",
+          "Pending Repo Pulse transaction marker has an unsupported version.",
+        );
+      }
+      const repositoryId = RepositoryIdSchema.parse(candidate.repositoryId);
+      const worktreeId = WorktreeIdSchema.parse(candidate.worktreeId);
+      const createdAt = IsoTimestampSchema.parse(candidate.createdAt);
+      if (
+        repositoryId !== this.repositoryId ||
+        worktreeId !== this.worktreeId
+      ) {
+        throw new ArtifactStoreError(
+          "artifact_corrupt",
+          "Pending Repo Pulse transaction belongs to another repository or worktree.",
+          { repositoryId, worktreeId },
+        );
+      }
+      const oldManifestValue = candidate.oldManifest as
+        | Record<string, unknown>
+        | undefined;
+      const oldPulseValue = candidate.oldPulse as
+        | Record<string, unknown>
+        | undefined;
+      if (oldManifestValue === undefined || oldPulseValue === undefined) {
+        throw new ArtifactStoreError(
+          "artifact_corrupt",
+          "Pending Repo Pulse transaction is missing rollback bytes.",
+        );
+      }
+      const oldManifestBytes = decodeTaskTransactionBytes(
+        oldManifestValue.contentBase64,
+        oldManifestValue.contentDigest,
+        "Pending Repo Pulse transaction old Manifest",
+      );
+      const oldPulseBytes = decodeTaskTransactionBytes(
+        oldPulseValue.contentBase64,
+        oldPulseValue.contentDigest,
+        "Pending Repo Pulse transaction old Pulse",
+      );
+      const oldManifest = ArtifactManifestV1Schema.parse(
+        JSON.parse(oldManifestBytes.toString("utf8")) as unknown,
+      );
+      if (
+        oldManifest.repositoryId !== this.repositoryId ||
+        oldManifest.worktreeId !== this.worktreeId
+      ) {
+        throw new ArtifactStoreError(
+          "artifact_corrupt",
+          "Pending Repo Pulse rollback Manifest has the wrong identity.",
+        );
+      }
+      const oldPulse = this.#parseTrustedArtifact(
+        JSON.parse(oldPulseBytes.toString("utf8")) as unknown,
+      );
+      const historyDescriptor = ArtifactDescriptorV1Schema.parse(
+        candidate.historyDescriptor,
+      );
+      const targetDescriptor = ArtifactDescriptorV1Schema.parse(
+        candidate.targetDescriptor,
+      );
+      if (typeof candidate.historyExisted !== "boolean") {
+        throw new ArtifactStoreError(
+          "artifact_corrupt",
+          "Pending Repo Pulse transaction history existence flag is invalid.",
+        );
+      }
+      const canonicalPulsePath = repositoryRelativePathFromAbsolute(
+        this.layout.worktreeRoot,
+        this.layout.repoPulse,
+      );
+      const expectedHistoryPath = repositoryRelativePathFromAbsolute(
+        this.layout.worktreeRoot,
+        this.layout.repoPulseHistoryVersion(
+          this.#repoPulseVersionToken(oldPulse),
+        ),
+      );
+      const oldDescriptor = oldManifest.artifacts.find(
+        (descriptor) =>
+          descriptor.artifactId === oldPulse.artifactId &&
+          descriptor.path === canonicalPulsePath,
+      );
+      if (
+        oldPulse.artifactType !== "repo_pulse" ||
+        oldDescriptor === undefined ||
+        oldDescriptor.artifactType !== "repo_pulse" ||
+        oldDescriptor.sourceSnapshotId !== oldPulse.sourceSnapshotId ||
+        oldDescriptor.revision !== oldPulse.revision ||
+        oldDescriptor.contentDigest !== oldPulse.contentDigest ||
+        historyDescriptor.artifactType !== "repo_pulse" ||
+        historyDescriptor.artifactId !== oldPulse.artifactId ||
+        historyDescriptor.sourceSnapshotId !== oldPulse.sourceSnapshotId ||
+        historyDescriptor.revision !== oldPulse.revision ||
+        historyDescriptor.contentDigest !== oldPulse.contentDigest ||
+        historyDescriptor.path !== expectedHistoryPath ||
+        historyDescriptor.state !== "historical" ||
+        historyDescriptor.freshness !== "stale" ||
+        targetDescriptor.artifactType !== "repo_pulse" ||
+        targetDescriptor.path !== canonicalPulsePath ||
+        targetDescriptor.state !== "current" ||
+        targetDescriptor.freshness === "invalid" ||
+        targetDescriptor.artifactId === historyDescriptor.artifactId ||
+        oldManifest.artifacts.some(
+          (descriptor) =>
+            descriptor.artifactId === targetDescriptor.artifactId ||
+            descriptor.path === historyDescriptor.path,
+        )
+      ) {
+        throw new ArtifactStoreError(
+          "artifact_corrupt",
+          "Pending Repo Pulse transaction marker has inconsistent publication identities.",
+          {
+            oldArtifactId: oldPulse.artifactId,
+            targetArtifactId: targetDescriptor.artifactId,
+          },
+        );
+      }
+      return {
+        version: 1,
+        repositoryId,
+        worktreeId,
+        createdAt,
+        oldManifest: {
+          contentBase64: oldManifestValue.contentBase64 as string,
+          contentDigest: ContentDigestSchema.parse(
+            oldManifestValue.contentDigest,
+          ),
+        },
+        oldPulse: {
+          contentBase64: oldPulseValue.contentBase64 as string,
+          contentDigest: ContentDigestSchema.parse(
+            oldPulseValue.contentDigest,
+          ),
+        },
+        historyExisted: candidate.historyExisted,
+        historyDescriptor,
+        targetDescriptor,
+      };
+    } catch (error) {
+      if (error instanceof ArtifactStoreError) throw error;
+      throw new ArtifactStoreError(
+        "artifact_corrupt",
+        "Pending Repo Pulse transaction marker failed validation.",
+        undefined,
+        { cause: error },
+      );
+    }
+  }
+
+  #manifestPublishesRepoPulseTransaction(
+    manifest: ArtifactManifestV1,
+    marker: PendingRepoPulseTransactionMarkerV1,
+  ): boolean {
+    const current = manifest.artifacts.find(
+      (descriptor) =>
+        descriptor.artifactId === marker.targetDescriptor.artifactId,
+    );
+    const history = manifest.artifacts.find(
+      (descriptor) =>
+        descriptor.artifactId === marker.historyDescriptor.artifactId,
+    );
+    return (
+      current !== undefined &&
+      history !== undefined &&
+      manifest.artifacts.filter(
+        (descriptor) =>
+          descriptor.artifactType === "repo_pulse" &&
+          descriptor.state === "current",
+      ).length === 1 &&
+      canonicalizeJson(current) ===
+        canonicalizeJson(marker.targetDescriptor) &&
+      canonicalizeJson(history) ===
+        canonicalizeJson(marker.historyDescriptor)
+    );
+  }
+
+  async #rollbackPendingRepoPulseTransaction(
+    marker: PendingRepoPulseTransactionMarkerV1,
+  ): Promise<void> {
+    const oldManifestBytes = decodeTaskTransactionBytes(
+      marker.oldManifest.contentBase64,
+      marker.oldManifest.contentDigest,
+      "Pending Repo Pulse transaction old Manifest",
+    );
+    const oldPulseBytes = decodeTaskTransactionBytes(
+      marker.oldPulse.contentBase64,
+      marker.oldPulse.contentDigest,
+      "Pending Repo Pulse transaction old Pulse",
+    );
+    await atomicWriteFile(
+      this.layout.worktreeRoot,
+      this.layout.repoPulse,
+      oldPulseBytes,
+    );
+    await atomicWriteFile(
+      this.layout.worktreeRoot,
+      this.layout.manifest,
+      oldManifestBytes,
+    );
+    if (!marker.historyExisted) {
+      const historyPath = path.join(
+        this.layout.worktreeRoot,
+        ...marker.historyDescriptor.path.split("/"),
+      );
+      await this.#durablyUnlinkManagedFile(historyPath);
+    }
+  }
+
+  async #recoverPendingRepoPulseTransaction(): Promise<void> {
+    let marker: PendingRepoPulseTransactionMarkerV1;
+    try {
+      marker = this.#parsePendingRepoPulseTransactionMarker(
+        await readManagedJson(
+          this.layout.worktreeRoot,
+          this.layout.repoPulseTransactionMarker,
+        ),
+      );
+    } catch (error) {
+      if (
+        error instanceof ArtifactStoreError &&
+        error.code === "artifact_not_found"
+      ) {
+        await fsyncDirectory(this.layout.pulseTransactions);
+        return;
+      }
+      throw error;
+    }
+    let currentManifest: ArtifactManifestV1 | undefined;
+    try {
+      currentManifest = await this.#readManifestRaw();
+    } catch (error) {
+      if (
+        !(
+          error instanceof ArtifactStoreError &&
+          (error.code === "artifact_not_found" ||
+            error.code === "artifact_corrupt" ||
+            error.code === "manifest_inconsistent")
+        )
+      ) {
+        throw error;
+      }
+    }
+    if (
+      currentManifest !== undefined &&
+      this.#manifestPublishesRepoPulseTransaction(currentManifest, marker)
+    ) {
+      await fsyncDirectory(path.dirname(this.layout.manifest));
+      await this.#durablyUnlinkManagedFile(
+        this.layout.repoPulseTransactionMarker,
+      );
+      return;
+    }
+    await this.#rollbackPendingRepoPulseTransaction(marker);
+    await this.#durablyUnlinkManagedFile(
+      this.layout.repoPulseTransactionMarker,
+    );
+  }
+
+  async #recoverPendingTaskTransactions(): Promise<void> {
+    await this.#recoverPendingRepoPulseTransaction();
+    const directoryEntries = await readdir(this.layout.taskTransactions, {
+      withFileTypes: true,
+    });
+    const entries = directoryEntries
+      .filter((entry) => entry.name.endsWith(".json"))
+      .sort((left, right) => compareCodeUnits(left.name, right.name));
+    for (const entry of entries) {
+      if (!entry.isFile()) {
+        throw new ArtifactStoreError(
+          "artifact_corrupt",
+          "Pending Task transaction marker must be a regular file.",
+          { entry: entry.name },
+        );
+      }
+      const markerPath = path.join(
+        this.layout.taskTransactions,
+        entry.name,
+      );
+      const marker = this.#parsePendingTaskTransactionMarker(
+        await readManagedJson(this.layout.worktreeRoot, markerPath),
+      );
+      if (entry.name !== `${marker.taskId}.json`) {
+        throw new ArtifactStoreError(
+          "artifact_corrupt",
+          "Pending Task transaction marker filename does not match taskId.",
+          { markerPath, taskId: marker.taskId },
+        );
+      }
+      let currentManifest: ArtifactManifestV1 | undefined;
+      try {
+        currentManifest = await this.#readManifestRaw();
+      } catch (error) {
+        if (
+          !(
+            error instanceof ArtifactStoreError &&
+            (error.code === "artifact_not_found" ||
+              error.code === "artifact_corrupt" ||
+              error.code === "manifest_inconsistent")
+          )
+        ) {
+          throw error;
+        }
+      }
+      if (
+        currentManifest !== undefined &&
+        this.#manifestPublishesTaskTransaction(currentManifest, marker)
+      ) {
+        // The Manifest is the transaction commit record. Never infer a
+        // partial commit from whichever individual Task files happen to be
+        // present after a crash.
+        await fsyncDirectory(path.dirname(this.layout.manifest));
+        await this.#durablyUnlinkManagedFile(markerPath);
+        continue;
+      }
+      await this.#rollbackPendingTaskTransaction(marker);
+      await this.#durablyUnlinkManagedFile(markerPath);
+    }
+    // A previous unlink may have reached the namespace while both of its
+    // directory-sync attempts failed. Re-sync on every successful drain,
+    // including an empty directory, before any later Manifest mutation.
+    await fsyncDirectory(this.layout.taskTransactions);
+  }
+
   async initialize(): Promise<ArtifactManifestV1> {
     const directories = [
       ".understand-code",
+      ".understand-code/pulses",
       ".understand-code/snapshots",
       ".understand-code/knowledge-base",
       ".understand-code/tasks",
@@ -907,6 +3213,8 @@ export class ArtifactStore {
       ".understand-code/.recovery/backups",
       ".understand-code/.recovery/quarantine",
       ".understand-code/.recovery/migrations",
+      ".understand-code/.recovery/pulse-transactions",
+      ".understand-code/.recovery/task-transactions",
     ];
     for (const directory of directories) {
       await ensureManagedDirectory(this.layout.worktreeRoot, directory);
@@ -916,6 +3224,7 @@ export class ArtifactStore {
       this.layout.worktreeRoot,
       this.layout.repositoryLock,
       async () => {
+        await this.#recoverPendingTaskTransactions();
         let manifest: ArtifactManifestV1;
         try {
           manifest = await this.#readManifestRaw();
@@ -1015,6 +3324,108 @@ export class ArtifactStore {
       ...(artifact.artifactType === "repository_snapshot"
         ? { snapshotId: artifact.sourceSnapshotId }
         : {}),
+    });
+  }
+
+  #repoPulseVersionToken(
+    artifact: PersistedArtifactV1,
+  ): string {
+    if (artifact.artifactType !== "repo_pulse") {
+      throw new TypeError("Repo Pulse versioning requires a Repo Pulse.");
+    }
+    return sha256CanonicalJson({
+      artifactId: artifact.artifactId,
+      repositoryId: artifact.repositoryId,
+      worktreeId: artifact.worktreeId,
+      sourceSnapshotId: artifact.sourceSnapshotId,
+      revision: artifact.revision,
+      contentDigest: artifact.contentDigest,
+    }).slice("sha256:".length);
+  }
+
+  #canonicalizeRepoPulseIdentity<TArtifact extends PersistedArtifactV1>(
+    artifact: TArtifact,
+    current: PersistedArtifactV1 | undefined,
+    manifest: ArtifactManifestV1,
+  ): TArtifact {
+    if (artifact.artifactType !== "repo_pulse") return artifact;
+    if (
+      current?.artifactType === "repo_pulse" &&
+      compareArtifacts(current, artifact)
+    ) {
+      return artifact;
+    }
+    const requestedIdentityConflict =
+      current?.artifactId === artifact.artifactId ||
+      manifest.artifacts.some(
+        (descriptor) => descriptor.artifactId === artifact.artifactId,
+      );
+    if (!requestedIdentityConflict) return artifact;
+
+    const versionedArtifactId =
+      `artifact:repo-pulse:${this.#repoPulseVersionToken(artifact)}`;
+    const existingVersion = manifest.artifacts.find(
+      (descriptor) => descriptor.artifactId === versionedArtifactId,
+    );
+    if (
+      existingVersion !== undefined &&
+      (existingVersion.artifactType !== "repo_pulse" ||
+        existingVersion.sourceSnapshotId !== artifact.sourceSnapshotId ||
+        existingVersion.revision !== artifact.revision ||
+        existingVersion.contentDigest !== artifact.contentDigest ||
+        existingVersion.path !==
+          repositoryRelativePathFromAbsolute(
+            this.layout.worktreeRoot,
+            this.layout.repoPulse,
+          ) ||
+        existingVersion.state !== "current")
+    ) {
+      throw new ArtifactStoreError(
+        "revision_conflict",
+        "The deterministic Repo Pulse version identity already belongs to a different or historical publication.",
+        {
+          requestedArtifactId: artifact.artifactId,
+          versionedArtifactId,
+          sourceSnapshotId: artifact.sourceSnapshotId,
+          revision: artifact.revision,
+        },
+      );
+    }
+    return this.#parseTrustedArtifact({
+      ...artifact,
+      artifactId: versionedArtifactId,
+    }) as TArtifact;
+  }
+
+  #repoPulseHistoryDescriptor(
+    artifact: PersistedArtifactV1,
+    descriptor: ReturnType<typeof ArtifactDescriptorV1Schema.parse>,
+  ): ReturnType<typeof ArtifactDescriptorV1Schema.parse> {
+    if (
+      artifact.artifactType !== "repo_pulse" ||
+      descriptor.artifactType !== "repo_pulse" ||
+      artifact.artifactId !== descriptor.artifactId ||
+      artifact.sourceSnapshotId !== descriptor.sourceSnapshotId ||
+      artifact.revision !== descriptor.revision ||
+      artifact.contentDigest !== descriptor.contentDigest
+    ) {
+      throw new ArtifactStoreError(
+        "manifest_inconsistent",
+        "The canonical Repo Pulse cannot be archived under a mismatched descriptor.",
+        { artifactId: artifact.artifactId },
+      );
+    }
+    const historyPath = this.layout.repoPulseHistoryVersion(
+      this.#repoPulseVersionToken(artifact),
+    );
+    return ArtifactDescriptorV1Schema.parse({
+      ...descriptor,
+      path: repositoryRelativePathFromAbsolute(
+        this.layout.worktreeRoot,
+        historyPath,
+      ),
+      state: "historical",
+      freshness: "stale",
     });
   }
 
@@ -1199,8 +3610,10 @@ export class ArtifactStore {
     return withStoreLock(
       this.layout.worktreeRoot,
       lockPath,
-      async () =>
-        this.#persistArtifactLocked(artifact, targetPath, options),
+      async () => {
+        await this.#recoverPendingTaskTransactions();
+        return this.#persistArtifactLocked(artifact, targetPath, options);
+      },
       this.#lockOptions,
     );
   }
@@ -1283,6 +3696,13 @@ export class ArtifactStore {
         );
       }
     }
+    if (artifact.artifactType === "repo_pulse") {
+      artifact = this.#canonicalizeRepoPulseIdentity(
+        artifact,
+        current,
+        await this.#readManifestRaw(),
+      );
+    }
     const idempotency = this.#validateIdempotencyOptions(options);
     const idempotencyPath = this.#idempotencyPath(artifact.taskId);
     const idempotencyIndex =
@@ -1293,7 +3713,9 @@ export class ArtifactStore {
       idempotency === undefined
         ? undefined
         : idempotencyIndex?.records.find(
-            (record) => record.key === idempotency.key,
+            (record) =>
+              record.scope === undefined &&
+              record.key === idempotency.key,
           );
     let currentDescriptor:
       | ReturnType<typeof ArtifactDescriptorV1Schema.parse>
@@ -1493,6 +3915,34 @@ export class ArtifactStore {
       }
     }
 
+    if (
+      artifact.artifactType === "repo_pulse" &&
+      current?.artifactType === "repo_pulse" &&
+      currentDescriptor !== undefined &&
+      !compareArtifacts(current, artifact)
+    ) {
+      const publication = await this.#persistRepoPulseHistoryTransaction(
+        current,
+        currentDescriptor,
+        artifact,
+        options,
+      );
+      if (idempotency !== undefined) {
+        await this.#recordIdempotency(
+          idempotencyPath,
+          idempotencyIndex ?? { version: 1, records: [] },
+          artifact,
+          idempotency,
+        );
+      }
+      return {
+        artifact,
+        descriptor: publication.descriptor,
+        replayed: false,
+        backupPath: publication.backupPath,
+      };
+    }
+
     const previousBytes =
       current === undefined
         ? undefined
@@ -1565,7 +4015,7 @@ export class ArtifactStore {
 
   #validateIdempotencyOptions(
     options: PersistArtifactOptions,
-  ): { key: string; requestDigest: ContentDigest } | undefined {
+  ): StoreIdempotencyControl | undefined {
     if (
       (options.idempotencyKey === undefined) !==
       (options.requestDigest === undefined)
@@ -1614,13 +4064,22 @@ export class ArtifactStore {
     idempotencyPath: string,
     index: StoreIdempotencyIndex,
     artifact: PersistedArtifactV1,
-    idempotency: { key: string; requestDigest: ContentDigest },
+    idempotency: StoreIdempotencyControl,
   ): Promise<void> {
+    const identity = storeIdempotencyIdentity(idempotency);
     const records = [
-      ...index.records.filter((record) => record.key !== idempotency.key),
+      ...index.records.filter(
+        (record) => storeIdempotencyIdentity(record) !== identity,
+      ),
       {
         key: idempotency.key,
         requestDigest: idempotency.requestDigest,
+        ...(idempotency.scope === undefined
+          ? {}
+          : {
+              scope: idempotency.scope,
+              actor: idempotency.actor,
+            }),
         artifactType: artifact.artifactType,
         artifactId: artifact.artifactId,
         resultRevision: artifact.revision,
@@ -1719,83 +4178,127 @@ export class ArtifactStore {
     });
   }
 
-  async #updateManifestForArtifact(
+  #propagateStaleFreshness(
+    descriptors: readonly ReturnType<
+      typeof ArtifactDescriptorV1Schema.parse
+    >[],
+    rootArtifactIds: readonly string[],
+  ): ReturnType<typeof ArtifactDescriptorV1Schema.parse>[] {
+    const staleArtifactIds = new Set(rootArtifactIds);
+    let next = [...descriptors];
+    let changed = true;
+    while (changed) {
+      changed = false;
+      next = next.map((descriptor) => {
+        if (
+          staleArtifactIds.has(descriptor.artifactId) ||
+          !descriptor.dependencies.some((dependency) =>
+            staleArtifactIds.has(dependency.artifactId),
+          )
+        ) {
+          return descriptor;
+        }
+        staleArtifactIds.add(descriptor.artifactId);
+        changed = true;
+        if (
+          descriptor.freshness !== "fresh" &&
+          descriptor.freshness !== "partial"
+        ) {
+          return descriptor;
+        }
+        return ArtifactDescriptorV1Schema.parse({
+          ...descriptor,
+          freshness: "stale",
+        });
+      });
+    }
+    return next;
+  }
+
+  async #nextManifestForArtifact(
+    currentManifest: ArtifactManifestV1,
     artifact: PersistedArtifactV1,
     options: PersistArtifactOptions,
-  ) {
-    let descriptor:
-      | ReturnType<typeof ArtifactDescriptorV1Schema.parse>
-      | undefined;
-    const update = async (): Promise<void> => {
-      const currentManifest = await this.#readManifestRaw();
-      const snapshotDescriptor =
-        artifact.artifactType === "repository_snapshot"
-          ? undefined
-          : await this.#requireUsableSnapshot(
-              currentManifest,
-              artifact.sourceSnapshotId,
-              `Artifact ${artifact.artifactId}`,
-            );
-      const requestedFreshness = options.freshness ?? "fresh";
-      const effectiveFreshness =
-        snapshotDescriptor !== undefined &&
-        requestedFreshness === "fresh" &&
-        !(
-          snapshotDescriptor.state === "current" &&
-          snapshotDescriptor.freshness === "fresh"
-        )
-          ? ("partial" as const)
-          : requestedFreshness;
-      const nextDescriptor = await this.#descriptorForArtifact(
-        artifact,
-        snapshotDescriptor !== undefined
-          ? {
-              ...options,
-              freshness: effectiveFreshness,
-              dependencies: this.#mergeRequiredDependencies(
-                [this.#requiredDependency(snapshotDescriptor)],
-                options.dependencies,
-              ),
-            }
-          : options,
-      );
-      descriptor = nextDescriptor;
-      const previousManifestBytes = await readManagedFile(
-        this.layout.worktreeRoot,
-        this.layout.manifest,
-      );
-      await this.#writeBackup(this.layout.manifest, previousManifestBytes);
-
-      const latestSnapshotChanged =
-        artifact.artifactType === "repository_snapshot" &&
-        currentManifest.latestSnapshotId !== artifact.sourceSnapshotId;
-      const normalizedExisting = currentManifest.artifacts
-        .filter(
-          (candidate) =>
-            candidate.artifactId !== nextDescriptor.artifactId &&
-            candidate.path !== nextDescriptor.path,
-        )
-        .map((candidate) => {
-          if (
-            latestSnapshotChanged &&
-            candidate.sourceSnapshotId !== artifact.sourceSnapshotId &&
-            candidate.state === "current"
-          ) {
-            return {
-              ...candidate,
-              state:
-                candidate.artifactType === "repository_snapshot"
-                  ? ("historical" as const)
-                  : candidate.state,
-              freshness:
-                candidate.freshness === "fresh"
-                  ? ("stale" as const)
-                  : candidate.freshness,
-            };
+    pulseHistory?: RepoPulseHistoryPublication,
+  ): Promise<{
+    descriptor: ReturnType<typeof ArtifactDescriptorV1Schema.parse>;
+    manifest: ArtifactManifestV1;
+  }> {
+    const snapshotDescriptor =
+      artifact.artifactType === "repository_snapshot"
+        ? undefined
+        : await this.#requireUsableSnapshot(
+            currentManifest,
+            artifact.sourceSnapshotId,
+            `Artifact ${artifact.artifactId}`,
+          );
+    const requestedFreshness = options.freshness ?? "fresh";
+    const effectiveFreshness =
+      snapshotDescriptor !== undefined &&
+      requestedFreshness === "fresh" &&
+      !(
+        snapshotDescriptor.state === "current" &&
+        snapshotDescriptor.freshness === "fresh"
+      )
+        ? ("partial" as const)
+        : requestedFreshness;
+    const nextDescriptor = await this.#descriptorForArtifact(
+      artifact,
+      snapshotDescriptor !== undefined
+        ? {
+            ...options,
+            freshness: effectiveFreshness,
+            dependencies: this.#mergeRequiredDependencies(
+              [this.#requiredDependency(snapshotDescriptor)],
+              options.dependencies,
+            ),
           }
-          return candidate;
-        });
-      const nextManifest = ArtifactManifestV1Schema.parse({
+        : options,
+    );
+    const latestSnapshotChanged =
+      artifact.artifactType === "repository_snapshot" &&
+      currentManifest.latestSnapshotId !== artifact.sourceSnapshotId;
+    const normalizedExisting = currentManifest.artifacts
+      .filter(
+        (candidate) =>
+          candidate.artifactId !== nextDescriptor.artifactId &&
+          candidate.path !== nextDescriptor.path,
+      )
+      .map((candidate) => {
+        if (
+          latestSnapshotChanged &&
+          candidate.sourceSnapshotId !== artifact.sourceSnapshotId &&
+          candidate.state === "current"
+        ) {
+          return ArtifactDescriptorV1Schema.parse({
+            ...candidate,
+            state:
+              candidate.artifactType === "repository_snapshot"
+                ? "historical"
+                : candidate.state,
+            freshness:
+              candidate.freshness === "fresh"
+                ? "stale"
+                : candidate.freshness,
+          });
+        }
+        return candidate;
+      });
+    let artifacts = [
+      ...normalizedExisting,
+      ...(pulseHistory === undefined
+        ? []
+        : [pulseHistory.historyDescriptor]),
+      nextDescriptor,
+    ];
+    if (pulseHistory !== undefined) {
+      artifacts = this.#propagateStaleFreshness(artifacts, [
+        pulseHistory.historyDescriptor.artifactId,
+      ]);
+    }
+    return {
+      descriptor: nextDescriptor,
+      manifest: ArtifactManifestV1Schema.parse({
         ...currentManifest,
         status:
           artifact.artifactType === "repository_snapshot"
@@ -1810,13 +4313,36 @@ export class ArtifactStore {
           artifact.artifactType === "repository_snapshot"
             ? []
             : currentManifest.reasons,
-        artifacts: [...normalizedExisting, nextDescriptor],
-      });
+        artifacts,
+      }),
+    };
+  }
+
+  async #updateManifestForArtifact(
+    artifact: PersistedArtifactV1,
+    options: PersistArtifactOptions,
+  ) {
+    let descriptor:
+      | ReturnType<typeof ArtifactDescriptorV1Schema.parse>
+      | undefined;
+    const update = async (): Promise<void> => {
+      const currentManifest = await this.#readManifestRaw();
+      const next = await this.#nextManifestForArtifact(
+        currentManifest,
+        artifact,
+        options,
+      );
+      descriptor = next.descriptor;
+      const previousManifestBytes = await readManagedFile(
+        this.layout.worktreeRoot,
+        this.layout.manifest,
+      );
+      await this.#writeBackup(this.layout.manifest, previousManifestBytes);
       try {
         await atomicWriteJson(
           this.layout.worktreeRoot,
           this.layout.manifest,
-          nextManifest,
+          next.manifest,
           options.manifestWrite,
         );
       } catch (error) {
@@ -1850,6 +4376,232 @@ export class ArtifactStore {
       );
     }
     return descriptor;
+  }
+
+  async #persistRepoPulseHistoryTransaction<
+    TArtifact extends PersistedArtifactV1,
+  >(
+    current: PersistedArtifactV1,
+    currentDescriptor: ReturnType<
+      typeof ArtifactDescriptorV1Schema.parse
+    >,
+    artifact: TArtifact,
+    options: PersistArtifactOptions,
+  ): Promise<{
+    descriptor: ReturnType<typeof ArtifactDescriptorV1Schema.parse>;
+    backupPath: string;
+  }> {
+    if (
+      current.artifactType !== "repo_pulse" ||
+      artifact.artifactType !== "repo_pulse"
+    ) {
+      throw new TypeError(
+        "Repo Pulse history transactions require two Repo Pulse envelopes.",
+      );
+    }
+    const currentManifest = await this.#readManifestRaw();
+    const publishedCurrent = await this.#requirePublishedDescriptor(
+      current,
+      this.layout.repoPulse,
+      currentManifest,
+    );
+    if (
+      canonicalizeJson(publishedCurrent) !==
+      canonicalizeJson(currentDescriptor)
+    ) {
+      throw new ArtifactStoreError(
+        "manifest_inconsistent",
+        "The current Repo Pulse descriptor changed before history publication.",
+        { artifactId: current.artifactId },
+      );
+    }
+    const oldPulseBytes = await readManagedFile(
+      this.layout.worktreeRoot,
+      this.layout.repoPulse,
+    );
+    const historyDescriptor = this.#repoPulseHistoryDescriptor(
+      current,
+      currentDescriptor,
+    );
+    const historyPath = path.join(
+      this.layout.worktreeRoot,
+      ...historyDescriptor.path.split("/"),
+    );
+    let historyAlreadyExists = false;
+    try {
+      const existingHistory = await readManagedFile(
+        this.layout.worktreeRoot,
+        historyPath,
+      );
+      if (!existingHistory.equals(oldPulseBytes)) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          "Repo Pulse history identity resolves conflicting immutable bytes.",
+          {
+            artifactId: current.artifactId,
+            historyPath: historyDescriptor.path,
+          },
+        );
+      }
+      historyAlreadyExists = true;
+    } catch (error) {
+      if (
+        !(
+          error instanceof ArtifactStoreError &&
+          error.code === "artifact_not_found"
+        )
+      ) {
+        throw error;
+      }
+    }
+    const next = await this.#nextManifestForArtifact(
+      currentManifest,
+      artifact,
+      options,
+      { historyDescriptor },
+    );
+    if (
+      next.descriptor.artifactId === historyDescriptor.artifactId ||
+      next.manifest.artifacts.filter(
+        (descriptor) =>
+          descriptor.artifactType === "repo_pulse" &&
+          descriptor.state === "current",
+      ).length !== 1
+    ) {
+      throw new ArtifactStoreError(
+        "manifest_inconsistent",
+        "Repo Pulse history publication must retain one historical identity and exactly one current identity.",
+        {
+          historicalArtifactId: historyDescriptor.artifactId,
+          targetArtifactId: next.descriptor.artifactId,
+        },
+      );
+    }
+    const previousManifestBytes = await readManagedFile(
+      this.layout.worktreeRoot,
+      this.layout.manifest,
+    );
+    await this.#writeBackup(this.layout.manifest, previousManifestBytes);
+    const backupPath = await this.#writeBackup(
+      this.layout.repoPulse,
+      oldPulseBytes,
+    );
+    const marker: PendingRepoPulseTransactionMarkerV1 = {
+      version: 1,
+      repositoryId: this.repositoryId,
+      worktreeId: this.worktreeId,
+      createdAt: this.#now(),
+      oldManifest: taskTransactionBytes(previousManifestBytes),
+      oldPulse: taskTransactionBytes(oldPulseBytes),
+      historyExisted: historyAlreadyExists,
+      historyDescriptor,
+      targetDescriptor: next.descriptor,
+    };
+    let markerCreated = false;
+    let manifestCommitted = false;
+    let manifestCommitAmbiguous = false;
+    try {
+      try {
+        await atomicWriteJson(
+          this.layout.worktreeRoot,
+          this.layout.repoPulseTransactionMarker,
+          marker,
+        );
+        markerCreated = true;
+      } catch (error) {
+        if (
+          isCommittedAtomicWriteError(
+            error,
+            this.layout.repoPulseTransactionMarker,
+          )
+        ) {
+          markerCreated = true;
+        }
+        throw error;
+      }
+      if (!historyAlreadyExists) {
+        await atomicWriteFile(
+          this.layout.worktreeRoot,
+          historyPath,
+          oldPulseBytes,
+          options.historyWrite,
+        );
+      } else {
+        await fsyncDirectory(path.dirname(historyPath));
+      }
+      await atomicWriteJson(
+        this.layout.worktreeRoot,
+        this.layout.repoPulse,
+        artifact,
+        options.artifactWrite,
+      );
+      try {
+        await atomicWriteJson(
+          this.layout.worktreeRoot,
+          this.layout.manifest,
+          next.manifest,
+          options.manifestWrite,
+        );
+        manifestCommitted = true;
+      } catch (error) {
+        if (isCommittedAtomicWriteError(error, this.layout.manifest)) {
+          if (
+            isDurablyCommittedAtomicWriteError(
+              error,
+              this.layout.manifest,
+            )
+          ) {
+            manifestCommitted = true;
+          } else {
+            manifestCommitAmbiguous = true;
+          }
+        }
+        throw error;
+      }
+      await this.#durablyUnlinkManagedFile(
+        this.layout.repoPulseTransactionMarker,
+      );
+      markerCreated = false;
+      return { descriptor: next.descriptor, backupPath };
+    } catch (error) {
+      if (isCommittedAtomicWriteError(error, this.layout.manifest)) {
+        if (
+          isDurablyCommittedAtomicWriteError(
+            error,
+            this.layout.manifest,
+          )
+        ) {
+          manifestCommitted = true;
+        } else {
+          manifestCommitAmbiguous = true;
+        }
+      }
+      if (markerCreated) {
+        if (manifestCommitted) {
+          await this.#durablyUnlinkManagedFile(
+            this.layout.repoPulseTransactionMarker,
+          ).catch(() => undefined);
+        } else if (!manifestCommitAmbiguous) {
+          try {
+            await this.#rollbackPendingRepoPulseTransaction(marker);
+            await this.#durablyUnlinkManagedFile(
+              this.layout.repoPulseTransactionMarker,
+            );
+          } catch (rollbackError) {
+            throw new ArtifactStoreError(
+              "artifact_corrupt",
+              "Repo Pulse history publication failed and its durable rollback did not complete.",
+              {
+                historicalArtifactId: historyDescriptor.artifactId,
+                targetArtifactId: next.descriptor.artifactId,
+              },
+              { cause: rollbackError },
+            );
+          }
+        }
+      }
+      throw error;
+    }
   }
 
   async #writeBackup(
@@ -1987,6 +4739,20 @@ export class ArtifactStore {
       this.layout.worktreeRoot,
       lockPath,
       async () => {
+        if (taskId === undefined) {
+          // The callback already owns the repository lock.
+          await this.#recoverPendingTaskTransactions();
+        } else {
+          // Task recovery owns the Task lock first, matching Task transaction
+          // lock order, and drains pending repository state before touching
+          // canonical Task bytes.
+          await withStoreLock(
+            this.layout.worktreeRoot,
+            this.layout.repositoryLock,
+            async () => this.#recoverPendingTaskTransactions(),
+            this.#lockOptions,
+          );
+        }
         let sourceSnapshotFailure: ArtifactStoreError | undefined;
         try {
           const nowReadable = await this.#readArtifactPath(targetPath);
@@ -2185,7 +4951,7 @@ export class ArtifactStore {
             throw error;
           }
         }
-        await this.#markDescriptorCorrupt(artifactType, identifiers);
+        await this.#markDescriptorCorrupt(committedDescriptor);
         if (sourceSnapshotFailure !== undefined) {
           throw sourceSnapshotFailure;
         }
@@ -2223,16 +4989,51 @@ export class ArtifactStore {
           { artifactId: artifact.artifactId, path: recoveredPath },
         );
       }
+      const historicalIdentity =
+        artifact.artifactType === "repo_pulse"
+          ? manifest.artifacts.find(
+              (descriptor) =>
+                descriptor.artifactType === "repo_pulse" &&
+                descriptor.artifactId === artifact.artifactId &&
+                descriptor.path !== recoveredPath,
+            )
+          : undefined;
       const recoveredDescriptor = await this.#descriptorForArtifact(artifact, {
         state,
         freshness,
-        dependencies: existing?.dependencies ?? [],
+        dependencies:
+          historicalIdentity?.dependencies ?? existing.dependencies,
       });
-      const recoveredArtifacts = manifest.artifacts.map((descriptor) =>
-        descriptor.path === recoveredPath
-          ? recoveredDescriptor
-          : descriptor,
-      );
+      let recoveredArtifacts;
+      if (artifact.artifactType === "repo_pulse") {
+        const firstPulseIndex = manifest.artifacts.findIndex(
+          (descriptor) => descriptor.artifactType === "repo_pulse",
+        );
+        recoveredArtifacts = manifest.artifacts.filter(
+          (descriptor) =>
+            descriptor.path !== recoveredPath &&
+            !(
+              descriptor.artifactType === "repo_pulse" &&
+              descriptor.artifactId === artifact.artifactId
+            ),
+        );
+        recoveredArtifacts.splice(
+          Math.min(
+            firstPulseIndex < 0
+              ? recoveredArtifacts.length
+              : firstPulseIndex,
+            recoveredArtifacts.length,
+          ),
+          0,
+          recoveredDescriptor,
+        );
+      } else {
+        recoveredArtifacts = manifest.artifacts.map((descriptor) =>
+          descriptor.path === recoveredPath
+            ? recoveredDescriptor
+            : descriptor,
+        );
+      }
       let next: ArtifactManifestV1;
       try {
         next = ArtifactManifestV1Schema.parse({
@@ -2280,24 +5081,26 @@ export class ArtifactStore {
       await withStoreLock(
         this.layout.worktreeRoot,
         this.layout.repositoryLock,
-        async () => update(),
+        async () => {
+          await this.#recoverPendingTaskTransactions();
+          await update();
+        },
         this.#lockOptions,
       );
     }
   }
 
   async #markDescriptorCorrupt(
-    artifactType: ArtifactTypeV1,
-    identifiers: { taskId?: string; snapshotId?: string },
+    committedDescriptor: ReturnType<
+      typeof ArtifactDescriptorV1Schema.parse
+    >,
   ): Promise<void> {
     const update = async (): Promise<void> => {
       const manifest = await this.#readManifestRaw();
       let artifacts = manifest.artifacts.map((descriptor) =>
-        descriptor.artifactType === artifactType &&
-        (identifiers.taskId === undefined ||
-          descriptor.taskId === identifiers.taskId) &&
-        (identifiers.snapshotId === undefined ||
-          descriptor.sourceSnapshotId === identifiers.snapshotId)
+        descriptor.artifactId === committedDescriptor.artifactId &&
+        descriptor.path === committedDescriptor.path &&
+        descriptor.artifactType === committedDescriptor.artifactType
           ? {
               ...descriptor,
               state: "corrupt" as const,
@@ -2305,7 +5108,7 @@ export class ArtifactStore {
             }
           : descriptor,
       );
-      if (artifactType === "repository_snapshot") {
+      if (committedDescriptor.artifactType === "repository_snapshot") {
         const invalidSnapshotIds = new Set(
           artifacts
             .filter(
@@ -2357,7 +5160,9 @@ export class ArtifactStore {
         ...manifest,
         status: hasCorrupt ? "error" : manifest.status,
         reasons: hasCorrupt
-          ? [`${artifactType} is corrupt and no valid backup was found.`]
+          ? [
+              `${committedDescriptor.artifactType} is corrupt and no valid backup was found.`,
+            ]
           : manifest.reasons,
         updatedAt: this.#now(),
         artifacts,
@@ -2368,13 +5173,16 @@ export class ArtifactStore {
         next,
       );
     };
-    if (identifiers.taskId === undefined) {
+    if (committedDescriptor.taskId === undefined) {
       await update();
     } else {
       await withStoreLock(
         this.layout.worktreeRoot,
         this.layout.repositoryLock,
-        async () => update(),
+        async () => {
+          await this.#recoverPendingTaskTransactions();
+          await update();
+        },
         this.#lockOptions,
       );
     }
@@ -2757,185 +5565,17 @@ export class ArtifactStore {
                 throw error;
               }
             }
-            const snapshotDescriptor = await this.#requireUsableSnapshot(
-              manifest,
-              requiredSnapshotId,
-              `Task Event ${event.eventId}`,
-            );
-            const taskDescriptor = manifest.artifacts.find(
-              (descriptor) =>
-                descriptor.artifactType === "task_manifest" &&
-                descriptor.taskId === taskId &&
-                descriptor.sourceSnapshotId === requiredSnapshotId &&
-                descriptor.revision === event.revision &&
-                (descriptor.state === "current" ||
-                  descriptor.state === "read_only_recovery"),
-            );
-            if (
-              taskDescriptor === undefined ||
-              taskDescriptor.contentDigest === undefined
-            ) {
-              throw new ArtifactStoreError(
-                "reference_integrity_failed",
-                "Standalone Event publication is recovery-only and requires the matching committed Task revision.",
-                { eventId: event.eventId, taskId, revision: event.revision },
-              );
-            }
-            const taskArtifactDescriptors = manifest.artifacts.filter(
-              (descriptor) =>
-                descriptor.taskId === taskId &&
-                descriptor.storageFormat === "enveloped_v1",
-            );
-            if (
-              taskArtifactDescriptors.length === 0 ||
-              taskArtifactDescriptors.some(
-                (descriptor) =>
-                  descriptor.revision !== event.revision ||
-                  descriptor.sourceSnapshotId !==
-                    requiredSnapshotId,
-              )
-            ) {
-              throw new ArtifactStoreError(
-                "reference_integrity_failed",
-                "Standalone Event recovery requires one complete Task Artifact descriptor revision.",
-                { eventId: event.eventId, taskId },
-              );
-            }
-            await this.#verifyDescriptorGraph(
-              manifest,
-              taskArtifactDescriptors,
-            );
-            await this.#requireStableManifest(manifest);
-            const idempotency = await this.#readIdempotencyIndex(
-              this.#idempotencyPath(taskId),
-            );
-            const control = idempotency.records.find(
-              (record) =>
-                record.key === event.idempotencyKey &&
-                record.requestDigest === event.requestDigest &&
-                record.artifactType === "task_manifest" &&
-                record.artifactId === taskDescriptor.artifactId &&
-                record.resultRevision === event.revision &&
-                record.resultDigest === taskDescriptor.contentDigest,
-            );
-            if (control === undefined) {
-              throw new ArtifactStoreError(
-                "idempotency_conflict",
-                "Standalone Event publication requires the committed Task transaction idempotency record.",
-                { eventId: event.eventId, taskId },
-              );
-            }
-            let manifestCommitted = false;
-            try {
-              const result = await appendTaskEventFile(
-                this.layout,
+            throw new ArtifactStoreError(
+              "reference_integrity_failed",
+              "Standalone Event publication accepts only exact committed replay or truncated-tail repair. Missing Event history must be restored through an explicit trusted migration.",
+              {
                 taskId,
-                event,
-                {
-                  ...options,
-                  taskLockLease,
-                },
-              );
-              const revision = result.events.at(-1)?.revision ?? 0;
-              if ((existing?.revision ?? -1) > revision) {
-                throw new ArtifactStoreError(
-                  "manifest_inconsistent",
-                  "The published Event descriptor is ahead of the verified event-log bytes.",
-                  {
-                    taskId,
-                    descriptorRevision: existing?.revision,
-                    eventRevision: revision,
-                  },
-                );
-              }
-              const sourceSnapshotId =
-                result.events.at(-1)?.sourceSnapshotId ??
-                existing?.sourceSnapshotId;
-              if (sourceSnapshotId === undefined) {
-                throw new ArtifactStoreError(
-                  "manifest_inconsistent",
-                  "A non-empty Task event log requires sourceSnapshotId.",
-                );
-              }
-              const descriptor = ArtifactDescriptorV1Schema.parse({
-                descriptorVersion: 1,
-                artifactId:
-                  existing?.artifactId ?? `artifact:task-events:${taskId}`,
-                artifactType: "task_event_log",
-                storageFormat: "jsonl_v1",
-                path: repositoryRelativePathFromAbsolute(
-                  this.layout.worktreeRoot,
-                  eventsPath,
-                ),
-                schemaVersion: 1,
-                producerVersion: this.producerVersion,
-                sourceSnapshotId,
-                taskId,
-                revision,
-                contentDigest: result.contentDigest,
-                state: "current",
-                freshness:
-                  snapshotDescriptor.state === "current" &&
-                  snapshotDescriptor.freshness === "fresh"
-                    ? "fresh"
-                    : "partial",
-                generatedAt: this.#now(),
-                dependencies: this.#mergeRequiredDependencies(
-                  [
-                    this.#requiredDependency(snapshotDescriptor),
-                    this.#requiredDependency(taskDescriptor),
-                  ],
-                  existing?.dependencies,
-                ),
-              });
-              const next = ArtifactManifestV1Schema.parse({
-                ...manifest,
-                updatedAt: this.#now(),
-                artifacts: [
-                  ...manifest.artifacts.filter(
-                    (candidate) =>
-                      !(
-                        candidate.artifactType === "task_event_log" &&
-                        candidate.taskId === taskId
-                      ),
-                  ),
-                  descriptor,
-                ],
-              });
-              const previous = await readManagedFile(
-                this.layout.worktreeRoot,
-                this.layout.manifest,
-              );
-              await this.#writeBackup(this.layout.manifest, previous);
-              await atomicWriteJson(
-                this.layout.worktreeRoot,
-                this.layout.manifest,
-                next,
-              );
-              manifestCommitted = true;
-              return result;
-            } catch (error) {
-              if (
-                error instanceof ArtifactStoreError &&
-                error.details?.committed === true &&
-                error.details?.targetPath === this.layout.manifest
-              ) {
-                manifestCommitted = true;
-              }
-              if (!manifestCommitted) {
-                try {
-                  await restoreEventBytes();
-                } catch (rollbackError) {
-                  throw new ArtifactStoreError(
-                    "artifact_corrupt",
-                    "Event recovery failed before its Manifest commit and prior bytes could not be restored.",
-                    { taskId, eventId: event.eventId },
-                    { cause: rollbackError },
-                  );
-                }
-              }
-              throw error;
-            }
+                eventId: event.eventId,
+                requestedRevision: event.revision,
+                committedRevision: existing?.revision,
+                logRevision: currentLog.events.at(-1)?.revision,
+              },
+            );
           },
           this.#lockOptions,
         ),
@@ -3010,6 +5650,154 @@ export class ArtifactStore {
     };
   }
 
+  /**
+   * Reads one complete Task revision under a stable Manifest.
+   *
+   * The operation journal is mandatory for this API because callers must never
+   * reconstruct idempotency history or historical mutation results from a
+   * collection of individually read files.
+   */
+  async readTaskBundle(taskIdInput: string): Promise<ReadTaskBundleResult> {
+    const taskId = TaskIdSchema.parse(taskIdInput);
+    const manifest = await this.#readManifestRaw();
+    const descriptors = manifest.artifacts.filter(
+      (descriptor) => descriptor.taskId === taskId,
+    );
+    const taskManifestDescriptor = descriptors.find(
+      (descriptor) => descriptor.artifactType === "task_manifest",
+    );
+    const eventDescriptor = descriptors.find(
+      (descriptor) => descriptor.artifactType === "task_event_log",
+    );
+    const journalDescriptor = descriptors.find(
+      (descriptor) => descriptor.artifactType === "task_operation_journal",
+    );
+    if (
+      taskManifestDescriptor === undefined ||
+      eventDescriptor === undefined ||
+      journalDescriptor === undefined
+    ) {
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        "A trusted Task bundle read requires Manifest, Event log, and operation journal descriptors.",
+        { taskId },
+      );
+    }
+
+    await this.#verifyTaskDescriptorSet(manifest, taskId);
+    const taskArtifactTypes = new Set<ArtifactTypeV1>([
+      "task_manifest",
+      "task_brief",
+      "claim_ledger",
+      "evidence_ledger",
+      "impact",
+      "task_operation_journal",
+      "change_check",
+      "verification",
+    ]);
+    const artifacts: PersistedArtifactV1[] = [];
+    for (const descriptor of descriptors) {
+      const parsedType = ArtifactTypeV1Schema.safeParse(
+        descriptor.artifactType,
+      );
+      if (
+        !parsedType.success ||
+        !taskArtifactTypes.has(parsedType.data)
+      ) {
+        continue;
+      }
+      const targetPath = this.layout.artifact(parsedType.data, { taskId });
+      const artifact = await this.#readArtifactPath(targetPath);
+      await this.#requirePublishedDescriptor(
+        artifact,
+        targetPath,
+        manifest,
+      );
+      await this.#requireArtifactSourceSnapshot(
+        manifest,
+        descriptor,
+        artifact,
+        `Task bundle ${taskId}`,
+      );
+      artifacts.push(artifact);
+    }
+
+    const journal = artifacts.find(
+      (artifact) => artifact.artifactType === "task_operation_journal",
+    );
+    if (journal?.artifactType !== "task_operation_journal") {
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        "The published Task operation journal could not be read.",
+        { taskId },
+      );
+    }
+    const events = await readTaskEventLog(this.layout, taskId);
+    if (
+      events.truncatedTail !== undefined ||
+      events.contentDigest !== eventDescriptor.contentDigest ||
+      events.events.at(-1)?.revision !== eventDescriptor.revision
+    ) {
+      throw new ArtifactStoreError(
+        "manifest_inconsistent",
+        "Task Event bytes do not match the stable Task descriptor set.",
+        { taskId },
+      );
+    }
+    const prepared = this.#prepareTaskBundle({
+      artifacts,
+      events: events.events,
+      idempotencyRecords: journal.payload.idempotencyRecords,
+    });
+    await this.#requireStableManifest(manifest);
+    return {
+      bundle: prepared.bundle,
+      artifacts: prepared.artifacts,
+      receipts: journal.payload.receipts,
+      state: taskManifestDescriptor.state,
+      freshness: taskManifestDescriptor.freshness,
+      ...(manifest.latestSnapshotId === undefined
+        ? {}
+        : { latestSnapshotId: manifest.latestSnapshotId }),
+      recoveryState:
+        taskManifestDescriptor.state === "read_only_recovery"
+          ? "read_only_recovery"
+          : "current",
+    };
+  }
+
+  async lookupTaskOperationReceipt(
+    taskIdInput: string,
+    scope: IdempotencyScopeV1,
+    idempotencyKeyInput: string,
+  ): Promise<TaskOperationReceiptLookupResult | undefined> {
+    const taskId = TaskIdSchema.parse(taskIdInput);
+    const idempotencyKey = IdempotencyKeySchema.parse(idempotencyKeyInput);
+    const trustedScope = IdempotencyScopeV1Schema.parse(scope);
+    const read = await this.readTaskBundle(taskId);
+    const record = read.bundle.idempotencyRecords.find((candidate) => {
+      if (candidate.idempotencyKey !== idempotencyKey) return false;
+      if (candidate.scope.kind !== trustedScope.kind) return false;
+      return candidate.scope.kind === "task"
+        ? trustedScope.kind === "task" &&
+            candidate.scope.taskId === trustedScope.taskId
+        : trustedScope.kind === "task_create" &&
+            candidate.scope.createScope === trustedScope.createScope;
+    });
+    if (record === undefined) return undefined;
+    const receipt = read.receipts.find(
+      (candidate) => candidate.eventId === record.eventId,
+    );
+    if (receipt === undefined) {
+      throw new ArtifactStoreError(
+        "manifest_inconsistent",
+        "A committed idempotency record has no matching operation receipt.",
+        { taskId, eventId: record.eventId },
+      );
+    }
+    return { record, receipt };
+  }
+
   parseTrustedTaskBundle(input: unknown): TaskArtifactBundleV1 {
     return parseTrustedTaskBundle(input);
   }
@@ -3076,28 +5864,46 @@ export class ArtifactStore {
       }
     }
 
-    const fullTypes = [
+    const contextualRequiredTypes = [
       "task_manifest",
       "task_brief",
       "claim_ledger",
       "evidence_ledger",
       "impact",
+    ] as const satisfies readonly ArtifactTypeV1[];
+    const contextualAllowedTypes = new Set<ArtifactTypeV1>([
+      ...contextualRequiredTypes,
+      "task_operation_journal",
       "change_check",
       "verification",
-    ] as const satisfies readonly ArtifactTypeV1[];
+    ]);
+    const contextlessAllowedTypes = new Set<ArtifactTypeV1>([
+      "task_manifest",
+      "task_operation_journal",
+    ]);
     const hasContext = byType.has("task_brief");
     if (
       (hasContext &&
-        (byType.size !== fullTypes.length ||
-          fullTypes.some((type) => !byType.has(type)))) ||
+        (contextualRequiredTypes.some((type) => !byType.has(type)) ||
+          [...byType.keys()].some(
+            (type) => !contextualAllowedTypes.has(type),
+          ))) ||
       (!hasContext &&
-        (byType.size !== 1 || !byType.has("task_manifest")))
+        [...byType.keys()].some(
+          (type) => !contextlessAllowedTypes.has(type),
+        ))
     ) {
       throw new ArtifactStoreError(
         "reference_integrity_failed",
         hasContext
-          ? "A contextual Task transaction requires all seven canonical Task Artifacts."
-          : "A contextless Task transaction may contain only task_manifest.",
+          ? "A contextual Task transaction requires Task Manifest, Brief, Claim, Evidence, and Impact Artifacts; Check and Verification remain lifecycle-optional."
+          : "A contextless Task transaction may contain only Task Manifest and its optional operation journal.",
+      );
+    }
+    if (byType.has("verification") && !byType.has("change_check")) {
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        "A Verification Artifact requires a Change Check Artifact in the same Task revision.",
       );
     }
 
@@ -3111,6 +5917,211 @@ export class ArtifactStore {
       }
       return artifact.payload;
     };
+    const journalArtifact = byType.get("task_operation_journal");
+    const journalPayload =
+      journalArtifact?.artifactType === "task_operation_journal"
+        ? journalArtifact.payload
+        : undefined;
+    if (
+      journalPayload !== undefined &&
+      canonicalizeJson(journalPayload.idempotencyRecords) !==
+        canonicalizeJson(input.idempotencyRecords)
+    ) {
+      throw new ArtifactStoreError(
+        "idempotency_conflict",
+        "The Task operation journal must persist the complete trusted idempotency ledger.",
+        { taskId },
+      );
+    }
+    if (journalPayload !== undefined) {
+      const eventIds = input.events.map((event) => event.eventId);
+      if (
+        canonicalizeJson(
+          journalPayload.idempotencyRecords.map(
+            (record) => record.eventId,
+          ),
+        ) !== canonicalizeJson(eventIds) ||
+        canonicalizeJson(
+          journalPayload.receipts.map((receipt) => receipt.eventId),
+        ) !== canonicalizeJson(eventIds)
+      ) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          "Operation Journal Records and Receipts must preserve exact Task Event order.",
+          { taskId },
+        );
+      }
+      const events = new Map(
+        input.events.map((event) => [event.eventId, event]),
+      );
+      const records = new Map(
+        journalPayload.idempotencyRecords.map((record) => [
+          record.eventId,
+          record,
+        ]),
+      );
+      for (const receipt of journalPayload.receipts) {
+        const integrity = verifyTaskOperationReceiptV1(
+          receipt,
+          sha256CanonicalJson,
+        );
+        if (!integrity.valid) {
+          throw new ArtifactStoreError(
+            "artifact_corrupt",
+            "A Task operation receipt result digest is invalid.",
+            {
+              taskId,
+              eventId: receipt.eventId,
+              expectedDigest: integrity.expectedDigest,
+              actualDigest: integrity.actualDigest,
+            },
+          );
+        }
+        const event = events.get(receipt.eventId);
+        const record = records.get(receipt.eventId);
+        const eventIssue =
+          event === undefined
+            ? "operation receipt references an Event outside the trusted Task history"
+            : taskOperationReceiptEventIssue(receipt, event);
+        const recordIssue =
+          record === undefined
+            ? "operation receipt has no matching idempotency record"
+            : event === undefined
+              ? undefined
+              : taskIdempotencyRecordEventIssue(record, event);
+        const expectsCreateScope =
+          receipt.operation === "task_created" ||
+          receipt.operation === "build_task_brief";
+        const scopeIssue =
+          record === undefined ||
+          (expectsCreateScope
+            ? record.scope.kind !== "task_create"
+            : record.scope.kind !== "task");
+        let taskResultIssue: string | undefined;
+        let projectionIssue: string | undefined;
+        if (
+          receipt.operation === "task_created" ||
+          receipt.operation === "build_task_brief" ||
+          receipt.operation === "update_task"
+        ) {
+          const resultTask = receipt.result.task;
+          const persistedTask = taskManifestArtifact.payload;
+          if (
+            resultTask.title !== persistedTask.title ||
+            resultTask.originalIntent !== persistedTask.originalIntent ||
+            resultTask.createdAt !== persistedTask.createdAt ||
+            resultTask.producerVersion !== persistedTask.producerVersion
+          ) {
+            taskResultIssue =
+              "operation receipt changed immutable Task identity fields";
+          } else if (
+            resultTask.revision === revision &&
+            canonicalizeJson(resultTask) !== canonicalizeJson(persistedTask)
+          ) {
+            taskResultIssue =
+              "latest operation receipt Task result must equal the committed Task Manifest";
+          }
+        }
+        // Only the receipt committing this candidate revision can bind the
+        // current projection. Older receipts remain immutable Journal facts,
+        // while their contextual projections may be evolved or resolved by
+        // later authorized Events.
+        if (event?.revision === revision) {
+          switch (receipt.operation) {
+            case "build_task_brief": {
+              const briefArtifact = byType.get("task_brief");
+              const claimArtifact = byType.get("claim_ledger");
+              const evidenceArtifact = byType.get("evidence_ledger");
+              if (
+                briefArtifact?.artifactType !== "task_brief" ||
+                claimArtifact?.artifactType !== "claim_ledger" ||
+                evidenceArtifact?.artifactType !== "evidence_ledger" ||
+                canonicalizeJson(receipt.result.brief) !==
+                  canonicalizeJson(briefArtifact.payload) ||
+                canonicalizeJson(receipt.result.claimIds) !==
+                  canonicalizeJson(
+                    claimArtifact.payload.claims.map((claim) => claim.id),
+                  ) ||
+                canonicalizeJson(receipt.result.evidenceIds) !==
+                  canonicalizeJson(
+                    evidenceArtifact.payload.evidence.map(
+                      (evidence) => evidence.id,
+                    ),
+                  )
+              ) {
+                projectionIssue =
+                  "latest build_task_brief receipt must exactly identify the committed Brief, Claims, and Evidence";
+              }
+              break;
+            }
+            case "check_change": {
+              const checkArtifact = byType.get("change_check");
+              if (
+                checkArtifact?.artifactType !== "change_check" ||
+                canonicalizeJson(receipt.result.changeCheck) !==
+                  canonicalizeJson(checkArtifact.payload)
+              ) {
+                projectionIssue =
+                  "latest check_change receipt must equal the committed Change Check";
+              }
+              break;
+            }
+            case "record_verification": {
+              const verificationArtifact = byType.get("verification");
+              if (
+                verificationArtifact?.artifactType !== "verification" ||
+                !verificationArtifact.payload.records.some(
+                  (verification) =>
+                    verification.id === receipt.result.verification.id &&
+                    canonicalizeJson(verification) ===
+                      canonicalizeJson(receipt.result.verification),
+                )
+              ) {
+                projectionIssue =
+                  "latest record_verification receipt must equal one complete committed Verification record";
+              }
+              break;
+            }
+            case "task_created":
+            case "update_task":
+              break;
+          }
+        }
+        if (
+          eventIssue !== undefined ||
+          recordIssue !== undefined ||
+          scopeIssue ||
+          taskResultIssue !== undefined ||
+          projectionIssue !== undefined
+        ) {
+          throw new ArtifactStoreError(
+            "reference_integrity_failed",
+            eventIssue ??
+              recordIssue ??
+              taskResultIssue ??
+              projectionIssue ??
+              "operation receipt type does not match its idempotency scope",
+            {
+              taskId,
+              eventId: receipt.eventId,
+              operation: receipt.operation,
+            },
+          );
+        }
+      }
+      const historyIssue = taskOperationHistoryIssue(
+        journalPayload.receipts,
+        input.events,
+        taskManifestArtifact.payload,
+      );
+      if (historyIssue !== undefined) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          historyIssue,
+          { taskId },
+        );
+      }
+    }
     const candidate: unknown = hasContext
       ? {
           manifest: payload("task_manifest"),
@@ -3119,10 +6130,12 @@ export class ArtifactStore {
           evidence: (payload("evidence_ledger") as { evidence?: unknown })
             .evidence,
           impactPaths: (payload("impact") as { paths?: unknown }).paths,
-          changeChecks: [payload("change_check")],
-          verificationRecords: (
-            payload("verification") as { records?: unknown }
-          ).records,
+          changeChecks: byType.has("change_check")
+            ? [payload("change_check")]
+            : [],
+          verificationRecords: byType.has("verification")
+            ? (payload("verification") as { records?: unknown }).records
+            : [],
           events: [...input.events],
           idempotencyRecords: [...input.idempotencyRecords],
         }
@@ -3132,7 +6145,13 @@ export class ArtifactStore {
           idempotencyRecords: [...input.idempotencyRecords],
         };
     const bundle = this.parseTrustedTaskBundle(candidate);
-    return { bundle, artifacts, taskId, revision };
+    return {
+      bundle,
+      artifacts,
+      taskId,
+      revision,
+      contextual: hasContext,
+    };
   }
 
   async #verifyPublishedTaskBundle(
@@ -3208,255 +6227,267 @@ export class ArtifactStore {
     }
   }
 
-  async #publishTaskBundleManifest(
+  async #nextTaskBundleManifest(
+    current: ArtifactManifestV1,
     prepared: PreparedTaskBundle,
     serializedEvents: string,
     options: PersistTaskBundleOptions,
-  ): Promise<void> {
-    await withStoreLock(
-      this.layout.worktreeRoot,
-      this.layout.repositoryLock,
-      async () => {
-        const current = await this.#readManifestRaw();
-        const freshness = await this.#taskBundleFreshness(current, prepared);
-        const artifactByType = new Map(
-          prepared.artifacts.map((artifact) => [
-            artifact.artifactType,
-            artifact,
-          ]),
+  ): Promise<ArtifactManifestV1> {
+    const freshness = await this.#taskBundleFreshness(current, prepared);
+    const artifactByType = new Map(
+      prepared.artifacts.map((artifact) => [
+        artifact.artifactType,
+        artifact,
+      ]),
+    );
+    const taskManifestArtifact = artifactByType.get("task_manifest");
+    if (taskManifestArtifact === undefined) {
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        "Prepared Task bundle lost its Task Manifest.",
+      );
+    }
+    const snapshotDescriptor = current.artifacts.find(
+      (descriptor) =>
+        descriptor.artifactType === "repository_snapshot" &&
+        descriptor.sourceSnapshotId ===
+          prepared.bundle.manifest.latestSnapshotId &&
+        (descriptor.state === "current" ||
+          descriptor.state === "read_only_recovery"),
+    );
+    const repoPulseDescriptor = current.artifacts.find(
+      (descriptor) =>
+        descriptor.artifactType === "repo_pulse" &&
+        descriptor.sourceSnapshotId ===
+          prepared.bundle.manifest.latestSnapshotId &&
+        descriptor.state === "current" &&
+        (descriptor.freshness === "fresh" ||
+          descriptor.freshness === "partial"),
+    );
+    const requirePrepared = (
+      artifactType: ArtifactTypeV1,
+    ): ArtifactDependencyV1 => {
+      const artifact = artifactByType.get(artifactType);
+      if (artifact === undefined) {
+        throw new ArtifactStoreError(
+          "reference_integrity_failed",
+          `Task dependency target is missing: ${artifactType}.`,
         );
-        const taskManifestArtifact = artifactByType.get("task_manifest");
-        if (taskManifestArtifact === undefined) {
-          throw new ArtifactStoreError(
-            "reference_integrity_failed",
-            "Prepared Task bundle lost its Task Manifest.",
-          );
-        }
-        const snapshotDescriptor = current.artifacts.find(
-          (descriptor) =>
-            descriptor.artifactType === "repository_snapshot" &&
-            descriptor.sourceSnapshotId ===
-              prepared.bundle.manifest.latestSnapshotId &&
-            (descriptor.state === "current" ||
-              descriptor.state === "read_only_recovery"),
-        );
-        const repoPulseDescriptor = current.artifacts.find(
-          (descriptor) =>
-            descriptor.artifactType === "repo_pulse" &&
-            descriptor.sourceSnapshotId ===
-              prepared.bundle.manifest.latestSnapshotId &&
-            descriptor.state === "current" &&
-            (descriptor.freshness === "fresh" ||
-              descriptor.freshness === "partial"),
-        );
-        const requirePrepared = (
-          artifactType: ArtifactTypeV1,
-        ): ArtifactDependencyV1 => {
-          const artifact = artifactByType.get(artifactType);
-          if (artifact === undefined) {
-            throw new ArtifactStoreError(
-              "reference_integrity_failed",
-              `Task dependency target is missing: ${artifactType}.`,
-            );
-          }
-          return this.#requiredArtifactDependency(artifact);
-        };
-        const repositoryDependencies: ArtifactDependencyV1[] = [];
-        if (snapshotDescriptor !== undefined) {
-          repositoryDependencies.push(
-            this.#requiredDependency(snapshotDescriptor),
-          );
-        }
-        if (repoPulseDescriptor !== undefined) {
-          repositoryDependencies.push(
-            this.#requiredDependency(repoPulseDescriptor),
-          );
-        }
-        const canonicalDependencies = (
-          artifactType: ArtifactTypeV1,
-        ): ArtifactDependencyV1[] => {
-          switch (artifactType) {
-            case "task_manifest":
-              return repositoryDependencies;
-            case "claim_ledger":
-              return [requirePrepared("task_manifest")];
-            case "evidence_ledger":
-              return [
-                requirePrepared("task_manifest"),
-                requirePrepared("claim_ledger"),
-              ];
-            case "impact":
-              return [
-                requirePrepared("claim_ledger"),
-                requirePrepared("evidence_ledger"),
-              ];
-            case "task_brief":
-              return [
-                requirePrepared("task_manifest"),
-                requirePrepared("claim_ledger"),
-                requirePrepared("evidence_ledger"),
-                requirePrepared("impact"),
-              ];
-            case "change_check":
-              return [
-                requirePrepared("task_brief"),
-                requirePrepared("evidence_ledger"),
-                requirePrepared("impact"),
-              ];
-            case "verification":
-              return [
-                requirePrepared("change_check"),
-                requirePrepared("claim_ledger"),
-              ];
-            default:
-              return [];
-          }
-        };
-        const descriptors = await Promise.all(
-          prepared.artifacts.map((artifact) =>
-            this.#descriptorForArtifact(artifact, {
-              state: "current",
-              freshness,
-              dependencies: this.#mergeRequiredDependencies(
-                canonicalDependencies(artifact.artifactType),
-                options.dependenciesByArtifactId?.[artifact.artifactId],
-              ),
-            }),
-          ),
-        );
-        const existingEventDescriptor = current.artifacts.find(
-          (descriptor) =>
-            descriptor.artifactType === "task_event_log" &&
-            descriptor.taskId === prepared.taskId,
-        );
-        const eventDescriptor = ArtifactDescriptorV1Schema.parse({
-          descriptorVersion: 1,
-          artifactId:
-            existingEventDescriptor?.artifactId ??
-            `artifact:task-events:${prepared.taskId}`,
-          artifactType: "task_event_log",
-          storageFormat: "jsonl_v1",
-          path: repositoryRelativePathFromAbsolute(
-            this.layout.worktreeRoot,
-            this.layout.task(prepared.taskId).events,
-          ),
-          schemaVersion: 1,
-          producerVersion: this.producerVersion,
-          sourceSnapshotId: prepared.bundle.manifest.latestSnapshotId,
-          taskId: prepared.taskId,
-          revision: prepared.revision,
-          contentDigest: sha256Bytes(serializedEvents),
+      }
+      return this.#requiredArtifactDependency(artifact);
+    };
+    const repositoryDependencies: ArtifactDependencyV1[] = [];
+    if (snapshotDescriptor !== undefined) {
+      repositoryDependencies.push(
+        this.#requiredDependency(snapshotDescriptor),
+      );
+    }
+    if (repoPulseDescriptor !== undefined) {
+      repositoryDependencies.push(
+        this.#requiredDependency(repoPulseDescriptor),
+      );
+    }
+    const canonicalDependencies = (
+      artifactType: ArtifactTypeV1,
+    ): ArtifactDependencyV1[] => {
+      switch (artifactType) {
+        case "task_manifest":
+          return repositoryDependencies;
+        case "claim_ledger":
+          return [requirePrepared("task_manifest")];
+        case "evidence_ledger":
+          return [
+            requirePrepared("task_manifest"),
+            requirePrepared("claim_ledger"),
+          ];
+        case "impact":
+          return [
+            requirePrepared("claim_ledger"),
+            requirePrepared("evidence_ledger"),
+          ];
+        case "task_operation_journal":
+          return [requirePrepared("task_manifest")];
+        case "task_brief":
+          return [
+            requirePrepared("task_manifest"),
+            requirePrepared("claim_ledger"),
+            requirePrepared("evidence_ledger"),
+            requirePrepared("impact"),
+          ];
+        case "change_check":
+          return [
+            requirePrepared("task_brief"),
+            requirePrepared("evidence_ledger"),
+            requirePrepared("impact"),
+          ];
+        case "verification":
+          return [
+            requirePrepared("change_check"),
+            requirePrepared("claim_ledger"),
+          ];
+        default:
+          return [];
+      }
+    };
+    const descriptors = await Promise.all(
+      prepared.artifacts.map((artifact) =>
+        this.#descriptorForArtifact(artifact, {
           state: "current",
           freshness,
-          generatedAt:
-            prepared.bundle.events.at(-1)?.occurredAt ?? this.#now(),
           dependencies: this.#mergeRequiredDependencies(
-            [this.#requiredArtifactDependency(taskManifestArtifact)],
-            options.dependenciesByArtifactId?.[
-              existingEventDescriptor?.artifactId ??
-                `artifact:task-events:${prepared.taskId}`
-            ],
+            canonicalDependencies(artifact.artifactType),
+            options.dependenciesByArtifactId?.[artifact.artifactId],
           ),
-        });
-        const next = ArtifactManifestV1Schema.parse({
-          ...current,
-          updatedAt: this.#now(),
-          artifacts: [
-            ...current.artifacts.filter(
-              (descriptor) => descriptor.taskId !== prepared.taskId,
-            ),
-            ...descriptors,
-            eventDescriptor,
-          ],
-        });
-        const previousManifest = await readManagedFile(
-          this.layout.worktreeRoot,
-          this.layout.manifest,
-        );
-        await this.#writeBackup(this.layout.manifest, previousManifest);
-        try {
-          await atomicWriteJson(
-            this.layout.worktreeRoot,
-            this.layout.manifest,
-            next,
-            options.manifestWrite,
-          );
-        } catch (error) {
-          if (isCommittedAtomicWriteError(error, this.layout.manifest)) {
-            throw error;
-          }
-          await atomicWriteFile(
-            this.layout.worktreeRoot,
-            this.layout.manifest,
-            previousManifest,
-          );
-          throw error;
-        }
-      },
-      this.#lockOptions,
+        }),
+      ),
     );
+    const existingEventDescriptor = current.artifacts.find(
+      (descriptor) =>
+        descriptor.artifactType === "task_event_log" &&
+        descriptor.taskId === prepared.taskId,
+    );
+    const eventDescriptor = ArtifactDescriptorV1Schema.parse({
+      descriptorVersion: 1,
+      artifactId:
+        existingEventDescriptor?.artifactId ??
+        `artifact:task-events:${prepared.taskId}`,
+      artifactType: "task_event_log",
+      storageFormat: "jsonl_v1",
+      path: repositoryRelativePathFromAbsolute(
+        this.layout.worktreeRoot,
+        this.layout.task(prepared.taskId).events,
+      ),
+      schemaVersion: 1,
+      producerVersion: this.producerVersion,
+      sourceSnapshotId: prepared.bundle.manifest.latestSnapshotId,
+      taskId: prepared.taskId,
+      revision: prepared.revision,
+      contentDigest: sha256Bytes(serializedEvents),
+      state: "current",
+      freshness,
+      generatedAt:
+        prepared.bundle.events.at(-1)?.occurredAt ?? this.#now(),
+      dependencies: this.#mergeRequiredDependencies(
+        [this.#requiredArtifactDependency(taskManifestArtifact)],
+        options.dependenciesByArtifactId?.[
+          existingEventDescriptor?.artifactId ??
+            `artifact:task-events:${prepared.taskId}`
+        ],
+      ),
+    });
+    return ArtifactManifestV1Schema.parse({
+      ...current,
+      updatedAt: this.#now(),
+      artifacts: [
+        ...current.artifacts.filter(
+          (descriptor) => descriptor.taskId !== prepared.taskId,
+        ),
+        ...descriptors,
+        eventDescriptor,
+      ],
+    });
   }
 
   /**
    * Persists one semantically complete Task revision.
    *
    * Contracts validates every Claim/Evidence/Finding/Verification backlink and
-   * the trusted Event digest chain before any bytes are written. Canonical
-   * files may be replaced one at a time, but they are not committed until one
-   * Manifest switch publishes the complete descriptor set; public reads reject
-   * any crash-interrupted intermediate state.
+   * the trusted Event digest chain before any bytes are written. A durable
+   * whole-task marker records the previously published bytes before canonical
+   * files are replaced. The Manifest switch is the sole commit point, so
+   * startup recovery can preserve or roll back the complete descriptor set.
    */
   async persistTaskBundle(
     input: PersistTaskBundleInput,
     options: PersistTaskBundleOptions,
   ): Promise<PersistTaskBundleResult> {
     const prepared = this.#prepareTaskBundle(input);
+    const hasOperationJournal = prepared.artifacts.some(
+      (artifact) => artifact.artifactType === "task_operation_journal",
+    );
     const expectedRevision = options.expectedRevision;
-    if (
-      !Number.isSafeInteger(expectedRevision) ||
-      expectedRevision < 0 ||
-      prepared.revision <= expectedRevision
-    ) {
+    const validHistoryImport =
+      options.historyImport === true &&
+      expectedRevision === 0 &&
+      prepared.bundle.events.length === prepared.revision &&
+      prepared.bundle.events.every(
+        (event, index) => event.revision === index + 1,
+      );
+    if (!hasOperationJournal && !validHistoryImport) {
+      throw new ArtifactStoreError(
+        "reference_integrity_failed",
+        "Live Task transactions require a complete operation journal; journal-less bundles are accepted only through a validated legacy history import into an empty Task.",
+        { taskId: prepared.taskId },
+      );
+    }
+    if (options.historyImport === true && !validHistoryImport) {
       throw new ArtifactStoreError(
         "revision_conflict",
-        "Task bundle revision must advance beyond expectedRevision.",
+        "historyImport is valid only for contiguous revision-1..N history with expectedRevision 0.",
         { expectedRevision, bundleRevision: prepared.revision },
       );
     }
-    const idempotency = {
+    if (
+      !Number.isSafeInteger(expectedRevision) ||
+      expectedRevision < 0 ||
+      (prepared.revision !== expectedRevision + 1 && !validHistoryImport)
+    ) {
+      throw new ArtifactStoreError(
+        "revision_conflict",
+        "Task bundle revision must advance exactly once beyond expectedRevision.",
+        { expectedRevision, bundleRevision: prepared.revision },
+      );
+    }
+    const requestedIdempotency = {
       key: IdempotencyKeySchema.parse(options.idempotencyKey),
       requestDigest: ContentDigestSchema.parse(options.requestDigest),
     };
     const matchingControlRecord = prepared.bundle.idempotencyRecords.find(
       (record) =>
-        record.idempotencyKey === idempotency.key &&
-        record.requestDigest === idempotency.requestDigest &&
+        record.idempotencyKey === requestedIdempotency.key &&
+        record.requestDigest === requestedIdempotency.requestDigest &&
         record.resultRevision === prepared.revision,
     );
     if (matchingControlRecord === undefined) {
       throw new ArtifactStoreError(
         "idempotency_conflict",
         "Task transaction control must match a trusted bundle idempotency record.",
-        { idempotencyKey: idempotency.key },
+        { idempotencyKey: requestedIdempotency.key },
       );
     }
+    const idempotency: StoreIdempotencyControl = {
+      ...requestedIdempotency,
+      scope: matchingControlRecord.scope,
+      actor: matchingControlRecord.actor,
+    };
 
     await ensureManagedDirectory(
       this.layout.worktreeRoot,
       `.understand-code/tasks/${prepared.taskId}`,
     );
+    await ensureManagedDirectory(
+      this.layout.worktreeRoot,
+      ".understand-code/.recovery/task-transactions",
+    );
     return withStoreLock(
       this.layout.worktreeRoot,
       this.layout.taskLock(prepared.taskId),
-      async () => {
+      async () =>
+        withStoreLock(
+          this.layout.worktreeRoot,
+          this.layout.repositoryLock,
+          async () => {
+        await this.#recoverPendingTaskTransactions();
         const idempotencyPath = this.#idempotencyPath(prepared.taskId);
         const index = await this.#readIdempotencyIndex(idempotencyPath);
+        const identity = storeIdempotencyIdentity(idempotency);
         const recorded = index.records.find(
-          (record) => record.key === idempotency.key,
+          (record) => storeIdempotencyIdentity(record) === identity,
         );
         if (recorded !== undefined) {
           if (
             recorded.requestDigest !== idempotency.requestDigest ||
+            recorded.actor !== idempotency.actor ||
             recorded.resultRevision !== prepared.revision ||
             recorded.resultDigest !==
               prepared.artifacts.find(
@@ -3500,6 +6531,121 @@ export class ArtifactStore {
             "Recovered Task state is read-only until explicitly promoted.",
             { taskId: prepared.taskId },
           );
+        }
+
+        if (
+          currentRevision > 0 &&
+          currentRevision === expectedRevision
+        ) {
+          const currentTaskPath = this.layout.artifact(
+            "task_manifest",
+            { taskId: prepared.taskId },
+          );
+          const currentTask = await this.#readArtifactPath(
+            currentTaskPath,
+          );
+          const candidateTask = prepared.artifacts.find(
+            (artifact) => artifact.artifactType === "task_manifest",
+          );
+          const appendedEvent = prepared.bundle.events.at(-1);
+          if (
+            currentTask.artifactType !== "task_manifest" ||
+            candidateTask?.artifactType !== "task_manifest" ||
+            appendedEvent === undefined
+          ) {
+            throw new ArtifactStoreError(
+              "manifest_inconsistent",
+              "A live Task mutation requires current and candidate Task Manifests plus one appended Event.",
+              { taskId: prepared.taskId },
+            );
+          }
+          await this.#requirePublishedDescriptor(
+            currentTask,
+            currentTaskPath,
+            currentManifest,
+          );
+          const transitionIssue = taskManifestTransitionIssue(
+            currentTask.payload,
+            candidateTask.payload,
+            appendedEvent,
+          );
+          if (transitionIssue !== undefined) {
+            throw new ArtifactStoreError(
+              "reference_integrity_failed",
+              transitionIssue,
+              {
+                taskId: prepared.taskId,
+                currentRevision,
+                action: appendedEvent.action.type,
+              },
+            );
+          }
+          await this.#assertTaskPayloadMutationPolicy(
+            currentManifest,
+            prepared,
+            currentTask.payload,
+            appendedEvent,
+          );
+          const currentJournalDescriptor = currentManifest.artifacts.find(
+            (descriptor) =>
+              descriptor.artifactType === "task_operation_journal" &&
+              descriptor.taskId === prepared.taskId,
+          );
+          const candidateJournal = prepared.artifacts.find(
+            (artifact) =>
+              artifact.artifactType === "task_operation_journal",
+          );
+          if (
+            currentJournalDescriptor === undefined ||
+            candidateJournal?.artifactType !== "task_operation_journal"
+          ) {
+            throw new ArtifactStoreError(
+              "reference_integrity_failed",
+              "A live Task mutation requires the previously committed operation Journal and its append-only successor.",
+              { taskId: prepared.taskId, currentRevision },
+            );
+          }
+          const currentJournalPath = this.layout.artifact(
+            "task_operation_journal",
+            { taskId: prepared.taskId },
+          );
+          const currentJournal = await this.#readArtifactPath(
+            currentJournalPath,
+          );
+          if (currentJournal.artifactType !== "task_operation_journal") {
+            throw new ArtifactStoreError(
+              "manifest_inconsistent",
+              "The current operation Journal path resolved another Artifact type.",
+              { taskId: prepared.taskId },
+            );
+          }
+          await this.#requirePublishedDescriptor(
+            currentJournal,
+            currentJournalPath,
+            currentManifest,
+          );
+          const currentRecords =
+            currentJournal.payload.idempotencyRecords;
+          const currentReceipts = currentJournal.payload.receipts;
+          const candidateRecords =
+            candidateJournal.payload.idempotencyRecords;
+          const candidateReceipts = candidateJournal.payload.receipts;
+          if (
+            candidateRecords.length !== currentRecords.length + 1 ||
+            candidateReceipts.length !== currentReceipts.length + 1 ||
+            canonicalizeJson(
+              candidateRecords.slice(0, currentRecords.length),
+            ) !== canonicalizeJson(currentRecords) ||
+            canonicalizeJson(
+              candidateReceipts.slice(0, currentReceipts.length),
+            ) !== canonicalizeJson(currentReceipts)
+          ) {
+            throw new ArtifactStoreError(
+              "reference_integrity_failed",
+              "A live Task mutation must append exactly one Record and Receipt without rewriting trusted Journal history.",
+              { taskId: prepared.taskId, currentRevision },
+            );
+          }
         }
 
         if (
@@ -3597,56 +6743,136 @@ export class ArtifactStore {
             path: this.layout.task(prepared.taskId).events,
             content: serializedEvents,
           },
-        ];
-        const previousByPath = new Map<string, Buffer | undefined>();
+        ] satisfies TaskBundleWrite[];
+        const nextManifest = await this.#nextTaskBundleManifest(
+          currentManifest,
+          prepared,
+          serializedEvents,
+          options,
+        );
+        const targetDescriptors = nextManifest.artifacts.filter(
+          (descriptor) => descriptor.taskId === prepared.taskId,
+        );
+        const writePaths = new Set(
+          writes.map((write) =>
+            repositoryRelativePathFromAbsolute(
+              this.layout.worktreeRoot,
+              write.path,
+            ),
+          ),
+        );
+        if (
+          targetDescriptors.length !== writePaths.size ||
+          targetDescriptors.some(
+            (descriptor) => !writePaths.has(descriptor.path),
+          )
+        ) {
+          throw new ArtifactStoreError(
+            "manifest_inconsistent",
+            "Task transaction target descriptors do not match its complete canonical write set.",
+            { taskId: prepared.taskId },
+          );
+        }
+        const previousManifestBytes = await readManagedFile(
+          this.layout.worktreeRoot,
+          this.layout.manifest,
+        );
+        await this.#writeBackup(
+          this.layout.manifest,
+          previousManifestBytes,
+        );
+        const publishedOldPaths = new Set(
+          currentManifest.artifacts
+            .filter(
+              (descriptor) => descriptor.taskId === prepared.taskId,
+            )
+            .map((descriptor) => descriptor.path),
+        );
+        const oldFiles: TaskTransactionFileBackupV1[] = [];
         for (const write of writes) {
-          try {
+          const relativePath = repositoryRelativePathFromAbsolute(
+            this.layout.worktreeRoot,
+            write.path,
+          );
+          if (publishedOldPaths.has(relativePath)) {
             const previous = await readManagedFile(
               this.layout.worktreeRoot,
               write.path,
             );
-            previousByPath.set(write.path, previous);
             await this.#writeBackup(write.path, previous);
-          } catch (error) {
-            if (
-              error instanceof ArtifactStoreError &&
-              error.code === "artifact_not_found"
-            ) {
-              previousByPath.set(write.path, undefined);
-            } else {
-              throw error;
-            }
+            oldFiles.push({
+              relativePath,
+              existed: true,
+              ...taskTransactionBytes(previous),
+            });
+          } else {
+            oldFiles.push({ relativePath, existed: false });
           }
         }
 
-        const writtenPaths: string[] = [];
+        const markerPath = this.layout.taskTransactionMarker(
+          prepared.taskId,
+        );
+        const marker: PendingTaskTransactionMarkerV1 = {
+          version: 1,
+          repositoryId: this.repositoryId,
+          worktreeId: this.worktreeId,
+          taskId: prepared.taskId,
+          expectedRevision,
+          targetRevision: prepared.revision,
+          createdAt: this.#now(),
+          oldManifest: taskTransactionBytes(previousManifestBytes),
+          oldFiles,
+          targetDescriptors,
+        };
+        let markerCreated = false;
         let manifestCommitted = false;
+        let manifestCommitAmbiguous = false;
         try {
-          for (const write of writes) {
-            try {
-              await atomicWriteFile(
-                this.layout.worktreeRoot,
-                write.path,
-                write.content,
-                options.artifactWrite,
-              );
-              writtenPaths.push(write.path);
-            } catch (error) {
-              if (
-                error instanceof ArtifactStoreError &&
-                error.details?.committed === true
-              ) {
-                writtenPaths.push(write.path);
-              }
-              throw error;
+          try {
+            await atomicWriteJson(
+              this.layout.worktreeRoot,
+              markerPath,
+              marker,
+            );
+            markerCreated = true;
+          } catch (error) {
+            if (isCommittedAtomicWriteError(error, markerPath)) {
+              markerCreated = true;
             }
+            throw error;
           }
-          await this.#publishTaskBundleManifest(
-            prepared,
-            serializedEvents,
-            options,
-          );
-          manifestCommitted = true;
+          for (const write of writes) {
+            await atomicWriteFile(
+              this.layout.worktreeRoot,
+              write.path,
+              write.content,
+              options.artifactWrite,
+            );
+          }
+          try {
+            await atomicWriteJson(
+              this.layout.worktreeRoot,
+              this.layout.manifest,
+              nextManifest,
+              options.manifestWrite,
+            );
+            manifestCommitted = true;
+          } catch (error) {
+            if (isCommittedAtomicWriteError(error, this.layout.manifest)) {
+              if (
+                isDurablyCommittedAtomicWriteError(
+                  error,
+                  this.layout.manifest,
+                )
+              ) {
+                manifestCommitted = true;
+              } else {
+                manifestCommitAmbiguous = true;
+              }
+            }
+            throw error;
+          }
           const taskManifestArtifact = prepared.artifacts.find(
             (artifact) => artifact.artifactType === "task_manifest",
           );
@@ -3662,6 +6888,8 @@ export class ArtifactStore {
             taskManifestArtifact,
             idempotency,
           );
+          await this.#durablyUnlinkManagedFile(markerPath);
+          markerCreated = false;
           return {
             bundle: prepared.bundle,
             artifacts: prepared.artifacts,
@@ -3669,28 +6897,41 @@ export class ArtifactStore {
           };
         } catch (error) {
           if (isCommittedAtomicWriteError(error, this.layout.manifest)) {
-            manifestCommitted = true;
+            if (
+              isDurablyCommittedAtomicWriteError(
+                error,
+                this.layout.manifest,
+              )
+            ) {
+              manifestCommitted = true;
+            } else {
+              manifestCommitAmbiguous = true;
+            }
           }
-          if (!manifestCommitted) {
-            for (const writtenPath of writtenPaths.reverse()) {
-              const previous = previousByPath.get(writtenPath);
-              if (previous === undefined) {
-                await this.#quarantinePath(
-                  writtenPath,
-                  "uncommitted-task-transaction",
-                ).catch(() => undefined);
-              } else {
-                await atomicWriteFile(
-                  this.layout.worktreeRoot,
-                  writtenPath,
-                  previous,
+          if (markerCreated) {
+            if (manifestCommitted) {
+              await this.#durablyUnlinkManagedFile(markerPath).catch(
+                () => undefined,
+              );
+            } else if (!manifestCommitAmbiguous) {
+              try {
+                await this.#rollbackPendingTaskTransaction(marker);
+                await this.#durablyUnlinkManagedFile(markerPath);
+              } catch (rollbackError) {
+                throw new ArtifactStoreError(
+                  "artifact_corrupt",
+                  "Task transaction failed and its durable whole-task rollback did not complete.",
+                  { taskId: prepared.taskId, targetRevision: prepared.revision },
+                  { cause: rollbackError },
                 );
               }
             }
           }
           throw error;
         }
-      },
+          },
+          this.#lockOptions,
+        ),
       this.#lockOptions,
     );
   }
@@ -3710,6 +6951,7 @@ export class ArtifactStore {
       this.layout.worktreeRoot,
       this.layout.repositoryLock,
       async () => {
+        await this.#recoverPendingTaskTransactions();
         const manifest = await this.#readManifestRaw();
         const publishedDescriptor = manifest.artifacts.find(
           (descriptor) => descriptor.path === targetRelative,

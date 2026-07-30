@@ -2,11 +2,13 @@
 
 记录 ID：`G0-2026-07-28`
 
-状态：**Closed for WP1 implementation**
+状态：**Closed for implementation；WP4 Decision Amendments D-22～D-23 incorporated**
 
 候选基线：`34da354968a6071d914e4e4a4fca738e6c2d8a29`
 
 冻结日期：2026-07-28
+
+WP4 修订日期：2026-07-29
 
 编制方式：Codex 汇总版本化证据、独立审查和自动化结果；Codex 不被记录为真人签署人
 
@@ -24,6 +26,19 @@ Product Mission、P0 Scope、Non-goals、Task Lifecycle V1、Root Binding Contra
 - 本记录不声称任何组织、公司仓库 Owner 或未具名真人已签署发布许可。
 
 Gate 关闭依据是 `understand-code` 项目 Owner 已明确要求按本研制计划继续实施；这是单项目工程决策授权，不代表 `ALPHA-B` 或其他外部仓库 Owner 授权。未来进入团队 Alpha、外部 Beta 或公开发布时，Product、Tech、Platform/Security 与 QA 仍须在对应 Gate 留下可追踪的真人确认。
+
+2026-07-29 的 D-22 是 WP4 实现过程中发现并关闭的契约歧义：公开
+`build_task_brief(expectedRevision=0)` 必须编排 `created@1` 与
+`context_ready@2` 两次合法 Mutation，而不能绕过 Genesis 或一次增加两个
+revision。该修订不重新打开 G0，也不改变 D-21 的状态集合、允许转移或 Guard；
+它冻结公开 Operation 与底层 Mutation 的边界，并将完整 Operation Journal /
+Receipt 提升为可信持久化事实。
+
+同日 D-23 关闭了 Persistent Task 与可变 canonical Repo Pulse 之间的存储
+冲突：旧 Task 精确 Pin 的 Pulse 必须归档为不可变历史版本，新的 canonical
+Pulse 通过 durable marker 与 Manifest commit point 原子切换。该修订不新增
+Artifact Type 或 Lifecycle 状态，只冻结 Pulse 版本身份、历史可寻址性和恢复
+边界。
 
 ## 2. 状态语义
 
@@ -80,7 +95,7 @@ Gate 关闭依据是 `understand-code` 项目 Owner 已明确要求按本研制�
 - 性能 Evidence 保存生产源文件 Hash、原始样本、预热/采样数和 expected/actual 完整性字段。
 - Host Evidence 保持 Surface 边界；Codex App Server provisional 结果和 Claude 未认证 Tool Call 不被提升为 supported。
 
-## 4. D-13～D-21 冻结结果
+## 4. D-13～D-23 冻结结果
 
 ### D-13：P0 平台
 
@@ -190,6 +205,57 @@ Activation Gate：`open`
 
 Lifecycle 见第 5 节。WP1 Schema 与 WP4 Task Engine 不得自行引入额外状态或绕过 Guard；如需改变，必须新增 Decision Amendment 和迁移规则。
 
+### D-22：`build_task_brief` 两阶段编排与 Operation Journal
+
+状态：`accepted`（2026-07-29 Decision Amendment）
+
+- 公开 `build_task_brief` 保持 `expectedRevision=0`，并由
+  `(worktreeId, createScope, idempotencyKey)` 稳定映射同一个 Task ID。
+- Stage 1 原子提交最小 recovery bundle：
+  `created@1 + task_created Event + task_created Receipt`。
+- Stage 2 只在 Pulse、Context 和所有引用校验通过后，原子提交完整 Context
+  bundle：`context_ready@2 + transition Event + build_task_brief Receipt`。
+- 每一 Stage 分别且只 `+1 revision/+1 Event`；公开调用可以编排两次
+  Mutation，但任何单次 Store commit 仍不得跨 revision。
+- `task_operation_journal` 必须保存从 Genesis 开始的完整
+  Idempotency Record 与 Operation Receipt；每个 Receipt 保存首次提交的完整
+  结构化结果与 canonical result digest。
+- 同 key 同 Actor 同 request digest 的重试从 Journal 返回首次结果；Task 即使
+  已推进到更高 revision，也不能丢失旧结果。payload 或 Actor 不同则返回
+  `idempotency_conflict`。
+- Stage 1 后崩溃或 Context Gate 失败时保留 `created@1`；重试同 key 恢复
+  Stage 2，不创建第二个 Task。
+- `context_ready@2` 是阶段间没有其他 Mutation 的标准结果。若 Stage 1 后合法
+  `block_task → resume_task`，Stage 2 从恢复后的 `created@N` 严格 CAS 到
+  `context_ready@(N+1)`；不得硬编码 revision 2 或倒退 Event history。
+- 旧的无 Journal Task 只允许显式兼容读取或迁移；新 writer 不得静默把最近
+  idempotency cache 当成完整历史事实。
+
+本修订解决的是编排边界，不新增状态或转移，因此 D-21 Lifecycle 无迁移；
+Journal Schema 作为新的 Task-scoped V1 Artifact 需要由 Contracts、Store 和
+Task Engine 同步升级。验收矩阵见
+`docs/research/2026-07-29-wp4-task-intelligence-matrix.md`。
+
+### D-23：Repo Pulse 不可变历史与 canonical 切换
+
+状态：`accepted`（2026-07-29 Decision Amendment）
+
+- canonical 文件固定为 `.understand-code/repo-pulse.json`；被替换的完整
+  envelope 归档到 `.understand-code/pulses/<version-key>.json`。
+- 历史 descriptor 保留原 `artifactId/contentDigest/sourceSnapshotId`，状态为
+  `historical/stale`；新 current descriptor 使用不冲突的确定性身份。
+- 生产写入顺序为 `marker → history → canonical → Manifest`，Manifest 是唯一
+  commit point；所有 Manifest mutation 必须先 drain Pulse/Task transaction。
+- historical Pulse 的依赖者递归 stale，但历史 bytes 与 exact Pin 继续可信可读。
+- canonical 恢复失败只标记精确 committed descriptor；不得按 Artifact Type
+  批量标坏历史 Pulse。
+- `migrateJson` 的 Repo Pulse 历史统一留给 WP8 Migration Gate；在此之前不得
+  用该入口替换已被 Task Pin 的 Pulse。
+
+D-23 是存储与恢复语义修订，不改变 D-21 状态机，也不新增 public Artifact
+Schema。验证矩阵见
+`docs/research/2026-07-29-wp4-task-intelligence-matrix.md`。
+
 ## 5. Task Lifecycle V1
 
 ### 5.1 状态
@@ -245,6 +311,48 @@ P0 不另设 `cancelled`；放弃表示为 `superseded(reason=abandoned)`。P0 �
 - 成功 Mutation 恰好增加一次 revision、追加一次 Event；Schema、Guard、CAS、权限或执行失败均不增加 revision。
 - Crash 后结果不确定时必须复用原 key；`build_task_brief` 的 key 稳定映射到同一 Task ID。
 - `rebase_task` 更新 baseline 并使旧 Plan/Check/Verification 失效，不能原地保留旧 `verified` 语义。
+
+### 5.4 `build_task_brief` 编排与可信回放
+
+`build_task_brief` 是唯一允许在一个公开 Tool Call 内顺序执行两次底层 Mutation
+的 P0 编排；两次提交仍分别执行第 5.3 节的 authorization、idempotency、CAS、
+Guard、Artifact/Event/Journal 原子提交规则。
+
+| 阶段 | 输入 revision | 提交后状态 | 必备持久事实 | 不得出现 |
+|---|---:|---|---|---|
+| Stage 1 / intent recovery | 0 | `created@1` | Manifest、唯一 `task_created` Event、创建 Idempotency Record 与完整 Receipt、Operation Journal | Brief/Claim/Evidence/Impact/Check/Verification 伪事实 |
+| Stage 2 / context publication | 当前 `created@N`（标准路径 N=1） | `context_ready@(N+1)`（标准路径 @2） | Brief、Claim、Evidence、Impact、下一条 Event、公开调用 Idempotency Record 与完整 Receipt、更新后的完整 Journal | 未通过 Pulse/引用校验的 Context；空 Change Check/Verification；硬编码 revision 2 |
+
+可信 Journal 满足：
+
+1. 每个 Idempotency Record 恰好对应一个 Receipt，Task/Event/revision/result
+   digest 全部一致；Receipt operation、Task resultingStatus、Snapshot、
+   repo/worktree 与对应 Event 逐项一致。
+2. Receipt 的完整 result 必须重新计算 canonical digest；只验证结构不足以
+   信任历史 replay。
+3. Journal、Manifest、Task Artifact 与 Event chain 必须来自同一 CAS
+   revision；任一缺失、截断、悬空或 digest mismatch 时整个 Bundle fail
+   closed。
+4. 幂等 lookup 先于 revision conflict：旧 key 即使携带旧
+   `expectedRevision`，仍返回首次结果；未见过的新 key 才执行当前 CAS。
+5. `.idempotency.json`、内存 Map 或调用方单文件拼装只能作为非权威缓存/实现
+   细节，不能替代 `task_operation_journal`。
+6. 新 live writer 每个 revision 都必须提交完整 Journal；无 Journal 仅允许
+   显式 legacy history import/migration，且不得被可信 `readTaskBundle` 读取。
+
+WP4 关闭前至少通过以下验收：
+
+- 正常调用固定产生同一 Task 的 `created@1 → context_ready@2` 两条连续 Event。
+- Stage 1 后故障、进程退出或 Context 暂不可用，原 key 重试可恢复 Stage 2。
+- Stage 1 后合法 block/resume 回到 `created@N` 时，Stage 2 只提交
+  `context_ready@(N+1)`，不倒退 revision。
+- 已完成调用在后续 Task revision 上仍能 replay revision 2 的首次完整结果。
+- 同 key 不同 payload 或 Actor fail closed，且不追加 revision/Event。
+- 20 路同 key 并发只产生一个 Task、一个 Genesis 和一个
+  `context_ready` Event。
+- 进程重启后仅通过可信 Store bundle/journal 继续 Task；非法
+  `resume_task` 不能恢复到 `blockedState.resumeStatus` 之外的状态。
+- `context_ready@2` 可在没有 Change Check/Verification Artifact 时可信读取。
 
 ## 6. Owner Matrix
 
@@ -319,7 +427,7 @@ Support 文案由 Product + QA 联签；任何一行未通过时只能保持 `pe
 | 条件 | 结果 |
 |---|---|
 | Mission、P0、Non-goals 已冻结 | PASS |
-| D-13～D-19、D-21 已接受；D-20 有 Owner/Gate | PASS |
+| D-13～D-19、D-21～D-23 已接受；D-20 有 Owner/Gate | PASS |
 | Task Lifecycle、Revision 与幂等语义唯一 | PASS |
 | Root/Error/Rendezvous 语义唯一 | PASS |
 | Surface mandatory/conditional、Owner、后续 Gate 完整 | PASS |

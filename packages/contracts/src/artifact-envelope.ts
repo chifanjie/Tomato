@@ -30,6 +30,7 @@ export const ArtifactTypeV1Schema = z.enum([
   "claim_ledger",
   "evidence_ledger",
   "impact",
+  "task_operation_journal",
   "change_check",
   "verification",
 ]);
@@ -42,6 +43,7 @@ export const TASK_SCOPED_ARTIFACT_TYPES = Object.freeze([
   "claim_ledger",
   "evidence_ledger",
   "impact",
+  "task_operation_journal",
   "change_check",
   "verification",
 ] as const satisfies readonly ArtifactTypeV1[]);

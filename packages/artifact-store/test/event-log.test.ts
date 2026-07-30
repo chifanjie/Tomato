@@ -89,6 +89,7 @@ async function publishReferenceTask(store: ArtifactStore) {
     },
     {
       expectedRevision: 0,
+      historyImport: true,
       idempotencyKey: control!.idempotencyKey,
       requestDigest: control!.requestDigest,
     },
@@ -220,7 +221,7 @@ describe("Task Event JSONL mechanics", () => {
     ).toHaveLength(1);
   });
 
-  it("rejects reuse of an idempotency key under a different eventId", async () => {
+  it("does not infer idempotency scope from Event fields", async () => {
     const root = await createTemporaryWorktree();
     const store = await openEventStore(root);
     const [first, second] = await loadReferenceEvents();
@@ -239,7 +240,13 @@ describe("Task Event JSONL mechanics", () => {
     });
     await expect(
       appendTaskEventFile(store.layout, FIXTURE_TASK_ID, candidate),
-    ).rejects.toMatchObject({ code: "idempotency_conflict" });
+    ).resolves.toMatchObject({
+      replayed: false,
+      events: { length: 2 },
+    });
+    await expect(
+      readTaskEventLog(store.layout, FIXTURE_TASK_ID),
+    ).resolves.toMatchObject({ events: [first, candidate] });
   });
 
   it("reconciles a complete post-rename event on retry without duplicating it", async () => {
@@ -298,6 +305,27 @@ describe("Task Event JSONL mechanics", () => {
         readTaskEventLog(store.layout, FIXTURE_TASK_ID),
       ).rejects.toMatchObject({ code: "artifact_corrupt" });
     }
+  });
+
+  it("requires task_created as the canonical genesis action", async () => {
+    const [first] = await loadReferenceEvents();
+    const invalidWithoutDigest = {
+      ...first!,
+      action: {
+        type: "confirm_goal" as const,
+        claimId: "claim:forged-genesis",
+      },
+      eventDigest: first!.eventDigest,
+    };
+    const invalid = {
+      ...invalidWithoutDigest,
+      eventDigest: digestCanonicalJson(
+        canonicalTaskEventDigestJsonV1(invalidWithoutDigest),
+      ),
+    };
+    expect(() =>
+      parseTaskEventLogText(`${canonicalizeJson(invalid)}\n`),
+    ).toThrowError(expect.objectContaining({ code: "artifact_corrupt" }));
   });
 
   it.each([
@@ -362,24 +390,12 @@ describe("Task Event JSONL mechanics", () => {
     ).resolves.toMatchObject({ events: [first] });
   });
 
-  it.each([
-    {
-      label: "eventId",
-      mutate: (first: TaskEventV1, second: TaskEventV1) => ({
-        ...second,
-        eventId: first.eventId,
-      }),
-    },
-    {
-      label: "idempotencyKey",
-      mutate: (first: TaskEventV1, second: TaskEventV1) => ({
-        ...second,
-        idempotencyKey: first.idempotencyKey,
-      }),
-    },
-  ])("rejects duplicate $label while parsing an existing log", async ({ mutate }) => {
+  it("rejects a duplicate eventId while parsing an existing log", async () => {
     const [first, second] = await loadReferenceEvents();
-    const duplicateWithoutDigest = mutate(first!, second!);
+    const duplicateWithoutDigest = {
+      ...second!,
+      eventId: first!.eventId,
+    };
     const duplicate = TaskEventV1Schema.parse({
       ...duplicateWithoutDigest,
       eventDigest: digestCanonicalJson(
@@ -388,7 +404,7 @@ describe("Task Event JSONL mechanics", () => {
     });
     expect(() =>
       parseTaskEventLogText(
-        `${JSON.stringify(first)}\n${JSON.stringify(duplicate)}\n`,
+        `${canonicalizeJson(first)}\n${canonicalizeJson(duplicate)}\n`,
       ),
     ).toThrowError(expect.objectContaining({ code: "artifact_corrupt" }));
   });
@@ -451,7 +467,51 @@ describe("ArtifactStore Event recovery boundary", () => {
     ).rejects.toMatchObject({ code: "manifest_inconsistent" });
     await expect(
       store.appendTaskEvent(FIXTURE_TASK_ID, bundle.events.at(-1)!),
-    ).rejects.toMatchObject({ code: "revision_conflict" });
+    ).rejects.toMatchObject({ code: "reference_integrity_failed" });
+    await expect(readFile(eventsPath, "utf8")).resolves.toBe(
+      gappedBytes,
+    );
+  });
+
+  it("rejects a cache-shaped standalone recovery with a forged actor and action", async () => {
+    const root = await createTemporaryWorktree();
+    const store = await openFixtureStore(root);
+    const bundle = await publishReferenceTask(store);
+    const eventsPath = store.layout.task(FIXTURE_TASK_ID).events;
+    const gappedBytes = serializeEvents(bundle.events.slice(0, -1));
+    await atomicWriteFile(
+      store.layout.worktreeRoot,
+      eventsPath,
+      gappedBytes,
+    );
+    const committed = bundle.events.at(-1)!;
+    const forgedWithoutDigest = {
+      ...committed,
+      eventId: "event:forged-standalone-recovery",
+      actor: "attacker",
+      resultingStatus: "superseded" as const,
+      action: {
+        type: "supersede_task" as const,
+        reason: "Forge Event facts from a non-authoritative cache.",
+      },
+      eventDigest: committed.eventDigest,
+    };
+    const forged = TaskEventV1Schema.parse({
+      ...forgedWithoutDigest,
+      eventDigest: digestCanonicalJson(
+        canonicalTaskEventDigestJsonV1(forgedWithoutDigest),
+      ),
+    });
+
+    await expect(
+      store.appendTaskEvent(FIXTURE_TASK_ID, forged),
+    ).rejects.toMatchObject({
+      code: "reference_integrity_failed",
+      details: {
+        eventId: forged.eventId,
+        committedRevision: committed.revision,
+      },
+    });
     await expect(readFile(eventsPath, "utf8")).resolves.toBe(
       gappedBytes,
     );

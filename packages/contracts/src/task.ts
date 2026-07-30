@@ -758,6 +758,28 @@ export const TaskEventV1Schema = z.strictObject({
     });
   }
   if (
+    action.type === "change_checked" &&
+    event.previousStatus !== "check_required"
+  ) {
+    context.addIssue({
+      code: "custom",
+      message:
+        "change_checked requires a check_required Task and must preserve that status",
+      path: ["previousStatus"],
+    });
+  }
+  if (
+    action.type === "verification_recorded" &&
+    event.previousStatus !== "verification_required"
+  ) {
+    context.addIssue({
+      code: "custom",
+      message:
+        "verification_recorded requires a verification_required Task and must preserve that status",
+      path: ["previousStatus"],
+    });
+  }
+  if (
     action.type === "transition_status" &&
     (event.resultingStatus !== action.to ||
       !isTaskOrdinaryTransitionV1(event.previousStatus, action.to))

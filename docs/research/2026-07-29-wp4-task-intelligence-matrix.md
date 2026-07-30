@@ -183,7 +183,7 @@ Store 因此不能用单一 descriptor 覆盖所有 Pulse revision。D-23 的实
 | WP4-F09 | 真实 self-host Benchmark Dataset | fixture + `self-host-benchmark.test.ts` | 3 个声明目标均命中 ranking/reading/planned，预算与 digest 稳定 | verified locally |
 | WP4-F10 | Repository provider 只发布可信 Source anchor | `repository-context-provider.ts` | comment/string/substring/duplicate/call-site/regex/symlink/path negatives | verified locally |
 | WP4-I01 | 根 build/typecheck/test/clean 集成 | root scripts、lockfile、quality gate | 最终 `git diff --check && pnpm quality` exit 0 | verified locally |
-| WP4-I02 | 远端 CI 与独立审查 | feature commits / GitHub Actions | Task Engine 与 Store 最终复审均无 P0/P1；最终修复树通过 run `30510573063` | verified remotely |
+| WP4-I02 | 远端 CI 与独立审查 | feature commits / GitHub Actions | Task Engine 与 Store 最终复审均无 P0/P1；最终修复树通过 run `30512901210` | verified remotely |
 
 ## 4. 最终本地自动化证据
 
@@ -222,6 +222,14 @@ localStorage experimental warning，以及 invalid YAML/JSON 负例的 parser st
 - 在本地连续运行 8 轮、每轮 20 并发，再执行完整 `pnpm quality`；
 - 在 clean checkout 的 GitHub Actions run `30510573063` 重跑相同根级门禁，
   最终成功。
+
+随后 evidence-only closeout commit 的 CI run `30511335019` 在产品与测试代码
+未变化时，又暴露两个多 revision 生命周期用例继承 Vitest 默认 5 秒 watchdog：
+它们分别在 5019 ms 与 5004 ms 被终止。提交 `a7230c36` 只给这两个场景配置
+15 秒有界 watchdog，Store 的每次 lock acquisition 仍保持 1 秒；同时补充
+精确 revision/Event/Receipt 数量与 Task/repository lock 均已释放的断言。
+本地 5 轮成对压力测试、根级 `pnpm quality` 与最终 clean-checkout run
+`30512901210` 全部通过，因此不是通过全局放宽或重复碰运气关闭问题。
 
 ## 5. Required acceptance matrix
 
@@ -312,11 +320,14 @@ Artifact Store reciprocal audit 发现并已关闭：
 |---|---|
 | Contracts/Store commit | `862c5061611dd812ef07a58259c19e8fcb5a189d` |
 | Task Engine commit | `81d55760e2afbce3e35dea472459653f126ceb6a` |
-| CI remediation commit | `6a6fd742bb7ca55a23fb6a5a17d067d7f2396fc6` |
-| Feature tree hash | `cfe271908a8a1345dab6b823cc06aeef37e8b441`（`6a6fd742^{tree}`；不含本证据文档的后继 tree） |
+| Hermetic/lock-budget remediation | `6a6fd742bb7ca55a23fb6a5a17d067d7f2396fc6` |
+| Lifecycle watchdog remediation | `a7230c36855841638dc5c22fac34e20cbdd7ce73` |
+| Final verified source tree hash | `91ef6fda108627011565be382973160c0ec80569`（`a7230c36^{tree}`；不含本 evidence-only 更新的后继 tree） |
 | Contracts/Store CI | run `30508030920`，success |
 | 首次 Task Engine CI | run `30508509703`，failure；失败原因与修复见第 4 节，不作为通过证据 |
-| 最终 feature tree CI | run `30510573063`，success；head SHA 精确匹配 `6a6fd742...` |
+| 首次 remediation CI | run `30510573063`，success；head SHA 精确匹配 `6a6fd742...` |
+| 首次 closeout CI | run `30511335019`，failure；默认 5 秒 watchdog 波动，失败原因与修复见第 4 节 |
+| 最终 source tree CI | run `30512901210`，success；head SHA 精确匹配 `a7230c36...` |
 | 本地最终门禁 | `git diff --check && pnpm quality`，exit 0 |
 | Independent audit | Task Engine passed；Artifact Store passed；no open P0/P1 |
 | 用户文件保护 | 未跟踪的 `docs/prd/.qa/`、历史 PRD 产物、`assets/`、builder、`site/` 均未进入任何 WP4 commit |

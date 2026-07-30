@@ -1,0 +1,1006 @@
+import { createHash } from "node:crypto";
+import {
+  constants,
+  type BigIntStats,
+} from "node:fs";
+import {
+  open,
+  realpath,
+  stat,
+  type FileHandle,
+} from "node:fs/promises";
+import path from "node:path";
+
+import { ArtifactStoreError } from "@understand-code/artifact-store";
+import {
+  canonicalizeWorktreeRoot,
+  resolveRepositoryPath,
+} from "@understand-code/artifact-store/path-guard";
+import {
+  RepositoryRelativePathSchema,
+  RepositorySnapshotV1Schema,
+} from "@understand-code/contracts";
+import {
+  KnowledgeGraphSchema,
+  validateGraph,
+  type GraphNode,
+  type KnowledgeGraph,
+} from "@understand-code/core";
+import {
+  parseWikiIndexV2,
+  parseWikiSearchIndexV2,
+  type WikiIndexV2,
+  type WikiSearchIndexV2,
+} from "@understand-code/core/knowledge-base";
+
+import type {
+  SourceEvidenceRecord,
+  TaskContextData,
+  TaskContextLoadInput,
+  TaskContextProvider,
+  TaskContextProviderBinding,
+} from "./engine-types.js";
+import { compareUnicodeCodeUnits } from "./stable-order.js";
+import type {
+  WikiIndexLike,
+  WikiRecordLike,
+} from "./types.js";
+
+const DEFAULT_GRAPH_PATH = ".understand-code/knowledge-graph.json";
+const DEFAULT_WIKI_INDEX_PATH =
+  ".understand-code/knowledge-base/wiki-index.json";
+const DEFAULT_WIKI_SEARCH_PATH =
+  ".understand-code/knowledge-base/search-index.json";
+const DEFAULT_MAX_GRAPH_BYTES = 32 * 1024 * 1024;
+const DEFAULT_MAX_WIKI_BYTES = 32 * 1024 * 1024;
+const DEFAULT_MAX_SOURCE_BYTES = 8 * 1024 * 1024;
+
+export type RepositoryTaskContextProviderErrorCode =
+  | "invalid_root"
+  | "invalid_provider_option"
+  | "invalid_snapshot"
+  | "snapshot_mismatch"
+  | "repository_file_unavailable"
+  | "repository_file_changed"
+  | "repository_file_too_large"
+  | "unsafe_repository_path"
+  | "invalid_graph";
+
+/**
+ * Provider errors deliberately expose repository-relative paths only. The
+ * canonical Host root remains private even when callers use the provider
+ * directly instead of through TaskEngine's error boundary.
+ */
+export class RepositoryTaskContextProviderError extends Error {
+  readonly code: RepositoryTaskContextProviderErrorCode;
+  readonly details?: Readonly<Record<string, unknown>>;
+
+  constructor(
+    code: RepositoryTaskContextProviderErrorCode,
+    message: string,
+    details?: Readonly<Record<string, unknown>>,
+  ) {
+    super(message);
+    this.name = "RepositoryTaskContextProviderError";
+    this.code = code;
+    this.details = details;
+  }
+}
+
+export interface RepositoryTaskContextProviderOptions {
+  /**
+   * Explicit absolute repository root. `open` resolves and verifies its
+   * canonical directory identity; no process cwd or implicit root is used.
+   */
+  canonicalRoot: string;
+  graphPath?: string;
+  wikiIndexPath?: string;
+  wikiSearchPath?: string;
+  maxGraphBytes?: number;
+  maxWikiBytes?: number;
+  maxSourceFileBytes?: number;
+}
+
+interface NormalizedOptions {
+  graphPath: string;
+  wikiIndexPath: string;
+  wikiSearchPath: string;
+  maxGraphBytes: number;
+  maxWikiBytes: number;
+  maxSourceFileBytes: number;
+}
+
+interface VerifiedFile {
+  bytes?: Buffer;
+}
+
+interface OptionalJson {
+  present: boolean;
+  value?: unknown;
+}
+
+function isInside(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return (
+    relative === "" ||
+    (!relative.startsWith(`..${path.sep}`) &&
+      relative !== ".." &&
+      !path.isAbsolute(relative))
+  );
+}
+
+function sameIdentity(
+  left: BigIntStats,
+  right: BigIntStats,
+): boolean {
+  return (
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.size === right.size &&
+    left.mtimeNs === right.mtimeNs &&
+    left.ctimeNs === right.ctimeNs
+  );
+}
+
+function isMissing(error: unknown): boolean {
+  return (
+    (error instanceof ArtifactStoreError &&
+      error.code === "artifact_not_found") ||
+    (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT"
+  );
+}
+
+function positiveSafeInteger(
+  value: number | undefined,
+  fallback: number,
+  option: string,
+): number {
+  const resolved = value ?? fallback;
+  if (!Number.isSafeInteger(resolved) || resolved <= 0) {
+    throw new RepositoryTaskContextProviderError(
+      "invalid_provider_option",
+      `${option} must be a positive safe integer.`,
+      { option },
+    );
+  }
+  return resolved;
+}
+
+function repositoryPath(value: string, option: string): string {
+  const parsed = RepositoryRelativePathSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new RepositoryTaskContextProviderError(
+      "invalid_provider_option",
+      `${option} must be a normalized repository-relative path.`,
+      { option },
+    );
+  }
+  return parsed.data;
+}
+
+function providerErrorForPath(
+  code: RepositoryTaskContextProviderErrorCode,
+  message: string,
+  relativePath: string,
+): RepositoryTaskContextProviderError {
+  return new RepositoryTaskContextProviderError(code, message, {
+    relativePath,
+  });
+}
+
+async function openVerifiedFile(
+  canonicalRoot: string,
+  relativePath: string,
+  options: {
+    allowMissing: boolean;
+    readBytes: boolean;
+    maxBytes?: number;
+  },
+): Promise<VerifiedFile | undefined> {
+  let resolved: string;
+  try {
+    resolved = await resolveRepositoryPath(canonicalRoot, relativePath);
+  } catch (error) {
+    if (options.allowMissing && isMissing(error)) return undefined;
+    if (isMissing(error)) {
+      throw providerErrorForPath(
+        "repository_file_unavailable",
+        "A required repository file is unavailable.",
+        relativePath,
+      );
+    }
+    throw providerErrorForPath(
+      "unsafe_repository_path",
+      "A repository path failed containment or symlink validation.",
+      relativePath,
+    );
+  }
+
+  let handle: FileHandle;
+  try {
+    handle = await open(
+      resolved,
+      constants.O_RDONLY | constants.O_NOFOLLOW,
+    );
+  } catch (error) {
+    if (options.allowMissing && isMissing(error)) return undefined;
+    throw providerErrorForPath(
+      "repository_file_unavailable",
+      "A repository file could not be opened safely.",
+      relativePath,
+    );
+  }
+
+  try {
+    const before = await handle.stat({ bigint: true });
+    if (!before.isFile()) {
+      throw providerErrorForPath(
+        "unsafe_repository_path",
+        "A repository path does not identify a regular file.",
+        relativePath,
+      );
+    }
+    if (
+      options.maxBytes !== undefined &&
+      before.size > BigInt(options.maxBytes)
+    ) {
+      throw providerErrorForPath(
+        "repository_file_too_large",
+        "A repository file exceeds the configured byte limit.",
+        relativePath,
+      );
+    }
+
+    const bytes = options.readBytes ? await handle.readFile() : undefined;
+    const after = await handle.stat({ bigint: true });
+    let finalPath: string;
+    let finalMetadata: BigIntStats;
+    try {
+      finalPath = await realpath(resolved);
+      finalMetadata = await stat(finalPath, { bigint: true });
+    } catch {
+      throw providerErrorForPath(
+        "repository_file_changed",
+        "A repository file changed while it was being verified.",
+        relativePath,
+      );
+    }
+    if (
+      !isInside(canonicalRoot, finalPath) ||
+      !sameIdentity(before, after) ||
+      !sameIdentity(after, finalMetadata) ||
+      (bytes !== undefined && BigInt(bytes.byteLength) !== after.size)
+    ) {
+      throw providerErrorForPath(
+        "repository_file_changed",
+        "A repository file changed while it was being verified.",
+        relativePath,
+      );
+    }
+    return { ...(bytes === undefined ? {} : { bytes }) };
+  } finally {
+    await handle.close();
+  }
+}
+
+function parseJson(bytes: Buffer, relativePath: string): unknown {
+  try {
+    return JSON.parse(bytes.toString("utf8")) as unknown;
+  } catch {
+    throw providerErrorForPath(
+      "invalid_graph",
+      "A repository context artifact is not valid JSON.",
+      relativePath,
+    );
+  }
+}
+
+async function readRequiredJson(
+  root: string,
+  relativePath: string,
+  maxBytes: number,
+): Promise<unknown> {
+  const file = await openVerifiedFile(root, relativePath, {
+    allowMissing: false,
+    readBytes: true,
+    maxBytes,
+  });
+  return parseJson(file!.bytes!, relativePath);
+}
+
+async function readOptionalJson(
+  root: string,
+  relativePath: string,
+  maxBytes: number,
+): Promise<OptionalJson> {
+  const file = await openVerifiedFile(root, relativePath, {
+    allowMissing: true,
+    readBytes: true,
+    maxBytes,
+  });
+  return file === undefined
+    ? { present: false }
+    : (() => {
+        try {
+          return {
+            present: true,
+            value: JSON.parse(file.bytes!.toString("utf8")) as unknown,
+          };
+        } catch {
+          // An optional Wiki artifact may be absent or invalid without
+          // suppressing valid Graph context. `adaptWiki` marks it invalid so
+          // ranking emits an explicit boundary and ignores its records.
+          return { present: true, value: undefined };
+        }
+      })();
+}
+
+function validateGraphArtifact(
+  value: unknown,
+  relativePath: string,
+): KnowledgeGraph {
+  const parsed = KnowledgeGraphSchema.safeParse(value);
+  const validation = validateGraph(value);
+  if (
+    !parsed.success ||
+    !validation.success ||
+    validation.issues.length > 0
+  ) {
+    throw providerErrorForPath(
+      "invalid_graph",
+      "The Core Knowledge Graph failed validation.",
+      relativePath,
+    );
+  }
+
+  const nodeIds = new Set<string>();
+  for (const node of parsed.data.nodes) {
+    if (nodeIds.has(node.id)) {
+      throw providerErrorForPath(
+        "invalid_graph",
+        "The Core Knowledge Graph contains duplicate node identifiers.",
+        relativePath,
+      );
+    }
+    nodeIds.add(node.id);
+  }
+  for (const layer of parsed.data.layers) {
+    if (layer.nodeIds.some((nodeId) => !nodeIds.has(nodeId))) {
+      throw providerErrorForPath(
+        "invalid_graph",
+        "The Core Knowledge Graph contains a dangling layer reference.",
+        relativePath,
+      );
+    }
+  }
+  for (const step of parsed.data.tour) {
+    if (step.nodeIds.some((nodeId) => !nodeIds.has(nodeId))) {
+      throw providerErrorForPath(
+        "invalid_graph",
+        "The Core Knowledge Graph contains a dangling tour reference.",
+        relativePath,
+      );
+    }
+  }
+  return parsed.data;
+}
+
+function inScope(
+  filePath: string,
+  scope: readonly string[] | undefined,
+): boolean {
+  return (
+    scope === undefined ||
+    scope.length === 0 ||
+    scope.some(
+      (prefix) =>
+        filePath === prefix || filePath.startsWith(`${prefix}/`),
+    )
+  );
+}
+
+async function verifiedGraphPaths(
+  canonicalRoot: string,
+  graph: KnowledgeGraph,
+  scope: readonly string[] | undefined,
+): Promise<string[]> {
+  const parsedScope = scope?.map((value) => {
+    const parsed = RepositoryRelativePathSchema.safeParse(value);
+    if (!parsed.success) {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_snapshot",
+        "Task scope contains an invalid repository-relative path.",
+      );
+    }
+    return parsed.data;
+  });
+  const unique = new Set<string>();
+  for (const node of graph.nodes) {
+    if (node.filePath === undefined) continue;
+    const parsed = RepositoryRelativePathSchema.safeParse(node.filePath);
+    if (!parsed.success) {
+      throw new RepositoryTaskContextProviderError(
+        "unsafe_repository_path",
+        "The Core Knowledge Graph contains a non-repository-relative path.",
+        { source: "knowledge_graph" },
+      );
+    }
+    unique.add(parsed.data);
+  }
+
+  const existing: string[] = [];
+  for (
+    const relativePath of [...unique].sort(compareUnicodeCodeUnits)
+  ) {
+    if (!inScope(relativePath, parsedScope)) continue;
+    const file = await openVerifiedFile(canonicalRoot, relativePath, {
+      allowMissing: true,
+      readBytes: false,
+    });
+    if (file !== undefined) existing.push(relativePath);
+  }
+  return existing;
+}
+
+function invalidWiki(): WikiIndexLike {
+  return {
+    freshness: "error",
+    valid: false,
+    records: [],
+  };
+}
+
+function adaptWikiRecord(
+  record: WikiSearchIndexV2["records"][number],
+  existingPaths: ReadonlySet<string>,
+): WikiRecordLike | undefined {
+  let verifiedFilePath: string | undefined;
+  if (record.filePath !== undefined) {
+    const parsed = RepositoryRelativePathSchema.safeParse(record.filePath);
+    if (!parsed.success) return undefined;
+    if (existingPaths.has(parsed.data)) verifiedFilePath = parsed.data;
+  }
+  return {
+    id: record.id,
+    ...(record.nodeId === undefined ? {} : { nodeId: record.nodeId }),
+    pageId: record.pageId,
+    title: record.title,
+    ...(record.summary === undefined ? {} : { summary: record.summary }),
+    ...(record.content === undefined ? {} : { content: record.content }),
+    ...(verifiedFilePath === undefined
+      ? {}
+      : { filePath: verifiedFilePath }),
+    terms: [...record.terms].sort(compareUnicodeCodeUnits),
+    businessTerms: [...record.businessTerms].sort(
+      compareUnicodeCodeUnits,
+    ),
+  };
+}
+
+function wikiFreshness(
+  index: WikiIndexV2 | undefined,
+  search: WikiSearchIndexV2 | undefined,
+  graph: KnowledgeGraph,
+): "fresh" | "partial" | "stale" {
+  if (index === undefined || search === undefined) return "partial";
+  const declaredGraphDigest =
+    index.source.graphDigest?.replace(/^sha256:/u, "");
+  if (
+    declaredGraphDigest === undefined ||
+    !/^[0-9a-f]{64}$/u.test(declaredGraphDigest)
+  ) {
+    return "partial";
+  }
+  const actualGraphDigest = createHash("sha256")
+    .update(JSON.stringify(graph), "utf8")
+    .digest("hex");
+  if (declaredGraphDigest !== actualGraphDigest) return "stale";
+  if (
+    index.source.gitCommitHash !== undefined &&
+    index.source.gitCommitHash !== graph.project.gitCommitHash
+  ) {
+    return "stale";
+  }
+  return index.generatedAt === search.generatedAt ? "fresh" : "partial";
+}
+
+function adaptWiki(
+  wikiIndex: OptionalJson,
+  wikiSearch: OptionalJson,
+  graph: KnowledgeGraph,
+  existingPaths: ReadonlySet<string>,
+): WikiIndexLike | undefined {
+  if (!wikiIndex.present && !wikiSearch.present) return undefined;
+
+  const parsedIndex = wikiIndex.present
+    ? parseWikiIndexV2(wikiIndex.value)
+    : undefined;
+  const parsedSearch = wikiSearch.present
+    ? parseWikiSearchIndexV2(wikiSearch.value)
+    : undefined;
+  if (
+    (parsedIndex !== undefined && !parsedIndex.ok) ||
+    (parsedSearch !== undefined && !parsedSearch.ok)
+  ) {
+    return invalidWiki();
+  }
+
+  const index = parsedIndex?.ok === true
+    ? parsedIndex.value
+    : undefined;
+  const search = parsedSearch?.ok === true
+    ? parsedSearch.value
+    : undefined;
+  const records = (search?.records ?? [])
+    .map((record) => adaptWikiRecord(record, existingPaths))
+    .filter((record): record is WikiRecordLike => record !== undefined)
+    .sort((left, right) =>
+      compareUnicodeCodeUnits(left.id, right.id)
+    );
+  return {
+    ...(index?.generatedAt === undefined
+      ? search?.generatedAt === undefined
+        ? {}
+        : { generatedAt: search.generatedAt }
+      : { generatedAt: index.generatedAt }),
+    freshness: wikiFreshness(index, search, graph),
+    valid: true,
+    records,
+  };
+}
+
+function sourceKind(
+  node: GraphNode,
+  filePath: string,
+): SourceEvidenceRecord["kind"] {
+  if (
+    /(?:^|\/)(?:test|tests|__tests__)(?:\/|$)|(?:\.test|_test)\.[^/]+$/iu.test(
+      filePath,
+    )
+  ) {
+    return "test";
+  }
+  if (
+    node.type === "config" ||
+    /(?:^|\/)(?:package|tsconfig|vite\.config|vitest\.config)\.[^/]+$/iu.test(
+      filePath,
+    )
+  ) {
+    return "config";
+  }
+  if (
+    node.type === "document" ||
+    /\.(?:md|mdx|rst|txt)$/iu.test(filePath)
+  ) {
+    return "document";
+  }
+  return "source";
+}
+
+function trustedSnapshotDigests(
+  input: TaskContextLoadInput,
+): ReadonlyMap<string, string> {
+  const candidates = new Map<
+    string,
+    { digests: Set<string>; unusable: boolean }
+  >();
+  for (const change of input.repositorySnapshot.changes) {
+    const current = candidates.get(change.path) ?? {
+      digests: new Set<string>(),
+      unusable: false,
+    };
+    if (change.kind === "deleted" || change.contentDigest === undefined) {
+      current.unusable = true;
+    } else {
+      current.digests.add(change.contentDigest);
+    }
+    candidates.set(change.path, current);
+  }
+  const trusted = new Map<string, string>();
+  for (const [filePath, candidate] of candidates) {
+    if (!candidate.unusable && candidate.digests.size === 1) {
+      trusted.set(filePath, [...candidate.digests][0]!);
+    }
+  }
+  return trusted;
+}
+
+async function snapshotBoundSourceEvidence(
+  canonicalRoot: string,
+  graph: KnowledgeGraph,
+  existingPaths: ReadonlySet<string>,
+  input: TaskContextLoadInput,
+  maxSourceFileBytes: number,
+): Promise<SourceEvidenceRecord[]> {
+  const trustedDigests = trustedSnapshotDigests(input);
+  const actualFiles = new Map<
+    string,
+    { digest: string; bytes: Buffer }
+  >();
+  for (
+    const filePath of [...trustedDigests.keys()].sort(
+      compareUnicodeCodeUnits,
+    )
+  ) {
+    if (!existingPaths.has(filePath)) continue;
+    let file: VerifiedFile;
+    try {
+      file = (await openVerifiedFile(canonicalRoot, filePath, {
+        allowMissing: false,
+        readBytes: true,
+        maxBytes: maxSourceFileBytes,
+      }))!;
+    } catch (error) {
+      if (
+        error instanceof RepositoryTaskContextProviderError &&
+        error.code === "repository_file_too_large"
+      ) {
+        continue;
+      }
+      throw error;
+    }
+    const digest =
+      `sha256:${createHash("sha256").update(file.bytes!).digest("hex")}`;
+    if (digest === trustedDigests.get(filePath)) {
+      actualFiles.set(filePath, { digest, bytes: file.bytes! });
+    }
+  }
+
+  const result: SourceEvidenceRecord[] = [];
+  for (
+    const node of [...graph.nodes].sort((left, right) =>
+      compareUnicodeCodeUnits(left.id, right.id)
+    )
+  ) {
+    if (node.filePath === undefined) continue;
+    const actual = actualFiles.get(node.filePath);
+    if (actual === undefined) continue;
+    if (!sourceAnchorMatches(node, actual.bytes)) continue;
+    result.push({
+      nodeId: node.id,
+      filePath: node.filePath,
+      ...(node.lineRange === undefined
+        ? {}
+        : { lineRange: [...node.lineRange] }),
+      contentHash: actual.digest,
+      kind: sourceKind(node, node.filePath),
+    });
+  }
+  return result;
+}
+
+/**
+ * A matching whole-file digest proves only the bytes, not that an older Graph
+ * symbol anchor still identifies those bytes. Symbol Evidence therefore also
+ * requires a live line-range/name match. File-level nodes may rely on the
+ * whole-file digest because they make no narrower symbol-location claim.
+ */
+function sourceAnchorMatches(
+  node: GraphNode,
+  bytes: Buffer,
+): boolean {
+  if (node.lineRange === undefined) {
+    return ["file", "config", "document"].includes(node.type);
+  }
+  const [start, end] = node.lineRange;
+  if (
+    !Number.isSafeInteger(start) ||
+    !Number.isSafeInteger(end) ||
+    start < 1 ||
+    end < start ||
+    node.name.trim().length === 0
+  ) {
+    return false;
+  }
+  const source = maskCommentsAndStrings(bytes.toString("utf8"));
+  const lines = source.split(/\r?\n/gu);
+  if (end > lines.length) return false;
+  const name = node.name.trim();
+  if (
+    !/^[$_\p{ID_Start}][$\u200c\u200d_\p{ID_Continue}]*$/u.test(name)
+  ) {
+    return false;
+  }
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const identifier = new RegExp(
+    `(?<![$_\\p{ID_Continue}])${escapedName}(?![$_\\p{ID_Continue}])`,
+    "u",
+  );
+  const anchoredSource = lines
+    .slice(start - 1, end)
+    .join("\n");
+  if (!identifier.test(anchoredSource)) return false;
+
+  // A call-site identifier is not a symbol anchor. Require the declared
+  // symbol itself to fall inside the Graph line range, and reject duplicate
+  // declarations that the whole-file digest cannot disambiguate.
+  const declarations = symbolDeclarationPattern(escapedName);
+  const anchoredDeclarations = [
+    ...anchoredSource.matchAll(declarations),
+  ].length;
+  const wholeFileDeclarations = [
+    ...source.matchAll(symbolDeclarationPattern(escapedName)),
+  ].length;
+  return anchoredDeclarations === 1 && wholeFileDeclarations === 1;
+}
+
+function symbolDeclarationPattern(escapedName: string): RegExp {
+  const boundary = `(?![$_\\p{ID_Continue}])`;
+  const namedDeclaration =
+    `\\b(?:function|class|interface|type|enum|struct|trait|def|fn)\\s+${escapedName}${boundary}`;
+  const goDeclaration =
+    `\\bfunc\\s+(?:\\([^\\n)]*\\)\\s*)?${escapedName}${boundary}`;
+  const variableDeclaration =
+    `\\b(?:const|let|var)\\s+${escapedName}${boundary}`;
+  const typedMethodDeclaration =
+    `(?:^|\\n)\\s*(?:(?:export|default|public|private|protected|static|async|abstract|override|readonly|get|set)\\s+)*${escapedName}${boundary}\\s*(?:<[^\\n>{}]*>)?\\([^\\n)]*\\)\\s*(?::[^\\n{=]+)?\\s*\\{`;
+  return new RegExp(
+    `(?:${namedDeclaration}|${goDeclaration}|${variableDeclaration}|${typedMethodDeclaration})`,
+    "gmu",
+  );
+}
+
+/**
+ * Masks comments and string/template literals while preserving line breaks.
+ * This deliberately favors false negatives over upgrading comment text or a
+ * string value into observed Source Evidence.
+ */
+function maskCommentsAndStrings(source: string): string {
+  type State =
+    | "code"
+    | "line_comment"
+    | "block_comment"
+    | "single_quote"
+    | "double_quote"
+    | "template"
+    | "regex";
+  let state: State = "code";
+  let escaped = false;
+  let regexCharacterClass = false;
+  let result = "";
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index]!;
+    const next = source[index + 1];
+    const preserve = character === "\n" || character === "\r";
+    if (state === "line_comment") {
+      if (preserve) {
+        state = "code";
+        result += character;
+      } else {
+        result += " ";
+      }
+      continue;
+    }
+    if (state === "block_comment") {
+      if (character === "*" && next === "/") {
+        result += "  ";
+        index += 1;
+        state = "code";
+      } else {
+        result += preserve ? character : " ";
+      }
+      continue;
+    }
+    if (state === "regex") {
+      result += preserve ? character : " ";
+      if (preserve) {
+        state = "code";
+        escaped = false;
+        regexCharacterClass = false;
+      } else if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === "[") {
+        regexCharacterClass = true;
+      } else if (character === "]") {
+        regexCharacterClass = false;
+      } else if (character === "/" && !regexCharacterClass) {
+        state = "code";
+      }
+      continue;
+    }
+    if (
+      state === "single_quote" ||
+      state === "double_quote" ||
+      state === "template"
+    ) {
+      const terminator =
+        state === "single_quote"
+          ? "'"
+          : state === "double_quote"
+            ? "\""
+            : "`";
+      result += preserve ? character : " ";
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === terminator) {
+        state = "code";
+      }
+      continue;
+    }
+    if (character === "/" && next === "/") {
+      result += "  ";
+      index += 1;
+      state = "line_comment";
+    } else if (character === "/" && next === "*") {
+      result += "  ";
+      index += 1;
+      state = "block_comment";
+    } else if (
+      character === "/" &&
+      isLikelyRegexLiteralStart(source, index)
+    ) {
+      result += " ";
+      state = "regex";
+      escaped = false;
+      regexCharacterClass = false;
+    } else if (character === "#") {
+      result += " ";
+      state = "line_comment";
+    } else if (character === "'") {
+      result += " ";
+      state = "single_quote";
+    } else if (character === "\"") {
+      result += " ";
+      state = "double_quote";
+    } else if (character === "`") {
+      result += " ";
+      state = "template";
+    } else {
+      result += character;
+    }
+  }
+  return result;
+}
+
+function isLikelyRegexLiteralStart(
+  source: string,
+  slashIndex: number,
+): boolean {
+  let cursor = slashIndex - 1;
+  while (cursor >= 0 && /\s/u.test(source[cursor]!)) cursor -= 1;
+  if (cursor < 0) return true;
+  if (/[=([{,:;!?&|^~<>%*+\-]/u.test(source[cursor]!)) {
+    return true;
+  }
+  const prefix = source.slice(0, slashIndex);
+  return /(?:^|[^\p{ID_Continue}])(?:return|case|throw|yield|await|typeof|instanceof|in|of)\s*$/u
+    .test(prefix);
+}
+
+export class RepositoryTaskContextProvider
+implements TaskContextProvider {
+  readonly binding: TaskContextProviderBinding;
+  readonly #canonicalRoot: string;
+  readonly #options: NormalizedOptions;
+
+  private constructor(
+    canonicalRoot: string,
+    options: NormalizedOptions,
+  ) {
+    this.#canonicalRoot = canonicalRoot;
+    this.binding = Object.freeze({
+      schemaVersion: 1,
+      kind: "canonical_worktree_root",
+      canonicalRoot,
+    });
+    this.#options = options;
+  }
+
+  static async open(
+    options: RepositoryTaskContextProviderOptions,
+  ): Promise<RepositoryTaskContextProvider> {
+    let canonicalRoot: string;
+    try {
+      canonicalRoot = await canonicalizeWorktreeRoot(
+        options.canonicalRoot,
+      );
+    } catch {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_root",
+        "The explicit repository root could not be canonicalized.",
+      );
+    }
+    return new RepositoryTaskContextProvider(canonicalRoot, {
+      graphPath: repositoryPath(
+        options.graphPath ?? DEFAULT_GRAPH_PATH,
+        "graphPath",
+      ),
+      wikiIndexPath: repositoryPath(
+        options.wikiIndexPath ?? DEFAULT_WIKI_INDEX_PATH,
+        "wikiIndexPath",
+      ),
+      wikiSearchPath: repositoryPath(
+        options.wikiSearchPath ?? DEFAULT_WIKI_SEARCH_PATH,
+        "wikiSearchPath",
+      ),
+      maxGraphBytes: positiveSafeInteger(
+        options.maxGraphBytes,
+        DEFAULT_MAX_GRAPH_BYTES,
+        "maxGraphBytes",
+      ),
+      maxWikiBytes: positiveSafeInteger(
+        options.maxWikiBytes,
+        DEFAULT_MAX_WIKI_BYTES,
+        "maxWikiBytes",
+      ),
+      maxSourceFileBytes: positiveSafeInteger(
+        options.maxSourceFileBytes,
+        DEFAULT_MAX_SOURCE_BYTES,
+        "maxSourceFileBytes",
+      ),
+    });
+  }
+
+  async loadTaskContext(
+    input: TaskContextLoadInput,
+  ): Promise<TaskContextData> {
+    const snapshot = RepositorySnapshotV1Schema.safeParse(
+      input.repositorySnapshot,
+    );
+    if (!snapshot.success) {
+      throw new RepositoryTaskContextProviderError(
+        "invalid_snapshot",
+        "The requested Repository Snapshot failed contract validation.",
+      );
+    }
+    if (
+      snapshot.data.snapshotId !== input.sourceSnapshotId
+    ) {
+      throw new RepositoryTaskContextProviderError(
+        "snapshot_mismatch",
+        "The requested Snapshot identity does not match its payload.",
+      );
+    }
+
+    const graph = validateGraphArtifact(
+      await readRequiredJson(
+        this.#canonicalRoot,
+        this.#options.graphPath,
+        this.#options.maxGraphBytes,
+      ),
+      this.#options.graphPath,
+    );
+    const existingFilePaths = await verifiedGraphPaths(
+      this.#canonicalRoot,
+      graph,
+      input.scope,
+    );
+    const existingPaths = new Set(existingFilePaths);
+    const [wikiIndex, wikiSearch] = await Promise.all([
+      readOptionalJson(
+        this.#canonicalRoot,
+        this.#options.wikiIndexPath,
+        this.#options.maxWikiBytes,
+      ),
+      readOptionalJson(
+        this.#canonicalRoot,
+        this.#options.wikiSearchPath,
+        this.#options.maxWikiBytes,
+      ),
+    ]);
+    const wiki = adaptWiki(
+      wikiIndex,
+      wikiSearch,
+      graph,
+      existingPaths,
+    );
+    const sourceEvidence = await snapshotBoundSourceEvidence(
+      this.#canonicalRoot,
+      graph,
+      existingPaths,
+      { ...input, repositorySnapshot: snapshot.data },
+      this.#options.maxSourceFileBytes,
+    );
+    return {
+      graph,
+      existingFilePaths,
+      ...(wiki === undefined ? {} : { wiki }),
+      ...(sourceEvidence.length === 0 ? {} : { sourceEvidence }),
+      repositorySnapshot: snapshot.data,
+    };
+  }
+}

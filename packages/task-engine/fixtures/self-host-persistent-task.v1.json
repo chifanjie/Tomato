@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "name": "self-host-real-repository-context",
+  "intent": "Harden loadGraph and validateGraph context selection with deterministic SearchEngine ranking",
+  "createdAt": "2026-07-29T00:00:00.000Z",
+  "createIdentity": {
+    "createScope": "self_host_real_repository_context",
+    "idempotencyKey": "self-host-real-repository-context-v1",
+    "actor": "codex"
+  },
+  "declaredTargets": [
+    {
+      "nodeId": "function:packages/core/src/persistence/index.ts:loadGraph",
+      "filePath": "packages/core/src/persistence/index.ts",
+      "symbolName": "loadGraph"
+    },
+    {
+      "nodeId": "function:packages/core/src/schema.ts:validateGraph",
+      "filePath": "packages/core/src/schema.ts",
+      "symbolName": "validateGraph"
+    },
+    {
+      "nodeId": "class:packages/core/src/search.ts:SearchEngine",
+      "filePath": "packages/core/src/search.ts",
+      "symbolName": "SearchEngine"
+    }
+  ],
+  "budgets": {
+    "maxCandidates": 8,
+    "tokenBudget": 3600,
+    "maxImpactDepth": 3
+  },
+  "captureLimitations": [
+    "The benchmark captures declared corpus bytes and Git status projections only; it does not claim a complete Repository Snapshot.",
+    "The checked-in Knowledge Graph was generated at its declared commit and may be stale relative to the current HEAD.",
+    "Static analysis cannot prove runtime-only or dynamic call targets, so the Call Graph boundary remains unknown."
+  ]
+}

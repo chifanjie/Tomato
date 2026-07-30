@@ -213,6 +213,28 @@ importers:
         specifier: ^3.1.0
         version: 3.2.4(@types/debug@4.1.13)(@types/node@25.5.0)(happy-dom@20.10.6)(jiti@2.6.1)(lightningcss@1.32.0)(yaml@2.8.3)
 
+  packages/task-engine:
+    dependencies:
+      '@understand-code/artifact-store':
+        specifier: workspace:*
+        version: link:../artifact-store
+      '@understand-code/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@understand-code/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: ^25.5.0
+        version: 25.5.0
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.1.0
+        version: 3.2.4(@types/debug@4.1.13)(@types/node@25.5.0)(happy-dom@20.10.6)(jiti@2.6.1)(lightningcss@1.32.0)(yaml@2.8.3)
+
 packages:
 
   '@ampproject/remapping@2.3.0':

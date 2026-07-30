@@ -1,0 +1,46 @@
+{
+  "name": "@understand-code/task-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./ranking": {
+      "types": "./dist/ranking.d.ts",
+      "import": "./dist/ranking.js",
+      "default": "./dist/ranking.js"
+    },
+    "./impact": {
+      "types": "./dist/impact.d.ts",
+      "import": "./dist/impact.js",
+      "default": "./dist/impact.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "fixtures"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "test": "pnpm run build && vitest run"
+  },
+  "dependencies": {
+    "@understand-code/artifact-store": "workspace:*",
+    "@understand-code/contracts": "workspace:*",
+    "@understand-code/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.1.0"
+  }
+}

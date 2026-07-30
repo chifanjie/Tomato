@@ -5,7 +5,7 @@
 范围：WP4 `packages/task-engine`、其依赖的 Contracts/Artifact Store 修订，以及
 WP4 关闭所需的测试、审查和发布证据
 
-状态：**Local Gate passed / remote closeout pending**
+状态：**WP4 Completed**
 
 权威决策：
 
@@ -15,9 +15,10 @@ WP4 关闭所需的测试、审查和发布证据
 
 本矩阵是研发追踪证据，不是发布批准。最终本地 source tree 已关闭 Artifact
 Store 互审发现的 durability、Snapshot trust、Repo Pulse liveness 与精确恢复
-问题；focused regressions、Store/Task Engine 全包、根级 `pnpm quality` 和
-两轮独立复审均通过且无未关闭 P0/P1。WP4 仍等待分层 commit、push 与远端 CI，
-因此当前只关闭 Local Gate，不提前标记为 Completed。
+问题；focused regressions、Store/Task Engine 全包、根级 `pnpm quality`、
+两轮独立复审和最终 clean-checkout 远端 CI 均通过，且无未关闭 P0/P1。分层
+commit 已推送，WP4 功能树、CI 修复树和可追溯证据均已冻结，因此本矩阵正式
+关闭 WP4。
 
 ## 1. WP4 目标与实际产品结果
 
@@ -155,7 +156,8 @@ Store 因此不能用单一 descriptor 覆盖所有 Pulse revision。D-23 的实
 - `verified locally`：最终 source tree 上存在针对性自动化证据。
 - `capability locked`：该能力不对外暴露，调用在写入前 fail closed，并有明确
   Owner/Gate。
-- `remote pending`：本地证据完成，仍待提交对应远端 CI。
+- `verified remotely`：对应提交已推送，并由 clean-checkout GitHub Actions
+  对同一 source tree 完成质量门禁。
 
 | ID | 目标/Contract | 实现定位 | 最终本地证据 | 状态 |
 |---|---|---|---|---|
@@ -181,7 +183,7 @@ Store 因此不能用单一 descriptor 覆盖所有 Pulse revision。D-23 的实
 | WP4-F09 | 真实 self-host Benchmark Dataset | fixture + `self-host-benchmark.test.ts` | 3 个声明目标均命中 ranking/reading/planned，预算与 digest 稳定 | verified locally |
 | WP4-F10 | Repository provider 只发布可信 Source anchor | `repository-context-provider.ts` | comment/string/substring/duplicate/call-site/regex/symlink/path negatives | verified locally |
 | WP4-I01 | 根 build/typecheck/test/clean 集成 | root scripts、lockfile、quality gate | 最终 `git diff --check && pnpm quality` exit 0 | verified locally |
-| WP4-I02 | 远端 CI 与独立审查 | feature commits / GitHub Actions | Task Engine 与 Store 最终复审均无 P0/P1；CI 待分层提交后记录 | remote pending |
+| WP4-I02 | 远端 CI 与独立审查 | feature commits / GitHub Actions | Task Engine 与 Store 最终复审均无 P0/P1；最终修复树通过 run `30510573063` | verified remotely |
 
 ## 4. 最终本地自动化证据
 
@@ -208,6 +210,19 @@ pnpm quality
 预期且非失败的输出只有 Node `module.register` deprecation、Dashboard
 localStorage experimental warning，以及 invalid YAML/JSON 负例的 parser stderr。
 
+远端第一次运行 `30508509703` 暴露了两项仅在 clean checkout / 较慢 runner
+可见的测试环境问题：self-host benchmark 依赖 ignored 本地产物，以及 20 路
+并发测试沿用 1 秒 acquisition budget。修复提交 `6a6fd742` 没有放宽生产锁
+或跳过测试，而是：
+
+- 将最小 self-host Graph corpus 作为版本化 fixture 提交，同时继续用当前
+  仓库源码核验符号、行区间、source bytes 与 digest；
+- 只给 20 路并发压力用例设置 10 秒有界 lock budget，并在成功后断言 Task 与
+  repository 两条 lock path 均已删除；
+- 在本地连续运行 8 轮、每轮 20 并发，再执行完整 `pnpm quality`；
+- 在 clean checkout 的 GitHub Actions run `30510573063` 重跑相同根级门禁，
+  最终成功。
+
 ## 5. Required acceptance matrix
 
 | Test ID | 场景 | 本地验证结果 | 状态 |
@@ -228,7 +243,7 @@ localStorage experimental warning，以及 invalid YAML/JSON 负例的 parser st
 | AT-14 | fault injection | pre/post Manifest crash、durability ambiguity、Journal corruption 均 fail closed/recover | verified locally |
 | AT-15 | Benchmark Dataset | 固定 Snapshot/Task 的 ID、候选、Impact、digest 稳定，3 个 self-host 目标命中 | verified locally |
 | AT-16 | root closeout | build/typecheck/all tests/schema/fixtures/diff/clean audit 全过 | verified locally |
-| AT-17 | remote/independent closeout | Task Engine 与 Store 最终复审无 P0/P1；分层 commits/CI 尚未开始 | remote pending |
+| AT-17 | remote/independent closeout | Task Engine 与 Store 最终复审无 P0/P1；分层 commits 已推送；最终修复树的 clean-checkout CI 成功 | verified remotely |
 
 ## 6. Capability locks、P2 与 Owner/Gate
 
@@ -277,11 +292,12 @@ Artifact Store reciprocal audit 发现并已关闭：
 
 修复后的 focused gate、Artifact Store 125/125、Task Engine 60/60 与根级
 `pnpm quality` 均通过。最终 focused re-audit 确认无新增 P0/P1；Local Gate
-可以关闭。第 6 节 P2 已有明确 Owner/Gate，不阻断 WP4，但不得提前宣传为已完成。
+和远端 Gate 均已关闭。第 6 节 P2 已有明确 Owner/Gate，不阻断 WP4，也不得
+被包装成 WP4 已交付能力。
 
 ## 8. WP4 完成判定与关闭记录
 
-只有同时满足以下条件，才能把 WP4 标记为 Completed：
+以下关闭条件已全部满足：
 
 - D-22～D-23 在 PRD 与 G0 Freeze Record 中一致；
 - Journal、Store 与 Engine 语义一致；
@@ -292,17 +308,19 @@ Artifact Store reciprocal audit 发现并已关闭：
 - 独立审查无未关闭 P0/P1；
 - 用户未跟踪的 QA/历史 PRD/site 文件未被暂存或提交。
 
-待远端 closeout 完成后，在此补写：
-
 | 证据 | 值 |
 |---|---|
-| Contracts/Store commit | pending |
-| Task Engine commit | pending |
-| Closeout documentation commit | pending |
-| Final tree hash | pending |
-| GitHub Actions run | pending |
+| Contracts/Store commit | `862c5061611dd812ef07a58259c19e8fcb5a189d` |
+| Task Engine commit | `81d55760e2afbce3e35dea472459653f126ceb6a` |
+| CI remediation commit | `6a6fd742bb7ca55a23fb6a5a17d067d7f2396fc6` |
+| Feature tree hash | `cfe271908a8a1345dab6b823cc06aeef37e8b441`（`6a6fd742^{tree}`；不含本证据文档的后继 tree） |
+| Contracts/Store CI | run `30508030920`，success |
+| 首次 Task Engine CI | run `30508509703`，failure；失败原因与修复见第 4 节，不作为通过证据 |
+| 最终 feature tree CI | run `30510573063`，success；head SHA 精确匹配 `6a6fd742...` |
+| 本地最终门禁 | `git diff --check && pnpm quality`，exit 0 |
 | Independent audit | Task Engine passed；Artifact Store passed；no open P0/P1 |
+| 用户文件保护 | 未跟踪的 `docs/prd/.qa/`、历史 PRD 产物、`assets/`、builder、`site/` 均未进入任何 WP4 commit |
 
-远端证据补齐后，状态从 `Local Gate passed / remote closeout pending` 更新为
-`WP4 Completed`，并保留第 6 节 Owner/Gate，避免把 WP5/WP8 能力提前包装成
-WP4 产物。
+本证据文档是 feature tree 之后的 evidence-only closeout，不反向修改或冒充
+上表的已验证 tree。第 6 节 Owner/Gate 继续有效，避免把 WP5/WP8 能力提前
+包装成 WP4 产物。

@@ -1,0 +1,73 @@
+{
+  "version": "1.0.0",
+  "kind": "codebase",
+  "project": {
+    "name": "@understand-code/skill",
+    "languages": [
+      "typescript"
+    ],
+    "frameworks": [
+      "Fuse.js",
+      "Zod"
+    ],
+    "description": "A committed, source-verified corpus for the Task Engine self-host benchmark.",
+    "analyzedAt": "2026-07-30T00:00:00.000Z",
+    "gitCommitHash": "81d55760e2afbce3e35dea472459653f126ceb6a"
+  },
+  "nodes": [
+    {
+      "id": "function:packages/core/src/persistence/index.ts:loadGraph",
+      "type": "function",
+      "name": "loadGraph",
+      "filePath": "packages/core/src/persistence/index.ts",
+      "lineRange": [
+        85,
+        105
+      ],
+      "summary": "Load and validate a persisted knowledge graph from the repository.",
+      "tags": [
+        "persistence",
+        "knowledge-graph",
+        "validation"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:packages/core/src/schema.ts:validateGraph",
+      "type": "function",
+      "name": "validateGraph",
+      "filePath": "packages/core/src/schema.ts",
+      "lineRange": [
+        499,
+        663
+      ],
+      "summary": "Validate and normalize a knowledge graph while preserving explicit quality boundaries.",
+      "tags": [
+        "schema",
+        "knowledge-graph",
+        "validation"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "class:packages/core/src/search.ts:SearchEngine",
+      "type": "class",
+      "name": "SearchEngine",
+      "filePath": "packages/core/src/search.ts",
+      "lineRange": [
+        27,
+        65
+      ],
+      "summary": "Rank repository graph nodes through deterministic weighted text search.",
+      "tags": [
+        "search",
+        "ranking",
+        "knowledge-graph"
+      ],
+      "complexity": "simple"
+    }
+  ],
+  "edges": [],
+  "layers": [],
+  "tour": []
+}

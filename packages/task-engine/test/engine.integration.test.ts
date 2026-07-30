@@ -1,4 +1,5 @@
 import {
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
@@ -51,6 +52,7 @@ const WORKTREE_ID = "worktree:fixture";
 const PRODUCER_VERSION = "3.0.0-alpha.1";
 const ACTOR = "codex";
 const FIXED_NOW = new Date("2026-07-29T08:00:00.000Z");
+const CONCURRENT_BUILD_LOCK_TIMEOUT_MS = 10_000;
 const SOURCE_DIGEST =
   "sha256:034be1c7304cd2d721eb758d60ae69c6115f11f1edca7b939e2dd0cebfbe3bc0";
 const ALL_CAPABILITIES = [
@@ -192,7 +194,10 @@ async function loadFixture(
 }
 
 async function openStore(
-  options: { publishPulse?: boolean } = {},
+  options: {
+    publishPulse?: boolean;
+    lockTimeoutMs?: number;
+  } = {},
 ): Promise<{ root: string; store: ArtifactStore }> {
   const root = await mkdtemp(path.join(tmpdir(), "task-engine-integration-"));
   temporaryRoots.push(root);
@@ -222,7 +227,7 @@ async function openStore(
     worktreeId: WORKTREE_ID,
     producerVersion: PRODUCER_VERSION,
     lock: {
-      timeoutMs: 1_000,
+      timeoutMs: options.lockTimeoutMs ?? 1_000,
       staleAfterMs: 5_000,
       pollMinMs: 1,
       pollMaxMs: 4,
@@ -950,7 +955,9 @@ describe("TaskEngine persistent integration", () => {
   });
 
   it("serializes concurrent identical builds to one Task and two committed events", async () => {
-    const { store } = await openStore();
+    const { store } = await openStore({
+      lockTimeoutMs: CONCURRENT_BUILD_LOCK_TIMEOUT_MS,
+    });
     const taskEngine = engine(store);
     const input = buildInput("concurrent-build");
 
@@ -970,7 +977,15 @@ describe("TaskEngine persistent integration", () => {
     expect(
       results.filter((result) => result.mutation.idempotentReplay).length,
     ).toBeGreaterThan(0);
-  });
+    await Promise.all([
+      expect(lstat(store.layout.taskLock(taskId))).rejects.toMatchObject({
+        code: "ENOENT",
+      }),
+      expect(lstat(store.layout.repositoryLock)).rejects.toMatchObject({
+        code: "ENOENT",
+      }),
+    ]);
+  }, CONCURRENT_BUILD_LOCK_TIMEOUT_MS + 5_000);
 
   it("builds deterministic Task identities and persisted payload digests across Stores", async () => {
     const first = await openStore();

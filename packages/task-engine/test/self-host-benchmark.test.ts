@@ -200,9 +200,9 @@ async function captureRealRepository(
     fileURLToPath(new URL("../../../", import.meta.url)),
   );
   const graphBytes = await readFile(
-    await resolveRepositoryPath(
-      repositoryRoot,
-      ".understand-code/knowledge-graph.json",
+    new URL(
+      "../fixtures/self-host-knowledge-graph.v1.json",
+      import.meta.url,
     ),
   );
   const graph = KnowledgeGraphSchema.parse(

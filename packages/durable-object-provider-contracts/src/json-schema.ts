@@ -18,6 +18,10 @@ import {
   LowerHex64V1Schema,
   ProviderRegistryRootKeyIdV1Schema,
 } from "./primitives.js";
+import {
+  ProviderCapabilityFailureReasonV1Schema,
+  ProviderUnavailableToolErrorV1Schema,
+} from "./provider-error.js";
 
 export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
   "canonical-byte-string": CanonicalByteStringV1Schema,
@@ -40,6 +44,9 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
   "provider-registry-root-key-id": ProviderRegistryRootKeyIdV1Schema,
   "provider-registry-root-key-id-fields":
     ProviderRegistryRootKeyIdFieldsV1Schema,
+  "provider-capability-failure-reason":
+    ProviderCapabilityFailureReasonV1Schema,
+  "provider-unavailable-tool-error": ProviderUnavailableToolErrorV1Schema,
 } as const satisfies Record<string, z.ZodType>;
 
 export type ProviderContractJsonSchemaNameV1 =

@@ -8,6 +8,8 @@ import type {
   KeyedStateTokenV1,
   LowerHex22V1,
   ProviderCryptoHostV1,
+  ProviderCapabilityFailureReasonV1,
+  ProviderUnavailableToolErrorV1,
   ProviderRegistryRootKeyIdFieldsV1,
   ProviderRegistryRootKeyIdV1,
 } from "../src/index.js";
@@ -15,6 +17,7 @@ import {
   deriveInstallationIdentityGenerationIdV1,
   deriveInstallationIdentityKeyCheckTokenV1,
   deriveProviderRegistryRootKeyIdV1,
+  createProviderUnavailableToolErrorV1,
 } from "../src/index.js";
 
 declare const lowerHex22: LowerHex22V1;
@@ -28,6 +31,7 @@ declare const keyCheckFields: InstallationIdentityKeyCheckFieldsV1;
 declare const rootKeyFields: ProviderRegistryRootKeyIdFieldsV1;
 declare const cryptoHost: ProviderCryptoHostV1;
 declare const installationKey: Uint8Array;
+declare const providerFailureReason: ProviderCapabilityFailureReasonV1;
 
 // @ts-expect-error semantic brands with the same wire shape are not interchangeable
 const rootKeyFromGenericHex: ProviderRegistryRootKeyIdV1 = lowerHex22;
@@ -59,6 +63,14 @@ const keyCheckResult: Promise<KeyedStateTokenV1> =
     installationKey,
     cryptoHost,
   );
+const providerError: ProviderUnavailableToolErrorV1 =
+  createProviderUnavailableToolErrorV1(providerFailureReason);
+const unavailableProviderError: ProviderUnavailableToolErrorV1 =
+  createProviderUnavailableToolErrorV1("unavailable");
+// @ts-expect-error provider failure reasons are a closed public allowlist
+createProviderUnavailableToolErrorV1("network_error");
+// @ts-expect-error the public error contract cannot carry retry metadata
+const providerErrorWithRetry: ProviderUnavailableToolErrorV1 = { schemaVersion: 1, code: "provider_unavailable", details: { reason: "unavailable" }, retryable: true };
 
 void [
   rootKeyFromGenericHex,
@@ -73,4 +85,7 @@ void [
   generationResult,
   rootKeyResult,
   keyCheckResult,
+  providerError,
+  unavailableProviderError,
+  providerErrorWithRetry,
 ];

@@ -1,6 +1,21 @@
 import { z } from "zod";
 
 import {
+  ProviderUnavailableToolErrorV1Schema,
+} from "@understand-code/durable-object-provider-contracts/provider-error";
+
+export {
+  PROVIDER_CAPABILITY_FAILURE_REASONS_V1,
+  ProviderCapabilityFailureReasonV1Schema,
+  ProviderUnavailableToolErrorV1Schema,
+  createProviderUnavailableToolErrorV1,
+} from "@understand-code/durable-object-provider-contracts/provider-error";
+export type {
+  ProviderCapabilityFailureReasonV1,
+  ProviderUnavailableToolErrorV1,
+} from "@understand-code/durable-object-provider-contracts/provider-error";
+
+import {
   ChangeCheckV1Schema,
   CheckChangeInputV1Schema,
   ImpactPathV1Schema,
@@ -150,9 +165,13 @@ const ABSOLUTE_FILESYSTEM_PATH_PATTERNS_V1 = Object.freeze([
   // treating the slashes in an ordinary URI such as https://example.test as a
   // local path while still rejecting labels such as path:/private/repository.
   /(?:^|[^A-Za-z0-9/])\/(?!\/)[^\s"'`<>{}\[\]]+/u,
+  // POSIX permits an implementation-defined meaning for exactly two leading
+  // slashes, but the pathname remains absolute. Keep URI schemes usable by
+  // excluding ':' immediately before the slash run.
+  /(?:^|[^A-Za-z0-9:/])\/{2,}[^\s"'`<>{}\[\]]+/u,
   /(?:^|[^A-Za-z0-9])[A-Za-z]:[\\/][^\s"'`<>{}\[\]]+/u,
   /(?:^|[^\\])\\\\[^\\\s"'`<>{}\[\]]+\\[^\\\s"'`<>{}\[\]]+/u,
-  /\bfile:\/\/[^\s"'`<>{}\[\]]+/iu,
+  /\b[Ff][Ii][Ll][Ee]:\/\/[^\s"'`<>{}\[\]]+/u,
 ]);
 
 export function containsAbsoluteFilesystemPathV1(value: string): boolean {
@@ -161,10 +180,29 @@ export function containsAbsoluteFilesystemPathV1(value: string): boolean {
   );
 }
 
-export const PublicToolTextV1Schema = NonEmptyStringSchema.max(2_048).refine(
-  (value) => !containsAbsoluteFilesystemPathV1(value),
-  "tool text must not expose an absolute filesystem path",
+const PUBLIC_TOOL_TEXT_NO_ABSOLUTE_PATH_PATTERNS_V1 = Object.freeze(
+  ABSOLUTE_FILESYSTEM_PATH_PATTERNS_V1.map(
+    (pattern) =>
+      new RegExp(
+        `^(?![\\s\\S]*(?:${pattern.source}))[\\s\\S]*$`,
+        "u",
+      ),
+  ),
 );
+
+export const PublicToolTextV1Schema =
+  PUBLIC_TOOL_TEXT_NO_ABSOLUTE_PATH_PATTERNS_V1.reduce(
+    (schema, pattern) =>
+      schema.regex(
+        pattern,
+        "tool text must not expose an absolute filesystem path",
+      ),
+    z
+      .string()
+      .min(1)
+      .max(2_048)
+      .regex(/\S/u, "tool text must contain non-whitespace characters"),
+  );
 
 export type PublicToolTextV1 = z.infer<typeof PublicToolTextV1Schema>;
 
@@ -517,6 +555,7 @@ function validatePublicErrorDetailsV1(
 
 export const ToolErrorEnvelopeV1Schema = z
   .discriminatedUnion("code", [
+    ProviderUnavailableToolErrorV1Schema,
     WorkspaceBindingRequiredErrorV1Schema,
     InvalidArgumentsErrorV1Schema,
     RepositoryNotReadyErrorV1Schema,

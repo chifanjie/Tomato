@@ -1,0 +1,236 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "caseId": "unknown-reason",
+      "expectedFailure": {
+        "keyword": "enum",
+        "instancePath": "/details/reason"
+      },
+      "value": {
+        "schemaVersion": 1,
+        "code": "provider_unavailable",
+        "details": {
+          "reason": "network_error"
+        }
+      }
+    },
+    {
+      "caseId": "missing-reason",
+      "expectedFailure": {
+        "keyword": "required",
+        "instancePath": "/details",
+        "missingProperty": "reason"
+      },
+      "value": {
+        "schemaVersion": 1,
+        "code": "provider_unavailable",
+        "details": {}
+      }
+    },
+    {
+      "caseId": "wrong-schema-version",
+      "expectedFailure": {
+        "keyword": "const",
+        "instancePath": "/schemaVersion"
+      },
+      "value": {
+        "schemaVersion": 2,
+        "code": "provider_unavailable",
+        "details": {
+          "reason": "unavailable"
+        }
+      }
+    },
+    {
+      "caseId": "wrong-code",
+      "expectedFailure": {
+        "keyword": "const",
+        "instancePath": "/code"
+      },
+      "value": {
+        "schemaVersion": 1,
+        "code": "internal_error",
+        "details": {
+          "reason": "unavailable"
+        }
+      }
+    },
+    {
+      "caseId": "top-level-extra",
+      "expectedFailure": {
+        "keyword": "additionalProperties",
+        "instancePath": "",
+        "additionalProperty": "debug"
+      },
+      "value": {
+        "schemaVersion": 1,
+        "code": "provider_unavailable",
+        "details": {
+          "reason": "unavailable"
+        },
+        "debug": "not-public"
+      }
+    },
+    {
+      "caseId": "details-extra",
+      "expectedFailure": {
+        "keyword": "additionalProperties",
+        "instancePath": "/details",
+        "additionalProperty": "diagnostics"
+      },
+      "value": {
+        "schemaVersion": 1,
+        "code": "provider_unavailable",
+        "details": {
+          "reason": "unavailable",
+          "diagnostics": "not-public"
+        }
+      }
+    },
+    {
+      "caseId": "retryable-leakage",
+      "expectedFailure": {
+        "keyword": "additionalProperties",
+        "instancePath": "",
+        "additionalProperty": "retryable"
+      },
+      "value": {
+        "schemaVersion": 1,
+        "code": "provider_unavailable",
+        "details": {
+          "reason": "unavailable"
+        },
+        "retryable": true
+      }
+    },
+    {
+      "caseId": "provider-id-leakage",
+      "expectedFailure": {
+        "keyword": "additionalProperties",
+        "instancePath": "/details",
+        "additionalProperty": "providerId"
+      },
+      "value": {
+        "schemaVersion": 1,
+        "code": "provider_unavailable",
+        "details": {
+          "reason": "unavailable",
+          "providerId": "durable-object-provider:native-fs"
+        }
+      }
+    },
+    {
+      "caseId": "locator-leakage",
+      "expectedFailure": {
+        "keyword": "additionalProperties",
+        "instancePath": "/details",
+        "additionalProperty": "locator"
+      },
+      "value": {
+        "schemaVersion": 1,
+        "code": "provider_unavailable",
+        "details": {
+          "reason": "unavailable",
+          "locator": "provider-runtime:private"
+        }
+      }
+    },
+    {
+      "caseId": "ipc-endpoint-leakage",
+      "expectedFailure": {
+        "keyword": "additionalProperties",
+        "instancePath": "/details",
+        "additionalProperty": "ipcEndpoint"
+      },
+      "value": {
+        "schemaVersion": 1,
+        "code": "provider_unavailable",
+        "details": {
+          "reason": "unavailable",
+          "ipcEndpoint": "unix:///private/provider.sock"
+        }
+      }
+    },
+    {
+      "caseId": "path-leakage",
+      "expectedFailure": {
+        "keyword": "additionalProperties",
+        "instancePath": "/details",
+        "additionalProperty": "path"
+      },
+      "value": {
+        "schemaVersion": 1,
+        "code": "provider_unavailable",
+        "details": {
+          "reason": "unavailable",
+          "path": "/Users/example/private-provider"
+        }
+      }
+    },
+    {
+      "caseId": "owner-leakage",
+      "expectedFailure": {
+        "keyword": "additionalProperties",
+        "instancePath": "/details",
+        "additionalProperty": "owner"
+      },
+      "value": {
+        "schemaVersion": 1,
+        "code": "provider_unavailable",
+        "details": {
+          "reason": "unavailable",
+          "owner": "local-owner"
+        }
+      }
+    },
+    {
+      "caseId": "username-leakage",
+      "expectedFailure": {
+        "keyword": "additionalProperties",
+        "instancePath": "/details",
+        "additionalProperty": "username"
+      },
+      "value": {
+        "schemaVersion": 1,
+        "code": "provider_unavailable",
+        "details": {
+          "reason": "unavailable",
+          "username": "local-user"
+        }
+      }
+    },
+    {
+      "caseId": "key-id-leakage",
+      "expectedFailure": {
+        "keyword": "additionalProperties",
+        "instancePath": "/details",
+        "additionalProperty": "keyId"
+      },
+      "value": {
+        "schemaVersion": 1,
+        "code": "provider_unavailable",
+        "details": {
+          "reason": "unavailable",
+          "keyId": "0123456789abcdef012345"
+        }
+      }
+    },
+    {
+      "caseId": "raw-attestation-leakage",
+      "expectedFailure": {
+        "keyword": "additionalProperties",
+        "instancePath": "/details",
+        "additionalProperty": "rawAttestation"
+      },
+      "value": {
+        "schemaVersion": 1,
+        "code": "provider_unavailable",
+        "details": {
+          "reason": "unavailable",
+          "rawAttestation": "signed-private-attestation"
+        }
+      }
+    }
+  ]
+}

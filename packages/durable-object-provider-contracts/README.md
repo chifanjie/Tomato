@@ -2,7 +2,8 @@
 
 Portable, fail-closed wire contracts for the WP5 durable-object provider boundary.
 
-This first `WP5-C09-0` slice freezes the cryptographic format foundation:
+The `WP5-C09-0` slice freezes the cryptographic format foundation, and
+`WP5-C09-1A` adds the public provider failure boundary:
 
 - `rfc8785-jcs-safe-integer-v1` canonical JSON and exact canonical-byte parsing;
 - independent branded digest, token, provider identity, and key primitives;
@@ -11,6 +12,8 @@ This first `WP5-C09-0` slice freezes the cryptographic format foundation:
   and installation key-check token derivation;
 - immutable cross-runtime golden and negative manifests;
 - versioned generated JSON Schemas and packed-distribution smoke coverage.
+- the single-authority `provider_unavailable` error with six ordered reasons,
+  strict privacy-minimal fixtures, and a dedicated `./provider-error` export.
 
 The arbitrary domain/prefix crypto helpers are intentionally package-internal.
 Consumers use the exported domain-specific builders so a caller cannot swap a
@@ -28,6 +31,10 @@ pnpm --filter @understand-code/durable-object-provider-contracts test:distributi
 The tracked manifests live under `fixtures/v1`. Expected bytes and crypto results
 are literal reviewable constants; tests never generate expected values with the
 implementation under test.
+
+The versioned provider-error reference and invalid fixtures are checked by both
+the runtime Zod contract and its generated draft-2020-12 JSON Schema. The public
+error deliberately contains only `schemaVersion`, `code`, and `details.reason`.
 
 ## Scope boundary
 

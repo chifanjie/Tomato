@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "caseId": "unavailable",
+      "value": {
+        "schemaVersion": 1,
+        "code": "provider_unavailable",
+        "details": {
+          "reason": "unavailable"
+        }
+      }
+    },
+    {
+      "caseId": "unsupported-filesystem-profile",
+      "value": {
+        "schemaVersion": 1,
+        "code": "provider_unavailable",
+        "details": {
+          "reason": "unsupported_filesystem_profile"
+        }
+      }
+    },
+    {
+      "caseId": "attestation-invalid",
+      "value": {
+        "schemaVersion": 1,
+        "code": "provider_unavailable",
+        "details": {
+          "reason": "attestation_invalid"
+        }
+      }
+    },
+    {
+      "caseId": "revoked",
+      "value": {
+        "schemaVersion": 1,
+        "code": "provider_unavailable",
+        "details": {
+          "reason": "revoked"
+        }
+      }
+    },
+    {
+      "caseId": "migration-required",
+      "value": {
+        "schemaVersion": 1,
+        "code": "provider_unavailable",
+        "details": {
+          "reason": "migration_required"
+        }
+      }
+    },
+    {
+      "caseId": "initialization-not-terminalized",
+      "value": {
+        "schemaVersion": 1,
+        "code": "provider_unavailable",
+        "details": {
+          "reason": "initialization_not_terminalized"
+        }
+      }
+    }
+  ]
+}

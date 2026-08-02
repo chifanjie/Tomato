@@ -67,3 +67,13 @@ export type {
   ProviderContractGoldenManifestV1,
   ProviderContractNegativeManifestV1,
 } from "./golden-vectors.js";
+export {
+  PROVIDER_CAPABILITY_FAILURE_REASONS_V1,
+  ProviderCapabilityFailureReasonV1Schema,
+  ProviderUnavailableToolErrorV1Schema,
+  createProviderUnavailableToolErrorV1,
+} from "./provider-error.js";
+export type {
+  ProviderCapabilityFailureReasonV1,
+  ProviderUnavailableToolErrorV1,
+} from "./provider-error.js";

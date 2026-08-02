@@ -55,4 +55,32 @@ describe("provider contract JSON Schema distribution", () => {
       expect(generated[name].additionalProperties).toBe(false);
     }
   });
+
+  it("publishes the ordered provider reason and strict minimal error schemas", () => {
+    const generated = generateProviderContractJsonSchemasV1();
+    expect(generated["provider-capability-failure-reason"].enum).toEqual([
+      "unavailable",
+      "unsupported_filesystem_profile",
+      "attestation_invalid",
+      "revoked",
+      "migration_required",
+      "initialization_not_terminalized",
+    ]);
+    expect(generated["provider-unavailable-tool-error"].required).toEqual([
+      "schemaVersion",
+      "code",
+      "details",
+    ]);
+    expect(
+      generated["provider-unavailable-tool-error"].additionalProperties,
+    ).toBe(false);
+    const details = (
+      generated["provider-unavailable-tool-error"].properties as Record<
+        string,
+        Record<string, unknown>
+      >
+    ).details;
+    expect(details?.additionalProperties).toBe(false);
+    expect(details?.required).toEqual(["reason"]);
+  });
 });

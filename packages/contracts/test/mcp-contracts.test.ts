@@ -1,3 +1,4 @@
+import Ajv2020 from "ajv/dist/2020.js";
 import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -18,6 +19,8 @@ import {
   P0_MCP_TOOL_CONTRACTS_V1,
   P0_MCP_TOOL_NAMES_V1,
   PageInfoV1Schema,
+  PROVIDER_CAPABILITY_FAILURE_REASONS_V1,
+  ProviderUnavailableToolErrorV1Schema,
   RecordVerificationOutputV1Schema,
   RefreshIndexCancellationV1Schema,
   RefreshIndexInputV1Schema,
@@ -29,7 +32,11 @@ import {
   TraceImpactOutputV1Schema,
   UpdateTaskOutputV1Schema,
   WorkspaceBindingReasonV1Schema,
+  createProviderUnavailableToolErrorV1,
 } from "../src/mcp.js";
+import {
+  ProviderUnavailableToolErrorV1Schema as DirectProviderUnavailableToolErrorV1Schema,
+} from "@understand-code/durable-object-provider-contracts/provider-error";
 import { parseTrustedTaskArtifactBundleV1 } from "../src/invariants.js";
 
 const TASK_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
@@ -51,6 +58,27 @@ function referenceFixture(fileName: string): unknown {
 
 function referencePayload<T>(fileName: string): T {
   return (referenceFixture(fileName) as { payload: T }).payload;
+}
+
+interface ProviderErrorFixtureManifest {
+  schemaVersion: 1;
+  cases: Array<{ caseId: string; value: unknown }>;
+}
+
+function providerErrorFixture(
+  fixtureKind: "reference" | "invalid",
+): ProviderErrorFixtureManifest {
+  return JSON.parse(
+    readFileSync(
+      fileURLToPath(
+        new URL(
+          `../../durable-object-provider-contracts/fixtures/v1/${fixtureKind}/provider-unavailable-tool-errors.json`,
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    ),
+  ) as ProviderErrorFixtureManifest;
 }
 
 function digestCanonicalJson(canonicalJson: string): string {
@@ -679,6 +707,219 @@ describe("task workflow MCP success outputs", () => {
 });
 
 describe("stable tool errors", () => {
+  it("uses the Provider package as the only six-reason failure authority", () => {
+    expect(ProviderUnavailableToolErrorV1Schema).toBe(
+      DirectProviderUnavailableToolErrorV1Schema,
+    );
+    expect(PROVIDER_CAPABILITY_FAILURE_REASONS_V1).toEqual([
+      "unavailable",
+      "unsupported_filesystem_profile",
+      "attestation_invalid",
+      "revoked",
+      "migration_required",
+      "initialization_not_terminalized",
+    ]);
+
+    const referenceCases = providerErrorFixture("reference").cases;
+    expect(referenceCases).toHaveLength(6);
+    expect(
+      referenceCases.map(
+        ({ value }) =>
+          (value as { details: { reason: string } }).details.reason,
+      ),
+    ).toEqual(PROVIDER_CAPABILITY_FAILURE_REASONS_V1);
+
+    for (const [index, fixtureCase] of referenceCases.entries()) {
+      const reason = PROVIDER_CAPABILITY_FAILURE_REASONS_V1[index]!;
+      const error = createProviderUnavailableToolErrorV1(reason);
+      expect(error).toEqual({
+        schemaVersion: 1,
+        code: "provider_unavailable",
+        details: { reason },
+      });
+      expect(fixtureCase.value).toEqual(error);
+      expect(
+        ProviderUnavailableToolErrorV1Schema.safeParse(fixtureCase.value)
+          .success,
+        fixtureCase.caseId,
+      ).toBe(true);
+      expect(ToolErrorEnvelopeV1Schema.safeParse(error).success).toBe(true);
+      expect(
+        McpToolErrorResultV1Schema.safeParse({
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: "The strong Store is unavailable. Run Doctor for details.",
+            },
+          ],
+          structuredContent: { error },
+        }).success,
+      ).toBe(true);
+    }
+  });
+
+  it("rejects provider retry hints, private fields, extras, and absolute path text", () => {
+    const error = createProviderUnavailableToolErrorV1("unavailable");
+    const result = {
+      isError: true,
+      content: [
+        {
+          type: "text",
+          text: "The strong Store is unavailable. Run Doctor for details.",
+        },
+      ],
+      structuredContent: { error },
+    };
+
+    const invalidCases = providerErrorFixture("invalid").cases;
+    expect(invalidCases).toHaveLength(15);
+    for (const fixtureCase of invalidCases) {
+      expect(
+        ProviderUnavailableToolErrorV1Schema.safeParse(fixtureCase.value)
+          .success,
+        `${fixtureCase.caseId} must fail the Provider Schema`,
+      ).toBe(false);
+      expect(
+        ToolErrorEnvelopeV1Schema.safeParse(fixtureCase.value).success,
+        `${fixtureCase.caseId} must fail the MCP Tool Error union`,
+      ).toBe(false);
+      expect(
+        McpToolErrorResultV1Schema.safeParse({
+          ...result,
+          structuredContent: { error: fixtureCase.value },
+        }).success,
+        `${fixtureCase.caseId} must fail the MCP result envelope`,
+      ).toBe(false);
+    }
+
+    expect(
+      McpToolErrorResultV1Schema.safeParse({
+        ...result,
+        structuredContent: {
+          error: { ...error, retryable: true },
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      McpToolErrorResultV1Schema.safeParse({
+        ...result,
+        structuredContent: {
+          error: { ...error, debug: "not-public" },
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      McpToolErrorResultV1Schema.safeParse({
+        ...result,
+        structuredContent: {
+          error: {
+            ...error,
+            details: { reason: "unknown_provider_reason" },
+          },
+        },
+      }).success,
+    ).toBe(false);
+
+    for (const [field, value] of Object.entries({
+      providerId: "durable-object-provider:native-fs",
+      locator: "provider-runtime:private",
+      ipcEndpoint: "unix:///private/provider.sock",
+      path: "/Users/example/private-provider",
+      owner: "local-owner",
+      username: "local-user",
+      keyId: "0123456789abcdef012345",
+      rawAttestation: "signed-private-attestation",
+    })) {
+      expect(
+        McpToolErrorResultV1Schema.safeParse({
+          ...result,
+          structuredContent: {
+            error: {
+              ...error,
+              details: { ...error.details, [field]: value },
+            },
+          },
+        }).success,
+        `${field} must not cross the public provider failure boundary`,
+      ).toBe(false);
+    }
+
+    expect(
+      McpToolErrorResultV1Schema.safeParse({
+        ...result,
+        content: [
+          {
+            type: "text",
+            text: "Provider data failed at /Users/example/private-provider.",
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps provider error text path-safe in both Zod and tracked JSON Schema", () => {
+    const trackedSchema = JSON.parse(
+      readFileSync(
+        fileURLToPath(
+          new URL(
+            "../schemas/v1/mcp-tool-error-result.schema.json",
+            import.meta.url,
+          ),
+        ),
+        "utf8",
+      ),
+    );
+    const validateJsonSchema = new Ajv2020({
+      allErrors: true,
+      strict: false,
+      validateFormats: false,
+    }).compile(trackedSchema);
+    const error = createProviderUnavailableToolErrorV1("unavailable");
+    const resultForText = (text: string) => ({
+      isError: true as const,
+      content: [{ type: "text" as const, text }],
+      structuredContent: { error },
+    });
+
+    for (const text of [
+      "Provider failed at /Users/alice/private.",
+      "Provider failed at //Users/alice/private.",
+      "Provider failed at ///Users/alice/private.",
+      "Provider failed at path:/Users/alice/private.",
+      "Provider failed at C:\\Users\\alice\\private.",
+      "Provider failed at \\\\server\\share\\private.",
+      "Provider failed at file:///Users/alice/private.",
+      "Provider failed at FILE:///Users/alice/private.",
+    ]) {
+      const result = resultForText(text);
+      expect(
+        McpToolErrorResultV1Schema.safeParse(result).success,
+        `Zod accepted ${text}`,
+      ).toBe(false);
+      expect(
+        validateJsonSchema(result),
+        `JSON Schema accepted ${text}: ${JSON.stringify(validateJsonSchema.errors)}`,
+      ).toBe(false);
+    }
+
+    for (const text of [
+      "The strong Store is unavailable. Run Doctor for details.",
+      "See https://example.test/provider for help.",
+      "See custom://example.test/provider for help.",
+    ]) {
+      const result = resultForText(text);
+      expect(
+        McpToolErrorResultV1Schema.safeParse(result).success,
+        `Zod rejected ${text}`,
+      ).toBe(true);
+      expect(
+        validateJsonSchema(result),
+        `JSON Schema rejected ${text}: ${JSON.stringify(validateJsonSchema.errors)}`,
+      ).toBe(true);
+    }
+  });
+
   it("freezes the six mutually exclusive workspace binding reasons", () => {
     const reasons = [
       "root_conflict",

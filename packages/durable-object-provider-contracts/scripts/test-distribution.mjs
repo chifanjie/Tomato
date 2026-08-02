@@ -154,12 +154,21 @@ try {
       'if (modules.some((module) => Object.keys(module).length === 0)) throw new Error("empty public export");',
       'const root = await import("@understand-code/durable-object-provider-contracts");',
       'if (root.DurableObjectIdentityProviderIdV1Schema.parse("durable-object-provider:native-fs") !== "durable-object-provider:native-fs") throw new Error("reader ID schema failed");',
+      'const providerError = await import("@understand-code/durable-object-provider-contracts/provider-error");',
+      'const unavailable = providerError.createProviderUnavailableToolErrorV1("unavailable");',
+      'if (providerError.ProviderUnavailableToolErrorV1Schema.parse(unavailable).details.reason !== "unavailable") throw new Error("provider error export failed");',
       'const schemaUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/schemas/v1/canonical-byte-string.schema.json"));',
+      'const providerErrorSchemaUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/schemas/v1/provider-unavailable-tool-error.schema.json"));',
       'const goldenUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/golden/manifest.json"));',
+      'const providerErrorFixtureUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/reference/provider-unavailable-tool-errors.json"));',
       'const schema = JSON.parse(await readFile(schemaUrl, "utf8"));',
+      'const providerErrorSchema = JSON.parse(await readFile(providerErrorSchemaUrl, "utf8"));',
       'const golden = JSON.parse(await readFile(goldenUrl, "utf8"));',
+      'const providerErrorFixture = JSON.parse(await readFile(providerErrorFixtureUrl, "utf8"));',
       'if (schema.$id !== "urn:understand-code:provider-contract:schema:v1:canonical-byte-string") throw new Error("packed schema missing");',
+      'if (providerErrorSchema.$id !== "urn:understand-code:provider-contract:schema:v1:provider-unavailable-tool-error") throw new Error("packed provider error schema missing");',
       'if (golden.profile !== "rfc8785-jcs-safe-integer-v1") throw new Error("packed golden manifest missing");',
+      'if (providerErrorFixture.cases.length !== 6) throw new Error("packed provider error fixture missing");',
       'try { await import("@understand-code/durable-object-provider-contracts/domain-crypto"); throw new Error("private crypto helper exported"); } catch (error) { if (error?.message === "private crypto helper exported") throw error; }',
     ].join("\n"),
     "utf8",
@@ -171,11 +180,18 @@ try {
     typeProbe,
     [
       'import { DurableObjectIdentityProviderIdV1Schema, DurableObjectIdentityProviderSlugV1Schema, createDurableObjectIdentityProviderIdV1 } from "@understand-code/durable-object-provider-contracts";',
+      'import { createProviderUnavailableToolErrorV1 } from "@understand-code/durable-object-provider-contracts/provider-error";',
+      'import type { ProviderCapabilityFailureReasonV1, ProviderUnavailableToolErrorV1 } from "@understand-code/durable-object-provider-contracts/provider-error";',
       'const slug = DurableObjectIdentityProviderSlugV1Schema.parse("native-fs");',
       'const id = createDurableObjectIdentityProviderIdV1(slug);',
       'DurableObjectIdentityProviderIdV1Schema.parse(id);',
+      'const reason: ProviderCapabilityFailureReasonV1 = "attestation_invalid";',
+      'const providerError: ProviderUnavailableToolErrorV1 = createProviderUnavailableToolErrorV1(reason);',
+      'void providerError;',
       '// @ts-expect-error a raw string has not passed the branded slug schema',
       'createDurableObjectIdentityProviderIdV1("native-fs");',
+      '// @ts-expect-error provider failure reasons are closed',
+      'createProviderUnavailableToolErrorV1("network_error");',
     ].join("\n"),
     "utf8",
   );
@@ -205,11 +221,14 @@ try {
   await writeFile(
     join(consumerRoot, "browser-entry.js"),
     [
+      'import { ProviderUnavailableToolErrorV1Schema, createProviderUnavailableToolErrorV1 } from "@understand-code/durable-object-provider-contracts/provider-error";',
       ...explicitSpecifiers.map(
         (specifier, index) =>
           `import * as providerContractBrowserModule${index} from ${JSON.stringify(specifier)};`,
       ),
-      `globalThis.providerContractDistributionProbe = [${explicitSpecifiers
+      'const providerError = createProviderUnavailableToolErrorV1("revoked");',
+      'ProviderUnavailableToolErrorV1Schema.parse(providerError);',
+      `globalThis.providerContractDistributionProbe = [providerError, ${explicitSpecifiers
         .map((_, index) => `providerContractBrowserModule${index}`)
         .join(", ")}];`,
     ].join("\n"),
@@ -241,9 +260,14 @@ try {
     "dist/index.js",
     "dist/index.d.ts",
     "dist/jcs.js",
+    "dist/provider-error.js",
+    "dist/provider-error.d.ts",
     "schemas/v1/canonical-byte-string.schema.json",
+    "schemas/v1/provider-unavailable-tool-error.schema.json",
     "fixtures/v1/golden/manifest.json",
     "fixtures/v1/invalid/manifest.json",
+    "fixtures/v1/reference/provider-unavailable-tool-errors.json",
+    "fixtures/v1/invalid/provider-unavailable-tool-errors.json",
     "README.md",
   ]) {
     if (!(await isFile(join(installedRoot, requiredPath)))) {

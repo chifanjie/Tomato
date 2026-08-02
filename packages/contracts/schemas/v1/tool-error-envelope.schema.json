@@ -11,6 +11,45 @@
         },
         "code": {
           "type": "string",
+          "const": "provider_unavailable"
+        },
+        "details": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string",
+              "enum": [
+                "unavailable",
+                "unsupported_filesystem_profile",
+                "attestation_invalid",
+                "revoked",
+                "migration_required",
+                "initialization_not_terminalized"
+              ]
+            }
+          },
+          "required": [
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "code",
+        "details"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "number",
+          "const": 1
+        },
+        "code": {
+          "type": "string",
           "const": "workspace_binding_required"
         },
         "details": {

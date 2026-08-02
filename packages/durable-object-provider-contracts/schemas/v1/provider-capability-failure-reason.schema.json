@@ -1,0 +1,13 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-capability-failure-reason",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "unavailable",
+    "unsupported_filesystem_profile",
+    "attestation_invalid",
+    "revoked",
+    "migration_required",
+    "initialization_not_terminalized"
+  ]
+}

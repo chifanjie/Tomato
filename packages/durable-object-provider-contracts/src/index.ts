@@ -11,6 +11,7 @@ export {
   ContentDigestV1Schema,
   DurableObjectIdentityProviderIdV1Schema,
   DurableObjectIdentityProviderSlugV1Schema,
+  Ed25519PublicKeyDigestV1Schema,
   InstallationIdentityGenerationIdV1Schema,
   KeyedStateTokenV1Schema,
   LowerHex22V1Schema,
@@ -25,6 +26,7 @@ export type {
   ContentDigestV1,
   DurableObjectIdentityProviderIdV1,
   DurableObjectIdentityProviderSlugV1,
+  Ed25519PublicKeyDigestV1,
   InstallationIdentityGenerationIdV1,
   KeyedStateTokenV1,
   LowerHex22V1,
@@ -33,6 +35,61 @@ export type {
   ProviderRegistryRootKeyIdV1,
 } from "./primitives.js";
 export type { ProviderCryptoHostV1 } from "./domain-crypto.js";
+export {
+  ED25519_PUBLIC_KEY_DIGEST_GOLDEN_LEGACY_ROOT_KEY_ID_V1,
+  ED25519_PUBLIC_KEY_DIGEST_GOLDEN_PUBLIC_KEY_BYTES_V1,
+  ED25519_PUBLIC_KEY_DIGEST_GOLDEN_RAW_HEX_V1,
+  ED25519_PUBLIC_KEY_DIGEST_GOLDEN_VALUE_V1,
+  ProviderEd25519PublicKeyDigestGoldenCaseV1Schema,
+  ProviderEd25519PublicKeyDigestGoldenManifestV1Schema,
+  deriveEd25519PublicKeyDigestV1,
+  verifyProviderEd25519PublicKeyDigestGoldenManifestV1,
+} from "./public-key-digest.js";
+export type {
+  ProviderEd25519PublicKeyDigestGoldenCaseV1,
+  ProviderEd25519PublicKeyDigestGoldenManifestV1,
+} from "./public-key-digest.js";
+export {
+  STRICT_ED25519_VERIFICATION_PROFILE_V1,
+  validatePrimeSubgroupPoint,
+  verifyRawEd25519,
+} from "./strict-ed25519.js";
+export {
+  PROVIDER_STRICT_ED25519_ADVERSARIAL_MANIFEST_CONTENT_DIGEST_V1,
+  PROVIDER_STRICT_ED25519_ADVERSARIAL_MANIFEST_DOMAIN_V1,
+  PROVIDER_STRICT_ED25519_ADVERSARIAL_MANIFEST_PIN_V1,
+  PROVIDER_STRICT_ED25519_CASE_CATEGORIES_V1,
+  PROVIDER_STRICT_ED25519_CRYPTO_CAPABILITY_V1,
+  PROVIDER_STRICT_ED25519_HOST_OPERATION_TIMEOUT_MS_V1,
+  PROVIDER_STRICT_ED25519_MANIFEST_MAX_BYTES_V1,
+  PROVIDER_STRICT_ED25519_MANIFEST_RESOURCE_PATH_V1,
+  PROVIDER_STRICT_ED25519_REQUIRED_CASE_IDS_V1,
+  ProviderEd25519VerificationProfileV1Schema,
+  ProviderStrictEd25519AdversarialCaseV1Schema,
+  ProviderStrictEd25519AdversarialManifestEnvelopeV1Schema,
+  ProviderStrictEd25519AdversarialManifestPinV1Schema,
+  ProviderStrictEd25519AdversarialManifestV1Schema,
+  ProviderStrictEd25519AttestationError,
+  ProviderStrictEd25519CryptoCapabilityV1Schema,
+  attestProviderStrictEd25519CryptoHostV1,
+  getProviderStrictEd25519CryptoCapabilityBytesV1,
+  validateProviderStrictEd25519PointWithCapabilityV1,
+  verifyRawEd25519WithCapabilityV1,
+} from "./strict-ed25519-conformance.js";
+export type {
+  AttestProviderStrictEd25519CryptoHostV1Input,
+  ProviderEd25519VerificationProfileV1,
+  ProviderStrictEd25519AdversarialCaseV1,
+  ProviderStrictEd25519AdversarialManifestEnvelopeV1,
+  ProviderStrictEd25519AdversarialManifestPinV1,
+  ProviderStrictEd25519AdversarialManifestV1,
+  ProviderStrictEd25519CryptoCapabilityV1,
+  ProviderStrictEd25519CryptoHostV1,
+  ProviderStrictEd25519CryptoResultV1,
+  ProviderStrictEd25519FixedResourceHostV1,
+  ProviderStrictEd25519FixedResourceResultV1,
+  ProviderStrictEd25519OpaqueCapabilityV1,
+} from "./strict-ed25519-conformance.js";
 export {
   INSTALLATION_IDENTITY_GENERATION_DOMAIN_V1,
   INSTALLATION_IDENTITY_KEY_CHECK_DOMAIN_V1,

@@ -9,6 +9,7 @@
     "dist",
     "schemas",
     "fixtures",
+    "provider",
     "README.md"
   ],
   "sideEffects": false,
@@ -43,19 +44,36 @@
       "import": "./dist/provider-error.js",
       "default": "./dist/provider-error.js"
     },
+    "./public-key-digest": {
+      "types": "./dist/public-key-digest.d.ts",
+      "import": "./dist/public-key-digest.js",
+      "default": "./dist/public-key-digest.js"
+    },
+    "./strict-ed25519": {
+      "types": "./dist/strict-ed25519.d.ts",
+      "import": "./dist/strict-ed25519.js",
+      "default": "./dist/strict-ed25519.js"
+    },
+    "./strict-ed25519-conformance": {
+      "types": "./dist/strict-ed25519-conformance.d.ts",
+      "import": "./dist/strict-ed25519-conformance.js",
+      "default": "./dist/strict-ed25519-conformance.js"
+    },
     "./schemas/*": "./schemas/*",
-    "./fixtures/*": "./fixtures/*"
+    "./fixtures/*": "./fixtures/*",
+    "./provider/*": "./provider/*"
   },
   "scripts": {
     "build": "tsc",
     "generate:schemas": "pnpm run build && node scripts/generate-json-schemas.mjs",
-    "prepack": "npm run build && npm run verify:schemas && npm run verify:golden && npm run verify:fixtures",
+    "prepack": "npm run build && npm run verify:schemas && npm run verify:golden && npm run verify:fixtures && npm run verify:strict-ed25519",
     "test:distribution": "node scripts/test-distribution.mjs",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "verify:golden": "node scripts/verify-golden.mjs",
     "verify:fixtures": "node scripts/verify-fixtures.mjs",
     "verify:schemas": "node scripts/generate-json-schemas.mjs --check",
-    "test": "pnpm run build && pnpm run typecheck && pnpm run verify:schemas && pnpm run verify:golden && pnpm run verify:fixtures && vitest run && pnpm run test:distribution"
+    "verify:strict-ed25519": "node scripts/verify-strict-ed25519.mjs",
+    "test": "pnpm run build && pnpm run typecheck && pnpm run verify:schemas && pnpm run verify:golden && pnpm run verify:fixtures && pnpm run verify:strict-ed25519 && vitest run && pnpm run test:distribution"
   },
   "dependencies": {
     "zod": "^4.3.6"

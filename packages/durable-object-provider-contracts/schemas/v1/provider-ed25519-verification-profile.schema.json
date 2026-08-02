@@ -1,0 +1,6 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-ed25519-verification-profile",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "const": "ed25519-rfc8032-cofactorless-prime-subgroup-v1"
+}

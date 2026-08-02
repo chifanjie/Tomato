@@ -1,0 +1,102 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-strict-ed25519-adversarial-manifest",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string",
+      "const": "provider_strict_ed25519_adversarial_manifest_v1"
+    },
+    "manifestVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "verificationProfile": {
+      "type": "string",
+      "const": "ed25519-rfc8032-cofactorless-prime-subgroup-v1"
+    },
+    "cases": {
+      "minItems": 28,
+      "maxItems": 28,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "caseId": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "rfc8032_valid",
+              "provider_wrapper_valid",
+              "public_key_length",
+              "signature_length",
+              "public_key_noncanonical",
+              "public_key_identity_or_small_order",
+              "public_key_mixed_order",
+              "r_noncanonical",
+              "r_identity_or_small_order",
+              "r_mixed_order",
+              "s_out_of_range",
+              "equation_mismatch",
+              "context_or_prehash_substitution"
+            ]
+          },
+          "publicKeyBytes": {
+            "type": "string",
+            "pattern": "^base64url:(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$"
+          },
+          "messageBytes": {
+            "type": "string",
+            "pattern": "^base64url:(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$"
+          },
+          "signatureBytes": {
+            "type": "string",
+            "pattern": "^base64url:(?=[A-Za-z0-9_-]{43,}$)(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$"
+          },
+          "expectedPublicKeyPointAdmission": {
+            "type": "string",
+            "enum": [
+              "accept",
+              "reject"
+            ]
+          },
+          "expectedSignatureRPointAdmission": {
+            "type": "string",
+            "enum": [
+              "accept",
+              "reject"
+            ]
+          },
+          "expectedResult": {
+            "type": "string",
+            "enum": [
+              "accept",
+              "reject"
+            ]
+          }
+        },
+        "required": [
+          "caseId",
+          "category",
+          "publicKeyBytes",
+          "messageBytes",
+          "signatureBytes",
+          "expectedPublicKeyPointAdmission",
+          "expectedSignatureRPointAdmission",
+          "expectedResult"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "profile",
+    "manifestVersion",
+    "verificationProfile",
+    "cases"
+  ],
+  "additionalProperties": false
+}

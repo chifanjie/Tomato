@@ -2,6 +2,7 @@ import type {
   CanonicalByteStringV1,
   CanonicalPublicKeyBytes32V1,
   ContentDigestV1,
+  Ed25519PublicKeyDigestV1,
   InstallationIdentityGenerationFieldsV1,
   InstallationIdentityGenerationIdV1,
   InstallationIdentityKeyCheckFieldsV1,
@@ -12,6 +13,8 @@ import type {
   ProviderUnavailableToolErrorV1,
   ProviderRegistryRootKeyIdFieldsV1,
   ProviderRegistryRootKeyIdV1,
+  ProviderStrictEd25519CryptoHostV1,
+  ProviderStrictEd25519OpaqueCapabilityV1,
 } from "../src/index.js";
 import {
   deriveInstallationIdentityGenerationIdV1,
@@ -23,6 +26,7 @@ import {
 declare const lowerHex22: LowerHex22V1;
 declare const rootKeyId: ProviderRegistryRootKeyIdV1;
 declare const contentDigest: ContentDigestV1;
+declare const publicKeyDigest: Ed25519PublicKeyDigestV1;
 declare const keyedStateToken: KeyedStateTokenV1;
 declare const canonicalBytes: CanonicalByteStringV1;
 declare const publicKeyBytes: CanonicalPublicKeyBytes32V1;
@@ -32,6 +36,8 @@ declare const rootKeyFields: ProviderRegistryRootKeyIdFieldsV1;
 declare const cryptoHost: ProviderCryptoHostV1;
 declare const installationKey: Uint8Array;
 declare const providerFailureReason: ProviderCapabilityFailureReasonV1;
+declare const strictCryptoHost: ProviderStrictEd25519CryptoHostV1;
+declare const strictCapability: ProviderStrictEd25519OpaqueCapabilityV1;
 
 // @ts-expect-error semantic brands with the same wire shape are not interchangeable
 const rootKeyFromGenericHex: ProviderRegistryRootKeyIdV1 = lowerHex22;
@@ -41,6 +47,11 @@ const genericHexFromRootKey: LowerHex22V1 = rootKeyId;
 const tokenFromDigest: KeyedStateTokenV1 = contentDigest;
 // @ts-expect-error digest and keyed-token brands are not interchangeable
 const digestFromToken: ContentDigestV1 = keyedStateToken;
+// @ts-expect-error a raw public-key digest is not a generic content digest
+const contentDigestFromPublicKeyDigest: ContentDigestV1 = publicKeyDigest;
+// @ts-expect-error a generic content digest is not a raw public-key digest
+const publicKeyDigestFromContentDigest: Ed25519PublicKeyDigestV1 =
+  contentDigest;
 // @ts-expect-error a generic canonical byte string is not an exact public key
 const publicKeyFromCanonicalBytes: CanonicalPublicKeyBytes32V1 = canonicalBytes;
 // @ts-expect-error domain field brands cannot cross domains
@@ -77,6 +88,8 @@ void [
   genericHexFromRootKey,
   tokenFromDigest,
   digestFromToken,
+  contentDigestFromPublicKeyDigest,
+  publicKeyDigestFromContentDigest,
   publicKeyFromCanonicalBytes,
   publicKeyBytes,
   generationFromKeyCheck,
@@ -88,4 +101,6 @@ void [
   providerError,
   unavailableProviderError,
   providerErrorWithRetry,
+  strictCryptoHost,
+  strictCapability,
 ];

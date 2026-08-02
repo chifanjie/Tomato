@@ -11,6 +11,7 @@ import {
   ContentDigestV1Schema,
   DurableObjectIdentityProviderIdV1Schema,
   DurableObjectIdentityProviderSlugV1Schema,
+  Ed25519PublicKeyDigestV1Schema,
   InstallationIdentityGenerationIdV1Schema,
   KeyedStateTokenV1Schema,
   LowerHex22V1Schema,
@@ -22,6 +23,18 @@ import {
   ProviderCapabilityFailureReasonV1Schema,
   ProviderUnavailableToolErrorV1Schema,
 } from "./provider-error.js";
+import {
+  ProviderEd25519PublicKeyDigestGoldenCaseV1Schema,
+  ProviderEd25519PublicKeyDigestGoldenManifestV1Schema,
+} from "./public-key-digest.js";
+import {
+  ProviderEd25519VerificationProfileV1Schema,
+  ProviderStrictEd25519AdversarialCaseV1Schema,
+  ProviderStrictEd25519AdversarialManifestEnvelopeV1Schema,
+  ProviderStrictEd25519AdversarialManifestPinV1Schema,
+  ProviderStrictEd25519AdversarialManifestV1Schema,
+  ProviderStrictEd25519CryptoCapabilityV1Schema,
+} from "./strict-ed25519-conformance.js";
 
 export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
   "canonical-byte-string": CanonicalByteStringV1Schema,
@@ -31,6 +44,11 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
     DurableObjectIdentityProviderIdV1Schema,
   "durable-object-identity-provider-slug":
     DurableObjectIdentityProviderSlugV1Schema,
+  "ed25519-public-key-digest": Ed25519PublicKeyDigestV1Schema,
+  "ed25519-public-key-digest-golden-case":
+    ProviderEd25519PublicKeyDigestGoldenCaseV1Schema,
+  "ed25519-public-key-digest-golden-manifest":
+    ProviderEd25519PublicKeyDigestGoldenManifestV1Schema,
   "installation-identity-generation-fields":
     InstallationIdentityGenerationFieldsV1Schema,
   "installation-identity-generation-id":
@@ -47,6 +65,18 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
   "provider-capability-failure-reason":
     ProviderCapabilityFailureReasonV1Schema,
   "provider-unavailable-tool-error": ProviderUnavailableToolErrorV1Schema,
+  "provider-ed25519-verification-profile":
+    ProviderEd25519VerificationProfileV1Schema,
+  "provider-strict-ed25519-adversarial-case":
+    ProviderStrictEd25519AdversarialCaseV1Schema,
+  "provider-strict-ed25519-adversarial-manifest":
+    ProviderStrictEd25519AdversarialManifestV1Schema,
+  "provider-strict-ed25519-adversarial-manifest-envelope":
+    ProviderStrictEd25519AdversarialManifestEnvelopeV1Schema,
+  "provider-strict-ed25519-adversarial-manifest-pin":
+    ProviderStrictEd25519AdversarialManifestPinV1Schema,
+  "provider-strict-ed25519-crypto-capability":
+    ProviderStrictEd25519CryptoCapabilityV1Schema,
 } as const satisfies Record<string, z.ZodType>;
 
 export type ProviderContractJsonSchemaNameV1 =

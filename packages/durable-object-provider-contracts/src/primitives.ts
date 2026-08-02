@@ -35,6 +35,14 @@ export const ContentDigestV1Schema = z
   .brand<"ContentDigestV1">();
 export type ContentDigestV1 = z.infer<typeof ContentDigestV1Schema>;
 
+export const Ed25519PublicKeyDigestV1Schema = z
+  .string()
+  .regex(/^sha256:[0-9a-f]{64}$/u)
+  .brand<"Ed25519PublicKeyDigestV1">();
+export type Ed25519PublicKeyDigestV1 = z.infer<
+  typeof Ed25519PublicKeyDigestV1Schema
+>;
+
 export const KeyedStateTokenV1Schema = z
   .string()
   .regex(/^hmac-sha256:[0-9a-f]{64}$/u)

@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Ajv2020 } from "ajv/dist/2020.js";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -9,6 +10,18 @@ import {
 } from "../src/json-schema.js";
 
 const schemaRoot = fileURLToPath(new URL("../schemas/v1", import.meta.url));
+const strictEd25519ResourcePath = fileURLToPath(
+  new URL(
+    "../provider/ed25519-strict-host-conformance-v1.json",
+    import.meta.url,
+  ),
+);
+const publicKeyDigestGoldenPath = fileURLToPath(
+  new URL(
+    "../fixtures/v1/golden/ed25519-public-key-digest-v1.json",
+    import.meta.url,
+  ),
+);
 
 describe("provider contract JSON Schema distribution", () => {
   it("tracks one current document for every registered schema", () => {
@@ -82,5 +95,110 @@ describe("provider contract JSON Schema distribution", () => {
     ).details;
     expect(details?.additionalProperties).toBe(false);
     expect(details?.required).toEqual(["reason"]);
+  });
+
+  it("publishes closed strict-Ed25519 resource and capability schemas", () => {
+    const generated = generateProviderContractJsonSchemasV1();
+    expect(generated["ed25519-public-key-digest"].pattern).toBe(
+      "^sha256:[0-9a-f]{64}$",
+    );
+    const publicKeyDigestGoldenCases = (
+      generated["ed25519-public-key-digest-golden-manifest"]
+        .properties as Record<string, Record<string, unknown>>
+    ).cases;
+    expect(publicKeyDigestGoldenCases).toMatchObject({
+      minItems: 1,
+      maxItems: 1,
+      type: "array",
+    });
+
+    const manifestCases = (
+      generated["provider-strict-ed25519-adversarial-manifest"]
+        .properties as Record<string, Record<string, unknown>>
+    ).cases;
+    expect(manifestCases).toMatchObject({
+      minItems: 28,
+      maxItems: 28,
+      type: "array",
+    });
+    expect(
+      generated["provider-strict-ed25519-adversarial-manifest"]
+        .additionalProperties,
+    ).toBe(false);
+
+    const caseProperties = (
+      generated["provider-strict-ed25519-adversarial-case"]
+        .properties as Record<string, Record<string, unknown>>
+    );
+    const signaturePattern = new RegExp(
+      caseProperties.signatureBytes!.pattern as string,
+      "u",
+    );
+    expect(signaturePattern.test(`base64url:${"A".repeat(43)}`)).toBe(true);
+    expect(signaturePattern.test(`base64url:${"A".repeat(42)}`)).toBe(false);
+    expect(
+      generated["provider-strict-ed25519-adversarial-case"]
+        .additionalProperties,
+    ).toBe(false);
+
+    const capability =
+      generated["provider-strict-ed25519-crypto-capability"];
+    expect(capability.additionalProperties).toBe(false);
+    const adversarialManifest = (
+      capability.properties as Record<string, Record<string, unknown>>
+    ).adversarialManifest;
+    expect(adversarialManifest?.additionalProperties).toBe(false);
+  });
+
+  it("validates the fixed Ed25519 resource with independent draft-2020 JSON Schema", () => {
+    const generated = generateProviderContractJsonSchemasV1();
+    const validate = new Ajv2020({
+      allErrors: true,
+      strict: true,
+    }).compile(
+      generated[
+        "provider-strict-ed25519-adversarial-manifest-envelope"
+      ],
+    );
+    const resource = JSON.parse(
+      readFileSync(strictEd25519ResourcePath, "utf8"),
+    ) as Record<string, unknown>;
+    expect(validate(resource), JSON.stringify(validate.errors)).toBe(true);
+
+    const withUnknownField = structuredClone(resource);
+    withUnknownField.unexpected = true;
+    expect(validate(withUnknownField)).toBe(false);
+
+    const withShortSignature = structuredClone(resource);
+    const firstCase = (
+      (withShortSignature.payload as Record<string, unknown>).cases as Array<
+        Record<string, unknown>
+      >
+    )[0]!;
+    firstCase.signatureBytes = `base64url:${"A".repeat(42)}`;
+    expect(validate(withShortSignature)).toBe(false);
+  });
+
+  it("validates an exact-one raw-key golden with independent draft-2020 JSON Schema", () => {
+    const generated = generateProviderContractJsonSchemasV1();
+    const validate = new Ajv2020({
+      allErrors: true,
+      strict: true,
+    }).compile(
+      generated["ed25519-public-key-digest-golden-manifest"],
+    );
+    const fixture = JSON.parse(
+      readFileSync(publicKeyDigestGoldenPath, "utf8"),
+    ) as Record<string, unknown>;
+    expect(validate(fixture), JSON.stringify(validate.errors)).toBe(true);
+
+    const withoutCase = structuredClone(fixture);
+    withoutCase.cases = [];
+    expect(validate(withoutCase)).toBe(false);
+
+    const withDuplicateCase = structuredClone(fixture);
+    const cases = withDuplicateCase.cases as unknown[];
+    cases.push(structuredClone(cases[0]));
+    expect(validate(withDuplicateCase)).toBe(false);
   });
 });

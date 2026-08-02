@@ -1,0 +1,25 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-strict-ed25519-adversarial-manifest-pin",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "locatorProfile": {
+      "type": "string",
+      "const": "distribution_provider_strict_ed25519_adversarial_manifest_v1"
+    },
+    "manifestVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "locatorProfile",
+    "manifestVersion",
+    "contentDigest"
+  ],
+  "additionalProperties": false
+}

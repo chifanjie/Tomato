@@ -1,0 +1,3351 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-registry-root-history-invalid-manifest",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "profile": {
+      "type": "string",
+      "const": "provider_registry_root_history_invalid_manifest_v1"
+    },
+    "canonicalizationProfile": {
+      "type": "string",
+      "const": "rfc8785-jcs-safe-integer-v1"
+    },
+    "verificationProfile": {
+      "type": "string",
+      "const": "ed25519-rfc8032-cofactorless-prime-subgroup-v1"
+    },
+    "fixtureAuthority": {
+      "type": "string",
+      "const": "none_rejection_only"
+    },
+    "goldenResource": {
+      "type": "object",
+      "properties": {
+        "resourcePath": {
+          "type": "string",
+          "const": "fixtures/v1/golden/provider-registry-root-history-v1.json"
+        },
+        "resourceByteLength": {
+          "type": "number",
+          "const": 38568
+        },
+        "resourceSha256Hex": {
+          "type": "string",
+          "const": "3f4a86c2dedf36e0d8b19859f34937d439423d7223d44cfe49196d015f7dfca6"
+        },
+        "semanticContentDigest": {
+          "type": "string",
+          "const": "sha256:a57984671d7761e19a3fa04c704d7147bb8e3809994c554b46ca8c0dc7b3f922"
+        }
+      },
+      "required": [
+        "resourcePath",
+        "resourceByteLength",
+        "resourceSha256Hex",
+        "semanticContentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "cases": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "history-empty"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "replace_history_with_empty"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory"
+                },
+                "operands": {
+                  "minItems": 0,
+                  "maxItems": 0,
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "none"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "history_input"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "history_empty"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 0
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 0
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "bootstrap-anchor-substitution"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "replace_bootstrap_active_root_and_resign_self"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/0"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "/rootMetadataHistory/1/payload/activeRoot"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "golden_json_pointer"
+                    },
+                    "resourcePath": {
+                      "type": "string",
+                      "const": "fixtures/v1/golden/provider-registry-root-history-v1.json"
+                    },
+                    "jsonPointer": {
+                      "type": "string",
+                      "const": "/deterministicSeeds/plannedRootSeedHex"
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "resourcePath",
+                    "jsonPointer"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "bootstrap_anchor"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "bootstrap_metadata_mismatch"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 5
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 1
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "bootstrap-generation-substitution"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "replace_number"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/0/rootGeneration"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "2"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "none"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "root_metadata_envelope"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "envelope_mismatch"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 5
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 1
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "history-generation-gap"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "replace_number_and_reseal_envelope"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/1/payload/rootGeneration"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "3"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "none"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "history_predecessor"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "generation_not_contiguous"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 7
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 2
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "history-generation-rollback"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "duplicate_history_envelope"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/2"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "/rootMetadataHistory/1"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "none"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "history_predecessor"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "generation_not_contiguous"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 9
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 6
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "predecessor-generation-substitution"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "replace_number_and_resign_all"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/1/payload/predecessor/rootGeneration"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "2"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "golden_json_pointer"
+                    },
+                    "resourcePath": {
+                      "type": "string",
+                      "const": "fixtures/v1/golden/provider-registry-root-history-v1.json"
+                    },
+                    "jsonPointer": {
+                      "type": "string",
+                      "const": "/deterministicSeeds/plannedRootSeedHex"
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "resourcePath",
+                    "jsonPointer"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "history_predecessor"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "predecessor_pin_mismatch"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 7
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 2
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "predecessor-root-key-substitution"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "replace_string_and_resign_all"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/1/payload/predecessor/rootKeyId"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "b428dd9c9d0cb51b9b44a8"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "golden_json_pointer"
+                    },
+                    "resourcePath": {
+                      "type": "string",
+                      "const": "fixtures/v1/golden/provider-registry-root-history-v1.json"
+                    },
+                    "jsonPointer": {
+                      "type": "string",
+                      "const": "/deterministicSeeds/plannedRootSeedHex"
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "resourcePath",
+                    "jsonPointer"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "history_predecessor"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "predecessor_pin_mismatch"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 7
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 2
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "predecessor-content-digest-substitution"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "replace_string_and_resign_all"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/1/payload/predecessor/contentDigest"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "golden_json_pointer"
+                    },
+                    "resourcePath": {
+                      "type": "string",
+                      "const": "fixtures/v1/golden/provider-registry-root-history-v1.json"
+                    },
+                    "jsonPointer": {
+                      "type": "string",
+                      "const": "/deterministicSeeds/plannedRootSeedHex"
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "resourcePath",
+                    "jsonPointer"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "history_predecessor"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "predecessor_pin_mismatch"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 7
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 2
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "self-signature-bitflip"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "flip_signature_last_bit"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/1/payload/selfSignature"
+                },
+                "operands": {
+                  "minItems": 0,
+                  "maxItems": 0,
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "none"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "root_self_signature"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "self_signature_invalid"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 9
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 3
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "self-signature-wrong-domain"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "resign_with_domain"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/1/payload/selfSignature"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "provider-registry-root-cross-signature-v1"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "golden_json_pointer"
+                    },
+                    "resourcePath": {
+                      "type": "string",
+                      "const": "fixtures/v1/golden/provider-registry-root-history-v1.json"
+                    },
+                    "jsonPointer": {
+                      "type": "string",
+                      "const": "/deterministicSeeds/plannedRootSeedHex"
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "resourcePath",
+                    "jsonPointer"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "root_self_signature"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "self_signature_invalid"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 9
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 3
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "self-signature-prefix-substitution"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "replace_signature_prefix_key_id"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/1/payload/selfSignature"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "bfe44356f03760a13c8e1b"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "none"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "root_metadata_envelope"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "envelope_mismatch"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 7
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 2
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "cross-signature-bitflip"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "flip_signature_last_bit"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/1/payload/predecessorCrossSignature"
+                },
+                "operands": {
+                  "minItems": 0,
+                  "maxItems": 0,
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "none"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "root_cross_signature"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "cross_signature_invalid"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 9
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 4
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "cross-signature-wrong-domain"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "resign_with_domain"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/1/payload/predecessorCrossSignature"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "provider-registry-root-self-signature-v1"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "golden_json_pointer"
+                    },
+                    "resourcePath": {
+                      "type": "string",
+                      "const": "fixtures/v1/golden/provider-registry-root-history-v1.json"
+                    },
+                    "jsonPointer": {
+                      "type": "string",
+                      "const": "/deterministicSeeds/bootstrapRootSeedHex"
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "resourcePath",
+                    "jsonPointer"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "root_cross_signature"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "cross_signature_invalid"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 9
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 4
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "cross-signature-prefix-substitution"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "replace_signature_prefix_key_id"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/1/payload/predecessorCrossSignature"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "ec3cca8fc833754cd58394"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "none"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "root_metadata_envelope"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "envelope_mismatch"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 7
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 2
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "planned-cross-signature-missing"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "delete_property"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/1/payload/predecessorCrossSignature"
+                },
+                "operands": {
+                  "minItems": 0,
+                  "maxItems": 0,
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "none"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "root_metadata_envelope"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "schema_invalid"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 7
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 2
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "compromise-cross-signature-injected"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "copy_property"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/2/payload/predecessorCrossSignature"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "/rootMetadataHistory/1/payload/predecessorCrossSignature"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "none"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "root_metadata_envelope"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "schema_invalid"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 9
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 6
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "recovery-signature-missing"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "remove_array_item"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/1/payload/recoverySignatures"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "1"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "none"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "root_metadata_envelope"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "schema_invalid"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 7
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 2
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "recovery-signature-extra"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "append_array_item"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/1/payload/recoverySignatures"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "/rootMetadataHistory/1/payload/recoverySignatures/0"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "none"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "root_metadata_envelope"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "schema_invalid"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 7
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 2
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "recovery-signature-duplicate-signer"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "resign_recovery_with_key"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/1/payload/recoverySignatures/1"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "1b5e57fd47720f4d9c9c86"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "golden_json_pointer"
+                    },
+                    "resourcePath": {
+                      "type": "string",
+                      "const": "fixtures/v1/golden/provider-registry-root-history-v1.json"
+                    },
+                    "jsonPointer": {
+                      "type": "string",
+                      "const": "/deterministicSeeds/recoverySeedHexes/0"
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "resourcePath",
+                    "jsonPointer"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "root_metadata_envelope"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "envelope_mismatch"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 7
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 2
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "recovery-signature-reversed"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "reverse_array"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/1/payload/recoverySignatures"
+                },
+                "operands": {
+                  "minItems": 0,
+                  "maxItems": 0,
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "none"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "root_metadata_envelope"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "envelope_mismatch"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 7
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 2
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "recovery-signature-unknown-signer"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "resign_recovery_with_literal_seed"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/1/payload/recoverySignatures/0"
+                },
+                "operands": {
+                  "minItems": 0,
+                  "maxItems": 0,
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "literal_non_production"
+                    },
+                    "seedHex": {
+                      "type": "string",
+                      "const": "7070707070707070707070707070707070707070707070707070707070707070"
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "seedHex"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "root_recovery_signature"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "recovery_quorum_invalid"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 9
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 4
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "recovery-signature-bitflip"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "flip_signature_last_bit"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/1/payload/recoverySignatures/0"
+                },
+                "operands": {
+                  "minItems": 0,
+                  "maxItems": 0,
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "none"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "root_recovery_signature"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "recovery_quorum_invalid"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 9
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 5
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "recovery-signature-wrong-domain"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "resign_with_domain"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/1/payload/recoverySignatures/0"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "provider-registry-root-self-signature-v1"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "golden_json_pointer"
+                    },
+                    "resourcePath": {
+                      "type": "string",
+                      "const": "fixtures/v1/golden/provider-registry-root-history-v1.json"
+                    },
+                    "jsonPointer": {
+                      "type": "string",
+                      "const": "/deterministicSeeds/recoverySeedHexes/0"
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "resourcePath",
+                    "jsonPointer"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "root_recovery_signature"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "recovery_quorum_invalid"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 9
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 5
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "root-reuses-historical-root-material"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "replace_active_root_and_resign_self"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/2/payload/activeRoot"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "/rootMetadataHistory/0/payload/activeRoot"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "golden_json_pointer"
+                    },
+                    "resourcePath": {
+                      "type": "string",
+                      "const": "fixtures/v1/golden/provider-registry-root-history-v1.json"
+                    },
+                    "jsonPointer": {
+                      "type": "string",
+                      "const": "/deterministicSeeds/bootstrapRootSeedHex"
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "resourcePath",
+                    "jsonPointer"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "root_material_closure"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "root_key_material_alias"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 9
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 6
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "root-reuses-recovery-material"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "replace_active_root_from_recovery_and_resign_self"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/2/payload/activeRoot"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "/bootstrapTrustBundle/providerRegistryRecoveryKeys/0"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "golden_json_pointer"
+                    },
+                    "resourcePath": {
+                      "type": "string",
+                      "const": "fixtures/v1/golden/provider-registry-root-history-v1.json"
+                    },
+                    "jsonPointer": {
+                      "type": "string",
+                      "const": "/deterministicSeeds/recoverySeedHexes/0"
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "resourcePath",
+                    "jsonPointer"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "root_material_closure"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "root_key_material_alias"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 9
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 6
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "root-point-invalid"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "replace_active_root_with_small_order_point"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/2/payload/activeRoot"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "base64url:AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "none"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "root_key_admission"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "point_admission_failed"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 10
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 6
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "envelope-outer-generation-mismatch"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "replace_number"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/1/rootGeneration"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "3"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "none"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "root_metadata_envelope"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "envelope_mismatch"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 7
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 2
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "envelope-outer-key-mismatch"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "replace_string"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/1/rootKeyId"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "bfe44356f03760a13c8e1b"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "none"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "root_metadata_envelope"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "envelope_mismatch"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 7
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 2
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "envelope-content-digest-mismatch"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "replace_string"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/1/contentDigest"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                    }
+                  ],
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "none"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "root_metadata_envelope"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "envelope_mismatch"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 7
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 2
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "envelope-byte-cap-exceeded"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "replace_timestamp_with_repeated_ascii"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory/1/payload/issuedAt"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "4194305"
+                    },
+                    {
+                      "type": "string",
+                      "const": "61"
+                    }
+                  ],
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "none"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "history_limit"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "envelope_byte_limit_exceeded"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 7
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 2
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "root-generation-count-cap-exceeded"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_registry_root_history_invalid_recipe_v1"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "repeat_history_envelope"
+                },
+                "targetJsonPointer": {
+                  "type": "string",
+                  "const": "/rootMetadataHistory"
+                },
+                "operands": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "string",
+                      "const": "257"
+                    },
+                    {
+                      "type": "string",
+                      "const": "/rootMetadataHistory/2"
+                    }
+                  ],
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": false
+                },
+                "deterministicSeed": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "const": "none"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "dialect",
+                "operation",
+                "targetJsonPointer",
+                "operands",
+                "deterministicSeed"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "boundary": {
+                  "type": "string",
+                  "const": "internal_diagnostic"
+                },
+                "stage": {
+                  "type": "string",
+                  "const": "history_limit"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "history_generation_limit_exceeded"
+                },
+                "publicFailureReason": {
+                  "type": "string",
+                  "const": "attestation_invalid"
+                },
+                "postAttestationPointCalls": {
+                  "type": "number",
+                  "const": 0
+                },
+                "postAttestationSignatureCalls": {
+                  "type": "number",
+                  "const": 0
+                }
+              },
+              "required": [
+                "boundary",
+                "stage",
+                "reason",
+                "publicFailureReason",
+                "postAttestationPointCalls",
+                "postAttestationSignatureCalls"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "minItems": 31,
+      "maxItems": 31,
+      "items": false
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "profile",
+    "canonicalizationProfile",
+    "verificationProfile",
+    "fixtureAuthority",
+    "goldenResource",
+    "cases"
+  ],
+  "additionalProperties": false
+}

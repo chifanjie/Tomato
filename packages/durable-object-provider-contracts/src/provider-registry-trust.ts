@@ -235,23 +235,30 @@ const providerRegistryRootUnsignedClaimsCommonShapeV1 = {
   issuedAt: ProviderRegistryIsoTimestampV1Schema,
 } as const;
 
+export const ProviderRegistryBootstrapRootMetadataUnsignedClaimsV1Schema =
+  z.strictObject({
+    ...providerRegistryRootUnsignedClaimsCommonShapeV1,
+    activation: z.literal("bootstrap"),
+    predecessor: ProviderRegistryRootGenesisPredecessorV1Schema,
+  });
+export const ProviderRegistryPlannedRolloverRootMetadataUnsignedClaimsV1Schema =
+  z.strictObject({
+    ...providerRegistryRootUnsignedClaimsCommonShapeV1,
+    activation: z.literal("planned_rollover"),
+    predecessor: ProviderRegistryRootMetadataPredecessorV1Schema,
+  });
+export const ProviderRegistryCompromiseRecoveryRootMetadataUnsignedClaimsV1Schema =
+  z.strictObject({
+    ...providerRegistryRootUnsignedClaimsCommonShapeV1,
+    activation: z.literal("compromise_recovery"),
+    predecessor: ProviderRegistryRootMetadataPredecessorV1Schema,
+  });
+
 export const ProviderRegistryRootMetadataUnsignedClaimsV1Schema =
   z.discriminatedUnion("activation", [
-    z.strictObject({
-      ...providerRegistryRootUnsignedClaimsCommonShapeV1,
-      activation: z.literal("bootstrap"),
-      predecessor: ProviderRegistryRootGenesisPredecessorV1Schema,
-    }),
-    z.strictObject({
-      ...providerRegistryRootUnsignedClaimsCommonShapeV1,
-      activation: z.literal("planned_rollover"),
-      predecessor: ProviderRegistryRootMetadataPredecessorV1Schema,
-    }),
-    z.strictObject({
-      ...providerRegistryRootUnsignedClaimsCommonShapeV1,
-      activation: z.literal("compromise_recovery"),
-      predecessor: ProviderRegistryRootMetadataPredecessorV1Schema,
-    }),
+    ProviderRegistryBootstrapRootMetadataUnsignedClaimsV1Schema,
+    ProviderRegistryPlannedRolloverRootMetadataUnsignedClaimsV1Schema,
+    ProviderRegistryCompromiseRecoveryRootMetadataUnsignedClaimsV1Schema,
   ]);
 export type ProviderRegistryRootMetadataUnsignedClaimsV1 = z.infer<
   typeof ProviderRegistryRootMetadataUnsignedClaimsV1Schema

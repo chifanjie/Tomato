@@ -62,6 +62,22 @@ import {
   ProviderTrustHistoryPolicyV1Schema,
 } from "./provider-trust-policy.js";
 import {
+  HashedStoreFilenameKeyV1Schema,
+  ProviderRegistryRootMetadataLocatorV1Schema,
+  ShortStoreFilenameKeySyntaxV1Schema,
+  StoreFilenameKeySyntaxV1Schema,
+} from "./provider-fixed-locator.js";
+import {
+  ProviderRegistryRootCrossSignatureWrapperV1Schema,
+  ProviderRegistryRootRecoverySignatureWrapperV1Schema,
+} from "./provider-registry-root-history.js";
+import {
+  ProviderRegistryRootHistoryGoldenManifestV1Schema,
+  ProviderRegistryRootHistoryInvalidManifestV1Schema,
+  ProviderRegistryRootHistoryInvalidReasonV1Schema,
+  ProviderRegistryRootHistoryInvalidStageV1Schema,
+} from "./provider-registry-root-history-fixtures.js";
+import {
   ProviderEd25519PublicKeyDigestGoldenCaseV1Schema,
   ProviderEd25519PublicKeyDigestGoldenManifestV1Schema,
 } from "./public-key-digest.js";
@@ -152,6 +168,24 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
     ProviderRegistryRootMetadataPinV1Schema,
   "provider-registry-root-self-signature-wrapper":
     ProviderRegistryRootSelfSignatureWrapperV1Schema,
+  "provider-registry-root-cross-signature-wrapper":
+    ProviderRegistryRootCrossSignatureWrapperV1Schema,
+  "provider-registry-root-recovery-signature-wrapper":
+    ProviderRegistryRootRecoverySignatureWrapperV1Schema,
+  "store-filename-key-syntax": StoreFilenameKeySyntaxV1Schema,
+  "short-store-filename-key-syntax":
+    ShortStoreFilenameKeySyntaxV1Schema,
+  "hashed-store-filename-key": HashedStoreFilenameKeyV1Schema,
+  "provider-registry-root-metadata-locator":
+    ProviderRegistryRootMetadataLocatorV1Schema,
+  "provider-registry-root-history-golden-manifest":
+    ProviderRegistryRootHistoryGoldenManifestV1Schema,
+  "provider-registry-root-history-invalid-manifest":
+    ProviderRegistryRootHistoryInvalidManifestV1Schema,
+  "provider-registry-root-history-invalid-stage":
+    ProviderRegistryRootHistoryInvalidStageV1Schema,
+  "provider-registry-root-history-invalid-reason":
+    ProviderRegistryRootHistoryInvalidReasonV1Schema,
   "provider-bootstrap-trust-bundle":
     ProviderBootstrapTrustBundleV1Schema,
   "provider-bootstrap-trust-bundle-envelope":

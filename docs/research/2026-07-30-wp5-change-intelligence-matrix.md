@@ -469,7 +469,7 @@ ID使用独立 branded Schema，不继续用无语义的 `OpaqueIdentifierSchema
 | Git object | `GitObjectIdSchema`：与 `objectFormat` 对应的 40/64 lowercase hex |
 | repository path | `RepositoryRelativePathSchema`；POSIX、relative、无 dot/parent/control segment |
 | Store descriptor path | `StoreRelativePathV1Schema`；与 repository path 同等 traversal/control 约束，但相对 `.understand-code/` |
-| Store filename encoding | `StoreFilenameKeyV1Schema`：short `id-<base64url>` 或 long `idh-<full sha256>` canonical variant |
+| Store filename encoding | `StoreFilenameKeyV1Schema`：short `id-<lowercase unpadded base32hex>` 或 long `idh-<full sha256>` canonical variant；short alphabet 在 case-insensitive filesystem 上仍唯一 |
 | Git mode | `GitModeV1Schema`：`040000/100644/100755/120000/160000` |
 | Git ref | `GitRefNameV1Schema`：通过 `git check-ref-format` 等价纯函数校验，禁止 leading `-`、control、reflog syntax 与 path traversal |
 | 时间 | `IsoTimestampSchema`：真实 RFC 3339 UTC |
@@ -722,7 +722,7 @@ type PathSafeRepositoryRedactionIdV1 =
 type PathSafeRepositoryUnknownStateIdV1 =
   `snapshot-unknown-state-${LowerHex64}`;
 type StoreFilenameKeyV1 =
-  | `id-${string}`     // short canonical base64url
+  | `id-${string}`     // short canonical lowercase unpadded base32hex
   | `idh-${LowerHex64}`; // long-ID SHA-256 key
 type InstallationIdentityGenerationIdV1 =
   `installation-identity-generation:${LowerHex22}`;
@@ -832,9 +832,13 @@ type ProviderOsReleaseFamilyCodeV1 =
 <encoded-reservationId>/<encoded-blobId>/<encoded-generationId>` 都表示先验证
 semantic ID，再使用
 `StoreFilenameKeyV1` 映射为单个 component，绝不直接使用含 `:` 的 wire ID。
-UTF-8 semantic ID 的 canonical base64url body 长度为 1..220 时使用
-`^id-[A-Za-z0-9_-]{1,220}$`，禁止 `=`；decode 后 UTF-8、重新编码和目标 ID
-brand 必须 exact-equal。更长但仍通过 legacy ID Schema 的值使用
+UTF-8 semantic ID 为 1..137 bytes、其 canonical lowercase unpadded
+base32hex body 长度为 2..220 时使用 `id-` short branch；从 138 bytes 起
+唯一切换到 hashed branch。wire syntax 还必须约束 RFC 4648 base32hex 的
+合法 encoded-length class 与零 trailing bits。decode 后 UTF-8、
+重新编码和目标 ID brand 必须 exact-equal。全小写 alphabet 保证默认
+case-insensitive 的 macOS/Windows filename 比较不会把两个不同 short key
+折叠为同一 component。更长但仍通过 legacy ID Schema 的值使用
 `idh-<full lowercase sha256(UTF-8 semantic ID)>`。hashed key 不能自行 decode；
 trusted reader 必须从 descriptor/Envelope 取得 semantic ID、重算 key，并拒绝
 同 key 不同 semantic ID。short/hashed variant 的选择唯一，禁止 caller 指定或
@@ -15649,6 +15653,13 @@ supported tool list。
 | AT-C29 | Store filename + provider trust/binding/terminal contract | `StoreFilenameKeyV1` short/long/Unicode/hash-collision golden固定；provider slug仅接受1..64-byte lower ASCII `^(?!.*\.\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$`，ID只接受其 `durable-object-provider:<slug>` 构造并 exact-resolve Registry；empty/65-byte/uppercase/non-ASCII/whitespace/control/slash/colon/连续点/首尾 `._-`及 caller拼接 ID全部 reject。Bootstrap Trust Bundle与 strict host manifest只从两个 signed-package literal读取，Pin/Envelope/payload/compiled digest、origin binding与 Installation Identity retained copy exact闭合；alias、第二 path、caller path或 bundle/profile替换拒绝。Pulse/Artifact/Store与其余 installation trust fixed locator、Envelope outer/payload等式可重算。Catalog、Public Taxonomy、Release Matrix、Target Discovery Result与 Release Target Universe只能按 canonical positive generation从同一 signed-distribution root的五个独立 fixed locator读取；real-FS Suite/Fixture Corpus另按 full content digest fixed locator读取并验证独立 root signature，semantic digest locator拒绝。缺 strict Envelope、错误 recordType/path alias、pin/outer/payload generation或 digest不等、五者 root/taxonomy/input pin不等、Suite/Corpus transitive pin或签名 domain替换全部 reject。immutable Identity、Root full-record quorum digest、Registry Entry/Manifest、Acceptance、Catalog/Evidence/runtime无环 pin与 signer key alias防护全部闭合。Result required-case exact-cover、case/crash-cut ID preimage、QA/Release双签、七字段 target及三方 result/runtime/policy等式任一 signed-but-mismatched都 reject。所有 durable binding必须 generation-aware且跨 restart online revalidate；epoch/nonce/raw handle持久化拒绝。atomic publish六个 strict failure分支唯一映射 reason/directive/successor；完整 durable request/receipt、compare-delete outcome、external CAS、journal complete enumeration与 proof-only sealed tip按 strict union验证；missing/extra/sibling/replay/rollback、敏感字段泄漏及预算超限均在首个 strong副作用前 fail closed，legacy/redacted read-only保持可用 |
 | AT-C30 | Acceptance/target/migration/receipt amendment | `ProviderAcceptanceCompareAppend`必须原子发布 generation、complete enumeration、high-water与 compact receipt，nonce replay/mismatch、ordinal/predecessor/current/count/set digest/floor/linkage逐项闭合。root self/cross/recovery quorum、provider/approver及所有 historical signature都必须使用 attested strict profile，宽松 native boolean不得授权 successor。`strong_ready`每个完整 target恰选一个 enabled writer；Catalog按 private target分组并 exact-cover独立签名 Universe，public row只按 Taxonomy四字段 bucket聚合。coverage basis、嵌入式 Discovery Input Bundle、typed retained-object accounting、deterministic resolution/reason、union cap与 bucket exact partition全部重算；private claim、unknown descriptor/code、target omission/substitution不得抬升 strong。producer pre-schema collection置换必须经 comparator生成同 bytes；serialized wire array置换必须 reject。`migration_only`只允许 pinned executor；same/cross Plan、typed source dry-run、Plan-bound reservation、exact final committed receipt selector、universe kind↔side、complete universe、receipt prefix/complete set、per-object subset、root/object semantic proof、zero-live、tombstone、ready/seal/final activation单向闭合。recovery compromise、journal-authority HMAC issuer、atomic publish failure union、compare-delete与 handoff proof strict branch按本节详细 acceptance逐项验证 |
 | AT-C31 | strict Ed25519 + Bootstrap Trust Bundle | 四类 public-key record按 decoded raw32重算独立 digest，并按原 domain-separated JCS另算 key ID；旧 C09-0 key-ID golden byte-identical但其 mixed-order key在 trust admission拒绝。required hostile manifest exact-cover固定28项且 Pin/resource/compiled digest三方相等；每项分别断言 public-key point admission、signature `R` point admission与完整 signature result，固定执行56次 point + 28次 signature KAT。TypeScript、Node host、browser host与 provider共同接受 PureEd25519/RFC8032正例，并共同拒绝 bad length、`S>=L`/`S+L`、noncanonical/negative-zero、identity/small-order/torsion/mixed-order `A/R`、ctx/ph/prehash及 equation/message substitution；point method恒 true/false、与 verify分叉、去重/少调用/重排都失败。Host KAT产生不可绕过 opaque capability；固定 Bundle Pin/Envelope/Payload、bootstrap metadata、root+3 recovery keys、threshold=2、policy/profile/manifest以及 signed distribution与 Installation Identity retained origin闭合。任一 missing/extra/reorder/alias/第二 path/package/bundle/profile/digest substitution在读取 Root chain及首个 strong副作用前以 `attestation_invalid` fail closed。old recovery-only source必须凭 retained old bundle/manifest可读迁移，新 bundle不得替换旧 trust且只可建立新 Identity |
+
+作为 AT-C29 的不可分割 filename acceptance，golden/negative vectors 必须同时
+覆盖 RFC 4648 lowercase unpadded base32hex、137/138 UTF-8-byte 唯一分支边界、
+fatal UTF-8 decode 与 exact re-encode，以及 ASCII/Unicode semantic ID 在默认
+case-insensitive macOS/Windows filename 比较下不发生 collision；mixed-case
+short wire、非法 encoded-length class、非零 trailing bits 与 caller 强制 variant
+全部 reject。
 
 作为 AT-C21/AT-C31 的不可分割签名 acceptance，每个 provider/root/approver
 domain都必须从

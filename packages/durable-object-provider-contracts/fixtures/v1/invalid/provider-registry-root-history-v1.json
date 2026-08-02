@@ -1,0 +1,706 @@
+{
+  "schemaVersion": 1,
+  "profile": "provider_registry_root_history_invalid_manifest_v1",
+  "canonicalizationProfile": "rfc8785-jcs-safe-integer-v1",
+  "verificationProfile": "ed25519-rfc8032-cofactorless-prime-subgroup-v1",
+  "fixtureAuthority": "none_rejection_only",
+  "goldenResource": {
+    "resourcePath": "fixtures/v1/golden/provider-registry-root-history-v1.json",
+    "resourceByteLength": 38568,
+    "resourceSha256Hex": "3f4a86c2dedf36e0d8b19859f34937d439423d7223d44cfe49196d015f7dfca6",
+    "semanticContentDigest": "sha256:a57984671d7761e19a3fa04c704d7147bb8e3809994c554b46ca8c0dc7b3f922"
+  },
+  "cases": [
+    {
+      "caseId": "history-empty",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "replace_history_with_empty",
+        "targetJsonPointer": "/rootMetadataHistory",
+        "operands": [],
+        "deterministicSeed": {
+          "source": "none"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "history_input",
+        "reason": "history_empty",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 0,
+        "postAttestationSignatureCalls": 0
+      }
+    },
+    {
+      "caseId": "bootstrap-anchor-substitution",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "replace_bootstrap_active_root_and_resign_self",
+        "targetJsonPointer": "/rootMetadataHistory/0",
+        "operands": [
+          "/rootMetadataHistory/1/payload/activeRoot"
+        ],
+        "deterministicSeed": {
+          "source": "golden_json_pointer",
+          "resourcePath": "fixtures/v1/golden/provider-registry-root-history-v1.json",
+          "jsonPointer": "/deterministicSeeds/plannedRootSeedHex"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bootstrap_anchor",
+        "reason": "bootstrap_metadata_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 5,
+        "postAttestationSignatureCalls": 1
+      }
+    },
+    {
+      "caseId": "bootstrap-generation-substitution",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "replace_number",
+        "targetJsonPointer": "/rootMetadataHistory/0/rootGeneration",
+        "operands": [
+          "2"
+        ],
+        "deterministicSeed": {
+          "source": "none"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_metadata_envelope",
+        "reason": "envelope_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 5,
+        "postAttestationSignatureCalls": 1
+      }
+    },
+    {
+      "caseId": "history-generation-gap",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "replace_number_and_reseal_envelope",
+        "targetJsonPointer": "/rootMetadataHistory/1/payload/rootGeneration",
+        "operands": [
+          "3"
+        ],
+        "deterministicSeed": {
+          "source": "none"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "history_predecessor",
+        "reason": "generation_not_contiguous",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 7,
+        "postAttestationSignatureCalls": 2
+      }
+    },
+    {
+      "caseId": "history-generation-rollback",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "duplicate_history_envelope",
+        "targetJsonPointer": "/rootMetadataHistory/2",
+        "operands": [
+          "/rootMetadataHistory/1"
+        ],
+        "deterministicSeed": {
+          "source": "none"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "history_predecessor",
+        "reason": "generation_not_contiguous",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 9,
+        "postAttestationSignatureCalls": 6
+      }
+    },
+    {
+      "caseId": "predecessor-generation-substitution",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "replace_number_and_resign_all",
+        "targetJsonPointer": "/rootMetadataHistory/1/payload/predecessor/rootGeneration",
+        "operands": [
+          "2"
+        ],
+        "deterministicSeed": {
+          "source": "golden_json_pointer",
+          "resourcePath": "fixtures/v1/golden/provider-registry-root-history-v1.json",
+          "jsonPointer": "/deterministicSeeds/plannedRootSeedHex"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "history_predecessor",
+        "reason": "predecessor_pin_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 7,
+        "postAttestationSignatureCalls": 2
+      }
+    },
+    {
+      "caseId": "predecessor-root-key-substitution",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "replace_string_and_resign_all",
+        "targetJsonPointer": "/rootMetadataHistory/1/payload/predecessor/rootKeyId",
+        "operands": [
+          "b428dd9c9d0cb51b9b44a8"
+        ],
+        "deterministicSeed": {
+          "source": "golden_json_pointer",
+          "resourcePath": "fixtures/v1/golden/provider-registry-root-history-v1.json",
+          "jsonPointer": "/deterministicSeeds/plannedRootSeedHex"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "history_predecessor",
+        "reason": "predecessor_pin_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 7,
+        "postAttestationSignatureCalls": 2
+      }
+    },
+    {
+      "caseId": "predecessor-content-digest-substitution",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "replace_string_and_resign_all",
+        "targetJsonPointer": "/rootMetadataHistory/1/payload/predecessor/contentDigest",
+        "operands": [
+          "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        ],
+        "deterministicSeed": {
+          "source": "golden_json_pointer",
+          "resourcePath": "fixtures/v1/golden/provider-registry-root-history-v1.json",
+          "jsonPointer": "/deterministicSeeds/plannedRootSeedHex"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "history_predecessor",
+        "reason": "predecessor_pin_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 7,
+        "postAttestationSignatureCalls": 2
+      }
+    },
+    {
+      "caseId": "self-signature-bitflip",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "flip_signature_last_bit",
+        "targetJsonPointer": "/rootMetadataHistory/1/payload/selfSignature",
+        "operands": [],
+        "deterministicSeed": {
+          "source": "none"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_self_signature",
+        "reason": "self_signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 9,
+        "postAttestationSignatureCalls": 3
+      }
+    },
+    {
+      "caseId": "self-signature-wrong-domain",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "resign_with_domain",
+        "targetJsonPointer": "/rootMetadataHistory/1/payload/selfSignature",
+        "operands": [
+          "provider-registry-root-cross-signature-v1"
+        ],
+        "deterministicSeed": {
+          "source": "golden_json_pointer",
+          "resourcePath": "fixtures/v1/golden/provider-registry-root-history-v1.json",
+          "jsonPointer": "/deterministicSeeds/plannedRootSeedHex"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_self_signature",
+        "reason": "self_signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 9,
+        "postAttestationSignatureCalls": 3
+      }
+    },
+    {
+      "caseId": "self-signature-prefix-substitution",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "replace_signature_prefix_key_id",
+        "targetJsonPointer": "/rootMetadataHistory/1/payload/selfSignature",
+        "operands": [
+          "bfe44356f03760a13c8e1b"
+        ],
+        "deterministicSeed": {
+          "source": "none"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_metadata_envelope",
+        "reason": "envelope_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 7,
+        "postAttestationSignatureCalls": 2
+      }
+    },
+    {
+      "caseId": "cross-signature-bitflip",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "flip_signature_last_bit",
+        "targetJsonPointer": "/rootMetadataHistory/1/payload/predecessorCrossSignature",
+        "operands": [],
+        "deterministicSeed": {
+          "source": "none"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_cross_signature",
+        "reason": "cross_signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 9,
+        "postAttestationSignatureCalls": 4
+      }
+    },
+    {
+      "caseId": "cross-signature-wrong-domain",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "resign_with_domain",
+        "targetJsonPointer": "/rootMetadataHistory/1/payload/predecessorCrossSignature",
+        "operands": [
+          "provider-registry-root-self-signature-v1"
+        ],
+        "deterministicSeed": {
+          "source": "golden_json_pointer",
+          "resourcePath": "fixtures/v1/golden/provider-registry-root-history-v1.json",
+          "jsonPointer": "/deterministicSeeds/bootstrapRootSeedHex"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_cross_signature",
+        "reason": "cross_signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 9,
+        "postAttestationSignatureCalls": 4
+      }
+    },
+    {
+      "caseId": "cross-signature-prefix-substitution",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "replace_signature_prefix_key_id",
+        "targetJsonPointer": "/rootMetadataHistory/1/payload/predecessorCrossSignature",
+        "operands": [
+          "ec3cca8fc833754cd58394"
+        ],
+        "deterministicSeed": {
+          "source": "none"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_metadata_envelope",
+        "reason": "envelope_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 7,
+        "postAttestationSignatureCalls": 2
+      }
+    },
+    {
+      "caseId": "planned-cross-signature-missing",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "delete_property",
+        "targetJsonPointer": "/rootMetadataHistory/1/payload/predecessorCrossSignature",
+        "operands": [],
+        "deterministicSeed": {
+          "source": "none"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_metadata_envelope",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 7,
+        "postAttestationSignatureCalls": 2
+      }
+    },
+    {
+      "caseId": "compromise-cross-signature-injected",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "copy_property",
+        "targetJsonPointer": "/rootMetadataHistory/2/payload/predecessorCrossSignature",
+        "operands": [
+          "/rootMetadataHistory/1/payload/predecessorCrossSignature"
+        ],
+        "deterministicSeed": {
+          "source": "none"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_metadata_envelope",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 9,
+        "postAttestationSignatureCalls": 6
+      }
+    },
+    {
+      "caseId": "recovery-signature-missing",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "remove_array_item",
+        "targetJsonPointer": "/rootMetadataHistory/1/payload/recoverySignatures",
+        "operands": [
+          "1"
+        ],
+        "deterministicSeed": {
+          "source": "none"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_metadata_envelope",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 7,
+        "postAttestationSignatureCalls": 2
+      }
+    },
+    {
+      "caseId": "recovery-signature-extra",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "append_array_item",
+        "targetJsonPointer": "/rootMetadataHistory/1/payload/recoverySignatures",
+        "operands": [
+          "/rootMetadataHistory/1/payload/recoverySignatures/0"
+        ],
+        "deterministicSeed": {
+          "source": "none"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_metadata_envelope",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 7,
+        "postAttestationSignatureCalls": 2
+      }
+    },
+    {
+      "caseId": "recovery-signature-duplicate-signer",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "resign_recovery_with_key",
+        "targetJsonPointer": "/rootMetadataHistory/1/payload/recoverySignatures/1",
+        "operands": [
+          "1b5e57fd47720f4d9c9c86"
+        ],
+        "deterministicSeed": {
+          "source": "golden_json_pointer",
+          "resourcePath": "fixtures/v1/golden/provider-registry-root-history-v1.json",
+          "jsonPointer": "/deterministicSeeds/recoverySeedHexes/0"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_metadata_envelope",
+        "reason": "envelope_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 7,
+        "postAttestationSignatureCalls": 2
+      }
+    },
+    {
+      "caseId": "recovery-signature-reversed",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "reverse_array",
+        "targetJsonPointer": "/rootMetadataHistory/1/payload/recoverySignatures",
+        "operands": [],
+        "deterministicSeed": {
+          "source": "none"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_metadata_envelope",
+        "reason": "envelope_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 7,
+        "postAttestationSignatureCalls": 2
+      }
+    },
+    {
+      "caseId": "recovery-signature-unknown-signer",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "resign_recovery_with_literal_seed",
+        "targetJsonPointer": "/rootMetadataHistory/1/payload/recoverySignatures/0",
+        "operands": [],
+        "deterministicSeed": {
+          "source": "literal_non_production",
+          "seedHex": "7070707070707070707070707070707070707070707070707070707070707070"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_recovery_signature",
+        "reason": "recovery_quorum_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 9,
+        "postAttestationSignatureCalls": 4
+      }
+    },
+    {
+      "caseId": "recovery-signature-bitflip",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "flip_signature_last_bit",
+        "targetJsonPointer": "/rootMetadataHistory/1/payload/recoverySignatures/0",
+        "operands": [],
+        "deterministicSeed": {
+          "source": "none"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_recovery_signature",
+        "reason": "recovery_quorum_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 9,
+        "postAttestationSignatureCalls": 5
+      }
+    },
+    {
+      "caseId": "recovery-signature-wrong-domain",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "resign_with_domain",
+        "targetJsonPointer": "/rootMetadataHistory/1/payload/recoverySignatures/0",
+        "operands": [
+          "provider-registry-root-self-signature-v1"
+        ],
+        "deterministicSeed": {
+          "source": "golden_json_pointer",
+          "resourcePath": "fixtures/v1/golden/provider-registry-root-history-v1.json",
+          "jsonPointer": "/deterministicSeeds/recoverySeedHexes/0"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_recovery_signature",
+        "reason": "recovery_quorum_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 9,
+        "postAttestationSignatureCalls": 5
+      }
+    },
+    {
+      "caseId": "root-reuses-historical-root-material",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "replace_active_root_and_resign_self",
+        "targetJsonPointer": "/rootMetadataHistory/2/payload/activeRoot",
+        "operands": [
+          "/rootMetadataHistory/0/payload/activeRoot"
+        ],
+        "deterministicSeed": {
+          "source": "golden_json_pointer",
+          "resourcePath": "fixtures/v1/golden/provider-registry-root-history-v1.json",
+          "jsonPointer": "/deterministicSeeds/bootstrapRootSeedHex"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_material_closure",
+        "reason": "root_key_material_alias",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 9,
+        "postAttestationSignatureCalls": 6
+      }
+    },
+    {
+      "caseId": "root-reuses-recovery-material",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "replace_active_root_from_recovery_and_resign_self",
+        "targetJsonPointer": "/rootMetadataHistory/2/payload/activeRoot",
+        "operands": [
+          "/bootstrapTrustBundle/providerRegistryRecoveryKeys/0"
+        ],
+        "deterministicSeed": {
+          "source": "golden_json_pointer",
+          "resourcePath": "fixtures/v1/golden/provider-registry-root-history-v1.json",
+          "jsonPointer": "/deterministicSeeds/recoverySeedHexes/0"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_material_closure",
+        "reason": "root_key_material_alias",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 9,
+        "postAttestationSignatureCalls": 6
+      }
+    },
+    {
+      "caseId": "root-point-invalid",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "replace_active_root_with_small_order_point",
+        "targetJsonPointer": "/rootMetadataHistory/2/payload/activeRoot",
+        "operands": [
+          "base64url:AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        ],
+        "deterministicSeed": {
+          "source": "none"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_key_admission",
+        "reason": "point_admission_failed",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 10,
+        "postAttestationSignatureCalls": 6
+      }
+    },
+    {
+      "caseId": "envelope-outer-generation-mismatch",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "replace_number",
+        "targetJsonPointer": "/rootMetadataHistory/1/rootGeneration",
+        "operands": [
+          "3"
+        ],
+        "deterministicSeed": {
+          "source": "none"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_metadata_envelope",
+        "reason": "envelope_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 7,
+        "postAttestationSignatureCalls": 2
+      }
+    },
+    {
+      "caseId": "envelope-outer-key-mismatch",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "replace_string",
+        "targetJsonPointer": "/rootMetadataHistory/1/rootKeyId",
+        "operands": [
+          "bfe44356f03760a13c8e1b"
+        ],
+        "deterministicSeed": {
+          "source": "none"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_metadata_envelope",
+        "reason": "envelope_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 7,
+        "postAttestationSignatureCalls": 2
+      }
+    },
+    {
+      "caseId": "envelope-content-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "replace_string",
+        "targetJsonPointer": "/rootMetadataHistory/1/contentDigest",
+        "operands": [
+          "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        ],
+        "deterministicSeed": {
+          "source": "none"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_metadata_envelope",
+        "reason": "envelope_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 7,
+        "postAttestationSignatureCalls": 2
+      }
+    },
+    {
+      "caseId": "envelope-byte-cap-exceeded",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "replace_timestamp_with_repeated_ascii",
+        "targetJsonPointer": "/rootMetadataHistory/1/payload/issuedAt",
+        "operands": [
+          "4194305",
+          "61"
+        ],
+        "deterministicSeed": {
+          "source": "none"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "history_limit",
+        "reason": "envelope_byte_limit_exceeded",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 7,
+        "postAttestationSignatureCalls": 2
+      }
+    },
+    {
+      "caseId": "root-generation-count-cap-exceeded",
+      "mutation": {
+        "dialect": "provider_registry_root_history_invalid_recipe_v1",
+        "operation": "repeat_history_envelope",
+        "targetJsonPointer": "/rootMetadataHistory",
+        "operands": [
+          "257",
+          "/rootMetadataHistory/2"
+        ],
+        "deterministicSeed": {
+          "source": "none"
+        }
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "history_limit",
+        "reason": "history_generation_limit_exceeded",
+        "publicFailureReason": "attestation_invalid",
+        "postAttestationPointCalls": 0,
+        "postAttestationSignatureCalls": 0
+      }
+    }
+  ]
+}

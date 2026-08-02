@@ -8,6 +8,9 @@ import {
   PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1,
   generateProviderContractJsonSchemasV1,
 } from "../src/json-schema.js";
+import {
+  ShortStoreFilenameKeyV1Schema,
+} from "../src/provider-fixed-locator.js";
 
 const schemaRoot = fileURLToPath(new URL("../schemas/v1", import.meta.url));
 const strictEd25519ResourcePath = fileURLToPath(
@@ -37,6 +40,18 @@ const bootstrapTrustGoldenPath = fileURLToPath(
 const bootstrapTrustInvalidPath = fileURLToPath(
   new URL(
     "../fixtures/v1/invalid/provider-bootstrap-structure-crypto-v1.json",
+    import.meta.url,
+  ),
+);
+const providerRootHistoryGoldenPath = fileURLToPath(
+  new URL(
+    "../fixtures/v1/golden/provider-registry-root-history-v1.json",
+    import.meta.url,
+  ),
+);
+const providerRootHistoryInvalidPath = fileURLToPath(
+  new URL(
+    "../fixtures/v1/invalid/provider-registry-root-history-v1.json",
     import.meta.url,
   ),
 );
@@ -74,6 +89,55 @@ describe("provider contract JSON Schema distribution", () => {
     for (const value of ["base64url:A", "base64url:AB", "base64url:AAF", "base64url:AA="]) {
       expect(expression.test(value), value).toBe(false);
     }
+  });
+
+  it("publishes filename syntax without overstating UTF-8 or semantic-ID binding", () => {
+    const generated = generateProviderContractJsonSchemasV1();
+    expect(
+      "short-store-filename-key" in generated,
+    ).toBe(false);
+    expect("store-filename-key" in generated).toBe(false);
+
+    const validateShortSyntax = new Ajv2020({
+      strict: true,
+    }).compile(
+      generated["short-store-filename-key-syntax"],
+    );
+    const validateStoreSyntax = new Ajv2020({
+      strict: true,
+    }).compile(generated["store-filename-key-syntax"]);
+    for (const value of [
+      "id-c4",
+      "id-vs",
+      "id-0000",
+      "id-00000",
+      "id-0000000",
+      "id-00000000",
+    ]) {
+      expect(validateShortSyntax(value), value).toBe(true);
+      expect(validateStoreSyntax(value), value).toBe(true);
+    }
+    for (const value of [
+      "id-0",
+      "id-c5",
+      "id-000",
+      "id-0001",
+      "id-0000004",
+      "id-C4",
+    ]) {
+      expect(validateShortSyntax(value), value).toBe(false);
+      expect(validateStoreSyntax(value), value).toBe(false);
+    }
+
+    expect(ShortStoreFilenameKeyV1Schema.safeParse("id-c4").success).toBe(
+      true,
+    );
+    expect(ShortStoreFilenameKeyV1Schema.safeParse("id-vs").success).toBe(
+      false,
+    );
+    expect(
+      validateStoreSyntax(`idh-${"a".repeat(64)}`),
+    ).toBe(true);
   });
 
   it("keeps domain field objects closed to unknown keys", () => {
@@ -346,5 +410,126 @@ describe("provider contract JSON Schema distribution", () => {
       mutate(candidate.cases as unknown[]);
       expect(validate(candidate)).toBe(false);
     }
+  });
+
+  it("publishes exact root-history golden and 31-case invalid JSON Schemas", () => {
+    const generated = generateProviderContractJsonSchemasV1();
+    const validateGolden = new Ajv2020({
+      allErrors: true,
+      strict: true,
+    }).compile(
+      generated[
+        "provider-registry-root-history-golden-manifest"
+      ],
+    );
+    const validateInvalid = new Ajv2020({
+      allErrors: true,
+      strict: true,
+    }).compile(
+      generated[
+        "provider-registry-root-history-invalid-manifest"
+      ],
+    );
+    const golden = JSON.parse(
+      readFileSync(providerRootHistoryGoldenPath, "utf8"),
+    ) as Record<string, unknown>;
+    const invalid = JSON.parse(
+      readFileSync(providerRootHistoryInvalidPath, "utf8"),
+    ) as Record<string, unknown>;
+    expect(
+      validateGolden(golden),
+      JSON.stringify(validateGolden.errors),
+    ).toBe(true);
+    expect(
+      validateInvalid(invalid),
+      JSON.stringify(validateInvalid.errors),
+    ).toBe(true);
+
+    const goldenHistory = (
+      generated[
+        "provider-registry-root-history-golden-manifest"
+      ].properties as Record<string, Record<string, unknown>>
+    ).rootMetadataHistory;
+    expect(goldenHistory).toMatchObject({
+      minItems: 3,
+      maxItems: 3,
+      items: false,
+      type: "array",
+    });
+    const invalidCases = (
+      generated[
+        "provider-registry-root-history-invalid-manifest"
+      ].properties as Record<string, Record<string, unknown>>
+    ).cases;
+    expect(invalidCases).toMatchObject({
+      minItems: 31,
+      maxItems: 31,
+      items: false,
+      type: "array",
+    });
+    expect(invalidCases?.prefixItems).toHaveLength(31);
+
+    const reordered = structuredClone(invalid);
+    (reordered.cases as unknown[]).reverse();
+    expect(validateInvalid(reordered)).toBe(false);
+
+    for (const mutate of [
+      (candidate: Record<string, unknown>) => {
+        const first = (candidate.cases as Array<Record<string, unknown>>)[0]!;
+        (first.mutation as Record<string, unknown>).operation =
+          "do_anything";
+      },
+      (candidate: Record<string, unknown>) => {
+        const first = (candidate.cases as Array<Record<string, unknown>>)[0]!;
+        (first.mutation as Record<string, unknown>).operands = [
+          "unexpected",
+        ];
+      },
+      (candidate: Record<string, unknown>) => {
+        const first = (candidate.cases as Array<Record<string, unknown>>)[0]!;
+        (first.expected as Record<string, unknown>).stage =
+          "history_limit";
+      },
+      (candidate: Record<string, unknown>) => {
+        const first = (candidate.cases as Array<Record<string, unknown>>)[0]!;
+        (
+          first.expected as Record<string, unknown>
+        ).postAttestationPointCalls = 999;
+      },
+      (candidate: Record<string, unknown>) => {
+        const first = (candidate.cases as Array<Record<string, unknown>>)[0]!;
+        (first.expected as Record<string, unknown>).boundary =
+          "public_provider_error";
+      },
+    ]) {
+      const tampered = structuredClone(invalid);
+      mutate(tampered);
+      expect(
+        validateInvalid(tampered),
+        JSON.stringify(validateInvalid.errors),
+      ).toBe(false);
+    }
+
+    const substitutedGoldenAnchor = structuredClone(invalid);
+    (
+      substitutedGoldenAnchor.goldenResource as Record<
+        string,
+        unknown
+      >
+    ).resourceByteLength = 1;
+    expect(validateInvalid(substitutedGoldenAnchor)).toBe(false);
+
+    const leakedPath = structuredClone(golden);
+    leakedPath.rootMetadataPath =
+      "provider/root-metadata/latest.json";
+    expect(validateGolden(leakedPath)).toBe(false);
+
+    const nonCanonicalLocator = structuredClone(golden);
+    (
+      (
+        nonCanonicalLocator.expected as Record<string, unknown>
+      ).vectors as Array<Record<string, unknown>>
+    )[0]!.locator = "provider/root-metadata/id-A.json";
+    expect(validateGolden(nonCanonicalLocator)).toBe(false);
   });
 });

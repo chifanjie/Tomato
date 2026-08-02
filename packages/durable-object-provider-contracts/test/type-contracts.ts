@@ -24,8 +24,15 @@ import type {
   ProviderStrictEd25519OpaqueCapabilityV1,
   InstallationBootstrapTrustUseStructureAssessmentV1,
   InstallationIdentityRetainedTrustStructureValidationV1,
+  HashedStoreFilenameKeyV1,
+  ProviderRegistryRootHistoryGoldenManifestV1,
+  ProviderRegistryRootHistoryInvalidManifestV1,
+  ProviderRegistryRootMetadataHistoryValidationV1,
+  ShortStoreFilenameKeyV1,
+  StoreFilenameKeyV1,
 } from "../src/index.js";
 import {
+  encodeStoreFilenameKeyV1,
   deriveInstallationIdentityGenerationIdV1,
   deriveInstallationIdentityKeyCheckTokenV1,
   deriveProviderRegistryRootKeyIdV1,
@@ -65,6 +72,16 @@ declare const recoveryGolden1:
   ProviderBootstrapTrustGoldenManifestV1["vectors"]["recoveryKeyIds"][1];
 declare const recoveryGolden2:
   ProviderBootstrapTrustGoldenManifestV1["vectors"]["recoveryKeyIds"][2];
+declare const shortFilenameKey: ShortStoreFilenameKeyV1;
+declare const hashedFilenameKey: HashedStoreFilenameKeyV1;
+declare const rootHistory:
+  ProviderRegistryRootMetadataHistoryValidationV1;
+declare const rootHistoryGolden:
+  ProviderRegistryRootHistoryGoldenManifestV1;
+declare const rootHistoryInvalid:
+  ProviderRegistryRootHistoryInvalidManifestV1;
+const storeFilenameFromShort: StoreFilenameKeyV1 = shortFilenameKey;
+const storeFilenameFromHash: StoreFilenameKeyV1 = hashedFilenameKey;
 
 // @ts-expect-error semantic brands with the same wire shape are not interchangeable
 const rootKeyFromGenericHex: ProviderRegistryRootKeyIdV1 = lowerHex22;
@@ -134,6 +151,21 @@ const keyCheckFromRootKey: InstallationIdentityKeyCheckFieldsV1 =
 // @ts-expect-error domain field brands cannot cross domains
 const rootKeyFromGeneration: ProviderRegistryRootKeyIdFieldsV1 =
   generationFields;
+// @ts-expect-error reversible short and non-reversible hashed keys are distinct
+const hashedFromShort: HashedStoreFilenameKeyV1 = shortFilenameKey;
+// @ts-expect-error reversible short and non-reversible hashed keys are distinct
+const shortFromHashed: ShortStoreFilenameKeyV1 = hashedFilenameKey;
+const encodedFilenameKey: StoreFilenameKeyV1 =
+  encodeStoreFilenameKeyV1("provider-registry-manifest:fixture");
+const historyAuthority:
+  "none_structure_and_history_only" = rootHistory.authority;
+// @ts-expect-error validated root history is deliberately not strong-ready authority
+const strongHistoryAuthority: "strong_ready" = rootHistory.authority;
+// @ts-expect-error the golden fixture has no production authority
+const productionGoldenAuthority: "strong_ready" =
+  rootHistoryGolden.fixtureAuthority;
+const rejectionOnlyAuthority: "none_rejection_only" =
+  rootHistoryInvalid.fixtureAuthority;
 
 const generationResult: Promise<InstallationIdentityGenerationIdV1> =
   deriveInstallationIdentityGenerationIdV1(generationFields, cryptoHost);
@@ -180,6 +212,15 @@ void [
   generationFromKeyCheck,
   keyCheckFromRootKey,
   rootKeyFromGeneration,
+  hashedFromShort,
+  shortFromHashed,
+  encodedFilenameKey,
+  historyAuthority,
+  strongHistoryAuthority,
+  productionGoldenAuthority,
+  rejectionOnlyAuthority,
+  storeFilenameFromShort,
+  storeFilenameFromHash,
   generationResult,
   rootKeyResult,
   keyCheckResult,

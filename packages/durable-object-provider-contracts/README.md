@@ -5,7 +5,8 @@ Portable, fail-closed wire contracts for the WP5 durable-object provider boundar
 The `WP5-C09-0` slice freezes the cryptographic format foundation,
 `WP5-C09-1A` adds the public provider failure boundary, `WP5-C09-1B`
 freezes strict Ed25519 host conformance, and `WP5-C09-1C` closes the
-structure-only bootstrap trust bundle:
+structure-only bootstrap trust bundle. `WP5-C09-1D` adds portable Root
+Metadata lookup and verifies the retained successor history:
 
 - `rfc8785-jcs-safe-integer-v1` canonical JSON and exact canonical-byte parsing;
 - independent branded digest, token, provider identity, and key primitives;
@@ -39,7 +40,20 @@ structure-only bootstrap trust bundle:
   recovery ordering, opaque-capability forgery, and deterministic fixtures;
 - immutable Installation Identity retained-origin fields and a conservative
   current versus historical-recovery classifier that never substitutes the
-  current Bundle for missing or malformed retained trust.
+  current Bundle for missing or malformed retained trust;
+- a canonical `StoreFilenameKeyV1` codec with reversible `id-` keys for short
+  semantic IDs, SHA-256-bound `idh-` keys for long IDs, and exact verification
+  of either branch against the trusted semantic ID;
+- the only allowed Root Metadata state-relative locator,
+  `provider/root-metadata/<StoreFilenameKey(rootGeneration ":" rootKeyId)>.json`,
+  built from an exact plain-data locator rather than a caller-supplied path;
+- immutable Root Metadata history validation for the bootstrap anchor,
+  contiguous predecessor Pins, planned rollover, compromise recovery, strict
+  Ed25519 point admission, recovery quorum, and historical key-material
+  non-reuse;
+- one three-generation bootstrap to planned-rollover to compromise-recovery
+  golden resource and one exact 31-case executable rejection corpus, each
+  independently bound by raw-resource and semantic JCS digests.
 
 The arbitrary domain/prefix crypto helpers are intentionally package-internal.
 Consumers use the exported domain-specific builders so a caller cannot swap a
@@ -52,6 +66,7 @@ pnpm --filter @understand-code/durable-object-provider-contracts build
 pnpm --filter @understand-code/durable-object-provider-contracts typecheck
 pnpm --filter @understand-code/durable-object-provider-contracts verify:bootstrap-trust-invalid
 pnpm --filter @understand-code/durable-object-provider-contracts verify:bootstrap-trust
+pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-root-history
 pnpm --filter @understand-code/durable-object-provider-contracts test
 pnpm --filter @understand-code/durable-object-provider-contracts test:distribution
 ```
@@ -130,10 +145,62 @@ thrown message as the rejection oracle.
 Packed Node and browser consumers validate the same raw manifest and generated
 draft-2020-12 JSON Schema.
 
-This checked-in Bundle is deliberately a pre-release structure-conformance
-fixture. Its one-time signing keys were not retained, no private key material is
-distributed, and every successful public validation result is explicitly
-`authority: "none_structure_only"`. It must not be treated as a production
+`StoreFilenameKeyV1` encodes the UTF-8 bytes of an already domain-validated
+semantic ID. A canonical lowercase unpadded base32hex body of at most 220
+characters (at most 137 UTF-8 bytes) uses the reversible `id-` branch; a
+semantic ID of 138 UTF-8 bytes or more uses
+`idh-<lowercase sha256(semantic-id UTF-8)>`. Hashed keys are deliberately not
+decoded, and either branch must be recomputed against the trusted semantic ID
+before use. The generated `short-store-filename-key-syntax` and
+`store-filename-key-syntax` JSON Schemas prove only alphabet, length, branch,
+and canonical unpadded-base32hex trailing-bit syntax. Full validation must
+still perform fatal UTF-8 decode, exact re-encoding, canonical branch
+selection, and semantic-ID recomputation; the JSON Schema documents do not
+claim that authority. Root Metadata lookup exposes no arbitrary-path API: its
+fixed locator derives the filename component from the exact
+`rootGeneration:rootKeyId` semantic value. The short alphabet is lowercase
+only, so two distinct semantic IDs cannot collapse merely because the host
+filesystem compares filename case insensitively.
+
+The retained Root Metadata validator anchors generation one exactly to the
+Bootstrap Trust Bundle and requires every successor generation and predecessor
+Pin to be contiguous. Planned rollover requires the new-root self-signature,
+the predecessor-root cross-signature, and an exact sorted, distinct 2-of-3
+recovery quorum. Compromise recovery requires the new-root self-signature and
+the same recovery quorum without a predecessor cross-signature. Every active
+root is strictly admitted as an Ed25519 point and may reuse neither historical
+root material nor recovery material. The Bundle policy caps a retained history
+at 256 generations and each canonical trust Envelope at 4 MiB.
+
+The matching cross-language resources are
+`fixtures/v1/golden/provider-registry-root-history-v1.json` and
+`fixtures/v1/invalid/provider-registry-root-history-v1.json`. The golden
+resource freezes bootstrap, planned-rollover, and compromise-recovery
+generations, their canonical signature messages, Pins, and fixed locators. The
+invalid resource freezes 31 ordered, self-contained mutation recipes together
+with their exact rejection stage/reason and post-attestation crypto call
+counts; the operation and seed semantics are defined in
+`fixtures/v1/invalid/provider-registry-root-history-invalid-recipe-v1.md`.
+The invalid resource has only `none_rejection_only` authority. Their semantic
+anchors are exactly
+`SHA-256(JCS(["provider-registry-root-history-golden-manifest-v1", manifest]))`
+and
+`SHA-256(JCS(["provider-registry-root-history-invalid-manifest-v1", manifest]))`;
+both domain literals are exported so independent implementations need not infer
+the preimage. `verify:provider-root-history` first checks the generators and
+both raw and semantic resource anchors, then executes the valid chain and every
+negative recipe. Packed Node and browser consumers verify these same resources;
+the valid chain requires exactly 11 point admissions and 9 strict signatures.
+
+These checked-in trust resources are deliberately pre-release conformance
+fixtures. The standalone Bootstrap Trust Bundle's one-time signing keys were
+not retained. By contrast, the Root Metadata history corpus intentionally
+publishes deterministic, non-production signing seeds so independent
+implementations can reproduce signatures and executable rejection recipes;
+those fixture keys must never be reused or trusted outside conformance tests.
+A successful Bundle validation remains `authority: "none_structure_only"`.
+Successful Root Metadata history validation is likewise limited to
+`authority: "none_structure_and_history_only"`. Neither result is a production
 registry authority. A future signed-package resolver, offline production key
 ceremony, and crash-safe installer transaction must establish that authority
 before any strong provider capability can be exposed.
@@ -148,6 +215,7 @@ every domain-specific comparator. Path/OID/time/producer primitives,
 signed-package provenance authority, atomic Installation Identity persistence,
 and full cross-language provider execution remain pending.
 Later WP5 slices must add all remaining stable/digest/HMAC domains, Ed25519 signer wrappers,
-provider Registry/Catalog/Taxonomy/Release Matrix contracts, provider runtime and
-real-filesystem conformance, migration proofs, and the cross-language provider
-implementation that consumes these same immutable manifests.
+signed Registry Entry and Registry Manifest contracts, Catalog/Taxonomy/Release
+Matrix contracts, provider runtime and real-filesystem conformance, migration
+proofs, and the cross-language provider implementation that consumes these same
+immutable manifests.

@@ -1,0 +1,6 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:short-store-filename-key-syntax",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "pattern": "^id-(?=[0-9a-v]{2,220}$)(?:[0-9a-v]{8})*(?:[0-9a-v][048cgkos]|[0-9a-v]{3}[0g]|[0-9a-v]{4}[02468acegikmoqsu]|[0-9a-v]{6}[08go])?$"
+}

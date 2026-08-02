@@ -1,0 +1,211 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-registry-root-recovery-signature-wrapper",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "recoveryKeyId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{22}$"
+    },
+    "domain": {
+      "type": "string",
+      "const": "provider-registry-root-recovery-signature-v1"
+    },
+    "claims": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "profile": {
+              "type": "string",
+              "const": "provider_registry_root_metadata_v1"
+            },
+            "rootGeneration": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "activeRoot": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "const": "provider_registry_root_public_key_v1"
+                },
+                "rootKeyId": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{22}$"
+                },
+                "algorithm": {
+                  "type": "string",
+                  "const": "ed25519"
+                },
+                "publicKeyBytes": {
+                  "type": "string",
+                  "pattern": "^base64url:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+                },
+                "publicKeyDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "profile",
+                "rootKeyId",
+                "algorithm",
+                "publicKeyBytes",
+                "publicKeyDigest"
+              ],
+              "additionalProperties": false
+            },
+            "issuedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+            },
+            "activation": {
+              "type": "string",
+              "const": "planned_rollover"
+            },
+            "predecessor": {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "const": "root_metadata"
+                },
+                "rootGeneration": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "rootKeyId": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{22}$"
+                },
+                "contentDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "state",
+                "rootGeneration",
+                "rootKeyId",
+                "contentDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "profile",
+            "rootGeneration",
+            "activeRoot",
+            "issuedAt",
+            "activation",
+            "predecessor"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "profile": {
+              "type": "string",
+              "const": "provider_registry_root_metadata_v1"
+            },
+            "rootGeneration": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "activeRoot": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "const": "provider_registry_root_public_key_v1"
+                },
+                "rootKeyId": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{22}$"
+                },
+                "algorithm": {
+                  "type": "string",
+                  "const": "ed25519"
+                },
+                "publicKeyBytes": {
+                  "type": "string",
+                  "pattern": "^base64url:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+                },
+                "publicKeyDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "profile",
+                "rootKeyId",
+                "algorithm",
+                "publicKeyBytes",
+                "publicKeyDigest"
+              ],
+              "additionalProperties": false
+            },
+            "issuedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+            },
+            "activation": {
+              "type": "string",
+              "const": "compromise_recovery"
+            },
+            "predecessor": {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "const": "root_metadata"
+                },
+                "rootGeneration": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "rootKeyId": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{22}$"
+                },
+                "contentDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "state",
+                "rootGeneration",
+                "rootKeyId",
+                "contentDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "profile",
+            "rootGeneration",
+            "activeRoot",
+            "issuedAt",
+            "activation",
+            "predecessor"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "required": [
+    "recoveryKeyId",
+    "domain",
+    "claims"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,21 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-registry-root-history-invalid-reason",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "schema_invalid",
+    "history_empty",
+    "history_generation_limit_exceeded",
+    "envelope_byte_limit_exceeded",
+    "history_total_byte_limit_exceeded",
+    "bootstrap_metadata_mismatch",
+    "envelope_mismatch",
+    "generation_not_contiguous",
+    "predecessor_pin_mismatch",
+    "point_admission_failed",
+    "self_signature_invalid",
+    "cross_signature_invalid",
+    "recovery_quorum_invalid",
+    "root_key_material_alias"
+  ]
+}

@@ -44,6 +44,11 @@
       "import": "./dist/provider-error.js",
       "default": "./dist/provider-error.js"
     },
+    "./provider-registry": {
+      "types": "./dist/provider-registry.d.ts",
+      "import": "./dist/provider-registry.js",
+      "default": "./dist/provider-registry.js"
+    },
     "./public-key-digest": {
       "types": "./dist/public-key-digest.d.ts",
       "import": "./dist/public-key-digest.js",
@@ -67,16 +72,18 @@
     "build": "tsc",
     "generate:schemas": "pnpm run build && node scripts/generate-json-schemas.mjs",
     "generate:bootstrap-trust-invalid": "pnpm run build && node scripts/generate-bootstrap-trust-invalid.mjs",
-    "prepack": "npm run build && npm run verify:schemas && npm run verify:fixtures && npm run verify:strict-ed25519 && npm run verify:golden && npm run verify:bootstrap-trust-invalid && npm run verify:bootstrap-trust",
+    "generate:provider-root-history": "pnpm run build && node scripts/generate-provider-registry-root-history.mjs",
+    "prepack": "npm run build && npm run verify:schemas && npm run verify:fixtures && npm run verify:strict-ed25519 && npm run verify:golden && npm run verify:bootstrap-trust-invalid && npm run verify:bootstrap-trust && npm run verify:provider-root-history",
     "test:distribution": "node scripts/test-distribution.mjs",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "verify:golden": "node scripts/verify-golden.mjs",
     "verify:fixtures": "node scripts/verify-fixtures.mjs",
     "verify:bootstrap-trust": "node scripts/verify-bootstrap-trust.mjs",
     "verify:bootstrap-trust-invalid": "node scripts/generate-bootstrap-trust-invalid.mjs --check && node scripts/verify-bootstrap-trust-invalid.mjs",
+    "verify:provider-root-history": "node scripts/generate-provider-registry-root-history.mjs --check && node scripts/verify-provider-registry-root-history.mjs",
     "verify:schemas": "node scripts/generate-json-schemas.mjs --check",
     "verify:strict-ed25519": "node scripts/verify-strict-ed25519.mjs",
-    "test": "pnpm run build && pnpm run typecheck && pnpm run verify:schemas && pnpm run verify:fixtures && pnpm run verify:strict-ed25519 && pnpm run verify:golden && pnpm run verify:bootstrap-trust-invalid && pnpm run verify:bootstrap-trust && vitest run && pnpm run test:distribution"
+    "test": "pnpm run build && pnpm run typecheck && pnpm run verify:schemas && pnpm run verify:fixtures && pnpm run verify:strict-ed25519 && pnpm run verify:golden && pnpm run verify:bootstrap-trust-invalid && pnpm run verify:bootstrap-trust && pnpm run verify:provider-root-history && vitest run && pnpm run test:distribution"
   },
   "dependencies": {
     "zod": "^4.3.6"

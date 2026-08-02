@@ -203,6 +203,66 @@ export type {
   ProviderRegistryRootSelfSignatureWrapperV1,
 } from "./provider-registry-trust.js";
 export {
+  PROVIDER_REGISTRY_ROOT_METADATA_LOCATOR_PROFILE_V1,
+  STORE_FILENAME_SHORT_BODY_MAX_LENGTH_V1,
+  HashedStoreFilenameKeyV1Schema,
+  ProviderRegistryRootMetadataLocatorV1Schema,
+  ShortStoreFilenameKeyV1Schema,
+  StoreFilenameKeyV1Schema,
+  buildProviderRegistryRootMetadataRelativePathV1,
+  decodeShortStoreFilenameKeyV1,
+  encodeStoreFilenameKeyV1,
+  verifyStoreFilenameKeyForSemanticIdV1,
+} from "./provider-fixed-locator.js";
+export type {
+  HashedStoreFilenameKeyV1,
+  ProviderRegistryRootMetadataLocatorV1,
+  ProviderRegistryRootMetadataRelativePathV1,
+  ShortStoreFilenameKeyV1,
+  StoreFilenameKeyV1,
+} from "./provider-fixed-locator.js";
+export {
+  ProviderRegistryRootCrossSignatureWrapperV1Schema,
+  ProviderRegistryRootHistoryValidationError,
+  ProviderRegistryRootRecoverySignatureWrapperV1Schema,
+  createProviderRegistryRootCrossSignatureMessageV1,
+  createProviderRegistryRootRecoverySignatureMessageV1,
+  validateProviderRegistryRootMetadataHistoryV1,
+} from "./provider-registry-root-history.js";
+export type {
+  ProviderRegistryRootCrossSignatureWrapperV1,
+  ProviderRegistryRootMetadataHistoryValidationV1,
+  ProviderRegistryRootRecoverySignatureWrapperV1,
+  ValidateProviderRegistryRootMetadataHistoryV1Input,
+} from "./provider-registry-root-history.js";
+export {
+  PROVIDER_REGISTRY_ROOT_HISTORY_FIXTURE_MAX_BYTES_V1,
+  PROVIDER_REGISTRY_ROOT_HISTORY_GOLDEN_PROFILE_V1,
+  PROVIDER_REGISTRY_ROOT_HISTORY_GOLDEN_RESOURCE_BYTE_LENGTH_V1,
+  PROVIDER_REGISTRY_ROOT_HISTORY_GOLDEN_RESOURCE_PATH_V1,
+  PROVIDER_REGISTRY_ROOT_HISTORY_GOLDEN_RESOURCE_SHA256_HEX_V1,
+  PROVIDER_REGISTRY_ROOT_HISTORY_GOLDEN_SEMANTIC_DOMAIN_V1,
+  PROVIDER_REGISTRY_ROOT_HISTORY_GOLDEN_SEMANTIC_CONTENT_DIGEST_V1,
+  PROVIDER_REGISTRY_ROOT_HISTORY_INVALID_CASE_IDS_V1,
+  PROVIDER_REGISTRY_ROOT_HISTORY_INVALID_PROFILE_V1,
+  PROVIDER_REGISTRY_ROOT_HISTORY_INVALID_RESOURCE_BYTE_LENGTH_V1,
+  PROVIDER_REGISTRY_ROOT_HISTORY_INVALID_RESOURCE_PATH_V1,
+  PROVIDER_REGISTRY_ROOT_HISTORY_INVALID_RESOURCE_SHA256_HEX_V1,
+  PROVIDER_REGISTRY_ROOT_HISTORY_INVALID_SEMANTIC_DOMAIN_V1,
+  PROVIDER_REGISTRY_ROOT_HISTORY_INVALID_SEMANTIC_CONTENT_DIGEST_V1,
+  ProviderRegistryRootHistoryFixtureError,
+  ProviderRegistryRootHistoryGoldenManifestV1Schema,
+  ProviderRegistryRootHistoryInvalidManifestV1Schema,
+  ProviderRegistryRootHistoryInvalidReasonV1Schema,
+  ProviderRegistryRootHistoryInvalidStageV1Schema,
+  verifyProviderRegistryRootHistoryGoldenManifestResourceV1,
+  verifyProviderRegistryRootHistoryInvalidManifestResourceV1,
+} from "./provider-registry-root-history-fixtures.js";
+export type {
+  ProviderRegistryRootHistoryGoldenManifestV1,
+  ProviderRegistryRootHistoryInvalidManifestV1,
+} from "./provider-registry-root-history-fixtures.js";
+export {
   PROVIDER_BOOTSTRAP_TRUST_BUNDLE_CONTENT_DIGEST_V1,
   PROVIDER_BOOTSTRAP_TRUST_BUNDLE_DOMAIN_V1,
   PROVIDER_BOOTSTRAP_TRUST_BUNDLE_MAX_BYTES_V1,

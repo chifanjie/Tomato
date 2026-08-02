@@ -2862,8 +2862,10 @@ Coding Agent 经常在 Git Worktree 中运行。不得把 Worktree 输出简单�
 - 每个 Worktree 保存自己的 Manifest、Pulse 和 `snapshots/<snapshotId>.json`。
 - Task 移动到另一个 Worktree 时生成显式 rebase/migrate event。
 - `<taskId>` 使用 canonical uppercase ULID 原值；其他 semantic ID 的 Store
-  filename 使用唯一双 variant：短 ID 为 injective base64url，超过 component
-  上限的 legacy ID 为 full SHA-256 key。trusted reader 必须从 Envelope/
+  filename 使用唯一双 variant：短 ID 为 injective lowercase unpadded
+  base32hex；1..137 UTF-8 bytes 对应 2..220 字符 short body，138 bytes
+  起唯一切换为 full SHA-256 key。该短编码在默认不区分大小写的
+  macOS/Windows 文件系统上仍保持唯一。trusted reader 必须从 Envelope/
   descriptor 取 semantic ID 重算 key，并拒绝同 hash 不同 ID；caller 不能选择
   variant。
 

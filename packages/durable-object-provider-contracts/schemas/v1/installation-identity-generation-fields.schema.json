@@ -1,0 +1,15 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:installation-identity-generation-fields",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "initializationNonce": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    }
+  },
+  "required": [
+    "initializationNonce"
+  ],
+  "additionalProperties": false
+}

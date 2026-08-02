@@ -1,0 +1,480 @@
+{
+  "schemaVersion": 1,
+  "profile": "rfc8785-jcs-safe-integer-v1",
+  "cases": [
+    {
+      "caseId": "duplicate-json-member",
+      "kind": "canonical_bytes",
+      "inputHex": "7b2261223a312c2261223a327d"
+    },
+    {
+      "caseId": "utf8-bom",
+      "kind": "canonical_bytes",
+      "inputHex": "efbbbf7b7d"
+    },
+    {
+      "caseId": "trailing-newline",
+      "kind": "canonical_bytes",
+      "inputHex": "7b7d0a"
+    },
+    {
+      "caseId": "invalid-utf8",
+      "kind": "canonical_bytes",
+      "inputHex": "ff"
+    },
+    {
+      "caseId": "lone-surrogate",
+      "kind": "canonical_bytes",
+      "inputHex": "7b2276616c7565223a225c7564383030227d"
+    },
+    {
+      "caseId": "lone-low-surrogate",
+      "kind": "canonical_bytes",
+      "inputHex": "7b2276616c7565223a225c7564666666227d"
+    },
+    {
+      "caseId": "fractional-number",
+      "kind": "canonical_bytes",
+      "inputHex": "312e35"
+    },
+    {
+      "caseId": "negative-zero",
+      "kind": "canonical_bytes",
+      "inputHex": "2d30"
+    },
+    {
+      "caseId": "unsafe-integer",
+      "kind": "canonical_bytes",
+      "inputHex": "39303037313939323534373430393932"
+    },
+    {
+      "caseId": "unsorted-json-members",
+      "kind": "canonical_bytes",
+      "inputHex": "7b2262223a312c2261223a327d"
+    },
+    {
+      "caseId": "leading-whitespace",
+      "kind": "canonical_bytes",
+      "inputHex": "207b7d"
+    },
+    {
+      "caseId": "trailing-whitespace",
+      "kind": "canonical_bytes",
+      "inputHex": "7b7d20"
+    },
+    {
+      "caseId": "noncanonical-one-point-zero",
+      "kind": "canonical_bytes",
+      "inputHex": "312e30"
+    },
+    {
+      "caseId": "noncanonical-one-exponent-zero",
+      "kind": "canonical_bytes",
+      "inputHex": "316530"
+    },
+    {
+      "caseId": "nan-value",
+      "kind": "unsupported_value",
+      "representation": "nan"
+    },
+    {
+      "caseId": "positive-infinity-value",
+      "kind": "unsupported_value",
+      "representation": "positive_infinity"
+    },
+    {
+      "caseId": "negative-infinity-value",
+      "kind": "unsupported_value",
+      "representation": "negative_infinity"
+    },
+    {
+      "caseId": "undefined-value",
+      "kind": "unsupported_value",
+      "representation": "undefined"
+    },
+    {
+      "caseId": "bigint-value",
+      "kind": "unsupported_value",
+      "representation": "bigint"
+    },
+    {
+      "caseId": "function-value",
+      "kind": "unsupported_value",
+      "representation": "function"
+    },
+    {
+      "caseId": "symbol-value",
+      "kind": "unsupported_value",
+      "representation": "symbol"
+    },
+    {
+      "caseId": "sparse-array",
+      "kind": "unsupported_value",
+      "representation": "sparse_array"
+    },
+    {
+      "caseId": "getter-value",
+      "kind": "unsupported_value",
+      "representation": "getter"
+    },
+    {
+      "caseId": "non-enumerable-value",
+      "kind": "unsupported_value",
+      "representation": "non_enumerable"
+    },
+    {
+      "caseId": "array-accessor",
+      "kind": "unsupported_value",
+      "representation": "array_accessor"
+    },
+    {
+      "caseId": "array-extra-property",
+      "kind": "unsupported_value",
+      "representation": "array_extra_property"
+    },
+    {
+      "caseId": "map-value",
+      "kind": "unsupported_value",
+      "representation": "map"
+    },
+    {
+      "caseId": "class-instance",
+      "kind": "unsupported_value",
+      "representation": "class_instance"
+    },
+    {
+      "caseId": "cyclic-value",
+      "kind": "unsupported_value",
+      "representation": "cycle"
+    },
+    {
+      "caseId": "extra-domain-field",
+      "kind": "schema",
+      "target": "installation_identity_generation_fields",
+      "input": {
+        "initializationNonce": "00112233445566778899aabbccddeeff",
+        "unexpected": true
+      }
+    },
+    {
+      "caseId": "null-for-omitted-field",
+      "kind": "schema",
+      "target": "installation_identity_generation_fields",
+      "input": {
+        "initializationNonce": null
+      }
+    },
+    {
+      "caseId": "missing-required-domain-field",
+      "kind": "schema",
+      "target": "installation_identity_generation_fields",
+      "input": {}
+    },
+    {
+      "caseId": "canonical-byte-string-padding",
+      "kind": "schema",
+      "target": "canonical_byte_string",
+      "input": "base64url:AA=="
+    },
+    {
+      "caseId": "canonical-byte-string-invalid-alphabet",
+      "kind": "schema",
+      "target": "canonical_byte_string",
+      "input": "base64url:AA+"
+    },
+    {
+      "caseId": "canonical-byte-string-noncanonical-tail-bits",
+      "kind": "schema",
+      "target": "canonical_byte_string",
+      "input": "base64url:AB"
+    },
+    {
+      "caseId": "content-digest-wrong-prefix",
+      "kind": "schema",
+      "target": "content_digest",
+      "input": "digest:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "caseId": "content-digest-short-body",
+      "kind": "schema",
+      "target": "content_digest",
+      "input": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "caseId": "content-digest-uppercase-body",
+      "kind": "schema",
+      "target": "content_digest",
+      "input": "sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "caseId": "generation-id-wrong-prefix",
+      "kind": "schema",
+      "target": "installation_identity_generation_id",
+      "input": "installation-identity:aaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "caseId": "generation-id-21-hex",
+      "kind": "schema",
+      "target": "installation_identity_generation_id",
+      "input": "installation-identity-generation:aaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "caseId": "generation-id-23-hex",
+      "kind": "schema",
+      "target": "installation_identity_generation_id",
+      "input": "installation-identity-generation:aaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "caseId": "generation-id-uppercase",
+      "kind": "schema",
+      "target": "installation_identity_generation_id",
+      "input": "installation-identity-generation:AAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "caseId": "root-key-id-21-hex",
+      "kind": "schema",
+      "target": "provider_registry_root_key_id",
+      "input": "aaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "caseId": "root-key-id-23-hex",
+      "kind": "schema",
+      "target": "provider_registry_root_key_id",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "caseId": "root-key-id-uppercase",
+      "kind": "schema",
+      "target": "provider_registry_root_key_id",
+      "input": "AAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "caseId": "keyed-state-token-wrong-prefix",
+      "kind": "schema",
+      "target": "keyed_state_token",
+      "input": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "caseId": "keyed-state-token-short-body",
+      "kind": "schema",
+      "target": "keyed_state_token",
+      "input": "hmac-sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "caseId": "keyed-state-token-long-body",
+      "kind": "schema",
+      "target": "keyed_state_token",
+      "input": "hmac-sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "caseId": "keyed-state-token-uppercase-body",
+      "kind": "schema",
+      "target": "keyed_state_token",
+      "input": "hmac-sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "caseId": "wrong-public-key-length",
+      "kind": "schema",
+      "target": "provider_registry_root_key_id_fields",
+      "input": {
+        "publicKeyBytes": "base64url:AA"
+      }
+    },
+    {
+      "caseId": "public-key-31-bytes",
+      "kind": "schema",
+      "target": "provider_registry_root_key_id_fields",
+      "input": {
+        "publicKeyBytes": "base64url:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "caseId": "public-key-33-bytes",
+      "kind": "schema",
+      "target": "provider_registry_root_key_id_fields",
+      "input": {
+        "publicKeyBytes": "base64url:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    {
+      "caseId": "public-key-padded",
+      "kind": "schema",
+      "target": "provider_registry_root_key_id_fields",
+      "input": {
+        "publicKeyBytes": "base64url:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      }
+    },
+    {
+      "caseId": "public-key-invalid-alphabet",
+      "kind": "schema",
+      "target": "provider_registry_root_key_id_fields",
+      "input": {
+        "publicKeyBytes": "base64url:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA+"
+      }
+    },
+    {
+      "caseId": "public-key-noncanonical-tail-bits",
+      "kind": "schema",
+      "target": "provider_registry_root_key_id_fields",
+      "input": {
+        "publicKeyBytes": "base64url:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB"
+      }
+    },
+    {
+      "caseId": "invalid-provider-slug-uppercase",
+      "kind": "schema",
+      "target": "provider_slug",
+      "input": "Native"
+    },
+    {
+      "caseId": "invalid-provider-slug-double-dot",
+      "kind": "schema",
+      "target": "provider_slug",
+      "input": "native..fs"
+    },
+    {
+      "caseId": "invalid-provider-slug-trailing-punctuation",
+      "kind": "schema",
+      "target": "provider_slug",
+      "input": "native-"
+    },
+    {
+      "caseId": "invalid-provider-slug-leading-punctuation",
+      "kind": "schema",
+      "target": "provider_slug",
+      "input": "_native"
+    },
+    {
+      "caseId": "invalid-provider-slug-leading-dot",
+      "kind": "schema",
+      "target": "provider_slug",
+      "input": ".native"
+    },
+    {
+      "caseId": "invalid-provider-slug-leading-dash",
+      "kind": "schema",
+      "target": "provider_slug",
+      "input": "-native"
+    },
+    {
+      "caseId": "invalid-provider-slug-trailing-dot",
+      "kind": "schema",
+      "target": "provider_slug",
+      "input": "native."
+    },
+    {
+      "caseId": "invalid-provider-slug-trailing-underscore",
+      "kind": "schema",
+      "target": "provider_slug",
+      "input": "native_"
+    },
+    {
+      "caseId": "invalid-provider-slug-empty",
+      "kind": "schema",
+      "target": "provider_slug",
+      "input": ""
+    },
+    {
+      "caseId": "invalid-provider-slug-colon",
+      "kind": "schema",
+      "target": "provider_slug",
+      "input": "native:fs"
+    },
+    {
+      "caseId": "invalid-provider-slug-control",
+      "kind": "schema",
+      "target": "provider_slug",
+      "input": "native\u0000fs"
+    },
+    {
+      "caseId": "invalid-provider-slug-space",
+      "kind": "schema",
+      "target": "provider_slug",
+      "input": "native fs"
+    },
+    {
+      "caseId": "invalid-provider-slug-nonascii",
+      "kind": "schema",
+      "target": "provider_slug",
+      "input": "原生"
+    },
+    {
+      "caseId": "invalid-provider-slug-slash",
+      "kind": "schema",
+      "target": "provider_slug",
+      "input": "native/fs"
+    },
+    {
+      "caseId": "invalid-provider-slug-too-long",
+      "kind": "schema",
+      "target": "provider_slug",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "caseId": "invalid-provider-id-prefix",
+      "kind": "schema",
+      "target": "provider_id",
+      "input": "provider:native"
+    },
+    {
+      "caseId": "invalid-provider-id-double-dot",
+      "kind": "schema",
+      "target": "provider_id",
+      "input": "durable-object-provider:native..fs"
+    },
+    {
+      "caseId": "mismatched-key-check-fields",
+      "kind": "schema",
+      "target": "installation_identity_key_check_fields",
+      "input": {
+        "generationId": "installation-identity-generation:AE17702DA507AED6775255",
+        "initializationNonce": "00112233445566778899aabbccddeeff"
+      }
+    },
+    {
+      "caseId": "unsorted-string-set",
+      "kind": "utf8_bytewise_string_set",
+      "input": ["beta", "alpha"]
+    },
+    {
+      "caseId": "duplicate-string-set",
+      "kind": "utf8_bytewise_string_set",
+      "input": ["alpha", "alpha"]
+    },
+    {
+      "caseId": "domain-substitution",
+      "kind": "substitution",
+      "target": "domain",
+      "substitutedDomain": "installation-identity-generation-substitute-v1"
+    },
+    {
+      "caseId": "prefix-substitution",
+      "kind": "substitution",
+      "target": "prefix",
+      "substitutedValue": "installation-identity:4fe634940e20afac35e02d"
+    },
+    {
+      "caseId": "key-id-substitution",
+      "kind": "substitution",
+      "target": "key_id",
+      "substitutedFields": {
+        "publicKeyBytes": "base64url:AQECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+      }
+    },
+    {
+      "caseId": "hmac-key-substitution",
+      "kind": "substitution",
+      "target": "hmac_key",
+      "substitutedKeyHex": "ff0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    },
+    {
+      "caseId": "generation-id-substitution",
+      "kind": "substitution",
+      "target": "generation_id",
+      "substitutedFields": {
+        "generationId": "installation-identity-generation:0000000000000000000000",
+        "initializationNonce": "000102030405060708090a0b0c0d0e0f"
+      }
+    }
+  ]
+}

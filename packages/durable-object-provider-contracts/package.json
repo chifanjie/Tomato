@@ -1,0 +1,63 @@
+{
+  "name": "@understand-code/durable-object-provider-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "schemas",
+    "fixtures",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./jcs": {
+      "types": "./dist/jcs.d.ts",
+      "import": "./dist/jcs.js",
+      "default": "./dist/jcs.js"
+    },
+    "./primitives": {
+      "types": "./dist/primitives.d.ts",
+      "import": "./dist/primitives.js",
+      "default": "./dist/primitives.js"
+    },
+    "./golden-vectors": {
+      "types": "./dist/golden-vectors.d.ts",
+      "import": "./dist/golden-vectors.js",
+      "default": "./dist/golden-vectors.js"
+    },
+    "./json-schema": {
+      "types": "./dist/json-schema.d.ts",
+      "import": "./dist/json-schema.js",
+      "default": "./dist/json-schema.js"
+    },
+    "./schemas/*": "./schemas/*",
+    "./fixtures/*": "./fixtures/*"
+  },
+  "scripts": {
+    "build": "tsc",
+    "generate:schemas": "pnpm run build && node scripts/generate-json-schemas.mjs",
+    "prepack": "npm run build && npm run verify:schemas && npm run verify:golden",
+    "test:distribution": "node scripts/test-distribution.mjs",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
+    "verify:golden": "node scripts/verify-golden.mjs",
+    "verify:schemas": "node scripts/generate-json-schemas.mjs --check",
+    "test": "pnpm run build && pnpm run typecheck && pnpm run verify:schemas && pnpm run verify:golden && vitest run && pnpm run test:distribution"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vite": "6.4.1",
+    "vitest": "^3.1.0"
+  }
+}

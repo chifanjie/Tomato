@@ -16,7 +16,7 @@ import {
 import {
   PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_MAX_BYTES_V1,
   PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_RESOURCE_PATH_V1,
-  verifyProviderBootstrapTrustGoldenManifestV1,
+  verifyProviderBootstrapTrustGoldenManifestResourceV1,
 } from "../dist/bootstrap-trust-golden.js";
 import {
   PROVIDER_STRICT_ED25519_MANIFEST_MAX_BYTES_V1,
@@ -93,12 +93,6 @@ const [bootstrapTrustGoldenBytes, strictManifestEnvelopeBytes] =
       PROVIDER_STRICT_ED25519_MANIFEST_MAX_BYTES_V1,
     ),
   ]);
-const bootstrapTrustGolden = JSON.parse(
-  new TextDecoder("utf-8", { fatal: true }).decode(
-    bootstrapTrustGoldenBytes,
-  ),
-);
-
 const verifiedGolden = await verifyProviderContractGoldenManifestV1(
   golden,
   cryptoHost,
@@ -137,8 +131,8 @@ const strictCryptoCapability =
     }),
   });
 const verifiedBootstrapTrust =
-  await verifyProviderBootstrapTrustGoldenManifestV1(
-    bootstrapTrustGolden,
+  await verifyProviderBootstrapTrustGoldenManifestResourceV1(
+    bootstrapTrustGoldenBytes,
     strictCryptoCapability,
   );
 if (pointCalls !== 58 || verifyCalls !== 30) {

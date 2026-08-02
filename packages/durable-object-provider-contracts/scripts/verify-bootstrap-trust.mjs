@@ -15,7 +15,7 @@ import {
   PROVIDER_BOOTSTRAP_TRUST_BUNDLE_GOLDEN_RESOURCE_PATH_V1,
   PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_MAX_BYTES_V1,
   PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_RESOURCE_PATH_V1,
-  verifyProviderBootstrapTrustGoldenManifestV1,
+  verifyProviderBootstrapTrustGoldenManifestResourceV1,
 } from "../dist/bootstrap-trust-golden.js";
 import {
   canonicalizeJcsSafeIntegerUtf8V1,
@@ -93,12 +93,6 @@ const [
 if (!Buffer.from(bundleEnvelopeBytes).equals(Buffer.from(goldenBytes))) {
   throw new Error("bootstrap trust resource and golden bytes differ");
 }
-const bootstrapTrustGolden = JSON.parse(
-  new TextDecoder("utf-8", { fatal: true }).decode(
-    bootstrapTrustGoldenBytes,
-  ),
-);
-
 let pointCalls = 0;
 let verifyCalls = 0;
 const host = Object.freeze({
@@ -129,8 +123,8 @@ const strictCryptoCapability =
     resourceHost,
   });
 const goldenValidation =
-  await verifyProviderBootstrapTrustGoldenManifestV1(
-    bootstrapTrustGolden,
+  await verifyProviderBootstrapTrustGoldenManifestResourceV1(
+    bootstrapTrustGoldenBytes,
     strictCryptoCapability,
   );
 if (

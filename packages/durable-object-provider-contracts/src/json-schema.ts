@@ -31,6 +31,9 @@ import {
   ProviderBootstrapTrustGoldenManifestV1Schema,
 } from "./bootstrap-trust-golden.js";
 import {
+  ProviderBootstrapTrustInvalidManifestV1Schema,
+} from "./bootstrap-trust-invalid.js";
+import {
   InstallationIdentityBootstrapTrustFieldsV1Schema,
 } from "./installation-bootstrap-trust.js";
 import {
@@ -155,6 +158,8 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
     ProviderBootstrapTrustBundleEnvelopeV1Schema,
   "provider-bootstrap-trust-golden-manifest":
     ProviderBootstrapTrustGoldenManifestV1Schema,
+  "provider-bootstrap-trust-invalid-manifest":
+    ProviderBootstrapTrustInvalidManifestV1Schema,
   "installation-identity-bootstrap-trust-fields":
     InstallationIdentityBootstrapTrustFieldsV1Schema,
 } as const satisfies Record<string, z.ZodType>;

@@ -17,6 +17,11 @@ import {
   canonicalizeJcsSafeIntegerUtf8V1,
 } from "./jcs.js";
 import {
+  assertFixedResourceByteAnchorInternalV1,
+  parseFixedUtf8JsonResourceInternalV1,
+  snapshotBoundedFixedResourceBytesInternalV1,
+} from "./fixed-resource.js";
+import {
   CanonicalPublicKeyBytes32V1Schema,
   ContentDigestV1Schema,
   Ed25519PublicKeyDigestV1Schema,
@@ -48,6 +53,11 @@ import {
 } from "./provider-registry-trust.js";
 import { sha256InternalV1 } from "./sha256.js";
 import {
+  providerTrustDiagnosticFailureInternalV1,
+  providerTrustDiagnosticSuccessInternalV1,
+  type ProviderTrustDiagnosticResultV1,
+} from "./provider-trust-diagnostics.js";
+import {
   PROVIDER_STRICT_ED25519_ADVERSARIAL_MANIFEST_PIN_V1,
   ProviderStrictEd25519AdversarialManifestPinV1Schema,
   validateProviderStrictEd25519PointWithCapabilityV1,
@@ -64,6 +74,14 @@ export const PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_MAX_BYTES_V1 =
   1_048_576;
 export const PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_PROFILE_V1 =
   "provider_bootstrap_structure_crypto_golden_manifest_v1" as const;
+export const PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_RESOURCE_BYTE_LENGTH_V1 =
+  41_713;
+export const PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_RESOURCE_SHA256_HEX_V1 =
+  "b55028577e024df64ed1bb21a5c36089a235df1de95ced0168de025e632a92d8" as const;
+export const PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_SEMANTIC_CONTENT_DIGEST_V1 =
+  ContentDigestV1Schema.parse(
+    "sha256:791dcb58e8168c8731edb7c96198d9c50da543a43d13a534ef02462fd5bed83c",
+  );
 export const PROVIDER_BOOTSTRAP_TRUST_BUNDLE_GOLDEN_RESOURCE_PATH_V1 =
   "fixtures/v1/golden/bootstrap-trust-bundle-v1.json" as const;
 
@@ -231,6 +249,28 @@ export interface ProviderBootstrapTrustGoldenManifestValidationV1 {
   readonly manifest: ProviderBootstrapTrustGoldenManifestV1;
 }
 
+/**
+ * Package-private raw resource Pin diagnostic shared by the public resource
+ * verifier and the deterministic rejection runner.
+ */
+export function diagnoseProviderBootstrapTrustGoldenResourceAnchorInternalV1(
+  snapshot: Uint8Array,
+): ProviderTrustDiagnosticResultV1<Uint8Array> {
+  try {
+    assertFixedResourceByteAnchorInternalV1(
+      snapshot,
+      PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_RESOURCE_BYTE_LENGTH_V1,
+      PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_RESOURCE_SHA256_HEX_V1,
+    );
+  } catch {
+    return providerTrustDiagnosticFailureInternalV1(
+      "compiled_golden_anchor",
+      "fixed_resource_identity_mismatch",
+    );
+  }
+  return providerTrustDiagnosticSuccessInternalV1(snapshot);
+}
+
 function bytesToLowerHex(bytes: Uint8Array): string {
   let output = "";
   for (const byte of bytes) output += byte.toString(16).padStart(2, "0");
@@ -324,6 +364,133 @@ function verifyDomainDigestV1(
     expected.contentDigest,
     `${context} content digest`,
   );
+}
+
+function domainDigestVectorMatchesV1(
+  domain: string,
+  fields: object,
+  expected: {
+    readonly canonicalPreimageUtf8Hex: string;
+    readonly sha256Hex: string;
+    readonly contentDigest: ContentDigestV1;
+  },
+): boolean {
+  const preimage = canonicalizeJcsSafeIntegerUtf8V1([domain, fields]);
+  const sha256Hex = bytesToLowerHex(sha256InternalV1(preimage));
+  return (
+    bytesToLowerHex(preimage) ===
+      expected.canonicalPreimageUtf8Hex &&
+    sha256Hex === expected.sha256Hex &&
+    `sha256:${sha256Hex}` === expected.contentDigest
+  );
+}
+
+/**
+ * Package-private deep-vector diagnostic used by the invalid-vector runner.
+ * The public verifier calls the same core after the compiled semantic anchor,
+ * so a Pin failure cannot make deeper regression vectors pass accidentally.
+ */
+export function diagnoseProviderBootstrapTrustGoldenStaticContractInternalV1(
+  input: unknown,
+): ProviderTrustDiagnosticResultV1<ProviderBootstrapTrustGoldenManifestV1> {
+  let manifest: ProviderBootstrapTrustGoldenManifestV1;
+  try {
+    assertDataObjectDescriptorsBeforeSchemaV1(input);
+    assertJsonDataTreeBeforeSchemaV1(input);
+    manifest =
+      ProviderBootstrapTrustGoldenManifestV1Schema.parse(input);
+  } catch {
+    return providerTrustDiagnosticFailureInternalV1(
+      "golden_schema",
+      "schema_invalid",
+    );
+  }
+
+  const vectors = manifest.vectors;
+  const fixedKeyMaterials = new Set<string>([
+    vectors.bootstrapRootMetadataDigest.fields.activeRoot.publicKeyBytes,
+    ...vectors.recoveryKeyIds.map(
+      (vector) => vector.fields.publicKeyBytes,
+    ),
+  ]);
+  if (
+    fixedKeyMaterials.has(
+      vectors.deterministicRootSelfSignatureSigning.expected
+        .publicKeyBytes,
+    )
+  ) {
+    return providerTrustDiagnosticFailureInternalV1(
+      "golden_semantic",
+      "key_material_alias",
+    );
+  }
+
+  if (
+    !domainDigestVectorMatchesV1(
+      vectors.signedPackageIdentityDigest.domain,
+      vectors.signedPackageIdentityDigest.fields,
+      vectors.signedPackageIdentityDigest.expected,
+    ) ||
+    !domainDigestVectorMatchesV1(
+      vectors.bootstrapTrustBundleDigest.domain,
+      vectors.bootstrapTrustBundleDigest.fields,
+      vectors.bootstrapTrustBundleDigest.expected,
+    ) ||
+    !domainDigestVectorMatchesV1(
+      vectors.bootstrapRootMetadataDigest.domain,
+      vectors.bootstrapRootMetadataDigest.fields,
+      vectors.bootstrapRootMetadataDigest.expected,
+    )
+  ) {
+    return providerTrustDiagnosticFailureInternalV1(
+      "golden_semantic",
+      "expected_bytes_mismatch",
+    );
+  }
+
+  for (const vector of vectors.recoveryKeyIds) {
+    const preimage = canonicalizeJcsSafeIntegerUtf8V1([
+      vector.domain,
+      vector.fields,
+    ]);
+    const sha256Hex = bytesToLowerHex(sha256InternalV1(preimage));
+    if (
+      bytesToLowerHex(preimage) !==
+        vector.expected.canonicalPreimageUtf8Hex ||
+      sha256Hex !== vector.expected.sha256Hex ||
+      sha256Hex.slice(0, 22) !== vector.expected.id
+    ) {
+      return providerTrustDiagnosticFailureInternalV1(
+        "golden_semantic",
+        "expected_bytes_mismatch",
+      );
+    }
+  }
+  return providerTrustDiagnosticSuccessInternalV1(manifest);
+}
+
+/**
+ * Package-private semantic Pin diagnostic shared by the public verifier and
+ * coherent-alternate rejection vectors.
+ */
+export function diagnoseProviderBootstrapTrustGoldenCompiledAnchorInternalV1(
+  manifest: ProviderBootstrapTrustGoldenManifestV1,
+): ProviderTrustDiagnosticResultV1<ProviderBootstrapTrustGoldenManifestV1> {
+  const contentDigest = ContentDigestV1Schema.parse(
+    `sha256:${bytesToLowerHex(
+      sha256InternalV1(canonicalizeJcsSafeIntegerUtf8V1(manifest)),
+    )}`,
+  );
+  if (
+    contentDigest !==
+    PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_SEMANTIC_CONTENT_DIGEST_V1
+  ) {
+    return providerTrustDiagnosticFailureInternalV1(
+      "compiled_golden_anchor",
+      "compiled_digest_mismatch",
+    );
+  }
+  return providerTrustDiagnosticSuccessInternalV1(manifest);
 }
 
 async function verifyRootSelfSignatureVectorV1(
@@ -430,8 +597,10 @@ async function verifyRootSelfSignatureVectorV1(
 }
 
 /**
- * Verifies immutable cross-language fixture bytes only. A successful result
- * does not authenticate a package, registry root, or provider capability.
+ * Verifies a parsed manifest against the compiled semantic anchor. Resource
+ * consumers should prefer verifyProviderBootstrapTrustGoldenManifestResourceV1
+ * so the exact raw bytes are anchored before JSON interpretation. A successful
+ * result does not authenticate a package, registry root, or provider capability.
  */
 export async function verifyProviderBootstrapTrustGoldenManifestV1(
   input: unknown,
@@ -440,6 +609,24 @@ export async function verifyProviderBootstrapTrustGoldenManifestV1(
   assertDataObjectDescriptorsBeforeSchemaV1(input);
   assertJsonDataTreeBeforeSchemaV1(input);
   const manifest = ProviderBootstrapTrustGoldenManifestV1Schema.parse(input);
+  const compiledAnchorDiagnostic =
+    diagnoseProviderBootstrapTrustGoldenCompiledAnchorInternalV1(
+      manifest,
+    );
+  if (!compiledAnchorDiagnostic.ok) {
+    throw new Error(
+      "bootstrap trust golden manifest compiled digest golden mismatch",
+    );
+  }
+  const staticContractDiagnostic =
+    diagnoseProviderBootstrapTrustGoldenStaticContractInternalV1(
+      manifest,
+    );
+  if (!staticContractDiagnostic.ok) {
+    throw new Error(
+      "bootstrap trust golden manifest static contract mismatch",
+    );
+  }
   const vectors = manifest.vectors;
 
   assertEqual(
@@ -657,4 +844,31 @@ export async function verifyProviderBootstrapTrustGoldenManifestV1(
     authority: "none_structure_only",
     manifest,
   });
+}
+
+/**
+ * Verifies the exact immutable fixture resource before interpreting its JSON.
+ * This is the preferred entry point for package, provider, and browser runners.
+ */
+export async function verifyProviderBootstrapTrustGoldenManifestResourceV1(
+  resourceBytes: unknown,
+  strictCryptoCapability: ProviderStrictEd25519OpaqueCapabilityV1,
+): Promise<ProviderBootstrapTrustGoldenManifestValidationV1> {
+  const snapshot = snapshotBoundedFixedResourceBytesInternalV1(
+    resourceBytes,
+    PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_MAX_BYTES_V1,
+  );
+  const resourceAnchorDiagnostic =
+    diagnoseProviderBootstrapTrustGoldenResourceAnchorInternalV1(
+      snapshot,
+    );
+  if (!resourceAnchorDiagnostic.ok) {
+    throw new TypeError("fixed resource byte anchor mismatch");
+  }
+  return verifyProviderBootstrapTrustGoldenManifestV1(
+    parseFixedUtf8JsonResourceInternalV1(
+      resourceAnchorDiagnostic.value,
+    ),
+    strictCryptoCapability,
+  );
 }

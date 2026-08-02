@@ -21,9 +21,9 @@ import {
   ProviderRegistryRecoveryPublicKeyV1Schema,
   ProviderRegistryRootMetadataEnvelopeV1Schema,
   ProviderRegistryRootPublicKeyV1Schema,
-  validateProviderRegistryRecoveryPublicKeyV1,
-  validateProviderRegistryRootMetadataEnvelopeStructureV1,
-  validateProviderRegistryRootPublicKeyV1,
+  diagnoseProviderRegistryRecoveryPublicKeyInternalV1,
+  diagnoseProviderRegistryRootMetadataEnvelopeStructureInternalV1,
+  diagnoseProviderRegistryRootPublicKeyInternalV1,
   verifyProviderRegistryBootstrapRootSelfSignatureV1,
   type ProviderRegistryRecoveryPublicKeyV1,
   type ProviderRegistryRootMetadataEnvelopeV1,
@@ -33,6 +33,11 @@ import {
   PROVIDER_TRUST_HISTORY_POLICY_V1,
   ProviderTrustHistoryPolicyV1Schema,
 } from "./provider-trust-policy.js";
+import {
+  providerTrustDiagnosticFailureInternalV1,
+  providerTrustDiagnosticSuccessInternalV1,
+  type ProviderTrustDiagnosticResultV1,
+} from "./provider-trust-diagnostics.js";
 import { sha256InternalV1 } from "./sha256.js";
 import {
   PROVIDER_STRICT_ED25519_ADVERSARIAL_MANIFEST_CONTENT_DIGEST_V1,
@@ -315,22 +320,99 @@ function decodeCanonicalPublicKeyBytes32V1(
 function validateStrictManifestEnvelopeV1(
   input: unknown,
 ): ProviderStrictEd25519AdversarialManifestEnvelopeV1 {
-  assertDataObjectDescriptorsBeforeSchemaV1(input);
-  const envelope =
-    ProviderStrictEd25519AdversarialManifestEnvelopeV1Schema.parse(input);
-  if (envelope.manifestVersion !== envelope.payload.manifestVersion) {
-    throw new TypeError("strict manifest version mismatch");
+  const diagnostic =
+    diagnoseProviderStrictManifestEnvelopeInternalV1(input);
+  if (!diagnostic.ok) {
+    throw new TypeError("strict manifest validation failed");
   }
-  const actualCaseIds = envelope.payload.cases.map((item) => item.caseId);
+  return diagnostic.value;
+}
+
+export function diagnoseProviderStrictManifestEnvelopeInternalV1(
+  input: unknown,
+): ProviderTrustDiagnosticResultV1<ProviderStrictEd25519AdversarialManifestEnvelopeV1> {
+  let outerManifestVersion: unknown;
+  let payloadManifestVersion: unknown;
+  let rawCases: unknown;
+  try {
+    assertDataObjectDescriptorsBeforeSchemaV1(input);
+    assertJsonDataTreeBeforeSchemaV1(input);
+    const outerDescriptors = Object.getOwnPropertyDescriptors(input);
+    outerManifestVersion =
+      outerDescriptors.manifestVersion?.value;
+    const payload = outerDescriptors.payload?.value;
+    if (
+      payload !== null &&
+      typeof payload === "object" &&
+      !Array.isArray(payload)
+    ) {
+      const payloadDescriptors =
+        Object.getOwnPropertyDescriptors(payload);
+      payloadManifestVersion =
+        payloadDescriptors.manifestVersion?.value;
+      rawCases = payloadDescriptors.cases?.value;
+    }
+  } catch {
+    return providerTrustDiagnosticFailureInternalV1(
+      "strict_manifest",
+      "schema_invalid",
+    );
+  }
+
   if (
-    actualCaseIds.length !==
-      PROVIDER_STRICT_ED25519_REQUIRED_CASE_IDS_V1.length ||
-    actualCaseIds.some(
-      (caseId, index) =>
-        caseId !== PROVIDER_STRICT_ED25519_REQUIRED_CASE_IDS_V1[index],
-    )
+    typeof outerManifestVersion === "number" &&
+    typeof payloadManifestVersion === "number" &&
+    (outerManifestVersion !== 1 ||
+      payloadManifestVersion !== 1 ||
+      outerManifestVersion !== payloadManifestVersion)
   ) {
-    throw new TypeError("strict manifest case coverage mismatch");
+    return providerTrustDiagnosticFailureInternalV1(
+      "strict_manifest",
+      "manifest_version_mismatch",
+    );
+  }
+
+  if (Array.isArray(rawCases)) {
+    const actualCaseIds = rawCases.map((item) => {
+      if (
+        item === null ||
+        typeof item !== "object" ||
+        Array.isArray(item)
+      ) {
+        return undefined;
+      }
+      return Object.getOwnPropertyDescriptor(item, "caseId")?.value;
+    });
+    if (
+      actualCaseIds.every(
+        (caseId): caseId is string => typeof caseId === "string",
+      ) &&
+      (actualCaseIds.length !==
+        PROVIDER_STRICT_ED25519_REQUIRED_CASE_IDS_V1.length ||
+        actualCaseIds.some(
+          (caseId, index) =>
+            caseId !==
+            PROVIDER_STRICT_ED25519_REQUIRED_CASE_IDS_V1[index],
+        ))
+    ) {
+      return providerTrustDiagnosticFailureInternalV1(
+        "strict_manifest",
+        "manifest_case_coverage_mismatch",
+      );
+    }
+  }
+
+  let envelope: ProviderStrictEd25519AdversarialManifestEnvelopeV1;
+  try {
+    envelope =
+      ProviderStrictEd25519AdversarialManifestEnvelopeV1Schema.parse(
+        input,
+      );
+  } catch {
+    return providerTrustDiagnosticFailureInternalV1(
+      "strict_manifest",
+      "schema_invalid",
+    );
   }
   const derivedDigest = contentDigestForDomainV1(
     PROVIDER_STRICT_ED25519_ADVERSARIAL_MANIFEST_DOMAIN_V1,
@@ -342,9 +424,12 @@ function validateStrictManifestEnvelopeV1(
     derivedDigest !==
       PROVIDER_STRICT_ED25519_ADVERSARIAL_MANIFEST_CONTENT_DIGEST_V1
   ) {
-    throw new TypeError("strict manifest digest mismatch");
+    return providerTrustDiagnosticFailureInternalV1(
+      "strict_manifest",
+      "compiled_digest_mismatch",
+    );
   }
-  return envelope;
+  return providerTrustDiagnosticSuccessInternalV1(envelope);
 }
 
 export function deriveProviderBootstrapTrustBundleContentDigestV1(
@@ -375,6 +460,61 @@ export function validateProviderBootstrapTrustBundleEnvelopeV1(
   return envelope;
 }
 
+export function diagnoseProviderBootstrapTrustBundleEnvelopeInternalV1(
+  input: unknown,
+): ProviderTrustDiagnosticResultV1<ProviderBootstrapTrustBundleEnvelopeV1> {
+  let envelope: ProviderBootstrapTrustBundleEnvelopeV1;
+  try {
+    assertDataObjectDescriptorsBeforeSchemaV1(input);
+    assertJsonDataTreeBeforeSchemaV1(input);
+    envelope =
+      ProviderBootstrapTrustBundleEnvelopeV1Schema.parse(input);
+  } catch {
+    return providerTrustDiagnosticFailureInternalV1(
+      "bundle_envelope",
+      "schema_invalid",
+    );
+  }
+  if (
+    envelope.contentDigest !==
+    deriveProviderBootstrapTrustBundleContentDigestV1(envelope.payload)
+  ) {
+    return providerTrustDiagnosticFailureInternalV1(
+      "bundle_envelope",
+      "content_digest_mismatch",
+    );
+  }
+  return providerTrustDiagnosticSuccessInternalV1(envelope);
+}
+
+export function diagnoseProviderBootstrapTrustBundleCompiledAnchorInternalV1(
+  input: ProviderBootstrapTrustBundleEnvelopeV1,
+): ProviderTrustDiagnosticResultV1<ProviderBootstrapTrustBundleEnvelopeV1> {
+  if (
+    input.contentDigest !==
+    PROVIDER_BOOTSTRAP_TRUST_BUNDLE_CONTENT_DIGEST_V1
+  ) {
+    return providerTrustDiagnosticFailureInternalV1(
+      "compiled_bundle_anchor",
+      "compiled_digest_mismatch",
+    );
+  }
+  return providerTrustDiagnosticSuccessInternalV1(input);
+}
+
+function validateProviderBootstrapTrustBundleCompiledAnchorV1(
+  input: ProviderBootstrapTrustBundleEnvelopeV1,
+): ProviderBootstrapTrustBundleEnvelopeV1 {
+  const diagnostic =
+    diagnoseProviderBootstrapTrustBundleCompiledAnchorInternalV1(
+      input,
+    );
+  if (!diagnostic.ok) {
+    throw new TypeError("bootstrap trust bundle compiled Pin mismatch");
+  }
+  return diagnostic.value;
+}
+
 export function createProviderBootstrapTrustBundlePinV1(
   input: unknown,
 ): ProviderBootstrapTrustBundlePinV1 {
@@ -386,21 +526,61 @@ export function createProviderBootstrapTrustBundlePinV1(
 }
 
 function validateBundleRootClosureV1(
-  bundle: ProviderBootstrapTrustBundleV1,
+  input: unknown,
 ): {
   readonly root: ProviderRegistryRootPublicKeyV1;
   readonly metadata: ProviderRegistryRootMetadataEnvelopeV1;
   readonly recoveryKeys: readonly ProviderRegistryRecoveryPublicKeyV1[];
 } {
-  const root = validateProviderRegistryRootPublicKeyV1(
-    bundle.bootstrapProviderRegistryRoot,
-  );
-  const metadata = validateProviderRegistryRootMetadataEnvelopeStructureV1(
-    bundle.bootstrapProviderRegistryRootMetadata,
-  );
-  const recoveryKeys = bundle.providerRegistryRecoveryKeys.map((key) =>
-    validateProviderRegistryRecoveryPublicKeyV1(key),
-  );
+  const diagnostic =
+    diagnoseProviderBootstrapTrustBundleRootClosureInternalV1(
+      input,
+    );
+  if (!diagnostic.ok) {
+    throw new TypeError("bootstrap registry root closure mismatch");
+  }
+  return diagnostic.value;
+}
+
+export function diagnoseProviderBootstrapTrustBundleRootClosureInternalV1(
+  input: unknown,
+): ProviderTrustDiagnosticResultV1<{
+  readonly root: ProviderRegistryRootPublicKeyV1;
+  readonly metadata: ProviderRegistryRootMetadataEnvelopeV1;
+  readonly recoveryKeys: readonly ProviderRegistryRecoveryPublicKeyV1[];
+}> {
+  let bundle: ProviderBootstrapTrustBundleV1;
+  try {
+    assertDataObjectDescriptorsBeforeSchemaV1(input);
+    assertJsonDataTreeBeforeSchemaV1(input);
+    bundle = ProviderBootstrapTrustBundleV1Schema.parse(input);
+  } catch {
+    return providerTrustDiagnosticFailureInternalV1(
+      "bundle_payload_schema",
+      "schema_invalid",
+    );
+  }
+
+  const rootDiagnostic =
+    diagnoseProviderRegistryRootPublicKeyInternalV1(
+      bundle.bootstrapProviderRegistryRoot,
+    );
+  if (!rootDiagnostic.ok) return rootDiagnostic;
+  const metadataDiagnostic =
+    diagnoseProviderRegistryRootMetadataEnvelopeStructureInternalV1(
+      bundle.bootstrapProviderRegistryRootMetadata,
+    );
+  if (!metadataDiagnostic.ok) return metadataDiagnostic;
+
+  const recoveryKeys: ProviderRegistryRecoveryPublicKeyV1[] = [];
+  for (const key of bundle.providerRegistryRecoveryKeys) {
+    const recoveryDiagnostic =
+      diagnoseProviderRegistryRecoveryPublicKeyInternalV1(key);
+    if (!recoveryDiagnostic.ok) return recoveryDiagnostic;
+    recoveryKeys.push(recoveryDiagnostic.value);
+  }
+  const root = rootDiagnostic.value;
+  const metadata = metadataDiagnostic.value;
   if (
     metadata.rootGeneration !== 1 ||
     metadata.payload.rootGeneration !== 1 ||
@@ -409,25 +589,49 @@ function validateBundleRootClosureV1(
     metadata.payload.recoverySignatures.length !== 0 ||
     !canonicalJsonEqual(root, metadata.payload.activeRoot)
   ) {
-    throw new TypeError("bootstrap registry root closure mismatch");
+    return providerTrustDiagnosticFailureInternalV1(
+      "bundle_root_closure",
+      "bundle_root_metadata_mismatch",
+    );
   }
 
+  const seenRecoveryKeyIds = new Set<string>();
+  const seenRecoveryKeyMaterials = new Set<string>();
+  for (const recoveryKey of recoveryKeys) {
+    if (
+      seenRecoveryKeyIds.has(recoveryKey.recoveryKeyId) ||
+      seenRecoveryKeyMaterials.has(recoveryKey.publicKeyBytes)
+    ) {
+      return providerTrustDiagnosticFailureInternalV1(
+        "recovery_key_closure",
+        "recovery_duplicate",
+      );
+    }
+    if (recoveryKey.publicKeyBytes === root.publicKeyBytes) {
+      return providerTrustDiagnosticFailureInternalV1(
+        "recovery_key_closure",
+        "key_material_alias",
+      );
+    }
+    seenRecoveryKeyIds.add(recoveryKey.recoveryKeyId);
+    seenRecoveryKeyMaterials.add(recoveryKey.publicKeyBytes);
+  }
   for (let index = 1; index < recoveryKeys.length; index += 1) {
     if (
-      recoveryKeys[index - 1]!.recoveryKeyId >=
+      recoveryKeys[index - 1]!.recoveryKeyId >
       recoveryKeys[index]!.recoveryKeyId
     ) {
-      throw new TypeError("recovery keys must be strictly ordered");
+      return providerTrustDiagnosticFailureInternalV1(
+        "recovery_key_closure",
+        "recovery_order_invalid",
+      );
     }
   }
-  const publicKeyMaterials = [
-    root.publicKeyBytes,
-    ...recoveryKeys.map((key) => key.publicKeyBytes),
-  ];
-  if (new Set(publicKeyMaterials).size !== publicKeyMaterials.length) {
-    throw new TypeError("bootstrap trust key material must be unique");
-  }
-  return { root, metadata, recoveryKeys };
+  return providerTrustDiagnosticSuccessInternalV1({
+    root,
+    metadata,
+    recoveryKeys,
+  });
 }
 
 async function validateProviderBootstrapTrustBundleStructureInternalV1(
@@ -446,6 +650,9 @@ async function validateProviderBootstrapTrustBundleStructureInternalV1(
     validateProviderBootstrapTrustBundleEnvelopeV1(bundleUnknown);
   const strictManifestEnvelope =
     validateStrictManifestEnvelopeV1(manifestUnknown);
+  validateProviderBootstrapTrustBundleCompiledAnchorV1(
+    bundleEnvelope,
+  );
 
   const liveCapabilityUnknown = parseCanonicalJcsSafeIntegerUtf8V1(
     getProviderStrictEd25519CryptoCapabilityBytesV1(

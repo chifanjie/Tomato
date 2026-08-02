@@ -25,6 +25,11 @@ import {
   verifyRawEd25519WithCapabilityV1,
   type ProviderStrictEd25519OpaqueCapabilityV1,
 } from "./strict-ed25519-conformance.js";
+import {
+  providerTrustDiagnosticFailureInternalV1,
+  providerTrustDiagnosticSuccessInternalV1,
+  type ProviderTrustDiagnosticResultV1,
+} from "./provider-trust-diagnostics.js";
 
 export const PROVIDER_REGISTRY_RECOVERY_KEY_ID_DOMAIN_V1 =
   "provider-registry-recovery-key-id-v1" as const;
@@ -389,6 +394,40 @@ export function validateProviderRegistryRootPublicKeyV1(
   return publicKey;
 }
 
+export function diagnoseProviderRegistryRootPublicKeyInternalV1(
+  input: unknown,
+): ProviderTrustDiagnosticResultV1<ProviderRegistryRootPublicKeyV1> {
+  let publicKey: ProviderRegistryRootPublicKeyV1;
+  try {
+    assertDataObjectDescriptorsBeforeSchemaV1(input);
+    publicKey = ProviderRegistryRootPublicKeyV1Schema.parse(input);
+  } catch {
+    return providerTrustDiagnosticFailureInternalV1(
+      "root_key_record",
+      "schema_invalid",
+    );
+  }
+  const expectedKeyId = deriveProviderRegistryRootKeyIdInternalV1({
+    publicKeyBytes: publicKey.publicKeyBytes,
+  });
+  const expectedDigest = deriveProviderEd25519PublicKeyDigestInternalV1(
+    publicKey.publicKeyBytes,
+  );
+  if (publicKey.rootKeyId !== expectedKeyId) {
+    return providerTrustDiagnosticFailureInternalV1(
+      "root_key_record",
+      "key_id_mismatch",
+    );
+  }
+  if (publicKey.publicKeyDigest !== expectedDigest) {
+    return providerTrustDiagnosticFailureInternalV1(
+      "root_key_record",
+      "raw_public_key_digest_mismatch",
+    );
+  }
+  return providerTrustDiagnosticSuccessInternalV1(publicKey);
+}
+
 export function validateProviderRegistryRecoveryPublicKeyV1(
   input: unknown,
 ): ProviderRegistryRecoveryPublicKeyV1 {
@@ -407,6 +446,40 @@ export function validateProviderRegistryRecoveryPublicKeyV1(
     throw new TypeError("registry recovery public key material mismatch");
   }
   return publicKey;
+}
+
+export function diagnoseProviderRegistryRecoveryPublicKeyInternalV1(
+  input: unknown,
+): ProviderTrustDiagnosticResultV1<ProviderRegistryRecoveryPublicKeyV1> {
+  let publicKey: ProviderRegistryRecoveryPublicKeyV1;
+  try {
+    assertDataObjectDescriptorsBeforeSchemaV1(input);
+    publicKey = ProviderRegistryRecoveryPublicKeyV1Schema.parse(input);
+  } catch {
+    return providerTrustDiagnosticFailureInternalV1(
+      "recovery_key_record",
+      "schema_invalid",
+    );
+  }
+  const expectedKeyId = deriveProviderRegistryRecoveryKeyIdInternalV1({
+    publicKeyBytes: publicKey.publicKeyBytes,
+  });
+  const expectedDigest = deriveProviderEd25519PublicKeyDigestInternalV1(
+    publicKey.publicKeyBytes,
+  );
+  if (publicKey.recoveryKeyId !== expectedKeyId) {
+    return providerTrustDiagnosticFailureInternalV1(
+      "recovery_key_record",
+      "key_id_mismatch",
+    );
+  }
+  if (publicKey.publicKeyDigest !== expectedDigest) {
+    return providerTrustDiagnosticFailureInternalV1(
+      "recovery_key_record",
+      "raw_public_key_digest_mismatch",
+    );
+  }
+  return providerTrustDiagnosticSuccessInternalV1(publicKey);
 }
 
 export function projectProviderRegistryRootMetadataUnsignedClaimsV1(
@@ -533,6 +606,92 @@ export function validateProviderRegistryRootMetadataEnvelopeStructureV1(
     }
   }
   return envelope;
+}
+
+export function diagnoseProviderRegistryRootMetadataEnvelopeStructureInternalV1(
+  input: unknown,
+): ProviderTrustDiagnosticResultV1<ProviderRegistryRootMetadataEnvelopeV1> {
+  let envelope: ProviderRegistryRootMetadataEnvelopeV1;
+  try {
+    assertDataObjectDescriptorsBeforeSchemaV1(input);
+    assertJsonDataTreeBeforeSchemaV1(input);
+    envelope =
+      ProviderRegistryRootMetadataEnvelopeV1Schema.parse(input);
+  } catch {
+    return providerTrustDiagnosticFailureInternalV1(
+      "root_metadata_envelope",
+      "schema_invalid",
+    );
+  }
+  const activeRootDiagnostic =
+    diagnoseProviderRegistryRootPublicKeyInternalV1(
+      envelope.payload.activeRoot,
+    );
+  if (!activeRootDiagnostic.ok) return activeRootDiagnostic;
+  const activeRoot = activeRootDiagnostic.value;
+  const selfSignature = parseRootSelfSignatureV1(
+    envelope.payload.selfSignature,
+  );
+  if (envelope.rootGeneration !== envelope.payload.rootGeneration) {
+    return providerTrustDiagnosticFailureInternalV1(
+      "root_metadata_envelope",
+      "envelope_generation_mismatch",
+    );
+  }
+  if (envelope.rootKeyId !== activeRoot.rootKeyId) {
+    return providerTrustDiagnosticFailureInternalV1(
+      "root_metadata_envelope",
+      "envelope_key_id_mismatch",
+    );
+  }
+  if (
+    envelope.contentDigest !==
+    deriveProviderRegistryRootMetadataContentDigestV1(envelope.payload)
+  ) {
+    return providerTrustDiagnosticFailureInternalV1(
+      "root_metadata_envelope",
+      "content_digest_mismatch",
+    );
+  }
+  if (
+    selfSignature === undefined ||
+    selfSignature.keyId !== activeRoot.rootKeyId
+  ) {
+    return providerTrustDiagnosticFailureInternalV1(
+      "root_metadata_envelope",
+      "self_signature_key_id_mismatch",
+    );
+  }
+
+  if (envelope.payload.activation === "planned_rollover") {
+    const predecessorSigner = signatureKeyId(
+      envelope.payload.predecessorCrossSignature,
+      PROVIDER_ROOT_CROSS_SIGNATURE_PATTERN,
+    );
+    if (predecessorSigner !== envelope.payload.predecessor.rootKeyId) {
+      return providerTrustDiagnosticFailureInternalV1(
+        "root_metadata_envelope",
+        "predecessor_signature_key_id_mismatch",
+      );
+    }
+  }
+
+  if (envelope.payload.activation !== "bootstrap") {
+    const recoverySignerIds = envelope.payload.recoverySignatures.map(
+      (signature) =>
+        signatureKeyId(signature, PROVIDER_ROOT_RECOVERY_SIGNATURE_PATTERN),
+    );
+    if (
+      recoverySignerIds.some((keyId) => keyId === undefined) ||
+      recoverySignerIds[0]! >= recoverySignerIds[1]!
+    ) {
+      return providerTrustDiagnosticFailureInternalV1(
+        "root_metadata_envelope",
+        "recovery_signature_order_invalid",
+      );
+    }
+  }
+  return providerTrustDiagnosticSuccessInternalV1(envelope);
 }
 
 export async function verifyProviderRegistryRootSelfSignatureV1(

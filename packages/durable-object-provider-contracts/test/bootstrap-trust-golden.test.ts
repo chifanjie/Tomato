@@ -11,8 +11,13 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import {
   PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_PROFILE_V1,
+  PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_MAX_BYTES_V1,
+  PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_RESOURCE_BYTE_LENGTH_V1,
+  PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_RESOURCE_SHA256_HEX_V1,
+  PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_SEMANTIC_CONTENT_DIGEST_V1,
   ProviderBootstrapTrustGoldenManifestV1Schema,
   verifyProviderBootstrapTrustGoldenManifestV1,
+  verifyProviderBootstrapTrustGoldenManifestResourceV1,
 } from "../src/bootstrap-trust-golden.js";
 import {
   PROVIDER_STRICT_ED25519_MANIFEST_MAX_BYTES_V1,
@@ -112,6 +117,11 @@ describe("immutable bootstrap trust cross-language golden manifest", () => {
     expect(validation.manifest.profile).toBe(
       PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_PROFILE_V1,
     );
+    expect(
+      PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_SEMANTIC_CONTENT_DIGEST_V1,
+    ).toBe(
+      "sha256:791dcb58e8168c8731edb7c96198d9c50da543a43d13a534ef02462fd5bed83c",
+    );
     expect(validation.manifest.vectors.recoveryKeyIds).toHaveLength(3);
     expect(Object.isFrozen(validation)).toBe(true);
     expect(Object.isFrozen(validation.manifest.vectors)).toBe(true);
@@ -130,6 +140,112 @@ describe("immutable bootstrap trust cross-language golden manifest", () => {
     ];
     expect(caseIds).toHaveLength(8);
     expect(new Set(caseIds).size).toBe(8);
+  });
+
+  it("anchors the exact raw fixture bytes before semantic verification", async () => {
+    expect(goldenBytes.byteLength).toBe(
+      PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_RESOURCE_BYTE_LENGTH_V1,
+    );
+    expect(createHash("sha256").update(goldenBytes).digest("hex")).toBe(
+      PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_RESOURCE_SHA256_HEX_V1,
+    );
+    const validation =
+      await verifyProviderBootstrapTrustGoldenManifestResourceV1(
+        new Uint8Array(goldenBytes),
+        strictCryptoCapability,
+      );
+    expect(validation.authority).toBe("none_structure_only");
+
+    const semanticallyEqualDifferentBytes = new TextEncoder().encode(
+      JSON.stringify(goldenInput),
+    );
+    await expect(
+      verifyProviderBootstrapTrustGoldenManifestResourceV1(
+        semanticallyEqualDifferentBytes,
+        strictCryptoCapability,
+      ),
+    ).rejects.toThrow(/byte anchor mismatch/u);
+  });
+
+  it("rejects oversized and exotic raw resource views before reading overrides", async () => {
+    await expect(
+      verifyProviderBootstrapTrustGoldenManifestResourceV1(
+        new Uint8Array(
+          PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_MAX_BYTES_V1 + 1,
+        ),
+        strictCryptoCapability,
+      ),
+    ).rejects.toThrow(/invalid fixed resource bytes/u);
+
+    let subclassByteLengthRead = false;
+    let subclassSliceCalled = false;
+    class HostileUint8Array extends Uint8Array {
+      override get byteLength(): number {
+        subclassByteLengthRead = true;
+        return goldenBytes.byteLength;
+      }
+
+      override slice(
+        _start?: number,
+        _end?: number,
+      ): Uint8Array<ArrayBuffer> {
+        subclassSliceCalled = true;
+        return new Uint8Array(goldenBytes);
+      }
+    }
+    await expect(
+      verifyProviderBootstrapTrustGoldenManifestResourceV1(
+        new HostileUint8Array(goldenBytes),
+        strictCryptoCapability,
+      ),
+    ).rejects.toThrow(/invalid fixed resource bytes/u);
+    expect(subclassByteLengthRead).toBe(false);
+    expect(subclassSliceCalled).toBe(false);
+
+    let proxyGetterRead = false;
+    const proxiedBytes = new Proxy(new Uint8Array(goldenBytes), {
+      get(target, property, receiver) {
+        proxyGetterRead = true;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    await expect(
+      verifyProviderBootstrapTrustGoldenManifestResourceV1(
+        proxiedBytes,
+        strictCryptoCapability,
+      ),
+    ).rejects.toThrow(/invalid fixed resource bytes/u);
+    expect(proxyGetterRead).toBe(false);
+
+    if (typeof SharedArrayBuffer === "function") {
+      const sharedBytes = new Uint8Array(
+        new SharedArrayBuffer(goldenBytes.byteLength),
+      );
+      sharedBytes.set(goldenBytes);
+      await expect(
+        verifyProviderBootstrapTrustGoldenManifestResourceV1(
+          sharedBytes,
+          strictCryptoCapability,
+        ),
+      ).rejects.toThrow(/invalid fixed resource bytes/u);
+    }
+  });
+
+  it("rejects a schema-valid crypto-coherent alternate semantic manifest", async () => {
+    const alternate = cloneJson(golden);
+    alternate.fixedBundleResource.resourceBytesSha256Hex =
+      "f".repeat(64);
+    expect(
+      ProviderBootstrapTrustGoldenManifestV1Schema.safeParse(
+        alternate,
+      ).success,
+    ).toBe(true);
+    await expect(
+      verifyProviderBootstrapTrustGoldenManifestV1(
+        alternate,
+        strictCryptoCapability,
+      ),
+    ).rejects.toThrow(/compiled digest golden mismatch/u);
   });
 
   it("binds the literal manifest to the exact fixed Bundle bytes and records", () => {

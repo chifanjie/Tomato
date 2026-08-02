@@ -8,6 +8,7 @@ import {
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import { ZodError } from "zod";
 
 import {
   PROVIDER_BOOTSTRAP_TRUST_BUNDLE_DOMAIN_V1,
@@ -16,8 +17,8 @@ import {
   ProviderBootstrapTrustStructureError,
   createProviderBootstrapTrustBundlePinV1,
   deriveProviderBootstrapTrustBundleContentDigestV1,
+  validateProviderBootstrapTrustBundleEnvelopeV1,
   validateProviderBootstrapTrustBundleStructureV1,
-  type ProviderBootstrapTrustBundleEnvelopeV1,
   type ValidateProviderBootstrapTrustBundleStructureV1Input,
 } from "../src/bootstrap-trust-bundle.js";
 import { canonicalizeJcsSafeIntegerUtf8V1 } from "../src/jcs.js";
@@ -37,10 +38,8 @@ import {
   type ProviderRegistryRootMetadataEnvelopeV1,
   type ProviderRegistryRootPublicKeyV1,
 } from "../src/provider-registry-trust.js";
-import { PROVIDER_TRUST_HISTORY_POLICY_V1 } from "../src/provider-trust-policy.js";
 import {
   PROVIDER_STRICT_ED25519_ADVERSARIAL_MANIFEST_DOMAIN_V1,
-  PROVIDER_STRICT_ED25519_CRYPTO_CAPABILITY_V1,
   PROVIDER_STRICT_ED25519_MANIFEST_MAX_BYTES_V1,
   PROVIDER_STRICT_ED25519_MANIFEST_RESOURCE_PATH_V1,
   attestProviderStrictEd25519CryptoHostV1,
@@ -62,6 +61,20 @@ const strictManifestEnvelopeBytes = new Uint8Array(
     ),
   ),
 );
+const bundleEnvelopeBytes = new Uint8Array(
+  readFileSync(
+    fileURLToPath(
+      new URL(
+        "../provider/bootstrap-trust-bundle-v1.json",
+        import.meta.url,
+      ),
+    ),
+  ),
+);
+const bundleEnvelope =
+  ProviderBootstrapTrustBundleEnvelopeV1Schema.parse(
+    JSON.parse(Buffer.from(bundleEnvelopeBytes).toString("utf8")),
+  );
 
 interface DeterministicEd25519KeyPair {
   readonly privateKey: KeyObject;
@@ -94,22 +107,6 @@ function rootPublicKey(
   return ProviderRegistryRootPublicKeyV1Schema.parse({
     profile: "provider_registry_root_public_key_v1",
     rootKeyId: deriveProviderRegistryRootKeyIdInternalV1({
-      publicKeyBytes: keyPair.publicKeyBytes,
-    }),
-    algorithm: "ed25519",
-    publicKeyBytes: keyPair.publicKeyBytes,
-    publicKeyDigest: deriveProviderEd25519PublicKeyDigestInternalV1(
-      keyPair.publicKeyBytes,
-    ),
-  });
-}
-
-function recoveryPublicKey(
-  keyPair: DeterministicEd25519KeyPair,
-): ProviderRegistryRecoveryPublicKeyV1 {
-  return ProviderRegistryRecoveryPublicKeyV1Schema.parse({
-    profile: "provider_registry_recovery_public_key_v1",
-    recoveryKeyId: deriveProviderRegistryRecoveryKeyIdInternalV1({
       publicKeyBytes: keyPair.publicKeyBytes,
     }),
     algorithm: "ed25519",
@@ -162,43 +159,12 @@ function sha256DomainDigest(domain: string, payload: object): string {
     .digest("hex")}`;
 }
 
-const rootKeyPair = deterministicEd25519KeyPair(21);
 const alternateRootKeyPair = deterministicEd25519KeyPair(22);
-const recoveryKeyPairs = [
-  deterministicEd25519KeyPair(23),
-  deterministicEd25519KeyPair(24),
-  deterministicEd25519KeyPair(25),
-] as const;
-const root = rootPublicKey(rootKeyPair);
 const alternateRoot = rootPublicKey(alternateRootKeyPair);
-const rootMetadataEnvelope = signRootMetadata(rootKeyPair, root);
 const alternateRootMetadataEnvelope = signRootMetadata(
   alternateRootKeyPair,
   alternateRoot,
 );
-const recoveryKeys = recoveryKeyPairs
-  .map(recoveryPublicKey)
-  .sort((left, right) =>
-    left.recoveryKeyId.localeCompare(right.recoveryKeyId),
-  );
-
-const bundleEnvelope = ProviderBootstrapTrustBundleEnvelopeV1Schema.parse({
-  schemaVersion: 1,
-  recordType: "provider_bootstrap_trust_bundle",
-  contentDigest: `sha256:${"0".repeat(64)}`,
-  payload: {
-    profile: "provider_bootstrap_trust_bundle_v1",
-    strictCryptoCapability: PROVIDER_STRICT_ED25519_CRYPTO_CAPABILITY_V1,
-    bootstrapProviderRegistryRoot: root,
-    bootstrapProviderRegistryRootMetadata: rootMetadataEnvelope,
-    providerRegistryRecoveryKeys: recoveryKeys,
-    providerRegistryRecoveryThreshold: 2,
-    providerTrustHistoryPolicy: PROVIDER_TRUST_HISTORY_POLICY_V1,
-  },
-});
-bundleEnvelope.contentDigest =
-  deriveProviderBootstrapTrustBundleContentDigestV1(bundleEnvelope.payload);
-const bundleEnvelopeBytes = canonicalizeJcsSafeIntegerUtf8V1(bundleEnvelope);
 
 const pointSpy = vi.fn(validatePrimeSubgroupPoint);
 const verifySpy = vi.fn(verifyRawEd25519);
@@ -337,16 +303,33 @@ describe("bootstrap trust bundle structure-only validation", () => {
       .map(([bytes]) => Buffer.from(bytes).toString("hex"))
       .sort();
     const expectedHex = [
-      rootKeyPair.rawPublicKey,
-      ...recoveryKeyPairs.map((keyPair) => keyPair.rawPublicKey),
+      bundleEnvelope.payload.bootstrapProviderRegistryRoot
+        .publicKeyBytes,
+      ...bundleEnvelope.payload.providerRegistryRecoveryKeys.map(
+        (key) => key.publicKeyBytes,
+      ),
     ]
-      .map((bytes) => Buffer.from(bytes).toString("hex"))
+      .map((bytes) =>
+        Buffer.from(
+          bytes.slice("base64url:".length),
+          "base64url",
+        ).toString("hex"),
+      )
       .sort();
     expect(admittedHex).toEqual(expectedHex);
-    expect(verifySpy.mock.calls[0]?.[0]).toEqual(rootKeyPair.rawPublicKey);
+    expect(verifySpy.mock.calls[0]?.[0]).toEqual(
+      new Uint8Array(
+        Buffer.from(
+          bundleEnvelope.payload.bootstrapProviderRegistryRoot
+            .publicKeyBytes.slice("base64url:".length),
+          "base64url",
+        ),
+      ),
+    );
     expect(verifySpy.mock.calls[0]?.[1]).toEqual(
       createProviderRegistryRootSelfSignatureMessageV1(
-        rootMetadataEnvelope.payload,
+        bundleEnvelope.payload.bootstrapProviderRegistryRootMetadata
+          .payload,
       ),
     );
   });
@@ -370,6 +353,73 @@ describe("bootstrap trust bundle structure-only validation", () => {
         contentDigest: `sha256:${"f".repeat(64)}`,
       }),
     ).toThrow(/digest mismatch/u);
+  });
+
+  it("preserves public Bundle schema failures for validation and Pin derivation", () => {
+    for (const validate of [
+      validateProviderBootstrapTrustBundleEnvelopeV1,
+      createProviderBootstrapTrustBundlePinV1,
+    ]) {
+      let rejection: unknown;
+      try {
+        validate({
+          ...bundleEnvelope,
+          recordType: "not-bootstrap-trust-bundle",
+        });
+      } catch (error) {
+        rejection = error;
+      }
+      expect(rejection).toBeInstanceOf(ZodError);
+      expect((rejection as ZodError).issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ path: ["recordType"] }),
+        ]),
+      );
+    }
+  });
+
+  it("preserves public descriptor errors without invoking accessors", () => {
+    for (const validate of [
+      validateProviderBootstrapTrustBundleEnvelopeV1,
+      createProviderBootstrapTrustBundlePinV1,
+    ]) {
+      let getterInvoked = false;
+      const input = { ...bundleEnvelope } as Record<string, unknown>;
+      Object.defineProperty(input, "recordType", {
+        enumerable: true,
+        get() {
+          getterInvoked = true;
+          return bundleEnvelope.recordType;
+        },
+      });
+      expect(() => validate(input)).toThrow(
+        "domain field recordType must be an enumerable data property",
+      );
+      expect(getterInvoked).toBe(false);
+    }
+
+    for (const validate of [
+      validateProviderBootstrapTrustBundleEnvelopeV1,
+      createProviderBootstrapTrustBundlePinV1,
+    ]) {
+      let getterInvoked = false;
+      const payload = {
+        ...bundleEnvelope.payload,
+      } as Record<string, unknown>;
+      Object.defineProperty(payload, "profile", {
+        enumerable: true,
+        get() {
+          getterInvoked = true;
+          return bundleEnvelope.payload.profile;
+        },
+      });
+      expect(() =>
+        validate({ ...bundleEnvelope, payload }),
+      ).toThrow(
+        "JSON data properties must be enumerable data properties",
+      );
+      expect(getterInvoked).toBe(false);
+    }
   });
 });
 
@@ -438,6 +488,24 @@ describe("fixed resource byte boundaries", () => {
 });
 
 describe("Bundle, manifest, profile, and policy substitutions", () => {
+  it("rejects a fully self-consistent alternate Bundle outside the compiled Pin", async () => {
+    const candidate = mutableBundleEnvelope();
+    const payload = bundlePayload(candidate);
+    payload.bootstrapProviderRegistryRoot = alternateRoot;
+    payload.bootstrapProviderRegistryRootMetadata =
+      alternateRootMetadataEnvelope;
+
+    pointSpy.mockClear();
+    verifySpy.mockClear();
+    await expectStructureFailure(
+      validationInput({
+        bundleEnvelopeBytes: sealBundleEnvelope(candidate),
+      }),
+    );
+    expect(pointSpy).not.toHaveBeenCalled();
+    expect(verifySpy).not.toHaveBeenCalled();
+  });
+
   it("rejects Bundle digest and outer Envelope substitutions", async () => {
     const candidates = [
       {
@@ -595,11 +663,19 @@ describe("registry root and recovery-key closure substitutions", () => {
     const rootAliasCandidate = mutableBundleEnvelope();
     const aliasKeys = bundlePayload(rootAliasCandidate)
       .providerRegistryRecoveryKeys as Array<Record<string, unknown>>;
-    const rootMaterialAsRecovery = recoveryPublicKey({
-      privateKey: rootKeyPair.privateKey,
-      rawPublicKey: rootKeyPair.rawPublicKey,
-      publicKeyBytes: rootKeyPair.publicKeyBytes,
-    });
+    const candidateRoot = bundlePayload(rootAliasCandidate)
+      .bootstrapProviderRegistryRoot as ProviderRegistryRootPublicKeyV1;
+    const rootMaterialAsRecovery =
+      ProviderRegistryRecoveryPublicKeyV1Schema.parse({
+        profile: "provider_registry_recovery_public_key_v1",
+        recoveryKeyId:
+          deriveProviderRegistryRecoveryKeyIdInternalV1({
+            publicKeyBytes: candidateRoot.publicKeyBytes,
+          }),
+        algorithm: "ed25519",
+        publicKeyBytes: candidateRoot.publicKeyBytes,
+        publicKeyDigest: candidateRoot.publicKeyDigest,
+      });
     aliasKeys[0] = rootMaterialAsRecovery as unknown as Record<string, unknown>;
     aliasKeys.sort((left, right) =>
       String(left.recoveryKeyId).localeCompare(String(right.recoveryKeyId)),
@@ -616,7 +692,7 @@ describe("registry root and recovery-key closure substitutions", () => {
     }
   });
 
-  it("keeps the legacy mixed-order key derivable but rejects it at trust admission", async () => {
+  it("keeps the legacy mixed-order key derivable but rejects the substituted Bundle before trust-key cryptography", async () => {
     const mixedOrderCandidate = mutableBundleEnvelope();
     const keys = bundlePayload(mixedOrderCandidate)
       .providerRegistryRecoveryKeys as Array<Record<string, unknown>>;
@@ -636,7 +712,7 @@ describe("registry root and recovery-key closure substitutions", () => {
         bundleEnvelopeBytes: sealBundleEnvelope(mixedOrderCandidate),
       }),
     );
-    expect(pointSpy).toHaveBeenCalled();
+    expect(pointSpy).not.toHaveBeenCalled();
     expect(verifySpy).not.toHaveBeenCalled();
   });
 });

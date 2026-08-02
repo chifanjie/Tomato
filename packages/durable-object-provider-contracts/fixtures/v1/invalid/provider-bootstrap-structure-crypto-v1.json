@@ -1,0 +1,1740 @@
+{
+  "schemaVersion": 1,
+  "profile": "provider_bootstrap_structure_crypto_invalid_manifest_v1",
+  "canonicalizationProfile": "rfc8785-jcs-safe-integer-v1",
+  "verificationProfile": "ed25519-rfc8032-cofactorless-prime-subgroup-v1",
+  "fixtureAuthority": "none_rejection_only",
+  "baseResources": {
+    "bootstrapGolden": {
+      "resourcePath": "fixtures/v1/golden/provider-bootstrap-structure-crypto-v1.json",
+      "resourceByteLength": 41713,
+      "resourceBytesSha256Hex": "b55028577e024df64ed1bb21a5c36089a235df1de95ced0168de025e632a92d8",
+      "semanticContentDigest": "sha256:791dcb58e8168c8731edb7c96198d9c50da543a43d13a534ef02462fd5bed83c"
+    },
+    "bootstrapBundle": {
+      "resourcePath": "provider/bootstrap-trust-bundle-v1.json",
+      "resourceByteLength": 6518,
+      "resourceBytesSha256Hex": "794c4d1032c249563ee43b325de6625031202a43ea1a32e783a60b79ab1bcd6d",
+      "contentDigest": "sha256:a9aad99fd56ce76cf315514f258965e3d77e4da9e6a13897f42a27513a5c1cbc"
+    },
+    "strictManifest": {
+      "resourcePath": "provider/ed25519-strict-host-conformance-v1.json",
+      "resourceByteLength": 13167,
+      "resourceBytesSha256Hex": "89859dd0125f3779624ef5882417351d583f87fcf41aae6e95dc5ae4b4eb1226",
+      "contentDigest": "sha256:6c65e40a20d82c557ba6485008bce62a903d81ff15cc859fab589d203904f1d9"
+    }
+  },
+  "cases": [
+    {
+      "caseId": "bundle-resource-missing",
+      "category": "resource_inventory",
+      "target": "provider/bootstrap-trust-bundle-v1.json",
+      "witnesses": [
+        {
+          "profile": "remove:provider/bootstrap-trust-bundle-v1.json",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "remove",
+            "operands": [
+              "provider/bootstrap-trust-bundle-v1.json"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "fixed_resource_inventory",
+          "reason": "resource_missing",
+          "boundary": "fixed_resource_loader",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "bundle-resource-duplicate-identical",
+      "category": "resource_inventory",
+      "target": "provider/bootstrap-trust-bundle-v1.json",
+      "witnesses": [
+        {
+          "profile": "duplicate:provider/bootstrap-trust-bundle-v1.json:byte_identical",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "duplicate",
+            "operands": [
+              "provider/bootstrap-trust-bundle-v1.json",
+              "byte_identical"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "fixed_resource_inventory",
+          "reason": "resource_duplicate",
+          "boundary": "fixed_resource_loader",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "bundle-resource-duplicate-semantic-alias",
+      "category": "resource_inventory",
+      "target": "provider/bootstrap-trust-bundle-v1.json",
+      "witnesses": [
+        {
+          "profile": "duplicate:provider/bootstrap-trust-bundle-v1.json:semantic_equal_raw_distinct",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "duplicate",
+            "operands": [
+              "provider/bootstrap-trust-bundle-v1.json",
+              "semantic_equal_raw_distinct"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "fixed_resource_inventory",
+          "reason": "resource_duplicate",
+          "boundary": "fixed_resource_loader",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        },
+        {
+          "profile": "add:provider/bootstrap-trust-bundle-alternate-v1.json:coherent_alternate",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "add",
+            "operands": [
+              "provider/bootstrap-trust-bundle-alternate-v1.json",
+              "coherent_alternate"
+            ],
+            "deterministicSeed": {
+              "source": "literal_non_production",
+              "seedHex": "1616161616161616161616161616161616161616161616161616161616161616"
+            }
+          },
+          "stage": "fixed_resource_inventory",
+          "reason": "resource_unexpected",
+          "boundary": "fixed_resource_loader",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "bundle-resource-non-regular",
+      "category": "resource_inventory",
+      "target": "provider/bootstrap-trust-bundle-v1.json",
+      "witnesses": [
+        {
+          "profile": "replace_type:provider/bootstrap-trust-bundle-v1.json:symlink",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace_type",
+            "operands": [
+              "provider/bootstrap-trust-bundle-v1.json",
+              "symlink"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "fixed_resource_inventory",
+          "reason": "resource_type_invalid",
+          "boundary": "fixed_resource_loader",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        },
+        {
+          "profile": "replace_type:provider/bootstrap-trust-bundle-v1.json:hardlink",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace_type",
+            "operands": [
+              "provider/bootstrap-trust-bundle-v1.json",
+              "hardlink"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "fixed_resource_inventory",
+          "reason": "resource_type_invalid",
+          "boundary": "fixed_resource_loader",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "strict-manifest-resource-missing",
+      "category": "resource_inventory",
+      "target": "provider/ed25519-strict-host-conformance-v1.json",
+      "witnesses": [
+        {
+          "profile": "remove:provider/ed25519-strict-host-conformance-v1.json",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "remove",
+            "operands": [
+              "provider/ed25519-strict-host-conformance-v1.json"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "fixed_resource_inventory",
+          "reason": "resource_missing",
+          "boundary": "fixed_resource_loader",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "strict-manifest-resource-duplicate",
+      "category": "resource_inventory",
+      "target": "provider/ed25519-strict-host-conformance-v1.json",
+      "witnesses": [
+        {
+          "profile": "duplicate:provider/ed25519-strict-host-conformance-v1.json:byte_identical",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "duplicate",
+            "operands": [
+              "provider/ed25519-strict-host-conformance-v1.json",
+              "byte_identical"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "fixed_resource_inventory",
+          "reason": "resource_duplicate",
+          "boundary": "fixed_resource_loader",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        },
+        {
+          "profile": "duplicate:provider/ed25519-strict-host-conformance-v1.json:semantic_equal_raw_distinct",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "duplicate",
+            "operands": [
+              "provider/ed25519-strict-host-conformance-v1.json",
+              "semantic_equal_raw_distinct"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "fixed_resource_inventory",
+          "reason": "resource_duplicate",
+          "boundary": "fixed_resource_loader",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "strict-manifest-resource-non-regular",
+      "category": "resource_inventory",
+      "target": "provider/ed25519-strict-host-conformance-v1.json",
+      "witnesses": [
+        {
+          "profile": "replace_type:provider/ed25519-strict-host-conformance-v1.json:symlink",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace_type",
+            "operands": [
+              "provider/ed25519-strict-host-conformance-v1.json",
+              "symlink"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "fixed_resource_inventory",
+          "reason": "resource_type_invalid",
+          "boundary": "fixed_resource_loader",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        },
+        {
+          "profile": "replace_type:provider/ed25519-strict-host-conformance-v1.json:hardlink",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace_type",
+            "operands": [
+              "provider/ed25519-strict-host-conformance-v1.json",
+              "hardlink"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "fixed_resource_inventory",
+          "reason": "resource_type_invalid",
+          "boundary": "fixed_resource_loader",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "golden-raw-semantic-alias",
+      "category": "golden_anchor",
+      "target": "fixtures/v1/golden/provider-bootstrap-structure-crypto-v1.json",
+      "witnesses": [
+        {
+          "profile": "serialize:minified_json_semantic_equal",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "serialize",
+            "operands": [
+              "minified_json_semantic_equal"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "compiled_golden_anchor",
+          "reason": "fixed_resource_identity_mismatch",
+          "boundary": "fixture_verifier",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "golden-semantic-coherent-alternate",
+      "category": "golden_anchor",
+      "target": "fixedBundleResource.resourceBytesSha256Hex",
+      "witnesses": [
+        {
+          "profile": "replace:fixedBundleResource.resourceBytesSha256Hex:sha256_ff",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "fixedBundleResource.resourceBytesSha256Hex",
+              "sha256_ff"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "compiled_golden_anchor",
+          "reason": "compiled_digest_mismatch",
+          "boundary": "fixture_verifier",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "golden-expected-bytes-substitution",
+      "category": "golden_anchor",
+      "target": "vectors.signedPackageIdentityDigest.expected",
+      "witnesses": [
+        {
+          "profile": "replace:vectors.signedPackageIdentityDigest.expected.sha256Hex:zero64",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "vectors.signedPackageIdentityDigest.expected.sha256Hex",
+              "zero64"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "golden_semantic",
+          "reason": "expected_bytes_mismatch",
+          "boundary": "fixture_verifier",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "golden-recovery-vector-reorder",
+      "category": "golden_anchor",
+      "target": "vectors.recoveryKeyIds",
+      "witnesses": [
+        {
+          "profile": "reverse:vectors.recoveryKeyIds",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "reverse",
+            "operands": [
+              "vectors.recoveryKeyIds"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "golden_schema",
+          "reason": "schema_invalid",
+          "boundary": "fixture_verifier",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "golden-deterministic-fixed-key-alias",
+      "category": "golden_anchor",
+      "target": "vectors.deterministicRootSelfSignatureSigning.expected.publicKeyBytes",
+      "witnesses": [
+        {
+          "profile": "alias:deterministic_root_key:fixed_bundle_root_key",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "alias",
+            "operands": [
+              "deterministic_root_key",
+              "fixed_bundle_root_key"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "golden_semantic",
+          "reason": "key_material_alias",
+          "boundary": "fixture_verifier",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "golden-authority-substitution",
+      "category": "golden_anchor",
+      "target": "fixtureAuthority",
+      "witnesses": [
+        {
+          "profile": "replace:fixtureAuthority:strong_ready",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "fixtureAuthority",
+              "strong_ready"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "golden_schema",
+          "reason": "schema_invalid",
+          "boundary": "fixture_verifier",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "signed-package-wrong-domain-digest",
+      "category": "domain_separation",
+      "target": "vectors.signedPackageIdentityDigest",
+      "witnesses": [
+        {
+          "profile": "derive_valid_under:provider-bootstrap-trust-bundle-v1",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "derive_valid_under",
+            "operands": [
+              "provider-bootstrap-trust-bundle-v1"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "domain_separation",
+          "reason": "domain_separation_mismatch",
+          "boundary": "reference_oracle",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "bundle-wrong-domain-digest",
+      "category": "domain_separation",
+      "target": "vectors.bootstrapTrustBundleDigest",
+      "witnesses": [
+        {
+          "profile": "derive_valid_under:provider-signed-package-identity-v1",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "derive_valid_under",
+            "operands": [
+              "provider-signed-package-identity-v1"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "domain_separation",
+          "reason": "domain_separation_mismatch",
+          "boundary": "reference_oracle",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "root-metadata-wrong-domain-digest",
+      "category": "domain_separation",
+      "target": "vectors.bootstrapRootMetadataDigest",
+      "witnesses": [
+        {
+          "profile": "derive_valid_under:provider-bootstrap-trust-bundle-v1",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "derive_valid_under",
+            "operands": [
+              "provider-bootstrap-trust-bundle-v1"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "domain_separation",
+          "reason": "domain_separation_mismatch",
+          "boundary": "reference_oracle",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "root-self-signature-wrong-domain-valid",
+      "category": "domain_separation",
+      "target": "vectors.bootstrapRootSelfSignatureVerification",
+      "witnesses": [
+        {
+          "profile": "sign_valid_under:provider-registry-root-cross-signature-v1",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "sign_valid_under",
+            "operands": [
+              "provider-registry-root-cross-signature-v1"
+            ],
+            "deterministicSeed": {
+              "source": "bootstrap_golden_json_pointer",
+              "resourcePath": "fixtures/v1/golden/provider-bootstrap-structure-crypto-v1.json",
+              "jsonPointer": "/vectors/deterministicRootSelfSignatureSigning/rfc8032TestSeedHex"
+            }
+          },
+          "stage": "root_self_signature",
+          "reason": "signature_invalid",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 1,
+          "postAttestationVerifyCalls": 1
+        }
+      ]
+    },
+    {
+      "caseId": "root-key-id-recovery-domain-confusion",
+      "category": "domain_separation",
+      "target": "bootstrapProviderRegistryRoot.rootKeyId",
+      "witnesses": [
+        {
+          "profile": "derive_valid_under:provider-registry-recovery-key-id-v1",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "derive_valid_under",
+            "operands": [
+              "provider-registry-recovery-key-id-v1"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "root_key_record",
+          "reason": "key_id_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "recovery-key-id-root-domain-confusion",
+      "category": "domain_separation",
+      "target": "providerRegistryRecoveryKeys[0].recoveryKeyId",
+      "witnesses": [
+        {
+          "profile": "derive_valid_under:provider-registry-root-key-id-v1",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "derive_valid_under",
+            "operands": [
+              "provider-registry-root-key-id-v1"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "recovery_key_record",
+          "reason": "key_id_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "bundle-noncanonical-resource",
+      "category": "bundle_envelope",
+      "target": "provider/bootstrap-trust-bundle-v1.json",
+      "witnesses": [
+        {
+          "profile": "append:trailing_newline",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "append",
+            "operands": [
+              "trailing_newline"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "bundle_envelope",
+          "reason": "canonical_encoding_mismatch",
+          "boundary": "public_provider_error",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "bundle-schema-version-substitution",
+      "category": "bundle_envelope",
+      "target": "schemaVersion",
+      "witnesses": [
+        {
+          "profile": "replace:schemaVersion:2",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "schemaVersion",
+              "2"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "bundle_envelope",
+          "reason": "schema_invalid",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "bundle-record-type-substitution",
+      "category": "bundle_envelope",
+      "target": "recordType",
+      "witnesses": [
+        {
+          "profile": "replace:recordType:provider_bootstrap_trust_bundle_alias",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "recordType",
+              "provider_bootstrap_trust_bundle_alias"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "bundle_envelope",
+          "reason": "schema_invalid",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "bundle-outer-digest-stale",
+      "category": "bundle_envelope",
+      "target": "contentDigest",
+      "witnesses": [
+        {
+          "profile": "replace:contentDigest:sha256_zero64",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "contentDigest",
+              "sha256_zero64"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "bundle_envelope",
+          "reason": "content_digest_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "bundle-coherent-alternate-compiled-pin",
+      "category": "bundle_envelope",
+      "target": "payload.bootstrapProviderRegistryRoot",
+      "witnesses": [
+        {
+          "profile": "replace_and_reseal:root_metadata_and_root:seed_22",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace_and_reseal",
+            "operands": [
+              "root_metadata_and_root",
+              "seed_22"
+            ],
+            "deterministicSeed": {
+              "source": "literal_non_production",
+              "seedHex": "1616161616161616161616161616161616161616161616161616161616161616"
+            }
+          },
+          "stage": "compiled_bundle_anchor",
+          "reason": "compiled_digest_mismatch",
+          "boundary": "public_provider_error",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "bundle-payload-profile-substitution",
+      "category": "bundle_envelope",
+      "target": "payload.profile",
+      "witnesses": [
+        {
+          "profile": "replace:payload.profile:provider_bootstrap_trust_bundle_alias_v1",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "payload.profile",
+              "provider_bootstrap_trust_bundle_alias_v1"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "bundle_payload_schema",
+          "reason": "schema_invalid",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "bundle-capability-profile-substitution",
+      "category": "bundle_envelope",
+      "target": "payload.strictCryptoCapability.profile",
+      "witnesses": [
+        {
+          "profile": "replace:strictCryptoCapability.profile:alias_v1",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "strictCryptoCapability.profile",
+              "alias_v1"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "bundle_payload_schema",
+          "reason": "schema_invalid",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "bundle-strict-manifest-pin-substitution",
+      "category": "bundle_envelope",
+      "target": "payload.strictCryptoCapability.adversarialManifest.contentDigest",
+      "witnesses": [
+        {
+          "profile": "replace_and_reseal:strict_manifest_pin:sha256_aa64",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace_and_reseal",
+            "operands": [
+              "strict_manifest_pin",
+              "sha256_aa64"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "compiled_bundle_anchor",
+          "reason": "compiled_digest_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "bundle-history-policy-substitution",
+      "category": "bundle_envelope",
+      "target": "payload.providerTrustHistoryPolicy",
+      "witnesses": [
+        {
+          "profile": "replace_no_reseal:maxRootMetadataGenerationCountPerInstallationIdentity:255",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace_no_reseal",
+            "operands": [
+              "maxRootMetadataGenerationCountPerInstallationIdentity",
+              "255"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "bundle_envelope",
+          "reason": "schema_invalid",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "bundle-root-metadata-closure-substitution",
+      "category": "bundle_envelope",
+      "target": "payload.bootstrapProviderRegistryRootMetadata",
+      "witnesses": [
+        {
+          "profile": "replace:root_metadata:valid_independent_seed_22",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "root_metadata",
+              "valid_independent_seed_22"
+            ],
+            "deterministicSeed": {
+              "source": "literal_non_production",
+              "seedHex": "1616161616161616161616161616161616161616161616161616161616161616"
+            }
+          },
+          "stage": "bundle_root_closure",
+          "reason": "bundle_root_metadata_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "strict-manifest-noncanonical-resource",
+      "category": "strict_manifest",
+      "target": "provider/ed25519-strict-host-conformance-v1.json",
+      "witnesses": [
+        {
+          "profile": "append:trailing_newline",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "append",
+            "operands": [
+              "trailing_newline"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "strict_manifest",
+          "reason": "canonical_encoding_mismatch",
+          "boundary": "public_provider_error",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "strict-manifest-version-substitution",
+      "category": "strict_manifest",
+      "target": "manifestVersion",
+      "witnesses": [
+        {
+          "profile": "replace:manifestVersion:2",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "manifestVersion",
+              "2"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "strict_manifest",
+          "reason": "manifest_version_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "strict-manifest-case-coverage-matrix",
+      "category": "strict_manifest",
+      "target": "payload.cases",
+      "witnesses": [
+        {
+          "profile": "remove:payload.cases[0]",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "remove",
+            "operands": [
+              "payload.cases[0]"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "strict_manifest",
+          "reason": "manifest_case_coverage_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        },
+        {
+          "profile": "append:payload.cases:duplicate_last",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "append",
+            "operands": [
+              "payload.cases",
+              "duplicate_last"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "strict_manifest",
+          "reason": "manifest_case_coverage_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        },
+        {
+          "profile": "reverse:payload.cases",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "reverse",
+            "operands": [
+              "payload.cases"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "strict_manifest",
+          "reason": "manifest_case_coverage_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "strict-manifest-compiled-digest-substitution",
+      "category": "strict_manifest",
+      "target": "contentDigest",
+      "witnesses": [
+        {
+          "profile": "mutate_payload_and_reseal:payload.cases[0].messageBytes",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "mutate_payload_and_reseal",
+            "operands": [
+              "payload.cases[0].messageBytes"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "strict_manifest",
+          "reason": "compiled_digest_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "metadata-outer-generation-substitution",
+      "category": "registry_record",
+      "target": "bootstrapProviderRegistryRootMetadata.rootGeneration",
+      "witnesses": [
+        {
+          "profile": "replace:rootGeneration:2",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "rootGeneration",
+              "2"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "root_metadata_envelope",
+          "reason": "envelope_generation_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "metadata-outer-key-id-substitution",
+      "category": "registry_record",
+      "target": "bootstrapProviderRegistryRootMetadata.rootKeyId",
+      "witnesses": [
+        {
+          "profile": "replace:rootKeyId:independent_root_id",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "rootKeyId",
+              "independent_root_id"
+            ],
+            "deterministicSeed": {
+              "source": "literal_non_production",
+              "seedHex": "1616161616161616161616161616161616161616161616161616161616161616"
+            }
+          },
+          "stage": "root_metadata_envelope",
+          "reason": "envelope_key_id_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "metadata-outer-digest-substitution",
+      "category": "registry_record",
+      "target": "bootstrapProviderRegistryRootMetadata.contentDigest",
+      "witnesses": [
+        {
+          "profile": "replace:contentDigest:sha256_cc64",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "contentDigest",
+              "sha256_cc64"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "root_metadata_envelope",
+          "reason": "content_digest_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "metadata-self-signature-key-id-substitution",
+      "category": "registry_record",
+      "target": "bootstrapProviderRegistryRootMetadata.payload.selfSignature",
+      "witnesses": [
+        {
+          "profile": "replace_prefix_and_reseal_metadata_content_digest:selfSignature:independent_root_id",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace_prefix_and_reseal_metadata_content_digest",
+            "operands": [
+              "selfSignature",
+              "independent_root_id"
+            ],
+            "deterministicSeed": {
+              "source": "literal_non_production",
+              "seedHex": "1616161616161616161616161616161616161616161616161616161616161616"
+            }
+          },
+          "stage": "root_metadata_envelope",
+          "reason": "self_signature_key_id_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "root-key-id-mismatch",
+      "category": "registry_record",
+      "target": "bootstrapProviderRegistryRoot.rootKeyId",
+      "witnesses": [
+        {
+          "profile": "replace:rootKeyId:independent_root_id",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "rootKeyId",
+              "independent_root_id"
+            ],
+            "deterministicSeed": {
+              "source": "literal_non_production",
+              "seedHex": "1616161616161616161616161616161616161616161616161616161616161616"
+            }
+          },
+          "stage": "root_key_record",
+          "reason": "key_id_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "root-public-key-digest-mismatch",
+      "category": "registry_record",
+      "target": "bootstrapProviderRegistryRoot.publicKeyDigest",
+      "witnesses": [
+        {
+          "profile": "replace:publicKeyDigest:sha256_dd64",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "publicKeyDigest",
+              "sha256_dd64"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "root_key_record",
+          "reason": "raw_public_key_digest_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "recovery-key-id-mismatch",
+      "category": "registry_record",
+      "target": "providerRegistryRecoveryKeys[0].recoveryKeyId",
+      "witnesses": [
+        {
+          "profile": "replace:recoveryKeyId:independent_root_id",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "recoveryKeyId",
+              "independent_root_id"
+            ],
+            "deterministicSeed": {
+              "source": "literal_non_production",
+              "seedHex": "1616161616161616161616161616161616161616161616161616161616161616"
+            }
+          },
+          "stage": "recovery_key_record",
+          "reason": "key_id_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "recovery-public-key-digest-mismatch",
+      "category": "registry_record",
+      "target": "providerRegistryRecoveryKeys[0].publicKeyDigest",
+      "witnesses": [
+        {
+          "profile": "replace:publicKeyDigest:sha256_ee64",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "publicKeyDigest",
+              "sha256_ee64"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "recovery_key_record",
+          "reason": "raw_public_key_digest_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "root-self-signature-message-matrix",
+      "category": "root_signature",
+      "target": "bootstrapProviderRegistryRootMetadata.payload.selfSignature",
+      "witnesses": [
+        {
+          "profile": "verify_signature_over:wrapper_only",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "verify_signature_over",
+            "operands": [
+              "wrapper_only"
+            ],
+            "deterministicSeed": {
+              "source": "bootstrap_golden_json_pointer",
+              "resourcePath": "fixtures/v1/golden/provider-bootstrap-structure-crypto-v1.json",
+              "jsonPointer": "/vectors/deterministicRootSelfSignatureSigning/rfc8032TestSeedHex"
+            }
+          },
+          "stage": "root_self_signature",
+          "reason": "signature_message_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 1,
+          "postAttestationVerifyCalls": 1
+        },
+        {
+          "profile": "verify_signature_over:claims_only",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "verify_signature_over",
+            "operands": [
+              "claims_only"
+            ],
+            "deterministicSeed": {
+              "source": "bootstrap_golden_json_pointer",
+              "resourcePath": "fixtures/v1/golden/provider-bootstrap-structure-crypto-v1.json",
+              "jsonPointer": "/vectors/deterministicRootSelfSignatureSigning/rfc8032TestSeedHex"
+            }
+          },
+          "stage": "root_self_signature",
+          "reason": "signature_message_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 1,
+          "postAttestationVerifyCalls": 1
+        },
+        {
+          "profile": "verify_signature_over:domain_and_claims",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "verify_signature_over",
+            "operands": [
+              "domain_and_claims"
+            ],
+            "deterministicSeed": {
+              "source": "bootstrap_golden_json_pointer",
+              "resourcePath": "fixtures/v1/golden/provider-bootstrap-structure-crypto-v1.json",
+              "jsonPointer": "/vectors/deterministicRootSelfSignatureSigning/rfc8032TestSeedHex"
+            }
+          },
+          "stage": "root_self_signature",
+          "reason": "signature_message_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 1,
+          "postAttestationVerifyCalls": 1
+        },
+        {
+          "profile": "verify_signature_over:domain_and_strict_fields",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "verify_signature_over",
+            "operands": [
+              "domain_and_strict_fields"
+            ],
+            "deterministicSeed": {
+              "source": "bootstrap_golden_json_pointer",
+              "resourcePath": "fixtures/v1/golden/provider-bootstrap-structure-crypto-v1.json",
+              "jsonPointer": "/vectors/deterministicRootSelfSignatureSigning/rfc8032TestSeedHex"
+            }
+          },
+          "stage": "root_self_signature",
+          "reason": "signature_message_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 1,
+          "postAttestationVerifyCalls": 1
+        },
+        {
+          "profile": "verify_signature_over:inner_outer_domain_mismatch",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "verify_signature_over",
+            "operands": [
+              "inner_outer_domain_mismatch"
+            ],
+            "deterministicSeed": {
+              "source": "bootstrap_golden_json_pointer",
+              "resourcePath": "fixtures/v1/golden/provider-bootstrap-structure-crypto-v1.json",
+              "jsonPointer": "/vectors/deterministicRootSelfSignatureSigning/rfc8032TestSeedHex"
+            }
+          },
+          "stage": "root_self_signature",
+          "reason": "signature_message_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 1,
+          "postAttestationVerifyCalls": 1
+        },
+        {
+          "profile": "verify_signature_over:prefix_wrapper_key_mismatch:alternate_root_key_id=661166fa4208cb1d325f30",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "verify_signature_over",
+            "operands": [
+              "prefix_wrapper_key_mismatch",
+              "alternate_root_key_id=661166fa4208cb1d325f30"
+            ],
+            "deterministicSeed": {
+              "source": "bootstrap_golden_json_pointer",
+              "resourcePath": "fixtures/v1/golden/provider-bootstrap-structure-crypto-v1.json",
+              "jsonPointer": "/vectors/deterministicRootSelfSignatureSigning/rfc8032TestSeedHex"
+            }
+          },
+          "stage": "root_self_signature",
+          "reason": "signature_message_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 1,
+          "postAttestationVerifyCalls": 1
+        },
+        {
+          "profile": "verify_signature_over:claims_include_self_signature",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "verify_signature_over",
+            "operands": [
+              "claims_include_self_signature"
+            ],
+            "deterministicSeed": {
+              "source": "bootstrap_golden_json_pointer",
+              "resourcePath": "fixtures/v1/golden/provider-bootstrap-structure-crypto-v1.json",
+              "jsonPointer": "/vectors/deterministicRootSelfSignatureSigning/rfc8032TestSeedHex"
+            }
+          },
+          "stage": "root_self_signature",
+          "reason": "signature_message_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 1,
+          "postAttestationVerifyCalls": 1
+        },
+        {
+          "profile": "verify_signature_over:claims_omit_issued_at",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "verify_signature_over",
+            "operands": [
+              "claims_omit_issued_at"
+            ],
+            "deterministicSeed": {
+              "source": "bootstrap_golden_json_pointer",
+              "resourcePath": "fixtures/v1/golden/provider-bootstrap-structure-crypto-v1.json",
+              "jsonPointer": "/vectors/deterministicRootSelfSignatureSigning/rfc8032TestSeedHex"
+            }
+          },
+          "stage": "root_self_signature",
+          "reason": "signature_message_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 1,
+          "postAttestationVerifyCalls": 1
+        },
+        {
+          "profile": "verify_signature_over:raw_payload_only",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "verify_signature_over",
+            "operands": [
+              "raw_payload_only"
+            ],
+            "deterministicSeed": {
+              "source": "bootstrap_golden_json_pointer",
+              "resourcePath": "fixtures/v1/golden/provider-bootstrap-structure-crypto-v1.json",
+              "jsonPointer": "/vectors/deterministicRootSelfSignatureSigning/rfc8032TestSeedHex"
+            }
+          },
+          "stage": "root_self_signature",
+          "reason": "signature_message_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 1,
+          "postAttestationVerifyCalls": 1
+        }
+      ]
+    },
+    {
+      "caseId": "root-self-signature-raw-substitution",
+      "category": "root_signature",
+      "target": "bootstrapProviderRegistryRootMetadata.payload.selfSignature",
+      "witnesses": [
+        {
+          "profile": "mutate:last_signature_hex_nibble",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "mutate",
+            "operands": [
+              "last_signature_hex_nibble"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "root_self_signature",
+          "reason": "signature_invalid",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 1,
+          "postAttestationVerifyCalls": 1
+        }
+      ]
+    },
+    {
+      "caseId": "recovery-count-matrix",
+      "category": "recovery_closure",
+      "target": "providerRegistryRecoveryKeys",
+      "witnesses": [
+        {
+          "profile": "remove:providerRegistryRecoveryKeys[2]",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "remove",
+            "operands": [
+              "providerRegistryRecoveryKeys[2]"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "bundle_payload_schema",
+          "reason": "schema_invalid",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        },
+        {
+          "profile": "append:providerRegistryRecoveryKeys:duplicate_last",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "append",
+            "operands": [
+              "providerRegistryRecoveryKeys",
+              "duplicate_last"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "bundle_payload_schema",
+          "reason": "schema_invalid",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "recovery-id-digest-substitution-matrix",
+      "category": "recovery_closure",
+      "target": "providerRegistryRecoveryKeys[0]",
+      "witnesses": [
+        {
+          "profile": "replace:recoveryKeyId:independent_root_id",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "recoveryKeyId",
+              "independent_root_id"
+            ],
+            "deterministicSeed": {
+              "source": "literal_non_production",
+              "seedHex": "1616161616161616161616161616161616161616161616161616161616161616"
+            }
+          },
+          "stage": "recovery_key_record",
+          "reason": "key_id_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        },
+        {
+          "profile": "replace:publicKeyDigest:sha256_ee64",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "publicKeyDigest",
+              "sha256_ee64"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "recovery_key_record",
+          "reason": "raw_public_key_digest_mismatch",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "recovery-order-duplicate-alias-matrix",
+      "category": "recovery_closure",
+      "target": "providerRegistryRecoveryKeys",
+      "witnesses": [
+        {
+          "profile": "reverse:providerRegistryRecoveryKeys",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "reverse",
+            "operands": [
+              "providerRegistryRecoveryKeys"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "recovery_key_closure",
+          "reason": "recovery_order_invalid",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        },
+        {
+          "profile": "alias:providerRegistryRecoveryKeys[1]:providerRegistryRecoveryKeys[0]",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "alias",
+            "operands": [
+              "providerRegistryRecoveryKeys[1]",
+              "providerRegistryRecoveryKeys[0]"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "recovery_key_closure",
+          "reason": "recovery_duplicate",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        },
+        {
+          "profile": "alias_material:providerRegistryRecoveryKeys[0]:bootstrap_root",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "alias_material",
+            "operands": [
+              "providerRegistryRecoveryKeys[0]",
+              "bootstrap_root"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "recovery_key_closure",
+          "reason": "key_material_alias",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "recovery-mixed-order-point",
+      "category": "recovery_closure",
+      "target": "providerRegistryRecoveryKeys[0].publicKeyBytes",
+      "witnesses": [
+        {
+          "profile": "replace:raw_public_key_hex:000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "raw_public_key_hex",
+              "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "recovery_key_closure",
+          "reason": "point_validation_failed",
+          "boundary": "internal_diagnostic",
+          "postAttestationPointCalls": 1,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "opaque-capability-forgery-matrix",
+      "category": "opaque_capability",
+      "target": "strictCryptoCapability",
+      "witnesses": [
+        {
+          "profile": "replace:strictCryptoCapability:plain_object",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "strictCryptoCapability",
+              "plain_object"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "opaque_capability_lookup",
+          "reason": "opaque_capability_invalid",
+          "boundary": "public_provider_error",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        },
+        {
+          "profile": "replace:strictCryptoCapability:proxy_of_real_capability",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "strictCryptoCapability",
+              "proxy_of_real_capability"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "opaque_capability_lookup",
+          "reason": "opaque_capability_invalid",
+          "boundary": "public_provider_error",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        },
+        {
+          "profile": "replace:strictCryptoCapability:foreign_module_instance",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "strictCryptoCapability",
+              "foreign_module_instance"
+            ],
+            "deterministicSeed": {
+              "source": "none"
+            }
+          },
+          "stage": "opaque_capability_lookup",
+          "reason": "opaque_capability_invalid",
+          "boundary": "public_provider_error",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "deterministic-seed-public-mismatch",
+      "category": "deterministic_fixture",
+      "target": "vectors.deterministicRootSelfSignatureSigning",
+      "witnesses": [
+        {
+          "profile": "replace:rfc8032TestSeedHex:repeat_33",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace",
+            "operands": [
+              "rfc8032TestSeedHex",
+              "repeat_33"
+            ],
+            "deterministicSeed": {
+              "source": "literal_non_production",
+              "seedHex": "3333333333333333333333333333333333333333333333333333333333333333"
+            }
+          },
+          "stage": "deterministic_fixture",
+          "reason": "deterministic_key_mismatch",
+          "boundary": "reference_oracle",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "deterministic-seed-signature-mismatch",
+      "category": "deterministic_fixture",
+      "target": "vectors.deterministicRootSelfSignatureSigning.expected.rawSignatureHex",
+      "witnesses": [
+        {
+          "profile": "reproduce_with_published_seed_and_compare:mutated_last_signature_hex_nibble",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "reproduce_with_published_seed_and_compare",
+            "operands": [
+              "mutated_last_signature_hex_nibble"
+            ],
+            "deterministicSeed": {
+              "source": "bootstrap_golden_json_pointer",
+              "resourcePath": "fixtures/v1/golden/provider-bootstrap-structure-crypto-v1.json",
+              "jsonPointer": "/vectors/deterministicRootSelfSignatureSigning/rfc8032TestSeedHex"
+            }
+          },
+          "stage": "deterministic_fixture",
+          "reason": "deterministic_signature_mismatch",
+          "boundary": "reference_oracle",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    },
+    {
+      "caseId": "deterministic-coherent-alternate",
+      "category": "deterministic_fixture",
+      "target": "vectors.deterministicRootSelfSignatureSigning",
+      "witnesses": [
+        {
+          "profile": "replace_and_recompute:seed_public_metadata_signature_expected:repeat_44",
+          "recipe": {
+            "dialect": "provider_bootstrap_invalid_recipe_v1",
+            "operation": "replace_and_recompute",
+            "operands": [
+              "seed_public_metadata_signature_expected",
+              "repeat_44"
+            ],
+            "deterministicSeed": {
+              "source": "literal_non_production",
+              "seedHex": "4444444444444444444444444444444444444444444444444444444444444444"
+            }
+          },
+          "stage": "compiled_golden_anchor",
+          "reason": "compiled_digest_mismatch",
+          "boundary": "fixture_verifier",
+          "postAttestationPointCalls": 0,
+          "postAttestationVerifyCalls": 0
+        }
+      ]
+    }
+  ]
+}

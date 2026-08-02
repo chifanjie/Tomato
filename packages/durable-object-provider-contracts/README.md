@@ -33,6 +33,10 @@ structure-only bootstrap trust bundle:
   literal cases covering the signed-package identity, Bundle payload, Root
   Metadata, fixed-resource and deterministic root signatures, and all three
   recovery key IDs;
+- one exact 51-case bootstrap rejection manifest with 71 deterministic
+  witnesses spanning fixed-resource inventory, raw/semantic Pins, domain
+  separation, Envelope and key closure, wrong-message Ed25519 signatures,
+  recovery ordering, opaque-capability forgery, and deterministic fixtures;
 - immutable Installation Identity retained-origin fields and a conservative
   current versus historical-recovery classifier that never substitutes the
   current Bundle for missing or malformed retained trust.
@@ -46,6 +50,7 @@ domain or output prefix.
 ```sh
 pnpm --filter @understand-code/durable-object-provider-contracts build
 pnpm --filter @understand-code/durable-object-provider-contracts typecheck
+pnpm --filter @understand-code/durable-object-provider-contracts verify:bootstrap-trust-invalid
 pnpm --filter @understand-code/durable-object-provider-contracts verify:bootstrap-trust
 pnpm --filter @understand-code/durable-object-provider-contracts test
 pnpm --filter @understand-code/durable-object-provider-contracts test:distribution
@@ -81,7 +86,9 @@ The Bundle resource is fixed at
 and is byte-identical to
 `fixtures/v1/golden/bootstrap-trust-bundle-v1.json`. Bundle and strict-manifest
 resources each have their own 4 MiB pre-materialization limit. Verification
-runs the 56+28 host KAT, then uses the resulting opaque capability for two
+runs the 56+28 host KAT, then rejects any otherwise self-consistent Bundle
+whose derived digest does not equal the compiled Pin before consulting trust
+keys. It next uses the resulting opaque capability for two
 golden root-signature point/signature pairs, followed by exactly four
 Bundle trust-key point admissions and one bootstrap self-signature
 verification. The complete path therefore performs 62 point and 31 signature
@@ -95,8 +102,33 @@ length and SHA-256 separately from semantic payload digests. The one published
 seed is explicitly non-production, uses key material independent from the
 Bundle root and recovery keys, and exists only to let every implementation
 reproduce the same signer output. Node and browser distribution probes consume
-this same file rather than copying expected constants into runtime-specific
-tests.
+this same file through the raw-resource verifier rather than copying expected
+constants into runtime-specific tests. That boundary requires the exact
+41,713-byte resource and its compiled SHA-256 before parsing, then independently
+requires the compiled semantic-manifest digest; whitespace/key-order aliases
+and fully coherent alternate fixture contents both fail closed.
+
+The matching rejection corpus is
+`fixtures/v1/invalid/provider-bootstrap-structure-crypto-v1.json`. Its schema
+uses an exact ordered 51-item tuple, while matrix cases freeze 71 total
+witnesses and their diagnostic boundary, stage/reason, and exact
+post-attestation point/signature call counts. The manifest itself is bound by
+independent raw-byte and semantic JCS digests. Every witness also carries a
+closed `provider_bootstrap_invalid_recipe_v1` operation/operand tuple and an
+explicit deterministic-input source: either no seed, a literal non-production
+seed, or a JSON Pointer into the pinned golden resource. A cross-language
+consumer can therefore reproduce each mutation from the manifest alone rather
+than depending on the Node runner's source code; the prefix-mismatch signature
+vector also carries its alternate root key ID as a literal recipe operand,
+without hidden cross-case state. The Node reference runner
+first proves each coherent-alternate or valid-under-wrong-domain precondition,
+then executes the shared production diagnostics or public fail-closed
+boundary. Value-returning domain derivations and deterministic fixture
+comparisons are explicitly labeled `reference_oracle`, rather than being
+presented as production diagnostics. The runner never treats an arbitrary
+thrown message as the rejection oracle.
+Packed Node and browser consumers validate the same raw manifest and generated
+draft-2020-12 JSON Schema.
 
 This checked-in Bundle is deliberately a pre-release structure-conformance
 fixture. Its one-time signing keys were not retained, no private key material is

@@ -34,6 +34,12 @@ const bootstrapTrustGoldenPath = fileURLToPath(
     import.meta.url,
   ),
 );
+const bootstrapTrustInvalidPath = fileURLToPath(
+  new URL(
+    "../fixtures/v1/invalid/provider-bootstrap-structure-crypto-v1.json",
+    import.meta.url,
+  ),
+);
 
 describe("provider contract JSON Schema distribution", () => {
   it("tracks one current document for every registered schema", () => {
@@ -305,5 +311,40 @@ describe("provider contract JSON Schema distribution", () => {
     const extraAuthority = structuredClone(fixture);
     extraAuthority.acceptedAuthority = "strong_ready";
     expect(validate(extraAuthority)).toBe(false);
+  });
+
+  it("publishes an exact ordered 51-case bootstrap invalid JSON Schema", () => {
+    const generated = generateProviderContractJsonSchemasV1();
+    const document =
+      generated["provider-bootstrap-trust-invalid-manifest"];
+    const validate = new Ajv2020({
+      allErrors: true,
+      strict: true,
+    }).compile(document);
+    const fixture = JSON.parse(
+      readFileSync(bootstrapTrustInvalidPath, "utf8"),
+    ) as Record<string, unknown>;
+    expect(validate(fixture), JSON.stringify(validate.errors)).toBe(true);
+
+    const cases = (
+      document.properties as Record<string, Record<string, unknown>>
+    ).cases;
+    expect(cases).toMatchObject({
+      minItems: 51,
+      maxItems: 51,
+      type: "array",
+      items: false,
+    });
+    expect(cases?.prefixItems).toHaveLength(51);
+
+    for (const mutate of [
+      (items: unknown[]) => items.splice(0, 1),
+      (items: unknown[]) => items.push(structuredClone(items.at(-1))),
+      (items: unknown[]) => items.reverse(),
+    ]) {
+      const candidate = structuredClone(fixture);
+      mutate(candidate.cases as unknown[]);
+      expect(validate(candidate)).toBe(false);
+    }
   });
 });

@@ -226,14 +226,40 @@ export {
   PROVIDER_BOOTSTRAP_TRUST_BUNDLE_GOLDEN_RESOURCE_PATH_V1,
   PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_MAX_BYTES_V1,
   PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_PROFILE_V1,
+  PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_RESOURCE_BYTE_LENGTH_V1,
   PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_RESOURCE_PATH_V1,
+  PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_RESOURCE_SHA256_HEX_V1,
+  PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_SEMANTIC_CONTENT_DIGEST_V1,
   ProviderBootstrapTrustGoldenManifestV1Schema,
   verifyProviderBootstrapTrustGoldenManifestV1,
+  verifyProviderBootstrapTrustGoldenManifestResourceV1,
 } from "./bootstrap-trust-golden.js";
 export type {
   ProviderBootstrapTrustGoldenManifestV1,
   ProviderBootstrapTrustGoldenManifestValidationV1,
 } from "./bootstrap-trust-golden.js";
+export {
+  PROVIDER_BOOTSTRAP_TRUST_INVALID_CASE_IDS_V1,
+  PROVIDER_BOOTSTRAP_TRUST_INVALID_MANIFEST_MAX_BYTES_V1,
+  PROVIDER_BOOTSTRAP_TRUST_INVALID_MANIFEST_PROFILE_V1,
+  PROVIDER_BOOTSTRAP_TRUST_INVALID_MANIFEST_RESOURCE_BYTE_LENGTH_V1,
+  PROVIDER_BOOTSTRAP_TRUST_INVALID_MANIFEST_RESOURCE_PATH_V1,
+  PROVIDER_BOOTSTRAP_TRUST_INVALID_MANIFEST_RESOURCE_SHA256_HEX_V1,
+  PROVIDER_BOOTSTRAP_TRUST_INVALID_MANIFEST_SEMANTIC_CONTENT_DIGEST_V1,
+  ProviderBootstrapTrustInvalidBoundaryV1Schema,
+  ProviderBootstrapTrustInvalidManifestV1Schema,
+  ProviderBootstrapTrustInvalidReasonV1Schema,
+  ProviderBootstrapTrustInvalidStageV1Schema,
+  verifyProviderBootstrapTrustInvalidManifestResourceV1,
+  verifyProviderBootstrapTrustInvalidManifestV1,
+} from "./bootstrap-trust-invalid.js";
+export type {
+  ProviderBootstrapTrustInvalidBoundaryV1,
+  ProviderBootstrapTrustInvalidManifestV1,
+  ProviderBootstrapTrustInvalidManifestValidationV1,
+  ProviderBootstrapTrustInvalidReasonV1,
+  ProviderBootstrapTrustInvalidStageV1,
+} from "./bootstrap-trust-invalid.js";
 export {
   InstallationIdentityBootstrapTrustFieldsV1Schema,
   classifyInstallationBootstrapTrustUseStructureV1,

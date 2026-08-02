@@ -8,6 +8,7 @@ import {
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import { ZodError } from "zod";
 
 import {
   ProviderBootstrapTrustGoldenManifestV1Schema,
@@ -344,6 +345,34 @@ describe("provider registry key identities and raw digests", () => {
     ).toThrow(/material mismatch/u);
   });
 
+  it("preserves public schema failures while diagnostics stay package-private", () => {
+    for (const validate of [
+      () =>
+        validateProviderRegistryRootPublicKeyV1({
+          ...root,
+          algorithm: "not-ed25519",
+        }),
+      () =>
+        validateProviderRegistryRecoveryPublicKeyV1({
+          ...recoveryKeys[0]!,
+          algorithm: "not-ed25519",
+        }),
+    ]) {
+      let rejection: unknown;
+      try {
+        validate();
+      } catch (error) {
+        rejection = error;
+      }
+      expect(rejection).toBeInstanceOf(ZodError);
+      expect((rejection as ZodError).issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ path: ["algorithm"] }),
+        ]),
+      );
+    }
+  });
+
   it("rejects field injection and accessors before key-ID hashing", () => {
     expect(() =>
       deriveProviderRegistryRecoveryKeyIdInternalV1({
@@ -569,6 +598,44 @@ describe("root metadata digest, projection, and envelope closure", () => {
         /envelope mismatch/u,
       );
     }
+  });
+
+  it("preserves public envelope schema and nested active-root errors", () => {
+    let schemaRejection: unknown;
+    try {
+      validateProviderRegistryRootMetadataEnvelopeStructureV1({
+        ...bootstrapEnvelope,
+        recordType: "not-root-metadata",
+      });
+    } catch (error) {
+      schemaRejection = error;
+    }
+    expect(schemaRejection).toBeInstanceOf(ZodError);
+    expect((schemaRejection as ZodError).issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: ["recordType"] }),
+      ]),
+    );
+
+    let activeRootRejection: unknown;
+    try {
+      validateProviderRegistryRootMetadataEnvelopeStructureV1({
+        ...bootstrapEnvelope,
+        payload: {
+          ...bootstrapEnvelope.payload,
+          activeRoot: {
+            ...bootstrapEnvelope.payload.activeRoot,
+            rootKeyId: predecessorRoot.rootKeyId,
+          },
+        },
+      });
+    } catch (error) {
+      activeRootRejection = error;
+    }
+    expect(activeRootRejection).toBeInstanceOf(TypeError);
+    expect((activeRootRejection as TypeError).message).toBe(
+      "registry root public key material mismatch",
+    );
   });
 
   it("rejects mismatched cross signers and unordered recovery signer IDs", () => {

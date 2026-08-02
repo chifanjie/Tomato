@@ -16,9 +16,21 @@ const strictEd25519ResourcePath = fileURLToPath(
     import.meta.url,
   ),
 );
+const bootstrapTrustBundleResourcePath = fileURLToPath(
+  new URL(
+    "../provider/bootstrap-trust-bundle-v1.json",
+    import.meta.url,
+  ),
+);
 const publicKeyDigestGoldenPath = fileURLToPath(
   new URL(
     "../fixtures/v1/golden/ed25519-public-key-digest-v1.json",
+    import.meta.url,
+  ),
+);
+const bootstrapTrustGoldenPath = fileURLToPath(
+  new URL(
+    "../fixtures/v1/golden/provider-bootstrap-structure-crypto-v1.json",
     import.meta.url,
   ),
 );
@@ -200,5 +212,98 @@ describe("provider contract JSON Schema distribution", () => {
     const cases = withDuplicateCase.cases as unknown[];
     cases.push(structuredClone(cases[0]));
     expect(validate(withDuplicateCase)).toBe(false);
+  });
+
+  it("publishes an exact closed bootstrap trust bundle JSON Schema", () => {
+    const generated = generateProviderContractJsonSchemasV1();
+    const bundleDocument =
+      generated["provider-bootstrap-trust-bundle-envelope"];
+    const validate = new Ajv2020({
+      allErrors: true,
+      strict: true,
+    }).compile(bundleDocument);
+    const resource = JSON.parse(
+      readFileSync(bootstrapTrustBundleResourcePath, "utf8"),
+    ) as Record<string, unknown>;
+    expect(validate(resource), JSON.stringify(validate.errors)).toBe(true);
+
+    const withoutRecovery = structuredClone(resource);
+    const withoutRecoveryPayload = withoutRecovery.payload as Record<
+      string,
+      unknown
+    >;
+    (
+      withoutRecoveryPayload.providerRegistryRecoveryKeys as unknown[]
+    ).pop();
+    expect(validate(withoutRecovery)).toBe(false);
+
+    const extraRecovery = structuredClone(resource);
+    const extraRecoveryKeys = (
+      (extraRecovery.payload as Record<string, unknown>)
+        .providerRegistryRecoveryKeys as unknown[]
+    );
+    extraRecoveryKeys.push(structuredClone(extraRecoveryKeys[0]));
+    expect(validate(extraRecovery)).toBe(false);
+
+    const bootstrapRecoverySignature = structuredClone(resource);
+    const metadataPayload = (
+      (
+        bootstrapRecoverySignature.payload as Record<string, unknown>
+      ).bootstrapProviderRegistryRootMetadata as Record<string, unknown>
+    ).payload as Record<string, unknown>;
+    metadataPayload.recoverySignatures = [
+      `provider-root-recovery-ed25519:${"0".repeat(22)}:${"0".repeat(128)}`,
+    ];
+    expect(validate(bootstrapRecoverySignature)).toBe(false);
+
+    const withUnknownField = structuredClone(resource);
+    (withUnknownField.payload as Record<string, unknown>).authority =
+      "strong_ready";
+    expect(validate(withUnknownField)).toBe(false);
+  });
+
+  it("publishes an exact eight-case bootstrap trust golden JSON Schema", () => {
+    const generated = generateProviderContractJsonSchemasV1();
+    const document =
+      generated["provider-bootstrap-trust-golden-manifest"];
+    const validate = new Ajv2020({
+      allErrors: true,
+      strict: true,
+    }).compile(document);
+    const fixture = JSON.parse(
+      readFileSync(bootstrapTrustGoldenPath, "utf8"),
+    ) as Record<string, unknown>;
+    expect(validate(fixture), JSON.stringify(validate.errors)).toBe(true);
+
+    const recoveryKeyIds = (
+      (
+        document.properties as Record<string, Record<string, unknown>>
+      ).vectors?.properties as Record<string, Record<string, unknown>>
+    ).recoveryKeyIds;
+    expect(recoveryKeyIds).toMatchObject({
+      minItems: 3,
+      maxItems: 3,
+      type: "array",
+    });
+
+    const missingRecovery = structuredClone(fixture);
+    (
+      (
+        missingRecovery.vectors as Record<string, unknown>
+      ).recoveryKeyIds as unknown[]
+    ).pop();
+    expect(validate(missingRecovery)).toBe(false);
+
+    const reorderedRecovery = structuredClone(fixture);
+    (
+      (
+        reorderedRecovery.vectors as Record<string, unknown>
+      ).recoveryKeyIds as unknown[]
+    ).reverse();
+    expect(validate(reorderedRecovery)).toBe(false);
+
+    const extraAuthority = structuredClone(fixture);
+    extraAuthority.acceptedAuthority = "strong_ready";
+    expect(validate(extraAuthority)).toBe(false);
   });
 });

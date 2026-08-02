@@ -125,3 +125,72 @@ export function assertDataObjectDescriptorsBeforeSchemaV1(
     }
   }
 }
+
+/**
+ * Recursively rejects accessors, custom prototypes, sparse arrays, cycles,
+ * aliases, symbols, and hidden properties without evaluating attacker-owned
+ * getters. Use this for the small, bounded JSON DTOs that are canonicalized or
+ * passed to a nested Zod schema.
+ */
+export function assertJsonDataTreeBeforeSchemaV1(value: unknown): void {
+  if (value === null || typeof value !== "object") {
+    throw new TypeError("value must be a JSON data object or array");
+  }
+  const pending: object[] = [value];
+  const seen = new WeakSet<object>();
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    if (seen.has(current)) {
+      throw new TypeError("JSON data must be a tree");
+    }
+    seen.add(current);
+
+    const isArray = Array.isArray(current);
+    const prototype = Object.getPrototypeOf(current);
+    if (
+      (isArray && prototype !== Array.prototype) ||
+      (!isArray && prototype !== Object.prototype && prototype !== null)
+    ) {
+      throw new TypeError("JSON data must use plain prototypes");
+    }
+    if (Object.getOwnPropertySymbols(current).length !== 0) {
+      throw new TypeError("JSON data must not contain symbol properties");
+    }
+
+    const descriptors = Object.getOwnPropertyDescriptors(current);
+    let arrayElementCount = 0;
+    for (const [key, descriptor] of Object.entries(descriptors)) {
+      if (isArray && key === "length") continue;
+      if (
+        !("value" in descriptor) ||
+        descriptor.enumerable !== true
+      ) {
+        throw new TypeError(
+          "JSON data properties must be enumerable data properties",
+        );
+      }
+      if (isArray) {
+        const index = Number(key);
+        if (
+          !/^(?:0|[1-9][0-9]*)$/u.test(key) ||
+          !Number.isSafeInteger(index) ||
+          index < 0 ||
+          index >= (current as unknown[]).length ||
+          String(index) !== key
+        ) {
+          throw new TypeError("JSON arrays must contain only indexed elements");
+        }
+        arrayElementCount += 1;
+      }
+      if (descriptor.value !== null && typeof descriptor.value === "object") {
+        pending.push(descriptor.value);
+      }
+    }
+    if (
+      isArray &&
+      arrayElementCount !== (current as unknown[]).length
+    ) {
+      throw new TypeError("JSON arrays must not contain sparse slots");
+    }
+  }
+}

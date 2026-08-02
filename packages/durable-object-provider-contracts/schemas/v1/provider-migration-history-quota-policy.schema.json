@@ -1,0 +1,190 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-migration-history-quota-policy",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string",
+      "const": "provider_migration_history_quota_policy_v1"
+    },
+    "scope": {
+      "type": "string",
+      "const": "installation_identity_generation"
+    },
+    "storageBoundary": {
+      "type": "string",
+      "const": "installation_state_provider_isolated_namespace"
+    },
+    "maxChargedMigrationCountPerInstallationIdentity": {
+      "type": "number",
+      "const": 64
+    },
+    "maxChargedMigrationHistoryLogicalBytesPerInstallationIdentity": {
+      "type": "number",
+      "const": 8589934592
+    },
+    "maxChargedMigrationHistoryProviderAllocatedBytesPerInstallationIdentity": {
+      "type": "number",
+      "const": 17179869184
+    },
+    "maxSingleMigrationHistoryReservationLogicalBytes": {
+      "type": "number",
+      "const": 4294967296
+    },
+    "maxSingleMigrationHistoryReservationProviderAllocatedBytes": {
+      "type": "number",
+      "const": 8589934592
+    },
+    "maxActiveMigrationReservationCountPerInstallationIdentity": {
+      "type": "number",
+      "const": 4
+    },
+    "maxActiveReservedMigrationHistoryLogicalBytesPerInstallationIdentity": {
+      "type": "number",
+      "const": 8589934592
+    },
+    "maxActiveReservedMigrationHistoryProviderAllocatedBytesPerInstallationIdentity": {
+      "type": "number",
+      "const": 17179869184
+    },
+    "maxReservationRecordCountPerInstallationIdentity": {
+      "type": "number",
+      "const": 4096
+    },
+    "maxReservationRecordLogicalBytesPerInstallationIdentity": {
+      "type": "number",
+      "const": 67108864
+    },
+    "maxSingleReservationRecordLogicalBytes": {
+      "type": "number",
+      "const": 1048576
+    },
+    "maxChargedObjectReceiptCountPerInstallationIdentity": {
+      "type": "number",
+      "const": 2000000
+    },
+    "maxChargedObjectReceiptLogicalBytesPerInstallationIdentity": {
+      "type": "number",
+      "const": 2147483648
+    },
+    "maxChargedSemanticRootZeroProofCountPerInstallationIdentity": {
+      "type": "number",
+      "const": 4000512
+    },
+    "maxChargedSemanticRootZeroProofLogicalBytesPerInstallationIdentity": {
+      "type": "number",
+      "const": 2147483648
+    },
+    "maxChargedProgressRecordCountPerInstallationIdentity": {
+      "type": "number",
+      "const": 4000032
+    },
+    "maxChargedProgressRecordLogicalBytesPerInstallationIdentity": {
+      "type": "number",
+      "const": 2147483648
+    },
+    "maxChargedProgressOperationReceiptCountPerInstallationIdentity": {
+      "type": "number",
+      "const": 8000000
+    },
+    "maxChargedProgressOperationReceiptLogicalBytesPerInstallationIdentity": {
+      "type": "number",
+      "const": 2147483648
+    },
+    "normalUpdateEmergencyMigrationCountReserve": {
+      "type": "number",
+      "const": 1
+    },
+    "normalUpdateEmergencyMigrationHistoryLogicalBytesReserve": {
+      "type": "number",
+      "const": 4294967296
+    },
+    "normalUpdateEmergencyMigrationHistoryProviderAllocatedBytesReserve": {
+      "type": "number",
+      "const": 8589934592
+    },
+    "maxLedgerEventCountPerInstallationIdentity": {
+      "type": "number",
+      "const": 4096
+    },
+    "maxLedgerEventLogicalBytesPerInstallationIdentity": {
+      "type": "number",
+      "const": 67108864
+    },
+    "maxSingleLedgerEventLogicalBytes": {
+      "type": "number",
+      "const": 262144
+    },
+    "maxOperationReceiptCountPerInstallationIdentity": {
+      "type": "number",
+      "const": 4096
+    },
+    "maxOperationReceiptLogicalBytesPerInstallationIdentity": {
+      "type": "number",
+      "const": 268435456
+    },
+    "maxSingleOperationReceiptLogicalBytes": {
+      "type": "number",
+      "const": 1048576
+    },
+    "maxCurrentHighWaterLogicalBytes": {
+      "type": "number",
+      "const": 1048576
+    },
+    "reservedAccountFutureTerminalTransitionEscrowCount": {
+      "type": "number",
+      "const": 3
+    },
+    "retainedAccountFutureTerminalTransitionEscrowCount": {
+      "type": "number",
+      "const": 1
+    },
+    "admission": {
+      "type": "string",
+      "const": "reserve_migration_slot_bytes_record_caps_and_terminal_control_escrow_before_first_migration_side_effect"
+    },
+    "exhaustion": {
+      "type": "string",
+      "const": "zero_write_migration_required_new_installation_identity"
+    }
+  },
+  "required": [
+    "profile",
+    "scope",
+    "storageBoundary",
+    "maxChargedMigrationCountPerInstallationIdentity",
+    "maxChargedMigrationHistoryLogicalBytesPerInstallationIdentity",
+    "maxChargedMigrationHistoryProviderAllocatedBytesPerInstallationIdentity",
+    "maxSingleMigrationHistoryReservationLogicalBytes",
+    "maxSingleMigrationHistoryReservationProviderAllocatedBytes",
+    "maxActiveMigrationReservationCountPerInstallationIdentity",
+    "maxActiveReservedMigrationHistoryLogicalBytesPerInstallationIdentity",
+    "maxActiveReservedMigrationHistoryProviderAllocatedBytesPerInstallationIdentity",
+    "maxReservationRecordCountPerInstallationIdentity",
+    "maxReservationRecordLogicalBytesPerInstallationIdentity",
+    "maxSingleReservationRecordLogicalBytes",
+    "maxChargedObjectReceiptCountPerInstallationIdentity",
+    "maxChargedObjectReceiptLogicalBytesPerInstallationIdentity",
+    "maxChargedSemanticRootZeroProofCountPerInstallationIdentity",
+    "maxChargedSemanticRootZeroProofLogicalBytesPerInstallationIdentity",
+    "maxChargedProgressRecordCountPerInstallationIdentity",
+    "maxChargedProgressRecordLogicalBytesPerInstallationIdentity",
+    "maxChargedProgressOperationReceiptCountPerInstallationIdentity",
+    "maxChargedProgressOperationReceiptLogicalBytesPerInstallationIdentity",
+    "normalUpdateEmergencyMigrationCountReserve",
+    "normalUpdateEmergencyMigrationHistoryLogicalBytesReserve",
+    "normalUpdateEmergencyMigrationHistoryProviderAllocatedBytesReserve",
+    "maxLedgerEventCountPerInstallationIdentity",
+    "maxLedgerEventLogicalBytesPerInstallationIdentity",
+    "maxSingleLedgerEventLogicalBytes",
+    "maxOperationReceiptCountPerInstallationIdentity",
+    "maxOperationReceiptLogicalBytesPerInstallationIdentity",
+    "maxSingleOperationReceiptLogicalBytes",
+    "maxCurrentHighWaterLogicalBytes",
+    "reservedAccountFutureTerminalTransitionEscrowCount",
+    "retainedAccountFutureTerminalTransitionEscrowCount",
+    "admission",
+    "exhaustion"
+  ],
+  "additionalProperties": false
+}

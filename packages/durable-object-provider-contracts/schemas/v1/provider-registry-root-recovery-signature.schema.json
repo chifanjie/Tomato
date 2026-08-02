@@ -1,0 +1,6 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-registry-root-recovery-signature",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "pattern": "^provider-root-recovery-ed25519:([0-9a-f]{22}):([0-9a-f]{128})$"
+}

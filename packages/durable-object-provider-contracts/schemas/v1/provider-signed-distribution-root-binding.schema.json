@@ -1,0 +1,123 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-signed-distribution-root-binding",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string",
+      "const": "provider_signed_distribution_root_binding_v1"
+    },
+    "resolverProfile": {
+      "type": "string",
+      "const": "verified_signed_package_distribution_root_v1"
+    },
+    "signedPackageIdentityDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "releaseRevisionDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "bootstrapTrustBundle": {
+      "type": "object",
+      "properties": {
+        "locatorProfile": {
+          "type": "string",
+          "const": "distribution_provider_bootstrap_trust_bundle_v1"
+        },
+        "contentDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "locatorProfile",
+        "contentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "historyPolicy": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "provider_distribution_history_policy_v1"
+        },
+        "maxSupportCatalogGenerationCount": {
+          "type": "number",
+          "const": 4096
+        },
+        "maxPublicTaxonomyGenerationCount": {
+          "type": "number",
+          "const": 4096
+        },
+        "maxReleaseMatrixGenerationCount": {
+          "type": "number",
+          "const": 4096
+        },
+        "maxTargetDiscoveryResultGenerationCount": {
+          "type": "number",
+          "const": 4096
+        },
+        "maxReleaseTargetUniverseGenerationCount": {
+          "type": "number",
+          "const": 4096
+        },
+        "maxSingleDistributionObjectCanonicalBytes": {
+          "type": "number",
+          "const": 16777216
+        },
+        "maxTotalRetainedDistributionObjectCount": {
+          "type": "number",
+          "const": 65536
+        },
+        "maxTotalRetainedDistributionHistoryLogicalBytes": {
+          "type": "number",
+          "const": 536870912
+        },
+        "normalUpdateEmergencyGenerationReservePerChain": {
+          "type": "number",
+          "const": 8
+        },
+        "normalUpdateEmergencyLogicalBytesReserve": {
+          "type": "number",
+          "const": 16777216
+        },
+        "admission": {
+          "type": "string",
+          "const": "stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution"
+        },
+        "exhaustion": {
+          "type": "string",
+          "const": "reject_candidate_distribution_and_preserve_last_verified_distribution"
+        }
+      },
+      "required": [
+        "profile",
+        "maxSupportCatalogGenerationCount",
+        "maxPublicTaxonomyGenerationCount",
+        "maxReleaseMatrixGenerationCount",
+        "maxTargetDiscoveryResultGenerationCount",
+        "maxReleaseTargetUniverseGenerationCount",
+        "maxSingleDistributionObjectCanonicalBytes",
+        "maxTotalRetainedDistributionObjectCount",
+        "maxTotalRetainedDistributionHistoryLogicalBytes",
+        "normalUpdateEmergencyGenerationReservePerChain",
+        "normalUpdateEmergencyLogicalBytesReserve",
+        "admission",
+        "exhaustion"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "profile",
+    "resolverProfile",
+    "signedPackageIdentityDigest",
+    "releaseRevisionDigest",
+    "bootstrapTrustBundle",
+    "historyPolicy"
+  ],
+  "additionalProperties": false
+}

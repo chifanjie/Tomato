@@ -134,3 +134,117 @@ export type {
   ProviderCapabilityFailureReasonV1,
   ProviderUnavailableToolErrorV1,
 } from "./provider-error.js";
+export {
+  PROVIDER_DISTRIBUTION_HISTORY_POLICY_V1,
+  PROVIDER_MIGRATION_HISTORY_QUOTA_POLICY_V1,
+  PROVIDER_TRUST_HISTORY_POLICY_V1,
+  ProviderDistributionHistoryPolicyV1Schema,
+  ProviderMigrationHistoryQuotaPolicyV1Schema,
+  ProviderTrustHistoryPolicyV1Schema,
+} from "./provider-trust-policy.js";
+export type {
+  ProviderDistributionHistoryPolicyV1,
+  ProviderMigrationHistoryQuotaPolicyV1,
+  ProviderTrustHistoryPolicyV1,
+} from "./provider-trust-policy.js";
+export {
+  PROVIDER_SIGNED_PACKAGE_IDENTITY_DOMAIN_V1,
+  ProviderBootstrapTrustBundlePinV1Schema,
+  ProviderSignedDistributionRootBindingV1Schema,
+  ProviderSignedPackageIdentityFieldsV1Schema,
+  deriveProviderSignedPackageIdentityDigestV1,
+  validateProviderSignedDistributionRootBindingStructureV1,
+} from "./provider-distribution-trust.js";
+export type {
+  ProviderBootstrapTrustBundlePinV1,
+  ProviderSignedDistributionRootBindingV1,
+  ProviderSignedPackageIdentityFieldsV1,
+} from "./provider-distribution-trust.js";
+export {
+  PROVIDER_REGISTRY_RECOVERY_KEY_ID_DOMAIN_V1,
+  PROVIDER_REGISTRY_ROOT_CROSS_SIGNATURE_DOMAIN_V1,
+  PROVIDER_REGISTRY_ROOT_METADATA_DOMAIN_V1,
+  PROVIDER_REGISTRY_ROOT_RECOVERY_SIGNATURE_DOMAIN_V1,
+  PROVIDER_REGISTRY_ROOT_SELF_SIGNATURE_DOMAIN_V1,
+  ProviderRegistryIsoTimestampV1Schema,
+  ProviderRegistryRecoveryKeyIdFieldsV1Schema,
+  ProviderRegistryRecoveryKeyIdV1Schema,
+  ProviderRegistryRecoveryPublicKeyV1Schema,
+  ProviderRegistryRootCrossSignatureV1Schema,
+  ProviderRegistryRootMetadataEnvelopeV1Schema,
+  ProviderRegistryRootMetadataPinV1Schema,
+  ProviderRegistryRootMetadataUnsignedClaimsV1Schema,
+  ProviderRegistryRootMetadataV1Schema,
+  ProviderRegistryRootPublicKeyV1Schema,
+  ProviderRegistryRootRecoverySignatureV1Schema,
+  ProviderRegistryRootSelfSignatureV1Schema,
+  ProviderRegistryRootSelfSignatureWrapperV1Schema,
+  createProviderRegistryRootSelfSignatureMessageV1,
+  deriveProviderRegistryRootMetadataContentDigestV1,
+  projectProviderRegistryRootMetadataUnsignedClaimsV1,
+  validateProviderRegistryRecoveryPublicKeyV1,
+  validateProviderRegistryRootPublicKeyV1,
+  verifyProviderRegistryBootstrapRootSelfSignatureV1,
+  verifyProviderRegistryRootSelfSignatureV1,
+} from "./provider-registry-trust.js";
+export type {
+  ProviderRegistryIsoTimestampV1,
+  ProviderRegistryRecoveryKeyIdFieldsV1,
+  ProviderRegistryRecoveryKeyIdV1,
+  ProviderRegistryRecoveryPublicKeyV1,
+  ProviderRegistryRootCrossSignatureV1,
+  ProviderRegistryRootMetadataEnvelopeV1,
+  ProviderRegistryRootMetadataPinV1,
+  ProviderRegistryRootMetadataUnsignedClaimsV1,
+  ProviderRegistryRootMetadataV1,
+  ProviderRegistryRootPublicKeyV1,
+  ProviderRegistryRootRecoverySignatureV1,
+  ProviderRegistryRootSelfSignatureV1,
+  ProviderRegistryRootSelfSignatureWrapperV1,
+} from "./provider-registry-trust.js";
+export {
+  PROVIDER_BOOTSTRAP_TRUST_BUNDLE_CONTENT_DIGEST_V1,
+  PROVIDER_BOOTSTRAP_TRUST_BUNDLE_DOMAIN_V1,
+  PROVIDER_BOOTSTRAP_TRUST_BUNDLE_MAX_BYTES_V1,
+  PROVIDER_BOOTSTRAP_TRUST_BUNDLE_PIN_V1,
+  PROVIDER_BOOTSTRAP_TRUST_BUNDLE_RESOURCE_PATH_V1,
+  ProviderBootstrapTrustBundleEnvelopeV1Schema,
+  ProviderBootstrapTrustBundleV1Schema,
+  ProviderBootstrapTrustStructureError,
+  createProviderBootstrapTrustBundlePinV1,
+  deriveProviderBootstrapTrustBundleContentDigestV1,
+  validateProviderBootstrapTrustBundleEnvelopeV1,
+  validateProviderBootstrapTrustBundleStructureV1,
+} from "./bootstrap-trust-bundle.js";
+export type {
+  ProviderBootstrapTrustBundleEnvelopeV1,
+  ProviderBootstrapTrustBundleStructureValidationV1,
+  ProviderBootstrapTrustBundleV1,
+  ValidateProviderBootstrapTrustBundleStructureV1Input,
+} from "./bootstrap-trust-bundle.js";
+export {
+  PROVIDER_BOOTSTRAP_TRUST_BUNDLE_GOLDEN_RESOURCE_PATH_V1,
+  PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_MAX_BYTES_V1,
+  PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_PROFILE_V1,
+  PROVIDER_BOOTSTRAP_TRUST_GOLDEN_MANIFEST_RESOURCE_PATH_V1,
+  ProviderBootstrapTrustGoldenManifestV1Schema,
+  verifyProviderBootstrapTrustGoldenManifestV1,
+} from "./bootstrap-trust-golden.js";
+export type {
+  ProviderBootstrapTrustGoldenManifestV1,
+  ProviderBootstrapTrustGoldenManifestValidationV1,
+} from "./bootstrap-trust-golden.js";
+export {
+  InstallationIdentityBootstrapTrustFieldsV1Schema,
+  classifyInstallationBootstrapTrustUseStructureV1,
+  validateInstallationIdentityRetainedTrustStructureV1,
+} from "./installation-bootstrap-trust.js";
+export type {
+  ClassifyInstallationBootstrapTrustUseStructureV1Input,
+  InstallationBootstrapTrustRecoveryOnlyReasonV1,
+  InstallationBootstrapTrustUseStructureAssessmentV1,
+  InstallationBootstrapTrustUseV1,
+  InstallationIdentityBootstrapTrustFieldsV1,
+  InstallationIdentityRetainedTrustStructureValidationV1,
+  ValidateInstallationIdentityRetainedTrustStructureV1Input,
+} from "./installation-bootstrap-trust.js";

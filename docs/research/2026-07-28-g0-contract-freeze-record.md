@@ -2,7 +2,7 @@
 
 记录 ID：`G0-2026-07-28`
 
-状态：**Closed for implementation；WP5 Decision Amendments D-24～D-30 incorporated**
+状态：**Closed for implementation；WP5 Decision Amendments D-24～D-31 incorporated**
 
 候选基线：`34da354968a6071d914e4e4a4fca738e6c2d8a29`
 
@@ -10,7 +10,7 @@
 
 WP4 修订日期：2026-07-29
 
-WP5 修订日期：2026-07-30～2026-07-31
+WP5 修订日期：2026-07-30～2026-08-02
 
 编制方式：Codex 汇总版本化证据、独立审查和自动化结果；Codex 不被记录为真人签署人
 
@@ -45,7 +45,7 @@ generation pin Pulse，再只以唯一 maximal Store Manifest generation所 pin�
 保留为 legacy/read-only projection。该修订不新增 Artifact Type 或 Lifecycle
 状态，只冻结 Pulse 版本身份、历史可寻址性和恢复边界。
 
-2026-07-30～2026-07-31 的 D-24～D-30 是 WP5 实现前的证据模型、写入边界与
+2026-07-30～2026-08-02 的 D-24～D-31 是 WP5 实现前的证据模型、写入边界与
 Provider可行性修订。审计确认：
 原 Change Check 没有 Actual Change 实体、Hunk 或完整性证明；Repository
 Snapshot 也不能重建任务开始时已经存在的 dirty/untracked 内容。修订因此新增
@@ -58,7 +58,10 @@ Verification semantic commitment、CAS reservation、cycle-free Merkle quota
 Transition chain、exact Context pins 与 flat History 纳入首个 durable write
 边界，同时保留旧 V1 为 owner-only/只读
 `legacy_summary`；D-30进一步把原先悬空的“理想 provider”提升为带 Owner、
-预算、真实文件系统证据、签名/密钥生命周期和安装路径的 P0 阻断 Gate。未通过
+预算、真实文件系统证据、签名/密钥生命周期和安装路径的 P0 阻断 Gate；D-31再
+固定 raw32 public-key digest、跨 runtime严格 Ed25519接受集合、host hostile
+manifest attestation、signed-package Bootstrap Trust Bundle及 old
+recovery-only Identity retained verifier。未通过
 Gate的 target只可 legacy/redacted read-only。这些修订不增加 D-21
 状态，也不把任何 WP5 capability 提前声明为可用。
 
@@ -117,7 +120,7 @@ Gate的 target只可 legacy/redacted read-only。这些修订不增加 D-21
 - 性能 Evidence 保存生产源文件 Hash、原始样本、预热/采样数和 expected/actual 完整性字段。
 - Host Evidence 保持 Surface 边界；Codex App Server provisional 结果和 Claude 未认证 Tool Call 不被提升为 supported。
 
-## 4. D-13～D-30 冻结结果
+## 4. D-13～D-31 冻结结果
 
 ### D-13：P0 平台
 
@@ -307,7 +310,7 @@ Task Engine 同步升级。验收矩阵见
 D-23 是存储与恢复语义修订，不改变 D-21 状态机，也不新增 public Artifact
 Schema。新 strong 三层 no-replace + provider-side compare-append合同以
 `docs/research/2026-07-30-wp5-change-intelligence-matrix.md` 的
-`AT-C17/AT-C29/AT-C30/AT-D35/AT-D37/AT-D38`为验收权威；WP4 Matrix的早期
+`AT-C17/AT-C29/AT-C30/AT-C31/AT-D35/AT-D37/AT-D38`为验收权威；WP4 Matrix的早期
 marker/canonical replacement证据只保留 legacy compatibility意义，不得据此把
 strong三层路径标记为已实现。
 
@@ -741,9 +744,12 @@ WP5 Matrix为准；一旦 wire bytes发布，后续变更必须显式升版。
   domain必须相等，只签 wrapper/claims或`[domainLiteral,claims]`拒绝。只有 producer
   的 pre-schema无序 collection可排序后获得 permutation-invariant bytes；signed
   wire array乱序必须 reject，verifier不得修复。
-- immutable Installation Identity只 pin发行物 bootstrap registry-root exact
-  bytes/digest、bootstrap Root Metadata、三把互异 offline recovery key与2-of-3
-  threshold，并 pin含 Root/Registry/Catalog/Acceptance generation、Acceptance
+- immutable Installation Identity只从 signed-package fixed locator接受完整
+  Bootstrap Trust Bundle：其 exact pin/Envelope/payload固定 strict crypto
+  capability/manifest、bootstrap registry-root、bootstrap Root Metadata、三把
+  互异 offline recovery key与2-of-3 threshold；Identity同时保留 origin
+  distribution binding、Bundle与manifest完整 Envelope，并 pin含
+  Root/Registry/Catalog/Acceptance generation、Acceptance
   receipt、provider/approver/binding history与累计 canonical bytes hard cap及
   emergency reserve的 `ProviderTrustHistoryPolicyV1`。可升级 configuration只
   存在于 Provider Acceptance append-only
@@ -754,8 +760,10 @@ WP5 Matrix为准；一旦 wire bytes发布，后续变更必须显式升版。
   writer，不能留下 loser sibling。planned
   rollover要求 old-root cross + new-root self + 2-of-3 recovery；compromise
   recovery要求 new-root self + quorum并进入 `recovery_only`关闭 strong Surface。
-  任一 recovery key compromise要求新签名发行物建立新 Installation Identity并
-  显式迁移既有 Store，不能原地换 key或用旧剩余 quorum恢复写入。
+  任一 recovery key compromise要求新签名发行物/new Bundle建立新 Installation
+  Identity并显式迁移既有 Store，不能原地换 key或用旧剩余 quorum恢复写入；
+  old recovery-only source只由 retained old Bundle/manifest验证，new Bundle不得
+  替换 historical trust或授权 old write。
   Registry successor必须保留 sorted enabled member或永久 tombstone，双-provider
   migration过渡代同时 enabled old/new，并以 `migration_only` Registry routing、
   Catalog candidates、cycle-free plan与专用 executor闭合。Plan按 same Identity/
@@ -963,16 +971,55 @@ WP5 Matrix为准；一旦 wire bytes发布，后续变更必须显式升版。
   locator、IPC endpoint、path、owner、key ID或 raw attestation；WP8 CLI
   `understand-code doctor --provider`不是新增 MCP Tool。
 
-D-24～D-30 的实现与验收矩阵为
+### D-31：严格 Ed25519 与不可变 Bootstrap Trust Bundle
+
+状态：`accepted`（2026-08-02 Decision Amendment）
+
+- 四类 key record的 `publicKeyDigest`只按 canonical base64url decoded exact
+  raw32计算 SHA-256，独立于各用途 domain-separated JCS key ID。既有 C09-0
+  `00..1f` root key-ID golden保持 byte-identical；该 material是 mixed-order，
+  只可验证旧 ID derivation，在 Bundle/trust admission必须拒绝。
+- 所有 C09签名固定为
+  `ed25519-rfc8032-cofactorless-prime-subgroup-v1`：exact 32/64 bytes、`S<L`、
+  canonical且 non-identity的 `A/R`、完整 Edwards25519群上不先约化 scalar/
+  不 clear cofactor的 `[L]P=identity`、PureEd25519与未批处理 cofactorless
+  equation。ctx/ph/prehash、small-order/torsion/mixed-order及宽松 native
+  acceptance全部拒绝；signer deterministic，retry回放首次 signature。
+- host必须从 fixed
+  `provider/ed25519-strict-host-conformance-v1.json`运行 exact-cover 28-case
+  immutable manifest；每项独立携带 public-key point、signature `R` point与完整
+  signature expected结果，runner固定执行56次 point admission + 28次 verify，
+  point validator恒 true/false或与 verify分叉都失败。通过后才返回不可替换的
+  opaque capability；后续 verifier只接
+  raw32，不接受裸 host/caller manifest/PEM/DER/JWK。Node/OpenSSL adapter若内部
+  构造 SPKI，只允许 RFC 8410 `id-Ed25519`、parameters absent、BIT STRING exact
+  raw32。任一 KAT/profile/method/digest分歧在读取 Root chain前
+  `attestation_invalid`且零 strong write。
+- fixed `provider/bootstrap-trust-bundle-v1.json`唯一承载 strict capability/
+  manifest Pin、bootstrap root、完整 bootstrap Root Metadata、sorted 3 recovery
+  keys、2-of-3 threshold与 trust-history policy。两个 fixed resources各 exact-one、
+  独立4 MiB pre-materialize、永久保留，且不进入五条 distribution history的
+  40960/512 MiB accounting。signed distribution与 Installation Identity都 pin
+  Bundle；Identity还保留 origin binding及完整 Bundle/manifest Envelope。
+- recovery compromise后的 new package/new Bundle只建立 new Identity。old
+  recovery-only Identity迁移只能用 retained old trust做 read-only source；
+  missing/mismatch时 fail closed，禁止用 current Bundle回填。
+
+完整 types、digest domains、case IDs、dangerous regression bytes、host启动顺序、
+AT-C31与AT-Q33以 WP5 Matrix为唯一规范。D-31不改变 D-21 Lifecycle；它关闭的是
+签名接受集合、bootstrap发行物与 historical verifier边界，任何后续放宽必须显式
+升版。
+
+D-24～D-31 的实现与验收矩阵为
 `docs/research/2026-07-30-wp5-change-intelligence-matrix.md`；其中第 3.8 节是
 必须逐字段等价实现的 normative Schema Appendix。所有 C09 provider
 contract、canonical bytes/golden与 prerequisite conformance归
 WP5-1P；C01～C08 Change Intelligence contracts归 WP5-1，WP5-1后续只能增加
 与已冻结 C09兼容的补充，不能重定义或推迟 C09 Gate。冻结验收范围为
-AT-C01～C30、D01～D38、S01～S16、O01～O33、Q01～Q32，其中 D35～D38 关闭
+AT-C01～C31、D01～D38、S01～S16、O01～O33、Q01～Q33，其中 D35～D38 关闭
 Store ownership、Manifest atomic head与 known-redacted/unknown accounting，
-Q29～Q32 关闭 OS locator、handle-bound sandbox、SafeGit resource/race caps及
-trust compromise/migration。这些修订不改变
+Q29～Q33 关闭 OS locator、handle-bound sandbox、SafeGit resource/race caps、
+trust compromise/migration及 strict crypto host/identity lifecycle。这些修订不改变
 D-21 Lifecycle 状态集合或普通转移。
 
 WP1只提供 shared strict Envelope、Digest/brand primitive、Schema/package
@@ -1135,7 +1182,7 @@ capability gap，不是 WP0 新引入回归。对应能力在后续 Gate 关闭�
 | G0-06 Diff Overlay 断链 | 旧 Overlay deprecated，不作为 P0 数据源或完成证据 | WP5/WP7 open | Change Intelligence + Frontend | Change Check Workbench Alpha 前 |
 | G0-07 Worktree 重定向 | Task/Store 绑定当前 canonical worktree；共享只限不可变缓存 | WP3/WP4 core binding closed；WP6 Surface open | Core + Platform | Mandatory Host Surface Alpha 前 |
 | G0-08 Quality/Release | 根 quality、CI 已关闭；CLI/bin、统一版本、License、SBOM、allowlist、Marketplace 留后续 Gate | Partial | Platform + QA | Mandatory Surface Release / M4 |
-| G0-09 Durable Object Provider | strong writer必须使用 OS-isolated exact-object provider、immutable identity/trust-history caps + append-only Acceptance、root-signed Registry/Taxonomy/Target Universe/Catalog、provider-isolated receipt ledger、atomic path containment、external CAS/journal seal与 bounded dual-namespace migration；未通过或 coverage incomplete target只读 | WP3P open / all strong mutations capability locked | Platform/Security Lead + Provider/Systems；QA/Security/Release验证 | 首个 strong Task Alpha前关闭签名开发 target profile并验证当前物理 volume runtime exact-match；P0前关闭全部 advertised profiles |
+| G0-09 Durable Object Provider | strong writer必须使用 OS-isolated exact-object provider、strict Ed25519 host KAT/opaque capability、fixed Bootstrap Trust Bundle + immutable Identity retained historical trust、trust-history caps + append-only Acceptance、root-signed Registry/Taxonomy/Target Universe/Catalog、provider-isolated receipt ledger、atomic path containment、external CAS/journal seal与 bounded dual-namespace migration；未通过或 coverage incomplete target只读 | WP3P open / all strong mutations capability locked | Platform/Security Lead + Provider/Systems；QA/Security/Release验证 | 首个 strong Task Alpha前关闭 AT-C31/Q33、签名开发 target profile并验证当前物理 volume runtime exact-match；P0前关闭全部 advertised profiles |
 
 ## 8. 当前发布缺口
 
@@ -1149,8 +1196,9 @@ capability gap，不是 WP0 新引入回归。对应能力在后续 Gate 关闭�
 6. 根 Package 缺少 `files`、`publishConfig`、`engines`、`packageManager`、repository/homepage/license 的一致配置。
 7. 性能 Evidence 使用 Node 26 / pnpm 11，CI 使用 Node 22 / pnpm 9；WP8 必须冻结唯一支持基线并在该环境重采 RC Evidence。
 8. macOS code signing/notarization、Linux Artifact 签名以及构建 provenance/attestation 尚未建立。
-9. provider OS principal/service、offline registry-root与 key custody、mutual IPC
-   权限、historical verifier、per-target-profile real-FS conformance与当前
+9. provider OS principal/service、strict crypto host/hostile manifest、fixed
+   Bootstrap Trust Bundle、offline registry-root与 key custody、mutual IPC
+   权限、retained historical verifier、per-target-profile real-FS conformance与当前
    物理 volume runtime对签名 profile的 exact-match，以及 provider
    install/upgrade/downgrade/uninstall/rollback证据尚未建立；完成前 strong
    Store write不得出现在 supported capability中。
@@ -1170,7 +1218,7 @@ capability gap，不是 WP0 新引入回归。对应能力在后续 Gate 关闭�
 | 条件 | 结果 |
 |---|---|
 | Mission、P0、Non-goals 已冻结 | PASS |
-| D-13～D-19、D-21～D-30 已接受；D-20 有 Owner/Gate | PASS |
+| D-13～D-19、D-21～D-31 已接受；D-20 有 Owner/Gate | PASS |
 | Task Lifecycle、Revision 与幂等语义唯一 | PASS |
 | Root/Error/Rendezvous 语义唯一 | PASS |
 | Surface mandatory/conditional、Owner、后续 Gate 完整 | PASS |

@@ -5,12 +5,13 @@
 范围：WP5 Evidence-backed Change Check、可重建 Task Baseline、Repository
 Delta、Diff→Symbol、Planned vs Actual、Verification recording、Context
 refresh/rebase，以及 path-safe Snapshot、SafeGit、owner-only request equality、
-并发 CAS/quota、OS-isolated durable-object provider与 real-FS feasibility
+并发 CAS/quota、OS-isolated durable-object provider、strict Ed25519 bootstrap
+trust bundle与 real-FS feasibility
 对 Contracts、Artifact Store、Repository State、Core 和 Task Engine 的修订
 
 状态：**Contract Frozen / Implementation In Progress**
 
-当前总计划位置：**14/17**。本矩阵关闭 WP5-A 契约研究，不代表 WP5 功能完成；
+当前总计划位置：**15/17**。WP5 合同已冻结且实现正在分层推进，不代表 WP5 功能完成；
 WP5 只有在第 11 节全部满足后才能改为 Completed。
 
 2026-08-02 D-30 pre-implementation amendment：尚无 WP5 Provider v1 artifact、
@@ -21,9 +22,23 @@ Plan-binding/final-receipt selector、Private Store category correlation及
 Admission/Transition full-record digest；后续若任何 bytes发布，再改这些 wire
 contract必须显式升版而不能继续原位修改。
 
+2026-08-02 D-31 implementation-safety amendment：首批 Provider foundation
+实现与独立安全复审证明，D-30 尚未冻结 `publicKeyDigest` 的 exact preimage，
+也没有为 Node/OpenSSL、WebCrypto与未来 provider runtime冻结同一 Ed25519
+signature acceptance set。D-31 因此在任何签名 wire bytes发布前原位补齐：
+decoded raw 32-byte public-key digest、项目级 strict Ed25519 profile、host
+crypto capability/KAT gate，以及固定资源
+`provider/ed25519-strict-host-conformance-v1.json`与
+`provider/bootstrap-trust-bundle-v1.json`。后者以单一 immutable
+`ProviderBootstrapTrustBundleV1`同时封装 bootstrap root、bootstrap Root
+Metadata、三把 recovery key、2-of-3 threshold、trust-history policy与验证
+profile，并由 signed distribution binding和 Installation Identity exact pin。
+这些补充收窄接受集合且消除重复 bootstrap字段，不解锁任何 capability；一旦
+相关 v1 bytes发布，后续改变 profile、digest preimage或 bundle shape必须升版。
+
 权威决策：
 
-- `docs/prd/2026-07-27-agent-native-change-intelligence-rd-plan.md` D-24～D-30
+- `docs/prd/2026-07-27-agent-native-change-intelligence-rd-plan.md` D-24～D-31
 - `docs/research/2026-07-28-g0-contract-freeze-record.md` 第 4、5 节
 - WP1 Contracts、WP2 Repository State、WP3 Artifact Store 与 WP4 Task
   Intelligence 已关闭的 Schema、Snapshot、CAS、Journal 和 Lifecycle 规则
@@ -448,6 +463,9 @@ ID使用独立 branded Schema，不继续用无语义的 `OpaqueIdentifierSchema
 | 语义 | 必须使用的 Schema / wire format |
 |---|---|
 | payload/content/policy/state digest | `ContentDigestSchema`：`sha256:<64 lowercase hex>` |
+| Ed25519 raw public-key digest | `Ed25519PublicKeyDigestV1Schema`：wire同为 `sha256:<64 lowercase hex>` 但必须是独立 brand；唯一 preimage 是 canonical base64url 解码后的 exact 32 raw octets |
+| Ed25519 verification profile | singleton `ed25519-rfc8032-cofactorless-prime-subgroup-v1`；不得由 runtime 默认行为或“Ed25519”字符串替代 |
+| Ed25519 raw public key | `CanonicalPublicKeyBytes32V1Schema`：canonical unpadded base64url，解码后 exact 32 octets；独立于任意长度的 `CanonicalByteStringV1Schema` |
 | Git object | `GitObjectIdSchema`：与 `objectFormat` 对应的 40/64 lowercase hex |
 | repository path | `RepositoryRelativePathSchema`；POSIX、relative、无 dot/parent/control segment |
 | Store descriptor path | `StoreRelativePathV1Schema`；与 repository path 同等 traversal/control 约束，但相对 `.understand-code/` |
@@ -515,6 +533,85 @@ normalization，唯一 UTF-8 bytes由下述 JCS profile产生。完整 SHA-256 d
    直接签名；禁止 Ed25519ph、额外 prehash、只签 wrapper、
    `[domainLiteral, claims]`、替代 domain wrapper 或重新序列化。
 
+`Ed25519PublicKeyDigestV1`是本节唯一不使用 JCS/domain wrapper的 key digest：
+producer先以 `CanonicalPublicKeyBytes32V1Schema`验证 canonical unpadded
+base64url，再解码为 exact 32 raw octets，直接计算
+`SHA-256(rawPublicKeyBytes)`并编码为 `sha256:<64 lowercase hex>`。对 base64url
+文本、UTF-8文本、PEM、SPKI/DER、JWK、长度前缀、JCS string或
+`[domain,fields]`求 hash全部错误。root/recovery/provider/approver key ID仍按各自
+domain-separated JCS stable-ID preimage从 `publicKeyBytes`重算；key ID绝不是
+`publicKeyDigest`的前22位，两者必须分别验证。
+
+所有 C09 Ed25519签名统一使用项目级
+`ed25519-rfc8032-cofactorless-prime-subgroup-v1`。这是一项有意收窄、跨 runtime
+一致的 PureEd25519 profile，而不是“调用任一名为 Ed25519的 API”：
+
+固定参数为 RFC 8032 Ed25519的
+`p = 2^255 - 19`、`L = 2^252 + 27742317777372353535851937790883648493`与标准
+base point `B`；不得由 runtime选择其它 curve/order或批量验证变体。
+
+1. public key、signature分别必须是 exact 32/64 octets；signature拆为 exact
+   32-byte `R`与32-byte little-endian `S`，且 `0 <= S < L`；
+2. `A`与`R`都必须按 RFC 8032 compressed Edwards25519 point严格解码：`y < p`、
+   点在曲线上、decode后重新 encode必须 byte-identical；negative-zero与其它
+   non-canonical encoding拒绝；
+3. `A`与`R`都不得是 identity，且必须在**完整 Edwards25519 群**上对原始 decoded
+   point执行不先 `mod L`、不 cofactor-clear 的整数标量乘，并满足
+   `[L]P = identity`；不得用会先把 scalar约化 `mod L` 的高层 API，也不得先转换/
+   投影到 Ristretto、清除 cofactor后再检查。由此只接受 non-identity prime-order
+   subgroup point，small-order、torsion与mixed-order point全部拒绝；
+4. `SHA-512(Rraw || Araw || message)`按 little-endian非负整数解释后
+   `mod L`得到 `k`；每个签名单独使用未批处理、未乘 cofactor的
+   `[S]B = R + [k]A`验证，不得改用扩大接受集合的实现特定等式；
+5. `message`就是上文 exact JCS octets，context参数必须 absent且不得提供 empty
+   context；禁止 Ed25519ctx、Ed25519ph、caller prehash、streaming重组或
+   runtime默认 context。
+6. signer必须按 RFC 8032 PureEd25519确定性生成 exact raw64 signature；禁止
+   randomized/hedged Ed25519、ctx/ph与额外 prehash。同 key+message必须得到同
+   signature bytes；operation retry只回放首次已持久化 signature/receipt，不能
+   重新签名制造另一个合法但 byte-different结果。
+
+host-injected crypto必须显式暴露并冻结以下能力；方法名可按语言映射，语义不可
+放宽：
+
+```ts
+interface ProviderStrictEd25519CryptoHostV1 {
+  verificationProfile:
+    "ed25519-rfc8032-cofactorless-prime-subgroup-v1";
+  validatePrimeSubgroupPoint(
+    encodedPoint: Uint8Array
+  ): boolean | Promise<boolean>;
+  verifyRawEd25519(
+    publicKey: Uint8Array,
+    message: Uint8Array,
+    signature: Uint8Array
+  ): boolean | Promise<boolean>;
+}
+```
+
+该函数接口不是 JSON wire。可序列化的
+`ProviderStrictEd25519CryptoCapabilityV1`只声明 profile与 typed adversarial
+manifest Pin，并由 bootstrap bundle固定；启动 attestation必须从 fixed package
+resource读取 manifest、运行全部 case，然后返回绑定 defensive-copied method
+references与 capability bytes的进程内 opaque handle。后续 Trust Verifier只接受该
+opaque handle，不能再次接受裸 host或 caller manifest，防止“先通过 KAT再替换
+method”。
+
+两个方法都必须消费 defensive copy并执行相同 profile；`verifyRawEd25519`不能把
+“底层 API返回 true”当成完整验证。Node/OpenSSL或 WebCrypto只能在 strict
+length/canonical/subgroup/S检查之后作为等式 backend使用，且 host必须先通过
+signed package所 pin的 immutable adversarial manifest。任一方法缺失、profile
+不等、KAT/negative case分歧、异常、timeout或返回非 boolean都在读取任何
+Root/Registry/Catalog/Acceptance签名之前 fail closed，映射
+`provider_unavailable/attestation_invalid`并保持零 strong write。
+
+Trust Verifier与 host接口始终只接收 exact raw32 public key；若 Node/OpenSSL
+adapter内部必须构造 SPKI，只能在 adapter私有边界拼接固定 RFC 8410
+`id-Ed25519` OID `1.3.101.112`、**parameters absent**、且 BIT STRING payload恰为
+该 raw32。禁止 caller提供 PEM/DER/SPKI/JWK，禁止 X25519/OID替换、NULL parameters
+或额外 wrapper。`Ed25519PublicKeyDigestV1`仍只 hash raw32，不 hash adapter内部
+临时 SPKI bytes。
+
 本文任何“输入顺序置换后 bytes不变”只描述 producer在 DTO/Schema之前持有的
 无序 collection：builder必须先按合同 comparator排序并拒绝 duplicate，因此不同
 遍历顺序产生同一合法 wire DTO。它绝不授权 verifier修复 signed wire array；
@@ -571,6 +668,14 @@ type PrivateStoreQuotaAdmissionRecordId =
 type PrivateStoreQuotaTransitionRecordId =
   `private-store-quota-transition:${LowerHex22}`;
 type KeyedStateTokenV1 = `hmac-sha256:${LowerHex64}`;
+type Ed25519PublicKeyDigestV1 =
+  `sha256:${LowerHex64}` & {
+    readonly __brand: "Ed25519PublicKeyDigestV1";
+  };
+type CanonicalPublicKeyBytes32V1 =
+  string & { readonly __brand: "CanonicalPublicKeyBytes32V1" };
+type ProviderEd25519VerificationProfileV1 =
+  "ed25519-rfc8032-cofactorless-prime-subgroup-v1";
 type StoreProviderDurableBindingTokenV1 =
   `provider-binding:${LowerHex64}`;
 type StoreProviderRegistrySignatureV1 =
@@ -770,8 +875,8 @@ exact stable-ID fields 冻结如下；表内字段名也是 wire contract：
 | `store-manifest-generation-id-v1` | `{repositoryId,worktreeId,predecessor,manifest}`；不含 generation ID/time/content digest |
 | `repo-pulse-version-v1` | `{artifactId,sourceSnapshotId,contentDigest}`；输出 full lowercase SHA-256 body，不含 provider binding/receipt |
 | `artifact-manifest-generation-id-v1` | `{repositoryId,worktreeId,predecessor,manifestContentDigest,canonicalRepoPulse}`；不含 generation ID/time/content digest |
-| `provider-registry-root-key-id-v1` | `{publicKeyBytes}`；取 SHA-256 前22个 lowercase hex，public bytes先验证 exact 32 bytes |
-| `provider-registry-recovery-key-id-v1` | `{publicKeyBytes}`；取 SHA-256 前22个 lowercase hex，public bytes先验证 exact 32 bytes且不得与 bootstrap/current/historical root material重复 |
+| `provider-registry-root-key-id-v1` | `{publicKeyBytes}`；取 domain-separated JCS preimage的 SHA-256前22个 lowercase hex，key-ID primitive只验证 exact 32 bytes以保持已发布 golden；不得取 raw-key digest前缀。strict prime-subgroup检查在 key进入 trust record/bundle时另行执行 |
+| `provider-registry-recovery-key-id-v1` | `{publicKeyBytes}`；取 domain-separated JCS preimage的 SHA-256前22个 lowercase hex，key-ID primitive只验证 exact 32 bytes；不得取 raw-key digest前缀。进入 trust closure时再做 strict point与 material-uniqueness检查 |
 | `provider-registry-manifest-id-v1` | `{installationIdentityGenerationId,activeRootMetadata,manifestGeneration,predecessor,members,routing}`；不含 generation ID/signature/issuedAt |
 | `provider-acceptance-state-generation-id-v1` | `{installationIdentityGenerationId,acceptanceOrdinal,predecessor,configuration}`；不含 generation ID/time/token |
 | `provider-target-profile-id-v1` | `{osPlatform,osReleaseFamilyCode,osBuildDigest,architecture,filesystemProfileCode,filesystemFeatureProfileDigest,mountOptionProfileDigest}`；输出完整64位 lowercase SHA-256，不含自身 ID或物理 volume identity |
@@ -789,8 +894,8 @@ exact stable-ID fields 冻结如下；表内字段名也是 wire contract：
 | `provider-migration-object-receipt-id-v1` | `{migrationId,sourceObject,destinationObject,transformation,destinationPublication,sourceRevalidationStateVersionToken}`；不含 receipt ID/time/token；rewrite branch的 transformation必须包含完整 Rewrite Plan Pin与 Semantic Equivalence Proof Pin，禁止只存裸 digest |
 | `provider-migration-zero-live-proof-id-v1` | `{migrationId,sourceUniverse,destinationUniverse,sourceStoreCut,destinationStoreCut,sourceFreezeStateVersionToken,receiptCount,receiptSetDigest,canonicalReferenceRewriteClosure,expectedSourceObjectCount,remainingSourceProviderReferences,unmappedSourceObjects,duplicateSourceMappings,unverifiedDestinationObjects,activeTransactions,retainedPhysicalSourceObjectCount,retainedPhysicalSourceObjectSetDigest}`；不含 proof ID/time/token；`expectedSourceObjectCount`必须 exact-equal `sourceUniverse.objectCount` |
 | `provider-migration-source-tombstone-id-v1` | `{migrationId,mode,migrationPlan,sourceInstallationIdentity,sourceProviderId,lastEnabledRegistryEntryContentDigest,zeroLiveProof,tombstoneRegistryManifest?,sourceRecoveryOnlyAcceptance?,destinationInstallationIdentity?,destinationActiveRoot?,destinationRebootstrapBundleDigest?,sourceIdentityRetirementPolicyDigest?,reason}`；不含 tombstone ID/time/signature |
-| `store-provider-verification-key-id-v1` | `{providerId,usage,publicKeyBytes}`；取 SHA-256前22个 lowercase hex，public bytes先验证 exact 32 bytes |
-| `provider-feasibility-approver-key-id-v1` | `{role,publicKeyBytes}`；取 SHA-256前22个 lowercase hex，QA/Release material不得相同 |
+| `store-provider-verification-key-id-v1` | `{providerId,usage,publicKeyBytes}`；取 domain-separated JCS preimage的 SHA-256前22个 lowercase hex，key-ID primitive只验证 exact 32 bytes；不得取 raw-key digest前缀。Registry admission另做 strict point检查 |
+| `provider-feasibility-approver-key-id-v1` | `{role,publicKeyBytes}`；取 domain-separated JCS preimage的 SHA-256前22个 lowercase hex，key-ID primitive只验证 exact 32 bytes；QA/Release material不得相同且 admission另做 strict point检查；不得取 raw-key digest前缀 |
 | `store-terminalization-handoff-record-id-v1` | `{repositoryId,worktreeId,transactionNonce,predecessor,terminalReceiptContentDigest,terminalizationPlanContentDigest,terminalizationWriteProgressContentDigest,terminalizationProgressDeltaContentDigest?,terminalizationProofContentDigest?}`；genesis无 delta/proof，普通 successor只有 delta，proof-only successor两者必有；不含 record ID/time/content digest |
 | `store-external-intent-mutation-id-v1` | `{repositoryId,worktreeId,transactionNonce,predecessor,replacementRevision,replacementPayloadContentDigest}`；predecessor包含 expected revision/content digest/provider version token，genesis固定 absent |
 | `store-provider-compare-delete-record-id-v1` | `{repositoryId,worktreeId,transactionNonce,operationNonce,predecessor,progressContentDigest}`；不含 record ID/time/content digest |
@@ -824,7 +929,9 @@ digest-only domain exact fields：
 | `provider-feasibility-support-catalog-v1` | 完整 strict `ProviderFeasibilitySupportCatalogV1`，排除 `catalogSignature`；包含 exact Public Taxonomy与 Release Target Universe pins，targets按 target profile ID、各 candidates按 provider ID UTF-8 bytewise排序且unique并 exact-cover Universe，generation/predecessor连续 |
 | `provider-public-support-taxonomy-v1` | 完整 strict `ProviderPublicSupportTaxonomyV1`，排除 `taxonomySignature`；OS-family records按 code、filesystem records按 code UTF-8 bytewise排序且 descriptor/code分别unique，code必须由对应 descriptor stable domain重算 |
 | `provider-distribution-history-policy-v1` | 完整 strict `ProviderDistributionHistoryPolicyV1`；reachable closure固定为 Catalog、Taxonomy、Release Matrix、Discovery Result、Release Target Universe五条完整 generation chain、每代 Discovery内嵌 Bundle，以及 Bundle传递 pin到的 Fixture/Runner、Suite、Fixture Corpus source Envelope；single retained object 16 MiB、65,536 unique retained object、unique Envelope累计 canonical bytes 512 MiB、emergency reserve、streaming admission与 exhaustion全部进入 signed package identity |
-| `provider-signed-package-identity-v1` | `{resolverProfile,releaseRevisionDigest,bootstrapRegistryRootKeyId,bootstrapRegistryRootMetadataContentDigest,historyPolicy}`；输出完整 SHA-256并 exact-equal `ProviderSignedDistributionRootBindingV1.signedPackageIdentityDigest`，不包含任一 coverage artifact digest或 physical path |
+| `provider-strict-ed25519-adversarial-manifest-v1` | 完整 strict `ProviderStrictEd25519AdversarialManifestV1`；case按 case ID UTF-8 bytewise排序且unique，覆盖 exact raw key/message/signature bytes、category、public-key point admission、signature-R point admission与完整 signature expected result；outer Envelope `contentDigest`不进入 payload digest |
+| `provider-bootstrap-trust-bundle-v1` | 完整 strict `ProviderBootstrapTrustBundleV1`；覆盖 typed strict crypto capability/manifest Pin、bootstrap root、完整 bootstrap Root Metadata Envelope、按 recovery key ID排序的三把 recovery key、threshold=2与 trust-history policy；outer Envelope `contentDigest`不进入 payload digest |
+| `provider-signed-package-identity-v1` | `{resolverProfile,releaseRevisionDigest,bootstrapTrustBundle,historyPolicy}`；`bootstrapTrustBundle`是 fixed-resource Pin；输出完整 SHA-256并 exact-equal `ProviderSignedDistributionRootBindingV1.signedPackageIdentityDigest`，不包含任一 coverage artifact digest或 physical path |
 | `provider-release-target-entry-set-v1` | `{targets:ProviderReleaseTargetUniverseTargetEntryV1[]}`；按 `target.targetProfileId` UTF-8 bytewise排序且unique，同 ID不同完整 target/public projection bytes拒绝，不含 count |
 | `provider-release-matrix-v1` | 完整 strict `ProviderReleaseMatrixV1`，排除 `matrixSignature`；generation/predecessor、root/taxonomy pin、target count/set digest与完整有序 target set进入 digest |
 | `provider-target-discovery-source-manifest-record-set-v1` | `{observationSource,entries:ProviderTargetDiscoverySourceManifestRecordV1[]}`；按 `sourceRecordOrdinal` exact `0..N-1`，完整 resolved/unresolved outcome进入 digest，允许 canonical empty |
@@ -1117,9 +1224,10 @@ prefix、provider、usage或 role的签名都无效。
 先对另一 domain/provider/usage/role/key ID的 message签名后换 prefix。provider
 verifier必须按
 `(providerId, usage, keyId)`从 registry-root签名的 immutable historical key
-record精确取回 public key，验证 decoded key恰为32 bytes、digest与 usage一致、
-key未被 compromise-revoked，再验证签名；不能使用“当前 active key”代替 token
-所 pin 的 key。key ID必须按对应
+record精确取回 public key，验证 decoded key恰为32 bytes、
+`publicKeyDigest=SHA-256(raw 32 bytes)`、strict prime-subgroup admission、
+digest与 usage一致、key未被 compromise-revoked，再按冻结 profile验证签名；
+不能使用“当前 active key”代替 token所 pin 的 key。key ID必须按对应
 `store-provider-verification-key-id-v1{providerId,usage,publicKeyBytes}`或
 `provider-feasibility-approver-key-id-v1{role,publicKeyBytes}`重算；root与
 recovery key ID也分别按 `provider-registry-root-key-id-v1` /
@@ -1708,6 +1816,15 @@ interface ProviderUnavailableToolErrorV1 {
   };
 }
 
+const PROVIDER_CAPABILITY_FAILURE_REASON_PRECEDENCE_V1 = [
+  "attestation_invalid",
+  "revoked",
+  "migration_required",
+  "initialization_not_terminalized",
+  "unsupported_filesystem_profile",
+  "unavailable",
+] as const;
+
 type StoreDurableObjectProviderIsolationV1 =
   | {
       kind: "separate_os_principal";
@@ -1804,8 +1921,8 @@ interface StoreDurableObjectProviderVerificationPublicKeyV1 {
   keyId: LowerHex22;
   usage: StoreDurableObjectProviderVerificationKeyUsageV1;
   algorithm: "ed25519";
-  publicKeyBytes: CanonicalByteStringV1; // decoded exact 32 bytes
-  publicKeyDigest: ContentDigest;
+  publicKeyBytes: CanonicalPublicKeyBytes32V1;
+  publicKeyDigest: Ed25519PublicKeyDigestV1;
   registrySignature: StoreProviderRegistrySignatureV1;
 }
 
@@ -1826,8 +1943,8 @@ interface ProviderFeasibilityApproverPublicKeyV1 {
   role: "qa" | "release";
   keyId: LowerHex22;
   algorithm: "ed25519";
-  publicKeyBytes: CanonicalByteStringV1; // decoded exact 32 bytes
-  publicKeyDigest: ContentDigest;
+  publicKeyBytes: CanonicalPublicKeyBytes32V1;
+  publicKeyDigest: Ed25519PublicKeyDigestV1;
   registrySignature: StoreProviderRegistrySignatureV1;
 }
 
@@ -2015,14 +2132,34 @@ interface ProviderDistributionHistoryPolicyV1 {
     "reject_candidate_distribution_and_preserve_last_verified_distribution";
 }
 
+interface ProviderBootstrapTrustBundlePinV1 {
+  locatorProfile:
+    "distribution_provider_bootstrap_trust_bundle_v1";
+  contentDigest: ContentDigest;
+}
+
+interface ProviderStrictEd25519AdversarialManifestPinV1 {
+  locatorProfile:
+    "distribution_provider_strict_ed25519_adversarial_manifest_v1";
+  manifestVersion: 1;
+  contentDigest: ContentDigest;
+}
+
+interface ProviderStrictEd25519CryptoCapabilityV1 {
+  profile: "provider_strict_ed25519_crypto_capability_v1";
+  verificationProfile:
+    ProviderEd25519VerificationProfileV1;
+  adversarialManifest:
+    ProviderStrictEd25519AdversarialManifestPinV1;
+}
+
 interface ProviderSignedDistributionRootBindingV1 {
   profile: "provider_signed_distribution_root_binding_v1";
   resolverProfile:
     "verified_signed_package_distribution_root_v1";
   signedPackageIdentityDigest: ContentDigest;
   releaseRevisionDigest: ContentDigest;
-  bootstrapRegistryRootKeyId: LowerHex22;
-  bootstrapRegistryRootMetadataContentDigest: ContentDigest;
+  bootstrapTrustBundle: ProviderBootstrapTrustBundlePinV1;
   historyPolicy: ProviderDistributionHistoryPolicyV1;
 }
 
@@ -2741,16 +2878,16 @@ interface ProviderRegistryRootPublicKeyV1 {
   profile: "provider_registry_root_public_key_v1";
   rootKeyId: LowerHex22;
   algorithm: "ed25519";
-  publicKeyBytes: CanonicalByteStringV1; // decoded exact 32 bytes
-  publicKeyDigest: ContentDigest;
+  publicKeyBytes: CanonicalPublicKeyBytes32V1;
+  publicKeyDigest: Ed25519PublicKeyDigestV1;
 }
 
 interface ProviderRegistryRecoveryPublicKeyV1 {
   profile: "provider_registry_recovery_public_key_v1";
   recoveryKeyId: LowerHex22;
   algorithm: "ed25519";
-  publicKeyBytes: CanonicalByteStringV1; // decoded exact 32 bytes
-  publicKeyDigest: ContentDigest;
+  publicKeyBytes: CanonicalPublicKeyBytes32V1;
+  publicKeyDigest: Ed25519PublicKeyDigestV1;
 }
 
 interface ProviderRegistryRootMetadataCommonV1 {
@@ -2812,6 +2949,171 @@ interface ProviderRegistryRootMetadataPinV1 {
   rootKeyId: LowerHex22;
   contentDigest: ContentDigest;
 }
+
+interface ProviderStrictEd25519AdversarialCaseV1 {
+  caseId: string; // strict lower kebab-case，UTF-8 bytewise sorted + unique
+  category:
+    | "rfc8032_valid"
+    | "provider_wrapper_valid"
+    | "public_key_length"
+    | "signature_length"
+    | "public_key_noncanonical"
+    | "public_key_identity_or_small_order"
+    | "public_key_mixed_order"
+    | "r_noncanonical"
+    | "r_identity_or_small_order"
+    | "r_mixed_order"
+    | "s_out_of_range"
+    | "equation_mismatch"
+    | "context_or_prehash_substitution";
+  publicKeyBytes: CanonicalByteStringV1;
+  messageBytes: CanonicalByteStringV1;
+  signatureBytes: CanonicalByteStringV1;
+  expectedPublicKeyPointAdmission: "accept" | "reject";
+  expectedSignatureRPointAdmission: "accept" | "reject";
+  expectedResult: "accept" | "reject";
+}
+
+interface ProviderStrictEd25519AdversarialManifestV1 {
+  profile:
+    "provider_strict_ed25519_adversarial_manifest_v1";
+  manifestVersion: 1;
+  verificationProfile:
+    ProviderEd25519VerificationProfileV1;
+  cases: [
+    ProviderStrictEd25519AdversarialCaseV1,
+    ...ProviderStrictEd25519AdversarialCaseV1[]
+  ];
+}
+
+interface ProviderStrictEd25519AdversarialManifestEnvelopeV1 {
+  schemaVersion: 1;
+  recordType:
+    "provider_strict_ed25519_adversarial_manifest";
+  manifestVersion: 1;
+  contentDigest: ContentDigest;
+  payload: ProviderStrictEd25519AdversarialManifestV1;
+}
+
+`manifestVersion=1`不是开放 case registry。verifier代码与跨语言 conformance
+runner必须 hard-code下列 UTF-8 bytewise有序 tuple，并要求 manifest
+exact-cover、无 missing/extra/duplicate/reorder；只有名字以 `rfc8032-`及
+`provider-wrapper-valid`的5项期望 `accept`，其余全部期望 `reject`，每个 ID的
+category与 raw bytes由 immutable golden固定：
+
+```ts
+const PROVIDER_STRICT_ED25519_REQUIRED_CASE_IDS_V1 = [
+  "caller-prehash-substitution",
+  "ed25519ctx-substitution",
+  "ed25519ph-substitution",
+  "equation-message-bitflip",
+  "identity-universal-forgery",
+  "provider-wrapper-valid",
+  "public-key-31-bytes",
+  "public-key-33-bytes",
+  "public-key-identity",
+  "public-key-mixed-order",
+  "public-key-negative-zero",
+  "public-key-nonsquare",
+  "public-key-small-order",
+  "public-key-y-equals-p",
+  "r-identity",
+  "r-mixed-order",
+  "r-noncanonical",
+  "r-small-order",
+  "rfc8032-empty-valid",
+  "rfc8032-one-byte-valid",
+  "rfc8032-test-1024-valid",
+  "rfc8032-two-byte-valid",
+  "s-equals-l",
+  "s-l-plus-one",
+  "s-max",
+  "s-plus-l-malleability",
+  "signature-63-bytes",
+  "signature-65-bytes",
+] as const;
+```
+
+`rfc8032-test-1024-valid`沿用 RFC 8032 的 `TEST 1024`标签，其 MESSAGE 实际为
+1023 octets；不得按 case ID标签误生成 1024-byte message。
+
+manifest的三个 expected结果彼此独立，不能从整体 `expectedResult`推导 point
+结果。每个 v1 case的 decoded `signatureBytes`必须至少32 octets；runner对28项逐项、
+不去重且按 tuple顺序：
+
+1. 把完整 decoded `publicKeyBytes`传给
+   `validatePrimeSubgroupPoint`，只与
+   `expectedPublicKeyPointAdmission`比较；
+2. 把 decoded `signatureBytes`的 exact前32 octets `R`传给同一 method，只与
+   `expectedSignatureRPointAdmission`比较；63/65-byte signature仍必须测试其
+   exact 32-byte `R`；
+3. 把完整 key/message/signature传给 `verifyRawEd25519`，只与
+   `expectedResult`比较。
+
+因此启动 KAT固定执行56次 point admission与28次完整 signature verification。
+`S>=L`、equation/message或 ctx/ph/prehash substitution等 case可以且应当拥有
+`expectedResult=reject`但两个 point expected均为 `accept`；不得把整体 reject复用
+为 point结果。任一 method始终 true/false、两 method分叉、少调用/去重/重排、输入
+mutation或预期字段互换都不能取得 opaque capability。
+
+至少两个 regression bytes必须原样进入该 manifest：`identity-universal-forgery`
+使用 public key
+`base64url:AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`、message
+`base64url:dGVzdA`、signature
+`base64url:AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`；
+`public-key-mixed-order`使用 public key raw hex `95 || 99*31`、message raw UTF-8
+`mixed-0`及 signature
+`base64url:WGZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmYFNgrUYD-aM4nc_dUoG9OVFxUNr_IfbNwutPySDWcNBg`。
+已观察到 native runtime可宽松接受这类构造；strict profile必须拒绝。首次实现
+生成完整 canonical manifest后，package还必须编译固定
+`ProviderStrictEd25519AdversarialManifestContentDigestV1`常量；Pin、resource与
+常量三方 exact-equal。caller不能删减、替换或自带 manifest来获取 capability。
+
+interface ProviderBootstrapTrustBundleV1 {
+  profile: "provider_bootstrap_trust_bundle_v1";
+  strictCryptoCapability:
+    ProviderStrictEd25519CryptoCapabilityV1;
+  bootstrapProviderRegistryRoot:
+    ProviderRegistryRootPublicKeyV1;
+  bootstrapProviderRegistryRootMetadata:
+    ProviderRegistryRootMetadataEnvelopeV1;
+  providerRegistryRecoveryKeys: [
+    ProviderRegistryRecoveryPublicKeyV1,
+    ProviderRegistryRecoveryPublicKeyV1,
+    ProviderRegistryRecoveryPublicKeyV1
+  ]; // recoveryKeyId UTF-8 bytewise sorted + unique；四把 trust key material全异
+  providerRegistryRecoveryThreshold: 2;
+  providerTrustHistoryPolicy:
+    ProviderTrustHistoryPolicyV1;
+}
+
+interface ProviderBootstrapTrustBundleEnvelopeV1 {
+  schemaVersion: 1;
+  recordType: "provider_bootstrap_trust_bundle";
+  contentDigest: ContentDigest;
+  payload: ProviderBootstrapTrustBundleV1;
+}
+
+Bundle validator必须逐项关闭下列等式后才可建立 trust：
+
+- `strictCryptoCapability.verificationProfile`、adversarial manifest payload
+  `verificationProfile`与 host capability三者 exact-equal；manifest Pin的
+  version/content digest与 retained/resolved Envelope outer/payload exact-equal；
+- `bootstrapProviderRegistryRoot`必须 byte-identical
+  `bootstrapProviderRegistryRootMetadata.payload.activeRoot`；metadata outer
+  `rootGeneration/rootKeyId/contentDigest`分别等于 payload generation/active
+  root ID及 `provider-registry-root-metadata-v1`重算值；
+- metadata必须恰为
+  `rootGeneration=1/activation=bootstrap/predecessor={state:"genesis"}/
+  recoverySignatures=[]`，self-signature通过同一 strict profile；
+- recovery tuple恰有3项，按 recoveryKeyId UTF-8 bytewise严格升序，ID与 raw-key
+  digest分别重算、无 duplicate；root+3 recovery raw material两两不同且全部通过
+  prime-subgroup point admission；threshold恰为2；
+- bundle Envelope `contentDigest`等于
+  `provider-bootstrap-trust-bundle-v1`完整 payload digest。现有 C09-0
+  key-ID golden只证明“任意 exact 32 bytes的稳定 ID派生”，不因此成为
+  trust-admissible key；mixed/small-order key可继续验证旧 key-ID vector，但必须被
+  Bundle/Registry admission拒绝。
 
 interface ProviderFeasibilityEvidenceV1 {
   profile: "provider_feasibility_evidence_v1";
@@ -3614,19 +3916,15 @@ interface InstallationIdentityStateV1 {
   generationId: InstallationIdentityGenerationIdV1;
   initializationNonce: LowerHex32;
   resolverId: InstallationStateResolverIdV1;
-  bootstrapProviderRegistryRoot:
-    ProviderRegistryRootPublicKeyV1;
-    // 必须与 distribution bootstrap trust anchor exact-equal，永不升级改写
-  bootstrapProviderRegistryRootMetadata:
-    ProviderRegistryRootMetadataPinV1;
-    // 必须固定 rootGeneration=1 / activation=bootstrap
-  providerRegistryRecoveryKeys: [
-    ProviderRegistryRecoveryPublicKeyV1,
-    ProviderRegistryRecoveryPublicKeyV1,
-    ProviderRegistryRecoveryPublicKeyV1
-  ]; // recoveryKeyId UTF-8 bytewise sorted + unique，且 public material全异
-  providerRegistryRecoveryThreshold: 2;
-  providerTrustHistoryPolicy: ProviderTrustHistoryPolicyV1;
+  bootstrapOriginDistributionRootBinding:
+    ProviderSignedDistributionRootBindingV1;
+  bootstrapTrustBundle:
+    ProviderBootstrapTrustBundlePinV1;
+  bootstrapTrustBundleEnvelope:
+    ProviderBootstrapTrustBundleEnvelopeV1;
+  strictEd25519AdversarialManifestEnvelope:
+    ProviderStrictEd25519AdversarialManifestEnvelopeV1;
+    // 三者必须与 original verified signed distribution exact闭合，永不升级改写
   providerMigrationHistoryQuotaHighWaterLocatorProfile:
     "installation_provider_migration_history_quota_high_water_v1";
   providerAcceptanceStateLocatorProfile:
@@ -10717,19 +11015,66 @@ boundary：独立 OS principal或经证明的 kernel-isolated storage domain。�
 0700、随机文件名、普通同 UID broker、advisory lock或进程内抽象都不是安全
 边界。
 
-registry 的信任根不是 Store、workspace或可写 installation-state 文件本身：
-发行物内置的 bootstrap registry-root Ed25519 public key与三把 offline recovery
-public key是 installation唯一初始 trust anchor。
-`InstallationIdentityStateV1`只保存**不可变身份与容量宪法**：bootstrap root exact
-32-byte bytes/digest、bootstrap Root Metadata pin、按 recovery key ID排序且
-material全异的三把 recovery key、固定 threshold=2，以及完整
-`ProviderTrustHistoryPolicyV1`。trusted read必须先证明
-它们与当前签名发行物 bootstrap trust bundle exact-equal；普通 root、registry、
-catalog、binary或 signing-key升级永不改写该 identity，已有 Store ownership
-marker继续 pin原 identity generation/content digest。root private key与 recovery
-private key离线保管，不存在于 workspace进程或 durable-object provider；
-provider的 binding derivation secret与四类 signing private key只存在于上文
-OS-isolated provider。
+registry 的信任根不是 Store、workspace或可写 installation-state 文件本身，而是
+已验证签名发行物内 fixed resource
+`provider/bootstrap-trust-bundle-v1.json`。Trust Verifier只能从 verified package
+root按该 literal解析 strict canonical
+`ProviderBootstrapTrustBundleEnvelopeV1`，不能接受 caller/provider/runtime给出的
+path、mirror或 bytes；Pin的 `locatorProfile/contentDigest`、locatorProfile到 fixed
+literal的唯一映射、Envelope
+recordType/content digest及 payload domain必须逐项闭合。byte-identical mirror只有
+在 verified package resolver明确映射同一 signed package identity时才可接受。
+
+bundle是 installation唯一初始 trust anchor，必须同时包含：
+`ed25519-rfc8032-cofactorless-prime-subgroup-v1`、immutable adversarial manifest
+digest、bootstrap registry-root、完整 bootstrap Root Metadata Envelope、按
+recovery key ID排序且 material全异的三把 offline recovery key、固定 threshold=2
+及完整 `ProviderTrustHistoryPolicyV1`。bootstrap metadata必须
+`rootGeneration=1/activation=bootstrap/predecessor=genesis/recoverySignatures=[]`，
+outer root key ID与 payload active root exact-equal；root metadata self-signature
+也必须先过 strict host profile。四把 trust public key逐一重算 canonical
+raw-key digest与 domain-separated key ID，做 strict point admission并全域
+material unique；bundle content digest覆盖完整 payload。
+
+`ProviderSignedDistributionRootBindingV1.bootstrapTrustBundle`与
+`InstallationIdentityStateV1.bootstrapTrustBundle`必须 byte-identical pin同一
+bundle。初始化事务还要把 original verified
+`ProviderSignedDistributionRootBindingV1`、bundle完整 canonical Envelope及其
+adversarial manifest完整 canonical Envelope复制进 provider-isolated immutable
+Identity state；三份 retained bytes分别与 Pin/content digest/profile exact闭合，
+不再重复保存可漂移的 root/recovery/threshold/policy字段。该复制只在 package
+signature、fixed-resource resolver、strict Schema/digest与 host KAT全部通过后发生，
+并与 Identity publication同一 crash-safe事务提交。
+
+普通 current Identity的 strong read必须同时验证 retained Envelope与当前 verified
+package的 bundle Pin相等；普通 root、registry、catalog、binary或 signing-key升级
+不得换 bundle。recovery-key compromise后的新发行物必然携带新 bundle：旧
+`recovery_only` source Identity不要求与新 package bundle相等，而是只从自己的
+immutable retained origin binding/bundle/manifest重建历史 verifier，并要求当前
+host按 source bundle所 pin同一 strict profile通过该 retained manifest；
+cross-installation Plan必须同时 exact pin source与destination两套 bundle digest。
+任一历史 Envelope/manifest缺失或不等都让 source保持
+`recovery_only/provider_unavailable`且零写，绝不能采用新 bundle替换；它们在旧
+Identity全部 Store/live-reference清零、sealed tombstone和 deletion proof完成前
+不得 GC。已有 Store ownership marker继续 pin原 identity generation/content
+digest。root private key与 recovery private key离线保管，不存在于 workspace进程或
+durable-object provider；provider的 binding derivation secret与四类 signing private
+key只存在于上文 OS-isolated provider。host strict profile/KAT未关闭时，甚至
+bootstrap self-signature都不得尝试以 runtime默认 API“宽松验证”后继续。
+
+公开失败 reason必须按
+`PROVIDER_CAPABILITY_FAILURE_REASON_PRECEDENCE_V1`选唯一结果：package/bundle/
+manifest/KAT或 current/retained trust closure任一 malformed、missing、mismatch先
+报 `attestation_invalid`；闭包有效且本次操作所需的 exact signer/provider/binding
+存在已验证的适用 revocation才报 `revoked`，历史闭包中其它已淘汰 key的 revocation
+不产生全局 revoked；闭包有效且 Acceptance/Identity明确为
+`migration_only/recovery_only`、policy/binding换代或容量耗尽才报
+`migration_required`；再依次是合法但未 terminalized的初始化、
+unsupported target和残余 service/IPC不可用。valid old recovery-only Identity面对
+different current Bundle的普通 strong调用因此是 `migration_required`，专用
+migration source read仍按 retained old trust；若 retained object损坏则升级为
+`attestation_invalid`，绝不能借第3项采用 current Bundle。结构合法的 partial init是
+`initialization_not_terminalized`，结构损坏仍是 `attestation_invalid`。
 
 可升级游标只存在于独立的 append-only
 `ProviderAcceptanceStateEnvelopeV1`，但 generation publication与 current
@@ -11423,11 +11768,20 @@ Discovery Result与 Release Target Universe外，所有 installation-scoped
 trust对象都使用同一 owner-pinned state root；五个 distribution对象只允许从
 同一个已验证 `ProviderSignedDistributionRootBindingV1`所绑定的签名发行物只读根
 解析；Target Discovery Input Bundle嵌入并由 Discovery Result保留，不新增第六条
-generation locator。两类对象
-都使用 `.json`扩展名和 `StoreFilenameKeyV1`，完整 locator映射冻结为：
+generation locator。bootstrap trust bundle同样来自该 verified package root，但它是
+signed-package/Installation Identity各自只 pin一次的 bootstrap structural object，
+不属于五条 generation history、40,960个 schema可达 retained closure或
+512 MiB distribution-history accounting，避免把信任根计入由自身绑定的可升级
+history；bundle与 strict manifest两个 bootstrap resource分别受 exact-one、
+4 MiB canonical Envelope pre-materialize cap与永久 retention约束，不能借此携带
+任一 coverage generation artifact。除 bootstrap
+literal外，generation/content-addressed对象使用 `.json`扩展名和
+`StoreFilenameKeyV1`；完整 locator映射冻结为：
 
 | locator profile | state-root relative path / semantic component |
 |---|---|
+| `distribution_provider_bootstrap_trust_bundle_v1` | verified签名发行物只读根的 literal `provider/bootstrap-trust-bundle-v1.json`；禁止编码、alias、第二 path或 caller path |
+| `distribution_provider_strict_ed25519_adversarial_manifest_v1` | verified签名发行物只读根的 literal `provider/ed25519-strict-host-conformance-v1.json`；manifestVersion固定1，禁止 alias、第二 path或 caller path |
 | `installation_provider_registry_root_metadata_v1` | `provider/root-metadata/<encoded(rootGeneration ":" rootKeyId)>.json` |
 | `installation_provider_registry_manifest_v1` | `provider/registry-manifests/<encoded-generationId>.json` |
 | `installation_provider_feasibility_evidence_v1` | `provider/feasibility-evidence/<encoded-evidenceId>.json` |
@@ -11477,7 +11831,7 @@ resolver只接受 profile与该行声明的 semantic fields，禁止 caller-supp
 glob、目录扫描或候选 adoption。Root/Registry/Acceptance/Result/Evidence/Catalog/
 Public Taxonomy/Release Matrix/Target Discovery Result/Release Target Universe/
 Target Discovery Fixture Manifest/Runner Run Manifest/Real-FS Suite Manifest/
-Real-FS Fixture Corpus Manifest/
+Real-FS Fixture Corpus Manifest/Bootstrap Trust Bundle/
 Migration Plan/Universe/Rewrite Plan/
 Semantic Equivalence Proof/Object Receipt/Zero-live/Tombstone/Progress
 Envelope的重复 outer ID/generation/root key/installation identity/time必须与
@@ -11569,9 +11923,11 @@ fail closed。non-canonical decimal或任一 generation的第二 semantic path�
 Trust Verifier必须从 host已验证的只读 package capability取得完整
 `ProviderSignedDistributionRootBindingV1`，不能接受 caller/provider/runtime传入的
 physical path或候选 digest；binding的 `signedPackageIdentityDigest`只按
-`provider-signed-package-identity-v1`重算，且 bootstrap root key/content digest必须
-闭合到 active Root Metadata chain的 genesis。byte-identical mirror可以使用不同
-physical path，但只能解析出同一 binding与同一 artifact bytes；不同 binding伪装成
+`provider-signed-package-identity-v1`重算。binding的 `bootstrapTrustBundle`
+必须按 fixed literal解析到 exact Envelope/payload，再由 bundle bootstrap root与
+metadata闭合 active Root Metadata chain的 genesis；不能再从 binding中读取已删除的
+独立 root-key/content-digest字段。byte-identical physical mirror只有 verified
+package resolver明确证明同一 signed package identity时才允许；不同 binding伪装成
 mirror、把同 bytes放在第二 semantic component或 path alias均拒绝。
 
 五条 current generation都必须小于等于各自 policy的4096上限，并从 generation 1
@@ -15160,7 +15516,7 @@ Event action、capability 必须交叉一致。
 
 状态枚举：
 
-- `frozen`：D-24～D-30 已在 PRD/G0/本矩阵一致；
+- `frozen`：D-24～D-31 已在 PRD/G0/本矩阵一致；
 - `pending implementation`：代码或 focused tests 尚未提交；
 - `capability locked`：生产入口必须在任何仓库读取/写入前 fail closed；
 - `verified locally/remotely`：只在对应 source tree 的 focused/root/CI 证据通过
@@ -15176,7 +15532,7 @@ Event action、capability 必须交叉一致。
 | WP5-C06 | path-safe Snapshot/Pulse、legacy redacted Surface 与 HMAC locator brands | Repository/Surface contracts + fixtures | frozen / pending implementation |
 | WP5-C07 | SafeGit/bootstrap/state-token/request-equality/quota-index strict schemas + seven-way category correlation + Admission/Transition full-record digest golden bytes | contracts security/internal schemas | frozen / pending implementation |
 | WP5-C08 | Context Generation Record、root-relative History closure、Store filename codec | contracts + Store internal schemas | frozen / pending implementation |
-| WP5-C09 | RFC 8785/JCS exact bytes与strict provider ID、provider registry root/key history、Catalog strict Envelope、signed Public Taxonomy/Release Matrix/Target Discovery Result/real-FS Suite+Corpus、closed-world Release Target Universe与 typed retained-object/保守 public privacy projection、Acceptance compact receipt、same/cross Identity migration typed dry-run/Plan-bound reservation/exact final receipt/universe-side/receipt prefix/versioned canonical Rewrite Plan/Semantic Equivalence Proof/zero-live/sealed head、signed proof/version Envelope、binding generation、atomic path containment、Store Manifest compact compare-append receipt与 terminal journal contracts | `packages/durable-object-provider-contracts` + cross-language golden/negative vectors（含 coverage input、rewrite mapping/SCC/JCS/proof-token/locator/budget） | frozen / pending implementation |
+| WP5-C09 | RFC 8785/JCS exact bytes与strict provider ID；raw-key digest/strict Ed25519 host capability+exact hostile manifest；fixed Bootstrap Trust Bundle/retained historical source closure；provider registry root/key history、Catalog strict Envelope、signed Public Taxonomy/Release Matrix/Target Discovery Result/real-FS Suite+Corpus、closed-world Release Target Universe与 typed retained-object/保守 public privacy projection、Acceptance compact receipt、same/cross Identity migration typed dry-run/Plan-bound reservation/exact final receipt/universe-side/receipt prefix/versioned canonical Rewrite Plan/Semantic Equivalence Proof/zero-live/sealed head、signed proof/version Envelope、binding generation、atomic path containment、Store Manifest compact compare-append receipt与 terminal journal contracts | `packages/durable-object-provider-contracts` + cross-language golden/negative vectors（含 strict crypto/KAT/bootstrap bundle、coverage input、rewrite mapping/SCC/JCS/proof-token/locator/budget） | frozen / implementation in progress；capability locked |
 | WP5-S01 | private baseline blob/Git lease layout、permissions、Stage 1 transaction | `packages/artifact-store` | frozen / pending implementation |
 | WP5-S02 | exact Repository Basis lock-time guard | `packages/artifact-store/src/store.ts` | frozen / pending implementation |
 | WP5-S03 | duplicate Check and direct Snapshot dependencies | Artifact Store semantic guards | frozen / pending implementation |
@@ -15219,10 +15575,26 @@ Release另验签名发行物与 coverage vectors。该 Gate估算3–4 calendar 
 person-weeks，包含 Schema、TypeScript types、cross-language golden、negative
 manifest、conformance runner及两轮独立复审，不包含 WP3P runtime/installer。
 
+D-31不得藏在一个巨型 WP5-1P commit中，固定按以下三个独立 commit/push/review
+边界交付，前一层的 root quality、同 SHA push与 P0/P1 review关闭后才进入下一层：
+
+1. `docs(wp5): freeze strict ed25519 bootstrap trust`：只含 PRD/G0/Matrix；
+2. `feat(wp5): add strict ed25519 host conformance`：raw-key digest、strict point/
+   signature primitive、host interface/opaque capability、28-case resource与
+   56-point/28-signature runner；
+3. `feat(wp5): add bootstrap trust bundle contracts`：Bundle Pin/Envelope/resource、
+   bootstrap metadata/key closure、signed distribution binding、immutable Identity
+   origin retention与 current-vs-historical migration semantics。
+
+任一子层通过只产生 candidate，不解锁 strong capability；WP5-1P aggregate Gate仍须
+覆盖此前与后续全部 C09合同。
+
 | Gate | 内容 | 最低本地证据 | Capability |
 |---|---|---|---|
-| WP5-0 | D-24～D-30 文档冻结 | diff/link/range/术语审查 | locked |
-| WP5-1P | C09 Provider contracts prerequisite：RFC 8785/JCS与provider ID、registry/root/key/runtime/Evidence/Catalog Envelope + signed Distribution Root Binding/Taxonomy/Release Matrix/embedded Discovery Input Bundle/Target Discovery Result/Release Target Universe + signed real-FS Suite/Fixture Corpus与 typed retained-object accounting + bounded five-chain history、deterministic public projection、Acceptance/Store compact receipts、same/cross migration typed dry-run/Plan-bound reservation/exact final receipt/receipt-prefix closure、versioned Rewrite Plan/Object+Root Semantic Proof、exact-object、external CAS、journal与 error wire + golden vectors | provider contract build/schema、cross-language golden bytes、coverage provenance/history/union/catalog omission/code-smuggling、nonce mismatch/restart/migration及 rewrite mapping/root/SCC/JCS/size/HMAC issuer/proof-token/locator/budget negative vectors | locked |
+| WP5-0 | D-24～D-31 文档冻结 | diff/link/range/术语审查 | locked |
+| WP5-1P/C09-1B | raw-key digest + strict Ed25519 host conformance | old C09-0 key-ID golden byte-identical；独立 digest brand/schema/golden；strict point/signature vectors；28-case fixed resource/digest exact-cover；每 runtime恰56次 point + 28次 verify；constant-true/false/divergent/mutating/replaced host negatives；package build/typecheck/test/distribution/root quality与 Security review | locked |
+| WP5-1P/C09-1C | fixed Bootstrap Trust Bundle + immutable Identity retained trust | Bundle/manifest Pin/Envelope/payload/fixed-locator/4 MiB Schema与golden；bootstrap metadata、root+3 recovery/threshold/policy/strict profile等式；signed distribution与Identity origin closure；old/new Bundle recovery-only migration、missing retained object、五链 accounting negatives；package build/typecheck/test/distribution/root quality与 Implementability/Security review | locked |
+| WP5-1P | C09 Provider contracts prerequisite：RFC 8785/JCS与provider ID、raw-key digest、strict Ed25519 host capability/KAT、fixed Bootstrap Trust Bundle+historical source retention、registry/root/key/runtime/Evidence/Catalog Envelope + signed Distribution Root Binding/Taxonomy/Release Matrix/embedded Discovery Input Bundle/Target Discovery Result/Release Target Universe + signed real-FS Suite/Fixture Corpus与 typed retained-object accounting + bounded five-chain history、deterministic public projection、Acceptance/Store compact receipts、same/cross migration typed dry-run/Plan-bound reservation/exact final receipt/receipt-prefix closure、versioned Rewrite Plan/Object+Root Semantic Proof、exact-object、external CAS、journal与 error wire + golden vectors | provider contract build/schema；old C09-0 vectors byte-identical；strict manifest exact-cover、fixed digest、cross-runtime positive/hostile KAT、bundle/metadata/key/pin/history-source negatives；cross-language golden bytes、coverage provenance/history/union/catalog omission/code-smuggling、nonce mismatch/restart/migration及 rewrite mapping/root/SCC/JCS/size/HMAC issuer/proof-token/locator/budget negative vectors | locked |
 | WP5-PF | provider feasibility：独立 OS principal/kernel isolation、registry-root/key custody、exact-object API、external CAS/journal与安装生命周期 | macOS/Linux真实 FS×mount 矩阵、crash/ABA/path-race、签名/权限、upgrade/downgrade/uninstall E2E；任一 target 未过只读 | strong Store write locked |
 | WP5-1 | C01～C08及其余 strong/legacy/path-safe/internal schemas + fixtures；C09只允许在兼容前提下增补 | contracts full suite/schema/golden vectors | locked |
 | WP5-2A | SafeGit/bootstrap + path-safe Snapshot/Pulse + identity cutover | hostile config/real worktree/legacy Surface/key crash | locked |
@@ -15266,7 +15638,7 @@ supported tool list。
 | AT-C18 | strong Task/Pulse baseline 不同 | Task baseline 等于 evaluated Snapshot；Pulse logical baseline 只作 provenance |
 | AT-C19 | created/context_ready spec/generation | Manifest spec 从 created 存在；Manifest/Brief/Event generation 相等 |
 | AT-C20 | strong Check 的 empty Findings | 仅在零 effective change、零未处置 required/gap 且五维 complete 时合法；其他情况 reject |
-| AT-C21 | JCS、strong primitive/stable ID 跨语言 golden vectors | TypeScript/provider读取同一 immutable manifest，并逐 byte 断言 `rfc8785-jcs-safe-integer-v1` UTF-8 no-BOM/no-newline preimage、SHA-256/HMAC/raw-Ed25519 wrapper与 signature、exact prefix+22 lowercase hex；nested/non-ASCII key按 JCS UTF-16排序，array保持合同顺序，NFC/NFD bytes不同且跨 domain输出不同。duplicate/extra key、BOM/trailing newline、invalid UTF-8/lone surrogate、float/`-0`/unsafe/non-finite number、undefined/null substitution、unsorted/duplicate set、domain/prefix/key-ID/signature substitution及 path/OID/digest/time/producer 类型错误全部 reject；semantic digest 重算排除自身 |
+| AT-C21 | JCS、strong primitive/stable ID 跨语言 golden vectors | TypeScript/provider读取同一 immutable manifest，并逐 byte断言 `rfc8785-jcs-safe-integer-v1` UTF-8 no-BOM/no-newline preimage、SHA-256/HMAC/raw-Ed25519 wrapper与 signature、exact prefix+22 lowercase hex；raw public-key digest另按 decoded exact32 octets固定且证明不同于文本/JCS/DER hash与 domain-key-ID前缀。nested/non-ASCII key按 JCS UTF-16排序，array保持合同顺序，NFC/NFD bytes不同且跨 domain输出不同。duplicate/extra key、BOM/trailing newline、invalid UTF-8/lone surrogate、float/`-0`/unsafe/non-finite number、undefined/null substitution、unsorted/duplicate set、domain/prefix/key-ID/signature substitution及 path/OID/digest/time/producer 类型错误全部 reject；semantic digest 重算排除自身 |
 | AT-C22 | legacy/strong Verification union | legacy fixture bytes 不变；strong public Record 禁止 command/summary/output；完整 detail projection 进入 Record ID；stored semantic commitment无环可重算，redacted fixed codes sorted/unique且无 dangling Boundary |
 | AT-C23 | internal managed baseline/history type | Store internal dispatcher 可读；公开 Artifact Type/MCP/read_artifact union 一律 reject |
 | AT-C24 | path-safe Snapshot/change/redaction ID + strong Pulse | exact preimage/golden bytes/branch conditions/count equality；generic string、opaque ID、同 ID 不同 payload reject |
@@ -15274,15 +15646,19 @@ supported tool list。
 | AT-C26 | state/SafeGit/request/quota internal codecs | base64url/uint/file identity/config/HMAC/isolation/Merkle leaf-node-empty-root/delta/admission golden vectors跨平台一致；七个 root slot/category const、Node/Delta category correlation、Admission/Transition stable-ID与 full-record content domain substitution逐项验证；conditional/duplicate/malformed input reject |
 | AT-C27 | Context Generation Record | target Snapshot/Pulse、四 policy恰好一个；Graph/Wiki/Evidence present-or-absence；Envelope target/revision exact；完整 pin union 可重算 ID |
 | AT-C28 | History root-relative descriptor closure | path 不含 root ID、archived edge 全 immutable、source semantics 保留；连续两次 refresh+rebase 产生平级 roots，旧 closure 可读且 history 不套 history；legacy fixture `snapshot:actual` 可由 legacy Snapshot/redacted reader读取，但放入任一 strong History descriptor/edge/root/envelope必须 reject，`snapshot-${LowerHex64}` 全链 exact-equal才通过 |
-| AT-C29 | Store filename + provider trust/binding/terminal contract | `StoreFilenameKeyV1` short/long/Unicode/hash-collision golden固定；provider slug仅接受1..64-byte lower ASCII `^(?!.*\.\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$`，ID只接受其 `durable-object-provider:<slug>` 构造并 exact-resolve Registry；empty/65-byte/uppercase/non-ASCII/whitespace/control/slash/colon/连续点/首尾 `._-`及 caller拼接 ID全部 reject。Pulse/Artifact/Store与所有 installation trust fixed locator、Envelope outer/payload等式可重算。Catalog、Public Taxonomy、Release Matrix、Target Discovery Result与 Release Target Universe只能按 canonical positive generation从同一 signed-distribution root的五个独立 fixed locator读取；real-FS Suite/Fixture Corpus另按 full content digest fixed locator读取并验证独立 root signature，semantic digest locator拒绝。缺 strict Envelope、错误 recordType/path alias、pin/outer/payload generation或 digest不等、五者 root/taxonomy/input pin不等、Suite/Corpus transitive pin或签名 domain替换全部 reject。immutable Identity、Root full-record quorum digest、Registry Entry/Manifest、Acceptance、Catalog/Evidence/runtime无环 pin与 signer key alias防护全部闭合。Result required-case exact-cover、case/crash-cut ID preimage、QA/Release双签、七字段 target及三方 result/runtime/policy等式任一 signed-but-mismatched都 reject。所有 durable binding必须 generation-aware且跨 restart online revalidate；epoch/nonce/raw handle持久化拒绝。atomic publish六个 strict failure分支唯一映射 reason/directive/successor；完整 durable request/receipt、compare-delete outcome、external CAS、journal complete enumeration与 proof-only sealed tip按 strict union验证；missing/extra/sibling/replay/rollback、敏感字段泄漏及预算超限均在首个 strong副作用前 fail closed，legacy/redacted read-only保持可用 |
-| AT-C30 | Acceptance/target/migration/receipt amendment | `ProviderAcceptanceCompareAppend`必须原子发布 generation、complete enumeration、high-water与 compact receipt，nonce replay/mismatch、ordinal/predecessor/current/count/set digest/floor/linkage逐项闭合。`strong_ready`每个完整 target恰选一个 enabled writer；Catalog按 private target分组并 exact-cover独立签名 Universe，public row只按 Taxonomy四字段 bucket聚合。coverage basis、嵌入式 Discovery Input Bundle、typed retained-object accounting、deterministic resolution/reason、union cap与 bucket exact partition全部重算；private claim、unknown descriptor/code、target omission/substitution不得抬升 strong。producer pre-schema collection置换必须经 comparator生成同 bytes；serialized wire array置换必须 reject。`migration_only`只允许 pinned executor；same/cross Plan、typed source dry-run、Plan-bound reservation、exact final committed receipt selector、universe kind↔side、complete universe、receipt prefix/complete set、per-object subset、root/object semantic proof、zero-live、tombstone、ready/seal/final activation单向闭合。recovery compromise、journal-authority HMAC issuer、atomic publish failure union、compare-delete与 handoff proof strict branch按本节详细 acceptance逐项验证 |
+| AT-C29 | Store filename + provider trust/binding/terminal contract | `StoreFilenameKeyV1` short/long/Unicode/hash-collision golden固定；provider slug仅接受1..64-byte lower ASCII `^(?!.*\.\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$`，ID只接受其 `durable-object-provider:<slug>` 构造并 exact-resolve Registry；empty/65-byte/uppercase/non-ASCII/whitespace/control/slash/colon/连续点/首尾 `._-`及 caller拼接 ID全部 reject。Bootstrap Trust Bundle与 strict host manifest只从两个 signed-package literal读取，Pin/Envelope/payload/compiled digest、origin binding与 Installation Identity retained copy exact闭合；alias、第二 path、caller path或 bundle/profile替换拒绝。Pulse/Artifact/Store与其余 installation trust fixed locator、Envelope outer/payload等式可重算。Catalog、Public Taxonomy、Release Matrix、Target Discovery Result与 Release Target Universe只能按 canonical positive generation从同一 signed-distribution root的五个独立 fixed locator读取；real-FS Suite/Fixture Corpus另按 full content digest fixed locator读取并验证独立 root signature，semantic digest locator拒绝。缺 strict Envelope、错误 recordType/path alias、pin/outer/payload generation或 digest不等、五者 root/taxonomy/input pin不等、Suite/Corpus transitive pin或签名 domain替换全部 reject。immutable Identity、Root full-record quorum digest、Registry Entry/Manifest、Acceptance、Catalog/Evidence/runtime无环 pin与 signer key alias防护全部闭合。Result required-case exact-cover、case/crash-cut ID preimage、QA/Release双签、七字段 target及三方 result/runtime/policy等式任一 signed-but-mismatched都 reject。所有 durable binding必须 generation-aware且跨 restart online revalidate；epoch/nonce/raw handle持久化拒绝。atomic publish六个 strict failure分支唯一映射 reason/directive/successor；完整 durable request/receipt、compare-delete outcome、external CAS、journal complete enumeration与 proof-only sealed tip按 strict union验证；missing/extra/sibling/replay/rollback、敏感字段泄漏及预算超限均在首个 strong副作用前 fail closed，legacy/redacted read-only保持可用 |
+| AT-C30 | Acceptance/target/migration/receipt amendment | `ProviderAcceptanceCompareAppend`必须原子发布 generation、complete enumeration、high-water与 compact receipt，nonce replay/mismatch、ordinal/predecessor/current/count/set digest/floor/linkage逐项闭合。root self/cross/recovery quorum、provider/approver及所有 historical signature都必须使用 attested strict profile，宽松 native boolean不得授权 successor。`strong_ready`每个完整 target恰选一个 enabled writer；Catalog按 private target分组并 exact-cover独立签名 Universe，public row只按 Taxonomy四字段 bucket聚合。coverage basis、嵌入式 Discovery Input Bundle、typed retained-object accounting、deterministic resolution/reason、union cap与 bucket exact partition全部重算；private claim、unknown descriptor/code、target omission/substitution不得抬升 strong。producer pre-schema collection置换必须经 comparator生成同 bytes；serialized wire array置换必须 reject。`migration_only`只允许 pinned executor；same/cross Plan、typed source dry-run、Plan-bound reservation、exact final committed receipt selector、universe kind↔side、complete universe、receipt prefix/complete set、per-object subset、root/object semantic proof、zero-live、tombstone、ready/seal/final activation单向闭合。recovery compromise、journal-authority HMAC issuer、atomic publish failure union、compare-delete与 handoff proof strict branch按本节详细 acceptance逐项验证 |
+| AT-C31 | strict Ed25519 + Bootstrap Trust Bundle | 四类 public-key record按 decoded raw32重算独立 digest，并按原 domain-separated JCS另算 key ID；旧 C09-0 key-ID golden byte-identical但其 mixed-order key在 trust admission拒绝。required hostile manifest exact-cover固定28项且 Pin/resource/compiled digest三方相等；每项分别断言 public-key point admission、signature `R` point admission与完整 signature result，固定执行56次 point + 28次 signature KAT。TypeScript、Node host、browser host与 provider共同接受 PureEd25519/RFC8032正例，并共同拒绝 bad length、`S>=L`/`S+L`、noncanonical/negative-zero、identity/small-order/torsion/mixed-order `A/R`、ctx/ph/prehash及 equation/message substitution；point method恒 true/false、与 verify分叉、去重/少调用/重排都失败。Host KAT产生不可绕过 opaque capability；固定 Bundle Pin/Envelope/Payload、bootstrap metadata、root+3 recovery keys、threshold=2、policy/profile/manifest以及 signed distribution与 Installation Identity retained origin闭合。任一 missing/extra/reorder/alias/第二 path/package/bundle/profile/digest substitution在读取 Root chain及首个 strong副作用前以 `attestation_invalid` fail closed。old recovery-only source必须凭 retained old bundle/manifest可读迁移，新 bundle不得替换旧 trust且只可建立新 Identity |
 
-作为 AT-C21 的不可分割签名 acceptance，每个 provider/root/approver domain都必须从
+作为 AT-C21/AT-C31 的不可分割签名 acceptance，每个 provider/root/approver
+domain都必须从
 同一 immutable manifest验证 exact
 `JCS([domainLiteral, signerWrapper])` bytes。root wrapper内 `domain`必须等于 tuple
 第一项；只签 wrapper、只签 claims、签 provider-private/HMAC使用的
 `[domainLiteral,strictFields]`、签 `[domainLiteral,claims]`、内外 domain不同、
 prefix key与 wrapper key不同都逐项 reject，即使 raw Ed25519 key与 signature本身有效。
+这组 domain wrapper fixture只在 strict host capability已经验证 `A/R/S/equation`
+之后运行，不能以 wrapper测试替代 point/subgroup acceptance。
 
 作为 AT-C29/AT-C30 的不可分割 rewrite acceptance，same-identity golden必须证明
 Rewrite Plan与Semantic Equivalence Proof fixed locator均不存在且 progress显式
@@ -15550,6 +15926,14 @@ policy/Identity/role/side/admission-vector/reservation-ID/domain/HMAC/fixed-path
 | AT-Q30 | SafeGit binary/config/alternate/backpointer TOCTOU | pinned handle/token 在 invocation 前后重验；binary/config/alternate/promisor/replace/worktree backpointer race 只能得到 sandbox denial；网络、Root 外读取与非 allowlist child exec 从未发生 |
 | AT-Q31 | SafeGit process/input/output/ref-lock resource exhaustion | 每 command 的 stdin/parsed-record/deadline/zero-lock 与 OS-enforced RSS/address-space/CPU/PID/FD cap 精确生效；hostile pack/object graph 不得 OOM Host；timeout/cap/cancel 终止完整 process containment；`update-ref` unknown outcome 保留 marker并按 exact ref/OID/reflog/lock CAS recovery，不删来源不明 lock/reflog |
 | AT-Q32 | provider trust compromise/migration/lifecycle | recovery key泄漏立即 append recovery-only并永久关闭旧 identity写入；新签名发行物建立不同 Installation Identity，partial/crash/restart/downgrade只能恢复同一 cross-installation migration，不能用剩余旧 quorum解锁。same-identity与cross-rebootstrap Plan逐项验证双方 Identity/pre-plan Acceptance/Root/Registry/Catalog/selector/Store cuts；mode关系错误、writer相同、source非 recovery-only或bundle不等均 reject。对 Plan→migration-only→source universe→每对象 planned/publish/receipt/committed→destination cut/universe→zero-live→tombstone→ready→seal→strong-ready每个 cut注入 crash并10k restart；progress并发恰一 record，missing/extra/reorder/sibling/head replay fail closed。每次 restart从 authenticated enumeration重建唯一 receipt prefix：`started` empty golden、planned不增长、committed只追加 next ordinal；注入 partial-as-complete、ordinal gap/duplicate/reorder、count/digest/byte不等均 fail closed，且任一 partial prefix不能产生 zero-live、sealed head或 final Acceptance。删任一 root/object/edge、receipt missing/duplicate/cross-migration replay、任一 destination binding仍指 source、非空 failure/active set均不能出 zero proof；seal后/Acceptance前保持 Surface关闭，final core必须与 ready record exact。same-identity tombstone永久不可 re-enable；cross tombstone由新 root签发且旧 Identity永久 recovery-only。public JSON/Markdown/doctor严格禁止内部 targetProfileId、build/feature/mount digest与内部 group数量/顺序；只改变 private claims时四字段 public ID不变，注入 extra key reject。另逐项注入 signed Catalog omission/extra target、Universe bucket missing/duplicate target、coverage basis ruleset/dimension/source/count/set/unresolved mismatch、incomplete coverage伪 strong、unknown descriptor/code、同 descriptor异 code、同 code异 descriptor及 private build/feature/mount→code smuggling；全部 fail closed或保守 read-only且 public bytes不泄漏内部 membership。所有 trust Envelope outer/payload等式与 fixed locator映射、Store/Acceptance/progress head token、runtime不能自报 Registry/Catalog/selector均做 hostile fixture |
+| AT-Q33 | strict crypto host/package/identity lifecycle | 在每个 advertised Node/OpenSSL、WebCrypto/browser及 provider runtime上消费同一 exact manifest；逐项按顺序分别断言 public-key point expected、signature `R` point expected和完整 signature expected，恰为56次 point admission + 28次 verify，不能去重。`identity-universal-forgery`与 mixed-order `A`构造即使 native backend返回 true仍被 strict外围拒绝；合法 `A/R`但因 `S>=L`、equation或 ctx/ph失败的 case证明整体 reject绝不能误作 point expected。缺 method、point validator恒 true/false、point/verify分叉、profile错、throw/rejected promise、非 boolean、输入 buffer mutation、KAT后 method replacement、caller删减/reorder/duplicate manifest、resource/compiled digest不等都不能取得 opaque capability。安装 old bundle/old Identity并进入 recovery-only，再安装 new signed package/new bundle：old Identity只凭 retained origin binding/bundle/manifest验证 read-only source，cross migration完成前新 bundle或剩余旧 quorum都不能授权旧写入；删除任一 retained Envelope使迁移 fail closed而不采用 current bundle。bootstrap bundle/manifest各受独立4 MiB pre-materialize cap且不改变五链40,960/512 MiB history accounting；所有错误只暴露稳定 provider reason，不含 key/message/signature/package path |
+
+AT-Q24还必须证明普通 key rotation后，历史 token/Acceptance/Store receipt继续按其
+retained strict profile/bundle/manifest验证；删历史 key、bundle或 manifest都
+fail closed。root/recovery/provider/approver的 raw-key digest与 domain key ID互换、
+宽松 native signature acceptance、duplicate material alias全部拒绝。普通 binary
+upgrade/downgrade保持 Installation Identity bundle Pin；活引用存在时不得卸载或删除
+historical Root Metadata/bundle/manifest。
 
 AT-Q32 还必须把 cross-identity crash schedule扩展为
 `Plan → migration-only → source universe → Rewrite Plan → started → 每对象 planned
@@ -15585,16 +15969,19 @@ usage、event/receipt/account set与 high-water byte-identical；要求实时 Pl
 closure时 release必须永久拒绝，deletion receipt任一 token/identity/domain/count/set/
 bytes substitution都拒绝。
 
-AT-C29/C30/Q32 的 release-coverage hostile fixtures还必须从五个独立 fixed
+AT-C29/C30/C31/Q32/Q33 的 release-coverage hostile fixtures还必须先从两个
+bootstrap literal读取 strict manifest与 Bootstrap Trust Bundle，再从五个独立 fixed
 locator加载 Catalog、Public Taxonomy、Release Matrix、Target Discovery Result与
 Release Target Universe，并逐项注入 missing Envelope、recordType/path alias、
 stale/fork generation、pin/outer/payload digest不等、root/taxonomy pin不等及五种
 generation artifact签名 domain互换。另独立注入 Discovery Input Bundle第六类
-签名 domain substitution。五者 `ProviderSignedDistributionRootBindingV1`、host verified
-package capability、bootstrap root chain与 release revision必须 exact-equal；注入
-binding/package identity/bootstrap root/revision substitution或同 semantic artifact的
-第二 path一律拒绝，byte-identical physical mirror只有在 binding与 bytes完全相同
-时允许。
+签名 domain substitution。两个 bootstrap resource的 typed Pin、compiled manifest
+digest、host opaque capability、origin/retained Identity copy及五者
+`ProviderSignedDistributionRootBindingV1`必须闭合；bundle再唯一导出 bootstrap root
+chain与 strict verification profile。注入 binding/package identity/bundle/profile/
+manifest/bootstrap root/release revision substitution或同 semantic artifact的第二
+path一律拒绝，byte-identical physical mirror只有 verified package resolver证明同一
+signed package identity时允许。
 
 Discovery的嵌入式 Input Bundle还必须逐项测试独立 signature/domain、content digest、
 Matrix/fixture/runner pin、runner version/implementation/binary/run manifest、
@@ -15685,7 +16072,7 @@ aggregated report 都作为 Commit/CI Evidence 保存。
 
 | 能力 | 当前事实 | Owner | 解锁 Gate |
 |---|---|---|---|
-| strong Store write / Durable Object Provider | Contract frozen；Provider、client、三层 Manifest writer与真实 target Evidence均未完整交付 | Platform/Security Lead + Provider/Systems + Artifact Store；QA/Release验证 | **全部同时满足**：WP5-1P/C09 contract+golden；WP5-PF/WP3P signed real-FS与安装生命周期；WP5-S07 provider client/adapter；D-23 Pulse→Artifact→Store provider-side unique-head compare-append；Acceptance/high-water/compact receipts/root/Registry/Catalog Envelope/public projection/same+cross migration closure及 versioned canonical Rewrite Plan/Semantic Equivalence Proof实现；AT-C17/C29/C30/D35/D37/D38/Q24/Q32（含 rewrite mapping/SCC/JCS/proof-token/locator/budget vectors）及 upgrade/downgrade/root/recovery-key compromise/migration E2E；root `pnpm quality`；同 SHA clean CI；独立 Security/Implementability review无 P0/P1；最后 closeout commit才更新 capability flag/supported tool list |
+| strong Store write / Durable Object Provider | Contract frozen；Provider、client、三层 Manifest writer与真实 target Evidence均未完整交付；strict Ed25519 host capability、Bootstrap Trust Bundle及 historical retained trust仍待实现 | Platform/Security Lead + Provider/Systems + Artifact Store；QA/Release验证 | **全部同时满足**：WP5-1P/C09 contract+golden；strict Ed25519 raw32/profile/host exact manifest attestation与 opaque capability；固定 Bootstrap Trust Bundle/manifest resource、signed distribution双 Pin、immutable Installation Identity retained origin closure；WP5-PF/WP3P signed real-FS与安装生命周期；WP5-S07 provider client/adapter；D-23 Pulse→Artifact→Store provider-side unique-head compare-append；Acceptance/high-water/compact receipts/root/Registry/Catalog Envelope/public projection/same+cross migration closure及 versioned canonical Rewrite Plan/Semantic Equivalence Proof实现；AT-C17/C29/C30/C31、D35/D37/D38、Q24/Q32/Q33（含 rewrite mapping/SCC/JCS/proof-token/locator/budget/hostile crypto vectors）及 upgrade/downgrade/root/recovery-key compromise/current-vs-historical bundle migration E2E；root `pnpm quality`；同 SHA clean CI；独立 Security/Implementability review无 P0/P1；最后 closeout commit才更新 capability flag/supported tool list |
 | `task:verify` | Contract frozen，生产方法未实现 | Task Engine | WP5-4 local/remote + review；WP6 前仍不宣传 |
 | `task:check` | Contract frozen，Delta/Symbol/Matching/Operation 未实现 | Change Intelligence + Task Engine | WP5-7/10 全部通过 |
 | `task:context:refresh` | capability locked | Task Engine / Context Recovery | WP5-8 full rebuild/failure evidence |
@@ -15730,9 +16117,10 @@ WP5-S07 client或三层 provider-side compare-append，strong write继续锁定�
 
 只有以下条件全部满足，本文件状态才能改为 **WP5 Completed**：
 
-- D-24～D-30 在 PRD、G0、Contracts、Store、Engine 与 Surface DTO 中一致；
+- D-24～D-31 在 PRD、G0、Contracts、Store、Engine、Provider host/bundle与 Surface
+  DTO 中一致；
 - WP5-C/S/R/P/A/E/I 全部从 pending 变为 verified；
-- AT-C01～C30、D01～D38、S01～S16、O01～O33、Q01～Q32 全部有可复核
+- AT-C01～C31、D01～D38、S01～S16、O01～O33、Q01～Q33 全部有可复核
   自动化证据或明确 `not_applicable` 理由；
 - legacy fixtures bytes 保持不变，strong fixtures/schema 确定生成；
 - 四类 Operation 的 auth/idempotency/CAS/restart/crash/race 均关闭；

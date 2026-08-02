@@ -1,6 +1,6 @@
 # Understand Code：Agent-native Code Change Intelligence 项目研制计划
 
-> 文档状态：Approved / Contract Frozen v1.5（含 WP5 Decision Amendment D-24～D-30）
+> 文档状态：Approved / Contract Frozen v1.6（含 WP5 Decision Amendment D-24～D-31）
 >
 > 日期：2026-07-27
 >
@@ -8,7 +8,7 @@
 >
 > WP4 Contract Amendment：2026-07-29；`build_task_brief` 的可恢复两阶段编排与可信 Operation Journal 见 D-22，Repo Pulse 不可变历史与原子切换见 D-23
 >
-> WP5 Contract Amendment：2026-07-30～2026-07-31；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate 与 Alpha 兼容边界见 D-24～D-30
+> WP5 Contract Amendment：2026-07-30～2026-08-02；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host与不可变 Bootstrap Trust Bundle见 D-24～D-31
 >
 > 适用范围：`understand-code` 产品、Core、Agent 插件、MCP、本地服务与 Dashboard
 >
@@ -3130,6 +3130,41 @@ Owner 与资源：
   emergency reserve与零副作用 admission；其独立
   `migrationHistoryQuotaPolicy`字段携带
   `ProviderMigrationHistoryQuotaPolicyV1`，但两个 ledger的计数与 bytes绝不混用。
+- 冻结 D-31 严格签名与 bootstrap 边界：四类 public-key record的
+  `publicKeyDigest`唯一是 decoded exact raw32的 `SHA-256`，不得 hash
+  base64url文本、PEM/DER/SPKI/JWK、JCS或 domain wrapper；key ID继续按各用途
+  domain-separated JCS独立重算。现有 C09-0 `00..1f` key-ID golden保持
+  byte-identical，只证明 key-ID推导；该 mixed-order key必须在 trust admission
+  拒绝，不能为了 strict subgroup门禁改写旧 golden或其派生函数。
+  所有签名统一采用
+  `ed25519-rfc8032-cofactorless-prime-subgroup-v1`：exact raw32/raw64、`S<L`、
+  canonical `A/R`、non-identity且在完整 Edwards25519群上不先 `mod L`/
+  不 clear cofactor地验证 `[L]P=identity`，并用未批处理 cofactorless
+  PureEd25519等式；禁止 ctx/ph/prehash、mixed-order与 native permissive boolean。
+  host必须从固定
+  `provider/ed25519-strict-host-conformance-v1.json`读取 immutable、
+  exact-cover 28项 hostile manifest；每项独立携带 public-key point、
+  signature-`R` point与完整 signature三个 expected结果，runner按顺序执行56次
+  point admission + 28次 verify。运行后只向 Trust Verifier交付绑定
+  defensive-copied methods的 opaque capability；Trust Verifier只接 raw32，
+  adapter若需 SPKI只能内部构造 RFC 8410 `id-Ed25519`、parameters absent且
+  BIT STRING恰为 raw32。
+  发行物另从固定
+  `provider/bootstrap-trust-bundle-v1.json`读取 immutable Bundle
+  Envelope，exact pin strict capability/manifest、bootstrap root、完整 bootstrap
+  Root Metadata、3把 sorted recovery key、2-of-3 threshold与 trust-history
+  policy。两个资源各自 exact-one、4 MiB pre-materialize、永久保留，属于 signed
+  package bootstrap structural resource，不进入五条 distribution history的
+  40960/512 MiB accounting。signed distribution与 Installation Identity都 pin
+  Bundle；Identity还保留其 origin Bundle/manifest完整 Envelope。recovery-only旧
+  Identity迁移只能用 retained old trust读取，new Bundle只建立新 Identity，
+  不能替换旧 source trust；retained任一缺失/错配即 fail closed。
+- D-31交付固定拆为三个顺序独立的 commit/push/review Gate：
+  `docs(wp5): freeze strict ed25519 bootstrap trust`、
+  `feat(wp5): add strict ed25519 host conformance`与
+  `feat(wp5): add bootstrap trust bundle contracts`。前一层必须完成 focused+
+  package+root quality、同 SHA push与无未关闭 P0/P1复审后才进入下一层；任一层
+  单独通过都不解锁 strong capability。
 - 冻结完整七字段 `ProviderTargetProfileIdV1`、Result→Runtime→Evidence→
   Catalog/Registry无环 pin、QA/Release双签和 owner-only→public确定性投影：
   root-signed Public Taxonomy只从非敏感 canonical OS-family/filesystem descriptor
@@ -3273,6 +3308,12 @@ Owner 与资源：
 
 - provider contract package、JSON Schema、TypeScript types与已冻结的语言无关
   RFC 8785/JCS canonical message实现说明。
+- `Ed25519PublicKeyDigestV1`、strict profile/host interface、serializable capability、
+  opaque-attestation boundary、Bootstrap Trust Bundle/Pin/Envelope及 retained
+  historical trust Schemas与跨 runtime reference implementation。
+- 固定 `provider/ed25519-strict-host-conformance-v1.json`和
+  `provider/bootstrap-trust-bundle-v1.json` signed-package resources；manifest
+  required-case tuple与 compiled digest不可由 caller或运行时替换。
 - cross-language golden bytes/signature/digest/token fixtures。
 - negative vector manifest与 contract conformance runner。
 
@@ -3280,6 +3321,27 @@ Owner 与资源：
 
 - schema build/typecheck、golden/negative vectors、strict extra-key与条件字段测试
   全过；
+- raw32 digest golden固定
+  `00..1f → sha256:630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd`，
+  同一 key的既有 root key ID仍为 `6e88eeded5ad931d6d2eba`；base64 text/SPKI/
+  JCS-string preimage全部产生不同值。旧 key-ID vector不变，但该 mixed-order
+  material与 identity universal forgery在 bundle/trust admission拒绝；
+- TypeScript、每个 Node/OpenSSL与 browser/WebCrypto host及 provider消费同一
+  exact 28-case manifest；逐项分别断言 public-key point、signature `R` point与
+  完整 signature结果，恰为56次 point + 28次 verify且不得去重。5个完整签名正例
+  共同接受，bad length、`S>=L`/`S+L`、
+  noncanonical/negative-zero、identity/small-order/torsion/mixed-order `A/R`、
+  ctx/ph/prehash、message/equation substitution共同拒绝。缺 method、错误
+  profile、point validator恒 true/false或与 verify分叉、exception/non-boolean、
+  输入 mutation、KAT后 method replacement、
+  manifest missing/extra/reorder/duplicate或 Pin/resource/compiled digest不等都
+  无法取得 opaque capability；
+- Bootstrap Bundle Pin/Envelope/payload、root+bootstrap metadata、sorted 3-key
+  recovery tuple、2-of-3 threshold、policy/profile/manifest与 signed
+  distribution/Identity retained origin逐字段闭合；两个 fixed resource各受独立
+  4 MiB cap且不改变五链 accounting。old recovery-only source只能凭 retained old
+  Bundle/manifest迁移；new Bundle不得授权 old write或替换 old verifier，删除任一
+  retained Envelope必须 fail closed；
 - Acceptance publish+high-water、Store Manifest publish+unique-head都只有一个
   原子 compare-append解释，且 generation/set/head与 compact receipt同事务；
   同 nonce异 request必须结构化拒绝，不能留下 loser sibling；
@@ -3357,9 +3419,13 @@ Owner 与资源：
 - 实现独立 OS principal或经安全评审的 kernel-isolated storage domain；普通
   same-UID helper、0700目录、随机文件名、advisory lock和进程内 broker均不算
   隔离边界。
-- 建立不可变 Installation Identity：发行物 bootstrap registry-root、三把互异
-  offline recovery public key、固定2-of-3 threshold与不可变
-  `ProviderTrustHistoryPolicyV1`；后者对 Root/Registry/Catalog/Acceptance
+- 建立不可变 Installation Identity：只从签名发行物固定 locator解析并验证
+  Bootstrap Trust Bundle与 strict host manifest；Bundle包含 bootstrap
+  registry-root、完整 bootstrap Root Metadata、三把互异且 sorted的 offline
+  recovery public key、固定2-of-3 threshold、strict crypto capability与不可变
+  `ProviderTrustHistoryPolicyV1`。Identity同时 pin signed distribution Bundle并
+  永久保留其 origin Bundle/manifest完整 Envelope；后者对
+  Root/Registry/Catalog/Acceptance
   generation、Acceptance receipt、provider/approver/binding history及累计 bytes
   设置 hard cap和 emergency reserve，并通过独立
   `migrationHistoryQuotaPolicy`字段携带
@@ -3377,8 +3443,17 @@ Owner 与资源：
   compromise recovery要求 new-root self + 2-of-3 recovery并进入关闭 strong
   Surface的 `recovery_only`。任一 recovery key compromise不得原地换 key或用
   剩余旧 quorum恢复写入，必须新签名发行物建立新 Installation Identity并显式
-  迁移既有 Store；普通升级不得改 Installation Identity或既有 Store marker，
-  downgrade不得回退任何 accepted generation/high-water floor。
+  迁移既有 Store；旧 source只由 retained old Bundle/manifest验证，new Bundle不得
+  回填旧 Identity或授权旧写入。普通升级不得改 Installation Identity或既有 Store
+  marker，downgrade不得回退任何 accepted generation/high-water floor。
+- 实现严格 Ed25519 host启动 attestation：host与 provider只能消费 exact raw32，
+  在任何 Root/Registry/Catalog/Acceptance读取前运行 signed-package exact
+  28-case manifest并取得 opaque capability；后续 verifier不得再次接收裸 host或
+  caller manifest。Node/OpenSSL/WebCrypto的 native verify只能在 strict
+  length/canonical/prime-subgroup/`S<L`门禁之后作为等式 backend；若 adapter
+  内部构造 SPKI，只允许 RFC 8410 `id-Ed25519`、parameters absent、BIT STRING
+  exact raw32。signer使用 deterministic PureEd25519；retry回放首次持久化
+  signature/receipt，不重新签名。
 - Registry Manifest按 provider ID保存 sorted enabled member或永久 revoked
   tombstone，撤销不能由 member消失表达；双-provider migration过渡代必须同时
   enabled old/new。runtime attestation、四类 usage-separated signing key
@@ -3529,8 +3604,11 @@ Owner 与资源：
   `JCS([domainLiteral,signerWrapper])`且 root wrapper内外 domain相等；key ID从
   exact 32-byte public material按用途
   重算，整个 accepted trust closure禁止同 material换 ID/provider/usage/role/
-  root kind建立别名。wire prefix substitution、duplicate-key alias与 revoked-key
-  alias全部 fail closed。
+  root kind建立别名。独立 `publicKeyDigest`必须按 decoded raw32重算，不能与 key
+  ID前缀互代；所有 verifier只能经已 attested
+  `ed25519-rfc8032-cofactorless-prime-subgroup-v1` opaque capability验证。
+  wire prefix substitution、duplicate-key alias、revoked-key alias、宽松 native
+  identity/mixed-order acceptance与 SPKI/JWK substitution全部 fail closed。
 - 设计 semantic policy变化或 binding secret compromise时的显式双-provider
   `migration_only`：Registry routing、Catalog同 profile双 candidates、
   immutable migration plan与 Acceptance必须 exact闭合。Plan按 same Identity与
@@ -3562,6 +3640,10 @@ Owner 与资源：
 - 消费并验证 WP5-1P交付的
   `packages/durable-object-provider-contracts` 与 golden vectors；WP3P不重复
   定义 C09 wire。
+- strict Ed25519 Node/browser/provider host adapters、exact hostile-manifest
+  attestation与进程内 opaque capability；Bootstrap Trust Bundle安装、origin
+  retention、current-vs-historical trust resolver及 recovery-only migration
+  integration。
 - macOS、Linux signed provider runtime及 Artifact Store client adapter。
 - provider registry/key custody/rotation/revocation工具与审计格式。
 - real-FS conformance harness、crash injector、ABA/path-race fixtures。
@@ -3587,6 +3669,17 @@ Owner 与资源：
   enabled/tombstone successor、historical key lookup与 usage separation全部通过
   golden/E2E；acceptance/manifest sibling、same-generation-different-bytes、
   truncate/replay、missing tombstone与 duplicate-key alias均 fail closed。
+- 每个 advertised host/backend对同一28-case manifest返回 byte-identical结果，
+  并分别 exact-cover 56次 point admission与28次完整 signature verification；
+  identity universal forgery与 mixed-order `A`即使 native backend返回 true也被
+  strict外围拒绝；合法 `A/R`但整体因 `S`/equation/ctx失败的 case不得把整体
+  reject误作 point expected。point validator恒 true/false或与 verify分叉、
+  KAT后 method replacement、caller manifest、PEM/DER/JWK、错误
+  OID/NULL parameters与 raw-key digest substitution不能绕过 opaque capability。
+  Bundle/manifest fixed resource、compiled digest、signed distribution与 immutable
+  Identity origin retention逐项闭合；new Bundle安装后 old recovery-only Identity
+  仍只凭 retained old trust做 read-only migration，缺失任一 retained Envelope时
+  零 strong write fail closed。
 - regular file与 directory的 exact-handle publish在 parent/ancestor于同一 root内
   rename/reparent/exchange、移出 root、final collision、source swap后均
   not-committed且 namespace零副作用。
@@ -3928,7 +4021,7 @@ Symbol、Evidence、Impact 与分析完整性，而不是把 Git 文件列表包
 WP3P Provider Feasibility Gate 与 WP4 Task Intelligence；Diff→Symbol/Matching
 可在 security contracts 冻结后并行，但任何 strong mutation在 WP3P Gate关闭前
 保持 capability locked。
-估算：原 2.5 周只覆盖摘要级实现；按 D-24～D-30 的 path-safe、identity、
+估算：原 2.5 周只覆盖摘要级实现；按 D-24～D-31 的 path-safe、identity、
 SafeGit、reservation/quota 与 recovery 生产闭环修订为
 **6–8 周、12–16 person-weeks**。Contracts、Store 与 Operation kernel 串行冻结，
 Delta/Symbol/Matching 可在接口冻结后并行。
@@ -4532,9 +4625,12 @@ Beta 前 Gold Set 至少包含 100 个已人工标注 Task，并覆盖不少于 
   Transition/Manifest，provider调用后 durable保存 resolved record，之后才可
   移除 ownership。不得持久化 epoch-only handle，
   也不得用 device+inode/file ID、btime/ctime、bytes、digest或HMAC降级授权。
-  immutable Installation Identity只 pin发行物 bootstrap offline-root exact
-  key bytes/digest、bootstrap Root Metadata与三把互异 recovery key/2-of-3
-  threshold及 immutable trust-history count/byte/emergency policy；可升级
+  immutable Installation Identity只从发行物 fixed locator pin Bootstrap Trust
+  Bundle，并永久保留 origin signed-distribution binding、Bundle完整 Envelope与
+  strict hostile-manifest完整 Envelope；Bundle唯一承载 bootstrap root/Root
+  Metadata、三把互异 recovery key、2-of-3 threshold、strict crypto capability
+  与 immutable trust-history count/byte/emergency policy，Identity不再重复保存
+  这些可产生漂移的独立字段。可升级
   root/Registry Manifest/Public Taxonomy/Release Target Universe/Support Catalog
   只由 append-only
   Provider Acceptance的 authenticated complete enumeration + atomic high-water
@@ -5760,7 +5856,7 @@ reflog 与未定义 quota 会让 crash recovery 存在误删或不一致结果�
 边界前移到首个 durable write，并冻结并发 ownership 与资源耗尽的唯一语义。
 
 WP5 的实现追踪、Acceptance 与 capability locks 见
-`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。D-24～D-30 不
+`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。D-24～D-31 不
 改变 D-21 的状态集合；它们冻结的是 Change/Verification 事实模型、可重建
 baseline、安全持久化、Operation 提交边界与 Alpha 兼容策略。
 
@@ -5799,9 +5895,11 @@ locator/acceptance为唯一细节；后续一旦 wire bytes发布，再变更必
   该 profile；Evidence/公开输出不固化 volume UUID/path。未通过组合只保留
   legacy/redacted read-only。
 - provider trust bootstrap来自签名发行物，不来自可写 state。immutable
-  Installation Identity固定 bootstrap root、三把 recovery key与2-of-3
-  threshold，并 pin含 generation/receipt/key-history count/byte hard cap与
-  emergency reserve的 `ProviderTrustHistoryPolicyV1`；可升级配置只由 Provider
+  Installation Identity固定 Bootstrap Trust Bundle Pin并保留 origin distribution
+  binding、Bundle与strict manifest完整 Envelope；Bundle唯一封装 bootstrap
+  root/Root Metadata、三把 recovery key、2-of-3 threshold、strict capability及含
+  generation/receipt/key-history count/byte hard cap与 emergency reserve的
+  `ProviderTrustHistoryPolicyV1`，Identity不重复存放这些字段；可升级配置只由 Provider
   Acceptance原子 generation+
   complete-enumeration+high-water+compact immutable receipt pin Root Metadata、完整 Registry Manifest、
   Support Catalog及 target active writer。planned/compromise root rollover、
@@ -5888,12 +5986,78 @@ locator/acceptance为唯一细节；后续一旦 wire bytes发布，再变更必
 P0，实际只能 read-only。D-30把这项隐藏依赖提升为有预算、有交付物、有稳定错误
 合同的发布阻断 Gate，产品范围不再以无法实现的 pathname假设为前提。
 
+### D-31：严格 Ed25519 验证与不可变 Bootstrap Trust Bundle
+
+状态：Accepted。
+
+2026-08-02 implementation-safety amendment：C09-1A只冻结了签名 wrapper、key ID
+和 trust records，却仍可能让不同 runtime沿用各自宽松 Ed25519接受集合，也没有把
+bootstrap root、recovery keys、strict crypto capability与 historical verifier打包成
+不可替换的发行物信任根。Provider v1尚未发布 wire bytes，因此在实现前冻结：
+
+- `Ed25519PublicKeyDigestV1`唯一是 decoded canonical base64url exact raw32的
+  `SHA-256`，wire为 `sha256:<64 lowercase hex>`；不得 hash base64 text、
+  PEM/DER/SPKI/JWK、JCS、长度前缀或 domain wrapper。四类 key ID仍按各自
+  domain-separated JCS独立派生，绝不能取 digest前缀。
+- 现有 C09-0 `00..1f` root key ID golden
+  `6e88eeded5ad931d6d2eba`保持 byte-identical；同 raw32 digest固定为
+  `sha256:630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd`。
+  该 key是 mixed-order，只可继续证明旧 key-ID derivation；进入 Bundle/trust
+  record时必须拒绝，不能把 strict point admission反向塞进旧 ID builder。
+- 项目签名接受集合固定为
+  `ed25519-rfc8032-cofactorless-prime-subgroup-v1`：exact key/signature
+  32/64 bytes、`S<L`、严格 canonical `A/R` decode/re-encode、non-identity，并在
+  完整 Edwards25519群对原始 point执行不先 `mod L`、不 clear cofactor的
+  `[L]P=identity`；使用 PureEd25519、
+  `k=SHA-512(R||A||M) mod L`与未批处理 cofactorless equation。ctx/ph/prehash、
+  negative-zero、small-order/torsion/mixed-order `A/R`与扩大接受集合的 native
+  boolean全部拒绝。signer必须 deterministic；retry只回放首次持久化 signature。
+- host interface与 package wire capability严格分离。启动时只从 fixed
+  `provider/ed25519-strict-host-conformance-v1.json`读取 signed、immutable
+  hostile manifest，exact-cover hard-coded 28-case tuple并与 compiled digest
+  闭合；每项独立验证 public-key point、signature `R` point与完整 signature
+  expected结果，固定56次 point + 28次 verify。成功后返回绑定 defensive-copied
+  methods与 capability bytes的进程内
+  opaque handle。后续 Trust Verifier不接受裸 host或 caller manifest。它只接
+  raw32；Node/OpenSSL adapter若必须构造 SPKI，只能内部使用 RFC 8410
+  `id-Ed25519` OID、parameters absent、BIT STRING exact raw32。
+- fixed `provider/bootstrap-trust-bundle-v1.json`唯一承载 strict crypto
+  capability/manifest Pin、bootstrap root、完整 bootstrap Root Metadata、sorted
+  3 recovery keys、threshold=2与 trust-history policy。Pin、Envelope、payload、
+  compiled constants、signed distribution binding及 immutable Installation
+  Identity origin retention必须逐字段相等。两个 fixed resource均 exact-one、
+  独立4 MiB pre-materialize并永久保留，属于 signed-package bootstrap structural
+  resources，不计入五条 distribution history的40960/512 MiB closure。
+- recovery-key compromise安装的新 package携带 new Bundle并建立 new Identity。
+  old recovery-only source必须继续凭 original distribution binding、retained old
+  Bundle与 retained old hostile manifest做 read-only验证和迁移；new Bundle绝不能
+  回填旧 trust或授权旧写入。任一 retained object丢失/错配时迁移 fail closed，
+  不能静默采用 current Bundle。
+- 验证顺序固定为 package capability → fixed resource限额/strict parse →
+  Pin/Envelope/payload/compiled digest closure → full Host KAT/opaque capability →
+  raw digest/key ID/point admission/四 key全异 → bootstrap Root Metadata
+  self-signature → 原子保存 Identity retained closure；此前不得读取
+  Acceptance/Registry/Catalog或执行任何 strong副作用。
+
+唯一细节合同、28项 case IDs、dangerous native regression bytes、Schema、
+locator、AT-C31与AT-Q33见
+`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。本决策有意定义比通用
+RFC 8032/WebCrypto API更窄的项目接受集合；后续任何放宽、case变化或 resource
+替换都必须显式升版，不得静默重写 v1。
+
+修订原因：Node/OpenSSL与 WebCrypto等 backend可能对 identity universal forgery
+或 mixed-order公钥返回成功；只调用 native verify无法构成跨 runtime一致的信任
+边界。同时，若 Identity只保存 current bundle pin，recovery compromise后的旧
+Identity会丢失其历史 verifier，既无法安全迁移，也可能被错误地用 new trust解释。
+D-31把密码学接受集合、host attestation、发行物 bootstrap与历史恢复生命周期闭合
+为同一个 fail-closed Gate。
+
 ---
 
 ## 20. M0 冻结结果与延后决策
 
 原 M0 第 1–7 项已经分别由 D-13～D-19 冻结；Task Lifecycle、WP4 持久化与
-WP5 Change Intelligence 修订由 D-21～D-30 冻结。完整证据、Owner、试点 Pin
+WP5 Change Intelligence 修订由 D-21～D-31 冻结。完整证据、Owner、试点 Pin
 和 capability lock 见
 `docs/research/2026-07-28-g0-contract-freeze-record.md`。
 
@@ -6077,7 +6241,14 @@ Required action: incremental refresh before task analysis
 完整场景 H 是 G2 strong mutation和 G4 P0 Release的双重阻断项：
 
 1. 从签名发行物安装 provider service/principal，验证 immutable Installation
-   Identity、bootstrap root + 3 recovery keys、Provider Acceptance atomic
+   Identity、fixed Bootstrap Trust Bundle + strict hostile manifest、bootstrap
+   root/完整 Root Metadata + 3 recovery keys、2-of-3 threshold与 origin retained
+   closure；在读取 trust chain前，让 Node/OpenSSL、browser/WebCrypto与 provider
+   host消费同一 exact 28-case manifest，分别执行56次 point admission与28次
+   signature verification后取得 opaque capability。验证 raw32
+   digest与 domain-separated key ID独立，旧 `00..1f` key-ID golden不变但该
+   mixed-order material在 trust admission拒绝；identity universal forgery即使
+   native verify返回 true也必须拒绝。随后验证 Provider Acceptance atomic
    generation/enumeration/high-water/compact receipt、
    Root Metadata、完整 Registry Manifest、runtime attestation、QA/Release双签
    Evidence、mutual IPC与权限。对 Acceptance/Manifest做 sibling、同代异 bytes、
@@ -6114,7 +6285,11 @@ Required action: incremental refresh before task analysis
 4. 先 normal signing-key/root planned rotation，再 upgrade/downgrade/rollback
    provider；验证 immutable identity/Store marker、历史 token与 binding
    generation不变。随后注入 compromised root/key、Acceptance/Registry rollback/
-   fork、semantic policy变化与 binding-secret换代。
+   fork、semantic policy变化与 binding-secret换代。recovery-key compromise后安装
+   new package/new Bundle，断言 old recovery-only Identity只凭 retained old
+   distribution binding/Bundle/manifest读 source，new Bundle只建立 destination
+   Identity；删除或替换任一 retained Envelope时 cross migration fail closed，绝不
+   回退到 current Bundle。
    对 same-identity与 recovery-key compromise cross-installation migration逐点
    注入 Plan、source universe、object planned/publish/receipt、destination cut、
    zero-live、tombstone、ready、seal、final Acceptance crash；删任一
@@ -6156,6 +6331,12 @@ Required action: incremental refresh before task analysis
   总函数，strong/read-only/no-row逐项相符，且无内部 target
   ID/build/feature/mount digest、内部 group数量/顺序、volume/path/user/endpoint/
   provider/catalog/evidence digest/key ID。
+- strict crypto启动先于任何 Root/Acceptance读取；manifest missing/extra/reorder/
+  duplicate、profile/method/compiled digest错、exception/non-boolean、KAT后 method
+  replacement、point validator恒 true/false或与 verify分叉、PEM/DER/JWK/SPKI
+  参数替换及 Bundle Pin/Envelope/payload不等均返回
+  `attestation_invalid`并保持零 strong write。old/new Identity迁移证据同时证明
+  historical verifier不可被 current Bundle替代。
 - hostile path/ABA fixture全部 not-committed且 namespace零副作用；delete只有
   planned/resolved durable chain完整时发生，foreign/race winner不移动、不覆盖、
   不按 name删除。六 reason只产生冻结 directive；containment不等零 successor、
@@ -6246,6 +6427,9 @@ Required action: incremental refresh before task analysis
 - `provider/runtime/{darwin,linux}/**`
 - `provider/installer/**`
 - `provider/registry/**`
+- `provider/ed25519-strict-host-conformance-v1.json`
+- `provider/bootstrap-trust-bundle-v1.json`
+- `provider/crypto-host/**`
 - `provider/conformance/**`
 - `integrations/codex/plugin/**`
 - `integrations/codex/ide/**`

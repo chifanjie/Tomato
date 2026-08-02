@@ -2,13 +2,15 @@
 
 记录 ID：`G0-2026-07-28`
 
-状态：**Closed for implementation；WP4 Decision Amendments D-22～D-23 incorporated**
+状态：**Closed for implementation；WP5 Decision Amendments D-24～D-30 incorporated**
 
 候选基线：`34da354968a6071d914e4e4a4fca738e6c2d8a29`
 
 冻结日期：2026-07-28
 
 WP4 修订日期：2026-07-29
+
+WP5 修订日期：2026-07-30～2026-07-31
 
 编制方式：Codex 汇总版本化证据、独立审查和自动化结果；Codex 不被记录为真人签署人
 
@@ -36,9 +38,29 @@ Receipt 提升为可信持久化事实。
 
 同日 D-23 关闭了 Persistent Task 与可变 canonical Repo Pulse 之间的存储
 冲突：旧 Task 精确 Pin 的 Pulse 必须归档为不可变历史版本，新的 canonical
-Pulse 通过 durable marker 与 Manifest commit point 原子切换。该修订不新增
-Artifact Type 或 Lifecycle 状态，只冻结 Pulse 版本身份、历史可寻址性和恢复
-边界。
+Pulse 通过 Store Manifest commit point 切换。D-30 后 strong writer将每一版
+Pulse发布到 provider管理的不可变 version path，由 immutable Artifact Manifest
+generation pin Pulse，再只以唯一 maximal Store Manifest generation所 pin版本
+选择 canonical；D-23 早期固定文件 replacement 流程仅
+保留为 legacy/read-only projection。该修订不新增 Artifact Type 或 Lifecycle
+状态，只冻结 Pulse 版本身份、历史可寻址性和恢复边界。
+
+2026-07-30～2026-07-31 的 D-24～D-30 是 WP5 实现前的证据模型、写入边界与
+Provider可行性修订。审计确认：
+原 Change Check 没有 Actual Change 实体、Hunk 或完整性证明；Repository
+Snapshot 也不能重建任务开始时已经存在的 dirty/untracked 内容。修订因此新增
+Evidence-backed strong profile、task-private baseline materialization、明确
+Plan obligation、Verification method equality 和 exact Repository Basis/CAS
+Operation 协议；D-29 进一步把 path-safe Snapshot/strong Pulse、known-redacted
+change 与 equality-unprovable unknown aggregate、OS-resolved installation HMAC
+identity、Store ownership marker、handle-bound SafeGit sandbox、private request /
+Verification semantic commitment、CAS reservation、cycle-free Merkle quota
+Transition chain、exact Context pins 与 flat History 纳入首个 durable write
+边界，同时保留旧 V1 为 owner-only/只读
+`legacy_summary`；D-30进一步把原先悬空的“理想 provider”提升为带 Owner、
+预算、真实文件系统证据、签名/密钥生命周期和安装路径的 P0 阻断 Gate。未通过
+Gate的 target只可 legacy/redacted read-only。这些修订不增加 D-21
+状态，也不把任何 WP5 capability 提前声明为可用。
 
 ## 2. 状态语义
 
@@ -95,7 +117,7 @@ Artifact Type 或 Lifecycle 状态，只冻结 Pulse 版本身份、历史可寻
 - 性能 Evidence 保存生产源文件 Hash、原始样本、预热/采样数和 expected/actual 完整性字段。
 - Host Evidence 保持 Surface 边界；Codex App Server provisional 结果和 Claude 未认证 Tool Call 不被提升为 supported。
 
-## 4. D-13～D-23 冻结结果
+## 4. D-13～D-30 冻结结果
 
 ### D-13：P0 平台
 
@@ -104,6 +126,10 @@ Artifact Type 或 Lifecycle 状态，只冻结 Pulse 版本身份、历史可寻
 - P0 Beta 支持 macOS 与 Linux。
 - Windows Native、Windows named pipe 与 WSL 不进入 P0 Beta 支持范围。
 - 最低 OS、发行版、CPU 架构与 libc 组合由 WP8 RC Evidence 冻结。
+- 平台可安装与 strong Store write是两个 Gate：每个 macOS/Linux
+  filesystem/mount target profile仍须关闭 D-30 Provider Gate，且当前物理
+  volume运行时必须 exact-match该 profile；否则仅 legacy/redacted read-only，
+  支持文案不得合并两者。
 - 重新打开条件：完成 Windows Runtime lock/control/IPC 设计与 E2E，或 GA 平台评审明确要求。
 
 ### D-14：产品、CLI、Package 与 Plugin 标识
@@ -240,12 +266,38 @@ Task Engine 同步升级。验收矩阵见
 
 状态：`accepted`（2026-07-29 Decision Amendment）
 
-- canonical 文件固定为 `.understand-code/repo-pulse.json`；被替换的完整
-  envelope 归档到 `.understand-code/pulses/<version-key>.json`。
+- 逻辑 canonical Pulse 由唯一 maximal Store Manifest generation中的 exact pin
+  选择；该 Store generation再 exact pin immutable Artifact Manifest generation，
+  后者 pin immutable Pulse version；
+  每一版 strong Pulse直接以 exact-object no-replace发布到不可变
+  `.understand-code/pulses/<encoded-version-key>.json`，不替换 current pathname。
+- `.understand-code/repo-pulse.json` 仅是 legacy reader、迁移输入和开发 Fixture
+  的兼容投影，不是 strong authorization、canonical identity 或 commit point；
+  strong writer 不得创建、替换或从它恢复 canonical。
 - 历史 descriptor 保留原 `artifactId/contentDigest/sourceSnapshotId`，状态为
   `historical/stale`；新 current descriptor 使用不冲突的确定性身份。
-- 生产写入顺序为 `marker → history → canonical → Manifest`，Manifest 是唯一
-  commit point；所有 Manifest mutation 必须先 drain Pulse/Task transaction。
+- strong 生产写入顺序为
+  `durable plan → immutable Pulse version publish → exact-predecessor Artifact
+  Manifest generation publish → exact-predecessor Store Manifest generation
+  publish`。Artifact与 Store路径分别固定为
+  `.understand-code/manifests/artifact/<encoded-generation-id>.json`与 owner-only
+  `.understand-code/private/store-manifests/<encoded-generation-id>.json`，所有
+  component都走 `StoreFilenameKeyV1`。最后一项才是唯一 commit point；它同时
+  pin Artifact generation ID/content、durable binding及 provider proof。
+  Store candidate由 provider在同一事务 compare expected head/version、
+  no-replace发布 generation并推进 authenticated complete set/unique head；
+  commit前失败时旧 tip继续 canonical，同 head并发 loser不留下 generation。
+  若 authenticated enumeration仍出现 Store sibling/extra/missing，必须
+  `store_manifest_fork` fail closed并进入显式恢复，不能任选时间、文件名或
+  “赢家”。D-30 provider
+  no-replace/path-projection contract明确取代早期
+  `marker → history → canonical-file replacement → Manifest`的物理流程；
+  所有 Manifest mutation必须先 drain Pulse/Task transaction。
+- `canonicalRepoPulse`是 strict `absent | version`：cold/error/genesis只可
+  absent，version必须与 Artifact Manifest中唯一 current Pulse descriptor
+  exact-equal。未被 Store tip选择的 Artifact sibling不 canonical且不得扫描
+  adopt；chosen Store/Artifact/Pulse任一 missing/corrupt都 fail closed且不得
+  rollback。旧 Task pin在活引用期间继续读取历史版本并阻止 GC。
 - historical Pulse 的依赖者递归 stale，但历史 bytes 与 exact Pin 继续可信可读。
 - canonical 恢复失败只标记精确 committed descriptor；不得按 Artifact Type
   批量标坏历史 Pulse。
@@ -253,8 +305,679 @@ Task Engine 同步升级。验收矩阵见
   用该入口替换已被 Task Pin 的 Pulse。
 
 D-23 是存储与恢复语义修订，不改变 D-21 状态机，也不新增 public Artifact
-Schema。验证矩阵见
-`docs/research/2026-07-29-wp4-task-intelligence-matrix.md`。
+Schema。新 strong 三层 no-replace + provider-side compare-append合同以
+`docs/research/2026-07-30-wp5-change-intelligence-matrix.md` 的
+`AT-C17/AT-C29/AT-C30/AT-D35/AT-D37/AT-D38`为验收权威；WP4 Matrix的早期
+marker/canonical replacement证据只保留 legacy compatibility意义，不得据此把
+strong三层路径标记为已实现。
+
+### D-24：Evidence-backed Change Check
+
+状态：`accepted`（2026-07-30 Decision Amendment）
+
+- 兼容 `ChangeCheckV1` reader 可识别旧 payload；新 writer 只写
+  `analysis.profile=evidence_backed_v1` strong profile。旧 Check 由非持久化
+  classifier 标为 `legacy_summary`，不得注入字段或改变 digest；其空 Findings
+  不构成 clean 证据。
+- strong Check 包含确定性 Actual Changes、Diff Hunk Evidence、结构化 Analysis
+  Boundary 和 repository delta、semantic classification、planned matching、
+  impact analysis、verification coverage 五维 Completeness；Actual 明确
+  old/new Symbol refs 与 pairing status。
+- 每个 Actual/Planned/Evidence/Impact 引用必须解析且双向覆盖；不完整维度必须
+  有 Boundary。每个 Actual 与 confirmed required change 恰好一个互斥 primary
+  disposition；只有 confirmed required change 且对应分析完整时才能生成
+  `possible_omission`。complete 禁止 UNKNOWN/Boundary，redacted、metadata-only
+  或 ambiguous 必须降级。空 Findings 只有在零 effective change、零未处置
+  required obligation/verification gap 且五维 complete 时合法。
+- ID、顺序和 semantic digest 按 canonical semantic input 确定，不依赖时间、
+  摘要、resolution、Map 或文件系统遍历顺序。
+
+### D-25：可重建 Task Baseline 与 final-tree Delta
+
+状态：`accepted`（2026-07-30 Decision Amendment）
+
+- strong `TaskManifest.baselineSnapshotId`、`task_baseline.captureSnapshotId`
+  与 source Snapshot 均等于 Stage 1 current/evaluated Snapshot；Repo Pulse 的
+  logical baseline 只作分析 provenance。legacy Task 保留旧解释但不能 strong
+  Check。
+- current Snapshot 先以 repository transaction 单独 immutable 提交；Task
+  Stage 1 在 exact `TaskCreationBasisV1` 上原子提交 internal baseline
+  descriptor、private blobs、Manifest、Event、Receipt、Journal 与 owner-only
+  Basis Record，不把 repository-scoped Snapshot 塞入 Task transaction。
+- clean tracked 内容由 exact HEAD object 重建；unborn repository 绑定
+  canonical empty tree；dirty/untracked 最终可见内容写入 `0600` 私有 CAS。
+  敏感、secret、binary、special、conflict、超预算或不可读内容按策略
+  metadata-only；hard-deny/secret unit 不进入 path list，只保存 aggregate
+  count + Boundary，不持久化 exact path、正文、fingerprint 或 raw content
+  digest。`task_baseline` 为 internal-only Envelope；Host 只读 aggregate
+  summary。
+- private blob/marker/Basis Record/detail/history 统一 no-follow trusted I/O：owner UID/SID、
+  目录0700、regular file0600、nlink=1；从 bound Store root解析并持续持有同一
+  destination-parent authority；允许的 bound-root re-resolution只作非授权
+  continuity observation。provider-private staging先 durable记录 binding，再
+  写入/验证 payload；publish API只接受 exact opened staging handle、held
+  parent authority与 final name，不接受 source path/name，并 fsync file与
+  destination parent。每次 trusted read重验 provider binding/size/digest。
+  symlink/reparse、hardlink、wrong owner/mode/type、corrupt或 parent/open/
+  rename swap全部 fail closed，不覆盖/修复预置对象；device+inode/file ID复用
+  不提供 rollback/delete authority，epoch-only binding禁止持久化；delete只
+  允许 provider atomic handle-addressed compare-delete，否则保留并计费。
+- 每个存在的 baseline HEAD 使用 immutable managed Git object lease；unborn
+  repository 使用 canonical empty tree。lease 失败只可 partial/unpinned；
+  lease 只在固定
+  `refs/understand-code/task-baselines/<lease-hex22>-<marker-nonce-hex32>`
+  namespace 以 `update-ref --no-deref` + zero-old-OID CAS 创建；逻辑
+  `git-lease:<hex22>` 不能直接拼入 ref。nonce 在任何副作用前由 CSPRNG 生成并
+  写入 durable marker，Git 显式指向 owner-only 空 hooks 目录，不能运行
+  reference hook 或修改用户 ref/config/Index/Worktree。rebase 新建版本。
+  committed baseline/blob/lease 与历史 projection 在 P0 永久保留；recovery
+  只可在 marker nonce + exact ref/OID + 无 descriptor pin 同时成立时回收该
+  transaction-owned uncommitted orphan，仅同 OID 不足以证明 ownership。
+- Delta 状态代数固定为
+  `B(final) → B0(baseline HEAD) → A0(actual HEAD) → A1(Index) → A(final)`；
+  首段是 Delta-only `baseline_reconciliation`，其后为 committed、staged、
+  unstaged/untracked/conflict，effective 直接比较 B→A。
+- tracked clean 使用 commit/index canonical blob，unstaged/untracked 才读 raw
+  worktree；autocrlf/encoding/LFS/filter/sparse 跨 domain 时 Boundary，禁止
+  执行 filter/textconv/external diff。预算按确定性 work units 与 bytewise path
+  分配，wall-clock/cancel 必须零写入。
+- Git rename/copy detection 必须关闭；WP5 对完整 canonical add/delete 与
+  retained-source 集合自行做受预算 exact OID/content join。Git score、
+  threshold、limit、candidate 或配置不进入 lineage；非唯一/modified 配对稳定
+  降级 delete+add + Boundary。
+- `actualSnapshotId` 为必填精确断言；同 key replay，同 Snapshot 不同 key 在
+  已有 canonical Check 后返回 `change_check_already_current`。Check descriptor
+  直接依赖 baseline/actual Snapshot、task baseline、Brief、Evidence 和 Impact。
+- digest-pinned historical baseline 使用 immutable-pin dependency，不因不是
+  latest 自动传播 stale；缺失、损坏或 digest mismatch 仍失败。destructive
+  reset 前归档 immutable Task projection，旧 Check dependency closure 保持可读。
+- 旧 Diff Overlay、legacy diff analyzer、吞错 changed-file helper 与旧 cosmetic
+  fingerprint 禁止进入生产证据链。
+
+### D-26：Plan obligation 与 Verification execution
+
+状态：`accepted`（2026-07-30 Decision Amendment）
+
+- 新 Planned Change writer 必须保存
+  `required_change / optional_change / inspect_only / verification_only`；
+  legacy 缺失值不得追溯推断为 required 或产生 omission。
+- `verification_gap` 只表示 Plan/Acceptance 覆盖设计：missing entry 只引用
+  uncovered Claim，insufficient coverage 引用 Entry+Claim，unsupported/
+  ambiguous 另需 Boundary；不表示记录尚未执行。
+- P0 Verification Record method 必须精确等于 Plan method，不支持静默
+  substitution。不同方法只能执行原 method、显式 accepted skip，或 supersede
+  并创建新 Task；refresh 不是计划改写捷径。
+- latest passed/accepted skipped Record 必须覆盖 Plan Entry 全部
+  `acceptanceClaimIds` 才能满足 verified Gate；子集记录不丢弃，但不算完成。
+- `recordVerification` 只记录外部执行结果，不执行调用方命令；attempt 与
+  supersedes 必须形成同 Entry、同 Snapshot 的线性链。
+- strong public Verification 只保存 method/status/attempt/Claim/Snapshot、
+  fixed result code 与 owner-keyed detail commitment；禁止 private detail
+  ID/content digest、command、summary、
+  exit/duration/output/raw text。内部 detail 经 secret/Host-path scanner 后写入
+  0700/0600 私有 ledger，raw output 永不持久化；legacy raw 只供 trusted
+  validator/migration reader，所有 Surface/read_artifact/Receipt replay 只能
+  返回固定 redacted view。public/private ledger/Event/Receipt/Journal 同事务；
+  current/historical Record commitment 是 detail owner-only closure edge，
+  committed detail 不随 projection cleanup 删除且 P0 不自动 GC。
+- skipped strong Record 永不内嵌或后写 acceptance；授权 Action 只在同一 ledger
+  追加独立 immutable `VerificationSkipAcceptanceRecordV1`，其 Actor/time/Event
+  与 Action/Event exact-equal。每个 skipped current leaf 最多一个，Record/
+  detail/content digest 保持不变；verified Gate 通过 ID join 校验唯一记录。
+- `verification_required → in_progress` 只看当前 generation/Snapshot/Entry 的
+  latest failed/blocked/flaky Record，并由该 Record ID 触发；旧失败在后续
+  passed 后不能再次授权回退。
+
+### D-27：精确 Repository Basis、Journal 与 CAS Operation 协议
+
+状态：`accepted`（2026-07-30 Decision Amendment）
+
+- `checkChanges / recordVerification / refreshTaskContext / rebaseTask` 统一执行
+  `parse → authorize → sensitive-input scan + safe projection + owner-only
+  equality tag → safe digest → trusted read → idempotency lookup → guard → exact
+  basis → out-of-lock work → read-set validation → Store CAS`。
+- authorization 先于 security key/private equality record、仓库读取与 Receipt
+  返回；idempotency lookup 先于 revision/status guard。公开 `requestDigest`
+  exact-equal safe projection digest；完整 input 只写 owner-only HMAC equality
+  tag，same key 必须同时匹配两者，different Actor/payload/operation 零写入。
+- Stage 1 单独使用 `TaskCreationBasisV1`，只 pin 已提交 current/evaluated
+  source Snapshot、repository/worktree、HEAD/Index/Worktree/Untracked/ignore
+  state 与 attributes/scanner/repository/baseline-budget/private-store-quota
+  policy；Pulse、candidate baseline、
+  lease/blob 都不是前置 pin。scan/plan 无副作用；Store 在任何 blob/lease 前
+  durable/fsync marker，final commit 前再次验证完整 read set。
+- 其余四类 Operation 使用 `RepositoryBasisV1`。Store 保持
+  Task→Repository 锁序，在锁内重验 target Snapshot、Pulse、historical
+  baseline/materialization 与 policy/read-set pins；read set 是逐项可重读的
+  structured entries，不是 opaque token，必须覆盖完整 repository state
+  enumeration，能发现此前未读 path 的新增/删除/rename。
+- `build_task_brief` Stage 1/Stage 2 与
+  `checkChanges/recordVerification/refreshTaskContext/rebaseTask` 六类 strong
+  repository-reading transaction 成功时，同事务追加 owner-only
+  immutable `RepositoryBasisRecordEnvelopeV1` 到独立 private basis ledger，
+  不进入公开 Task Operation Journal/Artifact/read_artifact union；public
+  Receipt/Check 只保存 basis record ID、record content digest、basis digest 与
+  read-set digest，trusted read 从 fixed path 重算四者。committed Record 由
+  append-only Receipt/Event/Check 保留且 P0 不自动 GC。rebase 的 resulting
+  baseline 是 transaction output，full Basis 只 pin prior baseline，避免循环。
+- Provider 在 commit 前设 final validation cut；cut 前 drift 零写入，cut 后
+  外部变化不受 Store lock 控制，本次结果仍只绑定旧 Snapshot，后续 Snapshot
+  使 Task stale。契约不声称消除所有外部写窗口，也不静默 retarget。
+- Check 成功后保持 `check_required`；Finding 处置后才进入
+  `verification_required`。Verification Record 成功后保持
+  `verification_required`，直到 frozen verified Gate 满足。
+- `check_required` 无 strong descriptor 时派生为 `awaiting_check`，存在唯一
+  exact descriptor 时为 `check_review`；Manifest pointer 仍为空，只有
+  check_review 可接受 Finding/离开状态，进入 verification_required 时设置。
+- strong Manifest 从 created 保存 resolved `contextBuildSpec`；context_ready 后
+  Manifest/Brief/Event 绑定同一个 generation。refresh/rebase Event 记录
+  previous/resulting generation，confirmation 只对同代有效。
+- refresh 保持 Task baseline；rebase 的 new baseline 必须等于 exact live
+  target，不能从任意 historical dirty Snapshot 猜造。两者重建 Context，在
+  reset 前归档 immutable projection，保留旧 Evidence/Impact/Check/Baseline
+  closure 与 append-only Event/Receipt/Journal。
+- refresh/rebase 保持 Receipt `operation=update_task`，request digest 包含
+  action type 的 safe projection，完整 input 由 private HMAC 覆盖；
+  Receipt/Event/capability 交叉一致。
+- 新授权能力为 `task:check`、`task:verify`、
+  `task:context:refresh`、`task:context:rebase`；WP5 全部验证关闭前维持
+  capability lock。
+
+### D-28：Alpha 单向兼容读取与 Strong Writer
+
+状态：`accepted`（2026-07-30 Decision Amendment）
+
+- `3.0.0-alpha.1` 新 reader 继续读取旧 V1；新 writer 只写 strong profile。
+  `task_baseline` 是 Store internal-only managed descriptor/Envelope，不扩展
+  公开 Artifact Type/MCP/read_artifact union；旧 binary 不保证理解新增
+  strong 字段或内部 descriptor，不能声称双向兼容。
+- 保留旧 reference fixture bytes，新增 evidence-backed/invalid fixtures；
+  不猜造旧 Actual Change，不原地修改历史 digest/Event/Receipt。
+- legacy Snapshot/Verification redacted view继续使用 generic `SnapshotId` 并
+  原样接受既有 opaque wire value；`task_projection_history_v1`只由 strong Task
+  产生，其 descriptor/edge/root/Envelope Snapshot pin全部必须是
+  `PathSafeRepositorySnapshotIdV1`且 exact-equal，legacy Task不能用 History
+  绕过显式 migration。
+- 新 persisted field 禁止 parse-time default；结构 Schema 与跨 Artifact
+  reference/coverage/digest/lifecycle invariant 分层校验。
+- legacy Task 缺少 baseline 或 context build spec 时，strong
+  Check/refresh/rebase fail closed，只能独立显式迁移，或 supersede 后创建新
+  strong Task；普通 rebase 不是 migration。
+- Beta 若要求旧 binary forward-read、稳定外部分发 `$id` 或跨版本原地升级，
+  必须发布 V2 和 Store migration。
+
+### D-29：公开持久化前置安全扫描与可恢复 private ownership
+
+状态：`accepted`（2026-07-31 Decision Amendment）
+
+- strong Repository Snapshot 只允许
+  `repository_snapshot_path_safe_v1`：先在内存完成 hard-deny/path/content
+  streaming scan，随后才发布。对 trusted source/kind 已能证明变化的隐藏单位，
+  只写按 kind/source/boundary 聚合的 `redactedChanges`；不能证明 equality、因而
+  也不能证明是否发生变化的单位，只写不含 source/kind 的 `unknownStates`，绝不
+  伪造 `modified/committed/clean`。raw、candidate、safe、known-redacted、unknown
+  的计数必须精确闭合，并与 Pulse/Completeness 等价。legacy Snapshot/Pulse
+  lossless owner-only 可读但不能进入 strong Basis；所有非 owner Surface 只返回
+  strict aggregate redacted DTO。new Pulse 只写 `repo_pulse_path_safe_v1`。
+- mandatory security scan 与 Change Analysis Budget 分离；16 MiB/unit、
+  256 MiB/capture 是版本化安全上限。scanner error 零写，明确超限才允许
+  partial aggregate；unit/path-byte/depth cap 无法证明 universe 时必须零写。
+  hard-deny candidate 只能按已证明语义进入 known-redacted 或
+  equality-unprovable unknown，scan/digest/baseline/Hunk bytes使用同
+  handle/stream；tracked/pre-existing `.understand-code` collision不覆盖。
+- public repository/worktree/root identity 由 installation-global owner-only
+  key 做 domain-separated HMAC。首次启用建立新 strong manifest namespace并
+  重建 repository-scoped dependency，legacy namespace只读共存；active global
+  state 后 key 丢失/损坏全局 fail closed，不能按当前仓库内容重生。platform
+  runtime-state key 与 worktree binding 是冻结的 control-plane 例外。Store
+  locator 必须由 OS API 解析：macOS User Domain Application Support；Linux
+  `getpwuid_r(geteuid())` 的 account home 下 `.local/state/understand-code`；
+  Windows `SHGetKnownFolderPath(FOLDERID_LocalAppData,current-user-token)`。
+  不读取 `$HOME`/`XDG_STATE_HOME`/`LOCALAPPDATA`，也不回退到 cwd、temp 或
+  workspace；绝对 owner-safe no-follow root、resolver/file identity 与 HMAC
+  binding 必须在使用前后重验。
+- Store 只有在 strict `.store-ownership-v1.json` 以 HMAC 绑定 installation、
+  repository、worktree、root，并同时通过 owner/mode/nlink/durable binding/digest
+  校验后才可使用。初始化先在 Store 外保存 durable preflight intent，再重验
+  root absence；registry provider在 private staging取得 Store-root/marker
+  durable binding后，才以 exact opened handle + held parent authority执行
+  no-replace publish并 fsync。provider不能跨 restart重验 generation-aware token、
+  不能 handle-publish或只支持 source-name rename时首副作用前拒绝。marker 是
+  bootstrap structural state，受独立 total/count/
+  single-file cap 且明确排除 quota Merkle universe。external intent必须在
+  marker与 genesis的任何物理写前分别 durable保存
+  `marker_planned/genesis_planned` exact write set；后续
+  `identity_planned/activation_planned/terminalization` 使用同一协议。所有
+  staging object位于普通进程不可列举的 provider-private namespace；nested
+  parent由 topological directory plan按0700 staging→binding→handle-addressed
+  no-replace publish→final binding建立；跨 phase复用必须 pin exact
+  path/binding/owner/mode/source-plan/`sourceDirectoryOrdinal` proof并满足
+  `dirname(finalPath)===parent.path`。每个 attempt持续持有同一
+  destination-parent authority；provider必须在 namespace mutation的同一原子
+  commit内验证 bound-root containment，以及 relative components与
+  root→parent ancestor bindings逐项 exact-equal；parent/ancestor即使仍在同一
+  root内 rename/reparent/exchange也必须 not-committed。bound-root
+  re-resolution只作 continuity observation，不能授权 replacement parent。
+  not-committed exact signed receipt必须进入 attempt/quarantine并按六 reason总映射：
+  final collision→fatal；三个 root/parent/path reason→每次 online
+  containment revalidation后 retry；staging authority change→new attempt；
+  policy change→migration。只有两个 retry分支可追加 ordinal+1，
+  fatal/migration无 successor；同 operation nonce跨 restart结果/receipt
+  byte-identical。file先 durable
+  `temp_planned` provider locator，创建0-byte private staging object并进入
+  `temp_identity_recorded`，写入 exact canonical payload、fsync并验证后进入
+  `temp_payload_verified`；publish API只收 exact opened staging handle、held
+  parent authority与 final name，不收 source pathname/name，最后进入
+  `final_identity_verified`。unsupported时 fail closed，禁止普通
+  rename/link/path fallback或 exact-existing Manifest CAS。identity前 provider
+  crash不产生 pathname；final collision/provider mismatch才进入 bounded
+  quarantine，race winner从不移动/覆盖/name-delete。所有 persisted binding
+  必须可跨 restart重验，device+inode/file ID、btime/ctime、bytes、digest或
+  HMAC不能降级授权；delete必须先持久化 planned request/record并由 quota
+  Transition root，再执行 provider atomic compare-delete，resolved record
+  durable后才移除 ownership；否则保留。
+  ledger连续重试必须保留全部
+  generation plan/progress并 pin独立 domain的 pre-ledger
+  `binding_activated` intent digest；generation只允许1～4，第4代可完成，第5代
+  在任何新副作用前零写 fail closed。
+  identity plan保存 sealed equality key（不保存 raw key）、Binding Intent、
+  bootstrap Transition、quota nodes/root与 post Manifest的可重建 canonical
+  preimage及 pre/post root/head；摘要按 context→pre-seal skeleton→AEAD→final
+  write set→plan token无环生成，digest-only/fixed-point plan reject。首个
+  `identity_bootstrap` Transition不发布 active binding；full strong Bundle
+  durable后必须先保存 activation plan，再由 `identity_activation`发布 active
+  binding、移除 Intent leaf并 exact pin既有 full Manifest。所有 write均
+  `final_identity_verified`后只可进入 recovery-only `binding_activated`，不能
+  清除 intent或开放 strong Surface。preflight必须在 Store-root/provider
+  allocation前执行 zero-side-effect full dry-run；external intent、独立
+  receipt、最大单 handoff record、完整 handoff journal四项 worst-case各
+  ≤64 MiB且 record count≤4096，否则零写拒绝。external intent先冻结完整
+  receipt preimage/content digest及 receipt/handoff-genesis两个 deterministic
+  allocation plan，进入 `terminalization_allocations_planned`；两项只允许
+  AA→SA/AS→SS，crash后仅从 current provider state按同 locator重开 exact
+  object，禁止读取历史 revision或重分配。只有 SS 可进入
+  `terminalization_planned`且 receipt bytes不变。provider no-replace发布
+  genesis full plan/progress及 receipt，后续 progress只追加一个 single-delta
+  immutable handoff record。每条 successor必须从 current unique tip按
+  `directory < write`、再按 ordinal的 fixed scheduler唯一导出 target/delta、
+  deterministic attempt nonce、staging locator及 record ID/locator；相同 tip的
+  并发 writer必须重开同一对象，不能产生 loser orphan或 sibling，且每条
+  successor的 allocation/payload/publish/append crash cut均可幂等恢复。
+  proof-only record必须为唯一 terminal tip。第三个
+  `store_initialization_terminalize` Transition把 terminal head写入新的
+  immutable append-only Manifest generation。每代 Manifest只向 absent path
+  发布并 exact pin predecessor，reader必须得到 unique maximal tip；sibling
+  tips fail closed。provider在同一 atomic final cut中 compare unique proof tip/
+  journal version、seal journal并把 external intent永久 retained为
+  `terminalized`。只有
+  `active binding → unique Manifest tip → terminal head → retained receipt →
+  optional exact ledger`全链及 sealed journal token通过才开放 strong
+  namespace；每次 Surface授权重验同一 token，后续 generation原样继承 head。
+  legacy migration必须显式授权、allowlist enumeration，且
+  token/authorization贯穿相同 post-marker、ledger、receipt、handoff、
+  terminalization和 terminalized phases；crash、foreign、ambiguous或 unknown
+  entry均不得被采用、删除或覆盖。
+- Git subprocess 统一由 filesystem-only bootstrap + SafeGit adapter 执行；
+  linked worktree 双向 backpointer、fixed env/argv/config parser、local ODB
+  only，禁 hook/fsmonitor/filter/external diff/alternate/promisor/replace/lazy
+  fetch。Git executable 必须以 pinned no-follow handle/identity 打开并在启动前后
+  重验，使用 `fexecve`/平台等价 handle execution；平台无此能力时只允许签名且
+  由管理员维护的 immutable binary。sandbox 默认 deny network 与任意 child，
+  只放行 pinned Git/loader、预算内 read handle；写入只允许 `update-ref` 的 exact
+  product ref/lock，reflog 永久 write-deny。stdin 默认关闭，只有 `hash-object`
+  可收 blob 16 MiB/tree 64 MiB；stdout、stderr、parsed-record 数量、wall deadline
+  与 zero-lock timeout 均为版本化 cap。RSS/address-space/CPU/PID/FD 也必须由
+  rlimit/cgroup/Mach/Windows Job Object 平台等价机制在 exec 前对完整
+  containment 强制并进入 profile digest；无法可靠安装/回读限制的平台对 strong
+  capability fail closed，hostile pack/object graph 不得 OOM Host。
+  timeout/resource-cap/cancel 必须终止完整 process group / Job Object，并在
+  250 ms 后 hard-kill；`update-ref` 结果不确定时保留 marker，
+  仅按 exact ref/OID/reflog/lock CAS recovery。resolved profile digest 进入
+  Snapshot/Pulse/Basis；reftable/缺 local object 只能 partial/unpinned且无网络。
+- public `requestDigest` 只等于 strict safe request projection digest；完整
+  parsed input 使用 owner-only security key 的 domain-separated HMAC，并与
+  Event/Receipt/Journal 原子保存 private equality record。same-key replay 两者
+  都必须匹配，transient command/summary/raw output 不得进入 raw SHA。request
+  policy caps 超限零写。public Verification stored detail 只保存 semantic
+  commitment，绑定 Task/generation/Snapshot/Plan Entry/attempt 与 sanitized private
+  detail semantic digest，排除 Record/detail ID、时间、private content digest；
+  完整 canonical public detail 进入 Verification Record ID。redacted detail 只能
+  保存 sorted/unique 的固定 code：`secret_detected`、`host_path_detected`、
+  `control_character`、`invalid_utf8`，不得引用不存在的 Boundary ledger 或保存
+  hit text；任何 public Surface 均不得泄露 private ID/digest。
+- shared private CAS writer/deduper 在释放 Repository lock 前创建 durable
+  reservation；rollback/GC 同时验证 current/history descriptor 与其他 active
+  reservation/marker，不能按同 digest/OID 猜测删除。
+- deterministic baseline Budget、blob/active/temp logical quota、metadata quota
+  与真实 durable I/O failure 使用不同结果：前两类可以 metadata-only partial；
+  metadata admission 或 ENOSPC/fsync/write 失败整次零写。quota leaf 只包含
+  category/key/record kind/logical size/owners digest，不包含 payload/content digest
+  或 post-root digest；reservation membership 按 count 收费，active blob
+  entitlement 按 unique bytes 收费，bytes/count/structural caps 独立核算，形成
+  cycle-free Merkle accounting。category↔record kind使用 strict判别联合：
+  committed metadata只接受 metadata/history/quota-journal类，control只接受
+  marker/reservation/binding/security-key类，active metadata排除 blob/control，
+  active temp只接受 blob或 metadata类；valid key/size下错误交叉也必须 Schema
+  reject，生成的 wire Schema必须展开 category-specific atomic `oneOf`。
+  root slot到 wire category的唯一映射固定为
+  `committedBlobs→committed_blobs`、`committedMetadata→committed_metadata`、
+  `reservationMembership→reservation_membership`、
+  `activeBlobEntitlements→active_blob_entitlements`、
+  `activeMetadataPlans→active_metadata_plans`、
+  `activeTempPlans→active_temp_plans`、`controlState→control_state`；
+  root property/node/child/leaf/delta category必须按映射全链 exact-equal并由七个
+  category-correlated `oneOf`表达；`canonical-btree-256-v1` 固定 delta顺序，absent key每层选择
+  首个 `child.lastKey>=key`（否则最右 child），并固定
+  split/borrow/merge/root-collapse；`put k0001…k0257→remove k0129→put
+  k0129`必须回到
+  byte-identical root，使同 genesis + Transition chain重放唯一。reject前做
+  无副作用 preflight，final cut必须以 latest
+  root/head 重新 admission。每个 active transaction 还必须预留下一
+  ordinal 的 rollback 与 recovery 两个互斥 Transition 候选的 worst-case
+  bytes/count；self-metered record
+  仅做 bounded fixed-width size 收敛，payload/content/root digest 永不进入自身
+  leaf，因此不存在 hash fixed point。
+- 每次 quota root change（reservation、phase、commit、rollback、recovery）都在
+  同一 Repository lock 内追加 owner-only `PrivateStoreQuotaTransitionRecordV1`。
+  Store Manifest 固定保存 genesis、current root 与 Transition head，并由
+  provider在一个事务 compare expected-root/head/version、发布 immutable
+  generation并推进 authenticated unique head；每条 Transition 的 previous pair、pre/post root
+  与 delta 必须连续，审计先从 head 反向到 genesis，再正向 replay。旧且不可达
+  的 structural nodes 可以 GC，但 quota-counted Transition chain 在 P0 不可
+  删改/压缩。genesis 只由 policy 与七类 typed empty-root constant 构造，所有
+  category count/bytes 和 active transaction count 均为零；ownership marker、
+  genesis node/root 与 Store Manifest 由独立 bootstrap/structural caps 约束，
+  不对自身计费。Admission 只为
+  accepted commit 创建，并且只 pin 该 commit Transition 及 accepted/rejected
+  结论；Baseline/Basis 不得反向引用 quota。Receipt/Journal/Task Manifest 的 proof
+  必须闭合 Admission↔Transition↔roots↔delta。Admission/Transition stable ID分别
+  使用 cycle-free identity domain，Envelope content digest则使用不同的完整 strict
+  full-record domain；顺序固定为 stable IDs/size收敛→delta/post-root→Transition
+  full digest→Admission写入 exact Transition pin→Admission full digest→next
+  Manifest，stable-ID digest不得替代 content digest，outer/payload字段必须闭合。
+  startup/recovery/audit 做 full audit，
+  maintenance 也必须在 final cut 重验 generation/root/head。
+- Git lease command 强制关闭 reflog 创建并使用已验证空 hooks 目录；product
+  ref/reflog create 前均不存在；任意 reflog 都永不由 recovery 删除或截断，
+  race/interference 只回滚 exact ref 并阻断 capability 等待人工审计；
+  pre-existing/race ref lock 同样永不删除或覆盖。
+- Context generation 使用可重算 immutable Record，并执行 exact cardinality：
+  target Snapshot 与 evaluated Pulse 各恰好一个；context-build、repository、
+  scanner、safe-git policy 各恰好一个；Graph/Wiki/source Evidence 各自恰好一个
+  present pin 或固定 absence。所有 present source snapshot 必须等于 target，
+  Envelope source/revision 必须等于 target/resulting revision；首次 generation
+  不得有 previous，refresh/rebase 必须 pin 旧 Manifest generation。缺失、重复或
+  foreign pin 一律拒绝。
+- History 是与 current Task projection 平行的独立 immutable root；new root 不得
+  包含、复制、依赖或包裹任何 `task_projection_history` descriptor。每个 History
+  root 的 owner-only closure 独立包含 Basis/request equality/detail/quota
+  Admission 及其 commit Transition/blob/lease；其余 quota Transition 由 global
+  Manifest chain 保留。active reservation/marker 只作 global temporary root。
+
+### D-30：Durable Object Provider Feasibility Gate
+
+状态：`accepted`（2026-07-31 Decision Amendment）
+
+2026-08-02 implementation pre-freeze amendment：尚无 WP5 Provider v1 wire
+artifact/golden/reader对外发布，故终审在实现前原位替换未落地的 v1：
+real-FS新增独立签名 Suite/Fixture Corpus full-content closure；distribution改用
+Envelope+embedded-Bundle typed retained-object accounting；migration quota新增
+typed source dry-run/full candidate Plan reservation binding及精确 final receipt/
+universe-side selector，并补齐 admission-vector/mode/final Plan binding；Private
+Store补齐七项 root-category映射与
+Admission/Transition full-record digest domain。严格 type/domain/locator/vector以
+WP5 Matrix为准；一旦 wire bytes发布，后续变更必须显式升版。
+
+- Provider不是现有 pathname writer的接口别名。P0必须交付 workspace writer
+  无法进入的独立 OS principal或经过证明的 kernel-isolated storage domain，
+  exact-object API、atomic root + logical path projection containment、external
+  state CAS、Store Manifest generation+unique-head原子 compare-append、
+  append-only handoff journal/seal与 compare-delete-or-disabled。所有 C09 stable
+  ID/digest/HMAC/signature message使用冻结的 RFC 8785/JCS exact UTF-8 bytes：
+  strict Schema、无 BOM、safe integer-only、禁止 float/`-0`/NaN/Infinity，
+  字符串不做 Unicode normalization；Provider ID body是1..64 bytes canonical
+  lower-ASCII slug，首尾标点、连续点、upper/non-ASCII与超长值均拒绝。
+  Ed25519唯一 message是 `JCS([domainLiteral,signerWrapper])`，root wrapper内外
+  domain必须相等，只签 wrapper/claims或`[domainLiteral,claims]`拒绝。只有 producer
+  的 pre-schema无序 collection可排序后获得 permutation-invariant bytes；signed
+  wire array乱序必须 reject，verifier不得修复。
+- immutable Installation Identity只 pin发行物 bootstrap registry-root exact
+  bytes/digest、bootstrap Root Metadata、三把互异 offline recovery key与2-of-3
+  threshold，并 pin含 Root/Registry/Catalog/Acceptance generation、Acceptance
+  receipt、provider/approver/binding history与累计 canonical bytes hard cap及
+  emergency reserve的 `ProviderTrustHistoryPolicyV1`。可升级 configuration只
+  存在于 Provider Acceptance append-only
+  chain；installation-state provider在同一事务发布 generation、更新
+  authenticated complete enumeration、CAS high-water与按 operation nonce固定
+  定位的 compact immutable receipt，原子 pin active Root
+  Metadata、完整 root-signed Registry Manifest、Support Catalog与 target active
+  writer，不能留下 loser sibling。planned
+  rollover要求 old-root cross + new-root self + 2-of-3 recovery；compromise
+  recovery要求 new-root self + quorum并进入 `recovery_only`关闭 strong Surface。
+  任一 recovery key compromise要求新签名发行物建立新 Installation Identity并
+  显式迁移既有 Store，不能原地换 key或用旧剩余 quorum恢复写入。
+  Registry successor必须保留 sorted enabled member或永久 tombstone，双-provider
+  migration过渡代同时 enabled old/new，并以 `migration_only` Registry routing、
+  Catalog candidates、cycle-free plan与专用 executor闭合。Plan按 same Identity/
+  cross-installation rebootstrap strict union pin双方 pre-plan
+  Identity/Acceptance/Root/Registry/Catalog/selector/Store cut、source/
+  destination双 namespace identity与双方 translation authorization；source
+  current/historical和 destination candidate writer使用 executor-only strict
+  authorization union。executor通过独立 root/object/reference/receipt set
+  domain、bounded complete live-reference universe、per-object receipts、
+  zero-live proof、permanent tombstone、ready record与 sealed progress head推进；
+  progress receipt set必须能表示empty与partial contiguous prefix，只有
+  zero-live/ready/sealed/final closure才要求 exact-cover source object set。
+  cross mode无论 reference edge是否为空都必须 exact pin versioned canonical
+  Rewrite Plan；每个 Object Mapping的 reference子集以独立 domain固定
+  count/digest/bytes，object proof逐 slot exact-cover。destination universe后还必须
+  重建 exact-cover全部 root/root edge并验证逐根 non-reference equality的 Root
+  Rewrite Proof Set，zero-edge不得退化为 `not_required`。Plan/object proof无反向
+  receipt引用；Canonical Rewrite Plan、Semantic Equivalence Proof与 Zero-live
+  Proof三个 exact size projection分别使用独立 domain并排除自身及后续 auth。
+  Object Receipt、Zero-live Proof、Progress Head/Version与 Progress Operation
+  Receipt四类 HMAC issuer只取 trusted Plan journal authority，不能以opaque digest
+  或 source key替代。final
+  strong-ready Acceptance只单向 pin seal。普通升级不改 Installation Identity/
+  Store marker，downgrade不得降低 accepted generation。
+- Installation Identity的 immutable `ProviderTrustHistoryPolicyV1`宪法通过独立
+  `migrationHistoryQuotaPolicy`字段携带
+  `ProviderMigrationHistoryQuotaPolicyV1`，并另行 pin authenticated quota
+  high-water fixed locator；migration accounting ledger与 trust/key/Acceptance
+  history的计数、bytes和 event/receipt不混用，也不借用 Private Store quota。same
+  Identity在首个
+  migration副作用前必须形成 typed source dry-run cut，绑定 authenticated source
+  trust/Manifest/freeze token、complete-set claims、ordered artifact upper bounds、
+  budgets与 derived charges；artifact upper bounds按 UTF-8顺序 exact-cover全部
+  11种 kind且零项不可省略。cut→sizing→admission→migration ID→descriptors→Plan
+  digest无环；完整 admission digest是所有 descriptor/record/request projection
+  唯一复用的 `admissionVectorDigest`，禁止单 charge digest。Plan Envelope是
+  mode↔payload strict union，same reserve只接 same Plan，cross reserve/activate只接
+  cross Plan，内部 sizing/cut/admission/reservation mode逐层一致。三个 reserve
+  branch都携带完整 candidate Plan，reservation record/token
+  单向绑定 Plan digest。same Identity以单事务 reserve+发布 Plan；cross Identity不
+  宣称跨 provider全局原子，而是 destination在线重验同一 Plan后 intent预留完整
+  quota/terminal escrow→source以同一 Plan写 provisional anchor→destination验证两份
+  reservation Plan digest相同并以同一 account CAS原子 activate+发布 Plan；
+  activate与 cancel竞争同一 expected intent transition，关闭 absent-read
+  TOCTOU。V1 pending intent只持久化 Plan digest；崩溃后只允许 exact Plan重传继续，
+  无法重传时只允许 authenticated cancel/release，禁止扫描或凭裸 digest重建。
+  quota reservation、reserve request、reserved event与 reserved account
+  必须以判别联合关闭 role↔charge↔publication↔plan-state，跨支组合在 Schema阶段
+  拒绝；activate必须原子替换 destination pending→published account，后续
+  commit/release的 role↔operation-kind及 source保存的 destination committed receipt
+  selector也必须逐支相关，生成的 wire Schema必须展开为 atomic `oneOf`而非宽化
+  union。source保存的 destination commit、intent cancellation与 retained release
+  receipt pin必须分别从 loaded full receipt durable projection重算
+  `migrationId/destination reservationId/migrationPlanContentDigest`、
+  `migrationId/destination reservationId/candidatePlanContentDigest`与
+  `migrationId/destination reservationId/migrationPlanContentDigest`，receipt ledger
+  generation还必须对应 destination descriptor Identity。source event/request自身的
+  reservation ID保持 source role，counterpart binding明确使用 destination
+  reservation ID。cancellation binding须与 source reservation、destination
+  intent/reservation、permanent fence四方闭合，故完整 Plan丢失仍可安全释放
+  provisional；retained release binding须与 source committed event保存的
+  destination commit闭合；后者已在 source commit时与当时可解析的 published Plan
+  destination descriptor闭合。destination release必须在删除 Plan前把该 closure固化
+  进 full receipt，随后 source不得重载已合法删除的 Plan，只能从 authenticated source
+  commit event与 destination commit/release receipt继承 closure。cross-migration、
+  wrong destination reservation与 same-migration/wrong candidate/published Plan digest
+  receipt全部拒绝。quota receipt `requestContentDigest`只覆盖完整 strict
+  request；同 nonce但完整 candidate Plan/Plan/proof/counterpart pin任一不同必须
+  `operation_nonce_request_mismatch`且零写。commit只结算未用 reservation，actual
+  retained在
+  同 Identity内单调计费；final Acceptance只接受 mode-specific exact committed
+  receipt tuple（same retained commit，或 cross destination retained + source anchor
+  commit），pin selector/outcome/nonce/digest/token与 loaded receipt逐字段闭合，
+  并携带 exact-equal loaded Plan/对应 descriptor的
+  `migrationId/reservationId/migrationPlanContentDigest`；Plan mode与 receipt-set
+  mode相关，cross source保存的 destination receipt与 final destination receipt
+  byte-identical且两侧不可互换。retained artifact set强制
+  `source_universe↔side=source`、`destination_universe↔side=destination`。
+  release只允许旧 Identity退休后，在 Acceptance/Store/audit完整零引用 proof与
+  provider-authenticated exact deletion receipt同一事务成立时执行；quota event/
+  receipt只保存 non-resolving audit commitment，不反向成为待删除 closure的 live
+  resolver root。
+- runtime attestation、verification public-key和 binding generation records均由
+  active root签名。operation/containment/state/journal key按 usage隔离并保留
+  historical verifier；root/recovery/provider/approver key ID进入 signed
+  wrapper并从 exact public bytes重算，跨 identity/usage/role alias禁止。
+  compromise revocation立即 fail closed；binding generation普通升级不得变化，
+  换代只允许显式 dual-provider migration。每个 trust successor必须在首个
+  signature/no-replace前 canonicalize完整 retained verifier closure并做
+  count/byte admission；provider-scoped cap耗尽走 dual-provider migration，
+  identity-wide cap耗尽走新签名发行物与 cross-installation rebootstrap，不能删除
+  历史 verifier或复制 key alias绕过。
+- macOS/Linux每个签名 OS/filesystem/mount target profile必须以真实 APFS/ext4等目标环境
+  通过 crash、ABA、directory publish、root内 rename/reparent/exchange、
+  external CAS、journal seal和 install/upgrade/downgrade/uninstall E2E后才可
+  注册 production capability，且当前物理 volume runtime必须 exact-match该
+  profile；Evidence/公开输出不固化 volume UUID/path。mock与 stock same-UID
+  rename/link/unlink adapter不足以关闭 Gate。
+- Gate以 owner-only strict `ProviderFeasibilityEvidenceV1`关闭：固定
+  provider/policy/runtime、脱敏 OS family/build/arch与 filesystem/mount/
+  isolation/IPC profile、
+  suite/fixture/runner/crash-cut digest与 result，由独立 QA/Release key双签，
+  registry以 fixed locator profile pin evidence ID+content digest。real-FS source
+  closure必须先生成各自独立 root-signed、只按 full Envelope content digest定位的
+  Fixture Corpus与 Suite Manifest；signature先按不含 signature的 claims生成，
+  Envelope content digest随后覆盖包含 exact signature的完整 signed payload。
+  Suite单向 pin Corpus，Corpus record、Case ID与
+  hashed Crash Cut ID都有 strict preimage。随后生成 fixed-locator strict
+  `ProviderRealFilesystemConformanceResultV1`：纳入 exact Discovery Result/
+  Input Bundle与 Suite Pin，且 Result Suite Pin必须 byte-identical
+  Discovery→Bundle→Fixture payload所 pin对象；required
+  `{caseId,crashCutId}` exact-cover、outcome/code/aggregate总函数、ID/content
+  digest可重算。构造顺序为 Corpus→Suite→Discovery Result→result bundle→runtime
+  attestation/content digest→
+  Evidence→Catalog/Registry；Evidence exact pin result ID/digest并复制 target/
+  suite/fixture/runner/crash/result，runtime只 pin同一 result content digest，
+  不反向 pin Evidence。reader按 ID读取并验证 pin/Envelope/payload三方，不扫描目录。
+  公开支持矩阵的唯一权威输入是 registry-root按独立 domain签名、
+  generation/predecessor连续，并由 current
+  `ProviderAcceptanceStateV1(strong_ready)`经 Catalog exact pin的 Public
+  Taxonomy、Release Target Universe与 owner-only strict
+  `ProviderFeasibilitySupportCatalogEnvelopeV1`闭包；Public Taxonomy、
+  Release Matrix、Target Discovery Result、Release Target Universe与 Catalog
+  五者只从签名发行物
+  canonical generation fixed locator读取，pin/outer/payload generation与 digest
+  必须相等，并 exact复制 host verified
+  `ProviderSignedDistributionRootBindingV1`。五条 chain各最多4096代，单 object最多
+  16 MiB，完整 reachable retained closure累计最多512 MiB且最多65536个 retained
+  object；closure必须 streaming遍历五链、每代内嵌 Bundle及其传递 pin的
+  Fixture/Runner/Suite/Corpus Envelope。Envelope以
+  `{binding,typed locator,contentDigest}`去重并计 object/bytes，embedded Bundle以
+  `{binding,parentDiscoveryContentDigest,bundleContentDigest}`计 object但 incremental
+  logical bytes为0；所有 object在 materialize前先做16 MiB cap，512 MiB只计 unique
+  Envelope。40960是 schema可达 E2E，65536/65537是独立 accumulator synthetic
+  boundary；超限保留上一 verified
+  distribution。Taxonomy code只能由非敏感 canonical OS-family/filesystem descriptor
+  生成，private build/feature/mount变化不得换 code；Universe coverage basis必须
+  exact pin同一 distribution root签名的 Release Matrix与 Target Discovery
+  Result。Discovery Result必须嵌入独立 root-signed Input Bundle，exact pin本代
+  Matrix、fixture manifest、runner instance/profile/version/implementation/run
+  manifest及 release observation cut；Matrix observations只能由有序
+  `targets[i]`投影为 ordinal `i` resolved record，三个 source artifact digest必须
+  exact取对应完整 Envelope content digest，Fixture/Suite/Corpus fixed locator只接受
+  包含 signature的完整 content digest而非可跨 release复用的 semantic digest；
+  Fixture pin/payload exact pin Suite，Suite exact pin Corpus，Pin冗余 semantic
+  digest必须与 resolved payload闭合。Result只能从
+  complete observations deterministic projection得到。Universe targets必须是两份 target set最多4096项
+  的 canonical streaming union；同 ID不同 bytes或第4097项直接拒绝。只有两集合
+  相等且 unresolved typed empty才 complete，否则按固定优先级派生单一全局 reason
+  并令全部 buckets incomplete/read-only。Catalog必须逐 target exact-cover Universe。
+  完整七字段 target先重算
+  `ProviderTargetProfileIdV1`，catalog按 target profile分组、组内按 provider列
+  candidates，因此 migration期 old/new可同组并存。candidate显式列出
+  passed/failed/unsupported Evidence pin、exact policy/runtime与 root-signed
+  release disposition；catalog顶层保存完整 root-signed approver-key
+  history/revocations，enabled registry必须 exact复制。public capability按同组
+  全部有效 candidates确定性聚合；strong只允许至少一个 passed+strong candidate，
+  failed/unsupported只允许 read-only，Release保守关闭必须把全组标为
+  read-only。Universe target omission/substitution、bucket partition或 coverage
+  basis不闭合、unknown/noncanonical code、duplicate target/profile candidate、
+  catalog rollback/fork与 entry digest错配均 fail closed；公开 DTO不复制内部
+  target ID或 build/feature/mount digest，只按 platform/family/arch/filesystem
+  code重算 public ID，只有 coverage complete且同 public bucket全部 covered
+  target strong才输出 strong，incomplete或任一 read-only均保守 read-only。
+  公开行禁止内部 group数量/顺序、volume UUID/path、username、endpoint、
+  provider/catalog/evidence digest或 signer key，且不授权 I/O。本机 registry
+  missing/invalid时 mutation仍 `provider_unavailable`零写。
+- Result/Evidence重复的 provider/policy/implementation/binary/target七字段/
+  suite/fixture/runner/crash/result，runtime/Evidence的 platform/profile，
+  policy/Evidence的 isolation/IPC/suite与三方 result digest必须 exact-equal。
+  每个 Catalog candidate的 Result Discovery/Input Bundle/Suite Pin必须
+  byte-identical回接 Universe→Discovery→Bundle→Fixture retained closure；
+  signature替换必须改变 Suite/Corpus signed-payload locator，同 semantic digest的
+  另一份合法 signed Suite/Corpus替换也必须拒绝。
+  Catalog/Registry runtime pin必须 byte-identical，unsigned runtime digest必须
+  exact-equal Evidence runtime digest；IPC endpoint attestation digest、
+  attestation generation或 issuedAt任一 signed-but-mismatched组合都按
+  `attestation_invalid`在首个 strong副作用前零写拒绝。
+- atomic publish的六个 not-committed reason必须由 signed receipt exact绑定并
+  作为单一 strict failure union总映射为 fatal、containment-revalidate retry、
+  new-attempt retry或 migration；reason/directive/successor不能独立组合，
+  fatal/migration无 successor，同 nonce跨 restart只返回 byte-identical durable
+  result。receipt保存完整 durable request projection/final binding/proof，但
+  broker epoch/handle nonce只存在于 transient companion/reopen authority；
+  Store-root、receipt、genesis、Manifest及普通 file/directory都使用同一 outcome
+  union。Pulse/Artifact/Store canonical pin保存可重建 claims的完整 receipt/proof
+  signed Envelope，不能只存裸 token。Acceptance与 Store Manifest compare-append
+  同 nonce同 request返回原 receipt，同 nonce异 request结构化拒绝；receipt只保存
+  本次 head/high-water+entry而非累计 enumeration。Store receipt固定在
+  provider-isolated append-only semantic ledger，policy-bound count/byte
+  admission必须在首个 candidate副作用前完成；ledger不进入正在提交的 Private
+  Store quota root但必须进入 migration live-reference closure。Acceptance receipt
+  与 trust/key history同样受 immutable count/byte/emergency policy约束，existing
+  nonce replay不受新 admission拒绝。compare-delete的
+  `delete_disabled`不得在 durable progress/pin中丢失。
+- WP5-1P由 Platform/Security Lead负责，Contracts/Core + Provider/Systems实现，
+  QA/Security与独立 Implementability复核，预算6～8 person-weeks；它独立于
+  WP1 shared foundations与 WP3P runtime预算。WP3P由 Platform/Security Lead负责，
+  预算10～14 person-weeks，阻塞 WP3 strong
+  writer、WP5 strong mutation和 WP8 P0 Release Gate。未通过 target只可
+  legacy/redacted read-only，不能创建或更新 strong Task。
+- Tool Error固定为 `code=provider_unavailable`，reason只允许
+  `unavailable/unsupported_filesystem_profile/attestation_invalid/revoked/
+  migration_required/initialization_not_terminalized`。公开 Envelope不得含
+  locator、IPC endpoint、path、owner、key ID或 raw attestation；WP8 CLI
+  `understand-code doctor --provider`不是新增 MCP Tool。
+
+D-24～D-30 的实现与验收矩阵为
+`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`；其中第 3.8 节是
+必须逐字段等价实现的 normative Schema Appendix。所有 C09 provider
+contract、canonical bytes/golden与 prerequisite conformance归
+WP5-1P；C01～C08 Change Intelligence contracts归 WP5-1，WP5-1后续只能增加
+与已冻结 C09兼容的补充，不能重定义或推迟 C09 Gate。冻结验收范围为
+AT-C01～C30、D01～D38、S01～S16、O01～O33、Q01～Q32，其中 D35～D38 关闭
+Store ownership、Manifest atomic head与 known-redacted/unknown accounting，
+Q29～Q32 关闭 OS locator、handle-bound sandbox、SafeGit resource/race caps及
+trust compromise/migration。这些修订不改变
+D-21 Lifecycle 状态集合或普通转移。
+
+WP1只提供 shared strict Envelope、Digest/brand primitive、Schema/package
+machinery与 Fixture runner；任何 C09 schema、digest/signature domain、locator、
+golden/negative vector及 C09 Gate均不得计入 WP1退出条件或预算。
 
 ## 5. Task Lifecycle V1
 
@@ -266,7 +989,7 @@ Schema。验证矩阵见
 | `context_ready` | Pulse 可用，Brief/Claim/Evidence 引用有效；Unknown 已显式记录 | 活跃 |
 | `planned` | Goal、Acceptance 与 Plan 已通过强类型 Action 确认 | 活跃 |
 | `in_progress` | 实施已开始，Worktree Diff 可持续变化 | 活跃 |
-| `check_required` | 当前实现切片完成，必须对最新 actual snapshot 执行 Change Check | 活跃 |
+| `check_required` | 当前实现切片完成；无 strong Check descriptor 时派生 `awaiting_check`，有 exact descriptor 时派生 `check_review` 等待处置 | 活跃 |
 | `verification_required` | 最新 Check 已完成且阻断 Finding 已处理，仍需 Verification 记录 | 活跃 |
 | `verified` | Check 与 Verification 均绑定最终 snapshot，验收闭环完成 | 终态 |
 | `blocked` | 外部依赖使任务暂停，保存 `resumeStatus` 和结构化原因 | 可恢复异常态 |
@@ -285,7 +1008,7 @@ P0 不另设 `cancelled`；放弃表示为 `superseded(reason=abandoned)`。P0 �
 | `in_progress` | `check_required` | 已捕获最新 actual snapshot；Agent 声明本轮修改可检查 |
 | `check_required` | `in_progress` | Check 发现需要继续修改或补计划 |
 | `check_required` | `verification_required` | Check 绑定当前 revision/snapshot；阻断 Finding 已修复或由授权 Actor 显式接受 |
-| `verification_required` | `in_progress` | Verification 失败且需要继续修改 |
+| `verification_required` | `in_progress` | Action 指向当前 generation/Snapshot/Plan Entry 的 latest failed/blocked/flaky Verification Record |
 | `verification_required` | `check_required` | actual snapshot 再次变化，旧 Check 自动失效 |
 | `verification_required` | `verified` | Check 仍为最新；所需 Verification 已通过或被授权 Actor 接受 skip；无 unresolved failed/blocked/flaky |
 | `created` / `context_ready` / `planned` / `in_progress` / `check_required` / `verification_required` | `blocked` | 使用 `block_task`；记录 `resumeStatus`、blocker、Actor 与时间 |
@@ -304,13 +1027,21 @@ P0 不另设 `cancelled`；放弃表示为 `superseded(reason=abandoned)`。P0 �
 
 - `update_task` 的生命周期 Action 固定包含 `transition_status`、`block_task`、`resume_task`、`refresh_task_context`、`rebase_task` 与 `supersede_task`；`transition_status` 只执行表内普通阶段转移。
 - 所有 Task Mutation 使用 `(worktreeId, taskId/create-scope, idempotencyKey)` 唯一键，并保存 canonical request digest 与 Actor。
-- 服务端顺序固定为：binding/auth → idempotency lookup → same-key digest check → CAS `expectedRevision` → lifecycle guard → 原子提交 Artifact/Event/idempotency result。
+- 普通既有 Mutation 的服务端顺序固定为：binding/auth → idempotency lookup →
+  same-key digest check → CAS `expectedRevision` → lifecycle guard → 原子提交
+  Artifact/Event/idempotency result。WP5 仓库相关 Operation 还必须在 guard 后
+  执行 D-27 的 exact Basis/out-of-lock work/final read-set validation；Stage 1
+  使用独立 Creation Basis 与 marker-first 协议，不能被该简写跳过。
 - 同 key、同请求重试返回首次持久化结果，不增加 revision、不追加 Event；即使请求携带旧 revision，也先返回 replay。
 - 同 key、不同 payload 或 Actor 返回 `idempotency_conflict`，不写入。
 - 未见过的 key 且 revision 不匹配返回 `revision_conflict`；调用方读取最新 revision、重新决策并使用新 key。
 - 成功 Mutation 恰好增加一次 revision、追加一次 Event；Schema、Guard、CAS、权限或执行失败均不增加 revision。
 - Crash 后结果不确定时必须复用原 key；`build_task_brief` 的 key 稳定映射到同一 Task ID。
-- `rebase_task` 更新 baseline 并使旧 Plan/Check/Verification 失效，不能原地保留旧 `verified` 语义。
+- `refresh_task_context` 必须显式断言 target Snapshot、保留 baseline、重建
+  Context 并删除旧 Check/Verification 投影；`rebase_task` 还必须显式提供且
+  真正把 baseline 改为同一个 exact live target Snapshot。二者清理前归档
+  immutable historical projection，不能原地保留旧 Plan/Check/Verification
+  语义或断开旧 Evidence closure。
 
 ### 5.4 `build_task_brief` 编排与可信回放
 
@@ -320,8 +1051,8 @@ Guard、Artifact/Event/Journal 原子提交规则。
 
 | 阶段 | 输入 revision | 提交后状态 | 必备持久事实 | 不得出现 |
 |---|---:|---|---|---|
-| Stage 1 / intent recovery | 0 | `created@1` | Manifest、唯一 `task_created` Event、创建 Idempotency Record 与完整 Receipt、Operation Journal | Brief/Claim/Evidence/Impact/Check/Verification 伪事实 |
-| Stage 2 / context publication | 当前 `created@N`（标准路径 N=1） | `context_ready@(N+1)`（标准路径 @2） | Brief、Claim、Evidence、Impact、下一条 Event、公开调用 Idempotency Record 与完整 Receipt、更新后的完整 Journal | 未通过 Pulse/引用校验的 Context；空 Change Check/Verification；硬编码 revision 2 |
+| Stage 1 / intent recovery | 0 | `created@1` | 先引用已提交 immutable current Snapshot；无副作用 scan/plan 得到 `TaskCreationBasisV1`；Store 锁内重验后，在任何 blob/lease 前 fsync 含 nonce/ref/OID/ownership/write plan 的 marker，materialize 后 final read-set revalidate；Task transaction 提交含 resolved `contextBuildSpec` 的 Manifest、internal baseline descriptor/private blobs、唯一 `task_created` Event、创建 Record/Receipt/Journal/Basis Record | Pulse/candidate baseline/blob/lease 反向进入 Creation Basis；Brief/Claim/Evidence/Impact/Check/Verification 伪事实；副作用早于 marker；未验证 locator；把 repository Snapshot 塞入 Task transaction |
+| Stage 2 / context publication | 当前 `created@N`（标准路径 N=1） | `context_ready@(N+1)`（标准路径 @2） | Brief、Claim、Evidence、Impact、下一条 Event、公开调用 Record/Receipt、完整 Journal；Manifest/Brief/Event 绑定同一新 `contextGenerationId` | 未通过 Pulse/引用校验的 Context；空 Change Check/Verification；硬编码 revision 2；缺失 generation |
 
 可信 Journal 满足：
 
@@ -361,7 +1092,11 @@ WP4 关闭前至少通过以下验收：
 | 范围 | Accountable | Implementer | Verifier | Promotion approver |
 |---|---|---|---|---|
 | Mission/P0/Non-goals | Product Owner | — | QA | Product Owner |
-| Contracts/Task lifecycle | Tech Lead / Core | Core | QA | Tech Lead |
+| Shared Contracts / Task lifecycle foundations | Tech Lead / Core | Core | QA | Tech Lead |
+| Provider Contracts Prerequisite / C09 | Platform / Security Lead | Contracts/Core + Provider/Systems | QA/Security + independent Implementability | Tech Lead + Product Owner |
+| Change Check / Verification | Tech Lead / Core | Change Intelligence + Task Engine | QA/Security | Tech Lead |
+| Baseline / Delta trust boundary | Tech Lead + Platform | Repository State + Artifact Store | QA/Security | Tech Lead |
+| Durable Object Provider / registry / real-FS Gate | Platform / Security Lead | Provider/Systems + Artifact Store | QA/Security + Release | Tech Lead + Product Owner |
 | Root/Error Contract | Tech Lead + Platform | Platform | QA/Security | Tech Lead |
 | Runtime Rendezvous | Platform / Integration | Platform + Frontend | QA/Security | Tech Lead |
 | Codex CLI mandatory | Platform / Integration | Platform | QA | Product Owner |
@@ -384,20 +1119,23 @@ WP4 关闭前至少通过以下验收：
 
 Support 文案由 Product + QA 联签；任何一行未通过时只能保持 `pending-e2e`。
 
-## 7. G0-01～G0-08 处置
+## 7. G0-01～G0-09 处置
 
-尚未实现的项是已知 pre-P0 capability gap，不是 WP0 新引入回归。对应能力在后续 Gate 关闭前保持未支持，不能进入产品支持文案。
+已关闭的底座项保留其证据位置；仍为 partial/open 的项是已知 pre-P0
+capability gap，不是 WP0 新引入回归。对应能力在后续 Gate 关闭前保持未支持，
+不能进入产品支持文案。
 
 | ID | Contract disposition | 实现状态 | Owner | 必须关闭时间 |
 |---|---|---|---|---|
-| G0-01 Worktree freshness | staged/unstaged/untracked/rename/delete/error 必须进入 Snapshot；旧 fresh 结论不可信 | WP2 open | Repository State | M1；任何可信 Pulse/Task Brief 前 |
-| G0-02 BODY_LOGIC 被当 cosmetic | 旧 `SKIP` 不得进入 P0；Refresh 与 Behavior Risk 分离 | WP2 open | Core | M1；Task Brief Alpha 前 |
-| G0-03 Edge provenance 丢失 | Edge Evidence V1 进入 WP1；旧边只能显示 unknown provenance | WP1/WP2 open | Core | Evidence Alpha 前 |
-| G0-04 非原子持久化 | Task Store 必须 atomic/CAS/lock；旧 writer 不得用于多 Agent Task | WP3 open | Core + Platform | 首次持久 Task Alpha 前 |
-| G0-05 Secret hard deny | Hard deny 与内容扫描不可被 ignore negation 取消 | WP2/WP3/WP6 open | Platform / Security | 首个返回源码摘录的 MCP Alpha 前 |
+| G0-01 Worktree freshness | staged/unstaged/untracked/rename/delete/error 必须进入 Snapshot；旧 fresh 结论不可信 | WP2 discovery core closed（CI `30366487231`）；D-29 path-safe strong Snapshot/Pulse profile 在 WP5 reopened/pending | Repository State + Security | strong Task Alpha 前关闭 safe profile；Surface 继续验证 |
+| G0-02 BODY_LOGIC 被当 cosmetic | 旧 `SKIP` 不得进入 P0；Refresh 与 Behavior Risk 分离 | WP2 conservative taxonomy closed；WP5 rich parser open | Core + Change Intelligence | Change Check Alpha 前关闭 rich mapping |
+| G0-03 Edge provenance 丢失 | Edge Evidence V1 进入 WP1；旧边只能显示 unknown provenance | WP1 contract closed；WP4 Evidence/Impact producer closed | Core | Closed for Task Brief；WP5 Actual mapping 另验 |
+| G0-04 非原子持久化 | Task Store 必须 atomic/CAS/lock；旧 writer 不得用于多 Agent Task | WP3/WP4 closed；Store/Engine CI `30512901210` | Core + Platform | Closed for Task；WP5 operations 另验 |
+| G0-05 Secret hard deny | Hard deny 与内容扫描不可被 ignore negation 取消；首个公开持久化前完成扫描 | WP2 path deny/WP3 owner boundary closed；WP5 safe Snapshot/request HMAC/CAS reservation pending，WP6 Surface open | Platform / Security | 首个 strong Task/源码摘录 MCP Alpha 前 |
 | G0-06 Diff Overlay 断链 | 旧 Overlay deprecated，不作为 P0 数据源或完成证据 | WP5/WP7 open | Change Intelligence + Frontend | Change Check Workbench Alpha 前 |
-| G0-07 Worktree 重定向 | Task/Store 绑定当前 canonical worktree；共享只限不可变缓存 | WP3/WP6 open | Core + Platform | 首次 Agent-native Task 写入前 |
+| G0-07 Worktree 重定向 | Task/Store 绑定当前 canonical worktree；共享只限不可变缓存 | WP3/WP4 core binding closed；WP6 Surface open | Core + Platform | Mandatory Host Surface Alpha 前 |
 | G0-08 Quality/Release | 根 quality、CI 已关闭；CLI/bin、统一版本、License、SBOM、allowlist、Marketplace 留后续 Gate | Partial | Platform + QA | Mandatory Surface Release / M4 |
+| G0-09 Durable Object Provider | strong writer必须使用 OS-isolated exact-object provider、immutable identity/trust-history caps + append-only Acceptance、root-signed Registry/Taxonomy/Target Universe/Catalog、provider-isolated receipt ledger、atomic path containment、external CAS/journal seal与 bounded dual-namespace migration；未通过或 coverage incomplete target只读 | WP3P open / all strong mutations capability locked | Platform/Security Lead + Provider/Systems；QA/Security/Release验证 | 首个 strong Task Alpha前关闭签名开发 target profile并验证当前物理 volume runtime exact-match；P0前关闭全部 advertised profiles |
 
 ## 8. 当前发布缺口
 
@@ -411,6 +1149,11 @@ Support 文案由 Product + QA 联签；任何一行未通过时只能保持 `pe
 6. 根 Package 缺少 `files`、`publishConfig`、`engines`、`packageManager`、repository/homepage/license 的一致配置。
 7. 性能 Evidence 使用 Node 26 / pnpm 11，CI 使用 Node 22 / pnpm 9；WP8 必须冻结唯一支持基线并在该环境重采 RC Evidence。
 8. macOS code signing/notarization、Linux Artifact 签名以及构建 provenance/attestation 尚未建立。
+9. provider OS principal/service、offline registry-root与 key custody、mutual IPC
+   权限、historical verifier、per-target-profile real-FS conformance与当前
+   物理 volume runtime对签名 profile的 exact-match，以及 provider
+   install/upgrade/downgrade/uninstall/rollback证据尚未建立；完成前 strong
+   Store write不得出现在 supported capability中。
 
 ## 9. 用户工作区处置
 
@@ -427,11 +1170,11 @@ Support 文案由 Product + QA 联签；任何一行未通过时只能保持 `pe
 | 条件 | 结果 |
 |---|---|
 | Mission、P0、Non-goals 已冻结 | PASS |
-| D-13～D-19、D-21～D-23 已接受；D-20 有 Owner/Gate | PASS |
+| D-13～D-19、D-21～D-30 已接受；D-20 有 Owner/Gate | PASS |
 | Task Lifecycle、Revision 与幂等语义唯一 | PASS |
 | Root/Error/Rendezvous 语义唯一 | PASS |
 | Surface mandatory/conditional、Owner、后续 Gate 完整 | PASS |
-| G0-01～08 有处置、Owner 和 capability lock | PASS |
+| G0-01～09 有处置、Owner 和 capability lock | PASS |
 | 根质量、CI、Host 与性能证据可复核 | PASS |
 | 用户未跟踪文件明确排除 | PASS |
 | PRD/Host Spike 状态同步 | 由包含本记录的提交完成 |

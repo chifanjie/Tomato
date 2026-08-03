@@ -1,0 +1,10 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-target-discovery-observation-source",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "signed_release_matrix",
+    "real_filesystem_fixture_manifest",
+    "target_discovery_runner"
+  ]
+}

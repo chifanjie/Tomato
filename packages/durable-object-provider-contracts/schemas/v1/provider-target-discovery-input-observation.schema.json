@@ -1,0 +1,150 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-target-discovery-input-observation",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "observationSource": {
+      "type": "string",
+      "enum": [
+        "signed_release_matrix",
+        "real_filesystem_fixture_manifest",
+        "target_discovery_runner"
+      ]
+    },
+    "sourceArtifactContentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "sourceRecordOrdinal": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "outcome": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "resolved"
+            },
+            "target": {
+              "type": "object",
+              "properties": {
+                "target": {
+                  "type": "object",
+                  "properties": {
+                    "targetProfileId": {
+                      "type": "string",
+                      "pattern": "^provider-target-profile:[0-9a-f]{64}$"
+                    },
+                    "osPlatform": {
+                      "type": "string",
+                      "enum": [
+                        "darwin",
+                        "linux"
+                      ]
+                    },
+                    "osReleaseFamilyCode": {
+                      "type": "string",
+                      "pattern": "^provider-os-family:[0-9a-f]{22}$"
+                    },
+                    "osBuildDigest": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    "architecture": {
+                      "type": "string",
+                      "enum": [
+                        "arm64",
+                        "x86_64"
+                      ]
+                    },
+                    "filesystemProfileCode": {
+                      "type": "string",
+                      "pattern": "^provider-fs-profile:[0-9a-f]{22}$"
+                    },
+                    "filesystemFeatureProfileDigest": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    "mountOptionProfileDigest": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    }
+                  },
+                  "required": [
+                    "targetProfileId",
+                    "osPlatform",
+                    "osReleaseFamilyCode",
+                    "osBuildDigest",
+                    "architecture",
+                    "filesystemProfileCode",
+                    "filesystemFeatureProfileDigest",
+                    "mountOptionProfileDigest"
+                  ],
+                  "additionalProperties": false
+                },
+                "publicProfileId": {
+                  "type": "string",
+                  "pattern": "^provider-public-support-profile:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "target",
+                "publicProfileId"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "state",
+            "target"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "unresolved"
+            },
+            "reason": {
+              "type": "string",
+              "enum": [
+                "target_dimensions_missing",
+                "taxonomy_mapping_unresolved",
+                "conflicting_target_claims",
+                "observation_source_unavailable"
+              ]
+            }
+          },
+          "required": [
+            "state",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "privacySafeObservationClaimsDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "observationKeyDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "observationSource",
+    "sourceArtifactContentDigest",
+    "sourceRecordOrdinal",
+    "outcome",
+    "privacySafeObservationClaimsDigest",
+    "observationKeyDigest"
+  ],
+  "additionalProperties": false
+}

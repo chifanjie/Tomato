@@ -845,12 +845,33 @@ describe("provider contract JSON Schema distribution", () => {
       "provider-real-filesystem-suite-manifest-signature-wrapper",
       "provider-real-filesystem-source-golden-manifest",
       "provider-real-filesystem-source-invalid-manifest",
+      "provider-public-support-taxonomy-envelope",
+      "provider-public-support-taxonomy-pin",
+      "provider-public-support-taxonomy-locator",
+      "provider-release-matrix-envelope",
+      "provider-release-matrix-pin",
+      "provider-release-matrix-locator",
+      "provider-target-discovery-fixture-manifest-envelope",
+      "provider-target-discovery-fixture-manifest-pin",
+      "provider-target-discovery-fixture-manifest-locator",
+      "provider-target-discovery-runner-run-envelope",
+      "provider-target-discovery-runner-run-locator",
+      "provider-target-discovery-input-bundle",
+      "provider-target-discovery-result-envelope",
+      "provider-target-discovery-result-pin",
+      "provider-target-discovery-result-locator",
+      "provider-target-discovery-point-golden-manifest",
+      "provider-target-discovery-point-invalid-manifest",
+      "provider-public-support-taxonomy-signature-wrapper",
+      "provider-release-matrix-signature-wrapper",
+      "provider-target-discovery-input-bundle-signature-wrapper",
+      "provider-target-discovery-result-signature-wrapper",
     ] as const;
     for (const name of requiredNames) {
       expect(generated, name).toHaveProperty(name);
       expectEveryJsonSchemaObjectClosed(generated[name], name);
     }
-    expect(Object.keys(generated)).toHaveLength(152);
+    expect(Object.keys(generated)).toHaveLength(220);
 
     for (const name of [
       "store-durable-object-provider-runtime-attestation-signature-wrapper",
@@ -861,6 +882,10 @@ describe("provider contract JSON Schema distribution", () => {
       "provider-registry-manifest-signature-wrapper",
       "provider-real-filesystem-fixture-corpus-manifest-signature-wrapper",
       "provider-real-filesystem-suite-manifest-signature-wrapper",
+      "provider-public-support-taxonomy-signature-wrapper",
+      "provider-release-matrix-signature-wrapper",
+      "provider-target-discovery-input-bundle-signature-wrapper",
+      "provider-target-discovery-result-signature-wrapper",
     ] as const) {
       expect(generated[name].additionalProperties, name).toBe(false);
       const claims = (

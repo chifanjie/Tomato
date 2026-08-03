@@ -1,0 +1,21 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-release-matrix-locator",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "locatorProfile": {
+      "type": "string",
+      "const": "distribution_provider_release_matrix_v1"
+    },
+    "releaseMatrixGeneration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "locatorProfile",
+    "releaseMatrixGeneration"
+  ],
+  "additionalProperties": false
+}

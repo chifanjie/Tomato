@@ -1,0 +1,69 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-public-os-release-family-descriptor",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "osPlatform": {
+          "type": "string",
+          "const": "darwin"
+        },
+        "resolver": {
+          "type": "string",
+          "const": "darwin_product_major_version_v1"
+        },
+        "productMajorVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 999
+        }
+      },
+      "required": [
+        "osPlatform",
+        "resolver",
+        "productMajorVersion"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "osPlatform": {
+          "type": "string",
+          "const": "linux"
+        },
+        "resolver": {
+          "type": "string",
+          "const": "linux_os_release_id_major_version_v1"
+        },
+        "distributionId": {
+          "type": "string",
+          "enum": [
+            "almalinux",
+            "amazon-linux",
+            "debian",
+            "fedora",
+            "opensuse-leap",
+            "rhel",
+            "rocky",
+            "sles",
+            "ubuntu"
+          ]
+        },
+        "distributionMajorVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 999
+        }
+      },
+      "required": [
+        "osPlatform",
+        "resolver",
+        "distributionId",
+        "distributionMajorVersion"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

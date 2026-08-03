@@ -1,0 +1,56 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-feasibility-target",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "targetProfileId": {
+      "type": "string",
+      "pattern": "^provider-target-profile:[0-9a-f]{64}$"
+    },
+    "osPlatform": {
+      "type": "string",
+      "enum": [
+        "darwin",
+        "linux"
+      ]
+    },
+    "osReleaseFamilyCode": {
+      "type": "string",
+      "pattern": "^provider-os-family:[0-9a-f]{22}$"
+    },
+    "osBuildDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "architecture": {
+      "type": "string",
+      "enum": [
+        "arm64",
+        "x86_64"
+      ]
+    },
+    "filesystemProfileCode": {
+      "type": "string",
+      "pattern": "^provider-fs-profile:[0-9a-f]{22}$"
+    },
+    "filesystemFeatureProfileDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "mountOptionProfileDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "targetProfileId",
+    "osPlatform",
+    "osReleaseFamilyCode",
+    "osBuildDigest",
+    "architecture",
+    "filesystemProfileCode",
+    "filesystemFeatureProfileDigest",
+    "mountOptionProfileDigest"
+  ],
+  "additionalProperties": false
+}

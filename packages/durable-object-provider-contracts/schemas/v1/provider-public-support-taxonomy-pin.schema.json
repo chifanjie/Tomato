@@ -1,0 +1,26 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-public-support-taxonomy-pin",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "locatorProfile": {
+      "type": "string",
+      "const": "distribution_provider_public_support_taxonomy_v1"
+    },
+    "taxonomyGeneration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "locatorProfile",
+    "taxonomyGeneration",
+    "contentDigest"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,16 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-public-linux-distribution-id",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "almalinux",
+    "amazon-linux",
+    "debian",
+    "fedora",
+    "opensuse-leap",
+    "rhel",
+    "rocky",
+    "sles",
+    "ubuntu"
+  ]
+}

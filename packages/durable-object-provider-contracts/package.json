@@ -54,6 +54,16 @@
       "import": "./dist/provider-real-filesystem-source.js",
       "default": "./dist/provider-real-filesystem-source.js"
     },
+    "./provider-target-discovery-point": {
+      "types": "./dist/provider-target-discovery-point.d.ts",
+      "import": "./dist/provider-target-discovery-point.js",
+      "default": "./dist/provider-target-discovery-point.js"
+    },
+    "./provider-target-discovery-point-fixtures": {
+      "types": "./dist/provider-target-discovery-point-fixtures.d.ts",
+      "import": "./dist/provider-target-discovery-point-fixtures.js",
+      "default": "./dist/provider-target-discovery-point-fixtures.js"
+    },
     "./public-key-digest": {
       "types": "./dist/public-key-digest.d.ts",
       "import": "./dist/public-key-digest.js",
@@ -81,7 +91,8 @@
     "generate:provider-registry-manifest-history": "pnpm run build && node scripts/generate-provider-registry-manifest-history.mjs",
     "generate:provider-registry-manifest-invalid": "pnpm run build && node scripts/generate-provider-registry-manifest-invalid.mjs",
     "generate:provider-real-fs-source": "pnpm run build && node scripts/generate-provider-real-filesystem-source.mjs",
-    "prepack": "npm run build && npm run verify:schemas && npm run verify:fixtures && npm run verify:strict-ed25519 && npm run verify:golden && npm run verify:bootstrap-trust-invalid && npm run verify:bootstrap-trust && npm run verify:provider-root-history && npm run verify:provider-registry-manifest-history && npm run verify:provider-registry-manifest-invalid && npm run verify:provider-real-fs-source",
+    "generate:provider-target-discovery-point": "pnpm run build && node scripts/generate-provider-target-discovery-point.mjs",
+    "prepack": "npm run build && npm run verify:schemas && npm run verify:fixtures && npm run verify:strict-ed25519 && npm run verify:golden && npm run verify:bootstrap-trust-invalid && npm run verify:bootstrap-trust && npm run verify:provider-root-history && npm run verify:provider-registry-manifest-history && npm run verify:provider-registry-manifest-invalid && npm run verify:provider-real-fs-source && npm run verify:provider-target-discovery-point",
     "test:distribution": "node scripts/test-distribution.mjs",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "verify:golden": "node scripts/verify-golden.mjs",
@@ -92,9 +103,10 @@
     "verify:provider-registry-manifest-history": "node scripts/generate-provider-registry-manifest-history.mjs --check && node scripts/verify-provider-registry-manifest-history.mjs",
     "verify:provider-registry-manifest-invalid": "node scripts/generate-provider-registry-manifest-invalid.mjs --check && node scripts/verify-provider-registry-manifest-invalid.mjs",
     "verify:provider-real-fs-source": "node scripts/generate-provider-real-filesystem-source.mjs --check && node scripts/verify-provider-real-filesystem-source.mjs",
+    "verify:provider-target-discovery-point": "node scripts/generate-provider-target-discovery-point.mjs --check && node scripts/verify-provider-target-discovery-point.mjs",
     "verify:schemas": "node scripts/generate-json-schemas.mjs --check",
     "verify:strict-ed25519": "node scripts/verify-strict-ed25519.mjs",
-    "test": "pnpm run build && pnpm run typecheck && pnpm run verify:schemas && pnpm run verify:fixtures && pnpm run verify:strict-ed25519 && pnpm run verify:golden && pnpm run verify:bootstrap-trust-invalid && pnpm run verify:bootstrap-trust && pnpm run verify:provider-root-history && pnpm run verify:provider-registry-manifest-history && pnpm run verify:provider-registry-manifest-invalid && pnpm run verify:provider-real-fs-source && vitest run --maxWorkers=1 && pnpm run test:distribution"
+    "test": "pnpm run build && pnpm run typecheck && pnpm run verify:schemas && pnpm run verify:fixtures && pnpm run verify:strict-ed25519 && pnpm run verify:golden && pnpm run verify:bootstrap-trust-invalid && pnpm run verify:bootstrap-trust && pnpm run verify:provider-root-history && pnpm run verify:provider-registry-manifest-history && pnpm run verify:provider-registry-manifest-invalid && pnpm run verify:provider-real-fs-source && pnpm run verify:provider-target-discovery-point && vitest run --maxWorkers=1 && pnpm run test:distribution"
   },
   "dependencies": {
     "zod": "^4.3.6"

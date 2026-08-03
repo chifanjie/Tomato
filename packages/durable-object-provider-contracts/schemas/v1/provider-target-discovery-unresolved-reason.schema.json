@@ -1,0 +1,11 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-target-discovery-unresolved-reason",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "target_dimensions_missing",
+    "taxonomy_mapping_unresolved",
+    "conflicting_target_claims",
+    "observation_source_unavailable"
+  ]
+}

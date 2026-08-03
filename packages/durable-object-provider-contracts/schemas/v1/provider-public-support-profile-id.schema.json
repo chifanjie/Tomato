@@ -1,0 +1,6 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-public-support-profile-id",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "pattern": "^provider-public-support-profile:[0-9a-f]{64}$"
+}

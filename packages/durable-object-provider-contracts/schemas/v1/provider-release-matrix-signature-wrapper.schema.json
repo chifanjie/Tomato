@@ -1,0 +1,345 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-release-matrix-signature-wrapper",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "rootKeyId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{22}$"
+    },
+    "domain": {
+      "type": "string",
+      "const": "provider-release-matrix-signature-v1"
+    },
+    "claims": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "provider_release_matrix_v1"
+        },
+        "distributionRootBinding": {
+          "type": "object",
+          "properties": {
+            "profile": {
+              "type": "string",
+              "const": "provider_signed_distribution_root_binding_v1"
+            },
+            "resolverProfile": {
+              "type": "string",
+              "const": "verified_signed_package_distribution_root_v1"
+            },
+            "signedPackageIdentityDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "releaseRevisionDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "bootstrapTrustBundle": {
+              "type": "object",
+              "properties": {
+                "locatorProfile": {
+                  "type": "string",
+                  "const": "distribution_provider_bootstrap_trust_bundle_v1"
+                },
+                "contentDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "locatorProfile",
+                "contentDigest"
+              ],
+              "additionalProperties": false
+            },
+            "historyPolicy": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "const": "provider_distribution_history_policy_v1"
+                },
+                "maxSupportCatalogGenerationCount": {
+                  "type": "number",
+                  "const": 4096
+                },
+                "maxPublicTaxonomyGenerationCount": {
+                  "type": "number",
+                  "const": 4096
+                },
+                "maxReleaseMatrixGenerationCount": {
+                  "type": "number",
+                  "const": 4096
+                },
+                "maxTargetDiscoveryResultGenerationCount": {
+                  "type": "number",
+                  "const": 4096
+                },
+                "maxReleaseTargetUniverseGenerationCount": {
+                  "type": "number",
+                  "const": 4096
+                },
+                "maxSingleDistributionObjectCanonicalBytes": {
+                  "type": "number",
+                  "const": 16777216
+                },
+                "maxTotalRetainedDistributionObjectCount": {
+                  "type": "number",
+                  "const": 65536
+                },
+                "maxTotalRetainedDistributionHistoryLogicalBytes": {
+                  "type": "number",
+                  "const": 536870912
+                },
+                "normalUpdateEmergencyGenerationReservePerChain": {
+                  "type": "number",
+                  "const": 8
+                },
+                "normalUpdateEmergencyLogicalBytesReserve": {
+                  "type": "number",
+                  "const": 16777216
+                },
+                "admission": {
+                  "type": "string",
+                  "const": "stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution"
+                },
+                "exhaustion": {
+                  "type": "string",
+                  "const": "reject_candidate_distribution_and_preserve_last_verified_distribution"
+                }
+              },
+              "required": [
+                "profile",
+                "maxSupportCatalogGenerationCount",
+                "maxPublicTaxonomyGenerationCount",
+                "maxReleaseMatrixGenerationCount",
+                "maxTargetDiscoveryResultGenerationCount",
+                "maxReleaseTargetUniverseGenerationCount",
+                "maxSingleDistributionObjectCanonicalBytes",
+                "maxTotalRetainedDistributionObjectCount",
+                "maxTotalRetainedDistributionHistoryLogicalBytes",
+                "normalUpdateEmergencyGenerationReservePerChain",
+                "normalUpdateEmergencyLogicalBytesReserve",
+                "admission",
+                "exhaustion"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "profile",
+            "resolverProfile",
+            "signedPackageIdentityDigest",
+            "releaseRevisionDigest",
+            "bootstrapTrustBundle",
+            "historyPolicy"
+          ],
+          "additionalProperties": false
+        },
+        "activeRootMetadata": {
+          "type": "object",
+          "properties": {
+            "locatorProfile": {
+              "type": "string",
+              "const": "installation_provider_registry_root_metadata_v1"
+            },
+            "rootGeneration": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "rootKeyId": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{22}$"
+            },
+            "contentDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "locatorProfile",
+            "rootGeneration",
+            "rootKeyId",
+            "contentDigest"
+          ],
+          "additionalProperties": false
+        },
+        "registryRootKeyId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{22}$"
+        },
+        "releaseMatrixGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "predecessorReleaseMatrixContentDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "publicSupportTaxonomy": {
+          "type": "object",
+          "properties": {
+            "locatorProfile": {
+              "type": "string",
+              "const": "distribution_provider_public_support_taxonomy_v1"
+            },
+            "taxonomyGeneration": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "contentDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "locatorProfile",
+            "taxonomyGeneration",
+            "contentDigest"
+          ],
+          "additionalProperties": false
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "profile": {
+              "type": "string",
+              "const": "provider_release_coverage_artifact_limits_v1"
+            },
+            "maxTargetEntriesPerArtifact": {
+              "type": "number",
+              "const": 4096
+            },
+            "maxCanonicalUnionTargetEntries": {
+              "type": "number",
+              "const": 4096
+            },
+            "maxUnresolvedObservationsPerDiscoveryResult": {
+              "type": "number",
+              "const": 4096
+            },
+            "maxCanonicalEnvelopeBytes": {
+              "type": "number",
+              "const": 16777216
+            }
+          },
+          "required": [
+            "profile",
+            "maxTargetEntriesPerArtifact",
+            "maxCanonicalUnionTargetEntries",
+            "maxUnresolvedObservationsPerDiscoveryResult",
+            "maxCanonicalEnvelopeBytes"
+          ],
+          "additionalProperties": false
+        },
+        "targetCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "targetSetDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "targets": {
+          "minItems": 1,
+          "maxItems": 4096,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "target": {
+                "type": "object",
+                "properties": {
+                  "targetProfileId": {
+                    "type": "string",
+                    "pattern": "^provider-target-profile:[0-9a-f]{64}$"
+                  },
+                  "osPlatform": {
+                    "type": "string",
+                    "enum": [
+                      "darwin",
+                      "linux"
+                    ]
+                  },
+                  "osReleaseFamilyCode": {
+                    "type": "string",
+                    "pattern": "^provider-os-family:[0-9a-f]{22}$"
+                  },
+                  "osBuildDigest": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  "architecture": {
+                    "type": "string",
+                    "enum": [
+                      "arm64",
+                      "x86_64"
+                    ]
+                  },
+                  "filesystemProfileCode": {
+                    "type": "string",
+                    "pattern": "^provider-fs-profile:[0-9a-f]{22}$"
+                  },
+                  "filesystemFeatureProfileDigest": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  "mountOptionProfileDigest": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "targetProfileId",
+                  "osPlatform",
+                  "osReleaseFamilyCode",
+                  "osBuildDigest",
+                  "architecture",
+                  "filesystemProfileCode",
+                  "filesystemFeatureProfileDigest",
+                  "mountOptionProfileDigest"
+                ],
+                "additionalProperties": false
+              },
+              "publicProfileId": {
+                "type": "string",
+                "pattern": "^provider-public-support-profile:[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "target",
+              "publicProfileId"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "profile",
+        "distributionRootBinding",
+        "activeRootMetadata",
+        "registryRootKeyId",
+        "releaseMatrixGeneration",
+        "publicSupportTaxonomy",
+        "limits",
+        "targetCount",
+        "targetSetDigest",
+        "targets"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "rootKeyId",
+    "domain",
+    "claims"
+  ],
+  "additionalProperties": false
+}

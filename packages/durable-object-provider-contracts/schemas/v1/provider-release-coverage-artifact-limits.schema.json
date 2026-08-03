@@ -1,0 +1,35 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-release-coverage-artifact-limits",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string",
+      "const": "provider_release_coverage_artifact_limits_v1"
+    },
+    "maxTargetEntriesPerArtifact": {
+      "type": "number",
+      "const": 4096
+    },
+    "maxCanonicalUnionTargetEntries": {
+      "type": "number",
+      "const": 4096
+    },
+    "maxUnresolvedObservationsPerDiscoveryResult": {
+      "type": "number",
+      "const": 4096
+    },
+    "maxCanonicalEnvelopeBytes": {
+      "type": "number",
+      "const": 16777216
+    }
+  },
+  "required": [
+    "profile",
+    "maxTargetEntriesPerArtifact",
+    "maxCanonicalUnionTargetEntries",
+    "maxUnresolvedObservationsPerDiscoveryResult",
+    "maxCanonicalEnvelopeBytes"
+  ],
+  "additionalProperties": false
+}

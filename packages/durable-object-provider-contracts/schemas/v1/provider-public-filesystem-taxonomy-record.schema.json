@@ -1,0 +1,66 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-public-filesystem-taxonomy-record",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "descriptor": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "osPlatform": {
+              "type": "string",
+              "const": "darwin"
+            },
+            "resolver": {
+              "type": "string",
+              "const": "darwin_filesystem_type_v1"
+            },
+            "filesystemKind": {
+              "type": "string",
+              "const": "apfs"
+            }
+          },
+          "required": [
+            "osPlatform",
+            "resolver",
+            "filesystemKind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "osPlatform": {
+              "type": "string",
+              "const": "linux"
+            },
+            "resolver": {
+              "type": "string",
+              "const": "linux_statfs_type_v1"
+            },
+            "filesystemKind": {
+              "type": "string",
+              "const": "ext4"
+            }
+          },
+          "required": [
+            "osPlatform",
+            "resolver",
+            "filesystemKind"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "filesystemProfileCode": {
+      "type": "string",
+      "pattern": "^provider-fs-profile:[0-9a-f]{22}$"
+    }
+  },
+  "required": [
+    "descriptor",
+    "filesystemProfileCode"
+  ],
+  "additionalProperties": false
+}

@@ -33,6 +33,13 @@ import type {
   ProviderSignedDistributionRootBindingV1,
   ProviderStrictEd25519CryptoHostV1,
   ProviderStrictEd25519OpaqueCapabilityV1,
+  ProviderPublicSupportTaxonomyLocatorV1,
+  ProviderReleaseMatrixLocatorV1,
+  ProviderTargetDiscoveryFixtureManifestLocatorV1,
+  ProviderTargetDiscoveryPointClosureValidationV1,
+  ProviderTargetDiscoveryResultLocatorV1,
+  ProviderTargetDiscoveryResultPinV1,
+  ProviderTargetDiscoveryRunnerRunLocatorV1,
   InstallationBootstrapTrustUseStructureAssessmentV1,
   InstallationIdentityRetainedTrustStructureValidationV1,
   HashedStoreFilenameKeyV1,
@@ -45,6 +52,9 @@ import type {
   StoreProviderRegistrySignatureV1,
   StoreProviderVerificationKeyIdV1,
 } from "../src/index.js";
+import type {
+  ProviderTargetDiscoveryResultPinV1 as ProviderTargetDiscoveryResultPinFromSubpathV1,
+} from "../src/provider-target-discovery-point.js";
 import {
   encodeStoreFilenameKeyV1,
   deriveInstallationIdentityGenerationIdV1,
@@ -114,8 +124,28 @@ declare const manifestMember: ProviderRegistryManifestMemberV1;
 declare const migrationId: ProviderMigrationIdV1;
 declare const registryManifestHistory:
   ProviderRegistryManifestHistoryValidationV1;
+declare const taxonomyLocator: ProviderPublicSupportTaxonomyLocatorV1;
+declare const matrixLocator: ProviderReleaseMatrixLocatorV1;
+declare const fixtureLocator: ProviderTargetDiscoveryFixtureManifestLocatorV1;
+declare const runnerLocator: ProviderTargetDiscoveryRunnerRunLocatorV1;
+declare const discoveryLocator: ProviderTargetDiscoveryResultLocatorV1;
+declare const discoveryPin: ProviderTargetDiscoveryResultPinV1;
+declare const discoveryPinFromSubpath:
+  ProviderTargetDiscoveryResultPinFromSubpathV1;
+declare const discoveryClosure:
+  ProviderTargetDiscoveryPointClosureValidationV1;
 const storeFilenameFromShort: StoreFilenameKeyV1 = shortFilenameKey;
 const storeFilenameFromHash: StoreFilenameKeyV1 = hashedFilenameKey;
+const rootPinFromSubpath:
+  ProviderTargetDiscoveryResultPinV1 = discoveryPinFromSubpath;
+const subpathPinFromRoot:
+  ProviderTargetDiscoveryResultPinFromSubpathV1 = discoveryPin;
+const discoveryAuthority:
+  "none_target_discovery_point_structure_only" =
+    discoveryClosure.authority;
+// @ts-expect-error point closure deliberately does not grant strong authority
+const strongDiscoveryAuthority: "strong_ready" =
+  discoveryClosure.authority;
 
 // @ts-expect-error semantic brands with the same wire shape are not interchangeable
 const rootKeyFromGenericHex: ProviderRegistryRootKeyIdV1 = lowerHex22;
@@ -324,6 +354,16 @@ void [
   invalidApproverRole,
   storeFilenameFromShort,
   storeFilenameFromHash,
+  taxonomyLocator,
+  matrixLocator,
+  fixtureLocator,
+  runnerLocator,
+  discoveryLocator,
+  discoveryPin,
+  rootPinFromSubpath,
+  subpathPinFromRoot,
+  discoveryAuthority,
+  strongDiscoveryAuthority,
   generationResult,
   rootKeyResult,
   keyCheckResult,

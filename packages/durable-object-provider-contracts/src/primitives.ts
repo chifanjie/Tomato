@@ -172,6 +172,70 @@ export type ProviderRealFilesystemSuiteManifestSignatureV1 = z.infer<
   typeof ProviderRealFilesystemSuiteManifestSignatureV1Schema
 >;
 
+export const ProviderPublicSupportTaxonomySignatureV1Schema = z
+  .string()
+  .regex(
+    /^provider-public-support-taxonomy-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$/u,
+  )
+  .brand<"ProviderPublicSupportTaxonomySignatureV1">();
+export type ProviderPublicSupportTaxonomySignatureV1 = z.infer<
+  typeof ProviderPublicSupportTaxonomySignatureV1Schema
+>;
+
+export const ProviderReleaseMatrixSignatureV1Schema = z
+  .string()
+  .regex(
+    /^provider-release-matrix-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$/u,
+  )
+  .brand<"ProviderReleaseMatrixSignatureV1">();
+export type ProviderReleaseMatrixSignatureV1 = z.infer<
+  typeof ProviderReleaseMatrixSignatureV1Schema
+>;
+
+export const ProviderTargetDiscoveryInputBundleSignatureV1Schema = z
+  .string()
+  .regex(
+    /^provider-target-discovery-input-bundle-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$/u,
+  )
+  .brand<"ProviderTargetDiscoveryInputBundleSignatureV1">();
+export type ProviderTargetDiscoveryInputBundleSignatureV1 = z.infer<
+  typeof ProviderTargetDiscoveryInputBundleSignatureV1Schema
+>;
+
+export const ProviderTargetDiscoveryResultSignatureV1Schema = z
+  .string()
+  .regex(
+    /^provider-target-discovery-result-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$/u,
+  )
+  .brand<"ProviderTargetDiscoveryResultSignatureV1">();
+export type ProviderTargetDiscoveryResultSignatureV1 = z.infer<
+  typeof ProviderTargetDiscoveryResultSignatureV1Schema
+>;
+
+export const ProviderFilesystemProfileCodeV1Schema = z
+  .string()
+  .regex(/^provider-fs-profile:[0-9a-f]{22}$/u)
+  .brand<"ProviderFilesystemProfileCodeV1">();
+export type ProviderFilesystemProfileCodeV1 = z.infer<
+  typeof ProviderFilesystemProfileCodeV1Schema
+>;
+
+export const ProviderTargetProfileIdV1Schema = z
+  .string()
+  .regex(/^provider-target-profile:[0-9a-f]{64}$/u)
+  .brand<"ProviderTargetProfileIdV1">();
+export type ProviderTargetProfileIdV1 = z.infer<
+  typeof ProviderTargetProfileIdV1Schema
+>;
+
+export const ProviderPublicSupportProfileIdV1Schema = z
+  .string()
+  .regex(/^provider-public-support-profile:[0-9a-f]{64}$/u)
+  .brand<"ProviderPublicSupportProfileIdV1">();
+export type ProviderPublicSupportProfileIdV1 = z.infer<
+  typeof ProviderPublicSupportProfileIdV1Schema
+>;
+
 export const StoreProviderVerificationKeyIdV1Schema = z
   .string()
   .regex(/^[0-9a-f]{22}$/u)

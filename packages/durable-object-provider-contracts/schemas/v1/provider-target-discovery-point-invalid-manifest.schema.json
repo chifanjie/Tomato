@@ -1,0 +1,1021 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-target-discovery-point-invalid-manifest",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "profile": {
+      "type": "string",
+      "const": "provider_target_discovery_point_invalid_v1"
+    },
+    "fixtureAuthority": {
+      "type": "string",
+      "const": "none_rejection_only"
+    },
+    "canonicalizationProfile": {
+      "type": "string",
+      "const": "rfc8785-jcs-safe-integer-v1"
+    },
+    "verificationProfile": {
+      "type": "string",
+      "const": "ed25519-rfc8032-cofactorless-prime-subgroup-v1"
+    },
+    "semanticDomain": {
+      "type": "string",
+      "const": "provider-target-discovery-point-invalid-manifest-v1"
+    },
+    "materializedRequestSemanticDomain": {
+      "type": "string",
+      "const": "provider-target-discovery-point-invalid-materialized-request-v1"
+    },
+    "goldenDependency": {
+      "type": "object",
+      "properties": {
+        "resourcePath": {
+          "type": "string",
+          "const": "fixtures/v1/golden/provider-target-discovery-point-v1.json"
+        },
+        "resourceByteLength": {
+          "type": "number",
+          "const": 205053
+        },
+        "resourceSha256Hex": {
+          "type": "string",
+          "const": "cfcc03e388e46bf23b1fe62e513476991c535bc22887ff01b77eca4f01b979ed"
+        },
+        "semanticContentDigest": {
+          "type": "string",
+          "const": "sha256:4ad3ff9e4459207059ded87d51cebb29c5ec36b03c994ee5d3cb61604eda98ae"
+        }
+      },
+      "required": [
+        "resourcePath",
+        "resourceByteLength",
+        "resourceSha256Hex",
+        "semanticContentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "mutationRecipeDialect": {
+      "type": "string",
+      "const": "provider_target_discovery_point_invalid_recipe_v1"
+    },
+    "caseCount": {
+      "type": "number",
+      "const": 116
+    },
+    "caseIds": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "string",
+          "const": "input-extra-field"
+        },
+        {
+          "type": "string",
+          "const": "input-missing-result"
+        },
+        {
+          "type": "string",
+          "const": "taxonomy-envelope-extra-field"
+        },
+        {
+          "type": "string",
+          "const": "taxonomy-code-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "taxonomy-order-reversed"
+        },
+        {
+          "type": "string",
+          "const": "taxonomy-signature-bitflip"
+        },
+        {
+          "type": "string",
+          "const": "taxonomy-envelope-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "taxonomy-outer-generation-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "matrix-taxonomy-pin-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "matrix-target-count-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "matrix-target-id-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "matrix-public-id-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "matrix-target-order-reversed"
+        },
+        {
+          "type": "string",
+          "const": "matrix-target-set-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "matrix-signature-bitflip"
+        },
+        {
+          "type": "string",
+          "const": "matrix-envelope-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "fixture-suite-pin-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "fixture-suite-semantic-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "fixture-corpus-semantic-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "fixture-record-ordinal-gap"
+        },
+        {
+          "type": "string",
+          "const": "fixture-record-count-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "fixture-record-set-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "fixture-envelope-content-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "runner-record-ordinal-gap"
+        },
+        {
+          "type": "string",
+          "const": "runner-record-count-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "runner-record-set-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "runner-envelope-content-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "bundle-taxonomy-pin-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "bundle-fixture-pin-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "bundle-runner-pin-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "bundle-observation-cut-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "bundle-observation-cut-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "bundle-source-summary-order-reversed"
+        },
+        {
+          "type": "string",
+          "const": "bundle-observation-count-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "bundle-observation-outcome-rewritten"
+        },
+        {
+          "type": "string",
+          "const": "bundle-observation-key-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "bundle-observation-set-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "bundle-signature-bitflip"
+        },
+        {
+          "type": "string",
+          "const": "result-bundle-content-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "result-target-count-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "result-target-order-reversed"
+        },
+        {
+          "type": "string",
+          "const": "result-target-set-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "result-unresolved-count-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "result-unresolved-order-reversed"
+        },
+        {
+          "type": "string",
+          "const": "result-signature-bitflip"
+        },
+        {
+          "type": "string",
+          "const": "result-envelope-content-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "resolved-target-conflict"
+        },
+        {
+          "type": "string",
+          "const": "source-suite-signature-bitflip"
+        },
+        {
+          "type": "string",
+          "const": "caller-distribution-binding-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "caller-active-root-metadata-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "caller-active-root-key-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "taxonomy-distribution-binding-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "taxonomy-active-root-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "taxonomy-root-key-id-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "matrix-distribution-binding-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "matrix-active-root-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "matrix-root-key-id-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "fixture-distribution-binding-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "fixture-release-revision-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "runner-distribution-binding-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "runner-release-revision-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "bundle-distribution-binding-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "bundle-active-root-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "bundle-root-key-id-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "result-distribution-binding-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "result-active-root-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "result-root-key-id-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "taxonomy-signature-wrong-signer"
+        },
+        {
+          "type": "string",
+          "const": "taxonomy-signature-wrong-domain"
+        },
+        {
+          "type": "string",
+          "const": "taxonomy-signature-wrong-prefix"
+        },
+        {
+          "type": "string",
+          "const": "taxonomy-signature-wrong-claims"
+        },
+        {
+          "type": "string",
+          "const": "matrix-signature-wrong-signer"
+        },
+        {
+          "type": "string",
+          "const": "matrix-signature-wrong-domain"
+        },
+        {
+          "type": "string",
+          "const": "matrix-signature-wrong-prefix"
+        },
+        {
+          "type": "string",
+          "const": "matrix-signature-wrong-claims"
+        },
+        {
+          "type": "string",
+          "const": "bundle-signature-wrong-signer"
+        },
+        {
+          "type": "string",
+          "const": "bundle-signature-wrong-domain"
+        },
+        {
+          "type": "string",
+          "const": "bundle-signature-wrong-prefix"
+        },
+        {
+          "type": "string",
+          "const": "bundle-signature-wrong-claims"
+        },
+        {
+          "type": "string",
+          "const": "result-signature-wrong-signer"
+        },
+        {
+          "type": "string",
+          "const": "result-signature-wrong-domain"
+        },
+        {
+          "type": "string",
+          "const": "result-signature-wrong-prefix"
+        },
+        {
+          "type": "string",
+          "const": "result-signature-wrong-claims"
+        },
+        {
+          "type": "string",
+          "const": "matrix-source-artifact-semantic-digest-substitution"
+        },
+        {
+          "type": "string",
+          "const": "fixture-source-artifact-semantic-digest-substitution"
+        },
+        {
+          "type": "string",
+          "const": "runner-source-artifact-semantic-digest-substitution"
+        },
+        {
+          "type": "string",
+          "const": "bundle-observation-missing"
+        },
+        {
+          "type": "string",
+          "const": "bundle-observation-extra"
+        },
+        {
+          "type": "string",
+          "const": "bundle-observation-duplicate"
+        },
+        {
+          "type": "string",
+          "const": "bundle-observation-reordered"
+        },
+        {
+          "type": "string",
+          "const": "matrix-target-4097"
+        },
+        {
+          "type": "string",
+          "const": "result-target-4097"
+        },
+        {
+          "type": "string",
+          "const": "result-unresolved-4097"
+        },
+        {
+          "type": "string",
+          "const": "embedded-bundle-16mib-plus-one"
+        },
+        {
+          "type": "string",
+          "const": "runner-envelope-16mib-plus-one"
+        },
+        {
+          "type": "string",
+          "const": "taxonomy-locator-bare-dto"
+        },
+        {
+          "type": "string",
+          "const": "matrix-locator-bare-dto"
+        },
+        {
+          "type": "string",
+          "const": "fixture-locator-bare-digest"
+        },
+        {
+          "type": "string",
+          "const": "runner-locator-bare-digest"
+        },
+        {
+          "type": "string",
+          "const": "result-locator-bare-dto"
+        },
+        {
+          "type": "string",
+          "const": "fixture-locator-semantic-digest-substitution"
+        },
+        {
+          "type": "string",
+          "const": "fixture-locator-outer-semantic-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "runner-locator-semantic-digest-substitution"
+        },
+        {
+          "type": "string",
+          "const": "taxonomy-locator-path-alias"
+        },
+        {
+          "type": "string",
+          "const": "matrix-locator-latest-alias"
+        },
+        {
+          "type": "string",
+          "const": "result-locator-path-alias"
+        },
+        {
+          "type": "string",
+          "const": "security-top-level-proxy"
+        },
+        {
+          "type": "string",
+          "const": "security-nested-proxy"
+        },
+        {
+          "type": "string",
+          "const": "security-top-level-getter"
+        },
+        {
+          "type": "string",
+          "const": "security-nested-getter"
+        },
+        {
+          "type": "string",
+          "const": "security-nested-hidden"
+        },
+        {
+          "type": "string",
+          "const": "security-nested-symbol"
+        },
+        {
+          "type": "string",
+          "const": "security-sparse-array"
+        },
+        {
+          "type": "string",
+          "const": "security-cycle"
+        },
+        {
+          "type": "string",
+          "const": "security-alias"
+        },
+        {
+          "type": "string",
+          "const": "security-async-mutation"
+        }
+      ],
+      "minItems": 116,
+      "maxItems": 116,
+      "items": false
+    },
+    "cases": {
+      "minItems": 116,
+      "maxItems": 116,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "caseId": {
+            "type": "string",
+            "enum": [
+              "input-extra-field",
+              "input-missing-result",
+              "taxonomy-envelope-extra-field",
+              "taxonomy-code-mismatch",
+              "taxonomy-order-reversed",
+              "taxonomy-signature-bitflip",
+              "taxonomy-envelope-digest-mismatch",
+              "taxonomy-outer-generation-mismatch",
+              "matrix-taxonomy-pin-mismatch",
+              "matrix-target-count-mismatch",
+              "matrix-target-id-mismatch",
+              "matrix-public-id-mismatch",
+              "matrix-target-order-reversed",
+              "matrix-target-set-digest-mismatch",
+              "matrix-signature-bitflip",
+              "matrix-envelope-digest-mismatch",
+              "fixture-suite-pin-mismatch",
+              "fixture-suite-semantic-digest-mismatch",
+              "fixture-corpus-semantic-digest-mismatch",
+              "fixture-record-ordinal-gap",
+              "fixture-record-count-mismatch",
+              "fixture-record-set-digest-mismatch",
+              "fixture-envelope-content-digest-mismatch",
+              "runner-record-ordinal-gap",
+              "runner-record-count-mismatch",
+              "runner-record-set-digest-mismatch",
+              "runner-envelope-content-digest-mismatch",
+              "bundle-taxonomy-pin-mismatch",
+              "bundle-fixture-pin-mismatch",
+              "bundle-runner-pin-mismatch",
+              "bundle-observation-cut-mismatch",
+              "bundle-observation-cut-digest-mismatch",
+              "bundle-source-summary-order-reversed",
+              "bundle-observation-count-mismatch",
+              "bundle-observation-outcome-rewritten",
+              "bundle-observation-key-mismatch",
+              "bundle-observation-set-digest-mismatch",
+              "bundle-signature-bitflip",
+              "result-bundle-content-digest-mismatch",
+              "result-target-count-mismatch",
+              "result-target-order-reversed",
+              "result-target-set-digest-mismatch",
+              "result-unresolved-count-mismatch",
+              "result-unresolved-order-reversed",
+              "result-signature-bitflip",
+              "result-envelope-content-digest-mismatch",
+              "resolved-target-conflict",
+              "source-suite-signature-bitflip",
+              "caller-distribution-binding-mismatch",
+              "caller-active-root-metadata-mismatch",
+              "caller-active-root-key-mismatch",
+              "taxonomy-distribution-binding-mismatch",
+              "taxonomy-active-root-mismatch",
+              "taxonomy-root-key-id-mismatch",
+              "matrix-distribution-binding-mismatch",
+              "matrix-active-root-mismatch",
+              "matrix-root-key-id-mismatch",
+              "fixture-distribution-binding-mismatch",
+              "fixture-release-revision-mismatch",
+              "runner-distribution-binding-mismatch",
+              "runner-release-revision-mismatch",
+              "bundle-distribution-binding-mismatch",
+              "bundle-active-root-mismatch",
+              "bundle-root-key-id-mismatch",
+              "result-distribution-binding-mismatch",
+              "result-active-root-mismatch",
+              "result-root-key-id-mismatch",
+              "taxonomy-signature-wrong-signer",
+              "taxonomy-signature-wrong-domain",
+              "taxonomy-signature-wrong-prefix",
+              "taxonomy-signature-wrong-claims",
+              "matrix-signature-wrong-signer",
+              "matrix-signature-wrong-domain",
+              "matrix-signature-wrong-prefix",
+              "matrix-signature-wrong-claims",
+              "bundle-signature-wrong-signer",
+              "bundle-signature-wrong-domain",
+              "bundle-signature-wrong-prefix",
+              "bundle-signature-wrong-claims",
+              "result-signature-wrong-signer",
+              "result-signature-wrong-domain",
+              "result-signature-wrong-prefix",
+              "result-signature-wrong-claims",
+              "matrix-source-artifact-semantic-digest-substitution",
+              "fixture-source-artifact-semantic-digest-substitution",
+              "runner-source-artifact-semantic-digest-substitution",
+              "bundle-observation-missing",
+              "bundle-observation-extra",
+              "bundle-observation-duplicate",
+              "bundle-observation-reordered",
+              "matrix-target-4097",
+              "result-target-4097",
+              "result-unresolved-4097",
+              "embedded-bundle-16mib-plus-one",
+              "runner-envelope-16mib-plus-one",
+              "taxonomy-locator-bare-dto",
+              "matrix-locator-bare-dto",
+              "fixture-locator-bare-digest",
+              "runner-locator-bare-digest",
+              "result-locator-bare-dto",
+              "fixture-locator-semantic-digest-substitution",
+              "fixture-locator-outer-semantic-digest-mismatch",
+              "runner-locator-semantic-digest-substitution",
+              "taxonomy-locator-path-alias",
+              "matrix-locator-latest-alias",
+              "result-locator-path-alias",
+              "security-top-level-proxy",
+              "security-nested-proxy",
+              "security-top-level-getter",
+              "security-nested-getter",
+              "security-nested-hidden",
+              "security-nested-symbol",
+              "security-sparse-array",
+              "security-cycle",
+              "security-alias",
+              "security-async-mutation"
+            ]
+          },
+          "mutation": {
+            "type": "object",
+            "properties": {
+              "dialect": {
+                "type": "string",
+                "const": "provider_target_discovery_point_invalid_recipe_v1"
+              },
+              "goldenResourcePath": {
+                "type": "string",
+                "const": "fixtures/v1/golden/provider-target-discovery-point-v1.json"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "input-extra-field",
+                  "input-missing-result",
+                  "taxonomy-envelope-extra-field",
+                  "taxonomy-code-mismatch",
+                  "taxonomy-order-reversed",
+                  "taxonomy-signature-bitflip",
+                  "taxonomy-envelope-digest-mismatch",
+                  "taxonomy-outer-generation-mismatch",
+                  "matrix-taxonomy-pin-mismatch",
+                  "matrix-target-count-mismatch",
+                  "matrix-target-id-mismatch",
+                  "matrix-public-id-mismatch",
+                  "matrix-target-order-reversed",
+                  "matrix-target-set-digest-mismatch",
+                  "matrix-signature-bitflip",
+                  "matrix-envelope-digest-mismatch",
+                  "fixture-suite-pin-mismatch",
+                  "fixture-suite-semantic-digest-mismatch",
+                  "fixture-corpus-semantic-digest-mismatch",
+                  "fixture-record-ordinal-gap",
+                  "fixture-record-count-mismatch",
+                  "fixture-record-set-digest-mismatch",
+                  "fixture-envelope-content-digest-mismatch",
+                  "runner-record-ordinal-gap",
+                  "runner-record-count-mismatch",
+                  "runner-record-set-digest-mismatch",
+                  "runner-envelope-content-digest-mismatch",
+                  "bundle-taxonomy-pin-mismatch",
+                  "bundle-fixture-pin-mismatch",
+                  "bundle-runner-pin-mismatch",
+                  "bundle-observation-cut-mismatch",
+                  "bundle-observation-cut-digest-mismatch",
+                  "bundle-source-summary-order-reversed",
+                  "bundle-observation-count-mismatch",
+                  "bundle-observation-outcome-rewritten",
+                  "bundle-observation-key-mismatch",
+                  "bundle-observation-set-digest-mismatch",
+                  "bundle-signature-bitflip",
+                  "result-bundle-content-digest-mismatch",
+                  "result-target-count-mismatch",
+                  "result-target-order-reversed",
+                  "result-target-set-digest-mismatch",
+                  "result-unresolved-count-mismatch",
+                  "result-unresolved-order-reversed",
+                  "result-signature-bitflip",
+                  "result-envelope-content-digest-mismatch",
+                  "resolved-target-conflict",
+                  "source-suite-signature-bitflip",
+                  "caller-distribution-binding-mismatch",
+                  "caller-active-root-metadata-mismatch",
+                  "caller-active-root-key-mismatch",
+                  "taxonomy-distribution-binding-mismatch",
+                  "taxonomy-active-root-mismatch",
+                  "taxonomy-root-key-id-mismatch",
+                  "matrix-distribution-binding-mismatch",
+                  "matrix-active-root-mismatch",
+                  "matrix-root-key-id-mismatch",
+                  "fixture-distribution-binding-mismatch",
+                  "fixture-release-revision-mismatch",
+                  "runner-distribution-binding-mismatch",
+                  "runner-release-revision-mismatch",
+                  "bundle-distribution-binding-mismatch",
+                  "bundle-active-root-mismatch",
+                  "bundle-root-key-id-mismatch",
+                  "result-distribution-binding-mismatch",
+                  "result-active-root-mismatch",
+                  "result-root-key-id-mismatch",
+                  "taxonomy-signature-wrong-signer",
+                  "taxonomy-signature-wrong-domain",
+                  "taxonomy-signature-wrong-prefix",
+                  "taxonomy-signature-wrong-claims",
+                  "matrix-signature-wrong-signer",
+                  "matrix-signature-wrong-domain",
+                  "matrix-signature-wrong-prefix",
+                  "matrix-signature-wrong-claims",
+                  "bundle-signature-wrong-signer",
+                  "bundle-signature-wrong-domain",
+                  "bundle-signature-wrong-prefix",
+                  "bundle-signature-wrong-claims",
+                  "result-signature-wrong-signer",
+                  "result-signature-wrong-domain",
+                  "result-signature-wrong-prefix",
+                  "result-signature-wrong-claims",
+                  "matrix-source-artifact-semantic-digest-substitution",
+                  "fixture-source-artifact-semantic-digest-substitution",
+                  "runner-source-artifact-semantic-digest-substitution",
+                  "bundle-observation-missing",
+                  "bundle-observation-extra",
+                  "bundle-observation-duplicate",
+                  "bundle-observation-reordered",
+                  "matrix-target-4097",
+                  "result-target-4097",
+                  "result-unresolved-4097",
+                  "embedded-bundle-16mib-plus-one",
+                  "runner-envelope-16mib-plus-one",
+                  "taxonomy-locator-bare-dto",
+                  "matrix-locator-bare-dto",
+                  "fixture-locator-bare-digest",
+                  "runner-locator-bare-digest",
+                  "result-locator-bare-dto",
+                  "fixture-locator-semantic-digest-substitution",
+                  "fixture-locator-outer-semantic-digest-mismatch",
+                  "runner-locator-semantic-digest-substitution",
+                  "taxonomy-locator-path-alias",
+                  "matrix-locator-latest-alias",
+                  "result-locator-path-alias",
+                  "security-top-level-proxy",
+                  "security-nested-proxy",
+                  "security-top-level-getter",
+                  "security-nested-getter",
+                  "security-nested-hidden",
+                  "security-nested-symbol",
+                  "security-sparse-array",
+                  "security-cycle",
+                  "security-alias",
+                  "security-async-mutation"
+                ]
+              }
+            },
+            "required": [
+              "dialect",
+              "goldenResourcePath",
+              "operation"
+            ],
+            "additionalProperties": false
+          },
+          "expected": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "boundary": {
+                    "type": "string",
+                    "const": "internal_diagnostic"
+                  },
+                  "stage": {
+                    "type": "string",
+                    "enum": [
+                      "input",
+                      "source_closure",
+                      "envelope_limit",
+                      "distribution_binding",
+                      "active_root",
+                      "taxonomy_structure",
+                      "taxonomy_digest",
+                      "taxonomy_signature",
+                      "taxonomy_envelope",
+                      "matrix_structure",
+                      "matrix_taxonomy_pin",
+                      "matrix_digest",
+                      "matrix_signature",
+                      "matrix_envelope",
+                      "fixture_structure",
+                      "fixture_source_pin",
+                      "fixture_digest",
+                      "fixture_envelope",
+                      "runner_structure",
+                      "runner_digest",
+                      "runner_envelope",
+                      "bundle_structure",
+                      "bundle_cut",
+                      "bundle_projection",
+                      "bundle_digest",
+                      "bundle_signature",
+                      "result_structure",
+                      "result_projection",
+                      "result_digest",
+                      "result_signature",
+                      "result_envelope",
+                      "locator"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "schema_invalid",
+                      "source_invalid",
+                      "byte_limit_exceeded",
+                      "binding_mismatch",
+                      "root_mismatch",
+                      "ordering_invalid",
+                      "count_mismatch",
+                      "digest_mismatch",
+                      "coverage_mismatch",
+                      "signature_invalid",
+                      "envelope_mismatch",
+                      "conflicting_resolved_targets"
+                    ]
+                  },
+                  "publicFailureReason": {
+                    "type": "string",
+                    "const": "attestation_invalid"
+                  },
+                  "publicFailure": {
+                    "type": "object",
+                    "properties": {
+                      "errorName": {
+                        "type": "string",
+                        "const": "ProviderTargetDiscoveryPointClosureValidationError"
+                      },
+                      "code": {
+                        "type": "string",
+                        "const": "provider_unavailable"
+                      },
+                      "reason": {
+                        "type": "string",
+                        "const": "attestation_invalid"
+                      }
+                    },
+                    "required": [
+                      "errorName",
+                      "code",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "materializedRequestSemanticDigest": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "boundary",
+                  "stage",
+                  "reason",
+                  "publicFailureReason",
+                  "publicFailure",
+                  "materializedRequestSemanticDigest"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "boundary": {
+                    "type": "string",
+                    "const": "locator_builder"
+                  },
+                  "stage": {
+                    "type": "string",
+                    "const": "locator"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "const": "envelope_mismatch"
+                  },
+                  "materializedRequestSemanticDigest": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "boundary",
+                  "stage",
+                  "reason",
+                  "materializedRequestSemanticDigest"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "boundary": {
+                    "type": "string",
+                    "const": "snapshot_stability"
+                  },
+                  "outcome": {
+                    "type": "string",
+                    "const": "accepted_frozen_snapshot"
+                  },
+                  "authority": {
+                    "type": "string",
+                    "const": "none_target_discovery_point_structure_only"
+                  },
+                  "observationCount": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "targetCount": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "unresolvedObservationCount": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "materializedRequestSemanticDigest": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "boundary",
+                  "outcome",
+                  "authority",
+                  "observationCount",
+                  "targetCount",
+                  "unresolvedObservationCount",
+                  "materializedRequestSemanticDigest"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": [
+          "caseId",
+          "mutation",
+          "expected"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "semanticContentDigest": {
+      "type": "string",
+      "const": "sha256:77f3f36e9a7855007fc75706d22c5e43571aa83e8c710619a53f879ea1fc6de1"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "profile",
+    "fixtureAuthority",
+    "canonicalizationProfile",
+    "verificationProfile",
+    "semanticDomain",
+    "materializedRequestSemanticDomain",
+    "goldenDependency",
+    "mutationRecipeDialect",
+    "caseCount",
+    "caseIds",
+    "cases",
+    "semanticContentDigest"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,36 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-public-support-profile-fields",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "osPlatform": {
+      "type": "string",
+      "enum": [
+        "darwin",
+        "linux"
+      ]
+    },
+    "osReleaseFamilyCode": {
+      "type": "string",
+      "pattern": "^provider-os-family:[0-9a-f]{22}$"
+    },
+    "architecture": {
+      "type": "string",
+      "enum": [
+        "arm64",
+        "x86_64"
+      ]
+    },
+    "filesystemProfileCode": {
+      "type": "string",
+      "pattern": "^provider-fs-profile:[0-9a-f]{22}$"
+    }
+  },
+  "required": [
+    "osPlatform",
+    "osReleaseFamilyCode",
+    "architecture",
+    "filesystemProfileCode"
+  ],
+  "additionalProperties": false
+}

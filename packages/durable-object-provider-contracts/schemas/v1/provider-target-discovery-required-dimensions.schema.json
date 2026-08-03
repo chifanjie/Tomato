@@ -1,0 +1,38 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-target-discovery-required-dimensions",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "array",
+  "prefixItems": [
+    {
+      "type": "string",
+      "const": "osPlatform"
+    },
+    {
+      "type": "string",
+      "const": "osReleaseFamilyCode"
+    },
+    {
+      "type": "string",
+      "const": "osBuildDigest"
+    },
+    {
+      "type": "string",
+      "const": "architecture"
+    },
+    {
+      "type": "string",
+      "const": "filesystemProfileCode"
+    },
+    {
+      "type": "string",
+      "const": "filesystemFeatureProfileDigest"
+    },
+    {
+      "type": "string",
+      "const": "mountOptionProfileDigest"
+    }
+  ],
+  "minItems": 7,
+  "maxItems": 7,
+  "items": false
+}

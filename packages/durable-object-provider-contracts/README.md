@@ -9,9 +9,11 @@ structure-only bootstrap trust bundle. `WP5-C09-1D` adds portable Root
 Metadata lookup and retained successor-history verification. `WP5-C09-1E`
 now adds the signed supporting records, per-provider Registry Entry, complete
 Registry Manifest, fixed Manifest locator, and retained Registry history
-validator. `WP5-C09-1F` now adds the independently root-signed real-filesystem
-Fixture Corpus and Suite source closure, again without promoting any of these
-records to I/O authority:
+validator. `WP5-C09-1F` adds the independently root-signed real-filesystem
+Fixture Corpus and Suite source closure. `WP5-C09-1G` closes one signed Target
+Discovery point across Taxonomy, Release Matrix, Fixture observations, Runner
+observations, embedded Input Bundle, and Discovery Result, again without
+promoting any of these records to I/O authority:
 
 - `rfc8785-jcs-safe-integer-v1` canonical JSON and exact canonical-byte parsing;
 - independent branded digest, token, provider identity, and key primitives;
@@ -70,6 +72,10 @@ records to I/O authority:
   full-signed-payload Envelopes and Pins, two content-digest-only fixed
   locators, strict case/crash-cut coverage, and an explicit none-only source
   validation result.
+- a public-only support Taxonomy, signed Release Matrix, release-bound Fixture
+  and Runner observation manifests, root-signed embedded Input Bundle and
+  root-signed deterministic Result, with exactly five complete-Envelope
+  locators and `none_target_discovery_point_structure_only` authority.
 
 The arbitrary domain/prefix crypto helpers are intentionally package-internal.
 Consumers use the exported domain-specific builders so a caller cannot swap a
@@ -213,22 +219,26 @@ resource. The generator and verifier bind both the raw resource and
 digests. The already-published Root Metadata invalid corpus remains the exact
 31-case resource described below.
 
-The C09-1F inventory contains exactly 152 draft-2020-12 JSON Schemas at this
-checkpoint, including every primitive, supporting wire and
-unsigned projection, atomic genesis/successor and enabled/revoked branch,
-routing union, Envelope, Pin, fixed locator, all six wrappers, and the
+The C09-1G inventory contains exactly 220 draft-2020-12 JSON Schemas at this
+checkpoint (the C09-1F baseline was 152), including every primitive,
+supporting wire and unsigned projection, atomic genesis/successor and
+enabled/revoked branch,
+routing union, Envelope, Pin, fixed locator, the previously frozen six
+Registry wrappers plus the four Target Discovery signature wrappers, and the
 seven-generation golden manifest. The inventory also includes the exact
 89-case invalid Registry Manifest plus its stage and reason enums, and the
-complete signed real-filesystem source DTO, wrapper, locator, golden, invalid,
-stage, and reason surface. Consumers should use the shipped inventory rather
-than assume 152 is a forever constant.
+complete signed real-filesystem source and Target Discovery DTO, wrapper,
+Envelope, Pin, locator, golden, invalid, stage, and reason surface. Consumers
+should use the shipped inventory rather than assume 220 is a forever constant.
 
 The production sources remain ES2022 browser/worker portable. The npm/browser
 distribution gate must expose the new public API through the root and
-`./provider-registry` and `./provider-real-filesystem-source` exports, pack all
+`./provider-registry`, `./provider-real-filesystem-source`,
+`./provider-target-discovery-point`, and
+`./provider-target-discovery-point-fixtures` exports, pack all
 `schemas/`, `fixtures/`, and fixed `provider/` resources, reject private deep
-imports, and execute the same Registry and real-filesystem source validators
-from clean Node and browser-bundle installs.
+imports, and execute the same Registry, real-filesystem source, and Target
+Discovery point validators from clean Node and browser-bundle installs.
 `test:distribution` enforces exact source-to-packed Schema path-set equality
 in addition to that gate; a successful source build alone must not be
 presented as npm or browser distribution completion.
@@ -313,6 +323,57 @@ prefix substitution. Both resources are independently anchored by raw byte
 length/SHA-256 and domain-separated semantic digest; every invalid recipe also
 pins the semantic digest of its materialized request.
 
+## C09-1G signed Target Discovery point closure
+
+The public Taxonomy assigns derived codes only to public OS-release families
+and filesystem kinds; build identifiers, filesystem feature digests, and mount
+option digests remain excluded from the public projection. The signed Release
+Matrix carries complete feasibility targets and fixed 4,096-target, 4,096
+unresolved-observation, and 16 MiB canonical-Envelope limits. The release-bound
+Fixture manifest transitively exact-pins the C09-1F Suite and Corpus closure.
+The Runner manifest has its own producer, implementation, binary-attestation,
+and runner-profile identity and is deliberately independent from the C09-1F
+Suite runner profile.
+
+The embedded signed Input Bundle fixes one observation cut and projects records
+in exactly Matrix, Fixture, Runner order. The signed Result is recomputed from
+that Bundle: resolved targets are unique and UTF-8 sorted by target ID, while
+typed unresolved observations are UTF-8 tuple-sorted by source and observation
+key. Missing, extra, duplicate, reordered, semantically substituted, or
+conflicting observations fail closed. Canonical empty Fixture and Runner
+record lists are valid; the Matrix still produces the point's two resolved
+targets.
+
+One successful validation performs exactly one active-root point admission and
+six signature verifications: the two transitive C09-1F Corpus/Suite signatures
+plus Taxonomy, Matrix, Input Bundle, and Result. It returns only
+`authority: "none_target_discovery_point_structure_only"`. It does not read a
+filesystem or package path, execute a Runner or fixture, resolve `current`,
+verify retained Taxonomy/Matrix/Result history, construct a Target Universe,
+prove conformance, publish Evidence or Catalog data, or authorize provider I/O.
+All public failures collapse to
+`ProviderTargetDiscoveryPointClosureValidationError` with
+`provider_unavailable/attestation_invalid`.
+
+The five path builders accept only complete strict, content-bound Envelopes:
+Taxonomy, Release Matrix, Fixture manifest, Runner run, and Discovery Result.
+They reject bare DTOs or digests, semantic-digest substitutions, extra path
+fields, and `latest` aliases. The root and the two dedicated package subpaths
+export the named Pins and locator DTOs; packed Node and browser KATs verify the
+same resources and exact 1/6 cryptographic closure.
+
+The golden resource is
+`fixtures/v1/golden/provider-target-discovery-point-v1.json`: seven
+observations project to two targets and two typed unresolved observations. Its
+paired invalid resource freezes exactly 116 ordered diagnostic and executable
+recipes. Coverage includes distribution/active-root/release binding, every
+new signer/domain/prefix/claims substitution, source-artifact digest
+substitution, observation coverage/order, 4,097-entry limits, exact 16 MiB+1
+boundaries, all five locator families, Proxy/getter/hidden/symbol/sparse/cycle
+and alias inputs, and mutation during asynchronous verification. Raw bytes,
+semantic manifests, and every materialized-request witness are independently
+digest-bound.
+
 ## Verification
 
 ```sh
@@ -327,6 +388,8 @@ pnpm --filter @understand-code/durable-object-provider-contracts generate:provid
 pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-registry-manifest-invalid
 pnpm --filter @understand-code/durable-object-provider-contracts generate:provider-real-fs-source
 pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-real-fs-source
+pnpm --filter @understand-code/durable-object-provider-contracts generate:provider-target-discovery-point
+pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-target-discovery-point
 pnpm --filter @understand-code/durable-object-provider-contracts generate:schemas
 pnpm --filter @understand-code/durable-object-provider-contracts verify:schemas
 pnpm --filter @understand-code/durable-object-provider-contracts exec vitest run \
@@ -335,6 +398,8 @@ pnpm --filter @understand-code/durable-object-provider-contracts exec vitest run
   test/provider-registry-manifest-fixtures.test.ts \
   test/provider-real-filesystem-source.test.ts \
   test/provider-real-filesystem-source-fixtures.test.ts \
+  test/provider-target-discovery-point.test.ts \
+  test/provider-target-discovery-point-fixtures.test.ts \
   test/json-schema.test.ts
 pnpm --filter @understand-code/durable-object-provider-contracts test
 pnpm --filter @understand-code/durable-object-provider-contracts test:distribution
@@ -350,8 +415,11 @@ diagnostics, and crypto call counts are checked by
 `verify:provider-registry-manifest-invalid`. The signed real-filesystem fixture
 anchors, exact source closure, and 43 materialized negative diagnostics are
 checked by `verify:provider-real-fs-source`. `test/json-schema.test.ts` freezes
-the current 152-schema inventory and `verify:schemas` rejects generated-file
-drift. `test:distribution` is the clean packed Node/browser source for the npm
+the current 220-schema inventory and `verify:schemas` rejects generated-file
+drift. `verify:provider-target-discovery-point` checks the exact five locators,
+six-signature closure, canonical empty Fixture/Runner success, typed unresolved
+projection, and all 116 ordered diagnostic/executable recipes.
+`test:distribution` is the clean packed Node/browser source for the npm
 distribution claims.
 
 The tracked manifests live under `fixtures/v1`. Expected bytes and crypto results
@@ -485,7 +553,9 @@ A successful Bundle validation remains `authority: "none_structure_only"`.
 Successful Root Metadata history validation is limited to
 `authority: "none_structure_and_history_only"`, and successful Registry
 history validation to
-`authority: "none_registry_structure_and_history_only"`. None is production
+`authority: "none_registry_structure_and_history_only"`. Successful Target
+Discovery point validation is limited to
+`authority: "none_target_discovery_point_structure_only"`. None is production
 Registry or Store I/O authority. A signed-package resolver, offline production
 key ceremony, crash-safe installer transaction, verified Evidence/Catalog, and
 current Acceptance closure must all establish that authority before any strong
@@ -495,13 +565,15 @@ provider capability can be exposed.
 
 This package establishes the common foundation needed by AT-C21, AT-C29,
 AT-C31, and AT-Q33; it does not claim those end-to-end acceptance groups are
-complete. C09-1F covers signed Registry supporting records, Entries, Manifests,
-retained history, local migration/tombstone transitions, and the independently
-signed real-filesystem Fixture Corpus to Suite source chain. It does not close
-signed-package provenance authority, atomic Installation Identity persistence,
-Target Discovery Fixture/Runner/Input Bundle/Result resolution, real-filesystem
-Conformance Result exact-cover, Feasibility Evidence, Catalog/Taxonomy/Release
-Matrix/Target Universe history, typed retained-distribution accounting,
+complete. Through C09-1G this package covers signed Registry supporting
+records, Entries, Manifests, retained history, local migration/tombstone
+transitions, the independently signed real-filesystem Fixture Corpus to Suite
+source chain, and one root-bound Target Discovery point across Taxonomy,
+Release Matrix, Fixture/Runner observations, Input Bundle, and Result. It does
+not close signed-package provenance authority, atomic Installation Identity
+persistence, Target Discovery history or current selection, real-filesystem
+Conformance Result exact-cover, Feasibility Evidence, Catalog or Target
+Universe history, typed retained-distribution accounting,
 Acceptance high-water and active-writer selection, Migration Plan equality,
 provider runtime or real-filesystem execution, or migration proofs. Those later
 gates must consume these immutable records and return `provider_unavailable`

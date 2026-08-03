@@ -19,16 +19,23 @@ import {
   LowerHex64V1Schema,
   ProviderFeasibilityApproverKeyIdV1Schema,
   ProviderFeasibilityEvidenceIdV1Schema,
+  ProviderFilesystemProfileCodeV1Schema,
   ProviderMigrationIdV1Schema,
   ProviderOsReleaseFamilyCodeV1Schema,
+  ProviderPublicSupportProfileIdV1Schema,
+  ProviderPublicSupportTaxonomySignatureV1Schema,
   ProviderRealFilesystemCaseIdV1Schema,
   ProviderRealFilesystemCaseKeyV1Schema,
   ProviderRealFilesystemCrashCutIdV1Schema,
   ProviderRealFilesystemFixtureCorpusManifestSignatureV1Schema,
   ProviderRealFilesystemSuiteManifestSignatureV1Schema,
+  ProviderReleaseMatrixSignatureV1Schema,
   ProviderRegistryManifestGenerationIdV1Schema,
   ProviderRegistryManifestSignatureV1Schema,
   ProviderRegistryRootKeyIdV1Schema,
+  ProviderTargetDiscoveryInputBundleSignatureV1Schema,
+  ProviderTargetDiscoveryResultSignatureV1Schema,
+  ProviderTargetProfileIdV1Schema,
   StoreProviderRegistrySignatureV1Schema,
   StoreProviderVerificationKeyIdV1Schema,
 } from "./primitives.js";
@@ -117,6 +124,71 @@ import {
   ProviderRealFilesystemSourceInvalidStageV1Schema,
 } from "./provider-real-filesystem-source-fixtures.js";
 import {
+  ProviderFeasibilityTargetFieldsV1Schema,
+  ProviderFeasibilityTargetV1Schema,
+  ProviderPublicFilesystemDescriptorV1Schema,
+  ProviderPublicFilesystemProfileCodeFieldsV1Schema,
+  ProviderPublicFilesystemTaxonomyRecordV1Schema,
+  ProviderPublicLinuxDistributionIdV1Schema,
+  ProviderPublicOsReleaseFamilyCodeFieldsV1Schema,
+  ProviderPublicOsReleaseFamilyDescriptorV1Schema,
+  ProviderPublicOsReleaseFamilyTaxonomyRecordV1Schema,
+  ProviderPublicSupportProfileFieldsV1Schema,
+  ProviderPublicSupportTaxonomyEnvelopeV1Schema,
+  ProviderPublicSupportTaxonomyLocatorV1Schema,
+  ProviderPublicSupportTaxonomyPinV1Schema,
+  ProviderPublicSupportTaxonomySignatureWrapperV1Schema,
+  ProviderPublicSupportTaxonomyUnsignedClaimsV1Schema,
+  ProviderPublicSupportTaxonomyV1Schema,
+  ProviderReleaseCoverageArtifactLimitsV1Schema,
+  ProviderReleaseMatrixEnvelopeV1Schema,
+  ProviderReleaseMatrixLocatorV1Schema,
+  ProviderReleaseMatrixPinV1Schema,
+  ProviderReleaseMatrixSignatureWrapperV1Schema,
+  ProviderReleaseMatrixUnsignedClaimsV1Schema,
+  ProviderReleaseMatrixV1Schema,
+  ProviderReleaseTargetEntrySetFieldsV1Schema,
+  ProviderReleaseTargetUniverseTargetEntryV1Schema,
+  ProviderTargetDiscoveryFixtureManifestEnvelopeV1Schema,
+  ProviderTargetDiscoveryFixtureManifestLocatorV1Schema,
+  ProviderTargetDiscoveryFixtureManifestPinV1Schema,
+  ProviderTargetDiscoveryFixtureManifestV1Schema,
+  ProviderTargetDiscoveryInputBundleSignatureWrapperV1Schema,
+  ProviderTargetDiscoveryInputBundleUnsignedClaimsV1Schema,
+  ProviderTargetDiscoveryInputBundleV1Schema,
+  ProviderTargetDiscoveryInputObservationSetFieldsV1Schema,
+  ProviderTargetDiscoveryInputObservationV1Schema,
+  ProviderTargetDiscoveryObservationCutV1Schema,
+  ProviderTargetDiscoveryObservationKeyFieldsV1Schema,
+  ProviderTargetDiscoveryObservationSourceV1Schema,
+  ProviderTargetDiscoveryObservationSourcesV1Schema,
+  ProviderTargetDiscoveryPointInvalidReasonV1Schema,
+  ProviderTargetDiscoveryPointInvalidStageV1Schema,
+  ProviderTargetDiscoveryRequiredDimensionsV1Schema,
+  ProviderTargetDiscoveryResultEnvelopeV1Schema,
+  ProviderTargetDiscoveryResultLocatorV1Schema,
+  ProviderTargetDiscoveryResultPinV1Schema,
+  ProviderTargetDiscoveryResultSignatureWrapperV1Schema,
+  ProviderTargetDiscoveryResultUnsignedClaimsV1Schema,
+  ProviderTargetDiscoveryResultV1Schema,
+  ProviderTargetDiscoveryRunnerInstancePinV1Schema,
+  ProviderTargetDiscoveryRunnerRunEnvelopeV1Schema,
+  ProviderTargetDiscoveryRunnerRunLocatorV1Schema,
+  ProviderTargetDiscoveryRunnerRunManifestV1Schema,
+  ProviderTargetDiscoverySourceManifestRecordSetFieldsV1Schema,
+  ProviderTargetDiscoverySourceManifestRecordV1Schema,
+  ProviderTargetDiscoverySourceObservationSetFieldsV1Schema,
+  ProviderTargetDiscoverySourceObservationSetSummaryV1Schema,
+  ProviderTargetDiscoverySourceRecordOutcomeV1Schema,
+  ProviderTargetDiscoverySourceRecordProjectionV1Schema,
+  ProviderTargetDiscoveryUnresolvedObservationV1Schema,
+  ProviderTargetDiscoveryUnresolvedReasonV1Schema,
+} from "./provider-target-discovery-point.js";
+import {
+  ProviderTargetDiscoveryPointGoldenManifestV1Schema,
+  ProviderTargetDiscoveryPointInvalidManifestV1Schema,
+} from "./provider-target-discovery-point-fixtures.js";
+import {
   ProviderFeasibilityApprovalKeysV1Schema,
   ProviderFeasibilityApproverKeyIdFieldsV1Schema,
   ProviderFeasibilityApproverPublicKeySignatureWrapperV1Schema,
@@ -191,7 +263,14 @@ import {
   ProviderStrictEd25519CryptoCapabilityV1Schema,
 } from "./strict-ed25519-conformance.js";
 
-export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
+function defineProviderContractJsonSchemaSourcesV1<
+  const T extends Record<string, z.ZodType>,
+>(sources: T): { readonly [K in keyof T]: z.ZodType } {
+  return sources;
+}
+
+export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 =
+  defineProviderContractJsonSchemaSourcesV1({
   "canonical-byte-string": CanonicalByteStringV1Schema,
   "canonical-public-key-bytes-32": CanonicalPublicKeyBytes32V1Schema,
   "content-digest": ContentDigestV1Schema,
@@ -226,6 +305,11 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
     ProviderFeasibilityApproverKeyIdV1Schema,
   "provider-os-release-family-code":
     ProviderOsReleaseFamilyCodeV1Schema,
+  "provider-filesystem-profile-code":
+    ProviderFilesystemProfileCodeV1Schema,
+  "provider-target-profile-id": ProviderTargetProfileIdV1Schema,
+  "provider-public-support-profile-id":
+    ProviderPublicSupportProfileIdV1Schema,
   "provider-real-filesystem-case-id":
     ProviderRealFilesystemCaseIdV1Schema,
   "provider-real-filesystem-case-key":
@@ -236,6 +320,14 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
     ProviderRealFilesystemFixtureCorpusManifestSignatureV1Schema,
   "provider-real-filesystem-suite-manifest-signature":
     ProviderRealFilesystemSuiteManifestSignatureV1Schema,
+  "provider-public-support-taxonomy-signature":
+    ProviderPublicSupportTaxonomySignatureV1Schema,
+  "provider-release-matrix-signature":
+    ProviderReleaseMatrixSignatureV1Schema,
+  "provider-target-discovery-input-bundle-signature":
+    ProviderTargetDiscoveryInputBundleSignatureV1Schema,
+  "provider-target-discovery-result-signature":
+    ProviderTargetDiscoveryResultSignatureV1Schema,
   "store-provider-registry-signature":
     StoreProviderRegistrySignatureV1Schema,
   "provider-registry-manifest-signature":
@@ -480,7 +572,123 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
     ProviderRealFilesystemSourceInvalidStageV1Schema,
   "provider-real-filesystem-source-invalid-reason":
     ProviderRealFilesystemSourceInvalidReasonV1Schema,
-} as const satisfies Record<string, z.ZodType>;
+  "provider-public-linux-distribution-id":
+    ProviderPublicLinuxDistributionIdV1Schema,
+  "provider-public-os-release-family-descriptor":
+    ProviderPublicOsReleaseFamilyDescriptorV1Schema,
+  "provider-public-filesystem-descriptor":
+    ProviderPublicFilesystemDescriptorV1Schema,
+  "provider-public-os-release-family-code-fields":
+    ProviderPublicOsReleaseFamilyCodeFieldsV1Schema,
+  "provider-public-filesystem-profile-code-fields":
+    ProviderPublicFilesystemProfileCodeFieldsV1Schema,
+  "provider-public-os-release-family-taxonomy-record":
+    ProviderPublicOsReleaseFamilyTaxonomyRecordV1Schema,
+  "provider-public-filesystem-taxonomy-record":
+    ProviderPublicFilesystemTaxonomyRecordV1Schema,
+  "provider-public-support-taxonomy-unsigned-claims":
+    ProviderPublicSupportTaxonomyUnsignedClaimsV1Schema,
+  "provider-public-support-taxonomy":
+    ProviderPublicSupportTaxonomyV1Schema,
+  "provider-public-support-taxonomy-envelope":
+    ProviderPublicSupportTaxonomyEnvelopeV1Schema,
+  "provider-public-support-taxonomy-pin":
+    ProviderPublicSupportTaxonomyPinV1Schema,
+  "provider-public-support-taxonomy-locator":
+    ProviderPublicSupportTaxonomyLocatorV1Schema,
+  "provider-public-support-taxonomy-signature-wrapper":
+    ProviderPublicSupportTaxonomySignatureWrapperV1Schema,
+  "provider-feasibility-target-fields":
+    ProviderFeasibilityTargetFieldsV1Schema,
+  "provider-feasibility-target": ProviderFeasibilityTargetV1Schema,
+  "provider-public-support-profile-fields":
+    ProviderPublicSupportProfileFieldsV1Schema,
+  "provider-release-target-universe-target-entry":
+    ProviderReleaseTargetUniverseTargetEntryV1Schema,
+  "provider-release-target-entry-set-fields":
+    ProviderReleaseTargetEntrySetFieldsV1Schema,
+  "provider-release-coverage-artifact-limits":
+    ProviderReleaseCoverageArtifactLimitsV1Schema,
+  "provider-release-matrix-unsigned-claims":
+    ProviderReleaseMatrixUnsignedClaimsV1Schema,
+  "provider-release-matrix": ProviderReleaseMatrixV1Schema,
+  "provider-release-matrix-envelope": ProviderReleaseMatrixEnvelopeV1Schema,
+  "provider-release-matrix-pin": ProviderReleaseMatrixPinV1Schema,
+  "provider-release-matrix-locator": ProviderReleaseMatrixLocatorV1Schema,
+  "provider-release-matrix-signature-wrapper":
+    ProviderReleaseMatrixSignatureWrapperV1Schema,
+  "provider-target-discovery-observation-source":
+    ProviderTargetDiscoveryObservationSourceV1Schema,
+  "provider-target-discovery-required-dimensions":
+    ProviderTargetDiscoveryRequiredDimensionsV1Schema,
+  "provider-target-discovery-observation-sources":
+    ProviderTargetDiscoveryObservationSourcesV1Schema,
+  "provider-target-discovery-unresolved-reason":
+    ProviderTargetDiscoveryUnresolvedReasonV1Schema,
+  "provider-target-discovery-source-record-outcome":
+    ProviderTargetDiscoverySourceRecordOutcomeV1Schema,
+  "provider-target-discovery-source-manifest-record":
+    ProviderTargetDiscoverySourceManifestRecordV1Schema,
+  "provider-target-discovery-source-manifest-record-set-fields":
+    ProviderTargetDiscoverySourceManifestRecordSetFieldsV1Schema,
+  "provider-target-discovery-fixture-manifest-pin":
+    ProviderTargetDiscoveryFixtureManifestPinV1Schema,
+  "provider-target-discovery-fixture-manifest":
+    ProviderTargetDiscoveryFixtureManifestV1Schema,
+  "provider-target-discovery-fixture-manifest-envelope":
+    ProviderTargetDiscoveryFixtureManifestEnvelopeV1Schema,
+  "provider-target-discovery-fixture-manifest-locator":
+    ProviderTargetDiscoveryFixtureManifestLocatorV1Schema,
+  "provider-target-discovery-runner-instance-pin":
+    ProviderTargetDiscoveryRunnerInstancePinV1Schema,
+  "provider-target-discovery-runner-run-manifest":
+    ProviderTargetDiscoveryRunnerRunManifestV1Schema,
+  "provider-target-discovery-runner-run-envelope":
+    ProviderTargetDiscoveryRunnerRunEnvelopeV1Schema,
+  "provider-target-discovery-runner-run-locator":
+    ProviderTargetDiscoveryRunnerRunLocatorV1Schema,
+  "provider-target-discovery-observation-cut":
+    ProviderTargetDiscoveryObservationCutV1Schema,
+  "provider-target-discovery-source-record-projection":
+    ProviderTargetDiscoverySourceRecordProjectionV1Schema,
+  "provider-target-discovery-input-observation":
+    ProviderTargetDiscoveryInputObservationV1Schema,
+  "provider-target-discovery-observation-key-fields":
+    ProviderTargetDiscoveryObservationKeyFieldsV1Schema,
+  "provider-target-discovery-source-observation-set-fields":
+    ProviderTargetDiscoverySourceObservationSetFieldsV1Schema,
+  "provider-target-discovery-input-observation-set-fields":
+    ProviderTargetDiscoveryInputObservationSetFieldsV1Schema,
+  "provider-target-discovery-source-observation-set-summary":
+    ProviderTargetDiscoverySourceObservationSetSummaryV1Schema,
+  "provider-target-discovery-input-bundle-unsigned-claims":
+    ProviderTargetDiscoveryInputBundleUnsignedClaimsV1Schema,
+  "provider-target-discovery-input-bundle":
+    ProviderTargetDiscoveryInputBundleV1Schema,
+  "provider-target-discovery-input-bundle-signature-wrapper":
+    ProviderTargetDiscoveryInputBundleSignatureWrapperV1Schema,
+  "provider-target-discovery-unresolved-observation":
+    ProviderTargetDiscoveryUnresolvedObservationV1Schema,
+  "provider-target-discovery-result-unsigned-claims":
+    ProviderTargetDiscoveryResultUnsignedClaimsV1Schema,
+  "provider-target-discovery-result": ProviderTargetDiscoveryResultV1Schema,
+  "provider-target-discovery-result-envelope":
+    ProviderTargetDiscoveryResultEnvelopeV1Schema,
+  "provider-target-discovery-result-pin":
+    ProviderTargetDiscoveryResultPinV1Schema,
+  "provider-target-discovery-result-locator":
+    ProviderTargetDiscoveryResultLocatorV1Schema,
+  "provider-target-discovery-result-signature-wrapper":
+    ProviderTargetDiscoveryResultSignatureWrapperV1Schema,
+  "provider-target-discovery-point-invalid-stage":
+    ProviderTargetDiscoveryPointInvalidStageV1Schema,
+  "provider-target-discovery-point-invalid-reason":
+    ProviderTargetDiscoveryPointInvalidReasonV1Schema,
+  "provider-target-discovery-point-golden-manifest":
+    ProviderTargetDiscoveryPointGoldenManifestV1Schema,
+  "provider-target-discovery-point-invalid-manifest":
+    ProviderTargetDiscoveryPointInvalidManifestV1Schema,
+  });
 
 export type ProviderContractJsonSchemaNameV1 =
   keyof typeof PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1;

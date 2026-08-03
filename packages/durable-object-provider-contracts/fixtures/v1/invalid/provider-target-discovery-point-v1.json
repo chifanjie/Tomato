@@ -1,0 +1,2389 @@
+{
+  "schemaVersion": 1,
+  "profile": "provider_target_discovery_point_invalid_v1",
+  "fixtureAuthority": "none_rejection_only",
+  "canonicalizationProfile": "rfc8785-jcs-safe-integer-v1",
+  "verificationProfile": "ed25519-rfc8032-cofactorless-prime-subgroup-v1",
+  "semanticDomain": "provider-target-discovery-point-invalid-manifest-v1",
+  "materializedRequestSemanticDomain": "provider-target-discovery-point-invalid-materialized-request-v1",
+  "goldenDependency": {
+    "resourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+    "resourceByteLength": 205053,
+    "resourceSha256Hex": "cfcc03e388e46bf23b1fe62e513476991c535bc22887ff01b77eca4f01b979ed",
+    "semanticContentDigest": "sha256:4ad3ff9e4459207059ded87d51cebb29c5ec36b03c994ee5d3cb61604eda98ae"
+  },
+  "mutationRecipeDialect": "provider_target_discovery_point_invalid_recipe_v1",
+  "caseCount": 116,
+  "caseIds": [
+    "input-extra-field",
+    "input-missing-result",
+    "taxonomy-envelope-extra-field",
+    "taxonomy-code-mismatch",
+    "taxonomy-order-reversed",
+    "taxonomy-signature-bitflip",
+    "taxonomy-envelope-digest-mismatch",
+    "taxonomy-outer-generation-mismatch",
+    "matrix-taxonomy-pin-mismatch",
+    "matrix-target-count-mismatch",
+    "matrix-target-id-mismatch",
+    "matrix-public-id-mismatch",
+    "matrix-target-order-reversed",
+    "matrix-target-set-digest-mismatch",
+    "matrix-signature-bitflip",
+    "matrix-envelope-digest-mismatch",
+    "fixture-suite-pin-mismatch",
+    "fixture-suite-semantic-digest-mismatch",
+    "fixture-corpus-semantic-digest-mismatch",
+    "fixture-record-ordinal-gap",
+    "fixture-record-count-mismatch",
+    "fixture-record-set-digest-mismatch",
+    "fixture-envelope-content-digest-mismatch",
+    "runner-record-ordinal-gap",
+    "runner-record-count-mismatch",
+    "runner-record-set-digest-mismatch",
+    "runner-envelope-content-digest-mismatch",
+    "bundle-taxonomy-pin-mismatch",
+    "bundle-fixture-pin-mismatch",
+    "bundle-runner-pin-mismatch",
+    "bundle-observation-cut-mismatch",
+    "bundle-observation-cut-digest-mismatch",
+    "bundle-source-summary-order-reversed",
+    "bundle-observation-count-mismatch",
+    "bundle-observation-outcome-rewritten",
+    "bundle-observation-key-mismatch",
+    "bundle-observation-set-digest-mismatch",
+    "bundle-signature-bitflip",
+    "result-bundle-content-digest-mismatch",
+    "result-target-count-mismatch",
+    "result-target-order-reversed",
+    "result-target-set-digest-mismatch",
+    "result-unresolved-count-mismatch",
+    "result-unresolved-order-reversed",
+    "result-signature-bitflip",
+    "result-envelope-content-digest-mismatch",
+    "resolved-target-conflict",
+    "source-suite-signature-bitflip",
+    "caller-distribution-binding-mismatch",
+    "caller-active-root-metadata-mismatch",
+    "caller-active-root-key-mismatch",
+    "taxonomy-distribution-binding-mismatch",
+    "taxonomy-active-root-mismatch",
+    "taxonomy-root-key-id-mismatch",
+    "matrix-distribution-binding-mismatch",
+    "matrix-active-root-mismatch",
+    "matrix-root-key-id-mismatch",
+    "fixture-distribution-binding-mismatch",
+    "fixture-release-revision-mismatch",
+    "runner-distribution-binding-mismatch",
+    "runner-release-revision-mismatch",
+    "bundle-distribution-binding-mismatch",
+    "bundle-active-root-mismatch",
+    "bundle-root-key-id-mismatch",
+    "result-distribution-binding-mismatch",
+    "result-active-root-mismatch",
+    "result-root-key-id-mismatch",
+    "taxonomy-signature-wrong-signer",
+    "taxonomy-signature-wrong-domain",
+    "taxonomy-signature-wrong-prefix",
+    "taxonomy-signature-wrong-claims",
+    "matrix-signature-wrong-signer",
+    "matrix-signature-wrong-domain",
+    "matrix-signature-wrong-prefix",
+    "matrix-signature-wrong-claims",
+    "bundle-signature-wrong-signer",
+    "bundle-signature-wrong-domain",
+    "bundle-signature-wrong-prefix",
+    "bundle-signature-wrong-claims",
+    "result-signature-wrong-signer",
+    "result-signature-wrong-domain",
+    "result-signature-wrong-prefix",
+    "result-signature-wrong-claims",
+    "matrix-source-artifact-semantic-digest-substitution",
+    "fixture-source-artifact-semantic-digest-substitution",
+    "runner-source-artifact-semantic-digest-substitution",
+    "bundle-observation-missing",
+    "bundle-observation-extra",
+    "bundle-observation-duplicate",
+    "bundle-observation-reordered",
+    "matrix-target-4097",
+    "result-target-4097",
+    "result-unresolved-4097",
+    "embedded-bundle-16mib-plus-one",
+    "runner-envelope-16mib-plus-one",
+    "taxonomy-locator-bare-dto",
+    "matrix-locator-bare-dto",
+    "fixture-locator-bare-digest",
+    "runner-locator-bare-digest",
+    "result-locator-bare-dto",
+    "fixture-locator-semantic-digest-substitution",
+    "fixture-locator-outer-semantic-digest-mismatch",
+    "runner-locator-semantic-digest-substitution",
+    "taxonomy-locator-path-alias",
+    "matrix-locator-latest-alias",
+    "result-locator-path-alias",
+    "security-top-level-proxy",
+    "security-nested-proxy",
+    "security-top-level-getter",
+    "security-nested-getter",
+    "security-nested-hidden",
+    "security-nested-symbol",
+    "security-sparse-array",
+    "security-cycle",
+    "security-alias",
+    "security-async-mutation"
+  ],
+  "cases": [
+    {
+      "caseId": "input-extra-field",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "input-extra-field"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:12915ff55f1a5722655940b0cac23214ef1e48b82cac125d15d65d642ead5104"
+      }
+    },
+    {
+      "caseId": "input-missing-result",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "input-missing-result"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:e6586fc1ad94903b84426351ed40de27013d438bccd338a3994d94e4a5468279"
+      }
+    },
+    {
+      "caseId": "taxonomy-envelope-extra-field",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "taxonomy-envelope-extra-field"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "taxonomy_structure",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:ed72c395ff964370c74a056637169b72449be6fd71f212324338f173cf3a4691"
+      }
+    },
+    {
+      "caseId": "taxonomy-code-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "taxonomy-code-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "taxonomy_digest",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:fbb97f8fb1087169717aec3a657cca0de571dfb3740ccaa37bbf2de49b63d978"
+      }
+    },
+    {
+      "caseId": "taxonomy-order-reversed",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "taxonomy-order-reversed"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "taxonomy_structure",
+        "reason": "ordering_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:f11712f2e936a1136e67a106c1ee1c9531b6ce2ee86360168ee1cf397e04a881"
+      }
+    },
+    {
+      "caseId": "taxonomy-signature-bitflip",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "taxonomy-signature-bitflip"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "taxonomy_signature",
+        "reason": "signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:8a576b2a62cf1e11a0d7b602debf91c6ab36968d31887f34115e1c206aff86ab"
+      }
+    },
+    {
+      "caseId": "taxonomy-envelope-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "taxonomy-envelope-digest-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "taxonomy_envelope",
+        "reason": "envelope_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:fbc0323dbd63c0d0783ee678d18eec50c0f8887d4138726f28db7f93ed4dde62"
+      }
+    },
+    {
+      "caseId": "taxonomy-outer-generation-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "taxonomy-outer-generation-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "taxonomy_envelope",
+        "reason": "envelope_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:82df330fdc4e912e5e168edbc684f82065b80a635722abc505911b8747816109"
+      }
+    },
+    {
+      "caseId": "matrix-taxonomy-pin-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "matrix-taxonomy-pin-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "matrix_taxonomy_pin",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:a524eb24283223b6d1bdcf9672a9335bf1927ef5ff0982c41e9fc37c0075af8e"
+      }
+    },
+    {
+      "caseId": "matrix-target-count-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "matrix-target-count-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "matrix_structure",
+        "reason": "count_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:3279ca79f48f80eebf3b7b1808df96d9e9a991f56e943bd53f9669849022adb3"
+      }
+    },
+    {
+      "caseId": "matrix-target-id-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "matrix-target-id-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "matrix_digest",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:f5c451fc9dd92bd1c9dde305e246fddf5e7645c7fa06e4aba4e35ca4af8a7173"
+      }
+    },
+    {
+      "caseId": "matrix-public-id-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "matrix-public-id-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "matrix_digest",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:e0c4f0f1933620ca67d2ca3f3035fb1d7c819071145f3d09330ccc45becdcfe3"
+      }
+    },
+    {
+      "caseId": "matrix-target-order-reversed",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "matrix-target-order-reversed"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "matrix_structure",
+        "reason": "ordering_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:a9ee6a78bb6cdf7ecc0f961367faf77e794a5b3e6c5b157e5535b152d81e7dec"
+      }
+    },
+    {
+      "caseId": "matrix-target-set-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "matrix-target-set-digest-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "matrix_digest",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:ac230bf6abe7fd84204cd1fa1ac76519c1a4674111ba2a3ef332e43b6f80c3b5"
+      }
+    },
+    {
+      "caseId": "matrix-signature-bitflip",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "matrix-signature-bitflip"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "matrix_signature",
+        "reason": "signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:cdefdf75edaddcd8dded8c68651d541768eaf071940afaf4c798c9ae8444f198"
+      }
+    },
+    {
+      "caseId": "matrix-envelope-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "matrix-envelope-digest-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "matrix_envelope",
+        "reason": "envelope_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:fab8e76608bc3e9266ba85be603c74d2286cf46bdef2b3bf629a917acd1b84bc"
+      }
+    },
+    {
+      "caseId": "fixture-suite-pin-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "fixture-suite-pin-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "fixture_source_pin",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:b4d630a2b09d4cee034a897e8626b39d6d866271bc0992db16864fd52961e6b1"
+      }
+    },
+    {
+      "caseId": "fixture-suite-semantic-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "fixture-suite-semantic-digest-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "fixture_source_pin",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:b7bda50dd1d21808c592973b3f27f27f44e6535f6a9e8a5d4c90096c9a13f79e"
+      }
+    },
+    {
+      "caseId": "fixture-corpus-semantic-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "fixture-corpus-semantic-digest-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "fixture_source_pin",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:41b3accabf41e46ddf6d04221a40f7a02c51398bb8108505ec272f04015c4dd3"
+      }
+    },
+    {
+      "caseId": "fixture-record-ordinal-gap",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "fixture-record-ordinal-gap"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "fixture_structure",
+        "reason": "ordering_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:9899c1ddc98a817e69a89a8a87188c5d7555fcd3a38a400f4250f0d4a61edafe"
+      }
+    },
+    {
+      "caseId": "fixture-record-count-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "fixture-record-count-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "fixture_structure",
+        "reason": "count_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:97ac84e78d554d81bac8f6f725ecbed2bd05e0919bb63f11853bdcfd78bcecec"
+      }
+    },
+    {
+      "caseId": "fixture-record-set-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "fixture-record-set-digest-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "fixture_digest",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:5d5e34a641f4e10382d893544377e965c3da959d928e04449822b40adc9ef376"
+      }
+    },
+    {
+      "caseId": "fixture-envelope-content-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "fixture-envelope-content-digest-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "fixture_envelope",
+        "reason": "envelope_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:ae24724f3319282fe06646b741317e8ee49c4989b3f5500c4618ad642eacf696"
+      }
+    },
+    {
+      "caseId": "runner-record-ordinal-gap",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "runner-record-ordinal-gap"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "runner_structure",
+        "reason": "ordering_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:a30163204aa4ea83a72b543752aeeadd433fe254fcbc57c1cae6a9ba3b97ca2b"
+      }
+    },
+    {
+      "caseId": "runner-record-count-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "runner-record-count-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "runner_structure",
+        "reason": "count_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:318103f5f18f56cdd0b33fd17f89475dba8cec09a41e847ca27b4cb3cc29fb14"
+      }
+    },
+    {
+      "caseId": "runner-record-set-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "runner-record-set-digest-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "runner_digest",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:21aa8d564a245ef413600d26f7e2e610674b122cd340f3ef3510d1ee4414da29"
+      }
+    },
+    {
+      "caseId": "runner-envelope-content-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "runner-envelope-content-digest-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "runner_envelope",
+        "reason": "envelope_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:0c4eaf3ef79c22d9f29e45521c44e90bd3dc97c38e365f04ba1a240455387f82"
+      }
+    },
+    {
+      "caseId": "bundle-taxonomy-pin-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "bundle-taxonomy-pin-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bundle_structure",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:6272883e031c0623e495132fdf6fa7c9c8dd8c1ec9327189741ec155103229d5"
+      }
+    },
+    {
+      "caseId": "bundle-fixture-pin-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "bundle-fixture-pin-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bundle_structure",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:8f204c2be08b968b9e907dbdc2706dc1d48738840a24bb9e105bf62eb15824d6"
+      }
+    },
+    {
+      "caseId": "bundle-runner-pin-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "bundle-runner-pin-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bundle_structure",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:754ec51e30bf5447516f5327ed04443738a3265f2c68e4d609ca627cc9483630"
+      }
+    },
+    {
+      "caseId": "bundle-observation-cut-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "bundle-observation-cut-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_structure",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:3e68afc9ae4b4df879619863f93a30d80788dfdff3fd8183cee1037edf36dc49"
+      }
+    },
+    {
+      "caseId": "bundle-observation-cut-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "bundle-observation-cut-digest-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bundle_cut",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:b7ecadd610efa6dda84cf91fabed473edf0fc10143071a8c0d79805c4cbf7367"
+      }
+    },
+    {
+      "caseId": "bundle-source-summary-order-reversed",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "bundle-source-summary-order-reversed"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_structure",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:91c96eb00065204688cb3a5dbde302d2b00447dbd4543c6055f72e06aeb86160"
+      }
+    },
+    {
+      "caseId": "bundle-observation-count-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "bundle-observation-count-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bundle_projection",
+        "reason": "coverage_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:2c5ca2a91cfe6a4210f5ac85f7f3c85feb63267825f4fdd0138c77681188cf60"
+      }
+    },
+    {
+      "caseId": "bundle-observation-outcome-rewritten",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "bundle-observation-outcome-rewritten"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bundle_projection",
+        "reason": "coverage_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:1369af0d1af87bb966e466911a4ebfb47178dca85348612a32eed2ce0a850a91"
+      }
+    },
+    {
+      "caseId": "bundle-observation-key-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "bundle-observation-key-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bundle_projection",
+        "reason": "coverage_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:321304a76db266b28953c10d55b111b60499a981f9c6d93bde8a570372a891aa"
+      }
+    },
+    {
+      "caseId": "bundle-observation-set-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "bundle-observation-set-digest-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bundle_projection",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:4cabfdedd133bfa5bd021b63f8b33b0786ca28ee22353cdc73d6ad35fb1b5b1e"
+      }
+    },
+    {
+      "caseId": "bundle-signature-bitflip",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "bundle-signature-bitflip"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bundle_signature",
+        "reason": "signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:804ab9f1f12cb7d9120afca4784375eaca0c6f5d560d3af47d0044ae321e1b69"
+      }
+    },
+    {
+      "caseId": "result-bundle-content-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "result-bundle-content-digest-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_structure",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:516d75fe923f80387db744cf206477a1e5b3acf12f0d54d15bf202b836be15dd"
+      }
+    },
+    {
+      "caseId": "result-target-count-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "result-target-count-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_projection",
+        "reason": "count_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:7ffc3430d2056d1fa388f456c4fd98938c11569486523949921b96fa27a14395"
+      }
+    },
+    {
+      "caseId": "result-target-order-reversed",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "result-target-order-reversed"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_projection",
+        "reason": "coverage_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:a15a3db41a41537f809366728435082110da0c5db136dd24a240e37321650d60"
+      }
+    },
+    {
+      "caseId": "result-target-set-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "result-target-set-digest-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_digest",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:b4072852fc159dd7b362dffefe26e21a1dc105458cdd62a085e54aff01da961c"
+      }
+    },
+    {
+      "caseId": "result-unresolved-count-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "result-unresolved-count-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_projection",
+        "reason": "count_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:5e043ac1e5f1a55eb1a699a6c1099784a7852f573dd055ed1b499a6fdf2ce9a2"
+      }
+    },
+    {
+      "caseId": "result-unresolved-order-reversed",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "result-unresolved-order-reversed"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_projection",
+        "reason": "coverage_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:9829e58709d7f477b42e3a90f84121df3c132492768147aee7fd1a5375e45fe9"
+      }
+    },
+    {
+      "caseId": "result-signature-bitflip",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "result-signature-bitflip"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_signature",
+        "reason": "signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:1bb196b3e99220dfaa3d5be303f46bf6af95afda0a3515f74f8e3681ea040d24"
+      }
+    },
+    {
+      "caseId": "result-envelope-content-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "result-envelope-content-digest-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_envelope",
+        "reason": "envelope_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:f09cc1fcef967c9b043b4cbb8601d43460de577e0789ad059336eed769975f26"
+      }
+    },
+    {
+      "caseId": "resolved-target-conflict",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "resolved-target-conflict"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_projection",
+        "reason": "conflicting_resolved_targets",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:4a3bab4171d49b11fde5de1ac5e7ee79dbac49567e99ede54f61edef096eb8a7"
+      }
+    },
+    {
+      "caseId": "source-suite-signature-bitflip",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "source-suite-signature-bitflip"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "source_closure",
+        "reason": "source_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:6442daa4b257ac9282abd45493df1cf25d6772373797d7d382d5b61f5c0c2b3e"
+      }
+    },
+    {
+      "caseId": "caller-distribution-binding-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "caller-distribution-binding-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "distribution_binding",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:6afbf6adbb63ab78ef2bf0cfdbe8ada2239a705f4706d957372f3d72fb38c49a"
+      }
+    },
+    {
+      "caseId": "caller-active-root-metadata-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "caller-active-root-metadata-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "source_closure",
+        "reason": "source_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:286e2118070460586a3e7638983da3b1f35e2cfc6f644d3b1c82dcd893f9d150"
+      }
+    },
+    {
+      "caseId": "caller-active-root-key-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "caller-active-root-key-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "active_root",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:eb375fa0bda183a0312e00ba685b17432f07736d7385615273cf5696177dd95d"
+      }
+    },
+    {
+      "caseId": "taxonomy-distribution-binding-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "taxonomy-distribution-binding-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "distribution_binding",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:d81eeaf64170a35e277b3c4ff1066bf8f1b90e8e3b15f17c359b85aea6bf70c3"
+      }
+    },
+    {
+      "caseId": "taxonomy-active-root-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "taxonomy-active-root-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "active_root",
+        "reason": "root_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:a1626e621f66e375e24415e032c682a10839facd12403ee5cb84809eafbecc76"
+      }
+    },
+    {
+      "caseId": "taxonomy-root-key-id-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "taxonomy-root-key-id-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "active_root",
+        "reason": "root_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:844b67f99a95e4c5fb171674b6aa6f1660763343dba1d4cadb297dd18a84ba41"
+      }
+    },
+    {
+      "caseId": "matrix-distribution-binding-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "matrix-distribution-binding-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "distribution_binding",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:f0011b6e8e2d71b0ff52e211b4a182facb3fafa96a8744bac26c872e7e736759"
+      }
+    },
+    {
+      "caseId": "matrix-active-root-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "matrix-active-root-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "active_root",
+        "reason": "root_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:b570febc53e0863b11611c24474b1f5036938ae3af8309def1d10351b96c5534"
+      }
+    },
+    {
+      "caseId": "matrix-root-key-id-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "matrix-root-key-id-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "active_root",
+        "reason": "root_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:f936faa8dfcf6c011ef6af18397cb129366c86e0d5f435ec5c5dea589277dfb6"
+      }
+    },
+    {
+      "caseId": "fixture-distribution-binding-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "fixture-distribution-binding-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "distribution_binding",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:ab9201d2aa2297e5b2832de23c0d98ecdbd665f22113c4ecefb93f743a71b204"
+      }
+    },
+    {
+      "caseId": "fixture-release-revision-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "fixture-release-revision-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "distribution_binding",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:111dbaae710def1695915c660858053c587fb41028948dd413be0035544c65f4"
+      }
+    },
+    {
+      "caseId": "runner-distribution-binding-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "runner-distribution-binding-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "distribution_binding",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:7454f54cab34beacd20edbd6265f25fccdbdda797701626800fcaa3672826c30"
+      }
+    },
+    {
+      "caseId": "runner-release-revision-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "runner-release-revision-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "distribution_binding",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:30cd7f44983dbaf0b4c2169727926c7012f5fdcd0ecaee1f257129804b8ab3f5"
+      }
+    },
+    {
+      "caseId": "bundle-distribution-binding-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "bundle-distribution-binding-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bundle_structure",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:6987cd6c0fd53b0cb70c3d821506bd4425b0995fc0346991b702b00a028ccc8e"
+      }
+    },
+    {
+      "caseId": "bundle-active-root-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "bundle-active-root-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bundle_structure",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:8bdb40f76fadf30ff5c0c27c2310a4360403504d8257c941aaef9179fa4aee77"
+      }
+    },
+    {
+      "caseId": "bundle-root-key-id-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "bundle-root-key-id-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bundle_structure",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:a4215c9395e1247b397225434af6471504bea302bc8d60aa4e569a4363de5d1b"
+      }
+    },
+    {
+      "caseId": "result-distribution-binding-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "result-distribution-binding-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_structure",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:c36e97554513a1a789e6b34f6419317bcccfeb5455954cd5dc72696d2f33266c"
+      }
+    },
+    {
+      "caseId": "result-active-root-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "result-active-root-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_structure",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:a515910f4bc06e6347c04ddcc97ddf677b2f0e72387de22d2a36c45c47347eea"
+      }
+    },
+    {
+      "caseId": "result-root-key-id-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "result-root-key-id-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_structure",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:6131b89f8ef38c9e71ac86fad385f8ffca3a7d8caeedacc5ac98f4e3bffb35fb"
+      }
+    },
+    {
+      "caseId": "taxonomy-signature-wrong-signer",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "taxonomy-signature-wrong-signer"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "taxonomy_signature",
+        "reason": "signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:abdd0d2000478fbf3e23b1bf93c4422044b717c2e2c473dbd857ba388a592ebc"
+      }
+    },
+    {
+      "caseId": "taxonomy-signature-wrong-domain",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "taxonomy-signature-wrong-domain"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "taxonomy_signature",
+        "reason": "signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:3361b752a438eb97c444a0e6bc4c8c0a46ddce9efdaf30987d9242b876783d42"
+      }
+    },
+    {
+      "caseId": "taxonomy-signature-wrong-prefix",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "taxonomy-signature-wrong-prefix"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "taxonomy_structure",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:05d856473dcbc4dc8343396cb5c362c4f1c5953ec188e56437eb45aa725c203e"
+      }
+    },
+    {
+      "caseId": "taxonomy-signature-wrong-claims",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "taxonomy-signature-wrong-claims"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "taxonomy_signature",
+        "reason": "signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:a930f3b6f58b30e873777b5804d6e21ebb0e67dea37d26453a7b687507f7994f"
+      }
+    },
+    {
+      "caseId": "matrix-signature-wrong-signer",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "matrix-signature-wrong-signer"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "matrix_signature",
+        "reason": "signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:480af5eb25672947d3216068c304ec8233503d47b46cfd40fbe38b2793cb35e8"
+      }
+    },
+    {
+      "caseId": "matrix-signature-wrong-domain",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "matrix-signature-wrong-domain"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "matrix_signature",
+        "reason": "signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:a913d7c715a36ef1a4c45260e1c8c9b0894751423106de414b91600a44315393"
+      }
+    },
+    {
+      "caseId": "matrix-signature-wrong-prefix",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "matrix-signature-wrong-prefix"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "matrix_structure",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:c3a46fbe8d8f73fea8efa1ef3fa4933b2b677b12c5ae63ee999a0edd157c6cce"
+      }
+    },
+    {
+      "caseId": "matrix-signature-wrong-claims",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "matrix-signature-wrong-claims"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "matrix_signature",
+        "reason": "signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:e40ed1375f0d7275118d2aa553b7655821960ca6ebd1380dbfe324a1cac02007"
+      }
+    },
+    {
+      "caseId": "bundle-signature-wrong-signer",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "bundle-signature-wrong-signer"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bundle_signature",
+        "reason": "signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:1de888c0c8bdff569429a5108cb2b4899a110545b81fbf91a515c14fc5704404"
+      }
+    },
+    {
+      "caseId": "bundle-signature-wrong-domain",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "bundle-signature-wrong-domain"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bundle_signature",
+        "reason": "signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:1966e5c24fee7d42d5531978b018f051ce838ecacb5309129b9b5206782d10fd"
+      }
+    },
+    {
+      "caseId": "bundle-signature-wrong-prefix",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "bundle-signature-wrong-prefix"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_structure",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:2a3684b9aee26e011bd0a262e0a25a25a5923f27c2e14e18b653895063b02419"
+      }
+    },
+    {
+      "caseId": "bundle-signature-wrong-claims",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "bundle-signature-wrong-claims"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bundle_signature",
+        "reason": "signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:5f57d1c032dc22385f16e76c9b0b2099f31a84cf51d8b680a85174c25e7f1ab3"
+      }
+    },
+    {
+      "caseId": "result-signature-wrong-signer",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "result-signature-wrong-signer"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_signature",
+        "reason": "signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:6e9dbea1c975b2c4d54d998ef9411fcc49a66f600b426e25314e9ae9f7713f31"
+      }
+    },
+    {
+      "caseId": "result-signature-wrong-domain",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "result-signature-wrong-domain"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_signature",
+        "reason": "signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:f29f0af943b8926a523f294f703918cd739179ece4501a08524f155aa8d17a01"
+      }
+    },
+    {
+      "caseId": "result-signature-wrong-prefix",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "result-signature-wrong-prefix"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_structure",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:4079bd245ced9d5777129c5aa46b5382a18e6ceca2b8f2049937f392540b045d"
+      }
+    },
+    {
+      "caseId": "result-signature-wrong-claims",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "result-signature-wrong-claims"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_signature",
+        "reason": "signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:f6fbbe0dc1fa5c11fc36acc457c7c20f8feb1735b14f252f19bde6dffe8a7de6"
+      }
+    },
+    {
+      "caseId": "matrix-source-artifact-semantic-digest-substitution",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "matrix-source-artifact-semantic-digest-substitution"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bundle_projection",
+        "reason": "coverage_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:588a32ac28dbf9448fe86656e0200bb34f7af13f5603876718b2970fed690ff4"
+      }
+    },
+    {
+      "caseId": "fixture-source-artifact-semantic-digest-substitution",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "fixture-source-artifact-semantic-digest-substitution"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bundle_projection",
+        "reason": "coverage_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:eb3f065ae984c5d44a55cf6605347834107a0d33e3d0cd36a7350f982445492b"
+      }
+    },
+    {
+      "caseId": "runner-source-artifact-semantic-digest-substitution",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "runner-source-artifact-semantic-digest-substitution"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bundle_projection",
+        "reason": "coverage_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:9eab795550d554c705bc2d9111583e8e9628dcc16558d94bc5aa59457c62c450"
+      }
+    },
+    {
+      "caseId": "bundle-observation-missing",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "bundle-observation-missing"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bundle_projection",
+        "reason": "coverage_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:0e5c615110e67555ac91a972177fcf8c0205a1ef5cfdca0a9f3b069ece1009f3"
+      }
+    },
+    {
+      "caseId": "bundle-observation-extra",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "bundle-observation-extra"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bundle_projection",
+        "reason": "coverage_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:8c6eb0551788ef14ceccd66a155bfd8d8ce326ae5640d69a4fe266d7d4c5ca56"
+      }
+    },
+    {
+      "caseId": "bundle-observation-duplicate",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "bundle-observation-duplicate"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bundle_projection",
+        "reason": "coverage_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:e653739085a5a3dabfe805e87616cedf5585163b2dc0269ed4fc532a15e5032c"
+      }
+    },
+    {
+      "caseId": "bundle-observation-reordered",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "bundle-observation-reordered"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "bundle_projection",
+        "reason": "coverage_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:7c6d095be6401128c4252407b5bb94f20a6809161068bcd7ca0cfa757f66de58"
+      }
+    },
+    {
+      "caseId": "matrix-target-4097",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "matrix-target-4097"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "matrix_structure",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:98d512fcd186908a03bc780c4f137bb1c04d87e304cc3bf5e40d8a6385a0d606"
+      }
+    },
+    {
+      "caseId": "result-target-4097",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "result-target-4097"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_structure",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:0f172be3d6c6a60bcdb04d4296f2a1668dba44eac9a068dcaa7dde008a283149"
+      }
+    },
+    {
+      "caseId": "result-unresolved-4097",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "result-unresolved-4097"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_structure",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:28667f60710fe2534908ab4a2eb22b5559f2d7b180d9d5460aecd86ac677e93c"
+      }
+    },
+    {
+      "caseId": "embedded-bundle-16mib-plus-one",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "embedded-bundle-16mib-plus-one"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "envelope_limit",
+        "reason": "byte_limit_exceeded",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:6507f9998c83da77daea310acdbcc4d10858e8f4fb499cc94da1edae3d4b5e57"
+      }
+    },
+    {
+      "caseId": "runner-envelope-16mib-plus-one",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "runner-envelope-16mib-plus-one"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "envelope_limit",
+        "reason": "byte_limit_exceeded",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:6d6f5b099747eb28f47321c448d18ce29b12adb5cb35ecedb2ff3630da1fb221"
+      }
+    },
+    {
+      "caseId": "taxonomy-locator-bare-dto",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "taxonomy-locator-bare-dto"
+      },
+      "expected": {
+        "boundary": "locator_builder",
+        "stage": "locator",
+        "reason": "envelope_mismatch",
+        "materializedRequestSemanticDigest": "sha256:f74f7149fb7bb054d97f326072f5d5ad3cedc257477bd71c6f654d054217772b"
+      }
+    },
+    {
+      "caseId": "matrix-locator-bare-dto",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "matrix-locator-bare-dto"
+      },
+      "expected": {
+        "boundary": "locator_builder",
+        "stage": "locator",
+        "reason": "envelope_mismatch",
+        "materializedRequestSemanticDigest": "sha256:c925a9b64e2256c0e9878172ab22adeaa984983f06a2330948f5a9f064118849"
+      }
+    },
+    {
+      "caseId": "fixture-locator-bare-digest",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "fixture-locator-bare-digest"
+      },
+      "expected": {
+        "boundary": "locator_builder",
+        "stage": "locator",
+        "reason": "envelope_mismatch",
+        "materializedRequestSemanticDigest": "sha256:db25df0d0118a3a5c27a2632b4eea8da47d6dbf2c6f1f4f85c0073c66acc8e0b"
+      }
+    },
+    {
+      "caseId": "runner-locator-bare-digest",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "runner-locator-bare-digest"
+      },
+      "expected": {
+        "boundary": "locator_builder",
+        "stage": "locator",
+        "reason": "envelope_mismatch",
+        "materializedRequestSemanticDigest": "sha256:803fe8e3092e0574a16facf9593e7b857dc865cff9193071306c184b629bb5b7"
+      }
+    },
+    {
+      "caseId": "result-locator-bare-dto",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "result-locator-bare-dto"
+      },
+      "expected": {
+        "boundary": "locator_builder",
+        "stage": "locator",
+        "reason": "envelope_mismatch",
+        "materializedRequestSemanticDigest": "sha256:661edd37655386f1433a2215ee0d24c6a9c9334feae4ded142a6c18c06c47584"
+      }
+    },
+    {
+      "caseId": "fixture-locator-semantic-digest-substitution",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "fixture-locator-semantic-digest-substitution"
+      },
+      "expected": {
+        "boundary": "locator_builder",
+        "stage": "locator",
+        "reason": "envelope_mismatch",
+        "materializedRequestSemanticDigest": "sha256:c9c32857891131b3fd2ae6939522d0451bebfbad97d8354a97651001a6b48b72"
+      }
+    },
+    {
+      "caseId": "fixture-locator-outer-semantic-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "fixture-locator-outer-semantic-digest-mismatch"
+      },
+      "expected": {
+        "boundary": "locator_builder",
+        "stage": "locator",
+        "reason": "envelope_mismatch",
+        "materializedRequestSemanticDigest": "sha256:43b8384e00a37cc46955203296bd7be5837778d30e54bf08af2224a48556223d"
+      }
+    },
+    {
+      "caseId": "runner-locator-semantic-digest-substitution",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "runner-locator-semantic-digest-substitution"
+      },
+      "expected": {
+        "boundary": "locator_builder",
+        "stage": "locator",
+        "reason": "envelope_mismatch",
+        "materializedRequestSemanticDigest": "sha256:6df88e2523a0c1d7a367d77a1a6065b8f4e397febec32dd2463667625d2712c4"
+      }
+    },
+    {
+      "caseId": "taxonomy-locator-path-alias",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "taxonomy-locator-path-alias"
+      },
+      "expected": {
+        "boundary": "locator_builder",
+        "stage": "locator",
+        "reason": "envelope_mismatch",
+        "materializedRequestSemanticDigest": "sha256:9a34533a98da31a5a3cd9e7142f01562e251ab7f32976bc8d051363c5c00583b"
+      }
+    },
+    {
+      "caseId": "matrix-locator-latest-alias",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "matrix-locator-latest-alias"
+      },
+      "expected": {
+        "boundary": "locator_builder",
+        "stage": "locator",
+        "reason": "envelope_mismatch",
+        "materializedRequestSemanticDigest": "sha256:fb96605965d27900f7f2489a4de5d363dc8e42176f5b8c6a9ffb2cde3d61407f"
+      }
+    },
+    {
+      "caseId": "result-locator-path-alias",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "result-locator-path-alias"
+      },
+      "expected": {
+        "boundary": "locator_builder",
+        "stage": "locator",
+        "reason": "envelope_mismatch",
+        "materializedRequestSemanticDigest": "sha256:9d7bef8658fa679a3043de7ebd89e7a5810bcf9dc3bb15671e463452416b9643"
+      }
+    },
+    {
+      "caseId": "security-top-level-proxy",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "security-top-level-proxy"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:383f345b6521ee7a9c82ad219b39fd1b9c282c7080875079d63e07e7499e9f05"
+      }
+    },
+    {
+      "caseId": "security-nested-proxy",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "security-nested-proxy"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:8df1d63b57bc50a702bcb82a7f636cf2d39bf6350af5cf03426b390292bbb916"
+      }
+    },
+    {
+      "caseId": "security-top-level-getter",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "security-top-level-getter"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:cdf776ed8a5f9a7cc0db9f64d8ba0e3f5da8bfbf0471439d84acceb0fd050a29"
+      }
+    },
+    {
+      "caseId": "security-nested-getter",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "security-nested-getter"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:9deeb762dab39e8dbae6a5c22d5c6276cab9d73aebdee452a1f16904a5f8321d"
+      }
+    },
+    {
+      "caseId": "security-nested-hidden",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "security-nested-hidden"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:f864fdf89695b65b65c505d2f1063895dd5889554c2876dcff52f0dc303afcc8"
+      }
+    },
+    {
+      "caseId": "security-nested-symbol",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "security-nested-symbol"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:f11e442911eddcd03eda6a6d2c17c7878f59105839d7c6dcf71178e297434866"
+      }
+    },
+    {
+      "caseId": "security-sparse-array",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "security-sparse-array"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:8d1cc7cbfe4108396f26f9d332bf0f6bab7bc3021b92f6aa023f0dc61912e768"
+      }
+    },
+    {
+      "caseId": "security-cycle",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "security-cycle"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:7ff7cfbb1f6541076c4f1bd226b837aa5795f5d2ef7e1c38542f0bee582ae766"
+      }
+    },
+    {
+      "caseId": "security-alias",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "security-alias"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderTargetDiscoveryPointClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:f7914ed51bb951791cae00841df61cc879a3e63460844e3273c94a0dfe95d1aa"
+      }
+    },
+    {
+      "caseId": "security-async-mutation",
+      "mutation": {
+        "dialect": "provider_target_discovery_point_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+        "operation": "security-async-mutation"
+      },
+      "expected": {
+        "boundary": "snapshot_stability",
+        "outcome": "accepted_frozen_snapshot",
+        "authority": "none_target_discovery_point_structure_only",
+        "observationCount": 7,
+        "targetCount": 2,
+        "unresolvedObservationCount": 2,
+        "materializedRequestSemanticDigest": "sha256:01534a682c0ba3b923213b64830cd26de8741b416e417ba4f53010cf123ab186"
+      }
+    }
+  ],
+  "semanticContentDigest": "sha256:77f3f36e9a7855007fc75706d22c5e43571aa83e8c710619a53f879ea1fc6de1"
+}

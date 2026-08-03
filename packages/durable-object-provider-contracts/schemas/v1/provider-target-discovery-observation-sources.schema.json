@@ -1,0 +1,22 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-target-discovery-observation-sources",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "array",
+  "prefixItems": [
+    {
+      "type": "string",
+      "const": "signed_release_matrix"
+    },
+    {
+      "type": "string",
+      "const": "real_filesystem_fixture_manifest"
+    },
+    {
+      "type": "string",
+      "const": "target_discovery_runner"
+    }
+  ],
+  "minItems": 3,
+  "maxItems": 3,
+  "items": false
+}

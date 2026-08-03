@@ -21,6 +21,11 @@ import {
   ProviderFeasibilityEvidenceIdV1Schema,
   ProviderMigrationIdV1Schema,
   ProviderOsReleaseFamilyCodeV1Schema,
+  ProviderRealFilesystemCaseIdV1Schema,
+  ProviderRealFilesystemCaseKeyV1Schema,
+  ProviderRealFilesystemCrashCutIdV1Schema,
+  ProviderRealFilesystemFixtureCorpusManifestSignatureV1Schema,
+  ProviderRealFilesystemSuiteManifestSignatureV1Schema,
   ProviderRegistryManifestGenerationIdV1Schema,
   ProviderRegistryManifestSignatureV1Schema,
   ProviderRegistryRootKeyIdV1Schema,
@@ -73,9 +78,44 @@ import {
   HashedStoreFilenameKeyV1Schema,
   ProviderRegistryManifestLocatorV1Schema,
   ProviderRegistryRootMetadataLocatorV1Schema,
+  ProviderRealFilesystemFixtureCorpusManifestLocatorV1Schema,
+  ProviderRealFilesystemSuiteManifestLocatorV1Schema,
   ShortStoreFilenameKeySyntaxV1Schema,
   StoreFilenameKeySyntaxV1Schema,
 } from "./provider-fixed-locator.js";
+import {
+  ProviderRealFilesystemCaseIdFieldsV1Schema,
+  ProviderRealFilesystemCrashCutIdFieldsV1Schema,
+  ProviderRealFilesystemFixtureCaseRecordSetFieldsV1Schema,
+  ProviderRealFilesystemFixtureCorpusManifestEnvelopeV1Schema,
+  ProviderRealFilesystemFixtureCorpusManifestPinV1Schema,
+  ProviderRealFilesystemFixtureCorpusManifestSignatureWrapperV1Schema,
+  ProviderRealFilesystemFixtureCorpusManifestUnsignedClaimsV1Schema,
+  ProviderRealFilesystemFixtureCorpusManifestV1Schema,
+  ProviderRealFilesystemFixtureCorpusRecordSetFieldsV1Schema,
+  ProviderRealFilesystemFixtureCorpusRecordV1Schema,
+  ProviderRealFilesystemFixtureManifestFieldsV1Schema,
+  ProviderRealFilesystemFixtureProgramFieldsV1Schema,
+  ProviderRealFilesystemRecoveryAssertionFieldsV1Schema,
+  ProviderRealFilesystemRequiredCaseCutEntryV1Schema,
+  ProviderRealFilesystemRequiredCaseCutSetFieldsV1Schema,
+  ProviderRealFilesystemRunnerProfileV1Schema,
+  ProviderRealFilesystemSuiteCaseSetFieldsV1Schema,
+  ProviderRealFilesystemSuiteCaseV1Schema,
+  ProviderRealFilesystemSuiteCrashCutV1Schema,
+  ProviderRealFilesystemSuiteDefinitionFieldsV1Schema,
+  ProviderRealFilesystemSuiteManifestEnvelopeV1Schema,
+  ProviderRealFilesystemSuiteManifestPinV1Schema,
+  ProviderRealFilesystemSuiteManifestSignatureWrapperV1Schema,
+  ProviderRealFilesystemSuiteManifestUnsignedClaimsV1Schema,
+  ProviderRealFilesystemSuiteManifestV1Schema,
+} from "./provider-real-filesystem-source.js";
+import {
+  ProviderRealFilesystemSourceGoldenManifestV1Schema,
+  ProviderRealFilesystemSourceInvalidManifestV1Schema,
+  ProviderRealFilesystemSourceInvalidReasonV1Schema,
+  ProviderRealFilesystemSourceInvalidStageV1Schema,
+} from "./provider-real-filesystem-source-fixtures.js";
 import {
   ProviderFeasibilityApprovalKeysV1Schema,
   ProviderFeasibilityApproverKeyIdFieldsV1Schema,
@@ -186,6 +226,16 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
     ProviderFeasibilityApproverKeyIdV1Schema,
   "provider-os-release-family-code":
     ProviderOsReleaseFamilyCodeV1Schema,
+  "provider-real-filesystem-case-id":
+    ProviderRealFilesystemCaseIdV1Schema,
+  "provider-real-filesystem-case-key":
+    ProviderRealFilesystemCaseKeyV1Schema,
+  "provider-real-filesystem-crash-cut-id":
+    ProviderRealFilesystemCrashCutIdV1Schema,
+  "provider-real-filesystem-fixture-corpus-manifest-signature":
+    ProviderRealFilesystemFixtureCorpusManifestSignatureV1Schema,
+  "provider-real-filesystem-suite-manifest-signature":
+    ProviderRealFilesystemSuiteManifestSignatureV1Schema,
   "store-provider-registry-signature":
     StoreProviderRegistrySignatureV1Schema,
   "provider-registry-manifest-signature":
@@ -256,6 +306,10 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
     ProviderRegistryRootMetadataLocatorV1Schema,
   "provider-registry-manifest-locator":
     ProviderRegistryManifestLocatorV1Schema,
+  "provider-real-filesystem-fixture-corpus-manifest-locator":
+    ProviderRealFilesystemFixtureCorpusManifestLocatorV1Schema,
+  "provider-real-filesystem-suite-manifest-locator":
+    ProviderRealFilesystemSuiteManifestLocatorV1Schema,
   "store-durable-object-provider-verification-key-usage":
     StoreDurableObjectProviderVerificationKeyUsageV1Schema,
   "store-provider-verification-key-id-fields":
@@ -368,6 +422,64 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
     ProviderBootstrapTrustInvalidManifestV1Schema,
   "installation-identity-bootstrap-trust-fields":
     InstallationIdentityBootstrapTrustFieldsV1Schema,
+  "provider-real-filesystem-fixture-program-fields":
+    ProviderRealFilesystemFixtureProgramFieldsV1Schema,
+  "provider-real-filesystem-fixture-corpus-record":
+    ProviderRealFilesystemFixtureCorpusRecordV1Schema,
+  "provider-real-filesystem-fixture-corpus-record-set-fields":
+    ProviderRealFilesystemFixtureCorpusRecordSetFieldsV1Schema,
+  "provider-real-filesystem-fixture-case-record-set-fields":
+    ProviderRealFilesystemFixtureCaseRecordSetFieldsV1Schema,
+  "provider-real-filesystem-fixture-manifest-fields":
+    ProviderRealFilesystemFixtureManifestFieldsV1Schema,
+  "provider-real-filesystem-fixture-corpus-manifest-unsigned-claims":
+    ProviderRealFilesystemFixtureCorpusManifestUnsignedClaimsV1Schema,
+  "provider-real-filesystem-fixture-corpus-manifest":
+    ProviderRealFilesystemFixtureCorpusManifestV1Schema,
+  "provider-real-filesystem-fixture-corpus-manifest-envelope":
+    ProviderRealFilesystemFixtureCorpusManifestEnvelopeV1Schema,
+  "provider-real-filesystem-fixture-corpus-manifest-pin":
+    ProviderRealFilesystemFixtureCorpusManifestPinV1Schema,
+  "provider-real-filesystem-fixture-corpus-manifest-signature-wrapper":
+    ProviderRealFilesystemFixtureCorpusManifestSignatureWrapperV1Schema,
+  "provider-real-filesystem-runner-profile":
+    ProviderRealFilesystemRunnerProfileV1Schema,
+  "provider-real-filesystem-suite-crash-cut":
+    ProviderRealFilesystemSuiteCrashCutV1Schema,
+  "provider-real-filesystem-suite-case":
+    ProviderRealFilesystemSuiteCaseV1Schema,
+  "provider-real-filesystem-case-id-fields":
+    ProviderRealFilesystemCaseIdFieldsV1Schema,
+  "provider-real-filesystem-crash-cut-id-fields":
+    ProviderRealFilesystemCrashCutIdFieldsV1Schema,
+  "provider-real-filesystem-recovery-assertion-fields":
+    ProviderRealFilesystemRecoveryAssertionFieldsV1Schema,
+  "provider-real-filesystem-suite-case-set-fields":
+    ProviderRealFilesystemSuiteCaseSetFieldsV1Schema,
+  "provider-real-filesystem-required-case-cut-entry":
+    ProviderRealFilesystemRequiredCaseCutEntryV1Schema,
+  "provider-real-filesystem-required-case-cut-set-fields":
+    ProviderRealFilesystemRequiredCaseCutSetFieldsV1Schema,
+  "provider-real-filesystem-suite-definition-fields":
+    ProviderRealFilesystemSuiteDefinitionFieldsV1Schema,
+  "provider-real-filesystem-suite-manifest-unsigned-claims":
+    ProviderRealFilesystemSuiteManifestUnsignedClaimsV1Schema,
+  "provider-real-filesystem-suite-manifest":
+    ProviderRealFilesystemSuiteManifestV1Schema,
+  "provider-real-filesystem-suite-manifest-envelope":
+    ProviderRealFilesystemSuiteManifestEnvelopeV1Schema,
+  "provider-real-filesystem-suite-manifest-pin":
+    ProviderRealFilesystemSuiteManifestPinV1Schema,
+  "provider-real-filesystem-suite-manifest-signature-wrapper":
+    ProviderRealFilesystemSuiteManifestSignatureWrapperV1Schema,
+  "provider-real-filesystem-source-golden-manifest":
+    ProviderRealFilesystemSourceGoldenManifestV1Schema,
+  "provider-real-filesystem-source-invalid-manifest":
+    ProviderRealFilesystemSourceInvalidManifestV1Schema,
+  "provider-real-filesystem-source-invalid-stage":
+    ProviderRealFilesystemSourceInvalidStageV1Schema,
+  "provider-real-filesystem-source-invalid-reason":
+    ProviderRealFilesystemSourceInvalidReasonV1Schema,
 } as const satisfies Record<string, z.ZodType>;
 
 export type ProviderContractJsonSchemaNameV1 =

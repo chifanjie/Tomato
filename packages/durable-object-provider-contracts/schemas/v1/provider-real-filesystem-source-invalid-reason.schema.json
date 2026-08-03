@@ -1,0 +1,17 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-real-filesystem-source-invalid-reason",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "schema_invalid",
+    "binding_mismatch",
+    "root_mismatch",
+    "byte_limit_exceeded",
+    "ordering_invalid",
+    "count_mismatch",
+    "digest_mismatch",
+    "coverage_mismatch",
+    "signature_invalid",
+    "envelope_mismatch"
+  ]
+}

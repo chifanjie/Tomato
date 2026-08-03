@@ -1,0 +1,25 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-real-filesystem-runner-profile",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string",
+      "const": "provider_real_fs_runner_profile_v1"
+    },
+    "protocolVersion": {
+      "type": "string",
+      "const": "provider-real-fs-runner-v1"
+    },
+    "canonicalProfileBytes": {
+      "type": "string",
+      "pattern": "^base64url:(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$"
+    }
+  },
+  "required": [
+    "profile",
+    "protocolVersion",
+    "canonicalProfileBytes"
+  ],
+  "additionalProperties": false
+}

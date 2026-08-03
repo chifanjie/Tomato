@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  ContentDigestV1Schema,
   ProviderRegistryManifestGenerationIdV1Schema,
   ProviderRegistryRootKeyIdV1Schema,
 } from "./primitives.js";
@@ -11,6 +12,10 @@ export const PROVIDER_REGISTRY_ROOT_METADATA_LOCATOR_PROFILE_V1 =
   "installation_provider_registry_root_metadata_v1" as const;
 export const PROVIDER_REGISTRY_MANIFEST_LOCATOR_PROFILE_V1 =
   "installation_provider_registry_manifest_v1" as const;
+export const PROVIDER_REAL_FILESYSTEM_FIXTURE_CORPUS_MANIFEST_LOCATOR_PROFILE_V1 =
+  "distribution_provider_real_fs_fixture_corpus_manifest_v1" as const;
+export const PROVIDER_REAL_FILESYSTEM_SUITE_MANIFEST_LOCATOR_PROFILE_V1 =
+  "distribution_provider_real_fs_suite_manifest_v1" as const;
 
 const BASE32HEX_LOWER_ALPHABET = "0123456789abcdefghijklmnopqrstuv";
 const SHORT_KEY_SYNTAX_PATTERN =
@@ -362,3 +367,39 @@ export function validateProviderRegistryManifestRelativePathV1(
 ): ProviderRegistryManifestRelativePathV1 {
   return buildProviderRegistryManifestRelativePathV1(input);
 }
+
+export const ProviderRealFilesystemFixtureCorpusManifestLocatorV1Schema =
+  z.strictObject({
+    locatorProfile: z.literal(
+      PROVIDER_REAL_FILESYSTEM_FIXTURE_CORPUS_MANIFEST_LOCATOR_PROFILE_V1,
+    ),
+    contentDigest: ContentDigestV1Schema,
+  });
+export type ProviderRealFilesystemFixtureCorpusManifestLocatorV1 = z.infer<
+  typeof ProviderRealFilesystemFixtureCorpusManifestLocatorV1Schema
+>;
+
+export const ProviderRealFilesystemSuiteManifestLocatorV1Schema =
+  z.strictObject({
+    locatorProfile: z.literal(
+      PROVIDER_REAL_FILESYSTEM_SUITE_MANIFEST_LOCATOR_PROFILE_V1,
+    ),
+    contentDigest: ContentDigestV1Schema,
+  });
+export type ProviderRealFilesystemSuiteManifestLocatorV1 = z.infer<
+  typeof ProviderRealFilesystemSuiteManifestLocatorV1Schema
+>;
+
+declare const ProviderRealFilesystemFixtureCorpusManifestRelativePathV1Brand:
+  unique symbol;
+export type ProviderRealFilesystemFixtureCorpusManifestRelativePathV1 =
+  `provider/real-fs-fixture-corpus-manifests/${StoreFilenameKeyV1}.json` & {
+    readonly [ProviderRealFilesystemFixtureCorpusManifestRelativePathV1Brand]: true;
+  };
+
+declare const ProviderRealFilesystemSuiteManifestRelativePathV1Brand:
+  unique symbol;
+export type ProviderRealFilesystemSuiteManifestRelativePathV1 =
+  `provider/real-fs-suite-manifests/${StoreFilenameKeyV1}.json` & {
+    readonly [ProviderRealFilesystemSuiteManifestRelativePathV1Brand]: true;
+  };

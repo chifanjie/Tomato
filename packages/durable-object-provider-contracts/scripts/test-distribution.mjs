@@ -908,6 +908,24 @@ try {
       "provider-registry-entry-manifest-history-v1.recipe-dialect.md",
     ),
   );
+  const installedRealFilesystemSourceGoldenPath = await realpath(
+    join(
+      installedRoot,
+      "fixtures",
+      "v1",
+      "golden",
+      "provider-real-filesystem-source-v1.json",
+    ),
+  );
+  const installedRealFilesystemSourceInvalidPath = await realpath(
+    join(
+      installedRoot,
+      "fixtures",
+      "v1",
+      "invalid",
+      "provider-real-filesystem-source-v1.json",
+    ),
+  );
 
   const runtimeProbe = join(consumerRoot, "runtime-probe.mjs");
   await writeFile(
@@ -926,6 +944,7 @@ try {
       'if (root.DurableObjectIdentityProviderIdV1Schema.parse("durable-object-provider:native-fs") !== "durable-object-provider:native-fs") throw new Error("reader ID schema failed");',
       'const providerError = await import("@understand-code/durable-object-provider-contracts/provider-error");',
       'const providerRegistry = await import("@understand-code/durable-object-provider-contracts/provider-registry");',
+      'const realFilesystemSource = await import("@understand-code/durable-object-provider-contracts/provider-real-filesystem-source");',
       'const unavailable = providerError.createProviderUnavailableToolErrorV1("unavailable");',
       'if (providerError.ProviderUnavailableToolErrorV1Schema.parse(unavailable).details.reason !== "unavailable") throw new Error("provider error export failed");',
       'const schemaUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/schemas/v1/canonical-byte-string.schema.json"));',
@@ -942,6 +961,8 @@ try {
       'const registryManifestGoldenUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json"));',
       'const registryManifestInvalidUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/invalid/provider-registry-entry-manifest-history-v1.json"));',
       'const registryManifestInvalidRecipeUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/invalid/provider-registry-entry-manifest-history-v1.recipe-dialect.md"));',
+      'const realFilesystemSourceGoldenUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/golden/provider-real-filesystem-source-v1.json"));',
+      'const realFilesystemSourceInvalidUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/invalid/provider-real-filesystem-source-v1.json"));',
       `if (await realpath(fileURLToPath(strictEd25519ManifestUrl)) !== ${JSON.stringify(installedStrictManifestPath)}) throw new Error("strict manifest resolved outside the exact installed path");`,
       `if (await realpath(fileURLToPath(bootstrapTrustBundleUrl)) !== ${JSON.stringify(installedBootstrapBundlePath)}) throw new Error("bootstrap Bundle resolved outside the exact installed path");`,
       `if (await realpath(fileURLToPath(bootstrapTrustGoldenUrl)) !== ${JSON.stringify(installedBootstrapGoldenPath)}) throw new Error("bootstrap golden resolved outside the exact installed path");`,
@@ -951,6 +972,8 @@ try {
       `if (await realpath(fileURLToPath(registryManifestGoldenUrl)) !== ${JSON.stringify(installedRegistryManifestGoldenPath)}) throw new Error("Registry Manifest golden resolved outside the exact installed path");`,
       `if (await realpath(fileURLToPath(registryManifestInvalidUrl)) !== ${JSON.stringify(installedRegistryManifestInvalidPath)}) throw new Error("Registry Manifest invalid corpus resolved outside the exact installed path");`,
       `if (await realpath(fileURLToPath(registryManifestInvalidRecipeUrl)) !== ${JSON.stringify(installedRegistryManifestInvalidRecipePath)}) throw new Error("Registry Manifest invalid recipe resolved outside the exact installed path");`,
+      `if (await realpath(fileURLToPath(realFilesystemSourceGoldenUrl)) !== ${JSON.stringify(installedRealFilesystemSourceGoldenPath)}) throw new Error("real filesystem source golden resolved outside the exact installed path");`,
+      `if (await realpath(fileURLToPath(realFilesystemSourceInvalidUrl)) !== ${JSON.stringify(installedRealFilesystemSourceInvalidPath)}) throw new Error("real filesystem source invalid corpus resolved outside the exact installed path");`,
       'const schema = JSON.parse(await readFile(schemaUrl, "utf8"));',
       'const providerErrorSchema = JSON.parse(await readFile(providerErrorSchemaUrl, "utf8"));',
       'const golden = JSON.parse(await readFile(goldenUrl, "utf8"));',
@@ -965,6 +988,8 @@ try {
       'const registryManifestGoldenBytes = new Uint8Array(await readFile(registryManifestGoldenUrl));',
       'const registryManifestInvalidBytes = new Uint8Array(await readFile(registryManifestInvalidUrl));',
       'const registryManifestInvalidRecipe = await readFile(registryManifestInvalidRecipeUrl, "utf8");',
+      'const realFilesystemSourceGoldenBytes = new Uint8Array(await readFile(realFilesystemSourceGoldenUrl));',
+      'const realFilesystemSourceInvalidBytes = new Uint8Array(await readFile(realFilesystemSourceInvalidUrl));',
       'const strictEd25519Manifest = JSON.parse(new TextDecoder().decode(strictEd25519ManifestBytes));',
       'if (schema.$id !== "urn:understand-code:provider-contract:schema:v1:canonical-byte-string") throw new Error("packed schema missing");',
       'if (providerErrorSchema.$id !== "urn:understand-code:provider-contract:schema:v1:provider-unavailable-tool-error") throw new Error("packed provider error schema missing");',
@@ -1037,6 +1062,15 @@ try {
       'const packedRuntimeSignature = packedRuntimeSignatureBitflip[0].payload.members[0].registryEntry.runtimeAttestation.payload.registrySignature;',
       'packedRuntimeSignatureBitflip[0].payload.members[0].registryEntry.runtimeAttestation.payload.registrySignature = `${packedRuntimeSignature.slice(0, -1)}${packedRuntimeSignature.endsWith("0") ? "1" : "0"}`;',
       'await expectPackedRegistryRejection(packedRuntimeSignatureBitflip, "runtime-signature-bitflip");',
+      'if (root.validateProviderRealFilesystemSourceClosureV1 !== realFilesystemSource.validateProviderRealFilesystemSourceClosureV1 || root.buildProviderRealFilesystemFixtureCorpusManifestRelativePathV1 === undefined || root.buildProviderRealFilesystemSuiteManifestRelativePathV1 === undefined) throw new Error("root/real-filesystem-source exports diverged");',
+      'const realFilesystemGoldenValidation = await root.verifyProviderRealFilesystemSourceGoldenResourceV1(realFilesystemSourceGoldenBytes, strictCapability);',
+      'if (realFilesystemGoldenValidation.authority !== "none_real_fs_source_structure_only" || realFilesystemGoldenValidation.sourceClosure.recordCount !== 12 || realFilesystemGoldenValidation.sourceClosure.caseCount !== 4 || realFilesystemGoldenValidation.sourceClosure.requiredCaseCutCount !== 8) throw new Error("packed real filesystem source golden failed");',
+      'if (root.buildProviderRealFilesystemFixtureCorpusManifestRelativePathV1(realFilesystemGoldenValidation.manifest.fixtureCorpusManifest) !== realFilesystemGoldenValidation.sourceClosure.fixtureCorpusManifestRelativePath || root.buildProviderRealFilesystemSuiteManifestRelativePathV1(realFilesystemGoldenValidation.manifest.suiteManifest) !== realFilesystemGoldenValidation.sourceClosure.suiteManifestRelativePath) throw new Error("packed real filesystem Envelope locator failed");',
+      'const packedSuiteSemanticDigestSubstitution = structuredClone(realFilesystemGoldenValidation.manifest.suiteManifest);',
+      'packedSuiteSemanticDigestSubstitution.contentDigest = packedSuiteSemanticDigestSubstitution.payload.suiteDigest;',
+      'try { root.buildProviderRealFilesystemSuiteManifestRelativePathV1(packedSuiteSemanticDigestSubstitution); throw new Error("packed real filesystem semantic locator substitution accepted"); } catch (error) { if (error?.message === "packed real filesystem semantic locator substitution accepted") throw error; }',
+      'const realFilesystemInvalid = root.verifyProviderRealFilesystemSourceInvalidResourceV1(realFilesystemSourceInvalidBytes);',
+      'if (realFilesystemInvalid.fixtureAuthority !== "none_rejection_only" || realFilesystemInvalid.caseCount !== 43 || realFilesystemInvalid.cases.length !== 43 || JSON.stringify(realFilesystemInvalid.caseIds) !== JSON.stringify(root.PROVIDER_REAL_FILESYSTEM_SOURCE_INVALID_CASE_IDS_V1)) throw new Error("packed real filesystem source invalid corpus failed");',
       'if (providerRegistry.StoreFilenameKeyV1Schema.parse("id-c4") !== "id-c4" || providerRegistry.decodeShortStoreFilenameKeyV1("id-c4") !== "a") throw new Error("packed lowercase base32hex filename codec failed");',
       'try { await import("@understand-code/durable-object-provider-contracts/domain-crypto"); throw new Error("private crypto helper exported"); } catch (error) { if (error?.message === "private crypto helper exported") throw error; }',
       'for (const privateSpecifier of ["@understand-code/durable-object-provider-contracts/provider-registry-records", "@understand-code/durable-object-provider-contracts/provider-registry-manifest-history"]) { try { await import(privateSpecifier); throw new Error(`private deep import exported: ${privateSpecifier}`); } catch (error) { if (error?.message?.startsWith("private deep import exported:")) throw error; } }',
@@ -1054,7 +1088,10 @@ try {
       'import type { ProviderCapabilityFailureReasonV1, ProviderUnavailableToolErrorV1 } from "@understand-code/durable-object-provider-contracts/provider-error";',
       'import { ProviderRegistryManifestHistoryGoldenManifestV1Schema, ProviderRegistryManifestHistoryInvalidManifestV1Schema, StoreFilenameKeyV1Schema, buildProviderRegistryRootMetadataRelativePathV1 } from "@understand-code/durable-object-provider-contracts/provider-registry";',
       'import type { ProviderRegistryManifestHistoryGoldenManifestV1, ProviderRegistryManifestHistoryInvalidManifestV1, ProviderRegistryManifestHistoryValidationV1, ProviderRegistryRootMetadataHistoryValidationV1, ProviderRegistryRootMetadataRelativePathV1, StoreFilenameKeyV1, ValidateProviderRegistryManifestHistoryV1Input } from "@understand-code/durable-object-provider-contracts/provider-registry";',
-      'import type { Ed25519PublicKeyDigestV1, ContentDigestV1, ProviderBootstrapTrustBundleStructureValidationV1, ProviderBootstrapTrustGoldenManifestValidationV1, ProviderBootstrapTrustInvalidManifestValidationV1, ProviderStrictEd25519FixedResourceHostV1 } from "@understand-code/durable-object-provider-contracts";',
+      'import { ProviderRealFilesystemSourceGoldenManifestV1Schema } from "@understand-code/durable-object-provider-contracts";',
+      'import type { Ed25519PublicKeyDigestV1, ContentDigestV1, ProviderBootstrapTrustBundleStructureValidationV1, ProviderBootstrapTrustGoldenManifestValidationV1, ProviderBootstrapTrustInvalidManifestValidationV1, ProviderRealFilesystemSourceGoldenManifestV1, ProviderStrictEd25519FixedResourceHostV1 } from "@understand-code/durable-object-provider-contracts";',
+      'import { validateProviderRealFilesystemSourceClosureV1 } from "@understand-code/durable-object-provider-contracts/provider-real-filesystem-source";',
+      'import type { ProviderRealFilesystemSourceClosureValidationV1, ValidateProviderRealFilesystemSourceClosureV1Input } from "@understand-code/durable-object-provider-contracts/provider-real-filesystem-source";',
       'const slug = DurableObjectIdentityProviderSlugV1Schema.parse("native-fs");',
       'const id = createDurableObjectIdentityProviderIdV1(slug);',
       'DurableObjectIdentityProviderIdV1Schema.parse(id);',
@@ -1070,10 +1107,14 @@ try {
       'declare const registryHistoryInput: ValidateProviderRegistryManifestHistoryV1Input;',
       'declare const registryGoldenManifest: ProviderRegistryManifestHistoryGoldenManifestV1;',
       'declare const registryInvalidBytes: Uint8Array;',
+      'declare const realFilesystemSourceInput: ValidateProviderRealFilesystemSourceClosureV1Input;',
+      'declare const realFilesystemGoldenManifest: ProviderRealFilesystemSourceGoldenManifestV1;',
       'const registryGoldenParsed = ProviderRegistryManifestHistoryGoldenManifestV1Schema.parse(registryGoldenManifest);',
       'const registryHistoryValidation: Promise<ProviderRegistryManifestHistoryValidationV1> = validateProviderRegistryManifestHistoryV1(registryHistoryInput);',
       'const registryInvalidManifest: ProviderRegistryManifestHistoryInvalidManifestV1 = ProviderRegistryManifestHistoryInvalidManifestV1Schema.parse(verifyProviderRegistryManifestHistoryInvalidResourceV1(registryInvalidBytes));',
       'const registryMaterializedRequestDigest: ContentDigestV1 = registryInvalidManifest.cases[0]!.expected.materializedRequestSemanticDigest;',
+      'const realFilesystemGoldenParsed = ProviderRealFilesystemSourceGoldenManifestV1Schema.parse(realFilesystemGoldenManifest);',
+      'const realFilesystemSourceValidation: Promise<ProviderRealFilesystemSourceClosureValidationV1> = validateProviderRealFilesystemSourceClosureV1(realFilesystemSourceInput);',
       'const filenameKey: StoreFilenameKeyV1 = StoreFilenameKeyV1Schema.parse("id-c4");',
       'const rootMetadataPath: ProviderRegistryRootMetadataRelativePathV1 = buildProviderRegistryRootMetadataRelativePathV1({ locatorProfile: "installation_provider_registry_root_metadata_v1", rootGeneration: 1, rootKeyId: "0000000000000000000000" });',
       'void rawKeyDigest;',
@@ -1090,6 +1131,8 @@ try {
       'void registryHistoryValidation;',
       'void registryInvalidManifest;',
       'void registryMaterializedRequestDigest;',
+      'void realFilesystemGoldenParsed;',
+      'void realFilesystemSourceValidation;',
       'void filenameKey;',
       'void rootMetadataPath;',
       'void providerError;',
@@ -1197,12 +1240,33 @@ try {
     ),
     "utf8",
   );
+  const packedRealFilesystemSourceGoldenText = await readFile(
+    join(
+      installedRoot,
+      "fixtures",
+      "v1",
+      "golden",
+      "provider-real-filesystem-source-v1.json",
+    ),
+    "utf8",
+  );
+  const packedRealFilesystemSourceInvalidText = await readFile(
+    join(
+      installedRoot,
+      "fixtures",
+      "v1",
+      "invalid",
+      "provider-real-filesystem-source-v1.json",
+    ),
+    "utf8",
+  );
   await writeFile(
     join(consumerRoot, "browser-entry.js"),
     [
       'import { ProviderUnavailableToolErrorV1Schema, createProviderUnavailableToolErrorV1 } from "@understand-code/durable-object-provider-contracts/provider-error";',
-      'import { PROVIDER_BOOTSTRAP_TRUST_BUNDLE_CONTENT_DIGEST_V1, validateProviderBootstrapTrustBundleStructureV1, verifyProviderBootstrapTrustGoldenManifestResourceV1, verifyProviderBootstrapTrustInvalidManifestResourceV1 } from "@understand-code/durable-object-provider-contracts";',
+      'import { PROVIDER_BOOTSTRAP_TRUST_BUNDLE_CONTENT_DIGEST_V1, PROVIDER_REAL_FILESYSTEM_SOURCE_INVALID_CASE_IDS_V1, validateProviderBootstrapTrustBundleStructureV1, verifyProviderBootstrapTrustGoldenManifestResourceV1, verifyProviderBootstrapTrustInvalidManifestResourceV1, verifyProviderRealFilesystemSourceGoldenResourceV1, verifyProviderRealFilesystemSourceInvalidResourceV1 } from "@understand-code/durable-object-provider-contracts";',
       'import { PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_RESOURCE_BYTE_LENGTH_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_SEMANTIC_CONTENT_DIGEST_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_SEMANTIC_DOMAIN_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_RESOURCE_SHA256_HEX_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_CASE_IDS_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_RESOURCE_BYTE_LENGTH_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_RESOURCE_SHA256_HEX_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_SEMANTIC_CONTENT_DIGEST_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_SEMANTIC_DOMAIN_V1, PROVIDER_REGISTRY_MANIFEST_INVALID_MATERIALIZED_REQUEST_SEMANTIC_DOMAIN_V1, PROVIDER_REGISTRY_ROOT_METADATA_LOCATOR_PROFILE_V1, ProviderRegistryManifestHistoryValidationError, buildProviderRegistryRootMetadataRelativePathV1, validateProviderRegistryManifestHistoryV1, validateProviderRegistryRootMetadataHistoryV1, verifyProviderRegistryManifestHistoryGoldenResourceV1, verifyProviderRegistryManifestHistoryInvalidResourceV1, verifyProviderRegistryRootHistoryGoldenManifestResourceV1, verifyProviderRegistryRootHistoryInvalidManifestResourceV1 } from "@understand-code/durable-object-provider-contracts/provider-registry";',
+      'import { validateProviderRealFilesystemSourceClosureV1 } from "@understand-code/durable-object-provider-contracts/provider-real-filesystem-source";',
       'import { STRICT_ED25519_VERIFICATION_PROFILE_V1, validatePrimeSubgroupPoint, verifyRawEd25519 } from "@understand-code/durable-object-provider-contracts/strict-ed25519";',
       'import { PROVIDER_STRICT_ED25519_MANIFEST_MAX_BYTES_V1, PROVIDER_STRICT_ED25519_MANIFEST_RESOURCE_PATH_V1, attestProviderStrictEd25519CryptoHostV1, getProviderStrictEd25519CryptoCapabilityBytesV1 } from "@understand-code/durable-object-provider-contracts/strict-ed25519-conformance";',
       ...explicitSpecifiers.map(
@@ -1217,6 +1281,8 @@ try {
       `const rootHistoryInvalidBytes = new TextEncoder().encode(${JSON.stringify(packedRootHistoryInvalidText)});`,
       `const registryManifestGoldenBytes = new TextEncoder().encode(${JSON.stringify(packedRegistryManifestGoldenText)});`,
       `const registryManifestInvalidBytes = new TextEncoder().encode(${JSON.stringify(packedRegistryManifestInvalidText)});`,
+      `const realFilesystemSourceGoldenBytes = new TextEncoder().encode(${JSON.stringify(packedRealFilesystemSourceGoldenText)});`,
+      `const realFilesystemSourceInvalidBytes = new TextEncoder().encode(${JSON.stringify(packedRealFilesystemSourceInvalidText)});`,
       'let pointCalls = 0;',
       'let verifyCalls = 0;',
       'const strictHost = {',
@@ -1282,6 +1348,11 @@ try {
       'const digest = digestBitflip[6].contentDigest;',
       'digestBitflip[6].contentDigest = `${digest.slice(0, -1)}${digest.endsWith("0") ? "1" : "0"}`;',
       'await expectRegistryRejection(digestBitflip, "Envelope digest bitflip");',
+      'if (typeof validateProviderRealFilesystemSourceClosureV1 !== "function") throw new Error("browser real filesystem source subpath export missing");',
+      'const realFilesystemGoldenValidation = await verifyProviderRealFilesystemSourceGoldenResourceV1(realFilesystemSourceGoldenBytes, strictCapability);',
+      'if (realFilesystemGoldenValidation.authority !== "none_real_fs_source_structure_only" || realFilesystemGoldenValidation.sourceClosure.recordCount !== 12 || realFilesystemGoldenValidation.sourceClosure.caseCount !== 4 || realFilesystemGoldenValidation.sourceClosure.requiredCaseCutCount !== 8) throw new Error("browser real filesystem source golden mismatch");',
+      'const realFilesystemInvalid = verifyProviderRealFilesystemSourceInvalidResourceV1(realFilesystemSourceInvalidBytes);',
+      'if (realFilesystemInvalid.fixtureAuthority !== "none_rejection_only" || realFilesystemInvalid.caseCount !== 43 || realFilesystemInvalid.cases.length !== 43 || JSON.stringify(realFilesystemInvalid.caseIds) !== JSON.stringify(PROVIDER_REAL_FILESYSTEM_SOURCE_INVALID_CASE_IDS_V1)) throw new Error("browser real filesystem source invalid mismatch");',
       'const capabilityBytes = getProviderStrictEd25519CryptoCapabilityBytesV1(strictCapability);',
       'const providerError = createProviderUnavailableToolErrorV1("revoked");',
       'ProviderUnavailableToolErrorV1Schema.parse(providerError);',
@@ -1289,7 +1360,7 @@ try {
         .map((_, index) => `providerContractBrowserModule${index}`)
         .join(", ")}];`,
       'if (publicModules.some((module) => Object.keys(module).length === 0)) throw new Error("empty browser public export");',
-      'export const browserKatResult = Object.freeze({ pointCalls: bootstrapPointCalls, verifyCalls: bootstrapVerifyCalls, rootHistoryPointCalls, rootHistoryVerifyCalls, registryHistoryPointCalls, registryHistoryVerifyCalls, registryNegativeCount, registryInvalidCaseCount: registryInvalid.caseCount, registryHistoryAuthority: registryValidation.authority, registryManifestCount: registryValidation.retainedRegistryManifestGenerationCount, capabilityByteLength: capabilityBytes.byteLength, bootstrapAuthority: bootstrapValidation.authority, goldenAuthority: bootstrapGoldenValidation.authority, goldenCaseCount: 5 + bootstrapGoldenValidation.manifest.vectors.recoveryKeyIds.length, invalidAuthority: bootstrapInvalidValidation.authority, invalidCaseCount: bootstrapInvalidValidation.manifest.cases.length, rootHistoryAuthority: rootHistoryValidation.authority, rootHistoryGenerationCount: rootHistoryValidation.retainedRootMetadataGenerationCount, rootHistoryInvalidCaseCount: rootHistoryInvalid.cases.length, rootHistoryLocator: latestRootLocator, expectedRootHistoryLocator: rootHistoryGolden.expected.vectors[2].locator, publicModuleCount: publicModules.length, providerReason: providerError.details.reason });',
+      'export const browserKatResult = Object.freeze({ pointCalls: bootstrapPointCalls, verifyCalls: bootstrapVerifyCalls, rootHistoryPointCalls, rootHistoryVerifyCalls, registryHistoryPointCalls, registryHistoryVerifyCalls, registryNegativeCount, registryInvalidCaseCount: registryInvalid.caseCount, registryHistoryAuthority: registryValidation.authority, registryManifestCount: registryValidation.retainedRegistryManifestGenerationCount, realFilesystemAuthority: realFilesystemGoldenValidation.authority, realFilesystemRecordCount: realFilesystemGoldenValidation.sourceClosure.recordCount, realFilesystemCaseCount: realFilesystemGoldenValidation.sourceClosure.caseCount, realFilesystemCutCount: realFilesystemGoldenValidation.sourceClosure.requiredCaseCutCount, realFilesystemInvalidCaseCount: realFilesystemInvalid.caseCount, capabilityByteLength: capabilityBytes.byteLength, bootstrapAuthority: bootstrapValidation.authority, goldenAuthority: bootstrapGoldenValidation.authority, goldenCaseCount: 5 + bootstrapGoldenValidation.manifest.vectors.recoveryKeyIds.length, invalidAuthority: bootstrapInvalidValidation.authority, invalidCaseCount: bootstrapInvalidValidation.manifest.cases.length, rootHistoryAuthority: rootHistoryValidation.authority, rootHistoryGenerationCount: rootHistoryValidation.retainedRootMetadataGenerationCount, rootHistoryInvalidCaseCount: rootHistoryInvalid.cases.length, rootHistoryLocator: latestRootLocator, expectedRootHistoryLocator: rootHistoryGolden.expected.vectors[2].locator, publicModuleCount: publicModules.length, providerReason: providerError.details.reason });',
     ].join("\n"),
     "utf8",
   );
@@ -1372,6 +1443,7 @@ try {
       'if (browserKatResult.invalidAuthority !== "none_rejection_only" || browserKatResult.invalidCaseCount !== 51) throw new Error("browser bootstrap invalid manifest exposed authority or lost cases");',
       'if (browserKatResult.rootHistoryAuthority !== "none_structure_and_history_only" || browserKatResult.rootHistoryGenerationCount !== 3 || browserKatResult.rootHistoryInvalidCaseCount !== 31) throw new Error("browser root history exposed authority or lost cases");',
       'if (browserKatResult.registryHistoryAuthority !== "none_registry_structure_and_history_only" || browserKatResult.registryManifestCount !== 7) throw new Error("browser Registry history exposed authority or lost generations");',
+      'if (browserKatResult.realFilesystemAuthority !== "none_real_fs_source_structure_only" || browserKatResult.realFilesystemRecordCount !== 12 || browserKatResult.realFilesystemCaseCount !== 4 || browserKatResult.realFilesystemCutCount !== 8 || browserKatResult.realFilesystemInvalidCaseCount !== 43) throw new Error("browser real filesystem source exposed authority or lost fixture coverage");',
       'if (browserKatResult.rootHistoryLocator !== browserKatResult.expectedRootHistoryLocator) throw new Error("browser root history locator mismatch");',
       `if (browserKatResult.publicModuleCount !== ${explicitSpecifiers.length}) throw new Error("browser public module count mismatch");`,
       'if (browserKatResult.providerReason !== "revoked") throw new Error("browser provider error probe failed");',
@@ -1427,6 +1499,10 @@ try {
     "dist/provider-registry-manifest-invalid-definitions.d.ts",
     "dist/provider-registry.js",
     "dist/provider-registry.d.ts",
+    "dist/provider-real-filesystem-source.js",
+    "dist/provider-real-filesystem-source.d.ts",
+    "dist/provider-real-filesystem-source-fixtures.js",
+    "dist/provider-real-filesystem-source-fixtures.d.ts",
     "dist/provider-trust-policy.js",
     "dist/provider-trust-policy.d.ts",
     "dist/strict-ed25519.js",
@@ -1457,6 +1533,14 @@ try {
     "schemas/v1/provider-registry-manifest-history-invalid-manifest.schema.json",
     "schemas/v1/provider-registry-manifest-history-invalid-stage.schema.json",
     "schemas/v1/provider-registry-manifest-history-invalid-reason.schema.json",
+    "schemas/v1/provider-real-filesystem-fixture-corpus-manifest-envelope.schema.json",
+    "schemas/v1/provider-real-filesystem-fixture-corpus-manifest-pin.schema.json",
+    "schemas/v1/provider-real-filesystem-fixture-corpus-manifest-locator.schema.json",
+    "schemas/v1/provider-real-filesystem-suite-manifest-envelope.schema.json",
+    "schemas/v1/provider-real-filesystem-suite-manifest-pin.schema.json",
+    "schemas/v1/provider-real-filesystem-suite-manifest-locator.schema.json",
+    "schemas/v1/provider-real-filesystem-source-golden-manifest.schema.json",
+    "schemas/v1/provider-real-filesystem-source-invalid-manifest.schema.json",
     "schemas/v1/store-durable-object-provider-runtime-attestation.schema.json",
     "schemas/v1/store-durable-object-provider-verification-keys.schema.json",
     "schemas/v1/store-durable-object-provider-registry-entry.schema.json",
@@ -1469,10 +1553,12 @@ try {
     "fixtures/v1/golden/provider-bootstrap-structure-crypto-v1.json",
     "fixtures/v1/golden/provider-registry-root-history-v1.json",
     "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+    "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
     "fixtures/v1/invalid/manifest.json",
     "fixtures/v1/invalid/provider-bootstrap-structure-crypto-v1.json",
     "fixtures/v1/invalid/provider-registry-root-history-v1.json",
     "fixtures/v1/invalid/provider-registry-entry-manifest-history-v1.json",
+    "fixtures/v1/invalid/provider-real-filesystem-source-v1.json",
     "fixtures/v1/invalid/provider-registry-entry-manifest-history-v1.recipe-dialect.md",
     "fixtures/v1/invalid/provider-registry-root-history-invalid-recipe-v1.md",
     "fixtures/v1/reference/provider-unavailable-tool-errors.json",
@@ -1495,7 +1581,7 @@ try {
   }
 
   process.stdout.write(
-    `Verified packed provider contracts with ${explicitSpecifiers.length} public module exports, exact ${packedSchemaRelativePaths.length}-schema source/install parity, browser ESM trust checks for bootstrap (62 point/31 signature), root history (11 point/9 signature), 7-generation Registry history (24 point/38 signature), and 89 anchored Registry invalid recipes/materialized-request digests with 3 exact opaque consumer rejections.\n`,
+    `Verified packed provider contracts with ${explicitSpecifiers.length} public module exports, exact ${packedSchemaRelativePaths.length}-schema source/install parity, browser ESM trust checks for bootstrap (62 point/31 signature), root history (11 point/9 signature), 7-generation Registry history (24 point/38 signature), 89 anchored Registry invalid recipes/materialized-request digests with 3 exact opaque consumer rejections, and signed real filesystem source closure (12 records/4 cases/8 cuts plus 43 invalid cases).\n`,
   );
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true });

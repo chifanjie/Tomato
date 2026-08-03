@@ -1,0 +1,20 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-real-filesystem-source-invalid-stage",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "input",
+    "distribution_binding",
+    "active_root",
+    "envelope_limit",
+    "corpus_structure",
+    "corpus_digest",
+    "corpus_signature",
+    "corpus_envelope",
+    "suite_structure",
+    "suite_corpus_pin",
+    "suite_digest",
+    "suite_signature",
+    "suite_envelope"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-real-filesystem-fixture-corpus-manifest-locator",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "locatorProfile": {
+      "type": "string",
+      "const": "distribution_provider_real_fs_fixture_corpus_manifest_v1"
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "locatorProfile",
+    "contentDigest"
+  ],
+  "additionalProperties": false
+}

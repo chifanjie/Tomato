@@ -128,6 +128,50 @@ export type ProviderFeasibilityEvidenceIdV1 = z.infer<
   typeof ProviderFeasibilityEvidenceIdV1Schema
 >;
 
+export const ProviderRealFilesystemCaseIdV1Schema = z
+  .string()
+  .regex(/^provider-real-fs-case:[0-9a-f]{22}$/u)
+  .brand<"ProviderRealFilesystemCaseIdV1">();
+export type ProviderRealFilesystemCaseIdV1 = z.infer<
+  typeof ProviderRealFilesystemCaseIdV1Schema
+>;
+
+export const ProviderRealFilesystemCrashCutIdV1Schema = z
+  .string()
+  .regex(/^(?:no-crash|provider-crash-cut:[0-9a-f]{22})$/u)
+  .brand<"ProviderRealFilesystemCrashCutIdV1">();
+export type ProviderRealFilesystemCrashCutIdV1 = z.infer<
+  typeof ProviderRealFilesystemCrashCutIdV1Schema
+>;
+
+export const ProviderRealFilesystemCaseKeyV1Schema = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9._-]{0,127}$/u)
+  .brand<"ProviderRealFilesystemCaseKeyV1">();
+export type ProviderRealFilesystemCaseKeyV1 = z.infer<
+  typeof ProviderRealFilesystemCaseKeyV1Schema
+>;
+
+export const ProviderRealFilesystemFixtureCorpusManifestSignatureV1Schema = z
+  .string()
+  .regex(
+    /^provider-real-fs-fixture-corpus-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$/u,
+  )
+  .brand<"ProviderRealFilesystemFixtureCorpusManifestSignatureV1">();
+export type ProviderRealFilesystemFixtureCorpusManifestSignatureV1 = z.infer<
+  typeof ProviderRealFilesystemFixtureCorpusManifestSignatureV1Schema
+>;
+
+export const ProviderRealFilesystemSuiteManifestSignatureV1Schema = z
+  .string()
+  .regex(
+    /^provider-real-fs-suite-manifest-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$/u,
+  )
+  .brand<"ProviderRealFilesystemSuiteManifestSignatureV1">();
+export type ProviderRealFilesystemSuiteManifestSignatureV1 = z.infer<
+  typeof ProviderRealFilesystemSuiteManifestSignatureV1Schema
+>;
+
 export const StoreProviderVerificationKeyIdV1Schema = z
   .string()
   .regex(/^[0-9a-f]{22}$/u)

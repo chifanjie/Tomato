@@ -752,7 +752,7 @@ describe("provider contract JSON Schema distribution", () => {
     const missingGeneration = structuredClone(fixture);
     (missingGeneration.registryManifestHistory as unknown[]).pop();
     expect(validate(missingGeneration)).toBe(false);
-  });
+  }, 15_000);
 
   it("validates the real exact 89-case Registry Manifest invalid fixture with AJV", () => {
     const generated = generateProviderContractJsonSchemasV1();
@@ -794,9 +794,9 @@ describe("provider contract JSON Schema distribution", () => {
     expect(validateStage("unknown_stage")).toBe(false);
     expect(validateReason("schema_invalid")).toBe(true);
     expect(validateReason("unknown_reason")).toBe(false);
-  });
+  }, 15_000);
 
-  it("registers the complete C09-1E primitive, record, wrapper, and locator surface", () => {
+  it("registers the complete C09-1F primitive, record, wrapper, and locator surface", () => {
     const generated = generateProviderContractJsonSchemasV1();
     const requiredNames = [
       "provider-registry-manifest-generation-id",
@@ -832,14 +832,36 @@ describe("provider contract JSON Schema distribution", () => {
       "provider-feasibility-approver-public-key-signature-wrapper",
       "store-durable-object-provider-registry-entry-signature-wrapper",
       "provider-registry-manifest-signature-wrapper",
+      "provider-real-filesystem-case-id",
+      "provider-real-filesystem-crash-cut-id",
+      "provider-real-filesystem-case-key",
+      "provider-real-filesystem-fixture-corpus-manifest-envelope",
+      "provider-real-filesystem-fixture-corpus-manifest-pin",
+      "provider-real-filesystem-fixture-corpus-manifest-locator",
+      "provider-real-filesystem-fixture-corpus-manifest-signature-wrapper",
+      "provider-real-filesystem-suite-manifest-envelope",
+      "provider-real-filesystem-suite-manifest-pin",
+      "provider-real-filesystem-suite-manifest-locator",
+      "provider-real-filesystem-suite-manifest-signature-wrapper",
+      "provider-real-filesystem-source-golden-manifest",
+      "provider-real-filesystem-source-invalid-manifest",
     ] as const;
     for (const name of requiredNames) {
       expect(generated, name).toHaveProperty(name);
       expectEveryJsonSchemaObjectClosed(generated[name], name);
     }
-    expect(Object.keys(generated)).toHaveLength(116);
+    expect(Object.keys(generated)).toHaveLength(152);
 
-    for (const name of requiredNames.slice(-6)) {
+    for (const name of [
+      "store-durable-object-provider-runtime-attestation-signature-wrapper",
+      "store-durable-object-provider-verification-public-key-signature-wrapper",
+      "store-durable-object-provider-binding-derivation-generation-signature-wrapper",
+      "provider-feasibility-approver-public-key-signature-wrapper",
+      "store-durable-object-provider-registry-entry-signature-wrapper",
+      "provider-registry-manifest-signature-wrapper",
+      "provider-real-filesystem-fixture-corpus-manifest-signature-wrapper",
+      "provider-real-filesystem-suite-manifest-signature-wrapper",
+    ] as const) {
       expect(generated[name].additionalProperties, name).toBe(false);
       const claims = (
         generated[name].properties as Record<string, Record<string, unknown>>

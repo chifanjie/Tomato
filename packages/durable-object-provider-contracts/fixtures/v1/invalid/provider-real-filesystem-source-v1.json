@@ -1,0 +1,1269 @@
+{
+  "schemaVersion": 1,
+  "profile": "provider_real_fs_source_invalid_v1",
+  "fixtureAuthority": "none_rejection_only",
+  "canonicalizationProfile": "rfc8785-jcs-safe-integer-v1",
+  "verificationProfile": "ed25519-rfc8032-cofactorless-prime-subgroup-v1",
+  "semanticDomain": "provider-real-fs-source-invalid-manifest-v1",
+  "materializedRequestSemanticDomain": "provider-real-fs-source-invalid-materialized-request-v1",
+  "goldenDependency": {
+    "resourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+    "resourceByteLength": 73611,
+    "resourceSha256Hex": "15a59a180d088bf60fbedd7dc7c5500c515e2debf761503ba15c89f7556e2d36",
+    "semanticContentDigest": "sha256:551e9ad5ad5b0b8e55d944176878bd5dc6c3643315adbebfa2a130c4c09f9a0e"
+  },
+  "mutationRecipeDialect": "provider_real_fs_source_invalid_recipe_v1",
+  "caseCount": 43,
+  "caseIds": [
+    "input-extra-field",
+    "input-missing-suite",
+    "corpus-envelope-extra-field",
+    "corpus-profile-malformed",
+    "corpus-record-order-reversed",
+    "corpus-record-duplicate",
+    "corpus-ordinal-gap",
+    "fixture-program-digest-mismatch",
+    "fixture-program-length-mismatch",
+    "corpus-record-count-mismatch",
+    "corpus-record-set-digest-mismatch",
+    "fixture-manifest-digest-mismatch",
+    "corpus-distribution-binding-mismatch",
+    "corpus-active-root-mismatch",
+    "corpus-signature-bitflip",
+    "corpus-signature-wrong-domain",
+    "corpus-signature-wrong-signer",
+    "corpus-signature-prefix-substitution",
+    "corpus-envelope-content-digest-mismatch",
+    "suite-envelope-extra-field",
+    "suite-profile-malformed",
+    "suite-distribution-binding-mismatch",
+    "suite-active-root-mismatch",
+    "suite-corpus-content-pin-mismatch",
+    "suite-corpus-semantic-pin-mismatch",
+    "suite-runner-profile-digest-mismatch",
+    "suite-case-count-mismatch",
+    "suite-case-order-reversed",
+    "suite-case-coverage-omitted",
+    "suite-case-id-mismatch",
+    "suite-case-fixture-count-mismatch",
+    "suite-crash-cut-ordinal-gap",
+    "suite-crash-cut-injection-not-operation",
+    "suite-recovery-assertion-digest-mismatch",
+    "suite-crash-cut-id-mismatch",
+    "suite-required-cut-count-mismatch",
+    "suite-required-cut-set-digest-mismatch",
+    "suite-semantic-digest-mismatch",
+    "suite-signature-bitflip",
+    "suite-signature-wrong-domain",
+    "suite-signature-wrong-signer",
+    "suite-signature-prefix-substitution",
+    "suite-envelope-content-digest-mismatch"
+  ],
+  "cases": [
+    {
+      "caseId": "input-extra-field",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "input-extra-field",
+            "targetJsonPointer": "",
+            "operands": [
+              "callerPath"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:26de92fcdc4bc1558c5a02c232e25009347cef098c30b02b93844de7c6b65a86"
+      }
+    },
+    {
+      "caseId": "input-missing-suite",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "input-missing-suite",
+            "targetJsonPointer": "/suiteManifest",
+            "operands": [
+              "delete"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:de0cd3b9bb44dd30b846a4f57234953584ddda1d75546fdc51c69b69d0d16d17"
+      }
+    },
+    {
+      "caseId": "corpus-envelope-extra-field",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "corpus-envelope-extra-field",
+            "targetJsonPointer": "/fixtureCorpusManifest/callerPath",
+            "operands": [
+              "latest.json"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "corpus_structure",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:afdc335ef8a3e6cd8108ddfec41e3885aef3fb69ef3a3c45aef8bad7989b7def"
+      }
+    },
+    {
+      "caseId": "corpus-profile-malformed",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "corpus-profile-malformed",
+            "targetJsonPointer": "/fixtureCorpusManifest/payload/profile",
+            "operands": [
+              "v2"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "corpus_structure",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:1c6e99e66cdfa3b536d7d39d9509222287acfb904866433bdf075b7b3ace74a6"
+      }
+    },
+    {
+      "caseId": "corpus-record-order-reversed",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "corpus-record-order-reversed",
+            "targetJsonPointer": "/fixtureCorpusManifest/payload/records",
+            "operands": [
+              "swap:0:1"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "corpus_structure",
+        "reason": "ordering_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:ea23a25befc0c108ac09c73677cd167b37b062302091a188982de7e7435aa8a4"
+      }
+    },
+    {
+      "caseId": "corpus-record-duplicate",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "corpus-record-duplicate",
+            "targetJsonPointer": "/fixtureCorpusManifest/payload/records",
+            "operands": [
+              "copy:0:1"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "corpus_structure",
+        "reason": "ordering_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:1312c1cd526ddfa74815f4af05201e8b39eb2e1d46495de164a4695fad0ef046"
+      }
+    },
+    {
+      "caseId": "corpus-ordinal-gap",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "corpus-ordinal-gap",
+            "targetJsonPointer": "/fixtureCorpusManifest/payload/records/1/fixtureOrdinal",
+            "operands": [
+              "2"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "corpus_structure",
+        "reason": "ordering_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:d1be1ddb93ffddf036fdb209b5cbd68da11815a62cbc351e944c189b6a431d72"
+      }
+    },
+    {
+      "caseId": "fixture-program-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "fixture-program-digest-mismatch",
+            "targetJsonPointer": "/fixtureCorpusManifest/payload/records/0/fixtureProgramContentDigest",
+            "operands": [
+              "zero-digest"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "corpus_digest",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:f4ab084fd8c1eafa0292efdad6ac9e7dd851df958951a14e3797a3207280ae4c"
+      }
+    },
+    {
+      "caseId": "fixture-program-length-mismatch",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "fixture-program-length-mismatch",
+            "targetJsonPointer": "/fixtureCorpusManifest/payload/records/0/fixtureProgramLogicalBytes",
+            "operands": [
+              "+1"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "corpus_digest",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:a04916cc96a29380f930028281d8345852f67e75fc2a0abc5fdd059a48b14998"
+      }
+    },
+    {
+      "caseId": "corpus-record-count-mismatch",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "corpus-record-count-mismatch",
+            "targetJsonPointer": "/fixtureCorpusManifest/payload/recordCount",
+            "operands": [
+              "+1"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "corpus_structure",
+        "reason": "count_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:a0b5c62d9da50214fb980c7ad791601038a8e878b1d7b32dca8caeab230defd2"
+      }
+    },
+    {
+      "caseId": "corpus-record-set-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "corpus-record-set-digest-mismatch",
+            "targetJsonPointer": "/fixtureCorpusManifest/payload/recordSetDigest",
+            "operands": [
+              "zero-digest"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "corpus_digest",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:1a87251007ac9e5491e46ea9487884b5b2257a9cf01b39a079e50da017bef9f5"
+      }
+    },
+    {
+      "caseId": "fixture-manifest-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "fixture-manifest-digest-mismatch",
+            "targetJsonPointer": "/fixtureCorpusManifest/payload/fixtureManifestDigest",
+            "operands": [
+              "zero-digest"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "corpus_digest",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:373db5a14c85b3c4cc1d621dfe732fc2e96b7038217e76024d0edbf5b3aefbe4"
+      }
+    },
+    {
+      "caseId": "corpus-distribution-binding-mismatch",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "corpus-distribution-binding-mismatch",
+            "targetJsonPointer": "/fixtureCorpusManifest/payload/releaseRevisionDigest",
+            "operands": [
+              "zero-digest"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "distribution_binding",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:b1f4ec7b3d17c0cb15721c137668c61d27893eb42d3e9e981e93893da97cc585"
+      }
+    },
+    {
+      "caseId": "corpus-active-root-mismatch",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "corpus-active-root-mismatch",
+            "targetJsonPointer": "/fixtureCorpusManifest/payload/registryRootKeyId",
+            "operands": [
+              "zero-key-id"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "active_root",
+        "reason": "root_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:36068e5165eaec60fc9a7243acb53778cf3ccefe81682780c3ffa4f72990f6a0"
+      }
+    },
+    {
+      "caseId": "corpus-signature-bitflip",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "corpus-signature-bitflip",
+            "targetJsonPointer": "/fixtureCorpusManifest/payload/corpusSignature",
+            "operands": [
+              "last-bit"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "corpus_signature",
+        "reason": "signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:99ec411f21cd67abbe7e9e748eacb37c0a964912ab4c83fc2cf795157950d3f2"
+      }
+    },
+    {
+      "caseId": "corpus-signature-wrong-domain",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "corpus-signature-wrong-domain",
+            "targetJsonPointer": "/fixtureCorpusManifest/payload/corpusSignature",
+            "operands": [
+              "independently-valid-wrong-domain"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "corpus_signature",
+        "reason": "signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:b499a78317aaaf98a86b0d2540a64550898bf5b5d6c8d1ac17b0fc55716e20c4"
+      }
+    },
+    {
+      "caseId": "corpus-signature-wrong-signer",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "corpus-signature-wrong-signer",
+            "targetJsonPointer": "/fixtureCorpusManifest/payload/corpusSignature",
+            "operands": [
+              "alternate-key"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "corpus_signature",
+        "reason": "signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:73d55aa1c8f4cf168e62d3fb9c07245c4c18dfeb3c005edd1b077a97a6ae4e05"
+      }
+    },
+    {
+      "caseId": "corpus-signature-prefix-substitution",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "corpus-signature-prefix-substitution",
+            "targetJsonPointer": "/fixtureCorpusManifest/payload/corpusSignature",
+            "operands": [
+              "suite-prefix"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "corpus_structure",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:01bfbf3bcfe1aa2db2fe8d4dd8abd297b42621b1c04a275fe3e54aaf96cc948d"
+      }
+    },
+    {
+      "caseId": "corpus-envelope-content-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "corpus-envelope-content-digest-mismatch",
+            "targetJsonPointer": "/fixtureCorpusManifest/contentDigest",
+            "operands": [
+              "zero-digest"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "corpus_envelope",
+        "reason": "envelope_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:3880ff9204e4035efea1f6cc85895d42ab28b0409a5b07d1375df97069e6d4e7"
+      }
+    },
+    {
+      "caseId": "suite-envelope-extra-field",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-envelope-extra-field",
+            "targetJsonPointer": "/suiteManifest/callerPath",
+            "operands": [
+              "latest.json"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_structure",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:b55e2530bba7ada12a3afc8bf70ebff23c2c6ee0a3e773d35ee4fa453643ed8f"
+      }
+    },
+    {
+      "caseId": "suite-profile-malformed",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-profile-malformed",
+            "targetJsonPointer": "/suiteManifest/payload/profile",
+            "operands": [
+              "v2"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_structure",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:7bd41b1ab86dd2f0cbdc2fe6782d05712875f667984d7fb9b17d61b2d0df67ba"
+      }
+    },
+    {
+      "caseId": "suite-distribution-binding-mismatch",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-distribution-binding-mismatch",
+            "targetJsonPointer": "/suiteManifest/payload/releaseRevisionDigest",
+            "operands": [
+              "zero-digest"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "distribution_binding",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:3fbadac9fcd4198d4478cffc01e7d862dad869954300be3aba4cf0801216a11b"
+      }
+    },
+    {
+      "caseId": "suite-active-root-mismatch",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-active-root-mismatch",
+            "targetJsonPointer": "/suiteManifest/payload/registryRootKeyId",
+            "operands": [
+              "zero-key-id"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "active_root",
+        "reason": "root_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:65a0d831d575087cdb1973e4b64605b0aa402c4cb1828b21c7677b2a67302304"
+      }
+    },
+    {
+      "caseId": "suite-corpus-content-pin-mismatch",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-corpus-content-pin-mismatch",
+            "targetJsonPointer": "/suiteManifest/payload/fixtureCorpusManifest/contentDigest",
+            "operands": [
+              "zero-digest"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_corpus_pin",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:e38215ea082a61bca94f5e0ce65b4d4b20b45974ecca503e804fb193e4e21ef8"
+      }
+    },
+    {
+      "caseId": "suite-corpus-semantic-pin-mismatch",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-corpus-semantic-pin-mismatch",
+            "targetJsonPointer": "/suiteManifest/payload/fixtureCorpusManifest/fixtureManifestDigest",
+            "operands": [
+              "zero-digest"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_corpus_pin",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:02f70e17b5b33d97cc23faa97cfd0b10677334f021fe7fe0229d816988e2e8d3"
+      }
+    },
+    {
+      "caseId": "suite-runner-profile-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-runner-profile-digest-mismatch",
+            "targetJsonPointer": "/suiteManifest/payload/runnerProfileDigest",
+            "operands": [
+              "zero-digest"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_digest",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:95174dd36cf82d47af3ed32d7aa8db6774d528ac87619b173b5a0e6da9621553"
+      }
+    },
+    {
+      "caseId": "suite-case-count-mismatch",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-case-count-mismatch",
+            "targetJsonPointer": "/suiteManifest/payload/caseCount",
+            "operands": [
+              "+1"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_structure",
+        "reason": "count_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:d41c1f4c83d63162e7b906d13082d936c1a02e5e95675ce8fdb38360e971b73c"
+      }
+    },
+    {
+      "caseId": "suite-case-order-reversed",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-case-order-reversed",
+            "targetJsonPointer": "/suiteManifest/payload/cases",
+            "operands": [
+              "reverse"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_structure",
+        "reason": "ordering_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:05f3f0b751b2ab5a272932193844ad4206ec2f4cbc3144c45f3c6a4355968bc2"
+      }
+    },
+    {
+      "caseId": "suite-case-coverage-omitted",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-case-coverage-omitted",
+            "targetJsonPointer": "/suiteManifest/payload/cases",
+            "operands": [
+              "pop-and-decrement"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_structure",
+        "reason": "coverage_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:be6a5eab9f1cbee6f7aeadd6ee9a24504c663aa827fc1c3857d14e79b6ed2350"
+      }
+    },
+    {
+      "caseId": "suite-case-id-mismatch",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-case-id-mismatch",
+            "targetJsonPointer": "/suiteManifest/payload/cases/0/caseId",
+            "operands": [
+              "alternate-valid-id"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_digest",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:d381f6393cd934ecd841b75ed12a1a3c18cfe6e354bf966964ecac48242334d0"
+      }
+    },
+    {
+      "caseId": "suite-case-fixture-count-mismatch",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-case-fixture-count-mismatch",
+            "targetJsonPointer": "/suiteManifest/payload/cases/0/fixtureRecordCount",
+            "operands": [
+              "+1"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_digest",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:d1dc5c7a8e20974136b576969ee22e910e5446158b4e247105c4044fe167247f"
+      }
+    },
+    {
+      "caseId": "suite-crash-cut-ordinal-gap",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-crash-cut-ordinal-gap",
+            "targetJsonPointer": "/suiteManifest/payload/cases/0/requiredCrashCuts/1/crashCutOrdinal",
+            "operands": [
+              "2"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_structure",
+        "reason": "ordering_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:bf70a415f3fb3aa44e7f434f63850205c848afd4028061cb5cb92015bfd425f6"
+      }
+    },
+    {
+      "caseId": "suite-crash-cut-injection-not-operation",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-crash-cut-injection-not-operation",
+            "targetJsonPointer": "/suiteManifest/payload/cases/0/requiredCrashCuts/1/injection/afterFixtureOrdinal",
+            "operands": [
+              "0"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_structure",
+        "reason": "coverage_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:4694a92eedf88271201cc0002c0490fa8696937d2a8e12dba3d6302fc7440718"
+      }
+    },
+    {
+      "caseId": "suite-recovery-assertion-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-recovery-assertion-digest-mismatch",
+            "targetJsonPointer": "/suiteManifest/payload/cases/0/requiredCrashCuts/1/recoveryAssertionContentDigest",
+            "operands": [
+              "zero-digest"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_digest",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:521be75fe860bd286ba9f7f19ddc0e0a954474b949d9bddb62ea1ac2040ea3dd"
+      }
+    },
+    {
+      "caseId": "suite-crash-cut-id-mismatch",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-crash-cut-id-mismatch",
+            "targetJsonPointer": "/suiteManifest/payload/cases/0/requiredCrashCuts/1/crashCutId",
+            "operands": [
+              "alternate-valid-id"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_digest",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:d3607784a6ad771ee83e7268590abbdf01f3744f07c02d7038ff5ce255a84011"
+      }
+    },
+    {
+      "caseId": "suite-required-cut-count-mismatch",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-required-cut-count-mismatch",
+            "targetJsonPointer": "/suiteManifest/payload/requiredCaseCutCount",
+            "operands": [
+              "+1"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_digest",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:64de428e820570f0667a30c87a20fcca35890d16ee9f7afdba1a03b978c57303"
+      }
+    },
+    {
+      "caseId": "suite-required-cut-set-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-required-cut-set-digest-mismatch",
+            "targetJsonPointer": "/suiteManifest/payload/requiredCaseCutSetDigest",
+            "operands": [
+              "zero-digest"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_digest",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:9956f4aa830e88087fa230a1707cb6d2f5a1a143bb9a24b335934ef18beb62d6"
+      }
+    },
+    {
+      "caseId": "suite-semantic-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-semantic-digest-mismatch",
+            "targetJsonPointer": "/suiteManifest/payload/suiteDigest",
+            "operands": [
+              "zero-digest"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_digest",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:5084ecb7a8df87185f7aebe8096fee74986f8235233a9eeeca737ab83c5222b3"
+      }
+    },
+    {
+      "caseId": "suite-signature-bitflip",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-signature-bitflip",
+            "targetJsonPointer": "/suiteManifest/payload/suiteSignature",
+            "operands": [
+              "last-bit"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_signature",
+        "reason": "signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:fbdd63e32fee0dfd1921897782e239083d6f171c10badd46f63a1c52dea39a6a"
+      }
+    },
+    {
+      "caseId": "suite-signature-wrong-domain",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-signature-wrong-domain",
+            "targetJsonPointer": "/suiteManifest/payload/suiteSignature",
+            "operands": [
+              "independently-valid-wrong-domain"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_signature",
+        "reason": "signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:bdf6754855b4941747ef48a6b269c6137de3a3c67f63863f872a2fa9387c8578"
+      }
+    },
+    {
+      "caseId": "suite-signature-wrong-signer",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-signature-wrong-signer",
+            "targetJsonPointer": "/suiteManifest/payload/suiteSignature",
+            "operands": [
+              "alternate-key"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_signature",
+        "reason": "signature_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:17db52ddbc04a52177e10eb49a67f056017ac8ad0f2b918d36d2b3f2c007a01e"
+      }
+    },
+    {
+      "caseId": "suite-signature-prefix-substitution",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-signature-prefix-substitution",
+            "targetJsonPointer": "/suiteManifest/payload/suiteSignature",
+            "operands": [
+              "corpus-prefix"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_structure",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:fb4f831f5045624ae9faa6a38bc6a69300fd0260383dbd515e4f173f6471427b"
+      }
+    },
+    {
+      "caseId": "suite-envelope-content-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_real_fs_source_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
+        "steps": [
+          {
+            "operation": "suite-envelope-content-digest-mismatch",
+            "targetJsonPointer": "/suiteManifest/contentDigest",
+            "operands": [
+              "zero-digest"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_envelope",
+        "reason": "envelope_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemSourceClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:4fff8798c16827925e0eec43a207250193198e17efa82e28fba1dd993fba5d07"
+      }
+    }
+  ],
+  "semanticContentDigest": "sha256:b5e7e10560360afbc60f86c51bd69158a8e42ecbee055f1ea742de73c4d04404"
+}

@@ -1,0 +1,512 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-real-filesystem-source-invalid-manifest",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "profile": {
+      "type": "string",
+      "const": "provider_real_fs_source_invalid_v1"
+    },
+    "fixtureAuthority": {
+      "type": "string",
+      "const": "none_rejection_only"
+    },
+    "canonicalizationProfile": {
+      "type": "string",
+      "const": "rfc8785-jcs-safe-integer-v1"
+    },
+    "verificationProfile": {
+      "type": "string",
+      "const": "ed25519-rfc8032-cofactorless-prime-subgroup-v1"
+    },
+    "semanticDomain": {
+      "type": "string",
+      "const": "provider-real-fs-source-invalid-manifest-v1"
+    },
+    "materializedRequestSemanticDomain": {
+      "type": "string",
+      "const": "provider-real-fs-source-invalid-materialized-request-v1"
+    },
+    "goldenDependency": {
+      "type": "object",
+      "properties": {
+        "resourcePath": {
+          "type": "string",
+          "const": "fixtures/v1/golden/provider-real-filesystem-source-v1.json"
+        },
+        "resourceByteLength": {
+          "type": "number",
+          "const": 73611
+        },
+        "resourceSha256Hex": {
+          "type": "string",
+          "const": "15a59a180d088bf60fbedd7dc7c5500c515e2debf761503ba15c89f7556e2d36"
+        },
+        "semanticContentDigest": {
+          "type": "string",
+          "const": "sha256:551e9ad5ad5b0b8e55d944176878bd5dc6c3643315adbebfa2a130c4c09f9a0e"
+        }
+      },
+      "required": [
+        "resourcePath",
+        "resourceByteLength",
+        "resourceSha256Hex",
+        "semanticContentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "mutationRecipeDialect": {
+      "type": "string",
+      "const": "provider_real_fs_source_invalid_recipe_v1"
+    },
+    "caseCount": {
+      "type": "number",
+      "const": 43
+    },
+    "caseIds": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "string",
+          "const": "input-extra-field"
+        },
+        {
+          "type": "string",
+          "const": "input-missing-suite"
+        },
+        {
+          "type": "string",
+          "const": "corpus-envelope-extra-field"
+        },
+        {
+          "type": "string",
+          "const": "corpus-profile-malformed"
+        },
+        {
+          "type": "string",
+          "const": "corpus-record-order-reversed"
+        },
+        {
+          "type": "string",
+          "const": "corpus-record-duplicate"
+        },
+        {
+          "type": "string",
+          "const": "corpus-ordinal-gap"
+        },
+        {
+          "type": "string",
+          "const": "fixture-program-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "fixture-program-length-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "corpus-record-count-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "corpus-record-set-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "fixture-manifest-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "corpus-distribution-binding-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "corpus-active-root-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "corpus-signature-bitflip"
+        },
+        {
+          "type": "string",
+          "const": "corpus-signature-wrong-domain"
+        },
+        {
+          "type": "string",
+          "const": "corpus-signature-wrong-signer"
+        },
+        {
+          "type": "string",
+          "const": "corpus-signature-prefix-substitution"
+        },
+        {
+          "type": "string",
+          "const": "corpus-envelope-content-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "suite-envelope-extra-field"
+        },
+        {
+          "type": "string",
+          "const": "suite-profile-malformed"
+        },
+        {
+          "type": "string",
+          "const": "suite-distribution-binding-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "suite-active-root-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "suite-corpus-content-pin-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "suite-corpus-semantic-pin-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "suite-runner-profile-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "suite-case-count-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "suite-case-order-reversed"
+        },
+        {
+          "type": "string",
+          "const": "suite-case-coverage-omitted"
+        },
+        {
+          "type": "string",
+          "const": "suite-case-id-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "suite-case-fixture-count-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "suite-crash-cut-ordinal-gap"
+        },
+        {
+          "type": "string",
+          "const": "suite-crash-cut-injection-not-operation"
+        },
+        {
+          "type": "string",
+          "const": "suite-recovery-assertion-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "suite-crash-cut-id-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "suite-required-cut-count-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "suite-required-cut-set-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "suite-semantic-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "suite-signature-bitflip"
+        },
+        {
+          "type": "string",
+          "const": "suite-signature-wrong-domain"
+        },
+        {
+          "type": "string",
+          "const": "suite-signature-wrong-signer"
+        },
+        {
+          "type": "string",
+          "const": "suite-signature-prefix-substitution"
+        },
+        {
+          "type": "string",
+          "const": "suite-envelope-content-digest-mismatch"
+        }
+      ],
+      "minItems": 43,
+      "maxItems": 43,
+      "items": false
+    },
+    "cases": {
+      "minItems": 43,
+      "maxItems": 43,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "caseId": {
+            "type": "string",
+            "enum": [
+              "input-extra-field",
+              "input-missing-suite",
+              "corpus-envelope-extra-field",
+              "corpus-profile-malformed",
+              "corpus-record-order-reversed",
+              "corpus-record-duplicate",
+              "corpus-ordinal-gap",
+              "fixture-program-digest-mismatch",
+              "fixture-program-length-mismatch",
+              "corpus-record-count-mismatch",
+              "corpus-record-set-digest-mismatch",
+              "fixture-manifest-digest-mismatch",
+              "corpus-distribution-binding-mismatch",
+              "corpus-active-root-mismatch",
+              "corpus-signature-bitflip",
+              "corpus-signature-wrong-domain",
+              "corpus-signature-wrong-signer",
+              "corpus-signature-prefix-substitution",
+              "corpus-envelope-content-digest-mismatch",
+              "suite-envelope-extra-field",
+              "suite-profile-malformed",
+              "suite-distribution-binding-mismatch",
+              "suite-active-root-mismatch",
+              "suite-corpus-content-pin-mismatch",
+              "suite-corpus-semantic-pin-mismatch",
+              "suite-runner-profile-digest-mismatch",
+              "suite-case-count-mismatch",
+              "suite-case-order-reversed",
+              "suite-case-coverage-omitted",
+              "suite-case-id-mismatch",
+              "suite-case-fixture-count-mismatch",
+              "suite-crash-cut-ordinal-gap",
+              "suite-crash-cut-injection-not-operation",
+              "suite-recovery-assertion-digest-mismatch",
+              "suite-crash-cut-id-mismatch",
+              "suite-required-cut-count-mismatch",
+              "suite-required-cut-set-digest-mismatch",
+              "suite-semantic-digest-mismatch",
+              "suite-signature-bitflip",
+              "suite-signature-wrong-domain",
+              "suite-signature-wrong-signer",
+              "suite-signature-prefix-substitution",
+              "suite-envelope-content-digest-mismatch"
+            ]
+          },
+          "mutation": {
+            "type": "object",
+            "properties": {
+              "dialect": {
+                "type": "string",
+                "const": "provider_real_fs_source_invalid_recipe_v1"
+              },
+              "goldenResourcePath": {
+                "type": "string",
+                "const": "fixtures/v1/golden/provider-real-filesystem-source-v1.json"
+              },
+              "steps": {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "operation": {
+                        "type": "string",
+                        "enum": [
+                          "input-extra-field",
+                          "input-missing-suite",
+                          "corpus-envelope-extra-field",
+                          "corpus-profile-malformed",
+                          "corpus-record-order-reversed",
+                          "corpus-record-duplicate",
+                          "corpus-ordinal-gap",
+                          "fixture-program-digest-mismatch",
+                          "fixture-program-length-mismatch",
+                          "corpus-record-count-mismatch",
+                          "corpus-record-set-digest-mismatch",
+                          "fixture-manifest-digest-mismatch",
+                          "corpus-distribution-binding-mismatch",
+                          "corpus-active-root-mismatch",
+                          "corpus-signature-bitflip",
+                          "corpus-signature-wrong-domain",
+                          "corpus-signature-wrong-signer",
+                          "corpus-signature-prefix-substitution",
+                          "corpus-envelope-content-digest-mismatch",
+                          "suite-envelope-extra-field",
+                          "suite-profile-malformed",
+                          "suite-distribution-binding-mismatch",
+                          "suite-active-root-mismatch",
+                          "suite-corpus-content-pin-mismatch",
+                          "suite-corpus-semantic-pin-mismatch",
+                          "suite-runner-profile-digest-mismatch",
+                          "suite-case-count-mismatch",
+                          "suite-case-order-reversed",
+                          "suite-case-coverage-omitted",
+                          "suite-case-id-mismatch",
+                          "suite-case-fixture-count-mismatch",
+                          "suite-crash-cut-ordinal-gap",
+                          "suite-crash-cut-injection-not-operation",
+                          "suite-recovery-assertion-digest-mismatch",
+                          "suite-crash-cut-id-mismatch",
+                          "suite-required-cut-count-mismatch",
+                          "suite-required-cut-set-digest-mismatch",
+                          "suite-semantic-digest-mismatch",
+                          "suite-signature-bitflip",
+                          "suite-signature-wrong-domain",
+                          "suite-signature-wrong-signer",
+                          "suite-signature-prefix-substitution",
+                          "suite-envelope-content-digest-mismatch"
+                        ]
+                      },
+                      "targetJsonPointer": {
+                        "type": "string"
+                      },
+                      "operands": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "operation",
+                      "targetJsonPointer",
+                      "operands"
+                    ],
+                    "additionalProperties": false
+                  }
+                ],
+                "minItems": 1,
+                "maxItems": 1,
+                "items": false
+              }
+            },
+            "required": [
+              "dialect",
+              "goldenResourcePath",
+              "steps"
+            ],
+            "additionalProperties": false
+          },
+          "expected": {
+            "type": "object",
+            "properties": {
+              "boundary": {
+                "type": "string",
+                "const": "internal_diagnostic"
+              },
+              "stage": {
+                "type": "string",
+                "enum": [
+                  "input",
+                  "distribution_binding",
+                  "active_root",
+                  "envelope_limit",
+                  "corpus_structure",
+                  "corpus_digest",
+                  "corpus_signature",
+                  "corpus_envelope",
+                  "suite_structure",
+                  "suite_corpus_pin",
+                  "suite_digest",
+                  "suite_signature",
+                  "suite_envelope"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "schema_invalid",
+                  "binding_mismatch",
+                  "root_mismatch",
+                  "byte_limit_exceeded",
+                  "ordering_invalid",
+                  "count_mismatch",
+                  "digest_mismatch",
+                  "coverage_mismatch",
+                  "signature_invalid",
+                  "envelope_mismatch"
+                ]
+              },
+              "publicFailureReason": {
+                "type": "string",
+                "const": "attestation_invalid"
+              },
+              "publicFailure": {
+                "type": "object",
+                "properties": {
+                  "errorName": {
+                    "type": "string",
+                    "const": "ProviderRealFilesystemSourceClosureValidationError"
+                  },
+                  "code": {
+                    "type": "string",
+                    "const": "provider_unavailable"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "const": "attestation_invalid"
+                  }
+                },
+                "required": [
+                  "errorName",
+                  "code",
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              "materializedRequestSemanticDigest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "boundary",
+              "stage",
+              "reason",
+              "publicFailureReason",
+              "publicFailure",
+              "materializedRequestSemanticDigest"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "caseId",
+          "mutation",
+          "expected"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "semanticContentDigest": {
+      "type": "string",
+      "const": "sha256:b5e7e10560360afbc60f86c51bd69158a8e42ecbee055f1ea742de73c4d04404"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "profile",
+    "fixtureAuthority",
+    "canonicalizationProfile",
+    "verificationProfile",
+    "semanticDomain",
+    "materializedRequestSemanticDomain",
+    "goldenDependency",
+    "mutationRecipeDialect",
+    "caseCount",
+    "caseIds",
+    "cases",
+    "semanticContentDigest"
+  ],
+  "additionalProperties": false
+}

@@ -9,7 +9,9 @@ structure-only bootstrap trust bundle. `WP5-C09-1D` adds portable Root
 Metadata lookup and retained successor-history verification. `WP5-C09-1E`
 now adds the signed supporting records, per-provider Registry Entry, complete
 Registry Manifest, fixed Manifest locator, and retained Registry history
-validator without promoting any of them to I/O authority:
+validator. `WP5-C09-1F` now adds the independently root-signed real-filesystem
+Fixture Corpus and Suite source closure, again without promoting any of these
+records to I/O authority:
 
 - `rfc8785-jcs-safe-integer-v1` canonical JSON and exact canonical-byte parsing;
 - independent branded digest, token, provider identity, and key primitives;
@@ -64,6 +66,10 @@ validator without promoting any of them to I/O authority:
   key/runtime rotation, prepared/rebinding/source-drained migration, permanent
   source tombstoning, historical signer verification, and exact retained-byte
   identity.
+- release-independent Fixture Corpus and Suite semantic digests, exact
+  full-signed-payload Envelopes and Pins, two content-digest-only fixed
+  locators, strict case/crash-cut coverage, and an explicit none-only source
+  validation result.
 
 The arbitrary domain/prefix crypto helpers are intentionally package-internal.
 Consumers use the exported domain-specific builders so a caller cannot swap a
@@ -207,22 +213,105 @@ resource. The generator and verifier bind both the raw resource and
 digests. The already-published Root Metadata invalid corpus remains the exact
 31-case resource described below.
 
-The C09-1E inventory contains exactly 116 draft-2020-12 JSON Schemas at this
+The C09-1F inventory contains exactly 152 draft-2020-12 JSON Schemas at this
 checkpoint, including every primitive, supporting wire and
 unsigned projection, atomic genesis/successor and enabled/revoked branch,
 routing union, Envelope, Pin, fixed locator, all six wrappers, and the
 seven-generation golden manifest. The inventory also includes the exact
-89-case invalid Manifest plus its stage and reason enums. Consumers should use
-the shipped inventory rather than assume 116 is a forever constant.
+89-case invalid Registry Manifest plus its stage and reason enums, and the
+complete signed real-filesystem source DTO, wrapper, locator, golden, invalid,
+stage, and reason surface. Consumers should use the shipped inventory rather
+than assume 152 is a forever constant.
 
 The production sources remain ES2022 browser/worker portable. The npm/browser
 distribution gate must expose the new public API through the root and
-`./provider-registry` exports, pack all `schemas/`, `fixtures/`, and fixed
-`provider/` resources, reject private deep imports, and execute the same
-Registry validators from clean Node and browser-bundle installs.
+`./provider-registry` and `./provider-real-filesystem-source` exports, pack all
+`schemas/`, `fixtures/`, and fixed `provider/` resources, reject private deep
+imports, and execute the same Registry and real-filesystem source validators
+from clean Node and browser-bundle installs.
 `test:distribution` enforces exact source-to-packed Schema path-set equality
 in addition to that gate; a successful source build alone must not be
 presented as npm or browser distribution completion.
+
+## C09-1F signed real-filesystem source closure
+
+The Fixture Corpus is the immutable source program inventory. Each strict
+record carries a domain-typed case key, contiguous fixture ordinal, role,
+canonical fixture-program bytes, derived program content digest, and decoded
+logical byte length. Records must be UTF-8 bytewise sorted by
+`{caseKey,fixtureOrdinal}`, unique, and contiguous from ordinal zero within
+every case. The release-independent `fixtureManifestDigest` is derived from
+the corpus version, record count, record-set digest, and complete records; it
+does not absorb distribution binding, active-root metadata, or signatures.
+
+The Suite exact-pins the Corpus by both its semantic fixture-manifest digest
+and full signed Envelope content digest. Its runner profile digest, cases,
+crash cuts, and required-case-cut set are independently recomputed. Cases are
+UTF-8 bytewise sorted by derived case ID and exact-cover every distinct Corpus
+case key. Each case ID is derived from
+`{caseKey,fixtureRecordCount,fixtureRecordSetDigest}`. Crash-cut ordinal zero
+is exactly `no-crash`; hashed cuts start at ordinal one, point only at an
+`operation` record in the same case, and derive their ID from the case ID,
+ordinal, injection, and recovery-assertion digest. The flattened
+`{caseId,crashCutId}` set is UTF-8 tuple-sorted, explicitly checked unique, and
+bound by its count and set digest before the Suite semantic digest is accepted.
+
+Corpus and Suite use separate signature domains:
+
+- `provider-real-fs-fixture-corpus-manifest-signature-v1` with wire prefix
+  `provider-real-fs-fixture-corpus-ed25519`;
+- `provider-real-fs-suite-manifest-signature-v1` with wire prefix
+  `provider-real-fs-suite-manifest-ed25519`.
+
+Both signature builders emit only
+`JCS([domainLiteral,{rootKeyId,domain:domainLiteral,claims}])`. The strict
+validator checks the supplied active-root Pin/key equality, admits the root as
+a strict Ed25519 point, verifies both signatures with the opaque attested
+capability, and requires the Corpus/Suite release cut and distribution binding
+to agree exactly. Signature-prefix, wrapper-domain, signer, message, and Pin
+substitution are all rejected. This validator consumes an active root supplied
+by a higher trust closure; it does not itself prove the retained Root Metadata
+history or signed-package provenance.
+
+The outer Envelope content digest is deliberately different from the semantic
+digest: it covers the complete already-signed payload, including the generated
+signature. The public path builders accept only a complete strict Corpus or
+Suite Envelope and recompute that full signed-payload `contentDigest` before
+they derive:
+
+- `provider/real-fs-fixture-corpus-manifests/<StoreFilenameKey("fixture-corpus-envelope:" + contentDigest)>.json`;
+- `provider/real-fs-suite-manifests/<StoreFilenameKey("suite-envelope:" + contentDigest)>.json`.
+
+Callers cannot provide a bare digest, physical path, alias, directory scan,
+semantic digest, or alternate filename. The lower-level locator DTO schemas
+describe verified Pins and inventories but do not establish digest provenance
+and are not accepted by the path builders. The validator applies the signed
+distribution policy's 16 MiB canonical Envelope ceiling after strict in-memory
+materialization; this slice does not claim resolver-level streaming or a
+pre-read physical-byte cap.
+
+Successful validation returns exactly
+`authority: "none_real_fs_source_structure_only"`, immutable Corpus/Suite Pins,
+their two derived relative paths, and the verified record/case/cut counts. The
+public failure remains the privacy-opaque
+`ProviderRealFilesystemSourceClosureValidationError` with
+`provider_unavailable/attestation_invalid`; detailed stage/reason diagnostics
+exist for conformance fixtures and must not be surfaced as provider authority.
+In particular, this closure does not execute fixture programs, touch a real
+filesystem, select a target, or prove a provider conformance result.
+
+The golden resource is
+`fixtures/v1/golden/provider-real-filesystem-source-v1.json`. It freezes 12
+records, four cases, eight required cuts, both exact signature messages,
+complete canonical payload bytes, full-content locators, and a none-only
+successful validation. The paired
+`fixtures/v1/invalid/provider-real-filesystem-source-v1.json` is an exact
+43-case ordered rejection corpus covering closed input shape, record/case/cut
+ordering and coverage, every semantic and Envelope digest, distribution/root
+binding, Corpus Pin equality, signature bitflips, wrong domains/signers and
+prefix substitution. Both resources are independently anchored by raw byte
+length/SHA-256 and domain-separated semantic digest; every invalid recipe also
+pins the semantic digest of its materialized request.
 
 ## Verification
 
@@ -236,12 +325,16 @@ pnpm --filter @understand-code/durable-object-provider-contracts generate:provid
 pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-registry-manifest-history
 pnpm --filter @understand-code/durable-object-provider-contracts generate:provider-registry-manifest-invalid
 pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-registry-manifest-invalid
+pnpm --filter @understand-code/durable-object-provider-contracts generate:provider-real-fs-source
+pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-real-fs-source
 pnpm --filter @understand-code/durable-object-provider-contracts generate:schemas
 pnpm --filter @understand-code/durable-object-provider-contracts verify:schemas
 pnpm --filter @understand-code/durable-object-provider-contracts exec vitest run \
   test/provider-registry-records.test.ts \
   test/provider-registry-manifest-history.test.ts \
   test/provider-registry-manifest-fixtures.test.ts \
+  test/provider-real-filesystem-source.test.ts \
+  test/provider-real-filesystem-source-fixtures.test.ts \
   test/json-schema.test.ts
 pnpm --filter @understand-code/durable-object-provider-contracts test
 pnpm --filter @understand-code/durable-object-provider-contracts test:distribution
@@ -254,8 +347,10 @@ and retained-byte fields are checked by
 `verify:provider-registry-manifest-history` and the focused fixture tests. The
 invalid resource's `caseCount`, ordered `caseIds`, raw/semantic anchors, exact
 diagnostics, and crypto call counts are checked by
-`verify:provider-registry-manifest-invalid`. `test/json-schema.test.ts` freezes
-the current 116-schema inventory and `verify:schemas` rejects generated-file
+`verify:provider-registry-manifest-invalid`. The signed real-filesystem fixture
+anchors, exact source closure, and 43 materialized negative diagnostics are
+checked by `verify:provider-real-fs-source`. `test/json-schema.test.ts` freezes
+the current 152-schema inventory and `verify:schemas` rejects generated-file
 drift. `test:distribution` is the clean packed Node/browser source for the npm
 distribution claims.
 
@@ -400,12 +495,14 @@ provider capability can be exposed.
 
 This package establishes the common foundation needed by AT-C21, AT-C29,
 AT-C31, and AT-Q33; it does not claim those end-to-end acceptance groups are
-complete. C09-1E now covers signed Registry supporting records, Entries,
-Manifests, retained history, and local migration/tombstone transitions. It does
-not close signed-package provenance authority, atomic Installation Identity
-persistence, Feasibility Evidence resolution, Catalog/Taxonomy/Release Matrix
-coverage, Acceptance high-water and active-writer selection, Migration Plan
-equality, provider runtime/real-filesystem execution, or migration proofs.
-Those later gates must consume these immutable records and return
-`provider_unavailable` with zero writes whenever the external closure is
-missing or inconsistent.
+complete. C09-1F covers signed Registry supporting records, Entries, Manifests,
+retained history, local migration/tombstone transitions, and the independently
+signed real-filesystem Fixture Corpus to Suite source chain. It does not close
+signed-package provenance authority, atomic Installation Identity persistence,
+Target Discovery Fixture/Runner/Input Bundle/Result resolution, real-filesystem
+Conformance Result exact-cover, Feasibility Evidence, Catalog/Taxonomy/Release
+Matrix/Target Universe history, typed retained-distribution accounting,
+Acceptance high-water and active-writer selection, Migration Plan equality,
+provider runtime or real-filesystem execution, or migration proofs. Those later
+gates must consume these immutable records and return `provider_unavailable`
+with zero writes whenever the external closure is missing or inconsistent.

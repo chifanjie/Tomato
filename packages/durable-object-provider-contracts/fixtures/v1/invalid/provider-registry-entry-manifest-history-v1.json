@@ -1,0 +1,2781 @@
+{
+  "schemaVersion": 1,
+  "profile": "provider_registry_manifest_history_invalid_manifest_v1",
+  "fixtureAuthority": "none_rejection_only",
+  "verificationProfile": "ed25519-rfc8032-cofactorless-prime-subgroup-v1",
+  "canonicalizationProfile": "rfc8785-jcs-safe-integer-v1",
+  "semanticDomain": "provider-registry-manifest-history-invalid-manifest-v1",
+  "materializedRequestSemanticDomain": "provider-registry-manifest-invalid-materialized-request-v1",
+  "goldenDependency": {
+    "resourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+    "resourceByteLength": 1341933,
+    "resourceSha256Hex": "bff8bdf27f6034d6bbaeea08be79f054300244405900008fcfb9c46e590962d8",
+    "semanticContentDigest": "sha256:6c2c8e75f7a4c8e6b43cb151db0dc292146a20182d0fce9b623b346437a0a12a"
+  },
+  "mutationRecipeDialect": "provider_registry_manifest_history_invalid_recipe_v1",
+  "caseCount": 89,
+  "caseIds": [
+    "history-empty",
+    "input-extra-field",
+    "input-missing-installation-id",
+    "input-bad-installation-id",
+    "history-not-array",
+    "history-sparse-array",
+    "envelope-null",
+    "envelope-extra-field",
+    "envelope-record-type-malformed",
+    "envelope-generation-id-malformed",
+    "manifest-extra-field",
+    "manifest-profile-malformed",
+    "genesis-predecessor-branch-malformed",
+    "successor-predecessor-branch-malformed",
+    "entry-extra-field",
+    "entry-genesis-predecessor-branch-malformed",
+    "entry-successor-predecessor-branch-malformed",
+    "verification-key-extra-field",
+    "manifest-signature-malformed",
+    "envelope-generation-id-mismatch",
+    "payload-generation-id-mismatch",
+    "envelope-content-digest-mismatch",
+    "manifest-installation-id-mismatch",
+    "manifest-generation-starts-at-two",
+    "manifest-generation-gap",
+    "predecessor-generation-id-mismatch",
+    "predecessor-content-digest-mismatch",
+    "manifest-sibling-generation",
+    "root-generation-rollback",
+    "unknown-root-pin",
+    "member-order-reversed",
+    "member-duplicate",
+    "tombstone-disappears",
+    "enabled-entry-digest-mismatch",
+    "member-entry-provider-mismatch",
+    "entry-generation-jump",
+    "entry-predecessor-digest-mismatch",
+    "same-entry-digest-different-bytes",
+    "runtime-pin-digest-mismatch",
+    "runtime-provider-mismatch",
+    "provider-key-id-mismatch",
+    "provider-key-raw-digest-mismatch",
+    "provider-key-order-reversed",
+    "active-key-missing",
+    "active-key-wrong-usage",
+    "active-key-revoked",
+    "revoked-key-unknown",
+    "rotated-key-backdated",
+    "key-history-removal",
+    "retained-key-bytes-changed",
+    "public-key-material-alias-root",
+    "provider-key-cap-exceeded",
+    "per-usage-key-cap-exceeded",
+    "manifest-signature-bitflip",
+    "manifest-signature-wrong-signer",
+    "manifest-signature-wrong-domain",
+    "manifest-signature-wrong-prefix",
+    "runtime-signature-bitflip",
+    "runtime-signature-wrong-signer",
+    "runtime-signature-wrong-domain",
+    "key-signature-bitflip",
+    "key-signature-wrong-domain",
+    "entry-signature-bitflip",
+    "entry-signature-wrong-domain",
+    "public-key-small-order",
+    "steady-two-enabled-bypass",
+    "migration-missing-member",
+    "migration-source-equals-destination",
+    "migration-active-outsider",
+    "migration-phase-skip",
+    "migration-id-switch",
+    "tombstone-generation-wrong",
+    "tombstone-digest-wrong",
+    "tombstone-mutated-after-retention",
+    "provider-resurrection",
+    "early-steady-before-drained",
+    "locator-alias-extra-field",
+    "locator-path-extra-field",
+    "locator-filename-key-extra-field",
+    "history-count-cap-4097",
+    "single-envelope-byte-cap",
+    "total-history-byte-cap",
+    "approval-snapshot-diverges",
+    "binding-active-missing",
+    "binding-revocation-unknown",
+    "approver-active-role-mismatch",
+    "approver-revocation-unknown",
+    "binding-record-duplicate",
+    "approver-record-order-reversed"
+  ],
+  "cases": [
+    {
+      "caseId": "history-empty",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "history-empty",
+            "targetJsonPointer": "/registryManifestHistory",
+            "operands": []
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "history_input",
+        "reason": "history_empty",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 0,
+        "postAttestationSignatureCalls": 0,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:78d190af677055f6d05c7d5696c63c985fe875272bc12b935e1fc66153106fd2"
+      }
+    },
+    {
+      "caseId": "input-extra-field",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "input-extra-field",
+            "targetJsonPointer": "",
+            "operands": [
+              "callerPath"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "history_input",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 0,
+        "postAttestationSignatureCalls": 0,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:32825f829110f621ff835b13bf53e88778320f28317ed981c9aa75ab92a535de"
+      }
+    },
+    {
+      "caseId": "input-missing-installation-id",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "input-missing-installation-id",
+            "targetJsonPointer": "/installationIdentityGenerationId",
+            "operands": []
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "history_input",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 0,
+        "postAttestationSignatureCalls": 0,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:e8778060381c30b4a890c6d3204145a97dc5097482d7747b5920a4fee18b6af6"
+      }
+    },
+    {
+      "caseId": "input-bad-installation-id",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "input-bad-installation-id",
+            "targetJsonPointer": "/installationIdentityGenerationId",
+            "operands": [
+              "installation-identity-generation:BAD"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "history_input",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 0,
+        "postAttestationSignatureCalls": 0,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:6899257c01c1a7493f3abc98ad15b0aa0752ae46fdf41ad7f4a8f08192adee49"
+      }
+    },
+    {
+      "caseId": "history-not-array",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "history-not-array",
+            "targetJsonPointer": "/registryManifestHistory",
+            "operands": [
+              "object"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "history_input",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 0,
+        "postAttestationSignatureCalls": 0,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:7a029018875139b616ce599dae7dbfb17a4f4f93ce792153269ff3026a612fbc"
+      }
+    },
+    {
+      "caseId": "history-sparse-array",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "history-sparse-array",
+            "targetJsonPointer": "/registryManifestHistory/0",
+            "operands": [
+              "delete"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "history_input",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 0,
+        "postAttestationSignatureCalls": 0,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:cf3c0e96d0b8bd1113d3cef6035fecb541c2039e13927bfac7040b87c2cd6326"
+      }
+    },
+    {
+      "caseId": "envelope-null",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "envelope-null",
+            "targetJsonPointer": "/registryManifestHistory/0",
+            "operands": [
+              "null"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:f1bd079666e032a9b0245301d5b8b075499e0005d8b24c1756aae478439e68f6"
+      }
+    },
+    {
+      "caseId": "envelope-extra-field",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "envelope-extra-field",
+            "targetJsonPointer": "/registryManifestHistory/0/callerPath",
+            "operands": [
+              "latest.json"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:a40e6840c07e293fba58e76404ece632d5dab423f2b2e40d2e4d9b4ca203e815"
+      }
+    },
+    {
+      "caseId": "envelope-record-type-malformed",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "envelope-record-type-malformed",
+            "targetJsonPointer": "/registryManifestHistory/0/recordType",
+            "operands": [
+              "provider_registry_entry"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:aed0c1545958404c9e8998e194e3c1be829da98fc1c859996a310ef9e62800e5"
+      }
+    },
+    {
+      "caseId": "envelope-generation-id-malformed",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "envelope-generation-id-malformed",
+            "targetJsonPointer": "/registryManifestHistory/0/generationId",
+            "operands": [
+              "provider-registry-manifest:BAD"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:52186615819f83b6c7b47c233c293454f1b26ed1b4ab661ece49fa3b544a8f1e"
+      }
+    },
+    {
+      "caseId": "manifest-extra-field",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "manifest-extra-field",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/callerPath",
+            "operands": [
+              "latest.json"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:cf3f570f9aaccd454b2ffed7a6134a9f5566bb99e49f70f14df69246cdd16121"
+      }
+    },
+    {
+      "caseId": "manifest-profile-malformed",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "manifest-profile-malformed",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/profile",
+            "operands": [
+              "provider_registry_manifest_v2"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:6f4c4420620e2c73eb6f429f972c440267c0e13c180b1f4671478868dc5d4814"
+      }
+    },
+    {
+      "caseId": "genesis-predecessor-branch-malformed",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "genesis-predecessor-branch-malformed",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/predecessor",
+            "operands": [
+              "manifest"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:8ceee763dfd0586f7e38593166323560b71530d154a369dbb08f4b1110582a80"
+      }
+    },
+    {
+      "caseId": "successor-predecessor-branch-malformed",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "successor-predecessor-branch-malformed",
+            "targetJsonPointer": "/registryManifestHistory/1/payload/predecessor",
+            "operands": [
+              "genesis"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 18,
+        "postAttestationSignatureCalls": 20,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:b5efabbd196d7bde40185bc64cd70e26872b70746912a550dad058bd516ad869"
+      }
+    },
+    {
+      "caseId": "entry-extra-field",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "entry-extra-field",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/callerPath",
+            "operands": [
+              "entry.json"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:ed95e4cbca05c0c72f0bf5037f17df868560027560faba9240628521d57c457d"
+      }
+    },
+    {
+      "caseId": "entry-genesis-predecessor-branch-malformed",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "entry-genesis-predecessor-branch-malformed",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/predecessorRegistryEntryContentDigest",
+            "operands": [
+              "sha256:00"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:9cba572bd479e8bdd0bb80ffe1a952779af25b2c43dcd13668fc21b08c0b62af"
+      }
+    },
+    {
+      "caseId": "entry-successor-predecessor-branch-malformed",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "entry-successor-predecessor-branch-malformed",
+            "targetJsonPointer": "/registryManifestHistory/1/payload/members/0/registryEntry/predecessorRegistryEntryContentDigest",
+            "operands": [
+              "delete"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 18,
+        "postAttestationSignatureCalls": 20,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:14916d458daff79b8fe46c1377e5762dba84345dc4fba5802ef863cf3c09712e"
+      }
+    },
+    {
+      "caseId": "verification-key-extra-field",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "verification-key-extra-field",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/verificationKeys/publicKeyRecords/0/path",
+            "operands": [
+              "key.json"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:a0446af59b4eff1a0e42ca6a22e85a3c7227ae6bf45fa8655f2e227e73d6ae85"
+      }
+    },
+    {
+      "caseId": "manifest-signature-malformed",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "manifest-signature-malformed",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/manifestSignature",
+            "operands": [
+              "malformed"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:489e72e0fb9e980bd95842095ff855c8b9f23701aba599fcff4039861203394b"
+      }
+    },
+    {
+      "caseId": "envelope-generation-id-mismatch",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "envelope-generation-id-mismatch",
+            "targetJsonPointer": "/registryManifestHistory/0/generationId",
+            "operands": [
+              "generation-2"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "envelope_mismatch",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:52a71a4ff6a03c634ce782bd21ce03b493efe29a9ed4bb7d234fdfd9f0dbb931"
+      }
+    },
+    {
+      "caseId": "payload-generation-id-mismatch",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "payload-generation-id-mismatch",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/generationId",
+            "operands": [
+              "generation-2"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "envelope_mismatch",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:4c5b71c2899d11c32c3c09ee75605b01035605d563e20cb7513eba634b956f2c"
+      }
+    },
+    {
+      "caseId": "envelope-content-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "envelope-content-digest-mismatch",
+            "targetJsonPointer": "/registryManifestHistory/0/contentDigest",
+            "operands": [
+              "sha256:ee"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "envelope_mismatch",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:d64d5e99a743c75c68a442510c503a735cb09ddc2e5fdae02a4224e5bc8fbf35"
+      }
+    },
+    {
+      "caseId": "manifest-installation-id-mismatch",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "manifest-installation-id-mismatch",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/installationIdentityGenerationId",
+            "operands": [
+              "installation-identity-generation:00"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "envelope_mismatch",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:1a7a7344dfd3eaf990fa6a9d5b0368d079c043938d70f4b09809d7e597f55115"
+      }
+    },
+    {
+      "caseId": "manifest-generation-starts-at-two",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "manifest-generation-starts-at-two",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/manifestGeneration",
+            "operands": [
+              "2"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_predecessor",
+        "reason": "generation_not_contiguous",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:e4c610c9ff4ca2f265095fa1de22176cf422a662b40c873d6d46467e2994a45a"
+      }
+    },
+    {
+      "caseId": "manifest-generation-gap",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "manifest-generation-gap",
+            "targetJsonPointer": "/registryManifestHistory/1/payload/manifestGeneration",
+            "operands": [
+              "3"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_predecessor",
+        "reason": "generation_not_contiguous",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 18,
+        "postAttestationSignatureCalls": 20,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:7789fa4f7af76ac4adadfe720e63cb2b405aaeafcb803369af23f714f534fe6c"
+      }
+    },
+    {
+      "caseId": "predecessor-generation-id-mismatch",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "predecessor-generation-id-mismatch",
+            "targetJsonPointer": "/registryManifestHistory/1/payload/predecessor/generationId",
+            "operands": [
+              "generation-2"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_predecessor",
+        "reason": "predecessor_pin_mismatch",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 18,
+        "postAttestationSignatureCalls": 20,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:e55a42757aab0f0327bd7bfb16a4ebba1e856542680fe4620cbbed76d963289f"
+      }
+    },
+    {
+      "caseId": "predecessor-content-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "predecessor-content-digest-mismatch",
+            "targetJsonPointer": "/registryManifestHistory/1/payload/predecessor/contentDigest",
+            "operands": [
+              "sha256:ff"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_predecessor",
+        "reason": "predecessor_pin_mismatch",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 18,
+        "postAttestationSignatureCalls": 20,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:00a52c975c1f4354f7df53076e3ab842a2ca6af978bd037b768a66b2e4c9692f"
+      }
+    },
+    {
+      "caseId": "manifest-sibling-generation",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "manifest-sibling-generation",
+            "targetJsonPointer": "/registryManifestHistory/2",
+            "operands": [
+              "copy-generation-2"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_predecessor",
+        "reason": "generation_not_contiguous",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 19,
+        "postAttestationSignatureCalls": 24,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:88b5958e3b1f1212648bc2ba9552e68b8bd0701ccf82ad9151ab61b12b310ab4"
+      }
+    },
+    {
+      "caseId": "root-generation-rollback",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "root-generation-rollback",
+            "targetJsonPointer": "/registryManifestHistory/2/payload/activeRootMetadata",
+            "operands": [
+              "root-1"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_binding",
+        "reason": "root_generation_rollback",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 19,
+        "postAttestationSignatureCalls": 24,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:e37a1bb1e08e5e545162601c1dd46d1f5a59c445bce2093283d52b60b9286731"
+      }
+    },
+    {
+      "caseId": "unknown-root-pin",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "unknown-root-pin",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/activeRootMetadata/contentDigest",
+            "operands": [
+              "sha256:ff"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "root_binding",
+        "reason": "root_pin_mismatch",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:a0d11bb555c290ba113b035a669c4686840815a71383039b76141529ab2bfb1d"
+      }
+    },
+    {
+      "caseId": "member-order-reversed",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "member-order-reversed",
+            "targetJsonPointer": "/registryManifestHistory/2/payload/members",
+            "operands": [
+              "reverse"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 19,
+        "postAttestationSignatureCalls": 24,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:00dbb2e9f2af9de5d65013398ffc492d5c23011cdfff7916c9ded0f7b8b2e7df"
+      }
+    },
+    {
+      "caseId": "member-duplicate",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "member-duplicate",
+            "targetJsonPointer": "/registryManifestHistory/2/payload/members",
+            "operands": [
+              "duplicate-0"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 19,
+        "postAttestationSignatureCalls": 24,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:e9bc1880f785b968a9dba632658d911794a3b453ca82a65c675d46b04514a5a4"
+      }
+    },
+    {
+      "caseId": "tombstone-disappears",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "tombstone-disappears",
+            "targetJsonPointer": "/registryManifestHistory/6/payload/members/0",
+            "operands": [
+              "delete"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "member_set",
+        "reason": "member_transition_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 24,
+        "postAttestationSignatureCalls": 38,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:d22769e32e4475e9aab99ddc9b35d3da7d29ea9224face619c1db30365cf7575"
+      }
+    },
+    {
+      "caseId": "enabled-entry-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "enabled-entry-digest-mismatch",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntryContentDigest",
+            "operands": [
+              "sha256:ff"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "registry_entry",
+        "reason": "entry_mismatch",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 10,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:37d0ae0849643910f1a91bfe3ea0eae5316a7f984f09c99507d4f11fe3711350"
+      }
+    },
+    {
+      "caseId": "member-entry-provider-mismatch",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "member-entry-provider-mismatch",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/providerId",
+            "operands": [
+              "native-b"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "registry_entry",
+        "reason": "entry_mismatch",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 10,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:581d6c1ddf5dd9c1ef804950a4926ff4039b93b1366e8d2924a7feae27aa142b"
+      }
+    },
+    {
+      "caseId": "entry-generation-jump",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "entry-generation-jump",
+            "targetJsonPointer": "/registryManifestHistory/1/payload/members/0/registryEntry/registryGeneration",
+            "operands": [
+              "3"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "registry_entry",
+        "reason": "entry_successor_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 18,
+        "postAttestationSignatureCalls": 21,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:a1faac35e11407a603a69be0c2f4ae233f03c74e0fbf7f35c763f1aedc9aa0a3"
+      }
+    },
+    {
+      "caseId": "entry-predecessor-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "entry-predecessor-digest-mismatch",
+            "targetJsonPointer": "/registryManifestHistory/1/payload/members/0/registryEntry/predecessorRegistryEntryContentDigest",
+            "operands": [
+              "sha256:ff"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "registry_entry",
+        "reason": "entry_successor_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 18,
+        "postAttestationSignatureCalls": 21,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:cf5f58e8c0f4ba3bbc2bf58a01ab913651b976f31c3711a99de8dbe8917e303b"
+      }
+    },
+    {
+      "caseId": "same-entry-digest-different-bytes",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "same-entry-digest-different-bytes",
+            "targetJsonPointer": "/registryManifestHistory/1/payload/members/0",
+            "operands": [
+              "reuse-digest-change-signature"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "registry_entry",
+        "reason": "entry_successor_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 18,
+        "postAttestationSignatureCalls": 21,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:edaea46a39f0d1eada4390bf4828d8e86428e9e240438c3b2fac3fb662619dd3"
+      }
+    },
+    {
+      "caseId": "runtime-pin-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "runtime-pin-digest-mismatch",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/runtimeAttestation/contentDigest",
+            "operands": [
+              "sha256:ff"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "registry_entry",
+        "reason": "entry_mismatch",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 10,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:8f8928eba9b46841d712edeb3e129ad7f906270968b328f3c8bc259f226b0532"
+      }
+    },
+    {
+      "caseId": "runtime-provider-mismatch",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "runtime-provider-mismatch",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/runtimeAttestation/payload/providerId",
+            "operands": [
+              "native-b"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "registry_entry",
+        "reason": "entry_mismatch",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 10,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:c6e7ee09c6e72794b719a8f8eb60f004efa7afe1b43f23cca4a82e8f2870b3af"
+      }
+    },
+    {
+      "caseId": "provider-key-id-mismatch",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "provider-key-id-mismatch",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/verificationKeys/publicKeyRecords/0/keyId",
+            "operands": [
+              "00"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "key_history",
+        "reason": "record_history_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 11,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:de10d634015721aef06a0f259103705286373dcff94d0d73519e6c9ceadd7103"
+      }
+    },
+    {
+      "caseId": "provider-key-raw-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "provider-key-raw-digest-mismatch",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/verificationKeys/publicKeyRecords/0/publicKeyDigest",
+            "operands": [
+              "sha256:ff"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "key_history",
+        "reason": "record_history_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 11,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:03728ed54b6dd9b3d7613e381fc616a7b30c1afdd1ced9e501d4495556b3a103"
+      }
+    },
+    {
+      "caseId": "provider-key-order-reversed",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "provider-key-order-reversed",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/verificationKeys/publicKeyRecords",
+            "operands": [
+              "reverse"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:9dfc8d7b45285f70da058740349a9c1f125745da33aaa26a954eb32e033d1289"
+      }
+    },
+    {
+      "caseId": "active-key-missing",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "active-key-missing",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/verificationKeys/activeKeyIds/operationReceipt",
+            "operands": [
+              "00"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "key_history",
+        "reason": "active_record_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 10,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:7e7133c9dd2c8085c71f2c82233e00a5eedbc0de823ef26455e2092a208cb44f"
+      }
+    },
+    {
+      "caseId": "active-key-wrong-usage",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "active-key-wrong-usage",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/verificationKeys/activeKeyIds/operationReceipt",
+            "operands": [
+              "containment-key"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "key_history",
+        "reason": "active_record_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 10,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:edac0e115c29523cc203af7d2ccff2c8a30ee1a302f3f1b1ca8de67247cb0170"
+      }
+    },
+    {
+      "caseId": "active-key-revoked",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "active-key-revoked",
+            "targetJsonPointer": "/registryManifestHistory/1/payload/members/0/registryEntry/verificationKeys/compromisedRevokedKeyIds",
+            "operands": [
+              "active-operation"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "key_history",
+        "reason": "active_record_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 18,
+        "postAttestationSignatureCalls": 21,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:fa5462a77d9ed62e0c6a808ed23e9816734173fc309d4da0299984f04814661d"
+      }
+    },
+    {
+      "caseId": "revoked-key-unknown",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "revoked-key-unknown",
+            "targetJsonPointer": "/registryManifestHistory/1/payload/members/0/registryEntry/verificationKeys/compromisedRevokedKeyIds",
+            "operands": [
+              "00"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "key_history",
+        "reason": "revocation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 18,
+        "postAttestationSignatureCalls": 21,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:eb8cee28bbd4530da317d4a9ba314c68e5965a664f3f940e19b1a20d3c5ab520"
+      }
+    },
+    {
+      "caseId": "rotated-key-backdated",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "rotated-key-backdated",
+            "targetJsonPointer": "/registryManifestHistory/1/payload/members/0/registryEntry/verificationKeys/publicKeyRecords",
+            "operands": [
+              "generation-1"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "key_history",
+        "reason": "record_history_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 18,
+        "postAttestationSignatureCalls": 22,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:4e25af590e83c8c208ce0e4d1bacc9c8c2c08dc8be60a411e9e2e0cb60fbb0bb"
+      }
+    },
+    {
+      "caseId": "key-history-removal",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "key-history-removal",
+            "targetJsonPointer": "/registryManifestHistory/1/payload/members/0/registryEntry/verificationKeys/publicKeyRecords",
+            "operands": [
+              "remove-migration-key"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "key_history",
+        "reason": "record_history_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 18,
+        "postAttestationSignatureCalls": 21,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:27873110d5ff0da57a91f3d72eb03bb7b847fea882e7088fe1d17765466a70c5"
+      }
+    },
+    {
+      "caseId": "retained-key-bytes-changed",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "retained-key-bytes-changed",
+            "targetJsonPointer": "/registryManifestHistory/1/payload/members/0/registryEntry/verificationKeys/publicKeyRecords/0",
+            "operands": [
+              "change-signature"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "key_history",
+        "reason": "record_history_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 18,
+        "postAttestationSignatureCalls": 21,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:a61fdb4443e2cc568feb574b79420e2a7d71ffa216890607997f290694e45585"
+      }
+    },
+    {
+      "caseId": "public-key-material-alias-root",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "public-key-material-alias-root",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/verificationKeys/publicKeyRecords",
+            "operands": [
+              "usage=migration_semantic_proof",
+              "root-1"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "material_closure",
+        "reason": "public_key_material_alias",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 13,
+        "postAttestationSignatureCalls": 13,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:5cb2a4e5a61cdc262b38da26e969a9f392eb9eb1d4e29251d58df3a1e2240473"
+      }
+    },
+    {
+      "caseId": "provider-key-cap-exceeded",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "provider-key-cap-exceeded",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/verificationKeys/publicKeyRecords",
+            "operands": [
+              "257"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "key_history",
+        "reason": "record_history_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 10,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:d7a5533223a8ccdc9cfcb9736a782368ab5e3438cc4f2ef80e4c0d88b0a749d5"
+      }
+    },
+    {
+      "caseId": "per-usage-key-cap-exceeded",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "per-usage-key-cap-exceeded",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/verificationKeys/publicKeyRecords",
+            "operands": [
+              "operation_receipt",
+              "65"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "key_history",
+        "reason": "record_history_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 10,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:2af17da21127b2c6d1bc440e78fb73b03f2d83b066754ed2aa87b85a465d78a2"
+      }
+    },
+    {
+      "caseId": "manifest-signature-bitflip",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "manifest-signature-bitflip",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/manifestSignature",
+            "operands": [
+              "last-bit"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_signature",
+        "reason": "signature_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 10,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:20147146afa8146ef6dc2bfb601fe5728c6301707b0d14a40a954e41b6696ab1"
+      }
+    },
+    {
+      "caseId": "manifest-signature-wrong-signer",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "manifest-signature-wrong-signer",
+            "targetJsonPointer": "/registryManifestHistory/2/payload/manifestSignature",
+            "operands": [
+              "root-2"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_signature",
+        "reason": "signature_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 19,
+        "postAttestationSignatureCalls": 24,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:571dff8e78ade4bad16bb03d983797966f46b1b7103f8e0cf9bb11e8954ac02f"
+      }
+    },
+    {
+      "caseId": "manifest-signature-wrong-domain",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "manifest-signature-wrong-domain",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/manifestSignature",
+            "operands": [
+              "provider-registry-manifest-wrong-signature-v1"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_signature",
+        "reason": "signature_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 10,
+        "wrongDomainProofCount": 1,
+        "materializedRequestSemanticDigest": "sha256:14b7eb2d760e1d93ef7e3fe909c78a647b5fe326edd3c5cc6c54edbbfcf7bde1"
+      }
+    },
+    {
+      "caseId": "manifest-signature-wrong-prefix",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "manifest-signature-wrong-prefix",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/manifestSignature",
+            "operands": [
+              "provider-registry-ed25519"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:e7aa5c026241d800aef9d05bb56118c82bc028812bf65e493471ea892d757480"
+      }
+    },
+    {
+      "caseId": "runtime-signature-bitflip",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "runtime-signature-bitflip",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/runtimeAttestation/payload/registrySignature",
+            "operands": [
+              "last-bit"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "record_signature",
+        "reason": "signature_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 11,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:d1f098486315c14a2dbb8212ed9ee1bf72eddf63e5e74334585bdca9186a0140"
+      }
+    },
+    {
+      "caseId": "runtime-signature-wrong-signer",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "runtime-signature-wrong-signer",
+            "targetJsonPointer": "/registryManifestHistory/1/payload/members/0/registryEntry/runtimeAttestation/payload/registrySignature",
+            "operands": [
+              "root-1"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "record_signature",
+        "reason": "signature_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 18,
+        "postAttestationSignatureCalls": 21,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:a1cddb264dc37e37faf885217aa154c3ac975a2e66f0298e65b2dd103c702cac"
+      }
+    },
+    {
+      "caseId": "runtime-signature-wrong-domain",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "runtime-signature-wrong-domain",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/runtimeAttestation/payload/registrySignature",
+            "operands": [
+              "store-provider-runtime-attestation-wrong-signature-v1"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "record_signature",
+        "reason": "signature_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 11,
+        "wrongDomainProofCount": 1,
+        "materializedRequestSemanticDigest": "sha256:12755667ca6a8bd112b8a2e94924bbf18e157ab6c90c899cf28531198252cea6"
+      }
+    },
+    {
+      "caseId": "key-signature-bitflip",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "key-signature-bitflip",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/verificationKeys/publicKeyRecords/0/registrySignature",
+            "operands": [
+              "last-bit"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "record_signature",
+        "reason": "signature_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 12,
+        "postAttestationSignatureCalls": 12,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:37431083d14dee981273158b432a5fb601904b92f560f68f3ebc8046c6c73ca7"
+      }
+    },
+    {
+      "caseId": "key-signature-wrong-domain",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "key-signature-wrong-domain",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/verificationKeys/publicKeyRecords/0/registrySignature",
+            "operands": [
+              "store-provider-key-wrong-signature-v1"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "record_signature",
+        "reason": "signature_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 12,
+        "postAttestationSignatureCalls": 12,
+        "wrongDomainProofCount": 1,
+        "materializedRequestSemanticDigest": "sha256:51b0f7e520618d2a8d8a011c8d20ffb34834ce36cec8ec2da41e90c3f7eed1b7"
+      }
+    },
+    {
+      "caseId": "entry-signature-bitflip",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "entry-signature-bitflip",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/registrySignature",
+            "operands": [
+              "last-bit"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "record_signature",
+        "reason": "signature_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 18,
+        "postAttestationSignatureCalls": 20,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:7e92c7f3c3a6a3f6fcb7ea361a0e5949eb77141b4bdd96b0c25ae2b8c3e208c1"
+      }
+    },
+    {
+      "caseId": "entry-signature-wrong-domain",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "entry-signature-wrong-domain",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/registrySignature",
+            "operands": [
+              "store-provider-entry-wrong-signature-v1"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "record_signature",
+        "reason": "signature_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 18,
+        "postAttestationSignatureCalls": 20,
+        "wrongDomainProofCount": 1,
+        "materializedRequestSemanticDigest": "sha256:eb3fee31fa9f566d8f8dcbb974c1600ef03e666654854ab6b9a0ee2f9ad49b87"
+      }
+    },
+    {
+      "caseId": "public-key-small-order",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "public-key-small-order",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/verificationKeys/publicKeyRecords",
+            "operands": [
+              "usage=migration_semantic_proof",
+              "identity-point"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "key_admission",
+        "reason": "point_admission_failed",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 14,
+        "postAttestationSignatureCalls": 13,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:204e2e761c6a966bb271890aa89e1d9584a6ab499c7560d6d8c285f5d4f438f7"
+      }
+    },
+    {
+      "caseId": "steady-two-enabled-bypass",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "steady-two-enabled-bypass",
+            "targetJsonPointer": "/registryManifestHistory/2/payload/routing",
+            "operands": [
+              "steady"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "routing",
+        "reason": "routing_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 19,
+        "postAttestationSignatureCalls": 25,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:844125b49fd51bd8c71c71c9f30f85fb87a2a1574e4df1e1c722e6a75e0dd1ca"
+      }
+    },
+    {
+      "caseId": "migration-missing-member",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "migration-missing-member",
+            "targetJsonPointer": "/registryManifestHistory/2/payload/members/1",
+            "operands": [
+              "delete"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "routing",
+        "reason": "routing_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 19,
+        "postAttestationSignatureCalls": 25,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:45eb973664349bb6e4f352f6e91e02b53a887edd129ef92aa4142f5910fd0c6a"
+      }
+    },
+    {
+      "caseId": "migration-source-equals-destination",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "migration-source-equals-destination",
+            "targetJsonPointer": "/registryManifestHistory/2/payload/routing/sourceProviderId",
+            "operands": [
+              "destination"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "routing",
+        "reason": "routing_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 19,
+        "postAttestationSignatureCalls": 25,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:366c1e8afb60e0a694c4c960f15d1238e851af156ae3b92654041839c23b5d8e"
+      }
+    },
+    {
+      "caseId": "migration-active-outsider",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "migration-active-outsider",
+            "targetJsonPointer": "/registryManifestHistory/2/payload/routing/activeForMigrationWrites",
+            "operands": [
+              "native-c"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "routing",
+        "reason": "routing_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 19,
+        "postAttestationSignatureCalls": 25,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:1b7adb81038474a51ccd492df451fcf0c389d6bec5f2040b39a558708afdd4ff"
+      }
+    },
+    {
+      "caseId": "migration-phase-skip",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "migration-phase-skip",
+            "targetJsonPointer": "/registryManifestHistory/3/payload/routing/phase",
+            "operands": [
+              "source_drained"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "routing",
+        "reason": "routing_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 24,
+        "postAttestationSignatureCalls": 35,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:044260fe64b95862e235c65094cd0607e02820c69dbd52ecfef3a0313b1e8fda"
+      }
+    },
+    {
+      "caseId": "migration-id-switch",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "migration-id-switch",
+            "targetJsonPointer": "/registryManifestHistory/3/payload/routing/migrationId",
+            "operands": [
+              "provider-migration:00"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "routing",
+        "reason": "routing_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 24,
+        "postAttestationSignatureCalls": 35,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:05519366ea366c85fbcd7be6f18d87b726694c5c36fbd0ff395125ffca054d0c"
+      }
+    },
+    {
+      "caseId": "tombstone-generation-wrong",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "tombstone-generation-wrong",
+            "targetJsonPointer": "/registryManifestHistory/5/payload/members/0/revokedAtManifestGeneration",
+            "operands": [
+              "5"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "member_set",
+        "reason": "member_transition_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 24,
+        "postAttestationSignatureCalls": 37,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:b4a964f302bddc373048507e8fd7b7e372498ce53f8bfb4ea28ad7122ae52a33"
+      }
+    },
+    {
+      "caseId": "tombstone-digest-wrong",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "tombstone-digest-wrong",
+            "targetJsonPointer": "/registryManifestHistory/5/payload/members/0/lastEnabledRegistryEntryContentDigest",
+            "operands": [
+              "sha256:ff"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "member_set",
+        "reason": "member_transition_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 24,
+        "postAttestationSignatureCalls": 37,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:206fed275eefa8a05ee742dbd1e7b7f2810276f42d400918402a06e965e41cd7"
+      }
+    },
+    {
+      "caseId": "tombstone-mutated-after-retention",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "tombstone-mutated-after-retention",
+            "targetJsonPointer": "/registryManifestHistory/6/payload/members/0/reason",
+            "operands": [
+              "provider_compromised"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "member_set",
+        "reason": "member_transition_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 24,
+        "postAttestationSignatureCalls": 38,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:6648ffe6867deecde15b87a8ba925811655e106201f064bd42a88905425d62ee"
+      }
+    },
+    {
+      "caseId": "provider-resurrection",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "provider-resurrection",
+            "targetJsonPointer": "/registryManifestHistory/6/payload/members/0",
+            "operands": [
+              "enabled-a3"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "member_set",
+        "reason": "member_transition_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 24,
+        "postAttestationSignatureCalls": 38,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:d448620af6310ab4f688b9d59079d4586e6c82ac300ee91b6f85c288b992588f"
+      }
+    },
+    {
+      "caseId": "early-steady-before-drained",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "early-steady-before-drained",
+            "targetJsonPointer": "/registryManifestHistory/4",
+            "operands": [
+              "tombstone-and-steady"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "routing",
+        "reason": "routing_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 24,
+        "postAttestationSignatureCalls": 36,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:2a7874905ce9192aeb8116b292bb477f2b04de694ae5195f0dd2bdb376bc412a"
+      }
+    },
+    {
+      "caseId": "locator-alias-extra-field",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "locator-alias-extra-field",
+            "targetJsonPointer": "/registryManifestHistory/0/locator",
+            "operands": [
+              "latest"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:09785578112d294c988e29135073bfd3102ba0c7f97ef0ada1dd585add5a57ae"
+      }
+    },
+    {
+      "caseId": "locator-path-extra-field",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "locator-path-extra-field",
+            "targetJsonPointer": "/registryManifestHistory/0/path",
+            "operands": [
+              "provider/registry-manifests/latest.json"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:c318b30400c336723aabd190d7248b15d3e0f677437bea4be2886293eee28b4b"
+      }
+    },
+    {
+      "caseId": "locator-filename-key-extra-field",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "locator-filename-key-extra-field",
+            "targetJsonPointer": "/registryManifestHistory/0/filenameKey",
+            "operands": [
+              "idh-00"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:b0510895a1e85a4c53ce6a6581022d2dcdf5efc26957043bdc4030046ec214e0"
+      }
+    },
+    {
+      "caseId": "history-count-cap-4097",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "history-count-cap-4097",
+            "targetJsonPointer": "/registryManifestHistory",
+            "operands": [
+              "4097"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "history_limit",
+        "reason": "history_generation_limit_exceeded",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 0,
+        "postAttestationSignatureCalls": 0,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:142bfbd77a32022ff18b62b3d5741b735eb22295ef931d2183239b251aade744"
+      }
+    },
+    {
+      "caseId": "single-envelope-byte-cap",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "single-envelope-byte-cap",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/issuedAt",
+            "operands": [
+              "4194305",
+              "61"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "history_limit",
+        "reason": "envelope_byte_limit_exceeded",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 0,
+        "postAttestationSignatureCalls": 0,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:9a6615a7e9b37ab01beb0025b159ffe9cdd1cd56b0f9f3d3d30ca61fa6bda48a"
+      }
+    },
+    {
+      "caseId": "total-history-byte-cap",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "total-history-byte-cap",
+            "targetJsonPointer": "/registryManifestHistory",
+            "operands": [
+              "68",
+              "4000000"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "history_limit",
+        "reason": "history_total_byte_limit_exceeded",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 0,
+        "postAttestationSignatureCalls": 0,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:39998eec99eda594372ec18f0025505eb5478d089145908d439295812dbb469a"
+      }
+    },
+    {
+      "caseId": "approval-snapshot-diverges",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "approval-snapshot-diverges",
+            "targetJsonPointer": "/registryManifestHistory/2/payload/members/1/registryEntry/feasibilityApprovalKeys/activeKeyIds",
+            "operands": [
+              "swap"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "key_history",
+        "reason": "record_history_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 19,
+        "postAttestationSignatureCalls": 25,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:f5de95a0990c2db37376886dce287b60cb420187c9962c5ca6ad1bdeefdf7f49"
+      }
+    },
+    {
+      "caseId": "binding-active-missing",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "binding-active-missing",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/verificationKeys/activeBindingDerivationKeyGeneration",
+            "operands": [
+              "2"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "key_history",
+        "reason": "active_record_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 10,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:c4e61d728df543ca96c18bd9240b65d25d3a86fa8e309661af44b60065b1bedd"
+      }
+    },
+    {
+      "caseId": "binding-revocation-unknown",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "binding-revocation-unknown",
+            "targetJsonPointer": "/registryManifestHistory/1/payload/members/0/registryEntry/verificationKeys/compromisedRevokedBindingDerivationGenerations",
+            "operands": [
+              "2"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "key_history",
+        "reason": "revocation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 18,
+        "postAttestationSignatureCalls": 21,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:2817ea79ab3573f6b04905e2c642dbcd2525a8c0815e47181747e50534d13554"
+      }
+    },
+    {
+      "caseId": "approver-active-role-mismatch",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "approver-active-role-mismatch",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/feasibilityApprovalKeys/activeKeyIds",
+            "operands": [
+              "swap"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "key_history",
+        "reason": "active_record_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 10,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:73831ad89854695560477f440b2dda49f1e4b9ab2a612c91675843bf59b637c2"
+      }
+    },
+    {
+      "caseId": "approver-revocation-unknown",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "approver-revocation-unknown",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/feasibilityApprovalKeys/compromisedRevokedKeyIds",
+            "operands": [
+              "00"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "key_history",
+        "reason": "revocation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 10,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:f29397a056ff87f221fdfb282eace20e1d34b12b13120b7e5dd14077fba5f2b4"
+      }
+    },
+    {
+      "caseId": "binding-record-duplicate",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "binding-record-duplicate",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/verificationKeys/bindingDerivationGenerationRecords",
+            "operands": [
+              "duplicate-0"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:6e8ac33410baeca5e9a3b29409f635f46a09dec54b9f375163335442ac5ac340"
+      }
+    },
+    {
+      "caseId": "approver-record-order-reversed",
+      "mutation": {
+        "dialect": "provider_registry_manifest_history_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+        "steps": [
+          {
+            "operation": "approver-record-order-reversed",
+            "targetJsonPointer": "/registryManifestHistory/0/payload/members/0/registryEntry/feasibilityApprovalKeys/publicKeyRecords",
+            "operands": [
+              "reverse"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "manifest_envelope",
+        "reason": "schema_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRegistryManifestHistoryValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "postAttestationPointCalls": 11,
+        "postAttestationSignatureCalls": 9,
+        "wrongDomainProofCount": 0,
+        "materializedRequestSemanticDigest": "sha256:8276e6f3910dd869f3f1850397660b12ff8ff2338ddef05b04ba382f33d5acde"
+      }
+    }
+  ]
+}

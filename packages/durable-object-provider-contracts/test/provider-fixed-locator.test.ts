@@ -2,12 +2,16 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import {
+  buildProviderRegistryManifestRelativePathV1,
   buildProviderRegistryRootMetadataRelativePathV1,
   decodeShortStoreFilenameKeyV1,
   encodeStoreFilenameKeyV1,
   HashedStoreFilenameKeyV1Schema,
+  PROVIDER_REGISTRY_MANIFEST_LOCATOR_PROFILE_V1,
+  ProviderRegistryManifestLocatorV1Schema,
   ShortStoreFilenameKeyV1Schema,
   StoreFilenameKeyV1Schema,
+  validateProviderRegistryManifestRelativePathV1,
   verifyStoreFilenameKeyForSemanticIdV1,
 } from "../src/provider-fixed-locator.js";
 
@@ -287,5 +291,113 @@ describe("Provider Registry Root Metadata fixed locator", () => {
     expect(() =>
       buildProviderRegistryRootMetadataRelativePathV1(symbolInput),
     ).toThrow(/symbols/u);
+  });
+});
+
+describe("Provider Registry Manifest fixed locator", () => {
+  const generationId =
+    "provider-registry-manifest:0123456789abcdefabcdef";
+  const valid = {
+    locatorProfile: PROVIDER_REGISTRY_MANIFEST_LOCATOR_PROFILE_V1,
+    generationId,
+  };
+
+  it("builds the one canonical short relative path", () => {
+    const locator = ProviderRegistryManifestLocatorV1Schema.parse(valid);
+    const path = buildProviderRegistryManifestRelativePathV1(locator);
+
+    expect(path).toBe(
+      "provider/registry-manifests/id-e1p6utj9chin4bbicljmisrke9siqrb1dpkmcpbjegt30c9i6cq3adhn70sm2oj3chimcob2cdi6apg.json",
+    );
+    expect(path).toBe(
+      `provider/registry-manifests/${encodeStoreFilenameKeyV1(generationId)}.json`,
+    );
+    expect(validateProviderRegistryManifestRelativePathV1(valid)).toBe(path);
+    expect(path).toContain("/id-");
+  });
+
+  it("does not accept a caller-forced hashed alias", () => {
+    const canonical = buildProviderRegistryManifestRelativePathV1(valid);
+    const forcedHash =
+      `provider/registry-manifests/idh-${sha256Hex(generationId)}.json`;
+    expect(canonical).not.toBe(forcedHash);
+
+    for (const input of [
+      { ...valid, filenameKey: `idh-${sha256Hex(generationId)}` },
+      { ...valid, path: forcedHash },
+      { ...valid, relativePath: forcedHash },
+      { ...valid, alias: "latest" },
+    ]) {
+      expect(() =>
+        buildProviderRegistryManifestRelativePathV1(input),
+      ).toThrow(/exact fields/u);
+    }
+  });
+
+  it("rejects profile, prefix, case and generation-body substitutions", () => {
+    for (const input of [
+      {
+        ...valid,
+        locatorProfile: "provider_registry_manifest_v1",
+      },
+      { ...valid, generationId: generationId.toUpperCase() },
+      {
+        ...valid,
+        generationId: generationId.replace(
+          "provider-registry-manifest:",
+          "provider_registry_manifest:",
+        ),
+      },
+      {
+        ...valid,
+        generationId: `provider-registry-manifest:${"0".repeat(21)}`,
+      },
+      {
+        ...valid,
+        generationId: `provider-registry-manifest:${"0".repeat(23)}`,
+      },
+      {
+        ...valid,
+        generationId: `provider-registry-manifest:g${"0".repeat(21)}`,
+      },
+    ]) {
+      expect(() =>
+        buildProviderRegistryManifestRelativePathV1(input),
+      ).toThrow();
+    }
+  });
+
+  it("rejects accessors without invoking them", () => {
+    let invoked = false;
+    const input = {
+      locatorProfile: PROVIDER_REGISTRY_MANIFEST_LOCATOR_PROFILE_V1,
+    } as Record<string, unknown>;
+    Object.defineProperty(input, "generationId", {
+      enumerable: true,
+      get() {
+        invoked = true;
+        return generationId;
+      },
+    });
+
+    expect(() =>
+      buildProviderRegistryManifestRelativePathV1(input),
+    ).toThrow(/data property/u);
+    expect(invoked).toBe(false);
+  });
+
+  it("rejects proxies before a value-get trap can influence lookup", () => {
+    let getInvoked = false;
+    const proxied = new Proxy(valid, {
+      get() {
+        getInvoked = true;
+        throw new Error("must not read through caller proxy");
+      },
+    });
+
+    expect(() =>
+      buildProviderRegistryManifestRelativePathV1(proxied),
+    ).toThrow(/non-proxy/u);
+    expect(getInvoked).toBe(false);
   });
 });

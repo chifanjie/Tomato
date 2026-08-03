@@ -17,7 +17,15 @@ import {
   LowerHex22V1Schema,
   LowerHex32V1Schema,
   LowerHex64V1Schema,
+  ProviderFeasibilityApproverKeyIdV1Schema,
+  ProviderFeasibilityEvidenceIdV1Schema,
+  ProviderMigrationIdV1Schema,
+  ProviderOsReleaseFamilyCodeV1Schema,
+  ProviderRegistryManifestGenerationIdV1Schema,
+  ProviderRegistryManifestSignatureV1Schema,
   ProviderRegistryRootKeyIdV1Schema,
+  StoreProviderRegistrySignatureV1Schema,
+  StoreProviderVerificationKeyIdV1Schema,
 } from "./primitives.js";
 import {
   ProviderCapabilityFailureReasonV1Schema,
@@ -63,10 +71,57 @@ import {
 } from "./provider-trust-policy.js";
 import {
   HashedStoreFilenameKeyV1Schema,
+  ProviderRegistryManifestLocatorV1Schema,
   ProviderRegistryRootMetadataLocatorV1Schema,
   ShortStoreFilenameKeySyntaxV1Schema,
   StoreFilenameKeySyntaxV1Schema,
 } from "./provider-fixed-locator.js";
+import {
+  ProviderFeasibilityApprovalKeysV1Schema,
+  ProviderFeasibilityApproverKeyIdFieldsV1Schema,
+  ProviderFeasibilityApproverPublicKeySignatureWrapperV1Schema,
+  ProviderFeasibilityApproverPublicKeyUnsignedClaimsV1Schema,
+  ProviderFeasibilityApproverPublicKeyV1Schema,
+  ProviderFeasibilityEvidencePinV1Schema,
+  ProviderRegistryManifestEnabledMemberV1Schema,
+  ProviderRegistryManifestEnvelopeV1Schema,
+  ProviderRegistryManifestGenesisIdFieldsV1Schema,
+  ProviderRegistryManifestGenesisPredecessorV1Schema,
+  ProviderRegistryManifestGenesisUnsignedClaimsV1Schema,
+  ProviderRegistryManifestGenesisV1Schema,
+  ProviderRegistryManifestIdFieldsV1Schema,
+  ProviderRegistryManifestMemberV1Schema,
+  ProviderRegistryManifestPinV1Schema,
+  ProviderRegistryManifestRevokedMemberV1Schema,
+  ProviderRegistryManifestRoutingV1Schema,
+  ProviderRegistryManifestSignatureWrapperV1Schema,
+  ProviderRegistryManifestSuccessorIdFieldsV1Schema,
+  ProviderRegistryManifestSuccessorPredecessorV1Schema,
+  ProviderRegistryManifestSuccessorUnsignedClaimsV1Schema,
+  ProviderRegistryManifestSuccessorV1Schema,
+  ProviderRegistryManifestUnsignedClaimsV1Schema,
+  ProviderRegistryManifestV1Schema,
+  StoreDurableObjectProviderBindingDerivationGenerationSignatureWrapperV1Schema,
+  StoreDurableObjectProviderBindingDerivationGenerationUnsignedClaimsV1Schema,
+  StoreDurableObjectProviderBindingDerivationGenerationV1Schema,
+  StoreDurableObjectProviderRegistryEntryGenesisUnsignedClaimsV1Schema,
+  StoreDurableObjectProviderRegistryEntryGenesisV1Schema,
+  StoreDurableObjectProviderRegistryEntrySignatureWrapperV1Schema,
+  StoreDurableObjectProviderRegistryEntrySuccessorUnsignedClaimsV1Schema,
+  StoreDurableObjectProviderRegistryEntrySuccessorV1Schema,
+  StoreDurableObjectProviderRegistryEntryUnsignedClaimsV1Schema,
+  StoreDurableObjectProviderRegistryEntryV1Schema,
+  StoreDurableObjectProviderRuntimeAttestationPinV1Schema,
+  StoreDurableObjectProviderRuntimeAttestationSignatureWrapperV1Schema,
+  StoreDurableObjectProviderRuntimeAttestationUnsignedClaimsV1Schema,
+  StoreDurableObjectProviderRuntimeAttestationV1Schema,
+  StoreDurableObjectProviderVerificationKeysV1Schema,
+  StoreDurableObjectProviderVerificationKeyUsageV1Schema,
+  StoreDurableObjectProviderVerificationPublicKeySignatureWrapperV1Schema,
+  StoreDurableObjectProviderVerificationPublicKeyUnsignedClaimsV1Schema,
+  StoreDurableObjectProviderVerificationPublicKeyV1Schema,
+  StoreProviderVerificationKeyIdFieldsV1Schema,
+} from "./provider-registry-records.js";
 import {
   ProviderRegistryRootCrossSignatureWrapperV1Schema,
   ProviderRegistryRootRecoverySignatureWrapperV1Schema,
@@ -77,6 +132,12 @@ import {
   ProviderRegistryRootHistoryInvalidReasonV1Schema,
   ProviderRegistryRootHistoryInvalidStageV1Schema,
 } from "./provider-registry-root-history-fixtures.js";
+import {
+  ProviderRegistryManifestHistoryGoldenManifestV1Schema,
+  ProviderRegistryManifestHistoryInvalidManifestV1Schema,
+  ProviderRegistryManifestHistoryInvalidReasonV1Schema,
+  ProviderRegistryManifestHistoryInvalidStageV1Schema,
+} from "./provider-registry-manifest-fixtures.js";
 import {
   ProviderEd25519PublicKeyDigestGoldenCaseV1Schema,
   ProviderEd25519PublicKeyDigestGoldenManifestV1Schema,
@@ -114,6 +175,21 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
   "lower-hex-32": LowerHex32V1Schema,
   "lower-hex-64": LowerHex64V1Schema,
   "provider-registry-root-key-id": ProviderRegistryRootKeyIdV1Schema,
+  "provider-registry-manifest-generation-id":
+    ProviderRegistryManifestGenerationIdV1Schema,
+  "provider-migration-id": ProviderMigrationIdV1Schema,
+  "provider-feasibility-evidence-id":
+    ProviderFeasibilityEvidenceIdV1Schema,
+  "store-provider-verification-key-id":
+    StoreProviderVerificationKeyIdV1Schema,
+  "provider-feasibility-approver-key-id":
+    ProviderFeasibilityApproverKeyIdV1Schema,
+  "provider-os-release-family-code":
+    ProviderOsReleaseFamilyCodeV1Schema,
+  "store-provider-registry-signature":
+    StoreProviderRegistrySignatureV1Schema,
+  "provider-registry-manifest-signature":
+    ProviderRegistryManifestSignatureV1Schema,
   "provider-registry-root-key-id-fields":
     ProviderRegistryRootKeyIdFieldsV1Schema,
   "provider-capability-failure-reason":
@@ -178,6 +254,94 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
   "hashed-store-filename-key": HashedStoreFilenameKeyV1Schema,
   "provider-registry-root-metadata-locator":
     ProviderRegistryRootMetadataLocatorV1Schema,
+  "provider-registry-manifest-locator":
+    ProviderRegistryManifestLocatorV1Schema,
+  "store-durable-object-provider-verification-key-usage":
+    StoreDurableObjectProviderVerificationKeyUsageV1Schema,
+  "store-provider-verification-key-id-fields":
+    StoreProviderVerificationKeyIdFieldsV1Schema,
+  "provider-feasibility-approver-key-id-fields":
+    ProviderFeasibilityApproverKeyIdFieldsV1Schema,
+  "store-durable-object-provider-runtime-attestation-unsigned-claims":
+    StoreDurableObjectProviderRuntimeAttestationUnsignedClaimsV1Schema,
+  "store-durable-object-provider-runtime-attestation":
+    StoreDurableObjectProviderRuntimeAttestationV1Schema,
+  "store-durable-object-provider-runtime-attestation-pin":
+    StoreDurableObjectProviderRuntimeAttestationPinV1Schema,
+  "store-durable-object-provider-verification-public-key-unsigned-claims":
+    StoreDurableObjectProviderVerificationPublicKeyUnsignedClaimsV1Schema,
+  "store-durable-object-provider-verification-public-key":
+    StoreDurableObjectProviderVerificationPublicKeyV1Schema,
+  "store-durable-object-provider-binding-derivation-generation-unsigned-claims":
+    StoreDurableObjectProviderBindingDerivationGenerationUnsignedClaimsV1Schema,
+  "store-durable-object-provider-binding-derivation-generation":
+    StoreDurableObjectProviderBindingDerivationGenerationV1Schema,
+  "provider-feasibility-approver-public-key-unsigned-claims":
+    ProviderFeasibilityApproverPublicKeyUnsignedClaimsV1Schema,
+  "provider-feasibility-approver-public-key":
+    ProviderFeasibilityApproverPublicKeyV1Schema,
+  "provider-feasibility-evidence-pin":
+    ProviderFeasibilityEvidencePinV1Schema,
+  "provider-feasibility-approval-keys":
+    ProviderFeasibilityApprovalKeysV1Schema,
+  "store-durable-object-provider-verification-keys":
+    StoreDurableObjectProviderVerificationKeysV1Schema,
+  "store-durable-object-provider-registry-entry-genesis-unsigned-claims":
+    StoreDurableObjectProviderRegistryEntryGenesisUnsignedClaimsV1Schema,
+  "store-durable-object-provider-registry-entry-successor-unsigned-claims":
+    StoreDurableObjectProviderRegistryEntrySuccessorUnsignedClaimsV1Schema,
+  "store-durable-object-provider-registry-entry-unsigned-claims":
+    StoreDurableObjectProviderRegistryEntryUnsignedClaimsV1Schema,
+  "store-durable-object-provider-registry-entry-genesis":
+    StoreDurableObjectProviderRegistryEntryGenesisV1Schema,
+  "store-durable-object-provider-registry-entry-successor":
+    StoreDurableObjectProviderRegistryEntrySuccessorV1Schema,
+  "store-durable-object-provider-registry-entry":
+    StoreDurableObjectProviderRegistryEntryV1Schema,
+  "provider-registry-manifest-enabled-member":
+    ProviderRegistryManifestEnabledMemberV1Schema,
+  "provider-registry-manifest-revoked-member":
+    ProviderRegistryManifestRevokedMemberV1Schema,
+  "provider-registry-manifest-member":
+    ProviderRegistryManifestMemberV1Schema,
+  "provider-registry-manifest-routing":
+    ProviderRegistryManifestRoutingV1Schema,
+  "provider-registry-manifest-genesis-predecessor":
+    ProviderRegistryManifestGenesisPredecessorV1Schema,
+  "provider-registry-manifest-successor-predecessor":
+    ProviderRegistryManifestSuccessorPredecessorV1Schema,
+  "provider-registry-manifest-genesis-id-fields":
+    ProviderRegistryManifestGenesisIdFieldsV1Schema,
+  "provider-registry-manifest-successor-id-fields":
+    ProviderRegistryManifestSuccessorIdFieldsV1Schema,
+  "provider-registry-manifest-id-fields":
+    ProviderRegistryManifestIdFieldsV1Schema,
+  "provider-registry-manifest-genesis-unsigned-claims":
+    ProviderRegistryManifestGenesisUnsignedClaimsV1Schema,
+  "provider-registry-manifest-successor-unsigned-claims":
+    ProviderRegistryManifestSuccessorUnsignedClaimsV1Schema,
+  "provider-registry-manifest-unsigned-claims":
+    ProviderRegistryManifestUnsignedClaimsV1Schema,
+  "provider-registry-manifest-genesis":
+    ProviderRegistryManifestGenesisV1Schema,
+  "provider-registry-manifest-successor":
+    ProviderRegistryManifestSuccessorV1Schema,
+  "provider-registry-manifest": ProviderRegistryManifestV1Schema,
+  "provider-registry-manifest-envelope":
+    ProviderRegistryManifestEnvelopeV1Schema,
+  "provider-registry-manifest-pin": ProviderRegistryManifestPinV1Schema,
+  "store-durable-object-provider-runtime-attestation-signature-wrapper":
+    StoreDurableObjectProviderRuntimeAttestationSignatureWrapperV1Schema,
+  "store-durable-object-provider-verification-public-key-signature-wrapper":
+    StoreDurableObjectProviderVerificationPublicKeySignatureWrapperV1Schema,
+  "store-durable-object-provider-binding-derivation-generation-signature-wrapper":
+    StoreDurableObjectProviderBindingDerivationGenerationSignatureWrapperV1Schema,
+  "provider-feasibility-approver-public-key-signature-wrapper":
+    ProviderFeasibilityApproverPublicKeySignatureWrapperV1Schema,
+  "store-durable-object-provider-registry-entry-signature-wrapper":
+    StoreDurableObjectProviderRegistryEntrySignatureWrapperV1Schema,
+  "provider-registry-manifest-signature-wrapper":
+    ProviderRegistryManifestSignatureWrapperV1Schema,
   "provider-registry-root-history-golden-manifest":
     ProviderRegistryRootHistoryGoldenManifestV1Schema,
   "provider-registry-root-history-invalid-manifest":
@@ -186,6 +350,14 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
     ProviderRegistryRootHistoryInvalidStageV1Schema,
   "provider-registry-root-history-invalid-reason":
     ProviderRegistryRootHistoryInvalidReasonV1Schema,
+  "provider-registry-manifest-history-golden-manifest":
+    ProviderRegistryManifestHistoryGoldenManifestV1Schema,
+  "provider-registry-manifest-history-invalid-manifest":
+    ProviderRegistryManifestHistoryInvalidManifestV1Schema,
+  "provider-registry-manifest-history-invalid-stage":
+    ProviderRegistryManifestHistoryInvalidStageV1Schema,
+  "provider-registry-manifest-history-invalid-reason":
+    ProviderRegistryManifestHistoryInvalidReasonV1Schema,
   "provider-bootstrap-trust-bundle":
     ProviderBootstrapTrustBundleV1Schema,
   "provider-bootstrap-trust-bundle-envelope":

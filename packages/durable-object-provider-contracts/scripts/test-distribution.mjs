@@ -135,6 +135,32 @@ async function listFiles(root) {
   return files;
 }
 
+async function listRelativeSchemaPaths(schemaRoot) {
+  return (await listFiles(schemaRoot))
+    .filter((filePath) => filePath.endsWith(".schema.json"))
+    .map((filePath) => relative(schemaRoot, filePath).split(sep).join("/"))
+    .sort();
+}
+
+function assertExactSortedPathSet(actual, expected, label) {
+  const actualSet = new Set(actual);
+  const expectedSet = new Set(expected);
+  const missing = expected.filter((filePath) => !actualSet.has(filePath));
+  const extra = actual.filter((filePath) => !expectedSet.has(filePath));
+  if (
+    actual.length !== actualSet.size ||
+    expected.length !== expectedSet.size ||
+    actual.length !== expected.length ||
+    actual.some((filePath, index) => filePath !== expected[index]) ||
+    missing.length !== 0 ||
+    extra.length !== 0
+  ) {
+    throw new Error(
+      `${label} differs: missing=[${missing.join(", ")}], extra=[${extra.join(", ")}]`,
+    );
+  }
+}
+
 async function assertExactProviderDirectory(providerRoot, label) {
   const directoryEntries = await readdir(providerRoot);
   const entries = await Promise.all(
@@ -576,6 +602,12 @@ const temporaryRoot = await mkdtemp(
 );
 
 try {
+  const sourceSchemaRelativePaths = await listRelativeSchemaPaths(
+    join(packageRoot, "schemas", "v1"),
+  );
+  if (sourceSchemaRelativePaths.length === 0) {
+    throw new Error("Source provider contracts contain no JSON Schemas");
+  }
   await assertExactProviderDirectory(
     join(packageRoot, "provider"),
     "source",
@@ -849,6 +881,33 @@ try {
       "provider-registry-root-history-v1.json",
     ),
   );
+  const installedRegistryManifestGoldenPath = await realpath(
+    join(
+      installedRoot,
+      "fixtures",
+      "v1",
+      "golden",
+      "provider-registry-entry-manifest-history-v1.json",
+    ),
+  );
+  const installedRegistryManifestInvalidPath = await realpath(
+    join(
+      installedRoot,
+      "fixtures",
+      "v1",
+      "invalid",
+      "provider-registry-entry-manifest-history-v1.json",
+    ),
+  );
+  const installedRegistryManifestInvalidRecipePath = await realpath(
+    join(
+      installedRoot,
+      "fixtures",
+      "v1",
+      "invalid",
+      "provider-registry-entry-manifest-history-v1.recipe-dialect.md",
+    ),
+  );
 
   const runtimeProbe = join(consumerRoot, "runtime-probe.mjs");
   await writeFile(
@@ -880,12 +939,18 @@ try {
       'const bootstrapTrustInvalidUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/invalid/provider-bootstrap-structure-crypto-v1.json"));',
       'const rootHistoryGoldenUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/golden/provider-registry-root-history-v1.json"));',
       'const rootHistoryInvalidUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/invalid/provider-registry-root-history-v1.json"));',
+      'const registryManifestGoldenUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json"));',
+      'const registryManifestInvalidUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/invalid/provider-registry-entry-manifest-history-v1.json"));',
+      'const registryManifestInvalidRecipeUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/invalid/provider-registry-entry-manifest-history-v1.recipe-dialect.md"));',
       `if (await realpath(fileURLToPath(strictEd25519ManifestUrl)) !== ${JSON.stringify(installedStrictManifestPath)}) throw new Error("strict manifest resolved outside the exact installed path");`,
       `if (await realpath(fileURLToPath(bootstrapTrustBundleUrl)) !== ${JSON.stringify(installedBootstrapBundlePath)}) throw new Error("bootstrap Bundle resolved outside the exact installed path");`,
       `if (await realpath(fileURLToPath(bootstrapTrustGoldenUrl)) !== ${JSON.stringify(installedBootstrapGoldenPath)}) throw new Error("bootstrap golden resolved outside the exact installed path");`,
       `if (await realpath(fileURLToPath(bootstrapTrustInvalidUrl)) !== ${JSON.stringify(installedBootstrapInvalidPath)}) throw new Error("bootstrap invalid manifest resolved outside the exact installed path");`,
       `if (await realpath(fileURLToPath(rootHistoryGoldenUrl)) !== ${JSON.stringify(installedRootHistoryGoldenPath)}) throw new Error("root history golden resolved outside the exact installed path");`,
       `if (await realpath(fileURLToPath(rootHistoryInvalidUrl)) !== ${JSON.stringify(installedRootHistoryInvalidPath)}) throw new Error("root history invalid manifest resolved outside the exact installed path");`,
+      `if (await realpath(fileURLToPath(registryManifestGoldenUrl)) !== ${JSON.stringify(installedRegistryManifestGoldenPath)}) throw new Error("Registry Manifest golden resolved outside the exact installed path");`,
+      `if (await realpath(fileURLToPath(registryManifestInvalidUrl)) !== ${JSON.stringify(installedRegistryManifestInvalidPath)}) throw new Error("Registry Manifest invalid corpus resolved outside the exact installed path");`,
+      `if (await realpath(fileURLToPath(registryManifestInvalidRecipeUrl)) !== ${JSON.stringify(installedRegistryManifestInvalidRecipePath)}) throw new Error("Registry Manifest invalid recipe resolved outside the exact installed path");`,
       'const schema = JSON.parse(await readFile(schemaUrl, "utf8"));',
       'const providerErrorSchema = JSON.parse(await readFile(providerErrorSchemaUrl, "utf8"));',
       'const golden = JSON.parse(await readFile(goldenUrl, "utf8"));',
@@ -897,6 +962,9 @@ try {
       'const bootstrapTrustInvalidBytes = new Uint8Array(await readFile(bootstrapTrustInvalidUrl));',
       'const rootHistoryGoldenBytes = new Uint8Array(await readFile(rootHistoryGoldenUrl));',
       'const rootHistoryInvalidBytes = new Uint8Array(await readFile(rootHistoryInvalidUrl));',
+      'const registryManifestGoldenBytes = new Uint8Array(await readFile(registryManifestGoldenUrl));',
+      'const registryManifestInvalidBytes = new Uint8Array(await readFile(registryManifestInvalidUrl));',
+      'const registryManifestInvalidRecipe = await readFile(registryManifestInvalidRecipeUrl, "utf8");',
       'const strictEd25519Manifest = JSON.parse(new TextDecoder().decode(strictEd25519ManifestBytes));',
       'if (schema.$id !== "urn:understand-code:provider-contract:schema:v1:canonical-byte-string") throw new Error("packed schema missing");',
       'if (providerErrorSchema.$id !== "urn:understand-code:provider-contract:schema:v1:provider-unavailable-tool-error") throw new Error("packed provider error schema missing");',
@@ -938,8 +1006,40 @@ try {
       'const latestRootEnvelope = rootHistoryGolden.rootMetadataHistory[2];',
       'const latestRootLocator = providerRegistry.buildProviderRegistryRootMetadataRelativePathV1({ locatorProfile: providerRegistry.PROVIDER_REGISTRY_ROOT_METADATA_LOCATOR_PROFILE_V1, rootGeneration: latestRootEnvelope.rootGeneration, rootKeyId: latestRootEnvelope.rootKeyId });',
       'if (latestRootLocator !== rootHistoryGolden.expected.vectors[2].locator) throw new Error("packed root history locator failed");',
+      'if (root.validateProviderRegistryManifestHistoryV1 !== providerRegistry.validateProviderRegistryManifestHistoryV1 || root.verifyProviderRegistryManifestHistoryGoldenResourceV1 !== providerRegistry.verifyProviderRegistryManifestHistoryGoldenResourceV1 || root.verifyProviderRegistryManifestHistoryInvalidResourceV1 !== providerRegistry.verifyProviderRegistryManifestHistoryInvalidResourceV1) throw new Error("root/provider-registry Registry exports diverged");',
+      'if (registryManifestGoldenBytes.byteLength !== providerRegistry.PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_RESOURCE_BYTE_LENGTH_V1 || createHash("sha256").update(registryManifestGoldenBytes).digest("hex") !== providerRegistry.PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_RESOURCE_SHA256_HEX_V1) throw new Error("packed Registry golden raw anchor failed");',
+      'const registryGolden = providerRegistry.verifyProviderRegistryManifestHistoryGoldenResourceV1(registryManifestGoldenBytes);',
+      'const registrySemanticDigest = `sha256:${createHash("sha256").update(root.canonicalizeJcsSafeIntegerUtf8V1([providerRegistry.PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_SEMANTIC_DOMAIN_V1, registryGolden])).digest("hex")}`;',
+      'if (registrySemanticDigest !== providerRegistry.PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_SEMANTIC_CONTENT_DIGEST_V1 || registryGolden.fixtureAuthority !== "none_registry_structure_and_history_only" || registryGolden.registryManifestHistory.length !== 7) throw new Error("packed Registry golden semantic anchor failed");',
+      'if (registryManifestInvalidBytes.byteLength !== providerRegistry.PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_RESOURCE_BYTE_LENGTH_V1 || createHash("sha256").update(registryManifestInvalidBytes).digest("hex") !== providerRegistry.PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_RESOURCE_SHA256_HEX_V1) throw new Error("packed Registry invalid raw anchor failed");',
+      'const registryInvalid = providerRegistry.verifyProviderRegistryManifestHistoryInvalidResourceV1(registryManifestInvalidBytes);',
+      'const registryInvalidSemanticDigest = `sha256:${createHash("sha256").update(root.canonicalizeJcsSafeIntegerUtf8V1([providerRegistry.PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_SEMANTIC_DOMAIN_V1, registryInvalid])).digest("hex")}`;',
+      'if (registryInvalidSemanticDigest !== providerRegistry.PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_SEMANTIC_CONTENT_DIGEST_V1 || registryInvalid.fixtureAuthority !== "none_rejection_only" || registryInvalid.caseCount !== 89 || registryInvalid.cases.length !== 89 || registryInvalid.caseIds.length !== 89 || new Set(registryInvalid.caseIds).size !== 89 || JSON.stringify(registryInvalid.caseIds) !== JSON.stringify(providerRegistry.PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_CASE_IDS_V1)) throw new Error("packed Registry invalid semantic or case closure failed");',
+      'const registryInvalidMaterializedRequestDigests = registryInvalid.cases.map((invalidCase, index) => { if (invalidCase.caseId !== registryInvalid.caseIds[index]) throw new Error("packed Registry materialized request case alignment failed"); return invalidCase.expected.materializedRequestSemanticDigest; });',
+      'if (root.PROVIDER_REGISTRY_MANIFEST_INVALID_MATERIALIZED_REQUEST_SEMANTIC_DOMAIN_V1 !== providerRegistry.PROVIDER_REGISTRY_MANIFEST_INVALID_MATERIALIZED_REQUEST_SEMANTIC_DOMAIN_V1 || registryInvalid.materializedRequestSemanticDomain !== providerRegistry.PROVIDER_REGISTRY_MANIFEST_INVALID_MATERIALIZED_REQUEST_SEMANTIC_DOMAIN_V1 || registryInvalidMaterializedRequestDigests.length !== 89 || new Set(registryInvalidMaterializedRequestDigests).size !== 89 || registryInvalidMaterializedRequestDigests.some((digest) => !/^sha256:[0-9a-f]{64}$/u.test(digest))) throw new Error("packed Registry materialized request semantic digest closure failed");',
+      'if (registryInvalid.goldenDependency.resourcePath !== providerRegistry.PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_RESOURCE_PATH_V1 || registryInvalid.goldenDependency.resourceByteLength !== providerRegistry.PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_RESOURCE_BYTE_LENGTH_V1 || registryInvalid.goldenDependency.resourceSha256Hex !== providerRegistry.PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_RESOURCE_SHA256_HEX_V1 || registryInvalid.goldenDependency.semanticContentDigest !== providerRegistry.PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_SEMANTIC_CONTENT_DIGEST_V1) throw new Error("packed Registry invalid golden dependency drifted");',
+      'const packedRegistryNegativeCaseIds = ["envelope-extra-field", "manifest-signature-bitflip", "runtime-signature-bitflip"];',
+      'if (!packedRegistryNegativeCaseIds.every((caseId) => registryInvalid.caseIds.includes(caseId)) || !registryManifestInvalidRecipe.includes(registryInvalid.mutationRecipeDialect) || !registryManifestInvalidRecipe.includes(registryInvalid.goldenDependency.resourcePath) || !registryManifestInvalidRecipe.includes("ProviderRegistryManifestHistoryValidationError")) throw new Error("packed Registry invalid recipe contract failed");',
+      'pointCalls = 0;',
+      'verifyCalls = 0;',
+      'const registryValidation = await providerRegistry.validateProviderRegistryManifestHistoryV1({ installationIdentityGenerationId: registryGolden.installationIdentityGenerationId, bootstrapTrustBundle: registryGolden.bootstrapTrustBundle, rootMetadataHistory: registryGolden.rootMetadataHistory, registryManifestHistory: registryGolden.registryManifestHistory, strictCryptoCapability: strictCapability });',
+      'if (registryValidation.authority !== "none_registry_structure_and_history_only" || registryValidation.retainedRegistryManifestGenerationCount !== 7 || registryValidation.currentRegistryManifest.contentDigest !== registryGolden.expected.currentRegistryManifest.contentDigest) throw new Error("packed Registry history validation failed");',
+      'if (pointCalls !== 24 || verifyCalls !== 38) throw new Error(`packed Registry history crypto calls: ${pointCalls}/${verifyCalls}`);',
+      'async function expectPackedRegistryRejection(registryManifestHistory, label) { try { await providerRegistry.validateProviderRegistryManifestHistoryV1({ installationIdentityGenerationId: registryGolden.installationIdentityGenerationId, bootstrapTrustBundle: registryGolden.bootstrapTrustBundle, rootMetadataHistory: registryGolden.rootMetadataHistory, registryManifestHistory, strictCryptoCapability: strictCapability }); } catch (error) { if (!(error instanceof providerRegistry.ProviderRegistryManifestHistoryValidationError) || error.name !== "ProviderRegistryManifestHistoryValidationError" || error.code !== "provider_unavailable" || error.reason !== "attestation_invalid" || error.message !== "Provider registry manifest history validation failed") throw new Error(`packed Registry negative escaped opaque boundary: ${label}`, { cause: error }); return; } throw new Error(`packed Registry negative accepted: ${label}`); }',
+      'const packedSchemaExtraField = structuredClone(registryGolden.registryManifestHistory);',
+      'packedSchemaExtraField[6].unexpectedField = true;',
+      'await expectPackedRegistryRejection(packedSchemaExtraField, "envelope-extra-field");',
+      'const packedManifestSignatureBitflip = structuredClone(registryGolden.registryManifestHistory);',
+      'const packedManifestSignature = packedManifestSignatureBitflip[6].payload.manifestSignature;',
+      'packedManifestSignatureBitflip[6].payload.manifestSignature = `${packedManifestSignature.slice(0, -1)}${packedManifestSignature.endsWith("0") ? "1" : "0"}`;',
+      'await expectPackedRegistryRejection(packedManifestSignatureBitflip, "manifest-signature-bitflip");',
+      'const packedRuntimeSignatureBitflip = structuredClone(registryGolden.registryManifestHistory);',
+      'const packedRuntimeSignature = packedRuntimeSignatureBitflip[0].payload.members[0].registryEntry.runtimeAttestation.payload.registrySignature;',
+      'packedRuntimeSignatureBitflip[0].payload.members[0].registryEntry.runtimeAttestation.payload.registrySignature = `${packedRuntimeSignature.slice(0, -1)}${packedRuntimeSignature.endsWith("0") ? "1" : "0"}`;',
+      'await expectPackedRegistryRejection(packedRuntimeSignatureBitflip, "runtime-signature-bitflip");',
       'if (providerRegistry.StoreFilenameKeyV1Schema.parse("id-c4") !== "id-c4" || providerRegistry.decodeShortStoreFilenameKeyV1("id-c4") !== "a") throw new Error("packed lowercase base32hex filename codec failed");',
       'try { await import("@understand-code/durable-object-provider-contracts/domain-crypto"); throw new Error("private crypto helper exported"); } catch (error) { if (error?.message === "private crypto helper exported") throw error; }',
+      'for (const privateSpecifier of ["@understand-code/durable-object-provider-contracts/provider-registry-records", "@understand-code/durable-object-provider-contracts/provider-registry-manifest-history"]) { try { await import(privateSpecifier); throw new Error(`private deep import exported: ${privateSpecifier}`); } catch (error) { if (error?.message?.startsWith("private deep import exported:")) throw error; } }',
     ].join("\n"),
     "utf8",
   );
@@ -949,11 +1049,11 @@ try {
   await writeFile(
     typeProbe,
     [
-      'import { DurableObjectIdentityProviderIdV1Schema, DurableObjectIdentityProviderSlugV1Schema, createDurableObjectIdentityProviderIdV1 } from "@understand-code/durable-object-provider-contracts";',
+      'import { DurableObjectIdentityProviderIdV1Schema, DurableObjectIdentityProviderSlugV1Schema, createDurableObjectIdentityProviderIdV1, validateProviderRegistryManifestHistoryV1, verifyProviderRegistryManifestHistoryInvalidResourceV1 } from "@understand-code/durable-object-provider-contracts";',
       'import { createProviderUnavailableToolErrorV1 } from "@understand-code/durable-object-provider-contracts/provider-error";',
       'import type { ProviderCapabilityFailureReasonV1, ProviderUnavailableToolErrorV1 } from "@understand-code/durable-object-provider-contracts/provider-error";',
-      'import { StoreFilenameKeyV1Schema, buildProviderRegistryRootMetadataRelativePathV1 } from "@understand-code/durable-object-provider-contracts/provider-registry";',
-      'import type { ProviderRegistryRootMetadataHistoryValidationV1, ProviderRegistryRootMetadataRelativePathV1, StoreFilenameKeyV1 } from "@understand-code/durable-object-provider-contracts/provider-registry";',
+      'import { ProviderRegistryManifestHistoryGoldenManifestV1Schema, ProviderRegistryManifestHistoryInvalidManifestV1Schema, StoreFilenameKeyV1Schema, buildProviderRegistryRootMetadataRelativePathV1 } from "@understand-code/durable-object-provider-contracts/provider-registry";',
+      'import type { ProviderRegistryManifestHistoryGoldenManifestV1, ProviderRegistryManifestHistoryInvalidManifestV1, ProviderRegistryManifestHistoryValidationV1, ProviderRegistryRootMetadataHistoryValidationV1, ProviderRegistryRootMetadataRelativePathV1, StoreFilenameKeyV1, ValidateProviderRegistryManifestHistoryV1Input } from "@understand-code/durable-object-provider-contracts/provider-registry";',
       'import type { Ed25519PublicKeyDigestV1, ContentDigestV1, ProviderBootstrapTrustBundleStructureValidationV1, ProviderBootstrapTrustGoldenManifestValidationV1, ProviderBootstrapTrustInvalidManifestValidationV1, ProviderStrictEd25519FixedResourceHostV1 } from "@understand-code/durable-object-provider-contracts";',
       'const slug = DurableObjectIdentityProviderSlugV1Schema.parse("native-fs");',
       'const id = createDurableObjectIdentityProviderIdV1(slug);',
@@ -967,6 +1067,13 @@ try {
       'declare const goldenValidation: ProviderBootstrapTrustGoldenManifestValidationV1;',
       'declare const invalidValidation: ProviderBootstrapTrustInvalidManifestValidationV1;',
       'declare const rootHistoryValidation: ProviderRegistryRootMetadataHistoryValidationV1;',
+      'declare const registryHistoryInput: ValidateProviderRegistryManifestHistoryV1Input;',
+      'declare const registryGoldenManifest: ProviderRegistryManifestHistoryGoldenManifestV1;',
+      'declare const registryInvalidBytes: Uint8Array;',
+      'const registryGoldenParsed = ProviderRegistryManifestHistoryGoldenManifestV1Schema.parse(registryGoldenManifest);',
+      'const registryHistoryValidation: Promise<ProviderRegistryManifestHistoryValidationV1> = validateProviderRegistryManifestHistoryV1(registryHistoryInput);',
+      'const registryInvalidManifest: ProviderRegistryManifestHistoryInvalidManifestV1 = ProviderRegistryManifestHistoryInvalidManifestV1Schema.parse(verifyProviderRegistryManifestHistoryInvalidResourceV1(registryInvalidBytes));',
+      'const registryMaterializedRequestDigest: ContentDigestV1 = registryInvalidManifest.cases[0]!.expected.materializedRequestSemanticDigest;',
       'const filenameKey: StoreFilenameKeyV1 = StoreFilenameKeyV1Schema.parse("id-c4");',
       'const rootMetadataPath: ProviderRegistryRootMetadataRelativePathV1 = buildProviderRegistryRootMetadataRelativePathV1({ locatorProfile: "installation_provider_registry_root_metadata_v1", rootGeneration: 1, rootKeyId: "0000000000000000000000" });',
       'void rawKeyDigest;',
@@ -979,6 +1086,10 @@ try {
       'void fixtureAuthority;',
       'void invalidAuthority;',
       'void rootHistoryAuthority;',
+      'void registryGoldenParsed;',
+      'void registryHistoryValidation;',
+      'void registryInvalidManifest;',
+      'void registryMaterializedRequestDigest;',
       'void filenameKey;',
       'void rootMetadataPath;',
       'void providerError;',
@@ -1066,12 +1177,32 @@ try {
     ),
     "utf8",
   );
+  const packedRegistryManifestGoldenText = await readFile(
+    join(
+      installedRoot,
+      "fixtures",
+      "v1",
+      "golden",
+      "provider-registry-entry-manifest-history-v1.json",
+    ),
+    "utf8",
+  );
+  const packedRegistryManifestInvalidText = await readFile(
+    join(
+      installedRoot,
+      "fixtures",
+      "v1",
+      "invalid",
+      "provider-registry-entry-manifest-history-v1.json",
+    ),
+    "utf8",
+  );
   await writeFile(
     join(consumerRoot, "browser-entry.js"),
     [
       'import { ProviderUnavailableToolErrorV1Schema, createProviderUnavailableToolErrorV1 } from "@understand-code/durable-object-provider-contracts/provider-error";',
       'import { PROVIDER_BOOTSTRAP_TRUST_BUNDLE_CONTENT_DIGEST_V1, validateProviderBootstrapTrustBundleStructureV1, verifyProviderBootstrapTrustGoldenManifestResourceV1, verifyProviderBootstrapTrustInvalidManifestResourceV1 } from "@understand-code/durable-object-provider-contracts";',
-      'import { PROVIDER_REGISTRY_ROOT_METADATA_LOCATOR_PROFILE_V1, buildProviderRegistryRootMetadataRelativePathV1, validateProviderRegistryRootMetadataHistoryV1, verifyProviderRegistryRootHistoryGoldenManifestResourceV1, verifyProviderRegistryRootHistoryInvalidManifestResourceV1 } from "@understand-code/durable-object-provider-contracts/provider-registry";',
+      'import { PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_RESOURCE_BYTE_LENGTH_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_SEMANTIC_CONTENT_DIGEST_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_SEMANTIC_DOMAIN_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_RESOURCE_SHA256_HEX_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_CASE_IDS_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_RESOURCE_BYTE_LENGTH_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_RESOURCE_SHA256_HEX_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_SEMANTIC_CONTENT_DIGEST_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_SEMANTIC_DOMAIN_V1, PROVIDER_REGISTRY_MANIFEST_INVALID_MATERIALIZED_REQUEST_SEMANTIC_DOMAIN_V1, PROVIDER_REGISTRY_ROOT_METADATA_LOCATOR_PROFILE_V1, ProviderRegistryManifestHistoryValidationError, buildProviderRegistryRootMetadataRelativePathV1, validateProviderRegistryManifestHistoryV1, validateProviderRegistryRootMetadataHistoryV1, verifyProviderRegistryManifestHistoryGoldenResourceV1, verifyProviderRegistryManifestHistoryInvalidResourceV1, verifyProviderRegistryRootHistoryGoldenManifestResourceV1, verifyProviderRegistryRootHistoryInvalidManifestResourceV1 } from "@understand-code/durable-object-provider-contracts/provider-registry";',
       'import { STRICT_ED25519_VERIFICATION_PROFILE_V1, validatePrimeSubgroupPoint, verifyRawEd25519 } from "@understand-code/durable-object-provider-contracts/strict-ed25519";',
       'import { PROVIDER_STRICT_ED25519_MANIFEST_MAX_BYTES_V1, PROVIDER_STRICT_ED25519_MANIFEST_RESOURCE_PATH_V1, attestProviderStrictEd25519CryptoHostV1, getProviderStrictEd25519CryptoCapabilityBytesV1 } from "@understand-code/durable-object-provider-contracts/strict-ed25519-conformance";',
       ...explicitSpecifiers.map(
@@ -1084,6 +1215,8 @@ try {
       `const bootstrapTrustInvalidBytes = new TextEncoder().encode(${JSON.stringify(packedBootstrapTrustInvalidText)});`,
       `const rootHistoryGoldenBytes = new TextEncoder().encode(${JSON.stringify(packedRootHistoryGoldenText)});`,
       `const rootHistoryInvalidBytes = new TextEncoder().encode(${JSON.stringify(packedRootHistoryInvalidText)});`,
+      `const registryManifestGoldenBytes = new TextEncoder().encode(${JSON.stringify(packedRegistryManifestGoldenText)});`,
+      `const registryManifestInvalidBytes = new TextEncoder().encode(${JSON.stringify(packedRegistryManifestInvalidText)});`,
       'let pointCalls = 0;',
       'let verifyCalls = 0;',
       'const strictHost = {',
@@ -1121,6 +1254,34 @@ try {
       'const latestRootEnvelope = rootHistoryGolden.rootMetadataHistory[2];',
       'const latestRootLocator = buildProviderRegistryRootMetadataRelativePathV1({ locatorProfile: PROVIDER_REGISTRY_ROOT_METADATA_LOCATOR_PROFILE_V1, rootGeneration: latestRootEnvelope.rootGeneration, rootKeyId: latestRootEnvelope.rootKeyId });',
       'if (latestRootLocator !== rootHistoryGolden.expected.vectors[2].locator) throw new Error("browser root history locator mismatch");',
+      'if (registryManifestGoldenBytes.byteLength !== PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_RESOURCE_BYTE_LENGTH_V1 || !/^[0-9a-f]{64}$/.test(PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_RESOURCE_SHA256_HEX_V1) || PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_SEMANTIC_DOMAIN_V1 !== "provider-registry-entry-manifest-history-golden-manifest-v1" || !PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_SEMANTIC_CONTENT_DIGEST_V1.startsWith("sha256:")) throw new Error("browser Registry golden anchor exports mismatch");',
+      'const registryGolden = verifyProviderRegistryManifestHistoryGoldenResourceV1(registryManifestGoldenBytes);',
+      'if (registryGolden.fixtureAuthority !== "none_registry_structure_and_history_only" || registryGolden.registryManifestHistory.length !== 7) throw new Error("browser Registry golden mismatch");',
+      'if (registryManifestInvalidBytes.byteLength !== PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_RESOURCE_BYTE_LENGTH_V1 || !/^[0-9a-f]{64}$/.test(PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_RESOURCE_SHA256_HEX_V1) || PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_SEMANTIC_DOMAIN_V1 !== "provider-registry-manifest-history-invalid-manifest-v1" || !PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_SEMANTIC_CONTENT_DIGEST_V1.startsWith("sha256:")) throw new Error("browser Registry invalid anchor exports mismatch");',
+      'const registryInvalid = verifyProviderRegistryManifestHistoryInvalidResourceV1(registryManifestInvalidBytes);',
+      'if (registryInvalid.fixtureAuthority !== "none_rejection_only" || registryInvalid.caseCount !== 89 || registryInvalid.cases.length !== 89 || registryInvalid.caseIds.length !== 89 || new Set(registryInvalid.caseIds).size !== 89 || JSON.stringify(registryInvalid.caseIds) !== JSON.stringify(PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_CASE_IDS_V1)) throw new Error("browser Registry invalid corpus mismatch");',
+      'const registryInvalidMaterializedRequestDigests = registryInvalid.cases.map((invalidCase, index) => { if (invalidCase.caseId !== registryInvalid.caseIds[index]) throw new Error("browser Registry materialized request case alignment mismatch"); return invalidCase.expected.materializedRequestSemanticDigest; });',
+      'if (registryInvalid.materializedRequestSemanticDomain !== PROVIDER_REGISTRY_MANIFEST_INVALID_MATERIALIZED_REQUEST_SEMANTIC_DOMAIN_V1 || registryInvalidMaterializedRequestDigests.length !== 89 || new Set(registryInvalidMaterializedRequestDigests).size !== 89 || registryInvalidMaterializedRequestDigests.some((digest) => !/^sha256:[0-9a-f]{64}$/u.test(digest))) throw new Error("browser Registry materialized request semantic digest closure mismatch");',
+      'if (registryInvalid.goldenDependency.resourceByteLength !== PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_RESOURCE_BYTE_LENGTH_V1 || registryInvalid.goldenDependency.resourceSha256Hex !== PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_RESOURCE_SHA256_HEX_V1 || registryInvalid.goldenDependency.semanticContentDigest !== PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_SEMANTIC_CONTENT_DIGEST_V1) throw new Error("browser Registry invalid golden dependency mismatch");',
+      'pointCalls = 0;',
+      'verifyCalls = 0;',
+      'const registryValidation = await validateProviderRegistryManifestHistoryV1({ installationIdentityGenerationId: registryGolden.installationIdentityGenerationId, bootstrapTrustBundle: registryGolden.bootstrapTrustBundle, rootMetadataHistory: registryGolden.rootMetadataHistory, registryManifestHistory: registryGolden.registryManifestHistory, strictCryptoCapability: strictCapability });',
+      'if (registryValidation.authority !== "none_registry_structure_and_history_only" || registryValidation.retainedRegistryManifestGenerationCount !== 7 || registryValidation.currentRegistryManifest.contentDigest !== registryGolden.expected.currentRegistryManifest.contentDigest) throw new Error("browser Registry history validation mismatch");',
+      'const registryHistoryPointCalls = pointCalls;',
+      'const registryHistoryVerifyCalls = verifyCalls;',
+      'let registryNegativeCount = 0;',
+      'async function expectRegistryRejection(registryManifestHistory, label) { try { await validateProviderRegistryManifestHistoryV1({ installationIdentityGenerationId: registryGolden.installationIdentityGenerationId, bootstrapTrustBundle: registryGolden.bootstrapTrustBundle, rootMetadataHistory: registryGolden.rootMetadataHistory, registryManifestHistory, strictCryptoCapability: strictCapability }); } catch (error) { if (!(error instanceof ProviderRegistryManifestHistoryValidationError) || error.name !== "ProviderRegistryManifestHistoryValidationError" || error.code !== "provider_unavailable" || error.reason !== "attestation_invalid" || error.message !== "Provider registry manifest history validation failed") throw new Error(`browser Registry negative escaped opaque boundary: ${label}`, { cause: error }); registryNegativeCount += 1; return; } throw new Error(`browser Registry negative accepted: ${label}`); }',
+      'const signatureBitflip = structuredClone(registryGolden.registryManifestHistory);',
+      'const signature = signatureBitflip[6].payload.manifestSignature;',
+      'signatureBitflip[6].payload.manifestSignature = `${signature.slice(0, -1)}${signature.endsWith("0") ? "1" : "0"}`;',
+      'await expectRegistryRejection(signatureBitflip, "Manifest signature bitflip");',
+      'const schemaExtraField = structuredClone(registryGolden.registryManifestHistory);',
+      'schemaExtraField[6].unexpectedField = true;',
+      'await expectRegistryRejection(schemaExtraField, "Envelope extra field");',
+      'const digestBitflip = structuredClone(registryGolden.registryManifestHistory);',
+      'const digest = digestBitflip[6].contentDigest;',
+      'digestBitflip[6].contentDigest = `${digest.slice(0, -1)}${digest.endsWith("0") ? "1" : "0"}`;',
+      'await expectRegistryRejection(digestBitflip, "Envelope digest bitflip");',
       'const capabilityBytes = getProviderStrictEd25519CryptoCapabilityBytesV1(strictCapability);',
       'const providerError = createProviderUnavailableToolErrorV1("revoked");',
       'ProviderUnavailableToolErrorV1Schema.parse(providerError);',
@@ -1128,7 +1289,7 @@ try {
         .map((_, index) => `providerContractBrowserModule${index}`)
         .join(", ")}];`,
       'if (publicModules.some((module) => Object.keys(module).length === 0)) throw new Error("empty browser public export");',
-      'export const browserKatResult = Object.freeze({ pointCalls: bootstrapPointCalls, verifyCalls: bootstrapVerifyCalls, rootHistoryPointCalls, rootHistoryVerifyCalls, capabilityByteLength: capabilityBytes.byteLength, bootstrapAuthority: bootstrapValidation.authority, goldenAuthority: bootstrapGoldenValidation.authority, goldenCaseCount: 5 + bootstrapGoldenValidation.manifest.vectors.recoveryKeyIds.length, invalidAuthority: bootstrapInvalidValidation.authority, invalidCaseCount: bootstrapInvalidValidation.manifest.cases.length, rootHistoryAuthority: rootHistoryValidation.authority, rootHistoryGenerationCount: rootHistoryValidation.retainedRootMetadataGenerationCount, rootHistoryInvalidCaseCount: rootHistoryInvalid.cases.length, rootHistoryLocator: latestRootLocator, expectedRootHistoryLocator: rootHistoryGolden.expected.vectors[2].locator, publicModuleCount: publicModules.length, providerReason: providerError.details.reason });',
+      'export const browserKatResult = Object.freeze({ pointCalls: bootstrapPointCalls, verifyCalls: bootstrapVerifyCalls, rootHistoryPointCalls, rootHistoryVerifyCalls, registryHistoryPointCalls, registryHistoryVerifyCalls, registryNegativeCount, registryInvalidCaseCount: registryInvalid.caseCount, registryHistoryAuthority: registryValidation.authority, registryManifestCount: registryValidation.retainedRegistryManifestGenerationCount, capabilityByteLength: capabilityBytes.byteLength, bootstrapAuthority: bootstrapValidation.authority, goldenAuthority: bootstrapGoldenValidation.authority, goldenCaseCount: 5 + bootstrapGoldenValidation.manifest.vectors.recoveryKeyIds.length, invalidAuthority: bootstrapInvalidValidation.authority, invalidCaseCount: bootstrapInvalidValidation.manifest.cases.length, rootHistoryAuthority: rootHistoryValidation.authority, rootHistoryGenerationCount: rootHistoryValidation.retainedRootMetadataGenerationCount, rootHistoryInvalidCaseCount: rootHistoryInvalid.cases.length, rootHistoryLocator: latestRootLocator, expectedRootHistoryLocator: rootHistoryGolden.expected.vectors[2].locator, publicModuleCount: publicModules.length, providerReason: providerError.details.reason });',
     ].join("\n"),
     "utf8",
   );
@@ -1201,11 +1362,16 @@ try {
       'if (browserKatResult.verifyCalls !== 31) throw new Error(`browser KAT+trust verify calls: ${browserKatResult.verifyCalls}`);',
       'if (browserKatResult.rootHistoryPointCalls !== 11) throw new Error(`browser root history point calls: ${browserKatResult.rootHistoryPointCalls}`);',
       'if (browserKatResult.rootHistoryVerifyCalls !== 9) throw new Error(`browser root history verify calls: ${browserKatResult.rootHistoryVerifyCalls}`);',
+      'if (browserKatResult.registryHistoryPointCalls !== 24) throw new Error(`browser Registry history point calls: ${browserKatResult.registryHistoryPointCalls}`);',
+      'if (browserKatResult.registryHistoryVerifyCalls !== 38) throw new Error(`browser Registry history verify calls: ${browserKatResult.registryHistoryVerifyCalls}`);',
+      'if (browserKatResult.registryNegativeCount !== 3) throw new Error(`browser Registry exact negative count: ${browserKatResult.registryNegativeCount}`);',
+      'if (browserKatResult.registryInvalidCaseCount !== 89) throw new Error(`browser Registry invalid case count: ${browserKatResult.registryInvalidCaseCount}`);',
       'if (browserKatResult.capabilityByteLength === 0) throw new Error("browser KAT capability is empty");',
       'if (browserKatResult.bootstrapAuthority !== "none_structure_only") throw new Error("browser bootstrap trust exposed authority");',
       'if (browserKatResult.goldenAuthority !== "none_structure_only" || browserKatResult.goldenCaseCount !== 8) throw new Error("browser bootstrap golden exposed authority or lost cases");',
       'if (browserKatResult.invalidAuthority !== "none_rejection_only" || browserKatResult.invalidCaseCount !== 51) throw new Error("browser bootstrap invalid manifest exposed authority or lost cases");',
       'if (browserKatResult.rootHistoryAuthority !== "none_structure_and_history_only" || browserKatResult.rootHistoryGenerationCount !== 3 || browserKatResult.rootHistoryInvalidCaseCount !== 31) throw new Error("browser root history exposed authority or lost cases");',
+      'if (browserKatResult.registryHistoryAuthority !== "none_registry_structure_and_history_only" || browserKatResult.registryManifestCount !== 7) throw new Error("browser Registry history exposed authority or lost generations");',
       'if (browserKatResult.rootHistoryLocator !== browserKatResult.expectedRootHistoryLocator) throw new Error("browser root history locator mismatch");',
       `if (browserKatResult.publicModuleCount !== ${explicitSpecifiers.length}) throw new Error("browser public module count mismatch");`,
       'if (browserKatResult.providerReason !== "revoked") throw new Error("browser provider error probe failed");',
@@ -1213,6 +1379,15 @@ try {
     "utf8",
   );
   run(process.execPath, [browserRuntimeProbe], { cwd: consumerRoot });
+
+  const packedSchemaRelativePaths = await listRelativeSchemaPaths(
+    join(installedRoot, "schemas", "v1"),
+  );
+  assertExactSortedPathSet(
+    packedSchemaRelativePaths,
+    sourceSchemaRelativePaths,
+    "Cold-installed provider schema path set",
+  );
 
   for (const requiredPath of [
     "dist/index.js",
@@ -1242,6 +1417,14 @@ try {
     "dist/provider-registry-root-history-fixtures.d.ts",
     "dist/provider-registry-root-history-invalid-definitions.js",
     "dist/provider-registry-root-history-invalid-definitions.d.ts",
+    "dist/provider-registry-records.js",
+    "dist/provider-registry-records.d.ts",
+    "dist/provider-registry-manifest-history.js",
+    "dist/provider-registry-manifest-history.d.ts",
+    "dist/provider-registry-manifest-fixtures.js",
+    "dist/provider-registry-manifest-fixtures.d.ts",
+    "dist/provider-registry-manifest-invalid-definitions.js",
+    "dist/provider-registry-manifest-invalid-definitions.d.ts",
     "dist/provider-registry.js",
     "dist/provider-registry.d.ts",
     "dist/provider-trust-policy.js",
@@ -1268,6 +1451,15 @@ try {
     "schemas/v1/provider-registry-root-history-invalid-stage.schema.json",
     "schemas/v1/provider-registry-root-history-invalid-reason.schema.json",
     "schemas/v1/provider-registry-root-metadata.schema.json",
+    "schemas/v1/provider-registry-manifest-locator.schema.json",
+    "schemas/v1/provider-registry-manifest-envelope.schema.json",
+    "schemas/v1/provider-registry-manifest-history-golden-manifest.schema.json",
+    "schemas/v1/provider-registry-manifest-history-invalid-manifest.schema.json",
+    "schemas/v1/provider-registry-manifest-history-invalid-stage.schema.json",
+    "schemas/v1/provider-registry-manifest-history-invalid-reason.schema.json",
+    "schemas/v1/store-durable-object-provider-runtime-attestation.schema.json",
+    "schemas/v1/store-durable-object-provider-verification-keys.schema.json",
+    "schemas/v1/store-durable-object-provider-registry-entry.schema.json",
     "schemas/v1/provider-signed-distribution-root-binding.schema.json",
     "schemas/v1/installation-identity-bootstrap-trust-fields.schema.json",
     "schemas/v1/provider-unavailable-tool-error.schema.json",
@@ -1276,9 +1468,12 @@ try {
     "fixtures/v1/golden/bootstrap-trust-bundle-v1.json",
     "fixtures/v1/golden/provider-bootstrap-structure-crypto-v1.json",
     "fixtures/v1/golden/provider-registry-root-history-v1.json",
+    "fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
     "fixtures/v1/invalid/manifest.json",
     "fixtures/v1/invalid/provider-bootstrap-structure-crypto-v1.json",
     "fixtures/v1/invalid/provider-registry-root-history-v1.json",
+    "fixtures/v1/invalid/provider-registry-entry-manifest-history-v1.json",
+    "fixtures/v1/invalid/provider-registry-entry-manifest-history-v1.recipe-dialect.md",
     "fixtures/v1/invalid/provider-registry-root-history-invalid-recipe-v1.md",
     "fixtures/v1/reference/provider-unavailable-tool-errors.json",
     "fixtures/v1/invalid/provider-unavailable-tool-errors.json",
@@ -1300,7 +1495,7 @@ try {
   }
 
   process.stdout.write(
-    `Verified packed provider contracts with ${explicitSpecifiers.length} public module exports and executed browser ESM trust checks for bootstrap (62 point/31 signature) plus root history (11 point/9 signature).\n`,
+    `Verified packed provider contracts with ${explicitSpecifiers.length} public module exports, exact ${packedSchemaRelativePaths.length}-schema source/install parity, browser ESM trust checks for bootstrap (62 point/31 signature), root history (11 point/9 signature), 7-generation Registry history (24 point/38 signature), and 89 anchored Registry invalid recipes/materialized-request digests with 3 exact opaque consumer rejections.\n`,
   );
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true });

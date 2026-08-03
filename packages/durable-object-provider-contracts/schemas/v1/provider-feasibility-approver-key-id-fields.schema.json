@@ -1,0 +1,23 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-feasibility-approver-key-id-fields",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "role": {
+      "type": "string",
+      "enum": [
+        "qa",
+        "release"
+      ]
+    },
+    "publicKeyBytes": {
+      "type": "string",
+      "pattern": "^base64url:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+    }
+  },
+  "required": [
+    "role",
+    "publicKeyBytes"
+  ],
+  "additionalProperties": false
+}

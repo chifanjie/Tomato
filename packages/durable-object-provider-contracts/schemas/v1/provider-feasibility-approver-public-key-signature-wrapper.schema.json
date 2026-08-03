@@ -1,0 +1,68 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-feasibility-approver-public-key-signature-wrapper",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "rootKeyId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{22}$"
+    },
+    "domain": {
+      "type": "string",
+      "const": "provider-feasibility-approver-public-key-signature-v1"
+    },
+    "claims": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "provider_feasibility_approver_public_key_v1"
+        },
+        "distributionRegistryGenerationIntroduced": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "qa",
+            "release"
+          ]
+        },
+        "keyId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{22}$"
+        },
+        "algorithm": {
+          "type": "string",
+          "const": "ed25519"
+        },
+        "publicKeyBytes": {
+          "type": "string",
+          "pattern": "^base64url:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+        },
+        "publicKeyDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "profile",
+        "distributionRegistryGenerationIntroduced",
+        "role",
+        "keyId",
+        "algorithm",
+        "publicKeyBytes",
+        "publicKeyDigest"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "rootKeyId",
+    "domain",
+    "claims"
+  ],
+  "additionalProperties": false
+}

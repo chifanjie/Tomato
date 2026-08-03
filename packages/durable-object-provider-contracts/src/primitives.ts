@@ -104,6 +104,70 @@ export type InstallationIdentityGenerationIdV1 = z.infer<
   typeof InstallationIdentityGenerationIdV1Schema
 >;
 
+export const ProviderRegistryManifestGenerationIdV1Schema = z
+  .string()
+  .regex(/^provider-registry-manifest:[0-9a-f]{22}$/u)
+  .brand<"ProviderRegistryManifestGenerationIdV1">();
+export type ProviderRegistryManifestGenerationIdV1 = z.infer<
+  typeof ProviderRegistryManifestGenerationIdV1Schema
+>;
+
+export const ProviderMigrationIdV1Schema = z
+  .string()
+  .regex(/^provider-migration:[0-9a-f]{22}$/u)
+  .brand<"ProviderMigrationIdV1">();
+export type ProviderMigrationIdV1 = z.infer<
+  typeof ProviderMigrationIdV1Schema
+>;
+
+export const ProviderFeasibilityEvidenceIdV1Schema = z
+  .string()
+  .regex(/^provider-feasibility-evidence:[0-9a-f]{22}$/u)
+  .brand<"ProviderFeasibilityEvidenceIdV1">();
+export type ProviderFeasibilityEvidenceIdV1 = z.infer<
+  typeof ProviderFeasibilityEvidenceIdV1Schema
+>;
+
+export const StoreProviderVerificationKeyIdV1Schema = z
+  .string()
+  .regex(/^[0-9a-f]{22}$/u)
+  .brand<"StoreProviderVerificationKeyIdV1">();
+export type StoreProviderVerificationKeyIdV1 = z.infer<
+  typeof StoreProviderVerificationKeyIdV1Schema
+>;
+
+export const ProviderFeasibilityApproverKeyIdV1Schema = z
+  .string()
+  .regex(/^[0-9a-f]{22}$/u)
+  .brand<"ProviderFeasibilityApproverKeyIdV1">();
+export type ProviderFeasibilityApproverKeyIdV1 = z.infer<
+  typeof ProviderFeasibilityApproverKeyIdV1Schema
+>;
+
+export const ProviderOsReleaseFamilyCodeV1Schema = z
+  .string()
+  .regex(/^provider-os-family:[0-9a-f]{22}$/u)
+  .brand<"ProviderOsReleaseFamilyCodeV1">();
+export type ProviderOsReleaseFamilyCodeV1 = z.infer<
+  typeof ProviderOsReleaseFamilyCodeV1Schema
+>;
+
+export const StoreProviderRegistrySignatureV1Schema = z
+  .string()
+  .regex(/^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$/u)
+  .brand<"StoreProviderRegistrySignatureV1">();
+export type StoreProviderRegistrySignatureV1 = z.infer<
+  typeof StoreProviderRegistrySignatureV1Schema
+>;
+
+export const ProviderRegistryManifestSignatureV1Schema = z
+  .string()
+  .regex(/^provider-registry-manifest-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$/u)
+  .brand<"ProviderRegistryManifestSignatureV1">();
+export type ProviderRegistryManifestSignatureV1 = z.infer<
+  typeof ProviderRegistryManifestSignatureV1Schema
+>;
+
 export function createDurableObjectIdentityProviderIdV1(
   slug: DurableObjectIdentityProviderSlugV1,
 ): DurableObjectIdentityProviderIdV1 {

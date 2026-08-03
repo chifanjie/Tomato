@@ -6,7 +6,10 @@ The `WP5-C09-0` slice freezes the cryptographic format foundation,
 `WP5-C09-1A` adds the public provider failure boundary, `WP5-C09-1B`
 freezes strict Ed25519 host conformance, and `WP5-C09-1C` closes the
 structure-only bootstrap trust bundle. `WP5-C09-1D` adds portable Root
-Metadata lookup and verifies the retained successor history:
+Metadata lookup and retained successor-history verification. `WP5-C09-1E`
+now adds the signed supporting records, per-provider Registry Entry, complete
+Registry Manifest, fixed Manifest locator, and retained Registry history
+validator without promoting any of them to I/O authority:
 
 - `rfc8785-jcs-safe-integer-v1` canonical JSON and exact canonical-byte parsing;
 - independent branded digest, token, provider identity, and key primitives;
@@ -54,10 +57,172 @@ Metadata lookup and verifies the retained successor history:
 - one three-generation bootstrap to planned-rollover to compromise-recovery
   golden resource and one exact 31-case executable rejection corpus, each
   independently bound by raw-resource and semantic JCS digests.
+- four root-signed supporting record families, signed Registry Entry and
+  Registry Manifest records, and six domain-specific signer-wrapper message
+  builders with no exported arbitrary-domain signing helper;
+- seven retained Registry Manifest generations covering steady operation,
+  key/runtime rotation, prepared/rebinding/source-drained migration, permanent
+  source tombstoning, historical signer verification, and exact retained-byte
+  identity.
 
 The arbitrary domain/prefix crypto helpers are intentionally package-internal.
 Consumers use the exported domain-specific builders so a caller cannot swap a
 domain or output prefix.
+
+## C09-1E Registry Entry and Manifest history
+
+The signed supporting records are
+`StoreDurableObjectProviderRuntimeAttestationV1`,
+`StoreDurableObjectProviderVerificationPublicKeyV1`,
+`StoreDurableObjectProviderBindingDerivationGenerationV1`, and
+`ProviderFeasibilityApproverPublicKeyV1`. An enabled
+`StoreDurableObjectProviderRegistryEntryV1` binds those records to one
+Installation Identity generation, active Root Metadata Pin, provider ID,
+semantic policy digest, owner-only Feasibility Evidence Pin, and immutable key
+histories. `ProviderRegistryManifestV1` is the complete retained generation:
+every known provider is represented by either an enabled Entry or a permanent
+revocation tombstone, so omission never means revocation.
+
+The six root-signature domains are:
+
+- `store-provider-runtime-attestation-signature-v1`;
+- `store-durable-object-provider-verification-public-key-signature-v1`;
+- `store-durable-object-provider-binding-derivation-generation-signature-v1`;
+- `provider-feasibility-approver-public-key-signature-v1`;
+- `store-durable-object-provider-registry-entry-signature-v1`;
+- `provider-registry-manifest-signature-v1`.
+
+Each builder produces only
+`JCS([domainLiteral,{rootKeyId,domain:domainLiteral,claims}])`. The wrapper's
+root key ID, duplicate domain literal, tuple domain, and wire-signature prefix
+must agree. The package builds messages and validates retained signatures but
+does not expose an arbitrary-domain helper or a general-purpose signing API.
+
+The three Registry projections are intentionally different:
+
+- Entry content digest uses
+  `store-durable-object-provider-registry-entry-v1` over the complete strict
+  Entry excluding only its own `registrySignature`. Signed nested records and
+  their signatures remain inside the digest.
+- Manifest stable ID uses `provider-registry-manifest-id-v1` over
+  `{installationIdentityGenerationId,activeRootMetadata,manifestGeneration,predecessor,members,routing}`.
+  It excludes `generationId`, `issuedAt`, and `manifestSignature`, but includes
+  complete enabled Entries and their already-generated signatures.
+- Manifest content digest uses `provider-registry-manifest-v1` over the
+  complete strict Manifest excluding only `manifestSignature`. It therefore
+  includes both `generationId` and `issuedAt`.
+
+`validateProviderRegistryManifestHistoryV1` internally revalidates the entire
+retained Root Metadata history; it never accepts a caller assertion that a root
+or signer is trusted. A nested record's signature prefix resolves to the exact
+retained historical root key, and the original signed record bytes must remain
+byte-identical across later Manifest generations. Root rollover does not permit
+rewriting or re-signing old records under the current root. Provider
+verification keys are append-only by `(providerId,usage,keyId)`, binding
+derivation generations by `(providerId,generation)`, and approver keys by
+`(role,keyId)`. Revocation ID/generation sets are likewise append-only;
+historical records cannot be deleted, compacted, or changed to evade a limit.
+
+There are five verification-key usages:
+`operation_receipt`, `containment_proof`, `state_version`, `journal_version`,
+and `migration_semantic_proof`. The active-key map deliberately has only four
+slots: operation receipt, containment proof, state version, and journal
+version. It must not grow an `active migration semantic proof` field. Migration
+semantic-proof signer selection remains part of the external proof/Migration
+Plan closure rather than mutable Registry-wide active state.
+
+The retained routing state machine is also frozen:
+
+- the genesis Manifest must start in `steady`; v1 cannot bootstrap directly
+  into a migration without a retained source-provider history.
+- `steady` has exactly one enabled provider; retained tombstones may coexist
+  with it but a second enabled provider is invalid.
+- `migration` has exactly two distinct enabled providers matching source and
+  destination. `prepared` writes through the source,
+  `source_drained` writes through the destination, and phases move monotonically
+  through `prepared`, `rebinding`, and `source_drained`.
+- returning to `steady` requires a `migration_completed` source tombstone whose
+  digest points to the last enabled source Entry. Later generations retain that
+  tombstone byte-for-byte and can never re-enable the provider ID.
+
+These checks close only Registry-local shape, signatures, history, and routing
+transitions. They do not prove equality with a current Migration Plan.
+
+The only Registry Manifest locator input is the exact object
+`{locatorProfile:"installation_provider_registry_manifest_v1",generationId}`.
+It derives
+`provider/registry-manifests/<StoreFilenameKey(generationId)>.json`; callers
+cannot provide a path, `latest` alias, directory scan, or alternate filename.
+The locator and its generated JSON Schema validate syntax and closed fields;
+runtime lookup must still recompute the canonical filename binding.
+
+The immutable trust-history limits include 4,096 Registry Manifest generations
+per Installation Identity, 256 provider verification-key records per provider
+and 64 per usage, 64 binding-derivation generations per provider, 64 approver
+keys per role, and 256 compromised revocations per Identity. A single trust
+Envelope is capped at 4 MiB and total retained trust history at 256 MiB. Normal
+updates preserve an eight-generation and 4 MiB emergency reserve. Admission
+must canonicalize the complete successor and retained verifier closure and
+check every count and byte limit before signing, immutable publication, or
+advancing current state.
+Hostile pre-schema JSON containers are independently capped at 65,536 entries
+and snapshotted one data-property descriptor at a time, so a small logical-byte
+input cannot force an unbounded descriptor map before the 4 MiB gate.
+
+Successful Registry history validation returns exactly
+`authority: "none_registry_structure_and_history_only"`. It is never
+`strong_ready`. The owner-only Feasibility Evidence object, signed distribution
+Support Catalog, current Acceptance state, and Migration Plan are external to
+this validator; their pins, policy/runtime equality, active-writer selection,
+and migration identifiers/phases are not yet closed here. A caller must not use
+this result to authorize Store reads or writes.
+
+The Registry golden resource is
+`fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json`. It
+freezes seven Manifest generations, exact Entry and Manifest projection bytes,
+signer messages, signatures, Envelopes, Pins, fixed locators, append-only
+records, migration transitions, and retained byte identities. Its complete
+validation performs exactly 24 strict point admissions and 38 strict signature
+checks: 11 point admissions and nine signatures for the retained Root history,
+plus 13 point admissions and 29 signatures for the Registry Manifest and unique
+nested-record closure. Its expected retained closure contains three Root
+Metadata generations, 11 provider verification-key records, two binding
+generations, two approver keys, three runtime attestations, four unique Registry
+Entries, seven Registry Manifests, and one source tombstone. The canonical-byte
+accounting is 3,945 bytes of retained Root Metadata plus 91,351 bytes of
+retained Registry Manifests, for 95,296 retained trust-history bytes in total.
+
+The Registry Manifest invalid corpus is
+`fixtures/v1/invalid/provider-registry-entry-manifest-history-v1.json`. It is
+an exact 89-case `provider_registry_manifest_history_invalid_manifest_v1`
+resource with `fixtureAuthority: "none_rejection_only"`. Each ordered mutation
+recipe freezes the expected internal stage/reason, privacy-opaque public
+failure, independently reviewed point/signature call counts, any independently
+verified wrong-domain proof, and a domain-separated semantic digest of the
+actual materialized request. A second-source tuple oracle rejects recipe path,
+operand, operation, shape, or ordering drift before reading the golden
+resource. The generator and verifier bind both the raw resource and
+`provider-registry-manifest-history-invalid-manifest-v1` semantic projection;
+`verify:provider-registry-manifest-invalid` checks all 89 recipes and request
+digests. The already-published Root Metadata invalid corpus remains the exact
+31-case resource described below.
+
+The C09-1E inventory contains exactly 116 draft-2020-12 JSON Schemas at this
+checkpoint, including every primitive, supporting wire and
+unsigned projection, atomic genesis/successor and enabled/revoked branch,
+routing union, Envelope, Pin, fixed locator, all six wrappers, and the
+seven-generation golden manifest. The inventory also includes the exact
+89-case invalid Manifest plus its stage and reason enums. Consumers should use
+the shipped inventory rather than assume 116 is a forever constant.
+
+The production sources remain ES2022 browser/worker portable. The npm/browser
+distribution gate must expose the new public API through the root and
+`./provider-registry` exports, pack all `schemas/`, `fixtures/`, and fixed
+`provider/` resources, reject private deep imports, and execute the same
+Registry validators from clean Node and browser-bundle installs.
+`test:distribution` enforces exact source-to-packed Schema path-set equality
+in addition to that gate; a successful source build alone must not be
+presented as npm or browser distribution completion.
 
 ## Verification
 
@@ -67,9 +232,32 @@ pnpm --filter @understand-code/durable-object-provider-contracts typecheck
 pnpm --filter @understand-code/durable-object-provider-contracts verify:bootstrap-trust-invalid
 pnpm --filter @understand-code/durable-object-provider-contracts verify:bootstrap-trust
 pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-root-history
+pnpm --filter @understand-code/durable-object-provider-contracts generate:provider-registry-manifest-history
+pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-registry-manifest-history
+pnpm --filter @understand-code/durable-object-provider-contracts generate:provider-registry-manifest-invalid
+pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-registry-manifest-invalid
+pnpm --filter @understand-code/durable-object-provider-contracts generate:schemas
+pnpm --filter @understand-code/durable-object-provider-contracts verify:schemas
+pnpm --filter @understand-code/durable-object-provider-contracts exec vitest run \
+  test/provider-registry-records.test.ts \
+  test/provider-registry-manifest-history.test.ts \
+  test/provider-registry-manifest-fixtures.test.ts \
+  test/json-schema.test.ts
 pnpm --filter @understand-code/durable-object-provider-contracts test
 pnpm --filter @understand-code/durable-object-provider-contracts test:distribution
 ```
+
+The numerical contracts above are executable, not prose-only estimates.
+`PROVIDER_TRUST_HISTORY_POLICY_V1` is the source for every history and byte
+limit. The golden resource's `expected.cryptoClosure`, `expected.uniqueClosure`,
+and retained-byte fields are checked by
+`verify:provider-registry-manifest-history` and the focused fixture tests. The
+invalid resource's `caseCount`, ordered `caseIds`, raw/semantic anchors, exact
+diagnostics, and crypto call counts are checked by
+`verify:provider-registry-manifest-invalid`. `test/json-schema.test.ts` freezes
+the current 116-schema inventory and `verify:schemas` rejects generated-file
+drift. `test:distribution` is the clean packed Node/browser source for the npm
+distribution claims.
 
 The tracked manifests live under `fixtures/v1`. Expected bytes and crypto results
 are literal reviewable constants; tests never generate expected values with the
@@ -199,23 +387,25 @@ publishes deterministic, non-production signing seeds so independent
 implementations can reproduce signatures and executable rejection recipes;
 those fixture keys must never be reused or trusted outside conformance tests.
 A successful Bundle validation remains `authority: "none_structure_only"`.
-Successful Root Metadata history validation is likewise limited to
-`authority: "none_structure_and_history_only"`. Neither result is a production
-registry authority. A future signed-package resolver, offline production key
-ceremony, and crash-safe installer transaction must establish that authority
-before any strong provider capability can be exposed.
+Successful Root Metadata history validation is limited to
+`authority: "none_structure_and_history_only"`, and successful Registry
+history validation to
+`authority: "none_registry_structure_and_history_only"`. None is production
+Registry or Store I/O authority. A signed-package resolver, offline production
+key ceremony, crash-safe installer transaction, verified Evidence/Catalog, and
+current Acceptance closure must all establish that authority before any strong
+provider capability can be exposed.
 
 ## Scope boundary
 
 This package establishes the common foundation needed by AT-C21, AT-C29,
 AT-C31, and AT-Q33; it does not claim those end-to-end acceptance groups are
-complete. Generic set
-ordering fixtures in this slice cover only the UTF-8 bytewise foundation, not
-every domain-specific comparator. Path/OID/time/producer primitives,
-signed-package provenance authority, atomic Installation Identity persistence,
-and full cross-language provider execution remain pending.
-Later WP5 slices must add all remaining stable/digest/HMAC domains, Ed25519 signer wrappers,
-signed Registry Entry and Registry Manifest contracts, Catalog/Taxonomy/Release
-Matrix contracts, provider runtime and real-filesystem conformance, migration
-proofs, and the cross-language provider implementation that consumes these same
-immutable manifests.
+complete. C09-1E now covers signed Registry supporting records, Entries,
+Manifests, retained history, and local migration/tombstone transitions. It does
+not close signed-package provenance authority, atomic Installation Identity
+persistence, Feasibility Evidence resolution, Catalog/Taxonomy/Release Matrix
+coverage, Acceptance high-water and active-writer selection, Migration Plan
+equality, provider runtime/real-filesystem execution, or migration proofs.
+Those later gates must consume these immutable records and return
+`provider_unavailable` with zero writes whenever the external closure is
+missing or inconsistent.

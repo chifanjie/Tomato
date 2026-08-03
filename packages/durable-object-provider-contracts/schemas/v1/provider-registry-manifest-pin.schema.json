@@ -1,0 +1,31 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-registry-manifest-pin",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "locatorProfile": {
+      "type": "string",
+      "const": "installation_provider_registry_manifest_v1"
+    },
+    "manifestGeneration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "generationId": {
+      "type": "string",
+      "pattern": "^provider-registry-manifest:[0-9a-f]{22}$"
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "locatorProfile",
+    "manifestGeneration",
+    "generationId",
+    "contentDigest"
+  ],
+  "additionalProperties": false
+}

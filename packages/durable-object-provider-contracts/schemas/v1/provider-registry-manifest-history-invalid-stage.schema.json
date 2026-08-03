@@ -1,0 +1,21 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-registry-manifest-history-invalid-stage",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "history_input",
+    "history_limit",
+    "root_history",
+    "manifest_envelope",
+    "root_binding",
+    "manifest_predecessor",
+    "manifest_signature",
+    "member_set",
+    "registry_entry",
+    "record_signature",
+    "key_admission",
+    "key_history",
+    "material_closure",
+    "routing"
+  ]
+}

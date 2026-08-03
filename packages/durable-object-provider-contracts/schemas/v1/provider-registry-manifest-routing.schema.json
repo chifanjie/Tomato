@@ -1,0 +1,61 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-registry-manifest-routing",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "const": "steady"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "const": "migration"
+        },
+        "migrationId": {
+          "type": "string",
+          "pattern": "^provider-migration:[0-9a-f]{22}$"
+        },
+        "sourceProviderId": {
+          "type": "string",
+          "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+        },
+        "destinationProviderId": {
+          "type": "string",
+          "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+        },
+        "activeForMigrationWrites": {
+          "type": "string",
+          "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "prepared",
+            "rebinding",
+            "source_drained"
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "migrationId",
+        "sourceProviderId",
+        "destinationProviderId",
+        "activeForMigrationWrites",
+        "phase"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

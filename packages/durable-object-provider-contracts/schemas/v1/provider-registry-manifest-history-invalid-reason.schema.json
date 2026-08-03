@@ -1,0 +1,29 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-registry-manifest-history-invalid-reason",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "schema_invalid",
+    "history_empty",
+    "history_generation_limit_exceeded",
+    "envelope_byte_limit_exceeded",
+    "history_total_byte_limit_exceeded",
+    "root_history_invalid",
+    "envelope_mismatch",
+    "root_pin_mismatch",
+    "root_generation_rollback",
+    "generation_not_contiguous",
+    "predecessor_pin_mismatch",
+    "signature_invalid",
+    "member_order_invalid",
+    "member_transition_invalid",
+    "entry_mismatch",
+    "entry_successor_invalid",
+    "record_history_invalid",
+    "active_record_invalid",
+    "revocation_invalid",
+    "point_admission_failed",
+    "public_key_material_alias",
+    "routing_invalid"
+  ]
+}

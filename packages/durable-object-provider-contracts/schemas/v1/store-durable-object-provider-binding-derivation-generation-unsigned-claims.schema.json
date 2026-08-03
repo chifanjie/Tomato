@@ -1,0 +1,42 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:store-durable-object-provider-binding-derivation-generation-unsigned-claims",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string",
+      "const": "store_durable_object_provider_binding_derivation_generation_v1"
+    },
+    "providerId": {
+      "type": "string",
+      "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+    },
+    "registryGenerationIntroduced": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "algorithm": {
+      "type": "string",
+      "const": "hmac_sha256_provider_private"
+    },
+    "keyCommitmentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "profile",
+    "providerId",
+    "registryGenerationIntroduced",
+    "generation",
+    "algorithm",
+    "keyCommitmentDigest"
+  ],
+  "additionalProperties": false
+}

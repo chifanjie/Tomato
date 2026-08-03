@@ -1,0 +1,41 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-registry-manifest-revoked-member",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "providerId": {
+      "type": "string",
+      "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+    },
+    "disposition": {
+      "type": "string",
+      "const": "revoked"
+    },
+    "lastEnabledRegistryEntryContentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "revokedAtManifestGeneration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "provider_compromised",
+        "semantic_policy_retired",
+        "distribution_support_withdrawn",
+        "migration_completed"
+      ]
+    }
+  },
+  "required": [
+    "providerId",
+    "disposition",
+    "lastEnabledRegistryEntryContentDigest",
+    "revokedAtManifestGeneration",
+    "reason"
+  ],
+  "additionalProperties": false
+}

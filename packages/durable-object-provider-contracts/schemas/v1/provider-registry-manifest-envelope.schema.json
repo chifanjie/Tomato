@@ -1,0 +1,2462 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-registry-manifest-envelope",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "recordType": {
+      "type": "string",
+      "const": "provider_registry_manifest"
+    },
+    "generationId": {
+      "type": "string",
+      "pattern": "^provider-registry-manifest:[0-9a-f]{22}$"
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "payload": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "profile": {
+              "type": "string",
+              "const": "provider_registry_manifest_v1"
+            },
+            "generationId": {
+              "type": "string",
+              "pattern": "^provider-registry-manifest:[0-9a-f]{22}$"
+            },
+            "installationIdentityGenerationId": {
+              "type": "string",
+              "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+            },
+            "activeRootMetadata": {
+              "type": "object",
+              "properties": {
+                "locatorProfile": {
+                  "type": "string",
+                  "const": "installation_provider_registry_root_metadata_v1"
+                },
+                "rootGeneration": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "rootKeyId": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{22}$"
+                },
+                "contentDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "locatorProfile",
+                "rootGeneration",
+                "rootKeyId",
+                "contentDigest"
+              ],
+              "additionalProperties": false
+            },
+            "members": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "providerId": {
+                        "type": "string",
+                        "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                      },
+                      "disposition": {
+                        "type": "string",
+                        "const": "enabled"
+                      },
+                      "registryEntryContentDigest": {
+                        "type": "string",
+                        "pattern": "^sha256:[0-9a-f]{64}$"
+                      },
+                      "registryEntry": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "profile": {
+                                "type": "string",
+                                "const": "store_durable_object_provider_registry_entry_v1"
+                              },
+                              "installationIdentityGenerationId": {
+                                "type": "string",
+                                "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+                              },
+                              "activeRootMetadata": {
+                                "type": "object",
+                                "properties": {
+                                  "locatorProfile": {
+                                    "type": "string",
+                                    "const": "installation_provider_registry_root_metadata_v1"
+                                  },
+                                  "rootGeneration": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "rootKeyId": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{22}$"
+                                  },
+                                  "contentDigest": {
+                                    "type": "string",
+                                    "pattern": "^sha256:[0-9a-f]{64}$"
+                                  }
+                                },
+                                "required": [
+                                  "locatorProfile",
+                                  "rootGeneration",
+                                  "rootKeyId",
+                                  "contentDigest"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "registryRootKeyId": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{22}$"
+                              },
+                              "providerId": {
+                                "type": "string",
+                                "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                              },
+                              "semanticProviderPolicyDigest": {
+                                "type": "string",
+                                "pattern": "^sha256:[0-9a-f]{64}$"
+                              },
+                              "providerFeasibilityEvidence": {
+                                "type": "object",
+                                "properties": {
+                                  "locatorProfile": {
+                                    "type": "string",
+                                    "const": "installation_provider_feasibility_evidence_v1"
+                                  },
+                                  "evidenceId": {
+                                    "type": "string",
+                                    "pattern": "^provider-feasibility-evidence:[0-9a-f]{22}$"
+                                  },
+                                  "contentDigest": {
+                                    "type": "string",
+                                    "pattern": "^sha256:[0-9a-f]{64}$"
+                                  }
+                                },
+                                "required": [
+                                  "locatorProfile",
+                                  "evidenceId",
+                                  "contentDigest"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "runtimeAttestation": {
+                                "type": "object",
+                                "properties": {
+                                  "profile": {
+                                    "type": "string",
+                                    "const": "store_durable_object_provider_runtime_attestation_pin_v1"
+                                  },
+                                  "contentDigest": {
+                                    "type": "string",
+                                    "pattern": "^sha256:[0-9a-f]{64}$"
+                                  },
+                                  "payload": {
+                                    "type": "object",
+                                    "properties": {
+                                      "profile": {
+                                        "type": "string",
+                                        "const": "store_durable_object_provider_runtime_attestation_v1"
+                                      },
+                                      "providerId": {
+                                        "type": "string",
+                                        "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                                      },
+                                      "semanticProviderPolicyDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "implementationDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "binaryAttestationDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "ipcEndpointAttestationDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "osPlatform": {
+                                        "type": "string",
+                                        "enum": [
+                                          "darwin",
+                                          "linux",
+                                          "win32"
+                                        ]
+                                      },
+                                      "osReleaseFamilyCode": {
+                                        "type": "string",
+                                        "pattern": "^provider-os-family:[0-9a-f]{22}$"
+                                      },
+                                      "osBuildDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "architecture": {
+                                        "type": "string",
+                                        "enum": [
+                                          "arm64",
+                                          "x86_64"
+                                        ]
+                                      },
+                                      "filesystemProfileDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "realFilesystemConformanceResultDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "attestationGeneration": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "issuedAt": {
+                                        "type": "string",
+                                        "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+                                      },
+                                      "registrySignature": {
+                                        "type": "string",
+                                        "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                                      }
+                                    },
+                                    "required": [
+                                      "profile",
+                                      "providerId",
+                                      "semanticProviderPolicyDigest",
+                                      "implementationDigest",
+                                      "binaryAttestationDigest",
+                                      "ipcEndpointAttestationDigest",
+                                      "osPlatform",
+                                      "osReleaseFamilyCode",
+                                      "osBuildDigest",
+                                      "architecture",
+                                      "filesystemProfileDigest",
+                                      "realFilesystemConformanceResultDigest",
+                                      "attestationGeneration",
+                                      "issuedAt",
+                                      "registrySignature"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "required": [
+                                  "profile",
+                                  "contentDigest",
+                                  "payload"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "verificationKeys": {
+                                "type": "object",
+                                "properties": {
+                                  "profile": {
+                                    "type": "string",
+                                    "const": "store_durable_object_provider_verification_keys_v1"
+                                  },
+                                  "activeKeyIds": {
+                                    "type": "object",
+                                    "properties": {
+                                      "operationReceipt": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      },
+                                      "containmentProof": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      },
+                                      "stateVersion": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      },
+                                      "journalVersion": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      }
+                                    },
+                                    "required": [
+                                      "operationReceipt",
+                                      "containmentProof",
+                                      "stateVersion",
+                                      "journalVersion"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "activeBindingDerivationKeyGeneration": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "publicKeyRecords": {
+                                    "minItems": 1,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "profile": {
+                                          "type": "string",
+                                          "const": "store_durable_object_provider_verification_public_key_v1"
+                                        },
+                                        "providerId": {
+                                          "type": "string",
+                                          "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                                        },
+                                        "registryGenerationIntroduced": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "keyId": {
+                                          "type": "string",
+                                          "pattern": "^[0-9a-f]{22}$"
+                                        },
+                                        "usage": {
+                                          "type": "string",
+                                          "enum": [
+                                            "operation_receipt",
+                                            "containment_proof",
+                                            "state_version",
+                                            "journal_version",
+                                            "migration_semantic_proof"
+                                          ]
+                                        },
+                                        "algorithm": {
+                                          "type": "string",
+                                          "const": "ed25519"
+                                        },
+                                        "publicKeyBytes": {
+                                          "type": "string",
+                                          "pattern": "^base64url:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+                                        },
+                                        "publicKeyDigest": {
+                                          "type": "string",
+                                          "pattern": "^sha256:[0-9a-f]{64}$"
+                                        },
+                                        "registrySignature": {
+                                          "type": "string",
+                                          "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                                        }
+                                      },
+                                      "required": [
+                                        "profile",
+                                        "providerId",
+                                        "registryGenerationIntroduced",
+                                        "keyId",
+                                        "usage",
+                                        "algorithm",
+                                        "publicKeyBytes",
+                                        "publicKeyDigest",
+                                        "registrySignature"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "bindingDerivationGenerationRecords": {
+                                    "minItems": 1,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "profile": {
+                                          "type": "string",
+                                          "const": "store_durable_object_provider_binding_derivation_generation_v1"
+                                        },
+                                        "providerId": {
+                                          "type": "string",
+                                          "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                                        },
+                                        "registryGenerationIntroduced": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "generation": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "algorithm": {
+                                          "type": "string",
+                                          "const": "hmac_sha256_provider_private"
+                                        },
+                                        "keyCommitmentDigest": {
+                                          "type": "string",
+                                          "pattern": "^sha256:[0-9a-f]{64}$"
+                                        },
+                                        "registrySignature": {
+                                          "type": "string",
+                                          "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                                        }
+                                      },
+                                      "required": [
+                                        "profile",
+                                        "providerId",
+                                        "registryGenerationIntroduced",
+                                        "generation",
+                                        "algorithm",
+                                        "keyCommitmentDigest",
+                                        "registrySignature"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "compromisedRevokedKeyIds": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "pattern": "^[0-9a-f]{22}$"
+                                    }
+                                  },
+                                  "compromisedRevokedBindingDerivationGenerations": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 9007199254740991
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "profile",
+                                  "activeKeyIds",
+                                  "activeBindingDerivationKeyGeneration",
+                                  "publicKeyRecords",
+                                  "bindingDerivationGenerationRecords",
+                                  "compromisedRevokedKeyIds",
+                                  "compromisedRevokedBindingDerivationGenerations"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "feasibilityApprovalKeys": {
+                                "type": "object",
+                                "properties": {
+                                  "profile": {
+                                    "type": "string",
+                                    "const": "provider_feasibility_approval_keys_v1"
+                                  },
+                                  "activeKeyIds": {
+                                    "type": "object",
+                                    "properties": {
+                                      "qa": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      },
+                                      "release": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      }
+                                    },
+                                    "required": [
+                                      "qa",
+                                      "release"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "publicKeyRecords": {
+                                    "minItems": 1,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "profile": {
+                                          "type": "string",
+                                          "const": "provider_feasibility_approver_public_key_v1"
+                                        },
+                                        "distributionRegistryGenerationIntroduced": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "role": {
+                                          "type": "string",
+                                          "enum": [
+                                            "qa",
+                                            "release"
+                                          ]
+                                        },
+                                        "keyId": {
+                                          "type": "string",
+                                          "pattern": "^[0-9a-f]{22}$"
+                                        },
+                                        "algorithm": {
+                                          "type": "string",
+                                          "const": "ed25519"
+                                        },
+                                        "publicKeyBytes": {
+                                          "type": "string",
+                                          "pattern": "^base64url:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+                                        },
+                                        "publicKeyDigest": {
+                                          "type": "string",
+                                          "pattern": "^sha256:[0-9a-f]{64}$"
+                                        },
+                                        "registrySignature": {
+                                          "type": "string",
+                                          "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                                        }
+                                      },
+                                      "required": [
+                                        "profile",
+                                        "distributionRegistryGenerationIntroduced",
+                                        "role",
+                                        "keyId",
+                                        "algorithm",
+                                        "publicKeyBytes",
+                                        "publicKeyDigest",
+                                        "registrySignature"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "compromisedRevokedKeyIds": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "pattern": "^[0-9a-f]{22}$"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "profile",
+                                  "activeKeyIds",
+                                  "publicKeyRecords",
+                                  "compromisedRevokedKeyIds"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "status": {
+                                "type": "string",
+                                "const": "enabled"
+                              },
+                              "registryGeneration": {
+                                "type": "number",
+                                "const": 1
+                              },
+                              "registrySignature": {
+                                "type": "string",
+                                "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                              }
+                            },
+                            "required": [
+                              "profile",
+                              "installationIdentityGenerationId",
+                              "activeRootMetadata",
+                              "registryRootKeyId",
+                              "providerId",
+                              "semanticProviderPolicyDigest",
+                              "providerFeasibilityEvidence",
+                              "runtimeAttestation",
+                              "verificationKeys",
+                              "feasibilityApprovalKeys",
+                              "status",
+                              "registryGeneration",
+                              "registrySignature"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "profile": {
+                                "type": "string",
+                                "const": "store_durable_object_provider_registry_entry_v1"
+                              },
+                              "installationIdentityGenerationId": {
+                                "type": "string",
+                                "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+                              },
+                              "activeRootMetadata": {
+                                "type": "object",
+                                "properties": {
+                                  "locatorProfile": {
+                                    "type": "string",
+                                    "const": "installation_provider_registry_root_metadata_v1"
+                                  },
+                                  "rootGeneration": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "rootKeyId": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{22}$"
+                                  },
+                                  "contentDigest": {
+                                    "type": "string",
+                                    "pattern": "^sha256:[0-9a-f]{64}$"
+                                  }
+                                },
+                                "required": [
+                                  "locatorProfile",
+                                  "rootGeneration",
+                                  "rootKeyId",
+                                  "contentDigest"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "registryRootKeyId": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{22}$"
+                              },
+                              "providerId": {
+                                "type": "string",
+                                "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                              },
+                              "semanticProviderPolicyDigest": {
+                                "type": "string",
+                                "pattern": "^sha256:[0-9a-f]{64}$"
+                              },
+                              "providerFeasibilityEvidence": {
+                                "type": "object",
+                                "properties": {
+                                  "locatorProfile": {
+                                    "type": "string",
+                                    "const": "installation_provider_feasibility_evidence_v1"
+                                  },
+                                  "evidenceId": {
+                                    "type": "string",
+                                    "pattern": "^provider-feasibility-evidence:[0-9a-f]{22}$"
+                                  },
+                                  "contentDigest": {
+                                    "type": "string",
+                                    "pattern": "^sha256:[0-9a-f]{64}$"
+                                  }
+                                },
+                                "required": [
+                                  "locatorProfile",
+                                  "evidenceId",
+                                  "contentDigest"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "runtimeAttestation": {
+                                "type": "object",
+                                "properties": {
+                                  "profile": {
+                                    "type": "string",
+                                    "const": "store_durable_object_provider_runtime_attestation_pin_v1"
+                                  },
+                                  "contentDigest": {
+                                    "type": "string",
+                                    "pattern": "^sha256:[0-9a-f]{64}$"
+                                  },
+                                  "payload": {
+                                    "type": "object",
+                                    "properties": {
+                                      "profile": {
+                                        "type": "string",
+                                        "const": "store_durable_object_provider_runtime_attestation_v1"
+                                      },
+                                      "providerId": {
+                                        "type": "string",
+                                        "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                                      },
+                                      "semanticProviderPolicyDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "implementationDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "binaryAttestationDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "ipcEndpointAttestationDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "osPlatform": {
+                                        "type": "string",
+                                        "enum": [
+                                          "darwin",
+                                          "linux",
+                                          "win32"
+                                        ]
+                                      },
+                                      "osReleaseFamilyCode": {
+                                        "type": "string",
+                                        "pattern": "^provider-os-family:[0-9a-f]{22}$"
+                                      },
+                                      "osBuildDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "architecture": {
+                                        "type": "string",
+                                        "enum": [
+                                          "arm64",
+                                          "x86_64"
+                                        ]
+                                      },
+                                      "filesystemProfileDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "realFilesystemConformanceResultDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "attestationGeneration": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "issuedAt": {
+                                        "type": "string",
+                                        "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+                                      },
+                                      "registrySignature": {
+                                        "type": "string",
+                                        "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                                      }
+                                    },
+                                    "required": [
+                                      "profile",
+                                      "providerId",
+                                      "semanticProviderPolicyDigest",
+                                      "implementationDigest",
+                                      "binaryAttestationDigest",
+                                      "ipcEndpointAttestationDigest",
+                                      "osPlatform",
+                                      "osReleaseFamilyCode",
+                                      "osBuildDigest",
+                                      "architecture",
+                                      "filesystemProfileDigest",
+                                      "realFilesystemConformanceResultDigest",
+                                      "attestationGeneration",
+                                      "issuedAt",
+                                      "registrySignature"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "required": [
+                                  "profile",
+                                  "contentDigest",
+                                  "payload"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "verificationKeys": {
+                                "type": "object",
+                                "properties": {
+                                  "profile": {
+                                    "type": "string",
+                                    "const": "store_durable_object_provider_verification_keys_v1"
+                                  },
+                                  "activeKeyIds": {
+                                    "type": "object",
+                                    "properties": {
+                                      "operationReceipt": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      },
+                                      "containmentProof": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      },
+                                      "stateVersion": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      },
+                                      "journalVersion": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      }
+                                    },
+                                    "required": [
+                                      "operationReceipt",
+                                      "containmentProof",
+                                      "stateVersion",
+                                      "journalVersion"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "activeBindingDerivationKeyGeneration": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "publicKeyRecords": {
+                                    "minItems": 1,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "profile": {
+                                          "type": "string",
+                                          "const": "store_durable_object_provider_verification_public_key_v1"
+                                        },
+                                        "providerId": {
+                                          "type": "string",
+                                          "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                                        },
+                                        "registryGenerationIntroduced": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "keyId": {
+                                          "type": "string",
+                                          "pattern": "^[0-9a-f]{22}$"
+                                        },
+                                        "usage": {
+                                          "type": "string",
+                                          "enum": [
+                                            "operation_receipt",
+                                            "containment_proof",
+                                            "state_version",
+                                            "journal_version",
+                                            "migration_semantic_proof"
+                                          ]
+                                        },
+                                        "algorithm": {
+                                          "type": "string",
+                                          "const": "ed25519"
+                                        },
+                                        "publicKeyBytes": {
+                                          "type": "string",
+                                          "pattern": "^base64url:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+                                        },
+                                        "publicKeyDigest": {
+                                          "type": "string",
+                                          "pattern": "^sha256:[0-9a-f]{64}$"
+                                        },
+                                        "registrySignature": {
+                                          "type": "string",
+                                          "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                                        }
+                                      },
+                                      "required": [
+                                        "profile",
+                                        "providerId",
+                                        "registryGenerationIntroduced",
+                                        "keyId",
+                                        "usage",
+                                        "algorithm",
+                                        "publicKeyBytes",
+                                        "publicKeyDigest",
+                                        "registrySignature"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "bindingDerivationGenerationRecords": {
+                                    "minItems": 1,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "profile": {
+                                          "type": "string",
+                                          "const": "store_durable_object_provider_binding_derivation_generation_v1"
+                                        },
+                                        "providerId": {
+                                          "type": "string",
+                                          "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                                        },
+                                        "registryGenerationIntroduced": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "generation": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "algorithm": {
+                                          "type": "string",
+                                          "const": "hmac_sha256_provider_private"
+                                        },
+                                        "keyCommitmentDigest": {
+                                          "type": "string",
+                                          "pattern": "^sha256:[0-9a-f]{64}$"
+                                        },
+                                        "registrySignature": {
+                                          "type": "string",
+                                          "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                                        }
+                                      },
+                                      "required": [
+                                        "profile",
+                                        "providerId",
+                                        "registryGenerationIntroduced",
+                                        "generation",
+                                        "algorithm",
+                                        "keyCommitmentDigest",
+                                        "registrySignature"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "compromisedRevokedKeyIds": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "pattern": "^[0-9a-f]{22}$"
+                                    }
+                                  },
+                                  "compromisedRevokedBindingDerivationGenerations": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 9007199254740991
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "profile",
+                                  "activeKeyIds",
+                                  "activeBindingDerivationKeyGeneration",
+                                  "publicKeyRecords",
+                                  "bindingDerivationGenerationRecords",
+                                  "compromisedRevokedKeyIds",
+                                  "compromisedRevokedBindingDerivationGenerations"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "feasibilityApprovalKeys": {
+                                "type": "object",
+                                "properties": {
+                                  "profile": {
+                                    "type": "string",
+                                    "const": "provider_feasibility_approval_keys_v1"
+                                  },
+                                  "activeKeyIds": {
+                                    "type": "object",
+                                    "properties": {
+                                      "qa": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      },
+                                      "release": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      }
+                                    },
+                                    "required": [
+                                      "qa",
+                                      "release"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "publicKeyRecords": {
+                                    "minItems": 1,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "profile": {
+                                          "type": "string",
+                                          "const": "provider_feasibility_approver_public_key_v1"
+                                        },
+                                        "distributionRegistryGenerationIntroduced": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "role": {
+                                          "type": "string",
+                                          "enum": [
+                                            "qa",
+                                            "release"
+                                          ]
+                                        },
+                                        "keyId": {
+                                          "type": "string",
+                                          "pattern": "^[0-9a-f]{22}$"
+                                        },
+                                        "algorithm": {
+                                          "type": "string",
+                                          "const": "ed25519"
+                                        },
+                                        "publicKeyBytes": {
+                                          "type": "string",
+                                          "pattern": "^base64url:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+                                        },
+                                        "publicKeyDigest": {
+                                          "type": "string",
+                                          "pattern": "^sha256:[0-9a-f]{64}$"
+                                        },
+                                        "registrySignature": {
+                                          "type": "string",
+                                          "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                                        }
+                                      },
+                                      "required": [
+                                        "profile",
+                                        "distributionRegistryGenerationIntroduced",
+                                        "role",
+                                        "keyId",
+                                        "algorithm",
+                                        "publicKeyBytes",
+                                        "publicKeyDigest",
+                                        "registrySignature"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "compromisedRevokedKeyIds": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "pattern": "^[0-9a-f]{22}$"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "profile",
+                                  "activeKeyIds",
+                                  "publicKeyRecords",
+                                  "compromisedRevokedKeyIds"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "status": {
+                                "type": "string",
+                                "const": "enabled"
+                              },
+                              "registryGeneration": {
+                                "type": "integer",
+                                "minimum": 2,
+                                "maximum": 9007199254740991
+                              },
+                              "predecessorRegistryEntryContentDigest": {
+                                "type": "string",
+                                "pattern": "^sha256:[0-9a-f]{64}$"
+                              },
+                              "registrySignature": {
+                                "type": "string",
+                                "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                              }
+                            },
+                            "required": [
+                              "profile",
+                              "installationIdentityGenerationId",
+                              "activeRootMetadata",
+                              "registryRootKeyId",
+                              "providerId",
+                              "semanticProviderPolicyDigest",
+                              "providerFeasibilityEvidence",
+                              "runtimeAttestation",
+                              "verificationKeys",
+                              "feasibilityApprovalKeys",
+                              "status",
+                              "registryGeneration",
+                              "predecessorRegistryEntryContentDigest",
+                              "registrySignature"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "providerId",
+                      "disposition",
+                      "registryEntryContentDigest",
+                      "registryEntry"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "providerId": {
+                        "type": "string",
+                        "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                      },
+                      "disposition": {
+                        "type": "string",
+                        "const": "revoked"
+                      },
+                      "lastEnabledRegistryEntryContentDigest": {
+                        "type": "string",
+                        "pattern": "^sha256:[0-9a-f]{64}$"
+                      },
+                      "revokedAtManifestGeneration": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      "reason": {
+                        "type": "string",
+                        "enum": [
+                          "provider_compromised",
+                          "semantic_policy_retired",
+                          "distribution_support_withdrawn",
+                          "migration_completed"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "providerId",
+                      "disposition",
+                      "lastEnabledRegistryEntryContentDigest",
+                      "revokedAtManifestGeneration",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "routing": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "steady"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "migration"
+                    },
+                    "migrationId": {
+                      "type": "string",
+                      "pattern": "^provider-migration:[0-9a-f]{22}$"
+                    },
+                    "sourceProviderId": {
+                      "type": "string",
+                      "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                    },
+                    "destinationProviderId": {
+                      "type": "string",
+                      "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                    },
+                    "activeForMigrationWrites": {
+                      "type": "string",
+                      "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                    },
+                    "phase": {
+                      "type": "string",
+                      "enum": [
+                        "prepared",
+                        "rebinding",
+                        "source_drained"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "migrationId",
+                    "sourceProviderId",
+                    "destinationProviderId",
+                    "activeForMigrationWrites",
+                    "phase"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "issuedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+            },
+            "manifestGeneration": {
+              "type": "number",
+              "const": 1
+            },
+            "predecessor": {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "const": "genesis"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "additionalProperties": false
+            },
+            "manifestSignature": {
+              "type": "string",
+              "pattern": "^provider-registry-manifest-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+            }
+          },
+          "required": [
+            "profile",
+            "generationId",
+            "installationIdentityGenerationId",
+            "activeRootMetadata",
+            "members",
+            "routing",
+            "issuedAt",
+            "manifestGeneration",
+            "predecessor",
+            "manifestSignature"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "profile": {
+              "type": "string",
+              "const": "provider_registry_manifest_v1"
+            },
+            "generationId": {
+              "type": "string",
+              "pattern": "^provider-registry-manifest:[0-9a-f]{22}$"
+            },
+            "installationIdentityGenerationId": {
+              "type": "string",
+              "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+            },
+            "activeRootMetadata": {
+              "type": "object",
+              "properties": {
+                "locatorProfile": {
+                  "type": "string",
+                  "const": "installation_provider_registry_root_metadata_v1"
+                },
+                "rootGeneration": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "rootKeyId": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{22}$"
+                },
+                "contentDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "locatorProfile",
+                "rootGeneration",
+                "rootKeyId",
+                "contentDigest"
+              ],
+              "additionalProperties": false
+            },
+            "members": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "providerId": {
+                        "type": "string",
+                        "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                      },
+                      "disposition": {
+                        "type": "string",
+                        "const": "enabled"
+                      },
+                      "registryEntryContentDigest": {
+                        "type": "string",
+                        "pattern": "^sha256:[0-9a-f]{64}$"
+                      },
+                      "registryEntry": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "profile": {
+                                "type": "string",
+                                "const": "store_durable_object_provider_registry_entry_v1"
+                              },
+                              "installationIdentityGenerationId": {
+                                "type": "string",
+                                "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+                              },
+                              "activeRootMetadata": {
+                                "type": "object",
+                                "properties": {
+                                  "locatorProfile": {
+                                    "type": "string",
+                                    "const": "installation_provider_registry_root_metadata_v1"
+                                  },
+                                  "rootGeneration": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "rootKeyId": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{22}$"
+                                  },
+                                  "contentDigest": {
+                                    "type": "string",
+                                    "pattern": "^sha256:[0-9a-f]{64}$"
+                                  }
+                                },
+                                "required": [
+                                  "locatorProfile",
+                                  "rootGeneration",
+                                  "rootKeyId",
+                                  "contentDigest"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "registryRootKeyId": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{22}$"
+                              },
+                              "providerId": {
+                                "type": "string",
+                                "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                              },
+                              "semanticProviderPolicyDigest": {
+                                "type": "string",
+                                "pattern": "^sha256:[0-9a-f]{64}$"
+                              },
+                              "providerFeasibilityEvidence": {
+                                "type": "object",
+                                "properties": {
+                                  "locatorProfile": {
+                                    "type": "string",
+                                    "const": "installation_provider_feasibility_evidence_v1"
+                                  },
+                                  "evidenceId": {
+                                    "type": "string",
+                                    "pattern": "^provider-feasibility-evidence:[0-9a-f]{22}$"
+                                  },
+                                  "contentDigest": {
+                                    "type": "string",
+                                    "pattern": "^sha256:[0-9a-f]{64}$"
+                                  }
+                                },
+                                "required": [
+                                  "locatorProfile",
+                                  "evidenceId",
+                                  "contentDigest"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "runtimeAttestation": {
+                                "type": "object",
+                                "properties": {
+                                  "profile": {
+                                    "type": "string",
+                                    "const": "store_durable_object_provider_runtime_attestation_pin_v1"
+                                  },
+                                  "contentDigest": {
+                                    "type": "string",
+                                    "pattern": "^sha256:[0-9a-f]{64}$"
+                                  },
+                                  "payload": {
+                                    "type": "object",
+                                    "properties": {
+                                      "profile": {
+                                        "type": "string",
+                                        "const": "store_durable_object_provider_runtime_attestation_v1"
+                                      },
+                                      "providerId": {
+                                        "type": "string",
+                                        "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                                      },
+                                      "semanticProviderPolicyDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "implementationDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "binaryAttestationDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "ipcEndpointAttestationDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "osPlatform": {
+                                        "type": "string",
+                                        "enum": [
+                                          "darwin",
+                                          "linux",
+                                          "win32"
+                                        ]
+                                      },
+                                      "osReleaseFamilyCode": {
+                                        "type": "string",
+                                        "pattern": "^provider-os-family:[0-9a-f]{22}$"
+                                      },
+                                      "osBuildDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "architecture": {
+                                        "type": "string",
+                                        "enum": [
+                                          "arm64",
+                                          "x86_64"
+                                        ]
+                                      },
+                                      "filesystemProfileDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "realFilesystemConformanceResultDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "attestationGeneration": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "issuedAt": {
+                                        "type": "string",
+                                        "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+                                      },
+                                      "registrySignature": {
+                                        "type": "string",
+                                        "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                                      }
+                                    },
+                                    "required": [
+                                      "profile",
+                                      "providerId",
+                                      "semanticProviderPolicyDigest",
+                                      "implementationDigest",
+                                      "binaryAttestationDigest",
+                                      "ipcEndpointAttestationDigest",
+                                      "osPlatform",
+                                      "osReleaseFamilyCode",
+                                      "osBuildDigest",
+                                      "architecture",
+                                      "filesystemProfileDigest",
+                                      "realFilesystemConformanceResultDigest",
+                                      "attestationGeneration",
+                                      "issuedAt",
+                                      "registrySignature"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "required": [
+                                  "profile",
+                                  "contentDigest",
+                                  "payload"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "verificationKeys": {
+                                "type": "object",
+                                "properties": {
+                                  "profile": {
+                                    "type": "string",
+                                    "const": "store_durable_object_provider_verification_keys_v1"
+                                  },
+                                  "activeKeyIds": {
+                                    "type": "object",
+                                    "properties": {
+                                      "operationReceipt": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      },
+                                      "containmentProof": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      },
+                                      "stateVersion": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      },
+                                      "journalVersion": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      }
+                                    },
+                                    "required": [
+                                      "operationReceipt",
+                                      "containmentProof",
+                                      "stateVersion",
+                                      "journalVersion"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "activeBindingDerivationKeyGeneration": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "publicKeyRecords": {
+                                    "minItems": 1,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "profile": {
+                                          "type": "string",
+                                          "const": "store_durable_object_provider_verification_public_key_v1"
+                                        },
+                                        "providerId": {
+                                          "type": "string",
+                                          "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                                        },
+                                        "registryGenerationIntroduced": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "keyId": {
+                                          "type": "string",
+                                          "pattern": "^[0-9a-f]{22}$"
+                                        },
+                                        "usage": {
+                                          "type": "string",
+                                          "enum": [
+                                            "operation_receipt",
+                                            "containment_proof",
+                                            "state_version",
+                                            "journal_version",
+                                            "migration_semantic_proof"
+                                          ]
+                                        },
+                                        "algorithm": {
+                                          "type": "string",
+                                          "const": "ed25519"
+                                        },
+                                        "publicKeyBytes": {
+                                          "type": "string",
+                                          "pattern": "^base64url:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+                                        },
+                                        "publicKeyDigest": {
+                                          "type": "string",
+                                          "pattern": "^sha256:[0-9a-f]{64}$"
+                                        },
+                                        "registrySignature": {
+                                          "type": "string",
+                                          "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                                        }
+                                      },
+                                      "required": [
+                                        "profile",
+                                        "providerId",
+                                        "registryGenerationIntroduced",
+                                        "keyId",
+                                        "usage",
+                                        "algorithm",
+                                        "publicKeyBytes",
+                                        "publicKeyDigest",
+                                        "registrySignature"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "bindingDerivationGenerationRecords": {
+                                    "minItems": 1,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "profile": {
+                                          "type": "string",
+                                          "const": "store_durable_object_provider_binding_derivation_generation_v1"
+                                        },
+                                        "providerId": {
+                                          "type": "string",
+                                          "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                                        },
+                                        "registryGenerationIntroduced": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "generation": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "algorithm": {
+                                          "type": "string",
+                                          "const": "hmac_sha256_provider_private"
+                                        },
+                                        "keyCommitmentDigest": {
+                                          "type": "string",
+                                          "pattern": "^sha256:[0-9a-f]{64}$"
+                                        },
+                                        "registrySignature": {
+                                          "type": "string",
+                                          "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                                        }
+                                      },
+                                      "required": [
+                                        "profile",
+                                        "providerId",
+                                        "registryGenerationIntroduced",
+                                        "generation",
+                                        "algorithm",
+                                        "keyCommitmentDigest",
+                                        "registrySignature"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "compromisedRevokedKeyIds": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "pattern": "^[0-9a-f]{22}$"
+                                    }
+                                  },
+                                  "compromisedRevokedBindingDerivationGenerations": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 9007199254740991
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "profile",
+                                  "activeKeyIds",
+                                  "activeBindingDerivationKeyGeneration",
+                                  "publicKeyRecords",
+                                  "bindingDerivationGenerationRecords",
+                                  "compromisedRevokedKeyIds",
+                                  "compromisedRevokedBindingDerivationGenerations"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "feasibilityApprovalKeys": {
+                                "type": "object",
+                                "properties": {
+                                  "profile": {
+                                    "type": "string",
+                                    "const": "provider_feasibility_approval_keys_v1"
+                                  },
+                                  "activeKeyIds": {
+                                    "type": "object",
+                                    "properties": {
+                                      "qa": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      },
+                                      "release": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      }
+                                    },
+                                    "required": [
+                                      "qa",
+                                      "release"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "publicKeyRecords": {
+                                    "minItems": 1,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "profile": {
+                                          "type": "string",
+                                          "const": "provider_feasibility_approver_public_key_v1"
+                                        },
+                                        "distributionRegistryGenerationIntroduced": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "role": {
+                                          "type": "string",
+                                          "enum": [
+                                            "qa",
+                                            "release"
+                                          ]
+                                        },
+                                        "keyId": {
+                                          "type": "string",
+                                          "pattern": "^[0-9a-f]{22}$"
+                                        },
+                                        "algorithm": {
+                                          "type": "string",
+                                          "const": "ed25519"
+                                        },
+                                        "publicKeyBytes": {
+                                          "type": "string",
+                                          "pattern": "^base64url:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+                                        },
+                                        "publicKeyDigest": {
+                                          "type": "string",
+                                          "pattern": "^sha256:[0-9a-f]{64}$"
+                                        },
+                                        "registrySignature": {
+                                          "type": "string",
+                                          "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                                        }
+                                      },
+                                      "required": [
+                                        "profile",
+                                        "distributionRegistryGenerationIntroduced",
+                                        "role",
+                                        "keyId",
+                                        "algorithm",
+                                        "publicKeyBytes",
+                                        "publicKeyDigest",
+                                        "registrySignature"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "compromisedRevokedKeyIds": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "pattern": "^[0-9a-f]{22}$"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "profile",
+                                  "activeKeyIds",
+                                  "publicKeyRecords",
+                                  "compromisedRevokedKeyIds"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "status": {
+                                "type": "string",
+                                "const": "enabled"
+                              },
+                              "registryGeneration": {
+                                "type": "number",
+                                "const": 1
+                              },
+                              "registrySignature": {
+                                "type": "string",
+                                "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                              }
+                            },
+                            "required": [
+                              "profile",
+                              "installationIdentityGenerationId",
+                              "activeRootMetadata",
+                              "registryRootKeyId",
+                              "providerId",
+                              "semanticProviderPolicyDigest",
+                              "providerFeasibilityEvidence",
+                              "runtimeAttestation",
+                              "verificationKeys",
+                              "feasibilityApprovalKeys",
+                              "status",
+                              "registryGeneration",
+                              "registrySignature"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "profile": {
+                                "type": "string",
+                                "const": "store_durable_object_provider_registry_entry_v1"
+                              },
+                              "installationIdentityGenerationId": {
+                                "type": "string",
+                                "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+                              },
+                              "activeRootMetadata": {
+                                "type": "object",
+                                "properties": {
+                                  "locatorProfile": {
+                                    "type": "string",
+                                    "const": "installation_provider_registry_root_metadata_v1"
+                                  },
+                                  "rootGeneration": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "rootKeyId": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{22}$"
+                                  },
+                                  "contentDigest": {
+                                    "type": "string",
+                                    "pattern": "^sha256:[0-9a-f]{64}$"
+                                  }
+                                },
+                                "required": [
+                                  "locatorProfile",
+                                  "rootGeneration",
+                                  "rootKeyId",
+                                  "contentDigest"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "registryRootKeyId": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{22}$"
+                              },
+                              "providerId": {
+                                "type": "string",
+                                "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                              },
+                              "semanticProviderPolicyDigest": {
+                                "type": "string",
+                                "pattern": "^sha256:[0-9a-f]{64}$"
+                              },
+                              "providerFeasibilityEvidence": {
+                                "type": "object",
+                                "properties": {
+                                  "locatorProfile": {
+                                    "type": "string",
+                                    "const": "installation_provider_feasibility_evidence_v1"
+                                  },
+                                  "evidenceId": {
+                                    "type": "string",
+                                    "pattern": "^provider-feasibility-evidence:[0-9a-f]{22}$"
+                                  },
+                                  "contentDigest": {
+                                    "type": "string",
+                                    "pattern": "^sha256:[0-9a-f]{64}$"
+                                  }
+                                },
+                                "required": [
+                                  "locatorProfile",
+                                  "evidenceId",
+                                  "contentDigest"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "runtimeAttestation": {
+                                "type": "object",
+                                "properties": {
+                                  "profile": {
+                                    "type": "string",
+                                    "const": "store_durable_object_provider_runtime_attestation_pin_v1"
+                                  },
+                                  "contentDigest": {
+                                    "type": "string",
+                                    "pattern": "^sha256:[0-9a-f]{64}$"
+                                  },
+                                  "payload": {
+                                    "type": "object",
+                                    "properties": {
+                                      "profile": {
+                                        "type": "string",
+                                        "const": "store_durable_object_provider_runtime_attestation_v1"
+                                      },
+                                      "providerId": {
+                                        "type": "string",
+                                        "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                                      },
+                                      "semanticProviderPolicyDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "implementationDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "binaryAttestationDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "ipcEndpointAttestationDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "osPlatform": {
+                                        "type": "string",
+                                        "enum": [
+                                          "darwin",
+                                          "linux",
+                                          "win32"
+                                        ]
+                                      },
+                                      "osReleaseFamilyCode": {
+                                        "type": "string",
+                                        "pattern": "^provider-os-family:[0-9a-f]{22}$"
+                                      },
+                                      "osBuildDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "architecture": {
+                                        "type": "string",
+                                        "enum": [
+                                          "arm64",
+                                          "x86_64"
+                                        ]
+                                      },
+                                      "filesystemProfileDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "realFilesystemConformanceResultDigest": {
+                                        "type": "string",
+                                        "pattern": "^sha256:[0-9a-f]{64}$"
+                                      },
+                                      "attestationGeneration": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "issuedAt": {
+                                        "type": "string",
+                                        "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+                                      },
+                                      "registrySignature": {
+                                        "type": "string",
+                                        "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                                      }
+                                    },
+                                    "required": [
+                                      "profile",
+                                      "providerId",
+                                      "semanticProviderPolicyDigest",
+                                      "implementationDigest",
+                                      "binaryAttestationDigest",
+                                      "ipcEndpointAttestationDigest",
+                                      "osPlatform",
+                                      "osReleaseFamilyCode",
+                                      "osBuildDigest",
+                                      "architecture",
+                                      "filesystemProfileDigest",
+                                      "realFilesystemConformanceResultDigest",
+                                      "attestationGeneration",
+                                      "issuedAt",
+                                      "registrySignature"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "required": [
+                                  "profile",
+                                  "contentDigest",
+                                  "payload"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "verificationKeys": {
+                                "type": "object",
+                                "properties": {
+                                  "profile": {
+                                    "type": "string",
+                                    "const": "store_durable_object_provider_verification_keys_v1"
+                                  },
+                                  "activeKeyIds": {
+                                    "type": "object",
+                                    "properties": {
+                                      "operationReceipt": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      },
+                                      "containmentProof": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      },
+                                      "stateVersion": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      },
+                                      "journalVersion": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      }
+                                    },
+                                    "required": [
+                                      "operationReceipt",
+                                      "containmentProof",
+                                      "stateVersion",
+                                      "journalVersion"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "activeBindingDerivationKeyGeneration": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "publicKeyRecords": {
+                                    "minItems": 1,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "profile": {
+                                          "type": "string",
+                                          "const": "store_durable_object_provider_verification_public_key_v1"
+                                        },
+                                        "providerId": {
+                                          "type": "string",
+                                          "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                                        },
+                                        "registryGenerationIntroduced": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "keyId": {
+                                          "type": "string",
+                                          "pattern": "^[0-9a-f]{22}$"
+                                        },
+                                        "usage": {
+                                          "type": "string",
+                                          "enum": [
+                                            "operation_receipt",
+                                            "containment_proof",
+                                            "state_version",
+                                            "journal_version",
+                                            "migration_semantic_proof"
+                                          ]
+                                        },
+                                        "algorithm": {
+                                          "type": "string",
+                                          "const": "ed25519"
+                                        },
+                                        "publicKeyBytes": {
+                                          "type": "string",
+                                          "pattern": "^base64url:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+                                        },
+                                        "publicKeyDigest": {
+                                          "type": "string",
+                                          "pattern": "^sha256:[0-9a-f]{64}$"
+                                        },
+                                        "registrySignature": {
+                                          "type": "string",
+                                          "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                                        }
+                                      },
+                                      "required": [
+                                        "profile",
+                                        "providerId",
+                                        "registryGenerationIntroduced",
+                                        "keyId",
+                                        "usage",
+                                        "algorithm",
+                                        "publicKeyBytes",
+                                        "publicKeyDigest",
+                                        "registrySignature"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "bindingDerivationGenerationRecords": {
+                                    "minItems": 1,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "profile": {
+                                          "type": "string",
+                                          "const": "store_durable_object_provider_binding_derivation_generation_v1"
+                                        },
+                                        "providerId": {
+                                          "type": "string",
+                                          "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                                        },
+                                        "registryGenerationIntroduced": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "generation": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "algorithm": {
+                                          "type": "string",
+                                          "const": "hmac_sha256_provider_private"
+                                        },
+                                        "keyCommitmentDigest": {
+                                          "type": "string",
+                                          "pattern": "^sha256:[0-9a-f]{64}$"
+                                        },
+                                        "registrySignature": {
+                                          "type": "string",
+                                          "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                                        }
+                                      },
+                                      "required": [
+                                        "profile",
+                                        "providerId",
+                                        "registryGenerationIntroduced",
+                                        "generation",
+                                        "algorithm",
+                                        "keyCommitmentDigest",
+                                        "registrySignature"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "compromisedRevokedKeyIds": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "pattern": "^[0-9a-f]{22}$"
+                                    }
+                                  },
+                                  "compromisedRevokedBindingDerivationGenerations": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 9007199254740991
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "profile",
+                                  "activeKeyIds",
+                                  "activeBindingDerivationKeyGeneration",
+                                  "publicKeyRecords",
+                                  "bindingDerivationGenerationRecords",
+                                  "compromisedRevokedKeyIds",
+                                  "compromisedRevokedBindingDerivationGenerations"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "feasibilityApprovalKeys": {
+                                "type": "object",
+                                "properties": {
+                                  "profile": {
+                                    "type": "string",
+                                    "const": "provider_feasibility_approval_keys_v1"
+                                  },
+                                  "activeKeyIds": {
+                                    "type": "object",
+                                    "properties": {
+                                      "qa": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      },
+                                      "release": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{22}$"
+                                      }
+                                    },
+                                    "required": [
+                                      "qa",
+                                      "release"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "publicKeyRecords": {
+                                    "minItems": 1,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "profile": {
+                                          "type": "string",
+                                          "const": "provider_feasibility_approver_public_key_v1"
+                                        },
+                                        "distributionRegistryGenerationIntroduced": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 9007199254740991
+                                        },
+                                        "role": {
+                                          "type": "string",
+                                          "enum": [
+                                            "qa",
+                                            "release"
+                                          ]
+                                        },
+                                        "keyId": {
+                                          "type": "string",
+                                          "pattern": "^[0-9a-f]{22}$"
+                                        },
+                                        "algorithm": {
+                                          "type": "string",
+                                          "const": "ed25519"
+                                        },
+                                        "publicKeyBytes": {
+                                          "type": "string",
+                                          "pattern": "^base64url:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+                                        },
+                                        "publicKeyDigest": {
+                                          "type": "string",
+                                          "pattern": "^sha256:[0-9a-f]{64}$"
+                                        },
+                                        "registrySignature": {
+                                          "type": "string",
+                                          "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                                        }
+                                      },
+                                      "required": [
+                                        "profile",
+                                        "distributionRegistryGenerationIntroduced",
+                                        "role",
+                                        "keyId",
+                                        "algorithm",
+                                        "publicKeyBytes",
+                                        "publicKeyDigest",
+                                        "registrySignature"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "compromisedRevokedKeyIds": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "pattern": "^[0-9a-f]{22}$"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "profile",
+                                  "activeKeyIds",
+                                  "publicKeyRecords",
+                                  "compromisedRevokedKeyIds"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "status": {
+                                "type": "string",
+                                "const": "enabled"
+                              },
+                              "registryGeneration": {
+                                "type": "integer",
+                                "minimum": 2,
+                                "maximum": 9007199254740991
+                              },
+                              "predecessorRegistryEntryContentDigest": {
+                                "type": "string",
+                                "pattern": "^sha256:[0-9a-f]{64}$"
+                              },
+                              "registrySignature": {
+                                "type": "string",
+                                "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                              }
+                            },
+                            "required": [
+                              "profile",
+                              "installationIdentityGenerationId",
+                              "activeRootMetadata",
+                              "registryRootKeyId",
+                              "providerId",
+                              "semanticProviderPolicyDigest",
+                              "providerFeasibilityEvidence",
+                              "runtimeAttestation",
+                              "verificationKeys",
+                              "feasibilityApprovalKeys",
+                              "status",
+                              "registryGeneration",
+                              "predecessorRegistryEntryContentDigest",
+                              "registrySignature"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "providerId",
+                      "disposition",
+                      "registryEntryContentDigest",
+                      "registryEntry"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "providerId": {
+                        "type": "string",
+                        "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                      },
+                      "disposition": {
+                        "type": "string",
+                        "const": "revoked"
+                      },
+                      "lastEnabledRegistryEntryContentDigest": {
+                        "type": "string",
+                        "pattern": "^sha256:[0-9a-f]{64}$"
+                      },
+                      "revokedAtManifestGeneration": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      "reason": {
+                        "type": "string",
+                        "enum": [
+                          "provider_compromised",
+                          "semantic_policy_retired",
+                          "distribution_support_withdrawn",
+                          "migration_completed"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "providerId",
+                      "disposition",
+                      "lastEnabledRegistryEntryContentDigest",
+                      "revokedAtManifestGeneration",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "routing": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "steady"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "migration"
+                    },
+                    "migrationId": {
+                      "type": "string",
+                      "pattern": "^provider-migration:[0-9a-f]{22}$"
+                    },
+                    "sourceProviderId": {
+                      "type": "string",
+                      "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                    },
+                    "destinationProviderId": {
+                      "type": "string",
+                      "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                    },
+                    "activeForMigrationWrites": {
+                      "type": "string",
+                      "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                    },
+                    "phase": {
+                      "type": "string",
+                      "enum": [
+                        "prepared",
+                        "rebinding",
+                        "source_drained"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "migrationId",
+                    "sourceProviderId",
+                    "destinationProviderId",
+                    "activeForMigrationWrites",
+                    "phase"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "issuedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+            },
+            "manifestGeneration": {
+              "type": "integer",
+              "minimum": 2,
+              "maximum": 9007199254740991
+            },
+            "predecessor": {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "const": "manifest"
+                },
+                "generationId": {
+                  "type": "string",
+                  "pattern": "^provider-registry-manifest:[0-9a-f]{22}$"
+                },
+                "contentDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "state",
+                "generationId",
+                "contentDigest"
+              ],
+              "additionalProperties": false
+            },
+            "manifestSignature": {
+              "type": "string",
+              "pattern": "^provider-registry-manifest-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+            }
+          },
+          "required": [
+            "profile",
+            "generationId",
+            "installationIdentityGenerationId",
+            "activeRootMetadata",
+            "members",
+            "routing",
+            "issuedAt",
+            "manifestGeneration",
+            "predecessor",
+            "manifestSignature"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "recordType",
+    "generationId",
+    "contentDigest",
+    "payload"
+  ],
+  "additionalProperties": false
+}

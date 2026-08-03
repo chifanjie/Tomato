@@ -41,19 +41,25 @@ export type {
   ProviderRegistryRootSelfSignatureWrapperV1,
 } from "./provider-registry-trust.js";
 export {
+  PROVIDER_REGISTRY_MANIFEST_LOCATOR_PROFILE_V1,
   PROVIDER_REGISTRY_ROOT_METADATA_LOCATOR_PROFILE_V1,
   STORE_FILENAME_SHORT_BODY_MAX_LENGTH_V1,
   HashedStoreFilenameKeyV1Schema,
+  ProviderRegistryManifestLocatorV1Schema,
   ProviderRegistryRootMetadataLocatorV1Schema,
   ShortStoreFilenameKeyV1Schema,
   StoreFilenameKeyV1Schema,
+  buildProviderRegistryManifestRelativePathV1,
   buildProviderRegistryRootMetadataRelativePathV1,
   decodeShortStoreFilenameKeyV1,
   encodeStoreFilenameKeyV1,
+  validateProviderRegistryManifestRelativePathV1,
   verifyStoreFilenameKeyForSemanticIdV1,
 } from "./provider-fixed-locator.js";
 export type {
   HashedStoreFilenameKeyV1,
+  ProviderRegistryManifestLocatorV1,
+  ProviderRegistryManifestRelativePathV1,
   ProviderRegistryRootMetadataLocatorV1,
   ProviderRegistryRootMetadataRelativePathV1,
   ShortStoreFilenameKeyV1,
@@ -100,3 +106,13 @@ export type {
   ProviderRegistryRootHistoryGoldenManifestV1,
   ProviderRegistryRootHistoryInvalidManifestV1,
 } from "./provider-registry-root-history-fixtures.js";
+export * from "./provider-registry-records.js";
+export {
+  ProviderRegistryManifestHistoryValidationError,
+  validateProviderRegistryManifestHistoryV1,
+} from "./provider-registry-manifest-history.js";
+export type {
+  ProviderRegistryManifestHistoryValidationV1,
+  ValidateProviderRegistryManifestHistoryV1Input,
+} from "./provider-registry-manifest-history.js";
+export * from "./provider-registry-manifest-fixtures.js";

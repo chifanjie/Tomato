@@ -1,11 +1,16 @@
 import { z } from "zod";
 
-import { ProviderRegistryRootKeyIdV1Schema } from "./primitives.js";
+import {
+  ProviderRegistryManifestGenerationIdV1Schema,
+  ProviderRegistryRootKeyIdV1Schema,
+} from "./primitives.js";
 import { sha256InternalV1 } from "./sha256.js";
 
 export const STORE_FILENAME_SHORT_BODY_MAX_LENGTH_V1 = 220 as const;
 export const PROVIDER_REGISTRY_ROOT_METADATA_LOCATOR_PROFILE_V1 =
   "installation_provider_registry_root_metadata_v1" as const;
+export const PROVIDER_REGISTRY_MANIFEST_LOCATOR_PROFILE_V1 =
+  "installation_provider_registry_manifest_v1" as const;
 
 const BASE32HEX_LOWER_ALPHABET = "0123456789abcdefghijklmnopqrstuv";
 const SHORT_KEY_SYNTAX_PATTERN =
@@ -224,11 +229,13 @@ export type ProviderRegistryRootMetadataLocatorV1 = z.infer<
 export type ProviderRegistryRootMetadataRelativePathV1 =
   `provider/root-metadata/${StoreFilenameKeyV1}.json`;
 
-function snapshotRootMetadataLocatorV1(
+function snapshotExactLocatorDataObjectV1(
   input: unknown,
+  requiredKeys: readonly string[],
+  locatorName: string,
 ): Record<string, unknown> {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
-    throw new TypeError("root metadata locator must be a plain data object");
+    throw new TypeError(`${locatorName} must be a plain data object`);
   }
 
   let prototype: object | null;
@@ -239,22 +246,22 @@ function snapshotRootMetadataLocatorV1(
     symbols = Object.getOwnPropertySymbols(input);
     descriptors = Object.getOwnPropertyDescriptors(input);
   } catch {
-    throw new TypeError("root metadata locator must be a plain data object");
+    throw new TypeError(`${locatorName} must be a plain data object`);
   }
   if (prototype !== Object.prototype && prototype !== null) {
-    throw new TypeError("root metadata locator must be a plain data object");
+    throw new TypeError(`${locatorName} must be a plain data object`);
   }
   if (symbols.length !== 0) {
-    throw new TypeError("root metadata locator must not contain symbols");
+    throw new TypeError(`${locatorName} must not contain symbols`);
   }
 
-  const requiredKeys = ["locatorProfile", "rootGeneration", "rootKeyId"];
+  const sortedRequiredKeys = [...requiredKeys].sort();
   const actualKeys = Object.keys(descriptors).sort();
   if (
-    actualKeys.length !== requiredKeys.length ||
-    actualKeys.some((key, index) => key !== requiredKeys[index])
+    actualKeys.length !== sortedRequiredKeys.length ||
+    actualKeys.some((key, index) => key !== sortedRequiredKeys[index])
   ) {
-    throw new TypeError("root metadata locator must contain only exact fields");
+    throw new TypeError(`${locatorName} must contain only exact fields`);
   }
 
   const snapshot: Record<string, unknown> = {};
@@ -266,7 +273,7 @@ function snapshotRootMetadataLocatorV1(
       descriptor.enumerable !== true
     ) {
       throw new TypeError(
-        `root metadata locator field ${key} must be an enumerable data property`,
+        `${locatorName} field ${key} must be an enumerable data property`,
       );
     }
     snapshot[key] = descriptor.value;
@@ -275,14 +282,17 @@ function snapshotRootMetadataLocatorV1(
   return snapshot;
 }
 
-function assertNonProxyRootMetadataLocatorV1(input: object): void {
+function assertNonProxyLocatorDataObjectV1(
+  input: object,
+  locatorName: string,
+): void {
   // The structured-clone algorithm rejects Proxy exotic objects. It is a web
   // platform primitive, so this guard preserves browser/worker portability.
   try {
     structuredClone(input);
   } catch {
     throw new TypeError(
-      "root metadata locator must be an ordinary non-proxy data object",
+      `${locatorName} must be an ordinary non-proxy data object`,
     );
   }
 }
@@ -291,12 +301,64 @@ function assertNonProxyRootMetadataLocatorV1(input: object): void {
 export function buildProviderRegistryRootMetadataRelativePathV1(
   input: unknown,
 ): ProviderRegistryRootMetadataRelativePathV1 {
-  const snapshot = snapshotRootMetadataLocatorV1(input);
+  const snapshot = snapshotExactLocatorDataObjectV1(
+    input,
+    ["locatorProfile", "rootGeneration", "rootKeyId"],
+    "root metadata locator",
+  );
   const locator = ProviderRegistryRootMetadataLocatorV1Schema.parse(
     snapshot,
   );
-  assertNonProxyRootMetadataLocatorV1(input as object);
+  assertNonProxyLocatorDataObjectV1(
+    input as object,
+    "root metadata locator",
+  );
   const semanticComponent = `${locator.rootGeneration}:${locator.rootKeyId}`;
   const filenameKey = encodeStoreFilenameKeyV1(semanticComponent);
   return `provider/root-metadata/${filenameKey}.json`;
+}
+
+export const ProviderRegistryManifestLocatorV1Schema = z
+  .strictObject({
+    locatorProfile: z.literal(
+      PROVIDER_REGISTRY_MANIFEST_LOCATOR_PROFILE_V1,
+    ),
+    generationId: ProviderRegistryManifestGenerationIdV1Schema,
+  })
+  .brand<"ProviderRegistryManifestLocatorV1">();
+export type ProviderRegistryManifestLocatorV1 = z.infer<
+  typeof ProviderRegistryManifestLocatorV1Schema
+>;
+
+declare const ProviderRegistryManifestRelativePathV1Brand: unique symbol;
+export type ProviderRegistryManifestRelativePathV1 =
+  `provider/registry-manifests/${StoreFilenameKeyV1}.json` & {
+    readonly [ProviderRegistryManifestRelativePathV1Brand]: true;
+  };
+
+/** Builds the only allowed state-root-relative Registry Manifest path. */
+export function buildProviderRegistryManifestRelativePathV1(
+  input: unknown,
+): ProviderRegistryManifestRelativePathV1 {
+  const snapshot = snapshotExactLocatorDataObjectV1(
+    input,
+    ["locatorProfile", "generationId"],
+    "registry manifest locator",
+  );
+  const locator = ProviderRegistryManifestLocatorV1Schema.parse(
+    snapshot,
+  );
+  assertNonProxyLocatorDataObjectV1(
+    input as object,
+    "registry manifest locator",
+  );
+  const filenameKey = encodeStoreFilenameKeyV1(locator.generationId);
+  return `provider/registry-manifests/${filenameKey}.json` as ProviderRegistryManifestRelativePathV1;
+}
+
+/** Validates exact semantic locator fields and returns their canonical path. */
+export function validateProviderRegistryManifestRelativePathV1(
+  input: unknown,
+): ProviderRegistryManifestRelativePathV1 {
+  return buildProviderRegistryManifestRelativePathV1(input);
 }

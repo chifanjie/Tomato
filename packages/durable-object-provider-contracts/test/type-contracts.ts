@@ -8,6 +8,17 @@ import type {
   InstallationIdentityKeyCheckFieldsV1,
   KeyedStateTokenV1,
   LowerHex22V1,
+  ProviderFeasibilityApproverKeyIdV1,
+  ProviderFeasibilityApproverPublicKeyV1,
+  ProviderFeasibilityEvidencePinV1,
+  ProviderMigrationIdV1,
+  ProviderRegistryManifestGenerationIdV1,
+  ProviderRegistryManifestHistoryValidationV1,
+  ProviderRegistryManifestMemberV1,
+  ProviderRegistryManifestRelativePathV1,
+  ProviderRegistryManifestRoutingV1,
+  ProviderRegistryManifestSignatureV1,
+  ProviderRegistryRootMetadataPinV1,
   ProviderCryptoHostV1,
   ProviderCapabilityFailureReasonV1,
   ProviderBootstrapTrustBundlePinV1,
@@ -29,7 +40,10 @@ import type {
   ProviderRegistryRootHistoryInvalidManifestV1,
   ProviderRegistryRootMetadataHistoryValidationV1,
   ShortStoreFilenameKeyV1,
+  StoreDurableObjectProviderRuntimeAttestationPinV1,
   StoreFilenameKeyV1,
+  StoreProviderRegistrySignatureV1,
+  StoreProviderVerificationKeyIdV1,
 } from "../src/index.js";
 import {
   encodeStoreFilenameKeyV1,
@@ -80,6 +94,26 @@ declare const rootHistoryGolden:
   ProviderRegistryRootHistoryGoldenManifestV1;
 declare const rootHistoryInvalid:
   ProviderRegistryRootHistoryInvalidManifestV1;
+declare const manifestGenerationId:
+  ProviderRegistryManifestGenerationIdV1;
+declare const installationGenerationId:
+  InstallationIdentityGenerationIdV1;
+declare const providerVerificationKeyId:
+  StoreProviderVerificationKeyIdV1;
+declare const approverKeyId:
+  ProviderFeasibilityApproverKeyIdV1;
+declare const registrySignature:
+  StoreProviderRegistrySignatureV1;
+declare const manifestSignature:
+  ProviderRegistryManifestSignatureV1;
+declare const evidencePin: ProviderFeasibilityEvidencePinV1;
+declare const runtimePin:
+  StoreDurableObjectProviderRuntimeAttestationPinV1;
+declare const rootMetadataPin: ProviderRegistryRootMetadataPinV1;
+declare const manifestMember: ProviderRegistryManifestMemberV1;
+declare const migrationId: ProviderMigrationIdV1;
+declare const registryManifestHistory:
+  ProviderRegistryManifestHistoryValidationV1;
 const storeFilenameFromShort: StoreFilenameKeyV1 = shortFilenameKey;
 const storeFilenameFromHash: StoreFilenameKeyV1 = hashedFilenameKey;
 
@@ -166,6 +200,60 @@ const productionGoldenAuthority: "strong_ready" =
   rootHistoryGolden.fixtureAuthority;
 const rejectionOnlyAuthority: "none_rejection_only" =
   rootHistoryInvalid.fixtureAuthority;
+const registryHistoryAuthority:
+  "none_registry_structure_and_history_only" =
+    registryManifestHistory.authority;
+// @ts-expect-error Registry history validation is not strong I/O authority
+const strongRegistryHistoryAuthority: "strong_ready" =
+  registryManifestHistory.authority;
+// @ts-expect-error Manifest and Installation Identity IDs use separate domains
+const installationIdFromManifest:
+  InstallationIdentityGenerationIdV1 = manifestGenerationId;
+// @ts-expect-error Installation Identity and Manifest IDs use separate domains
+const manifestIdFromInstallation:
+  ProviderRegistryManifestGenerationIdV1 = installationGenerationId;
+// @ts-expect-error provider and approver key IDs are separate semantic brands
+const approverIdFromProvider:
+  ProviderFeasibilityApproverKeyIdV1 = providerVerificationKeyId;
+// @ts-expect-error approver and provider key IDs are separate semantic brands
+const providerIdFromApprover:
+  StoreProviderVerificationKeyIdV1 = approverKeyId;
+// @ts-expect-error Entry/nested registry and Manifest signatures cannot mix
+const manifestSignatureFromRegistry:
+  ProviderRegistryManifestSignatureV1 = registrySignature;
+// @ts-expect-error Manifest and registry signatures cannot mix
+const registrySignatureFromManifest:
+  StoreProviderRegistrySignatureV1 = manifestSignature;
+// @ts-expect-error Evidence, Runtime and Root Pins are independent contracts
+const runtimePinFromEvidence:
+  StoreDurableObjectProviderRuntimeAttestationPinV1 = evidencePin;
+// @ts-expect-error Runtime and Root Pins are independent contracts
+const rootPinFromRuntime: ProviderRegistryRootMetadataPinV1 =
+  runtimePin;
+// @ts-expect-error callers cannot forge the canonical fixed path brand
+const rawManifestPath: ProviderRegistryManifestRelativePathV1 =
+  "provider/registry-manifests/latest.json";
+
+function narrowRegistryMember(
+  member: ProviderRegistryManifestMemberV1,
+): string {
+  if (member.disposition === "enabled") {
+    return member.registryEntry.providerId;
+  }
+  return member.reason;
+}
+
+// @ts-expect-error migration routing requires its complete atomic branch
+const missingMigrationPhase: ProviderRegistryManifestRoutingV1 = {
+  state: "migration",
+  migrationId,
+  sourceProviderId: manifestMember.providerId,
+  destinationProviderId: manifestMember.providerId,
+  activeForMigrationWrites: manifestMember.providerId,
+};
+// @ts-expect-error approver role is a closed qa/release union
+const invalidApproverRole:
+  ProviderFeasibilityApproverPublicKeyV1["role"] = "security";
 
 const generationResult: Promise<InstallationIdentityGenerationIdV1> =
   deriveInstallationIdentityGenerationIdV1(generationFields, cryptoHost);
@@ -219,6 +307,21 @@ void [
   strongHistoryAuthority,
   productionGoldenAuthority,
   rejectionOnlyAuthority,
+  registryHistoryAuthority,
+  strongRegistryHistoryAuthority,
+  installationIdFromManifest,
+  manifestIdFromInstallation,
+  approverIdFromProvider,
+  providerIdFromApprover,
+  manifestSignatureFromRegistry,
+  registrySignatureFromManifest,
+  runtimePinFromEvidence,
+  rootPinFromRuntime,
+  rootMetadataPin,
+  rawManifestPath,
+  narrowRegistryMember(manifestMember),
+  missingMigrationPhase,
+  invalidApproverRole,
   storeFilenameFromShort,
   storeFilenameFromHash,
   generationResult,

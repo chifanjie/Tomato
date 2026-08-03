@@ -1,0 +1,93 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:store-durable-object-provider-runtime-attestation",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string",
+      "const": "store_durable_object_provider_runtime_attestation_v1"
+    },
+    "providerId": {
+      "type": "string",
+      "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+    },
+    "semanticProviderPolicyDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "implementationDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "binaryAttestationDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "ipcEndpointAttestationDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "osPlatform": {
+      "type": "string",
+      "enum": [
+        "darwin",
+        "linux",
+        "win32"
+      ]
+    },
+    "osReleaseFamilyCode": {
+      "type": "string",
+      "pattern": "^provider-os-family:[0-9a-f]{22}$"
+    },
+    "osBuildDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "architecture": {
+      "type": "string",
+      "enum": [
+        "arm64",
+        "x86_64"
+      ]
+    },
+    "filesystemProfileDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "realFilesystemConformanceResultDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "attestationGeneration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "issuedAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+    },
+    "registrySignature": {
+      "type": "string",
+      "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+    }
+  },
+  "required": [
+    "profile",
+    "providerId",
+    "semanticProviderPolicyDigest",
+    "implementationDigest",
+    "binaryAttestationDigest",
+    "ipcEndpointAttestationDigest",
+    "osPlatform",
+    "osReleaseFamilyCode",
+    "osBuildDigest",
+    "architecture",
+    "filesystemProfileDigest",
+    "realFilesystemConformanceResultDigest",
+    "attestationGeneration",
+    "issuedAt",
+    "registrySignature"
+  ],
+  "additionalProperties": false
+}

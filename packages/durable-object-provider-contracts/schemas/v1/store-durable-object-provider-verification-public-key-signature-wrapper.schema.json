@@ -1,0 +1,76 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:store-durable-object-provider-verification-public-key-signature-wrapper",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "rootKeyId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{22}$"
+    },
+    "domain": {
+      "type": "string",
+      "const": "store-durable-object-provider-verification-public-key-signature-v1"
+    },
+    "claims": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "store_durable_object_provider_verification_public_key_v1"
+        },
+        "providerId": {
+          "type": "string",
+          "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+        },
+        "registryGenerationIntroduced": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "keyId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{22}$"
+        },
+        "usage": {
+          "type": "string",
+          "enum": [
+            "operation_receipt",
+            "containment_proof",
+            "state_version",
+            "journal_version",
+            "migration_semantic_proof"
+          ]
+        },
+        "algorithm": {
+          "type": "string",
+          "const": "ed25519"
+        },
+        "publicKeyBytes": {
+          "type": "string",
+          "pattern": "^base64url:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+        },
+        "publicKeyDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "profile",
+        "providerId",
+        "registryGenerationIntroduced",
+        "keyId",
+        "usage",
+        "algorithm",
+        "publicKeyBytes",
+        "publicKeyDigest"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "rootKeyId",
+    "domain",
+    "claims"
+  ],
+  "additionalProperties": false
+}

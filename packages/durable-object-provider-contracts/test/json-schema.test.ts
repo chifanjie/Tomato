@@ -11,6 +11,10 @@ import {
 import {
   ShortStoreFilenameKeyV1Schema,
 } from "../src/provider-fixed-locator.js";
+import {
+  deriveProviderRegistryManifestGenerationIdV1,
+  projectProviderRegistryManifestIdFieldsV1,
+} from "../src/provider-registry-records.js";
 
 const schemaRoot = fileURLToPath(new URL("../schemas/v1", import.meta.url));
 const strictEd25519ResourcePath = fileURLToPath(
@@ -55,6 +59,191 @@ const providerRootHistoryInvalidPath = fileURLToPath(
     import.meta.url,
   ),
 );
+const providerRegistryManifestHistoryGoldenPath = fileURLToPath(
+  new URL(
+    "../fixtures/v1/golden/provider-registry-entry-manifest-history-v1.json",
+    import.meta.url,
+  ),
+);
+const providerRegistryManifestHistoryInvalidPath = fileURLToPath(
+  new URL(
+    "../fixtures/v1/invalid/provider-registry-entry-manifest-history-v1.json",
+    import.meta.url,
+  ),
+);
+
+const REGISTRY_SCHEMA_ROOT_KEY_ID = "a".repeat(22);
+const REGISTRY_SCHEMA_PROVIDER_ID = "durable-object-provider:schema";
+const REGISTRY_SCHEMA_INSTALLATION_ID =
+  `installation-identity-generation:${"b".repeat(22)}`;
+
+function schemaDigest(character: string): string {
+  return `sha256:${character.repeat(64)}`;
+}
+
+function schemaRegistrySignature(): string {
+  return `provider-registry-ed25519:${REGISTRY_SCHEMA_ROOT_KEY_ID}:${"0".repeat(128)}`;
+}
+
+function registryEntryForJsonSchema(): Record<string, any> {
+  const keyId = "c".repeat(22);
+  const approverKeyId = "d".repeat(22);
+  const publicKeyBytes = `base64url:${"A".repeat(43)}`;
+  const rootMetadata = {
+    locatorProfile: "installation_provider_registry_root_metadata_v1",
+    rootGeneration: 1,
+    rootKeyId: REGISTRY_SCHEMA_ROOT_KEY_ID,
+    contentDigest: schemaDigest("1"),
+  };
+  return {
+    profile: "store_durable_object_provider_registry_entry_v1",
+    installationIdentityGenerationId: REGISTRY_SCHEMA_INSTALLATION_ID,
+    activeRootMetadata: rootMetadata,
+    registryRootKeyId: REGISTRY_SCHEMA_ROOT_KEY_ID,
+    registryGeneration: 1,
+    providerId: REGISTRY_SCHEMA_PROVIDER_ID,
+    semanticProviderPolicyDigest: schemaDigest("2"),
+    providerFeasibilityEvidence: {
+      locatorProfile: "installation_provider_feasibility_evidence_v1",
+      evidenceId: `provider-feasibility-evidence:${"e".repeat(22)}`,
+      contentDigest: schemaDigest("3"),
+    },
+    runtimeAttestation: {
+      profile: "store_durable_object_provider_runtime_attestation_pin_v1",
+      contentDigest: schemaDigest("4"),
+      payload: {
+        profile: "store_durable_object_provider_runtime_attestation_v1",
+        providerId: REGISTRY_SCHEMA_PROVIDER_ID,
+        semanticProviderPolicyDigest: schemaDigest("2"),
+        implementationDigest: schemaDigest("5"),
+        binaryAttestationDigest: schemaDigest("6"),
+        ipcEndpointAttestationDigest: schemaDigest("7"),
+        osPlatform: "linux",
+        osReleaseFamilyCode: `provider-os-family:${"f".repeat(22)}`,
+        osBuildDigest: schemaDigest("8"),
+        architecture: "x86_64",
+        filesystemProfileDigest: schemaDigest("9"),
+        realFilesystemConformanceResultDigest: schemaDigest("a"),
+        attestationGeneration: 1,
+        issuedAt: "2026-08-03T01:02:03Z",
+        registrySignature: schemaRegistrySignature(),
+      },
+    },
+    verificationKeys: {
+      profile: "store_durable_object_provider_verification_keys_v1",
+      activeKeyIds: {
+        operationReceipt: keyId,
+        containmentProof: keyId,
+        stateVersion: keyId,
+        journalVersion: keyId,
+      },
+      activeBindingDerivationKeyGeneration: 1,
+      publicKeyRecords: [
+        {
+          profile:
+            "store_durable_object_provider_verification_public_key_v1",
+          providerId: REGISTRY_SCHEMA_PROVIDER_ID,
+          registryGenerationIntroduced: 1,
+          keyId,
+          usage: "operation_receipt",
+          algorithm: "ed25519",
+          publicKeyBytes,
+          publicKeyDigest: schemaDigest("b"),
+          registrySignature: schemaRegistrySignature(),
+        },
+      ],
+      bindingDerivationGenerationRecords: [
+        {
+          profile:
+            "store_durable_object_provider_binding_derivation_generation_v1",
+          providerId: REGISTRY_SCHEMA_PROVIDER_ID,
+          registryGenerationIntroduced: 1,
+          generation: 1,
+          algorithm: "hmac_sha256_provider_private",
+          keyCommitmentDigest: schemaDigest("c"),
+          registrySignature: schemaRegistrySignature(),
+        },
+      ],
+      compromisedRevokedKeyIds: [],
+      compromisedRevokedBindingDerivationGenerations: [],
+    },
+    feasibilityApprovalKeys: {
+      profile: "provider_feasibility_approval_keys_v1",
+      activeKeyIds: { qa: approverKeyId, release: approverKeyId },
+      publicKeyRecords: [
+        {
+          profile: "provider_feasibility_approver_public_key_v1",
+          distributionRegistryGenerationIntroduced: 1,
+          role: "qa",
+          keyId: approverKeyId,
+          algorithm: "ed25519",
+          publicKeyBytes,
+          publicKeyDigest: schemaDigest("b"),
+          registrySignature: schemaRegistrySignature(),
+        },
+      ],
+      compromisedRevokedKeyIds: [],
+    },
+    status: "enabled",
+    registrySignature: schemaRegistrySignature(),
+  };
+}
+
+function registryManifestForJsonSchema(): Record<string, any> {
+  const entry = registryEntryForJsonSchema();
+  const manifest = {
+    profile: "provider_registry_manifest_v1",
+    generationId: `provider-registry-manifest:${"0".repeat(22)}`,
+    installationIdentityGenerationId: REGISTRY_SCHEMA_INSTALLATION_ID,
+    activeRootMetadata: structuredClone(entry.activeRootMetadata),
+    manifestGeneration: 1,
+    predecessor: { state: "genesis" },
+    members: [
+      {
+        providerId: REGISTRY_SCHEMA_PROVIDER_ID,
+        disposition: "enabled",
+        registryEntryContentDigest: schemaDigest("d"),
+        registryEntry: entry,
+      },
+    ],
+    routing: { state: "steady" },
+    issuedAt: "2026-08-03T01:02:03Z",
+    manifestSignature:
+      `provider-registry-manifest-ed25519:${REGISTRY_SCHEMA_ROOT_KEY_ID}:${"0".repeat(128)}`,
+  };
+  manifest.generationId = deriveProviderRegistryManifestGenerationIdV1(
+    projectProviderRegistryManifestIdFieldsV1(manifest),
+  );
+  return manifest;
+}
+
+function atomicAlternatives(
+  document: Record<string, unknown>,
+): Array<Record<string, unknown>> {
+  const alternatives = document.oneOf ?? document.anyOf;
+  expect(Array.isArray(alternatives)).toBe(true);
+  return alternatives as Array<Record<string, unknown>>;
+}
+
+function expectEveryJsonSchemaObjectClosed(
+  value: unknown,
+  path: string,
+): void {
+  if (Array.isArray(value)) {
+    value.forEach((child, index) =>
+      expectEveryJsonSchemaObjectClosed(child, `${path}[${index}]`),
+    );
+    return;
+  }
+  if (value === null || typeof value !== "object") return;
+  const record = value as Record<string, unknown>;
+  if (record.type === "object") {
+    expect(record.additionalProperties, path).toBe(false);
+  }
+  for (const [key, child] of Object.entries(record)) {
+    expectEveryJsonSchemaObjectClosed(child, `${path}.${key}`);
+  }
+}
 
 describe("provider contract JSON Schema distribution", () => {
   it("tracks one current document for every registered schema", () => {
@@ -531,5 +720,339 @@ describe("provider contract JSON Schema distribution", () => {
       ).vectors as Array<Record<string, unknown>>
     )[0]!.locator = "provider/root-metadata/id-A.json";
     expect(validateGolden(nonCanonicalLocator)).toBe(false);
+  });
+
+  it("validates the real seven-generation Registry Manifest history fixture with AJV", () => {
+    const generated = generateProviderContractJsonSchemasV1();
+    const document =
+      generated["provider-registry-manifest-history-golden-manifest"];
+    const validate = new Ajv2020({
+      allErrors: true,
+      strict: true,
+    }).compile(document);
+    const fixture = JSON.parse(
+      readFileSync(providerRegistryManifestHistoryGoldenPath, "utf8"),
+    ) as Record<string, unknown>;
+    expect(validate(fixture), JSON.stringify(validate.errors)).toBe(true);
+
+    const history = (
+      document.properties as Record<string, Record<string, unknown>>
+    ).registryManifestHistory;
+    expect(history).toMatchObject({
+      type: "array",
+      minItems: 7,
+      maxItems: 7,
+      items: false,
+    });
+
+    const withUnknownAuthority = structuredClone(fixture);
+    withUnknownAuthority.runtimeAuthority = "strong_ready";
+    expect(validate(withUnknownAuthority)).toBe(false);
+
+    const missingGeneration = structuredClone(fixture);
+    (missingGeneration.registryManifestHistory as unknown[]).pop();
+    expect(validate(missingGeneration)).toBe(false);
+  });
+
+  it("validates the real exact 89-case Registry Manifest invalid fixture with AJV", () => {
+    const generated = generateProviderContractJsonSchemasV1();
+    const validateManifest = new Ajv2020({
+      allErrors: true,
+      strict: true,
+    }).compile(
+      generated["provider-registry-manifest-history-invalid-manifest"],
+    );
+    const fixture = JSON.parse(
+      readFileSync(providerRegistryManifestHistoryInvalidPath, "utf8"),
+    ) as Record<string, any>;
+    expect(fixture.caseCount).toBe(89);
+    expect(fixture.caseIds).toHaveLength(89);
+    expect(fixture.cases).toHaveLength(89);
+    expect(
+      validateManifest(fixture),
+      JSON.stringify(validateManifest.errors),
+    ).toBe(true);
+
+    const withUnknownField = structuredClone(fixture);
+    withUnknownField.runtimeAuthority = "strong_ready";
+    expect(validateManifest(withUnknownField)).toBe(false);
+
+    const reorderedCases = structuredClone(fixture);
+    [reorderedCases.cases[0], reorderedCases.cases[1]] = [
+      reorderedCases.cases[1],
+      reorderedCases.cases[0],
+    ];
+    expect(validateManifest(reorderedCases)).toBe(false);
+
+    const validateStage = new Ajv2020({ strict: true }).compile(
+      generated["provider-registry-manifest-history-invalid-stage"],
+    );
+    const validateReason = new Ajv2020({ strict: true }).compile(
+      generated["provider-registry-manifest-history-invalid-reason"],
+    );
+    expect(validateStage("history_input")).toBe(true);
+    expect(validateStage("unknown_stage")).toBe(false);
+    expect(validateReason("schema_invalid")).toBe(true);
+    expect(validateReason("unknown_reason")).toBe(false);
+  });
+
+  it("registers the complete C09-1E primitive, record, wrapper, and locator surface", () => {
+    const generated = generateProviderContractJsonSchemasV1();
+    const requiredNames = [
+      "provider-registry-manifest-generation-id",
+      "provider-migration-id",
+      "provider-feasibility-evidence-id",
+      "store-provider-verification-key-id",
+      "provider-feasibility-approver-key-id",
+      "provider-os-release-family-code",
+      "store-provider-registry-signature",
+      "provider-registry-manifest-signature",
+      "provider-registry-manifest-locator",
+      "store-durable-object-provider-runtime-attestation",
+      "store-durable-object-provider-runtime-attestation-pin",
+      "store-durable-object-provider-verification-public-key",
+      "store-durable-object-provider-binding-derivation-generation",
+      "provider-feasibility-approver-public-key",
+      "provider-feasibility-evidence-pin",
+      "provider-feasibility-approval-keys",
+      "store-durable-object-provider-verification-keys",
+      "store-durable-object-provider-registry-entry",
+      "provider-registry-manifest-member",
+      "provider-registry-manifest-routing",
+      "provider-registry-manifest",
+      "provider-registry-manifest-envelope",
+      "provider-registry-manifest-pin",
+      "provider-registry-manifest-history-golden-manifest",
+      "provider-registry-manifest-history-invalid-manifest",
+      "provider-registry-manifest-history-invalid-stage",
+      "provider-registry-manifest-history-invalid-reason",
+      "store-durable-object-provider-runtime-attestation-signature-wrapper",
+      "store-durable-object-provider-verification-public-key-signature-wrapper",
+      "store-durable-object-provider-binding-derivation-generation-signature-wrapper",
+      "provider-feasibility-approver-public-key-signature-wrapper",
+      "store-durable-object-provider-registry-entry-signature-wrapper",
+      "provider-registry-manifest-signature-wrapper",
+    ] as const;
+    for (const name of requiredNames) {
+      expect(generated, name).toHaveProperty(name);
+      expectEveryJsonSchemaObjectClosed(generated[name], name);
+    }
+    expect(Object.keys(generated)).toHaveLength(116);
+
+    for (const name of requiredNames.slice(-6)) {
+      expect(generated[name].additionalProperties, name).toBe(false);
+      const claims = (
+        generated[name].properties as Record<string, Record<string, unknown>>
+      ).claims;
+      expect(claims, `${name} claims`).toBeDefined();
+      if (claims === undefined) throw new TypeError("wrapper claims missing");
+      if (claims.additionalProperties === undefined) {
+        for (const alternative of atomicAlternatives(claims)) {
+          expect(alternative.additionalProperties, `${name} claims`).toBe(
+            false,
+          );
+        }
+      } else {
+        expect(claims.additionalProperties, `${name} claims`).toBe(false);
+      }
+    }
+  });
+
+  it("publishes every Registry atomic union as closed alternatives", () => {
+    const generated = generateProviderContractJsonSchemasV1();
+    for (const name of [
+      "store-durable-object-provider-registry-entry-unsigned-claims",
+      "store-durable-object-provider-registry-entry",
+      "provider-registry-manifest-member",
+      "provider-registry-manifest-routing",
+      "provider-registry-manifest-id-fields",
+      "provider-registry-manifest-unsigned-claims",
+      "provider-registry-manifest",
+    ] as const) {
+      const alternatives = atomicAlternatives(generated[name]);
+      expect(alternatives, name).toHaveLength(2);
+      for (const alternative of alternatives) {
+        expect(alternative.additionalProperties, name).toBe(false);
+      }
+    }
+
+    for (const name of [
+      "store-durable-object-provider-registry-entry-genesis-unsigned-claims",
+      "store-durable-object-provider-registry-entry-successor-unsigned-claims",
+      "store-durable-object-provider-registry-entry-genesis",
+      "store-durable-object-provider-registry-entry-successor",
+      "provider-registry-manifest-enabled-member",
+      "provider-registry-manifest-revoked-member",
+      "provider-registry-manifest-genesis-id-fields",
+      "provider-registry-manifest-successor-id-fields",
+      "provider-registry-manifest-genesis-unsigned-claims",
+      "provider-registry-manifest-successor-unsigned-claims",
+      "provider-registry-manifest-genesis",
+      "provider-registry-manifest-successor",
+    ] as const) {
+      expect(generated[name].additionalProperties, name).toBe(false);
+    }
+  });
+
+  it("rejects unknown fields and genesis/successor cross-branch objects with AJV", () => {
+    const generated = generateProviderContractJsonSchemasV1();
+    const validateEntry = new Ajv2020({
+      allErrors: true,
+      strict: true,
+    }).compile(generated["store-durable-object-provider-registry-entry"]);
+    const entry = registryEntryForJsonSchema();
+    expect(validateEntry(entry), JSON.stringify(validateEntry.errors)).toBe(
+      true,
+    );
+
+    const genesisWithPredecessor = structuredClone(entry);
+    genesisWithPredecessor.predecessorRegistryEntryContentDigest =
+      schemaDigest("e");
+    expect(validateEntry(genesisWithPredecessor)).toBe(false);
+
+    const successorWithoutPredecessor = structuredClone(entry);
+    successorWithoutPredecessor.registryGeneration = 2;
+    expect(validateEntry(successorWithoutPredecessor)).toBe(false);
+
+    const validSuccessor = structuredClone(successorWithoutPredecessor);
+    validSuccessor.predecessorRegistryEntryContentDigest = schemaDigest("e");
+    expect(
+      validateEntry(validSuccessor),
+      JSON.stringify(validateEntry.errors),
+    ).toBe(true);
+
+    const nestedUnknown = structuredClone(entry);
+    nestedUnknown.runtimeAttestation.payload.rawIpcEndpoint = "/tmp/provider";
+    expect(validateEntry(nestedUnknown)).toBe(false);
+
+    const validateManifest = new Ajv2020({
+      allErrors: true,
+      strict: true,
+    }).compile(generated["provider-registry-manifest"]);
+    const manifest = registryManifestForJsonSchema();
+    expect(
+      validateManifest(manifest),
+      JSON.stringify(validateManifest.errors),
+    ).toBe(true);
+
+    const genesisWithManifestPredecessor = structuredClone(manifest);
+    genesisWithManifestPredecessor.predecessor = {
+      state: "manifest",
+      generationId: manifest.generationId,
+      contentDigest: schemaDigest("f"),
+    };
+    expect(validateManifest(genesisWithManifestPredecessor)).toBe(false);
+
+    const successorWithGenesis = structuredClone(manifest);
+    successorWithGenesis.manifestGeneration = 2;
+    expect(validateManifest(successorWithGenesis)).toBe(false);
+
+    const manifestUnknown = structuredClone(manifest);
+    manifestUnknown.latestAlias = true;
+    expect(validateManifest(manifestUnknown)).toBe(false);
+
+    const validateLocator = new Ajv2020({
+      allErrors: true,
+      strict: true,
+    }).compile(generated["provider-registry-manifest-locator"]);
+    const locator = {
+      locatorProfile: "installation_provider_registry_manifest_v1",
+      generationId: manifest.generationId,
+    };
+    expect(validateLocator(locator), JSON.stringify(validateLocator.errors)).toBe(
+      true,
+    );
+    expect(validateLocator({ ...locator, callerPath: "latest.json" })).toBe(
+      false,
+    );
+  });
+
+  it("rejects enabled/revoked and steady/migration cross-branch fields with AJV", () => {
+    const generated = generateProviderContractJsonSchemasV1();
+    const validateMember = new Ajv2020({
+      allErrors: true,
+      strict: true,
+    }).compile(generated["provider-registry-manifest-member"]);
+    const enabled = registryManifestForJsonSchema().members[0];
+    expect(validateMember(enabled), JSON.stringify(validateMember.errors)).toBe(
+      true,
+    );
+    const enabledWithRevokedField = structuredClone(enabled);
+    enabledWithRevokedField.reason = "provider_compromised";
+    expect(validateMember(enabledWithRevokedField)).toBe(false);
+
+    const revoked = {
+      providerId: REGISTRY_SCHEMA_PROVIDER_ID,
+      disposition: "revoked",
+      lastEnabledRegistryEntryContentDigest: schemaDigest("a"),
+      revokedAtManifestGeneration: 2,
+      reason: "provider_compromised",
+    };
+    expect(validateMember(revoked), JSON.stringify(validateMember.errors)).toBe(
+      true,
+    );
+    const revokedWithEnabledField = {
+      ...revoked,
+      registryEntryContentDigest: schemaDigest("b"),
+    };
+    expect(validateMember(revokedWithEnabledField)).toBe(false);
+
+    const validateRouting = new Ajv2020({
+      allErrors: true,
+      strict: true,
+    }).compile(generated["provider-registry-manifest-routing"]);
+    expect(validateRouting({ state: "steady" })).toBe(true);
+    expect(
+      validateRouting({
+        state: "steady",
+        migrationId: `provider-migration:${"c".repeat(22)}`,
+      }),
+    ).toBe(false);
+    const migration = {
+      state: "migration",
+      migrationId: `provider-migration:${"c".repeat(22)}`,
+      sourceProviderId: "durable-object-provider:source",
+      destinationProviderId: "durable-object-provider:destination",
+      activeForMigrationWrites: "durable-object-provider:destination",
+      phase: "prepared",
+    };
+    expect(
+      validateRouting(migration),
+      JSON.stringify(validateRouting.errors),
+    ).toBe(true);
+    expect(validateRouting({ ...migration, phase: "steady" })).toBe(false);
+  });
+
+  it("keeps cryptographic/history equality outside JSON Schema authority", () => {
+    const generated = generateProviderContractJsonSchemasV1();
+    const candidate = registryManifestForJsonSchema();
+    const expectedGenerationId = candidate.generationId;
+    candidate.generationId =
+      `provider-registry-manifest:${"f".repeat(22)}`;
+    const envelope = {
+      schemaVersion: 1,
+      recordType: "provider_registry_manifest",
+      generationId: candidate.generationId,
+      contentDigest: schemaDigest("f"),
+      payload: candidate,
+    };
+    const validateEnvelope = new Ajv2020({
+      allErrors: true,
+      strict: true,
+    }).compile(generated["provider-registry-manifest-envelope"]);
+
+    // JSON Schema deliberately validates wire shape only. The runtime history
+    // validator recomputes this stable ID (plus Envelope/member digests and
+    // signatures) and rejects the otherwise well-shaped candidate fail closed.
+    expect(
+      validateEnvelope(envelope),
+      JSON.stringify(validateEnvelope.errors),
+    ).toBe(true);
+    expect(
+      deriveProviderRegistryManifestGenerationIdV1(
+        projectProviderRegistryManifestIdFieldsV1(candidate),
+      ),
+    ).toBe(expectedGenerationId);
+    expect(candidate.generationId).not.toBe(expectedGenerationId);
   });
 });

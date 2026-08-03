@@ -17,7 +17,15 @@ export {
   LowerHex22V1Schema,
   LowerHex32V1Schema,
   LowerHex64V1Schema,
+  ProviderFeasibilityApproverKeyIdV1Schema,
+  ProviderFeasibilityEvidenceIdV1Schema,
+  ProviderMigrationIdV1Schema,
+  ProviderOsReleaseFamilyCodeV1Schema,
+  ProviderRegistryManifestGenerationIdV1Schema,
+  ProviderRegistryManifestSignatureV1Schema,
   ProviderRegistryRootKeyIdV1Schema,
+  StoreProviderRegistrySignatureV1Schema,
+  StoreProviderVerificationKeyIdV1Schema,
   createDurableObjectIdentityProviderIdV1,
 } from "./primitives.js";
 export type {
@@ -32,7 +40,15 @@ export type {
   LowerHex22V1,
   LowerHex32V1,
   LowerHex64V1,
+  ProviderFeasibilityApproverKeyIdV1,
+  ProviderFeasibilityEvidenceIdV1,
+  ProviderMigrationIdV1,
+  ProviderOsReleaseFamilyCodeV1,
+  ProviderRegistryManifestGenerationIdV1,
+  ProviderRegistryManifestSignatureV1,
   ProviderRegistryRootKeyIdV1,
+  StoreProviderRegistrySignatureV1,
+  StoreProviderVerificationKeyIdV1,
 } from "./primitives.js";
 export type { ProviderCryptoHostV1 } from "./domain-crypto.js";
 export {
@@ -204,18 +220,24 @@ export type {
 } from "./provider-registry-trust.js";
 export {
   PROVIDER_REGISTRY_ROOT_METADATA_LOCATOR_PROFILE_V1,
+  PROVIDER_REGISTRY_MANIFEST_LOCATOR_PROFILE_V1,
   STORE_FILENAME_SHORT_BODY_MAX_LENGTH_V1,
   HashedStoreFilenameKeyV1Schema,
+  ProviderRegistryManifestLocatorV1Schema,
   ProviderRegistryRootMetadataLocatorV1Schema,
   ShortStoreFilenameKeyV1Schema,
   StoreFilenameKeyV1Schema,
+  buildProviderRegistryManifestRelativePathV1,
   buildProviderRegistryRootMetadataRelativePathV1,
   decodeShortStoreFilenameKeyV1,
   encodeStoreFilenameKeyV1,
+  validateProviderRegistryManifestRelativePathV1,
   verifyStoreFilenameKeyForSemanticIdV1,
 } from "./provider-fixed-locator.js";
 export type {
   HashedStoreFilenameKeyV1,
+  ProviderRegistryManifestLocatorV1,
+  ProviderRegistryManifestRelativePathV1,
   ProviderRegistryRootMetadataLocatorV1,
   ProviderRegistryRootMetadataRelativePathV1,
   ShortStoreFilenameKeyV1,
@@ -262,6 +284,16 @@ export type {
   ProviderRegistryRootHistoryGoldenManifestV1,
   ProviderRegistryRootHistoryInvalidManifestV1,
 } from "./provider-registry-root-history-fixtures.js";
+export * from "./provider-registry-records.js";
+export {
+  ProviderRegistryManifestHistoryValidationError,
+  validateProviderRegistryManifestHistoryV1,
+} from "./provider-registry-manifest-history.js";
+export type {
+  ProviderRegistryManifestHistoryValidationV1,
+  ValidateProviderRegistryManifestHistoryV1Input,
+} from "./provider-registry-manifest-history.js";
+export * from "./provider-registry-manifest-fixtures.js";
 export {
   PROVIDER_BOOTSTRAP_TRUST_BUNDLE_CONTENT_DIGEST_V1,
   PROVIDER_BOOTSTRAP_TRUST_BUNDLE_DOMAIN_V1,

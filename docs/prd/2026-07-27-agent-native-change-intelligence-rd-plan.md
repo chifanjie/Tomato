@@ -1,6 +1,6 @@
 # Understand Code：Agent-native Code Change Intelligence 项目研制计划
 
-> 文档状态：Approved / Contract Frozen v1.9（含 WP5 Decision Amendment D-24～D-32、C09-1F 与 16-A-1 实施证据重校）
+> 文档状态：Approved / Contract Frozen v1.9（含 WP5 Decision Amendment D-24～D-32、C09-1G 与 16-A-1 实施证据重校）
 >
 > 日期：2026-07-27
 >
@@ -10,7 +10,7 @@
 >
 > WP5 Contract Amendment：2026-07-30～2026-08-03；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host、不可变 Bootstrap Trust Bundle与签名 Target Discovery point closure见 D-24～D-32
 >
-> Implementation Rebaseline：2026-08-03；重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1F 与 16-A-1 已形成候选证据，但 Provider aggregate、真实 Provider、生产 Change Intelligence、双 Agent、Task-first Workbench 与发布门仍未关闭
+> Implementation Rebaseline：2026-08-03；重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1G 与 16-A-1 已形成候选证据，但 Provider aggregate、真实 Provider、生产 Change Intelligence、双 Agent、Task-first Workbench 与发布门仍未关闭
 >
 > 适用范围：`understand-code` 产品、Core、Agent 插件、MCP、本地服务与 Dashboard
 >
@@ -325,11 +325,11 @@ Incident、Impact、Change Check 和 Verification 都应成为 Task 的章节或
 
 | 项目 | 当前事实 |
 |---|---|
-| 分支 / 实现 HEAD | `feature/agent-native-change-intelligence` / `0a07e33d362bca04a177afbe4eff3b12e038dce7`（后续文档重校为 `97d357b`） |
+| 分支 / 实现 HEAD | `feature/agent-native-change-intelligence` / `70201b4c2329f23cd70119b56685e1a2aed97e65`（C09-1G code slice） |
 | Workspace 包 | 8 个：Contracts、Repository State、Artifact Store、Core、Task Engine、CLI、Dashboard、Durable Object Provider Contracts |
-| 根质量门禁 | `pnpm quality`：2,237 passed、1 个既有 skip、0 failed；build/typecheck/Dashboard production build 全绿；clean CI `30803535321` on `97d357b` success |
+| 根质量门禁 | `pnpm quality`：2,248 passed、1 个既有 skip、0 failed；build/typecheck/Dashboard production build 全绿；clean CI `30822355769` on `70201b4` success |
 | 修改前能力 | Repo Pulse、Persistent Task Brief、候选排序、影响路径、Evidence/Unknown、Task Lifecycle 已有正式实现 |
-| Provider Contracts | Strict Ed25519、Bootstrap Trust Bundle、Root/Registry History 与 signed real-FS Corpus→Suite source closure 已闭环到候选边界；C09 aggregate 仍未关闭 |
+| Provider Contracts | Strict Ed25519、Bootstrap Trust Bundle、Root/Registry History、signed real-FS Corpus→Suite source closure 与 signed Target Discovery point closure 已闭环到候选边界；C09-1G 固定 1 次 point admission、6 次签名、5 个 locator、220 份 Schema 与 116 个负例，C09 aggregate 仍未关闭 |
 | 修改后能力 | Change Check/Verification 有严格 Contract 和 Store 基础，但没有生产 `checkChanges()` / `recordVerification()` 执行服务 |
 | Agent Surface | 已有 `packages/cli` 自包含 stdio MCP 候选和 3 个真实 Tool；仍无 `.codex-plugin/plugin.json`、Codex/Claude Adapter 或双 Agent Task E2E |
 | 前端 | 活跃 Surface 仍为 `wiki | graph`；尚无 Tasks、Brief、Check、Verification 与 Repo Pulse 产品页面 |
@@ -3022,7 +3022,7 @@ P2 的阻断规则必须确定性执行：
 | WP2 | Closed | Repository State / Repo Pulse 已关闭 |
 | WP3 | Closed | Artifact Store / Evidence persistence 已关闭 |
 | WP4 | Closed | Persistent Task Brief 与 Lifecycle 已关闭；不包含生产 Change Check |
-| WP5-1P/C09 | **Partial / aggregate open** | 已完成 crypto、Bootstrap、Root/Registry history 与 signed real-FS Corpus→Suite source closure（`3ca2977`）；Catalog、Discovery、Universe、Acceptance、Migration 等总门仍缺 |
+| WP5-1P/C09 | **Partial / aggregate open** | 已完成 crypto、Bootstrap、Root/Registry history、signed real-FS Corpus→Suite source closure（`3ca2977`）与 signed Target Discovery point closure（`70201b4`）；real-FS Conformance Result、Catalog、Discovery history/current、Universe、Acceptance、Migration 等总门仍缺 |
 | WP3P | Not closed / capability locked | 真实 OS principal、Provider runtime 与 real-FS feasibility 尚未实现 |
 | WP5 | Contract frozen / implementation incomplete | 没有生产 Delta/Hunk/Matching、`checkChanges()`、`recordVerification()` 纵向闭环 |
 | WP6 | **Open（仅 16-A-1 candidate closed）** | `packages/cli` 已交付自包含 stdio MCP 与 Pulse/Brief 三工具；Host Adapter、完整 Tool surface、双 Agent E2E 仍未实现，不能把子切片状态外推为 WP6 candidate |
@@ -6220,6 +6220,19 @@ admission与恰好六次签名验证（Corpus、Suite、Taxonomy、Matrix、Bund
 packed Node/browser distribution KAT。该层不执行 runner、不触碰真实文件系统，
 也不授权任何 Store I/O；冻结顺序中的下一项 “Result” 仍指
 `ProviderRealFilesystemConformanceResultV1`，不能与本层 Discovery Result混淆。
+
+2026-08-03 implementation evidence：C09-1G 已由 `70201b4` 独立提交并推送。
+Provider package现冻结 220 份 JSON Schema、1 份 205,053-byte golden与 116 个
+ordered diagnostic/executable negative cases；29 个测试文件 / 263 项测试及 clean
+packed Node/browser KAT均通过，分发面为 13 个显式 public module exports（另有
+3 个 wildcard resource exports），成功闭包精确保持
+1 次 point admission、6 次签名验证与 5 个完整 Envelope locator。独立只读复审
+发现的 wrong-signer 未穿透密码学边界、resolved-conflict 未命中目标分支、诊断归因
+及 Fixture locator outer/payload等式缺口均在提交前修复，最终无残余 P0/P1/P2/P3。
+同一提交树根级 `pnpm quality` 为 2,248 passed、1 个既有 skip、0 failed，远端
+clean-checkout CI `30822355769` success。该证据只关闭 C09-1G point-structure
+candidate；history/current/anti-rollback、real-FS Conformance Result、Universe、
+runtime、Evidence、Catalog与真实 I/O仍保持 open/locked。
 
 修订原因：如果签名根、冲突投影、两种排序或 runner profile关系留给实现自行解释，
 不同 runtime可以对同一组已签名 observation得出不同 target集合；如果又把 point

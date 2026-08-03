@@ -1,6 +1,6 @@
 # Understand Code：Agent-native Code Change Intelligence 项目研制计划
 
-> 文档状态：Approved / Contract Frozen v1.8（含 WP5 Decision Amendment D-24～D-31、C09-1F 与 16-A-1 实施证据重校）
+> 文档状态：Approved / Contract Frozen v1.9（含 WP5 Decision Amendment D-24～D-32、C09-1F 与 16-A-1 实施证据重校）
 >
 > 日期：2026-07-27
 >
@@ -8,7 +8,7 @@
 >
 > WP4 Contract Amendment：2026-07-29；`build_task_brief` 的可恢复两阶段编排与可信 Operation Journal 见 D-22，Repo Pulse 不可变历史与原子切换见 D-23
 >
-> WP5 Contract Amendment：2026-07-30～2026-08-02；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host与不可变 Bootstrap Trust Bundle见 D-24～D-31
+> WP5 Contract Amendment：2026-07-30～2026-08-03；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host、不可变 Bootstrap Trust Bundle与签名 Target Discovery point closure见 D-24～D-32
 >
 > Implementation Rebaseline：2026-08-03；重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1F 与 16-A-1 已形成候选证据，但 Provider aggregate、真实 Provider、生产 Change Intelligence、双 Agent、Task-first Workbench 与发布门仍未关闭
 >
@@ -4120,7 +4120,7 @@ Symbol、Evidence、Impact 与分析完整性，而不是把 Git 文件列表包
 WP3P Provider Feasibility Gate 与 WP4 Task Intelligence；Diff→Symbol/Matching
 可在 security contracts 冻结后并行，但任何 strong mutation在 WP3P Gate关闭前
 保持 capability locked。
-估算：原 2.5 周只覆盖摘要级实现；按 D-24～D-31 的 path-safe、identity、
+估算：原 2.5 周只覆盖摘要级实现；按 D-24～D-32 的 path-safe、identity、
 SafeGit、reservation/quota 与 recovery 生产闭环修订为
 **6–8 周、12–16 person-weeks**。Contracts、Store 与 Operation kernel 串行冻结，
 Delta/Symbol/Matching 可在接口冻结后并行。
@@ -5977,7 +5977,7 @@ reflog 与未定义 quota 会让 crash recovery 存在误删或不一致结果�
 边界前移到首个 durable write，并冻结并发 ownership 与资源耗尽的唯一语义。
 
 WP5 的实现追踪、Acceptance 与 capability locks 见
-`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。D-24～D-31 不
+`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。D-24～D-32 不
 改变 D-21 的状态集合；它们冻结的是 Change/Verification 事实模型、可重建
 baseline、安全持久化、Operation 提交边界与 Alpha 兼容策略。
 
@@ -6173,12 +6173,65 @@ Identity会丢失其历史 verifier，既无法安全迁移，也可能被错误
 D-31把密码学接受集合、host attestation、发行物 bootstrap与历史恢复生命周期闭合
 为同一个 fail-closed Gate。
 
+### D-32：签名 Target Discovery 采用单点结构闭包
+
+状态：Accepted。
+
+2026-08-03 C09-1G pre-implementation amendment：C09-1F 已关闭 root-signed
+Fixture Corpus→Suite source closure，但 Public Taxonomy、Release Matrix、Fixture/
+Runner observation 与 Discovery Result 之间仍有几处会改变首批签名 bytes 的歧义。
+在生成 C09-1G golden 前冻结如下唯一解释：
+
+- C09-1G 是 Taxonomy→Matrix→signed Input Bundle→signed Discovery Result 的
+  **point closure**，唯一成功 authority 为
+  `none_target_discovery_point_structure_only`。它只证明传入的一组对象在同一
+  distribution binding、release cut 与 supplied active registry root 下形成确定性
+  结构闭包，不证明 predecessor 可解析、current generation、anti-rollback、五链
+  retained accounting、Target Universe 或真实 OS observation。
+- Taxonomy、Matrix、Input Bundle 与 Discovery Result 四份签名全部由调用方已经
+  point-admit 的同一 active registry root key验证；`distributionRootBinding`只
+  绑定 verified signed-package root与 release revision，不产生另一把隐式
+  “distribution signer”。四个对象使用四个独立 domain/wire prefix，Fixture 与
+  Runner manifest由 Bundle对其完整 Envelope Pin/content digest的签名承接，不
+  额外发明第五或第六类签名。
+- Taxonomy、Matrix、Bundle 与 Discovery Result 的 content digest均排除各自
+  signature；C09-1F Corpus/Suite的 Envelope content digest仍覆盖完整已签名
+  payload。verifier必须分别重算，禁止用 semantic digest、target-set digest、
+  suite digest或 caller提供的裸 content digest代替完整 source Envelope digest。
+- Bundle observations按 Matrix→Fixture→Runner 固定 source顺序与 source ordinal
+  排序；Result unresolved projection则按
+  `(observationSource, observationKeyDigest)` UTF-8 tuple排序。两种顺序各自唯一，
+  不互相借用。
+- 若两个 resolved source outcome携带相同 `targetProfileId`但完整 target/public
+  projection bytes不同，整份 point直接拒绝；verifier不擅自改写已签名 source
+  outcome。`conflicting_target_claims`只能由 Fixture/Runner source manifest原生
+  发布为 typed unresolved record，再被 Bundle和Result逐字投影。
+- Discovery Runner的 `runnerProfileDigest`只与其 Runner Pin/Envelope/payload
+  exact闭合；本层不要求它等于 C09-1F real-FS Suite runner profile digest。二者
+  属于不同协议角色，后续 real-FS Conformance Result再按自己的合同回接 Suite。
+- Fixture/Runner records允许 canonical empty；V1不擅自增加每 source 4,096 条
+  上限。Matrix targets与 Result targets/unresolved仍受已冻结的 4,096 上限，所有
+  Envelope及嵌入 Bundle受16 MiB canonical cap。本层只能证明内存 materialization
+  后的 cap；parse前 streaming admission仍属于后续 resolver/history实现。
+
+C09-1G必须继续消费 C09-1F exact Corpus/Suite Pin，执行一次 active-root point
+admission与恰好六次签名验证（Corpus、Suite、Taxonomy、Matrix、Bundle、Result），
+并冻结五个 fixed locator、完整 golden/negative corpus、精确 Schema inventory与
+packed Node/browser distribution KAT。该层不执行 runner、不触碰真实文件系统，
+也不授权任何 Store I/O；冻结顺序中的下一项 “Result” 仍指
+`ProviderRealFilesystemConformanceResultV1`，不能与本层 Discovery Result混淆。
+
+修订原因：如果签名根、冲突投影、两种排序或 runner profile关系留给实现自行解释，
+不同 runtime可以对同一组已签名 observation得出不同 target集合；如果又把 point
+closure写成 history/current authority，则会在 predecessor、rollback与 retention尚未
+实现时提前宣称可信发行状态。D-32只关闭首批 bytes所需的最小确定性边界。
+
 ---
 
 ## 20. M0 冻结结果与延后决策
 
 原 M0 第 1–7 项已经分别由 D-13～D-19 冻结；Task Lifecycle、WP4 持久化与
-WP5 Change Intelligence 修订由 D-21～D-31 冻结。完整证据、Owner、试点 Pin
+WP5 Change Intelligence 修订由 D-21～D-32 冻结。完整证据、Owner、试点 Pin
 和 capability lock 见
 `docs/research/2026-07-28-g0-contract-freeze-record.md`。
 

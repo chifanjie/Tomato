@@ -40,6 +40,19 @@ profile，并由 signed distribution binding和 Installation Identity exact pin�
 这些补充收窄接受集合且消除重复 bootstrap字段，不解锁任何 capability；一旦
 相关 v1 bytes发布，后续改变 profile、digest preimage或 bundle shape必须升版。
 
+2026-08-03 D-32 pre-implementation amendment：C09-1G在生成首批 Target
+Discovery签名 bytes前冻结为 point closure。Taxonomy、Release Matrix、嵌入式
+Input Bundle与 Discovery Result统一由同一 supplied active registry root key使用
+各自独立 domain验证；Bundle不是由另一把未定义的 distribution key签名。
+Bundle使用 Matrix→Fixture→Runner固定 source顺序，Result unresolved使用
+`(observationSource,observationKeyDigest)` UTF-8 tuple排序；相同 target ID的两个
+resolved不同完整 bytes直接拒绝，typed `conflicting_target_claims`必须由 source
+manifest原生发布。Discovery Runner profile只与其自身 Pin/Envelope闭合，不强加
+与 real-FS Suite runner profile的跨类型等式。本层不增加 per-source 4096 cap，且
+只能声明 materialized 16 MiB admission；成功 authority固定为
+`none_target_discovery_point_structure_only`，不证明 history/current/rollback、
+Universe或真实 I/O。
+
 2026-08-03 implementation evidence：C09-1F 已由 `3ca2977` 独立提交并推送。
 该层只关闭 root-signed Fixture Corpus→Suite source closure：12 条记录、4 个
 case、8 个 crash cut、43 个 materialized negative cases、152 份 Provider JSON
@@ -54,7 +67,7 @@ skipped、0 failed。clean-checkout CI 已成功：C09-1F `30797985994`、CLI
 
 权威决策：
 
-- `docs/prd/2026-07-27-agent-native-change-intelligence-rd-plan.md` D-24～D-31
+- `docs/prd/2026-07-27-agent-native-change-intelligence-rd-plan.md` D-24～D-32
 - `docs/research/2026-07-28-g0-contract-freeze-record.md` 第 4、5 节
 - WP1 Contracts、WP2 Repository State、WP3 Artifact Store 与 WP4 Task
   Intelligence 已关闭的 Schema、Snapshot、CAS、Journal 和 Lifecycle 规则
@@ -1225,7 +1238,7 @@ prefix、provider、usage或 role的签名都无效。
 | `provider-release-matrix-signature-v1` | 同一 verified active registry-root Ed25519且使用独立 domain；完整 strict `ProviderReleaseMatrixV1`，排除 `matrixSignature`；签名覆盖 generation/predecessor、root/taxonomy pin与完整发行 target set |
 | `provider-real-fs-fixture-corpus-manifest-signature-v1` | 同一 verified active registry-root Ed25519且使用独立 domain；完整 strict `ProviderRealFilesystemFixtureCorpusManifestV1`，排除 `corpusSignature`；签名覆盖 exact distribution binding/release cut、semantic corpus digest与全部 fixture program bytes |
 | `provider-real-fs-suite-manifest-signature-v1` | 同一 verified active registry-root Ed25519且使用独立 domain；完整 strict `ProviderRealFilesystemSuiteManifestV1`，排除 `suiteSignature`；签名覆盖 exact Corpus Pin、runner profile、全部 case/crash-cut定义与 semantic suite digest |
-| `provider-target-discovery-input-bundle-signature-v1` | signed-distribution root Ed25519独立 domain；完整 strict `ProviderTargetDiscoveryInputBundleV1`，排除 `bundleSignature`；签名覆盖 exact Matrix、含 Suite Pin的 fixture、runner/release cut及 complete observation universe |
+| `provider-target-discovery-input-bundle-signature-v1` | 与 Taxonomy/Matrix/Result相同的 supplied active registry-root Ed25519、使用独立 domain；完整 strict `ProviderTargetDiscoveryInputBundleV1`，排除 `bundleSignature`；签名覆盖 exact Matrix、含 Suite Pin的 fixture、runner/release cut及 complete observation universe |
 | `provider-target-discovery-result-signature-v1` | 同一 verified active registry-root Ed25519且使用独立 domain；完整 strict `ProviderTargetDiscoveryResultV1`，排除 `discoverySignature`；签名覆盖 input bundle pin、ruleset/dimensions/sources、完整 discovered target set与全部 typed unresolved observations |
 | `provider-release-target-universe-signature-v1` | 同一 verified active registry-root Ed25519且与 Catalog/两份 coverage input分开签名；完整 strict `ProviderReleaseTargetUniverseV1`，排除 `universeSignature`；签名覆盖 taxonomy/input pins、完整 coverage basis、target set、bucket exact-partition与 coverage state |
 | `provider-registry-manifest-signature-v1` | active registry-root Ed25519 wrapper；claims为完整 strict `ProviderRegistryManifestV1`并排除 `manifestSignature` |
@@ -12148,16 +12161,30 @@ privacySafeObservationClaimsDigest}`重算；三个 source set的 union再按
 count/digest、missing/extra/duplicate/reorder任一不等都拒绝。Matrix source必须
 恰有一条 resolved observation对应每个 Matrix target且不得 unresolved；fixture与
 runner manifest声明的 record count/set digest也必须与 Bundle summary exact。
-真实 source不可用必须发布可解析、content-addressed的 strict manifest并以 typed
+Bundle中三组 observations及其 summary沿用上述 fixed source order；Discovery
+Result的 `unresolvedObservations`独立按
+`(observationSource,observationKeyDigest)` UTF-8 tuple排序。真实 source不可用必须发布可解析、content-addressed的 strict manifest并以 typed
 `observation_source_unavailable` record进入 Bundle；缺 locator/Envelope不能伪装成
 合法 incomplete。不同 source对同 target ID给出不同完整 bytes时只能形成
-`conflicting_target_claims` unresolved，若仍作为两个 resolved outcomes进入 projection
+`conflicting_target_claims` unresolved；该 typed outcome必须由 Fixture/Runner
+source manifest原生发布，verifier不得改写已签名 outcome。若相同 target ID的不同
+完整 target/public projection bytes仍作为两个 resolved outcomes进入 projection，
 则整份拒绝。
 Discovery Result不是可自由填写的第二份结论：其 `targets`只能是所有 resolved
 outcome完整 target的 sorted unique投影，`unresolvedObservations`只能是所有
 unresolved outcome的 sorted unique投影，且重复的 bundle/cut/observation set
 digest必须 byte-identical。Bundle先签名，Result后签名；二者都不反向 pin后继，
 构造顺序无环。
+
+本 point closure中 Taxonomy、Matrix、Input Bundle与 Discovery Result由调用方已
+point-admit的同一 active registry root key分别以独立 domain验证；发行物
+`distributionRootBinding`不引入另一把隐式 signer。Discovery Runner的
+`runnerProfileDigest`只与 Runner Pin/Envelope/payload闭合，不要求等于 real-FS
+Suite runner profile digest。Fixture/Runner records允许 canonical empty且本层不
+增加 per-source 4096 cap；Matrix/Result既有4096项上限与所有 Envelope/嵌入 Bundle
+的16 MiB canonical cap保持不变。本层只做 materialized size admission，不宣称
+resolver parse前 streaming gate，也不从 generation字段推导 predecessor history、
+current或 anti-rollback authority。
 
 `coverageBasis`不仅复制 discovery ruleset version、七个 required dimensions、
 三个固定 observation source及 count/set digest，还必须 exact pin独立签名、
@@ -15536,7 +15563,7 @@ Event action、capability 必须交叉一致。
 
 状态枚举：
 
-- `frozen`：D-24～D-31 已在 PRD/G0/本矩阵一致；
+- `frozen`：D-24～D-32 已在 PRD/G0/本矩阵一致；
 - `pending implementation`：代码或 focused tests 尚未提交；
 - `capability locked`：生产入口必须在任何仓库读取/写入前 fail closed；
 - `verified locally/remotely`：只在对应 source tree 的 focused/root/CI 证据通过
@@ -15614,7 +15641,7 @@ D-31不得藏在一个巨型 WP5-1P commit中，固定按以下三个独立 comm
 
 | # | Gate | 状态 | 当前证据 / 下一关闭点 |
 |---:|---|---|---|
-| 1 | WP5-0 | Closed | D-24～D-31 已冻结 |
+| 1 | WP5-0 | Closed | D-24～D-32 已冻结 |
 | 2 | WP5-1P/C09-1B | Closed | strict Ed25519 host conformance 已通过独立复审 |
 | 3 | WP5-1P/C09-1C | Closed | Bootstrap Trust Bundle 与 retained trust 已闭环 |
 | 4 | WP5-1P aggregate | **In progress** | C09-1D `acc6c9c`、C09-1E `1b182aa` 与 C09-1F `3ca2977` 已完成；1F 仅为 signed real-FS source closure，Catalog/Discovery/Universe/Acceptance/Migration 等仍需关闭 |
@@ -15634,7 +15661,7 @@ D-31不得藏在一个巨型 WP5-1P commit中，固定按以下三个独立 comm
 
 | Gate | 内容 | 最低本地证据 | Capability |
 |---|---|---|---|
-| WP5-0 | D-24～D-31 文档冻结 | diff/link/range/术语审查 | locked |
+| WP5-0 | D-24～D-32 文档冻结 | diff/link/range/术语审查 | locked |
 | WP5-1P/C09-1B | raw-key digest + strict Ed25519 host conformance | old C09-0 key-ID golden byte-identical；独立 digest brand/schema/golden；strict point/signature vectors；28-case fixed resource/digest exact-cover；每 runtime恰56次 point + 28次 verify；constant-true/false/divergent/mutating/replaced host negatives；package build/typecheck/test/distribution/root quality与 Security review | locked |
 | WP5-1P/C09-1C | fixed Bootstrap Trust Bundle + immutable Identity retained trust | Bundle/manifest Pin/Envelope/payload/fixed-locator/4 MiB Schema与golden；bootstrap metadata、root+3 recovery/threshold/policy/strict profile等式；signed distribution与Identity origin closure；old/new Bundle recovery-only migration、missing retained object、五链 accounting negatives；package build/typecheck/test/distribution/root quality与 Implementability/Security review | locked |
 | WP5-1P | C09 Provider contracts prerequisite：RFC 8785/JCS与provider ID、raw-key digest、strict Ed25519 host capability/KAT、fixed Bootstrap Trust Bundle+historical source retention、registry/root/key/runtime/Evidence/Catalog Envelope + signed Distribution Root Binding/Taxonomy/Release Matrix/embedded Discovery Input Bundle/Target Discovery Result/Release Target Universe + signed real-FS Suite/Fixture Corpus与 typed retained-object accounting + bounded five-chain history、deterministic public projection、Acceptance/Store compact receipts、same/cross migration typed dry-run/Plan-bound reservation/exact final receipt/receipt-prefix closure、versioned Rewrite Plan/Object+Root Semantic Proof、exact-object、external CAS、journal与 error wire + golden vectors | provider contract build/schema；old C09-0 vectors byte-identical；strict manifest exact-cover、fixed digest、cross-runtime positive/hostile KAT、bundle/metadata/key/pin/history-source negatives；cross-language golden bytes、coverage provenance/history/union/catalog omission/code-smuggling、nonce mismatch/restart/migration及 rewrite mapping/root/SCC/JCS/size/HMAC issuer/proof-token/locator/budget negative vectors | locked |
@@ -16167,7 +16194,7 @@ WP5-S07 client或三层 provider-side compare-append，strong write继续锁定�
 
 只有以下条件全部满足，本文件状态才能改为 **WP5 Completed**：
 
-- D-24～D-31 在 PRD、G0、Contracts、Store、Engine、Provider host/bundle与 Surface
+- D-24～D-32 在 PRD、G0、Contracts、Store、Engine、Provider host/bundle与 Surface
   DTO 中一致；
 - WP5-C/S/R/P/A/E/I 全部从 pending 变为 verified；
 - AT-C01～C31、D01～D38、S01～S16、O01～O33、Q01～Q33 全部有可复核

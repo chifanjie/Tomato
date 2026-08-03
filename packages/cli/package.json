@@ -1,0 +1,38 @@
+{
+  "name": "@understand-code/cli",
+  "version": "0.1.0",
+  "description": "Self-contained CLI and stdio MCP server for Understand Code",
+  "type": "module",
+  "bin": {
+    "understand-code": "dist/understand-code.mjs"
+  },
+  "main": "dist/understand-code.mjs",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node scripts/build-bundle.mjs",
+    "prepack": "npm run build",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:cold": "vitest run test/cold-packed.e2e.test.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@understand-code/artifact-store": "workspace:*",
+    "@understand-code/contracts": "workspace:*",
+    "@understand-code/core": "workspace:*",
+    "@understand-code/repository-state": "workspace:*",
+    "@understand-code/task-engine": "workspace:*",
+    "ajv": "^8.17.1",
+    "esbuild": "^0.25.12",
+    "typescript": "^5.7.0",
+    "vitest": "^3.1.0",
+    "zod": "^4.3.6"
+  }
+}

@@ -1,6 +1,6 @@
 # Understand Code：Agent-native Code Change Intelligence 项目研制计划
 
-> 文档状态：Approved / Contract Frozen v1.6（含 WP5 Decision Amendment D-24～D-31）
+> 文档状态：Approved / Contract Frozen v1.7（含 WP5 Decision Amendment D-24～D-31 与 2026-08-03 实施进度重校）
 >
 > 日期：2026-07-27
 >
@@ -9,6 +9,8 @@
 > WP4 Contract Amendment：2026-07-29；`build_task_brief` 的可恢复两阶段编排与可信 Operation Journal 见 D-22，Repo Pulse 不可变历史与原子切换见 D-23
 >
 > WP5 Contract Amendment：2026-07-30～2026-08-02；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host与不可变 Bootstrap Trust Bundle见 D-24～D-31
+>
+> Implementation Rebaseline：2026-08-03；重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率，并把 Provider aggregate、真实 Provider、生产 Change Intelligence、MCP/双 Agent、Task-first Workbench 与发布门重新列为未关闭工作
 >
 > 适用范围：`understand-code` 产品、Core、Agent 插件、MCP、本地服务与 Dashboard
 >
@@ -50,6 +52,12 @@ P0 不追求一次性增加很多独立功能页，而是先打通一条完整�
   → 验证记录
   → 持久保存 Verified Task，并标记知识刷新需求
 ```
+
+截至 2026-08-03，仓库已经完成 Contracts、Repository State、Artifact Store、
+Persistent Task Brief 以及一部分 Provider Contracts；但尚无生产
+`checkChanges()`、OS 隔离的 Durable Provider、产品级 MCP Server、Codex Plugin、
+稳定 CLI/Doctor、Task-first Workbench 或可安装发布包。因此当前形态是
+**可信内核与契约底座**，不是已经可交给用户安装的 Alpha/Beta 产品。
 
 推荐研制节奏：
 
@@ -306,6 +314,74 @@ Tasks（默认） | Knowledge | Graph
 ```
 
 Incident、Impact、Change Check 和 Verification 都应成为 Task 的章节或视图。
+
+### 2.5 2026-08-03 最新实施快照
+
+2026-07-27 的基线表保留为问题发现现场；以下快照才是继续实施时使用的当前事实：
+
+| 项目 | 当前事实 |
+|---|---|
+| 分支 / HEAD | `feature/agent-native-change-intelligence` / `1b182aae29d149873725cead21a4e217463bdb4f` |
+| Workspace 包 | 7 个：Contracts、Repository State、Artifact Store、Core、Task Engine、Dashboard、Durable Object Provider Contracts |
+| 根质量门禁 | `pnpm quality`：2,207 tests passed、1 个既有 skip；build/typecheck/Dashboard production build 全绿 |
+| 修改前能力 | Repo Pulse、Persistent Task Brief、候选排序、影响路径、Evidence/Unknown、Task Lifecycle 已有正式实现 |
+| Provider Contracts | Strict Ed25519、Bootstrap Trust Bundle、Root Metadata History、Registry Manifest History 已闭环；C09 aggregate 仍未关闭 |
+| 修改后能力 | Change Check/Verification 有严格 Contract 和 Store 基础，但没有生产 `checkChanges()` / `recordVerification()` 执行服务 |
+| Agent Surface | 有旧 Claude Plugin/Skills；没有产品 MCP Server、`.codex-plugin/plugin.json`、Codex Adapter 或双 Agent Task E2E |
+| 前端 | 活跃 Surface 仍为 `wiki | graph`；尚无 Tasks、Brief、Check、Verification 与 Repo Pulse 产品页面 |
+| 安装发布 | 新平台包仍为 private；根包无稳定 `bin`、Doctor、Installer、升级/卸载与签名 RC |
+| 工作区保护 | 用户未跟踪的 QA、历史 Graph/Layout PRD、builder/assets 与 `site/` 继续排除，不纳入本主线提交 |
+
+当前完成度必须分维度解释，不能再用一个数字代替：
+
+| 维度 | 工程判断 | 含义 |
+|---|---|---|
+| 确定性基础设施 | 约 70–80% | Contracts、Repo、Store、Task 与 Provider 信任合同较扎实 |
+| 修改前 Task 理解 | 较高 | 已能形成可持久化 Brief，但尚未通过真实 Host 产品化交付 |
+| 修改后 Change Check | 未完成 | Contract 已冻结，生产 Delta/Hunk/Matching/Verification 链路尚未闭环 |
+| 用户可运行纵向产品 | 约 45–55% | 这是研发权重估算，不是测试覆盖率，也不是 17 步的算术比例 |
+| Beta 发布准备度 | 低于 15% | 没有 clean-install 双 Agent、Doctor、发布物与 Release Gate 证据 |
+
+### 2.6 2026-08-03 重建后的 17 步执行基线
+
+仓库只保留了旧记录中的 `15/17`，没有版本化保存当时 UI 的完整步骤名。本次依据
+提交历史、WP0～WP8 和现有实现重建下面的新执行基线；它从本版本起成为权威，
+但不声称逐字还原当时 UI 中未保存的步骤名。**15/17 表示当前执行到第 15 步，
+不表示产品完成 88%**；第 15～17 步恰好承载最重的运行时、集成、前端和发布工作。
+
+| 步骤 | 状态 | 交付边界 |
+|---:|---|---|
+| 1. 产品重新定版 | Completed | Agent-native Change Intelligence 主旨、P0 与非目标冻结 |
+| 2. 质量基线 | Completed | Graph/Layout、根质量命令、CI 与受保护工作区收口 |
+| 3. Host/Root 合同 | Completed | Workspace Binding 与 Runtime Rendezvous 冻结 |
+| 4. Artifact Contracts | Completed | Envelope、Schema、Error 与兼容边界 |
+| 5. Repository Snapshot | Completed | Git 状态、语义分类与可复现 Snapshot |
+| 6. Repo Pulse | Completed | 新鲜度、不可变历史与原子 canonical 切换 |
+| 7. Artifact Store | Completed | 事务、CAS、锁、Manifest、恢复与审计 |
+| 8. Claim/Evidence 基础 | Completed | Evidence Ledger、引用完整性与安全投影 |
+| 9. Task Lifecycle | Completed | 状态机、Event、并发与 revision 语义 |
+| 10. Task Brief Engine | Completed | 候选、影响、风险、Unknown 与 Markdown |
+| 11. Journal/Recovery | Completed | 两阶段编排、幂等回放与故障恢复 |
+| 12. Change Intelligence 合同 | Completed | Strong Profile、Baseline、Matching、Verification 与强写决策冻结 |
+| 13. Provider Crypto/Public Error | Completed | JCS、密码学原语、稳定失败语义与分发约束 |
+| 14. Bootstrap 与 Trust History | Completed | Strict Ed25519、Bootstrap Bundle、Root/Registry Manifest History |
+| 15. Provider Gate + WP5 生产闭环 | **In progress** | 补齐 C09 aggregate、真实 Provider Gate、Baseline→Delta→Check→Verification |
+| 16. 双 Agent 可安装 Alpha | Pending | MCP/CLI、Codex/Claude Adapter、Product Design Workbench 与真实任务 E2E |
+| 17. 成品发行 | Pending | Doctor、安装升级卸载、RC、安全/性能门禁与 mandatory Surface Release Gate |
+
+第 15～17 步采用下面的产品纵切顺序，避免继续完成大量底层合同后才首次验证安装：
+
+| 子门 | 最终可见成果 | 关闭条件摘要 |
+|---|---|---|
+| 15-A Provider aggregate | 完整 C09 Contract、Catalog/Discovery/Universe/Acceptance/Migration closure | C09 aggregate Gate、negative corpus、distribution 与独立安全复审关闭 |
+| 15-B Real Provider | 一个明确 macOS/Linux × filesystem profile 上的真实 Durable Provider | 隔离 principal、exact-object、crash/ABA/path-race、安装生命周期通过；其他环境只读 |
+| 15-C Change Intelligence | 可执行 `checkChanges()` 与 `recordVerification()` | baseline→actual Delta、hunk→symbol、planned/unplanned/omission/unknown、恢复与安全用例通过 |
+| 16-A MCP/CLI | 预编译 `understand-code mcp --stdio` 和最小 CLI | 冷 tarball 安装可 initialize、list tools、真实 Tool Call；目标仓库无需构建源码 |
+| 16-B Host Adapter | Codex CLI Plugin 与 Claude Code CLI Plugin | 两端独立空白环境安装、Root fail-closed、同任务 Artifact 一致、升级/移除无残留 |
+| 16-C Single-Host Alpha | 一个 mandatory CLI Surface 跑通 12 个固定 Gold Task | 完成 Pulse→Brief→修改→Check→Verification，可中断恢复且无错误“安全”结论，关闭 G2 |
+| 16-D Workbench | Product Design 驱动的 Task-first Evidence Workbench | Tasks/Brief/Check/Evidence/Graph Deep Link 和 desktop/tablet/mobile 状态流验收 |
+| 16-E Dual-Agent Alpha | Codex CLI 与 Claude Code CLI 均跑完全部 24 个 Gold Task | 两端 Artifact/Task/revision 一致，Workbench Deep Link 与跨 Agent 续接通过，关闭 G3 |
+| 17 Release | 可验证安装包与 RC | Doctor、checksum、SBOM、provenance、签名、24 Gold Task 和 mandatory Surface 生命周期通过 |
 
 ---
 
@@ -2932,6 +3008,23 @@ P2 的阻断规则必须确定性执行：
 - Beta Hardening 再完成多 Worktree、并发恢复、迁移、安全、完整 Workbench 和双 Agent。
 - 接口可以按 Fixture 并行开发，但阶段门前必须切换到正式实现并通过集成测试。
 
+截至 2026-08-03 的实现状态如下。`Closed` 只关闭该工作包写明的边界，不自动
+解锁下游 capability，也不能被宣传成用户产品已经可用：
+
+| 工作包 | 当前状态 | 解释 |
+|---|---|---|
+| WP0 | Closed | Contract Freeze `closed_for_implementation`；Surface Release Gate 仍 open |
+| WP1 | Closed | Shared Contracts 与 Artifact boundary 已关闭 |
+| WP2 | Closed | Repository State / Repo Pulse 已关闭 |
+| WP3 | Closed | Artifact Store / Evidence persistence 已关闭 |
+| WP4 | Closed | Persistent Task Brief 与 Lifecycle 已关闭；不包含生产 Change Check |
+| WP5-1P/C09 | **Partial / aggregate open** | 已完成 crypto、Bootstrap、Root/Registry history；Catalog、Discovery、Universe、Acceptance、Migration 等总门仍缺 |
+| WP3P | Not closed / capability locked | 真实 OS principal、Provider runtime 与 real-FS feasibility 尚未实现 |
+| WP5 | Contract frozen / implementation incomplete | 没有生产 Delta/Hunk/Matching、`checkChanges()`、`recordVerification()` 纵向闭环 |
+| WP6 | Not implemented | 只有 MCP DTO/Tool Contract 与 host-binding probe，没有产品 Server/Adapter |
+| WP7 | Not implemented | 已有 Dashboard localhost/Token 开发服务，但没有面向 Agent-native Task/MCP 的产品 Local Server、Runtime Manager 与 Task-first Workbench |
+| WP8 | Not implemented | 没有稳定 CLI/Doctor/Installer/RC；所有 Release Gate 保持 open |
+
 ### WP0：当前分支稳定与产品契约冻结
 
 **目标**：在新主轴开发前，结束当前 Graph/Layout 未完成状态，建立可信基线。
@@ -4167,6 +4260,16 @@ P0 Beta 的 mandatory Surface 固定为 **Codex CLI Plugin** 与 **Claude Code C
 ---
 
 ## 12. 里程碑与阶段门
+
+当前里程碑判定（2026-08-03）：
+
+| Gate | 状态 | 原因 |
+|---|---|---|
+| G0 | `closed_for_implementation` | 产品、Root、Runtime 与质量基线已冻结 |
+| G1 | **open** | Shared Repository foundation 已完成，但 WP5-1P aggregate 与其 conformance contract/harness 尚未闭合；真实 Provider prototype/evidence 属于 G2 |
+| G2 | not reached | 尚无单 Host `Pulse → Brief → Check → record_verification` 生产 E2E |
+| G3 | not reached | 尚无 mandatory Codex/Claude 双 Adapter 与 Task-first Workbench E2E |
+| G4 | not reached | 尚无 clean-install RC、Doctor、完整 Provider/Surface 生命周期证据 |
 
 阶段门使用一个在 M1 结束前冻结的 **Alpha Gold Set（24 个 Task）**：
 
@@ -6481,3 +6584,8 @@ Understand Code 的最终产品主旨应正式冻结为：
 如果一个功能只是让页面更丰富、图谱更炫或生成更多文档，却没有增强 Task Brief、Evidence、Impact、Change Check 或 Verification，就不应进入近期主线。
 
 P0 的成功不是“又增加了一批能力”，而是用户在 Codex 或 Claude 中完成一个真实任务时，能够得到同一份持续更新、证据闭环、可在 Workbench 深入审阅的修改决策包。
+
+Provider Contracts 是这个产品的安全底座，不是用户可见产品本身。只有第 15 步的
+生产 Change Intelligence 与真实 Provider、第 16 步的 MCP/双 Agent/Workbench，
+以及第 17 步的 clean-install、Doctor 与 Release Gate 全部关闭后，项目才可以称为
+“可安装进 Codex/Claude 的完整 P0 产品”。

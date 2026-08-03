@@ -11,8 +11,12 @@ trust bundle与 real-FS feasibility
 
 状态：**Contract Frozen / Implementation In Progress**
 
-当前总计划位置：**15/17**。WP5 合同已冻结且实现正在分层推进，不代表 WP5 功能完成；
-WP5 只有在第 11 节全部满足后才能改为 Completed。
+历史总计划执行游标：**15/17**。这里的含义是“当前进入原 17 步主线的第 15 步”，
+不是“17 个 WP5 Gate 已完成 15 个”，也不是 88% 产品完成率。按本文件第 6 节的
+17 个 Commit Gate 逐项计算，截至 2026-08-03 只有前 3 个 Gate closed，第 4 个
+WP5-1P aggregate 正在进行，其余 13 个仍 pending/locked。WP5 合同已冻结且实现
+正在分层推进，不代表 WP5 功能完成；WP5 只有在第 11 节全部满足后才能改为
+Completed。
 
 2026-08-02 D-30 pre-implementation amendment：尚无 WP5 Provider v1 artifact、
 golden或兼容 reader对外发布，因此本次终审修订在实现前原位替换未落地的 v1 freeze，
@@ -15592,6 +15596,29 @@ D-31不得藏在一个巨型 WP5-1P commit中，固定按以下三个独立 comm
 
 任一子层通过只产生 candidate，不解锁 strong capability；WP5-1P aggregate Gate仍须
 覆盖此前与后续全部 C09合同。
+
+截至 2026-08-03 的 17 Gate 状态账本如下；这是 Gate closure 计数，与上面的总计划
+执行游标是两个不同概念：
+
+| # | Gate | 状态 | 当前证据 / 下一关闭点 |
+|---:|---|---|---|
+| 1 | WP5-0 | Closed | D-24～D-31 已冻结 |
+| 2 | WP5-1P/C09-1B | Closed | strict Ed25519 host conformance 已通过独立复审 |
+| 3 | WP5-1P/C09-1C | Closed | Bootstrap Trust Bundle 与 retained trust 已闭环 |
+| 4 | WP5-1P aggregate | **In progress** | C09-1D `acc6c9c` 与 C09-1E `1b182aa` 已完成；Catalog/Discovery/Universe/Acceptance/Migration 等仍需关闭 |
+| 5 | WP5-PF | Pending / locked | 尚无真实 OS-isolated Provider 与 real-FS 安装生命周期证据 |
+| 6 | WP5-1 | Pending / locked | 其余 strong/legacy/path-safe contracts 与 fixtures 未关闭 |
+| 7 | WP5-2A | Pending / locked | SafeGit、path-safe Snapshot/Pulse、identity cutover 未实现 |
+| 8 | WP5-2B | Pending / locked | Baseline/Git lease/private CAS/quota admission 未实现 |
+| 9 | WP5-2C | Pending / locked | Immutable projection history/Context Generation 未实现 |
+| 10 | WP5-3 | Pending / locked | Operation kernel/auth/idempotency/CAS helper 未实现 |
+| 11 | WP5-4 | Pending / locked | 生产 `recordVerification()` vertical slice 未实现 |
+| 12 | WP5-5 | Pending / locked | Repository Delta 与 deterministic hunk 未实现 |
+| 13 | WP5-6 | Pending / locked | Rich symbol API 与 hunk mapper 未实现 |
+| 14 | WP5-7 | Pending / locked | Matching/Completeness 与生产 `checkChanges()` 未实现 |
+| 15 | WP5-8 | Pending / locked | refresh context rebuild 未实现 |
+| 16 | WP5-9 | Pending / locked | rebase context rebuild 未实现 |
+| 17 | WP5-10 | Pending / locked | renderer/benchmark/root closeout 与 capability unlock 未完成 |
 
 | Gate | 内容 | 最低本地证据 | Capability |
 |---|---|---|---|

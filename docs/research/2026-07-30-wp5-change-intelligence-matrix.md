@@ -40,6 +40,16 @@ profile，并由 signed distribution binding和 Installation Identity exact pin�
 这些补充收窄接受集合且消除重复 bootstrap字段，不解锁任何 capability；一旦
 相关 v1 bytes发布，后续改变 profile、digest preimage或 bundle shape必须升版。
 
+2026-08-03 implementation evidence：C09-1F 已由 `3ca2977` 独立提交并推送。
+该层只关闭 root-signed Fixture Corpus→Suite source closure：12 条记录、4 个
+case、8 个 crash cut、43 个 materialized negative cases、152 份 Provider JSON
+Schema 与 packed Node/browser distribution KAT 全部通过，两轮只读复审无残余
+P0/P1。成功 authority 仍严格为
+`none_real_fs_source_structure_only`；它不执行 fixture、不触碰真实文件系统，也不
+替代 Catalog/Discovery/Universe/Acceptance/Migration 或 WP5-PF。随后同一提交树
+叠加 16-A-1 CLI 候选 `0a07e33` 后，根级 `pnpm quality` 为 2,237 passed、1
+skipped、0 failed；clean-checkout remote CI 仍须单独取证。
+
 权威决策：
 
 - `docs/prd/2026-07-27-agent-native-change-intelligence-rd-plan.md` D-24～D-31
@@ -15540,7 +15550,7 @@ Event action、capability 必须交叉一致。
 | WP5-C06 | path-safe Snapshot/Pulse、legacy redacted Surface 与 HMAC locator brands | Repository/Surface contracts + fixtures | frozen / pending implementation |
 | WP5-C07 | SafeGit/bootstrap/state-token/request-equality/quota-index strict schemas + seven-way category correlation + Admission/Transition full-record digest golden bytes | contracts security/internal schemas | frozen / pending implementation |
 | WP5-C08 | Context Generation Record、root-relative History closure、Store filename codec | contracts + Store internal schemas | frozen / pending implementation |
-| WP5-C09 | RFC 8785/JCS exact bytes与strict provider ID；raw-key digest/strict Ed25519 host capability+exact hostile manifest；fixed Bootstrap Trust Bundle/retained historical source closure；provider registry root/key history、Catalog strict Envelope、signed Public Taxonomy/Release Matrix/Target Discovery Result/real-FS Suite+Corpus、closed-world Release Target Universe与 typed retained-object/保守 public privacy projection、Acceptance compact receipt、same/cross Identity migration typed dry-run/Plan-bound reservation/exact final receipt/universe-side/receipt prefix/versioned canonical Rewrite Plan/Semantic Equivalence Proof/zero-live/sealed head、signed proof/version Envelope、binding generation、atomic path containment、Store Manifest compact compare-append receipt与 terminal journal contracts | `packages/durable-object-provider-contracts` + cross-language golden/negative vectors（含 strict crypto/KAT/bootstrap bundle、coverage input、rewrite mapping/SCC/JCS/proof-token/locator/budget） | frozen / implementation in progress；capability locked |
+| WP5-C09 | RFC 8785/JCS exact bytes与strict provider ID；raw-key digest/strict Ed25519 host capability+exact hostile manifest；fixed Bootstrap Trust Bundle/retained historical source closure；provider registry root/key history、Catalog strict Envelope、signed Public Taxonomy/Release Matrix/Target Discovery Result/real-FS Suite+Corpus、closed-world Release Target Universe与 typed retained-object/保守 public privacy projection、Acceptance compact receipt、same/cross Identity migration typed dry-run/Plan-bound reservation/exact final receipt/universe-side/receipt prefix/versioned canonical Rewrite Plan/Semantic Equivalence Proof/zero-live/sealed head、signed proof/version Envelope、binding generation、atomic path containment、Store Manifest compact compare-append receipt与 terminal journal contracts | `packages/durable-object-provider-contracts` + cross-language golden/negative vectors（含 strict crypto/KAT/bootstrap bundle、coverage input、rewrite mapping/SCC/JCS/proof-token/locator/budget） | C09-1B～1F 分层 candidate 已推进至 signed real-FS source closure；aggregate 仍 in progress，capability locked |
 | WP5-S01 | private baseline blob/Git lease layout、permissions、Stage 1 transaction | `packages/artifact-store` | frozen / pending implementation |
 | WP5-S02 | exact Repository Basis lock-time guard | `packages/artifact-store/src/store.ts` | frozen / pending implementation |
 | WP5-S03 | duplicate Check and direct Snapshot dependencies | Artifact Store semantic guards | frozen / pending implementation |
@@ -15559,7 +15569,7 @@ Event action、capability 必须交叉一致。
 | WP5-E03 | `checkChanges` vertical slice | `packages/task-engine` | capability locked |
 | WP5-E04 | refresh/rebase rebuild | `packages/task-engine` | capability locked |
 | WP5-E05 | safe request projection、private equality replay、Verification detail commitment/skip acceptance | `packages/task-engine` + private Store ledgers | capability locked |
-| WP5-I01 | root quality/CI/independent review | workspace CI + evidence | pending |
+| WP5-I01 | root quality/CI/independent review | workspace CI + evidence | local candidate：`0a07e33` tree 2,237 passed / 1 skipped / 0 failed，相关切片复审无 P0/P1；clean remote CI pending |
 | WP5-I02 | macOS/Linux real-FS provider feasibility、install/upgrade/downgrade/uninstall/crash evidence | signed provider package + target-profile capability registry；当前物理 volume运行时 exact-match profile | mandatory blocking gate |
 
 ## 6. 分层实现与 Commit Gate
@@ -15605,7 +15615,7 @@ D-31不得藏在一个巨型 WP5-1P commit中，固定按以下三个独立 comm
 | 1 | WP5-0 | Closed | D-24～D-31 已冻结 |
 | 2 | WP5-1P/C09-1B | Closed | strict Ed25519 host conformance 已通过独立复审 |
 | 3 | WP5-1P/C09-1C | Closed | Bootstrap Trust Bundle 与 retained trust 已闭环 |
-| 4 | WP5-1P aggregate | **In progress** | C09-1D `acc6c9c` 与 C09-1E `1b182aa` 已完成；Catalog/Discovery/Universe/Acceptance/Migration 等仍需关闭 |
+| 4 | WP5-1P aggregate | **In progress** | C09-1D `acc6c9c`、C09-1E `1b182aa` 与 C09-1F `3ca2977` 已完成；1F 仅为 signed real-FS source closure，Catalog/Discovery/Universe/Acceptance/Migration 等仍需关闭 |
 | 5 | WP5-PF | Pending / locked | 尚无真实 OS-isolated Provider 与 real-FS 安装生命周期证据 |
 | 6 | WP5-1 | Pending / locked | 其余 strong/legacy/path-safe contracts 与 fixtures 未关闭 |
 | 7 | WP5-2A | Pending / locked | SafeGit、path-safe Snapshot/Pulse、identity cutover 未实现 |
@@ -16110,7 +16120,7 @@ aggregated report 都作为 Commit/CI Evidence 保存。
 
 | 能力 | 当前事实 | Owner | 解锁 Gate |
 |---|---|---|---|
-| strong Store write / Durable Object Provider | Contract frozen；Provider、client、三层 Manifest writer与真实 target Evidence均未完整交付；strict Ed25519 host capability、Bootstrap Trust Bundle及 historical retained trust仍待实现 | Platform/Security Lead + Provider/Systems + Artifact Store；QA/Release验证 | **全部同时满足**：WP5-1P/C09 contract+golden；strict Ed25519 raw32/profile/host exact manifest attestation与 opaque capability；固定 Bootstrap Trust Bundle/manifest resource、signed distribution双 Pin、immutable Installation Identity retained origin closure；WP5-PF/WP3P signed real-FS与安装生命周期；WP5-S07 provider client/adapter；D-23 Pulse→Artifact→Store provider-side unique-head compare-append；Acceptance/high-water/compact receipts/root/Registry/Catalog Envelope/public projection/same+cross migration closure及 versioned canonical Rewrite Plan/Semantic Equivalence Proof实现；AT-C17/C29/C30/C31、D35/D37/D38、Q24/Q32/Q33（含 rewrite mapping/SCC/JCS/proof-token/locator/budget/hostile crypto vectors）及 upgrade/downgrade/root/recovery-key compromise/current-vs-historical bundle migration E2E；root `pnpm quality`；同 SHA clean CI；独立 Security/Implementability review无 P0/P1；最后 closeout commit才更新 capability flag/supported tool list |
+| strong Store write / Durable Object Provider | Contract frozen；strict Ed25519 host、Bootstrap/retained trust、Root/Registry History 与 signed real-FS Corpus→Suite source closure 已形成 reviewed candidate；C09 aggregate 的 Catalog/Discovery/Universe/Acceptance/Migration、真实 Provider、client/三层 Manifest writer及 target Evidence 仍未完整交付 | Platform/Security Lead + Provider/Systems + Artifact Store；QA/Release验证 | **全部同时满足**：WP5-1P/C09 contract+golden；strict Ed25519 raw32/profile/host exact manifest attestation与 opaque capability；固定 Bootstrap Trust Bundle/manifest resource、signed distribution双 Pin、immutable Installation Identity retained origin closure；WP5-PF/WP3P signed real-FS与安装生命周期；WP5-S07 provider client/adapter；D-23 Pulse→Artifact→Store provider-side unique-head compare-append；Acceptance/high-water/compact receipts/root/Registry/Catalog Envelope/public projection/same+cross migration closure及 versioned canonical Rewrite Plan/Semantic Equivalence Proof实现；AT-C17/C29/C30/C31、D35/D37/D38、Q24/Q32/Q33（含 rewrite mapping/SCC/JCS/proof-token/locator/budget/hostile crypto vectors）及 upgrade/downgrade/root/recovery-key compromise/current-vs-historical bundle migration E2E；root `pnpm quality`；同 SHA clean CI；独立 Security/Implementability review无 P0/P1；最后 closeout commit才更新 capability flag/supported tool list |
 | `task:verify` | Contract frozen，生产方法未实现 | Task Engine | WP5-4 local/remote + review；WP6 前仍不宣传 |
 | `task:check` | Contract frozen，Delta/Symbol/Matching/Operation 未实现 | Change Intelligence + Task Engine | WP5-7/10 全部通过 |
 | `task:context:refresh` | capability locked | Task Engine / Context Recovery | WP5-8 full rebuild/failure evidence |

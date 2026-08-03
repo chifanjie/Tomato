@@ -48,7 +48,9 @@ P0/P1。成功 authority 仍严格为
 `none_real_fs_source_structure_only`；它不执行 fixture、不触碰真实文件系统，也不
 替代 Catalog/Discovery/Universe/Acceptance/Migration 或 WP5-PF。随后同一提交树
 叠加 16-A-1 CLI 候选 `0a07e33` 后，根级 `pnpm quality` 为 2,237 passed、1
-skipped、0 failed；clean-checkout remote CI 仍须单独取证。
+skipped、0 failed。clean-checkout CI 已成功：C09-1F `30797985994`、CLI
+`30799673953`、文档重校树 `30803535321`；这些切片证据不替代 WP5 aggregate
+最终同 SHA closeout Gate。
 
 权威决策：
 
@@ -15569,7 +15571,7 @@ Event action、capability 必须交叉一致。
 | WP5-E03 | `checkChanges` vertical slice | `packages/task-engine` | capability locked |
 | WP5-E04 | refresh/rebase rebuild | `packages/task-engine` | capability locked |
 | WP5-E05 | safe request projection、private equality replay、Verification detail commitment/skip acceptance | `packages/task-engine` + private Store ledgers | capability locked |
-| WP5-I01 | root quality/CI/independent review | workspace CI + evidence | local candidate：`0a07e33` tree 2,237 passed / 1 skipped / 0 failed，相关切片复审无 P0/P1；clean remote CI pending |
+| WP5-I01 | root quality/CI/independent review | workspace CI + evidence | slice candidate：`0a07e33` tree 2,237 passed / 1 skipped / 0 failed，相关复审无 P0/P1，clean CI `30797985994` / `30799673953` / `30803535321` success；WP5 aggregate final closeout pending |
 | WP5-I02 | macOS/Linux real-FS provider feasibility、install/upgrade/downgrade/uninstall/crash evidence | signed provider package + target-profile capability registry；当前物理 volume运行时 exact-match profile | mandatory blocking gate |
 
 ## 6. 分层实现与 Commit Gate

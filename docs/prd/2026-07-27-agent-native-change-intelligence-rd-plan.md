@@ -325,9 +325,9 @@ Incident、Impact、Change Check 和 Verification 都应成为 Task 的章节或
 
 | 项目 | 当前事实 |
 |---|---|
-| 分支 / HEAD | `feature/agent-native-change-intelligence` / `0a07e33d362bca04a177afbe4eff3b12e038dce7` |
+| 分支 / 实现 HEAD | `feature/agent-native-change-intelligence` / `0a07e33d362bca04a177afbe4eff3b12e038dce7`（后续文档重校为 `97d357b`） |
 | Workspace 包 | 8 个：Contracts、Repository State、Artifact Store、Core、Task Engine、CLI、Dashboard、Durable Object Provider Contracts |
-| 根质量门禁 | `pnpm quality`：2,237 passed、1 个既有 skip、0 failed；build/typecheck/Dashboard production build 全绿 |
+| 根质量门禁 | `pnpm quality`：2,237 passed、1 个既有 skip、0 failed；build/typecheck/Dashboard production build 全绿；clean CI `30803535321` on `97d357b` success |
 | 修改前能力 | Repo Pulse、Persistent Task Brief、候选排序、影响路径、Evidence/Unknown、Task Lifecycle 已有正式实现 |
 | Provider Contracts | Strict Ed25519、Bootstrap Trust Bundle、Root/Registry History 与 signed real-FS Corpus→Suite source closure 已闭环到候选边界；C09 aggregate 仍未关闭 |
 | 修改后能力 | Change Check/Verification 有严格 Contract 和 Store 基础，但没有生产 `checkChanges()` / `recordVerification()` 执行服务 |

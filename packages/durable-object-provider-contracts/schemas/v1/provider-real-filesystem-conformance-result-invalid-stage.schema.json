@@ -1,0 +1,23 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-real-filesystem-conformance-result-invalid-stage",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "input",
+    "target_discovery_point",
+    "envelope_limit",
+    "result_structure",
+    "target_identity",
+    "target_membership",
+    "discovery_pin",
+    "suite_pin",
+    "source_digests",
+    "case_coverage",
+    "case_outcome",
+    "aggregate",
+    "result_id",
+    "result_digest",
+    "result_envelope",
+    "locator"
+  ]
+}

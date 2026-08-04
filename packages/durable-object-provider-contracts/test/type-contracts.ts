@@ -40,6 +40,10 @@ import type {
   ProviderTargetDiscoveryResultLocatorV1,
   ProviderTargetDiscoveryResultPinV1,
   ProviderTargetDiscoveryRunnerRunLocatorV1,
+  ProviderRealFilesystemConformanceResultClosureValidationV1,
+  ProviderRealFilesystemConformanceResultIdV1,
+  ProviderRealFilesystemConformanceResultLocatorV1,
+  ProviderRealFilesystemConformanceResultPinV1,
   InstallationBootstrapTrustUseStructureAssessmentV1,
   InstallationIdentityRetainedTrustStructureValidationV1,
   HashedStoreFilenameKeyV1,
@@ -55,6 +59,9 @@ import type {
 import type {
   ProviderTargetDiscoveryResultPinV1 as ProviderTargetDiscoveryResultPinFromSubpathV1,
 } from "../src/provider-target-discovery-point.js";
+import type {
+  ProviderRealFilesystemConformanceResultPinV1 as ProviderRealFilesystemConformanceResultPinFromSubpathV1,
+} from "../src/provider-real-filesystem-conformance-result.js";
 import {
   encodeStoreFilenameKeyV1,
   deriveInstallationIdentityGenerationIdV1,
@@ -134,6 +141,16 @@ declare const discoveryPinFromSubpath:
   ProviderTargetDiscoveryResultPinFromSubpathV1;
 declare const discoveryClosure:
   ProviderTargetDiscoveryPointClosureValidationV1;
+declare const conformanceResultId:
+  ProviderRealFilesystemConformanceResultIdV1;
+declare const conformanceResultLocator:
+  ProviderRealFilesystemConformanceResultLocatorV1;
+declare const conformanceResultPin:
+  ProviderRealFilesystemConformanceResultPinV1;
+declare const conformanceResultPinFromSubpath:
+  ProviderRealFilesystemConformanceResultPinFromSubpathV1;
+declare const conformanceResultClosure:
+  ProviderRealFilesystemConformanceResultClosureValidationV1;
 const storeFilenameFromShort: StoreFilenameKeyV1 = shortFilenameKey;
 const storeFilenameFromHash: StoreFilenameKeyV1 = hashedFilenameKey;
 const rootPinFromSubpath:
@@ -143,9 +160,27 @@ const subpathPinFromRoot:
 const discoveryAuthority:
   "none_target_discovery_point_structure_only" =
     discoveryClosure.authority;
+const conformanceResultRootPinFromSubpath:
+  ProviderRealFilesystemConformanceResultPinV1 =
+    conformanceResultPinFromSubpath;
+const conformanceResultSubpathPinFromRoot:
+  ProviderRealFilesystemConformanceResultPinFromSubpathV1 =
+    conformanceResultPin;
+const conformanceResultAuthority:
+  "none_real_fs_conformance_result_structure_only" =
+    conformanceResultClosure.authority;
+const conformanceResultLocatorFromPin:
+  ProviderRealFilesystemConformanceResultLocatorV1 =
+    conformanceResultPin;
 // @ts-expect-error point closure deliberately does not grant strong authority
 const strongDiscoveryAuthority: "strong_ready" =
   discoveryClosure.authority;
+// @ts-expect-error Conformance Result point closure deliberately does not grant strong authority
+const strongConformanceResultAuthority: "strong_ready" =
+  conformanceResultClosure.authority;
+// @ts-expect-error Result identity and Evidence identity use independent semantic domains
+const evidenceIdFromConformanceResultId: ProviderFeasibilityEvidenceIdV1 =
+  conformanceResultId;
 
 // @ts-expect-error semantic brands with the same wire shape are not interchangeable
 const rootKeyFromGenericHex: ProviderRegistryRootKeyIdV1 = lowerHex22;

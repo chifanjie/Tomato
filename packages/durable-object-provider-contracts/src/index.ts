@@ -24,6 +24,7 @@ export {
   ProviderOsReleaseFamilyCodeV1Schema,
   ProviderPublicSupportProfileIdV1Schema,
   ProviderPublicSupportTaxonomySignatureV1Schema,
+  ProviderRealFilesystemConformanceResultIdV1Schema,
   ProviderRealFilesystemCaseIdV1Schema,
   ProviderRealFilesystemCaseKeyV1Schema,
   ProviderRealFilesystemCrashCutIdV1Schema,
@@ -59,6 +60,7 @@ export type {
   ProviderOsReleaseFamilyCodeV1,
   ProviderPublicSupportProfileIdV1,
   ProviderPublicSupportTaxonomySignatureV1,
+  ProviderRealFilesystemConformanceResultIdV1,
   ProviderRealFilesystemCaseIdV1,
   ProviderRealFilesystemCaseKeyV1,
   ProviderRealFilesystemCrashCutIdV1,
@@ -277,6 +279,8 @@ export type {
 } from "./provider-fixed-locator.js";
 export * from "./provider-real-filesystem-source.js";
 export * from "./provider-real-filesystem-source-fixtures.js";
+export * from "./provider-real-filesystem-conformance-result.js";
+export * from "./provider-real-filesystem-conformance-result-fixtures.js";
 export * from "./provider-target-discovery-point.js";
 export * from "./provider-target-discovery-point-fixtures.js";
 export {

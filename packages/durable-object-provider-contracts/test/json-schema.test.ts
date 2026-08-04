@@ -862,6 +862,19 @@ describe("provider contract JSON Schema distribution", () => {
       "provider-target-discovery-result-locator",
       "provider-target-discovery-point-golden-manifest",
       "provider-target-discovery-point-invalid-manifest",
+      "provider-real-filesystem-conformance-result-id",
+      "provider-real-filesystem-conformance-case-outcome",
+      "provider-real-filesystem-conformance-result-code",
+      "provider-real-filesystem-conformance-case-result",
+      "provider-real-filesystem-conformance-result-id-fields",
+      "provider-real-filesystem-conformance-result",
+      "provider-real-filesystem-conformance-result-envelope",
+      "provider-real-filesystem-conformance-result-locator",
+      "provider-real-filesystem-conformance-result-pin",
+      "provider-real-filesystem-conformance-result-invalid-stage",
+      "provider-real-filesystem-conformance-result-invalid-reason",
+      "provider-real-filesystem-conformance-result-golden-manifest",
+      "provider-real-filesystem-conformance-result-invalid-manifest",
       "provider-public-support-taxonomy-signature-wrapper",
       "provider-release-matrix-signature-wrapper",
       "provider-target-discovery-input-bundle-signature-wrapper",
@@ -871,7 +884,7 @@ describe("provider contract JSON Schema distribution", () => {
       expect(generated, name).toHaveProperty(name);
       expectEveryJsonSchemaObjectClosed(generated[name], name);
     }
-    expect(Object.keys(generated)).toHaveLength(220);
+    expect(Object.keys(generated)).toHaveLength(233);
 
     for (const name of [
       "store-durable-object-provider-runtime-attestation-signature-wrapper",

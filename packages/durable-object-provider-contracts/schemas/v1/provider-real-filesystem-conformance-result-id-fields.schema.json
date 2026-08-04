@@ -1,0 +1,345 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-real-filesystem-conformance-result-id-fields",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "providerId": {
+      "type": "string",
+      "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+    },
+    "semanticProviderPolicyDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "implementationDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "binaryAttestationDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "targetProfileId": {
+          "type": "string",
+          "pattern": "^provider-target-profile:[0-9a-f]{64}$"
+        },
+        "osPlatform": {
+          "type": "string",
+          "enum": [
+            "darwin",
+            "linux"
+          ]
+        },
+        "osReleaseFamilyCode": {
+          "type": "string",
+          "pattern": "^provider-os-family:[0-9a-f]{22}$"
+        },
+        "osBuildDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "architecture": {
+          "type": "string",
+          "enum": [
+            "arm64",
+            "x86_64"
+          ]
+        },
+        "filesystemProfileCode": {
+          "type": "string",
+          "pattern": "^provider-fs-profile:[0-9a-f]{22}$"
+        },
+        "filesystemFeatureProfileDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "mountOptionProfileDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "targetProfileId",
+        "osPlatform",
+        "osReleaseFamilyCode",
+        "osBuildDigest",
+        "architecture",
+        "filesystemProfileCode",
+        "filesystemFeatureProfileDigest",
+        "mountOptionProfileDigest"
+      ],
+      "additionalProperties": false
+    },
+    "targetDiscoveryResult": {
+      "type": "object",
+      "properties": {
+        "locatorProfile": {
+          "type": "string",
+          "const": "distribution_provider_target_discovery_result_v1"
+        },
+        "discoveryGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "contentDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "locatorProfile",
+        "discoveryGeneration",
+        "contentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "targetDiscoveryInputBundleContentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "realFilesystemSuiteManifest": {
+      "type": "object",
+      "properties": {
+        "locatorProfile": {
+          "type": "string",
+          "const": "distribution_provider_real_fs_suite_manifest_v1"
+        },
+        "distributionRootBinding": {
+          "type": "object",
+          "properties": {
+            "profile": {
+              "type": "string",
+              "const": "provider_signed_distribution_root_binding_v1"
+            },
+            "resolverProfile": {
+              "type": "string",
+              "const": "verified_signed_package_distribution_root_v1"
+            },
+            "signedPackageIdentityDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "releaseRevisionDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "bootstrapTrustBundle": {
+              "type": "object",
+              "properties": {
+                "locatorProfile": {
+                  "type": "string",
+                  "const": "distribution_provider_bootstrap_trust_bundle_v1"
+                },
+                "contentDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "locatorProfile",
+                "contentDigest"
+              ],
+              "additionalProperties": false
+            },
+            "historyPolicy": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "const": "provider_distribution_history_policy_v1"
+                },
+                "maxSupportCatalogGenerationCount": {
+                  "type": "number",
+                  "const": 4096
+                },
+                "maxPublicTaxonomyGenerationCount": {
+                  "type": "number",
+                  "const": 4096
+                },
+                "maxReleaseMatrixGenerationCount": {
+                  "type": "number",
+                  "const": 4096
+                },
+                "maxTargetDiscoveryResultGenerationCount": {
+                  "type": "number",
+                  "const": 4096
+                },
+                "maxReleaseTargetUniverseGenerationCount": {
+                  "type": "number",
+                  "const": 4096
+                },
+                "maxSingleDistributionObjectCanonicalBytes": {
+                  "type": "number",
+                  "const": 16777216
+                },
+                "maxTotalRetainedDistributionObjectCount": {
+                  "type": "number",
+                  "const": 65536
+                },
+                "maxTotalRetainedDistributionHistoryLogicalBytes": {
+                  "type": "number",
+                  "const": 536870912
+                },
+                "normalUpdateEmergencyGenerationReservePerChain": {
+                  "type": "number",
+                  "const": 8
+                },
+                "normalUpdateEmergencyLogicalBytesReserve": {
+                  "type": "number",
+                  "const": 16777216
+                },
+                "admission": {
+                  "type": "string",
+                  "const": "stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution"
+                },
+                "exhaustion": {
+                  "type": "string",
+                  "const": "reject_candidate_distribution_and_preserve_last_verified_distribution"
+                }
+              },
+              "required": [
+                "profile",
+                "maxSupportCatalogGenerationCount",
+                "maxPublicTaxonomyGenerationCount",
+                "maxReleaseMatrixGenerationCount",
+                "maxTargetDiscoveryResultGenerationCount",
+                "maxReleaseTargetUniverseGenerationCount",
+                "maxSingleDistributionObjectCanonicalBytes",
+                "maxTotalRetainedDistributionObjectCount",
+                "maxTotalRetainedDistributionHistoryLogicalBytes",
+                "normalUpdateEmergencyGenerationReservePerChain",
+                "normalUpdateEmergencyLogicalBytesReserve",
+                "admission",
+                "exhaustion"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "profile",
+            "resolverProfile",
+            "signedPackageIdentityDigest",
+            "releaseRevisionDigest",
+            "bootstrapTrustBundle",
+            "historyPolicy"
+          ],
+          "additionalProperties": false
+        },
+        "suiteDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "fixtureManifestDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "contentDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "locatorProfile",
+        "distributionRootBinding",
+        "suiteDigest",
+        "fixtureManifestDigest",
+        "contentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "suiteDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "fixtureManifestDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "runnerProfileDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "crashCutCoverageDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "caseResults": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "caseId": {
+            "type": "string",
+            "pattern": "^provider-real-fs-case:[0-9a-f]{22}$"
+          },
+          "crashCutId": {
+            "type": "string",
+            "pattern": "^(?:no-crash|provider-crash-cut:[0-9a-f]{22})$"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "unsupported"
+            ]
+          },
+          "resultCode": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "assertion_failed",
+              "provider_rejected",
+              "crash_recovery_failed",
+              "identity_discontinuity",
+              "containment_violation",
+              "unsupported_by_target_profile"
+            ]
+          }
+        },
+        "required": [
+          "caseId",
+          "crashCutId",
+          "outcome",
+          "resultCode"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "result": {
+      "type": "string",
+      "enum": [
+        "passed",
+        "failed",
+        "unsupported"
+      ]
+    },
+    "completedAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+    }
+  },
+  "required": [
+    "providerId",
+    "semanticProviderPolicyDigest",
+    "implementationDigest",
+    "binaryAttestationDigest",
+    "target",
+    "targetDiscoveryResult",
+    "targetDiscoveryInputBundleContentDigest",
+    "realFilesystemSuiteManifest",
+    "suiteDigest",
+    "fixtureManifestDigest",
+    "runnerProfileDigest",
+    "crashCutCoverageDigest",
+    "caseResults",
+    "result",
+    "completedAt"
+  ],
+  "additionalProperties": false
+}

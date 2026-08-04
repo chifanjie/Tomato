@@ -1,0 +1,604 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-real-filesystem-conformance-result-invalid-manifest",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "profile": {
+      "type": "string",
+      "const": "provider_real_filesystem_conformance_result_invalid_v1"
+    },
+    "fixtureAuthority": {
+      "type": "string",
+      "const": "none_rejection_only"
+    },
+    "canonicalizationProfile": {
+      "type": "string",
+      "const": "rfc8785-jcs-safe-integer-v1"
+    },
+    "verificationProfile": {
+      "type": "string",
+      "const": "ed25519-rfc8032-cofactorless-prime-subgroup-v1"
+    },
+    "semanticDomain": {
+      "type": "string",
+      "const": "provider-real-filesystem-conformance-result-invalid-manifest-v1"
+    },
+    "materializedRequestSemanticDomain": {
+      "type": "string",
+      "const": "provider-real-filesystem-conformance-result-invalid-materialized-request-v1"
+    },
+    "goldenDependency": {
+      "type": "object",
+      "properties": {
+        "resourcePath": {
+          "type": "string",
+          "const": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json"
+        },
+        "resourceByteLength": {
+          "type": "number",
+          "const": 96224
+        },
+        "resourceSha256Hex": {
+          "type": "string",
+          "const": "1afe75d00ea7469a0f0bb43fdf3f14721fbc780115a39dd4bd3f9de92f4b9e12"
+        },
+        "semanticContentDigest": {
+          "type": "string",
+          "const": "sha256:3a647f61d4e4f71a2126873f7969b8326e8be438fc436782fb81fdce5cb00af2"
+        }
+      },
+      "required": [
+        "resourcePath",
+        "resourceByteLength",
+        "resourceSha256Hex",
+        "semanticContentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "mutationRecipeDialect": {
+      "type": "string",
+      "const": "provider_real_filesystem_conformance_result_invalid_recipe_v1"
+    },
+    "caseCount": {
+      "type": "number",
+      "const": 50
+    },
+    "caseIds": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "string",
+          "const": "input-extra-field"
+        },
+        {
+          "type": "string",
+          "const": "input-plain-validation-dto"
+        },
+        {
+          "type": "string",
+          "const": "result-extra-signature"
+        },
+        {
+          "type": "string",
+          "const": "source-suite-signature-bitflip"
+        },
+        {
+          "type": "string",
+          "const": "target-id-not-recomputed"
+        },
+        {
+          "type": "string",
+          "const": "target-not-discovered"
+        },
+        {
+          "type": "string",
+          "const": "discovery-pin-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "bundle-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "suite-pin-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "suite-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "fixture-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "runner-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "crash-cut-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "case-results-reordered"
+        },
+        {
+          "type": "string",
+          "const": "case-result-missing"
+        },
+        {
+          "type": "string",
+          "const": "case-result-extra"
+        },
+        {
+          "type": "string",
+          "const": "case-result-duplicate"
+        },
+        {
+          "type": "string",
+          "const": "passed-code-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "unsupported-code-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "failed-code-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "passed-assertion-failed-code-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "passed-crash-recovery-failed-code-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "passed-identity-discontinuity-code-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "passed-containment-violation-code-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "passed-unsupported-by-target-profile-code-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "unsupported-assertion-failed-code-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "unsupported-provider-rejected-code-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "unsupported-crash-recovery-failed-code-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "unsupported-identity-discontinuity-code-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "unsupported-containment-violation-code-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "failed-passed-code-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "aggregate-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "result-id-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "result-content-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "result-outer-id-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "locator-profile-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "locator-id-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "pin-content-digest-mismatch"
+        },
+        {
+          "type": "string",
+          "const": "result-envelope-16mib-plus-one"
+        },
+        {
+          "type": "string",
+          "const": "locator-envelope-substitution"
+        },
+        {
+          "type": "string",
+          "const": "security-top-level-proxy"
+        },
+        {
+          "type": "string",
+          "const": "security-nested-proxy"
+        },
+        {
+          "type": "string",
+          "const": "security-top-level-getter"
+        },
+        {
+          "type": "string",
+          "const": "security-nested-getter"
+        },
+        {
+          "type": "string",
+          "const": "security-nested-hidden"
+        },
+        {
+          "type": "string",
+          "const": "security-nested-symbol"
+        },
+        {
+          "type": "string",
+          "const": "security-sparse-array"
+        },
+        {
+          "type": "string",
+          "const": "security-cycle"
+        },
+        {
+          "type": "string",
+          "const": "security-alias"
+        },
+        {
+          "type": "string",
+          "const": "security-async-mutation"
+        }
+      ],
+      "minItems": 50,
+      "maxItems": 50,
+      "items": false
+    },
+    "cases": {
+      "minItems": 50,
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "caseId": {
+            "type": "string",
+            "enum": [
+              "input-extra-field",
+              "input-plain-validation-dto",
+              "result-extra-signature",
+              "source-suite-signature-bitflip",
+              "target-id-not-recomputed",
+              "target-not-discovered",
+              "discovery-pin-mismatch",
+              "bundle-digest-mismatch",
+              "suite-pin-mismatch",
+              "suite-digest-mismatch",
+              "fixture-digest-mismatch",
+              "runner-digest-mismatch",
+              "crash-cut-digest-mismatch",
+              "case-results-reordered",
+              "case-result-missing",
+              "case-result-extra",
+              "case-result-duplicate",
+              "passed-code-mismatch",
+              "unsupported-code-mismatch",
+              "failed-code-mismatch",
+              "passed-assertion-failed-code-mismatch",
+              "passed-crash-recovery-failed-code-mismatch",
+              "passed-identity-discontinuity-code-mismatch",
+              "passed-containment-violation-code-mismatch",
+              "passed-unsupported-by-target-profile-code-mismatch",
+              "unsupported-assertion-failed-code-mismatch",
+              "unsupported-provider-rejected-code-mismatch",
+              "unsupported-crash-recovery-failed-code-mismatch",
+              "unsupported-identity-discontinuity-code-mismatch",
+              "unsupported-containment-violation-code-mismatch",
+              "failed-passed-code-mismatch",
+              "aggregate-mismatch",
+              "result-id-mismatch",
+              "result-content-digest-mismatch",
+              "result-outer-id-mismatch",
+              "locator-profile-mismatch",
+              "locator-id-mismatch",
+              "pin-content-digest-mismatch",
+              "result-envelope-16mib-plus-one",
+              "locator-envelope-substitution",
+              "security-top-level-proxy",
+              "security-nested-proxy",
+              "security-top-level-getter",
+              "security-nested-getter",
+              "security-nested-hidden",
+              "security-nested-symbol",
+              "security-sparse-array",
+              "security-cycle",
+              "security-alias",
+              "security-async-mutation"
+            ]
+          },
+          "mutation": {
+            "type": "object",
+            "properties": {
+              "dialect": {
+                "type": "string",
+                "const": "provider_real_filesystem_conformance_result_invalid_recipe_v1"
+              },
+              "goldenResourcePath": {
+                "type": "string",
+                "const": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "input-extra-field",
+                  "input-plain-validation-dto",
+                  "result-extra-signature",
+                  "source-suite-signature-bitflip",
+                  "target-id-not-recomputed",
+                  "target-not-discovered",
+                  "discovery-pin-mismatch",
+                  "bundle-digest-mismatch",
+                  "suite-pin-mismatch",
+                  "suite-digest-mismatch",
+                  "fixture-digest-mismatch",
+                  "runner-digest-mismatch",
+                  "crash-cut-digest-mismatch",
+                  "case-results-reordered",
+                  "case-result-missing",
+                  "case-result-extra",
+                  "case-result-duplicate",
+                  "passed-code-mismatch",
+                  "unsupported-code-mismatch",
+                  "failed-code-mismatch",
+                  "passed-assertion-failed-code-mismatch",
+                  "passed-crash-recovery-failed-code-mismatch",
+                  "passed-identity-discontinuity-code-mismatch",
+                  "passed-containment-violation-code-mismatch",
+                  "passed-unsupported-by-target-profile-code-mismatch",
+                  "unsupported-assertion-failed-code-mismatch",
+                  "unsupported-provider-rejected-code-mismatch",
+                  "unsupported-crash-recovery-failed-code-mismatch",
+                  "unsupported-identity-discontinuity-code-mismatch",
+                  "unsupported-containment-violation-code-mismatch",
+                  "failed-passed-code-mismatch",
+                  "aggregate-mismatch",
+                  "result-id-mismatch",
+                  "result-content-digest-mismatch",
+                  "result-outer-id-mismatch",
+                  "locator-profile-mismatch",
+                  "locator-id-mismatch",
+                  "pin-content-digest-mismatch",
+                  "result-envelope-16mib-plus-one",
+                  "locator-envelope-substitution",
+                  "security-top-level-proxy",
+                  "security-nested-proxy",
+                  "security-top-level-getter",
+                  "security-nested-getter",
+                  "security-nested-hidden",
+                  "security-nested-symbol",
+                  "security-sparse-array",
+                  "security-cycle",
+                  "security-alias",
+                  "security-async-mutation"
+                ]
+              }
+            },
+            "required": [
+              "dialect",
+              "goldenResourcePath",
+              "operation"
+            ],
+            "additionalProperties": false
+          },
+          "expected": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "boundary": {
+                    "type": "string",
+                    "const": "internal_diagnostic"
+                  },
+                  "stage": {
+                    "type": "string",
+                    "enum": [
+                      "input",
+                      "target_discovery_point",
+                      "envelope_limit",
+                      "result_structure",
+                      "target_identity",
+                      "target_membership",
+                      "discovery_pin",
+                      "suite_pin",
+                      "source_digests",
+                      "case_coverage",
+                      "case_outcome",
+                      "aggregate",
+                      "result_id",
+                      "result_digest",
+                      "result_envelope",
+                      "locator"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "schema_invalid",
+                      "source_invalid",
+                      "byte_limit_exceeded",
+                      "binding_mismatch",
+                      "identity_mismatch",
+                      "membership_mismatch",
+                      "ordering_invalid",
+                      "coverage_mismatch",
+                      "outcome_code_mismatch",
+                      "aggregate_mismatch",
+                      "digest_mismatch",
+                      "envelope_mismatch",
+                      "locator_mismatch"
+                    ]
+                  },
+                  "publicFailureReason": {
+                    "type": "string",
+                    "const": "attestation_invalid"
+                  },
+                  "publicFailure": {
+                    "type": "object",
+                    "properties": {
+                      "errorName": {
+                        "type": "string",
+                        "const": "ProviderRealFilesystemConformanceResultClosureValidationError"
+                      },
+                      "code": {
+                        "type": "string",
+                        "const": "provider_unavailable"
+                      },
+                      "reason": {
+                        "type": "string",
+                        "const": "attestation_invalid"
+                      }
+                    },
+                    "required": [
+                      "errorName",
+                      "code",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "materializedRequestSemanticDigest": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "boundary",
+                  "stage",
+                  "reason",
+                  "publicFailureReason",
+                  "publicFailure",
+                  "materializedRequestSemanticDigest"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "boundary": {
+                    "type": "string",
+                    "const": "locator_builder"
+                  },
+                  "stage": {
+                    "type": "string",
+                    "const": "locator"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "const": "locator_mismatch"
+                  },
+                  "materializedRequestSemanticDigest": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "boundary",
+                  "stage",
+                  "reason",
+                  "materializedRequestSemanticDigest"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "boundary": {
+                    "type": "string",
+                    "const": "snapshot_stability"
+                  },
+                  "outcome": {
+                    "type": "string",
+                    "const": "accepted_frozen_snapshot"
+                  },
+                  "authority": {
+                    "type": "string",
+                    "const": "none_real_fs_conformance_result_structure_only"
+                  },
+                  "caseResultCount": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "passedCaseResultCount": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "materializedRequestSemanticDigest": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "boundary",
+                  "outcome",
+                  "authority",
+                  "caseResultCount",
+                  "passedCaseResultCount",
+                  "materializedRequestSemanticDigest"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": [
+          "caseId",
+          "mutation",
+          "expected"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "semanticContentDigest": {
+      "type": "string",
+      "const": "sha256:d6531dc366161432570799d672c5f22c39cd3154d4735b060a001630c4a2f887"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "profile",
+    "fixtureAuthority",
+    "canonicalizationProfile",
+    "verificationProfile",
+    "semanticDomain",
+    "materializedRequestSemanticDomain",
+    "goldenDependency",
+    "mutationRecipeDialect",
+    "caseCount",
+    "caseIds",
+    "cases",
+    "semanticContentDigest"
+  ],
+  "additionalProperties": false
+}

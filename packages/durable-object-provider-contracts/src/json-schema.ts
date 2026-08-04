@@ -24,6 +24,7 @@ import {
   ProviderOsReleaseFamilyCodeV1Schema,
   ProviderPublicSupportProfileIdV1Schema,
   ProviderPublicSupportTaxonomySignatureV1Schema,
+  ProviderRealFilesystemConformanceResultIdV1Schema,
   ProviderRealFilesystemCaseIdV1Schema,
   ProviderRealFilesystemCaseKeyV1Schema,
   ProviderRealFilesystemCrashCutIdV1Schema,
@@ -123,6 +124,22 @@ import {
   ProviderRealFilesystemSourceInvalidReasonV1Schema,
   ProviderRealFilesystemSourceInvalidStageV1Schema,
 } from "./provider-real-filesystem-source-fixtures.js";
+import {
+  ProviderRealFilesystemConformanceCaseOutcomeV1Schema,
+  ProviderRealFilesystemConformanceCaseResultV1Schema,
+  ProviderRealFilesystemConformanceResultCodeV1Schema,
+  ProviderRealFilesystemConformanceResultEnvelopeV1Schema,
+  ProviderRealFilesystemConformanceResultIdFieldsV1Schema,
+  ProviderRealFilesystemConformanceResultInvalidReasonV1Schema,
+  ProviderRealFilesystemConformanceResultInvalidStageV1Schema,
+  ProviderRealFilesystemConformanceResultLocatorV1Schema,
+  ProviderRealFilesystemConformanceResultPinV1Schema,
+  ProviderRealFilesystemConformanceResultV1Schema,
+} from "./provider-real-filesystem-conformance-result.js";
+import {
+  ProviderRealFilesystemConformanceResultGoldenManifestV1Schema,
+  ProviderRealFilesystemConformanceResultInvalidManifestV1Schema,
+} from "./provider-real-filesystem-conformance-result-fixtures.js";
 import {
   ProviderFeasibilityTargetFieldsV1Schema,
   ProviderFeasibilityTargetV1Schema,
@@ -572,6 +589,32 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 =
     ProviderRealFilesystemSourceInvalidStageV1Schema,
   "provider-real-filesystem-source-invalid-reason":
     ProviderRealFilesystemSourceInvalidReasonV1Schema,
+  "provider-real-filesystem-conformance-result-id":
+    ProviderRealFilesystemConformanceResultIdV1Schema,
+  "provider-real-filesystem-conformance-case-outcome":
+    ProviderRealFilesystemConformanceCaseOutcomeV1Schema,
+  "provider-real-filesystem-conformance-result-code":
+    ProviderRealFilesystemConformanceResultCodeV1Schema,
+  "provider-real-filesystem-conformance-case-result":
+    ProviderRealFilesystemConformanceCaseResultV1Schema,
+  "provider-real-filesystem-conformance-result-id-fields":
+    ProviderRealFilesystemConformanceResultIdFieldsV1Schema,
+  "provider-real-filesystem-conformance-result":
+    ProviderRealFilesystemConformanceResultV1Schema,
+  "provider-real-filesystem-conformance-result-envelope":
+    ProviderRealFilesystemConformanceResultEnvelopeV1Schema,
+  "provider-real-filesystem-conformance-result-locator":
+    ProviderRealFilesystemConformanceResultLocatorV1Schema,
+  "provider-real-filesystem-conformance-result-pin":
+    ProviderRealFilesystemConformanceResultPinV1Schema,
+  "provider-real-filesystem-conformance-result-invalid-stage":
+    ProviderRealFilesystemConformanceResultInvalidStageV1Schema,
+  "provider-real-filesystem-conformance-result-invalid-reason":
+    ProviderRealFilesystemConformanceResultInvalidReasonV1Schema,
+  "provider-real-filesystem-conformance-result-golden-manifest":
+    ProviderRealFilesystemConformanceResultGoldenManifestV1Schema,
+  "provider-real-filesystem-conformance-result-invalid-manifest":
+    ProviderRealFilesystemConformanceResultInvalidManifestV1Schema,
   "provider-public-linux-distribution-id":
     ProviderPublicLinuxDistributionIdV1Schema,
   "provider-public-os-release-family-descriptor":

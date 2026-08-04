@@ -1,0 +1,10 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-real-filesystem-conformance-case-outcome",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "passed",
+    "failed",
+    "unsupported"
+  ]
+}

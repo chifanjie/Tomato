@@ -13,7 +13,10 @@ validator. `WP5-C09-1F` adds the independently root-signed real-filesystem
 Fixture Corpus and Suite source closure. `WP5-C09-1G` closes one signed Target
 Discovery point across Taxonomy, Release Matrix, Fixture observations, Runner
 observations, embedded Input Bundle, and Discovery Result, again without
-promoting any of these records to I/O authority:
+promoting any of these records to I/O authority. `WP5-C09-1H` now closes one
+unsigned real-filesystem Conformance Result point back to that complete raw
+Discovery/Suite source closure, still without granting Provider or Store I/O
+authority:
 
 - `rfc8785-jcs-safe-integer-v1` canonical JSON and exact canonical-byte parsing;
 - independent branded digest, token, provider identity, and key primitives;
@@ -76,6 +79,10 @@ promoting any of these records to I/O authority:
   and Runner observation manifests, root-signed embedded Input Bundle and
   root-signed deterministic Result, with exactly five complete-Envelope
   locators and `none_target_discovery_point_structure_only` authority.
+- one unsigned, content-bound Conformance Result whose target is an exact
+  discovered target, whose case results tuple-exact-cover the signed Suite,
+  whose aggregate is a total function, and whose only success authority is
+  `none_real_fs_conformance_result_structure_only`.
 
 The arbitrary domain/prefix crypto helpers are intentionally package-internal.
 Consumers use the exported domain-specific builders so a caller cannot swap a
@@ -219,23 +226,26 @@ resource. The generator and verifier bind both the raw resource and
 digests. The already-published Root Metadata invalid corpus remains the exact
 31-case resource described below.
 
-The C09-1G inventory contains exactly 220 draft-2020-12 JSON Schemas at this
-checkpoint (the C09-1F baseline was 152), including every primitive,
+The C09-1H inventory contains exactly 233 draft-2020-12 JSON Schemas at this
+checkpoint (the C09-1G baseline was 220), including every primitive,
 supporting wire and unsigned projection, atomic genesis/successor and
 enabled/revoked branch,
 routing union, Envelope, Pin, fixed locator, the previously frozen six
 Registry wrappers plus the four Target Discovery signature wrappers, and the
 seven-generation golden manifest. The inventory also includes the exact
 89-case invalid Registry Manifest plus its stage and reason enums, and the
-complete signed real-filesystem source and Target Discovery DTO, wrapper,
-Envelope, Pin, locator, golden, invalid, stage, and reason surface. Consumers
-should use the shipped inventory rather than assume 220 is a forever constant.
+complete signed real-filesystem source, Target Discovery, and unsigned
+Conformance Result DTO, Envelope, Pin, locator, golden, invalid, stage, and
+reason surface. Consumers should use the shipped inventory rather than assume
+233 is a forever constant.
 
 The production sources remain ES2022 browser/worker portable. The npm/browser
 distribution gate must expose the new public API through the root and
 `./provider-registry`, `./provider-real-filesystem-source`,
 `./provider-target-discovery-point`, and
-`./provider-target-discovery-point-fixtures` exports, pack all
+`./provider-target-discovery-point-fixtures`,
+`./provider-real-filesystem-conformance-result`, and
+`./provider-real-filesystem-conformance-result-fixtures` exports, pack all
 `schemas/`, `fixtures/`, and fixed `provider/` resources, reject private deep
 imports, and execute the same Registry, real-filesystem source, and Target
 Discovery point validators from clean Node and browser-bundle installs.
@@ -374,6 +384,65 @@ and alias inputs, and mutation during asynchronous verification. Raw bytes,
 semantic manifests, and every materialized-request witness are independently
 digest-bound.
 
+## C09-1H unsigned real-filesystem Conformance Result point closure
+
+`validateProviderRealFilesystemConformanceResultClosureV1` accepts the complete
+raw C09-1G request plus the Result Envelope, explicit Result Locator DTO, and
+Result Pin. It snapshots that whole hostile input exactly once before the first
+async verification boundary, then invokes the C09-1G diagnostic validator on
+the snapshotted raw artifacts. A successful call therefore still performs
+exactly one active-root point admission and six signature verifications. The
+Result has no seventh root signature: its `result="passed"` is only the
+deterministic aggregate of case details, not evidence that a runner or physical
+filesystem executed.
+
+The Result target ID is recomputed from its other seven target claims. Its
+complete target bytes must match exactly one discovered target. The Discovery
+Pin and Input Bundle digest equal the resolved C09-1G point. The Suite Pin must
+simultaneously equal the raw signed Suite Envelope Pin, the C09-1G source Pin,
+and the Discovery Bundle-to-Fixture transitive Suite Pin. `suiteDigest`,
+`fixtureManifestDigest`, `runnerProfileDigest`, and
+`crashCutCoverageDigest` copy the resolved Suite values exactly. In particular,
+the Result runner digest comes from the real-filesystem Suite; it is never
+connected to the independent Target Discovery Runner profile.
+
+The signed Suite is flattened into required `{caseId,crashCutId}` tuples. The
+Result `caseResults` must be UTF-8 bytewise tuple-sorted, unique, and an exact
+cover. `passed` only pairs with `passed`, `unsupported` only with
+`unsupported_by_target_profile`, and every other allowlisted code pairs with
+`failed`. Aggregate precedence is failed, then unsupported, then passed. V1
+has no independent case-count limit; Suite exact-cover and the 16 MiB canonical
+materialized Result Envelope ceiling are the limits.
+
+The stable ID uses `provider-real-fs-conformance-result-id-v1` over the complete
+frozen identity fields; the content digest uses
+`provider-real-fs-conformance-result-v1` over the complete strict payload.
+Envelope outer ID/content digest, payload ID, explicit Locator, and Pin close
+exactly. The pre-read path resolver accepts only
+`{locatorProfile:"installation_provider_real_fs_conformance_result_v1",resultId}`.
+It rejects an Envelope, a Pin, an extra caller path, or an alias before deriving
+`provider/real-fs-conformance-results/<StoreFilenameKey(resultId)>.json`.
+
+Successful validation returns only
+`authority: "none_real_fs_conformance_result_structure_only"` and recursively
+frozen projections. Public rejection remains
+`provider_unavailable/attestation_invalid`; exact stage/reason stays on the
+diagnostic/fixture surface. This point does not execute a runner, touch a
+filesystem, establish runtime attestation, create QA/Release Evidence, resolve
+history/current state, or authorize reads or writes.
+
+The immutable golden resource is
+`fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json`; it
+freezes eight case/cut results, ID/payload canonical bytes, Locator/Pin/path,
+exact 1/6 crypto counts, and zero Result signatures. The paired invalid resource
+contains 50 ordered executable cases covering all 14 invalid outcome/code
+pairings, source substitution, target and
+transitive Pin equality, tuple/outcome/aggregate semantics, ID/content/Envelope,
+Locator-only resolution, 16 MiB+1, hostile containers, and async mutation. Both
+resources have independent raw and semantic anchors, and every case pins its
+materialized witness digest. Focused core tests exercise the complete 21-pair
+outcome/code matrix: seven valid and fourteen invalid combinations.
+
 ## Verification
 
 ```sh
@@ -390,6 +459,8 @@ pnpm --filter @understand-code/durable-object-provider-contracts generate:provid
 pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-real-fs-source
 pnpm --filter @understand-code/durable-object-provider-contracts generate:provider-target-discovery-point
 pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-target-discovery-point
+pnpm --filter @understand-code/durable-object-provider-contracts generate:provider-real-fs-conformance-result
+pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-real-fs-conformance-result
 pnpm --filter @understand-code/durable-object-provider-contracts generate:schemas
 pnpm --filter @understand-code/durable-object-provider-contracts verify:schemas
 pnpm --filter @understand-code/durable-object-provider-contracts exec vitest run \
@@ -400,6 +471,8 @@ pnpm --filter @understand-code/durable-object-provider-contracts exec vitest run
   test/provider-real-filesystem-source-fixtures.test.ts \
   test/provider-target-discovery-point.test.ts \
   test/provider-target-discovery-point-fixtures.test.ts \
+  test/provider-real-filesystem-conformance-result.test.ts \
+  test/provider-real-filesystem-conformance-result-fixtures.test.ts \
   test/json-schema.test.ts
 pnpm --filter @understand-code/durable-object-provider-contracts test
 pnpm --filter @understand-code/durable-object-provider-contracts test:distribution
@@ -415,10 +488,13 @@ diagnostics, and crypto call counts are checked by
 `verify:provider-registry-manifest-invalid`. The signed real-filesystem fixture
 anchors, exact source closure, and 43 materialized negative diagnostics are
 checked by `verify:provider-real-fs-source`. `test/json-schema.test.ts` freezes
-the current 220-schema inventory and `verify:schemas` rejects generated-file
+the current 233-schema inventory and `verify:schemas` rejects generated-file
 drift. `verify:provider-target-discovery-point` checks the exact five locators,
 six-signature closure, canonical empty Fixture/Runner success, typed unresolved
 projection, and all 116 ordered diagnostic/executable recipes.
+`verify:provider-real-fs-conformance-result` checks the exact one-point,
+six-signature, no-seventh-signature closure, Locator-only path, eight tuple
+results, immutable anchors, and all 50 ordered executable cases.
 `test:distribution` is the clean packed Node/browser source for the npm
 distribution claims.
 
@@ -555,8 +631,10 @@ Successful Root Metadata history validation is limited to
 history validation to
 `authority: "none_registry_structure_and_history_only"`. Successful Target
 Discovery point validation is limited to
-`authority: "none_target_discovery_point_structure_only"`. None is production
-Registry or Store I/O authority. A signed-package resolver, offline production
+`authority: "none_target_discovery_point_structure_only"`. Successful
+Conformance Result point validation is limited to
+`authority: "none_real_fs_conformance_result_structure_only"`. None is
+production Registry or Store I/O authority. A signed-package resolver, offline production
 key ceremony, crash-safe installer transaction, verified Evidence/Catalog, and
 current Acceptance closure must all establish that authority before any strong
 provider capability can be exposed.
@@ -565,14 +643,15 @@ provider capability can be exposed.
 
 This package establishes the common foundation needed by AT-C21, AT-C29,
 AT-C31, and AT-Q33; it does not claim those end-to-end acceptance groups are
-complete. Through C09-1G this package covers signed Registry supporting
+complete. Through C09-1H this package covers signed Registry supporting
 records, Entries, Manifests, retained history, local migration/tombstone
 transitions, the independently signed real-filesystem Fixture Corpus to Suite
-source chain, and one root-bound Target Discovery point across Taxonomy,
-Release Matrix, Fixture/Runner observations, Input Bundle, and Result. It does
+source chain, one root-bound Target Discovery point across Taxonomy,
+Release Matrix, Fixture/Runner observations, Input Bundle, and Discovery
+Result, plus one unsigned real-filesystem Conformance Result exact-cover point. It does
 not close signed-package provenance authority, atomic Installation Identity
-persistence, Target Discovery history or current selection, real-filesystem
-Conformance Result exact-cover, Feasibility Evidence, Catalog or Target
+persistence, Target Discovery or Conformance Result history/current selection,
+real runner/filesystem execution, Feasibility Evidence, Catalog or Target
 Universe history, typed retained-distribution accounting,
 Acceptance high-water and active-writer selection, Migration Plan equality,
 provider runtime or real-filesystem execution, or migration proofs. Those later

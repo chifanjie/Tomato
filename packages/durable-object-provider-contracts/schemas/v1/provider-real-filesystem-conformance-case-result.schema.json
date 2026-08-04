@@ -1,0 +1,42 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-real-filesystem-conformance-case-result",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "caseId": {
+      "type": "string",
+      "pattern": "^provider-real-fs-case:[0-9a-f]{22}$"
+    },
+    "crashCutId": {
+      "type": "string",
+      "pattern": "^(?:no-crash|provider-crash-cut:[0-9a-f]{22})$"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "passed",
+        "failed",
+        "unsupported"
+      ]
+    },
+    "resultCode": {
+      "type": "string",
+      "enum": [
+        "passed",
+        "assertion_failed",
+        "provider_rejected",
+        "crash_recovery_failed",
+        "identity_discontinuity",
+        "containment_violation",
+        "unsupported_by_target_profile"
+      ]
+    }
+  },
+  "required": [
+    "caseId",
+    "crashCutId",
+    "outcome",
+    "resultCode"
+  ],
+  "additionalProperties": false
+}

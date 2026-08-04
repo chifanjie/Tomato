@@ -1,0 +1,1062 @@
+{
+  "schemaVersion": 1,
+  "profile": "provider_real_filesystem_conformance_result_invalid_v1",
+  "fixtureAuthority": "none_rejection_only",
+  "canonicalizationProfile": "rfc8785-jcs-safe-integer-v1",
+  "verificationProfile": "ed25519-rfc8032-cofactorless-prime-subgroup-v1",
+  "semanticDomain": "provider-real-filesystem-conformance-result-invalid-manifest-v1",
+  "materializedRequestSemanticDomain": "provider-real-filesystem-conformance-result-invalid-materialized-request-v1",
+  "goldenDependency": {
+    "resourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+    "resourceByteLength": 96224,
+    "resourceSha256Hex": "1afe75d00ea7469a0f0bb43fdf3f14721fbc780115a39dd4bd3f9de92f4b9e12",
+    "semanticContentDigest": "sha256:3a647f61d4e4f71a2126873f7969b8326e8be438fc436782fb81fdce5cb00af2"
+  },
+  "mutationRecipeDialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+  "caseCount": 50,
+  "caseIds": [
+    "input-extra-field",
+    "input-plain-validation-dto",
+    "result-extra-signature",
+    "source-suite-signature-bitflip",
+    "target-id-not-recomputed",
+    "target-not-discovered",
+    "discovery-pin-mismatch",
+    "bundle-digest-mismatch",
+    "suite-pin-mismatch",
+    "suite-digest-mismatch",
+    "fixture-digest-mismatch",
+    "runner-digest-mismatch",
+    "crash-cut-digest-mismatch",
+    "case-results-reordered",
+    "case-result-missing",
+    "case-result-extra",
+    "case-result-duplicate",
+    "passed-code-mismatch",
+    "unsupported-code-mismatch",
+    "failed-code-mismatch",
+    "passed-assertion-failed-code-mismatch",
+    "passed-crash-recovery-failed-code-mismatch",
+    "passed-identity-discontinuity-code-mismatch",
+    "passed-containment-violation-code-mismatch",
+    "passed-unsupported-by-target-profile-code-mismatch",
+    "unsupported-assertion-failed-code-mismatch",
+    "unsupported-provider-rejected-code-mismatch",
+    "unsupported-crash-recovery-failed-code-mismatch",
+    "unsupported-identity-discontinuity-code-mismatch",
+    "unsupported-containment-violation-code-mismatch",
+    "failed-passed-code-mismatch",
+    "aggregate-mismatch",
+    "result-id-mismatch",
+    "result-content-digest-mismatch",
+    "result-outer-id-mismatch",
+    "locator-profile-mismatch",
+    "locator-id-mismatch",
+    "pin-content-digest-mismatch",
+    "result-envelope-16mib-plus-one",
+    "locator-envelope-substitution",
+    "security-top-level-proxy",
+    "security-nested-proxy",
+    "security-top-level-getter",
+    "security-nested-getter",
+    "security-nested-hidden",
+    "security-nested-symbol",
+    "security-sparse-array",
+    "security-cycle",
+    "security-alias",
+    "security-async-mutation"
+  ],
+  "cases": [
+    {
+      "caseId": "input-extra-field",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "input-extra-field"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:442abde9ce08929ad3f263917266ebafb12a3c60f40d2888ddd42247056d0437"
+      }
+    },
+    {
+      "caseId": "input-plain-validation-dto",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "input-plain-validation-dto"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:473625eb350ebcbae588ee1b076eb8d10f5c89e6048f4e6df5024f16169082b5"
+      }
+    },
+    {
+      "caseId": "result-extra-signature",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "result-extra-signature"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_structure",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:476effe38235362b9a16e2001918a6620399598b8eb6ff83cfeb27413df0efa7"
+      }
+    },
+    {
+      "caseId": "source-suite-signature-bitflip",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "source-suite-signature-bitflip"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "target_discovery_point",
+        "reason": "source_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:9282a3a330c61cb3cee660fda2255c75c32450814a6dad66d647dc6eff091a48"
+      }
+    },
+    {
+      "caseId": "target-id-not-recomputed",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "target-id-not-recomputed"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "target_identity",
+        "reason": "identity_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:360a98ad1da0290afd4bf8ecae8be7fcd561080c7bd86ee9d13c4512b51bd83e"
+      }
+    },
+    {
+      "caseId": "target-not-discovered",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "target-not-discovered"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "target_membership",
+        "reason": "membership_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:edba08bc5e3456da70b8e37da9d7ce4878c7412c772f8b71e4f0ae144473a266"
+      }
+    },
+    {
+      "caseId": "discovery-pin-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "discovery-pin-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "discovery_pin",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:2d1acb9f31fd39d4b1c5949ab93a180cb811f26a08a3eef5a770447dff7798a0"
+      }
+    },
+    {
+      "caseId": "bundle-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "bundle-digest-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "discovery_pin",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:137675a2e465398d18c70ceda7034238a8a66c4cc466c9b06e4bd41a19d2f585"
+      }
+    },
+    {
+      "caseId": "suite-pin-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "suite-pin-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "suite_pin",
+        "reason": "binding_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:d4d7f3b626b0dc1f3c72060657be6c8a4a47d37f5605409c090b6075b6f97cfb"
+      }
+    },
+    {
+      "caseId": "suite-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "suite-digest-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "source_digests",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:71db6afda9de273f08903998a05720a0b928ee23a9b75ea06bd23061ccb1b513"
+      }
+    },
+    {
+      "caseId": "fixture-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "fixture-digest-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "source_digests",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:3e923ef782d8485167dfa972c742fa583ddb3e72403da21cb114f27e702a6535"
+      }
+    },
+    {
+      "caseId": "runner-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "runner-digest-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "source_digests",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:169d4b3f8926b0ead78e48f5fbc5171777ee423727ddb03de45185db3dc00aae"
+      }
+    },
+    {
+      "caseId": "crash-cut-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "crash-cut-digest-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "source_digests",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:e97115b9dcb713c0db19ee409458cd74ee6dce6902e9d0fae0027ef59029a342"
+      }
+    },
+    {
+      "caseId": "case-results-reordered",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "case-results-reordered"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "case_coverage",
+        "reason": "ordering_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:2ae310ae5d65730ac3c8facf04b31a4aaafd30cfc644b5bf41db9bb5b4621f32"
+      }
+    },
+    {
+      "caseId": "case-result-missing",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "case-result-missing"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "case_coverage",
+        "reason": "coverage_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:4bf799c4f51e3d803faab63d93e864b27278ae61eca381f252caaa373453ad12"
+      }
+    },
+    {
+      "caseId": "case-result-extra",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "case-result-extra"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "case_coverage",
+        "reason": "coverage_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:100f7e339d7af4bed6dc853e0207bc68de1b04e08d05f333555374de74a4b4a7"
+      }
+    },
+    {
+      "caseId": "case-result-duplicate",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "case-result-duplicate"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "case_coverage",
+        "reason": "coverage_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:c6722078f11db70013ef1f16abdfea07ea7ac11351d01823c5ea20396e78c485"
+      }
+    },
+    {
+      "caseId": "passed-code-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "passed-code-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "case_outcome",
+        "reason": "outcome_code_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:011887ddebef57b6776563e772b78d7ddac284943c464faec70b106142a3a2f1"
+      }
+    },
+    {
+      "caseId": "unsupported-code-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "unsupported-code-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "case_outcome",
+        "reason": "outcome_code_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:b070e68ce5d99eadd46160cb6658304025b6dab3f732cd02c554cb3dfa3d6741"
+      }
+    },
+    {
+      "caseId": "failed-code-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "failed-code-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "case_outcome",
+        "reason": "outcome_code_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:55026d26d4f5b2953d6e1d14153acffb58e7f9486fb765a7a648d2228e750e2a"
+      }
+    },
+    {
+      "caseId": "passed-assertion-failed-code-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "passed-assertion-failed-code-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "case_outcome",
+        "reason": "outcome_code_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:c18e071bb65e2f9bd8ecc79d514e101f793e07f21d80ceec20a3f8d31c93c019"
+      }
+    },
+    {
+      "caseId": "passed-crash-recovery-failed-code-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "passed-crash-recovery-failed-code-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "case_outcome",
+        "reason": "outcome_code_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:7be64658f39fde75280dd0f43d724c316196d7c335624ad8040a32a3dd2fe3ea"
+      }
+    },
+    {
+      "caseId": "passed-identity-discontinuity-code-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "passed-identity-discontinuity-code-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "case_outcome",
+        "reason": "outcome_code_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:a78ca930ae26c93502f542490890af698c91399d33a5bf7c96150ae799275114"
+      }
+    },
+    {
+      "caseId": "passed-containment-violation-code-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "passed-containment-violation-code-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "case_outcome",
+        "reason": "outcome_code_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:7b77732292af7c8cdaff808743c01fbaf4e9b394f60d0d662548519df3dea685"
+      }
+    },
+    {
+      "caseId": "passed-unsupported-by-target-profile-code-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "passed-unsupported-by-target-profile-code-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "case_outcome",
+        "reason": "outcome_code_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:f8d0b68b994e0e05c969ed270c046e199e1021556adaa66da08fa2b39fddd458"
+      }
+    },
+    {
+      "caseId": "unsupported-assertion-failed-code-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "unsupported-assertion-failed-code-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "case_outcome",
+        "reason": "outcome_code_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:a14b7a7a5f9ae9b201eaf04903e2b7a0750c95e398029efbce457978159a4944"
+      }
+    },
+    {
+      "caseId": "unsupported-provider-rejected-code-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "unsupported-provider-rejected-code-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "case_outcome",
+        "reason": "outcome_code_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:ca81c1d949cd1615542ef0af615cc82f781db9cbfc57d35ac21973e17ec5a409"
+      }
+    },
+    {
+      "caseId": "unsupported-crash-recovery-failed-code-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "unsupported-crash-recovery-failed-code-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "case_outcome",
+        "reason": "outcome_code_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:0fc7972a930464975fb71bde294c74da2aa7b7921217bb63a5ab0b046d3c2aa6"
+      }
+    },
+    {
+      "caseId": "unsupported-identity-discontinuity-code-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "unsupported-identity-discontinuity-code-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "case_outcome",
+        "reason": "outcome_code_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:9d5bc32c7c495ea2a9343d4ca346f568aef099830500fbfdb1fba4073f100700"
+      }
+    },
+    {
+      "caseId": "unsupported-containment-violation-code-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "unsupported-containment-violation-code-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "case_outcome",
+        "reason": "outcome_code_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:a4a82c71cc2f9cd4ff225f2583a4bf4a9d51e3981f18ef5b7982455361c9c28d"
+      }
+    },
+    {
+      "caseId": "failed-passed-code-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "failed-passed-code-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "case_outcome",
+        "reason": "outcome_code_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:24e652164e3fa8b7edeca2f3bd8cb8ef2cf9226b17209f3c9e0df1176cf3a64a"
+      }
+    },
+    {
+      "caseId": "aggregate-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "aggregate-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "aggregate",
+        "reason": "aggregate_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:8fca028be5b109efea937a69b1e255f3e9703007b01b9b9c8388d097f3d70f50"
+      }
+    },
+    {
+      "caseId": "result-id-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "result-id-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_id",
+        "reason": "identity_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:324e88e6e66fe72c8ff14b580a18a4abfd4a6e719a0ccd34f45a5c10d03c2be2"
+      }
+    },
+    {
+      "caseId": "result-content-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "result-content-digest-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_digest",
+        "reason": "digest_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:32037490bf4a59d19092a53d8889be2af9853d0a4aa0dd48960f2733706d1d4f"
+      }
+    },
+    {
+      "caseId": "result-outer-id-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "result-outer-id-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_envelope",
+        "reason": "envelope_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:3020b8c2d8500d5055b93fad9bad1ef80fb686de69ab7840085b684ff4e32813"
+      }
+    },
+    {
+      "caseId": "locator-profile-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "locator-profile-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "result_structure",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:faaf32dc4324d59a4360604294c7bbf8c523c833c2ebc68aabd577a359202d80"
+      }
+    },
+    {
+      "caseId": "locator-id-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "locator-id-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "locator",
+        "reason": "locator_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:5e8981b7820bfa9eb457736cbbd2959d9368f138b1d820881c78feafe0363324"
+      }
+    },
+    {
+      "caseId": "pin-content-digest-mismatch",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "pin-content-digest-mismatch"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "locator",
+        "reason": "locator_mismatch",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:c69a151ca687b152347374e18666f01dc7442ee0147a06c3c09919378ded8f38"
+      }
+    },
+    {
+      "caseId": "result-envelope-16mib-plus-one",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "result-envelope-16mib-plus-one"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "envelope_limit",
+        "reason": "byte_limit_exceeded",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:4e559a0df36ba6c91c8b7216991e6f01eab5547d975d6306aae5f17df09a5859"
+      }
+    },
+    {
+      "caseId": "locator-envelope-substitution",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "locator-envelope-substitution"
+      },
+      "expected": {
+        "boundary": "locator_builder",
+        "stage": "locator",
+        "reason": "locator_mismatch",
+        "materializedRequestSemanticDigest": "sha256:e37c0c152e4d1bf38979cfaff3ce8e473a099d281f892e8b14e90c32e8c6072b"
+      }
+    },
+    {
+      "caseId": "security-top-level-proxy",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "security-top-level-proxy"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:1401ae9c27e7a4de02ccbf4104cd64424c1e03a5d84ca13f17059d7656ac5c49"
+      }
+    },
+    {
+      "caseId": "security-nested-proxy",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "security-nested-proxy"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:5a20ae3b96b458871b725e012b051fa993760d0d979e9c12ef133bceaf9aa980"
+      }
+    },
+    {
+      "caseId": "security-top-level-getter",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "security-top-level-getter"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:e5cc362ee7322ab15e49ecbba4fa31c99daacbb995983eab8a47e053dc74a844"
+      }
+    },
+    {
+      "caseId": "security-nested-getter",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "security-nested-getter"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:a60df572b293f16e2fe0d9e86788347f72baedd5f2be795700af909512766aaf"
+      }
+    },
+    {
+      "caseId": "security-nested-hidden",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "security-nested-hidden"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:591a805282e5d141a55211b79dca71c37cc6ae94db30de16736ef2626d177ba5"
+      }
+    },
+    {
+      "caseId": "security-nested-symbol",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "security-nested-symbol"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:a90d09b8e51c829980b6eb4c7eb3f8adae4fdc037c1051933da70ecdeca72cd8"
+      }
+    },
+    {
+      "caseId": "security-sparse-array",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "security-sparse-array"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:2858376a3caa27308f6841002b24d72af5d3b7b7d4dc6b29c3675f5dbd895f38"
+      }
+    },
+    {
+      "caseId": "security-cycle",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "security-cycle"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:2587b67378b81d61ca461bee1a44c99f83d7cb8e1dd153d2ec6857052fbac0b7"
+      }
+    },
+    {
+      "caseId": "security-alias",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "security-alias"
+      },
+      "expected": {
+        "boundary": "internal_diagnostic",
+        "stage": "input",
+        "reason": "schema_invalid",
+        "publicFailureReason": "attestation_invalid",
+        "publicFailure": {
+          "errorName": "ProviderRealFilesystemConformanceResultClosureValidationError",
+          "code": "provider_unavailable",
+          "reason": "attestation_invalid"
+        },
+        "materializedRequestSemanticDigest": "sha256:9fe87d50244880d38799cef97449882cbbf53dd40d0b7de3605cfe3328faa1e7"
+      }
+    },
+    {
+      "caseId": "security-async-mutation",
+      "mutation": {
+        "dialect": "provider_real_filesystem_conformance_result_invalid_recipe_v1",
+        "goldenResourcePath": "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+        "operation": "security-async-mutation"
+      },
+      "expected": {
+        "boundary": "snapshot_stability",
+        "outcome": "accepted_frozen_snapshot",
+        "authority": "none_real_fs_conformance_result_structure_only",
+        "caseResultCount": 8,
+        "passedCaseResultCount": 8,
+        "materializedRequestSemanticDigest": "sha256:24a52a5700998a7c9cd37b8827166e05d48c8b7c69d20c5a2a4fc61abf7ee344"
+      }
+    }
+  ],
+  "semanticContentDigest": "sha256:d6531dc366161432570799d672c5f22c39cd3154d4735b060a001630c4a2f887"
+}

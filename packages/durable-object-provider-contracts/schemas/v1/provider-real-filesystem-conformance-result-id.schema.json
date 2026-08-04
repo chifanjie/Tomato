@@ -1,0 +1,6 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-real-filesystem-conformance-result-id",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "pattern": "^provider-real-fs-result:[0-9a-f]{22}$"
+}

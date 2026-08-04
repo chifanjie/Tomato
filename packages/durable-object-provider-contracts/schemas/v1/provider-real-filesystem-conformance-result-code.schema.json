@@ -1,0 +1,14 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-real-filesystem-conformance-result-code",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "passed",
+    "assertion_failed",
+    "provider_rejected",
+    "crash_recovery_failed",
+    "identity_discontinuity",
+    "containment_violation",
+    "unsupported_by_target_profile"
+  ]
+}

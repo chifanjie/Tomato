@@ -1,0 +1,25 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-real-filesystem-conformance-result-pin",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "locatorProfile": {
+      "type": "string",
+      "const": "installation_provider_real_fs_conformance_result_v1"
+    },
+    "resultId": {
+      "type": "string",
+      "pattern": "^provider-real-fs-result:[0-9a-f]{22}$"
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "locatorProfile",
+    "resultId",
+    "contentDigest"
+  ],
+  "additionalProperties": false
+}

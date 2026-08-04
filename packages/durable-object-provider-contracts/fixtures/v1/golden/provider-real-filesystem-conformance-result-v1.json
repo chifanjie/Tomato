@@ -1,0 +1,1403 @@
+{
+  "schemaVersion": 1,
+  "profile": "provider_real_filesystem_conformance_result_golden_v1",
+  "fixtureAuthority": "none_real_fs_conformance_result_structure_only",
+  "canonicalizationProfile": "rfc8785-jcs-safe-integer-v1",
+  "verificationProfile": "ed25519-rfc8032-cofactorless-prime-subgroup-v1",
+  "distributionRootBinding": {
+    "profile": "provider_signed_distribution_root_binding_v1",
+    "signedPackageIdentityDigest": "sha256:790ff3e3002e946ccaab1bc79d94a01b24b599f67de6001439266d74ba9a8917",
+    "resolverProfile": "verified_signed_package_distribution_root_v1",
+    "releaseRevisionDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "bootstrapTrustBundle": {
+      "locatorProfile": "distribution_provider_bootstrap_trust_bundle_v1",
+      "contentDigest": "sha256:a9aad99fd56ce76cf315514f258965e3d77e4da9e6a13897f42a27513a5c1cbc"
+    },
+    "historyPolicy": {
+      "profile": "provider_distribution_history_policy_v1",
+      "maxSupportCatalogGenerationCount": 4096,
+      "maxPublicTaxonomyGenerationCount": 4096,
+      "maxReleaseMatrixGenerationCount": 4096,
+      "maxTargetDiscoveryResultGenerationCount": 4096,
+      "maxReleaseTargetUniverseGenerationCount": 4096,
+      "maxSingleDistributionObjectCanonicalBytes": 16777216,
+      "maxTotalRetainedDistributionObjectCount": 65536,
+      "maxTotalRetainedDistributionHistoryLogicalBytes": 536870912,
+      "normalUpdateEmergencyGenerationReservePerChain": 8,
+      "normalUpdateEmergencyLogicalBytesReserve": 16777216,
+      "admission": "stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution",
+      "exhaustion": "reject_candidate_distribution_and_preserve_last_verified_distribution"
+    }
+  },
+  "activeRootMetadata": {
+    "locatorProfile": "installation_provider_registry_root_metadata_v1",
+    "rootGeneration": 3,
+    "rootKeyId": "b428dd9c9d0cb51b9b44a8",
+    "contentDigest": "sha256:b7a24e2d5fd9b4c7cb55d7f1133135d6a759de0a249680f4859596b3cad3d158"
+  },
+  "activeRoot": {
+    "profile": "provider_registry_root_public_key_v1",
+    "rootKeyId": "b428dd9c9d0cb51b9b44a8",
+    "algorithm": "ed25519",
+    "publicKeyBytes": "base64url:G6QHW3fJ4_s-zeFc2vUiHzwQNz5iP3sOHvdjZrCvcTc",
+    "publicKeyDigest": "sha256:0e6a6ec67d9a935b8ad276cefd36919b9d230e364e285e46e49f3989e7a68531"
+  },
+  "fixtureCorpusManifest": {
+    "schemaVersion": 1,
+    "recordType": "provider_real_fs_fixture_corpus_manifest",
+    "contentDigest": "sha256:43849f65dde01834c24312007f4697e23c886a862b42079a5a463256d95061ca",
+    "payload": {
+      "profile": "provider_real_fs_fixture_corpus_manifest_v1",
+      "distributionRootBinding": {
+        "profile": "provider_signed_distribution_root_binding_v1",
+        "resolverProfile": "verified_signed_package_distribution_root_v1",
+        "signedPackageIdentityDigest": "sha256:790ff3e3002e946ccaab1bc79d94a01b24b599f67de6001439266d74ba9a8917",
+        "releaseRevisionDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "bootstrapTrustBundle": {
+          "locatorProfile": "distribution_provider_bootstrap_trust_bundle_v1",
+          "contentDigest": "sha256:a9aad99fd56ce76cf315514f258965e3d77e4da9e6a13897f42a27513a5c1cbc"
+        },
+        "historyPolicy": {
+          "profile": "provider_distribution_history_policy_v1",
+          "maxSupportCatalogGenerationCount": 4096,
+          "maxPublicTaxonomyGenerationCount": 4096,
+          "maxReleaseMatrixGenerationCount": 4096,
+          "maxTargetDiscoveryResultGenerationCount": 4096,
+          "maxReleaseTargetUniverseGenerationCount": 4096,
+          "maxSingleDistributionObjectCanonicalBytes": 16777216,
+          "maxTotalRetainedDistributionObjectCount": 65536,
+          "maxTotalRetainedDistributionHistoryLogicalBytes": 536870912,
+          "normalUpdateEmergencyGenerationReservePerChain": 8,
+          "normalUpdateEmergencyLogicalBytesReserve": 16777216,
+          "admission": "stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution",
+          "exhaustion": "reject_candidate_distribution_and_preserve_last_verified_distribution"
+        }
+      },
+      "activeRootMetadata": {
+        "locatorProfile": "installation_provider_registry_root_metadata_v1",
+        "rootGeneration": 3,
+        "rootKeyId": "b428dd9c9d0cb51b9b44a8",
+        "contentDigest": "sha256:b7a24e2d5fd9b4c7cb55d7f1133135d6a759de0a249680f4859596b3cad3d158"
+      },
+      "registryRootKeyId": "b428dd9c9d0cb51b9b44a8",
+      "releaseRevisionDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "corpusVersion": "1.0.0",
+      "recordCount": 12,
+      "recordSetDigest": "sha256:6368fec10f8071f83dca9f34f430a000e415496434442f02fe739c4530e14a14",
+      "records": [
+        {
+          "caseKey": "atomic-publish",
+          "fixtureOrdinal": 0,
+          "fixtureRole": "setup",
+          "fixtureProgramProfile": "provider_real_fs_fixture_program_v1",
+          "fixtureProgramBytes": "base64url:c2V0dXA6ZW1wdHktcm9vdA",
+          "fixtureProgramContentDigest": "sha256:83ad3c4f6a93d1366a08588007977ab9f3b1c6019bc1934e7628f718563f1d14",
+          "fixtureProgramLogicalBytes": 16
+        },
+        {
+          "caseKey": "atomic-publish",
+          "fixtureOrdinal": 1,
+          "fixtureRole": "operation",
+          "fixtureProgramProfile": "provider_real_fs_fixture_program_v1",
+          "fixtureProgramBytes": "base64url:cHVibGlzaDphbHBoYQ",
+          "fixtureProgramContentDigest": "sha256:d66600adfb9bb072835e0597566fad7e23980e4bc7862dca40ab889b959ba9f7",
+          "fixtureProgramLogicalBytes": 13
+        },
+        {
+          "caseKey": "atomic-publish",
+          "fixtureOrdinal": 2,
+          "fixtureRole": "assertion",
+          "fixtureProgramProfile": "provider_real_fs_fixture_program_v1",
+          "fixtureProgramBytes": "base64url:YXNzZXJ0OmFscGhhLXZpc2libGU",
+          "fixtureProgramContentDigest": "sha256:724b957f28508a56b47e671020de882c723b6ef2464f590c8f4df0be9d23dc36",
+          "fixtureProgramLogicalBytes": 20
+        },
+        {
+          "caseKey": "compare-delete",
+          "fixtureOrdinal": 0,
+          "fixtureRole": "setup",
+          "fixtureProgramProfile": "provider_real_fs_fixture_program_v1",
+          "fixtureProgramBytes": "base64url:c2V0dXA6ZXhpc3Rpbmctb2JqZWN0",
+          "fixtureProgramContentDigest": "sha256:6b81dd41acc0cd30fccbd420c4d1203573f8a951bdd8198398589ae62a35955a",
+          "fixtureProgramLogicalBytes": 21
+        },
+        {
+          "caseKey": "compare-delete",
+          "fixtureOrdinal": 1,
+          "fixtureRole": "operation",
+          "fixtureProgramProfile": "provider_real_fs_fixture_program_v1",
+          "fixtureProgramBytes": "base64url:ZGVsZXRlOmV4cGVjdGVkLXZlcnNpb24",
+          "fixtureProgramContentDigest": "sha256:e7cf13c3ded01db8f22f895d7ced2a2e298a71a802b9f1f725efde8528aae472",
+          "fixtureProgramLogicalBytes": 23
+        },
+        {
+          "caseKey": "compare-delete",
+          "fixtureOrdinal": 2,
+          "fixtureRole": "assertion",
+          "fixtureProgramProfile": "provider_real_fs_fixture_program_v1",
+          "fixtureProgramBytes": "base64url:YXNzZXJ0Om9iamVjdC1hYnNlbnQ",
+          "fixtureProgramContentDigest": "sha256:f368e76846df4ef9429e7071033a01366a38831565712b8d52200a2333fb7c28",
+          "fixtureProgramLogicalBytes": 20
+        },
+        {
+          "caseKey": "restart-recovery",
+          "fixtureOrdinal": 0,
+          "fixtureRole": "setup",
+          "fixtureProgramProfile": "provider_real_fs_fixture_program_v1",
+          "fixtureProgramBytes": "base64url:c2V0dXA6am91cm5hbA",
+          "fixtureProgramContentDigest": "sha256:cb2c9f6f3136a17ee9a68351168c10578da9fa01c54254e345bede88c2750610",
+          "fixtureProgramLogicalBytes": 13
+        },
+        {
+          "caseKey": "restart-recovery",
+          "fixtureOrdinal": 1,
+          "fixtureRole": "operation",
+          "fixtureProgramProfile": "provider_real_fs_fixture_program_v1",
+          "fixtureProgramBytes": "base64url:Y29tbWl0OmpvdXJuYWw",
+          "fixtureProgramContentDigest": "sha256:f86a588d019f7524d7c0b29f35e6d09deed6c91531f2e78ddb5ee33b77e259b4",
+          "fixtureProgramLogicalBytes": 14
+        },
+        {
+          "caseKey": "restart-recovery",
+          "fixtureOrdinal": 2,
+          "fixtureRole": "assertion",
+          "fixtureProgramProfile": "provider_real_fs_fixture_program_v1",
+          "fixtureProgramBytes": "base64url:YXNzZXJ0OnJlY292ZXJlZA",
+          "fixtureProgramContentDigest": "sha256:852e1267d9539eead6c7654f00b178fed036b18c3c488d756a4fec8c643c7780",
+          "fixtureProgramLogicalBytes": 16
+        },
+        {
+          "caseKey": "root-containment",
+          "fixtureOrdinal": 0,
+          "fixtureRole": "setup",
+          "fixtureProgramProfile": "provider_real_fs_fixture_program_v1",
+          "fixtureProgramBytes": "base64url:c2V0dXA6Ym91bmQtcm9vdA",
+          "fixtureProgramContentDigest": "sha256:ac3a9d7b3efd8b821c0147abd72de5fefc72b9518ffe771ed26b117e920a8168",
+          "fixtureProgramLogicalBytes": 16
+        },
+        {
+          "caseKey": "root-containment",
+          "fixtureOrdinal": 1,
+          "fixtureRole": "operation",
+          "fixtureProgramProfile": "provider_real_fs_fixture_program_v1",
+          "fixtureProgramBytes": "base64url:cHVibGlzaDp1bmljb2RlLei3r-W-hA",
+          "fixtureProgramContentDigest": "sha256:c08aa52dbaff3c229764777a6e81c55c55fb7a268607ddc810b17e8e4b1f1f17",
+          "fixtureProgramLogicalBytes": 22
+        },
+        {
+          "caseKey": "root-containment",
+          "fixtureOrdinal": 2,
+          "fixtureRole": "assertion",
+          "fixtureProgramProfile": "provider_real_fs_fixture_program_v1",
+          "fixtureProgramBytes": "base64url:YXNzZXJ0Om5vLWVzY2FwZQpjb250cm9s",
+          "fixtureProgramContentDigest": "sha256:0f50473ee4a8176ab47da7d17709c226ab0637e039ed213d3b2da5140d01a6d9",
+          "fixtureProgramLogicalBytes": 24
+        }
+      ],
+      "fixtureManifestDigest": "sha256:72a09216eca9f2b4c9a442de89270558accf552c2f4f83dc54c3b65ecab0c740",
+      "corpusSignature": "provider-real-fs-fixture-corpus-ed25519:b428dd9c9d0cb51b9b44a8:3a3dc5a0c92df71118b0a348266fc55fa36ddb6b691bdaed56b62672b0d57f1b8591332f2b31b8d519b8891584570fb3eab3708404f8ebf37721c11ef7b33902"
+    }
+  },
+  "suiteManifest": {
+    "schemaVersion": 1,
+    "recordType": "provider_real_fs_suite_manifest",
+    "contentDigest": "sha256:fa25382564e2fbb801d6f9e1cd2df980fcee6ebf6ac50b1c893c923bcdbb3d05",
+    "payload": {
+      "profile": "provider_real_fs_suite_manifest_v1",
+      "distributionRootBinding": {
+        "profile": "provider_signed_distribution_root_binding_v1",
+        "resolverProfile": "verified_signed_package_distribution_root_v1",
+        "signedPackageIdentityDigest": "sha256:790ff3e3002e946ccaab1bc79d94a01b24b599f67de6001439266d74ba9a8917",
+        "releaseRevisionDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "bootstrapTrustBundle": {
+          "locatorProfile": "distribution_provider_bootstrap_trust_bundle_v1",
+          "contentDigest": "sha256:a9aad99fd56ce76cf315514f258965e3d77e4da9e6a13897f42a27513a5c1cbc"
+        },
+        "historyPolicy": {
+          "profile": "provider_distribution_history_policy_v1",
+          "maxSupportCatalogGenerationCount": 4096,
+          "maxPublicTaxonomyGenerationCount": 4096,
+          "maxReleaseMatrixGenerationCount": 4096,
+          "maxTargetDiscoveryResultGenerationCount": 4096,
+          "maxReleaseTargetUniverseGenerationCount": 4096,
+          "maxSingleDistributionObjectCanonicalBytes": 16777216,
+          "maxTotalRetainedDistributionObjectCount": 65536,
+          "maxTotalRetainedDistributionHistoryLogicalBytes": 536870912,
+          "normalUpdateEmergencyGenerationReservePerChain": 8,
+          "normalUpdateEmergencyLogicalBytesReserve": 16777216,
+          "admission": "stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution",
+          "exhaustion": "reject_candidate_distribution_and_preserve_last_verified_distribution"
+        }
+      },
+      "activeRootMetadata": {
+        "locatorProfile": "installation_provider_registry_root_metadata_v1",
+        "rootGeneration": 3,
+        "rootKeyId": "b428dd9c9d0cb51b9b44a8",
+        "contentDigest": "sha256:b7a24e2d5fd9b4c7cb55d7f1133135d6a759de0a249680f4859596b3cad3d158"
+      },
+      "registryRootKeyId": "b428dd9c9d0cb51b9b44a8",
+      "releaseRevisionDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "suiteVersion": "1.0.0",
+      "fixtureCorpusManifest": {
+        "locatorProfile": "distribution_provider_real_fs_fixture_corpus_manifest_v1",
+        "distributionRootBinding": {
+          "profile": "provider_signed_distribution_root_binding_v1",
+          "resolverProfile": "verified_signed_package_distribution_root_v1",
+          "signedPackageIdentityDigest": "sha256:790ff3e3002e946ccaab1bc79d94a01b24b599f67de6001439266d74ba9a8917",
+          "releaseRevisionDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "bootstrapTrustBundle": {
+            "locatorProfile": "distribution_provider_bootstrap_trust_bundle_v1",
+            "contentDigest": "sha256:a9aad99fd56ce76cf315514f258965e3d77e4da9e6a13897f42a27513a5c1cbc"
+          },
+          "historyPolicy": {
+            "profile": "provider_distribution_history_policy_v1",
+            "maxSupportCatalogGenerationCount": 4096,
+            "maxPublicTaxonomyGenerationCount": 4096,
+            "maxReleaseMatrixGenerationCount": 4096,
+            "maxTargetDiscoveryResultGenerationCount": 4096,
+            "maxReleaseTargetUniverseGenerationCount": 4096,
+            "maxSingleDistributionObjectCanonicalBytes": 16777216,
+            "maxTotalRetainedDistributionObjectCount": 65536,
+            "maxTotalRetainedDistributionHistoryLogicalBytes": 536870912,
+            "normalUpdateEmergencyGenerationReservePerChain": 8,
+            "normalUpdateEmergencyLogicalBytesReserve": 16777216,
+            "admission": "stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution",
+            "exhaustion": "reject_candidate_distribution_and_preserve_last_verified_distribution"
+          }
+        },
+        "fixtureManifestDigest": "sha256:72a09216eca9f2b4c9a442de89270558accf552c2f4f83dc54c3b65ecab0c740",
+        "contentDigest": "sha256:43849f65dde01834c24312007f4697e23c886a862b42079a5a463256d95061ca"
+      },
+      "runnerProfile": {
+        "profile": "provider_real_fs_runner_profile_v1",
+        "protocolVersion": "provider-real-fs-runner-v1",
+        "canonicalProfileBytes": "base64url:cnVubmVyOnYxOm5vLW5ldHdvcms6bm8tZm9sbG93OmNyYXNoLWluamVjdGlvbg"
+      },
+      "runnerProfileDigest": "sha256:fa62bd897b15eb99c225b8877873ed29a5df838d91cbf31e32a2bcc46516bca7",
+      "caseCount": 4,
+      "caseSetDigest": "sha256:d7ad6b0714915b92cb3435ad792b5acac1360387d0f5d495382ea8ae6edf2147",
+      "requiredCaseCutCount": 8,
+      "requiredCaseCutSetDigest": "sha256:7b0ecd4bf9ea686b74e4b08805b75822eba380315f090c2ec687ec5942b5ef58",
+      "cases": [
+        {
+          "caseId": "provider-real-fs-case:29eefd091965e9d7c5d0d0",
+          "caseKey": "compare-delete",
+          "fixtureRecordCount": 3,
+          "fixtureRecordSetDigest": "sha256:29efac7bfc87f8c8172e4cc64db23516ed0c3b4160117f94e6c8863fbf7bf286",
+          "requiredCrashCuts": [
+            {
+              "crashCutId": "no-crash",
+              "crashCutOrdinal": 0,
+              "injection": {
+                "state": "none"
+              }
+            },
+            {
+              "crashCutId": "provider-crash-cut:64f3e7338698edf9d265cc",
+              "crashCutOrdinal": 1,
+              "injection": {
+                "state": "after_fixture_operation",
+                "afterFixtureOrdinal": 1
+              },
+              "recoveryAssertionProfile": "provider_real_fs_recovery_assertion_v1",
+              "recoveryAssertionBytes": "base64url:cmVjb3Zlcjpjb21wYXJlLWRlbGV0ZQ",
+              "recoveryAssertionContentDigest": "sha256:69e7640ac4cbc576bd2f73ca47308d4311c4cd389834977c9320ed417861734b"
+            }
+          ]
+        },
+        {
+          "caseId": "provider-real-fs-case:aea44717ff5b840740bf59",
+          "caseKey": "restart-recovery",
+          "fixtureRecordCount": 3,
+          "fixtureRecordSetDigest": "sha256:92b3687ef6ba4eb04fe59b215210e9ea11bfebaf0003fc9c7cc9530cc0641dab",
+          "requiredCrashCuts": [
+            {
+              "crashCutId": "no-crash",
+              "crashCutOrdinal": 0,
+              "injection": {
+                "state": "none"
+              }
+            },
+            {
+              "crashCutId": "provider-crash-cut:ed6aa60cf3437f7e5b5cb1",
+              "crashCutOrdinal": 1,
+              "injection": {
+                "state": "after_fixture_operation",
+                "afterFixtureOrdinal": 1
+              },
+              "recoveryAssertionProfile": "provider_real_fs_recovery_assertion_v1",
+              "recoveryAssertionBytes": "base64url:cmVjb3ZlcjpyZXN0YXJ0LXJlY292ZXJ5",
+              "recoveryAssertionContentDigest": "sha256:037a24744081feec60422b90c842db43be451588da9458238a1735213dd6bdc0"
+            }
+          ]
+        },
+        {
+          "caseId": "provider-real-fs-case:d6e0fde28d191c2734e509",
+          "caseKey": "atomic-publish",
+          "fixtureRecordCount": 3,
+          "fixtureRecordSetDigest": "sha256:362a1b4dac9a6d0984b872cdb7cd55432a5b4c775c763c639262729b48a5231d",
+          "requiredCrashCuts": [
+            {
+              "crashCutId": "no-crash",
+              "crashCutOrdinal": 0,
+              "injection": {
+                "state": "none"
+              }
+            },
+            {
+              "crashCutId": "provider-crash-cut:2ef3fe103641cbee4ed1ae",
+              "crashCutOrdinal": 1,
+              "injection": {
+                "state": "after_fixture_operation",
+                "afterFixtureOrdinal": 1
+              },
+              "recoveryAssertionProfile": "provider_real_fs_recovery_assertion_v1",
+              "recoveryAssertionBytes": "base64url:cmVjb3ZlcjphdG9taWMtcHVibGlzaA",
+              "recoveryAssertionContentDigest": "sha256:8d3c36d3def9a4afcd8033810323d5e0480b9cd44079f675a87f6fbfb4570454"
+            }
+          ]
+        },
+        {
+          "caseId": "provider-real-fs-case:eb863b93db43d6eb532537",
+          "caseKey": "root-containment",
+          "fixtureRecordCount": 3,
+          "fixtureRecordSetDigest": "sha256:95236cc181e07cc73180bad03b74b0d11ea15cdf10f501c013abed469adbbe8a",
+          "requiredCrashCuts": [
+            {
+              "crashCutId": "no-crash",
+              "crashCutOrdinal": 0,
+              "injection": {
+                "state": "none"
+              }
+            },
+            {
+              "crashCutId": "provider-crash-cut:6b57842af4f208eb77ed66",
+              "crashCutOrdinal": 1,
+              "injection": {
+                "state": "after_fixture_operation",
+                "afterFixtureOrdinal": 1
+              },
+              "recoveryAssertionProfile": "provider_real_fs_recovery_assertion_v1",
+              "recoveryAssertionBytes": "base64url:cmVjb3Zlcjpyb290LWNvbnRhaW5tZW50",
+              "recoveryAssertionContentDigest": "sha256:ab2e2f7e621e47c489076ec55fd97468cd921f180305c2159fced03fd628c36f"
+            }
+          ]
+        }
+      ],
+      "suiteDigest": "sha256:2c8cb050e227b34f7b5a1fe8c998f23eb69100d1fadd5586f3a6df2985c49dc8",
+      "suiteSignature": "provider-real-fs-suite-manifest-ed25519:b428dd9c9d0cb51b9b44a8:c956c0c50fdea4ffb29698d19c150483446b0f6fa873d980e70bd8f1935a884c30f241d1b462e718327184ce40e124643a0c17c2a0479edcb9ab8c32c8151a0e"
+    }
+  },
+  "publicSupportTaxonomy": {
+    "schemaVersion": 1,
+    "recordType": "provider_public_support_taxonomy",
+    "taxonomyGeneration": 1,
+    "contentDigest": "sha256:b3310b252f4c5943f0ad07c7b4cc98774a2829ce75b84f5cb6164f52fdfce278",
+    "payload": {
+      "profile": "provider_public_support_taxonomy_v1",
+      "distributionRootBinding": {
+        "profile": "provider_signed_distribution_root_binding_v1",
+        "resolverProfile": "verified_signed_package_distribution_root_v1",
+        "signedPackageIdentityDigest": "sha256:790ff3e3002e946ccaab1bc79d94a01b24b599f67de6001439266d74ba9a8917",
+        "releaseRevisionDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "bootstrapTrustBundle": {
+          "locatorProfile": "distribution_provider_bootstrap_trust_bundle_v1",
+          "contentDigest": "sha256:a9aad99fd56ce76cf315514f258965e3d77e4da9e6a13897f42a27513a5c1cbc"
+        },
+        "historyPolicy": {
+          "profile": "provider_distribution_history_policy_v1",
+          "maxSupportCatalogGenerationCount": 4096,
+          "maxPublicTaxonomyGenerationCount": 4096,
+          "maxReleaseMatrixGenerationCount": 4096,
+          "maxTargetDiscoveryResultGenerationCount": 4096,
+          "maxReleaseTargetUniverseGenerationCount": 4096,
+          "maxSingleDistributionObjectCanonicalBytes": 16777216,
+          "maxTotalRetainedDistributionObjectCount": 65536,
+          "maxTotalRetainedDistributionHistoryLogicalBytes": 536870912,
+          "normalUpdateEmergencyGenerationReservePerChain": 8,
+          "normalUpdateEmergencyLogicalBytesReserve": 16777216,
+          "admission": "stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution",
+          "exhaustion": "reject_candidate_distribution_and_preserve_last_verified_distribution"
+        }
+      },
+      "activeRootMetadata": {
+        "locatorProfile": "installation_provider_registry_root_metadata_v1",
+        "rootGeneration": 3,
+        "rootKeyId": "b428dd9c9d0cb51b9b44a8",
+        "contentDigest": "sha256:b7a24e2d5fd9b4c7cb55d7f1133135d6a759de0a249680f4859596b3cad3d158"
+      },
+      "registryRootKeyId": "b428dd9c9d0cb51b9b44a8",
+      "taxonomyGeneration": 1,
+      "osReleaseFamilies": [
+        {
+          "descriptor": {
+            "osPlatform": "darwin",
+            "resolver": "darwin_product_major_version_v1",
+            "productMajorVersion": 15
+          },
+          "osReleaseFamilyCode": "provider-os-family:42302d6ad4703c2b07a205"
+        },
+        {
+          "descriptor": {
+            "osPlatform": "linux",
+            "resolver": "linux_os_release_id_major_version_v1",
+            "distributionId": "ubuntu",
+            "distributionMajorVersion": 24
+          },
+          "osReleaseFamilyCode": "provider-os-family:b3c813bd678ba40707eed0"
+        }
+      ],
+      "filesystemProfiles": [
+        {
+          "descriptor": {
+            "osPlatform": "linux",
+            "resolver": "linux_statfs_type_v1",
+            "filesystemKind": "ext4"
+          },
+          "filesystemProfileCode": "provider-fs-profile:22dad279fd650f08b8c6fe"
+        },
+        {
+          "descriptor": {
+            "osPlatform": "darwin",
+            "resolver": "darwin_filesystem_type_v1",
+            "filesystemKind": "apfs"
+          },
+          "filesystemProfileCode": "provider-fs-profile:a7c0ac0396034e50a4e1e4"
+        }
+      ],
+      "derivationPolicy": {
+        "osFamilySource": "strict_public_platform_release_api_without_build_identifier",
+        "filesystemSource": "strict_public_filesystem_kind_without_features_or_mount_options",
+        "excludedPrivateInputs": [
+          "osBuildDigest",
+          "filesystemFeatureProfileDigest",
+          "mountOptionProfileDigest"
+        ],
+        "unknownOrNoncanonicalObservation": "public_strong_forbidden"
+      },
+      "taxonomySignature": "provider-public-support-taxonomy-ed25519:b428dd9c9d0cb51b9b44a8:0786d34597ab4b90a66265fbe23479bb707d9373f18dfbd56d3f498eace42209408fe64c51100e2f295e4cc76a5e54fcdf17c165c1cfc6bb88598404d0f80909"
+    }
+  },
+  "releaseMatrix": {
+    "schemaVersion": 1,
+    "recordType": "provider_release_matrix",
+    "releaseMatrixGeneration": 1,
+    "contentDigest": "sha256:8384fa5e91f75c370dd5bdf8168576eeb83f810717994f90de333aa96bae5c7a",
+    "payload": {
+      "profile": "provider_release_matrix_v1",
+      "distributionRootBinding": {
+        "profile": "provider_signed_distribution_root_binding_v1",
+        "resolverProfile": "verified_signed_package_distribution_root_v1",
+        "signedPackageIdentityDigest": "sha256:790ff3e3002e946ccaab1bc79d94a01b24b599f67de6001439266d74ba9a8917",
+        "releaseRevisionDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "bootstrapTrustBundle": {
+          "locatorProfile": "distribution_provider_bootstrap_trust_bundle_v1",
+          "contentDigest": "sha256:a9aad99fd56ce76cf315514f258965e3d77e4da9e6a13897f42a27513a5c1cbc"
+        },
+        "historyPolicy": {
+          "profile": "provider_distribution_history_policy_v1",
+          "maxSupportCatalogGenerationCount": 4096,
+          "maxPublicTaxonomyGenerationCount": 4096,
+          "maxReleaseMatrixGenerationCount": 4096,
+          "maxTargetDiscoveryResultGenerationCount": 4096,
+          "maxReleaseTargetUniverseGenerationCount": 4096,
+          "maxSingleDistributionObjectCanonicalBytes": 16777216,
+          "maxTotalRetainedDistributionObjectCount": 65536,
+          "maxTotalRetainedDistributionHistoryLogicalBytes": 536870912,
+          "normalUpdateEmergencyGenerationReservePerChain": 8,
+          "normalUpdateEmergencyLogicalBytesReserve": 16777216,
+          "admission": "stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution",
+          "exhaustion": "reject_candidate_distribution_and_preserve_last_verified_distribution"
+        }
+      },
+      "activeRootMetadata": {
+        "locatorProfile": "installation_provider_registry_root_metadata_v1",
+        "rootGeneration": 3,
+        "rootKeyId": "b428dd9c9d0cb51b9b44a8",
+        "contentDigest": "sha256:b7a24e2d5fd9b4c7cb55d7f1133135d6a759de0a249680f4859596b3cad3d158"
+      },
+      "registryRootKeyId": "b428dd9c9d0cb51b9b44a8",
+      "releaseMatrixGeneration": 1,
+      "publicSupportTaxonomy": {
+        "locatorProfile": "distribution_provider_public_support_taxonomy_v1",
+        "taxonomyGeneration": 1,
+        "contentDigest": "sha256:b3310b252f4c5943f0ad07c7b4cc98774a2829ce75b84f5cb6164f52fdfce278"
+      },
+      "limits": {
+        "profile": "provider_release_coverage_artifact_limits_v1",
+        "maxTargetEntriesPerArtifact": 4096,
+        "maxCanonicalUnionTargetEntries": 4096,
+        "maxUnresolvedObservationsPerDiscoveryResult": 4096,
+        "maxCanonicalEnvelopeBytes": 16777216
+      },
+      "targetCount": 2,
+      "targetSetDigest": "sha256:91919380401d30c2767ea2527568b9c539a09941facdf2ada26d8b629ecf355b",
+      "targets": [
+        {
+          "target": {
+            "targetProfileId": "provider-target-profile:7b1a9d57bc7ee4d2c35f9bcd02a99a1be680076ab6e7e231caccb665f792daee",
+            "osPlatform": "darwin",
+            "osReleaseFamilyCode": "provider-os-family:42302d6ad4703c2b07a205",
+            "osBuildDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "architecture": "arm64",
+            "filesystemProfileCode": "provider-fs-profile:a7c0ac0396034e50a4e1e4",
+            "filesystemFeatureProfileDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "mountOptionProfileDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+          },
+          "publicProfileId": "provider-public-support-profile:7f37e43a2a335dda37ed52ba80d1b146154891efac2a3c74d4c0ad0ef2493dbc"
+        },
+        {
+          "target": {
+            "targetProfileId": "provider-target-profile:85f704b7a83092969d3ccc5354f64c23bfdb74b64c92f32f8888bec8548404b5",
+            "osPlatform": "linux",
+            "osReleaseFamilyCode": "provider-os-family:b3c813bd678ba40707eed0",
+            "osBuildDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+            "architecture": "x86_64",
+            "filesystemProfileCode": "provider-fs-profile:22dad279fd650f08b8c6fe",
+            "filesystemFeatureProfileDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+            "mountOptionProfileDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+          },
+          "publicProfileId": "provider-public-support-profile:eb0e3a9b393a33092ecf8baf30468800479b4abb772c7a000592d356926a3904"
+        }
+      ],
+      "matrixSignature": "provider-release-matrix-ed25519:b428dd9c9d0cb51b9b44a8:39ef0724f572610d8c95d6e82b35f7fbfd4ca853019dc0f8a25b3e411d3a8358257b3c99a8eb332b9935a7bf3d7481d94f34b918a234984b4e85edf227138f0f"
+    }
+  },
+  "targetDiscoveryFixtureManifest": {
+    "schemaVersion": 1,
+    "recordType": "provider_target_discovery_fixture_manifest",
+    "fixtureManifestDigest": "sha256:72a09216eca9f2b4c9a442de89270558accf552c2f4f83dc54c3b65ecab0c740",
+    "contentDigest": "sha256:4266eb9e886c59ba1a40fd6146bb7e5c45f705df20398cb1da5bcbe7a2d5ecdb",
+    "payload": {
+      "profile": "provider_target_discovery_fixture_manifest_v1",
+      "distributionRootBinding": {
+        "profile": "provider_signed_distribution_root_binding_v1",
+        "resolverProfile": "verified_signed_package_distribution_root_v1",
+        "signedPackageIdentityDigest": "sha256:790ff3e3002e946ccaab1bc79d94a01b24b599f67de6001439266d74ba9a8917",
+        "releaseRevisionDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "bootstrapTrustBundle": {
+          "locatorProfile": "distribution_provider_bootstrap_trust_bundle_v1",
+          "contentDigest": "sha256:a9aad99fd56ce76cf315514f258965e3d77e4da9e6a13897f42a27513a5c1cbc"
+        },
+        "historyPolicy": {
+          "profile": "provider_distribution_history_policy_v1",
+          "maxSupportCatalogGenerationCount": 4096,
+          "maxPublicTaxonomyGenerationCount": 4096,
+          "maxReleaseMatrixGenerationCount": 4096,
+          "maxTargetDiscoveryResultGenerationCount": 4096,
+          "maxReleaseTargetUniverseGenerationCount": 4096,
+          "maxSingleDistributionObjectCanonicalBytes": 16777216,
+          "maxTotalRetainedDistributionObjectCount": 65536,
+          "maxTotalRetainedDistributionHistoryLogicalBytes": 536870912,
+          "normalUpdateEmergencyGenerationReservePerChain": 8,
+          "normalUpdateEmergencyLogicalBytesReserve": 16777216,
+          "admission": "stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution",
+          "exhaustion": "reject_candidate_distribution_and_preserve_last_verified_distribution"
+        }
+      },
+      "releaseRevisionDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "realFilesystemSuiteManifest": {
+        "locatorProfile": "distribution_provider_real_fs_suite_manifest_v1",
+        "distributionRootBinding": {
+          "profile": "provider_signed_distribution_root_binding_v1",
+          "resolverProfile": "verified_signed_package_distribution_root_v1",
+          "signedPackageIdentityDigest": "sha256:790ff3e3002e946ccaab1bc79d94a01b24b599f67de6001439266d74ba9a8917",
+          "releaseRevisionDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "bootstrapTrustBundle": {
+            "locatorProfile": "distribution_provider_bootstrap_trust_bundle_v1",
+            "contentDigest": "sha256:a9aad99fd56ce76cf315514f258965e3d77e4da9e6a13897f42a27513a5c1cbc"
+          },
+          "historyPolicy": {
+            "profile": "provider_distribution_history_policy_v1",
+            "maxSupportCatalogGenerationCount": 4096,
+            "maxPublicTaxonomyGenerationCount": 4096,
+            "maxReleaseMatrixGenerationCount": 4096,
+            "maxTargetDiscoveryResultGenerationCount": 4096,
+            "maxReleaseTargetUniverseGenerationCount": 4096,
+            "maxSingleDistributionObjectCanonicalBytes": 16777216,
+            "maxTotalRetainedDistributionObjectCount": 65536,
+            "maxTotalRetainedDistributionHistoryLogicalBytes": 536870912,
+            "normalUpdateEmergencyGenerationReservePerChain": 8,
+            "normalUpdateEmergencyLogicalBytesReserve": 16777216,
+            "admission": "stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution",
+            "exhaustion": "reject_candidate_distribution_and_preserve_last_verified_distribution"
+          }
+        },
+        "suiteDigest": "sha256:2c8cb050e227b34f7b5a1fe8c998f23eb69100d1fadd5586f3a6df2985c49dc8",
+        "fixtureManifestDigest": "sha256:72a09216eca9f2b4c9a442de89270558accf552c2f4f83dc54c3b65ecab0c740",
+        "contentDigest": "sha256:fa25382564e2fbb801d6f9e1cd2df980fcee6ebf6ac50b1c893c923bcdbb3d05"
+      },
+      "realFilesystemSuiteDigest": "sha256:2c8cb050e227b34f7b5a1fe8c998f23eb69100d1fadd5586f3a6df2985c49dc8",
+      "fixtureManifestDigest": "sha256:72a09216eca9f2b4c9a442de89270558accf552c2f4f83dc54c3b65ecab0c740",
+      "targetRecordCount": 2,
+      "targetRecordSetDigest": "sha256:bb5852e32aa2d28ecdf18ca5bf4601d14d6e08eb7d33504edc31280db676c82d",
+      "records": [
+        {
+          "sourceRecordOrdinal": 0,
+          "outcome": {
+            "state": "resolved",
+            "target": {
+              "target": {
+                "targetProfileId": "provider-target-profile:85f704b7a83092969d3ccc5354f64c23bfdb74b64c92f32f8888bec8548404b5",
+                "osPlatform": "linux",
+                "osReleaseFamilyCode": "provider-os-family:b3c813bd678ba40707eed0",
+                "osBuildDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+                "architecture": "x86_64",
+                "filesystemProfileCode": "provider-fs-profile:22dad279fd650f08b8c6fe",
+                "filesystemFeatureProfileDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+                "mountOptionProfileDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+              },
+              "publicProfileId": "provider-public-support-profile:eb0e3a9b393a33092ecf8baf30468800479b4abb772c7a000592d356926a3904"
+            }
+          }
+        },
+        {
+          "sourceRecordOrdinal": 1,
+          "outcome": {
+            "state": "unresolved",
+            "reason": "taxonomy_mapping_unresolved"
+          }
+        }
+      ],
+      "completedAt": "2026-08-03T03:10:00Z"
+    }
+  },
+  "targetDiscoveryRunnerRun": {
+    "schemaVersion": 1,
+    "recordType": "provider_target_discovery_runner_run",
+    "contentDigest": "sha256:290dae097d7a1dc8e9d904f8e91c494d36045dfe9e8a92be6a10af0a1413a2e6",
+    "payload": {
+      "profile": "provider_target_discovery_runner_run_manifest_v1",
+      "distributionRootBinding": {
+        "profile": "provider_signed_distribution_root_binding_v1",
+        "resolverProfile": "verified_signed_package_distribution_root_v1",
+        "signedPackageIdentityDigest": "sha256:790ff3e3002e946ccaab1bc79d94a01b24b599f67de6001439266d74ba9a8917",
+        "releaseRevisionDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "bootstrapTrustBundle": {
+          "locatorProfile": "distribution_provider_bootstrap_trust_bundle_v1",
+          "contentDigest": "sha256:a9aad99fd56ce76cf315514f258965e3d77e4da9e6a13897f42a27513a5c1cbc"
+        },
+        "historyPolicy": {
+          "profile": "provider_distribution_history_policy_v1",
+          "maxSupportCatalogGenerationCount": 4096,
+          "maxPublicTaxonomyGenerationCount": 4096,
+          "maxReleaseMatrixGenerationCount": 4096,
+          "maxTargetDiscoveryResultGenerationCount": 4096,
+          "maxReleaseTargetUniverseGenerationCount": 4096,
+          "maxSingleDistributionObjectCanonicalBytes": 16777216,
+          "maxTotalRetainedDistributionObjectCount": 65536,
+          "maxTotalRetainedDistributionHistoryLogicalBytes": 536870912,
+          "normalUpdateEmergencyGenerationReservePerChain": 8,
+          "normalUpdateEmergencyLogicalBytesReserve": 16777216,
+          "admission": "stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution",
+          "exhaustion": "reject_candidate_distribution_and_preserve_last_verified_distribution"
+        }
+      },
+      "releaseRevisionDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "producerName": "understand-code",
+      "producerVersion": "0.1.0",
+      "implementationDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "binaryAttestationDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "runnerProfileDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "targetRecordCount": 3,
+      "targetRecordSetDigest": "sha256:229a4f861e95642dc43ba65cb408c666f51d3890ee8e78ce85c6f7b585d03024",
+      "records": [
+        {
+          "sourceRecordOrdinal": 0,
+          "outcome": {
+            "state": "resolved",
+            "target": {
+              "target": {
+                "targetProfileId": "provider-target-profile:7b1a9d57bc7ee4d2c35f9bcd02a99a1be680076ab6e7e231caccb665f792daee",
+                "osPlatform": "darwin",
+                "osReleaseFamilyCode": "provider-os-family:42302d6ad4703c2b07a205",
+                "osBuildDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                "architecture": "arm64",
+                "filesystemProfileCode": "provider-fs-profile:a7c0ac0396034e50a4e1e4",
+                "filesystemFeatureProfileDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                "mountOptionProfileDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+              },
+              "publicProfileId": "provider-public-support-profile:7f37e43a2a335dda37ed52ba80d1b146154891efac2a3c74d4c0ad0ef2493dbc"
+            }
+          }
+        },
+        {
+          "sourceRecordOrdinal": 1,
+          "outcome": {
+            "state": "resolved",
+            "target": {
+              "target": {
+                "targetProfileId": "provider-target-profile:85f704b7a83092969d3ccc5354f64c23bfdb74b64c92f32f8888bec8548404b5",
+                "osPlatform": "linux",
+                "osReleaseFamilyCode": "provider-os-family:b3c813bd678ba40707eed0",
+                "osBuildDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+                "architecture": "x86_64",
+                "filesystemProfileCode": "provider-fs-profile:22dad279fd650f08b8c6fe",
+                "filesystemFeatureProfileDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+                "mountOptionProfileDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+              },
+              "publicProfileId": "provider-public-support-profile:eb0e3a9b393a33092ecf8baf30468800479b4abb772c7a000592d356926a3904"
+            }
+          }
+        },
+        {
+          "sourceRecordOrdinal": 2,
+          "outcome": {
+            "state": "unresolved",
+            "reason": "observation_source_unavailable"
+          }
+        }
+      ],
+      "executedAt": "2026-08-03T03:20:00Z"
+    }
+  },
+  "targetDiscoveryResult": {
+    "schemaVersion": 1,
+    "recordType": "provider_target_discovery_result",
+    "discoveryGeneration": 1,
+    "contentDigest": "sha256:dfa6530c0373f4840053ac609ac845fa2fd2e0b594b50e673c5a41e3967e7243",
+    "payload": {
+      "profile": "provider_target_discovery_result_v1",
+      "distributionRootBinding": {
+        "profile": "provider_signed_distribution_root_binding_v1",
+        "resolverProfile": "verified_signed_package_distribution_root_v1",
+        "signedPackageIdentityDigest": "sha256:790ff3e3002e946ccaab1bc79d94a01b24b599f67de6001439266d74ba9a8917",
+        "releaseRevisionDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "bootstrapTrustBundle": {
+          "locatorProfile": "distribution_provider_bootstrap_trust_bundle_v1",
+          "contentDigest": "sha256:a9aad99fd56ce76cf315514f258965e3d77e4da9e6a13897f42a27513a5c1cbc"
+        },
+        "historyPolicy": {
+          "profile": "provider_distribution_history_policy_v1",
+          "maxSupportCatalogGenerationCount": 4096,
+          "maxPublicTaxonomyGenerationCount": 4096,
+          "maxReleaseMatrixGenerationCount": 4096,
+          "maxTargetDiscoveryResultGenerationCount": 4096,
+          "maxReleaseTargetUniverseGenerationCount": 4096,
+          "maxSingleDistributionObjectCanonicalBytes": 16777216,
+          "maxTotalRetainedDistributionObjectCount": 65536,
+          "maxTotalRetainedDistributionHistoryLogicalBytes": 536870912,
+          "normalUpdateEmergencyGenerationReservePerChain": 8,
+          "normalUpdateEmergencyLogicalBytesReserve": 16777216,
+          "admission": "stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution",
+          "exhaustion": "reject_candidate_distribution_and_preserve_last_verified_distribution"
+        }
+      },
+      "activeRootMetadata": {
+        "locatorProfile": "installation_provider_registry_root_metadata_v1",
+        "rootGeneration": 3,
+        "rootKeyId": "b428dd9c9d0cb51b9b44a8",
+        "contentDigest": "sha256:b7a24e2d5fd9b4c7cb55d7f1133135d6a759de0a249680f4859596b3cad3d158"
+      },
+      "registryRootKeyId": "b428dd9c9d0cb51b9b44a8",
+      "discoveryGeneration": 1,
+      "publicSupportTaxonomy": {
+        "locatorProfile": "distribution_provider_public_support_taxonomy_v1",
+        "taxonomyGeneration": 1,
+        "contentDigest": "sha256:b3310b252f4c5943f0ad07c7b4cc98774a2829ce75b84f5cb6164f52fdfce278"
+      },
+      "limits": {
+        "profile": "provider_release_coverage_artifact_limits_v1",
+        "maxTargetEntriesPerArtifact": 4096,
+        "maxCanonicalUnionTargetEntries": 4096,
+        "maxUnresolvedObservationsPerDiscoveryResult": 4096,
+        "maxCanonicalEnvelopeBytes": 16777216
+      },
+      "targetDiscoveryInputBundleContentDigest": "sha256:33f77456b6030aeaf06e6ca0077f277ccd349610cd4ac2eb40c8955ba096bb9c",
+      "targetDiscoveryInputBundle": {
+        "profile": "provider_target_discovery_input_bundle_v1",
+        "distributionRootBinding": {
+          "profile": "provider_signed_distribution_root_binding_v1",
+          "resolverProfile": "verified_signed_package_distribution_root_v1",
+          "signedPackageIdentityDigest": "sha256:790ff3e3002e946ccaab1bc79d94a01b24b599f67de6001439266d74ba9a8917",
+          "releaseRevisionDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "bootstrapTrustBundle": {
+            "locatorProfile": "distribution_provider_bootstrap_trust_bundle_v1",
+            "contentDigest": "sha256:a9aad99fd56ce76cf315514f258965e3d77e4da9e6a13897f42a27513a5c1cbc"
+          },
+          "historyPolicy": {
+            "profile": "provider_distribution_history_policy_v1",
+            "maxSupportCatalogGenerationCount": 4096,
+            "maxPublicTaxonomyGenerationCount": 4096,
+            "maxReleaseMatrixGenerationCount": 4096,
+            "maxTargetDiscoveryResultGenerationCount": 4096,
+            "maxReleaseTargetUniverseGenerationCount": 4096,
+            "maxSingleDistributionObjectCanonicalBytes": 16777216,
+            "maxTotalRetainedDistributionObjectCount": 65536,
+            "maxTotalRetainedDistributionHistoryLogicalBytes": 536870912,
+            "normalUpdateEmergencyGenerationReservePerChain": 8,
+            "normalUpdateEmergencyLogicalBytesReserve": 16777216,
+            "admission": "stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution",
+            "exhaustion": "reject_candidate_distribution_and_preserve_last_verified_distribution"
+          }
+        },
+        "activeRootMetadata": {
+          "locatorProfile": "installation_provider_registry_root_metadata_v1",
+          "rootGeneration": 3,
+          "rootKeyId": "b428dd9c9d0cb51b9b44a8",
+          "contentDigest": "sha256:b7a24e2d5fd9b4c7cb55d7f1133135d6a759de0a249680f4859596b3cad3d158"
+        },
+        "registryRootKeyId": "b428dd9c9d0cb51b9b44a8",
+        "publicSupportTaxonomy": {
+          "locatorProfile": "distribution_provider_public_support_taxonomy_v1",
+          "taxonomyGeneration": 1,
+          "contentDigest": "sha256:b3310b252f4c5943f0ad07c7b4cc98774a2829ce75b84f5cb6164f52fdfce278"
+        },
+        "releaseMatrix": {
+          "locatorProfile": "distribution_provider_release_matrix_v1",
+          "releaseMatrixGeneration": 1,
+          "contentDigest": "sha256:8384fa5e91f75c370dd5bdf8168576eeb83f810717994f90de333aa96bae5c7a"
+        },
+        "realFilesystemFixtureManifest": {
+          "locatorProfile": "distribution_provider_real_fs_fixture_manifest_v1",
+          "realFilesystemSuiteManifest": {
+            "locatorProfile": "distribution_provider_real_fs_suite_manifest_v1",
+            "distributionRootBinding": {
+              "profile": "provider_signed_distribution_root_binding_v1",
+              "resolverProfile": "verified_signed_package_distribution_root_v1",
+              "signedPackageIdentityDigest": "sha256:790ff3e3002e946ccaab1bc79d94a01b24b599f67de6001439266d74ba9a8917",
+              "releaseRevisionDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+              "bootstrapTrustBundle": {
+                "locatorProfile": "distribution_provider_bootstrap_trust_bundle_v1",
+                "contentDigest": "sha256:a9aad99fd56ce76cf315514f258965e3d77e4da9e6a13897f42a27513a5c1cbc"
+              },
+              "historyPolicy": {
+                "profile": "provider_distribution_history_policy_v1",
+                "maxSupportCatalogGenerationCount": 4096,
+                "maxPublicTaxonomyGenerationCount": 4096,
+                "maxReleaseMatrixGenerationCount": 4096,
+                "maxTargetDiscoveryResultGenerationCount": 4096,
+                "maxReleaseTargetUniverseGenerationCount": 4096,
+                "maxSingleDistributionObjectCanonicalBytes": 16777216,
+                "maxTotalRetainedDistributionObjectCount": 65536,
+                "maxTotalRetainedDistributionHistoryLogicalBytes": 536870912,
+                "normalUpdateEmergencyGenerationReservePerChain": 8,
+                "normalUpdateEmergencyLogicalBytesReserve": 16777216,
+                "admission": "stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution",
+                "exhaustion": "reject_candidate_distribution_and_preserve_last_verified_distribution"
+              }
+            },
+            "suiteDigest": "sha256:2c8cb050e227b34f7b5a1fe8c998f23eb69100d1fadd5586f3a6df2985c49dc8",
+            "fixtureManifestDigest": "sha256:72a09216eca9f2b4c9a442de89270558accf552c2f4f83dc54c3b65ecab0c740",
+            "contentDigest": "sha256:fa25382564e2fbb801d6f9e1cd2df980fcee6ebf6ac50b1c893c923bcdbb3d05"
+          },
+          "realFilesystemSuiteDigest": "sha256:2c8cb050e227b34f7b5a1fe8c998f23eb69100d1fadd5586f3a6df2985c49dc8",
+          "fixtureManifestDigest": "sha256:72a09216eca9f2b4c9a442de89270558accf552c2f4f83dc54c3b65ecab0c740",
+          "contentDigest": "sha256:4266eb9e886c59ba1a40fd6146bb7e5c45f705df20398cb1da5bcbe7a2d5ecdb"
+        },
+        "targetDiscoveryRunner": {
+          "locatorProfile": "distribution_provider_target_discovery_runner_run_v1",
+          "producerName": "understand-code",
+          "producerVersion": "0.1.0",
+          "implementationDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+          "binaryAttestationDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "runnerProfileDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+          "runManifestContentDigest": "sha256:290dae097d7a1dc8e9d904f8e91c494d36045dfe9e8a92be6a10af0a1413a2e6",
+          "releaseRevisionDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "executedAt": "2026-08-03T03:20:00Z"
+        },
+        "discoveryRulesetVersion": "provider_release_target_discovery_v1",
+        "requiredDimensions": [
+          "osPlatform",
+          "osReleaseFamilyCode",
+          "osBuildDigest",
+          "architecture",
+          "filesystemProfileCode",
+          "filesystemFeatureProfileDigest",
+          "mountOptionProfileDigest"
+        ],
+        "observationSources": [
+          "signed_release_matrix",
+          "real_filesystem_fixture_manifest",
+          "target_discovery_runner"
+        ],
+        "observationCut": {
+          "profile": "provider_target_discovery_observation_cut_v1",
+          "distributionRootBinding": {
+            "profile": "provider_signed_distribution_root_binding_v1",
+            "resolverProfile": "verified_signed_package_distribution_root_v1",
+            "signedPackageIdentityDigest": "sha256:790ff3e3002e946ccaab1bc79d94a01b24b599f67de6001439266d74ba9a8917",
+            "releaseRevisionDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "bootstrapTrustBundle": {
+              "locatorProfile": "distribution_provider_bootstrap_trust_bundle_v1",
+              "contentDigest": "sha256:a9aad99fd56ce76cf315514f258965e3d77e4da9e6a13897f42a27513a5c1cbc"
+            },
+            "historyPolicy": {
+              "profile": "provider_distribution_history_policy_v1",
+              "maxSupportCatalogGenerationCount": 4096,
+              "maxPublicTaxonomyGenerationCount": 4096,
+              "maxReleaseMatrixGenerationCount": 4096,
+              "maxTargetDiscoveryResultGenerationCount": 4096,
+              "maxReleaseTargetUniverseGenerationCount": 4096,
+              "maxSingleDistributionObjectCanonicalBytes": 16777216,
+              "maxTotalRetainedDistributionObjectCount": 65536,
+              "maxTotalRetainedDistributionHistoryLogicalBytes": 536870912,
+              "normalUpdateEmergencyGenerationReservePerChain": 8,
+              "normalUpdateEmergencyLogicalBytesReserve": 16777216,
+              "admission": "stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution",
+              "exhaustion": "reject_candidate_distribution_and_preserve_last_verified_distribution"
+            }
+          },
+          "activeRootMetadata": {
+            "locatorProfile": "installation_provider_registry_root_metadata_v1",
+            "rootGeneration": 3,
+            "rootKeyId": "b428dd9c9d0cb51b9b44a8",
+            "contentDigest": "sha256:b7a24e2d5fd9b4c7cb55d7f1133135d6a759de0a249680f4859596b3cad3d158"
+          },
+          "publicSupportTaxonomy": {
+            "locatorProfile": "distribution_provider_public_support_taxonomy_v1",
+            "taxonomyGeneration": 1,
+            "contentDigest": "sha256:b3310b252f4c5943f0ad07c7b4cc98774a2829ce75b84f5cb6164f52fdfce278"
+          },
+          "releaseMatrix": {
+            "locatorProfile": "distribution_provider_release_matrix_v1",
+            "releaseMatrixGeneration": 1,
+            "contentDigest": "sha256:8384fa5e91f75c370dd5bdf8168576eeb83f810717994f90de333aa96bae5c7a"
+          },
+          "realFilesystemFixtureManifest": {
+            "locatorProfile": "distribution_provider_real_fs_fixture_manifest_v1",
+            "realFilesystemSuiteManifest": {
+              "locatorProfile": "distribution_provider_real_fs_suite_manifest_v1",
+              "distributionRootBinding": {
+                "profile": "provider_signed_distribution_root_binding_v1",
+                "resolverProfile": "verified_signed_package_distribution_root_v1",
+                "signedPackageIdentityDigest": "sha256:790ff3e3002e946ccaab1bc79d94a01b24b599f67de6001439266d74ba9a8917",
+                "releaseRevisionDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                "bootstrapTrustBundle": {
+                  "locatorProfile": "distribution_provider_bootstrap_trust_bundle_v1",
+                  "contentDigest": "sha256:a9aad99fd56ce76cf315514f258965e3d77e4da9e6a13897f42a27513a5c1cbc"
+                },
+                "historyPolicy": {
+                  "profile": "provider_distribution_history_policy_v1",
+                  "maxSupportCatalogGenerationCount": 4096,
+                  "maxPublicTaxonomyGenerationCount": 4096,
+                  "maxReleaseMatrixGenerationCount": 4096,
+                  "maxTargetDiscoveryResultGenerationCount": 4096,
+                  "maxReleaseTargetUniverseGenerationCount": 4096,
+                  "maxSingleDistributionObjectCanonicalBytes": 16777216,
+                  "maxTotalRetainedDistributionObjectCount": 65536,
+                  "maxTotalRetainedDistributionHistoryLogicalBytes": 536870912,
+                  "normalUpdateEmergencyGenerationReservePerChain": 8,
+                  "normalUpdateEmergencyLogicalBytesReserve": 16777216,
+                  "admission": "stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution",
+                  "exhaustion": "reject_candidate_distribution_and_preserve_last_verified_distribution"
+                }
+              },
+              "suiteDigest": "sha256:2c8cb050e227b34f7b5a1fe8c998f23eb69100d1fadd5586f3a6df2985c49dc8",
+              "fixtureManifestDigest": "sha256:72a09216eca9f2b4c9a442de89270558accf552c2f4f83dc54c3b65ecab0c740",
+              "contentDigest": "sha256:fa25382564e2fbb801d6f9e1cd2df980fcee6ebf6ac50b1c893c923bcdbb3d05"
+            },
+            "realFilesystemSuiteDigest": "sha256:2c8cb050e227b34f7b5a1fe8c998f23eb69100d1fadd5586f3a6df2985c49dc8",
+            "fixtureManifestDigest": "sha256:72a09216eca9f2b4c9a442de89270558accf552c2f4f83dc54c3b65ecab0c740",
+            "contentDigest": "sha256:4266eb9e886c59ba1a40fd6146bb7e5c45f705df20398cb1da5bcbe7a2d5ecdb"
+          },
+          "targetDiscoveryRunner": {
+            "locatorProfile": "distribution_provider_target_discovery_runner_run_v1",
+            "producerName": "understand-code",
+            "producerVersion": "0.1.0",
+            "implementationDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+            "binaryAttestationDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+            "runnerProfileDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+            "runManifestContentDigest": "sha256:290dae097d7a1dc8e9d904f8e91c494d36045dfe9e8a92be6a10af0a1413a2e6",
+            "releaseRevisionDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "executedAt": "2026-08-03T03:20:00Z"
+          },
+          "discoveryRulesetVersion": "provider_release_target_discovery_v1",
+          "requiredDimensions": [
+            "osPlatform",
+            "osReleaseFamilyCode",
+            "osBuildDigest",
+            "architecture",
+            "filesystemProfileCode",
+            "filesystemFeatureProfileDigest",
+            "mountOptionProfileDigest"
+          ],
+          "observationSources": [
+            "signed_release_matrix",
+            "real_filesystem_fixture_manifest",
+            "target_discovery_runner"
+          ],
+          "freshnessRule": "exact_release_revision_and_source_digest_cut_v1"
+        },
+        "observationCutDigest": "sha256:b6a066f2c4c41f3305cfe97e50acf0faed6701c995430686c6d4bf9d2967ab42",
+        "sourceObservationSets": [
+          {
+            "observationSource": "signed_release_matrix",
+            "sourceArtifactContentDigest": "sha256:8384fa5e91f75c370dd5bdf8168576eeb83f810717994f90de333aa96bae5c7a",
+            "observationCount": 2,
+            "observationSetDigest": "sha256:7b777a71cfc376067667c0c0a43c42a71d1651d29fe32cc9202763de024a7364"
+          },
+          {
+            "observationSource": "real_filesystem_fixture_manifest",
+            "sourceArtifactContentDigest": "sha256:4266eb9e886c59ba1a40fd6146bb7e5c45f705df20398cb1da5bcbe7a2d5ecdb",
+            "observationCount": 2,
+            "observationSetDigest": "sha256:0b741011ff67786e1c5c1b527bb767a30c746201c429fb4bf6b0b282cf47d36f"
+          },
+          {
+            "observationSource": "target_discovery_runner",
+            "sourceArtifactContentDigest": "sha256:290dae097d7a1dc8e9d904f8e91c494d36045dfe9e8a92be6a10af0a1413a2e6",
+            "observationCount": 3,
+            "observationSetDigest": "sha256:4d2760c60b66dc5b43881853bb06ec6e3629b4ea1f0d8648f7b50bcb340fd912"
+          }
+        ],
+        "observationCount": 7,
+        "observationSetDigest": "sha256:f8c994f38e6686f26f576092f1c678297c400a93c56ac9a372de1c523a23bccd",
+        "observations": [
+          {
+            "observationSource": "signed_release_matrix",
+            "sourceArtifactContentDigest": "sha256:8384fa5e91f75c370dd5bdf8168576eeb83f810717994f90de333aa96bae5c7a",
+            "sourceRecordOrdinal": 0,
+            "outcome": {
+              "state": "resolved",
+              "target": {
+                "target": {
+                  "targetProfileId": "provider-target-profile:7b1a9d57bc7ee4d2c35f9bcd02a99a1be680076ab6e7e231caccb665f792daee",
+                  "osPlatform": "darwin",
+                  "osReleaseFamilyCode": "provider-os-family:42302d6ad4703c2b07a205",
+                  "osBuildDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                  "architecture": "arm64",
+                  "filesystemProfileCode": "provider-fs-profile:a7c0ac0396034e50a4e1e4",
+                  "filesystemFeatureProfileDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                  "mountOptionProfileDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                "publicProfileId": "provider-public-support-profile:7f37e43a2a335dda37ed52ba80d1b146154891efac2a3c74d4c0ad0ef2493dbc"
+              }
+            },
+            "privacySafeObservationClaimsDigest": "sha256:c6dd3bce4712ef118d1d364852de7de0e0751737a5f8d2759051335d2df2dd2f",
+            "observationKeyDigest": "sha256:c7d19ee9c8d3e4cf239961fc89a6b1f64199079c84d7acdc9cc44e5899c83f76"
+          },
+          {
+            "observationSource": "signed_release_matrix",
+            "sourceArtifactContentDigest": "sha256:8384fa5e91f75c370dd5bdf8168576eeb83f810717994f90de333aa96bae5c7a",
+            "sourceRecordOrdinal": 1,
+            "outcome": {
+              "state": "resolved",
+              "target": {
+                "target": {
+                  "targetProfileId": "provider-target-profile:85f704b7a83092969d3ccc5354f64c23bfdb74b64c92f32f8888bec8548404b5",
+                  "osPlatform": "linux",
+                  "osReleaseFamilyCode": "provider-os-family:b3c813bd678ba40707eed0",
+                  "osBuildDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+                  "architecture": "x86_64",
+                  "filesystemProfileCode": "provider-fs-profile:22dad279fd650f08b8c6fe",
+                  "filesystemFeatureProfileDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+                  "mountOptionProfileDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+                },
+                "publicProfileId": "provider-public-support-profile:eb0e3a9b393a33092ecf8baf30468800479b4abb772c7a000592d356926a3904"
+              }
+            },
+            "privacySafeObservationClaimsDigest": "sha256:d30886503350489988ee6560ce604de5ed31619256d63b9bf178530c3fcb7738",
+            "observationKeyDigest": "sha256:c83e837fd87426a28fe2a6b387530a33b0d37c6a19275c108af47a4f013ca282"
+          },
+          {
+            "observationSource": "real_filesystem_fixture_manifest",
+            "sourceArtifactContentDigest": "sha256:4266eb9e886c59ba1a40fd6146bb7e5c45f705df20398cb1da5bcbe7a2d5ecdb",
+            "sourceRecordOrdinal": 0,
+            "outcome": {
+              "state": "resolved",
+              "target": {
+                "target": {
+                  "targetProfileId": "provider-target-profile:85f704b7a83092969d3ccc5354f64c23bfdb74b64c92f32f8888bec8548404b5",
+                  "osPlatform": "linux",
+                  "osReleaseFamilyCode": "provider-os-family:b3c813bd678ba40707eed0",
+                  "osBuildDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+                  "architecture": "x86_64",
+                  "filesystemProfileCode": "provider-fs-profile:22dad279fd650f08b8c6fe",
+                  "filesystemFeatureProfileDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+                  "mountOptionProfileDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+                },
+                "publicProfileId": "provider-public-support-profile:eb0e3a9b393a33092ecf8baf30468800479b4abb772c7a000592d356926a3904"
+              }
+            },
+            "privacySafeObservationClaimsDigest": "sha256:2081f61a1ac02ce8f4cad65782ae118056af800ef3c480199d9f166021a8b92a",
+            "observationKeyDigest": "sha256:18a301136f88c1e20f8bdff007a14ba9ca4a5743b6e4d53a45111b772bf99b8c"
+          },
+          {
+            "observationSource": "real_filesystem_fixture_manifest",
+            "sourceArtifactContentDigest": "sha256:4266eb9e886c59ba1a40fd6146bb7e5c45f705df20398cb1da5bcbe7a2d5ecdb",
+            "sourceRecordOrdinal": 1,
+            "outcome": {
+              "state": "unresolved",
+              "reason": "taxonomy_mapping_unresolved"
+            },
+            "privacySafeObservationClaimsDigest": "sha256:4b1446e7856797faaeeac3240eaced1757428f928ab11728c0cdd32771108361",
+            "observationKeyDigest": "sha256:da44ac0ea1e1b15ded14d79bee0ad7c7c569a943ddd0fd27daa872b546fac67a"
+          },
+          {
+            "observationSource": "target_discovery_runner",
+            "sourceArtifactContentDigest": "sha256:290dae097d7a1dc8e9d904f8e91c494d36045dfe9e8a92be6a10af0a1413a2e6",
+            "sourceRecordOrdinal": 0,
+            "outcome": {
+              "state": "resolved",
+              "target": {
+                "target": {
+                  "targetProfileId": "provider-target-profile:7b1a9d57bc7ee4d2c35f9bcd02a99a1be680076ab6e7e231caccb665f792daee",
+                  "osPlatform": "darwin",
+                  "osReleaseFamilyCode": "provider-os-family:42302d6ad4703c2b07a205",
+                  "osBuildDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                  "architecture": "arm64",
+                  "filesystemProfileCode": "provider-fs-profile:a7c0ac0396034e50a4e1e4",
+                  "filesystemFeatureProfileDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                  "mountOptionProfileDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+                },
+                "publicProfileId": "provider-public-support-profile:7f37e43a2a335dda37ed52ba80d1b146154891efac2a3c74d4c0ad0ef2493dbc"
+              }
+            },
+            "privacySafeObservationClaimsDigest": "sha256:82d149005b62531aa2bcf4a007a03c1083b0f22daf3127b169af7ff279d8fb3f",
+            "observationKeyDigest": "sha256:9529498ef802bd72b8e6f4cafa3fa84658c9261e330514b0cfd0a547ceedf8e7"
+          },
+          {
+            "observationSource": "target_discovery_runner",
+            "sourceArtifactContentDigest": "sha256:290dae097d7a1dc8e9d904f8e91c494d36045dfe9e8a92be6a10af0a1413a2e6",
+            "sourceRecordOrdinal": 1,
+            "outcome": {
+              "state": "resolved",
+              "target": {
+                "target": {
+                  "targetProfileId": "provider-target-profile:85f704b7a83092969d3ccc5354f64c23bfdb74b64c92f32f8888bec8548404b5",
+                  "osPlatform": "linux",
+                  "osReleaseFamilyCode": "provider-os-family:b3c813bd678ba40707eed0",
+                  "osBuildDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+                  "architecture": "x86_64",
+                  "filesystemProfileCode": "provider-fs-profile:22dad279fd650f08b8c6fe",
+                  "filesystemFeatureProfileDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+                  "mountOptionProfileDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+                },
+                "publicProfileId": "provider-public-support-profile:eb0e3a9b393a33092ecf8baf30468800479b4abb772c7a000592d356926a3904"
+              }
+            },
+            "privacySafeObservationClaimsDigest": "sha256:b2ba5ee21c86a4ddab02654f8c7d4faf7f561628017160b8384181bb8595f5ed",
+            "observationKeyDigest": "sha256:68031027424ba3144d76c87e2df1e780e73e6358526fc0b7899bb0554ec055e3"
+          },
+          {
+            "observationSource": "target_discovery_runner",
+            "sourceArtifactContentDigest": "sha256:290dae097d7a1dc8e9d904f8e91c494d36045dfe9e8a92be6a10af0a1413a2e6",
+            "sourceRecordOrdinal": 2,
+            "outcome": {
+              "state": "unresolved",
+              "reason": "observation_source_unavailable"
+            },
+            "privacySafeObservationClaimsDigest": "sha256:025e127c2439e03e4df0b15afe6d566bccd9b215a0d39febc2a321102de6d59d",
+            "observationKeyDigest": "sha256:013868cdf0f8f98e5fb1461c044073a45bc3006fd38758bad382d19bc7bb2dad"
+          }
+        ],
+        "bundleSignature": "provider-target-discovery-input-bundle-ed25519:b428dd9c9d0cb51b9b44a8:a0bbe6d3806ba1e9a90fa681ea70c3a95223e7a6abb099fafba4461e86e61297bd5cab00362783155c27f68a383708be1c4c0d61fe103c1320c68aa5db921904"
+      },
+      "observationCutDigest": "sha256:b6a066f2c4c41f3305cfe97e50acf0faed6701c995430686c6d4bf9d2967ab42",
+      "observationSetDigest": "sha256:f8c994f38e6686f26f576092f1c678297c400a93c56ac9a372de1c523a23bccd",
+      "discoveryRulesetVersion": "provider_release_target_discovery_v1",
+      "requiredDimensions": [
+        "osPlatform",
+        "osReleaseFamilyCode",
+        "osBuildDigest",
+        "architecture",
+        "filesystemProfileCode",
+        "filesystemFeatureProfileDigest",
+        "mountOptionProfileDigest"
+      ],
+      "observationSources": [
+        "signed_release_matrix",
+        "real_filesystem_fixture_manifest",
+        "target_discovery_runner"
+      ],
+      "targetCount": 2,
+      "targetSetDigest": "sha256:91919380401d30c2767ea2527568b9c539a09941facdf2ada26d8b629ecf355b",
+      "targets": [
+        {
+          "target": {
+            "targetProfileId": "provider-target-profile:7b1a9d57bc7ee4d2c35f9bcd02a99a1be680076ab6e7e231caccb665f792daee",
+            "osPlatform": "darwin",
+            "osReleaseFamilyCode": "provider-os-family:42302d6ad4703c2b07a205",
+            "osBuildDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "architecture": "arm64",
+            "filesystemProfileCode": "provider-fs-profile:a7c0ac0396034e50a4e1e4",
+            "filesystemFeatureProfileDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "mountOptionProfileDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+          },
+          "publicProfileId": "provider-public-support-profile:7f37e43a2a335dda37ed52ba80d1b146154891efac2a3c74d4c0ad0ef2493dbc"
+        },
+        {
+          "target": {
+            "targetProfileId": "provider-target-profile:85f704b7a83092969d3ccc5354f64c23bfdb74b64c92f32f8888bec8548404b5",
+            "osPlatform": "linux",
+            "osReleaseFamilyCode": "provider-os-family:b3c813bd678ba40707eed0",
+            "osBuildDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+            "architecture": "x86_64",
+            "filesystemProfileCode": "provider-fs-profile:22dad279fd650f08b8c6fe",
+            "filesystemFeatureProfileDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+            "mountOptionProfileDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+          },
+          "publicProfileId": "provider-public-support-profile:eb0e3a9b393a33092ecf8baf30468800479b4abb772c7a000592d356926a3904"
+        }
+      ],
+      "unresolvedObservationCount": 2,
+      "unresolvedObservations": [
+        {
+          "observationSource": "real_filesystem_fixture_manifest",
+          "sourceArtifactContentDigest": "sha256:4266eb9e886c59ba1a40fd6146bb7e5c45f705df20398cb1da5bcbe7a2d5ecdb",
+          "sourceRecordOrdinal": 1,
+          "privacySafeObservationClaimsDigest": "sha256:4b1446e7856797faaeeac3240eaced1757428f928ab11728c0cdd32771108361",
+          "observationKeyDigest": "sha256:da44ac0ea1e1b15ded14d79bee0ad7c7c569a943ddd0fd27daa872b546fac67a",
+          "reason": "taxonomy_mapping_unresolved"
+        },
+        {
+          "observationSource": "target_discovery_runner",
+          "sourceArtifactContentDigest": "sha256:290dae097d7a1dc8e9d904f8e91c494d36045dfe9e8a92be6a10af0a1413a2e6",
+          "sourceRecordOrdinal": 2,
+          "privacySafeObservationClaimsDigest": "sha256:025e127c2439e03e4df0b15afe6d566bccd9b215a0d39febc2a321102de6d59d",
+          "observationKeyDigest": "sha256:013868cdf0f8f98e5fb1461c044073a45bc3006fd38758bad382d19bc7bb2dad",
+          "reason": "observation_source_unavailable"
+        }
+      ],
+      "discoverySignature": "provider-target-discovery-result-ed25519:b428dd9c9d0cb51b9b44a8:a957271d2e23f66d03d0f93091f1a0815b4d80e3d3565f27ba3a921041796fee16fff297a010a6f1643db8e37fc73d500fb0ccb0ebbcfc5f208c3d4431d4b409"
+    }
+  },
+  "realFilesystemConformanceResult": {
+    "schemaVersion": 1,
+    "recordType": "provider_real_fs_conformance_result",
+    "resultId": "provider-real-fs-result:613f9e88358de5707e803f",
+    "contentDigest": "sha256:fb3f441c15d4f517dabca528779e6b3da3a29e3c00d1219416e02783d81c3199",
+    "payload": {
+      "profile": "provider_real_fs_conformance_result_v1",
+      "resultId": "provider-real-fs-result:613f9e88358de5707e803f",
+      "providerId": "durable-object-provider:local-helper",
+      "semanticProviderPolicyDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "implementationDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "binaryAttestationDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "target": {
+        "targetProfileId": "provider-target-profile:7b1a9d57bc7ee4d2c35f9bcd02a99a1be680076ab6e7e231caccb665f792daee",
+        "osPlatform": "darwin",
+        "osReleaseFamilyCode": "provider-os-family:42302d6ad4703c2b07a205",
+        "osBuildDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "architecture": "arm64",
+        "filesystemProfileCode": "provider-fs-profile:a7c0ac0396034e50a4e1e4",
+        "filesystemFeatureProfileDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "mountOptionProfileDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "targetDiscoveryResult": {
+        "locatorProfile": "distribution_provider_target_discovery_result_v1",
+        "discoveryGeneration": 1,
+        "contentDigest": "sha256:dfa6530c0373f4840053ac609ac845fa2fd2e0b594b50e673c5a41e3967e7243"
+      },
+      "targetDiscoveryInputBundleContentDigest": "sha256:33f77456b6030aeaf06e6ca0077f277ccd349610cd4ac2eb40c8955ba096bb9c",
+      "realFilesystemSuiteManifest": {
+        "locatorProfile": "distribution_provider_real_fs_suite_manifest_v1",
+        "distributionRootBinding": {
+          "profile": "provider_signed_distribution_root_binding_v1",
+          "resolverProfile": "verified_signed_package_distribution_root_v1",
+          "signedPackageIdentityDigest": "sha256:790ff3e3002e946ccaab1bc79d94a01b24b599f67de6001439266d74ba9a8917",
+          "releaseRevisionDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "bootstrapTrustBundle": {
+            "locatorProfile": "distribution_provider_bootstrap_trust_bundle_v1",
+            "contentDigest": "sha256:a9aad99fd56ce76cf315514f258965e3d77e4da9e6a13897f42a27513a5c1cbc"
+          },
+          "historyPolicy": {
+            "profile": "provider_distribution_history_policy_v1",
+            "maxSupportCatalogGenerationCount": 4096,
+            "maxPublicTaxonomyGenerationCount": 4096,
+            "maxReleaseMatrixGenerationCount": 4096,
+            "maxTargetDiscoveryResultGenerationCount": 4096,
+            "maxReleaseTargetUniverseGenerationCount": 4096,
+            "maxSingleDistributionObjectCanonicalBytes": 16777216,
+            "maxTotalRetainedDistributionObjectCount": 65536,
+            "maxTotalRetainedDistributionHistoryLogicalBytes": 536870912,
+            "normalUpdateEmergencyGenerationReservePerChain": 8,
+            "normalUpdateEmergencyLogicalBytesReserve": 16777216,
+            "admission": "stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution",
+            "exhaustion": "reject_candidate_distribution_and_preserve_last_verified_distribution"
+          }
+        },
+        "suiteDigest": "sha256:2c8cb050e227b34f7b5a1fe8c998f23eb69100d1fadd5586f3a6df2985c49dc8",
+        "fixtureManifestDigest": "sha256:72a09216eca9f2b4c9a442de89270558accf552c2f4f83dc54c3b65ecab0c740",
+        "contentDigest": "sha256:fa25382564e2fbb801d6f9e1cd2df980fcee6ebf6ac50b1c893c923bcdbb3d05"
+      },
+      "suiteDigest": "sha256:2c8cb050e227b34f7b5a1fe8c998f23eb69100d1fadd5586f3a6df2985c49dc8",
+      "fixtureManifestDigest": "sha256:72a09216eca9f2b4c9a442de89270558accf552c2f4f83dc54c3b65ecab0c740",
+      "runnerProfileDigest": "sha256:fa62bd897b15eb99c225b8877873ed29a5df838d91cbf31e32a2bcc46516bca7",
+      "crashCutCoverageDigest": "sha256:7b0ecd4bf9ea686b74e4b08805b75822eba380315f090c2ec687ec5942b5ef58",
+      "caseResults": [
+        {
+          "caseId": "provider-real-fs-case:29eefd091965e9d7c5d0d0",
+          "crashCutId": "no-crash",
+          "outcome": "passed",
+          "resultCode": "passed"
+        },
+        {
+          "caseId": "provider-real-fs-case:29eefd091965e9d7c5d0d0",
+          "crashCutId": "provider-crash-cut:64f3e7338698edf9d265cc",
+          "outcome": "passed",
+          "resultCode": "passed"
+        },
+        {
+          "caseId": "provider-real-fs-case:aea44717ff5b840740bf59",
+          "crashCutId": "no-crash",
+          "outcome": "passed",
+          "resultCode": "passed"
+        },
+        {
+          "caseId": "provider-real-fs-case:aea44717ff5b840740bf59",
+          "crashCutId": "provider-crash-cut:ed6aa60cf3437f7e5b5cb1",
+          "outcome": "passed",
+          "resultCode": "passed"
+        },
+        {
+          "caseId": "provider-real-fs-case:d6e0fde28d191c2734e509",
+          "crashCutId": "no-crash",
+          "outcome": "passed",
+          "resultCode": "passed"
+        },
+        {
+          "caseId": "provider-real-fs-case:d6e0fde28d191c2734e509",
+          "crashCutId": "provider-crash-cut:2ef3fe103641cbee4ed1ae",
+          "outcome": "passed",
+          "resultCode": "passed"
+        },
+        {
+          "caseId": "provider-real-fs-case:eb863b93db43d6eb532537",
+          "crashCutId": "no-crash",
+          "outcome": "passed",
+          "resultCode": "passed"
+        },
+        {
+          "caseId": "provider-real-fs-case:eb863b93db43d6eb532537",
+          "crashCutId": "provider-crash-cut:6b57842af4f208eb77ed66",
+          "outcome": "passed",
+          "resultCode": "passed"
+        }
+      ],
+      "result": "passed",
+      "completedAt": "2026-08-03T04:00:00Z"
+    }
+  },
+  "realFilesystemConformanceResultLocator": {
+    "locatorProfile": "installation_provider_real_fs_conformance_result_v1",
+    "resultId": "provider-real-fs-result:613f9e88358de5707e803f"
+  },
+  "realFilesystemConformanceResultPin": {
+    "locatorProfile": "installation_provider_real_fs_conformance_result_v1",
+    "resultId": "provider-real-fs-result:613f9e88358de5707e803f",
+    "contentDigest": "sha256:fb3f441c15d4f517dabca528779e6b3da3a29e3c00d1219416e02783d81c3199"
+  },
+  "expected": {
+    "resultIdPreimageCanonicalUtf8Hex": "5b2270726f76696465722d7265616c2d66732d636f6e666f726d616e63652d726573756c742d69642d7631222c7b2262696e6172794174746573746174696f6e446967657374223a227368613235363a63636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363222c2263617365526573756c7473223a5b7b22636173654964223a2270726f76696465722d7265616c2d66732d636173653a32396565666430393139363565396437633564306430222c2263726173684375744964223a226e6f2d6372617368222c226f7574636f6d65223a22706173736564222c22726573756c74436f6465223a22706173736564227d2c7b22636173654964223a2270726f76696465722d7265616c2d66732d636173653a32396565666430393139363565396437633564306430222c2263726173684375744964223a2270726f76696465722d63726173682d6375743a36346633653733333836393865646639643236356363222c226f7574636f6d65223a22706173736564222c22726573756c74436f6465223a22706173736564227d2c7b22636173654964223a2270726f76696465722d7265616c2d66732d636173653a61656134343731376666356238343037343062663539222c2263726173684375744964223a226e6f2d6372617368222c226f7574636f6d65223a22706173736564222c22726573756c74436f6465223a22706173736564227d2c7b22636173654964223a2270726f76696465722d7265616c2d66732d636173653a61656134343731376666356238343037343062663539222c2263726173684375744964223a2270726f76696465722d63726173682d6375743a65643661613630636633343337663765356235636231222c226f7574636f6d65223a22706173736564222c22726573756c74436f6465223a22706173736564227d2c7b22636173654964223a2270726f76696465722d7265616c2d66732d636173653a64366530666465323864313931633237333465353039222c2263726173684375744964223a226e6f2d6372617368222c226f7574636f6d65223a22706173736564222c22726573756c74436f6465223a22706173736564227d2c7b22636173654964223a2270726f76696465722d7265616c2d66732d636173653a64366530666465323864313931633237333465353039222c2263726173684375744964223a2270726f76696465722d63726173682d6375743a32656633666531303336343163626565346564316165222c226f7574636f6d65223a22706173736564222c22726573756c74436f6465223a22706173736564227d2c7b22636173654964223a2270726f76696465722d7265616c2d66732d636173653a65623836336239336462343364366562353332353337222c2263726173684375744964223a226e6f2d6372617368222c226f7574636f6d65223a22706173736564222c22726573756c74436f6465223a22706173736564227d2c7b22636173654964223a2270726f76696465722d7265616c2d66732d636173653a65623836336239336462343364366562353332353337222c2263726173684375744964223a2270726f76696465722d63726173682d6375743a36623537383432616634663230386562373765643636222c226f7574636f6d65223a22706173736564222c22726573756c74436f6465223a22706173736564227d5d2c22636f6d706c657465644174223a22323032362d30382d30335430343a30303a30305a222c226372617368437574436f766572616765446967657374223a227368613235363a37623065636434626639656136383662373465346230383830356237353832326562613338303331356630393063326563363837656335393432623565663538222c22666978747572654d616e6966657374446967657374223a227368613235363a37326130393231366563613966326234633961343432646538393237303535386163636635353263326634663833646335346333623635656361623063373430222c22696d706c656d656e746174696f6e446967657374223a227368613235363a62626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262222c2270726f76696465724964223a2264757261626c652d6f626a6563742d70726f76696465723a6c6f63616c2d68656c706572222c227265616c46696c6573797374656d53756974654d616e6966657374223a7b22636f6e74656e74446967657374223a227368613235363a66613235333832353634653266626238303164366639653163643264663938306663656536656266366163353062316338393363393233626364626233643035222c22646973747269627574696f6e526f6f7442696e64696e67223a7b22626f6f747374726170547275737442756e646c65223a7b22636f6e74656e74446967657374223a227368613235363a61396161643939666435366365373663663331353531346632353839363565336437376534646139653661313338393766343261323735313361356331636263222c226c6f6361746f7250726f66696c65223a22646973747269627574696f6e5f70726f76696465725f626f6f7473747261705f74727573745f62756e646c655f7631227d2c22686973746f7279506f6c696379223a7b2261646d697373696f6e223a2273747265616d5f7665726966795f666976655f636861696e735f656d6265646465645f62756e646c65735f616e645f7472616e7369746976655f736f757263655f656e76656c6f7065735f6265666f72655f616363657074696e675f646973747269627574696f6e222c2265786861757374696f6e223a2272656a6563745f63616e6469646174655f646973747269627574696f6e5f616e645f70726573657276655f6c6173745f76657269666965645f646973747269627574696f6e222c226d61785075626c69635461786f6e6f6d7947656e65726174696f6e436f756e74223a343039362c226d617852656c656173654d617472697847656e65726174696f6e436f756e74223a343039362c226d617852656c65617365546172676574556e69766572736547656e65726174696f6e436f756e74223a343039362c226d617853696e676c65446973747269627574696f6e4f626a65637443616e6f6e6963616c4279746573223a31363737373231362c226d6178537570706f7274436174616c6f6747656e65726174696f6e436f756e74223a343039362c226d6178546172676574446973636f76657279526573756c7447656e65726174696f6e436f756e74223a343039362c226d6178546f74616c52657461696e6564446973747269627574696f6e486973746f72794c6f676963616c4279746573223a3533363837303931322c226d6178546f74616c52657461696e6564446973747269627574696f6e4f626a656374436f756e74223a36353533362c226e6f726d616c557064617465456d657267656e637947656e65726174696f6e52657365727665506572436861696e223a382c226e6f726d616c557064617465456d657267656e63794c6f676963616c427974657352657365727665223a31363737373231362c2270726f66696c65223a2270726f76696465725f646973747269627574696f6e5f686973746f72795f706f6c6963795f7631227d2c2270726f66696c65223a2270726f76696465725f7369676e65645f646973747269627574696f6e5f726f6f745f62696e64696e675f7631222c2272656c656173655265766973696f6e446967657374223a227368613235363a31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131222c227265736f6c76657250726f66696c65223a2276657269666965645f7369676e65645f7061636b6167655f646973747269627574696f6e5f726f6f745f7631222c227369676e65645061636b6167654964656e74697479446967657374223a227368613235363a37393066663365333030326539343663636161623162633739643934613031623234623539396636376465363030313433393236366437346261396138393137227d2c22666978747572654d616e6966657374446967657374223a227368613235363a37326130393231366563613966326234633961343432646538393237303535386163636635353263326634663833646335346333623635656361623063373430222c226c6f6361746f7250726f66696c65223a22646973747269627574696f6e5f70726f76696465725f7265616c5f66735f73756974655f6d616e69666573745f7631222c227375697465446967657374223a227368613235363a32633863623035306532323762333466376235613166653863393938663233656236393130306431666164643535383666336136646632393835633439646338227d2c22726573756c74223a22706173736564222c2272756e6e657250726f66696c65446967657374223a227368613235363a66613632626438393762313565623939633232356238383737383733656432396135646638333864393163626633316533326132626363343635313662636137222c2273656d616e74696350726f7669646572506f6c696379446967657374223a227368613235363a61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c227375697465446967657374223a227368613235363a32633863623035306532323762333466376235613166653863393938663233656236393130306431666164643535383666336136646632393835633439646338222c22746172676574223a7b22617263686974656374757265223a2261726d3634222c2266696c6573797374656d4665617475726550726f66696c65446967657374223a227368613235363a32323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232222c2266696c6573797374656d50726f66696c65436f6465223a2270726f76696465722d66732d70726f66696c653a61376330616330333936303334653530613465316534222c226d6f756e744f7074696f6e50726f66696c65446967657374223a227368613235363a33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333222c226f734275696c64446967657374223a227368613235363a31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131222c226f73506c6174666f726d223a2264617277696e222c226f7352656c6561736546616d696c79436f6465223a2270726f76696465722d6f732d66616d696c793a34323330326436616434373033633262303761323035222c2274617267657450726f66696c654964223a2270726f76696465722d7461726765742d70726f66696c653a37623161396435376263376565346432633335663962636430326139396131626536383030373661623665376532333163616363623636356637393264616565227d2c22746172676574446973636f76657279496e70757442756e646c65436f6e74656e74446967657374223a227368613235363a33336637373435366236303330616561663036653663613030373766323737636364333439363130636434616332656234306338393535626130393662623963222c22746172676574446973636f76657279526573756c74223a7b22636f6e74656e74446967657374223a227368613235363a64666136353330633033373366343834303035336163363039616338343566613266643265306235393462353065363733633561343165333936376537323433222c22646973636f7665727947656e65726174696f6e223a312c226c6f6361746f7250726f66696c65223a22646973747269627574696f6e5f70726f76696465725f7461726765745f646973636f766572795f726573756c745f7631227d7d5d",
+    "resultCanonicalUtf8Hex": "7b2262696e6172794174746573746174696f6e446967657374223a227368613235363a63636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363222c2263617365526573756c7473223a5b7b22636173654964223a2270726f76696465722d7265616c2d66732d636173653a32396565666430393139363565396437633564306430222c2263726173684375744964223a226e6f2d6372617368222c226f7574636f6d65223a22706173736564222c22726573756c74436f6465223a22706173736564227d2c7b22636173654964223a2270726f76696465722d7265616c2d66732d636173653a32396565666430393139363565396437633564306430222c2263726173684375744964223a2270726f76696465722d63726173682d6375743a36346633653733333836393865646639643236356363222c226f7574636f6d65223a22706173736564222c22726573756c74436f6465223a22706173736564227d2c7b22636173654964223a2270726f76696465722d7265616c2d66732d636173653a61656134343731376666356238343037343062663539222c2263726173684375744964223a226e6f2d6372617368222c226f7574636f6d65223a22706173736564222c22726573756c74436f6465223a22706173736564227d2c7b22636173654964223a2270726f76696465722d7265616c2d66732d636173653a61656134343731376666356238343037343062663539222c2263726173684375744964223a2270726f76696465722d63726173682d6375743a65643661613630636633343337663765356235636231222c226f7574636f6d65223a22706173736564222c22726573756c74436f6465223a22706173736564227d2c7b22636173654964223a2270726f76696465722d7265616c2d66732d636173653a64366530666465323864313931633237333465353039222c2263726173684375744964223a226e6f2d6372617368222c226f7574636f6d65223a22706173736564222c22726573756c74436f6465223a22706173736564227d2c7b22636173654964223a2270726f76696465722d7265616c2d66732d636173653a64366530666465323864313931633237333465353039222c2263726173684375744964223a2270726f76696465722d63726173682d6375743a32656633666531303336343163626565346564316165222c226f7574636f6d65223a22706173736564222c22726573756c74436f6465223a22706173736564227d2c7b22636173654964223a2270726f76696465722d7265616c2d66732d636173653a65623836336239336462343364366562353332353337222c2263726173684375744964223a226e6f2d6372617368222c226f7574636f6d65223a22706173736564222c22726573756c74436f6465223a22706173736564227d2c7b22636173654964223a2270726f76696465722d7265616c2d66732d636173653a65623836336239336462343364366562353332353337222c2263726173684375744964223a2270726f76696465722d63726173682d6375743a36623537383432616634663230386562373765643636222c226f7574636f6d65223a22706173736564222c22726573756c74436f6465223a22706173736564227d5d2c22636f6d706c657465644174223a22323032362d30382d30335430343a30303a30305a222c226372617368437574436f766572616765446967657374223a227368613235363a37623065636434626639656136383662373465346230383830356237353832326562613338303331356630393063326563363837656335393432623565663538222c22666978747572654d616e6966657374446967657374223a227368613235363a37326130393231366563613966326234633961343432646538393237303535386163636635353263326634663833646335346333623635656361623063373430222c22696d706c656d656e746174696f6e446967657374223a227368613235363a62626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262222c2270726f66696c65223a2270726f76696465725f7265616c5f66735f636f6e666f726d616e63655f726573756c745f7631222c2270726f76696465724964223a2264757261626c652d6f626a6563742d70726f76696465723a6c6f63616c2d68656c706572222c227265616c46696c6573797374656d53756974654d616e6966657374223a7b22636f6e74656e74446967657374223a227368613235363a66613235333832353634653266626238303164366639653163643264663938306663656536656266366163353062316338393363393233626364626233643035222c22646973747269627574696f6e526f6f7442696e64696e67223a7b22626f6f747374726170547275737442756e646c65223a7b22636f6e74656e74446967657374223a227368613235363a61396161643939666435366365373663663331353531346632353839363565336437376534646139653661313338393766343261323735313361356331636263222c226c6f6361746f7250726f66696c65223a22646973747269627574696f6e5f70726f76696465725f626f6f7473747261705f74727573745f62756e646c655f7631227d2c22686973746f7279506f6c696379223a7b2261646d697373696f6e223a2273747265616d5f7665726966795f666976655f636861696e735f656d6265646465645f62756e646c65735f616e645f7472616e7369746976655f736f757263655f656e76656c6f7065735f6265666f72655f616363657074696e675f646973747269627574696f6e222c2265786861757374696f6e223a2272656a6563745f63616e6469646174655f646973747269627574696f6e5f616e645f70726573657276655f6c6173745f76657269666965645f646973747269627574696f6e222c226d61785075626c69635461786f6e6f6d7947656e65726174696f6e436f756e74223a343039362c226d617852656c656173654d617472697847656e65726174696f6e436f756e74223a343039362c226d617852656c65617365546172676574556e69766572736547656e65726174696f6e436f756e74223a343039362c226d617853696e676c65446973747269627574696f6e4f626a65637443616e6f6e6963616c4279746573223a31363737373231362c226d6178537570706f7274436174616c6f6747656e65726174696f6e436f756e74223a343039362c226d6178546172676574446973636f76657279526573756c7447656e65726174696f6e436f756e74223a343039362c226d6178546f74616c52657461696e6564446973747269627574696f6e486973746f72794c6f676963616c4279746573223a3533363837303931322c226d6178546f74616c52657461696e6564446973747269627574696f6e4f626a656374436f756e74223a36353533362c226e6f726d616c557064617465456d657267656e637947656e65726174696f6e52657365727665506572436861696e223a382c226e6f726d616c557064617465456d657267656e63794c6f676963616c427974657352657365727665223a31363737373231362c2270726f66696c65223a2270726f76696465725f646973747269627574696f6e5f686973746f72795f706f6c6963795f7631227d2c2270726f66696c65223a2270726f76696465725f7369676e65645f646973747269627574696f6e5f726f6f745f62696e64696e675f7631222c2272656c656173655265766973696f6e446967657374223a227368613235363a31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131222c227265736f6c76657250726f66696c65223a2276657269666965645f7369676e65645f7061636b6167655f646973747269627574696f6e5f726f6f745f7631222c227369676e65645061636b6167654964656e74697479446967657374223a227368613235363a37393066663365333030326539343663636161623162633739643934613031623234623539396636376465363030313433393236366437346261396138393137227d2c22666978747572654d616e6966657374446967657374223a227368613235363a37326130393231366563613966326234633961343432646538393237303535386163636635353263326634663833646335346333623635656361623063373430222c226c6f6361746f7250726f66696c65223a22646973747269627574696f6e5f70726f76696465725f7265616c5f66735f73756974655f6d616e69666573745f7631222c227375697465446967657374223a227368613235363a32633863623035306532323762333466376235613166653863393938663233656236393130306431666164643535383666336136646632393835633439646338227d2c22726573756c74223a22706173736564222c22726573756c744964223a2270726f76696465722d7265616c2d66732d726573756c743a36313366396538383335386465353730376538303366222c2272756e6e657250726f66696c65446967657374223a227368613235363a66613632626438393762313565623939633232356238383737383733656432396135646638333864393163626633316533326132626363343635313662636137222c2273656d616e74696350726f7669646572506f6c696379446967657374223a227368613235363a61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c227375697465446967657374223a227368613235363a32633863623035306532323762333466376235613166653863393938663233656236393130306431666164643535383666336136646632393835633439646338222c22746172676574223a7b22617263686974656374757265223a2261726d3634222c2266696c6573797374656d4665617475726550726f66696c65446967657374223a227368613235363a32323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232323232222c2266696c6573797374656d50726f66696c65436f6465223a2270726f76696465722d66732d70726f66696c653a61376330616330333936303334653530613465316534222c226d6f756e744f7074696f6e50726f66696c65446967657374223a227368613235363a33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333222c226f734275696c64446967657374223a227368613235363a31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131222c226f73506c6174666f726d223a2264617277696e222c226f7352656c6561736546616d696c79436f6465223a2270726f76696465722d6f732d66616d696c793a34323330326436616434373033633262303761323035222c2274617267657450726f66696c654964223a2270726f76696465722d7461726765742d70726f66696c653a37623161396435376263376565346432633335663962636430326139396131626536383030373661623665376532333163616363623636356637393264616565227d2c22746172676574446973636f76657279496e70757442756e646c65436f6e74656e74446967657374223a227368613235363a33336637373435366236303330616561663036653663613030373766323737636364333439363130636434616332656234306338393535626130393662623963222c22746172676574446973636f76657279526573756c74223a7b22636f6e74656e74446967657374223a227368613235363a64666136353330633033373366343834303035336163363039616338343566613266643265306235393462353065363733633561343165333936376537323433222c22646973636f7665727947656e65726174696f6e223a312c226c6f6361746f7250726f66696c65223a22646973747269627574696f6e5f70726f76696465725f7461726765745f646973636f766572795f726573756c745f7631227d7d",
+    "relativePath": "provider/real-fs-conformance-results/id-e1p6utj9chin4bbiclgmobb6ecmn4pbjelm78ehm64pmceb570s36d9ochijadpg6tijgc1jco.json",
+    "caseResultCount": 8,
+    "passedCaseResultCount": 8,
+    "failedCaseResultCount": 0,
+    "unsupportedCaseResultCount": 0,
+    "targetMatchCount": 1,
+    "activeRootPointAdmissionCount": 1,
+    "signatureVerificationCount": 6,
+    "resultSignatureCount": 0,
+    "resultRunnerProfileSource": "signed_real_filesystem_suite_manifest"
+  },
+  "semanticDomain": "provider-real-filesystem-conformance-result-golden-manifest-v1",
+  "dependencies": {
+    "targetDiscoveryGoldenResourcePath": "fixtures/v1/golden/provider-target-discovery-point-v1.json",
+    "targetDiscoveryGoldenResourceByteLength": 205053,
+    "targetDiscoveryGoldenResourceSha256Hex": "cfcc03e388e46bf23b1fe62e513476991c535bc22887ff01b77eca4f01b979ed",
+    "targetDiscoveryGoldenSemanticContentDigest": "sha256:4ad3ff9e4459207059ded87d51cebb29c5ec36b03c994ee5d3cb61604eda98ae"
+  },
+  "semanticContentDigest": "sha256:3a647f61d4e4f71a2126873f7969b8326e8be438fc436782fb81fdce5cb00af2"
+}

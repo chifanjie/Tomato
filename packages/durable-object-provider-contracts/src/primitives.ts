@@ -128,6 +128,14 @@ export type ProviderFeasibilityEvidenceIdV1 = z.infer<
   typeof ProviderFeasibilityEvidenceIdV1Schema
 >;
 
+export const ProviderRealFilesystemConformanceResultIdV1Schema = z
+  .string()
+  .regex(/^provider-real-fs-result:[0-9a-f]{22}$/u)
+  .brand<"ProviderRealFilesystemConformanceResultIdV1">();
+export type ProviderRealFilesystemConformanceResultIdV1 = z.infer<
+  typeof ProviderRealFilesystemConformanceResultIdV1Schema
+>;
+
 export const ProviderRealFilesystemCaseIdV1Schema = z
   .string()
   .regex(/^provider-real-fs-case:[0-9a-f]{22}$/u)

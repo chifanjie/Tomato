@@ -2,7 +2,7 @@
 
 记录 ID：`G0-2026-07-28`
 
-状态：**Closed for implementation；WP5 Decision Amendments D-24～D-31 incorporated**
+状态：**Closed for implementation；WP5 Decision Amendments D-24～D-34 incorporated**
 
 候选基线：`34da354968a6071d914e4e4a4fca738e6c2d8a29`
 
@@ -10,7 +10,7 @@
 
 WP4 修订日期：2026-07-29
 
-WP5 修订日期：2026-07-30～2026-08-02
+WP5 修订日期：2026-07-30～2026-08-04
 
 编制方式：Codex 汇总版本化证据、独立审查和自动化结果；Codex 不被记录为真人签署人
 
@@ -45,7 +45,7 @@ generation pin Pulse，再只以唯一 maximal Store Manifest generation所 pin�
 保留为 legacy/read-only projection。该修订不新增 Artifact Type 或 Lifecycle
 状态，只冻结 Pulse 版本身份、历史可寻址性和恢复边界。
 
-2026-07-30～2026-08-02 的 D-24～D-31 是 WP5 实现前的证据模型、写入边界与
+2026-07-30～2026-08-04 的 D-24～D-34 是 WP5 实现前及分层实现中的证据模型、写入边界与
 Provider可行性修订。审计确认：
 原 Change Check 没有 Actual Change 实体、Hunk 或完整性证明；Repository
 Snapshot 也不能重建任务开始时已经存在的 dirty/untracked 内容。修订因此新增
@@ -120,7 +120,7 @@ Gate的 target只可 legacy/redacted read-only。这些修订不增加 D-21
 - 性能 Evidence 保存生产源文件 Hash、原始样本、预热/采样数和 expected/actual 完整性字段。
 - Host Evidence 保持 Surface 边界；Codex App Server provisional 结果和 Claude 未认证 Tool Call 不被提升为 supported。
 
-## 4. D-13～D-31 冻结结果
+## 4. D-13～D-34 冻结结果
 
 ### D-13：P0 平台
 
@@ -1010,7 +1010,26 @@ AT-C31与AT-Q33以 WP5 Matrix为唯一规范。D-31不改变 D-21 Lifecycle；�
 签名接受集合、bootstrap发行物与 historical verifier边界，任何后续放宽必须显式
 升版。
 
-D-24～D-31 的实现与验收矩阵为
+### D-32～D-34：Provider point closure 分层冻结
+
+状态：`accepted`（2026-08-03～2026-08-04 Decision Amendments）
+
+- D-32把 C09-1G冻结为 signed Target Discovery point：Taxonomy、Matrix、Input
+  Bundle与 Discovery Result使用 supplied active registry root的独立 signature
+  domain，成功 authority仅为`none_target_discovery_point_structure_only`，不证明
+  history/current、Universe或真实 I/O。
+- D-33把 C09-1H冻结为完整 C09-1G raw request→unsigned real-FS Conformance Result
+  Envelope point：Result没有第七签名，target membership、Discovery/Bundle/Suite Pin、
+  case-cut exact-cover、aggregate、ID/content digest及 Locator等式全部可重算，authority
+  仅为`none_real_fs_conformance_result_structure_only`。
+- D-34把 C09-1I冻结为16字段 raw input上的 Result→strict semantic Policy→root-signed
+  Runtime Attestation Pin point：复用一次 C09-1H diagnostic，重算 Policy/Filesystem/
+  Runtime digest，关闭 provider/policy/implementation/binary/target/Result等式；成功
+  路径固定1次 active-root point admission与7次 signature verification，authority仅为
+  `none_provider_runtime_attestation_structure_only`。它不证明 runtime在线、current
+  generation、真实 volume/IPC、QA/Release Evidence、Catalog/Registry/Acceptance或 I/O。
+
+D-24～D-34 的实现与验收矩阵为
 `docs/research/2026-07-30-wp5-change-intelligence-matrix.md`；其中第 3.8 节是
 必须逐字段等价实现的 normative Schema Appendix。所有 C09 provider
 contract、canonical bytes/golden与 prerequisite conformance归
@@ -1205,7 +1224,7 @@ capability gap，不是 WP0 新引入回归。对应能力在后续 Gate 关闭�
 
 ## 9. 用户工作区处置
 
-提交本记录时只允许暂存 G0 文档：
+提交本记录及后续 Decision Amendment时只允许暂存 G0、权威 PRD与 WP5 Matrix文档：
 
 - 用户所有的 `docs/prd/.qa/` 保持未跟踪、未暂存。
 - 用户所有的 Graph Layout PRD `.docx` / `.md`、`assets/`、`__pycache__/` 和生成脚本保持未跟踪、未暂存。
@@ -1218,7 +1237,7 @@ capability gap，不是 WP0 新引入回归。对应能力在后续 Gate 关闭�
 | 条件 | 结果 |
 |---|---|
 | Mission、P0、Non-goals 已冻结 | PASS |
-| D-13～D-19、D-21～D-31 已接受；D-20 有 Owner/Gate | PASS |
+| D-13～D-19、D-21～D-34 已接受；D-20 有 Owner/Gate | PASS |
 | Task Lifecycle、Revision 与幂等语义唯一 | PASS |
 | Root/Error/Rendezvous 语义唯一 | PASS |
 | Surface mandatory/conditional、Owner、后续 Gate 完整 | PASS |

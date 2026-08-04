@@ -1,6 +1,6 @@
 # Understand Code：Agent-native Code Change Intelligence 项目研制计划
 
-> 文档状态：Approved / Contract Frozen v1.10（含 WP5 Decision Amendment D-24～D-33、C09-1H 与 16-A-1 实施证据重校）
+> 文档状态：Approved / Contract Frozen v1.11（含 WP5 Decision Amendment D-24～D-34、C09-1I 合同冻结、C09-1H 与 16-A-1 实施证据重校）
 >
 > 日期：2026-07-27
 >
@@ -8,7 +8,7 @@
 >
 > WP4 Contract Amendment：2026-07-29；`build_task_brief` 的可恢复两阶段编排与可信 Operation Journal 见 D-22，Repo Pulse 不可变历史与原子切换见 D-23
 >
-> WP5 Contract Amendment：2026-07-30～2026-08-03；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host、不可变 Bootstrap Trust Bundle、签名 Target Discovery point closure与 real-FS Conformance Result point closure见 D-24～D-33
+> WP5 Contract Amendment：2026-07-30～2026-08-04；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host、不可变 Bootstrap Trust Bundle、签名 Target Discovery point closure、real-FS Conformance Result point closure与 Provider Runtime Attestation point closure见 D-24～D-34
 >
 > Implementation Rebaseline：2026-08-03；Evidence Refresh：2026-08-04。重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1H 与 16-A-1 已形成候选证据，但 Provider aggregate、真实 Provider、生产 Change Intelligence、双 Agent、Task-first Workbench 与发布门仍未关闭
 >
@@ -3022,7 +3022,7 @@ P2 的阻断规则必须确定性执行：
 | WP2 | Closed | Repository State / Repo Pulse 已关闭 |
 | WP3 | Closed | Artifact Store / Evidence persistence 已关闭 |
 | WP4 | Closed | Persistent Task Brief 与 Lifecycle 已关闭；不包含生产 Change Check |
-| WP5-1P/C09 | **Partial / aggregate open** | 已完成 crypto、Bootstrap、Root/Registry history、signed real-FS Corpus→Suite source closure（`3ca2977`）、signed Target Discovery point closure（`70201b4`）与 unsigned real-FS Conformance Result point closure（`35f9aaf`）；下一实现 frontier 为 Runtime attestation→QA/Release Evidence，Catalog/Registry、Discovery history/current、Universe、Acceptance、Migration 等总门仍缺 |
+| WP5-1P/C09 | **Partial / aggregate open** | 已完成 crypto、Bootstrap、Root/Registry history、signed real-FS Corpus→Suite source closure（`3ca2977`）、signed Target Discovery point closure（`70201b4`）与 unsigned real-FS Conformance Result point closure（`35f9aaf`）；D-34 已冻结下一实现点 C09-1I Result→Policy→root-signed Runtime Attestation point，尚无实现证据；其后仍需 QA/Release Evidence、Catalog/Registry、Discovery history/current、Universe、Acceptance、Migration 等总门 |
 | WP3P | Not closed / capability locked | 真实 OS principal、Provider runtime 与 real-FS feasibility 尚未实现 |
 | WP5 | Contract frozen / implementation incomplete | 没有生产 Delta/Hunk/Matching、`checkChanges()`、`recordVerification()` 纵向闭环 |
 | WP6 | **Open（仅 16-A-1 candidate closed）** | `packages/cli` 已交付自包含 stdio MCP 与 Pulse/Brief 三工具；Host Adapter、完整 Tool surface、双 Agent E2E 仍未实现，不能把子切片状态外推为 WP6 candidate |
@@ -4122,7 +4122,7 @@ Symbol、Evidence、Impact 与分析完整性，而不是把 Git 文件列表包
 WP3P Provider Feasibility Gate 与 WP4 Task Intelligence；Diff→Symbol/Matching
 可在 security contracts 冻结后并行，但任何 strong mutation在 WP3P Gate关闭前
 保持 capability locked。
-估算：原 2.5 周只覆盖摘要级实现；按 D-24～D-33 的 path-safe、identity、
+估算：原 2.5 周只覆盖摘要级实现；按 D-24～D-34 的 path-safe、identity、
 SafeGit、reservation/quota 与 recovery 生产闭环修订为
 **6–8 周、12–16 person-weeks**。Contracts、Store 与 Operation kernel 串行冻结，
 Delta/Symbol/Matching 可在接口冻结后并行。
@@ -5980,7 +5980,7 @@ reflog 与未定义 quota 会让 crash recovery 存在误删或不一致结果�
 边界前移到首个 durable write，并冻结并发 ownership 与资源耗尽的唯一语义。
 
 WP5 的实现追踪、Acceptance 与 capability locks 见
-`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。D-24～D-33 不
+`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。D-24～D-34 不
 改变 D-21 的状态集合；它们冻结的是 Change/Verification 事实模型、可重建
 baseline、安全持久化、Operation 提交边界与 Alpha 兼容策略。
 
@@ -6224,8 +6224,8 @@ admission与恰好六次签名验证（Corpus、Suite、Taxonomy、Matrix、Bund
 packed Node/browser distribution KAT。该层不执行 runner、不触碰真实文件系统，
 也不授权任何 Store I/O。在 C09-1G 当时的冻结顺序中，后继 “Result” 指
 `ProviderRealFilesystemConformanceResultV1`，不能与本层 Discovery Result混淆；
-该后继 point 现已由 C09-1H 独立关闭，当前下一 frontier 为 Runtime attestation
-→ QA/Release Evidence。
+该后继 point 现已由 C09-1H 独立关闭；D-34进一步把当前下一实现点正式冻结为
+C09-1I Result→Policy→Runtime Attestation point，其后才进入 QA/Release Evidence。
 
 2026-08-03 implementation evidence：C09-1G 已由 `70201b4` 独立提交并推送。
 Provider package现冻结 220 份 JSON Schema、1 份 205,053-byte golden与 116 个
@@ -6339,12 +6339,106 @@ digest相同的 Suite，Result可以脱离发行物 retained closure伪造；如
 `passed`外推为真实 conformance authority，就会在 runner、runtime和 QA/Release证据
 均不存在时提前解锁写能力。D-33只关闭下一批 wire bytes所需的最小证据边界。
 
+### D-34：Provider Runtime Attestation 采用 Result→Policy→Runtime 单点结构闭包
+
+状态：Accepted。
+
+2026-08-04 C09-1I pre-implementation amendment：C09-1H 已关闭完整 raw source→
+unsigned real-FS Result Envelope 的 point evidence closure；C09-1E 也已实现 strict
+Runtime unsigned/signed/Pin DTO、unsigned content-digest domain与 registry-root
+signature domain。但现有实现尚未把一份 C09-1H Result、稳定 semantic policy与
+root-signed Runtime Pin接成独立可重算闭包。在生成 C09-1I首批 bytes前冻结如下唯一
+解释，且不得复制或改写既有 Runtime wire DTO：
+
+- C09-1I入口只接受 C09-1H完整14字段 raw request，再增加
+  `semanticProviderPolicy`与`runtimeAttestation`两个字段。16个 exact enumerable
+  data-property固定为：`activeRoot`、`activeRootMetadata`、
+  `distributionRootBinding`、`fixtureCorpusManifest`、`publicSupportTaxonomy`、
+  `realFilesystemConformanceResult`、`realFilesystemConformanceResultLocator`、
+  `realFilesystemConformanceResultPin`、`releaseMatrix`、`runtimeAttestation`、
+  `semanticProviderPolicy`、`strictCryptoCapability`、`suiteManifest`、
+  `targetDiscoveryFixtureManifest`、`targetDiscoveryResult`、
+  `targetDiscoveryRunnerRun`。首次`await`前必须一次性 snapshot全部 data-property；
+  JSON artifacts经`structuredClone`后递归冻结，opaque crypto capability只保留已证明
+  引用。新增/缺失字段、getter/Proxy、hidden/symbol key、alias/cycle、异步 mutation、
+  普通 validation DTO或 caller `verified` boolean全部拒绝。
+- 快照中的原始14字段 source必须恰好调用一次 C09-1H diagnostic validator；不得
+  重写或绕过其 Result/Discovery/Suite/crypto/locator逻辑。随后按已冻结的完整 strict
+  `StoreDurableObjectProviderPolicyV1`解析 policy，以
+  `store-durable-object-provider-policy-v1`对完整 policy重算 semantic digest；
+  `providerId`必须与 Result相等，`realFilesystemConformanceSuiteDigest`必须与 Result
+  `suiteDigest`相等，重算 policy digest必须同时等于 Result与 Runtime同名字段。
+- Runtime输入固定为既有
+  `StoreDurableObjectProviderRuntimeAttestationPinV1`：Runtime没有另一个 Envelope、
+  ID或 locator，Pin只包含`profile/contentDigest/payload`。payload unsigned content
+  digest继续使用`store-durable-object-provider-runtime-attestation-v1`且排除
+  `registrySignature`；Pin content digest必须等于该重算值，禁止用包含 signature的
+  payload digest、Result ID、Suite semantic digest或 caller摘要替代。
+- Runtime的`providerId/semanticProviderPolicyDigest/implementationDigest/
+  binaryAttestationDigest`分别与 Result exact-equal；
+  `osPlatform/osReleaseFamilyCode/osBuildDigest/architecture`分别与 Result target
+  exact-equal。`filesystemProfileDigest`固定为
+  `SHA256(JCS(["store-provider-filesystem-profile-v1",{
+  filesystemProfileCode,filesystemFeatureProfileDigest,mountOptionProfileDigest}]))`，
+  三字段只取 Result target。`realFilesystemConformanceResultDigest`必须同时等于
+  C09-1H Result Pin与 Result Envelope的完整 content digest。
+- Runtime signature继续使用
+  `store-provider-runtime-attestation-signature-v1`。signature wire prefix root ID、
+  signature wrapper root ID与 C09-1H已验证的 supplied active root ID必须三方相等，
+  并只用该 root raw key与同一 opaque strict host capability验证。组合成功路径固定
+  为恰好1次 active-root point admission与7次 signature verification：Corpus、Suite、
+  Taxonomy、Matrix、Input Bundle、Discovery Result、Runtime Attestation；Runtime不得
+  重复 point-admit root，QA/Release signatures不属于本点。
+- 唯一成功 authority固定为
+  `none_provider_runtime_attestation_structure_only`。它只证明 C09-1H source、strict
+  policy/digest、Runtime signed claims、Result/Policy bindings与 Runtime Pin在 supplied
+  point root下可重算。`attestationGeneration`本点只验证 positive safe integer，
+  `issuedAt`只验证 canonical timestamp；不验证 predecessor/current/anti-rollback，
+  也不增加`runtime.issuedAt >= result.completedAt`规则。`passed/failed/unsupported`
+  Result均可形成结构有效 Runtime；后继 Evidence可以诚实记录三种结果，只有 production
+  registration / strong candidate才要求 passed。
+- 内部 diagnostic stage精确冻结为`input`、`conformance_result_closure`、
+  `semantic_policy_structure`、`semantic_policy_digest`、`result_policy_binding`、
+  `runtime_pin`、`runtime_structure`、`runtime_result_binding`、`runtime_root`、
+  `runtime_signature`；reason精确冻结为`schema_invalid`、
+  `source_invalid`、`digest_mismatch`、`binding_mismatch`、`root_mismatch`、
+  `signature_invalid`、`pin_mismatch`。公共失败继续只暴露
+  `provider_unavailable / attestation_invalid`，不得泄漏 key、signature、IPC endpoint、
+  locator、path或内部字段。
+- Golden/negative必须冻结 strict policy、filesystem-profile preimage、Runtime unsigned
+  digest/Pin/root signature、完整等式、递归冻结结果与1/7 crypto count；C09-1H的50个
+  ordered invalid operation必须从 C09-1I入口逐条重放：违反新增16字段 snapshot/
+  data-tree边界的 case固定归因`input/schema_invalid`，通过外层 snapshot后由 C09-1H
+  拒绝的 case固定归因`conformance_result_closure/source_invalid`，fixture inventory
+  必须逐例冻结唯一映射，不能笼统改写实际首个失败边界。
+  point-specific negatives必须覆盖 policy每个 frozen literal/tuple/union、所有重复字段、
+  合法重签后的 cross-object mismatch、wrong signer/domain/root、stale digest/Pin、
+  Proxy/getter/hidden/symbol/alias/cycle与异步 mutation。clean packed Node及
+  Vite/browser必须从安装 tar导入新增 core/fixtures显式 export，按
+  `mutation.operation`真实执行全部负例并比较 stage/reason、snapshot projection、
+  opaque public error和 crypto count；Schema与fixture inventory、raw/semantic digest及
+  generator `--check`必须稳定。
+
+C09-1I明确不包含真实 runtime process或文件系统执行、mutual-auth IPC实际建立、
+当前物理 volume exact-match、Runtime history/current/anti-rollback、QA/Release Evidence
+ID/Envelope/双签、Catalog/Registry/Acceptance、Discovery five-chain history/current、
+Universe retained accounting、installation-state持久化或 strong write解锁。修改
+`ipcEndpointAttestationDigest/attestationGeneration/issuedAt`后合法重签并重算 Pin可在
+本 point保持结构有效，但仍没有 current authority；Runtime也不得反向 pin Evidence、
+Catalog或Registry，以保持 Result→Runtime→Evidence→Catalog/Registry无环顺序。
+
+修订原因：只验证 Runtime自身签名会允许一份分别合法但指向另一 Result、policy、
+binary或 target的 attestation被拼接进后继 Evidence；反过来，如果把单点结构闭包
+当成 runtime在线、当前 volume匹配或 QA/Release批准，又会在真实 Provider Gate尚未
+执行时提前授权写能力。D-34只冻结 C09-1I首批 bytes与可执行拒绝语义，后继 Evidence
+仍须独立提交和复审。
+
 ---
 
 ## 20. M0 冻结结果与延后决策
 
 原 M0 第 1–7 项已经分别由 D-13～D-19 冻结；Task Lifecycle、WP4 持久化与
-WP5 Change Intelligence 修订由 D-21～D-33 冻结。完整证据、Owner、试点 Pin
+WP5 Change Intelligence 修订由 D-21～D-34 冻结。完整证据、Owner、试点 Pin
 和 capability lock 见
 `docs/research/2026-07-28-g0-contract-freeze-record.md`。
 

@@ -1,6 +1,6 @@
 # Understand Code：Agent-native Code Change Intelligence 项目研制计划
 
-> 文档状态：Approved / Contract Frozen v1.9（含 WP5 Decision Amendment D-24～D-32、C09-1G 与 16-A-1 实施证据重校）
+> 文档状态：Approved / Contract Frozen v1.9（含 WP5 Decision Amendment D-24～D-33、C09-1G 与 16-A-1 实施证据重校）
 >
 > 日期：2026-07-27
 >
@@ -8,7 +8,7 @@
 >
 > WP4 Contract Amendment：2026-07-29；`build_task_brief` 的可恢复两阶段编排与可信 Operation Journal 见 D-22，Repo Pulse 不可变历史与原子切换见 D-23
 >
-> WP5 Contract Amendment：2026-07-30～2026-08-03；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host、不可变 Bootstrap Trust Bundle与签名 Target Discovery point closure见 D-24～D-32
+> WP5 Contract Amendment：2026-07-30～2026-08-03；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host、不可变 Bootstrap Trust Bundle、签名 Target Discovery point closure与 real-FS Conformance Result point closure见 D-24～D-33
 >
 > Implementation Rebaseline：2026-08-03；重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1G 与 16-A-1 已形成候选证据，但 Provider aggregate、真实 Provider、生产 Change Intelligence、双 Agent、Task-first Workbench 与发布门仍未关闭
 >
@@ -3293,10 +3293,11 @@ Owner 与资源：
   digest不得定位，case/crash-cut ID必须从 strict preimage重算。Suite/Corpus必须先按
   不含 signature的独立 claims domain签名，再对**包含 exact signature 的完整 signed
   payload**计算 Envelope content digest与 locator；换 signature必须换 locator。
-  Result同时 pin exact Discovery Result与 Input Bundle content digest，其 Suite Pin
-  必须与该 Discovery→Bundle→Fixture payload中的完整 Suite Pin canonical bytes相同，
-  并只能是 Bundle complete observation set的确定性投影；同 semantic digest的另一份
-  合法 signed Suite/Corpus不得脱离 retained closure替换。
+  Result同时 pin exact Discovery Result与 Input Bundle content digest；其所 pin 的
+  Discovery Result只能是 Bundle complete observation set的确定性投影。Result自身的
+  Suite Pin必须与该 Discovery→Bundle→Fixture payload中的完整 Suite Pin canonical
+  bytes相同；同 semantic digest的另一份合法 signed Suite/Corpus不得脱离 retained
+  closure替换。
   coverage basis exact复制 Bundle/cut/observation commitments并 pin Matrix与
   Discovery Result；Universe targets是两者最多4096项的 streaming canonical
   union。同 ID不同 bytes或 union第4097项直接拒绝；只有两集合相等且 unresolved
@@ -3635,7 +3636,8 @@ Owner 与资源：
   signed payload；Suite单向 pin Corpus。Corpus record、Case ID与 hashed Crash Cut
   ID都从 strict preimage重算，Suite flatten出的 sorted
   `{caseId,crashCutId}` required set必须被 Result exact-cover；Result把完整 Suite
-  Pin以及 exact Discovery Result/Input Bundle pin纳入 ID/content digest，并要求
+  Pin以及 exact Discovery Result Pin与 Input Bundle content digest纳入 ID/content
+  digest，并要求
   Result Suite Pin与 Discovery→Bundle→Fixture中的 Suite Pin byte-identical，再以
   fixed installation locator no-replace发布；
   Evidence exact pin result ID+digest并复制全部 target/suite/fixture/runner/
@@ -4120,7 +4122,7 @@ Symbol、Evidence、Impact 与分析完整性，而不是把 Git 文件列表包
 WP3P Provider Feasibility Gate 与 WP4 Task Intelligence；Diff→Symbol/Matching
 可在 security contracts 冻结后并行，但任何 strong mutation在 WP3P Gate关闭前
 保持 capability locked。
-估算：原 2.5 周只覆盖摘要级实现；按 D-24～D-32 的 path-safe、identity、
+估算：原 2.5 周只覆盖摘要级实现；按 D-24～D-33 的 path-safe、identity、
 SafeGit、reservation/quota 与 recovery 生产闭环修订为
 **6–8 周、12–16 person-weeks**。Contracts、Store 与 Operation kernel 串行冻结，
 Delta/Symbol/Matching 可在接口冻结后并行。
@@ -5977,7 +5979,7 @@ reflog 与未定义 quota 会让 crash recovery 存在误删或不一致结果�
 边界前移到首个 durable write，并冻结并发 ownership 与资源耗尽的唯一语义。
 
 WP5 的实现追踪、Acceptance 与 capability locks 见
-`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。D-24～D-32 不
+`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。D-24～D-33 不
 改变 D-21 的状态集合；它们冻结的是 Change/Verification 事实模型、可重建
 baseline、安全持久化、Operation 提交边界与 Alpha 兼容策略。
 
@@ -6060,7 +6062,8 @@ locator/acceptance为唯一细节；后续一旦 wire bytes发布，再变更必
 - strict real-FS result bundle必须按 fixed locator exact pin required case
   coverage与 aggregate；Suite/Fixture Corpus各自 root-signed并只按 full Envelope
   signed-payload content digest定位，Case/Crash Cut ID从 strict preimage重算，
-  Result ID纳入 exact Discovery Result/Input Bundle与 Suite Pin，且该 Suite Pin必须
+  Result ID纳入 exact Discovery Result Pin、Input Bundle content digest与 Suite Pin，
+  且该 Suite Pin必须
   byte-identical Discovery→Bundle→Fixture所 pin对象。Result/Evidence重复的 provider/policy、
   implementation/binary/target/suite/fixture/runner/crash/result及
   runtime/Evidence的 platform/profile digest必须逐字段 exact-equal。
@@ -6239,12 +6242,83 @@ runtime、Evidence、Catalog与真实 I/O仍保持 open/locked。
 closure写成 history/current authority，则会在 predecessor、rollback与 retention尚未
 实现时提前宣称可信发行状态。D-32只关闭首批 bytes所需的最小确定性边界。
 
+### D-33：real-FS Conformance Result 采用无签名单点证据闭包
+
+状态：Accepted。
+
+2026-08-03 C09-1H pre-implementation amendment：D-30 已冻结
+`ProviderRealFilesystemConformanceResultV1` 的 wire DTO、ID preimage、Suite
+exact-cover与 aggregate总函数，但尚未冻结该独立实现点如何消费 C09-1G、成功
+authority、target membership、Result自身签名语义、materialized cap及完整 locator
+等式。在生成首批 C09-1H bytes前冻结如下唯一解释：
+
+- C09-1H 是完整 C09-1G raw request→unsigned Conformance Result Envelope 的
+  **point evidence closure**。入口先对整份 hostile input做一次不可变快照，再把快照
+  中的原始对象交给 C09-1G diagnostic validator；不得接受普通 validation DTO、
+  caller boolean或可伪造“已验证”对象替代原始闭包。成功路径仍精确执行 1 次
+  active-root point admission与6次签名验证，不复制 C09-1F/C09-1G 的 crypto/
+  projection实现。
+- 唯一成功 authority 为
+  `none_real_fs_conformance_result_structure_only`。payload `result="passed"`只表示
+  明细 aggregate，不证明 fixture真实执行、当前物理 volume匹配、runtime/Evidence/
+  Catalog/Registry/Acceptance有效，也不授权 Provider或 Store I/O。
+- Result wire本身**没有第七类 root signature**。构造顺序保持：unsigned Result先
+  完成自己的 ID/content digest；runtime随后 exact pin该 Result content digest，并对
+  runtime自身 unsigned canonical payload计算独立 content digest；Evidence最后由
+  QA/Release双签。给 Result擅自增加签名会改变已冻结 ID/content bytes并制造错误
+  authority。
+- Result `target.targetProfileId`必须由其余七个 target claim重算，且完整 target
+  bytes必须在 resolved Discovery Result `payload.targets[i].target`中
+  byte-identical命中恰好一次；
+  缺失、同 ID异 bytes或另造未发现 target均拒绝。Discovery仍可含 typed unresolved，
+  因为 closed-world/current authority属于后续 Universe/history Gate。
+- Result的 Discovery Pin必须与本次 resolved Discovery Envelope生成的 Pin
+  byte-identical；`targetDiscoveryInputBundleContentDigest`是 exact digest commitment，
+  必须等于 resolved Discovery Result同名字段。Result Suite Pin必须与
+  Discovery→embedded Bundle→Fixture payload所 pin Suite canonical bytes完全相同，
+  并解析回本次 C09-1G验证的 signed Suite/Corpus closure。`suiteDigest`、
+  `fixtureManifestDigest`、`runnerProfileDigest`与 `crashCutCoverageDigest`分别 exact
+  复制 resolved Suite中的 semantic suite、Corpus Pin、runner profile与 required
+  case-cut set digest；相同 semantic digest的另一份 signed Envelope不得替换。
+- Suite flatten出的 `{caseId,crashCutId}` required set必须被 `caseResults`按 tuple
+  UTF-8 bytewise sorted+unique exact-cover。`passed↔passed`、
+  `unsupported↔unsupported_by_target_profile`；其余 allowlist code只允许
+  `outcome="failed"`。aggregate固定为 failed优先，其次 unsupported，最后 passed，
+  不能由 producer自由填写。
+- Result ID按冻结的 `provider-real-fs-conformance-result-id-v1`完整 preimage生成
+  `provider-real-fs-result:<first22 lowercase hex>`；Result content digest覆盖完整 strict
+  payload。Locator DTO固定为
+  `{locatorProfile:"installation_provider_real_fs_conformance_result_v1",resultId}`，
+  Pin只在该 Locator上增加 `contentDigest`；Envelope outer
+  `resultId/contentDigest`、payload `resultId`、Pin与 locator必须全部等式闭合。
+  唯一 canonical relative path为
+  `provider/real-fs-conformance-results/<encoded-resultId>.json`；本层只返回并验证
+  locator，不执行物理 no-replace发布、目录扫描或第二路径探测。
+- 完整 materialized Result Envelope继续受16 MiB canonical bytes上限；V1不增加
+  独立 per-case条目上限，条目集合由已验证 Suite exact-cover并同时受 Envelope cap
+  约束。parse前 streaming admission与实际 reader/no-replace writer属于后续 runtime/
+  Provider实现，不能由本 point candidate冒充。
+- verifier必须拒绝 Proxy/getter、hidden/symbol key、sparse array、cycle/alias及异步
+  mutation，成功值递归冻结，公共错误继续只暴露 `provider_unavailable /
+  attestation_invalid`。golden/negative、精确 Schema inventory、完整 Envelope locator
+  与 packed Node/browser KAT必须作为同一提交证据。
+
+C09-1H明确不包含 Result history/current/anti-rollback、Release Target Universe、
+Provider policy解析、真实 runner/文件系统执行、runtime attestation、Evidence双签、
+Catalog/Registry/Acceptance、installation-state持久化或 strong write解锁。它只把已签名
+Discovery source closure与一份确定性 Result record接成可重算、可定位的候选证据点。
+
+修订原因：如果允许 caller传入普通“已验证”DTO、未发现 target或另一份 semantic
+digest相同的 Suite，Result可以脱离发行物 retained closure伪造；如果又把 aggregate
+`passed`外推为真实 conformance authority，就会在 runner、runtime和 QA/Release证据
+均不存在时提前解锁写能力。D-33只关闭下一批 wire bytes所需的最小证据边界。
+
 ---
 
 ## 20. M0 冻结结果与延后决策
 
 原 M0 第 1–7 项已经分别由 D-13～D-19 冻结；Task Lifecycle、WP4 持久化与
-WP5 Change Intelligence 修订由 D-21～D-32 冻结。完整证据、Owner、试点 Pin
+WP5 Change Intelligence 修订由 D-21～D-33 冻结。完整证据、Owner、试点 Pin
 和 capability lock 见
 `docs/research/2026-07-28-g0-contract-freeze-record.md`。
 
@@ -6458,7 +6532,8 @@ Required action: incremental refresh before task analysis
    唯一投影，以及相同 semantic suite/corpus/fixture digest在不同 release下仍由各自
    包含 signature的完整 content digest定位为不同 signed Envelope。另替换 signature
    bytes及用同 semantic digest的另一份合法 Suite/Corpus改写 Result，确认 Result的
-   Discovery/Input Bundle/Suite Pin等式与 retained closure共同拒绝。
+   Discovery Result Pin / Input Bundle content digest / Suite Pin等式与 retained
+   closure共同拒绝。
 2. 在每个 advertised macOS/Linux OS×filesystem×mount profile上，对 regular
    file/directory publish执行 parent/ancestor于 root内 rename、reparent、
    rename-exchange，移出 root、source/final swap、collision、hardlink/symlink
@@ -6509,8 +6584,9 @@ Required action: incremental refresh before task analysis
   exact-cover、覆盖 signature的 signed Suite/Corpus full-content locator与
   case/crash-cut stable ID
   可重算、签名 target profile与当前物理 volume runtime exact-match、双签
-  有效；Result的 Discovery/Input Bundle/Suite Pin byte-identical回接 distribution
-  retained closure；Result→Runtime→Evidence→Taxonomy/Target Universe→Catalog/Registry按
+  有效；Result的 Discovery Result Pin / Input Bundle content digest / Suite Pin
+  byte-identical回接 distribution retained closure；Result→Runtime→Evidence→
+  Taxonomy/Target Universe→Catalog/Registry按
   fixed locator/digest无环 chain一致，Catalog/Registry runtime byte-identical且
   全部重复字段逐项 exact-equal。任一重签后的 mismatch仍
   `attestation_invalid`。公开支持矩阵的 descriptor/code、coverage basis、

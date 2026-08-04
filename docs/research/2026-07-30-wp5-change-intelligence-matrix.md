@@ -53,6 +53,24 @@ manifest原生发布。Discovery Runner profile只与其自身 Pin/Envelope闭�
 `none_target_discovery_point_structure_only`，不证明 history/current/rollback、
 Universe或真实 I/O。
 
+2026-08-03 D-33 pre-implementation amendment：冻结 C09-1H为完整 C09-1G raw
+request→unsigned `ProviderRealFilesystemConformanceResultV1` Envelope 的 point
+evidence closure。入口对整份 hostile input做一次 immutable snapshot，再组合 C09-1G
+diagnostic validator；不接受普通 validation DTO或 caller “verified” boolean。成功
+authority唯一为 `none_real_fs_conformance_result_structure_only`，仍精确 1 次 root
+point admission与6次签名，Result本身不新增签名；payload aggregate `passed`不授权
+真实 I/O。Result target必须按七字段重算 ID并 byte-identical命中 Discovery
+`payload.targets[i].target`恰好一次；Discovery Pin、Input Bundle digest、
+Bundle→Fixture→signed Suite Pin及
+Suite/fixture/runner/crash-cut冗余 digest全部 exact闭合。caseResults按
+`{caseId,crashCutId}` UTF-8 tuple sorted+unique exact-cover Suite required set，
+outcome/code与 failed→unsupported→passed aggregate为总函数。Result ID/content digest、
+Envelope/Pin/payload等式及仅含 `locatorProfile + resultId` 的唯一 installation
+locator必须可重算；完整 materialized
+Result Envelope受16 MiB cap，不另加 per-case cap。本点不包含真实 runner/文件系统、
+history/current、Universe、policy/runtime、Evidence、Catalog/Registry/Acceptance、
+持久化或 strong write。
+
 2026-08-03 implementation evidence：C09-1F 已由 `3ca2977` 独立提交并推送。
 该层只关闭 root-signed Fixture Corpus→Suite source closure：12 条记录、4 个
 case、8 个 crash cut、43 个 materialized negative cases、152 份 Provider JSON
@@ -81,7 +99,7 @@ Universe、runtime、Evidence、Catalog、真实 I/O及 WP5 aggregate仍 open/lo
 
 权威决策：
 
-- `docs/prd/2026-07-27-agent-native-change-intelligence-rd-plan.md` D-24～D-32
+- `docs/prd/2026-07-27-agent-native-change-intelligence-rd-plan.md` D-24～D-33
 - `docs/research/2026-07-28-g0-contract-freeze-record.md` 第 4、5 节
 - WP1 Contracts、WP2 Repository State、WP3 Artifact Store 与 WP4 Task
   Intelligence 已关闭的 Schema、Snapshot、CAS、Journal 和 Lifecycle 规则
@@ -2914,10 +2932,14 @@ interface ProviderRealFilesystemConformanceResultEnvelopeV1 {
   payload: ProviderRealFilesystemConformanceResultV1;
 }
 
-interface ProviderRealFilesystemConformanceResultPinV1 {
+interface ProviderRealFilesystemConformanceResultLocatorV1 {
   locatorProfile:
     "installation_provider_real_fs_conformance_result_v1";
   resultId: ProviderRealFilesystemConformanceResultIdV1;
+}
+
+interface ProviderRealFilesystemConformanceResultPinV1
+  extends ProviderRealFilesystemConformanceResultLocatorV1 {
   contentDigest: ContentDigest;
 }
 
@@ -15577,7 +15599,7 @@ Event action、capability 必须交叉一致。
 
 状态枚举：
 
-- `frozen`：D-24～D-32 已在 PRD/G0/本矩阵一致；
+- `frozen`：D-24～D-33 已在 PRD/G0/本矩阵一致；
 - `pending implementation`：代码或 focused tests 尚未提交；
 - `capability locked`：生产入口必须在任何仓库读取/写入前 fail closed；
 - `verified locally/remotely`：只在对应 source tree 的 focused/root/CI 证据通过
@@ -15655,7 +15677,7 @@ D-31不得藏在一个巨型 WP5-1P commit中，固定按以下三个独立 comm
 
 | # | Gate | 状态 | 当前证据 / 下一关闭点 |
 |---:|---|---|---|
-| 1 | WP5-0 | Closed | D-24～D-32 已冻结 |
+| 1 | WP5-0 | Closed | D-24～D-33 已冻结 |
 | 2 | WP5-1P/C09-1B | Closed | strict Ed25519 host conformance 已通过独立复审 |
 | 3 | WP5-1P/C09-1C | Closed | Bootstrap Trust Bundle 与 retained trust 已闭环 |
 | 4 | WP5-1P aggregate | **In progress** | C09-1D `acc6c9c`、C09-1E `1b182aa`、C09-1F `3ca2977` 与 C09-1G `70201b4` 已完成；1G 仅为 signed Target Discovery point closure，下一点为 real-FS Conformance Result，Catalog、Discovery history/current、Universe、Acceptance、Migration 等仍需关闭 |
@@ -15675,7 +15697,7 @@ D-31不得藏在一个巨型 WP5-1P commit中，固定按以下三个独立 comm
 
 | Gate | 内容 | 最低本地证据 | Capability |
 |---|---|---|---|
-| WP5-0 | D-24～D-32 文档冻结 | diff/link/range/术语审查 | locked |
+| WP5-0 | D-24～D-33 文档冻结 | diff/link/range/术语审查 | locked |
 | WP5-1P/C09-1B | raw-key digest + strict Ed25519 host conformance | old C09-0 key-ID golden byte-identical；独立 digest brand/schema/golden；strict point/signature vectors；28-case fixed resource/digest exact-cover；每 runtime恰56次 point + 28次 verify；constant-true/false/divergent/mutating/replaced host negatives；package build/typecheck/test/distribution/root quality与 Security review | locked |
 | WP5-1P/C09-1C | fixed Bootstrap Trust Bundle + immutable Identity retained trust | Bundle/manifest Pin/Envelope/payload/fixed-locator/4 MiB Schema与golden；bootstrap metadata、root+3 recovery/threshold/policy/strict profile等式；signed distribution与Identity origin closure；old/new Bundle recovery-only migration、missing retained object、五链 accounting negatives；package build/typecheck/test/distribution/root quality与 Implementability/Security review | locked |
 | WP5-1P | C09 Provider contracts prerequisite：RFC 8785/JCS与provider ID、raw-key digest、strict Ed25519 host capability/KAT、fixed Bootstrap Trust Bundle+historical source retention、registry/root/key/runtime/Evidence/Catalog Envelope + signed Distribution Root Binding/Taxonomy/Release Matrix/embedded Discovery Input Bundle/Target Discovery Result/Release Target Universe + signed real-FS Suite/Fixture Corpus与 typed retained-object accounting + bounded five-chain history、deterministic public projection、Acceptance/Store compact receipts、same/cross migration typed dry-run/Plan-bound reservation/exact final receipt/receipt-prefix closure、versioned Rewrite Plan/Object+Root Semantic Proof、exact-object、external CAS、journal与 error wire + golden vectors | provider contract build/schema；old C09-0 vectors byte-identical；strict manifest exact-cover、fixed digest、cross-runtime positive/hostile KAT、bundle/metadata/key/pin/history-source negatives；cross-language golden bytes、coverage provenance/history/union/catalog omission/code-smuggling、nonce mismatch/restart/migration及 rewrite mapping/root/SCC/JCS/size/HMAC issuer/proof-token/locator/budget negative vectors | locked |
@@ -16089,7 +16111,8 @@ signed-payload content digest与 locator随之改变，旧 locator下替换 sign
 失败；semantic suite/corpus digest相同但 release/binding/records/signature不同的
 另一份合法 signed Envelope不能替代原对象。对每个 Catalog candidate，再以两份都
 合法签名且 semantic digest相同、full content digest不同的 Suite/Corpus构造替换：
-Result所 pin Discovery Result/Input Bundle必须 exact回到 Universe coverage basis，
+Result所 pin Discovery Result Pin与 Input Bundle content digest必须 exact回到
+Universe coverage basis，
 Result Suite Pin必须与该 Bundle→Fixture payload Suite Pin byte-identical，任一
 Discovery pin、Bundle digest、Suite/Corpus冗余 digest或 full Pin不等均拒绝且不得
 扩大 retained closure之外的对象集合。
@@ -16208,7 +16231,7 @@ WP5-S07 client或三层 provider-side compare-append，strong write继续锁定�
 
 只有以下条件全部满足，本文件状态才能改为 **WP5 Completed**：
 
-- D-24～D-32 在 PRD、G0、Contracts、Store、Engine、Provider host/bundle与 Surface
+- D-24～D-33 在 PRD、G0、Contracts、Store、Engine、Provider host/bundle与 Surface
   DTO 中一致；
 - WP5-C/S/R/P/A/E/I 全部从 pending 变为 verified；
 - AT-C01～C31、D01～D38、S01～S16、O01～O33、Q01～Q33 全部有可复核

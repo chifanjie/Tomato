@@ -1,0 +1,42 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:store-durable-object-provider-isolation",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "separate_os_principal"
+        },
+        "securityBoundaryProfileDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "kind",
+        "securityBoundaryProfileDigest"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "kernel_isolated_storage_domain"
+        },
+        "securityBoundaryProfileDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "kind",
+        "securityBoundaryProfileDigest"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

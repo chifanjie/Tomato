@@ -44,6 +44,12 @@ import type {
   ProviderRealFilesystemConformanceResultIdV1,
   ProviderRealFilesystemConformanceResultLocatorV1,
   ProviderRealFilesystemConformanceResultPinV1,
+  ProviderRuntimeAttestationPointClosureValidationV1,
+  ProviderRuntimeAttestationPointGoldenManifestV1,
+  ProviderRuntimeAttestationPointInvalidCaseIdV1,
+  StoreDurableObjectProviderPolicyV1,
+  StoreProviderFilesystemProfileFieldsV1,
+  ValidateProviderRuntimeAttestationPointClosureV1Input,
   InstallationBootstrapTrustUseStructureAssessmentV1,
   InstallationIdentityRetainedTrustStructureValidationV1,
   HashedStoreFilenameKeyV1,
@@ -62,6 +68,9 @@ import type {
 import type {
   ProviderRealFilesystemConformanceResultPinV1 as ProviderRealFilesystemConformanceResultPinFromSubpathV1,
 } from "../src/provider-real-filesystem-conformance-result.js";
+import type {
+  ProviderRuntimeAttestationPointClosureValidationV1 as ProviderRuntimeAttestationPointClosureFromSubpathV1,
+} from "../src/provider-runtime-attestation-point.js";
 import {
   encodeStoreFilenameKeyV1,
   deriveInstallationIdentityGenerationIdV1,
@@ -151,6 +160,18 @@ declare const conformanceResultPinFromSubpath:
   ProviderRealFilesystemConformanceResultPinFromSubpathV1;
 declare const conformanceResultClosure:
   ProviderRealFilesystemConformanceResultClosureValidationV1;
+declare const runtimePointClosure:
+  ProviderRuntimeAttestationPointClosureValidationV1;
+declare const runtimePointClosureFromSubpath:
+  ProviderRuntimeAttestationPointClosureFromSubpathV1;
+declare const runtimePointInput:
+  ValidateProviderRuntimeAttestationPointClosureV1Input;
+declare const runtimePointGolden:
+  ProviderRuntimeAttestationPointGoldenManifestV1;
+declare const semanticProviderPolicy:
+  StoreDurableObjectProviderPolicyV1;
+declare const filesystemProfileFields:
+  StoreProviderFilesystemProfileFieldsV1;
 const storeFilenameFromShort: StoreFilenameKeyV1 = shortFilenameKey;
 const storeFilenameFromHash: StoreFilenameKeyV1 = hashedFilenameKey;
 const rootPinFromSubpath:
@@ -172,6 +193,38 @@ const conformanceResultAuthority:
 const conformanceResultLocatorFromPin:
   ProviderRealFilesystemConformanceResultLocatorV1 =
     conformanceResultPin;
+const runtimePointRootFromSubpath:
+  ProviderRuntimeAttestationPointClosureValidationV1 =
+    runtimePointClosureFromSubpath;
+const runtimePointSubpathFromRoot:
+  ProviderRuntimeAttestationPointClosureFromSubpathV1 =
+    runtimePointClosure;
+const runtimePointAuthority:
+  "none_provider_runtime_attestation_structure_only" =
+    runtimePointClosure.authority;
+const runtimePointPolicy:
+  StoreDurableObjectProviderPolicyV1 =
+    runtimePointClosure.semanticProviderPolicy;
+const runtimePointFilesystemProfile:
+  StoreProviderFilesystemProfileFieldsV1 =
+    runtimePointClosure.filesystemProfile;
+const inheritedRuntimePointInvalidCaseId:
+  ProviderRuntimeAttestationPointInvalidCaseIdV1 =
+    "inner-input-extra-field";
+const pointSpecificRuntimePointInvalidCaseId:
+  ProviderRuntimeAttestationPointInvalidCaseIdV1 =
+    "runtime-signature-bitflip";
+// @ts-expect-error Runtime point invalid IDs are an exact closed union
+const unknownRuntimePointInvalidCaseId:
+  ProviderRuntimeAttestationPointInvalidCaseIdV1 =
+    "runtime-attestation-point-unknown";
+// @ts-expect-error Runtime point closure deliberately does not grant strong authority
+const strongRuntimePointAuthority: "strong_ready" =
+  runtimePointClosure.authority;
+const reorderedRuntimePointStagingKinds:
+  StoreDurableObjectProviderPolicyV1["supportedStagingObjectKinds"] =
+    // @ts-expect-error the policy staging tuple has one exact order
+    ["directory", "regular"];
 // @ts-expect-error point closure deliberately does not grant strong authority
 const strongDiscoveryAuthority: "strong_ready" =
   discoveryClosure.authority;
@@ -399,6 +452,20 @@ void [
   subpathPinFromRoot,
   discoveryAuthority,
   strongDiscoveryAuthority,
+  runtimePointRootFromSubpath,
+  runtimePointSubpathFromRoot,
+  runtimePointAuthority,
+  runtimePointPolicy,
+  runtimePointFilesystemProfile,
+  inheritedRuntimePointInvalidCaseId,
+  pointSpecificRuntimePointInvalidCaseId,
+  unknownRuntimePointInvalidCaseId,
+  strongRuntimePointAuthority,
+  reorderedRuntimePointStagingKinds,
+  runtimePointInput,
+  runtimePointGolden,
+  semanticProviderPolicy,
+  filesystemProfileFields,
   generationResult,
   rootKeyResult,
   keyCheckResult,

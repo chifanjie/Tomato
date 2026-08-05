@@ -1,0 +1,17 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-runtime-attestation-point-invalid-stage",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "input",
+    "conformance_result_closure",
+    "semantic_policy_structure",
+    "semantic_policy_digest",
+    "result_policy_binding",
+    "runtime_pin",
+    "runtime_structure",
+    "runtime_result_binding",
+    "runtime_root",
+    "runtime_signature"
+  ]
+}

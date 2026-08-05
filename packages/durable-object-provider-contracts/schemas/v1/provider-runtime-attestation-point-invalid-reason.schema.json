@@ -1,0 +1,14 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-runtime-attestation-point-invalid-reason",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "schema_invalid",
+    "source_invalid",
+    "digest_mismatch",
+    "binding_mismatch",
+    "root_mismatch",
+    "signature_invalid",
+    "pin_mismatch"
+  ]
+}

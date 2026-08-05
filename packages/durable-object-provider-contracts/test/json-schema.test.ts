@@ -71,6 +71,18 @@ const providerRegistryManifestHistoryInvalidPath = fileURLToPath(
     import.meta.url,
   ),
 );
+const providerRuntimeAttestationPointGoldenPath = fileURLToPath(
+  new URL(
+    "../fixtures/v1/golden/provider-runtime-attestation-point-v1.json",
+    import.meta.url,
+  ),
+);
+const providerRuntimeAttestationPointInvalidPath = fileURLToPath(
+  new URL(
+    "../fixtures/v1/invalid/provider-runtime-attestation-point-v1.json",
+    import.meta.url,
+  ),
+);
 
 const REGISTRY_SCHEMA_ROOT_KEY_ID = "a".repeat(22);
 const REGISTRY_SCHEMA_PROVIDER_ID = "durable-object-provider:schema";
@@ -875,6 +887,14 @@ describe("provider contract JSON Schema distribution", () => {
       "provider-real-filesystem-conformance-result-invalid-reason",
       "provider-real-filesystem-conformance-result-golden-manifest",
       "provider-real-filesystem-conformance-result-invalid-manifest",
+      "store-durable-object-provider-isolation",
+      "store-manifest-compare-append-receipt-ledger-policy",
+      "store-durable-object-provider-policy",
+      "store-provider-filesystem-profile-fields",
+      "provider-runtime-attestation-point-invalid-stage",
+      "provider-runtime-attestation-point-invalid-reason",
+      "provider-runtime-attestation-point-golden-manifest",
+      "provider-runtime-attestation-point-invalid-manifest",
       "provider-public-support-taxonomy-signature-wrapper",
       "provider-release-matrix-signature-wrapper",
       "provider-target-discovery-input-bundle-signature-wrapper",
@@ -884,7 +904,7 @@ describe("provider contract JSON Schema distribution", () => {
       expect(generated, name).toHaveProperty(name);
       expectEveryJsonSchemaObjectClosed(generated[name], name);
     }
-    expect(Object.keys(generated)).toHaveLength(233);
+    expect(Object.keys(generated)).toHaveLength(241);
 
     for (const name of [
       "store-durable-object-provider-runtime-attestation-signature-wrapper",
@@ -917,6 +937,102 @@ describe("provider contract JSON Schema distribution", () => {
       }
     }
   });
+
+  it("publishes strict Runtime point policy/golden/122-case invalid schemas", () => {
+    const generated = generateProviderContractJsonSchemasV1();
+    const golden = JSON.parse(
+      readFileSync(providerRuntimeAttestationPointGoldenPath, "utf8"),
+    ) as Record<string, any>;
+    const invalid = JSON.parse(
+      readFileSync(providerRuntimeAttestationPointInvalidPath, "utf8"),
+    ) as Record<string, any>;
+    const validateGolden = new Ajv2020({ allErrors: true, strict: true }).compile(
+      generated["provider-runtime-attestation-point-golden-manifest"],
+    );
+    const validateInvalid = new Ajv2020({ allErrors: true, strict: true }).compile(
+      generated["provider-runtime-attestation-point-invalid-manifest"],
+    );
+    const validatePolicy = new Ajv2020({ allErrors: true, strict: true }).compile(
+      generated["store-durable-object-provider-policy"],
+    );
+    expect(validateGolden(golden), JSON.stringify(validateGolden.errors)).toBe(true);
+    expect(validateInvalid(invalid), JSON.stringify(validateInvalid.errors)).toBe(true);
+    expect(validatePolicy(golden.semanticProviderPolicy)).toBe(true);
+
+    const alternatePolicy = structuredClone(golden.semanticProviderPolicy);
+    alternatePolicy.isolation.kind = "kernel_isolated_storage_domain";
+    alternatePolicy.deleteSemantics = "disabled";
+    expect(validatePolicy(alternatePolicy), JSON.stringify(validatePolicy.errors)).toBe(true);
+    const reorderedTuple = structuredClone(golden.semanticProviderPolicy);
+    reorderedTuple.supportedStagingObjectKinds.reverse();
+    expect(validatePolicy(reorderedTuple)).toBe(false);
+
+    const missingCase = structuredClone(invalid);
+    missingCase.cases.pop();
+    expect(validateInvalid(missingCase)).toBe(false);
+    const invalidProperties = generated[
+      "provider-runtime-attestation-point-invalid-manifest"
+    ].properties as Record<string, Record<string, any>>;
+    for (const propertyName of ["caseIds", "cases"] as const) {
+      expect(invalidProperties[propertyName]).toMatchObject({
+        type: "array",
+        minItems: 122,
+        maxItems: 122,
+        items: false,
+      });
+      expect(invalidProperties[propertyName]?.prefixItems).toHaveLength(122);
+    }
+    const reorderedCaseIds = structuredClone(invalid);
+    [reorderedCaseIds.caseIds[0], reorderedCaseIds.caseIds[1]] = [
+      reorderedCaseIds.caseIds[1],
+      reorderedCaseIds.caseIds[0],
+    ];
+    expect(
+      validateInvalid(reorderedCaseIds),
+      JSON.stringify(validateInvalid.errors),
+    ).toBe(false);
+    const reorderedCases = structuredClone(invalid);
+    [reorderedCases.cases[0], reorderedCases.cases[1]] = [
+      reorderedCases.cases[1],
+      reorderedCases.cases[0],
+    ];
+    expect(
+      validateInvalid(reorderedCases),
+      JSON.stringify(validateInvalid.errors),
+    ).toBe(false);
+    const mismatchedInnerSource = structuredClone(invalid);
+    mismatchedInnerSource.cases[0].mutation.recipe.sourceOperation =
+      invalid.cases[1].mutation.recipe.sourceOperation;
+    expect(
+      validateInvalid(mismatchedInnerSource),
+      JSON.stringify(validateInvalid.errors),
+    ).toBe(false);
+    expect(
+      generated["provider-runtime-attestation-point-invalid-stage"].enum,
+    ).toEqual([
+      "input",
+      "conformance_result_closure",
+      "semantic_policy_structure",
+      "semantic_policy_digest",
+      "result_policy_binding",
+      "runtime_pin",
+      "runtime_structure",
+      "runtime_result_binding",
+      "runtime_root",
+      "runtime_signature",
+    ]);
+    expect(
+      generated["provider-runtime-attestation-point-invalid-reason"].enum,
+    ).toEqual([
+      "schema_invalid",
+      "source_invalid",
+      "digest_mismatch",
+      "binding_mismatch",
+      "root_mismatch",
+      "signature_invalid",
+      "pin_mismatch",
+    ]);
+  }, 30_000);
 
   it("publishes every Registry atomic union as closed alternatives", () => {
     const generated = generateProviderContractJsonSchemasV1();

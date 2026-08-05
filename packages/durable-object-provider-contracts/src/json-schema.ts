@@ -141,6 +141,18 @@ import {
   ProviderRealFilesystemConformanceResultInvalidManifestV1Schema,
 } from "./provider-real-filesystem-conformance-result-fixtures.js";
 import {
+  ProviderRuntimeAttestationPointInvalidReasonV1Schema,
+  ProviderRuntimeAttestationPointInvalidStageV1Schema,
+  StoreDurableObjectProviderIsolationV1Schema,
+  StoreDurableObjectProviderPolicyV1Schema,
+  StoreManifestCompareAppendReceiptLedgerPolicyV1Schema,
+  StoreProviderFilesystemProfileFieldsV1Schema,
+} from "./provider-runtime-attestation-point.js";
+import {
+  ProviderRuntimeAttestationPointGoldenManifestV1Schema,
+  ProviderRuntimeAttestationPointInvalidManifestV1Schema,
+} from "./provider-runtime-attestation-point-fixtures.js";
+import {
   ProviderFeasibilityTargetFieldsV1Schema,
   ProviderFeasibilityTargetV1Schema,
   ProviderPublicFilesystemDescriptorV1Schema,
@@ -615,6 +627,22 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 =
     ProviderRealFilesystemConformanceResultGoldenManifestV1Schema,
   "provider-real-filesystem-conformance-result-invalid-manifest":
     ProviderRealFilesystemConformanceResultInvalidManifestV1Schema,
+  "store-durable-object-provider-isolation":
+    StoreDurableObjectProviderIsolationV1Schema,
+  "store-manifest-compare-append-receipt-ledger-policy":
+    StoreManifestCompareAppendReceiptLedgerPolicyV1Schema,
+  "store-durable-object-provider-policy":
+    StoreDurableObjectProviderPolicyV1Schema,
+  "store-provider-filesystem-profile-fields":
+    StoreProviderFilesystemProfileFieldsV1Schema,
+  "provider-runtime-attestation-point-invalid-stage":
+    ProviderRuntimeAttestationPointInvalidStageV1Schema,
+  "provider-runtime-attestation-point-invalid-reason":
+    ProviderRuntimeAttestationPointInvalidReasonV1Schema,
+  "provider-runtime-attestation-point-golden-manifest":
+    ProviderRuntimeAttestationPointGoldenManifestV1Schema,
+  "provider-runtime-attestation-point-invalid-manifest":
+    ProviderRuntimeAttestationPointInvalidManifestV1Schema,
   "provider-public-linux-distribution-id":
     ProviderPublicLinuxDistributionIdV1Schema,
   "provider-public-os-release-family-descriptor":

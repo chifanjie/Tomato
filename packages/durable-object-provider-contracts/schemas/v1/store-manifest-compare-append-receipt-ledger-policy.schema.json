@@ -1,0 +1,55 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:store-manifest-compare-append-receipt-ledger-policy",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string",
+      "const": "store_manifest_compare_append_receipt_ledger_policy_v1"
+    },
+    "locatorProfile": {
+      "type": "string",
+      "const": "store_manifest_compare_append_receipt_v1"
+    },
+    "storageBoundary": {
+      "type": "string",
+      "const": "provider_isolated_non_store_namespace"
+    },
+    "appendSemantics": {
+      "type": "string",
+      "const": "immutable_no_replace_by_repository_worktree_operation_nonce"
+    },
+    "maxReceiptCountPerRepositoryWorktree": {
+      "type": "number",
+      "const": 16384
+    },
+    "maxReceiptLogicalBytesPerRepositoryWorktree": {
+      "type": "number",
+      "const": 67108864
+    },
+    "maxSingleReceiptLogicalBytes": {
+      "type": "number",
+      "const": 1048576
+    },
+    "admission": {
+      "type": "string",
+      "const": "freeze_resolved_at_and_complete_signed_receipt_then_reserve_exact_count_and_canonical_bytes_before_atomic_namespace_commit"
+    },
+    "quotaAccounting": {
+      "type": "string",
+      "const": "excluded_from_private_store_quota_root"
+    }
+  },
+  "required": [
+    "profile",
+    "locatorProfile",
+    "storageBoundary",
+    "appendSemantics",
+    "maxReceiptCountPerRepositoryWorktree",
+    "maxReceiptLogicalBytesPerRepositoryWorktree",
+    "maxSingleReceiptLogicalBytes",
+    "admission",
+    "quotaAccounting"
+  ],
+  "additionalProperties": false
+}

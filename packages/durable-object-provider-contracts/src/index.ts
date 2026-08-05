@@ -281,6 +281,8 @@ export * from "./provider-real-filesystem-source.js";
 export * from "./provider-real-filesystem-source-fixtures.js";
 export * from "./provider-real-filesystem-conformance-result.js";
 export * from "./provider-real-filesystem-conformance-result-fixtures.js";
+export * from "./provider-runtime-attestation-point.js";
+export * from "./provider-runtime-attestation-point-fixtures.js";
 export * from "./provider-target-discovery-point.js";
 export * from "./provider-target-discovery-point-fixtures.js";
 export {

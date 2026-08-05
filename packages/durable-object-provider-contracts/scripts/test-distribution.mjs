@@ -605,8 +605,10 @@ try {
   const sourceSchemaRelativePaths = await listRelativeSchemaPaths(
     join(packageRoot, "schemas", "v1"),
   );
-  if (sourceSchemaRelativePaths.length === 0) {
-    throw new Error("Source provider contracts contain no JSON Schemas");
+  if (sourceSchemaRelativePaths.length !== 241) {
+    throw new Error(
+      `Source provider contracts must contain exactly 241 JSON Schemas, found ${sourceSchemaRelativePaths.length}`,
+    );
   }
   await assertExactProviderDirectory(
     join(packageRoot, "provider"),
@@ -831,6 +833,11 @@ try {
   const explicitSpecifiers = Object.keys(manifest.exports)
     .filter((key) => !key.includes("*"))
     .map(packageSpecifier);
+  if (explicitSpecifiers.length !== 17) {
+    throw new Error(
+      `Packed provider contracts must expose exactly 17 public modules, found ${explicitSpecifiers.length}`,
+    );
+  }
   const installedStrictManifestPath = await realpath(
     join(
       installedRoot,
@@ -962,6 +969,24 @@ try {
       "provider-real-filesystem-conformance-result-v1.json",
     ),
   );
+  const installedProviderRuntimeAttestationPointGoldenPath = await realpath(
+    join(
+      installedRoot,
+      "fixtures",
+      "v1",
+      "golden",
+      "provider-runtime-attestation-point-v1.json",
+    ),
+  );
+  const installedProviderRuntimeAttestationPointInvalidPath = await realpath(
+    join(
+      installedRoot,
+      "fixtures",
+      "v1",
+      "invalid",
+      "provider-runtime-attestation-point-v1.json",
+    ),
+  );
 
   const runtimeProbe = join(consumerRoot, "runtime-probe.mjs");
   await writeFile(
@@ -985,6 +1010,8 @@ try {
       'const targetDiscoveryPointFixtures = await import("@understand-code/durable-object-provider-contracts/provider-target-discovery-point-fixtures");',
       'const realFilesystemConformanceResult = await import("@understand-code/durable-object-provider-contracts/provider-real-filesystem-conformance-result");',
       'const realFilesystemConformanceResultFixtures = await import("@understand-code/durable-object-provider-contracts/provider-real-filesystem-conformance-result-fixtures");',
+      'const providerRuntimeAttestationPoint = await import("@understand-code/durable-object-provider-contracts/provider-runtime-attestation-point");',
+      'const providerRuntimeAttestationPointFixtures = await import("@understand-code/durable-object-provider-contracts/provider-runtime-attestation-point-fixtures");',
       'const unavailable = providerError.createProviderUnavailableToolErrorV1("unavailable");',
       'if (providerError.ProviderUnavailableToolErrorV1Schema.parse(unavailable).details.reason !== "unavailable") throw new Error("provider error export failed");',
       'const schemaUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/schemas/v1/canonical-byte-string.schema.json"));',
@@ -1007,6 +1034,8 @@ try {
       'const targetDiscoveryPointInvalidUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/invalid/provider-target-discovery-point-v1.json"));',
       'const realFilesystemConformanceResultGoldenUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json"));',
       'const realFilesystemConformanceResultInvalidUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/invalid/provider-real-filesystem-conformance-result-v1.json"));',
+      'const providerRuntimeAttestationPointGoldenUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/golden/provider-runtime-attestation-point-v1.json"));',
+      'const providerRuntimeAttestationPointInvalidUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/invalid/provider-runtime-attestation-point-v1.json"));',
       `if (await realpath(fileURLToPath(strictEd25519ManifestUrl)) !== ${JSON.stringify(installedStrictManifestPath)}) throw new Error("strict manifest resolved outside the exact installed path");`,
       `if (await realpath(fileURLToPath(bootstrapTrustBundleUrl)) !== ${JSON.stringify(installedBootstrapBundlePath)}) throw new Error("bootstrap Bundle resolved outside the exact installed path");`,
       `if (await realpath(fileURLToPath(bootstrapTrustGoldenUrl)) !== ${JSON.stringify(installedBootstrapGoldenPath)}) throw new Error("bootstrap golden resolved outside the exact installed path");`,
@@ -1022,6 +1051,8 @@ try {
       `if (await realpath(fileURLToPath(targetDiscoveryPointInvalidUrl)) !== ${JSON.stringify(installedTargetDiscoveryPointInvalidPath)}) throw new Error("target discovery point invalid corpus resolved outside the exact installed path");`,
       `if (await realpath(fileURLToPath(realFilesystemConformanceResultGoldenUrl)) !== ${JSON.stringify(installedRealFilesystemConformanceResultGoldenPath)}) throw new Error("real filesystem conformance result golden resolved outside the exact installed path");`,
       `if (await realpath(fileURLToPath(realFilesystemConformanceResultInvalidUrl)) !== ${JSON.stringify(installedRealFilesystemConformanceResultInvalidPath)}) throw new Error("real filesystem conformance result invalid corpus resolved outside the exact installed path");`,
+      `if (await realpath(fileURLToPath(providerRuntimeAttestationPointGoldenUrl)) !== ${JSON.stringify(installedProviderRuntimeAttestationPointGoldenPath)}) throw new Error("provider runtime attestation point golden resolved outside the exact installed path");`,
+      `if (await realpath(fileURLToPath(providerRuntimeAttestationPointInvalidUrl)) !== ${JSON.stringify(installedProviderRuntimeAttestationPointInvalidPath)}) throw new Error("provider runtime attestation point invalid corpus resolved outside the exact installed path");`,
       'const schema = JSON.parse(await readFile(schemaUrl, "utf8"));',
       'const providerErrorSchema = JSON.parse(await readFile(providerErrorSchemaUrl, "utf8"));',
       'const golden = JSON.parse(await readFile(goldenUrl, "utf8"));',
@@ -1042,6 +1073,8 @@ try {
       'const targetDiscoveryPointInvalidBytes = new Uint8Array(await readFile(targetDiscoveryPointInvalidUrl));',
       'const realFilesystemConformanceResultGoldenBytes = new Uint8Array(await readFile(realFilesystemConformanceResultGoldenUrl));',
       'const realFilesystemConformanceResultInvalidBytes = new Uint8Array(await readFile(realFilesystemConformanceResultInvalidUrl));',
+      'const providerRuntimeAttestationPointGoldenBytes = new Uint8Array(await readFile(providerRuntimeAttestationPointGoldenUrl));',
+      'const providerRuntimeAttestationPointInvalidBytes = new Uint8Array(await readFile(providerRuntimeAttestationPointInvalidUrl));',
       'const strictEd25519Manifest = JSON.parse(new TextDecoder().decode(strictEd25519ManifestBytes));',
       'if (schema.$id !== "urn:understand-code:provider-contract:schema:v1:canonical-byte-string") throw new Error("packed schema missing");',
       'if (providerErrorSchema.$id !== "urn:understand-code:provider-contract:schema:v1:provider-unavailable-tool-error") throw new Error("packed provider error schema missing");',
@@ -1157,6 +1190,31 @@ try {
       '  conformanceResultInvalidExecutedCaseCount += 1;',
       '}',
       'if (conformanceResultInvalidExecutedCaseCount !== conformanceResultInvalid.caseCount) throw new Error(`packed conformance result replay count drift: ${conformanceResultInvalidExecutedCaseCount}/${conformanceResultInvalid.caseCount}`);',
+      'if (root.validateProviderRuntimeAttestationPointClosureV1 !== providerRuntimeAttestationPoint.validateProviderRuntimeAttestationPointClosureV1 || root.verifyProviderRuntimeAttestationPointGoldenResourceV1 !== providerRuntimeAttestationPointFixtures.verifyProviderRuntimeAttestationPointGoldenResourceV1 || root.verifyProviderRuntimeAttestationPointInvalidResourceV1 !== providerRuntimeAttestationPointFixtures.verifyProviderRuntimeAttestationPointInvalidResourceV1) throw new Error("root/provider-runtime-attestation-point exports diverged");',
+      'pointCalls = 0;',
+      'verifyCalls = 0;',
+      'const runtimeAttestationPointGoldenValidation = await providerRuntimeAttestationPointFixtures.verifyProviderRuntimeAttestationPointGoldenResourceV1(providerRuntimeAttestationPointGoldenBytes, strictCapability);',
+      'if (runtimeAttestationPointGoldenValidation.authority !== "none_provider_runtime_attestation_structure_only" || runtimeAttestationPointGoldenValidation.pointClosure.authority !== "none_provider_runtime_attestation_structure_only" || runtimeAttestationPointGoldenValidation.pointClosure.conformanceResultClosure.authority !== "none_real_fs_conformance_result_structure_only" || runtimeAttestationPointGoldenValidation.manifest.expected.activeRootPointAdmissionCount !== 1 || runtimeAttestationPointGoldenValidation.manifest.expected.signatureVerificationCount !== 7 || runtimeAttestationPointGoldenValidation.manifest.expected.runtimeSignatureCount !== 1 || runtimeAttestationPointGoldenValidation.manifest.expected.conformanceResultSignatureCount !== 0 || pointCalls !== 1 || verifyCalls !== 7) throw new Error(`packed runtime attestation point golden/crypto closure failed: ${pointCalls}/${verifyCalls}`);',
+      'const runtimeAttestationPointInvalid = providerRuntimeAttestationPointFixtures.verifyProviderRuntimeAttestationPointInvalidResourceV1(providerRuntimeAttestationPointInvalidBytes);',
+      'if (runtimeAttestationPointInvalid.fixtureAuthority !== "none_rejection_only" || runtimeAttestationPointInvalid.innerCaseCount !== 50 || runtimeAttestationPointInvalid.pointCaseCount !== 72 || runtimeAttestationPointInvalid.caseCount !== 122 || runtimeAttestationPointInvalid.cases.length !== 122 || runtimeAttestationPointInvalid.caseIds.length !== 122 || new Set(runtimeAttestationPointInvalid.caseIds).size !== 122 || JSON.stringify(runtimeAttestationPointInvalid.caseIds) !== JSON.stringify(providerRuntimeAttestationPointFixtures.PROVIDER_RUNTIME_ATTESTATION_POINT_INVALID_CASE_IDS_V1)) throw new Error("packed runtime attestation point invalid corpus failed");',
+      'let runtimeAttestationPointInvalidExecutedCaseCount = 0;',
+      'for (const [index, invalidCase] of runtimeAttestationPointInvalid.cases.entries()) {',
+      '  if (invalidCase.caseId !== runtimeAttestationPointInvalid.caseIds[index] || invalidCase.mutation.operation !== invalidCase.caseId) throw new Error(`packed runtime attestation point invalid operation/order drift: ${invalidCase.caseId}`);',
+      '  const materializedRequest = providerRuntimeAttestationPointFixtures.materializeProviderRuntimeAttestationPointInvalidRequestWitnessV1(runtimeAttestationPointGoldenValidation.manifest, invalidCase);',
+      '  const materializedRequestDigest = `sha256:${createHash("sha256").update(root.canonicalizeJcsSafeIntegerUtf8V1([providerRuntimeAttestationPointFixtures.PROVIDER_RUNTIME_ATTESTATION_POINT_INVALID_MATERIALIZED_REQUEST_DOMAIN_V1, materializedRequest])).digest("hex")}`;',
+      '  if (materializedRequestDigest !== invalidCase.expected.materializedRequestSemanticDigest) throw new Error(`packed runtime attestation point materialized request drift: ${invalidCase.caseId}`);',
+      '  pointCalls = 0;',
+      '  verifyCalls = 0;',
+      '  const outcome = await providerRuntimeAttestationPointFixtures.executeProviderRuntimeAttestationPointInvalidCaseV1(runtimeAttestationPointGoldenValidation.manifest, invalidCase, strictCapability);',
+      '  if (pointCalls !== invalidCase.expected.pointAdmissionCount || verifyCalls !== invalidCase.expected.signatureVerificationCount) throw new Error(`packed runtime attestation point crypto replay drift: ${invalidCase.caseId}/${pointCalls}/${verifyCalls}`);',
+      '  if (invalidCase.expected.boundary === "snapshot_stability") {',
+      '    if (outcome.kind !== "snapshot_acceptance" || outcome.boundary !== "snapshot_stability" || outcome.authority !== invalidCase.expected.authority || JSON.stringify(outcome.snapshotProjection) !== JSON.stringify(invalidCase.expected.snapshotProjection)) throw new Error(`packed runtime attestation point snapshot replay drift: ${invalidCase.caseId}/${JSON.stringify(outcome)}`);',
+      '  } else {',
+      '    if (outcome.kind !== "rejection" || outcome.boundary !== "internal_diagnostic" || outcome.stage !== invalidCase.expected.stage || outcome.reason !== invalidCase.expected.reason || outcome.publicFailure?.errorName !== invalidCase.expected.publicFailure.errorName || outcome.publicFailure?.code !== invalidCase.expected.publicFailure.code || outcome.publicFailure?.reason !== invalidCase.expected.publicFailure.reason) throw new Error(`packed runtime attestation point diagnostic replay drift: ${invalidCase.caseId}/${JSON.stringify(outcome)}`);',
+      '  }',
+      '  runtimeAttestationPointInvalidExecutedCaseCount += 1;',
+      '}',
+      'if (runtimeAttestationPointInvalidExecutedCaseCount !== 122) throw new Error(`packed runtime attestation point replay count drift: ${runtimeAttestationPointInvalidExecutedCaseCount}/122`);',
       'if (providerRegistry.StoreFilenameKeyV1Schema.parse("id-c4") !== "id-c4" || providerRegistry.decodeShortStoreFilenameKeyV1("id-c4") !== "a") throw new Error("packed lowercase base32hex filename codec failed");',
       'try { await import("@understand-code/durable-object-provider-contracts/domain-crypto"); throw new Error("private crypto helper exported"); } catch (error) { if (error?.message === "private crypto helper exported") throw error; }',
       'for (const privateSpecifier of ["@understand-code/durable-object-provider-contracts/provider-registry-records", "@understand-code/durable-object-provider-contracts/provider-registry-manifest-history"]) { try { await import(privateSpecifier); throw new Error(`private deep import exported: ${privateSpecifier}`); } catch (error) { if (error?.message?.startsWith("private deep import exported:")) throw error; } }',
@@ -1185,6 +1243,10 @@ try {
       'import { buildProviderRealFilesystemConformanceResultRelativePathV1, validateProviderRealFilesystemConformanceResultClosureV1 } from "@understand-code/durable-object-provider-contracts/provider-real-filesystem-conformance-result";',
       'import type { ProviderRealFilesystemConformanceResultClosureValidationV1, ProviderRealFilesystemConformanceResultLocatorV1, ProviderRealFilesystemConformanceResultPinV1, ProviderRealFilesystemConformanceResultRelativePathV1, ValidateProviderRealFilesystemConformanceResultClosureV1Input } from "@understand-code/durable-object-provider-contracts/provider-real-filesystem-conformance-result";',
       'import { verifyProviderRealFilesystemConformanceResultGoldenResourceV1 } from "@understand-code/durable-object-provider-contracts/provider-real-filesystem-conformance-result-fixtures";',
+      'import { deriveStoreDurableObjectProviderPolicyDigestV1, validateProviderRuntimeAttestationPointClosureV1 } from "@understand-code/durable-object-provider-contracts/provider-runtime-attestation-point";',
+      'import type { ProviderRuntimeAttestationPointClosureValidationV1, StoreDurableObjectProviderPolicyV1, ValidateProviderRuntimeAttestationPointClosureV1Input } from "@understand-code/durable-object-provider-contracts/provider-runtime-attestation-point";',
+      'import { ProviderRuntimeAttestationPointGoldenManifestV1Schema, verifyProviderRuntimeAttestationPointGoldenResourceV1 } from "@understand-code/durable-object-provider-contracts/provider-runtime-attestation-point-fixtures";',
+      'import type { ProviderRuntimeAttestationPointGoldenManifestV1, ProviderRuntimeAttestationPointInvalidCaseIdV1 } from "@understand-code/durable-object-provider-contracts/provider-runtime-attestation-point-fixtures";',
       'const slug = DurableObjectIdentityProviderSlugV1Schema.parse("native-fs");',
       'const id = createDurableObjectIdentityProviderIdV1(slug);',
       'DurableObjectIdentityProviderIdV1Schema.parse(id);',
@@ -1212,6 +1274,10 @@ try {
       'declare const conformanceResultInput: ValidateProviderRealFilesystemConformanceResultClosureV1Input;',
       'declare const conformanceResultLocator: ProviderRealFilesystemConformanceResultLocatorV1;',
       'declare const conformanceResultPin: ProviderRealFilesystemConformanceResultPinV1;',
+      'declare const runtimeAttestationPointInput: ValidateProviderRuntimeAttestationPointClosureV1Input;',
+      'declare const runtimeAttestationPointClosure: ProviderRuntimeAttestationPointClosureValidationV1;',
+      'declare const runtimeProviderPolicy: StoreDurableObjectProviderPolicyV1;',
+      'declare const runtimeFixtureManifest: unknown;',
       'const registryGoldenParsed = ProviderRegistryManifestHistoryGoldenManifestV1Schema.parse(registryGoldenManifest);',
       'const registryHistoryValidation: Promise<ProviderRegistryManifestHistoryValidationV1> = validateProviderRegistryManifestHistoryV1(registryHistoryInput);',
       'const registryInvalidManifest: ProviderRegistryManifestHistoryInvalidManifestV1 = ProviderRegistryManifestHistoryInvalidManifestV1Schema.parse(verifyProviderRegistryManifestHistoryInvalidResourceV1(registryInvalidBytes));',
@@ -1222,6 +1288,13 @@ try {
       'const conformanceResultValidation: Promise<ProviderRealFilesystemConformanceResultClosureValidationV1> = validateProviderRealFilesystemConformanceResultClosureV1(conformanceResultInput);',
       'const conformanceResultPath: ProviderRealFilesystemConformanceResultRelativePathV1 = buildProviderRealFilesystemConformanceResultRelativePathV1(conformanceResultLocator);',
       'const conformanceResultLocatorFromPin: ProviderRealFilesystemConformanceResultLocatorV1 = conformanceResultPin;',
+      'const runtimeAttestationPointValidation: Promise<ProviderRuntimeAttestationPointClosureValidationV1> = validateProviderRuntimeAttestationPointClosureV1(runtimeAttestationPointInput);',
+      'const runtimeProviderPolicyDigest: ContentDigestV1 = deriveStoreDurableObjectProviderPolicyDigestV1(runtimeProviderPolicy);',
+      'const runtimeFixtureParsed: ProviderRuntimeAttestationPointGoldenManifestV1 = ProviderRuntimeAttestationPointGoldenManifestV1Schema.parse(runtimeFixtureManifest);',
+      'const runtimeInvalidCaseId: ProviderRuntimeAttestationPointInvalidCaseIdV1 = "inner-input-extra-field";',
+      '// @ts-expect-error Runtime point invalid IDs are an exact closed union',
+      'const unknownRuntimeInvalidCaseId: ProviderRuntimeAttestationPointInvalidCaseIdV1 = "runtime-attestation-point-unknown";',
+      'const runtimeAttestationAuthority: "none_provider_runtime_attestation_structure_only" = runtimeAttestationPointClosure.authority;',
       'const rootTargetDiscoveryResultPin: RootProviderTargetDiscoveryResultPinV1 = targetDiscoveryResultPin;',
       'const rootTargetDiscoveryTaxonomyLocator: RootProviderPublicSupportTaxonomyLocatorV1 = targetDiscoveryTaxonomyLocator;',
       'const rootTargetDiscoveryMatrixLocator: RootProviderReleaseMatrixLocatorV1 = targetDiscoveryMatrixLocator;',
@@ -1230,6 +1303,7 @@ try {
       'const rootTargetDiscoveryResultLocator: RootProviderTargetDiscoveryResultLocatorV1 = targetDiscoveryResultLocator;',
       'void verifyProviderTargetDiscoveryPointGoldenResourceV1;',
       'void verifyProviderRealFilesystemConformanceResultGoldenResourceV1;',
+      'void verifyProviderRuntimeAttestationPointGoldenResourceV1;',
       'const filenameKey: StoreFilenameKeyV1 = StoreFilenameKeyV1Schema.parse("id-c4");',
       'const rootMetadataPath: ProviderRegistryRootMetadataRelativePathV1 = buildProviderRegistryRootMetadataRelativePathV1({ locatorProfile: "installation_provider_registry_root_metadata_v1", rootGeneration: 1, rootKeyId: "0000000000000000000000" });',
       'void rawKeyDigest;',
@@ -1252,6 +1326,12 @@ try {
       'void conformanceResultValidation;',
       'void conformanceResultPath;',
       'void conformanceResultLocatorFromPin;',
+      'void runtimeAttestationPointValidation;',
+      'void runtimeProviderPolicyDigest;',
+      'void runtimeFixtureParsed;',
+      'void runtimeInvalidCaseId;',
+      'void unknownRuntimeInvalidCaseId;',
+      'void runtimeAttestationAuthority;',
       'void rootTargetDiscoveryResultPin;',
       'void rootTargetDiscoveryTaxonomyLocator;',
       'void rootTargetDiscoveryMatrixLocator;',
@@ -1425,6 +1505,26 @@ try {
     ),
     "utf8",
   );
+  const packedProviderRuntimeAttestationPointGoldenText = await readFile(
+    join(
+      installedRoot,
+      "fixtures",
+      "v1",
+      "golden",
+      "provider-runtime-attestation-point-v1.json",
+    ),
+    "utf8",
+  );
+  const packedProviderRuntimeAttestationPointInvalidText = await readFile(
+    join(
+      installedRoot,
+      "fixtures",
+      "v1",
+      "invalid",
+      "provider-runtime-attestation-point-v1.json",
+    ),
+    "utf8",
+  );
   await writeFile(
     join(consumerRoot, "browser-entry.js"),
     [
@@ -1436,6 +1536,9 @@ try {
       'import { PROVIDER_TARGET_DISCOVERY_POINT_INVALID_CASE_IDS_V1, verifyProviderTargetDiscoveryPointGoldenResourceV1, verifyProviderTargetDiscoveryPointInvalidResourceV1 } from "@understand-code/durable-object-provider-contracts/provider-target-discovery-point-fixtures";',
       'import { buildProviderRealFilesystemConformanceResultRelativePathV1, validateProviderRealFilesystemConformanceResultClosureV1 } from "@understand-code/durable-object-provider-contracts/provider-real-filesystem-conformance-result";',
       'import { PROVIDER_REAL_FILESYSTEM_CONFORMANCE_RESULT_INVALID_CASE_IDS_V1, executeProviderRealFilesystemConformanceResultInvalidCaseV1, verifyProviderRealFilesystemConformanceResultGoldenResourceV1, verifyProviderRealFilesystemConformanceResultInvalidResourceV1 } from "@understand-code/durable-object-provider-contracts/provider-real-filesystem-conformance-result-fixtures";',
+      'import { validateProviderRuntimeAttestationPointClosureV1 } from "@understand-code/durable-object-provider-contracts/provider-runtime-attestation-point";',
+      'import { PROVIDER_RUNTIME_ATTESTATION_POINT_INVALID_CASE_IDS_V1, PROVIDER_RUNTIME_ATTESTATION_POINT_INVALID_MATERIALIZED_REQUEST_DOMAIN_V1, executeProviderRuntimeAttestationPointInvalidCaseV1, materializeProviderRuntimeAttestationPointInvalidRequestWitnessV1, verifyProviderRuntimeAttestationPointGoldenResourceV1, verifyProviderRuntimeAttestationPointInvalidResourceV1 } from "@understand-code/durable-object-provider-contracts/provider-runtime-attestation-point-fixtures";',
+      'import { canonicalizeJcsSafeIntegerUtf8V1 } from "@understand-code/durable-object-provider-contracts/jcs";',
       'import { STRICT_ED25519_VERIFICATION_PROFILE_V1, validatePrimeSubgroupPoint, verifyRawEd25519 } from "@understand-code/durable-object-provider-contracts/strict-ed25519";',
       'import { PROVIDER_STRICT_ED25519_MANIFEST_MAX_BYTES_V1, PROVIDER_STRICT_ED25519_MANIFEST_RESOURCE_PATH_V1, attestProviderStrictEd25519CryptoHostV1, getProviderStrictEd25519CryptoCapabilityBytesV1 } from "@understand-code/durable-object-provider-contracts/strict-ed25519-conformance";',
       ...explicitSpecifiers.map(
@@ -1456,6 +1559,8 @@ try {
       `const targetDiscoveryPointInvalidBytes = new TextEncoder().encode(${JSON.stringify(packedTargetDiscoveryPointInvalidText)});`,
       `const realFilesystemConformanceResultGoldenBytes = new TextEncoder().encode(${JSON.stringify(packedRealFilesystemConformanceResultGoldenText)});`,
       `const realFilesystemConformanceResultInvalidBytes = new TextEncoder().encode(${JSON.stringify(packedRealFilesystemConformanceResultInvalidText)});`,
+      `const providerRuntimeAttestationPointGoldenBytes = new TextEncoder().encode(${JSON.stringify(packedProviderRuntimeAttestationPointGoldenText)});`,
+      `const providerRuntimeAttestationPointInvalidBytes = new TextEncoder().encode(${JSON.stringify(packedProviderRuntimeAttestationPointInvalidText)});`,
       'let pointCalls = 0;',
       'let verifyCalls = 0;',
       'const strictHost = {',
@@ -1470,6 +1575,8 @@ try {
       '  },',
       '};',
       'const strictCapability = await attestProviderStrictEd25519CryptoHostV1({ host: strictHost, resourceHost });',
+      'const lowerHex = (bytes) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");',
+      'const browserSemanticDigest = async (domain, value) => `sha256:${lowerHex(new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", canonicalizeJcsSafeIntegerUtf8V1([domain, value]))))}`;',
       'const bootstrapValidation = await validateProviderBootstrapTrustBundleStructureV1({ bundleEnvelopeBytes: bundleResourceBytes, strictManifestEnvelopeBytes: manifestResourceBytes, strictCryptoCapability: strictCapability });',
       'if (bootstrapValidation.bundleEnvelope.contentDigest !== PROVIDER_BOOTSTRAP_TRUST_BUNDLE_CONTENT_DIGEST_V1) throw new Error("browser bootstrap trust digest mismatch");',
       'const bootstrapGoldenValidation = await verifyProviderBootstrapTrustGoldenManifestResourceV1(bootstrapTrustGoldenBytes, strictCapability);',
@@ -1562,6 +1669,33 @@ try {
       '  conformanceResultInvalidExecutedCaseCount += 1;',
       '}',
       'if (conformanceResultInvalidExecutedCaseCount !== conformanceResultInvalid.caseCount) throw new Error(`browser conformance result replay count drift: ${conformanceResultInvalidExecutedCaseCount}/${conformanceResultInvalid.caseCount}`);',
+      'if (typeof validateProviderRuntimeAttestationPointClosureV1 !== "function") throw new Error("browser runtime attestation point subpath export missing");',
+      'pointCalls = 0;',
+      'verifyCalls = 0;',
+      'const runtimeAttestationPointGoldenValidation = await verifyProviderRuntimeAttestationPointGoldenResourceV1(providerRuntimeAttestationPointGoldenBytes, strictCapability);',
+      'if (runtimeAttestationPointGoldenValidation.authority !== "none_provider_runtime_attestation_structure_only" || runtimeAttestationPointGoldenValidation.pointClosure.authority !== "none_provider_runtime_attestation_structure_only" || runtimeAttestationPointGoldenValidation.pointClosure.conformanceResultClosure.authority !== "none_real_fs_conformance_result_structure_only" || runtimeAttestationPointGoldenValidation.manifest.expected.activeRootPointAdmissionCount !== 1 || runtimeAttestationPointGoldenValidation.manifest.expected.signatureVerificationCount !== 7 || runtimeAttestationPointGoldenValidation.manifest.expected.runtimeSignatureCount !== 1 || runtimeAttestationPointGoldenValidation.manifest.expected.conformanceResultSignatureCount !== 0) throw new Error("browser runtime attestation point golden mismatch");',
+      'const runtimeAttestationPointCalls = pointCalls;',
+      'const runtimeAttestationPointVerifyCalls = verifyCalls;',
+      'const runtimeAttestationPointInvalid = verifyProviderRuntimeAttestationPointInvalidResourceV1(providerRuntimeAttestationPointInvalidBytes);',
+      'if (runtimeAttestationPointInvalid.fixtureAuthority !== "none_rejection_only" || runtimeAttestationPointInvalid.innerCaseCount !== 50 || runtimeAttestationPointInvalid.pointCaseCount !== 72 || runtimeAttestationPointInvalid.caseCount !== 122 || runtimeAttestationPointInvalid.cases.length !== 122 || runtimeAttestationPointInvalid.caseIds.length !== 122 || new Set(runtimeAttestationPointInvalid.caseIds).size !== 122 || JSON.stringify(runtimeAttestationPointInvalid.caseIds) !== JSON.stringify(PROVIDER_RUNTIME_ATTESTATION_POINT_INVALID_CASE_IDS_V1)) throw new Error("browser runtime attestation point invalid corpus mismatch");',
+      'let runtimeAttestationPointInvalidExecutedCaseCount = 0;',
+      'for (const [index, invalidCase] of runtimeAttestationPointInvalid.cases.entries()) {',
+      '  if (invalidCase.caseId !== runtimeAttestationPointInvalid.caseIds[index] || invalidCase.mutation.operation !== invalidCase.caseId) throw new Error(`browser runtime attestation point invalid operation/order drift: ${invalidCase.caseId}`);',
+      '  const materializedRequest = materializeProviderRuntimeAttestationPointInvalidRequestWitnessV1(runtimeAttestationPointGoldenValidation.manifest, invalidCase);',
+      '  const materializedRequestDigest = await browserSemanticDigest(PROVIDER_RUNTIME_ATTESTATION_POINT_INVALID_MATERIALIZED_REQUEST_DOMAIN_V1, materializedRequest);',
+      '  if (materializedRequestDigest !== invalidCase.expected.materializedRequestSemanticDigest) throw new Error(`browser runtime attestation point materialized request drift: ${invalidCase.caseId}`);',
+      '  pointCalls = 0;',
+      '  verifyCalls = 0;',
+      '  const outcome = await executeProviderRuntimeAttestationPointInvalidCaseV1(runtimeAttestationPointGoldenValidation.manifest, invalidCase, strictCapability);',
+      '  if (pointCalls !== invalidCase.expected.pointAdmissionCount || verifyCalls !== invalidCase.expected.signatureVerificationCount) throw new Error(`browser runtime attestation point crypto replay drift: ${invalidCase.caseId}/${pointCalls}/${verifyCalls}`);',
+      '  if (invalidCase.expected.boundary === "snapshot_stability") {',
+      '    if (outcome.kind !== "snapshot_acceptance" || outcome.boundary !== "snapshot_stability" || outcome.authority !== invalidCase.expected.authority || JSON.stringify(outcome.snapshotProjection) !== JSON.stringify(invalidCase.expected.snapshotProjection)) throw new Error(`browser runtime attestation point snapshot replay drift: ${invalidCase.caseId}/${JSON.stringify(outcome)}`);',
+      '  } else {',
+      '    if (outcome.kind !== "rejection" || outcome.boundary !== "internal_diagnostic" || outcome.stage !== invalidCase.expected.stage || outcome.reason !== invalidCase.expected.reason || outcome.publicFailure?.errorName !== invalidCase.expected.publicFailure.errorName || outcome.publicFailure?.code !== invalidCase.expected.publicFailure.code || outcome.publicFailure?.reason !== invalidCase.expected.publicFailure.reason) throw new Error(`browser runtime attestation point diagnostic replay drift: ${invalidCase.caseId}/${JSON.stringify(outcome)}`);',
+      '  }',
+      '  runtimeAttestationPointInvalidExecutedCaseCount += 1;',
+      '}',
+      'if (runtimeAttestationPointInvalidExecutedCaseCount !== 122) throw new Error(`browser runtime attestation point replay count drift: ${runtimeAttestationPointInvalidExecutedCaseCount}/122`);',
       'const capabilityBytes = getProviderStrictEd25519CryptoCapabilityBytesV1(strictCapability);',
       'const providerError = createProviderUnavailableToolErrorV1("revoked");',
       'ProviderUnavailableToolErrorV1Schema.parse(providerError);',
@@ -1569,7 +1703,7 @@ try {
         .map((_, index) => `providerContractBrowserModule${index}`)
         .join(", ")}];`,
       'if (publicModules.some((module) => Object.keys(module).length === 0)) throw new Error("empty browser public export");',
-      'export const browserKatResult = Object.freeze({ pointCalls: bootstrapPointCalls, verifyCalls: bootstrapVerifyCalls, rootHistoryPointCalls, rootHistoryVerifyCalls, registryHistoryPointCalls, registryHistoryVerifyCalls, registryNegativeCount, registryInvalidCaseCount: registryInvalid.caseCount, registryHistoryAuthority: registryValidation.authority, registryManifestCount: registryValidation.retainedRegistryManifestGenerationCount, realFilesystemAuthority: realFilesystemGoldenValidation.authority, realFilesystemRecordCount: realFilesystemGoldenValidation.sourceClosure.recordCount, realFilesystemCaseCount: realFilesystemGoldenValidation.sourceClosure.caseCount, realFilesystemCutCount: realFilesystemGoldenValidation.sourceClosure.requiredCaseCutCount, realFilesystemInvalidCaseCount: realFilesystemInvalid.caseCount, targetDiscoveryAuthority: targetDiscoveryGoldenValidation.authority, targetDiscoveryPointCalls, targetDiscoveryVerifyCalls, targetDiscoveryTargetCount: targetDiscoveryGoldenValidation.pointClosure.targetCount, targetDiscoveryUnresolvedObservationCount: targetDiscoveryGoldenValidation.pointClosure.unresolvedObservationCount, targetDiscoveryInvalidCaseCount: targetDiscoveryInvalid.caseCount, conformanceResultAuthority: conformanceResultGoldenValidation.authority, conformanceResultPointCalls, conformanceResultVerifyCalls, conformanceResultCaseCount: conformanceResultGoldenValidation.resultClosure.caseResultCount, conformanceResultInvalidCaseCount: conformanceResultInvalid.caseCount, conformanceResultInvalidExecutedCaseCount, conformanceResultPath, expectedConformanceResultPath: conformanceResultGoldenValidation.manifest.expected.relativePath, capabilityByteLength: capabilityBytes.byteLength, bootstrapAuthority: bootstrapValidation.authority, goldenAuthority: bootstrapGoldenValidation.authority, goldenCaseCount: 5 + bootstrapGoldenValidation.manifest.vectors.recoveryKeyIds.length, invalidAuthority: bootstrapInvalidValidation.authority, invalidCaseCount: bootstrapInvalidValidation.manifest.cases.length, rootHistoryAuthority: rootHistoryValidation.authority, rootHistoryGenerationCount: rootHistoryValidation.retainedRootMetadataGenerationCount, rootHistoryInvalidCaseCount: rootHistoryInvalid.cases.length, rootHistoryLocator: latestRootLocator, expectedRootHistoryLocator: rootHistoryGolden.expected.vectors[2].locator, publicModuleCount: publicModules.length, providerReason: providerError.details.reason });',
+      'export const browserKatResult = Object.freeze({ pointCalls: bootstrapPointCalls, verifyCalls: bootstrapVerifyCalls, rootHistoryPointCalls, rootHistoryVerifyCalls, registryHistoryPointCalls, registryHistoryVerifyCalls, registryNegativeCount, registryInvalidCaseCount: registryInvalid.caseCount, registryHistoryAuthority: registryValidation.authority, registryManifestCount: registryValidation.retainedRegistryManifestGenerationCount, realFilesystemAuthority: realFilesystemGoldenValidation.authority, realFilesystemRecordCount: realFilesystemGoldenValidation.sourceClosure.recordCount, realFilesystemCaseCount: realFilesystemGoldenValidation.sourceClosure.caseCount, realFilesystemCutCount: realFilesystemGoldenValidation.sourceClosure.requiredCaseCutCount, realFilesystemInvalidCaseCount: realFilesystemInvalid.caseCount, targetDiscoveryAuthority: targetDiscoveryGoldenValidation.authority, targetDiscoveryPointCalls, targetDiscoveryVerifyCalls, targetDiscoveryTargetCount: targetDiscoveryGoldenValidation.pointClosure.targetCount, targetDiscoveryUnresolvedObservationCount: targetDiscoveryGoldenValidation.pointClosure.unresolvedObservationCount, targetDiscoveryInvalidCaseCount: targetDiscoveryInvalid.caseCount, conformanceResultAuthority: conformanceResultGoldenValidation.authority, conformanceResultPointCalls, conformanceResultVerifyCalls, conformanceResultCaseCount: conformanceResultGoldenValidation.resultClosure.caseResultCount, conformanceResultInvalidCaseCount: conformanceResultInvalid.caseCount, conformanceResultInvalidExecutedCaseCount, conformanceResultPath, expectedConformanceResultPath: conformanceResultGoldenValidation.manifest.expected.relativePath, runtimeAttestationPointAuthority: runtimeAttestationPointGoldenValidation.authority, runtimeAttestationPointCalls, runtimeAttestationPointVerifyCalls, runtimeAttestationPointInnerCaseCount: runtimeAttestationPointInvalid.innerCaseCount, runtimeAttestationPointSpecificCaseCount: runtimeAttestationPointInvalid.pointCaseCount, runtimeAttestationPointInvalidCaseCount: runtimeAttestationPointInvalid.caseCount, runtimeAttestationPointInvalidExecutedCaseCount, capabilityByteLength: capabilityBytes.byteLength, bootstrapAuthority: bootstrapValidation.authority, goldenAuthority: bootstrapGoldenValidation.authority, goldenCaseCount: 5 + bootstrapGoldenValidation.manifest.vectors.recoveryKeyIds.length, invalidAuthority: bootstrapInvalidValidation.authority, invalidCaseCount: bootstrapInvalidValidation.manifest.cases.length, rootHistoryAuthority: rootHistoryValidation.authority, rootHistoryGenerationCount: rootHistoryValidation.retainedRootMetadataGenerationCount, rootHistoryInvalidCaseCount: rootHistoryInvalid.cases.length, rootHistoryLocator: latestRootLocator, expectedRootHistoryLocator: rootHistoryGolden.expected.vectors[2].locator, publicModuleCount: publicModules.length, providerReason: providerError.details.reason });',
     ].join("\n"),
     "utf8",
   );
@@ -1659,6 +1793,9 @@ try {
       'if (browserKatResult.conformanceResultAuthority !== "none_real_fs_conformance_result_structure_only" || browserKatResult.conformanceResultCaseCount !== 8 || browserKatResult.conformanceResultInvalidCaseCount !== 50 || browserKatResult.conformanceResultInvalidExecutedCaseCount !== 50) throw new Error("browser conformance result exposed authority or lost executable fixture coverage");',
       'if (browserKatResult.conformanceResultPointCalls !== 1 || browserKatResult.conformanceResultVerifyCalls !== 6) throw new Error(`browser conformance result crypto calls: ${browserKatResult.conformanceResultPointCalls}/${browserKatResult.conformanceResultVerifyCalls}`);',
       'if (browserKatResult.conformanceResultPath !== browserKatResult.expectedConformanceResultPath) throw new Error("browser conformance result Locator-only path mismatch");',
+      'if (browserKatResult.runtimeAttestationPointAuthority !== "none_provider_runtime_attestation_structure_only") throw new Error("browser runtime attestation point exposed authority");',
+      'if (browserKatResult.runtimeAttestationPointCalls !== 1 || browserKatResult.runtimeAttestationPointVerifyCalls !== 7) throw new Error(`browser runtime attestation point crypto calls: ${browserKatResult.runtimeAttestationPointCalls}/${browserKatResult.runtimeAttestationPointVerifyCalls}`);',
+      'if (browserKatResult.runtimeAttestationPointInnerCaseCount !== 50 || browserKatResult.runtimeAttestationPointSpecificCaseCount !== 72 || browserKatResult.runtimeAttestationPointInvalidCaseCount !== 122 || browserKatResult.runtimeAttestationPointInvalidExecutedCaseCount !== 122) throw new Error("browser runtime attestation point lost executable fixture coverage");',
       'if (browserKatResult.rootHistoryLocator !== browserKatResult.expectedRootHistoryLocator) throw new Error("browser root history locator mismatch");',
       `if (browserKatResult.publicModuleCount !== ${explicitSpecifiers.length}) throw new Error("browser public module count mismatch");`,
       'if (browserKatResult.providerReason !== "revoked") throw new Error("browser provider error probe failed");',
@@ -1722,6 +1859,10 @@ try {
     "dist/provider-real-filesystem-conformance-result.d.ts",
     "dist/provider-real-filesystem-conformance-result-fixtures.js",
     "dist/provider-real-filesystem-conformance-result-fixtures.d.ts",
+    "dist/provider-runtime-attestation-point.js",
+    "dist/provider-runtime-attestation-point.d.ts",
+    "dist/provider-runtime-attestation-point-fixtures.js",
+    "dist/provider-runtime-attestation-point-fixtures.d.ts",
     "dist/provider-target-discovery-point.js",
     "dist/provider-target-discovery-point.d.ts",
     "dist/provider-target-discovery-point-fixtures.js",
@@ -1779,6 +1920,14 @@ try {
     "schemas/v1/provider-real-filesystem-conformance-result-pin.schema.json",
     "schemas/v1/provider-real-filesystem-conformance-result-golden-manifest.schema.json",
     "schemas/v1/provider-real-filesystem-conformance-result-invalid-manifest.schema.json",
+    "schemas/v1/provider-runtime-attestation-point-golden-manifest.schema.json",
+    "schemas/v1/provider-runtime-attestation-point-invalid-manifest.schema.json",
+    "schemas/v1/provider-runtime-attestation-point-invalid-reason.schema.json",
+    "schemas/v1/provider-runtime-attestation-point-invalid-stage.schema.json",
+    "schemas/v1/store-durable-object-provider-isolation.schema.json",
+    "schemas/v1/store-durable-object-provider-policy.schema.json",
+    "schemas/v1/store-manifest-compare-append-receipt-ledger-policy.schema.json",
+    "schemas/v1/store-provider-filesystem-profile-fields.schema.json",
     "schemas/v1/store-durable-object-provider-runtime-attestation.schema.json",
     "schemas/v1/store-durable-object-provider-verification-keys.schema.json",
     "schemas/v1/store-durable-object-provider-registry-entry.schema.json",
@@ -1794,6 +1943,7 @@ try {
     "fixtures/v1/golden/provider-real-filesystem-source-v1.json",
     "fixtures/v1/golden/provider-target-discovery-point-v1.json",
     "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
+    "fixtures/v1/golden/provider-runtime-attestation-point-v1.json",
     "fixtures/v1/invalid/manifest.json",
     "fixtures/v1/invalid/provider-bootstrap-structure-crypto-v1.json",
     "fixtures/v1/invalid/provider-registry-root-history-v1.json",
@@ -1801,6 +1951,7 @@ try {
     "fixtures/v1/invalid/provider-real-filesystem-source-v1.json",
     "fixtures/v1/invalid/provider-target-discovery-point-v1.json",
     "fixtures/v1/invalid/provider-real-filesystem-conformance-result-v1.json",
+    "fixtures/v1/invalid/provider-runtime-attestation-point-v1.json",
     "fixtures/v1/invalid/provider-registry-entry-manifest-history-v1.recipe-dialect.md",
     "fixtures/v1/invalid/provider-registry-root-history-invalid-recipe-v1.md",
     "fixtures/v1/reference/provider-unavailable-tool-errors.json",
@@ -1823,7 +1974,7 @@ try {
   }
 
   process.stdout.write(
-    `Verified packed provider contracts with ${explicitSpecifiers.length} public module exports, exact ${packedSchemaRelativePaths.length}-schema source/install parity, browser ESM trust checks for bootstrap (62 point/31 signature), root history (11 point/9 signature), 7-generation Registry history (24 point/38 signature), 89 anchored Registry invalid recipes/materialized-request digests with 3 exact opaque consumer rejections, signed real filesystem source closure (12 records/4 cases/8 cuts plus 43 invalid cases), signed target discovery point closure (1 point/6 signatures with five locators), and unsigned real filesystem conformance result closure (8 tuples/1 point/6 signatures/no seventh signature/50 replayed invalid cases/Locator-only path).\n`,
+    `Verified packed provider contracts with exactly ${explicitSpecifiers.length} public module exports and ${packedSchemaRelativePaths.length} JSON Schemas, browser ESM trust checks for bootstrap (62 point/31 signature), root history (11 point/9 signature), 7-generation Registry history (24 point/38 signature), 89 anchored Registry invalid recipes/materialized-request digests with 3 exact opaque consumer rejections, signed real filesystem source closure (12 records/4 cases/8 cuts plus 43 invalid cases), signed target discovery point closure (1 point/6 signatures with five locators), unsigned real filesystem conformance result closure (8 tuples/1 point/6 signatures/no seventh signature/50 replayed invalid cases/Locator-only path), and root-signed runtime attestation point closure (1 point/7 signatures/50 inherited plus 72 point-specific invalid recipes replayed in Node and browser).\n`,
   );
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true });

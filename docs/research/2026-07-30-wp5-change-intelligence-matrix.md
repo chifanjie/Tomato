@@ -13,7 +13,7 @@ trust bundle与 real-FS feasibility
 
 历史总计划执行游标：**15/17**。这里的含义是“当前进入原 17 步主线的第 15 步”，
 不是“17 个 WP5 Gate 已完成 15 个”，也不是 88% 产品完成率。按本文件第 6 节的
-17 个 Commit Gate 逐项计算，截至 2026-08-05 只有前 3 个 Gate closed，第 4 个
+17 个 Commit Gate 逐项计算，截至 2026-08-06 只有前 3 个 Gate closed，第 4 个
 WP5-1P aggregate 正在进行，其余 13 个仍 pending/locked。WP5 合同已冻结且实现
 正在分层推进，不代表 WP5 功能完成；WP5 只有在第 11 节全部满足后才能改为
 Completed。
@@ -208,9 +208,256 @@ Linux clean-checkout same-SHA CI `31006241178`为189个测试文件、2,306 pass
 0 skipped、0 failed并成功完成；三路独立终审P0/P1/P2/P3均为0。该 candidate不关闭
 Catalog/Registry/Universe/Acceptance、真实 Provider/runner/I/O或 strong write。
 
+2026-08-06 D-36 pre-implementation amendment：正式冻结 C09-1K为完整 C09-1G raw
+request + root-signed `ProviderReleaseTargetUniverseEnvelopeV1`的 Matrix＋Discovery→
+Universe supplied-point closure。入口固定12个 exact data-property：C09-1G既有11项只
+新增`releaseTargetUniverse`。模块初始化必须在 request前捕获/bind所有
+reflection/collection/clone security intrinsics（包括 Array/`Object.create`/prototype/own-key/descriptor/
+define/freeze、uncurried WeakSet/WeakMap methods、typed-array copy与`structuredClone`）为
+lexical trusted references，以 deep-detach + Proxy `DataCloneError` probe fail closed；无
+polyfill/fallback或 request-time global/prototype lookup；同时捕获 intrinsic `Promise`、
+`Symbol.species`、`Reflect.apply`、bound resolve/reject，以及 raw Promise then/catch/finally
+method objects与显式接收 receiver的 uncurried invocation helpers。
+pre-import realm compromise属 Host bootstrap
+trust boundary。request唯一顺序为：任何 reflection前记录 raw top-level identity→
+top-level descriptor snapshot→Universe bounded preflight并 seed shared WeakSet/hardened
+identity collector→同步非导出 void opaque WeakMap identity checker→只遍历 inherited
+十项并复用该 WeakSet/collector→对`{originalInput,observedIdentities}` capsule恰好一次
+trusted `structuredClone`→丢弃 cloned collector branch/capability、只重验并 freeze
+cloned original JSON→以 package-internal
+pre-snapshot调用唯一 C09-1G diagnostic→首次`await`；不得再 clone，opaque capability保留
+原引用，transparent top-level/nested/self-removing Proxy与 crypto-host mutation都不得绕过。调用方不得
+提供 Universe Pin、Locator、path或`verified/current/complete`标记；Pin固定从已验证
+Envelope派生为
+`{locatorProfile:"distribution_provider_release_target_universe_v1",
+universeGeneration,contentDigest}`，相对路径只由
+`universe-generation:<canonical-positive-decimal>`经`StoreFilenameKeyV1`编码为
+`provider/release-target-universe/<encoded>.json`。
+
+Universe raw preflight必须早于任何递归检查/clone/inner/`await`，以 descriptor-only
+迭代 walk冻结 depth=64、node=262,144、单 string<=4096且所有 string value累计 UTF-16
+code units<=16,777,216、dense targets/buckets各1..4096、每 bucket IDs 1..4096且
+累计IDs<=4096；
+同时检查各层 exact data-key/container kind并 seed shared WeakSet；top-level与每个子
+object/array都必须在对其做 Array/prototype/own-key/descriptor reflection前记入
+hardened collector。collector在任何 reflection前用 captured `Object.create(null)`创建为
+不暴露的 null-prototype record，只用 captured `defineProperty`追加 monotonic own
+enumerable data slot，clone前用 captured `freeze`封闭。每次 define使用的 descriptor
+record也必须 fresh null-prototype，恰有 own value/enumerable/configurable/writable且无
+get/set，禁止普通 object literal。首次 trusted clone成功前、会接触 raw identity
+的所有 request-local mutable admission scratch（collector、walker worklist/frame、exact-key
+map、descriptor、capsule）只能是 null-prototype own-data storage或以
+captured uncurried method访问的 WeakSet/WeakMap；普通 Array只可作为 module-init frozen
+constant或按 own length/index只读消费的 platform own-key result，禁止用作动态
+stack/list及 push/pop/index assignment/iterator/spread/Array prototype。capsule直接引用而不通过
+iterable复制 collector。该禁令在 clone成功/丢弃 collector后结束；只消费
+detached/frozen data的 Schema/语义验证与既有 C09-1G core可继续使用普通
+Array/Map/Set，不重写 core或改变116项归因。随后只遍历 inherited
+十项并继续同一 WeakSet，从而全局拒绝 inherited内部、Universe内部及 cross-block
+alias/cycle。必须以 cross-binding alias negative
+证明 input 0/0，并以无 alias after-start/crypto-host mutation positive证明1/7 snapshot稳定。
+任一第65层、第262,145
+节点、第16,777,217个 code unit或第4097项立即以`input/schema_invalid`、0/0短路。
+code-unit cap只保护 clone；strict Universe wire受现有 cardinality/fixed-string Schema约束，
+本 object point无法达到16 MiB，因而不制造 byte-limit diagnostic。length recipe须覆盖 cap/cap+1与多字符串累计
+cap+1，资源本身不得内嵌巨型 literal。budget只在平台 reflection成功返回后约束 traversal；
+raw-object API不宣称可抢占 hostile synchronous Proxy trap或回收 caller已分配的巨量 own
+keys。实现须先按 expected keys取 descriptor/prototype，再 exact-key enumeration，异常
+统一 input fail；payload的 predecessor optional key set不得在 preflight关联 generation，
+coverage的 reason optional key set也不得在此关联 state，以保留 late semantic stage。
+`coverageBasis.resolution`的 reason optional key set同样不得在 preflight关联 state。
+任一已观察 Proxy即使在 trap内脱链或劫持 global/prototype/collector追加路径，
+也必须留在 sealed collector并使 trusted clone `DataCloneError`。collector与 original graph
+的有意 aliases在同一 memoized clone中只增加 O(object-count)引用 record，clone后先
+丢弃该 branch，不对整个 capsule做 alias rejection。稳定 ordinary accessor必须不调用
+getter即拒绝；Proxy compound side-effect不承诺为0，但最终不 accepted。
+本 API不是 same-realm sandbox；生产 adapter仍须先做 byte-capped safe JSON parse。
+可执行 taint规则为：任一 point diagnostic `stage="input"`、任一 public-validator
+rejection、或 locator-builder failure，Host都必须保守
+废弃/重建 realm，无 reset API，不得让后续成功调用进入污染 semantic core。
+只有同一 diagnostic invocation自身返回`stage!="input"`可证明该次已跨过 clone；
+另一次/replayed/paired diagnostic不得为 public invocation作证，未来只能以同次内部
+unforgeable sideband+显式升版改变。
+sequential A/B1/B2只测 raw admission reject；crypto-host mutation positive只修改 caller
+JSON，不修改 realm primordials/captured intrinsics。
+C09-1G/C09-1K每个 async fulfilled top-level value均必须由非导出
+`createProviderNonThenableFrozenRecordV1`以 captured create/define/freeze构造为 frozen
+null-prototype exact enumerable own-data record；覆盖 C09-1G internal success closure、diagnostic
+success/failure wrapper、public fulfilled success，以及 C09-1K internal success、diagnostic wrapper和
+public fulfilled success。禁止返回 ordinary object literal；helper不 export，DTO/JSON/type/stage/
+reason/crypto count不变。C09-1G/C09-1K的 diagnostic/public API保持`Promise<...>`
+type但必须改为 non-async wrappers：同一同步 frame在创建/调用/await任何 inner
+Promise前完成 raw admission、trusted clone与 detached invariant；C09-1G async core只接受
+detached/frozen snapshot，1K也只在 outer clone成功后调用 pre-snapshot diagnostic。raw
+failure直接构造 exact null-proto result，不得创建/await nested validator Promise。diagnostic/
+public共享 synchronous prepare logic但每个 invocation自行执行；public不得调用/chain同一
+point的 sibling diagnostic API Promise。该禁令不阻止 C09-1K在 outer clone后唯一调用 C09-1G
+pre-snapshot diagnostic。raw failure时 diagnostic直接 hardened fulfill，public直接 hardened opaque
+reject；只有 prepare/clone成功后可创建 async core Promise。
+每个暴露的 native Promise均须经非导出`hardenProviderPointPromiseV1`：由 captured
+intrinsic Promise/resolve-reject构造，在返回前定义 own non-enumerable/non-writable/
+non-configurable `constructor=HardenedProviderPointPromiseConstructorV1`及 own frozen internal
+then/catch/finally wrappers，再 freeze Promise shell。模块必须分开捕获 raw intrinsic
+Promise method objects与只供内部调用、显式接收 receiver的 uncurried helpers；own wrappers保持
+正常 instance-method约定并以动态`this`为 receiver，经 captured helper/Reflect.apply调用 raw
+method，在返回前递归幂等 harden派生 Promise，禁止直接以 raw method或 uncurried helper作 own
+value。private constructor必须 constructible、frozen且不进入 package export：实现 Promise
+executor调用签名，以 captured intrinsic Promise构造 native Promise后立即 harden并返回；executor
+来源不可也无需鉴别，caller可经`p.constructor`观察/调用但不会取得 validation/crypto authority。
+其 private prototype frozen，且以
+captured `Symbol.species`定义 own non-enumerable/non-writable/non-configurable species精确指向
+自身。Promise shell own constructor不得等于 captured/global Promise；不得修改或冻结 global
+Promise。Host intrinsic await因 constructor不同而只经 Promise shell own hardened then做
+assimilation；native SpeciesConstructor只观察 private constructor/species，不读取被污染的
+`%Promise%[Symbol.species]`。p.then/catch/finally直接及多级链都必须返回同样 hardened Promise；
+inner组合只用 captured Promise methods/已 hardened Promise。helper/properties不 export，不改
+return type、settlement、DTO/bytes/count。公开同步
+`buildProviderReleaseTargetUniverseRelativePathV1(envelope)`独立执行 identity-first bounded
+preflight/hardened collection→一次 trusted capsule clone→丢弃 collector branch→重验/freeze
+detached Envelope，然后只做 strict
+Envelope、generation↔predecessor iff、unsigned digest与 generation self-binding并导出 fixed path，始终0/0且无
+authority。builder与 point共享非导出 verified-Pin→path resolver；point在完整1/7后用
+derived Pin直接解析，不得调用 public builder或再 clone/遍历/哈希完整 Envelope。
+standalone成功不表示 verified/current。
+C09-1K以 package-internal WeakMap把新建的 exact inherited request映射到同一 frozen
+pre-snapshot；C09-1G入口一次性 take/delete，命中时跳过普通 snapshot/clone但复用同一
+validation core，且仅 pre-snapshot+success调用才以 closure identity在第二个非导出 WeakMap
+sidecar注册该 snapshot。普通/失败 C09-1G不留 pre-snapshot/sidecar；C09-1K await后
+一次性 take+delete并只读其中 verified Taxonomy/
+Matrix/Discovery/active-root事实，绝不重读 caller。sidecar缺失/重复消费归 inner
+`source_invalid`；公开 C09-1G DTO、wire与 exports不变。
+sidecar helper必须测试普通调用无注册、pre-snapshot失败清理、两并发 identity隔离、
+one-shot take，且 frozen snapshot wrapper保留 opaque capability identity。
+full clone前的 capability identity check还必须以含 getter/Proxy的 fake handle证明0/0拒绝，
+且断言 getter/trap调用数为0。它固定为非导出
+`assertProviderStrictEd25519CryptoCapabilityIdentityV1`，与现有 bytes accessor共享
+strict-Ed25519模块初始化捕获的 uncurried `WeakMap.has/get`；bytes defensive
+copy也必须用 captured typed-array primitive，禁止 late-bound `.slice()`。checker/state/
+intrinsics均不 package-export。
+
+Universe使用独立`provider-release-target-universe-signature-v1` root-signature
+domain；signature与`provider-release-target-universe-v1` content digest都覆盖完整
+strict payload排除`universeSignature`。distribution binding、active root、Taxonomy
+Pin与 inner closure逐字节一致；coverage basis exact pin Matrix/Discovery，并重算
+Bundle/cut/observation、limits/ruleset/dimensions/sources、两份 target count/set digest与
+unresolved count。C09-1G 已证明 Matrix targets是 Discovery targets的 exact-byte subset，
+所以两者 canonical union恒等于最多4096项的 Discovery targets；Universe targets自身
+受4096项 strict cap并必须 exact-equal该集合。outer不得伪造 inner已排除的同 ID异
+bytes或 derived-union第4097项 failure。
+
+resolution是唯一优先级总函数：`taxonomy_mapping_unresolved` →
+`target_discovery_unresolved` → `release_matrix_incomplete` →
+`closed_world_complete`。四类均为结构合法 positive。buckets按 public profile ID排序且
+unique，公开四字段/public ID重算相等，内部 target IDs sorted+unique并 exact-partition
+Universe targets。Universe与 bucket均为 owner-only；按 public profile分组不代表可直接
+公开。complete时全部 bucket complete，incomplete时全部 bucket使用同一派生 reason；
+除冻结的`targetProfileIds`外，bucket不得携带 private build/feature/mount、path、volume、
+endpoint或其它 private membership细节，且`targetProfileIds`不得进入 public projection或 Surface。
+
+point diagnostic固定16-stage短路：`input`、`target_discovery_closure`、
+`universe_structure`、
+`universe_distribution_binding`、`universe_active_root`、
+`universe_taxonomy_pin`、`universe_coverage_pins`、
+`universe_coverage_binding`、`universe_coverage_counts`、
+`universe_target_union`、`universe_resolution`、`universe_buckets`、
+`universe_signature_binding`、`universe_signature`、`universe_digest`、
+`universe_envelope`。fixture stage union另加只用于 direct-builder boundary的
+`target_discovery_locator`与`universe_locator`，总计18项；11-reason全集为`schema_invalid/source_invalid/
+binding_mismatch/pin_mismatch/root_mismatch/count_mismatch/
+digest_mismatch/ordering_invalid/coverage_mismatch/signature_invalid/envelope_mismatch`，
+具体 stage配对与内部优先级以 PRD D-36为准。
+同 stage tuple固定为：input preflight独占 own-key/container/density/resource；structure只做
+literal/regex/safe-int/value Schema→generation=1 iff predecessor absent（wire Schema不得提前 refinement）；pins
+Matrix→Discovery；coverage binding为 limits→ruleset→dimensions tuple→sources tuple→bundle/
+cut/set digest；counts为 Matrix count/digest→Discovery count/digest→unresolved count；union
+为 ordering/unique→count→full-byte exact-equality（ID仅作为已验证 bytes的
+字段比较，不重算）；buckets为 ordering/unique→
+public mapping→partition→coverage state，nonempty已在 raw preflight/strict Schema关闭。
+每个跨 reason相邻边界必须有 compound vector并
+断言 earlier mismatch获胜。
+成功固定1次 point admission / 7次 signature verification，authority唯一为
+`none_release_target_universe_structure_only`；公共错误仍只有
+`provider_unavailable/attestation_invalid`。返回的`releaseTargetUniverse`是完整 Envelope；
+`coverageResolution`与 Envelope内`coverageBasis.resolution`使用同一 discriminated-union
+Schema并 byte-identical，不得实现成 string或 reason-only。
+16 MiB copied policy只在本点做 binding equality；raw-byte cap/cap+1留给后续 resolver/
+retained aggregate。depth/node threshold因 strict full-point不可达，只要求 bounded-walker
+helper early-stop测试，不得用 schema-invalid输入冒充 point stage evidence。
+
+C09-1G的116个 ordered operation必须保持原位置逐位重放：104个 internal diagnostic
+中，11个 source input case在新 outer snapshot固定0/0，93个非 input rejection由 inner
+`source_invalid`归因并逐例加倍 source diagnostic crypto count；原 zero-based位置
+95～105的11个
+locator-builder case直接重放对应 C09-1G builder，新 stage固定
+`target_discovery_locator/envelope_mismatch`与0/0并保留 source stage=`locator`证据，
+禁止把未修改 raw request误送入 Universe validator；最后1个 async mutation继续
+frozen-snapshot成功且1/7。generator必须 pin既有
+C09-1G golden 205,053 bytes（SHA-256 `cfcc03e388e46bf23b1fe62e513476991c535bc22887ff01b77eca4f01b979ed`，
+semantic `sha256:4ad3ff9e4459207059ded87d51cebb29c5ec36b03c994ee5d3cb61604eda98ae`）
+与 invalid 98,186 bytes（SHA-256 `bb0ed1ad0f14698c9378ff42b242b2a09355a3ccb2472213a001f3f0a6162f05`，
+semantic `sha256:77f3f36e9a7855007fc75706d22c5e43571aa83e8c710619a53f879ea1fc6de1`）。
+point-specific corpus覆盖 strict wire、generation/predecessor、binding/pins、coverage复制
+字段、supplied Universe第4097项 outer input cap、Matrix⊆Discovery且 union=Discovery
+前置不变量、order/duplicate/missing/extra、四档 resolution、bucket partition/
+public mapping/privacy、signature/digest/Envelope/path、hostile input与 async mutation；
+其中必须显式覆盖 transparent top-level/nested/self-removing Proxy、cross-block alias与
+crypto-host mutation；Universe direct locator-builder negatives必须覆盖 ordinary accessor
+（getter=0）、transparent top-level/nested/self-removing Proxy、get-only trap（get=0），以及
+trap内替换 global `structuredClone`、篡改`Array.prototype.push`/安装 inherited index
+setter后暴露 child的 compound cases（只断言 reject且 collector未泄漏），全部
+固定`universe_locator/envelope_mismatch`与0/0。另加 sequential pollution vector：A的
+Proxy污染`Object.prototype` descriptor meta-key及`Array.prototype` numeric setter后拒绝，
+不恢复即独立执行 B1 nested accessor（getter=0、0/0 reject），仍不恢复再独立
+执行 B2 self-removing Proxy（reflection trap>0、parent已脱链后 sealed collector仍保留
+identity、collector不泄漏、0/0 reject）；外层`try/finally`按预先捕获的 exact
+descriptors恢复/删除
+全部 mutation并断言 primordial state完全恢复，不得污染后续 case。
+另加单调用 point vector：self-removing Proxy安装`Object.prototype.then`伪造
+accepted value，但 diagnostic仍 fulfill prototype=null/frozen exact
+`{ok:false,stage:"input",reason:"schema_invalid"}`，then hits=0、crypto 0/0，public仍 opaque
+reject，finally精确恢复。success/helper tests断言 C09-1G/C09-1K internal/diagnostic/
+public fulfilled顶层全为 null-prototype+frozen，enumerable DTO keys/bytes不变；
+再加单调用 Promise-boundary vector：raw Proxy污染 Promise prototype constructor+then及
+intrinsic `Promise[Symbol.species]`（分别伪造 inner success/派生 Promise）后 self-remove，wrapper不创建/
+调用 inner async core而直接返回 hardened native Promise；断言`p instanceof captured Promise`，但
+own constructor为 stable frozen private constructor且不等于 captured/global Promise，private
+prototype frozen、own captured species精确指向自身；then/catch/finally为保持正常 receiver约定的
+frozen stable wrappers。constructor/species/三个 method descriptor均按各自 owner
+non-enumerable/non-writable/non-configurable，shell frozen；Host await仍得 exact input failure，
+poisoned then/species hits=0、0/0，
+public hardened Promise opaque reject与finally精确恢复。覆盖 await p.then(identity)、reject
+p.catch、p.finally与至少3层 mixed chain，每层派生 Promise均 own-hardened+frozen、
+forged value/Promise不可达、poison hits=0。污染测试须由 non-async callback返回最终 hardened
+chain；intrinsic-await probe的 async outer Promise须由 package-internal test-only helper立即
+harden后才暴露，再用 hardened finally恢复 primordials，避免 runner assimilation普通 outer
+Promise制造假 poison hit。三种 method须实际验证 settlement而非只比较 identity。
+clean success同样断言 Promise descriptors/frozen/
+派生链且 public wrappers非`AsyncFunction`、settlement/type不变；
+深层 mutation须合法重签和 reanchor。
+
+accepted snapshot冻结13字段 projection；四类 positive与 accepted mutation均精确1/7。
+outer input失败0/0，Universe signature前 point-specific rejection在 diagnostic+public
+两次执行中2/12；malformed signature wire/prefix或 root-ID binding在 host verify前拒绝，
+同样为2/12；只有真正调用 Universe verify的 valid-wire wrong signer/domain/claims/
+bitflip及其后的 digest/Envelope失败为2/14。最终 Case/Schema/export/resource
+总数与 SHA只在 literal inventory实现后实测冻结；clean packed Node与Vite/browser必须
+从 exact subpath `./provider-release-target-universe-point`与
+`./provider-release-target-universe-point-fixtures`逐例 fresh materialize并验证 stage/reason、
+projection、opaque error、crypto count、witness digest与 root-barrel identity，runtime
+executor不得引入 Node external。不得新增声称抵达 outer conflict或 derived-union
+第4097项的伪 case；相关 hostile source只作为 inherited C09-1G
+`target_discovery_closure/source_invalid`证据。
+
+C09-1K只关闭 supplied Universe结构，不证明 Taxonomy/Matrix/Discovery/Universe四条
+predecessor history/current/anti-rollback，也不证明加入 Catalog后的五链 retained/
+current-candidate closure与 accounting、Catalog exact-cover、Registry/approval history、Acceptance、唯一
+writer、真实 Provider/runtime/volume/I/O、strong write或 Migration。后继顺序固定为
+production Registry Entry↔Evidence binding、Catalog、五链 retained history/current-
+candidate、Acceptance，最后 Migration；WP5-1P aggregate保持 open/locked。
+
 权威决策：
 
-- `docs/prd/2026-07-27-agent-native-change-intelligence-rd-plan.md` D-24～D-35
+- `docs/prd/2026-07-27-agent-native-change-intelligence-rd-plan.md` D-24～D-36
 - `docs/research/2026-07-28-g0-contract-freeze-record.md` 第 4、5 节
 - WP1 Contracts、WP2 Repository State、WP3 Artifact Store 与 WP4 Task
   Intelligence 已关闭的 Schema、Snapshot、CAS、Journal 和 Lifecycle 规则
@@ -12266,7 +12513,9 @@ read-only/no-row，不能由 runtime、Evidence或 Catalog临时创建 code。
 Release Target Universe是 Catalog之外的 closed-world release声明。其 `targets`
 保存完整 target与按 Taxonomy四字段重算的 public profile ID；`buckets`按 public ID
 唯一分组，且所有 `targetProfileIds`必须组成 targets的 exact partition：每个 target
-恰出现一次，bucket四字段与 target四字段/public ID exact-equal。
+恰出现一次，bucket四字段与 target四字段/public ID exact-equal。Universe及其 buckets
+都是 owner-only发行对象；public ID只作为分组键，`targetProfileIds`不得进入 conservative
+public projection或 Surface payload。
 Target Discovery Result必须嵌入一份独立 domain、root-signed
 `ProviderTargetDiscoveryInputBundleV1`，并保存其按无签名 bundle domain重算的
 content digest。Bundle exact pin本代 Release Matrix、Public Taxonomy、real-FS
@@ -12347,18 +12596,19 @@ byte-identical；Discovery payload与 basis的 `unresolvedObservationCount`都�
 exact-equal完整 typed `unresolvedObservations.length`，并重新验证嵌入式 Bundle
 签名与 deterministic projection。Matrix、Discovery payload与 Universe
 `coverageBasis`中的 `limits`必须 byte-identical，其中16 MiB必须 exact-equal
-distribution root history policy的 single-object canonical-bytes cap，两个4096
-target cap必须
-分别约束单 artifact与 canonical union；reader在JSON parse前先拒绝超过
-16 MiB的 Envelope，再分别执行
-target最多4096项、unresolved最多4096项的count admission，不能先分配无界数组后
-才检查。
+distribution root history policy的 single-object canonical-bytes cap。Matrix、Discovery
+与 supplied Universe各自的 targets均受4096项 strict cap；C09-1G验证后的 Discovery cap
+同时界定 canonical union，因为 Matrix是 Discovery的 exact-byte subset。reader在JSON
+parse前先拒绝超过16 MiB的 Envelope，再分别执行 targets最多4096项、unresolved最多
+4096项的count admission，不能先分配无界数组后才检查。
 
-Universe `targets`始终必须等于两份输入 target的canonical streaming sorted
-union；merge一旦遇到第4097个 unique target立即 fail closed，即使两份输入各自
-不超过4096也不能先分配8192项或签出 oversized Universe。同一 target profile ID
-出现不同完整 target/public projection bytes时整份拒绝，不能以 `incomplete`
-降级掩盖冲突。coverage resolution是下列唯一总函数，producer无权自选：
+C09-1G成功闭包已经证明 Matrix targets是 Discovery targets的 exact-byte subset，且
+resolved claim冲突与输入超限已在 inner boundary拒绝；因此 canonical union恒等于
+Discovery targets且最多4096项。该 subset/full-byte证明只来自 C09-1G core；Universe
+不得另写 merge/ID verifier或暴露不可达的 outer conflict/derived-union第4097项分支。
+Supplied Universe `targets`自身受4096项 strict schema/admission cap，并必须
+byte-identical等于已验证 Discovery targets；missing/extra/duplicate/reorder/substitute
+均拒绝。coverage resolution是下列唯一总函数，producer无权自选：
 
 1. unresolved中只要出现 `taxonomy_mapping_unresolved`，resolution必须是
    `{state:"incomplete",reason:"taxonomy_mapping_unresolved"}`；
@@ -15710,7 +15960,7 @@ Event action、capability 必须交叉一致。
 
 状态枚举：
 
-- `frozen`：D-24～D-35 已在 PRD/G0/本矩阵一致；
+- `frozen`：D-24～D-36 已在 PRD/G0/本矩阵一致；
 - `pending implementation`：代码或 focused tests 尚未提交；
 - `capability locked`：生产入口必须在任何仓库读取/写入前 fail closed；
 - `verified locally/remotely`：只在对应 source tree 的 focused/root/CI 证据通过
@@ -15726,7 +15976,7 @@ Event action、capability 必须交叉一致。
 | WP5-C06 | path-safe Snapshot/Pulse、legacy redacted Surface 与 HMAC locator brands | Repository/Surface contracts + fixtures | frozen / pending implementation |
 | WP5-C07 | SafeGit/bootstrap/state-token/request-equality/quota-index strict schemas + seven-way category correlation + Admission/Transition full-record digest golden bytes | contracts security/internal schemas | frozen / pending implementation |
 | WP5-C08 | Context Generation Record、root-relative History closure、Store filename codec | contracts + Store internal schemas | frozen / pending implementation |
-| WP5-C09 | RFC 8785/JCS exact bytes与strict provider ID；raw-key digest/strict Ed25519 host capability+exact hostile manifest；fixed Bootstrap Trust Bundle/retained historical source closure；provider registry root/key history、Catalog strict Envelope、signed Public Taxonomy/Release Matrix/Target Discovery Result/real-FS Suite+Corpus、closed-world Release Target Universe与 typed retained-object/保守 public privacy projection、Acceptance compact receipt、same/cross Identity migration typed dry-run/Plan-bound reservation/exact final receipt/universe-side/receipt prefix/versioned canonical Rewrite Plan/Semantic Equivalence Proof/zero-live/sealed head、signed proof/version Envelope、binding generation、atomic path containment、Store Manifest compact compare-append receipt与 terminal journal contracts | `packages/durable-object-provider-contracts` + cross-language golden/negative vectors（含 strict crypto/KAT/bootstrap bundle、coverage input、rewrite mapping/SCC/JCS/proof-token/locator/budget） | C09-1B～1J candidate 已推进至 Runtime→QA/Release Provider Feasibility Evidence point closure；C09-1J `d8769a0` 的 code/fixture/distribution/local quality/review与 same-SHA CI `31006241178`均已完成；aggregate in progress且 capability locked |
+| WP5-C09 | RFC 8785/JCS exact bytes与strict provider ID；raw-key digest/strict Ed25519 host capability+exact hostile manifest；fixed Bootstrap Trust Bundle/retained historical source closure；provider registry root/key history、Catalog strict Envelope、signed Public Taxonomy/Release Matrix/Target Discovery Result/real-FS Suite+Corpus、closed-world Release Target Universe与 typed retained-object/保守 public privacy projection、Acceptance compact receipt、same/cross Identity migration typed dry-run/Plan-bound reservation/exact final receipt/universe-side/receipt prefix/versioned canonical Rewrite Plan/Semantic Equivalence Proof/zero-live/sealed head、signed proof/version Envelope、binding generation、atomic path containment、Store Manifest compact compare-append receipt与 terminal journal contracts | `packages/durable-object-provider-contracts` + cross-language golden/negative vectors（含 strict crypto/KAT/bootstrap bundle、coverage input、rewrite mapping/SCC/JCS/proof-token/locator/budget） | C09-1B～1J candidate 已推进至 Runtime→QA/Release Provider Feasibility Evidence point closure；C09-1J `d8769a0` 的 code/fixture/distribution/local quality/review与 same-SHA CI `31006241178`均已完成；D-36已冻结 C09-1K Release Target Universe supplied-point且等待独立实现；aggregate in progress且 capability locked |
 | WP5-S01 | private baseline blob/Git lease layout、permissions、Stage 1 transaction | `packages/artifact-store` | frozen / pending implementation |
 | WP5-S02 | exact Repository Basis lock-time guard | `packages/artifact-store/src/store.ts` | frozen / pending implementation |
 | WP5-S03 | duplicate Check and direct Snapshot dependencies | Artifact Store semantic guards | frozen / pending implementation |
@@ -15783,15 +16033,15 @@ D-31不得藏在一个巨型 WP5-1P commit中，固定按以下三个独立 comm
 任一子层通过只产生 candidate，不解锁 strong capability；WP5-1P aggregate Gate仍须
 覆盖此前与后续全部 C09合同。
 
-截至 2026-08-05 的 17 Gate 状态账本如下；这是 Gate closure 计数，与上面的总计划
+截至 2026-08-06 的 17 Gate 状态账本如下；这是 Gate closure 计数，与上面的总计划
 执行游标是两个不同概念：
 
 | # | Gate | 状态 | 当前证据 / 下一关闭点 |
 |---:|---|---|---|
-| 1 | WP5-0 | Closed | D-24～D-35 已冻结 |
+| 1 | WP5-0 | Closed | D-24～D-36 已冻结 |
 | 2 | WP5-1P/C09-1B | Closed | strict Ed25519 host conformance 已通过独立复审 |
 | 3 | WP5-1P/C09-1C | Closed | Bootstrap Trust Bundle 与 retained trust 已闭环 |
-| 4 | WP5-1P aggregate | **In progress** | C09-1D `acc6c9c`、C09-1E `1b182aa`、C09-1F `3ca2977`、C09-1G `70201b4`、C09-1H `35f9aaf`、C09-1I `60f6582`与C09-1J `d8769a0`已完成；Catalog/Registry、Discovery history/current、Universe、Acceptance、Migration 等仍需关闭 |
+| 4 | WP5-1P aggregate | **In progress** | C09-1D `acc6c9c`、C09-1E `1b182aa`、C09-1F `3ca2977`、C09-1G `70201b4`、C09-1H `35f9aaf`、C09-1I `60f6582`与C09-1J `d8769a0`已完成；D-36已冻结 C09-1K Universe point且等待独立实现；Catalog/Registry、Discovery/Universe history/current、Acceptance、Migration 等仍需关闭 |
 | 5 | WP5-PF | Pending / locked | 尚无真实 OS-isolated Provider 与 real-FS 安装生命周期证据 |
 | 6 | WP5-1 | Pending / locked | 其余 strong/legacy/path-safe contracts 与 fixtures 未关闭 |
 | 7 | WP5-2A | Pending / locked | SafeGit、path-safe Snapshot/Pulse、identity cutover 未实现 |
@@ -15808,7 +16058,7 @@ D-31不得藏在一个巨型 WP5-1P commit中，固定按以下三个独立 comm
 
 | Gate | 内容 | 最低本地证据 | Capability |
 |---|---|---|---|
-| WP5-0 | D-24～D-35 文档冻结 | diff/link/range/术语审查 | locked |
+| WP5-0 | D-24～D-36 文档冻结 | diff/link/range/术语审查 | locked |
 | WP5-1P/C09-1B | raw-key digest + strict Ed25519 host conformance | old C09-0 key-ID golden byte-identical；独立 digest brand/schema/golden；strict point/signature vectors；28-case fixed resource/digest exact-cover；每 runtime恰56次 point + 28次 verify；constant-true/false/divergent/mutating/replaced host negatives；package build/typecheck/test/distribution/root quality与 Security review | locked |
 | WP5-1P/C09-1C | fixed Bootstrap Trust Bundle + immutable Identity retained trust | Bundle/manifest Pin/Envelope/payload/fixed-locator/4 MiB Schema与golden；bootstrap metadata、root+3 recovery/threshold/policy/strict profile等式；signed distribution与Identity origin closure；old/new Bundle recovery-only migration、missing retained object、五链 accounting negatives；package build/typecheck/test/distribution/root quality与 Implementability/Security review | locked |
 | WP5-1P | C09 Provider contracts prerequisite：RFC 8785/JCS与provider ID、raw-key digest、strict Ed25519 host capability/KAT、fixed Bootstrap Trust Bundle+historical source retention、registry/root/key/runtime/Evidence/Catalog Envelope + signed Distribution Root Binding/Taxonomy/Release Matrix/embedded Discovery Input Bundle/Target Discovery Result/Release Target Universe + signed real-FS Suite/Fixture Corpus与 typed retained-object accounting + bounded five-chain history、deterministic public projection、Acceptance/Store compact receipts、same/cross migration typed dry-run/Plan-bound reservation/exact final receipt/receipt-prefix closure、versioned Rewrite Plan/Object+Root Semantic Proof、exact-object、external CAS、journal与 error wire + golden vectors | provider contract build/schema；old C09-0 vectors byte-identical；strict manifest exact-cover、fixed digest、cross-runtime positive/hostile KAT、bundle/metadata/key/pin/history-source negatives；cross-language golden bytes、coverage provenance/history/union/catalog omission/code-smuggling、nonce mismatch/restart/migration及 rewrite mapping/root/SCC/JCS/size/HMAC issuer/proof-token/locator/budget negative vectors | locked |
@@ -16212,9 +16462,10 @@ Matrix/fixture/runner pin、runner version/implementation/binary/run manifest、
 observation cut freshness、三份 source count/set digest及 observation-key preimage。
 stale或漏任一 source record、Matrix source未 exact-cover Matrix targets、Bundle与
 Result/Coverage Basis重复 digest不等、Result不是 Bundle outcomes的 deterministic
-projection都 fail closed。Matrix或Discovery删/增/substitute target、同 target ID
-不同完整 bytes、伪造 artifact自身或 coverage basis复制的 count/set digest、
-Discovery漏 unresolved observation、Universe不等于两输入canonical union，或派生
+projection都 fail closed。任何破坏 Matrix⊆Discovery或制造同 target ID不同完整 bytes的
+source/Result mutation必须在 C09-1G inner boundary拒绝并由 outer归为`source_invalid`；
+通过 inner的 closure上，Universe若不 exact-equal Discovery targets，或 artifact/
+coverage basis复制的 count/set digest不等、Discovery漏 unresolved observation、派生
 resolution/reason与四级优先总函数不等，全部 fail closed；合法 incomplete输入必须
 让**全部** bucket使用同一 reason并保持 read-only。
 Suite/Corpus还必须分别注入“signature claims完全相同但 signature bytes替换”并验证
@@ -16231,9 +16482,11 @@ Discovery pin、Bundle digest、Suite/Corpus冗余 digest或 full Pin不等均�
 还要在 parse/allocation/admission前分别注入超过16 MiB的 chain/Bundle/source
 object、任一 chain第4097代、schema可达40,960 retained-object E2E、独立 accumulator
 第65,537个 retained object、仅 transitive source使 unique Envelope retained
-canonical bytes达到512 MiB+1、4097 target、4097
-unresolved，以及两份输入各合法但 union出现第4097项并验证有界拒绝；共享 source在
-同 binding/locator/content digest exact-equal时只计一次，任一 alias仍拒绝。两份 target bytes相等、
+canonical bytes达到512 MiB+1、Matrix/Discovery/supplied Universe各自 raw wire的
+第4097个 target及 Discovery第4097个 unresolved。还必须证明通过 C09-1G的输入恒满足
+Matrix⊆Discovery与 union=Discovery≤4096；不得伪造“两份各自合法却 union出现第4097项”
+的不可达 E2E。共享 source在同 binding/locator/content digest exact-equal时只计一次，
+任一 alias仍拒绝。两份 target bytes相等、
 unresolved typed empty的 golden才允许 complete。producer的 pre-schema无序
 collection以多种遍历顺序构造时必须先按 comparator排序并得到同一 bytes/digest/
 signature；已经序列化的 set-like wire array调换两项、fixed tuple调换、
@@ -16297,7 +16550,7 @@ aggregated report 都作为 Commit/CI Evidence 保存。
 
 | 能力 | 当前事实 | Owner | 解锁 Gate |
 |---|---|---|---|
-| strong Store write / Durable Object Provider | Contract frozen；strict Ed25519 host、Bootstrap/retained trust、Root/Registry History、signed real-FS Corpus→Suite、signed Target Discovery、unsigned Result、root-signed Runtime Attestation与QA/Release Provider Feasibility Evidence point已形成 reviewed candidate；C09 aggregate 的 Catalog/Registry、Discovery history/current、Universe、Acceptance、Migration、真实 Provider、client/三层 Manifest writer仍未完整交付 | Platform/Security Lead + Provider/Systems + Artifact Store；QA/Release验证 | **全部同时满足**：WP5-1P/C09 contract+golden；strict Ed25519 raw32/profile/host exact manifest attestation与 opaque capability；固定 Bootstrap Trust Bundle/manifest resource、signed distribution双 Pin、immutable Installation Identity retained origin closure；WP5-PF/WP3P signed real-FS与安装生命周期；WP5-S07 provider client/adapter；D-23 Pulse→Artifact→Store provider-side unique-head compare-append；Acceptance/high-water/compact receipts/root/Registry/Catalog Envelope/public projection/same+cross migration closure及 versioned canonical Rewrite Plan/Semantic Equivalence Proof实现；AT-C17/C29/C30/C31、D35/D37/D38、Q24/Q32/Q33（含 rewrite mapping/SCC/JCS/proof-token/locator/budget/hostile crypto vectors）及 upgrade/downgrade/root/recovery-key compromise/current-vs-historical bundle migration E2E；root `pnpm quality`；同 SHA clean CI；独立 Security/Implementability review无 P0/P1；最后 closeout commit才更新 capability flag/supported tool list |
+| strong Store write / Durable Object Provider | Contract frozen；strict Ed25519 host、Bootstrap/retained trust、Root/Registry History、signed real-FS Corpus→Suite、signed Target Discovery、unsigned Result、root-signed Runtime Attestation与QA/Release Provider Feasibility Evidence point已形成 reviewed candidate；D-36已冻结 Release Target Universe point但 C09-1K实现尚未形成；C09 aggregate 的 Catalog/Registry、Discovery/Universe history/current、Acceptance、Migration、真实 Provider、client/三层 Manifest writer仍未完整交付 | Platform/Security Lead + Provider/Systems + Artifact Store；QA/Release验证 | **全部同时满足**：WP5-1P/C09 contract+golden；strict Ed25519 raw32/profile/host exact manifest attestation与 opaque capability；固定 Bootstrap Trust Bundle/manifest resource、signed distribution双 Pin、immutable Installation Identity retained origin closure；WP5-PF/WP3P signed real-FS与安装生命周期；WP5-S07 provider client/adapter；D-23 Pulse→Artifact→Store provider-side unique-head compare-append；Acceptance/high-water/compact receipts/root/Registry/Catalog Envelope/public projection/same+cross migration closure及 versioned canonical Rewrite Plan/Semantic Equivalence Proof实现；AT-C17/C29/C30/C31、D35/D37/D38、Q24/Q32/Q33（含 rewrite mapping/SCC/JCS/proof-token/locator/budget/hostile crypto vectors）及 upgrade/downgrade/root/recovery-key compromise/current-vs-historical bundle migration E2E；root `pnpm quality`；同 SHA clean CI；独立 Security/Implementability review无 P0/P1；最后 closeout commit才更新 capability flag/supported tool list |
 | `task:verify` | Contract frozen，生产方法未实现 | Task Engine | WP5-4 local/remote + review；WP6 前仍不宣传 |
 | `task:check` | Contract frozen，Delta/Symbol/Matching/Operation 未实现 | Change Intelligence + Task Engine | WP5-7/10 全部通过 |
 | `task:context:refresh` | capability locked | Task Engine / Context Recovery | WP5-8 full rebuild/failure evidence |
@@ -16342,7 +16595,7 @@ WP5-S07 client或三层 provider-side compare-append，strong write继续锁定�
 
 只有以下条件全部满足，本文件状态才能改为 **WP5 Completed**：
 
-- D-24～D-35 在 PRD、G0、Contracts、Store、Engine、Provider host/bundle与 Surface
+- D-24～D-36 在 PRD、G0、Contracts、Store、Engine、Provider host/bundle与 Surface
   DTO 中一致；
 - WP5-C/S/R/P/A/E/I 全部从 pending 变为 verified；
 - AT-C01～C31、D01～D38、S01～S16、O01～O33、Q01～Q33 全部有可复核

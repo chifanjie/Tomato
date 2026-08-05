@@ -1,6 +1,6 @@
 # Understand Code：Agent-native Code Change Intelligence 项目研制计划
 
-> 文档状态：Approved / Contract Frozen v1.14（含 WP5 Decision Amendment D-24～D-35、C09-1J 与 16-A-1 实施证据重校）
+> 文档状态：Approved / Contract Frozen v1.15（含 WP5 Decision Amendment D-24～D-36、C09-1J 与 16-A-1 实施证据重校）
 >
 > 日期：2026-07-27
 >
@@ -8,9 +8,9 @@
 >
 > WP4 Contract Amendment：2026-07-29；`build_task_brief` 的可恢复两阶段编排与可信 Operation Journal 见 D-22，Repo Pulse 不可变历史与原子切换见 D-23
 >
-> WP5 Contract Amendment：2026-07-30～2026-08-05；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host、不可变 Bootstrap Trust Bundle、签名 Target Discovery point closure、real-FS Conformance Result point closure、Provider Runtime Attestation point closure与 QA/Release Provider Feasibility Evidence point closure见 D-24～D-35
+> WP5 Contract Amendment：2026-07-30～2026-08-06；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host、不可变 Bootstrap Trust Bundle、签名 Target Discovery point closure、real-FS Conformance Result point closure、Provider Runtime Attestation point closure、QA/Release Provider Feasibility Evidence point closure与 Release Target Universe point closure见 D-24～D-36
 >
-> Implementation Rebaseline：2026-08-03；Evidence Refresh：2026-08-05。重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1J 与 16-A-1 已形成候选证据；Provider aggregate、真实 Provider、生产 Change Intelligence、双 Agent、Task-first Workbench 与发布门仍未关闭
+> Implementation Rebaseline：2026-08-03；Evidence Refresh：2026-08-05；Contract Refresh：2026-08-06。重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1J 与 16-A-1 已形成候选证据，C09-1K 合同已冻结但尚未实现；Provider aggregate、真实 Provider、生产 Change Intelligence、双 Agent、Task-first Workbench 与发布门仍未关闭
 >
 > 适用范围：`understand-code` 产品、Core、Agent 插件、MCP、本地服务与 Dashboard
 >
@@ -329,7 +329,7 @@ Incident、Impact、Change Check 和 Verification 都应成为 Task 的章节或
 | Workspace 包 | 8 个：Contracts、Repository State、Artifact Store、Core、Task Engine、CLI、Dashboard、Durable Object Provider Contracts |
 | 根质量门禁 | 本地 macOS `pnpm quality`：189 个测试文件、2,305 passed、1 个既有 skip、0 failed；build/typecheck/Dashboard production build 全绿；Linux clean-checkout same-SHA CI `31006241178` on `d8769a0`：189 个测试文件、2,306 passed、0 skipped、0 failed，success |
 | 修改前能力 | Repo Pulse、Persistent Task Brief、候选排序、影响路径、Evidence/Unknown、Task Lifecycle 已有正式实现 |
-| Provider Contracts | Strict Ed25519、Bootstrap Trust Bundle、Root/Registry History、signed real-FS Corpus→Suite、signed Target Discovery、unsigned real-FS Result、root-signed Runtime Attestation 与 QA/Release Provider Feasibility Evidence point 已闭环到候选边界；C09-1J 在 C09-1I 的 122 个 operation 基础上增加 105 个 point-specific case，共 227 个 ordered executable case，成功路径固定 3 次 point admission / 11 次签名验证；Provider package 共冻结 253 份 Schema、19 个显式 public module 与确定性 golden/invalid 资源；authority 仍为 none-only，C09 aggregate 未关闭 |
+| Provider Contracts | Strict Ed25519、Bootstrap Trust Bundle、Root/Registry History、signed real-FS Corpus→Suite、signed Target Discovery、unsigned real-FS Result、root-signed Runtime Attestation 与 QA/Release Provider Feasibility Evidence point 已闭环到候选边界；C09-1J 在 C09-1I 的 122 个 operation 基础上增加 105 个 point-specific case，共 227 个 ordered executable case，成功路径固定 3 次 point admission / 11 次签名验证；Provider package 共冻结 253 份 Schema、19 个显式 public module 与确定性 golden/invalid 资源；D-36已冻结 C09-1K Universe point但尚无实现 bytes，authority 仍为 none-only，C09 aggregate 未关闭 |
 | 修改后能力 | Change Check/Verification 有严格 Contract 和 Store 基础，但没有生产 `checkChanges()` / `recordVerification()` 执行服务 |
 | Agent Surface | 已有 `packages/cli` 自包含 stdio MCP 候选和 3 个真实 Tool；仍无 `.codex-plugin/plugin.json`、Codex/Claude Adapter 或双 Agent Task E2E |
 | 前端 | 活跃 Surface 仍为 `wiki | graph`；尚无 Tasks、Brief、Check、Verification 与 Repo Pulse 产品页面 |
@@ -3012,7 +3012,7 @@ P2 的阻断规则必须确定性执行：
 - Beta Hardening 再完成多 Worktree、并发恢复、迁移、安全、完整 Workbench 和双 Agent。
 - 接口可以按 Fixture 并行开发，但阶段门前必须切换到正式实现并通过集成测试。
 
-截至 2026-08-05 的实现状态如下。`Closed` 只关闭该工作包写明的边界，不自动
+截至 2026-08-05 的实现证据（合同状态截至 2026-08-06）如下。`Closed` 只关闭该工作包写明的边界，不自动
 解锁下游 capability，也不能被宣传成用户产品已经可用：
 
 | 工作包 | 当前状态 | 解释 |
@@ -3022,7 +3022,7 @@ P2 的阻断规则必须确定性执行：
 | WP2 | Closed | Repository State / Repo Pulse 已关闭 |
 | WP3 | Closed | Artifact Store / Evidence persistence 已关闭 |
 | WP4 | Closed | Persistent Task Brief 与 Lifecycle 已关闭；不包含生产 Change Check |
-| WP5-1P/C09 | **Partial / aggregate open** | 已完成 crypto、Bootstrap、Root/Registry history、signed real-FS Corpus→Suite（`3ca2977`）、signed Target Discovery（`70201b4`）、unsigned real-FS Result（`35f9aaf`）、root-signed Runtime Attestation（`60f6582`）与 QA/Release Provider Feasibility Evidence point closure（`d8769a0`）；Catalog/Registry、Discovery history/current、Universe、Acceptance、Migration 等 aggregate 总门仍需关闭 |
+| WP5-1P/C09 | **Partial / aggregate open** | 已完成 crypto、Bootstrap、Root/Registry history、signed real-FS Corpus→Suite（`3ca2977`）、signed Target Discovery（`70201b4`）、unsigned real-FS Result（`35f9aaf`）、root-signed Runtime Attestation（`60f6582`）与 QA/Release Provider Feasibility Evidence point closure（`d8769a0`）；D-36已冻结 C09-1K Release Target Universe supplied-point，仍待独立实现；Catalog/Registry、Discovery history/current、Universe aggregate history、Acceptance、Migration 等总门仍需关闭 |
 | WP3P | Not closed / capability locked | 真实 OS principal、Provider runtime 与 real-FS feasibility 尚未实现 |
 | WP5 | Contract frozen / implementation incomplete | 没有生产 Delta/Hunk/Matching、`checkChanges()`、`recordVerification()` 纵向闭环 |
 | WP6 | **Open（仅 16-A-1 candidate closed）** | `packages/cli` 已交付自包含 stdio MCP 与 Pulse/Brief 三工具；Host Adapter、完整 Tool surface、双 Agent E2E 仍未实现，不能把子切片状态外推为 WP6 candidate |
@@ -3299,8 +3299,9 @@ Owner 与资源：
   bytes相同；同 semantic digest的另一份合法 signed Suite/Corpus不得脱离 retained
   closure替换。
   coverage basis exact复制 Bundle/cut/observation commitments并 pin Matrix与
-  Discovery Result；Universe targets是两者最多4096项的 streaming canonical
-  union。同 ID不同 bytes或 union第4097项直接拒绝；只有两集合相等且 unresolved
+  Discovery Result；C09-1G 已证明 Matrix targets是 Discovery targets的 exact-byte
+  subset，因此 Universe canonical union恒等于最多4096项的 Discovery targets；
+  supplied Universe仍受4096项 strict cap并必须 exact-equal该集合。只有两集合相等且 unresolved
   typed empty才 complete，否则按冻结优先级派生全局 incomplete reason并使全部
   bucket read-only。Catalog必须 exact-cover Universe。public DTO
   移除内部 target ID与 build/feature/mount digest，只按四个公开字段生成
@@ -3458,8 +3459,8 @@ Owner 与资源：
   cap都有 golden/negative vector；Suite/Corpus signature substitution必须改变
   signed-payload content digest/locator，Result的 Discovery/Bundle/Suite Pin必须
   byte-identical回接 retained closure，同 semantic digest另一份合法 signed
-  Suite/Corpus替换也必须拒绝；Universe
-  streaming union、4096 cap、全局 resolution/reason及所有 bucket状态唯一派生。
+  Suite/Corpus替换也必须拒绝；C09-1G已证明 Matrix⊆Discovery，Universe只需 exact-equal
+  最多4096项的 verified Discovery targets，并唯一派生全局 resolution/reason及所有 bucket状态。
   stale provenance、history/byte cap、omission、code smuggling、incomplete
   coverage伪 strong全部 fail closed；
 - trust history与 Acceptance/Store receipt ledger在 count/byte cap满时对新请求
@@ -3666,9 +3667,9 @@ Owner 与资源：
   确定性生成 targets/unresolved。Fixture fixed locator只接受完整 Envelope content
   digest，底层 fixture/suite semantic digest仅作 payload claim；Fixture必须 exact
   pin Suite，Suite必须 exact pin Corpus，Suite/Corpus pin中的冗余 semantic digest
-  必须与 resolved payload逐字段闭合。Universe targets必须是
-  两份输入最多4096项的 canonical
-  streaming union；同 ID不同 bytes或第4097项直接拒绝。两集合相等且 unresolved
+  必须与 resolved payload逐字段闭合。C09-1G 已证明 Matrix targets是 Discovery
+  targets的 exact-byte subset，因此 Universe targets必须 exact-equal最多4096项的
+  Discovery targets；supplied Universe自身继续受4096项 strict cap。两集合相等且 unresolved
   empty才 complete，否则按冻结优先级派生一个全局 incomplete reason并使全部 bucket
   read-only；Catalog必须逐 target exact-cover Universe。每个 target用
   OS family/build/arch、filesystem code/features/
@@ -4122,7 +4123,7 @@ Symbol、Evidence、Impact 与分析完整性，而不是把 Git 文件列表包
 WP3P Provider Feasibility Gate 与 WP4 Task Intelligence；Diff→Symbol/Matching
 可在 security contracts 冻结后并行，但任何 strong mutation在 WP3P Gate关闭前
 保持 capability locked。
-估算：原 2.5 周只覆盖摘要级实现；按 D-24～D-35 的 path-safe、identity、
+估算：原 2.5 周只覆盖摘要级实现；按 D-24～D-36 的 path-safe、identity、
 SafeGit、reservation/quota 与 recovery 生产闭环修订为
 **6–8 周、12–16 person-weeks**。Contracts、Store 与 Operation kernel 串行冻结，
 Delta/Symbol/Matching 可在接口冻结后并行。
@@ -5980,7 +5981,7 @@ reflog 与未定义 quota 会让 crash recovery 存在误删或不一致结果�
 边界前移到首个 durable write，并冻结并发 ownership 与资源耗尽的唯一语义。
 
 WP5 的实现追踪、Acceptance 与 capability locks 见
-`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。D-24～D-35 不
+`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。D-24～D-36 不
 改变 D-21 的状态集合；它们冻结的是 Change/Verification 事实模型、可重建
 baseline、安全持久化、Operation 提交边界与 Alpha 兼容策略。
 
@@ -6088,7 +6089,8 @@ locator/acceptance为唯一细节；后续一旦 wire bytes发布，再变更必
   content digest；Fixture/Suite/Corpus locator只取各自完整 content digest，Fixture
   与 Suite的 transitive pin必须闭合。Result只能是 complete
   observations的 deterministic projection。Universe coverage basis exact pin两份
-  输入并取最多4096项 canonical union；两集合相等且 unresolved empty才 complete，
+  输入；C09-1G前置闭包证明 Matrix⊆Discovery，Universe必须 exact-equal最多4096项的
+  Discovery targets。两集合相等且 unresolved empty才 complete，
   否则单一全局 reason使全部 bucket read-only。Catalog必须 exact-cover Universe。
   内部七字段 group中 strong只允许 passed，
   failed/unsupported只允许 read-only，passed可保守 read-only，catalog无行则不
@@ -6673,12 +6675,484 @@ Registry Gate；若先算完整 Evidence digest再验双签，则 signature篡�
 其实现证据现已按独立提交、全量测试、同 SHA CI与三路复审形成，但只关闭 supplied-point
 结构 candidate。
 
+### D-36：Release Target Universe 采用 Matrix＋Discovery 确定性并集结构闭包
+
+状态：Accepted。
+
+2026-08-06 C09-1K pre-implementation amendment：C09-1G 已关闭 Public Taxonomy、
+Release Matrix、Target Discovery Input Bundle与 Target Discovery Result的 supplied-point
+结构闭包，C09-1J则独立关闭 Result→Runtime→Evidence分支；但 Catalog若在没有独立
+Release Target Universe验证器时自行列 target，就能通过遗漏 failed/read-only target
+把不完整集合伪装成 closed world。为先关闭 Catalog的最小硬前置、又不提前引入
+Acceptance current或完整五链 history，在生成 C09-1K首批 bytes前冻结如下唯一解释：
+
+- C09-1K只接受 C09-1G完整11字段 raw request，再增加一份
+  `releaseTargetUniverse` Envelope。12个 exact enumerable data-property按字典序固定为：
+  `activeRoot`、`activeRootMetadata`、`distributionRootBinding`、
+  `fixtureCorpusManifest`、`publicSupportTaxonomy`、`releaseMatrix`、
+  `releaseTargetUniverse`、`strictCryptoCapability`、`suiteManifest`、
+  `targetDiscoveryFixtureManifest`、`targetDiscoveryResult`、
+  `targetDiscoveryRunnerRun`。首次`await`前用 own data-property descriptor一次 snapshot并
+  捕获全部字段；opaque strict crypto capability最终只保留原引用。模块初始化必须在
+  处理任何 caller request前捕获并绑定 platform `structuredClone`及全部安全相关
+  reflection/collection intrinsics为 lexical trusted references，至少包括
+  `Array.isArray`、`Object.create`、prototype/own-key/descriptor、`defineProperty`、`freeze`、
+  `WeakSet.has/add`、`WeakMap.has/get/set/delete`、typed-array copy与`structuredClone`。
+  还必须捕获 intrinsic `Promise`、`Symbol.species`、`Reflect.apply`、bound
+  `Promise.resolve/reject`，并分开捕获 raw intrinsic
+  `Promise.prototype.then/catch/finally` method objects与只供内部组合调用的
+  uncurried invocation helpers；前一组只作为 hardened own wrapper的被调用目标，后一组
+  必须显式接收 Promise receiver，二者不得混作 public instance method。全部 prototype
+  method invocation必须经 captured uncurried/bound lexical reference完成。一次 bootstrap
+  conformance probe必须证明
+  plain object真正 deep-detach且 Proxy固定抛`DataCloneError`；不可用时 fail closed，
+  不得 polyfill/fallback，request路径不得重读可被 trap替换的 global/prototype方法。
+  pre-import realm compromise属于 Host bootstrap trust boundary，不由本 raw-object point
+  冒充解决。每次 request唯一顺序固定为：先把 raw top-level input identity记入
+  于任何 reflection前创建的私有 hardened `observedIdentities` collector，再做
+  top-level descriptor snapshot→新增 Universe bounded preflight→同步调用新增且非导出的
+  `assertProviderStrictEd25519CryptoCapabilityIdentityV1`做 void opaque WeakMap identity check→
+  以 Universe preflight已 seed的 shared WeakSet只遍历 inherited十项
+  JSON并执行 C09-1G同语义检查→用 trusted lexical reference对内部
+  `{originalInput,observedIdentities}` capsule恰好一次`structuredClone`（既作 portable
+  top-level/nested/self-removing Proxy rejection probe，也一次性 detach全部 JSON bytes）→
+  先丢弃 cloned collector branch与 cloned capability，只对`cloned.originalInput`的11项
+  JSON重跑同一 data-tree invariant并
+  递归冻结→通过下述 package-internal
+  pre-snapshot通道调用唯一 C09-1G diagnostic→首次`await`。不得再 clone inherited或 Universe；
+  该顺序还必须抵抗 strict crypto host在首次 verify期间同步或异步 mutation caller Universe。
+  新增/缺失字段、getter/Proxy、hidden/
+  symbol key、各 detached block内部 sparse/alias/cycle、普通 validation DTO，或 caller
+  `verified/current/complete`标记全部拒绝；shared WeakSet必须全局拒绝 inherited内部、
+  Universe内部及 Universe↔inherited cross-object alias/cycle。完成 snapshot后不得再次读取 caller对象。
+  outer只恰好组合一次 C09-1G diagnostic，不复制其1次 active-root point admission与6次
+  signature verification。
+- Opaque identity check必须早于 full-input capsule `structuredClone`，且不计 point admission或
+  signature verification；真实 handle由现有 WeakMap证明为 frozen empty object。普通 fake
+  capability、含 enumerable getter的 fake或 Proxy必须在不读取其属性、不执行 getter/trap的
+  前提下以`input/schema_invalid`与0/0拒绝，不能让 clone先执行 attacker-owned getter。
+  该 void checker必须与现有 bytes accessor在 strict-Ed25519内部复用模块初始化捕获的
+  uncurried `WeakMap.has/get`；bytes accessor的 defensive copy同样必须用捕获的
+  typed-array copy primitive，不得 late-bound `.slice()`。void checker、opaque state map与
+  captured intrinsics均不得 package-export或进入 declaration/fixture wire。
+- 对`releaseTargetUniverse`必须在任何递归 JSON-tree检查、`structuredClone`、inner调用或
+  `await`前执行同步、descriptor-only、迭代式 bounded preflight；失败固定
+  `input/schema_invalid`与0/0。preflight先检查 Envelope/payload/coverageBasis/target/
+  bucket/coverage的 exact own enumerable data-key shape与预期 primitive/container kind，
+  其中 payload只允许“无 predecessor”或“含 predecessor”两套 key set但此时不关联
+  generation；bucket coverage只允许“无 reason”或“含 reason”两套 key set但此时不关联
+  `coverageState`；`coverageBasis.resolution`同样只允许“无 reason”或“含 reason”两套 key
+  set但不在 preflight关联`state`，使 generation、strict union shape与 overall coverage
+  语义仍分别在后续 stage可达。preflight同时 seed后续 inherited walker复用的 shared
+  WeakSet并拒绝 Universe内部 alias/cycle。top-level及任一子 object/array identity
+  必须在对该 identity执行`Array.isArray`/prototype/own-key/descriptor任一可能触发
+  Proxy trap的 reflection前记入 hardened collector。collector必须是在任何 caller
+  reflection前以 captured `Object.create(null)`创建、不向 caller/trap暴露的
+  null-prototype内部 record；每个 identity只能用 module-init捕获的
+  `defineProperty`按单调 own enumerable data slot追加，clone前用捕获的
+  `freeze`封闭。每次`defineProperty`的 property-descriptor参数也必须是 fresh
+  null-prototype record，恰有 own `value/enumerable/configurable/writable` data fields、
+  不得存在或继承`get/set`；只能用 captured create与 null-prototype上的 intrinsic
+  own-slot write构造，禁止把普通 object literal作为 descriptor record。
+  首次 trusted clone成功前、会接触 caller raw identity的所有 request-local mutable
+  admission scratch container（collector、walker worklist/frame、exact-key temporary map、
+  descriptor record与 capsule）都必须是 fresh null-prototype own-data
+  storage，或只通过 captured uncurried method访问的 WeakSet/WeakMap；普通 Array只可
+  作为 module-init frozen constant，或作为 platform own-key返回值按 own `length`/索引只读
+  消费，不得作为动态 stack/list。禁止 late-bound `push/pop`、普通 Array索引
+  赋值、iterator/spread、`Array.prototype`或任何可被原型 setter劫持的路径；
+  capsule直接引用 collector，不通过 iterable复制。该禁令在 trusted clone成功、
+  collector branch丢弃后结束；只消费 detached/frozen data且不再接触 caller
+  identity的 strict Schema/语义验证及既有 C09-1G core可继续使用普通
+  Array/Map/Set，不得为套用 raw-walker hardening重写 core或改变116项归因。
+  最大深度固定64，访问节点固定最多262,144（root及每个
+  data-property值各计1，array `length`不计），每个 string primitive最多4096个 UTF-16
+  code unit且其`length`以 safe-integer累加、总和最多16,777,216；具体 literal/regex仍在
+  structure stage验证，以保留可达归因。`targets`与`buckets`各为 dense 1..4096，
+  每个`coverage.targetProfileIds`为 dense 1..4096且全 bucket累计最多4096。达到第65层、
+  第262,145节点、单 string第4097或累计第16,777,217个 string code unit、第4097个
+  target/bucket/单 bucket ID或累计第4097个 ID时立即拒绝，
+  不得继续遍历/复制其余 subtree。该新增资源 cap只保护 Universe；inherited十项沿用
+  C09-1G既有 data-tree/clone语义，只是由 outer shared snapshot执行并通过内部 pre-snapshot
+  交给 validation core，不改变116个 source operation的首个拒绝边界。code-unit cap只保证
+  clone-safe上界；当前 strict Universe wire在4096 target/bucket/partition与固定 string
+  Schema下无法达到16 MiB，故本 point不得伪造 materialized-byte diagnostic。fixture必须以长度 recipe覆盖单 string与
+  累计 cap/cap+1、多个字符串合计 cap+1，不把巨型 literal写入资源文件。
+- capsule的`originalInput`必须是原始 top-level input identity，collector必须按首次发现
+  顺序保留全部原始 object/array identity；不得只对 descriptor值重建对象做
+  clone。即使 nested Proxy在 trap中把自身从 parent替换掉、篡改
+  `Array.prototype.push`或安装 inherited index setter，已封闭 collector中的 identity仍必须
+  使整个 capsule `DataCloneError`，不得生成 accepted snapshot。collector与 original
+  graph的 alias是内部有意 probe，trusted clone必须在同一 memoized graph中处理，
+  只增加 O(object-count)引用 record而不复制第二套对象图；先丢弃 cloned
+  collector branch，不得对整个 capsule运行 alias rejection。clone结果只提供
+  detached original JSON，cloned opaque capability绝不进入验证。shared data-tree检查使 cross-block binding alias固定
+  `input/schema_invalid`与0/0；after-start与 crypto-host mutation positive则使用无 alias的
+  ordinary tree，证明 accepted projection及完整冻结返回值保持1/7且无 TOCTOU。
+- 上述 budget从每次平台 reflection成功返回 key/descriptor后开始计数；raw JavaScript object
+  API无法抢占 attacker-owned synchronous Proxy trap，也无法撤销 caller在调用前已经为
+  海量 own keys分配的内存，因此本点不得宣称隔离任意 in-process Proxy DoS。实现必须先按
+  已知 key逐项读取 own descriptor与 prototype/container shape，再做 exact-key enumeration，
+  稳定 ordinary accessor必须在不调用 getter的前提下拒绝。hostile Proxy trap可同步
+  修改 sibling/global/prototype或种入 accessor，capsule clone在最终命中已记录 Proxy
+  并拒绝前不承诺 trap/compound getter零副作用，但该 input最终绝不得
+  accepted；reflection/clone抛错或发现 Proxy异常 shape一律`input/schema_invalid`。
+  生产 Host/transport在调用本 point前仍必须以独立 byte cap和安全 JSON parser把不可信 bytes
+  转成普通 data tree；该 adapter Gate属于后续真实 Provider，不得被本 supplied point冒充。
+  本 raw-object API不是 same-realm sandbox；能执行 Proxy trap的 caller本来就能直接篡改
+  primordials。每个允许进入 post-clone semantic core的生产调用都必须来自 trusted
+  realm。Host无法从 opaque error证明 trap是否执行，因此可执行规则固定为：
+  任一 point diagnostic `stage="input"`、任一 public-validator rejection，或任一
+  locator-builder failure，都必须保守标记
+  realm tainted并由 Host废弃/重建；不得继续在该 realm运行可成功的 point/
+  builder，也不得暴露 reset API。只有同一 diagnostic invocation自身返回
+  `stage!="input"`才能证明该次调用已跨过 clone；另一次/replayed/paired diagnostic
+  绝不能为 public-validator invocation提供证明，除非未来有同一 invocation内部
+  不可伪造 sideband并显式升版。下述 sequential vector只允许 B1/B2
+  继续命中 raw admission拒绝路径，不宣称既有 semantic core可在污染 realm中安全
+  成功。crypto-host mutation positive只允许修改 caller JSON，不得修改 realm
+  primordials/captured intrinsics；后者属 Host trust failure，不是 accepted mutation vector。
+- 为保证同一次 hostile raw call在 Proxy污染`Object.prototype.then`后仍能返回真实
+  diagnostic，C09-1G与 C09-1K的所有 async fulfilled top-level record必须统一由
+  package-internal `createProviderNonThenableFrozenRecordV1`构造：使用 module-init
+  captured create/define/freeze生成 null-prototype、只含既有 expected enumerable own-data
+  fields且 frozen的 record，不依赖 inherited/own `then`。覆盖 C09-1G
+  `validatePointClosureInternalV1`的 success closure本体、
+  `diagnoseProviderTargetDiscoveryPointClosureV1`的 success/failure wrapper、
+  `validateProviderTargetDiscoveryPointClosureV1`的 fulfilled success value，以及 C09-1K
+  internal success result、diagnostic success/failure wrapper和 public fulfilled success value；任一
+  ordinary object literal不得直接成为这些
+  async fulfilled value。helper及 captured intrinsics不得 package-export，不改变 enumerable
+  DTO keys、JSON/golden bytes、公开 TypeScript shape、stage/reason或 crypto count。这只保证
+  当前调用的 Promise result不被 thenable assimilation劫持，不解锁上述被污染
+  realm的后续成功调用。
+- null-prototype fulfilled value之前还必须关闭 nested Promise assimilation：C09-1G现有
+  `diagnoseProviderTargetDiscoveryPointClosureV1`/
+  `validateProviderTargetDiscoveryPointClosureV1`与 C09-1K对应 public API保持相同
+  `Promise<...>` TypeScript contract，但实现必须是 non-async wrapper。每个 wrapper必须在
+  同一同步 frame内先完成 top-level descriptor、raw bounded admission、opaque identity、
+  trusted capsule clone与 detached invariant；clone成功前不得创建、调用或`await`任何
+  nested async validator/Promise。C09-1G必须把现有 raw snapshot从
+  `validatePointClosureInternalV1(input)`拆到 synchronous wrapper，async semantic core只接受
+  已 detached/frozen snapshot；C09-1K同理，且只在 outer clone成功后才调用 pre-snapshot
+  C09-1G diagnostic。raw failure必须在不创建 inner Promise的前提下构造上述
+  exact non-thenable failure record。diagnostic与public wrapper只能复用同一 synchronous
+  `prepare...FromRawInputV1`逻辑，但 public wrapper不得调用/chain同一 point的 sibling
+  diagnostic API Promise；两者在各自 invocation中直接运行 prepare。该禁令不阻止
+  C09-1K在自身 outer clone成功后唯一调用 C09-1G pre-snapshot diagnostic。raw failure时 diagnostic直接
+  构造 hardened fulfilled failure Promise，public直接构造 hardened rejected opaque-error
+  Promise；只有 prepare/clone成功后才可创建 async semantic core Promise。
+- 每个对外返回的 native Promise必须立即经非导出
+  `hardenProviderPointPromiseV1`处理后才暴露：Promise由 captured intrinsic
+  `Promise`/bound resolve-reject构造，并在 caller获得引用前用 captured
+  create/define/freeze定义 own non-enumerable、non-writable、non-configurable
+  `constructor=HardenedProviderPointPromiseConstructorV1`，以及 own frozen module-internal
+  `hardenedThenV1/hardenedCatchV1/hardenedFinallyV1`，然后 freeze Promise shell；禁止依赖
+  可被替换的`Promise.prototype`/global `Promise`。三个 own method wrapper必须保持正常
+  instance-method调用约定（以动态`this`为 Promise receiver），再用 captured uncurried
+  helper或 captured `Reflect.apply`调用对应 raw intrinsic then/catch/finally method object，
+  并在返回派生 native
+  Promise `q`前递归调用`hardenProviderPointPromiseV1(q)`；hardener必须可幂等识别
+  已加固 Promise。`HardenedProviderPointPromiseConstructorV1`必须是 constructible、frozen、
+  不进入 package export的 species constructor：实现 Promise executor调用签名，使用 captured
+  intrinsic Promise构造 native Promise后立即 harden并将其作为 constructor result返回；
+  executor来源不可也无需鉴别，caller可经`p.constructor`观察/调用它，但不会取得任何
+  validation/crypto authority。它与其
+  private prototype均 frozen，且以 captured `Symbol.species`定义 own non-enumerable/non-writable/
+  non-configurable species值精确指向自身。不得把 captured intrinsic Promise直接作为
+  Promise shell的 own constructor，也不得修改/冻结全局 intrinsic Promise对象。
+  wrapper/hardener/species constructor均 frozen、不进入 package export，不得直接把 captured intrinsic
+  method或 uncurried invocation helper直接作为 own value。Host intrinsic `await`因 own constructor不等于 realm intrinsic Promise而
+  稳定走 thenable assimilation，但只能读到 p的 own hardened `then`；原生 then内部
+  SpeciesConstructor只能读到 private constructor及其闭合 own species，不读取被污染的
+  `%Promise%[Symbol.species]`。这也使
+  `p.then/p.catch/p.finally`的直接与多级链式返回值持续带有同样 own hardening，
+  不读取 poisoned inherited `constructor/then`。inner async core/diagnostic之间的组合
+  同样只能用 captured Promise methods或已 hardened Promise，不得对 raw-failure Promise
+  做普通 nested `await`。helper/own Promise properties不改公开 return type、fulfilled/rejected
+  语义、DTO/golden bytes或 crypto count，不得 package-export。
+- pre-snapshot与sidecar必须是显式 one-shot opt-in，不能让普通 C09-1G调用长期暗藏完整
+  snapshot：C09-1K从上述 detached tree构造 exact 11字段 inherited-request object（十项
+  frozen JSON＋原始 opaque capability），并在 package-internal
+  `WeakMap<object, ProviderTargetDiscoveryPointSnapshotV1>`注册同一 frozen inherited snapshot。
+  C09-1G在 snapshot入口原子 take/delete该 pre-snapshot；只有命中内部 map时才跳过其普通
+  descriptor/clone路径，随后仍执行同一个 validation/diagnostic core。仅 pre-snapshot命中且
+  最终成功的调用才把同一 snapshot注册到
+  `WeakMap<ProviderTargetDiscoveryPointClosureValidationV1,
+  ProviderTargetDiscoveryPointSnapshotV1>`，并以返回的
+  frozen closure对象 identity为 key。普通 public C09-1G调用不注册 sidecar；失败调用也不得
+  留 pre-snapshot/sidecar。internal module、Snapshot type及 register/take函数不得进入 root
+  barrel、任一 package export、JSON、fixture wire或公开 TypeScript declaration。C09-1K在
+  await唯一 diagnostic成功后以该 exact closure一次性 take并删除 snapshot，随后只从 sidecar读取
+  verified Taxonomy/Matrix/Discovery完整 Envelope、targets、unresolved与 active-root事实；
+  snapshot最终 wrapper本身也必须冻结，但不得递归冻结 opaque capability。
+  不得重读 caller；missing/already-consumed sidecar固定
+  `target_discovery_closure/source_invalid`。C09-1G既有公开返回 DTO/bytes/authority保持不变。
+- 本点新增并严格实现既有 normative wire：
+  `ProviderReleaseCoverageIncompleteReasonV1`、
+  `ProviderReleaseTargetBucketCoverageV1`、
+  `ProviderReleaseTargetUniverseBucketV1`、
+  `ProviderReleaseTargetCoverageBasisV1`、
+  `ProviderReleaseTargetUniverseV1`及其 unsigned claims、Envelope与 Pin。Universe
+  signature wire固定为
+  `provider-release-target-universe-ed25519:<22-lowercase-hex-root-id>:<128-lowercase-hex>`，
+  domain固定`provider-release-target-universe-signature-v1`，wrapper固定
+  `{rootKeyId,domain,claims}`；claims为完整 strict Universe排除
+  `universeSignature`。`provider-release-target-universe-v1` content digest使用同一
+  unsigned claims，Envelope outer `contentDigest`与`universeGeneration`不进入 payload
+  digest并必须分别等于重算值与 payload generation。
+- C09-1K**不接受 caller-supplied Universe Pin、Locator或 path**。验证 Envelope后唯一
+  派生 Pin为
+  `{locatorProfile:"distribution_provider_release_target_universe_v1",
+  universeGeneration,contentDigest}`；resolver只从 Pin内部投影 generation，以 canonical
+  positive decimal生成`universe-generation:<generation>`，再经`StoreFilenameKeyV1`
+  形成唯一相对路径
+  `provider/release-target-universe/<encoded-component>.json`。禁止 caller path、raw
+  generation component、目录扫描、`latest` alias、第二份 Pin或第二物理候选事实。
+  generation必须为正 safe integer；generation=1当且仅当 predecessor absent，
+  generation>1当且仅当提供 predecessor digest。本 point只验证该 shape，不解析
+  predecessor、不声明 history/current/anti-rollback。
+- 公开同步 builder固定为
+  `buildProviderReleaseTargetUniverseRelativePathV1(envelope)`：它必须独立执行 raw Envelope
+  identity-first bounded descriptor preflight/hardened identity collection→用同一 trusted
+  lexical reference恰好一次 clone `{originalInput:envelope,observedIdentities}` capsule→丢弃
+  cloned collector branch→重验/freeze detached Envelope，然后只做 strict Envelope
+  schema、generation↔predecessor iff、unsigned content digest与
+  outer/payload generation self-binding，再从 generation构造固定相对路径；不执行 root signature verification、
+  point admission或 I/O，成功与失败均为0/0且绝不返回 authority。公开 builder与 point
+  必须共享唯一 package-internal
+  `resolveProviderReleaseTargetUniverseRelativePathFromVerifiedPinV1(pin)`：builder完成结构
+  校验后构造 self-bound Pin再调用它；point完成1/7验证、digest与 Envelope闭合后以 derived
+  Pin直接调用它，不得调用 public builder或再次对最多约5 MiB Envelope做
+  clone/preflight/schema/hash；
+  standalone builder成功不得被解释为 verified/current Universe。`universe_locator`
+  direct-builder negatives只验证这一 authority-free structural boundary。
+- Universe的`distributionRootBinding`、`activeRootMetadata`与`registryRootKeyId`
+  必须和 C09-1G supplied closure byte-identical；`publicSupportTaxonomy`必须等于 inner
+  Taxonomy Pin。`coverageBasis.releaseMatrix/targetDiscoveryResult`必须分别等于 inner
+  Matrix/Discovery Pin；Bundle content digest、observation cut/set digest、limits、
+  discovery ruleset、七个 required dimensions、三个固定 observation source、Matrix与
+  Discovery target count/set digest及 unresolved count全部从已验证对象重算后逐项
+  exact-equal。C09-1G 成功闭包已经证明 Matrix targets是 Discovery targets的
+  exact-byte subset，且两者分别不超过4096项；因此两者 canonical union恒等于
+  Discovery targets，不可能在本 outer point首次产生同 ID异 bytes或第4097个 unique
+  target。该 subset/full-byte证明只来自同一 C09-1G validation core；Universe不得实现
+  第二套 merge/ID verifier，也不得为 inner前置不变量排除的状态新增伪造 outer failure或
+  不可达 fixture。
+- Matrix与Discovery target都按`target.targetProfileId` UTF-8 bytewise严格排序且
+  unique。Universe `targets`自身受4096项 strict schema/admission cap，并必须
+  byte-identical等于已验证 Discovery targets，不能 missing/extra/duplicate/reorder/
+  substitute。caller-supplied Universe第4097项必须在 outer `input/schema_invalid`
+  边界以0/0拒绝；Matrix/Discovery resolved claim conflict与超限只由唯一 C09-1G inner
+  closure拒绝，不得重复包装成 Universe-specific failure。target/public ID有效性直接继承
+  verified Discovery exact bytes；outer不得重复重算。bucket public mapping仍须按下述规则
+  从 verified targets重算，禁止 producer自报第二套映射。
+- `coverageBasis.resolution`是唯一总函数，producer无权自选：任一 unresolved reason为
+  `taxonomy_mapping_unresolved`时固定该 incomplete reason；否则只要 unresolved非空，
+  固定`target_discovery_unresolved`；否则 Matrix与Discovery完整 target bytes不相等，
+  固定`release_matrix_incomplete`；只有 unresolved empty且两集合 byte-identical时才是
+  `closed_world_complete`。四类都属于结构合法 positive，不是 validation failure；
+  none-only返回值不得把 complete翻译成 supported、current或 write authority。
+- Universe与`buckets`均为 owner-only发行对象；这里按`publicProfileId`分组只表示使用
+  四字段公开身份键，不表示 bucket可直接进入 public DTO或 Surface。`buckets`按
+  `publicProfileId` UTF-8 bytewise严格排序且unique，每个 bucket的四个公开
+  字段与 public ID必须从其 targets重算并 exact-equal；bucket内 target ID严格排序且
+  unique，所有 bucket的 ID集合必须组成 Universe targets的 exact partition，每个 target
+  恰出现一次且 bucket不得为空。overall complete时全部 bucket必须
+  `closed_world_complete`；overall incomplete时全部 bucket必须`incomplete`并使用同一
+  派生 reason。bucket禁止携带 build/feature/mount digest、raw path、volume、endpoint、
+  username或自由文本；除冻结的`targetProfileIds`外，不得携带其它 private membership
+  细节。`targetProfileIds`只服务 owner-only exact partition，绝不得进入 conservative
+  public projection或任何 Surface payload。
+- point diagnostic短路顺序固定为16项：`input`、`target_discovery_closure`、
+  `universe_structure`、
+  `universe_distribution_binding`、`universe_active_root`、
+  `universe_taxonomy_pin`、`universe_coverage_pins`、
+  `universe_coverage_binding`、`universe_coverage_counts`、
+  `universe_target_union`、`universe_resolution`、`universe_buckets`、
+  `universe_signature_binding`、`universe_signature`、`universe_digest`、
+  `universe_envelope`。invalid fixture stage union另加两个只属于 direct-builder
+  boundary、不会由 point diagnostic返回的 stage：`target_discovery_locator`用于逐位
+  继承 C09-1G builder，`universe_locator`用于本点新 builder；stage总数因此为18。
+  reason全集精确为
+  `schema_invalid`、`source_invalid`、`binding_mismatch`、
+  `pin_mismatch`、`root_mismatch`、`count_mismatch`、`digest_mismatch`、
+  `ordering_invalid`、`coverage_mismatch`、`signature_invalid`与
+  `envelope_mismatch`。reason总数为11。stage→reason固定：input只可
+  schema_invalid；inner只可 source_invalid；structure可 schema_invalid或
+  coverage_mismatch；distribution/root分别只可
+  binding_mismatch/root_mismatch；taxonomy/coverage pins只可 pin_mismatch；coverage
+  binding可 binding_mismatch或 digest_mismatch，counts可 count_mismatch或
+  digest_mismatch；union可 ordering/count/coverage，resolution只可
+  coverage_mismatch，buckets可 ordering/coverage；signature binding只可
+  root_mismatch，signature只可 signature_invalid，digest只可 digest_mismatch，
+  Envelope只可 envelope_mismatch；两个 direct-builder stage也只可
+  envelope_mismatch。Universe signature必须先于 payload digest，
+  使 bitflip归入 signature；digest负例必须合法重签。公共失败仍只暴露
+  `provider_unavailable / attestation_invalid`。
+- Distribution Root中16 MiB `maxCanonicalEnvelopeBytes`仍须在 coverage binding逐字节复制，
+  但 C09-1K object point不声称 raw-byte pre-parse admission；真正的16 MiB与16 MiB+1
+  executable boundary留给后续 signed-package resolver/retained aggregate。depth/node guard
+  同样是 shape检查后的 defense-in-depth，因 strict Universe full-point不可达而只做 bounded
+  walker helper级 early-stop测试；不得把 unknown-key或 wrong-container输入重新分类来伪造
+  full-point threshold evidence。
+- 同一 stage出现多个坏字段时也必须确定性短路：全部 own-key/container kind/density/
+  resource问题已由`input` preflight唯一关闭；`universe_structure`只先检查 literal/regex/
+  safe-integer/value Schema（`schema_invalid`），再验证 generation=1当且仅当 predecessor
+  absent（`coverage_mismatch`）。wire Schema只声明 predecessor optional，不得用 refinement
+  抢先吞掉该可执行语义边界。`universe_coverage_pins`按 Matrix→Discovery；
+  `universe_coverage_binding`按`limits`→`discoveryRulesetVersion`→七项
+  `requiredDimensions` tuple顺序→三项`observationSources` tuple顺序→
+  `targetDiscoveryInputBundleContentDigest`→`observationCutDigest`→
+  `observationSetDigest`，前四组为`binding_mismatch`、后三项为`digest_mismatch`；
+  `universe_coverage_counts`按 Matrix count→Matrix set digest→Discovery count→Discovery
+  set digest→unresolved count；`universe_target_union`先 supplied ordering/unique，再
+  target count，再 full-byte exact-equality（ID仅作为已验证 bytes的字段比较，
+  不重算），分别对应 ordering→count→coverage；
+  `universe_buckets`先 bucket及内部 ID ordering/unique，再 public ID/四字段映射，
+  再 exact partition，最后 coverage state/reason；nonempty已由 raw preflight/strict Schema
+  在`input`关闭，不得在该 late stage重复归因。point-specific corpus必须为每个同 stage
+  跨 reason相邻边界提供至少一个 compound mutation，并证明 tuple中更早的 mismatch胜出；
+  producer对象遍历顺序不得改变 diagnostic bytes。
+- package-internal pre-snapshot/sidecar helper必须独立覆盖：普通 C09-1G调用从不注册、
+  pre-snapshot validation失败无残留、两个并发 request/closure identity绝不串线、take一次
+  后为空、最终 snapshot wrapper冻结但 capability identity保持。public builder与
+  verified-Pin internal resolver还必须证明同 generation得到 byte-identical path且 point
+  不会重复全 Envelope遍历。
+- 成功路径固定1次 strict point admission与7次 signature verification：完整继承
+  C09-1G的1/6，只增加一次 Universe root signature verification；不得重新 admission
+  active root、不得把 signature R另计，也不得同时调用 inner public validator和
+  diagnostic。成功 authority唯一为
+  `none_release_target_universe_structure_only`，返回并递归冻结
+  `{authority,targetDiscoveryPointClosure,releaseTargetUniverse,
+  releaseTargetUniversePin,relativePath,targetCount,bucketCount,coverageResolution}`；
+  `releaseTargetUniverse`固定为完整 Envelope而非 payload；`coverageResolution`固定为
+  `releaseTargetUniverse.payload.coverageBasis.resolution`的 byte-identical discriminated
+  union对象（`{state:"closed_world_complete"}`或`{state:"incomplete",reason}`），Schema与
+  wire直接复用`ProviderReleaseTargetCoverageBasisV1.resolution`，不得缩成 string/reason。
+  不得增加`current/supported/productionReady/strongWrite`。
+- C09-1G现有116个 ordered operation必须保持原位置逐位重放，不能按新 boundary重排。
+  其中104个`internal_diagnostic`包含11个 source stage=`input`的 hostile/raw-input case
+  与93个非 input rejection：前者在新12字段 outer snapshot仍固定
+  `input/schema_invalid`与0/0 crypto，后者固定由唯一 inner diagnostic归因
+  `target_discovery_closure/source_invalid`；fixture executor对 diagnostic与独立调用同一
+  shared prepare/semantic core的 public validator各执行一次，故必须把对应 source diagnostic crypto
+  count逐项精确加倍。原 zero-based位置95～105的11个`locator_builder` operation必须直接调用
+  C09-1G对应 builder；新 expected固定
+  `target_discovery_locator/envelope_mismatch`与0/0，并另存 source
+  `locator/envelope_mismatch`作逐位证据，不得把未修改 raw request送入 Universe
+  validator后误判为成功。最后位置115的 inherited async mutation继续
+  accepted frozen snapshot并单次保持1/7。inherited case占新 manifest前116个位置，ID
+  固定`discovery-${sourceCaseId}`；internal/snapshot recipe固定
+  `{kind:"target_discovery_point",sourceOperation}`，locator recipe固定
+  `{kind:"target_discovery_locator_builder",sourceOperation}`，并逐位满足 Case ID、
+  operation、source boundary与 source ID positional equality。generator同时 pin C09-1G golden
+  `fixtures/v1/golden/provider-target-discovery-point-v1.json`（205,053 bytes，SHA-256
+  `cfcc03e388e46bf23b1fe62e513476991c535bc22887ff01b77eca4f01b979ed`，semantic
+  `sha256:4ad3ff9e4459207059ded87d51cebb29c5ec36b03c994ee5d3cb61604eda98ae`）
+  与 invalid（98,186 bytes，SHA-256
+  `bb0ed1ad0f14698c9378ff42b242b2a09355a3ccb2472213a001f3f0a6162f05`，semantic
+  `sha256:77f3f36e9a7855007fc75706d22c5e43571aa83e8c710619a53f879ea1fc6de1`）；
+  任一依赖漂移使`--check`失败。
+- point-specific negatives必须覆盖 strict Universe/Envelope、generation/predecessor、
+  binding/root/Taxonomy/Matrix/Discovery Pin、所有 copied coverage字段、supplied Universe
+  4097项的 outer input cap、Matrix⊆Discovery且 union=Discovery的前置不变量证据、
+  ordering/duplicate/missing/extra、四档 resolution优先级、bucket exact
+  partition/public mapping/privacy、wrong signer/domain/prefix/signature、digest/Envelope/
+  fixed path、transparent top-level/nested/self-removing Proxy、Universe↔inherited cross-alias、hostile
+  container与 async/crypto-host mutation。Universe direct locator-builder negatives必须覆盖
+  ordinary accessor（getter调用数为0）、transparent top-level/nested/self-removing Proxy、只定义
+  `get` trap的 Proxy（get trap调用数为0），以及 Proxy trap同步替换 global
+  `structuredClone`、篡改`Array.prototype.push`/安装 inherited index setter后再暴露
+  child的 compound cases；compound side-effect cases只断言最终拒绝且 collector未泄漏，
+  不断言 trap/compound getter调用数为0。全部固定`universe_locator/envelope_mismatch`
+  与0/0。还必须有不在两次调用之间恢复的 sequential pollution vector：调用 A
+  的已记录 Proxy污染`Object.prototype` descriptor meta-key及`Array.prototype`
+  numeric setter后拒绝；不恢复污染即独立执行 B1 nested ordinary accessor，
+  必须 getter=0且0/0拒绝；仍不恢复即独立执行 B2 self-removing Proxy，
+  必须断言 reflection trap确实执行、parent中 Proxy已脱链后仍由 sealed collector保留
+  identity，并以0/0拒绝且 collector不泄漏。fixture
+  executor必须在外层`try/finally`以预先捕获的 exact descriptors恢复/删除所有
+  global/prototype mutation，断言 primordial state byte-for-byte恢复后才执行后续 case；
+  不得污染其他测试。另加单调用 point raw-input vector：self-removing
+  Proxy只安装`Object.prototype.then = resolve => resolve(forgedAcceptedValue)`；当次
+  diagnostic必须 fulfill为 prototype=null、frozen且 exact enumerable fields为
+  `{ok:false,stage:"input",reason:"schema_invalid"}`的真实 record，inherited `then`
+  调用数为0、crypto 0/0，public validator仍以既有 opaque validation error稳定拒绝。
+  该 case同样在`finally`精确恢复 descriptor。独立 helper/success tests还必须断言
+  C09-1G internal closure、diagnostic wrapper/public fulfilled success与 C09-1K internal/diagnostic/public
+  fulfilled success的顶层 prototype全为null且 frozen，enumerable key顺序/集合与旧 DTO
+  byte-identical。还必须有独立单调用 Promise-boundary vector：raw Proxy同步污染
+  `Promise.prototype.constructor`、`Promise.prototype.then`及 intrinsic
+  `Promise[Symbol.species]`（then尝试 fulfill forged inner success、species尝试构造 forged
+  Promise）后 self-remove；diagnostic wrapper必须在未创建/调用 inner async core时直接返回
+  hardened native Promise。该 Promise必须满足`p instanceof <captured Promise>`，但 own
+  `constructor`严格等于 stable frozen private
+  `HardenedProviderPointPromiseConstructorV1`且不等于 captured/global Promise；private
+  constructor与其 prototype均 frozen，`constructor[<captured Symbol.species>] === constructor`。
+  own `then/catch/finally`必须分别是保持正常 receiver约定的 frozen internal wrapper，且在所有
+  派生 Promise上保持稳定 identity；五项 own descriptor（constructor、species及三个 method）
+  均按各自 owner non-enumerable/non-writable/non-configurable，Promise shell
+  frozen；Host `await`后仍得到上述 exact input failure，poisoned then hits=0、crypto
+  0/0。public validator返回的 hardened Promise也必须以既有 opaque error reject；
+  `finally`必须精确恢复 Promise descriptors/global。同一污染下还必须分别断言
+  `await p.then(identity)`、public reject的`await p.catch(handler)`、`await p.finally(handler)`
+  与至少3层 mixed chain；每个中间/最终 Promise均必须 own-hardened+frozen，
+  forged value/Promise不可达、poisoned then与species hits均为0。污染窗口内的测试 harness
+  必须由 non-async test callback返回最终 hardened chain；需要执行 intrinsic `await`时，只能
+  通过 package-internal test-only await probe立即 harden其 async outer Promise后再暴露，并由
+  hardened `finally`恢复 primordials，防止测试 runner先 assimilation普通 outer Promise而产生
+  假阳性 poison hit。上述调用必须实际验证
+  `then/catch/finally` settlement，不能只比较 descriptor/identity；clean success同样断言 Promise own
+  descriptors/frozen shell/派生链，还要断言公开函数不是`AsyncFunction`但 return type/settlement
+  不变。深层语义 mutation必须重新合法签名并
+  重算后继 digest/Envelope，避免提前死于 signature。outer input failure固定0/0；
+  Universe-specific signature前 rejection在 diagnostic+public两次执行中固定2/12；
+  malformed/wrong prefix在调用 host前拒绝仍为2/12；valid-wire wrong signer/domain/
+  bitflip以及 signature之后的 digest/Envelope failure固定2/14；accepted snapshot
+  与四类 positive各只跑成功路径一次并固定1/7。不得新增声称抵达 outer
+  conflict或 derived-union第4097项的伪 executable case；相关 hostile source只能作为
+  inherited C09-1G `target_discovery_closure/source_invalid`证据。
+- accepted-snapshot projection冻结为13字段：
+  `publicSupportTaxonomyContentDigest/releaseMatrixContentDigest/
+  targetDiscoveryResultContentDigest/targetDiscoveryInputBundleContentDigest/
+  releaseMatrixTargetCount/discoveredTargetCount/unresolvedObservationCount/
+  universeGeneration/universeContentDigest/universeTargetCount/universeBucketCount/
+  coverageResolution/universeRelativePath`。其中`coverageResolution`复用上述完整
+  discriminated-union Schema并与 Envelope字段 byte-identical。不得投影 private target membership、raw key、
+  signature、physical path或 caller对象。inherited与 Universe自身 after-start mutation都
+  必须比较该 exact projection与完整递归冻结返回值。
+- D-36只预先冻结 inherited=116与 point-specific完整类别，不猜最终 point-specific、
+  Schema、public export、fixture byte数或总数；实现先形成闭合 literal Case ID inventory，
+  再从数组长度导出 count。invalid Schema必须把 Case ID union与`caseIds/cases`生成为
+  最终长度 positional tuple。clean packed Node与Vite/browser必须从安装 tar的两个新
+  显式 subpath `./provider-release-target-universe-point`与
+  `./provider-release-target-universe-point-fixtures`导入 Universe point与 fixtures，
+  并验证 root barrel symbol identity、
+  realpath资源、全部 fresh materialized case、exact stage/reason、13字段 projection、
+  opaque error、crypto count与 witness digest；运行时 executor必须 browser-safe，
+  Node-only generator才可签名/reanchor，packed Vite不得出现 Node external。
+
+C09-1K明确不证明 Taxonomy/Matrix/Discovery/Universe predecessor history、current、
+anti-rollback、五链 retained accounting或真实 signed-package resolver；不证明 Catalog
+exact-cover、approver history/current/revocation、Registry current、Acceptance或唯一
+active writer；也不执行真实 runner/runtime/volume/IPC，不注册 production provider，
+不执行任何 Store I/O/write或 Migration。即使 supplied objects得到
+`closed_world_complete`，也只产生结构一致性事实，不能解锁 strong Store write。
+
+修订原因：直接实现 Catalog会迫使 Catalog自己定义 target全集或相信 opaque Universe
+Pin，均可通过 omission抬高公开 capability；先实现 history/current则会在 Universe与
+Catalog对象尚不存在时形成不完整五链。D-36因此只冻结 Matrix＋Discovery→Universe的
+最小 deterministic point，后续顺序固定为 production Registry Entry↔Evidence binding、
+Catalog exact-cover、五链 retained history/current-candidate、Acceptance current selector，
+最后才是 Migration；C09 aggregate与第15步继续保持 open/in progress。
+
 ---
 
 ## 20. M0 冻结结果与延后决策
 
 原 M0 第 1–7 项已经分别由 D-13～D-19 冻结；Task Lifecycle、WP4 持久化与
-WP5 Change Intelligence 修订由 D-21～D-35 冻结。完整证据、Owner、试点 Pin
+WP5 Change Intelligence 修订由 D-21～D-36 冻结。完整证据、Owner、试点 Pin
 和 capability lock 见
 `docs/research/2026-07-28-g0-contract-freeze-record.md`。
 

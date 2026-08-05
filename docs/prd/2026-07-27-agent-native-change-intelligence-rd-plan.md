@@ -1,6 +1,6 @@
 # Understand Code：Agent-native Code Change Intelligence 项目研制计划
 
-> 文档状态：Approved / Contract Frozen v1.12（含 WP5 Decision Amendment D-24～D-34、C09-1I 与 16-A-1 实施证据重校）
+> 文档状态：Approved / Contract Frozen v1.13（含 WP5 Decision Amendment D-24～D-35、C09-1I 与 16-A-1 实施证据重校）
 >
 > 日期：2026-07-27
 >
@@ -8,9 +8,9 @@
 >
 > WP4 Contract Amendment：2026-07-29；`build_task_brief` 的可恢复两阶段编排与可信 Operation Journal 见 D-22，Repo Pulse 不可变历史与原子切换见 D-23
 >
-> WP5 Contract Amendment：2026-07-30～2026-08-04；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host、不可变 Bootstrap Trust Bundle、签名 Target Discovery point closure、real-FS Conformance Result point closure与 Provider Runtime Attestation point closure见 D-24～D-34
+> WP5 Contract Amendment：2026-07-30～2026-08-05；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host、不可变 Bootstrap Trust Bundle、签名 Target Discovery point closure、real-FS Conformance Result point closure、Provider Runtime Attestation point closure与 QA/Release Provider Feasibility Evidence point closure见 D-24～D-35
 >
-> Implementation Rebaseline：2026-08-03；Evidence Refresh：2026-08-05。重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1I 与 16-A-1 已形成候选证据，但 Provider aggregate、真实 Provider、生产 Change Intelligence、双 Agent、Task-first Workbench 与发布门仍未关闭
+> Implementation Rebaseline：2026-08-03；Evidence Refresh：2026-08-05。重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1I 与 16-A-1 已形成候选证据，C09-1J 合同已冻结但尚未实现；Provider aggregate、真实 Provider、生产 Change Intelligence、双 Agent、Task-first Workbench 与发布门仍未关闭
 >
 > 适用范围：`understand-code` 产品、Core、Agent 插件、MCP、本地服务与 Dashboard
 >
@@ -329,7 +329,7 @@ Incident、Impact、Change Check 和 Verification 都应成为 Task 的章节或
 | Workspace 包 | 8 个：Contracts、Repository State、Artifact Store、Core、Task Engine、CLI、Dashboard、Durable Object Provider Contracts |
 | 根质量门禁 | 本地 macOS `pnpm quality`：187 个测试文件、2,295 passed、1 个既有 skip、0 failed；build/typecheck/Dashboard production build 全绿；Linux clean CI `30978915713` on `60f6582`：187 个测试文件、2,296 passed、0 skipped、0 failed，success |
 | 修改前能力 | Repo Pulse、Persistent Task Brief、候选排序、影响路径、Evidence/Unknown、Task Lifecycle 已有正式实现 |
-| Provider Contracts | Strict Ed25519、Bootstrap Trust Bundle、Root/Registry History、signed real-FS Corpus→Suite、signed Target Discovery、unsigned real-FS Result 与 root-signed Runtime Attestation point 已闭环到候选边界；C09-1I 保持 1 次 point admission、7 次签名，冻结 241 份 Schema 与 122 个逐条重放负例；authority 仍为 none-only，C09 aggregate 未关闭 |
+| Provider Contracts | Strict Ed25519、Bootstrap Trust Bundle、Root/Registry History、signed real-FS Corpus→Suite、signed Target Discovery、unsigned real-FS Result 与 root-signed Runtime Attestation point 已闭环到候选边界；C09-1I 保持 1 次 point admission、7 次签名，冻结 241 份 Schema 与 122 个逐条重放负例；D-35 已冻结后继 QA/Release Evidence point，但尚无 C09-1J bytes；authority 仍为 none-only，C09 aggregate 未关闭 |
 | 修改后能力 | Change Check/Verification 有严格 Contract 和 Store 基础，但没有生产 `checkChanges()` / `recordVerification()` 执行服务 |
 | Agent Surface | 已有 `packages/cli` 自包含 stdio MCP 候选和 3 个真实 Tool；仍无 `.codex-plugin/plugin.json`、Codex/Claude Adapter 或双 Agent Task E2E |
 | 前端 | 活跃 Surface 仍为 `wiki | graph`；尚无 Tasks、Brief、Check、Verification 与 Repo Pulse 产品页面 |
@@ -3022,7 +3022,7 @@ P2 的阻断规则必须确定性执行：
 | WP2 | Closed | Repository State / Repo Pulse 已关闭 |
 | WP3 | Closed | Artifact Store / Evidence persistence 已关闭 |
 | WP4 | Closed | Persistent Task Brief 与 Lifecycle 已关闭；不包含生产 Change Check |
-| WP5-1P/C09 | **Partial / aggregate open** | 已完成 crypto、Bootstrap、Root/Registry history、signed real-FS Corpus→Suite（`3ca2977`）、signed Target Discovery（`70201b4`）、unsigned real-FS Result（`35f9aaf`）与 root-signed Runtime Attestation point closure（`60f6582`）；下一实现点为 QA/Release Evidence，其后仍有 Catalog/Registry、Discovery history/current、Universe、Acceptance、Migration 等总门 |
+| WP5-1P/C09 | **Partial / aggregate open** | 已完成 crypto、Bootstrap、Root/Registry history、signed real-FS Corpus→Suite（`3ca2977`）、signed Target Discovery（`70201b4`）、unsigned real-FS Result（`35f9aaf`）与 root-signed Runtime Attestation point closure（`60f6582`）；D-35 已冻结 C09-1J QA/Release Evidence 合同，下一动作是独立实现、测试与复审，之后仍有 Catalog/Registry、Discovery history/current、Universe、Acceptance、Migration 等总门 |
 | WP3P | Not closed / capability locked | 真实 OS principal、Provider runtime 与 real-FS feasibility 尚未实现 |
 | WP5 | Contract frozen / implementation incomplete | 没有生产 Delta/Hunk/Matching、`checkChanges()`、`recordVerification()` 纵向闭环 |
 | WP6 | **Open（仅 16-A-1 candidate closed）** | `packages/cli` 已交付自包含 stdio MCP 与 Pulse/Brief 三工具；Host Adapter、完整 Tool surface、双 Agent E2E 仍未实现，不能把子切片状态外推为 WP6 candidate |
@@ -4122,7 +4122,7 @@ Symbol、Evidence、Impact 与分析完整性，而不是把 Git 文件列表包
 WP3P Provider Feasibility Gate 与 WP4 Task Intelligence；Diff→Symbol/Matching
 可在 security contracts 冻结后并行，但任何 strong mutation在 WP3P Gate关闭前
 保持 capability locked。
-估算：原 2.5 周只覆盖摘要级实现；按 D-24～D-34 的 path-safe、identity、
+估算：原 2.5 周只覆盖摘要级实现；按 D-24～D-35 的 path-safe、identity、
 SafeGit、reservation/quota 与 recovery 生产闭环修订为
 **6–8 周、12–16 person-weeks**。Contracts、Store 与 Operation kernel 串行冻结，
 Delta/Symbol/Matching 可在接口冻结后并行。
@@ -5980,7 +5980,7 @@ reflog 与未定义 quota 会让 crash recovery 存在误删或不一致结果�
 边界前移到首个 durable write，并冻结并发 ownership 与资源耗尽的唯一语义。
 
 WP5 的实现追踪、Acceptance 与 capability locks 见
-`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。D-24～D-34 不
+`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。D-24～D-35 不
 改变 D-21 的状态集合；它们冻结的是 Change/Verification 事实模型、可重建
 baseline、安全持久化、Operation 提交边界与 Alpha 兼容策略。
 
@@ -6457,12 +6457,204 @@ binary或 target的 attestation被拼接进后继 Evidence；反过来，如果�
 执行时提前授权写能力。D-34只冻结 C09-1I首批 bytes与可执行拒绝语义，后继 Evidence
 仍须独立提交和复审。
 
+### D-35：Provider Feasibility Evidence 采用 Runtime→Evidence QA/Release 双签结构闭包
+
+状态：Accepted。
+
+2026-08-05 C09-1J pre-implementation amendment：C09-1I 已关闭 Result→Policy→
+root-signed Runtime Attestation 的 supplied-point 结构闭包，但现有实现仍没有把同一
+Result、Runtime、Policy 与两把由 supplied root签名的 QA/Release approver key接成
+可重算 Evidence Envelope。为避免把两条 point key record误写成完整审批历史，或再
+引入一份 caller-controlled locator形成重复事实，在生成 C09-1J首批 bytes前冻结如下
+唯一解释：
+
+- C09-1J只接受 C09-1I完整16字段 raw request，再增加
+  `providerFeasibilityEvidence`、`providerFeasibilityEvidencePin`、
+  `qaApproverPublicKey`与`releaseApproverPublicKey`四项。20个 exact enumerable
+  data-property按字典序固定为：`activeRoot`、`activeRootMetadata`、
+  `distributionRootBinding`、`fixtureCorpusManifest`、
+  `providerFeasibilityEvidence`、`providerFeasibilityEvidencePin`、
+  `publicSupportTaxonomy`、`qaApproverPublicKey`、
+  `realFilesystemConformanceResult`、`realFilesystemConformanceResultLocator`、
+  `realFilesystemConformanceResultPin`、`releaseApproverPublicKey`、`releaseMatrix`、
+  `runtimeAttestation`、`semanticProviderPolicy`、`strictCryptoCapability`、
+  `suiteManifest`、`targetDiscoveryFixtureManifest`、`targetDiscoveryResult`、
+  `targetDiscoveryRunnerRun`。首次`await`前一次 snapshot全部字段；19项 JSON
+  artifact经`structuredClone`后递归冻结，opaque strict crypto capability只保留
+  原引用。首次 snapshot本身存在新增/缺失字段、getter/Proxy、hidden/symbol key、
+  alias/cycle、普通 validation DTO或 caller `verified/approved`标记时拒绝；snapshot
+  完成后不得再次读取 caller对象，调用开始后的异步 mutation不得改变已捕获值，原始
+  snapshot合法时必须继续成功并比较冻结投影，而不是把 after-start mutation重新归为
+  input failure。随后只恰好调用一次 C09-1I diagnostic，不复制其1次 point admission与
+  7次签名逻辑。
+- Evidence wire严格复用既有`ProviderFeasibilityEvidenceV1`、Envelope与
+  `ProviderFeasibilityEvidencePinV1`。本点**不新增独立 Evidence Locator DTO或输入**：
+  已验证 Pin中的`locatorProfile/evidenceId/contentDigest`已经同时给出 resolver选择与
+  完整性事实；resolver只能从 Pin内部投影 fixed profile与 ID，并以
+  `StoreFilenameKeyV1`生成唯一相对路径
+  `provider/feasibility-evidence/<encoded-evidenceId>.json`。禁止 raw ID、Envelope、
+  caller path、目录扫描、`latest` alias或第二套 locator选择路径。
+- Evidence ID domain固定为`provider-feasibility-evidence-id-v1`，strict fields恰为
+  `{providerId,semanticProviderPolicyDigest,runtimeAttestationContentDigest,
+  implementationDigest,binaryAttestationDigest,target,
+  isolationSecurityBoundaryProfileDigest,ipcPeerAuthenticationPolicyDigest,
+  realFilesystemSuiteDigest,realFilesystemConformanceResult,
+  realFilesystemConformanceResultDigest,fixtureManifestDigest,runnerProfileDigest,
+  crashCutCoverageDigest,result,issuedAt}`；排除`profile/evidenceId/qaSignature/
+  releaseSignature`及 Envelope digest。QA signature wire固定为
+  `provider-feasibility-ed25519:qa:<22-lowercase-hex-key-id>:<128-lowercase-hex>`，
+  domain为`provider-feasibility-evidence-qa-signature-v1`，wrapper固定
+  `{role:"qa",keyId,claims}`；Release使用对应`release` wire/domain/wrapper。
+  两份 claims byte-identical，均为完整 strict Evidence排除两份 signature，包含
+  `profile/evidenceId`。构造与验证 DAG固定为 Result/Policy/Runtime closure → Evidence
+  ID → QA/Release分别签署同一 claims → 含双签 payload →
+  `provider-feasibility-evidence-v1`完整 payload digest → Envelope → Pin，不形成回边。
+- Evidence与 Result的 provider、semantic policy、implementation、binary、完整
+  target八字段、Suite、完整 Result Pin、Result content digest、Fixture、real-FS
+  Runner、Crash Coverage及 aggregate result必须逐项 exact-equal；Evidence
+  `runtimeAttestationContentDigest`必须等于 C09-1I Runtime Pin content digest，且
+  Result Pin digest、Evidence独立 Result digest、Runtime内 Result digest三方相等；
+  Evidence isolation boundary、IPC peer-auth policy与 Suite digest必须分别等于
+  strict Policy对应字段。时间只冻结 canonical Evidence
+  `issuedAt >= Result.completedAt`（相等合法）；比较器必须把两个已通过 strict UTC
+  Schema的值解析为`[year,month,day,hour,minute,second,fractionNanos]`，缺失 fraction
+  视为0、1～9位 fraction右补0到9位后按 tuple比较，禁止 raw string排序或用会截断
+  纳秒的 JavaScript `Date`比较。fixture至少冻结 exact equal、前后各1 ns与不同 fraction
+  长度但同一时刻三组边界。不新增 Runtime与 Result/Evidence的 timestamp顺序，也不
+  引入 now、TTL、max-age、clock-skew、freshness或 current判断。
+  `passed/failed/unsupported`均可形成结构有效 Evidence；只有后继 production
+  Catalog/Registry/Acceptance与 strong candidate才可要求`passed`。
+- 两个 approver输入分别必须是 exact role=`qa/release`的既有
+  `ProviderFeasibilityApproverPublicKeyV1` record。逐条重算 role-specific key ID与
+  raw-key digest；QA、Release及 supplied active root三份 public-key material必须
+  两两不同。两条 record的 registry-signature prefix、signed wrapper root与 C09-1I
+  supplied point root必须相等，按
+  `provider-feasibility-approver-public-key-signature-v1`验证；QA始终先于 Release。
+  本点不接收完整`ProviderFeasibilityApprovalKeysV1`，不证明 active/current、
+  append-only history、revocation或 historical root resolution；这些只由后继
+  Catalog/Registry closure关闭。
+- diagnostic stage按以下顺序唯一短路：`input`、`runtime_attestation_closure`、
+  `evidence_structure`、`evidence_pin_structure`、`qa_approver_key_structure`、
+  `release_approver_key_structure`、`qa_approver_key_identity`、
+  `release_approver_key_identity`、`approver_key_separation`、
+  `qa_approver_key_root`、`release_approver_key_root`、
+  `qa_approver_key_admission`、`release_approver_key_admission`、
+  `qa_approver_key_signature`、`release_approver_key_signature`、
+  `evidence_result_binding`、`evidence_policy_binding`、`evidence_runtime_binding`、
+  `evidence_time`、`evidence_id`、`evidence_qa_signature_binding`、
+  `evidence_release_signature_binding`、`evidence_qa_signature`、
+  `evidence_release_signature`、`evidence_digest`、`evidence_envelope`、
+  `evidence_pin`。stage→reason配对同样冻结：`input→schema_invalid`、
+  `runtime_attestation_closure→source_invalid`；四个 structure stage只可
+  `schema_invalid`；QA/Release identity stage中 role错固定`binding_mismatch`、派生
+  key ID错固定`identity_mismatch`、raw-key digest错固定`digest_mismatch`；
+  `approver_key_separation→binding_mismatch`；两个 root stage只可`root_mismatch`；
+  两个 admission stage只可`public_key_invalid`；两个 approver record signature
+  stage只可`signature_invalid`；`evidence_result_binding`中普通复制字段错为
+  `binding_mismatch`、完整 Result Pin错为`pin_mismatch`、独立 Result content digest错为
+  `digest_mismatch`。同一 identity stage内部严格按 role → derived key ID → raw-key
+  digest短路；`evidence_result_binding`内部严格按普通复制字段 → 完整 Result Pin →
+  独立 Result content digest短路，禁止实现自行换序。Policy/Runtime digest等式错均为
+  `digest_mismatch`；
+  `evidence_time→ordering_invalid`、`evidence_id→identity_mismatch`；两个 Evidence
+  signature-binding stage只可`binding_mismatch`，两个 Evidence signature stage只可
+  `signature_invalid`；最后依次只可`evidence_digest→digest_mismatch`、
+  `evidence_envelope→envelope_mismatch`、`evidence_pin→pin_mismatch`。因此 reason全集
+  精确为`schema_invalid`、`source_invalid`、`binding_mismatch`、
+  `identity_mismatch`、`digest_mismatch`、`pin_mismatch`、`root_mismatch`、
+  `public_key_invalid`、`signature_invalid`、`ordering_invalid`、
+  `envelope_mismatch`。Evidence双签必须先于完整 payload digest检查，确保签名篡改
+  优先归入 role-specific signature stage；digest负例必须保持双签合法。公共失败仍
+  只暴露`provider_unavailable / attestation_invalid`。
+- 成功路径固定为3次 strict point admission与11次 signature verification：继承
+  C09-1I的1/7；QA/Release raw key各增加1次 point admission；两条 approver record
+  root signature与 Evidence QA/Release双签各增加2次 signature。不得重新 admission
+  active root、不得把 signature R另计，也不得同时调用 inner public validator与
+  diagnostic。成功 authority唯一为
+  `none_provider_feasibility_evidence_structure_only`，返回
+  `{authority,runtimeAttestationPointClosure,providerFeasibilityEvidence,
+  providerFeasibilityEvidencePin,relativePath,qaApproverPublicKey,
+  releaseApproverPublicKey}`并递归冻结；不得增加`approved/current/productionReady`。
+- C09-1I现有122个 ordered operation必须逐位重放，而非抽样：24个违反新20字段
+  snapshot/data-tree边界的 case固定为`input/schema_invalid`；其余96个 rejection固定
+  由唯一 inner diagnostic归因`runtime_attestation_closure/source_invalid`；其中
+  `inner-source-suite-signature-bitflip`固定2 point/4 signature，92例固定2/12，
+  `runtime-signature-bitflip/wrong-signer/wrong-domain`三例固定2/14。两个 inherited
+  async-mutation operation继续 accepted-snapshot成功并各保持单次3/11。
+  inherited case必须占新 manifest前122个位置，case ID固定为
+  `runtime-${sourceCaseId}`，recipe固定
+  `{kind:"runtime_attestation_point",sourceOperation}`，且逐位满足
+  `caseIds[i] == cases[i].caseId == cases[i].mutation.operation`与
+  `sourceOperation == PROVIDER_RUNTIME_ATTESTATION_POINT_INVALID_CASE_IDS_V1[i]`。
+  generator同时 pin C09-1I golden
+  `fixtures/v1/golden/provider-runtime-attestation-point-v1.json`（117,782 bytes，
+  SHA-256 `cc1aa6bd32d88c5d45056c3ef3b2ba862ce263935fb6870e052acc34353c48ce`，
+  semantic `sha256:bb06778970ae77a562f078c09560de7ecf6613dfaa9c14657d44056da3a0ecb2`）
+  与`fixtures/v1/invalid/provider-runtime-attestation-point-v1.json`（256,796 bytes，SHA-256
+  `33be13b249c208a3f6bf1de0a65cebfa0e122f870dc7df5d4eed200762fb58bb`，semantic
+  `sha256:ecc2cff8ec3a6481143087e24313ce111fe0f5434788fbcf09ba79bdb5a341a3`）；
+  任一依赖漂移使`--check`失败。
+- point-specific negatives必须覆盖 strict Evidence/Pin、每个 ID与重复绑定字段、合法
+  重签 cross-object mismatch、纳秒时间边界、双签的 wrong signer/domain/role/prefix/
+  wrapper/swap、两条 root-signed approver record、root/QA/Release material alias、隐私
+  extra field、hostile container与 async mutation；compound vectors至少覆盖 role+key
+  ID、key ID+raw digest、普通复制字段+Result Pin、Result Pin+独立 Result digest，且
+  必须证明上一条冻结的 stage内首项 reason恒胜。rejection executor对 fresh request先
+  调 diagnostic、再调一次内部复用 diagnostic的 public validator以验证 opaque error；
+  point-specific outer `input/schema_invalid` failure固定0 point/0 signature，outer/inner
+  之外的 pre-admission非 crypto failure固定2/14，QA/Release admission
+  failure依次固定4/14与6/14，QA/Release approver-record signature failure依次固定
+  6/16与6/18，Evidence binding/time/ID/signature-binding failure固定6/18，QA Evidence
+  signature failure固定6/20，Release Evidence signature及其后的 digest/Envelope/Pin
+  failure固定6/22；accepted-snapshot只执行成功路径一次并固定3/11。另有
+  `passed/failed/unsupported`三份独立 positive vector，三者均返回同一 none-only
+  authority，防止把后继 production的`passed`门提前到 C09-1J。
+- accepted-snapshot projection冻结为 strict 20字段对象：原11项
+  `runtimeAttestationContentDigest/runtimeAttestationGeneration/runtimeIssuedAt/
+  runtimeIpcEndpointAttestationDigest/semanticProviderPolicyDigest/
+  filesystemProfileDigest/realFilesystemConformanceResultContentDigest/
+  conformanceCaseResultCount/conformancePassedCaseResultCount/
+  conformanceFailedCaseResultCount/conformanceUnsupportedCaseResultCount`原样保留，再增加
+  `evidenceId/evidenceContentDigest/evidenceIssuedAt/evidenceResult/qaApproverKeyId/
+  releaseApproverKeyId/qaApproverPublicKeyDigest/releaseApproverPublicKeyDigest/
+  evidenceRelativePath`九项；不得投影 raw key、signature、raw endpoint或 caller path。
+  inherited两个 snapshot及 Evidence/Pin/QA/Release各自 after-start mutation都必须
+  比较该 exact projection与完整递归冻结返回值。
+- D-35只预先冻结 inherited=122与 point-specific完整类别，不猜 point-specific或最终
+  总数；实现先形成闭合 literal Case ID inventory，再由数组长度导出
+  `runtimeCaseCount/pointCaseCount/caseCount`。invalid JSON Schema必须把 Case ID union与
+  `caseIds/cases`生成为最终长度的 positional tuple，逐位置冻结 ID、group、operation、
+  recipe kind与 sourceOperation，禁止宽 regex或 unordered array。
+  clean packed Node与 Vite/browser必须从安装 tar的
+  `./provider-feasibility-evidence-point`与
+  `./provider-feasibility-evidence-point-fixtures`两个显式 public subpath导入，并验证
+  root barrel导出为同一 symbol引用；通过`import.meta.resolve`+realpath只读取已安装包
+  golden/invalid资源，逐例 fresh materialize并比较 exact stage/reason、strict 20字段
+  projection、opaque error、crypto count与 witness digest。签名/reanchor与 fixture生成
+  只留在 Node-only generator；运行时 fixtures executor必须 browser-safe且 packed Vite
+  不得出现 Node external。Schema/exports/fixture最终总数、byte数与 SHA只在实现后实测冻结。
+
+C09-1J明确不证明 approver key history/current/revocation，也不证明 QA/Release与
+provider verification keys、recovery keys或 historical roots之间的全历史 public-key
+material唯一性；本点的 separation只覆盖 QA、Release与当前 supplied active root三方。
+它同样不证明 runtime在线/current generation、真实 volume或 mutual-auth IPC、real-FS
+runner在本次调用执行、物理 installation-state no-replace发布、Catalog/Registry/
+Universe/Acceptance、production registration、strong candidate、产品发布批准或任何
+I/O/write authority。修改两份签名并重算后继 digest只能得到 supplied-point结构事实，
+不能解锁 strong Store write。
+
+修订原因：若新增独立 Locator，会让 Pin与第二份 caller locator同时控制同一对象；若
+只接两条 approver record却宣称 current/未撤销，又会绕过完整 approval history与
+Registry Gate；若先算完整 Evidence digest再验双签，则 signature篡改会被错误归因为
+普通 envelope drift。D-35只冻结 C09-1J首批 bytes、拒绝优先级与 none-only authority，
+实现证据仍须独立提交、全量测试、同 SHA CI与复审。
+
 ---
 
 ## 20. M0 冻结结果与延后决策
 
 原 M0 第 1–7 项已经分别由 D-13～D-19 冻结；Task Lifecycle、WP4 持久化与
-WP5 Change Intelligence 修订由 D-21～D-34 冻结。完整证据、Owner、试点 Pin
+WP5 Change Intelligence 修订由 D-21～D-35 冻结。完整证据、Owner、试点 Pin
 和 capability lock 见
 `docs/research/2026-07-28-g0-contract-freeze-record.md`。
 

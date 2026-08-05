@@ -2,7 +2,7 @@
 
 记录 ID：`G0-2026-07-28`
 
-状态：**Closed for implementation；WP5 Decision Amendments D-24～D-34 incorporated**
+状态：**Closed for implementation；WP5 Decision Amendments D-24～D-35 incorporated**
 
 候选基线：`34da354968a6071d914e4e4a4fca738e6c2d8a29`
 
@@ -10,7 +10,7 @@
 
 WP4 修订日期：2026-07-29
 
-WP5 修订日期：2026-07-30～2026-08-04
+WP5 修订日期：2026-07-30～2026-08-05
 
 编制方式：Codex 汇总版本化证据、独立审查和自动化结果；Codex 不被记录为真人签署人
 
@@ -45,7 +45,7 @@ generation pin Pulse，再只以唯一 maximal Store Manifest generation所 pin�
 保留为 legacy/read-only projection。该修订不新增 Artifact Type 或 Lifecycle
 状态，只冻结 Pulse 版本身份、历史可寻址性和恢复边界。
 
-2026-07-30～2026-08-04 的 D-24～D-34 是 WP5 实现前及分层实现中的证据模型、写入边界与
+2026-07-30～2026-08-05 的 D-24～D-35 是 WP5 实现前及分层实现中的证据模型、写入边界与
 Provider可行性修订。审计确认：
 原 Change Check 没有 Actual Change 实体、Hunk 或完整性证明；Repository
 Snapshot 也不能重建任务开始时已经存在的 dirty/untracked 内容。修订因此新增
@@ -120,7 +120,7 @@ Gate的 target只可 legacy/redacted read-only。这些修订不增加 D-21
 - 性能 Evidence 保存生产源文件 Hash、原始样本、预热/采样数和 expected/actual 完整性字段。
 - Host Evidence 保持 Surface 边界；Codex App Server provisional 结果和 Claude 未认证 Tool Call 不被提升为 supported。
 
-## 4. D-13～D-34 冻结结果
+## 4. D-13～D-35 冻结结果
 
 ### D-13：P0 平台
 
@@ -1010,9 +1010,9 @@ AT-C31与AT-Q33以 WP5 Matrix为唯一规范。D-31不改变 D-21 Lifecycle；�
 签名接受集合、bootstrap发行物与 historical verifier边界，任何后续放宽必须显式
 升版。
 
-### D-32～D-34：Provider point closure 分层冻结
+### D-32～D-35：Provider point closure 分层冻结
 
-状态：`accepted`（2026-08-03～2026-08-04 Decision Amendments）
+状态：`accepted`（2026-08-03～2026-08-05 Decision Amendments）
 
 - D-32把 C09-1G冻结为 signed Target Discovery point：Taxonomy、Matrix、Input
   Bundle与 Discovery Result使用 supplied active registry root的独立 signature
@@ -1028,8 +1028,16 @@ AT-C31与AT-Q33以 WP5 Matrix为唯一规范。D-31不改变 D-21 Lifecycle；�
   路径固定1次 active-root point admission与7次 signature verification，authority仅为
   `none_provider_runtime_attestation_structure_only`。它不证明 runtime在线、current
   generation、真实 volume/IPC、QA/Release Evidence、Catalog/Registry/Acceptance或 I/O。
+- D-35把 C09-1J冻结为20字段 raw input上的 Runtime→Evidence QA/Release双签结构点：
+  只增加 Evidence Envelope/Pin与两条 role-specific root-signed approver record，Pin
+  内部投影 fixed locator而不新增第二份 caller Locator；Evidence ID→双签→完整 payload
+  digest→Envelope→Pin无环，Result/Runtime/Policy重复字段与
+  `Evidence.issuedAt >= Result.completedAt`逐项关闭。成功路径固定3次 point admission与
+  11次 signature verification，authority仅为
+  `none_provider_feasibility_evidence_structure_only`；不证明 approver history/current/
+  revocation、Catalog/Registry/Acceptance、真实 I/O或 strong write。
 
-D-24～D-34 的实现与验收矩阵为
+D-24～D-35 的实现与验收矩阵为
 `docs/research/2026-07-30-wp5-change-intelligence-matrix.md`；其中第 3.8 节是
 必须逐字段等价实现的 normative Schema Appendix。所有 C09 provider
 contract、canonical bytes/golden与 prerequisite conformance归
@@ -1237,7 +1245,7 @@ capability gap，不是 WP0 新引入回归。对应能力在后续 Gate 关闭�
 | 条件 | 结果 |
 |---|---|
 | Mission、P0、Non-goals 已冻结 | PASS |
-| D-13～D-19、D-21～D-34 已接受；D-20 有 Owner/Gate | PASS |
+| D-13～D-19、D-21～D-35 已接受；D-20 有 Owner/Gate | PASS |
 | Task Lifecycle、Revision 与幂等语义唯一 | PASS |
 | Root/Error/Rendezvous 语义唯一 | PASS |
 | Surface mandatory/conditional、Owner、后续 Gate 完整 | PASS |

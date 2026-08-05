@@ -153,6 +153,22 @@ import {
   ProviderRuntimeAttestationPointInvalidManifestV1Schema,
 } from "./provider-runtime-attestation-point-fixtures.js";
 import {
+  ProviderFeasibilityEvidenceEnvelopeV1Schema,
+  ProviderFeasibilityEvidenceIdFieldsV1Schema,
+  ProviderFeasibilityEvidencePointInvalidReasonV1Schema,
+  ProviderFeasibilityEvidencePointInvalidStageV1Schema,
+  ProviderFeasibilityEvidenceQaSignatureWrapperV1Schema,
+  ProviderFeasibilityEvidenceReleaseSignatureWrapperV1Schema,
+  ProviderFeasibilityEvidenceUnsignedClaimsV1Schema,
+  ProviderFeasibilityEvidenceV1Schema,
+  ProviderFeasibilityQaSignatureV1Schema,
+  ProviderFeasibilityReleaseSignatureV1Schema,
+} from "./provider-feasibility-evidence-point.js";
+import {
+  ProviderFeasibilityEvidencePointGoldenManifestV1Schema,
+  ProviderFeasibilityEvidencePointInvalidManifestV1Schema,
+} from "./provider-feasibility-evidence-point-fixtures.js";
+import {
   ProviderFeasibilityTargetFieldsV1Schema,
   ProviderFeasibilityTargetV1Schema,
   ProviderPublicFilesystemDescriptorV1Schema,
@@ -457,6 +473,29 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 =
     ProviderFeasibilityApproverPublicKeyV1Schema,
   "provider-feasibility-evidence-pin":
     ProviderFeasibilityEvidencePinV1Schema,
+  "provider-feasibility-qa-signature":
+    ProviderFeasibilityQaSignatureV1Schema,
+  "provider-feasibility-release-signature":
+    ProviderFeasibilityReleaseSignatureV1Schema,
+  "provider-feasibility-evidence-id-fields":
+    ProviderFeasibilityEvidenceIdFieldsV1Schema,
+  "provider-feasibility-evidence-unsigned-claims":
+    ProviderFeasibilityEvidenceUnsignedClaimsV1Schema,
+  "provider-feasibility-evidence": ProviderFeasibilityEvidenceV1Schema,
+  "provider-feasibility-evidence-envelope":
+    ProviderFeasibilityEvidenceEnvelopeV1Schema,
+  "provider-feasibility-evidence-qa-signature-wrapper":
+    ProviderFeasibilityEvidenceQaSignatureWrapperV1Schema,
+  "provider-feasibility-evidence-release-signature-wrapper":
+    ProviderFeasibilityEvidenceReleaseSignatureWrapperV1Schema,
+  "provider-feasibility-evidence-point-invalid-stage":
+    ProviderFeasibilityEvidencePointInvalidStageV1Schema,
+  "provider-feasibility-evidence-point-invalid-reason":
+    ProviderFeasibilityEvidencePointInvalidReasonV1Schema,
+  "provider-feasibility-evidence-point-golden-manifest":
+    ProviderFeasibilityEvidencePointGoldenManifestV1Schema,
+  "provider-feasibility-evidence-point-invalid-manifest":
+    ProviderFeasibilityEvidencePointInvalidManifestV1Schema,
   "provider-feasibility-approval-keys":
     ProviderFeasibilityApprovalKeysV1Schema,
   "store-durable-object-provider-verification-keys":

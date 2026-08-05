@@ -1,0 +1,192 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-feasibility-evidence-release-signature-wrapper",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "role": {
+      "type": "string",
+      "const": "release"
+    },
+    "keyId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{22}$"
+    },
+    "claims": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "provider_feasibility_evidence_v1"
+        },
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^provider-feasibility-evidence:[0-9a-f]{22}$"
+        },
+        "providerId": {
+          "type": "string",
+          "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+        },
+        "semanticProviderPolicyDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "runtimeAttestationContentDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "implementationDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "binaryAttestationDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "targetProfileId": {
+              "type": "string",
+              "pattern": "^provider-target-profile:[0-9a-f]{64}$"
+            },
+            "osPlatform": {
+              "type": "string",
+              "enum": [
+                "darwin",
+                "linux"
+              ]
+            },
+            "osReleaseFamilyCode": {
+              "type": "string",
+              "pattern": "^provider-os-family:[0-9a-f]{22}$"
+            },
+            "osBuildDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "architecture": {
+              "type": "string",
+              "enum": [
+                "arm64",
+                "x86_64"
+              ]
+            },
+            "filesystemProfileCode": {
+              "type": "string",
+              "pattern": "^provider-fs-profile:[0-9a-f]{22}$"
+            },
+            "filesystemFeatureProfileDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "mountOptionProfileDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "targetProfileId",
+            "osPlatform",
+            "osReleaseFamilyCode",
+            "osBuildDigest",
+            "architecture",
+            "filesystemProfileCode",
+            "filesystemFeatureProfileDigest",
+            "mountOptionProfileDigest"
+          ],
+          "additionalProperties": false
+        },
+        "isolationSecurityBoundaryProfileDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "ipcPeerAuthenticationPolicyDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "realFilesystemSuiteDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "realFilesystemConformanceResult": {
+          "type": "object",
+          "properties": {
+            "locatorProfile": {
+              "type": "string",
+              "const": "installation_provider_real_fs_conformance_result_v1"
+            },
+            "resultId": {
+              "type": "string",
+              "pattern": "^provider-real-fs-result:[0-9a-f]{22}$"
+            },
+            "contentDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "locatorProfile",
+            "resultId",
+            "contentDigest"
+          ],
+          "additionalProperties": false
+        },
+        "realFilesystemConformanceResultDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "fixtureManifestDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "runnerProfileDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "crashCutCoverageDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "result": {
+          "type": "string",
+          "enum": [
+            "passed",
+            "failed",
+            "unsupported"
+          ]
+        },
+        "issuedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+        }
+      },
+      "required": [
+        "profile",
+        "evidenceId",
+        "providerId",
+        "semanticProviderPolicyDigest",
+        "runtimeAttestationContentDigest",
+        "implementationDigest",
+        "binaryAttestationDigest",
+        "target",
+        "isolationSecurityBoundaryProfileDigest",
+        "ipcPeerAuthenticationPolicyDigest",
+        "realFilesystemSuiteDigest",
+        "realFilesystemConformanceResult",
+        "realFilesystemConformanceResultDigest",
+        "fixtureManifestDigest",
+        "runnerProfileDigest",
+        "crashCutCoverageDigest",
+        "result",
+        "issuedAt"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "role",
+    "keyId",
+    "claims"
+  ],
+  "additionalProperties": false
+}

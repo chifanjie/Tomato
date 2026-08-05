@@ -74,6 +74,9 @@ function findBrowserNodeRuntimeDependency(source) {
   if (source.includes("__vite-browser-external")) {
     return "Vite browser-external shim";
   }
+  if (/\bimport\.meta\.resolve\s*\(/u.test(source)) {
+    return "runtime import.meta.resolve resource lookup";
+  }
   if (
     /(?:\brequire\s*\(|\bprocess\s*(?:\.|\[)|\bBuffer\b|\b__dirname\b|\b__filename\b)/u.test(
       source,
@@ -101,6 +104,7 @@ for (const regressionSource of [
   'export const latentCrypto = () => import("crypto");',
   'import shim from "./__vite-browser-external-latent.js";',
   'export { readFile } from "node:fs";',
+  'export const fixtureUrl = import.meta.resolve("./fixture.json");',
 ]) {
   if (findBrowserNodeRuntimeDependency(regressionSource) === undefined) {
     throw new Error("Browser Node-runtime detector regression");
@@ -605,9 +609,9 @@ try {
   const sourceSchemaRelativePaths = await listRelativeSchemaPaths(
     join(packageRoot, "schemas", "v1"),
   );
-  if (sourceSchemaRelativePaths.length !== 241) {
+  if (sourceSchemaRelativePaths.length !== 253) {
     throw new Error(
-      `Source provider contracts must contain exactly 241 JSON Schemas, found ${sourceSchemaRelativePaths.length}`,
+      `Source provider contracts must contain exactly 253 JSON Schemas, found ${sourceSchemaRelativePaths.length}`,
     );
   }
   await assertExactProviderDirectory(
@@ -833,9 +837,9 @@ try {
   const explicitSpecifiers = Object.keys(manifest.exports)
     .filter((key) => !key.includes("*"))
     .map(packageSpecifier);
-  if (explicitSpecifiers.length !== 17) {
+  if (explicitSpecifiers.length !== 19) {
     throw new Error(
-      `Packed provider contracts must expose exactly 17 public modules, found ${explicitSpecifiers.length}`,
+      `Packed provider contracts must expose exactly 19 public modules, found ${explicitSpecifiers.length}`,
     );
   }
   const installedStrictManifestPath = await realpath(
@@ -987,6 +991,24 @@ try {
       "provider-runtime-attestation-point-v1.json",
     ),
   );
+  const installedProviderFeasibilityEvidencePointGoldenPath = await realpath(
+    join(
+      installedRoot,
+      "fixtures",
+      "v1",
+      "golden",
+      "provider-feasibility-evidence-point-v1.json",
+    ),
+  );
+  const installedProviderFeasibilityEvidencePointInvalidPath = await realpath(
+    join(
+      installedRoot,
+      "fixtures",
+      "v1",
+      "invalid",
+      "provider-feasibility-evidence-point-v1.json",
+    ),
+  );
 
   const runtimeProbe = join(consumerRoot, "runtime-probe.mjs");
   await writeFile(
@@ -1012,6 +1034,8 @@ try {
       'const realFilesystemConformanceResultFixtures = await import("@understand-code/durable-object-provider-contracts/provider-real-filesystem-conformance-result-fixtures");',
       'const providerRuntimeAttestationPoint = await import("@understand-code/durable-object-provider-contracts/provider-runtime-attestation-point");',
       'const providerRuntimeAttestationPointFixtures = await import("@understand-code/durable-object-provider-contracts/provider-runtime-attestation-point-fixtures");',
+      'const providerFeasibilityEvidencePoint = await import("@understand-code/durable-object-provider-contracts/provider-feasibility-evidence-point");',
+      'const providerFeasibilityEvidencePointFixtures = await import("@understand-code/durable-object-provider-contracts/provider-feasibility-evidence-point-fixtures");',
       'const unavailable = providerError.createProviderUnavailableToolErrorV1("unavailable");',
       'if (providerError.ProviderUnavailableToolErrorV1Schema.parse(unavailable).details.reason !== "unavailable") throw new Error("provider error export failed");',
       'const schemaUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/schemas/v1/canonical-byte-string.schema.json"));',
@@ -1036,6 +1060,8 @@ try {
       'const realFilesystemConformanceResultInvalidUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/invalid/provider-real-filesystem-conformance-result-v1.json"));',
       'const providerRuntimeAttestationPointGoldenUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/golden/provider-runtime-attestation-point-v1.json"));',
       'const providerRuntimeAttestationPointInvalidUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/invalid/provider-runtime-attestation-point-v1.json"));',
+      'const providerFeasibilityEvidencePointGoldenUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/golden/provider-feasibility-evidence-point-v1.json"));',
+      'const providerFeasibilityEvidencePointInvalidUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/invalid/provider-feasibility-evidence-point-v1.json"));',
       `if (await realpath(fileURLToPath(strictEd25519ManifestUrl)) !== ${JSON.stringify(installedStrictManifestPath)}) throw new Error("strict manifest resolved outside the exact installed path");`,
       `if (await realpath(fileURLToPath(bootstrapTrustBundleUrl)) !== ${JSON.stringify(installedBootstrapBundlePath)}) throw new Error("bootstrap Bundle resolved outside the exact installed path");`,
       `if (await realpath(fileURLToPath(bootstrapTrustGoldenUrl)) !== ${JSON.stringify(installedBootstrapGoldenPath)}) throw new Error("bootstrap golden resolved outside the exact installed path");`,
@@ -1053,6 +1079,8 @@ try {
       `if (await realpath(fileURLToPath(realFilesystemConformanceResultInvalidUrl)) !== ${JSON.stringify(installedRealFilesystemConformanceResultInvalidPath)}) throw new Error("real filesystem conformance result invalid corpus resolved outside the exact installed path");`,
       `if (await realpath(fileURLToPath(providerRuntimeAttestationPointGoldenUrl)) !== ${JSON.stringify(installedProviderRuntimeAttestationPointGoldenPath)}) throw new Error("provider runtime attestation point golden resolved outside the exact installed path");`,
       `if (await realpath(fileURLToPath(providerRuntimeAttestationPointInvalidUrl)) !== ${JSON.stringify(installedProviderRuntimeAttestationPointInvalidPath)}) throw new Error("provider runtime attestation point invalid corpus resolved outside the exact installed path");`,
+      `if (await realpath(fileURLToPath(providerFeasibilityEvidencePointGoldenUrl)) !== ${JSON.stringify(installedProviderFeasibilityEvidencePointGoldenPath)}) throw new Error("provider feasibility evidence point golden resolved outside the exact installed path");`,
+      `if (await realpath(fileURLToPath(providerFeasibilityEvidencePointInvalidUrl)) !== ${JSON.stringify(installedProviderFeasibilityEvidencePointInvalidPath)}) throw new Error("provider feasibility evidence point invalid corpus resolved outside the exact installed path");`,
       'const schema = JSON.parse(await readFile(schemaUrl, "utf8"));',
       'const providerErrorSchema = JSON.parse(await readFile(providerErrorSchemaUrl, "utf8"));',
       'const golden = JSON.parse(await readFile(goldenUrl, "utf8"));',
@@ -1075,6 +1103,8 @@ try {
       'const realFilesystemConformanceResultInvalidBytes = new Uint8Array(await readFile(realFilesystemConformanceResultInvalidUrl));',
       'const providerRuntimeAttestationPointGoldenBytes = new Uint8Array(await readFile(providerRuntimeAttestationPointGoldenUrl));',
       'const providerRuntimeAttestationPointInvalidBytes = new Uint8Array(await readFile(providerRuntimeAttestationPointInvalidUrl));',
+      'const providerFeasibilityEvidencePointGoldenBytes = new Uint8Array(await readFile(providerFeasibilityEvidencePointGoldenUrl));',
+      'const providerFeasibilityEvidencePointInvalidBytes = new Uint8Array(await readFile(providerFeasibilityEvidencePointInvalidUrl));',
       'const strictEd25519Manifest = JSON.parse(new TextDecoder().decode(strictEd25519ManifestBytes));',
       'if (schema.$id !== "urn:understand-code:provider-contract:schema:v1:canonical-byte-string") throw new Error("packed schema missing");',
       'if (providerErrorSchema.$id !== "urn:understand-code:provider-contract:schema:v1:provider-unavailable-tool-error") throw new Error("packed provider error schema missing");',
@@ -1215,6 +1245,35 @@ try {
       '  runtimeAttestationPointInvalidExecutedCaseCount += 1;',
       '}',
       'if (runtimeAttestationPointInvalidExecutedCaseCount !== 122) throw new Error(`packed runtime attestation point replay count drift: ${runtimeAttestationPointInvalidExecutedCaseCount}/122`);',
+      'if (root.validateProviderFeasibilityEvidencePointClosureV1 !== providerFeasibilityEvidencePoint.validateProviderFeasibilityEvidencePointClosureV1 || root.verifyProviderFeasibilityEvidencePointGoldenResourceV1 !== providerFeasibilityEvidencePointFixtures.verifyProviderFeasibilityEvidencePointGoldenResourceV1 || root.verifyProviderFeasibilityEvidencePointPositiveVectorsV1 !== providerFeasibilityEvidencePointFixtures.verifyProviderFeasibilityEvidencePointPositiveVectorsV1 || root.verifyProviderFeasibilityEvidencePointInvalidResourceV1 !== providerFeasibilityEvidencePointFixtures.verifyProviderFeasibilityEvidencePointInvalidResourceV1) throw new Error("root/provider-feasibility-evidence-point exports diverged");',
+      'pointCalls = 0;',
+      'verifyCalls = 0;',
+      'const feasibilityEvidencePointGoldenValidation = await providerFeasibilityEvidencePointFixtures.verifyProviderFeasibilityEvidencePointGoldenResourceV1(providerFeasibilityEvidencePointGoldenBytes, strictCapability);',
+      'if (feasibilityEvidencePointGoldenValidation.authority !== "none_provider_feasibility_evidence_structure_only" || feasibilityEvidencePointGoldenValidation.pointClosure.authority !== "none_provider_feasibility_evidence_structure_only" || feasibilityEvidencePointGoldenValidation.pointClosure.runtimeAttestationPointClosure.authority !== "none_provider_runtime_attestation_structure_only" || feasibilityEvidencePointGoldenValidation.manifest.expected.activeRootPointAdmissionCount !== 3 || feasibilityEvidencePointGoldenValidation.manifest.expected.signatureVerificationCount !== 11 || feasibilityEvidencePointGoldenValidation.manifest.expected.approverRecordSignatureCount !== 2 || feasibilityEvidencePointGoldenValidation.manifest.expected.evidenceSignatureCount !== 2 || pointCalls !== 3 || verifyCalls !== 11) throw new Error(`packed feasibility evidence point golden/crypto closure failed: ${pointCalls}/${verifyCalls}`);',
+      'pointCalls = 0;',
+      'verifyCalls = 0;',
+      'const feasibilityEvidencePositiveVectorClosures = await providerFeasibilityEvidencePointFixtures.verifyProviderFeasibilityEvidencePointPositiveVectorsV1(feasibilityEvidencePointGoldenValidation.manifest, strictCapability);',
+      'if (feasibilityEvidencePositiveVectorClosures.length !== 3 || JSON.stringify(feasibilityEvidencePositiveVectorClosures.map((closure) => closure.providerFeasibilityEvidence.payload.result)) !== JSON.stringify(["passed", "failed", "unsupported"]) || pointCalls !== 9 || verifyCalls !== 33) throw new Error(`packed feasibility evidence point positive vectors failed: ${pointCalls}/${verifyCalls}`);',
+      'const feasibilityEvidencePointInvalid = providerFeasibilityEvidencePointFixtures.verifyProviderFeasibilityEvidencePointInvalidResourceV1(providerFeasibilityEvidencePointInvalidBytes);',
+      'if (feasibilityEvidencePointInvalid.fixtureAuthority !== "none_rejection_only" || feasibilityEvidencePointInvalid.runtimeCaseCount !== 122 || feasibilityEvidencePointInvalid.pointCaseCount !== 105 || feasibilityEvidencePointInvalid.caseCount !== 227 || feasibilityEvidencePointInvalid.cases.length !== 227 || feasibilityEvidencePointInvalid.caseIds.length !== 227 || new Set(feasibilityEvidencePointInvalid.caseIds).size !== 227 || JSON.stringify(feasibilityEvidencePointInvalid.caseIds) !== JSON.stringify(providerFeasibilityEvidencePointFixtures.PROVIDER_FEASIBILITY_EVIDENCE_POINT_INVALID_CASE_IDS_V1)) throw new Error("packed feasibility evidence point invalid corpus failed");',
+      'let feasibilityEvidencePointInvalidExecutedCaseCount = 0;',
+      'for (const [index, invalidCase] of feasibilityEvidencePointInvalid.cases.entries()) {',
+      '  if (invalidCase.caseId !== feasibilityEvidencePointInvalid.caseIds[index] || invalidCase.mutation.operation !== invalidCase.caseId) throw new Error(`packed feasibility evidence point invalid operation/order drift: ${invalidCase.caseId}`);',
+      '  const materializedRequest = providerFeasibilityEvidencePointFixtures.materializeProviderFeasibilityEvidencePointInvalidRequestWitnessV1(feasibilityEvidencePointGoldenValidation.manifest, feasibilityEvidencePointInvalid, invalidCase);',
+      '  const materializedRequestDigest = `sha256:${createHash("sha256").update(root.canonicalizeJcsSafeIntegerUtf8V1([providerFeasibilityEvidencePointFixtures.PROVIDER_FEASIBILITY_EVIDENCE_POINT_INVALID_MATERIALIZED_REQUEST_DOMAIN_V1, materializedRequest])).digest("hex")}`;',
+      '  if (materializedRequestDigest !== invalidCase.expected.materializedRequestSemanticDigest) throw new Error(`packed feasibility evidence point materialized request drift: ${invalidCase.caseId}`);',
+      '  pointCalls = 0;',
+      '  verifyCalls = 0;',
+      '  const outcome = await providerFeasibilityEvidencePointFixtures.executeProviderFeasibilityEvidencePointInvalidCaseV1(feasibilityEvidencePointGoldenValidation.manifest, feasibilityEvidencePointInvalid, invalidCase, strictCapability);',
+      '  if (pointCalls !== invalidCase.expected.pointAdmissionCount || verifyCalls !== invalidCase.expected.signatureVerificationCount) throw new Error(`packed feasibility evidence point crypto replay drift: ${invalidCase.caseId}/${pointCalls}/${verifyCalls}`);',
+      '  if (invalidCase.expected.boundary === "snapshot_stability") {',
+      '    if (outcome.kind !== "snapshot_acceptance" || outcome.boundary !== "snapshot_stability" || outcome.authority !== invalidCase.expected.authority || JSON.stringify(outcome.snapshotProjection) !== JSON.stringify(invalidCase.expected.snapshotProjection)) throw new Error(`packed feasibility evidence point snapshot replay drift: ${invalidCase.caseId}/${JSON.stringify(outcome)}`);',
+      '  } else {',
+      '    if (outcome.kind !== "rejection" || outcome.boundary !== "internal_diagnostic" || outcome.stage !== invalidCase.expected.stage || outcome.reason !== invalidCase.expected.reason || outcome.publicFailure?.errorName !== invalidCase.expected.publicFailure.errorName || outcome.publicFailure?.code !== invalidCase.expected.publicFailure.code || outcome.publicFailure?.reason !== invalidCase.expected.publicFailure.reason) throw new Error(`packed feasibility evidence point diagnostic replay drift: ${invalidCase.caseId}/${JSON.stringify(outcome)}`);',
+      '  }',
+      '  feasibilityEvidencePointInvalidExecutedCaseCount += 1;',
+      '}',
+      'if (feasibilityEvidencePointInvalidExecutedCaseCount !== 227) throw new Error(`packed feasibility evidence point replay count drift: ${feasibilityEvidencePointInvalidExecutedCaseCount}/227`);',
       'if (providerRegistry.StoreFilenameKeyV1Schema.parse("id-c4") !== "id-c4" || providerRegistry.decodeShortStoreFilenameKeyV1("id-c4") !== "a") throw new Error("packed lowercase base32hex filename codec failed");',
       'try { await import("@understand-code/durable-object-provider-contracts/domain-crypto"); throw new Error("private crypto helper exported"); } catch (error) { if (error?.message === "private crypto helper exported") throw error; }',
       'for (const privateSpecifier of ["@understand-code/durable-object-provider-contracts/provider-registry-records", "@understand-code/durable-object-provider-contracts/provider-registry-manifest-history"]) { try { await import(privateSpecifier); throw new Error(`private deep import exported: ${privateSpecifier}`); } catch (error) { if (error?.message?.startsWith("private deep import exported:")) throw error; } }',
@@ -1247,6 +1306,10 @@ try {
       'import type { ProviderRuntimeAttestationPointClosureValidationV1, StoreDurableObjectProviderPolicyV1, ValidateProviderRuntimeAttestationPointClosureV1Input } from "@understand-code/durable-object-provider-contracts/provider-runtime-attestation-point";',
       'import { ProviderRuntimeAttestationPointGoldenManifestV1Schema, verifyProviderRuntimeAttestationPointGoldenResourceV1 } from "@understand-code/durable-object-provider-contracts/provider-runtime-attestation-point-fixtures";',
       'import type { ProviderRuntimeAttestationPointGoldenManifestV1, ProviderRuntimeAttestationPointInvalidCaseIdV1 } from "@understand-code/durable-object-provider-contracts/provider-runtime-attestation-point-fixtures";',
+      'import { buildProviderFeasibilityEvidenceRelativePathV1, validateProviderFeasibilityEvidencePointClosureV1 } from "@understand-code/durable-object-provider-contracts/provider-feasibility-evidence-point";',
+      'import type { ProviderFeasibilityEvidencePointClosureValidationV1, ProviderFeasibilityEvidenceRelativePathV1, ValidateProviderFeasibilityEvidencePointClosureV1Input } from "@understand-code/durable-object-provider-contracts/provider-feasibility-evidence-point";',
+      'import { ProviderFeasibilityEvidencePointGoldenManifestV1Schema, verifyProviderFeasibilityEvidencePointGoldenResourceV1 } from "@understand-code/durable-object-provider-contracts/provider-feasibility-evidence-point-fixtures";',
+      'import type { ProviderFeasibilityEvidencePointGoldenManifestV1, ProviderFeasibilityEvidencePointInvalidCaseIdV1 } from "@understand-code/durable-object-provider-contracts/provider-feasibility-evidence-point-fixtures";',
       'const slug = DurableObjectIdentityProviderSlugV1Schema.parse("native-fs");',
       'const id = createDurableObjectIdentityProviderIdV1(slug);',
       'DurableObjectIdentityProviderIdV1Schema.parse(id);',
@@ -1278,6 +1341,9 @@ try {
       'declare const runtimeAttestationPointClosure: ProviderRuntimeAttestationPointClosureValidationV1;',
       'declare const runtimeProviderPolicy: StoreDurableObjectProviderPolicyV1;',
       'declare const runtimeFixtureManifest: unknown;',
+      'declare const feasibilityEvidencePointInput: ValidateProviderFeasibilityEvidencePointClosureV1Input;',
+      'declare const feasibilityEvidencePointClosure: ProviderFeasibilityEvidencePointClosureValidationV1;',
+      'declare const feasibilityEvidencePointFixtureManifest: unknown;',
       'const registryGoldenParsed = ProviderRegistryManifestHistoryGoldenManifestV1Schema.parse(registryGoldenManifest);',
       'const registryHistoryValidation: Promise<ProviderRegistryManifestHistoryValidationV1> = validateProviderRegistryManifestHistoryV1(registryHistoryInput);',
       'const registryInvalidManifest: ProviderRegistryManifestHistoryInvalidManifestV1 = ProviderRegistryManifestHistoryInvalidManifestV1Schema.parse(verifyProviderRegistryManifestHistoryInvalidResourceV1(registryInvalidBytes));',
@@ -1295,6 +1361,13 @@ try {
       '// @ts-expect-error Runtime point invalid IDs are an exact closed union',
       'const unknownRuntimeInvalidCaseId: ProviderRuntimeAttestationPointInvalidCaseIdV1 = "runtime-attestation-point-unknown";',
       'const runtimeAttestationAuthority: "none_provider_runtime_attestation_structure_only" = runtimeAttestationPointClosure.authority;',
+      'const feasibilityEvidencePointValidation: Promise<ProviderFeasibilityEvidencePointClosureValidationV1> = validateProviderFeasibilityEvidencePointClosureV1(feasibilityEvidencePointInput);',
+      'const feasibilityEvidencePointPath: ProviderFeasibilityEvidenceRelativePathV1 = buildProviderFeasibilityEvidenceRelativePathV1(feasibilityEvidencePointClosure.providerFeasibilityEvidencePin);',
+      'const feasibilityEvidencePointFixtureParsed: ProviderFeasibilityEvidencePointGoldenManifestV1 = ProviderFeasibilityEvidencePointGoldenManifestV1Schema.parse(feasibilityEvidencePointFixtureManifest);',
+      'const feasibilityEvidencePointInvalidCaseId: ProviderFeasibilityEvidencePointInvalidCaseIdV1 = "runtime-inner-input-extra-field";',
+      '// @ts-expect-error Evidence point invalid IDs are an exact closed union',
+      'const unknownFeasibilityEvidencePointInvalidCaseId: ProviderFeasibilityEvidencePointInvalidCaseIdV1 = "provider-feasibility-evidence-point-unknown";',
+      'const feasibilityEvidencePointAuthority: "none_provider_feasibility_evidence_structure_only" = feasibilityEvidencePointClosure.authority;',
       'const rootTargetDiscoveryResultPin: RootProviderTargetDiscoveryResultPinV1 = targetDiscoveryResultPin;',
       'const rootTargetDiscoveryTaxonomyLocator: RootProviderPublicSupportTaxonomyLocatorV1 = targetDiscoveryTaxonomyLocator;',
       'const rootTargetDiscoveryMatrixLocator: RootProviderReleaseMatrixLocatorV1 = targetDiscoveryMatrixLocator;',
@@ -1304,6 +1377,7 @@ try {
       'void verifyProviderTargetDiscoveryPointGoldenResourceV1;',
       'void verifyProviderRealFilesystemConformanceResultGoldenResourceV1;',
       'void verifyProviderRuntimeAttestationPointGoldenResourceV1;',
+      'void verifyProviderFeasibilityEvidencePointGoldenResourceV1;',
       'const filenameKey: StoreFilenameKeyV1 = StoreFilenameKeyV1Schema.parse("id-c4");',
       'const rootMetadataPath: ProviderRegistryRootMetadataRelativePathV1 = buildProviderRegistryRootMetadataRelativePathV1({ locatorProfile: "installation_provider_registry_root_metadata_v1", rootGeneration: 1, rootKeyId: "0000000000000000000000" });',
       'void rawKeyDigest;',
@@ -1332,6 +1406,12 @@ try {
       'void runtimeInvalidCaseId;',
       'void unknownRuntimeInvalidCaseId;',
       'void runtimeAttestationAuthority;',
+      'void feasibilityEvidencePointValidation;',
+      'void feasibilityEvidencePointPath;',
+      'void feasibilityEvidencePointFixtureParsed;',
+      'void feasibilityEvidencePointInvalidCaseId;',
+      'void unknownFeasibilityEvidencePointInvalidCaseId;',
+      'void feasibilityEvidencePointAuthority;',
       'void rootTargetDiscoveryResultPin;',
       'void rootTargetDiscoveryTaxonomyLocator;',
       'void rootTargetDiscoveryMatrixLocator;',
@@ -1525,11 +1605,19 @@ try {
     ),
     "utf8",
   );
+  const packedProviderFeasibilityEvidencePointGoldenText = await readFile(
+    installedProviderFeasibilityEvidencePointGoldenPath,
+    "utf8",
+  );
+  const packedProviderFeasibilityEvidencePointInvalidText = await readFile(
+    installedProviderFeasibilityEvidencePointInvalidPath,
+    "utf8",
+  );
   await writeFile(
     join(consumerRoot, "browser-entry.js"),
     [
       'import { ProviderUnavailableToolErrorV1Schema, createProviderUnavailableToolErrorV1 } from "@understand-code/durable-object-provider-contracts/provider-error";',
-      'import { PROVIDER_BOOTSTRAP_TRUST_BUNDLE_CONTENT_DIGEST_V1, PROVIDER_REAL_FILESYSTEM_SOURCE_INVALID_CASE_IDS_V1, validateProviderBootstrapTrustBundleStructureV1, verifyProviderBootstrapTrustGoldenManifestResourceV1, verifyProviderBootstrapTrustInvalidManifestResourceV1, verifyProviderRealFilesystemSourceGoldenResourceV1, verifyProviderRealFilesystemSourceInvalidResourceV1 } from "@understand-code/durable-object-provider-contracts";',
+      'import { PROVIDER_BOOTSTRAP_TRUST_BUNDLE_CONTENT_DIGEST_V1, PROVIDER_REAL_FILESYSTEM_SOURCE_INVALID_CASE_IDS_V1, validateProviderBootstrapTrustBundleStructureV1, validateProviderFeasibilityEvidencePointClosureV1 as rootValidateProviderFeasibilityEvidencePointClosureV1, verifyProviderBootstrapTrustGoldenManifestResourceV1, verifyProviderBootstrapTrustInvalidManifestResourceV1, verifyProviderFeasibilityEvidencePointGoldenResourceV1 as rootVerifyProviderFeasibilityEvidencePointGoldenResourceV1, verifyProviderFeasibilityEvidencePointPositiveVectorsV1 as rootVerifyProviderFeasibilityEvidencePointPositiveVectorsV1, verifyProviderFeasibilityEvidencePointInvalidResourceV1 as rootVerifyProviderFeasibilityEvidencePointInvalidResourceV1, verifyProviderRealFilesystemSourceGoldenResourceV1, verifyProviderRealFilesystemSourceInvalidResourceV1 } from "@understand-code/durable-object-provider-contracts";',
       'import { PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_RESOURCE_BYTE_LENGTH_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_SEMANTIC_CONTENT_DIGEST_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_SEMANTIC_DOMAIN_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_GOLDEN_RESOURCE_SHA256_HEX_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_CASE_IDS_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_RESOURCE_BYTE_LENGTH_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_RESOURCE_SHA256_HEX_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_SEMANTIC_CONTENT_DIGEST_V1, PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_SEMANTIC_DOMAIN_V1, PROVIDER_REGISTRY_MANIFEST_INVALID_MATERIALIZED_REQUEST_SEMANTIC_DOMAIN_V1, PROVIDER_REGISTRY_ROOT_METADATA_LOCATOR_PROFILE_V1, ProviderRegistryManifestHistoryValidationError, buildProviderRegistryRootMetadataRelativePathV1, validateProviderRegistryManifestHistoryV1, validateProviderRegistryRootMetadataHistoryV1, verifyProviderRegistryManifestHistoryGoldenResourceV1, verifyProviderRegistryManifestHistoryInvalidResourceV1, verifyProviderRegistryRootHistoryGoldenManifestResourceV1, verifyProviderRegistryRootHistoryInvalidManifestResourceV1 } from "@understand-code/durable-object-provider-contracts/provider-registry";',
       'import { validateProviderRealFilesystemSourceClosureV1 } from "@understand-code/durable-object-provider-contracts/provider-real-filesystem-source";',
       'import { buildProviderPublicSupportTaxonomyRelativePathV1, buildProviderReleaseMatrixRelativePathV1, buildProviderTargetDiscoveryFixtureManifestRelativePathV1, buildProviderTargetDiscoveryResultRelativePathV1, buildProviderTargetDiscoveryRunnerRunRelativePathV1, validateProviderTargetDiscoveryPointClosureV1 } from "@understand-code/durable-object-provider-contracts/provider-target-discovery-point";',
@@ -1538,6 +1626,8 @@ try {
       'import { PROVIDER_REAL_FILESYSTEM_CONFORMANCE_RESULT_INVALID_CASE_IDS_V1, executeProviderRealFilesystemConformanceResultInvalidCaseV1, verifyProviderRealFilesystemConformanceResultGoldenResourceV1, verifyProviderRealFilesystemConformanceResultInvalidResourceV1 } from "@understand-code/durable-object-provider-contracts/provider-real-filesystem-conformance-result-fixtures";',
       'import { validateProviderRuntimeAttestationPointClosureV1 } from "@understand-code/durable-object-provider-contracts/provider-runtime-attestation-point";',
       'import { PROVIDER_RUNTIME_ATTESTATION_POINT_INVALID_CASE_IDS_V1, PROVIDER_RUNTIME_ATTESTATION_POINT_INVALID_MATERIALIZED_REQUEST_DOMAIN_V1, executeProviderRuntimeAttestationPointInvalidCaseV1, materializeProviderRuntimeAttestationPointInvalidRequestWitnessV1, verifyProviderRuntimeAttestationPointGoldenResourceV1, verifyProviderRuntimeAttestationPointInvalidResourceV1 } from "@understand-code/durable-object-provider-contracts/provider-runtime-attestation-point-fixtures";',
+      'import { validateProviderFeasibilityEvidencePointClosureV1 } from "@understand-code/durable-object-provider-contracts/provider-feasibility-evidence-point";',
+      'import { PROVIDER_FEASIBILITY_EVIDENCE_POINT_INVALID_CASE_IDS_V1, PROVIDER_FEASIBILITY_EVIDENCE_POINT_INVALID_MATERIALIZED_REQUEST_DOMAIN_V1, executeProviderFeasibilityEvidencePointInvalidCaseV1, materializeProviderFeasibilityEvidencePointInvalidRequestWitnessV1, verifyProviderFeasibilityEvidencePointGoldenResourceV1, verifyProviderFeasibilityEvidencePointPositiveVectorsV1, verifyProviderFeasibilityEvidencePointInvalidResourceV1 } from "@understand-code/durable-object-provider-contracts/provider-feasibility-evidence-point-fixtures";',
       'import { canonicalizeJcsSafeIntegerUtf8V1 } from "@understand-code/durable-object-provider-contracts/jcs";',
       'import { STRICT_ED25519_VERIFICATION_PROFILE_V1, validatePrimeSubgroupPoint, verifyRawEd25519 } from "@understand-code/durable-object-provider-contracts/strict-ed25519";',
       'import { PROVIDER_STRICT_ED25519_MANIFEST_MAX_BYTES_V1, PROVIDER_STRICT_ED25519_MANIFEST_RESOURCE_PATH_V1, attestProviderStrictEd25519CryptoHostV1, getProviderStrictEd25519CryptoCapabilityBytesV1 } from "@understand-code/durable-object-provider-contracts/strict-ed25519-conformance";',
@@ -1561,6 +1651,8 @@ try {
       `const realFilesystemConformanceResultInvalidBytes = new TextEncoder().encode(${JSON.stringify(packedRealFilesystemConformanceResultInvalidText)});`,
       `const providerRuntimeAttestationPointGoldenBytes = new TextEncoder().encode(${JSON.stringify(packedProviderRuntimeAttestationPointGoldenText)});`,
       `const providerRuntimeAttestationPointInvalidBytes = new TextEncoder().encode(${JSON.stringify(packedProviderRuntimeAttestationPointInvalidText)});`,
+      `const providerFeasibilityEvidencePointGoldenBytes = new TextEncoder().encode(${JSON.stringify(packedProviderFeasibilityEvidencePointGoldenText)});`,
+      `const providerFeasibilityEvidencePointInvalidBytes = new TextEncoder().encode(${JSON.stringify(packedProviderFeasibilityEvidencePointInvalidText)});`,
       'let pointCalls = 0;',
       'let verifyCalls = 0;',
       'const strictHost = {',
@@ -1696,6 +1788,39 @@ try {
       '  runtimeAttestationPointInvalidExecutedCaseCount += 1;',
       '}',
       'if (runtimeAttestationPointInvalidExecutedCaseCount !== 122) throw new Error(`browser runtime attestation point replay count drift: ${runtimeAttestationPointInvalidExecutedCaseCount}/122`);',
+      'if (rootValidateProviderFeasibilityEvidencePointClosureV1 !== validateProviderFeasibilityEvidencePointClosureV1 || rootVerifyProviderFeasibilityEvidencePointGoldenResourceV1 !== verifyProviderFeasibilityEvidencePointGoldenResourceV1 || rootVerifyProviderFeasibilityEvidencePointPositiveVectorsV1 !== verifyProviderFeasibilityEvidencePointPositiveVectorsV1 || rootVerifyProviderFeasibilityEvidencePointInvalidResourceV1 !== verifyProviderFeasibilityEvidencePointInvalidResourceV1) throw new Error("browser root/provider-feasibility-evidence-point exports diverged");',
+      'pointCalls = 0;',
+      'verifyCalls = 0;',
+      'const feasibilityEvidencePointGoldenValidation = await verifyProviderFeasibilityEvidencePointGoldenResourceV1(providerFeasibilityEvidencePointGoldenBytes, strictCapability);',
+      'if (feasibilityEvidencePointGoldenValidation.authority !== "none_provider_feasibility_evidence_structure_only" || feasibilityEvidencePointGoldenValidation.pointClosure.authority !== "none_provider_feasibility_evidence_structure_only" || feasibilityEvidencePointGoldenValidation.pointClosure.runtimeAttestationPointClosure.authority !== "none_provider_runtime_attestation_structure_only" || feasibilityEvidencePointGoldenValidation.manifest.expected.activeRootPointAdmissionCount !== 3 || feasibilityEvidencePointGoldenValidation.manifest.expected.signatureVerificationCount !== 11 || feasibilityEvidencePointGoldenValidation.manifest.expected.approverRecordSignatureCount !== 2 || feasibilityEvidencePointGoldenValidation.manifest.expected.evidenceSignatureCount !== 2 || pointCalls !== 3 || verifyCalls !== 11) throw new Error(`browser feasibility evidence point golden/crypto closure failed: ${pointCalls}/${verifyCalls}`);',
+      'const feasibilityEvidencePointCalls = pointCalls;',
+      'const feasibilityEvidencePointVerifyCalls = verifyCalls;',
+      'pointCalls = 0;',
+      'verifyCalls = 0;',
+      'const feasibilityEvidencePositiveVectorClosures = await verifyProviderFeasibilityEvidencePointPositiveVectorsV1(feasibilityEvidencePointGoldenValidation.manifest, strictCapability);',
+      'if (feasibilityEvidencePositiveVectorClosures.length !== 3 || JSON.stringify(feasibilityEvidencePositiveVectorClosures.map((closure) => closure.providerFeasibilityEvidence.payload.result)) !== JSON.stringify(["passed", "failed", "unsupported"]) || pointCalls !== 9 || verifyCalls !== 33) throw new Error(`browser feasibility evidence point positive vectors failed: ${pointCalls}/${verifyCalls}`);',
+      'const feasibilityEvidencePositiveVectorPointCalls = pointCalls;',
+      'const feasibilityEvidencePositiveVectorVerifyCalls = verifyCalls;',
+      'const feasibilityEvidencePointInvalid = verifyProviderFeasibilityEvidencePointInvalidResourceV1(providerFeasibilityEvidencePointInvalidBytes);',
+      'if (feasibilityEvidencePointInvalid.fixtureAuthority !== "none_rejection_only" || feasibilityEvidencePointInvalid.runtimeCaseCount !== 122 || feasibilityEvidencePointInvalid.pointCaseCount !== 105 || feasibilityEvidencePointInvalid.caseCount !== 227 || feasibilityEvidencePointInvalid.cases.length !== 227 || feasibilityEvidencePointInvalid.caseIds.length !== 227 || new Set(feasibilityEvidencePointInvalid.caseIds).size !== 227 || JSON.stringify(feasibilityEvidencePointInvalid.caseIds) !== JSON.stringify(PROVIDER_FEASIBILITY_EVIDENCE_POINT_INVALID_CASE_IDS_V1)) throw new Error("browser feasibility evidence point invalid corpus mismatch");',
+      'let feasibilityEvidencePointInvalidExecutedCaseCount = 0;',
+      'for (const [index, invalidCase] of feasibilityEvidencePointInvalid.cases.entries()) {',
+      '  if (invalidCase.caseId !== feasibilityEvidencePointInvalid.caseIds[index] || invalidCase.mutation.operation !== invalidCase.caseId) throw new Error(`browser feasibility evidence point invalid operation/order drift: ${invalidCase.caseId}`);',
+      '  const materializedRequest = materializeProviderFeasibilityEvidencePointInvalidRequestWitnessV1(feasibilityEvidencePointGoldenValidation.manifest, feasibilityEvidencePointInvalid, invalidCase);',
+      '  const materializedRequestDigest = await browserSemanticDigest(PROVIDER_FEASIBILITY_EVIDENCE_POINT_INVALID_MATERIALIZED_REQUEST_DOMAIN_V1, materializedRequest);',
+      '  if (materializedRequestDigest !== invalidCase.expected.materializedRequestSemanticDigest) throw new Error(`browser feasibility evidence point materialized request drift: ${invalidCase.caseId}`);',
+      '  pointCalls = 0;',
+      '  verifyCalls = 0;',
+      '  const outcome = await executeProviderFeasibilityEvidencePointInvalidCaseV1(feasibilityEvidencePointGoldenValidation.manifest, feasibilityEvidencePointInvalid, invalidCase, strictCapability);',
+      '  if (pointCalls !== invalidCase.expected.pointAdmissionCount || verifyCalls !== invalidCase.expected.signatureVerificationCount) throw new Error(`browser feasibility evidence point crypto replay drift: ${invalidCase.caseId}/${pointCalls}/${verifyCalls}`);',
+      '  if (invalidCase.expected.boundary === "snapshot_stability") {',
+      '    if (outcome.kind !== "snapshot_acceptance" || outcome.boundary !== "snapshot_stability" || outcome.authority !== invalidCase.expected.authority || JSON.stringify(outcome.snapshotProjection) !== JSON.stringify(invalidCase.expected.snapshotProjection)) throw new Error(`browser feasibility evidence point snapshot replay drift: ${invalidCase.caseId}/${JSON.stringify(outcome)}`);',
+      '  } else {',
+      '    if (outcome.kind !== "rejection" || outcome.boundary !== "internal_diagnostic" || outcome.stage !== invalidCase.expected.stage || outcome.reason !== invalidCase.expected.reason || outcome.publicFailure?.errorName !== invalidCase.expected.publicFailure.errorName || outcome.publicFailure?.code !== invalidCase.expected.publicFailure.code || outcome.publicFailure?.reason !== invalidCase.expected.publicFailure.reason) throw new Error(`browser feasibility evidence point diagnostic replay drift: ${invalidCase.caseId}/${JSON.stringify(outcome)}`);',
+      '  }',
+      '  feasibilityEvidencePointInvalidExecutedCaseCount += 1;',
+      '}',
+      'if (feasibilityEvidencePointInvalidExecutedCaseCount !== 227) throw new Error(`browser feasibility evidence point replay count drift: ${feasibilityEvidencePointInvalidExecutedCaseCount}/227`);',
       'const capabilityBytes = getProviderStrictEd25519CryptoCapabilityBytesV1(strictCapability);',
       'const providerError = createProviderUnavailableToolErrorV1("revoked");',
       'ProviderUnavailableToolErrorV1Schema.parse(providerError);',
@@ -1703,7 +1828,7 @@ try {
         .map((_, index) => `providerContractBrowserModule${index}`)
         .join(", ")}];`,
       'if (publicModules.some((module) => Object.keys(module).length === 0)) throw new Error("empty browser public export");',
-      'export const browserKatResult = Object.freeze({ pointCalls: bootstrapPointCalls, verifyCalls: bootstrapVerifyCalls, rootHistoryPointCalls, rootHistoryVerifyCalls, registryHistoryPointCalls, registryHistoryVerifyCalls, registryNegativeCount, registryInvalidCaseCount: registryInvalid.caseCount, registryHistoryAuthority: registryValidation.authority, registryManifestCount: registryValidation.retainedRegistryManifestGenerationCount, realFilesystemAuthority: realFilesystemGoldenValidation.authority, realFilesystemRecordCount: realFilesystemGoldenValidation.sourceClosure.recordCount, realFilesystemCaseCount: realFilesystemGoldenValidation.sourceClosure.caseCount, realFilesystemCutCount: realFilesystemGoldenValidation.sourceClosure.requiredCaseCutCount, realFilesystemInvalidCaseCount: realFilesystemInvalid.caseCount, targetDiscoveryAuthority: targetDiscoveryGoldenValidation.authority, targetDiscoveryPointCalls, targetDiscoveryVerifyCalls, targetDiscoveryTargetCount: targetDiscoveryGoldenValidation.pointClosure.targetCount, targetDiscoveryUnresolvedObservationCount: targetDiscoveryGoldenValidation.pointClosure.unresolvedObservationCount, targetDiscoveryInvalidCaseCount: targetDiscoveryInvalid.caseCount, conformanceResultAuthority: conformanceResultGoldenValidation.authority, conformanceResultPointCalls, conformanceResultVerifyCalls, conformanceResultCaseCount: conformanceResultGoldenValidation.resultClosure.caseResultCount, conformanceResultInvalidCaseCount: conformanceResultInvalid.caseCount, conformanceResultInvalidExecutedCaseCount, conformanceResultPath, expectedConformanceResultPath: conformanceResultGoldenValidation.manifest.expected.relativePath, runtimeAttestationPointAuthority: runtimeAttestationPointGoldenValidation.authority, runtimeAttestationPointCalls, runtimeAttestationPointVerifyCalls, runtimeAttestationPointInnerCaseCount: runtimeAttestationPointInvalid.innerCaseCount, runtimeAttestationPointSpecificCaseCount: runtimeAttestationPointInvalid.pointCaseCount, runtimeAttestationPointInvalidCaseCount: runtimeAttestationPointInvalid.caseCount, runtimeAttestationPointInvalidExecutedCaseCount, capabilityByteLength: capabilityBytes.byteLength, bootstrapAuthority: bootstrapValidation.authority, goldenAuthority: bootstrapGoldenValidation.authority, goldenCaseCount: 5 + bootstrapGoldenValidation.manifest.vectors.recoveryKeyIds.length, invalidAuthority: bootstrapInvalidValidation.authority, invalidCaseCount: bootstrapInvalidValidation.manifest.cases.length, rootHistoryAuthority: rootHistoryValidation.authority, rootHistoryGenerationCount: rootHistoryValidation.retainedRootMetadataGenerationCount, rootHistoryInvalidCaseCount: rootHistoryInvalid.cases.length, rootHistoryLocator: latestRootLocator, expectedRootHistoryLocator: rootHistoryGolden.expected.vectors[2].locator, publicModuleCount: publicModules.length, providerReason: providerError.details.reason });',
+      'export const browserKatResult = Object.freeze({ pointCalls: bootstrapPointCalls, verifyCalls: bootstrapVerifyCalls, rootHistoryPointCalls, rootHistoryVerifyCalls, registryHistoryPointCalls, registryHistoryVerifyCalls, registryNegativeCount, registryInvalidCaseCount: registryInvalid.caseCount, registryHistoryAuthority: registryValidation.authority, registryManifestCount: registryValidation.retainedRegistryManifestGenerationCount, realFilesystemAuthority: realFilesystemGoldenValidation.authority, realFilesystemRecordCount: realFilesystemGoldenValidation.sourceClosure.recordCount, realFilesystemCaseCount: realFilesystemGoldenValidation.sourceClosure.caseCount, realFilesystemCutCount: realFilesystemGoldenValidation.sourceClosure.requiredCaseCutCount, realFilesystemInvalidCaseCount: realFilesystemInvalid.caseCount, targetDiscoveryAuthority: targetDiscoveryGoldenValidation.authority, targetDiscoveryPointCalls, targetDiscoveryVerifyCalls, targetDiscoveryTargetCount: targetDiscoveryGoldenValidation.pointClosure.targetCount, targetDiscoveryUnresolvedObservationCount: targetDiscoveryGoldenValidation.pointClosure.unresolvedObservationCount, targetDiscoveryInvalidCaseCount: targetDiscoveryInvalid.caseCount, conformanceResultAuthority: conformanceResultGoldenValidation.authority, conformanceResultPointCalls, conformanceResultVerifyCalls, conformanceResultCaseCount: conformanceResultGoldenValidation.resultClosure.caseResultCount, conformanceResultInvalidCaseCount: conformanceResultInvalid.caseCount, conformanceResultInvalidExecutedCaseCount, conformanceResultPath, expectedConformanceResultPath: conformanceResultGoldenValidation.manifest.expected.relativePath, runtimeAttestationPointAuthority: runtimeAttestationPointGoldenValidation.authority, runtimeAttestationPointCalls, runtimeAttestationPointVerifyCalls, runtimeAttestationPointInnerCaseCount: runtimeAttestationPointInvalid.innerCaseCount, runtimeAttestationPointSpecificCaseCount: runtimeAttestationPointInvalid.pointCaseCount, runtimeAttestationPointInvalidCaseCount: runtimeAttestationPointInvalid.caseCount, runtimeAttestationPointInvalidExecutedCaseCount, feasibilityEvidencePointAuthority: feasibilityEvidencePointGoldenValidation.authority, feasibilityEvidencePointCalls, feasibilityEvidencePointVerifyCalls, feasibilityEvidencePointPositiveVectorCount: feasibilityEvidencePositiveVectorClosures.length, feasibilityEvidencePositiveVectorPointCalls, feasibilityEvidencePositiveVectorVerifyCalls, feasibilityEvidencePointRuntimeCaseCount: feasibilityEvidencePointInvalid.runtimeCaseCount, feasibilityEvidencePointSpecificCaseCount: feasibilityEvidencePointInvalid.pointCaseCount, feasibilityEvidencePointInvalidCaseCount: feasibilityEvidencePointInvalid.caseCount, feasibilityEvidencePointInvalidExecutedCaseCount, capabilityByteLength: capabilityBytes.byteLength, bootstrapAuthority: bootstrapValidation.authority, goldenAuthority: bootstrapGoldenValidation.authority, goldenCaseCount: 5 + bootstrapGoldenValidation.manifest.vectors.recoveryKeyIds.length, invalidAuthority: bootstrapInvalidValidation.authority, invalidCaseCount: bootstrapInvalidValidation.manifest.cases.length, rootHistoryAuthority: rootHistoryValidation.authority, rootHistoryGenerationCount: rootHistoryValidation.retainedRootMetadataGenerationCount, rootHistoryInvalidCaseCount: rootHistoryInvalid.cases.length, rootHistoryLocator: latestRootLocator, expectedRootHistoryLocator: rootHistoryGolden.expected.vectors[2].locator, publicModuleCount: publicModules.length, providerReason: providerError.details.reason });',
     ].join("\n"),
     "utf8",
   );
@@ -1796,6 +1921,10 @@ try {
       'if (browserKatResult.runtimeAttestationPointAuthority !== "none_provider_runtime_attestation_structure_only") throw new Error("browser runtime attestation point exposed authority");',
       'if (browserKatResult.runtimeAttestationPointCalls !== 1 || browserKatResult.runtimeAttestationPointVerifyCalls !== 7) throw new Error(`browser runtime attestation point crypto calls: ${browserKatResult.runtimeAttestationPointCalls}/${browserKatResult.runtimeAttestationPointVerifyCalls}`);',
       'if (browserKatResult.runtimeAttestationPointInnerCaseCount !== 50 || browserKatResult.runtimeAttestationPointSpecificCaseCount !== 72 || browserKatResult.runtimeAttestationPointInvalidCaseCount !== 122 || browserKatResult.runtimeAttestationPointInvalidExecutedCaseCount !== 122) throw new Error("browser runtime attestation point lost executable fixture coverage");',
+      'if (browserKatResult.feasibilityEvidencePointAuthority !== "none_provider_feasibility_evidence_structure_only") throw new Error("browser feasibility evidence point exposed authority");',
+      'if (browserKatResult.feasibilityEvidencePointCalls !== 3 || browserKatResult.feasibilityEvidencePointVerifyCalls !== 11) throw new Error(`browser feasibility evidence point golden crypto calls: ${browserKatResult.feasibilityEvidencePointCalls}/${browserKatResult.feasibilityEvidencePointVerifyCalls}`);',
+      'if (browserKatResult.feasibilityEvidencePointPositiveVectorCount !== 3 || browserKatResult.feasibilityEvidencePositiveVectorPointCalls !== 9 || browserKatResult.feasibilityEvidencePositiveVectorVerifyCalls !== 33) throw new Error(`browser feasibility evidence point positive-vector crypto calls: ${browserKatResult.feasibilityEvidencePositiveVectorPointCalls}/${browserKatResult.feasibilityEvidencePositiveVectorVerifyCalls}`);',
+      'if (browserKatResult.feasibilityEvidencePointRuntimeCaseCount !== 122 || browserKatResult.feasibilityEvidencePointSpecificCaseCount !== 105 || browserKatResult.feasibilityEvidencePointInvalidCaseCount !== 227 || browserKatResult.feasibilityEvidencePointInvalidExecutedCaseCount !== 227) throw new Error("browser feasibility evidence point lost executable fixture coverage");',
       'if (browserKatResult.rootHistoryLocator !== browserKatResult.expectedRootHistoryLocator) throw new Error("browser root history locator mismatch");',
       `if (browserKatResult.publicModuleCount !== ${explicitSpecifiers.length}) throw new Error("browser public module count mismatch");`,
       'if (browserKatResult.providerReason !== "revoked") throw new Error("browser provider error probe failed");',
@@ -1863,6 +1992,10 @@ try {
     "dist/provider-runtime-attestation-point.d.ts",
     "dist/provider-runtime-attestation-point-fixtures.js",
     "dist/provider-runtime-attestation-point-fixtures.d.ts",
+    "dist/provider-feasibility-evidence-point.js",
+    "dist/provider-feasibility-evidence-point.d.ts",
+    "dist/provider-feasibility-evidence-point-fixtures.js",
+    "dist/provider-feasibility-evidence-point-fixtures.d.ts",
     "dist/provider-target-discovery-point.js",
     "dist/provider-target-discovery-point.d.ts",
     "dist/provider-target-discovery-point-fixtures.js",
@@ -1924,6 +2057,18 @@ try {
     "schemas/v1/provider-runtime-attestation-point-invalid-manifest.schema.json",
     "schemas/v1/provider-runtime-attestation-point-invalid-reason.schema.json",
     "schemas/v1/provider-runtime-attestation-point-invalid-stage.schema.json",
+    "schemas/v1/provider-feasibility-qa-signature.schema.json",
+    "schemas/v1/provider-feasibility-release-signature.schema.json",
+    "schemas/v1/provider-feasibility-evidence-id-fields.schema.json",
+    "schemas/v1/provider-feasibility-evidence-unsigned-claims.schema.json",
+    "schemas/v1/provider-feasibility-evidence.schema.json",
+    "schemas/v1/provider-feasibility-evidence-envelope.schema.json",
+    "schemas/v1/provider-feasibility-evidence-qa-signature-wrapper.schema.json",
+    "schemas/v1/provider-feasibility-evidence-release-signature-wrapper.schema.json",
+    "schemas/v1/provider-feasibility-evidence-point-invalid-stage.schema.json",
+    "schemas/v1/provider-feasibility-evidence-point-invalid-reason.schema.json",
+    "schemas/v1/provider-feasibility-evidence-point-golden-manifest.schema.json",
+    "schemas/v1/provider-feasibility-evidence-point-invalid-manifest.schema.json",
     "schemas/v1/store-durable-object-provider-isolation.schema.json",
     "schemas/v1/store-durable-object-provider-policy.schema.json",
     "schemas/v1/store-manifest-compare-append-receipt-ledger-policy.schema.json",
@@ -1944,6 +2089,7 @@ try {
     "fixtures/v1/golden/provider-target-discovery-point-v1.json",
     "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
     "fixtures/v1/golden/provider-runtime-attestation-point-v1.json",
+    "fixtures/v1/golden/provider-feasibility-evidence-point-v1.json",
     "fixtures/v1/invalid/manifest.json",
     "fixtures/v1/invalid/provider-bootstrap-structure-crypto-v1.json",
     "fixtures/v1/invalid/provider-registry-root-history-v1.json",
@@ -1952,6 +2098,7 @@ try {
     "fixtures/v1/invalid/provider-target-discovery-point-v1.json",
     "fixtures/v1/invalid/provider-real-filesystem-conformance-result-v1.json",
     "fixtures/v1/invalid/provider-runtime-attestation-point-v1.json",
+    "fixtures/v1/invalid/provider-feasibility-evidence-point-v1.json",
     "fixtures/v1/invalid/provider-registry-entry-manifest-history-v1.recipe-dialect.md",
     "fixtures/v1/invalid/provider-registry-root-history-invalid-recipe-v1.md",
     "fixtures/v1/reference/provider-unavailable-tool-errors.json",
@@ -1974,7 +2121,7 @@ try {
   }
 
   process.stdout.write(
-    `Verified packed provider contracts with exactly ${explicitSpecifiers.length} public module exports and ${packedSchemaRelativePaths.length} JSON Schemas, browser ESM trust checks for bootstrap (62 point/31 signature), root history (11 point/9 signature), 7-generation Registry history (24 point/38 signature), 89 anchored Registry invalid recipes/materialized-request digests with 3 exact opaque consumer rejections, signed real filesystem source closure (12 records/4 cases/8 cuts plus 43 invalid cases), signed target discovery point closure (1 point/6 signatures with five locators), unsigned real filesystem conformance result closure (8 tuples/1 point/6 signatures/no seventh signature/50 replayed invalid cases/Locator-only path), and root-signed runtime attestation point closure (1 point/7 signatures/50 inherited plus 72 point-specific invalid recipes replayed in Node and browser).\n`,
+    `Verified packed provider contracts with exactly ${explicitSpecifiers.length} public module exports and ${packedSchemaRelativePaths.length} JSON Schemas, browser ESM trust checks for bootstrap (62 point/31 signature), root history (11 point/9 signature), 7-generation Registry history (24 point/38 signature), 89 anchored Registry invalid recipes/materialized-request digests with 3 exact opaque consumer rejections, signed real filesystem source closure (12 records/4 cases/8 cuts plus 43 invalid cases), signed target discovery point closure (1 point/6 signatures with five locators), unsigned real filesystem conformance result closure (8 tuples/1 point/6 signatures/no seventh signature/50 replayed invalid cases/Locator-only path), root-signed runtime attestation point closure (1 point/7 signatures/50 inherited plus 72 point-specific invalid recipes), and QA/Release-signed feasibility evidence point closure (3 point/11 signatures per success, passed/failed/unsupported positives, 122 inherited plus 105 point-specific invalid recipes replayed in Node and browser).\n`,
   );
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true });

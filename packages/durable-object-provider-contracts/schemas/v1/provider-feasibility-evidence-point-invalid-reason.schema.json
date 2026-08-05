@@ -1,0 +1,18 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-feasibility-evidence-point-invalid-reason",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "schema_invalid",
+    "source_invalid",
+    "binding_mismatch",
+    "identity_mismatch",
+    "digest_mismatch",
+    "pin_mismatch",
+    "root_mismatch",
+    "public_key_invalid",
+    "signature_invalid",
+    "ordering_invalid",
+    "envelope_mismatch"
+  ]
+}

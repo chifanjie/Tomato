@@ -83,6 +83,18 @@ const providerRuntimeAttestationPointInvalidPath = fileURLToPath(
     import.meta.url,
   ),
 );
+const providerFeasibilityEvidencePointGoldenPath = fileURLToPath(
+  new URL(
+    "../fixtures/v1/golden/provider-feasibility-evidence-point-v1.json",
+    import.meta.url,
+  ),
+);
+const providerFeasibilityEvidencePointInvalidPath = fileURLToPath(
+  new URL(
+    "../fixtures/v1/invalid/provider-feasibility-evidence-point-v1.json",
+    import.meta.url,
+  ),
+);
 
 const REGISTRY_SCHEMA_ROOT_KEY_ID = "a".repeat(22);
 const REGISTRY_SCHEMA_PROVIDER_ID = "durable-object-provider:schema";
@@ -826,6 +838,18 @@ describe("provider contract JSON Schema distribution", () => {
       "store-durable-object-provider-binding-derivation-generation",
       "provider-feasibility-approver-public-key",
       "provider-feasibility-evidence-pin",
+      "provider-feasibility-qa-signature",
+      "provider-feasibility-release-signature",
+      "provider-feasibility-evidence-id-fields",
+      "provider-feasibility-evidence-unsigned-claims",
+      "provider-feasibility-evidence",
+      "provider-feasibility-evidence-envelope",
+      "provider-feasibility-evidence-qa-signature-wrapper",
+      "provider-feasibility-evidence-release-signature-wrapper",
+      "provider-feasibility-evidence-point-invalid-stage",
+      "provider-feasibility-evidence-point-invalid-reason",
+      "provider-feasibility-evidence-point-golden-manifest",
+      "provider-feasibility-evidence-point-invalid-manifest",
       "provider-feasibility-approval-keys",
       "store-durable-object-provider-verification-keys",
       "store-durable-object-provider-registry-entry",
@@ -904,13 +928,15 @@ describe("provider contract JSON Schema distribution", () => {
       expect(generated, name).toHaveProperty(name);
       expectEveryJsonSchemaObjectClosed(generated[name], name);
     }
-    expect(Object.keys(generated)).toHaveLength(241);
+    expect(Object.keys(generated)).toHaveLength(253);
 
     for (const name of [
       "store-durable-object-provider-runtime-attestation-signature-wrapper",
       "store-durable-object-provider-verification-public-key-signature-wrapper",
       "store-durable-object-provider-binding-derivation-generation-signature-wrapper",
       "provider-feasibility-approver-public-key-signature-wrapper",
+      "provider-feasibility-evidence-qa-signature-wrapper",
+      "provider-feasibility-evidence-release-signature-wrapper",
       "store-durable-object-provider-registry-entry-signature-wrapper",
       "provider-registry-manifest-signature-wrapper",
       "provider-real-filesystem-fixture-corpus-manifest-signature-wrapper",
@@ -1033,6 +1059,117 @@ describe("provider contract JSON Schema distribution", () => {
       "pin_mismatch",
     ]);
   }, 30_000);
+
+  it("publishes strict Evidence point wire/golden/227-case invalid schemas without a second Locator", () => {
+    const generated = generateProviderContractJsonSchemasV1();
+    const golden = JSON.parse(
+      readFileSync(providerFeasibilityEvidencePointGoldenPath, "utf8"),
+    ) as Record<string, any>;
+    const invalid = JSON.parse(
+      readFileSync(providerFeasibilityEvidencePointInvalidPath, "utf8"),
+    ) as Record<string, any>;
+    const validateGolden = new Ajv2020({ allErrors: true, strict: true }).compile(
+      generated["provider-feasibility-evidence-point-golden-manifest"],
+    );
+    const validateInvalid = new Ajv2020({ allErrors: true, strict: true }).compile(
+      generated["provider-feasibility-evidence-point-invalid-manifest"],
+    );
+    const validateEvidenceEnvelope = new Ajv2020({
+      allErrors: true,
+      strict: true,
+    }).compile(generated["provider-feasibility-evidence-envelope"]);
+    expect(validateGolden(golden), JSON.stringify(validateGolden.errors)).toBe(true);
+    expect(validateInvalid(invalid), JSON.stringify(validateInvalid.errors)).toBe(true);
+    expect(
+      validateEvidenceEnvelope(golden.providerFeasibilityEvidence),
+      JSON.stringify(validateEvidenceEnvelope.errors),
+    ).toBe(true);
+    expect(golden.positiveVectors).toHaveLength(3);
+    expect(golden.positiveVectors.map((vector: Record<string, unknown>) => vector.result)).toEqual([
+      "passed",
+      "failed",
+      "unsupported",
+    ]);
+    expect(invalid).toMatchObject({
+      runtimeCaseCount: 122,
+      pointCaseCount: 105,
+      caseCount: 227,
+    });
+
+    const invalidProperties = generated[
+      "provider-feasibility-evidence-point-invalid-manifest"
+    ].properties as Record<string, Record<string, any>>;
+    for (const propertyName of ["caseIds", "cases"] as const) {
+      expect(invalidProperties[propertyName]).toMatchObject({
+        type: "array",
+        minItems: 227,
+        maxItems: 227,
+        items: false,
+      });
+      expect(invalidProperties[propertyName]?.prefixItems).toHaveLength(227);
+    }
+    const missingCase = structuredClone(invalid);
+    missingCase.cases.pop();
+    expect(validateInvalid(missingCase)).toBe(false);
+    const reorderedCaseIds = structuredClone(invalid);
+    [reorderedCaseIds.caseIds[0], reorderedCaseIds.caseIds[1]] = [
+      reorderedCaseIds.caseIds[1],
+      reorderedCaseIds.caseIds[0],
+    ];
+    expect(validateInvalid(reorderedCaseIds)).toBe(false);
+    const mismatchedRuntimeSource = structuredClone(invalid);
+    mismatchedRuntimeSource.cases[0].mutation.recipe.sourceOperation =
+      invalid.cases[1].mutation.recipe.sourceOperation;
+    expect(validateInvalid(mismatchedRuntimeSource)).toBe(false);
+
+    expect(
+      generated["provider-feasibility-evidence-point-invalid-stage"].enum,
+    ).toEqual([
+      "input",
+      "runtime_attestation_closure",
+      "evidence_structure",
+      "evidence_pin_structure",
+      "qa_approver_key_structure",
+      "release_approver_key_structure",
+      "qa_approver_key_identity",
+      "release_approver_key_identity",
+      "approver_key_separation",
+      "qa_approver_key_root",
+      "release_approver_key_root",
+      "qa_approver_key_admission",
+      "release_approver_key_admission",
+      "qa_approver_key_signature",
+      "release_approver_key_signature",
+      "evidence_result_binding",
+      "evidence_policy_binding",
+      "evidence_runtime_binding",
+      "evidence_time",
+      "evidence_id",
+      "evidence_qa_signature_binding",
+      "evidence_release_signature_binding",
+      "evidence_qa_signature",
+      "evidence_release_signature",
+      "evidence_digest",
+      "evidence_envelope",
+      "evidence_pin",
+    ]);
+    expect(
+      generated["provider-feasibility-evidence-point-invalid-reason"].enum,
+    ).toEqual([
+      "schema_invalid",
+      "source_invalid",
+      "binding_mismatch",
+      "identity_mismatch",
+      "digest_mismatch",
+      "pin_mismatch",
+      "root_mismatch",
+      "public_key_invalid",
+      "signature_invalid",
+      "ordering_invalid",
+      "envelope_mismatch",
+    ]);
+    expect(generated).not.toHaveProperty("provider-feasibility-evidence-locator");
+  }, 60_000);
 
   it("publishes every Registry atomic union as closed alternatives", () => {
     const generated = generateProviderContractJsonSchemasV1();

@@ -1,6 +1,6 @@
 # Understand Code：Agent-native Code Change Intelligence 项目研制计划
 
-> 文档状态：Approved / Contract Frozen v1.13（含 WP5 Decision Amendment D-24～D-35、C09-1I 与 16-A-1 实施证据重校）
+> 文档状态：Approved / Contract Frozen v1.14（含 WP5 Decision Amendment D-24～D-35、C09-1J 与 16-A-1 实施证据重校）
 >
 > 日期：2026-07-27
 >
@@ -10,7 +10,7 @@
 >
 > WP5 Contract Amendment：2026-07-30～2026-08-05；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host、不可变 Bootstrap Trust Bundle、签名 Target Discovery point closure、real-FS Conformance Result point closure、Provider Runtime Attestation point closure与 QA/Release Provider Feasibility Evidence point closure见 D-24～D-35
 >
-> Implementation Rebaseline：2026-08-03；Evidence Refresh：2026-08-05。重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1I 与 16-A-1 已形成候选证据，C09-1J 合同已冻结但尚未实现；Provider aggregate、真实 Provider、生产 Change Intelligence、双 Agent、Task-first Workbench 与发布门仍未关闭
+> Implementation Rebaseline：2026-08-03；Evidence Refresh：2026-08-05。重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1J 与 16-A-1 已形成候选证据；Provider aggregate、真实 Provider、生产 Change Intelligence、双 Agent、Task-first Workbench 与发布门仍未关闭
 >
 > 适用范围：`understand-code` 产品、Core、Agent 插件、MCP、本地服务与 Dashboard
 >
@@ -325,11 +325,11 @@ Incident、Impact、Change Check 和 Verification 都应成为 Task 的章节或
 
 | 项目 | 当前事实 |
 |---|---|
-| 分支 / 实现 HEAD | `feature/agent-native-change-intelligence` / `60f6582ad7049c87d7c1b6c15bac189c30357eef`（C09-1I code slice） |
+| 分支 / 实现 HEAD | `feature/agent-native-change-intelligence` / `d8769a092d8cc231676a63a67c239aaf7b1f6894`（C09-1J code slice） |
 | Workspace 包 | 8 个：Contracts、Repository State、Artifact Store、Core、Task Engine、CLI、Dashboard、Durable Object Provider Contracts |
-| 根质量门禁 | 本地 macOS `pnpm quality`：187 个测试文件、2,295 passed、1 个既有 skip、0 failed；build/typecheck/Dashboard production build 全绿；Linux clean CI `30978915713` on `60f6582`：187 个测试文件、2,296 passed、0 skipped、0 failed，success |
+| 根质量门禁 | 本地 macOS `pnpm quality`：189 个测试文件、2,305 passed、1 个既有 skip、0 failed；build/typecheck/Dashboard production build 全绿；Linux clean-checkout same-SHA CI `31006241178` on `d8769a0`：189 个测试文件、2,306 passed、0 skipped、0 failed，success |
 | 修改前能力 | Repo Pulse、Persistent Task Brief、候选排序、影响路径、Evidence/Unknown、Task Lifecycle 已有正式实现 |
-| Provider Contracts | Strict Ed25519、Bootstrap Trust Bundle、Root/Registry History、signed real-FS Corpus→Suite、signed Target Discovery、unsigned real-FS Result 与 root-signed Runtime Attestation point 已闭环到候选边界；C09-1I 保持 1 次 point admission、7 次签名，冻结 241 份 Schema 与 122 个逐条重放负例；D-35 已冻结后继 QA/Release Evidence point，但尚无 C09-1J bytes；authority 仍为 none-only，C09 aggregate 未关闭 |
+| Provider Contracts | Strict Ed25519、Bootstrap Trust Bundle、Root/Registry History、signed real-FS Corpus→Suite、signed Target Discovery、unsigned real-FS Result、root-signed Runtime Attestation 与 QA/Release Provider Feasibility Evidence point 已闭环到候选边界；C09-1J 在 C09-1I 的 122 个 operation 基础上增加 105 个 point-specific case，共 227 个 ordered executable case，成功路径固定 3 次 point admission / 11 次签名验证；Provider package 共冻结 253 份 Schema、19 个显式 public module 与确定性 golden/invalid 资源；authority 仍为 none-only，C09 aggregate 未关闭 |
 | 修改后能力 | Change Check/Verification 有严格 Contract 和 Store 基础，但没有生产 `checkChanges()` / `recordVerification()` 执行服务 |
 | Agent Surface | 已有 `packages/cli` 自包含 stdio MCP 候选和 3 个真实 Tool；仍无 `.codex-plugin/plugin.json`、Codex/Claude Adapter 或双 Agent Task E2E |
 | 前端 | 活跃 Surface 仍为 `wiki | graph`；尚无 Tasks、Brief、Check、Verification 与 Repo Pulse 产品页面 |
@@ -3022,7 +3022,7 @@ P2 的阻断规则必须确定性执行：
 | WP2 | Closed | Repository State / Repo Pulse 已关闭 |
 | WP3 | Closed | Artifact Store / Evidence persistence 已关闭 |
 | WP4 | Closed | Persistent Task Brief 与 Lifecycle 已关闭；不包含生产 Change Check |
-| WP5-1P/C09 | **Partial / aggregate open** | 已完成 crypto、Bootstrap、Root/Registry history、signed real-FS Corpus→Suite（`3ca2977`）、signed Target Discovery（`70201b4`）、unsigned real-FS Result（`35f9aaf`）与 root-signed Runtime Attestation point closure（`60f6582`）；D-35 已冻结 C09-1J QA/Release Evidence 合同，下一动作是独立实现、测试与复审，之后仍有 Catalog/Registry、Discovery history/current、Universe、Acceptance、Migration 等总门 |
+| WP5-1P/C09 | **Partial / aggregate open** | 已完成 crypto、Bootstrap、Root/Registry history、signed real-FS Corpus→Suite（`3ca2977`）、signed Target Discovery（`70201b4`）、unsigned real-FS Result（`35f9aaf`）、root-signed Runtime Attestation（`60f6582`）与 QA/Release Provider Feasibility Evidence point closure（`d8769a0`）；Catalog/Registry、Discovery history/current、Universe、Acceptance、Migration 等 aggregate 总门仍需关闭 |
 | WP3P | Not closed / capability locked | 真实 OS principal、Provider runtime 与 real-FS feasibility 尚未实现 |
 | WP5 | Contract frozen / implementation incomplete | 没有生产 Delta/Hunk/Matching、`checkChanges()`、`recordVerification()` 纵向闭环 |
 | WP6 | **Open（仅 16-A-1 candidate closed）** | `packages/cli` 已交付自包含 stdio MCP 与 Pulse/Brief 三工具；Host Adapter、完整 Tool surface、双 Agent E2E 仍未实现，不能把子切片状态外推为 WP6 candidate |
@@ -6224,9 +6224,11 @@ admission与恰好六次签名验证（Corpus、Suite、Taxonomy、Matrix、Bund
 packed Node/browser distribution KAT。该层不执行 runner、不触碰真实文件系统，
 也不授权任何 Store I/O。在 C09-1G 当时的冻结顺序中，后继 “Result” 指
 `ProviderRealFilesystemConformanceResultV1`，不能与本层 Discovery Result混淆；
-该后继 point 现已由 C09-1H 独立关闭；D-34冻结的
-C09-1I Result→Policy→Runtime Attestation point也已由后续独立实现关闭，当前
-frontier为 QA/Release Evidence。
+该后继 point 已由 C09-1H 独立关闭，D-34冻结的
+C09-1I Result→Policy→Runtime Attestation point与D-35冻结的 C09-1J
+QA/Release Evidence point也已分别由后续独立实现关闭；Catalog/Registry、
+Discovery history/current、Universe、Acceptance、Migration与真实 Provider仍
+open/locked。
 
 2026-08-03 implementation evidence：C09-1G 已由 `70201b4` 独立提交并推送。
 Provider package现冻结 220 份 JSON Schema、1 份 205,053-byte golden与 116 个
@@ -6448,14 +6450,14 @@ admission / 7次 signature count。成功返回值递归冻结，authority严格
 skip、0 failed；Linux clean-checkout CI `30978915713`为187个测试文件、2,296
 passed、0 skipped、0 failed并成功完成。core、fixture/distribution与 holistic三路
 独立只读终审均无残余 P0/P1/P2。该证据只关闭 C09-1I point-structure candidate；
-真实 runtime/volume/IPC、generation current、QA/Release Evidence、Catalog/Registry、
-Acceptance与 strong write继续 open/locked，下一实现 frontier为 QA/Release Evidence。
+QA/Release Evidence 后由 C09-1J `d8769a0` 独立关闭；真实 runtime/volume/IPC、
+generation current、Catalog/Registry、Acceptance 与 strong write继续 open/locked。
 
 修订原因：只验证 Runtime自身签名会允许一份分别合法但指向另一 Result、policy、
 binary或 target的 attestation被拼接进后继 Evidence；反过来，如果把单点结构闭包
 当成 runtime在线、当前 volume匹配或 QA/Release批准，又会在真实 Provider Gate尚未
-执行时提前授权写能力。D-34只冻结 C09-1I首批 bytes与可执行拒绝语义，后继 Evidence
-仍须独立提交和复审。
+执行时提前授权写能力。D-34只冻结 C09-1I首批 bytes与可执行拒绝语义；后继
+Evidence必须独立提交和复审，该要求已由 C09-1J `d8769a0` 的独立实现证据关闭。
 
 ### D-35：Provider Feasibility Evidence 采用 Runtime→Evidence QA/Release 双签结构闭包
 
@@ -6634,6 +6636,27 @@ Result、Runtime、Policy 与两把由 supplied root签名的 QA/Release approve
   只留在 Node-only generator；运行时 fixtures executor必须 browser-safe且 packed Vite
   不得出现 Node external。Schema/exports/fixture最终总数、byte数与 SHA只在实现后实测冻结。
 
+2026-08-05 C09-1J implementation evidence：Runtime→Evidence QA/Release双签结构闭包
+已由`d8769a092d8cc231676a63a67c239aaf7b1f6894`独立提交并推送。该提交共变更
+26个文件；Provider package冻结253份 JSON Schema、179,229-byte golden
+（SHA-256 `2537f38c41acdd5606db8cd5e5a720f1c28bc543a66ea24bcca6e96dba9cc3b5`，
+semantic `sha256:eecf734efab5d720b00770d110489c378261ab259a1561004510556103c6b3ea`）
+与716,365-byte invalid resource
+（SHA-256 `df833678cfcffc466014cf627a9d1469cfa7840ab2a0b62d2c63f2cb7ccca48f`，
+semantic `sha256:3fd076475ee3445fa07a8d580873655cd4d87b98d3f80de645ae643ccafc2ab2`）。
+invalid corpus逐位继承C09-1I的122个 operation并增加105个 point-specific case，
+共227个 ordered executable case；另有`passed/failed/unsupported`三份 positive
+vector。clean packed Node与Vite/browser从19个显式 public module导入并验证分发闭包；
+成功路径固定3次 point admission / 11次 signature verification，authority严格保持
+`none_provider_feasibility_evidence_structure_only`。
+
+同一提交树本地macOS根级`pnpm quality`为189个测试文件、2,305 passed、1个既有
+skip、0 failed；Linux clean-checkout same-SHA CI `31006241178`为189个测试文件、
+2,306 passed、0 skipped、0 failed并成功完成；三路独立只读终审P0/P1/P2/P3均为0。
+该证据只关闭C09-1J supplied-point结构 candidate，不证明approver
+history/current/revocation、真实runtime/volume/IPC、Catalog/Registry/Universe/
+Acceptance、生产批准或任何I/O/write authority。
+
 C09-1J明确不证明 approver key history/current/revocation，也不证明 QA/Release与
 provider verification keys、recovery keys或 historical roots之间的全历史 public-key
 material唯一性；本点的 separation只覆盖 QA、Release与当前 supplied active root三方。
@@ -6646,8 +6669,9 @@ I/O/write authority。修改两份签名并重算后继 digest只能得到 suppl
 修订原因：若新增独立 Locator，会让 Pin与第二份 caller locator同时控制同一对象；若
 只接两条 approver record却宣称 current/未撤销，又会绕过完整 approval history与
 Registry Gate；若先算完整 Evidence digest再验双签，则 signature篡改会被错误归因为
-普通 envelope drift。D-35只冻结 C09-1J首批 bytes、拒绝优先级与 none-only authority，
-实现证据仍须独立提交、全量测试、同 SHA CI与复审。
+普通 envelope drift。D-35只冻结 C09-1J首批 bytes、拒绝优先级与 none-only authority；
+其实现证据现已按独立提交、全量测试、同 SHA CI与三路复审形成，但只关闭 supplied-point
+结构 candidate。
 
 ---
 

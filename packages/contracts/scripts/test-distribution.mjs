@@ -182,7 +182,19 @@ try {
 
   run(
     pnpmCommand,
-    ["pack", "--pack-destination", packRoot],
+    ["run", "build"],
+    { cwd: cleanProviderRoot },
+  );
+  run(
+    npmCommand,
+    [
+      "pack",
+      ".",
+      "--ignore-scripts",
+      "--pack-destination",
+      packRoot,
+      "--silent",
+    ],
     { cwd: cleanProviderRoot },
   );
   run(

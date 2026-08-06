@@ -36,7 +36,7 @@ describe("CI workflow contract", () => {
     expect(workflow).not.toMatch(/contents:\s+write|write-all/);
     expect(workflow).toContain("persist-credentials: false");
     expect(workflow).toContain("cancel-in-progress: true");
-    expect(workflow).toContain("timeout-minutes: 30");
+    expect(workflow).toContain("timeout-minutes: 45");
     expect(workflow).toMatch(/on:\n\s+push:\n\s+pull_request:/);
   });
 });

@@ -19,6 +19,36 @@ import {
 const packageJsonPath = fileURLToPath(new URL("../../package.json", import.meta.url));
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
 const scripts = packageJson.scripts ?? {};
+const providerPackageJson = JSON.parse(
+  readFileSync(
+    fileURLToPath(
+      new URL(
+        "../../packages/durable-object-provider-contracts/package.json",
+        import.meta.url,
+      ),
+    ),
+    "utf8",
+  ),
+);
+const providerScripts = providerPackageJson.scripts ?? {};
+const providerDistributionScript = readFileSync(
+  fileURLToPath(
+    new URL(
+      "../../packages/durable-object-provider-contracts/scripts/test-distribution.mjs",
+      import.meta.url,
+    ),
+  ),
+  "utf8",
+);
+const contractsDistributionScript = readFileSync(
+  fileURLToPath(
+    new URL(
+      "../../packages/contracts/scripts/test-distribution.mjs",
+      import.meta.url,
+    ),
+  ),
+  "utf8",
+);
 const vitestConfig = readFileSync(
   fileURLToPath(new URL("../../vitest.config.ts", import.meta.url)),
   "utf8",
@@ -61,6 +91,43 @@ describe("root quality gate", () => {
   it("provides one fail-fast command for build, typecheck, and test", () => {
     expect(scripts.quality).toBe(
       "pnpm run build:all && pnpm run typecheck && pnpm run test",
+    );
+  });
+
+  it("runs the complete Provider verifier once per quality gate", () => {
+    const verifierNames = [
+      "verify:schemas",
+      "verify:fixtures",
+      "verify:strict-ed25519",
+      "verify:golden",
+      "verify:bootstrap-trust-invalid",
+      "verify:bootstrap-trust",
+      "verify:provider-root-history",
+      "verify:provider-registry-manifest-history",
+      "verify:provider-registry-manifest-invalid",
+      "verify:provider-real-fs-source",
+      "verify:provider-target-discovery-point",
+      "verify:provider-release-target-universe-point",
+      "verify:provider-real-fs-conformance-result",
+      "verify:provider-runtime-attestation-point",
+      "verify:provider-feasibility-evidence-point",
+    ];
+
+    expect(providerScripts.prepack).toBe(
+      "npm run build && npm run verify:all",
+    );
+    expect(providerScripts["verify:all"].split(" && ")).toEqual(
+      verifierNames.map((name) => `npm run ${name}`),
+    );
+    expect(providerScripts.test).toBe(
+      "pnpm run build && pnpm run typecheck && vitest run --maxWorkers=1 && pnpm run test:distribution",
+    );
+    expect(providerScripts.test).not.toContain("verify:");
+    expect(providerDistributionScript).toMatch(
+      /run\(\s*npmCommand,\s*\[\s*"pack",\s*"\.",\s*"--ignore-scripts=false"[\s\S]*?\],\s*\{\s*cwd: cleanPackageRoot,?\s*\},\s*\);/,
+    );
+    expect(contractsDistributionScript).toMatch(
+      /run\(\s*pnpmCommand,\s*\["run", "build"\],\s*\{ cwd: cleanProviderRoot \},\s*\);\s*run\(\s*npmCommand,\s*\[\s*"pack",\s*"\.",\s*"--ignore-scripts"[\s\S]*?\],\s*\{ cwd: cleanProviderRoot \},\s*\);/,
     );
   });
 

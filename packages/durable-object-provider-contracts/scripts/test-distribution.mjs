@@ -732,9 +732,20 @@ try {
     "clean pack source",
   );
 
-  run(npmCommand, ["pack", ".", "--pack-destination", packRoot, "--silent"], {
-    cwd: cleanPackageRoot,
-  });
+  run(
+    npmCommand,
+    [
+      "pack",
+      ".",
+      "--ignore-scripts=false",
+      "--pack-destination",
+      packRoot,
+      "--silent",
+    ],
+    {
+      cwd: cleanPackageRoot,
+    },
+  );
   const tarballs = (await readdir(packRoot))
     .filter((name) => name.endsWith(".tgz"))
     .sort();

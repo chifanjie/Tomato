@@ -12,6 +12,8 @@ WP4 修订日期：2026-07-29
 
 WP5 修订日期：2026-07-30～2026-08-06
 
+C09-1K 实施证据刷新：2026-08-06
+
 编制方式：Codex 汇总版本化证据、独立审查和自动化结果；Codex 不被记录为真人签署人
 
 Surface Release Gate：**Open**
@@ -1049,6 +1051,38 @@ AT-C31与AT-Q33以 WP5 Matrix为唯一规范。D-31不改变 D-21 Lifecycle；�
   verification，authority仅为`none_release_target_universe_structure_only`；不证明
   distribution history/current、Catalog/Registry、Acceptance、真实 I/O或 strong write。
 
+2026-08-06 implementation evidence：C09-1K code slice
+`3e6f516d089aaacaf67984f46ca972d8687a5772`已独立提交并推送；Provider package最新
+切片冻结268份 JSON Schema、21个显式 public module + 3个 wildcard resource export、
+4份 genuine positive vector，以及116个 inherited + 169个 point-specific = 285个
+ordered executable case；其中 inherited accepted-snapshot保持成功结果。internal
+diagnostic拒绝分类固定16个 stage / 11个 reason；fixture另含2个 locator-builder stage
+与3个无stage/reason的 snapshot-stability success。成功路径
+固定1次 point admission / 7次 signature verification，authority严格为
+`none_release_target_universe_structure_only`。该最新切片不追溯改写C09-1J的
+253份 Schema / 19个显式 public module / 122+105=227个 ordered executable case
+历史证据。
+golden资源固定为585,993 bytes / SHA-256
+`4bea094e065951abfcc1f42decca105f5bedc94ee947ddb344365374f4d1a914` /
+semantic `sha256:1fa267ecee01d48350708c475365ddc8a3873fef14dbff812cc3c685e27555bc`；
+invalid资源固定为694,224 bytes / SHA-256
+`ba8d12f558ba8db8534b606340d5b08de6898d2aa11e9d646c5a339a7f3042aa` /
+semantic `sha256:b19908bef43443040cf6da82e5c6fa9dd21d406357b0b2048da8baa6af8a701f`。
+
+CI stabilization commit `0c6474df66ce28e4a7caf4006233100194a6e493`保持原
+`prepack` 15个 verifier的精确数量、顺序与命令，通过`verify:all`只执行一次；Provider
+distribution显式`--ignore-scripts=false`，因此 hostile
+`npm_config_ignore_scripts=true`不能静默绕过`prepack`，Contracts clean workspace则在
+`--ignore-scripts`打包前显式 build Provider。hostile-env prepack闭环、冷分发完整性与
+失败上抛均已由质量守卫固定。同树本地macOS `CI=true pnpm quality`为194个测试文件、
+2,367 passed、1个既有skip、0 failed；Linux clean-checkout same-SHA CI run
+`31079755984` / job `92545638787`为194个测试文件、2,368 passed、0 skipped、
+0 failed，用时19m39s并success；独立复审P0/P1/P2=0。
+
+以上只关闭C09-1K supplied-point candidate，不关闭C09 aggregate、真实Provider、
+strong-write、production或release gates；这些 Gate继续`open/locked`，Surface Release
+Gate也继续为Open。
+
 D-24～D-36 的实现与验收矩阵为
 `docs/research/2026-07-30-wp5-change-intelligence-matrix.md`；其中第 3.8 节是
 必须逐字段等价实现的 normative Schema Appendix。所有 C09 provider
@@ -1221,7 +1255,7 @@ capability gap，不是 WP0 新引入回归。对应能力在后续 Gate 关闭�
 | G0-06 Diff Overlay 断链 | 旧 Overlay deprecated，不作为 P0 数据源或完成证据 | WP5/WP7 open | Change Intelligence + Frontend | Change Check Workbench Alpha 前 |
 | G0-07 Worktree 重定向 | Task/Store 绑定当前 canonical worktree；共享只限不可变缓存 | WP3/WP4 core binding closed；WP6 Surface open | Core + Platform | Mandatory Host Surface Alpha 前 |
 | G0-08 Quality/Release | 根 quality、CI 已关闭；CLI/bin、统一版本、License、SBOM、allowlist、Marketplace 留后续 Gate | Partial | Platform + QA | Mandatory Surface Release / M4 |
-| G0-09 Durable Object Provider | strong writer必须使用 OS-isolated exact-object provider、strict Ed25519 host KAT/opaque capability、fixed Bootstrap Trust Bundle + immutable Identity retained historical trust、trust-history caps + append-only Acceptance、root-signed Registry/Taxonomy/Target Universe/Catalog、provider-isolated receipt ledger、atomic path containment、external CAS/journal seal与 bounded dual-namespace migration；未通过或 coverage incomplete target只读 | WP3P open / all strong mutations capability locked | Platform/Security Lead + Provider/Systems；QA/Security/Release验证 | 首个 strong Task Alpha前关闭 AT-C31/Q33、签名开发 target profile并验证当前物理 volume runtime exact-match；P0前关闭全部 advertised profiles |
+| G0-09 Durable Object Provider | strong writer必须使用 OS-isolated exact-object provider、strict Ed25519 host KAT/opaque capability、fixed Bootstrap Trust Bundle + immutable Identity retained historical trust、trust-history caps + append-only Acceptance、root-signed Registry/Taxonomy/Target Universe/Catalog、provider-isolated receipt ledger、atomic path containment、external CAS/journal seal与 bounded dual-namespace migration；未通过或 coverage incomplete target只读 | C09-1K supplied Universe candidate及同SHA CI已关闭；C09 aggregate与WP3P仍open，全部 strong mutations capability locked | Platform/Security Lead + Provider/Systems；QA/Security/Release验证 | 首个 strong Task Alpha前关闭 AT-C31/Q33、签名开发 target profile并验证当前物理 volume runtime exact-match；P0前关闭全部 advertised profiles |
 
 ## 8. 当前发布缺口
 
@@ -1263,6 +1297,8 @@ capability gap，不是 WP0 新引入回归。对应能力在后续 Gate 关闭�
 | Surface mandatory/conditional、Owner、后续 Gate 完整 | PASS |
 | G0-01～09 有处置、Owner 和 capability lock | PASS |
 | 根质量、CI、Host 与性能证据可复核 | PASS |
+| C09-1K supplied-point code / local quality / same-SHA CI / independent review | PASS；不外推到 aggregate |
+| C09 aggregate、真实 Provider、strong-write、production 与 release gates | OPEN / LOCKED |
 | 用户未跟踪文件明确排除 | PASS |
 | PRD/Host Spike 状态同步 | 由包含本记录的提交完成 |
 | Surface Release Evidence | OPEN，不属于 Contract Freeze |

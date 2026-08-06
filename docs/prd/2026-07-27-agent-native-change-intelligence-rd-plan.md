@@ -1,6 +1,6 @@
 # Understand Code：Agent-native Code Change Intelligence 项目研制计划
 
-> 文档状态：Approved / Contract Frozen v1.15（含 WP5 Decision Amendment D-24～D-36、C09-1J 与 16-A-1 实施证据重校）
+> 文档状态：Approved / Contract Frozen v1.16（含 WP5 Decision Amendment D-24～D-36、C09-1K、CI stabilization 与 16-A-1 实施证据重校）
 >
 > 日期：2026-07-27
 >
@@ -10,7 +10,7 @@
 >
 > WP5 Contract Amendment：2026-07-30～2026-08-06；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host、不可变 Bootstrap Trust Bundle、签名 Target Discovery point closure、real-FS Conformance Result point closure、Provider Runtime Attestation point closure、QA/Release Provider Feasibility Evidence point closure与 Release Target Universe point closure见 D-24～D-36
 >
-> Implementation Rebaseline：2026-08-03；Evidence Refresh：2026-08-05；Contract Refresh：2026-08-06。重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1J 与 16-A-1 已形成候选证据，C09-1K 合同已冻结但尚未实现；Provider aggregate、真实 Provider、生产 Change Intelligence、双 Agent、Task-first Workbench 与发布门仍未关闭
+> Implementation Rebaseline：2026-08-03；Evidence Refresh：2026-08-06；Contract Refresh：2026-08-06。重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1J、C09-1K 与 16-A-1 已形成各自边界内的候选证据；Provider aggregate、真实 Provider、生产 Change Intelligence、双 Agent、Task-first Workbench、strong-write、production 与 release gates 仍未关闭
 >
 > 适用范围：`understand-code` 产品、Core、Agent 插件、MCP、本地服务与 Dashboard
 >
@@ -319,17 +319,17 @@ Tasks（默认） | Knowledge | Graph
 
 Incident、Impact、Change Check 和 Verification 都应成为 Task 的章节或视图。
 
-### 2.5 2026-08-05 最新实施快照
+### 2.5 2026-08-06 最新实施快照
 
 2026-07-27 的基线表保留为问题发现现场；以下快照才是继续实施时使用的当前事实：
 
 | 项目 | 当前事实 |
 |---|---|
-| 分支 / 实现 HEAD | `feature/agent-native-change-intelligence` / `d8769a092d8cc231676a63a67c239aaf7b1f6894`（C09-1J code slice） |
+| 分支 / 实现 HEAD | `feature/agent-native-change-intelligence` / `0c6474df66ce28e4a7caf4006233100194a6e493`（C09-1K code slice `3e6f516d089aaacaf67984f46ca972d8687a5772` + CI stabilization） |
 | Workspace 包 | 8 个：Contracts、Repository State、Artifact Store、Core、Task Engine、CLI、Dashboard、Durable Object Provider Contracts |
-| 根质量门禁 | 本地 macOS `pnpm quality`：189 个测试文件、2,305 passed、1 个既有 skip、0 failed；build/typecheck/Dashboard production build 全绿；Linux clean-checkout same-SHA CI `31006241178` on `d8769a0`：189 个测试文件、2,306 passed、0 skipped、0 failed，success |
+| 根质量门禁 | 本地 macOS `CI=true pnpm quality`：194 个测试文件、2,367 passed、1 个既有 skip、0 failed；build/typecheck/Dashboard production build 全绿；Linux clean-checkout same-SHA CI run `31079755984` / job `92545638787` on `0c6474df66ce28e4a7caf4006233100194a6e493`：194 个测试文件、2,368 passed、0 skipped、0 failed，19m39s，success |
 | 修改前能力 | Repo Pulse、Persistent Task Brief、候选排序、影响路径、Evidence/Unknown、Task Lifecycle 已有正式实现 |
-| Provider Contracts | Strict Ed25519、Bootstrap Trust Bundle、Root/Registry History、signed real-FS Corpus→Suite、signed Target Discovery、unsigned real-FS Result、root-signed Runtime Attestation 与 QA/Release Provider Feasibility Evidence point 已闭环到候选边界；C09-1J 在 C09-1I 的 122 个 operation 基础上增加 105 个 point-specific case，共 227 个 ordered executable case，成功路径固定 3 次 point admission / 11 次签名验证；Provider package 共冻结 253 份 Schema、19 个显式 public module 与确定性 golden/invalid 资源；D-36已冻结 C09-1K Universe point但尚无实现 bytes，authority 仍为 none-only，C09 aggregate 未关闭 |
+| Provider Contracts | Strict Ed25519、Bootstrap Trust Bundle、Root/Registry History、signed real-FS Corpus→Suite、signed Target Discovery、unsigned real-FS Result、root-signed Runtime Attestation、QA/Release Provider Feasibility Evidence 与 Release Target Universe supplied-point 已闭环到各自候选边界。C09-1J 历史切片仍固定为 253 份 Schema、19 个显式 public module、122+105=227 个 ordered executable case 与成功路径 3/11；不得用后继数字回写该历史事实。C09-1K 最新切片为 268 份 Schema、21 个显式 public module + 3 个 wildcard resource export、4 个 positive vector、116 个 inherited + 169 个 point-specific = 285 个 ordered executable case；internal diagnostic schema 固定 16 个 stage / 11 个 reason，fixture 另含 2 个 locator-builder stage 与 3 个无 stage/reason 的 snapshot-stability success；成功路径固定 1 次 point admission / 7 次 signature verification，authority 严格为 `none_release_target_universe_structure_only`。独立复审 P0/P1/P2=0；C09 aggregate 及全部 strong-write/production/release gate 仍 open |
 | 修改后能力 | Change Check/Verification 有严格 Contract 和 Store 基础，但没有生产 `checkChanges()` / `recordVerification()` 执行服务 |
 | Agent Surface | 已有 `packages/cli` 自包含 stdio MCP 候选和 3 个真实 Tool；仍无 `.codex-plugin/plugin.json`、Codex/Claude Adapter 或双 Agent Task E2E |
 | 前端 | 活跃 Surface 仍为 `wiki | graph`；尚无 Tasks、Brief、Check、Verification 与 Repo Pulse 产品页面 |
@@ -3022,7 +3022,7 @@ P2 的阻断规则必须确定性执行：
 | WP2 | Closed | Repository State / Repo Pulse 已关闭 |
 | WP3 | Closed | Artifact Store / Evidence persistence 已关闭 |
 | WP4 | Closed | Persistent Task Brief 与 Lifecycle 已关闭；不包含生产 Change Check |
-| WP5-1P/C09 | **Partial / aggregate open** | 已完成 crypto、Bootstrap、Root/Registry history、signed real-FS Corpus→Suite（`3ca2977`）、signed Target Discovery（`70201b4`）、unsigned real-FS Result（`35f9aaf`）、root-signed Runtime Attestation（`60f6582`）与 QA/Release Provider Feasibility Evidence point closure（`d8769a0`）；D-36已冻结 C09-1K Release Target Universe supplied-point，仍待独立实现；Catalog/Registry、Discovery history/current、Universe aggregate history、Acceptance、Migration 等总门仍需关闭 |
+| WP5-1P/C09 | **Partial / aggregate open** | 已完成 crypto、Bootstrap、Root/Registry history、signed real-FS Corpus→Suite（`3ca2977`）、signed Target Discovery（`70201b4`）、unsigned real-FS Result（`35f9aaf`）、root-signed Runtime Attestation（`60f6582`）、QA/Release Provider Feasibility Evidence point（`d8769a0`）与 C09-1K Release Target Universe supplied-point（`3e6f516d`）；CI stabilization（`0c6474df`）及 same-SHA CI 已关闭本切片执行证据。Catalog/Registry、Discovery history/current、Universe aggregate history、Acceptance、Migration 等 aggregate 总门仍需关闭 |
 | WP3P | Not closed / capability locked | 真实 OS principal、Provider runtime 与 real-FS feasibility 尚未实现 |
 | WP5 | Contract frozen / implementation incomplete | 没有生产 Delta/Hunk/Matching、`checkChanges()`、`recordVerification()` 纵向闭环 |
 | WP6 | **Open（仅 16-A-1 candidate closed）** | `packages/cli` 已交付自包含 stdio MCP 与 Pulse/Brief 三工具；Host Adapter、完整 Tool surface、双 Agent E2E 仍未实现，不能把子切片状态外推为 WP6 candidate |
@@ -7132,6 +7132,41 @@ Acceptance current或完整五链 history，在生成 C09-1K首批 bytes前冻�
   realpath资源、全部 fresh materialized case、exact stage/reason、13字段 projection、
   opaque error、crypto count与 witness digest；运行时 executor必须 browser-safe，
   Node-only generator才可签名/reanchor，packed Vite不得出现 Node external。
+
+2026-08-06 C09-1K implementation evidence：Matrix＋Discovery→root-signed Release
+Target Universe supplied-point结构闭包已由 code slice
+`3e6f516d089aaacaf67984f46ca972d8687a5772`独立提交并推送。最新 Provider package
+冻结268份 JSON Schema、21个显式 public module与3个 wildcard resource export；
+golden固定4份 genuine positive vector，`invalid` fixture逐位继承C09-1G的116个 case并
+增加169个 Universe point-specific case，共285个 ordered executable case；其中
+inherited accepted-snapshot仍按成功结果执行，不把资源名`invalid`外推为全部 case失败。
+golden资源固定为585,993 bytes，SHA-256
+`4bea094e065951abfcc1f42decca105f5bedc94ee947ddb344365374f4d1a914`，semantic digest
+`sha256:1fa267ecee01d48350708c475365ddc8a3873fef14dbff812cc3c685e27555bc`；
+invalid资源固定为694,224 bytes，SHA-256
+`ba8d12f558ba8db8534b606340d5b08de6898d2aa11e9d646c5a339a7f3042aa`，semantic digest
+`sha256:b19908bef43443040cf6da82e5c6fa9dd21d406357b0b2048da8baa6af8a701f`。
+internal diagnostic拒绝面冻结为16个 stage / 11个 reason；fixture另含
+`target_discovery_locator`与`universe_locator`两个 locator-builder stage，以及3个无
+stage/reason的 snapshot-stability success。每份 positive及 accepted snapshot成功路径
+均固定1次 point admission / 7次 signature verification，成功 authority严格保持
+`none_release_target_universe_structure_only`。这里的268/21+3是C09-1K最新切片，
+不回写C09-1J已记录的253份 Schema / 19个显式 public module历史快照。
+
+CI stabilization由`0c6474df66ce28e4a7caf4006233100194a6e493`独立提交并推送：
+原`prepack`的15个 verifier按原数量、顺序与命令精确收敛到`verify:all`，Provider
+distribution在 hostile `npm_config_ignore_scripts=true`等环境下仍显式使用
+`--ignore-scripts=false`进入`prepack`，失败状态逐层上抛；Contracts冷分发则从无
+`dist`的 clean Provider副本先显式 build，再以`--ignore-scripts`打包，既不重复执行
+Provider verifier也不消费旧产物。新增质量守卫固定上述两条调用边，hostile-env
+prepack bypass已关闭。同树本地macOS `CI=true pnpm quality`为194个测试文件、
+2,367 passed、1个既有skip、0 failed；Linux clean-checkout same-SHA CI run
+`31079755984` / job `92545638787`为194个测试文件、2,368 passed、0 skipped、
+0 failed，并在19m39s内success。独立终审P0/P1/P2均为0。
+
+该证据只关闭C09-1K supplied-point candidate及其同SHA执行证据；C09 aggregate、
+真实OS-isolated Provider、strong-write、production与release gates全部继续保持
+open/locked，不得据此更新 capability flag、supported tool list或发布文案。
 
 C09-1K明确不证明 Taxonomy/Matrix/Discovery/Universe predecessor history、current、
 anti-rollback、五链 retained accounting或真实 signed-package resolver；不证明 Catalog

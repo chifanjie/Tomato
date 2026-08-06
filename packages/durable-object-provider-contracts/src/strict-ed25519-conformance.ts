@@ -11,6 +11,14 @@ import {
 } from "./primitives.js";
 import { sha256InternalV1 } from "./sha256.js";
 import { STRICT_ED25519_VERIFICATION_PROFILE_V1 } from "./strict-ed25519.js";
+import {
+  copyProviderStrictEd25519ByteRangeInternalV1,
+  copyProviderStrictEd25519BytesInternalV1,
+  copyProviderStrictEd25519CryptoCapabilityBytesV1,
+  getProviderStrictEd25519OpaqueCapabilityMethodsV1,
+  registerProviderStrictEd25519OpaqueCapabilityStateV1,
+  type ProviderStrictEd25519BoundMethodsInternalV1,
+} from "./strict-ed25519-capability-internal.js";
 
 export const PROVIDER_STRICT_ED25519_MANIFEST_RESOURCE_PATH_V1 =
   "provider/ed25519-strict-host-conformance-v1.json" as const;
@@ -233,31 +241,13 @@ export class ProviderStrictEd25519AttestationError extends Error {
   }
 }
 
+const providerStrictEd25519CapabilityOwnerV1 =
+  ProviderStrictEd25519AttestationError;
+
 declare const providerStrictEd25519OpaqueCapabilityBrandV1: unique symbol;
 export interface ProviderStrictEd25519OpaqueCapabilityV1 {
   readonly [providerStrictEd25519OpaqueCapabilityBrandV1]: true;
 }
-
-interface BoundStrictEd25519MethodsV1 {
-  readonly validatePrimeSubgroupPoint: (
-    encodedPoint: Uint8Array,
-  ) => ProviderStrictEd25519CryptoResultV1;
-  readonly verifyRawEd25519: (
-    publicKey: Uint8Array,
-    message: Uint8Array,
-    signature: Uint8Array,
-  ) => ProviderStrictEd25519CryptoResultV1;
-}
-
-interface OpaqueCapabilityStateV1 {
-  readonly methods: BoundStrictEd25519MethodsV1;
-  readonly capabilityBytes: Uint8Array;
-}
-
-const opaqueCapabilityStatesV1 = new WeakMap<
-  object,
-  OpaqueCapabilityStateV1
->();
 
 const BASE64URL_ALPHABET =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
@@ -333,7 +323,7 @@ function assertExactRequiredCases(
 
 function captureBoundMethods(
   host: ProviderStrictEd25519CryptoHostV1,
-): BoundStrictEd25519MethodsV1 {
+): ProviderStrictEd25519BoundMethodsInternalV1 {
   assertDataObjectDescriptorsBeforeSchemaV1(host);
   const descriptors = Object.getOwnPropertyDescriptors(host);
   const hostKeys = Object.keys(descriptors).sort();
@@ -399,8 +389,12 @@ async function invokeBooleanMethod(
   method: (...args: Uint8Array[]) => ProviderStrictEd25519CryptoResultV1,
   inputs: readonly Uint8Array[],
 ): Promise<boolean> {
-  const callInputs = inputs.map((value) => value.slice());
-  const snapshots = callInputs.map((value) => value.slice());
+  const callInputs = inputs.map((value) =>
+    copyProviderStrictEd25519BytesInternalV1(value),
+  );
+  const snapshots = callInputs.map((value) =>
+    copyProviderStrictEd25519BytesInternalV1(value),
+  );
   const result = await withHostTimeout(
     Promise.resolve().then(() => method(...callInputs)),
   );
@@ -423,7 +417,7 @@ async function parseAndVerifyManifestResource(
     throw new TypeError("manifest resource");
   }
   const parsedUnknown = parseCanonicalJcsSafeIntegerUtf8V1(
-    resourceBytes.slice(),
+    copyProviderStrictEd25519BytesInternalV1(resourceBytes),
   );
   assertDataObjectDescriptorsBeforeSchemaV1(parsedUnknown);
   const envelope =
@@ -493,14 +487,18 @@ async function loadFixedManifestResource(
 }
 
 async function runExactHostKat(
-  methods: BoundStrictEd25519MethodsV1,
+  methods: ProviderStrictEd25519BoundMethodsInternalV1,
   manifest: ProviderStrictEd25519AdversarialManifestV1,
 ): Promise<void> {
   for (const vector of manifest.cases) {
     const publicKey = decodeCanonicalByteStringV1(vector.publicKeyBytes);
     const message = decodeCanonicalByteStringV1(vector.messageBytes);
     const signature = decodeCanonicalByteStringV1(vector.signatureBytes);
-    const encodedR = signature.slice(0, 32);
+    const encodedR = copyProviderStrictEd25519ByteRangeInternalV1(
+      signature,
+      0,
+      32,
+    );
 
     const publicKeyAdmission = await invokeBooleanMethod(
       methods.validatePrimeSubgroupPoint,
@@ -534,17 +532,17 @@ async function runExactHostKat(
   }
 }
 
-function requireOpaqueState(
+function requireOpaqueMethods(
   capability: ProviderStrictEd25519OpaqueCapabilityV1,
-): OpaqueCapabilityStateV1 {
-  if (
-    capability === null ||
-    typeof capability !== "object" ||
-    !opaqueCapabilityStatesV1.has(capability)
-  ) {
+): ProviderStrictEd25519BoundMethodsInternalV1 {
+  try {
+    return getProviderStrictEd25519OpaqueCapabilityMethodsV1(
+      providerStrictEd25519CapabilityOwnerV1,
+      capability,
+    );
+  } catch {
     throw new ProviderStrictEd25519AttestationError();
   }
-  return opaqueCapabilityStatesV1.get(capability)!;
 }
 
 async function attestProviderStrictEd25519CryptoHostInternalV1(
@@ -580,12 +578,14 @@ async function attestProviderStrictEd25519CryptoHostInternalV1(
   const opaqueHandle = Object.freeze(
     {},
   ) as ProviderStrictEd25519OpaqueCapabilityV1;
-  opaqueCapabilityStatesV1.set(opaqueHandle, {
+  registerProviderStrictEd25519OpaqueCapabilityStateV1(
+    providerStrictEd25519CapabilityOwnerV1,
+    opaqueHandle,
     methods,
-    capabilityBytes: canonicalizeJcsSafeIntegerUtf8V1(
+    canonicalizeJcsSafeIntegerUtf8V1(
       PROVIDER_STRICT_ED25519_CRYPTO_CAPABILITY_V1,
     ),
-  });
+  );
   return opaqueHandle;
 }
 
@@ -604,20 +604,27 @@ export async function attestProviderStrictEd25519CryptoHostV1(
 export function getProviderStrictEd25519CryptoCapabilityBytesV1(
   capability: ProviderStrictEd25519OpaqueCapabilityV1,
 ): Uint8Array {
-  return requireOpaqueState(capability).capabilityBytes.slice();
+  try {
+    return copyProviderStrictEd25519CryptoCapabilityBytesV1(
+      providerStrictEd25519CapabilityOwnerV1,
+      capability,
+    );
+  } catch {
+    throw new ProviderStrictEd25519AttestationError();
+  }
 }
 
 export async function validateProviderStrictEd25519PointWithCapabilityV1(
   capability: ProviderStrictEd25519OpaqueCapabilityV1,
   encodedPoint: Uint8Array,
 ): Promise<boolean> {
-  const state = requireOpaqueState(capability);
+  const methods = requireOpaqueMethods(capability);
   if (!(encodedPoint instanceof Uint8Array) || encodedPoint.byteLength !== 32) {
     return false;
   }
   try {
     return await invokeBooleanMethod(
-      state.methods.validatePrimeSubgroupPoint,
+      methods.validatePrimeSubgroupPoint,
       [encodedPoint],
     );
   } catch {
@@ -631,7 +638,7 @@ export async function verifyRawEd25519WithCapabilityV1(
   message: Uint8Array,
   signature: Uint8Array,
 ): Promise<boolean> {
-  const state = requireOpaqueState(capability);
+  const methods = requireOpaqueMethods(capability);
   if (
     !(publicKey instanceof Uint8Array) ||
     !(message instanceof Uint8Array) ||
@@ -642,7 +649,7 @@ export async function verifyRawEd25519WithCapabilityV1(
     return false;
   }
   try {
-    return await invokeBooleanMethod(state.methods.verifyRawEd25519, [
+    return await invokeBooleanMethod(methods.verifyRawEd25519, [
       publicKey,
       message,
       signature,

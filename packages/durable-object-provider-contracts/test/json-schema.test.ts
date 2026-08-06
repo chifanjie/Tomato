@@ -95,6 +95,18 @@ const providerFeasibilityEvidencePointInvalidPath = fileURLToPath(
     import.meta.url,
   ),
 );
+const providerReleaseTargetUniversePointGoldenPath = fileURLToPath(
+  new URL(
+    "../fixtures/v1/golden/provider-release-target-universe-point-v1.json",
+    import.meta.url,
+  ),
+);
+const providerReleaseTargetUniversePointInvalidPath = fileURLToPath(
+  new URL(
+    "../fixtures/v1/invalid/provider-release-target-universe-point-v1.json",
+    import.meta.url,
+  ),
+);
 
 const REGISTRY_SCHEMA_ROOT_KEY_ID = "a".repeat(22);
 const REGISTRY_SCHEMA_PROVIDER_ID = "durable-object-provider:schema";
@@ -928,7 +940,7 @@ describe("provider contract JSON Schema distribution", () => {
       expect(generated, name).toHaveProperty(name);
       expectEveryJsonSchemaObjectClosed(generated[name], name);
     }
-    expect(Object.keys(generated)).toHaveLength(253);
+    expect(Object.keys(generated)).toHaveLength(268);
 
     for (const name of [
       "store-durable-object-provider-runtime-attestation-signature-wrapper",
@@ -963,6 +975,299 @@ describe("provider contract JSON Schema distribution", () => {
       }
     }
   });
+
+  it("publishes the closed Release Target Universe wire and exact 4/285 point fixtures", () => {
+    const generated = generateProviderContractJsonSchemasV1();
+    const universeSchemaNames = [
+      "provider-release-target-universe-signature",
+      "provider-release-coverage-incomplete-reason",
+      "provider-release-target-bucket-coverage",
+      "provider-release-target-universe-bucket",
+      "provider-release-target-coverage-resolution",
+      "provider-release-target-coverage-basis",
+      "provider-release-target-universe-unsigned-claims",
+      "provider-release-target-universe",
+      "provider-release-target-universe-envelope",
+      "provider-release-target-universe-pin",
+      "provider-release-target-universe-signature-wrapper",
+      "provider-release-target-universe-point-invalid-stage",
+      "provider-release-target-universe-point-invalid-reason",
+      "provider-release-target-universe-point-golden-manifest",
+      "provider-release-target-universe-point-invalid-manifest",
+    ] as const;
+
+    for (const name of universeSchemaNames) {
+      expect(generated, name).toHaveProperty(name);
+      expect(generated[name].$id, name).toBe(
+        `urn:understand-code:provider-contract:schema:v1:${name}`,
+      );
+      if (
+        name ===
+        "provider-release-target-universe-point-invalid-manifest"
+      ) {
+        // Patch recipe values intentionally admit any JSON data tree. Their
+        // recursive object branch therefore needs schema-valued
+        // additionalProperties; the fixture/domain objects remain closed.
+        expect(generated[name].additionalProperties, name).toBe(false);
+      } else {
+        expectEveryJsonSchemaObjectClosed(generated[name], name);
+      }
+    }
+
+    const golden = JSON.parse(
+      readFileSync(providerReleaseTargetUniversePointGoldenPath, "utf8"),
+    ) as Record<string, any>;
+    const invalid = JSON.parse(
+      readFileSync(providerReleaseTargetUniversePointInvalidPath, "utf8"),
+    ) as Record<string, any>;
+    const ajv = new Ajv2020({ allErrors: true, strict: true });
+    const validateGolden = ajv.compile(
+      generated["provider-release-target-universe-point-golden-manifest"],
+    );
+    const validateInvalid = ajv.compile(
+      generated["provider-release-target-universe-point-invalid-manifest"],
+    );
+    const validateEnvelope = ajv.compile(
+      generated["provider-release-target-universe-envelope"],
+    );
+    const validateCoverageBasis = ajv.compile(
+      generated["provider-release-target-coverage-basis"],
+    );
+
+    expect(validateGolden(golden), JSON.stringify(validateGolden.errors)).toBe(
+      true,
+    );
+    expect(validateInvalid(invalid), JSON.stringify(validateInvalid.errors)).toBe(
+      true,
+    );
+    expect(
+      validateEnvelope(golden.releaseTargetUniverse),
+      JSON.stringify(validateEnvelope.errors),
+    ).toBe(true);
+    expect(golden.positiveVectors).toHaveLength(4);
+    expect(golden.positiveVectors.map((vector: Record<string, unknown>) => vector.vectorId)).toEqual([
+      "taxonomy-mapping-unresolved",
+      "target-discovery-unresolved",
+      "release-matrix-incomplete",
+      "closed-world-complete",
+    ]);
+    expect(invalid).toMatchObject({
+      inheritedCaseCount: 116,
+      pointCaseCount: 169,
+      caseCount: 285,
+    });
+    expect(invalid.caseIds).toHaveLength(285);
+    expect(invalid.inheritedReplayRecipes).toHaveLength(116);
+    expect(invalid.cases).toHaveLength(285);
+
+    const goldenProperties = generated[
+      "provider-release-target-universe-point-golden-manifest"
+    ].properties as Record<string, Record<string, any>>;
+    expect(goldenProperties.positiveVectors).toMatchObject({
+      type: "array",
+      minItems: 4,
+      maxItems: 4,
+      items: false,
+    });
+    expect(goldenProperties.positiveVectors?.prefixItems).toHaveLength(4);
+    const invalidProperties = generated[
+      "provider-release-target-universe-point-invalid-manifest"
+    ].properties as Record<string, Record<string, any>>;
+    for (const propertyName of ["caseIds", "cases"] as const) {
+      expect(invalidProperties[propertyName]).toMatchObject({
+        type: "array",
+        minItems: 285,
+        maxItems: 285,
+        items: false,
+      });
+      expect(invalidProperties[propertyName]?.prefixItems).toHaveLength(285);
+    }
+    expect(invalidProperties.inheritedReplayRecipes).toMatchObject({
+      type: "array",
+      minItems: 116,
+      maxItems: 116,
+      items: false,
+    });
+    expect(
+      invalidProperties.inheritedReplayRecipes?.prefixItems,
+    ).toHaveLength(116);
+
+    const caseIdSchemas = invalidProperties.caseIds!
+      .prefixItems as Array<Record<string, any>>;
+    const caseSchemas = invalidProperties.cases!
+      .prefixItems as Array<Record<string, any>>;
+    const inheritedReplaySchemas = invalidProperties.inheritedReplayRecipes!
+      .prefixItems as Array<Record<string, any>>;
+    for (let index = 0; index < invalid.caseIds.length; index += 1) {
+      const caseId = invalid.caseIds[index] as string;
+      const caseProperties = caseSchemas[index]?.properties as Record<
+        string,
+        any
+      >;
+      const mutationProperties = caseProperties.mutation.properties as Record<
+        string,
+        any
+      >;
+      expect(caseIdSchemas[index]?.const, `caseIds[${index}]`).toBe(caseId);
+      expect(caseProperties.caseId.const, `cases[${index}].caseId`).toBe(
+        caseId,
+      );
+      expect(
+        mutationProperties.operation.const,
+        `cases[${index}].mutation.operation`,
+      ).toBe(caseId);
+      expect(caseProperties.group.const, `cases[${index}].group`).toBe(
+        index < 116
+          ? "target_discovery_point"
+          : "release_target_universe_point",
+      );
+    }
+    for (let index = 0; index < 116; index += 1) {
+      const replay = invalid.inheritedReplayRecipes[index] as Record<
+        string,
+        string
+      >;
+      const replayProperties = inheritedReplaySchemas[index]
+        ?.properties as Record<string, any>;
+      expect(
+        replayProperties.caseId.const,
+        `inheritedReplayRecipes[${index}].caseId`,
+      ).toBe(replay.caseId);
+      expect(
+        replayProperties.sourceOperation.const,
+        `inheritedReplayRecipes[${index}].sourceOperation`,
+      ).toBe(replay.sourceOperation);
+    }
+
+    const invalidSchema = generated[
+      "provider-release-target-universe-point-invalid-manifest"
+    ] as Record<string, any>;
+    const definitions = invalidSchema.$defs as Record<string, unknown>;
+    const visited = new Set<object>();
+    const references: string[] = [];
+    const nonClosedObjectSchemas: Array<Record<string, any>> = [];
+    let emptySchemaCount = 0;
+    const inspectSchema = (value: unknown): void => {
+      if (value === null || typeof value !== "object" || visited.has(value)) {
+        return;
+      }
+      visited.add(value);
+      if (Array.isArray(value)) {
+        for (const entry of value) inspectSchema(entry);
+        return;
+      }
+      const record = value as Record<string, any>;
+      if (Object.keys(record).length === 0) emptySchemaCount += 1;
+      if (typeof record.$ref === "string") references.push(record.$ref);
+      if (record.type === "object" && record.additionalProperties !== false) {
+        nonClosedObjectSchemas.push(record);
+      }
+      for (const child of Object.values(record)) inspectSchema(child);
+    };
+    inspectSchema(invalidSchema);
+    expect(emptySchemaCount).toBe(0);
+    expect(references.length).toBeGreaterThan(0);
+    for (const reference of references) {
+      expect(reference).toMatch(/^#\/\$defs\/[^/]+$/u);
+      expect(definitions).toHaveProperty(reference.slice("#/$defs/".length));
+    }
+    expect(nonClosedObjectSchemas).toHaveLength(1);
+    expect(nonClosedObjectSchemas[0]).toMatchObject({
+      propertyNames: { type: "string" },
+      additionalProperties: { $ref: expect.stringMatching(/^#\/\$defs\//u) },
+    });
+
+    const structurallyCurrentCoverageBasis = structuredClone(
+      golden.releaseTargetUniverse.payload.coverageBasis,
+    );
+    expect(validateCoverageBasis(structurallyCurrentCoverageBasis)).toBe(true);
+    const structurallyValidNoncurrentCoverageBasis = structuredClone(
+      structurallyCurrentCoverageBasis,
+    );
+    structurallyValidNoncurrentCoverageBasis.limits.profile =
+      "provider_release_coverage_artifact_limits_v2";
+    structurallyValidNoncurrentCoverageBasis.discoveryRulesetVersion =
+      "provider_release_target_discovery_v2";
+    structurallyValidNoncurrentCoverageBasis.requiredDimensions.reverse();
+    structurallyValidNoncurrentCoverageBasis.observationSources.reverse();
+    expect(
+      validateCoverageBasis(structurallyValidNoncurrentCoverageBasis),
+      JSON.stringify(validateCoverageBasis.errors),
+    ).toBe(true);
+    const malformedCoverageBasis = structuredClone(
+      structurallyCurrentCoverageBasis,
+    );
+    malformedCoverageBasis.limits.profile = "coverage_limits_latest";
+    expect(validateCoverageBasis(malformedCoverageBasis)).toBe(false);
+
+    const envelopeWithUnknownPayloadField = structuredClone(
+      golden.releaseTargetUniverse,
+    );
+    envelopeWithUnknownPayloadField.payload.current = true;
+    expect(validateEnvelope(envelopeWithUnknownPayloadField)).toBe(false);
+    const envelopeWithUnknownCoverageField = structuredClone(
+      golden.releaseTargetUniverse,
+    );
+    envelopeWithUnknownCoverageField.payload.coverageBasis.current = true;
+    expect(validateEnvelope(envelopeWithUnknownCoverageField)).toBe(false);
+
+    const reorderedPositiveVectors = structuredClone(golden);
+    reorderedPositiveVectors.positiveVectors.reverse();
+    expect(validateGolden(reorderedPositiveVectors)).toBe(false);
+    const goldenWithUnknownField = structuredClone(golden);
+    goldenWithUnknownField.runtimeAuthority = "strong_ready";
+    expect(validateGolden(goldenWithUnknownField)).toBe(false);
+
+    const missingInvalidCase = structuredClone(invalid);
+    missingInvalidCase.cases.pop();
+    expect(validateInvalid(missingInvalidCase)).toBe(false);
+    const reorderedInvalidCaseIds = structuredClone(invalid);
+    [reorderedInvalidCaseIds.caseIds[0], reorderedInvalidCaseIds.caseIds[1]] = [
+      reorderedInvalidCaseIds.caseIds[1],
+      reorderedInvalidCaseIds.caseIds[0],
+    ];
+    expect(validateInvalid(reorderedInvalidCaseIds)).toBe(false);
+    const mismatchedInheritedSource = structuredClone(invalid);
+    mismatchedInheritedSource.inheritedReplayRecipes[0].sourceOperation =
+      invalid.inheritedReplayRecipes[1].sourceOperation;
+    expect(validateInvalid(mismatchedInheritedSource)).toBe(false);
+
+    expect(
+      generated["provider-release-target-universe-point-invalid-stage"].enum,
+    ).toEqual([
+      "input",
+      "target_discovery_closure",
+      "universe_structure",
+      "universe_distribution_binding",
+      "universe_active_root",
+      "universe_taxonomy_pin",
+      "universe_coverage_pins",
+      "universe_coverage_binding",
+      "universe_coverage_counts",
+      "universe_target_union",
+      "universe_resolution",
+      "universe_buckets",
+      "universe_signature_binding",
+      "universe_signature",
+      "universe_digest",
+      "universe_envelope",
+    ]);
+    expect(
+      generated["provider-release-target-universe-point-invalid-reason"].enum,
+    ).toEqual([
+      "schema_invalid",
+      "source_invalid",
+      "binding_mismatch",
+      "pin_mismatch",
+      "root_mismatch",
+      "count_mismatch",
+      "digest_mismatch",
+      "ordering_invalid",
+      "coverage_mismatch",
+      "signature_invalid",
+      "envelope_mismatch",
+    ]);
+  }, 120_000);
 
   it("publishes strict Runtime point policy/golden/122-case invalid schemas", () => {
     const generated = generateProviderContractJsonSchemasV1();

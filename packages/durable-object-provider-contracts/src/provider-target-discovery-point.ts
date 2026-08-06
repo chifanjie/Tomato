@@ -24,6 +24,19 @@ import {
   type StoreFilenameKeyV1,
 } from "./provider-fixed-locator.js";
 import {
+  captureProviderPointRawExactTopLevelV1,
+  cloneProviderPointRawAdmissionCapsuleV1,
+  createProviderPointRawAdmissionSessionV1,
+  deepFreezeProviderPointDetachedDataTreeV1,
+  walkProviderPointRawJsonIdentityTreeV1,
+} from "./provider-point-raw-admission-internal.js";
+import {
+  createProviderNonThenableFrozenRecordV1,
+  createProviderPointFulfilledPromiseV1,
+  createProviderPointRejectedPromiseV1,
+  hardenProviderPointPromiseV1,
+} from "./provider-point-runtime-internal.js";
+import {
   ProviderSignedDistributionRootBindingV1Schema,
   validateProviderSignedDistributionRootBindingStructureV1,
   type ProviderSignedDistributionRootBindingV1,
@@ -47,6 +60,16 @@ import {
 } from "./provider-registry-trust.js";
 import { sha256InternalV1 } from "./sha256.js";
 import {
+  createProviderTargetDiscoveryPointSnapshotV1,
+  registerProviderTargetDiscoveryPointClosureSnapshotV1,
+  takeProviderTargetDiscoveryPointPreSnapshotV1,
+  type ProviderTargetDiscoveryPointSnapshotV1,
+} from "./provider-target-discovery-point-internal.js";
+import {
+  assertProviderStrictEd25519CryptoCapabilityIdentityV1,
+} from "./strict-ed25519-capability-internal.js";
+import {
+  ProviderStrictEd25519AttestationError,
   verifyRawEd25519WithCapabilityV1,
   type ProviderStrictEd25519OpaqueCapabilityV1,
 } from "./strict-ed25519-conformance.js";
@@ -971,7 +994,7 @@ export class ProviderTargetDiscoveryPointClosureValidationError extends Error {
   }
 }
 
-const POINT_INPUT_KEYS = [
+const POINT_INPUT_KEYS = Object.freeze([
   "activeRoot",
   "activeRootMetadata",
   "distributionRootBinding",
@@ -983,46 +1006,109 @@ const POINT_INPUT_KEYS = [
   "targetDiscoveryFixtureManifest",
   "targetDiscoveryResult",
   "targetDiscoveryRunnerRun",
-] as const;
+] as const);
+const POINT_JSON_INPUT_KEYS = Object.freeze([
+  "activeRoot",
+  "activeRootMetadata",
+  "distributionRootBinding",
+  "fixtureCorpusManifest",
+  "publicSupportTaxonomy",
+  "releaseMatrix",
+  "suiteManifest",
+  "targetDiscoveryFixtureManifest",
+  "targetDiscoveryResult",
+  "targetDiscoveryRunnerRun",
+] as const);
 
-function snapshotPointInputV1(input: unknown): Record<(typeof POINT_INPUT_KEYS)[number], unknown> {
+interface PreparedProviderTargetDiscoveryPointInputV1 {
+  readonly snapshot: ProviderTargetDiscoveryPointSnapshotV1;
+  readonly preSnapshotOptIn: boolean;
+}
+
+function prepareProviderTargetDiscoveryPointFromRawInputV1(
+  input: unknown,
+): PreparedProviderTargetDiscoveryPointInputV1 {
+  const preSnapshot = takeProviderTargetDiscoveryPointPreSnapshotV1(input);
+  if (preSnapshot !== undefined) {
+    return { snapshot: preSnapshot, preSnapshotOptIn: true };
+  }
   try {
-    assertDataObjectDescriptorsBeforeSchemaV1(input);
-    const descriptors = Object.getOwnPropertyDescriptors(input);
-    const keys = Object.keys(descriptors).sort();
-    if (
-      keys.length !== POINT_INPUT_KEYS.length ||
-      keys.some((key, index) => key !== POINT_INPUT_KEYS[index])
-    ) {
-      return fail("input", "schema_invalid");
-    }
-    const captured = {} as Record<(typeof POINT_INPUT_KEYS)[number], unknown>;
-    for (const key of POINT_INPUT_KEYS) {
-      const descriptor = descriptors[key];
-      if (descriptor === undefined || !("value" in descriptor) || descriptor.enumerable !== true) {
-        return fail("input", "schema_invalid");
-      }
-      captured[key] = descriptor.value;
-    }
-    // structuredClone rejects Proxy exotic objects portably. The descriptor
-    // walk above runs first, so ordinary accessors/hidden properties are
-    // rejected without executing attacker-owned getters. Clone a JSON-only
-    // projection to both reject nested Proxy objects and detach every signed
-    // byte from caller mutation before the first async verification yield.
-    const { strictCryptoCapability, ...jsonArtifacts } = captured;
-    assertJsonDataTreeBeforeSchemaV1(jsonArtifacts);
-    structuredClone(input as object);
-    const isolatedArtifacts = structuredClone(jsonArtifacts) as Omit<
-      Record<(typeof POINT_INPUT_KEYS)[number], unknown>,
-      "strictCryptoCapability"
-    >;
-    assertJsonDataTreeBeforeSchemaV1(isolatedArtifacts);
-    return {
-      ...deepFreezeV1(isolatedArtifacts),
+    const admission = createProviderPointRawAdmissionSessionV1(input);
+    const captured = captureProviderPointRawExactTopLevelV1(
+      admission,
+      POINT_INPUT_KEYS,
+    );
+    const strictCryptoCapability = captured.strictCryptoCapability;
+    assertProviderStrictEd25519CryptoCapabilityIdentityV1(
+      ProviderStrictEd25519AttestationError,
       strictCryptoCapability,
-    } as Record<(typeof POINT_INPUT_KEYS)[number], unknown>;
-  } catch (error) {
-    if (error instanceof PointDiagnosticSignal) throw error;
+    );
+    for (
+      let index = 0;
+      index < POINT_JSON_INPUT_KEYS.length;
+      index += 1
+    ) {
+      const key = POINT_JSON_INPUT_KEYS[index]!;
+      walkProviderPointRawJsonIdentityTreeV1(admission, captured[key]);
+    }
+
+    const detachedInput = cloneProviderPointRawAdmissionCapsuleV1(admission);
+    const detachedAdmission = createProviderPointRawAdmissionSessionV1(
+      detachedInput,
+    );
+    const detached = captureProviderPointRawExactTopLevelV1(
+      detachedAdmission,
+      POINT_INPUT_KEYS,
+    );
+    for (
+      let index = 0;
+      index < POINT_JSON_INPUT_KEYS.length;
+      index += 1
+    ) {
+      const key = POINT_JSON_INPUT_KEYS[index]!;
+      walkProviderPointRawJsonIdentityTreeV1(
+        detachedAdmission,
+        detached[key],
+      );
+    }
+
+    const snapshot = createProviderTargetDiscoveryPointSnapshotV1({
+      activeRoot: deepFreezeProviderPointDetachedDataTreeV1(
+        detached.activeRoot,
+      ) as ProviderRegistryRootPublicKeyV1,
+      activeRootMetadata: deepFreezeProviderPointDetachedDataTreeV1(
+        detached.activeRootMetadata,
+      ) as ProviderRegistryRootMetadataPinV1,
+      distributionRootBinding: deepFreezeProviderPointDetachedDataTreeV1(
+        detached.distributionRootBinding,
+      ) as ProviderSignedDistributionRootBindingV1,
+      fixtureCorpusManifest: deepFreezeProviderPointDetachedDataTreeV1(
+        detached.fixtureCorpusManifest,
+      ) as ProviderRealFilesystemFixtureCorpusManifestEnvelopeV1,
+      publicSupportTaxonomy: deepFreezeProviderPointDetachedDataTreeV1(
+        detached.publicSupportTaxonomy,
+      ) as ProviderPublicSupportTaxonomyEnvelopeV1,
+      releaseMatrix: deepFreezeProviderPointDetachedDataTreeV1(
+        detached.releaseMatrix,
+      ) as ProviderReleaseMatrixEnvelopeV1,
+      strictCryptoCapability:
+        strictCryptoCapability as ProviderStrictEd25519OpaqueCapabilityV1,
+      suiteManifest: deepFreezeProviderPointDetachedDataTreeV1(
+        detached.suiteManifest,
+      ) as ProviderRealFilesystemSuiteManifestEnvelopeV1,
+      targetDiscoveryFixtureManifest:
+        deepFreezeProviderPointDetachedDataTreeV1(
+          detached.targetDiscoveryFixtureManifest,
+        ) as ProviderTargetDiscoveryFixtureManifestEnvelopeV1,
+      targetDiscoveryResult: deepFreezeProviderPointDetachedDataTreeV1(
+        detached.targetDiscoveryResult,
+      ) as ProviderTargetDiscoveryResultEnvelopeV1,
+      targetDiscoveryRunnerRun: deepFreezeProviderPointDetachedDataTreeV1(
+        detached.targetDiscoveryRunnerRun,
+      ) as ProviderTargetDiscoveryRunnerRunEnvelopeV1,
+    });
+    return { snapshot, preSnapshotOptIn: false };
+  } catch {
     return fail("input", "schema_invalid");
   }
 }
@@ -1259,8 +1345,10 @@ function deepFreezeV1<T>(value: T): T {
   return value;
 }
 
-async function validatePointClosureInternalV1(input: unknown): Promise<ProviderTargetDiscoveryPointClosureValidationV1> {
-  const snapshot = snapshotPointInputV1(input);
+async function validatePointClosureInternalV1(
+  snapshot: ProviderTargetDiscoveryPointSnapshotV1,
+  preSnapshotOptIn: boolean,
+): Promise<ProviderTargetDiscoveryPointClosureValidationV1> {
   let binding: ProviderSignedDistributionRootBindingV1;
   let activeRootMetadata: ProviderRegistryRootMetadataPinV1;
   let activeRoot: ProviderRegistryRootPublicKeyV1;
@@ -1614,7 +1702,7 @@ async function validatePointClosureInternalV1(input: unknown): Promise<ProviderT
   });
 
   try {
-    return deepFreezeV1({
+    const closureFields = deepFreezeV1({
       authority: "none_target_discovery_point_structure_only" as const,
       distributionRootBinding: binding,
       activeRootMetadata,
@@ -1637,26 +1725,87 @@ async function validatePointClosureInternalV1(input: unknown): Promise<ProviderT
       targetCount: result.targetCount,
       unresolvedObservationCount: result.unresolvedObservationCount,
     });
+    const closure = createProviderNonThenableFrozenRecordV1(closureFields);
+    if (preSnapshotOptIn) {
+      registerProviderTargetDiscoveryPointClosureSnapshotV1(
+        closure,
+        snapshot,
+      );
+    }
+    return closure;
   } catch {
     return fail("locator", "envelope_mismatch");
   }
 }
 
-export async function diagnoseProviderTargetDiscoveryPointClosureV1(
-  input: unknown,
-): Promise<ProviderTargetDiscoveryPointClosureDiagnosticResultV1> {
-  try {
-    return { ok: true, value: await validatePointClosureInternalV1(input) };
-  } catch (error) {
-    if (error instanceof PointDiagnosticSignal) return { ok: false, stage: error.stage, reason: error.reason };
-    return { ok: false, stage: "input", reason: "schema_invalid" };
-  }
+function createPointDiagnosticFailureV1(
+  stage: ProviderTargetDiscoveryPointInvalidStageV1,
+  reason: ProviderTargetDiscoveryPointInvalidReasonV1,
+): PointDiagnosticFailureV1 {
+  return createProviderNonThenableFrozenRecordV1({
+    ok: false as const,
+    stage,
+    reason,
+  });
 }
 
-export async function validateProviderTargetDiscoveryPointClosureV1(
+function createPointDiagnosticFailureFromErrorV1(
+  error: unknown,
+): PointDiagnosticFailureV1 {
+  if (error instanceof PointDiagnosticSignal) {
+    return createPointDiagnosticFailureV1(error.stage, error.reason);
+  }
+  return createPointDiagnosticFailureV1("input", "schema_invalid");
+}
+
+export function diagnoseProviderTargetDiscoveryPointClosureV1(
+  input: unknown,
+): Promise<ProviderTargetDiscoveryPointClosureDiagnosticResultV1> {
+  let prepared: PreparedProviderTargetDiscoveryPointInputV1;
+  try {
+    prepared = prepareProviderTargetDiscoveryPointFromRawInputV1(input);
+  } catch {
+    return createProviderPointFulfilledPromiseV1(
+      createPointDiagnosticFailureV1("input", "schema_invalid"),
+    );
+  }
+  const corePromise = hardenProviderPointPromiseV1(
+    validatePointClosureInternalV1(
+      prepared.snapshot,
+      prepared.preSnapshotOptIn,
+    ),
+  );
+  return corePromise.then(
+    (value): PointDiagnosticSuccessV1 =>
+      createProviderNonThenableFrozenRecordV1({
+        ok: true as const,
+        value,
+      }),
+    createPointDiagnosticFailureFromErrorV1,
+  );
+}
+
+export function validateProviderTargetDiscoveryPointClosureV1(
   input: ValidateProviderTargetDiscoveryPointClosureV1Input,
 ): Promise<ProviderTargetDiscoveryPointClosureValidationV1> {
-  const diagnostic = await diagnoseProviderTargetDiscoveryPointClosureV1(input);
-  if (!diagnostic.ok) throw new ProviderTargetDiscoveryPointClosureValidationError();
-  return diagnostic.value;
+  let prepared: PreparedProviderTargetDiscoveryPointInputV1;
+  try {
+    prepared = prepareProviderTargetDiscoveryPointFromRawInputV1(input);
+  } catch {
+    return createProviderPointRejectedPromiseV1(
+      new ProviderTargetDiscoveryPointClosureValidationError(),
+    );
+  }
+  const corePromise = hardenProviderPointPromiseV1(
+    validatePointClosureInternalV1(
+      prepared.snapshot,
+      prepared.preSnapshotOptIn,
+    ),
+  );
+  return corePromise.then(
+    (value) => value,
+    () => {
+      throw new ProviderTargetDiscoveryPointClosureValidationError();
+    },
+  );
 }

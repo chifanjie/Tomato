@@ -70,7 +70,7 @@ const bareNodeBuiltinSpecifiers = new Set(
   builtinModules.map((specifier) => specifier.replace(/^node:/u, "")),
 );
 
-function findBrowserNodeRuntimeDependency(source) {
+function findBrowserRuntimeDependency(source) {
   if (source.includes("__vite-browser-external")) {
     return "Vite browser-external shim";
   }
@@ -96,6 +96,13 @@ function findBrowserNodeRuntimeDependency(source) {
     if (bareNodeBuiltinSpecifiers.has(specifier)) {
       return `bare Node builtin import ${specifier}`;
     }
+    if (
+      !specifier.startsWith("./") &&
+      !specifier.startsWith("../") &&
+      !specifier.startsWith("/")
+    ) {
+      return `bare external runtime import ${specifier}`;
+    }
   }
   return undefined;
 }
@@ -105,13 +112,14 @@ for (const regressionSource of [
   'import shim from "./__vite-browser-external-latent.js";',
   'export { readFile } from "node:fs";',
   'export const fixtureUrl = import.meta.resolve("./fixture.json");',
+  'import { z } from "zod";',
 ]) {
-  if (findBrowserNodeRuntimeDependency(regressionSource) === undefined) {
-    throw new Error("Browser Node-runtime detector regression");
+  if (findBrowserRuntimeDependency(regressionSource) === undefined) {
+    throw new Error("Browser runtime-dependency detector regression");
   }
 }
 if (
-  findBrowserNodeRuntimeDependency(
+  findBrowserRuntimeDependency(
     'export const loadHelper = () => import("./crypto-helper.js");',
   ) !== undefined
 ) {
@@ -609,9 +617,9 @@ try {
   const sourceSchemaRelativePaths = await listRelativeSchemaPaths(
     join(packageRoot, "schemas", "v1"),
   );
-  if (sourceSchemaRelativePaths.length !== 253) {
+  if (sourceSchemaRelativePaths.length !== 268) {
     throw new Error(
-      `Source provider contracts must contain exactly 253 JSON Schemas, found ${sourceSchemaRelativePaths.length}`,
+      `Source provider contracts must contain exactly 268 JSON Schemas, found ${sourceSchemaRelativePaths.length}`,
     );
   }
   await assertExactProviderDirectory(
@@ -837,9 +845,9 @@ try {
   const explicitSpecifiers = Object.keys(manifest.exports)
     .filter((key) => !key.includes("*"))
     .map(packageSpecifier);
-  if (explicitSpecifiers.length !== 19) {
+  if (explicitSpecifiers.length !== 21) {
     throw new Error(
-      `Packed provider contracts must expose exactly 19 public modules, found ${explicitSpecifiers.length}`,
+      `Packed provider contracts must expose exactly 21 public modules, found ${explicitSpecifiers.length}`,
     );
   }
   const installedStrictManifestPath = await realpath(
@@ -1009,6 +1017,24 @@ try {
       "provider-feasibility-evidence-point-v1.json",
     ),
   );
+  const installedProviderReleaseTargetUniversePointGoldenPath = await realpath(
+    join(
+      installedRoot,
+      "fixtures",
+      "v1",
+      "golden",
+      "provider-release-target-universe-point-v1.json",
+    ),
+  );
+  const installedProviderReleaseTargetUniversePointInvalidPath = await realpath(
+    join(
+      installedRoot,
+      "fixtures",
+      "v1",
+      "invalid",
+      "provider-release-target-universe-point-v1.json",
+    ),
+  );
 
   const runtimeProbe = join(consumerRoot, "runtime-probe.mjs");
   await writeFile(
@@ -1036,6 +1062,8 @@ try {
       'const providerRuntimeAttestationPointFixtures = await import("@understand-code/durable-object-provider-contracts/provider-runtime-attestation-point-fixtures");',
       'const providerFeasibilityEvidencePoint = await import("@understand-code/durable-object-provider-contracts/provider-feasibility-evidence-point");',
       'const providerFeasibilityEvidencePointFixtures = await import("@understand-code/durable-object-provider-contracts/provider-feasibility-evidence-point-fixtures");',
+      'const providerReleaseTargetUniversePoint = await import("@understand-code/durable-object-provider-contracts/provider-release-target-universe-point");',
+      'const providerReleaseTargetUniversePointFixtures = await import("@understand-code/durable-object-provider-contracts/provider-release-target-universe-point-fixtures");',
       'const unavailable = providerError.createProviderUnavailableToolErrorV1("unavailable");',
       'if (providerError.ProviderUnavailableToolErrorV1Schema.parse(unavailable).details.reason !== "unavailable") throw new Error("provider error export failed");',
       'const schemaUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/schemas/v1/canonical-byte-string.schema.json"));',
@@ -1062,6 +1090,8 @@ try {
       'const providerRuntimeAttestationPointInvalidUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/invalid/provider-runtime-attestation-point-v1.json"));',
       'const providerFeasibilityEvidencePointGoldenUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/golden/provider-feasibility-evidence-point-v1.json"));',
       'const providerFeasibilityEvidencePointInvalidUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/invalid/provider-feasibility-evidence-point-v1.json"));',
+      'const providerReleaseTargetUniversePointGoldenUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/golden/provider-release-target-universe-point-v1.json"));',
+      'const providerReleaseTargetUniversePointInvalidUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/invalid/provider-release-target-universe-point-v1.json"));',
       `if (await realpath(fileURLToPath(strictEd25519ManifestUrl)) !== ${JSON.stringify(installedStrictManifestPath)}) throw new Error("strict manifest resolved outside the exact installed path");`,
       `if (await realpath(fileURLToPath(bootstrapTrustBundleUrl)) !== ${JSON.stringify(installedBootstrapBundlePath)}) throw new Error("bootstrap Bundle resolved outside the exact installed path");`,
       `if (await realpath(fileURLToPath(bootstrapTrustGoldenUrl)) !== ${JSON.stringify(installedBootstrapGoldenPath)}) throw new Error("bootstrap golden resolved outside the exact installed path");`,
@@ -1081,6 +1111,8 @@ try {
       `if (await realpath(fileURLToPath(providerRuntimeAttestationPointInvalidUrl)) !== ${JSON.stringify(installedProviderRuntimeAttestationPointInvalidPath)}) throw new Error("provider runtime attestation point invalid corpus resolved outside the exact installed path");`,
       `if (await realpath(fileURLToPath(providerFeasibilityEvidencePointGoldenUrl)) !== ${JSON.stringify(installedProviderFeasibilityEvidencePointGoldenPath)}) throw new Error("provider feasibility evidence point golden resolved outside the exact installed path");`,
       `if (await realpath(fileURLToPath(providerFeasibilityEvidencePointInvalidUrl)) !== ${JSON.stringify(installedProviderFeasibilityEvidencePointInvalidPath)}) throw new Error("provider feasibility evidence point invalid corpus resolved outside the exact installed path");`,
+      `if (await realpath(fileURLToPath(providerReleaseTargetUniversePointGoldenUrl)) !== ${JSON.stringify(installedProviderReleaseTargetUniversePointGoldenPath)}) throw new Error("provider release target Universe point golden resolved outside the exact installed path");`,
+      `if (await realpath(fileURLToPath(providerReleaseTargetUniversePointInvalidUrl)) !== ${JSON.stringify(installedProviderReleaseTargetUniversePointInvalidPath)}) throw new Error("provider release target Universe point invalid corpus resolved outside the exact installed path");`,
       'const schema = JSON.parse(await readFile(schemaUrl, "utf8"));',
       'const providerErrorSchema = JSON.parse(await readFile(providerErrorSchemaUrl, "utf8"));',
       'const golden = JSON.parse(await readFile(goldenUrl, "utf8"));',
@@ -1105,6 +1137,8 @@ try {
       'const providerRuntimeAttestationPointInvalidBytes = new Uint8Array(await readFile(providerRuntimeAttestationPointInvalidUrl));',
       'const providerFeasibilityEvidencePointGoldenBytes = new Uint8Array(await readFile(providerFeasibilityEvidencePointGoldenUrl));',
       'const providerFeasibilityEvidencePointInvalidBytes = new Uint8Array(await readFile(providerFeasibilityEvidencePointInvalidUrl));',
+      'const providerReleaseTargetUniversePointGoldenBytes = new Uint8Array(await readFile(providerReleaseTargetUniversePointGoldenUrl));',
+      'const providerReleaseTargetUniversePointInvalidBytes = new Uint8Array(await readFile(providerReleaseTargetUniversePointInvalidUrl));',
       'const strictEd25519Manifest = JSON.parse(new TextDecoder().decode(strictEd25519ManifestBytes));',
       'if (schema.$id !== "urn:understand-code:provider-contract:schema:v1:canonical-byte-string") throw new Error("packed schema missing");',
       'if (providerErrorSchema.$id !== "urn:understand-code:provider-contract:schema:v1:provider-unavailable-tool-error") throw new Error("packed provider error schema missing");',
@@ -1117,7 +1151,9 @@ try {
       'const strictConformance = await import("@understand-code/durable-object-provider-contracts/strict-ed25519-conformance");',
       'let pointCalls = 0;',
       'let verifyCalls = 0;',
-      'const strictHost = { verificationProfile: strictEd25519.STRICT_ED25519_VERIFICATION_PROFILE_V1, validatePrimeSubgroupPoint(point) { pointCalls += 1; return strictEd25519.validatePrimeSubgroupPoint(point); }, verifyRawEd25519(publicKey, message, signature) { verifyCalls += 1; return strictEd25519.verifyRawEd25519(publicKey, message, signature); } };',
+      'let nextSignatureMutation;',
+      'const strictHost = { verificationProfile: strictEd25519.STRICT_ED25519_VERIFICATION_PROFILE_V1, validatePrimeSubgroupPoint(point) { pointCalls += 1; return strictEd25519.validatePrimeSubgroupPoint(point); }, verifyRawEd25519(publicKey, message, signature) { verifyCalls += 1; const mutation = nextSignatureMutation; nextSignatureMutation = undefined; mutation?.(); return strictEd25519.verifyRawEd25519(publicKey, message, signature); } };',
+      'const universeExecutionCounter = Object.freeze({ pointAdmissionCount() { return pointCalls; }, signatureVerificationCount() { return verifyCalls; }, mutateDuringNextSignature(mutation) { if (nextSignatureMutation !== undefined) throw new Error("a packed Universe signature-time mutation is already registered"); nextSignatureMutation = mutation; } });',
       'const resourceHost = { readFixedSignedPackageResource(path, maxBytes) { if (path !== strictConformance.PROVIDER_STRICT_ED25519_MANIFEST_RESOURCE_PATH_V1 || strictEd25519ManifestBytes.byteLength > maxBytes) throw new Error("invalid resource request"); return strictEd25519ManifestBytes; } };',
       'const strictCapability = await strictConformance.attestProviderStrictEd25519CryptoHostV1({ host: strictHost, resourceHost });',
       'if (strictConformance.getProviderStrictEd25519CryptoCapabilityBytesV1(strictCapability).byteLength === 0) throw new Error("packed strict Ed25519 attestation failed");',
@@ -1274,9 +1310,50 @@ try {
       '  feasibilityEvidencePointInvalidExecutedCaseCount += 1;',
       '}',
       'if (feasibilityEvidencePointInvalidExecutedCaseCount !== 227) throw new Error(`packed feasibility evidence point replay count drift: ${feasibilityEvidencePointInvalidExecutedCaseCount}/227`);',
+      'if (root.validateProviderReleaseTargetUniversePointClosureV1 !== providerReleaseTargetUniversePoint.validateProviderReleaseTargetUniversePointClosureV1 || root.diagnoseProviderReleaseTargetUniversePointClosureV1 !== providerReleaseTargetUniversePoint.diagnoseProviderReleaseTargetUniversePointClosureV1 || root.buildProviderReleaseTargetUniverseRelativePathV1 !== providerReleaseTargetUniversePoint.buildProviderReleaseTargetUniverseRelativePathV1 || root.ProviderReleaseTargetUniversePointClosureValidationError !== providerReleaseTargetUniversePoint.ProviderReleaseTargetUniversePointClosureValidationError || root.verifyProviderReleaseTargetUniversePointGoldenResourceV1 !== providerReleaseTargetUniversePointFixtures.verifyProviderReleaseTargetUniversePointGoldenResourceV1 || root.verifyProviderReleaseTargetUniversePointPositiveVectorsV1 !== providerReleaseTargetUniversePointFixtures.verifyProviderReleaseTargetUniversePointPositiveVectorsV1 || root.verifyProviderReleaseTargetUniversePointInvalidResourceV1 !== providerReleaseTargetUniversePointFixtures.verifyProviderReleaseTargetUniversePointInvalidResourceV1 || root.materializeProviderReleaseTargetUniversePointInvalidCaseWitnessV1 !== providerReleaseTargetUniversePointFixtures.materializeProviderReleaseTargetUniversePointInvalidCaseWitnessV1 || root.executeProviderReleaseTargetUniversePointInvalidCaseV1 !== providerReleaseTargetUniversePointFixtures.executeProviderReleaseTargetUniversePointInvalidCaseV1 || root.ProviderReleaseTargetUniversePointFixtureError !== providerReleaseTargetUniversePointFixtures.ProviderReleaseTargetUniversePointFixtureError || root.PROVIDER_RELEASE_TARGET_UNIVERSE_POINT_INVALID_CASE_IDS_V1 !== providerReleaseTargetUniversePointFixtures.PROVIDER_RELEASE_TARGET_UNIVERSE_POINT_INVALID_CASE_IDS_V1) throw new Error("root/provider-release-target-universe-point exports diverged");',
+      'if (providerReleaseTargetUniversePointGoldenBytes.byteLength !== providerReleaseTargetUniversePointFixtures.PROVIDER_RELEASE_TARGET_UNIVERSE_POINT_GOLDEN_RESOURCE_BYTE_LENGTH_V1 || createHash("sha256").update(providerReleaseTargetUniversePointGoldenBytes).digest("hex") !== providerReleaseTargetUniversePointFixtures.PROVIDER_RELEASE_TARGET_UNIVERSE_POINT_GOLDEN_RESOURCE_SHA256_HEX_V1) throw new Error("packed release target Universe golden raw anchor failed");',
+      'if (providerReleaseTargetUniversePointInvalidBytes.byteLength !== providerReleaseTargetUniversePointFixtures.PROVIDER_RELEASE_TARGET_UNIVERSE_POINT_INVALID_RESOURCE_BYTE_LENGTH_V1 || createHash("sha256").update(providerReleaseTargetUniversePointInvalidBytes).digest("hex") !== providerReleaseTargetUniversePointFixtures.PROVIDER_RELEASE_TARGET_UNIVERSE_POINT_INVALID_RESOURCE_SHA256_HEX_V1) throw new Error("packed release target Universe invalid raw anchor failed");',
+      'pointCalls = 0;',
+      'verifyCalls = 0;',
+      'nextSignatureMutation = undefined;',
+      'const releaseTargetUniverseGoldenValidation = await providerReleaseTargetUniversePointFixtures.verifyProviderReleaseTargetUniversePointGoldenResourceV1(providerReleaseTargetUniversePointGoldenBytes, strictCapability);',
+      'if (releaseTargetUniverseGoldenValidation.authority !== "none_release_target_universe_structure_only" || releaseTargetUniverseGoldenValidation.pointClosure.authority !== "none_release_target_universe_structure_only" || releaseTargetUniverseGoldenValidation.pointClosure.targetDiscoveryPointClosure.authority !== "none_target_discovery_point_structure_only" || releaseTargetUniverseGoldenValidation.manifest.positiveVectors.length !== 4 || releaseTargetUniverseGoldenValidation.manifest.expected.pointAdmissionCount !== 1 || releaseTargetUniverseGoldenValidation.manifest.expected.signatureVerificationCount !== 7 || pointCalls !== 1 || verifyCalls !== 7 || nextSignatureMutation !== undefined) throw new Error(`packed release target Universe golden/crypto closure failed: ${pointCalls}/${verifyCalls}`);',
+      'const releaseTargetUniversePath = providerReleaseTargetUniversePoint.buildProviderReleaseTargetUniverseRelativePathV1(releaseTargetUniverseGoldenValidation.manifest.releaseTargetUniverse);',
+      'if (releaseTargetUniversePath !== releaseTargetUniverseGoldenValidation.pointClosure.relativePath || releaseTargetUniversePath !== releaseTargetUniverseGoldenValidation.manifest.expected.snapshotProjection.universeRelativePath) throw new Error("packed release target Universe Locator-only path failed");',
+      'pointCalls = 0;',
+      'verifyCalls = 0;',
+      'const releaseTargetUniversePositiveVectorClosures = await providerReleaseTargetUniversePointFixtures.verifyProviderReleaseTargetUniversePointPositiveVectorsV1(releaseTargetUniverseGoldenValidation.manifest, strictCapability);',
+      'if (releaseTargetUniversePositiveVectorClosures.length !== 4 || JSON.stringify(releaseTargetUniverseGoldenValidation.manifest.positiveVectors.map(({ vectorId }) => vectorId)) !== JSON.stringify(["taxonomy-mapping-unresolved", "target-discovery-unresolved", "release-matrix-incomplete", "closed-world-complete"]) || releaseTargetUniversePositiveVectorClosures.some((closure) => closure.authority !== "none_release_target_universe_structure_only") || pointCalls !== 4 || verifyCalls !== 28 || nextSignatureMutation !== undefined) throw new Error(`packed release target Universe positive-vector closure failed: ${pointCalls}/${verifyCalls}`);',
+      'const releaseTargetUniverseInvalid = providerReleaseTargetUniversePointFixtures.verifyProviderReleaseTargetUniversePointInvalidResourceV1(providerReleaseTargetUniversePointInvalidBytes);',
+      'if (releaseTargetUniverseInvalid.fixtureAuthority !== "none_rejection_only" || releaseTargetUniverseInvalid.inheritedCaseCount !== 116 || releaseTargetUniverseInvalid.pointCaseCount !== 169 || releaseTargetUniverseInvalid.caseCount !== 285 || releaseTargetUniverseInvalid.caseIds.length !== 285 || releaseTargetUniverseInvalid.cases.length !== 285 || releaseTargetUniverseInvalid.inheritedReplayRecipes.length !== 116 || new Set(releaseTargetUniverseInvalid.caseIds).size !== 285 || JSON.stringify(releaseTargetUniverseInvalid.caseIds) !== JSON.stringify(providerReleaseTargetUniversePointFixtures.PROVIDER_RELEASE_TARGET_UNIVERSE_POINT_INVALID_CASE_IDS_V1)) throw new Error("packed release target Universe invalid corpus failed");',
+      'let releaseTargetUniverseInvalidExecutedCaseCount = 0;',
+      'for (const [index, invalidCase] of releaseTargetUniverseInvalid.cases.entries()) {',
+      '  if (invalidCase.caseId !== releaseTargetUniverseInvalid.caseIds[index] || invalidCase.mutation.operation !== invalidCase.caseId) throw new Error(`packed release target Universe invalid operation/order drift: ${invalidCase.caseId}`);',
+      '  const firstWitness = providerReleaseTargetUniversePointFixtures.materializeProviderReleaseTargetUniversePointInvalidCaseWitnessV1(releaseTargetUniverseGoldenValidation.manifest, releaseTargetUniverseInvalid, invalidCase);',
+      '  const secondWitness = providerReleaseTargetUniversePointFixtures.materializeProviderReleaseTargetUniversePointInvalidCaseWitnessV1(releaseTargetUniverseGoldenValidation.manifest, releaseTargetUniverseInvalid, invalidCase);',
+      '  if (firstWitness === secondWitness) throw new Error(`packed release target Universe witness was reused: ${invalidCase.caseId}`);',
+      '  const firstWitnessDigest = `sha256:${createHash("sha256").update(root.canonicalizeJcsSafeIntegerUtf8V1([providerReleaseTargetUniversePointFixtures.PROVIDER_RELEASE_TARGET_UNIVERSE_POINT_INVALID_MATERIALIZED_REQUEST_DOMAIN_V1, firstWitness])).digest("hex")}`;',
+      '  const secondWitnessDigest = `sha256:${createHash("sha256").update(root.canonicalizeJcsSafeIntegerUtf8V1([providerReleaseTargetUniversePointFixtures.PROVIDER_RELEASE_TARGET_UNIVERSE_POINT_INVALID_MATERIALIZED_REQUEST_DOMAIN_V1, secondWitness])).digest("hex")}`;',
+      '  if (firstWitnessDigest !== invalidCase.expected.materializedRequestSemanticDigest || secondWitnessDigest !== firstWitnessDigest) throw new Error(`packed release target Universe materialized request drift: ${invalidCase.caseId}`);',
+      '  pointCalls = 0;',
+      '  verifyCalls = 0;',
+      '  nextSignatureMutation = undefined;',
+      '  const outcome = await providerReleaseTargetUniversePointFixtures.executeProviderReleaseTargetUniversePointInvalidCaseV1(releaseTargetUniverseGoldenValidation.manifest, releaseTargetUniverseInvalid, invalidCase, strictCapability, universeExecutionCounter);',
+      '  if (nextSignatureMutation !== undefined || pointCalls !== invalidCase.expected.pointAdmissionCount || verifyCalls !== invalidCase.expected.signatureVerificationCount || outcome.pointAdmissionCount !== invalidCase.expected.pointAdmissionCount || outcome.signatureVerificationCount !== invalidCase.expected.signatureVerificationCount || Object.getPrototypeOf(outcome) !== null || !Object.isFrozen(outcome)) throw new Error(`packed release target Universe execution/count drift: ${invalidCase.caseId}/${pointCalls}/${verifyCalls}`);',
+      '  if (invalidCase.expected.boundary === "snapshot_stability") {',
+      '    if (outcome.kind !== "snapshot_acceptance" || outcome.boundary !== "snapshot_stability" || outcome.authority !== invalidCase.expected.authority || JSON.stringify(outcome.snapshotProjection) !== JSON.stringify(invalidCase.expected.snapshotProjection)) throw new Error(`packed release target Universe snapshot replay drift: ${invalidCase.caseId}/${JSON.stringify(outcome)}`);',
+      '  } else if (invalidCase.expected.boundary === "locator_builder") {',
+      '    if (outcome.kind !== "rejection" || outcome.boundary !== "locator_builder" || outcome.stage !== invalidCase.expected.stage || outcome.reason !== invalidCase.expected.reason) throw new Error(`packed release target Universe locator replay drift: ${invalidCase.caseId}/${JSON.stringify(outcome)}`);',
+      '  } else {',
+      '    if (outcome.kind !== "rejection" || outcome.boundary !== "internal_diagnostic" || outcome.stage !== invalidCase.expected.stage || outcome.reason !== invalidCase.expected.reason || outcome.publicFailure?.errorName !== invalidCase.expected.publicFailure.errorName || outcome.publicFailure?.code !== invalidCase.expected.publicFailure.code || outcome.publicFailure?.reason !== invalidCase.expected.publicFailure.reason) throw new Error(`packed release target Universe diagnostic replay drift: ${invalidCase.caseId}/${JSON.stringify(outcome)}`);',
+      '  }',
+      '  releaseTargetUniverseInvalidExecutedCaseCount += 1;',
+      '}',
+      'if (releaseTargetUniverseInvalidExecutedCaseCount !== 285) throw new Error(`packed release target Universe replay count drift: ${releaseTargetUniverseInvalidExecutedCaseCount}/285`);',
+      'for (const internalExportName of ["createProviderPointRawAdmissionSessionV1", "createProviderPointPromiseV1", "createProviderTargetDiscoveryPointSnapshotV1", "assertProviderStrictEd25519CryptoCapabilityIdentityV1"]) { if (Object.hasOwn(root, internalExportName)) throw new Error(`private internal helper exported from root: ${internalExportName}`); }',
       'if (providerRegistry.StoreFilenameKeyV1Schema.parse("id-c4") !== "id-c4" || providerRegistry.decodeShortStoreFilenameKeyV1("id-c4") !== "a") throw new Error("packed lowercase base32hex filename codec failed");',
       'try { await import("@understand-code/durable-object-provider-contracts/domain-crypto"); throw new Error("private crypto helper exported"); } catch (error) { if (error?.message === "private crypto helper exported") throw error; }',
-      'for (const privateSpecifier of ["@understand-code/durable-object-provider-contracts/provider-registry-records", "@understand-code/durable-object-provider-contracts/provider-registry-manifest-history"]) { try { await import(privateSpecifier); throw new Error(`private deep import exported: ${privateSpecifier}`); } catch (error) { if (error?.message?.startsWith("private deep import exported:")) throw error; } }',
+      'for (const privateSpecifier of ["@understand-code/durable-object-provider-contracts/provider-registry-records", "@understand-code/durable-object-provider-contracts/provider-registry-manifest-history", "@understand-code/durable-object-provider-contracts/provider-point-raw-admission-internal", "@understand-code/durable-object-provider-contracts/provider-point-runtime-internal", "@understand-code/durable-object-provider-contracts/provider-target-discovery-point-internal", "@understand-code/durable-object-provider-contracts/strict-ed25519-capability-internal"]) { try { await import(privateSpecifier); throw new Error(`private deep import exported: ${privateSpecifier}`); } catch (error) { if (error?.message?.startsWith("private deep import exported:")) throw error; } }',
     ].join("\n"),
     "utf8",
   );
@@ -1310,6 +1387,10 @@ try {
       'import type { ProviderFeasibilityEvidencePointClosureValidationV1, ProviderFeasibilityEvidenceRelativePathV1, ValidateProviderFeasibilityEvidencePointClosureV1Input } from "@understand-code/durable-object-provider-contracts/provider-feasibility-evidence-point";',
       'import { ProviderFeasibilityEvidencePointGoldenManifestV1Schema, verifyProviderFeasibilityEvidencePointGoldenResourceV1 } from "@understand-code/durable-object-provider-contracts/provider-feasibility-evidence-point-fixtures";',
       'import type { ProviderFeasibilityEvidencePointGoldenManifestV1, ProviderFeasibilityEvidencePointInvalidCaseIdV1 } from "@understand-code/durable-object-provider-contracts/provider-feasibility-evidence-point-fixtures";',
+      'import { buildProviderReleaseTargetUniverseRelativePathV1, validateProviderReleaseTargetUniversePointClosureV1 } from "@understand-code/durable-object-provider-contracts/provider-release-target-universe-point";',
+      'import type { ProviderReleaseTargetUniversePointClosureValidationV1, ProviderReleaseTargetUniverseRelativePathV1, ValidateProviderReleaseTargetUniversePointClosureV1Input } from "@understand-code/durable-object-provider-contracts/provider-release-target-universe-point";',
+      'import { ProviderReleaseTargetUniversePointGoldenManifestV1Schema, verifyProviderReleaseTargetUniversePointGoldenResourceV1 } from "@understand-code/durable-object-provider-contracts/provider-release-target-universe-point-fixtures";',
+      'import type { ProviderReleaseTargetUniversePointExecutionCounterV1, ProviderReleaseTargetUniversePointGoldenManifestV1, ProviderReleaseTargetUniversePointInvalidCaseIdV1 } from "@understand-code/durable-object-provider-contracts/provider-release-target-universe-point-fixtures";',
       'const slug = DurableObjectIdentityProviderSlugV1Schema.parse("native-fs");',
       'const id = createDurableObjectIdentityProviderIdV1(slug);',
       'DurableObjectIdentityProviderIdV1Schema.parse(id);',
@@ -1344,6 +1425,10 @@ try {
       'declare const feasibilityEvidencePointInput: ValidateProviderFeasibilityEvidencePointClosureV1Input;',
       'declare const feasibilityEvidencePointClosure: ProviderFeasibilityEvidencePointClosureValidationV1;',
       'declare const feasibilityEvidencePointFixtureManifest: unknown;',
+      'declare const releaseTargetUniversePointInput: ValidateProviderReleaseTargetUniversePointClosureV1Input;',
+      'declare const releaseTargetUniversePointClosure: ProviderReleaseTargetUniversePointClosureValidationV1;',
+      'declare const releaseTargetUniversePointFixtureManifest: unknown;',
+      'declare const releaseTargetUniversePointExecutionCounter: ProviderReleaseTargetUniversePointExecutionCounterV1;',
       'const registryGoldenParsed = ProviderRegistryManifestHistoryGoldenManifestV1Schema.parse(registryGoldenManifest);',
       'const registryHistoryValidation: Promise<ProviderRegistryManifestHistoryValidationV1> = validateProviderRegistryManifestHistoryV1(registryHistoryInput);',
       'const registryInvalidManifest: ProviderRegistryManifestHistoryInvalidManifestV1 = ProviderRegistryManifestHistoryInvalidManifestV1Schema.parse(verifyProviderRegistryManifestHistoryInvalidResourceV1(registryInvalidBytes));',
@@ -1368,6 +1453,13 @@ try {
       '// @ts-expect-error Evidence point invalid IDs are an exact closed union',
       'const unknownFeasibilityEvidencePointInvalidCaseId: ProviderFeasibilityEvidencePointInvalidCaseIdV1 = "provider-feasibility-evidence-point-unknown";',
       'const feasibilityEvidencePointAuthority: "none_provider_feasibility_evidence_structure_only" = feasibilityEvidencePointClosure.authority;',
+      'const releaseTargetUniversePointValidation: Promise<ProviderReleaseTargetUniversePointClosureValidationV1> = validateProviderReleaseTargetUniversePointClosureV1(releaseTargetUniversePointInput);',
+      'const releaseTargetUniversePointPath: ProviderReleaseTargetUniverseRelativePathV1 = buildProviderReleaseTargetUniverseRelativePathV1(releaseTargetUniversePointClosure.releaseTargetUniverse);',
+      'const releaseTargetUniversePointFixtureParsed: ProviderReleaseTargetUniversePointGoldenManifestV1 = ProviderReleaseTargetUniversePointGoldenManifestV1Schema.parse(releaseTargetUniversePointFixtureManifest);',
+      'const releaseTargetUniversePointInvalidCaseId: ProviderReleaseTargetUniversePointInvalidCaseIdV1 = "discovery-input-extra-field";',
+      '// @ts-expect-error Release target Universe invalid IDs are an exact closed union',
+      'const unknownReleaseTargetUniversePointInvalidCaseId: ProviderReleaseTargetUniversePointInvalidCaseIdV1 = "provider-release-target-universe-point-unknown";',
+      'const releaseTargetUniversePointAuthority: "none_release_target_universe_structure_only" = releaseTargetUniversePointClosure.authority;',
       'const rootTargetDiscoveryResultPin: RootProviderTargetDiscoveryResultPinV1 = targetDiscoveryResultPin;',
       'const rootTargetDiscoveryTaxonomyLocator: RootProviderPublicSupportTaxonomyLocatorV1 = targetDiscoveryTaxonomyLocator;',
       'const rootTargetDiscoveryMatrixLocator: RootProviderReleaseMatrixLocatorV1 = targetDiscoveryMatrixLocator;',
@@ -1378,6 +1470,7 @@ try {
       'void verifyProviderRealFilesystemConformanceResultGoldenResourceV1;',
       'void verifyProviderRuntimeAttestationPointGoldenResourceV1;',
       'void verifyProviderFeasibilityEvidencePointGoldenResourceV1;',
+      'void verifyProviderReleaseTargetUniversePointGoldenResourceV1;',
       'const filenameKey: StoreFilenameKeyV1 = StoreFilenameKeyV1Schema.parse("id-c4");',
       'const rootMetadataPath: ProviderRegistryRootMetadataRelativePathV1 = buildProviderRegistryRootMetadataRelativePathV1({ locatorProfile: "installation_provider_registry_root_metadata_v1", rootGeneration: 1, rootKeyId: "0000000000000000000000" });',
       'void rawKeyDigest;',
@@ -1412,6 +1505,13 @@ try {
       'void feasibilityEvidencePointInvalidCaseId;',
       'void unknownFeasibilityEvidencePointInvalidCaseId;',
       'void feasibilityEvidencePointAuthority;',
+      'void releaseTargetUniversePointValidation;',
+      'void releaseTargetUniversePointPath;',
+      'void releaseTargetUniversePointFixtureParsed;',
+      'void releaseTargetUniversePointInvalidCaseId;',
+      'void unknownReleaseTargetUniversePointInvalidCaseId;',
+      'void releaseTargetUniversePointAuthority;',
+      'void releaseTargetUniversePointExecutionCounter;',
       'void rootTargetDiscoveryResultPin;',
       'void rootTargetDiscoveryTaxonomyLocator;',
       'void rootTargetDiscoveryMatrixLocator;',
@@ -1613,6 +1713,14 @@ try {
     installedProviderFeasibilityEvidencePointInvalidPath,
     "utf8",
   );
+  const packedProviderReleaseTargetUniversePointGoldenText = await readFile(
+    installedProviderReleaseTargetUniversePointGoldenPath,
+    "utf8",
+  );
+  const packedProviderReleaseTargetUniversePointInvalidText = await readFile(
+    installedProviderReleaseTargetUniversePointInvalidPath,
+    "utf8",
+  );
   await writeFile(
     join(consumerRoot, "browser-entry.js"),
     [
@@ -1628,6 +1736,9 @@ try {
       'import { PROVIDER_RUNTIME_ATTESTATION_POINT_INVALID_CASE_IDS_V1, PROVIDER_RUNTIME_ATTESTATION_POINT_INVALID_MATERIALIZED_REQUEST_DOMAIN_V1, executeProviderRuntimeAttestationPointInvalidCaseV1, materializeProviderRuntimeAttestationPointInvalidRequestWitnessV1, verifyProviderRuntimeAttestationPointGoldenResourceV1, verifyProviderRuntimeAttestationPointInvalidResourceV1 } from "@understand-code/durable-object-provider-contracts/provider-runtime-attestation-point-fixtures";',
       'import { validateProviderFeasibilityEvidencePointClosureV1 } from "@understand-code/durable-object-provider-contracts/provider-feasibility-evidence-point";',
       'import { PROVIDER_FEASIBILITY_EVIDENCE_POINT_INVALID_CASE_IDS_V1, PROVIDER_FEASIBILITY_EVIDENCE_POINT_INVALID_MATERIALIZED_REQUEST_DOMAIN_V1, executeProviderFeasibilityEvidencePointInvalidCaseV1, materializeProviderFeasibilityEvidencePointInvalidRequestWitnessV1, verifyProviderFeasibilityEvidencePointGoldenResourceV1, verifyProviderFeasibilityEvidencePointPositiveVectorsV1, verifyProviderFeasibilityEvidencePointInvalidResourceV1 } from "@understand-code/durable-object-provider-contracts/provider-feasibility-evidence-point-fixtures";',
+      'import { ProviderReleaseTargetUniversePointClosureValidationError, buildProviderReleaseTargetUniverseRelativePathV1, diagnoseProviderReleaseTargetUniversePointClosureV1, validateProviderReleaseTargetUniversePointClosureV1 } from "@understand-code/durable-object-provider-contracts/provider-release-target-universe-point";',
+      'import { PROVIDER_RELEASE_TARGET_UNIVERSE_POINT_GOLDEN_RESOURCE_BYTE_LENGTH_V1, PROVIDER_RELEASE_TARGET_UNIVERSE_POINT_GOLDEN_RESOURCE_SHA256_HEX_V1, PROVIDER_RELEASE_TARGET_UNIVERSE_POINT_INVALID_CASE_IDS_V1, PROVIDER_RELEASE_TARGET_UNIVERSE_POINT_INVALID_MATERIALIZED_REQUEST_DOMAIN_V1, PROVIDER_RELEASE_TARGET_UNIVERSE_POINT_INVALID_RESOURCE_BYTE_LENGTH_V1, PROVIDER_RELEASE_TARGET_UNIVERSE_POINT_INVALID_RESOURCE_SHA256_HEX_V1, ProviderReleaseTargetUniversePointFixtureError, executeProviderReleaseTargetUniversePointInvalidCaseV1, materializeProviderReleaseTargetUniversePointInvalidCaseWitnessV1, verifyProviderReleaseTargetUniversePointGoldenResourceV1, verifyProviderReleaseTargetUniversePointInvalidResourceV1, verifyProviderReleaseTargetUniversePointPositiveVectorsV1 } from "@understand-code/durable-object-provider-contracts/provider-release-target-universe-point-fixtures";',
+      'import { ProviderReleaseTargetUniversePointClosureValidationError as RootProviderReleaseTargetUniversePointClosureValidationError, buildProviderReleaseTargetUniverseRelativePathV1 as rootBuildProviderReleaseTargetUniverseRelativePathV1, diagnoseProviderReleaseTargetUniversePointClosureV1 as rootDiagnoseProviderReleaseTargetUniversePointClosureV1, executeProviderReleaseTargetUniversePointInvalidCaseV1 as rootExecuteProviderReleaseTargetUniversePointInvalidCaseV1, materializeProviderReleaseTargetUniversePointInvalidCaseWitnessV1 as rootMaterializeProviderReleaseTargetUniversePointInvalidCaseWitnessV1, ProviderReleaseTargetUniversePointFixtureError as RootProviderReleaseTargetUniversePointFixtureError, validateProviderReleaseTargetUniversePointClosureV1 as rootValidateProviderReleaseTargetUniversePointClosureV1, verifyProviderReleaseTargetUniversePointGoldenResourceV1 as rootVerifyProviderReleaseTargetUniversePointGoldenResourceV1, verifyProviderReleaseTargetUniversePointInvalidResourceV1 as rootVerifyProviderReleaseTargetUniversePointInvalidResourceV1, verifyProviderReleaseTargetUniversePointPositiveVectorsV1 as rootVerifyProviderReleaseTargetUniversePointPositiveVectorsV1 } from "@understand-code/durable-object-provider-contracts";',
       'import { canonicalizeJcsSafeIntegerUtf8V1 } from "@understand-code/durable-object-provider-contracts/jcs";',
       'import { STRICT_ED25519_VERIFICATION_PROFILE_V1, validatePrimeSubgroupPoint, verifyRawEd25519 } from "@understand-code/durable-object-provider-contracts/strict-ed25519";',
       'import { PROVIDER_STRICT_ED25519_MANIFEST_MAX_BYTES_V1, PROVIDER_STRICT_ED25519_MANIFEST_RESOURCE_PATH_V1, attestProviderStrictEd25519CryptoHostV1, getProviderStrictEd25519CryptoCapabilityBytesV1 } from "@understand-code/durable-object-provider-contracts/strict-ed25519-conformance";',
@@ -1653,13 +1764,17 @@ try {
       `const providerRuntimeAttestationPointInvalidBytes = new TextEncoder().encode(${JSON.stringify(packedProviderRuntimeAttestationPointInvalidText)});`,
       `const providerFeasibilityEvidencePointGoldenBytes = new TextEncoder().encode(${JSON.stringify(packedProviderFeasibilityEvidencePointGoldenText)});`,
       `const providerFeasibilityEvidencePointInvalidBytes = new TextEncoder().encode(${JSON.stringify(packedProviderFeasibilityEvidencePointInvalidText)});`,
+      `const providerReleaseTargetUniversePointGoldenBytes = new TextEncoder().encode(${JSON.stringify(packedProviderReleaseTargetUniversePointGoldenText)});`,
+      `const providerReleaseTargetUniversePointInvalidBytes = new TextEncoder().encode(${JSON.stringify(packedProviderReleaseTargetUniversePointInvalidText)});`,
       'let pointCalls = 0;',
       'let verifyCalls = 0;',
+      'let nextSignatureMutation;',
       'const strictHost = {',
       '  verificationProfile: STRICT_ED25519_VERIFICATION_PROFILE_V1,',
       '  validatePrimeSubgroupPoint(point) { pointCalls += 1; return validatePrimeSubgroupPoint(point); },',
-      '  verifyRawEd25519(publicKey, message, signature) { verifyCalls += 1; return verifyRawEd25519(publicKey, message, signature); },',
+      '  verifyRawEd25519(publicKey, message, signature) { verifyCalls += 1; const mutation = nextSignatureMutation; nextSignatureMutation = undefined; mutation?.(); return verifyRawEd25519(publicKey, message, signature); },',
       '};',
+      'const universeExecutionCounter = Object.freeze({ pointAdmissionCount() { return pointCalls; }, signatureVerificationCount() { return verifyCalls; }, mutateDuringNextSignature(mutation) { if (nextSignatureMutation !== undefined) throw new Error("a browser Universe signature-time mutation is already registered"); nextSignatureMutation = mutation; } });',
       'const resourceHost = {',
       '  readFixedSignedPackageResource(path, maxBytes) {',
       '    if (path !== PROVIDER_STRICT_ED25519_MANIFEST_RESOURCE_PATH_V1 || maxBytes !== PROVIDER_STRICT_ED25519_MANIFEST_MAX_BYTES_V1 || manifestResourceBytes.byteLength > maxBytes) throw new Error("invalid fixed resource request");',
@@ -1821,6 +1936,50 @@ try {
       '  feasibilityEvidencePointInvalidExecutedCaseCount += 1;',
       '}',
       'if (feasibilityEvidencePointInvalidExecutedCaseCount !== 227) throw new Error(`browser feasibility evidence point replay count drift: ${feasibilityEvidencePointInvalidExecutedCaseCount}/227`);',
+      'if (rootValidateProviderReleaseTargetUniversePointClosureV1 !== validateProviderReleaseTargetUniversePointClosureV1 || rootDiagnoseProviderReleaseTargetUniversePointClosureV1 !== diagnoseProviderReleaseTargetUniversePointClosureV1 || rootBuildProviderReleaseTargetUniverseRelativePathV1 !== buildProviderReleaseTargetUniverseRelativePathV1 || RootProviderReleaseTargetUniversePointClosureValidationError !== ProviderReleaseTargetUniversePointClosureValidationError || rootVerifyProviderReleaseTargetUniversePointGoldenResourceV1 !== verifyProviderReleaseTargetUniversePointGoldenResourceV1 || rootVerifyProviderReleaseTargetUniversePointPositiveVectorsV1 !== verifyProviderReleaseTargetUniversePointPositiveVectorsV1 || rootVerifyProviderReleaseTargetUniversePointInvalidResourceV1 !== verifyProviderReleaseTargetUniversePointInvalidResourceV1 || rootMaterializeProviderReleaseTargetUniversePointInvalidCaseWitnessV1 !== materializeProviderReleaseTargetUniversePointInvalidCaseWitnessV1 || rootExecuteProviderReleaseTargetUniversePointInvalidCaseV1 !== executeProviderReleaseTargetUniversePointInvalidCaseV1 || RootProviderReleaseTargetUniversePointFixtureError !== ProviderReleaseTargetUniversePointFixtureError) throw new Error("browser root/provider-release-target-universe-point exports diverged");',
+      'if (providerReleaseTargetUniversePointGoldenBytes.byteLength !== PROVIDER_RELEASE_TARGET_UNIVERSE_POINT_GOLDEN_RESOURCE_BYTE_LENGTH_V1 || lowerHex(new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", providerReleaseTargetUniversePointGoldenBytes))) !== PROVIDER_RELEASE_TARGET_UNIVERSE_POINT_GOLDEN_RESOURCE_SHA256_HEX_V1) throw new Error("browser release target Universe golden raw anchor mismatch");',
+      'if (providerReleaseTargetUniversePointInvalidBytes.byteLength !== PROVIDER_RELEASE_TARGET_UNIVERSE_POINT_INVALID_RESOURCE_BYTE_LENGTH_V1 || lowerHex(new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", providerReleaseTargetUniversePointInvalidBytes))) !== PROVIDER_RELEASE_TARGET_UNIVERSE_POINT_INVALID_RESOURCE_SHA256_HEX_V1) throw new Error("browser release target Universe invalid raw anchor mismatch");',
+      'pointCalls = 0;',
+      'verifyCalls = 0;',
+      'nextSignatureMutation = undefined;',
+      'const releaseTargetUniverseGoldenValidation = await verifyProviderReleaseTargetUniversePointGoldenResourceV1(providerReleaseTargetUniversePointGoldenBytes, strictCapability);',
+      'if (releaseTargetUniverseGoldenValidation.authority !== "none_release_target_universe_structure_only" || releaseTargetUniverseGoldenValidation.pointClosure.authority !== "none_release_target_universe_structure_only" || releaseTargetUniverseGoldenValidation.pointClosure.targetDiscoveryPointClosure.authority !== "none_target_discovery_point_structure_only" || releaseTargetUniverseGoldenValidation.manifest.positiveVectors.length !== 4 || pointCalls !== 1 || verifyCalls !== 7 || nextSignatureMutation !== undefined) throw new Error(`browser release target Universe golden/crypto closure failed: ${pointCalls}/${verifyCalls}`);',
+      'const releaseTargetUniversePointCalls = pointCalls;',
+      'const releaseTargetUniverseVerifyCalls = verifyCalls;',
+      'const releaseTargetUniversePath = buildProviderReleaseTargetUniverseRelativePathV1(releaseTargetUniverseGoldenValidation.manifest.releaseTargetUniverse);',
+      'if (releaseTargetUniversePath !== releaseTargetUniverseGoldenValidation.pointClosure.relativePath || releaseTargetUniversePath !== releaseTargetUniverseGoldenValidation.manifest.expected.snapshotProjection.universeRelativePath) throw new Error("browser release target Universe Locator-only path mismatch");',
+      'pointCalls = 0;',
+      'verifyCalls = 0;',
+      'const releaseTargetUniversePositiveVectorClosures = await verifyProviderReleaseTargetUniversePointPositiveVectorsV1(releaseTargetUniverseGoldenValidation.manifest, strictCapability);',
+      'if (releaseTargetUniversePositiveVectorClosures.length !== 4 || JSON.stringify(releaseTargetUniverseGoldenValidation.manifest.positiveVectors.map(({ vectorId }) => vectorId)) !== JSON.stringify(["taxonomy-mapping-unresolved", "target-discovery-unresolved", "release-matrix-incomplete", "closed-world-complete"]) || releaseTargetUniversePositiveVectorClosures.some((closure) => closure.authority !== "none_release_target_universe_structure_only") || pointCalls !== 4 || verifyCalls !== 28 || nextSignatureMutation !== undefined) throw new Error(`browser release target Universe positive-vector closure failed: ${pointCalls}/${verifyCalls}`);',
+      'const releaseTargetUniversePositiveVectorPointCalls = pointCalls;',
+      'const releaseTargetUniversePositiveVectorVerifyCalls = verifyCalls;',
+      'const releaseTargetUniverseInvalid = verifyProviderReleaseTargetUniversePointInvalidResourceV1(providerReleaseTargetUniversePointInvalidBytes);',
+      'if (releaseTargetUniverseInvalid.fixtureAuthority !== "none_rejection_only" || releaseTargetUniverseInvalid.inheritedCaseCount !== 116 || releaseTargetUniverseInvalid.pointCaseCount !== 169 || releaseTargetUniverseInvalid.caseCount !== 285 || releaseTargetUniverseInvalid.caseIds.length !== 285 || releaseTargetUniverseInvalid.cases.length !== 285 || releaseTargetUniverseInvalid.inheritedReplayRecipes.length !== 116 || new Set(releaseTargetUniverseInvalid.caseIds).size !== 285 || JSON.stringify(releaseTargetUniverseInvalid.caseIds) !== JSON.stringify(PROVIDER_RELEASE_TARGET_UNIVERSE_POINT_INVALID_CASE_IDS_V1)) throw new Error("browser release target Universe invalid corpus mismatch");',
+      'let releaseTargetUniverseInvalidExecutedCaseCount = 0;',
+      'for (const [index, invalidCase] of releaseTargetUniverseInvalid.cases.entries()) {',
+      '  if (invalidCase.caseId !== releaseTargetUniverseInvalid.caseIds[index] || invalidCase.mutation.operation !== invalidCase.caseId) throw new Error(`browser release target Universe invalid operation/order drift: ${invalidCase.caseId}`);',
+      '  const firstWitness = materializeProviderReleaseTargetUniversePointInvalidCaseWitnessV1(releaseTargetUniverseGoldenValidation.manifest, releaseTargetUniverseInvalid, invalidCase);',
+      '  const secondWitness = materializeProviderReleaseTargetUniversePointInvalidCaseWitnessV1(releaseTargetUniverseGoldenValidation.manifest, releaseTargetUniverseInvalid, invalidCase);',
+      '  if (firstWitness === secondWitness) throw new Error(`browser release target Universe witness was reused: ${invalidCase.caseId}`);',
+      '  const firstWitnessDigest = await browserSemanticDigest(PROVIDER_RELEASE_TARGET_UNIVERSE_POINT_INVALID_MATERIALIZED_REQUEST_DOMAIN_V1, firstWitness);',
+      '  const secondWitnessDigest = await browserSemanticDigest(PROVIDER_RELEASE_TARGET_UNIVERSE_POINT_INVALID_MATERIALIZED_REQUEST_DOMAIN_V1, secondWitness);',
+      '  if (firstWitnessDigest !== invalidCase.expected.materializedRequestSemanticDigest || secondWitnessDigest !== firstWitnessDigest) throw new Error(`browser release target Universe materialized request drift: ${invalidCase.caseId}`);',
+      '  pointCalls = 0;',
+      '  verifyCalls = 0;',
+      '  nextSignatureMutation = undefined;',
+      '  const outcome = await executeProviderReleaseTargetUniversePointInvalidCaseV1(releaseTargetUniverseGoldenValidation.manifest, releaseTargetUniverseInvalid, invalidCase, strictCapability, universeExecutionCounter);',
+      '  if (nextSignatureMutation !== undefined || pointCalls !== invalidCase.expected.pointAdmissionCount || verifyCalls !== invalidCase.expected.signatureVerificationCount || outcome.pointAdmissionCount !== invalidCase.expected.pointAdmissionCount || outcome.signatureVerificationCount !== invalidCase.expected.signatureVerificationCount || Object.getPrototypeOf(outcome) !== null || !Object.isFrozen(outcome)) throw new Error(`browser release target Universe execution/count drift: ${invalidCase.caseId}/${pointCalls}/${verifyCalls}`);',
+      '  if (invalidCase.expected.boundary === "snapshot_stability") {',
+      '    if (outcome.kind !== "snapshot_acceptance" || outcome.boundary !== "snapshot_stability" || outcome.authority !== invalidCase.expected.authority || JSON.stringify(outcome.snapshotProjection) !== JSON.stringify(invalidCase.expected.snapshotProjection)) throw new Error(`browser release target Universe snapshot replay drift: ${invalidCase.caseId}/${JSON.stringify(outcome)}`);',
+      '  } else if (invalidCase.expected.boundary === "locator_builder") {',
+      '    if (outcome.kind !== "rejection" || outcome.boundary !== "locator_builder" || outcome.stage !== invalidCase.expected.stage || outcome.reason !== invalidCase.expected.reason) throw new Error(`browser release target Universe locator replay drift: ${invalidCase.caseId}/${JSON.stringify(outcome)}`);',
+      '  } else {',
+      '    if (outcome.kind !== "rejection" || outcome.boundary !== "internal_diagnostic" || outcome.stage !== invalidCase.expected.stage || outcome.reason !== invalidCase.expected.reason || outcome.publicFailure?.errorName !== invalidCase.expected.publicFailure.errorName || outcome.publicFailure?.code !== invalidCase.expected.publicFailure.code || outcome.publicFailure?.reason !== invalidCase.expected.publicFailure.reason) throw new Error(`browser release target Universe diagnostic replay drift: ${invalidCase.caseId}/${JSON.stringify(outcome)}`);',
+      '  }',
+      '  releaseTargetUniverseInvalidExecutedCaseCount += 1;',
+      '}',
+      'if (releaseTargetUniverseInvalidExecutedCaseCount !== 285) throw new Error(`browser release target Universe replay count drift: ${releaseTargetUniverseInvalidExecutedCaseCount}/285`);',
       'const capabilityBytes = getProviderStrictEd25519CryptoCapabilityBytesV1(strictCapability);',
       'const providerError = createProviderUnavailableToolErrorV1("revoked");',
       'ProviderUnavailableToolErrorV1Schema.parse(providerError);',
@@ -1828,7 +1987,7 @@ try {
         .map((_, index) => `providerContractBrowserModule${index}`)
         .join(", ")}];`,
       'if (publicModules.some((module) => Object.keys(module).length === 0)) throw new Error("empty browser public export");',
-      'export const browserKatResult = Object.freeze({ pointCalls: bootstrapPointCalls, verifyCalls: bootstrapVerifyCalls, rootHistoryPointCalls, rootHistoryVerifyCalls, registryHistoryPointCalls, registryHistoryVerifyCalls, registryNegativeCount, registryInvalidCaseCount: registryInvalid.caseCount, registryHistoryAuthority: registryValidation.authority, registryManifestCount: registryValidation.retainedRegistryManifestGenerationCount, realFilesystemAuthority: realFilesystemGoldenValidation.authority, realFilesystemRecordCount: realFilesystemGoldenValidation.sourceClosure.recordCount, realFilesystemCaseCount: realFilesystemGoldenValidation.sourceClosure.caseCount, realFilesystemCutCount: realFilesystemGoldenValidation.sourceClosure.requiredCaseCutCount, realFilesystemInvalidCaseCount: realFilesystemInvalid.caseCount, targetDiscoveryAuthority: targetDiscoveryGoldenValidation.authority, targetDiscoveryPointCalls, targetDiscoveryVerifyCalls, targetDiscoveryTargetCount: targetDiscoveryGoldenValidation.pointClosure.targetCount, targetDiscoveryUnresolvedObservationCount: targetDiscoveryGoldenValidation.pointClosure.unresolvedObservationCount, targetDiscoveryInvalidCaseCount: targetDiscoveryInvalid.caseCount, conformanceResultAuthority: conformanceResultGoldenValidation.authority, conformanceResultPointCalls, conformanceResultVerifyCalls, conformanceResultCaseCount: conformanceResultGoldenValidation.resultClosure.caseResultCount, conformanceResultInvalidCaseCount: conformanceResultInvalid.caseCount, conformanceResultInvalidExecutedCaseCount, conformanceResultPath, expectedConformanceResultPath: conformanceResultGoldenValidation.manifest.expected.relativePath, runtimeAttestationPointAuthority: runtimeAttestationPointGoldenValidation.authority, runtimeAttestationPointCalls, runtimeAttestationPointVerifyCalls, runtimeAttestationPointInnerCaseCount: runtimeAttestationPointInvalid.innerCaseCount, runtimeAttestationPointSpecificCaseCount: runtimeAttestationPointInvalid.pointCaseCount, runtimeAttestationPointInvalidCaseCount: runtimeAttestationPointInvalid.caseCount, runtimeAttestationPointInvalidExecutedCaseCount, feasibilityEvidencePointAuthority: feasibilityEvidencePointGoldenValidation.authority, feasibilityEvidencePointCalls, feasibilityEvidencePointVerifyCalls, feasibilityEvidencePointPositiveVectorCount: feasibilityEvidencePositiveVectorClosures.length, feasibilityEvidencePositiveVectorPointCalls, feasibilityEvidencePositiveVectorVerifyCalls, feasibilityEvidencePointRuntimeCaseCount: feasibilityEvidencePointInvalid.runtimeCaseCount, feasibilityEvidencePointSpecificCaseCount: feasibilityEvidencePointInvalid.pointCaseCount, feasibilityEvidencePointInvalidCaseCount: feasibilityEvidencePointInvalid.caseCount, feasibilityEvidencePointInvalidExecutedCaseCount, capabilityByteLength: capabilityBytes.byteLength, bootstrapAuthority: bootstrapValidation.authority, goldenAuthority: bootstrapGoldenValidation.authority, goldenCaseCount: 5 + bootstrapGoldenValidation.manifest.vectors.recoveryKeyIds.length, invalidAuthority: bootstrapInvalidValidation.authority, invalidCaseCount: bootstrapInvalidValidation.manifest.cases.length, rootHistoryAuthority: rootHistoryValidation.authority, rootHistoryGenerationCount: rootHistoryValidation.retainedRootMetadataGenerationCount, rootHistoryInvalidCaseCount: rootHistoryInvalid.cases.length, rootHistoryLocator: latestRootLocator, expectedRootHistoryLocator: rootHistoryGolden.expected.vectors[2].locator, publicModuleCount: publicModules.length, providerReason: providerError.details.reason });',
+      'export const browserKatResult = Object.freeze({ pointCalls: bootstrapPointCalls, verifyCalls: bootstrapVerifyCalls, rootHistoryPointCalls, rootHistoryVerifyCalls, registryHistoryPointCalls, registryHistoryVerifyCalls, registryNegativeCount, registryInvalidCaseCount: registryInvalid.caseCount, registryHistoryAuthority: registryValidation.authority, registryManifestCount: registryValidation.retainedRegistryManifestGenerationCount, realFilesystemAuthority: realFilesystemGoldenValidation.authority, realFilesystemRecordCount: realFilesystemGoldenValidation.sourceClosure.recordCount, realFilesystemCaseCount: realFilesystemGoldenValidation.sourceClosure.caseCount, realFilesystemCutCount: realFilesystemGoldenValidation.sourceClosure.requiredCaseCutCount, realFilesystemInvalidCaseCount: realFilesystemInvalid.caseCount, targetDiscoveryAuthority: targetDiscoveryGoldenValidation.authority, targetDiscoveryPointCalls, targetDiscoveryVerifyCalls, targetDiscoveryTargetCount: targetDiscoveryGoldenValidation.pointClosure.targetCount, targetDiscoveryUnresolvedObservationCount: targetDiscoveryGoldenValidation.pointClosure.unresolvedObservationCount, targetDiscoveryInvalidCaseCount: targetDiscoveryInvalid.caseCount, conformanceResultAuthority: conformanceResultGoldenValidation.authority, conformanceResultPointCalls, conformanceResultVerifyCalls, conformanceResultCaseCount: conformanceResultGoldenValidation.resultClosure.caseResultCount, conformanceResultInvalidCaseCount: conformanceResultInvalid.caseCount, conformanceResultInvalidExecutedCaseCount, conformanceResultPath, expectedConformanceResultPath: conformanceResultGoldenValidation.manifest.expected.relativePath, runtimeAttestationPointAuthority: runtimeAttestationPointGoldenValidation.authority, runtimeAttestationPointCalls, runtimeAttestationPointVerifyCalls, runtimeAttestationPointInnerCaseCount: runtimeAttestationPointInvalid.innerCaseCount, runtimeAttestationPointSpecificCaseCount: runtimeAttestationPointInvalid.pointCaseCount, runtimeAttestationPointInvalidCaseCount: runtimeAttestationPointInvalid.caseCount, runtimeAttestationPointInvalidExecutedCaseCount, feasibilityEvidencePointAuthority: feasibilityEvidencePointGoldenValidation.authority, feasibilityEvidencePointCalls, feasibilityEvidencePointVerifyCalls, feasibilityEvidencePointPositiveVectorCount: feasibilityEvidencePositiveVectorClosures.length, feasibilityEvidencePositiveVectorPointCalls, feasibilityEvidencePositiveVectorVerifyCalls, feasibilityEvidencePointRuntimeCaseCount: feasibilityEvidencePointInvalid.runtimeCaseCount, feasibilityEvidencePointSpecificCaseCount: feasibilityEvidencePointInvalid.pointCaseCount, feasibilityEvidencePointInvalidCaseCount: feasibilityEvidencePointInvalid.caseCount, feasibilityEvidencePointInvalidExecutedCaseCount, releaseTargetUniverseAuthority: releaseTargetUniverseGoldenValidation.authority, releaseTargetUniversePointCalls, releaseTargetUniverseVerifyCalls, releaseTargetUniversePositiveVectorCount: releaseTargetUniversePositiveVectorClosures.length, releaseTargetUniversePositiveVectorPointCalls, releaseTargetUniversePositiveVectorVerifyCalls, releaseTargetUniverseInheritedCaseCount: releaseTargetUniverseInvalid.inheritedCaseCount, releaseTargetUniverseSpecificCaseCount: releaseTargetUniverseInvalid.pointCaseCount, releaseTargetUniverseInvalidCaseCount: releaseTargetUniverseInvalid.caseCount, releaseTargetUniverseInvalidExecutedCaseCount, releaseTargetUniversePath, expectedReleaseTargetUniversePath: releaseTargetUniverseGoldenValidation.manifest.expected.snapshotProjection.universeRelativePath, capabilityByteLength: capabilityBytes.byteLength, bootstrapAuthority: bootstrapValidation.authority, goldenAuthority: bootstrapGoldenValidation.authority, goldenCaseCount: 5 + bootstrapGoldenValidation.manifest.vectors.recoveryKeyIds.length, invalidAuthority: bootstrapInvalidValidation.authority, invalidCaseCount: bootstrapInvalidValidation.manifest.cases.length, rootHistoryAuthority: rootHistoryValidation.authority, rootHistoryGenerationCount: rootHistoryValidation.retainedRootMetadataGenerationCount, rootHistoryInvalidCaseCount: rootHistoryInvalid.cases.length, rootHistoryLocator: latestRootLocator, expectedRootHistoryLocator: rootHistoryGolden.expected.vectors[2].locator, publicModuleCount: publicModules.length, providerReason: providerError.details.reason });',
     ].join("\n"),
     "utf8",
   );
@@ -1880,7 +2039,7 @@ try {
   }
   for (const filePath of browserJavaScriptFiles) {
     const source = await readFile(filePath, "utf8");
-    const dependency = findBrowserNodeRuntimeDependency(source);
+    const dependency = findBrowserRuntimeDependency(source);
     if (dependency !== undefined) {
       throw new Error(
         `Browser bundle ${basename(filePath)} contains ${dependency}`,
@@ -1925,6 +2084,11 @@ try {
       'if (browserKatResult.feasibilityEvidencePointCalls !== 3 || browserKatResult.feasibilityEvidencePointVerifyCalls !== 11) throw new Error(`browser feasibility evidence point golden crypto calls: ${browserKatResult.feasibilityEvidencePointCalls}/${browserKatResult.feasibilityEvidencePointVerifyCalls}`);',
       'if (browserKatResult.feasibilityEvidencePointPositiveVectorCount !== 3 || browserKatResult.feasibilityEvidencePositiveVectorPointCalls !== 9 || browserKatResult.feasibilityEvidencePositiveVectorVerifyCalls !== 33) throw new Error(`browser feasibility evidence point positive-vector crypto calls: ${browserKatResult.feasibilityEvidencePositiveVectorPointCalls}/${browserKatResult.feasibilityEvidencePositiveVectorVerifyCalls}`);',
       'if (browserKatResult.feasibilityEvidencePointRuntimeCaseCount !== 122 || browserKatResult.feasibilityEvidencePointSpecificCaseCount !== 105 || browserKatResult.feasibilityEvidencePointInvalidCaseCount !== 227 || browserKatResult.feasibilityEvidencePointInvalidExecutedCaseCount !== 227) throw new Error("browser feasibility evidence point lost executable fixture coverage");',
+      'if (browserKatResult.releaseTargetUniverseAuthority !== "none_release_target_universe_structure_only") throw new Error("browser release target Universe exposed authority");',
+      'if (browserKatResult.releaseTargetUniversePointCalls !== 1 || browserKatResult.releaseTargetUniverseVerifyCalls !== 7) throw new Error(`browser release target Universe golden crypto calls: ${browserKatResult.releaseTargetUniversePointCalls}/${browserKatResult.releaseTargetUniverseVerifyCalls}`);',
+      'if (browserKatResult.releaseTargetUniversePositiveVectorCount !== 4 || browserKatResult.releaseTargetUniversePositiveVectorPointCalls !== 4 || browserKatResult.releaseTargetUniversePositiveVectorVerifyCalls !== 28) throw new Error(`browser release target Universe positive-vector crypto calls: ${browserKatResult.releaseTargetUniversePositiveVectorPointCalls}/${browserKatResult.releaseTargetUniversePositiveVectorVerifyCalls}`);',
+      'if (browserKatResult.releaseTargetUniverseInheritedCaseCount !== 116 || browserKatResult.releaseTargetUniverseSpecificCaseCount !== 169 || browserKatResult.releaseTargetUniverseInvalidCaseCount !== 285 || browserKatResult.releaseTargetUniverseInvalidExecutedCaseCount !== 285) throw new Error("browser release target Universe lost executable fixture coverage");',
+      'if (browserKatResult.releaseTargetUniversePath !== browserKatResult.expectedReleaseTargetUniversePath) throw new Error("browser release target Universe Locator-only path mismatch");',
       'if (browserKatResult.rootHistoryLocator !== browserKatResult.expectedRootHistoryLocator) throw new Error("browser root history locator mismatch");',
       `if (browserKatResult.publicModuleCount !== ${explicitSpecifiers.length}) throw new Error("browser public module count mismatch");`,
       'if (browserKatResult.providerReason !== "revoked") throw new Error("browser provider error probe failed");',
@@ -2000,6 +2164,18 @@ try {
     "dist/provider-target-discovery-point.d.ts",
     "dist/provider-target-discovery-point-fixtures.js",
     "dist/provider-target-discovery-point-fixtures.d.ts",
+    "dist/provider-point-raw-admission-internal.js",
+    "dist/provider-point-raw-admission-internal.d.ts",
+    "dist/provider-point-runtime-internal.js",
+    "dist/provider-point-runtime-internal.d.ts",
+    "dist/provider-target-discovery-point-internal.js",
+    "dist/provider-target-discovery-point-internal.d.ts",
+    "dist/strict-ed25519-capability-internal.js",
+    "dist/strict-ed25519-capability-internal.d.ts",
+    "dist/provider-release-target-universe-point.js",
+    "dist/provider-release-target-universe-point.d.ts",
+    "dist/provider-release-target-universe-point-fixtures.js",
+    "dist/provider-release-target-universe-point-fixtures.d.ts",
     "dist/provider-trust-policy.js",
     "dist/provider-trust-policy.d.ts",
     "dist/strict-ed25519.js",
@@ -2046,6 +2222,21 @@ try {
     "schemas/v1/provider-target-discovery-result-pin.schema.json",
     "schemas/v1/provider-target-discovery-point-golden-manifest.schema.json",
     "schemas/v1/provider-target-discovery-point-invalid-manifest.schema.json",
+    "schemas/v1/provider-release-coverage-incomplete-reason.schema.json",
+    "schemas/v1/provider-release-target-bucket-coverage.schema.json",
+    "schemas/v1/provider-release-target-coverage-basis.schema.json",
+    "schemas/v1/provider-release-target-coverage-resolution.schema.json",
+    "schemas/v1/provider-release-target-universe-bucket.schema.json",
+    "schemas/v1/provider-release-target-universe-unsigned-claims.schema.json",
+    "schemas/v1/provider-release-target-universe.schema.json",
+    "schemas/v1/provider-release-target-universe-envelope.schema.json",
+    "schemas/v1/provider-release-target-universe-pin.schema.json",
+    "schemas/v1/provider-release-target-universe-signature.schema.json",
+    "schemas/v1/provider-release-target-universe-signature-wrapper.schema.json",
+    "schemas/v1/provider-release-target-universe-point-invalid-stage.schema.json",
+    "schemas/v1/provider-release-target-universe-point-invalid-reason.schema.json",
+    "schemas/v1/provider-release-target-universe-point-golden-manifest.schema.json",
+    "schemas/v1/provider-release-target-universe-point-invalid-manifest.schema.json",
     "schemas/v1/provider-real-filesystem-conformance-result-id.schema.json",
     "schemas/v1/provider-real-filesystem-conformance-result.schema.json",
     "schemas/v1/provider-real-filesystem-conformance-result-envelope.schema.json",
@@ -2090,6 +2281,7 @@ try {
     "fixtures/v1/golden/provider-real-filesystem-conformance-result-v1.json",
     "fixtures/v1/golden/provider-runtime-attestation-point-v1.json",
     "fixtures/v1/golden/provider-feasibility-evidence-point-v1.json",
+    "fixtures/v1/golden/provider-release-target-universe-point-v1.json",
     "fixtures/v1/invalid/manifest.json",
     "fixtures/v1/invalid/provider-bootstrap-structure-crypto-v1.json",
     "fixtures/v1/invalid/provider-registry-root-history-v1.json",
@@ -2099,6 +2291,7 @@ try {
     "fixtures/v1/invalid/provider-real-filesystem-conformance-result-v1.json",
     "fixtures/v1/invalid/provider-runtime-attestation-point-v1.json",
     "fixtures/v1/invalid/provider-feasibility-evidence-point-v1.json",
+    "fixtures/v1/invalid/provider-release-target-universe-point-v1.json",
     "fixtures/v1/invalid/provider-registry-entry-manifest-history-v1.recipe-dialect.md",
     "fixtures/v1/invalid/provider-registry-root-history-invalid-recipe-v1.md",
     "fixtures/v1/reference/provider-unavailable-tool-errors.json",
@@ -2121,7 +2314,7 @@ try {
   }
 
   process.stdout.write(
-    `Verified packed provider contracts with exactly ${explicitSpecifiers.length} public module exports and ${packedSchemaRelativePaths.length} JSON Schemas, browser ESM trust checks for bootstrap (62 point/31 signature), root history (11 point/9 signature), 7-generation Registry history (24 point/38 signature), 89 anchored Registry invalid recipes/materialized-request digests with 3 exact opaque consumer rejections, signed real filesystem source closure (12 records/4 cases/8 cuts plus 43 invalid cases), signed target discovery point closure (1 point/6 signatures with five locators), unsigned real filesystem conformance result closure (8 tuples/1 point/6 signatures/no seventh signature/50 replayed invalid cases/Locator-only path), root-signed runtime attestation point closure (1 point/7 signatures/50 inherited plus 72 point-specific invalid recipes), and QA/Release-signed feasibility evidence point closure (3 point/11 signatures per success, passed/failed/unsupported positives, 122 inherited plus 105 point-specific invalid recipes replayed in Node and browser).\n`,
+    `Verified packed provider contracts with exactly ${explicitSpecifiers.length} public module exports and ${packedSchemaRelativePaths.length} JSON Schemas, no browser runtime externals, browser ESM trust checks for bootstrap (62 point/31 signature), root history (11 point/9 signature), 7-generation Registry history (24 point/38 signature), 89 anchored Registry invalid recipes/materialized-request digests with 3 exact opaque consumer rejections, signed real filesystem source closure (12 records/4 cases/8 cuts plus 43 invalid cases), signed target discovery point closure (1 point/6 signatures with five locators), unsigned real filesystem conformance result closure (8 tuples/1 point/6 signatures/no seventh signature/50 replayed invalid cases/Locator-only path), root-signed runtime attestation point closure (1 point/7 signatures/50 inherited plus 72 point-specific invalid recipes), QA/Release-signed feasibility evidence point closure (3 point/11 signatures per success, passed/failed/unsupported positives, 122 inherited plus 105 point-specific invalid recipes), and release target Universe closure (4 genuine positives at 1 point/7 signatures each, 116 inherited plus 169 point-specific fresh invalid recipes replayed in Node and browser) with exact root/subpath identities and private internals unavailable.\n`,
   );
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true });

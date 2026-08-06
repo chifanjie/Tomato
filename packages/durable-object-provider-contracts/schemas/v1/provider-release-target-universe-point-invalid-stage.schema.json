@@ -1,0 +1,23 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-release-target-universe-point-invalid-stage",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "input",
+    "target_discovery_closure",
+    "universe_structure",
+    "universe_distribution_binding",
+    "universe_active_root",
+    "universe_taxonomy_pin",
+    "universe_coverage_pins",
+    "universe_coverage_binding",
+    "universe_coverage_counts",
+    "universe_target_union",
+    "universe_resolution",
+    "universe_buckets",
+    "universe_signature_binding",
+    "universe_signature",
+    "universe_digest",
+    "universe_envelope"
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-release-target-universe-pin",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "locatorProfile": {
+      "type": "string",
+      "const": "distribution_provider_release_target_universe_v1"
+    },
+    "universeGeneration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "locatorProfile",
+    "universeGeneration",
+    "contentDigest"
+  ],
+  "additionalProperties": false
+}

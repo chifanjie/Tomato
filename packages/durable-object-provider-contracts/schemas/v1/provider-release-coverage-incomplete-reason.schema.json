@@ -1,0 +1,10 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-release-coverage-incomplete-reason",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "release_matrix_incomplete",
+    "target_discovery_unresolved",
+    "taxonomy_mapping_unresolved"
+  ]
+}

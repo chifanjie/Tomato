@@ -1,0 +1,61 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-release-target-bucket-coverage",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "coverageState": {
+          "type": "string",
+          "const": "closed_world_complete"
+        },
+        "targetProfileIds": {
+          "minItems": 1,
+          "maxItems": 4096,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^provider-target-profile:[0-9a-f]{64}$"
+          }
+        }
+      },
+      "required": [
+        "coverageState",
+        "targetProfileIds"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "coverageState": {
+          "type": "string",
+          "const": "incomplete"
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "release_matrix_incomplete",
+            "target_discovery_unresolved",
+            "taxonomy_mapping_unresolved"
+          ]
+        },
+        "targetProfileIds": {
+          "minItems": 1,
+          "maxItems": 4096,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^provider-target-profile:[0-9a-f]{64}$"
+          }
+        }
+      },
+      "required": [
+        "coverageState",
+        "reason",
+        "targetProfileIds"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

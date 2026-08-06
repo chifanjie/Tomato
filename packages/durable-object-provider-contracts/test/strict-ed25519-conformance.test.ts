@@ -3,10 +3,18 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import * as publicPackageModuleV1 from "../src/index.js";
 import {
   canonicalizeJcsSafeIntegerUtf8V1,
   parseCanonicalJcsSafeIntegerUtf8V1,
 } from "../src/jcs.js";
+import {
+  assertProviderStrictEd25519CryptoCapabilityIdentityV1,
+  copyProviderStrictEd25519CryptoCapabilityBytesV1,
+  getProviderStrictEd25519OpaqueCapabilityMethodsV1,
+  registerProviderStrictEd25519OpaqueCapabilityStateV1,
+} from "../src/strict-ed25519-capability-internal.js";
+import * as publicConformanceModuleV1 from "../src/strict-ed25519-conformance.js";
 import {
   PROVIDER_STRICT_ED25519_ADVERSARIAL_MANIFEST_CONTENT_DIGEST_V1,
   PROVIDER_STRICT_ED25519_CRYPTO_CAPABILITY_V1,
@@ -338,6 +346,294 @@ describe("strict Ed25519 host attestation", () => {
     expect(
       getProviderStrictEd25519CryptoCapabilityBytesV1(capability),
     ).not.toEqual(firstBytes);
+  });
+
+  it("keeps opaque identity and defensive copies independent of poisoned primordials", async () => {
+    let postAttestation = false;
+    const resilientHost: ProviderStrictEd25519CryptoHostV1 = {
+      verificationProfile: STRICT_ED25519_VERIFICATION_PROFILE_V1,
+      validatePrimeSubgroupPoint(point) {
+        if (postAttestation) return point.byteLength === 32;
+        return validatePrimeSubgroupPoint(point);
+      },
+      verifyRawEd25519(publicKey, _message, signature) {
+        if (postAttestation) {
+          return publicKey.byteLength === 32 && signature.byteLength === 64;
+        }
+        return verifyRawEd25519(publicKey, _message, signature);
+      },
+    };
+    const capability = await attestProviderStrictEd25519CryptoHostV1(
+      createAttestationInput({ host: resilientHost }),
+    );
+    postAttestation = true;
+
+    const valid = parsedResource.payload.cases.find(
+      ({ caseId }) => caseId === "rfc8032-empty-valid",
+    )!;
+    const publicKey = decodeWireBytes(valid.publicKeyBytes);
+    const message = decodeWireBytes(valid.messageBytes);
+    const signature = decodeWireBytes(valid.signatureBytes);
+    const fakeGetterCalls = { count: 0 };
+    const forgedWithGetter = Object.defineProperty({}, "observable", {
+      configurable: true,
+      enumerable: true,
+      get() {
+        fakeGetterCalls.count += 1;
+        return true;
+      },
+    }) as ProviderStrictEd25519OpaqueCapabilityV1;
+    const fakeProxyTrapCalls = { count: 0 };
+    const forgedProxy = new Proxy(
+      {},
+      {
+        get() {
+          fakeProxyTrapCalls.count += 1;
+          return undefined;
+        },
+        getOwnPropertyDescriptor() {
+          fakeProxyTrapCalls.count += 1;
+          return undefined;
+        },
+        ownKeys() {
+          fakeProxyTrapCalls.count += 1;
+          return [];
+        },
+      },
+    ) as ProviderStrictEd25519OpaqueCapabilityV1;
+
+    const weakMapHasDescriptor = Object.getOwnPropertyDescriptor(
+      WeakMap.prototype,
+      "has",
+    )!;
+    const weakMapGetDescriptor = Object.getOwnPropertyDescriptor(
+      WeakMap.prototype,
+      "get",
+    )!;
+    const weakMapSetDescriptor = Object.getOwnPropertyDescriptor(
+      WeakMap.prototype,
+      "set",
+    )!;
+    const typedArrayPrototype = Object.getPrototypeOf(
+      Uint8Array.prototype,
+    ) as object;
+    const typedArraySliceDescriptor = Object.getOwnPropertyDescriptor(
+      typedArrayPrototype,
+      "slice",
+    )!;
+    const globalTypeErrorDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "TypeError",
+    )!;
+    const poisonHits = {
+      globalTypeError: 0,
+      weakMapHas: 0,
+      weakMapGet: 0,
+      weakMapSet: 0,
+      typedArraySlice: 0,
+    };
+    const internalOwner = Object.freeze({});
+    const internalCapability = Object.freeze({});
+    const internalMethods = Object.freeze({
+      validatePrimeSubgroupPoint: () => true,
+      verifyRawEd25519: () => true,
+    });
+    const internalBytes = new Uint8Array([1, 2, 3]);
+
+    let pointResult: boolean | undefined;
+    let signatureResult: boolean | undefined;
+    let firstCapabilityBytes: Uint8Array | undefined;
+    let secondCapabilityBytes: Uint8Array | undefined;
+    let copiedInternalBytes: Uint8Array | undefined;
+    let retrievedInternalMethods: unknown;
+    let forgedGetterError: unknown;
+    let forgedProxyError: unknown;
+    try {
+      Object.defineProperty(globalThis, "TypeError", {
+        configurable: globalTypeErrorDescriptor.configurable,
+        enumerable: globalTypeErrorDescriptor.enumerable,
+        get() {
+          poisonHits.globalTypeError += 1;
+          return globalTypeErrorDescriptor.value;
+        },
+      });
+      Object.defineProperty(WeakMap.prototype, "has", {
+        ...weakMapHasDescriptor,
+        value(this: WeakMap<object, unknown>, key: object) {
+          poisonHits.weakMapHas += 1;
+          return Reflect.apply(weakMapHasDescriptor.value, this, [
+            key,
+          ]) as boolean;
+        },
+      });
+      Object.defineProperty(WeakMap.prototype, "get", {
+        ...weakMapGetDescriptor,
+        value(this: WeakMap<object, unknown>, key: object) {
+          poisonHits.weakMapGet += 1;
+          return Reflect.apply(weakMapGetDescriptor.value, this, [
+            key,
+          ]) as unknown;
+        },
+      });
+      Object.defineProperty(WeakMap.prototype, "set", {
+        ...weakMapSetDescriptor,
+        value(this: WeakMap<object, unknown>, key: object, value: unknown) {
+          poisonHits.weakMapSet += 1;
+          return Reflect.apply(weakMapSetDescriptor.value, this, [
+            key,
+            value,
+          ]) as WeakMap<object, unknown>;
+        },
+      });
+      Object.defineProperty(typedArrayPrototype, "slice", {
+        ...typedArraySliceDescriptor,
+        value(this: Uint8Array, start?: number, end?: number) {
+          poisonHits.typedArraySlice += 1;
+          return Reflect.apply(typedArraySliceDescriptor.value, this, [
+            start,
+            end,
+          ]) as Uint8Array;
+        },
+      });
+
+      assertProviderStrictEd25519CryptoCapabilityIdentityV1(
+        ProviderStrictEd25519AttestationError,
+        capability,
+      );
+      pointResult =
+        await validateProviderStrictEd25519PointWithCapabilityV1(
+          capability,
+          publicKey,
+        );
+      signatureResult = await verifyRawEd25519WithCapabilityV1(
+        capability,
+        publicKey,
+        message,
+        signature,
+      );
+      firstCapabilityBytes =
+        getProviderStrictEd25519CryptoCapabilityBytesV1(capability);
+      firstCapabilityBytes[0] = firstCapabilityBytes[0]! ^ 0xff;
+      secondCapabilityBytes =
+        getProviderStrictEd25519CryptoCapabilityBytesV1(capability);
+
+      registerProviderStrictEd25519OpaqueCapabilityStateV1(
+        internalOwner,
+        internalCapability,
+        internalMethods,
+        internalBytes,
+      );
+      internalBytes[0] = 9;
+      assertProviderStrictEd25519CryptoCapabilityIdentityV1(
+        internalOwner,
+        internalCapability,
+      );
+      retrievedInternalMethods =
+        getProviderStrictEd25519OpaqueCapabilityMethodsV1(
+          internalOwner,
+          internalCapability,
+        );
+      copiedInternalBytes =
+        copyProviderStrictEd25519CryptoCapabilityBytesV1(
+          internalOwner,
+          internalCapability,
+        );
+
+      try {
+        getProviderStrictEd25519CryptoCapabilityBytesV1(forgedWithGetter);
+      } catch (error) {
+        forgedGetterError = error;
+      }
+      try {
+        getProviderStrictEd25519CryptoCapabilityBytesV1(forgedProxy);
+      } catch (error) {
+        forgedProxyError = error;
+      }
+    } finally {
+      Object.defineProperty(
+        globalThis,
+        "TypeError",
+        globalTypeErrorDescriptor,
+      );
+      Object.defineProperty(
+        WeakMap.prototype,
+        "has",
+        weakMapHasDescriptor,
+      );
+      Object.defineProperty(
+        WeakMap.prototype,
+        "get",
+        weakMapGetDescriptor,
+      );
+      Object.defineProperty(
+        WeakMap.prototype,
+        "set",
+        weakMapSetDescriptor,
+      );
+      Object.defineProperty(
+        typedArrayPrototype,
+        "slice",
+        typedArraySliceDescriptor,
+      );
+    }
+
+    expect(pointResult).toBe(true);
+    expect(signatureResult).toBe(true);
+    expect(firstCapabilityBytes).toBeDefined();
+    expect(secondCapabilityBytes).toEqual(
+      canonicalizeJcsSafeIntegerUtf8V1(
+        PROVIDER_STRICT_ED25519_CRYPTO_CAPABILITY_V1,
+      ),
+    );
+    expect(firstCapabilityBytes).not.toEqual(secondCapabilityBytes);
+    expect(retrievedInternalMethods).toBe(internalMethods);
+    expect(copiedInternalBytes).toEqual(new Uint8Array([1, 2, 3]));
+    expect(poisonHits).toEqual({
+      globalTypeError: 0,
+      weakMapHas: 0,
+      weakMapGet: 0,
+      weakMapSet: 0,
+      typedArraySlice: 0,
+    });
+    expect(
+      Object.getOwnPropertyDescriptor(globalThis, "TypeError"),
+    ).toEqual(globalTypeErrorDescriptor);
+    expect(
+      Object.getOwnPropertyDescriptor(WeakMap.prototype, "has"),
+    ).toEqual(weakMapHasDescriptor);
+    expect(
+      Object.getOwnPropertyDescriptor(WeakMap.prototype, "get"),
+    ).toEqual(weakMapGetDescriptor);
+    expect(
+      Object.getOwnPropertyDescriptor(WeakMap.prototype, "set"),
+    ).toEqual(weakMapSetDescriptor);
+    expect(
+      Object.getOwnPropertyDescriptor(typedArrayPrototype, "slice"),
+    ).toEqual(typedArraySliceDescriptor);
+    expect(forgedGetterError).toBeInstanceOf(
+      ProviderStrictEd25519AttestationError,
+    );
+    expect(forgedProxyError).toBeInstanceOf(
+      ProviderStrictEd25519AttestationError,
+    );
+    expect(fakeGetterCalls.count).toBe(0);
+    expect(fakeProxyTrapCalls.count).toBe(0);
+  });
+
+  it("keeps package-internal capability helpers out of public modules", () => {
+    const internalExportNames = [
+      "assertProviderStrictEd25519CryptoCapabilityIdentityV1",
+      "copyProviderStrictEd25519ByteRangeInternalV1",
+      "copyProviderStrictEd25519BytesInternalV1",
+      "copyProviderStrictEd25519CryptoCapabilityBytesV1",
+      "getProviderStrictEd25519OpaqueCapabilityMethodsV1",
+      "isProviderStrictEd25519CryptoCapabilityIdentityV1",
+      "registerProviderStrictEd25519OpaqueCapabilityStateV1",
+    ];
+    for (const exportName of internalExportNames) {
+      expect(Object.hasOwn(publicConformanceModuleV1, exportName)).toBe(false);
+      expect(Object.hasOwn(publicPackageModuleV1, exportName)).toBe(false);
+    }
   });
 
   it("snapshots the selected host before awaiting the fixed resource", async () => {

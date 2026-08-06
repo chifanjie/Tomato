@@ -31,6 +31,7 @@ import {
   ProviderRealFilesystemFixtureCorpusManifestSignatureV1Schema,
   ProviderRealFilesystemSuiteManifestSignatureV1Schema,
   ProviderReleaseMatrixSignatureV1Schema,
+  ProviderReleaseTargetUniverseSignatureV1Schema,
   ProviderRegistryManifestGenerationIdV1Schema,
   ProviderRegistryManifestSignatureV1Schema,
   ProviderRegistryRootKeyIdV1Schema,
@@ -234,6 +235,24 @@ import {
   ProviderTargetDiscoveryPointInvalidManifestV1Schema,
 } from "./provider-target-discovery-point-fixtures.js";
 import {
+  ProviderReleaseCoverageIncompleteReasonV1Schema,
+  ProviderReleaseTargetBucketCoverageV1Schema,
+  ProviderReleaseTargetCoverageBasisV1Schema,
+  ProviderReleaseTargetCoverageResolutionV1Schema,
+  ProviderReleaseTargetUniverseBucketV1Schema,
+  ProviderReleaseTargetUniverseEnvelopeV1Schema,
+  ProviderReleaseTargetUniversePinV1Schema,
+  ProviderReleaseTargetUniversePointInvalidReasonV1Schema,
+  ProviderReleaseTargetUniversePointInvalidStageV1Schema,
+  ProviderReleaseTargetUniverseSignatureWrapperV1Schema,
+  ProviderReleaseTargetUniverseUnsignedClaimsV1Schema,
+  ProviderReleaseTargetUniverseV1Schema,
+} from "./provider-release-target-universe-point.js";
+import {
+  ProviderReleaseTargetUniversePointGoldenManifestV1Schema,
+  ProviderReleaseTargetUniversePointInvalidManifestV1Schema,
+} from "./provider-release-target-universe-point-fixtures.js";
+import {
   ProviderFeasibilityApprovalKeysV1Schema,
   ProviderFeasibilityApproverKeyIdFieldsV1Schema,
   ProviderFeasibilityApproverPublicKeySignatureWrapperV1Schema,
@@ -373,6 +392,8 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 =
     ProviderTargetDiscoveryInputBundleSignatureV1Schema,
   "provider-target-discovery-result-signature":
     ProviderTargetDiscoveryResultSignatureV1Schema,
+  "provider-release-target-universe-signature":
+    ProviderReleaseTargetUniverseSignatureV1Schema,
   "store-provider-registry-signature":
     StoreProviderRegistrySignatureV1Schema,
   "provider-registry-manifest-signature":
@@ -798,6 +819,34 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 =
     ProviderTargetDiscoveryPointGoldenManifestV1Schema,
   "provider-target-discovery-point-invalid-manifest":
     ProviderTargetDiscoveryPointInvalidManifestV1Schema,
+  "provider-release-coverage-incomplete-reason":
+    ProviderReleaseCoverageIncompleteReasonV1Schema,
+  "provider-release-target-bucket-coverage":
+    ProviderReleaseTargetBucketCoverageV1Schema,
+  "provider-release-target-universe-bucket":
+    ProviderReleaseTargetUniverseBucketV1Schema,
+  "provider-release-target-coverage-resolution":
+    ProviderReleaseTargetCoverageResolutionV1Schema,
+  "provider-release-target-coverage-basis":
+    ProviderReleaseTargetCoverageBasisV1Schema,
+  "provider-release-target-universe-unsigned-claims":
+    ProviderReleaseTargetUniverseUnsignedClaimsV1Schema,
+  "provider-release-target-universe":
+    ProviderReleaseTargetUniverseV1Schema,
+  "provider-release-target-universe-envelope":
+    ProviderReleaseTargetUniverseEnvelopeV1Schema,
+  "provider-release-target-universe-pin":
+    ProviderReleaseTargetUniversePinV1Schema,
+  "provider-release-target-universe-signature-wrapper":
+    ProviderReleaseTargetUniverseSignatureWrapperV1Schema,
+  "provider-release-target-universe-point-invalid-stage":
+    ProviderReleaseTargetUniversePointInvalidStageV1Schema,
+  "provider-release-target-universe-point-invalid-reason":
+    ProviderReleaseTargetUniversePointInvalidReasonV1Schema,
+  "provider-release-target-universe-point-golden-manifest":
+    ProviderReleaseTargetUniversePointGoldenManifestV1Schema,
+  "provider-release-target-universe-point-invalid-manifest":
+    ProviderReleaseTargetUniversePointInvalidManifestV1Schema,
   });
 
 export type ProviderContractJsonSchemaNameV1 =
@@ -836,6 +885,15 @@ function schemaDocument(
   const generated = z.toJSONSchema(schema, {
     target: "draft-2020-12",
     unrepresentable: "any",
+    // This manifest keeps every positional case contract while reusing the
+    // recursive replay and expectation schemas. Inlining those shared nodes
+    // produces a ~24 MiB validator that overflows default AJV stacks; refs
+    // preserve every per-position literal without changing other schema bytes.
+    reused:
+      name ===
+      "provider-release-target-universe-point-invalid-manifest"
+        ? "ref"
+        : "inline",
   }) as unknown as Record<string, unknown>;
   closeExactTupleKeywords(generated);
   return {

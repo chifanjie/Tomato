@@ -94,6 +94,16 @@
       "import": "./dist/provider-target-discovery-point-fixtures.js",
       "default": "./dist/provider-target-discovery-point-fixtures.js"
     },
+    "./provider-release-target-universe-point": {
+      "types": "./dist/provider-release-target-universe-point.d.ts",
+      "import": "./dist/provider-release-target-universe-point.js",
+      "default": "./dist/provider-release-target-universe-point.js"
+    },
+    "./provider-release-target-universe-point-fixtures": {
+      "types": "./dist/provider-release-target-universe-point-fixtures.d.ts",
+      "import": "./dist/provider-release-target-universe-point-fixtures.js",
+      "default": "./dist/provider-release-target-universe-point-fixtures.js"
+    },
     "./public-key-digest": {
       "types": "./dist/public-key-digest.d.ts",
       "import": "./dist/public-key-digest.js",
@@ -125,7 +135,8 @@
     "generate:provider-runtime-attestation-point": "pnpm run build && node scripts/generate-provider-runtime-attestation-point.mjs",
     "generate:provider-feasibility-evidence-point": "pnpm run build && node scripts/generate-provider-feasibility-evidence-point.mjs",
     "generate:provider-target-discovery-point": "pnpm run build && node scripts/generate-provider-target-discovery-point.mjs",
-    "prepack": "npm run build && npm run verify:schemas && npm run verify:fixtures && npm run verify:strict-ed25519 && npm run verify:golden && npm run verify:bootstrap-trust-invalid && npm run verify:bootstrap-trust && npm run verify:provider-root-history && npm run verify:provider-registry-manifest-history && npm run verify:provider-registry-manifest-invalid && npm run verify:provider-real-fs-source && npm run verify:provider-target-discovery-point && npm run verify:provider-real-fs-conformance-result && npm run verify:provider-runtime-attestation-point && npm run verify:provider-feasibility-evidence-point",
+    "generate:provider-release-target-universe-point": "pnpm run build && node scripts/generate-provider-release-target-universe-point.mjs",
+    "prepack": "npm run build && npm run verify:schemas && npm run verify:fixtures && npm run verify:strict-ed25519 && npm run verify:golden && npm run verify:bootstrap-trust-invalid && npm run verify:bootstrap-trust && npm run verify:provider-root-history && npm run verify:provider-registry-manifest-history && npm run verify:provider-registry-manifest-invalid && npm run verify:provider-real-fs-source && npm run verify:provider-target-discovery-point && npm run verify:provider-release-target-universe-point && npm run verify:provider-real-fs-conformance-result && npm run verify:provider-runtime-attestation-point && npm run verify:provider-feasibility-evidence-point",
     "test:distribution": "node scripts/test-distribution.mjs",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "verify:golden": "node scripts/verify-golden.mjs",
@@ -140,9 +151,10 @@
     "verify:provider-runtime-attestation-point": "node scripts/generate-provider-runtime-attestation-point.mjs --check && node scripts/verify-provider-runtime-attestation-point.mjs",
     "verify:provider-feasibility-evidence-point": "node scripts/generate-provider-feasibility-evidence-point.mjs --check && node scripts/verify-provider-feasibility-evidence-point.mjs",
     "verify:provider-target-discovery-point": "node scripts/generate-provider-target-discovery-point.mjs --check && node scripts/verify-provider-target-discovery-point.mjs",
+    "verify:provider-release-target-universe-point": "node scripts/generate-provider-release-target-universe-point.mjs --check && node scripts/verify-provider-release-target-universe-point.mjs",
     "verify:schemas": "node scripts/generate-json-schemas.mjs --check",
     "verify:strict-ed25519": "node scripts/verify-strict-ed25519.mjs",
-    "test": "pnpm run build && pnpm run typecheck && pnpm run verify:schemas && pnpm run verify:fixtures && pnpm run verify:strict-ed25519 && pnpm run verify:golden && pnpm run verify:bootstrap-trust-invalid && pnpm run verify:bootstrap-trust && pnpm run verify:provider-root-history && pnpm run verify:provider-registry-manifest-history && pnpm run verify:provider-registry-manifest-invalid && pnpm run verify:provider-real-fs-source && pnpm run verify:provider-target-discovery-point && pnpm run verify:provider-real-fs-conformance-result && pnpm run verify:provider-runtime-attestation-point && pnpm run verify:provider-feasibility-evidence-point && vitest run --maxWorkers=1 && pnpm run test:distribution"
+    "test": "pnpm run build && pnpm run typecheck && pnpm run verify:schemas && pnpm run verify:fixtures && pnpm run verify:strict-ed25519 && pnpm run verify:golden && pnpm run verify:bootstrap-trust-invalid && pnpm run verify:bootstrap-trust && pnpm run verify:provider-root-history && pnpm run verify:provider-registry-manifest-history && pnpm run verify:provider-registry-manifest-invalid && pnpm run verify:provider-real-fs-source && pnpm run verify:provider-target-discovery-point && pnpm run verify:provider-release-target-universe-point && pnpm run verify:provider-real-fs-conformance-result && pnpm run verify:provider-runtime-attestation-point && pnpm run verify:provider-feasibility-evidence-point && vitest run --maxWorkers=1 && pnpm run test:distribution"
   },
   "dependencies": {
     "zod": "^4.3.6"

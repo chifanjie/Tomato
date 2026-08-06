@@ -31,6 +31,7 @@ export {
   ProviderRealFilesystemFixtureCorpusManifestSignatureV1Schema,
   ProviderRealFilesystemSuiteManifestSignatureV1Schema,
   ProviderReleaseMatrixSignatureV1Schema,
+  ProviderReleaseTargetUniverseSignatureV1Schema,
   ProviderRegistryManifestGenerationIdV1Schema,
   ProviderRegistryManifestSignatureV1Schema,
   ProviderRegistryRootKeyIdV1Schema,
@@ -67,6 +68,7 @@ export type {
   ProviderRealFilesystemFixtureCorpusManifestSignatureV1,
   ProviderRealFilesystemSuiteManifestSignatureV1,
   ProviderReleaseMatrixSignatureV1,
+  ProviderReleaseTargetUniverseSignatureV1,
   ProviderRegistryManifestGenerationIdV1,
   ProviderRegistryManifestSignatureV1,
   ProviderRegistryRootKeyIdV1,
@@ -287,6 +289,8 @@ export * from "./provider-feasibility-evidence-point.js";
 export * from "./provider-feasibility-evidence-point-fixtures.js";
 export * from "./provider-target-discovery-point.js";
 export * from "./provider-target-discovery-point-fixtures.js";
+export * from "./provider-release-target-universe-point.js";
+export * from "./provider-release-target-universe-point-fixtures.js";
 export {
   ProviderRegistryRootCrossSignatureWrapperV1Schema,
   ProviderRegistryRootHistoryValidationError,

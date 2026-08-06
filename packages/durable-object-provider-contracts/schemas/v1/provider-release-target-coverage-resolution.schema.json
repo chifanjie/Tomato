@@ -1,0 +1,41 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-release-target-coverage-resolution",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "const": "closed_world_complete"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "const": "incomplete"
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "release_matrix_incomplete",
+            "target_discovery_unresolved",
+            "taxonomy_mapping_unresolved"
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "reason"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

@@ -220,6 +220,16 @@ export type ProviderTargetDiscoveryResultSignatureV1 = z.infer<
   typeof ProviderTargetDiscoveryResultSignatureV1Schema
 >;
 
+export const ProviderReleaseTargetUniverseSignatureV1Schema = z
+  .string()
+  .regex(
+    /^provider-release-target-universe-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$/u,
+  )
+  .brand<"ProviderReleaseTargetUniverseSignatureV1">();
+export type ProviderReleaseTargetUniverseSignatureV1 = z.infer<
+  typeof ProviderReleaseTargetUniverseSignatureV1Schema
+>;
+
 export const ProviderFilesystemProfileCodeV1Schema = z
   .string()
   .regex(/^provider-fs-profile:[0-9a-f]{22}$/u)

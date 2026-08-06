@@ -1,0 +1,18 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-release-target-universe-point-invalid-reason",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "schema_invalid",
+    "source_invalid",
+    "binding_mismatch",
+    "pin_mismatch",
+    "root_mismatch",
+    "count_mismatch",
+    "digest_mismatch",
+    "ordering_invalid",
+    "coverage_mismatch",
+    "signature_invalid",
+    "envelope_mismatch"
+  ]
+}

@@ -233,21 +233,17 @@ resource. The generator and verifier bind both the raw resource and
 digests. The already-published Root Metadata invalid corpus remains the exact
 31-case resource described below.
 
-The C09-1I inventory contains exactly 241 draft-2020-12 JSON Schemas at this
-checkpoint (the C09-1H baseline was 233), including every primitive,
+The C09-1K inventory contains exactly 268 draft-2020-12 JSON Schemas at this
+checkpoint (the C09-1J baseline was 253), including every primitive,
 supporting wire and unsigned projection, atomic genesis/successor and
-enabled/revoked branch,
-routing union, Envelope, Pin, fixed locator, the previously frozen six
-Registry wrappers plus the four Target Discovery signature wrappers, and the
-seven-generation golden manifest. The inventory also includes the exact
-89-case invalid Registry Manifest plus its stage and reason enums, and the
-complete signed real-filesystem source, Target Discovery, and unsigned
-Conformance Result DTO, Envelope, Pin, locator, golden, invalid, stage, and
-reason surface. The eight C09-1I additions cover strict Provider isolation,
-receipt-ledger policy, semantic Provider Policy, filesystem-profile fields,
-and the Runtime Attestation point golden/invalid/stage/reason fixtures.
-Consumers should use the shipped inventory rather than assume 241 is a forever
-constant.
+enabled/revoked branch, routing union, Envelope, Pin, fixed locator, the
+previously frozen Registry, Target Discovery, Runtime Attestation, and
+Feasibility Evidence surface, and their immutable golden/invalid manifests.
+The 15 C09-1K additions cover the dedicated Universe signature primitive,
+incomplete reason, bucket coverage and bucket, coverage resolution and basis,
+unsigned claims, complete Universe, Envelope, Pin, signature wrapper,
+point stage/reason, and the two fixture manifests. Consumers should use the
+shipped inventory rather than assume 268 is a forever constant.
 
 The production sources remain ES2022 browser/worker portable. The npm/browser
 distribution gate must expose the new public API through the root and
@@ -257,11 +253,16 @@ distribution gate must expose the new public API through the root and
 `./provider-real-filesystem-conformance-result`, and
 `./provider-real-filesystem-conformance-result-fixtures`,
 `./provider-runtime-attestation-point`, and
-`./provider-runtime-attestation-point-fixtures` exports, pack all
+`./provider-runtime-attestation-point-fixtures`,
+`./provider-feasibility-evidence-point`,
+`./provider-feasibility-evidence-point-fixtures`,
+`./provider-release-target-universe-point`, and
+`./provider-release-target-universe-point-fixtures` exports, pack all
 `schemas/`, `fixtures/`, and fixed `provider/` resources, reject private deep
 imports, and execute the same Registry, real-filesystem source, and Target
-Discovery, Conformance Result, and Runtime Attestation point validators from
-clean Node and browser-bundle installs. There are exactly 17 explicit public
+Discovery, Conformance Result, Runtime Attestation, Feasibility Evidence, and
+Release Target Universe point validators from clean Node and browser-bundle
+installs. There are exactly 21 explicit public
 module exports at this checkpoint.
 `test:distribution` enforces exact source-to-packed Schema path-set equality
 in addition to that gate; a successful source build alone must not be
@@ -507,6 +508,84 @@ focused tests, and packed Node/Vite/browser KAT all consume those same resources
 both clean-tar runtimes independently recompute every materialized witness
 digest.
 
+## C09-1J QA/Release Provider Feasibility Evidence point
+
+`validateProviderFeasibilityEvidencePointClosureV1` accepts the complete raw
+C09-1I request plus one root-signed QA approver key, one distinct root-signed
+Release approver key, a dual-signed Feasibility Evidence Envelope, and its Pin.
+It snapshots the exact 20-field request before the first asynchronous boundary
+and invokes the C09-1I diagnostic exactly once. A successful validation performs
+three strict point admissions and 11 signature verifications: the inherited
+1/7 Runtime closure, two approver-key admissions, two approver-record root
+signatures, and the Evidence QA/Release signatures.
+
+The Evidence ID binds the Provider, semantic Policy, Runtime Attestation,
+implementation and binary attestations, complete target, isolation and IPC
+policy, real-filesystem Suite and Result, Fixture/Runner/Cut provenance,
+aggregate result, and issuance time. QA and Release sign byte-identical claims
+under role-separated domains. The complete dual-signed payload then determines
+the Envelope content digest and Pin. `issuedAt` ordering is compared at exact
+nanosecond precision; this closure deliberately adds no wall clock, TTL,
+freshness, or `current` claim.
+
+Success returns only
+`authority: "none_provider_feasibility_evidence_structure_only"`. The approver
+records are supplied-point facts, not proof of key history, current selection,
+revocation state, production approval, or live Provider execution. The immutable
+golden resource contains independent `passed`, `failed`, and `unsupported`
+positive vectors. Its paired invalid resource replays all 122 Runtime operations
+and adds 105 Evidence-specific operations, for 227 ordered executable cases with
+fresh request witnesses and exact crypto counts.
+
+## C09-1K closed-world Release Target Universe point
+
+`validateProviderReleaseTargetUniversePointClosureV1` accepts the exact raw
+C09-1G request plus a root-signed Release Target Universe Envelope. Before any
+Promise or cryptographic work, the non-async wrapper performs identity-first,
+descriptor-only bounded admission across the complete 12-field graph, rejects
+accessors, Proxy identities, aliases, cycles, sparse containers, and budget
+overruns, and trusted-clones one sealed capsule exactly once. The opaque strict
+crypto capability keeps its original owner-bound identity. The detached frozen
+snapshot is then handed to the C09-1G core without a second clone.
+
+Universe coverage exact-pins the verified Matrix and Discovery Result and
+rechecks their limits, ruleset, dimension/source tuples, Bundle and observation
+cut, target counts and set digests, and unresolved count. Its target entries are
+the canonical full-byte union (therefore the already-verified Discovery target
+set), while public-profile buckets are ordered, unique, and an exact partition.
+Resolution is the single ordered total function
+`taxonomy_mapping_unresolved` → `target_discovery_unresolved` →
+`release_matrix_incomplete` → `closed_world_complete`; an incomplete Universe
+uses the same derived reason in every bucket.
+
+The dedicated `provider-release-target-universe-signature-v1` signature covers
+the complete unsigned Universe claims. The full signed payload determines the
+`provider-release-target-universe-v1` content digest, derived Pin, and only valid
+relative path under `provider/release-target-universe/`. A successful point
+performs exactly one active-root point admission and seven signature
+verifications and returns only
+`authority: "none_release_target_universe_structure_only"`. The standalone path
+builder performs its own single bounded snapshot and remains 0/0 and
+authority-free.
+
+Public Promise shells and all derived `then`/`catch`/`finally` chains are native,
+recursively frozen, and own-hardened against post-bootstrap Promise prototype or
+species poisoning. Fulfilled top-level records are frozen null-prototype records.
+These hardening helpers and the C09-1G pre-snapshot sidecars are package-private;
+the public C09-1G wire and its original immutable resource bytes remain unchanged.
+
+The immutable golden resource is
+`fixtures/v1/golden/provider-release-target-universe-point-v1.json`. It freezes
+four genuine resolution vectors, each with the exact 1/7 closure. The paired
+invalid resource preserves all 116 C09-1G operations in their original positions
+and adds 169 Universe-specific operations, for 285 fresh ordered cases. The
+corpus covers the 16-stage/11-reason first-boundary contract, coverage and bucket
+precedence, signature/digest/Envelope/path substitution, resource budgets,
+hostile containers, Promise pollution, and asynchronous mutation. This point
+does not prove retained predecessor history, current selection, Catalog
+exact-cover, Registry/Acceptance state, a real Provider, I/O, migration, or
+strong-write authority.
+
 ## Verification
 
 ```sh
@@ -527,6 +606,10 @@ pnpm --filter @understand-code/durable-object-provider-contracts generate:provid
 pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-real-fs-conformance-result
 pnpm --filter @understand-code/durable-object-provider-contracts generate:provider-runtime-attestation-point
 pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-runtime-attestation-point
+pnpm --filter @understand-code/durable-object-provider-contracts generate:provider-feasibility-evidence-point
+pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-feasibility-evidence-point
+pnpm --filter @understand-code/durable-object-provider-contracts generate:provider-release-target-universe-point
+pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-release-target-universe-point
 pnpm --filter @understand-code/durable-object-provider-contracts generate:schemas
 pnpm --filter @understand-code/durable-object-provider-contracts verify:schemas
 pnpm --filter @understand-code/durable-object-provider-contracts exec vitest run \
@@ -541,6 +624,11 @@ pnpm --filter @understand-code/durable-object-provider-contracts exec vitest run
   test/provider-real-filesystem-conformance-result-fixtures.test.ts \
   test/provider-runtime-attestation-point.test.ts \
   test/provider-runtime-attestation-point-fixtures.test.ts \
+  test/provider-feasibility-evidence-point.test.ts \
+  test/provider-feasibility-evidence-point-fixtures.test.ts \
+  test/provider-release-target-universe-wire.test.ts \
+  test/provider-release-target-universe-point.test.ts \
+  test/provider-release-target-universe-point-fixtures.test.ts \
   test/json-schema.test.ts
 pnpm --filter @understand-code/durable-object-provider-contracts test
 pnpm --filter @understand-code/durable-object-provider-contracts test:distribution
@@ -556,7 +644,7 @@ diagnostics, and crypto call counts are checked by
 `verify:provider-registry-manifest-invalid`. The signed real-filesystem fixture
 anchors, exact source closure, and 43 materialized negative diagnostics are
 checked by `verify:provider-real-fs-source`. `test/json-schema.test.ts` freezes
-the current 241-schema inventory and `verify:schemas` rejects generated-file
+the current 268-schema inventory and `verify:schemas` rejects generated-file
 drift. `verify:provider-target-discovery-point` checks the exact five locators,
 six-signature closure, canonical empty Fixture/Runner success, typed unresolved
 projection, and all 116 ordered diagnostic/executable recipes.
@@ -567,6 +655,12 @@ results, immutable anchors, and all 50 ordered executable cases.
 seven-signature Result-to-Policy-to-Runtime closure, immutable 16-field
 snapshot and returned projection, none-only authority, and all 122 ordered
 executable cases.
+`verify:provider-feasibility-evidence-point` checks the exact three-point,
+11-signature Runtime-to-QA/Release Evidence closure, immutable 20-field
+snapshot, three structurally valid outcomes, and all 227 ordered executable
+cases. `verify:provider-release-target-universe-point` checks all four 1/7
+resolution closures, exact C09-1G replay, fixed coverage/bucket semantics,
+hardened Promise and raw-admission behavior, and all 285 fresh ordered cases.
 `test:distribution` is the clean packed Node/browser source for the npm
 distribution claims.
 

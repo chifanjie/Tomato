@@ -2,7 +2,7 @@
 
 记录 ID：`G0-2026-07-28`
 
-状态：**Closed for implementation；WP5 Decision Amendments D-24～D-36 incorporated**
+状态：**Closed for implementation；WP5 Decision Amendments D-24～D-37 incorporated**
 
 候选基线：`34da354968a6071d914e4e4a4fca738e6c2d8a29`
 
@@ -47,7 +47,7 @@ generation pin Pulse，再只以唯一 maximal Store Manifest generation所 pin�
 保留为 legacy/read-only projection。该修订不新增 Artifact Type 或 Lifecycle
 状态，只冻结 Pulse 版本身份、历史可寻址性和恢复边界。
 
-2026-07-30～2026-08-06 的 D-24～D-36 是 WP5 实现前及分层实现中的证据模型、写入边界与
+2026-07-30～2026-08-06 的 D-24～D-37 是 WP5 实现前及分层实现中的证据模型、写入边界与
 Provider可行性修订。审计确认：
 原 Change Check 没有 Actual Change 实体、Hunk 或完整性证明；Repository
 Snapshot 也不能重建任务开始时已经存在的 dirty/untracked 内容。修订因此新增
@@ -122,7 +122,7 @@ Gate的 target只可 legacy/redacted read-only。这些修订不增加 D-21
 - 性能 Evidence 保存生产源文件 Hash、原始样本、预热/采样数和 expected/actual 完整性字段。
 - Host Evidence 保持 Surface 边界；Codex App Server provisional 结果和 Claude 未认证 Tool Call 不被提升为 supported。
 
-## 4. D-13～D-36 冻结结果
+## 4. D-13～D-37 冻结结果
 
 ### D-13：P0 平台
 
@@ -1051,17 +1051,58 @@ AT-C31与AT-Q33以 WP5 Matrix为唯一规范。D-31不改变 D-21 Lifecycle；�
   verification，authority仅为`none_release_target_universe_structure_only`；不证明
   distribution history/current、Catalog/Registry、Acceptance、真实 I/O或 strong write。
 
+### D-37：Registry Entry↔Evidence supplied-history candidate
+
+状态：`accepted`（2026-08-06 Decision Amendment）
+
+- D-37把 C09-1L冻结为22字段 raw input上的 production-format Registry Entry↔passed
+  Evidence supplied-history candidate：入口以 C09-1I完整16字段为基础，增加 Evidence
+  Envelope/Pin、Installation Identity、Bootstrap Bundle、Root history与 Registry Manifest
+  history；Entry、provider与 QA/Release key全部从同一次已验证 history tip派生，caller不得
+  提供。Evidence signer按 role命中未撤销 historical approver，允许不是 current active key，
+  从而不因正常 root/key rotation误废弃旧 Evidence。authoritative current仍只能由后继
+  Acceptance选择；成功 authority仅为
+  `none_registry_entry_evidence_binding_structure_only`，不证明 Catalog exact-cover、五链
+  current、唯一 writer、真实 Provider/I/O或 strong write。shared raw collector固定 depth=64，
+  Bundle/Evidence/单 trust Envelope的 budget `B=4,194,304`、C09-1I既有大对象
+  `B=16,777,216`，Root/Registry history count=256/4096、retained trust总量=268,435,456；
+  node/property-name＋string-value/dense limit由各自`B`规范推导，两条 history另共享 raw
+  `B_H=268,435,456`；raw admission对包含 original input与全部 observed
+  identity的 capsule恰好做一次 full-input trusted clone；full-capsule identity/work cap固定
+  2,097,152/16,777,216并以 machine topology proof与 C/C+1、W/W+1 zero-clone fixture关闭，bootstrap及
+  request都断言 original/collector shared-child alias在 clone后仍 memoized且 detached。prepared cores随后零 clone，
+  prepared Registry input与 verified history witness使用两张 per-invocation WeakMap/两个 one-shot
+  handle，不能被同 capability并发调用串用；pre-clone failure ledger=0、抵达唯一 clone boundary=1，
+  prepared closure保持 detached history identity且 private copy ledger证明没有第二份 full-history graph；
+  Registry→Root及 C09-1I→C09-1H两条 prepared call graph都只能进入 transitive no-snapshot subcore。
+  `evidence_id`由 stage-3 prepared payload的 private exact 16-field projection派生，避免 malformed role
+  signature被旧 strict public projector提前吞掉；digest/Envelope/Pin分别关闭 payload digest、outer ID与
+  Pin ID/digest。diagnostic固定26 stage / 15 reason及逐 stage predicate/
+  crypto-prefix表：history前0/0、history source exact prefix、binding为`P_H/S_H`、prepared C09-1I
+  为`P_H/(S_H+S_I_prefix)`、其后 non-crypto为`P_H/(S_H+6)`、QA为`+7`、Release及后继为
+  `+8`；成功固定`P_L=P_H`、`S_L=S_H+8`，当前 full-history anchor 24/38对应24/46。新
+  compatible base以 Registry `native-b`拓扑重签全部关联 C09-1I/Evidence/Entry对象，旧 C09-1J
+  与 Registry资源只作227+89项 source inventory，不直接拼接。adapter expected使用 diagnostic或
+  accepted-snapshot discriminated union；J 227项内固定6个3/11 snapshot case（其中2项仅有 Runtime
+  1/7 lineage，禁止重复计数）在 L中映射 detached-snapshot success，并核对固定10字段 projection与
+  完整 frozen closure；shard完整性使用 branch-aware expected-outcome digest而非强制 stage/reason。
+  执行固定连续32-case shard、最多4 worker；Node22/pnpm9下专属验证≤10分钟/process-tree aggregate
+  peak RSS≤1,536 MiB（monotonic spawn→last-child-exit并计入存活 worker/packed/Vite/browser child），
+  根 quality≤40分钟且不提高
+  45分钟 workflow timeout。完整表以 PRD D-37为唯一 normative定义，Matrix只作追踪镜像。
+
 2026-08-06 implementation evidence：C09-1K code slice
 `3e6f516d089aaacaf67984f46ca972d8687a5772`已独立提交并推送；Provider package最新
 切片冻结268份 JSON Schema、21个显式 public module + 3个 wildcard resource export、
 4份 genuine positive vector，以及116个 inherited + 169个 point-specific = 285个
 ordered executable case；其中 inherited accepted-snapshot保持成功结果。internal
 diagnostic拒绝分类固定16个 stage / 11个 reason；fixture另含2个 locator-builder stage
-与3个无stage/reason的 snapshot-stability success。成功路径
+`target_discovery_locator`、`universe_locator`与3个无stage/reason的 snapshot-stability
+success。成功路径
 固定1次 point admission / 7次 signature verification，authority严格为
 `none_release_target_universe_structure_only`。该最新切片不追溯改写C09-1J的
-253份 Schema / 19个显式 public module / 122+105=227个 ordered executable case
-历史证据。
+253份 Schema / 19个显式 public module / 122+105=227个 ordered executable case /
+3次 point admission / 11次 signature verification历史证据。
 golden资源固定为585,993 bytes / SHA-256
 `4bea094e065951abfcc1f42decca105f5bedc94ee947ddb344365374f4d1a914` /
 semantic `sha256:1fa267ecee01d48350708c475365ddc8a3873fef14dbff812cc3c685e27555bc`；
@@ -1083,15 +1124,16 @@ distribution显式`--ignore-scripts=false`，因此 hostile
 strong-write、production或release gates；这些 Gate继续`open/locked`，Surface Release
 Gate也继续为Open。
 
-D-24～D-36 的实现与验收矩阵为
+D-24～D-37 的实现与验收矩阵为
 `docs/research/2026-07-30-wp5-change-intelligence-matrix.md`；其中第 3.8 节是
 必须逐字段等价实现的 normative Schema Appendix。所有 C09 provider
 contract、canonical bytes/golden与 prerequisite conformance归
 WP5-1P；C01～C08 Change Intelligence contracts归 WP5-1，WP5-1后续只能增加
 与已冻结 C09兼容的补充，不能重定义或推迟 C09 Gate。冻结验收范围为
-AT-C01～C31、D01～D38、S01～S16、O01～O33、Q01～Q33，其中 D35～D38 关闭
+AT-C01～AT-C31、AT-D01～AT-D38、AT-S01～AT-S16、AT-O01～AT-O33、
+AT-Q01～AT-Q33，其中 AT-D35～AT-D38 关闭
 Store ownership、Manifest atomic head与 known-redacted/unknown accounting，
-Q29～Q33 关闭 OS locator、handle-bound sandbox、SafeGit resource/race caps、
+AT-Q29～AT-Q33 关闭 OS locator、handle-bound sandbox、SafeGit resource/race caps、
 trust compromise/migration及 strict crypto host/identity lifecycle。这些修订不改变
 D-21 Lifecycle 状态集合或普通转移。
 
@@ -1255,7 +1297,7 @@ capability gap，不是 WP0 新引入回归。对应能力在后续 Gate 关闭�
 | G0-06 Diff Overlay 断链 | 旧 Overlay deprecated，不作为 P0 数据源或完成证据 | WP5/WP7 open | Change Intelligence + Frontend | Change Check Workbench Alpha 前 |
 | G0-07 Worktree 重定向 | Task/Store 绑定当前 canonical worktree；共享只限不可变缓存 | WP3/WP4 core binding closed；WP6 Surface open | Core + Platform | Mandatory Host Surface Alpha 前 |
 | G0-08 Quality/Release | 根 quality、CI 已关闭；CLI/bin、统一版本、License、SBOM、allowlist、Marketplace 留后续 Gate | Partial | Platform + QA | Mandatory Surface Release / M4 |
-| G0-09 Durable Object Provider | strong writer必须使用 OS-isolated exact-object provider、strict Ed25519 host KAT/opaque capability、fixed Bootstrap Trust Bundle + immutable Identity retained historical trust、trust-history caps + append-only Acceptance、root-signed Registry/Taxonomy/Target Universe/Catalog、provider-isolated receipt ledger、atomic path containment、external CAS/journal seal与 bounded dual-namespace migration；未通过或 coverage incomplete target只读 | C09-1K supplied Universe candidate及同SHA CI已关闭；C09 aggregate与WP3P仍open，全部 strong mutations capability locked | Platform/Security Lead + Provider/Systems；QA/Security/Release验证 | 首个 strong Task Alpha前关闭 AT-C31/Q33、签名开发 target profile并验证当前物理 volume runtime exact-match；P0前关闭全部 advertised profiles |
+| G0-09 Durable Object Provider | strong writer必须使用 OS-isolated exact-object provider、strict Ed25519 host KAT/opaque capability、fixed Bootstrap Trust Bundle + immutable Identity retained historical trust、trust-history caps + append-only Acceptance、root-signed Registry/Taxonomy/Target Universe/Catalog、provider-isolated receipt ledger、atomic path containment、external CAS/journal seal与 bounded dual-namespace migration；未通过或 coverage incomplete target只读 | C09-1K supplied Universe candidate及同SHA CI已关闭；D-37/C09-1L contract frozen、implementation pending；C09 aggregate与WP3P仍open，全部 strong mutations capability locked | Platform/Security Lead + Provider/Systems；QA/Security/Release验证 | 首个 strong Task Alpha前关闭 AT-C31/AT-Q33、签名开发 target profile并验证当前物理 volume runtime exact-match；P0前关闭全部 advertised profiles |
 
 ## 8. 当前发布缺口
 
@@ -1291,13 +1333,14 @@ capability gap，不是 WP0 新引入回归。对应能力在后续 Gate 关闭�
 | 条件 | 结果 |
 |---|---|
 | Mission、P0、Non-goals 已冻结 | PASS |
-| D-13～D-19、D-21～D-36 已接受；D-20 有 Owner/Gate | PASS |
+| D-13～D-19、D-21～D-37 已接受；D-20 有 Owner/Gate | PASS |
 | Task Lifecycle、Revision 与幂等语义唯一 | PASS |
 | Root/Error/Rendezvous 语义唯一 | PASS |
 | Surface mandatory/conditional、Owner、后续 Gate 完整 | PASS |
 | G0-01～09 有处置、Owner 和 capability lock | PASS |
 | 根质量、CI、Host 与性能证据可复核 | PASS |
 | C09-1K supplied-point code / local quality / same-SHA CI / independent review | PASS；不外推到 aggregate |
+| Decision D-37 三文档合同、历史 signer 与 crypto-count 口径 | PASS；C09-1L implementation pending |
 | C09 aggregate、真实 Provider、strong-write、production 与 release gates | OPEN / LOCKED |
 | 用户未跟踪文件明确排除 | PASS |
 | PRD/Host Spike 状态同步 | 由包含本记录的提交完成 |

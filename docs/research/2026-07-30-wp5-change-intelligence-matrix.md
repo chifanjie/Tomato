@@ -459,8 +459,9 @@ diagnostic拒绝分类闭合为16个 stage / 11个 reason；fixture另含
 `target_discovery_locator`与`universe_locator`两个 locator-builder stage，以及3个无
 stage/reason的 snapshot-stability success。四份 positive与 accepted snapshot成功路径均固定1次 point
 admission / 7次 signature verification，authority严格保持
-`none_release_target_universe_structure_only`。C09-1J的历史快照仍是253份 Schema、
-19个显式 public module，不以C09-1K的268/21+3数字追溯覆盖。
+`none_release_target_universe_structure_only`。C09-1J的历史快照仍是253份 Schema /
+19个显式 public module / 122+105=227个 ordered executable case / 3次 point admission /
+11次 signature verification，不以C09-1K的268/21+3数字追溯覆盖。
 golden资源固定为585,993 bytes / SHA-256
 `4bea094e065951abfcc1f42decca105f5bedc94ee947ddb344365374f4d1a914` /
 semantic `sha256:1fa267ecee01d48350708c475365ddc8a3873fef14dbff812cc3c685e27555bc`；
@@ -486,12 +487,166 @@ C09-1K只关闭 supplied Universe结构，不证明 Taxonomy/Matrix/Discovery/Un
 predecessor history/current/anti-rollback，也不证明加入 Catalog后的五链 retained/
 current-candidate closure与 accounting、Catalog exact-cover、Registry/approval history、Acceptance、唯一
 writer、真实 Provider/runtime/volume/I/O、strong write或 Migration。后继顺序固定为
-production Registry Entry↔Evidence binding、Catalog、五链 retained history/current-
+production Registry Entry↔Evidence binding、Catalog exact-cover、五链 retained history/current-
 candidate、Acceptance，最后 Migration；WP5-1P aggregate保持 open/locked。
+
+2026-08-06 D-37 pre-implementation amendment：正式冻结 C09-1L为
+production-format Registry Entry↔passed Evidence的 supplied-history candidate binding。
+该 point不把 supplied history tip称为 authoritative current；current仍只能由后继
+`ProviderAcceptanceStateV1(strong_ready)`的 immutable pin选择，D-37也不新增第18个
+Commit Gate。
+
+- raw input固定22个 exact own-data字段：C09-1I完整16项加
+  `bootstrapTrustBundle/installationIdentityGenerationId/
+  providerFeasibilityEvidence/providerFeasibilityEvidencePin/
+  rootMetadataHistory/registryManifestHistory`。caller不得提供 provider ID、Registry
+  Entry、approver record、物理 path、current/verified/approved标记或 bypass DTO。
+- 首次`await`前必须完成 exact descriptor snapshot、opaque capability identity check、
+  shared identity/alias/cycle/preflight与全部 detached clone。所有 branch depth固定64；每个 branch
+  的 node、每个/累计 enumerable own property-name＋string value code unit与普通 dense length上限由其 canonical-byte ceiling `B`
+  规范推导：Bundle/Evidence/单 trust Envelope为4,194,304，C09-1I既有16 MiB对象为
+  16,777,216，history array另固定256/4096。`B+1`统一在 clone/crypto前以`input/schema_invalid`
+  0/0拒绝；两条 history再共享 raw `B_H=268,435,456` node/累计 key+value string/dense-entry
+  budget，post-clone retained canonical bytes仍独立受同一268,435,456 ceiling。full capsule另固定
+  observed identity `C=2,097,152`与 pre-clone allocation work `W=16,777,216`：先预留64，首次 identity
+  在任何 collector/token/clone reservation前 charge 4，每 own key、dense index、frame/scratch各 charge 1，
+  全部用 subtraction先计费后分配；`C+1/W+1`同步`input/schema_invalid`、0/0、零 clone。只读 topology
+  proof generator必须覆盖22-field全部 strict union/policy cardinality并 pin branch/aggregate
+  identity/work derivation；proof超 cap或 drift使 generation失败并重开 D-37，不得静默加 cap。
+  B/B+1与 test-only counter-seam C/C+1、W/W+1 fixture必须含 oversized unknown own-key recipe且不物化巨树。
+  raw-object API不承诺抢占 hostile Proxy trap；生产 transport仍须先 byte-cap并 safe-parse。
+- package-internal raw-admission collector保留 original top-level、两条 history container及全部 nested
+  identity；budget/capability通过后，对 fresh null-prototype
+  `{originalInput,observedIdentities}` capsule恰好执行一次 trusted full-input clone，ledger固定
+  `cloneAttemptCount=1`。这样任一 transparent top-level/nested/array Proxy都由平台拒绝；cloned
+  collector/capability立即丢弃并恢复原 opaque identity。V1 genuine capability的 internal shell固定为
+  frozen/own-key-empty/platform-cloneable ordinary object，authority只在 WeakMap；cloned shell永不用于
+  crypto，representation变化须显式升版。prepared Registry/C09-1I core只消费同一
+  detached/frozen graph的 slice且零 clone，不把最高256 MiB history复制第二次；允许有界 scalar/index、
+  closure DTO与逐 Envelope/单 signature message即弃的 validation/canonical/signature-byte temporary，
+  但禁止跨 Envelope保留或拼接第二份 retained full-history object/canonical-byte graph；copy ledger只计
+  retained parallel history，不把单 Envelope短生命周期 buffer误判为副本。
+  prepared closure必须保持两条 detached history数组及逐项 Envelope identity，private copy ledger固定
+  history snapshot attempt/parallel retained graph均为0；prepared Registry/Root与 C09-1I/C09-1H必须
+  使用 transitive no-snapshot subcore，architecture test禁止 prepared call graph调用任何旧 public
+  validator/diagnostic或 raw snapshot helper，nested prepared snapshot ledger也固定0。
+  module bootstrap必须以 original/collector共同引用同一 child证明 clone后 alias仍同一且已 detached；
+  每次 request clone还必须在丢弃 collector前断言 cloned collector的首 identity与 cloned top-level是
+  `===`。pre-clone budget/alias/capability失败 ledger=0，仅实际到达 clone boundary的成功或 DataCloneError=1，
+  任一路径至多1；private ledger/helper不得 package-export。
+- trust复用固定两个不同 one-shot handle与两张 WeakMap：fresh exact五字段 Registry request
+  identity注册`PreparedRegistryHistoryInputHandleV1`，prepared Registry core入口原子
+  take/delete；成功后再以 exact frozen Registry closure identity注册全新的
+  `RegistryTrustWitnessHandleV1`，prepared C09-1I core原子 take/delete。Registry失败不产生第二
+  handle；candidate提前失败、C09-1I成功/失败与异常均清理，ordinary public调用永不注册。
+  两个 handle同时绑定 per-invocation identity与 capability identity，因此同一合法 capability并发
+  不串线。witness只含 supplied-history tip root、tip Entry Runtime/Manifest/Entry与已验 historical
+  approver事实；public closure、普通 DTO、boolean或另一 invocation都不能制造或重放。
+- Bundle重算 digest必须 exact-equal signed distribution binding中的 Bootstrap Pin；Bundle
+  genesis/root closure归 prepared Registry source。supplied `activeRootMetadata`必须 exact-equal
+  `registryTip.payload.activeRootMetadata`与 Registry closure既有字段`currentRootMetadata`，
+  `activeRoot`再 exact-equal该 Pin唯一命中 retained Root Envelope的`payload.activeRoot`；这里
+  `currentRootMetadata`只是历史 closure字段名，不表示 Acceptance authoritative current，且不能只比
+  key ID。provider selector唯一来自 Evidence payload；tip必须 steady且同 provider恰有一个
+  enabled member，absent/tombstone/migration routing fail closed。
+- Entry的 Evidence Pin、Runtime Pin与 semantic policy digest分别 exact-equal supplied
+  Evidence Pin、C09-1I Runtime与完整 strict Policy重算值。只有上述 binding完成后，C09-1I
+  history-reuse core才可复用 history已验证的 active-root point与 Runtime signature，同时仍
+  独立执行 Corpus/Suite/Taxonomy/Matrix/Discovery Bundle/Discovery Result六条 distribution
+  signature及全部 Result→Policy→Runtime等式。
+- Evidence使用 staged strict parser：`evidence_structure`对双签值只要求 bounded own-data
+  string，其余 Envelope/Payload仍完全 strict；两个 signature-binding stage分别执行既有完整
+  canonical prefix/role/key-ID/128-lowercase-hex-character（64-octet）grammar；通过后具备完整
+  strict Evidence V1的全部前提，最终组合 Schema断言固定在`evidence_envelope`且不得新增拒绝，
+  最终接受集合不变。signer key ID只从通过 binding的 role-specific signature prefix取得，并按
+  `(role,keyId)`在 Entry append-only approval history中 exact解析；record必须已由同次 history验证且未撤销。
+  signer**不要求等于 active key ID**：root或 approver正常 rotation后，未撤销 historical
+  Evidence仍有效。QA/Release key/material不别名已由 Registry history关闭；same-material mutation
+  必须在`registry_history_closure/source_invalid`拒绝，不保留不可达 outer separation stage。
+  Entry Pin不替代两份 Evidence签名，QA→Release仍各验证一次。
+  `evidence_id`使用 stage-3 prepared payload的 private exact 16-field projector，不得调用会先 strict-parse
+  完整 Evidence的 public projector；合法 Evidence必须与旧 helper得到 byte-identical projection/ID，
+  malformed role-specific signature必须分别抵达两个 binding stage。digest stage重算完整 payload并
+  exact-compare Envelope digest；Envelope stage只关闭 outer/payload/derived ID并执行 final strict
+  no-new-rejection assertion；Pin stage分别把 ID与digest exact-equal Envelope。stages 22～24使用
+  private prepared no-reparse claims/message/digest helpers并与旧 public helpers做合法输入 byte-equivalence；
+  完整 Evidence strict Schema只能在 stage 25作为 normative runtime assertion执行。
+- C09-1J的`failed/unsupported`仍是合法 supplied structure，但在 C09-1L完成全部
+  Result等式后必须以`production_result_gate/result_not_passed`拒绝；只有`passed`进入
+  candidate closure。该 gate不观察 current volume、online runtime或 IPC peer。
+- normative internal diagnostic固定26个 stage与15个 reason。stage顺序为：`input`→
+  `bootstrap_distribution_binding`→`evidence_structure`→`evidence_pin_structure`→
+  `registry_history_closure`→`candidate_root_binding`→`candidate_member_resolution`→
+  `registry_evidence_pin_binding`→`registry_runtime_binding`→
+  `runtime_attestation_closure`→`registry_policy_binding`→`evidence_result_binding`→
+  `production_result_gate`→`evidence_policy_binding`→`evidence_runtime_binding`→
+  `evidence_time`→`evidence_id`→两个 signature binding→两个 approver resolution→
+  QA/Release Evidence signature→digest→Envelope→Pin。reason全集为
+  `schema_invalid/source_invalid/identity_mismatch/root_mismatch/member_not_enabled/
+  routing_invalid/binding_mismatch/digest_mismatch/pin_mismatch/result_not_passed/
+  approver_not_found/approver_revoked/signature_invalid/ordering_invalid/
+  envelope_mismatch`；exact 26-row stage→reason与同-stage predicate顺序以 PRD D-37表为唯一
+  normative定义，其中 candidate root为 identity→Pin→full root、member为 routing→lookup→state、
+  approver resolution为 not-found→revoked，Evidence Result保持 D-35 binding→pin→digest顺序。
+  公共错误仍只有
+  `provider_unavailable/attestation_invalid`。
+- crypto count使用同调用历史事实复用，而不是串联两个 public validator。若 exact Registry
+  history为`P_H/S_H`，则成功严格为`P_L=P_H`、`S_L=S_H+8`：只新增六条 distribution
+  signature与 Evidence QA/Release两签；不重复 supplied-tip root point、tip Entry Runtime signature、
+  approver point/record signature，也不把 signature R另计。当前 full-history cardinality
+  anchor 24/38对应24/46。history前四个 stage为0/0；history失败保持 source exact prefix；
+  history成功但 C09-1I前失败为`P_H/S_H`；prepared C09-1I失败为
+  `P_H/(S_H+S_I_prefix)`，其中 internal count固定返回实际完成的0..6条 distribution verify；
+  C09-1I成功后到 approver resolution为`P_H/(S_H+6)`，QA失败为`P_H/(S_H+7)`，Release及
+  digest/Envelope/Pin/成功为`P_H/(S_H+8)`。所有 point-specific/inherited fixture逐 case核对
+  source count、`S_I_prefix`与 outer total，non-crypto stage不得暗增调用。
+- success DTO固定10字段：authority、Registry history closure、Runtime point closure、
+  candidate Entry digest/完整 Entry、完整 Evidence Envelope/Pin/fixed relative path及实际命中的
+  historical QA/Release records；顶层 null-prototype/frozen，Promise shell沿用 D-36 hardened
+  profile。authority唯一为
+  `none_registry_entry_evidence_binding_structure_only`。
+- C09-1J golden的`local-helper`与 Registry golden tip的`native-b`不能直接拼接。新 L-specific
+  compatible base固定保留 Registry golden完整 generation topology/cardinality并选
+  `durable-object-provider:native-b`，重新生成/重签六 distribution对象、Result、Runtime、passed
+  Evidence、tip Entry及受影响 Manifest；先自证 Registry 24/38，再自证完整 point 24/46，并 pin
+  新 base raw/semantic/per-generation digest。两份旧资源 bytes/SHA/semantic digest保持不变。
+- fixture固定先逐位继承 C09-1J全部227个 ordered executable case，再逐位继承 Registry
+  history全部89项，最后追加 point-specific literal inventory。两段显式 adapter table逐行冻结
+  source resource/index/case/operation、L case/mutation与 expected outer tuple；source/outer expected
+  都是`diagnostic(stage/reason/count/digest)`或
+  `accepted_snapshot(boundary/outcome/authority/projection/count/digest)`的 exact discriminated union，
+  snapshot branch没有 stage/reason。Registry 89项全是 diagnostic且按最早 outer predicate显式映射，
+  mutation全部施加在 compatible base，不直接拼旧 request。caller approver mutation映射为 Registry
+  approval-history或 Evidence signer mutation，不得把删除的 caller字段偷偷加回；same-material归
+  history source，malformed/role signature wire经 staged parser归 binding。旧 C09-1J 3/11与 Registry
+  source counts必须 byte-identical，不预猜新 point-specific、Schema、resource byte数或最终总数。
+  C09-1J中的6个 snapshot success原位保留且 source均为3/11；其中2项虽源自 Runtime 1/7 lineage，
+  已包含在 J 的227项中，禁止重复计数。在 L中都映射 detached-snapshot success与当前 compatible-base
+  24/46；L projection固定 Installation
+  ID、Registry Manifest digest、candidate Entry digest/provider、Runtime digest、Evidence ID/digest/path
+  及 QA/Release key ID共10字段，并额外 canonical-compare完整递归 frozen success DTO。
+  positives至少覆盖 genesis、
+  root rollover＋未撤销非 active historical signer、Runtime＋Evidence＋Entry successor；
+  negatives覆盖 Bundle/root/identity/routing/member、Entry Evidence/Runtime/Policy、revoked/
+  unknown/wrong-role signer、result gate、合法重签 cross-object mismatch、snapshot/Promise边界。
+  packed Node与Vite/browser逐例 fresh replay并验证 root/subpath identity与无 Node external。
+  最终 inventory按连续32-case shard固定分片、每 surface最多4 worker；每 case仍 fresh history/witness，
+  shard输出 range/count/ordered-ID/expected-outcome/crypto digest并聚合 exact-cover；outcome digest按
+  discriminant覆盖 diagnostic的stage/reason或 snapshot的boundary/outcome/authority/projection，禁止
+  snapshot伪造stage/reason，也禁止跨 invocation缓存。
+  GitHub ubuntu-latest Node22/pnpm9上 C09-1L专属 generate-check＋direct＋两 packed surface合计≤10分钟、
+  peak RSS≤1,536 MiB，根`pnpm quality`≤40分钟；专属 wall time用 monotonic spawn→last-child-exit，
+  RSS按同一时刻 parent＋最多4 worker＋packed/Vite/browser存活子进程的 process-tree aggregate采样。
+  不得提高45分钟 workflow timeout或抽样降覆盖。
+
+D-37只冻结 C09-1L wire/diagnostic/crypto与 none-only authority，implementation仍 pending。
+Catalog exact-cover、五链 retained history/current-candidate、Acceptance、唯一 writer、真实
+Provider与 Migration继续 locked；只有实现提交、root quality、same-SHA clean CI和独立
+Security/Implementability review关闭后，C09-1L才成为 candidate，且仍不解锁 strong write。
 
 权威决策：
 
-- `docs/prd/2026-07-27-agent-native-change-intelligence-rd-plan.md` D-24～D-36
+- `docs/prd/2026-07-27-agent-native-change-intelligence-rd-plan.md` D-24～D-37
 - `docs/research/2026-07-28-g0-contract-freeze-record.md` 第 4、5 节
 - WP1 Contracts、WP2 Repository State、WP3 Artifact Store 与 WP4 Task
   Intelligence 已关闭的 Schema、Snapshot、CAS、Journal 和 Lifecycle 规则
@@ -15994,7 +16149,7 @@ Event action、capability 必须交叉一致。
 
 状态枚举：
 
-- `frozen`：D-24～D-36 已在 PRD/G0/本矩阵一致；
+- `frozen`：D-24～D-37 已在 PRD/G0/本矩阵一致；
 - `pending implementation`：代码或 focused tests 尚未提交；
 - `capability locked`：生产入口必须在任何仓库读取/写入前 fail closed；
 - `verified locally/remotely`：只在对应 source tree 的 focused/root/CI 证据通过
@@ -16010,7 +16165,7 @@ Event action、capability 必须交叉一致。
 | WP5-C06 | path-safe Snapshot/Pulse、legacy redacted Surface 与 HMAC locator brands | Repository/Surface contracts + fixtures | frozen / pending implementation |
 | WP5-C07 | SafeGit/bootstrap/state-token/request-equality/quota-index strict schemas + seven-way category correlation + Admission/Transition full-record digest golden bytes | contracts security/internal schemas | frozen / pending implementation |
 | WP5-C08 | Context Generation Record、root-relative History closure、Store filename codec | contracts + Store internal schemas | frozen / pending implementation |
-| WP5-C09 | RFC 8785/JCS exact bytes与strict provider ID；raw-key digest/strict Ed25519 host capability+exact hostile manifest；fixed Bootstrap Trust Bundle/retained historical source closure；provider registry root/key history、Catalog strict Envelope、signed Public Taxonomy/Release Matrix/Target Discovery Result/real-FS Suite+Corpus、closed-world Release Target Universe与 typed retained-object/保守 public privacy projection、Acceptance compact receipt、same/cross Identity migration typed dry-run/Plan-bound reservation/exact final receipt/universe-side/receipt prefix/versioned canonical Rewrite Plan/Semantic Equivalence Proof/zero-live/sealed head、signed proof/version Envelope、binding generation、atomic path containment、Store Manifest compact compare-append receipt与 terminal journal contracts | `packages/durable-object-provider-contracts` + cross-language golden/negative vectors（含 strict crypto/KAT/bootstrap bundle、coverage input、rewrite mapping/SCC/JCS/proof-token/locator/budget） | C09-1B～1K candidate已推进至 Matrix＋Discovery→Release Target Universe supplied-point closure；C09-1K code `3e6f516d`与CI stabilization `0c6474df`、本地`CI=true pnpm quality`、same-SHA CI `31079755984` / job `92545638787`及独立复审均已完成；aggregate in progress且 capability locked |
+| WP5-C09 | RFC 8785/JCS exact bytes与strict provider ID；raw-key digest/strict Ed25519 host capability+exact hostile manifest；fixed Bootstrap Trust Bundle/retained historical source closure；provider registry root/key history、Catalog strict Envelope、signed Public Taxonomy/Release Matrix/Target Discovery Result/real-FS Suite+Corpus、closed-world Release Target Universe与 typed retained-object/保守 public privacy projection、Acceptance compact receipt、same/cross Identity migration typed dry-run/Plan-bound reservation/exact final receipt/universe-side/receipt prefix/versioned canonical Rewrite Plan/Semantic Equivalence Proof/zero-live/sealed head、signed proof/version Envelope、binding generation、atomic path containment、Store Manifest compact compare-append receipt与 terminal journal contracts | `packages/durable-object-provider-contracts` + cross-language golden/negative vectors（含 strict crypto/KAT/bootstrap bundle、coverage input、rewrite mapping/SCC/JCS/proof-token/locator/budget） | C09-1B～1K candidate已推进至 Matrix＋Discovery→Release Target Universe supplied-point closure；C09-1K code `3e6f516d`与CI stabilization `0c6474df`、本地`CI=true pnpm quality`、same-SHA CI `31079755984` / job `92545638787`及独立复审均已完成。D-37/C09-1L Registry Entry↔Evidence supplied-history contract已冻结，implementation pending；C09-1K仍是最新已实现 candidate，aggregate in progress且 capability locked |
 | WP5-S01 | private baseline blob/Git lease layout、permissions、Stage 1 transaction | `packages/artifact-store` | frozen / pending implementation |
 | WP5-S02 | exact Repository Basis lock-time guard | `packages/artifact-store/src/store.ts` | frozen / pending implementation |
 | WP5-S03 | duplicate Check and direct Snapshot dependencies | Artifact Store semantic guards | frozen / pending implementation |
@@ -16072,10 +16227,10 @@ D-31不得藏在一个巨型 WP5-1P commit中，固定按以下三个独立 comm
 
 | # | Gate | 状态 | 当前证据 / 下一关闭点 |
 |---:|---|---|---|
-| 1 | WP5-0 | Closed | D-24～D-36 已冻结 |
+| 1 | WP5-0 | Closed | D-24～D-37 已冻结 |
 | 2 | WP5-1P/C09-1B | Closed | strict Ed25519 host conformance 已通过独立复审 |
 | 3 | WP5-1P/C09-1C | Closed | Bootstrap Trust Bundle 与 retained trust 已闭环 |
-| 4 | WP5-1P aggregate | **In progress** | C09-1D `acc6c9c`、C09-1E `1b182aa`、C09-1F `3ca2977`、C09-1G `70201b4`、C09-1H `35f9aaf`、C09-1I `60f6582`、C09-1J `d8769a0`与C09-1K `3e6f516d`已完成各自 candidate；CI stabilization `0c6474df`及同SHA CI已关闭本切片执行证据。Catalog/Registry、Discovery/Universe history/current、Acceptance、Migration等仍需关闭，aggregate继续open |
+| 4 | WP5-1P aggregate | **In progress** | C09-1D `acc6c9c`、C09-1E `1b182aa`、C09-1F `3ca2977`、C09-1G `70201b4`、C09-1H `35f9aaf`、C09-1I `60f6582`、C09-1J `d8769a0`与C09-1K `3e6f516d`已完成各自 candidate；CI stabilization `0c6474df`及同SHA CI已关闭本切片执行证据。D-37/C09-1L合同已冻结，下一关闭点是其实现、测试、同SHA CI与独立复审；Catalog exact-cover、五链 retained history/current-candidate、Acceptance、Migration等仍需关闭，aggregate继续open |
 | 5 | WP5-PF | Pending / locked | 尚无真实 OS-isolated Provider 与 real-FS 安装生命周期证据 |
 | 6 | WP5-1 | Pending / locked | 其余 strong/legacy/path-safe contracts 与 fixtures 未关闭 |
 | 7 | WP5-2A | Pending / locked | SafeGit、path-safe Snapshot/Pulse、identity cutover 未实现 |
@@ -16092,7 +16247,7 @@ D-31不得藏在一个巨型 WP5-1P commit中，固定按以下三个独立 comm
 
 | Gate | 内容 | 最低本地证据 | Capability |
 |---|---|---|---|
-| WP5-0 | D-24～D-36 文档冻结 | diff/link/range/术语审查 | locked |
+| WP5-0 | D-24～D-37 文档冻结 | diff/link/range/术语审查 | locked |
 | WP5-1P/C09-1B | raw-key digest + strict Ed25519 host conformance | old C09-0 key-ID golden byte-identical；独立 digest brand/schema/golden；strict point/signature vectors；28-case fixed resource/digest exact-cover；每 runtime恰56次 point + 28次 verify；constant-true/false/divergent/mutating/replaced host negatives；package build/typecheck/test/distribution/root quality与 Security review | locked |
 | WP5-1P/C09-1C | fixed Bootstrap Trust Bundle + immutable Identity retained trust | Bundle/manifest Pin/Envelope/payload/fixed-locator/4 MiB Schema与golden；bootstrap metadata、root+3 recovery/threshold/policy/strict profile等式；signed distribution与Identity origin closure；old/new Bundle recovery-only migration、missing retained object、五链 accounting negatives；package build/typecheck/test/distribution/root quality与 Implementability/Security review | locked |
 | WP5-1P | C09 Provider contracts prerequisite：RFC 8785/JCS与provider ID、raw-key digest、strict Ed25519 host capability/KAT、fixed Bootstrap Trust Bundle+historical source retention、registry/root/key/runtime/Evidence/Catalog Envelope + signed Distribution Root Binding/Taxonomy/Release Matrix/embedded Discovery Input Bundle/Target Discovery Result/Release Target Universe + signed real-FS Suite/Fixture Corpus与 typed retained-object accounting + bounded five-chain history、deterministic public projection、Acceptance/Store compact receipts、same/cross migration typed dry-run/Plan-bound reservation/exact final receipt/receipt-prefix closure、versioned Rewrite Plan/Object+Root Semantic Proof、exact-object、external CAS、journal与 error wire + golden vectors | provider contract build/schema；old C09-0 vectors byte-identical；strict manifest exact-cover、fixed digest、cross-runtime positive/hostile KAT、bundle/metadata/key/pin/history-source negatives；cross-language golden bytes、coverage provenance/history/union/catalog omission/code-smuggling、nonce mismatch/restart/migration及 rewrite mapping/root/SCC/JCS/size/HMAC issuer/proof-token/locator/budget negative vectors | locked |
@@ -16584,7 +16739,7 @@ aggregated report 都作为 Commit/CI Evidence 保存。
 
 | 能力 | 当前事实 | Owner | 解锁 Gate |
 |---|---|---|---|
-| strong Store write / Durable Object Provider | Contract frozen；strict Ed25519 host、Bootstrap/retained trust、Root/Registry History、signed real-FS Corpus→Suite、signed Target Discovery、unsigned Result、root-signed Runtime Attestation、QA/Release Provider Feasibility Evidence与Release Target Universe supplied-point均已形成reviewed candidate；C09-1K `3e6f516d`、CI stabilization `0c6474df`及same-SHA CI已完成，但C09 aggregate的Catalog/Registry、Discovery/Universe history/current、Acceptance、Migration、真实Provider、client/三层Manifest writer仍未完整交付，strong-write/production/release继续open/locked | Platform/Security Lead + Provider/Systems + Artifact Store；QA/Release验证 | **全部同时满足**：WP5-1P/C09 contract+golden；strict Ed25519 raw32/profile/host exact manifest attestation与 opaque capability；固定 Bootstrap Trust Bundle/manifest resource、signed distribution双 Pin、immutable Installation Identity retained origin closure；WP5-PF/WP3P signed real-FS与安装生命周期；WP5-S07 provider client/adapter；D-23 Pulse→Artifact→Store provider-side unique-head compare-append；Acceptance/high-water/compact receipts/root/Registry/Catalog Envelope/public projection/same+cross migration closure及 versioned canonical Rewrite Plan/Semantic Equivalence Proof实现；AT-C17/C29/C30/C31、D35/D37/D38、Q24/Q32/Q33（含 rewrite mapping/SCC/JCS/proof-token/locator/budget/hostile crypto vectors）及 upgrade/downgrade/root/recovery-key compromise/current-vs-historical bundle migration E2E；root `pnpm quality`；同 SHA clean CI；独立 Security/Implementability review无 P0/P1；最后 closeout commit才更新 capability flag/supported tool list |
+| strong Store write / Durable Object Provider | Contract frozen；strict Ed25519 host、Bootstrap/retained trust、Root/Registry History、signed real-FS Corpus→Suite、signed Target Discovery、unsigned Result、root-signed Runtime Attestation、QA/Release Provider Feasibility Evidence与Release Target Universe supplied-point均已形成reviewed candidate；C09-1K `3e6f516d`、CI stabilization `0c6474df`及same-SHA CI已完成。D-37/C09-1L Registry Entry↔Evidence supplied-history contract已冻结但implementation pending，不构成candidate或capability unlock；C09 aggregate的Catalog exact-cover、五链 retained history/current-candidate、Acceptance、Migration、真实Provider、client/三层Manifest writer仍未完整交付，strong-write/production/release继续open/locked | Platform/Security Lead + Provider/Systems + Artifact Store；QA/Release验证 | **全部同时满足**：WP5-1P/C09 contract+golden；strict Ed25519 raw32/profile/host exact manifest attestation与 opaque capability；固定 Bootstrap Trust Bundle/manifest resource、signed distribution双 Pin、immutable Installation Identity retained origin closure；WP5-PF/WP3P signed real-FS与安装生命周期；WP5-S07 provider client/adapter；D-23 Pulse→Artifact→Store provider-side unique-head compare-append；Acceptance/high-water/compact receipts/root/Registry/Catalog Envelope/public projection/same+cross migration closure及 versioned canonical Rewrite Plan/Semantic Equivalence Proof实现；AT-C17/AT-C29/AT-C30/AT-C31、AT-D35/AT-D37/AT-D38、AT-Q24/AT-Q32/AT-Q33（含 rewrite mapping/SCC/JCS/proof-token/locator/budget/hostile crypto vectors）及 upgrade/downgrade/root/recovery-key compromise/current-vs-historical bundle migration E2E；root `pnpm quality`；同 SHA clean CI；独立 Security/Implementability review无 P0/P1；最后 closeout commit才更新 capability flag/supported tool list |
 | `task:verify` | Contract frozen，生产方法未实现 | Task Engine | WP5-4 local/remote + review；WP6 前仍不宣传 |
 | `task:check` | Contract frozen，Delta/Symbol/Matching/Operation 未实现 | Change Intelligence + Task Engine | WP5-7/10 全部通过 |
 | `task:context:refresh` | capability locked | Task Engine / Context Recovery | WP5-8 full rebuild/failure evidence |
@@ -16629,10 +16784,11 @@ WP5-S07 client或三层 provider-side compare-append，strong write继续锁定�
 
 只有以下条件全部满足，本文件状态才能改为 **WP5 Completed**：
 
-- D-24～D-36 在 PRD、G0、Contracts、Store、Engine、Provider host/bundle与 Surface
+- D-24～D-37 在 PRD、G0、Contracts、Store、Engine、Provider host/bundle与 Surface
   DTO 中一致；
 - WP5-C/S/R/P/A/E/I 全部从 pending 变为 verified；
-- AT-C01～C31、D01～D38、S01～S16、O01～O33、Q01～Q33 全部有可复核
+- AT-C01～AT-C31、AT-D01～AT-D38、AT-S01～AT-S16、AT-O01～AT-O33、
+  AT-Q01～AT-Q33 全部有可复核
   自动化证据或明确 `not_applicable` 理由；
 - legacy fixtures bytes 保持不变，strong fixtures/schema 确定生成；
 - 四类 Operation 的 auth/idempotency/CAS/restart/crash/race 均关闭；

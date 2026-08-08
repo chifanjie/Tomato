@@ -1,0 +1,60 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-registry-evidence-binding-point-success-projection",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "installationIdentityGenerationId": {
+      "type": "string",
+      "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+    },
+    "registryManifestContentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "candidateRegistryEntryContentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "providerId": {
+      "type": "string",
+      "const": "durable-object-provider:native-b"
+    },
+    "runtimeAttestationContentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "evidenceId": {
+      "type": "string",
+      "pattern": "^provider-feasibility-evidence:[0-9a-f]{22}$"
+    },
+    "evidenceContentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "evidenceRelativePath": {
+      "type": "string",
+      "pattern": "^provider\\/feasibility-evidence\\/(?:id-[0-9a-v]+|idh-[0-9a-f]{64})\\.json$"
+    },
+    "qaApproverKeyId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{22}$"
+    },
+    "releaseApproverKeyId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{22}$"
+    }
+  },
+  "required": [
+    "installationIdentityGenerationId",
+    "registryManifestContentDigest",
+    "candidateRegistryEntryContentDigest",
+    "providerId",
+    "runtimeAttestationContentDigest",
+    "evidenceId",
+    "evidenceContentDigest",
+    "evidenceRelativePath",
+    "qaApproverKeyId",
+    "releaseApproverKeyId"
+  ],
+  "additionalProperties": false
+}

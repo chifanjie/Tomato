@@ -1,6 +1,91 @@
 export const RFC8785_JCS_SAFE_INTEGER_PROFILE_V1 =
   "rfc8785-jcs-safe-integer-v1" as const;
 
+const CapturedArrayIsArrayV1 = Array.isArray;
+const CapturedArrayPrototypeJoinV1 = Array.prototype.join;
+const CapturedArrayPrototypePushV1 = Array.prototype.push;
+const CapturedArrayPrototypeSomeV1 = Array.prototype.some;
+const CapturedArrayPrototypeSortV1 = Array.prototype.sort;
+const CapturedJsonParseV1 = JSON.parse;
+const CapturedJsonStringifyV1 = JSON.stringify;
+const CapturedNumberIsSafeIntegerV1 = Number.isSafeInteger;
+const CapturedObjectGetOwnPropertyDescriptorV1 =
+  Object.getOwnPropertyDescriptor;
+const CapturedObjectGetOwnPropertyDescriptorsV1 =
+  Object.getOwnPropertyDescriptors;
+const CapturedObjectGetOwnPropertySymbolsV1 = Object.getOwnPropertySymbols;
+const CapturedObjectGetPrototypeOfV1 = Object.getPrototypeOf;
+const CapturedObjectIsV1 = Object.is;
+const CapturedObjectKeysV1 = Object.keys;
+const CapturedObjectPrototypeHasOwnPropertyV1 =
+  Object.prototype.hasOwnProperty;
+const CapturedReflectApplyV1 = Reflect.apply;
+const CapturedReflectOwnKeysV1 = Reflect.ownKeys;
+const CapturedSetV1 = Set;
+const CapturedSetPrototypeAddV1 = Set.prototype.add;
+const CapturedSetPrototypeDeleteV1 = Set.prototype.delete;
+const CapturedSetPrototypeHasV1 = Set.prototype.has;
+
+function arrayJoinV1(array: readonly string[], separator: string): string {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeJoinV1, array, [
+    separator,
+  ]) as string;
+}
+
+function arrayPushV1<T>(array: T[], value: T): number {
+  return CapturedReflectApplyV1(CapturedArrayPrototypePushV1, array, [
+    value,
+  ]) as number;
+}
+
+function arraySomeV1<T>(
+  array: readonly T[],
+  callback: (value: T, index: number, source: readonly T[]) => unknown,
+): boolean {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeSomeV1, array, [
+    callback,
+  ]) as boolean;
+}
+
+function arraySortV1<T>(
+  array: T[],
+  compare: (left: T, right: T) => number,
+): T[] {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeSortV1, array, [
+    compare,
+  ]) as T[];
+}
+
+function hasOwnPropertyV1(value: object, key: PropertyKey): boolean {
+  return CapturedReflectApplyV1(
+    CapturedObjectPrototypeHasOwnPropertyV1,
+    value,
+    [key],
+  ) as boolean;
+}
+
+function setAddV1<T>(set: Set<T>, value: T): void {
+  CapturedReflectApplyV1(CapturedSetPrototypeAddV1, set, [value]);
+}
+
+function setDeleteV1<T>(set: Set<T>, value: T): void {
+  CapturedReflectApplyV1(CapturedSetPrototypeDeleteV1, set, [value]);
+}
+
+function setHasV1<T>(set: ReadonlySet<T>, value: T): boolean {
+  return CapturedReflectApplyV1(CapturedSetPrototypeHasV1, set, [
+    value,
+  ]) as boolean;
+}
+
+function setFromValuesV1<T>(values: readonly T[]): Set<T> {
+  const set = new CapturedSetV1<T>();
+  for (let index = 0; index < values.length; index += 1) {
+    setAddV1(set, values[index]!);
+  }
+  return set;
+}
+
 export class ProviderCanonicalJsonError extends TypeError {
   readonly code:
     | "invalid_utf8"
@@ -54,7 +139,7 @@ function compareUtf16(left: string, right: string): number {
 
 function quoteString(value: string, path: string): string {
   assertUnicodeScalarSequence(value, path);
-  return JSON.stringify(value);
+  return CapturedJsonStringifyV1(value) as string;
 }
 
 function canonicalizeArray(
@@ -62,30 +147,33 @@ function canonicalizeArray(
   path: string,
   active: Set<object>,
 ): string {
-  if (active.has(value)) fail("cycle", path, "contains a cycle");
-  active.add(value);
+  if (setHasV1(active, value)) fail("cycle", path, "contains a cycle");
+  setAddV1(active, value);
   try {
-    const ownKeys = Reflect.ownKeys(value);
-    if (ownKeys.some((key) => typeof key === "symbol")) {
+    const ownKeys = CapturedReflectOwnKeysV1(value);
+    if (arraySomeV1(ownKeys, (key) => typeof key === "symbol")) {
       fail("unsupported_value", path, "contains a symbol property");
     }
-    const expectedKeys = new Set<string>(["length"]);
+    const expectedKeys = setFromValuesV1(["length"]);
     for (let index = 0; index < value.length; index += 1) {
       const key = String(index);
-      expectedKeys.add(key);
-      if (!Object.prototype.hasOwnProperty.call(value, key)) {
+      setAddV1(expectedKeys, key);
+      if (!hasOwnPropertyV1(value, key)) {
         fail("invalid_object", `${path}[${index}]`, "is a sparse array slot");
       }
     }
     for (const key of ownKeys) {
-      if (typeof key === "string" && !expectedKeys.has(key)) {
+      if (typeof key === "string" && !setHasV1(expectedKeys, key)) {
         fail("invalid_object", path, `contains non-index array property ${key}`);
       }
     }
 
     const items: string[] = [];
     for (let index = 0; index < value.length; index += 1) {
-      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      const descriptor = CapturedObjectGetOwnPropertyDescriptorV1(
+        value,
+        String(index),
+      );
       if (
         descriptor === undefined ||
         !("value" in descriptor) ||
@@ -97,11 +185,14 @@ function canonicalizeArray(
           "must be an enumerable data property",
         );
       }
-      items.push(canonicalizeValue(descriptor.value, `${path}[${index}]`, active));
+      arrayPushV1(
+        items,
+        canonicalizeValue(descriptor.value, `${path}[${index}]`, active),
+      );
     }
-    return `[${items.join(",")}]`;
+    return `[${arrayJoinV1(items, ",")}]`;
   } finally {
-    active.delete(value);
+    setDeleteV1(active, value);
   }
 }
 
@@ -110,19 +201,19 @@ function canonicalizeObject(
   path: string,
   active: Set<object>,
 ): string {
-  const prototype = Object.getPrototypeOf(value);
+  const prototype = CapturedObjectGetPrototypeOfV1(value);
   if (prototype !== Object.prototype && prototype !== null) {
     fail("invalid_object", path, "must be a plain object");
   }
-  if (active.has(value)) fail("cycle", path, "contains a cycle");
-  active.add(value);
+  if (setHasV1(active, value)) fail("cycle", path, "contains a cycle");
+  setAddV1(active, value);
   try {
-    const symbolKeys = Object.getOwnPropertySymbols(value);
+    const symbolKeys = CapturedObjectGetOwnPropertySymbolsV1(value);
     if (symbolKeys.length !== 0) {
       fail("unsupported_value", path, "contains a symbol property");
     }
-    const descriptors = Object.getOwnPropertyDescriptors(value);
-    const keys = Object.keys(descriptors).sort(compareUtf16);
+    const descriptors = CapturedObjectGetOwnPropertyDescriptorsV1(value);
+    const keys = arraySortV1(CapturedObjectKeysV1(descriptors), compareUtf16);
     const members: string[] = [];
     for (const key of keys) {
       assertUnicodeScalarSequence(key, `${path} member name`);
@@ -138,7 +229,8 @@ function canonicalizeObject(
           "must be an enumerable data property",
         );
       }
-      members.push(
+      arrayPushV1(
+        members,
         `${quoteString(key, `${path} member name`)}:${canonicalizeValue(
           descriptor.value,
           `${path}.${key}`,
@@ -146,9 +238,9 @@ function canonicalizeObject(
         )}`,
       );
     }
-    return `{${members.join(",")}}`;
+    return `{${arrayJoinV1(members, ",")}}`;
   } finally {
-    active.delete(value);
+    setDeleteV1(active, value);
   }
 }
 
@@ -164,16 +256,16 @@ function canonicalizeValue(
     case "string":
       return quoteString(value, path);
     case "number":
-      if (!Number.isSafeInteger(value) || Object.is(value, -0)) {
+      if (!CapturedNumberIsSafeIntegerV1(value) || CapturedObjectIsV1(value, -0)) {
         fail(
           "invalid_number",
           path,
           "must be a safe integer and must not be negative zero",
         );
       }
-      return JSON.stringify(value);
+      return CapturedJsonStringifyV1(value);
     case "object":
-      return Array.isArray(value)
+      return CapturedArrayIsArrayV1(value)
         ? canonicalizeArray(value, path, active)
         : canonicalizeObject(value, path, active);
     default:
@@ -187,7 +279,7 @@ function canonicalizeValue(
  * silently omit.
  */
 export function canonicalizeJcsSafeIntegerV1(value: unknown): string {
-  return canonicalizeValue(value, "$", new Set<object>());
+  return canonicalizeValue(value, "$", new CapturedSetV1<object>());
 }
 
 export function canonicalizeJcsSafeIntegerUtf8V1(
@@ -235,7 +327,7 @@ export function parseCanonicalJcsSafeIntegerUtf8V1(
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = CapturedJsonParseV1(text);
   } catch {
     fail("non_canonical_bytes", "$bytes", "is not valid JSON");
   }

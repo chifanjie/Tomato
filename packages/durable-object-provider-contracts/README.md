@@ -17,8 +17,11 @@ promoting any of these records to I/O authority. `WP5-C09-1H` now closes one
 unsigned real-filesystem Conformance Result point back to that complete raw
 Discovery/Suite source closure, still without granting Provider or Store I/O
 authority. `WP5-C09-1I` binds that Result to one strict semantic Provider
-Policy and one root-signed Runtime Attestation point, while continuing to
-return structure-only, none-authority validation:
+Policy and one root-signed Runtime Attestation point. `WP5-C09-1J` adds
+dual-role QA/Release Evidence, `WP5-C09-1K` freezes the closed-world Release
+Target Universe supplied point, and `WP5-C09-1L` binds a production-format
+Registry Entry to passed Evidence through the exact supplied trust history.
+Every slice still returns structure-only, none-authority validation:
 
 - `rfc8785-jcs-safe-integer-v1` canonical JSON and exact canonical-byte parsing;
 - independent branded digest, token, provider identity, and key primitives;
@@ -243,7 +246,10 @@ The 15 C09-1K additions cover the dedicated Universe signature primitive,
 incomplete reason, bucket coverage and bucket, coverage resolution and basis,
 unsigned claims, complete Universe, Envelope, Pin, signature wrapper,
 point stage/reason, and the two fixture manifests. Consumers should use the
-shipped inventory rather than assume 268 is a forever constant.
+shipped inventory rather than assume 268 is a forever constant. C09-1L adds
+seven generated documents for its stage/reason, compatible base, success
+projection, golden/invalid manifests, and topology proof, bringing the current
+inventory to 275.
 
 The production sources remain ES2022 browser/worker portable. The npm/browser
 distribution gate must expose the new public API through the root and
@@ -256,14 +262,21 @@ distribution gate must expose the new public API through the root and
 `./provider-runtime-attestation-point-fixtures`,
 `./provider-feasibility-evidence-point`,
 `./provider-feasibility-evidence-point-fixtures`,
+`./provider-registry-evidence-binding-point`,
+`./provider-registry-evidence-binding-point-fixtures`,
 `./provider-release-target-universe-point`, and
 `./provider-release-target-universe-point-fixtures` exports, pack all
 `schemas/`, `fixtures/`, and fixed `provider/` resources, reject private deep
 imports, and execute the same Registry, real-filesystem source, and Target
-Discovery, Conformance Result, Runtime Attestation, Feasibility Evidence, and
-Release Target Universe point validators from clean Node and browser-bundle
-installs. There are exactly 21 explicit public
+Discovery, Conformance Result, Runtime Attestation, Feasibility Evidence,
+Registry/Evidence binding, and Release Target Universe point validators from
+clean Node and browser-bundle installs. There are exactly 23 explicit public
 module exports at this checkpoint.
+Node uses the exact official Zod 4.3.6 runtime. The package's browser path uses
+its shipped CSP-safe runtime, with dynamic compilation disabled and
+`util.createTransparentProxy` failing closed. Consumers should treat the
+package Schemas' `parse`, `safeParse`, and issues as the boundary, rather than
+depending on cross-runtime `instanceof` against a separately imported Zod.
 `test:distribution` enforces exact source-to-packed Schema path-set equality
 in addition to that gate; a successful source build alone must not be
 presented as npm or browser distribution completion.
@@ -586,6 +599,56 @@ does not prove retained predecessor history, current selection, Catalog
 exact-cover, Registry/Acceptance state, a real Provider, I/O, migration, or
 strong-write authority.
 
+## C09-1L Registry Entry/Evidence supplied-history candidate binding
+
+`validateProviderRegistryEvidenceBindingPointClosureV1` closes one
+production-format Registry Entry to one passed QA/Release Evidence object while
+reusing the exact retained Root and Registry history supplied in the same call.
+Its 22-field raw request contains the complete C09-1I request plus the Bootstrap
+Trust Bundle, Installation Identity, Evidence Envelope/Pin, Root history, and
+Registry history. There is no caller-supplied provider selector, Registry Entry,
+approver key, path, `current` flag, validation DTO, or bypass boolean.
+
+The non-async public wrapper performs descriptor-only bounded admission before
+the first asynchronous boundary. It rejects aliases, cycles, sparse arrays,
+accessors, symbols, custom prototypes, and raw budget overruns before crypto,
+then performs one full-capsule trusted clone. Package-internal prepared Registry
+and Runtime cores consume two separate identity-bound one-shot witnesses; they
+do not call the public snapshotting validators or retain a second full history
+graph. The full capsule is bounded at 4,194,304 observed identities and
+268,435,456 pre-clone allocation work units, with independent per-object and
+aggregate retained-history limits. A generated topology proof covers every one
+of the 21 JSON branches, records the constructive lower and finite sound upper,
+and proves that the adopted caps contain the latter while the superseded caps
+do not.
+
+The Evidence payload is the sole provider selector. The supplied Registry tip
+must be steady and contain exactly one enabled matching member. The candidate
+Entry must exact-bind the supplied Evidence Pin, Runtime Pin, and semantic
+Policy digest. QA and Release signatures resolve from the Entry's already
+verified append-only approver history, so an unrevoked historical signer remains
+valid after ordinary key rotation; revoked, unknown, or wrong-role signers fail
+closed. Only `result="passed"` reaches success. A successful compatible-base
+closure performs exactly 24 strict point admissions and 46 signature
+verifications and returns the recursively frozen ten-field projection under
+`authority: "none_registry_entry_evidence_binding_structure_only"`. It does
+not establish authoritative current state, Catalog coverage, Acceptance,
+online runtime/volume identity, Store I/O, migration, or strong-write authority.
+
+The immutable fixture set contains all 227 C09-1J cases, all 89 Registry-history
+cases, and 38 point-specific cases: 354 ordered fresh executions in 12
+continuous shards of at most 32 cases. Node and Vite/browser packed consumers
+import the point and fixture subpaths, verify root/subpath symbol identity and
+resource realpaths, and replay the complete corpus without sharing a prepared
+history or crypto witness across cases.
+
+The first-party validation path captures and binds the primordials it uses, but
+this package does not claim a complete same-realm SES boundary for third-party
+dependencies. Zod and its own primordial calls are part of the trusted module
+realm. Untrusted Provider or host code must run in an isolated realm or,
+preferably, out of process; same-realm hostile code must not be treated as an
+authority boundary merely because the public Promise shell is hardened.
+
 ## Verification
 
 ```sh
@@ -608,6 +671,10 @@ pnpm --filter @understand-code/durable-object-provider-contracts generate:provid
 pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-runtime-attestation-point
 pnpm --filter @understand-code/durable-object-provider-contracts generate:provider-feasibility-evidence-point
 pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-feasibility-evidence-point
+pnpm --filter @understand-code/durable-object-provider-contracts generate:provider-registry-evidence-binding-point
+pnpm --filter @understand-code/durable-object-provider-contracts generate:provider-registry-evidence-binding-topology-proof
+pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-registry-evidence-binding-point
+pnpm --filter @understand-code/durable-object-provider-contracts test:provider-registry-evidence-binding-point-replay
 pnpm --filter @understand-code/durable-object-provider-contracts generate:provider-release-target-universe-point
 pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-release-target-universe-point
 pnpm --filter @understand-code/durable-object-provider-contracts generate:schemas
@@ -644,7 +711,7 @@ diagnostics, and crypto call counts are checked by
 `verify:provider-registry-manifest-invalid`. The signed real-filesystem fixture
 anchors, exact source closure, and 43 materialized negative diagnostics are
 checked by `verify:provider-real-fs-source`. `test/json-schema.test.ts` freezes
-the current 268-schema inventory and `verify:schemas` rejects generated-file
+the current 275-schema inventory and `verify:schemas` rejects generated-file
 drift. `verify:provider-target-discovery-point` checks the exact five locators,
 six-signature closure, canonical empty Fixture/Runner success, typed unresolved
 projection, and all 116 ordered diagnostic/executable recipes.
@@ -658,7 +725,12 @@ executable cases.
 `verify:provider-feasibility-evidence-point` checks the exact three-point,
 11-signature Runtime-to-QA/Release Evidence closure, immutable 20-field
 snapshot, three structurally valid outcomes, and all 227 ordered executable
-cases. `verify:provider-release-target-universe-point` checks all four 1/7
+cases. `verify:provider-registry-evidence-binding-point` checks the exact 24/46
+supplied-history candidate closure, both explicit inherited adapter tables, all
+354 ordered cases and 12 fixed shards, and the generated 21-branch topology
+proof. The dedicated four-worker replay command executes every case with a
+fresh request and one-shot witnesses.
+`verify:provider-release-target-universe-point` checks all four 1/7
 resolution closures, exact C09-1G replay, fixed coverage/bucket semantics,
 hardened Promise and raw-admission behavior, and all 285 fresh ordered cases.
 `test:distribution` is the clean packed Node/browser source for the npm

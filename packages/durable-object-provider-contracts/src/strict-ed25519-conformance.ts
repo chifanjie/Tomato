@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod-runtime.js";
 
 import { assertDataObjectDescriptorsBeforeSchemaV1 } from "./domain-crypto.js";
 import {
@@ -10,7 +10,11 @@ import {
   ContentDigestV1Schema,
 } from "./primitives.js";
 import { sha256InternalV1 } from "./sha256.js";
-import { STRICT_ED25519_VERIFICATION_PROFILE_V1 } from "./strict-ed25519.js";
+import {
+  STRICT_ED25519_VERIFICATION_PROFILE_V1,
+  validatePrimeSubgroupPoint as validatePrimeSubgroupPointReferenceV1,
+  verifyRawEd25519 as verifyRawEd25519ReferenceV1,
+} from "./strict-ed25519.js";
 import {
   copyProviderStrictEd25519ByteRangeInternalV1,
   copyProviderStrictEd25519BytesInternalV1,
@@ -19,6 +23,86 @@ import {
   registerProviderStrictEd25519OpaqueCapabilityStateV1,
   type ProviderStrictEd25519BoundMethodsInternalV1,
 } from "./strict-ed25519-capability-internal.js";
+import { hardenProviderPointPromiseV1 } from "./provider-point-runtime-internal.js";
+
+const CapturedArrayPrototypeMapV1 = Array.prototype.map;
+const CapturedFunctionPrototypeHasInstanceV1 =
+  Function.prototype[Symbol.hasInstance];
+const CapturedNumberIsFiniteV1 = Number.isFinite;
+const CapturedObjectFreezeV1 = Object.freeze;
+const CapturedPerformanceV1 = performance;
+const CapturedPerformanceNowV1 = performance.now;
+const CapturedPromiseV1 = Promise;
+const CapturedPromisePrototypeThenV1 = Promise.prototype.then;
+const CapturedQueueMicrotaskV1 = queueMicrotask;
+const CapturedReflectApplyV1 = Reflect.apply;
+const CapturedUint8ArrayV1 = Uint8Array;
+const CapturedTypedArrayPrototypeV1 = Object.getPrototypeOf(
+  Uint8Array.prototype,
+);
+const CapturedTypedArrayByteLengthGetterV1 =
+  Object.getOwnPropertyDescriptor(
+    CapturedTypedArrayPrototypeV1,
+    "byteLength",
+  )?.get;
+const CapturedValidatePrimeSubgroupPointReferenceV1 =
+  CapturedObjectFreezeV1(validatePrimeSubgroupPointReferenceV1);
+const CapturedVerifyRawEd25519ReferenceV1 = CapturedObjectFreezeV1(
+  verifyRawEd25519ReferenceV1,
+);
+
+if (CapturedTypedArrayByteLengthGetterV1 === undefined) {
+  throw new TypeError("Uint8Array byteLength primordial unavailable");
+}
+
+function arrayMapV1<T, U>(
+  array: readonly T[],
+  callback: (value: T, index: number, source: readonly T[]) => U,
+): U[] {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeMapV1, array, [
+    callback,
+  ]) as U[];
+}
+
+function hardenPromiseV1<T>(promise: Promise<T>): Promise<T> {
+  return hardenProviderPointPromiseV1(promise);
+}
+
+function monotonicNowV1(): number {
+  const value = CapturedReflectApplyV1(
+    CapturedPerformanceNowV1,
+    CapturedPerformanceV1,
+    [],
+  ) as number;
+  if (!CapturedNumberIsFiniteV1(value)) {
+    throw new TypeError("monotonic clock unavailable");
+  }
+  return value;
+}
+
+function isCapturedPromiseV1(value: unknown): value is Promise<unknown> {
+  return CapturedReflectApplyV1(
+    CapturedFunctionPrototypeHasInstanceV1,
+    CapturedPromiseV1,
+    [value],
+  ) as boolean;
+}
+
+function isCapturedUint8ArrayV1(value: unknown): value is Uint8Array {
+  return CapturedReflectApplyV1(
+    CapturedFunctionPrototypeHasInstanceV1,
+    CapturedUint8ArrayV1,
+    [value],
+  ) as boolean;
+}
+
+function capturedUint8ArrayByteLengthV1(value: Uint8Array): number {
+  return CapturedReflectApplyV1(
+    CapturedTypedArrayByteLengthGetterV1!,
+    value,
+    [],
+  ) as number;
+}
 
 export const PROVIDER_STRICT_ED25519_MANIFEST_RESOURCE_PATH_V1 =
   "provider/ed25519-strict-host-conformance-v1.json" as const;
@@ -254,7 +338,7 @@ const BASE64URL_ALPHABET =
 
 function decodeCanonicalByteStringV1(value: string): Uint8Array {
   const body = value.slice("base64url:".length);
-  const decoded = new Uint8Array(decodedByteLength(value));
+  const decoded = new CapturedUint8ArrayV1(decodedByteLength(value));
   let accumulator = 0;
   let availableBits = 0;
   let outputOffset = 0;
@@ -347,14 +431,14 @@ function captureBoundMethods(
     throw new TypeError("host methods");
   }
 
-  const frozenMethodTable = Object.freeze({
+  const frozenMethodTable = CapturedObjectFreezeV1({
     verificationProfile,
     validatePrimeSubgroupPoint,
     verifyRawEd25519,
   });
-  return Object.freeze({
+  return CapturedObjectFreezeV1({
     validatePrimeSubgroupPoint: (encodedPoint: Uint8Array) =>
-      Reflect.apply(validatePrimeSubgroupPoint, frozenMethodTable, [
+      CapturedReflectApplyV1(validatePrimeSubgroupPoint, frozenMethodTable, [
         encodedPoint,
       ]) as ProviderStrictEd25519CryptoResultV1,
     verifyRawEd25519: (
@@ -362,7 +446,7 @@ function captureBoundMethods(
       message: Uint8Array,
       signature: Uint8Array,
     ) =>
-      Reflect.apply(verifyRawEd25519, frozenMethodTable, [
+      CapturedReflectApplyV1(verifyRawEd25519, frozenMethodTable, [
         publicKey,
         message,
         signature,
@@ -370,49 +454,242 @@ function captureBoundMethods(
   });
 }
 
-async function withHostTimeout<T>(operation: Promise<T>): Promise<T> {
+function invokeOperationWithHostTimeoutV1<T>(
+  operation: () => T | Promise<T>,
+): Promise<T> {
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timeoutHandle = setTimeout(
-      () => reject(new TypeError("host timeout")),
-      PROVIDER_STRICT_ED25519_HOST_OPERATION_TIMEOUT_MS_V1,
-    );
+  let didSettle = false;
+  const settled = new CapturedPromiseV1<T>((resolve, reject) => {
+    let startedAt: number;
+    try {
+      startedAt = monotonicNowV1();
+    } catch (error) {
+      reject(error);
+      return;
+    }
+    const clearHostTimerV1 = () => {
+      if (timeoutHandle === undefined) return;
+      // The timer provider is intentionally resolved from the captured realm
+      // at call time so an embedding host (and deterministic fake-timer KATs)
+      // can supply its clock. Timer replacement is outside the crypto
+      // primordial-freeze contract; settlement methods remain captured.
+      globalThis.clearTimeout(timeoutHandle);
+      timeoutHandle = undefined;
+    };
+    const settleValueV1 = (value: T) => {
+      if (didSettle) return;
+      try {
+        if (
+          monotonicNowV1() - startedAt >=
+          PROVIDER_STRICT_ED25519_HOST_OPERATION_TIMEOUT_MS_V1
+        ) {
+          settleErrorV1(new TypeError("host timeout"));
+          return;
+        }
+      } catch (error) {
+        settleErrorV1(error);
+        return;
+      }
+      didSettle = true;
+      clearHostTimerV1();
+      resolve(value);
+    };
+    const settleErrorV1 = (error: unknown) => {
+      if (didSettle) return;
+      didSettle = true;
+      clearHostTimerV1();
+      reject(error);
+    };
+    const failIfDeadlineExpiredV1 = (): boolean => {
+      if (didSettle) return true;
+      try {
+        if (
+          monotonicNowV1() - startedAt <
+          PROVIDER_STRICT_ED25519_HOST_OPERATION_TIMEOUT_MS_V1
+        ) {
+          return false;
+        }
+      } catch (error) {
+        settleErrorV1(error);
+        return true;
+      }
+      settleErrorV1(new TypeError("host timeout"));
+      return true;
+    };
+
+    try {
+      timeoutHandle = globalThis.setTimeout(
+        () => settleErrorV1(new TypeError("host timeout")),
+        PROVIDER_STRICT_ED25519_HOST_OPERATION_TIMEOUT_MS_V1,
+      );
+      CapturedReflectApplyV1(
+        CapturedQueueMicrotaskV1,
+        undefined,
+        [() => {
+          // Attach both settlement callbacks without creating a post-start
+          // async/await Promise.  The rejection callback remains attached
+          // after timeout, so a late host rejection is still consumed.
+          try {
+            if (failIfDeadlineExpiredV1()) return;
+            const produced = CapturedReflectApplyV1(
+              operation,
+              undefined,
+              [],
+            ) as T | Promise<T>;
+            if (
+              produced === null ||
+              (typeof produced !== "object" &&
+                typeof produced !== "function")
+            ) {
+              settleValueV1(produced as T);
+              return;
+            }
+
+            if (isCapturedPromiseV1(produced)) {
+              // A native Promise is host-owned. Observe it through the
+              // bootstrap-captured intrinsic without defining properties or
+              // freezing it; frozen/non-extensible Promises remain valid host
+              // results. The settled Promise created above is still hardened
+              // before it crosses our public boundary.
+              CapturedReflectApplyV1(
+                CapturedPromisePrototypeThenV1,
+                produced,
+                [settleValueV1, settleErrorV1],
+              );
+              failIfDeadlineExpiredV1();
+              return;
+            }
+
+            const then = (produced as { readonly then?: unknown }).then;
+            if (typeof then !== "function") {
+              settleValueV1(produced as T);
+              return;
+            }
+            CapturedReflectApplyV1(then, produced, [
+              settleValueV1,
+              settleErrorV1,
+            ]);
+            failIfDeadlineExpiredV1();
+          } catch (error) {
+            settleErrorV1(error);
+          }
+        }],
+      );
+    } catch (error) {
+      settleErrorV1(error);
+    }
   });
-  try {
-    return await Promise.race([operation, timeout]);
-  } finally {
-    if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
-  }
+  return hardenPromiseV1(settled);
 }
 
-async function invokeBooleanMethod(
+function invokeBooleanMethod(
   method: (...args: Uint8Array[]) => ProviderStrictEd25519CryptoResultV1,
   inputs: readonly Uint8Array[],
 ): Promise<boolean> {
-  const callInputs = inputs.map((value) =>
-    copyProviderStrictEd25519BytesInternalV1(value),
-  );
-  const snapshots = callInputs.map((value) =>
-    copyProviderStrictEd25519BytesInternalV1(value),
-  );
-  const result = await withHostTimeout(
-    Promise.resolve().then(() => method(...callInputs)),
-  );
-  for (let index = 0; index < callInputs.length; index += 1) {
-    if (!bytesEqual(callInputs[index]!, snapshots[index]!)) {
-      throw new TypeError("host input mutation");
+  const operation = (async () => {
+    const callInputs = arrayMapV1(inputs, (value) =>
+      copyProviderStrictEd25519BytesInternalV1(value),
+    );
+    const snapshots = arrayMapV1(callInputs, (value) =>
+      copyProviderStrictEd25519BytesInternalV1(value),
+    );
+    const result = await invokeOperationWithHostTimeoutV1(() =>
+      CapturedReflectApplyV1(method, undefined, callInputs) as
+        ProviderStrictEd25519CryptoResultV1,
+    );
+    for (let index = 0; index < callInputs.length; index += 1) {
+      if (!bytesEqual(callInputs[index]!, snapshots[index]!)) {
+        throw new TypeError("host input mutation");
+      }
     }
-  }
-  if (typeof result !== "boolean") throw new TypeError("host result");
-  return result;
+    if (typeof result !== "boolean") throw new TypeError("host result");
+    return result;
+  })();
+  return hardenPromiseV1(operation);
+}
+
+function invokeHostBooleanMethodAgainstReferenceV1(
+  hostMethod: (
+    ...args: Uint8Array[]
+  ) => ProviderStrictEd25519CryptoResultV1,
+  referenceMethod: (...args: Uint8Array[]) => boolean,
+  inputs: readonly Uint8Array[],
+): Promise<boolean> {
+  const operation = (async () => {
+    // Snapshot once before the first await.  The reference and the host then
+    // receive independent arrays carrying the exact same bytes, so an
+    // untrusted host cannot mutate the reference monitor's input.
+    const referenceInputs = arrayMapV1(inputs, (value) =>
+      copyProviderStrictEd25519BytesInternalV1(value),
+    );
+    const hostInputs = arrayMapV1(referenceInputs, (value) =>
+      copyProviderStrictEd25519BytesInternalV1(value),
+    );
+    const referenceResult = CapturedReflectApplyV1(
+      referenceMethod,
+      undefined,
+      referenceInputs,
+    ) as boolean;
+    if (typeof referenceResult !== "boolean") {
+      throw new TypeError("strict reference result");
+    }
+
+    const hostResult = await invokeOperationWithHostTimeoutV1(() =>
+      CapturedReflectApplyV1(hostMethod, undefined, hostInputs) as
+        ProviderStrictEd25519CryptoResultV1,
+    );
+    for (let index = 0; index < hostInputs.length; index += 1) {
+      if (!bytesEqual(hostInputs[index]!, referenceInputs[index]!)) {
+        throw new TypeError("host input mutation");
+      }
+    }
+    if (typeof hostResult !== "boolean") {
+      throw new TypeError("host result");
+    }
+    if (hostResult !== referenceResult) {
+      throw new TypeError("host/reference divergence");
+    }
+    return hostResult;
+  })();
+  return hardenPromiseV1(operation);
+}
+
+function bindStrictReferenceMonitorV1(
+  hostMethods: ProviderStrictEd25519BoundMethodsInternalV1,
+): ProviderStrictEd25519BoundMethodsInternalV1 {
+  const monitoredValidatePrimeSubgroupPoint = CapturedObjectFreezeV1(
+    (encodedPoint: Uint8Array) =>
+      invokeHostBooleanMethodAgainstReferenceV1(
+        hostMethods.validatePrimeSubgroupPoint,
+        CapturedValidatePrimeSubgroupPointReferenceV1,
+        [encodedPoint],
+      ),
+  );
+  const monitoredVerifyRawEd25519 = CapturedObjectFreezeV1(
+    (
+      publicKey: Uint8Array,
+      message: Uint8Array,
+      signature: Uint8Array,
+    ) =>
+      invokeHostBooleanMethodAgainstReferenceV1(
+        hostMethods.verifyRawEd25519,
+        CapturedVerifyRawEd25519ReferenceV1,
+        [publicKey, message, signature],
+      ),
+  );
+  return CapturedObjectFreezeV1({
+    validatePrimeSubgroupPoint: monitoredValidatePrimeSubgroupPoint,
+    verifyRawEd25519: monitoredVerifyRawEd25519,
+  });
 }
 
 async function parseAndVerifyManifestResource(
   resourceBytes: Uint8Array,
 ): Promise<ProviderStrictEd25519AdversarialManifestEnvelopeV1> {
   if (
-    !(resourceBytes instanceof Uint8Array) ||
-    resourceBytes.byteLength > PROVIDER_STRICT_ED25519_MANIFEST_MAX_BYTES_V1
+    !isCapturedUint8ArrayV1(resourceBytes) ||
+    capturedUint8ArrayByteLengthV1(resourceBytes) >
+      PROVIDER_STRICT_ED25519_MANIFEST_MAX_BYTES_V1
   ) {
     throw new TypeError("manifest resource");
   }
@@ -447,30 +724,29 @@ async function parseAndVerifyManifestResource(
   return envelope;
 }
 
-async function loadFixedManifestResource(
+function loadFixedManifestResource(
   resourceHost: ProviderStrictEd25519FixedResourceHostV1,
 ): Promise<Uint8Array> {
-  assertDataObjectDescriptorsBeforeSchemaV1(resourceHost);
-  const descriptors = Object.getOwnPropertyDescriptors(resourceHost);
-  const resourceHostKeys = Object.keys(descriptors);
-  if (
-    resourceHostKeys.length !== 1 ||
-    resourceHostKeys[0] !== "readFixedSignedPackageResource"
-  ) {
-    throw new TypeError("resource host");
-  }
-  const readFixedSignedPackageResource =
-    descriptors.readFixedSignedPackageResource?.value;
-  if (typeof readFixedSignedPackageResource !== "function") {
-    throw new TypeError("resource host");
-  }
-  const frozenResourceHost = Object.freeze({
-    readFixedSignedPackageResource,
-  });
-  const resourceBytes = await withHostTimeout(
-    Promise.resolve().then(
-      () =>
-        Reflect.apply(
+  const operation = (async () => {
+    assertDataObjectDescriptorsBeforeSchemaV1(resourceHost);
+    const descriptors = Object.getOwnPropertyDescriptors(resourceHost);
+    const resourceHostKeys = Object.keys(descriptors);
+    if (
+      resourceHostKeys.length !== 1 ||
+      resourceHostKeys[0] !== "readFixedSignedPackageResource"
+    ) {
+      throw new TypeError("resource host");
+    }
+    const readFixedSignedPackageResource =
+      descriptors.readFixedSignedPackageResource?.value;
+    if (typeof readFixedSignedPackageResource !== "function") {
+      throw new TypeError("resource host");
+    }
+    const frozenResourceHost = CapturedObjectFreezeV1({
+      readFixedSignedPackageResource,
+    });
+    const resourceBytes = await invokeOperationWithHostTimeoutV1(() =>
+      CapturedReflectApplyV1(
           readFixedSignedPackageResource,
           frozenResourceHost,
           [
@@ -478,12 +754,13 @@ async function loadFixedManifestResource(
             PROVIDER_STRICT_ED25519_MANIFEST_MAX_BYTES_V1,
           ],
         ) as ProviderStrictEd25519FixedResourceResultV1,
-    ),
-  );
-  if (!(resourceBytes instanceof Uint8Array)) {
-    throw new TypeError("manifest resource");
-  }
-  return resourceBytes;
+    );
+    if (!isCapturedUint8ArrayV1(resourceBytes)) {
+      throw new TypeError("manifest resource");
+    }
+    return resourceBytes;
+  })();
+  return hardenPromiseV1(operation);
 }
 
 async function runExactHostKat(
@@ -574,14 +851,15 @@ async function attestProviderStrictEd25519CryptoHostInternalV1(
     await parseAndVerifyManifestResource(manifestResourceBytes);
   const methods = captureBoundMethods(host);
   await runExactHostKat(methods, envelope.payload);
+  const monitoredMethods = bindStrictReferenceMonitorV1(methods);
 
-  const opaqueHandle = Object.freeze(
+  const opaqueHandle = CapturedObjectFreezeV1(
     {},
   ) as ProviderStrictEd25519OpaqueCapabilityV1;
   registerProviderStrictEd25519OpaqueCapabilityStateV1(
     providerStrictEd25519CapabilityOwnerV1,
     opaqueHandle,
-    methods,
+    monitoredMethods,
     canonicalizeJcsSafeIntegerUtf8V1(
       PROVIDER_STRICT_ED25519_CRYPTO_CAPABILITY_V1,
     ),
@@ -589,16 +867,19 @@ async function attestProviderStrictEd25519CryptoHostInternalV1(
   return opaqueHandle;
 }
 
-export async function attestProviderStrictEd25519CryptoHostV1(
+export function attestProviderStrictEd25519CryptoHostV1(
   input: AttestProviderStrictEd25519CryptoHostV1Input,
 ): Promise<ProviderStrictEd25519OpaqueCapabilityV1> {
-  try {
-    return await withHostTimeout(
-      attestProviderStrictEd25519CryptoHostInternalV1(input),
-    );
-  } catch {
-    throw new ProviderStrictEd25519AttestationError();
-  }
+  const operation = (async () => {
+    try {
+      return await invokeOperationWithHostTimeoutV1(() =>
+        attestProviderStrictEd25519CryptoHostInternalV1(input),
+      );
+    } catch {
+      throw new ProviderStrictEd25519AttestationError();
+    }
+  })();
+  return hardenPromiseV1(operation);
 }
 
 export function getProviderStrictEd25519CryptoCapabilityBytesV1(
@@ -614,47 +895,56 @@ export function getProviderStrictEd25519CryptoCapabilityBytesV1(
   }
 }
 
-export async function validateProviderStrictEd25519PointWithCapabilityV1(
+export function validateProviderStrictEd25519PointWithCapabilityV1(
   capability: ProviderStrictEd25519OpaqueCapabilityV1,
   encodedPoint: Uint8Array,
 ): Promise<boolean> {
-  const methods = requireOpaqueMethods(capability);
-  if (!(encodedPoint instanceof Uint8Array) || encodedPoint.byteLength !== 32) {
-    return false;
-  }
-  try {
-    return await invokeBooleanMethod(
-      methods.validatePrimeSubgroupPoint,
-      [encodedPoint],
-    );
-  } catch {
-    throw new ProviderStrictEd25519AttestationError();
-  }
+  const operation = (async () => {
+    const methods = requireOpaqueMethods(capability);
+    if (
+      !isCapturedUint8ArrayV1(encodedPoint) ||
+      capturedUint8ArrayByteLengthV1(encodedPoint) !== 32
+    ) {
+      return false;
+    }
+    try {
+      return await invokeBooleanMethod(
+        methods.validatePrimeSubgroupPoint,
+        [encodedPoint],
+      );
+    } catch {
+      throw new ProviderStrictEd25519AttestationError();
+    }
+  })();
+  return hardenPromiseV1(operation);
 }
 
-export async function verifyRawEd25519WithCapabilityV1(
+export function verifyRawEd25519WithCapabilityV1(
   capability: ProviderStrictEd25519OpaqueCapabilityV1,
   publicKey: Uint8Array,
   message: Uint8Array,
   signature: Uint8Array,
 ): Promise<boolean> {
-  const methods = requireOpaqueMethods(capability);
-  if (
-    !(publicKey instanceof Uint8Array) ||
-    !(message instanceof Uint8Array) ||
-    !(signature instanceof Uint8Array) ||
-    publicKey.byteLength !== 32 ||
-    signature.byteLength !== 64
-  ) {
-    return false;
-  }
-  try {
-    return await invokeBooleanMethod(methods.verifyRawEd25519, [
-      publicKey,
-      message,
-      signature,
-    ]);
-  } catch {
-    throw new ProviderStrictEd25519AttestationError();
-  }
+  const operation = (async () => {
+    const methods = requireOpaqueMethods(capability);
+    if (
+      !isCapturedUint8ArrayV1(publicKey) ||
+      !isCapturedUint8ArrayV1(message) ||
+      !isCapturedUint8ArrayV1(signature) ||
+      capturedUint8ArrayByteLengthV1(publicKey) !== 32 ||
+      capturedUint8ArrayByteLengthV1(signature) !== 64
+    ) {
+      return false;
+    }
+    try {
+      return await invokeBooleanMethod(methods.verifyRawEd25519, [
+        publicKey,
+        message,
+        signature,
+      ]);
+    } catch {
+      throw new ProviderStrictEd25519AttestationError();
+    }
+  })();
+  return hardenPromiseV1(operation);
 }

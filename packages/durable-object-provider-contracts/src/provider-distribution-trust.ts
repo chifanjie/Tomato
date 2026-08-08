@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod-runtime.js";
 
 import {
   assertDataObjectDescriptorsBeforeSchemaV1,
@@ -12,6 +12,22 @@ import {
   ProviderDistributionHistoryPolicyV1Schema,
 } from "./provider-trust-policy.js";
 import { sha256InternalV1 } from "./sha256.js";
+
+const CapturedObjectFreezeV1 = Object.freeze;
+const CapturedObjectValuesV1 = Object.values;
+const CapturedReflectApplyV1 = Reflect.apply;
+
+function objectFreezeV1<T>(value: T): Readonly<T> {
+  return CapturedReflectApplyV1(CapturedObjectFreezeV1, undefined, [
+    value,
+  ]) as Readonly<T>;
+}
+
+function objectValuesV1(value: object): unknown[] {
+  return CapturedReflectApplyV1(CapturedObjectValuesV1, undefined, [
+    value,
+  ]) as unknown[];
+}
 
 export const PROVIDER_SIGNED_PACKAGE_IDENTITY_DOMAIN_V1 =
   "provider-signed-package-identity-v1" as const;
@@ -62,8 +78,8 @@ function bytesToLowerHex(bytes: Uint8Array): string {
 
 function deepFreezeJson<T>(value: T): T {
   if (value !== null && typeof value === "object") {
-    for (const child of Object.values(value)) deepFreezeJson(child);
-    Object.freeze(value);
+    for (const child of objectValuesV1(value)) deepFreezeJson(child);
+    objectFreezeV1(value);
   }
   return value;
 }

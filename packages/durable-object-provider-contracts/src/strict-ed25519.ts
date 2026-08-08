@@ -1,6 +1,72 @@
 export const STRICT_ED25519_VERIFICATION_PROFILE_V1 =
   "ed25519-rfc8032-cofactorless-prime-subgroup-v1" as const;
 
+// The strict primitive is also the package-internal reference monitor for an
+// attested host.  Capture every mutable primordial it needs while the trusted
+// module realm is bootstrapping; capability operations must not re-resolve
+// caller-replaceable globals or typed-array prototype methods after startup.
+const CapturedArrayFromV1 = Array.from;
+const CapturedArrayV1 = Array;
+const CapturedBigIntV1 = BigInt;
+const CapturedFunctionPrototypeHasInstanceV1 =
+  Function.prototype[Symbol.hasInstance];
+const CapturedNumberV1 = Number;
+const CapturedObjectFreezeV1 = Object.freeze;
+const CapturedReflectApplyV1 = Reflect.apply;
+const CapturedUint8ArrayV1 = Uint8Array;
+const CapturedUint8ArrayPrototypeSetV1 = Uint8Array.prototype.set;
+const CapturedTypedArrayPrototypeV1 = Object.getPrototypeOf(
+  Uint8Array.prototype,
+);
+const CapturedTypedArrayByteLengthGetterV1 =
+  Object.getOwnPropertyDescriptor(
+    CapturedTypedArrayPrototypeV1,
+    "byteLength",
+  )?.get;
+
+if (CapturedTypedArrayByteLengthGetterV1 === undefined) {
+  throw new TypeError("Uint8Array byteLength primordial unavailable");
+}
+
+function isUint8ArrayV1(value: unknown): value is Uint8Array {
+  return CapturedReflectApplyV1(
+    CapturedFunctionPrototypeHasInstanceV1,
+    CapturedUint8ArrayV1,
+    [value],
+  ) as boolean;
+}
+
+function byteLengthV1(value: Uint8Array): number {
+  return CapturedReflectApplyV1(
+    CapturedTypedArrayByteLengthGetterV1!,
+    value,
+    [],
+  ) as number;
+}
+
+function setBytesV1(
+  target: Uint8Array,
+  source: Uint8Array,
+  offset = 0,
+): void {
+  CapturedReflectApplyV1(CapturedUint8ArrayPrototypeSetV1, target, [
+    source,
+    offset,
+  ]);
+}
+
+function copyByteRangeV1(
+  source: Uint8Array,
+  start: number,
+  end: number,
+): Uint8Array {
+  const result = new CapturedUint8ArrayV1(end - start);
+  for (let index = start; index < end; index += 1) {
+    result[index - start] = source[index]!;
+  }
+  return result;
+}
+
 const FIELD_PRIME = (1n << 255n) - 19n;
 const SUBGROUP_ORDER =
   (1n << 252n) + 27742317777372353535851937790883648493n;
@@ -148,9 +214,10 @@ function invert(value: bigint): bigint | undefined {
 }
 
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.byteLength !== right.byteLength) return false;
+  const leftByteLength = byteLengthV1(left);
+  if (leftByteLength !== byteLengthV1(right)) return false;
   let difference = 0;
-  for (let index = 0; index < left.byteLength; index += 1) {
+  for (let index = 0; index < leftByteLength; index += 1) {
     difference |= left[index]! ^ right[index]!;
   }
   return difference === 0;
@@ -158,8 +225,8 @@ function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
 
 function littleEndianToBigInt(bytes: Uint8Array): bigint {
   let value = 0n;
-  for (let index = bytes.byteLength - 1; index >= 0; index -= 1) {
-    value = (value << 8n) | BigInt(bytes[index]!);
+  for (let index = byteLengthV1(bytes) - 1; index >= 0; index -= 1) {
+    value = (value << 8n) | CapturedBigIntV1(bytes[index]!);
   }
   return value;
 }
@@ -169,20 +236,21 @@ function encodePoint(point: ExtendedPoint): Uint8Array | undefined {
   if (inverseZ === undefined) return undefined;
   const affineX = mod(point.x * inverseZ);
   let affineY = mod(point.y * inverseZ);
-  const encoded = new Uint8Array(32);
-  for (let index = 0; index < encoded.byteLength; index += 1) {
-    encoded[index] = Number(affineY & 0xffn);
+  const encoded = new CapturedUint8ArrayV1(32);
+  for (let index = 0; index < byteLengthV1(encoded); index += 1) {
+    encoded[index] = CapturedNumberV1(affineY & 0xffn);
     affineY >>= 8n;
   }
-  encoded[31] = encoded[31]! | Number((affineX & 1n) << 7n);
+  encoded[31] =
+    encoded[31]! | CapturedNumberV1((affineX & 1n) << 7n);
   return encoded;
 }
 
 function decodePoint(encoded: Uint8Array): ExtendedPoint | undefined {
-  if (encoded.byteLength !== 32) return undefined;
+  if (byteLengthV1(encoded) !== 32) return undefined;
 
   const sign = encoded[31]! >>> 7;
-  const yBytes = new Uint8Array(encoded);
+  const yBytes = new CapturedUint8ArrayV1(encoded);
   yBytes[31] = yBytes[31]! & 0x7f;
   const y = littleEndianToBigInt(yBytes);
   if (y >= FIELD_PRIME) return undefined;
@@ -196,7 +264,7 @@ function decodePoint(encoded: Uint8Array): ExtendedPoint | undefined {
   let x = powMod(xSquared, (FIELD_PRIME + 3n) >> 3n);
   if (mod(x * x - xSquared) !== 0n) x = mod(x * SQRT_MINUS_ONE);
   if (mod(x * x - xSquared) !== 0n) return undefined;
-  if (Number(x & 1n) !== sign) x = mod(FIELD_PRIME - x);
+  if (CapturedNumberV1(x & 1n) !== sign) x = mod(FIELD_PRIME - x);
   if (x === 0n && sign === 1) return undefined;
 
   if (mod(ySquared - x * x - 1n - CURVE_D * x * x * ySquared) !== 0n) {
@@ -280,14 +348,15 @@ function isAdmissiblePoint(point: ExtendedPoint): boolean {
 }
 
 function rotateRight64(value: bigint, amount: number): bigint {
-  const shift = BigInt(amount);
+  const shift = CapturedBigIntV1(amount);
   return ((value >> shift) | (value << (64n - shift))) & MASK_64;
 }
 
 function readBigEndian64(bytes: Uint8Array, offset: number): bigint {
   let value = 0n;
   for (let index = 0; index < 8; index += 1) {
-    value = (value << 8n) | BigInt(bytes[offset + index]!);
+    value =
+      (value << 8n) | CapturedBigIntV1(bytes[offset + index]!);
   }
   return value;
 }
@@ -295,22 +364,25 @@ function readBigEndian64(bytes: Uint8Array, offset: number): bigint {
 function writeBigEndian64(bytes: Uint8Array, offset: number, value: bigint): void {
   let remaining = value;
   for (let index = 7; index >= 0; index -= 1) {
-    bytes[offset + index] = Number(remaining & 0xffn);
+    bytes[offset + index] = CapturedNumberV1(remaining & 0xffn);
     remaining >>= 8n;
   }
 }
 
 function sha512(message: Uint8Array): Uint8Array {
-  const remainder = (message.byteLength + 17) % 128;
+  const messageByteLength = byteLengthV1(message);
+  const remainder = (messageByteLength + 17) % 128;
   const paddedLength =
-    message.byteLength + 17 + (remainder === 0 ? 0 : 128 - remainder);
-  const padded = new Uint8Array(paddedLength);
-  padded.set(message);
-  padded[message.byteLength] = 0x80;
+    messageByteLength + 17 + (remainder === 0 ? 0 : 128 - remainder);
+  const padded = new CapturedUint8ArrayV1(paddedLength);
+  setBytesV1(padded, message);
+  padded[messageByteLength] = 0x80;
 
-  let bitLength = BigInt(message.byteLength) * 8n;
+  let bitLength = CapturedBigIntV1(messageByteLength) * 8n;
   for (let index = 0; index < 16; index += 1) {
-    padded[paddedLength - 1 - index] = Number(bitLength & 0xffn);
+    padded[paddedLength - 1 - index] = CapturedNumberV1(
+      bitLength & 0xffn,
+    );
     bitLength >>= 8n;
   }
 
@@ -322,9 +394,13 @@ function sha512(message: Uint8Array): Uint8Array {
   let h5: bigint = SHA512_INITIAL_STATE[5];
   let h6: bigint = SHA512_INITIAL_STATE[6];
   let h7: bigint = SHA512_INITIAL_STATE[7];
-  const words: bigint[] = Array.from({ length: 80 }, () => 0n);
+  const words = CapturedReflectApplyV1(
+    CapturedArrayFromV1,
+    CapturedArrayV1,
+    [{ length: 80 }, () => 0n],
+  ) as bigint[];
 
-  for (let offset = 0; offset < padded.byteLength; offset += 128) {
+  for (let offset = 0; offset < byteLengthV1(padded); offset += 128) {
     for (let index = 0; index < 16; index += 1) {
       words[index] = readBigEndian64(padded, offset + index * 8);
     }
@@ -389,17 +465,18 @@ function sha512(message: Uint8Array): Uint8Array {
     h7 = (h7 + h) & MASK_64;
   }
 
-  const digest = new Uint8Array(64);
-  [h0, h1, h2, h3, h4, h5, h6, h7].forEach((word, index) => {
-    writeBigEndian64(digest, index * 8, word);
-  });
+  const digest = new CapturedUint8ArrayV1(64);
+  const finalState = [h0, h1, h2, h3, h4, h5, h6, h7] as const;
+  for (let index = 0; index < finalState.length; index += 1) {
+    writeBigEndian64(digest, index * 8, finalState[index]!);
+  }
   return digest;
 }
 
 function copyBytes(value: Uint8Array): Uint8Array | undefined {
-  if (!(value instanceof Uint8Array)) return undefined;
+  if (!isUint8ArrayV1(value)) return undefined;
   try {
-    return new Uint8Array(value);
+    return new CapturedUint8ArrayV1(value);
   } catch {
     return undefined;
   }
@@ -407,7 +484,9 @@ function copyBytes(value: Uint8Array): Uint8Array | undefined {
 
 export function validatePrimeSubgroupPoint(encodedPoint: Uint8Array): boolean {
   const pointBytes = copyBytes(encodedPoint);
-  if (pointBytes === undefined || pointBytes.byteLength !== 32) return false;
+  if (pointBytes === undefined || byteLengthV1(pointBytes) !== 32) {
+    return false;
+  }
   const point = decodePoint(pointBytes);
   return point !== undefined && isAdmissiblePoint(point);
 }
@@ -418,11 +497,11 @@ export function verifyRawEd25519(
   signature: Uint8Array,
 ): boolean {
   if (
-    !(publicKey instanceof Uint8Array) ||
-    publicKey.byteLength !== 32 ||
-    !(signature instanceof Uint8Array) ||
-    signature.byteLength !== 64 ||
-    !(message instanceof Uint8Array)
+    !isUint8ArrayV1(publicKey) ||
+    byteLengthV1(publicKey) !== 32 ||
+    !isUint8ArrayV1(signature) ||
+    byteLengthV1(signature) !== 64 ||
+    !isUint8ArrayV1(message)
   ) {
     return false;
   }
@@ -439,8 +518,8 @@ export function verifyRawEd25519(
   }
 
   try {
-    const encodedR = signatureBytes.slice(0, 32);
-    const encodedS = signatureBytes.slice(32, 64);
+    const encodedR = copyByteRangeV1(signatureBytes, 0, 32);
+    const encodedS = copyByteRangeV1(signatureBytes, 32, 64);
     const publicPoint = decodePoint(publicKeyBytes);
     const signaturePoint = decodePoint(encodedR);
     if (
@@ -455,10 +534,12 @@ export function verifyRawEd25519(
     const scalarS = littleEndianToBigInt(encodedS);
     if (scalarS >= SUBGROUP_ORDER) return false;
 
-    const hashInput = new Uint8Array(64 + messageBytes.byteLength);
-    hashInput.set(encodedR, 0);
-    hashInput.set(publicKeyBytes, 32);
-    hashInput.set(messageBytes, 64);
+    const hashInput = new CapturedUint8ArrayV1(
+      64 + byteLengthV1(messageBytes),
+    );
+    setBytesV1(hashInput, encodedR, 0);
+    setBytesV1(hashInput, publicKeyBytes, 32);
+    setBytesV1(hashInput, messageBytes, 64);
     const challenge = littleEndianToBigInt(sha512(hashInput)) % SUBGROUP_ORDER;
 
     const left = multiplyPoint(BASE_POINT, scalarS);
@@ -471,3 +552,6 @@ export function verifyRawEd25519(
     return false;
   }
 }
+
+CapturedObjectFreezeV1(validatePrimeSubgroupPoint);
+CapturedObjectFreezeV1(verifyRawEd25519);

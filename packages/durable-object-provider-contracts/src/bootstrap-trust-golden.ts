@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod-runtime.js";
 
 import {
   PROVIDER_BOOTSTRAP_TRUST_BUNDLE_CONTENT_DIGEST_V1,

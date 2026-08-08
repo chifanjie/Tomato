@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod-runtime.js";
 
 import {
   ContentDigestV1Schema,
@@ -6,6 +6,68 @@ import {
   ProviderRegistryRootKeyIdV1Schema,
 } from "./primitives.js";
 import { sha256InternalV1 } from "./sha256.js";
+
+const CapturedArrayIsArrayV1 = Array.isArray;
+const CapturedArrayPrototypeSomeV1 = Array.prototype.some;
+const CapturedArrayPrototypeSortV1 = Array.prototype.sort;
+const CapturedObjectGetOwnPropertyDescriptorsV1 =
+  Object.getOwnPropertyDescriptors;
+const CapturedObjectGetOwnPropertySymbolsV1 = Object.getOwnPropertySymbols;
+const CapturedObjectGetPrototypeOfV1 = Object.getPrototypeOf;
+const CapturedObjectKeysV1 = Object.keys;
+const CapturedObjectPrototypeV1 = Object.prototype;
+const CapturedReflectApplyV1 = Reflect.apply;
+
+function arrayIsArrayV1(value: unknown): value is unknown[] {
+  return CapturedReflectApplyV1(CapturedArrayIsArrayV1, undefined, [
+    value,
+  ]) as boolean;
+}
+
+function arraySomeV1<T>(
+  array: readonly T[],
+  callback: (value: T, index: number, source: readonly T[]) => unknown,
+): boolean {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeSomeV1, array, [
+    callback,
+  ]) as boolean;
+}
+
+function arraySortV1<T>(array: T[]): T[] {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeSortV1, array, [
+    undefined,
+  ]) as T[];
+}
+
+function objectGetOwnPropertyDescriptorsV1(
+  value: object,
+): PropertyDescriptorMap {
+  return CapturedReflectApplyV1(
+    CapturedObjectGetOwnPropertyDescriptorsV1,
+    undefined,
+    [value],
+  ) as PropertyDescriptorMap;
+}
+
+function objectGetOwnPropertySymbolsV1(value: object): symbol[] {
+  return CapturedReflectApplyV1(
+    CapturedObjectGetOwnPropertySymbolsV1,
+    undefined,
+    [value],
+  ) as symbol[];
+}
+
+function objectGetPrototypeOfV1(value: object): object | null {
+  return CapturedReflectApplyV1(CapturedObjectGetPrototypeOfV1, undefined, [
+    value,
+  ]) as object | null;
+}
+
+function objectKeysV1(value: object): string[] {
+  return CapturedReflectApplyV1(CapturedObjectKeysV1, undefined, [
+    value,
+  ]) as string[];
+}
 
 export const STORE_FILENAME_SHORT_BODY_MAX_LENGTH_V1 = 220 as const;
 export const PROVIDER_REGISTRY_ROOT_METADATA_LOCATOR_PROFILE_V1 =
@@ -239,7 +301,7 @@ function snapshotExactLocatorDataObjectV1(
   requiredKeys: readonly string[],
   locatorName: string,
 ): Record<string, unknown> {
-  if (input === null || typeof input !== "object" || Array.isArray(input)) {
+  if (input === null || typeof input !== "object" || arrayIsArrayV1(input)) {
     throw new TypeError(`${locatorName} must be a plain data object`);
   }
 
@@ -247,24 +309,27 @@ function snapshotExactLocatorDataObjectV1(
   let symbols: symbol[];
   let descriptors: PropertyDescriptorMap;
   try {
-    prototype = Object.getPrototypeOf(input) as object | null;
-    symbols = Object.getOwnPropertySymbols(input);
-    descriptors = Object.getOwnPropertyDescriptors(input);
+    prototype = objectGetPrototypeOfV1(input);
+    symbols = objectGetOwnPropertySymbolsV1(input);
+    descriptors = objectGetOwnPropertyDescriptorsV1(input);
   } catch {
     throw new TypeError(`${locatorName} must be a plain data object`);
   }
-  if (prototype !== Object.prototype && prototype !== null) {
+  if (prototype !== CapturedObjectPrototypeV1 && prototype !== null) {
     throw new TypeError(`${locatorName} must be a plain data object`);
   }
   if (symbols.length !== 0) {
     throw new TypeError(`${locatorName} must not contain symbols`);
   }
 
-  const sortedRequiredKeys = [...requiredKeys].sort();
-  const actualKeys = Object.keys(descriptors).sort();
+  const sortedRequiredKeys = arraySortV1([...requiredKeys]);
+  const actualKeys = arraySortV1(objectKeysV1(descriptors));
   if (
     actualKeys.length !== sortedRequiredKeys.length ||
-    actualKeys.some((key, index) => key !== sortedRequiredKeys[index])
+    arraySomeV1(
+      actualKeys,
+      (key, index) => key !== sortedRequiredKeys[index],
+    )
   ) {
     throw new TypeError(`${locatorName} must contain only exact fields`);
   }

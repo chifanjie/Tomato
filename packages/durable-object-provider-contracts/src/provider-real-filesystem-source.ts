@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod-runtime.js";
 
 import {
   assertDataObjectDescriptorsBeforeSchemaV1,
@@ -42,6 +42,101 @@ import {
   verifyRawEd25519WithCapabilityV1,
   type ProviderStrictEd25519OpaqueCapabilityV1,
 } from "./strict-ed25519-conformance.js";
+import {
+  assertPreparedDistributionInputBindingsInternalV1,
+  recordPreparedDistributionSignatureVerificationInternalV1,
+  registerProviderRealFilesystemSourcePreparedCoreInternalV1,
+  type PreparedDistributionVerificationContextV1,
+} from "./provider-real-filesystem-source-internal.js";
+import {
+  hardenProviderPointPromiseV1,
+} from "./provider-point-runtime-internal.js";
+
+const CapturedArrayPrototypePushV1 = Array.prototype.push;
+const CapturedArrayPrototypeSomeV1 = Array.prototype.some;
+const CapturedArrayPrototypeSortV1 = Array.prototype.sort;
+const CapturedMapV1 = Map;
+const CapturedMapPrototypeForEachV1 = Map.prototype.forEach;
+const CapturedMapPrototypeGetV1 = Map.prototype.get;
+const CapturedMapPrototypeSetV1 = Map.prototype.set;
+const CapturedObjectFreezeV1 = Object.freeze;
+const CapturedObjectGetOwnPropertyDescriptorsV1 =
+  Object.getOwnPropertyDescriptors;
+const CapturedObjectKeysV1 = Object.keys;
+const CapturedObjectValuesV1 = Object.values;
+const CapturedReflectApplyV1 = Reflect.apply;
+const CapturedRegExpPrototypeExecV1 = RegExp.prototype.exec;
+const CapturedSetV1 = Set;
+const CapturedSetPrototypeAddV1 = Set.prototype.add;
+const CapturedSetPrototypeHasV1 = Set.prototype.has;
+
+function hardenPromiseV1<T>(promise: Promise<T>): Promise<T> {
+  return hardenProviderPointPromiseV1(promise);
+}
+
+function arrayPushV1<T>(array: T[], value: T): number {
+  return CapturedReflectApplyV1(CapturedArrayPrototypePushV1, array, [
+    value,
+  ]) as number;
+}
+
+function arraySomeV1<T>(
+  array: readonly T[],
+  callback: (value: T, index: number, source: readonly T[]) => unknown,
+): boolean {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeSomeV1, array, [
+    callback,
+  ]) as boolean;
+}
+
+function arraySortV1<T>(
+  array: T[],
+  compare?: (left: T, right: T) => number,
+): T[] {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeSortV1, array, [
+    compare,
+  ]) as T[];
+}
+
+function mapGetV1<K, V>(map: ReadonlyMap<K, V>, key: K): V | undefined {
+  return CapturedReflectApplyV1(CapturedMapPrototypeGetV1, map, [key]) as
+    | V
+    | undefined;
+}
+
+function mapSetV1<K, V>(map: Map<K, V>, key: K, value: V): void {
+  CapturedReflectApplyV1(CapturedMapPrototypeSetV1, map, [key, value]);
+}
+
+function mapKeysArrayV1<K, V>(map: ReadonlyMap<K, V>): K[] {
+  const output: K[] = [];
+  CapturedReflectApplyV1(CapturedMapPrototypeForEachV1, map, [
+    (_value: V, key: K) => {
+      arrayPushV1(output, key);
+    },
+  ]);
+  return output;
+}
+
+function setAddV1<T>(set: Set<T>, value: T): void {
+  CapturedReflectApplyV1(CapturedSetPrototypeAddV1, set, [value]);
+}
+
+function setHasV1<T>(set: ReadonlySet<T>, value: T): boolean {
+  return CapturedReflectApplyV1(CapturedSetPrototypeHasV1, set, [
+    value,
+  ]) as boolean;
+}
+
+function regExpExecV1(pattern: RegExp, value: string): RegExpExecArray | null {
+  return CapturedReflectApplyV1(CapturedRegExpPrototypeExecV1, pattern, [
+    value,
+  ]) as RegExpExecArray | null;
+}
+
+function regExpTestV1(pattern: RegExp, value: string): boolean {
+  return regExpExecV1(pattern, value) !== null;
+}
 
 export const PROVIDER_REAL_FILESYSTEM_FIXTURE_PROGRAM_DOMAIN_V1 =
   "provider-real-fs-fixture-program-v1" as const;
@@ -448,7 +543,7 @@ function bytesToLowerHexV1(bytes: Uint8Array): string {
 }
 
 function lowerHexToBytesV1(hex: string): Uint8Array {
-  if (!/^(?:[0-9a-f]{2})+$/u.test(hex)) {
+  if (!regExpTestV1(/^(?:[0-9a-f]{2})+$/u, hex)) {
     throw new TypeError("signature is not lowercase octets");
   }
   const bytes = new Uint8Array(hex.length / 2);
@@ -680,8 +775,8 @@ function rootKeyIdFromSignatureV1(
   pattern: RegExp,
 ): string | undefined {
   assertDataObjectDescriptorsBeforeSchemaV1(input);
-  const value = Object.getOwnPropertyDescriptors(input)[field]?.value;
-  return typeof value === "string" ? pattern.exec(value)?.[1] : undefined;
+  const value = CapturedObjectGetOwnPropertyDescriptorsV1(input)[field]?.value;
+  return typeof value === "string" ? regExpExecV1(pattern, value)?.[1] : undefined;
 }
 
 function resolveSignatureRootKeyIdV1(
@@ -913,8 +1008,8 @@ function snapshotInputV1(input: unknown): {
   strictCryptoCapability: unknown;
 } {
   assertDataObjectDescriptorsBeforeSchemaV1(input);
-  const descriptors = Object.getOwnPropertyDescriptors(input);
-  const keys = Object.keys(descriptors).sort();
+  const descriptors = CapturedObjectGetOwnPropertyDescriptorsV1(input);
+  const keys = arraySortV1(CapturedObjectKeysV1(descriptors));
   const expected = [
     "activeRoot",
     "activeRootMetadata",
@@ -925,7 +1020,7 @@ function snapshotInputV1(input: unknown): {
   ];
   if (
     keys.length !== expected.length ||
-    keys.some((key, index) => key !== expected[index])
+    arraySomeV1(keys, (key, index) => key !== expected[index])
   ) {
     return fail("input", "schema_invalid");
   }
@@ -953,57 +1048,77 @@ function parseSignatureV1(
   signature: string,
   pattern: RegExp,
 ): { rootKeyId: string; bytes: Uint8Array } {
-  const match = pattern.exec(signature);
+  const match = regExpExecV1(pattern, signature);
   if (match?.[1] === undefined || match[2] === undefined) {
     throw new TypeError("invalid source signature");
   }
   return { rootKeyId: match[1], bytes: lowerHexToBytesV1(match[2]) };
 }
 
-async function verifyRootSignatureV1(
+function verifyRootSignatureV1(
   signature: string,
   pattern: RegExp,
   root: ProviderRegistryRootPublicKeyV1,
   message: Uint8Array,
   capability: ProviderStrictEd25519OpaqueCapabilityV1,
   stage: "corpus_signature" | "suite_signature",
+  preparedContext?: PreparedDistributionVerificationContextV1,
 ): Promise<void> {
-  try {
-    const parsed = parseSignatureV1(signature, pattern);
-    if (
-      parsed.rootKeyId !== root.rootKeyId ||
-      !(await verifyRawEd25519WithCapabilityV1(
-        capability,
-        decodeCanonicalPublicKeyBytes32V1(root.publicKeyBytes),
-        message,
-        parsed.bytes,
-      ))
-    ) {
-      return fail(stage, "signature_invalid");
-    }
-  } catch (error) {
-    if (error instanceof SourceDiagnosticSignal) throw error;
-    return fail(stage, "signature_invalid");
-  }
+  return hardenPromiseV1(
+    (async (): Promise<void> => {
+      try {
+        const parsed = parseSignatureV1(signature, pattern);
+        if (parsed.rootKeyId !== root.rootKeyId) {
+          return fail(stage, "signature_invalid");
+        }
+        const publicKeyBytes = decodeCanonicalPublicKeyBytes32V1(
+          root.publicKeyBytes,
+        );
+        if (preparedContext !== undefined) {
+          recordPreparedDistributionSignatureVerificationInternalV1(
+            preparedContext,
+          );
+        }
+        if (
+          !(await verifyRawEd25519WithCapabilityV1(
+            capability,
+            publicKeyBytes,
+            message,
+            parsed.bytes,
+          ))
+        ) {
+          return fail(stage, "signature_invalid");
+        }
+      } catch (error) {
+        if (error instanceof SourceDiagnosticSignal) throw error;
+        return fail(stage, "signature_invalid");
+      }
+    })(),
+  );
 }
 
 function deepFreezeV1<T>(value: T): T {
   if (value !== null && typeof value === "object") {
-    for (const child of Object.values(value)) deepFreezeV1(child);
-    Object.freeze(value);
+    for (const child of CapturedObjectValuesV1(value)) deepFreezeV1(child);
+    CapturedObjectFreezeV1(value);
   }
   return value;
 }
 
-async function validateSourceClosureInternalV1(
-  input: unknown,
+async function validateSourceClosureFromSnapshotInternalV1(
+  snapshot: ReturnType<typeof snapshotInputV1>,
+  preparedContext?: PreparedDistributionVerificationContextV1,
+  admitActiveRoot?: (
+    capability: ProviderStrictEd25519OpaqueCapabilityV1,
+    publicKeyBytes: Uint8Array,
+  ) => Promise<boolean>,
 ): Promise<ProviderRealFilesystemSourceClosureValidationV1> {
-  let snapshot: ReturnType<typeof snapshotInputV1>;
-  try {
-    snapshot = snapshotInputV1(input);
-  } catch (error) {
-    if (error instanceof SourceDiagnosticSignal) throw error;
-    return fail("input", "schema_invalid");
+  if (preparedContext !== undefined) {
+    assertPreparedDistributionInputBindingsInternalV1(
+      preparedContext,
+      snapshot.activeRoot as ProviderRegistryRootPublicKeyV1,
+      snapshot.strictCryptoCapability as ProviderStrictEd25519OpaqueCapabilityV1,
+    );
   }
 
   let binding: ProviderSignedDistributionRootBindingV1;
@@ -1012,23 +1127,35 @@ async function validateSourceClosureInternalV1(
   let corpusEnvelope: ProviderRealFilesystemFixtureCorpusManifestEnvelopeV1;
   let suiteEnvelope: ProviderRealFilesystemSuiteManifestEnvelopeV1;
   try {
-    binding = validateProviderSignedDistributionRootBindingStructureV1(
+    const parsedBinding = validateProviderSignedDistributionRootBindingStructureV1(
       snapshot.distributionRootBinding,
     );
+    binding = preparedContext === undefined
+      ? parsedBinding
+      : snapshot.distributionRootBinding as ProviderSignedDistributionRootBindingV1;
   } catch {
     return fail("distribution_binding", "schema_invalid");
   }
   try {
-    activeRootMetadata = ProviderRegistryRootMetadataPinV1Schema.parse(
+    const parsedActiveRootMetadata = ProviderRegistryRootMetadataPinV1Schema.parse(
       snapshot.activeRootMetadata,
     );
-    activeRoot = validateProviderRegistryRootPublicKeyV1(snapshot.activeRoot);
+    const parsedActiveRoot = validateProviderRegistryRootPublicKeyV1(
+      snapshot.activeRoot,
+    );
+    activeRootMetadata = preparedContext === undefined
+      ? parsedActiveRootMetadata
+      : snapshot.activeRootMetadata as ProviderRegistryRootMetadataPinV1;
+    activeRoot = preparedContext === undefined
+      ? parsedActiveRoot
+      : snapshot.activeRoot as ProviderRegistryRootPublicKeyV1;
     if (
       activeRootMetadata.rootKeyId !== activeRoot.rootKeyId ||
-      !(await validateProviderStrictEd25519PointWithCapabilityV1(
-        snapshot.strictCryptoCapability as ProviderStrictEd25519OpaqueCapabilityV1,
-        decodeCanonicalPublicKeyBytes32V1(activeRoot.publicKeyBytes),
-      ))
+      (admitActiveRoot !== undefined &&
+        !(await admitActiveRoot(
+          snapshot.strictCryptoCapability as ProviderStrictEd25519OpaqueCapabilityV1,
+          decodeCanonicalPublicKeyBytes32V1(activeRoot.publicKeyBytes),
+        )))
     ) {
       return fail("active_root", "root_mismatch");
     }
@@ -1038,18 +1165,24 @@ async function validateSourceClosureInternalV1(
   }
   try {
     assertJsonDataTreeBeforeSchemaV1(snapshot.fixtureCorpusManifest);
-    corpusEnvelope =
+    const parsedCorpusEnvelope =
       ProviderRealFilesystemFixtureCorpusManifestEnvelopeV1Schema.parse(
         snapshot.fixtureCorpusManifest,
       );
+    corpusEnvelope = preparedContext === undefined
+      ? parsedCorpusEnvelope
+      : snapshot.fixtureCorpusManifest as ProviderRealFilesystemFixtureCorpusManifestEnvelopeV1;
   } catch {
     return fail("corpus_structure", "schema_invalid");
   }
   try {
     assertJsonDataTreeBeforeSchemaV1(snapshot.suiteManifest);
-    suiteEnvelope = ProviderRealFilesystemSuiteManifestEnvelopeV1Schema.parse(
+    const parsedSuiteEnvelope = ProviderRealFilesystemSuiteManifestEnvelopeV1Schema.parse(
       snapshot.suiteManifest,
     );
+    suiteEnvelope = preparedContext === undefined
+      ? parsedSuiteEnvelope
+      : snapshot.suiteManifest as ProviderRealFilesystemSuiteManifestEnvelopeV1;
   } catch {
     return fail("suite_structure", "schema_invalid");
   }
@@ -1082,7 +1215,7 @@ async function validateSourceClosureInternalV1(
     return fail("corpus_structure", "count_mismatch");
   }
 
-  const recordsByCase = new Map<
+  const recordsByCase = new CapturedMapV1<
     string,
     ProviderRealFilesystemFixtureCorpusRecordV1[]
   >();
@@ -1097,7 +1230,7 @@ async function validateSourceClosureInternalV1(
     ) {
       return fail("corpus_structure", "ordering_invalid");
     }
-    const records = recordsByCase.get(record.caseKey) ?? [];
+    const records = mapGetV1(recordsByCase, record.caseKey) ?? [];
     if (record.fixtureOrdinal !== records.length) {
       return fail("corpus_structure", "ordering_invalid");
     }
@@ -1112,8 +1245,8 @@ async function validateSourceClosureInternalV1(
     ) {
       return fail("corpus_digest", "digest_mismatch");
     }
-    records.push(record);
-    recordsByCase.set(record.caseKey, records);
+    arrayPushV1(records, record);
+    mapSetV1(recordsByCase, record.caseKey, records);
   }
   if (
     corpus.recordSetDigest !==
@@ -1140,19 +1273,26 @@ async function validateSourceClosureInternalV1(
     ),
     snapshot.strictCryptoCapability as ProviderStrictEd25519OpaqueCapabilityV1,
     "corpus_signature",
+    preparedContext,
   );
   const expectedCorpusContentDigest =
     deriveProviderRealFilesystemFixtureCorpusManifestContentDigestV1(corpus);
   if (corpusEnvelope.contentDigest !== expectedCorpusContentDigest) {
     return fail("corpus_envelope", "envelope_mismatch");
   }
-  const corpusPin =
+  const parsedCorpusPin =
     ProviderRealFilesystemFixtureCorpusManifestPinV1Schema.parse({
       locatorProfile:
         "distribution_provider_real_fs_fixture_corpus_manifest_v1",
       distributionRootBinding: binding,
       fixtureManifestDigest: corpus.fixtureManifestDigest,
       contentDigest: corpusEnvelope.contentDigest,
+    });
+  const corpusPin = preparedContext === undefined
+    ? parsedCorpusPin
+    : deepFreezeV1({
+      ...parsedCorpusPin,
+      distributionRootBinding: binding,
     });
 
   const suite = suiteEnvelope.payload;
@@ -1181,14 +1321,16 @@ async function validateSourceClosureInternalV1(
     return fail("suite_structure", "count_mismatch");
   }
 
-  const requiredEntries: ProviderRealFilesystemRequiredCaseCutEntryV1[] =
-    suite.cases.flatMap((suiteCase) =>
-      suiteCase.requiredCrashCuts.map((cut) => ({
+  const requiredEntries: ProviderRealFilesystemRequiredCaseCutEntryV1[] = [];
+  for (const suiteCase of suite.cases) {
+    for (const cut of suiteCase.requiredCrashCuts) {
+      arrayPushV1(requiredEntries, {
         caseId: suiteCase.caseId,
         crashCutId: cut.crashCutId,
-      })),
-    );
-  requiredEntries.sort((left, right) => {
+      });
+    }
+  }
+  arraySortV1(requiredEntries, (left, right) => {
     const caseOrder = compareUtf8V1(left.caseId, right.caseId);
     return caseOrder !== 0
       ? caseOrder
@@ -1205,7 +1347,7 @@ async function validateSourceClosureInternalV1(
     }
   }
 
-  const observedCaseKeys = new Set<string>();
+  const observedCaseKeys = new CapturedSetV1<string>();
   for (let index = 0; index < suite.cases.length; index += 1) {
     const suiteCase = suite.cases[index]!;
     const previous = suite.cases[index - 1];
@@ -1215,11 +1357,11 @@ async function validateSourceClosureInternalV1(
     ) {
       return fail("suite_structure", "ordering_invalid");
     }
-    if (observedCaseKeys.has(suiteCase.caseKey)) {
+    if (setHasV1(observedCaseKeys, suiteCase.caseKey)) {
       return fail("suite_structure", "coverage_mismatch");
     }
-    observedCaseKeys.add(suiteCase.caseKey);
-    const caseRecords = recordsByCase.get(suiteCase.caseKey);
+    setAddV1(observedCaseKeys, suiteCase.caseKey);
+    const caseRecords = mapGetV1(recordsByCase, suiteCase.caseKey);
     if (caseRecords === undefined) {
       return fail("suite_structure", "coverage_mismatch");
     }
@@ -1292,7 +1434,10 @@ async function validateSourceClosureInternalV1(
   }
   if (
     observedCaseKeys.size !== recordsByCase.size ||
-    [...recordsByCase.keys()].some((key) => !observedCaseKeys.has(key))
+    arraySomeV1(
+      mapKeysArrayV1(recordsByCase),
+      (key) => !setHasV1(observedCaseKeys, key),
+    )
   ) {
     return fail("suite_structure", "coverage_mismatch");
   }
@@ -1331,13 +1476,14 @@ async function validateSourceClosureInternalV1(
     ),
     snapshot.strictCryptoCapability as ProviderStrictEd25519OpaqueCapabilityV1,
     "suite_signature",
+    preparedContext,
   );
   const expectedSuiteContentDigest =
     deriveProviderRealFilesystemSuiteManifestContentDigestV1(suite);
   if (suiteEnvelope.contentDigest !== expectedSuiteContentDigest) {
     return fail("suite_envelope", "envelope_mismatch");
   }
-  const suitePin = ProviderRealFilesystemSuiteManifestPinV1Schema.parse({
+  const parsedSuitePin = ProviderRealFilesystemSuiteManifestPinV1Schema.parse({
     locatorProfile: "distribution_provider_real_fs_suite_manifest_v1",
     distributionRootBinding: binding,
     suiteDigest: suite.suiteDigest,
@@ -1345,6 +1491,12 @@ async function validateSourceClosureInternalV1(
       suite.fixtureCorpusManifest.fixtureManifestDigest,
     contentDigest: suiteEnvelope.contentDigest,
   });
+  const suitePin = preparedContext === undefined
+    ? parsedSuitePin
+    : deepFreezeV1({
+      ...parsedSuitePin,
+      distributionRootBinding: binding,
+    });
 
   return deepFreezeV1({
     authority: "none_real_fs_source_structure_only" as const,
@@ -1362,6 +1514,23 @@ async function validateSourceClosureInternalV1(
     caseCount: suite.caseCount,
     requiredCaseCutCount: suite.requiredCaseCutCount,
   });
+}
+
+async function validateSourceClosureInternalV1(
+  input: unknown,
+): Promise<ProviderRealFilesystemSourceClosureValidationV1> {
+  let snapshot: ReturnType<typeof snapshotInputV1>;
+  try {
+    snapshot = snapshotInputV1(input);
+  } catch (error) {
+    if (error instanceof SourceDiagnosticSignal) throw error;
+    return fail("input", "schema_invalid");
+  }
+  return validateSourceClosureFromSnapshotInternalV1(
+    snapshot,
+    undefined,
+    validateProviderStrictEd25519PointWithCapabilityV1,
+  );
 }
 
 export async function diagnoseProviderRealFilesystemSourceClosureV1(
@@ -1386,3 +1555,29 @@ export async function validateProviderRealFilesystemSourceClosureV1(
   }
   return result.value;
 }
+
+registerProviderRealFilesystemSourcePreparedCoreInternalV1(
+  (
+    input: ValidateProviderRealFilesystemSourceClosureV1Input,
+    context: PreparedDistributionVerificationContextV1,
+  ): Promise<ProviderRealFilesystemSourceClosureDiagnosticResultV1> =>
+    hardenPromiseV1(
+      (async (): Promise<ProviderRealFilesystemSourceClosureDiagnosticResultV1> => {
+        try {
+          const validation = validateSourceClosureFromSnapshotInternalV1(
+            input,
+            context,
+          );
+          return {
+            ok: true,
+            value: await hardenPromiseV1(validation),
+          };
+        } catch (error) {
+          if (error instanceof SourceDiagnosticSignal) {
+            return { ok: false, stage: error.stage, reason: error.reason };
+          }
+          return { ok: false, stage: "input", reason: "schema_invalid" };
+        }
+      })(),
+    ),
+);

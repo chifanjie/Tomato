@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod-runtime.js";
 
 import { canonicalizeJcsSafeIntegerUtf8V1 } from "./jcs.js";
 import { ContentDigestV1Schema, LowerHex64V1Schema } from "./primitives.js";
@@ -2057,6 +2057,53 @@ function restorePropertyV1(saved: SavedPropertyV1): void {
   }
 }
 
+function readGlobalStructuredCloneDescriptorV1():
+  | PropertyDescriptor
+  | undefined {
+  return Object.getOwnPropertyDescriptor(globalThis, "structuredClone");
+}
+
+function installGlobalStructuredClonePoisonV1(
+  poison: (value: unknown) => unknown,
+): void {
+  Object.defineProperty(
+    globalThis,
+    "structuredClone",
+    descriptorRecordV1({
+      value: poison,
+      enumerable: false,
+      configurable: true,
+      writable: true,
+    }),
+  );
+}
+
+function restoreGlobalStructuredCloneDescriptorV1(
+  descriptor: PropertyDescriptor | undefined,
+): void {
+  if (descriptor === undefined) {
+    if (
+      !delete (globalThis as { structuredClone?: unknown }).structuredClone
+    ) {
+      throw new ProviderReleaseTargetUniversePointFixtureError(
+        "failed to delete the fixture-installed structuredClone property",
+      );
+    }
+  } else {
+    Object.defineProperty(globalThis, "structuredClone", descriptor);
+  }
+  if (
+    !descriptorsEqualV1(
+      Object.getOwnPropertyDescriptor(globalThis, "structuredClone"),
+      descriptor,
+    )
+  ) {
+    throw new ProviderReleaseTargetUniversePointFixtureError(
+      "fixture failed to restore the structuredClone descriptor exactly",
+    );
+  }
+}
+
 function noCleanupV1(): void {}
 
 function requestRecordV1(
@@ -2721,11 +2768,28 @@ function executeLocatorBoundaryV1(
   let getterCalls = 0;
   let trapCalls = 0;
   const saved: SavedPropertyV1[] = [];
+  let structuredCloneDescriptor: PropertyDescriptor | undefined;
+  let restoreStructuredClone = false;
   let cleaned = false;
   const cleanup = (): void => {
     if (cleaned) return;
     cleaned = true;
-    restorePropertiesV1(saved);
+    let firstError: unknown;
+    try {
+      restorePropertiesV1(saved);
+    } catch (error) {
+      firstError = error;
+    }
+    if (restoreStructuredClone) {
+      try {
+        restoreGlobalStructuredCloneDescriptorV1(
+          structuredCloneDescriptor,
+        );
+      } catch (error) {
+        if (firstError === undefined) firstError = error;
+      }
+    }
+    if (firstError !== undefined) throw firstError;
   };
   try {
     if (invalidCase.caseId === "universe-locator-ordinary-accessor") {
@@ -2782,18 +2846,16 @@ function executeLocatorBoundaryV1(
     ) {
       const envelope = input as Record<PropertyKey, unknown>;
       const payload = envelope.payload as object;
-      arrayPushV1(saved, savePropertyV1(globalThis, "structuredClone"));
+      structuredCloneDescriptor = readGlobalStructuredCloneDescriptorV1();
+      restoreStructuredClone = true;
       envelope.payload = new CapturedProxyV1(payload, {
         ownKeys(target) {
           trapCalls += 1;
-          defineDataPropertyV1(
-            globalThis,
-            "structuredClone",
+          installGlobalStructuredClonePoisonV1(
             () => {
               getterCalls += 1;
               return CapturedObjectFreezeV1({ forgedClone: true });
             },
-            false,
           );
           CapturedReflectSetV1(envelope, "payload", payload, envelope);
           return CapturedReflectOwnKeysV1(target);

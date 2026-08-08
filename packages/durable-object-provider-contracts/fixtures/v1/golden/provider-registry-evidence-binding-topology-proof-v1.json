@@ -1,0 +1,2329 @@
+{
+  "schemaVersion": 1,
+  "recordType": "provider_registry_evidence_binding_topology_proof",
+  "profile": "provider_registry_evidence_binding_topology_proof_v1",
+  "status": "accepted_after_contract_reopen",
+  "contractReopenRequired": false,
+  "priorContractReopenRequired": true,
+  "inputKeys": [
+    "activeRoot",
+    "activeRootMetadata",
+    "bootstrapTrustBundle",
+    "distributionRootBinding",
+    "fixtureCorpusManifest",
+    "installationIdentityGenerationId",
+    "providerFeasibilityEvidence",
+    "providerFeasibilityEvidencePin",
+    "publicSupportTaxonomy",
+    "realFilesystemConformanceResult",
+    "realFilesystemConformanceResultLocator",
+    "realFilesystemConformanceResultPin",
+    "registryManifestHistory",
+    "releaseMatrix",
+    "rootMetadataHistory",
+    "runtimeAttestation",
+    "semanticProviderPolicy",
+    "strictCryptoCapability",
+    "suiteManifest",
+    "targetDiscoveryFixtureManifest",
+    "targetDiscoveryResult",
+    "targetDiscoveryRunnerRun"
+  ],
+  "jsonBranchKeys": [
+    "activeRoot",
+    "activeRootMetadata",
+    "bootstrapTrustBundle",
+    "distributionRootBinding",
+    "fixtureCorpusManifest",
+    "installationIdentityGenerationId",
+    "providerFeasibilityEvidence",
+    "providerFeasibilityEvidencePin",
+    "publicSupportTaxonomy",
+    "realFilesystemConformanceResult",
+    "realFilesystemConformanceResultLocator",
+    "realFilesystemConformanceResultPin",
+    "registryManifestHistory",
+    "releaseMatrix",
+    "rootMetadataHistory",
+    "runtimeAttestation",
+    "semanticProviderPolicy",
+    "suiteManifest",
+    "targetDiscoveryFixtureManifest",
+    "targetDiscoveryResult",
+    "targetDiscoveryRunnerRun"
+  ],
+  "opaqueField": "strictCryptoCapability",
+  "limits": {
+    "maxObservedIdentities": 4194304,
+    "maxPrecloneAllocationWorkUnits": 268435456,
+    "maxRootMetadataHistoryGenerations": 256,
+    "maxRegistryManifestHistoryGenerations": 4096,
+    "maxTrustEnvelopeRawUnits": 4194304,
+    "maxDistributionRawUnits": 16777216,
+    "maxRetainedTrustHistoryRawUnits": 268435456,
+    "maxRawDepth": 64
+  },
+  "policyCardinality": {
+    "maxProviderVerificationPublicKeyRecordsPerProvider": 256,
+    "maxProviderVerificationPublicKeyRecordsPerUsage": 64,
+    "maxBindingDerivationGenerationRecordsPerProvider": 64,
+    "maxApproverPublicKeyRecordsPerRole": 64,
+    "maxCompromisedRevocationRecordsPerIdentity": 256,
+    "maxTotalRetainedDistributionObjectCount": 65536,
+    "registryManifestJsonContainerEntryHardCap": 65536
+  },
+  "sourceAnchors": {
+    "pointAdmissionContractSemanticDigest": "sha256:04214a7fc05d2d84af781ca36db649b78576b545aac88701c2f3a324d8f07cce",
+    "pointImplementationRawSha256": "sha256:aa01b9b035646b66d95cebe47a8f141d56d457d521dc2ac1c990741b4e8b6803",
+    "rawAdmissionImplementationSha256": "sha256:29654ab2688bf11de0c4e8f786e5618afc4f1f09fc5334428b653357f165aa3d",
+    "jsonSchemaGeneratorSourceRawSha256": "sha256:6873418c7709a1a44c170009f92f3be79f69b474d67795c54e91a40ca1e79ea7",
+    "compatibleBaseResourcePath": "fixtures/v1/golden/provider-registry-evidence-binding-point-v1.json",
+    "compatibleBaseResourceRawSha256": "sha256:aae31cd1e79f928a1c3035cc8d9f0c2556a91466629605bf733607b69ff01fc3",
+    "productionParserBindingSemanticDigest": "sha256:eb4c6a3f94ddef876adb002b1e4f5e4e43556015a28b5fa24374b360ec532920",
+    "productionParserRuntimeTraceProfile": "fresh_emit_exact_ast_callsite_trace_v1",
+    "productionParserRuntimeTraceInstrumentation": "typescript_before_transform_exact_ast_callsite_nonce_global_hook_v1",
+    "productionParserRuntimeTraceEntryExport": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+    "productionParserRuntimeTraceSemanticDigest": "sha256:141e45fe544043936e7e064ba4756b2376b8f26a0b5bc646fd677f57dcbcb48b",
+    "productionParserRuntimeTraceSummary": {
+      "uninstrumentedFreshEmitCompatibleBaseAccepted": true,
+      "instrumentedFreshEmitCompatibleBaseAccepted": true,
+      "successProjectionFieldCount": 10,
+      "successProjectionsEquivalent": true,
+      "successProjectionSemanticDigest": "sha256:1fd1cab00238c1d879a6908526340c34a02d9d7a6006567bfbe6b6ff44b2e36e",
+      "uninstrumentedCryptoClosure": {
+        "pointAdmissionCount": 24,
+        "signatureVerificationCount": 46
+      },
+      "instrumentedCryptoClosure": {
+        "pointAdmissionCount": 24,
+        "signatureVerificationCount": 46
+      },
+      "exactAstBindingCount": 21,
+      "schemaTableConsumerCount": 1,
+      "hookLifecycle": {
+        "randomizedNonceGlobalOwnProperty": true,
+        "nonEnumerable": true,
+        "configurableForCleanup": true,
+        "frozenHookValue": true,
+        "residualPropertyAfterCleanup": false
+      }
+    },
+    "manifestContainerHardCap": 65536,
+    "trustPolicyRawSha256": "sha256:61f9d442043fbf621b8b7ea837dec107fa8668514f747398c0577dd7170e7888",
+    "trustPolicySemanticDigest": "sha256:c1d43aa90bc8a5cf99f3384fb3090cdb7b19540be322ad37a3267fc562a161ae",
+    "distributionPolicyRawSha256": "sha256:ad4e1637c5612c5234011a3a2d1aa65449c7a79e7977c9cbfdfd333da00bedcd",
+    "distributionPolicySemanticDigest": "sha256:3e02de99c553c059d02a5070b8d50fd7a263253e2d8729e1e3a31c43011a21ca",
+    "accountingModel": {
+      "fixedSessionWorkUnits": 64,
+      "identityWorkUnits": 4,
+      "topLevelWorkUnits": 95,
+      "sessionOwnedBudgetConstructionWorkUnits": 4,
+      "budgetRootWeakSetInsertionWorkUnits": 2,
+      "descendantWeakSetInsertionWorkUnitsPerBudget": 1,
+      "ordinaryFormula": {
+        "branchConstant": 5,
+        "identityCoefficient": 6,
+        "ownKeyCoefficient": 1,
+        "denseIndexCoefficient": 1
+      },
+      "historyFormula": {
+        "arrayConstant": 10,
+        "perEnvelopeConstant": 7,
+        "identityCoefficient": 7,
+        "ownKeyCoefficient": 1,
+        "denseIndexCoefficient": 1,
+        "sharedAggregateBudgetConstructionWorkUnits": 4
+      },
+      "freshAstControlFlow": {
+        "profile": "fresh_typescript_ast_accounting_control_flow_v1",
+        "entryExport": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+        "relevantFunctionCount": 26,
+        "mutableTestSeamsExcludedFromAccountingAuthority": true,
+        "semanticDigest": "sha256:b44c643fb7b9d34c7c1a4ce55d6afe649621ad0fce61efaaee18e0deb689bddf"
+      },
+      "runtimeDifferential": {
+        "profile": "production_raw_walker_allocation_ledger_differential_v1",
+        "testSeamIsolation": {
+          "mutableTestSeamsExcludedFromAccountingAuthority": true,
+          "allocationCapExerciseActivated": false,
+          "stringBudgetObserverActivated": false,
+          "allocationLedgerReadCount": 9,
+          "productionBudgetObserverRejectionCount": 7,
+          "authority": "fresh_ast_and_unmodified_production_walker_differential_only"
+        },
+        "topLevel": {
+          "observedIdentities": 1,
+          "observedWorkUnits": 95,
+          "exact": true
+        },
+        "ordinaryRows": [
+          {
+            "profile": "object",
+            "topology": {
+              "identities": 1,
+              "ownKeys": 2,
+              "denseIndices": 0
+            },
+            "observedIdentityDelta": 1,
+            "observedWorkDelta": 13,
+            "expectedWorkDelta": 13,
+            "exact": true
+          },
+          {
+            "profile": "array",
+            "topology": {
+              "identities": 1,
+              "ownKeys": 3,
+              "denseIndices": 2
+            },
+            "observedIdentityDelta": 1,
+            "observedWorkDelta": 16,
+            "expectedWorkDelta": 16,
+            "exact": true
+          },
+          {
+            "profile": "nested",
+            "topology": {
+              "identities": 3,
+              "ownKeys": 4,
+              "denseIndices": 1
+            },
+            "observedIdentityDelta": 3,
+            "observedWorkDelta": 28,
+            "expectedWorkDelta": 28,
+            "exact": true
+          }
+        ],
+        "retainedHistory": {
+          "sharedAggregateBudget": true,
+          "sharedAggregateBudgetProfile": "B_H",
+          "historyArrayCount": 2,
+          "envelopeCount": 2,
+          "envelopeTopologies": [
+            {
+              "identities": 2,
+              "ownKeys": 2,
+              "denseIndices": 0
+            },
+            {
+              "identities": 3,
+              "ownKeys": 3,
+              "denseIndices": 1
+            }
+          ],
+          "observedIdentityDelta": 7,
+          "expectedIdentityDelta": 7,
+          "observedWorkDelta": 79,
+          "expectedWorkDelta": 79,
+          "exact": true
+        },
+        "semanticDigest": "sha256:8d1375513cbdf2c1079c4d4951dcb53ff0731db120247857e8ed98469b3b7f67"
+      }
+    }
+  },
+  "productionParserBindings": [
+    {
+      "branch": "activeRoot",
+      "schemaName": "provider-registry-root-public-key",
+      "zodSchemaSymbol": "ProviderRegistryRootPublicKeyV1Schema",
+      "parserMode": "direct_safe_parse",
+      "parserSourcePath": "src/provider-registry-evidence-binding-point.ts",
+      "parserSourceRawSha256": "sha256:aa01b9b035646b66d95cebe47a8f141d56d457d521dc2ac1c990741b4e8b6803",
+      "parserAst": {
+        "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+        "callsiteFunction": "bindCandidateRootV1",
+        "callsiteKind": "direct_schema_method",
+        "argumentAnchor": "activeRoot",
+        "runtimeSchemaSymbol": "ProviderRegistryRootPublicKeyV1Schema",
+        "runtimeSchemaSourcePath": "src/provider-registry-trust.ts",
+        "runtimeMethod": "safeParse",
+        "runtimeSchemaExportResolved": true,
+        "astReachable": true,
+        "astCallsiteLine": 846,
+        "astCallsiteSemanticDigest": "sha256:25eaabafa86e24d876853d1fa7bca1a08ba1d795b1b48221dc69c4962bf3cd77",
+        "astCallChain": [
+          "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+          "src/provider-registry-evidence-binding-point.ts#validateRegistryEvidenceBindingPointInternalV1",
+          "src/provider-registry-evidence-binding-point.ts#bindCandidateRootV1"
+        ]
+      },
+      "runtimeTrace": {
+        "requiredMethod": "safeParse",
+        "parseHits": 17,
+        "safeParseHits": 1,
+        "hitRequiredParser": true,
+        "schemaMethodHitAuthority": "auxiliary_non_authority",
+        "exactCallsiteId": "exact_ast_callsite_v1:activeRoot:sha256:25eaabafa86e24d876853d1fa7bca1a08ba1d795b1b48221dc69c4962bf3cd77",
+        "exactCallsiteHits": 1,
+        "hitExactCallsite": true
+      }
+    },
+    {
+      "branch": "activeRootMetadata",
+      "schemaName": "provider-registry-root-metadata-pin",
+      "zodSchemaSymbol": "ProviderRegistryRootMetadataPinV1Schema",
+      "parserMode": "direct_safe_parse",
+      "parserSourcePath": "src/provider-registry-evidence-binding-point.ts",
+      "parserSourceRawSha256": "sha256:aa01b9b035646b66d95cebe47a8f141d56d457d521dc2ac1c990741b4e8b6803",
+      "parserAst": {
+        "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+        "callsiteFunction": "bindCandidateRootV1",
+        "callsiteKind": "direct_schema_method",
+        "argumentAnchor": "activeRootMetadata",
+        "runtimeSchemaSymbol": "ProviderRegistryRootMetadataPinV1Schema",
+        "runtimeSchemaSourcePath": "src/provider-registry-trust.ts",
+        "runtimeMethod": "safeParse",
+        "runtimeSchemaExportResolved": true,
+        "astReachable": true,
+        "astCallsiteLine": 810,
+        "astCallsiteSemanticDigest": "sha256:299ff69a79cd604dde490f92428364f099d02eeb2d8488c8ac07594287ced327",
+        "astCallChain": [
+          "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+          "src/provider-registry-evidence-binding-point.ts#validateRegistryEvidenceBindingPointInternalV1",
+          "src/provider-registry-evidence-binding-point.ts#bindCandidateRootV1"
+        ]
+      },
+      "runtimeTrace": {
+        "requiredMethod": "safeParse",
+        "parseHits": 3,
+        "safeParseHits": 1,
+        "hitRequiredParser": true,
+        "schemaMethodHitAuthority": "auxiliary_non_authority",
+        "exactCallsiteId": "exact_ast_callsite_v1:activeRootMetadata:sha256:299ff69a79cd604dde490f92428364f099d02eeb2d8488c8ac07594287ced327",
+        "exactCallsiteHits": 1,
+        "hitExactCallsite": true
+      }
+    },
+    {
+      "branch": "bootstrapTrustBundle",
+      "schemaName": "provider-bootstrap-trust-bundle",
+      "zodSchemaSymbol": "ProviderBootstrapTrustBundleV1Schema",
+      "parserMode": "direct_parse",
+      "parserSourcePath": "src/provider-registry-evidence-binding-point.ts",
+      "parserSourceRawSha256": "sha256:aa01b9b035646b66d95cebe47a8f141d56d457d521dc2ac1c990741b4e8b6803",
+      "parserAst": {
+        "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+        "callsiteFunction": "validateBootstrapDistributionBindingV1",
+        "callsiteKind": "direct_schema_method",
+        "argumentAnchor": "bootstrapTrustBundle",
+        "runtimeSchemaSymbol": "ProviderBootstrapTrustBundleV1Schema",
+        "runtimeSchemaSourcePath": "src/bootstrap-trust-bundle.ts",
+        "runtimeMethod": "parse",
+        "runtimeSchemaExportResolved": true,
+        "astReachable": true,
+        "astCallsiteLine": 699,
+        "astCallsiteSemanticDigest": "sha256:cd45489301ae3482eb5a25bc5d3f0fcf422443919e6932dd81e6f8568d4e69ad",
+        "astCallChain": [
+          "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+          "src/provider-registry-evidence-binding-point.ts#validateRegistryEvidenceBindingPointInternalV1",
+          "src/provider-registry-evidence-binding-point.ts#validateBootstrapDistributionBindingV1"
+        ]
+      },
+      "runtimeTrace": {
+        "requiredMethod": "parse",
+        "parseHits": 3,
+        "safeParseHits": 2,
+        "hitRequiredParser": true,
+        "schemaMethodHitAuthority": "auxiliary_non_authority",
+        "exactCallsiteId": "exact_ast_callsite_v1:bootstrapTrustBundle:sha256:cd45489301ae3482eb5a25bc5d3f0fcf422443919e6932dd81e6f8568d4e69ad",
+        "exactCallsiteHits": 1,
+        "hitExactCallsite": true
+      }
+    },
+    {
+      "branch": "distributionRootBinding",
+      "schemaName": "provider-signed-distribution-root-binding",
+      "zodSchemaSymbol": "ProviderSignedDistributionRootBindingV1Schema",
+      "parserMode": "direct_parse",
+      "parserSourcePath": "src/provider-registry-evidence-binding-point.ts",
+      "parserSourceRawSha256": "sha256:aa01b9b035646b66d95cebe47a8f141d56d457d521dc2ac1c990741b4e8b6803",
+      "parserAst": {
+        "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+        "callsiteFunction": "validateBootstrapDistributionBindingV1",
+        "callsiteKind": "direct_schema_method",
+        "argumentAnchor": "distributionRootBinding",
+        "runtimeSchemaSymbol": "ProviderSignedDistributionRootBindingV1Schema",
+        "runtimeSchemaSourcePath": "src/provider-distribution-trust.ts",
+        "runtimeMethod": "parse",
+        "runtimeSchemaExportResolved": true,
+        "astReachable": true,
+        "astCallsiteLine": 703,
+        "astCallsiteSemanticDigest": "sha256:41626e7b2ab70bc33286620151ff9ccbd74a7d2bdd8e2f1cd13c0b377ca4d79e",
+        "astCallChain": [
+          "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+          "src/provider-registry-evidence-binding-point.ts#validateRegistryEvidenceBindingPointInternalV1",
+          "src/provider-registry-evidence-binding-point.ts#validateBootstrapDistributionBindingV1"
+        ]
+      },
+      "runtimeTrace": {
+        "requiredMethod": "parse",
+        "parseHits": 3,
+        "safeParseHits": 0,
+        "hitRequiredParser": true,
+        "schemaMethodHitAuthority": "auxiliary_non_authority",
+        "exactCallsiteId": "exact_ast_callsite_v1:distributionRootBinding:sha256:41626e7b2ab70bc33286620151ff9ccbd74a7d2bdd8e2f1cd13c0b377ca4d79e",
+        "exactCallsiteHits": 1,
+        "hitExactCallsite": true
+      }
+    },
+    {
+      "branch": "fixtureCorpusManifest",
+      "schemaName": "provider-real-filesystem-fixture-corpus-manifest-envelope",
+      "zodSchemaSymbol": "ProviderRealFilesystemFixtureCorpusManifestEnvelopeV1Schema",
+      "parserMode": "prepared_delegated_parse",
+      "parserSourcePath": "src/provider-target-discovery-point.ts",
+      "parserSourceRawSha256": "sha256:c27c585950d2fe667df0fbba2ffa8611488c33c639a0f1abe9a8d5d526c742aa",
+      "parserAst": {
+        "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+        "callsiteFunction": "validatePointClosureInternalV1",
+        "callsiteKind": "direct_schema_method",
+        "argumentAnchor": "fixtureCorpusManifest",
+        "runtimeSchemaSymbol": "ProviderRealFilesystemFixtureCorpusManifestEnvelopeV1Schema",
+        "runtimeSchemaSourcePath": "src/provider-real-filesystem-source.ts",
+        "runtimeMethod": "parse",
+        "runtimeSchemaExportResolved": true,
+        "astReachable": true,
+        "astCallsiteLine": 1540,
+        "astCallsiteSemanticDigest": "sha256:2ab89c08c01af01f0c8309dcbf1d39aa062c954ee6d188e04cf1d13ea77a70a3",
+        "astCallChain": [
+          "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+          "src/provider-registry-evidence-binding-point.ts#validateRegistryEvidenceBindingPointInternalV1",
+          "src/provider-runtime-attestation-point-internal.ts#diagnoseProviderRuntimeAttestationPointFromRegistryHistoryInternalV1",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#validateRuntimePointClosureFromSnapshotInternalV1",
+          "src/provider-real-filesystem-conformance-result.ts#diagnoseProviderRealFilesystemConformanceResultClosureV1",
+          "src/provider-real-filesystem-conformance-result.ts#validateResultClosureInternalV1",
+          "src/provider-real-filesystem-conformance-result.ts#validateResultClosureFromSnapshotInternalV1",
+          "src/provider-target-discovery-point.ts#diagnoseProviderTargetDiscoveryPointClosureV1",
+          "src/provider-target-discovery-point.ts#validatePointClosureInternalV1"
+        ]
+      },
+      "runtimeTrace": {
+        "requiredMethod": "parse",
+        "parseHits": 3,
+        "safeParseHits": 0,
+        "hitRequiredParser": true,
+        "schemaMethodHitAuthority": "auxiliary_non_authority",
+        "exactCallsiteId": "exact_ast_callsite_v1:fixtureCorpusManifest:sha256:2ab89c08c01af01f0c8309dcbf1d39aa062c954ee6d188e04cf1d13ea77a70a3",
+        "exactCallsiteHits": 1,
+        "hitExactCallsite": true
+      }
+    },
+    {
+      "branch": "installationIdentityGenerationId",
+      "schemaName": "installation-identity-generation-id",
+      "zodSchemaSymbol": "InstallationIdentityGenerationIdV1Schema",
+      "parserMode": "direct_safe_parse",
+      "parserSourcePath": "src/provider-registry-evidence-binding-point.ts",
+      "parserSourceRawSha256": "sha256:aa01b9b035646b66d95cebe47a8f141d56d457d521dc2ac1c990741b4e8b6803",
+      "parserAst": {
+        "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+        "callsiteFunction": "bindCandidateRootV1",
+        "callsiteKind": "direct_schema_method",
+        "argumentAnchor": "installationIdentityGenerationId",
+        "runtimeSchemaSymbol": "InstallationIdentityGenerationIdV1Schema",
+        "runtimeSchemaSourcePath": "src/primitives.ts",
+        "runtimeMethod": "safeParse",
+        "runtimeSchemaExportResolved": true,
+        "astReachable": true,
+        "astCallsiteLine": 792,
+        "astCallsiteSemanticDigest": "sha256:90ed691b35b526e03fcbe886fa6544bda368d97c6b740204467a0451712870f8",
+        "astCallChain": [
+          "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+          "src/provider-registry-evidence-binding-point.ts#validateRegistryEvidenceBindingPointInternalV1",
+          "src/provider-registry-evidence-binding-point.ts#bindCandidateRootV1"
+        ]
+      },
+      "runtimeTrace": {
+        "requiredMethod": "safeParse",
+        "parseHits": 1,
+        "safeParseHits": 1,
+        "hitRequiredParser": true,
+        "schemaMethodHitAuthority": "auxiliary_non_authority",
+        "exactCallsiteId": "exact_ast_callsite_v1:installationIdentityGenerationId:sha256:90ed691b35b526e03fcbe886fa6544bda368d97c6b740204467a0451712870f8",
+        "exactCallsiteHits": 1,
+        "hitExactCallsite": true
+      }
+    },
+    {
+      "branch": "providerFeasibilityEvidence",
+      "schemaName": "provider-feasibility-evidence-envelope",
+      "zodSchemaSymbol": "ProviderFeasibilityEvidenceEnvelopeV1Schema",
+      "parserMode": "prepared_then_complete_safe_parse",
+      "parserSourcePath": "src/provider-registry-evidence-binding-point.ts",
+      "parserSourceRawSha256": "sha256:aa01b9b035646b66d95cebe47a8f141d56d457d521dc2ac1c990741b4e8b6803",
+      "parserAst": {
+        "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+        "callsiteFunction": "validateCompleteEvidenceEnvelopeV1",
+        "callsiteKind": "direct_schema_method",
+        "argumentAnchor": "envelope",
+        "runtimeSchemaSymbol": "ProviderFeasibilityEvidenceEnvelopeV1Schema",
+        "runtimeSchemaSourcePath": "src/provider-feasibility-evidence-point.ts",
+        "runtimeMethod": "safeParse",
+        "runtimeSchemaExportResolved": true,
+        "astReachable": true,
+        "astCallsiteLine": 1213,
+        "astCallsiteSemanticDigest": "sha256:73b5a8710728bde8f1270ef9f32ef10d9162d991c329b305ad40ab0ccc8e2d2f",
+        "astCallChain": [
+          "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+          "src/provider-registry-evidence-binding-point.ts#validateRegistryEvidenceBindingPointInternalV1",
+          "src/provider-registry-evidence-binding-point.ts#validateCompleteEvidenceEnvelopeV1"
+        ]
+      },
+      "runtimeTrace": {
+        "requiredMethod": "safeParse",
+        "parseHits": 0,
+        "safeParseHits": 1,
+        "hitRequiredParser": true,
+        "schemaMethodHitAuthority": "auxiliary_non_authority",
+        "exactCallsiteId": "exact_ast_callsite_v1:providerFeasibilityEvidence:sha256:73b5a8710728bde8f1270ef9f32ef10d9162d991c329b305ad40ab0ccc8e2d2f",
+        "exactCallsiteHits": 1,
+        "hitExactCallsite": true
+      }
+    },
+    {
+      "branch": "providerFeasibilityEvidencePin",
+      "schemaName": "provider-feasibility-evidence-pin",
+      "zodSchemaSymbol": "ProviderFeasibilityEvidencePinV1Schema",
+      "parserMode": "direct_safe_parse",
+      "parserSourcePath": "src/provider-registry-evidence-binding-point.ts",
+      "parserSourceRawSha256": "sha256:aa01b9b035646b66d95cebe47a8f141d56d457d521dc2ac1c990741b4e8b6803",
+      "parserAst": {
+        "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+        "callsiteFunction": "validatePreparedEvidencePinStructureV1",
+        "callsiteKind": "direct_schema_method",
+        "argumentAnchor": "input",
+        "runtimeSchemaSymbol": "ProviderFeasibilityEvidencePinV1Schema",
+        "runtimeSchemaSourcePath": "src/provider-registry-records.ts",
+        "runtimeMethod": "safeParse",
+        "runtimeSchemaExportResolved": true,
+        "astReachable": true,
+        "astCallsiteLine": 757,
+        "astCallsiteSemanticDigest": "sha256:1ad8eef5712df6a96f2d4d6d3f2a167187cb6baa074594e4b0d0b992d4e1f4a4",
+        "astCallChain": [
+          "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+          "src/provider-registry-evidence-binding-point.ts#validateRegistryEvidenceBindingPointInternalV1",
+          "src/provider-registry-evidence-binding-point.ts#validatePreparedEvidencePinStructureV1"
+        ]
+      },
+      "runtimeTrace": {
+        "requiredMethod": "safeParse",
+        "parseHits": 1,
+        "safeParseHits": 1,
+        "hitRequiredParser": true,
+        "schemaMethodHitAuthority": "auxiliary_non_authority",
+        "exactCallsiteId": "exact_ast_callsite_v1:providerFeasibilityEvidencePin:sha256:1ad8eef5712df6a96f2d4d6d3f2a167187cb6baa074594e4b0d0b992d4e1f4a4",
+        "exactCallsiteHits": 1,
+        "hitExactCallsite": true
+      }
+    },
+    {
+      "branch": "publicSupportTaxonomy",
+      "schemaName": "provider-public-support-taxonomy-envelope",
+      "zodSchemaSymbol": "ProviderPublicSupportTaxonomyEnvelopeV1Schema",
+      "parserMode": "prepared_delegated_schema_table_parse",
+      "parserSourcePath": "src/provider-target-discovery-point.ts",
+      "parserSourceRawSha256": "sha256:c27c585950d2fe667df0fbba2ffa8611488c33c639a0f1abe9a8d5d526c742aa",
+      "parserAst": {
+        "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+        "callsiteFunction": "validatePointClosureInternalV1",
+        "callsiteKind": "schema_table",
+        "argumentAnchor": "publicSupportTaxonomy",
+        "runtimeSchemaSymbol": "ProviderPublicSupportTaxonomyEnvelopeV1Schema",
+        "runtimeSchemaSourcePath": "src/provider-target-discovery-point.ts",
+        "runtimeMethod": "parse",
+        "runtimeSchemaExportResolved": true,
+        "astReachable": true,
+        "astCallsiteLine": 1546,
+        "astCallsiteSemanticDigest": "sha256:20ae51a2e7ee4331abc20ccb94e2b6a67e94dc126358b93cf024888f8f85f465",
+        "astCallChain": [
+          "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+          "src/provider-registry-evidence-binding-point.ts#validateRegistryEvidenceBindingPointInternalV1",
+          "src/provider-runtime-attestation-point-internal.ts#diagnoseProviderRuntimeAttestationPointFromRegistryHistoryInternalV1",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#validateRuntimePointClosureFromSnapshotInternalV1",
+          "src/provider-real-filesystem-conformance-result.ts#diagnoseProviderRealFilesystemConformanceResultClosureV1",
+          "src/provider-real-filesystem-conformance-result.ts#validateResultClosureInternalV1",
+          "src/provider-real-filesystem-conformance-result.ts#validateResultClosureFromSnapshotInternalV1",
+          "src/provider-target-discovery-point.ts#diagnoseProviderTargetDiscoveryPointClosureV1",
+          "src/provider-target-discovery-point.ts#validatePointClosureInternalV1"
+        ]
+      },
+      "runtimeTrace": {
+        "requiredMethod": "parse",
+        "parseHits": 2,
+        "safeParseHits": 0,
+        "hitRequiredParser": true,
+        "schemaMethodHitAuthority": "auxiliary_non_authority",
+        "exactCallsiteId": "exact_ast_callsite_v1:publicSupportTaxonomy:sha256:20ae51a2e7ee4331abc20ccb94e2b6a67e94dc126358b93cf024888f8f85f465",
+        "exactCallsiteHits": 1,
+        "hitExactCallsite": true
+      }
+    },
+    {
+      "branch": "realFilesystemConformanceResult",
+      "schemaName": "provider-real-filesystem-conformance-result-envelope",
+      "zodSchemaSymbol": "ProviderRealFilesystemConformanceResultEnvelopeV1Schema",
+      "parserMode": "prepared_delegated_parse",
+      "parserSourcePath": "src/provider-real-filesystem-conformance-result.ts",
+      "parserSourceRawSha256": "sha256:88b7f6dc7bd4cc048033307b1c72a261a82845a8832f92765856fb643f0c9364",
+      "parserAst": {
+        "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+        "callsiteFunction": "validateResultClosureFromSnapshotInternalV1",
+        "callsiteKind": "direct_schema_method",
+        "argumentAnchor": "realFilesystemConformanceResult",
+        "runtimeSchemaSymbol": "ProviderRealFilesystemConformanceResultEnvelopeV1Schema",
+        "runtimeSchemaSourcePath": "src/provider-real-filesystem-conformance-result.ts",
+        "runtimeMethod": "parse",
+        "runtimeSchemaExportResolved": true,
+        "astReachable": true,
+        "astCallsiteLine": 614,
+        "astCallsiteSemanticDigest": "sha256:95a5245ed7df2b14df3f205a879993ed936b21828a9b8d18db4a8b5bc3f235b0",
+        "astCallChain": [
+          "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+          "src/provider-registry-evidence-binding-point.ts#validateRegistryEvidenceBindingPointInternalV1",
+          "src/provider-runtime-attestation-point-internal.ts#diagnoseProviderRuntimeAttestationPointFromRegistryHistoryInternalV1",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#validateRuntimePointClosureFromSnapshotInternalV1",
+          "src/provider-real-filesystem-conformance-result.ts#diagnoseProviderRealFilesystemConformanceResultClosureV1",
+          "src/provider-real-filesystem-conformance-result.ts#validateResultClosureInternalV1",
+          "src/provider-real-filesystem-conformance-result.ts#validateResultClosureFromSnapshotInternalV1"
+        ]
+      },
+      "runtimeTrace": {
+        "requiredMethod": "parse",
+        "parseHits": 2,
+        "safeParseHits": 0,
+        "hitRequiredParser": true,
+        "schemaMethodHitAuthority": "auxiliary_non_authority",
+        "exactCallsiteId": "exact_ast_callsite_v1:realFilesystemConformanceResult:sha256:95a5245ed7df2b14df3f205a879993ed936b21828a9b8d18db4a8b5bc3f235b0",
+        "exactCallsiteHits": 1,
+        "hitExactCallsite": true
+      }
+    },
+    {
+      "branch": "realFilesystemConformanceResultLocator",
+      "schemaName": "provider-real-filesystem-conformance-result-locator",
+      "zodSchemaSymbol": "ProviderRealFilesystemConformanceResultLocatorV1Schema",
+      "parserMode": "prepared_delegated_parse",
+      "parserSourcePath": "src/provider-real-filesystem-conformance-result.ts",
+      "parserSourceRawSha256": "sha256:88b7f6dc7bd4cc048033307b1c72a261a82845a8832f92765856fb643f0c9364",
+      "parserAst": {
+        "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+        "callsiteFunction": "validateResultClosureFromSnapshotInternalV1",
+        "callsiteKind": "direct_schema_method",
+        "argumentAnchor": "realFilesystemConformanceResultLocator",
+        "runtimeSchemaSymbol": "ProviderRealFilesystemConformanceResultLocatorV1Schema",
+        "runtimeSchemaSourcePath": "src/provider-real-filesystem-conformance-result.ts",
+        "runtimeMethod": "parse",
+        "runtimeSchemaExportResolved": true,
+        "astReachable": true,
+        "astCallsiteLine": 617,
+        "astCallsiteSemanticDigest": "sha256:ef415e5da92dd9f4aeb96ce5bfbeb6fb5dbba72b9d7a34ce5b714f3840a66845",
+        "astCallChain": [
+          "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+          "src/provider-registry-evidence-binding-point.ts#validateRegistryEvidenceBindingPointInternalV1",
+          "src/provider-runtime-attestation-point-internal.ts#diagnoseProviderRuntimeAttestationPointFromRegistryHistoryInternalV1",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#validateRuntimePointClosureFromSnapshotInternalV1",
+          "src/provider-real-filesystem-conformance-result.ts#diagnoseProviderRealFilesystemConformanceResultClosureV1",
+          "src/provider-real-filesystem-conformance-result.ts#validateResultClosureInternalV1",
+          "src/provider-real-filesystem-conformance-result.ts#validateResultClosureFromSnapshotInternalV1"
+        ]
+      },
+      "runtimeTrace": {
+        "requiredMethod": "parse",
+        "parseHits": 3,
+        "safeParseHits": 0,
+        "hitRequiredParser": true,
+        "schemaMethodHitAuthority": "auxiliary_non_authority",
+        "exactCallsiteId": "exact_ast_callsite_v1:realFilesystemConformanceResultLocator:sha256:ef415e5da92dd9f4aeb96ce5bfbeb6fb5dbba72b9d7a34ce5b714f3840a66845",
+        "exactCallsiteHits": 1,
+        "hitExactCallsite": true
+      }
+    },
+    {
+      "branch": "realFilesystemConformanceResultPin",
+      "schemaName": "provider-real-filesystem-conformance-result-pin",
+      "zodSchemaSymbol": "ProviderRealFilesystemConformanceResultPinV1Schema",
+      "parserMode": "prepared_delegated_parse",
+      "parserSourcePath": "src/provider-real-filesystem-conformance-result.ts",
+      "parserSourceRawSha256": "sha256:88b7f6dc7bd4cc048033307b1c72a261a82845a8832f92765856fb643f0c9364",
+      "parserAst": {
+        "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+        "callsiteFunction": "validateResultClosureFromSnapshotInternalV1",
+        "callsiteKind": "direct_schema_method",
+        "argumentAnchor": "realFilesystemConformanceResultPin",
+        "runtimeSchemaSymbol": "ProviderRealFilesystemConformanceResultPinV1Schema",
+        "runtimeSchemaSourcePath": "src/provider-real-filesystem-conformance-result.ts",
+        "runtimeMethod": "parse",
+        "runtimeSchemaExportResolved": true,
+        "astReachable": true,
+        "astCallsiteLine": 620,
+        "astCallsiteSemanticDigest": "sha256:8bd586dca07107f6ae38369b9cfd9b33c3015312b83c09bc903ea82197752892",
+        "astCallChain": [
+          "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+          "src/provider-registry-evidence-binding-point.ts#validateRegistryEvidenceBindingPointInternalV1",
+          "src/provider-runtime-attestation-point-internal.ts#diagnoseProviderRuntimeAttestationPointFromRegistryHistoryInternalV1",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#validateRuntimePointClosureFromSnapshotInternalV1",
+          "src/provider-real-filesystem-conformance-result.ts#diagnoseProviderRealFilesystemConformanceResultClosureV1",
+          "src/provider-real-filesystem-conformance-result.ts#validateResultClosureInternalV1",
+          "src/provider-real-filesystem-conformance-result.ts#validateResultClosureFromSnapshotInternalV1"
+        ]
+      },
+      "runtimeTrace": {
+        "requiredMethod": "parse",
+        "parseHits": 2,
+        "safeParseHits": 0,
+        "hitRequiredParser": true,
+        "schemaMethodHitAuthority": "auxiliary_non_authority",
+        "exactCallsiteId": "exact_ast_callsite_v1:realFilesystemConformanceResultPin:sha256:8bd586dca07107f6ae38369b9cfd9b33c3015312b83c09bc903ea82197752892",
+        "exactCallsiteHits": 1,
+        "hitExactCallsite": true
+      }
+    },
+    {
+      "branch": "registryManifestHistory",
+      "schemaName": "provider-registry-manifest-envelope",
+      "zodSchemaSymbol": "ProviderRegistryManifestEnvelopeV1Schema",
+      "parserMode": "prepared_history_safe_parse_each_envelope",
+      "parserSourcePath": "src/provider-registry-manifest-history.ts",
+      "parserSourceRawSha256": "sha256:a1d5cee5254e6b9f74faf345e0893c2e21d9bfa5d70dc24e161308384241086c",
+      "parserAst": {
+        "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+        "callsiteFunction": "validatePreparedInternalV1",
+        "callsiteKind": "direct_schema_method",
+        "argumentAnchor": "envelope",
+        "runtimeSchemaSymbol": "ProviderRegistryManifestEnvelopeV1Schema",
+        "runtimeSchemaSourcePath": "src/provider-registry-records.ts",
+        "runtimeMethod": "safeParse",
+        "runtimeSchemaExportResolved": true,
+        "astReachable": true,
+        "astCallsiteLine": 2361,
+        "astCallsiteSemanticDigest": "sha256:7a6e668845c0ff04d2a59928d49f3f2602d7192bece82110c35e9926a798f637",
+        "astCallChain": [
+          "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+          "src/provider-registry-evidence-binding-point.ts#validateRegistryEvidenceBindingPointInternalV1",
+          "src/provider-registry-history-prepared-handle-internal.ts#diagnoseProviderRegistryManifestHistoryPreparedInternalV1",
+          "src/provider-registry-manifest-history.ts#diagnoseProviderRegistryManifestHistoryPreparedInternalV1",
+          "src/provider-registry-manifest-history.ts#validatePreparedInternalV1"
+        ]
+      },
+      "runtimeTrace": {
+        "requiredMethod": "safeParse",
+        "parseHits": 0,
+        "safeParseHits": 7,
+        "hitRequiredParser": true,
+        "schemaMethodHitAuthority": "auxiliary_non_authority",
+        "exactCallsiteId": "exact_ast_callsite_v1:registryManifestHistory:sha256:7a6e668845c0ff04d2a59928d49f3f2602d7192bece82110c35e9926a798f637",
+        "exactCallsiteHits": 7,
+        "hitExactCallsite": true
+      }
+    },
+    {
+      "branch": "releaseMatrix",
+      "schemaName": "provider-release-matrix-envelope",
+      "zodSchemaSymbol": "ProviderReleaseMatrixEnvelopeV1Schema",
+      "parserMode": "prepared_delegated_schema_table_parse",
+      "parserSourcePath": "src/provider-target-discovery-point.ts",
+      "parserSourceRawSha256": "sha256:c27c585950d2fe667df0fbba2ffa8611488c33c639a0f1abe9a8d5d526c742aa",
+      "parserAst": {
+        "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+        "callsiteFunction": "validatePointClosureInternalV1",
+        "callsiteKind": "schema_table",
+        "argumentAnchor": "releaseMatrix",
+        "runtimeSchemaSymbol": "ProviderReleaseMatrixEnvelopeV1Schema",
+        "runtimeSchemaSourcePath": "src/provider-target-discovery-point.ts",
+        "runtimeMethod": "parse",
+        "runtimeSchemaExportResolved": true,
+        "astReachable": true,
+        "astCallsiteLine": 1547,
+        "astCallsiteSemanticDigest": "sha256:d1976f2bf6019af11f98ffcd37007bf7c8bac63c8b0955155a58fe4d1ae6db82",
+        "astCallChain": [
+          "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+          "src/provider-registry-evidence-binding-point.ts#validateRegistryEvidenceBindingPointInternalV1",
+          "src/provider-runtime-attestation-point-internal.ts#diagnoseProviderRuntimeAttestationPointFromRegistryHistoryInternalV1",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#validateRuntimePointClosureFromSnapshotInternalV1",
+          "src/provider-real-filesystem-conformance-result.ts#diagnoseProviderRealFilesystemConformanceResultClosureV1",
+          "src/provider-real-filesystem-conformance-result.ts#validateResultClosureInternalV1",
+          "src/provider-real-filesystem-conformance-result.ts#validateResultClosureFromSnapshotInternalV1",
+          "src/provider-target-discovery-point.ts#diagnoseProviderTargetDiscoveryPointClosureV1",
+          "src/provider-target-discovery-point.ts#validatePointClosureInternalV1"
+        ]
+      },
+      "runtimeTrace": {
+        "requiredMethod": "parse",
+        "parseHits": 2,
+        "safeParseHits": 0,
+        "hitRequiredParser": true,
+        "schemaMethodHitAuthority": "auxiliary_non_authority",
+        "exactCallsiteId": "exact_ast_callsite_v1:releaseMatrix:sha256:d1976f2bf6019af11f98ffcd37007bf7c8bac63c8b0955155a58fe4d1ae6db82",
+        "exactCallsiteHits": 1,
+        "hitExactCallsite": true
+      }
+    },
+    {
+      "branch": "rootMetadataHistory",
+      "schemaName": "provider-registry-root-metadata-envelope",
+      "zodSchemaSymbol": "ProviderRegistryRootMetadataEnvelopeV1Schema",
+      "parserMode": "prepared_history_structure_diagnostic_parse",
+      "parserSourcePath": "src/provider-registry-trust.ts",
+      "parserSourceRawSha256": "sha256:a224a7a2431b4d0401be8ab0a161ca2643cf4e7109945304364ad67cb2eb1c1e",
+      "parserAst": {
+        "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+        "callsiteFunction": "diagnoseProviderRegistryRootMetadataEnvelopeStructureInternalV1",
+        "callsiteKind": "direct_schema_method",
+        "argumentAnchor": "input",
+        "runtimeSchemaSymbol": "ProviderRegistryRootMetadataEnvelopeV1Schema",
+        "runtimeSchemaSourcePath": "src/provider-registry-trust.ts",
+        "runtimeMethod": "parse",
+        "runtimeSchemaExportResolved": true,
+        "astReachable": true,
+        "astCallsiteLine": 668,
+        "astCallsiteSemanticDigest": "sha256:3ad5a980680734e7cc70a0b42836af9dabbcb138c6289085a96bcb8fb5fd56b5",
+        "astCallChain": [
+          "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+          "src/provider-registry-evidence-binding-point.ts#validateRegistryEvidenceBindingPointInternalV1",
+          "src/provider-registry-history-prepared-handle-internal.ts#diagnoseProviderRegistryManifestHistoryPreparedInternalV1",
+          "src/provider-registry-manifest-history.ts#diagnoseProviderRegistryManifestHistoryPreparedInternalV1",
+          "src/provider-registry-manifest-history.ts#validatePreparedInternalV1",
+          "src/provider-registry-history-prepared-handle-internal.ts#validateProviderRegistryRootMetadataHistoryPreparedInternalV1",
+          "src/provider-registry-root-history.ts#validateProviderRegistryRootMetadataHistoryPreparedInternalV1",
+          "src/provider-registry-trust.ts#diagnoseProviderRegistryRootMetadataEnvelopeStructureInternalV1"
+        ]
+      },
+      "runtimeTrace": {
+        "requiredMethod": "parse",
+        "parseHits": 5,
+        "safeParseHits": 0,
+        "hitRequiredParser": true,
+        "schemaMethodHitAuthority": "auxiliary_non_authority",
+        "exactCallsiteId": "exact_ast_callsite_v1:rootMetadataHistory:sha256:3ad5a980680734e7cc70a0b42836af9dabbcb138c6289085a96bcb8fb5fd56b5",
+        "exactCallsiteHits": 4,
+        "hitExactCallsite": true
+      }
+    },
+    {
+      "branch": "runtimeAttestation",
+      "schemaName": "store-durable-object-provider-runtime-attestation-pin",
+      "zodSchemaSymbol": "StoreDurableObjectProviderRuntimeAttestationPinV1Schema",
+      "parserMode": "split_outer_pin_and_payload_parse",
+      "parserSourcePath": "src/provider-runtime-attestation-point.ts",
+      "parserSourceRawSha256": "sha256:c1da1b046e5ccfed83c524c9c91dbbffc82501d57ef53e5e47e11aa4d96d1e52",
+      "parserAst": {
+        "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+        "callsiteFunction": "validateRuntimePointClosureFromSnapshotInternalV1",
+        "callsiteKind": "direct_schema_method",
+        "argumentAnchor": "payload",
+        "runtimeSchemaSymbol": "StoreDurableObjectProviderRuntimeAttestationV1Schema",
+        "runtimeSchemaSourcePath": "src/provider-registry-records.ts",
+        "runtimeMethod": "parse",
+        "runtimeSchemaExportResolved": true,
+        "astReachable": true,
+        "astCallsiteLine": 639,
+        "astCallsiteSemanticDigest": "sha256:b5b6ba840b4799d12657faf817cfd136ae1cdacf047f7ca74df10ba88835826c",
+        "astCallChain": [
+          "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+          "src/provider-registry-evidence-binding-point.ts#validateRegistryEvidenceBindingPointInternalV1",
+          "src/provider-runtime-attestation-point-internal.ts#diagnoseProviderRuntimeAttestationPointFromRegistryHistoryInternalV1",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#validateRuntimePointClosureFromSnapshotInternalV1"
+        ]
+      },
+      "runtimeTrace": {
+        "requiredMethod": "parse",
+        "parseHits": 1,
+        "safeParseHits": 14,
+        "hitRequiredParser": true,
+        "schemaMethodHitAuthority": "auxiliary_non_authority",
+        "exactCallsiteId": "exact_ast_callsite_v1:runtimeAttestation:sha256:b5b6ba840b4799d12657faf817cfd136ae1cdacf047f7ca74df10ba88835826c",
+        "exactCallsiteHits": 1,
+        "hitExactCallsite": true
+      }
+    },
+    {
+      "branch": "semanticProviderPolicy",
+      "schemaName": "store-durable-object-provider-policy",
+      "zodSchemaSymbol": "StoreDurableObjectProviderPolicyV1Schema",
+      "parserMode": "prepared_delegated_strict_parse",
+      "parserSourcePath": "src/provider-runtime-attestation-point.ts",
+      "parserSourceRawSha256": "sha256:c1da1b046e5ccfed83c524c9c91dbbffc82501d57ef53e5e47e11aa4d96d1e52",
+      "parserAst": {
+        "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+        "callsiteFunction": "validateRuntimePointClosureFromSnapshotInternalV1",
+        "callsiteKind": "schema_argument",
+        "argumentAnchor": "semanticProviderPolicy",
+        "runtimeSchemaSymbol": "StoreDurableObjectProviderPolicyV1Schema",
+        "runtimeSchemaSourcePath": "src/provider-runtime-attestation-point.ts",
+        "runtimeMethod": "parse",
+        "runtimeSchemaExportResolved": true,
+        "astReachable": true,
+        "astCallsiteLine": 602,
+        "astCallsiteSemanticDigest": "sha256:84f3c7ca4e0924ac018fa68ec88a266a1e007302ae56c3a1cc18df256f480d00",
+        "astCallChain": [
+          "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+          "src/provider-registry-evidence-binding-point.ts#validateRegistryEvidenceBindingPointInternalV1",
+          "src/provider-runtime-attestation-point-internal.ts#diagnoseProviderRuntimeAttestationPointFromRegistryHistoryInternalV1",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#validateRuntimePointClosureFromSnapshotInternalV1"
+        ]
+      },
+      "runtimeTrace": {
+        "requiredMethod": "parse",
+        "parseHits": 2,
+        "safeParseHits": 0,
+        "hitRequiredParser": true,
+        "schemaMethodHitAuthority": "auxiliary_non_authority",
+        "exactCallsiteId": "exact_ast_callsite_v1:semanticProviderPolicy:sha256:84f3c7ca4e0924ac018fa68ec88a266a1e007302ae56c3a1cc18df256f480d00",
+        "exactCallsiteHits": 1,
+        "hitExactCallsite": true
+      }
+    },
+    {
+      "branch": "suiteManifest",
+      "schemaName": "provider-real-filesystem-suite-manifest-envelope",
+      "zodSchemaSymbol": "ProviderRealFilesystemSuiteManifestEnvelopeV1Schema",
+      "parserMode": "prepared_delegated_parse",
+      "parserSourcePath": "src/provider-target-discovery-point.ts",
+      "parserSourceRawSha256": "sha256:c27c585950d2fe667df0fbba2ffa8611488c33c639a0f1abe9a8d5d526c742aa",
+      "parserAst": {
+        "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+        "callsiteFunction": "validatePointClosureInternalV1",
+        "callsiteKind": "direct_schema_method",
+        "argumentAnchor": "suiteManifest",
+        "runtimeSchemaSymbol": "ProviderRealFilesystemSuiteManifestEnvelopeV1Schema",
+        "runtimeSchemaSourcePath": "src/provider-real-filesystem-source.ts",
+        "runtimeMethod": "parse",
+        "runtimeSchemaExportResolved": true,
+        "astReachable": true,
+        "astCallsiteLine": 1541,
+        "astCallsiteSemanticDigest": "sha256:f5e256c1966763157d55d54eaba09f95a554b6d3930b8134aa0a032acd992619",
+        "astCallChain": [
+          "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+          "src/provider-registry-evidence-binding-point.ts#validateRegistryEvidenceBindingPointInternalV1",
+          "src/provider-runtime-attestation-point-internal.ts#diagnoseProviderRuntimeAttestationPointFromRegistryHistoryInternalV1",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#validateRuntimePointClosureFromSnapshotInternalV1",
+          "src/provider-real-filesystem-conformance-result.ts#diagnoseProviderRealFilesystemConformanceResultClosureV1",
+          "src/provider-real-filesystem-conformance-result.ts#validateResultClosureInternalV1",
+          "src/provider-real-filesystem-conformance-result.ts#validateResultClosureFromSnapshotInternalV1",
+          "src/provider-target-discovery-point.ts#diagnoseProviderTargetDiscoveryPointClosureV1",
+          "src/provider-target-discovery-point.ts#validatePointClosureInternalV1"
+        ]
+      },
+      "runtimeTrace": {
+        "requiredMethod": "parse",
+        "parseHits": 4,
+        "safeParseHits": 0,
+        "hitRequiredParser": true,
+        "schemaMethodHitAuthority": "auxiliary_non_authority",
+        "exactCallsiteId": "exact_ast_callsite_v1:suiteManifest:sha256:f5e256c1966763157d55d54eaba09f95a554b6d3930b8134aa0a032acd992619",
+        "exactCallsiteHits": 1,
+        "hitExactCallsite": true
+      }
+    },
+    {
+      "branch": "targetDiscoveryFixtureManifest",
+      "schemaName": "provider-target-discovery-fixture-manifest-envelope",
+      "zodSchemaSymbol": "ProviderTargetDiscoveryFixtureManifestEnvelopeV1Schema",
+      "parserMode": "prepared_delegated_schema_table_parse",
+      "parserSourcePath": "src/provider-target-discovery-point.ts",
+      "parserSourceRawSha256": "sha256:c27c585950d2fe667df0fbba2ffa8611488c33c639a0f1abe9a8d5d526c742aa",
+      "parserAst": {
+        "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+        "callsiteFunction": "validatePointClosureInternalV1",
+        "callsiteKind": "schema_table",
+        "argumentAnchor": "targetDiscoveryFixtureManifest",
+        "runtimeSchemaSymbol": "ProviderTargetDiscoveryFixtureManifestEnvelopeV1Schema",
+        "runtimeSchemaSourcePath": "src/provider-target-discovery-point.ts",
+        "runtimeMethod": "parse",
+        "runtimeSchemaExportResolved": true,
+        "astReachable": true,
+        "astCallsiteLine": 1548,
+        "astCallsiteSemanticDigest": "sha256:49eb563d897ae5ab23b8f078e63321a06323598457418093c31784baf576b01e",
+        "astCallChain": [
+          "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+          "src/provider-registry-evidence-binding-point.ts#validateRegistryEvidenceBindingPointInternalV1",
+          "src/provider-runtime-attestation-point-internal.ts#diagnoseProviderRuntimeAttestationPointFromRegistryHistoryInternalV1",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#validateRuntimePointClosureFromSnapshotInternalV1",
+          "src/provider-real-filesystem-conformance-result.ts#diagnoseProviderRealFilesystemConformanceResultClosureV1",
+          "src/provider-real-filesystem-conformance-result.ts#validateResultClosureInternalV1",
+          "src/provider-real-filesystem-conformance-result.ts#validateResultClosureFromSnapshotInternalV1",
+          "src/provider-target-discovery-point.ts#diagnoseProviderTargetDiscoveryPointClosureV1",
+          "src/provider-target-discovery-point.ts#validatePointClosureInternalV1"
+        ]
+      },
+      "runtimeTrace": {
+        "requiredMethod": "parse",
+        "parseHits": 2,
+        "safeParseHits": 0,
+        "hitRequiredParser": true,
+        "schemaMethodHitAuthority": "auxiliary_non_authority",
+        "exactCallsiteId": "exact_ast_callsite_v1:targetDiscoveryFixtureManifest:sha256:49eb563d897ae5ab23b8f078e63321a06323598457418093c31784baf576b01e",
+        "exactCallsiteHits": 1,
+        "hitExactCallsite": true
+      }
+    },
+    {
+      "branch": "targetDiscoveryResult",
+      "schemaName": "provider-target-discovery-result-envelope",
+      "zodSchemaSymbol": "ProviderTargetDiscoveryResultEnvelopeV1Schema",
+      "parserMode": "prepared_delegated_schema_table_parse",
+      "parserSourcePath": "src/provider-target-discovery-point.ts",
+      "parserSourceRawSha256": "sha256:c27c585950d2fe667df0fbba2ffa8611488c33c639a0f1abe9a8d5d526c742aa",
+      "parserAst": {
+        "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+        "callsiteFunction": "validatePointClosureInternalV1",
+        "callsiteKind": "schema_table",
+        "argumentAnchor": "targetDiscoveryResult",
+        "runtimeSchemaSymbol": "ProviderTargetDiscoveryResultEnvelopeV1Schema",
+        "runtimeSchemaSourcePath": "src/provider-target-discovery-point.ts",
+        "runtimeMethod": "parse",
+        "runtimeSchemaExportResolved": true,
+        "astReachable": true,
+        "astCallsiteLine": 1550,
+        "astCallsiteSemanticDigest": "sha256:8fe719da055f96b3f854f1ecbdc307c3009a0aaf30c636fb19f9d17075179898",
+        "astCallChain": [
+          "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+          "src/provider-registry-evidence-binding-point.ts#validateRegistryEvidenceBindingPointInternalV1",
+          "src/provider-runtime-attestation-point-internal.ts#diagnoseProviderRuntimeAttestationPointFromRegistryHistoryInternalV1",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#validateRuntimePointClosureFromSnapshotInternalV1",
+          "src/provider-real-filesystem-conformance-result.ts#diagnoseProviderRealFilesystemConformanceResultClosureV1",
+          "src/provider-real-filesystem-conformance-result.ts#validateResultClosureInternalV1",
+          "src/provider-real-filesystem-conformance-result.ts#validateResultClosureFromSnapshotInternalV1",
+          "src/provider-target-discovery-point.ts#diagnoseProviderTargetDiscoveryPointClosureV1",
+          "src/provider-target-discovery-point.ts#validatePointClosureInternalV1"
+        ]
+      },
+      "runtimeTrace": {
+        "requiredMethod": "parse",
+        "parseHits": 3,
+        "safeParseHits": 0,
+        "hitRequiredParser": true,
+        "schemaMethodHitAuthority": "auxiliary_non_authority",
+        "exactCallsiteId": "exact_ast_callsite_v1:targetDiscoveryResult:sha256:8fe719da055f96b3f854f1ecbdc307c3009a0aaf30c636fb19f9d17075179898",
+        "exactCallsiteHits": 1,
+        "hitExactCallsite": true
+      }
+    },
+    {
+      "branch": "targetDiscoveryRunnerRun",
+      "schemaName": "provider-target-discovery-runner-run-envelope",
+      "zodSchemaSymbol": "ProviderTargetDiscoveryRunnerRunEnvelopeV1Schema",
+      "parserMode": "prepared_delegated_schema_table_parse",
+      "parserSourcePath": "src/provider-target-discovery-point.ts",
+      "parserSourceRawSha256": "sha256:c27c585950d2fe667df0fbba2ffa8611488c33c639a0f1abe9a8d5d526c742aa",
+      "parserAst": {
+        "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+        "callsiteFunction": "validatePointClosureInternalV1",
+        "callsiteKind": "schema_table",
+        "argumentAnchor": "targetDiscoveryRunnerRun",
+        "runtimeSchemaSymbol": "ProviderTargetDiscoveryRunnerRunEnvelopeV1Schema",
+        "runtimeSchemaSourcePath": "src/provider-target-discovery-point.ts",
+        "runtimeMethod": "parse",
+        "runtimeSchemaExportResolved": true,
+        "astReachable": true,
+        "astCallsiteLine": 1549,
+        "astCallsiteSemanticDigest": "sha256:05bb62461830672af6b8bd423cccf93b725aa213d9c58e1eaeda11de0ed7f534",
+        "astCallChain": [
+          "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
+          "src/provider-registry-evidence-binding-point.ts#validateRegistryEvidenceBindingPointInternalV1",
+          "src/provider-runtime-attestation-point-internal.ts#diagnoseProviderRuntimeAttestationPointFromRegistryHistoryInternalV1",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#<anonymous_callback>",
+          "src/provider-runtime-attestation-point.ts#validateRuntimePointClosureFromSnapshotInternalV1",
+          "src/provider-real-filesystem-conformance-result.ts#diagnoseProviderRealFilesystemConformanceResultClosureV1",
+          "src/provider-real-filesystem-conformance-result.ts#validateResultClosureInternalV1",
+          "src/provider-real-filesystem-conformance-result.ts#validateResultClosureFromSnapshotInternalV1",
+          "src/provider-target-discovery-point.ts#diagnoseProviderTargetDiscoveryPointClosureV1",
+          "src/provider-target-discovery-point.ts#validatePointClosureInternalV1"
+        ]
+      },
+      "runtimeTrace": {
+        "requiredMethod": "parse",
+        "parseHits": 2,
+        "safeParseHits": 0,
+        "hitRequiredParser": true,
+        "schemaMethodHitAuthority": "auxiliary_non_authority",
+        "exactCallsiteId": "exact_ast_callsite_v1:targetDiscoveryRunnerRun:sha256:05bb62461830672af6b8bd423cccf93b725aa213d9c58e1eaeda11de0ed7f534",
+        "exactCallsiteHits": 1,
+        "hitExactCallsite": true
+      }
+    }
+  ],
+  "schemaSources": [
+    {
+      "branch": "activeRoot",
+      "schemaName": "provider-registry-root-public-key",
+      "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-registry-root-public-key",
+      "rawSha256": "sha256:169284d6f72883eafd071a0a829bf19a4befd33099b9b523c5ac2c4e1b4271d1",
+      "semanticDigest": "sha256:73f689144128399de073ead77976837b283777b3134dd3a557cb2a8c44468ba9",
+      "traversal": {
+        "refsResolved": 0,
+        "unionsVisited": 0,
+        "unboundedArrayOverrides": []
+      }
+    },
+    {
+      "branch": "activeRootMetadata",
+      "schemaName": "provider-registry-root-metadata-pin",
+      "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-registry-root-metadata-pin",
+      "rawSha256": "sha256:008fb0a5b88d5fa9fdd7d9d1695fe13167470bedd00a74a0126a685ea448d28e",
+      "semanticDigest": "sha256:1181f6386763febf14d47e27f782f92cddfddf30406af8228bdf0aa70b2d76c3",
+      "traversal": {
+        "refsResolved": 0,
+        "unionsVisited": 0,
+        "unboundedArrayOverrides": []
+      }
+    },
+    {
+      "branch": "bootstrapTrustBundle",
+      "schemaName": "provider-bootstrap-trust-bundle",
+      "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-bootstrap-trust-bundle",
+      "rawSha256": "sha256:44c4a6c92d9e39e07fcc6e3b01bf35af628910e0f26c8726d30a6f8c619d3996",
+      "semanticDigest": "sha256:0e39e7ca772b99e4eccd98af2c09c65e96d90b4e8669f417a0dbb232af216ced",
+      "traversal": {
+        "refsResolved": 0,
+        "unionsVisited": 1,
+        "unboundedArrayOverrides": []
+      }
+    },
+    {
+      "branch": "distributionRootBinding",
+      "schemaName": "provider-signed-distribution-root-binding",
+      "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-signed-distribution-root-binding",
+      "rawSha256": "sha256:4fced32064bdbfb97e5bfba677d37e893fe8d1350c3f41baf9e0711bbb0c1d0d",
+      "semanticDigest": "sha256:caeab4f77bd6db3ed562c92219ea196e93cdcd71d1e570a9ab0cfb8ae735f750",
+      "traversal": {
+        "refsResolved": 0,
+        "unionsVisited": 0,
+        "unboundedArrayOverrides": []
+      }
+    },
+    {
+      "branch": "fixtureCorpusManifest",
+      "schemaName": "provider-real-filesystem-fixture-corpus-manifest-envelope",
+      "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-real-filesystem-fixture-corpus-manifest-envelope",
+      "rawSha256": "sha256:1fde950d53b14c8625b7fddd707ae681ecdc1ce7764bbad59d95c006686080eb",
+      "semanticDigest": "sha256:eb4153648fc35520a608415ce3cf758eb521302298bee36adfa89d19535ab862",
+      "traversal": {
+        "refsResolved": 0,
+        "unionsVisited": 0,
+        "unboundedArrayOverrides": [
+          {
+            "path": "$.properties.payload.properties.records",
+            "maxItems": 16777216,
+            "source": "fixtureCorpusManifest canonical-byte ceiling (every array item consumes at least one canonical byte)"
+          }
+        ]
+      }
+    },
+    {
+      "branch": "installationIdentityGenerationId",
+      "schemaName": "installation-identity-generation-id",
+      "schemaId": "urn:understand-code:provider-contract:schema:v1:installation-identity-generation-id",
+      "rawSha256": "sha256:d6db0fd8d120a260487fb7df048f2398ad83a082369173d97d594229959563f9",
+      "semanticDigest": "sha256:ae3084188bf0f32562fa87630378fa8a5f30d055ec168dee8fc06611f258b950",
+      "traversal": {
+        "refsResolved": 0,
+        "unionsVisited": 0,
+        "unboundedArrayOverrides": []
+      }
+    },
+    {
+      "branch": "providerFeasibilityEvidence",
+      "schemaName": "provider-feasibility-evidence-envelope",
+      "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-feasibility-evidence-envelope",
+      "rawSha256": "sha256:67b5b4a29e6725940fa8b5253929a74ddae5a3ffe428f43dccbbe123d2df705a",
+      "semanticDigest": "sha256:1d19be629f421a36b1de73d23a97f2d14d4ff1f9f81677c42785d88ec8756693",
+      "traversal": {
+        "refsResolved": 0,
+        "unionsVisited": 0,
+        "unboundedArrayOverrides": []
+      }
+    },
+    {
+      "branch": "providerFeasibilityEvidencePin",
+      "schemaName": "provider-feasibility-evidence-pin",
+      "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-feasibility-evidence-pin",
+      "rawSha256": "sha256:0975c12a36ec795df82f17177f4d3729fe3c92572f795795db750339f3601bce",
+      "semanticDigest": "sha256:aafff106f1d2bba13483f0370ec6c8c4586769d6b3248a1c5a2f07c47386d6ea",
+      "traversal": {
+        "refsResolved": 0,
+        "unionsVisited": 0,
+        "unboundedArrayOverrides": []
+      }
+    },
+    {
+      "branch": "publicSupportTaxonomy",
+      "schemaName": "provider-public-support-taxonomy-envelope",
+      "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-public-support-taxonomy-envelope",
+      "rawSha256": "sha256:f0cc5a84ced60093033a910c22de9d38ba3a295f8c9623950efbb37b8361d97a",
+      "semanticDigest": "sha256:3f3a052d83abfda3fe816c3e31e2bfa279f874325f113202dc6608af099abf89",
+      "traversal": {
+        "refsResolved": 0,
+        "unionsVisited": 2,
+        "unboundedArrayOverrides": [
+          {
+            "path": "$.properties.payload.properties.filesystemProfiles",
+            "maxItems": 16777216,
+            "source": "publicSupportTaxonomy canonical-byte ceiling (every array item consumes at least one canonical byte)"
+          },
+          {
+            "path": "$.properties.payload.properties.osReleaseFamilies",
+            "maxItems": 16777216,
+            "source": "publicSupportTaxonomy canonical-byte ceiling (every array item consumes at least one canonical byte)"
+          }
+        ]
+      }
+    },
+    {
+      "branch": "realFilesystemConformanceResult",
+      "schemaName": "provider-real-filesystem-conformance-result-envelope",
+      "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-real-filesystem-conformance-result-envelope",
+      "rawSha256": "sha256:041d158ba648ce3c757eb3b5650f042085f46cc865a80cfbb21995a72f00d6b8",
+      "semanticDigest": "sha256:c7a79cf2834c766d89a6fb9aa37d72293ea404928050780203771ccba1e14e49",
+      "traversal": {
+        "refsResolved": 0,
+        "unionsVisited": 0,
+        "unboundedArrayOverrides": [
+          {
+            "path": "$.properties.payload.properties.caseResults",
+            "maxItems": 16777216,
+            "source": "realFilesystemConformanceResult canonical-byte ceiling (every array item consumes at least one canonical byte)"
+          }
+        ]
+      }
+    },
+    {
+      "branch": "realFilesystemConformanceResultLocator",
+      "schemaName": "provider-real-filesystem-conformance-result-locator",
+      "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-real-filesystem-conformance-result-locator",
+      "rawSha256": "sha256:96f1ba72b2b77c7099273d92cca46823c1a22dc356568815c6261f1259143cf9",
+      "semanticDigest": "sha256:e3db288d54b2a139f72aff2133a0283c2b5914c8e425e3b3c13880b839d7d316",
+      "traversal": {
+        "refsResolved": 0,
+        "unionsVisited": 0,
+        "unboundedArrayOverrides": []
+      }
+    },
+    {
+      "branch": "realFilesystemConformanceResultPin",
+      "schemaName": "provider-real-filesystem-conformance-result-pin",
+      "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-real-filesystem-conformance-result-pin",
+      "rawSha256": "sha256:3a31375bb8c3d1bc162c56e854025f85a4d5e6878fb31111a6c21261e3961e23",
+      "semanticDigest": "sha256:b4fc213396b10d8fe821946040ada5eb17c1e488dfec24a6f807ddb0e83e02d4",
+      "traversal": {
+        "refsResolved": 0,
+        "unionsVisited": 0,
+        "unboundedArrayOverrides": []
+      }
+    },
+    {
+      "branch": "registryManifestHistory",
+      "schemaName": "provider-registry-manifest-envelope",
+      "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-registry-manifest-envelope",
+      "rawSha256": "sha256:a57ebfab4ff76784f6b8489776b38fdcd96934fae339ea72de0123db1695c1e5",
+      "semanticDigest": "sha256:9114b95ea263e1d8c65cf7ea05891ab78bfe1bebab92c6553392008a073c5f9f",
+      "traversal": {
+        "refsResolved": 0,
+        "unionsVisited": 7,
+        "unboundedArrayOverrides": [
+          {
+            "path": "$.properties.payload.properties.members",
+            "maxItems": 65536,
+            "source": "Registry manifest JSON container hard cap"
+          },
+          {
+            "path": "$.properties.payload.properties.members.items.properties.registryEntry.properties.feasibilityApprovalKeys.properties.compromisedRevokedKeyIds",
+            "maxItems": 256,
+            "source": "ProviderTrustHistoryPolicyV1.maxCompromisedRevocationRecordCountPerIdentity"
+          },
+          {
+            "path": "$.properties.payload.properties.members.items.properties.registryEntry.properties.feasibilityApprovalKeys.properties.publicKeyRecords",
+            "maxItems": 128,
+            "source": "2 role literals × ProviderTrustHistoryPolicyV1.maxApproverPublicKeyRecordCountPerRole"
+          },
+          {
+            "path": "$.properties.payload.properties.members.items.properties.registryEntry.properties.verificationKeys.properties.bindingDerivationGenerationRecords",
+            "maxItems": 64,
+            "source": "ProviderTrustHistoryPolicyV1.maxBindingDerivationGenerationRecordCountPerProvider"
+          },
+          {
+            "path": "$.properties.payload.properties.members.items.properties.registryEntry.properties.verificationKeys.properties.compromisedRevokedBindingDerivationGenerations",
+            "maxItems": 256,
+            "source": "ProviderTrustHistoryPolicyV1.maxCompromisedRevocationRecordCountPerIdentity"
+          },
+          {
+            "path": "$.properties.payload.properties.members.items.properties.registryEntry.properties.verificationKeys.properties.compromisedRevokedKeyIds",
+            "maxItems": 256,
+            "source": "ProviderTrustHistoryPolicyV1.maxCompromisedRevocationRecordCountPerIdentity"
+          },
+          {
+            "path": "$.properties.payload.properties.members.items.properties.registryEntry.properties.verificationKeys.properties.publicKeyRecords",
+            "maxItems": 256,
+            "source": "min(maxProviderVerificationPublicKeyRecordCountPerProvider=256, maxProviderVerificationPublicKeyRecordCountPerUsage=64 by usage)"
+          }
+        ]
+      }
+    },
+    {
+      "branch": "releaseMatrix",
+      "schemaName": "provider-release-matrix-envelope",
+      "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-release-matrix-envelope",
+      "rawSha256": "sha256:c2ef3f6af8dd2a68da18c5a3e970241909dd7729967256f55506556c7b8e9f8c",
+      "semanticDigest": "sha256:cbdc48ad4b1c79b0615cc0f1e10bdf1d8b972774e631fd478a8ef6b08fe22ce4",
+      "traversal": {
+        "refsResolved": 0,
+        "unionsVisited": 0,
+        "unboundedArrayOverrides": []
+      }
+    },
+    {
+      "branch": "rootMetadataHistory",
+      "schemaName": "provider-registry-root-metadata-envelope",
+      "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-registry-root-metadata-envelope",
+      "rawSha256": "sha256:f729be0ac330261d4a5165a730c28b6ee243aa89a286ff3fb37d2ad0844bcb43",
+      "semanticDigest": "sha256:cbc27a93341a7d461af27c11030a31ff84761d623969d278d6f24fb2c0c61485",
+      "traversal": {
+        "refsResolved": 0,
+        "unionsVisited": 1,
+        "unboundedArrayOverrides": []
+      }
+    },
+    {
+      "branch": "runtimeAttestation",
+      "schemaName": "store-durable-object-provider-runtime-attestation-pin",
+      "schemaId": "urn:understand-code:provider-contract:schema:v1:store-durable-object-provider-runtime-attestation-pin",
+      "rawSha256": "sha256:bf2acbc2f30fb39382b4e6339b6fdd32b6ecf77024def821883ff1f54ab5a6d2",
+      "semanticDigest": "sha256:ddf9905072fe91425a487ce9f455b39ff2b8b0327f6c81d0a009b90a872a5d80",
+      "traversal": {
+        "refsResolved": 0,
+        "unionsVisited": 0,
+        "unboundedArrayOverrides": []
+      }
+    },
+    {
+      "branch": "semanticProviderPolicy",
+      "schemaName": "store-durable-object-provider-policy",
+      "schemaId": "urn:understand-code:provider-contract:schema:v1:store-durable-object-provider-policy",
+      "rawSha256": "sha256:56be2032699b583a1ca85b5b425cc8bb28bada4c1c61b599d20d30f2f3de6c7c",
+      "semanticDigest": "sha256:6b0776b622243f5181317a0401eb936415ff76d8a9fad3e0a24596ce3268025c",
+      "traversal": {
+        "refsResolved": 0,
+        "unionsVisited": 1,
+        "unboundedArrayOverrides": []
+      }
+    },
+    {
+      "branch": "suiteManifest",
+      "schemaName": "provider-real-filesystem-suite-manifest-envelope",
+      "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-real-filesystem-suite-manifest-envelope",
+      "rawSha256": "sha256:5b2afdfb2decdf6c00be36f25df1ed104d3f044d5cda403c32124616337876b3",
+      "semanticDigest": "sha256:7ffbd90ca212e97b941883aaac261e7be57f2bf9b5a4377afcf3fae8d1d7a9bc",
+      "traversal": {
+        "refsResolved": 0,
+        "unionsVisited": 1,
+        "unboundedArrayOverrides": [
+          {
+            "path": "$.properties.payload.properties.cases",
+            "maxItems": 16777216,
+            "source": "suiteManifest canonical-byte ceiling (every array item consumes at least one canonical byte)"
+          },
+          {
+            "path": "$.properties.payload.properties.cases.items.properties.requiredCrashCuts",
+            "maxItems": 16777216,
+            "source": "suiteManifest canonical-byte ceiling (every array item consumes at least one canonical byte)"
+          }
+        ]
+      }
+    },
+    {
+      "branch": "targetDiscoveryFixtureManifest",
+      "schemaName": "provider-target-discovery-fixture-manifest-envelope",
+      "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-target-discovery-fixture-manifest-envelope",
+      "rawSha256": "sha256:721edaa3305d9319d6036b8c1866c5d0856d47c0b37e6e2e1d151f13efc6b9f0",
+      "semanticDigest": "sha256:2c5d1e9e1f159abd2245654064e55f5f14890b0011b6f553a54565f91bd67407",
+      "traversal": {
+        "refsResolved": 0,
+        "unionsVisited": 1,
+        "unboundedArrayOverrides": [
+          {
+            "path": "$.properties.payload.properties.records",
+            "maxItems": 16777216,
+            "source": "targetDiscoveryFixtureManifest canonical-byte ceiling (every array item consumes at least one canonical byte)"
+          }
+        ]
+      }
+    },
+    {
+      "branch": "targetDiscoveryResult",
+      "schemaName": "provider-target-discovery-result-envelope",
+      "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-target-discovery-result-envelope",
+      "rawSha256": "sha256:17403c1e21be968c1a7008c3dda1a490a5df0bbea88bd9a232eb002ae1c05610",
+      "semanticDigest": "sha256:3156a9aac25ceebe94f4c4dd9c16eeb26c9fccc7cae334d3dda07a718fd459b1",
+      "traversal": {
+        "refsResolved": 0,
+        "unionsVisited": 1,
+        "unboundedArrayOverrides": [
+          {
+            "path": "$.properties.payload.properties.targetDiscoveryInputBundle.properties.observations",
+            "maxItems": 16777216,
+            "source": "targetDiscoveryResult canonical-byte ceiling (every array item consumes at least one canonical byte)"
+          }
+        ]
+      }
+    },
+    {
+      "branch": "targetDiscoveryRunnerRun",
+      "schemaName": "provider-target-discovery-runner-run-envelope",
+      "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-target-discovery-runner-run-envelope",
+      "rawSha256": "sha256:d6a1772f28b64ddff59fa46e9063322bf1fa256c358f56275a6a0f1b789035ee",
+      "semanticDigest": "sha256:c04dc567123ffb5090e75ce02df706cadda143188fadcb7dcc1467dda8578c23",
+      "traversal": {
+        "refsResolved": 0,
+        "unionsVisited": 1,
+        "unboundedArrayOverrides": [
+          {
+            "path": "$.properties.payload.properties.records",
+            "maxItems": 16777216,
+            "source": "targetDiscoveryRunnerRun canonical-byte ceiling (every array item consumes at least one canonical byte)"
+          }
+        ]
+      }
+    }
+  ],
+  "solver": {
+    "profile": "finite_capacity_frontier_v1",
+    "arithmetic": "bigint_rational",
+    "objectives": [
+      "identities",
+      "ordinary_work",
+      "history_work"
+    ],
+    "relaxations": [
+      {
+        "kind": "fractional_last_atom",
+        "detail": "The last capacity segment may be fractionally occupied. Integer productions are a subset, so this only enlarges the upper bound."
+      },
+      {
+        "kind": "one_of_as_alternative_upper",
+        "detail": "Union base cases are retained, while mutually exclusive finite segment capacities may be combined before the alternative structural maximum clamps the objective."
+      },
+      {
+        "kind": "nested_prerequisite_dropped",
+        "detail": "Required nested segments retain their finite gain caps; optional and repeated children are collapsed into complete-production ratios, but segment prerequisites across relaxed union alternatives are not reimposed."
+      },
+      {
+        "kind": "cross_branch_semantic_and_crypto_equalities_not_modeled",
+        "detail": "The requested proof domain is the strict Zod→JSON Schema production plus frozen byte/cardinality policies. Later cross-branch digest, signature, exact-cover, and history semantics are intentionally not used to shrink this schema upper."
+      }
+    ],
+    "pathRelaxations": [
+      "$.properties.bootstrapProviderRegistryRootMetadata.properties.payload.oneOf: mutually exclusive alternative segment capacities are combined, then clamped by the largest alternative structural objective",
+      "$.properties.isolation.oneOf: mutually exclusive alternative segment capacities are combined, then clamped by the largest alternative structural objective",
+      "$.properties.payload.anyOf: mutually exclusive alternative segment capacities are combined, then clamped by the largest alternative structural objective",
+      "$.properties.payload.anyOf[0].properties.members.items.oneOf: mutually exclusive alternative segment capacities are combined, then clamped by the largest alternative structural objective",
+      "$.properties.payload.anyOf[0].properties.members.items.oneOf[0].properties.registryEntry.anyOf: mutually exclusive alternative segment capacities are combined, then clamped by the largest alternative structural objective",
+      "$.properties.payload.anyOf[0].properties.members.items.oneOf[0].properties.registryEntry.anyOf[0].properties.feasibilityApprovalKeys.properties.compromisedRevokedKeyIds: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[0].properties.members.items.oneOf[0].properties.registryEntry.anyOf[0].properties.feasibilityApprovalKeys.properties.compromisedRevokedKeyIds: the first complete item from an empty array is count-capped and charged no comma byte",
+      "$.properties.payload.anyOf[0].properties.members.items.oneOf[0].properties.registryEntry.anyOf[0].properties.feasibilityApprovalKeys.properties.publicKeyRecords: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[0].properties.members.items.oneOf[0].properties.registryEntry.anyOf[0].properties.verificationKeys.properties.bindingDerivationGenerationRecords: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[0].properties.members.items.oneOf[0].properties.registryEntry.anyOf[0].properties.verificationKeys.properties.compromisedRevokedBindingDerivationGenerations: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[0].properties.members.items.oneOf[0].properties.registryEntry.anyOf[0].properties.verificationKeys.properties.compromisedRevokedBindingDerivationGenerations: the first complete item from an empty array is count-capped and charged no comma byte",
+      "$.properties.payload.anyOf[0].properties.members.items.oneOf[0].properties.registryEntry.anyOf[0].properties.verificationKeys.properties.compromisedRevokedKeyIds: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[0].properties.members.items.oneOf[0].properties.registryEntry.anyOf[0].properties.verificationKeys.properties.compromisedRevokedKeyIds: the first complete item from an empty array is count-capped and charged no comma byte",
+      "$.properties.payload.anyOf[0].properties.members.items.oneOf[0].properties.registryEntry.anyOf[0].properties.verificationKeys.properties.publicKeyRecords: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[0].properties.members.items.oneOf[0].properties.registryEntry.anyOf[1].properties.feasibilityApprovalKeys.properties.compromisedRevokedKeyIds: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[0].properties.members.items.oneOf[0].properties.registryEntry.anyOf[1].properties.feasibilityApprovalKeys.properties.compromisedRevokedKeyIds: the first complete item from an empty array is count-capped and charged no comma byte",
+      "$.properties.payload.anyOf[0].properties.members.items.oneOf[0].properties.registryEntry.anyOf[1].properties.feasibilityApprovalKeys.properties.publicKeyRecords: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[0].properties.members.items.oneOf[0].properties.registryEntry.anyOf[1].properties.verificationKeys.properties.bindingDerivationGenerationRecords: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[0].properties.members.items.oneOf[0].properties.registryEntry.anyOf[1].properties.verificationKeys.properties.compromisedRevokedBindingDerivationGenerations: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[0].properties.members.items.oneOf[0].properties.registryEntry.anyOf[1].properties.verificationKeys.properties.compromisedRevokedBindingDerivationGenerations: the first complete item from an empty array is count-capped and charged no comma byte",
+      "$.properties.payload.anyOf[0].properties.members.items.oneOf[0].properties.registryEntry.anyOf[1].properties.verificationKeys.properties.compromisedRevokedKeyIds: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[0].properties.members.items.oneOf[0].properties.registryEntry.anyOf[1].properties.verificationKeys.properties.compromisedRevokedKeyIds: the first complete item from an empty array is count-capped and charged no comma byte",
+      "$.properties.payload.anyOf[0].properties.members.items.oneOf[0].properties.registryEntry.anyOf[1].properties.verificationKeys.properties.publicKeyRecords: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[0].properties.members: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[0].properties.routing.oneOf: mutually exclusive alternative segment capacities are combined, then clamped by the largest alternative structural objective",
+      "$.properties.payload.anyOf[1].properties.members.items.oneOf: mutually exclusive alternative segment capacities are combined, then clamped by the largest alternative structural objective",
+      "$.properties.payload.anyOf[1].properties.members.items.oneOf[0].properties.registryEntry.anyOf: mutually exclusive alternative segment capacities are combined, then clamped by the largest alternative structural objective",
+      "$.properties.payload.anyOf[1].properties.members.items.oneOf[0].properties.registryEntry.anyOf[0].properties.feasibilityApprovalKeys.properties.compromisedRevokedKeyIds: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[1].properties.members.items.oneOf[0].properties.registryEntry.anyOf[0].properties.feasibilityApprovalKeys.properties.compromisedRevokedKeyIds: the first complete item from an empty array is count-capped and charged no comma byte",
+      "$.properties.payload.anyOf[1].properties.members.items.oneOf[0].properties.registryEntry.anyOf[0].properties.feasibilityApprovalKeys.properties.publicKeyRecords: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[1].properties.members.items.oneOf[0].properties.registryEntry.anyOf[0].properties.verificationKeys.properties.bindingDerivationGenerationRecords: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[1].properties.members.items.oneOf[0].properties.registryEntry.anyOf[0].properties.verificationKeys.properties.compromisedRevokedBindingDerivationGenerations: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[1].properties.members.items.oneOf[0].properties.registryEntry.anyOf[0].properties.verificationKeys.properties.compromisedRevokedBindingDerivationGenerations: the first complete item from an empty array is count-capped and charged no comma byte",
+      "$.properties.payload.anyOf[1].properties.members.items.oneOf[0].properties.registryEntry.anyOf[0].properties.verificationKeys.properties.compromisedRevokedKeyIds: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[1].properties.members.items.oneOf[0].properties.registryEntry.anyOf[0].properties.verificationKeys.properties.compromisedRevokedKeyIds: the first complete item from an empty array is count-capped and charged no comma byte",
+      "$.properties.payload.anyOf[1].properties.members.items.oneOf[0].properties.registryEntry.anyOf[0].properties.verificationKeys.properties.publicKeyRecords: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[1].properties.members.items.oneOf[0].properties.registryEntry.anyOf[1].properties.feasibilityApprovalKeys.properties.compromisedRevokedKeyIds: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[1].properties.members.items.oneOf[0].properties.registryEntry.anyOf[1].properties.feasibilityApprovalKeys.properties.compromisedRevokedKeyIds: the first complete item from an empty array is count-capped and charged no comma byte",
+      "$.properties.payload.anyOf[1].properties.members.items.oneOf[0].properties.registryEntry.anyOf[1].properties.feasibilityApprovalKeys.properties.publicKeyRecords: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[1].properties.members.items.oneOf[0].properties.registryEntry.anyOf[1].properties.verificationKeys.properties.bindingDerivationGenerationRecords: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[1].properties.members.items.oneOf[0].properties.registryEntry.anyOf[1].properties.verificationKeys.properties.compromisedRevokedBindingDerivationGenerations: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[1].properties.members.items.oneOf[0].properties.registryEntry.anyOf[1].properties.verificationKeys.properties.compromisedRevokedBindingDerivationGenerations: the first complete item from an empty array is count-capped and charged no comma byte",
+      "$.properties.payload.anyOf[1].properties.members.items.oneOf[0].properties.registryEntry.anyOf[1].properties.verificationKeys.properties.compromisedRevokedKeyIds: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[1].properties.members.items.oneOf[0].properties.registryEntry.anyOf[1].properties.verificationKeys.properties.compromisedRevokedKeyIds: the first complete item from an empty array is count-capped and charged no comma byte",
+      "$.properties.payload.anyOf[1].properties.members.items.oneOf[0].properties.registryEntry.anyOf[1].properties.verificationKeys.properties.publicKeyRecords: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[1].properties.members: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.anyOf[1].properties.routing.oneOf: mutually exclusive alternative segment capacities are combined, then clamped by the largest alternative structural objective",
+      "$.properties.payload.oneOf: mutually exclusive alternative segment capacities are combined, then clamped by the largest alternative structural objective",
+      "$.properties.payload.properties.caseResults: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.properties.cases.items.properties.requiredCrashCuts.items.anyOf: mutually exclusive alternative segment capacities are combined, then clamped by the largest alternative structural objective",
+      "$.properties.payload.properties.cases.items.properties.requiredCrashCuts: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.properties.cases: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.properties.filesystemProfiles.items.properties.descriptor.anyOf: mutually exclusive alternative segment capacities are combined, then clamped by the largest alternative structural objective",
+      "$.properties.payload.properties.filesystemProfiles: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.properties.osReleaseFamilies.items.properties.descriptor.anyOf: mutually exclusive alternative segment capacities are combined, then clamped by the largest alternative structural objective",
+      "$.properties.payload.properties.osReleaseFamilies: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.properties.predecessorDiscoveryContentDigest: optional complete-production group uses a finite-capacity fractional ratio",
+      "$.properties.payload.properties.predecessorReleaseMatrixContentDigest: optional complete-production group uses a finite-capacity fractional ratio",
+      "$.properties.payload.properties.predecessorTaxonomyContentDigest: optional complete-production group uses a finite-capacity fractional ratio",
+      "$.properties.payload.properties.records.items.properties.outcome.anyOf: mutually exclusive alternative segment capacities are combined, then clamped by the largest alternative structural objective",
+      "$.properties.payload.properties.records: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.properties.records: the first complete item from an empty array is count-capped and charged no comma byte",
+      "$.properties.payload.properties.targetDiscoveryInputBundle.properties.observations.items.properties.outcome.anyOf: mutually exclusive alternative segment capacities are combined, then clamped by the largest alternative structural objective",
+      "$.properties.payload.properties.targetDiscoveryInputBundle.properties.observations: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.properties.targetDiscoveryInputBundle.properties.observations: the first complete item from an empty array is count-capped and charged no comma byte",
+      "$.properties.payload.properties.targets: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.properties.targets: the first complete item from an empty array is count-capped and charged no comma byte",
+      "$.properties.payload.properties.unresolvedObservations: repeated complete-item choices use a count-capped fractional frontier; comma cost is charged to every item after a present predecessor",
+      "$.properties.payload.properties.unresolvedObservations: the first complete item from an empty array is count-capped and charged no comma byte"
+    ]
+  },
+  "orderedBounds": [
+    {
+      "scope": "topLevel",
+      "maxIdentities": 1,
+      "maxWorkUnits": 95,
+      "derivation": "64 fixed session units + 4 top-level identity units + 22 exact own-key units + 1 capture scratch unit + 4 retained-history aggregate-budget construction units = 95; identity count = 1."
+    },
+    {
+      "scope": "opaqueCapabilityShell",
+      "maxIdentities": 0,
+      "maxWorkUnits": 0,
+      "derivation": "strictCryptoCapability is identity-checked as the original opaque handle and is neither observed as a JSON identity nor walked; its shell reservation is included in the session's 64 fixed units."
+    },
+    {
+      "scope": "activeRoot",
+      "maxIdentities": 1,
+      "maxWorkUnits": 16,
+      "derivation": "The strict production is bounded under B=16777216 by a BigInt rational finite-capacity frontier. Identity uses objective I; work independently uses objective 6I+K+D and then adds the exact 5-unit branch constant (4 budget construction + 2 root WeakSet insertions - 1 root/descendant algebraic overlap). Array item count, nested finite capacities, comma bytes, union alternatives, and structural maxima are retained by the solver; listed relaxations only enlarge the upper bound."
+    },
+    {
+      "scope": "activeRootMetadata",
+      "maxIdentities": 1,
+      "maxWorkUnits": 15,
+      "derivation": "The strict production is bounded under B=16777216 by a BigInt rational finite-capacity frontier. Identity uses objective I; work independently uses objective 6I+K+D and then adds the exact 5-unit branch constant (4 budget construction + 2 root WeakSet insertions - 1 root/descendant algebraic overlap). Array item count, nested finite capacities, comma bytes, union alternatives, and structural maxima are retained by the solver; listed relaxations only enlarge the upper bound."
+    },
+    {
+      "scope": "bootstrapTrustBundle",
+      "maxIdentities": 16,
+      "maxWorkUnits": 229,
+      "derivation": "The strict production is bounded under B=4194304 by a BigInt rational finite-capacity frontier. Identity uses objective I; work independently uses objective 6I+K+D and then adds the exact 5-unit branch constant (4 budget construction + 2 root WeakSet insertions - 1 root/descendant algebraic overlap). Array item count, nested finite capacities, comma bytes, union alternatives, and structural maxima are retained by the solver; listed relaxations only enlarge the upper bound."
+    },
+    {
+      "scope": "distributionRootBinding",
+      "maxIdentities": 3,
+      "maxWorkUnits": 44,
+      "derivation": "The strict production is bounded under B=16777216 by a BigInt rational finite-capacity frontier. Identity uses objective I; work independently uses objective 6I+K+D and then adds the exact 5-unit branch constant (4 budget construction + 2 root WeakSet insertions - 1 root/descendant algebraic overlap). Array item count, nested finite capacities, comma bytes, union alternatives, and structural maxima are retained by the solver; listed relaxations only enlarge the upper bound."
+    },
+    {
+      "scope": "fixtureCorpusManifest",
+      "maxIdentities": 58051,
+      "maxWorkUnits": 870755,
+      "derivation": "The strict production is bounded under B=16777216 by a BigInt rational finite-capacity frontier. Identity uses objective I; work independently uses objective 6I+K+D and then adds the exact 5-unit branch constant (4 budget construction + 2 root WeakSet insertions - 1 root/descendant algebraic overlap). Array item count, nested finite capacities, comma bytes, union alternatives, and structural maxima are retained by the solver; listed relaxations only enlarge the upper bound."
+    },
+    {
+      "scope": "installationIdentityGenerationId",
+      "maxIdentities": 0,
+      "maxWorkUnits": 0,
+      "derivation": "The strict production is a string primitive. Its top-level key is already charged, and production allocates no branch budget, JSON identity, own-key array, dense-index reservation, frame, or WeakSet insertion."
+    },
+    {
+      "scope": "providerFeasibilityEvidence",
+      "maxIdentities": 4,
+      "maxWorkUnits": 65,
+      "derivation": "The strict production is bounded under B=4194304 by a BigInt rational finite-capacity frontier. Identity uses objective I; work independently uses objective 6I+K+D and then adds the exact 5-unit branch constant (4 budget construction + 2 root WeakSet insertions - 1 root/descendant algebraic overlap). Array item count, nested finite capacities, comma bytes, union alternatives, and structural maxima are retained by the solver; listed relaxations only enlarge the upper bound."
+    },
+    {
+      "scope": "providerFeasibilityEvidencePin",
+      "maxIdentities": 1,
+      "maxWorkUnits": 14,
+      "derivation": "The strict production is bounded under B=16777216 by a BigInt rational finite-capacity frontier. Identity uses objective I; work independently uses objective 6I+K+D and then adds the exact 5-unit branch constant (4 budget construction + 2 root WeakSet insertions - 1 root/descendant algebraic overlap). Array item count, nested finite capacities, comma bytes, union alternatives, and structural maxima are retained by the solver; listed relaxations only enlarge the upper bound."
+    },
+    {
+      "scope": "publicSupportTaxonomy",
+      "maxIdentities": 203340,
+      "maxWorkUnits": 1931758,
+      "derivation": "The strict production is bounded under B=16777216 by a BigInt rational finite-capacity frontier. Identity uses objective I; work independently uses objective 6I+K+D and then adds the exact 5-unit branch constant (4 budget construction + 2 root WeakSet insertions - 1 root/descendant algebraic overlap). Array item count, nested finite capacities, comma bytes, union alternatives, and structural maxima are retained by the solver; listed relaxations only enlarge the upper bound."
+    },
+    {
+      "scope": "realFilesystemConformanceResult",
+      "maxIdentities": 136378,
+      "maxWorkUnits": 1636557,
+      "derivation": "The strict production is bounded under B=16777216 by a BigInt rational finite-capacity frontier. Identity uses objective I; work independently uses objective 6I+K+D and then adds the exact 5-unit branch constant (4 budget construction + 2 root WeakSet insertions - 1 root/descendant algebraic overlap). Array item count, nested finite capacities, comma bytes, union alternatives, and structural maxima are retained by the solver; listed relaxations only enlarge the upper bound."
+    },
+    {
+      "scope": "realFilesystemConformanceResultLocator",
+      "maxIdentities": 1,
+      "maxWorkUnits": 13,
+      "derivation": "The strict production is bounded under B=16777216 by a BigInt rational finite-capacity frontier. Identity uses objective I; work independently uses objective 6I+K+D and then adds the exact 5-unit branch constant (4 budget construction + 2 root WeakSet insertions - 1 root/descendant algebraic overlap). Array item count, nested finite capacities, comma bytes, union alternatives, and structural maxima are retained by the solver; listed relaxations only enlarge the upper bound."
+    },
+    {
+      "scope": "realFilesystemConformanceResultPin",
+      "maxIdentities": 1,
+      "maxWorkUnits": 14,
+      "derivation": "The strict production is bounded under B=16777216 by a BigInt rational finite-capacity frontier. Identity uses objective I; work independently uses objective 6I+K+D and then adds the exact 5-unit branch constant (4 budget construction + 2 root WeakSet insertions - 1 root/descendant algebraic overlap). Array item count, nested finite capacities, comma bytes, union alternatives, and structural maxima are retained by the solver; listed relaxations only enlarge the upper bound."
+    },
+    {
+      "scope": "registryManifestHistory",
+      "maxIdentities": 70488065,
+      "maxWorkUnits": 14084444170,
+      "derivation": "L=4096. Identity and work are independently maximized by the finite-capacity frontier under the per-Envelope B=4,194,304 ceiling. The history array contributes 1 identity and 10+7L work; each Envelope continuation is optimized directly for 7I+K+D, so max-I/max-K/max-D from different witnesses are never added as one work witness. The aggregate B_H correlation is applied only in symbolicWitness.retainedHistories."
+    },
+    {
+      "scope": "releaseMatrix",
+      "maxIdentities": 8201,
+      "maxWorkUnits": 98414,
+      "derivation": "The strict production is bounded under B=16777216 by a BigInt rational finite-capacity frontier. Identity uses objective I; work independently uses objective 6I+K+D and then adds the exact 5-unit branch constant (4 budget construction + 2 root WeakSet insertions - 1 root/descendant algebraic overlap). Array item count, nested finite capacities, comma bytes, union alternatives, and structural maxima are retained by the solver; listed relaxations only enlarge the upper bound."
+    },
+    {
+      "scope": "rootMetadataHistory",
+      "maxIdentities": 1281,
+      "maxWorkUnits": 18186,
+      "derivation": "L=256. Identity and work are independently maximized by the finite-capacity frontier under the per-Envelope B=4,194,304 ceiling. The history array contributes 1 identity and 10+7L work; each Envelope continuation is optimized directly for 7I+K+D, so max-I/max-K/max-D from different witnesses are never added as one work witness. The aggregate B_H correlation is applied only in symbolicWitness.retainedHistories."
+    },
+    {
+      "scope": "runtimeAttestation",
+      "maxIdentities": 2,
+      "maxWorkUnits": 35,
+      "derivation": "The strict production is bounded under B=16777216 by a BigInt rational finite-capacity frontier. Identity uses objective I; work independently uses objective 6I+K+D and then adds the exact 5-unit branch constant (4 budget construction + 2 root WeakSet insertions - 1 root/descendant algebraic overlap). Array item count, nested finite capacities, comma bytes, union alternatives, and structural maxima are retained by the solver; listed relaxations only enlarge the upper bound."
+    },
+    {
+      "scope": "semanticProviderPolicy",
+      "maxIdentities": 4,
+      "maxWorkUnits": 61,
+      "derivation": "The strict production is bounded under B=16777216 by a BigInt rational finite-capacity frontier. Identity uses objective I; work independently uses objective 6I+K+D and then adds the exact 5-unit branch constant (4 budget construction + 2 root WeakSet insertions - 1 root/descendant algebraic overlap). Array item count, nested finite capacities, comma bytes, union alternatives, and structural maxima are retained by the solver; listed relaxations only enlarge the upper bound."
+    },
+    {
+      "scope": "suiteManifest",
+      "maxIdentities": 447287,
+      "maxWorkUnits": 4025632,
+      "derivation": "The strict production is bounded under B=16777216 by a BigInt rational finite-capacity frontier. Identity uses objective I; work independently uses objective 6I+K+D and then adds the exact 5-unit branch constant (4 budget construction + 2 root WeakSet insertions - 1 root/descendant algebraic overlap). Array item count, nested finite capacities, comma bytes, union alternatives, and structural maxima are retained by the solver; listed relaxations only enlarge the upper bound."
+    },
+    {
+      "scope": "targetDiscoveryFixtureManifest",
+      "maxIdentities": 349457,
+      "maxWorkUnits": 3145153,
+      "derivation": "The strict production is bounded under B=16777216 by a BigInt rational finite-capacity frontier. Identity uses objective I; work independently uses objective 6I+K+D and then adds the exact 5-unit branch constant (4 budget construction + 2 root WeakSet insertions - 1 root/descendant algebraic overlap). Array item count, nested finite capacities, comma bytes, union alternatives, and structural maxima are retained by the solver; listed relaxations only enlarge the upper bound."
+    },
+    {
+      "scope": "targetDiscoveryResult",
+      "maxIdentities": 74216,
+      "maxWorkUnits": 816469,
+      "derivation": "The strict production is bounded under B=16777216 by a BigInt rational finite-capacity frontier. Identity uses objective I; work independently uses objective 6I+K+D and then adds the exact 5-unit branch constant (4 budget construction + 2 root WeakSet insertions - 1 root/descendant algebraic overlap). Array item count, nested finite capacities, comma bytes, union alternatives, and structural maxima are retained by the solver; listed relaxations only enlarge the upper bound."
+    },
+    {
+      "scope": "targetDiscoveryRunnerRun",
+      "maxIdentities": 349486,
+      "maxWorkUnits": 3145406,
+      "derivation": "The strict production is bounded under B=16777216 by a BigInt rational finite-capacity frontier. Identity uses objective I; work independently uses objective 6I+K+D and then adds the exact 5-unit branch constant (4 budget construction + 2 root WeakSet insertions - 1 root/descendant algebraic overlap). Array item count, nested finite capacities, comma bytes, union alternatives, and structural maxima are retained by the solver; listed relaxations only enlarge the upper bound."
+    }
+  ],
+  "symbolicWitness": {
+    "kind": "sound_finite_capacity_upper_witness",
+    "ordinaryBranches": [
+      {
+        "branch": "activeRoot",
+        "maxIdentities": 1,
+        "maxOwnKeys": 5,
+        "maxDenseIndices": 0,
+        "maxWorkTopologyObjective": 11,
+        "objectiveWitnessesAreIndependent": true
+      },
+      {
+        "branch": "activeRootMetadata",
+        "maxIdentities": 1,
+        "maxOwnKeys": 4,
+        "maxDenseIndices": 0,
+        "maxWorkTopologyObjective": 10,
+        "objectiveWitnessesAreIndependent": true
+      },
+      {
+        "branch": "bootstrapTrustBundle",
+        "maxIdentities": 16,
+        "maxOwnKeys": 123,
+        "maxDenseIndices": 5,
+        "maxWorkTopologyObjective": 224,
+        "objectiveWitnessesAreIndependent": true
+      },
+      {
+        "branch": "distributionRootBinding",
+        "maxIdentities": 3,
+        "maxOwnKeys": 21,
+        "maxDenseIndices": 0,
+        "maxWorkTopologyObjective": 39,
+        "objectiveWitnessesAreIndependent": true
+      },
+      {
+        "branch": "fixtureCorpusManifest",
+        "maxIdentities": 58051,
+        "maxOwnKeys": 464397,
+        "maxDenseIndices": 58044,
+        "maxWorkTopologyObjective": 870750,
+        "objectiveWitnessesAreIndependent": true
+      },
+      {
+        "branch": "installationIdentityGenerationId",
+        "maxIdentities": 0,
+        "maxOwnKeys": 0,
+        "maxDenseIndices": 0,
+        "maxWorkTopologyObjective": 0,
+        "objectiveWitnessesAreIndependent": true
+      },
+      {
+        "branch": "providerFeasibilityEvidence",
+        "maxIdentities": 4,
+        "maxOwnKeys": 36,
+        "maxDenseIndices": 0,
+        "maxWorkTopologyObjective": 60,
+        "objectiveWitnessesAreIndependent": true
+      },
+      {
+        "branch": "providerFeasibilityEvidencePin",
+        "maxIdentities": 1,
+        "maxOwnKeys": 3,
+        "maxDenseIndices": 0,
+        "maxWorkTopologyObjective": 9,
+        "objectiveWitnessesAreIndependent": true
+      },
+      {
+        "branch": "publicSupportTaxonomy",
+        "maxIdentities": 203340,
+        "maxOwnKeys": 610041,
+        "maxDenseIndices": 101668,
+        "maxWorkTopologyObjective": 1931753,
+        "objectiveWitnessesAreIndependent": true
+      },
+      {
+        "branch": "realFilesystemConformanceResult",
+        "maxIdentities": 136378,
+        "maxOwnKeys": 681909,
+        "maxDenseIndices": 136369,
+        "maxWorkTopologyObjective": 1636552,
+        "objectiveWitnessesAreIndependent": true
+      },
+      {
+        "branch": "realFilesystemConformanceResultLocator",
+        "maxIdentities": 1,
+        "maxOwnKeys": 2,
+        "maxDenseIndices": 0,
+        "maxWorkTopologyObjective": 8,
+        "objectiveWitnessesAreIndependent": true
+      },
+      {
+        "branch": "realFilesystemConformanceResultPin",
+        "maxIdentities": 1,
+        "maxOwnKeys": 3,
+        "maxDenseIndices": 0,
+        "maxWorkTopologyObjective": 9,
+        "objectiveWitnessesAreIndependent": true
+      },
+      {
+        "branch": "releaseMatrix",
+        "maxIdentities": 8201,
+        "maxOwnKeys": 45107,
+        "maxDenseIndices": 4096,
+        "maxWorkTopologyObjective": 98409,
+        "objectiveWitnessesAreIndependent": true
+      },
+      {
+        "branch": "runtimeAttestation",
+        "maxIdentities": 2,
+        "maxOwnKeys": 18,
+        "maxDenseIndices": 0,
+        "maxWorkTopologyObjective": 30,
+        "objectiveWitnessesAreIndependent": true
+      },
+      {
+        "branch": "semanticProviderPolicy",
+        "maxIdentities": 4,
+        "maxOwnKeys": 30,
+        "maxDenseIndices": 2,
+        "maxWorkTopologyObjective": 56,
+        "objectiveWitnessesAreIndependent": true
+      },
+      {
+        "branch": "suiteManifest",
+        "maxIdentities": 447287,
+        "maxOwnKeys": 1118267,
+        "maxDenseIndices": 223637,
+        "maxWorkTopologyObjective": 4025627,
+        "objectiveWitnessesAreIndependent": true
+      },
+      {
+        "branch": "targetDiscoveryFixtureManifest",
+        "maxIdentities": 349457,
+        "maxOwnKeys": 873681,
+        "maxDenseIndices": 174723,
+        "maxWorkTopologyObjective": 3145148,
+        "objectiveWitnessesAreIndependent": true
+      },
+      {
+        "branch": "targetDiscoveryResult",
+        "maxIdentities": 74216,
+        "maxOwnKeys": 334046,
+        "maxDenseIndices": 37416,
+        "maxWorkTopologyObjective": 816464,
+        "objectiveWitnessesAreIndependent": true
+      },
+      {
+        "branch": "targetDiscoveryRunnerRun",
+        "maxIdentities": 349486,
+        "maxOwnKeys": 873740,
+        "maxDenseIndices": 174740,
+        "maxWorkTopologyObjective": 3145401,
+        "objectiveWitnessesAreIndependent": true
+      }
+    ],
+    "retainedHistories": {
+      "rootEnvelopeCount": 256,
+      "registryEnvelopeCount": 4096,
+      "sharedRawUnits": 268435456,
+      "maxIdentities": 1499645,
+      "maxWorkUnits": 220055124,
+      "derivation": "Root<=256 and Registry<=4096 complete-Envelope groups are first bounded by the per-Envelope B=4,194,304 frontier, then jointly optimized under the full B_H=268,435,456 retained-Envelope canonical-byte policy. Outer history-array syntax is not charged by that production policy; the two raw history arrays are instead accounted exactly as 2 identities and 20 work units. Identity and exact history-work objective 7I+K+D+7-per-Envelope are optimized independently."
+    },
+    "totalMaxIdentities": 3126096,
+    "totalMaxWorkUnits": 235725869,
+    "totalDerivation": "Top-level + every ordinary branch's independently optimized I or 6I+K+D objective + the joint retained-history frontier. The work result never adds componentwise maxima from different witnesses. All exact constants include the session-owned 4-unit budget construction and every production WeakSet insertion."
+  },
+  "capAssessment": {
+    "priorFrozenCaps": {
+      "maxObservedIdentities": 2097152,
+      "maxPrecloneAllocationWorkUnits": 16777216
+    },
+    "adoptedCaps": {
+      "maxObservedIdentities": 4194304,
+      "maxPrecloneAllocationWorkUnits": 268435456
+    },
+    "soundUpperBounds": {
+      "maxObservedIdentities": 3126096,
+      "maxPrecloneAllocationWorkUnits": 235725869
+    },
+    "adoptedAssessment": {
+      "withinSoundUpper": true,
+      "observedIdentityHeadroom": 1068208,
+      "precloneAllocationWorkUnitHeadroom": 32709587
+    },
+    "recommendedBinaryCaps": {
+      "rule": "least_power_of_two_not_less_than_sound_upper",
+      "maxObservedIdentities": 4194304,
+      "maxPrecloneAllocationWorkUnits": 268435456,
+      "observedIdentityHeadroom": 1068208,
+      "precloneAllocationWorkUnitHeadroom": 32709587
+    },
+    "constructiveLowerBound": {
+      "basis": "strict_zod_json_schema_production_only",
+      "doesNotClaimCrossBranchSemanticOrCryptoAcceptance": true,
+      "ordinaryRows": [
+        {
+          "branch": "fixtureCorpusManifest",
+          "path": "$.properties.payload.properties.records",
+          "targetInstancePointer": "/payload/records",
+          "baseByteAllowance": 2641,
+          "itemCanonicalBytes": 288,
+          "commaBytesPerRepetition": 1,
+          "deltaIdentities": 1,
+          "deltaOwnKeys": 8,
+          "deltaDenseIndices": 1,
+          "repetitions": 58043,
+          "branchCanonicalBytesAtMost": 16777068,
+          "identityContribution": 58043,
+          "workUnitsPerRepetition": 15,
+          "workContribution": 870645,
+          "validation": {
+            "engine": "ajv_draft_2020_12",
+            "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-real-filesystem-fixture-corpus-manifest-envelope",
+            "repeatabilityProfile": "homogeneous_items_without_max_unique_contains_or_tuple_keywords",
+            "fullBranchBaseItemCount": 1,
+            "repeatProbeAdditionalItems": 2,
+            "ajvAcceptedFullBranchBase": true,
+            "ajvAcceptedRepeatProbe": true,
+            "ajvAcceptedFinalRunLength": true,
+            "finalMaterializedItemCount": 58044,
+            "finalMaterializedCanonicalBytes": 16777068,
+            "finalMaterializedRawSha256": "sha256:78a8969aac4b42887dd4cf8521916323a6554a2ecd7ae2dee0d453ef2731bdfc",
+            "fullBranchBaseCanonicalJson": "{\"contentDigest\":\"sha256:61028aeb755da8c4a90304612fba225b9d8b5477db1dddd46cdf706870cf0404\",\"payload\":{\"activeRootMetadata\":{\"contentDigest\":\"sha256:b7a24e2d5fd9b4c7cb55d7f1133135d6a759de0a249680f4859596b3cad3d158\",\"locatorProfile\":\"installation_provider_registry_root_metadata_v1\",\"rootGeneration\":3,\"rootKeyId\":\"b428dd9c9d0cb51b9b44a8\"},\"corpusSignature\":\"provider-real-fs-fixture-corpus-ed25519:b428dd9c9d0cb51b9b44a8:0cd7cd07a448df9e27450a7df98ff9f21357a52949f88ac0b749f67b3574eff879b2b18f8999dfb0e424c1ebd382ed0712acdf10979c1509cd0b79661840ef09\",\"corpusVersion\":\"1.0.0\",\"distributionRootBinding\":{\"bootstrapTrustBundle\":{\"contentDigest\":\"sha256:bbb4058af5bc44189d9590f05d43b421ac81aef2b15649b7ceaa8037c7df787f\",\"locatorProfile\":\"distribution_provider_bootstrap_trust_bundle_v1\"},\"historyPolicy\":{\"admission\":\"stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution\",\"exhaustion\":\"reject_candidate_distribution_and_preserve_last_verified_distribution\",\"maxPublicTaxonomyGenerationCount\":4096,\"maxReleaseMatrixGenerationCount\":4096,\"maxReleaseTargetUniverseGenerationCount\":4096,\"maxSingleDistributionObjectCanonicalBytes\":16777216,\"maxSupportCatalogGenerationCount\":4096,\"maxTargetDiscoveryResultGenerationCount\":4096,\"maxTotalRetainedDistributionHistoryLogicalBytes\":536870912,\"maxTotalRetainedDistributionObjectCount\":65536,\"normalUpdateEmergencyGenerationReservePerChain\":8,\"normalUpdateEmergencyLogicalBytesReserve\":16777216,\"profile\":\"provider_distribution_history_policy_v1\"},\"profile\":\"provider_signed_distribution_root_binding_v1\",\"releaseRevisionDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"resolverProfile\":\"verified_signed_package_distribution_root_v1\",\"signedPackageIdentityDigest\":\"sha256:a022824bcf01e93c262331ddf5635daeb0b7af2a3591396888037a60cb7089cf\"},\"fixtureManifestDigest\":\"sha256:72a09216eca9f2b4c9a442de89270558accf552c2f4f83dc54c3b65ecab0c740\",\"profile\":\"provider_real_fs_fixture_corpus_manifest_v1\",\"recordCount\":12,\"recordSetDigest\":\"sha256:6368fec10f8071f83dca9f34f430a000e415496434442f02fe739c4530e14a14\",\"records\":[{\"caseKey\":\"0\",\"fixtureOrdinal\":0,\"fixtureProgramBytes\":\"base64url:\",\"fixtureProgramContentDigest\":\"sha256:83ad3c4f6a93d1366a08588007977ab9f3b1c6019bc1934e7628f718563f1d14\",\"fixtureProgramLogicalBytes\":0,\"fixtureProgramProfile\":\"provider_real_fs_fixture_program_v1\",\"fixtureRole\":\"setup\"}],\"registryRootKeyId\":\"b428dd9c9d0cb51b9b44a8\",\"releaseRevisionDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\"},\"recordType\":\"provider_real_fs_fixture_corpus_manifest\",\"schemaVersion\":1}",
+            "exemplarCanonicalJson": "{\"caseKey\":\"0\",\"fixtureOrdinal\":0,\"fixtureProgramBytes\":\"base64url:\",\"fixtureProgramContentDigest\":\"sha256:83ad3c4f6a93d1366a08588007977ab9f3b1c6019bc1934e7628f718563f1d14\",\"fixtureProgramLogicalBytes\":0,\"fixtureProgramProfile\":\"provider_real_fs_fixture_program_v1\",\"fixtureRole\":\"setup\"}",
+            "fullBranchBaseSemanticDigest": "sha256:719431468cd0cde4f37823d7370f58718d2d810c6e479fb704cae57c6a8f73a7",
+            "exemplarSemanticDigest": "sha256:95914e82cd86191976a6165a300e279f95fc1cd4855da84f38210b5f6366e673",
+            "runLengthWitnessSemanticDigest": "sha256:d5b60f818b1b0fa74e9ce1b7701d45e0f222099ac25b4fab60f7026f68fad6ed",
+            "fullBranchBaseTopology": {
+              "identities": 8,
+              "ownKeys": 49,
+              "denseIndices": 1
+            },
+            "exemplarTopology": {
+              "identities": 1,
+              "ownKeys": 7,
+              "denseIndices": 0
+            },
+            "repeatabilityAudit": {
+              "auditedSchemaPath": "$.properties.payload.properties.records",
+              "exactArrayKeywords": [
+                "items",
+                "minItems",
+                "type"
+              ],
+              "auditedAncestorCount": 2
+            },
+            "nextRepetitionWouldExceedByteCeiling": true
+          }
+        },
+        {
+          "branch": "publicSupportTaxonomy",
+          "path": "$.properties.payload.properties.filesystemProfiles",
+          "targetInstancePointer": "/payload/filesystemProfiles",
+          "baseByteAllowance": 2987,
+          "itemCanonicalBytes": 164,
+          "commaBytesPerRepetition": 1,
+          "deltaIdentities": 2,
+          "deltaOwnKeys": 6,
+          "deltaDenseIndices": 1,
+          "repetitions": 101661,
+          "branchCanonicalBytesAtMost": 16777052,
+          "identityContribution": 203322,
+          "workUnitsPerRepetition": 19,
+          "workContribution": 1931559,
+          "validation": {
+            "engine": "ajv_draft_2020_12",
+            "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-public-support-taxonomy-envelope",
+            "repeatabilityProfile": "homogeneous_items_without_max_unique_contains_or_tuple_keywords",
+            "fullBranchBaseItemCount": 1,
+            "repeatProbeAdditionalItems": 2,
+            "ajvAcceptedFullBranchBase": true,
+            "ajvAcceptedRepeatProbe": true,
+            "ajvAcceptedFinalRunLength": true,
+            "finalMaterializedItemCount": 101662,
+            "finalMaterializedCanonicalBytes": 16777052,
+            "finalMaterializedRawSha256": "sha256:f63416d79970eaec51986e42378b3331bc8c350991399debc3aebbddd16d7be6",
+            "fullBranchBaseCanonicalJson": "{\"contentDigest\":\"sha256:527ca7b1cbe7fc2e7ab83118dbf37da0639242e020563cee0988300ef7073ca6\",\"payload\":{\"activeRootMetadata\":{\"contentDigest\":\"sha256:b7a24e2d5fd9b4c7cb55d7f1133135d6a759de0a249680f4859596b3cad3d158\",\"locatorProfile\":\"installation_provider_registry_root_metadata_v1\",\"rootGeneration\":3,\"rootKeyId\":\"b428dd9c9d0cb51b9b44a8\"},\"derivationPolicy\":{\"excludedPrivateInputs\":[\"osBuildDigest\",\"filesystemFeatureProfileDigest\",\"mountOptionProfileDigest\"],\"filesystemSource\":\"strict_public_filesystem_kind_without_features_or_mount_options\",\"osFamilySource\":\"strict_public_platform_release_api_without_build_identifier\",\"unknownOrNoncanonicalObservation\":\"public_strong_forbidden\"},\"distributionRootBinding\":{\"bootstrapTrustBundle\":{\"contentDigest\":\"sha256:bbb4058af5bc44189d9590f05d43b421ac81aef2b15649b7ceaa8037c7df787f\",\"locatorProfile\":\"distribution_provider_bootstrap_trust_bundle_v1\"},\"historyPolicy\":{\"admission\":\"stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution\",\"exhaustion\":\"reject_candidate_distribution_and_preserve_last_verified_distribution\",\"maxPublicTaxonomyGenerationCount\":4096,\"maxReleaseMatrixGenerationCount\":4096,\"maxReleaseTargetUniverseGenerationCount\":4096,\"maxSingleDistributionObjectCanonicalBytes\":16777216,\"maxSupportCatalogGenerationCount\":4096,\"maxTargetDiscoveryResultGenerationCount\":4096,\"maxTotalRetainedDistributionHistoryLogicalBytes\":536870912,\"maxTotalRetainedDistributionObjectCount\":65536,\"normalUpdateEmergencyGenerationReservePerChain\":8,\"normalUpdateEmergencyLogicalBytesReserve\":16777216,\"profile\":\"provider_distribution_history_policy_v1\"},\"profile\":\"provider_signed_distribution_root_binding_v1\",\"releaseRevisionDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"resolverProfile\":\"verified_signed_package_distribution_root_v1\",\"signedPackageIdentityDigest\":\"sha256:a022824bcf01e93c262331ddf5635daeb0b7af2a3591396888037a60cb7089cf\"},\"filesystemProfiles\":[{\"descriptor\":{\"filesystemKind\":\"ext4\",\"osPlatform\":\"linux\",\"resolver\":\"linux_statfs_type_v1\"},\"filesystemProfileCode\":\"provider-fs-profile:22dad279fd650f08b8c6fe\"}],\"osReleaseFamilies\":[{\"descriptor\":{\"osPlatform\":\"darwin\",\"productMajorVersion\":15,\"resolver\":\"darwin_product_major_version_v1\"},\"osReleaseFamilyCode\":\"provider-os-family:42302d6ad4703c2b07a205\"},{\"descriptor\":{\"distributionId\":\"ubuntu\",\"distributionMajorVersion\":24,\"osPlatform\":\"linux\",\"resolver\":\"linux_os_release_id_major_version_v1\"},\"osReleaseFamilyCode\":\"provider-os-family:b3c813bd678ba40707eed0\"}],\"profile\":\"provider_public_support_taxonomy_v1\",\"registryRootKeyId\":\"b428dd9c9d0cb51b9b44a8\",\"taxonomyGeneration\":1,\"taxonomySignature\":\"provider-public-support-taxonomy-ed25519:b428dd9c9d0cb51b9b44a8:6ec15442457eeae0499b3a9a398c347a8d0c1892a03ca0dca76af90d3764c74f7c208935f3c9f47885885a6a8fc0b9083aa5b9030e4b26341d7f34d27cc4220a\"},\"recordType\":\"provider_public_support_taxonomy\",\"schemaVersion\":1,\"taxonomyGeneration\":1}",
+            "exemplarCanonicalJson": "{\"descriptor\":{\"filesystemKind\":\"ext4\",\"osPlatform\":\"linux\",\"resolver\":\"linux_statfs_type_v1\"},\"filesystemProfileCode\":\"provider-fs-profile:22dad279fd650f08b8c6fe\"}",
+            "fullBranchBaseSemanticDigest": "sha256:2dcd3c9df3b2bafbf1fed815a505f4a9628cf0d73ee72a0c02cd0627bcb7db09",
+            "exemplarSemanticDigest": "sha256:92bc6179d4740bb6f843e1584fedd1dbbe79922545f3e841318a26107cd8379e",
+            "runLengthWitnessSemanticDigest": "sha256:035dbdc4750bc7cc53d62a2ddf40cf2cd0d780a48885e3d55d4162954f9fb3b6",
+            "fullBranchBaseTopology": {
+              "identities": 16,
+              "ownKeys": 68,
+              "denseIndices": 6
+            },
+            "exemplarTopology": {
+              "identities": 2,
+              "ownKeys": 5,
+              "denseIndices": 0
+            },
+            "repeatabilityAudit": {
+              "auditedSchemaPath": "$.properties.payload.properties.filesystemProfiles",
+              "exactArrayKeywords": [
+                "items",
+                "minItems",
+                "type"
+              ],
+              "auditedAncestorCount": 2
+            },
+            "nextRepetitionWouldExceedByteCeiling": true
+          }
+        },
+        {
+          "branch": "realFilesystemConformanceResult",
+          "path": "$.properties.payload.properties.caseResults",
+          "targetInstancePointer": "/payload/caseResults",
+          "baseByteAllowance": 3850,
+          "itemCanonicalBytes": 122,
+          "commaBytesPerRepetition": 1,
+          "deltaIdentities": 1,
+          "deltaOwnKeys": 5,
+          "deltaDenseIndices": 1,
+          "repetitions": 136368,
+          "branchCanonicalBytesAtMost": 16777114,
+          "identityContribution": 136368,
+          "workUnitsPerRepetition": 12,
+          "workContribution": 1636416,
+          "validation": {
+            "engine": "ajv_draft_2020_12",
+            "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-real-filesystem-conformance-result-envelope",
+            "repeatabilityProfile": "homogeneous_items_without_max_unique_contains_or_tuple_keywords",
+            "fullBranchBaseItemCount": 1,
+            "repeatProbeAdditionalItems": 2,
+            "ajvAcceptedFullBranchBase": true,
+            "ajvAcceptedRepeatProbe": true,
+            "ajvAcceptedFinalRunLength": true,
+            "finalMaterializedItemCount": 136369,
+            "finalMaterializedCanonicalBytes": 16777114,
+            "finalMaterializedRawSha256": "sha256:db1e9ff8553d1cec7f1677a05d3ff24503fb2542445456753835c80218bc07d4",
+            "fullBranchBaseCanonicalJson": "{\"contentDigest\":\"sha256:9b1a3cac51f598c0928ad28b8f1013b6c98f26bf20910b2ece1852ce10e1a891\",\"payload\":{\"binaryAttestationDigest\":\"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"caseResults\":[{\"caseId\":\"provider-real-fs-case:29eefd091965e9d7c5d0d0\",\"crashCutId\":\"no-crash\",\"outcome\":\"passed\",\"resultCode\":\"passed\"}],\"completedAt\":\"2026-08-03T04:00:00Z\",\"crashCutCoverageDigest\":\"sha256:7b0ecd4bf9ea686b74e4b08805b75822eba380315f090c2ec687ec5942b5ef58\",\"fixtureManifestDigest\":\"sha256:72a09216eca9f2b4c9a442de89270558accf552c2f4f83dc54c3b65ecab0c740\",\"implementationDigest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"profile\":\"provider_real_fs_conformance_result_v1\",\"providerId\":\"durable-object-provider:native-b\",\"realFilesystemSuiteManifest\":{\"contentDigest\":\"sha256:0fddfb349bb1edc8539621d79e58463bc3227d43060def76d937c3a8faa9614d\",\"distributionRootBinding\":{\"bootstrapTrustBundle\":{\"contentDigest\":\"sha256:bbb4058af5bc44189d9590f05d43b421ac81aef2b15649b7ceaa8037c7df787f\",\"locatorProfile\":\"distribution_provider_bootstrap_trust_bundle_v1\"},\"historyPolicy\":{\"admission\":\"stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution\",\"exhaustion\":\"reject_candidate_distribution_and_preserve_last_verified_distribution\",\"maxPublicTaxonomyGenerationCount\":4096,\"maxReleaseMatrixGenerationCount\":4096,\"maxReleaseTargetUniverseGenerationCount\":4096,\"maxSingleDistributionObjectCanonicalBytes\":16777216,\"maxSupportCatalogGenerationCount\":4096,\"maxTargetDiscoveryResultGenerationCount\":4096,\"maxTotalRetainedDistributionHistoryLogicalBytes\":536870912,\"maxTotalRetainedDistributionObjectCount\":65536,\"normalUpdateEmergencyGenerationReservePerChain\":8,\"normalUpdateEmergencyLogicalBytesReserve\":16777216,\"profile\":\"provider_distribution_history_policy_v1\"},\"profile\":\"provider_signed_distribution_root_binding_v1\",\"releaseRevisionDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"resolverProfile\":\"verified_signed_package_distribution_root_v1\",\"signedPackageIdentityDigest\":\"sha256:a022824bcf01e93c262331ddf5635daeb0b7af2a3591396888037a60cb7089cf\"},\"fixtureManifestDigest\":\"sha256:72a09216eca9f2b4c9a442de89270558accf552c2f4f83dc54c3b65ecab0c740\",\"locatorProfile\":\"distribution_provider_real_fs_suite_manifest_v1\",\"suiteDigest\":\"sha256:2c8cb050e227b34f7b5a1fe8c998f23eb69100d1fadd5586f3a6df2985c49dc8\"},\"result\":\"passed\",\"resultId\":\"provider-real-fs-result:46585a87d9f81b46bd3a3c\",\"runnerProfileDigest\":\"sha256:fa62bd897b15eb99c225b8877873ed29a5df838d91cbf31e32a2bcc46516bca7\",\"semanticProviderPolicyDigest\":\"sha256:87785b1b1279e1009782958222cb877399b7d0b685cf5b7e422ce1d0eea6d56c\",\"suiteDigest\":\"sha256:2c8cb050e227b34f7b5a1fe8c998f23eb69100d1fadd5586f3a6df2985c49dc8\",\"target\":{\"architecture\":\"arm64\",\"filesystemFeatureProfileDigest\":\"sha256:2222222222222222222222222222222222222222222222222222222222222222\",\"filesystemProfileCode\":\"provider-fs-profile:a7c0ac0396034e50a4e1e4\",\"mountOptionProfileDigest\":\"sha256:3333333333333333333333333333333333333333333333333333333333333333\",\"osBuildDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"osPlatform\":\"darwin\",\"osReleaseFamilyCode\":\"provider-os-family:42302d6ad4703c2b07a205\",\"targetProfileId\":\"provider-target-profile:7b1a9d57bc7ee4d2c35f9bcd02a99a1be680076ab6e7e231caccb665f792daee\"},\"targetDiscoveryInputBundleContentDigest\":\"sha256:430b55327b1f4cedbdf8cfd7853f7f91b589e6cfabbcc000f329dc9973e4e6fc\",\"targetDiscoveryResult\":{\"contentDigest\":\"sha256:8d5db3fd7d904925ce0b767543f74caf9f837869e67997d1c6f8899713686cd3\",\"discoveryGeneration\":1,\"locatorProfile\":\"distribution_provider_target_discovery_result_v1\"}},\"recordType\":\"provider_real_fs_conformance_result\",\"resultId\":\"provider-real-fs-result:46585a87d9f81b46bd3a3c\",\"schemaVersion\":1}",
+            "exemplarCanonicalJson": "{\"caseId\":\"provider-real-fs-case:29eefd091965e9d7c5d0d0\",\"crashCutId\":\"no-crash\",\"outcome\":\"passed\",\"resultCode\":\"passed\"}",
+            "fullBranchBaseSemanticDigest": "sha256:35e8ade687adc6b84887ca70425b773db81edcf86d1d00ec092cd344b20ac59c",
+            "exemplarSemanticDigest": "sha256:16ea2dd76455b4cddc140e2c1e31ed74e8a7487b30fcafd978cde53dcddaad12",
+            "runLengthWitnessSemanticDigest": "sha256:ae1e27e3074b7c6d68c095e17f0febb60c1e3542254dbad5c1cb492afb2631a7",
+            "fullBranchBaseTopology": {
+              "identities": 10,
+              "ownKeys": 65,
+              "denseIndices": 1
+            },
+            "exemplarTopology": {
+              "identities": 1,
+              "ownKeys": 4,
+              "denseIndices": 0
+            },
+            "repeatabilityAudit": {
+              "auditedSchemaPath": "$.properties.payload.properties.caseResults",
+              "exactArrayKeywords": [
+                "items",
+                "minItems",
+                "type"
+              ],
+              "auditedAncestorCount": 2
+            },
+            "nextRepetitionWouldExceedByteCeiling": true
+          }
+        },
+        {
+          "branch": "suiteManifest",
+          "path": "$.properties.payload.properties.cases.items.properties.requiredCrashCuts",
+          "targetInstancePointer": "/payload/cases/0/requiredCrashCuts",
+          "baseByteAllowance": 6729,
+          "itemCanonicalBytes": 74,
+          "commaBytesPerRepetition": 1,
+          "deltaIdentities": 2,
+          "deltaOwnKeys": 5,
+          "deltaDenseIndices": 1,
+          "repetitions": 223606,
+          "branchCanonicalBytesAtMost": 16777179,
+          "identityContribution": 447212,
+          "workUnitsPerRepetition": 18,
+          "workContribution": 4024908,
+          "validation": {
+            "engine": "ajv_draft_2020_12",
+            "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-real-filesystem-suite-manifest-envelope",
+            "repeatabilityProfile": "homogeneous_items_without_max_unique_contains_or_tuple_keywords",
+            "fullBranchBaseItemCount": 1,
+            "repeatProbeAdditionalItems": 2,
+            "ajvAcceptedFullBranchBase": true,
+            "ajvAcceptedRepeatProbe": true,
+            "ajvAcceptedFinalRunLength": true,
+            "finalMaterializedItemCount": 223607,
+            "finalMaterializedCanonicalBytes": 16777179,
+            "finalMaterializedRawSha256": "sha256:361b078da4436131702d559755666b1dfa16bf10328723ed3b0d2c66853ad21f",
+            "fullBranchBaseCanonicalJson": "{\"contentDigest\":\"sha256:0fddfb349bb1edc8539621d79e58463bc3227d43060def76d937c3a8faa9614d\",\"payload\":{\"activeRootMetadata\":{\"contentDigest\":\"sha256:b7a24e2d5fd9b4c7cb55d7f1133135d6a759de0a249680f4859596b3cad3d158\",\"locatorProfile\":\"installation_provider_registry_root_metadata_v1\",\"rootGeneration\":3,\"rootKeyId\":\"b428dd9c9d0cb51b9b44a8\"},\"caseCount\":4,\"caseSetDigest\":\"sha256:d7ad6b0714915b92cb3435ad792b5acac1360387d0f5d495382ea8ae6edf2147\",\"cases\":[{\"caseId\":\"provider-real-fs-case:29eefd091965e9d7c5d0d0\",\"caseKey\":\"compare-delete\",\"fixtureRecordCount\":3,\"fixtureRecordSetDigest\":\"sha256:29efac7bfc87f8c8172e4cc64db23516ed0c3b4160117f94e6c8863fbf7bf286\",\"requiredCrashCuts\":[{\"crashCutId\":\"no-crash\",\"crashCutOrdinal\":0,\"injection\":{\"state\":\"none\"}}]},{\"caseId\":\"provider-real-fs-case:aea44717ff5b840740bf59\",\"caseKey\":\"restart-recovery\",\"fixtureRecordCount\":3,\"fixtureRecordSetDigest\":\"sha256:92b3687ef6ba4eb04fe59b215210e9ea11bfebaf0003fc9c7cc9530cc0641dab\",\"requiredCrashCuts\":[{\"crashCutId\":\"no-crash\",\"crashCutOrdinal\":0,\"injection\":{\"state\":\"none\"}},{\"crashCutId\":\"provider-crash-cut:ed6aa60cf3437f7e5b5cb1\",\"crashCutOrdinal\":1,\"injection\":{\"afterFixtureOrdinal\":1,\"state\":\"after_fixture_operation\"},\"recoveryAssertionBytes\":\"base64url:cmVjb3ZlcjpyZXN0YXJ0LXJlY292ZXJ5\",\"recoveryAssertionContentDigest\":\"sha256:037a24744081feec60422b90c842db43be451588da9458238a1735213dd6bdc0\",\"recoveryAssertionProfile\":\"provider_real_fs_recovery_assertion_v1\"}]},{\"caseId\":\"provider-real-fs-case:d6e0fde28d191c2734e509\",\"caseKey\":\"atomic-publish\",\"fixtureRecordCount\":3,\"fixtureRecordSetDigest\":\"sha256:362a1b4dac9a6d0984b872cdb7cd55432a5b4c775c763c639262729b48a5231d\",\"requiredCrashCuts\":[{\"crashCutId\":\"no-crash\",\"crashCutOrdinal\":0,\"injection\":{\"state\":\"none\"}},{\"crashCutId\":\"provider-crash-cut:2ef3fe103641cbee4ed1ae\",\"crashCutOrdinal\":1,\"injection\":{\"afterFixtureOrdinal\":1,\"state\":\"after_fixture_operation\"},\"recoveryAssertionBytes\":\"base64url:cmVjb3ZlcjphdG9taWMtcHVibGlzaA\",\"recoveryAssertionContentDigest\":\"sha256:8d3c36d3def9a4afcd8033810323d5e0480b9cd44079f675a87f6fbfb4570454\",\"recoveryAssertionProfile\":\"provider_real_fs_recovery_assertion_v1\"}]},{\"caseId\":\"provider-real-fs-case:eb863b93db43d6eb532537\",\"caseKey\":\"root-containment\",\"fixtureRecordCount\":3,\"fixtureRecordSetDigest\":\"sha256:95236cc181e07cc73180bad03b74b0d11ea15cdf10f501c013abed469adbbe8a\",\"requiredCrashCuts\":[{\"crashCutId\":\"no-crash\",\"crashCutOrdinal\":0,\"injection\":{\"state\":\"none\"}},{\"crashCutId\":\"provider-crash-cut:6b57842af4f208eb77ed66\",\"crashCutOrdinal\":1,\"injection\":{\"afterFixtureOrdinal\":1,\"state\":\"after_fixture_operation\"},\"recoveryAssertionBytes\":\"base64url:cmVjb3Zlcjpyb290LWNvbnRhaW5tZW50\",\"recoveryAssertionContentDigest\":\"sha256:ab2e2f7e621e47c489076ec55fd97468cd921f180305c2159fced03fd628c36f\",\"recoveryAssertionProfile\":\"provider_real_fs_recovery_assertion_v1\"}]}],\"distributionRootBinding\":{\"bootstrapTrustBundle\":{\"contentDigest\":\"sha256:bbb4058af5bc44189d9590f05d43b421ac81aef2b15649b7ceaa8037c7df787f\",\"locatorProfile\":\"distribution_provider_bootstrap_trust_bundle_v1\"},\"historyPolicy\":{\"admission\":\"stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution\",\"exhaustion\":\"reject_candidate_distribution_and_preserve_last_verified_distribution\",\"maxPublicTaxonomyGenerationCount\":4096,\"maxReleaseMatrixGenerationCount\":4096,\"maxReleaseTargetUniverseGenerationCount\":4096,\"maxSingleDistributionObjectCanonicalBytes\":16777216,\"maxSupportCatalogGenerationCount\":4096,\"maxTargetDiscoveryResultGenerationCount\":4096,\"maxTotalRetainedDistributionHistoryLogicalBytes\":536870912,\"maxTotalRetainedDistributionObjectCount\":65536,\"normalUpdateEmergencyGenerationReservePerChain\":8,\"normalUpdateEmergencyLogicalBytesReserve\":16777216,\"profile\":\"provider_distribution_history_policy_v1\"},\"profile\":\"provider_signed_distribution_root_binding_v1\",\"releaseRevisionDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"resolverProfile\":\"verified_signed_package_distribution_root_v1\",\"signedPackageIdentityDigest\":\"sha256:a022824bcf01e93c262331ddf5635daeb0b7af2a3591396888037a60cb7089cf\"},\"fixtureCorpusManifest\":{\"contentDigest\":\"sha256:61028aeb755da8c4a90304612fba225b9d8b5477db1dddd46cdf706870cf0404\",\"distributionRootBinding\":{\"bootstrapTrustBundle\":{\"contentDigest\":\"sha256:bbb4058af5bc44189d9590f05d43b421ac81aef2b15649b7ceaa8037c7df787f\",\"locatorProfile\":\"distribution_provider_bootstrap_trust_bundle_v1\"},\"historyPolicy\":{\"admission\":\"stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution\",\"exhaustion\":\"reject_candidate_distribution_and_preserve_last_verified_distribution\",\"maxPublicTaxonomyGenerationCount\":4096,\"maxReleaseMatrixGenerationCount\":4096,\"maxReleaseTargetUniverseGenerationCount\":4096,\"maxSingleDistributionObjectCanonicalBytes\":16777216,\"maxSupportCatalogGenerationCount\":4096,\"maxTargetDiscoveryResultGenerationCount\":4096,\"maxTotalRetainedDistributionHistoryLogicalBytes\":536870912,\"maxTotalRetainedDistributionObjectCount\":65536,\"normalUpdateEmergencyGenerationReservePerChain\":8,\"normalUpdateEmergencyLogicalBytesReserve\":16777216,\"profile\":\"provider_distribution_history_policy_v1\"},\"profile\":\"provider_signed_distribution_root_binding_v1\",\"releaseRevisionDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"resolverProfile\":\"verified_signed_package_distribution_root_v1\",\"signedPackageIdentityDigest\":\"sha256:a022824bcf01e93c262331ddf5635daeb0b7af2a3591396888037a60cb7089cf\"},\"fixtureManifestDigest\":\"sha256:72a09216eca9f2b4c9a442de89270558accf552c2f4f83dc54c3b65ecab0c740\",\"locatorProfile\":\"distribution_provider_real_fs_fixture_corpus_manifest_v1\"},\"profile\":\"provider_real_fs_suite_manifest_v1\",\"registryRootKeyId\":\"b428dd9c9d0cb51b9b44a8\",\"releaseRevisionDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"requiredCaseCutCount\":8,\"requiredCaseCutSetDigest\":\"sha256:7b0ecd4bf9ea686b74e4b08805b75822eba380315f090c2ec687ec5942b5ef58\",\"runnerProfile\":{\"canonicalProfileBytes\":\"base64url:cnVubmVyOnYxOm5vLW5ldHdvcms6bm8tZm9sbG93OmNyYXNoLWluamVjdGlvbg\",\"profile\":\"provider_real_fs_runner_profile_v1\",\"protocolVersion\":\"provider-real-fs-runner-v1\"},\"runnerProfileDigest\":\"sha256:fa62bd897b15eb99c225b8877873ed29a5df838d91cbf31e32a2bcc46516bca7\",\"suiteDigest\":\"sha256:2c8cb050e227b34f7b5a1fe8c998f23eb69100d1fadd5586f3a6df2985c49dc8\",\"suiteSignature\":\"provider-real-fs-suite-manifest-ed25519:b428dd9c9d0cb51b9b44a8:667ad3d4cb330b7a7429cf39a4bdfaa86e5374242ec1906f634055fb8be43f7409b0bcdd7aa869df62d3c214b81df8dc7f34bc5b893e6c0b2c7a23f021c80804\",\"suiteVersion\":\"1.0.0\"},\"recordType\":\"provider_real_fs_suite_manifest\",\"schemaVersion\":1}",
+            "exemplarCanonicalJson": "{\"crashCutId\":\"no-crash\",\"crashCutOrdinal\":0,\"injection\":{\"state\":\"none\"}}",
+            "fullBranchBaseSemanticDigest": "sha256:509d62446861be54bace49b1b66dc0a21c70660bb1067f4caf6519b3c03e6330",
+            "exemplarSemanticDigest": "sha256:86e91e1b78274d3bcf529d3e1938753254448c939e83e5ae410537727ea824c3",
+            "runLengthWitnessSemanticDigest": "sha256:d54e4c9ffc2d334c8693e531eae61f73e72dedff6ab91e63d32e332f5a175667",
+            "fullBranchBaseTopology": {
+              "identities": 34,
+              "ownKeys": 149,
+              "denseIndices": 11
+            },
+            "exemplarTopology": {
+              "identities": 2,
+              "ownKeys": 4,
+              "denseIndices": 0
+            },
+            "repeatabilityAudit": {
+              "auditedSchemaPath": "$.properties.payload.properties.cases.items.properties.requiredCrashCuts",
+              "exactArrayKeywords": [
+                "items",
+                "minItems",
+                "type"
+              ],
+              "auditedAncestorCount": 4
+            },
+            "nextRepetitionWouldExceedByteCeiling": true
+          }
+        },
+        {
+          "branch": "targetDiscoveryFixtureManifest",
+          "path": "$.properties.payload.properties.records",
+          "targetInstancePointer": "/payload/records",
+          "baseByteAllowance": 3843,
+          "itemCanonicalBytes": 95,
+          "commaBytesPerRepetition": 1,
+          "deltaIdentities": 2,
+          "deltaOwnKeys": 5,
+          "deltaDenseIndices": 1,
+          "repetitions": 174722,
+          "branchCanonicalBytesAtMost": 16777155,
+          "identityContribution": 349444,
+          "workUnitsPerRepetition": 18,
+          "workContribution": 3144996,
+          "validation": {
+            "engine": "ajv_draft_2020_12",
+            "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-target-discovery-fixture-manifest-envelope",
+            "repeatabilityProfile": "homogeneous_items_without_max_unique_contains_or_tuple_keywords",
+            "fullBranchBaseItemCount": 1,
+            "repeatProbeAdditionalItems": 2,
+            "ajvAcceptedFullBranchBase": true,
+            "ajvAcceptedRepeatProbe": true,
+            "ajvAcceptedFinalRunLength": true,
+            "finalMaterializedItemCount": 174723,
+            "finalMaterializedCanonicalBytes": 16777155,
+            "finalMaterializedRawSha256": "sha256:cea983fa4799f4d6a2d4ddcc470c2a2537fd089af6e5b8b65ed096c55853eb0d",
+            "fullBranchBaseCanonicalJson": "{\"contentDigest\":\"sha256:962fe82d1698dcaa0f91b9b4a7ebde54cc4c29a3f81ebdf5385baac839e0dc8d\",\"fixtureManifestDigest\":\"sha256:72a09216eca9f2b4c9a442de89270558accf552c2f4f83dc54c3b65ecab0c740\",\"payload\":{\"completedAt\":\"2026-08-03T03:10:00Z\",\"distributionRootBinding\":{\"bootstrapTrustBundle\":{\"contentDigest\":\"sha256:bbb4058af5bc44189d9590f05d43b421ac81aef2b15649b7ceaa8037c7df787f\",\"locatorProfile\":\"distribution_provider_bootstrap_trust_bundle_v1\"},\"historyPolicy\":{\"admission\":\"stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution\",\"exhaustion\":\"reject_candidate_distribution_and_preserve_last_verified_distribution\",\"maxPublicTaxonomyGenerationCount\":4096,\"maxReleaseMatrixGenerationCount\":4096,\"maxReleaseTargetUniverseGenerationCount\":4096,\"maxSingleDistributionObjectCanonicalBytes\":16777216,\"maxSupportCatalogGenerationCount\":4096,\"maxTargetDiscoveryResultGenerationCount\":4096,\"maxTotalRetainedDistributionHistoryLogicalBytes\":536870912,\"maxTotalRetainedDistributionObjectCount\":65536,\"normalUpdateEmergencyGenerationReservePerChain\":8,\"normalUpdateEmergencyLogicalBytesReserve\":16777216,\"profile\":\"provider_distribution_history_policy_v1\"},\"profile\":\"provider_signed_distribution_root_binding_v1\",\"releaseRevisionDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"resolverProfile\":\"verified_signed_package_distribution_root_v1\",\"signedPackageIdentityDigest\":\"sha256:a022824bcf01e93c262331ddf5635daeb0b7af2a3591396888037a60cb7089cf\"},\"fixtureManifestDigest\":\"sha256:72a09216eca9f2b4c9a442de89270558accf552c2f4f83dc54c3b65ecab0c740\",\"profile\":\"provider_target_discovery_fixture_manifest_v1\",\"realFilesystemSuiteDigest\":\"sha256:2c8cb050e227b34f7b5a1fe8c998f23eb69100d1fadd5586f3a6df2985c49dc8\",\"realFilesystemSuiteManifest\":{\"contentDigest\":\"sha256:0fddfb349bb1edc8539621d79e58463bc3227d43060def76d937c3a8faa9614d\",\"distributionRootBinding\":{\"bootstrapTrustBundle\":{\"contentDigest\":\"sha256:bbb4058af5bc44189d9590f05d43b421ac81aef2b15649b7ceaa8037c7df787f\",\"locatorProfile\":\"distribution_provider_bootstrap_trust_bundle_v1\"},\"historyPolicy\":{\"admission\":\"stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution\",\"exhaustion\":\"reject_candidate_distribution_and_preserve_last_verified_distribution\",\"maxPublicTaxonomyGenerationCount\":4096,\"maxReleaseMatrixGenerationCount\":4096,\"maxReleaseTargetUniverseGenerationCount\":4096,\"maxSingleDistributionObjectCanonicalBytes\":16777216,\"maxSupportCatalogGenerationCount\":4096,\"maxTargetDiscoveryResultGenerationCount\":4096,\"maxTotalRetainedDistributionHistoryLogicalBytes\":536870912,\"maxTotalRetainedDistributionObjectCount\":65536,\"normalUpdateEmergencyGenerationReservePerChain\":8,\"normalUpdateEmergencyLogicalBytesReserve\":16777216,\"profile\":\"provider_distribution_history_policy_v1\"},\"profile\":\"provider_signed_distribution_root_binding_v1\",\"releaseRevisionDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"resolverProfile\":\"verified_signed_package_distribution_root_v1\",\"signedPackageIdentityDigest\":\"sha256:a022824bcf01e93c262331ddf5635daeb0b7af2a3591396888037a60cb7089cf\"},\"fixtureManifestDigest\":\"sha256:72a09216eca9f2b4c9a442de89270558accf552c2f4f83dc54c3b65ecab0c740\",\"locatorProfile\":\"distribution_provider_real_fs_suite_manifest_v1\",\"suiteDigest\":\"sha256:2c8cb050e227b34f7b5a1fe8c998f23eb69100d1fadd5586f3a6df2985c49dc8\"},\"records\":[{\"outcome\":{\"reason\":\"target_dimensions_missing\",\"state\":\"unresolved\"},\"sourceRecordOrdinal\":0}],\"releaseRevisionDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"targetRecordCount\":2,\"targetRecordSetDigest\":\"sha256:bb5852e32aa2d28ecdf18ca5bf4601d14d6e08eb7d33504edc31280db676c82d\"},\"recordType\":\"provider_target_discovery_fixture_manifest\",\"schemaVersion\":1}",
+            "exemplarCanonicalJson": "{\"outcome\":{\"reason\":\"target_dimensions_missing\",\"state\":\"unresolved\"},\"sourceRecordOrdinal\":0}",
+            "fullBranchBaseSemanticDigest": "sha256:b6675c3c9966c89bf930d73177b9985be97a0ce5e7845c345a1a10f9ccde376f",
+            "exemplarSemanticDigest": "sha256:7e6aa8fe9e7b70a798c9b7b7e8355725bd6decfdc82f3324b126ff8cf8de09f9",
+            "runLengthWitnessSemanticDigest": "sha256:02b5218542522ee60878273639569b392ae653a80e86f15d98e158492a6ba031",
+            "fullBranchBaseTopology": {
+              "identities": 12,
+              "ownKeys": 68,
+              "denseIndices": 1
+            },
+            "exemplarTopology": {
+              "identities": 2,
+              "ownKeys": 4,
+              "denseIndices": 0
+            },
+            "repeatabilityAudit": {
+              "auditedSchemaPath": "$.properties.payload.properties.records",
+              "exactArrayKeywords": [
+                "items",
+                "type"
+              ],
+              "auditedAncestorCount": 2
+            },
+            "nextRepetitionWouldExceedByteCeiling": true
+          }
+        },
+        {
+          "branch": "targetDiscoveryResult",
+          "path": "$.properties.payload.properties.targetDiscoveryInputBundle.properties.observations",
+          "targetInstancePointer": "/payload/targetDiscoveryInputBundle/observations",
+          "baseByteAllowance": 17641,
+          "itemCanonicalBytes": 451,
+          "commaBytesPerRepetition": 1,
+          "deltaIdentities": 2,
+          "deltaOwnKeys": 9,
+          "deltaDenseIndices": 1,
+          "repetitions": 37078,
+          "branchCanonicalBytesAtMost": 16776897,
+          "identityContribution": 74156,
+          "workUnitsPerRepetition": 22,
+          "workContribution": 815716,
+          "validation": {
+            "engine": "ajv_draft_2020_12",
+            "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-target-discovery-result-envelope",
+            "repeatabilityProfile": "homogeneous_items_without_max_unique_contains_or_tuple_keywords",
+            "fullBranchBaseItemCount": 1,
+            "repeatProbeAdditionalItems": 2,
+            "ajvAcceptedFullBranchBase": true,
+            "ajvAcceptedRepeatProbe": true,
+            "ajvAcceptedFinalRunLength": true,
+            "finalMaterializedItemCount": 37079,
+            "finalMaterializedCanonicalBytes": 16776897,
+            "finalMaterializedRawSha256": "sha256:af4d8b242f323b11760e5f0aa7f17c6484433293aa2cf868fcd5c08df49ffd56",
+            "fullBranchBaseCanonicalJson": "{\"contentDigest\":\"sha256:8d5db3fd7d904925ce0b767543f74caf9f837869e67997d1c6f8899713686cd3\",\"discoveryGeneration\":1,\"payload\":{\"activeRootMetadata\":{\"contentDigest\":\"sha256:b7a24e2d5fd9b4c7cb55d7f1133135d6a759de0a249680f4859596b3cad3d158\",\"locatorProfile\":\"installation_provider_registry_root_metadata_v1\",\"rootGeneration\":3,\"rootKeyId\":\"b428dd9c9d0cb51b9b44a8\"},\"discoveryGeneration\":1,\"discoveryRulesetVersion\":\"provider_release_target_discovery_v1\",\"discoverySignature\":\"provider-target-discovery-result-ed25519:b428dd9c9d0cb51b9b44a8:831aaf885f850cee80a761001b5b2e7ccaa2dc2cf54d28268927e2c767fdba297861d2a25324b5be4ca2302b5598c608b49a56819847b5cccc9f894776793003\",\"distributionRootBinding\":{\"bootstrapTrustBundle\":{\"contentDigest\":\"sha256:bbb4058af5bc44189d9590f05d43b421ac81aef2b15649b7ceaa8037c7df787f\",\"locatorProfile\":\"distribution_provider_bootstrap_trust_bundle_v1\"},\"historyPolicy\":{\"admission\":\"stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution\",\"exhaustion\":\"reject_candidate_distribution_and_preserve_last_verified_distribution\",\"maxPublicTaxonomyGenerationCount\":4096,\"maxReleaseMatrixGenerationCount\":4096,\"maxReleaseTargetUniverseGenerationCount\":4096,\"maxSingleDistributionObjectCanonicalBytes\":16777216,\"maxSupportCatalogGenerationCount\":4096,\"maxTargetDiscoveryResultGenerationCount\":4096,\"maxTotalRetainedDistributionHistoryLogicalBytes\":536870912,\"maxTotalRetainedDistributionObjectCount\":65536,\"normalUpdateEmergencyGenerationReservePerChain\":8,\"normalUpdateEmergencyLogicalBytesReserve\":16777216,\"profile\":\"provider_distribution_history_policy_v1\"},\"profile\":\"provider_signed_distribution_root_binding_v1\",\"releaseRevisionDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"resolverProfile\":\"verified_signed_package_distribution_root_v1\",\"signedPackageIdentityDigest\":\"sha256:a022824bcf01e93c262331ddf5635daeb0b7af2a3591396888037a60cb7089cf\"},\"limits\":{\"maxCanonicalEnvelopeBytes\":16777216,\"maxCanonicalUnionTargetEntries\":4096,\"maxTargetEntriesPerArtifact\":4096,\"maxUnresolvedObservationsPerDiscoveryResult\":4096,\"profile\":\"provider_release_coverage_artifact_limits_v1\"},\"observationCutDigest\":\"sha256:f961eab2117f440c4af05f9d05bd19b3250d2df60108164e824c6b1ccedc28c6\",\"observationSetDigest\":\"sha256:496f3de87517b9479f241e480080572b7ea7766f4fd53a9b8e5844986b9738b4\",\"observationSources\":[\"signed_release_matrix\",\"real_filesystem_fixture_manifest\",\"target_discovery_runner\"],\"profile\":\"provider_target_discovery_result_v1\",\"publicSupportTaxonomy\":{\"contentDigest\":\"sha256:527ca7b1cbe7fc2e7ab83118dbf37da0639242e020563cee0988300ef7073ca6\",\"locatorProfile\":\"distribution_provider_public_support_taxonomy_v1\",\"taxonomyGeneration\":1},\"registryRootKeyId\":\"b428dd9c9d0cb51b9b44a8\",\"requiredDimensions\":[\"osPlatform\",\"osReleaseFamilyCode\",\"osBuildDigest\",\"architecture\",\"filesystemProfileCode\",\"filesystemFeatureProfileDigest\",\"mountOptionProfileDigest\"],\"targetCount\":2,\"targetDiscoveryInputBundle\":{\"activeRootMetadata\":{\"contentDigest\":\"sha256:b7a24e2d5fd9b4c7cb55d7f1133135d6a759de0a249680f4859596b3cad3d158\",\"locatorProfile\":\"installation_provider_registry_root_metadata_v1\",\"rootGeneration\":3,\"rootKeyId\":\"b428dd9c9d0cb51b9b44a8\"},\"bundleSignature\":\"provider-target-discovery-input-bundle-ed25519:b428dd9c9d0cb51b9b44a8:f3f9646834468bcbe7f6f5bad5bb1689148ff0497922811afc199050a6b260fb50e8ef0e8d7698cab1296e674dc3fa43393a5b36643acf5ce1889e50d8b0b309\",\"discoveryRulesetVersion\":\"provider_release_target_discovery_v1\",\"distributionRootBinding\":{\"bootstrapTrustBundle\":{\"contentDigest\":\"sha256:bbb4058af5bc44189d9590f05d43b421ac81aef2b15649b7ceaa8037c7df787f\",\"locatorProfile\":\"distribution_provider_bootstrap_trust_bundle_v1\"},\"historyPolicy\":{\"admission\":\"stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution\",\"exhaustion\":\"reject_candidate_distribution_and_preserve_last_verified_distribution\",\"maxPublicTaxonomyGenerationCount\":4096,\"maxReleaseMatrixGenerationCount\":4096,\"maxReleaseTargetUniverseGenerationCount\":4096,\"maxSingleDistributionObjectCanonicalBytes\":16777216,\"maxSupportCatalogGenerationCount\":4096,\"maxTargetDiscoveryResultGenerationCount\":4096,\"maxTotalRetainedDistributionHistoryLogicalBytes\":536870912,\"maxTotalRetainedDistributionObjectCount\":65536,\"normalUpdateEmergencyGenerationReservePerChain\":8,\"normalUpdateEmergencyLogicalBytesReserve\":16777216,\"profile\":\"provider_distribution_history_policy_v1\"},\"profile\":\"provider_signed_distribution_root_binding_v1\",\"releaseRevisionDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"resolverProfile\":\"verified_signed_package_distribution_root_v1\",\"signedPackageIdentityDigest\":\"sha256:a022824bcf01e93c262331ddf5635daeb0b7af2a3591396888037a60cb7089cf\"},\"observationCount\":7,\"observationCut\":{\"activeRootMetadata\":{\"contentDigest\":\"sha256:b7a24e2d5fd9b4c7cb55d7f1133135d6a759de0a249680f4859596b3cad3d158\",\"locatorProfile\":\"installation_provider_registry_root_metadata_v1\",\"rootGeneration\":3,\"rootKeyId\":\"b428dd9c9d0cb51b9b44a8\"},\"discoveryRulesetVersion\":\"provider_release_target_discovery_v1\",\"distributionRootBinding\":{\"bootstrapTrustBundle\":{\"contentDigest\":\"sha256:bbb4058af5bc44189d9590f05d43b421ac81aef2b15649b7ceaa8037c7df787f\",\"locatorProfile\":\"distribution_provider_bootstrap_trust_bundle_v1\"},\"historyPolicy\":{\"admission\":\"stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution\",\"exhaustion\":\"reject_candidate_distribution_and_preserve_last_verified_distribution\",\"maxPublicTaxonomyGenerationCount\":4096,\"maxReleaseMatrixGenerationCount\":4096,\"maxReleaseTargetUniverseGenerationCount\":4096,\"maxSingleDistributionObjectCanonicalBytes\":16777216,\"maxSupportCatalogGenerationCount\":4096,\"maxTargetDiscoveryResultGenerationCount\":4096,\"maxTotalRetainedDistributionHistoryLogicalBytes\":536870912,\"maxTotalRetainedDistributionObjectCount\":65536,\"normalUpdateEmergencyGenerationReservePerChain\":8,\"normalUpdateEmergencyLogicalBytesReserve\":16777216,\"profile\":\"provider_distribution_history_policy_v1\"},\"profile\":\"provider_signed_distribution_root_binding_v1\",\"releaseRevisionDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"resolverProfile\":\"verified_signed_package_distribution_root_v1\",\"signedPackageIdentityDigest\":\"sha256:a022824bcf01e93c262331ddf5635daeb0b7af2a3591396888037a60cb7089cf\"},\"freshnessRule\":\"exact_release_revision_and_source_digest_cut_v1\",\"observationSources\":[\"signed_release_matrix\",\"real_filesystem_fixture_manifest\",\"target_discovery_runner\"],\"profile\":\"provider_target_discovery_observation_cut_v1\",\"publicSupportTaxonomy\":{\"contentDigest\":\"sha256:527ca7b1cbe7fc2e7ab83118dbf37da0639242e020563cee0988300ef7073ca6\",\"locatorProfile\":\"distribution_provider_public_support_taxonomy_v1\",\"taxonomyGeneration\":1},\"realFilesystemFixtureManifest\":{\"contentDigest\":\"sha256:962fe82d1698dcaa0f91b9b4a7ebde54cc4c29a3f81ebdf5385baac839e0dc8d\",\"fixtureManifestDigest\":\"sha256:72a09216eca9f2b4c9a442de89270558accf552c2f4f83dc54c3b65ecab0c740\",\"locatorProfile\":\"distribution_provider_real_fs_fixture_manifest_v1\",\"realFilesystemSuiteDigest\":\"sha256:2c8cb050e227b34f7b5a1fe8c998f23eb69100d1fadd5586f3a6df2985c49dc8\",\"realFilesystemSuiteManifest\":{\"contentDigest\":\"sha256:0fddfb349bb1edc8539621d79e58463bc3227d43060def76d937c3a8faa9614d\",\"distributionRootBinding\":{\"bootstrapTrustBundle\":{\"contentDigest\":\"sha256:bbb4058af5bc44189d9590f05d43b421ac81aef2b15649b7ceaa8037c7df787f\",\"locatorProfile\":\"distribution_provider_bootstrap_trust_bundle_v1\"},\"historyPolicy\":{\"admission\":\"stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution\",\"exhaustion\":\"reject_candidate_distribution_and_preserve_last_verified_distribution\",\"maxPublicTaxonomyGenerationCount\":4096,\"maxReleaseMatrixGenerationCount\":4096,\"maxReleaseTargetUniverseGenerationCount\":4096,\"maxSingleDistributionObjectCanonicalBytes\":16777216,\"maxSupportCatalogGenerationCount\":4096,\"maxTargetDiscoveryResultGenerationCount\":4096,\"maxTotalRetainedDistributionHistoryLogicalBytes\":536870912,\"maxTotalRetainedDistributionObjectCount\":65536,\"normalUpdateEmergencyGenerationReservePerChain\":8,\"normalUpdateEmergencyLogicalBytesReserve\":16777216,\"profile\":\"provider_distribution_history_policy_v1\"},\"profile\":\"provider_signed_distribution_root_binding_v1\",\"releaseRevisionDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"resolverProfile\":\"verified_signed_package_distribution_root_v1\",\"signedPackageIdentityDigest\":\"sha256:a022824bcf01e93c262331ddf5635daeb0b7af2a3591396888037a60cb7089cf\"},\"fixtureManifestDigest\":\"sha256:72a09216eca9f2b4c9a442de89270558accf552c2f4f83dc54c3b65ecab0c740\",\"locatorProfile\":\"distribution_provider_real_fs_suite_manifest_v1\",\"suiteDigest\":\"sha256:2c8cb050e227b34f7b5a1fe8c998f23eb69100d1fadd5586f3a6df2985c49dc8\"}},\"releaseMatrix\":{\"contentDigest\":\"sha256:ea9854f07ddb359e7932ff67c6d7336ec09fae4195df8a8e3c85d737d8b9cf5d\",\"locatorProfile\":\"distribution_provider_release_matrix_v1\",\"releaseMatrixGeneration\":1},\"requiredDimensions\":[\"osPlatform\",\"osReleaseFamilyCode\",\"osBuildDigest\",\"architecture\",\"filesystemProfileCode\",\"filesystemFeatureProfileDigest\",\"mountOptionProfileDigest\"],\"targetDiscoveryRunner\":{\"binaryAttestationDigest\":\"sha256:8888888888888888888888888888888888888888888888888888888888888888\",\"executedAt\":\"2026-08-03T03:20:00Z\",\"implementationDigest\":\"sha256:7777777777777777777777777777777777777777777777777777777777777777\",\"locatorProfile\":\"distribution_provider_target_discovery_runner_run_v1\",\"producerName\":\"understand-code\",\"producerVersion\":\"0.1.0\",\"releaseRevisionDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"runManifestContentDigest\":\"sha256:70c31250c6f8f2606074623d512f1bf2c85ab9787518a26ae1873f587f58588f\",\"runnerProfileDigest\":\"sha256:9999999999999999999999999999999999999999999999999999999999999999\"}},\"observationCutDigest\":\"sha256:f961eab2117f440c4af05f9d05bd19b3250d2df60108164e824c6b1ccedc28c6\",\"observationSetDigest\":\"sha256:496f3de87517b9479f241e480080572b7ea7766f4fd53a9b8e5844986b9738b4\",\"observationSources\":[\"signed_release_matrix\",\"real_filesystem_fixture_manifest\",\"target_discovery_runner\"],\"observations\":[{\"observationKeyDigest\":\"sha256:51ccc4158458f24e72982c51f5abe2c743d22adeee993d436af8303fc34ce728\",\"observationSource\":\"signed_release_matrix\",\"outcome\":{\"reason\":\"target_dimensions_missing\",\"state\":\"unresolved\"},\"privacySafeObservationClaimsDigest\":\"sha256:a7e90c1d9ad6614a5ae28bfad9ea11b44c04c320f28c61d5b8ab52d2107f17e3\",\"sourceArtifactContentDigest\":\"sha256:962fe82d1698dcaa0f91b9b4a7ebde54cc4c29a3f81ebdf5385baac839e0dc8d\",\"sourceRecordOrdinal\":0}],\"profile\":\"provider_target_discovery_input_bundle_v1\",\"publicSupportTaxonomy\":{\"contentDigest\":\"sha256:527ca7b1cbe7fc2e7ab83118dbf37da0639242e020563cee0988300ef7073ca6\",\"locatorProfile\":\"distribution_provider_public_support_taxonomy_v1\",\"taxonomyGeneration\":1},\"realFilesystemFixtureManifest\":{\"contentDigest\":\"sha256:962fe82d1698dcaa0f91b9b4a7ebde54cc4c29a3f81ebdf5385baac839e0dc8d\",\"fixtureManifestDigest\":\"sha256:72a09216eca9f2b4c9a442de89270558accf552c2f4f83dc54c3b65ecab0c740\",\"locatorProfile\":\"distribution_provider_real_fs_fixture_manifest_v1\",\"realFilesystemSuiteDigest\":\"sha256:2c8cb050e227b34f7b5a1fe8c998f23eb69100d1fadd5586f3a6df2985c49dc8\",\"realFilesystemSuiteManifest\":{\"contentDigest\":\"sha256:0fddfb349bb1edc8539621d79e58463bc3227d43060def76d937c3a8faa9614d\",\"distributionRootBinding\":{\"bootstrapTrustBundle\":{\"contentDigest\":\"sha256:bbb4058af5bc44189d9590f05d43b421ac81aef2b15649b7ceaa8037c7df787f\",\"locatorProfile\":\"distribution_provider_bootstrap_trust_bundle_v1\"},\"historyPolicy\":{\"admission\":\"stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution\",\"exhaustion\":\"reject_candidate_distribution_and_preserve_last_verified_distribution\",\"maxPublicTaxonomyGenerationCount\":4096,\"maxReleaseMatrixGenerationCount\":4096,\"maxReleaseTargetUniverseGenerationCount\":4096,\"maxSingleDistributionObjectCanonicalBytes\":16777216,\"maxSupportCatalogGenerationCount\":4096,\"maxTargetDiscoveryResultGenerationCount\":4096,\"maxTotalRetainedDistributionHistoryLogicalBytes\":536870912,\"maxTotalRetainedDistributionObjectCount\":65536,\"normalUpdateEmergencyGenerationReservePerChain\":8,\"normalUpdateEmergencyLogicalBytesReserve\":16777216,\"profile\":\"provider_distribution_history_policy_v1\"},\"profile\":\"provider_signed_distribution_root_binding_v1\",\"releaseRevisionDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"resolverProfile\":\"verified_signed_package_distribution_root_v1\",\"signedPackageIdentityDigest\":\"sha256:a022824bcf01e93c262331ddf5635daeb0b7af2a3591396888037a60cb7089cf\"},\"fixtureManifestDigest\":\"sha256:72a09216eca9f2b4c9a442de89270558accf552c2f4f83dc54c3b65ecab0c740\",\"locatorProfile\":\"distribution_provider_real_fs_suite_manifest_v1\",\"suiteDigest\":\"sha256:2c8cb050e227b34f7b5a1fe8c998f23eb69100d1fadd5586f3a6df2985c49dc8\"}},\"registryRootKeyId\":\"b428dd9c9d0cb51b9b44a8\",\"releaseMatrix\":{\"contentDigest\":\"sha256:ea9854f07ddb359e7932ff67c6d7336ec09fae4195df8a8e3c85d737d8b9cf5d\",\"locatorProfile\":\"distribution_provider_release_matrix_v1\",\"releaseMatrixGeneration\":1},\"requiredDimensions\":[\"osPlatform\",\"osReleaseFamilyCode\",\"osBuildDigest\",\"architecture\",\"filesystemProfileCode\",\"filesystemFeatureProfileDigest\",\"mountOptionProfileDigest\"],\"sourceObservationSets\":[{\"observationCount\":2,\"observationSetDigest\":\"sha256:58930bb47f0331b9755b556fe44ce82475aa58d743858b2fafb8c8a4df2d5dd5\",\"observationSource\":\"signed_release_matrix\",\"sourceArtifactContentDigest\":\"sha256:ea9854f07ddb359e7932ff67c6d7336ec09fae4195df8a8e3c85d737d8b9cf5d\"},{\"observationCount\":2,\"observationSetDigest\":\"sha256:d6f3b64d03ce19af8289a8852edd65a34ca1e3cf220b5973b7216a76ba786949\",\"observationSource\":\"real_filesystem_fixture_manifest\",\"sourceArtifactContentDigest\":\"sha256:962fe82d1698dcaa0f91b9b4a7ebde54cc4c29a3f81ebdf5385baac839e0dc8d\"},{\"observationCount\":3,\"observationSetDigest\":\"sha256:37be9a0d33efcddb262cc6b1f195534fee2ebe514f057b1a7b097f5829f0b802\",\"observationSource\":\"target_discovery_runner\",\"sourceArtifactContentDigest\":\"sha256:70c31250c6f8f2606074623d512f1bf2c85ab9787518a26ae1873f587f58588f\"}],\"targetDiscoveryRunner\":{\"binaryAttestationDigest\":\"sha256:8888888888888888888888888888888888888888888888888888888888888888\",\"executedAt\":\"2026-08-03T03:20:00Z\",\"implementationDigest\":\"sha256:7777777777777777777777777777777777777777777777777777777777777777\",\"locatorProfile\":\"distribution_provider_target_discovery_runner_run_v1\",\"producerName\":\"understand-code\",\"producerVersion\":\"0.1.0\",\"releaseRevisionDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"runManifestContentDigest\":\"sha256:70c31250c6f8f2606074623d512f1bf2c85ab9787518a26ae1873f587f58588f\",\"runnerProfileDigest\":\"sha256:9999999999999999999999999999999999999999999999999999999999999999\"}},\"targetDiscoveryInputBundleContentDigest\":\"sha256:430b55327b1f4cedbdf8cfd7853f7f91b589e6cfabbcc000f329dc9973e4e6fc\",\"targetSetDigest\":\"sha256:91919380401d30c2767ea2527568b9c539a09941facdf2ada26d8b629ecf355b\",\"targets\":[{\"publicProfileId\":\"provider-public-support-profile:7f37e43a2a335dda37ed52ba80d1b146154891efac2a3c74d4c0ad0ef2493dbc\",\"target\":{\"architecture\":\"arm64\",\"filesystemFeatureProfileDigest\":\"sha256:2222222222222222222222222222222222222222222222222222222222222222\",\"filesystemProfileCode\":\"provider-fs-profile:a7c0ac0396034e50a4e1e4\",\"mountOptionProfileDigest\":\"sha256:3333333333333333333333333333333333333333333333333333333333333333\",\"osBuildDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"osPlatform\":\"darwin\",\"osReleaseFamilyCode\":\"provider-os-family:42302d6ad4703c2b07a205\",\"targetProfileId\":\"provider-target-profile:7b1a9d57bc7ee4d2c35f9bcd02a99a1be680076ab6e7e231caccb665f792daee\"}},{\"publicProfileId\":\"provider-public-support-profile:eb0e3a9b393a33092ecf8baf30468800479b4abb772c7a000592d356926a3904\",\"target\":{\"architecture\":\"x86_64\",\"filesystemFeatureProfileDigest\":\"sha256:5555555555555555555555555555555555555555555555555555555555555555\",\"filesystemProfileCode\":\"provider-fs-profile:22dad279fd650f08b8c6fe\",\"mountOptionProfileDigest\":\"sha256:6666666666666666666666666666666666666666666666666666666666666666\",\"osBuildDigest\":\"sha256:4444444444444444444444444444444444444444444444444444444444444444\",\"osPlatform\":\"linux\",\"osReleaseFamilyCode\":\"provider-os-family:b3c813bd678ba40707eed0\",\"targetProfileId\":\"provider-target-profile:85f704b7a83092969d3ccc5354f64c23bfdb74b64c92f32f8888bec8548404b5\"}}],\"unresolvedObservationCount\":2,\"unresolvedObservations\":[{\"observationKeyDigest\":\"sha256:51ccc4158458f24e72982c51f5abe2c743d22adeee993d436af8303fc34ce728\",\"observationSource\":\"real_filesystem_fixture_manifest\",\"privacySafeObservationClaimsDigest\":\"sha256:a7e90c1d9ad6614a5ae28bfad9ea11b44c04c320f28c61d5b8ab52d2107f17e3\",\"reason\":\"taxonomy_mapping_unresolved\",\"sourceArtifactContentDigest\":\"sha256:962fe82d1698dcaa0f91b9b4a7ebde54cc4c29a3f81ebdf5385baac839e0dc8d\",\"sourceRecordOrdinal\":1},{\"observationKeyDigest\":\"sha256:d15d473cb0273551fbcd802f5dfbf2869b4ee7f40c75ee24e31115ecf354f273\",\"observationSource\":\"target_discovery_runner\",\"privacySafeObservationClaimsDigest\":\"sha256:04fce3be12201c96c04d9e98f573a069e62d5731e65b9c983eda576f073474b9\",\"reason\":\"observation_source_unavailable\",\"sourceArtifactContentDigest\":\"sha256:70c31250c6f8f2606074623d512f1bf2c85ab9787518a26ae1873f587f58588f\",\"sourceRecordOrdinal\":2}]},\"recordType\":\"provider_target_discovery_result\",\"schemaVersion\":1}",
+            "exemplarCanonicalJson": "{\"observationKeyDigest\":\"sha256:51ccc4158458f24e72982c51f5abe2c743d22adeee993d436af8303fc34ce728\",\"observationSource\":\"signed_release_matrix\",\"outcome\":{\"reason\":\"target_dimensions_missing\",\"state\":\"unresolved\"},\"privacySafeObservationClaimsDigest\":\"sha256:a7e90c1d9ad6614a5ae28bfad9ea11b44c04c320f28c61d5b8ab52d2107f17e3\",\"sourceArtifactContentDigest\":\"sha256:962fe82d1698dcaa0f91b9b4a7ebde54cc4c29a3f81ebdf5385baac839e0dc8d\",\"sourceRecordOrdinal\":0}",
+            "fullBranchBaseSemanticDigest": "sha256:b650f97d74ed7b87070be6c5f7ef68d29dcf6bef63b04f54b1c83a76983debc3",
+            "exemplarSemanticDigest": "sha256:d1aacc3b4b39faa7325e88c397888cc6f1d3f785a2c631f7e328e6d999ea0b59",
+            "runLengthWitnessSemanticDigest": "sha256:9279a6fe3b63e33a69d8ea21c37dbec825462a4db6077d3780a42c9043b31f86",
+            "fullBranchBaseTopology": {
+              "identities": 55,
+              "ownKeys": 329,
+              "denseIndices": 38
+            },
+            "exemplarTopology": {
+              "identities": 2,
+              "ownKeys": 8,
+              "denseIndices": 0
+            },
+            "repeatabilityAudit": {
+              "auditedSchemaPath": "$.properties.payload.properties.targetDiscoveryInputBundle.properties.observations",
+              "exactArrayKeywords": [
+                "items",
+                "type"
+              ],
+              "auditedAncestorCount": 3
+            },
+            "nextRepetitionWouldExceedByteCeiling": true
+          }
+        },
+        {
+          "branch": "targetDiscoveryRunnerRun",
+          "path": "$.properties.payload.properties.records",
+          "targetInstancePointer": "/payload/records",
+          "baseByteAllowance": 2233,
+          "itemCanonicalBytes": 95,
+          "commaBytesPerRepetition": 1,
+          "deltaIdentities": 2,
+          "deltaOwnKeys": 5,
+          "deltaDenseIndices": 1,
+          "repetitions": 174739,
+          "branchCanonicalBytesAtMost": 16777177,
+          "identityContribution": 349478,
+          "workUnitsPerRepetition": 18,
+          "workContribution": 3145302,
+          "validation": {
+            "engine": "ajv_draft_2020_12",
+            "schemaId": "urn:understand-code:provider-contract:schema:v1:provider-target-discovery-runner-run-envelope",
+            "repeatabilityProfile": "homogeneous_items_without_max_unique_contains_or_tuple_keywords",
+            "fullBranchBaseItemCount": 1,
+            "repeatProbeAdditionalItems": 2,
+            "ajvAcceptedFullBranchBase": true,
+            "ajvAcceptedRepeatProbe": true,
+            "ajvAcceptedFinalRunLength": true,
+            "finalMaterializedItemCount": 174740,
+            "finalMaterializedCanonicalBytes": 16777177,
+            "finalMaterializedRawSha256": "sha256:65fb294ea0568cfbe26a8892e2dcb4ad7ad13f8b6d1be9b75157343f3ba7c76b",
+            "fullBranchBaseCanonicalJson": "{\"contentDigest\":\"sha256:70c31250c6f8f2606074623d512f1bf2c85ab9787518a26ae1873f587f58588f\",\"payload\":{\"binaryAttestationDigest\":\"sha256:8888888888888888888888888888888888888888888888888888888888888888\",\"distributionRootBinding\":{\"bootstrapTrustBundle\":{\"contentDigest\":\"sha256:bbb4058af5bc44189d9590f05d43b421ac81aef2b15649b7ceaa8037c7df787f\",\"locatorProfile\":\"distribution_provider_bootstrap_trust_bundle_v1\"},\"historyPolicy\":{\"admission\":\"stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution\",\"exhaustion\":\"reject_candidate_distribution_and_preserve_last_verified_distribution\",\"maxPublicTaxonomyGenerationCount\":4096,\"maxReleaseMatrixGenerationCount\":4096,\"maxReleaseTargetUniverseGenerationCount\":4096,\"maxSingleDistributionObjectCanonicalBytes\":16777216,\"maxSupportCatalogGenerationCount\":4096,\"maxTargetDiscoveryResultGenerationCount\":4096,\"maxTotalRetainedDistributionHistoryLogicalBytes\":536870912,\"maxTotalRetainedDistributionObjectCount\":65536,\"normalUpdateEmergencyGenerationReservePerChain\":8,\"normalUpdateEmergencyLogicalBytesReserve\":16777216,\"profile\":\"provider_distribution_history_policy_v1\"},\"profile\":\"provider_signed_distribution_root_binding_v1\",\"releaseRevisionDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"resolverProfile\":\"verified_signed_package_distribution_root_v1\",\"signedPackageIdentityDigest\":\"sha256:a022824bcf01e93c262331ddf5635daeb0b7af2a3591396888037a60cb7089cf\"},\"executedAt\":\"2026-08-03T03:20:00Z\",\"implementationDigest\":\"sha256:7777777777777777777777777777777777777777777777777777777777777777\",\"producerName\":\"understand-code\",\"producerVersion\":\"0.1.0\",\"profile\":\"provider_target_discovery_runner_run_manifest_v1\",\"records\":[{\"outcome\":{\"reason\":\"target_dimensions_missing\",\"state\":\"unresolved\"},\"sourceRecordOrdinal\":0}],\"releaseRevisionDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"runnerProfileDigest\":\"sha256:9999999999999999999999999999999999999999999999999999999999999999\",\"targetRecordCount\":3,\"targetRecordSetDigest\":\"sha256:229a4f861e95642dc43ba65cb408c666f51d3890ee8e78ce85c6f7b585d03024\"},\"recordType\":\"provider_target_discovery_runner_run\",\"schemaVersion\":1}",
+            "exemplarCanonicalJson": "{\"outcome\":{\"reason\":\"target_dimensions_missing\",\"state\":\"unresolved\"},\"sourceRecordOrdinal\":0}",
+            "fullBranchBaseSemanticDigest": "sha256:a190b4ab3e006af091e7c03df424e054908eff0fa8a5cc7d3c98733aea3b19a6",
+            "exemplarSemanticDigest": "sha256:7e6aa8fe9e7b70a798c9b7b7e8355725bd6decfdc82f3324b126ff8cf8de09f9",
+            "runLengthWitnessSemanticDigest": "sha256:8ee8c717ac89640e6c400d5f9a1059539d308573ac3e7d3111e22eef765c68e5",
+            "fullBranchBaseTopology": {
+              "identities": 8,
+              "ownKeys": 43,
+              "denseIndices": 1
+            },
+            "exemplarTopology": {
+              "identities": 2,
+              "ownKeys": 4,
+              "denseIndices": 0
+            },
+            "repeatabilityAudit": {
+              "auditedSchemaPath": "$.properties.payload.properties.records",
+              "exactArrayKeywords": [
+                "items",
+                "type"
+              ],
+              "auditedAncestorCount": 2
+            },
+            "nextRepetitionWouldExceedByteCeiling": true
+          }
+        }
+      ],
+      "registryHistoryRow": {
+        "branch": "registryManifestHistory",
+        "path": "$.properties.payload.anyOf[0].properties.members.items.oneOf[1]",
+        "variant": "revoked_member",
+        "rootEnvelopeCount": 256,
+        "registryEnvelopeCount": 4096,
+        "registryEnvelopeBaseByteAllowance": 1411,
+        "rootEnvelopeBaseByteAllowance": 892,
+        "itemCanonicalBytes": 243,
+        "commaBytesPerRepetition": 1,
+        "deltaIdentities": 1,
+        "deltaOwnKeys": 6,
+        "deltaDenseIndices": 1,
+        "repetitions": 500000,
+        "maxAdditionalMembersPerEnvelope": 123,
+        "maxRegistryEnvelopeCanonicalBytes": 31423,
+        "outerHistoryArrayCanonicalSyntaxBytesExcludedFromPolicy": 4354,
+        "sharedHistoryCanonicalBytesAtMost": 128007808,
+        "identityContribution": 500000,
+        "workUnitsPerRepetition": 14,
+        "workContribution": 7000000,
+        "validation": {
+          "engine": "ajv_draft_2020_12",
+          "rootSchemaId": "urn:understand-code:provider-contract:schema:v1:provider-registry-root-metadata-envelope",
+          "registrySchemaId": "urn:understand-code:provider-contract:schema:v1:provider-registry-manifest-envelope",
+          "repeatabilityProfile": "homogeneous_items_without_max_unique_contains_or_tuple_keywords",
+          "rootEnvelopeBaseCanonicalJson": "{\"contentDigest\":\"sha256:598bd3fc5e941c7d0e8df8e584c2e867a82a48cfb4704c8d82b1cddc98f3f568\",\"payload\":{\"activation\":\"bootstrap\",\"activeRoot\":{\"algorithm\":\"ed25519\",\"profile\":\"provider_registry_root_public_key_v1\",\"publicKeyBytes\":\"base64url:XJxt8mHJy4QEdXdqrvzZRLQFMo-rKPmzqV70BJDT3oQ\",\"publicKeyDigest\":\"sha256:79fb38ef414ebed57f2f3a5ba81799ed7a357623cdb1e363a724a4bb9d92bfc4\",\"rootKeyId\":\"bfe44356f03760a13c8e1b\"},\"issuedAt\":\"2026-08-03T00:00:00Z\",\"predecessor\":{\"state\":\"genesis\"},\"profile\":\"provider_registry_root_metadata_v1\",\"recoverySignatures\":[],\"rootGeneration\":1,\"selfSignature\":\"provider-root-self-ed25519:bfe44356f03760a13c8e1b:b916c0a97e8317c1f7a1d43804b806f9f72d4b8b07fbeffa78a417129b044b12bb41f067537e5734ccf995050ca92117eef225eb5d885a05a31c02e8eb4a5101\"},\"recordType\":\"provider_registry_root_metadata\",\"rootGeneration\":1,\"rootKeyId\":\"bfe44356f03760a13c8e1b\",\"schemaVersion\":1}",
+          "registryEnvelopeBaseCanonicalJson": "{\"contentDigest\":\"sha256:4ac2456093e98c32a0a6a28a2e5ea169269701062a92177efff66792e69d773b\",\"generationId\":\"provider-registry-manifest:b0cc35c74ad029f77def43\",\"payload\":{\"activeRootMetadata\":{\"contentDigest\":\"sha256:b7a24e2d5fd9b4c7cb55d7f1133135d6a759de0a249680f4859596b3cad3d158\",\"locatorProfile\":\"installation_provider_registry_root_metadata_v1\",\"rootGeneration\":3,\"rootKeyId\":\"b428dd9c9d0cb51b9b44a8\"},\"generationId\":\"provider-registry-manifest:b0cc35c74ad029f77def43\",\"installationIdentityGenerationId\":\"installation-identity-generation:bef83ea31792994276733f\",\"issuedAt\":\"2026-08-03T00:04:00Z\",\"manifestGeneration\":6,\"manifestSignature\":\"provider-registry-manifest-ed25519:b428dd9c9d0cb51b9b44a8:475482ae9141470852baf8f855cfb768994e2cfb2f3181149cfa6c2278f3752905c7c948e3698ee3bf3bec308329956f573acbc193e9110423baea8f69bf8307\",\"members\":[{\"disposition\":\"revoked\",\"lastEnabledRegistryEntryContentDigest\":\"sha256:16b4ceeda2486da935bfd6ba63c675fa642fb7e53d80f1e85999ad95b0a6a3c6\",\"providerId\":\"durable-object-provider:e\",\"reason\":\"migration_completed\",\"revokedAtManifestGeneration\":1}],\"predecessor\":{\"contentDigest\":\"sha256:19491ae767e4775199a394490994f09964e216002048cadf22ff308debb6e376\",\"generationId\":\"provider-registry-manifest:bc9b9885a6f309d54701ab\",\"state\":\"manifest\"},\"profile\":\"provider_registry_manifest_v1\",\"routing\":{\"state\":\"steady\"}},\"recordType\":\"provider_registry_manifest\",\"schemaVersion\":1}",
+          "exemplarCanonicalJson": "{\"disposition\":\"revoked\",\"lastEnabledRegistryEntryContentDigest\":\"sha256:16b4ceeda2486da935bfd6ba63c675fa642fb7e53d80f1e85999ad95b0a6a3c6\",\"providerId\":\"durable-object-provider:e\",\"reason\":\"migration_completed\",\"revokedAtManifestGeneration\":1}",
+          "rootEnvelopeBaseSemanticDigest": "sha256:d0d51c0ffaff545da85f6b7e2533660aa02343593f8ac5318dd91a6420fcba59",
+          "registryEnvelopeBaseSemanticDigest": "sha256:6f7a83fc05b7b70ad43bf5175c7e04197e1a88227fb8c96f9ebee3889c906046",
+          "exemplarSemanticDigest": "sha256:0947ecc73b8f808d451df39e080e4a3a82d070320f984ef18e0d1677ba09a5d3",
+          "runLengthWitnessSemanticDigest": "sha256:d42bef3911931e5181f192e77d11b698403f2b59e7a780bac2f4321bd0ba602a",
+          "rootEnvelopeBaseTopology": {
+            "identities": 5,
+            "ownKeys": 21,
+            "denseIndices": 0
+          },
+          "registryEnvelopeBaseTopology": {
+            "identities": 7,
+            "ownKeys": 30,
+            "denseIndices": 1
+          },
+          "exemplarTopology": {
+            "identities": 1,
+            "ownKeys": 5,
+            "denseIndices": 0
+          },
+          "baselineMemberCountPerRegistryEnvelope": 1,
+          "ajvAcceptedRootEnvelopeBase": true,
+          "ajvAcceptedRegistryEnvelopeBase": true,
+          "ajvAcceptedMaximumRepeatProbe": true,
+          "maximumRepeatProbeAdditionalItems": 123,
+          "ajvAcceptedFinalRunLength": true,
+          "finalMaterializedEnvelopeProfiles": [
+            {
+              "additionalItems": 123,
+              "envelopeCount": 288,
+              "materializedMemberCount": 124,
+              "canonicalBytes": 31423,
+              "rawSha256": "sha256:cae55c54625638df3f71a010c03f36a0aa8cf768167386b0d132b8422aee463f",
+              "ajvAccepted": true
+            },
+            {
+              "additionalItems": 122,
+              "envelopeCount": 3808,
+              "materializedMemberCount": 123,
+              "canonicalBytes": 31179,
+              "rawSha256": "sha256:e3d58c48e177c4f28ba4c78f10f9a09e139544d895c9d4c47c13f8547c142535",
+              "ajvAccepted": true
+            }
+          ],
+          "repeatabilityAudit": {
+            "auditedSchemaPath": "$.properties.payload.anyOf[0].properties.members",
+            "exactArrayKeywords": [
+              "items",
+              "minItems",
+              "type"
+            ],
+            "auditedAncestorCount": 3
+          }
+        }
+      },
+      "provenAtLeastObservedIdentities": 2118023,
+      "provenAtLeastPrecloneAllocationWorkUnits": 22569542,
+      "derivation": "Expansion-only lower: seven ordinary arrays use Ajv-accepted full-branch bases plus Ajv-accepted minimized exemplars under a schema-keyword repeatability induction and integer floor repetitions. 500,000 Ajv-accepted revoked-member expansions are distributed 122/123 per Registry Envelope. Exact base/top-level/history-container resources are deliberately omitted, so the result remains a lower bound."
+    },
+    "priorFailures": [
+      {
+        "metric": "observed_identities",
+        "cap": 2097152,
+        "soundUpper": 3126096,
+        "provenAtLeast": 2118023,
+        "exceedsByAtLeast": 20871
+      },
+      {
+        "metric": "preclone_allocation_work_units",
+        "cap": 16777216,
+        "soundUpper": 235725869,
+        "provenAtLeast": 22569542,
+        "exceedsByAtLeast": 5792326
+      }
+    ],
+    "adoptedFailures": []
+  },
+  "semanticDomain": "provider-registry-evidence-binding-topology-proof-v1",
+  "aggregateSemanticDigest": "sha256:61e3f97a97d61c2170dfb287dd24cdac49e7c4ec75a04603c2b95f905e9f4714"
+}

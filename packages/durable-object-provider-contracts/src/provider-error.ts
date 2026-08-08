@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod-runtime.js";
 
 export const PROVIDER_CAPABILITY_FAILURE_REASONS_V1 = Object.freeze([
   "unavailable",

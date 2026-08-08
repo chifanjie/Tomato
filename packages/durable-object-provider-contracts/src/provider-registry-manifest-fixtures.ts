@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod-runtime.js";
 
 import { ProviderBootstrapTrustBundleV1Schema } from "./bootstrap-trust-bundle.js";
 import { assertJsonDataTreeBeforeSchemaV1 } from "./domain-crypto.js";
@@ -72,6 +72,7 @@ import {
   PROVIDER_REGISTRY_MANIFEST_INVALID_CASE_DEFINITIONS_V1,
   PROVIDER_REGISTRY_MANIFEST_INVALID_RECIPE_DIALECT_V1,
   type ProviderRegistryManifestInvalidCaseDefinitionV1,
+  type ProviderRegistryManifestInvalidCaseIdV1,
 } from "./provider-registry-manifest-invalid-definitions.js";
 import { sha256InternalV1 } from "./sha256.js";
 import { STRICT_ED25519_VERIFICATION_PROFILE_V1 } from "./strict-ed25519.js";
@@ -542,7 +543,9 @@ export const PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_CASE_IDS_V1 =
     PROVIDER_REGISTRY_MANIFEST_INVALID_CASE_DEFINITIONS_V1.map(
       ({ caseId }) => caseId,
     ),
-  );
+  ) as readonly ProviderRegistryManifestInvalidCaseIdV1[];
+export type ProviderRegistryManifestHistoryInvalidCaseIdV1 =
+  (typeof PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_CASE_IDS_V1)[number];
 
 const ProviderRegistryManifestMaterializedRequestDigestTupleV1 = Object.freeze([
   ["history-empty", "sha256:78d190af677055f6d05c7d5696c63c985fe875272bc12b935e1fc66153106fd2"],

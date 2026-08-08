@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod-runtime.js";
 
 import {
   ProviderBootstrapTrustBundleEnvelopeV1Schema,

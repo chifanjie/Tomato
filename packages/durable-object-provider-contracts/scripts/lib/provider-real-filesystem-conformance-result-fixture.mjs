@@ -81,7 +81,7 @@ function finalizeResult(base) {
   return { envelope, locator, pin };
 }
 
-function baseResult(discoveryGolden) {
+function baseResult(discoveryGolden, providerId) {
   const suite = discoveryGolden.suiteManifest;
   const discovery = discoveryGolden.targetDiscoveryResult;
   const caseResults = suite.payload.cases.flatMap((suiteCase) =>
@@ -94,7 +94,7 @@ function baseResult(discoveryGolden) {
   );
   return {
     profile: "provider_real_fs_conformance_result_v1",
-    providerId: "durable-object-provider:local-helper",
+    providerId,
     semanticProviderPolicyDigest: digest("a"),
     implementationDigest: digest("b"),
     binaryAttestationDigest: digest("c"),
@@ -123,8 +123,13 @@ function baseResult(discoveryGolden) {
   };
 }
 
-export function buildGoldenRealFilesystemConformanceResultFixture(discoveryGolden) {
-  const finalized = finalizeResult(baseResult(discoveryGolden));
+export function buildGoldenRealFilesystemConformanceResultFixture(
+  discoveryGolden,
+  options = {},
+) {
+  const providerId =
+    options.providerId ?? "durable-object-provider:local-helper";
+  const finalized = finalizeResult(baseResult(discoveryGolden, providerId));
   const resultIdPreimage = [
     "provider-real-fs-conformance-result-id-v1",
     idFields(finalized.envelope.payload),

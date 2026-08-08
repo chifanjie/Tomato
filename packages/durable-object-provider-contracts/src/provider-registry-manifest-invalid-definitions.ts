@@ -43,8 +43,10 @@ export type ProviderRegistryManifestInvalidReasonV1 =
   | "public_key_material_alias"
   | "routing_invalid";
 
-export interface ProviderRegistryManifestInvalidCaseDefinitionV1 {
-  readonly caseId: string;
+export interface ProviderRegistryManifestInvalidCaseDefinitionV1<
+  CaseId extends string = string,
+> {
+  readonly caseId: CaseId;
   readonly mutation: {
     readonly dialect: typeof PROVIDER_REGISTRY_MANIFEST_INVALID_RECIPE_DIALECT_V1;
     readonly goldenResourcePath: typeof PROVIDER_REGISTRY_MANIFEST_GOLDEN_RESOURCE_PATH_LITERAL_V1;
@@ -64,13 +66,13 @@ export interface ProviderRegistryManifestInvalidCaseDefinitionV1 {
   };
 }
 
-function defineInvalidCase(
-  caseId: string,
+function defineInvalidCase<const CaseId extends string>(
+  caseId: CaseId,
   targetJsonPointer: string,
   operands: readonly string[],
   stage: ProviderRegistryManifestInvalidStageV1,
   reason: ProviderRegistryManifestInvalidReasonV1,
-): ProviderRegistryManifestInvalidCaseDefinitionV1 {
+): ProviderRegistryManifestInvalidCaseDefinitionV1<CaseId> {
   return Object.freeze({
     caseId,
     mutation: Object.freeze({
@@ -188,3 +190,6 @@ export const PROVIDER_REGISTRY_MANIFEST_INVALID_CASE_DEFINITIONS_V1 =
     c("binding-record-duplicate", "/registryManifestHistory/0/payload/members/0/registryEntry/verificationKeys/bindingDerivationGenerationRecords", ["duplicate-0"], "manifest_envelope", "schema_invalid"),
     c("approver-record-order-reversed", "/registryManifestHistory/0/payload/members/0/registryEntry/feasibilityApprovalKeys/publicKeyRecords", ["reverse"], "manifest_envelope", "schema_invalid"),
   ]);
+
+export type ProviderRegistryManifestInvalidCaseIdV1 =
+  (typeof PROVIDER_REGISTRY_MANIFEST_INVALID_CASE_DEFINITIONS_V1)[number]["caseId"];

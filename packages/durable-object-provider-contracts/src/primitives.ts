@@ -1,10 +1,21 @@
-import { z } from "zod";
+import { z } from "./zod-runtime.js";
+
+const CapturedReflectApplyV1 = Reflect.apply;
+const CapturedRegExpPrototypeExecV1 = RegExp.prototype.exec;
+
+function regExpTestV1(pattern: RegExp, value: string): boolean {
+  return CapturedReflectApplyV1(CapturedRegExpPrototypeExecV1, pattern, [
+    value,
+  ]) !== null;
+}
 
 const BASE64URL_ALPHABET =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 function isCanonicalBase64UrlBody(body: string): boolean {
-  if (!/^[A-Za-z0-9_-]*$/u.test(body) || body.length % 4 === 1) return false;
+  if (!regExpTestV1(/^[A-Za-z0-9_-]*$/u, body) || body.length % 4 === 1) {
+    return false;
+  }
   if (body.length === 0 || body.length % 4 === 0) return true;
   const finalValue = BASE64URL_ALPHABET.indexOf(body.at(-1)!);
   if (body.length % 4 === 2) return (finalValue & 0x0f) === 0;

@@ -7,16 +7,23 @@ import {
   captureProviderPointRawObservedExactDataObjectV1,
   captureProviderPointRawObservedExactDataObjectUnionV1,
   cloneProviderPointRawAdmissionCapsuleV1,
+  countProviderPointRawAdmissionBudgetAdditionalRootV1,
   countProviderPointRawAdmissionBudgetRootV1,
+  createProviderPointRawAdmissionBudgetForSessionV1,
+  createProviderPointRawAdmissionBudgetForSessionObservedForTestV1,
   createProviderPointRawAdmissionBudgetV1,
   createProviderPointRawAdmissionSessionV1,
   deepFreezeProviderPointDetachedDataTreeV1,
+  exerciseProviderPointRawAdmissionAllocationCapForTestV1,
+  getProviderPointRawAdmissionAllocationLedgerForTestV1,
+  getProviderPointRawAdmissionBudgetLedgerForTestV1,
   getProviderPointRawAdmissionCloneAttemptCountForTestV1,
   isProviderPointStructuredCloneBootstrapConformantV1,
   observeProviderPointRawObjectIdentityV1,
   probeProviderPointStructuredCloneCandidateForTestV1,
   walkProviderPointRawJsonIdentityTreeV1,
   walkProviderPointRawObservedJsonIdentityTreeV1,
+  walkProviderPointRawObservedJsonIdentityTreeWithDualBudgetsV1,
   type ProviderPointRawAdmissionSessionV1,
 } from "../src/provider-point-raw-admission-internal.js";
 
@@ -40,6 +47,7 @@ const UNION_KEY_VARIANTS = Object.freeze([
   UNION_REASON_KEYS,
 ]);
 const BUDGET_VALUE_KEYS = Object.freeze(["value"] as const);
+const BUDGET_SHORT_VALUE_KEYS = Object.freeze(["v"] as const);
 const BUDGET_CHILD_KEYS = Object.freeze(["child"] as const);
 const BUDGET_UNION_BASE_KEYS = Object.freeze(["kind"] as const);
 const BUDGET_UNION_NOTE_KEYS = Object.freeze(["kind", "note"] as const);
@@ -59,6 +67,10 @@ const BUDGET_LONG_UNION_KEY_VARIANTS = Object.freeze([
   BUDGET_LONG_UNION_BASE_KEYS,
   BUDGET_LONG_UNION_FULL_KEYS,
 ]);
+const HISTORY_KEYS = Object.freeze([
+  "registryHistory",
+  "rootHistory",
+] as const);
 
 function preparePayload(input: object): {
   readonly session: ProviderPointRawAdmissionSessionV1;
@@ -426,12 +438,18 @@ describe("provider point package-internal raw admission", () => {
   });
 
   it("charges exact and union descriptor values at the configured budget boundary", () => {
-    const exactInput = preparePayload({ payload: { value: "12345" } });
+    const exactInput = preparePayload({ payload: { v: "12345" } });
     const exactToken = observeProviderPointRawObjectIdentityV1(
       exactInput.session,
       exactInput.captured.payload,
     );
-    const exactBudget = createProviderPointRawAdmissionBudgetV1(64, 16, 4, 16);
+    const exactBudget = createProviderPointRawAdmissionBudgetV1(
+      64,
+      16,
+      4,
+      16,
+      true,
+    );
     countProviderPointRawAdmissionBudgetRootV1(
       exactBudget,
       exactInput.captured.payload,
@@ -440,7 +458,7 @@ describe("provider point package-internal raw admission", () => {
       captureProviderPointRawObservedExactDataObjectV1(
         exactInput.session,
         exactToken,
-        BUDGET_VALUE_KEYS,
+        BUDGET_SHORT_VALUE_KEYS,
         exactBudget,
         1,
       ),
@@ -453,7 +471,13 @@ describe("provider point package-internal raw admission", () => {
       unionInput.session,
       unionInput.captured.payload,
     );
-    const unionBudget = createProviderPointRawAdmissionBudgetV1(64, 16, 8, 5);
+    const unionBudget = createProviderPointRawAdmissionBudgetV1(
+      64,
+      16,
+      8,
+      13,
+      true,
+    );
     countProviderPointRawAdmissionBudgetRootV1(
       unionBudget,
       unionInput.captured.payload,
@@ -472,7 +496,7 @@ describe("provider point package-internal raw admission", () => {
   it("makes root accounting one-shot and budgets an exact top-level capture", () => {
     const input = { value: "four" };
     const session = createProviderPointRawAdmissionSessionV1(input);
-    const budget = createProviderPointRawAdmissionBudgetV1(2, 2, 4, 4);
+    const budget = createProviderPointRawAdmissionBudgetV1(2, 2, 5, 9);
     countProviderPointRawAdmissionBudgetRootV1(budget, input);
     expect(() =>
       countProviderPointRawAdmissionBudgetRootV1(budget, input),
@@ -487,13 +511,178 @@ describe("provider point package-internal raw admission", () => {
     ).toEqual({ value: "four" });
   });
 
+  it("charges session-owned budget storage and root WeakSet entries at exact W boundaries", () => {
+    const exactInput = {};
+    const exactSession = createProviderPointRawAdmissionSessionV1(exactInput, {
+      maxObservedIdentities: 1,
+      maxPrecloneAllocationWorkUnits: 74,
+    });
+    const exactBudget = createProviderPointRawAdmissionBudgetForSessionV1(
+      exactSession,
+      1,
+      1,
+      1,
+      1,
+    );
+    countProviderPointRawAdmissionBudgetRootV1(exactBudget, exactInput);
+    expect(
+      getProviderPointRawAdmissionAllocationLedgerForTestV1(exactSession),
+    ).toMatchObject({
+      precloneAllocationWorkUnitCount: 74,
+      remainingPrecloneAllocationWorkUnits: 0,
+    });
+
+    const rootCappedInput = {};
+    const rootCappedSession = createProviderPointRawAdmissionSessionV1(
+      rootCappedInput,
+      {
+        maxObservedIdentities: 1,
+        maxPrecloneAllocationWorkUnits: 73,
+      },
+    );
+    const rootCappedBudget = createProviderPointRawAdmissionBudgetForSessionV1(
+      rootCappedSession,
+      1,
+      1,
+      1,
+      1,
+    );
+    expect(() =>
+      countProviderPointRawAdmissionBudgetRootV1(
+        rootCappedBudget,
+        rootCappedInput,
+      ),
+    ).toThrow(TypeError);
+    expect(
+      getProviderPointRawAdmissionAllocationLedgerForTestV1(rootCappedSession),
+    ).toMatchObject({
+      precloneAllocationWorkUnitCount: 72,
+      remainingPrecloneAllocationWorkUnits: 1,
+      cloneAttemptCount: 0,
+    });
+
+    const shellCappedSession = createProviderPointRawAdmissionSessionV1({}, {
+      maxObservedIdentities: 1,
+      maxPrecloneAllocationWorkUnits: 71,
+    });
+    expect(() =>
+      createProviderPointRawAdmissionBudgetForSessionV1(
+        shellCappedSession,
+        1,
+        1,
+        1,
+        1,
+      ),
+    ).toThrow(TypeError);
+    expect(
+      getProviderPointRawAdmissionAllocationLedgerForTestV1(shellCappedSession),
+    ).toMatchObject({
+      precloneAllocationWorkUnitCount: 68,
+      remainingPrecloneAllocationWorkUnits: 3,
+      cloneAttemptCount: 0,
+    });
+  });
+
+  it("charges both budget WeakSets exactly during a dual-budget walk", () => {
+    function exercise(maxWorkUnits: number): {
+      readonly session: ProviderPointRawAdmissionSessionV1;
+      readonly walk: () => void;
+      readonly childPrototypeReads: () => number;
+    } {
+      let prototypeReads = 0;
+      const child = new Proxy(
+        {},
+        {
+          getPrototypeOf(target) {
+            prototypeReads += 1;
+            return Reflect.getPrototypeOf(target);
+          },
+        },
+      );
+      const input = { payload: [{ child }] };
+      const session = createProviderPointRawAdmissionSessionV1(input, {
+        maxObservedIdentities: 4,
+        maxPrecloneAllocationWorkUnits: maxWorkUnits,
+      });
+      const top = captureProviderPointRawExactTopLevelV1(session, PAYLOAD_KEYS);
+      const historyToken = observeProviderPointRawObjectIdentityV1(
+        session,
+        top.payload,
+      );
+      const aggregateBudget = createProviderPointRawAdmissionBudgetForSessionV1(
+        session,
+        3,
+        4,
+        16,
+        64,
+      );
+      countProviderPointRawAdmissionBudgetRootV1(
+        aggregateBudget,
+        top.payload,
+      );
+      const dense = captureProviderPointRawObservedDenseArrayV1(
+        session,
+        historyToken,
+        1,
+        aggregateBudget,
+        1,
+      );
+      const branchBudget = createProviderPointRawAdmissionBudgetForSessionV1(
+        session,
+        2,
+        2,
+        16,
+        64,
+      );
+      countProviderPointRawAdmissionBudgetRootV1(
+        branchBudget,
+        dense.items["0"],
+      );
+      return {
+        session,
+        walk: () =>
+          walkProviderPointRawObservedJsonIdentityTreeWithDualBudgetsV1(
+            session,
+            dense.itemTokens["0"]!,
+            branchBudget,
+            aggregateBudget,
+          ),
+        childPrototypeReads: () => prototypeReads,
+      };
+    }
+
+    const exact = exercise(106);
+    expect(exact.walk).not.toThrow();
+    expect(exact.childPrototypeReads()).toBe(1);
+    expect(
+      getProviderPointRawAdmissionAllocationLedgerForTestV1(exact.session),
+    ).toMatchObject({
+      observedIdentityCount: 4,
+      precloneAllocationWorkUnitCount: 106,
+      remainingPrecloneAllocationWorkUnits: 0,
+      cloneAttemptCount: 0,
+    });
+
+    const capped = exercise(105);
+    expect(capped.walk).toThrow(TypeError);
+    expect(capped.childPrototypeReads()).toBe(0);
+    expect(
+      getProviderPointRawAdmissionAllocationLedgerForTestV1(capped.session),
+    ).toMatchObject({
+      observedIdentityCount: 4,
+      precloneAllocationWorkUnitCount: 105,
+      remainingPrecloneAllocationWorkUnits: 0,
+      cloneAttemptCount: 0,
+    });
+  });
+
   it("does not double-count an already-budgeted observed walker root", () => {
     const input = preparePayload({ payload: { child: {} } });
     const parentToken = observeProviderPointRawObjectIdentityV1(
       input.session,
       input.captured.payload,
     );
-    const budget = createProviderPointRawAdmissionBudgetV1(2, 2, 4, 4);
+    const budget = createProviderPointRawAdmissionBudgetV1(2, 2, 5, 5);
     countProviderPointRawAdmissionBudgetRootV1(
       budget,
       input.captured.payload,
@@ -543,7 +732,7 @@ describe("provider point package-internal raw admission", () => {
       exactInput.session,
       exactInput.captured.payload,
     );
-    const exactBudget = createProviderPointRawAdmissionBudgetV1(4, 3, 4, 4);
+    const exactBudget = createProviderPointRawAdmissionBudgetV1(4, 3, 6, 22);
     countProviderPointRawAdmissionBudgetRootV1(
       exactBudget,
       exactInput.captured.payload,
@@ -566,7 +755,7 @@ describe("provider point package-internal raw admission", () => {
       unionInput.session,
       unionInput.captured.payload,
     );
-    const unionBudget = createProviderPointRawAdmissionBudgetV1(4, 3, 4, 4);
+    const unionBudget = createProviderPointRawAdmissionBudgetV1(4, 3, 6, 22);
     countProviderPointRawAdmissionBudgetRootV1(
       unionBudget,
       unionInput.captured.payload,
@@ -619,17 +808,357 @@ describe("provider point package-internal raw admission", () => {
 
     const nodeKeys = exercise(
       [true, false, true, false],
-      createProviderPointRawAdmissionBudgetV1(64, 3, 16, 64),
+      createProviderPointRawAdmissionBudgetV1(64, 3, 16, 64, true),
     );
     expect(nodeKeys).toContain("2");
     expect(nodeKeys).not.toContain("3");
 
     const stringKeys = exercise(
       ["aa", "bb", "cc", "dd"],
-      createProviderPointRawAdmissionBudgetV1(64, 16, 4, 4),
+      createProviderPointRawAdmissionBudgetV1(64, 16, 4, 8, true),
     );
     expect(stringKeys).toContain("2");
     expect(stringKeys).not.toContain("3");
+  });
+
+  it("charges every raw string property name before its descriptor but excludes array length", () => {
+    const admitted = { v: true };
+    const admittedSession = createProviderPointRawAdmissionSessionV1(admitted);
+    const admittedBudget = createProviderPointRawAdmissionBudgetV1(
+      2,
+      2,
+      1,
+      1,
+      true,
+    );
+    countProviderPointRawAdmissionBudgetRootV1(admittedBudget, admitted);
+    expect(
+      captureProviderPointRawExactTopLevelV1(
+        admittedSession,
+        BUDGET_SHORT_VALUE_KEYS,
+        admittedBudget,
+        1,
+      ),
+    ).toEqual({ v: true });
+
+    let unknownDescriptorCalls = 0;
+    let unknownGetterCalls = 0;
+    const unknownTarget = { v: true } as { v: boolean; oversized?: unknown };
+    Object.defineProperty(unknownTarget, "oversized", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        unknownGetterCalls += 1;
+        return "unreachable";
+      },
+    });
+    const unknown = new Proxy(unknownTarget, {
+      getOwnPropertyDescriptor(target, key) {
+        unknownDescriptorCalls += 1;
+        return Reflect.getOwnPropertyDescriptor(target, key);
+      },
+    });
+    const unknownSession = createProviderPointRawAdmissionSessionV1(unknown);
+    const unknownBudget = createProviderPointRawAdmissionBudgetV1(
+      2,
+      4,
+      "oversized".length - 1,
+      64,
+      true,
+    );
+    countProviderPointRawAdmissionBudgetRootV1(unknownBudget, unknown);
+    expect(() =>
+      captureProviderPointRawExactTopLevelV1(
+        unknownSession,
+        BUDGET_SHORT_VALUE_KEYS,
+        unknownBudget,
+        1,
+      ),
+    ).toThrow(TypeError);
+    expect(unknownDescriptorCalls).toBe(0);
+    expect(unknownGetterCalls).toBe(0);
+    expect(
+      getProviderPointRawAdmissionCloneAttemptCountForTestV1(unknownSession),
+    ).toBe(0);
+
+    const arrayInput = preparePayload({ payload: [true] });
+    const arrayToken = observeProviderPointRawObjectIdentityV1(
+      arrayInput.session,
+      arrayInput.captured.payload,
+    );
+    const arrayBudget = createProviderPointRawAdmissionBudgetV1(
+      2,
+      2,
+      1,
+      1,
+      true,
+    );
+    countProviderPointRawAdmissionBudgetRootV1(
+      arrayBudget,
+      arrayInput.captured.payload,
+    );
+    expect(() =>
+      captureProviderPointRawObservedDenseArrayV1(
+        arrayInput.session,
+        arrayToken,
+        1,
+        arrayBudget,
+        1,
+      ),
+    ).not.toThrow();
+  });
+
+  it("charges two history roots against one exact aggregate budget and preserves C/W/clone ledgers", () => {
+    const rootEnvelope = { payload: { label: "a" } };
+    const registryEnvelope = { payload: { label: "b" } };
+    const input = {
+      rootHistory: [rootEnvelope],
+      registryHistory: [registryEnvelope],
+    };
+    const session = createProviderPointRawAdmissionSessionV1(input, {
+      maxObservedIdentities: 7,
+      maxPrecloneAllocationWorkUnits: 115,
+    });
+    const top = captureProviderPointRawExactTopLevelV1(session, HISTORY_KEYS);
+    const rootHistoryToken = observeProviderPointRawObjectIdentityV1(
+      session,
+      top.rootHistory,
+    );
+    const registryHistoryToken = observeProviderPointRawObjectIdentityV1(
+      session,
+      top.registryHistory,
+    );
+    const aggregateBudget = createProviderPointRawAdmissionBudgetV1(
+      4,
+      8,
+      7,
+      28,
+      true,
+    );
+    countProviderPointRawAdmissionBudgetRootV1(
+      aggregateBudget,
+      top.rootHistory,
+    );
+    countProviderPointRawAdmissionBudgetAdditionalRootV1(
+      aggregateBudget,
+      top.registryHistory,
+    );
+    const rootDense = captureProviderPointRawObservedDenseArrayV1(
+      session,
+      rootHistoryToken,
+      1,
+      aggregateBudget,
+      1,
+    );
+    const registryDense = captureProviderPointRawObservedDenseArrayV1(
+      session,
+      registryHistoryToken,
+      1,
+      aggregateBudget,
+      1,
+    );
+    const rootBranchBudget = createProviderPointRawAdmissionBudgetV1(
+      3,
+      3,
+      7,
+      13,
+      true,
+    );
+    const registryBranchBudget = createProviderPointRawAdmissionBudgetV1(
+      3,
+      3,
+      7,
+      13,
+      true,
+    );
+    countProviderPointRawAdmissionBudgetRootV1(
+      rootBranchBudget,
+      rootDense.items["0"],
+    );
+    countProviderPointRawAdmissionBudgetRootV1(
+      registryBranchBudget,
+      registryDense.items["0"],
+    );
+    walkProviderPointRawObservedJsonIdentityTreeWithDualBudgetsV1(
+      session,
+      rootDense.itemTokens["0"]!,
+      rootBranchBudget,
+      aggregateBudget,
+    );
+    walkProviderPointRawObservedJsonIdentityTreeWithDualBudgetsV1(
+      session,
+      registryDense.itemTokens["0"]!,
+      registryBranchBudget,
+      aggregateBudget,
+    );
+    expect(
+      getProviderPointRawAdmissionAllocationLedgerForTestV1(session),
+    ).toMatchObject({
+      observedIdentityCount: 7,
+      precloneAllocationWorkUnitCount: 115,
+      remainingPrecloneAllocationWorkUnits: 0,
+      cloneAttemptCount: 0,
+    });
+    expect(() => cloneProviderPointRawAdmissionCapsuleV1(session)).not.toThrow();
+    expect(getProviderPointRawAdmissionCloneAttemptCountForTestV1(session)).toBe(
+      1,
+    );
+  });
+
+  it("fails either history branch or aggregate name budget before one shared descriptor traversal", () => {
+    function exercise(
+      branchSingleCap: number,
+      aggregateSingleCap: number,
+      expectedFailure = true,
+    ): {
+      readonly ownKeysCalls: number;
+      readonly descriptorCalls: number;
+      readonly session: ProviderPointRawAdmissionSessionV1;
+    } {
+      let ownKeysCalls = 0;
+      let descriptorCalls = 0;
+      const envelope = new Proxy(
+        { payload: { label: "a" } },
+        {
+          ownKeys(target) {
+            ownKeysCalls += 1;
+            return Reflect.ownKeys(target);
+          },
+          getOwnPropertyDescriptor(target, key) {
+            descriptorCalls += 1;
+            return Reflect.getOwnPropertyDescriptor(target, key);
+          },
+        },
+      );
+      const input = { payload: [envelope] };
+      const session = createProviderPointRawAdmissionSessionV1(input);
+      const top = captureProviderPointRawExactTopLevelV1(session, PAYLOAD_KEYS);
+      const historyToken = observeProviderPointRawObjectIdentityV1(
+        session,
+        top.payload,
+      );
+      const aggregateBudget = createProviderPointRawAdmissionBudgetV1(
+        4,
+        4,
+        aggregateSingleCap,
+        64,
+        true,
+      );
+      countProviderPointRawAdmissionBudgetRootV1(
+        aggregateBudget,
+        top.payload,
+      );
+      const dense = captureProviderPointRawObservedDenseArrayV1(
+        session,
+        historyToken,
+        1,
+        aggregateBudget,
+        1,
+      );
+      const branchBudget = createProviderPointRawAdmissionBudgetV1(
+        3,
+        3,
+        branchSingleCap,
+        64,
+        true,
+      );
+      countProviderPointRawAdmissionBudgetRootV1(
+        branchBudget,
+        dense.items["0"],
+      );
+      const walk = () =>
+        walkProviderPointRawObservedJsonIdentityTreeWithDualBudgetsV1(
+          session,
+          dense.itemTokens["0"]!,
+          branchBudget,
+          aggregateBudget,
+        );
+      if (expectedFailure) {
+        expect(walk).toThrow(TypeError);
+      } else {
+        expect(walk).not.toThrow();
+      }
+      return { ownKeysCalls, descriptorCalls, session };
+    }
+
+    const branchFirst = exercise(6, 7);
+    expect(branchFirst.ownKeysCalls).toBe(1);
+    expect(branchFirst.descriptorCalls).toBe(0);
+    expect(
+      getProviderPointRawAdmissionCloneAttemptCountForTestV1(
+        branchFirst.session,
+      ),
+    ).toBe(0);
+
+    const aggregateFirst = exercise(7, 6);
+    expect(aggregateFirst.ownKeysCalls).toBe(1);
+    expect(aggregateFirst.descriptorCalls).toBe(0);
+    expect(
+      getProviderPointRawAdmissionCloneAttemptCountForTestV1(
+        aggregateFirst.session,
+      ),
+    ).toBe(0);
+
+    const exact = exercise(7, 7, false);
+    expect(exact.ownKeysCalls).toBe(1);
+    expect(exact.descriptorCalls).toBe(1);
+    expect(
+      getProviderPointRawAdmissionAllocationLedgerForTestV1(exact.session),
+    ).toMatchObject({
+      observedIdentityCount: 4,
+      cloneAttemptCount: 0,
+    });
+  });
+
+  it("still rejects an Envelope identity aliased across the two history arrays", () => {
+    const sharedEnvelope = { payload: { label: "shared" } };
+    const input = {
+      rootHistory: [sharedEnvelope],
+      registryHistory: [sharedEnvelope],
+    };
+    const session = createProviderPointRawAdmissionSessionV1(input);
+    const top = captureProviderPointRawExactTopLevelV1(session, HISTORY_KEYS);
+    const rootHistoryToken = observeProviderPointRawObjectIdentityV1(
+      session,
+      top.rootHistory,
+    );
+    const registryHistoryToken = observeProviderPointRawObjectIdentityV1(
+      session,
+      top.registryHistory,
+    );
+    const aggregateBudget = createProviderPointRawAdmissionBudgetV1(
+      4,
+      16,
+      16,
+      128,
+    );
+    countProviderPointRawAdmissionBudgetRootV1(
+      aggregateBudget,
+      top.rootHistory,
+    );
+    countProviderPointRawAdmissionBudgetAdditionalRootV1(
+      aggregateBudget,
+      top.registryHistory,
+    );
+    captureProviderPointRawObservedDenseArrayV1(
+      session,
+      rootHistoryToken,
+      1,
+      aggregateBudget,
+      1,
+    );
+    expect(() =>
+      captureProviderPointRawObservedDenseArrayV1(
+        session,
+        registryHistoryToken,
+        1,
+        aggregateBudget,
+        1,
+      ),
+    ).toThrow(TypeError);
+    expect(getProviderPointRawAdmissionCloneAttemptCountForTestV1(session)).toBe(
+      0,
+    );
   });
 
   it("rejects the first value at depth cap+1 before reflecting on that child", () => {
@@ -902,6 +1431,200 @@ describe("provider point package-internal raw admission", () => {
     ).toBe(1);
   });
 
+  it("applies scoped identity and allocation-work caps without changing the default path", () => {
+    const defaultInput = { payload: { accepted: true } };
+    const defaultSession = createProviderPointRawAdmissionSessionV1(defaultInput);
+    const defaultCaptured = captureProviderPointRawExactTopLevelV1(
+      defaultSession,
+      PAYLOAD_KEYS,
+    );
+    walkProviderPointRawJsonIdentityTreeV1(
+      defaultSession,
+      defaultCaptured.payload,
+    );
+    expect(
+      getProviderPointRawAdmissionAllocationLedgerForTestV1(defaultSession),
+    ).toEqual({
+      scoped: false,
+      maxObservedIdentities: undefined,
+      maxPrecloneAllocationWorkUnits: undefined,
+      observedIdentityCount: 2,
+      precloneAllocationWorkUnitCount: 0,
+      remainingPrecloneAllocationWorkUnits: undefined,
+      cloneAttemptCount: 0,
+      lastDenseArrayLength: undefined,
+      lastDenseArrayMaxLength: undefined,
+      lastDenseArrayLengthOverflow: undefined,
+      testCapExerciseKind: undefined,
+      testCapExerciseRelation: undefined,
+      testCapExerciseLimit: undefined,
+      testCapExerciseBefore: undefined,
+      testCapExerciseCharge: undefined,
+      testCapExerciseOverflow: undefined,
+    });
+
+    const exactInput = { payload: { accepted: true } };
+    const exactSession = createProviderPointRawAdmissionSessionV1(exactInput, {
+      maxObservedIdentities: 2,
+      maxPrecloneAllocationWorkUnits: 76,
+    });
+    const exactCaptured = captureProviderPointRawExactTopLevelV1(
+      exactSession,
+      PAYLOAD_KEYS,
+    );
+    walkProviderPointRawJsonIdentityTreeV1(
+      exactSession,
+      exactCaptured.payload,
+    );
+    expect(
+      getProviderPointRawAdmissionAllocationLedgerForTestV1(exactSession),
+    ).toEqual({
+      scoped: true,
+      maxObservedIdentities: 2,
+      maxPrecloneAllocationWorkUnits: 76,
+      observedIdentityCount: 2,
+      precloneAllocationWorkUnitCount: 76,
+      remainingPrecloneAllocationWorkUnits: 0,
+      cloneAttemptCount: 0,
+      lastDenseArrayLength: undefined,
+      lastDenseArrayMaxLength: undefined,
+      lastDenseArrayLengthOverflow: undefined,
+      testCapExerciseKind: undefined,
+      testCapExerciseRelation: undefined,
+      testCapExerciseLimit: undefined,
+      testCapExerciseBefore: undefined,
+      testCapExerciseCharge: undefined,
+      testCapExerciseOverflow: undefined,
+    });
+    expect(() => cloneProviderPointRawAdmissionCapsuleV1(exactSession)).not.toThrow();
+    expect(
+      getProviderPointRawAdmissionCloneAttemptCountForTestV1(exactSession),
+    ).toBe(1);
+
+    const identityInput = { payload: { accepted: true } };
+    const identitySession = createProviderPointRawAdmissionSessionV1(
+      identityInput,
+      {
+        maxObservedIdentities: 1,
+        maxPrecloneAllocationWorkUnits: 76,
+      },
+    );
+    const identityCaptured = captureProviderPointRawExactTopLevelV1(
+      identitySession,
+      PAYLOAD_KEYS,
+    );
+    expect(() =>
+      walkProviderPointRawJsonIdentityTreeV1(
+        identitySession,
+        identityCaptured.payload,
+      ),
+    ).toThrow(TypeError);
+    expect(
+      getProviderPointRawAdmissionAllocationLedgerForTestV1(identitySession),
+    ).toMatchObject({
+      observedIdentityCount: 1,
+      precloneAllocationWorkUnitCount: 70,
+      cloneAttemptCount: 0,
+    });
+    expect(() => cloneProviderPointRawAdmissionCapsuleV1(identitySession)).toThrow(
+      TypeError,
+    );
+    expect(
+      getProviderPointRawAdmissionCloneAttemptCountForTestV1(identitySession),
+    ).toBe(0);
+
+    const workInput = { payload: { accepted: true } };
+    const workSession = createProviderPointRawAdmissionSessionV1(workInput, {
+      maxObservedIdentities: 2,
+      maxPrecloneAllocationWorkUnits: 75,
+    });
+    const workCaptured = captureProviderPointRawExactTopLevelV1(
+      workSession,
+      PAYLOAD_KEYS,
+    );
+    expect(() =>
+      walkProviderPointRawJsonIdentityTreeV1(workSession, workCaptured.payload),
+    ).toThrow(TypeError);
+    expect(
+      getProviderPointRawAdmissionAllocationLedgerForTestV1(workSession),
+    ).toMatchObject({
+      observedIdentityCount: 2,
+      precloneAllocationWorkUnitCount: 75,
+      remainingPrecloneAllocationWorkUnits: 0,
+      cloneAttemptCount: 0,
+    });
+    expect(() => cloneProviderPointRawAdmissionCapsuleV1(workSession)).toThrow(
+      TypeError,
+    );
+    expect(
+      getProviderPointRawAdmissionCloneAttemptCountForTestV1(workSession),
+    ).toBe(0);
+  });
+
+  it("charges dense indices and reserves the complete own-key set before iteration", () => {
+    const exactInput = { payload: [true] };
+    const exactSession = createProviderPointRawAdmissionSessionV1(exactInput, {
+      maxObservedIdentities: 2,
+      maxPrecloneAllocationWorkUnits: 78,
+    });
+    const exactCaptured = captureProviderPointRawExactTopLevelV1(
+      exactSession,
+      PAYLOAD_KEYS,
+    );
+    walkProviderPointRawJsonIdentityTreeV1(
+      exactSession,
+      exactCaptured.payload,
+    );
+    expect(
+      getProviderPointRawAdmissionAllocationLedgerForTestV1(exactSession),
+    ).toMatchObject({
+      observedIdentityCount: 2,
+      precloneAllocationWorkUnitCount: 78,
+      remainingPrecloneAllocationWorkUnits: 0,
+      cloneAttemptCount: 0,
+    });
+
+    let ownKeysCalls = 0;
+    let indexDescriptorCalls = 0;
+    const array = new Proxy([true], {
+      ownKeys(target) {
+        ownKeysCalls += 1;
+        return Reflect.ownKeys(target);
+      },
+      getOwnPropertyDescriptor(target, key) {
+        if (key === "0") indexDescriptorCalls += 1;
+        return Reflect.getOwnPropertyDescriptor(target, key);
+      },
+    });
+    const cappedInput = { payload: array };
+    const cappedSession = createProviderPointRawAdmissionSessionV1(cappedInput, {
+      maxObservedIdentities: 2,
+      maxPrecloneAllocationWorkUnits: 77,
+    });
+    const cappedCaptured = captureProviderPointRawExactTopLevelV1(
+      cappedSession,
+      PAYLOAD_KEYS,
+    );
+    expect(() =>
+      walkProviderPointRawJsonIdentityTreeV1(
+        cappedSession,
+        cappedCaptured.payload,
+      ),
+    ).toThrow(TypeError);
+    expect(ownKeysCalls).toBe(1);
+    expect(indexDescriptorCalls).toBe(0);
+    expect(
+      getProviderPointRawAdmissionAllocationLedgerForTestV1(cappedSession),
+    ).toMatchObject({
+      precloneAllocationWorkUnitCount: 76,
+      remainingPrecloneAllocationWorkUnits: 1,
+      cloneAttemptCount: 0,
+    });
+    expect(() => cloneProviderPointRawAdmissionCapsuleV1(cappedSession)).toThrow(
+      TypeError,
+    );
+  });
+
   it("resists post-import primordial pollution and restores exact descriptors", () => {
     const input = { payload: { items: [{ value: "stable" }] } };
     const objectValueDescriptor = Object.getOwnPropertyDescriptor(
@@ -1017,7 +1740,193 @@ describe("provider point package-internal raw admission", () => {
     );
   });
 
-  it("probes deep detach and Proxy DataCloneError and fails closed for bad candidates", () => {
+  it("records observed string and dense-length boundary attempts without changing counters", () => {
+    const equalInput = { payload: { "": "x".repeat(5) } };
+    const equalSession = createProviderPointRawAdmissionSessionV1(equalInput, {
+      maxObservedIdentities: 2,
+      maxPrecloneAllocationWorkUnits: 128,
+    });
+    const equalTop = captureProviderPointRawExactTopLevelV1(
+      equalSession,
+      PAYLOAD_KEYS,
+    );
+    const equalBudget =
+      createProviderPointRawAdmissionBudgetForSessionObservedForTestV1(
+        equalSession,
+        2,
+        2,
+        5,
+        5,
+      );
+    expect(() =>
+      walkProviderPointRawJsonIdentityTreeV1(
+        equalSession,
+        equalTop.payload,
+        equalBudget,
+      ),
+    ).not.toThrow();
+    expect(getProviderPointRawAdmissionBudgetLedgerForTestV1(equalBudget)).toMatchObject({
+      maxStringCodeUnits: 5,
+      maxTotalStringCodeUnits: 5,
+      totalStringCodeUnits: 5,
+      lastStringChargeBefore: 0,
+      lastStringChargeUnits: 5,
+      lastStringChargeOverflow: false,
+    });
+
+    const overflowInput = { payload: { "": "x".repeat(6) } };
+    const overflowSession = createProviderPointRawAdmissionSessionV1(
+      overflowInput,
+      {
+        maxObservedIdentities: 2,
+        maxPrecloneAllocationWorkUnits: 128,
+      },
+    );
+    const overflowTop = captureProviderPointRawExactTopLevelV1(
+      overflowSession,
+      PAYLOAD_KEYS,
+    );
+    const overflowBudget =
+      createProviderPointRawAdmissionBudgetForSessionObservedForTestV1(
+        overflowSession,
+        2,
+        2,
+        5,
+        5,
+      );
+    expect(() =>
+      walkProviderPointRawJsonIdentityTreeV1(
+        overflowSession,
+        overflowTop.payload,
+        overflowBudget,
+      ),
+    ).toThrow(TypeError);
+    expect(
+      getProviderPointRawAdmissionBudgetLedgerForTestV1(overflowBudget),
+    ).toMatchObject({
+      totalStringCodeUnits: 0,
+      lastStringChargeBefore: 0,
+      lastStringChargeUnits: 6,
+      lastStringChargeOverflow: true,
+    });
+
+    const denseInput = { payload: [null, null] };
+    const denseSession = createProviderPointRawAdmissionSessionV1(denseInput, {
+      maxObservedIdentities: 2,
+      maxPrecloneAllocationWorkUnits: 128,
+    });
+    const denseTop = captureProviderPointRawExactTopLevelV1(
+      denseSession,
+      PAYLOAD_KEYS,
+    );
+    const denseToken = observeProviderPointRawObjectIdentityV1(
+      denseSession,
+      denseTop.payload,
+    );
+    expect(() =>
+      captureProviderPointRawObservedDenseArrayV1(denseSession, denseToken, 1),
+    ).toThrow(TypeError);
+    expect(
+      getProviderPointRawAdmissionAllocationLedgerForTestV1(denseSession),
+    ).toMatchObject({
+      lastDenseArrayLength: 2,
+      lastDenseArrayMaxLength: 1,
+      lastDenseArrayLengthOverflow: true,
+      cloneAttemptCount: 0,
+    });
+  });
+
+  it("exercises identity and work equality/plus-one through a strict one-shot seam", () => {
+    const identityEqual = createProviderPointRawAdmissionSessionV1({}, {
+      maxObservedIdentities: 2,
+      maxPrecloneAllocationWorkUnits: 100,
+    });
+    expect(() =>
+      exerciseProviderPointRawAdmissionAllocationCapForTestV1(
+        identityEqual,
+        "identities_c",
+        "equal",
+        2,
+        100,
+      ),
+    ).not.toThrow();
+    expect(() => cloneProviderPointRawAdmissionCapsuleV1(identityEqual)).not.toThrow();
+    expect(
+      getProviderPointRawAdmissionAllocationLedgerForTestV1(identityEqual),
+    ).toMatchObject({
+      observedIdentityCount: 2,
+      cloneAttemptCount: 1,
+      testCapExerciseKind: "identities_c",
+      testCapExerciseBefore: 1,
+      testCapExerciseCharge: 1,
+      testCapExerciseOverflow: false,
+    });
+
+    const identityOverflow = createProviderPointRawAdmissionSessionV1({}, {
+      maxObservedIdentities: 2,
+      maxPrecloneAllocationWorkUnits: 100,
+    });
+    expect(() =>
+      exerciseProviderPointRawAdmissionAllocationCapForTestV1(
+        identityOverflow,
+        "identities_c",
+        "plus_one",
+        2,
+        100,
+      ),
+    ).toThrow(TypeError);
+    expect(
+      getProviderPointRawAdmissionAllocationLedgerForTestV1(identityOverflow),
+    ).toMatchObject({
+      observedIdentityCount: 2,
+      cloneAttemptCount: 0,
+      testCapExerciseBefore: 2,
+      testCapExerciseOverflow: true,
+    });
+    expect(() =>
+      exerciseProviderPointRawAdmissionAllocationCapForTestV1(
+        identityOverflow,
+        "identities_c",
+        "plus_one",
+        2,
+        100,
+      ),
+    ).toThrow(TypeError);
+
+    for (const relation of ["equal", "plus_one"] as const) {
+      const session = createProviderPointRawAdmissionSessionV1({}, {
+        maxObservedIdentities: 2,
+        maxPrecloneAllocationWorkUnits: 100,
+      });
+      const exercise = () =>
+        exerciseProviderPointRawAdmissionAllocationCapForTestV1(
+          session,
+          "work_w",
+          relation,
+          2,
+          100,
+        );
+      if (relation === "equal") expect(exercise).not.toThrow();
+      else expect(exercise).toThrow(TypeError);
+      if (relation === "equal") {
+        expect(() => cloneProviderPointRawAdmissionCapsuleV1(session)).not.toThrow();
+      }
+      expect(
+        getProviderPointRawAdmissionAllocationLedgerForTestV1(session),
+      ).toMatchObject({
+        precloneAllocationWorkUnitCount: 100,
+        remainingPrecloneAllocationWorkUnits: 0,
+        cloneAttemptCount: relation === "equal" ? 1 : 0,
+        testCapExerciseKind: "work_w",
+        testCapExerciseRelation: relation,
+        testCapExerciseBefore: relation === "equal" ? 99 : 100,
+        testCapExerciseCharge: 1,
+        testCapExerciseOverflow: relation === "plus_one",
+      });
+    }
+  });
+
+  it("probes deep detach, shared alias memoization, and Proxy DataCloneError", () => {
     expect(isProviderPointStructuredCloneBootstrapConformantV1()).toBe(true);
     expect(
       probeProviderPointStructuredCloneCandidateForTestV1(structuredClone),
@@ -1032,7 +1941,8 @@ describe("provider point package-internal raw admission", () => {
     ).toBe(false);
     expect(
       probeProviderPointStructuredCloneCandidateForTestV1(() => ({
-        child: { marker: "before" },
+        originalInput: { child: { marker: "before" } },
+        observedIdentities: { 0: { marker: "before" } },
       })),
     ).toBe(false);
   });

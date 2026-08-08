@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod-runtime.js";
 
 import {
   assertDataObjectDescriptorsBeforeSchemaV1,
@@ -14,9 +14,13 @@ import {
 import {
   diagnoseProviderRealFilesystemConformanceResultClosureV1,
   ProviderRealFilesystemConformanceResultEnvelopeV1Schema,
+  type ProviderRealFilesystemConformanceResultClosureDiagnosticResultV1,
   type ProviderRealFilesystemConformanceResultClosureValidationV1,
   type ValidateProviderRealFilesystemConformanceResultClosureV1Input,
 } from "./provider-real-filesystem-conformance-result.js";
+import {
+  diagnoseProviderRealFilesystemConformanceResultPreparedInternalV1,
+} from "./provider-real-filesystem-conformance-result-internal.js";
 import {
   createStoreDurableObjectProviderRuntimeAttestationSignatureMessageV1,
   deriveStoreDurableObjectProviderRuntimeAttestationContentDigestV1,
@@ -29,11 +33,60 @@ import {
   ProviderRegistryRootPublicKeyV1Schema,
   type ProviderRegistryRootPublicKeyV1,
 } from "./provider-registry-trust.js";
+import {
+  assertPreparedDistributionInputBindingsInternalV1,
+  type PreparedDistributionVerificationContextV1,
+} from "./provider-real-filesystem-source-internal.js";
+import {
+  registerProviderRuntimeAttestationPreparedCoreInternalV1,
+} from "./provider-runtime-attestation-point-internal.js";
+import {
+  hardenProviderPointPromiseV1,
+} from "./provider-point-runtime-internal.js";
 import { sha256InternalV1 } from "./sha256.js";
 import {
   verifyRawEd25519WithCapabilityV1,
   type ProviderStrictEd25519OpaqueCapabilityV1,
 } from "./strict-ed25519-conformance.js";
+
+const CapturedArrayPrototypeSomeV1 = Array.prototype.some;
+const CapturedArrayPrototypeSortV1 = Array.prototype.sort;
+const CapturedObjectFreezeV1 = Object.freeze;
+const CapturedObjectGetOwnPropertyDescriptorsV1 =
+  Object.getOwnPropertyDescriptors;
+const CapturedObjectKeysV1 = Object.keys;
+const CapturedObjectValuesV1 = Object.values;
+const CapturedReflectApplyV1 = Reflect.apply;
+const CapturedRegExpPrototypeExecV1 = RegExp.prototype.exec;
+
+function hardenPromiseV1<T>(promise: Promise<T>): Promise<T> {
+  return hardenProviderPointPromiseV1(promise);
+}
+
+function arraySomeV1<T>(
+  array: readonly T[],
+  callback: (value: T, index: number, source: readonly T[]) => unknown,
+): boolean {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeSomeV1, array, [
+    callback,
+  ]) as boolean;
+}
+
+function arraySortV1<T>(array: T[]): T[] {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeSortV1, array, [
+    undefined,
+  ]) as T[];
+}
+
+function regExpExecV1(pattern: RegExp, value: string): RegExpExecArray | null {
+  return CapturedReflectApplyV1(CapturedRegExpPrototypeExecV1, pattern, [
+    value,
+  ]) as RegExpExecArray | null;
+}
+
+function regExpTestV1(pattern: RegExp, value: string): boolean {
+  return regExpExecV1(pattern, value) !== null;
+}
 
 export const STORE_DURABLE_OBJECT_PROVIDER_POLICY_DOMAIN_V1 =
   "store-durable-object-provider-policy-v1" as const;
@@ -274,8 +327,8 @@ type SnapshotRuntimePointInputV1 = Record<RuntimePointInputKeyV1, unknown>;
 
 function deepFreezeV1<T>(value: T): T {
   if (value !== null && typeof value === "object") {
-    for (const child of Object.values(value)) deepFreezeV1(child);
-    Object.freeze(value);
+    for (const child of CapturedObjectValuesV1(value)) deepFreezeV1(child);
+    CapturedObjectFreezeV1(value);
   }
   return value;
 }
@@ -285,11 +338,14 @@ function snapshotRuntimePointInputV1(
 ): SnapshotRuntimePointInputV1 {
   try {
     assertDataObjectDescriptorsBeforeSchemaV1(input);
-    const descriptors = Object.getOwnPropertyDescriptors(input);
-    const keys = Object.keys(descriptors).sort();
+    const descriptors = CapturedObjectGetOwnPropertyDescriptorsV1(input);
+    const keys = arraySortV1(CapturedObjectKeysV1(descriptors));
     if (
       keys.length !== RUNTIME_POINT_INPUT_KEYS.length ||
-      keys.some((key, index) => key !== RUNTIME_POINT_INPUT_KEYS[index])
+      arraySomeV1(
+        keys,
+        (key, index) => key !== RUNTIME_POINT_INPUT_KEYS[index],
+      )
     ) {
       return fail("input", "schema_invalid");
     }
@@ -342,11 +398,12 @@ function parseRuntimeAttestationPinOuterV1(
 ): RuntimeAttestationPinOuterV1 {
   try {
     assertDataObjectDescriptorsBeforeSchemaV1(input);
-    const descriptors = Object.getOwnPropertyDescriptors(input);
-    const keys = Object.keys(descriptors).sort();
+    const descriptors = CapturedObjectGetOwnPropertyDescriptorsV1(input);
+    const keys = arraySortV1(CapturedObjectKeysV1(descriptors));
     if (
       keys.length !== RUNTIME_ATTESTATION_PIN_OUTER_KEYS.length ||
-      keys.some(
+      arraySomeV1(
+        keys,
         (key, index) => key !== RUNTIME_ATTESTATION_PIN_OUTER_KEYS[index],
       )
     ) {
@@ -385,7 +442,7 @@ const BASE64URL_ALPHABET_V1 =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 function lowerHexToBytesV1(hex: string): Uint8Array {
-  if (!/^(?:[0-9a-f]{2})+$/u.test(hex)) {
+  if (!regExpTestV1(/^(?:[0-9a-f]{2})+$/u, hex)) {
     throw new TypeError("signature is not lowercase octets");
   }
   const bytes = new Uint8Array(hex.length / 2);
@@ -430,7 +487,10 @@ async function verifyRuntimeSignatureV1(
   activeRoot: ProviderRegistryRootPublicKeyV1,
   capability: ProviderStrictEd25519OpaqueCapabilityV1,
 ): Promise<void> {
-  const match = REGISTRY_SIGNATURE_PATTERN_V1.exec(runtime.registrySignature);
+  const match = regExpExecV1(
+    REGISTRY_SIGNATURE_PATTERN_V1,
+    runtime.registrySignature,
+  );
   if (match?.[1] === undefined || match[2] === undefined) {
     return fail("runtime_structure", "schema_invalid");
   }
@@ -465,15 +525,25 @@ async function verifyRuntimeSignatureV1(
   }
 }
 
-async function validateRuntimePointClosureInternalV1(
-  input: unknown,
+async function validateRuntimePointClosureFromSnapshotInternalV1(
+  snapshot: SnapshotRuntimePointInputV1,
+  preparedContext: PreparedDistributionVerificationContextV1 | undefined,
+  diagnoseConformanceResult: (
+    input: ValidateProviderRealFilesystemConformanceResultClosureV1Input,
+  ) => Promise<ProviderRealFilesystemConformanceResultClosureDiagnosticResultV1>,
+  verifyRegistryRuntimeSignature?: typeof verifyRuntimeSignatureV1,
 ): Promise<ProviderRuntimeAttestationPointClosureValidationV1> {
-  // This is the only caller-owned read phase and completes before the first
-  // await. The nested C09-1H call receives only this detached snapshot.
-  const snapshot = snapshotRuntimePointInputV1(input);
+  if (preparedContext !== undefined) {
+    const preparedInput = snapshot as unknown as
+      ValidateProviderRuntimeAttestationPointClosureV1Input;
+    assertPreparedDistributionInputBindingsInternalV1(
+      preparedContext,
+      preparedInput.activeRoot,
+      preparedInput.strictCryptoCapability,
+    );
+  }
 
-  const conformanceDiagnostic =
-    await diagnoseProviderRealFilesystemConformanceResultClosureV1({
+  const conformanceInput = {
       activeRoot: snapshot.activeRoot,
       activeRootMetadata: snapshot.activeRootMetadata,
       distributionRootBinding: snapshot.distributionRootBinding,
@@ -493,7 +563,10 @@ async function validateRuntimePointClosureInternalV1(
         snapshot.targetDiscoveryFixtureManifest,
       targetDiscoveryResult: snapshot.targetDiscoveryResult,
       targetDiscoveryRunnerRun: snapshot.targetDiscoveryRunnerRun,
-    });
+    } as ValidateProviderRealFilesystemConformanceResultClosureV1Input;
+  const conformanceDiagnostic = await hardenPromiseV1(
+    diagnoseConformanceResult(conformanceInput),
+  );
   if (!conformanceDiagnostic.ok) {
     return fail("conformance_result_closure", "source_invalid");
   }
@@ -504,13 +577,20 @@ async function validateRuntimePointClosureInternalV1(
   >;
   let activeRoot: ProviderRegistryRootPublicKeyV1;
   try {
-    resultEnvelope =
+    const parsedResultEnvelope =
       ProviderRealFilesystemConformanceResultEnvelopeV1Schema.parse(
         snapshot.realFilesystemConformanceResult,
       );
-    activeRoot = ProviderRegistryRootPublicKeyV1Schema.parse(
+    const parsedActiveRoot = ProviderRegistryRootPublicKeyV1Schema.parse(
       snapshot.activeRoot,
     );
+    if (preparedContext === undefined) {
+      resultEnvelope = parsedResultEnvelope;
+      activeRoot = parsedActiveRoot;
+    } else {
+      resultEnvelope = snapshot.realFilesystemConformanceResult as typeof parsedResultEnvelope;
+      activeRoot = snapshot.activeRoot as ProviderRegistryRootPublicKeyV1;
+    }
   } catch {
     // C09-1H success makes this unreachable for honest implementations; keep
     // any delegated/source inconsistency at the outer source boundary.
@@ -519,10 +599,13 @@ async function validateRuntimePointClosureInternalV1(
 
   let semanticProviderPolicy: StoreDurableObjectProviderPolicyV1;
   try {
-    semanticProviderPolicy = parseStrictFieldsV1(
+    const parsedSemanticProviderPolicy = parseStrictFieldsV1(
       StoreDurableObjectProviderPolicyV1Schema,
       snapshot.semanticProviderPolicy,
     );
+    semanticProviderPolicy = preparedContext === undefined
+      ? parsedSemanticProviderPolicy
+      : snapshot.semanticProviderPolicy as StoreDurableObjectProviderPolicyV1;
   } catch {
     return fail("semantic_policy_structure", "schema_invalid");
   }
@@ -553,9 +636,12 @@ async function validateRuntimePointClosureInternalV1(
   );
   let runtime: StoreDurableObjectProviderRuntimeAttestationV1;
   try {
-    runtime = StoreDurableObjectProviderRuntimeAttestationV1Schema.parse(
+    const parsedRuntime = StoreDurableObjectProviderRuntimeAttestationV1Schema.parse(
       runtimePinOuter.payload,
     );
+    runtime = preparedContext === undefined
+      ? parsedRuntime
+      : runtimePinOuter.payload as StoreDurableObjectProviderRuntimeAttestationV1;
   } catch {
     return fail("runtime_structure", "schema_invalid");
   }
@@ -603,18 +689,20 @@ async function validateRuntimePointClosureInternalV1(
     return fail("runtime_result_binding", "binding_mismatch");
   }
 
-  await verifyRuntimeSignatureV1(
-    runtime,
-    activeRoot,
-    snapshot.strictCryptoCapability as ProviderStrictEd25519OpaqueCapabilityV1,
-  );
+  if (verifyRegistryRuntimeSignature !== undefined) {
+    await verifyRegistryRuntimeSignature(
+      runtime,
+      activeRoot,
+      snapshot.strictCryptoCapability as ProviderStrictEd25519OpaqueCapabilityV1,
+    );
+  }
 
   const runtimeAttestation: StoreDurableObjectProviderRuntimeAttestationPinV1 =
-    {
+    preparedContext === undefined ? {
       profile: runtimePinOuter.profile,
       contentDigest: runtimeContentDigest,
       payload: runtime,
-    };
+    } : snapshot.runtimeAttestation as StoreDurableObjectProviderRuntimeAttestationPinV1;
   return deepFreezeV1({
     authority: "none_provider_runtime_attestation_structure_only" as const,
     conformanceResultClosure,
@@ -624,6 +712,19 @@ async function validateRuntimePointClosureInternalV1(
     filesystemProfileDigest,
     runtimeAttestation,
   });
+}
+
+async function validateRuntimePointClosureInternalV1(
+  input: unknown,
+): Promise<ProviderRuntimeAttestationPointClosureValidationV1> {
+  // This is the only caller-owned read phase and completes before the first
+  // await. The nested C09-1H call receives only this detached snapshot.
+  return validateRuntimePointClosureFromSnapshotInternalV1(
+    snapshotRuntimePointInputV1(input),
+    undefined,
+    diagnoseProviderRealFilesystemConformanceResultClosureV1,
+    verifyRuntimeSignatureV1,
+  );
 }
 
 export async function diagnoseProviderRuntimeAttestationPointClosureV1(
@@ -652,3 +753,35 @@ export async function validateProviderRuntimeAttestationPointClosureV1(
   }
   return diagnostic.value;
 }
+
+registerProviderRuntimeAttestationPreparedCoreInternalV1(
+  (
+    input: ValidateProviderRuntimeAttestationPointClosureV1Input,
+    context: PreparedDistributionVerificationContextV1,
+  ): Promise<ProviderRuntimeAttestationPointClosureDiagnosticResultV1> => {
+    const operation = (async () => {
+      try {
+        return {
+          ok: true as const,
+          value: await hardenPromiseV1(
+            validateRuntimePointClosureFromSnapshotInternalV1(
+              input as unknown as SnapshotRuntimePointInputV1,
+              context,
+              (conformanceInput) =>
+                diagnoseProviderRealFilesystemConformanceResultPreparedInternalV1(
+                  conformanceInput,
+                  context,
+                ),
+            ),
+          ),
+        };
+      } catch (error) {
+        if (error instanceof RuntimePointDiagnosticSignal) {
+          return { ok: false as const, stage: error.stage, reason: error.reason };
+        }
+        return { ok: false as const, stage: "input" as const, reason: "schema_invalid" as const };
+      }
+    })();
+    return hardenPromiseV1(operation);
+  },
+);

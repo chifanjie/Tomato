@@ -508,13 +508,24 @@ Commit Gate。
   16,777,216，history array另固定256/4096。`B+1`统一在 clone/crypto前以`input/schema_invalid`
   0/0拒绝；两条 history再共享 raw `B_H=268,435,456` node/累计 key+value string/dense-entry
   budget，post-clone retained canonical bytes仍独立受同一268,435,456 ceiling。full capsule另固定
-  observed identity `C=2,097,152`与 pre-clone allocation work `W=16,777,216`：先预留64，首次 identity
+  machine topology复核证明旧 observed identity `C=2,097,152`与 pre-clone allocation work
+  `W=16,777,216`不是 sound no-narrowing bound；strict production-only构造下界为
+  2,118,023/22,569,542，finite-capacity sound upper为3,126,096/235,725,869。D-37重开后
+  adopted `C=4,194,304`、`W=268,435,456`：先预留64，首次 identity
   在任何 collector/token/clone reservation前 charge 4，每 own key、dense index、frame/scratch各 charge 1，
   全部用 subtraction先计费后分配；`C+1/W+1`同步`input/schema_invalid`、0/0、零 clone。只读 topology
   proof generator必须覆盖22-field全部 strict union/policy cardinality并 pin branch/aggregate
-  identity/work derivation；proof超 cap或 drift使 generation失败并重开 D-37，不得静默加 cap。
+  identity/work derivation，同时固定 prior-cap failure与 adopted-cap within-bound；proof超 adopted
+  cap或 drift使 generation失败并重开 D-37，不得静默加 cap。
   B/B+1与 test-only counter-seam C/C+1、W/W+1 fixture必须含 oversized unknown own-key recipe且不物化巨树。
-  raw-object API不承诺抢占 hostile Proxy trap；生产 transport仍须先 byte-cap并 safe-parse。
+  raw-object API不承诺抢占 hostile Proxy trap、`Reflect.ownKeys`结果分配、trap内重入修改或
+  getter零副作用；这类 standard-JavaScript hostile-object边界只承诺 authorization fail-closed。
+  生产 transport仍须先 byte-cap并 safe-parse，只传入 parser新建的 ordinary data tree。
+  package只对 first-party validation path承诺 module-init primordial capture/bind与 post-start Promise
+  hardening；Zod内部 primordial是 trusted module realm边界，不构成完整 same-realm SES。未受信
+  Provider/host代码必须进入隔离 realm或生产独立进程。broad-poison KAT必须固定 first-party
+  post-start call=0、Zod trusted-boundary call>0且合法闭包24/46；dependency primordial实际破坏只可
+  opaque fail，不能返回任何 authority。
 - package-internal raw-admission collector保留 original top-level、两条 history container及全部 nested
   identity；budget/capability通过后，对 fresh null-prototype
   `{originalInput,observedIdentities}` capsule恰好执行一次 trusted full-input clone，ledger固定
@@ -590,6 +601,12 @@ Commit Gate。
   approver resolution为 not-found→revoked，Evidence Result保持 D-35 binding→pin→digest顺序。
   公共错误仍只有
   `provider_unavailable/attestation_invalid`。
+  stage 5成功已经蕴含 input/closure/Manifest/enabled Entry的 installation identity相等，
+  因此 stage 6 `identity_mismatch`是防御性不可达 reason；stage 5 Entry policy closure与stage 10
+  完整 Runtime policy closure也共同蕴含stage 11 digest等式，因此stage 11
+  `binding_mismatch`同样不可达。fixture coverage必须记录这两个 reason的 machine-readable
+  `unreachableRejections`与因果 rationale，并以成功路径证明对应 stage被 traversed；不得伪造
+  rejection来追求表面26/26失败覆盖。
 - crypto count使用同调用历史事实复用，而不是串联两个 public validator。若 exact Registry
   history为`P_H/S_H`，则成功严格为`P_L=P_H`、`S_L=S_H+8`：只新增六条 distribution
   signature与 Evidence QA/Release两签；不重复 supplied-tip root point、tip Entry Runtime signature、

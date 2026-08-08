@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod-runtime.js";
 
 export const ProviderMigrationHistoryQuotaPolicyV1Schema = z.strictObject({
   profile: z.literal("provider_migration_history_quota_policy_v1"),

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod-runtime.js";
 
 import { canonicalizeJcsSafeIntegerUtf8V1 } from "./jcs.js";
 import {
@@ -284,32 +284,37 @@ const InvalidRecipeV1Schema = z.discriminatedUnion("kind", [
   HostileRecipeV1Schema,
 ]);
 
-const SnapshotProjectionV1Schema = z.strictObject({
-  runtimeAttestationContentDigest: ContentDigestV1Schema,
-  runtimeAttestationGeneration: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-  runtimeIssuedAt: ProviderRegistryIsoTimestampV1Schema,
-  runtimeIpcEndpointAttestationDigest: ContentDigestV1Schema,
-  semanticProviderPolicyDigest: ContentDigestV1Schema,
-  filesystemProfileDigest: ContentDigestV1Schema,
-  realFilesystemConformanceResultContentDigest: ContentDigestV1Schema,
-  conformanceCaseResultCount: NonnegativeSafeIntegerV1Schema,
-  conformancePassedCaseResultCount: NonnegativeSafeIntegerV1Schema,
-  conformanceFailedCaseResultCount: NonnegativeSafeIntegerV1Schema,
-  conformanceUnsupportedCaseResultCount: NonnegativeSafeIntegerV1Schema,
-  evidenceId: ProviderFeasibilityEvidenceIdV1Schema,
-  evidenceContentDigest: ContentDigestV1Schema,
-  evidenceIssuedAt: ProviderRegistryIsoTimestampV1Schema,
-  evidenceResult: z.enum(["passed", "failed", "unsupported"]),
-  qaApproverKeyId: ProviderFeasibilityApproverKeyIdV1Schema,
-  releaseApproverKeyId: ProviderFeasibilityApproverKeyIdV1Schema,
-  qaApproverPublicKeyDigest: Ed25519PublicKeyDigestV1Schema,
-  releaseApproverPublicKeyDigest: Ed25519PublicKeyDigestV1Schema,
-  evidenceRelativePath: z
-    .string()
-    .regex(/^provider\/feasibility-evidence\/[A-Za-z0-9_-]+\.json$/u),
-});
+export const ProviderFeasibilityEvidencePointSnapshotProjectionV1Schema =
+  z.strictObject({
+    runtimeAttestationContentDigest: ContentDigestV1Schema,
+    runtimeAttestationGeneration: z
+      .number()
+      .int()
+      .min(1)
+      .max(Number.MAX_SAFE_INTEGER),
+    runtimeIssuedAt: ProviderRegistryIsoTimestampV1Schema,
+    runtimeIpcEndpointAttestationDigest: ContentDigestV1Schema,
+    semanticProviderPolicyDigest: ContentDigestV1Schema,
+    filesystemProfileDigest: ContentDigestV1Schema,
+    realFilesystemConformanceResultContentDigest: ContentDigestV1Schema,
+    conformanceCaseResultCount: NonnegativeSafeIntegerV1Schema,
+    conformancePassedCaseResultCount: NonnegativeSafeIntegerV1Schema,
+    conformanceFailedCaseResultCount: NonnegativeSafeIntegerV1Schema,
+    conformanceUnsupportedCaseResultCount: NonnegativeSafeIntegerV1Schema,
+    evidenceId: ProviderFeasibilityEvidenceIdV1Schema,
+    evidenceContentDigest: ContentDigestV1Schema,
+    evidenceIssuedAt: ProviderRegistryIsoTimestampV1Schema,
+    evidenceResult: z.enum(["passed", "failed", "unsupported"]),
+    qaApproverKeyId: ProviderFeasibilityApproverKeyIdV1Schema,
+    releaseApproverKeyId: ProviderFeasibilityApproverKeyIdV1Schema,
+    qaApproverPublicKeyDigest: Ed25519PublicKeyDigestV1Schema,
+    releaseApproverPublicKeyDigest: Ed25519PublicKeyDigestV1Schema,
+    evidenceRelativePath: z
+      .string()
+      .regex(/^provider\/feasibility-evidence\/[A-Za-z0-9_-]+\.json$/u),
+  });
 export type ProviderFeasibilityEvidencePointSnapshotProjectionV1 = z.infer<
-  typeof SnapshotProjectionV1Schema
+  typeof ProviderFeasibilityEvidencePointSnapshotProjectionV1Schema
 >;
 
 const PublicFailureV1Schema = z.strictObject({
@@ -331,7 +336,8 @@ const SnapshotExpectedV1Schema = z.strictObject({
   boundary: z.literal("snapshot_stability"),
   outcome: z.literal("accepted_frozen_snapshot"),
   authority: z.literal("none_provider_feasibility_evidence_structure_only"),
-  snapshotProjection: SnapshotProjectionV1Schema,
+  snapshotProjection:
+    ProviderFeasibilityEvidencePointSnapshotProjectionV1Schema,
   pointAdmissionCount: z.literal(3),
   signatureVerificationCount: z.literal(11),
   materializedRequestSemanticDigest: ContentDigestV1Schema,

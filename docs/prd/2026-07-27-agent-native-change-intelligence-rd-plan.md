@@ -7189,7 +7189,8 @@ Catalog exact-cover、五链 retained history/current-candidate、Acceptance cur
 
 ### D-37：Production Registry Entry↔Evidence 采用历史信任复用的 supplied-history candidate binding
 
-状态：Accepted（2026-08-06 pre-implementation Decision Amendment）。
+状态：Accepted（2026-08-07 topology-proof Decision Amendment；取代
+2026-08-06 pre-implementation中的旧 C/W literal）。
 
 2026-08-06 C09-1L pre-implementation amendment：C09-1K只关闭 supplied Release
 Target Universe结构，既有 Registry history与 C09-1J Evidence point也仍是两个互不
@@ -7197,6 +7198,22 @@ Target Universe结构，既有 Registry history与 C09-1J Evidence point也仍�
 `ProviderAcceptanceStateV1(strong_ready)`选择；因此本修订中的“production”只表示
 production-format Entry/Evidence等式完整，不表示 supplied history tip已经 current、
 registered、approved或可写。在生成 C09-1L首批 bytes前冻结如下唯一解释：
+
+2026-08-07 machine-topology复核按本节要求重开 D-37：旧
+`2,097,152/16,777,216` cap不是 sound no-narrowing bound。严格 Zod→JSON Schema
+production-only构造下界已经达到2,118,023个 observed identity与22,569,542个 work unit；修正
+`minItems=0`数组首项逗号计费后的 finite-capacity frontier给出 sound upper
+3,126,096/235,725,869。D-37同日重新 Accepted，并按“覆盖 sound upper的最小二次幂”冻结
+`4,194,304/268,435,456`，分别保留1,068,208与32,709,587余量。该修订不增加 Schema或
+policy narrowing，也不把 production-only witness误称为跨 branch digest/signature语义可接受
+request；proof必须同时保留 prior-cap failure与 adopted-cap within-bound两套 machine assessment。
+最终 proof资源为
+`fixtures/v1/golden/provider-registry-evidence-binding-topology-proof-v1.json`，固定181,122 bytes、
+raw SHA-256 `0c4c440ce0bc53e212f2bca0f389f196234a40963fed18ad4b44171f4554dc38`与
+aggregate semantic digest
+`sha256:61e3f97a97d61c2170dfb287dd24cdac49e7c4ec75a04603c2b95f905e9f4714`；
+21项 production parser binding的独立 semantic digest为
+`sha256:eb4c6a3f94ddef876adb002b1e4f5e4e43556015a28b5fa24374b360ec532920`。
 
 - C09-1L入口固定为22个 exact enumerable own data-property，按字典序为：
   `activeRoot`、`activeRootMetadata`、`bootstrapTrustBundle`、
@@ -7222,8 +7239,18 @@ registered、approved或可写。在生成 C09-1L首批 bytes前冻结如下唯�
   handle必须是 frozen、own-key-empty、platform-cloneable ordinary object，authority完全存于 WeakMap。
   唯一 full capsule clone可以机械复制该 empty shell，但 cloned shell永不做 identity check或 crypto、
   立即丢弃并恢复原 handle；未来改变 handle representation必须显式升版或提供等价 clone adapter。
-- raw-object API使用 descriptor-only bounded preflight，不能声称可抢占 hostile Proxy trap或
-  回收 caller已分配内存；生产 adapter仍必须在进入本点前完成 byte-capped safe JSON parse。
+  本点只对 package first-party validation path承诺 module-init capture/bind与 post-start
+  Promise hardening，不声称建立完整 same-realm SES边界。Zod及其内部 primordial调用属于
+  trusted module realm；未受信 Provider/host代码必须放在隔离 realm或（生产默认）独立进程，
+  不得与 gate共享可篡改 primordial的同一 realm。broad-poison KAT必须证明 first-party
+  post-start primordial调用为0、确有 Zod trusted-boundary调用且合法闭包仍为24/46；实际破坏
+  dependency primordial的 smoke只能得到 opaque failure、绝不能产生 authority。该边界不能被
+  文案解释为“任意同 realm hostile code下仍安全”。
+- raw-object API使用 descriptor-only bounded preflight，不能声称可抢占 hostile Proxy trap、
+  `Reflect.ownKeys`结果数组分配、trap内重入修改或回收 caller已分配内存；标准 JavaScript下这类
+  hostile object边界只承诺 authorization fail-closed，不承诺 trap/getter零副作用或资源抢占。
+  production adapter仍必须在进入本点前完成 byte-capped safe JSON parse，并只把该 parser新建的
+  ordinary data tree交给本点。
   preflight固定 Root history最多256代、Registry history最多4096代，所有 branch最大深度固定
   64。每个 branch以其 post-clone canonical-byte ceiling `B`建立独立 raw budget：Bundle、
   Evidence与每个 Root/Registry trust Envelope的`B=4,194,304`；C09-1I继承的 distribution、
@@ -7240,13 +7267,13 @@ registered、approved或可写。在生成 C09-1L首批 bytes前冻结如下唯�
   仍独立重算并不得超过268,435,456。Bundle中的 immutable
   `ProviderTrustHistoryPolicyV1`必须与这些 literal exact-equal。
   full capsule另冻结两项跨 branch admission cap：
-  `MAX_C09_1L_OBSERVED_IDENTITIES_V1=2,097,152`与
-  `MAX_C09_1L_PRECLONE_ALLOCATION_WORK_UNITS_V1=16,777,216`。session先预留64个 fixed work
+  `MAX_C09_1L_OBSERVED_IDENTITIES_V1=4,194,304`与
+  `MAX_C09_1L_PRECLONE_ALLOCATION_WORK_UNITS_V1=268,435,456`。session先预留64个 fixed work
   units给 counters/session/capsule/capability shell；每个首次发现的 JSON object/array identity必须在
   `WeakSet.add`、collector own slot、token/state或 clone-memo/output reservation前原子 charge 4 units，
   每个 own key进入 descriptor检查前 charge 1，每个 dense index排入遍历前再 charge 1，每个 walker
   frame或 scratch record分配前 charge 1。全部计数使用`remaining < charge`减法短路，禁止加法 overflow、
-  先分配后计费或失败后回退继续；第2,097,153个 observed identity或第16,777,217个 work unit必须同步
+  先分配后计费或失败后回退继续；第4,194,305个 observed identity或第268,435,457个 work unit必须同步
   `input/schema_invalid`、0/0、`cloneAttemptCount=0`拒绝。captured reflection返回的 own-key array本身仍属
   raw-object API无法抢占的 platform/caller边界，但其 safe length一旦读取，必须先整段 reservation再
   迭代或创建 request-local scratch。
@@ -7255,7 +7282,8 @@ registered、approved或可写。在生成 C09-1L首批 bytes前冻结如下唯�
   total=268,435,456及既有 policy cardinality 256/64/64/64/256/65,536，生成并 pin
   `ProviderRegistryEvidenceBindingTopologyProofV1`。proof对 top-level、opaque shell与每个 branch固定
   `{maxIdentities,maxWorkUnits,derivation}`，aggregate semantic digest覆盖有序 derivation；`--check`
-  必须硬断言 strict maxima分别不超过2,097,152/16,777,216。任一 Schema/policy drift、无法求界的
+  必须硬断言 strict maxima分别不超过4,194,304/268,435,456，并固定 prior
+  2,097,152/16,777,216失败与 adopted cap通过的双评估。任一 Schema/policy drift、无法求界的
   production或证明超 cap都使 generation失败并重开 D-37，不得静默提高 cap或先生成 candidate bytes。
   fixture以 test-only/non-export counter seam和小型 recipe覆盖 identity `C/C+1`、work `W/W+1`，不实际
   分配百万对象；`C/W`允许继续落到原最早 Schema结果，`C+1/W+1`必须当场0/0且零 clone。全部合法
@@ -7426,6 +7454,15 @@ registered、approved或可写。在生成 C09-1L首批 bytes前冻结如下唯�
 | 24 | `evidence_digest` | `digest_mismatch` | 从完整 payload重算原 D-35 content domain digest → Envelope `contentDigest` exact equality |
 | 25 | `evidence_envelope` | `envelope_mismatch` | Envelope `evidenceId` → payload `evidenceId` → stage-17 derived ID →完整 strict Evidence V1组合 Schema no-new-rejection assertion |
 | 26 | `evidence_pin` | `pin_mismatch` | Pin `evidenceId` → Envelope `evidenceId` → Pin `contentDigest` → Envelope `contentDigest` → fixed relative-path builder invariant；`locatorProfile` literal已由 stage 4关闭 |
+
+  stage 5成功已经证明同一个 installation identity同时闭合 input、closure、每代
+  Manifest与每个 enabled Entry，因此 stage 6的`identity_mismatch`是保留的防御性断言，
+  真实 identity mutation只能更早在`registry_history_closure/source_invalid`拒绝；stage 6仍可由
+  Root Metadata Pin或完整 Root record不等抵达`root_mismatch`。同理，stage 5已闭合 Entry policy
+  digest而stage 10已从完整 Runtime policy重算同一 digest，所以 stage 11的
+  `binding_mismatch`也是成功前置条件蕴含下的防御性断言，没有可诚实构造的 rejection。
+  fixture stage coverage必须分别记录`traversedBySuccess=true`、真实 rejection集合及
+  `unreachableRejections[{reason,rationale}]`；不得为这两个不可达 reason伪造失败案例。
 
   对只产生同一个 reason的多字段 stage，仍按表中列出的字段顺序比较，point-specific compound
   mutation必须证明更早 predicate稳定胜出。公共失败仍只暴露

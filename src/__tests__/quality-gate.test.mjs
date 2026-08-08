@@ -111,6 +111,7 @@ describe("root quality gate", () => {
       "verify:provider-real-fs-conformance-result",
       "verify:provider-runtime-attestation-point",
       "verify:provider-feasibility-evidence-point",
+      "verify:provider-registry-evidence-binding-point",
     ];
 
     expect(providerScripts.prepack).toBe(
@@ -124,7 +125,7 @@ describe("root quality gate", () => {
     );
     expect(providerScripts.test).not.toContain("verify:");
     expect(providerDistributionScript).toMatch(
-      /run\(\s*npmCommand,\s*\[\s*"pack",\s*"\.",\s*"--ignore-scripts=false"[\s\S]*?\],\s*\{\s*cwd: cleanPackageRoot,?\s*\},\s*\);/,
+      /run\(\s*npmCommand,\s*\[\s*"pack",\s*"\.",\s*"--ignore-scripts=false"[\s\S]*?\],\s*\{\s*cwd: cleanPackageRoot,\s*env:\s*\{\s*NODE_OPTIONS:\s*C09_PACK_NODE_OPTIONS\s*\},\s*timeoutMs:\s*PACK_COMMAND_TIMEOUT_MS,?\s*\},\s*\);/,
     );
     expect(contractsDistributionScript).toMatch(
       /run\(\s*pnpmCommand,\s*\["run", "build"\],\s*\{ cwd: cleanProviderRoot \},\s*\);\s*run\(\s*npmCommand,\s*\[\s*"pack",\s*"\.",\s*"--ignore-scripts"[\s\S]*?\],\s*\{ cwd: cleanProviderRoot \},\s*\);/,

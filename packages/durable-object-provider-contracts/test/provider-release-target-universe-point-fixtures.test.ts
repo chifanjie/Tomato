@@ -265,6 +265,52 @@ describe("release target Universe point fixture resources", () => {
     180_000,
   );
 
+  it("restores the structuredClone descriptor exactly after the locator poison witness", async () => {
+    const golden = JSON.parse(new TextDecoder().decode(goldenBytes));
+    const invalid =
+      verifyProviderReleaseTargetUniversePointInvalidResourceV1(invalidBytes);
+    const invalidCase = invalid.cases.find(
+      ({ caseId }) =>
+        caseId === "universe-locator-structured-clone-replacement",
+    );
+    expect(invalidCase).toBeDefined();
+    expect(invalidCase!.expected.boundary).toBe("locator_builder");
+    if (invalidCase!.expected.boundary !== "locator_builder") {
+      throw new TypeError(
+        "structuredClone poison fixture must target the locator boundary",
+      );
+    }
+    const expected = invalidCase!.expected;
+    const descriptorBefore = descriptorSnapshot(
+      globalThis,
+      "structuredClone",
+    );
+    pointAdmissionCount = 0;
+    signatureVerificationCount = 0;
+    nextSignatureMutation = undefined;
+
+    const outcome =
+      await executeProviderReleaseTargetUniversePointInvalidCaseV1(
+        golden,
+        invalid,
+        invalidCase!,
+        capability,
+        executionCounter,
+      );
+
+    expect(outcome).toMatchObject({
+      kind: "rejection",
+      boundary: "locator_builder",
+      stage: expected.stage,
+      reason: expected.reason,
+    });
+    expectDescriptorRestored(
+      globalThis,
+      "structuredClone",
+      descriptorBefore,
+    );
+  });
+
   it(
     "executes all 285 cases with fresh diagnostic/public inputs and exact counters",
     async () => {

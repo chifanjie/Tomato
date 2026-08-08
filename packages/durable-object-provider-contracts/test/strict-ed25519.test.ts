@@ -93,6 +93,155 @@ describe("strict Ed25519 reference primitive", () => {
     );
   });
 
+  it("freezes the reference functions and uses only bootstrap-captured primordials", () => {
+    expect(Object.isFrozen(validatePrimeSubgroupPoint)).toBe(true);
+    expect(Object.isFrozen(verifyRawEd25519)).toBe(true);
+
+    const globalBigIntDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "BigInt",
+    )!;
+    const globalNumberDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "Number",
+    )!;
+    const globalUint8ArrayDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "Uint8Array",
+    )!;
+    const arrayFromDescriptor = Object.getOwnPropertyDescriptor(
+      Array,
+      "from",
+    )!;
+    const typedArrayPrototype = Object.getPrototypeOf(
+      Uint8Array.prototype,
+    ) as object;
+    const typedArrayByteLengthDescriptor =
+      Object.getOwnPropertyDescriptor(
+        typedArrayPrototype,
+        "byteLength",
+      )!;
+    const typedArraySetDescriptor = Object.getOwnPropertyDescriptor(
+      typedArrayPrototype,
+      "set",
+    )!;
+    const poisonHits = {
+      arrayFrom: 0,
+      bigint: 0,
+      number: 0,
+      typedArrayByteLength: 0,
+      typedArraySet: 0,
+      uint8Array: 0,
+    };
+    let pointResult: boolean | undefined;
+    let signatureResult: boolean | undefined;
+
+    try {
+      Object.defineProperty(globalThis, "BigInt", {
+        configurable: globalBigIntDescriptor.configurable,
+        enumerable: globalBigIntDescriptor.enumerable,
+        get() {
+          poisonHits.bigint += 1;
+          return globalBigIntDescriptor.value;
+        },
+      });
+      Object.defineProperty(globalThis, "Number", {
+        configurable: globalNumberDescriptor.configurable,
+        enumerable: globalNumberDescriptor.enumerable,
+        get() {
+          poisonHits.number += 1;
+          return globalNumberDescriptor.value;
+        },
+      });
+      Object.defineProperty(globalThis, "Uint8Array", {
+        configurable: globalUint8ArrayDescriptor.configurable,
+        enumerable: globalUint8ArrayDescriptor.enumerable,
+        get() {
+          poisonHits.uint8Array += 1;
+          return globalUint8ArrayDescriptor.value;
+        },
+      });
+      Object.defineProperty(Array, "from", {
+        ...arrayFromDescriptor,
+        value(this: unknown, ...args: unknown[]) {
+          poisonHits.arrayFrom += 1;
+          return Reflect.apply(arrayFromDescriptor.value, this, args);
+        },
+      });
+      Object.defineProperty(typedArrayPrototype, "byteLength", {
+        configurable: typedArrayByteLengthDescriptor.configurable,
+        enumerable: typedArrayByteLengthDescriptor.enumerable,
+        get(this: Uint8Array) {
+          poisonHits.typedArrayByteLength += 1;
+          return Reflect.apply(
+            typedArrayByteLengthDescriptor.get!,
+            this,
+            [],
+          ) as number;
+        },
+      });
+      Object.defineProperty(typedArrayPrototype, "set", {
+        ...typedArraySetDescriptor,
+        value(
+          this: Uint8Array,
+          source: ArrayLike<number>,
+          offset?: number,
+        ) {
+          poisonHits.typedArraySet += 1;
+          return Reflect.apply(typedArraySetDescriptor.value, this, [
+            source,
+            offset,
+          ]);
+        },
+      });
+
+      pointResult = validatePrimeSubgroupPoint(RFC8032_EMPTY.publicKey);
+      signatureResult = verifyRawEd25519(
+        RFC8032_EMPTY.publicKey,
+        RFC8032_EMPTY.message,
+        RFC8032_EMPTY.signature,
+      );
+    } finally {
+      Object.defineProperty(
+        globalThis,
+        "BigInt",
+        globalBigIntDescriptor,
+      );
+      Object.defineProperty(
+        globalThis,
+        "Number",
+        globalNumberDescriptor,
+      );
+      Object.defineProperty(
+        globalThis,
+        "Uint8Array",
+        globalUint8ArrayDescriptor,
+      );
+      Object.defineProperty(Array, "from", arrayFromDescriptor);
+      Object.defineProperty(
+        typedArrayPrototype,
+        "byteLength",
+        typedArrayByteLengthDescriptor,
+      );
+      Object.defineProperty(
+        typedArrayPrototype,
+        "set",
+        typedArraySetDescriptor,
+      );
+    }
+
+    expect(pointResult).toBe(true);
+    expect(signatureResult).toBe(true);
+    expect(poisonHits).toEqual({
+      arrayFrom: 0,
+      bigint: 0,
+      number: 0,
+      typedArrayByteLength: 0,
+      typedArraySet: 0,
+      uint8Array: 0,
+    });
+  });
+
   it("accepts PureEd25519 RFC 8032 vectors with prime-subgroup A and R", () => {
     for (const vector of [
       RFC8032_EMPTY,

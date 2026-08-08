@@ -33,10 +33,8 @@ const CapturedNumberIsSafeIntegerV1 = Number.isSafeInteger;
 const CapturedProxyV1 = Proxy;
 const CapturedStringV1 = String;
 const CapturedTypeErrorV1 = TypeError;
-const CapturedGlobalThisV1 = globalThis;
-const CapturedDOMExceptionV1 = CapturedGlobalThisV1.DOMException;
-const CapturedStructuredCloneV1: unknown =
-  CapturedGlobalThisV1.structuredClone;
+const CapturedDOMExceptionV1 = globalThis.DOMException;
+const CapturedStructuredCloneV1: unknown = globalThis.structuredClone;
 
 function bindUncurriedAtBootstrapV1(method: Function): Function {
   const argumentsList = CapturedObjectFreezeV1([method]);
@@ -47,24 +45,14 @@ function bindUncurriedAtBootstrapV1(method: Function): Function {
   ) as Function;
 }
 
-function bindReceiverAtBootstrapV1(
-  method: Function,
-  receiver: unknown,
-): Function {
-  const argumentsList = CapturedObjectFreezeV1([receiver]);
-  return CapturedReflectApplyV1(
-    CapturedFunctionPrototypeBindV1,
-    method,
-    argumentsList,
-  ) as Function;
-}
-
 const BoundCapturedStructuredCloneV1 =
   typeof CapturedStructuredCloneV1 === "function"
-    ? (bindReceiverAtBootstrapV1(
-        CapturedStructuredCloneV1,
-        CapturedGlobalThisV1,
-      ) as StructuredCloneCandidateV1)
+    ? ((value: unknown) =>
+        CapturedReflectApplyV1(
+          CapturedStructuredCloneV1,
+          undefined,
+          [value],
+        ))
     : undefined;
 
 const hasOwnV1 = bindUncurriedAtBootstrapV1(
@@ -242,14 +230,45 @@ function isDataCloneErrorV1(error: unknown): boolean {
 }
 
 function createBootstrapProbeObjectV1(): {
-  readonly root: object;
+  readonly capsule: object;
+  readonly originalInput: object;
+  readonly observedIdentities: object;
   readonly child: object;
 } {
   const child = CapturedObjectCreateV1(CapturedObjectPrototypeV1) as object;
   defineDataPropertyV1(child, "marker", "before", true, true, true);
-  const root = CapturedObjectCreateV1(CapturedObjectPrototypeV1) as object;
-  defineDataPropertyV1(root, "child", child, true, true, true);
-  return CapturedObjectFreezeV1({ root, child });
+  const originalInput = CapturedObjectCreateV1(
+    CapturedObjectPrototypeV1,
+  ) as object;
+  defineDataPropertyV1(originalInput, "child", child, true, false, false);
+  const observedIdentities = CapturedObjectCreateV1(null) as object;
+  defineDataPropertyV1(observedIdentities, "0", child, true, false, false);
+  const capsule = CapturedObjectCreateV1(null) as object;
+  defineDataPropertyV1(
+    capsule,
+    "originalInput",
+    originalInput,
+    true,
+    false,
+    false,
+  );
+  defineDataPropertyV1(
+    capsule,
+    "observedIdentities",
+    observedIdentities,
+    true,
+    false,
+    false,
+  );
+  CapturedObjectFreezeV1(originalInput);
+  CapturedObjectFreezeV1(observedIdentities);
+  CapturedObjectFreezeV1(capsule);
+  return CapturedObjectFreezeV1({
+    capsule,
+    originalInput,
+    observedIdentities,
+    child,
+  });
 }
 
 function probeStructuredCloneCandidateV1(candidate: unknown): boolean {
@@ -257,33 +276,61 @@ function probeStructuredCloneCandidateV1(candidate: unknown): boolean {
   const clone = candidate as StructuredCloneCandidateV1;
   try {
     const probe = createBootstrapProbeObjectV1();
-    const detached = clone(probe.root);
+    const detached = clone(probe.capsule);
     if (
       detached === null ||
       typeof detached !== "object" ||
-      detached === probe.root ||
+      detached === probe.capsule ||
       CapturedArrayIsArrayV1(detached) ||
       CapturedObjectGetPrototypeOfV1(detached) !== CapturedObjectPrototypeV1
     ) {
       return false;
     }
-    const detachedChild = readEnumerableDataPropertyV1(detached, "child");
+    const detachedOriginalInput = readEnumerableDataPropertyV1(
+      detached,
+      "originalInput",
+    );
+    const detachedObservedIdentities = readEnumerableDataPropertyV1(
+      detached,
+      "observedIdentities",
+    );
     if (
-      detachedChild === null ||
-      typeof detachedChild !== "object" ||
-      detachedChild === probe.child ||
-      readEnumerableDataPropertyV1(detachedChild, "marker") !== "before"
+      detachedOriginalInput === null ||
+      typeof detachedOriginalInput !== "object" ||
+      detachedOriginalInput === probe.originalInput ||
+      detachedObservedIdentities === null ||
+      typeof detachedObservedIdentities !== "object" ||
+      detachedObservedIdentities === probe.observedIdentities
+    ) {
+      return false;
+    }
+    const detachedInputChild = readEnumerableDataPropertyV1(
+      detachedOriginalInput,
+      "child",
+    );
+    const detachedCollectorChild = readEnumerableDataPropertyV1(
+      detachedObservedIdentities,
+      "0",
+    );
+    if (
+      detachedInputChild === null ||
+      typeof detachedInputChild !== "object" ||
+      detachedInputChild === probe.child ||
+      detachedCollectorChild !== detachedInputChild ||
+      readEnumerableDataPropertyV1(detachedInputChild, "marker") !== "before"
     ) {
       return false;
     }
     if (!CapturedReflectSetV1(probe.child, "marker", "after", probe.child)) {
       return false;
     }
-    if (readEnumerableDataPropertyV1(detachedChild, "marker") !== "before") {
+    if (
+      readEnumerableDataPropertyV1(detachedInputChild, "marker") !== "before"
+    ) {
       return false;
     }
     try {
-      clone(new CapturedProxyV1(probe.root, CapturedObjectCreateV1(null)));
+      clone(new CapturedProxyV1(probe.capsule, CapturedObjectCreateV1(null)));
       return false;
     } catch (error) {
       return isDataCloneErrorV1(error);
@@ -307,14 +354,39 @@ const BudgetStateKeyV1 = Symbol(
   "provider-point-raw-admission-budget-state-v1",
 );
 
+const PROVIDER_POINT_RAW_ADMISSION_FIXED_WORK_UNITS_V1 = 64;
+const PROVIDER_POINT_RAW_ADMISSION_IDENTITY_WORK_UNITS_V1 = 4;
+const PROVIDER_POINT_RAW_ADMISSION_TEST_IDENTITY_PROBE_V1 =
+  CapturedObjectFreezeV1(CapturedObjectCreateV1(CapturedObjectPrototypeV1)) as object;
+
+/** Optional package-internal aggregate limits used by larger Provider points. */
+export interface ProviderPointRawAdmissionAllocationLimitsV1 {
+  readonly maxObservedIdentities: number;
+  readonly maxPrecloneAllocationWorkUnits: number;
+}
+
 interface ProviderPointRawAdmissionSessionStateV1 {
   readonly originalInput: object;
   readonly observedIdentities: Record<PropertyKey, unknown>;
   readonly seen: WeakSet<object>;
   readonly topToken: ProviderPointRawObservedObjectV1;
+  readonly maxObservedIdentities: number | undefined;
+  readonly maxPrecloneAllocationWorkUnits: number | undefined;
   identityCount: number;
+  remainingPrecloneAllocationWorkUnits: number | undefined;
+  precloneAllocationWorkUnitCount: number;
   cloneAttemptCount: number;
-  phase: "open" | "clone_attempted";
+  lastDenseArrayLength: number | undefined;
+  lastDenseArrayMaxLength: number | undefined;
+  lastDenseArrayLengthOverflow: boolean | undefined;
+  testCapExerciseConsumed: boolean;
+  testCapExerciseKind: "identities_c" | "work_w" | undefined;
+  testCapExerciseRelation: "equal" | "plus_one" | undefined;
+  testCapExerciseLimit: number | undefined;
+  testCapExerciseBefore: number | undefined;
+  testCapExerciseCharge: number | undefined;
+  testCapExerciseOverflow: boolean | undefined;
+  phase: "open" | "failed" | "clone_attempted";
 }
 
 interface ProviderPointRawObservedTokenStateV1 {
@@ -324,14 +396,21 @@ interface ProviderPointRawObservedTokenStateV1 {
 }
 
 interface ProviderPointRawAdmissionBudgetStateV1 {
+  readonly allocationSession: ProviderPointRawAdmissionSessionV1 | undefined;
+  readonly countPropertyNameCodeUnits: boolean;
   readonly maxDepth: number;
   readonly maxNodes: number;
   readonly maxStringCodeUnits: number;
   readonly maxTotalStringCodeUnits: number;
+  readonly rootIdentities: WeakSet<object>;
+  readonly countedContainers: WeakSet<object>;
   rootCounted: boolean;
-  rootIdentity: object | undefined;
   nodeCount: number;
   totalStringCodeUnits: number;
+  readonly observeStringChargesForTest: boolean;
+  lastStringChargeBefore: number;
+  lastStringChargeUnits: number;
+  lastStringChargeOverflow: boolean;
 }
 
 /** @internal */
@@ -422,6 +501,67 @@ function assertOpenSessionV1(
   }
 }
 
+function chargeProviderPointRawPrecloneWorkV1(
+  state: ProviderPointRawAdmissionSessionStateV1,
+  units: number,
+): void {
+  if (!CapturedNumberIsSafeIntegerV1(units) || units < 0) {
+    return failV1("provider point raw allocation charge is invalid");
+  }
+  const remaining = state.remainingPrecloneAllocationWorkUnits;
+  if (remaining === undefined || units === 0) return;
+  if (remaining < units) {
+    setNullRecordOwnFieldV1(
+      state as unknown as Record<PropertyKey, unknown>,
+      "phase",
+      "failed",
+    );
+    return failV1(
+      "provider point raw input exceeds its pre-clone allocation-work cap",
+    );
+  }
+  setNullRecordOwnFieldV1(
+    state as unknown as Record<PropertyKey, unknown>,
+    "remainingPrecloneAllocationWorkUnits",
+    remaining - units,
+  );
+  setNullRecordOwnFieldV1(
+    state as unknown as Record<PropertyKey, unknown>,
+    "precloneAllocationWorkUnitCount",
+    state.precloneAllocationWorkUnitCount + units,
+  );
+}
+
+function chargeProviderPointRawSessionWorkV1(
+  session: ProviderPointRawAdmissionSessionV1,
+  units: number,
+): void {
+  const state = sessionStateV1(session);
+  assertOpenSessionV1(state);
+  chargeProviderPointRawPrecloneWorkV1(state, units);
+}
+
+function reserveProviderPointRawOwnKeyWorkV1(
+  session: ProviderPointRawAdmissionSessionV1,
+  ownKeyCount: number,
+): void {
+  chargeProviderPointRawSessionWorkV1(session, ownKeyCount);
+}
+
+function reserveProviderPointRawDenseIndexWorkV1(
+  session: ProviderPointRawAdmissionSessionV1,
+  denseLength: number,
+): void {
+  chargeProviderPointRawSessionWorkV1(session, denseLength);
+}
+
+function reserveProviderPointRawScratchWorkV1(
+  session: ProviderPointRawAdmissionSessionV1,
+  scratchRecordCount = 1,
+): void {
+  chargeProviderPointRawSessionWorkV1(session, scratchRecordCount);
+}
+
 function observeObjectIdentityInternalV1(
   session: ProviderPointRawAdmissionSessionV1,
   value: unknown,
@@ -434,6 +574,23 @@ function observeObjectIdentityInternalV1(
   if (weakSetHasV1(state.seen, value)) {
     return failV1("provider point raw JSON identities must form one tree");
   }
+  if (
+    state.maxObservedIdentities !== undefined &&
+    state.identityCount >= state.maxObservedIdentities
+  ) {
+    setNullRecordOwnFieldV1(
+      state as unknown as Record<PropertyKey, unknown>,
+      "phase",
+      "failed",
+    );
+    return failV1(
+      "provider point raw input exceeds its observed-identity cap",
+    );
+  }
+  chargeProviderPointRawPrecloneWorkV1(
+    state,
+    PROVIDER_POINT_RAW_ADMISSION_IDENTITY_WORK_UNITS_V1,
+  );
   weakSetAddV1(state.seen, value);
 
   const identityIndex = state.identityCount;
@@ -476,6 +633,7 @@ function observeObjectIdentityInternalV1(
  */
 export function createProviderPointRawAdmissionSessionV1(
   originalInput: unknown,
+  allocationLimits?: ProviderPointRawAdmissionAllocationLimitsV1,
 ): ProviderPointRawAdmissionSessionV1 {
   if (TrustedStructuredCloneV1 === undefined) {
     return failV1(
@@ -484,6 +642,28 @@ export function createProviderPointRawAdmissionSessionV1(
   }
   if (originalInput === null || typeof originalInput !== "object") {
     return failV1("provider point raw input must be an object");
+  }
+  let maxObservedIdentities: number | undefined;
+  let maxPrecloneAllocationWorkUnits: number | undefined;
+  let remainingPrecloneAllocationWorkUnits: number | undefined;
+  let precloneAllocationWorkUnitCount = 0;
+  if (allocationLimits !== undefined) {
+    const identityLimit = allocationLimits.maxObservedIdentities;
+    const workLimit = allocationLimits.maxPrecloneAllocationWorkUnits;
+    if (
+      !CapturedNumberIsSafeIntegerV1(identityLimit) ||
+      identityLimit < 1 ||
+      !CapturedNumberIsSafeIntegerV1(workLimit) ||
+      workLimit < PROVIDER_POINT_RAW_ADMISSION_FIXED_WORK_UNITS_V1
+    ) {
+      return failV1("provider point raw allocation limits are invalid");
+    }
+    maxObservedIdentities = identityLimit;
+    maxPrecloneAllocationWorkUnits = workLimit;
+    remainingPrecloneAllocationWorkUnits =
+      workLimit - PROVIDER_POINT_RAW_ADMISSION_FIXED_WORK_UNITS_V1;
+    precloneAllocationWorkUnitCount =
+      PROVIDER_POINT_RAW_ADMISSION_FIXED_WORK_UNITS_V1;
   }
   const observedIdentities = CapturedObjectCreateV1(null) as Record<
     PropertyKey,
@@ -504,8 +684,78 @@ export function createProviderPointRawAdmissionSessionV1(
     false,
   );
   defineDataPropertyV1(state, "seen", seen, true, false, false);
+  defineDataPropertyV1(
+    state,
+    "maxObservedIdentities",
+    maxObservedIdentities,
+    true,
+    false,
+    false,
+  );
+  defineDataPropertyV1(
+    state,
+    "maxPrecloneAllocationWorkUnits",
+    maxPrecloneAllocationWorkUnits,
+    true,
+    false,
+    false,
+  );
   defineDataPropertyV1(state, "identityCount", 0, true, false, true);
+  defineDataPropertyV1(
+    state,
+    "remainingPrecloneAllocationWorkUnits",
+    remainingPrecloneAllocationWorkUnits,
+    true,
+    false,
+    true,
+  );
+  defineDataPropertyV1(
+    state,
+    "precloneAllocationWorkUnitCount",
+    precloneAllocationWorkUnitCount,
+    true,
+    false,
+    true,
+  );
   defineDataPropertyV1(state, "cloneAttemptCount", 0, true, false, true);
+  defineDataPropertyV1(state, "lastDenseArrayLength", undefined, true, false, true);
+  defineDataPropertyV1(
+    state,
+    "lastDenseArrayMaxLength",
+    undefined,
+    true,
+    false,
+    true,
+  );
+  defineDataPropertyV1(
+    state,
+    "lastDenseArrayLengthOverflow",
+    undefined,
+    true,
+    false,
+    true,
+  );
+  defineDataPropertyV1(state, "testCapExerciseConsumed", false, true, false, true);
+  defineDataPropertyV1(state, "testCapExerciseKind", undefined, true, false, true);
+  defineDataPropertyV1(
+    state,
+    "testCapExerciseRelation",
+    undefined,
+    true,
+    false,
+    true,
+  );
+  defineDataPropertyV1(state, "testCapExerciseLimit", undefined, true, false, true);
+  defineDataPropertyV1(state, "testCapExerciseBefore", undefined, true, false, true);
+  defineDataPropertyV1(state, "testCapExerciseCharge", undefined, true, false, true);
+  defineDataPropertyV1(
+    state,
+    "testCapExerciseOverflow",
+    undefined,
+    true,
+    false,
+    true,
+  );
   defineDataPropertyV1(state, "phase", "open", true, false, true);
   defineDataPropertyV1(
     session,
@@ -538,11 +788,14 @@ function assertPositiveSafeBudgetLimitV1(
  *
  * @internal
  */
-export function createProviderPointRawAdmissionBudgetV1(
+function createProviderPointRawAdmissionBudgetInternalV1(
+  allocationSession: ProviderPointRawAdmissionSessionV1 | undefined,
   maxDepth: number,
   maxNodes: number,
   maxStringCodeUnits: number,
   maxTotalStringCodeUnits: number,
+  countPropertyNameCodeUnits: boolean,
+  observeStringChargesForTest = false,
 ): ProviderPointRawAdmissionBudgetV1 {
   assertPositiveSafeBudgetLimitV1(maxDepth, "depth cap");
   assertPositiveSafeBudgetLimitV1(maxNodes, "node cap");
@@ -554,9 +807,34 @@ export function createProviderPointRawAdmissionBudgetV1(
     maxTotalStringCodeUnits,
     "total-string code-unit cap",
   );
+  if (allocationSession !== undefined) {
+    reserveProviderPointRawScratchWorkV1(allocationSession, 4);
+  }
 
   const state = CapturedObjectCreateV1(null) as unknown as
     ProviderPointRawAdmissionBudgetStateV1;
+  const rootIdentities = CapturedObjectFreezeV1(
+    new CapturedWeakSetV1<object>(),
+  );
+  const countedContainers = CapturedObjectFreezeV1(
+    new CapturedWeakSetV1<object>(),
+  );
+  defineDataPropertyV1(
+    state,
+    "allocationSession",
+    allocationSession,
+    true,
+    false,
+    false,
+  );
+  defineDataPropertyV1(
+    state,
+    "countPropertyNameCodeUnits",
+    countPropertyNameCodeUnits,
+    true,
+    false,
+    false,
+  );
   defineDataPropertyV1(state, "maxDepth", maxDepth, true, false, false);
   defineDataPropertyV1(state, "maxNodes", maxNodes, true, false, false);
   defineDataPropertyV1(
@@ -575,9 +853,24 @@ export function createProviderPointRawAdmissionBudgetV1(
     false,
     false,
   );
+  defineDataPropertyV1(
+    state,
+    "rootIdentities",
+    rootIdentities,
+    true,
+    false,
+    false,
+  );
+  defineDataPropertyV1(
+    state,
+    "countedContainers",
+    countedContainers,
+    true,
+    false,
+    false,
+  );
   defineDataPropertyV1(state, "nodeCount", 0, true, false, true);
   defineDataPropertyV1(state, "rootCounted", false, true, false, true);
-  defineDataPropertyV1(state, "rootIdentity", undefined, true, false, true);
   defineDataPropertyV1(
     state,
     "totalStringCodeUnits",
@@ -586,6 +879,17 @@ export function createProviderPointRawAdmissionBudgetV1(
     false,
     true,
   );
+  defineDataPropertyV1(
+    state,
+    "observeStringChargesForTest",
+    observeStringChargesForTest,
+    true,
+    false,
+    false,
+  );
+  defineDataPropertyV1(state, "lastStringChargeBefore", 0, true, false, true);
+  defineDataPropertyV1(state, "lastStringChargeUnits", 0, true, false, true);
+  defineDataPropertyV1(state, "lastStringChargeOverflow", false, true, false, true);
 
   const budget = CapturedObjectCreateV1(null) as
     ProviderPointRawAdmissionBudgetV1;
@@ -598,6 +902,128 @@ export function createProviderPointRawAdmissionBudgetV1(
     false,
   );
   return CapturedObjectFreezeV1(budget);
+}
+
+/**
+ * Creates an unscoped budget for legacy callers. Property-name accounting is
+ * opt-in because pre-D-37 points froze value-only string budgets; request-bound
+ * C09-1L budgets always enable it through the session constructors below.
+ * @internal
+ */
+export function createProviderPointRawAdmissionBudgetV1(
+  maxDepth: number,
+  maxNodes: number,
+  maxStringCodeUnits: number,
+  maxTotalStringCodeUnits: number,
+  countPropertyNameCodeUnits = false,
+): ProviderPointRawAdmissionBudgetV1 {
+  return createProviderPointRawAdmissionBudgetInternalV1(
+    undefined,
+    maxDepth,
+    maxNodes,
+    maxStringCodeUnits,
+    maxTotalStringCodeUnits,
+    countPropertyNameCodeUnits,
+  );
+}
+
+/**
+ * Creates a request-owned budget after atomically charging its state, two
+ * WeakSets, and shell before any of those four scratch objects are allocated.
+ *
+ * @internal
+ */
+export function createProviderPointRawAdmissionBudgetForSessionV1(
+  session: ProviderPointRawAdmissionSessionV1,
+  maxDepth: number,
+  maxNodes: number,
+  maxStringCodeUnits: number,
+  maxTotalStringCodeUnits: number,
+): ProviderPointRawAdmissionBudgetV1 {
+  return createProviderPointRawAdmissionBudgetInternalV1(
+    session,
+    maxDepth,
+    maxNodes,
+    maxStringCodeUnits,
+    maxTotalStringCodeUnits,
+    true,
+  );
+}
+
+/**
+ * Package-internal observed budget used only by request-bound C09-1L fixture
+ * recipes. Limits and accounting are otherwise identical to production.
+ * @internal
+ */
+export function createProviderPointRawAdmissionBudgetForSessionObservedForTestV1(
+  session: ProviderPointRawAdmissionSessionV1,
+  maxDepth: number,
+  maxNodes: number,
+  maxStringCodeUnits: number,
+  maxTotalStringCodeUnits: number,
+): ProviderPointRawAdmissionBudgetV1 {
+  return createProviderPointRawAdmissionBudgetInternalV1(
+    session,
+    maxDepth,
+    maxNodes,
+    maxStringCodeUnits,
+    maxTotalStringCodeUnits,
+    true,
+    true,
+  );
+}
+
+function reserveProviderPointRawBudgetWeakSetInsertionWorkV1(
+  state: ProviderPointRawAdmissionBudgetStateV1,
+  insertionCount: number,
+): void {
+  if (state.allocationSession === undefined || insertionCount === 0) return;
+  reserveProviderPointRawScratchWorkV1(
+    state.allocationSession,
+    insertionCount,
+  );
+}
+
+function countProviderPointRawAdmissionStringCodeUnitsV1(
+  budget: ProviderPointRawAdmissionBudgetV1,
+  value: string,
+): void {
+  const state = budgetStateV1(budget);
+  const codeUnits = value.length;
+  const overflow =
+    codeUnits > state.maxStringCodeUnits ||
+    codeUnits > state.maxTotalStringCodeUnits - state.totalStringCodeUnits;
+  if (state.observeStringChargesForTest) {
+    setNullRecordOwnFieldV1(
+      state as unknown as Record<PropertyKey, unknown>,
+      "lastStringChargeBefore",
+      state.totalStringCodeUnits,
+    );
+    setNullRecordOwnFieldV1(
+      state as unknown as Record<PropertyKey, unknown>,
+      "lastStringChargeUnits",
+      codeUnits,
+    );
+    setNullRecordOwnFieldV1(
+      state as unknown as Record<PropertyKey, unknown>,
+      "lastStringChargeOverflow",
+      overflow,
+    );
+  }
+  if (codeUnits > state.maxStringCodeUnits) {
+    return failV1("provider point raw string exceeds its code-unit cap");
+  }
+  if (
+    codeUnits >
+    state.maxTotalStringCodeUnits - state.totalStringCodeUnits
+  ) {
+    return failV1("provider point raw tree exceeds its total string cap");
+  }
+  setNullRecordOwnFieldV1(
+    state as unknown as Record<PropertyKey, unknown>,
+    "totalStringCodeUnits",
+    state.totalStringCodeUnits + codeUnits,
+  );
 }
 
 function countProviderPointRawAdmissionValueV1(
@@ -615,27 +1041,72 @@ function countProviderPointRawAdmissionValueV1(
   if (state.nodeCount >= state.maxNodes) {
     return failV1("provider point raw tree exceeds its node cap");
   }
+  const insertCountedContainer =
+    value !== null &&
+    typeof value === "object" &&
+    !weakSetHasV1(state.countedContainers, value);
+  if (insertCountedContainer) {
+    reserveProviderPointRawBudgetWeakSetInsertionWorkV1(state, 1);
+  }
   setNullRecordOwnFieldV1(
     state as unknown as Record<PropertyKey, unknown>,
     "nodeCount",
     state.nodeCount + 1,
   );
 
-  if (typeof value !== "string") return;
-  const codeUnits = value.length;
-  if (codeUnits > state.maxStringCodeUnits) {
-    return failV1("provider point raw string exceeds its code-unit cap");
+  if (insertCountedContainer) {
+    weakSetAddV1(state.countedContainers, value);
   }
-  if (
-    codeUnits >
-    state.maxTotalStringCodeUnits - state.totalStringCodeUnits
-  ) {
-    return failV1("provider point raw tree exceeds its total string cap");
+
+  if (typeof value !== "string") return;
+  countProviderPointRawAdmissionStringCodeUnitsV1(budget, value);
+}
+
+function countProviderPointRawAdmissionBudgetRootInternalV1(
+  budget: ProviderPointRawAdmissionBudgetV1,
+  root: unknown,
+  additional: boolean,
+): void {
+  const state = budgetStateV1(budget);
+  if (additional ? !state.rootCounted : state.rootCounted) {
+    return failV1(
+      additional
+        ? "provider point raw admission budget initial root was not counted"
+        : "provider point raw admission budget root was already counted",
+    );
+  }
+  if (root === null || typeof root !== "object") {
+    return failV1("provider point raw admission budget root must be an object");
+  }
+  if (weakSetHasV1(state.rootIdentities, root)) {
+    return failV1("provider point raw admission budget root was already counted");
+  }
+  if (state.nodeCount >= state.maxNodes) {
+    return failV1("provider point raw tree exceeds its node cap");
+  }
+  const insertCountedContainer = !weakSetHasV1(
+    state.countedContainers,
+    root,
+  );
+  reserveProviderPointRawBudgetWeakSetInsertionWorkV1(
+    state,
+    insertCountedContainer ? 2 : 1,
+  );
+  weakSetAddV1(state.rootIdentities, root);
+  if (insertCountedContainer) {
+    weakSetAddV1(state.countedContainers, root);
+  }
+  if (!additional) {
+    setNullRecordOwnFieldV1(
+      state as unknown as Record<PropertyKey, unknown>,
+      "rootCounted",
+      true,
+    );
   }
   setNullRecordOwnFieldV1(
     state as unknown as Record<PropertyKey, unknown>,
-    "totalStringCodeUnits",
-    state.totalStringCodeUnits + codeUnits,
+    "nodeCount",
+    state.nodeCount + 1,
   );
 }
 
@@ -644,24 +1115,15 @@ export function countProviderPointRawAdmissionBudgetRootV1(
   budget: ProviderPointRawAdmissionBudgetV1,
   root: unknown,
 ): void {
-  const state = budgetStateV1(budget);
-  if (state.rootCounted) {
-    return failV1("provider point raw admission budget root was already counted");
-  }
-  if (root === null || typeof root !== "object") {
-    return failV1("provider point raw admission budget root must be an object");
-  }
-  setNullRecordOwnFieldV1(
-    state as unknown as Record<PropertyKey, unknown>,
-    "rootCounted",
-    true,
-  );
-  setNullRecordOwnFieldV1(
-    state as unknown as Record<PropertyKey, unknown>,
-    "rootIdentity",
-    root,
-  );
-  countProviderPointRawAdmissionValueV1(budget, root, 1);
+  countProviderPointRawAdmissionBudgetRootInternalV1(budget, root, false);
+}
+
+/** Counts one distinct additional aggregate-history root at depth one. @internal */
+export function countProviderPointRawAdmissionBudgetAdditionalRootV1(
+  budget: ProviderPointRawAdmissionBudgetV1,
+  root: unknown,
+): void {
+  countProviderPointRawAdmissionBudgetRootInternalV1(budget, root, true);
 }
 
 function assertProviderPointRawBudgetContainerV1(
@@ -683,11 +1145,35 @@ function assertProviderPointRawBudgetContainerV1(
   if (!state.rootCounted) {
     return failV1("provider point raw admission budget root was not counted");
   }
-  if (containerDepth === 1 && state.rootIdentity !== value) {
+  if (
+    !weakSetHasV1(state.countedContainers, value) ||
+    (containerDepth === 1 && !weakSetHasV1(state.rootIdentities, value))
+  ) {
     return failV1("provider point raw admission budget root identity changed");
   }
   if (containerDepth > state.maxDepth) {
     return failV1("provider point raw tree exceeds its depth cap");
+  }
+}
+
+function countProviderPointRawBudgetedPropertyNameV1(
+  key: string,
+  budget: ProviderPointRawAdmissionBudgetV1 | undefined,
+  additionalBudget?: ProviderPointRawAdmissionBudgetV1,
+): void {
+  if (
+    budget !== undefined &&
+    budgetStateV1(budget).countPropertyNameCodeUnits
+  ) {
+    countProviderPointRawAdmissionStringCodeUnitsV1(budget, key);
+  }
+  if (additionalBudget !== undefined) {
+    if (additionalBudget === budget) {
+      return failV1("provider point raw dual budgets must be distinct");
+    }
+    if (budgetStateV1(additionalBudget).countPropertyNameCodeUnits) {
+      countProviderPointRawAdmissionStringCodeUnitsV1(additionalBudget, key);
+    }
   }
 }
 
@@ -696,17 +1182,40 @@ function readBudgetedEnumerableDataPropertyV1(
   key: PropertyKey,
   budget: ProviderPointRawAdmissionBudgetV1 | undefined,
   containerDepth: number | undefined,
+  additionalBudget?: ProviderPointRawAdmissionBudgetV1,
+  additionalContainerDepth?: number,
 ): unknown {
-  const fieldValue = readEnumerableDataPropertyV1(value, key);
-  if (budget === undefined && containerDepth === undefined) return fieldValue;
-  if (budget === undefined || containerDepth === undefined) {
+  if ((budget === undefined) !== (containerDepth === undefined)) {
     return failV1("provider point raw budget and depth must be provided together");
   }
-  countProviderPointRawAdmissionValueV1(
-    budget,
-    fieldValue,
-    containerDepth + 1,
-  );
+  if (
+    (additionalBudget === undefined) !==
+    (additionalContainerDepth === undefined)
+  ) {
+    return failV1("provider point raw budget and depth must be provided together");
+  }
+  if (additionalBudget !== undefined && budget === undefined) {
+    return failV1("provider point raw primary budget is required");
+  }
+  if (additionalBudget !== undefined && additionalBudget === budget) {
+    return failV1("provider point raw dual budgets must be distinct");
+  }
+
+  const fieldValue = readEnumerableDataPropertyV1(value, key);
+  if (budget !== undefined && containerDepth !== undefined) {
+    countProviderPointRawAdmissionValueV1(
+      budget,
+      fieldValue,
+      containerDepth + 1,
+    );
+  }
+  if (additionalBudget !== undefined && additionalContainerDepth !== undefined) {
+    countProviderPointRawAdmissionValueV1(
+      additionalBudget,
+      fieldValue,
+      additionalContainerDepth + 1,
+    );
+  }
   return fieldValue;
 }
 
@@ -784,35 +1293,32 @@ function snapshotExactDataObjectInternalV1(
   expectedKeys: readonly string[],
   budget?: ProviderPointRawAdmissionBudgetV1,
   containerDepth?: number,
+  allocationSession?: ProviderPointRawAdmissionSessionV1,
 ): Readonly<Record<string, unknown>> {
   assertProviderPointRawBudgetContainerV1(value, budget, containerDepth);
   assertPlainObjectIdentityV1(value);
   const expectedLength = assertTrustedExpectedKeysV1(expectedKeys);
-  const captured = CapturedObjectCreateV1(null) as Record<string, unknown>;
 
-  // Read known descriptors first.  No getter is ever invoked.
-  for (let index = 0; index < expectedLength; index += 1) {
-    const key = trustedArrayItemV1(expectedKeys, index);
-    const fieldValue = readBudgetedEnumerableDataPropertyV1(
-      value,
-      key,
-      budget,
-      containerDepth,
-    );
-    defineDataPropertyV1(captured, key, fieldValue, true, false, false);
-  }
-
-  // Then prove that no hidden, symbol, or unknown field was present.
+  // Reserve and charge the complete raw own-key set before reading any value
+  // descriptor. Unknown oversized names therefore fail before their value can
+  // be observed. Array length is handled only by the dense-array paths.
   const ownKeys = CapturedReflectOwnKeysV1(value);
   const ownKeyCount = readPlatformArrayLengthV1(ownKeys);
-  if (ownKeyCount !== expectedLength) {
-    return failV1("provider point raw object has an unexpected own key set");
+  if (allocationSession !== undefined) {
+    reserveProviderPointRawOwnKeyWorkV1(allocationSession, ownKeyCount);
   }
   for (let ownIndex = 0; ownIndex < ownKeyCount; ownIndex += 1) {
     const ownKey = readPlatformArrayElementV1(ownKeys, ownIndex);
     if (typeof ownKey !== "string") {
       return failV1("provider point raw object must not contain symbol keys");
     }
+    countProviderPointRawBudgetedPropertyNameV1(ownKey, budget);
+  }
+  if (ownKeyCount !== expectedLength) {
+    return failV1("provider point raw object has an unexpected own key set");
+  }
+  for (let ownIndex = 0; ownIndex < ownKeyCount; ownIndex += 1) {
+    const ownKey = readPlatformArrayElementV1(ownKeys, ownIndex) as string;
     let matched = false;
     for (let expectedIndex = 0; expectedIndex < expectedLength; expectedIndex += 1) {
       if (trustedArrayItemV1(expectedKeys, expectedIndex) === ownKey) {
@@ -823,6 +1329,24 @@ function snapshotExactDataObjectInternalV1(
     if (!matched) {
       return failV1("provider point raw object has an unexpected own key set");
     }
+  }
+
+  if (allocationSession !== undefined) {
+    reserveProviderPointRawScratchWorkV1(allocationSession);
+  }
+  const captured = CapturedObjectCreateV1(null) as Record<string, unknown>;
+
+  // Every admitted name was budgeted before its descriptor is read. No getter
+  // is ever invoked.
+  for (let index = 0; index < expectedLength; index += 1) {
+    const key = trustedArrayItemV1(expectedKeys, index);
+    const fieldValue = readBudgetedEnumerableDataPropertyV1(
+      value,
+      key,
+      budget,
+      containerDepth,
+    );
+    defineDataPropertyV1(captured, key, fieldValue, true, false, false);
   }
   return CapturedObjectFreezeV1(captured);
 }
@@ -849,6 +1373,7 @@ export function captureProviderPointRawExactTopLevelV1(
     expectedKeys,
     budget,
     containerDepth,
+    session,
   );
 }
 
@@ -871,6 +1396,7 @@ export function captureProviderPointRawObservedExactDataObjectV1(
     expectedKeys,
     budget,
     containerDepth,
+    session,
   );
 }
 
@@ -925,9 +1451,8 @@ function ownKeysExactlyMatchExpectedV1(
 
 /**
  * Selects one of several exact key tuples without consuming a one-shot token
- * more than once.  Fields common to every variant are descriptor-snapshotted
- * before exact own-key enumeration; the selected variant's optional fields
- * are then read descriptor-only.
+ * more than once. The complete own-key set is reserved and name-budgeted
+ * before common or optional value descriptors are read.
  *
  * @internal
  */
@@ -959,9 +1484,36 @@ export function captureProviderPointRawObservedExactDataObjectUnionV1(
   assertPlainObjectIdentityV1(value);
   const firstVariant = trustedExpectedVariantV1(expectedKeyVariants, 0);
   const firstVariantLength = readPlatformArrayLengthV1(firstVariant);
-  const commonFields = CapturedObjectCreateV1(null) as Record<string, unknown>;
 
-  // Snapshot only keys known to every variant before any own-key trap.
+  const ownKeys = CapturedReflectOwnKeysV1(value);
+  const ownKeyCount = readPlatformArrayLengthV1(ownKeys);
+  reserveProviderPointRawOwnKeyWorkV1(session, ownKeyCount);
+  for (let ownKeyIndex = 0; ownKeyIndex < ownKeyCount; ownKeyIndex += 1) {
+    const ownKey = readPlatformArrayElementV1(ownKeys, ownKeyIndex);
+    if (typeof ownKey !== "string") {
+      return failV1("provider point raw object must not contain symbol keys");
+    }
+    countProviderPointRawBudgetedPropertyNameV1(ownKey, budget);
+  }
+  let selectedVariantIndex = -1;
+  for (let variantIndex = 0; variantIndex < variantCount; variantIndex += 1) {
+    const variant = trustedExpectedVariantV1(
+      expectedKeyVariants,
+      variantIndex,
+    );
+    if (ownKeysExactlyMatchExpectedV1(ownKeys, ownKeyCount, variant)) {
+      if (selectedVariantIndex !== -1) {
+        return failV1("provider point expected-key variants are ambiguous");
+      }
+      selectedVariantIndex = variantIndex;
+    }
+  }
+  if (selectedVariantIndex === -1) {
+    return failV1("provider point raw object has an unexpected own key set");
+  }
+
+  reserveProviderPointRawScratchWorkV1(session);
+  const commonFields = CapturedObjectCreateV1(null) as Record<string, unknown>;
   for (let keyIndex = 0; keyIndex < firstVariantLength; keyIndex += 1) {
     const key = trustedArrayItemV1(firstVariant, keyIndex);
     let common = true;
@@ -994,30 +1546,12 @@ export function captureProviderPointRawObservedExactDataObjectUnionV1(
   }
   CapturedObjectFreezeV1(commonFields);
 
-  const ownKeys = CapturedReflectOwnKeysV1(value);
-  const ownKeyCount = readPlatformArrayLengthV1(ownKeys);
-  let selectedVariantIndex = -1;
-  for (let variantIndex = 0; variantIndex < variantCount; variantIndex += 1) {
-    const variant = trustedExpectedVariantV1(
-      expectedKeyVariants,
-      variantIndex,
-    );
-    if (ownKeysExactlyMatchExpectedV1(ownKeys, ownKeyCount, variant)) {
-      if (selectedVariantIndex !== -1) {
-        return failV1("provider point expected-key variants are ambiguous");
-      }
-      selectedVariantIndex = variantIndex;
-    }
-  }
-  if (selectedVariantIndex === -1) {
-    return failV1("provider point raw object has an unexpected own key set");
-  }
-
   const selectedVariant = trustedExpectedVariantV1(
     expectedKeyVariants,
     selectedVariantIndex,
   );
   const selectedLength = readPlatformArrayLengthV1(selectedVariant);
+  reserveProviderPointRawScratchWorkV1(session);
   const fields = CapturedObjectCreateV1(null) as Record<string, unknown>;
   for (let keyIndex = 0; keyIndex < selectedLength; keyIndex += 1) {
     const key = trustedArrayItemV1(selectedVariant, keyIndex);
@@ -1033,6 +1567,7 @@ export function captureProviderPointRawObservedExactDataObjectUnionV1(
   }
   CapturedObjectFreezeV1(fields);
 
+  reserveProviderPointRawScratchWorkV1(session);
   const capture = CapturedObjectCreateV1(null) as unknown as
     ProviderPointRawExactObjectUnionCaptureV1;
   defineDataPropertyV1(
@@ -1105,20 +1640,30 @@ export function captureProviderPointRawObservedDenseArrayV1(
   ) {
     return failV1("provider point raw array length is invalid");
   }
+  const sessionState = sessionStateV1(session);
+  setNullRecordOwnFieldV1(
+    sessionState as unknown as Record<PropertyKey, unknown>,
+    "lastDenseArrayLength",
+    rawLength,
+  );
+  setNullRecordOwnFieldV1(
+    sessionState as unknown as Record<PropertyKey, unknown>,
+    "lastDenseArrayMaxLength",
+    maxLength,
+  );
+  setNullRecordOwnFieldV1(
+    sessionState as unknown as Record<PropertyKey, unknown>,
+    "lastDenseArrayLengthOverflow",
+    rawLength > maxLength,
+  );
   if (rawLength > maxLength) {
     return failV1("provider point raw array length exceeds its cap");
   }
+  reserveProviderPointRawDenseIndexWorkV1(session, rawLength);
 
   const ownKeys = CapturedReflectOwnKeysV1(value);
   const ownKeyCount = readPlatformArrayLengthV1(ownKeys);
-  if (ownKeyCount !== rawLength + 1) {
-    return failV1("provider point raw arrays must be dense");
-  }
-  const items = CapturedObjectCreateV1(null) as Record<string, unknown>;
-  const itemTokens = CapturedObjectCreateV1(null) as Record<
-    string,
-    ProviderPointRawObservedObjectV1
-  >;
+  reserveProviderPointRawOwnKeyWorkV1(session, ownKeyCount);
   let sawLength = false;
   for (let ownKeyIndex = 0; ownKeyIndex < ownKeyCount; ownKeyIndex += 1) {
     const key = readPlatformArrayElementV1(ownKeys, ownKeyIndex);
@@ -1130,7 +1675,22 @@ export function captureProviderPointRawObservedDenseArrayV1(
       sawLength = true;
       continue;
     }
+    countProviderPointRawBudgetedPropertyNameV1(key, budget);
     parseDenseArrayIndexV1(key, rawLength);
+  }
+  if (!sawLength || ownKeyCount !== rawLength + 1) {
+    return failV1("provider point raw arrays must be dense");
+  }
+
+  reserveProviderPointRawScratchWorkV1(session, 2);
+  const items = CapturedObjectCreateV1(null) as Record<string, unknown>;
+  const itemTokens = CapturedObjectCreateV1(null) as Record<
+    string,
+    ProviderPointRawObservedObjectV1
+  >;
+  for (let ownKeyIndex = 0; ownKeyIndex < ownKeyCount; ownKeyIndex += 1) {
+    const key = readPlatformArrayElementV1(ownKeys, ownKeyIndex) as string;
+    if (key === "length") continue;
     const item = readBudgetedEnumerableDataPropertyV1(
       value,
       key,
@@ -1149,10 +1709,10 @@ export function captureProviderPointRawObservedDenseArrayV1(
       );
     }
   }
-  if (!sawLength) return failV1("provider point raw arrays must be dense");
   CapturedObjectFreezeV1(items);
   CapturedObjectFreezeV1(itemTokens);
 
+  reserveProviderPointRawScratchWorkV1(session);
   const capture = CapturedObjectCreateV1(null) as unknown as
     ProviderPointRawDenseArrayCaptureV1;
   defineDataPropertyV1(capture, "length", rawLength, true, false, false);
@@ -1175,10 +1735,12 @@ interface ProviderPointRawWalkFrameStateV1 {
 }
 
 function createWalkFrameV1(
+  session: ProviderPointRawAdmissionSessionV1,
   token: ProviderPointRawObservedObjectV1,
   next: ProviderPointRawWalkFrameStateV1 | null,
   depth: number,
 ): ProviderPointRawWalkFrameStateV1 {
+  reserveProviderPointRawScratchWorkV1(session);
   const frame = CapturedObjectCreateV1(null) as unknown as
     ProviderPointRawWalkFrameStateV1;
   defineDataPropertyV1(frame, "token", token, true, false, false);
@@ -1216,8 +1778,20 @@ function inspectObservedJsonNodeV1(
   pending: ProviderPointRawWalkFrameStateV1 | null,
   depth: number,
   budget?: ProviderPointRawAdmissionBudgetV1,
+  additionalBudget?: ProviderPointRawAdmissionBudgetV1,
+  additionalDepthOffset = 0,
 ): ProviderPointRawWalkFrameStateV1 | null {
   const value = consumeObservedTokenForInspectionV1(session, token);
+  if (budget !== undefined) {
+    assertProviderPointRawBudgetContainerV1(value, budget, depth);
+  }
+  if (additionalBudget !== undefined) {
+    assertProviderPointRawBudgetContainerV1(
+      value,
+      additionalBudget,
+      depth + additionalDepthOffset,
+    );
+  }
   const isArray = CapturedArrayIsArrayV1(value);
   const prototype = CapturedObjectGetPrototypeOfV1(value);
   if (
@@ -1244,16 +1818,14 @@ function inspectObservedJsonNodeV1(
       return failV1("provider point raw array length is invalid");
     }
     arrayLength = rawLength;
+    reserveProviderPointRawDenseIndexWorkV1(session, arrayLength);
   }
 
   const keys = CapturedReflectOwnKeysV1(value);
   const keyCount = readPlatformArrayLengthV1(keys);
-  if (isArray && keyCount !== arrayLength + 1) {
-    return failV1("provider point raw arrays must be dense");
-  }
+  reserveProviderPointRawOwnKeyWorkV1(session, keyCount);
 
   let sawArrayLength = false;
-  let nextPending = pending;
   for (let index = 0; index < keyCount; index += 1) {
     const key = readPlatformArrayElementV1(keys, index);
     if (typeof key !== "string") {
@@ -1266,23 +1838,96 @@ function inspectObservedJsonNodeV1(
       sawArrayLength = true;
       continue;
     }
+    countProviderPointRawBudgetedPropertyNameV1(
+      key,
+      budget,
+      additionalBudget,
+    );
     if (isArray) parseDenseArrayIndexV1(key, arrayLength);
+  }
+  if (isArray && (!sawArrayLength || keyCount !== arrayLength + 1)) {
+    return failV1("provider point raw arrays must be dense");
+  }
+
+  let nextPending = pending;
+  for (let index = 0; index < keyCount; index += 1) {
+    const key = readPlatformArrayElementV1(keys, index) as string;
+    if (isArray && key === "length") continue;
     const child = readBudgetedEnumerableDataPropertyV1(
       value,
       key,
       budget,
       budget === undefined ? undefined : depth,
+      additionalBudget,
+      additionalBudget === undefined
+        ? undefined
+        : depth + additionalDepthOffset,
     );
     if (child !== null && typeof child === "object") {
       // Claim at descriptor-discovery time, before reflecting on the child.
       const childToken = observeObjectIdentityInternalV1(session, child);
-      nextPending = createWalkFrameV1(childToken, nextPending, depth + 1);
+      nextPending = createWalkFrameV1(
+        session,
+        childToken,
+        nextPending,
+        depth + 1,
+      );
     }
   }
-  if (isArray && !sawArrayLength) {
-    return failV1("provider point raw arrays must be dense");
-  }
   return nextPending;
+}
+
+function walkProviderPointRawObservedJsonIdentityTreeInternalV1(
+  session: ProviderPointRawAdmissionSessionV1,
+  rootToken: ProviderPointRawObservedObjectV1,
+  budget: ProviderPointRawAdmissionBudgetV1 | undefined,
+  rootDepth: number,
+  additionalBudget?: ProviderPointRawAdmissionBudgetV1,
+  additionalRootDepth?: number,
+): void {
+  if (
+    (additionalBudget === undefined) !==
+    (additionalRootDepth === undefined)
+  ) {
+    return failV1("provider point raw budget and depth must be provided together");
+  }
+  if (budget === undefined && additionalBudget !== undefined) {
+    return failV1("provider point raw primary budget is required");
+  }
+  if (budget !== undefined && additionalBudget === budget) {
+    return failV1("provider point raw dual budgets must be distinct");
+  }
+  const additionalDepthOffset =
+    additionalRootDepth === undefined ? 0 : additionalRootDepth - rootDepth;
+  if (
+    !CapturedNumberIsSafeIntegerV1(additionalDepthOffset) ||
+    additionalDepthOffset < 0
+  ) {
+    return failV1("provider point raw dual-budget depth offset is invalid");
+  }
+
+  let pending: ProviderPointRawWalkFrameStateV1 | null = createWalkFrameV1(
+    session,
+    rootToken,
+    null,
+    rootDepth,
+  );
+  while (pending !== null) {
+    const frame = pending;
+    pending = readFrameFieldV1<ProviderPointRawWalkFrameStateV1 | null>(
+      frame,
+      "next",
+    );
+    pending = inspectObservedJsonNodeV1(
+      session,
+      readFrameFieldV1<ProviderPointRawObservedObjectV1>(frame, "token"),
+      pending,
+      readFrameFieldV1<number>(frame, "depth"),
+      budget,
+      additionalBudget,
+      additionalDepthOffset,
+    );
+  }
 }
 
 /**
@@ -1304,25 +1949,13 @@ export function walkProviderPointRawJsonIdentityTreeV1(
     }
     countProviderPointRawAdmissionBudgetRootV1(budget, root);
   }
-  let pending: ProviderPointRawWalkFrameStateV1 | null = createWalkFrameV1(
-    observeObjectIdentityInternalV1(session, root),
-    null,
+  const rootToken = observeObjectIdentityInternalV1(session, root);
+  walkProviderPointRawObservedJsonIdentityTreeInternalV1(
+    session,
+    rootToken,
+    budget,
     rootDepth,
   );
-  while (pending !== null) {
-    const frame = pending;
-    pending = readFrameFieldV1<ProviderPointRawWalkFrameStateV1 | null>(
-      frame,
-      "next",
-    );
-    pending = inspectObservedJsonNodeV1(
-      session,
-      readFrameFieldV1<ProviderPointRawObservedObjectV1>(frame, "token"),
-      pending,
-      readFrameFieldV1<number>(frame, "depth"),
-      budget,
-    );
-  }
 }
 
 /**
@@ -1345,25 +1978,50 @@ export function walkProviderPointRawObservedJsonIdentityTreeV1(
       rootDepth,
     );
   }
-  let pending: ProviderPointRawWalkFrameStateV1 | null = createWalkFrameV1(
+  walkProviderPointRawObservedJsonIdentityTreeInternalV1(
+    session,
     rootToken,
-    null,
+    budget,
     rootDepth,
   );
-  while (pending !== null) {
-    const frame = pending;
-    pending = readFrameFieldV1<ProviderPointRawWalkFrameStateV1 | null>(
-      frame,
-      "next",
-    );
-    pending = inspectObservedJsonNodeV1(
-      session,
-      readFrameFieldV1<ProviderPointRawObservedObjectV1>(frame, "token"),
-      pending,
-      readFrameFieldV1<number>(frame, "depth"),
-      budget,
-    );
+}
+
+/**
+ * Continues one already-observed history Envelope traversal while charging an
+ * Envelope-rooted branch budget at depth one and a history-array aggregate
+ * budget at depth two. The Envelope token and every descendant are consumed
+ * exactly once, so this path performs no duplicate reflection or observation.
+ *
+ * @internal
+ */
+export function walkProviderPointRawObservedJsonIdentityTreeWithDualBudgetsV1(
+  session: ProviderPointRawAdmissionSessionV1,
+  rootToken: ProviderPointRawObservedObjectV1,
+  branchBudget: ProviderPointRawAdmissionBudgetV1,
+  aggregateBudget: ProviderPointRawAdmissionBudgetV1,
+): void {
+  if (branchBudget === aggregateBudget) {
+    return failV1("provider point raw dual budgets must be distinct");
   }
+  const rootState = tokenStateV1(rootToken);
+  assertProviderPointRawBudgetContainerV1(
+    rootState.value,
+    branchBudget,
+    1,
+  );
+  assertProviderPointRawBudgetContainerV1(
+    rootState.value,
+    aggregateBudget,
+    2,
+  );
+  walkProviderPointRawObservedJsonIdentityTreeInternalV1(
+    session,
+    rootToken,
+    branchBudget,
+    1,
+    aggregateBudget,
+    2,
+  );
 }
 
 /**
@@ -1383,16 +2041,6 @@ export function cloneProviderPointRawAdmissionCapsuleV1(
       "provider point requires a conformant platform structuredClone",
     );
   }
-  setNullRecordOwnFieldV1(
-    state as unknown as Record<PropertyKey, unknown>,
-    "phase",
-    "clone_attempted",
-  );
-  setNullRecordOwnFieldV1(
-    state as unknown as Record<PropertyKey, unknown>,
-    "cloneAttemptCount",
-    state.cloneAttemptCount + 1,
-  );
   CapturedObjectFreezeV1(state.observedIdentities);
 
   const capsule = CapturedObjectCreateV1(null) as Record<PropertyKey, unknown>;
@@ -1414,6 +2062,16 @@ export function cloneProviderPointRawAdmissionCapsuleV1(
   );
   CapturedObjectFreezeV1(capsule);
 
+  setNullRecordOwnFieldV1(
+    state as unknown as Record<PropertyKey, unknown>,
+    "phase",
+    "clone_attempted",
+  );
+  setNullRecordOwnFieldV1(
+    state as unknown as Record<PropertyKey, unknown>,
+    "cloneAttemptCount",
+    state.cloneAttemptCount + 1,
+  );
   const clonedCapsule = TrustedStructuredCloneV1(capsule);
   if (clonedCapsule === null || typeof clonedCapsule !== "object") {
     return failV1("platform structuredClone returned an invalid capsule");
@@ -1424,7 +2082,23 @@ export function cloneProviderPointRawAdmissionCapsuleV1(
     clonedCapsule,
     "originalInput",
   );
-  readEnumerableDataPropertyV1(clonedCapsule, "observedIdentities");
+  const clonedObservedIdentities = readEnumerableDataPropertyV1(
+    clonedCapsule,
+    "observedIdentities",
+  );
+  if (
+    clonedOriginalInput === null ||
+    typeof clonedOriginalInput !== "object" ||
+    clonedOriginalInput === state.originalInput ||
+    clonedObservedIdentities === null ||
+    typeof clonedObservedIdentities !== "object" ||
+    readEnumerableDataPropertyV1(clonedObservedIdentities, "0") !==
+      clonedOriginalInput
+  ) {
+    return failV1(
+      "platform structuredClone did not preserve capsule identity memoization",
+    );
+  }
   const clonedKeys = CapturedReflectOwnKeysV1(clonedCapsule);
   if (readPlatformArrayLengthV1(clonedKeys) !== 2) {
     return failV1("platform structuredClone returned an invalid capsule");
@@ -1538,6 +2212,100 @@ export function deepFreezeProviderPointDetachedDataTreeV1<T>(value: T): T {
   return value;
 }
 
+/**
+ * Exercises the exact C09-1L identity/work cap comparison with one compact
+ * package-internal charge. The caller must bind both expected limits to the
+ * production constants. This hook is strict one-shot per admission session and
+ * is intentionally absent from the package export map/root barrel.
+ * @internal
+ */
+export function exerciseProviderPointRawAdmissionAllocationCapForTestV1(
+  session: ProviderPointRawAdmissionSessionV1,
+  kind: "identities_c" | "work_w",
+  relation: "equal" | "plus_one",
+  expectedMaxObservedIdentities: number,
+  expectedMaxPrecloneAllocationWorkUnits: number,
+): void {
+  const state = sessionStateV1(session);
+  assertOpenSessionV1(state);
+  if (
+    state.testCapExerciseConsumed ||
+    (kind !== "identities_c" && kind !== "work_w") ||
+    (relation !== "equal" && relation !== "plus_one") ||
+    state.maxObservedIdentities !== expectedMaxObservedIdentities ||
+    state.maxPrecloneAllocationWorkUnits !==
+      expectedMaxPrecloneAllocationWorkUnits
+  ) {
+    return failV1("provider point raw allocation-cap test seam is invalid or consumed");
+  }
+  setNullRecordOwnFieldV1(
+    state as unknown as Record<PropertyKey, unknown>,
+    "testCapExerciseConsumed",
+    true,
+  );
+  setNullRecordOwnFieldV1(
+    state as unknown as Record<PropertyKey, unknown>,
+    "testCapExerciseKind",
+    kind,
+  );
+  setNullRecordOwnFieldV1(
+    state as unknown as Record<PropertyKey, unknown>,
+    "testCapExerciseRelation",
+    relation,
+  );
+
+  const limit =
+    kind === "identities_c"
+      ? expectedMaxObservedIdentities
+      : expectedMaxPrecloneAllocationWorkUnits;
+  const before = relation === "equal" ? limit - 1 : limit;
+  setNullRecordOwnFieldV1(
+    state as unknown as Record<PropertyKey, unknown>,
+    "testCapExerciseLimit",
+    limit,
+  );
+  setNullRecordOwnFieldV1(
+    state as unknown as Record<PropertyKey, unknown>,
+    "testCapExerciseBefore",
+    before,
+  );
+  setNullRecordOwnFieldV1(
+    state as unknown as Record<PropertyKey, unknown>,
+    "testCapExerciseCharge",
+    1,
+  );
+  setNullRecordOwnFieldV1(
+    state as unknown as Record<PropertyKey, unknown>,
+    "testCapExerciseOverflow",
+    relation === "plus_one",
+  );
+
+  if (kind === "identities_c") {
+    setNullRecordOwnFieldV1(
+      state as unknown as Record<PropertyKey, unknown>,
+      "identityCount",
+      before,
+    );
+    observeObjectIdentityInternalV1(
+      session,
+      PROVIDER_POINT_RAW_ADMISSION_TEST_IDENTITY_PROBE_V1,
+    );
+    return;
+  }
+
+  setNullRecordOwnFieldV1(
+    state as unknown as Record<PropertyKey, unknown>,
+    "precloneAllocationWorkUnitCount",
+    before,
+  );
+  setNullRecordOwnFieldV1(
+    state as unknown as Record<PropertyKey, unknown>,
+    "remainingPrecloneAllocationWorkUnits",
+    limit - before,
+  );
+  chargeProviderPointRawSessionWorkV1(session, 1);
+}
+
 /** Internal bootstrap state probe used only by focused tests. @internal */
 export function isProviderPointStructuredCloneBootstrapConformantV1(): boolean {
   return providerPointStructuredCloneBootstrapConformantV1;
@@ -1557,9 +2325,215 @@ export function getProviderPointRawAdmissionCloneAttemptCountForTestV1(
   return sessionStateV1(session).cloneAttemptCount;
 }
 
+/** Package-internal read-only counter seam for focused cap tests. @internal */
+export interface ProviderPointRawAdmissionAllocationLedgerForTestV1 {
+  readonly scoped: boolean;
+  readonly maxObservedIdentities: number | undefined;
+  readonly maxPrecloneAllocationWorkUnits: number | undefined;
+  readonly observedIdentityCount: number;
+  readonly precloneAllocationWorkUnitCount: number;
+  readonly remainingPrecloneAllocationWorkUnits: number | undefined;
+  readonly cloneAttemptCount: number;
+  readonly lastDenseArrayLength: number | undefined;
+  readonly lastDenseArrayMaxLength: number | undefined;
+  readonly lastDenseArrayLengthOverflow: boolean | undefined;
+  readonly testCapExerciseKind: "identities_c" | "work_w" | undefined;
+  readonly testCapExerciseRelation: "equal" | "plus_one" | undefined;
+  readonly testCapExerciseLimit: number | undefined;
+  readonly testCapExerciseBefore: number | undefined;
+  readonly testCapExerciseCharge: number | undefined;
+  readonly testCapExerciseOverflow: boolean | undefined;
+}
+
+/** Package-internal read-only counter seam for focused cap tests. @internal */
+export function getProviderPointRawAdmissionAllocationLedgerForTestV1(
+  session: ProviderPointRawAdmissionSessionV1,
+): ProviderPointRawAdmissionAllocationLedgerForTestV1 {
+  const state = sessionStateV1(session);
+  const ledger = CapturedObjectCreateV1(null) as Record<PropertyKey, unknown>;
+  defineDataPropertyV1(
+    ledger,
+    "scoped",
+    state.maxObservedIdentities !== undefined,
+    true,
+    false,
+    false,
+  );
+  defineDataPropertyV1(
+    ledger,
+    "maxObservedIdentities",
+    state.maxObservedIdentities,
+    true,
+    false,
+    false,
+  );
+  defineDataPropertyV1(
+    ledger,
+    "maxPrecloneAllocationWorkUnits",
+    state.maxPrecloneAllocationWorkUnits,
+    true,
+    false,
+    false,
+  );
+  defineDataPropertyV1(
+    ledger,
+    "observedIdentityCount",
+    state.identityCount,
+    true,
+    false,
+    false,
+  );
+  defineDataPropertyV1(
+    ledger,
+    "precloneAllocationWorkUnitCount",
+    state.precloneAllocationWorkUnitCount,
+    true,
+    false,
+    false,
+  );
+  defineDataPropertyV1(
+    ledger,
+    "remainingPrecloneAllocationWorkUnits",
+    state.remainingPrecloneAllocationWorkUnits,
+    true,
+    false,
+    false,
+  );
+  defineDataPropertyV1(
+    ledger,
+    "cloneAttemptCount",
+    state.cloneAttemptCount,
+    true,
+    false,
+    false,
+  );
+  defineDataPropertyV1(
+    ledger,
+    "lastDenseArrayLength",
+    state.lastDenseArrayLength,
+    true,
+    false,
+    false,
+  );
+  defineDataPropertyV1(
+    ledger,
+    "lastDenseArrayMaxLength",
+    state.lastDenseArrayMaxLength,
+    true,
+    false,
+    false,
+  );
+  defineDataPropertyV1(
+    ledger,
+    "lastDenseArrayLengthOverflow",
+    state.lastDenseArrayLengthOverflow,
+    true,
+    false,
+    false,
+  );
+  defineDataPropertyV1(
+    ledger,
+    "testCapExerciseKind",
+    state.testCapExerciseKind,
+    true,
+    false,
+    false,
+  );
+  defineDataPropertyV1(
+    ledger,
+    "testCapExerciseRelation",
+    state.testCapExerciseRelation,
+    true,
+    false,
+    false,
+  );
+  defineDataPropertyV1(
+    ledger,
+    "testCapExerciseLimit",
+    state.testCapExerciseLimit,
+    true,
+    false,
+    false,
+  );
+  defineDataPropertyV1(
+    ledger,
+    "testCapExerciseBefore",
+    state.testCapExerciseBefore,
+    true,
+    false,
+    false,
+  );
+  defineDataPropertyV1(
+    ledger,
+    "testCapExerciseCharge",
+    state.testCapExerciseCharge,
+    true,
+    false,
+    false,
+  );
+  defineDataPropertyV1(
+    ledger,
+    "testCapExerciseOverflow",
+    state.testCapExerciseOverflow,
+    true,
+    false,
+    false,
+  );
+  return CapturedObjectFreezeV1(
+    ledger,
+  ) as unknown as ProviderPointRawAdmissionAllocationLedgerForTestV1;
+}
+
+/** Package-internal read-only ledger for one explicitly observed raw budget. */
+export interface ProviderPointRawAdmissionBudgetLedgerForTestV1 {
+  readonly maxDepth: number;
+  readonly maxNodes: number;
+  readonly maxStringCodeUnits: number;
+  readonly maxTotalStringCodeUnits: number;
+  readonly nodeCount: number;
+  readonly totalStringCodeUnits: number;
+  readonly lastStringChargeBefore: number;
+  readonly lastStringChargeUnits: number;
+  readonly lastStringChargeOverflow: boolean;
+}
+
+/** @internal */
+export function getProviderPointRawAdmissionBudgetLedgerForTestV1(
+  budget: ProviderPointRawAdmissionBudgetV1,
+): ProviderPointRawAdmissionBudgetLedgerForTestV1 {
+  const state = budgetStateV1(budget);
+  if (!state.observeStringChargesForTest) {
+    return failV1("provider point raw budget was not created with a test observer");
+  }
+  const ledger = CapturedObjectCreateV1(null) as Record<PropertyKey, unknown>;
+  const fields = CapturedObjectFreezeV1([
+    ["maxDepth", state.maxDepth],
+    ["maxNodes", state.maxNodes],
+    ["maxStringCodeUnits", state.maxStringCodeUnits],
+    ["maxTotalStringCodeUnits", state.maxTotalStringCodeUnits],
+    ["nodeCount", state.nodeCount],
+    ["totalStringCodeUnits", state.totalStringCodeUnits],
+    ["lastStringChargeBefore", state.lastStringChargeBefore],
+    ["lastStringChargeUnits", state.lastStringChargeUnits],
+    ["lastStringChargeOverflow", state.lastStringChargeOverflow],
+  ] as const);
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index]!;
+    defineDataPropertyV1(ledger, field[0], field[1], true, false, false);
+  }
+  return CapturedObjectFreezeV1(
+    ledger,
+  ) as unknown as ProviderPointRawAdmissionBudgetLedgerForTestV1;
+}
+
 CapturedObjectFreezeV1(createProviderPointRawAdmissionSessionV1);
 CapturedObjectFreezeV1(createProviderPointRawAdmissionBudgetV1);
+CapturedObjectFreezeV1(createProviderPointRawAdmissionBudgetForSessionV1);
+CapturedObjectFreezeV1(
+  createProviderPointRawAdmissionBudgetForSessionObservedForTestV1,
+);
 CapturedObjectFreezeV1(countProviderPointRawAdmissionBudgetRootV1);
+CapturedObjectFreezeV1(countProviderPointRawAdmissionBudgetAdditionalRootV1);
 CapturedObjectFreezeV1(observeProviderPointRawObjectIdentityV1);
 CapturedObjectFreezeV1(captureProviderPointRawExactTopLevelV1);
 CapturedObjectFreezeV1(captureProviderPointRawObservedExactDataObjectV1);
@@ -1567,9 +2541,15 @@ CapturedObjectFreezeV1(captureProviderPointRawObservedExactDataObjectUnionV1);
 CapturedObjectFreezeV1(captureProviderPointRawObservedDenseArrayV1);
 CapturedObjectFreezeV1(walkProviderPointRawJsonIdentityTreeV1);
 CapturedObjectFreezeV1(walkProviderPointRawObservedJsonIdentityTreeV1);
+CapturedObjectFreezeV1(
+  walkProviderPointRawObservedJsonIdentityTreeWithDualBudgetsV1,
+);
 CapturedObjectFreezeV1(cloneProviderPointRawAdmissionCapsuleV1);
 CapturedObjectFreezeV1(captureProviderPointDetachedExactDataObjectV1);
 CapturedObjectFreezeV1(deepFreezeProviderPointDetachedDataTreeV1);
+CapturedObjectFreezeV1(exerciseProviderPointRawAdmissionAllocationCapForTestV1);
 CapturedObjectFreezeV1(isProviderPointStructuredCloneBootstrapConformantV1);
 CapturedObjectFreezeV1(probeProviderPointStructuredCloneCandidateForTestV1);
 CapturedObjectFreezeV1(getProviderPointRawAdmissionCloneAttemptCountForTestV1);
+CapturedObjectFreezeV1(getProviderPointRawAdmissionAllocationLedgerForTestV1);
+CapturedObjectFreezeV1(getProviderPointRawAdmissionBudgetLedgerForTestV1);

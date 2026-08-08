@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod-runtime.js";
 
 import {
   assertDataObjectDescriptorsBeforeSchemaV1,
@@ -34,12 +34,84 @@ import {
   deriveProviderTargetProfileIdV1,
   diagnoseProviderTargetDiscoveryPointClosureV1,
   type ProviderFeasibilityTargetV1,
+  type ProviderTargetDiscoveryPointClosureDiagnosticResultV1,
   type ProviderTargetDiscoveryPointClosureValidationV1,
   type ProviderTargetDiscoveryResultEnvelopeV1,
   type ProviderTargetDiscoveryResultPinV1,
   type ValidateProviderTargetDiscoveryPointClosureV1Input,
 } from "./provider-target-discovery-point.js";
+import {
+  diagnoseProviderTargetDiscoveryPointPreparedInternalV1,
+} from "./provider-target-discovery-point-prepared-internal.js";
+import {
+  assertPreparedDistributionInputBindingsInternalV1,
+  type PreparedDistributionVerificationContextV1,
+} from "./provider-real-filesystem-source-internal.js";
+import {
+  registerProviderRealFilesystemConformanceResultPreparedCoreInternalV1,
+} from "./provider-real-filesystem-conformance-result-internal.js";
+import {
+  hardenProviderPointPromiseV1,
+} from "./provider-point-runtime-internal.js";
 import type { ProviderStrictEd25519OpaqueCapabilityV1 } from "./strict-ed25519-conformance.js";
+
+const CapturedArrayPrototypeFilterV1 = Array.prototype.filter;
+const CapturedArrayPrototypeMapV1 = Array.prototype.map;
+const CapturedArrayPrototypePushV1 = Array.prototype.push;
+const CapturedArrayPrototypeSomeV1 = Array.prototype.some;
+const CapturedArrayPrototypeSortV1 = Array.prototype.sort;
+const CapturedObjectFreezeV1 = Object.freeze;
+const CapturedObjectGetOwnPropertyDescriptorsV1 =
+  Object.getOwnPropertyDescriptors;
+const CapturedObjectKeysV1 = Object.keys;
+const CapturedObjectValuesV1 = Object.values;
+const CapturedReflectApplyV1 = Reflect.apply;
+
+function hardenPromiseV1<T>(promise: Promise<T>): Promise<T> {
+  return hardenProviderPointPromiseV1(promise);
+}
+
+function arrayFilterV1<T>(
+  array: readonly T[],
+  callback: (value: T, index: number, source: readonly T[]) => unknown,
+): T[] {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeFilterV1, array, [
+    callback,
+  ]) as T[];
+}
+
+function arrayMapV1<T, U>(
+  array: readonly T[],
+  callback: (value: T, index: number, source: readonly T[]) => U,
+): U[] {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeMapV1, array, [
+    callback,
+  ]) as U[];
+}
+
+function arrayPushV1<T>(array: T[], value: T): number {
+  return CapturedReflectApplyV1(CapturedArrayPrototypePushV1, array, [
+    value,
+  ]) as number;
+}
+
+function arraySomeV1<T>(
+  array: readonly T[],
+  callback: (value: T, index: number, source: readonly T[]) => unknown,
+): boolean {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeSomeV1, array, [
+    callback,
+  ]) as boolean;
+}
+
+function arraySortV1<T>(
+  array: T[],
+  compare?: (left: T, right: T) => number,
+): T[] {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeSortV1, array, [
+    compare,
+  ]) as T[];
+}
 
 export const PROVIDER_REAL_FILESYSTEM_CONFORMANCE_RESULT_ID_DOMAIN_V1 =
   "provider-real-fs-conformance-result-id-v1" as const;
@@ -412,8 +484,8 @@ type SnapshotResultClosureInputV1 = Record<ResultClosureInputKeyV1, unknown>;
 
 function deepFreezeV1<T>(value: T): T {
   if (value !== null && typeof value === "object") {
-    for (const child of Object.values(value)) deepFreezeV1(child);
-    Object.freeze(value);
+    for (const child of CapturedObjectValuesV1(value)) deepFreezeV1(child);
+    CapturedObjectFreezeV1(value);
   }
   return value;
 }
@@ -421,11 +493,14 @@ function deepFreezeV1<T>(value: T): T {
 function snapshotResultClosureInputV1(input: unknown): SnapshotResultClosureInputV1 {
   try {
     assertDataObjectDescriptorsBeforeSchemaV1(input);
-    const descriptors = Object.getOwnPropertyDescriptors(input);
-    const keys = Object.keys(descriptors).sort();
+    const descriptors = CapturedObjectGetOwnPropertyDescriptorsV1(input);
+    const keys = arraySortV1(CapturedObjectKeysV1(descriptors));
     if (
       keys.length !== RESULT_CLOSURE_INPUT_KEYS.length ||
-      keys.some((key, index) => key !== RESULT_CLOSURE_INPUT_KEYS[index])
+      arraySomeV1(
+        keys,
+        (key, index) => key !== RESULT_CLOSURE_INPUT_KEYS[index],
+      )
     ) {
       return fail("input", "schema_invalid");
     }
@@ -460,17 +535,19 @@ function targetFieldsV1(target: ProviderFeasibilityTargetV1) {
 function requiredCaseCutsV1(
   suite: ProviderRealFilesystemSuiteManifestEnvelopeV1,
 ): ProviderRealFilesystemRequiredCaseCutEntryV1[] {
-  return suite.payload.cases
-    .flatMap((suiteCase) =>
-      suiteCase.requiredCrashCuts.map((cut) => ({
+  const required: ProviderRealFilesystemRequiredCaseCutEntryV1[] = [];
+  for (const suiteCase of suite.payload.cases) {
+    for (const cut of suiteCase.requiredCrashCuts) {
+      arrayPushV1(required, {
         caseId: suiteCase.caseId,
         crashCutId: cut.crashCutId,
-      })),
-    )
-    .sort((left, right) => {
+      });
+    }
+  }
+  return arraySortV1(required, (left, right) => {
       const caseOrder = compareUtf8V1(left.caseId, right.caseId);
       return caseOrder !== 0 ? caseOrder : compareUtf8V1(left.crashCutId, right.crashCutId);
-    });
+  });
 }
 
 function validOutcomeCodeV1(result: ProviderRealFilesystemConformanceCaseResultV1): boolean {
@@ -484,16 +561,28 @@ function validOutcomeCodeV1(result: ProviderRealFilesystemConformanceCaseResultV
 function aggregateResultV1(
   caseResults: readonly ProviderRealFilesystemConformanceCaseResultV1[],
 ): ProviderRealFilesystemConformanceCaseOutcomeV1 {
-  if (caseResults.some((entry) => entry.outcome === "failed")) return "failed";
-  if (caseResults.some((entry) => entry.outcome === "unsupported")) return "unsupported";
+  if (arraySomeV1(caseResults, (entry) => entry.outcome === "failed")) return "failed";
+  if (arraySomeV1(caseResults, (entry) => entry.outcome === "unsupported")) return "unsupported";
   return "passed";
 }
 
-async function validateResultClosureInternalV1(
-  input: unknown,
+async function validateResultClosureFromSnapshotInternalV1(
+  snapshot: SnapshotResultClosureInputV1,
+  preparedContext: PreparedDistributionVerificationContextV1 | undefined,
+  diagnoseTargetDiscovery: (
+    input: ValidateProviderTargetDiscoveryPointClosureV1Input,
+  ) => Promise<ProviderTargetDiscoveryPointClosureDiagnosticResultV1>,
 ): Promise<ProviderRealFilesystemConformanceResultClosureValidationV1> {
-  const snapshot = snapshotResultClosureInputV1(input);
-  const targetDiscoveryDiagnostic = await diagnoseProviderTargetDiscoveryPointClosureV1({
+  if (preparedContext !== undefined) {
+    const preparedInput = snapshot as unknown as
+      ValidateProviderRealFilesystemConformanceResultClosureV1Input;
+    assertPreparedDistributionInputBindingsInternalV1(
+      preparedContext,
+      preparedInput.activeRoot,
+      preparedInput.strictCryptoCapability,
+    );
+  }
+  const targetDiscoveryInput = {
     distributionRootBinding: snapshot.distributionRootBinding,
     activeRootMetadata: snapshot.activeRootMetadata,
     activeRoot: snapshot.activeRoot,
@@ -506,7 +595,13 @@ async function validateResultClosureInternalV1(
     targetDiscoveryResult: snapshot.targetDiscoveryResult,
     strictCryptoCapability:
       snapshot.strictCryptoCapability as ProviderStrictEd25519OpaqueCapabilityV1,
-  });
+  } as ValidateProviderTargetDiscoveryPointClosureV1Input;
+  // The prepared Target bridge returns a fully hardened Promise with its own
+  // closed constructor/species. Re-pinning that frozen Promise would reject
+  // the valid hardening contract, so consume it directly.
+  const targetDiscoveryDiagnostic = await diagnoseTargetDiscovery(
+    targetDiscoveryInput,
+  );
   if (!targetDiscoveryDiagnostic.ok) return fail("target_discovery_point", "source_invalid");
   const point = targetDiscoveryDiagnostic.value;
 
@@ -516,19 +611,34 @@ async function validateResultClosureInternalV1(
   let discovery: ProviderTargetDiscoveryResultEnvelopeV1;
   let suite: ProviderRealFilesystemSuiteManifestEnvelopeV1;
   try {
-    envelope = ProviderRealFilesystemConformanceResultEnvelopeV1Schema.parse(
+    const parsedEnvelope = ProviderRealFilesystemConformanceResultEnvelopeV1Schema.parse(
       snapshot.realFilesystemConformanceResult,
     );
-    locator = ProviderRealFilesystemConformanceResultLocatorV1Schema.parse(
+    const parsedLocator = ProviderRealFilesystemConformanceResultLocatorV1Schema.parse(
       snapshot.realFilesystemConformanceResultLocator,
     );
-    pin = ProviderRealFilesystemConformanceResultPinV1Schema.parse(
+    const parsedPin = ProviderRealFilesystemConformanceResultPinV1Schema.parse(
       snapshot.realFilesystemConformanceResultPin,
     );
-    discovery = ProviderTargetDiscoveryResultEnvelopeV1Schema.parse(
+    const parsedDiscovery = ProviderTargetDiscoveryResultEnvelopeV1Schema.parse(
       snapshot.targetDiscoveryResult,
     );
-    suite = ProviderRealFilesystemSuiteManifestEnvelopeV1Schema.parse(snapshot.suiteManifest);
+    const parsedSuite = ProviderRealFilesystemSuiteManifestEnvelopeV1Schema.parse(
+      snapshot.suiteManifest,
+    );
+    if (preparedContext === undefined) {
+      envelope = parsedEnvelope;
+      locator = parsedLocator;
+      pin = parsedPin;
+      discovery = parsedDiscovery;
+      suite = parsedSuite;
+    } else {
+      envelope = snapshot.realFilesystemConformanceResult as ProviderRealFilesystemConformanceResultEnvelopeV1;
+      locator = snapshot.realFilesystemConformanceResultLocator as ProviderRealFilesystemConformanceResultLocatorV1;
+      pin = snapshot.realFilesystemConformanceResultPin as ProviderRealFilesystemConformanceResultPinV1;
+      discovery = snapshot.targetDiscoveryResult as ProviderTargetDiscoveryResultEnvelopeV1;
+      suite = snapshot.suiteManifest as ProviderRealFilesystemSuiteManifestEnvelopeV1;
+    }
   } catch {
     return fail("result_structure", "schema_invalid");
   }
@@ -544,7 +654,8 @@ async function validateResultClosureInternalV1(
   if (result.target.targetProfileId !== recomputedTargetId) {
     return fail("target_identity", "identity_mismatch");
   }
-  const sameIdTargets = discovery.payload.targets.filter(
+  const sameIdTargets = arrayFilterV1(
+    discovery.payload.targets,
     (entry) => entry.target.targetProfileId === result.target.targetProfileId,
   );
   if (
@@ -597,9 +708,12 @@ async function validateResultClosureInternalV1(
   }
 
   const requiredEntries = requiredCaseCutsV1(suite);
-  const actualEntries = result.caseResults.map(({ caseId, crashCutId }) => ({ caseId, crashCutId }));
+  const actualEntries = arrayMapV1(
+    result.caseResults,
+    ({ caseId, crashCutId }) => ({ caseId, crashCutId }),
+  );
   if (!canonicalEqualV1(actualEntries, requiredEntries)) {
-    const sortedActual = [...actualEntries].sort((left, right) => {
+    const sortedActual = arraySortV1([...actualEntries], (left, right) => {
       const caseOrder = compareUtf8V1(left.caseId, right.caseId);
       return caseOrder !== 0 ? caseOrder : compareUtf8V1(left.crashCutId, right.crashCutId);
     });
@@ -608,7 +722,7 @@ async function validateResultClosureInternalV1(
     }
     return fail("case_coverage", "coverage_mismatch");
   }
-  if (result.caseResults.some((entry) => !validOutcomeCodeV1(entry))) {
+  if (arraySomeV1(result.caseResults, (entry) => !validOutcomeCodeV1(entry))) {
     return fail("case_outcome", "outcome_code_mismatch");
   }
   if (result.result !== aggregateResultV1(result.caseResults)) {
@@ -643,10 +757,12 @@ async function validateResultClosureInternalV1(
     return fail("locator", "locator_mismatch");
   }
 
-  const passedCaseResultCount = result.caseResults.filter(
+  const passedCaseResultCount = arrayFilterV1(
+    result.caseResults,
     (entry) => entry.outcome === "passed",
   ).length;
-  const failedCaseResultCount = result.caseResults.filter(
+  const failedCaseResultCount = arrayFilterV1(
+    result.caseResults,
     (entry) => entry.outcome === "failed",
   ).length;
   const unsupportedCaseResultCount = result.caseResults.length -
@@ -665,6 +781,16 @@ async function validateResultClosureInternalV1(
     failedCaseResultCount,
     unsupportedCaseResultCount,
   });
+}
+
+async function validateResultClosureInternalV1(
+  input: unknown,
+): Promise<ProviderRealFilesystemConformanceResultClosureValidationV1> {
+  return validateResultClosureFromSnapshotInternalV1(
+    snapshotResultClosureInputV1(input),
+    undefined,
+    diagnoseProviderTargetDiscoveryPointClosureV1,
+  );
 }
 
 export async function diagnoseProviderRealFilesystemConformanceResultClosureV1(
@@ -689,3 +815,35 @@ export async function validateProviderRealFilesystemConformanceResultClosureV1(
   }
   return diagnostic.value;
 }
+
+registerProviderRealFilesystemConformanceResultPreparedCoreInternalV1(
+  (
+    input: ValidateProviderRealFilesystemConformanceResultClosureV1Input,
+    context: PreparedDistributionVerificationContextV1,
+  ): Promise<ProviderRealFilesystemConformanceResultClosureDiagnosticResultV1> => {
+    const operation = (async () => {
+      try {
+        return {
+          ok: true as const,
+          value: await hardenPromiseV1(
+            validateResultClosureFromSnapshotInternalV1(
+              input as unknown as SnapshotResultClosureInputV1,
+              context,
+              (targetInput) =>
+                diagnoseProviderTargetDiscoveryPointPreparedInternalV1(
+                  targetInput,
+                  context,
+                ),
+            ),
+          ),
+        };
+      } catch (error) {
+        if (error instanceof ResultDiagnosticSignal) {
+          return { ok: false as const, stage: error.stage, reason: error.reason };
+        }
+        return { ok: false as const, stage: "input" as const, reason: "schema_invalid" as const };
+      }
+    })();
+    return hardenPromiseV1(operation);
+  },
+);

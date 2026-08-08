@@ -1053,7 +1053,7 @@ AT-C31与AT-Q33以 WP5 Matrix为唯一规范。D-31不改变 D-21 Lifecycle；�
 
 ### D-37：Registry Entry↔Evidence supplied-history candidate
 
-状态：`accepted`（2026-08-06 Decision Amendment）
+状态：`accepted`（2026-08-07 topology-proof Decision Amendment）
 
 - D-37把 C09-1L冻结为22字段 raw input上的 production-format Registry Entry↔passed
   Evidence supplied-history candidate：入口以 C09-1I完整16字段为基础，增加 Evidence
@@ -1068,20 +1068,36 @@ AT-C31与AT-Q33以 WP5 Matrix为唯一规范。D-31不改变 D-21 Lifecycle；�
   `B=16,777,216`，Root/Registry history count=256/4096、retained trust总量=268,435,456；
   node/property-name＋string-value/dense limit由各自`B`规范推导，两条 history另共享 raw
   `B_H=268,435,456`；raw admission对包含 original input与全部 observed
-  identity的 capsule恰好做一次 full-input trusted clone；full-capsule identity/work cap固定
-  2,097,152/16,777,216并以 machine topology proof与 C/C+1、W/W+1 zero-clone fixture关闭，bootstrap及
+  identity的 capsule恰好做一次 full-input trusted clone；machine topology复核证明原
+  2,097,152/16,777,216不是 sound no-narrowing bound：strict production-only构造下界为
+  2,118,023/22,569,542，finite-capacity sound upper为3,126,096/235,725,869。D-37重开后按
+  最小覆盖二次幂把 full-capsule identity/work cap冻结为4,194,304/268,435,456；proof同时固定
+  prior failure、adopted within-bound与 C/C+1、W/W+1 zero-clone fixture。proof资源固定
+  181,122 bytes、raw SHA-256
+  `0c4c440ce0bc53e212f2bca0f389f196234a40963fed18ad4b44171f4554dc38`与 semantic digest
+  `sha256:61e3f97a97d61c2170dfb287dd24cdac49e7c4ec75a04603c2b95f905e9f4714`；21项 production
+  parser binding另固定 semantic digest
+  `sha256:eb4c6a3f94ddef876adb002b1e4f5e4e43556015a28b5fa24374b360ec532920`。bootstrap及
   request都断言 original/collector shared-child alias在 clone后仍 memoized且 detached。prepared cores随后零 clone，
   prepared Registry input与 verified history witness使用两张 per-invocation WeakMap/两个 one-shot
   handle，不能被同 capability并发调用串用；pre-clone failure ledger=0、抵达唯一 clone boundary=1，
   prepared closure保持 detached history identity且 private copy ledger证明没有第二份 full-history graph；
   Registry→Root及 C09-1I→C09-1H两条 prepared call graph都只能进入 transitive no-snapshot subcore。
+  security boundary只覆盖 package first-party path的 module-init primordial capture与 hardened Promise；
+  Zod内部 primordial属于 trusted module realm，不能宣称完整 same-realm SES。未受信 Provider/host必须
+  运行在隔离 realm或独立进程；broad-poison KAT固定 first-party post-start call=0、Zod trusted-boundary
+  call>0且合法闭包24/46，dependency primordial实际破坏只能 opaque fail、不得形成 authority。
   `evidence_id`由 stage-3 prepared payload的 private exact 16-field projection派生，避免 malformed role
   signature被旧 strict public projector提前吞掉；digest/Envelope/Pin分别关闭 payload digest、outer ID与
   Pin ID/digest。diagnostic固定26 stage / 15 reason及逐 stage predicate/
   crypto-prefix表：history前0/0、history source exact prefix、binding为`P_H/S_H`、prepared C09-1I
   为`P_H/(S_H+S_I_prefix)`、其后 non-crypto为`P_H/(S_H+6)`、QA为`+7`、Release及后继为
-  `+8`；成功固定`P_L=P_H`、`S_L=S_H+8`，当前 full-history anchor 24/38对应24/46。新
-  compatible base以 Registry `native-b`拓扑重签全部关联 C09-1I/Evidence/Entry对象，旧 C09-1J
+  `+8`；成功固定`P_L=P_H`、`S_L=S_H+8`，当前 full-history anchor 24/38对应24/46。
+  stage 5成功已蕴含 input/closure/Manifest/enabled Entry installation identity相等，故 stage 6
+  `identity_mismatch`仅作防御性断言；stage 5与stage 10也已分别闭合 Entry与完整 Runtime policy
+  digest，故 stage 11 `binding_mismatch`同样不可诚实构造。fixture必须 machine-readable区分
+  traversed success、reachable rejection与带因果 rationale的 unreachable rejection，不得伪造覆盖。
+  新 compatible base以 Registry `native-b`拓扑重签全部关联 C09-1I/Evidence/Entry对象，旧 C09-1J
   与 Registry资源只作227+89项 source inventory，不直接拼接。adapter expected使用 diagnostic或
   accepted-snapshot discriminated union；J 227项内固定6个3/11 snapshot case（其中2项仅有 Runtime
   1/7 lineage，禁止重复计数）在 L中映射 detached-snapshot success，并核对固定10字段 projection与

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod-runtime.js";
 
 import {
   assertDataObjectDescriptorsBeforeSchemaV1,
@@ -32,6 +32,27 @@ import {
   deriveProviderEd25519PublicKeyDigestInternalV1,
 } from "./provider-registry-trust.js";
 import { sha256InternalV1 } from "./sha256.js";
+
+const CapturedObjectGetOwnPropertyDescriptorsV1 =
+  Object.getOwnPropertyDescriptors;
+const CapturedReflectApplyV1 = Reflect.apply;
+const CapturedRegExpPrototypeExecV1 = RegExp.prototype.exec;
+
+function objectGetOwnPropertyDescriptorsV1(
+  value: object,
+): PropertyDescriptorMap {
+  return CapturedReflectApplyV1(
+    CapturedObjectGetOwnPropertyDescriptorsV1,
+    undefined,
+    [value],
+  ) as PropertyDescriptorMap;
+}
+
+function regExpExecV1(pattern: RegExp, value: string): RegExpExecArray | null {
+  return CapturedReflectApplyV1(CapturedRegExpPrototypeExecV1, pattern, [
+    value,
+  ]) as RegExpExecArray | null;
+}
 
 export const STORE_PROVIDER_VERIFICATION_KEY_ID_DOMAIN_V1 =
   "store-provider-verification-key-id-v1" as const;
@@ -982,11 +1003,12 @@ function createRegistryRootSignatureMessageV1(
 
 function rootKeyIdFromRegistrySignatureV1(input: unknown): string | undefined {
   assertDataObjectDescriptorsBeforeSchemaV1(input);
-  const descriptors = Object.getOwnPropertyDescriptors(input);
+  const descriptors = objectGetOwnPropertyDescriptorsV1(input as object);
   const signature = descriptors.registrySignature?.value;
   const match =
     typeof signature === "string"
-      ? /^provider-registry-ed25519:([0-9a-f]{22}):[0-9a-f]{128}$/u.exec(
+      ? regExpExecV1(
+          /^provider-registry-ed25519:([0-9a-f]{22}):[0-9a-f]{128}$/u,
           signature,
         )
       : null;
@@ -995,11 +1017,12 @@ function rootKeyIdFromRegistrySignatureV1(input: unknown): string | undefined {
 
 function rootKeyIdFromManifestSignatureV1(input: unknown): string | undefined {
   assertDataObjectDescriptorsBeforeSchemaV1(input);
-  const descriptors = Object.getOwnPropertyDescriptors(input);
+  const descriptors = objectGetOwnPropertyDescriptorsV1(input as object);
   const signature = descriptors.manifestSignature?.value;
   const match =
     typeof signature === "string"
-      ? /^provider-registry-manifest-ed25519:([0-9a-f]{22}):[0-9a-f]{128}$/u.exec(
+      ? regExpExecV1(
+          /^provider-registry-manifest-ed25519:([0-9a-f]{22}):[0-9a-f]{128}$/u,
           signature,
         )
       : null;

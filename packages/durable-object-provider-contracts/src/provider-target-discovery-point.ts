@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod-runtime.js";
 
 import {
   assertDataObjectDescriptorsBeforeSchemaV1,
@@ -46,10 +46,18 @@ import {
   ProviderRealFilesystemSuiteManifestEnvelopeV1Schema,
   ProviderRealFilesystemSuiteManifestPinV1Schema,
   diagnoseProviderRealFilesystemSourceClosureV1,
+  type ProviderRealFilesystemSourceClosureDiagnosticResultV1,
   type ProviderRealFilesystemFixtureCorpusManifestEnvelopeV1,
   type ProviderRealFilesystemSuiteManifestEnvelopeV1,
   type ProviderRealFilesystemSuiteManifestPinV1,
+  type ValidateProviderRealFilesystemSourceClosureV1Input,
 } from "./provider-real-filesystem-source.js";
+import {
+  assertPreparedDistributionInputBindingsInternalV1,
+  diagnoseProviderRealFilesystemSourcePreparedInternalV1,
+  recordPreparedDistributionSignatureVerificationInternalV1,
+  type PreparedDistributionVerificationContextV1,
+} from "./provider-real-filesystem-source-internal.js";
 import {
   ProviderRegistryIsoTimestampV1Schema,
   ProviderRegistryRootMetadataPinV1Schema,
@@ -66,6 +74,9 @@ import {
   type ProviderTargetDiscoveryPointSnapshotV1,
 } from "./provider-target-discovery-point-internal.js";
 import {
+  registerProviderTargetDiscoveryPointPreparedCoreInternalV1,
+} from "./provider-target-discovery-point-prepared-internal.js";
+import {
   assertProviderStrictEd25519CryptoCapabilityIdentityV1,
 } from "./strict-ed25519-capability-internal.js";
 import {
@@ -73,6 +84,121 @@ import {
   verifyRawEd25519WithCapabilityV1,
   type ProviderStrictEd25519OpaqueCapabilityV1,
 } from "./strict-ed25519-conformance.js";
+
+const CapturedArrayPrototypeMapV1 = Array.prototype.map;
+const CapturedArrayPrototypeFlatV1 = Array.prototype.flat;
+const CapturedArrayPrototypePushV1 = Array.prototype.push;
+const CapturedArrayPrototypeSomeV1 = Array.prototype.some;
+const CapturedArrayPrototypeSortV1 = Array.prototype.sort;
+const CapturedMapV1 = Map;
+const CapturedMapPrototypeForEachV1 = Map.prototype.forEach;
+const CapturedMapPrototypeGetV1 = Map.prototype.get;
+const CapturedMapPrototypeSetV1 = Map.prototype.set;
+const CapturedObjectFreezeV1 = Object.freeze;
+const CapturedObjectGetOwnPropertyDescriptorsV1 =
+  Object.getOwnPropertyDescriptors;
+const CapturedObjectValuesV1 = Object.values;
+const CapturedReflectApplyV1 = Reflect.apply;
+const CapturedRegExpPrototypeExecV1 = RegExp.prototype.exec;
+const CapturedSetV1 = Set;
+const CapturedSetPrototypeAddV1 = Set.prototype.add;
+const CapturedSetPrototypeHasV1 = Set.prototype.has;
+
+function arrayMapV1<T, U>(
+  array: readonly T[],
+  callback: (value: T, index: number, source: readonly T[]) => U,
+): U[] {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeMapV1, array, [
+    callback,
+  ]) as U[];
+}
+
+function arrayFlatV1<T>(array: readonly (T | readonly T[])[]): T[] {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeFlatV1, array, []) as T[];
+}
+
+function arrayPushV1<T>(array: T[], value: T): number {
+  return CapturedReflectApplyV1(CapturedArrayPrototypePushV1, array, [
+    value,
+  ]) as number;
+}
+
+function arraySomeV1<T>(
+  array: readonly T[],
+  callback: (value: T, index: number, source: readonly T[]) => unknown,
+): boolean {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeSomeV1, array, [
+    callback,
+  ]) as boolean;
+}
+
+function arraySortV1<T>(
+  array: T[],
+  compare?: (left: T, right: T) => number,
+): T[] {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeSortV1, array, [
+    compare,
+  ]) as T[];
+}
+
+function mapGetV1<K, V>(map: ReadonlyMap<K, V>, key: K): V | undefined {
+  return CapturedReflectApplyV1(CapturedMapPrototypeGetV1, map, [key]) as
+    | V
+    | undefined;
+}
+
+function mapSetV1<K, V>(map: Map<K, V>, key: K, value: V): void {
+  CapturedReflectApplyV1(CapturedMapPrototypeSetV1, map, [key, value]);
+}
+
+function mapFromEntriesV1<K, V>(
+  entries: readonly (readonly [K, V])[],
+): Map<K, V> {
+  const map = new CapturedMapV1<K, V>();
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index]!;
+    mapSetV1(map, entry[0], entry[1]);
+  }
+  return map;
+}
+
+function mapValuesArrayV1<K, V>(map: ReadonlyMap<K, V>): V[] {
+  const output: V[] = [];
+  CapturedReflectApplyV1(CapturedMapPrototypeForEachV1, map, [
+    (value: V) => {
+      arrayPushV1(output, value);
+    },
+  ]);
+  return output;
+}
+
+function setAddV1<T>(set: Set<T>, value: T): void {
+  CapturedReflectApplyV1(CapturedSetPrototypeAddV1, set, [value]);
+}
+
+function setHasV1<T>(set: ReadonlySet<T>, value: T): boolean {
+  return CapturedReflectApplyV1(CapturedSetPrototypeHasV1, set, [
+    value,
+  ]) as boolean;
+}
+
+function setFromValuesV1<T>(values: readonly T[]): Set<T> {
+  const set = new CapturedSetV1<T>();
+  for (let index = 0; index < values.length; index += 1) {
+    setAddV1(set, values[index]!);
+  }
+  return set;
+}
+
+function regExpExecV1(pattern: RegExp, value: string): RegExpExecArray | null {
+  return CapturedReflectApplyV1(CapturedRegExpPrototypeExecV1, pattern, [
+    value,
+  ]) as RegExpExecArray | null;
+}
+
+function regExpTestV1(pattern: RegExp, value: string): boolean {
+  return regExpExecV1(pattern, value) !== null;
+}
 
 export const PROVIDER_OS_RELEASE_FAMILY_CODE_DOMAIN_V1 =
   "provider-os-release-family-code-v1" as const;
@@ -652,7 +778,9 @@ function bytesToLowerHexV1(bytes: Uint8Array): string {
   return output;
 }
 function lowerHexToBytesV1(hex: string): Uint8Array {
-  if (!/^(?:[0-9a-f]{2})+$/u.test(hex)) throw new TypeError("invalid lowercase hex");
+  if (!regExpTestV1(/^(?:[0-9a-f]{2})+$/u, hex)) {
+    throw new TypeError("invalid lowercase hex");
+  }
   const bytes = new Uint8Array(hex.length / 2);
   for (let index = 0; index < bytes.length; index += 1) {
     bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
@@ -785,8 +913,8 @@ export const ProviderTargetDiscoveryResultSignatureWrapperV1Schema = z.strictObj
 
 function rootKeyIdFromSignatureV1(input: unknown, field: string, pattern: RegExp): string | undefined {
   assertDataObjectDescriptorsBeforeSchemaV1(input);
-  const value = Object.getOwnPropertyDescriptors(input)[field]?.value;
-  return typeof value === "string" ? pattern.exec(value)?.[1] : undefined;
+  const value = CapturedObjectGetOwnPropertyDescriptorsV1(input)[field]?.value;
+  return typeof value === "string" ? regExpExecV1(pattern, value)?.[1] : undefined;
 }
 function resolveSignatureRootKeyIdV1(input: unknown, field: string, pattern: RegExp, rootKeyId: unknown): string {
   const signed = rootKeyIdFromSignatureV1(input, field, pattern);
@@ -994,7 +1122,7 @@ export class ProviderTargetDiscoveryPointClosureValidationError extends Error {
   }
 }
 
-const POINT_INPUT_KEYS = Object.freeze([
+const POINT_INPUT_KEYS = CapturedObjectFreezeV1([
   "activeRoot",
   "activeRootMetadata",
   "distributionRootBinding",
@@ -1007,7 +1135,7 @@ const POINT_INPUT_KEYS = Object.freeze([
   "targetDiscoveryResult",
   "targetDiscoveryRunnerRun",
 ] as const);
-const POINT_JSON_INPUT_KEYS = Object.freeze([
+const POINT_JSON_INPUT_KEYS = CapturedObjectFreezeV1([
   "activeRoot",
   "activeRootMetadata",
   "distributionRootBinding",
@@ -1136,33 +1264,52 @@ function decodeCanonicalPublicKeyBytes32V1(value: string): Uint8Array {
   return output;
 }
 
-async function verifyPointRootSignatureV1(
+function verifyPointRootSignatureV1(
   signature: string,
   pattern: RegExp,
   root: ProviderRegistryRootPublicKeyV1,
   createMessage: () => Uint8Array,
   capability: ProviderStrictEd25519OpaqueCapabilityV1,
   stage: "taxonomy_signature" | "matrix_signature" | "bundle_signature" | "result_signature",
+  preparedContext?: PreparedDistributionVerificationContextV1,
 ): Promise<void> {
-  try {
-    const match = pattern.exec(signature);
-    if (
-      match?.[1] === undefined ||
-      match[2] === undefined ||
-      match[1] !== root.rootKeyId ||
-      !(await verifyRawEd25519WithCapabilityV1(
-        capability,
-        decodeCanonicalPublicKeyBytes32V1(root.publicKeyBytes),
-        createMessage(),
-        lowerHexToBytesV1(match[2]),
-      ))
-    ) {
-      return fail(stage, "signature_invalid");
-    }
-  } catch (error) {
-    if (error instanceof PointDiagnosticSignal) throw error;
-    return fail(stage, "signature_invalid");
-  }
+  return hardenProviderPointPromiseV1(
+    (async (): Promise<void> => {
+      try {
+        const match = regExpExecV1(pattern, signature);
+        if (
+          match?.[1] === undefined ||
+          match[2] === undefined ||
+          match[1] !== root.rootKeyId
+        ) {
+          return fail(stage, "signature_invalid");
+        }
+        const publicKeyBytes = decodeCanonicalPublicKeyBytes32V1(
+          root.publicKeyBytes,
+        );
+        const message = createMessage();
+        const signatureBytes = lowerHexToBytesV1(match[2]);
+        if (preparedContext !== undefined) {
+          recordPreparedDistributionSignatureVerificationInternalV1(
+            preparedContext,
+          );
+        }
+        if (
+          !(await verifyRawEd25519WithCapabilityV1(
+            capability,
+            publicKeyBytes,
+            message,
+            signatureBytes,
+          ))
+        ) {
+          return fail(stage, "signature_invalid");
+        }
+      } catch (error) {
+        if (error instanceof PointDiagnosticSignal) throw error;
+        return fail(stage, "signature_invalid");
+      }
+    })(),
+  );
 }
 
 function validateGenerationPredecessorV1(
@@ -1179,7 +1326,7 @@ function validateTaxonomyRecordsV1(taxonomy: ProviderPublicSupportTaxonomyV1): v
     taxonomy.predecessorTaxonomyContentDigest,
     "taxonomy_structure",
   );
-  const osDescriptorKeys = new Set<string>();
+  const osDescriptorKeys = new CapturedSetV1<string>();
   for (let index = 0; index < taxonomy.osReleaseFamilies.length; index += 1) {
     const record = taxonomy.osReleaseFamilies[index]!;
     const previous = taxonomy.osReleaseFamilies[index - 1];
@@ -1187,13 +1334,15 @@ function validateTaxonomyRecordsV1(taxonomy: ProviderPublicSupportTaxonomyV1): v
       return fail("taxonomy_structure", "ordering_invalid");
     }
     const descriptorKey = JSON.stringify(record.descriptor);
-    if (osDescriptorKeys.has(descriptorKey)) return fail("taxonomy_structure", "ordering_invalid");
-    osDescriptorKeys.add(descriptorKey);
+    if (setHasV1(osDescriptorKeys, descriptorKey)) {
+      return fail("taxonomy_structure", "ordering_invalid");
+    }
+    setAddV1(osDescriptorKeys, descriptorKey);
     if (record.osReleaseFamilyCode !== deriveProviderOsReleaseFamilyCodeV1({ descriptor: record.descriptor })) {
       return fail("taxonomy_digest", "digest_mismatch");
     }
   }
-  const filesystemDescriptorKeys = new Set<string>();
+  const filesystemDescriptorKeys = new CapturedSetV1<string>();
   for (let index = 0; index < taxonomy.filesystemProfiles.length; index += 1) {
     const record = taxonomy.filesystemProfiles[index]!;
     const previous = taxonomy.filesystemProfiles[index - 1];
@@ -1201,8 +1350,10 @@ function validateTaxonomyRecordsV1(taxonomy: ProviderPublicSupportTaxonomyV1): v
       return fail("taxonomy_structure", "ordering_invalid");
     }
     const descriptorKey = JSON.stringify(record.descriptor);
-    if (filesystemDescriptorKeys.has(descriptorKey)) return fail("taxonomy_structure", "ordering_invalid");
-    filesystemDescriptorKeys.add(descriptorKey);
+    if (setHasV1(filesystemDescriptorKeys, descriptorKey)) {
+      return fail("taxonomy_structure", "ordering_invalid");
+    }
+    setAddV1(filesystemDescriptorKeys, descriptorKey);
     if (record.filesystemProfileCode !== deriveProviderFilesystemProfileCodeV1({ descriptor: record.descriptor })) {
       return fail("taxonomy_digest", "digest_mismatch");
     }
@@ -1215,8 +1366,8 @@ interface TaxonomyIndexesV1 {
 }
 function taxonomyIndexesV1(taxonomy: ProviderPublicSupportTaxonomyV1): TaxonomyIndexesV1 {
   return {
-    osFamilies: new Map(taxonomy.osReleaseFamilies.map((record) => [record.osReleaseFamilyCode, record.descriptor.osPlatform])),
-    filesystems: new Map(taxonomy.filesystemProfiles.map((record) => [record.filesystemProfileCode, record.descriptor.osPlatform])),
+    osFamilies: mapFromEntriesV1(arrayMapV1(taxonomy.osReleaseFamilies, (record) => [record.osReleaseFamilyCode, record.descriptor.osPlatform] as const)),
+    filesystems: mapFromEntriesV1(arrayMapV1(taxonomy.filesystemProfiles, (record) => [record.filesystemProfileCode, record.descriptor.osPlatform] as const)),
   };
 }
 function validateTargetEntryV1(
@@ -1247,8 +1398,8 @@ function validateTargetEntryV1(
     return fail(digestStage, "digest_mismatch");
   }
   if (
-    taxonomy.osFamilies.get(target.osReleaseFamilyCode) !== target.osPlatform ||
-    taxonomy.filesystems.get(target.filesystemProfileCode) !== target.osPlatform
+    mapGetV1(taxonomy.osFamilies, target.osReleaseFamilyCode) !== target.osPlatform ||
+    mapGetV1(taxonomy.filesystems, target.filesystemProfileCode) !== target.osPlatform
   ) {
     return fail(taxonomyStage, "coverage_mismatch");
   }
@@ -1316,19 +1467,19 @@ function projectExpectedObservationsV1(
   ProviderTargetDiscoveryInputObservationV1[],
 ] {
   return [
-    matrix.payload.targets.map((target, sourceRecordOrdinal) => expectedObservationV1(
+    arrayMapV1(matrix.payload.targets, (target, sourceRecordOrdinal) => expectedObservationV1(
       "signed_release_matrix",
       matrix.contentDigest,
       sourceRecordOrdinal,
       { state: "resolved", target },
     )),
-    fixture.payload.records.map((record) => expectedObservationV1(
+    arrayMapV1(fixture.payload.records, (record) => expectedObservationV1(
       "real_filesystem_fixture_manifest",
       fixture.contentDigest,
       record.sourceRecordOrdinal,
       record.outcome,
     )),
-    runner.payload.records.map((record) => expectedObservationV1(
+    arrayMapV1(runner.payload.records, (record) => expectedObservationV1(
       "target_discovery_runner",
       runner.contentDigest,
       record.sourceRecordOrdinal,
@@ -1339,8 +1490,8 @@ function projectExpectedObservationsV1(
 
 function deepFreezeV1<T>(value: T): T {
   if (value !== null && typeof value === "object") {
-    for (const child of Object.values(value)) deepFreezeV1(child);
-    Object.freeze(value);
+    for (const child of CapturedObjectValuesV1(value)) deepFreezeV1(child);
+    CapturedObjectFreezeV1(value);
   }
   return value;
 }
@@ -1348,7 +1499,18 @@ function deepFreezeV1<T>(value: T): T {
 async function validatePointClosureInternalV1(
   snapshot: ProviderTargetDiscoveryPointSnapshotV1,
   preSnapshotOptIn: boolean,
+  preparedContext: PreparedDistributionVerificationContextV1 | undefined,
+  diagnoseSource: (
+    input: ValidateProviderRealFilesystemSourceClosureV1Input,
+  ) => Promise<ProviderRealFilesystemSourceClosureDiagnosticResultV1>,
 ): Promise<ProviderTargetDiscoveryPointClosureValidationV1> {
+  if (preparedContext !== undefined) {
+    assertPreparedDistributionInputBindingsInternalV1(
+      preparedContext,
+      snapshot.activeRoot,
+      snapshot.strictCryptoCapability,
+    );
+  }
   let binding: ProviderSignedDistributionRootBindingV1;
   let activeRootMetadata: ProviderRegistryRootMetadataPinV1;
   let activeRoot: ProviderRegistryRootPublicKeyV1;
@@ -1400,20 +1562,37 @@ async function validatePointClosureInternalV1(
     }
   }
 
-  const sourceDiagnostic = await diagnoseProviderRealFilesystemSourceClosureV1({
+  if (preparedContext !== undefined) {
+    // Zod parse results above are validation temporaries only.  The prepared
+    // path continues with the exact detached/frozen identities produced by L.
+    binding = snapshot.distributionRootBinding;
+    activeRootMetadata = snapshot.activeRootMetadata;
+    activeRoot = snapshot.activeRoot;
+    corpus = snapshot.fixtureCorpusManifest;
+    suite = snapshot.suiteManifest;
+    taxonomyEnvelope = snapshot.publicSupportTaxonomy;
+    matrixEnvelope = snapshot.releaseMatrix;
+    fixtureEnvelope = snapshot.targetDiscoveryFixtureManifest;
+    runnerEnvelope = snapshot.targetDiscoveryRunnerRun;
+    resultEnvelope = snapshot.targetDiscoveryResult;
+  }
+
+  const sourceInput = {
     distributionRootBinding: binding,
     activeRootMetadata,
     activeRoot,
     fixtureCorpusManifest: corpus,
     suiteManifest: suite,
     strictCryptoCapability: snapshot.strictCryptoCapability as ProviderStrictEd25519OpaqueCapabilityV1,
-  });
+  };
+  const sourceDiagnostic = await diagnoseSource(sourceInput);
   if (!sourceDiagnostic.ok) return fail("source_closure", "source_invalid");
   const sourceClosure = sourceDiagnostic.value;
 
   const maxBytes = binding.historyPolicy.maxSingleDistributionObjectCanonicalBytes;
   if (
-    [taxonomyEnvelope!, matrixEnvelope!, fixtureEnvelope!, runnerEnvelope!, resultEnvelope!].some(
+    arraySomeV1(
+      [taxonomyEnvelope!, matrixEnvelope!, fixtureEnvelope!, runnerEnvelope!, resultEnvelope!],
       (envelope) => canonicalizeJcsSafeIntegerUtf8V1(envelope).byteLength > maxBytes,
     ) ||
     canonicalizeJcsSafeIntegerUtf8V1(resultEnvelope!.payload.targetDiscoveryInputBundle).byteLength > maxBytes
@@ -1439,6 +1618,7 @@ async function validatePointClosureInternalV1(
     () => createProviderPublicSupportTaxonomySignatureMessageV1(taxonomy, activeRoot.rootKeyId),
     snapshot.strictCryptoCapability as ProviderStrictEd25519OpaqueCapabilityV1,
     "taxonomy_signature",
+    preparedContext,
   );
   if (taxonomyEnvelope!.contentDigest !== deriveProviderPublicSupportTaxonomyContentDigestV1(taxonomy)) {
     return fail("taxonomy_envelope", "envelope_mismatch");
@@ -1479,6 +1659,7 @@ async function validatePointClosureInternalV1(
     () => createProviderReleaseMatrixSignatureMessageV1(matrix, activeRoot.rootKeyId),
     snapshot.strictCryptoCapability as ProviderStrictEd25519OpaqueCapabilityV1,
     "matrix_signature",
+    preparedContext,
   );
   if (matrixEnvelope!.contentDigest !== deriveProviderReleaseMatrixContentDigestV1(matrix)) return fail("matrix_envelope", "envelope_mismatch");
   const matrixPin = ProviderReleaseMatrixPinV1Schema.parse({
@@ -1573,8 +1754,8 @@ async function validatePointClosureInternalV1(
   if (bundle.observationCutDigest !== expectedCutDigest) return fail("bundle_cut", "digest_mismatch");
 
   const sourceObservations = projectExpectedObservationsV1(matrixEnvelope!, fixtureEnvelope!, runnerEnvelope!);
-  const expectedObservations = sourceObservations.flat();
-  const expectedSummaries = sourceObservations.map((entries, index) => {
+  const expectedObservations = arrayFlatV1(sourceObservations);
+  const expectedSummaries = arrayMapV1(sourceObservations, (entries, index) => {
     const observationSource = (["signed_release_matrix", "real_filesystem_fixture_manifest", "target_discovery_runner"] as const)[index]!;
     const sourceArtifactContentDigest = [matrixEnvelope!.contentDigest, fixtureEnvelope!.contentDigest, runnerEnvelope!.contentDigest][index]!;
     return {
@@ -1591,7 +1772,9 @@ async function validatePointClosureInternalV1(
   ) return fail("bundle_projection", "coverage_mismatch");
   const observationSetDigest = deriveProviderTargetDiscoveryInputObservationSetDigestV1({ entries: expectedObservations });
   if (bundle.observationSetDigest !== observationSetDigest) return fail("bundle_projection", "digest_mismatch");
-  const observationKeys = new Set(bundle.observations.map((observation) => observation.observationKeyDigest));
+  const observationKeys = setFromValuesV1(
+    arrayMapV1(bundle.observations, (observation) => observation.observationKeyDigest),
+  );
   if (observationKeys.size !== bundle.observations.length) return fail("bundle_projection", "ordering_invalid");
   await verifyPointRootSignatureV1(
     bundle.bundleSignature,
@@ -1600,21 +1783,22 @@ async function validatePointClosureInternalV1(
     () => createProviderTargetDiscoveryInputBundleSignatureMessageV1(bundle, activeRoot.rootKeyId),
     snapshot.strictCryptoCapability as ProviderStrictEd25519OpaqueCapabilityV1,
     "bundle_signature",
+    preparedContext,
   );
   const bundleContentDigest = deriveProviderTargetDiscoveryInputBundleContentDigestV1(bundle);
 
-  const targetById = new Map<string, ProviderReleaseTargetUniverseTargetEntryV1>();
+  const targetById = new CapturedMapV1<string, ProviderReleaseTargetUniverseTargetEntryV1>();
   const unresolved: ProviderTargetDiscoveryUnresolvedObservationV1[] = [];
   for (const observation of expectedObservations) {
     if (observation.outcome.state === "resolved") {
       const targetId = observation.outcome.target.target.targetProfileId;
-      const previous = targetById.get(targetId);
+      const previous = mapGetV1(targetById, targetId);
       if (previous !== undefined && !canonicalEqualV1(previous, observation.outcome.target)) {
         return fail("result_projection", "conflicting_resolved_targets");
       }
-      targetById.set(targetId, observation.outcome.target);
+      mapSetV1(targetById, targetId, observation.outcome.target);
     } else {
-      unresolved.push({
+      arrayPushV1(unresolved, {
         observationSource: observation.observationSource,
         sourceArtifactContentDigest: observation.sourceArtifactContentDigest,
         sourceRecordOrdinal: observation.sourceRecordOrdinal,
@@ -1642,8 +1826,8 @@ async function validatePointClosureInternalV1(
       );
     }
   }
-  const projectedTargets = [...targetById.values()].sort((left, right) => compareUtf8V1(left.target.targetProfileId, right.target.targetProfileId));
-  unresolved.sort((left, right) => {
+  const projectedTargets = arraySortV1(mapValuesArrayV1(targetById), (left, right) => compareUtf8V1(left.target.targetProfileId, right.target.targetProfileId));
+  arraySortV1(unresolved, (left, right) => {
     const sourceOrder = compareUtf8V1(left.observationSource, right.observationSource);
     return sourceOrder !== 0 ? sourceOrder : compareUtf8V1(left.observationKeyDigest, right.observationKeyDigest);
   });
@@ -1691,6 +1875,7 @@ async function validatePointClosureInternalV1(
     () => createProviderTargetDiscoveryResultSignatureMessageV1(result, activeRoot.rootKeyId),
     snapshot.strictCryptoCapability as ProviderStrictEd25519OpaqueCapabilityV1,
     "result_signature",
+    preparedContext,
   );
   if (resultEnvelope!.contentDigest !== deriveProviderTargetDiscoveryResultContentDigestV1(result)) {
     return fail("result_envelope", "envelope_mismatch");
@@ -1773,6 +1958,8 @@ export function diagnoseProviderTargetDiscoveryPointClosureV1(
     validatePointClosureInternalV1(
       prepared.snapshot,
       prepared.preSnapshotOptIn,
+      undefined,
+      diagnoseProviderRealFilesystemSourceClosureV1,
     ),
   );
   return corePromise.then(
@@ -1800,6 +1987,8 @@ export function validateProviderTargetDiscoveryPointClosureV1(
     validatePointClosureInternalV1(
       prepared.snapshot,
       prepared.preSnapshotOptIn,
+      undefined,
+      diagnoseProviderRealFilesystemSourceClosureV1,
     ),
   );
   return corePromise.then(
@@ -1809,3 +1998,31 @@ export function validateProviderTargetDiscoveryPointClosureV1(
     },
   );
 }
+
+registerProviderTargetDiscoveryPointPreparedCoreInternalV1(
+  (
+    input: ValidateProviderTargetDiscoveryPointClosureV1Input,
+    context: PreparedDistributionVerificationContextV1,
+  ): Promise<ProviderTargetDiscoveryPointClosureDiagnosticResultV1> => {
+    const corePromise = hardenProviderPointPromiseV1(
+      validatePointClosureInternalV1(
+        input,
+        false,
+        context,
+        (sourceInput) =>
+          diagnoseProviderRealFilesystemSourcePreparedInternalV1(
+            sourceInput,
+            context,
+          ),
+      ),
+    );
+    return corePromise.then(
+      (value): PointDiagnosticSuccessV1 =>
+        createProviderNonThenableFrozenRecordV1({
+          ok: true as const,
+          value,
+        }),
+      createPointDiagnosticFailureFromErrorV1,
+    );
+  },
+);

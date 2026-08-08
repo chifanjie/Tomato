@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod-runtime.js";
 
 import {
   InstallationIdentityGenerationFieldsV1Schema,
@@ -169,6 +169,19 @@ import {
   ProviderFeasibilityEvidencePointGoldenManifestV1Schema,
   ProviderFeasibilityEvidencePointInvalidManifestV1Schema,
 } from "./provider-feasibility-evidence-point-fixtures.js";
+import {
+  ProviderRegistryEvidenceBindingPointInvalidReasonV1Schema,
+  ProviderRegistryEvidenceBindingPointInvalidStageV1Schema,
+} from "./provider-registry-evidence-binding-point.js";
+import {
+  ProviderRegistryEvidenceBindingPointCompatibleBaseV1Schema,
+  ProviderRegistryEvidenceBindingPointGoldenManifestV1Schema,
+  ProviderRegistryEvidenceBindingPointInvalidManifestV1Schema,
+  ProviderRegistryEvidenceBindingPointSuccessProjectionV1Schema,
+} from "./provider-registry-evidence-binding-point-fixtures.js";
+import {
+  ProviderRegistryEvidenceBindingTopologyProofV1Schema,
+} from "./provider-registry-evidence-binding-topology-proof.js";
 import {
   ProviderFeasibilityTargetFieldsV1Schema,
   ProviderFeasibilityTargetV1Schema,
@@ -517,6 +530,20 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 =
     ProviderFeasibilityEvidencePointGoldenManifestV1Schema,
   "provider-feasibility-evidence-point-invalid-manifest":
     ProviderFeasibilityEvidencePointInvalidManifestV1Schema,
+  "provider-registry-evidence-binding-point-invalid-stage":
+    ProviderRegistryEvidenceBindingPointInvalidStageV1Schema,
+  "provider-registry-evidence-binding-point-invalid-reason":
+    ProviderRegistryEvidenceBindingPointInvalidReasonV1Schema,
+  "provider-registry-evidence-binding-point-compatible-base":
+    ProviderRegistryEvidenceBindingPointCompatibleBaseV1Schema,
+  "provider-registry-evidence-binding-point-success-projection":
+    ProviderRegistryEvidenceBindingPointSuccessProjectionV1Schema,
+  "provider-registry-evidence-binding-point-golden-manifest":
+    ProviderRegistryEvidenceBindingPointGoldenManifestV1Schema,
+  "provider-registry-evidence-binding-point-invalid-manifest":
+    ProviderRegistryEvidenceBindingPointInvalidManifestV1Schema,
+  "provider-registry-evidence-binding-topology-proof":
+    ProviderRegistryEvidenceBindingTopologyProofV1Schema,
   "provider-feasibility-approval-keys":
     ProviderFeasibilityApprovalKeysV1Schema,
   "store-durable-object-provider-verification-keys":
@@ -885,13 +912,13 @@ function schemaDocument(
   const generated = z.toJSONSchema(schema, {
     target: "draft-2020-12",
     unrepresentable: "any",
-    // This manifest keeps every positional case contract while reusing the
-    // recursive replay and expectation schemas. Inlining those shared nodes
-    // produces a ~24 MiB validator that overflows default AJV stacks; refs
-    // preserve every per-position literal without changing other schema bytes.
+    // These manifests keep every positional case contract while reusing their
+    // replay and expectation schemas. Inlining those shared nodes produces
+    // validators that overflow default AJV stacks; refs preserve every
+    // per-position literal without changing other schema bytes.
     reused:
-      name ===
-      "provider-release-target-universe-point-invalid-manifest"
+      name === "provider-registry-evidence-binding-point-invalid-manifest" ||
+      name === "provider-release-target-universe-point-invalid-manifest"
         ? "ref"
         : "inline",
   }) as unknown as Record<string, unknown>;

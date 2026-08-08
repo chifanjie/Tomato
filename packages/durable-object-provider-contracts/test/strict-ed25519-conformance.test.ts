@@ -76,6 +76,36 @@ function createAttestationInput(
   };
 }
 
+function createKatThenStatefulHost(
+  pointAfterKat: ProviderStrictEd25519CryptoHostV1["validatePrimeSubgroupPoint"],
+  verifyAfterKat: ProviderStrictEd25519CryptoHostV1["verifyRawEd25519"],
+): {
+  readonly calls: { point: number; verify: number };
+  readonly host: ProviderStrictEd25519CryptoHostV1;
+} {
+  const calls = { point: 0, verify: 0 };
+  return {
+    calls,
+    host: {
+      verificationProfile: STRICT_ED25519_VERIFICATION_PROFILE_V1,
+      validatePrimeSubgroupPoint(point) {
+        calls.point += 1;
+        if (calls.point <= parsedResource.payload.cases.length * 2) {
+          return validatePrimeSubgroupPoint(point);
+        }
+        return pointAfterKat(point);
+      },
+      verifyRawEd25519(publicKey, message, signature) {
+        calls.verify += 1;
+        if (calls.verify <= parsedResource.payload.cases.length) {
+          return verifyRawEd25519(publicKey, message, signature);
+        }
+        return verifyAfterKat(publicKey, message, signature);
+      },
+    },
+  };
+}
+
 function decodeWireBytes(value: string): Uint8Array {
   return new Uint8Array(
     Buffer.from(value.slice("base64url:".length), "base64url"),
@@ -346,6 +376,233 @@ describe("strict Ed25519 host attestation", () => {
     expect(
       getProviderStrictEd25519CryptoCapabilityBytesV1(capability),
     ).not.toEqual(firstBytes);
+  });
+
+  it("keeps wrong signer, domain, role, and point rejected after a stateful host passes KAT", async () => {
+    const { calls, host } = createKatThenStatefulHost(
+      () => true,
+      () => true,
+    );
+    const capability = await attestProviderStrictEd25519CryptoHostV1(
+      createAttestationInput({ host }),
+    );
+    expect(calls).toEqual({ point: 56, verify: 28 });
+
+    const empty = parsedResource.payload.cases.find(
+      ({ caseId }) => caseId === "rfc8032-empty-valid",
+    )!;
+    const oneByte = parsedResource.payload.cases.find(
+      ({ caseId }) => caseId === "rfc8032-one-byte-valid",
+    )!;
+    const providerWrapper = parsedResource.payload.cases.find(
+      ({ caseId }) => caseId === "provider-wrapper-valid",
+    )!;
+    const identity = parsedResource.payload.cases.find(
+      ({ caseId }) => caseId === "public-key-identity",
+    )!;
+    const providerMessage = parseCanonicalJcsSafeIntegerUtf8V1(
+      decodeWireBytes(providerWrapper.messageBytes),
+    ) as [string, { readonly [key: string]: unknown; usage: string }];
+    const wrongDomainMessage = canonicalizeJcsSafeIntegerUtf8V1([
+      "store-provider-operation-receipt-v2",
+      providerMessage[1],
+    ]);
+    const wrongRoleClaims = structuredClone(providerMessage[1]);
+    wrongRoleClaims.usage = "release_approval";
+    const wrongRoleMessage = canonicalizeJcsSafeIntegerUtf8V1([
+      providerMessage[0],
+      wrongRoleClaims,
+    ]);
+
+    await expect(
+      verifyRawEd25519WithCapabilityV1(
+        capability,
+        decodeWireBytes(oneByte.publicKeyBytes),
+        decodeWireBytes(empty.messageBytes),
+        decodeWireBytes(empty.signatureBytes),
+      ),
+    ).rejects.toBeInstanceOf(ProviderStrictEd25519AttestationError);
+    await expect(
+      verifyRawEd25519WithCapabilityV1(
+        capability,
+        decodeWireBytes(providerWrapper.publicKeyBytes),
+        wrongDomainMessage,
+        decodeWireBytes(providerWrapper.signatureBytes),
+      ),
+    ).rejects.toBeInstanceOf(ProviderStrictEd25519AttestationError);
+    await expect(
+      verifyRawEd25519WithCapabilityV1(
+        capability,
+        decodeWireBytes(providerWrapper.publicKeyBytes),
+        wrongRoleMessage,
+        decodeWireBytes(providerWrapper.signatureBytes),
+      ),
+    ).rejects.toBeInstanceOf(ProviderStrictEd25519AttestationError);
+    await expect(
+      validateProviderStrictEd25519PointWithCapabilityV1(
+        capability,
+        decodeWireBytes(identity.publicKeyBytes),
+      ),
+    ).rejects.toBeInstanceOf(ProviderStrictEd25519AttestationError);
+    expect(calls).toEqual({ point: 57, verify: 31 });
+  });
+
+  it("fails closed when a KAT-conformant host later returns false for valid input", async () => {
+    const { calls, host } = createKatThenStatefulHost(
+      () => false,
+      () => false,
+    );
+    const capability = await attestProviderStrictEd25519CryptoHostV1(
+      createAttestationInput({ host }),
+    );
+    const valid = parsedResource.payload.cases.find(
+      ({ caseId }) => caseId === "rfc8032-empty-valid",
+    )!;
+
+    await expect(
+      validateProviderStrictEd25519PointWithCapabilityV1(
+        capability,
+        decodeWireBytes(valid.publicKeyBytes),
+      ),
+    ).rejects.toBeInstanceOf(ProviderStrictEd25519AttestationError);
+    await expect(
+      verifyRawEd25519WithCapabilityV1(
+        capability,
+        decodeWireBytes(valid.publicKeyBytes),
+        decodeWireBytes(valid.messageBytes),
+        decodeWireBytes(valid.signatureBytes),
+      ),
+    ).rejects.toBeInstanceOf(ProviderStrictEd25519AttestationError);
+    expect(calls).toEqual({ point: 57, verify: 29 });
+  });
+
+  it("detects post-KAT host mutation without mutating caller or reference bytes", async () => {
+    const { calls, host } = createKatThenStatefulHost(
+      validatePrimeSubgroupPoint,
+      (publicKey, message, signature) => {
+        const publicKeySnapshot = new Uint8Array(publicKey);
+        const messageSnapshot = new Uint8Array(message);
+        const signatureSnapshot = new Uint8Array(signature);
+        publicKey[0] = publicKey[0]! ^ 0xff;
+        message[0] = message[0]! ^ 0xff;
+        signature[0] = signature[0]! ^ 0xff;
+        return verifyRawEd25519(
+          publicKeySnapshot,
+          messageSnapshot,
+          signatureSnapshot,
+        );
+      },
+    );
+    const capability = await attestProviderStrictEd25519CryptoHostV1(
+      createAttestationInput({ host }),
+    );
+    const valid = parsedResource.payload.cases.find(
+      ({ caseId }) => caseId === "rfc8032-one-byte-valid",
+    )!;
+    const publicKey = decodeWireBytes(valid.publicKeyBytes);
+    const message = decodeWireBytes(valid.messageBytes);
+    const signature = decodeWireBytes(valid.signatureBytes);
+    const callerSnapshots = [
+      new Uint8Array(publicKey),
+      new Uint8Array(message),
+      new Uint8Array(signature),
+    ];
+
+    await expect(
+      verifyRawEd25519WithCapabilityV1(
+        capability,
+        publicKey,
+        message,
+        signature,
+      ),
+    ).rejects.toBeInstanceOf(ProviderStrictEd25519AttestationError);
+    expect([publicKey, message, signature]).toEqual(callerSnapshots);
+    expect(calls).toEqual({ point: 56, verify: 29 });
+  });
+
+  it("detects an asynchronous host result that drifts after invocation", async () => {
+    let driftedResult = false;
+    let settleHost!: () => void;
+    let markHostStarted!: () => void;
+    const hostStarted = new Promise<void>((resolve) => {
+      markHostStarted = resolve;
+    });
+    const { calls, host } = createKatThenStatefulHost(
+      validatePrimeSubgroupPoint,
+      () =>
+        new Promise<boolean>((resolve) => {
+          settleHost = () => resolve(driftedResult);
+          markHostStarted();
+        }),
+    );
+    const capability = await attestProviderStrictEd25519CryptoHostV1(
+      createAttestationInput({ host }),
+    );
+    const valid = parsedResource.payload.cases.find(
+      ({ caseId }) => caseId === "rfc8032-empty-valid",
+    )!;
+    const wrongMessage = new Uint8Array([0]);
+    const operation = verifyRawEd25519WithCapabilityV1(
+      capability,
+      decodeWireBytes(valid.publicKeyBytes),
+      wrongMessage,
+      decodeWireBytes(valid.signatureBytes),
+    );
+    const assertion = expect(operation).rejects.toBeInstanceOf(
+      ProviderStrictEd25519AttestationError,
+    );
+
+    await hostStarted;
+    driftedResult = true;
+    settleHost();
+    await assertion;
+    expect(calls).toEqual({ point: 56, verify: 29 });
+  });
+
+  it("isolates reference results across out-of-order concurrent capability calls", async () => {
+    const pending: Array<(result: boolean) => void> = [];
+    let markBothStarted!: () => void;
+    const bothStarted = new Promise<void>((resolve) => {
+      markBothStarted = resolve;
+    });
+    const { calls, host } = createKatThenStatefulHost(
+      validatePrimeSubgroupPoint,
+      () =>
+        new Promise<boolean>((resolve) => {
+          pending.push(resolve);
+          if (pending.length === 2) markBothStarted();
+        }),
+    );
+    const capability = await attestProviderStrictEd25519CryptoHostV1(
+      createAttestationInput({ host }),
+    );
+    const valid = parsedResource.payload.cases.find(
+      ({ caseId }) => caseId === "rfc8032-empty-valid",
+    )!;
+    const publicKey = decodeWireBytes(valid.publicKeyBytes);
+    const signature = decodeWireBytes(valid.signatureBytes);
+    const validOperation = verifyRawEd25519WithCapabilityV1(
+      capability,
+      publicKey,
+      decodeWireBytes(valid.messageBytes),
+      signature,
+    );
+    const invalidOperation = verifyRawEd25519WithCapabilityV1(
+      capability,
+      publicKey,
+      new Uint8Array([0]),
+      signature,
+    );
+    const validAssertion = expect(validOperation).resolves.toBe(true);
+    const invalidAssertion = expect(invalidOperation).rejects.toBeInstanceOf(
+      ProviderStrictEd25519AttestationError,
+    );
+
+    await bothStarted;
+    pending[1]!(true);
+    pending[0]!(true);
+    await Promise.all([validAssertion, invalidAssertion]);
+    expect(calls).toEqual({ point: 56, verify: 30 });
   });
 
   it("keeps opaque identity and defensive copies independent of poisoned primordials", async () => {
@@ -819,6 +1076,131 @@ describe("strict Ed25519 host attestation", () => {
     }
   });
 
+  it("accepts frozen, non-extensible, and ordinary async native Promise results", async () => {
+    const promiseHosts: ProviderStrictEd25519CryptoHostV1[] = [
+      {
+        verificationProfile: STRICT_ED25519_VERIFICATION_PROFILE_V1,
+        validatePrimeSubgroupPoint(point) {
+          return Object.freeze(
+            Promise.resolve(validatePrimeSubgroupPoint(point)),
+          );
+        },
+        verifyRawEd25519(publicKey, message, signature) {
+          return Object.freeze(
+            Promise.resolve(
+              verifyRawEd25519(publicKey, message, signature),
+            ),
+          );
+        },
+      },
+      {
+        verificationProfile: STRICT_ED25519_VERIFICATION_PROFILE_V1,
+        validatePrimeSubgroupPoint(point) {
+          return Object.preventExtensions(
+            Promise.resolve(validatePrimeSubgroupPoint(point)),
+          );
+        },
+        verifyRawEd25519(publicKey, message, signature) {
+          return Object.preventExtensions(
+            Promise.resolve(
+              verifyRawEd25519(publicKey, message, signature),
+            ),
+          );
+        },
+      },
+      {
+        verificationProfile: STRICT_ED25519_VERIFICATION_PROFILE_V1,
+        async validatePrimeSubgroupPoint(point) {
+          await Promise.resolve();
+          return validatePrimeSubgroupPoint(point);
+        },
+        async verifyRawEd25519(publicKey, message, signature) {
+          await Promise.resolve();
+          return verifyRawEd25519(publicKey, message, signature);
+        },
+      },
+    ];
+    const valid = parsedResource.payload.cases.find(
+      ({ caseId }) => caseId === "rfc8032-empty-valid",
+    )!;
+
+    for (const host of promiseHosts) {
+      const capability = await attestProviderStrictEd25519CryptoHostV1(
+        createAttestationInput({ host }),
+      );
+      await expect(
+        validateProviderStrictEd25519PointWithCapabilityV1(
+          capability,
+          decodeWireBytes(valid.publicKeyBytes),
+        ),
+      ).resolves.toBe(true);
+      await expect(
+        verifyRawEd25519WithCapabilityV1(
+          capability,
+          decodeWireBytes(valid.publicKeyBytes),
+          decodeWireBytes(valid.messageBytes),
+          decodeWireBytes(valid.signatureBytes),
+        ),
+      ).resolves.toBe(true);
+    }
+  });
+
+  it("consumes a frozen rejected native Promise and fails closed", async () => {
+    await expectAttestationFailure(
+      createAttestationInput({
+        host: {
+          ...strictHost,
+          validatePrimeSubgroupPoint() {
+            return Object.freeze(
+              Promise.reject(new Error("secret-canary")),
+            );
+          },
+        },
+      }),
+    );
+  });
+
+  it("preserves first-settlement semantics for non-Promise thenables", async () => {
+    function settleRepeatedly(result: boolean): Promise<boolean> {
+      return {
+        then(
+          onFulfilled: (value: boolean) => void,
+          onRejected: (reason: unknown) => void,
+        ) {
+          onFulfilled(result);
+          onRejected(new Error("secret-canary"));
+          onFulfilled(!result);
+        },
+      } as unknown as Promise<boolean>;
+    }
+    const host: ProviderStrictEd25519CryptoHostV1 = {
+      verificationProfile: STRICT_ED25519_VERIFICATION_PROFILE_V1,
+      validatePrimeSubgroupPoint(point) {
+        return settleRepeatedly(validatePrimeSubgroupPoint(point));
+      },
+      verifyRawEd25519(publicKey, message, signature) {
+        return settleRepeatedly(
+          verifyRawEd25519(publicKey, message, signature),
+        );
+      },
+    };
+    const capability = await attestProviderStrictEd25519CryptoHostV1(
+      createAttestationInput({ host }),
+    );
+    const valid = parsedResource.payload.cases.find(
+      ({ caseId }) => caseId === "rfc8032-empty-valid",
+    )!;
+
+    await expect(
+      verifyRawEd25519WithCapabilityV1(
+        capability,
+        decodeWireBytes(valid.publicKeyBytes),
+        decodeWireBytes(valid.messageBytes),
+        decodeWireBytes(valid.signatureBytes),
+      ),
+    ).resolves.toBe(true);
+  });
+
   it("times out a rejected-to-settle host without minting a handle", async () => {
     vi.useFakeTimers();
     const never = new Promise<boolean>(() => undefined);
@@ -837,6 +1219,103 @@ describe("strict Ed25519 host attestation", () => {
       PROVIDER_STRICT_ED25519_HOST_OPERATION_TIMEOUT_MS_V1,
     );
     await assertion;
+  });
+
+  it("keeps a rejection handler attached after an asynchronous timeout", async () => {
+    vi.useFakeTimers();
+    let rejectHost!: (reason: unknown) => void;
+    const lateRejection = new Promise<boolean>((_resolve, reject) => {
+      rejectHost = reject;
+    });
+    const promise = attestProviderStrictEd25519CryptoHostV1(
+      createAttestationInput({
+        host: {
+          ...strictHost,
+          validatePrimeSubgroupPoint: () => lateRejection,
+        },
+      }),
+    );
+    const assertion = expect(promise).rejects.toBeInstanceOf(
+      ProviderStrictEd25519AttestationError,
+    );
+    await vi.advanceTimersByTimeAsync(
+      PROVIDER_STRICT_ED25519_HOST_OPERATION_TIMEOUT_MS_V1,
+    );
+    await assertion;
+
+    rejectHost(new Error("secret-canary"));
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  it("rejects a finite synchronous host result that crosses the captured monotonic deadline", async () => {
+    const performanceDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "performance",
+    )!;
+    let monotonicTime = 0;
+    const isolatedPerformance = Object.freeze({
+      now() {
+        return monotonicTime;
+      },
+    });
+    let isolatedConformance!: typeof import("../src/strict-ed25519-conformance.js");
+    try {
+      Object.defineProperty(globalThis, "performance", {
+        configurable: performanceDescriptor.configurable,
+        enumerable: performanceDescriptor.enumerable,
+        value: isolatedPerformance,
+        writable: false,
+      });
+      isolatedConformance = (await import(
+        new URL(
+          "../src/strict-ed25519-conformance.js?finite-sync-deadline-v1",
+          import.meta.url,
+        ).href
+      )) as typeof import("../src/strict-ed25519-conformance.js");
+    } finally {
+      Object.defineProperty(
+        globalThis,
+        "performance",
+        performanceDescriptor,
+      );
+    }
+
+    let postKat = false;
+    const host: ProviderStrictEd25519CryptoHostV1 = {
+      verificationProfile: STRICT_ED25519_VERIFICATION_PROFILE_V1,
+      validatePrimeSubgroupPoint,
+      verifyRawEd25519(publicKey, message, signature) {
+        const result = verifyRawEd25519(publicKey, message, signature);
+        if (postKat) {
+          monotonicTime =
+            PROVIDER_STRICT_ED25519_HOST_OPERATION_TIMEOUT_MS_V1 + 1;
+        }
+        return result;
+      },
+    };
+    const capability =
+      await isolatedConformance.attestProviderStrictEd25519CryptoHostV1({
+        host,
+        resourceHost: {
+          readFixedSignedPackageResource: () => manifestResourceBytes,
+        },
+      });
+    postKat = true;
+    const valid = parsedResource.payload.cases.find(
+      ({ caseId }) => caseId === "rfc8032-empty-valid",
+    )!;
+
+    await expect(
+      isolatedConformance.verifyRawEd25519WithCapabilityV1(
+        capability,
+        decodeWireBytes(valid.publicKeyBytes),
+        decodeWireBytes(valid.messageBytes),
+        decodeWireBytes(valid.signatureBytes),
+      ),
+    ).rejects.toBeInstanceOf(
+      isolatedConformance.ProviderStrictEd25519AttestationError,
+    );
   });
 
   it("enforces the 4 MiB cap before digesting or running KAT", async () => {

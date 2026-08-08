@@ -41,6 +41,22 @@ import {
   type ProviderRegistryRootMetadataHistoryValidationV1,
 } from "./provider-registry-root-history.js";
 import {
+  assertProviderRegistryPreparedCopyLedgerZeroInternalV1,
+  createRegistryHistoryVerifiedCryptoWitnessInternalV1,
+  discardPreparedRegistryHistoryInputInternalV1,
+  discardRegistryHistoryVerifiedWitnessInternalV1,
+  registerProviderRegistryManifestHistoryPreparedValidatorInternalV1,
+  registerRegistryHistoryVerifiedWitnessInternalV1,
+  takePreparedRegistryHistoryInputInternalV1,
+  validateProviderRegistryRootMetadataHistoryPreparedInternalV1,
+  type PreparedRegistryHistoryInputHandleV1,
+  type PreparedRegistryHistorySnapshotV1,
+  type ProviderRegistryManifestHistoryPreparedDiagnosticResultInternalV1,
+  type RegistryHistoryVerifiedCryptoWitnessV1,
+  type RegistryHistoryVerifiedTipEntryV1,
+  type RegistryTrustWitnessHandleV1,
+} from "./provider-registry-history-prepared-handle-internal.js";
+import {
   deriveProviderEd25519PublicKeyDigestInternalV1,
   type ProviderRegistryRootMetadataEnvelopeV1,
   type ProviderRegistryRootMetadataPinV1,
@@ -51,6 +67,151 @@ import {
   verifyRawEd25519WithCapabilityV1,
   type ProviderStrictEd25519OpaqueCapabilityV1,
 } from "./strict-ed25519-conformance.js";
+import { hardenProviderPointPromiseV1 } from "./provider-point-runtime-internal.js";
+
+const CapturedArrayV1 = Array;
+const CapturedArrayIsArrayV1 = Array.isArray;
+const CapturedArrayPrototypeFilterV1 = Array.prototype.filter;
+const CapturedArrayPrototypeMapV1 = Array.prototype.map;
+const CapturedArrayPrototypePushV1 = Array.prototype.push;
+const CapturedArrayPrototypeSomeV1 = Array.prototype.some;
+const CapturedArrayPrototypeSortV1 = Array.prototype.sort;
+const CapturedMapV1 = Map;
+const CapturedMapPrototypeGetV1 = Map.prototype.get;
+const CapturedMapPrototypeHasV1 = Map.prototype.has;
+const CapturedMapPrototypeSetV1 = Map.prototype.set;
+const CapturedObjectDefinePropertyV1 = Object.defineProperty;
+const CapturedObjectFreezeV1 = Object.freeze;
+const CapturedObjectGetOwnPropertyDescriptorV1 =
+  Object.getOwnPropertyDescriptor;
+const CapturedObjectGetPrototypeOfV1 = Object.getPrototypeOf;
+const CapturedObjectIsV1 = Object.is;
+const CapturedObjectIsFrozenV1 = Object.isFrozen;
+const CapturedObjectValuesV1 = Object.values;
+const CapturedReflectApplyV1 = Reflect.apply;
+const CapturedReflectOwnKeysV1 = Reflect.ownKeys;
+const CapturedRegExpPrototypeExecV1 = RegExp.prototype.exec;
+const CapturedSetV1 = Set;
+const CapturedSetPrototypeAddV1 = Set.prototype.add;
+const CapturedSetPrototypeHasV1 = Set.prototype.has;
+const CapturedWeakSetV1 = WeakSet;
+const CapturedWeakSetPrototypeAddV1 = WeakSet.prototype.add;
+const CapturedWeakSetPrototypeHasV1 = WeakSet.prototype.has;
+
+function arrayFilterV1<T, S extends T>(
+  array: readonly T[],
+  callback: (value: T, index: number, source: readonly T[]) => value is S,
+): S[];
+function arrayFilterV1<T>(
+  array: readonly T[],
+  callback: (value: T, index: number, source: readonly T[]) => unknown,
+): T[];
+function arrayFilterV1<T>(
+  array: readonly T[],
+  callback: (value: T, index: number, source: readonly T[]) => unknown,
+): T[] {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeFilterV1, array, [
+    callback,
+  ]) as T[];
+}
+
+function arrayMapV1<T, U>(
+  array: readonly T[],
+  callback: (value: T, index: number, source: readonly T[]) => U,
+): U[] {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeMapV1, array, [
+    callback,
+  ]) as U[];
+}
+
+function arrayPushV1<T>(array: T[], value: T): number {
+  return CapturedReflectApplyV1(CapturedArrayPrototypePushV1, array, [
+    value,
+  ]) as number;
+}
+
+function arraySomeV1<T>(
+  array: readonly T[],
+  callback: (value: T, index: number, source: readonly T[]) => unknown,
+): boolean {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeSomeV1, array, [
+    callback,
+  ]) as boolean;
+}
+
+function arraySortV1<T>(
+  array: T[],
+  compare?: (left: T, right: T) => number,
+): T[] {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeSortV1, array, [
+    compare,
+  ]) as T[];
+}
+
+function mapGetV1<K, V>(map: ReadonlyMap<K, V>, key: K): V | undefined {
+  return CapturedReflectApplyV1(CapturedMapPrototypeGetV1, map, [key]) as
+    | V
+    | undefined;
+}
+
+function mapHasV1<K, V>(map: ReadonlyMap<K, V>, key: K): boolean {
+  return CapturedReflectApplyV1(CapturedMapPrototypeHasV1, map, [
+    key,
+  ]) as boolean;
+}
+
+function mapSetV1<K, V>(map: Map<K, V>, key: K, value: V): void {
+  CapturedReflectApplyV1(CapturedMapPrototypeSetV1, map, [key, value]);
+}
+
+function mapFromEntriesV1<K, V>(
+  entries: readonly (readonly [K, V])[],
+): Map<K, V> {
+  const map = new CapturedMapV1<K, V>();
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index]!;
+    mapSetV1(map, entry[0], entry[1]);
+  }
+  return map;
+}
+
+function setAddV1<T>(set: Set<T>, value: T): void {
+  CapturedReflectApplyV1(CapturedSetPrototypeAddV1, set, [value]);
+}
+
+function setHasV1<T>(set: Set<T>, value: T): boolean {
+  return CapturedReflectApplyV1(CapturedSetPrototypeHasV1, set, [
+    value,
+  ]) as boolean;
+}
+
+function setFromValuesV1<T>(values: readonly T[]): Set<T> {
+  const set = new CapturedSetV1<T>();
+  for (let index = 0; index < values.length; index += 1) {
+    setAddV1(set, values[index]!);
+  }
+  return set;
+}
+
+function weakSetAddV1<T extends object>(set: WeakSet<T>, value: T): void {
+  CapturedReflectApplyV1(CapturedWeakSetPrototypeAddV1, set, [value]);
+}
+
+function weakSetHasV1<T extends object>(set: WeakSet<T>, value: T): boolean {
+  return CapturedReflectApplyV1(CapturedWeakSetPrototypeHasV1, set, [
+    value,
+  ]) as boolean;
+}
+
+function regExpExecV1(pattern: RegExp, value: string): RegExpExecArray | null {
+  return CapturedReflectApplyV1(CapturedRegExpPrototypeExecV1, pattern, [
+    value,
+  ]) as RegExpExecArray | null;
+}
+
+function regExpTestV1(pattern: RegExp, value: string): boolean {
+  return regExpExecV1(pattern, value) !== null;
+}
 
 const REGISTRY_SIGNATURE_PATTERN =
   /^provider-registry-ed25519:([0-9a-f]{22}):([0-9a-f]{128})$/u;
@@ -232,8 +393,8 @@ function canonicalJsonEqual(left: unknown, right: unknown): boolean {
 
 function deepFreezeJson<T>(value: T): T {
   if (value !== null && typeof value === "object") {
-    for (const child of Object.values(value)) deepFreezeJson(child);
-    Object.freeze(value);
+    for (const child of CapturedObjectValuesV1(value)) deepFreezeJson(child);
+    CapturedObjectFreezeV1(value);
   }
   return value;
 }
@@ -283,7 +444,7 @@ function readOwnKeysBoundedV1(
     // arbitrary work inside this single trap, but the validator never asks for
     // a full PropertyDescriptorMap and rejects an oversized returned key set
     // before requesting any individual descriptor.
-    keys = Reflect.ownKeys(value);
+    keys = CapturedReflectOwnKeysV1(value);
   } catch {
     throw new TypeError("manifest envelope own keys could not be inspected");
   }
@@ -301,7 +462,7 @@ function readDataPropertyDescriptorV1(
 ): PropertyDescriptor & { readonly value: unknown } {
   let descriptor: PropertyDescriptor | undefined;
   try {
-    descriptor = Object.getOwnPropertyDescriptor(value, key);
+    descriptor = CapturedObjectGetOwnPropertyDescriptorV1(value, key);
   } catch {
     throw new TypeError(message);
   }
@@ -321,7 +482,7 @@ function assertExactDenseArrayOwnKeysV1(
   message: string,
 ): void {
   if (keys.length !== length + 1) throw new TypeError(message);
-  const indices = new Set<number>();
+  const indices = new CapturedSetV1<number>();
   let sawLength = false;
   for (const key of keys) {
     if (typeof key !== "string") throw new TypeError(message);
@@ -330,24 +491,26 @@ function assertExactDenseArrayOwnKeysV1(
       sawLength = true;
       continue;
     }
-    if (!/^(?:0|[1-9][0-9]*)$/u.test(key)) throw new TypeError(message);
+    if (!regExpTestV1(/^(?:0|[1-9][0-9]*)$/u, key)) {
+      throw new TypeError(message);
+    }
     const index = Number(key);
     if (
       !Number.isSafeInteger(index) ||
       index < 0 ||
       index >= length ||
       String(index) !== key ||
-      indices.has(index)
+      setHasV1(indices, index)
     ) {
       throw new TypeError(message);
     }
-    indices.add(index);
+    setAddV1(indices, index);
   }
   if (!sawLength || indices.size !== length) throw new TypeError(message);
 }
 
 function snapshotBoundedJsonV1(input: unknown, maxCanonicalBytes: number): unknown {
-  const seen = new WeakSet<object>();
+  const seen = new CapturedWeakSetV1<object>();
   let chargedBytes = 0;
 
   function charge(bytes: number): void {
@@ -371,7 +534,7 @@ function snapshotBoundedJsonV1(input: unknown, maxCanonicalBytes: number): unkno
       return value;
     }
     if (typeof value === "number") {
-      if (!Number.isSafeInteger(value) || Object.is(value, -0)) {
+      if (!Number.isSafeInteger(value) || CapturedObjectIsV1(value, -0)) {
         throw new TypeError("manifest numbers must be safe non-negative-zero integers");
       }
       charge(String(value).length);
@@ -380,15 +543,15 @@ function snapshotBoundedJsonV1(input: unknown, maxCanonicalBytes: number): unkno
     if (typeof value !== "object") {
       throw new TypeError("manifest envelope must be JSON data");
     }
-    if (seen.has(value)) {
+    if (weakSetHasV1(seen, value)) {
       throw new TypeError("manifest envelope must be a JSON tree");
     }
-    seen.add(value);
+    weakSetAddV1(seen, value);
 
-    const isArray = Array.isArray(value);
+    const isArray = CapturedArrayIsArrayV1(value);
     let prototype: object | null;
     try {
-      prototype = Object.getPrototypeOf(value) as object | null;
+      prototype = CapturedObjectGetPrototypeOfV1(value) as object | null;
     } catch (error) {
       if (error instanceof RegistryManifestHistoryDiagnosticSignal) throw error;
       throw new TypeError("manifest envelope must be plain JSON data");
@@ -439,7 +602,7 @@ function snapshotBoundedJsonV1(input: unknown, maxCanonicalBytes: number): unkno
         throw new TypeError("manifest envelope array length changed during snapshot");
       }
       charge(2 + Math.max(0, length - 1));
-      const output = new Array<unknown>(length);
+      const output = new CapturedArrayV1<unknown>(length);
       for (let index = 0; index < length; index += 1) {
         const descriptor = readDataPropertyDescriptorV1(
           value,
@@ -456,7 +619,7 @@ function snapshotBoundedJsonV1(input: unknown, maxCanonicalBytes: number): unkno
       value,
       REGISTRY_MANIFEST_JSON_CONTAINER_ENTRY_HARD_CAP_V1,
     );
-    if (ownKeys.some((key) => typeof key !== "string")) {
+    if (arraySomeV1(ownKeys, (key) => typeof key !== "string")) {
       throw new TypeError("manifest envelope must not contain symbols");
     }
     const keys = ownKeys as readonly string[];
@@ -468,7 +631,7 @@ function snapshotBoundedJsonV1(input: unknown, maxCanonicalBytes: number): unkno
         "manifest properties must be enumerable data properties",
       );
       charge(canonicalJsonStringByteLength(key) + 1);
-      Object.defineProperty(output, key, {
+      CapturedObjectDefinePropertyV1(output, key, {
         value: snapshot(descriptor.value),
         enumerable: true,
         configurable: true,
@@ -484,20 +647,24 @@ function snapshotBoundedJsonV1(input: unknown, maxCanonicalBytes: number): unkno
 function snapshotExactInputV1(
   input: unknown,
 ): ValidateProviderRegistryManifestHistoryV1Input {
-  if (input === null || typeof input !== "object" || Array.isArray(input)) {
+  if (
+    input === null ||
+    typeof input !== "object" ||
+    CapturedArrayIsArrayV1(input)
+  ) {
     throw new TypeError("registry manifest history input must be an object");
   }
   let prototype: object | null;
   let ownKeys: readonly PropertyKey[];
   try {
-    prototype = Object.getPrototypeOf(input) as object | null;
-    ownKeys = Reflect.ownKeys(input);
+    prototype = CapturedObjectGetPrototypeOfV1(input) as object | null;
+    ownKeys = CapturedReflectOwnKeysV1(input);
   } catch {
     throw new TypeError("registry manifest history input must be a data object");
   }
   if (
     (prototype !== Object.prototype && prototype !== null) ||
-    ownKeys.some((key) => typeof key !== "string")
+    arraySomeV1(ownKeys, (key) => typeof key !== "string")
   ) {
     throw new TypeError("registry manifest history input must be a plain data object");
   }
@@ -508,10 +675,10 @@ function snapshotExactInputV1(
     "rootMetadataHistory",
     "strictCryptoCapability",
   ];
-  const keys = [...(ownKeys as readonly string[])].sort();
+  const keys = arraySortV1([...(ownKeys as readonly string[])]);
   if (
     keys.length !== expectedKeys.length ||
-    keys.some((key, index) => key !== expectedKeys[index])
+    arraySomeV1(keys, (key, index) => key !== expectedKeys[index])
   ) {
     throw new TypeError("registry manifest history input has unexpected fields");
   }
@@ -544,8 +711,8 @@ function snapshotManifestHistoryCandidatesV1(
   let length: number;
   try {
     if (
-      !Array.isArray(input) ||
-      Object.getPrototypeOf(input) !== Array.prototype
+      !CapturedArrayIsArrayV1(input) ||
+      CapturedObjectGetPrototypeOfV1(input) !== Array.prototype
     ) {
       throw new TypeError("registry manifest history must be a plain array");
     }
@@ -595,7 +762,7 @@ function snapshotManifestHistoryCandidatesV1(
     );
     snapshot[index] = descriptor.value;
   }
-  return Object.freeze(snapshot);
+  return CapturedObjectFreezeV1(snapshot);
 }
 
 function decodeCanonicalPublicKeyBytes32V1(value: string): Uint8Array {
@@ -629,7 +796,7 @@ function decodeCanonicalPublicKeyBytes32V1(value: string): Uint8Array {
 }
 
 function lowerHexToBytesV1(hex: string): Uint8Array {
-  if (!/^(?:[0-9a-f]{2})+$/u.test(hex)) {
+  if (!regExpTestV1(/^(?:[0-9a-f]{2})+$/u, hex)) {
     throw new TypeError("signature is not lowercase octets");
   }
   const bytes = new Uint8Array(hex.length / 2);
@@ -643,7 +810,7 @@ function parseRootSignatureV1(
   signature: string,
   pattern: RegExp,
 ): { readonly rootKeyId: string; readonly signatureBytes: Uint8Array } {
-  const match = pattern.exec(signature);
+  const match = regExpExecV1(pattern, signature);
   if (match === null || match[1] === undefined || match[2] === undefined) {
     throw new TypeError("invalid registry root signature wire");
   }
@@ -653,7 +820,7 @@ function parseRootSignatureV1(
   };
 }
 
-async function requireRootSignatureV1(
+function requireRootSignatureV1(
   signature: string,
   pattern: RegExp,
   expectedRoot: ProviderRegistryRootPublicKeyV1,
@@ -661,29 +828,32 @@ async function requireRootSignatureV1(
   capability: ProviderStrictEd25519OpaqueCapabilityV1,
   stage: RegistryManifestHistoryStageV1,
 ): Promise<void> {
-  let parsed: ReturnType<typeof parseRootSignatureV1>;
-  try {
-    parsed = parseRootSignatureV1(signature, pattern);
-  } catch {
-    return fail(stage, "signature_invalid");
-  }
-  if (parsed.rootKeyId !== expectedRoot.rootKeyId) {
-    return fail(stage, "signature_invalid");
-  }
-  try {
-    if (
-      !(await verifyRawEd25519WithCapabilityV1(
-        capability,
-        decodeCanonicalPublicKeyBytes32V1(expectedRoot.publicKeyBytes),
-        message,
-        parsed.signatureBytes,
-      ))
-    ) {
+  const operation = (async (): Promise<void> => {
+    let parsed: ReturnType<typeof parseRootSignatureV1>;
+    try {
+      parsed = parseRootSignatureV1(signature, pattern);
+    } catch {
       return fail(stage, "signature_invalid");
     }
-  } catch {
-    return fail(stage, "signature_invalid");
-  }
+    if (parsed.rootKeyId !== expectedRoot.rootKeyId) {
+      return fail(stage, "signature_invalid");
+    }
+    try {
+      if (
+        !(await verifyRawEd25519WithCapabilityV1(
+          capability,
+          decodeCanonicalPublicKeyBytes32V1(expectedRoot.publicKeyBytes),
+          message,
+          parsed.signatureBytes,
+        ))
+      ) {
+        return fail(stage, "signature_invalid");
+      }
+    } catch {
+      return fail(stage, "signature_invalid");
+    }
+  })();
+  return hardenProviderPointPromiseV1(operation);
 }
 
 function resolveRetainedRegistrySignerV1(
@@ -703,7 +873,7 @@ function resolveRetainedRegistrySignerV1(
   ) {
     return fail("record_signature", "signature_invalid");
   }
-  const envelope = rootByKeyId.get(parsed.rootKeyId);
+  const envelope = mapGetV1(rootByKeyId, parsed.rootKeyId);
   if (envelope === undefined) {
     return fail("record_signature", "signature_invalid");
   }
@@ -748,7 +918,8 @@ type RevokedMemberV1 = Extract<
 function enabledMembersV1(
   manifest: ProviderRegistryManifestV1,
 ): readonly EnabledMemberV1[] {
-  return manifest.members.filter(
+  return arrayFilterV1(
+    manifest.members,
     (member): member is EnabledMemberV1 => member.disposition === "enabled",
   );
 }
@@ -756,7 +927,9 @@ function enabledMembersV1(
 function memberMapV1(
   manifest: ProviderRegistryManifestV1,
 ): ReadonlyMap<string, ProviderRegistryManifestMemberV1> {
-  return new Map(manifest.members.map((member) => [member.providerId, member]));
+  return mapFromEntriesV1(
+    arrayMapV1(manifest.members, (member) => [member.providerId, member] as const),
+  );
 }
 
 function assertSortedUniqueStringsV1(
@@ -827,9 +1000,12 @@ function registerMaterialV1(
     record === undefined
       ? undefined
       : canonicalizeJcsSafeIntegerUtf8V1(record);
-  const existing = state.materialOwners.get(publicKeyBytes);
+  const existing = mapGetV1(state.materialOwners, publicKeyBytes);
   if (existing === undefined) {
-    state.materialOwners.set(publicKeyBytes, { identity, canonicalRecord });
+    mapSetV1(state.materialOwners, publicKeyBytes, {
+      identity,
+      canonicalRecord,
+    });
     return true;
   }
   if (
@@ -853,9 +1029,9 @@ function assertRecordIdentityV1(
   record: unknown,
 ): boolean {
   const canonical = canonicalizeJcsSafeIntegerUtf8V1(record);
-  const existing = records.get(identity);
+  const existing = mapGetV1(records, identity);
   if (existing === undefined) {
-    records.set(identity, canonical);
+    mapSetV1(records, identity, canonical);
     return true;
   }
   if (!bytesEqual(existing, canonical)) {
@@ -887,11 +1063,11 @@ function assertRecordAppendOnlyV1<T>(
   current: readonly T[],
   identity: (record: T) => string,
 ): void {
-  const currentByIdentity = new Map(
-    current.map((record) => [identity(record), record]),
+  const currentByIdentity = mapFromEntriesV1(
+    arrayMapV1(current, (record) => [identity(record), record] as const),
   );
   for (const record of previous) {
-    const successor = currentByIdentity.get(identity(record));
+    const successor = mapGetV1(currentByIdentity, identity(record));
     if (successor === undefined || !canonicalJsonEqual(record, successor)) {
       return fail("key_history", "record_history_invalid");
     }
@@ -921,10 +1097,12 @@ function assertRoutingShapeV1(manifest: ProviderRegistryManifestV1): void {
   ) {
     return fail("routing", "routing_invalid");
   }
-  const enabledIds = new Set(enabled.map(({ providerId }) => providerId));
+  const enabledIds = setFromValuesV1(
+    arrayMapV1(enabled, ({ providerId }) => providerId),
+  );
   if (
-    !enabledIds.has(manifest.routing.sourceProviderId) ||
-    !enabledIds.has(manifest.routing.destinationProviderId)
+    !setHasV1(enabledIds, manifest.routing.sourceProviderId) ||
+    !setHasV1(enabledIds, manifest.routing.destinationProviderId)
   ) {
     return fail("routing", "routing_invalid");
   }
@@ -961,8 +1139,9 @@ function assertRoutingSuccessorV1(
       return fail("routing", "routing_invalid");
     }
     const currentMembers = memberMapV1(current);
-    const source = currentMembers.get(previous.routing.sourceProviderId);
-    const destination = currentMembers.get(
+    const source = mapGetV1(currentMembers, previous.routing.sourceProviderId);
+    const destination = mapGetV1(
+      currentMembers,
       previous.routing.destinationProviderId,
     );
     if (
@@ -1101,13 +1280,13 @@ function assertEntrySuccessorV1(
   );
 }
 
-async function verifyRegistrySignedRecordV1(
+function verifyRegistrySignedRecordV1(
   signature: string,
   root: ProviderRegistryRootPublicKeyV1,
   message: Uint8Array,
   capability: ProviderStrictEd25519OpaqueCapabilityV1,
 ): Promise<void> {
-  await requireRootSignatureV1(
+  return requireRootSignatureV1(
     signature,
     REGISTRY_SIGNATURE_PATTERN,
     root,
@@ -1160,7 +1339,9 @@ async function validateVerificationKeyRecordV1(
     rootByKeyId,
     currentRoot.rootKeyId,
   );
-  await admitPublicKeyV1(record.publicKeyBytes, capability);
+  await hardenProviderPointPromiseV1(
+    admitPublicKeyV1(record.publicKeyBytes, capability),
+  );
   await verifyRegistrySignedRecordV1(
     record.registrySignature,
     signer,
@@ -1249,7 +1430,9 @@ async function validateApproverRecordV1(
     rootByKeyId,
     currentRoot.rootKeyId,
   );
-  await admitPublicKeyV1(record.publicKeyBytes, capability);
+  await hardenProviderPointPromiseV1(
+    admitPublicKeyV1(record.publicKeyBytes, capability),
+  );
   await verifyRegistrySignedRecordV1(
     record.registrySignature,
     signer,
@@ -1265,7 +1448,7 @@ function validateActiveRecordClosureV1(
   entry: StoreDurableObjectProviderRegistryEntryV1,
 ): void {
   const records = entry.verificationKeys.publicKeyRecords;
-  const revokedKeys = new Set(
+  const revokedKeys = setFromValuesV1(
     entry.verificationKeys.compromisedRevokedKeyIds,
   );
   const activeByUsage = [
@@ -1276,8 +1459,9 @@ function validateActiveRecordClosureV1(
   ] as const;
   for (const [usage, keyId] of activeByUsage) {
     if (
-      revokedKeys.has(keyId) ||
-      records.filter(
+      setHasV1(revokedKeys, keyId) ||
+      arrayFilterV1(
+        records,
         (record) => record.usage === usage && record.keyId === keyId,
       ).length !== 1
     ) {
@@ -1290,7 +1474,8 @@ function validateActiveRecordClosureV1(
     entry.verificationKeys.compromisedRevokedBindingDerivationGenerations.includes(
       bindingGeneration,
     ) ||
-    entry.verificationKeys.bindingDerivationGenerationRecords.filter(
+    arrayFilterV1(
+      entry.verificationKeys.bindingDerivationGenerationRecords,
       ({ generation }) => generation === bindingGeneration,
     ).length !== 1
   ) {
@@ -1298,15 +1483,18 @@ function validateActiveRecordClosureV1(
   }
 
   const approvers = entry.feasibilityApprovalKeys;
-  const revokedApprovers = new Set(approvers.compromisedRevokedKeyIds);
+  const revokedApprovers = setFromValuesV1(
+    approvers.compromisedRevokedKeyIds,
+  );
   const activeApprovers = [
     ["qa", approvers.activeKeyIds.qa],
     ["release", approvers.activeKeyIds.release],
   ] as const;
   for (const [role, keyId] of activeApprovers) {
     if (
-      revokedApprovers.has(keyId) ||
-      approvers.publicKeyRecords.filter(
+      setHasV1(revokedApprovers, keyId) ||
+      arrayFilterV1(
+        approvers.publicKeyRecords,
         (record) => record.role === role && record.keyId === keyId,
       ).length !== 1
     ) {
@@ -1388,33 +1576,39 @@ async function validateRegistryEntryV1(
     );
   }
   for (const record of entry.verificationKeys.publicKeyRecords) {
-    await validateVerificationKeyRecordV1(
-      record,
-      entry,
-      currentRoot,
-      rootByKeyId,
-      state,
-      capability,
+    await hardenProviderPointPromiseV1(
+      validateVerificationKeyRecordV1(
+        record,
+        entry,
+        currentRoot,
+        rootByKeyId,
+        state,
+        capability,
+      ),
     );
   }
   for (const record of entry.verificationKeys.bindingDerivationGenerationRecords) {
-    await validateBindingRecordV1(
-      record,
-      entry,
-      currentRoot,
-      rootByKeyId,
-      state,
-      capability,
+    await hardenProviderPointPromiseV1(
+      validateBindingRecordV1(
+        record,
+        entry,
+        currentRoot,
+        rootByKeyId,
+        state,
+        capability,
+      ),
     );
   }
   for (const record of entry.feasibilityApprovalKeys.publicKeyRecords) {
-    await validateApproverRecordV1(
-      record,
-      currentRoot,
-      rootByKeyId,
-      manifest.manifestGeneration,
-      state,
-      capability,
+    await hardenProviderPointPromiseV1(
+      validateApproverRecordV1(
+        record,
+        currentRoot,
+        rootByKeyId,
+        manifest.manifestGeneration,
+        state,
+        capability,
+      ),
     );
   }
   if (entryFirstAppearance) {
@@ -1442,7 +1636,8 @@ function validateEntryCollectionsV1(
 ): void {
   const verificationRecords = entry.verificationKeys.publicKeyRecords;
   if (
-    verificationRecords.some(
+    arraySomeV1(
+      verificationRecords,
       (record) => record.providerId !== entry.providerId,
     )
   ) {
@@ -1470,7 +1665,8 @@ function validateEntryCollectionsV1(
     "migration_semantic_proof",
   ] as const) {
     if (
-      verificationRecords.filter((record) => record.usage === usage).length >
+      arrayFilterV1(verificationRecords, (record) => record.usage === usage)
+        .length >
       policy.maxProviderVerificationPublicKeyRecordCountPerUsage
     ) {
       return fail("key_history", "record_history_invalid");
@@ -1480,7 +1676,8 @@ function validateEntryCollectionsV1(
   const bindingRecords =
     entry.verificationKeys.bindingDerivationGenerationRecords;
   if (
-    bindingRecords.some(
+    arraySomeV1(
+      bindingRecords,
       (record, index) =>
         record.providerId !== entry.providerId ||
         record.generation !== index + 1,
@@ -1515,7 +1712,7 @@ function validateEntryCollectionsV1(
   );
   for (const role of ["qa", "release"] as const) {
     if (
-      approverRecords.filter((record) => record.role === role).length >
+      arrayFilterV1(approverRecords, (record) => record.role === role).length >
       policy.maxApproverPublicKeyRecordCountPerRole
     ) {
       return fail("key_history", "record_history_invalid");
@@ -1539,33 +1736,42 @@ function validateEntryCollectionsV1(
 
   for (const keyId of entry.verificationKeys.compromisedRevokedKeyIds) {
     if (
-      verificationRecords.filter((record) => record.keyId === keyId).length !==
+      arrayFilterV1(verificationRecords, (record) => record.keyId === keyId)
+        .length !==
       1
     ) {
       return fail("key_history", "revocation_invalid");
     }
-    state.revocationIdentities.add(`provider-key:${entry.providerId}:${keyId}`);
+    setAddV1(
+      state.revocationIdentities,
+      `provider-key:${entry.providerId}:${keyId}`,
+    );
   }
   for (const generation of entry.verificationKeys
     .compromisedRevokedBindingDerivationGenerations) {
     if (
-      bindingRecords.filter((record) => record.generation === generation)
+      arrayFilterV1(
+        bindingRecords,
+        (record) => record.generation === generation,
+      )
         .length !== 1
     ) {
       return fail("key_history", "revocation_invalid");
     }
-    state.revocationIdentities.add(
+    setAddV1(
+      state.revocationIdentities,
       `provider-binding:${entry.providerId}:${generation}`,
     );
   }
   for (const keyId of entry.feasibilityApprovalKeys
     .compromisedRevokedKeyIds) {
     if (
-      approverRecords.filter((record) => record.keyId === keyId).length !== 1
+      arrayFilterV1(approverRecords, (record) => record.keyId === keyId)
+        .length !== 1
     ) {
       return fail("key_history", "revocation_invalid");
     }
-    state.revocationIdentities.add(`approver:${keyId}`);
+    setAddV1(state.revocationIdentities, `approver:${keyId}`);
   }
   if (
     state.revocationIdentities.size >
@@ -1600,7 +1806,7 @@ function validateMemberSuccessorsV1(
   const previousMembers = memberMapV1(previous);
   const currentMembers = memberMapV1(current);
   for (const [providerId, previousMember] of previousMembers) {
-    const currentMember = currentMembers.get(providerId);
+    const currentMember = mapGetV1(currentMembers, providerId);
     if (currentMember === undefined) {
       return fail("member_set", "member_transition_invalid");
     }
@@ -1625,7 +1831,7 @@ function validateMemberSuccessorsV1(
   }
   for (const currentMember of current.members) {
     if (
-      !previousMembers.has(currentMember.providerId) &&
+      !mapHasV1(previousMembers, currentMember.providerId) &&
       (currentMember.disposition !== "enabled" ||
         currentMember.registryEntry.registryGeneration !== 1)
     ) {
@@ -1704,7 +1910,7 @@ async function validateInternalV1(
       ) {
         return fail("history_limit", "history_total_byte_limit_exceeded");
       }
-      rootEnvelopeSnapshots.push(snapshot);
+      arrayPushV1(rootEnvelopeSnapshots, snapshot);
     } catch (error) {
       if (error instanceof RegistryManifestHistoryDiagnosticSignal) throw error;
       return fail("root_history", "root_history_invalid");
@@ -1734,7 +1940,7 @@ async function validateInternalV1(
       ) {
         return fail("history_limit", "history_total_byte_limit_exceeded");
       }
-      envelopeSnapshots.push(snapshot);
+      arrayPushV1(envelopeSnapshots, snapshot);
     } catch (error) {
       if (error instanceof RegistryManifestHistoryDiagnosticSignal) throw error;
       return fail("manifest_envelope", "schema_invalid");
@@ -1773,23 +1979,26 @@ async function validateInternalV1(
     return fail("root_history", "root_history_invalid");
   }
 
-  const rootByPin = new Map<string, ProviderRegistryRootMetadataEnvelopeV1>();
-  const rootByKeyId = new Map<
+  const rootByPin = new CapturedMapV1<
+    string,
+    ProviderRegistryRootMetadataEnvelopeV1
+  >();
+  const rootByKeyId = new CapturedMapV1<
     string,
     ProviderRegistryRootMetadataEnvelopeV1
   >();
   const state: RegistryHistoryStateV1 = {
-    materialOwners: new Map(),
-    providerKeyRecords: new Map(),
-    bindingRecords: new Map(),
-    approverKeyRecords: new Map(),
-    runtimeAttestations: new Map(),
-    registryEntries: new Map(),
-    revocationIdentities: new Set(),
+    materialOwners: new CapturedMapV1(),
+    providerKeyRecords: new CapturedMapV1(),
+    bindingRecords: new CapturedMapV1(),
+    approverKeyRecords: new CapturedMapV1(),
+    runtimeAttestations: new CapturedMapV1(),
+    registryEntries: new CapturedMapV1(),
+    revocationIdentities: new CapturedSetV1(),
   };
   for (const envelope of rootValidation.rootMetadataHistory) {
-    rootByPin.set(rootPinKeyV1(rootPinForEnvelopeV1(envelope)), envelope);
-    rootByKeyId.set(envelope.rootKeyId, envelope);
+    mapSetV1(rootByPin, rootPinKeyV1(rootPinForEnvelopeV1(envelope)), envelope);
+    mapSetV1(rootByKeyId, envelope.rootKeyId, envelope);
     registerMaterialV1(
       state,
       envelope.payload.activeRoot.publicKeyBytes,
@@ -1805,8 +2014,8 @@ async function validateInternalV1(
   }
 
   const history: ProviderRegistryManifestEnvelopeV1[] = [];
-  const seenManifestGenerationIds = new Set<string>();
-  const seenManifestContentDigests = new Set<string>();
+  const seenManifestGenerationIds = new CapturedSetV1<string>();
+  const seenManifestContentDigests = new CapturedSetV1<string>();
   let previousRootGeneration = 0;
   for (let index = 0; index < envelopeSnapshots.length; index += 1) {
     let envelope: ProviderRegistryManifestEnvelopeV1;
@@ -1834,13 +2043,13 @@ async function validateInternalV1(
       return fail("manifest_envelope", "envelope_mismatch");
     }
     if (
-      seenManifestGenerationIds.has(envelope.generationId) ||
-      seenManifestContentDigests.has(envelope.contentDigest)
+      setHasV1(seenManifestGenerationIds, envelope.generationId) ||
+      setHasV1(seenManifestContentDigests, envelope.contentDigest)
     ) {
       return fail("manifest_envelope", "envelope_mismatch");
     }
-    seenManifestGenerationIds.add(envelope.generationId);
-    seenManifestContentDigests.add(envelope.contentDigest);
+    setAddV1(seenManifestGenerationIds, envelope.generationId);
+    setAddV1(seenManifestContentDigests, envelope.contentDigest);
     if (manifest.installationIdentityGenerationId !== installationIdentityGenerationId) {
       return fail("manifest_envelope", "envelope_mismatch");
     }
@@ -1855,7 +2064,10 @@ async function validateInternalV1(
       return fail("manifest_envelope", "envelope_mismatch");
     }
 
-    const rootEnvelope = rootByPin.get(rootPinKeyV1(manifest.activeRootMetadata));
+    const rootEnvelope = mapGetV1(
+      rootByPin,
+      rootPinKeyV1(manifest.activeRootMetadata),
+    );
     if (rootEnvelope === undefined) {
       return fail("root_binding", "root_pin_mismatch");
     }
@@ -1892,7 +2104,7 @@ async function validateInternalV1(
     );
 
     assertSortedUniqueStringsV1(
-      manifest.members.map(({ providerId }) => providerId),
+      arrayMapV1(manifest.members, ({ providerId }) => providerId),
     );
     assertRoutingShapeV1(manifest);
     assertManifestApprovalSnapshotV1(manifest);
@@ -1905,7 +2117,8 @@ async function validateInternalV1(
         return fail("routing", "routing_invalid");
       }
       if (
-        manifest.members.some(
+        arraySomeV1(
+          manifest.members,
           (member) =>
             member.disposition === "revoked" ||
             member.registryEntry.registryGeneration !== 1,
@@ -1916,17 +2129,19 @@ async function validateInternalV1(
     }
 
     for (const member of enabledMembersV1(manifest)) {
-      await validateRegistryEntryV1(
-        member,
-        manifest,
-        root,
-        rootByKeyId,
-        bundle.providerTrustHistoryPolicy,
-        state,
-        exactInput.strictCryptoCapability,
+      await hardenProviderPointPromiseV1(
+        validateRegistryEntryV1(
+          member,
+          manifest,
+          root,
+          rootByKeyId,
+          bundle.providerTrustHistoryPolicy,
+          state,
+          exactInput.strictCryptoCapability,
+        ),
       );
     }
-    history.push(envelope);
+    arrayPushV1(history, envelope);
   }
 
   const current = history[history.length - 1]!;
@@ -1949,6 +2164,461 @@ async function validateInternalV1(
     registryManifestHistory: history,
   });
 }
+
+interface PreparedRegistryManifestHistoryCoreSuccessV1 {
+  readonly closure: ProviderRegistryManifestHistoryValidationV1;
+  readonly witness: RegistryHistoryVerifiedCryptoWitnessV1;
+}
+
+/**
+ * Validates one already detached/frozen Registry source.  Unlike the ordinary
+ * public path above, this function neither calls any snapshot helper nor
+ * retains a second Root/Manifest history array.  Per-Envelope Schema and
+ * canonical byte values are temporary assertions and are discarded before the
+ * next candidate.
+ */
+async function validatePreparedInternalV1(
+  prepared: PreparedRegistryHistorySnapshotV1,
+): Promise<PreparedRegistryManifestHistoryCoreSuccessV1> {
+  assertProviderRegistryPreparedCopyLedgerZeroInternalV1(prepared.copyLedger);
+
+  let installationIdentityGenerationId: InstallationIdentityGenerationIdV1;
+  let bundle: ProviderBootstrapTrustBundleV1;
+  try {
+    installationIdentityGenerationId =
+      InstallationIdentityGenerationIdV1Schema.parse(
+        prepared.installationIdentityGenerationId,
+      );
+    if (!ProviderBootstrapTrustBundleV1Schema.safeParse(prepared.bootstrapTrustBundle).success) {
+      return fail("history_input", "schema_invalid");
+    }
+    bundle = prepared.bootstrapTrustBundle;
+  } catch (error) {
+    if (error instanceof RegistryManifestHistoryDiagnosticSignal) throw error;
+    return fail("history_input", "schema_invalid");
+  }
+
+  const rootHistory = prepared.rootMetadataHistory;
+  const manifestHistory = prepared.registryManifestHistory;
+  if (
+    !CapturedArrayIsArrayV1(rootHistory) ||
+    !CapturedArrayIsArrayV1(manifestHistory) ||
+    !CapturedObjectIsFrozenV1(rootHistory) ||
+    !CapturedObjectIsFrozenV1(manifestHistory)
+  ) {
+    return fail("history_input", "schema_invalid");
+  }
+  if (
+    rootHistory.length >
+      bundle.providerTrustHistoryPolicy
+        .maxRootMetadataGenerationCountPerInstallationIdentity ||
+    manifestHistory.length >
+      bundle.providerTrustHistoryPolicy
+        .maxRegistryManifestGenerationCountPerInstallationIdentity
+  ) {
+    return fail("history_limit", "history_generation_limit_exceeded");
+  }
+  if (rootHistory.length === 0) {
+    return fail("root_history", "root_history_invalid");
+  }
+  if (manifestHistory.length === 0) {
+    return fail("history_input", "history_empty");
+  }
+
+  let retainedRootBytes = 0;
+  for (let index = 0; index < rootHistory.length; index += 1) {
+    const candidate = rootHistory[index]!;
+    try {
+      if (!CapturedObjectIsFrozenV1(candidate)) {
+        return fail("root_history", "root_history_invalid");
+      }
+      const canonical = canonicalizeJcsSafeIntegerUtf8V1(candidate);
+      if (
+        canonical.byteLength >
+        bundle.providerTrustHistoryPolicy.maxSingleTrustEnvelopeLogicalBytes
+      ) {
+        return fail("history_limit", "envelope_byte_limit_exceeded");
+      }
+      retainedRootBytes += canonical.byteLength;
+      if (
+        retainedRootBytes >
+        bundle.providerTrustHistoryPolicy
+          .maxTotalTrustHistoryLogicalBytesPerInstallationIdentity
+      ) {
+        return fail("history_limit", "history_total_byte_limit_exceeded");
+      }
+    } catch (error) {
+      if (error instanceof RegistryManifestHistoryDiagnosticSignal) throw error;
+      return fail("root_history", "root_history_invalid");
+    }
+  }
+
+  let retainedRegistryBytes = 0;
+  for (let index = 0; index < manifestHistory.length; index += 1) {
+    const candidate = manifestHistory[index]!;
+    try {
+      if (!CapturedObjectIsFrozenV1(candidate)) {
+        return fail("manifest_envelope", "schema_invalid");
+      }
+      const canonical = canonicalizeJcsSafeIntegerUtf8V1(candidate);
+      if (
+        canonical.byteLength >
+        bundle.providerTrustHistoryPolicy.maxSingleTrustEnvelopeLogicalBytes
+      ) {
+        return fail("history_limit", "envelope_byte_limit_exceeded");
+      }
+      retainedRegistryBytes += canonical.byteLength;
+      if (
+        retainedRegistryBytes >
+        bundle.providerTrustHistoryPolicy
+          .maxTotalTrustHistoryLogicalBytesPerInstallationIdentity
+      ) {
+        return fail("history_limit", "history_total_byte_limit_exceeded");
+      }
+    } catch (error) {
+      if (error instanceof RegistryManifestHistoryDiagnosticSignal) throw error;
+      return fail("manifest_envelope", "schema_invalid");
+    }
+  }
+
+  const maxRetainedTrustBytes =
+    bundle.providerTrustHistoryPolicy
+      .maxTotalTrustHistoryLogicalBytesPerInstallationIdentity;
+  if (
+    !isProviderRegistryRetainedTrustHistoryWithinBudgetInternalV1(
+      retainedRootBytes,
+      retainedRegistryBytes,
+      maxRetainedTrustBytes,
+    )
+  ) {
+    return fail("history_limit", "history_total_byte_limit_exceeded");
+  }
+  const retainedTrustBytes = retainedRootBytes + retainedRegistryBytes;
+
+  let rootValidation: ProviderRegistryRootMetadataHistoryValidationV1;
+  try {
+    rootValidation =
+      await hardenProviderPointPromiseV1(
+        validateProviderRegistryRootMetadataHistoryPreparedInternalV1({
+          bootstrapTrustBundle: bundle,
+          rootMetadataHistory: rootHistory,
+          strictCryptoCapability: prepared.strictCryptoCapability,
+          copyLedger: prepared.copyLedger,
+        }),
+      );
+  } catch {
+    return fail("root_history", "root_history_invalid");
+  }
+  if (
+    rootValidation.retainedRootMetadataCanonicalBytes !== retainedRootBytes ||
+    rootValidation.rootMetadataHistory !== rootHistory
+  ) {
+    return fail("root_history", "root_history_invalid");
+  }
+
+  const rootByPin = new CapturedMapV1<
+    string,
+    ProviderRegistryRootMetadataEnvelopeV1
+  >();
+  const rootByKeyId = new CapturedMapV1<
+    string,
+    ProviderRegistryRootMetadataEnvelopeV1
+  >();
+  const state: RegistryHistoryStateV1 = {
+    materialOwners: new CapturedMapV1(),
+    providerKeyRecords: new CapturedMapV1(),
+    bindingRecords: new CapturedMapV1(),
+    approverKeyRecords: new CapturedMapV1(),
+    runtimeAttestations: new CapturedMapV1(),
+    registryEntries: new CapturedMapV1(),
+    revocationIdentities: new CapturedSetV1(),
+  };
+  for (const envelope of rootValidation.rootMetadataHistory) {
+    mapSetV1(rootByPin, rootPinKeyV1(rootPinForEnvelopeV1(envelope)), envelope);
+    mapSetV1(rootByKeyId, envelope.rootKeyId, envelope);
+    registerMaterialV1(
+      state,
+      envelope.payload.activeRoot.publicKeyBytes,
+      `root:${envelope.rootKeyId}`,
+    );
+  }
+  for (const recoveryKey of bundle.providerRegistryRecoveryKeys) {
+    registerMaterialV1(
+      state,
+      recoveryKey.publicKeyBytes,
+      `recovery:${recoveryKey.recoveryKeyId}`,
+    );
+  }
+
+  const seenManifestGenerationIds = new CapturedSetV1<string>();
+  const seenManifestContentDigests = new CapturedSetV1<string>();
+  let previousRootGeneration = 0;
+  for (let index = 0; index < manifestHistory.length; index += 1) {
+    const envelope = manifestHistory[index]!;
+    try {
+      // Strict parse is an assertion only.  Continue with `envelope` so every
+      // nested Entry/Runtime/approver identity remains the detached original.
+      if (!ProviderRegistryManifestEnvelopeV1Schema.safeParse(envelope).success) {
+        return fail("manifest_envelope", "schema_invalid");
+      }
+    } catch {
+      return fail("manifest_envelope", "schema_invalid");
+    }
+    const manifest = envelope.payload;
+    const expectedGeneration = index + 1;
+    if (manifest.manifestGeneration !== expectedGeneration) {
+      return fail("manifest_predecessor", "generation_not_contiguous");
+    }
+    if (
+      envelope.generationId !==
+        deriveProviderRegistryManifestGenerationIdV1(
+          projectProviderRegistryManifestIdFieldsV1(manifest),
+        ) ||
+      manifest.generationId !== envelope.generationId ||
+      envelope.contentDigest !==
+        deriveProviderRegistryManifestContentDigestV1(manifest)
+    ) {
+      return fail("manifest_envelope", "envelope_mismatch");
+    }
+    if (
+      setHasV1(seenManifestGenerationIds, envelope.generationId) ||
+      setHasV1(seenManifestContentDigests, envelope.contentDigest)
+    ) {
+      return fail("manifest_envelope", "envelope_mismatch");
+    }
+    setAddV1(seenManifestGenerationIds, envelope.generationId);
+    setAddV1(seenManifestContentDigests, envelope.contentDigest);
+    if (
+      manifest.installationIdentityGenerationId !==
+      installationIdentityGenerationId
+    ) {
+      return fail("manifest_envelope", "envelope_mismatch");
+    }
+    try {
+      buildProviderRegistryManifestRelativePathV1({
+        locatorProfile: "installation_provider_registry_manifest_v1",
+        generationId: envelope.generationId,
+      });
+    } catch {
+      return fail("manifest_envelope", "envelope_mismatch");
+    }
+
+    const rootEnvelope = mapGetV1(
+      rootByPin,
+      rootPinKeyV1(manifest.activeRootMetadata),
+    );
+    if (rootEnvelope === undefined) {
+      return fail("root_binding", "root_pin_mismatch");
+    }
+    if (rootEnvelope.rootGeneration < previousRootGeneration) {
+      return fail("root_binding", "root_generation_rollback");
+    }
+    previousRootGeneration = rootEnvelope.rootGeneration;
+    const root = rootEnvelope.payload.activeRoot;
+
+    if (index === 0) {
+      if (manifest.predecessor.state !== "genesis") {
+        return fail("manifest_predecessor", "predecessor_pin_mismatch");
+      }
+    } else {
+      const predecessor = manifestHistory[index - 1]!;
+      if (
+        manifest.predecessor.state !== "manifest" ||
+        manifest.predecessor.generationId !== predecessor.generationId ||
+        manifest.predecessor.contentDigest !== predecessor.contentDigest
+      ) {
+        return fail("manifest_predecessor", "predecessor_pin_mismatch");
+      }
+    }
+    await requireRootSignatureV1(
+      manifest.manifestSignature,
+      MANIFEST_SIGNATURE_PATTERN,
+      root,
+      createProviderRegistryManifestSignatureMessageV1(
+        projectProviderRegistryManifestUnsignedClaimsV1(manifest),
+        root.rootKeyId,
+      ),
+      prepared.strictCryptoCapability,
+      "manifest_signature",
+    );
+
+    assertSortedUniqueStringsV1(
+      arrayMapV1(
+        manifest.members,
+        (member: ProviderRegistryManifestMemberV1) => member.providerId,
+      ),
+    );
+    assertRoutingShapeV1(manifest);
+    assertManifestApprovalSnapshotV1(manifest);
+    const previous = manifestHistory[index - 1]?.payload;
+    if (previous !== undefined) {
+      validateMemberSuccessorsV1(previous, manifest);
+      assertRoutingSuccessorV1(previous, manifest);
+    } else {
+      if (manifest.routing.state !== "steady") {
+        return fail("routing", "routing_invalid");
+      }
+      if (
+        arraySomeV1(
+          manifest.members,
+          (member: ProviderRegistryManifestMemberV1) =>
+            member.disposition === "revoked" ||
+            member.registryEntry.registryGeneration !== 1,
+        )
+      ) {
+        return fail("member_set", "member_transition_invalid");
+      }
+    }
+
+    for (const member of enabledMembersV1(manifest)) {
+      await hardenProviderPointPromiseV1(
+        validateRegistryEntryV1(
+          member,
+          manifest,
+          root,
+          rootByKeyId,
+          bundle.providerTrustHistoryPolicy,
+          state,
+          prepared.strictCryptoCapability,
+        ),
+      );
+    }
+  }
+
+  const current = manifestHistory[manifestHistory.length - 1]!;
+  if (
+    !canonicalJsonEqual(
+      current.payload.activeRootMetadata,
+      rootValidation.currentRootMetadata,
+    )
+  ) {
+    return fail("root_binding", "root_pin_mismatch");
+  }
+  const suppliedHistoryTipRootEnvelope = mapGetV1(
+    rootByPin,
+    rootPinKeyV1(current.payload.activeRootMetadata),
+  );
+  if (suppliedHistoryTipRootEnvelope === undefined) {
+    return fail("root_binding", "root_pin_mismatch");
+  }
+
+  const currentRegistryManifest = deepFreezeJson(
+    registryManifestPinV1(current),
+  );
+  const closure = CapturedObjectFreezeV1({
+    authority: "none_registry_structure_and_history_only" as const,
+    installationIdentityGenerationId,
+    currentRootMetadata: rootValidation.currentRootMetadata,
+    currentRegistryManifest,
+    retainedRootMetadataGenerationCount:
+      rootValidation.retainedRootMetadataGenerationCount,
+    retainedRegistryManifestGenerationCount: manifestHistory.length,
+    retainedRootMetadataCanonicalBytes:
+      rootValidation.retainedRootMetadataCanonicalBytes,
+    retainedRegistryManifestCanonicalBytes: retainedRegistryBytes,
+    retainedTrustHistoryCanonicalBytes: retainedTrustBytes,
+    rootMetadataHistory: rootHistory,
+    registryManifestHistory: manifestHistory,
+  });
+
+  const tipMembers = enabledMembersV1(current.payload);
+  const verifiedTipEntries = arrayMapV1(
+    tipMembers,
+    (member): RegistryHistoryVerifiedTipEntryV1 =>
+      CapturedObjectFreezeV1({
+        providerId: member.providerId,
+        registryEntryContentDigest: member.registryEntryContentDigest,
+        runtimeAttestation: member.registryEntry.runtimeAttestation,
+        historicallyVerifiedApproverPublicKeys:
+          member.registryEntry.feasibilityApprovalKeys.publicKeyRecords,
+      }),
+  );
+  CapturedObjectFreezeV1(verifiedTipEntries);
+  const witness = createRegistryHistoryVerifiedCryptoWitnessInternalV1({
+    strictCryptoCapability: prepared.strictCryptoCapability,
+    suppliedHistoryTipRoot:
+      suppliedHistoryTipRootEnvelope.payload.activeRoot,
+    tipManifestGenerationId: current.generationId,
+    tipManifestContentDigest: current.contentDigest,
+    verifiedTipEntries,
+  });
+
+  assertProviderRegistryPreparedCopyLedgerZeroInternalV1(prepared.copyLedger);
+  return CapturedObjectFreezeV1({ closure, witness });
+}
+
+/**
+ * Package-private one-shot prepared entry used by C09-1L.  The request handle
+ * is consumed before validation.  A distinct witness handle is registered only
+ * after complete Registry success; all incomplete registrations are removed in
+ * `finally`.
+ *
+ * @internal
+ */
+async function diagnoseProviderRegistryManifestHistoryPreparedInternalV1(
+  requestIdentity: unknown,
+  inputHandle: PreparedRegistryHistoryInputHandleV1,
+  capabilityIdentity: ProviderStrictEd25519OpaqueCapabilityV1,
+): Promise<ProviderRegistryManifestHistoryPreparedDiagnosticResultInternalV1> {
+  let prepared: PreparedRegistryHistorySnapshotV1 | undefined;
+  let successfulClosure:
+    | ProviderRegistryManifestHistoryValidationV1
+    | undefined;
+  let witnessHandle: RegistryTrustWitnessHandleV1 | undefined;
+  let committed = false;
+  try {
+    prepared = takePreparedRegistryHistoryInputInternalV1(
+      requestIdentity,
+      inputHandle,
+      capabilityIdentity,
+    );
+    if (prepared === undefined) {
+      return { ok: false, stage: "history_input", reason: "schema_invalid" };
+    }
+    const validated = await hardenProviderPointPromiseV1(
+      validatePreparedInternalV1(prepared),
+    );
+    successfulClosure = validated.closure;
+    witnessHandle = registerRegistryHistoryVerifiedWitnessInternalV1(
+      successfulClosure,
+      validated.witness,
+      capabilityIdentity,
+    );
+    const value = CapturedObjectFreezeV1({
+      closure: successfulClosure,
+      registryTrustWitnessHandle: witnessHandle,
+      copyLedger: prepared.copyLedger,
+    });
+    committed = true;
+    return { ok: true, value };
+  } catch (error) {
+    if (error instanceof RegistryManifestHistoryDiagnosticSignal) {
+      return { ok: false, stage: error.stage, reason: error.reason };
+    }
+    return { ok: false, stage: "history_input", reason: "schema_invalid" };
+  } finally {
+    discardPreparedRegistryHistoryInputInternalV1(
+      requestIdentity,
+      inputHandle,
+      capabilityIdentity,
+    );
+    if (
+      !committed &&
+      successfulClosure !== undefined &&
+      witnessHandle !== undefined
+    ) {
+      discardRegistryHistoryVerifiedWitnessInternalV1(
+        successfulClosure,
+        witnessHandle,
+        capabilityIdentity,
+      );
+    }
+  }
+}
+
+registerProviderRegistryManifestHistoryPreparedValidatorInternalV1(
+  diagnoseProviderRegistryManifestHistoryPreparedInternalV1,
+);
 
 export async function diagnoseProviderRegistryManifestHistoryInternalV1(
   input: unknown,

@@ -1,0 +1,33 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-registry-evidence-binding-point-invalid-stage",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "input",
+    "bootstrap_distribution_binding",
+    "evidence_structure",
+    "evidence_pin_structure",
+    "registry_history_closure",
+    "candidate_root_binding",
+    "candidate_member_resolution",
+    "registry_evidence_pin_binding",
+    "registry_runtime_binding",
+    "runtime_attestation_closure",
+    "registry_policy_binding",
+    "evidence_result_binding",
+    "production_result_gate",
+    "evidence_policy_binding",
+    "evidence_runtime_binding",
+    "evidence_time",
+    "evidence_id",
+    "evidence_qa_signature_binding",
+    "evidence_release_signature_binding",
+    "qa_approver_resolution",
+    "release_approver_resolution",
+    "evidence_qa_signature",
+    "evidence_release_signature",
+    "evidence_digest",
+    "evidence_envelope",
+    "evidence_pin"
+  ]
+}

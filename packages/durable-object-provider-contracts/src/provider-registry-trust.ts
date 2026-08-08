@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod-runtime.js";
 
 import {
   assertDataObjectDescriptorsBeforeSchemaV1,
@@ -30,6 +30,41 @@ import {
   providerTrustDiagnosticSuccessInternalV1,
   type ProviderTrustDiagnosticResultV1,
 } from "./provider-trust-diagnostics.js";
+import { hardenProviderPointPromiseV1 } from "./provider-point-runtime-internal.js";
+
+const CapturedArrayPrototypeMapV1 = Array.prototype.map;
+const CapturedArrayPrototypeSomeV1 = Array.prototype.some;
+const CapturedNumberV1 = Number;
+const CapturedReflectApplyV1 = Reflect.apply;
+const CapturedRegExpPrototypeExecV1 = RegExp.prototype.exec;
+
+function arrayMapV1<T, U>(
+  array: readonly T[],
+  callback: (value: T, index: number, source: readonly T[]) => U,
+): U[] {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeMapV1, array, [
+    callback,
+  ]) as U[];
+}
+
+function arraySomeV1<T>(
+  array: readonly T[],
+  callback: (value: T, index: number, source: readonly T[]) => unknown,
+): boolean {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeSomeV1, array, [
+    callback,
+  ]) as boolean;
+}
+
+function regExpExecV1(regExp: RegExp, value: string): RegExpExecArray | null {
+  return CapturedReflectApplyV1(CapturedRegExpPrototypeExecV1, regExp, [
+    value,
+  ]) as RegExpExecArray | null;
+}
+
+function regExpTestV1(regExp: RegExp, value: string): boolean {
+  return regExpExecV1(regExp, value) !== null;
+}
 
 export const PROVIDER_REGISTRY_RECOVERY_KEY_ID_DOMAIN_V1 =
   "provider-registry-recovery-key-id-v1" as const;
@@ -55,10 +90,10 @@ const PROVIDER_ROOT_RECOVERY_SIGNATURE_PATTERN =
   /^provider-root-recovery-ed25519:([0-9a-f]{22}):([0-9a-f]{128})$/u;
 
 function isRealUtcTimestamp(value: string): boolean {
-  const match =
-    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?Z$/u.exec(
-      value,
-    );
+  const match = regExpExecV1(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?Z$/u,
+    value,
+  );
   if (match === null) return false;
   const [, year, month, day, hour, minute, second] = match;
   if (
@@ -72,7 +107,10 @@ function isRealUtcTimestamp(value: string): boolean {
     return false;
   }
 
-  const expected = [year, month, day, hour, minute, second].map(Number);
+  const expected = arrayMapV1(
+    [year, month, day, hour, minute, second],
+    CapturedNumberV1,
+  );
   const date = new Date(0);
   date.setUTCFullYear(expected[0]!, expected[1]! - 1, expected[2]!);
   date.setUTCHours(expected[3]!, expected[4]!, expected[5]!, 0);
@@ -304,7 +342,7 @@ function bytesToLowerHex(bytes: Uint8Array): string {
 }
 
 function lowerHexToBytes(hex: string): Uint8Array {
-  if (!/^(?:[0-9a-f]{2})+$/u.test(hex)) {
+  if (!regExpTestV1(/^(?:[0-9a-f]{2})+$/u, hex)) {
     throw new TypeError("signature must contain complete lowercase octets");
   }
   const bytes = new Uint8Array(hex.length / 2);
@@ -530,7 +568,10 @@ function parseRootSelfSignatureV1(
 ): ParsedRootSignatureV1<ProviderRegistryRootKeyIdV1> | undefined {
   const parsed = ProviderRegistryRootSelfSignatureV1Schema.safeParse(input);
   if (!parsed.success) return undefined;
-  const match = PROVIDER_ROOT_SELF_SIGNATURE_PATTERN.exec(parsed.data);
+  const match = regExpExecV1(
+    PROVIDER_ROOT_SELF_SIGNATURE_PATTERN,
+    parsed.data,
+  );
   if (match === null || match[1] === undefined || match[2] === undefined) {
     return undefined;
   }
@@ -544,7 +585,7 @@ function signatureKeyId(
   signature: string,
   pattern: RegExp,
 ): string | undefined {
-  return pattern.exec(signature)?.[1];
+  return regExpExecV1(pattern, signature)?.[1];
 }
 
 export function createProviderRegistryRootSelfSignatureMessageV1(
@@ -601,12 +642,13 @@ export function validateProviderRegistryRootMetadataEnvelopeStructureV1(
   }
 
   if (envelope.payload.activation !== "bootstrap") {
-    const recoverySignerIds = envelope.payload.recoverySignatures.map(
+    const recoverySignerIds = arrayMapV1(
+      envelope.payload.recoverySignatures,
       (signature) =>
         signatureKeyId(signature, PROVIDER_ROOT_RECOVERY_SIGNATURE_PATTERN),
     );
     if (
-      recoverySignerIds.some((keyId) => keyId === undefined) ||
+      arraySomeV1(recoverySignerIds, (keyId) => keyId === undefined) ||
       recoverySignerIds[0]! >= recoverySignerIds[1]!
     ) {
       throw new TypeError("registry root recovery signatures must be ordered");
@@ -684,12 +726,13 @@ export function diagnoseProviderRegistryRootMetadataEnvelopeStructureInternalV1(
   }
 
   if (envelope.payload.activation !== "bootstrap") {
-    const recoverySignerIds = envelope.payload.recoverySignatures.map(
+    const recoverySignerIds = arrayMapV1(
+      envelope.payload.recoverySignatures,
       (signature) =>
         signatureKeyId(signature, PROVIDER_ROOT_RECOVERY_SIGNATURE_PATTERN),
     );
     if (
-      recoverySignerIds.some((keyId) => keyId === undefined) ||
+      arraySomeV1(recoverySignerIds, (keyId) => keyId === undefined) ||
       recoverySignerIds[0]! >= recoverySignerIds[1]!
     ) {
       return providerTrustDiagnosticFailureInternalV1(
@@ -701,72 +744,78 @@ export function diagnoseProviderRegistryRootMetadataEnvelopeStructureInternalV1(
   return providerTrustDiagnosticSuccessInternalV1(envelope);
 }
 
-export async function verifyProviderRegistryRootSelfSignatureV1(
+export function verifyProviderRegistryRootSelfSignatureV1(
   input: unknown,
   capability: ProviderStrictEd25519OpaqueCapabilityV1,
 ): Promise<boolean> {
-  let metadata: ProviderRegistryRootMetadataV1;
-  try {
-    assertDataObjectDescriptorsBeforeSchemaV1(input);
-    assertJsonDataTreeBeforeSchemaV1(input);
-    metadata = ProviderRegistryRootMetadataV1Schema.parse(input);
-  } catch {
-    return false;
-  }
+  const operation = (async (): Promise<boolean> => {
+    let metadata: ProviderRegistryRootMetadataV1;
+    try {
+      assertDataObjectDescriptorsBeforeSchemaV1(input);
+      assertJsonDataTreeBeforeSchemaV1(input);
+      metadata = ProviderRegistryRootMetadataV1Schema.parse(input);
+    } catch {
+      return false;
+    }
 
-  let activeRoot: ProviderRegistryRootPublicKeyV1;
-  try {
-    activeRoot = validateProviderRegistryRootPublicKeyV1(metadata.activeRoot);
-  } catch {
-    return false;
-  }
-  const parsedSignature = parseRootSelfSignatureV1(metadata.selfSignature);
-  if (
-    parsedSignature === undefined ||
-    parsedSignature.keyId !== activeRoot.rootKeyId
-  ) {
-    return false;
-  }
+    let activeRoot: ProviderRegistryRootPublicKeyV1;
+    try {
+      activeRoot = validateProviderRegistryRootPublicKeyV1(metadata.activeRoot);
+    } catch {
+      return false;
+    }
+    const parsedSignature = parseRootSelfSignatureV1(metadata.selfSignature);
+    if (
+      parsedSignature === undefined ||
+      parsedSignature.keyId !== activeRoot.rootKeyId
+    ) {
+      return false;
+    }
 
-  const rawPublicKey = decodeCanonicalPublicKeyBytes32V1(
-    activeRoot.publicKeyBytes,
-  );
-  if (
-    !(await validateProviderStrictEd25519PointWithCapabilityV1(
+    const rawPublicKey = decodeCanonicalPublicKeyBytes32V1(
+      activeRoot.publicKeyBytes,
+    );
+    if (
+      !(await validateProviderStrictEd25519PointWithCapabilityV1(
+        capability,
+        rawPublicKey,
+      ))
+    ) {
+      return false;
+    }
+    const message = createProviderRegistryRootSelfSignatureMessageV1(metadata);
+    return await verifyRawEd25519WithCapabilityV1(
       capability,
       rawPublicKey,
-    ))
-  ) {
-    return false;
-  }
-  const message = createProviderRegistryRootSelfSignatureMessageV1(metadata);
-  return verifyRawEd25519WithCapabilityV1(
-    capability,
-    rawPublicKey,
-    message,
-    parsedSignature.signatureBytes,
-  );
+      message,
+      parsedSignature.signatureBytes,
+    );
+  })();
+  return hardenProviderPointPromiseV1(operation);
 }
 
-export async function verifyProviderRegistryBootstrapRootSelfSignatureV1(
+export function verifyProviderRegistryBootstrapRootSelfSignatureV1(
   input: unknown,
   capability: ProviderStrictEd25519OpaqueCapabilityV1,
 ): Promise<boolean> {
-  let envelope: ProviderRegistryRootMetadataEnvelopeV1;
-  try {
-    envelope = validateProviderRegistryRootMetadataEnvelopeStructureV1(input);
-  } catch {
-    return false;
-  }
-  if (
-    envelope.payload.activation !== "bootstrap" ||
-    envelope.payload.rootGeneration !== 1 ||
-    envelope.rootGeneration !== 1
-  ) {
-    return false;
-  }
-  return verifyProviderRegistryRootSelfSignatureV1(
-    envelope.payload,
-    capability,
-  );
+  const operation = (async (): Promise<boolean> => {
+    let envelope: ProviderRegistryRootMetadataEnvelopeV1;
+    try {
+      envelope = validateProviderRegistryRootMetadataEnvelopeStructureV1(input);
+    } catch {
+      return false;
+    }
+    if (
+      envelope.payload.activation !== "bootstrap" ||
+      envelope.payload.rootGeneration !== 1 ||
+      envelope.rootGeneration !== 1
+    ) {
+      return false;
+    }
+    return await verifyProviderRegistryRootSelfSignatureV1(
+      envelope.payload,
+      capability,
+    );
+  })();
+  return hardenProviderPointPromiseV1(operation);
 }

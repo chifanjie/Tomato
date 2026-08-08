@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod-runtime.js";
 
 import {
   assertDataObjectDescriptorsBeforeSchemaV1,
@@ -50,6 +50,63 @@ import {
   verifyRawEd25519WithCapabilityV1,
   type ProviderStrictEd25519OpaqueCapabilityV1,
 } from "./strict-ed25519-conformance.js";
+
+const CapturedArrayPrototypeSomeV1 = Array.prototype.some;
+const CapturedArrayPrototypeSortV1 = Array.prototype.sort;
+const CapturedObjectFreezeV1 = Object.freeze;
+const CapturedObjectGetOwnPropertyDescriptorsV1 =
+  Object.getOwnPropertyDescriptors;
+const CapturedObjectKeysV1 = Object.keys;
+const CapturedObjectValuesV1 = Object.values;
+const CapturedReflectApplyV1 = Reflect.apply;
+const CapturedRegExpPrototypeExecV1 = RegExp.prototype.exec;
+
+function arraySomeV1<T>(
+  array: readonly T[],
+  callback: (value: T, index: number, source: readonly T[]) => unknown,
+): boolean {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeSomeV1, array, [
+    callback,
+  ]) as boolean;
+}
+
+function arraySortV1<T>(array: T[]): T[] {
+  return CapturedReflectApplyV1(CapturedArrayPrototypeSortV1, array, [
+    undefined,
+  ]) as T[];
+}
+
+function objectGetOwnPropertyDescriptorsV1(
+  value: object,
+): PropertyDescriptorMap {
+  return CapturedReflectApplyV1(
+    CapturedObjectGetOwnPropertyDescriptorsV1,
+    undefined,
+    [value],
+  ) as PropertyDescriptorMap;
+}
+
+function objectKeysV1(value: object): string[] {
+  return CapturedReflectApplyV1(CapturedObjectKeysV1, undefined, [
+    value,
+  ]) as string[];
+}
+
+function objectValuesV1(value: object): unknown[] {
+  return CapturedReflectApplyV1(CapturedObjectValuesV1, undefined, [
+    value,
+  ]) as unknown[];
+}
+
+function regExpExecV1(pattern: RegExp, value: string): RegExpExecArray | null {
+  return CapturedReflectApplyV1(CapturedRegExpPrototypeExecV1, pattern, [
+    value,
+  ]) as RegExpExecArray | null;
+}
+
+function regExpTestV1(pattern: RegExp, value: string): boolean {
+  return regExpExecV1(pattern, value) !== null;
+}
 
 export const PROVIDER_FEASIBILITY_EVIDENCE_ID_DOMAIN_V1 =
   "provider-feasibility-evidence-id-v1" as const;
@@ -168,7 +225,7 @@ function bytesToLowerHexV1(bytes: Uint8Array): string {
 }
 
 function lowerHexToBytesV1(hex: string): Uint8Array {
-  if (!/^(?:[0-9a-f]{2})+$/u.test(hex)) {
+  if (!regExpTestV1(/^(?:[0-9a-f]{2})+$/u, hex)) {
     throw new TypeError("signature is not lowercase octets");
   }
   const bytes = new Uint8Array(hex.length / 2);
@@ -525,8 +582,8 @@ type SnapshotEvidencePointInputV1 = Record<EvidencePointInputKeyV1, unknown>;
 
 function deepFreezeV1<T>(value: T): T {
   if (value !== null && typeof value === "object") {
-    for (const child of Object.values(value)) deepFreezeV1(child);
-    Object.freeze(value);
+    for (const child of objectValuesV1(value)) deepFreezeV1(child);
+    CapturedObjectFreezeV1(value);
   }
   return value;
 }
@@ -536,11 +593,14 @@ function snapshotEvidencePointInputV1(
 ): SnapshotEvidencePointInputV1 {
   try {
     assertDataObjectDescriptorsBeforeSchemaV1(input);
-    const descriptors = Object.getOwnPropertyDescriptors(input);
-    const keys = Object.keys(descriptors).sort();
+    const descriptors = objectGetOwnPropertyDescriptorsV1(input as object);
+    const keys = arraySortV1(objectKeysV1(descriptors));
     if (
       keys.length !== EVIDENCE_POINT_INPUT_KEYS.length ||
-      keys.some((key, index) => key !== EVIDENCE_POINT_INPUT_KEYS[index])
+      arraySomeV1(
+        keys,
+        (key, index) => key !== EVIDENCE_POINT_INPUT_KEYS[index],
+      )
     ) {
       return fail("input", "schema_invalid");
     }
@@ -609,7 +669,10 @@ function validateApproverRootV1(
 ): void {
   const stage =
     role === "qa" ? "qa_approver_key_root" : "release_approver_key_root";
-  const match = REGISTRY_SIGNATURE_PATTERN_V1.exec(record.registrySignature);
+  const match = regExpExecV1(
+    REGISTRY_SIGNATURE_PATTERN_V1,
+    record.registrySignature,
+  );
   if (match?.[1] !== activeRoot.rootKeyId) {
     return fail(stage, "root_mismatch");
   }
@@ -655,7 +718,10 @@ async function verifyApproverRecordSignatureV1(
       ? "qa_approver_key_signature"
       : "release_approver_key_signature";
   try {
-    const match = REGISTRY_SIGNATURE_PATTERN_V1.exec(record.registrySignature);
+    const match = regExpExecV1(
+      REGISTRY_SIGNATURE_PATTERN_V1,
+      record.registrySignature,
+    );
     if (match?.[2] === undefined) return fail(stage, "signature_invalid");
     const message =
       createProviderFeasibilityApproverPublicKeySignatureMessageV1(
@@ -676,10 +742,10 @@ async function verifyApproverRecordSignatureV1(
 }
 
 function timestampTupleV1(value: string): readonly number[] {
-  const match =
-    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/u.exec(
-      value,
-    );
+  const match = regExpExecV1(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/u,
+    value,
+  );
   if (match === null) throw new TypeError("timestamp is not canonical UTC");
   const fraction = (match[7] ?? "").padEnd(9, "0");
   return [
@@ -723,7 +789,7 @@ function validateEvidenceSignatureBindingV1(
     role === "qa" ? evidence.qaSignature : evidence.releaseSignature;
   const pattern =
     role === "qa" ? QA_SIGNATURE_PATTERN_V1 : RELEASE_SIGNATURE_PATTERN_V1;
-  const match = pattern.exec(signature);
+  const match = regExpExecV1(pattern, signature);
   if (match?.[1] !== record.keyId) {
     return fail(bindingStage, "binding_mismatch");
   }
@@ -741,7 +807,7 @@ async function verifyEvidenceSignatureV1(
     role === "qa" ? evidence.qaSignature : evidence.releaseSignature;
   const pattern =
     role === "qa" ? QA_SIGNATURE_PATTERN_V1 : RELEASE_SIGNATURE_PATTERN_V1;
-  const match = pattern.exec(signature);
+  const match = regExpExecV1(pattern, signature);
   if (match?.[2] === undefined) {
     return fail(signatureStage, "signature_invalid");
   }

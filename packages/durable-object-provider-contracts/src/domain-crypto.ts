@@ -7,6 +7,50 @@ import {
   LowerHex22V1Schema,
 } from "./primitives.js";
 
+const CapturedArrayIsArrayV1 = Array.isArray;
+const CapturedArrayPrototypePopV1 = Array.prototype.pop;
+const CapturedArrayPrototypePushV1 = Array.prototype.push;
+const CapturedNumberIsSafeIntegerV1 = Number.isSafeInteger;
+const CapturedObjectEntriesV1 = Object.entries;
+const CapturedObjectFreezeV1 = Object.freeze;
+const CapturedObjectGetOwnPropertyDescriptorsV1 =
+  Object.getOwnPropertyDescriptors;
+const CapturedObjectGetOwnPropertySymbolsV1 = Object.getOwnPropertySymbols;
+const CapturedObjectGetPrototypeOfV1 = Object.getPrototypeOf;
+const CapturedReflectApplyV1 = Reflect.apply;
+const CapturedRegExpPrototypeExecV1 = RegExp.prototype.exec;
+const CapturedWeakSetV1 = WeakSet;
+const CapturedWeakSetPrototypeAddV1 = WeakSet.prototype.add;
+const CapturedWeakSetPrototypeHasV1 = WeakSet.prototype.has;
+
+function arrayPopV1<T>(array: T[]): T | undefined {
+  return CapturedReflectApplyV1(CapturedArrayPrototypePopV1, array, []) as
+    | T
+    | undefined;
+}
+
+function arrayPushV1<T>(array: T[], value: T): number {
+  return CapturedReflectApplyV1(CapturedArrayPrototypePushV1, array, [
+    value,
+  ]) as number;
+}
+
+function regExpTestV1(pattern: RegExp, value: string): boolean {
+  return CapturedReflectApplyV1(CapturedRegExpPrototypeExecV1, pattern, [
+    value,
+  ]) !== null;
+}
+
+function weakSetAddV1<T extends object>(set: WeakSet<T>, value: T): void {
+  CapturedReflectApplyV1(CapturedWeakSetPrototypeAddV1, set, [value]);
+}
+
+function weakSetHasV1<T extends object>(set: WeakSet<T>, value: T): boolean {
+  return CapturedReflectApplyV1(CapturedWeakSetPrototypeHasV1, set, [
+    value,
+  ]) as boolean;
+}
+
 export type ProviderCryptoResultV1 = Uint8Array | Promise<Uint8Array>;
 
 /** Host-injected so the production package remains browser/worker portable. */
@@ -39,7 +83,12 @@ function assertDigestBytes(bytes: Uint8Array, operation: string): Uint8Array {
 }
 
 function assertDomainLiteral(domain: string): void {
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*-v[1-9][0-9]*$/u.test(domain)) {
+  if (
+    !regExpTestV1(
+      /^[a-z0-9]+(?:-[a-z0-9]+)*-v[1-9][0-9]*$/u,
+      domain,
+    )
+  ) {
     throw new TypeError("domain literal must be an explicit lowercase versioned token");
   }
 }
@@ -68,7 +117,7 @@ export async function deriveSemanticHashV1(
     "SHA-256",
   );
   const sha256Hex = bytesToLowerHex(digestBytes);
-  return Object.freeze({
+  return CapturedObjectFreezeV1({
     canonicalPreimageUtf8,
     sha256Hex,
     contentDigest: ContentDigestV1Schema.parse(`sha256:${sha256Hex}`),
@@ -102,19 +151,25 @@ export async function deriveKeyedStateTokenForDomainV1(
 export function assertDataObjectDescriptorsBeforeSchemaV1(
   value: unknown,
 ): asserts value is Record<string, unknown> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    CapturedArrayIsArrayV1(value)
+  ) {
     throw new TypeError("domain fields must be a plain data object");
   }
-  const prototype = Object.getPrototypeOf(value);
+  const prototype = CapturedObjectGetPrototypeOfV1(value);
   if (prototype !== Object.prototype && prototype !== null) {
     throw new TypeError("domain fields must be a plain data object");
   }
-  if (Object.getOwnPropertySymbols(value).length !== 0) {
+  if (CapturedObjectGetOwnPropertySymbolsV1(value).length !== 0) {
     throw new TypeError("domain fields must not contain symbol properties");
   }
-  for (const [key, descriptor] of Object.entries(
-    Object.getOwnPropertyDescriptors(value),
-  )) {
+  const descriptorEntries = CapturedObjectEntriesV1(
+    CapturedObjectGetOwnPropertyDescriptorsV1(value),
+  );
+  for (let index = 0; index < descriptorEntries.length; index += 1) {
+    const [key, descriptor] = descriptorEntries[index]!;
     if (
       !("value" in descriptor) ||
       descriptor.enumerable !== true
@@ -137,29 +192,31 @@ export function assertJsonDataTreeBeforeSchemaV1(value: unknown): void {
     throw new TypeError("value must be a JSON data object or array");
   }
   const pending: object[] = [value];
-  const seen = new WeakSet<object>();
+  const seen = new CapturedWeakSetV1<object>();
   while (pending.length > 0) {
-    const current = pending.pop()!;
-    if (seen.has(current)) {
+    const current = arrayPopV1(pending)!;
+    if (weakSetHasV1(seen, current)) {
       throw new TypeError("JSON data must be a tree");
     }
-    seen.add(current);
+    weakSetAddV1(seen, current);
 
-    const isArray = Array.isArray(current);
-    const prototype = Object.getPrototypeOf(current);
+    const isArray = CapturedArrayIsArrayV1(current);
+    const prototype = CapturedObjectGetPrototypeOfV1(current);
     if (
       (isArray && prototype !== Array.prototype) ||
       (!isArray && prototype !== Object.prototype && prototype !== null)
     ) {
       throw new TypeError("JSON data must use plain prototypes");
     }
-    if (Object.getOwnPropertySymbols(current).length !== 0) {
+    if (CapturedObjectGetOwnPropertySymbolsV1(current).length !== 0) {
       throw new TypeError("JSON data must not contain symbol properties");
     }
 
-    const descriptors = Object.getOwnPropertyDescriptors(current);
+    const descriptors = CapturedObjectGetOwnPropertyDescriptorsV1(current);
     let arrayElementCount = 0;
-    for (const [key, descriptor] of Object.entries(descriptors)) {
+    const entries = CapturedObjectEntriesV1(descriptors);
+    for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
+      const [key, descriptor] = entries[entryIndex]!;
       if (isArray && key === "length") continue;
       if (
         !("value" in descriptor) ||
@@ -172,8 +229,8 @@ export function assertJsonDataTreeBeforeSchemaV1(value: unknown): void {
       if (isArray) {
         const index = Number(key);
         if (
-          !/^(?:0|[1-9][0-9]*)$/u.test(key) ||
-          !Number.isSafeInteger(index) ||
+          !regExpTestV1(/^(?:0|[1-9][0-9]*)$/u, key) ||
+          !CapturedNumberIsSafeIntegerV1(index) ||
           index < 0 ||
           index >= (current as unknown[]).length ||
           String(index) !== key
@@ -183,7 +240,7 @@ export function assertJsonDataTreeBeforeSchemaV1(value: unknown): void {
         arrayElementCount += 1;
       }
       if (descriptor.value !== null && typeof descriptor.value === "object") {
-        pending.push(descriptor.value);
+        arrayPushV1(pending, descriptor.value);
       }
     }
     if (

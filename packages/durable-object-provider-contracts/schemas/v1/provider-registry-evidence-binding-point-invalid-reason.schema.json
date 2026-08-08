@@ -1,0 +1,22 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-registry-evidence-binding-point-invalid-reason",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "schema_invalid",
+    "source_invalid",
+    "identity_mismatch",
+    "root_mismatch",
+    "member_not_enabled",
+    "routing_invalid",
+    "binding_mismatch",
+    "digest_mismatch",
+    "pin_mismatch",
+    "result_not_passed",
+    "approver_not_found",
+    "approver_revoked",
+    "signature_invalid",
+    "ordering_invalid",
+    "envelope_mismatch"
+  ]
+}

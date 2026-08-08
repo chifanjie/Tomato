@@ -9,6 +9,9 @@ import {
   generateProviderContractJsonSchemasV1,
 } from "../src/json-schema.js";
 import {
+  ProviderFeasibilityEvidencePointSnapshotProjectionV1Schema,
+} from "../src/provider-feasibility-evidence-point-fixtures.js";
+import {
   ShortStoreFilenameKeyV1Schema,
 } from "../src/provider-fixed-locator.js";
 import {
@@ -92,6 +95,24 @@ const providerFeasibilityEvidencePointGoldenPath = fileURLToPath(
 const providerFeasibilityEvidencePointInvalidPath = fileURLToPath(
   new URL(
     "../fixtures/v1/invalid/provider-feasibility-evidence-point-v1.json",
+    import.meta.url,
+  ),
+);
+const providerRegistryEvidenceBindingPointGoldenPath = fileURLToPath(
+  new URL(
+    "../fixtures/v1/golden/provider-registry-evidence-binding-point-v1.json",
+    import.meta.url,
+  ),
+);
+const providerRegistryEvidenceBindingPointInvalidPath = fileURLToPath(
+  new URL(
+    "../fixtures/v1/invalid/provider-registry-evidence-binding-point-v1.json",
+    import.meta.url,
+  ),
+);
+const providerRegistryEvidenceBindingTopologyProofPath = fileURLToPath(
+  new URL(
+    "../fixtures/v1/golden/provider-registry-evidence-binding-topology-proof-v1.json",
     import.meta.url,
   ),
 );
@@ -931,6 +952,13 @@ describe("provider contract JSON Schema distribution", () => {
       "provider-runtime-attestation-point-invalid-reason",
       "provider-runtime-attestation-point-golden-manifest",
       "provider-runtime-attestation-point-invalid-manifest",
+      "provider-registry-evidence-binding-point-invalid-stage",
+      "provider-registry-evidence-binding-point-invalid-reason",
+      "provider-registry-evidence-binding-point-compatible-base",
+      "provider-registry-evidence-binding-point-success-projection",
+      "provider-registry-evidence-binding-point-golden-manifest",
+      "provider-registry-evidence-binding-point-invalid-manifest",
+      "provider-registry-evidence-binding-topology-proof",
       "provider-public-support-taxonomy-signature-wrapper",
       "provider-release-matrix-signature-wrapper",
       "provider-target-discovery-input-bundle-signature-wrapper",
@@ -940,7 +968,7 @@ describe("provider contract JSON Schema distribution", () => {
       expect(generated, name).toHaveProperty(name);
       expectEveryJsonSchemaObjectClosed(generated[name], name);
     }
-    expect(Object.keys(generated)).toHaveLength(268);
+    expect(Object.keys(generated)).toHaveLength(275);
 
     for (const name of [
       "store-durable-object-provider-runtime-attestation-signature-wrapper",
@@ -1475,6 +1503,334 @@ describe("provider contract JSON Schema distribution", () => {
     ]);
     expect(generated).not.toHaveProperty("provider-feasibility-evidence-locator");
   }, 60_000);
+
+  it("publishes the closed Registry Entry/Evidence candidate, exact 354-case corpus, and topology proof schemas", () => {
+    const generated = generateProviderContractJsonSchemasV1();
+    const golden = JSON.parse(
+      readFileSync(providerRegistryEvidenceBindingPointGoldenPath, "utf8"),
+    ) as Record<string, any>;
+    const invalid = JSON.parse(
+      readFileSync(providerRegistryEvidenceBindingPointInvalidPath, "utf8"),
+    ) as Record<string, any>;
+    const topologyProof = JSON.parse(
+      readFileSync(providerRegistryEvidenceBindingTopologyProofPath, "utf8"),
+    ) as Record<string, any>;
+    const ajv = new Ajv2020({ allErrors: true, strict: true });
+    const validateGolden = ajv.compile(
+      generated["provider-registry-evidence-binding-point-golden-manifest"],
+    );
+    const validateInvalid = ajv.compile(
+      generated["provider-registry-evidence-binding-point-invalid-manifest"],
+    );
+    const validateTopologyProof = ajv.compile(
+      generated["provider-registry-evidence-binding-topology-proof"],
+    );
+
+    expect(validateGolden(golden), JSON.stringify(validateGolden.errors)).toBe(
+      true,
+    );
+    expect(validateInvalid(invalid), JSON.stringify(validateInvalid.errors)).toBe(
+      true,
+    );
+    expect(
+      validateTopologyProof(topologyProof),
+      JSON.stringify(validateTopologyProof.errors),
+    ).toBe(true);
+    expect(golden.expected).toMatchObject({
+      registryCryptoClosure: {
+        pointAdmissionCount: 24,
+        signatureVerificationCount: 38,
+      },
+      completeCryptoClosure: {
+        pointAdmissionCount: 24,
+        signatureVerificationCount: 46,
+      },
+    });
+    expect(Object.keys(golden.compatibleBase)).toHaveLength(21);
+    expect(invalid).toMatchObject({
+      inheritedEvidenceCaseCount: 227,
+      inheritedRegistryCaseCount: 89,
+      pointSpecificCaseCount: 38,
+      caseCount: 354,
+      shardSize: 32,
+      maxWorkers: 4,
+    });
+    expect(invalid.caseIds).toHaveLength(354);
+    expect(invalid.cases).toHaveLength(354);
+    expect(invalid.shards).toHaveLength(12);
+    expect(new Set(invalid.caseIds).size).toBe(354);
+    const unreachableRejections = invalid.stageCoverage.flatMap(
+      (coverage: Record<string, any>) =>
+        coverage.unreachableRejections.map(
+          (rejection: Record<string, unknown>) => ({
+            stage: coverage.stage,
+            ...rejection,
+          }),
+        ),
+    );
+    expect(
+      unreachableRejections.map(
+        ({ stage, reason }: Record<string, unknown>) => ({ stage, reason }),
+      ),
+    ).toEqual([
+      { stage: "candidate_root_binding", reason: "identity_mismatch" },
+      { stage: "registry_policy_binding", reason: "binding_mismatch" },
+    ]);
+    for (const rejection of unreachableRejections) {
+      expect(rejection.rationale).toEqual(expect.any(String));
+      expect(rejection.rationale.length).toBeGreaterThan(40);
+    }
+    expect(topologyProof).toMatchObject({
+      status: "accepted_after_contract_reopen",
+      contractReopenRequired: false,
+      priorContractReopenRequired: true,
+    });
+    expect(topologyProof.productionParserBindings).toHaveLength(21);
+    expect(topologyProof.capAssessment).toMatchObject({
+      adoptedAssessment: { withinSoundUpper: true },
+      adoptedFailures: [],
+    });
+    expect(topologyProof.capAssessment.priorFailures).toHaveLength(2);
+
+    const invalidSchemaDocument = generated[
+      "provider-registry-evidence-binding-point-invalid-manifest"
+    ] as Record<string, any>;
+    const invalidProperties = invalidSchemaDocument.properties as Record<
+      string,
+      Record<string, any>
+    >;
+    const resolveInvalidLocalSchema = (
+      schema: Record<string, any>,
+    ): Record<string, any> => {
+      const reference = schema?.$ref;
+      if (
+        typeof reference !== "string" ||
+        !reference.startsWith("#/$defs/")
+      ) {
+        return schema;
+      }
+      const resolved = invalidSchemaDocument.$defs?.[
+        reference.slice("#/$defs/".length)
+      ] as Record<string, any> | undefined;
+      if (resolved === undefined) {
+        throw new TypeError(`missing local schema reference ${reference}`);
+      }
+      return resolved;
+    };
+    const invalidCaseItemSchema =
+      invalidProperties.cases?.prefixItems?.[0] ??
+      invalidProperties.cases?.items;
+    const sourceExpectedJsonSchema = resolveInvalidLocalSchema(
+      invalidCaseItemSchema?.properties?.sourceExpected as Record<string, any>,
+    );
+    const sourceExpectedBranches = sourceExpectedJsonSchema.anyOf as Record<
+      string,
+      any
+    >[];
+    const acceptedSourceExpectedBranches = sourceExpectedBranches.filter(
+      (branch) => branch.properties?.authority !== undefined,
+    );
+    expect(acceptedSourceExpectedBranches).toHaveLength(2);
+    expect(
+      acceptedSourceExpectedBranches.map(
+        (branch) => branch.properties.authority.const,
+      ),
+    ).toEqual([
+      "none_provider_feasibility_evidence_structure_only",
+      "none_registry_entry_evidence_binding_structure_only",
+    ]);
+    expect(
+      acceptedSourceExpectedBranches.map((branch) => ({
+        additionalProperties:
+          resolveInvalidLocalSchema(branch.properties.snapshotProjection)
+            .additionalProperties,
+        requiredFieldCount:
+          resolveInvalidLocalSchema(branch.properties.snapshotProjection)
+            .required.length,
+      })),
+    ).toEqual([
+      { additionalProperties: false, requiredFieldCount: 20 },
+      { additionalProperties: false, requiredFieldCount: 10 },
+    ]);
+
+    const evidenceAcceptedSourceExpected = invalid.cases.find(
+      (invalidCase: Record<string, any>) =>
+        invalidCase.sourceExpected?.authority ===
+        "none_provider_feasibility_evidence_structure_only",
+    )?.sourceExpected as Record<string, any> | undefined;
+    const registryEvidenceAcceptedSourceExpected = invalid.cases.find(
+      (invalidCase: Record<string, any>) =>
+        invalidCase.sourceExpected?.authority ===
+        "none_registry_entry_evidence_binding_structure_only",
+    )?.sourceExpected as Record<string, any> | undefined;
+    expect(evidenceAcceptedSourceExpected).toBeDefined();
+    expect(registryEvidenceAcceptedSourceExpected).toBeDefined();
+    if (
+      evidenceAcceptedSourceExpected === undefined ||
+      registryEvidenceAcceptedSourceExpected === undefined
+    ) {
+      throw new TypeError("accepted source projection fixtures are incomplete");
+    }
+    expect(
+      ProviderFeasibilityEvidencePointSnapshotProjectionV1Schema.safeParse(
+        evidenceAcceptedSourceExpected.snapshotProjection,
+      ).success,
+    ).toBe(true);
+    const evidenceProjectionWithExtra = structuredClone(
+      evidenceAcceptedSourceExpected.snapshotProjection,
+    );
+    evidenceProjectionWithExtra.unreviewed = true;
+    expect(
+      ProviderFeasibilityEvidencePointSnapshotProjectionV1Schema.safeParse(
+        evidenceProjectionWithExtra,
+      ).success,
+    ).toBe(false);
+
+    const validateSourceExpected = ajv.compile({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      $defs: invalidSchemaDocument.$defs,
+      ...sourceExpectedJsonSchema,
+    });
+    expect(validateSourceExpected(evidenceAcceptedSourceExpected)).toBe(true);
+    expect(validateSourceExpected(registryEvidenceAcceptedSourceExpected)).toBe(
+      true,
+    );
+    const sourceExpectedWithExtraProjectionField = structuredClone(
+      evidenceAcceptedSourceExpected,
+    );
+    sourceExpectedWithExtraProjectionField.snapshotProjection.unreviewed = true;
+    expect(validateSourceExpected(sourceExpectedWithExtraProjectionField)).toBe(
+      false,
+    );
+    const evidenceAuthorityWithRegistryProjection = structuredClone(
+      evidenceAcceptedSourceExpected,
+    );
+    evidenceAuthorityWithRegistryProjection.snapshotProjection =
+      registryEvidenceAcceptedSourceExpected.snapshotProjection;
+    expect(validateSourceExpected(evidenceAuthorityWithRegistryProjection)).toBe(
+      false,
+    );
+    const registryAuthorityWithEvidenceProjection = structuredClone(
+      registryEvidenceAcceptedSourceExpected,
+    );
+    registryAuthorityWithEvidenceProjection.snapshotProjection =
+      evidenceAcceptedSourceExpected.snapshotProjection;
+    expect(validateSourceExpected(registryAuthorityWithEvidenceProjection)).toBe(
+      false,
+    );
+
+    const invalidMutationJsonSchema = resolveInvalidLocalSchema(
+      invalidCaseItemSchema?.properties?.mutation as Record<string, any>,
+    );
+    const sourceRecipeJsonSchema = resolveInvalidLocalSchema(
+      invalidMutationJsonSchema.properties.sourceRecipe as Record<string, any>,
+    );
+    const sourceRecipeBranches = sourceRecipeJsonSchema.anyOf as Record<
+      string,
+      any
+    >[];
+    expect(sourceRecipeBranches).toHaveLength(5);
+    for (const branch of sourceRecipeBranches) {
+      expect(resolveInvalidLocalSchema(branch).additionalProperties).toBe(false);
+    }
+    const validateSourceRecipe = ajv.compile({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      $defs: invalidSchemaDocument.$defs,
+      ...sourceRecipeJsonSchema,
+    });
+    for (const invalidCase of invalid.cases as Record<string, any>[]) {
+      expect(
+        validateSourceRecipe(invalidCase.mutation.sourceRecipe),
+        `${invalidCase.caseId}: ${JSON.stringify(validateSourceRecipe.errors)}`,
+      ).toBe(true);
+    }
+    const sourceRecipeForKind = (kind: string): Record<string, any> => {
+      const sourceRecipe = (invalid.cases as Record<string, any>[]).find(
+        (invalidCase) => invalidCase.mutation.sourceRecipe.kind === kind,
+      )?.mutation.sourceRecipe as Record<string, any> | undefined;
+      if (sourceRecipe === undefined) {
+        throw new TypeError(`missing source recipe fixture for ${kind}`);
+      }
+      return sourceRecipe;
+    };
+    const evidenceSourceRecipe = sourceRecipeForKind("runtime_inherited");
+    const pointHostileSourceRecipe = sourceRecipeForKind("point_hostile");
+    const registrySourceRecipe = sourceRecipeForKind(
+      "registry_manifest_history",
+    );
+    const pointSpecificSourceRecipe = sourceRecipeForKind("point_specific");
+    const pointBudgetSourceRecipe = sourceRecipeForKind(
+      "point_symbolic_budget",
+    );
+
+    const sourceRecipeWithExtraField = structuredClone(evidenceSourceRecipe);
+    sourceRecipeWithExtraField.unreviewed = true;
+    expect(validateSourceRecipe(sourceRecipeWithExtraField)).toBe(false);
+
+    const evidenceRecipeWithPointShape = {
+      kind: evidenceSourceRecipe.kind,
+      profile: pointSpecificSourceRecipe.profile,
+    };
+    expect(validateSourceRecipe(evidenceRecipeWithPointShape)).toBe(false);
+    const registryRecipeWithEvidenceShape = structuredClone(
+      evidenceSourceRecipe,
+    );
+    registryRecipeWithEvidenceShape.kind = registrySourceRecipe.kind;
+    expect(validateSourceRecipe(registryRecipeWithEvidenceShape)).toBe(false);
+
+    const pointSpecificWithBudgetProfile = structuredClone(
+      pointSpecificSourceRecipe,
+    );
+    pointSpecificWithBudgetProfile.profile = pointBudgetSourceRecipe.profile;
+    expect(validateSourceRecipe(pointSpecificWithBudgetProfile)).toBe(false);
+    const pointBudgetWithSpecificProfile = structuredClone(
+      pointBudgetSourceRecipe,
+    );
+    pointBudgetWithSpecificProfile.profile = pointSpecificSourceRecipe.profile;
+    expect(validateSourceRecipe(pointBudgetWithSpecificProfile)).toBe(false);
+
+    const pointHostileWithoutProfile = structuredClone(
+      pointHostileSourceRecipe,
+    );
+    delete pointHostileWithoutProfile.adapterProfile;
+    expect(validateSourceRecipe(pointHostileWithoutProfile)).toBe(false);
+
+    const topologyProperties = generated[
+      "provider-registry-evidence-binding-topology-proof"
+    ].properties as Record<string, Record<string, any>>;
+    expect(
+      topologyProperties.capAssessment?.properties.adoptedFailures,
+    ).toEqual({
+      minItems: 0,
+      maxItems: 0,
+      type: "array",
+      items: { not: {} },
+    });
+    const topologyProofWithAdoptedFailure = structuredClone(topologyProof);
+    topologyProofWithAdoptedFailure.capAssessment.adoptedFailures = [
+      topologyProof.capAssessment.priorFailures[0],
+    ];
+    expect(validateTopologyProof(topologyProofWithAdoptedFailure)).toBe(false);
+
+    for (const propertyName of ["caseIds", "cases"] as const) {
+      expect(invalidProperties[propertyName]).toMatchObject({
+        type: "array",
+        minItems: 354,
+        maxItems: 354,
+        items: false,
+      });
+      expect(invalidProperties[propertyName]?.prefixItems).toHaveLength(354);
+    }
+    const missingCase = structuredClone(invalid);
+    missingCase.cases.pop();
+    expect(validateInvalid(missingCase)).toBe(false);
+    const reorderedCaseIds = structuredClone(invalid);
+    [reorderedCaseIds.caseIds[0], reorderedCaseIds.caseIds[1]] = [
+      reorderedCaseIds.caseIds[1],
+      reorderedCaseIds.caseIds[0],
+    ];
+    expect(validateInvalid(reorderedCaseIds)).toBe(false);
+  }, 120_000);
 
   it("publishes every Registry atomic union as closed alternatives", () => {
     const generated = generateProviderContractJsonSchemasV1();

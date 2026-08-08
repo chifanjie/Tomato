@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { setImmediate as scheduleImmediate } from "node:timers";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -41,6 +42,12 @@ function semanticDigest(domain: string, value: unknown): string {
   return `sha256:${createHash("sha256")
     .update(canonicalizeJcsSafeIntegerUtf8V1([domain, value]))
     .digest("hex")}`;
+}
+
+function yieldForPendingWorkerRpc(): Promise<void> {
+  return new Promise((resolveYield) => {
+    scheduleImmediate(resolveYield);
+  });
 }
 
 function descriptorSnapshot(
@@ -445,6 +452,7 @@ describe("release target Universe point fixture resources", () => {
         );
         expectDescriptorRestored(Promise.prototype, "then", promiseThenBefore);
         expectDescriptorRestored(Promise, Symbol.species, promiseSpeciesBefore);
+        await yieldForPendingWorkerRpc();
       }
 
       const doubled = invalid.cases.find(

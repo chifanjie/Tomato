@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { setImmediate as scheduleImmediate } from "node:timers";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -42,6 +43,12 @@ function semanticDigest(domain: string, value: object): string {
   return `sha256:${createHash("sha256")
     .update(canonicalizeJcsSafeIntegerUtf8V1([domain, value]))
     .digest("hex")}`;
+}
+
+function yieldForPendingWorkerRpc(): Promise<void> {
+  return new Promise((resolveYield) => {
+    scheduleImmediate(resolveYield);
+  });
 }
 
 const goldenBytes = resourceBytes(
@@ -515,6 +522,7 @@ describe("provider feasibility evidence point fixture resources", () => {
         });
       }
       executed += 1;
+      await yieldForPendingWorkerRpc();
     }
     expect(executed).toBe(227);
   }, 300_000);

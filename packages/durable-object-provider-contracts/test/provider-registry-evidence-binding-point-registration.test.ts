@@ -24,24 +24,45 @@ import {
 
 const THIS_TEST_FILE_V1 = fileURLToPath(import.meta.url);
 
-function isDirectZodPrimordialCallerV1(): boolean {
+type PreparedChainExternalPrimordialCallerV1 =
+  | "node_async_hooks"
+  | "zod";
+
+function classifyPreparedChainExternalPrimordialCallerV1(
+  candidateLabel: string,
+): PreparedChainExternalPrimordialCallerV1 | undefined {
   const previousPrepareStackTrace = Error.prepareStackTrace;
   try {
     Error.prepareStackTrace = (_error, callSites) =>
       callSites as unknown as string;
     const callSites = new Error().stack as unknown as readonly NodeJS.CallSite[];
-    if (callSites === undefined || callSites === null) return false;
+    if (callSites === undefined || callSites === null) return undefined;
     for (let index = 0; index < callSites.length; index += 1) {
-      const fileName = callSites[index]?.getFileName();
+      const callSite = callSites[index];
+      const fileName = callSite?.getFileName();
       if (typeof fileName !== "string" || fileName === THIS_TEST_FILE_V1) {
         continue;
       }
-      return fileName.includes("/node_modules/zod/");
+      if (fileName.includes("/node_modules/zod/")) return "zod";
+      if (
+        candidateLabel === "Array.pop" &&
+        fileName === "node:internal/async_hooks" &&
+        callSite?.getFunctionName() === "popAsyncContext"
+      ) {
+        return "node_async_hooks";
+      }
+      return undefined;
     }
-    return false;
+    return undefined;
   } finally {
     Error.prepareStackTrace = previousPrepareStackTrace;
   }
+}
+
+function isDirectZodPrimordialCallerV1(): boolean {
+  return (
+    classifyPreparedChainExternalPrimordialCallerV1("Array.isArray") === "zod"
+  );
 }
 
 const pointSource = readFileSync(
@@ -204,6 +225,7 @@ function expectRecursivelyFrozenV1(
 interface InstalledPreparedChainPrimordialPoisonV1 {
   readonly forgedIdentity: Readonly<{ readonly forgedByPrimordialPoison: true }>;
   readonly firstPartyCalls: number;
+  readonly nodeRuntimeCalls: number;
   readonly thirdPartyZodCalls: number;
   readonly installed: boolean;
   readonly firstCall: string | undefined;
@@ -229,6 +251,7 @@ function createPreparedChainPrimordialPoisonV1(): InstalledPreparedChainPrimordi
   });
   const forgedDescriptorMap = nativeFreeze({ forged: forgedDescriptor });
   let firstPartyCalls = 0;
+  let nodeRuntimeCalls = 0;
   let thirdPartyZodCalls = 0;
   let installed = false;
   let firstCall: string | undefined;
@@ -295,8 +318,12 @@ function createPreparedChainPrimordialPoisonV1(): InstalledPreparedChainPrimordi
       this: unknown,
       ...args: unknown[]
     ): unknown {
-      if (isDirectZodPrimordialCallerV1()) {
-        thirdPartyZodCalls += 1;
+      const externalCaller = classifyPreparedChainExternalPrimordialCallerV1(
+        candidate.label,
+      );
+      if (externalCaller !== undefined) {
+        if (externalCaller === "zod") thirdPartyZodCalls += 1;
+        else nodeRuntimeCalls += 1;
         return candidate.constructCall === true
           ? nativeReflectConstruct(original, args, original)
           : nativeReflectApply(original, this, args);
@@ -316,6 +343,9 @@ function createPreparedChainPrimordialPoisonV1(): InstalledPreparedChainPrimordi
     forgedIdentity,
     get firstPartyCalls() {
       return firstPartyCalls;
+    },
+    get nodeRuntimeCalls() {
+      return nodeRuntimeCalls;
     },
     get thirdPartyZodCalls() {
       return thirdPartyZodCalls;
@@ -627,13 +657,16 @@ describe("provider Registry Evidence binding registration", () => {
 
       if (!diagnostic.ok) {
         throw new TypeError(
-          `${window}: ${diagnostic.stage}/${diagnostic.reason}; first=${poison.firstCall ?? "none"}; last=${poison.lastCall ?? "none"}; firstPartyCalls=${poison.firstPartyCalls}; thirdPartyZodCalls=${poison.thirdPartyZodCalls}; stack=${poison.firstStack?.replace(/\n/gu, " | ") ?? "none"}`,
+          `${window}: ${diagnostic.stage}/${diagnostic.reason}; first=${poison.firstCall ?? "none"}; last=${poison.lastCall ?? "none"}; firstPartyCalls=${poison.firstPartyCalls}; nodeRuntimeCalls=${poison.nodeRuntimeCalls}; thirdPartyZodCalls=${poison.thirdPartyZodCalls}; stack=${poison.firstStack?.replace(/\n/gu, " | ") ?? "none"}`,
         );
       }
       const value = diagnostic.value;
 
       expect(poison.installed, window).toBe(true);
-      expect(poison.firstPartyCalls, window).toBe(0);
+      expect(
+        poison.firstPartyCalls,
+        `${window}: first=${poison.firstCall ?? "none"}; last=${poison.lastCall ?? "none"}; stack=${poison.firstStack?.replace(/\n/gu, " | ") ?? "none"}`,
+      ).toBe(0);
       expect(poison.thirdPartyZodCalls, window).toBeGreaterThan(0);
       expect(pointCallsV1, window).toBe(
         goldenV1.expected.completeCryptoClosure.pointAdmissionCount,

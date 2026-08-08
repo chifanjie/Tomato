@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import {
+  canonicalizeJcsSafeIntegerV1,
   canonicalizeJcsSafeIntegerUtf8V1,
 } from "../../dist/jcs.js";
 import {
@@ -36,6 +37,104 @@ const SOURCE_RESOURCE_ANCHOR_V1 = Object.freeze({
   semanticContentDigest:
     PROVIDER_REGISTRY_MANIFEST_HISTORY_INVALID_SEMANTIC_CONTENT_DIGEST_V1,
 });
+
+function compareUtf16V1(left, right) {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
+function updateCanonicalJcsHashV1(hash, value, active) {
+  if (value === null || typeof value !== "object") {
+    hash.update(canonicalizeJcsSafeIntegerV1(value), "utf8");
+    return;
+  }
+
+  const isArray = Array.isArray(value);
+  const prototype = Reflect.getPrototypeOf(value);
+  if (
+    (isArray && prototype !== Array.prototype) ||
+    (!isArray && prototype !== Object.prototype && prototype !== null)
+  ) {
+    throw new TypeError("streamed JCS value has a non-data prototype");
+  }
+  if (active.has(value)) {
+    throw new TypeError("streamed JCS value contains a cycle");
+  }
+
+  active.add(value);
+  try {
+    if (Object.getOwnPropertySymbols(value).length !== 0) {
+      throw new TypeError("streamed JCS value has a symbol key");
+    }
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    if (isArray) {
+      const ownKeys = Reflect.ownKeys(value);
+      const expectedKeys = new Set(["length"]);
+      for (let index = 0; index < value.length; index += 1) {
+        const key = String(index);
+        expectedKeys.add(key);
+        if (!Object.hasOwn(value, key)) {
+          throw new TypeError("streamed JCS value has a sparse array slot");
+        }
+      }
+      if (
+        ownKeys.some(
+          (key) => typeof key !== "string" || !expectedKeys.has(key),
+        )
+      ) {
+        throw new TypeError("streamed JCS value has an extra array property");
+      }
+
+      hash.update("[", "utf8");
+      for (let index = 0; index < value.length; index += 1) {
+        const descriptor = descriptors[String(index)];
+        if (
+          descriptor === undefined ||
+          !("value" in descriptor) ||
+          descriptor.enumerable !== true
+        ) {
+          throw new TypeError(
+            "streamed JCS array requires enumerable data properties",
+          );
+        }
+        if (index !== 0) hash.update(",", "utf8");
+        updateCanonicalJcsHashV1(hash, descriptor.value, active);
+      }
+      hash.update("]", "utf8");
+      return;
+    }
+
+    const keys = Object.keys(descriptors).sort(compareUtf16V1);
+    hash.update("{", "utf8");
+    for (let index = 0; index < keys.length; index += 1) {
+      const key = keys[index];
+      const descriptor = descriptors[key];
+      if (
+        descriptor === undefined ||
+        !("value" in descriptor) ||
+        descriptor.enumerable !== true
+      ) {
+        throw new TypeError(
+          "streamed JCS object requires enumerable data properties",
+        );
+      }
+      if (index !== 0) hash.update(",", "utf8");
+      hash.update(canonicalizeJcsSafeIntegerV1(key), "utf8");
+      hash.update(":", "utf8");
+      updateCanonicalJcsHashV1(hash, descriptor.value, active);
+    }
+    hash.update("}", "utf8");
+  } finally {
+    active.delete(value);
+  }
+}
+
+function streamedSemanticDigestV1(domain, value) {
+  const hash = createHash("sha256");
+  updateCanonicalJcsHashV1(hash, [domain, value], new Set());
+  return `sha256:${hash.digest("hex")}`;
+}
 
 function semanticDigestV1(domain, value) {
   return `sha256:${createHash("sha256")
@@ -411,7 +510,7 @@ export function deriveProviderRegistryEvidenceBindingRegistryAdapterMaterialized
             completedSnapshots,
           );
   }
-  return semanticDigestV1(
+  return streamedSemanticDigestV1(
     PROVIDER_REGISTRY_EVIDENCE_BINDING_POINT_REGISTRY_ADAPTER_MATERIALIZED_REQUEST_DOMAIN_V1,
     {
       profile:

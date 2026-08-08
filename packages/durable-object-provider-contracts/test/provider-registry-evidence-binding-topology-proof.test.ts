@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Ajv2020 } from "ajv/dist/2020.js";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { generateProviderContractJsonSchemasV1 } from "../src/json-schema.js";
 import {
@@ -37,7 +37,6 @@ const {
   parseProductionParserRuntimeWorkerResultV1,
   precomputeProviderRegistryEvidenceBindingParserRuntimeTraceTokenV1,
   semanticDigestV1,
-  serializeTopologyProofV1,
   traceProductionParserBindingsV1,
   traceRawAdmissionAccountingV1,
 } = topologyProofHelpers;
@@ -59,6 +58,13 @@ const proof = ProviderRegistryEvidenceBindingTopologyProofV1Schema.parse(
   JSON.parse(rawResource.toString("utf8")),
 );
 const generatedSchemas = generateProviderContractJsonSchemasV1();
+const parserRuntimeTraceTestTimeoutMilliseconds =
+  PARSER_RUNTIME_WORKER_TIMEOUT_MS_V1 * 2 + 30_000;
+const standaloneGeneratorDeadlineMilliseconds = 60_000;
+const standaloneGeneratorCleanupFallbackMilliseconds = 70_000;
+const standaloneGeneratorTestTimeoutMilliseconds =
+  standaloneGeneratorCleanupFallbackMilliseconds + 5_000;
+const standaloneGeneratorOutputByteLimit = 1024 * 1024;
 
 function sha256Hex(value: Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
@@ -156,8 +162,143 @@ function measureTopology(value: unknown): {
   );
 }
 
+function runStandaloneTopologyProofCheck(): Promise<string> {
+  return new Promise((resolveCheck, rejectCheck) => {
+    const child = spawn(
+      process.execPath,
+      [generatorPath, "--check"],
+      {
+        cwd: packageRoot,
+        detached: process.platform !== "win32",
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+      },
+    );
+    let stdout = "";
+    let stderr = "";
+    let outputByteLength = 0;
+    let outputLimitExceeded = false;
+    let timedOut = false;
+    let settled = false;
+    let spawnError: Error | undefined;
+    let hardDeadline: ReturnType<typeof setTimeout> | undefined;
+    let cleanupFallback: ReturnType<typeof setTimeout> | undefined;
+
+    const clearRunnerTimers = (): void => {
+      if (hardDeadline !== undefined) clearTimeout(hardDeadline);
+      if (cleanupFallback !== undefined) clearTimeout(cleanupFallback);
+    };
+    const settleRejected = (error: Error): void => {
+      if (settled) return;
+      settled = true;
+      clearRunnerTimers();
+      rejectCheck(error);
+    };
+    const settleResolved = (value: string): void => {
+      if (settled) return;
+      settled = true;
+      clearRunnerTimers();
+      resolveCheck(value);
+    };
+
+    const terminateProcessTree = (): void => {
+      if (process.platform !== "win32" && child.pid !== undefined) {
+        try {
+          process.kill(-child.pid, "SIGKILL");
+          return;
+        } catch {
+          // Fall through to the cross-platform direct-child fallback.
+        }
+      }
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        // A concurrent close is handled by the authoritative close listener.
+      }
+    };
+    const appendOutput = (
+      stream: "stdout" | "stderr",
+      chunk: Buffer,
+    ): void => {
+      outputByteLength += chunk.byteLength;
+      if (outputByteLength > standaloneGeneratorOutputByteLimit) {
+        outputLimitExceeded = true;
+        terminateProcessTree();
+        return;
+      }
+      if (stream === "stdout") stdout += chunk.toString("utf8");
+      else stderr += chunk.toString("utf8");
+    };
+
+    child.stdout.on("data", (chunk: Buffer) => appendOutput("stdout", chunk));
+    child.stderr.on("data", (chunk: Buffer) => appendOutput("stderr", chunk));
+    child.once("error", (error) => {
+      spawnError = error;
+    });
+    hardDeadline = setTimeout(() => {
+      timedOut = true;
+      terminateProcessTree();
+    }, standaloneGeneratorDeadlineMilliseconds);
+    cleanupFallback = setTimeout(() => {
+      if (settled) return;
+      timedOut = true;
+      terminateProcessTree();
+      child.stdout.removeAllListeners("data");
+      child.stderr.removeAllListeners("data");
+      child.stdout.destroy();
+      child.stderr.destroy();
+      child.unref();
+      setImmediate(() => {
+        if (settled) return;
+        settleRejected(
+          spawnError ??
+            new Error(
+              `standalone topology proof check did not close within ${standaloneGeneratorCleanupFallbackMilliseconds}ms`,
+            ),
+        );
+      });
+    }, standaloneGeneratorCleanupFallbackMilliseconds);
+    child.once("close", (code, signal) => {
+      if (settled) return;
+      if (spawnError !== undefined) {
+        settleRejected(spawnError);
+        return;
+      }
+      if (timedOut) {
+        settleRejected(
+          new Error(
+            `standalone topology proof check exceeded ${standaloneGeneratorDeadlineMilliseconds}ms`,
+          ),
+        );
+        return;
+      }
+      if (outputLimitExceeded) {
+        settleRejected(
+          new Error(
+            `standalone topology proof check exceeded ${standaloneGeneratorOutputByteLimit} output bytes`,
+          ),
+        );
+        return;
+      }
+      if (code !== 0) {
+        settleRejected(
+          new Error(
+            `standalone topology proof check exited code=${String(code)} signal=${String(signal)} stderr=${stderr.slice(0, 4_096)}`,
+          ),
+        );
+        return;
+      }
+      settleResolved(stdout);
+    });
+  });
+}
+
 describe("provider Registry evidence-binding topology proof", () => {
-  it("pins raw bytes, strict structure, semantic digest, and generated schema sources", async () => {
+  beforeEach(async () => {
+    await new Promise<void>((resolveYield) => setImmediate(resolveYield));
+  });
+
+  it("pins raw bytes, strict structure, semantic digest, and generated schema sources", () => {
     const verified =
       verifyProviderRegistryEvidenceBindingTopologyProofResourceV1(
         new Uint8Array(rawResource),
@@ -195,15 +336,6 @@ describe("provider Registry evidence-binding topology proof", () => {
         withoutDigest,
       ),
     ).toBe(omittedDigest);
-
-    const regenerated =
-      await generateProviderRegistryEvidenceBindingTopologyProofV1({
-        packageRoot,
-        generatedSchemas,
-      });
-    expect(serializeTopologyProofV1(regenerated)).toBe(
-      rawResource.toString("utf8"),
-    );
 
     const topLevelExtra = structuredClone(proof) as Record<string, unknown>;
     topLevelExtra.unexpected = true;
@@ -382,7 +514,7 @@ describe("provider Registry evidence-binding topology proof", () => {
     );
   }, 60_000);
 
-  it("fails closed across the literal, optional-chain, and abrupt-control-flow parser matrix", async () => {
+  describe("literal, optional-chain, and abrupt-control-flow parser matrix", () => {
     const sourcePath = "src/provider-registry-evidence-binding-point.ts";
     const source = readFileSync(resolve(packageRoot, sourcePath), "utf8");
     const activeRootCall =
@@ -390,8 +522,6 @@ describe("provider Registry evidence-binding topology proof", () => {
     const activeRootFallback = "({ success: true } as const)";
     const insertionAnchor =
       "  if (\n    retainedRootEnvelope === undefined ||";
-    expect(source).toContain(activeRootCall);
-    expect(source).toContain(insertionAnchor);
     const assertRejected = (label: string, mutatedSource: string): void => {
       expect(mutatedSource, label).not.toBe(source);
       expect(() =>
@@ -418,13 +548,6 @@ describe("provider Registry evidence-binding topology proof", () => {
         `${statement}\n${insertionAnchor}`,
       );
 
-    const commentOnly = source.replace(
-      activeRootCall,
-      `/* ${activeRootCall} */ ({ success: true })`,
-    );
-    expect(commentOnly).toContain(activeRootCall);
-    assertRejected("comment-only", commentOnly);
-
     const deadExpressionCases = [
       ["0 &&", `((0 && ${activeRootCall}) || ${activeRootFallback})`],
       ["-0 &&", `((-0 && ${activeRootCall}) || ${activeRootFallback})`],
@@ -444,49 +567,27 @@ describe("provider Registry evidence-binding topology proof", () => {
       ["!true &&", `((!true && ${activeRootCall}) || ${activeRootFallback})`],
       ["!false ||", `((!false || ${activeRootCall}) && ${activeRootFallback})`],
     ] as const;
-    for (const [label, expression] of deadExpressionCases) {
-      assertRejected(label, replaceCall(expression));
-      await new Promise<void>((resolve) => setImmediate(resolve));
-    }
 
     const deadStatementCases = [
-      ["if(0)", `  if (0) { ${activeRootCall}; }`],
-      ["while(0)", `  while (0) { ${activeRootCall}; }`],
-      ["for(;0;)", `  for (; 0; ) { ${activeRootCall}; }`],
+      ["if(0)", `  if (0) { ${activeRootCall}; }`, false],
+      ["while(0)", `  while (0) { ${activeRootCall}; }`, false],
+      ["for(;0;)", `  for (; 0; ) { ${activeRootCall}; }`, false],
       [
         "sequential abrupt block",
         "  { return fields.activeRoot as ProviderRegistryRootPublicKeyV1; void 0; }",
+        true,
       ],
       [
         "abrupt try",
         "  try { return fields.activeRoot as ProviderRegistryRootPublicKeyV1; } finally {}",
+        true,
       ],
       [
         "abrupt finally",
         "  try {} finally { return fields.activeRoot as ProviderRegistryRootPublicKeyV1; }",
+        true,
       ],
     ] as const;
-    for (const [label, statement] of deadStatementCases) {
-      const mutated = label === "sequential abrupt block" ||
-        label === "abrupt try" || label === "abrupt finally"
-        ? source.replace(insertionAnchor, `${statement}\n${insertionAnchor}`)
-        : injectOnlyCandidate(statement);
-      assertRejected(label, mutated);
-      await new Promise<void>((resolve) => setImmediate(resolve));
-    }
-
-    assertRejected(
-      "labeled break",
-      injectOnlyCandidate(
-        `  parserTraceLabel: { break parserTraceLabel; ${activeRootCall}; }`,
-      ),
-    );
-    assertRejected(
-      "optional callsite",
-      replaceCall(
-        "ProviderRegistryRootPublicKeyV1Schema.safeParse?.(fields.activeRoot)",
-      ),
-    );
 
     const liveExpressionCases = [
       ["1 &&", `((1 && ${activeRootCall}) || ${activeRootFallback})`],
@@ -495,17 +596,74 @@ describe("provider Registry evidence-binding topology proof", () => {
       ["null ??", `((null ?? ${activeRootCall}) || ${activeRootFallback})`],
       ["void 0 ??", `((void 0 ?? ${activeRootCall}) || ${activeRootFallback})`],
     ] as const;
-    for (const [label, expression] of liveExpressionCases) {
-      assertAccepted(label, replaceCall(expression));
-      await new Promise<void>((resolve) => setImmediate(resolve));
-    }
 
-    const swappedSchema = source.replace(
-      activeRootCall,
-      "ProviderRegistryRootMetadataPinV1Schema.safeParse(fields.activeRoot)",
+    it("anchors the parser source mutation points", () => {
+      expect(source).toContain(activeRootCall);
+      expect(source).toContain(insertionAnchor);
+    });
+
+    it("rejects a comment-only parser callsite", () => {
+      const commentOnly = source.replace(
+        activeRootCall,
+        `/* ${activeRootCall} */ ({ success: true })`,
+      );
+      expect(commentOnly).toContain(activeRootCall);
+      assertRejected("comment-only", commentOnly);
+    }, 30_000);
+
+    it.each(deadExpressionCases)(
+      "rejects dead expression %s",
+      (label, expression) => {
+        assertRejected(label, replaceCall(expression));
+      },
+      30_000,
     );
-    assertRejected("swapped schema", swappedSchema);
-  }, 120_000);
+
+    it.each(deadStatementCases)(
+      "rejects dead statement %s",
+      (label, statement, insertDirectly) => {
+        const mutated = insertDirectly
+          ? source.replace(insertionAnchor, `${statement}\n${insertionAnchor}`)
+          : injectOnlyCandidate(statement);
+        assertRejected(label, mutated);
+      },
+      30_000,
+    );
+
+    it("rejects a labeled-break-only parser callsite", () => {
+      assertRejected(
+        "labeled break",
+        injectOnlyCandidate(
+          `  parserTraceLabel: { break parserTraceLabel; ${activeRootCall}; }`,
+        ),
+      );
+    }, 30_000);
+
+    it("rejects an optional parser callsite", () => {
+      assertRejected(
+        "optional callsite",
+        replaceCall(
+          "ProviderRegistryRootPublicKeyV1Schema.safeParse?.(fields.activeRoot)",
+        ),
+      );
+    }, 30_000);
+
+    it.each(liveExpressionCases)(
+      "accepts live expression %s",
+      (label, expression) => {
+        assertAccepted(label, replaceCall(expression));
+      },
+      30_000,
+    );
+
+    it("rejects a swapped parser schema", () => {
+      const swappedSchema = source.replace(
+        activeRootCall,
+        "ProviderRegistryRootMetadataPinV1Schema.safeParse(fields.activeRoot)",
+      );
+      assertRejected("swapped schema", swappedSchema);
+    }, 30_000);
+  });
 
   it("keeps dynamic conditional aliases while excluding constant-dead registration bridges", () => {
     const sourcePath =
@@ -564,7 +722,7 @@ describe("provider Registry evidence-binding topology proof", () => {
     ).toThrow(/unreachable from the exported entry/u);
   }, 30_000);
 
-  it("rejects fresh-emitted compatible executions when an exact runtime callsite ID is bypassed", async () => {
+  describe("exact runtime callsite bypasses", () => {
     const compatibleBaseBytes = readFileSync(
       resolve(packageRoot, proof.sourceAnchors.compatibleBaseResourcePath),
     );
@@ -585,7 +743,6 @@ describe("provider Registry evidence-binding topology proof", () => {
     ].join("\n");
     const runtimeType =
       "StoreDurableObjectProviderRuntimeAttestationV1";
-    expect(runtimeSource).toContain(runtimeCall);
     const runtimeExpressionCases = [
       [
         "0 &&",
@@ -608,80 +765,105 @@ describe("provider Registry evidence-binding topology proof", () => {
         `((((null as null | { consume(value: unknown): unknown })?.consume(${runtimeCall}) ?? runtimePinOuter.payload)) as ${runtimeType})`,
       ],
     ] as const;
-    for (const [label, expression] of runtimeExpressionCases) {
-      const mutated = runtimeSource.replace(runtimeCall, expression);
-      expect(mutated, label).not.toBe(runtimeSource);
-      await expect(
-        traceProductionParserBindingsV1({
-          packageRoot,
-          compatibleBase,
-          sourceOverrides: { [runtimeSourcePath]: mutated },
-        }),
-      ).rejects.toThrow(/exact AST callsite runtime trace missed required IDs/u);
-    }
 
     const declaration = `const parsedRuntime = ${runtimeCall};`;
-    expect(runtimeSource).toContain(declaration);
-    const labeledBreak = runtimeSource.replace(
-      declaration,
-      [
-        `let parsedRuntime = runtimePinOuter.payload as ${runtimeType};`,
-        "    exactParserTraceLabel: {",
-        "      break exactParserTraceLabel;",
-        `      parsedRuntime = ${runtimeCall};`,
-        "    }",
-      ].join("\n"),
-    );
-    await expect(
-      traceProductionParserBindingsV1({
-        packageRoot,
-        compatibleBase,
-        sourceOverrides: { [runtimeSourcePath]: labeledBreak },
-      }),
-    ).rejects.toThrow(/exact AST callsite runtime trace missed required IDs/u);
-
     const tableSourcePath = "src/provider-target-discovery-point.ts";
     const tableSource = readFileSync(
       resolve(packageRoot, tableSourcePath),
       "utf8",
     );
     const genericConsumer = "const parsed = schema.parse(value);";
-    expect(tableSource).toContain(genericConsumer);
-    const genericBypass = tableSource.replace(
-      genericConsumer,
-      [
-        "const parsed = (false as boolean)",
-        "        ? schema.parse(value)",
-        "        : schema[\"parse\"](value);",
-      ].join("\n"),
-    );
-    await expect(
-      traceProductionParserBindingsV1({
-        packageRoot,
-        compatibleBase,
-        sourceOverrides: { [tableSourcePath]: genericBypass },
-      }),
-    ).rejects.toThrow(/exact AST callsite runtime trace missed required IDs/u);
-
     const taxonomyRow =
       `[snapshot.publicSupportTaxonomy, ProviderPublicSupportTaxonomyEnvelopeV1Schema, "taxonomy_structure"]`;
-    expect(tableSource).toContain(taxonomyRow);
-    const taxonomyRowBypass = tableSource.replace(
-      taxonomyRow,
-      [
-        "((false as boolean)",
-        `      ? ${taxonomyRow} as const`,
-        "      : [snapshot.publicSupportTaxonomy, ({ schema: ProviderPublicSupportTaxonomyEnvelopeV1Schema }).schema, \"taxonomy_structure\"] as const)",
-      ].join("\n"),
+    const assertRuntimeTraceRejected = async (
+      label: string,
+      sourcePath: string,
+      originalSource: string,
+      mutatedSource: string,
+    ): Promise<void> => {
+      expect(mutatedSource, label).not.toBe(originalSource);
+      await expect(
+        traceProductionParserBindingsV1({
+          packageRoot,
+          compatibleBase,
+          sourceOverrides: { [sourcePath]: mutatedSource },
+        }),
+      ).rejects.toThrow(/exact AST callsite runtime trace missed required IDs/u);
+    };
+
+    it("anchors every runtime bypass mutation point", () => {
+      expect(runtimeSource).toContain(runtimeCall);
+      expect(runtimeSource).toContain(declaration);
+      expect(tableSource).toContain(genericConsumer);
+      expect(tableSource).toContain(taxonomyRow);
+    });
+
+    it.each(runtimeExpressionCases)(
+      "rejects fresh-emitted compatible execution for expression %s",
+      async (label, expression) => {
+        await assertRuntimeTraceRejected(
+          label,
+          runtimeSourcePath,
+          runtimeSource,
+          runtimeSource.replace(runtimeCall, expression),
+        );
+      },
+      parserRuntimeTraceTestTimeoutMilliseconds,
     );
-    await expect(
-      traceProductionParserBindingsV1({
-        packageRoot,
-        compatibleBase,
-        sourceOverrides: { [tableSourcePath]: taxonomyRowBypass },
-      }),
-    ).rejects.toThrow(/exact AST callsite runtime trace missed required IDs/u);
-  }, 180_000);
+
+    it("rejects fresh-emitted compatible execution after a labeled break", async () => {
+      const labeledBreak = runtimeSource.replace(
+        declaration,
+        [
+          `let parsedRuntime = runtimePinOuter.payload as ${runtimeType};`,
+          "    exactParserTraceLabel: {",
+          "      break exactParserTraceLabel;",
+          `      parsedRuntime = ${runtimeCall};`,
+          "    }",
+        ].join("\n"),
+      );
+      await assertRuntimeTraceRejected(
+        "labeled break",
+        runtimeSourcePath,
+        runtimeSource,
+        labeledBreak,
+      );
+    }, parserRuntimeTraceTestTimeoutMilliseconds);
+
+    it("rejects a fresh-emitted compatible generic table consumer bypass", async () => {
+      const genericBypass = tableSource.replace(
+        genericConsumer,
+        [
+          "const parsed = (false as boolean)",
+          "        ? schema.parse(value)",
+          "        : schema[\"parse\"](value);",
+        ].join("\n"),
+      );
+      await assertRuntimeTraceRejected(
+        "generic table consumer",
+        tableSourcePath,
+        tableSource,
+        genericBypass,
+      );
+    }, parserRuntimeTraceTestTimeoutMilliseconds);
+
+    it("rejects a fresh-emitted compatible taxonomy-row bypass", async () => {
+      const taxonomyRowBypass = tableSource.replace(
+        taxonomyRow,
+        [
+          "((false as boolean)",
+          `      ? ${taxonomyRow} as const`,
+          "      : [snapshot.publicSupportTaxonomy, ({ schema: ProviderPublicSupportTaxonomyEnvelopeV1Schema }).schema, \"taxonomy_structure\"] as const)",
+        ].join("\n"),
+      );
+      await assertRuntimeTraceRejected(
+        "taxonomy row",
+        tableSourcePath,
+        tableSource,
+        taxonomyRowBypass,
+      );
+    }, parserRuntimeTraceTestTimeoutMilliseconds);
+  });
 
   it("fails closed on garbled, stale, structurally incomplete, or crashed parser-runtime workers", async () => {
     expect(PARSER_RUNTIME_WORKER_TIMEOUT_MS_V1).toBe(120_000);
@@ -1605,12 +1787,9 @@ describe("provider Registry evidence-binding topology proof", () => {
     ).toThrow(/stale dist\/json-schema\.js/u);
   });
 
-  it("passes the standalone source-anchor and regeneration check", () => {
-    expect(
-      execFileSync(process.execPath, [generatorPath, "--check"], {
-        cwd: packageRoot,
-        encoding: "utf8",
-      }),
-    ).toContain("Verified accepted-after-contract-reopen topology proof");
-  }, 60_000);
+  it("passes the standalone source-anchor and regeneration check", async () => {
+    await expect(runStandaloneTopologyProofCheck()).resolves.toContain(
+      "Verified accepted-after-contract-reopen topology proof",
+    );
+  }, standaloneGeneratorTestTimeoutMilliseconds);
 });

@@ -65,7 +65,7 @@ const C09_RUNTIME_TIMEOUT_MS = 12 * 60 * 1_000;
 const C09_MINIMAL_RUNTIME_TIMEOUT_MS = 4 * 60 * 1_000;
 const C09_DEDICATED_GATE_MAX_WALL_MS = 10 * 60 * 1_000;
 const C09_DEDICATED_GATE_MAX_TREE_RSS_BYTES = 1_536 * 1024 * 1024;
-const C09_DEDICATED_MAX_LIVE_REPLAY_WORKERS = 3;
+const C09_DEDICATED_MAX_LIVE_REPLAY_WORKERS = 2;
 const C09_DEDICATED_WORKER_OUTPUT_MAX_BYTES = 2 * 1024 * 1024;
 const C09_DEDICATED_MONITOR_READY_TIMEOUT_MS = 10_000;
 const C09_DEDICATED_MONITOR_STOP_TIMEOUT_MS = 10_000;
@@ -90,6 +90,10 @@ const C09_BROWSER_RUNTIME_NODE_OPTIONS =
 // retaining the complete prepack verifier chain and worker protocol.
 const C09_PACK_NODE_OPTIONS =
   "--max-old-space-size=640 --max-semi-space-size=16";
+// The prepack chain runs the exact binding-point generator check under this
+// cap before D37 starts.  Reuse that proven complete run profile so the
+// dedicated generator retains process-tree headroom without changing output.
+const C09_GENERATOR_CHECK_NODE_OPTIONS = C09_PACK_NODE_OPTIONS;
 const C09_BROWSER_INVALID_BYTES_GLOBAL_V1 =
   "__UNDERSTAND_CODE_C09_REGISTRY_EVIDENCE_BINDING_INVALID_BYTES_V1__";
 const C09_BROWSER_MINIMAL_GOLDEN_DATA_GLOBAL_V1 =
@@ -5521,19 +5525,31 @@ async function runC09DedicatedGateLightRegressionsV1() {
       })),
     );
     const firstCompletion = Math.min(
-      ...boundedSchedulerReports.slice(0, 3).map(({ endedAt }) => endedAt),
+      ...boundedSchedulerReports
+        .slice(0, C09_DEDICATED_MAX_LIVE_REPLAY_WORKERS)
+        .map(({ endedAt }) => endedAt),
     );
     if (
       boundedSchedulerReports.some(
         ({ laneIndex }, index) => laneIndex !== index,
       ) ||
       boundedSchedulerReports
-        .slice(0, 3)
+        .slice(0, C09_DEDICATED_MAX_LIVE_REPLAY_WORKERS)
         .some(({ startedAt }) => startedAt >= firstCompletion) ||
-      boundedSchedulerReports[3].startedAt < firstCompletion
+      boundedSchedulerReports
+        .slice(C09_DEDICATED_MAX_LIVE_REPLAY_WORKERS)
+        .some(({ startedAt }) => startedAt < firstCompletion) ||
+      boundedSchedulerReports.some(
+        ({ startedAt }) =>
+          boundedSchedulerReports.filter(
+            ({ startedAt: candidateStartedAt, endedAt }) =>
+              candidateStartedAt <= startedAt &&
+              endedAt > startedAt,
+          ).length > C09_DEDICATED_MAX_LIVE_REPLAY_WORKERS,
+      )
     ) {
       throw new Error(
-        "C09 bounded replay scheduler did not retain three-live ordered execution",
+        `C09 bounded replay scheduler did not retain ${C09_DEDICATED_MAX_LIVE_REPLAY_WORKERS}-live ordered execution`,
       );
     }
 
@@ -5542,7 +5558,7 @@ async function runC09DedicatedGateLightRegressionsV1() {
       'const { writeFileSync } = require("node:fs");',
       "const laneIndex = Number(process.argv[1]);",
       "const pendingMarker = process.argv[2];",
-      "if (laneIndex === 3) {",
+      `if (laneIndex >= ${C09_DEDICATED_MAX_LIVE_REPLAY_WORKERS}) {`,
       '  writeFileSync(pendingMarker, "started");',
       '  process.stdout.write(JSON.stringify({ laneIndex, outcome: "unexpected" }));',
       "} else if (laneIndex === 0) {",
@@ -6126,7 +6142,7 @@ try {
     ],
     {
       cwd: cleanPackageRoot,
-      env: { NODE_OPTIONS: C09_NODE_OPTIONS },
+      env: { NODE_OPTIONS: C09_GENERATOR_CHECK_NODE_OPTIONS },
       timeoutMs: C09_RUNTIME_TIMEOUT_MS,
     },
   );

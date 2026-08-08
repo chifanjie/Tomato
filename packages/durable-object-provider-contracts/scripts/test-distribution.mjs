@@ -69,6 +69,7 @@ const C09_DEDICATED_MAX_LIVE_REPLAY_WORKERS = 2;
 const C09_DEDICATED_WORKER_OUTPUT_MAX_BYTES = 2 * 1024 * 1024;
 const C09_DEDICATED_MONITOR_READY_TIMEOUT_MS = 10_000;
 const C09_DEDICATED_MONITOR_STOP_TIMEOUT_MS = 10_000;
+const C09_DEDICATED_PROCESS_TREE_DRAIN_TIMEOUT_MS = 1_000;
 const C09_DEDICATED_PROCESS_TREE_STOP_TIMEOUT_MS = 10_000;
 const C09_DISTRIBUTION_REPLAY_PROFILE_V1 =
   "provider_registry_evidence_binding_distribution_replay_v1";
@@ -570,6 +571,17 @@ function isC09ProcessTreeLiveV1(child) {
   }
 }
 
+async function awaitC09ProcessTreeNaturalDrainV1(child) {
+  const deadline =
+    performance.now() + C09_DEDICATED_PROCESS_TREE_DRAIN_TIMEOUT_MS;
+  for (;;) {
+    if (!isC09ProcessTreeLiveV1(child)) return true;
+    const remaining = deadline - performance.now();
+    if (remaining <= 0) return false;
+    await delayV1(Math.min(10, Math.max(1, Math.ceil(remaining))));
+  }
+}
+
 function readC09ProcessTableV1() {
   if (process.platform === "win32") {
     return Object.freeze({ records: Object.freeze([]), error: undefined });
@@ -945,7 +957,12 @@ function startCapturedC09ProcessV1(specification, timeoutMs, maxOutputBytes) {
           .join("\n"),
       );
     }
-    if (isC09ProcessTreeLiveV1(child)) {
+    // Vite's unref'ed esbuild service exits when the Vite leader closes its
+    // stdin.  The leader's `close` event can therefore precede the service's
+    // natural process-group exit by a few scheduler turns.  Require bounded
+    // quiescence before returning, while retaining the same fail-closed kill
+    // and rejection for any descendant that survives the drain window.
+    if (!(await awaitC09ProcessTreeNaturalDrainV1(child))) {
       await terminate();
       throw new Error(`C09 ${specification.label} left a live descendant`);
     }
@@ -4260,6 +4277,7 @@ async function runC09BrowserRuntimeScannerViteRegressionsV1(
       cwd: regressionRoot,
       env: { NODE_OPTIONS: C09_NODE_OPTIONS },
       timeoutMs: C09_VITE_BUILD_TIMEOUT_MS,
+      label: `${label} Vite build`,
     });
     const javaScriptFiles = (
       await listFiles(join(regressionRoot, "dist"))
@@ -5498,6 +5516,76 @@ async function runC09DedicatedGateLightRegressionsV1() {
         isC09ProcessTreeLiveV1(execution.child)
       ) {
         throw new Error(`C09 tree-child ${mode} cleanup left an orphan`);
+      }
+    }
+
+    const leaderExitDescendantSource = [
+      'const { spawn } = require("node:child_process");',
+      'const { writeFileSync } = require("node:fs");',
+      'const mode = process.env.C09_LIGHT_DESCENDANT_MODE;',
+      'const grandchildSource = mode === "transient" ? "setTimeout(() => {}, 125)" : "setInterval(() => {}, 1000)";',
+      'const grandchild = spawn(process.execPath, ["-e", grandchildSource], { stdio: "ignore" });',
+      'writeFileSync(process.env.C09_LIGHT_GRANDCHILD_PID_PATH, String(grandchild.pid));',
+      "grandchild.unref();",
+      "process.exit(0);",
+    ].join("\n");
+    for (const mode of ["transient", "persistent"]) {
+      const grandchildPidPath = join(
+        lightRoot,
+        `leader-exit-grandchild-${mode}.pid`,
+      );
+      const execution = startCapturedC09ProcessV1(
+        {
+          label: `leader-exit ${mode} descendant regression`,
+          command: process.execPath,
+          args: ["-e", leaderExitDescendantSource],
+          cwd: lightRoot,
+          env: {
+            NODE_OPTIONS: C09_NODE_OPTIONS,
+            C09_LIGHT_DESCENDANT_MODE: mode,
+            C09_LIGHT_GRANDCHILD_PID_PATH: grandchildPidPath,
+          },
+        },
+        5_000,
+        64 * 1024,
+      );
+      if (mode === "transient") {
+        await execution.promise;
+      } else {
+        let rejection;
+        try {
+          await execution.promise;
+        } catch (error) {
+          rejection = error;
+        }
+        if (
+          !(rejection instanceof Error) ||
+          rejection.message !==
+            "C09 leader-exit persistent descendant regression left a live descendant"
+        ) {
+          throw new Error(
+            "C09 persistent descendant did not fail closed after the natural-drain window",
+            { cause: rejection },
+          );
+        }
+      }
+      const grandchildPid = Number(await readFile(grandchildPidPath, "utf8"));
+      const postDrainTable = readC09ProcessTableV1();
+      if (postDrainTable.error !== undefined) throw postDrainTable.error;
+      const grandchildIdentityStillLive = postDrainTable.records.some(
+        (record) =>
+          record.pid === grandchildPid &&
+          record.processGroupId === execution.child.pid,
+      );
+      if (
+        !Number.isSafeInteger(grandchildPid) ||
+        grandchildPid <= 1 ||
+        grandchildIdentityStillLive ||
+        isC09ProcessTreeLiveV1(execution.child)
+      ) {
+        throw new Error(
+          `C09 leader-exit ${mode} descendant cleanup left an orphan`,
+        );
       }
     }
 

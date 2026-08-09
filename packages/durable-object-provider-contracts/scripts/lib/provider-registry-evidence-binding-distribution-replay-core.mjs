@@ -398,13 +398,162 @@ function assertReplayLaneV1(laneIndex) {
   return lane;
 }
 
-export async function executeC09DistributionReplayLaneV1(input) {
+const browserEd25519PublicKeysV1 = new Map();
+const C09_BROWSER_PROMISE_POISON_CASE_INDEX_V1 = 343;
+const C09_BROWSER_PROMISE_POISON_SIGNATURE_COUNT_V1 = 46;
+let activeBrowserPromisePoisonReplayV1;
+
+async function verifyRawEd25519WithNativeBrowserOperationV1(
+  publicKey,
+  message,
+  signature,
+) {
+  if (
+    !(publicKey instanceof Uint8Array) ||
+    publicKey.byteLength !== 32 ||
+    !(message instanceof Uint8Array) ||
+    !(signature instanceof Uint8Array) ||
+    signature.byteLength !== 64
+  ) {
+    throw new TypeError("C09 browser native verification input is invalid");
+  }
+  const publicKeyAdmitted = validatePrimeSubgroupPoint(publicKey);
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle === undefined) {
+    throw new TypeError("C09 browser WebCrypto is unavailable");
+  }
+  const cacheKey = bytesToLowerHexV1(publicKey);
+  let key = browserEd25519PublicKeysV1.get(cacheKey);
+  if (key === undefined) {
+    key = await subtle.importKey(
+      "raw",
+      publicKey,
+      { name: "Ed25519" },
+      false,
+      ["verify"],
+    );
+    browserEd25519PublicKeysV1.set(cacheKey, key);
+  }
+  const nativeResult = await subtle.verify(
+    { name: "Ed25519" },
+    key,
+    signature,
+    message,
+  );
+  if (typeof nativeResult !== "boolean") {
+    throw new TypeError("C09 browser WebCrypto result is invalid");
+  }
+  return publicKeyAdmitted && nativeResult;
+}
+
+async function verifyRawEd25519WithNativeBrowserHostV1(
+  publicKey,
+  message,
+  signature,
+) {
+  try {
+    return await verifyRawEd25519WithNativeBrowserOperationV1(
+      publicKey,
+      message,
+      signature,
+    );
+  } catch {
+    return false;
+  }
+}
+
+function verifyRawEd25519WithAttestedBrowserHostV1(
+  publicKey,
+  message,
+  signature,
+) {
+  const poisonReplay = activeBrowserPromisePoisonReplayV1;
+  if (poisonReplay === undefined) {
+    return verifyRawEd25519WithNativeBrowserHostV1(
+      publicKey,
+      message,
+      signature,
+    );
+  }
+  if (
+    poisonReplay.logicalVerificationCount >=
+    C09_BROWSER_PROMISE_POISON_SIGNATURE_COUNT_V1
+  ) {
+    throw new Error("C09 browser Promise-poison verification count overflowed");
+  }
+  const strictResult = verifyRawEd25519(publicKey, message, signature);
+  poisonReplay.logicalVerificationCount += 1;
+  poisonReplay.records.push(
+    Object.freeze({
+      publicKey: new Uint8Array(publicKey),
+      message: new Uint8Array(message),
+      signature: new Uint8Array(signature),
+      strictResult,
+    }),
+  );
+  return strictResult;
+}
+
+function isExactBrowserPromisePoisonCaseV1(caseIndex, caseId, invalidCase) {
+  return (
+    caseIndex === C09_BROWSER_PROMISE_POISON_CASE_INDEX_V1 &&
+    caseId === "point-promise-poison" &&
+    invalidCase.mutation.operation === "point-promise-poison" &&
+    invalidCase.mutation.sourceRecipe?.profile === "promise_poison" &&
+    invalidCase.mutation.witnessRecipe?.profile === "promise_poison"
+  );
+}
+
+function hasBrowserPromisePoisonIdentityV1(caseIndex, caseId, invalidCase) {
+  return (
+    caseIndex === C09_BROWSER_PROMISE_POISON_CASE_INDEX_V1 ||
+    caseId === "point-promise-poison" ||
+    invalidCase.mutation.operation === "point-promise-poison" ||
+    invalidCase.mutation.sourceRecipe?.profile === "promise_poison" ||
+    invalidCase.mutation.witnessRecipe?.profile === "promise_poison"
+  );
+}
+
+async function verifyBrowserPromisePoisonNativeClosureV1(poisonReplay) {
+  const recordedVerificationCount = poisonReplay.records.length;
+  let postRestoreNativeVerificationCount = 0;
+  try {
+    for (const record of poisonReplay.records) {
+      const nativeResult = await verifyRawEd25519WithNativeBrowserOperationV1(
+        record.publicKey,
+        record.message,
+        record.signature,
+      );
+      postRestoreNativeVerificationCount += 1;
+      if (nativeResult !== record.strictResult) {
+        throw new Error(
+          "C09 browser Promise-poison strict/native verification diverged",
+        );
+      }
+    }
+  } finally {
+    poisonReplay.records.length = 0;
+  }
+  return { recordedVerificationCount, postRestoreNativeVerificationCount };
+}
+
+export async function executeC09DistributionReplayLaneV1(
+  input,
+  nodeVerifyRawEd25519,
+) {
   const parsed = assertPlainReplayInputV1(input, "C09 replay input");
   if (
     parsed.runtime !== "node" &&
     parsed.runtime !== "browser"
   ) {
     throw new TypeError("C09 replay runtime is invalid");
+  }
+  if (
+    (parsed.runtime === "node" &&
+      typeof nodeVerifyRawEd25519 !== "function") ||
+    (parsed.runtime === "browser" && nodeVerifyRawEd25519 !== undefined)
+  ) {
+    throw new TypeError("C09 replay Node verification host is invalid");
   }
   if (!/^[0-9a-f]{32}$/u.test(parsed.nonce)) {
     throw new TypeError("C09 replay nonce is invalid");
@@ -432,7 +581,19 @@ export async function executeC09DistributionReplayLaneV1(input) {
       },
       verifyRawEd25519(publicKey, message, signature) {
         signatureCalls += 1;
-        return verifyRawEd25519(publicKey, message, signature);
+        if (parsed.runtime === "browser") {
+          return verifyRawEd25519WithAttestedBrowserHostV1(
+            publicKey,
+            message,
+            signature,
+          );
+        }
+        return nodeVerifyRawEd25519(
+          publicKey,
+          message,
+          signature,
+          validatePrimeSubgroupPoint,
+        );
       },
     }),
     resourceHost: Object.freeze({
@@ -569,16 +730,70 @@ export async function executeC09DistributionReplayLaneV1(input) {
       }
       pointCalls = 0;
       signatureCalls = 0;
-      const execution =
-        await bindingFixtures.executeProviderRegistryEvidenceBindingPointInvalidCaseV1(
-          golden,
-          invalidCase,
-          capability,
-          {
-            readPointAdmissionCount: () => pointCalls,
-            readSignatureVerificationCount: () => signatureCalls,
-          },
-        );
+      const exactBrowserPromisePoisonCase =
+        parsed.runtime === "browser" &&
+        isExactBrowserPromisePoisonCaseV1(caseIndex, caseId, invalidCase);
+      if (
+        parsed.runtime === "browser" &&
+        hasBrowserPromisePoisonIdentityV1(caseIndex, caseId, invalidCase) &&
+        !exactBrowserPromisePoisonCase
+      ) {
+        throw new Error("C09 browser Promise-poison identity drifted");
+      }
+      let poisonReplay;
+      if (exactBrowserPromisePoisonCase) {
+        if (activeBrowserPromisePoisonReplayV1 !== undefined) {
+          throw new Error("C09 browser Promise-poison replay overlapped");
+        }
+        poisonReplay = {
+          logicalVerificationCount: 0,
+          records: [],
+        };
+        activeBrowserPromisePoisonReplayV1 = poisonReplay;
+      }
+      let execution;
+      try {
+        execution =
+          await bindingFixtures.executeProviderRegistryEvidenceBindingPointInvalidCaseV1(
+            golden,
+            invalidCase,
+            capability,
+            {
+              readPointAdmissionCount: () => pointCalls,
+              readSignatureVerificationCount: () => signatureCalls,
+            },
+          );
+      } finally {
+        if (poisonReplay !== undefined) {
+          if (activeBrowserPromisePoisonReplayV1 !== poisonReplay) {
+            activeBrowserPromisePoisonReplayV1 = undefined;
+            throw new Error("C09 browser Promise-poison replay state diverged");
+          }
+          activeBrowserPromisePoisonReplayV1 = undefined;
+        }
+      }
+      if (poisonReplay !== undefined) {
+        const {
+          recordedVerificationCount,
+          postRestoreNativeVerificationCount,
+        } =
+          await verifyBrowserPromisePoisonNativeClosureV1(poisonReplay);
+        if (
+          recordedVerificationCount !==
+            C09_BROWSER_PROMISE_POISON_SIGNATURE_COUNT_V1 ||
+          poisonReplay.logicalVerificationCount !==
+            C09_BROWSER_PROMISE_POISON_SIGNATURE_COUNT_V1 ||
+          postRestoreNativeVerificationCount !==
+            C09_BROWSER_PROMISE_POISON_SIGNATURE_COUNT_V1 ||
+          signatureCalls !== C09_BROWSER_PROMISE_POISON_SIGNATURE_COUNT_V1 ||
+          execution.signatureVerificationCount !==
+            C09_BROWSER_PROMISE_POISON_SIGNATURE_COUNT_V1
+        ) {
+          throw new Error(
+            "C09 browser Promise-poison verification closure drifted",
+          );
+        }
+      }
       if (
         execution.pointAdmissionCount !== pointCalls ||
         execution.signatureVerificationCount !== signatureCalls

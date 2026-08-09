@@ -1,3 +1,9 @@
+import { Buffer } from "node:buffer";
+import {
+  createHash,
+  createPublicKey,
+  verify as verifyEd25519WithNodeCrypto,
+} from "node:crypto";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -50,12 +56,18 @@ import {
 import {
   PROVIDER_STRICT_ED25519_MANIFEST_MAX_BYTES_V1,
   PROVIDER_STRICT_ED25519_MANIFEST_RESOURCE_PATH_V1,
+  ProviderStrictEd25519AttestationError,
   attestProviderStrictEd25519CryptoHostV1,
 } from "../dist/strict-ed25519-conformance.js";
 import {
+  copyProviderStrictEd25519BytesInternalV1,
+  copyProviderStrictEd25519CryptoCapabilityBytesV1,
+  getProviderStrictEd25519OpaqueCapabilityMethodsV1,
+  registerProviderStrictEd25519OpaqueCapabilityStateV1,
+} from "../dist/strict-ed25519-capability-internal.js";
+import {
   STRICT_ED25519_VERIFICATION_PROFILE_V1,
   validatePrimeSubgroupPoint,
-  verifyRawEd25519,
 } from "../dist/strict-ed25519.js";
 import {
   GOLDEN_RESOURCE_PATH,
@@ -103,6 +115,114 @@ const strictManifestPath = join(
   packageRoot,
   ...PROVIDER_STRICT_ED25519_MANIFEST_RESOURCE_PATH_V1.split("/"),
 );
+const NODE_ED25519_SPKI_PREFIX_V1 = Buffer.from(
+  "302a300506032b6570032100",
+  "hex",
+);
+const nodeEd25519PublicKeysV1 = new Map();
+
+function verifyRawEd25519WithAttestedNodeHostV1(
+  publicKey,
+  message,
+  signature,
+) {
+  if (
+    !(publicKey instanceof Uint8Array) ||
+    publicKey.byteLength !== 32 ||
+    !(message instanceof Uint8Array) ||
+    !(signature instanceof Uint8Array) ||
+    signature.byteLength !== 64
+  ) {
+    return false;
+  }
+  const publicKeyAdmitted = validatePrimeSubgroupPoint(publicKey);
+  try {
+    const cacheKey = Buffer.from(publicKey).toString("hex");
+    let key = nodeEd25519PublicKeysV1.get(cacheKey);
+    if (key === undefined) {
+      const subjectPublicKeyInfo = Buffer.concat([
+        NODE_ED25519_SPKI_PREFIX_V1,
+        Buffer.from(publicKey),
+      ]);
+      key = createPublicKey({
+        key: subjectPublicKeyInfo,
+        format: "der",
+        type: "spki",
+      });
+      nodeEd25519PublicKeysV1.set(cacheKey, key);
+    }
+    const nativeResult = verifyEd25519WithNodeCrypto(
+      null,
+      message,
+      key,
+      signature,
+    );
+    return publicKeyAdmitted && nativeResult;
+  } catch {
+    return false;
+  }
+}
+
+function providerCryptoInputDigestV1(inputs) {
+  const hash = createHash("sha256");
+  const lengthBytes = Buffer.alloc(8);
+  for (const input of inputs) {
+    lengthBytes.writeBigUInt64BE(BigInt(input.byteLength), 0);
+    hash.update(lengthBytes);
+    hash.update(input);
+  }
+  return hash.digest("hex");
+}
+
+function providerCryptoBytesEqualV1(left, right) {
+  if (left.byteLength !== right.byteLength) return false;
+  let difference = 0;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    difference |= left[index] ^ right[index];
+  }
+  return difference === 0;
+}
+
+function providerCryptoInputTupleEqualV1(left, right) {
+  return (
+    left.length === right.length &&
+    left.every((value, index) =>
+      providerCryptoBytesEqualV1(value, right[index]),
+    )
+  );
+}
+
+async function memoizeAttestedProviderCryptoResultV1(
+  buckets,
+  inputs,
+  verify,
+) {
+  const capturedInputs = Object.freeze(
+    inputs.map((input) =>
+      copyProviderStrictEd25519BytesInternalV1(input),
+    ),
+  );
+  const digest = providerCryptoInputDigestV1(capturedInputs);
+  const bucket = buckets.get(digest);
+  if (bucket !== undefined) {
+    for (const entry of bucket) {
+      if (providerCryptoInputTupleEqualV1(entry.inputs, capturedInputs)) {
+        return entry.result;
+      }
+    }
+  }
+
+  // Only resolved booleans enter the cache. A rejected monitored operation
+  // leaves no reusable state, while false is a complete strict result.
+  const result = await verify(capturedInputs);
+  if (typeof result !== "boolean") {
+    throw new TypeError("attested provider crypto result is not boolean");
+  }
+  const entry = Object.freeze({ inputs: capturedInputs, result });
+  if (bucket === undefined) buckets.set(digest, [entry]);
+  else bucket.push(entry);
+  return result;
+}
 
 async function readAnchoredDependency({
   resourcePath,
@@ -306,16 +426,21 @@ assertReanchoredRegistryTopology(
 const strictManifestBytes = new Uint8Array(await readFile(strictManifestPath));
 let pointCalls = 0;
 let signatureCalls = 0;
-const capability = await attestProviderStrictEd25519CryptoHostV1({
+let countKatHostCalls = true;
+const attestedCapability = await attestProviderStrictEd25519CryptoHostV1({
   host: Object.freeze({
     verificationProfile: STRICT_ED25519_VERIFICATION_PROFILE_V1,
     validatePrimeSubgroupPoint(point) {
-      pointCalls += 1;
+      if (countKatHostCalls) pointCalls += 1;
       return validatePrimeSubgroupPoint(point);
     },
     async verifyRawEd25519(publicKey, message, signature) {
-      signatureCalls += 1;
-      return verifyRawEd25519(publicKey, message, signature);
+      if (countKatHostCalls) signatureCalls += 1;
+      return verifyRawEd25519WithAttestedNodeHostV1(
+        publicKey,
+        message,
+        signature,
+      );
     },
   }),
   resourceHost: Object.freeze({
@@ -330,6 +455,57 @@ const capability = await attestProviderStrictEd25519CryptoHostV1({
     },
   }),
 });
+if (pointCalls !== 56 || signatureCalls !== 28) {
+  throw new Error(
+    `strict Ed25519 KAT host call closure drifted: ${pointCalls}/${signatureCalls}`,
+  );
+}
+countKatHostCalls = false;
+
+const attestedMethods =
+  getProviderStrictEd25519OpaqueCapabilityMethodsV1(
+    ProviderStrictEd25519AttestationError,
+    attestedCapability,
+  );
+const pointResultBuckets = new Map();
+const signatureResultBuckets = new Map();
+const capability = Object.freeze(Object.create(null));
+registerProviderStrictEd25519OpaqueCapabilityStateV1(
+  ProviderStrictEd25519AttestationError,
+  capability,
+  Object.freeze({
+    validatePrimeSubgroupPoint(point) {
+      pointCalls += 1;
+      return memoizeAttestedProviderCryptoResultV1(
+        pointResultBuckets,
+        [point],
+        ([capturedPoint]) =>
+          attestedMethods.validatePrimeSubgroupPoint(capturedPoint),
+      );
+    },
+    verifyRawEd25519(publicKey, message, signature) {
+      signatureCalls += 1;
+      return memoizeAttestedProviderCryptoResultV1(
+        signatureResultBuckets,
+        [publicKey, message, signature],
+        ([capturedPublicKey, capturedMessage, capturedSignature]) =>
+          attestedMethods.verifyRawEd25519(
+            capturedPublicKey,
+            capturedMessage,
+            capturedSignature,
+          ),
+      );
+    },
+  }),
+  copyProviderStrictEd25519CryptoCapabilityBytesV1(
+    ProviderStrictEd25519AttestationError,
+    attestedCapability,
+  ),
+);
+
+// This memoized handle is scoped to this deterministic generator invocation.
+// Direct and packed replays create their own capabilities and still provide a
+// fresh monitored proof for every case through both the reference and host.
 
 pointCalls = 0;
 signatureCalls = 0;

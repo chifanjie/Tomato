@@ -1,3 +1,8 @@
+import { Buffer } from "node:buffer";
+import {
+  createPublicKey,
+  verify as verifyEd25519WithNodeCrypto,
+} from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -21,7 +26,6 @@ import {
 import {
   STRICT_ED25519_VERIFICATION_PROFILE_V1,
   validatePrimeSubgroupPoint,
-  verifyRawEd25519,
 } from "../src/strict-ed25519.js";
 
 const REPLAY_LANE_RANGES_V1 = Object.freeze([
@@ -30,6 +34,53 @@ const REPLAY_LANE_RANGES_V1 = Object.freeze([
   Object.freeze([192, 288] as const),
   Object.freeze([288, 354] as const),
 ]);
+const NODE_ED25519_SPKI_PREFIX_V1 = Buffer.from(
+  "302a300506032b6570032100",
+  "hex",
+);
+const nodeEd25519PublicKeysV1 = new Map<
+  string,
+  ReturnType<typeof createPublicKey>
+>();
+
+function verifyRawEd25519WithAttestedNodeHostV1(
+  publicKey: Uint8Array,
+  message: Uint8Array,
+  signature: Uint8Array,
+): boolean {
+  if (
+    publicKey.byteLength !== 32 ||
+    signature.byteLength !== 64
+  ) {
+    return false;
+  }
+  const publicKeyAdmitted = validatePrimeSubgroupPoint(publicKey);
+  try {
+    const cacheKey = Buffer.from(publicKey).toString("hex");
+    let key = nodeEd25519PublicKeysV1.get(cacheKey);
+    if (key === undefined) {
+      const subjectPublicKeyInfo = Buffer.concat([
+        NODE_ED25519_SPKI_PREFIX_V1,
+        Buffer.from(publicKey),
+      ]);
+      key = createPublicKey({
+        key: subjectPublicKeyInfo,
+        format: "der",
+        type: "spki",
+      });
+      nodeEd25519PublicKeysV1.set(cacheKey, key);
+    }
+    const nativeResult = verifyEd25519WithNodeCrypto(
+      null,
+      message,
+      key,
+      signature,
+    );
+    return publicKeyAdmitted && nativeResult;
+  } catch {
+    return false;
+  }
+}
 
 interface ProviderRegistryEvidenceBindingPointReplayLaneV1 {
   readonly laneIndex: 0 | 1 | 2 | 3;
@@ -115,7 +166,11 @@ export function registerProviderRegistryEvidenceBindingPointReplayLaneV1(
           signature: Uint8Array,
         ) {
           signatureCalls += 1;
-          return verifyRawEd25519(publicKey, message, signature);
+          return verifyRawEd25519WithAttestedNodeHostV1(
+            publicKey,
+            message,
+            signature,
+          );
         },
       }),
       resourceHost: Object.freeze({

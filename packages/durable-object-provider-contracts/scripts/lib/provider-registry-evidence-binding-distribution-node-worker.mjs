@@ -1,6 +1,60 @@
+import { Buffer } from "node:buffer";
+import {
+  createPublicKey,
+  verify as verifyEd25519WithNodeCrypto,
+} from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+
+const NODE_ED25519_SPKI_PREFIX_V1 = Buffer.from(
+  "302a300506032b6570032100",
+  "hex",
+);
+const nodeEd25519PublicKeysV1 = new Map();
+
+function verifyRawEd25519WithAttestedNodeHostV1(
+  publicKey,
+  message,
+  signature,
+  validatePrimeSubgroupPoint,
+) {
+  if (
+    !(publicKey instanceof Uint8Array) ||
+    publicKey.byteLength !== 32 ||
+    !(message instanceof Uint8Array) ||
+    !(signature instanceof Uint8Array) ||
+    signature.byteLength !== 64
+  ) {
+    return false;
+  }
+  const publicKeyAdmitted = validatePrimeSubgroupPoint(publicKey);
+  try {
+    const cacheKey = Buffer.from(publicKey).toString("hex");
+    let key = nodeEd25519PublicKeysV1.get(cacheKey);
+    if (key === undefined) {
+      const subjectPublicKeyInfo = Buffer.concat([
+        NODE_ED25519_SPKI_PREFIX_V1,
+        Buffer.from(publicKey),
+      ]);
+      key = createPublicKey({
+        key: subjectPublicKeyInfo,
+        format: "der",
+        type: "spki",
+      });
+      nodeEd25519PublicKeysV1.set(cacheKey, key);
+    }
+    const nativeResult = verifyEd25519WithNodeCrypto(
+      null,
+      message,
+      key,
+      signature,
+    );
+    return publicKeyAdmitted && nativeResult;
+  } catch {
+    return false;
+  }
+}
 
 function exactArgumentsV1(argv) {
   if (argv.length !== 6) {
@@ -111,14 +165,17 @@ async function mainV1() {
   const { executeC09DistributionReplayLaneV1 } = await import(
     "./provider-registry-evidence-binding-distribution-replay-core.mjs"
   );
-  const result = await executeC09DistributionReplayLaneV1({
-    runtime: "node",
-    nonce: input.nonce,
-    laneIndex: input.laneIndex,
-    goldenBytes,
-    invalidBytes,
-    strictManifestBytes,
-  });
+  const result = await executeC09DistributionReplayLaneV1(
+    {
+      runtime: "node",
+      nonce: input.nonce,
+      laneIndex: input.laneIndex,
+      goldenBytes,
+      invalidBytes,
+      strictManifestBytes,
+    },
+    verifyRawEd25519WithAttestedNodeHostV1,
+  );
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 

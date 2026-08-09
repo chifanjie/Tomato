@@ -1985,49 +1985,49 @@ describe("Task semantic transition guards", () => {
     ).toContain(findingClaim?.id);
   });
 
-  it("allows one exact Verification append but rejects old history rewrites, deletion, and forged Claims", async () => {
-    const invalidCases: Array<{
-      name: string;
-      mutate: (draft: VerificationDraft) => void;
-    }> = [
-      {
-        name: "old Verification rewrite",
-        mutate(draft) {
-          draft.verificationRecords[0]!.summary =
-            "A forged rewrite of the previous Verification.";
-        },
+  const invalidVerificationHistoryCases: Array<{
+    name: string;
+    mutate: (draft: VerificationDraft) => void;
+  }> = [
+    {
+      name: "old Verification rewrite",
+      mutate(draft) {
+        draft.verificationRecords[0]!.summary =
+          "A forged rewrite of the previous Verification.";
       },
-      {
-        name: "old Verification deletion",
-        mutate(draft) {
-          draft.verificationRecords.splice(0, 1);
-          draft.verification.attempt = 1;
-          delete draft.verification.supersedesVerificationRecordId;
-          draft.receiptVerification.attempt = 1;
-          delete draft.receiptVerification
-            .supersedesVerificationRecordId;
-          const linked = draft.claims.find(
-            (claim) => claim.id === "claim:acceptance",
-          )!;
-          linked.verificationRecordIds = [draft.verification.id];
-        },
+    },
+    {
+      name: "old Verification deletion",
+      mutate(draft) {
+        draft.verificationRecords.splice(0, 1);
+        draft.verification.attempt = 1;
+        delete draft.verification.supersedesVerificationRecordId;
+        draft.receiptVerification.attempt = 1;
+        delete draft.receiptVerification.supersedesVerificationRecordId;
+        const linked = draft.claims.find(
+          (claim) => claim.id === "claim:acceptance",
+        )!;
+        linked.verificationRecordIds = [draft.verification.id];
       },
-      {
-        name: "unrelated old Claim rewrite",
-        mutate(draft) {
-          draft.claims[0]!.statement =
-            "Verification cannot rewrite the Task goal.";
-        },
+    },
+    {
+      name: "unrelated old Claim rewrite",
+      mutate(draft) {
+        draft.claims[0]!.statement =
+          "Verification cannot rewrite the Task goal.";
       },
-      {
-        name: "forged Claim append",
-        mutate(draft) {
-          draft.claims.push(forgedClaim(5));
-        },
+    },
+    {
+      name: "forged Claim append",
+      mutate(draft) {
+        draft.claims.push(forgedClaim(5));
       },
-    ];
+    },
+  ];
 
-    for (const testCase of invalidCases) {
+  it.each(invalidVerificationHistoryCases)(
+    "rejects a Verification append with $name",
+    async (testCase) => {
       const { store, current } = await setupContextualTask();
       const verificationRequired = await advanceToVerificationRequired(
         store,
@@ -2046,8 +2046,10 @@ describe("Task semantic transition guards", () => {
         ),
         testCase.name,
       ).rejects.toMatchObject({ code: "reference_integrity_failed" });
-    }
+    },
+  );
 
+  it("allows one exact Verification history append", async () => {
     const { store, current } = await setupContextualTask();
     const verificationRequired = await advanceToVerificationRequired(
       store,

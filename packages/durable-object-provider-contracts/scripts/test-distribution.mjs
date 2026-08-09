@@ -66,6 +66,7 @@ const C09_MINIMAL_RUNTIME_TIMEOUT_MS = 4 * 60 * 1_000;
 const C09_DEDICATED_GATE_MAX_WALL_MS = 10 * 60 * 1_000;
 const C09_DEDICATED_GATE_MAX_TREE_RSS_BYTES = 1_536 * 1024 * 1024;
 const C09_DEDICATED_MAX_LIVE_REPLAY_WORKERS = 2;
+const C09_DEDICATED_BROWSER_MAX_LIVE_REPLAY_WORKERS = 3;
 const C09_DEDICATED_WORKER_OUTPUT_MAX_BYTES = 2 * 1024 * 1024;
 const C09_DEDICATED_MONITOR_READY_TIMEOUT_MS = 10_000;
 const C09_DEDICATED_MONITOR_STOP_TIMEOUT_MS = 10_000;
@@ -789,6 +790,8 @@ async function startC09DedicatedGateMonitorV1(temporaryRoot) {
     readMonitorStderr: () => stderr,
     startedAt: undefined,
     lastChildExitAt: undefined,
+    diagnosticPhases: [],
+    diagnosticLanes: [],
     stopped: false,
   };
   try {
@@ -859,16 +862,30 @@ function beginC09DedicatedGateWindowV1(gate) {
   gate.startedAt = performance.now();
 }
 
-function remainingC09DedicatedGateTimeoutV1(gate, commandTimeoutMs) {
+function remainingC09DedicatedGateTimeoutV1(
+  gate,
+  commandTimeoutMs,
+  sampledAt = performance.now(),
+) {
   if (gate.startedAt === undefined || gate.stopped) {
     throw new Error("C09 dedicated distribution gate is not active");
   }
   const remaining =
-    C09_DEDICATED_GATE_MAX_WALL_MS - (performance.now() - gate.startedAt);
+    C09_DEDICATED_GATE_MAX_WALL_MS - (sampledAt - gate.startedAt);
   if (remaining <= 1) {
     throw new Error("C09 dedicated distribution gate exceeded 600000 ms");
   }
   return Math.max(1, Math.min(commandTimeoutMs, Math.floor(remaining)));
+}
+
+function formatC09DedicatedGateDiagnosticsV1(gate) {
+  const elapsedMs = performance.now() - gate.startedAt;
+  return JSON.stringify({
+    profile: "provider_registry_evidence_binding_distribution_parent_timing_v1",
+    gateElapsedMs: elapsedMs,
+    phases: gate.diagnosticPhases,
+    lanes: gate.diagnosticLanes,
+  });
 }
 
 function startCapturedC09ProcessV1(specification, timeoutMs, maxOutputBytes) {
@@ -977,24 +994,35 @@ async function runC09DedicatedCommandV1(
   args,
   options = {},
 ) {
-  const timeoutMs = remainingC09DedicatedGateTimeoutV1(
-    gate,
-    options.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS,
-  );
-  const execution = startCapturedC09ProcessV1(
-    {
-      label: options.label ?? `${command} ${args.join(" ")}`,
-      command,
-      args,
-      cwd: options.cwd,
-      env: options.env,
-    },
-    timeoutMs,
-    32 * 1024 * 1024,
-  );
-  const result = await execution.promise;
-  gate.lastChildExitAt = performance.now();
-  return result;
+  const startedAt = performance.now();
+  const label = options.label ?? `${command} ${args.join(" ")}`;
+  let outcome = "failed";
+  try {
+    const timeoutMs = remainingC09DedicatedGateTimeoutV1(
+      gate,
+      options.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS,
+      startedAt,
+    );
+    const execution = startCapturedC09ProcessV1(
+      { label, command, args, cwd: options.cwd, env: options.env },
+      timeoutMs,
+      32 * 1024 * 1024,
+    );
+    const result = await execution.promise;
+    gate.lastChildExitAt = performance.now();
+    outcome = "completed";
+    return result;
+  } finally {
+    const startOffsetMs = startedAt - gate.startedAt;
+    gate.diagnosticPhases.push({
+      phase: label,
+      startOffsetMs,
+      remainingAtStartMs:
+        C09_DEDICATED_GATE_MAX_WALL_MS - startOffsetMs,
+      durationMs: performance.now() - startedAt,
+      outcome,
+    });
+  }
 }
 
 function spawnBoundedC09WorkerV1(specification, timeoutMs) {
@@ -1015,33 +1043,77 @@ function spawnBoundedC09WorkerV1(specification, timeoutMs) {
   return { ...execution, promise };
 }
 
-async function runParallelC09WorkersV1(gate, specifications) {
+async function runParallelC09WorkersV1(
+  gate,
+  specifications,
+  maxLiveWorkers,
+  diagnosticPhase,
+) {
   if (specifications.length !== 4) {
     throw new TypeError("C09 distribution replay requires exactly four workers");
   }
+  if (
+    !Number.isSafeInteger(maxLiveWorkers) ||
+    (maxLiveWorkers !== 2 && maxLiveWorkers !== 3) ||
+    maxLiveWorkers > specifications.length ||
+    typeof diagnosticPhase !== "string" ||
+    diagnosticPhase.length === 0
+  ) {
+    throw new TypeError(
+      "C09 distribution replay requires an explicit two- or three-worker limit within four workers",
+    );
+  }
   const reports = new Array(specifications.length);
   const activeWorkers = new Set();
+  const phaseStartedAt = performance.now();
+  let phaseOutcome = "failed";
   let nextSpecificationIndex = 0;
   let aborted = false;
-  const runWorkerQueueV1 = async () => {
+  const finishLaneDiagnosticV1 = (diagnostic, outcome) => {
+    if (diagnostic === undefined) return;
+    const endOffsetMs = performance.now() - gate.startedAt;
+    diagnostic.endOffsetMs = endOffsetMs;
+    diagnostic.durationMs = endOffsetMs - diagnostic.startOffsetMs;
+    diagnostic.outcome = outcome;
+  };
+  const runWorkerQueueV1 = async (queueIndex) => {
     for (;;) {
       if (aborted) return;
       const specificationIndex = nextSpecificationIndex;
       if (specificationIndex >= specifications.length) return;
       nextSpecificationIndex += 1;
       let worker;
+      let diagnostic;
       try {
+        const startedAt = performance.now();
         const timeoutMs = remainingC09DedicatedGateTimeoutV1(
           gate,
           C09_RUNTIME_TIMEOUT_MS,
+          startedAt,
         );
+        const startOffsetMs = startedAt - gate.startedAt;
+        diagnostic = {
+          phase: diagnosticPhase,
+          label: specifications[specificationIndex].label,
+          specificationIndex,
+          queueIndex,
+          maxLiveWorkers,
+          startOffsetMs,
+          remainingAtStartMs:
+            C09_DEDICATED_GATE_MAX_WALL_MS - startOffsetMs,
+          assignedTimeoutMs: timeoutMs,
+          outcome: "running",
+        };
+        gate.diagnosticLanes.push(diagnostic);
         worker = spawnBoundedC09WorkerV1(
           specifications[specificationIndex],
           timeoutMs,
         );
         activeWorkers.add(worker);
         reports[specificationIndex] = await worker.promise;
+        finishLaneDiagnosticV1(diagnostic, "completed");
       } catch (error) {
+        finishLaneDiagnosticV1(diagnostic, "failed");
         aborted = true;
         throw error;
       } finally {
@@ -1050,13 +1122,8 @@ async function runParallelC09WorkersV1(gate, specifications) {
     }
   };
   const queues = Array.from(
-    {
-      length: Math.min(
-        C09_DEDICATED_MAX_LIVE_REPLAY_WORKERS,
-        specifications.length,
-      ),
-    },
-    () => runWorkerQueueV1(),
+    { length: maxLiveWorkers },
+    (_, queueIndex) => runWorkerQueueV1(queueIndex),
   );
   try {
     await Promise.all(queues);
@@ -1070,6 +1137,7 @@ async function runParallelC09WorkersV1(gate, specifications) {
       throw new Error("C09 distribution replay worker result is incomplete");
     }
     gate.lastChildExitAt = performance.now();
+    phaseOutcome = "completed";
     return reports;
   } catch (error) {
     aborted = true;
@@ -1089,6 +1157,16 @@ async function runParallelC09WorkersV1(gate, specifications) {
       );
     }
     throw error;
+  } finally {
+    const startOffsetMs = phaseStartedAt - gate.startedAt;
+    gate.diagnosticPhases.push({
+      phase: diagnosticPhase,
+      startOffsetMs,
+      remainingAtStartMs:
+        C09_DEDICATED_GATE_MAX_WALL_MS - startOffsetMs,
+      durationMs: performance.now() - phaseStartedAt,
+      outcome: phaseOutcome,
+    });
   }
 }
 
@@ -5597,56 +5675,12 @@ async function runC09DedicatedGateLightRegressionsV1() {
       "  process.stdout.write(JSON.stringify({ laneIndex, startedAt, endedAt: Date.now() }));",
       "}, delays[laneIndex]);",
     ].join("\n");
-    const boundedSchedulerGate = {
-      startedAt: performance.now(),
-      stopped: false,
-      lastChildExitAt: undefined,
-    };
-    const boundedSchedulerReports = await runParallelC09WorkersV1(
-      boundedSchedulerGate,
-      Array.from({ length: 4 }, (_, laneIndex) => ({
-        label: `bounded scheduler success lane ${laneIndex}`,
-        command: process.execPath,
-        args: ["-e", boundedSchedulerSource, String(laneIndex)],
-        cwd: lightRoot,
-        env: { NODE_OPTIONS: C09_NODE_OPTIONS },
-      })),
-    );
-    const firstCompletion = Math.min(
-      ...boundedSchedulerReports
-        .slice(0, C09_DEDICATED_MAX_LIVE_REPLAY_WORKERS)
-        .map(({ endedAt }) => endedAt),
-    );
-    if (
-      boundedSchedulerReports.some(
-        ({ laneIndex }, index) => laneIndex !== index,
-      ) ||
-      boundedSchedulerReports
-        .slice(0, C09_DEDICATED_MAX_LIVE_REPLAY_WORKERS)
-        .some(({ startedAt }) => startedAt >= firstCompletion) ||
-      boundedSchedulerReports
-        .slice(C09_DEDICATED_MAX_LIVE_REPLAY_WORKERS)
-        .some(({ startedAt }) => startedAt < firstCompletion) ||
-      boundedSchedulerReports.some(
-        ({ startedAt }) =>
-          boundedSchedulerReports.filter(
-            ({ startedAt: candidateStartedAt, endedAt }) =>
-              candidateStartedAt <= startedAt &&
-              endedAt > startedAt,
-          ).length > C09_DEDICATED_MAX_LIVE_REPLAY_WORKERS,
-      )
-    ) {
-      throw new Error(
-        `C09 bounded replay scheduler did not retain ${C09_DEDICATED_MAX_LIVE_REPLAY_WORKERS}-live ordered execution`,
-      );
-    }
-
-    const pendingWorkerMarker = join(lightRoot, "pending-worker-started");
     const failingSchedulerSource = [
       'const { writeFileSync } = require("node:fs");',
       "const laneIndex = Number(process.argv[1]);",
       "const pendingMarker = process.argv[2];",
-      `if (laneIndex >= ${C09_DEDICATED_MAX_LIVE_REPLAY_WORKERS}) {`,
+      "const maxLiveWorkers = Number(process.argv[3]);",
+      "if (laneIndex >= maxLiveWorkers) {",
       '  writeFileSync(pendingMarker, "started");',
       '  process.stdout.write(JSON.stringify({ laneIndex, outcome: "unexpected" }));',
       "} else if (laneIndex === 0) {",
@@ -5655,33 +5689,107 @@ async function runC09DedicatedGateLightRegressionsV1() {
       "  setInterval(() => {}, 1_000);",
       "}",
     ].join("\n");
-    const failingSchedulerGate = {
+
+    const createLightSchedulerGateV1 = () => ({
       startedAt: performance.now(),
       stopped: false,
       lastChildExitAt: undefined,
-    };
-    await expectC09LightRejectionV1("bounded scheduler active failure", () =>
-      runParallelC09WorkersV1(
-        failingSchedulerGate,
+      diagnosticPhases: [],
+      diagnosticLanes: [],
+    });
+    for (const maxLiveWorkers of [2, 3]) {
+      const boundedSchedulerGate = createLightSchedulerGateV1();
+      const boundedSchedulerReports = await runParallelC09WorkersV1(
+        boundedSchedulerGate,
         Array.from({ length: 4 }, (_, laneIndex) => ({
-          label: `bounded scheduler failure lane ${laneIndex}`,
+          label: `bounded scheduler success cap ${maxLiveWorkers} lane ${laneIndex}`,
           command: process.execPath,
-          args: [
-            "-e",
-            failingSchedulerSource,
-            String(laneIndex),
-            pendingWorkerMarker,
-          ],
+          args: ["-e", boundedSchedulerSource, String(laneIndex)],
           cwd: lightRoot,
           env: { NODE_OPTIONS: C09_NODE_OPTIONS },
         })),
-      ),
-    );
-    try {
-      await readFile(pendingWorkerMarker);
-      throw new Error("C09 bounded scheduler started a pending worker after failure");
-    } catch (error) {
-      if (error?.code !== "ENOENT") throw error;
+        maxLiveWorkers,
+        `bounded-scheduler-success-cap-${maxLiveWorkers}`,
+      );
+      const firstCompletion = Math.min(
+        ...boundedSchedulerReports
+          .slice(0, maxLiveWorkers)
+          .map(({ endedAt }) => endedAt),
+      );
+      if (
+        boundedSchedulerReports.some(
+          ({ laneIndex }, index) => laneIndex !== index,
+        ) ||
+        boundedSchedulerReports
+          .slice(0, maxLiveWorkers)
+          .some(({ startedAt }) => startedAt >= firstCompletion) ||
+        boundedSchedulerReports
+          .slice(maxLiveWorkers)
+          .some(({ startedAt }) => startedAt < firstCompletion) ||
+        boundedSchedulerReports.some(
+          ({ startedAt }) =>
+            boundedSchedulerReports.filter(
+              ({ startedAt: candidateStartedAt, endedAt }) =>
+                candidateStartedAt <= startedAt && endedAt > startedAt,
+            ).length > maxLiveWorkers,
+        ) ||
+        boundedSchedulerGate.diagnosticLanes.length !== 4 ||
+        !Number.isFinite(boundedSchedulerGate.lastChildExitAt) ||
+        boundedSchedulerGate.lastChildExitAt < boundedSchedulerGate.startedAt
+      ) {
+        throw new Error(
+          `C09 bounded replay scheduler did not retain ${maxLiveWorkers}-live ordered execution and diagnostics`,
+        );
+      }
+
+      const pendingWorkerMarker = join(
+        lightRoot,
+        `pending-worker-started-cap-${maxLiveWorkers}`,
+      );
+      const failingSchedulerGate = createLightSchedulerGateV1();
+      await expectC09LightRejectionV1(
+        `bounded scheduler cap ${maxLiveWorkers} active failure`,
+        () =>
+          runParallelC09WorkersV1(
+            failingSchedulerGate,
+            Array.from({ length: 4 }, (_, laneIndex) => ({
+              label: `bounded scheduler failure cap ${maxLiveWorkers} lane ${laneIndex}`,
+              command: process.execPath,
+              args: [
+                "-e",
+                failingSchedulerSource,
+                String(laneIndex),
+                pendingWorkerMarker,
+                String(maxLiveWorkers),
+              ],
+              cwd: lightRoot,
+              env: { NODE_OPTIONS: C09_NODE_OPTIONS },
+            })),
+            maxLiveWorkers,
+            `bounded-scheduler-failure-cap-${maxLiveWorkers}`,
+          ),
+      );
+      try {
+        await readFile(pendingWorkerMarker);
+        throw new Error(
+          `C09 ${maxLiveWorkers}-live scheduler started a queued worker after failure`,
+        );
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+      }
+      if (
+        failingSchedulerGate.diagnosticLanes.length !== maxLiveWorkers ||
+        failingSchedulerGate.diagnosticLanes.some(
+          ({ endOffsetMs, startOffsetMs, outcome }) =>
+            endOffsetMs < startOffsetMs || outcome !== "failed",
+        ) ||
+        !Number.isFinite(failingSchedulerGate.lastChildExitAt) ||
+        failingSchedulerGate.lastChildExitAt < failingSchedulerGate.startedAt
+      ) {
+        throw new Error(
+          `C09 ${maxLiveWorkers}-live scheduler failure did not kill and drain its initial batch`,
+        );
+      }
     }
 
     const temporaryReports = (await listFiles(lightRoot)).filter((path) =>
@@ -6229,6 +6337,7 @@ try {
       "--check",
     ],
     {
+      label: "generator-check",
       cwd: cleanPackageRoot,
       env: { NODE_OPTIONS: C09_GENERATOR_CHECK_NODE_OPTIONS },
       timeoutMs: C09_RUNTIME_TIMEOUT_MS,
@@ -6246,6 +6355,7 @@ try {
       "test/provider-registry-evidence-binding-point-fixtures-replay-lane-3.test.ts",
     ],
     {
+      label: "direct-replay",
       cwd: cleanPackageRoot,
       env: { NODE_OPTIONS: C09_NODE_OPTIONS },
       timeoutMs: C09_RUNTIME_TIMEOUT_MS,
@@ -6311,6 +6421,8 @@ try {
       cwd: consumerRoot,
       env: { NODE_OPTIONS: C09_NODE_OPTIONS },
     })),
+    C09_DEDICATED_MAX_LIVE_REPLAY_WORKERS,
+    "packed-node-replay",
   );
   const c09NodeReplaySummary = validateC09ReplayReportsV1(
     c09NodeReplayReports,
@@ -7571,6 +7683,7 @@ try {
     viteCommand,
     ["build", "--config", "vite-c09-replay.config.mjs"],
     {
+      label: "packed-browser-vite-build",
       cwd: consumerRoot,
       env: { NODE_OPTIONS: C09_NODE_OPTIONS },
       timeoutMs: C09_VITE_BUILD_TIMEOUT_MS,
@@ -7637,6 +7750,8 @@ try {
       cwd: consumerRoot,
       env: { NODE_OPTIONS: C09_BROWSER_RUNTIME_NODE_OPTIONS },
     })),
+    C09_DEDICATED_BROWSER_MAX_LIVE_REPLAY_WORKERS,
+    "packed-browser-replay",
   );
   const c09BrowserReplaySummary = validateC09ReplayReportsV1(
     c09BrowserReplayReports,
@@ -7751,6 +7866,7 @@ try {
     viteCommand,
     ["build", "--config", "vite-c09-minimal.config.mjs"],
     {
+      label: "minimal-browser-vite-build",
       cwd: consumerRoot,
       env: { NODE_OPTIONS: C09_NODE_OPTIONS },
       timeoutMs: C09_VITE_BUILD_TIMEOUT_MS,
@@ -7825,9 +7941,10 @@ try {
     process.execPath,
     [c09MinimalRuntimeProbe],
     {
-    cwd: consumerRoot,
-    env: { NODE_OPTIONS: C09_BROWSER_RUNTIME_NODE_OPTIONS },
-    timeoutMs: C09_MINIMAL_RUNTIME_TIMEOUT_MS,
+      label: "minimal-browser-runtime",
+      cwd: consumerRoot,
+      env: { NODE_OPTIONS: C09_BROWSER_RUNTIME_NODE_OPTIONS },
+      timeoutMs: C09_MINIMAL_RUNTIME_TIMEOUT_MS,
     },
   );
   c09DedicatedGateEvidence =
@@ -8102,6 +8219,16 @@ try {
   process.stdout.write(
     `C09 dedicated peak process roles: ${JSON.stringify({ countingPolicy: c09DedicatedGateEvidence.countingPolicy, processes: c09DedicatedGateEvidence.peakRoles })}\n`,
   );
+} catch (error) {
+  if (
+    c09DedicatedGate?.startedAt !== undefined &&
+    c09DedicatedGateEvidence === undefined
+  ) {
+    process.stderr.write(
+      `C09 dedicated gate diagnostics: ${formatC09DedicatedGateDiagnosticsV1(c09DedicatedGate)}\n`,
+    );
+  }
+  throw error;
 } finally {
   if (c09DedicatedGate !== undefined) {
     try {

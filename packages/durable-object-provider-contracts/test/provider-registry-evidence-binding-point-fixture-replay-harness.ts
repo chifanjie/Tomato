@@ -42,11 +42,13 @@ const nodeEd25519PublicKeysV1 = new Map<
   string,
   ReturnType<typeof createPublicKey>
 >();
+const nodeEd25519PublicKeyAdmissionsV1 = new Map<string, boolean>();
 
 function verifyRawEd25519WithAttestedNodeHostV1(
   publicKey: Uint8Array,
   message: Uint8Array,
   signature: Uint8Array,
+  publicKeyAdmissionCacheEnabled: boolean,
 ): boolean {
   if (
     publicKey.byteLength !== 32 ||
@@ -54,9 +56,20 @@ function verifyRawEd25519WithAttestedNodeHostV1(
   ) {
     return false;
   }
-  const publicKeyAdmitted = validatePrimeSubgroupPoint(publicKey);
+  const cacheKey = Buffer.from(publicKey).toString("hex");
+  let publicKeyAdmitted: boolean;
+  if (
+    publicKeyAdmissionCacheEnabled &&
+    nodeEd25519PublicKeyAdmissionsV1.has(cacheKey)
+  ) {
+    publicKeyAdmitted = nodeEd25519PublicKeyAdmissionsV1.get(cacheKey)!;
+  } else {
+    publicKeyAdmitted = validatePrimeSubgroupPoint(publicKey);
+    if (publicKeyAdmissionCacheEnabled) {
+      nodeEd25519PublicKeyAdmissionsV1.set(cacheKey, publicKeyAdmitted);
+    }
+  }
   try {
-    const cacheKey = Buffer.from(publicKey).toString("hex");
     let key = nodeEd25519PublicKeysV1.get(cacheKey);
     if (key === undefined) {
       const subjectPublicKeyInfo = Buffer.concat([
@@ -144,6 +157,7 @@ export function registerProviderRegistryEvidenceBindingPointReplayLaneV1(
 
   let pointCalls = 0;
   let signatureCalls = 0;
+  let signatureHostAdmissionCacheEnabled = false;
   let capability: ProviderStrictEd25519OpaqueCapabilityV1;
   let golden: ReturnType<
     typeof verifyProviderRegistryEvidenceBindingPointGoldenResourceV1
@@ -170,6 +184,7 @@ export function registerProviderRegistryEvidenceBindingPointReplayLaneV1(
             publicKey,
             message,
             signature,
+            signatureHostAdmissionCacheEnabled,
           );
         },
       }),
@@ -185,6 +200,7 @@ export function registerProviderRegistryEvidenceBindingPointReplayLaneV1(
         },
       }),
     });
+    signatureHostAdmissionCacheEnabled = true;
     pointCalls = 0;
     signatureCalls = 0;
     golden =

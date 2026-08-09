@@ -399,6 +399,7 @@ function assertReplayLaneV1(laneIndex) {
 }
 
 const browserEd25519PublicKeysV1 = new Map();
+const browserEd25519PublicKeyAdmissionsV1 = new Map();
 const C09_BROWSER_PROMISE_POISON_CASE_INDEX_V1 = 343;
 const C09_BROWSER_PROMISE_POISON_SIGNATURE_COUNT_V1 = 46;
 let activeBrowserPromisePoisonReplayV1;
@@ -407,6 +408,7 @@ async function verifyRawEd25519WithNativeBrowserOperationV1(
   publicKey,
   message,
   signature,
+  publicKeyAdmissionCacheEnabled,
 ) {
   if (
     !(publicKey instanceof Uint8Array) ||
@@ -417,12 +419,23 @@ async function verifyRawEd25519WithNativeBrowserOperationV1(
   ) {
     throw new TypeError("C09 browser native verification input is invalid");
   }
-  const publicKeyAdmitted = validatePrimeSubgroupPoint(publicKey);
+  const cacheKey = bytesToLowerHexV1(publicKey);
+  let publicKeyAdmitted;
+  if (
+    publicKeyAdmissionCacheEnabled &&
+    browserEd25519PublicKeyAdmissionsV1.has(cacheKey)
+  ) {
+    publicKeyAdmitted = browserEd25519PublicKeyAdmissionsV1.get(cacheKey);
+  } else {
+    publicKeyAdmitted = validatePrimeSubgroupPoint(publicKey);
+    if (publicKeyAdmissionCacheEnabled) {
+      browserEd25519PublicKeyAdmissionsV1.set(cacheKey, publicKeyAdmitted);
+    }
+  }
   const subtle = globalThis.crypto?.subtle;
   if (subtle === undefined) {
     throw new TypeError("C09 browser WebCrypto is unavailable");
   }
-  const cacheKey = bytesToLowerHexV1(publicKey);
   let key = browserEd25519PublicKeysV1.get(cacheKey);
   if (key === undefined) {
     key = await subtle.importKey(
@@ -450,12 +463,14 @@ async function verifyRawEd25519WithNativeBrowserHostV1(
   publicKey,
   message,
   signature,
+  publicKeyAdmissionCacheEnabled,
 ) {
   try {
     return await verifyRawEd25519WithNativeBrowserOperationV1(
       publicKey,
       message,
       signature,
+      publicKeyAdmissionCacheEnabled,
     );
   } catch {
     return false;
@@ -466,6 +481,7 @@ function verifyRawEd25519WithAttestedBrowserHostV1(
   publicKey,
   message,
   signature,
+  publicKeyAdmissionCacheEnabled,
 ) {
   const poisonReplay = activeBrowserPromisePoisonReplayV1;
   if (poisonReplay === undefined) {
@@ -473,6 +489,7 @@ function verifyRawEd25519WithAttestedBrowserHostV1(
       publicKey,
       message,
       signature,
+      publicKeyAdmissionCacheEnabled,
     );
   }
   if (
@@ -523,6 +540,7 @@ async function verifyBrowserPromisePoisonNativeClosureV1(poisonReplay) {
         record.publicKey,
         record.message,
         record.signature,
+        true,
       );
       postRestoreNativeVerificationCount += 1;
       if (nativeResult !== record.strictResult) {
@@ -572,6 +590,7 @@ export async function executeC09DistributionReplayLaneV1(
 
   let pointCalls = 0;
   let signatureCalls = 0;
+  let signatureHostAdmissionCacheEnabled = false;
   const capability = await attestProviderStrictEd25519CryptoHostV1({
     host: Object.freeze({
       verificationProfile: STRICT_ED25519_VERIFICATION_PROFILE_V1,
@@ -586,6 +605,7 @@ export async function executeC09DistributionReplayLaneV1(
             publicKey,
             message,
             signature,
+            signatureHostAdmissionCacheEnabled,
           );
         }
         return nodeVerifyRawEd25519(
@@ -593,6 +613,7 @@ export async function executeC09DistributionReplayLaneV1(
           message,
           signature,
           validatePrimeSubgroupPoint,
+          signatureHostAdmissionCacheEnabled,
         );
       },
     }),
@@ -609,6 +630,7 @@ export async function executeC09DistributionReplayLaneV1(
       },
     }),
   });
+  signatureHostAdmissionCacheEnabled = true;
   const golden =
     bindingFixtures.verifyProviderRegistryEvidenceBindingPointGoldenResourceV1(
       parsed.goldenBytes,

@@ -120,11 +120,13 @@ const NODE_ED25519_SPKI_PREFIX_V1 = Buffer.from(
   "hex",
 );
 const nodeEd25519PublicKeysV1 = new Map();
+const nodeEd25519PublicKeyAdmissionsV1 = new Map();
 
 function verifyRawEd25519WithAttestedNodeHostV1(
   publicKey,
   message,
   signature,
+  publicKeyAdmissionCacheEnabled,
 ) {
   if (
     !(publicKey instanceof Uint8Array) ||
@@ -135,9 +137,20 @@ function verifyRawEd25519WithAttestedNodeHostV1(
   ) {
     return false;
   }
-  const publicKeyAdmitted = validatePrimeSubgroupPoint(publicKey);
+  const cacheKey = Buffer.from(publicKey).toString("hex");
+  let publicKeyAdmitted;
+  if (
+    publicKeyAdmissionCacheEnabled &&
+    nodeEd25519PublicKeyAdmissionsV1.has(cacheKey)
+  ) {
+    publicKeyAdmitted = nodeEd25519PublicKeyAdmissionsV1.get(cacheKey);
+  } else {
+    publicKeyAdmitted = validatePrimeSubgroupPoint(publicKey);
+    if (publicKeyAdmissionCacheEnabled) {
+      nodeEd25519PublicKeyAdmissionsV1.set(cacheKey, publicKeyAdmitted);
+    }
+  }
   try {
-    const cacheKey = Buffer.from(publicKey).toString("hex");
     let key = nodeEd25519PublicKeysV1.get(cacheKey);
     if (key === undefined) {
       const subjectPublicKeyInfo = Buffer.concat([
@@ -440,6 +453,7 @@ const attestedCapability = await attestProviderStrictEd25519CryptoHostV1({
         publicKey,
         message,
         signature,
+        !countKatHostCalls,
       );
     },
   }),

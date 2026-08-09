@@ -12,8 +12,80 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
-    name: Quality gate
+  provider_unit:
+    name: Provider unit gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CI: true
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.x
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Provider unit gate
+        working-directory: packages/durable-object-provider-contracts
+        run: |
+          pnpm run build
+          pnpm run typecheck
+          pnpm exec vitest run --maxWorkers=1
+
+  provider_distribution:
+    name: Provider distribution gate
+    needs: provider_unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CI: true
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.x
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Provider distribution gate
+        working-directory: packages/durable-object-provider-contracts
+        run: |
+          pnpm run build
+          pnpm run test:distribution
+
+  workspace_quality:
+    name: Workspace quality gate
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -42,7 +114,44 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run workspace quality gate
-        run: pnpm quality
+        run: |
+          pnpm run build:all
+          pnpm run typecheck
+          pnpm --filter @understand-code/durable-object-provider-contracts --fail-if-no-match build
+          pnpm --filter @understand-code/contracts --fail-if-no-match build
+          pnpm --filter @understand-code/repository-state --fail-if-no-match build
+          pnpm --filter @understand-code/artifact-store --fail-if-no-match build
+          pnpm --filter @understand-code/core --fail-if-no-match build
+          pnpm --filter @understand-code/task-engine --fail-if-no-match build
+          pnpm --filter @understand-code/contracts --fail-if-no-match test
+          pnpm --filter @understand-code/repository-state --fail-if-no-match test
+          pnpm --filter @understand-code/artifact-store --fail-if-no-match test
+          pnpm run test:skill
+          pnpm --filter @understand-code/core --fail-if-no-match test
+          pnpm --filter @understand-code/task-engine --fail-if-no-match test
+          pnpm --filter @understand-code/cli --fail-if-no-match test
+          pnpm --filter @understand-code/dashboard --fail-if-no-match test
 
       - name: Audit active dashboard surface
         run: pnpm --filter @understand-code/dashboard audit:surface
+
+  quality:
+    name: Quality gate
+    if: ${{ always() }}
+    needs:
+      - provider_unit
+      - provider_distribution
+      - workspace_quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PROVIDER_UNIT_RESULT: ${{ needs.provider_unit.result }}
+      PROVIDER_DISTRIBUTION_RESULT: ${{ needs.provider_distribution.result }}
+      WORKSPACE_QUALITY_RESULT: ${{ needs.workspace_quality.result }}
+
+    steps:
+      - name: Require every quality shard
+        run: |
+          test "$PROVIDER_UNIT_RESULT" = "success"
+          test "$PROVIDER_DISTRIBUTION_RESULT" = "success"
+          test "$WORKSPACE_QUALITY_RESULT" = "success"

@@ -23,6 +23,7 @@ import {
   deriveProviderFeasibilitySupportCatalogPointFixtureSemanticContentDigestV1,
   executeProviderFeasibilitySupportCatalogPointInvalidCaseV1,
   materializeProviderFeasibilitySupportCatalogPointInvalidCaseRequestV1,
+  projectProviderFeasibilitySupportCatalogPointFixtureClosureV1,
   verifyProviderFeasibilitySupportCatalogPointGoldenResourceV1,
   verifyProviderFeasibilitySupportCatalogPointInvalidResourceV1,
   verifyProviderFeasibilitySupportCatalogPointPositiveVectorsV1,
@@ -30,6 +31,10 @@ import {
   type ProviderFeasibilitySupportCatalogPointInvalidCaseIdV1,
   type ProviderFeasibilitySupportCatalogPointInvalidManifestV1,
 } from "../src/provider-feasibility-support-catalog-point-fixtures.js";
+import {
+  validateProviderFeasibilitySupportCatalogPointClosureV1,
+  type ValidateProviderFeasibilitySupportCatalogPointClosureV1Input,
+} from "../src/provider-feasibility-support-catalog-point.js";
 import {
   PROVIDER_STRICT_ED25519_MANIFEST_MAX_BYTES_V1,
   PROVIDER_STRICT_ED25519_MANIFEST_RESOURCE_PATH_V1,
@@ -50,6 +55,27 @@ function resourceBytes(relativePath: string): Uint8Array {
 
 function rawSha256Hex(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function materializePositiveVectorRequest(
+  request: ProviderFeasibilitySupportCatalogPointGoldenManifestV1[
+    "positiveVectors"
+  ][number]["request"],
+  strictCryptoCapability: ProviderStrictEd25519OpaqueCapabilityV1,
+): ValidateProviderFeasibilitySupportCatalogPointClosureV1Input {
+  const freshRequest = JSON.parse(JSON.stringify(request)) as Record<
+    string,
+    unknown
+  >;
+  Object.defineProperty(freshRequest, "strictCryptoCapability", {
+    value: strictCryptoCapability,
+    enumerable: true,
+    configurable: false,
+    writable: false,
+  });
+  Object.freeze(freshRequest);
+  return freshRequest as unknown as
+    ValidateProviderFeasibilitySupportCatalogPointClosureV1Input;
 }
 
 function expectRecursivelyFrozen(
@@ -281,62 +307,97 @@ describe("provider feasibility support Catalog point fixture resources", () => {
     );
   });
 
-  it("executes all four genuine positive vectors with exact 2/2/1 projections", async () => {
-    const beforePoint = pointAdmissionCount;
-    const beforeSignature = signatureVerificationCount;
-    const pending =
-      verifyProviderFeasibilitySupportCatalogPointPositiveVectorsV1(
-        goldenManifest,
-        capability,
-      );
-    expect(Object.isFrozen(pending)).toBe(true);
-    const execution = await pending;
-
-    expect(execution.vectors.map((vector) => vector.vectorId)).toEqual(
-      PROVIDER_FEASIBILITY_SUPPORT_CATALOG_POINT_POSITIVE_VECTOR_IDS_V1,
-    );
-    expect(execution.cryptoCounts).toEqual({
-      pointAdmissionCount: 124,
-      signatureVerificationCount: 256,
-    });
-    expect(pointAdmissionCount - beforePoint).toBe(124);
-    expect(signatureVerificationCount - beforeSignature).toBe(256);
-    for (let index = 0; index < execution.vectors.length; index += 1) {
-      const vector = execution.vectors[index]!;
-      expect(vector.cryptoCounts).toEqual({
+  it("locks the four-vector positive crypto aggregate without replaying crypto", () => {
+    let expectedPointAdmissionCount = 0;
+    let expectedSignatureVerificationCount = 0;
+    for (const vector of goldenManifest.positiveVectors) {
+      expect(vector.expected.cryptoCounts).toEqual({
         pointAdmissionCount: 31,
         signatureVerificationCount: 64,
       });
-      expect(vector.closure.targetCount).toBe(2);
-      expect(vector.closure.candidateCount).toBe(2);
-      expect(vector.closure.publicSupportRowCount).toBe(1);
-      expect(vector.closure.publicSupport).toHaveLength(1);
+      expectedPointAdmissionCount +=
+        vector.expected.cryptoCounts.pointAdmissionCount;
+      expectedSignatureVerificationCount +=
+        vector.expected.cryptoCounts.signatureVerificationCount;
+    }
+    expect({
+      pointAdmissionCount: expectedPointAdmissionCount,
+      signatureVerificationCount: expectedSignatureVerificationCount,
+    }).toEqual({
+      pointAdmissionCount: 124,
+      signatureVerificationCount: 256,
+    });
+  });
+
+  it.each(
+    PROVIDER_FEASIBILITY_SUPPORT_CATALOG_POINT_POSITIVE_VECTOR_IDS_V1.map(
+      (vectorId, index) => [vectorId, index] as const,
+    ),
+  )(
+    "executes genuine positive vector %s with an exact 2/2/1 projection",
+    async (vectorId, index) => {
+      const vector = goldenManifest.positiveVectors[index]!;
+      expect(vector.vectorId).toBe(vectorId);
+      const request = materializePositiveVectorRequest(
+        vector.request,
+        capability,
+      );
+      expect(request).not.toBe(vector.request);
+      expect(request.providerFeasibilitySupportCatalog).not.toBe(
+        vector.request.providerFeasibilitySupportCatalog,
+      );
+      expect(Reflect.ownKeys(request)).toHaveLength(18);
+      expect(Object.isFrozen(request)).toBe(true);
+
+      const beforePoint = pointAdmissionCount;
+      const beforeSignature = signatureVerificationCount;
+      const pending = validateProviderFeasibilitySupportCatalogPointClosureV1(
+        request,
+      );
+      expect(Object.isFrozen(pending)).toBe(true);
+      const closure = await pending;
+      const projection =
+        projectProviderFeasibilitySupportCatalogPointFixtureClosureV1(closure);
+
+      expect(vector.expected.cryptoCounts).toEqual({
+        pointAdmissionCount: 31,
+        signatureVerificationCount: 64,
+      });
+      expect(pointAdmissionCount - beforePoint).toBe(31);
+      expect(signatureVerificationCount - beforeSignature).toBe(64);
+      expect(closure.targetCount).toBe(2);
+      expect(closure.candidateCount).toBe(2);
+      expect(closure.publicSupportRowCount).toBe(1);
+      expect(closure.publicSupport).toHaveLength(1);
       expect(
-        vector.closure.releaseTargetUniversePointClosure.releaseTargetUniverse
-          .payload.targets,
+        closure.releaseTargetUniversePointClosure.releaseTargetUniverse.payload
+          .targets,
       ).toHaveLength(2);
       expect(
-        vector.closure.releaseTargetUniversePointClosure.releaseTargetUniverse
-          .payload.buckets,
+        closure.releaseTargetUniversePointClosure.releaseTargetUniverse.payload
+          .buckets,
       ).toHaveLength(1);
-      expect(vector.closure.publicSupport[0]!.capability).toBe(
+      expect(closure.authority).toBe(vector.expected.projection.authority);
+      expect(closure.relativePath).toBe(
+        vector.expected.projection.relativePath,
+      );
+      expect(closure.publicSupport[0]!.capability).toBe(
         index === 0
           ? "strong_read_write"
           : "legacy_redacted_read_only",
       );
       expect(
-        vector.closure.ownerTargetCapabilities.map(
-          (entry) => entry.capability,
-        ),
+        closure.ownerTargetCapabilities.map((entry) => entry.capability),
       ).toEqual(
         index === 0
           ? ["strong_read_write", "strong_read_write"]
           : ["strong_read_write", "legacy_redacted_read_only"],
       );
-      expectRecursivelyFrozen(vector.closure);
-    }
-    expectRecursivelyFrozen(execution);
-  });
+      expect(projection).toEqual(vector.expected.projection);
+      expectRecursivelyFrozen(closure);
+      expectRecursivelyFrozen(projection);
+    },
+  );
 
   it.each(invalidExpectations)(
     "executes fresh invalid case %s at exact %s/%s with actual crypto counts",

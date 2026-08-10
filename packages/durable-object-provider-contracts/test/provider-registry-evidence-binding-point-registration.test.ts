@@ -96,6 +96,7 @@ const realFilesystemSource = sourceTextV1(
 );
 const internalModuleNamesV1 = Object.freeze([
   "provider-feasibility-evidence-point-internal",
+  "provider-feasibility-evidence-point-prepared-internal",
   "provider-real-filesystem-conformance-result-internal",
   "provider-real-filesystem-source-internal",
   "provider-registry-history-prepared-handle-internal",
@@ -103,6 +104,7 @@ const internalModuleNamesV1 = Object.freeze([
   "provider-registry-evidence-binding-point-budget-test-seam-internal",
   "provider-registry-evidence-binding-point-budget-witness-internal",
   "provider-runtime-attestation-point-internal",
+  "provider-release-target-universe-point-prepared-internal",
   "provider-target-discovery-point-prepared-internal",
 ]);
 const packageManifest = JSON.parse(

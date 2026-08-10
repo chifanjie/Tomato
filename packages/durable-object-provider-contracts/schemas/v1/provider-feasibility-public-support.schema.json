@@ -1,0 +1,54 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-feasibility-public-support",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string",
+      "const": "provider_feasibility_public_support_v1"
+    },
+    "publicProfileId": {
+      "type": "string",
+      "pattern": "^provider-public-support-profile:[0-9a-f]{64}$"
+    },
+    "osPlatform": {
+      "type": "string",
+      "enum": [
+        "darwin",
+        "linux"
+      ]
+    },
+    "osReleaseFamilyCode": {
+      "type": "string",
+      "pattern": "^provider-os-family:[0-9a-f]{22}$"
+    },
+    "architecture": {
+      "type": "string",
+      "enum": [
+        "arm64",
+        "x86_64"
+      ]
+    },
+    "filesystemProfileCode": {
+      "type": "string",
+      "pattern": "^provider-fs-profile:[0-9a-f]{22}$"
+    },
+    "capability": {
+      "type": "string",
+      "enum": [
+        "strong_read_write",
+        "legacy_redacted_read_only"
+      ]
+    }
+  },
+  "required": [
+    "profile",
+    "publicProfileId",
+    "osPlatform",
+    "osReleaseFamilyCode",
+    "architecture",
+    "filesystemProfileCode",
+    "capability"
+  ],
+  "additionalProperties": false
+}

@@ -81,7 +81,26 @@ function finalizeResult(base) {
   return { envelope, locator, pin };
 }
 
-function baseResult(discoveryGolden, providerId) {
+function selectResultTarget(discovery, targetProfileId) {
+  if (targetProfileId === undefined) {
+    const first = discovery.payload.targets[0];
+    if (first === undefined) {
+      throw new TypeError("target discovery golden has no result target");
+    }
+    return first.target;
+  }
+  const matches = discovery.payload.targets.filter(
+    (entry) => entry.target.targetProfileId === targetProfileId,
+  );
+  if (matches.length !== 1) {
+    throw new TypeError(
+      `target discovery golden must contain exactly one target ${targetProfileId}`,
+    );
+  }
+  return matches[0].target;
+}
+
+function baseResult(discoveryGolden, providerId, targetProfileId) {
   const suite = discoveryGolden.suiteManifest;
   const discovery = discoveryGolden.targetDiscoveryResult;
   const caseResults = suite.payload.cases.flatMap((suiteCase) =>
@@ -98,7 +117,7 @@ function baseResult(discoveryGolden, providerId) {
     semanticProviderPolicyDigest: digest("a"),
     implementationDigest: digest("b"),
     binaryAttestationDigest: digest("c"),
-    target: jsonClone(discovery.payload.targets[0].target),
+    target: jsonClone(selectResultTarget(discovery, targetProfileId)),
     targetDiscoveryResult: {
       locatorProfile: "distribution_provider_target_discovery_result_v1",
       discoveryGeneration: discovery.payload.discoveryGeneration,
@@ -129,7 +148,9 @@ export function buildGoldenRealFilesystemConformanceResultFixture(
 ) {
   const providerId =
     options.providerId ?? "durable-object-provider:local-helper";
-  const finalized = finalizeResult(baseResult(discoveryGolden, providerId));
+  const finalized = finalizeResult(
+    baseResult(discoveryGolden, providerId, options.targetProfileId),
+  );
   const resultIdPreimage = [
     "provider-real-fs-conformance-result-id-v1",
     idFields(finalized.envelope.payload),

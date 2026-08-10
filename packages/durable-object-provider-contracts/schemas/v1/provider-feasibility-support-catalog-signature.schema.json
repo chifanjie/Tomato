@@ -1,0 +1,6 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-feasibility-support-catalog-signature",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "pattern": "^provider-support-catalog-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+}

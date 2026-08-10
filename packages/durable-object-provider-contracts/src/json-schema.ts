@@ -170,6 +170,25 @@ import {
   ProviderFeasibilityEvidencePointInvalidManifestV1Schema,
 } from "./provider-feasibility-evidence-point-fixtures.js";
 import {
+  ProviderFeasibilityPublicSupportV1Schema,
+  ProviderFeasibilityReleaseDispositionV1Schema,
+  ProviderFeasibilitySupportCandidateArtifactV1Schema,
+  ProviderFeasibilitySupportCandidateV1Schema,
+  ProviderFeasibilitySupportCatalogEnvelopeV1Schema,
+  ProviderFeasibilitySupportCatalogPinV1Schema,
+  ProviderFeasibilitySupportCatalogPointInvalidReasonV1Schema,
+  ProviderFeasibilitySupportCatalogPointInvalidStageV1Schema,
+  ProviderFeasibilitySupportCatalogSignatureV1Schema,
+  ProviderFeasibilitySupportCatalogSignatureWrapperV1Schema,
+  ProviderFeasibilitySupportCatalogUnsignedClaimsV1Schema,
+  ProviderFeasibilitySupportCatalogV1Schema,
+  ProviderFeasibilitySupportTargetEntryV1Schema,
+} from "./provider-feasibility-support-catalog-point.js";
+import {
+  ProviderFeasibilitySupportCatalogPointGoldenManifestV1Schema,
+  ProviderFeasibilitySupportCatalogPointInvalidManifestV1Schema,
+} from "./provider-feasibility-support-catalog-point-fixtures.js";
+import {
   ProviderRegistryEvidenceBindingPointInvalidReasonV1Schema,
   ProviderRegistryEvidenceBindingPointInvalidStageV1Schema,
 } from "./provider-registry-evidence-binding-point.js";
@@ -530,6 +549,36 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 =
     ProviderFeasibilityEvidencePointGoldenManifestV1Schema,
   "provider-feasibility-evidence-point-invalid-manifest":
     ProviderFeasibilityEvidencePointInvalidManifestV1Schema,
+  "provider-feasibility-release-disposition":
+    ProviderFeasibilityReleaseDispositionV1Schema,
+  "provider-feasibility-support-catalog-signature":
+    ProviderFeasibilitySupportCatalogSignatureV1Schema,
+  "provider-feasibility-support-candidate":
+    ProviderFeasibilitySupportCandidateV1Schema,
+  "provider-feasibility-support-target-entry":
+    ProviderFeasibilitySupportTargetEntryV1Schema,
+  "provider-feasibility-support-catalog-unsigned-claims":
+    ProviderFeasibilitySupportCatalogUnsignedClaimsV1Schema,
+  "provider-feasibility-support-catalog":
+    ProviderFeasibilitySupportCatalogV1Schema,
+  "provider-feasibility-support-catalog-envelope":
+    ProviderFeasibilitySupportCatalogEnvelopeV1Schema,
+  "provider-feasibility-support-catalog-pin":
+    ProviderFeasibilitySupportCatalogPinV1Schema,
+  "provider-feasibility-public-support":
+    ProviderFeasibilityPublicSupportV1Schema,
+  "provider-feasibility-support-catalog-signature-wrapper":
+    ProviderFeasibilitySupportCatalogSignatureWrapperV1Schema,
+  "provider-feasibility-support-candidate-artifact":
+    ProviderFeasibilitySupportCandidateArtifactV1Schema,
+  "provider-feasibility-support-catalog-point-invalid-stage":
+    ProviderFeasibilitySupportCatalogPointInvalidStageV1Schema,
+  "provider-feasibility-support-catalog-point-invalid-reason":
+    ProviderFeasibilitySupportCatalogPointInvalidReasonV1Schema,
+  "provider-feasibility-support-catalog-point-golden-manifest":
+    ProviderFeasibilitySupportCatalogPointGoldenManifestV1Schema,
+  "provider-feasibility-support-catalog-point-invalid-manifest":
+    ProviderFeasibilitySupportCatalogPointInvalidManifestV1Schema,
   "provider-registry-evidence-binding-point-invalid-stage":
     ProviderRegistryEvidenceBindingPointInvalidStageV1Schema,
   "provider-registry-evidence-binding-point-invalid-reason":
@@ -918,7 +967,8 @@ function schemaDocument(
     // per-position literal without changing other schema bytes.
     reused:
       name === "provider-registry-evidence-binding-point-invalid-manifest" ||
-      name === "provider-release-target-universe-point-invalid-manifest"
+      name === "provider-release-target-universe-point-invalid-manifest" ||
+      name === "provider-feasibility-support-catalog-point-invalid-manifest"
         ? "ref"
         : "inline",
   }) as unknown as Record<string, unknown>;

@@ -19,6 +19,11 @@ import {
   type StoreFilenameKeyV1,
 } from "./provider-fixed-locator.js";
 import {
+  createProviderNonThenableFrozenRecordV1,
+  createProviderPointFulfilledPromiseV1,
+  hardenProviderPointPromiseV1,
+} from "./provider-point-runtime-internal.js";
+import {
   ProviderRealFilesystemConformanceResultEnvelopeV1Schema,
   ProviderRealFilesystemConformanceResultPinV1Schema,
 } from "./provider-real-filesystem-conformance-result.js";
@@ -38,14 +43,26 @@ import {
 } from "./provider-registry-trust.js";
 import {
   diagnoseProviderRuntimeAttestationPointClosureV1,
+  type ProviderRuntimeAttestationPointClosureDiagnosticResultV1,
   type ProviderRuntimeAttestationPointClosureValidationV1,
   type ValidateProviderRuntimeAttestationPointClosureV1Input,
 } from "./provider-runtime-attestation-point.js";
+import {
+  diagnoseProviderRuntimeAttestationPointPreparedInternalV1,
+} from "./provider-runtime-attestation-point-internal.js";
+import {
+  registerProviderFeasibilityEvidencePointPreparedCoreInternalV1,
+  registerProviderFeasibilityEvidencePointRegistryTrustedPreparedCoreInternalV1,
+} from "./provider-feasibility-evidence-point-prepared-internal.js";
 import { sha256InternalV1 } from "./sha256.js";
 import {
   ProviderFeasibilityTargetV1Schema,
 } from "./provider-target-discovery-point.js";
 import {
+  assertProviderStrictEd25519CryptoCapabilityIdentityV1,
+} from "./strict-ed25519-capability-internal.js";
+import {
+  ProviderStrictEd25519AttestationError,
   validateProviderStrictEd25519PointWithCapabilityV1,
   verifyRawEd25519WithCapabilityV1,
   type ProviderStrictEd25519OpaqueCapabilityV1,
@@ -57,9 +74,22 @@ const CapturedObjectFreezeV1 = Object.freeze;
 const CapturedObjectGetOwnPropertyDescriptorsV1 =
   Object.getOwnPropertyDescriptors;
 const CapturedObjectKeysV1 = Object.keys;
+const CapturedObjectIsFrozenV1 = Object.isFrozen;
 const CapturedObjectValuesV1 = Object.values;
 const CapturedReflectApplyV1 = Reflect.apply;
 const CapturedRegExpPrototypeExecV1 = RegExp.prototype.exec;
+const CapturedSymbolV1 = Symbol;
+const CapturedTypeErrorV1 = TypeError;
+
+const VERIFY_APPROVER_RECORD_ROOT_SIGNATURES_V1 = CapturedSymbolV1(
+  "verify provider feasibility approver record root signatures",
+);
+const REGISTRY_TRUSTED_APPROVER_RECORDS_V1 = CapturedSymbolV1(
+  "Registry-trusted provider feasibility approver records",
+);
+type ApproverRecordTrustV1 =
+  | typeof VERIFY_APPROVER_RECORD_ROOT_SIGNATURES_V1
+  | typeof REGISTRY_TRUSTED_APPROVER_RECORDS_V1;
 
 function arraySomeV1<T>(
   array: readonly T[],
@@ -633,6 +663,67 @@ function snapshotEvidencePointInputV1(
   }
 }
 
+function assertRecursivelyFrozenEvidenceJsonV1(value: unknown): void {
+  if (value === null || typeof value !== "object") return;
+  if (!CapturedObjectIsFrozenV1(value)) {
+    throw new CapturedTypeErrorV1(
+      "prepared Evidence JSON must already be frozen",
+    );
+  }
+  for (const child of objectValuesV1(value)) {
+    assertRecursivelyFrozenEvidenceJsonV1(child);
+  }
+}
+
+function snapshotPreparedEvidencePointInputV1(
+  input: unknown,
+): SnapshotEvidencePointInputV1 {
+  try {
+    assertDataObjectDescriptorsBeforeSchemaV1(input);
+    if (!CapturedObjectIsFrozenV1(input as object)) {
+      return fail("input", "schema_invalid");
+    }
+    const descriptors = objectGetOwnPropertyDescriptorsV1(input as object);
+    const keys = arraySortV1(objectKeysV1(descriptors));
+    if (
+      keys.length !== EVIDENCE_POINT_INPUT_KEYS.length ||
+      arraySomeV1(
+        keys,
+        (key, index) => key !== EVIDENCE_POINT_INPUT_KEYS[index],
+      )
+    ) {
+      return fail("input", "schema_invalid");
+    }
+
+    const captured = {} as SnapshotEvidencePointInputV1;
+    for (const key of EVIDENCE_POINT_INPUT_KEYS) {
+      const descriptor = descriptors[key];
+      if (
+        descriptor === undefined ||
+        !("value" in descriptor) ||
+        descriptor.enumerable !== true
+      ) {
+        return fail("input", "schema_invalid");
+      }
+      captured[key] = descriptor.value;
+    }
+    assertProviderStrictEd25519CryptoCapabilityIdentityV1(
+      ProviderStrictEd25519AttestationError,
+      captured.strictCryptoCapability,
+    );
+    const { strictCryptoCapability: _strictCryptoCapability, ...jsonArtifacts } =
+      captured;
+    assertJsonDataTreeBeforeSchemaV1(jsonArtifacts);
+    for (const value of objectValuesV1(jsonArtifacts)) {
+      assertRecursivelyFrozenEvidenceJsonV1(value);
+    }
+    return captured;
+  } catch (error) {
+    if (error instanceof EvidencePointDiagnosticSignal) throw error;
+    return fail("input", "schema_invalid");
+  }
+}
+
 const REGISTRY_SIGNATURE_PATTERN_V1 =
   /^provider-registry-ed25519:([0-9a-f]{22}):([0-9a-f]{128})$/u;
 const QA_SIGNATURE_PATTERN_V1 =
@@ -835,36 +926,50 @@ async function verifyEvidenceSignatureV1(
   }
 }
 
-async function validateEvidencePointClosureInternalV1(
-  input: unknown,
+type DiagnoseRuntimePointV1 = (
+  input: ValidateProviderRuntimeAttestationPointClosureV1Input,
+) => Promise<ProviderRuntimeAttestationPointClosureDiagnosticResultV1>;
+
+function createPreparedRuntimePointInputV1(
+  snapshot: SnapshotEvidencePointInputV1,
+  capability: ProviderStrictEd25519OpaqueCapabilityV1,
+): ValidateProviderRuntimeAttestationPointClosureV1Input {
+  return createProviderNonThenableFrozenRecordV1({
+    activeRoot: snapshot.activeRoot,
+    activeRootMetadata: snapshot.activeRootMetadata,
+    distributionRootBinding: snapshot.distributionRootBinding,
+    fixtureCorpusManifest: snapshot.fixtureCorpusManifest,
+    publicSupportTaxonomy: snapshot.publicSupportTaxonomy,
+    realFilesystemConformanceResult:
+      snapshot.realFilesystemConformanceResult,
+    realFilesystemConformanceResultLocator:
+      snapshot.realFilesystemConformanceResultLocator,
+    realFilesystemConformanceResultPin:
+      snapshot.realFilesystemConformanceResultPin,
+    releaseMatrix: snapshot.releaseMatrix,
+    runtimeAttestation: snapshot.runtimeAttestation,
+    semanticProviderPolicy: snapshot.semanticProviderPolicy,
+    strictCryptoCapability: capability,
+    suiteManifest: snapshot.suiteManifest,
+    targetDiscoveryFixtureManifest:
+      snapshot.targetDiscoveryFixtureManifest,
+    targetDiscoveryResult: snapshot.targetDiscoveryResult,
+    targetDiscoveryRunnerRun: snapshot.targetDiscoveryRunnerRun,
+  }) as unknown as ValidateProviderRuntimeAttestationPointClosureV1Input;
+}
+
+async function validateEvidencePointClosureFromSnapshotInternalV1(
+  snapshot: SnapshotEvidencePointInputV1,
+  diagnoseRuntimePoint: DiagnoseRuntimePointV1,
+  approverRecordTrust: ApproverRecordTrustV1,
 ): Promise<ProviderFeasibilityEvidencePointClosureValidationV1> {
-  const snapshot = snapshotEvidencePointInputV1(input);
   const capability =
     snapshot.strictCryptoCapability as ProviderStrictEd25519OpaqueCapabilityV1;
 
   const runtimeDiagnostic =
-    await diagnoseProviderRuntimeAttestationPointClosureV1({
-      activeRoot: snapshot.activeRoot,
-      activeRootMetadata: snapshot.activeRootMetadata,
-      distributionRootBinding: snapshot.distributionRootBinding,
-      fixtureCorpusManifest: snapshot.fixtureCorpusManifest,
-      publicSupportTaxonomy: snapshot.publicSupportTaxonomy,
-      realFilesystemConformanceResult:
-        snapshot.realFilesystemConformanceResult,
-      realFilesystemConformanceResultLocator:
-        snapshot.realFilesystemConformanceResultLocator,
-      realFilesystemConformanceResultPin:
-        snapshot.realFilesystemConformanceResultPin,
-      releaseMatrix: snapshot.releaseMatrix,
-      runtimeAttestation: snapshot.runtimeAttestation,
-      semanticProviderPolicy: snapshot.semanticProviderPolicy,
-      strictCryptoCapability: capability,
-      suiteManifest: snapshot.suiteManifest,
-      targetDiscoveryFixtureManifest:
-        snapshot.targetDiscoveryFixtureManifest,
-      targetDiscoveryResult: snapshot.targetDiscoveryResult,
-      targetDiscoveryRunnerRun: snapshot.targetDiscoveryRunnerRun,
-    });
+    await diagnoseRuntimePoint(
+      createPreparedRuntimePointInputV1(snapshot, capability),
+    );
   if (!runtimeDiagnostic.ok) {
     return fail("runtime_attestation_closure", "source_invalid");
   }
@@ -932,22 +1037,28 @@ async function validateEvidencePointClosureInternalV1(
     return fail("approver_key_separation", "binding_mismatch");
   }
 
-  validateApproverRootV1(qaApproverPublicKey, "qa", activeRoot);
-  validateApproverRootV1(releaseApproverPublicKey, "release", activeRoot);
+  if (approverRecordTrust === VERIFY_APPROVER_RECORD_ROOT_SIGNATURES_V1) {
+    validateApproverRootV1(qaApproverPublicKey, "qa", activeRoot);
+    validateApproverRootV1(releaseApproverPublicKey, "release", activeRoot);
+  } else if (approverRecordTrust !== REGISTRY_TRUSTED_APPROVER_RECORDS_V1) {
+    return fail("input", "schema_invalid");
+  }
   await admitApproverKeyV1(qaApproverPublicKey, "qa", capability);
   await admitApproverKeyV1(releaseApproverPublicKey, "release", capability);
-  await verifyApproverRecordSignatureV1(
-    qaApproverPublicKey,
-    "qa",
-    activeRoot,
-    capability,
-  );
-  await verifyApproverRecordSignatureV1(
-    releaseApproverPublicKey,
-    "release",
-    activeRoot,
-    capability,
-  );
+  if (approverRecordTrust === VERIFY_APPROVER_RECORD_ROOT_SIGNATURES_V1) {
+    await verifyApproverRecordSignatureV1(
+      qaApproverPublicKey,
+      "qa",
+      activeRoot,
+      capability,
+    );
+    await verifyApproverRecordSignatureV1(
+      releaseApproverPublicKey,
+      "release",
+      activeRoot,
+      capability,
+    );
+  }
 
   const evidence = evidenceEnvelope.payload;
   const result = resultEnvelope.payload;
@@ -1061,7 +1172,7 @@ async function validateEvidencePointClosureInternalV1(
   const relativePath = buildProviderFeasibilityEvidenceRelativePathV1(
     evidencePin,
   );
-  return deepFreezeV1({
+  const closureFields = deepFreezeV1({
     authority: "none_provider_feasibility_evidence_structure_only" as const,
     runtimeAttestationPointClosure,
     providerFeasibilityEvidence: evidenceEnvelope,
@@ -1070,6 +1181,84 @@ async function validateEvidencePointClosureInternalV1(
     qaApproverPublicKey,
     releaseApproverPublicKey,
   });
+  return createProviderNonThenableFrozenRecordV1(closureFields);
+}
+
+async function validateEvidencePointClosureInternalV1(
+  input: unknown,
+): Promise<ProviderFeasibilityEvidencePointClosureValidationV1> {
+  return validateEvidencePointClosureFromSnapshotInternalV1(
+    snapshotEvidencePointInputV1(input),
+    diagnoseProviderRuntimeAttestationPointClosureV1,
+    VERIFY_APPROVER_RECORD_ROOT_SIGNATURES_V1,
+  );
+}
+
+function createEvidencePointDiagnosticFailureV1(
+  stage: ProviderFeasibilityEvidencePointInvalidStageV1,
+  reason: ProviderFeasibilityEvidencePointInvalidReasonV1,
+): EvidencePointDiagnosticFailureV1 {
+  return createProviderNonThenableFrozenRecordV1({
+    ok: false as const,
+    stage,
+    reason,
+  });
+}
+
+function createEvidencePointDiagnosticFailureFromErrorV1(
+  error: unknown,
+): EvidencePointDiagnosticFailureV1 {
+  if (error instanceof EvidencePointDiagnosticSignal) {
+    return createEvidencePointDiagnosticFailureV1(error.stage, error.reason);
+  }
+  return createEvidencePointDiagnosticFailureV1("input", "schema_invalid");
+}
+
+function diagnosePreparedEvidencePointCoreWithApproverTrustV1(
+  input: ValidateProviderFeasibilityEvidencePointClosureV1Input,
+  approverRecordTrust: ApproverRecordTrustV1,
+): Promise<ProviderFeasibilityEvidencePointClosureDiagnosticResultV1> {
+  let snapshot: SnapshotEvidencePointInputV1;
+  try {
+    snapshot = snapshotPreparedEvidencePointInputV1(input);
+  } catch (error) {
+    return createProviderPointFulfilledPromiseV1(
+      createEvidencePointDiagnosticFailureFromErrorV1(error),
+    );
+  }
+  const operation = hardenProviderPointPromiseV1(
+    validateEvidencePointClosureFromSnapshotInternalV1(
+      snapshot,
+      diagnoseProviderRuntimeAttestationPointPreparedInternalV1,
+      approverRecordTrust,
+    ),
+  );
+  return operation.then(
+    (value): EvidencePointDiagnosticSuccessV1 =>
+      createProviderNonThenableFrozenRecordV1({
+        ok: true as const,
+        value,
+      }),
+    createEvidencePointDiagnosticFailureFromErrorV1,
+  );
+}
+
+function diagnosePreparedEvidencePointCoreV1(
+  input: ValidateProviderFeasibilityEvidencePointClosureV1Input,
+): Promise<ProviderFeasibilityEvidencePointClosureDiagnosticResultV1> {
+  return diagnosePreparedEvidencePointCoreWithApproverTrustV1(
+    input,
+    VERIFY_APPROVER_RECORD_ROOT_SIGNATURES_V1,
+  );
+}
+
+function diagnoseRegistryTrustedPreparedEvidencePointCoreV1(
+  input: ValidateProviderFeasibilityEvidencePointClosureV1Input,
+): Promise<ProviderFeasibilityEvidencePointClosureDiagnosticResultV1> {
+  return diagnosePreparedEvidencePointCoreWithApproverTrustV1(
+    input,
+    REGISTRY_TRUSTED_APPROVER_RECORDS_V1,
+  );
 }
 
 export async function diagnoseProviderFeasibilityEvidencePointClosureV1(
@@ -1098,3 +1287,10 @@ export async function validateProviderFeasibilityEvidencePointClosureV1(
   }
   return diagnostic.value;
 }
+
+registerProviderFeasibilityEvidencePointPreparedCoreInternalV1(
+  diagnosePreparedEvidencePointCoreV1,
+);
+registerProviderFeasibilityEvidencePointRegistryTrustedPreparedCoreInternalV1(
+  diagnoseRegistryTrustedPreparedEvidencePointCoreV1,
+);

@@ -211,26 +211,30 @@ export function buildGoldenTargetDiscoveryPointFixture(sourceGolden, options = {
     contentDigest: publicSupportTaxonomy.contentDigest,
   };
 
-  const targets = [
-    target({
-      osPlatform: "darwin",
-      osReleaseFamilyCode: darwinOs.osReleaseFamilyCode,
-      osBuildDigest: digest("1"),
-      architecture: "arm64",
-      filesystemProfileCode: apfs.filesystemProfileCode,
-      filesystemFeatureProfileDigest: digest("2"),
-      mountOptionProfileDigest: digest("3"),
-    }),
-    target({
-      osPlatform: "linux",
-      osReleaseFamilyCode: linuxOs.osReleaseFamilyCode,
-      osBuildDigest: digest("4"),
-      architecture: "x86_64",
-      filesystemProfileCode: ext4.filesystemProfileCode,
-      filesystemFeatureProfileDigest: digest("5"),
-      mountOptionProfileDigest: digest("6"),
-    }),
-  ].sort((left, right) => compareUtf8(left.target.targetProfileId, right.target.targetProfileId));
+  const targets = jsonClone(
+    options.targets ?? [
+      target({
+        osPlatform: "darwin",
+        osReleaseFamilyCode: darwinOs.osReleaseFamilyCode,
+        osBuildDigest: digest("1"),
+        architecture: "arm64",
+        filesystemProfileCode: apfs.filesystemProfileCode,
+        filesystemFeatureProfileDigest: digest("2"),
+        mountOptionProfileDigest: digest("3"),
+      }),
+      target({
+        osPlatform: "linux",
+        osReleaseFamilyCode: linuxOs.osReleaseFamilyCode,
+        osBuildDigest: digest("4"),
+        architecture: "x86_64",
+        filesystemProfileCode: ext4.filesystemProfileCode,
+        filesystemFeatureProfileDigest: digest("5"),
+        mountOptionProfileDigest: digest("6"),
+      }),
+    ],
+  ).sort((left, right) =>
+    compareUtf8(left.target.targetProfileId, right.target.targetProfileId),
+  );
   const limits = {
     profile: "provider_release_coverage_artifact_limits_v1",
     maxTargetEntriesPerArtifact: 4096,

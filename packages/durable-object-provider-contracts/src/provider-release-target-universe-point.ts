@@ -61,6 +61,9 @@ import {
   takeProviderTargetDiscoveryPointClosureSnapshotV1,
   type ProviderTargetDiscoveryPointSnapshotV1,
 } from "./provider-target-discovery-point-internal.js";
+import {
+  registerProviderReleaseTargetUniversePointPreparedCoreInternalV1,
+} from "./provider-release-target-universe-point-prepared-internal.js";
 import { sha256InternalV1 } from "./sha256.js";
 import {
   assertProviderStrictEd25519CryptoCapabilityIdentityV1,
@@ -391,6 +394,7 @@ function resolveProviderReleaseTargetUniverseRelativePathFromVerifiedPinV1(
 const CapturedObjectFreezeV1 = Object.freeze;
 const CapturedObjectGetOwnPropertyDescriptorV1 =
   Object.getOwnPropertyDescriptor;
+const CapturedObjectIsFrozenV1 = Object.isFrozen;
 const CapturedObjectPrototypeHasOwnPropertyV1 =
   Object.prototype.hasOwnProperty;
 const CapturedReflectApplyV1 = Reflect.apply;
@@ -1387,6 +1391,69 @@ function freezeDetachedPointInputV1(
   });
 }
 
+function assertRecursivelyFrozenDetachedUniverseJsonV1(value: unknown): void {
+  if (value === null || typeof value !== "object") return;
+  if (!CapturedObjectIsFrozenV1(value)) {
+    throw new CapturedTypeErrorV1(
+      "prepared release target Universe JSON must already be frozen",
+    );
+  }
+  const keys = CapturedReflectOwnKeysV1(value);
+  for (let index = 0; index < keys.length; index += 1) {
+    const descriptor = CapturedObjectGetOwnPropertyDescriptorV1(
+      value,
+      keys[index]!,
+    );
+    if (descriptor === undefined || !hasOwnV1(descriptor, "value")) {
+      throw new CapturedTypeErrorV1(
+        "prepared release target Universe JSON must use data properties",
+      );
+    }
+    assertRecursivelyFrozenDetachedUniverseJsonV1(descriptor.value);
+  }
+}
+
+function prepareProviderReleaseTargetUniversePointFromDetachedInputV1(
+  input: ValidateProviderReleaseTargetUniversePointClosureV1Input,
+): PreparedProviderReleaseTargetUniversePointInputV1 {
+  if (!CapturedObjectIsFrozenV1(input)) {
+    throw new CapturedTypeErrorV1(
+      "prepared release target Universe input must already be frozen",
+    );
+  }
+  const admission = createProviderPointRawAdmissionSessionV1(input);
+  const captured = captureProviderPointRawExactTopLevelV1(
+    admission,
+    POINT_INPUT_KEYS_V1,
+  );
+  preflightRawUniverseFromPointFieldV1(
+    admission,
+    captured.releaseTargetUniverse,
+  );
+  const strictCryptoCapability = captured.strictCryptoCapability;
+  assertProviderStrictEd25519CryptoCapabilityIdentityV1(
+    ProviderStrictEd25519AttestationError,
+    strictCryptoCapability,
+  );
+  walkInheritedRawPointFieldsV1(admission, captured);
+  for (
+    let index = 0;
+    index < POINT_INHERITED_JSON_KEYS_V1.length;
+    index += 1
+  ) {
+    assertRecursivelyFrozenDetachedUniverseJsonV1(
+      captured[POINT_INHERITED_JSON_KEYS_V1[index]!],
+    );
+  }
+  assertRecursivelyFrozenDetachedUniverseJsonV1(
+    captured.releaseTargetUniverse,
+  );
+  return freezeDetachedPointInputV1(
+    input,
+    strictCryptoCapability as ProviderStrictEd25519OpaqueCapabilityV1,
+  );
+}
+
 function prepareProviderReleaseTargetUniversePointFromRawInputV1(
   input: unknown,
 ): PreparedProviderReleaseTargetUniversePointInputV1 {
@@ -2132,6 +2199,31 @@ export function validateProviderReleaseTargetUniversePointClosureV1(
   );
 }
 
+function diagnosePreparedReleaseTargetUniversePointCoreV1(
+  input: ValidateProviderReleaseTargetUniversePointClosureV1Input,
+): Promise<ProviderReleaseTargetUniversePointClosureDiagnosticResultV1> {
+  let prepared: PreparedProviderReleaseTargetUniversePointInputV1;
+  try {
+    prepared =
+      prepareProviderReleaseTargetUniversePointFromDetachedInputV1(input);
+  } catch {
+    return createProviderPointFulfilledPromiseV1(
+      createUniversePointDiagnosticFailureV1("input", "schema_invalid"),
+    );
+  }
+  const corePromise = hardenProviderPointPromiseV1(
+    validateUniversePointClosureInternalV1(prepared),
+  );
+  return corePromise.then(
+    (value): ProviderReleaseTargetUniversePointDiagnosticSuccessV1 =>
+      createProviderNonThenableFrozenRecordV1({
+        ok: true as const,
+        value,
+      }),
+    createUniversePointDiagnosticFailureFromErrorV1,
+  );
+}
+
 function prepareDetachedUniverseEnvelopeForBuilderV1(
   detachedInput: unknown,
 ): ProviderReleaseTargetUniverseEnvelopeV1 {
@@ -2187,3 +2279,6 @@ CapturedObjectFreezeV1(
   validateProviderReleaseTargetUniversePointClosureV1,
 );
 CapturedObjectFreezeV1(buildProviderReleaseTargetUniverseRelativePathV1);
+registerProviderReleaseTargetUniversePointPreparedCoreInternalV1(
+  diagnosePreparedReleaseTargetUniversePointCoreV1,
+);

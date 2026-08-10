@@ -1,0 +1,347 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-feasibility-support-candidate",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "providerId": {
+      "type": "string",
+      "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+    },
+    "providerFeasibilityEvidence": {
+      "type": "object",
+      "properties": {
+        "locatorProfile": {
+          "type": "string",
+          "const": "installation_provider_feasibility_evidence_v1"
+        },
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^provider-feasibility-evidence:[0-9a-f]{22}$"
+        },
+        "contentDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "locatorProfile",
+        "evidenceId",
+        "contentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "semanticProviderPolicy": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "store_durable_object_provider_policy_v1"
+        },
+        "protocolVersion": {
+          "type": "number",
+          "const": 1
+        },
+        "providerId": {
+          "type": "string",
+          "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+        },
+        "ipcPeerAuthenticationPolicyDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "isolation": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "separate_os_principal"
+                },
+                "securityBoundaryProfileDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "kind",
+                "securityBoundaryProfileDigest"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "kernel_isolated_storage_domain"
+                },
+                "securityBoundaryProfileDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "kind",
+                "securityBoundaryProfileDigest"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "sourceNamespaceVisibility": {
+          "type": "string",
+          "const": "inaccessible_to_workspace_writer"
+        },
+        "supportedStagingObjectKinds": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "string",
+              "const": "regular"
+            },
+            {
+              "type": "string",
+              "const": "directory"
+            }
+          ],
+          "minItems": 2,
+          "maxItems": 2,
+          "items": false
+        },
+        "stagingRecovery": {
+          "type": "string",
+          "const": "opaque_locator_idempotent_allocate_or_reopen_exact_unpublished_object_across_restart"
+        },
+        "durableIdentity": {
+          "type": "string",
+          "const": "same_object_stable_aba_recreate_distinct_across_restart"
+        },
+        "publishSemantics": {
+          "type": "string",
+          "const": "exact_opened_object_no_replace_with_atomic_bound_root_containment"
+        },
+        "externalIntentStateSemantics": {
+          "type": "string",
+          "const": "atomic_monotonic_compare_replace_with_restart_receipt_and_handoff_cut"
+        },
+        "handoffJournalSemantics": {
+          "type": "string",
+          "const": "immutable_no_replace_compare_tip_complete_enumeration_prospective_sealed_version_atomic_seal"
+        },
+        "storeManifestCompareAppendReceiptLedger": {
+          "type": "object",
+          "properties": {
+            "profile": {
+              "type": "string",
+              "const": "store_manifest_compare_append_receipt_ledger_policy_v1"
+            },
+            "locatorProfile": {
+              "type": "string",
+              "const": "store_manifest_compare_append_receipt_v1"
+            },
+            "storageBoundary": {
+              "type": "string",
+              "const": "provider_isolated_non_store_namespace"
+            },
+            "appendSemantics": {
+              "type": "string",
+              "const": "immutable_no_replace_by_repository_worktree_operation_nonce"
+            },
+            "maxReceiptCountPerRepositoryWorktree": {
+              "type": "number",
+              "const": 16384
+            },
+            "maxReceiptLogicalBytesPerRepositoryWorktree": {
+              "type": "number",
+              "const": 67108864
+            },
+            "maxSingleReceiptLogicalBytes": {
+              "type": "number",
+              "const": 1048576
+            },
+            "admission": {
+              "type": "string",
+              "const": "freeze_resolved_at_and_complete_signed_receipt_then_reserve_exact_count_and_canonical_bytes_before_atomic_namespace_commit"
+            },
+            "quotaAccounting": {
+              "type": "string",
+              "const": "excluded_from_private_store_quota_root"
+            }
+          },
+          "required": [
+            "profile",
+            "locatorProfile",
+            "storageBoundary",
+            "appendSemantics",
+            "maxReceiptCountPerRepositoryWorktree",
+            "maxReceiptLogicalBytesPerRepositoryWorktree",
+            "maxSingleReceiptLogicalBytes",
+            "admission",
+            "quotaAccounting"
+          ],
+          "additionalProperties": false
+        },
+        "deleteSemantics": {
+          "type": "string",
+          "enum": [
+            "exact_opened_object_atomic_compare_delete_with_containment",
+            "disabled"
+          ]
+        },
+        "stockSameUidFilesystemFallback": {
+          "type": "string",
+          "const": "forbidden"
+        },
+        "realFilesystemConformanceSuiteDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "profile",
+        "protocolVersion",
+        "providerId",
+        "ipcPeerAuthenticationPolicyDigest",
+        "isolation",
+        "sourceNamespaceVisibility",
+        "supportedStagingObjectKinds",
+        "stagingRecovery",
+        "durableIdentity",
+        "publishSemantics",
+        "externalIntentStateSemantics",
+        "handoffJournalSemantics",
+        "storeManifestCompareAppendReceiptLedger",
+        "deleteSemantics",
+        "stockSameUidFilesystemFallback",
+        "realFilesystemConformanceSuiteDigest"
+      ],
+      "additionalProperties": false
+    },
+    "runtimeAttestation": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "store_durable_object_provider_runtime_attestation_pin_v1"
+        },
+        "contentDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "profile": {
+              "type": "string",
+              "const": "store_durable_object_provider_runtime_attestation_v1"
+            },
+            "providerId": {
+              "type": "string",
+              "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+            },
+            "semanticProviderPolicyDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "implementationDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "binaryAttestationDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "ipcEndpointAttestationDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "osPlatform": {
+              "type": "string",
+              "enum": [
+                "darwin",
+                "linux",
+                "win32"
+              ]
+            },
+            "osReleaseFamilyCode": {
+              "type": "string",
+              "pattern": "^provider-os-family:[0-9a-f]{22}$"
+            },
+            "osBuildDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "architecture": {
+              "type": "string",
+              "enum": [
+                "arm64",
+                "x86_64"
+              ]
+            },
+            "filesystemProfileDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "realFilesystemConformanceResultDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "attestationGeneration": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "issuedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+            },
+            "registrySignature": {
+              "type": "string",
+              "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+            }
+          },
+          "required": [
+            "profile",
+            "providerId",
+            "semanticProviderPolicyDigest",
+            "implementationDigest",
+            "binaryAttestationDigest",
+            "ipcEndpointAttestationDigest",
+            "osPlatform",
+            "osReleaseFamilyCode",
+            "osBuildDigest",
+            "architecture",
+            "filesystemProfileDigest",
+            "realFilesystemConformanceResultDigest",
+            "attestationGeneration",
+            "issuedAt",
+            "registrySignature"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "profile",
+        "contentDigest",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "releaseDisposition": {
+      "type": "string",
+      "enum": [
+        "strong_read_write",
+        "legacy_redacted_read_only"
+      ]
+    }
+  },
+  "required": [
+    "providerId",
+    "providerFeasibilityEvidence",
+    "semanticProviderPolicy",
+    "runtimeAttestation",
+    "releaseDisposition"
+  ],
+  "additionalProperties": false
+}

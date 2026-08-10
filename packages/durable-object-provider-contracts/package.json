@@ -95,6 +95,16 @@
       "import": "./dist/provider-feasibility-evidence-point-fixtures.js",
       "default": "./dist/provider-feasibility-evidence-point-fixtures.js"
     },
+    "./provider-feasibility-support-catalog-point": {
+      "types": "./dist/provider-feasibility-support-catalog-point.d.ts",
+      "import": "./dist/provider-feasibility-support-catalog-point.js",
+      "default": "./dist/provider-feasibility-support-catalog-point.js"
+    },
+    "./provider-feasibility-support-catalog-point-fixtures": {
+      "types": "./dist/provider-feasibility-support-catalog-point-fixtures.d.ts",
+      "import": "./dist/provider-feasibility-support-catalog-point-fixtures.js",
+      "default": "./dist/provider-feasibility-support-catalog-point-fixtures.js"
+    },
     "./provider-registry-evidence-binding-point": {
       "types": "./dist/provider-registry-evidence-binding-point.d.ts",
       "import": "./dist/provider-registry-evidence-binding-point.js",
@@ -155,6 +165,7 @@
     "generate:provider-real-fs-conformance-result": "pnpm run build && node scripts/generate-provider-real-filesystem-conformance-result.mjs",
     "generate:provider-runtime-attestation-point": "pnpm run build && node scripts/generate-provider-runtime-attestation-point.mjs",
     "generate:provider-feasibility-evidence-point": "pnpm run build && node scripts/generate-provider-feasibility-evidence-point.mjs",
+    "generate:provider-feasibility-support-catalog-point": "pnpm run build && node scripts/generate-provider-feasibility-support-catalog-point.mjs",
     "generate:provider-registry-evidence-binding-point": "pnpm run build && node scripts/generate-provider-registry-evidence-binding-point.mjs",
     "generate:provider-registry-evidence-binding-topology-proof": "pnpm run build && node scripts/generate-provider-registry-evidence-binding-topology-proof.mjs",
     "generate:provider-target-discovery-point": "pnpm run build && node scripts/generate-provider-target-discovery-point.mjs",
@@ -173,13 +184,14 @@
     "verify:provider-real-fs-conformance-result": "node scripts/generate-provider-real-filesystem-conformance-result.mjs --check && node scripts/verify-provider-real-filesystem-conformance-result.mjs",
     "verify:provider-runtime-attestation-point": "node scripts/generate-provider-runtime-attestation-point.mjs --check && node scripts/verify-provider-runtime-attestation-point.mjs",
     "verify:provider-feasibility-evidence-point": "node scripts/generate-provider-feasibility-evidence-point.mjs --check && node scripts/verify-provider-feasibility-evidence-point.mjs",
+    "verify:provider-feasibility-support-catalog-point": "node scripts/generate-provider-feasibility-support-catalog-point.mjs --check",
     "verify:provider-registry-evidence-binding-point": "node scripts/generate-provider-registry-evidence-binding-point.mjs --check && node scripts/verify-provider-registry-evidence-binding-point-evidence-adapter.mjs && node --max-old-space-size=768 --max-semi-space-size=16 scripts/verify-provider-registry-evidence-binding-point-registry-adapter.mjs && node scripts/generate-provider-registry-evidence-binding-topology-proof.mjs --check",
     "test:provider-registry-evidence-binding-point-replay": "vitest run --maxWorkers=4 test/provider-registry-evidence-binding-point-fixtures-replay-lane-0.test.ts test/provider-registry-evidence-binding-point-fixtures-replay-lane-1.test.ts test/provider-registry-evidence-binding-point-fixtures-replay-lane-2.test.ts test/provider-registry-evidence-binding-point-fixtures-replay-lane-3.test.ts",
     "verify:provider-target-discovery-point": "node scripts/generate-provider-target-discovery-point.mjs --check && node scripts/verify-provider-target-discovery-point.mjs",
     "verify:provider-release-target-universe-point": "node scripts/generate-provider-release-target-universe-point.mjs --check && node scripts/verify-provider-release-target-universe-point.mjs",
     "verify:schemas": "node scripts/generate-json-schemas.mjs --check",
     "verify:strict-ed25519": "node scripts/verify-strict-ed25519.mjs",
-    "verify:all": "npm run verify:schemas && npm run verify:fixtures && npm run verify:strict-ed25519 && npm run verify:golden && npm run verify:bootstrap-trust-invalid && npm run verify:bootstrap-trust && npm run verify:provider-root-history && npm run verify:provider-registry-manifest-history && npm run verify:provider-registry-manifest-invalid && npm run verify:provider-real-fs-source && npm run verify:provider-target-discovery-point && npm run verify:provider-release-target-universe-point && npm run verify:provider-real-fs-conformance-result && npm run verify:provider-runtime-attestation-point && npm run verify:provider-feasibility-evidence-point && npm run verify:provider-registry-evidence-binding-point",
+    "verify:all": "npm run verify:schemas && npm run verify:fixtures && npm run verify:strict-ed25519 && npm run verify:golden && npm run verify:bootstrap-trust-invalid && npm run verify:bootstrap-trust && npm run verify:provider-root-history && npm run verify:provider-registry-manifest-history && npm run verify:provider-registry-manifest-invalid && npm run verify:provider-real-fs-source && npm run verify:provider-target-discovery-point && npm run verify:provider-release-target-universe-point && npm run verify:provider-real-fs-conformance-result && npm run verify:provider-runtime-attestation-point && npm run verify:provider-feasibility-evidence-point && npm run verify:provider-registry-evidence-binding-point && npm run verify:provider-feasibility-support-catalog-point",
     "test": "pnpm run build && pnpm run typecheck && vitest run --maxWorkers=1 && pnpm run test:distribution"
   },
   "dependencies": {

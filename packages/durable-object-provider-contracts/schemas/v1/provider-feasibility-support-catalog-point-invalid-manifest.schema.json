@@ -1,0 +1,5059 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-feasibility-support-catalog-point-invalid-manifest",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "profile": {
+      "type": "string",
+      "const": "provider_feasibility_support_catalog_point_invalid_v1"
+    },
+    "fixtureAuthority": {
+      "type": "string",
+      "const": "none_provider_feasibility_support_catalog_structure_only"
+    },
+    "canonicalizationProfile": {
+      "type": "string",
+      "const": "rfc8785-jcs-safe-integer-v1"
+    },
+    "verificationProfile": {
+      "type": "string",
+      "const": "ed25519-rfc8032-cofactorless-prime-subgroup-v1"
+    },
+    "cases": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "catalog-target-missing"
+            },
+            "request": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "catalog_target_exact_cover"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "coverage_mismatch"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema88"
+                },
+                "cryptoCounts": {
+                  "type": "object",
+                  "properties": {
+                    "pointAdmissionCount": {
+                      "type": "number",
+                      "const": 50
+                    },
+                    "signatureVerificationCount": {
+                      "type": "number",
+                      "const": 90
+                    }
+                  },
+                  "required": [
+                    "pointAdmissionCount",
+                    "signatureVerificationCount"
+                  ],
+                  "additionalProperties": false
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema7"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "request",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "catalog-target-extra"
+            },
+            "request": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "catalog_target_exact_cover"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "coverage_mismatch"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema88"
+                },
+                "cryptoCounts": {
+                  "type": "object",
+                  "properties": {
+                    "pointAdmissionCount": {
+                      "type": "number",
+                      "const": 50
+                    },
+                    "signatureVerificationCount": {
+                      "type": "number",
+                      "const": 90
+                    }
+                  },
+                  "required": [
+                    "pointAdmissionCount",
+                    "signatureVerificationCount"
+                  ],
+                  "additionalProperties": false
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema7"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "request",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "catalog-target-duplicate"
+            },
+            "request": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "catalog_target_order"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "ordering_invalid"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema88"
+                },
+                "cryptoCounts": {
+                  "type": "object",
+                  "properties": {
+                    "pointAdmissionCount": {
+                      "type": "number",
+                      "const": 50
+                    },
+                    "signatureVerificationCount": {
+                      "type": "number",
+                      "const": 90
+                    }
+                  },
+                  "required": [
+                    "pointAdmissionCount",
+                    "signatureVerificationCount"
+                  ],
+                  "additionalProperties": false
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema7"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "request",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "catalog-provider-duplicate"
+            },
+            "request": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "catalog_candidate_order"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "ordering_invalid"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema88"
+                },
+                "cryptoCounts": {
+                  "type": "object",
+                  "properties": {
+                    "pointAdmissionCount": {
+                      "type": "number",
+                      "const": 50
+                    },
+                    "signatureVerificationCount": {
+                      "type": "number",
+                      "const": 90
+                    }
+                  },
+                  "required": [
+                    "pointAdmissionCount",
+                    "signatureVerificationCount"
+                  ],
+                  "additionalProperties": false
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema7"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "request",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "catalog-evidence-cross-group"
+            },
+            "request": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "catalog_candidate_binding"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "binding_mismatch"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema88"
+                },
+                "cryptoCounts": {
+                  "type": "object",
+                  "properties": {
+                    "pointAdmissionCount": {
+                      "type": "number",
+                      "const": 50
+                    },
+                    "signatureVerificationCount": {
+                      "type": "number",
+                      "const": 90
+                    }
+                  },
+                  "required": [
+                    "pointAdmissionCount",
+                    "signatureVerificationCount"
+                  ],
+                  "additionalProperties": false
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema7"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "request",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "catalog-failed-strong"
+            },
+            "request": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "catalog_release_disposition"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "result_not_passed"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema88"
+                },
+                "cryptoCounts": {
+                  "type": "object",
+                  "properties": {
+                    "pointAdmissionCount": {
+                      "type": "number",
+                      "const": 62
+                    },
+                    "signatureVerificationCount": {
+                      "type": "number",
+                      "const": 126
+                    }
+                  },
+                  "required": [
+                    "pointAdmissionCount",
+                    "signatureVerificationCount"
+                  ],
+                  "additionalProperties": false
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema7"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "request",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "catalog-unsupported-strong"
+            },
+            "request": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "catalog_release_disposition"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "result_not_passed"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema88"
+                },
+                "cryptoCounts": {
+                  "type": "object",
+                  "properties": {
+                    "pointAdmissionCount": {
+                      "type": "number",
+                      "const": 62
+                    },
+                    "signatureVerificationCount": {
+                      "type": "number",
+                      "const": 126
+                    }
+                  },
+                  "required": [
+                    "pointAdmissionCount",
+                    "signatureVerificationCount"
+                  ],
+                  "additionalProperties": false
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema7"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "request",
+            "expected"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "minItems": 7,
+      "maxItems": 7,
+      "items": false
+    },
+    "semanticDomain": {
+      "type": "string",
+      "const": "provider-feasibility-support-catalog-point-invalid-manifest-v1"
+    },
+    "dependencies": {
+      "type": "object",
+      "properties": {
+        "goldenResourcePath": {
+          "type": "string",
+          "const": "fixtures/v1/golden/provider-feasibility-support-catalog-point-v1.json"
+        },
+        "goldenResourceByteLength": {
+          "type": "number",
+          "const": 1069680
+        },
+        "goldenResourceSha256Hex": {
+          "type": "string",
+          "const": "2e7b8a9fb9c98e98a8f317c1b8800c52d9abae6936d04dd3a7d1dd6701f4de06"
+        },
+        "goldenSemanticContentDigest": {
+          "type": "string",
+          "const": "sha256:ae9301bfd01e6dfe9c1e9f0f96257c05b4d66c17be737664674376fe363cd2c1"
+        }
+      },
+      "required": [
+        "goldenResourcePath",
+        "goldenResourceByteLength",
+        "goldenResourceSha256Hex",
+        "goldenSemanticContentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "materializedRequestDomain": {
+      "type": "string",
+      "const": "provider-feasibility-support-catalog-point-invalid-materialized-request-v1"
+    },
+    "semanticContentDigest": {
+      "$ref": "#/$defs/__schema7"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "profile",
+    "fixtureAuthority",
+    "canonicalizationProfile",
+    "verificationProfile",
+    "cases",
+    "semanticDomain",
+    "dependencies",
+    "materializedRequestDomain",
+    "semanticContentDigest"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "__schema0": {
+      "type": "object",
+      "properties": {
+        "activeRoot": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "activeRootMetadata": {
+          "$ref": "#/$defs/__schema5"
+        },
+        "bootstrapTrustBundle": {
+          "type": "object",
+          "properties": {
+            "profile": {
+              "type": "string",
+              "const": "provider_bootstrap_trust_bundle_v1"
+            },
+            "strictCryptoCapability": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "const": "provider_strict_ed25519_crypto_capability_v1"
+                },
+                "verificationProfile": {
+                  "type": "string",
+                  "const": "ed25519-rfc8032-cofactorless-prime-subgroup-v1"
+                },
+                "adversarialManifest": {
+                  "type": "object",
+                  "properties": {
+                    "locatorProfile": {
+                      "type": "string",
+                      "const": "distribution_provider_strict_ed25519_adversarial_manifest_v1"
+                    },
+                    "manifestVersion": {
+                      "type": "number",
+                      "const": 1
+                    },
+                    "contentDigest": {
+                      "$ref": "#/$defs/__schema7"
+                    }
+                  },
+                  "required": [
+                    "locatorProfile",
+                    "manifestVersion",
+                    "contentDigest"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "profile",
+                "verificationProfile",
+                "adversarialManifest"
+              ],
+              "additionalProperties": false
+            },
+            "bootstrapProviderRegistryRoot": {
+              "$ref": "#/$defs/__schema1"
+            },
+            "bootstrapProviderRegistryRootMetadata": {
+              "$ref": "#/$defs/__schema8"
+            },
+            "providerRegistryRecoveryKeys": {
+              "minItems": 3,
+              "maxItems": 3,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema15"
+              }
+            },
+            "providerRegistryRecoveryThreshold": {
+              "type": "number",
+              "const": 2
+            },
+            "providerTrustHistoryPolicy": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "const": "provider_trust_history_policy_v1"
+                },
+                "maxRootMetadataGenerationCountPerInstallationIdentity": {
+                  "type": "number",
+                  "const": 256
+                },
+                "maxRegistryManifestGenerationCountPerInstallationIdentity": {
+                  "type": "number",
+                  "const": 4096
+                },
+                "maxSupportCatalogGenerationCountPerInstallationIdentity": {
+                  "type": "number",
+                  "const": 4096
+                },
+                "maxAcceptanceGenerationCountPerInstallationIdentity": {
+                  "type": "number",
+                  "const": 4096
+                },
+                "maxAcceptanceCompareAppendReceiptCountPerInstallationIdentity": {
+                  "type": "number",
+                  "const": 4096
+                },
+                "maxAcceptanceCompareAppendReceiptLogicalBytesPerInstallationIdentity": {
+                  "type": "number",
+                  "const": 67108864
+                },
+                "maxSingleAcceptanceCompareAppendReceiptLogicalBytes": {
+                  "type": "number",
+                  "const": 1048576
+                },
+                "maxProviderVerificationPublicKeyRecordCountPerProvider": {
+                  "type": "number",
+                  "const": 256
+                },
+                "maxProviderVerificationPublicKeyRecordCountPerUsage": {
+                  "type": "number",
+                  "const": 64
+                },
+                "maxBindingDerivationGenerationRecordCountPerProvider": {
+                  "type": "number",
+                  "const": 64
+                },
+                "maxApproverPublicKeyRecordCountPerRole": {
+                  "type": "number",
+                  "const": 64
+                },
+                "maxCompromisedRevocationRecordCountPerIdentity": {
+                  "type": "number",
+                  "const": 256
+                },
+                "maxSingleTrustEnvelopeLogicalBytes": {
+                  "type": "number",
+                  "const": 4194304
+                },
+                "maxTotalTrustHistoryLogicalBytesPerInstallationIdentity": {
+                  "type": "number",
+                  "const": 268435456
+                },
+                "normalUpdateEmergencyGenerationReserve": {
+                  "type": "number",
+                  "const": 8
+                },
+                "normalUpdateEmergencyAcceptanceReceiptReserve": {
+                  "type": "number",
+                  "const": 8
+                },
+                "normalUpdateEmergencyLogicalBytesReserve": {
+                  "type": "number",
+                  "const": 4194304
+                },
+                "migrationHistoryQuotaPolicy": {
+                  "type": "object",
+                  "properties": {
+                    "profile": {
+                      "type": "string",
+                      "const": "provider_migration_history_quota_policy_v1"
+                    },
+                    "scope": {
+                      "type": "string",
+                      "const": "installation_identity_generation"
+                    },
+                    "storageBoundary": {
+                      "type": "string",
+                      "const": "installation_state_provider_isolated_namespace"
+                    },
+                    "maxChargedMigrationCountPerInstallationIdentity": {
+                      "type": "number",
+                      "const": 64
+                    },
+                    "maxChargedMigrationHistoryLogicalBytesPerInstallationIdentity": {
+                      "type": "number",
+                      "const": 8589934592
+                    },
+                    "maxChargedMigrationHistoryProviderAllocatedBytesPerInstallationIdentity": {
+                      "type": "number",
+                      "const": 17179869184
+                    },
+                    "maxSingleMigrationHistoryReservationLogicalBytes": {
+                      "type": "number",
+                      "const": 4294967296
+                    },
+                    "maxSingleMigrationHistoryReservationProviderAllocatedBytes": {
+                      "type": "number",
+                      "const": 8589934592
+                    },
+                    "maxActiveMigrationReservationCountPerInstallationIdentity": {
+                      "type": "number",
+                      "const": 4
+                    },
+                    "maxActiveReservedMigrationHistoryLogicalBytesPerInstallationIdentity": {
+                      "type": "number",
+                      "const": 8589934592
+                    },
+                    "maxActiveReservedMigrationHistoryProviderAllocatedBytesPerInstallationIdentity": {
+                      "type": "number",
+                      "const": 17179869184
+                    },
+                    "maxReservationRecordCountPerInstallationIdentity": {
+                      "type": "number",
+                      "const": 4096
+                    },
+                    "maxReservationRecordLogicalBytesPerInstallationIdentity": {
+                      "type": "number",
+                      "const": 67108864
+                    },
+                    "maxSingleReservationRecordLogicalBytes": {
+                      "type": "number",
+                      "const": 1048576
+                    },
+                    "maxChargedObjectReceiptCountPerInstallationIdentity": {
+                      "type": "number",
+                      "const": 2000000
+                    },
+                    "maxChargedObjectReceiptLogicalBytesPerInstallationIdentity": {
+                      "type": "number",
+                      "const": 2147483648
+                    },
+                    "maxChargedSemanticRootZeroProofCountPerInstallationIdentity": {
+                      "type": "number",
+                      "const": 4000512
+                    },
+                    "maxChargedSemanticRootZeroProofLogicalBytesPerInstallationIdentity": {
+                      "type": "number",
+                      "const": 2147483648
+                    },
+                    "maxChargedProgressRecordCountPerInstallationIdentity": {
+                      "type": "number",
+                      "const": 4000032
+                    },
+                    "maxChargedProgressRecordLogicalBytesPerInstallationIdentity": {
+                      "type": "number",
+                      "const": 2147483648
+                    },
+                    "maxChargedProgressOperationReceiptCountPerInstallationIdentity": {
+                      "type": "number",
+                      "const": 8000000
+                    },
+                    "maxChargedProgressOperationReceiptLogicalBytesPerInstallationIdentity": {
+                      "type": "number",
+                      "const": 2147483648
+                    },
+                    "normalUpdateEmergencyMigrationCountReserve": {
+                      "type": "number",
+                      "const": 1
+                    },
+                    "normalUpdateEmergencyMigrationHistoryLogicalBytesReserve": {
+                      "type": "number",
+                      "const": 4294967296
+                    },
+                    "normalUpdateEmergencyMigrationHistoryProviderAllocatedBytesReserve": {
+                      "type": "number",
+                      "const": 8589934592
+                    },
+                    "maxLedgerEventCountPerInstallationIdentity": {
+                      "type": "number",
+                      "const": 4096
+                    },
+                    "maxLedgerEventLogicalBytesPerInstallationIdentity": {
+                      "type": "number",
+                      "const": 67108864
+                    },
+                    "maxSingleLedgerEventLogicalBytes": {
+                      "type": "number",
+                      "const": 262144
+                    },
+                    "maxOperationReceiptCountPerInstallationIdentity": {
+                      "type": "number",
+                      "const": 4096
+                    },
+                    "maxOperationReceiptLogicalBytesPerInstallationIdentity": {
+                      "type": "number",
+                      "const": 268435456
+                    },
+                    "maxSingleOperationReceiptLogicalBytes": {
+                      "type": "number",
+                      "const": 1048576
+                    },
+                    "maxCurrentHighWaterLogicalBytes": {
+                      "type": "number",
+                      "const": 1048576
+                    },
+                    "reservedAccountFutureTerminalTransitionEscrowCount": {
+                      "type": "number",
+                      "const": 3
+                    },
+                    "retainedAccountFutureTerminalTransitionEscrowCount": {
+                      "type": "number",
+                      "const": 1
+                    },
+                    "admission": {
+                      "type": "string",
+                      "const": "reserve_migration_slot_bytes_record_caps_and_terminal_control_escrow_before_first_migration_side_effect"
+                    },
+                    "exhaustion": {
+                      "type": "string",
+                      "const": "zero_write_migration_required_new_installation_identity"
+                    }
+                  },
+                  "required": [
+                    "profile",
+                    "scope",
+                    "storageBoundary",
+                    "maxChargedMigrationCountPerInstallationIdentity",
+                    "maxChargedMigrationHistoryLogicalBytesPerInstallationIdentity",
+                    "maxChargedMigrationHistoryProviderAllocatedBytesPerInstallationIdentity",
+                    "maxSingleMigrationHistoryReservationLogicalBytes",
+                    "maxSingleMigrationHistoryReservationProviderAllocatedBytes",
+                    "maxActiveMigrationReservationCountPerInstallationIdentity",
+                    "maxActiveReservedMigrationHistoryLogicalBytesPerInstallationIdentity",
+                    "maxActiveReservedMigrationHistoryProviderAllocatedBytesPerInstallationIdentity",
+                    "maxReservationRecordCountPerInstallationIdentity",
+                    "maxReservationRecordLogicalBytesPerInstallationIdentity",
+                    "maxSingleReservationRecordLogicalBytes",
+                    "maxChargedObjectReceiptCountPerInstallationIdentity",
+                    "maxChargedObjectReceiptLogicalBytesPerInstallationIdentity",
+                    "maxChargedSemanticRootZeroProofCountPerInstallationIdentity",
+                    "maxChargedSemanticRootZeroProofLogicalBytesPerInstallationIdentity",
+                    "maxChargedProgressRecordCountPerInstallationIdentity",
+                    "maxChargedProgressRecordLogicalBytesPerInstallationIdentity",
+                    "maxChargedProgressOperationReceiptCountPerInstallationIdentity",
+                    "maxChargedProgressOperationReceiptLogicalBytesPerInstallationIdentity",
+                    "normalUpdateEmergencyMigrationCountReserve",
+                    "normalUpdateEmergencyMigrationHistoryLogicalBytesReserve",
+                    "normalUpdateEmergencyMigrationHistoryProviderAllocatedBytesReserve",
+                    "maxLedgerEventCountPerInstallationIdentity",
+                    "maxLedgerEventLogicalBytesPerInstallationIdentity",
+                    "maxSingleLedgerEventLogicalBytes",
+                    "maxOperationReceiptCountPerInstallationIdentity",
+                    "maxOperationReceiptLogicalBytesPerInstallationIdentity",
+                    "maxSingleOperationReceiptLogicalBytes",
+                    "maxCurrentHighWaterLogicalBytes",
+                    "reservedAccountFutureTerminalTransitionEscrowCount",
+                    "retainedAccountFutureTerminalTransitionEscrowCount",
+                    "admission",
+                    "exhaustion"
+                  ],
+                  "additionalProperties": false
+                },
+                "admission": {
+                  "type": "string",
+                  "const": "canonicalize_complete_successor_and_retained_verification_closure_before_first_side_effect"
+                },
+                "exhaustion": {
+                  "type": "object",
+                  "properties": {
+                    "providerScopedHistory": {
+                      "type": "string",
+                      "const": "zero_write_same_identity_dual_provider_migration_or_new_identity_rebootstrap"
+                    },
+                    "installationWideHistory": {
+                      "type": "string",
+                      "const": "zero_write_new_installation_identity_rebootstrap_migration_required"
+                    }
+                  },
+                  "required": [
+                    "providerScopedHistory",
+                    "installationWideHistory"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "profile",
+                "maxRootMetadataGenerationCountPerInstallationIdentity",
+                "maxRegistryManifestGenerationCountPerInstallationIdentity",
+                "maxSupportCatalogGenerationCountPerInstallationIdentity",
+                "maxAcceptanceGenerationCountPerInstallationIdentity",
+                "maxAcceptanceCompareAppendReceiptCountPerInstallationIdentity",
+                "maxAcceptanceCompareAppendReceiptLogicalBytesPerInstallationIdentity",
+                "maxSingleAcceptanceCompareAppendReceiptLogicalBytes",
+                "maxProviderVerificationPublicKeyRecordCountPerProvider",
+                "maxProviderVerificationPublicKeyRecordCountPerUsage",
+                "maxBindingDerivationGenerationRecordCountPerProvider",
+                "maxApproverPublicKeyRecordCountPerRole",
+                "maxCompromisedRevocationRecordCountPerIdentity",
+                "maxSingleTrustEnvelopeLogicalBytes",
+                "maxTotalTrustHistoryLogicalBytesPerInstallationIdentity",
+                "normalUpdateEmergencyGenerationReserve",
+                "normalUpdateEmergencyAcceptanceReceiptReserve",
+                "normalUpdateEmergencyLogicalBytesReserve",
+                "migrationHistoryQuotaPolicy",
+                "admission",
+                "exhaustion"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "profile",
+            "strictCryptoCapability",
+            "bootstrapProviderRegistryRoot",
+            "bootstrapProviderRegistryRootMetadata",
+            "providerRegistryRecoveryKeys",
+            "providerRegistryRecoveryThreshold",
+            "providerTrustHistoryPolicy"
+          ],
+          "additionalProperties": false
+        },
+        "distributionRootBinding": {
+          "$ref": "#/$defs/__schema16"
+        },
+        "fixtureCorpusManifest": {
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "type": "number",
+              "const": 1
+            },
+            "recordType": {
+              "type": "string",
+              "const": "provider_real_fs_fixture_corpus_manifest"
+            },
+            "contentDigest": {
+              "$ref": "#/$defs/__schema7"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "const": "provider_real_fs_fixture_corpus_manifest_v1"
+                },
+                "distributionRootBinding": {
+                  "$ref": "#/$defs/__schema16"
+                },
+                "activeRootMetadata": {
+                  "$ref": "#/$defs/__schema5"
+                },
+                "registryRootKeyId": {
+                  "$ref": "#/$defs/__schema2"
+                },
+                "releaseRevisionDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "corpusVersion": {
+                  "$ref": "#/$defs/__schema17"
+                },
+                "recordCount": {
+                  "$ref": "#/$defs/__schema18"
+                },
+                "recordSetDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "records": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema19"
+                  }
+                },
+                "fixtureManifestDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "corpusSignature": {
+                  "type": "string",
+                  "pattern": "^provider-real-fs-fixture-corpus-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                }
+              },
+              "required": [
+                "profile",
+                "distributionRootBinding",
+                "activeRootMetadata",
+                "registryRootKeyId",
+                "releaseRevisionDigest",
+                "corpusVersion",
+                "recordCount",
+                "recordSetDigest",
+                "records",
+                "fixtureManifestDigest",
+                "corpusSignature"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "recordType",
+            "contentDigest",
+            "payload"
+          ],
+          "additionalProperties": false
+        },
+        "installationIdentityGenerationId": {
+          "$ref": "#/$defs/__schema23"
+        },
+        "providerFeasibilitySupportCandidateArtifacts": {
+          "minItems": 2,
+          "maxItems": 2,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema24"
+          }
+        },
+        "providerFeasibilitySupportCatalog": {
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "type": "number",
+              "const": 1
+            },
+            "recordType": {
+              "type": "string",
+              "const": "provider_feasibility_support_catalog"
+            },
+            "catalogGeneration": {
+              "$ref": "#/$defs/__schema39"
+            },
+            "contentDigest": {
+              "$ref": "#/$defs/__schema7"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "const": "provider_feasibility_support_catalog_v1"
+                },
+                "distributionRootBinding": {
+                  "$ref": "#/$defs/__schema16"
+                },
+                "activeRootMetadata": {
+                  "$ref": "#/$defs/__schema5"
+                },
+                "registryRootKeyId": {
+                  "$ref": "#/$defs/__schema2"
+                },
+                "catalogGeneration": {
+                  "$ref": "#/$defs/__schema39"
+                },
+                "predecessorCatalogContentDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "feasibilityApprovalKeys": {
+                  "$ref": "#/$defs/__schema40"
+                },
+                "publicSupportTaxonomy": {
+                  "$ref": "#/$defs/__schema45"
+                },
+                "releaseTargetUniverse": {
+                  "type": "object",
+                  "properties": {
+                    "locatorProfile": {
+                      "type": "string",
+                      "const": "distribution_provider_release_target_universe_v1"
+                    },
+                    "universeGeneration": {
+                      "$ref": "#/$defs/__schema46"
+                    },
+                    "contentDigest": {
+                      "$ref": "#/$defs/__schema7"
+                    }
+                  },
+                  "required": [
+                    "locatorProfile",
+                    "universeGeneration",
+                    "contentDigest"
+                  ],
+                  "additionalProperties": false
+                },
+                "targets": {
+                  "minItems": 1,
+                  "maxItems": 4096,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema47"
+                  }
+                },
+                "catalogSignature": {
+                  "type": "string",
+                  "pattern": "^provider-support-catalog-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                }
+              },
+              "required": [
+                "profile",
+                "distributionRootBinding",
+                "activeRootMetadata",
+                "registryRootKeyId",
+                "catalogGeneration",
+                "feasibilityApprovalKeys",
+                "publicSupportTaxonomy",
+                "releaseTargetUniverse",
+                "targets",
+                "catalogSignature"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "recordType",
+            "catalogGeneration",
+            "contentDigest",
+            "payload"
+          ],
+          "additionalProperties": false
+        },
+        "publicSupportTaxonomy": {
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "type": "number",
+              "const": 1
+            },
+            "recordType": {
+              "type": "string",
+              "const": "provider_public_support_taxonomy"
+            },
+            "taxonomyGeneration": {
+              "$ref": "#/$defs/__schema33"
+            },
+            "contentDigest": {
+              "$ref": "#/$defs/__schema7"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "const": "provider_public_support_taxonomy_v1"
+                },
+                "distributionRootBinding": {
+                  "$ref": "#/$defs/__schema16"
+                },
+                "activeRootMetadata": {
+                  "$ref": "#/$defs/__schema5"
+                },
+                "registryRootKeyId": {
+                  "$ref": "#/$defs/__schema2"
+                },
+                "taxonomyGeneration": {
+                  "$ref": "#/$defs/__schema33"
+                },
+                "predecessorTaxonomyContentDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "osReleaseFamilies": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema51"
+                  }
+                },
+                "filesystemProfiles": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema53"
+                  }
+                },
+                "derivationPolicy": {
+                  "type": "object",
+                  "properties": {
+                    "osFamilySource": {
+                      "type": "string",
+                      "const": "strict_public_platform_release_api_without_build_identifier"
+                    },
+                    "filesystemSource": {
+                      "type": "string",
+                      "const": "strict_public_filesystem_kind_without_features_or_mount_options"
+                    },
+                    "excludedPrivateInputs": {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "type": "string",
+                          "const": "osBuildDigest"
+                        },
+                        {
+                          "type": "string",
+                          "const": "filesystemFeatureProfileDigest"
+                        },
+                        {
+                          "type": "string",
+                          "const": "mountOptionProfileDigest"
+                        }
+                      ],
+                      "minItems": 3,
+                      "maxItems": 3,
+                      "items": false
+                    },
+                    "unknownOrNoncanonicalObservation": {
+                      "type": "string",
+                      "const": "public_strong_forbidden"
+                    }
+                  },
+                  "required": [
+                    "osFamilySource",
+                    "filesystemSource",
+                    "excludedPrivateInputs",
+                    "unknownOrNoncanonicalObservation"
+                  ],
+                  "additionalProperties": false
+                },
+                "taxonomySignature": {
+                  "type": "string",
+                  "pattern": "^provider-public-support-taxonomy-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                }
+              },
+              "required": [
+                "profile",
+                "distributionRootBinding",
+                "activeRootMetadata",
+                "registryRootKeyId",
+                "taxonomyGeneration",
+                "osReleaseFamilies",
+                "filesystemProfiles",
+                "derivationPolicy",
+                "taxonomySignature"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "recordType",
+            "taxonomyGeneration",
+            "contentDigest",
+            "payload"
+          ],
+          "additionalProperties": false
+        },
+        "registryManifestHistory": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "schemaVersion": {
+                "type": "number",
+                "const": 1
+              },
+              "recordType": {
+                "type": "string",
+                "const": "provider_registry_manifest"
+              },
+              "generationId": {
+                "$ref": "#/$defs/__schema54"
+              },
+              "contentDigest": {
+                "$ref": "#/$defs/__schema7"
+              },
+              "payload": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "profile": {
+                        "$ref": "#/$defs/__schema55"
+                      },
+                      "generationId": {
+                        "$ref": "#/$defs/__schema54"
+                      },
+                      "installationIdentityGenerationId": {
+                        "$ref": "#/$defs/__schema23"
+                      },
+                      "activeRootMetadata": {
+                        "$ref": "#/$defs/__schema5"
+                      },
+                      "members": {
+                        "$ref": "#/$defs/__schema56"
+                      },
+                      "routing": {
+                        "$ref": "#/$defs/__schema65"
+                      },
+                      "issuedAt": {
+                        "$ref": "#/$defs/__schema10"
+                      },
+                      "manifestGeneration": {
+                        "type": "number",
+                        "const": 1
+                      },
+                      "predecessor": {
+                        "type": "object",
+                        "properties": {
+                          "state": {
+                            "type": "string",
+                            "const": "genesis"
+                          }
+                        },
+                        "required": [
+                          "state"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "manifestSignature": {
+                        "$ref": "#/$defs/__schema66"
+                      }
+                    },
+                    "required": [
+                      "profile",
+                      "generationId",
+                      "installationIdentityGenerationId",
+                      "activeRootMetadata",
+                      "members",
+                      "routing",
+                      "issuedAt",
+                      "manifestGeneration",
+                      "predecessor",
+                      "manifestSignature"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "profile": {
+                        "$ref": "#/$defs/__schema55"
+                      },
+                      "generationId": {
+                        "$ref": "#/$defs/__schema54"
+                      },
+                      "installationIdentityGenerationId": {
+                        "$ref": "#/$defs/__schema23"
+                      },
+                      "activeRootMetadata": {
+                        "$ref": "#/$defs/__schema5"
+                      },
+                      "members": {
+                        "$ref": "#/$defs/__schema56"
+                      },
+                      "routing": {
+                        "$ref": "#/$defs/__schema65"
+                      },
+                      "issuedAt": {
+                        "$ref": "#/$defs/__schema10"
+                      },
+                      "manifestGeneration": {
+                        "$ref": "#/$defs/__schema64"
+                      },
+                      "predecessor": {
+                        "type": "object",
+                        "properties": {
+                          "state": {
+                            "type": "string",
+                            "const": "manifest"
+                          },
+                          "generationId": {
+                            "$ref": "#/$defs/__schema54"
+                          },
+                          "contentDigest": {
+                            "$ref": "#/$defs/__schema7"
+                          }
+                        },
+                        "required": [
+                          "state",
+                          "generationId",
+                          "contentDigest"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "manifestSignature": {
+                        "$ref": "#/$defs/__schema66"
+                      }
+                    },
+                    "required": [
+                      "profile",
+                      "generationId",
+                      "installationIdentityGenerationId",
+                      "activeRootMetadata",
+                      "members",
+                      "routing",
+                      "issuedAt",
+                      "manifestGeneration",
+                      "predecessor",
+                      "manifestSignature"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": [
+              "schemaVersion",
+              "recordType",
+              "generationId",
+              "contentDigest",
+              "payload"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "releaseMatrix": {
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "type": "number",
+              "const": 1
+            },
+            "recordType": {
+              "type": "string",
+              "const": "provider_release_matrix"
+            },
+            "releaseMatrixGeneration": {
+              "$ref": "#/$defs/__schema33"
+            },
+            "contentDigest": {
+              "$ref": "#/$defs/__schema7"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "const": "provider_release_matrix_v1"
+                },
+                "distributionRootBinding": {
+                  "$ref": "#/$defs/__schema16"
+                },
+                "activeRootMetadata": {
+                  "$ref": "#/$defs/__schema5"
+                },
+                "registryRootKeyId": {
+                  "$ref": "#/$defs/__schema2"
+                },
+                "releaseMatrixGeneration": {
+                  "$ref": "#/$defs/__schema33"
+                },
+                "predecessorReleaseMatrixContentDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "publicSupportTaxonomy": {
+                  "$ref": "#/$defs/__schema45"
+                },
+                "limits": {
+                  "$ref": "#/$defs/__schema67"
+                },
+                "targetCount": {
+                  "$ref": "#/$defs/__schema33"
+                },
+                "targetSetDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "targets": {
+                  "minItems": 1,
+                  "maxItems": 4096,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema68"
+                  }
+                },
+                "matrixSignature": {
+                  "type": "string",
+                  "pattern": "^provider-release-matrix-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                }
+              },
+              "required": [
+                "profile",
+                "distributionRootBinding",
+                "activeRootMetadata",
+                "registryRootKeyId",
+                "releaseMatrixGeneration",
+                "publicSupportTaxonomy",
+                "limits",
+                "targetCount",
+                "targetSetDigest",
+                "targets",
+                "matrixSignature"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "recordType",
+            "releaseMatrixGeneration",
+            "contentDigest",
+            "payload"
+          ],
+          "additionalProperties": false
+        },
+        "releaseTargetUniverse": {
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "type": "number",
+              "const": 1
+            },
+            "recordType": {
+              "type": "string",
+              "const": "provider_release_target_universe"
+            },
+            "universeGeneration": {
+              "$ref": "#/$defs/__schema46"
+            },
+            "contentDigest": {
+              "$ref": "#/$defs/__schema7"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "const": "provider_release_target_universe_v1"
+                },
+                "distributionRootBinding": {
+                  "$ref": "#/$defs/__schema16"
+                },
+                "activeRootMetadata": {
+                  "$ref": "#/$defs/__schema5"
+                },
+                "registryRootKeyId": {
+                  "$ref": "#/$defs/__schema2"
+                },
+                "universeGeneration": {
+                  "$ref": "#/$defs/__schema46"
+                },
+                "predecessorUniverseContentDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "publicSupportTaxonomy": {
+                  "$ref": "#/$defs/__schema45"
+                },
+                "coverageBasis": {
+                  "type": "object",
+                  "properties": {
+                    "profile": {
+                      "type": "string",
+                      "const": "provider_release_target_coverage_basis_v1"
+                    },
+                    "releaseMatrix": {
+                      "$ref": "#/$defs/__schema70"
+                    },
+                    "targetDiscoveryResult": {
+                      "$ref": "#/$defs/__schema32"
+                    },
+                    "targetDiscoveryInputBundleContentDigest": {
+                      "$ref": "#/$defs/__schema7"
+                    },
+                    "observationCutDigest": {
+                      "$ref": "#/$defs/__schema7"
+                    },
+                    "observationSetDigest": {
+                      "$ref": "#/$defs/__schema7"
+                    },
+                    "limits": {
+                      "type": "object",
+                      "properties": {
+                        "profile": {
+                          "type": "string",
+                          "pattern": "^provider_release_coverage_artifact_limits_v[1-9][0-9]*$"
+                        },
+                        "maxTargetEntriesPerArtifact": {
+                          "$ref": "#/$defs/__schema46"
+                        },
+                        "maxCanonicalUnionTargetEntries": {
+                          "$ref": "#/$defs/__schema46"
+                        },
+                        "maxUnresolvedObservationsPerDiscoveryResult": {
+                          "$ref": "#/$defs/__schema46"
+                        },
+                        "maxCanonicalEnvelopeBytes": {
+                          "$ref": "#/$defs/__schema46"
+                        }
+                      },
+                      "required": [
+                        "profile",
+                        "maxTargetEntriesPerArtifact",
+                        "maxCanonicalUnionTargetEntries",
+                        "maxUnresolvedObservationsPerDiscoveryResult",
+                        "maxCanonicalEnvelopeBytes"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "discoveryRulesetVersion": {
+                      "type": "string",
+                      "pattern": "^provider_release_target_discovery_v[1-9][0-9]*$"
+                    },
+                    "requiredDimensions": {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "$ref": "#/$defs/__schema71"
+                        },
+                        {
+                          "$ref": "#/$defs/__schema71"
+                        },
+                        {
+                          "$ref": "#/$defs/__schema71"
+                        },
+                        {
+                          "$ref": "#/$defs/__schema71"
+                        },
+                        {
+                          "$ref": "#/$defs/__schema71"
+                        },
+                        {
+                          "$ref": "#/$defs/__schema71"
+                        },
+                        {
+                          "$ref": "#/$defs/__schema71"
+                        }
+                      ],
+                      "minItems": 7,
+                      "maxItems": 7,
+                      "items": false
+                    },
+                    "observationSources": {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "$ref": "#/$defs/__schema72"
+                        },
+                        {
+                          "$ref": "#/$defs/__schema72"
+                        },
+                        {
+                          "$ref": "#/$defs/__schema72"
+                        }
+                      ],
+                      "minItems": 3,
+                      "maxItems": 3,
+                      "items": false
+                    },
+                    "releaseMatrixTargetCount": {
+                      "$ref": "#/$defs/__schema73"
+                    },
+                    "releaseMatrixTargetSetDigest": {
+                      "$ref": "#/$defs/__schema7"
+                    },
+                    "discoveredTargetCount": {
+                      "$ref": "#/$defs/__schema73"
+                    },
+                    "discoveredTargetSetDigest": {
+                      "$ref": "#/$defs/__schema7"
+                    },
+                    "unresolvedObservationCount": {
+                      "$ref": "#/$defs/__schema73"
+                    },
+                    "resolution": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "type": "string",
+                              "const": "closed_world_complete"
+                            }
+                          },
+                          "required": [
+                            "state"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "state": {
+                              "type": "string",
+                              "const": "incomplete"
+                            },
+                            "reason": {
+                              "$ref": "#/$defs/__schema74"
+                            }
+                          },
+                          "required": [
+                            "state",
+                            "reason"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "profile",
+                    "releaseMatrix",
+                    "targetDiscoveryResult",
+                    "targetDiscoveryInputBundleContentDigest",
+                    "observationCutDigest",
+                    "observationSetDigest",
+                    "limits",
+                    "discoveryRulesetVersion",
+                    "requiredDimensions",
+                    "observationSources",
+                    "releaseMatrixTargetCount",
+                    "releaseMatrixTargetSetDigest",
+                    "discoveredTargetCount",
+                    "discoveredTargetSetDigest",
+                    "unresolvedObservationCount",
+                    "resolution"
+                  ],
+                  "additionalProperties": false
+                },
+                "targets": {
+                  "minItems": 1,
+                  "maxItems": 4096,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema68"
+                  }
+                },
+                "buckets": {
+                  "minItems": 1,
+                  "maxItems": 4096,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema75"
+                  }
+                },
+                "universeSignature": {
+                  "type": "string",
+                  "pattern": "^provider-release-target-universe-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                }
+              },
+              "required": [
+                "profile",
+                "distributionRootBinding",
+                "activeRootMetadata",
+                "registryRootKeyId",
+                "universeGeneration",
+                "publicSupportTaxonomy",
+                "coverageBasis",
+                "targets",
+                "buckets",
+                "universeSignature"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "recordType",
+            "universeGeneration",
+            "contentDigest",
+            "payload"
+          ],
+          "additionalProperties": false
+        },
+        "rootMetadataHistory": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema8"
+          }
+        },
+        "suiteManifest": {
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "type": "number",
+              "const": 1
+            },
+            "recordType": {
+              "type": "string",
+              "const": "provider_real_fs_suite_manifest"
+            },
+            "contentDigest": {
+              "$ref": "#/$defs/__schema7"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "const": "provider_real_fs_suite_manifest_v1"
+                },
+                "distributionRootBinding": {
+                  "$ref": "#/$defs/__schema16"
+                },
+                "activeRootMetadata": {
+                  "$ref": "#/$defs/__schema5"
+                },
+                "registryRootKeyId": {
+                  "$ref": "#/$defs/__schema2"
+                },
+                "releaseRevisionDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "suiteVersion": {
+                  "$ref": "#/$defs/__schema17"
+                },
+                "fixtureCorpusManifest": {
+                  "type": "object",
+                  "properties": {
+                    "locatorProfile": {
+                      "type": "string",
+                      "const": "distribution_provider_real_fs_fixture_corpus_manifest_v1"
+                    },
+                    "distributionRootBinding": {
+                      "$ref": "#/$defs/__schema16"
+                    },
+                    "fixtureManifestDigest": {
+                      "$ref": "#/$defs/__schema7"
+                    },
+                    "contentDigest": {
+                      "$ref": "#/$defs/__schema7"
+                    }
+                  },
+                  "required": [
+                    "locatorProfile",
+                    "distributionRootBinding",
+                    "fixtureManifestDigest",
+                    "contentDigest"
+                  ],
+                  "additionalProperties": false
+                },
+                "runnerProfile": {
+                  "type": "object",
+                  "properties": {
+                    "profile": {
+                      "type": "string",
+                      "const": "provider_real_fs_runner_profile_v1"
+                    },
+                    "protocolVersion": {
+                      "type": "string",
+                      "const": "provider-real-fs-runner-v1"
+                    },
+                    "canonicalProfileBytes": {
+                      "$ref": "#/$defs/__schema22"
+                    }
+                  },
+                  "required": [
+                    "profile",
+                    "protocolVersion",
+                    "canonicalProfileBytes"
+                  ],
+                  "additionalProperties": false
+                },
+                "runnerProfileDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "caseCount": {
+                  "$ref": "#/$defs/__schema18"
+                },
+                "caseSetDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "requiredCaseCutCount": {
+                  "$ref": "#/$defs/__schema18"
+                },
+                "requiredCaseCutSetDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "cases": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema76"
+                  }
+                },
+                "suiteDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "suiteSignature": {
+                  "type": "string",
+                  "pattern": "^provider-real-fs-suite-manifest-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                }
+              },
+              "required": [
+                "profile",
+                "distributionRootBinding",
+                "activeRootMetadata",
+                "registryRootKeyId",
+                "releaseRevisionDigest",
+                "suiteVersion",
+                "fixtureCorpusManifest",
+                "runnerProfile",
+                "runnerProfileDigest",
+                "caseCount",
+                "caseSetDigest",
+                "requiredCaseCutCount",
+                "requiredCaseCutSetDigest",
+                "cases",
+                "suiteDigest",
+                "suiteSignature"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "recordType",
+            "contentDigest",
+            "payload"
+          ],
+          "additionalProperties": false
+        },
+        "targetDiscoveryFixtureManifest": {
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "type": "number",
+              "const": 1
+            },
+            "recordType": {
+              "type": "string",
+              "const": "provider_target_discovery_fixture_manifest"
+            },
+            "fixtureManifestDigest": {
+              "$ref": "#/$defs/__schema7"
+            },
+            "contentDigest": {
+              "$ref": "#/$defs/__schema7"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "const": "provider_target_discovery_fixture_manifest_v1"
+                },
+                "distributionRootBinding": {
+                  "$ref": "#/$defs/__schema16"
+                },
+                "releaseRevisionDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "realFilesystemSuiteManifest": {
+                  "$ref": "#/$defs/__schema34"
+                },
+                "realFilesystemSuiteDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "fixtureManifestDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "targetRecordCount": {
+                  "$ref": "#/$defs/__schema78"
+                },
+                "targetRecordSetDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "records": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema79"
+                  }
+                },
+                "completedAt": {
+                  "$ref": "#/$defs/__schema10"
+                }
+              },
+              "required": [
+                "profile",
+                "distributionRootBinding",
+                "releaseRevisionDigest",
+                "realFilesystemSuiteManifest",
+                "realFilesystemSuiteDigest",
+                "fixtureManifestDigest",
+                "targetRecordCount",
+                "targetRecordSetDigest",
+                "records",
+                "completedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "recordType",
+            "fixtureManifestDigest",
+            "contentDigest",
+            "payload"
+          ],
+          "additionalProperties": false
+        },
+        "targetDiscoveryResult": {
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "type": "number",
+              "const": 1
+            },
+            "recordType": {
+              "type": "string",
+              "const": "provider_target_discovery_result"
+            },
+            "discoveryGeneration": {
+              "$ref": "#/$defs/__schema33"
+            },
+            "contentDigest": {
+              "$ref": "#/$defs/__schema7"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "const": "provider_target_discovery_result_v1"
+                },
+                "distributionRootBinding": {
+                  "$ref": "#/$defs/__schema16"
+                },
+                "activeRootMetadata": {
+                  "$ref": "#/$defs/__schema5"
+                },
+                "registryRootKeyId": {
+                  "$ref": "#/$defs/__schema2"
+                },
+                "discoveryGeneration": {
+                  "$ref": "#/$defs/__schema33"
+                },
+                "predecessorDiscoveryContentDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "publicSupportTaxonomy": {
+                  "$ref": "#/$defs/__schema45"
+                },
+                "limits": {
+                  "$ref": "#/$defs/__schema67"
+                },
+                "targetDiscoveryInputBundleContentDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "targetDiscoveryInputBundle": {
+                  "type": "object",
+                  "properties": {
+                    "profile": {
+                      "type": "string",
+                      "const": "provider_target_discovery_input_bundle_v1"
+                    },
+                    "distributionRootBinding": {
+                      "$ref": "#/$defs/__schema16"
+                    },
+                    "activeRootMetadata": {
+                      "$ref": "#/$defs/__schema5"
+                    },
+                    "registryRootKeyId": {
+                      "$ref": "#/$defs/__schema2"
+                    },
+                    "publicSupportTaxonomy": {
+                      "$ref": "#/$defs/__schema45"
+                    },
+                    "releaseMatrix": {
+                      "$ref": "#/$defs/__schema70"
+                    },
+                    "realFilesystemFixtureManifest": {
+                      "$ref": "#/$defs/__schema82"
+                    },
+                    "targetDiscoveryRunner": {
+                      "$ref": "#/$defs/__schema83"
+                    },
+                    "discoveryRulesetVersion": {
+                      "type": "string",
+                      "const": "provider_release_target_discovery_v1"
+                    },
+                    "requiredDimensions": {
+                      "$ref": "#/$defs/__schema85"
+                    },
+                    "observationSources": {
+                      "$ref": "#/$defs/__schema86"
+                    },
+                    "observationCut": {
+                      "type": "object",
+                      "properties": {
+                        "profile": {
+                          "type": "string",
+                          "const": "provider_target_discovery_observation_cut_v1"
+                        },
+                        "distributionRootBinding": {
+                          "$ref": "#/$defs/__schema16"
+                        },
+                        "activeRootMetadata": {
+                          "$ref": "#/$defs/__schema5"
+                        },
+                        "publicSupportTaxonomy": {
+                          "$ref": "#/$defs/__schema45"
+                        },
+                        "releaseMatrix": {
+                          "$ref": "#/$defs/__schema70"
+                        },
+                        "realFilesystemFixtureManifest": {
+                          "$ref": "#/$defs/__schema82"
+                        },
+                        "targetDiscoveryRunner": {
+                          "$ref": "#/$defs/__schema83"
+                        },
+                        "discoveryRulesetVersion": {
+                          "type": "string",
+                          "const": "provider_release_target_discovery_v1"
+                        },
+                        "requiredDimensions": {
+                          "$ref": "#/$defs/__schema85"
+                        },
+                        "observationSources": {
+                          "$ref": "#/$defs/__schema86"
+                        },
+                        "freshnessRule": {
+                          "type": "string",
+                          "const": "exact_release_revision_and_source_digest_cut_v1"
+                        }
+                      },
+                      "required": [
+                        "profile",
+                        "distributionRootBinding",
+                        "activeRootMetadata",
+                        "publicSupportTaxonomy",
+                        "releaseMatrix",
+                        "realFilesystemFixtureManifest",
+                        "targetDiscoveryRunner",
+                        "discoveryRulesetVersion",
+                        "requiredDimensions",
+                        "observationSources",
+                        "freshnessRule"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "observationCutDigest": {
+                      "$ref": "#/$defs/__schema7"
+                    },
+                    "sourceObservationSets": {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "observationSource": {
+                              "type": "string",
+                              "const": "signed_release_matrix"
+                            },
+                            "sourceArtifactContentDigest": {
+                              "$ref": "#/$defs/__schema7"
+                            },
+                            "observationCount": {
+                              "$ref": "#/$defs/__schema78"
+                            },
+                            "observationSetDigest": {
+                              "$ref": "#/$defs/__schema7"
+                            }
+                          },
+                          "required": [
+                            "observationSource",
+                            "sourceArtifactContentDigest",
+                            "observationCount",
+                            "observationSetDigest"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "observationSource": {
+                              "type": "string",
+                              "const": "real_filesystem_fixture_manifest"
+                            },
+                            "sourceArtifactContentDigest": {
+                              "$ref": "#/$defs/__schema7"
+                            },
+                            "observationCount": {
+                              "$ref": "#/$defs/__schema78"
+                            },
+                            "observationSetDigest": {
+                              "$ref": "#/$defs/__schema7"
+                            }
+                          },
+                          "required": [
+                            "observationSource",
+                            "sourceArtifactContentDigest",
+                            "observationCount",
+                            "observationSetDigest"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "observationSource": {
+                              "type": "string",
+                              "const": "target_discovery_runner"
+                            },
+                            "sourceArtifactContentDigest": {
+                              "$ref": "#/$defs/__schema7"
+                            },
+                            "observationCount": {
+                              "$ref": "#/$defs/__schema78"
+                            },
+                            "observationSetDigest": {
+                              "$ref": "#/$defs/__schema7"
+                            }
+                          },
+                          "required": [
+                            "observationSource",
+                            "sourceArtifactContentDigest",
+                            "observationCount",
+                            "observationSetDigest"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ],
+                      "minItems": 3,
+                      "maxItems": 3,
+                      "items": false
+                    },
+                    "observationCount": {
+                      "$ref": "#/$defs/__schema78"
+                    },
+                    "observationSetDigest": {
+                      "$ref": "#/$defs/__schema7"
+                    },
+                    "observations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "observationSource": {
+                            "$ref": "#/$defs/__schema72"
+                          },
+                          "sourceArtifactContentDigest": {
+                            "$ref": "#/$defs/__schema7"
+                          },
+                          "sourceRecordOrdinal": {
+                            "$ref": "#/$defs/__schema78"
+                          },
+                          "outcome": {
+                            "$ref": "#/$defs/__schema80"
+                          },
+                          "privacySafeObservationClaimsDigest": {
+                            "$ref": "#/$defs/__schema7"
+                          },
+                          "observationKeyDigest": {
+                            "$ref": "#/$defs/__schema7"
+                          }
+                        },
+                        "required": [
+                          "observationSource",
+                          "sourceArtifactContentDigest",
+                          "sourceRecordOrdinal",
+                          "outcome",
+                          "privacySafeObservationClaimsDigest",
+                          "observationKeyDigest"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "bundleSignature": {
+                      "type": "string",
+                      "pattern": "^provider-target-discovery-input-bundle-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                    }
+                  },
+                  "required": [
+                    "profile",
+                    "distributionRootBinding",
+                    "activeRootMetadata",
+                    "registryRootKeyId",
+                    "publicSupportTaxonomy",
+                    "releaseMatrix",
+                    "realFilesystemFixtureManifest",
+                    "targetDiscoveryRunner",
+                    "discoveryRulesetVersion",
+                    "requiredDimensions",
+                    "observationSources",
+                    "observationCut",
+                    "observationCutDigest",
+                    "sourceObservationSets",
+                    "observationCount",
+                    "observationSetDigest",
+                    "observations",
+                    "bundleSignature"
+                  ],
+                  "additionalProperties": false
+                },
+                "observationCutDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "observationSetDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "discoveryRulesetVersion": {
+                  "type": "string",
+                  "const": "provider_release_target_discovery_v1"
+                },
+                "requiredDimensions": {
+                  "$ref": "#/$defs/__schema85"
+                },
+                "observationSources": {
+                  "$ref": "#/$defs/__schema86"
+                },
+                "targetCount": {
+                  "$ref": "#/$defs/__schema78"
+                },
+                "targetSetDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "targets": {
+                  "maxItems": 4096,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema68"
+                  }
+                },
+                "unresolvedObservationCount": {
+                  "$ref": "#/$defs/__schema78"
+                },
+                "unresolvedObservations": {
+                  "maxItems": 4096,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema87"
+                  }
+                },
+                "discoverySignature": {
+                  "type": "string",
+                  "pattern": "^provider-target-discovery-result-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                }
+              },
+              "required": [
+                "profile",
+                "distributionRootBinding",
+                "activeRootMetadata",
+                "registryRootKeyId",
+                "discoveryGeneration",
+                "publicSupportTaxonomy",
+                "limits",
+                "targetDiscoveryInputBundleContentDigest",
+                "targetDiscoveryInputBundle",
+                "observationCutDigest",
+                "observationSetDigest",
+                "discoveryRulesetVersion",
+                "requiredDimensions",
+                "observationSources",
+                "targetCount",
+                "targetSetDigest",
+                "targets",
+                "unresolvedObservationCount",
+                "unresolvedObservations",
+                "discoverySignature"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "recordType",
+            "discoveryGeneration",
+            "contentDigest",
+            "payload"
+          ],
+          "additionalProperties": false
+        },
+        "targetDiscoveryRunnerRun": {
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "type": "number",
+              "const": 1
+            },
+            "recordType": {
+              "type": "string",
+              "const": "provider_target_discovery_runner_run"
+            },
+            "contentDigest": {
+              "$ref": "#/$defs/__schema7"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "const": "provider_target_discovery_runner_run_manifest_v1"
+                },
+                "distributionRootBinding": {
+                  "$ref": "#/$defs/__schema16"
+                },
+                "releaseRevisionDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "producerName": {
+                  "type": "string",
+                  "const": "understand-code"
+                },
+                "producerVersion": {
+                  "$ref": "#/$defs/__schema84"
+                },
+                "implementationDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "binaryAttestationDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "runnerProfileDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "targetRecordCount": {
+                  "$ref": "#/$defs/__schema78"
+                },
+                "targetRecordSetDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "records": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema79"
+                  }
+                },
+                "executedAt": {
+                  "$ref": "#/$defs/__schema10"
+                }
+              },
+              "required": [
+                "profile",
+                "distributionRootBinding",
+                "releaseRevisionDigest",
+                "producerName",
+                "producerVersion",
+                "implementationDigest",
+                "binaryAttestationDigest",
+                "runnerProfileDigest",
+                "targetRecordCount",
+                "targetRecordSetDigest",
+                "records",
+                "executedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "recordType",
+            "contentDigest",
+            "payload"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "activeRoot",
+        "activeRootMetadata",
+        "bootstrapTrustBundle",
+        "distributionRootBinding",
+        "fixtureCorpusManifest",
+        "installationIdentityGenerationId",
+        "providerFeasibilitySupportCandidateArtifacts",
+        "providerFeasibilitySupportCatalog",
+        "publicSupportTaxonomy",
+        "registryManifestHistory",
+        "releaseMatrix",
+        "releaseTargetUniverse",
+        "rootMetadataHistory",
+        "suiteManifest",
+        "targetDiscoveryFixtureManifest",
+        "targetDiscoveryResult",
+        "targetDiscoveryRunnerRun"
+      ],
+      "additionalProperties": false
+    },
+    "__schema1": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "provider_registry_root_public_key_v1"
+        },
+        "rootKeyId": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "algorithm": {
+          "type": "string",
+          "const": "ed25519"
+        },
+        "publicKeyBytes": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "publicKeyDigest": {
+          "$ref": "#/$defs/__schema4"
+        }
+      },
+      "required": [
+        "profile",
+        "rootKeyId",
+        "algorithm",
+        "publicKeyBytes",
+        "publicKeyDigest"
+      ],
+      "additionalProperties": false
+    },
+    "__schema2": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{22}$"
+    },
+    "__schema3": {
+      "type": "string",
+      "pattern": "^base64url:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+    },
+    "__schema4": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "__schema5": {
+      "type": "object",
+      "properties": {
+        "locatorProfile": {
+          "type": "string",
+          "const": "installation_provider_registry_root_metadata_v1"
+        },
+        "rootGeneration": {
+          "$ref": "#/$defs/__schema6"
+        },
+        "rootKeyId": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "contentDigest": {
+          "$ref": "#/$defs/__schema7"
+        }
+      },
+      "required": [
+        "locatorProfile",
+        "rootGeneration",
+        "rootKeyId",
+        "contentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "__schema6": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "__schema7": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "__schema8": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "number",
+          "const": 1
+        },
+        "recordType": {
+          "type": "string",
+          "const": "provider_registry_root_metadata"
+        },
+        "rootGeneration": {
+          "$ref": "#/$defs/__schema6"
+        },
+        "rootKeyId": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "contentDigest": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "payload": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "$ref": "#/$defs/__schema9"
+                },
+                "rootGeneration": {
+                  "$ref": "#/$defs/__schema6"
+                },
+                "activeRoot": {
+                  "$ref": "#/$defs/__schema1"
+                },
+                "issuedAt": {
+                  "$ref": "#/$defs/__schema10"
+                },
+                "selfSignature": {
+                  "$ref": "#/$defs/__schema11"
+                },
+                "activation": {
+                  "type": "string",
+                  "const": "bootstrap"
+                },
+                "predecessor": {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "genesis"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                "recoverySignatures": {
+                  "minItems": 0,
+                  "maxItems": 0,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema12"
+                  }
+                }
+              },
+              "required": [
+                "profile",
+                "rootGeneration",
+                "activeRoot",
+                "issuedAt",
+                "selfSignature",
+                "activation",
+                "predecessor",
+                "recoverySignatures"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "$ref": "#/$defs/__schema9"
+                },
+                "rootGeneration": {
+                  "$ref": "#/$defs/__schema6"
+                },
+                "activeRoot": {
+                  "$ref": "#/$defs/__schema1"
+                },
+                "issuedAt": {
+                  "$ref": "#/$defs/__schema10"
+                },
+                "selfSignature": {
+                  "$ref": "#/$defs/__schema11"
+                },
+                "activation": {
+                  "type": "string",
+                  "const": "planned_rollover"
+                },
+                "predecessor": {
+                  "$ref": "#/$defs/__schema13"
+                },
+                "predecessorCrossSignature": {
+                  "type": "string",
+                  "pattern": "^provider-root-cross-ed25519:([0-9a-f]{22}):([0-9a-f]{128})$"
+                },
+                "recoverySignatures": {
+                  "$ref": "#/$defs/__schema14"
+                }
+              },
+              "required": [
+                "profile",
+                "rootGeneration",
+                "activeRoot",
+                "issuedAt",
+                "selfSignature",
+                "activation",
+                "predecessor",
+                "predecessorCrossSignature",
+                "recoverySignatures"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "$ref": "#/$defs/__schema9"
+                },
+                "rootGeneration": {
+                  "$ref": "#/$defs/__schema6"
+                },
+                "activeRoot": {
+                  "$ref": "#/$defs/__schema1"
+                },
+                "issuedAt": {
+                  "$ref": "#/$defs/__schema10"
+                },
+                "selfSignature": {
+                  "$ref": "#/$defs/__schema11"
+                },
+                "activation": {
+                  "type": "string",
+                  "const": "compromise_recovery"
+                },
+                "predecessor": {
+                  "$ref": "#/$defs/__schema13"
+                },
+                "recoverySignatures": {
+                  "$ref": "#/$defs/__schema14"
+                }
+              },
+              "required": [
+                "profile",
+                "rootGeneration",
+                "activeRoot",
+                "issuedAt",
+                "selfSignature",
+                "activation",
+                "predecessor",
+                "recoverySignatures"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "recordType",
+        "rootGeneration",
+        "rootKeyId",
+        "contentDigest",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "__schema9": {
+      "type": "string",
+      "const": "provider_registry_root_metadata_v1"
+    },
+    "__schema10": {
+      "type": "string",
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+    },
+    "__schema11": {
+      "type": "string",
+      "pattern": "^provider-root-self-ed25519:([0-9a-f]{22}):([0-9a-f]{128})$"
+    },
+    "__schema12": {
+      "type": "string",
+      "pattern": "^provider-root-recovery-ed25519:([0-9a-f]{22}):([0-9a-f]{128})$"
+    },
+    "__schema13": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "const": "root_metadata"
+        },
+        "rootGeneration": {
+          "$ref": "#/$defs/__schema6"
+        },
+        "rootKeyId": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "contentDigest": {
+          "$ref": "#/$defs/__schema7"
+        }
+      },
+      "required": [
+        "state",
+        "rootGeneration",
+        "rootKeyId",
+        "contentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "__schema14": {
+      "minItems": 2,
+      "maxItems": 2,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema12"
+      }
+    },
+    "__schema15": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "provider_registry_recovery_public_key_v1"
+        },
+        "recoveryKeyId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{22}$"
+        },
+        "algorithm": {
+          "type": "string",
+          "const": "ed25519"
+        },
+        "publicKeyBytes": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "publicKeyDigest": {
+          "$ref": "#/$defs/__schema4"
+        }
+      },
+      "required": [
+        "profile",
+        "recoveryKeyId",
+        "algorithm",
+        "publicKeyBytes",
+        "publicKeyDigest"
+      ],
+      "additionalProperties": false
+    },
+    "__schema16": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "provider_signed_distribution_root_binding_v1"
+        },
+        "resolverProfile": {
+          "type": "string",
+          "const": "verified_signed_package_distribution_root_v1"
+        },
+        "signedPackageIdentityDigest": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "releaseRevisionDigest": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "bootstrapTrustBundle": {
+          "type": "object",
+          "properties": {
+            "locatorProfile": {
+              "type": "string",
+              "const": "distribution_provider_bootstrap_trust_bundle_v1"
+            },
+            "contentDigest": {
+              "$ref": "#/$defs/__schema7"
+            }
+          },
+          "required": [
+            "locatorProfile",
+            "contentDigest"
+          ],
+          "additionalProperties": false
+        },
+        "historyPolicy": {
+          "type": "object",
+          "properties": {
+            "profile": {
+              "type": "string",
+              "const": "provider_distribution_history_policy_v1"
+            },
+            "maxSupportCatalogGenerationCount": {
+              "type": "number",
+              "const": 4096
+            },
+            "maxPublicTaxonomyGenerationCount": {
+              "type": "number",
+              "const": 4096
+            },
+            "maxReleaseMatrixGenerationCount": {
+              "type": "number",
+              "const": 4096
+            },
+            "maxTargetDiscoveryResultGenerationCount": {
+              "type": "number",
+              "const": 4096
+            },
+            "maxReleaseTargetUniverseGenerationCount": {
+              "type": "number",
+              "const": 4096
+            },
+            "maxSingleDistributionObjectCanonicalBytes": {
+              "type": "number",
+              "const": 16777216
+            },
+            "maxTotalRetainedDistributionObjectCount": {
+              "type": "number",
+              "const": 65536
+            },
+            "maxTotalRetainedDistributionHistoryLogicalBytes": {
+              "type": "number",
+              "const": 536870912
+            },
+            "normalUpdateEmergencyGenerationReservePerChain": {
+              "type": "number",
+              "const": 8
+            },
+            "normalUpdateEmergencyLogicalBytesReserve": {
+              "type": "number",
+              "const": 16777216
+            },
+            "admission": {
+              "type": "string",
+              "const": "stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution"
+            },
+            "exhaustion": {
+              "type": "string",
+              "const": "reject_candidate_distribution_and_preserve_last_verified_distribution"
+            }
+          },
+          "required": [
+            "profile",
+            "maxSupportCatalogGenerationCount",
+            "maxPublicTaxonomyGenerationCount",
+            "maxReleaseMatrixGenerationCount",
+            "maxTargetDiscoveryResultGenerationCount",
+            "maxReleaseTargetUniverseGenerationCount",
+            "maxSingleDistributionObjectCanonicalBytes",
+            "maxTotalRetainedDistributionObjectCount",
+            "maxTotalRetainedDistributionHistoryLogicalBytes",
+            "normalUpdateEmergencyGenerationReservePerChain",
+            "normalUpdateEmergencyLogicalBytesReserve",
+            "admission",
+            "exhaustion"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "profile",
+        "resolverProfile",
+        "signedPackageIdentityDigest",
+        "releaseRevisionDigest",
+        "bootstrapTrustBundle",
+        "historyPolicy"
+      ],
+      "additionalProperties": false
+    },
+    "__schema17": {
+      "type": "string",
+      "pattern": "^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "__schema18": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "__schema19": {
+      "type": "object",
+      "properties": {
+        "caseKey": {
+          "$ref": "#/$defs/__schema20"
+        },
+        "fixtureOrdinal": {
+          "$ref": "#/$defs/__schema21"
+        },
+        "fixtureRole": {
+          "type": "string",
+          "enum": [
+            "setup",
+            "operation",
+            "assertion"
+          ]
+        },
+        "fixtureProgramProfile": {
+          "type": "string",
+          "const": "provider_real_fs_fixture_program_v1"
+        },
+        "fixtureProgramBytes": {
+          "$ref": "#/$defs/__schema22"
+        },
+        "fixtureProgramContentDigest": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "fixtureProgramLogicalBytes": {
+          "$ref": "#/$defs/__schema21"
+        }
+      },
+      "required": [
+        "caseKey",
+        "fixtureOrdinal",
+        "fixtureRole",
+        "fixtureProgramProfile",
+        "fixtureProgramBytes",
+        "fixtureProgramContentDigest",
+        "fixtureProgramLogicalBytes"
+      ],
+      "additionalProperties": false
+    },
+    "__schema20": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+    },
+    "__schema21": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema22": {
+      "type": "string",
+      "pattern": "^base64url:(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$"
+    },
+    "__schema23": {
+      "type": "string",
+      "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+    },
+    "__schema24": {
+      "type": "object",
+      "properties": {
+        "providerFeasibilityEvidence": {
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "type": "number",
+              "const": 1
+            },
+            "recordType": {
+              "type": "string",
+              "const": "provider_feasibility_evidence"
+            },
+            "evidenceId": {
+              "$ref": "#/$defs/__schema25"
+            },
+            "contentDigest": {
+              "$ref": "#/$defs/__schema7"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "const": "provider_feasibility_evidence_v1"
+                },
+                "evidenceId": {
+                  "$ref": "#/$defs/__schema25"
+                },
+                "providerId": {
+                  "$ref": "#/$defs/__schema26"
+                },
+                "semanticProviderPolicyDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "runtimeAttestationContentDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "implementationDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "binaryAttestationDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "target": {
+                  "$ref": "#/$defs/__schema27"
+                },
+                "isolationSecurityBoundaryProfileDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "ipcPeerAuthenticationPolicyDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "realFilesystemSuiteDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "realFilesystemConformanceResult": {
+                  "type": "object",
+                  "properties": {
+                    "locatorProfile": {
+                      "type": "string",
+                      "const": "installation_provider_real_fs_conformance_result_v1"
+                    },
+                    "resultId": {
+                      "$ref": "#/$defs/__schema31"
+                    },
+                    "contentDigest": {
+                      "$ref": "#/$defs/__schema7"
+                    }
+                  },
+                  "required": [
+                    "locatorProfile",
+                    "resultId",
+                    "contentDigest"
+                  ],
+                  "additionalProperties": false
+                },
+                "realFilesystemConformanceResultDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "fixtureManifestDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "runnerProfileDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "crashCutCoverageDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "result": {
+                  "type": "string",
+                  "enum": [
+                    "passed",
+                    "failed",
+                    "unsupported"
+                  ]
+                },
+                "issuedAt": {
+                  "$ref": "#/$defs/__schema10"
+                },
+                "qaSignature": {
+                  "type": "string",
+                  "pattern": "^provider-feasibility-ed25519:qa:[0-9a-f]{22}:[0-9a-f]{128}$"
+                },
+                "releaseSignature": {
+                  "type": "string",
+                  "pattern": "^provider-feasibility-ed25519:release:[0-9a-f]{22}:[0-9a-f]{128}$"
+                }
+              },
+              "required": [
+                "profile",
+                "evidenceId",
+                "providerId",
+                "semanticProviderPolicyDigest",
+                "runtimeAttestationContentDigest",
+                "implementationDigest",
+                "binaryAttestationDigest",
+                "target",
+                "isolationSecurityBoundaryProfileDigest",
+                "ipcPeerAuthenticationPolicyDigest",
+                "realFilesystemSuiteDigest",
+                "realFilesystemConformanceResult",
+                "realFilesystemConformanceResultDigest",
+                "fixtureManifestDigest",
+                "runnerProfileDigest",
+                "crashCutCoverageDigest",
+                "result",
+                "issuedAt",
+                "qaSignature",
+                "releaseSignature"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "recordType",
+            "evidenceId",
+            "contentDigest",
+            "payload"
+          ],
+          "additionalProperties": false
+        },
+        "realFilesystemConformanceResult": {
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "type": "number",
+              "const": 1
+            },
+            "recordType": {
+              "type": "string",
+              "const": "provider_real_fs_conformance_result"
+            },
+            "resultId": {
+              "$ref": "#/$defs/__schema31"
+            },
+            "contentDigest": {
+              "$ref": "#/$defs/__schema7"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "const": "provider_real_fs_conformance_result_v1"
+                },
+                "resultId": {
+                  "$ref": "#/$defs/__schema31"
+                },
+                "providerId": {
+                  "$ref": "#/$defs/__schema26"
+                },
+                "semanticProviderPolicyDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "implementationDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "binaryAttestationDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "target": {
+                  "$ref": "#/$defs/__schema27"
+                },
+                "targetDiscoveryResult": {
+                  "$ref": "#/$defs/__schema32"
+                },
+                "targetDiscoveryInputBundleContentDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "realFilesystemSuiteManifest": {
+                  "$ref": "#/$defs/__schema34"
+                },
+                "suiteDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "fixtureManifestDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "runnerProfileDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "crashCutCoverageDigest": {
+                  "$ref": "#/$defs/__schema7"
+                },
+                "caseResults": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema35"
+                  }
+                },
+                "result": {
+                  "$ref": "#/$defs/__schema38"
+                },
+                "completedAt": {
+                  "$ref": "#/$defs/__schema10"
+                }
+              },
+              "required": [
+                "profile",
+                "resultId",
+                "providerId",
+                "semanticProviderPolicyDigest",
+                "implementationDigest",
+                "binaryAttestationDigest",
+                "target",
+                "targetDiscoveryResult",
+                "targetDiscoveryInputBundleContentDigest",
+                "realFilesystemSuiteManifest",
+                "suiteDigest",
+                "fixtureManifestDigest",
+                "runnerProfileDigest",
+                "crashCutCoverageDigest",
+                "caseResults",
+                "result",
+                "completedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "recordType",
+            "resultId",
+            "contentDigest",
+            "payload"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "providerFeasibilityEvidence",
+        "realFilesystemConformanceResult"
+      ],
+      "additionalProperties": false
+    },
+    "__schema25": {
+      "type": "string",
+      "pattern": "^provider-feasibility-evidence:[0-9a-f]{22}$"
+    },
+    "__schema26": {
+      "type": "string",
+      "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+    },
+    "__schema27": {
+      "type": "object",
+      "properties": {
+        "targetProfileId": {
+          "$ref": "#/$defs/__schema28"
+        },
+        "osPlatform": {
+          "type": "string",
+          "enum": [
+            "darwin",
+            "linux"
+          ]
+        },
+        "osReleaseFamilyCode": {
+          "$ref": "#/$defs/__schema29"
+        },
+        "osBuildDigest": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "architecture": {
+          "type": "string",
+          "enum": [
+            "arm64",
+            "x86_64"
+          ]
+        },
+        "filesystemProfileCode": {
+          "$ref": "#/$defs/__schema30"
+        },
+        "filesystemFeatureProfileDigest": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "mountOptionProfileDigest": {
+          "$ref": "#/$defs/__schema7"
+        }
+      },
+      "required": [
+        "targetProfileId",
+        "osPlatform",
+        "osReleaseFamilyCode",
+        "osBuildDigest",
+        "architecture",
+        "filesystemProfileCode",
+        "filesystemFeatureProfileDigest",
+        "mountOptionProfileDigest"
+      ],
+      "additionalProperties": false
+    },
+    "__schema28": {
+      "type": "string",
+      "pattern": "^provider-target-profile:[0-9a-f]{64}$"
+    },
+    "__schema29": {
+      "type": "string",
+      "pattern": "^provider-os-family:[0-9a-f]{22}$"
+    },
+    "__schema30": {
+      "type": "string",
+      "pattern": "^provider-fs-profile:[0-9a-f]{22}$"
+    },
+    "__schema31": {
+      "type": "string",
+      "pattern": "^provider-real-fs-result:[0-9a-f]{22}$"
+    },
+    "__schema32": {
+      "type": "object",
+      "properties": {
+        "locatorProfile": {
+          "type": "string",
+          "const": "distribution_provider_target_discovery_result_v1"
+        },
+        "discoveryGeneration": {
+          "$ref": "#/$defs/__schema33"
+        },
+        "contentDigest": {
+          "$ref": "#/$defs/__schema7"
+        }
+      },
+      "required": [
+        "locatorProfile",
+        "discoveryGeneration",
+        "contentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "__schema33": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "__schema34": {
+      "type": "object",
+      "properties": {
+        "locatorProfile": {
+          "type": "string",
+          "const": "distribution_provider_real_fs_suite_manifest_v1"
+        },
+        "distributionRootBinding": {
+          "$ref": "#/$defs/__schema16"
+        },
+        "suiteDigest": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "fixtureManifestDigest": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "contentDigest": {
+          "$ref": "#/$defs/__schema7"
+        }
+      },
+      "required": [
+        "locatorProfile",
+        "distributionRootBinding",
+        "suiteDigest",
+        "fixtureManifestDigest",
+        "contentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "__schema35": {
+      "type": "object",
+      "properties": {
+        "caseId": {
+          "$ref": "#/$defs/__schema36"
+        },
+        "crashCutId": {
+          "$ref": "#/$defs/__schema37"
+        },
+        "outcome": {
+          "$ref": "#/$defs/__schema38"
+        },
+        "resultCode": {
+          "type": "string",
+          "enum": [
+            "passed",
+            "assertion_failed",
+            "provider_rejected",
+            "crash_recovery_failed",
+            "identity_discontinuity",
+            "containment_violation",
+            "unsupported_by_target_profile"
+          ]
+        }
+      },
+      "required": [
+        "caseId",
+        "crashCutId",
+        "outcome",
+        "resultCode"
+      ],
+      "additionalProperties": false
+    },
+    "__schema36": {
+      "type": "string",
+      "pattern": "^provider-real-fs-case:[0-9a-f]{22}$"
+    },
+    "__schema37": {
+      "type": "string",
+      "pattern": "^(?:no-crash|provider-crash-cut:[0-9a-f]{22})$"
+    },
+    "__schema38": {
+      "type": "string",
+      "enum": [
+        "passed",
+        "failed",
+        "unsupported"
+      ]
+    },
+    "__schema39": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "__schema40": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "provider_feasibility_approval_keys_v1"
+        },
+        "activeKeyIds": {
+          "type": "object",
+          "properties": {
+            "qa": {
+              "$ref": "#/$defs/__schema41"
+            },
+            "release": {
+              "$ref": "#/$defs/__schema41"
+            }
+          },
+          "required": [
+            "qa",
+            "release"
+          ],
+          "additionalProperties": false
+        },
+        "publicKeyRecords": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema42"
+          }
+        },
+        "compromisedRevokedKeyIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema41"
+          }
+        }
+      },
+      "required": [
+        "profile",
+        "activeKeyIds",
+        "publicKeyRecords",
+        "compromisedRevokedKeyIds"
+      ],
+      "additionalProperties": false
+    },
+    "__schema41": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{22}$"
+    },
+    "__schema42": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "provider_feasibility_approver_public_key_v1"
+        },
+        "distributionRegistryGenerationIntroduced": {
+          "$ref": "#/$defs/__schema43"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "qa",
+            "release"
+          ]
+        },
+        "keyId": {
+          "$ref": "#/$defs/__schema41"
+        },
+        "algorithm": {
+          "type": "string",
+          "const": "ed25519"
+        },
+        "publicKeyBytes": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "publicKeyDigest": {
+          "$ref": "#/$defs/__schema4"
+        },
+        "registrySignature": {
+          "$ref": "#/$defs/__schema44"
+        }
+      },
+      "required": [
+        "profile",
+        "distributionRegistryGenerationIntroduced",
+        "role",
+        "keyId",
+        "algorithm",
+        "publicKeyBytes",
+        "publicKeyDigest",
+        "registrySignature"
+      ],
+      "additionalProperties": false
+    },
+    "__schema43": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "__schema44": {
+      "type": "string",
+      "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+    },
+    "__schema45": {
+      "type": "object",
+      "properties": {
+        "locatorProfile": {
+          "type": "string",
+          "const": "distribution_provider_public_support_taxonomy_v1"
+        },
+        "taxonomyGeneration": {
+          "$ref": "#/$defs/__schema33"
+        },
+        "contentDigest": {
+          "$ref": "#/$defs/__schema7"
+        }
+      },
+      "required": [
+        "locatorProfile",
+        "taxonomyGeneration",
+        "contentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "__schema46": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "__schema47": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/__schema27"
+        },
+        "candidates": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema48"
+          }
+        }
+      },
+      "required": [
+        "target",
+        "candidates"
+      ],
+      "additionalProperties": false
+    },
+    "__schema48": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "$ref": "#/$defs/__schema26"
+        },
+        "providerFeasibilityEvidence": {
+          "$ref": "#/$defs/__schema49"
+        },
+        "semanticProviderPolicy": {
+          "type": "object",
+          "properties": {
+            "profile": {
+              "type": "string",
+              "const": "store_durable_object_provider_policy_v1"
+            },
+            "protocolVersion": {
+              "type": "number",
+              "const": 1
+            },
+            "providerId": {
+              "$ref": "#/$defs/__schema26"
+            },
+            "ipcPeerAuthenticationPolicyDigest": {
+              "$ref": "#/$defs/__schema7"
+            },
+            "isolation": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "separate_os_principal"
+                    },
+                    "securityBoundaryProfileDigest": {
+                      "$ref": "#/$defs/__schema7"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "securityBoundaryProfileDigest"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "kernel_isolated_storage_domain"
+                    },
+                    "securityBoundaryProfileDigest": {
+                      "$ref": "#/$defs/__schema7"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "securityBoundaryProfileDigest"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "sourceNamespaceVisibility": {
+              "type": "string",
+              "const": "inaccessible_to_workspace_writer"
+            },
+            "supportedStagingObjectKinds": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "regular"
+                },
+                {
+                  "type": "string",
+                  "const": "directory"
+                }
+              ],
+              "minItems": 2,
+              "maxItems": 2,
+              "items": false
+            },
+            "stagingRecovery": {
+              "type": "string",
+              "const": "opaque_locator_idempotent_allocate_or_reopen_exact_unpublished_object_across_restart"
+            },
+            "durableIdentity": {
+              "type": "string",
+              "const": "same_object_stable_aba_recreate_distinct_across_restart"
+            },
+            "publishSemantics": {
+              "type": "string",
+              "const": "exact_opened_object_no_replace_with_atomic_bound_root_containment"
+            },
+            "externalIntentStateSemantics": {
+              "type": "string",
+              "const": "atomic_monotonic_compare_replace_with_restart_receipt_and_handoff_cut"
+            },
+            "handoffJournalSemantics": {
+              "type": "string",
+              "const": "immutable_no_replace_compare_tip_complete_enumeration_prospective_sealed_version_atomic_seal"
+            },
+            "storeManifestCompareAppendReceiptLedger": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "const": "store_manifest_compare_append_receipt_ledger_policy_v1"
+                },
+                "locatorProfile": {
+                  "type": "string",
+                  "const": "store_manifest_compare_append_receipt_v1"
+                },
+                "storageBoundary": {
+                  "type": "string",
+                  "const": "provider_isolated_non_store_namespace"
+                },
+                "appendSemantics": {
+                  "type": "string",
+                  "const": "immutable_no_replace_by_repository_worktree_operation_nonce"
+                },
+                "maxReceiptCountPerRepositoryWorktree": {
+                  "type": "number",
+                  "const": 16384
+                },
+                "maxReceiptLogicalBytesPerRepositoryWorktree": {
+                  "type": "number",
+                  "const": 67108864
+                },
+                "maxSingleReceiptLogicalBytes": {
+                  "type": "number",
+                  "const": 1048576
+                },
+                "admission": {
+                  "type": "string",
+                  "const": "freeze_resolved_at_and_complete_signed_receipt_then_reserve_exact_count_and_canonical_bytes_before_atomic_namespace_commit"
+                },
+                "quotaAccounting": {
+                  "type": "string",
+                  "const": "excluded_from_private_store_quota_root"
+                }
+              },
+              "required": [
+                "profile",
+                "locatorProfile",
+                "storageBoundary",
+                "appendSemantics",
+                "maxReceiptCountPerRepositoryWorktree",
+                "maxReceiptLogicalBytesPerRepositoryWorktree",
+                "maxSingleReceiptLogicalBytes",
+                "admission",
+                "quotaAccounting"
+              ],
+              "additionalProperties": false
+            },
+            "deleteSemantics": {
+              "type": "string",
+              "enum": [
+                "exact_opened_object_atomic_compare_delete_with_containment",
+                "disabled"
+              ]
+            },
+            "stockSameUidFilesystemFallback": {
+              "type": "string",
+              "const": "forbidden"
+            },
+            "realFilesystemConformanceSuiteDigest": {
+              "$ref": "#/$defs/__schema7"
+            }
+          },
+          "required": [
+            "profile",
+            "protocolVersion",
+            "providerId",
+            "ipcPeerAuthenticationPolicyDigest",
+            "isolation",
+            "sourceNamespaceVisibility",
+            "supportedStagingObjectKinds",
+            "stagingRecovery",
+            "durableIdentity",
+            "publishSemantics",
+            "externalIntentStateSemantics",
+            "handoffJournalSemantics",
+            "storeManifestCompareAppendReceiptLedger",
+            "deleteSemantics",
+            "stockSameUidFilesystemFallback",
+            "realFilesystemConformanceSuiteDigest"
+          ],
+          "additionalProperties": false
+        },
+        "runtimeAttestation": {
+          "$ref": "#/$defs/__schema50"
+        },
+        "releaseDisposition": {
+          "type": "string",
+          "enum": [
+            "strong_read_write",
+            "legacy_redacted_read_only"
+          ]
+        }
+      },
+      "required": [
+        "providerId",
+        "providerFeasibilityEvidence",
+        "semanticProviderPolicy",
+        "runtimeAttestation",
+        "releaseDisposition"
+      ],
+      "additionalProperties": false
+    },
+    "__schema49": {
+      "type": "object",
+      "properties": {
+        "locatorProfile": {
+          "type": "string",
+          "const": "installation_provider_feasibility_evidence_v1"
+        },
+        "evidenceId": {
+          "$ref": "#/$defs/__schema25"
+        },
+        "contentDigest": {
+          "$ref": "#/$defs/__schema7"
+        }
+      },
+      "required": [
+        "locatorProfile",
+        "evidenceId",
+        "contentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "__schema50": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "store_durable_object_provider_runtime_attestation_pin_v1"
+        },
+        "contentDigest": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "profile": {
+              "type": "string",
+              "const": "store_durable_object_provider_runtime_attestation_v1"
+            },
+            "providerId": {
+              "$ref": "#/$defs/__schema26"
+            },
+            "semanticProviderPolicyDigest": {
+              "$ref": "#/$defs/__schema7"
+            },
+            "implementationDigest": {
+              "$ref": "#/$defs/__schema7"
+            },
+            "binaryAttestationDigest": {
+              "$ref": "#/$defs/__schema7"
+            },
+            "ipcEndpointAttestationDigest": {
+              "$ref": "#/$defs/__schema7"
+            },
+            "osPlatform": {
+              "type": "string",
+              "enum": [
+                "darwin",
+                "linux",
+                "win32"
+              ]
+            },
+            "osReleaseFamilyCode": {
+              "$ref": "#/$defs/__schema29"
+            },
+            "osBuildDigest": {
+              "$ref": "#/$defs/__schema7"
+            },
+            "architecture": {
+              "type": "string",
+              "enum": [
+                "arm64",
+                "x86_64"
+              ]
+            },
+            "filesystemProfileDigest": {
+              "$ref": "#/$defs/__schema7"
+            },
+            "realFilesystemConformanceResultDigest": {
+              "$ref": "#/$defs/__schema7"
+            },
+            "attestationGeneration": {
+              "$ref": "#/$defs/__schema43"
+            },
+            "issuedAt": {
+              "$ref": "#/$defs/__schema10"
+            },
+            "registrySignature": {
+              "$ref": "#/$defs/__schema44"
+            }
+          },
+          "required": [
+            "profile",
+            "providerId",
+            "semanticProviderPolicyDigest",
+            "implementationDigest",
+            "binaryAttestationDigest",
+            "ipcEndpointAttestationDigest",
+            "osPlatform",
+            "osReleaseFamilyCode",
+            "osBuildDigest",
+            "architecture",
+            "filesystemProfileDigest",
+            "realFilesystemConformanceResultDigest",
+            "attestationGeneration",
+            "issuedAt",
+            "registrySignature"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "profile",
+        "contentDigest",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "__schema51": {
+      "type": "object",
+      "properties": {
+        "descriptor": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "osPlatform": {
+                  "type": "string",
+                  "const": "darwin"
+                },
+                "resolver": {
+                  "type": "string",
+                  "const": "darwin_product_major_version_v1"
+                },
+                "productMajorVersion": {
+                  "$ref": "#/$defs/__schema52"
+                }
+              },
+              "required": [
+                "osPlatform",
+                "resolver",
+                "productMajorVersion"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "osPlatform": {
+                  "type": "string",
+                  "const": "linux"
+                },
+                "resolver": {
+                  "type": "string",
+                  "const": "linux_os_release_id_major_version_v1"
+                },
+                "distributionId": {
+                  "type": "string",
+                  "enum": [
+                    "almalinux",
+                    "amazon-linux",
+                    "debian",
+                    "fedora",
+                    "opensuse-leap",
+                    "rhel",
+                    "rocky",
+                    "sles",
+                    "ubuntu"
+                  ]
+                },
+                "distributionMajorVersion": {
+                  "$ref": "#/$defs/__schema52"
+                }
+              },
+              "required": [
+                "osPlatform",
+                "resolver",
+                "distributionId",
+                "distributionMajorVersion"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "osReleaseFamilyCode": {
+          "$ref": "#/$defs/__schema29"
+        }
+      },
+      "required": [
+        "descriptor",
+        "osReleaseFamilyCode"
+      ],
+      "additionalProperties": false
+    },
+    "__schema52": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 999
+    },
+    "__schema53": {
+      "type": "object",
+      "properties": {
+        "descriptor": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "osPlatform": {
+                  "type": "string",
+                  "const": "darwin"
+                },
+                "resolver": {
+                  "type": "string",
+                  "const": "darwin_filesystem_type_v1"
+                },
+                "filesystemKind": {
+                  "type": "string",
+                  "const": "apfs"
+                }
+              },
+              "required": [
+                "osPlatform",
+                "resolver",
+                "filesystemKind"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "osPlatform": {
+                  "type": "string",
+                  "const": "linux"
+                },
+                "resolver": {
+                  "type": "string",
+                  "const": "linux_statfs_type_v1"
+                },
+                "filesystemKind": {
+                  "type": "string",
+                  "const": "ext4"
+                }
+              },
+              "required": [
+                "osPlatform",
+                "resolver",
+                "filesystemKind"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "filesystemProfileCode": {
+          "$ref": "#/$defs/__schema30"
+        }
+      },
+      "required": [
+        "descriptor",
+        "filesystemProfileCode"
+      ],
+      "additionalProperties": false
+    },
+    "__schema54": {
+      "type": "string",
+      "pattern": "^provider-registry-manifest:[0-9a-f]{22}$"
+    },
+    "__schema55": {
+      "type": "string",
+      "const": "provider_registry_manifest_v1"
+    },
+    "__schema56": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema57"
+      }
+    },
+    "__schema57": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "providerId": {
+              "$ref": "#/$defs/__schema26"
+            },
+            "disposition": {
+              "type": "string",
+              "const": "enabled"
+            },
+            "registryEntryContentDigest": {
+              "$ref": "#/$defs/__schema7"
+            },
+            "registryEntry": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "profile": {
+                      "$ref": "#/$defs/__schema58"
+                    },
+                    "installationIdentityGenerationId": {
+                      "$ref": "#/$defs/__schema23"
+                    },
+                    "activeRootMetadata": {
+                      "$ref": "#/$defs/__schema5"
+                    },
+                    "registryRootKeyId": {
+                      "$ref": "#/$defs/__schema2"
+                    },
+                    "providerId": {
+                      "$ref": "#/$defs/__schema26"
+                    },
+                    "semanticProviderPolicyDigest": {
+                      "$ref": "#/$defs/__schema7"
+                    },
+                    "providerFeasibilityEvidence": {
+                      "$ref": "#/$defs/__schema49"
+                    },
+                    "runtimeAttestation": {
+                      "$ref": "#/$defs/__schema50"
+                    },
+                    "verificationKeys": {
+                      "$ref": "#/$defs/__schema59"
+                    },
+                    "feasibilityApprovalKeys": {
+                      "$ref": "#/$defs/__schema40"
+                    },
+                    "status": {
+                      "$ref": "#/$defs/__schema63"
+                    },
+                    "registryGeneration": {
+                      "type": "number",
+                      "const": 1
+                    },
+                    "registrySignature": {
+                      "$ref": "#/$defs/__schema44"
+                    }
+                  },
+                  "required": [
+                    "profile",
+                    "installationIdentityGenerationId",
+                    "activeRootMetadata",
+                    "registryRootKeyId",
+                    "providerId",
+                    "semanticProviderPolicyDigest",
+                    "providerFeasibilityEvidence",
+                    "runtimeAttestation",
+                    "verificationKeys",
+                    "feasibilityApprovalKeys",
+                    "status",
+                    "registryGeneration",
+                    "registrySignature"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "profile": {
+                      "$ref": "#/$defs/__schema58"
+                    },
+                    "installationIdentityGenerationId": {
+                      "$ref": "#/$defs/__schema23"
+                    },
+                    "activeRootMetadata": {
+                      "$ref": "#/$defs/__schema5"
+                    },
+                    "registryRootKeyId": {
+                      "$ref": "#/$defs/__schema2"
+                    },
+                    "providerId": {
+                      "$ref": "#/$defs/__schema26"
+                    },
+                    "semanticProviderPolicyDigest": {
+                      "$ref": "#/$defs/__schema7"
+                    },
+                    "providerFeasibilityEvidence": {
+                      "$ref": "#/$defs/__schema49"
+                    },
+                    "runtimeAttestation": {
+                      "$ref": "#/$defs/__schema50"
+                    },
+                    "verificationKeys": {
+                      "$ref": "#/$defs/__schema59"
+                    },
+                    "feasibilityApprovalKeys": {
+                      "$ref": "#/$defs/__schema40"
+                    },
+                    "status": {
+                      "$ref": "#/$defs/__schema63"
+                    },
+                    "registryGeneration": {
+                      "$ref": "#/$defs/__schema64"
+                    },
+                    "predecessorRegistryEntryContentDigest": {
+                      "$ref": "#/$defs/__schema7"
+                    },
+                    "registrySignature": {
+                      "$ref": "#/$defs/__schema44"
+                    }
+                  },
+                  "required": [
+                    "profile",
+                    "installationIdentityGenerationId",
+                    "activeRootMetadata",
+                    "registryRootKeyId",
+                    "providerId",
+                    "semanticProviderPolicyDigest",
+                    "providerFeasibilityEvidence",
+                    "runtimeAttestation",
+                    "verificationKeys",
+                    "feasibilityApprovalKeys",
+                    "status",
+                    "registryGeneration",
+                    "predecessorRegistryEntryContentDigest",
+                    "registrySignature"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "providerId",
+            "disposition",
+            "registryEntryContentDigest",
+            "registryEntry"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "providerId": {
+              "$ref": "#/$defs/__schema26"
+            },
+            "disposition": {
+              "type": "string",
+              "const": "revoked"
+            },
+            "lastEnabledRegistryEntryContentDigest": {
+              "$ref": "#/$defs/__schema7"
+            },
+            "revokedAtManifestGeneration": {
+              "$ref": "#/$defs/__schema43"
+            },
+            "reason": {
+              "type": "string",
+              "enum": [
+                "provider_compromised",
+                "semantic_policy_retired",
+                "distribution_support_withdrawn",
+                "migration_completed"
+              ]
+            }
+          },
+          "required": [
+            "providerId",
+            "disposition",
+            "lastEnabledRegistryEntryContentDigest",
+            "revokedAtManifestGeneration",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "__schema58": {
+      "type": "string",
+      "const": "store_durable_object_provider_registry_entry_v1"
+    },
+    "__schema59": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "store_durable_object_provider_verification_keys_v1"
+        },
+        "activeKeyIds": {
+          "type": "object",
+          "properties": {
+            "operationReceipt": {
+              "$ref": "#/$defs/__schema60"
+            },
+            "containmentProof": {
+              "$ref": "#/$defs/__schema60"
+            },
+            "stateVersion": {
+              "$ref": "#/$defs/__schema60"
+            },
+            "journalVersion": {
+              "$ref": "#/$defs/__schema60"
+            }
+          },
+          "required": [
+            "operationReceipt",
+            "containmentProof",
+            "stateVersion",
+            "journalVersion"
+          ],
+          "additionalProperties": false
+        },
+        "activeBindingDerivationKeyGeneration": {
+          "$ref": "#/$defs/__schema43"
+        },
+        "publicKeyRecords": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema61"
+          }
+        },
+        "bindingDerivationGenerationRecords": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema62"
+          }
+        },
+        "compromisedRevokedKeyIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema60"
+          }
+        },
+        "compromisedRevokedBindingDerivationGenerations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema43"
+          }
+        }
+      },
+      "required": [
+        "profile",
+        "activeKeyIds",
+        "activeBindingDerivationKeyGeneration",
+        "publicKeyRecords",
+        "bindingDerivationGenerationRecords",
+        "compromisedRevokedKeyIds",
+        "compromisedRevokedBindingDerivationGenerations"
+      ],
+      "additionalProperties": false
+    },
+    "__schema60": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{22}$"
+    },
+    "__schema61": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "store_durable_object_provider_verification_public_key_v1"
+        },
+        "providerId": {
+          "$ref": "#/$defs/__schema26"
+        },
+        "registryGenerationIntroduced": {
+          "$ref": "#/$defs/__schema43"
+        },
+        "keyId": {
+          "$ref": "#/$defs/__schema60"
+        },
+        "usage": {
+          "type": "string",
+          "enum": [
+            "operation_receipt",
+            "containment_proof",
+            "state_version",
+            "journal_version",
+            "migration_semantic_proof"
+          ]
+        },
+        "algorithm": {
+          "type": "string",
+          "const": "ed25519"
+        },
+        "publicKeyBytes": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "publicKeyDigest": {
+          "$ref": "#/$defs/__schema4"
+        },
+        "registrySignature": {
+          "$ref": "#/$defs/__schema44"
+        }
+      },
+      "required": [
+        "profile",
+        "providerId",
+        "registryGenerationIntroduced",
+        "keyId",
+        "usage",
+        "algorithm",
+        "publicKeyBytes",
+        "publicKeyDigest",
+        "registrySignature"
+      ],
+      "additionalProperties": false
+    },
+    "__schema62": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "store_durable_object_provider_binding_derivation_generation_v1"
+        },
+        "providerId": {
+          "$ref": "#/$defs/__schema26"
+        },
+        "registryGenerationIntroduced": {
+          "$ref": "#/$defs/__schema43"
+        },
+        "generation": {
+          "$ref": "#/$defs/__schema43"
+        },
+        "algorithm": {
+          "type": "string",
+          "const": "hmac_sha256_provider_private"
+        },
+        "keyCommitmentDigest": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "registrySignature": {
+          "$ref": "#/$defs/__schema44"
+        }
+      },
+      "required": [
+        "profile",
+        "providerId",
+        "registryGenerationIntroduced",
+        "generation",
+        "algorithm",
+        "keyCommitmentDigest",
+        "registrySignature"
+      ],
+      "additionalProperties": false
+    },
+    "__schema63": {
+      "type": "string",
+      "const": "enabled"
+    },
+    "__schema64": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 9007199254740991
+    },
+    "__schema65": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "steady"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "migration"
+            },
+            "migrationId": {
+              "type": "string",
+              "pattern": "^provider-migration:[0-9a-f]{22}$"
+            },
+            "sourceProviderId": {
+              "$ref": "#/$defs/__schema26"
+            },
+            "destinationProviderId": {
+              "$ref": "#/$defs/__schema26"
+            },
+            "activeForMigrationWrites": {
+              "$ref": "#/$defs/__schema26"
+            },
+            "phase": {
+              "type": "string",
+              "enum": [
+                "prepared",
+                "rebinding",
+                "source_drained"
+              ]
+            }
+          },
+          "required": [
+            "state",
+            "migrationId",
+            "sourceProviderId",
+            "destinationProviderId",
+            "activeForMigrationWrites",
+            "phase"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "__schema66": {
+      "type": "string",
+      "pattern": "^provider-registry-manifest-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+    },
+    "__schema67": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "provider_release_coverage_artifact_limits_v1"
+        },
+        "maxTargetEntriesPerArtifact": {
+          "type": "number",
+          "const": 4096
+        },
+        "maxCanonicalUnionTargetEntries": {
+          "type": "number",
+          "const": 4096
+        },
+        "maxUnresolvedObservationsPerDiscoveryResult": {
+          "type": "number",
+          "const": 4096
+        },
+        "maxCanonicalEnvelopeBytes": {
+          "type": "number",
+          "const": 16777216
+        }
+      },
+      "required": [
+        "profile",
+        "maxTargetEntriesPerArtifact",
+        "maxCanonicalUnionTargetEntries",
+        "maxUnresolvedObservationsPerDiscoveryResult",
+        "maxCanonicalEnvelopeBytes"
+      ],
+      "additionalProperties": false
+    },
+    "__schema68": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/__schema27"
+        },
+        "publicProfileId": {
+          "$ref": "#/$defs/__schema69"
+        }
+      },
+      "required": [
+        "target",
+        "publicProfileId"
+      ],
+      "additionalProperties": false
+    },
+    "__schema69": {
+      "type": "string",
+      "pattern": "^provider-public-support-profile:[0-9a-f]{64}$"
+    },
+    "__schema70": {
+      "type": "object",
+      "properties": {
+        "locatorProfile": {
+          "type": "string",
+          "const": "distribution_provider_release_matrix_v1"
+        },
+        "releaseMatrixGeneration": {
+          "$ref": "#/$defs/__schema33"
+        },
+        "contentDigest": {
+          "$ref": "#/$defs/__schema7"
+        }
+      },
+      "required": [
+        "locatorProfile",
+        "releaseMatrixGeneration",
+        "contentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "__schema71": {
+      "type": "string",
+      "enum": [
+        "osPlatform",
+        "osReleaseFamilyCode",
+        "osBuildDigest",
+        "architecture",
+        "filesystemProfileCode",
+        "filesystemFeatureProfileDigest",
+        "mountOptionProfileDigest"
+      ]
+    },
+    "__schema72": {
+      "type": "string",
+      "enum": [
+        "signed_release_matrix",
+        "real_filesystem_fixture_manifest",
+        "target_discovery_runner"
+      ]
+    },
+    "__schema73": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema74": {
+      "type": "string",
+      "enum": [
+        "release_matrix_incomplete",
+        "target_discovery_unresolved",
+        "taxonomy_mapping_unresolved"
+      ]
+    },
+    "__schema75": {
+      "type": "object",
+      "properties": {
+        "publicProfileId": {
+          "$ref": "#/$defs/__schema69"
+        },
+        "osPlatform": {
+          "type": "string",
+          "enum": [
+            "darwin",
+            "linux"
+          ]
+        },
+        "osReleaseFamilyCode": {
+          "$ref": "#/$defs/__schema29"
+        },
+        "architecture": {
+          "type": "string",
+          "enum": [
+            "arm64",
+            "x86_64"
+          ]
+        },
+        "filesystemProfileCode": {
+          "$ref": "#/$defs/__schema30"
+        },
+        "coverage": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "coverageState": {
+                  "type": "string",
+                  "const": "closed_world_complete"
+                },
+                "targetProfileIds": {
+                  "minItems": 1,
+                  "maxItems": 4096,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema28"
+                  }
+                }
+              },
+              "required": [
+                "coverageState",
+                "targetProfileIds"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "coverageState": {
+                  "type": "string",
+                  "const": "incomplete"
+                },
+                "reason": {
+                  "$ref": "#/$defs/__schema74"
+                },
+                "targetProfileIds": {
+                  "minItems": 1,
+                  "maxItems": 4096,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema28"
+                  }
+                }
+              },
+              "required": [
+                "coverageState",
+                "reason",
+                "targetProfileIds"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "publicProfileId",
+        "osPlatform",
+        "osReleaseFamilyCode",
+        "architecture",
+        "filesystemProfileCode",
+        "coverage"
+      ],
+      "additionalProperties": false
+    },
+    "__schema76": {
+      "type": "object",
+      "properties": {
+        "caseId": {
+          "$ref": "#/$defs/__schema36"
+        },
+        "caseKey": {
+          "$ref": "#/$defs/__schema20"
+        },
+        "fixtureRecordCount": {
+          "$ref": "#/$defs/__schema18"
+        },
+        "fixtureRecordSetDigest": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "requiredCrashCuts": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema77"
+          }
+        }
+      },
+      "required": [
+        "caseId",
+        "caseKey",
+        "fixtureRecordCount",
+        "fixtureRecordSetDigest",
+        "requiredCrashCuts"
+      ],
+      "additionalProperties": false
+    },
+    "__schema77": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "crashCutId": {
+              "$ref": "#/$defs/__schema37"
+            },
+            "crashCutOrdinal": {
+              "type": "number",
+              "const": 0
+            },
+            "injection": {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "const": "none"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "crashCutId",
+            "crashCutOrdinal",
+            "injection"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "crashCutId": {
+              "$ref": "#/$defs/__schema37"
+            },
+            "crashCutOrdinal": {
+              "$ref": "#/$defs/__schema18"
+            },
+            "injection": {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "const": "after_fixture_operation"
+                },
+                "afterFixtureOrdinal": {
+                  "$ref": "#/$defs/__schema21"
+                }
+              },
+              "required": [
+                "state",
+                "afterFixtureOrdinal"
+              ],
+              "additionalProperties": false
+            },
+            "recoveryAssertionProfile": {
+              "type": "string",
+              "const": "provider_real_fs_recovery_assertion_v1"
+            },
+            "recoveryAssertionBytes": {
+              "$ref": "#/$defs/__schema22"
+            },
+            "recoveryAssertionContentDigest": {
+              "$ref": "#/$defs/__schema7"
+            }
+          },
+          "required": [
+            "crashCutId",
+            "crashCutOrdinal",
+            "injection",
+            "recoveryAssertionProfile",
+            "recoveryAssertionBytes",
+            "recoveryAssertionContentDigest"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "__schema78": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema79": {
+      "type": "object",
+      "properties": {
+        "sourceRecordOrdinal": {
+          "$ref": "#/$defs/__schema78"
+        },
+        "outcome": {
+          "$ref": "#/$defs/__schema80"
+        }
+      },
+      "required": [
+        "sourceRecordOrdinal",
+        "outcome"
+      ],
+      "additionalProperties": false
+    },
+    "__schema80": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "resolved"
+            },
+            "target": {
+              "$ref": "#/$defs/__schema68"
+            }
+          },
+          "required": [
+            "state",
+            "target"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "unresolved"
+            },
+            "reason": {
+              "$ref": "#/$defs/__schema81"
+            }
+          },
+          "required": [
+            "state",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "__schema81": {
+      "type": "string",
+      "enum": [
+        "target_dimensions_missing",
+        "taxonomy_mapping_unresolved",
+        "conflicting_target_claims",
+        "observation_source_unavailable"
+      ]
+    },
+    "__schema82": {
+      "type": "object",
+      "properties": {
+        "locatorProfile": {
+          "type": "string",
+          "const": "distribution_provider_real_fs_fixture_manifest_v1"
+        },
+        "realFilesystemSuiteManifest": {
+          "$ref": "#/$defs/__schema34"
+        },
+        "realFilesystemSuiteDigest": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "fixtureManifestDigest": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "contentDigest": {
+          "$ref": "#/$defs/__schema7"
+        }
+      },
+      "required": [
+        "locatorProfile",
+        "realFilesystemSuiteManifest",
+        "realFilesystemSuiteDigest",
+        "fixtureManifestDigest",
+        "contentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "__schema83": {
+      "type": "object",
+      "properties": {
+        "locatorProfile": {
+          "type": "string",
+          "const": "distribution_provider_target_discovery_runner_run_v1"
+        },
+        "producerName": {
+          "type": "string",
+          "const": "understand-code"
+        },
+        "producerVersion": {
+          "$ref": "#/$defs/__schema84"
+        },
+        "implementationDigest": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "binaryAttestationDigest": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "runnerProfileDigest": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "runManifestContentDigest": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "releaseRevisionDigest": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "executedAt": {
+          "$ref": "#/$defs/__schema10"
+        }
+      },
+      "required": [
+        "locatorProfile",
+        "producerName",
+        "producerVersion",
+        "implementationDigest",
+        "binaryAttestationDigest",
+        "runnerProfileDigest",
+        "runManifestContentDigest",
+        "releaseRevisionDigest",
+        "executedAt"
+      ],
+      "additionalProperties": false
+    },
+    "__schema84": {
+      "type": "string",
+      "pattern": "^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "__schema85": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "string",
+          "const": "osPlatform"
+        },
+        {
+          "type": "string",
+          "const": "osReleaseFamilyCode"
+        },
+        {
+          "type": "string",
+          "const": "osBuildDigest"
+        },
+        {
+          "type": "string",
+          "const": "architecture"
+        },
+        {
+          "type": "string",
+          "const": "filesystemProfileCode"
+        },
+        {
+          "type": "string",
+          "const": "filesystemFeatureProfileDigest"
+        },
+        {
+          "type": "string",
+          "const": "mountOptionProfileDigest"
+        }
+      ],
+      "minItems": 7,
+      "maxItems": 7,
+      "items": false
+    },
+    "__schema86": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "string",
+          "const": "signed_release_matrix"
+        },
+        {
+          "type": "string",
+          "const": "real_filesystem_fixture_manifest"
+        },
+        {
+          "type": "string",
+          "const": "target_discovery_runner"
+        }
+      ],
+      "minItems": 3,
+      "maxItems": 3,
+      "items": false
+    },
+    "__schema87": {
+      "type": "object",
+      "properties": {
+        "observationSource": {
+          "$ref": "#/$defs/__schema72"
+        },
+        "sourceArtifactContentDigest": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "sourceRecordOrdinal": {
+          "$ref": "#/$defs/__schema78"
+        },
+        "privacySafeObservationClaimsDigest": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "observationKeyDigest": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "reason": {
+          "$ref": "#/$defs/__schema81"
+        }
+      },
+      "required": [
+        "observationSource",
+        "sourceArtifactContentDigest",
+        "sourceRecordOrdinal",
+        "privacySafeObservationClaimsDigest",
+        "observationKeyDigest",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "__schema88": {
+      "type": "object",
+      "properties": {
+        "errorName": {
+          "type": "string",
+          "const": "ProviderFeasibilitySupportCatalogPointClosureValidationError"
+        },
+        "code": {
+          "type": "string",
+          "const": "provider_unavailable"
+        },
+        "reason": {
+          "type": "string",
+          "const": "attestation_invalid"
+        }
+      },
+      "required": [
+        "errorName",
+        "code",
+        "reason"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

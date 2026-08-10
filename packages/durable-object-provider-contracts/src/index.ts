@@ -287,6 +287,8 @@ export * from "./provider-runtime-attestation-point.js";
 export * from "./provider-runtime-attestation-point-fixtures.js";
 export * from "./provider-feasibility-evidence-point.js";
 export * from "./provider-feasibility-evidence-point-fixtures.js";
+export * from "./provider-feasibility-support-catalog-point.js";
+export * from "./provider-feasibility-support-catalog-point-fixtures.js";
 export * from "./provider-registry-evidence-binding-point.js";
 export * from "./provider-registry-evidence-binding-point-fixtures.js";
 export * from "./provider-registry-evidence-binding-topology-proof.js";

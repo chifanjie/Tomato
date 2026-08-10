@@ -1,0 +1,754 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-feasibility-support-catalog",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string",
+      "const": "provider_feasibility_support_catalog_v1"
+    },
+    "distributionRootBinding": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "provider_signed_distribution_root_binding_v1"
+        },
+        "resolverProfile": {
+          "type": "string",
+          "const": "verified_signed_package_distribution_root_v1"
+        },
+        "signedPackageIdentityDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "releaseRevisionDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "bootstrapTrustBundle": {
+          "type": "object",
+          "properties": {
+            "locatorProfile": {
+              "type": "string",
+              "const": "distribution_provider_bootstrap_trust_bundle_v1"
+            },
+            "contentDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "locatorProfile",
+            "contentDigest"
+          ],
+          "additionalProperties": false
+        },
+        "historyPolicy": {
+          "type": "object",
+          "properties": {
+            "profile": {
+              "type": "string",
+              "const": "provider_distribution_history_policy_v1"
+            },
+            "maxSupportCatalogGenerationCount": {
+              "type": "number",
+              "const": 4096
+            },
+            "maxPublicTaxonomyGenerationCount": {
+              "type": "number",
+              "const": 4096
+            },
+            "maxReleaseMatrixGenerationCount": {
+              "type": "number",
+              "const": 4096
+            },
+            "maxTargetDiscoveryResultGenerationCount": {
+              "type": "number",
+              "const": 4096
+            },
+            "maxReleaseTargetUniverseGenerationCount": {
+              "type": "number",
+              "const": 4096
+            },
+            "maxSingleDistributionObjectCanonicalBytes": {
+              "type": "number",
+              "const": 16777216
+            },
+            "maxTotalRetainedDistributionObjectCount": {
+              "type": "number",
+              "const": 65536
+            },
+            "maxTotalRetainedDistributionHistoryLogicalBytes": {
+              "type": "number",
+              "const": 536870912
+            },
+            "normalUpdateEmergencyGenerationReservePerChain": {
+              "type": "number",
+              "const": 8
+            },
+            "normalUpdateEmergencyLogicalBytesReserve": {
+              "type": "number",
+              "const": 16777216
+            },
+            "admission": {
+              "type": "string",
+              "const": "stream_verify_five_chains_embedded_bundles_and_transitive_source_envelopes_before_accepting_distribution"
+            },
+            "exhaustion": {
+              "type": "string",
+              "const": "reject_candidate_distribution_and_preserve_last_verified_distribution"
+            }
+          },
+          "required": [
+            "profile",
+            "maxSupportCatalogGenerationCount",
+            "maxPublicTaxonomyGenerationCount",
+            "maxReleaseMatrixGenerationCount",
+            "maxTargetDiscoveryResultGenerationCount",
+            "maxReleaseTargetUniverseGenerationCount",
+            "maxSingleDistributionObjectCanonicalBytes",
+            "maxTotalRetainedDistributionObjectCount",
+            "maxTotalRetainedDistributionHistoryLogicalBytes",
+            "normalUpdateEmergencyGenerationReservePerChain",
+            "normalUpdateEmergencyLogicalBytesReserve",
+            "admission",
+            "exhaustion"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "profile",
+        "resolverProfile",
+        "signedPackageIdentityDigest",
+        "releaseRevisionDigest",
+        "bootstrapTrustBundle",
+        "historyPolicy"
+      ],
+      "additionalProperties": false
+    },
+    "activeRootMetadata": {
+      "type": "object",
+      "properties": {
+        "locatorProfile": {
+          "type": "string",
+          "const": "installation_provider_registry_root_metadata_v1"
+        },
+        "rootGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "rootKeyId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{22}$"
+        },
+        "contentDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "locatorProfile",
+        "rootGeneration",
+        "rootKeyId",
+        "contentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "registryRootKeyId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{22}$"
+    },
+    "catalogGeneration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "predecessorCatalogContentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "feasibilityApprovalKeys": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "provider_feasibility_approval_keys_v1"
+        },
+        "activeKeyIds": {
+          "type": "object",
+          "properties": {
+            "qa": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{22}$"
+            },
+            "release": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{22}$"
+            }
+          },
+          "required": [
+            "qa",
+            "release"
+          ],
+          "additionalProperties": false
+        },
+        "publicKeyRecords": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "profile": {
+                "type": "string",
+                "const": "provider_feasibility_approver_public_key_v1"
+              },
+              "distributionRegistryGenerationIntroduced": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "qa",
+                  "release"
+                ]
+              },
+              "keyId": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{22}$"
+              },
+              "algorithm": {
+                "type": "string",
+                "const": "ed25519"
+              },
+              "publicKeyBytes": {
+                "type": "string",
+                "pattern": "^base64url:[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+              },
+              "publicKeyDigest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "registrySignature": {
+                "type": "string",
+                "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+              }
+            },
+            "required": [
+              "profile",
+              "distributionRegistryGenerationIntroduced",
+              "role",
+              "keyId",
+              "algorithm",
+              "publicKeyBytes",
+              "publicKeyDigest",
+              "registrySignature"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "compromisedRevokedKeyIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{22}$"
+          }
+        }
+      },
+      "required": [
+        "profile",
+        "activeKeyIds",
+        "publicKeyRecords",
+        "compromisedRevokedKeyIds"
+      ],
+      "additionalProperties": false
+    },
+    "publicSupportTaxonomy": {
+      "type": "object",
+      "properties": {
+        "locatorProfile": {
+          "type": "string",
+          "const": "distribution_provider_public_support_taxonomy_v1"
+        },
+        "taxonomyGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "contentDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "locatorProfile",
+        "taxonomyGeneration",
+        "contentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "releaseTargetUniverse": {
+      "type": "object",
+      "properties": {
+        "locatorProfile": {
+          "type": "string",
+          "const": "distribution_provider_release_target_universe_v1"
+        },
+        "universeGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "contentDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "locatorProfile",
+        "universeGeneration",
+        "contentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "targets": {
+      "minItems": 1,
+      "maxItems": 4096,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "object",
+            "properties": {
+              "targetProfileId": {
+                "type": "string",
+                "pattern": "^provider-target-profile:[0-9a-f]{64}$"
+              },
+              "osPlatform": {
+                "type": "string",
+                "enum": [
+                  "darwin",
+                  "linux"
+                ]
+              },
+              "osReleaseFamilyCode": {
+                "type": "string",
+                "pattern": "^provider-os-family:[0-9a-f]{22}$"
+              },
+              "osBuildDigest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "architecture": {
+                "type": "string",
+                "enum": [
+                  "arm64",
+                  "x86_64"
+                ]
+              },
+              "filesystemProfileCode": {
+                "type": "string",
+                "pattern": "^provider-fs-profile:[0-9a-f]{22}$"
+              },
+              "filesystemFeatureProfileDigest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "mountOptionProfileDigest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "targetProfileId",
+              "osPlatform",
+              "osReleaseFamilyCode",
+              "osBuildDigest",
+              "architecture",
+              "filesystemProfileCode",
+              "filesystemFeatureProfileDigest",
+              "mountOptionProfileDigest"
+            ],
+            "additionalProperties": false
+          },
+          "candidates": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "providerId": {
+                  "type": "string",
+                  "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                },
+                "providerFeasibilityEvidence": {
+                  "type": "object",
+                  "properties": {
+                    "locatorProfile": {
+                      "type": "string",
+                      "const": "installation_provider_feasibility_evidence_v1"
+                    },
+                    "evidenceId": {
+                      "type": "string",
+                      "pattern": "^provider-feasibility-evidence:[0-9a-f]{22}$"
+                    },
+                    "contentDigest": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    }
+                  },
+                  "required": [
+                    "locatorProfile",
+                    "evidenceId",
+                    "contentDigest"
+                  ],
+                  "additionalProperties": false
+                },
+                "semanticProviderPolicy": {
+                  "type": "object",
+                  "properties": {
+                    "profile": {
+                      "type": "string",
+                      "const": "store_durable_object_provider_policy_v1"
+                    },
+                    "protocolVersion": {
+                      "type": "number",
+                      "const": 1
+                    },
+                    "providerId": {
+                      "type": "string",
+                      "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                    },
+                    "ipcPeerAuthenticationPolicyDigest": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    "isolation": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "separate_os_principal"
+                            },
+                            "securityBoundaryProfileDigest": {
+                              "type": "string",
+                              "pattern": "^sha256:[0-9a-f]{64}$"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "securityBoundaryProfileDigest"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "kernel_isolated_storage_domain"
+                            },
+                            "securityBoundaryProfileDigest": {
+                              "type": "string",
+                              "pattern": "^sha256:[0-9a-f]{64}$"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "securityBoundaryProfileDigest"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "sourceNamespaceVisibility": {
+                      "type": "string",
+                      "const": "inaccessible_to_workspace_writer"
+                    },
+                    "supportedStagingObjectKinds": {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "type": "string",
+                          "const": "regular"
+                        },
+                        {
+                          "type": "string",
+                          "const": "directory"
+                        }
+                      ],
+                      "minItems": 2,
+                      "maxItems": 2,
+                      "items": false
+                    },
+                    "stagingRecovery": {
+                      "type": "string",
+                      "const": "opaque_locator_idempotent_allocate_or_reopen_exact_unpublished_object_across_restart"
+                    },
+                    "durableIdentity": {
+                      "type": "string",
+                      "const": "same_object_stable_aba_recreate_distinct_across_restart"
+                    },
+                    "publishSemantics": {
+                      "type": "string",
+                      "const": "exact_opened_object_no_replace_with_atomic_bound_root_containment"
+                    },
+                    "externalIntentStateSemantics": {
+                      "type": "string",
+                      "const": "atomic_monotonic_compare_replace_with_restart_receipt_and_handoff_cut"
+                    },
+                    "handoffJournalSemantics": {
+                      "type": "string",
+                      "const": "immutable_no_replace_compare_tip_complete_enumeration_prospective_sealed_version_atomic_seal"
+                    },
+                    "storeManifestCompareAppendReceiptLedger": {
+                      "type": "object",
+                      "properties": {
+                        "profile": {
+                          "type": "string",
+                          "const": "store_manifest_compare_append_receipt_ledger_policy_v1"
+                        },
+                        "locatorProfile": {
+                          "type": "string",
+                          "const": "store_manifest_compare_append_receipt_v1"
+                        },
+                        "storageBoundary": {
+                          "type": "string",
+                          "const": "provider_isolated_non_store_namespace"
+                        },
+                        "appendSemantics": {
+                          "type": "string",
+                          "const": "immutable_no_replace_by_repository_worktree_operation_nonce"
+                        },
+                        "maxReceiptCountPerRepositoryWorktree": {
+                          "type": "number",
+                          "const": 16384
+                        },
+                        "maxReceiptLogicalBytesPerRepositoryWorktree": {
+                          "type": "number",
+                          "const": 67108864
+                        },
+                        "maxSingleReceiptLogicalBytes": {
+                          "type": "number",
+                          "const": 1048576
+                        },
+                        "admission": {
+                          "type": "string",
+                          "const": "freeze_resolved_at_and_complete_signed_receipt_then_reserve_exact_count_and_canonical_bytes_before_atomic_namespace_commit"
+                        },
+                        "quotaAccounting": {
+                          "type": "string",
+                          "const": "excluded_from_private_store_quota_root"
+                        }
+                      },
+                      "required": [
+                        "profile",
+                        "locatorProfile",
+                        "storageBoundary",
+                        "appendSemantics",
+                        "maxReceiptCountPerRepositoryWorktree",
+                        "maxReceiptLogicalBytesPerRepositoryWorktree",
+                        "maxSingleReceiptLogicalBytes",
+                        "admission",
+                        "quotaAccounting"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "deleteSemantics": {
+                      "type": "string",
+                      "enum": [
+                        "exact_opened_object_atomic_compare_delete_with_containment",
+                        "disabled"
+                      ]
+                    },
+                    "stockSameUidFilesystemFallback": {
+                      "type": "string",
+                      "const": "forbidden"
+                    },
+                    "realFilesystemConformanceSuiteDigest": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    }
+                  },
+                  "required": [
+                    "profile",
+                    "protocolVersion",
+                    "providerId",
+                    "ipcPeerAuthenticationPolicyDigest",
+                    "isolation",
+                    "sourceNamespaceVisibility",
+                    "supportedStagingObjectKinds",
+                    "stagingRecovery",
+                    "durableIdentity",
+                    "publishSemantics",
+                    "externalIntentStateSemantics",
+                    "handoffJournalSemantics",
+                    "storeManifestCompareAppendReceiptLedger",
+                    "deleteSemantics",
+                    "stockSameUidFilesystemFallback",
+                    "realFilesystemConformanceSuiteDigest"
+                  ],
+                  "additionalProperties": false
+                },
+                "runtimeAttestation": {
+                  "type": "object",
+                  "properties": {
+                    "profile": {
+                      "type": "string",
+                      "const": "store_durable_object_provider_runtime_attestation_pin_v1"
+                    },
+                    "contentDigest": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "profile": {
+                          "type": "string",
+                          "const": "store_durable_object_provider_runtime_attestation_v1"
+                        },
+                        "providerId": {
+                          "type": "string",
+                          "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                        },
+                        "semanticProviderPolicyDigest": {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        "implementationDigest": {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        "binaryAttestationDigest": {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        "ipcEndpointAttestationDigest": {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        "osPlatform": {
+                          "type": "string",
+                          "enum": [
+                            "darwin",
+                            "linux",
+                            "win32"
+                          ]
+                        },
+                        "osReleaseFamilyCode": {
+                          "type": "string",
+                          "pattern": "^provider-os-family:[0-9a-f]{22}$"
+                        },
+                        "osBuildDigest": {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        "architecture": {
+                          "type": "string",
+                          "enum": [
+                            "arm64",
+                            "x86_64"
+                          ]
+                        },
+                        "filesystemProfileDigest": {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        "realFilesystemConformanceResultDigest": {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        "attestationGeneration": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        "issuedAt": {
+                          "type": "string",
+                          "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+                        },
+                        "registrySignature": {
+                          "type": "string",
+                          "pattern": "^provider-registry-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+                        }
+                      },
+                      "required": [
+                        "profile",
+                        "providerId",
+                        "semanticProviderPolicyDigest",
+                        "implementationDigest",
+                        "binaryAttestationDigest",
+                        "ipcEndpointAttestationDigest",
+                        "osPlatform",
+                        "osReleaseFamilyCode",
+                        "osBuildDigest",
+                        "architecture",
+                        "filesystemProfileDigest",
+                        "realFilesystemConformanceResultDigest",
+                        "attestationGeneration",
+                        "issuedAt",
+                        "registrySignature"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "profile",
+                    "contentDigest",
+                    "payload"
+                  ],
+                  "additionalProperties": false
+                },
+                "releaseDisposition": {
+                  "type": "string",
+                  "enum": [
+                    "strong_read_write",
+                    "legacy_redacted_read_only"
+                  ]
+                }
+              },
+              "required": [
+                "providerId",
+                "providerFeasibilityEvidence",
+                "semanticProviderPolicy",
+                "runtimeAttestation",
+                "releaseDisposition"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "target",
+          "candidates"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "catalogSignature": {
+      "type": "string",
+      "pattern": "^provider-support-catalog-ed25519:[0-9a-f]{22}:[0-9a-f]{128}$"
+    }
+  },
+  "required": [
+    "profile",
+    "distributionRootBinding",
+    "activeRootMetadata",
+    "registryRootKeyId",
+    "catalogGeneration",
+    "feasibilityApprovalKeys",
+    "publicSupportTaxonomy",
+    "releaseTargetUniverse",
+    "targets",
+    "catalogSignature"
+  ],
+  "additionalProperties": false
+}

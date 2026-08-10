@@ -16,7 +16,11 @@ import {
   type RegistryHistoryVerifiedTipEntryV1,
   type RegistryTrustWitnessHandleV1,
 } from "./provider-registry-history-prepared-handle-internal.js";
-import type { ProviderFeasibilityApproverPublicKeyV1 } from "./provider-registry-records.js";
+import {
+  createStoreDurableObjectProviderRuntimeAttestationSignatureMessageV1,
+  type ProviderFeasibilityApproverPublicKeyV1,
+  type StoreDurableObjectProviderRuntimeAttestationV1,
+} from "./provider-registry-records.js";
 import type { ProviderRegistryRootPublicKeyV1 } from "./provider-registry-trust.js";
 import {
   createPreparedDistributionVerificationContextInternalV1,
@@ -30,7 +34,19 @@ import type {
   ProviderRuntimeAttestationPointInvalidStageV1,
   ValidateProviderRuntimeAttestationPointClosureV1Input,
 } from "./provider-runtime-attestation-point.js";
-import type { ProviderStrictEd25519OpaqueCapabilityV1 } from "./strict-ed25519-conformance.js";
+import {
+  createProviderNonThenableFrozenRecordV1,
+  hardenProviderPointPromiseV1,
+} from "./provider-point-runtime-internal.js";
+import {
+  assertProviderStrictEd25519CryptoCapabilityIdentityV1,
+} from "./strict-ed25519-capability-internal.js";
+import {
+  ProviderStrictEd25519AttestationError,
+  validateProviderStrictEd25519PointWithCapabilityV1,
+  verifyRawEd25519WithCapabilityV1,
+  type ProviderStrictEd25519OpaqueCapabilityV1,
+} from "./strict-ed25519-conformance.js";
 
 const CapturedObjectCreateV1 = Object.create;
 const CapturedObjectDefinePropertyV1 = Object.defineProperty;
@@ -40,8 +56,14 @@ const CapturedObjectGetOwnPropertyDescriptorV1 =
 const CapturedObjectGetPrototypeOfV1 = Object.getPrototypeOf;
 const CapturedObjectIsFrozenV1 = Object.isFrozen;
 const CapturedObjectPrototypeV1 = Object.prototype;
+const CapturedNumberParseIntV1 = Number.parseInt;
+const CapturedReflectApplyV1 = Reflect.apply;
 const CapturedReflectOwnKeysV1 = Reflect.ownKeys;
+const CapturedRegExpPrototypeExecV1 = RegExp.prototype.exec;
+const CapturedStringPrototypeIndexOfV1 = String.prototype.indexOf;
+const CapturedStringPrototypeSliceV1 = String.prototype.slice;
 const CapturedTypeErrorV1 = TypeError;
+const CapturedUint8ArrayV1 = Uint8Array;
 
 const PREPARED_RUNTIME_INPUT_KEYS_V1 = CapturedObjectFreezeV1([
   "activeRoot",
@@ -200,6 +222,155 @@ function hasRegistryClosureAuthorityV1(
   );
 }
 
+function preparedPointFailureV1(
+  stage: ProviderRuntimeAttestationPointInvalidStageV1,
+  reason: ProviderRuntimeAttestationPointInvalidReasonV1,
+): ProviderRuntimeAttestationPointClosureDiagnosticResultV1 {
+  return createProviderNonThenableFrozenRecordV1({
+    ok: false as const,
+    stage,
+    reason,
+  });
+}
+
+function regExpExecV1(pattern: RegExp, value: string): RegExpExecArray | null {
+  return CapturedReflectApplyV1(CapturedRegExpPrototypeExecV1, pattern, [
+    value,
+  ]) as RegExpExecArray | null;
+}
+
+function stringSliceV1(value: string, start: number, end?: number): string {
+  return CapturedReflectApplyV1(CapturedStringPrototypeSliceV1, value, [
+    start,
+    end,
+  ]) as string;
+}
+
+function stringIndexOfV1(value: string, search: string): number {
+  return CapturedReflectApplyV1(CapturedStringPrototypeIndexOfV1, value, [
+    search,
+  ]) as number;
+}
+
+const REGISTRY_SIGNATURE_PATTERN_V1 =
+  /^provider-registry-ed25519:([0-9a-f]{22}):([0-9a-f]{128})$/u;
+const BASE64URL_PREFIX_V1 = "base64url:";
+const BASE64URL_ALPHABET_V1 =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+function lowerHexToBytesV1(hex: string): Uint8Array {
+  if (hex.length === 0 || hex.length % 2 !== 0) {
+    throw new CapturedTypeErrorV1("signature is not lowercase octets");
+  }
+  const bytes = new CapturedUint8ArrayV1(hex.length / 2);
+  for (let index = 0; index < bytes.length; index += 1) {
+    const octet = stringSliceV1(hex, index * 2, index * 2 + 2);
+    if (regExpExecV1(/^[0-9a-f]{2}$/u, octet) === null) {
+      throw new CapturedTypeErrorV1("signature is not lowercase octets");
+    }
+    bytes[index] = CapturedNumberParseIntV1(octet, 16);
+  }
+  return bytes;
+}
+
+function decodeCanonicalPublicKeyBytes32V1(value: string): Uint8Array {
+  if (stringSliceV1(value, 0, BASE64URL_PREFIX_V1.length) !== BASE64URL_PREFIX_V1) {
+    throw new CapturedTypeErrorV1("public key bytes have the wrong prefix");
+  }
+  const body = stringSliceV1(value, BASE64URL_PREFIX_V1.length);
+  const decoded = new CapturedUint8ArrayV1(32);
+  let accumulator = 0;
+  let availableBits = 0;
+  let offset = 0;
+  for (let index = 0; index < body.length; index += 1) {
+    const digit = stringIndexOfV1(
+      BASE64URL_ALPHABET_V1,
+      stringSliceV1(body, index, index + 1),
+    );
+    if (digit < 0) {
+      throw new CapturedTypeErrorV1("public key bytes are not base64url");
+    }
+    accumulator = (accumulator << 6) | digit;
+    availableBits += 6;
+    if (availableBits >= 8) {
+      availableBits -= 8;
+      if (offset >= decoded.byteLength) {
+        throw new CapturedTypeErrorV1("public key bytes exceed raw32");
+      }
+      decoded[offset] = (accumulator >>> availableBits) & 0xff;
+      offset += 1;
+      accumulator &= (1 << availableBits) - 1;
+    }
+  }
+  if (offset !== 32 || availableBits !== 2 || accumulator !== 0) {
+    throw new CapturedTypeErrorV1("public key bytes are not canonical raw32");
+  }
+  return decoded;
+}
+
+async function admitPreparedActiveRootV1(
+  input: ValidateProviderRuntimeAttestationPointClosureV1Input,
+): Promise<ProviderRegistryRootPublicKeyV1> {
+  const activeRoot = input.activeRoot as ProviderRegistryRootPublicKeyV1;
+  try {
+    const accepted = await validateProviderStrictEd25519PointWithCapabilityV1(
+      input.strictCryptoCapability,
+      decodeCanonicalPublicKeyBytes32V1(activeRoot.publicKeyBytes),
+    );
+    if (!accepted) {
+      throw new CapturedTypeErrorV1("active root point is not admitted");
+    }
+  } catch {
+    throw new CapturedTypeErrorV1("prepared active root admission failed");
+  }
+  return activeRoot;
+}
+
+async function verifyPreparedRuntimeSignatureV1(
+  input: ValidateProviderRuntimeAttestationPointClosureV1Input,
+  activeRoot: ProviderRegistryRootPublicKeyV1,
+): Promise<ProviderRuntimeAttestationPointClosureDiagnosticResultV1 | undefined> {
+  const runtime = input.runtimeAttestation
+    .payload as StoreDurableObjectProviderRuntimeAttestationV1;
+  const match = regExpExecV1(
+    REGISTRY_SIGNATURE_PATTERN_V1,
+    runtime.registrySignature,
+  );
+  if (match?.[1] === undefined || match[2] === undefined) {
+    return preparedPointFailureV1("runtime_structure", "schema_invalid");
+  }
+  if (match[1] !== activeRoot.rootKeyId) {
+    return preparedPointFailureV1("runtime_root", "root_mismatch");
+  }
+  let message: Uint8Array;
+  try {
+    message =
+      createStoreDurableObjectProviderRuntimeAttestationSignatureMessageV1(
+        runtime,
+        activeRoot.rootKeyId,
+      );
+  } catch {
+    return preparedPointFailureV1("runtime_root", "root_mismatch");
+  }
+  try {
+    const accepted = await verifyRawEd25519WithCapabilityV1(
+      input.strictCryptoCapability,
+      decodeCanonicalPublicKeyBytes32V1(activeRoot.publicKeyBytes),
+      message,
+      lowerHexToBytesV1(match[2]),
+    );
+    if (!accepted) {
+      return preparedPointFailureV1(
+        "runtime_signature",
+        "signature_invalid",
+      );
+    }
+  } catch {
+    return preparedPointFailureV1("runtime_signature", "signature_invalid");
+  }
+  return undefined;
+}
+
 export function registerProviderRuntimeAttestationPreparedCoreInternalV1(
   core: PreparedRuntimeCoreV1,
 ): void {
@@ -209,6 +380,84 @@ export function registerProviderRuntimeAttestationPreparedCoreInternalV1(
     );
   }
   preparedRuntimeCoreV1 = CapturedObjectFreezeV1(core);
+}
+
+/**
+ * Runs the Runtime core over an exact, already-detached input without taking a
+ * second snapshot. Unlike the Registry-history reuse entry below, this entry
+ * establishes its own root admission and verifies the Runtime root signature;
+ * it therefore carries no trust forward from a Registry witness.
+ */
+export function diagnoseProviderRuntimeAttestationPointPreparedInternalV1(
+  input: ValidateProviderRuntimeAttestationPointClosureV1Input,
+): Promise<ProviderRuntimeAttestationPointClosureDiagnosticResultV1> {
+  const operation = (async () => {
+    const copyLedger = createProviderRegistryPreparedCopyLedgerInternalV1();
+    try {
+      assertExactPreparedRuntimeInputV1(input);
+      assertProviderStrictEd25519CryptoCapabilityIdentityV1(
+        ProviderStrictEd25519AttestationError,
+        input.strictCryptoCapability,
+      );
+    } catch {
+      return preparedPointFailureV1("input", "schema_invalid");
+    }
+
+    let activeRoot: ProviderRegistryRootPublicKeyV1;
+    try {
+      activeRoot = await admitPreparedActiveRootV1(input);
+    } catch {
+      return preparedPointFailureV1(
+        "conformance_result_closure",
+        "source_invalid",
+      );
+    }
+
+    if (preparedRuntimeCoreV1 === undefined) {
+      return preparedPointFailureV1("input", "schema_invalid");
+    }
+    const context = createPreparedDistributionVerificationContextInternalV1(
+      input.strictCryptoCapability,
+      input.activeRoot,
+      copyLedger,
+    );
+    let diagnostic: ProviderRuntimeAttestationPointClosureDiagnosticResultV1;
+    try {
+      diagnostic = await hardenProviderPointPromiseV1(
+        preparedRuntimeCoreV1(input, context),
+      );
+    } catch {
+      return preparedPointFailureV1("input", "schema_invalid");
+    }
+    const sourceSignatureVerificationPrefix =
+      readPreparedDistributionSignatureVerificationCountInternalV1(context);
+    if (!diagnostic.ok) {
+      return preparedPointFailureV1(diagnostic.stage, diagnostic.reason);
+    }
+    if (sourceSignatureVerificationPrefix !== 6) {
+      return preparedPointFailureV1(
+        "conformance_result_closure",
+        "source_invalid",
+      );
+    }
+
+    const runtimeSignatureFailure = await verifyPreparedRuntimeSignatureV1(
+      input,
+      activeRoot,
+    );
+    if (runtimeSignatureFailure !== undefined) {
+      return runtimeSignatureFailure;
+    }
+    return createProviderNonThenableFrozenRecordV1({
+      ok: true as const,
+      value: diagnostic.value,
+    });
+  })();
+  const hardenedOperation = hardenProviderPointPromiseV1(operation);
+  return hardenedOperation.then(
+    (diagnostic) => diagnostic,
+    () => preparedPointFailureV1("input", "schema_invalid"),
+  );
 }
 
 export async function diagnoseProviderRuntimeAttestationPointFromRegistryHistoryInternalV1(
@@ -343,6 +592,9 @@ export async function diagnoseProviderRuntimeAttestationPointFromRegistryHistory
 }
 
 CapturedObjectFreezeV1(registerProviderRuntimeAttestationPreparedCoreInternalV1);
+CapturedObjectFreezeV1(
+  diagnoseProviderRuntimeAttestationPointPreparedInternalV1,
+);
 CapturedObjectFreezeV1(
   diagnoseProviderRuntimeAttestationPointFromRegistryHistoryInternalV1,
 );

@@ -128,6 +128,18 @@ const providerReleaseTargetUniversePointInvalidPath = fileURLToPath(
     import.meta.url,
   ),
 );
+const providerFeasibilitySupportCatalogPointGoldenPath = fileURLToPath(
+  new URL(
+    "../fixtures/v1/golden/provider-feasibility-support-catalog-point-v1.json",
+    import.meta.url,
+  ),
+);
+const providerFeasibilitySupportCatalogPointInvalidPath = fileURLToPath(
+  new URL(
+    "../fixtures/v1/invalid/provider-feasibility-support-catalog-point-v1.json",
+    import.meta.url,
+  ),
+);
 
 const REGISTRY_SCHEMA_ROOT_KEY_ID = "a".repeat(22);
 const REGISTRY_SCHEMA_PROVIDER_ID = "durable-object-provider:schema";
@@ -883,6 +895,21 @@ describe("provider contract JSON Schema distribution", () => {
       "provider-feasibility-evidence-point-invalid-reason",
       "provider-feasibility-evidence-point-golden-manifest",
       "provider-feasibility-evidence-point-invalid-manifest",
+      "provider-feasibility-release-disposition",
+      "provider-feasibility-support-catalog-signature",
+      "provider-feasibility-support-candidate",
+      "provider-feasibility-support-target-entry",
+      "provider-feasibility-support-catalog-unsigned-claims",
+      "provider-feasibility-support-catalog",
+      "provider-feasibility-support-catalog-envelope",
+      "provider-feasibility-support-catalog-pin",
+      "provider-feasibility-public-support",
+      "provider-feasibility-support-catalog-signature-wrapper",
+      "provider-feasibility-support-candidate-artifact",
+      "provider-feasibility-support-catalog-point-invalid-stage",
+      "provider-feasibility-support-catalog-point-invalid-reason",
+      "provider-feasibility-support-catalog-point-golden-manifest",
+      "provider-feasibility-support-catalog-point-invalid-manifest",
       "provider-feasibility-approval-keys",
       "store-durable-object-provider-verification-keys",
       "store-durable-object-provider-registry-entry",
@@ -968,7 +995,7 @@ describe("provider contract JSON Schema distribution", () => {
       expect(generated, name).toHaveProperty(name);
       expectEveryJsonSchemaObjectClosed(generated[name], name);
     }
-    expect(Object.keys(generated)).toHaveLength(275);
+    expect(Object.keys(generated)).toHaveLength(290);
 
     for (const name of [
       "store-durable-object-provider-runtime-attestation-signature-wrapper",
@@ -1296,6 +1323,98 @@ describe("provider contract JSON Schema distribution", () => {
       "envelope_mismatch",
     ]);
   }, 120_000);
+
+  it("publishes the supplied Catalog wire and exact 4-positive/7-invalid point fixtures", () => {
+    const generated = generateProviderContractJsonSchemasV1();
+    const catalogSchemaNames = [
+      "provider-feasibility-release-disposition",
+      "provider-feasibility-support-catalog-signature",
+      "provider-feasibility-support-candidate",
+      "provider-feasibility-support-target-entry",
+      "provider-feasibility-support-catalog-unsigned-claims",
+      "provider-feasibility-support-catalog",
+      "provider-feasibility-support-catalog-envelope",
+      "provider-feasibility-support-catalog-pin",
+      "provider-feasibility-public-support",
+      "provider-feasibility-support-catalog-signature-wrapper",
+      "provider-feasibility-support-candidate-artifact",
+      "provider-feasibility-support-catalog-point-invalid-stage",
+      "provider-feasibility-support-catalog-point-invalid-reason",
+      "provider-feasibility-support-catalog-point-golden-manifest",
+      "provider-feasibility-support-catalog-point-invalid-manifest",
+    ] as const;
+    for (const name of catalogSchemaNames) {
+      expect(generated, name).toHaveProperty(name);
+      expect(generated[name].$id, name).toBe(
+        `urn:understand-code:provider-contract:schema:v1:${name}`,
+      );
+      expectEveryJsonSchemaObjectClosed(generated[name], name);
+    }
+
+    const golden = JSON.parse(
+      readFileSync(providerFeasibilitySupportCatalogPointGoldenPath, "utf8"),
+    ) as Record<string, any>;
+    const invalid = JSON.parse(
+      readFileSync(providerFeasibilitySupportCatalogPointInvalidPath, "utf8"),
+    ) as Record<string, any>;
+    const ajv = new Ajv2020({ allErrors: true, strict: true });
+    const validateGolden = ajv.compile(
+      generated["provider-feasibility-support-catalog-point-golden-manifest"],
+    );
+    const validateInvalid = ajv.compile(
+      generated["provider-feasibility-support-catalog-point-invalid-manifest"],
+    );
+    const validateEnvelope = ajv.compile(
+      generated["provider-feasibility-support-catalog-envelope"],
+    );
+    const validateStage = ajv.compile(
+      generated["provider-feasibility-support-catalog-point-invalid-stage"],
+    );
+    const validateReason = ajv.compile(
+      generated["provider-feasibility-support-catalog-point-invalid-reason"],
+    );
+
+    expect(validateGolden(golden), JSON.stringify(validateGolden.errors)).toBe(true);
+    expect(validateInvalid(invalid), JSON.stringify(validateInvalid.errors)).toBe(true);
+    expect(golden.positiveVectors).toHaveLength(4);
+    expect(
+      golden.positiveVectors.map((vector: Record<string, unknown>) => vector.vectorId),
+    ).toEqual([
+      "both-passed-strong",
+      "second-passed-read-only",
+      "second-failed-read-only",
+      "second-unsupported-read-only",
+    ]);
+    for (const vector of golden.positiveVectors as Array<Record<string, any>>) {
+      expect(
+        validateEnvelope(vector.request.providerFeasibilitySupportCatalog),
+        JSON.stringify(validateEnvelope.errors),
+      ).toBe(true);
+      expect(vector.expected.projection).toMatchObject({
+        targetCount: 2,
+        candidateCount: 2,
+        publicSupportRowCount: 1,
+      });
+      expect(vector.expected.projection.ownerTargetCapabilities).toHaveLength(2);
+      expect(vector.expected.projection.publicSupport).toHaveLength(1);
+    }
+    expect(invalid.cases).toHaveLength(7);
+    expect(
+      invalid.cases.map((entry: Record<string, unknown>) => entry.caseId),
+    ).toEqual([
+      "catalog-target-missing",
+      "catalog-target-extra",
+      "catalog-target-duplicate",
+      "catalog-provider-duplicate",
+      "catalog-evidence-cross-group",
+      "catalog-failed-strong",
+      "catalog-unsupported-strong",
+    ]);
+    for (const entry of invalid.cases as Array<Record<string, any>>) {
+      expect(validateStage(entry.expected.stage)).toBe(true);
+      expect(validateReason(entry.expected.reason)).toBe(true);
+    }
+  });
 
   it("publishes strict Runtime point policy/golden/122-case invalid schemas", () => {
     const generated = generateProviderContractJsonSchemasV1();

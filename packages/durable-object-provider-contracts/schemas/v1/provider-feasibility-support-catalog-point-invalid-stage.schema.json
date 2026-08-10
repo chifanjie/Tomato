@@ -1,0 +1,31 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-feasibility-support-catalog-point-invalid-stage",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "input",
+    "bootstrap_distribution_binding",
+    "registry_history_closure",
+    "release_target_universe_closure",
+    "catalog_structure",
+    "candidate_artifacts_structure",
+    "catalog_generation",
+    "catalog_distribution_binding",
+    "catalog_active_root",
+    "catalog_approval_keys_binding",
+    "catalog_taxonomy_pin",
+    "catalog_universe_pin",
+    "catalog_target_identity",
+    "catalog_target_order",
+    "catalog_candidate_order",
+    "catalog_target_exact_cover",
+    "catalog_candidate_binding",
+    "candidate_deep_closure",
+    "catalog_release_disposition",
+    "catalog_signature_binding",
+    "catalog_signature",
+    "catalog_digest",
+    "catalog_envelope",
+    "catalog_pin"
+  ]
+}

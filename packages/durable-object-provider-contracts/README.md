@@ -19,8 +19,10 @@ Discovery/Suite source closure, still without granting Provider or Store I/O
 authority. `WP5-C09-1I` binds that Result to one strict semantic Provider
 Policy and one root-signed Runtime Attestation point. `WP5-C09-1J` adds
 dual-role QA/Release Evidence, `WP5-C09-1K` freezes the closed-world Release
-Target Universe supplied point, and `WP5-C09-1L` binds a production-format
-Registry Entry to passed Evidence through the exact supplied trust history.
+Target Universe supplied point, `WP5-C09-1L` binds a production-format
+Registry Entry to passed Evidence through the exact supplied trust history,
+and `WP5-C09-1M` closes the signed Provider Feasibility Support Catalog over
+that closed-world Universe.
 Every slice still returns structure-only, none-authority validation:
 
 - `rfc8785-jcs-safe-integer-v1` canonical JSON and exact canonical-byte parsing;
@@ -248,8 +250,10 @@ unsigned claims, complete Universe, Envelope, Pin, signature wrapper,
 point stage/reason, and the two fixture manifests. Consumers should use the
 shipped inventory rather than assume 268 is a forever constant. C09-1L adds
 seven generated documents for its stage/reason, compatible base, success
-projection, golden/invalid manifests, and topology proof, bringing the current
-inventory to 275.
+projection, golden/invalid manifests, and topology proof. C09-1M adds 15
+documents for its Catalog wire, release disposition, candidate and target
+entries, public projection, stage/reason, and golden/invalid manifests,
+bringing the current inventory to 290.
 
 The production sources remain ES2022 browser/worker portable. The npm/browser
 distribution gate must expose the new public API through the root and
@@ -265,13 +269,15 @@ distribution gate must expose the new public API through the root and
 `./provider-registry-evidence-binding-point`,
 `./provider-registry-evidence-binding-point-fixtures`,
 `./provider-release-target-universe-point`, and
-`./provider-release-target-universe-point-fixtures` exports, pack all
+`./provider-release-target-universe-point-fixtures`,
+`./provider-feasibility-support-catalog-point`, and
+`./provider-feasibility-support-catalog-point-fixtures` exports, pack all
 `schemas/`, `fixtures/`, and fixed `provider/` resources, reject private deep
 imports, and execute the same Registry, real-filesystem source, and Target
 Discovery, Conformance Result, Runtime Attestation, Feasibility Evidence,
-Registry/Evidence binding, and Release Target Universe point validators from
-clean Node and browser-bundle installs. There are exactly 23 explicit public
-module exports at this checkpoint.
+Registry/Evidence binding, Release Target Universe, and Feasibility Support
+Catalog point validators from clean Node and browser-bundle installs. There are
+exactly 25 explicit public module exports at this checkpoint.
 Node uses the exact official Zod 4.3.6 runtime. The package's browser path uses
 its shipped CSP-safe runtime, with dynamic compilation disabled and
 `util.createTransparentProxy` failing closed. Consumers should treat the
@@ -642,6 +648,54 @@ import the point and fixture subpaths, verify root/subpath symbol identity and
 resource realpaths, and replay the complete corpus without sharing a prepared
 history or crypto witness across cases.
 
+## C09-1M closed-world Provider Feasibility Support Catalog point
+
+`validateProviderFeasibilitySupportCatalogPointClosureV1` accepts exactly 18
+raw fields: `activeRoot`, `activeRootMetadata`, `bootstrapTrustBundle`,
+`distributionRootBinding`, `fixtureCorpusManifest`,
+`installationIdentityGenerationId`,
+`providerFeasibilitySupportCandidateArtifacts`,
+`providerFeasibilitySupportCatalog`, `publicSupportTaxonomy`,
+`registryManifestHistory`, `releaseMatrix`, `releaseTargetUniverse`,
+`rootMetadataHistory`, `strictCryptoCapability`, `suiteManifest`,
+`targetDiscoveryFixtureManifest`, `targetDiscoveryResult`, and
+`targetDiscoveryRunnerRun`. There is no caller-supplied Catalog Pin, path,
+current selector, Acceptance state, or authority flag.
+
+The signed Catalog has exactly one canonically ordered target group for every
+Universe target: omission, addition, substitution, duplication, or reordering
+fails the exact-cover boundary. Each canonically ordered candidate has one
+same-index artifact and must deep-close its Evidence and Result back to the
+supplied Registry history, Policy, Runtime, target, and common discovery
+sources. Deep closure accepts all three structurally valid Evidence outcomes:
+`passed`, `failed`, and `unsupported`. `strong_read_write` is valid only with
+`passed`; `legacy_redacted_read_only` is the conservative disposition for any
+of the three outcomes.
+
+Projection is deliberately two-level. First, each private owner target is
+`strong_read_write` only when at least one of its candidates is both `passed`
+and declared `strong_read_write`; otherwise it is
+`legacy_redacted_read_only`. Second, a Universe public bucket is strong only
+when its coverage is `closed_world_complete` and every private member target
+is strong; otherwise the public row is read-only. The public row exposes only
+the public profile ID and its four public dimensions: platform, release-family
+code, architecture, and filesystem-profile code.
+
+The four positive vectors each contain two private targets, two candidates,
+and one public row (`2/2/1`). The targets share one public profile but differ in
+their private digests. The vectors cover both candidates passed/strong, a
+second passed/read-only candidate, a second failed/read-only candidate, and a
+second unsupported/read-only candidate. Each successful closure freezes the
+exact 31 point admissions and 64 signature verifications.
+
+The active root signs the complete unsigned Catalog claims. The signed payload
+determines the content digest; the Envelope determines the Pin and the only
+valid relative path below `provider/support-catalog/`. Success returns only
+`authority: "none_provider_feasibility_support_catalog_structure_only"`.
+This point does not establish retained Catalog history, authoritative current
+Catalog or Registry/Acceptance selection, Acceptance, production Provider or
+Store I/O, migration, or strong-write authority.
+
 The first-party validation path captures and binds the primordials it uses, but
 this package does not claim a complete same-realm SES boundary for third-party
 dependencies. Zod and its own primordial calls are part of the trusted module
@@ -677,6 +731,8 @@ pnpm --filter @understand-code/durable-object-provider-contracts verify:provider
 pnpm --filter @understand-code/durable-object-provider-contracts test:provider-registry-evidence-binding-point-replay
 pnpm --filter @understand-code/durable-object-provider-contracts generate:provider-release-target-universe-point
 pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-release-target-universe-point
+pnpm --filter @understand-code/durable-object-provider-contracts generate:provider-feasibility-support-catalog-point
+pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-feasibility-support-catalog-point
 pnpm --filter @understand-code/durable-object-provider-contracts generate:schemas
 pnpm --filter @understand-code/durable-object-provider-contracts verify:schemas
 pnpm --filter @understand-code/durable-object-provider-contracts exec vitest run \
@@ -711,7 +767,7 @@ diagnostics, and crypto call counts are checked by
 `verify:provider-registry-manifest-invalid`. The signed real-filesystem fixture
 anchors, exact source closure, and 43 materialized negative diagnostics are
 checked by `verify:provider-real-fs-source`. `test/json-schema.test.ts` freezes
-the current 275-schema inventory and `verify:schemas` rejects generated-file
+the current 290-schema inventory and `verify:schemas` rejects generated-file
 drift. `verify:provider-target-discovery-point` checks the exact five locators,
 six-signature closure, canonical empty Fixture/Runner success, typed unresolved
 projection, and all 116 ordered diagnostic/executable recipes.
@@ -733,6 +789,11 @@ fresh request and one-shot witnesses.
 `verify:provider-release-target-universe-point` checks all four 1/7
 resolution closures, exact C09-1G replay, fixed coverage/bucket semantics,
 hardened Promise and raw-admission behavior, and all 285 fresh ordered cases.
+`verify:provider-feasibility-support-catalog-point` checks the exact 18-field
+raw boundary, Universe target exact-cover, passed/failed/unsupported candidate
+deep closure, two-level conservative projection, four `2/2/1` positive
+vectors, exact 31/64 crypto closure, derived Catalog Pin/path, and none-only
+authority.
 `test:distribution` is the clean packed Node/browser source for the npm
 distribution claims.
 

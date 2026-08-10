@@ -12,6 +12,17 @@ import {
   ProviderFeasibilityEvidencePointGoldenManifestV1Schema,
 } from "../src/provider-feasibility-evidence-point-fixtures.js";
 import {
+  ProviderFeasibilitySupportCatalogPointGoldenManifestV1Schema,
+  projectProviderFeasibilitySupportCatalogPointFixtureClosureV1,
+} from "../src/provider-feasibility-support-catalog-point-fixtures.js";
+import {
+  diagnoseProviderFeasibilitySupportCatalogPointRegistryTrustedPreparedInternalV1,
+  diagnoseProviderFeasibilitySupportCatalogPointPreparedInternalV1,
+  registerProviderFeasibilitySupportCatalogRegistryTrustedInternalV1,
+  type ProviderFeasibilitySupportCatalogRegistryTrustedHandleV1,
+} from "../src/provider-feasibility-support-catalog-point-prepared-internal.js";
+import type { ValidateProviderFeasibilitySupportCatalogPointClosureV1Input } from "../src/provider-feasibility-support-catalog-point.js";
+import {
   diagnoseProviderFeasibilityEvidencePointPreparedInternalV1,
   diagnoseProviderFeasibilityEvidencePointRegistryTrustedPreparedInternalV1,
   registerProviderFeasibilityEvidenceRegistryTrustedApproversInternalV1,
@@ -25,6 +36,15 @@ import {
 import {
   deriveProviderRegistryRootKeyIdInternalV1,
 } from "../src/provider-registry-trust.js";
+import {
+  createPreparedRegistryHistorySnapshotInternalV1,
+  diagnoseProviderRegistryManifestHistoryPreparedInternalV1,
+  discardPreparedRegistryHistoryInputInternalV1,
+  discardRegistryHistoryVerifiedWitnessInternalV1,
+  registerPreparedRegistryHistoryInputInternalV1,
+  takeRegistryHistoryVerifiedWitnessInternalV1,
+} from "../src/provider-registry-history-prepared-internal.js";
+import type { ValidateProviderRegistryManifestHistoryV1Input } from "../src/provider-registry-manifest-history.js";
 import {
   ProviderReleaseTargetUniversePointGoldenManifestV1Schema,
 } from "../src/provider-release-target-universe-point-fixtures.js";
@@ -154,6 +174,16 @@ const evidenceGolden =
       ),
     ),
   );
+const catalogGolden =
+  ProviderFeasibilitySupportCatalogPointGoldenManifestV1Schema.parse(
+    JSON.parse(
+      new TextDecoder().decode(
+        resourceBytes(
+          "fixtures/v1/golden/provider-feasibility-support-catalog-point-v1.json",
+        ),
+      ),
+    ),
+  );
 const universeGolden =
   ProviderReleaseTargetUniversePointGoldenManifestV1Schema.parse(
     JSON.parse(
@@ -267,6 +297,51 @@ function preparedUniverseRequestV1(): ValidateProviderReleaseTargetUniversePoint
     },
     capability,
   ) as ValidateProviderReleaseTargetUniversePointClosureV1Input;
+}
+
+function preparedCatalogRequestV1(
+  inputCapability: ProviderStrictEd25519OpaqueCapabilityV1 = capability,
+): ValidateProviderFeasibilitySupportCatalogPointClosureV1Input {
+  const request = cloneJsonV1(catalogGolden.positiveVectors[0]!.request);
+  return freezePreparedInputV1(
+    {
+      ...request,
+      strictCryptoCapability: inputCapability,
+    },
+    inputCapability,
+  ) as ValidateProviderFeasibilitySupportCatalogPointClosureV1Input;
+}
+
+function preparedRegistryInvocationForCatalogV1(
+  input: ValidateProviderFeasibilitySupportCatalogPointClosureV1Input,
+): Readonly<{
+  request: Readonly<ValidateProviderRegistryManifestHistoryV1Input>;
+  inputHandle: ReturnType<
+    typeof registerPreparedRegistryHistoryInputInternalV1
+  >;
+}> {
+  const request = Object.freeze({
+    bootstrapTrustBundle: input.bootstrapTrustBundle,
+    installationIdentityGenerationId:
+      input.installationIdentityGenerationId,
+    registryManifestHistory: input.registryManifestHistory,
+    rootMetadataHistory: input.rootMetadataHistory,
+    strictCryptoCapability: capability,
+  });
+  const snapshot = createPreparedRegistryHistorySnapshotInternalV1({
+    bootstrapTrustBundle: input.bootstrapTrustBundle,
+    installationIdentityGenerationId:
+      input.installationIdentityGenerationId,
+    registryManifestHistory: input.registryManifestHistory,
+    rootMetadataHistory: input.rootMetadataHistory,
+    strictCryptoCapability: capability,
+  });
+  const inputHandle = registerPreparedRegistryHistoryInputInternalV1(
+    request,
+    snapshot,
+    capability,
+  );
+  return Object.freeze({ inputHandle, request });
 }
 
 describe("Catalog prepared point bridges", () => {
@@ -391,6 +466,570 @@ describe("Catalog prepared point bridges", () => {
     expect(pointCalls).toBe(0);
     expect(verifyCalls).toBe(0);
   });
+
+  it("consumes a frozen detached Catalog input once without cloning and rejects replay before crypto", async () => {
+    const vector = catalogGolden.positiveVectors[0]!;
+    const input = preparedCatalogRequestV1();
+    expect(input).not.toBe(vector.request);
+    expect(input.providerFeasibilitySupportCatalog).not.toBe(
+      vector.request.providerFeasibilitySupportCatalog,
+    );
+    expect(Reflect.ownKeys(input)).toHaveLength(18);
+    expect(Object.isFrozen(input)).toBe(true);
+    expect(Object.isFrozen(input.providerFeasibilitySupportCatalog)).toBe(
+      true,
+    );
+
+    const originalStructuredClone = globalThis.structuredClone;
+    Object.defineProperty(globalThis, "structuredClone", {
+      configurable: true,
+      value() {
+        throw new TypeError("prepared path attempted structuredClone");
+      },
+      writable: true,
+    });
+    pointCalls = 0;
+    verifyCalls = 0;
+    let first;
+    try {
+      const pending =
+        diagnoseProviderFeasibilitySupportCatalogPointPreparedInternalV1(
+          input,
+        );
+      expectHardenedPromiseV1(pending);
+      first = await pending;
+    } finally {
+      Object.defineProperty(globalThis, "structuredClone", {
+        configurable: true,
+        value: originalStructuredClone,
+        writable: true,
+      });
+    }
+    expect(first).toMatchObject({ ok: true });
+    expect(Object.getPrototypeOf(first)).toBeNull();
+    expect(Object.isFrozen(first)).toBe(true);
+    if (!first.ok) throw new TypeError("prepared Catalog bridge rejected");
+    expect(
+      projectProviderFeasibilitySupportCatalogPointFixtureClosureV1(
+        first.value,
+      ),
+    ).toEqual(vector.expected.projection);
+    expect(pointCalls).toBe(31);
+    expect(verifyCalls).toBe(64);
+
+    pointCalls = 0;
+    verifyCalls = 0;
+    await expect(
+      diagnoseProviderFeasibilitySupportCatalogPointPreparedInternalV1(input),
+    ).resolves.toEqual({
+      ok: false,
+      stage: "input",
+      reason: "schema_invalid",
+    });
+    expect(pointCalls).toBe(0);
+    expect(verifyCalls).toBe(0);
+  });
+
+  it("reuses one prepared Registry witness in Catalog without cloning or double crypto", async () => {
+    const vector = catalogGolden.positiveVectors[0]!;
+    const input = preparedCatalogRequestV1();
+    const originalStructuredClone = globalThis.structuredClone;
+    let preparedRegistry:
+      | ReturnType<typeof preparedRegistryInvocationForCatalogV1>
+      | undefined;
+    let registryResult:
+      | Awaited<
+          ReturnType<
+            typeof diagnoseProviderRegistryManifestHistoryPreparedInternalV1
+          >
+        >
+      | undefined;
+    let trustedHandle:
+      | ProviderFeasibilitySupportCatalogRegistryTrustedHandleV1
+      | undefined;
+    let first:
+      | Awaited<
+          ReturnType<
+            typeof diagnoseProviderFeasibilitySupportCatalogPointRegistryTrustedPreparedInternalV1
+          >
+        >
+      | undefined;
+    let registryCryptoCounts:
+      | Readonly<{ pointCalls: number; verifyCalls: number }>
+      | undefined;
+    let witnessRequiredFinallyCleanup = false;
+
+    Object.defineProperty(globalThis, "structuredClone", {
+      configurable: true,
+      value() {
+        throw new TypeError("Registry-trusted Catalog attempted structuredClone");
+      },
+      writable: true,
+    });
+    pointCalls = 0;
+    verifyCalls = 0;
+    try {
+      preparedRegistry = preparedRegistryInvocationForCatalogV1(input);
+      expect(preparedRegistry.request.bootstrapTrustBundle).toBe(
+        input.bootstrapTrustBundle,
+      );
+      expect(preparedRegistry.request.registryManifestHistory).toBe(
+        input.registryManifestHistory,
+      );
+      const registryPending =
+        diagnoseProviderRegistryManifestHistoryPreparedInternalV1(
+          preparedRegistry.request,
+          preparedRegistry.inputHandle,
+          capability,
+        );
+      registryResult = await registryPending;
+      registryCryptoCounts = Object.freeze({ pointCalls, verifyCalls });
+      if (!registryResult.ok) {
+        throw new TypeError("prepared Registry rejected Catalog history");
+      }
+      trustedHandle =
+        registerProviderFeasibilitySupportCatalogRegistryTrustedInternalV1(
+          input,
+          registryResult.value.closure,
+          registryResult.value.registryTrustWitnessHandle,
+          capability,
+        );
+      const catalogPending =
+        diagnoseProviderFeasibilitySupportCatalogPointRegistryTrustedPreparedInternalV1(
+          input,
+          trustedHandle,
+          capability,
+        );
+      expectHardenedPromiseV1(catalogPending);
+      first = await catalogPending;
+    } finally {
+      Object.defineProperty(globalThis, "structuredClone", {
+        configurable: true,
+        value: originalStructuredClone,
+        writable: true,
+      });
+      if (registryResult?.ok) {
+        witnessRequiredFinallyCleanup =
+          discardRegistryHistoryVerifiedWitnessInternalV1(
+            registryResult.value.closure,
+            registryResult.value.registryTrustWitnessHandle,
+            capability,
+          );
+      }
+    }
+
+    expect(registryCryptoCounts).toEqual({
+      pointCalls: 24,
+      verifyCalls: 38,
+    });
+    expect(first).toMatchObject({ ok: true });
+    if (!first?.ok) {
+      throw new TypeError("Registry-trusted prepared Catalog rejected");
+    }
+    expect(
+      projectProviderFeasibilitySupportCatalogPointFixtureClosureV1(
+        first.value,
+      ),
+    ).toEqual(vector.expected.projection);
+    expect(pointCalls).toBe(31);
+    expect(verifyCalls).toBe(64);
+    expect(witnessRequiredFinallyCleanup).toBe(false);
+    expect(preparedRegistry).toBeDefined();
+    expect(registryResult?.ok).toBe(true);
+    if (preparedRegistry === undefined || !registryResult?.ok) return;
+    expect(
+      discardPreparedRegistryHistoryInputInternalV1(
+        preparedRegistry.request,
+        preparedRegistry.inputHandle,
+        capability,
+      ),
+    ).toBe(false);
+    expect(
+      takeRegistryHistoryVerifiedWitnessInternalV1(
+        registryResult.value.closure,
+        registryResult.value.registryTrustWitnessHandle,
+        capability,
+      ),
+    ).toBeUndefined();
+
+    pointCalls = 0;
+    verifyCalls = 0;
+    await expect(
+      diagnoseProviderFeasibilitySupportCatalogPointRegistryTrustedPreparedInternalV1(
+        input,
+        trustedHandle!,
+        capability,
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      stage: "input",
+      reason: "schema_invalid",
+    });
+    expect(pointCalls).toBe(0);
+    expect(verifyCalls).toBe(0);
+  });
+
+  it("atomically rejects a wrong Registry-trusted Catalog handle and cleans its witness", async () => {
+    const input = preparedCatalogRequestV1();
+    const preparedRegistry = preparedRegistryInvocationForCatalogV1(input);
+    const registryResult =
+      await diagnoseProviderRegistryManifestHistoryPreparedInternalV1(
+        preparedRegistry.request,
+        preparedRegistry.inputHandle,
+        capability,
+      );
+    expect(registryResult).toMatchObject({ ok: true });
+    if (!registryResult.ok) {
+      throw new TypeError("prepared Registry rejected Catalog history");
+    }
+    const trustedHandle =
+      registerProviderFeasibilitySupportCatalogRegistryTrustedInternalV1(
+        input,
+        registryResult.value.closure,
+        registryResult.value.registryTrustWitnessHandle,
+        capability,
+      );
+    const wrongHandle = Object.freeze(Object.create(null)) as
+      ProviderFeasibilitySupportCatalogRegistryTrustedHandleV1;
+    pointCalls = 0;
+    verifyCalls = 0;
+    const wrongPending =
+      diagnoseProviderFeasibilitySupportCatalogPointRegistryTrustedPreparedInternalV1(
+        input,
+        wrongHandle,
+        capability,
+      );
+    expectHardenedPromiseV1(wrongPending);
+    await expect(wrongPending).resolves.toEqual({
+      ok: false,
+      stage: "input",
+      reason: "schema_invalid",
+    });
+    expect(pointCalls).toBe(0);
+    expect(verifyCalls).toBe(0);
+    expect(
+      discardPreparedRegistryHistoryInputInternalV1(
+        preparedRegistry.request,
+        preparedRegistry.inputHandle,
+        capability,
+      ),
+    ).toBe(false);
+    expect(
+      takeRegistryHistoryVerifiedWitnessInternalV1(
+        registryResult.value.closure,
+        registryResult.value.registryTrustWitnessHandle,
+        capability,
+      ),
+    ).toBeUndefined();
+
+    await expect(
+      diagnoseProviderFeasibilitySupportCatalogPointRegistryTrustedPreparedInternalV1(
+        input,
+        trustedHandle,
+        capability,
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      stage: "input",
+      reason: "schema_invalid",
+    });
+    expect(pointCalls).toBe(0);
+    expect(verifyCalls).toBe(0);
+  });
+
+  it("atomically burns both Registry witnesses on a cross-wired Catalog input and handle", async () => {
+    const inputA = preparedCatalogRequestV1();
+    const inputB = preparedCatalogRequestV1();
+    const preparedRegistryA = preparedRegistryInvocationForCatalogV1(inputA);
+    const preparedRegistryB = preparedRegistryInvocationForCatalogV1(inputB);
+    const [registryResultA, registryResultB] = await Promise.all([
+      diagnoseProviderRegistryManifestHistoryPreparedInternalV1(
+        preparedRegistryA.request,
+        preparedRegistryA.inputHandle,
+        capability,
+      ),
+      diagnoseProviderRegistryManifestHistoryPreparedInternalV1(
+        preparedRegistryB.request,
+        preparedRegistryB.inputHandle,
+        capability,
+      ),
+    ]);
+    expect(registryResultA).toMatchObject({ ok: true });
+    expect(registryResultB).toMatchObject({ ok: true });
+    if (!registryResultA.ok || !registryResultB.ok) {
+      throw new TypeError("prepared Registry rejected cross-wire fixture");
+    }
+    const trustedHandleA =
+      registerProviderFeasibilitySupportCatalogRegistryTrustedInternalV1(
+        inputA,
+        registryResultA.value.closure,
+        registryResultA.value.registryTrustWitnessHandle,
+        capability,
+      );
+    const trustedHandleB =
+      registerProviderFeasibilitySupportCatalogRegistryTrustedInternalV1(
+        inputB,
+        registryResultB.value.closure,
+        registryResultB.value.registryTrustWitnessHandle,
+        capability,
+      );
+
+    pointCalls = 0;
+    verifyCalls = 0;
+    await expect(
+      diagnoseProviderFeasibilitySupportCatalogPointRegistryTrustedPreparedInternalV1(
+        inputA,
+        trustedHandleB,
+        capability,
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      stage: "input",
+      reason: "schema_invalid",
+    });
+    expect(pointCalls).toBe(0);
+    expect(verifyCalls).toBe(0);
+
+    for (const [input, handle] of [
+      [inputA, trustedHandleA],
+      [inputB, trustedHandleB],
+    ] as const) {
+      await expect(
+        diagnoseProviderFeasibilitySupportCatalogPointRegistryTrustedPreparedInternalV1(
+          input,
+          handle,
+          capability,
+        ),
+      ).resolves.toEqual({
+        ok: false,
+        stage: "input",
+        reason: "schema_invalid",
+      });
+    }
+    expect(
+      takeRegistryHistoryVerifiedWitnessInternalV1(
+        registryResultA.value.closure,
+        registryResultA.value.registryTrustWitnessHandle,
+        capability,
+      ),
+    ).toBeUndefined();
+    expect(
+      takeRegistryHistoryVerifiedWitnessInternalV1(
+        registryResultB.value.closure,
+        registryResultB.value.registryTrustWitnessHandle,
+        capability,
+      ),
+    ).toBeUndefined();
+    expect(
+      discardPreparedRegistryHistoryInputInternalV1(
+        preparedRegistryA.request,
+        preparedRegistryA.inputHandle,
+        capability,
+      ),
+    ).toBe(false);
+    expect(
+      discardPreparedRegistryHistoryInputInternalV1(
+        preparedRegistryB.request,
+        preparedRegistryB.inputHandle,
+        capability,
+      ),
+    ).toBe(false);
+  });
+
+  it("burns a real Registry witness after Catalog trust registration with a forged capability", async () => {
+    const forgedCapability = Object.freeze(Object.create(null)) as
+      ProviderStrictEd25519OpaqueCapabilityV1;
+    const input = preparedCatalogRequestV1(forgedCapability);
+    const preparedRegistry = preparedRegistryInvocationForCatalogV1(input);
+    const registryResult =
+      await diagnoseProviderRegistryManifestHistoryPreparedInternalV1(
+        preparedRegistry.request,
+        preparedRegistry.inputHandle,
+        capability,
+      );
+    expect(registryResult).toMatchObject({ ok: true });
+    if (!registryResult.ok) {
+      throw new TypeError("prepared Registry rejected forged-cap fixture");
+    }
+    const trustedHandle =
+      registerProviderFeasibilitySupportCatalogRegistryTrustedInternalV1(
+        input,
+        registryResult.value.closure,
+        registryResult.value.registryTrustWitnessHandle,
+        forgedCapability,
+      );
+
+    pointCalls = 0;
+    verifyCalls = 0;
+    await expect(
+      diagnoseProviderFeasibilitySupportCatalogPointRegistryTrustedPreparedInternalV1(
+        input,
+        trustedHandle,
+        forgedCapability,
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      stage: "input",
+      reason: "schema_invalid",
+    });
+    expect(pointCalls).toBe(0);
+    expect(verifyCalls).toBe(0);
+    expect(
+      takeRegistryHistoryVerifiedWitnessInternalV1(
+        registryResult.value.closure,
+        registryResult.value.registryTrustWitnessHandle,
+        capability,
+      ),
+    ).toBeUndefined();
+    expect(
+      discardPreparedRegistryHistoryInputInternalV1(
+        preparedRegistry.request,
+        preparedRegistry.inputHandle,
+        capability,
+      ),
+    ).toBe(false);
+  });
+
+  it("burns both Registry witnesses after Catalog trust registration cross-wires a closure and handle", async () => {
+    const inputA = preparedCatalogRequestV1();
+    const inputB = preparedCatalogRequestV1();
+    const preparedRegistryA = preparedRegistryInvocationForCatalogV1(inputA);
+    const preparedRegistryB = preparedRegistryInvocationForCatalogV1(inputB);
+    const [registryResultA, registryResultB] = await Promise.all([
+      diagnoseProviderRegistryManifestHistoryPreparedInternalV1(
+        preparedRegistryA.request,
+        preparedRegistryA.inputHandle,
+        capability,
+      ),
+      diagnoseProviderRegistryManifestHistoryPreparedInternalV1(
+        preparedRegistryB.request,
+        preparedRegistryB.inputHandle,
+        capability,
+      ),
+    ]);
+    expect(registryResultA).toMatchObject({ ok: true });
+    expect(registryResultB).toMatchObject({ ok: true });
+    if (!registryResultA.ok || !registryResultB.ok) {
+      throw new TypeError("prepared Registry rejected tuple cross-wire fixture");
+    }
+    const trustedHandle =
+      registerProviderFeasibilitySupportCatalogRegistryTrustedInternalV1(
+        inputA,
+        registryResultA.value.closure,
+        registryResultB.value.registryTrustWitnessHandle,
+        capability,
+      );
+
+    pointCalls = 0;
+    verifyCalls = 0;
+    await expect(
+      diagnoseProviderFeasibilitySupportCatalogPointRegistryTrustedPreparedInternalV1(
+        inputA,
+        trustedHandle,
+        capability,
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      stage: "registry_history_closure",
+      reason: "source_invalid",
+    });
+    expect(pointCalls).toBe(0);
+    expect(verifyCalls).toBe(0);
+    expect(
+      takeRegistryHistoryVerifiedWitnessInternalV1(
+        registryResultA.value.closure,
+        registryResultA.value.registryTrustWitnessHandle,
+        capability,
+      ),
+    ).toBeUndefined();
+    expect(
+      takeRegistryHistoryVerifiedWitnessInternalV1(
+        registryResultB.value.closure,
+        registryResultB.value.registryTrustWitnessHandle,
+        capability,
+      ),
+    ).toBeUndefined();
+    expect(
+      discardPreparedRegistryHistoryInputInternalV1(
+        preparedRegistryA.request,
+        preparedRegistryA.inputHandle,
+        capability,
+      ),
+    ).toBe(false);
+    expect(
+      discardPreparedRegistryHistoryInputInternalV1(
+        preparedRegistryB.request,
+        preparedRegistryB.inputHandle,
+        capability,
+      ),
+    ).toBe(false);
+  });
+
+  it.each(["fulfilled_input_failure", "capability_mismatch"] as const)(
+    "cleans a Registry witness after trusted Catalog %s",
+    async (mode) => {
+      const preparedInput = preparedCatalogRequestV1();
+      const input = mode === "fulfilled_input_failure"
+        ? Object.freeze({
+            ...preparedInput,
+            providerFeasibilitySupportCatalog: cloneJsonV1(
+              preparedInput.providerFeasibilitySupportCatalog,
+            ),
+          }) as ValidateProviderFeasibilitySupportCatalogPointClosureV1Input
+        : preparedInput;
+      const preparedRegistry = preparedRegistryInvocationForCatalogV1(input);
+      const registryResult =
+        await diagnoseProviderRegistryManifestHistoryPreparedInternalV1(
+          preparedRegistry.request,
+          preparedRegistry.inputHandle,
+          capability,
+        );
+      expect(registryResult).toMatchObject({ ok: true });
+      if (!registryResult.ok) {
+        throw new TypeError("prepared Registry rejected Catalog history");
+      }
+      const trustedHandle =
+        registerProviderFeasibilitySupportCatalogRegistryTrustedInternalV1(
+          input,
+          registryResult.value.closure,
+          registryResult.value.registryTrustWitnessHandle,
+          capability,
+        );
+      const suppliedCapability = mode === "capability_mismatch"
+        ? Object.freeze(Object.create(null)) as ProviderStrictEd25519OpaqueCapabilityV1
+        : capability;
+
+      pointCalls = 0;
+      verifyCalls = 0;
+      await expect(
+        diagnoseProviderFeasibilitySupportCatalogPointRegistryTrustedPreparedInternalV1(
+          input,
+          trustedHandle,
+          suppliedCapability,
+        ),
+      ).resolves.toEqual({
+        ok: false,
+        stage: "input",
+        reason: "schema_invalid",
+      });
+      expect(pointCalls).toBe(0);
+      expect(verifyCalls).toBe(0);
+      expect(
+        takeRegistryHistoryVerifiedWitnessInternalV1(
+          registryResult.value.closure,
+          registryResult.value.registryTrustWitnessHandle,
+          capability,
+        ),
+      ).toBeUndefined();
+      expect(
+        discardPreparedRegistryHistoryInputInternalV1(
+          preparedRegistry.request,
+          preparedRegistry.inputHandle,
+          capability,
+        ),
+      ).toBe(false);
+    },
+  );
 
   it("maps a native prepared-host throw to a frozen diagnostic", async () => {
     pointCalls = 0;

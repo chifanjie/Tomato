@@ -51,6 +51,12 @@ import {
   ProviderReleaseTargetUniverseTargetEntryV1Schema,
   ProviderTargetDiscoveryObservationSourceV1Schema,
   ProviderTargetDiscoveryResultPinV1Schema,
+  type ProviderPublicSupportTaxonomyEnvelopeV1,
+  type ProviderPublicSupportTaxonomyPinV1,
+  type ProviderReleaseMatrixEnvelopeV1,
+  type ProviderReleaseMatrixPinV1,
+  type ProviderTargetDiscoveryResultEnvelopeV1,
+  type ProviderTargetDiscoveryResultPinV1,
   type ProviderTargetDiscoveryPointClosureValidationV1,
   type ProviderReleaseTargetUniverseTargetEntryV1,
   type ValidateProviderTargetDiscoveryPointClosureV1Input,
@@ -64,6 +70,9 @@ import {
 import {
   registerProviderReleaseTargetUniversePointPreparedCoreInternalV1,
 } from "./provider-release-target-universe-point-prepared-internal.js";
+import {
+  registerProviderDistributionHistoricalUniverseSemanticCoreInternalV1,
+} from "./provider-distribution-historical-semantic-internal.js";
 import { sha256InternalV1 } from "./sha256.js";
 import {
   assertProviderStrictEd25519CryptoCapabilityIdentityV1,
@@ -1876,6 +1885,131 @@ function validateUniverseBucketsV1(
   }
 }
 
+interface HistoricalTargetDiscoveryResultSemanticStateViewV1 {
+  readonly envelope: ProviderTargetDiscoveryResultEnvelopeV1;
+  readonly pin: ProviderTargetDiscoveryResultPinV1;
+  readonly bundle: {
+    readonly matrix: {
+      readonly envelope: ProviderReleaseMatrixEnvelopeV1;
+      readonly pin: ProviderReleaseMatrixPinV1;
+    };
+    readonly taxonomy: {
+      readonly envelope: ProviderPublicSupportTaxonomyEnvelopeV1;
+      readonly pin: ProviderPublicSupportTaxonomyPinV1;
+    };
+  };
+}
+
+interface HistoricalUniverseSemanticStateV1 {
+  readonly envelope: ProviderReleaseTargetUniverseEnvelopeV1;
+  readonly pin: ProviderReleaseTargetUniversePinV1;
+  readonly result: HistoricalTargetDiscoveryResultSemanticStateViewV1;
+}
+
+function validateHistoricalUniverseSemanticCoreV1(
+  suppliedEnvelope: ProviderReleaseTargetUniverseEnvelopeV1,
+  suppliedResultState: unknown,
+): HistoricalUniverseSemanticStateV1 {
+  ProviderReleaseTargetUniverseEnvelopeV1Schema.parse(suppliedEnvelope);
+  const resultState =
+    suppliedResultState as HistoricalTargetDiscoveryResultSemanticStateViewV1;
+  if (
+    resultState?.envelope === undefined ||
+    resultState.bundle?.matrix?.envelope === undefined ||
+    resultState.bundle?.taxonomy?.envelope === undefined
+  ) {
+    return failUniversePointV1(
+      "target_discovery_closure",
+      "source_invalid",
+    );
+  }
+  const envelope = suppliedEnvelope;
+  const universe = envelope.payload;
+  const result = resultState.envelope.payload;
+  const matrix = resultState.bundle.matrix.envelope.payload;
+  const taxonomy = resultState.bundle.taxonomy.envelope.payload;
+  validateUniverseGenerationPredecessorV1(universe);
+  if (
+    !canonicalEqualV1(
+      universe.distributionRootBinding,
+      result.distributionRootBinding,
+    )
+  ) {
+    return failUniversePointV1(
+      "universe_distribution_binding",
+      "binding_mismatch",
+    );
+  }
+  if (
+    !canonicalEqualV1(universe.activeRootMetadata, result.activeRootMetadata) ||
+    universe.registryRootKeyId !== result.registryRootKeyId
+  ) {
+    return failUniversePointV1("universe_active_root", "root_mismatch");
+  }
+  if (
+    !canonicalEqualV1(
+      universe.publicSupportTaxonomy,
+      resultState.bundle.taxonomy.pin,
+    ) ||
+    !canonicalEqualV1(universe.publicSupportTaxonomy, result.publicSupportTaxonomy)
+  ) {
+    return failUniversePointV1("universe_taxonomy_pin", "pin_mismatch");
+  }
+  if (
+    !canonicalEqualV1(
+      universe.coverageBasis.releaseMatrix,
+      resultState.bundle.matrix.pin,
+    ) ||
+    !canonicalEqualV1(
+      universe.coverageBasis.targetDiscoveryResult,
+      resultState.pin,
+    )
+  ) {
+    return failUniversePointV1("universe_coverage_pins", "pin_mismatch");
+  }
+
+  const snapshot = {
+    publicSupportTaxonomy: resultState.bundle.taxonomy.envelope,
+    releaseMatrix: resultState.bundle.matrix.envelope,
+    targetDiscoveryResult: resultState.envelope,
+  } as ProviderTargetDiscoveryPointSnapshotV1;
+  validateUniverseCoverageBindingV1(universe, snapshot);
+  validateUniverseCoverageCountsV1(universe, snapshot);
+  validateUniverseTargetUnionV1(universe, snapshot);
+  const expectedResolution = deriveExpectedCoverageResolutionV1(snapshot);
+  if (!canonicalEqualV1(universe.coverageBasis.resolution, expectedResolution)) {
+    return failUniversePointV1("universe_resolution", "coverage_mismatch");
+  }
+  validateUniverseBucketsV1(universe, expectedResolution);
+  if (
+    envelope.contentDigest !==
+    deriveProviderReleaseTargetUniverseContentDigestV1(universe)
+  ) {
+    return failUniversePointV1("universe_digest", "digest_mismatch");
+  }
+  if (envelope.universeGeneration !== universe.universeGeneration) {
+    return failUniversePointV1("universe_envelope", "envelope_mismatch");
+  }
+  if (
+    matrix.distributionRootBinding.releaseRevisionDigest !==
+      taxonomy.distributionRootBinding.releaseRevisionDigest
+  ) {
+    return failUniversePointV1(
+      "universe_distribution_binding",
+      "binding_mismatch",
+    );
+  }
+  return {
+    envelope,
+    pin: ProviderReleaseTargetUniversePinV1Schema.parse({
+      locatorProfile: PROVIDER_RELEASE_TARGET_UNIVERSE_LOCATOR_PROFILE_V1,
+      universeGeneration: universe.universeGeneration,
+      contentDigest: envelope.contentDigest,
+    }),
+    result: resultState,
+  };
+}
+
 function lowerHexToBytesV1(hex: string): Uint8Array {
   if (!regExpTestV1(/^(?:[0-9a-f]{2})+$/u, hex)) {
     throw new CapturedTypeErrorV1("invalid lowercase hex");
@@ -2281,4 +2415,7 @@ CapturedObjectFreezeV1(
 CapturedObjectFreezeV1(buildProviderReleaseTargetUniverseRelativePathV1);
 registerProviderReleaseTargetUniversePointPreparedCoreInternalV1(
   diagnosePreparedReleaseTargetUniversePointCoreV1,
+);
+registerProviderDistributionHistoricalUniverseSemanticCoreInternalV1(
+  validateHistoricalUniverseSemanticCoreV1,
 );

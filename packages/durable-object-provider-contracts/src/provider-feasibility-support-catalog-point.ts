@@ -39,6 +39,15 @@ import {
   registerProviderFeasibilityEvidenceRegistryTrustedApproversInternalV1,
 } from "./provider-feasibility-evidence-point-prepared-internal.js";
 import {
+  registerProviderFeasibilitySupportCatalogPointPreparedCoreInternalV1,
+  type ProviderFeasibilitySupportCatalogRegistryTrustedContextInternalV1,
+} from "./provider-feasibility-support-catalog-point-prepared-internal.js";
+import {
+  registerProviderDistributionHistoricalCatalogSemanticCoreInternalV1,
+  registerProviderDistributionValidatedCurrentTipCatalogInternalV1,
+  type ProviderDistributionCurrentTipSemanticInputInternalV1,
+} from "./provider-distribution-historical-semantic-internal.js";
+import {
   captureProviderPointDetachedExactDataObjectV1,
   captureProviderPointRawExactTopLevelV1,
   cloneProviderPointRawAdmissionCapsuleV1,
@@ -143,7 +152,13 @@ const CapturedFunctionPrototypeCallV1 = Function.prototype.call;
 const CapturedNumberParseIntV1 = Number.parseInt;
 const CapturedNumberPrototypeToStringV1 = Number.prototype.toString;
 const CapturedObjectFreezeV1 = Object.freeze;
+const CapturedObjectGetOwnPropertyDescriptorV1 =
+  Object.getOwnPropertyDescriptor;
+const CapturedObjectIsFrozenV1 = Object.isFrozen;
+const CapturedObjectPrototypeHasOwnPropertyV1 =
+  Object.prototype.hasOwnProperty;
 const CapturedReflectApplyV1 = Reflect.apply;
+const CapturedReflectOwnKeysV1 = Reflect.ownKeys;
 const CapturedRegExpPrototypeExecV1 = RegExp.prototype.exec;
 const CapturedStringPrototypeIndexOfV1 = String.prototype.indexOf;
 const CapturedStringPrototypePadStartV1 = String.prototype.padStart;
@@ -187,6 +202,9 @@ const regExpExecV1 = bindUncurriedCatalogIntrinsicV1(
 const textEncoderEncodeV1 = bindUncurriedCatalogIntrinsicV1(
   CapturedTextEncoderPrototypeEncodeV1,
 ) as (receiver: TextEncoder, value?: string) => Uint8Array;
+const hasOwnV1 = bindUncurriedCatalogIntrinsicV1(
+  CapturedObjectPrototypeHasOwnPropertyV1,
+) as (receiver: object, key: PropertyKey) => boolean;
 const weakSetAddV1 = bindUncurriedCatalogIntrinsicV1(
   CapturedWeakSetPrototypeAddV1,
 ) as <T extends object>(receiver: WeakSet<T>, value: T) => WeakSet<T>;
@@ -722,11 +740,26 @@ const MAX_C09_1M_TRUST_BRANCH_UNITS_V1 = 4_194_304;
 const MAX_C09_1M_DISTRIBUTION_BRANCH_UNITS_V1 = 16_777_216;
 const MAX_C09_1M_AGGREGATE_BRANCH_UNITS_V1 = 268_435_456;
 
+interface PreparedCatalogRegistryRequestSourceV1 {
+  readonly profile: "prepared_registry_request";
+  readonly registryRequest: ValidateProviderRegistryManifestHistoryV1Input;
+  readonly registryInputHandle: PreparedRegistryHistoryInputHandleV1;
+}
+
+interface PreparedCatalogRegistryTrustedSourceV1 {
+  readonly profile: "trusted_registry_witness";
+  readonly registryClosure: ProviderRegistryManifestHistoryValidationV1;
+  readonly registryTrustWitnessHandle: RegistryTrustWitnessHandleV1;
+}
+
+type PreparedCatalogRegistrySourceV1 =
+  | PreparedCatalogRegistryRequestSourceV1
+  | PreparedCatalogRegistryTrustedSourceV1;
+
 interface PreparedCatalogPointInputV1 {
   readonly fields: DetachedPointFieldsV1;
   readonly strictCryptoCapability: ProviderStrictEd25519OpaqueCapabilityV1;
-  readonly registryRequest: ValidateProviderRegistryManifestHistoryV1Input;
-  readonly registryInputHandle: PreparedRegistryHistoryInputHandleV1;
+  readonly registrySource: PreparedCatalogRegistrySourceV1;
 }
 
 function branchLimitV1(key: PointInputKeyV1): number {
@@ -741,6 +774,67 @@ function branchLimitV1(key: PointInputKeyV1): number {
     return MAX_C09_1M_TRUST_BRANCH_UNITS_V1;
   }
   return MAX_C09_1M_DISTRIBUTION_BRANCH_UNITS_V1;
+}
+
+function createPreparedCatalogPointInputV1(
+  fields: DetachedPointFieldsV1,
+  capability: ProviderStrictEd25519OpaqueCapabilityV1,
+): PreparedCatalogPointInputV1 {
+  const registryRequest = createProviderNonThenableFrozenRecordV1({
+    bootstrapTrustBundle:
+      fields.bootstrapTrustBundle as ProviderBootstrapTrustBundleV1,
+    installationIdentityGenerationId:
+      fields.installationIdentityGenerationId as InstallationIdentityGenerationIdV1,
+    registryManifestHistory:
+      fields.registryManifestHistory as readonly ProviderRegistryManifestEnvelopeV1[],
+    rootMetadataHistory:
+      fields.rootMetadataHistory as readonly ProviderRegistryRootMetadataEnvelopeV1[],
+    strictCryptoCapability: capability,
+  }) as unknown as ValidateProviderRegistryManifestHistoryV1Input;
+  const snapshot = createPreparedRegistryHistorySnapshotInternalV1({
+    bootstrapTrustBundle: registryRequest.bootstrapTrustBundle,
+    installationIdentityGenerationId:
+      registryRequest.installationIdentityGenerationId,
+    registryManifestHistory: registryRequest.registryManifestHistory,
+    rootMetadataHistory: registryRequest.rootMetadataHistory,
+    strictCryptoCapability: capability,
+  });
+  const registryInputHandle = registerPreparedRegistryHistoryInputInternalV1(
+    registryRequest,
+    snapshot,
+    capability,
+  );
+  return createProviderNonThenableFrozenRecordV1({
+    fields,
+    strictCryptoCapability: capability,
+    registrySource: createProviderNonThenableFrozenRecordV1({
+      profile: "prepared_registry_request" as const,
+      registryRequest,
+      registryInputHandle,
+    }),
+  });
+}
+
+function createRegistryTrustedPreparedCatalogPointInputV1(
+  fields: DetachedPointFieldsV1,
+  capability: ProviderStrictEd25519OpaqueCapabilityV1,
+  trustedRegistryContext: ProviderFeasibilitySupportCatalogRegistryTrustedContextInternalV1,
+): PreparedCatalogPointInputV1 {
+  if (trustedRegistryContext.strictCryptoCapability !== capability) {
+    throw new CapturedTypeErrorV1(
+      "prepared Catalog Registry trust capability is invalid",
+    );
+  }
+  return createProviderNonThenableFrozenRecordV1({
+    fields,
+    strictCryptoCapability: capability,
+    registrySource: createProviderNonThenableFrozenRecordV1({
+      profile: "trusted_registry_witness" as const,
+      registryClosure: trustedRegistryContext.registryClosure,
+      registryTrustWitnessHandle:
+        trustedRegistryContext.registryTrustWitnessHandle,
+    }),
+  });
 }
 
 function prepareCatalogPointInputV1(input: unknown): PreparedCatalogPointInputV1 {
@@ -842,39 +936,118 @@ function prepareCatalogPointInputV1(input: unknown): PreparedCatalogPointInputV1
       detached.targetDiscoveryRunnerRun,
     ),
   }) as unknown as DetachedPointFieldsV1;
-  const registryRequest = createProviderNonThenableFrozenRecordV1({
-    bootstrapTrustBundle:
-      fields.bootstrapTrustBundle as ProviderBootstrapTrustBundleV1,
-    installationIdentityGenerationId:
-      fields.installationIdentityGenerationId as InstallationIdentityGenerationIdV1,
-    registryManifestHistory:
-      fields.registryManifestHistory as readonly ProviderRegistryManifestEnvelopeV1[],
-    rootMetadataHistory:
-      fields.rootMetadataHistory as readonly ProviderRegistryRootMetadataEnvelopeV1[],
-    strictCryptoCapability:
-      capability as ProviderStrictEd25519OpaqueCapabilityV1,
-  }) as unknown as ValidateProviderRegistryManifestHistoryV1Input;
-  const snapshot = createPreparedRegistryHistorySnapshotInternalV1({
-    bootstrapTrustBundle: registryRequest.bootstrapTrustBundle,
-    installationIdentityGenerationId:
-      registryRequest.installationIdentityGenerationId,
-    registryManifestHistory: registryRequest.registryManifestHistory,
-    rootMetadataHistory: registryRequest.rootMetadataHistory,
-    strictCryptoCapability:
-      capability as ProviderStrictEd25519OpaqueCapabilityV1,
-  });
-  const registryInputHandle = registerPreparedRegistryHistoryInputInternalV1(
-    registryRequest,
-    snapshot,
+  return createPreparedCatalogPointInputV1(
+    fields,
     capability as ProviderStrictEd25519OpaqueCapabilityV1,
   );
-  return createProviderNonThenableFrozenRecordV1({
-    fields,
+}
+
+function assertRecursivelyFrozenDetachedCatalogJsonV1(value: unknown): void {
+  if (value === null || typeof value !== "object") return;
+  if (!CapturedObjectIsFrozenV1(value)) {
+    throw new CapturedTypeErrorV1(
+      "prepared feasibility support Catalog JSON must already be frozen",
+    );
+  }
+  const keys = CapturedReflectOwnKeysV1(value);
+  for (let index = 0; index < keys.length; index += 1) {
+    const descriptor = CapturedObjectGetOwnPropertyDescriptorV1(
+      value,
+      keys[index]!,
+    );
+    if (descriptor === undefined || !hasOwnV1(descriptor, "value")) {
+      throw new CapturedTypeErrorV1(
+        "prepared feasibility support Catalog JSON must use data properties",
+      );
+    }
+    assertRecursivelyFrozenDetachedCatalogJsonV1(descriptor.value);
+  }
+}
+
+function prepareCatalogPointFromDetachedInputV1(
+  input: ValidateProviderFeasibilitySupportCatalogPointClosureV1Input,
+  trustedRegistryContext?: ProviderFeasibilitySupportCatalogRegistryTrustedContextInternalV1,
+): PreparedCatalogPointInputV1 {
+  if (!CapturedObjectIsFrozenV1(input)) {
+    throw new CapturedTypeErrorV1(
+      "prepared feasibility support Catalog input must already be frozen",
+    );
+  }
+  const admission = createProviderPointRawAdmissionSessionV1(input, {
+    maxObservedIdentities: MAX_C09_1M_OBSERVED_IDENTITIES_V1,
+    maxPrecloneAllocationWorkUnits: MAX_C09_1M_PRECLONE_WORK_UNITS_V1,
+  });
+  const captured = captureProviderPointRawExactTopLevelV1(
+    admission,
+    POINT_INPUT_KEYS_V1,
+  );
+  const capability = captured.strictCryptoCapability;
+  assertProviderStrictEd25519CryptoCapabilityIdentityV1(
+    ProviderStrictEd25519AttestationError,
+    capability,
+  );
+  for (let index = 0; index < POINT_INPUT_KEYS_V1.length; index += 1) {
+    const key = POINT_INPUT_KEYS_V1[index]!;
+    if (key === "strictCryptoCapability") continue;
+    const value = captured[key];
+    if (value === null || typeof value !== "object") {
+      if (
+        key !== "installationIdentityGenerationId" ||
+        typeof value !== "string" ||
+        value.length > MAX_C09_1M_DISTRIBUTION_BRANCH_UNITS_V1
+      ) {
+        throw new CapturedTypeErrorV1(
+          "prepared Catalog point JSON input branch is invalid",
+        );
+      }
+      continue;
+    }
+    const limit = branchLimitV1(key);
+    const budget = createProviderPointRawAdmissionBudgetForSessionV1(
+      admission,
+      MAX_C09_1M_DEPTH_V1,
+      limit,
+      limit,
+      limit,
+    );
+    walkProviderPointRawJsonIdentityTreeV1(admission, value, budget);
+    assertRecursivelyFrozenDetachedCatalogJsonV1(value);
+  }
+  const fields = createProviderNonThenableFrozenRecordV1({
+    activeRoot: captured.activeRoot,
+    activeRootMetadata: captured.activeRootMetadata,
+    bootstrapTrustBundle: captured.bootstrapTrustBundle,
+    distributionRootBinding: captured.distributionRootBinding,
+    fixtureCorpusManifest: captured.fixtureCorpusManifest,
+    installationIdentityGenerationId:
+      captured.installationIdentityGenerationId,
+    providerFeasibilitySupportCandidateArtifacts:
+      captured.providerFeasibilitySupportCandidateArtifacts,
+    providerFeasibilitySupportCatalog:
+      captured.providerFeasibilitySupportCatalog,
+    publicSupportTaxonomy: captured.publicSupportTaxonomy,
+    registryManifestHistory: captured.registryManifestHistory,
+    releaseMatrix: captured.releaseMatrix,
+    releaseTargetUniverse: captured.releaseTargetUniverse,
+    rootMetadataHistory: captured.rootMetadataHistory,
     strictCryptoCapability:
       capability as ProviderStrictEd25519OpaqueCapabilityV1,
-    registryRequest,
-    registryInputHandle,
-  });
+    suiteManifest: captured.suiteManifest,
+    targetDiscoveryFixtureManifest:
+      captured.targetDiscoveryFixtureManifest,
+    targetDiscoveryResult: captured.targetDiscoveryResult,
+    targetDiscoveryRunnerRun: captured.targetDiscoveryRunnerRun,
+  }) as unknown as DetachedPointFieldsV1;
+  return trustedRegistryContext === undefined
+    ? createPreparedCatalogPointInputV1(
+        fields,
+        capability as ProviderStrictEd25519OpaqueCapabilityV1,
+      )
+    : createRegistryTrustedPreparedCatalogPointInputV1(
+        fields,
+        capability as ProviderStrictEd25519OpaqueCapabilityV1,
+        trustedRegistryContext,
+      );
 }
 
 function validateBootstrapDistributionBindingV1(
@@ -1080,9 +1253,10 @@ function validateCatalogOrderingV1(
 
 function validateCatalogExactCoverV1(
   catalog: ProviderFeasibilitySupportCatalogV1,
-  universeClosure: ProviderReleaseTargetUniversePointClosureValidationV1,
+  universeTargets: readonly {
+    readonly target: ProviderFeasibilityTargetV1;
+  }[],
 ): void {
-  const universeTargets = universeClosure.releaseTargetUniverse.payload.targets;
   if (catalog.targets.length !== universeTargets.length) {
     return failCatalogV1("catalog_target_exact_cover", "coverage_mismatch");
   }
@@ -1091,6 +1265,79 @@ function validateCatalogExactCoverV1(
       return failCatalogV1("catalog_target_exact_cover", "coverage_mismatch");
     }
   }
+}
+
+interface HistoricalUniverseSemanticStateViewV1 {
+  readonly envelope: ProviderReleaseTargetUniverseEnvelopeV1;
+  readonly pin: z.infer<typeof ProviderReleaseTargetUniversePinV1Schema>;
+}
+
+interface HistoricalCatalogSemanticStateV1 {
+  readonly envelope: ProviderFeasibilitySupportCatalogEnvelopeV1;
+  readonly universe: HistoricalUniverseSemanticStateViewV1;
+}
+
+function validateHistoricalCatalogSemanticCoreV1(
+  suppliedEnvelope: ProviderFeasibilitySupportCatalogEnvelopeV1,
+  suppliedUniverseState: unknown,
+): HistoricalCatalogSemanticStateV1 {
+  ProviderFeasibilitySupportCatalogEnvelopeV1Schema.parse(suppliedEnvelope);
+  const universe = suppliedUniverseState as HistoricalUniverseSemanticStateViewV1;
+  if (universe?.envelope === undefined || universe.pin === undefined) {
+    return failCatalogV1("release_target_universe_closure", "source_invalid");
+  }
+  const envelope = suppliedEnvelope;
+  const catalog = envelope.payload;
+  const universePayload = universe.envelope.payload;
+  if (
+    (catalog.catalogGeneration === 1) !==
+    (catalog.predecessorCatalogContentDigest === undefined)
+  ) {
+    return failCatalogV1("catalog_generation", "coverage_mismatch");
+  }
+  if (
+    !canonicalEqualV1(
+      catalog.distributionRootBinding,
+      universePayload.distributionRootBinding,
+    )
+  ) {
+    return failCatalogV1(
+      "catalog_distribution_binding",
+      "binding_mismatch",
+    );
+  }
+  if (
+    !canonicalEqualV1(
+      catalog.activeRootMetadata,
+      universePayload.activeRootMetadata,
+    ) ||
+    catalog.registryRootKeyId !== universePayload.registryRootKeyId
+  ) {
+    return failCatalogV1("catalog_active_root", "root_mismatch");
+  }
+  if (
+    !canonicalEqualV1(
+      catalog.publicSupportTaxonomy,
+      universePayload.publicSupportTaxonomy,
+    )
+  ) {
+    return failCatalogV1("catalog_taxonomy_pin", "pin_mismatch");
+  }
+  if (!canonicalEqualV1(catalog.releaseTargetUniverse, universe.pin)) {
+    return failCatalogV1("catalog_universe_pin", "pin_mismatch");
+  }
+  validateCatalogOrderingV1(catalog);
+  validateCatalogExactCoverV1(catalog, universePayload.targets);
+  if (
+    envelope.contentDigest !==
+    deriveProviderFeasibilitySupportCatalogContentDigestV1(catalog)
+  ) {
+    return failCatalogV1("catalog_digest", "digest_mismatch");
+  }
+  if (envelope.catalogGeneration !== catalog.catalogGeneration) {
+    return failCatalogV1("catalog_envelope", "envelope_mismatch");
+  }
+  return { envelope, universe };
 }
 
 function validateApprovalKeysAgainstRegistryTipV1(
@@ -1261,29 +1508,44 @@ async function validateCatalogPointInternalV1(
   prepared: PreparedCatalogPointInputV1,
 ): Promise<ProviderFeasibilitySupportCatalogPointClosureValidationV1> {
   const { fields, strictCryptoCapability } = prepared;
-  let registryClosure: ProviderRegistryManifestHistoryValidationV1 | undefined;
-  let registryTrustWitnessHandle: RegistryTrustWitnessHandleV1 | undefined;
+  const { registrySource } = prepared;
+  let registryClosure =
+    registrySource.profile === "trusted_registry_witness"
+      ? registrySource.registryClosure
+      : undefined;
+  let registryTrustWitnessHandle =
+    registrySource.profile === "trusted_registry_witness"
+      ? registrySource.registryTrustWitnessHandle
+      : undefined;
   let registryWitness: RegistryHistoryVerifiedCryptoWitnessV1 | undefined;
   try {
     validateBootstrapDistributionBindingV1(fields);
-    let registryDiagnostic;
-    try {
-      registryDiagnostic = await hardenProviderPointPromiseV1(
-        diagnoseProviderRegistryManifestHistoryPreparedInternalV1(
-          prepared.registryRequest,
-          prepared.registryInputHandle,
-          strictCryptoCapability,
-        ),
-      );
-    } catch {
+    if (registrySource.profile === "prepared_registry_request") {
+      let registryDiagnostic;
+      try {
+        registryDiagnostic = await hardenProviderPointPromiseV1(
+          diagnoseProviderRegistryManifestHistoryPreparedInternalV1(
+            registrySource.registryRequest,
+            registrySource.registryInputHandle,
+            strictCryptoCapability,
+          ),
+        );
+      } catch {
+        return failCatalogV1("registry_history_closure", "source_invalid");
+      }
+      if (!registryDiagnostic.ok) {
+        return failCatalogV1("registry_history_closure", "source_invalid");
+      }
+      registryClosure = registryDiagnostic.value.closure;
+      registryTrustWitnessHandle =
+        registryDiagnostic.value.registryTrustWitnessHandle;
+    }
+    if (
+      registryClosure === undefined ||
+      registryTrustWitnessHandle === undefined
+    ) {
       return failCatalogV1("registry_history_closure", "source_invalid");
     }
-    if (!registryDiagnostic.ok) {
-      return failCatalogV1("registry_history_closure", "source_invalid");
-    }
-    registryClosure = registryDiagnostic.value.closure;
-    registryTrustWitnessHandle =
-      registryDiagnostic.value.registryTrustWitnessHandle;
     registryWitness = takeRegistryHistoryVerifiedWitnessInternalV1(
       registryClosure,
       registryTrustWitnessHandle,
@@ -1367,7 +1629,10 @@ async function validateCatalogPointInternalV1(
       return failCatalogV1("catalog_universe_pin", "pin_mismatch");
     }
     validateCatalogOrderingV1(catalog);
-    validateCatalogExactCoverV1(catalog, universeClosure);
+    validateCatalogExactCoverV1(
+      catalog,
+      universeClosure.releaseTargetUniverse.payload.targets,
+    );
 
     let candidateCount = 0;
     for (let targetIndex = 0; targetIndex < catalog.targets.length; targetIndex += 1) {
@@ -1535,7 +1800,7 @@ async function validateCatalogPointInternalV1(
       universeClosure,
       ownerTargetCapabilities,
     );
-    return createProviderNonThenableFrozenRecordV1({
+    const closure = createProviderNonThenableFrozenRecordV1({
       authority: PROVIDER_FEASIBILITY_SUPPORT_CATALOG_AUTHORITY_V1,
       registryManifestHistoryClosure: registryClosure,
       releaseTargetUniversePointClosure: universeClosure,
@@ -1549,12 +1814,21 @@ async function validateCatalogPointInternalV1(
       candidateCount,
       publicSupportRowCount: publicSupport.length,
     });
+    if (registrySource.profile === "trusted_registry_witness") {
+      registerProviderDistributionValidatedCurrentTipCatalogInternalV1(
+        closure,
+        fields as unknown as ProviderDistributionCurrentTipSemanticInputInternalV1,
+      );
+    }
+    return closure;
   } finally {
-    discardPreparedRegistryHistoryInputInternalV1(
-      prepared.registryRequest,
-      prepared.registryInputHandle,
-      strictCryptoCapability,
-    );
+    if (registrySource.profile === "prepared_registry_request") {
+      discardPreparedRegistryHistoryInputInternalV1(
+        registrySource.registryRequest,
+        registrySource.registryInputHandle,
+        strictCryptoCapability,
+      );
+    }
     if (
       registryClosure !== undefined &&
       registryTrustWitnessHandle !== undefined &&
@@ -1614,6 +1888,38 @@ export function diagnoseProviderFeasibilitySupportCatalogPointClosureV1(
   );
 }
 
+function diagnosePreparedCatalogPointCoreV1(
+  input: ValidateProviderFeasibilitySupportCatalogPointClosureV1Input,
+  trustedRegistryContext?: ProviderFeasibilitySupportCatalogRegistryTrustedContextInternalV1,
+): Promise<ProviderFeasibilitySupportCatalogPointClosureDiagnosticResultV1> {
+  let prepared: PreparedCatalogPointInputV1;
+  try {
+    prepared = prepareCatalogPointFromDetachedInputV1(
+      input,
+      trustedRegistryContext,
+    );
+  } catch {
+    return createProviderPointFulfilledPromiseV1(
+      diagnosticFailureV1("input", "schema_invalid"),
+    );
+  }
+  let operation: Promise<ProviderFeasibilitySupportCatalogPointClosureValidationV1>;
+  try {
+    operation = hardenProviderPointPromiseV1(
+      validateCatalogPointInternalV1(prepared),
+    );
+  } catch (error) {
+    return createProviderPointFulfilledPromiseV1(
+      diagnosticFailureFromErrorV1(error),
+    );
+  }
+  return operation.then(
+    (value) =>
+      createProviderNonThenableFrozenRecordV1({ ok: true as const, value }),
+    (error) => diagnosticFailureFromErrorV1(error),
+  );
+}
+
 export function validateProviderFeasibilitySupportCatalogPointClosureV1(
   input: ValidateProviderFeasibilitySupportCatalogPointClosureV1Input,
 ): Promise<ProviderFeasibilitySupportCatalogPointClosureValidationV1> {
@@ -1659,4 +1965,10 @@ CapturedObjectFreezeV1(
 );
 CapturedObjectFreezeV1(
   validateProviderFeasibilitySupportCatalogPointClosureV1,
+);
+registerProviderFeasibilitySupportCatalogPointPreparedCoreInternalV1(
+  diagnosePreparedCatalogPointCoreV1,
+);
+registerProviderDistributionHistoricalCatalogSemanticCoreInternalV1(
+  validateHistoricalCatalogSemanticCoreV1,
 );

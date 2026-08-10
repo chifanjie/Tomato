@@ -93,6 +93,7 @@ export function buildGoldenSourceFixture({
   distributionRootBinding,
   rootMetadataEnvelope,
   rootSeedHex,
+  sourceVersion = "1.0.0",
 }) {
   const activeRoot = jsonClone(rootMetadataEnvelope.payload.activeRoot);
   const activeRootMetadata = {
@@ -120,7 +121,7 @@ export function buildGoldenSourceFixture({
     deriveProviderRealFilesystemFixtureCorpusRecordSetDigestV1({ records });
   const fixtureManifestDigest =
     deriveProviderRealFilesystemFixtureManifestDigestV1({
-      corpusVersion: "1.0.0",
+      corpusVersion: sourceVersion,
       recordCount: records.length,
       recordSetDigest,
       records,
@@ -131,7 +132,7 @@ export function buildGoldenSourceFixture({
     activeRootMetadata: jsonClone(activeRootMetadata),
     registryRootKeyId: activeRoot.rootKeyId,
     releaseRevisionDigest: distributionRootBinding.releaseRevisionDigest,
-    corpusVersion: "1.0.0",
+    corpusVersion: sourceVersion,
     recordCount: records.length,
     recordSetDigest,
     records,
@@ -256,7 +257,7 @@ export function buildGoldenSourceFixture({
       entries: requiredEntries,
     });
   const suiteDefinition = {
-    suiteVersion: "1.0.0",
+    suiteVersion: sourceVersion,
     fixtureManifestDigest,
     runnerProfileDigest,
     caseCount: cases.length,
@@ -271,7 +272,7 @@ export function buildGoldenSourceFixture({
     activeRootMetadata: jsonClone(activeRootMetadata),
     registryRootKeyId: activeRoot.rootKeyId,
     releaseRevisionDigest: distributionRootBinding.releaseRevisionDigest,
-    suiteVersion: "1.0.0",
+    suiteVersion: sourceVersion,
     fixtureCorpusManifest: fixtureCorpusPin,
     runnerProfile,
     runnerProfileDigest,

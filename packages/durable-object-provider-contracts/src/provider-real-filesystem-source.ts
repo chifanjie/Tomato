@@ -49,6 +49,10 @@ import {
   type PreparedDistributionVerificationContextV1,
 } from "./provider-real-filesystem-source-internal.js";
 import {
+  registerProviderDistributionHistoricalCorpusSemanticCoreInternalV1,
+  registerProviderDistributionHistoricalSuiteSemanticCoreInternalV1,
+} from "./provider-distribution-historical-semantic-internal.js";
+import {
   hardenProviderPointPromiseV1,
 } from "./provider-point-runtime-internal.js";
 
@@ -1105,6 +1109,334 @@ function deepFreezeV1<T>(value: T): T {
   return value;
 }
 
+interface HistoricalCorpusSemanticStateV1 {
+  readonly corpusPin: ProviderRealFilesystemFixtureCorpusManifestPinV1;
+  readonly envelope: ProviderRealFilesystemFixtureCorpusManifestEnvelopeV1;
+  readonly recordsByCase: ReadonlyMap<
+    string,
+    readonly ProviderRealFilesystemFixtureCorpusRecordV1[]
+  >;
+}
+
+interface HistoricalSuiteSemanticStateV1 {
+  readonly corpus: HistoricalCorpusSemanticStateV1;
+  readonly envelope: ProviderRealFilesystemSuiteManifestEnvelopeV1;
+  readonly suitePin: ProviderRealFilesystemSuiteManifestPinV1;
+}
+
+function validateHistoricalCorpusSemanticCoreV1(
+  suppliedEnvelope: ProviderRealFilesystemFixtureCorpusManifestEnvelopeV1,
+): HistoricalCorpusSemanticStateV1 {
+  ProviderRealFilesystemFixtureCorpusManifestEnvelopeV1Schema.parse(
+    suppliedEnvelope,
+  );
+  const envelope = suppliedEnvelope;
+  const corpus = envelope.payload;
+  if (
+    corpus.releaseRevisionDigest !==
+      corpus.distributionRootBinding.releaseRevisionDigest
+  ) {
+    return fail("distribution_binding", "binding_mismatch");
+  }
+  if (corpus.activeRootMetadata.rootKeyId !== corpus.registryRootKeyId) {
+    return fail("active_root", "root_mismatch");
+  }
+  if (corpus.recordCount !== corpus.records.length) {
+    return fail("corpus_structure", "count_mismatch");
+  }
+  const recordsByCase = new CapturedMapV1<
+    string,
+    ProviderRealFilesystemFixtureCorpusRecordV1[]
+  >();
+  for (let index = 0; index < corpus.records.length; index += 1) {
+    const record = corpus.records[index]!;
+    const previous = corpus.records[index - 1];
+    if (
+      previous !== undefined &&
+      (compareUtf8V1(previous.caseKey, record.caseKey) > 0 ||
+        (previous.caseKey === record.caseKey &&
+          previous.fixtureOrdinal >= record.fixtureOrdinal))
+    ) {
+      return fail("corpus_structure", "ordering_invalid");
+    }
+    const records = mapGetV1(recordsByCase, record.caseKey) ?? [];
+    if (record.fixtureOrdinal !== records.length) {
+      return fail("corpus_structure", "ordering_invalid");
+    }
+    if (
+      record.fixtureProgramContentDigest !==
+        deriveProviderRealFilesystemFixtureProgramContentDigestV1({
+          fixtureProgramProfile: record.fixtureProgramProfile,
+          fixtureProgramBytes: record.fixtureProgramBytes,
+        }) ||
+      record.fixtureProgramLogicalBytes !==
+        canonicalByteStringLogicalLengthV1(record.fixtureProgramBytes)
+    ) {
+      return fail("corpus_digest", "digest_mismatch");
+    }
+    arrayPushV1(records, record);
+    mapSetV1(recordsByCase, record.caseKey, records);
+  }
+  if (
+    corpus.recordSetDigest !==
+      deriveProviderRealFilesystemFixtureCorpusRecordSetDigestV1({
+        records: corpus.records,
+      }) ||
+    corpus.fixtureManifestDigest !==
+      deriveProviderRealFilesystemFixtureManifestDigestV1({
+        corpusVersion: corpus.corpusVersion,
+        recordCount: corpus.recordCount,
+        recordSetDigest: corpus.recordSetDigest,
+        records: corpus.records,
+      })
+  ) {
+    return fail("corpus_digest", "digest_mismatch");
+  }
+  if (
+    envelope.contentDigest !==
+    deriveProviderRealFilesystemFixtureCorpusManifestContentDigestV1(corpus)
+  ) {
+    return fail("corpus_envelope", "envelope_mismatch");
+  }
+  return {
+    corpusPin: ProviderRealFilesystemFixtureCorpusManifestPinV1Schema.parse({
+      locatorProfile:
+        "distribution_provider_real_fs_fixture_corpus_manifest_v1",
+      distributionRootBinding: corpus.distributionRootBinding,
+      fixtureManifestDigest: corpus.fixtureManifestDigest,
+      contentDigest: envelope.contentDigest,
+    }),
+    envelope,
+    recordsByCase,
+  };
+}
+
+function asHistoricalCorpusStateV1(
+  value: unknown,
+  envelope: ProviderRealFilesystemFixtureCorpusManifestEnvelopeV1,
+): HistoricalCorpusSemanticStateV1 {
+  const state = value as HistoricalCorpusSemanticStateV1;
+  if (state?.envelope !== envelope) {
+    return fail("suite_corpus_pin", "binding_mismatch");
+  }
+  return state;
+}
+
+function validateHistoricalSuiteSemanticCoreV1(
+  suppliedEnvelope: ProviderRealFilesystemSuiteManifestEnvelopeV1,
+  corpusEnvelope: ProviderRealFilesystemFixtureCorpusManifestEnvelopeV1,
+  suppliedCorpusState: unknown,
+): HistoricalSuiteSemanticStateV1 {
+  ProviderRealFilesystemSuiteManifestEnvelopeV1Schema.parse(suppliedEnvelope);
+  const corpus = asHistoricalCorpusStateV1(
+    suppliedCorpusState,
+    corpusEnvelope,
+  );
+  const envelope = suppliedEnvelope;
+  const suite = envelope.payload;
+  if (
+    suite.releaseRevisionDigest !==
+      suite.distributionRootBinding.releaseRevisionDigest ||
+    !canonicalEqualV1(
+      suite.distributionRootBinding,
+      corpus.envelope.payload.distributionRootBinding,
+    )
+  ) {
+    return fail("distribution_binding", "binding_mismatch");
+  }
+  if (
+    suite.activeRootMetadata.rootKeyId !== suite.registryRootKeyId ||
+    !canonicalEqualV1(
+      suite.activeRootMetadata,
+      corpus.envelope.payload.activeRootMetadata,
+    ) ||
+    suite.registryRootKeyId !== corpus.envelope.payload.registryRootKeyId
+  ) {
+    return fail("active_root", "root_mismatch");
+  }
+  if (!canonicalEqualV1(suite.fixtureCorpusManifest, corpus.corpusPin)) {
+    return fail("suite_corpus_pin", "binding_mismatch");
+  }
+  if (
+    suite.runnerProfileDigest !==
+    deriveProviderRealFilesystemRunnerProfileDigestV1(suite.runnerProfile)
+  ) {
+    return fail("suite_digest", "digest_mismatch");
+  }
+  if (suite.caseCount !== suite.cases.length) {
+    return fail("suite_structure", "count_mismatch");
+  }
+
+  const requiredEntries: ProviderRealFilesystemRequiredCaseCutEntryV1[] = [];
+  for (let caseIndex = 0; caseIndex < suite.cases.length; caseIndex += 1) {
+    const suiteCase = suite.cases[caseIndex]!;
+    for (
+      let cutIndex = 0;
+      cutIndex < suiteCase.requiredCrashCuts.length;
+      cutIndex += 1
+    ) {
+      arrayPushV1(requiredEntries, {
+        caseId: suiteCase.caseId,
+        crashCutId: suiteCase.requiredCrashCuts[cutIndex]!.crashCutId,
+      });
+    }
+  }
+  arraySortV1(requiredEntries, (left, right) => {
+    const caseOrder = compareUtf8V1(left.caseId, right.caseId);
+    return caseOrder !== 0
+      ? caseOrder
+      : compareUtf8V1(left.crashCutId, right.crashCutId);
+  });
+  for (let index = 1; index < requiredEntries.length; index += 1) {
+    const previous = requiredEntries[index - 1]!;
+    const current = requiredEntries[index]!;
+    if (
+      previous.caseId === current.caseId &&
+      previous.crashCutId === current.crashCutId
+    ) {
+      return fail("suite_structure", "ordering_invalid");
+    }
+  }
+
+  const observedCaseKeys = new CapturedSetV1<string>();
+  for (let index = 0; index < suite.cases.length; index += 1) {
+    const suiteCase = suite.cases[index]!;
+    const previous = suite.cases[index - 1];
+    if (
+      previous !== undefined &&
+      compareUtf8V1(previous.caseId, suiteCase.caseId) >= 0
+    ) {
+      return fail("suite_structure", "ordering_invalid");
+    }
+    if (setHasV1(observedCaseKeys, suiteCase.caseKey)) {
+      return fail("suite_structure", "coverage_mismatch");
+    }
+    setAddV1(observedCaseKeys, suiteCase.caseKey);
+    const caseRecords = mapGetV1(corpus.recordsByCase, suiteCase.caseKey);
+    if (caseRecords === undefined) {
+      return fail("suite_structure", "coverage_mismatch");
+    }
+    const caseRecordSetDigest =
+      deriveProviderRealFilesystemFixtureCaseRecordSetDigestV1({
+        caseKey: suiteCase.caseKey,
+        records: caseRecords,
+      });
+    const expectedCaseId = deriveProviderRealFilesystemCaseIdV1({
+      caseKey: suiteCase.caseKey,
+      fixtureRecordCount: caseRecords.length,
+      fixtureRecordSetDigest: caseRecordSetDigest,
+    });
+    if (
+      suiteCase.fixtureRecordCount !== caseRecords.length ||
+      suiteCase.fixtureRecordSetDigest !== caseRecordSetDigest ||
+      suiteCase.caseId !== expectedCaseId
+    ) {
+      return fail("suite_digest", "digest_mismatch");
+    }
+    for (
+      let cutIndex = 0;
+      cutIndex < suiteCase.requiredCrashCuts.length;
+      cutIndex += 1
+    ) {
+      const cut = suiteCase.requiredCrashCuts[cutIndex]!;
+      if (cut.crashCutOrdinal !== cutIndex) {
+        return fail("suite_structure", "ordering_invalid");
+      }
+      if (cut.injection.state === "none") {
+        if (
+          cutIndex !== 0 ||
+          cut.crashCutId !== "no-crash" ||
+          cut.crashCutOrdinal !== 0
+        ) {
+          return fail("suite_structure", "coverage_mismatch");
+        }
+      } else {
+        if (
+          cutIndex === 0 ||
+          cut.crashCutId === "no-crash" ||
+          cut.crashCutOrdinal < 1 ||
+          !("recoveryAssertionProfile" in cut)
+        ) {
+          return fail("suite_structure", "coverage_mismatch");
+        }
+        const record = caseRecords[cut.injection.afterFixtureOrdinal];
+        if (record?.fixtureRole !== "operation") {
+          return fail("suite_structure", "coverage_mismatch");
+        }
+        const assertionDigest =
+          deriveProviderRealFilesystemRecoveryAssertionContentDigestV1({
+            recoveryAssertionProfile: cut.recoveryAssertionProfile,
+            recoveryAssertionBytes: cut.recoveryAssertionBytes,
+          });
+        if (
+          cut.recoveryAssertionContentDigest !== assertionDigest ||
+          cut.crashCutId !==
+            deriveProviderRealFilesystemCrashCutIdV1({
+              caseId: suiteCase.caseId,
+              crashCutOrdinal: cut.crashCutOrdinal,
+              injection: cut.injection,
+              recoveryAssertionContentDigest: assertionDigest,
+            })
+        ) {
+          return fail("suite_digest", "digest_mismatch");
+        }
+      }
+    }
+  }
+  if (
+    observedCaseKeys.size !== corpus.recordsByCase.size ||
+    arraySomeV1(
+      mapKeysArrayV1(corpus.recordsByCase),
+      (key) => !setHasV1(observedCaseKeys, key),
+    )
+  ) {
+    return fail("suite_structure", "coverage_mismatch");
+  }
+  if (
+    suite.caseSetDigest !==
+      deriveProviderRealFilesystemSuiteCaseSetDigestV1({
+        cases: suite.cases,
+      }) ||
+    suite.requiredCaseCutCount !== requiredEntries.length ||
+    suite.requiredCaseCutSetDigest !==
+      deriveProviderRealFilesystemRequiredCaseCutSetDigestV1({
+        entries: requiredEntries,
+      }) ||
+    suite.suiteDigest !==
+      deriveProviderRealFilesystemSuiteDigestV1({
+        suiteVersion: suite.suiteVersion,
+        fixtureManifestDigest:
+          suite.fixtureCorpusManifest.fixtureManifestDigest,
+        runnerProfileDigest: suite.runnerProfileDigest,
+        caseCount: suite.caseCount,
+        caseSetDigest: suite.caseSetDigest,
+        requiredCaseCutCount: suite.requiredCaseCutCount,
+        requiredCaseCutSetDigest: suite.requiredCaseCutSetDigest,
+        cases: suite.cases,
+      })
+  ) {
+    return fail("suite_digest", "digest_mismatch");
+  }
+  if (
+    envelope.contentDigest !==
+    deriveProviderRealFilesystemSuiteManifestContentDigestV1(suite)
+  ) {
+    return fail("suite_envelope", "envelope_mismatch");
+  }
+  return {
+    corpus,
+    envelope,
+    suitePin: ProviderRealFilesystemSuiteManifestPinV1Schema.parse({
+      locatorProfile: "distribution_provider_real_fs_suite_manifest_v1",
+      distributionRootBinding: suite.distributionRootBinding,
+      suiteDigest: suite.suiteDigest,
+      fixtureManifestDigest:
+        suite.fixtureCorpusManifest.fixtureManifestDigest,
+      contentDigest: envelope.contentDigest,
+    }),
+  };
+}
+
 async function validateSourceClosureFromSnapshotInternalV1(
   snapshot: ReturnType<typeof snapshotInputV1>,
   preparedContext?: PreparedDistributionVerificationContextV1,
@@ -1579,5 +1911,12 @@ registerProviderRealFilesystemSourcePreparedCoreInternalV1(
           return { ok: false, stage: "input", reason: "schema_invalid" };
         }
       })(),
-    ),
+  ),
+);
+
+registerProviderDistributionHistoricalCorpusSemanticCoreInternalV1(
+  validateHistoricalCorpusSemanticCoreV1,
+);
+registerProviderDistributionHistoricalSuiteSemanticCoreInternalV1(
+  validateHistoricalSuiteSemanticCoreV1,
 );

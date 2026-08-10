@@ -22,7 +22,9 @@ dual-role QA/Release Evidence, `WP5-C09-1K` freezes the closed-world Release
 Target Universe supplied point, `WP5-C09-1L` binds a production-format
 Registry Entry to passed Evidence through the exact supplied trust history,
 and `WP5-C09-1M` closes the signed Provider Feasibility Support Catalog over
-that closed-world Universe.
+that closed-world Universe. `WP5-C09-1N` validates a supplied current candidate
+across the retained Taxonomy, Release Matrix, Discovery Result, Universe, and
+Catalog histories while preserving the none-only authority boundary.
 Every slice still returns structure-only, none-authority validation:
 
 - `rfc8785-jcs-safe-integer-v1` canonical JSON and exact canonical-byte parsing;
@@ -253,7 +255,9 @@ seven generated documents for its stage/reason, compatible base, success
 projection, golden/invalid manifests, and topology proof. C09-1M adds 15
 documents for its Catalog wire, release disposition, candidate and target
 entries, public projection, stage/reason, and golden/invalid manifests,
-bringing the current inventory to 290.
+bringing that inventory to 290. C09-1N adds four documents for its point
+stage/reason and golden/invalid manifests, bringing the current inventory to
+294.
 
 The production sources remain ES2022 browser/worker portable. The npm/browser
 distribution gate must expose the new public API through the root and
@@ -271,13 +275,17 @@ distribution gate must expose the new public API through the root and
 `./provider-release-target-universe-point`, and
 `./provider-release-target-universe-point-fixtures`,
 `./provider-feasibility-support-catalog-point`, and
-`./provider-feasibility-support-catalog-point-fixtures` exports, pack all
+`./provider-feasibility-support-catalog-point-fixtures`,
+`./provider-distribution-history-current-candidate-point`, and
+`./provider-distribution-history-current-candidate-point-fixtures` exports,
+pack all
 `schemas/`, `fixtures/`, and fixed `provider/` resources, reject private deep
 imports, and execute the same Registry, real-filesystem source, and Target
 Discovery, Conformance Result, Runtime Attestation, Feasibility Evidence,
 Registry/Evidence binding, Release Target Universe, and Feasibility Support
-Catalog point validators from clean Node and browser-bundle installs. There are
-exactly 25 explicit public module exports at this checkpoint.
+Catalog point validators plus the Distribution History current-candidate
+validator from clean Node and browser-bundle installs. There are exactly 27
+explicit public module exports at this checkpoint.
 Node uses the exact official Zod 4.3.6 runtime. The package's browser path uses
 its shipped CSP-safe runtime, with dynamic compilation disabled and
 `util.createTransparentProxy` failing closed. Consumers should treat the
@@ -703,6 +711,53 @@ realm. Untrusted Provider or host code must run in an isolated realm or,
 preferably, out of process; same-realm hostile code must not be treated as an
 authority boundary merely because the public Promise shell is hardened.
 
+## C09-1N retained Distribution History current-candidate closure
+
+`validateProviderDistributionHistoryCurrentCandidatePointV1` accepts exactly
+16 fields: the Bootstrap Trust Bundle, distribution-root binding, Installation
+Identity generation, Root Metadata and Registry Manifest histories, the five
+retained Taxonomy/Release Matrix/Discovery Result/Release Target
+Universe/Support Catalog histories, the retained Fixture/Runner/Suite/Corpus
+source sets, current candidate artifacts, and the opaque strict-crypto
+capability. Caller-supplied `activeRoot`, `current`, and `path` fields are not
+part of this boundary.
+
+Each of the five signed distribution histories is non-empty, begins at
+generation one, advances contiguously, exact-pins its predecessor, and retains
+nondecreasing active Root Metadata. Every cross-chain dependency must resolve
+by exact generation and digest within the supplied histories. Universe
+Matrix/Result pins and Catalog Taxonomy/Universe pins may not roll back across
+successive generations. The last element of each supplied chain is only the
+candidate tip; this validator does not turn that supplied position into an
+Acceptance-selected current record.
+
+Every retained Discovery Input Bundle is counted and must close its transitive
+Fixture, Runner, Suite, and Corpus source. The four supplied source sets must
+exact-cover all history references by their owned locators and digests:
+missing, duplicate, extra, or cross-owned retained objects fail closed.
+Retained accounting permits at most 65,536 objects,
+512 MiB of logical bytes in aggregate, and 16 MiB per canonical object. Each
+chain has a hard 4,096-generation ceiling; normal updates stop at 4,088
+generations per chain and 496 MiB so the policy preserves its emergency reserve
+of eight generations per chain and 16 MiB.
+
+Only the five tips enter the current C09-1M Catalog deep closure, while every
+non-tip generation still receives full signature, source, and semantic
+validation. Success returns the five frozen tips, the complete current Catalog
+projection, and its full Catalog point closure. The three anchored positives
+are genesis at exactly 31 point admissions and 64 signature verifications,
+two-generation shared-source history at 31/70, and two-generation
+distinct-source history at 31/72; their aggregate is 93/206. The invalid
+manifest contains 39 fresh executable cases, including five validly re-signed
+and re-anchored non-tip semantic corruptions in addition to signature,
+five-chain structure, retained exact-cover, forbidden-input, and cross-pin
+failures.
+
+Success is limited to
+`authority: "none_provider_distribution_history_current_candidate_structure_only"`.
+It establishes neither Acceptance/current selection nor Migration equality,
+Provider or Store I/O, or strong-read/write authority.
+
 ## Verification
 
 ```sh
@@ -733,6 +788,8 @@ pnpm --filter @understand-code/durable-object-provider-contracts generate:provid
 pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-release-target-universe-point
 pnpm --filter @understand-code/durable-object-provider-contracts generate:provider-feasibility-support-catalog-point
 pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-feasibility-support-catalog-point
+pnpm --filter @understand-code/durable-object-provider-contracts generate:provider-distribution-history-current-candidate-point
+pnpm --filter @understand-code/durable-object-provider-contracts verify:provider-distribution-history-current-candidate-point
 pnpm --filter @understand-code/durable-object-provider-contracts generate:schemas
 pnpm --filter @understand-code/durable-object-provider-contracts verify:schemas
 pnpm --filter @understand-code/durable-object-provider-contracts exec vitest run \
@@ -752,6 +809,8 @@ pnpm --filter @understand-code/durable-object-provider-contracts exec vitest run
   test/provider-release-target-universe-wire.test.ts \
   test/provider-release-target-universe-point.test.ts \
   test/provider-release-target-universe-point-fixtures.test.ts \
+  test/provider-distribution-history-current-candidate-point.test.ts \
+  test/provider-distribution-history-current-candidate-point-fixtures.test.ts \
   test/json-schema.test.ts
 pnpm --filter @understand-code/durable-object-provider-contracts test
 pnpm --filter @understand-code/durable-object-provider-contracts test:distribution
@@ -767,7 +826,7 @@ diagnostics, and crypto call counts are checked by
 `verify:provider-registry-manifest-invalid`. The signed real-filesystem fixture
 anchors, exact source closure, and 43 materialized negative diagnostics are
 checked by `verify:provider-real-fs-source`. `test/json-schema.test.ts` freezes
-the current 290-schema inventory and `verify:schemas` rejects generated-file
+the current 294-schema inventory and `verify:schemas` rejects generated-file
 drift. `verify:provider-target-discovery-point` checks the exact five locators,
 six-signature closure, canonical empty Fixture/Runner success, typed unresolved
 projection, and all 116 ordered diagnostic/executable recipes.
@@ -793,6 +852,15 @@ hardened Promise and raw-admission behavior, and all 285 fresh ordered cases.
 raw boundary, Universe target exact-cover, passed/failed/unsupported candidate
 deep closure, two-level conservative projection, four `2/2/1` positive
 vectors, exact 31/64 crypto closure, derived Catalog Pin/path, and none-only
+authority.
+`generate:provider-distribution-history-current-candidate-point` reconstructs
+the three anchored history vectors and all 39 fresh invalid diagnose/public
+rejection pairs. Its `verify:` counterpart runs the generator in byte-exact
+read-only `--check` mode. The focused point and fixture tests additionally
+freeze the exact 16-field boundary, five contiguous anti-rollback chains,
+retained Bundle/source accounting and exact-cover, full non-tip semantics,
+tip-only current Catalog closure and projection, 31/64, 31/70, and 31/72
+crypto counts, the five validly re-signed semantic negatives, and none-only
 authority.
 `test:distribution` is the clean packed Node/browser source for the npm
 distribution claims.
@@ -935,29 +1003,35 @@ Conformance Result point validation is limited to
 `authority: "none_real_fs_conformance_result_structure_only"`. Successful
 Runtime Attestation point validation is likewise limited to
 `authority: "none_provider_runtime_attestation_structure_only"`. None is
-production Registry or Store I/O authority. A signed-package resolver, offline production
-key ceremony, crash-safe installer transaction, verified Evidence/Catalog, and
-current Acceptance closure must all establish that authority before any strong
-provider capability can be exposed.
+production Registry or Store I/O authority. C09-1N Distribution History
+current-candidate validation is separately limited to
+`authority: "none_provider_distribution_history_current_candidate_structure_only"`.
+A signed-package resolver, offline production key ceremony, crash-safe
+installer transaction, verified Evidence/Catalog, and current Acceptance
+closure must all establish authority before any strong provider capability can
+be exposed.
 
 ## Scope boundary
 
 This package establishes the common foundation needed by AT-C21, AT-C29,
 AT-C31, and AT-Q33; it does not claim those end-to-end acceptance groups are
-complete. Through C09-1I this package covers signed Registry supporting
+complete. Through C09-1N this package covers signed Registry supporting
 records, Entries, Manifests, retained history, local migration/tombstone
 transitions, the independently signed real-filesystem Fixture Corpus to Suite
 source chain, one root-bound Target Discovery point across Taxonomy,
 Release Matrix, Fixture/Runner observations, Input Bundle, and Discovery
 Result, one unsigned real-filesystem Conformance Result exact-cover point, and
 one strict Result-to-Policy root-signed Runtime Attestation structure-only
-point. It does
+point. It also covers dual-role Feasibility Evidence, the closed-world Target
+Universe, Registry/Evidence supplied-history binding, the signed Support
+Catalog, and a supplied five-chain retained Distribution History candidate
+with exact retained-source accounting and tip projection. It does
 not close signed-package provenance authority, atomic Installation Identity
-persistence, Target Discovery or Conformance Result history/current selection,
-real runner/filesystem execution, Feasibility Evidence, Catalog or Target
-Universe history, typed retained-distribution accounting,
-Acceptance high-water and active-writer selection, Migration Plan equality,
-provider runtime supervision, IPC endpoint authentication, real-filesystem
-execution, or migration proofs. Those later
-gates must consume these immutable records and return `provider_unavailable`
-with zero writes whenever the external closure is missing or inconsistent.
+persistence, Conformance Result history/current selection, authoritative
+Acceptance selection of the supplied candidate tips, real runner/filesystem
+execution, Acceptance high-water and active-writer selection, Migration Plan
+equality or migration proofs, Provider runtime supervision, IPC endpoint
+authentication, Provider or Store I/O, or strong-read/write authority. Those
+later gates must consume these immutable records and return
+`provider_unavailable` with zero writes whenever the external closure is
+missing or inconsistent.

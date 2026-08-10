@@ -217,6 +217,7 @@ interface PreparedRegistryHistoryMapEntryV1 {
 }
 
 interface RegistryHistoryWitnessMapEntryV1 {
+  readonly closureIdentity: ProviderRegistryManifestHistoryValidationV1;
   readonly handle: RegistryTrustWitnessHandleV1;
   readonly capabilityIdentity: ProviderStrictEd25519OpaqueCapabilityV1;
   readonly witness: RegistryHistoryVerifiedCryptoWitnessV1;
@@ -227,7 +228,7 @@ const preparedRegistryHistorySnapshotsV1 = new CapturedWeakMapV1<
   PreparedRegistryHistoryMapEntryV1
 >();
 const registryHistoryVerifiedWitnessesV1 = new CapturedWeakMapV1<
-  ProviderRegistryManifestHistoryValidationV1,
+  object,
   RegistryHistoryWitnessMapEntryV1
 >();
 
@@ -579,12 +580,40 @@ export function registerRegistryHistoryVerifiedWitnessInternalV1(
   }
   const handle = createOpaqueHandleV1<RegistryTrustWitnessHandleV1>();
   const entry = createFrozenRecordV1<RegistryHistoryWitnessMapEntryV1>([
+    ["closureIdentity", closureIdentity],
     ["handle", handle],
     ["capabilityIdentity", capabilityIdentity],
     ["witness", witness],
   ]);
   weakMapSetV1(registryHistoryVerifiedWitnessesV1, closureIdentity, entry);
+  weakMapSetV1(registryHistoryVerifiedWitnessesV1, handle, entry);
   return handle;
+}
+
+function burnRegistryHistoryVerifiedWitnessEntryInternalV1(
+  entry: RegistryHistoryWitnessMapEntryV1,
+): boolean {
+  if (
+    weakMapGetV1(
+      registryHistoryVerifiedWitnessesV1,
+      entry.closureIdentity,
+    ) !== entry ||
+    weakMapGetV1(
+      registryHistoryVerifiedWitnessesV1,
+      entry.handle,
+    ) !== entry
+  ) {
+    return false;
+  }
+  const closureDeleted = weakMapDeleteV1(
+    registryHistoryVerifiedWitnessesV1,
+    entry.closureIdentity,
+  );
+  const handleDeleted = weakMapDeleteV1(
+    registryHistoryVerifiedWitnessesV1,
+    entry.handle,
+  );
+  return closureDeleted && handleDeleted;
 }
 
 /** Atomically has/get/deletes one verified witness before checking bindings. */
@@ -603,7 +632,7 @@ export function takeRegistryHistoryVerifiedWitnessInternalV1(
   );
   if (
     entry === undefined ||
-    !weakMapDeleteV1(registryHistoryVerifiedWitnessesV1, closureIdentity)
+    !burnRegistryHistoryVerifiedWitnessEntryInternalV1(entry)
   ) {
     throw new CapturedTypeErrorV1(
       "prepared Registry witness state is inconsistent",
@@ -624,22 +653,35 @@ export function discardRegistryHistoryVerifiedWitnessInternalV1(
   handle: RegistryTrustWitnessHandleV1,
   capabilityIdentity: ProviderStrictEd25519OpaqueCapabilityV1,
 ): boolean {
-  if (!isObjectIdentityV1(closureIdentity)) return false;
-  if (!weakMapHasV1(registryHistoryVerifiedWitnessesV1, closureIdentity)) {
-    return false;
-  }
-  const entry = weakMapGetV1(
-    registryHistoryVerifiedWitnessesV1,
-    closureIdentity,
-  );
+  const entryByClosure = isObjectIdentityV1(closureIdentity)
+    ? weakMapGetV1(registryHistoryVerifiedWitnessesV1, closureIdentity)
+    : undefined;
+  const entryByHandle = isObjectIdentityV1(handle)
+    ? weakMapGetV1(registryHistoryVerifiedWitnessesV1, handle)
+    : undefined;
+  const exactTuple =
+    entryByClosure !== undefined &&
+    entryByClosure === entryByHandle &&
+    entryByClosure.handle === handle &&
+    entryByClosure.capabilityIdentity === capabilityIdentity;
   if (
-    entry === undefined ||
-    entry.handle !== handle ||
-    entry.capabilityIdentity !== capabilityIdentity
+    entryByClosure !== undefined &&
+    !burnRegistryHistoryVerifiedWitnessEntryInternalV1(entryByClosure)
   ) {
-    return false;
+    throw new CapturedTypeErrorV1(
+      "prepared Registry witness state is inconsistent",
+    );
   }
-  return weakMapDeleteV1(registryHistoryVerifiedWitnessesV1, closureIdentity);
+  if (
+    entryByHandle !== undefined &&
+    entryByHandle !== entryByClosure &&
+    !burnRegistryHistoryVerifiedWitnessEntryInternalV1(entryByHandle)
+  ) {
+    throw new CapturedTypeErrorV1(
+      "prepared Registry witness state is inconsistent",
+    );
+  }
+  return exactTuple;
 }
 
 CapturedObjectFreezeV1(createProviderRegistryPreparedCopyLedgerInternalV1);

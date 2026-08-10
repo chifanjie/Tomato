@@ -135,6 +135,16 @@
       "import": "./dist/provider-release-target-universe-point-fixtures.js",
       "default": "./dist/provider-release-target-universe-point-fixtures.js"
     },
+    "./provider-distribution-history-current-candidate-point": {
+      "types": "./dist/provider-distribution-history-current-candidate-point.d.ts",
+      "import": "./dist/provider-distribution-history-current-candidate-point.js",
+      "default": "./dist/provider-distribution-history-current-candidate-point.js"
+    },
+    "./provider-distribution-history-current-candidate-point-fixtures": {
+      "types": "./dist/provider-distribution-history-current-candidate-point-fixtures.d.ts",
+      "import": "./dist/provider-distribution-history-current-candidate-point-fixtures.js",
+      "default": "./dist/provider-distribution-history-current-candidate-point-fixtures.js"
+    },
     "./public-key-digest": {
       "types": "./dist/public-key-digest.d.ts",
       "import": "./dist/public-key-digest.js",
@@ -170,6 +180,7 @@
     "generate:provider-registry-evidence-binding-topology-proof": "pnpm run build && node scripts/generate-provider-registry-evidence-binding-topology-proof.mjs",
     "generate:provider-target-discovery-point": "pnpm run build && node scripts/generate-provider-target-discovery-point.mjs",
     "generate:provider-release-target-universe-point": "pnpm run build && node scripts/generate-provider-release-target-universe-point.mjs",
+    "generate:provider-distribution-history-current-candidate-point": "pnpm run build && node scripts/generate-provider-distribution-history-current-candidate-point.mjs",
     "prepack": "npm run build && npm run verify:all",
     "test:distribution": "node scripts/test-distribution.mjs",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
@@ -185,13 +196,14 @@
     "verify:provider-runtime-attestation-point": "node scripts/generate-provider-runtime-attestation-point.mjs --check && node scripts/verify-provider-runtime-attestation-point.mjs",
     "verify:provider-feasibility-evidence-point": "node scripts/generate-provider-feasibility-evidence-point.mjs --check && node scripts/verify-provider-feasibility-evidence-point.mjs",
     "verify:provider-feasibility-support-catalog-point": "node scripts/generate-provider-feasibility-support-catalog-point.mjs --check",
-    "verify:provider-registry-evidence-binding-point": "node scripts/generate-provider-registry-evidence-binding-point.mjs --check && node scripts/verify-provider-registry-evidence-binding-point-evidence-adapter.mjs && node --max-old-space-size=768 --max-semi-space-size=16 scripts/verify-provider-registry-evidence-binding-point-registry-adapter.mjs && node scripts/generate-provider-registry-evidence-binding-topology-proof.mjs --check",
+    "verify:provider-registry-evidence-binding-point": "node scripts/generate-provider-registry-evidence-binding-point.mjs --check && node scripts/verify-provider-registry-evidence-binding-point-evidence-adapter.mjs && node --max-old-space-size=768 --max-semi-space-size=16 scripts/verify-provider-registry-evidence-binding-point-registry-adapter.mjs && node --max-old-space-size=768 --max-semi-space-size=16 scripts/generate-provider-registry-evidence-binding-topology-proof.mjs --check",
     "test:provider-registry-evidence-binding-point-replay": "vitest run --maxWorkers=4 test/provider-registry-evidence-binding-point-fixtures-replay-lane-0.test.ts test/provider-registry-evidence-binding-point-fixtures-replay-lane-1.test.ts test/provider-registry-evidence-binding-point-fixtures-replay-lane-2.test.ts test/provider-registry-evidence-binding-point-fixtures-replay-lane-3.test.ts",
     "verify:provider-target-discovery-point": "node scripts/generate-provider-target-discovery-point.mjs --check && node scripts/verify-provider-target-discovery-point.mjs",
     "verify:provider-release-target-universe-point": "node scripts/generate-provider-release-target-universe-point.mjs --check && node scripts/verify-provider-release-target-universe-point.mjs",
+    "verify:provider-distribution-history-current-candidate-point": "node scripts/generate-provider-distribution-history-current-candidate-point.mjs --check",
     "verify:schemas": "node scripts/generate-json-schemas.mjs --check",
     "verify:strict-ed25519": "node scripts/verify-strict-ed25519.mjs",
-    "verify:all": "npm run verify:schemas && npm run verify:fixtures && npm run verify:strict-ed25519 && npm run verify:golden && npm run verify:bootstrap-trust-invalid && npm run verify:bootstrap-trust && npm run verify:provider-root-history && npm run verify:provider-registry-manifest-history && npm run verify:provider-registry-manifest-invalid && npm run verify:provider-real-fs-source && npm run verify:provider-target-discovery-point && npm run verify:provider-release-target-universe-point && npm run verify:provider-real-fs-conformance-result && npm run verify:provider-runtime-attestation-point && npm run verify:provider-feasibility-evidence-point && npm run verify:provider-registry-evidence-binding-point && npm run verify:provider-feasibility-support-catalog-point",
+    "verify:all": "npm run verify:schemas && npm run verify:fixtures && npm run verify:strict-ed25519 && npm run verify:golden && npm run verify:bootstrap-trust-invalid && npm run verify:bootstrap-trust && npm run verify:provider-root-history && npm run verify:provider-registry-manifest-history && npm run verify:provider-registry-manifest-invalid && npm run verify:provider-real-fs-source && npm run verify:provider-target-discovery-point && npm run verify:provider-release-target-universe-point && npm run verify:provider-real-fs-conformance-result && npm run verify:provider-runtime-attestation-point && npm run verify:provider-feasibility-evidence-point && npm run verify:provider-registry-evidence-binding-point && npm run verify:provider-feasibility-support-catalog-point && npm run verify:provider-distribution-history-current-candidate-point",
     "test": "pnpm run build && pnpm run typecheck && vitest run --maxWorkers=1 && pnpm run test:distribution"
   },
   "dependencies": {

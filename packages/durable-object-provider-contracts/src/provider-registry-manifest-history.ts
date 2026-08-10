@@ -35,7 +35,10 @@ import {
   type StoreDurableObjectProviderRuntimeAttestationV1,
   type StoreDurableObjectProviderVerificationPublicKeyV1,
 } from "./provider-registry-records.js";
-import { buildProviderRegistryManifestRelativePathV1 } from "./provider-fixed-locator.js";
+import {
+  buildProviderRegistryManifestRelativePathV1,
+  encodeStoreFilenameKeyV1,
+} from "./provider-fixed-locator.js";
 import {
   validateProviderRegistryRootMetadataHistoryV1,
   type ProviderRegistryRootMetadataHistoryValidationV1,
@@ -2395,10 +2398,11 @@ async function validatePreparedInternalV1(
       return fail("manifest_envelope", "envelope_mismatch");
     }
     try {
-      buildProviderRegistryManifestRelativePathV1({
-        locatorProfile: "installation_provider_registry_manifest_v1",
-        generationId: envelope.generationId,
-      });
+      // The prepared path already owns a strictly parsed, detached Envelope.
+      // Re-run the canonical filename branch without the public locator
+      // builder's structured-clone Proxy probe; otherwise a nested clone would
+      // escape the prepared history copy ledger.
+      encodeStoreFilenameKeyV1(envelope.generationId);
     } catch {
       return fail("manifest_envelope", "envelope_mismatch");
     }

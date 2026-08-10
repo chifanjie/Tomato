@@ -128,6 +128,20 @@ const providerReleaseTargetUniversePointInvalidPath = fileURLToPath(
     import.meta.url,
   ),
 );
+const providerDistributionHistoryCurrentCandidatePointGoldenPath =
+  fileURLToPath(
+    new URL(
+      "../fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json",
+      import.meta.url,
+    ),
+  );
+const providerDistributionHistoryCurrentCandidatePointInvalidPath =
+  fileURLToPath(
+    new URL(
+      "../fixtures/v1/invalid/provider-distribution-history-current-candidate-point-v1.json",
+      import.meta.url,
+    ),
+  );
 const providerFeasibilitySupportCatalogPointGoldenPath = fileURLToPath(
   new URL(
     "../fixtures/v1/golden/provider-feasibility-support-catalog-point-v1.json",
@@ -995,7 +1009,7 @@ describe("provider contract JSON Schema distribution", () => {
       expect(generated, name).toHaveProperty(name);
       expectEveryJsonSchemaObjectClosed(generated[name], name);
     }
-    expect(Object.keys(generated)).toHaveLength(290);
+    expect(Object.keys(generated)).toHaveLength(294);
 
     for (const name of [
       "store-durable-object-provider-runtime-attestation-signature-wrapper",
@@ -1415,6 +1429,302 @@ describe("provider contract JSON Schema distribution", () => {
       expect(validateReason(entry.expected.reason)).toBe(true);
     }
   });
+
+  it("publishes the strict distribution-history current-candidate 3-positive/39-invalid fixture schemas", () => {
+    const generated = generateProviderContractJsonSchemasV1();
+    const schemaNames = [
+      "provider-distribution-history-current-candidate-point-invalid-stage",
+      "provider-distribution-history-current-candidate-point-invalid-reason",
+      "provider-distribution-history-current-candidate-point-golden-manifest",
+      "provider-distribution-history-current-candidate-point-invalid-manifest",
+    ] as const;
+    for (const name of schemaNames) {
+      expect(generated, name).toHaveProperty(name);
+      expect(generated[name].$id, name).toBe(
+        `urn:understand-code:provider-contract:schema:v1:${name}`,
+      );
+    }
+    for (const name of schemaNames.slice(0, 3)) {
+      expectEveryJsonSchemaObjectClosed(generated[name], name);
+    }
+
+    const golden = JSON.parse(
+      readFileSync(
+        providerDistributionHistoryCurrentCandidatePointGoldenPath,
+        "utf8",
+      ),
+    ) as Record<string, any>;
+    const invalid = JSON.parse(
+      readFileSync(
+        providerDistributionHistoryCurrentCandidatePointInvalidPath,
+        "utf8",
+      ),
+    ) as Record<string, any>;
+    const ajv = new Ajv2020({ allErrors: true, strict: true });
+    const validateGolden = ajv.compile(
+      generated[
+        "provider-distribution-history-current-candidate-point-golden-manifest"
+      ],
+    );
+    const validateInvalid = ajv.compile(
+      generated[
+        "provider-distribution-history-current-candidate-point-invalid-manifest"
+      ],
+    );
+
+    expect(validateGolden(golden), JSON.stringify(validateGolden.errors)).toBe(
+      true,
+    );
+    expect(validateInvalid(invalid), JSON.stringify(validateInvalid.errors)).toBe(
+      true,
+    );
+
+    const expectedPositiveVectorIds = [
+      "genesis",
+      "two-generation-shared",
+      "two-generation-distinct",
+    ];
+    expect(golden.positiveVectorCount).toBe(3);
+    expect(golden.positiveVectorIds).toEqual(expectedPositiveVectorIds);
+    expect(
+      golden.positiveVectors.map(
+        (vector: Record<string, any>) => vector.vectorId,
+      ),
+    ).toEqual(expectedPositiveVectorIds);
+    expect(
+      golden.positiveVectors.map((vector: Record<string, any>) => ({
+        vectorId: vector.vectorId,
+        ...vector.expected.cryptoCounts,
+      })),
+    ).toEqual([
+      {
+        vectorId: "genesis",
+        pointAdmissionCount: 31,
+        signatureVerificationCount: 64,
+      },
+      {
+        vectorId: "two-generation-shared",
+        pointAdmissionCount: 31,
+        signatureVerificationCount: 70,
+      },
+      {
+        vectorId: "two-generation-distinct",
+        pointAdmissionCount: 31,
+        signatureVerificationCount: 72,
+      },
+    ]);
+
+    const expectedInvalidCaseIds = [
+      "historical-bundle-signature-bitflip",
+      "historical-suite-signature-bitflip",
+      "historical-corpus-signature-bitflip",
+      "historical-semantic-suite-cases-order",
+      "historical-semantic-fixture-record-ordinal",
+      "historical-semantic-result-target-count",
+      "historical-semantic-universe-discovered-count",
+      "historical-semantic-catalog-target-order",
+      "input-forbidden-active-root",
+      "input-forbidden-current",
+      "input-forbidden-path",
+      "taxonomy-history-empty",
+      "matrix-history-empty",
+      "discovery-history-empty",
+      "universe-history-empty",
+      "catalog-history-empty",
+      "taxonomy-history-non-genesis-first",
+      "matrix-history-non-genesis-first",
+      "discovery-history-non-genesis-first",
+      "universe-history-non-genesis-first",
+      "catalog-history-non-genesis-first",
+      "taxonomy-history-genesis-predecessor",
+      "matrix-history-genesis-predecessor",
+      "discovery-history-genesis-predecessor",
+      "universe-history-genesis-predecessor",
+      "catalog-history-genesis-predecessor",
+      "retained-fixture-missing",
+      "retained-runner-missing",
+      "retained-suite-missing",
+      "retained-corpus-missing",
+      "retained-fixture-duplicate",
+      "retained-runner-duplicate",
+      "retained-suite-duplicate",
+      "retained-corpus-duplicate",
+      "retained-fixture-extra",
+      "retained-runner-extra",
+      "retained-suite-extra",
+      "retained-corpus-extra",
+      "catalog-cross-pin-universe",
+    ];
+    expect(invalid).toMatchObject({
+      historicalSignatureCaseCount: 3,
+      historicalSemanticCaseCount: 5,
+      forbiddenExtraKeyCaseCount: 3,
+      fiveChainStructuralCaseCount: 15,
+      retainedExactCoverCaseCount: 12,
+      catalogCrossPinCaseCount: 1,
+      caseCount: 39,
+    });
+    expect(invalid.caseIds).toEqual(expectedInvalidCaseIds);
+    expect(
+      invalid.cases.map((entry: Record<string, unknown>) => entry.caseId),
+    ).toEqual(expectedInvalidCaseIds);
+
+    const invalidSchema = generated[
+      "provider-distribution-history-current-candidate-point-invalid-manifest"
+    ] as Record<string, any>;
+    expect(invalidSchema.additionalProperties).toBe(false);
+    const definitions = invalidSchema.$defs as Record<string, unknown>;
+    const visited = new Set<object>();
+    const references: string[] = [];
+    const nonClosedObjectSchemas: Array<Record<string, any>> = [];
+    let emptySchemaCount = 0;
+    const inspectSchema = (value: unknown): void => {
+      if (value === null || typeof value !== "object" || visited.has(value)) {
+        return;
+      }
+      visited.add(value);
+      if (Array.isArray(value)) {
+        for (const entry of value) inspectSchema(entry);
+        return;
+      }
+      const record = value as Record<string, any>;
+      if (Object.keys(record).length === 0) emptySchemaCount += 1;
+      if (typeof record.$ref === "string") references.push(record.$ref);
+      if (record.type === "object" && record.additionalProperties !== false) {
+        nonClosedObjectSchemas.push(record);
+      }
+      for (const child of Object.values(record)) inspectSchema(child);
+    };
+    inspectSchema(invalidSchema);
+    expect(emptySchemaCount).toBe(0);
+    expect(references.length).toBeGreaterThan(0);
+    for (const reference of references) {
+      expect(reference).toMatch(/^#\/\$defs\/[^/]+$/u);
+      expect(definitions).toHaveProperty(reference.slice("#/$defs/".length));
+    }
+    // The replace/add recipe alternatives each own one recursive z.json()
+    // value schema. Those are the only intentionally open object branches.
+    expect(nonClosedObjectSchemas).toHaveLength(2);
+    for (const objectSchema of nonClosedObjectSchemas) {
+      expect(objectSchema).toMatchObject({
+        propertyNames: { type: "string" },
+        additionalProperties: {
+          $ref: expect.stringMatching(/^#\/\$defs\//u),
+        },
+      });
+    }
+
+    const invalidProperties = invalidSchema.properties as Record<
+      string,
+      Record<string, any>
+    >;
+    for (const propertyName of ["caseIds", "cases"] as const) {
+      expect(invalidProperties[propertyName]).toMatchObject({
+        type: "array",
+        minItems: 39,
+        maxItems: 39,
+        items: false,
+      });
+      expect(invalidProperties[propertyName]?.prefixItems).toHaveLength(39);
+    }
+    const caseIdSchemas = invalidProperties.caseIds!
+      .prefixItems as Array<Record<string, any>>;
+    const caseSchemas = invalidProperties.cases!
+      .prefixItems as Array<Record<string, any>>;
+    for (let index = 0; index < expectedInvalidCaseIds.length; index += 1) {
+      expect(caseIdSchemas[index]?.const, `caseIds[${index}]`).toBe(
+        expectedInvalidCaseIds[index],
+      );
+      expect(
+        caseSchemas[index]?.properties.caseId.const,
+        `cases[${index}].caseId`,
+      ).toBe(expectedInvalidCaseIds[index]);
+    }
+
+    const goldenWithUnknownField = structuredClone(golden);
+    goldenWithUnknownField.runtimeAuthority = "strong_ready";
+    expect(validateGolden(goldenWithUnknownField)).toBe(false);
+    const goldenWithUnknownRequestField = structuredClone(golden);
+    goldenWithUnknownRequestField.positiveVectors[0].request.current = true;
+    expect(validateGolden(goldenWithUnknownRequestField)).toBe(false);
+    const reorderedPositiveVectors = structuredClone(golden);
+    reorderedPositiveVectors.positiveVectors.reverse();
+    expect(validateGolden(reorderedPositiveVectors)).toBe(false);
+
+    const invalidWithUnknownField = structuredClone(invalid);
+    invalidWithUnknownField.runtimeAuthority = "strong_ready";
+    expect(validateInvalid(invalidWithUnknownField)).toBe(false);
+    const invalidWithUnknownOperationField = structuredClone(invalid);
+    invalidWithUnknownOperationField.cases[0].mutation.operations[0].current =
+      true;
+    expect(validateInvalid(invalidWithUnknownOperationField)).toBe(false);
+    const missingInvalidCase = structuredClone(invalid);
+    missingInvalidCase.cases.pop();
+    expect(validateInvalid(missingInvalidCase)).toBe(false);
+    const reorderedInvalidCaseIds = structuredClone(invalid);
+    [reorderedInvalidCaseIds.caseIds[0], reorderedInvalidCaseIds.caseIds[1]] = [
+      reorderedInvalidCaseIds.caseIds[1],
+      reorderedInvalidCaseIds.caseIds[0],
+    ];
+    expect(validateInvalid(reorderedInvalidCaseIds)).toBe(false);
+    const reorderedInvalidCases = structuredClone(invalid);
+    [reorderedInvalidCases.cases[0], reorderedInvalidCases.cases[1]] = [
+      reorderedInvalidCases.cases[1],
+      reorderedInvalidCases.cases[0],
+    ];
+    expect(validateInvalid(reorderedInvalidCases)).toBe(false);
+
+    expect(
+      generated[
+        "provider-distribution-history-current-candidate-point-invalid-stage"
+      ].enum,
+    ).toEqual([
+      "input",
+      "registry_history_closure",
+      "public_support_taxonomy_history",
+      "release_matrix_history",
+      "target_discovery_result_history",
+      "release_target_universe_history",
+      "provider_feasibility_support_catalog_history",
+      "history_pin_closure",
+      "retained_history_accounting",
+      "current_source_closure",
+      "catalog_point_closure",
+    ]);
+    expect(
+      generated[
+        "provider-distribution-history-current-candidate-point-invalid-reason"
+      ].enum,
+    ).toEqual([
+      "schema_invalid",
+      "source_invalid",
+      "history_empty",
+      "history_generation_limit_exceeded",
+      "envelope_byte_limit_exceeded",
+      "generation_not_contiguous",
+      "predecessor_digest_mismatch",
+      "digest_mismatch",
+      "envelope_mismatch",
+      "distribution_binding_mismatch",
+      "active_root_mismatch",
+      "active_root_rollback",
+      "signature_invalid",
+      "locator_invalid",
+      "pin_mismatch",
+      "generation_rollback",
+      "count_mismatch",
+      "object_invalid",
+      "invalid_safe_integer",
+      "single_object_byte_limit_exceeded",
+      "retained_object_count_limit_exceeded",
+      "retained_history_byte_limit_exceeded",
+      "normal_update_emergency_generation_reserve_exhausted",
+      "normal_update_emergency_logical_bytes_reserve_exhausted",
+      "locator_ownership_conflict",
+      "retained_object_key_conflict",
+      "source_exact_cover_mismatch",
+    ]);
+  }, 60_000);
 
   it("publishes strict Runtime point policy/golden/122-case invalid schemas", () => {
     const generated = generateProviderContractJsonSchemasV1();

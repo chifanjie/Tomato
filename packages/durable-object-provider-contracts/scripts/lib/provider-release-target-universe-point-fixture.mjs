@@ -408,6 +408,45 @@ export function rebuildTargetDiscoveryFromRecords(
   return golden;
 }
 
+/**
+ * Re-sign a Discovery Result after an embedded Bundle mutation and re-anchor
+ * both content digests. This intentionally does not repair or re-sign the
+ * Bundle itself, so history tests can preserve a structurally valid but
+ * cryptographically invalid historical Bundle under a valid outer Result.
+ */
+export function resignAndReanchorTargetDiscoveryResultEnvelope(
+  rawEnvelope,
+  sourceGolden,
+) {
+  const rootKeyId = sourceGolden.activeRoot.rootKeyId;
+  const rootSeedHex = sourceGolden.deterministicRootSeedHex;
+  const resultUnsigned = jsonClone(rawEnvelope.payload);
+  resultUnsigned.targetDiscoveryInputBundleContentDigest =
+    deriveProviderTargetDiscoveryInputBundleContentDigestV1(
+      resultUnsigned.targetDiscoveryInputBundle,
+    );
+  delete resultUnsigned.discoverySignature;
+  const resultPayload = ProviderTargetDiscoveryResultV1Schema.parse({
+    ...resultUnsigned,
+    discoverySignature: rootSignature(
+      "provider-target-discovery-result-ed25519",
+      rootKeyId,
+      rootSeedHex,
+      createProviderTargetDiscoveryResultSignatureMessageV1(
+        resultUnsigned,
+        rootKeyId,
+      ),
+    ),
+  });
+  return ProviderTargetDiscoveryResultEnvelopeV1Schema.parse({
+    ...jsonClone(rawEnvelope),
+    discoveryGeneration: resultPayload.discoveryGeneration,
+    contentDigest:
+      deriveProviderTargetDiscoveryResultContentDigestV1(resultPayload),
+    payload: resultPayload,
+  });
+}
+
 export function buildTargetDiscoveryPositiveVariant(
   sourceRealFilesystemGolden,
   vectorId,

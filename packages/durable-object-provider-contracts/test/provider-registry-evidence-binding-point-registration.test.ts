@@ -399,6 +399,62 @@ function expectNoIdentityV1(
   }
 }
 
+type PreparedChainPrimordialReplacementWindowV1 =
+  | "early_registry"
+  | "signature_39";
+
+async function expectCompleteSuccessGraphAcrossPrimordialReplacementWindowV1(
+  window: PreparedChainPrimordialReplacementWindowV1,
+): Promise<void> {
+  const poison = createPreparedChainPrimordialPoisonV1();
+  pointCallsV1 = 0;
+  signatureCallsV1 = 0;
+  if (window === "early_registry") {
+    installEarlyRegistryPrimordialPoisonV1 = poison.install;
+  } else {
+    installPreparedSuccessPrimordialPoisonV1 = poison.install;
+  }
+
+  let diagnostic: Awaited<
+    ReturnType<typeof diagnoseProviderRegistryEvidenceBindingPointClosureV1>
+  >;
+  try {
+    diagnostic = await diagnoseProviderRegistryEvidenceBindingPointClosureV1({
+      ...structuredClone(goldenV1.compatibleBase),
+      strictCryptoCapability: capabilityV1,
+    });
+  } finally {
+    installEarlyRegistryPrimordialPoisonV1 = undefined;
+    installPreparedSuccessPrimordialPoisonV1 = undefined;
+    poison.restore();
+  }
+
+  if (!diagnostic.ok) {
+    throw new TypeError(
+      `${window}: ${diagnostic.stage}/${diagnostic.reason}; first=${poison.firstCall ?? "none"}; last=${poison.lastCall ?? "none"}; firstPartyCalls=${poison.firstPartyCalls}; nodeRuntimeCalls=${poison.nodeRuntimeCalls}; thirdPartyZodCalls=${poison.thirdPartyZodCalls}; stack=${poison.firstStack?.replace(/\n/gu, " | ") ?? "none"}`,
+    );
+  }
+  const value = diagnostic.value;
+
+  expect(poison.installed, window).toBe(true);
+  expect(
+    poison.firstPartyCalls,
+    `${window}: first=${poison.firstCall ?? "none"}; last=${poison.lastCall ?? "none"}; stack=${poison.firstStack?.replace(/\n/gu, " | ") ?? "none"}`,
+  ).toBe(0);
+  expect(poison.thirdPartyZodCalls, window).toBeGreaterThan(0);
+  expect(pointCallsV1, window).toBe(
+    goldenV1.expected.completeCryptoClosure.pointAdmissionCount,
+  );
+  expect(signatureCallsV1, window).toBe(
+    goldenV1.expected.completeCryptoClosure.signatureVerificationCount,
+  );
+  expect(value.authority, window).toBe(
+    PROVIDER_REGISTRY_EVIDENCE_BINDING_AUTHORITY_V1,
+  );
+  expectNoIdentityV1(value, poison.forgedIdentity);
+  expectRecursivelyFrozenV1(value);
+}
+
 function sourceSliceV1(
   source: string,
   start: string,
@@ -632,55 +688,15 @@ describe("provider Registry Evidence binding registration", () => {
     );
   });
 
-  it("keeps the complete 24/46 success graph frozen across early Registry and signature-39 primordial replacement windows", async () => {
-    for (const window of ["early_registry", "signature_39"] as const) {
-      const poison = createPreparedChainPrimordialPoisonV1();
-      pointCallsV1 = 0;
-      signatureCallsV1 = 0;
-      if (window === "early_registry") {
-        installEarlyRegistryPrimordialPoisonV1 = poison.install;
-      } else {
-        installPreparedSuccessPrimordialPoisonV1 = poison.install;
-      }
+  it("keeps the complete 24/46 success graph frozen across the early Registry primordial replacement window", async () => {
+    await expectCompleteSuccessGraphAcrossPrimordialReplacementWindowV1(
+      "early_registry",
+    );
+  });
 
-      let diagnostic: Awaited<
-        ReturnType<typeof diagnoseProviderRegistryEvidenceBindingPointClosureV1>
-      >;
-      try {
-        diagnostic = await diagnoseProviderRegistryEvidenceBindingPointClosureV1({
-          ...structuredClone(goldenV1.compatibleBase),
-          strictCryptoCapability: capabilityV1,
-        });
-      } finally {
-        installEarlyRegistryPrimordialPoisonV1 = undefined;
-        installPreparedSuccessPrimordialPoisonV1 = undefined;
-        poison.restore();
-      }
-
-      if (!diagnostic.ok) {
-        throw new TypeError(
-          `${window}: ${diagnostic.stage}/${diagnostic.reason}; first=${poison.firstCall ?? "none"}; last=${poison.lastCall ?? "none"}; firstPartyCalls=${poison.firstPartyCalls}; nodeRuntimeCalls=${poison.nodeRuntimeCalls}; thirdPartyZodCalls=${poison.thirdPartyZodCalls}; stack=${poison.firstStack?.replace(/\n/gu, " | ") ?? "none"}`,
-        );
-      }
-      const value = diagnostic.value;
-
-      expect(poison.installed, window).toBe(true);
-      expect(
-        poison.firstPartyCalls,
-        `${window}: first=${poison.firstCall ?? "none"}; last=${poison.lastCall ?? "none"}; stack=${poison.firstStack?.replace(/\n/gu, " | ") ?? "none"}`,
-      ).toBe(0);
-      expect(poison.thirdPartyZodCalls, window).toBeGreaterThan(0);
-      expect(pointCallsV1, window).toBe(
-        goldenV1.expected.completeCryptoClosure.pointAdmissionCount,
-      );
-      expect(signatureCallsV1, window).toBe(
-        goldenV1.expected.completeCryptoClosure.signatureVerificationCount,
-      );
-      expect(value.authority, window).toBe(
-        PROVIDER_REGISTRY_EVIDENCE_BINDING_AUTHORITY_V1,
-      );
-      expectNoIdentityV1(value, poison.forgedIdentity);
-      expectRecursivelyFrozenV1(value);
-    }
+  it("keeps the complete 24/46 success graph frozen across the signature-39 primordial replacement window", async () => {
+    await expectCompleteSuccessGraphAcrossPrimordialReplacementWindowV1(
+      "signature_39",
+    );
   });
 });

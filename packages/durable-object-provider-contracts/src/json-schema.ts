@@ -285,6 +285,14 @@ import {
   ProviderReleaseTargetUniversePointInvalidManifestV1Schema,
 } from "./provider-release-target-universe-point-fixtures.js";
 import {
+  ProviderDistributionHistoryCurrentCandidatePointInvalidReasonV1Schema,
+  ProviderDistributionHistoryCurrentCandidatePointInvalidStageV1Schema,
+} from "./provider-distribution-history-current-candidate-point.js";
+import {
+  ProviderDistributionHistoryCurrentCandidatePointGoldenManifestV1Schema,
+  ProviderDistributionHistoryCurrentCandidatePointInvalidManifestV1Schema,
+} from "./provider-distribution-history-current-candidate-point-fixtures.js";
+import {
   ProviderFeasibilityApprovalKeysV1Schema,
   ProviderFeasibilityApproverKeyIdFieldsV1Schema,
   ProviderFeasibilityApproverPublicKeySignatureWrapperV1Schema,
@@ -923,6 +931,14 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 =
     ProviderReleaseTargetUniversePointGoldenManifestV1Schema,
   "provider-release-target-universe-point-invalid-manifest":
     ProviderReleaseTargetUniversePointInvalidManifestV1Schema,
+  "provider-distribution-history-current-candidate-point-invalid-stage":
+    ProviderDistributionHistoryCurrentCandidatePointInvalidStageV1Schema,
+  "provider-distribution-history-current-candidate-point-invalid-reason":
+    ProviderDistributionHistoryCurrentCandidatePointInvalidReasonV1Schema,
+  "provider-distribution-history-current-candidate-point-golden-manifest":
+    ProviderDistributionHistoryCurrentCandidatePointGoldenManifestV1Schema,
+  "provider-distribution-history-current-candidate-point-invalid-manifest":
+    ProviderDistributionHistoryCurrentCandidatePointInvalidManifestV1Schema,
   });
 
 export type ProviderContractJsonSchemaNameV1 =
@@ -968,6 +984,8 @@ function schemaDocument(
     reused:
       name === "provider-registry-evidence-binding-point-invalid-manifest" ||
       name === "provider-release-target-universe-point-invalid-manifest" ||
+      name ===
+        "provider-distribution-history-current-candidate-point-invalid-manifest" ||
       name === "provider-feasibility-support-catalog-point-invalid-manifest"
         ? "ref"
         : "inline",

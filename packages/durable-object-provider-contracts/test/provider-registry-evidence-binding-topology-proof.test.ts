@@ -1785,6 +1785,40 @@ describe("provider Registry evidence-binding topology proof", () => {
     expect(() =>
       assertGeneratedSchemaInventoryFreshV1(generatedSchemas, tampered),
     ).toThrow(/stale dist\/json-schema\.js/u);
+
+    const compactSourceInventory = {
+      alpha: {
+        type: "object",
+        required: ["value"],
+        properties: { value: { type: "string" } },
+      },
+      beta: { type: "array", items: { type: "number" } },
+    };
+    const compactReorderedInventory = {
+      beta: { items: { type: "number" }, type: "array" },
+      alpha: {
+        properties: { value: { type: "string" } },
+        required: ["value"],
+        type: "object",
+      },
+    };
+    expect(() =>
+      assertGeneratedSchemaInventoryFreshV1(
+        compactSourceInventory,
+        compactReorderedInventory,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertGeneratedSchemaInventoryFreshV1(compactSourceInventory, {
+        alpha: compactReorderedInventory.alpha,
+      }),
+    ).toThrow(/stale dist\/json-schema\.js/u);
+    expect(() =>
+      assertGeneratedSchemaInventoryFreshV1(compactSourceInventory, {
+        ...compactReorderedInventory,
+        gamma: { type: "null" },
+      }),
+    ).toThrow(/stale dist\/json-schema\.js/u);
   });
 
   it("passes the standalone source-anchor and regeneration check", async () => {

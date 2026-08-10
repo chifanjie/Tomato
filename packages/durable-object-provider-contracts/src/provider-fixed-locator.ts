@@ -8,35 +8,107 @@ import {
 import { sha256InternalV1 } from "./sha256.js";
 
 const CapturedArrayIsArrayV1 = Array.isArray;
-const CapturedArrayPrototypeSomeV1 = Array.prototype.some;
-const CapturedArrayPrototypeSortV1 = Array.prototype.sort;
+const CapturedFunctionPrototypeBindV1 = Function.prototype.bind;
+const CapturedFunctionPrototypeCallV1 = Function.prototype.call;
+const CapturedMathCeilV1 = Math.ceil;
+const CapturedMathFloorV1 = Math.floor;
+const CapturedNumberIsSafeIntegerV1 = Number.isSafeInteger;
+const CapturedNumberPrototypeToStringV1 = Number.prototype.toString;
+const CapturedObjectCreateV1 = Object.create;
+const CapturedObjectFreezeV1 = Object.freeze;
 const CapturedObjectGetOwnPropertyDescriptorsV1 =
   Object.getOwnPropertyDescriptors;
+const CapturedObjectGetOwnPropertyDescriptorV1 =
+  Object.getOwnPropertyDescriptor;
 const CapturedObjectGetOwnPropertySymbolsV1 = Object.getOwnPropertySymbols;
 const CapturedObjectGetPrototypeOfV1 = Object.getPrototypeOf;
 const CapturedObjectKeysV1 = Object.keys;
 const CapturedObjectPrototypeV1 = Object.prototype;
+const CapturedObjectPrototypeHasOwnPropertyV1 =
+  Object.prototype.hasOwnProperty;
 const CapturedReflectApplyV1 = Reflect.apply;
+const CapturedStringPrototypeCharCodeAtV1 = String.prototype.charCodeAt;
+const CapturedStringPrototypeIndexOfV1 = String.prototype.indexOf;
+const CapturedStringPrototypePadStartV1 = String.prototype.padStart;
+const CapturedStringPrototypeSliceV1 = String.prototype.slice;
+const CapturedStructuredCloneV1: unknown = globalThis.structuredClone;
+const CapturedTextDecoderV1 = TextDecoder;
+const CapturedTextDecoderPrototypeDecodeV1 = TextDecoder.prototype.decode;
+const CapturedTextEncoderV1 = TextEncoder;
+const CapturedTextEncoderPrototypeEncodeV1 = TextEncoder.prototype.encode;
+const CapturedTypeErrorV1 = TypeError;
+const CapturedUint8ArrayV1 = Uint8Array;
+const CapturedTypedArrayPrototypeV1 = CapturedObjectGetPrototypeOfV1(
+  CapturedUint8ArrayV1.prototype,
+);
+const CapturedTypedArrayByteLengthGetterV1 =
+  CapturedObjectGetOwnPropertyDescriptorV1(
+    CapturedTypedArrayPrototypeV1,
+    "byteLength",
+  )?.get;
+
+if (CapturedTypedArrayByteLengthGetterV1 === undefined) {
+  throw new CapturedTypeErrorV1(
+    "Uint8Array byteLength primordial unavailable",
+  );
+}
+
+function bindUncurriedFixedLocatorIntrinsicV1(method: Function): Function {
+  return CapturedObjectFreezeV1(
+    CapturedReflectApplyV1(
+      CapturedFunctionPrototypeBindV1,
+      CapturedFunctionPrototypeCallV1,
+      CapturedObjectFreezeV1([method]),
+    ) as Function,
+  );
+}
+
+const hasOwnV1 = bindUncurriedFixedLocatorIntrinsicV1(
+  CapturedObjectPrototypeHasOwnPropertyV1,
+) as (receiver: object, key: PropertyKey) => boolean;
+const numberToStringV1 = bindUncurriedFixedLocatorIntrinsicV1(
+  CapturedNumberPrototypeToStringV1,
+) as (receiver: number, radix?: number) => string;
+const stringCharCodeAtV1 = bindUncurriedFixedLocatorIntrinsicV1(
+  CapturedStringPrototypeCharCodeAtV1,
+) as (receiver: string, index: number) => number;
+const stringIndexOfV1 = bindUncurriedFixedLocatorIntrinsicV1(
+  CapturedStringPrototypeIndexOfV1,
+) as (receiver: string, search: string, position?: number) => number;
+const stringPadStartV1 = bindUncurriedFixedLocatorIntrinsicV1(
+  CapturedStringPrototypePadStartV1,
+) as (receiver: string, length: number, fill?: string) => string;
+const stringSliceV1 = bindUncurriedFixedLocatorIntrinsicV1(
+  CapturedStringPrototypeSliceV1,
+) as (receiver: string, start?: number, end?: number) => string;
+const textDecoderDecodeV1 = bindUncurriedFixedLocatorIntrinsicV1(
+  CapturedTextDecoderPrototypeDecodeV1,
+) as (
+  receiver: TextDecoder,
+  input?: AllowSharedBufferSource,
+  options?: TextDecodeOptions,
+) => string;
+const textEncoderEncodeV1 = bindUncurriedFixedLocatorIntrinsicV1(
+  CapturedTextEncoderPrototypeEncodeV1,
+) as (receiver: TextEncoder, input?: string) => Uint8Array;
+const typedArrayByteLengthV1 = bindUncurriedFixedLocatorIntrinsicV1(
+  CapturedTypedArrayByteLengthGetterV1,
+) as (receiver: Uint8Array) => number;
+
+const BoundCapturedStructuredCloneV1 =
+  typeof CapturedStructuredCloneV1 === "function"
+    ? CapturedObjectFreezeV1((value: unknown): unknown =>
+        CapturedReflectApplyV1(
+          CapturedStructuredCloneV1,
+          undefined,
+          CapturedObjectFreezeV1([value]),
+        ))
+    : undefined;
 
 function arrayIsArrayV1(value: unknown): value is unknown[] {
   return CapturedReflectApplyV1(CapturedArrayIsArrayV1, undefined, [
     value,
   ]) as boolean;
-}
-
-function arraySomeV1<T>(
-  array: readonly T[],
-  callback: (value: T, index: number, source: readonly T[]) => unknown,
-): boolean {
-  return CapturedReflectApplyV1(CapturedArrayPrototypeSomeV1, array, [
-    callback,
-  ]) as boolean;
-}
-
-function arraySortV1<T>(array: T[]): T[] {
-  return CapturedReflectApplyV1(CapturedArrayPrototypeSortV1, array, [
-    undefined,
-  ]) as T[];
 }
 
 function objectGetOwnPropertyDescriptorsV1(
@@ -83,42 +155,53 @@ const BASE32HEX_LOWER_ALPHABET = "0123456789abcdefghijklmnopqrstuv";
 const SHORT_KEY_SYNTAX_PATTERN =
   /^id-(?=[0-9a-v]{2,220}$)(?:[0-9a-v]{8})*(?:[0-9a-v][048cgkos]|[0-9a-v]{3}[0g]|[0-9a-v]{4}[02468acegikmoqsu]|[0-9a-v]{6}[08go])?$/u;
 const HASHED_KEY_PATTERN = /^idh-[0-9a-f]{64}$/u;
-const textEncoderV1 = new TextEncoder();
-const textDecoderV1 = new TextDecoder("utf-8", {
+const textEncoderV1 = new CapturedTextEncoderV1();
+// TextDecoder.decode updates implementation-private streaming/BOM state even
+// for non-streaming calls in Node, so the captured instance cannot be frozen.
+// Its only callable surface is still the frozen uncurried method above.
+const textDecoderV1 = new CapturedTextDecoderV1("utf-8", {
   fatal: true,
   ignoreBOM: true,
 });
 
 function assertUnicodeScalarSequenceV1(value: string): void {
   for (let index = 0; index < value.length; index += 1) {
-    const codeUnit = value.charCodeAt(index);
+    const codeUnit = stringCharCodeAtV1(value, index);
     if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
-      const next = value.charCodeAt(index + 1);
+      const next = stringCharCodeAtV1(value, index + 1);
       if (!(next >= 0xdc00 && next <= 0xdfff)) {
-        throw new TypeError("semantic ID contains an unpaired high surrogate");
+        throw new CapturedTypeErrorV1(
+          "semantic ID contains an unpaired high surrogate",
+        );
       }
       index += 1;
       continue;
     }
     if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
-      throw new TypeError("semantic ID contains an unpaired low surrogate");
+      throw new CapturedTypeErrorV1(
+        "semantic ID contains an unpaired low surrogate",
+      );
     }
   }
 }
 
 function semanticIdUtf8V1(semanticId: unknown): Uint8Array {
   if (typeof semanticId !== "string" || semanticId.length === 0) {
-    throw new TypeError("semantic ID must be a non-empty validated string");
+    throw new CapturedTypeErrorV1(
+      "semantic ID must be a non-empty validated string",
+    );
   }
   assertUnicodeScalarSequenceV1(semanticId);
-  return textEncoderV1.encode(semanticId);
+  return textEncoderEncodeV1(textEncoderV1, semanticId);
 }
 
 function encodeBase32HexLowerV1(bytes: Uint8Array): string {
   let output = "";
   let accumulator = 0;
   let availableBits = 0;
-  for (const byte of bytes) {
+  const byteLength = typedArrayByteLengthV1(bytes);
+  for (let index = 0; index < byteLength; index += 1) {
+    const byte = bytes[index]!;
     accumulator = (accumulator << 8) | byte;
     availableBits += 8;
     while (availableBits >= 5) {
@@ -138,14 +221,17 @@ function encodeBase32HexLowerV1(bytes: Uint8Array): string {
 }
 
 function decodeBase32HexLowerV1(body: string): Uint8Array {
-  const decoded = new Uint8Array(Math.floor((body.length * 5) / 8));
+  const decoded = new CapturedUint8ArrayV1(
+    CapturedMathFloorV1((body.length * 5) / 8),
+  );
   let accumulator = 0;
   let availableBits = 0;
   let outputOffset = 0;
-  for (const character of body) {
-    const digit = BASE32HEX_LOWER_ALPHABET.indexOf(character);
+  for (let index = 0; index < body.length; index += 1) {
+    const character = body[index]!;
+    const digit = stringIndexOfV1(BASE32HEX_LOWER_ALPHABET, character);
     if (digit < 0) {
-      throw new TypeError(
+      throw new CapturedTypeErrorV1(
         "filename key is not lowercase unpadded base32hex",
       );
     }
@@ -158,8 +244,8 @@ function decodeBase32HexLowerV1(body: string): Uint8Array {
       accumulator &= (1 << availableBits) - 1;
     }
   }
-  if (outputOffset !== decoded.byteLength || accumulator !== 0) {
-    throw new TypeError(
+  if (outputOffset !== typedArrayByteLengthV1(decoded) || accumulator !== 0) {
+    throw new CapturedTypeErrorV1(
       "filename key is not canonical lowercase unpadded base32hex",
     );
   }
@@ -168,7 +254,14 @@ function decodeBase32HexLowerV1(body: string): Uint8Array {
 
 function bytesToLowerHexV1(bytes: Uint8Array): string {
   let output = "";
-  for (const byte of bytes) output += byte.toString(16).padStart(2, "0");
+  const byteLength = typedArrayByteLengthV1(bytes);
+  for (let index = 0; index < byteLength; index += 1) {
+    output += stringPadStartV1(
+      numberToStringV1(bytes[index]!, 16),
+      2,
+      "0",
+    );
+  }
   return output;
 }
 
@@ -176,12 +269,12 @@ function canonicalShortKeyBodyV1(body: string): boolean {
   try {
     const bytes = decodeBase32HexLowerV1(body);
     if (
-      bytes.byteLength === 0 ||
+      typedArrayByteLengthV1(bytes) === 0 ||
       encodeBase32HexLowerV1(bytes) !== body
     ) {
       return false;
     }
-    const semanticId = textDecoderV1.decode(bytes);
+    const semanticId = textDecoderDecodeV1(textDecoderV1, bytes);
     return (
       semanticId.length !== 0 &&
       encodeBase32HexLowerV1(semanticIdUtf8V1(semanticId)) === body
@@ -189,6 +282,26 @@ function canonicalShortKeyBodyV1(body: string): boolean {
   } catch {
     return false;
   }
+}
+
+function isExactLowerHexRangeV1(
+  value: string,
+  offset: number,
+  length: number,
+): boolean {
+  if (value.length !== offset + length) return false;
+  for (let index = offset; index < value.length; index += 1) {
+    const codeUnit = stringCharCodeAtV1(value, index);
+    if (
+      !(
+        (codeUnit >= 0x30 && codeUnit <= 0x39) ||
+        (codeUnit >= 0x61 && codeUnit <= 0x66)
+      )
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /**
@@ -202,7 +315,8 @@ export const ShortStoreFilenameKeySyntaxV1Schema = z
 export const ShortStoreFilenameKeyV1Schema =
   ShortStoreFilenameKeySyntaxV1Schema
     .refine(
-      (key) => canonicalShortKeyBodyV1(key.slice("id-".length)),
+      (key) =>
+        canonicalShortKeyBodyV1(stringSliceV1(key, "id-".length)),
       "must contain canonical UTF-8 lowercase base32hex semantic ID bytes",
     )
     .brand<"ShortStoreFilenameKeyV1">();
@@ -230,6 +344,53 @@ export const StoreFilenameKeyV1Schema = z.union([
 ]);
 export type StoreFilenameKeyV1 = z.infer<typeof StoreFilenameKeyV1Schema>;
 
+function parseShortStoreFilenameKeyInternalV1(
+  value: unknown,
+): ShortStoreFilenameKeyV1 {
+  if (typeof value !== "string") {
+    throw new CapturedTypeErrorV1("filename key must be a string");
+  }
+  const prefix = "id-";
+  const body = stringSliceV1(value, prefix.length);
+  if (
+    stringSliceV1(value, 0, prefix.length) !== prefix ||
+    body.length < 2 ||
+    body.length > STORE_FILENAME_SHORT_BODY_MAX_LENGTH_V1 ||
+    !canonicalShortKeyBodyV1(body)
+  ) {
+    throw new CapturedTypeErrorV1(
+      "filename key must contain canonical UTF-8 lowercase base32hex bytes",
+    );
+  }
+  return value as ShortStoreFilenameKeyV1;
+}
+
+function parseHashedStoreFilenameKeyInternalV1(
+  value: unknown,
+): HashedStoreFilenameKeyV1 {
+  const prefix = "idh-";
+  if (
+    typeof value !== "string" ||
+    stringSliceV1(value, 0, prefix.length) !== prefix ||
+    !isExactLowerHexRangeV1(value, prefix.length, 64)
+  ) {
+    throw new CapturedTypeErrorV1(
+      "hashed filename key must contain exactly 64 lowercase hex digits",
+    );
+  }
+  return value as HashedStoreFilenameKeyV1;
+}
+
+function parseStoreFilenameKeyInternalV1(value: unknown): StoreFilenameKeyV1 {
+  if (typeof value !== "string") {
+    throw new CapturedTypeErrorV1("filename key must be a string");
+  }
+  if (stringSliceV1(value, 0, "id-".length) === "id-") {
+    return parseShortStoreFilenameKeyInternalV1(value);
+  }
+  return parseHashedStoreFilenameKeyInternalV1(value);
+}
+
 /**
  * Encodes an already domain-schema-validated semantic ID as one canonical
  * portable filename component. This generic codec validates only the string,
@@ -239,22 +400,29 @@ export function encodeStoreFilenameKeyV1(
   semanticId: string,
 ): StoreFilenameKeyV1 {
   const utf8 = semanticIdUtf8V1(semanticId);
-  const canonicalBodyLength = Math.ceil((utf8.byteLength * 8) / 5);
+  const canonicalBodyLength = CapturedMathCeilV1(
+    (typedArrayByteLengthV1(utf8) * 8) / 5,
+  );
   const key = canonicalBodyLength <= STORE_FILENAME_SHORT_BODY_MAX_LENGTH_V1
     ? `id-${encodeBase32HexLowerV1(utf8)}`
     : `idh-${bytesToLowerHexV1(sha256InternalV1(utf8))}`;
-  return StoreFilenameKeyV1Schema.parse(key);
+  return parseStoreFilenameKeyInternalV1(key);
 }
 
 /** Short keys are reversible; hashed keys deliberately are not. */
 export function decodeShortStoreFilenameKeyV1(
   key: unknown,
 ): string {
-  const shortKey = ShortStoreFilenameKeyV1Schema.parse(key);
-  const body = shortKey.slice("id-".length);
-  const semanticId = textDecoderV1.decode(decodeBase32HexLowerV1(body));
+  const shortKey = parseShortStoreFilenameKeyInternalV1(key);
+  const body = stringSliceV1(shortKey, "id-".length);
+  const semanticId = textDecoderDecodeV1(
+    textDecoderV1,
+    decodeBase32HexLowerV1(body),
+  );
   if (encodeStoreFilenameKeyV1(semanticId) !== shortKey) {
-    throw new TypeError("filename key does not exactly re-encode");
+    throw new CapturedTypeErrorV1(
+      "filename key does not exactly re-encode",
+    );
   }
   return semanticId;
 }
@@ -268,10 +436,12 @@ export function verifyStoreFilenameKeyForSemanticIdV1(
   key: unknown,
   semanticId: string,
 ): StoreFilenameKeyV1 {
-  const parsedKey = StoreFilenameKeyV1Schema.parse(key);
+  const parsedKey = parseStoreFilenameKeyInternalV1(key);
   const expectedKey = encodeStoreFilenameKeyV1(semanticId);
   if (parsedKey !== expectedKey) {
-    throw new TypeError("filename key does not match the exact semantic ID");
+    throw new CapturedTypeErrorV1(
+      "filename key does not match the exact semantic ID",
+    );
   }
   return parsedKey;
 }
@@ -293,6 +463,25 @@ export type ProviderRegistryRootMetadataLocatorV1 = z.infer<
   typeof ProviderRegistryRootMetadataLocatorV1Schema
 >;
 
+function parseProviderRegistryRootMetadataLocatorInternalV1(
+  snapshot: Record<string, unknown>,
+): ProviderRegistryRootMetadataLocatorV1 {
+  const locatorProfile = snapshot.locatorProfile;
+  const rootGeneration = snapshot.rootGeneration;
+  const rootKeyId = snapshot.rootKeyId;
+  if (
+    locatorProfile !== PROVIDER_REGISTRY_ROOT_METADATA_LOCATOR_PROFILE_V1 ||
+    typeof rootGeneration !== "number" ||
+    !CapturedNumberIsSafeIntegerV1(rootGeneration) ||
+    rootGeneration < 1 ||
+    typeof rootKeyId !== "string" ||
+    !isExactLowerHexRangeV1(rootKeyId, 0, 22)
+  ) {
+    throw new CapturedTypeErrorV1("root metadata locator fields are invalid");
+  }
+  return snapshot as ProviderRegistryRootMetadataLocatorV1;
+}
+
 export type ProviderRegistryRootMetadataRelativePathV1 =
   `provider/root-metadata/${StoreFilenameKeyV1}.json`;
 
@@ -302,7 +491,9 @@ function snapshotExactLocatorDataObjectV1(
   locatorName: string,
 ): Record<string, unknown> {
   if (input === null || typeof input !== "object" || arrayIsArrayV1(input)) {
-    throw new TypeError(`${locatorName} must be a plain data object`);
+    throw new CapturedTypeErrorV1(
+      `${locatorName} must be a plain data object`,
+    );
   }
 
   let prototype: object | null;
@@ -313,36 +504,43 @@ function snapshotExactLocatorDataObjectV1(
     symbols = objectGetOwnPropertySymbolsV1(input);
     descriptors = objectGetOwnPropertyDescriptorsV1(input);
   } catch {
-    throw new TypeError(`${locatorName} must be a plain data object`);
+    throw new CapturedTypeErrorV1(
+      `${locatorName} must be a plain data object`,
+    );
   }
   if (prototype !== CapturedObjectPrototypeV1 && prototype !== null) {
-    throw new TypeError(`${locatorName} must be a plain data object`);
+    throw new CapturedTypeErrorV1(
+      `${locatorName} must be a plain data object`,
+    );
   }
   if (symbols.length !== 0) {
-    throw new TypeError(`${locatorName} must not contain symbols`);
+    throw new CapturedTypeErrorV1(`${locatorName} must not contain symbols`);
   }
 
-  const sortedRequiredKeys = arraySortV1([...requiredKeys]);
-  const actualKeys = arraySortV1(objectKeysV1(descriptors));
-  if (
-    actualKeys.length !== sortedRequiredKeys.length ||
-    arraySomeV1(
-      actualKeys,
-      (key, index) => key !== sortedRequiredKeys[index],
-    )
-  ) {
-    throw new TypeError(`${locatorName} must contain only exact fields`);
+  const actualKeys = objectKeysV1(descriptors);
+  if (actualKeys.length !== requiredKeys.length) {
+    throw new CapturedTypeErrorV1(
+      `${locatorName} must contain only exact fields`,
+    );
+  }
+  for (let index = 0; index < requiredKeys.length; index += 1) {
+    if (!hasOwnV1(descriptors, requiredKeys[index]!)) {
+      throw new CapturedTypeErrorV1(
+        `${locatorName} must contain only exact fields`,
+      );
+    }
   }
 
-  const snapshot: Record<string, unknown> = {};
-  for (const key of requiredKeys) {
+  const snapshot = CapturedObjectCreateV1(null) as Record<string, unknown>;
+  for (let index = 0; index < requiredKeys.length; index += 1) {
+    const key = requiredKeys[index]!;
     const descriptor = descriptors[key];
     if (
       descriptor === undefined ||
-      !("value" in descriptor) ||
+      !hasOwnV1(descriptor, "value") ||
       descriptor.enumerable !== true
     ) {
-      throw new TypeError(
+      throw new CapturedTypeErrorV1(
         `${locatorName} field ${key} must be an enumerable data property`,
       );
     }
@@ -359,9 +557,14 @@ function assertNonProxyLocatorDataObjectV1(
   // The structured-clone algorithm rejects Proxy exotic objects. It is a web
   // platform primitive, so this guard preserves browser/worker portability.
   try {
-    structuredClone(input);
+    if (BoundCapturedStructuredCloneV1 === undefined) {
+      throw new CapturedTypeErrorV1(
+        "structuredClone primordial unavailable",
+      );
+    }
+    BoundCapturedStructuredCloneV1(input);
   } catch {
-    throw new TypeError(
+    throw new CapturedTypeErrorV1(
       `${locatorName} must be an ordinary non-proxy data object`,
     );
   }
@@ -376,9 +579,7 @@ export function buildProviderRegistryRootMetadataRelativePathV1(
     ["locatorProfile", "rootGeneration", "rootKeyId"],
     "root metadata locator",
   );
-  const locator = ProviderRegistryRootMetadataLocatorV1Schema.parse(
-    snapshot,
-  );
+  const locator = parseProviderRegistryRootMetadataLocatorInternalV1(snapshot);
   assertNonProxyLocatorDataObjectV1(
     input as object,
     "root metadata locator",
@@ -400,6 +601,24 @@ export type ProviderRegistryManifestLocatorV1 = z.infer<
   typeof ProviderRegistryManifestLocatorV1Schema
 >;
 
+function parseProviderRegistryManifestLocatorInternalV1(
+  snapshot: Record<string, unknown>,
+): ProviderRegistryManifestLocatorV1 {
+  const locatorProfile = snapshot.locatorProfile;
+  const generationId = snapshot.generationId;
+  const generationPrefix = "provider-registry-manifest:";
+  if (
+    locatorProfile !== PROVIDER_REGISTRY_MANIFEST_LOCATOR_PROFILE_V1 ||
+    typeof generationId !== "string" ||
+    stringSliceV1(generationId, 0, generationPrefix.length) !==
+      generationPrefix ||
+    !isExactLowerHexRangeV1(generationId, generationPrefix.length, 22)
+  ) {
+    throw new CapturedTypeErrorV1("registry manifest locator fields are invalid");
+  }
+  return snapshot as ProviderRegistryManifestLocatorV1;
+}
+
 declare const ProviderRegistryManifestRelativePathV1Brand: unique symbol;
 export type ProviderRegistryManifestRelativePathV1 =
   `provider/registry-manifests/${StoreFilenameKeyV1}.json` & {
@@ -415,9 +634,7 @@ export function buildProviderRegistryManifestRelativePathV1(
     ["locatorProfile", "generationId"],
     "registry manifest locator",
   );
-  const locator = ProviderRegistryManifestLocatorV1Schema.parse(
-    snapshot,
-  );
+  const locator = parseProviderRegistryManifestLocatorInternalV1(snapshot);
   assertNonProxyLocatorDataObjectV1(
     input as object,
     "registry manifest locator",
@@ -468,3 +685,10 @@ export type ProviderRealFilesystemSuiteManifestRelativePathV1 =
   `provider/real-fs-suite-manifests/${StoreFilenameKeyV1}.json` & {
     readonly [ProviderRealFilesystemSuiteManifestRelativePathV1Brand]: true;
   };
+
+CapturedObjectFreezeV1(encodeStoreFilenameKeyV1);
+CapturedObjectFreezeV1(decodeShortStoreFilenameKeyV1);
+CapturedObjectFreezeV1(verifyStoreFilenameKeyForSemanticIdV1);
+CapturedObjectFreezeV1(buildProviderRegistryRootMetadataRelativePathV1);
+CapturedObjectFreezeV1(buildProviderRegistryManifestRelativePathV1);
+CapturedObjectFreezeV1(validateProviderRegistryManifestRelativePathV1);

@@ -77,6 +77,12 @@ import {
   registerProviderTargetDiscoveryPointPreparedCoreInternalV1,
 } from "./provider-target-discovery-point-prepared-internal.js";
 import {
+  registerProviderDistributionHistoricalBundleSemanticCoreInternalV1,
+  registerProviderDistributionHistoricalMatrixSemanticCoreInternalV1,
+  registerProviderDistributionHistoricalResultSemanticCoreInternalV1,
+  registerProviderDistributionHistoricalTaxonomySemanticCoreInternalV1,
+} from "./provider-distribution-historical-semantic-internal.js";
+import {
   assertProviderStrictEd25519CryptoCapabilityIdentityV1,
 } from "./strict-ed25519-capability-internal.js";
 import {
@@ -1488,6 +1494,557 @@ function projectExpectedObservationsV1(
   ];
 }
 
+interface HistoricalTaxonomySemanticStateV1 {
+  readonly envelope: ProviderPublicSupportTaxonomyEnvelopeV1;
+  readonly pin: ProviderPublicSupportTaxonomyPinV1;
+  readonly indexes: TaxonomyIndexesV1;
+}
+
+interface HistoricalMatrixSemanticStateV1 {
+  readonly envelope: ProviderReleaseMatrixEnvelopeV1;
+  readonly pin: ProviderReleaseMatrixPinV1;
+  readonly taxonomy: HistoricalTaxonomySemanticStateV1;
+}
+
+interface HistoricalSuiteSemanticStateViewV1 {
+  readonly envelope: ProviderRealFilesystemSuiteManifestEnvelopeV1;
+  readonly suitePin: ProviderRealFilesystemSuiteManifestPinV1;
+}
+
+interface HistoricalBundleSemanticStateV1 {
+  readonly bundle: ProviderTargetDiscoveryInputBundleV1;
+  readonly bundleContentDigest: ContentDigestV1;
+  readonly fixtureEnvelope: ProviderTargetDiscoveryFixtureManifestEnvelopeV1;
+  readonly fixturePin: ProviderTargetDiscoveryFixtureManifestPinV1;
+  readonly matrix: HistoricalMatrixSemanticStateV1;
+  readonly observationCutDigest: ContentDigestV1;
+  readonly observationSetDigest: ContentDigestV1;
+  readonly projectedTargets: readonly ProviderReleaseTargetUniverseTargetEntryV1[];
+  readonly runnerEnvelope: ProviderTargetDiscoveryRunnerRunEnvelopeV1;
+  readonly runnerPin: ProviderTargetDiscoveryRunnerInstancePinV1;
+  readonly suite: HistoricalSuiteSemanticStateViewV1;
+  readonly taxonomy: HistoricalTaxonomySemanticStateV1;
+  readonly unresolved: readonly ProviderTargetDiscoveryUnresolvedObservationV1[];
+}
+
+interface HistoricalResultSemanticStateV1 {
+  readonly bundle: HistoricalBundleSemanticStateV1;
+  readonly envelope: ProviderTargetDiscoveryResultEnvelopeV1;
+  readonly pin: ProviderTargetDiscoveryResultPinV1;
+}
+
+function validateHistoricalTaxonomySemanticCoreV1(
+  suppliedEnvelope: ProviderPublicSupportTaxonomyEnvelopeV1,
+): HistoricalTaxonomySemanticStateV1 {
+  ProviderPublicSupportTaxonomyEnvelopeV1Schema.parse(suppliedEnvelope);
+  const envelope = suppliedEnvelope;
+  const taxonomy = envelope.payload;
+  validateTaxonomyRecordsV1(taxonomy);
+  if (envelope.taxonomyGeneration !== taxonomy.taxonomyGeneration) {
+    return fail("taxonomy_envelope", "envelope_mismatch");
+  }
+  if (
+    envelope.contentDigest !==
+    deriveProviderPublicSupportTaxonomyContentDigestV1(taxonomy)
+  ) {
+    return fail("taxonomy_envelope", "envelope_mismatch");
+  }
+  return {
+    envelope,
+    pin: ProviderPublicSupportTaxonomyPinV1Schema.parse({
+      locatorProfile: PROVIDER_PUBLIC_SUPPORT_TAXONOMY_LOCATOR_PROFILE_V1,
+      taxonomyGeneration: taxonomy.taxonomyGeneration,
+      contentDigest: envelope.contentDigest,
+    }),
+    indexes: taxonomyIndexesV1(taxonomy),
+  };
+}
+
+function asHistoricalTaxonomyStateV1(
+  value: unknown,
+  envelope: ProviderPublicSupportTaxonomyEnvelopeV1,
+): HistoricalTaxonomySemanticStateV1 {
+  const state = value as HistoricalTaxonomySemanticStateV1;
+  if (state?.envelope !== envelope) {
+    return fail("matrix_taxonomy_pin", "binding_mismatch");
+  }
+  return state;
+}
+
+function validateHistoricalMatrixSemanticCoreV1(
+  suppliedEnvelope: ProviderReleaseMatrixEnvelopeV1,
+  taxonomyEnvelope: ProviderPublicSupportTaxonomyEnvelopeV1,
+  suppliedTaxonomyState: unknown,
+): HistoricalMatrixSemanticStateV1 {
+  ProviderReleaseMatrixEnvelopeV1Schema.parse(suppliedEnvelope);
+  const taxonomy = asHistoricalTaxonomyStateV1(
+    suppliedTaxonomyState,
+    taxonomyEnvelope,
+  );
+  const envelope = suppliedEnvelope;
+  const matrix = envelope.payload;
+  if (
+    !canonicalEqualV1(
+      matrix.distributionRootBinding,
+      taxonomy.envelope.payload.distributionRootBinding,
+    ) ||
+    !canonicalEqualV1(
+      matrix.activeRootMetadata,
+      taxonomy.envelope.payload.activeRootMetadata,
+    ) ||
+    matrix.registryRootKeyId !== taxonomy.envelope.payload.registryRootKeyId
+  ) {
+    return fail("matrix_taxonomy_pin", "binding_mismatch");
+  }
+  if (!canonicalEqualV1(matrix.publicSupportTaxonomy, taxonomy.pin)) {
+    return fail("matrix_taxonomy_pin", "binding_mismatch");
+  }
+  validateGenerationPredecessorV1(
+    matrix.releaseMatrixGeneration,
+    matrix.predecessorReleaseMatrixContentDigest,
+    "matrix_structure",
+  );
+  if (matrix.targetCount !== matrix.targets.length) {
+    return fail("matrix_structure", "count_mismatch");
+  }
+  validateSortedTargetEntriesV1(
+    matrix.targets,
+    taxonomy.indexes,
+    "matrix_structure",
+    "matrix_digest",
+    "matrix_taxonomy_pin",
+  );
+  if (
+    matrix.targetSetDigest !==
+    deriveProviderReleaseTargetEntrySetDigestV1({ targets: matrix.targets })
+  ) {
+    return fail("matrix_digest", "digest_mismatch");
+  }
+  if (
+    envelope.releaseMatrixGeneration !== matrix.releaseMatrixGeneration ||
+    envelope.contentDigest !== deriveProviderReleaseMatrixContentDigestV1(matrix)
+  ) {
+    return fail("matrix_envelope", "envelope_mismatch");
+  }
+  return {
+    envelope,
+    pin: ProviderReleaseMatrixPinV1Schema.parse({
+      locatorProfile: PROVIDER_RELEASE_MATRIX_LOCATOR_PROFILE_V1,
+      releaseMatrixGeneration: matrix.releaseMatrixGeneration,
+      contentDigest: envelope.contentDigest,
+    }),
+    taxonomy,
+  };
+}
+
+function asHistoricalMatrixStateV1(
+  value: unknown,
+  envelope: ProviderReleaseMatrixEnvelopeV1,
+): HistoricalMatrixSemanticStateV1 {
+  const state = value as HistoricalMatrixSemanticStateV1;
+  if (state?.envelope !== envelope) {
+    return fail("bundle_structure", "binding_mismatch");
+  }
+  return state;
+}
+
+function asHistoricalSuiteStateV1(
+  value: unknown,
+  envelope: ProviderRealFilesystemSuiteManifestEnvelopeV1,
+): HistoricalSuiteSemanticStateViewV1 {
+  const state = value as HistoricalSuiteSemanticStateViewV1;
+  if (state?.envelope !== envelope) {
+    return fail("fixture_source_pin", "binding_mismatch");
+  }
+  return state;
+}
+
+function validateHistoricalBundleSemanticCoreV1(
+  suppliedBundle: ProviderTargetDiscoveryInputBundleV1,
+  suppliedFixtureEnvelope: ProviderTargetDiscoveryFixtureManifestEnvelopeV1,
+  suppliedRunnerEnvelope: ProviderTargetDiscoveryRunnerRunEnvelopeV1,
+  taxonomyEnvelope: ProviderPublicSupportTaxonomyEnvelopeV1,
+  suppliedTaxonomyState: unknown,
+  matrixEnvelope: ProviderReleaseMatrixEnvelopeV1,
+  suppliedMatrixState: unknown,
+  suiteEnvelope: ProviderRealFilesystemSuiteManifestEnvelopeV1,
+  suppliedSuiteState: unknown,
+): HistoricalBundleSemanticStateV1 {
+  ProviderTargetDiscoveryInputBundleV1Schema.parse(suppliedBundle);
+  ProviderTargetDiscoveryFixtureManifestEnvelopeV1Schema.parse(
+    suppliedFixtureEnvelope,
+  );
+  ProviderTargetDiscoveryRunnerRunEnvelopeV1Schema.parse(suppliedRunnerEnvelope);
+  const taxonomy = asHistoricalTaxonomyStateV1(
+    suppliedTaxonomyState,
+    taxonomyEnvelope,
+  );
+  const matrix = asHistoricalMatrixStateV1(
+    suppliedMatrixState,
+    matrixEnvelope,
+  );
+  const suite = asHistoricalSuiteStateV1(suppliedSuiteState, suiteEnvelope);
+  if (matrix.taxonomy !== taxonomy) {
+    return fail("bundle_structure", "binding_mismatch");
+  }
+
+  const binding = taxonomy.envelope.payload.distributionRootBinding;
+  const activeRootMetadata = taxonomy.envelope.payload.activeRootMetadata;
+  const rootKeyId = taxonomy.envelope.payload.registryRootKeyId;
+  const fixtureEnvelope = suppliedFixtureEnvelope;
+  const fixture = fixtureEnvelope.payload;
+  if (
+    !canonicalEqualV1(fixture.distributionRootBinding, binding) ||
+    fixture.releaseRevisionDigest !== binding.releaseRevisionDigest
+  ) {
+    return fail("distribution_binding", "binding_mismatch");
+  }
+  if (
+    !canonicalEqualV1(fixture.realFilesystemSuiteManifest, suite.suitePin) ||
+    fixture.realFilesystemSuiteDigest !== suite.envelope.payload.suiteDigest ||
+    fixture.fixtureManifestDigest !== suite.suitePin.fixtureManifestDigest
+  ) {
+    return fail("fixture_source_pin", "binding_mismatch");
+  }
+  if (fixture.targetRecordCount !== fixture.records.length) {
+    return fail("fixture_structure", "count_mismatch");
+  }
+  validateSourceManifestRecordsV1(fixture.records, "fixture_structure");
+  if (
+    fixture.targetRecordSetDigest !==
+    deriveProviderTargetDiscoverySourceManifestRecordSetDigestV1({
+      observationSource: "real_filesystem_fixture_manifest",
+      entries: fixture.records,
+    })
+  ) {
+    return fail("fixture_digest", "digest_mismatch");
+  }
+  if (
+    fixtureEnvelope.fixtureManifestDigest !== fixture.fixtureManifestDigest ||
+    fixtureEnvelope.contentDigest !==
+      deriveProviderTargetDiscoveryFixtureManifestContentDigestV1(fixture)
+  ) {
+    return fail("fixture_envelope", "envelope_mismatch");
+  }
+  const fixturePin = ProviderTargetDiscoveryFixtureManifestPinV1Schema.parse({
+    locatorProfile:
+      PROVIDER_TARGET_DISCOVERY_FIXTURE_MANIFEST_LOCATOR_PROFILE_V1,
+    realFilesystemSuiteManifest: suite.suitePin,
+    realFilesystemSuiteDigest: fixture.realFilesystemSuiteDigest,
+    fixtureManifestDigest: fixture.fixtureManifestDigest,
+    contentDigest: fixtureEnvelope.contentDigest,
+  });
+
+  const runnerEnvelope = suppliedRunnerEnvelope;
+  const runner = runnerEnvelope.payload;
+  if (
+    !canonicalEqualV1(runner.distributionRootBinding, binding) ||
+    runner.releaseRevisionDigest !== binding.releaseRevisionDigest
+  ) {
+    return fail("distribution_binding", "binding_mismatch");
+  }
+  if (runner.targetRecordCount !== runner.records.length) {
+    return fail("runner_structure", "count_mismatch");
+  }
+  validateSourceManifestRecordsV1(runner.records, "runner_structure");
+  if (
+    runner.targetRecordSetDigest !==
+    deriveProviderTargetDiscoverySourceManifestRecordSetDigestV1({
+      observationSource: "target_discovery_runner",
+      entries: runner.records,
+    })
+  ) {
+    return fail("runner_digest", "digest_mismatch");
+  }
+  if (
+    runnerEnvelope.contentDigest !==
+    deriveProviderTargetDiscoveryRunnerRunManifestContentDigestV1(runner)
+  ) {
+    return fail("runner_envelope", "envelope_mismatch");
+  }
+  const runnerPin = ProviderTargetDiscoveryRunnerInstancePinV1Schema.parse({
+    locatorProfile: PROVIDER_TARGET_DISCOVERY_RUNNER_RUN_LOCATOR_PROFILE_V1,
+    producerName: runner.producerName,
+    producerVersion: runner.producerVersion,
+    implementationDigest: runner.implementationDigest,
+    binaryAttestationDigest: runner.binaryAttestationDigest,
+    runnerProfileDigest: runner.runnerProfileDigest,
+    runManifestContentDigest: runnerEnvelope.contentDigest,
+    releaseRevisionDigest: runner.releaseRevisionDigest,
+    executedAt: runner.executedAt,
+  });
+
+  const bundle = suppliedBundle;
+  if (
+    !canonicalEqualV1(bundle.distributionRootBinding, binding) ||
+    !canonicalEqualV1(bundle.activeRootMetadata, activeRootMetadata) ||
+    bundle.registryRootKeyId !== rootKeyId ||
+    !canonicalEqualV1(bundle.publicSupportTaxonomy, taxonomy.pin) ||
+    !canonicalEqualV1(bundle.releaseMatrix, matrix.pin) ||
+    !canonicalEqualV1(bundle.realFilesystemFixtureManifest, fixturePin) ||
+    !canonicalEqualV1(bundle.targetDiscoveryRunner, runnerPin)
+  ) {
+    return fail("bundle_structure", "binding_mismatch");
+  }
+  const expectedCut = ProviderTargetDiscoveryObservationCutV1Schema.parse({
+    profile: "provider_target_discovery_observation_cut_v1",
+    distributionRootBinding: binding,
+    activeRootMetadata,
+    publicSupportTaxonomy: taxonomy.pin,
+    releaseMatrix: matrix.pin,
+    realFilesystemFixtureManifest: fixturePin,
+    targetDiscoveryRunner: runnerPin,
+    discoveryRulesetVersion: bundle.discoveryRulesetVersion,
+    requiredDimensions: bundle.requiredDimensions,
+    observationSources: bundle.observationSources,
+    freshnessRule: "exact_release_revision_and_source_digest_cut_v1",
+  });
+  if (!canonicalEqualV1(bundle.observationCut, expectedCut)) {
+    return fail("bundle_cut", "binding_mismatch");
+  }
+  const observationCutDigest =
+    deriveProviderTargetDiscoveryObservationCutDigestV1(expectedCut);
+  if (bundle.observationCutDigest !== observationCutDigest) {
+    return fail("bundle_cut", "digest_mismatch");
+  }
+
+  const sourceObservations = projectExpectedObservationsV1(
+    matrix.envelope,
+    fixtureEnvelope,
+    runnerEnvelope,
+  );
+  const expectedObservations = arrayFlatV1(sourceObservations);
+  const observationSources = [
+    "signed_release_matrix",
+    "real_filesystem_fixture_manifest",
+    "target_discovery_runner",
+  ] as const;
+  const sourceContentDigests = [
+    matrix.envelope.contentDigest,
+    fixtureEnvelope.contentDigest,
+    runnerEnvelope.contentDigest,
+  ] as const;
+  const expectedSummaries = arrayMapV1(
+    sourceObservations,
+    (entries, index) => ({
+      observationSource: observationSources[index]!,
+      sourceArtifactContentDigest: sourceContentDigests[index]!,
+      observationCount: entries.length,
+      observationSetDigest:
+        deriveProviderTargetDiscoverySourceObservationSetDigestV1({
+          observationSource: observationSources[index]!,
+          sourceArtifactContentDigest: sourceContentDigests[index]!,
+          entries,
+        }),
+    }),
+  );
+  if (
+    !canonicalEqualV1(bundle.sourceObservationSets, expectedSummaries) ||
+    bundle.observationCount !== expectedObservations.length ||
+    !canonicalEqualV1(bundle.observations, expectedObservations)
+  ) {
+    return fail("bundle_projection", "coverage_mismatch");
+  }
+  const observationSetDigest =
+    deriveProviderTargetDiscoveryInputObservationSetDigestV1({
+      entries: expectedObservations,
+    });
+  if (bundle.observationSetDigest !== observationSetDigest) {
+    return fail("bundle_projection", "digest_mismatch");
+  }
+  const observationKeys = setFromValuesV1(
+    arrayMapV1(
+      bundle.observations,
+      (observation) => observation.observationKeyDigest,
+    ),
+  );
+  if (observationKeys.size !== bundle.observations.length) {
+    return fail("bundle_projection", "ordering_invalid");
+  }
+
+  const targetById = new CapturedMapV1<
+    string,
+    ProviderReleaseTargetUniverseTargetEntryV1
+  >();
+  const unresolved: ProviderTargetDiscoveryUnresolvedObservationV1[] = [];
+  for (let index = 0; index < expectedObservations.length; index += 1) {
+    const observation = expectedObservations[index]!;
+    if (observation.outcome.state === "resolved") {
+      const targetId = observation.outcome.target.target.targetProfileId;
+      const previous = mapGetV1(targetById, targetId);
+      if (
+        previous !== undefined &&
+        !canonicalEqualV1(previous, observation.outcome.target)
+      ) {
+        return fail("result_projection", "conflicting_resolved_targets");
+      }
+      mapSetV1(targetById, targetId, observation.outcome.target);
+    } else {
+      arrayPushV1(unresolved, {
+        observationSource: observation.observationSource,
+        sourceArtifactContentDigest: observation.sourceArtifactContentDigest,
+        sourceRecordOrdinal: observation.sourceRecordOrdinal,
+        privacySafeObservationClaimsDigest:
+          observation.privacySafeObservationClaimsDigest,
+        observationKeyDigest: observation.observationKeyDigest,
+        reason: observation.outcome.reason,
+      });
+    }
+  }
+  for (let index = 0; index < expectedObservations.length; index += 1) {
+    const observation = expectedObservations[index]!;
+    if (observation.outcome.state !== "resolved") continue;
+    if (observation.observationSource === "real_filesystem_fixture_manifest") {
+      validateTargetEntryV1(
+        observation.outcome.target,
+        taxonomy.indexes,
+        "fixture_digest",
+        "fixture_structure",
+      );
+    } else if (observation.observationSource === "target_discovery_runner") {
+      validateTargetEntryV1(
+        observation.outcome.target,
+        taxonomy.indexes,
+        "runner_digest",
+        "runner_structure",
+      );
+    }
+  }
+  const projectedTargets = arraySortV1(
+    mapValuesArrayV1(targetById),
+    (left, right) =>
+      compareUtf8V1(
+        left.target.targetProfileId,
+        right.target.targetProfileId,
+      ),
+  );
+  arraySortV1(unresolved, (left, right) => {
+    const sourceOrder = compareUtf8V1(
+      left.observationSource,
+      right.observationSource,
+    );
+    return sourceOrder !== 0
+      ? sourceOrder
+      : compareUtf8V1(left.observationKeyDigest, right.observationKeyDigest);
+  });
+  if (projectedTargets.length > 4096 || unresolved.length > 4096) {
+    return fail("result_projection", "count_mismatch");
+  }
+
+  return {
+    bundle,
+    bundleContentDigest:
+      deriveProviderTargetDiscoveryInputBundleContentDigestV1(bundle),
+    fixtureEnvelope,
+    fixturePin,
+    matrix,
+    observationCutDigest,
+    observationSetDigest,
+    projectedTargets,
+    runnerEnvelope,
+    runnerPin,
+    suite,
+    taxonomy,
+    unresolved,
+  };
+}
+
+function validateHistoricalResultSemanticCoreV1(
+  suppliedEnvelope: ProviderTargetDiscoveryResultEnvelopeV1,
+  suppliedBundleState: unknown,
+): HistoricalResultSemanticStateV1 {
+  ProviderTargetDiscoveryResultEnvelopeV1Schema.parse(suppliedEnvelope);
+  const bundleState = suppliedBundleState as HistoricalBundleSemanticStateV1;
+  const envelope = suppliedEnvelope;
+  const result = envelope.payload;
+  if (
+    bundleState?.bundle === undefined ||
+    result.targetDiscoveryInputBundle !== bundleState.bundle
+  ) {
+    return fail("result_structure", "binding_mismatch");
+  }
+  validateGenerationPredecessorV1(
+    result.discoveryGeneration,
+    result.predecessorDiscoveryContentDigest,
+    "result_structure",
+  );
+  if (
+    !canonicalEqualV1(
+      result.distributionRootBinding,
+      bundleState.taxonomy.envelope.payload.distributionRootBinding,
+    ) ||
+    !canonicalEqualV1(
+      result.activeRootMetadata,
+      bundleState.taxonomy.envelope.payload.activeRootMetadata,
+    ) ||
+    result.registryRootKeyId !==
+      bundleState.taxonomy.envelope.payload.registryRootKeyId ||
+    envelope.discoveryGeneration !== result.discoveryGeneration ||
+    !canonicalEqualV1(result.publicSupportTaxonomy, bundleState.taxonomy.pin) ||
+    !canonicalEqualV1(result.limits, bundleState.matrix.envelope.payload.limits) ||
+    result.targetDiscoveryInputBundleContentDigest !==
+      bundleState.bundleContentDigest ||
+    result.observationCutDigest !== bundleState.observationCutDigest ||
+    result.observationSetDigest !== bundleState.observationSetDigest ||
+    result.discoveryRulesetVersion !== bundleState.bundle.discoveryRulesetVersion ||
+    !canonicalEqualV1(
+      result.requiredDimensions,
+      bundleState.bundle.requiredDimensions,
+    ) ||
+    !canonicalEqualV1(
+      result.observationSources,
+      bundleState.bundle.observationSources,
+    )
+  ) {
+    return fail("result_structure", "binding_mismatch");
+  }
+  if (
+    result.targetCount !== bundleState.projectedTargets.length ||
+    result.unresolvedObservationCount !== bundleState.unresolved.length
+  ) {
+    return fail("result_projection", "count_mismatch");
+  }
+  if (
+    !canonicalEqualV1(result.targets, bundleState.projectedTargets) ||
+    !canonicalEqualV1(
+      result.unresolvedObservations,
+      bundleState.unresolved,
+    )
+  ) {
+    return fail("result_projection", "coverage_mismatch");
+  }
+  validateSortedTargetEntriesV1(
+    result.targets,
+    bundleState.taxonomy.indexes,
+    "result_projection",
+    "result_digest",
+    "result_projection",
+  );
+  if (
+    result.targetSetDigest !==
+    deriveProviderReleaseTargetEntrySetDigestV1({
+      targets: bundleState.projectedTargets,
+    })
+  ) {
+    return fail("result_digest", "digest_mismatch");
+  }
+  if (
+    envelope.contentDigest !==
+    deriveProviderTargetDiscoveryResultContentDigestV1(result)
+  ) {
+    return fail("result_envelope", "envelope_mismatch");
+  }
+  return {
+    bundle: bundleState,
+    envelope,
+    pin: ProviderTargetDiscoveryResultPinV1Schema.parse({
+      locatorProfile: PROVIDER_TARGET_DISCOVERY_RESULT_LOCATOR_PROFILE_V1,
+      discoveryGeneration: result.discoveryGeneration,
+      contentDigest: envelope.contentDigest,
+    }),
+  };
+}
+
 function deepFreezeV1<T>(value: T): T {
   if (value !== null && typeof value === "object") {
     for (const child of CapturedObjectValuesV1(value)) deepFreezeV1(child);
@@ -2025,4 +2582,17 @@ registerProviderTargetDiscoveryPointPreparedCoreInternalV1(
       createPointDiagnosticFailureFromErrorV1,
     );
   },
+);
+
+registerProviderDistributionHistoricalTaxonomySemanticCoreInternalV1(
+  validateHistoricalTaxonomySemanticCoreV1,
+);
+registerProviderDistributionHistoricalMatrixSemanticCoreInternalV1(
+  validateHistoricalMatrixSemanticCoreV1,
+);
+registerProviderDistributionHistoricalBundleSemanticCoreInternalV1(
+  validateHistoricalBundleSemanticCoreV1,
+);
+registerProviderDistributionHistoricalResultSemanticCoreInternalV1(
+  validateHistoricalResultSemanticCoreV1,
 );

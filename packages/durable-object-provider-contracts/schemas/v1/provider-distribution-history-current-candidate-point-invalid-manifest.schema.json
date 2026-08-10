@@ -1,0 +1,3671 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-distribution-history-current-candidate-point-invalid-manifest",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "profile": {
+      "type": "string",
+      "const": "provider_distribution_history_current_candidate_point_invalid_v1"
+    },
+    "fixtureAuthority": {
+      "type": "string",
+      "const": "none_rejection_only"
+    },
+    "canonicalizationProfile": {
+      "type": "string",
+      "const": "rfc8785-jcs-safe-integer-v1"
+    },
+    "verificationProfile": {
+      "type": "string",
+      "const": "ed25519-rfc8032-cofactorless-prime-subgroup-v1"
+    },
+    "goldenDependency": {
+      "type": "object",
+      "properties": {
+        "resourcePath": {
+          "type": "string",
+          "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+        },
+        "resourceByteLength": {
+          "type": "number",
+          "const": 964171
+        },
+        "resourceSha256Hex": {
+          "type": "string",
+          "const": "51841c3be2f7e785d067708d85442d7a99b3e1a3e260f7d0006674f21f6eb502"
+        },
+        "semanticContentDigest": {
+          "type": "string",
+          "const": "sha256:784c6ef5669c743dffed6ca7b0be2b386e4e768e36c9a12b31627aa474a2a4c1"
+        }
+      },
+      "required": [
+        "resourcePath",
+        "resourceByteLength",
+        "resourceSha256Hex",
+        "semanticContentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "mutationRecipeDialect": {
+      "type": "string",
+      "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+    },
+    "materializedRequestDomain": {
+      "type": "string",
+      "const": "provider-distribution-history-current-candidate-point-invalid-materialized-request-v1"
+    },
+    "historicalSignatureCaseCount": {
+      "type": "number",
+      "const": 3
+    },
+    "historicalSemanticCaseCount": {
+      "type": "number",
+      "const": 5
+    },
+    "forbiddenExtraKeyCaseCount": {
+      "type": "number",
+      "const": 3
+    },
+    "fiveChainStructuralCaseCount": {
+      "type": "number",
+      "const": 15
+    },
+    "retainedExactCoverCaseCount": {
+      "type": "number",
+      "const": 12
+    },
+    "catalogCrossPinCaseCount": {
+      "type": "number",
+      "const": 1
+    },
+    "caseCount": {
+      "type": "number",
+      "const": 39
+    },
+    "caseIds": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "string",
+          "const": "historical-bundle-signature-bitflip"
+        },
+        {
+          "type": "string",
+          "const": "historical-suite-signature-bitflip"
+        },
+        {
+          "type": "string",
+          "const": "historical-corpus-signature-bitflip"
+        },
+        {
+          "type": "string",
+          "const": "historical-semantic-suite-cases-order"
+        },
+        {
+          "type": "string",
+          "const": "historical-semantic-fixture-record-ordinal"
+        },
+        {
+          "type": "string",
+          "const": "historical-semantic-result-target-count"
+        },
+        {
+          "type": "string",
+          "const": "historical-semantic-universe-discovered-count"
+        },
+        {
+          "type": "string",
+          "const": "historical-semantic-catalog-target-order"
+        },
+        {
+          "type": "string",
+          "const": "input-forbidden-active-root"
+        },
+        {
+          "type": "string",
+          "const": "input-forbidden-current"
+        },
+        {
+          "type": "string",
+          "const": "input-forbidden-path"
+        },
+        {
+          "type": "string",
+          "const": "taxonomy-history-empty"
+        },
+        {
+          "type": "string",
+          "const": "matrix-history-empty"
+        },
+        {
+          "type": "string",
+          "const": "discovery-history-empty"
+        },
+        {
+          "type": "string",
+          "const": "universe-history-empty"
+        },
+        {
+          "type": "string",
+          "const": "catalog-history-empty"
+        },
+        {
+          "type": "string",
+          "const": "taxonomy-history-non-genesis-first"
+        },
+        {
+          "type": "string",
+          "const": "matrix-history-non-genesis-first"
+        },
+        {
+          "type": "string",
+          "const": "discovery-history-non-genesis-first"
+        },
+        {
+          "type": "string",
+          "const": "universe-history-non-genesis-first"
+        },
+        {
+          "type": "string",
+          "const": "catalog-history-non-genesis-first"
+        },
+        {
+          "type": "string",
+          "const": "taxonomy-history-genesis-predecessor"
+        },
+        {
+          "type": "string",
+          "const": "matrix-history-genesis-predecessor"
+        },
+        {
+          "type": "string",
+          "const": "discovery-history-genesis-predecessor"
+        },
+        {
+          "type": "string",
+          "const": "universe-history-genesis-predecessor"
+        },
+        {
+          "type": "string",
+          "const": "catalog-history-genesis-predecessor"
+        },
+        {
+          "type": "string",
+          "const": "retained-fixture-missing"
+        },
+        {
+          "type": "string",
+          "const": "retained-runner-missing"
+        },
+        {
+          "type": "string",
+          "const": "retained-suite-missing"
+        },
+        {
+          "type": "string",
+          "const": "retained-corpus-missing"
+        },
+        {
+          "type": "string",
+          "const": "retained-fixture-duplicate"
+        },
+        {
+          "type": "string",
+          "const": "retained-runner-duplicate"
+        },
+        {
+          "type": "string",
+          "const": "retained-suite-duplicate"
+        },
+        {
+          "type": "string",
+          "const": "retained-corpus-duplicate"
+        },
+        {
+          "type": "string",
+          "const": "retained-fixture-extra"
+        },
+        {
+          "type": "string",
+          "const": "retained-runner-extra"
+        },
+        {
+          "type": "string",
+          "const": "retained-suite-extra"
+        },
+        {
+          "type": "string",
+          "const": "retained-corpus-extra"
+        },
+        {
+          "type": "string",
+          "const": "catalog-cross-pin-universe"
+        }
+      ],
+      "minItems": 39,
+      "maxItems": 39,
+      "items": false
+    },
+    "cases": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "historical-bundle-signature-bitflip"
+            },
+            "group": {
+              "type": "string",
+              "const": "historical_signature"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "two-generation-distinct"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "current_source_closure"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "signature_invalid"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "historical-suite-signature-bitflip"
+            },
+            "group": {
+              "type": "string",
+              "const": "historical_signature"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "two-generation-distinct"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "current_source_closure"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "signature_invalid"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "historical-corpus-signature-bitflip"
+            },
+            "group": {
+              "type": "string",
+              "const": "historical_signature"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "two-generation-distinct"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "current_source_closure"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "signature_invalid"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "historical-semantic-suite-cases-order"
+            },
+            "group": {
+              "type": "string",
+              "const": "historical_semantic"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "two-generation-distinct"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "current_source_closure"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "source_invalid"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "historical-semantic-fixture-record-ordinal"
+            },
+            "group": {
+              "type": "string",
+              "const": "historical_semantic"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "two-generation-distinct"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "current_source_closure"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "source_invalid"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "historical-semantic-result-target-count"
+            },
+            "group": {
+              "type": "string",
+              "const": "historical_semantic"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "two-generation-distinct"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "target_discovery_result_history"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "source_invalid"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "historical-semantic-universe-discovered-count"
+            },
+            "group": {
+              "type": "string",
+              "const": "historical_semantic"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "two-generation-distinct"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "release_target_universe_history"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "source_invalid"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "historical-semantic-catalog-target-order"
+            },
+            "group": {
+              "type": "string",
+              "const": "historical_semantic"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "two-generation-distinct"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "provider_feasibility_support_catalog_history"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "source_invalid"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "input-forbidden-active-root"
+            },
+            "group": {
+              "type": "string",
+              "const": "forbidden_extra_key"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "input"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "schema_invalid"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "input-forbidden-current"
+            },
+            "group": {
+              "type": "string",
+              "const": "forbidden_extra_key"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "input"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "schema_invalid"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "input-forbidden-path"
+            },
+            "group": {
+              "type": "string",
+              "const": "forbidden_extra_key"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "input"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "schema_invalid"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "taxonomy-history-empty"
+            },
+            "group": {
+              "type": "string",
+              "const": "five_chain_structure"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "public_support_taxonomy_history"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "history_empty"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "matrix-history-empty"
+            },
+            "group": {
+              "type": "string",
+              "const": "five_chain_structure"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "release_matrix_history"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "history_empty"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "discovery-history-empty"
+            },
+            "group": {
+              "type": "string",
+              "const": "five_chain_structure"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "target_discovery_result_history"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "history_empty"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "universe-history-empty"
+            },
+            "group": {
+              "type": "string",
+              "const": "five_chain_structure"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "release_target_universe_history"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "history_empty"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "catalog-history-empty"
+            },
+            "group": {
+              "type": "string",
+              "const": "five_chain_structure"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "provider_feasibility_support_catalog_history"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "history_empty"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "taxonomy-history-non-genesis-first"
+            },
+            "group": {
+              "type": "string",
+              "const": "five_chain_structure"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "public_support_taxonomy_history"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "generation_not_contiguous"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "matrix-history-non-genesis-first"
+            },
+            "group": {
+              "type": "string",
+              "const": "five_chain_structure"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "release_matrix_history"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "generation_not_contiguous"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "discovery-history-non-genesis-first"
+            },
+            "group": {
+              "type": "string",
+              "const": "five_chain_structure"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "target_discovery_result_history"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "generation_not_contiguous"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "universe-history-non-genesis-first"
+            },
+            "group": {
+              "type": "string",
+              "const": "five_chain_structure"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "release_target_universe_history"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "generation_not_contiguous"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "catalog-history-non-genesis-first"
+            },
+            "group": {
+              "type": "string",
+              "const": "five_chain_structure"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "provider_feasibility_support_catalog_history"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "generation_not_contiguous"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "taxonomy-history-genesis-predecessor"
+            },
+            "group": {
+              "type": "string",
+              "const": "five_chain_structure"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "public_support_taxonomy_history"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "predecessor_digest_mismatch"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "matrix-history-genesis-predecessor"
+            },
+            "group": {
+              "type": "string",
+              "const": "five_chain_structure"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "release_matrix_history"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "predecessor_digest_mismatch"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "discovery-history-genesis-predecessor"
+            },
+            "group": {
+              "type": "string",
+              "const": "five_chain_structure"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "target_discovery_result_history"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "predecessor_digest_mismatch"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "universe-history-genesis-predecessor"
+            },
+            "group": {
+              "type": "string",
+              "const": "five_chain_structure"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "release_target_universe_history"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "predecessor_digest_mismatch"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "catalog-history-genesis-predecessor"
+            },
+            "group": {
+              "type": "string",
+              "const": "five_chain_structure"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "provider_feasibility_support_catalog_history"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "predecessor_digest_mismatch"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "retained-fixture-missing"
+            },
+            "group": {
+              "type": "string",
+              "const": "retained_exact_cover"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "retained_history_accounting"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "source_exact_cover_mismatch"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "retained-runner-missing"
+            },
+            "group": {
+              "type": "string",
+              "const": "retained_exact_cover"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "retained_history_accounting"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "source_exact_cover_mismatch"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "retained-suite-missing"
+            },
+            "group": {
+              "type": "string",
+              "const": "retained_exact_cover"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "retained_history_accounting"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "source_exact_cover_mismatch"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "retained-corpus-missing"
+            },
+            "group": {
+              "type": "string",
+              "const": "retained_exact_cover"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "retained_history_accounting"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "source_exact_cover_mismatch"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "retained-fixture-duplicate"
+            },
+            "group": {
+              "type": "string",
+              "const": "retained_exact_cover"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "retained_history_accounting"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "source_exact_cover_mismatch"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "retained-runner-duplicate"
+            },
+            "group": {
+              "type": "string",
+              "const": "retained_exact_cover"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "retained_history_accounting"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "source_exact_cover_mismatch"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "retained-suite-duplicate"
+            },
+            "group": {
+              "type": "string",
+              "const": "retained_exact_cover"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "retained_history_accounting"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "source_exact_cover_mismatch"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "retained-corpus-duplicate"
+            },
+            "group": {
+              "type": "string",
+              "const": "retained_exact_cover"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "retained_history_accounting"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "source_exact_cover_mismatch"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "retained-fixture-extra"
+            },
+            "group": {
+              "type": "string",
+              "const": "retained_exact_cover"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "retained_history_accounting"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "source_exact_cover_mismatch"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "retained-runner-extra"
+            },
+            "group": {
+              "type": "string",
+              "const": "retained_exact_cover"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "retained_history_accounting"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "source_exact_cover_mismatch"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "retained-suite-extra"
+            },
+            "group": {
+              "type": "string",
+              "const": "retained_exact_cover"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "retained_history_accounting"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "source_exact_cover_mismatch"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "retained-corpus-extra"
+            },
+            "group": {
+              "type": "string",
+              "const": "retained_exact_cover"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "retained_history_accounting"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "source_exact_cover_mismatch"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "const": "catalog-cross-pin-universe"
+            },
+            "group": {
+              "type": "string",
+              "const": "catalog_cross_pin"
+            },
+            "mutation": {
+              "type": "object",
+              "properties": {
+                "dialect": {
+                  "type": "string",
+                  "const": "provider_distribution_history_current_candidate_point_invalid_recipe_v1"
+                },
+                "goldenResourcePath": {
+                  "type": "string",
+                  "const": "fixtures/v1/golden/provider-distribution-history-current-candidate-point-v1.json"
+                },
+                "baseVectorId": {
+                  "type": "string",
+                  "const": "genesis"
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              },
+              "required": [
+                "dialect",
+                "goldenResourcePath",
+                "baseVectorId",
+                "operations"
+              ],
+              "additionalProperties": false
+            },
+            "expected": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "const": "history_pin_closure"
+                },
+                "reason": {
+                  "type": "string",
+                  "const": "pin_mismatch"
+                },
+                "publicFailure": {
+                  "$ref": "#/$defs/__schema3"
+                },
+                "cryptoCounts": {
+                  "$ref": "#/$defs/__schema4"
+                },
+                "materializedRequestSemanticDigest": {
+                  "$ref": "#/$defs/__schema6"
+                }
+              },
+              "required": [
+                "stage",
+                "reason",
+                "publicFailure",
+                "cryptoCounts",
+                "materializedRequestSemanticDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "caseId",
+            "group",
+            "mutation",
+            "expected"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "minItems": 39,
+      "maxItems": 39,
+      "items": false
+    },
+    "semanticDomain": {
+      "type": "string",
+      "const": "provider-distribution-history-current-candidate-point-invalid-manifest-v1"
+    },
+    "semanticContentDigest": {
+      "type": "string",
+      "const": "sha256:94117ec01456a28160c987b9df1b8403369e1ddd209a799df22aec2df340d3a4"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "profile",
+    "fixtureAuthority",
+    "canonicalizationProfile",
+    "verificationProfile",
+    "goldenDependency",
+    "mutationRecipeDialect",
+    "materializedRequestDomain",
+    "historicalSignatureCaseCount",
+    "historicalSemanticCaseCount",
+    "forbiddenExtraKeyCaseCount",
+    "fiveChainStructuralCaseCount",
+    "retainedExactCoverCaseCount",
+    "catalogCrossPinCaseCount",
+    "caseCount",
+    "caseIds",
+    "cases",
+    "semanticDomain",
+    "semanticContentDigest"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "__schema0": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "replace"
+            },
+            "field": {
+              "type": "string",
+              "enum": [
+                "bootstrapTrustBundle",
+                "distributionRootBinding",
+                "installationIdentityGenerationId",
+                "providerFeasibilitySupportCandidateArtifacts",
+                "providerFeasibilitySupportCatalogHistory",
+                "publicSupportTaxonomyHistory",
+                "realFilesystemFixtureCorpusManifests",
+                "realFilesystemSuiteManifests",
+                "registryManifestHistory",
+                "releaseMatrixHistory",
+                "releaseTargetUniverseHistory",
+                "rootMetadataHistory",
+                "targetDiscoveryFixtureManifests",
+                "targetDiscoveryResultHistory",
+                "targetDiscoveryRunnerRuns"
+              ]
+            },
+            "value": {
+              "$ref": "#/$defs/__schema1"
+            }
+          },
+          "required": [
+            "kind",
+            "field",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "add"
+            },
+            "field": {
+              "type": "string",
+              "enum": [
+                "activeRoot",
+                "current",
+                "path"
+              ]
+            },
+            "value": {
+              "$ref": "#/$defs/__schema2"
+            }
+          },
+          "required": [
+            "kind",
+            "field",
+            "value"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "__schema1": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema1"
+          }
+        },
+        {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema1"
+          }
+        }
+      ]
+    },
+    "__schema2": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema2"
+          }
+        },
+        {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema2"
+          }
+        }
+      ]
+    },
+    "__schema3": {
+      "type": "object",
+      "properties": {
+        "errorName": {
+          "type": "string",
+          "const": "ProviderDistributionHistoryCurrentCandidatePointValidationError"
+        },
+        "code": {
+          "type": "string",
+          "const": "provider_unavailable"
+        },
+        "reason": {
+          "type": "string",
+          "const": "attestation_invalid"
+        }
+      },
+      "required": [
+        "errorName",
+        "code",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "__schema4": {
+      "type": "object",
+      "properties": {
+        "pointAdmissionCount": {
+          "$ref": "#/$defs/__schema5"
+        },
+        "signatureVerificationCount": {
+          "$ref": "#/$defs/__schema5"
+        }
+      },
+      "required": [
+        "pointAdmissionCount",
+        "signatureVerificationCount"
+      ],
+      "additionalProperties": false
+    },
+    "__schema5": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema6": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  }
+}

@@ -113,6 +113,7 @@ describe("root quality gate", () => {
       "verify:provider-feasibility-evidence-point",
       "verify:provider-registry-evidence-binding-point",
       "verify:provider-feasibility-support-catalog-point",
+      "verify:provider-distribution-history-current-candidate-point",
     ];
 
     expect(providerScripts.prepack).toBe(

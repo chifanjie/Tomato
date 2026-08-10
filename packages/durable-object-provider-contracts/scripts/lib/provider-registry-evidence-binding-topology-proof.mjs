@@ -541,14 +541,25 @@ export function assertGeneratedSchemaInventoryFreshV1(
   sourceGeneratedSchemas,
   distGeneratedSchemas,
 ) {
-  if (
-    canonicalJsonV1(sourceGeneratedSchemas) !==
-    canonicalJsonV1(distGeneratedSchemas)
-  ) {
-    fail(
-      "stale dist/json-schema.js: emitted source schema inventory differs from dist",
-    );
+  const sourceSchemaNames = Object.keys(sourceGeneratedSchemas).sort();
+  const distSchemaNames = Object.keys(distGeneratedSchemas).sort();
+  if (canonicalJsonV1(sourceSchemaNames) === canonicalJsonV1(distSchemaNames)) {
+    for (const schemaName of sourceSchemaNames) {
+      if (
+        canonicalJsonV1(sourceGeneratedSchemas[schemaName]) ===
+        canonicalJsonV1(distGeneratedSchemas[schemaName])
+      ) {
+        continue;
+      }
+      fail(
+        "stale dist/json-schema.js: emitted source schema inventory differs from dist",
+      );
+    }
+    return;
   }
+  fail(
+    "stale dist/json-schema.js: emitted source schema inventory differs from dist",
+  );
 }
 
 function packageRelativePathV1(packageRoot, fileName) {

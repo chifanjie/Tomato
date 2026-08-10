@@ -1,0 +1,18 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-distribution-history-current-candidate-point-invalid-stage",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "input",
+    "registry_history_closure",
+    "public_support_taxonomy_history",
+    "release_matrix_history",
+    "target_discovery_result_history",
+    "release_target_universe_history",
+    "provider_feasibility_support_catalog_history",
+    "history_pin_closure",
+    "retained_history_accounting",
+    "current_source_closure",
+    "catalog_point_closure"
+  ]
+}

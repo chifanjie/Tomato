@@ -296,6 +296,8 @@ export * from "./provider-target-discovery-point.js";
 export * from "./provider-target-discovery-point-fixtures.js";
 export * from "./provider-release-target-universe-point.js";
 export * from "./provider-release-target-universe-point-fixtures.js";
+export * from "./provider-distribution-history-current-candidate-point.js";
+export * from "./provider-distribution-history-current-candidate-point-fixtures.js";
 export {
   ProviderRegistryRootCrossSignatureWrapperV1Schema,
   ProviderRegistryRootHistoryValidationError,

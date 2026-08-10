@@ -127,6 +127,9 @@ export function buildGoldenTargetDiscoveryPointFixture(sourceGolden, options = {
   const activeRoot = jsonClone(sourceGolden.activeRoot);
   const rootPrivateKey = privateKeyFromSeedHex(sourceGolden.deterministicRootSeedHex);
   const rootKeyId = activeRoot.rootKeyId;
+  const taxonomyGeneration = options.taxonomyGeneration ?? 1;
+  const releaseMatrixGeneration = options.releaseMatrixGeneration ?? 1;
+  const discoveryGeneration = options.discoveryGeneration ?? 1;
 
   const osReleaseFamilies = [
     {
@@ -178,7 +181,13 @@ export function buildGoldenTargetDiscoveryPointFixture(sourceGolden, options = {
     distributionRootBinding,
     activeRootMetadata,
     registryRootKeyId: rootKeyId,
-    taxonomyGeneration: 1,
+    taxonomyGeneration,
+    ...(taxonomyGeneration === 1
+      ? {}
+      : {
+          predecessorTaxonomyContentDigest:
+            options.predecessorTaxonomyContentDigest,
+        }),
     osReleaseFamilies,
     filesystemProfiles,
     derivationPolicy: {
@@ -201,13 +210,13 @@ export function buildGoldenTargetDiscoveryPointFixture(sourceGolden, options = {
   const publicSupportTaxonomy = ProviderPublicSupportTaxonomyEnvelopeV1Schema.parse({
     schemaVersion: 1,
     recordType: "provider_public_support_taxonomy",
-    taxonomyGeneration: 1,
+    taxonomyGeneration,
     contentDigest: deriveProviderPublicSupportTaxonomyContentDigestV1(taxonomyPayload),
     payload: taxonomyPayload,
   });
   const taxonomyPin = {
     locatorProfile: "distribution_provider_public_support_taxonomy_v1",
-    taxonomyGeneration: 1,
+    taxonomyGeneration,
     contentDigest: publicSupportTaxonomy.contentDigest,
   };
 
@@ -247,7 +256,13 @@ export function buildGoldenTargetDiscoveryPointFixture(sourceGolden, options = {
     distributionRootBinding,
     activeRootMetadata,
     registryRootKeyId: rootKeyId,
-    releaseMatrixGeneration: 1,
+    releaseMatrixGeneration,
+    ...(releaseMatrixGeneration === 1
+      ? {}
+      : {
+          predecessorReleaseMatrixContentDigest:
+            options.predecessorReleaseMatrixContentDigest,
+        }),
     publicSupportTaxonomy: taxonomyPin,
     limits,
     targetCount: targets.length,
@@ -267,13 +282,13 @@ export function buildGoldenTargetDiscoveryPointFixture(sourceGolden, options = {
   const releaseMatrix = ProviderReleaseMatrixEnvelopeV1Schema.parse({
     schemaVersion: 1,
     recordType: "provider_release_matrix",
-    releaseMatrixGeneration: 1,
+    releaseMatrixGeneration,
     contentDigest: deriveProviderReleaseMatrixContentDigestV1(matrixPayload),
     payload: matrixPayload,
   });
   const matrixPin = {
     locatorProfile: "distribution_provider_release_matrix_v1",
-    releaseMatrixGeneration: 1,
+    releaseMatrixGeneration,
     contentDigest: releaseMatrix.contentDigest,
   };
 
@@ -463,7 +478,13 @@ export function buildGoldenTargetDiscoveryPointFixture(sourceGolden, options = {
     distributionRootBinding,
     activeRootMetadata,
     registryRootKeyId: rootKeyId,
-    discoveryGeneration: 1,
+    discoveryGeneration,
+    ...(discoveryGeneration === 1
+      ? {}
+      : {
+          predecessorDiscoveryContentDigest:
+            options.predecessorDiscoveryContentDigest,
+        }),
     publicSupportTaxonomy: taxonomyPin,
     limits,
     targetDiscoveryInputBundleContentDigest: bundleContentDigest,
@@ -492,7 +513,7 @@ export function buildGoldenTargetDiscoveryPointFixture(sourceGolden, options = {
   const targetDiscoveryResult = ProviderTargetDiscoveryResultEnvelopeV1Schema.parse({
     schemaVersion: 1,
     recordType: "provider_target_discovery_result",
-    discoveryGeneration: 1,
+    discoveryGeneration,
     contentDigest: deriveProviderTargetDiscoveryResultContentDigestV1(resultPayload),
     payload: resultPayload,
   });

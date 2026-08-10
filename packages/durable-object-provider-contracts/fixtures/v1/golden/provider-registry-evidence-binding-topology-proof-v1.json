@@ -76,10 +76,10 @@
     "pointAdmissionContractSemanticDigest": "sha256:04214a7fc05d2d84af781ca36db649b78576b545aac88701c2f3a324d8f07cce",
     "pointImplementationRawSha256": "sha256:aa01b9b035646b66d95cebe47a8f141d56d457d521dc2ac1c990741b4e8b6803",
     "rawAdmissionImplementationSha256": "sha256:29654ab2688bf11de0c4e8f786e5618afc4f1f09fc5334428b653357f165aa3d",
-    "jsonSchemaGeneratorSourceRawSha256": "sha256:0c6896b2d97d3d007567b18a2f31d4365549b64e56bfcf7b96424b9cc5f30b91",
+    "jsonSchemaGeneratorSourceRawSha256": "sha256:15f25612bd8aec6d6eeaab0d8e3751864017551d21f5c5976c9b400796157588",
     "compatibleBaseResourcePath": "fixtures/v1/golden/provider-registry-evidence-binding-point-v1.json",
     "compatibleBaseResourceRawSha256": "sha256:aae31cd1e79f928a1c3035cc8d9f0c2556a91466629605bf733607b69ff01fc3",
-    "productionParserBindingSemanticDigest": "sha256:eb4c6a3f94ddef876adb002b1e4f5e4e43556015a28b5fa24374b360ec532920",
+    "productionParserBindingSemanticDigest": "sha256:d68876b44714ca179777ac456b589ac31e99e9e36249c9eda4a251299fd27124",
     "productionParserRuntimeTraceProfile": "fresh_emit_exact_ast_callsite_trace_v1",
     "productionParserRuntimeTraceInstrumentation": "typescript_before_transform_exact_ast_callsite_nonce_global_hook_v1",
     "productionParserRuntimeTraceEntryExport": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
@@ -372,7 +372,7 @@
       "zodSchemaSymbol": "ProviderRealFilesystemFixtureCorpusManifestEnvelopeV1Schema",
       "parserMode": "prepared_delegated_parse",
       "parserSourcePath": "src/provider-target-discovery-point.ts",
-      "parserSourceRawSha256": "sha256:c27c585950d2fe667df0fbba2ffa8611488c33c639a0f1abe9a8d5d526c742aa",
+      "parserSourceRawSha256": "sha256:9f2ed5fa0a221efee28b51a6a54bcfffa10849c701d61fc87a3850899e8dc0da",
       "parserAst": {
         "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
         "callsiteFunction": "validatePointClosureInternalV1",
@@ -383,7 +383,7 @@
         "runtimeMethod": "parse",
         "runtimeSchemaExportResolved": true,
         "astReachable": true,
-        "astCallsiteLine": 1540,
+        "astCallsiteLine": 2097,
         "astCallsiteSemanticDigest": "sha256:2ab89c08c01af01f0c8309dcbf1d39aa062c954ee6d188e04cf1d13ea77a70a3",
         "astCallChain": [
           "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
@@ -524,7 +524,7 @@
       "zodSchemaSymbol": "ProviderPublicSupportTaxonomyEnvelopeV1Schema",
       "parserMode": "prepared_delegated_schema_table_parse",
       "parserSourcePath": "src/provider-target-discovery-point.ts",
-      "parserSourceRawSha256": "sha256:c27c585950d2fe667df0fbba2ffa8611488c33c639a0f1abe9a8d5d526c742aa",
+      "parserSourceRawSha256": "sha256:9f2ed5fa0a221efee28b51a6a54bcfffa10849c701d61fc87a3850899e8dc0da",
       "parserAst": {
         "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
         "callsiteFunction": "validatePointClosureInternalV1",
@@ -535,7 +535,7 @@
         "runtimeMethod": "parse",
         "runtimeSchemaExportResolved": true,
         "astReachable": true,
-        "astCallsiteLine": 1546,
+        "astCallsiteLine": 2103,
         "astCallsiteSemanticDigest": "sha256:20ae51a2e7ee4331abc20ccb94e2b6a67e94dc126358b93cf024888f8f85f465",
         "astCallChain": [
           "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
@@ -694,7 +694,7 @@
       "zodSchemaSymbol": "ProviderRegistryManifestEnvelopeV1Schema",
       "parserMode": "prepared_history_safe_parse_each_envelope",
       "parserSourcePath": "src/provider-registry-manifest-history.ts",
-      "parserSourceRawSha256": "sha256:a1d5cee5254e6b9f74faf345e0893c2e21d9bfa5d70dc24e161308384241086c",
+      "parserSourceRawSha256": "sha256:e0e71bf74edeea1d185c5b0a83005986bb4aebffc6a3d6f97526f3e61c8091cd",
       "parserAst": {
         "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
         "callsiteFunction": "validatePreparedInternalV1",
@@ -705,7 +705,7 @@
         "runtimeMethod": "safeParse",
         "runtimeSchemaExportResolved": true,
         "astReachable": true,
-        "astCallsiteLine": 2361,
+        "astCallsiteLine": 2364,
         "astCallsiteSemanticDigest": "sha256:7a6e668845c0ff04d2a59928d49f3f2602d7192bece82110c35e9926a798f637",
         "astCallChain": [
           "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
@@ -732,7 +732,7 @@
       "zodSchemaSymbol": "ProviderReleaseMatrixEnvelopeV1Schema",
       "parserMode": "prepared_delegated_schema_table_parse",
       "parserSourcePath": "src/provider-target-discovery-point.ts",
-      "parserSourceRawSha256": "sha256:c27c585950d2fe667df0fbba2ffa8611488c33c639a0f1abe9a8d5d526c742aa",
+      "parserSourceRawSha256": "sha256:9f2ed5fa0a221efee28b51a6a54bcfffa10849c701d61fc87a3850899e8dc0da",
       "parserAst": {
         "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
         "callsiteFunction": "validatePointClosureInternalV1",
@@ -743,7 +743,7 @@
         "runtimeMethod": "parse",
         "runtimeSchemaExportResolved": true,
         "astReachable": true,
-        "astCallsiteLine": 1547,
+        "astCallsiteLine": 2104,
         "astCallsiteSemanticDigest": "sha256:d1976f2bf6019af11f98ffcd37007bf7c8bac63c8b0955155a58fe4d1ae6db82",
         "astCallChain": [
           "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
@@ -895,7 +895,7 @@
       "zodSchemaSymbol": "ProviderRealFilesystemSuiteManifestEnvelopeV1Schema",
       "parserMode": "prepared_delegated_parse",
       "parserSourcePath": "src/provider-target-discovery-point.ts",
-      "parserSourceRawSha256": "sha256:c27c585950d2fe667df0fbba2ffa8611488c33c639a0f1abe9a8d5d526c742aa",
+      "parserSourceRawSha256": "sha256:9f2ed5fa0a221efee28b51a6a54bcfffa10849c701d61fc87a3850899e8dc0da",
       "parserAst": {
         "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
         "callsiteFunction": "validatePointClosureInternalV1",
@@ -906,7 +906,7 @@
         "runtimeMethod": "parse",
         "runtimeSchemaExportResolved": true,
         "astReachable": true,
-        "astCallsiteLine": 1541,
+        "astCallsiteLine": 2098,
         "astCallsiteSemanticDigest": "sha256:f5e256c1966763157d55d54eaba09f95a554b6d3930b8134aa0a032acd992619",
         "astCallChain": [
           "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
@@ -939,7 +939,7 @@
       "zodSchemaSymbol": "ProviderTargetDiscoveryFixtureManifestEnvelopeV1Schema",
       "parserMode": "prepared_delegated_schema_table_parse",
       "parserSourcePath": "src/provider-target-discovery-point.ts",
-      "parserSourceRawSha256": "sha256:c27c585950d2fe667df0fbba2ffa8611488c33c639a0f1abe9a8d5d526c742aa",
+      "parserSourceRawSha256": "sha256:9f2ed5fa0a221efee28b51a6a54bcfffa10849c701d61fc87a3850899e8dc0da",
       "parserAst": {
         "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
         "callsiteFunction": "validatePointClosureInternalV1",
@@ -950,7 +950,7 @@
         "runtimeMethod": "parse",
         "runtimeSchemaExportResolved": true,
         "astReachable": true,
-        "astCallsiteLine": 1548,
+        "astCallsiteLine": 2105,
         "astCallsiteSemanticDigest": "sha256:49eb563d897ae5ab23b8f078e63321a06323598457418093c31784baf576b01e",
         "astCallChain": [
           "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
@@ -983,7 +983,7 @@
       "zodSchemaSymbol": "ProviderTargetDiscoveryResultEnvelopeV1Schema",
       "parserMode": "prepared_delegated_schema_table_parse",
       "parserSourcePath": "src/provider-target-discovery-point.ts",
-      "parserSourceRawSha256": "sha256:c27c585950d2fe667df0fbba2ffa8611488c33c639a0f1abe9a8d5d526c742aa",
+      "parserSourceRawSha256": "sha256:9f2ed5fa0a221efee28b51a6a54bcfffa10849c701d61fc87a3850899e8dc0da",
       "parserAst": {
         "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
         "callsiteFunction": "validatePointClosureInternalV1",
@@ -994,7 +994,7 @@
         "runtimeMethod": "parse",
         "runtimeSchemaExportResolved": true,
         "astReachable": true,
-        "astCallsiteLine": 1550,
+        "astCallsiteLine": 2107,
         "astCallsiteSemanticDigest": "sha256:8fe719da055f96b3f854f1ecbdc307c3009a0aaf30c636fb19f9d17075179898",
         "astCallChain": [
           "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
@@ -1027,7 +1027,7 @@
       "zodSchemaSymbol": "ProviderTargetDiscoveryRunnerRunEnvelopeV1Schema",
       "parserMode": "prepared_delegated_schema_table_parse",
       "parserSourcePath": "src/provider-target-discovery-point.ts",
-      "parserSourceRawSha256": "sha256:c27c585950d2fe667df0fbba2ffa8611488c33c639a0f1abe9a8d5d526c742aa",
+      "parserSourceRawSha256": "sha256:9f2ed5fa0a221efee28b51a6a54bcfffa10849c701d61fc87a3850899e8dc0da",
       "parserAst": {
         "exportedEntry": "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
         "callsiteFunction": "validatePointClosureInternalV1",
@@ -1038,7 +1038,7 @@
         "runtimeMethod": "parse",
         "runtimeSchemaExportResolved": true,
         "astReachable": true,
-        "astCallsiteLine": 1549,
+        "astCallsiteLine": 2106,
         "astCallsiteSemanticDigest": "sha256:05bb62461830672af6b8bd423cccf93b725aa213d9c58e1eaeda11de0ed7f534",
         "astCallChain": [
           "src/provider-registry-evidence-binding-point.ts#validateProviderRegistryEvidenceBindingPointClosureV1",
@@ -2325,5 +2325,5 @@
     "adoptedFailures": []
   },
   "semanticDomain": "provider-registry-evidence-binding-topology-proof-v1",
-  "aggregateSemanticDigest": "sha256:1d1008584b2ccd060c9248d4af15767ee099faa125bf324995d3d947bcf0ef53"
+  "aggregateSemanticDigest": "sha256:7da5f5d384eded1bb875c528d287b183c1559992c39e4c351967bd15b8c94499"
 }

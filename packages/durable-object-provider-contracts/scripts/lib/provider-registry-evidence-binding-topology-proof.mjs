@@ -1447,18 +1447,28 @@ function collectProductionParserAstBindingsInternalV1({
   });
 }
 
-export function assertProductionParserAstBindingsV1({
+function assertProductionParserAstBindingsFromProgramV1({
   packageRoot,
-  sourceOverrides = {},
-} = {}) {
-  if (typeof packageRoot !== "string") fail("packageRoot is required for parser AST proof");
-  const program = createFreshTypeScriptProgramV1(packageRoot, sourceOverrides);
+  program,
+}) {
   return collectProductionParserAstBindingsInternalV1({
     packageRoot,
     program,
     requireLexicallyReachable: true,
     rejectOptionalChain: true,
   }).map(({ publicRow }) => publicRow);
+}
+
+export function assertProductionParserAstBindingsV1({
+  packageRoot,
+  sourceOverrides = {},
+} = {}) {
+  if (typeof packageRoot !== "string") fail("packageRoot is required for parser AST proof");
+  const program = createFreshTypeScriptProgramV1(packageRoot, sourceOverrides);
+  return assertProductionParserAstBindingsFromProgramV1({
+    packageRoot,
+    program,
+  });
 }
 
 function runtimeModulePathForSourceV1(runtimeModuleRoot, sourcePath) {
@@ -2698,12 +2708,10 @@ function directCallNameV1(call) {
   return undefined;
 }
 
-export function assertRawAdmissionAccountingAstV1({
+function assertRawAdmissionAccountingAstFromProgramV1({
   packageRoot,
-  sourceOverrides = {},
-} = {}) {
-  if (typeof packageRoot !== "string") fail("packageRoot is required for accounting AST proof");
-  const program = createFreshTypeScriptProgramV1(packageRoot, sourceOverrides);
+  program,
+}) {
   if (program.getSyntacticDiagnostics().length !== 0) {
     fail("mutated accounting source is not syntactically valid TypeScript");
   }
@@ -2857,6 +2865,18 @@ export function assertRawAdmissionAccountingAstV1({
     relevantFunctionCount: functionRecords.length,
     controlFlowAstSemanticDigest: semanticDigest,
   };
+}
+
+export function assertRawAdmissionAccountingAstV1({
+  packageRoot,
+  sourceOverrides = {},
+} = {}) {
+  if (typeof packageRoot !== "string") fail("packageRoot is required for accounting AST proof");
+  const program = createFreshTypeScriptProgramV1(packageRoot, sourceOverrides);
+  return assertRawAdmissionAccountingAstFromProgramV1({
+    packageRoot,
+    program,
+  });
 }
 
 function runtimeTopologyRecordV1(value) {
@@ -5541,14 +5561,22 @@ export async function generateProviderRegistryEvidenceBindingTopologyProofV1({
     }),
   );
   const parserSources = Object.fromEntries(parserSourceEntries);
-  const parserAstBindings = assertProductionParserAstBindingsV1({
-    packageRoot,
-    sourceOverrides,
-  });
-  const accountingAst = assertRawAdmissionAccountingAstV1({
-    packageRoot,
-    sourceOverrides,
-  });
+  const { parserAstBindings, accountingAst } = (() => {
+    const program = createFreshTypeScriptProgramV1(
+      packageRoot,
+      sourceOverrides,
+    );
+    return {
+      parserAstBindings: assertProductionParserAstBindingsFromProgramV1({
+        packageRoot,
+        program,
+      }),
+      accountingAst: assertRawAdmissionAccountingAstFromProgramV1({
+        packageRoot,
+        program,
+      }),
+    };
+  })();
   const parserRuntimeTrace =
     precomputedParserRuntimeTraceState?.parserRuntimeTrace ??
     (await traceProductionParserBindingsV1({

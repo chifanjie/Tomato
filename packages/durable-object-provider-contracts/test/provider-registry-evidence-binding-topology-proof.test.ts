@@ -665,62 +665,71 @@ describe("provider Registry evidence-binding topology proof", () => {
     }, 30_000);
   });
 
-  it("keeps dynamic conditional aliases while excluding constant-dead registration bridges", () => {
-    const sourcePath =
-      "src/provider-runtime-attestation-point-internal.ts";
-    const source = readFileSync(resolve(packageRoot, sourcePath), "utf8");
-    const bridgeCall =
-      "    diagnostic = await preparedRuntimeCoreV1(input, context);";
-    expect(source).toContain(bridgeCall);
-    const withConditionalAlias = (condition: string): string =>
-      source.replace(
-        bridgeCall,
-        [
-          "    const observedPreparedCoreV1 = () => {",
-          "      throw new CapturedTypeErrorV1(\"observed-only core\");",
-          "    };",
-          `    const selectedPreparedCoreV1 = ${condition}`,
-          "      ? observedPreparedCoreV1",
-          "      : preparedRuntimeCoreV1;",
-          "    diagnostic = await selectedPreparedCoreV1(input, context);",
-        ].join("\n"),
-      );
-
-    expect(
-      assertProductionParserAstBindingsV1({
-        packageRoot,
-        sourceOverrides: {
-          [sourcePath]: withConditionalAlias("Boolean(input)"),
-        },
-      }),
-    ).toHaveLength(21);
-    expect(
-      assertProductionParserAstBindingsV1({
-        packageRoot,
-        sourceOverrides: { [sourcePath]: withConditionalAlias("false") },
-      }),
-    ).toHaveLength(21);
-    expect(() =>
-      assertProductionParserAstBindingsV1({
-        packageRoot,
-        sourceOverrides: { [sourcePath]: withConditionalAlias("true") },
-      }),
-    ).toThrow(/unreachable from the exported entry/u);
-
-    const deadBridge = source.replace(
-      bridgeCall,
+  const conditionalAliasSourcePath =
+    "src/provider-runtime-attestation-point-internal.ts";
+  const conditionalAliasSource = readFileSync(
+    resolve(packageRoot, conditionalAliasSourcePath),
+    "utf8",
+  );
+  const conditionalAliasBridgeCall =
+    "    diagnostic = await preparedRuntimeCoreV1(input, context);";
+  const withConditionalAlias = (condition: string): string =>
+    conditionalAliasSource.replace(
+      conditionalAliasBridgeCall,
       [
-        "    0 && preparedRuntimeCoreV1(input, context);",
-        "    throw new CapturedTypeErrorV1(\"dead prepared bridge\");",
+        "    const observedPreparedCoreV1 = () => {",
+        "      throw new CapturedTypeErrorV1(\"observed-only core\");",
+        "    };",
+        `    const selectedPreparedCoreV1 = ${condition}`,
+        "      ? observedPreparedCoreV1",
+        "      : preparedRuntimeCoreV1;",
+        "    diagnostic = await selectedPreparedCoreV1(input, context);",
       ].join("\n"),
     );
-    expect(() =>
-      assertProductionParserAstBindingsV1({
-        packageRoot,
-        sourceOverrides: { [sourcePath]: deadBridge },
-      }),
-    ).toThrow(/unreachable from the exported entry/u);
-  }, 30_000);
+  const deadConditionalAliasBridge = conditionalAliasSource.replace(
+    conditionalAliasBridgeCall,
+    [
+      "    0 && preparedRuntimeCoreV1(input, context);",
+      "    throw new CapturedTypeErrorV1(\"dead prepared bridge\");",
+    ].join("\n"),
+  );
+
+  it.each([
+    [
+      "keeps a dynamic conditional alias",
+      withConditionalAlias("Boolean(input)"),
+      false,
+    ],
+    ["keeps a false constant alias", withConditionalAlias("false"), false],
+    [
+      "rejects a true constant observed alias",
+      withConditionalAlias("true"),
+      true,
+    ],
+    [
+      "rejects a constant-dead registration bridge",
+      deadConditionalAliasBridge,
+      true,
+    ],
+  ] as const)(
+    "%s",
+    (_label, sourceOverride, rejects) => {
+      expect(conditionalAliasSource).toContain(conditionalAliasBridgeCall);
+      const assertBindings = (): unknown =>
+        assertProductionParserAstBindingsV1({
+          packageRoot,
+          sourceOverrides: {
+            [conditionalAliasSourcePath]: sourceOverride,
+          },
+        });
+      if (rejects) {
+        expect(assertBindings).toThrow(/unreachable from the exported entry/u);
+        return;
+      }
+      expect(assertBindings()).toHaveLength(21);
+    },
+    30_000,
+  );
 
   describe("exact runtime callsite bypasses", () => {
     const compatibleBaseBytes = readFileSync(
@@ -1073,7 +1082,9 @@ describe("provider Registry evidence-binding topology proof", () => {
       expect(row.observedWorkDelta).toBe(row.expectedWorkDelta);
       expect(row.exact).toBe(true);
     }
+  }, 30_000);
 
+  it("rejects allocation-ledger drift in topology generation", async () => {
     const sourcePath = "src/provider-point-raw-admission-internal.ts";
     const source = readFileSync(resolve(packageRoot, sourcePath), "utf8");
     const charge =

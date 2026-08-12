@@ -1021,12 +1021,14 @@ describe("provider contract JSON Schema distribution", () => {
       "provider-strong-ready-acceptance-state-unsigned-candidate",
       "provider-strong-ready-accepted-configuration-candidate",
       "provider-strong-ready-bootstrap-or-steady-activation",
+      "provider-trusted-local-physical-target-selection-candidate-invalid-reason",
+      "provider-trusted-local-physical-target-selection-candidate-invalid-stage",
     ] as const;
     for (const name of requiredNames) {
       expect(generated, name).toHaveProperty(name);
       expectEveryJsonSchemaObjectClosed(generated[name], name);
     }
-    expect(Object.keys(generated)).toHaveLength(311);
+    expect(Object.keys(generated)).toHaveLength(313);
 
     for (const name of [
       "store-durable-object-provider-runtime-attestation-signature-wrapper",

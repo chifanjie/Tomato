@@ -312,6 +312,10 @@ import {
   ProviderStrongReadyBootstrapOrSteadyActivationV1Schema,
 } from "./provider-strong-ready-acceptance-candidate.js";
 import {
+  ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidReasonV1Schema,
+  ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidStageV1Schema,
+} from "./provider-trusted-local-physical-target-selection-candidate.js";
+import {
   ProviderFeasibilityApprovalKeysV1Schema,
   ProviderFeasibilityApproverKeyIdFieldsV1Schema,
   ProviderFeasibilityApproverPublicKeySignatureWrapperV1Schema,
@@ -992,6 +996,10 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 =
     ProviderStrongReadyAcceptanceCandidateInvalidStageV1Schema,
   "provider-strong-ready-acceptance-candidate-invalid-reason":
     ProviderStrongReadyAcceptanceCandidateInvalidReasonV1Schema,
+  "provider-trusted-local-physical-target-selection-candidate-invalid-stage":
+    ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidStageV1Schema,
+  "provider-trusted-local-physical-target-selection-candidate-invalid-reason":
+    ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidReasonV1Schema,
   });
 
 export type ProviderContractJsonSchemaNameV1 =

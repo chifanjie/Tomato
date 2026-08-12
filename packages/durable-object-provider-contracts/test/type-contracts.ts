@@ -17,6 +17,9 @@ import type {
   ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1,
   CreateProviderStrongReadyAcceptanceCandidateV1Input,
   ValidateProviderStrongReadyAcceptanceCandidateV1Input,
+  ProviderTrustedLocalPhysicalTargetObservationCapabilityV1,
+  ProviderTrustedLocalPhysicalTargetSelectionCandidateValidationV1,
+  SelectProviderTrustedLocalPhysicalTargetCandidateV1Input,
   ProviderMigrationIdV1,
   ProviderRegistryManifestGenerationIdV1,
   ProviderRegistryManifestHistoryValidationV1,
@@ -80,6 +83,9 @@ import type {
 import type {
   ProviderStrongReadyAcceptanceCandidateValidationV1 as ProviderStrongReadyAcceptanceCandidateValidationFromSubpathV1,
 } from "../src/provider-strong-ready-acceptance-candidate.js";
+import type {
+  ProviderTrustedLocalPhysicalTargetSelectionCandidateValidationV1 as ProviderTrustedLocalPhysicalTargetSelectionCandidateValidationFromSubpathV1,
+} from "../src/provider-trusted-local-physical-target-selection-candidate.js";
 import {
   encodeStoreFilenameKeyV1,
   deriveInstallationIdentityGenerationIdV1,
@@ -88,6 +94,7 @@ import {
   createProviderUnavailableToolErrorV1,
   createProviderStrongReadyAcceptanceCandidateV1,
   validateProviderStrongReadyAcceptanceCandidateV1,
+  selectProviderTrustedLocalPhysicalTargetCandidateV1,
 } from "../src/index.js";
 
 declare const lowerHex22: LowerHex22V1;
@@ -187,6 +194,14 @@ declare const createAcceptanceCandidateInput:
   CreateProviderStrongReadyAcceptanceCandidateV1Input;
 declare const validateAcceptanceCandidateInput:
   ValidateProviderStrongReadyAcceptanceCandidateV1Input;
+declare const trustedLocalTargetCandidate:
+  ProviderTrustedLocalPhysicalTargetSelectionCandidateValidationV1;
+declare const trustedLocalTargetCandidateFromSubpath:
+  ProviderTrustedLocalPhysicalTargetSelectionCandidateValidationFromSubpathV1;
+declare const selectTrustedLocalTargetCandidateInput:
+  SelectProviderTrustedLocalPhysicalTargetCandidateV1Input;
+declare const trustedLocalObservationCapability:
+  ProviderTrustedLocalPhysicalTargetObservationCapabilityV1;
 declare const semanticProviderPolicy:
   StoreDurableObjectProviderPolicyV1;
 declare const filesystemProfileFields:
@@ -255,6 +270,33 @@ const validateAcceptanceCandidateResult:
     validateProviderStrongReadyAcceptanceCandidateV1(
       validateAcceptanceCandidateInput,
     );
+const trustedLocalTargetCandidateRootFromSubpath:
+  ProviderTrustedLocalPhysicalTargetSelectionCandidateValidationV1 =
+    trustedLocalTargetCandidateFromSubpath;
+const trustedLocalTargetCandidateSubpathFromRoot:
+  ProviderTrustedLocalPhysicalTargetSelectionCandidateValidationFromSubpathV1 =
+    trustedLocalTargetCandidate;
+const trustedLocalTargetCandidateAuthority:
+  "none_provider_trusted_local_physical_target_selection_candidate_only" =
+    trustedLocalTargetCandidate.authority;
+const selectedTrustedLocalTargetCandidateResult:
+  Promise<ProviderTrustedLocalPhysicalTargetSelectionCandidateValidationV1> =
+    selectProviderTrustedLocalPhysicalTargetCandidateV1(
+      selectTrustedLocalTargetCandidateInput,
+    );
+const trustedLocalCapabilityFromInput:
+  ProviderTrustedLocalPhysicalTargetObservationCapabilityV1 =
+    selectTrustedLocalTargetCandidateInput
+      .physicalTargetObservationCapability;
+void trustedLocalTargetCandidateRootFromSubpath;
+void trustedLocalTargetCandidateSubpathFromRoot;
+void trustedLocalTargetCandidateAuthority;
+void selectedTrustedLocalTargetCandidateResult;
+void trustedLocalCapabilityFromInput;
+void trustedLocalObservationCapability;
+// @ts-expect-error a local-target candidate deliberately does not grant strong/current authority
+const strongTrustedLocalTargetCandidateAuthority: "strong_ready" =
+  trustedLocalTargetCandidate.authority;
 // @ts-expect-error a candidate deliberately does not grant strong/current authority
 const strongAcceptanceCandidateAuthority: "strong_ready" =
   acceptanceCandidate.authority;

@@ -686,13 +686,50 @@ complete enumeration、CAS high-water与operation-nonce compact receipt，并由
 receipt/high-water选中后才形成authoritative current。C09-1O只产生
 `none_provider_strong_ready_acceptance_candidate_structure_only`，不授权I/O。
 
-D-38不新增第18个Commit Gate。C09-1N已提交none-authority candidate，C09-1O正在
-实施；Trust Verifier、WP5-PF/WP3P、atomic current/high-water/receipt、Migration及
+D-38不新增第18个Commit Gate。C09-1O已在
+`36588f34899f0e0de36536192841f7f188d3c128`提交；同 SHA CI run `31625767367`
+最终Quality success（Provider unit 26m38s、Provider distribution 36m18s、Workspace
+9m51s、Preview 1m27s）。该证据只关闭singleton Registry-exact structure-only
+none-authority candidate，不外推到C09 aggregate、authoritative current或I/O。
+Trust Verifier、WP5-PF/WP3P、atomic current/high-water/receipt、Migration及
 strong-write/production/release继续open/locked。完整normative定义以PRD D-38为准。
+
+2026-08-13 D-39 implementation-safety amendment把后继production Trust Verifier再收窄为
+“可信本机 opened-root physical-target selection candidate”。它位于既有WP5-1P/C09
+aggregate Gate内，但不命名为C09-1P、不新增第18 Gate或`AT-D39`。它只选择当前同一
+opened root对应的`ProviderFeasibilityTargetV1`和C09-1N owner capability；read-only
+capability也可成功。它不选择active writer、不生成Acceptance/current/receipt且不授权I/O。
+
+observation只能由trusted client或OS-isolated adapter针对同一`openedRootAuthority`
+产生；caller target ID/JSON、Catalog default、runtime self-report、pathname/path reopen均
+不是source。baseline/pre/post三次observation按完整七字段重算target ID；private
+1..4096-byte `Uint8Array` continuity witness先exact compare，再比较完整target canonical
+bytes。witness只驻留internal `WeakMap`，不得序列化或出现在public DTO/error；freshness
+不用clock/TTL，post只拒绝本次窗口内root/volume或target drift。witness不等固定为
+`root_volume_changed`；witness相等而完整target canonical bytes不等固定为
+`observation_changed`。
+
+internal mint exact输入为`openedRootAuthority`与`physicalTargetObservationHost`且不export；
+public consume exact输入为`distributionHistoryCandidate`与
+`physicalTargetObservationCapability`，其类型固定为
+`ProviderTrustedLocalPhysicalTargetObservationCapabilityV1`。handle必须null-prototype、frozen、zero-own-key；
+consume在source读取/await前burn。malformed/wrong-source/pre/post/selection失败均不恢复，
+并发同handle最多一胜。成功exact四字段为authority、已重验distribution candidate、
+selected owner target capability与Support Catalog Pin；Universe/Catalog/owner capability
+对可信observation必须做完整target三层exact unique match，不能只比ID。authority唯一为
+`none_provider_trusted_local_physical_target_selection_candidate_only`。
+
+internal stages固定`input/physical_target_observation_capability/physical_target_precheck/
+distribution_history_candidate/physical_target_postcheck/local_target_selection`；reasons固定
+`schema_invalid/capability_invalid/observation_unavailable/observation_invalid/
+root_volume_changed/observation_changed/source_invalid/target_zero_match/
+target_ambiguous_match/target_projection_mismatch`；public只暴露opaque
+`provider_unavailable/attestation_invalid`。Identity/key/current/IPC/atomic Acceptance/
+Migration/真实Provider/strong/release全部继续open/locked。完整normative定义以PRD D-39为准。
 
 权威决策：
 
-- `docs/prd/2026-07-27-agent-native-change-intelligence-rd-plan.md` D-24～D-38
+- `docs/prd/2026-07-27-agent-native-change-intelligence-rd-plan.md` D-24～D-39
 - `docs/research/2026-07-28-g0-contract-freeze-record.md` 第 4、5 节
 - WP1 Contracts、WP2 Repository State、WP3 Artifact Store 与 WP4 Task
   Intelligence 已关闭的 Schema、Snapshot、CAS、Journal 和 Lifecycle 规则
@@ -2955,6 +2992,76 @@ interface ProviderFeasibilityTargetV1 {
   filesystemProfileCode: ProviderFilesystemProfileCodeV1;
   filesystemFeatureProfileDigest: ContentDigest;
   mountOptionProfileDigest: ContentDigest;
+}
+
+// D-39 observation/host/mint contract is internal-only, is not JSON wire and
+// MUST NOT be exported from a public package subpath. The opaque handle type and
+// public consume input/output below are public runtime types, but still not
+// serializable JSON/Schema resources.
+interface ProviderTrustedLocalPhysicalTargetObservationV1 {
+  readonly target: ProviderFeasibilityTargetV1;
+  readonly rootVolumeContinuityWitness: Uint8Array; // exact 1..4096 bytes; WeakMap-only
+}
+
+interface ProviderPhysicalTargetObservationHostV1 {
+  observeOpenedRootPhysicalTargetV1(
+    authority: ProviderOpenedRootAuthorityV1
+  ): ProviderTrustedLocalPhysicalTargetObservationV1 |
+    Promise<ProviderTrustedLocalPhysicalTargetObservationV1>;
+}
+
+interface MintProviderTrustedLocalPhysicalTargetObservationCapabilityV1Input {
+  readonly openedRootAuthority: ProviderOpenedRootAuthorityV1;
+  readonly physicalTargetObservationHost:
+    ProviderPhysicalTargetObservationHostV1;
+}
+
+// Opaque public handle: prototype=null, frozen, exact zero enumerable/own keys.
+// Baseline observation, host, opened authority, witness and consumed state live
+// only in an internal WeakMap; mint is not exported.
+interface ProviderTrustedLocalPhysicalTargetObservationCapabilityV1 {}
+
+interface SelectProviderTrustedLocalPhysicalTargetCandidateV1Input {
+  readonly distributionHistoryCandidate:
+    ValidateProviderDistributionHistoryCurrentCandidatePointV1Input;
+  readonly physicalTargetObservationCapability:
+    ProviderTrustedLocalPhysicalTargetObservationCapabilityV1;
+}
+
+interface ProviderTrustedLocalPhysicalTargetSelectionCandidateValidationV1 {
+  readonly authority:
+    "none_provider_trusted_local_physical_target_selection_candidate_only";
+  readonly distributionHistoryCandidate:
+    ProviderDistributionHistoryCurrentCandidatePointValidationV1;
+  readonly selectedOwnerTargetCapability:
+    ProviderFeasibilityOwnerTargetCapabilityV1;
+  readonly providerFeasibilitySupportCatalogPin:
+    ProviderFeasibilitySupportCatalogPinV1;
+}
+
+type ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidStageV1 =
+  | "input"
+  | "physical_target_observation_capability"
+  | "physical_target_precheck"
+  | "distribution_history_candidate"
+  | "physical_target_postcheck"
+  | "local_target_selection";
+
+type ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidReasonV1 =
+  | "schema_invalid"
+  | "capability_invalid"
+  | "observation_unavailable"
+  | "observation_invalid"
+  | "root_volume_changed"
+  | "observation_changed"
+  | "source_invalid"
+  | "target_zero_match"
+  | "target_ambiguous_match"
+  | "target_projection_mismatch";
+
+interface ProviderTrustedLocalPhysicalTargetSelectionPublicErrorV1 {
+  readonly code: "provider_unavailable";
+  readonly reason: "attestation_invalid";
 }
 
 interface ProviderReleaseTargetUniverseTargetEntryV1 {
@@ -16200,7 +16307,7 @@ Event action、capability 必须交叉一致。
 
 状态枚举：
 
-- `frozen`：D-24～D-38 已在 PRD/G0/本矩阵一致；
+- `frozen`：D-24～D-39 已在 PRD/G0/本矩阵一致；
 - `pending implementation`：代码或 focused tests 尚未提交；
 - `capability locked`：生产入口必须在任何仓库读取/写入前 fail closed；
 - `verified locally/remotely`：只在对应 source tree 的 focused/root/CI 证据通过
@@ -16216,7 +16323,7 @@ Event action、capability 必须交叉一致。
 | WP5-C06 | path-safe Snapshot/Pulse、legacy redacted Surface 与 HMAC locator brands | Repository/Surface contracts + fixtures | frozen / pending implementation |
 | WP5-C07 | SafeGit/bootstrap/state-token/request-equality/quota-index strict schemas + seven-way category correlation + Admission/Transition full-record digest golden bytes | contracts security/internal schemas | frozen / pending implementation |
 | WP5-C08 | Context Generation Record、root-relative History closure、Store filename codec | contracts + Store internal schemas | frozen / pending implementation |
-| WP5-C09 | RFC 8785/JCS exact bytes与strict provider ID；raw-key digest/strict Ed25519 host capability+exact hostile manifest；fixed Bootstrap Trust Bundle/retained historical source closure；provider registry root/key history、Catalog strict Envelope、signed Public Taxonomy/Release Matrix/Target Discovery Result/real-FS Suite+Corpus、closed-world Release Target Universe与 typed retained-object/保守 public privacy projection、Acceptance compact receipt、same/cross Identity migration typed dry-run/Plan-bound reservation/exact final receipt/universe-side/receipt prefix/versioned canonical Rewrite Plan/Semantic Equivalence Proof/zero-live/sealed head、signed proof/version Envelope、binding generation、atomic path containment、Store Manifest compact compare-append receipt与 terminal journal contracts | `packages/durable-object-provider-contracts` + cross-language golden/negative vectors（含 strict crypto/KAT/bootstrap bundle、coverage input、rewrite mapping/SCC/JCS/proof-token/locator/budget） | C09-1B～1N已推进至五链retained Distribution History none-authority current-candidate closure；C09-1K的历史同SHA CI数字保持原样，不外推给后继提交。D-38/C09-1O single-target Registry-exact structure-only Acceptance candidate正在实施；trusted local physical-target verifier与atomic current仍pending，aggregate in progress且 capability locked |
+| WP5-C09 | RFC 8785/JCS exact bytes与strict provider ID；raw-key digest/strict Ed25519 host capability+exact hostile manifest；fixed Bootstrap Trust Bundle/retained historical source closure；provider registry root/key history、Catalog strict Envelope、signed Public Taxonomy/Release Matrix/Target Discovery Result/real-FS Suite+Corpus、closed-world Release Target Universe与 typed retained-object/保守 public privacy projection、Acceptance compact receipt、same/cross Identity migration typed dry-run/Plan-bound reservation/exact final receipt/universe-side/receipt prefix/versioned canonical Rewrite Plan/Semantic Equivalence Proof/zero-live/sealed head、signed proof/version Envelope、binding generation、atomic path containment、Store Manifest compact compare-append receipt与 terminal journal contracts | `packages/durable-object-provider-contracts` + cross-language golden/negative vectors（含 strict crypto/KAT/bootstrap bundle、coverage input、rewrite mapping/SCC/JCS/proof-token/locator/budget） | C09-1B～1N已推进至五链retained Distribution History none-authority current-candidate closure；D-38/C09-1O single-target Registry-exact structure-only Acceptance candidate已在 `36588f34899f0e0de36536192841f7f188d3c128`提交且同 SHA CI `31625767367` Quality success，只关闭none-authority candidate。D-39 trusted opened-root physical-target selection candidate已冻结、implementation in progress；atomic current仍pending，aggregate in progress且 capability locked |
 | WP5-S01 | private baseline blob/Git lease layout、permissions、Stage 1 transaction | `packages/artifact-store` | frozen / pending implementation |
 | WP5-S02 | exact Repository Basis lock-time guard | `packages/artifact-store/src/store.ts` | frozen / pending implementation |
 | WP5-S03 | duplicate Check and direct Snapshot dependencies | Artifact Store semantic guards | frozen / pending implementation |
@@ -16235,7 +16342,7 @@ Event action、capability 必须交叉一致。
 | WP5-E03 | `checkChanges` vertical slice | `packages/task-engine` | capability locked |
 | WP5-E04 | refresh/rebase rebuild | `packages/task-engine` | capability locked |
 | WP5-E05 | safe request projection、private equality replay、Verification detail commitment/skip acceptance | `packages/task-engine` + private Store ledgers | capability locked |
-| WP5-I01 | root quality/CI/independent review | workspace CI + evidence | latest slice candidate：`0c6474df66ce28e4a7caf4006233100194a6e493` tree本地 macOS `CI=true pnpm quality`为194 files / 2,367 passed / 1 existing skip / 0 failed；Linux clean-checkout same-SHA CI run `31079755984` / job `92545638787`为194 files / 2,368 passed / 0 skipped / 0 failed，用时19m39s并success；C09-1K独立终审P0/P1/P2=0，hostile-env prepack闭环；此前C09-1J的253 Schema / 19 explicit module、CI `31006241178`及更早切片证据继续保留，WP5 aggregate final closeout pending |
+| WP5-I01 | root quality/CI/independent review | workspace CI + evidence | C09-1O latest candidate commit `36588f34899f0e0de36536192841f7f188d3c128`的clean-checkout same-SHA CI run `31625767367`最终Quality success：Provider unit 26m38s、distribution 36m18s、Workspace 9m51s、Preview 1m27s；只证明D-38 none-authority candidate，不外推到aggregate/authority。C09-1K历史树`0c6474df66ce28e4a7caf4006233100194a6e493`与CI `31079755984`、更早C09证据继续按原边界保留；WP5 aggregate final closeout pending |
 | WP5-I02 | macOS/Linux real-FS provider feasibility、install/upgrade/downgrade/uninstall/crash evidence | signed provider package + target-profile capability registry；当前物理 volume运行时 exact-match profile | mandatory blocking gate |
 
 ## 6. 分层实现与 Commit Gate
@@ -16278,10 +16385,10 @@ D-31不得藏在一个巨型 WP5-1P commit中，固定按以下三个独立 comm
 
 | # | Gate | 状态 | 当前证据 / 下一关闭点 |
 |---:|---|---|---|
-| 1 | WP5-0 | Closed | D-24～D-38 已冻结 |
+| 1 | WP5-0 | Closed | D-24～D-39 已冻结；D-39不新增Gate/AT |
 | 2 | WP5-1P/C09-1B | Closed | strict Ed25519 host conformance 已通过独立复审 |
 | 3 | WP5-1P/C09-1C | Closed | Bootstrap Trust Bundle 与 retained trust 已闭环 |
-| 4 | WP5-1P aggregate | **In progress** | C09-1D～1K的既有提交/CI数字保持历史记录；C09-1L Registry↔Evidence、C09-1M Catalog exact-cover与C09-1N五链retained current-candidate已提交各自none-authority candidate。D-38/C09-1O singleton Registry-exact structure-only candidate正在实施；下一关闭点是其测试、同SHA CI与独立复审，随后仍须trusted physical-target Trust Verifier、atomic Acceptance current/high-water/receipt与Migration，aggregate继续open |
+| 4 | WP5-1P aggregate | **In progress** | C09-1L Registry↔Evidence、C09-1M Catalog exact-cover、C09-1N五链retained current-candidate与D-38/C09-1O singleton Registry-exact structure-only candidate均已提交none-authority candidate；C09-1O commit `36588f34899f0e0de36536192841f7f188d3c128` / same-SHA CI `31625767367` success只关闭该candidate。下一关闭点是D-39 trusted opened-root physical-target selection candidate的实现/测试/同SHA CI/复审；其后仍须atomic Acceptance current/high-water/receipt与Migration，aggregate继续open |
 | 5 | WP5-PF | Pending / locked | 尚无真实 OS-isolated Provider 与 real-FS 安装生命周期证据 |
 | 6 | WP5-1 | Pending / locked | 其余 strong/legacy/path-safe contracts 与 fixtures 未关闭 |
 | 7 | WP5-2A | Pending / locked | SafeGit、path-safe Snapshot/Pulse、identity cutover 未实现 |
@@ -16298,7 +16405,7 @@ D-31不得藏在一个巨型 WP5-1P commit中，固定按以下三个独立 comm
 
 | Gate | 内容 | 最低本地证据 | Capability |
 |---|---|---|---|
-| WP5-0 | D-24～D-38 文档冻结 | diff/link/range/术语审查 | locked |
+| WP5-0 | D-24～D-39 文档冻结（D-39复用既有Gate/验收范围） | diff/link/range/术语审查 | locked |
 | WP5-1P/C09-1B | raw-key digest + strict Ed25519 host conformance | old C09-0 key-ID golden byte-identical；独立 digest brand/schema/golden；strict point/signature vectors；28-case fixed resource/digest exact-cover；每 runtime恰56次 point + 28次 verify；constant-true/false/divergent/mutating/replaced host negatives；package build/typecheck/test/distribution/root quality与 Security review | locked |
 | WP5-1P/C09-1C | fixed Bootstrap Trust Bundle + immutable Identity retained trust | Bundle/manifest Pin/Envelope/payload/fixed-locator/4 MiB Schema与golden；bootstrap metadata、root+3 recovery/threshold/policy/strict profile等式；signed distribution与Identity origin closure；old/new Bundle recovery-only migration、missing retained object、五链 accounting negatives；package build/typecheck/test/distribution/root quality与 Implementability/Security review | locked |
 | WP5-1P | C09 Provider contracts prerequisite：RFC 8785/JCS与provider ID、raw-key digest、strict Ed25519 host capability/KAT、fixed Bootstrap Trust Bundle+historical source retention、registry/root/key/runtime/Evidence/Catalog Envelope + signed Distribution Root Binding/Taxonomy/Release Matrix/embedded Discovery Input Bundle/Target Discovery Result/Release Target Universe + signed real-FS Suite/Fixture Corpus与 typed retained-object accounting + bounded five-chain history、deterministic public projection、Acceptance/Store compact receipts、same/cross migration typed dry-run/Plan-bound reservation/exact final receipt/receipt-prefix closure、versioned Rewrite Plan/Object+Root Semantic Proof、exact-object、external CAS、journal与 error wire + golden vectors | provider contract build/schema；old C09-0 vectors byte-identical；strict manifest exact-cover、fixed digest、cross-runtime positive/hostile KAT、bundle/metadata/key/pin/history-source negatives；cross-language golden bytes、coverage provenance/history/union/catalog omission/code-smuggling、nonce mismatch/restart/migration及 rewrite mapping/root/SCC/JCS/size/HMAC issuer/proof-token/locator/budget negative vectors | locked |
@@ -16790,7 +16897,7 @@ aggregated report 都作为 Commit/CI Evidence 保存。
 
 | 能力 | 当前事实 | Owner | 解锁 Gate |
 |---|---|---|---|
-| strong Store write / Durable Object Provider | Contract frozen；C09-1N已推进到五链retained Distribution History none-authority candidate，C09-1O singleton Registry-exact structure-only Acceptance candidate正在实施。multi-target Distribution Catalog仍是合法release coverage但不授权本机I/O；trusted local physical-target Trust Verifier、immutable Identity/key ownership、versioned mutual-auth IPC、atomic Acceptance current/high-water/receipt、Migration、真实Provider与client/三层Manifest writer均未完整交付，strong-write/production/release继续open/locked | Platform/Security Lead + Provider/Systems + Artifact Store；QA/Release验证 | **全部同时满足**：WP5-1P/C09 contract+golden；strict Ed25519 raw32/profile/host exact manifest attestation与 opaque capability；固定 Bootstrap Trust Bundle/manifest resource、signed distribution双 Pin、immutable Installation Identity retained origin closure；可信本机physical-target observation与Registry/Catalog exact selector；WP5-PF/WP3P signed real-FS与安装生命周期；WP5-S07 provider client/adapter及mutual-auth IPC；D-23 Pulse→Artifact→Store provider-side unique-head compare-append；Acceptance atomic generation/enumeration/high-water/compact receipt、root/Registry/Catalog Envelope/public projection/same+cross migration closure及 versioned canonical Rewrite Plan/Semantic Equivalence Proof实现；AT-C17/AT-C29/AT-C30/AT-C31、AT-D35/AT-D37/AT-D38、AT-Q24/AT-Q32/AT-Q33（含 rewrite mapping/SCC/JCS/proof-token/locator/budget/hostile crypto vectors）及 upgrade/downgrade/root/recovery-key compromise/current-vs-historical bundle migration E2E；root `pnpm quality`；同 SHA clean CI；独立 Security/Implementability review无 P0/P1；最后 closeout commit才更新 capability flag/supported tool list |
+| strong Store write / Durable Object Provider | Contract frozen；C09-1O singleton Registry-exact structure-only Acceptance candidate已在 `36588f34899f0e0de36536192841f7f188d3c128`提交并通过同 SHA CI `31625767367`，仍仅none-authority。D-39 trusted opened-root physical-target selection candidate已冻结、implementation in progress；它允许如实选择read-only target，且不选择writer/Acceptance/I/O。immutable Identity/key ownership、versioned mutual-auth IPC、atomic Acceptance current/high-water/receipt、Migration、真实Provider与client/三层Manifest writer均未完整交付，strong-write/production/release继续open/locked | Platform/Security Lead + Provider/Systems + Artifact Store；QA/Release验证 | **全部同时满足**：WP5-1P/C09 contract+golden；strict Ed25519 raw32/profile/host exact manifest attestation与 opaque capability；固定 Bootstrap Trust Bundle/manifest resource、signed distribution双 Pin、immutable Installation Identity retained origin closure；可信本机physical-target observation与Registry/Catalog exact selector；WP5-PF/WP3P signed real-FS与安装生命周期；WP5-S07 provider client/adapter及mutual-auth IPC；D-23 Pulse→Artifact→Store provider-side unique-head compare-append；Acceptance atomic generation/enumeration/high-water/compact receipt、root/Registry/Catalog Envelope/public projection/same+cross migration closure及 versioned canonical Rewrite Plan/Semantic Equivalence Proof实现；AT-C17/AT-C29/AT-C30/AT-C31、AT-D35/AT-D37/AT-D38、AT-Q24/AT-Q32/AT-Q33（含D-39 opened-root one-shot capability/continuity/drift vectors及rewrite mapping/SCC/JCS/proof-token/locator/budget/hostile crypto vectors；不新增AT-D39）以及upgrade/downgrade/root/recovery-key compromise/current-vs-historical bundle migration E2E；root `pnpm quality`；同 SHA clean CI；独立 Security/Implementability review无 P0/P1；最后 closeout commit才更新 capability flag/supported tool list |
 | `task:verify` | Contract frozen，生产方法未实现 | Task Engine | WP5-4 local/remote + review；WP6 前仍不宣传 |
 | `task:check` | Contract frozen，Delta/Symbol/Matching/Operation 未实现 | Change Intelligence + Task Engine | WP5-7/10 全部通过 |
 | `task:context:refresh` | capability locked | Task Engine / Context Recovery | WP5-8 full rebuild/failure evidence |
@@ -16835,7 +16942,7 @@ WP5-S07 client或三层 provider-side compare-append，strong write继续锁定�
 
 只有以下条件全部满足，本文件状态才能改为 **WP5 Completed**：
 
-- D-24～D-38 在 PRD、G0、Contracts、Store、Engine、Provider host/bundle与 Surface
+- D-24～D-39 在 PRD、G0、Contracts、Store、Engine、Provider host/bundle与 Surface
   DTO 中一致；
 - WP5-C/S/R/P/A/E/I 全部从 pending 变为 verified；
 - AT-C01～AT-C31、AT-D01～AT-D38、AT-S01～AT-S16、AT-O01～AT-O33、

@@ -1,6 +1,8 @@
 # Understand Code：Agent-native Code Change Intelligence 项目研制计划
 
-> 文档状态：Approved / Contract Frozen v1.18（含 WP5 Decision Amendment D-24～D-38、C09-1N 已提交候选、C09-1O singleton Acceptance candidate 实施中与 16-A-1 实施证据重校）
+> 文档状态：Approved / Contract Frozen v1.19（含 WP5 Decision Amendment D-24～D-39、可信本机 opened-root physical-target selection candidate 边界与 16-A-1 实施证据重校）
+>
+> 最近 Provider slice 证据：C09-1O singleton Acceptance candidate 已提交并通过同 SHA CI；该证据不属于 D-39 implementation evidence
 >
 > 日期：2026-07-27
 >
@@ -8,9 +10,9 @@
 >
 > WP4 Contract Amendment：2026-07-29；`build_task_brief` 的可恢复两阶段编排与可信 Operation Journal 见 D-22，Repo Pulse 不可变历史与原子切换见 D-23
 >
-> WP5 Contract Amendment：2026-07-30～2026-08-13；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host、不可变 Bootstrap Trust Bundle、签名 Target Discovery point closure、real-FS Conformance Result point closure、Provider Runtime Attestation point closure、QA/Release Provider Feasibility Evidence point closure、Release Target Universe point closure、Registry Entry↔Evidence supplied-history candidate closure与 singleton Acceptance candidate边界见 D-24～D-38
+> WP5 Contract Amendment：2026-07-30～2026-08-13；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host、不可变 Bootstrap Trust Bundle、签名 Target Discovery point closure、real-FS Conformance Result point closure、Provider Runtime Attestation point closure、QA/Release Provider Feasibility Evidence point closure、Release Target Universe point closure、Registry Entry↔Evidence supplied-history candidate closure、singleton Acceptance candidate与可信本机 opened-root physical-target selection candidate边界见 D-24～D-39
 >
-> Implementation Rebaseline：2026-08-03；Evidence Refresh：2026-08-06；Contract Refresh：2026-08-13。重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1L、C09-1M与C09-1N已形成并提交各自 none-authority候选，C09-1O singleton Acceptance candidate正在实施；Provider aggregate、真实 Provider、生产 Change Intelligence、双 Agent、Task-first Workbench、strong-write、production 与 release gates 仍未关闭
+> Implementation Rebaseline：2026-08-03；Evidence Refresh：2026-08-13；Contract Refresh：2026-08-13。重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1L、C09-1M、C09-1N与C09-1O已形成并提交各自 none-authority候选，C09-1O已通过同 SHA CI；D-39可信本机 opened-root physical-target selection candidate已冻结、implementation in progress，但不新增 Gate或解锁 authority。Provider aggregate、真实 Provider、生产 Change Intelligence、双 Agent、Task-first Workbench、strong-write、production 与 release gates 仍未关闭
 >
 > 适用范围：`understand-code` 产品、Core、Agent 插件、MCP、本地服务与 Dashboard
 >
@@ -321,17 +323,17 @@ Incident、Impact、Change Check 和 Verification 都应成为 Task 的章节或
 
 ### 2.5 2026-08-13 合同状态与历史已核验证据
 
-2026-07-27 的基线表保留为问题发现现场；下表中的 SHA/CI数字是截至
-2026-08-06的最近一次完整同 SHA证据，不外推为后续提交的执行证据。Provider合同状态
-另按2026-08-13的D-38同步：
+2026-07-27 的基线表保留为问题发现现场；下表将截至2026-08-06的C09-1K历史
+根质量基线与2026-08-13的C09-1O独立同SHA证据分开记录，任一证据都不外推到其后
+slice、Provider aggregate或authority。Provider合同状态另按D-38～D-39同步：
 
 | 项目 | 当前事实 |
 |---|---|
-| 最近完整同 SHA Provider证据基线 | `feature/agent-native-change-intelligence` / `0c6474df66ce28e4a7caf4006233100194a6e493`（C09-1K code slice `3e6f516d089aaacaf67984f46ca972d8687a5772` + CI stabilization）；后续 C09提交不借用该 CI结论 |
+| C09-1K历史完整同 SHA Provider证据基线 | `feature/agent-native-change-intelligence` / `0c6474df66ce28e4a7caf4006233100194a6e493`（C09-1K code slice `3e6f516d089aaacaf67984f46ca972d8687a5772` + CI stabilization）；后续 C09提交不借用该 CI结论 |
 | Workspace 包 | 8 个：Contracts、Repository State、Artifact Store、Core、Task Engine、CLI、Dashboard、Durable Object Provider Contracts |
-| 根质量门禁 | 本地 macOS `CI=true pnpm quality`：194 个测试文件、2,367 passed、1 个既有 skip、0 failed；build/typecheck/Dashboard production build 全绿；Linux clean-checkout same-SHA CI run `31079755984` / job `92545638787` on `0c6474df66ce28e4a7caf4006233100194a6e493`：194 个测试文件、2,368 passed、0 skipped、0 failed，19m39s，success |
+| C09-1K历史根质量门禁 | 本地 macOS `CI=true pnpm quality`：194 个测试文件、2,367 passed、1 个既有 skip、0 failed；build/typecheck/Dashboard production build 全绿；Linux clean-checkout same-SHA CI run `31079755984` / job `92545638787` on `0c6474df66ce28e4a7caf4006233100194a6e493`：194 个测试文件、2,368 passed、0 skipped、0 failed，19m39s，success |
 | 修改前能力 | Repo Pulse、Persistent Task Brief、候选排序、影响路径、Evidence/Unknown、Task Lifecycle 已有正式实现 |
-| Provider Contracts | Strict Ed25519、Bootstrap Trust Bundle、Root/Registry History、signed real-FS Corpus→Suite、signed Target Discovery、unsigned Result、root-signed Runtime、QA/Release Evidence、Release Target Universe、Registry↔Evidence、Support Catalog与五链 retained current-candidate已经推进至 C09-1N committed none-authority candidate。C09-1J/C09-1K的历史数字保持原样，不由后继切片回写。D-38已冻结 C09-1O为 single-target、Registry-exact、structure-only Acceptance candidate，当前 implementation in progress；可信本机 physical-target Trust Verifier、atomic Acceptance current/high-water/receipt、真实 Provider与全部 strong-write/production/release gate仍 open/locked |
+| Provider Contracts | Strict Ed25519、Bootstrap Trust Bundle、Root/Registry History、signed real-FS Corpus→Suite、signed Target Discovery、unsigned Result、root-signed Runtime、QA/Release Evidence、Release Target Universe、Registry↔Evidence、Support Catalog与五链 retained current-candidate已经推进至 C09-1N committed none-authority candidate。D-38的 C09-1O single-target、Registry-exact、structure-only Acceptance candidate已在 `36588f34899f0e0de36536192841f7f188d3c128`提交，并由同 SHA CI run `31625767367`验证为 success；该 run内 Provider unit 26m38s、Provider distribution 36m18s、Workspace 9m51s、Preview 1m27s，最终 Quality success。上述证据只关闭 C09-1O candidate，不外推到 Provider aggregate、authoritative current或 I/O。D-39可信本机 opened-root physical-target selection candidate已冻结、implementation in progress；atomic Acceptance current/high-water/receipt、真实 Provider与全部 strong-write/production/release gate仍 open/locked |
 | 修改后能力 | Change Check/Verification 有严格 Contract 和 Store 基础，但没有生产 `checkChanges()` / `recordVerification()` 执行服务 |
 | Agent Surface | 已有 `packages/cli` 自包含 stdio MCP 候选和 3 个真实 Tool；仍无 `.codex-plugin/plugin.json`、Codex/Claude Adapter 或双 Agent Task E2E |
 | 前端 | 活跃 Surface 仍为 `wiki | graph`；尚无 Tasks、Brief、Check、Verification 与 Repo Pulse 产品页面 |
@@ -3024,7 +3026,7 @@ P2 的阻断规则必须确定性执行：
 | WP2 | Closed | Repository State / Repo Pulse 已关闭 |
 | WP3 | Closed | Artifact Store / Evidence persistence 已关闭 |
 | WP4 | Closed | Persistent Task Brief 与 Lifecycle 已关闭；不包含生产 Change Check |
-| WP5-1P/C09 | **Partial / aggregate open** | 已核验数字仍只对应 C09-1K与 CI stabilization历史基线；其后 C09-1L Registry↔Evidence、C09-1M Catalog exact-cover及 C09-1N五链 retained current-candidate均已提交各自 none-authority candidate，但不借用旧同 SHA CI数字。D-38/C09-1O singleton Registry-exact Acceptance candidate正在实施；可信本机 target选择、atomic current/high-water/receipt、Migration及 aggregate总门仍需关闭 |
+| WP5-1P/C09 | **Partial / aggregate open** | C09-1L Registry↔Evidence、C09-1M Catalog exact-cover、C09-1N五链 retained current-candidate及 D-38/C09-1O singleton Registry-exact Acceptance candidate均已提交各自 none-authority candidate。C09-1O提交为 `36588f34899f0e0de36536192841f7f188d3c128`，同 SHA CI run `31625767367`最终 Quality success；该证据不外推到 aggregate或 authority。D-39可信本机 opened-root physical-target selection candidate、atomic current/high-water/receipt、Migration及 aggregate总门仍需关闭 |
 | WP3P | Not closed / capability locked | 真实 OS principal、Provider runtime 与 real-FS feasibility 尚未实现 |
 | WP5 | Contract frozen / implementation incomplete | 没有生产 Delta/Hunk/Matching、`checkChanges()`、`recordVerification()` 纵向闭环 |
 | WP6 | **Open（仅 16-A-1 candidate closed）** | `packages/cli` 已交付自包含 stdio MCP 与 Pulse/Brief 三工具；Host Adapter、完整 Tool surface、双 Agent E2E 仍未实现，不能把子切片状态外推为 WP6 candidate |
@@ -4130,7 +4132,7 @@ Symbol、Evidence、Impact 与分析完整性，而不是把 Git 文件列表包
 WP3P Provider Feasibility Gate 与 WP4 Task Intelligence；Diff→Symbol/Matching
 可在 security contracts 冻结后并行，但任何 strong mutation在 WP3P Gate关闭前
 保持 capability locked。
-估算：原 2.5 周只覆盖摘要级实现；按 D-24～D-38 的 path-safe、identity、
+估算：原 2.5 周只覆盖摘要级实现；按 D-24～D-39 的 path-safe、identity、
 SafeGit、reservation/quota 与 recovery 生产闭环修订为
 **6–8 周、12–16 person-weeks**。Contracts、Store 与 Operation kernel 串行冻结，
 Delta/Symbol/Matching 可在接口冻结后并行。
@@ -5988,7 +5990,7 @@ reflog 与未定义 quota 会让 crash recovery 存在误删或不一致结果�
 边界前移到首个 durable write，并冻结并发 ownership 与资源耗尽的唯一语义。
 
 WP5 的实现追踪、Acceptance 与 capability locks 见
-`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。D-24～D-38 不
+`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。D-24～D-39 不
 改变 D-21 的状态集合；它们冻结的是 Change/Verification 事实模型、可重建
 baseline、安全持久化、Operation 提交边界与 Alpha 兼容策略。
 
@@ -7637,12 +7639,136 @@ receipt，且由 receipt/high-water选中后才成为current。Trust Verifier、
 atomic current/high-water/receipt、Migration与strong-write/production/release全部
 继续open/locked。
 
+C09-1O已在 commit `36588f34899f0e0de36536192841f7f188d3c128`提交；同 SHA
+clean-checkout CI run `31625767367`最终`Quality = success`，其中 Provider unit
+26m38s、Provider distribution 36m18s、Workspace 9m51s、Preview 1m27s。该证据只关闭
+D-38定义的 singleton Registry-exact structure-only candidate，不把C09 aggregate、
+authoritative current、Identity/key ownership、真实Provider或任何I/O authority一并关闭。
+
+### D-39：可信本机 opened-root physical-target selection candidate
+
+状态：Frozen / implementation in progress（2026-08-13 implementation-safety Decision Amendment）。D-39是现有
+WP5-1P/C09 aggregate Gate内、C09-1O之后的边界收窄；它**不命名为C09-1P**、不新增
+第18个Commit Gate，也不新增`AT-D39`。
+
+D-39只选择本机**当前同一 opened root authority**对应的
+`ProviderFeasibilityTargetV1`及C09-1N中与之exact匹配的owner target capability。
+成功不选择active writer，不要求该owner capability为`strong_read_write`，因此
+`legacy_redacted_read_only` target也可被如实选择；成功也不生成Acceptance、current、
+high-water、receipt、provider/runtime/IPC authority或任何I/O授权。
+
+唯一可信observation source是trusted client或OS-isolated adapter对调用方已经持有的
+同一`openedRootAuthority`所作的物理target观察。caller提供的target ID/JSON、Catalog
+default/首项、provider runtime self-report、pathname或关闭后按path reopen所得对象均不得
+进入选择。observation复用`ProviderFeasibilityTargetV1`完整七个claim并按既有
+`provider-target-profile-id-v1` domain重算`targetProfileId`；不得只验证caller或Catalog
+携带的ID。每次observation另带private continuity witness：exact `Uint8Array`、长度
+1..4096 bytes。witness只保存在internal `WeakMap`状态中，不进入public DTO、Schema、
+canonical bytes、日志或error，也不能经JSON/structured clone恢复capability authority。
+
+internal mint输入必须是exact两字段`openedRootAuthority`与
+`physicalTargetObservationHost`，且mint本身不export。mint在该opened authority上取得
+baseline observation；公开consume再在读取或验证`distributionHistoryCandidate`之前，
+同步claim并burn one-shot capability，然后依次取得pre observation、完整重验C09-1N
+distribution history candidate、取得post observation并完成本机target选择。baseline、pre、
+post三次observation必须来自同一opened identity：每次先对private witness做byte-exact
+比较，再对重算ID后的完整target canonical bytes做exact比较。freshness不借助wall clock、
+TTL或`observedAt`；postcheck只证明本次验证窗口内没有root/volume或target drift，不承诺
+函数返回后的未来状态。baseline与pre/post任一次witness不等映射
+`root_volume_changed`；witness相等但完整target canonical bytes不等映射
+`observation_changed`，不能用后一次观察覆盖前一次。
+
+`physicalTargetObservationHost`唯一observer method固定为
+`observeOpenedRootPhysicalTargetV1(authority)`；每次调用返回exact两字段
+`{ target, rootVolumeContinuityWitness }`，其中`target`是完整
+`ProviderFeasibilityTargetV1`，`rootVolumeContinuityWitness`是上述private exact
+1..4096-byte `Uint8Array`。extra key、错误method名、非同一authority结果或非exact
+两字段observation均为`observation_invalid`。
+
+```ts
+interface ProviderTrustedLocalPhysicalTargetObservationV1 {
+  readonly target: ProviderFeasibilityTargetV1;
+  readonly rootVolumeContinuityWitness: Uint8Array; // exact 1..4096 bytes
+}
+
+interface ProviderPhysicalTargetObservationHostV1 {
+  observeOpenedRootPhysicalTargetV1(
+    authority: ProviderOpenedRootAuthorityV1
+  ): ProviderTrustedLocalPhysicalTargetObservationV1 |
+    Promise<ProviderTrustedLocalPhysicalTargetObservationV1>;
+}
+
+interface MintProviderTrustedLocalPhysicalTargetObservationCapabilityV1Input {
+  readonly openedRootAuthority: ProviderOpenedRootAuthorityV1;
+  readonly physicalTargetObservationHost:
+    ProviderPhysicalTargetObservationHostV1;
+}
+```
+
+`physicalTargetObservationCapability`本体的类型固定为
+`ProviderTrustedLocalPhysicalTargetObservationCapabilityV1`，必须为`prototype=null`、frozen、zero own-key
+object；全部状态只存在internal `WeakMap`。consume在任何await和source读取前原子删除/标记
+该状态，因此同一handle并发调用最多一个可越过claim。只要真实handle已被提交给consume，
+top-level malformed、错误source、pre/post observation不可用或漂移、zero/ambiguous match及
+最终projection mismatch都必须保持已burn；复制、JSON round-trip、structured clone、普通
+空对象或另一source签发的handle均为`capability_invalid`，不能恢复或复用。
+
+public consume输入exact两字段：
+
+```ts
+interface SelectProviderTrustedLocalPhysicalTargetCandidateV1Input {
+  readonly distributionHistoryCandidate:
+    ValidateProviderDistributionHistoryCurrentCandidatePointV1Input;
+  readonly physicalTargetObservationCapability:
+    ProviderTrustedLocalPhysicalTargetObservationCapabilityV1;
+}
+```
+
+成功输出exact四字段并递归detached/frozen：
+
+```ts
+interface ProviderTrustedLocalPhysicalTargetSelectionCandidateValidationV1 {
+  readonly authority:
+    "none_provider_trusted_local_physical_target_selection_candidate_only";
+  readonly distributionHistoryCandidate:
+    ProviderDistributionHistoryCurrentCandidatePointValidationV1;
+  readonly selectedOwnerTargetCapability:
+    ProviderFeasibilityOwnerTargetCapabilityV1;
+  readonly providerFeasibilitySupportCatalogPin:
+    ProviderFeasibilitySupportCatalogPinV1;
+}
+```
+
+选择必须从同一次C09-1N重验closure按完整target canonical bytes做三层exact join：
+Release Target Universe target entry、Support Catalog target group与
+`ownerTargetCapabilities[]`三者都须与可信observation的八字段target（重算ID+七claims）
+byte-equivalent，且必须唯一。仅`targetProfileId`相同、三层任一claim不同、Catalog Pin不等、
+zero match或multiple match都fail closed；不得靠数组顺序消歧。
+
+internal diagnostic stage全集固定为：`input`→
+`physical_target_observation_capability`→`physical_target_precheck`→
+`distribution_history_candidate`→`physical_target_postcheck`→
+`local_target_selection`。reason全集固定为：`schema_invalid`、
+`capability_invalid`、`observation_unavailable`、`observation_invalid`、
+`root_volume_changed`、`observation_changed`、`source_invalid`、
+`target_zero_match`、`target_ambiguous_match`、`target_projection_mismatch`。
+public边界只允许opaque `provider_unavailable` / `attestation_invalid`，不得泄漏
+diagnostic stage、witness、opened-root identity或private target细节。
+
+D-39成功authority唯一为
+`none_provider_trusted_local_physical_target_selection_candidate_only`。immutable
+Installation Identity/key ownership、signed-package与retained trust current、online
+binding generation、versioned mutual-auth IPC、atomic Acceptance
+current/high-water/receipt、Migration、真实Provider/client/Store writer、strong-write、
+production与release gates继续`open/locked`；后继实现不得把本candidate冒充D-38
+Acceptance candidate或authoritative selector。
+
 ---
 
 ## 20. M0 冻结结果与延后决策
 
 原 M0 第 1–7 项已经分别由 D-13～D-19 冻结；Task Lifecycle、WP4 持久化与
-WP5 Change Intelligence 修订由 D-21～D-38 冻结。完整证据、Owner、试点 Pin
+WP5 Change Intelligence 修订由 D-21～D-39 冻结。完整证据、Owner、试点 Pin
 和 capability lock 见
 `docs/research/2026-07-28-g0-contract-freeze-record.md`。
 

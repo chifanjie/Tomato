@@ -1,0 +1,13 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-trusted-local-physical-target-selection-candidate-invalid-stage",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "input",
+    "physical_target_observation_capability",
+    "physical_target_precheck",
+    "distribution_history_candidate",
+    "physical_target_postcheck",
+    "local_target_selection"
+  ]
+}

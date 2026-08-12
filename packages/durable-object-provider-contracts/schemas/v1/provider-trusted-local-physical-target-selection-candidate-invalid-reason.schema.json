@@ -1,0 +1,17 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-trusted-local-physical-target-selection-candidate-invalid-reason",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "schema_invalid",
+    "capability_invalid",
+    "observation_unavailable",
+    "observation_invalid",
+    "root_volume_changed",
+    "observation_changed",
+    "source_invalid",
+    "target_zero_match",
+    "target_ambiguous_match",
+    "target_projection_mismatch"
+  ]
+}

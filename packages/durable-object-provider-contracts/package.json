@@ -150,6 +150,11 @@
       "import": "./dist/provider-strong-ready-acceptance-candidate.js",
       "default": "./dist/provider-strong-ready-acceptance-candidate.js"
     },
+    "./provider-trusted-local-physical-target-selection-candidate": {
+      "types": "./dist/provider-trusted-local-physical-target-selection-candidate.d.ts",
+      "import": "./dist/provider-trusted-local-physical-target-selection-candidate.js",
+      "default": "./dist/provider-trusted-local-physical-target-selection-candidate.js"
+    },
     "./public-key-digest": {
       "types": "./dist/public-key-digest.d.ts",
       "import": "./dist/public-key-digest.js",

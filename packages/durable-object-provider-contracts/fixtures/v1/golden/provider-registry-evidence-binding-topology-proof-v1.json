@@ -76,7 +76,7 @@
     "pointAdmissionContractSemanticDigest": "sha256:04214a7fc05d2d84af781ca36db649b78576b545aac88701c2f3a324d8f07cce",
     "pointImplementationRawSha256": "sha256:aa01b9b035646b66d95cebe47a8f141d56d457d521dc2ac1c990741b4e8b6803",
     "rawAdmissionImplementationSha256": "sha256:29654ab2688bf11de0c4e8f786e5618afc4f1f09fc5334428b653357f165aa3d",
-    "jsonSchemaGeneratorSourceRawSha256": "sha256:012616c551f49999abc8120340c903dfccbec3a66c9c5927fdf0efbe794e9d7d",
+    "jsonSchemaGeneratorSourceRawSha256": "sha256:df446aa4295cbfb6fca9a678c7dc17b2481da251134215b1b3a507335470683e",
     "compatibleBaseResourcePath": "fixtures/v1/golden/provider-registry-evidence-binding-point-v1.json",
     "compatibleBaseResourceRawSha256": "sha256:aae31cd1e79f928a1c3035cc8d9f0c2556a91466629605bf733607b69ff01fc3",
     "productionParserBindingSemanticDigest": "sha256:d68876b44714ca179777ac456b589ac31e99e9e36249c9eda4a251299fd27124",
@@ -2325,5 +2325,5 @@
     "adoptedFailures": []
   },
   "semanticDomain": "provider-registry-evidence-binding-topology-proof-v1",
-  "aggregateSemanticDigest": "sha256:005d21a1c314e535d2f689a24b07d3fc057f6e63f1d62ead792b2d1d65eacf27"
+  "aggregateSemanticDigest": "sha256:effc52b775dd11b82da087b5a831b7225e1dc83591e42aad01f46e68c803be88"
 }

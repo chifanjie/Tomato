@@ -301,6 +301,7 @@ export * from "./provider-release-target-universe-point-fixtures.js";
 export * from "./provider-distribution-history-current-candidate-point.js";
 export * from "./provider-distribution-history-current-candidate-point-fixtures.js";
 export * from "./provider-strong-ready-acceptance-candidate.js";
+export * from "./provider-trusted-local-physical-target-selection-candidate.js";
 export {
   ProviderRegistryRootCrossSignatureWrapperV1Schema,
   ProviderRegistryRootHistoryValidationError,

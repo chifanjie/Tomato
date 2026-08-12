@@ -2,7 +2,7 @@
 
 记录 ID：`G0-2026-07-28`
 
-状态：**Closed for implementation；WP5 Decision Amendments D-24～D-38 incorporated**
+状态：**Closed for implementation；WP5 Decision Amendments D-24～D-39 incorporated**
 
 候选基线：`34da354968a6071d914e4e4a4fca738e6c2d8a29`
 
@@ -47,7 +47,7 @@ generation pin Pulse，再只以唯一 maximal Store Manifest generation所 pin�
 保留为 legacy/read-only projection。该修订不新增 Artifact Type 或 Lifecycle
 状态，只冻结 Pulse 版本身份、历史可寻址性和恢复边界。
 
-2026-07-30～2026-08-13 的 D-24～D-38 是 WP5 实现前及分层实现中的证据模型、写入边界与
+2026-07-30～2026-08-13 的 D-24～D-39 是 WP5 实现前及分层实现中的证据模型、写入边界与
 Provider可行性修订。审计确认：
 原 Change Check 没有 Actual Change 实体、Hunk 或完整性证明；Repository
 Snapshot 也不能重建任务开始时已经存在的 dirty/untracked 内容。修订因此新增
@@ -122,7 +122,7 @@ Gate的 target只可 legacy/redacted read-only。这些修订不增加 D-21
 - 性能 Evidence 保存生产源文件 Hash、原始样本、预热/采样数和 expected/actual 完整性字段。
 - Host Evidence 保持 Surface 边界；Codex App Server provisional 结果和 Claude 未认证 Tool Call 不被提升为 supported。
 
-## 4. D-13～D-38 冻结结果
+## 4. D-13～D-39 冻结结果
 
 ### D-13：P0 平台
 
@@ -1139,13 +1139,14 @@ distribution显式`--ignore-scripts=false`，因此 hostile
 0 failed，用时19m39s并success；独立复审P0/P1/P2=0。
 
 上述2026-08-06证据只关闭C09-1K supplied-point candidate；其后C09-1L、C09-1M与
-C09-1N已分别形成并提交各自none-authority candidate，但本记录不把C09-1K旧同SHA
-CI数字外推给这些后继提交。C09 aggregate、真实Provider、strong-write、production与
-release gates继续`open/locked`，Surface Release Gate也继续为Open。
+C09-1N已分别形成并提交各自none-authority candidate，本记录不把C09-1K旧同SHA
+CI数字外推给这些后继提交。C09-1O另有下述commit与same-SHA CI独立证据；该证据同样
+不外推到C09 aggregate、真实Provider、strong-write、production或release。上述gates继续
+`open/locked`，Surface Release Gate也继续为Open。
 
 ### D-38：singleton Acceptance candidate与可信本机 target边界
 
-状态：`accepted`（2026-08-13 implementation-safety Decision Amendment）
+状态：`frozen / implementation in progress`（2026-08-13 implementation-safety Decision Amendment）
 
 - 实现审计确认：C09-1M/1N允许同一public bucket包含多个private full target，各
   target的Evidence/Runtime按target绑定，而steady Registry只有一个enabled Entry与
@@ -1171,12 +1172,58 @@ release gates继续`open/locked`，Surface Release Gate也继续为Open。
   trust与versioned mutual-auth IPC。
 - candidate只有经installation-state provider原子compare-append no-replace generation、
   authenticated complete enumeration、CAS high-water与operation-nonce compact receipt，
-  并由receipt/high-water选中后才成为current。D-38不新增第18个Commit Gate；C09-1N
-  已提交none-authority candidate，C09-1O正在实施。Trust Verifier、WP5-PF/WP3P、
+  并由receipt/high-water选中后才成为current。D-38不新增第18个Commit Gate；C09-1O
+  已提交并通过下述同SHA CI，但仍只形成none-authority candidate。Trust Verifier、WP5-PF/WP3P、
   atomic current/high-water/receipt、Migration及strong-write/production/release继续
   `open/locked`。PRD D-38是完整normative定义。
 
-D-24～D-38 的实现与验收矩阵为
+C09-1O已在 commit `36588f34899f0e0de36536192841f7f188d3c128`提交；同 SHA
+clean-checkout CI run `31625767367`最终`Quality = success`，Provider unit 26m38s、
+Provider distribution 36m18s、Workspace 9m51s、Preview 1m27s。该证据只关闭
+D-38的singleton Registry-exact structure-only candidate，不外推到C09 aggregate、
+authoritative current、Provider/I/O authority或任何capability unlock。
+
+### D-39：可信本机 opened-root physical-target selection candidate
+
+状态：`accepted`（2026-08-13 implementation-safety Decision Amendment）
+
+- D-39位于既有WP5-1P/C09 aggregate Gate内、接续C09-1O；它不命名为C09-1P、
+  不新增第18个Commit Gate，也不新增`AT-D39`。它只从同一opened root的可信物理
+  observation选择`ProviderFeasibilityTargetV1`及C09-1N中exact匹配的owner target
+  capability；read-only capability也可被如实选择。成功不选择active writer、不生成
+  Acceptance/current/receipt，也不授权Provider或Store I/O。
+- observation只能来自trusted client或OS-isolated adapter对同一
+  `openedRootAuthority`的观察；caller ID/JSON、Catalog default/首项、runtime self-report、
+  pathname或path reopen都不得成为source。baseline/pre/post三次observation复用并重算
+  完整七字段target ID，先比较private 1..4096-byte `Uint8Array` continuity witness，再比较
+  target canonical bytes；freshness不使用clock/TTL，postcheck只拒绝本次窗口内drift。
+  witness不等为`root_volume_changed`；witness相等而target bytes不等为
+  `observation_changed`。witness只在internal `WeakMap`，不可序列化、记录或进入public DTO。
+- host唯一method固定为`observeOpenedRootPhysicalTargetV1(authority)`，返回exact两字段
+  `{target, rootVolumeContinuityWitness}`；后者是private exact 1..4096-byte
+  `Uint8Array`。extra key、错误method/authority或非exact observation fail closed。
+- internal mint exact输入为`openedRootAuthority`与`physicalTargetObservationHost`且不export。
+  public consume exact输入为`distributionHistoryCandidate`与
+  `physicalTargetObservationCapability`；其类型固定为
+  `ProviderTrustedLocalPhysicalTargetObservationCapabilityV1`，capability是null-prototype、frozen、zero-own-key
+  one-shot handle，consume在任何source读取/await前burn。malformed、wrong source、pre/post
+  failure、zero/ambiguous/projection mismatch均不恢复handle；同handle并发最多一胜。
+- 成功输出exact四字段：authority、已重验distribution history candidate、
+  `selectedOwnerTargetCapability`与Support Catalog Pin；authority唯一为
+  `none_provider_trusted_local_physical_target_selection_candidate_only`。Universe、Catalog
+  与owner capability必须对可信observation做完整target三层exact unique match，不能只比ID。
+  internal stages固定为`input/physical_target_observation_capability/
+  physical_target_precheck/distribution_history_candidate/physical_target_postcheck/
+  local_target_selection`；reasons固定为`schema_invalid/capability_invalid/
+  observation_unavailable/observation_invalid/root_volume_changed/observation_changed/
+  source_invalid/target_zero_match/target_ambiguous_match/target_projection_mismatch`；public
+  只暴露opaque `provider_unavailable/attestation_invalid`。
+- D-39不闭合immutable Identity/key ownership、signed-package/retained current、online
+  binding generation、mutual-auth IPC、atomic Acceptance current/high-water/receipt、
+  Migration、真实Provider/client/Store writer或strong/release authority；全部继续
+  `open/locked`。PRD D-39是完整normative定义。
+
+D-24～D-39 的实现与验收矩阵为
 `docs/research/2026-07-30-wp5-change-intelligence-matrix.md`；其中第 3.8 节是
 必须逐字段等价实现的 normative Schema Appendix。所有 C09 provider
 contract、canonical bytes/golden与 prerequisite conformance归
@@ -1349,7 +1396,7 @@ capability gap，不是 WP0 新引入回归。对应能力在后续 Gate 关闭�
 | G0-06 Diff Overlay 断链 | 旧 Overlay deprecated，不作为 P0 数据源或完成证据 | WP5/WP7 open | Change Intelligence + Frontend | Change Check Workbench Alpha 前 |
 | G0-07 Worktree 重定向 | Task/Store 绑定当前 canonical worktree；共享只限不可变缓存 | WP3/WP4 core binding closed；WP6 Surface open | Core + Platform | Mandatory Host Surface Alpha 前 |
 | G0-08 Quality/Release | 根 quality、CI 已关闭；CLI/bin、统一版本、License、SBOM、allowlist、Marketplace 留后续 Gate | Partial | Platform + QA | Mandatory Surface Release / M4 |
-| G0-09 Durable Object Provider | strong writer必须使用 OS-isolated exact-object provider、strict Ed25519 host KAT/opaque capability、fixed Bootstrap Trust Bundle + immutable Identity retained historical trust、trust-history caps + append-only Acceptance、root-signed Registry/Taxonomy/Target Universe/Catalog、provider-isolated receipt ledger、atomic path containment、external CAS/journal seal与 bounded dual-namespace migration；未通过或 coverage incomplete target只读 | C09-1N已提交五链retained Distribution History none-authority candidate；D-38/C09-1O singleton Registry-exact structure-only candidate正在实施。trusted physical-target Trust Verifier、atomic Acceptance current/high-water/receipt、mutual-auth IPC、C09 aggregate与WP3P仍open，全部 strong mutations capability locked | Platform/Security Lead + Provider/Systems；QA/Security/Release验证 | 首个 strong Task Alpha前关闭 AT-C31/AT-Q33、签名开发 target profile并验证当前物理 volume runtime exact-match；P0前关闭全部 advertised profiles |
+| G0-09 Durable Object Provider | strong writer必须使用 OS-isolated exact-object provider、strict Ed25519 host KAT/opaque capability、fixed Bootstrap Trust Bundle + immutable Identity retained historical trust、trust-history caps + append-only Acceptance、root-signed Registry/Taxonomy/Target Universe/Catalog、provider-isolated receipt ledger、atomic path containment、external CAS/journal seal与 bounded dual-namespace migration；未通过或 coverage incomplete target只读 | D-38/C09-1O singleton Registry-exact structure-only candidate已在 `36588f34899f0e0de36536192841f7f188d3c128`提交且同 SHA CI `31625767367` success，仅关闭none-authority candidate。D-39可信本机 opened-root physical-target selection candidate已冻结、implementation in progress；atomic Acceptance current/high-water/receipt、mutual-auth IPC、C09 aggregate与WP3P仍open，全部 strong mutations capability locked | Platform/Security Lead + Provider/Systems；QA/Security/Release验证 | 首个 strong Task Alpha前关闭 AT-C31/AT-Q33、签名开发 target profile并验证当前物理 volume runtime exact-match；P0前关闭全部 advertised profiles |
 
 ## 8. 当前发布缺口
 
@@ -1387,14 +1434,15 @@ capability gap，不是 WP0 新引入回归。对应能力在后续 Gate 关闭�
 | 条件 | 结果 |
 |---|---|
 | Mission、P0、Non-goals 已冻结 | PASS |
-| D-13～D-19、D-21～D-38 已接受；D-20 有 Owner/Gate | PASS |
+| D-13～D-19、D-21～D-38 已接受；D-39 frozen / implementation in progress；D-20 有 Owner/Gate | PASS |
 | Task Lifecycle、Revision 与幂等语义唯一 | PASS |
 | Root/Error/Rendezvous 语义唯一 | PASS |
 | Surface mandatory/conditional、Owner、后续 Gate 完整 | PASS |
 | G0-01～09 有处置、Owner 和 capability lock | PASS |
 | 根质量、CI、Host 与性能证据可复核 | PASS |
 | C09-1K supplied-point code / local quality / same-SHA CI / independent review | PASS；不外推到 aggregate |
-| Decision D-38 三文档 singleton/Registry-exact/physical-target边界 | PASS；C09-1O implementation evidence pending |
+| Decision D-38 singleton/Registry-exact边界与C09-1O same-SHA evidence | PASS；只关闭none-authority candidate |
+| Decision D-39 三文档 trusted opened-root physical-target selection边界 | PASS；implementation in progress，不新增Gate/AT |
 | C09 aggregate、真实 Provider、strong-write、production 与 release gates | OPEN / LOCKED |
 | 用户未跟踪文件明确排除 | PASS |
 | PRD/Host Spike 状态同步 | 由包含本记录的提交完成 |

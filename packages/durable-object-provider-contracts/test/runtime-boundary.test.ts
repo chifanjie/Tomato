@@ -46,6 +46,18 @@ describe("provider contract runtime boundary", () => {
     expect(packageManifest.exports).not.toHaveProperty(
       "./provider-strong-ready-acceptance-candidate-internal",
     );
+    expect(packageManifest.exports).not.toHaveProperty(
+      "./provider-trusted-local-physical-target-observation-capability-internal",
+    );
+    expect(packageManifest.exports).not.toHaveProperty(
+      "./provider-trusted-local-physical-target-selection-candidate-internal",
+    );
+    expect(publicApi).not.toHaveProperty(
+      "mintProviderTrustedLocalPhysicalTargetObservationCapabilityInternalV1",
+    );
+    expect(publicApi).not.toHaveProperty(
+      "deriveProviderTrustedLocalPhysicalTargetSelectionInternalV1",
+    );
   });
 
   it("uses strict object schemas rather than silent unknown-field stripping", () => {

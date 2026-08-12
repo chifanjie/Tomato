@@ -25,6 +25,13 @@ and `WP5-C09-1M` closes the signed Provider Feasibility Support Catalog over
 that closed-world Universe. `WP5-C09-1N` validates a supplied current candidate
 across the retained Taxonomy, Release Matrix, Discovery Result, Universe, and
 Catalog histories while preserving the none-only authority boundary.
+`WP5-C09-1O` revalidates a complete single-target, Registry-exact candidate,
+derives exactly one strong-read/write active writer whose Catalog and Registry
+Evidence/runtime pins are byte-identical, and constructs a keyed Acceptance
+candidate. The signed multi-target Distribution Catalog remains a valid
+release-coverage input but is not treated as a local Acceptance success by this
+slice. C09-1O remains a structure-only candidate rather than authoritative
+current state.
 Every slice still returns structure-only, none-authority validation:
 
 - `rfc8785-jcs-safe-integer-v1` canonical JSON and exact canonical-byte parsing;
@@ -256,8 +263,10 @@ projection, golden/invalid manifests, and topology proof. C09-1M adds 15
 documents for its Catalog wire, release disposition, candidate and target
 entries, public projection, stage/reason, and golden/invalid manifests,
 bringing that inventory to 290. C09-1N adds four documents for its point
-stage/reason and golden/invalid manifests, bringing the current inventory to
-294.
+stage/reason and golden/invalid manifests. C09-1O adds 17 documents for the
+active-writer selector, strong-ready configuration, Acceptance predecessor,
+generation, Envelope, Pin, validation, stage, and reason surface, bringing the
+current inventory to 311.
 
 The production sources remain ES2022 browser/worker portable. The npm/browser
 distribution gate must expose the new public API through the root and
@@ -276,15 +285,17 @@ distribution gate must expose the new public API through the root and
 `./provider-release-target-universe-point-fixtures`,
 `./provider-feasibility-support-catalog-point`, and
 `./provider-feasibility-support-catalog-point-fixtures`,
-`./provider-distribution-history-current-candidate-point`, and
-`./provider-distribution-history-current-candidate-point-fixtures` exports,
+`./provider-distribution-history-current-candidate-point`,
+`./provider-distribution-history-current-candidate-point-fixtures`, and
+`./provider-strong-ready-acceptance-candidate` exports,
 pack all
 `schemas/`, `fixtures/`, and fixed `provider/` resources, reject private deep
 imports, and execute the same Registry, real-filesystem source, and Target
 Discovery, Conformance Result, Runtime Attestation, Feasibility Evidence,
 Registry/Evidence binding, Release Target Universe, and Feasibility Support
 Catalog point validators plus the Distribution History current-candidate
-validator from clean Node and browser-bundle installs. There are exactly 27
+validator and strong-ready Acceptance candidate surface from clean Node and
+browser-bundle installs. There are exactly 28
 explicit public module exports at this checkpoint.
 Node uses the exact official Zod 4.3.6 runtime. The package's browser path uses
 its shipped CSP-safe runtime, with dynamic compilation disabled and
@@ -811,6 +822,9 @@ pnpm --filter @understand-code/durable-object-provider-contracts exec vitest run
   test/provider-release-target-universe-point-fixtures.test.ts \
   test/provider-distribution-history-current-candidate-point.test.ts \
   test/provider-distribution-history-current-candidate-point-fixtures.test.ts \
+  test/provider-strong-ready-acceptance-candidate-internal.test.ts \
+  test/provider-strong-ready-acceptance-candidate.test.ts \
+  test/runtime-boundary.test.ts \
   test/json-schema.test.ts
 pnpm --filter @understand-code/durable-object-provider-contracts test
 pnpm --filter @understand-code/durable-object-provider-contracts test:distribution
@@ -826,7 +840,7 @@ diagnostics, and crypto call counts are checked by
 `verify:provider-registry-manifest-invalid`. The signed real-filesystem fixture
 anchors, exact source closure, and 43 materialized negative diagnostics are
 checked by `verify:provider-real-fs-source`. `test/json-schema.test.ts` freezes
-the current 294-schema inventory and `verify:schemas` rejects generated-file
+the current 311-schema inventory and `verify:schemas` rejects generated-file
 drift. `verify:provider-target-discovery-point` checks the exact five locators,
 six-signature closure, canonical empty Fixture/Runner success, typed unresolved
 projection, and all 116 ordered diagnostic/executable recipes.
@@ -1006,6 +1020,16 @@ Runtime Attestation point validation is likewise limited to
 production Registry or Store I/O authority. C09-1N Distribution History
 current-candidate validation is separately limited to
 `authority: "none_provider_distribution_history_current_candidate_structure_only"`.
+Successful C09-1O construction and validation is limited to
+`authority: "none_provider_strong_ready_acceptance_candidate_structure_only"`.
+It revalidates the C09-1N source, rejects non-steady routing, and requires one
+and only one enabled, policy-equal, Registry/Catalog Evidence- and
+runtime-exact passed strong candidate for its single target. A later Trust
+Verifier slice must select from a trusted local physical-target observation;
+neither a caller-authored target ID nor a provider-runtime claim is authority.
+Its caller-supplied 32-byte key signs a deterministic candidate, but this slice
+does not independently load or prove the immutable Installation Identity,
+key-check token, or installer transaction that owns that key.
 A signed-package resolver, offline production key ceremony, crash-safe
 installer transaction, verified Evidence/Catalog, and current Acceptance
 closure must all establish authority before any strong provider capability can
@@ -1015,7 +1039,7 @@ be exposed.
 
 This package establishes the common foundation needed by AT-C21, AT-C29,
 AT-C31, and AT-Q33; it does not claim those end-to-end acceptance groups are
-complete. Through C09-1N this package covers signed Registry supporting
+complete. Through C09-1O this package covers signed Registry supporting
 records, Entries, Manifests, retained history, local migration/tombstone
 transitions, the independently signed real-filesystem Fixture Corpus to Suite
 source chain, one root-bound Target Discovery point across Taxonomy,
@@ -1025,11 +1049,14 @@ one strict Result-to-Policy root-signed Runtime Attestation structure-only
 point. It also covers dual-role Feasibility Evidence, the closed-world Target
 Universe, Registry/Evidence supplied-history binding, the signed Support
 Catalog, and a supplied five-chain retained Distribution History candidate
-with exact retained-source accounting and tip projection. It does
+with exact retained-source accounting and tip projection. It also covers
+deterministic unique active-writer derivation and a keyed strong-ready
+Acceptance candidate with exact generation, content digest, token, Envelope,
+and Pin checks. It does
 not close signed-package provenance authority, atomic Installation Identity
-persistence, Conformance Result history/current selection, authoritative
-Acceptance selection of the supplied candidate tips, real runner/filesystem
-execution, Acceptance high-water and active-writer selection, Migration Plan
+persistence or key binding, Conformance Result history/current selection,
+authoritative atomic Acceptance publication/enumeration/high-water/receipt,
+real runner/filesystem execution, Migration Plan
 equality or migration proofs, Provider runtime supervision, IPC endpoint
 authentication, Provider or Store I/O, or strong-read/write authority. Those
 later gates must consume these immutable records and return

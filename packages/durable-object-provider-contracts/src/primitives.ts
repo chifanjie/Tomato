@@ -123,6 +123,14 @@ export type ProviderRegistryManifestGenerationIdV1 = z.infer<
   typeof ProviderRegistryManifestGenerationIdV1Schema
 >;
 
+export const ProviderAcceptanceStateGenerationIdV1Schema = z
+  .string()
+  .regex(/^provider-acceptance-state:[0-9a-f]{22}$/u)
+  .brand<"ProviderAcceptanceStateGenerationIdV1">();
+export type ProviderAcceptanceStateGenerationIdV1 = z.infer<
+  typeof ProviderAcceptanceStateGenerationIdV1Schema
+>;
+
 export const ProviderMigrationIdV1Schema = z
   .string()
   .regex(/^provider-migration:[0-9a-f]{22}$/u)

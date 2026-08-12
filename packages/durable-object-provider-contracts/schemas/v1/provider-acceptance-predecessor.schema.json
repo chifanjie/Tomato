@@ -1,0 +1,42 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-acceptance-predecessor",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "const": "genesis"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "const": "acceptance"
+        },
+        "generationId": {
+          "type": "string",
+          "pattern": "^provider-acceptance-state:[0-9a-f]{22}$"
+        },
+        "contentDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "state",
+        "generationId",
+        "contentDigest"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

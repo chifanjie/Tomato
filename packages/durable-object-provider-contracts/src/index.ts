@@ -20,6 +20,7 @@ export {
   ProviderFeasibilityApproverKeyIdV1Schema,
   ProviderFeasibilityEvidenceIdV1Schema,
   ProviderFilesystemProfileCodeV1Schema,
+  ProviderAcceptanceStateGenerationIdV1Schema,
   ProviderMigrationIdV1Schema,
   ProviderOsReleaseFamilyCodeV1Schema,
   ProviderPublicSupportProfileIdV1Schema,
@@ -57,6 +58,7 @@ export type {
   ProviderFeasibilityApproverKeyIdV1,
   ProviderFeasibilityEvidenceIdV1,
   ProviderFilesystemProfileCodeV1,
+  ProviderAcceptanceStateGenerationIdV1,
   ProviderMigrationIdV1,
   ProviderOsReleaseFamilyCodeV1,
   ProviderPublicSupportProfileIdV1,
@@ -298,6 +300,7 @@ export * from "./provider-release-target-universe-point.js";
 export * from "./provider-release-target-universe-point-fixtures.js";
 export * from "./provider-distribution-history-current-candidate-point.js";
 export * from "./provider-distribution-history-current-candidate-point-fixtures.js";
+export * from "./provider-strong-ready-acceptance-candidate.js";
 export {
   ProviderRegistryRootCrossSignatureWrapperV1Schema,
   ProviderRegistryRootHistoryValidationError,

@@ -35,8 +35,17 @@ describe("provider contract runtime boundary", () => {
     expect(publicApi).not.toHaveProperty("createDomainPreimageBytesV1");
     expect(publicApi).not.toHaveProperty("deriveSemanticHashV1");
     expect(publicApi).not.toHaveProperty("deriveKeyedStateTokenForDomainV1");
+    expect(publicApi).not.toHaveProperty(
+      "deriveProviderStrongReadyActiveWriterSelectionsInternalV1",
+    );
+    expect(publicApi).not.toHaveProperty(
+      "classifyProviderStrongReadyActiveWriterMatchCountInternalV1",
+    );
     expect(packageManifest.exports).not.toHaveProperty("./domain-crypto");
     expect(packageManifest.exports).not.toHaveProperty("./provider-foundation");
+    expect(packageManifest.exports).not.toHaveProperty(
+      "./provider-strong-ready-acceptance-candidate-internal",
+    );
   });
 
   it("uses strict object schemas rather than silent unknown-field stripping", () => {

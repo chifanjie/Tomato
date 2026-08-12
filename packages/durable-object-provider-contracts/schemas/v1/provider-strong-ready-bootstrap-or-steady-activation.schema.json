@@ -1,0 +1,15 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-strong-ready-bootstrap-or-steady-activation",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "origin": {
+      "type": "string",
+      "const": "bootstrap_or_steady_successor"
+    }
+  },
+  "required": [
+    "origin"
+  ],
+  "additionalProperties": false
+}

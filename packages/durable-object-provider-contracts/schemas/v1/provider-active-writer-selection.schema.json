@@ -1,0 +1,65 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-active-writer-selection",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "targetProfileId": {
+      "type": "string",
+      "pattern": "^provider-target-profile:[0-9a-f]{64}$"
+    },
+    "providerId": {
+      "type": "string",
+      "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+    },
+    "registryEntryContentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semanticProviderPolicyDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "providerFeasibilityEvidence": {
+      "type": "object",
+      "properties": {
+        "locatorProfile": {
+          "type": "string",
+          "const": "installation_provider_feasibility_evidence_v1"
+        },
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^provider-feasibility-evidence:[0-9a-f]{22}$"
+        },
+        "contentDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "locatorProfile",
+        "evidenceId",
+        "contentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "runtimeAttestationContentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "bindingDerivationKeyGeneration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "targetProfileId",
+    "providerId",
+    "registryEntryContentDigest",
+    "semanticProviderPolicyDigest",
+    "providerFeasibilityEvidence",
+    "runtimeAttestationContentDigest",
+    "bindingDerivationKeyGeneration"
+  ],
+  "additionalProperties": false
+}

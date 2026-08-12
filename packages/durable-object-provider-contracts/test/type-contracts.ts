@@ -11,6 +11,12 @@ import type {
   ProviderFeasibilityApproverKeyIdV1,
   ProviderFeasibilityApproverPublicKeyV1,
   ProviderFeasibilityEvidencePinV1,
+  ProviderAcceptanceStateGenerationIdV1,
+  ProviderActiveWriterSelectorV1,
+  ProviderStrongReadyAcceptanceCandidateValidationV1,
+  ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1,
+  CreateProviderStrongReadyAcceptanceCandidateV1Input,
+  ValidateProviderStrongReadyAcceptanceCandidateV1Input,
   ProviderMigrationIdV1,
   ProviderRegistryManifestGenerationIdV1,
   ProviderRegistryManifestHistoryValidationV1,
@@ -71,12 +77,17 @@ import type {
 import type {
   ProviderRuntimeAttestationPointClosureValidationV1 as ProviderRuntimeAttestationPointClosureFromSubpathV1,
 } from "../src/provider-runtime-attestation-point.js";
+import type {
+  ProviderStrongReadyAcceptanceCandidateValidationV1 as ProviderStrongReadyAcceptanceCandidateValidationFromSubpathV1,
+} from "../src/provider-strong-ready-acceptance-candidate.js";
 import {
   encodeStoreFilenameKeyV1,
   deriveInstallationIdentityGenerationIdV1,
   deriveInstallationIdentityKeyCheckTokenV1,
   deriveProviderRegistryRootKeyIdV1,
   createProviderUnavailableToolErrorV1,
+  createProviderStrongReadyAcceptanceCandidateV1,
+  validateProviderStrongReadyAcceptanceCandidateV1,
 } from "../src/index.js";
 
 declare const lowerHex22: LowerHex22V1;
@@ -168,6 +179,14 @@ declare const runtimePointInput:
   ValidateProviderRuntimeAttestationPointClosureV1Input;
 declare const runtimePointGolden:
   ProviderRuntimeAttestationPointGoldenManifestV1;
+declare const acceptanceCandidate:
+  ProviderStrongReadyAcceptanceCandidateValidationV1;
+declare const acceptanceCandidateFromSubpath:
+  ProviderStrongReadyAcceptanceCandidateValidationFromSubpathV1;
+declare const createAcceptanceCandidateInput:
+  CreateProviderStrongReadyAcceptanceCandidateV1Input;
+declare const validateAcceptanceCandidateInput:
+  ValidateProviderStrongReadyAcceptanceCandidateV1Input;
 declare const semanticProviderPolicy:
   StoreDurableObjectProviderPolicyV1;
 declare const filesystemProfileFields:
@@ -208,6 +227,37 @@ const runtimePointPolicy:
 const runtimePointFilesystemProfile:
   StoreProviderFilesystemProfileFieldsV1 =
     runtimePointClosure.filesystemProfile;
+const acceptanceCandidateRootFromSubpath:
+  ProviderStrongReadyAcceptanceCandidateValidationV1 =
+    acceptanceCandidateFromSubpath;
+const acceptanceCandidateSubpathFromRoot:
+  ProviderStrongReadyAcceptanceCandidateValidationFromSubpathV1 =
+    acceptanceCandidate;
+const acceptanceCandidateAuthority:
+  "none_provider_strong_ready_acceptance_candidate_structure_only" =
+    acceptanceCandidate.authority;
+const acceptanceSelector:
+  ProviderActiveWriterSelectorV1 =
+    acceptanceCandidate.activeWriterSelector;
+const acceptanceEnvelope:
+  ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1 =
+    acceptanceCandidate.acceptanceStateEnvelope;
+const acceptanceGenerationId:
+  ProviderAcceptanceStateGenerationIdV1 =
+    acceptanceEnvelope.generationId;
+const createAcceptanceCandidateResult:
+  Promise<ProviderStrongReadyAcceptanceCandidateValidationV1> =
+    createProviderStrongReadyAcceptanceCandidateV1(
+      createAcceptanceCandidateInput,
+    );
+const validateAcceptanceCandidateResult:
+  Promise<ProviderStrongReadyAcceptanceCandidateValidationV1> =
+    validateProviderStrongReadyAcceptanceCandidateV1(
+      validateAcceptanceCandidateInput,
+    );
+// @ts-expect-error a candidate deliberately does not grant strong/current authority
+const strongAcceptanceCandidateAuthority: "strong_ready" =
+  acceptanceCandidate.authority;
 const inheritedRuntimePointInvalidCaseId:
   ProviderRuntimeAttestationPointInvalidCaseIdV1 =
     "inner-input-extra-field";
@@ -457,6 +507,15 @@ void [
   runtimePointAuthority,
   runtimePointPolicy,
   runtimePointFilesystemProfile,
+  acceptanceCandidateRootFromSubpath,
+  acceptanceCandidateSubpathFromRoot,
+  acceptanceCandidateAuthority,
+  acceptanceSelector,
+  acceptanceEnvelope,
+  acceptanceGenerationId,
+  createAcceptanceCandidateResult,
+  validateAcceptanceCandidateResult,
+  strongAcceptanceCandidateAuthority,
   inheritedRuntimePointInvalidCaseId,
   pointSpecificRuntimePointInvalidCaseId,
   unknownRuntimePointInvalidCaseId,

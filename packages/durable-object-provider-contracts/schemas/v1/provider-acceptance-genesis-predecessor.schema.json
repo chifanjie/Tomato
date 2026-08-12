@@ -1,0 +1,15 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-acceptance-genesis-predecessor",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "state": {
+      "type": "string",
+      "const": "genesis"
+    }
+  },
+  "required": [
+    "state"
+  ],
+  "additionalProperties": false
+}

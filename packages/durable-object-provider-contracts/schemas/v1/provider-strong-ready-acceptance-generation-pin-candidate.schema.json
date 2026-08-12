@@ -1,0 +1,31 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-strong-ready-acceptance-generation-pin-candidate",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "locatorProfile": {
+      "type": "string",
+      "const": "installation_provider_acceptance_state_v1"
+    },
+    "acceptanceOrdinal": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "generationId": {
+      "type": "string",
+      "pattern": "^provider-acceptance-state:[0-9a-f]{22}$"
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "locatorProfile",
+    "acceptanceOrdinal",
+    "generationId",
+    "contentDigest"
+  ],
+  "additionalProperties": false
+}

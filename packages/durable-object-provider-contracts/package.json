@@ -145,6 +145,11 @@
       "import": "./dist/provider-distribution-history-current-candidate-point-fixtures.js",
       "default": "./dist/provider-distribution-history-current-candidate-point-fixtures.js"
     },
+    "./provider-strong-ready-acceptance-candidate": {
+      "types": "./dist/provider-strong-ready-acceptance-candidate.d.ts",
+      "import": "./dist/provider-strong-ready-acceptance-candidate.js",
+      "default": "./dist/provider-strong-ready-acceptance-candidate.js"
+    },
     "./public-key-digest": {
       "types": "./dist/public-key-digest.d.ts",
       "import": "./dist/public-key-digest.js",

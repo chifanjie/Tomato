@@ -1,6 +1,6 @@
 # Understand Code：Agent-native Code Change Intelligence 项目研制计划
 
-> 文档状态：Approved / Contract Frozen v1.17（含 WP5 Decision Amendment D-24～D-37、C09-1K、CI stabilization、C09-1L pre-implementation freeze 与 16-A-1 实施证据重校）
+> 文档状态：Approved / Contract Frozen v1.18（含 WP5 Decision Amendment D-24～D-38、C09-1N 已提交候选、C09-1O singleton Acceptance candidate 实施中与 16-A-1 实施证据重校）
 >
 > 日期：2026-07-27
 >
@@ -8,9 +8,9 @@
 >
 > WP4 Contract Amendment：2026-07-29；`build_task_brief` 的可恢复两阶段编排与可信 Operation Journal 见 D-22，Repo Pulse 不可变历史与原子切换见 D-23
 >
-> WP5 Contract Amendment：2026-07-30～2026-08-06；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host、不可变 Bootstrap Trust Bundle、签名 Target Discovery point closure、real-FS Conformance Result point closure、Provider Runtime Attestation point closure、QA/Release Provider Feasibility Evidence point closure、Release Target Universe point closure与 Registry Entry↔Evidence supplied-history candidate closure见 D-24～D-37
+> WP5 Contract Amendment：2026-07-30～2026-08-13；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host、不可变 Bootstrap Trust Bundle、签名 Target Discovery point closure、real-FS Conformance Result point closure、Provider Runtime Attestation point closure、QA/Release Provider Feasibility Evidence point closure、Release Target Universe point closure、Registry Entry↔Evidence supplied-history candidate closure与 singleton Acceptance candidate边界见 D-24～D-38
 >
-> Implementation Rebaseline：2026-08-03；Evidence Refresh：2026-08-06；Contract Refresh：2026-08-06。重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1J、C09-1K 与 16-A-1 已形成各自边界内的候选证据，C09-1L 已完成 pre-implementation contract freeze 但尚无实现 bytes；Provider aggregate、真实 Provider、生产 Change Intelligence、双 Agent、Task-first Workbench、strong-write、production 与 release gates 仍未关闭
+> Implementation Rebaseline：2026-08-03；Evidence Refresh：2026-08-06；Contract Refresh：2026-08-13。重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1L、C09-1M与C09-1N已形成并提交各自 none-authority候选，C09-1O singleton Acceptance candidate正在实施；Provider aggregate、真实 Provider、生产 Change Intelligence、双 Agent、Task-first Workbench、strong-write、production 与 release gates 仍未关闭
 >
 > 适用范围：`understand-code` 产品、Core、Agent 插件、MCP、本地服务与 Dashboard
 >
@@ -319,17 +319,19 @@ Tasks（默认） | Knowledge | Graph
 
 Incident、Impact、Change Check 和 Verification 都应成为 Task 的章节或视图。
 
-### 2.5 2026-08-06 最新实施快照
+### 2.5 2026-08-13 合同状态与历史已核验证据
 
-2026-07-27 的基线表保留为问题发现现场；以下快照才是继续实施时使用的当前事实：
+2026-07-27 的基线表保留为问题发现现场；下表中的 SHA/CI数字是截至
+2026-08-06的最近一次完整同 SHA证据，不外推为后续提交的执行证据。Provider合同状态
+另按2026-08-13的D-38同步：
 
 | 项目 | 当前事实 |
 |---|---|
-| 分支 / 实现 HEAD | `feature/agent-native-change-intelligence` / `0c6474df66ce28e4a7caf4006233100194a6e493`（C09-1K code slice `3e6f516d089aaacaf67984f46ca972d8687a5772` + CI stabilization） |
+| 最近完整同 SHA Provider证据基线 | `feature/agent-native-change-intelligence` / `0c6474df66ce28e4a7caf4006233100194a6e493`（C09-1K code slice `3e6f516d089aaacaf67984f46ca972d8687a5772` + CI stabilization）；后续 C09提交不借用该 CI结论 |
 | Workspace 包 | 8 个：Contracts、Repository State、Artifact Store、Core、Task Engine、CLI、Dashboard、Durable Object Provider Contracts |
 | 根质量门禁 | 本地 macOS `CI=true pnpm quality`：194 个测试文件、2,367 passed、1 个既有 skip、0 failed；build/typecheck/Dashboard production build 全绿；Linux clean-checkout same-SHA CI run `31079755984` / job `92545638787` on `0c6474df66ce28e4a7caf4006233100194a6e493`：194 个测试文件、2,368 passed、0 skipped、0 failed，19m39s，success |
 | 修改前能力 | Repo Pulse、Persistent Task Brief、候选排序、影响路径、Evidence/Unknown、Task Lifecycle 已有正式实现 |
-| Provider Contracts | Strict Ed25519、Bootstrap Trust Bundle、Root/Registry History、signed real-FS Corpus→Suite、signed Target Discovery、unsigned real-FS Result、root-signed Runtime Attestation、QA/Release Provider Feasibility Evidence 与 Release Target Universe supplied-point 已闭环到各自候选边界。C09-1J 历史切片仍固定为 253 份 Schema、19 个显式 public module、122+105=227 个 ordered executable case 与成功路径 3/11；不得用后继数字回写该历史事实。C09-1K 最新已实现切片为 268 份 Schema、21 个显式 public module + 3 个 wildcard resource export、4 个 positive vector、116 个 inherited + 169 个 point-specific = 285 个 ordered executable case；internal diagnostic schema 固定 16 个 stage / 11 个 reason，fixture 另含 2 个 locator-builder stage 与 3 个无 stage/reason 的 snapshot-stability success；成功路径固定 1 次 point admission / 7 次 signature verification，authority 严格为 `none_release_target_universe_structure_only`。独立复审 P0/P1/P2=0。D-37 已冻结 C09-1L Registry Entry↔Evidence supplied-history candidate 合同，但 implementation pending；C09 aggregate 及全部 strong-write/production/release gate 仍 open |
+| Provider Contracts | Strict Ed25519、Bootstrap Trust Bundle、Root/Registry History、signed real-FS Corpus→Suite、signed Target Discovery、unsigned Result、root-signed Runtime、QA/Release Evidence、Release Target Universe、Registry↔Evidence、Support Catalog与五链 retained current-candidate已经推进至 C09-1N committed none-authority candidate。C09-1J/C09-1K的历史数字保持原样，不由后继切片回写。D-38已冻结 C09-1O为 single-target、Registry-exact、structure-only Acceptance candidate，当前 implementation in progress；可信本机 physical-target Trust Verifier、atomic Acceptance current/high-water/receipt、真实 Provider与全部 strong-write/production/release gate仍 open/locked |
 | 修改后能力 | Change Check/Verification 有严格 Contract 和 Store 基础，但没有生产 `checkChanges()` / `recordVerification()` 执行服务 |
 | Agent Surface | 已有 `packages/cli` 自包含 stdio MCP 候选和 3 个真实 Tool；仍无 `.codex-plugin/plugin.json`、Codex/Claude Adapter 或双 Agent Task E2E |
 | 前端 | 活跃 Surface 仍为 `wiki | graph`；尚无 Tasks、Brief、Check、Verification 与 Repo Pulse 产品页面 |
@@ -3012,7 +3014,7 @@ P2 的阻断规则必须确定性执行：
 - Beta Hardening 再完成多 Worktree、并发恢复、迁移、安全、完整 Workbench 和双 Agent。
 - 接口可以按 Fixture 并行开发，但阶段门前必须切换到正式实现并通过集成测试。
 
-截至 2026-08-05 的实现证据（合同状态截至 2026-08-06）如下。`Closed` 只关闭该工作包写明的边界，不自动
+截至 2026-08-06 的完整同 SHA实现证据与截至2026-08-13的合同状态如下。`Closed` 只关闭该工作包写明的边界，不自动
 解锁下游 capability，也不能被宣传成用户产品已经可用：
 
 | 工作包 | 当前状态 | 解释 |
@@ -3022,7 +3024,7 @@ P2 的阻断规则必须确定性执行：
 | WP2 | Closed | Repository State / Repo Pulse 已关闭 |
 | WP3 | Closed | Artifact Store / Evidence persistence 已关闭 |
 | WP4 | Closed | Persistent Task Brief 与 Lifecycle 已关闭；不包含生产 Change Check |
-| WP5-1P/C09 | **Partial / aggregate open** | 已完成 crypto、Bootstrap、Root/Registry history、signed real-FS Corpus→Suite（`3ca2977`）、signed Target Discovery（`70201b4`）、unsigned real-FS Result（`35f9aaf`）、root-signed Runtime Attestation（`60f6582`）、QA/Release Provider Feasibility Evidence point（`d8769a0`）与 C09-1K Release Target Universe supplied-point（`3e6f516d`）；CI stabilization（`0c6474df`）及 same-SHA CI 已关闭本切片执行证据。D-37 已冻结 C09-1L Registry Entry↔Evidence supplied-history candidate 合同，implementation pending，C09-1K 仍是最新已实现候选；Catalog exact-cover、五链 retained history/current-candidate、Acceptance、Migration 等 aggregate 总门仍需关闭 |
+| WP5-1P/C09 | **Partial / aggregate open** | 已核验数字仍只对应 C09-1K与 CI stabilization历史基线；其后 C09-1L Registry↔Evidence、C09-1M Catalog exact-cover及 C09-1N五链 retained current-candidate均已提交各自 none-authority candidate，但不借用旧同 SHA CI数字。D-38/C09-1O singleton Registry-exact Acceptance candidate正在实施；可信本机 target选择、atomic current/high-water/receipt、Migration及 aggregate总门仍需关闭 |
 | WP3P | Not closed / capability locked | 真实 OS principal、Provider runtime 与 real-FS feasibility 尚未实现 |
 | WP5 | Contract frozen / implementation incomplete | 没有生产 Delta/Hunk/Matching、`checkChanges()`、`recordVerification()` 纵向闭环 |
 | WP6 | **Open（仅 16-A-1 candidate closed）** | `packages/cli` 已交付自包含 stdio MCP 与 Pulse/Brief 三工具；Host Adapter、完整 Tool surface、双 Agent E2E 仍未实现，不能把子切片状态外推为 WP6 candidate |
@@ -3538,8 +3540,11 @@ Owner 与资源：
   enumeration、CAS high-water与按 operation nonce固定定位的 compact signed
   outcome receipt；不能留下 loser sibling。同 nonce同 request返回首次 receipt，
   同 nonce异 request拒绝且不能生成第二 receipt。Acceptance原子 pin
-  active Root Metadata、完整 root-signed Provider Registry Manifest、Support
-  Catalog与每个完整 target profile的唯一 active writer。
+  active Root Metadata、完整 root-signed Provider Registry Manifest与Support
+  Catalog；strong-ready selector只 pin由可信本机 physical-target observation唯一
+  命中的完整 target及其唯一 Registry-exact active writer。Support Catalog仍须
+  exact-cover完整 Distribution Universe，其它 target继续参与发行 coverage与公开
+  保守投影但不进入本机 selector；详见D-38。
   planned root rollover要求 old-root cross + new-root self + 2-of-3 recovery，
   compromise recovery要求 new-root self + 2-of-3 recovery并进入关闭 strong
   Surface的 `recovery_only`。任一 recovery key compromise不得原地换 key或用
@@ -3692,6 +3697,8 @@ Owner 与资源：
   provider/catalog/evidence digest或 signer key，也不授权 I/O；实际 strong
   mutation仍要求本机 enabled registry
   exact pin同一 Evidence/policy/runtime，否则 `provider_unavailable`零写。
+  C09-1O singleton slice与后继可信本机 target选择边界见D-38；本段 exact
+  Evidence/policy/runtime等式不因 Distribution Catalog可含多个 target而放宽。
 - Gate reader逐字段验证 Result/Evidence的 provider、policy、implementation、
   binary、target七字段、suite/fixture/runner/crash coverage/result；
   runtime/Evidence的 OS family/build/arch与由 filesystem三字段重算的 profile；
@@ -4123,7 +4130,7 @@ Symbol、Evidence、Impact 与分析完整性，而不是把 Git 文件列表包
 WP3P Provider Feasibility Gate 与 WP4 Task Intelligence；Diff→Symbol/Matching
 可在 security contracts 冻结后并行，但任何 strong mutation在 WP3P Gate关闭前
 保持 capability locked。
-估算：原 2.5 周只覆盖摘要级实现；按 D-24～D-37 的 path-safe、identity、
+估算：原 2.5 周只覆盖摘要级实现；按 D-24～D-38 的 path-safe、identity、
 SafeGit、reservation/quota 与 recovery 生产闭环修订为
 **6–8 周、12–16 person-weeks**。Contracts、Store 与 Operation kernel 串行冻结，
 Delta/Symbol/Matching 可在接口冻结后并行。
@@ -5981,7 +5988,7 @@ reflog 与未定义 quota 会让 crash recovery 存在误删或不一致结果�
 边界前移到首个 durable write，并冻结并发 ownership 与资源耗尽的唯一语义。
 
 WP5 的实现追踪、Acceptance 与 capability locks 见
-`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。D-24～D-37 不
+`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。D-24～D-38 不
 改变 D-21 的状态集合；它们冻结的是 Change/Verification 事实模型、可重建
 baseline、安全持久化、Operation 提交边界与 Alpha 兼容策略。
 
@@ -6074,6 +6081,8 @@ locator/acceptance为唯一细节；后续一旦 wire bytes发布，再变更必
   runtime pin必须 byte-identical，unsigned runtime digest必须
   等于 Evidence runtime digest；IPC endpoint attestation digest、generation或
   issuedAt任一 signed-but-mismatched都按 `attestation_invalid`零写拒绝。
+  C09-1O只收窄其 structure-only success输入；它不改变本 exact等式，也不把
+  multi-target Distribution Catalog直接提升为本机 authority，详见D-38。
 - public support capability只由 root-signed、Provider-Acceptance-pinned Public
   Taxonomy + signed Release Matrix + signed Target Discovery Result + Release
   Target Universe + Support Catalog闭包导出；五者 exact复制 verified
@@ -7579,16 +7588,61 @@ aggregate semantic digest
 D-37只冻结 production-format Registry Entry↔passed Evidence supplied-history candidate；它不
 证明 Registry/approval authoritative current、Catalog exact-cover、Taxonomy/Matrix/Discovery/
 Universe/Catalog五链 retained current-candidate与 accounting、Acceptance selector、唯一 writer、
-真实 Provider/runtime/volume/IPC、Migration或任何 Store I/O。后继顺序仍固定为 C09-1L实现→
-Catalog exact-cover→五链 history/current-candidate→Acceptance current selector→Migration；
-C09 aggregate、第15步、strong-write、production与release gates继续 open/locked。
+真实 Provider/runtime/volume/IPC、Migration或任何 Store I/O。随后C09-1L实现、C09-1M
+Catalog exact-cover与C09-1N五链 history/current-candidate已分别形成并提交各自
+none-authority candidate；这不改变原顺序，也不借用C09-1K的旧同SHA CI数字。
+Acceptance current selector仍由D-38起继续实施，Migration在其后；C09 aggregate、
+第15步、strong-write、production与release gates继续open/locked。
+
+### D-38：Acceptance 将 Distribution coverage 与本机 active-writer authority 分离
+
+状态：Accepted（2026-08-13 implementation-safety Decision Amendment；在首个
+committed C09-1O bytes前冻结）。本修订不新增第18个 Commit Gate。
+
+实现审计发现，C09-1M/1N允许同一公开 bucket包含多个 private full target；各
+target的 Evidence与Runtime按target绑定，而 steady Registry只有一个 enabled Entry
+及一组 Evidence/Runtime Pin。将整份 multi-target Distribution Catalog直接解释为
+Acceptance selector会迫使实现把不同 target的Catalog pin与单一Registry pin拼接，
+违反D-30已经冻结的 Catalog/Registry Evidence、policy与Runtime exact equality。
+
+D-38保留该等式且不改变C09-1M/1N wire、positive/invalid资源、digest或合法接受
+集合。multi-target Catalog及其 retained history继续是合法的 distribution-wide
+release coverage与 none-authority输入；它本身不是本机 Acceptance success，也不得
+按首项、默认项或 provider自报 target直接提升为 active writer。
+
+C09-1O只关闭一个狭窄的 structure-only candidate：输入须先通过完整C09-1N重验，
+且本 slice只接受 Universe/Catalog exact-cover恰一 full target；该 target须恰有一个
+`passed`且`strong_read_write`的 candidate，并与 steady Registry中唯一 enabled
+Entry的 provider ID、semantic policy digest、完整 Evidence Pin及完整 Runtime Pin
+byte-identical。zero/multiple、non-steady或任一合法重签但 cross-object不等均 fail
+closed。成功 selector固定一项，authority唯一为
+`none_provider_strong_ready_acceptance_candidate_structure_only`；generation ID、
+content digest、HMAC token、Envelope与Pin都只是 candidate bytes。caller提供的32-byte
+key、ordinal、predecessor与time不证明 immutable Installation Identity持有该key，
+也不建立 authoritative current或I/O authority。
+
+全局`ProviderActiveWriterSelectorV1` wire继续保持非空排序数组，不原位缩版；
+C09-1O的singleton只是本 slice接受边界。后继 production Trust Verifier可消费合法
+multi-target Distribution closure，但必须在 trusted client或OS-isolated边界从本机
+当前 opened physical target observation导出完整七字段 target；caller target ID、
+Catalog默认项和 provider runtime self-report均不得成为 authority。verifier只投影
+该唯一 local target，并重验 Universe/Catalog、Registry/Catalog Evidence/runtime/
+policy、revocation、online binding generation及当前 provider/runtime/IPC endpoint。
+
+后继 verifier还必须闭合 immutable Installation Identity、key-check/owned HMAC key、
+signed-package与retained trust，并建立 versioned mutual-auth IPC。candidate只有经
+installation-state provider原子 compare-append：no-replace发布 generation、更新
+authenticated complete enumeration、CAS high-water、持久化 operation-nonce compact
+receipt，且由 receipt/high-water选中后才成为current。Trust Verifier、WP5-PF/WP3P、
+atomic current/high-water/receipt、Migration与strong-write/production/release全部
+继续open/locked。
 
 ---
 
 ## 20. M0 冻结结果与延后决策
 
 原 M0 第 1–7 项已经分别由 D-13～D-19 冻结；Task Lifecycle、WP4 持久化与
-WP5 Change Intelligence 修订由 D-21～D-37 冻结。完整证据、Owner、试点 Pin
+WP5 Change Intelligence 修订由 D-21～D-38 冻结。完整证据、Owner、试点 Pin
 和 capability lock 见
 `docs/research/2026-07-28-g0-contract-freeze-record.md`。
 

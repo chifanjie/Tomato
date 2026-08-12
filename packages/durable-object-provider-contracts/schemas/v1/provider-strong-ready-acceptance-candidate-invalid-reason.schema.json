@@ -1,0 +1,17 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-strong-ready-acceptance-candidate-invalid-reason",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "schema_invalid",
+    "source_invalid",
+    "routing_not_steady",
+    "selector_zero_match",
+    "selector_ambiguous_match",
+    "selector_mismatch",
+    "generation_mismatch",
+    "digest_mismatch",
+    "token_invalid",
+    "envelope_mismatch"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-strong-ready-acceptance-candidate-invalid-stage",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "input",
+    "distribution_history_candidate",
+    "active_writer_selector",
+    "acceptance_state"
+  ]
+}

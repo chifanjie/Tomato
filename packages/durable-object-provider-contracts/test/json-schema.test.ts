@@ -1004,12 +1004,29 @@ describe("provider contract JSON Schema distribution", () => {
       "provider-release-matrix-signature-wrapper",
       "provider-target-discovery-input-bundle-signature-wrapper",
       "provider-target-discovery-result-signature-wrapper",
+      "provider-acceptance-generation-predecessor",
+      "provider-acceptance-genesis-predecessor",
+      "provider-acceptance-predecessor",
+      "provider-acceptance-state-generation-id",
+      "provider-active-writer-selection",
+      "provider-active-writer-selector",
+      "provider-migration-strong-ready-core",
+      "provider-strong-ready-acceptance-candidate-invalid-reason",
+      "provider-strong-ready-acceptance-candidate-invalid-stage",
+      "provider-strong-ready-acceptance-candidate-validation",
+      "provider-strong-ready-acceptance-generation-pin-candidate",
+      "provider-strong-ready-acceptance-state-candidate",
+      "provider-strong-ready-acceptance-state-envelope-candidate",
+      "provider-strong-ready-acceptance-state-generation-id-fields",
+      "provider-strong-ready-acceptance-state-unsigned-candidate",
+      "provider-strong-ready-accepted-configuration-candidate",
+      "provider-strong-ready-bootstrap-or-steady-activation",
     ] as const;
     for (const name of requiredNames) {
       expect(generated, name).toHaveProperty(name);
       expectEveryJsonSchemaObjectClosed(generated[name], name);
     }
-    expect(Object.keys(generated)).toHaveLength(294);
+    expect(Object.keys(generated)).toHaveLength(311);
 
     for (const name of [
       "store-durable-object-provider-runtime-attestation-signature-wrapper",

@@ -20,6 +20,7 @@ import {
   ProviderFeasibilityApproverKeyIdV1Schema,
   ProviderFeasibilityEvidenceIdV1Schema,
   ProviderFilesystemProfileCodeV1Schema,
+  ProviderAcceptanceStateGenerationIdV1Schema,
   ProviderMigrationIdV1Schema,
   ProviderOsReleaseFamilyCodeV1Schema,
   ProviderPublicSupportProfileIdV1Schema,
@@ -293,6 +294,24 @@ import {
   ProviderDistributionHistoryCurrentCandidatePointInvalidManifestV1Schema,
 } from "./provider-distribution-history-current-candidate-point-fixtures.js";
 import {
+  ProviderAcceptanceGenesisPredecessorV1Schema,
+  ProviderAcceptanceGenerationPredecessorV1Schema,
+  ProviderAcceptancePredecessorV1Schema,
+  ProviderActiveWriterSelectionV1Schema,
+  ProviderActiveWriterSelectorV1Schema,
+  ProviderMigrationStrongReadyCoreV1Schema,
+  ProviderStrongReadyAcceptanceCandidateInvalidReasonV1Schema,
+  ProviderStrongReadyAcceptanceCandidateInvalidStageV1Schema,
+  ProviderStrongReadyAcceptanceCandidateValidationV1Schema,
+  ProviderStrongReadyAcceptanceGenerationPinCandidateV1Schema,
+  ProviderStrongReadyAcceptanceStateCandidateV1Schema,
+  ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1Schema,
+  ProviderStrongReadyAcceptanceStateGenerationIdFieldsV1Schema,
+  ProviderStrongReadyAcceptanceStateUnsignedCandidateV1Schema,
+  ProviderStrongReadyAcceptedConfigurationCandidateV1Schema,
+  ProviderStrongReadyBootstrapOrSteadyActivationV1Schema,
+} from "./provider-strong-ready-acceptance-candidate.js";
+import {
   ProviderFeasibilityApprovalKeysV1Schema,
   ProviderFeasibilityApproverKeyIdFieldsV1Schema,
   ProviderFeasibilityApproverPublicKeySignatureWrapperV1Schema,
@@ -400,6 +419,8 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 =
   "provider-registry-root-key-id": ProviderRegistryRootKeyIdV1Schema,
   "provider-registry-manifest-generation-id":
     ProviderRegistryManifestGenerationIdV1Schema,
+  "provider-acceptance-state-generation-id":
+    ProviderAcceptanceStateGenerationIdV1Schema,
   "provider-migration-id": ProviderMigrationIdV1Schema,
   "provider-feasibility-evidence-id":
     ProviderFeasibilityEvidenceIdV1Schema,
@@ -939,6 +960,38 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 =
     ProviderDistributionHistoryCurrentCandidatePointGoldenManifestV1Schema,
   "provider-distribution-history-current-candidate-point-invalid-manifest":
     ProviderDistributionHistoryCurrentCandidatePointInvalidManifestV1Schema,
+  "provider-active-writer-selection":
+    ProviderActiveWriterSelectionV1Schema,
+  "provider-active-writer-selector":
+    ProviderActiveWriterSelectorV1Schema,
+  "provider-migration-strong-ready-core":
+    ProviderMigrationStrongReadyCoreV1Schema,
+  "provider-strong-ready-bootstrap-or-steady-activation":
+    ProviderStrongReadyBootstrapOrSteadyActivationV1Schema,
+  "provider-strong-ready-accepted-configuration-candidate":
+    ProviderStrongReadyAcceptedConfigurationCandidateV1Schema,
+  "provider-acceptance-genesis-predecessor":
+    ProviderAcceptanceGenesisPredecessorV1Schema,
+  "provider-acceptance-generation-predecessor":
+    ProviderAcceptanceGenerationPredecessorV1Schema,
+  "provider-acceptance-predecessor":
+    ProviderAcceptancePredecessorV1Schema,
+  "provider-strong-ready-acceptance-state-generation-id-fields":
+    ProviderStrongReadyAcceptanceStateGenerationIdFieldsV1Schema,
+  "provider-strong-ready-acceptance-state-unsigned-candidate":
+    ProviderStrongReadyAcceptanceStateUnsignedCandidateV1Schema,
+  "provider-strong-ready-acceptance-state-candidate":
+    ProviderStrongReadyAcceptanceStateCandidateV1Schema,
+  "provider-strong-ready-acceptance-state-envelope-candidate":
+    ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1Schema,
+  "provider-strong-ready-acceptance-generation-pin-candidate":
+    ProviderStrongReadyAcceptanceGenerationPinCandidateV1Schema,
+  "provider-strong-ready-acceptance-candidate-validation":
+    ProviderStrongReadyAcceptanceCandidateValidationV1Schema,
+  "provider-strong-ready-acceptance-candidate-invalid-stage":
+    ProviderStrongReadyAcceptanceCandidateInvalidStageV1Schema,
+  "provider-strong-ready-acceptance-candidate-invalid-reason":
+    ProviderStrongReadyAcceptanceCandidateInvalidReasonV1Schema,
   });
 
 export type ProviderContractJsonSchemaNameV1 =

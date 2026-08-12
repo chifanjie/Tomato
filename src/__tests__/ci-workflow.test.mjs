@@ -30,11 +30,15 @@ describe("CI workflow contract", () => {
       "provider_distribution",
       "workspace_quality",
     );
-    const workspaceQuality = workflowJob("workspace_quality", "quality");
+    const workspaceQuality = workflowJob(
+      "workspace_quality",
+      "preview_candidate",
+    );
+    const previewCandidate = workflowJob("preview_candidate", "quality");
     const quality = workflowJob("quality");
 
     expect(workflow.match(/run: pnpm install --frozen-lockfile/g)).toHaveLength(
-      3,
+      4,
     );
 
     expect(providerUnit).toContain("pnpm run build");
@@ -70,6 +74,9 @@ describe("CI workflow contract", () => {
       "pnpm --filter @understand-code/dashboard --fail-if-no-match test",
     );
     expect(workspaceQuality).toContain(
+      "pnpm --filter @understand-code/preview --fail-if-no-match test:runtime",
+    );
+    expect(workspaceQuality).toContain(
       "run: pnpm --filter @understand-code/dashboard audit:surface",
     );
     expect(
@@ -82,10 +89,68 @@ describe("CI workflow contract", () => {
       ),
     );
 
+    expect(previewCandidate).toContain("needs: workspace_quality");
+    expect(previewCandidate).toContain(
+      "pnpm --filter @understand-code/preview --fail-if-no-match build",
+    );
+    expect(previewCandidate).toContain(
+      "pnpm --filter @understand-code/preview --fail-if-no-match typecheck",
+    );
+    expect(previewCandidate).toContain(
+      "pnpm --filter @understand-code/preview --fail-if-no-match test:runtime",
+    );
+    expect(previewCandidate).toContain(
+      "npm pack . --ignore-scripts --pack-destination",
+    );
+    expect(previewCandidate.match(/npm pack/g)).toHaveLength(1);
+    expect(previewCandidate).toContain(
+      'test "${#PREVIEW_TARBALLS[@]}" -eq 1',
+    );
+    expect(previewCandidate).toContain(
+      'PREVIEW_TARBALL="${PREVIEW_TARBALLS[0]}"',
+    );
+    expect(previewCandidate).toContain(
+      'UNDERSTAND_CODE_PREVIEW_TARBALL="$PREVIEW_TARBALL"',
+    );
+    expect(previewCandidate).toContain(
+      'sha256sum "$(basename "$PREVIEW_TARBALL")"',
+    );
+    expect(previewCandidate).toContain(
+      "sha256sum --check understand-code-preview.sha256",
+    );
+    expect(previewCandidate).toContain(
+      "UNDERSTAND_CODE_PREVIEW_TARBALL=",
+    );
+    expect(previewCandidate).toContain(
+      "pnpm --filter @understand-code/preview --fail-if-no-match test:cold",
+    );
+    expect(previewCandidate).toContain("uses: actions/upload-artifact@v6");
+    expect(previewCandidate).toContain(
+      "name: understand-code-preview-${{ github.sha }}",
+    );
+    expect(previewCandidate).toContain(
+      "preview-artifacts/understand-code-preview-0.1.0-preview.1.tgz",
+    );
+    expect(previewCandidate).toContain(
+      "preview-artifacts/understand-code-preview.sha256",
+    );
+    expect(
+      previewCandidate.indexOf("--fail-if-no-match build"),
+    ).toBeLessThan(previewCandidate.indexOf("npm pack . --ignore-scripts"));
+    expect(
+      previewCandidate.indexOf("npm pack . --ignore-scripts"),
+    ).toBeLessThan(
+      previewCandidate.indexOf('UNDERSTAND_CODE_PREVIEW_TARBALL="$PREVIEW_TARBALL"'),
+    );
+    expect(
+      previewCandidate.indexOf('UNDERSTAND_CODE_PREVIEW_TARBALL="$PREVIEW_TARBALL"'),
+    ).toBeLessThan(previewCandidate.indexOf("sha256sum --check"));
+
     expect(quality).toContain("if: ${{ always() }}");
     expect(quality).toContain("- provider_unit");
     expect(quality).toContain("- provider_distribution");
     expect(quality).toContain("- workspace_quality");
+    expect(quality).toContain("- preview_candidate");
     expect(quality).toContain(
       "PROVIDER_UNIT_RESULT: ${{ needs.provider_unit.result }}",
     );
@@ -95,11 +160,15 @@ describe("CI workflow contract", () => {
     expect(quality).toContain(
       "WORKSPACE_QUALITY_RESULT: ${{ needs.workspace_quality.result }}",
     );
+    expect(quality).toContain(
+      "PREVIEW_CANDIDATE_RESULT: ${{ needs.preview_candidate.result }}",
+    );
     expect(quality).toContain('test "$PROVIDER_UNIT_RESULT" = "success"');
     expect(quality).toContain(
       'test "$PROVIDER_DISTRIBUTION_RESULT" = "success"',
     );
     expect(quality).toContain('test "$WORKSPACE_QUALITY_RESULT" = "success"');
+    expect(quality).toContain('test "$PREVIEW_CANDIDATE_RESULT" = "success"');
   });
 
   it("uses the Node 24-compatible action generation with a pinned project toolchain", () => {
@@ -121,7 +190,7 @@ describe("CI workflow contract", () => {
       [...workflow.matchAll(/timeout-minutes:\s*(\d+)/g)].map((match) =>
         Number(match[1]),
       ),
-    ).toEqual([45, 45, 45, 5]);
+    ).toEqual([45, 45, 45, 20, 5]);
     expect(workflow).toMatch(/on:\n\s+push:\n\s+pull_request:/);
   });
 });

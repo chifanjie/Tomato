@@ -131,9 +131,64 @@ jobs:
           pnpm --filter @understand-code/task-engine --fail-if-no-match test
           pnpm --filter @understand-code/cli --fail-if-no-match test
           pnpm --filter @understand-code/dashboard --fail-if-no-match test
+          pnpm --filter @understand-code/preview --fail-if-no-match test:runtime
 
       - name: Audit active dashboard surface
         run: pnpm --filter @understand-code/dashboard audit:surface
+
+  preview_candidate:
+    name: Preview candidate package
+    needs: workspace_quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: true
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.x
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and cold-test Preview package
+        run: |
+          pnpm --filter @understand-code/preview --fail-if-no-match build
+          pnpm --filter @understand-code/preview --fail-if-no-match typecheck
+          pnpm --filter @understand-code/preview --fail-if-no-match test:runtime
+          mkdir -p preview-artifacts
+          (cd packages/preview && npm pack . --ignore-scripts --pack-destination "$GITHUB_WORKSPACE/preview-artifacts")
+          mapfile -t PREVIEW_TARBALLS < <(find "$GITHUB_WORKSPACE/preview-artifacts" -maxdepth 1 -type f -name '*.tgz' -print)
+          test "${#PREVIEW_TARBALLS[@]}" -eq 1
+          PREVIEW_TARBALL="${PREVIEW_TARBALLS[0]}"
+          UNDERSTAND_CODE_PREVIEW_TARBALL="$PREVIEW_TARBALL" pnpm --filter @understand-code/preview --fail-if-no-match test:cold
+          (cd preview-artifacts && sha256sum "$(basename "$PREVIEW_TARBALL")" > understand-code-preview.sha256)
+          (cd preview-artifacts && sha256sum --check understand-code-preview.sha256)
+
+      - name: Upload installable Preview Candidate
+        uses: actions/upload-artifact@v6
+        with:
+          name: understand-code-preview-${{ github.sha }}
+          path: |
+            preview-artifacts/understand-code-preview-0.1.0-preview.1.tgz
+            preview-artifacts/understand-code-preview.sha256
+          if-no-files-found: error
+          retention-days: 14
 
   quality:
     name: Quality gate
@@ -142,12 +197,14 @@ jobs:
       - provider_unit
       - provider_distribution
       - workspace_quality
+      - preview_candidate
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
       PROVIDER_UNIT_RESULT: ${{ needs.provider_unit.result }}
       PROVIDER_DISTRIBUTION_RESULT: ${{ needs.provider_distribution.result }}
       WORKSPACE_QUALITY_RESULT: ${{ needs.workspace_quality.result }}
+      PREVIEW_CANDIDATE_RESULT: ${{ needs.preview_candidate.result }}
 
     steps:
       - name: Require every quality shard
@@ -155,3 +212,4 @@ jobs:
           test "$PROVIDER_UNIT_RESULT" = "success"
           test "$PROVIDER_DISTRIBUTION_RESULT" = "success"
           test "$WORKSPACE_QUALITY_RESULT" = "success"
+          test "$PREVIEW_CANDIDATE_RESULT" = "success"

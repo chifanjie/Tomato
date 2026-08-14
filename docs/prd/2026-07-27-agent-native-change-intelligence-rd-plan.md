@@ -1,8 +1,8 @@
 # Understand Code：Agent-native Code Change Intelligence 项目研制计划
 
-> 文档状态：Approved / Contract Frozen v1.21（含 WP5 Decision Amendment D-24～D-40、strong-ready bootstrap/steady Acceptance compare-append closure/reference candidate 边界与 16-A-1 实施证据重校）
+> 文档状态：Approved / Contract Frozen v1.22（含 WP5 Decision Amendment D-24～D-41、strong-ready bootstrap/steady Acceptance compare-append closure/reference candidate、same-installation-identity current-strong-source normal pre-side-effect Plan/admission closure/reference candidate 边界与 16-A-1 实施证据重校）
 >
-> 最近 Provider slice 证据：D-39 trusted opened-root physical-target selection candidate 已在 `876ce8ef4f0d8dd375fa0d7c6e25aa61c713ba70` 提交并通过同 SHA CI run `31643781457`；该证据不属于 D-40 implementation evidence
+> 最近 Provider slice 证据：D-40 strong-ready bootstrap/steady Acceptance compare-append closure/reference candidate 已在 `58cc52f78f25fb743136a819da753e72c62eded6` 提交；same-SHA CI run `31764659888`全部success（Workspace 9m13s、Provider unit 28m21s、Preview 1m24s、Provider distribution 40m13s、final Quality 3s），只关闭D-40 none-authority candidate implementation evidence
 >
 > 日期：2026-07-27
 >
@@ -10,9 +10,9 @@
 >
 > WP4 Contract Amendment：2026-07-29；`build_task_brief` 的可恢复两阶段编排与可信 Operation Journal 见 D-22，Repo Pulse 不可变历史与原子切换见 D-23
 >
-> WP5 Contract Amendment：2026-07-30～2026-08-13；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host、不可变 Bootstrap Trust Bundle、签名 Target Discovery point closure、real-FS Conformance Result point closure、Provider Runtime Attestation point closure、QA/Release Provider Feasibility Evidence point closure、Release Target Universe point closure、Registry Entry↔Evidence supplied-history candidate closure、singleton Acceptance candidate、可信本机 opened-root physical-target selection candidate与 strong-ready bootstrap/steady Acceptance compare-append closure/reference candidate边界见 D-24～D-40
+> WP5 Contract Amendment：2026-07-30～2026-08-14；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host、不可变 Bootstrap Trust Bundle、签名 Target Discovery point closure、real-FS Conformance Result point closure、Provider Runtime Attestation point closure、QA/Release Provider Feasibility Evidence point closure、Release Target Universe point closure、Registry Entry↔Evidence supplied-history candidate closure、singleton Acceptance candidate、可信本机 opened-root physical-target selection candidate、strong-ready bootstrap/steady Acceptance compare-append closure/reference candidate与 same-installation-identity current-strong-source normal pre-side-effect Plan/admission closure/reference candidate边界见 D-24～D-41
 >
-> Implementation Rebaseline：2026-08-03；Evidence Refresh：2026-08-13；Contract Refresh：2026-08-13。重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1L、C09-1M、C09-1N、C09-1O与D-39已形成并提交各自 none-authority候选，D-39已通过同 SHA CI。D-40 strong-ready bootstrap/steady Acceptance compare-append closure/reference candidate已冻结、implementation in progress；它不命名为C09-1P、不新增 Gate/AT且不解锁 authority。Provider aggregate、真实 Provider、生产 Change Intelligence、双 Agent、Task-first Workbench、strong-write、production 与 release gates 仍未关闭
+> Implementation Rebaseline：2026-08-03；Evidence Refresh：2026-08-14；Contract Refresh：2026-08-14。重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1L、C09-1M、C09-1N、C09-1O、D-39与D-40已形成并提交各自 none-authority候选。D-40 implementation commit `58cc52f78f25fb743136a819da753e72c62eded6`及same-SHA CI `31764659888` evidence accepted，只关闭该none-authority candidate。D-41仅冻结same-installation-identity current-strong-source normal pre-side-effect、`provider_decommission`-only、尚未Catalog/Registry admit的prospective destination none-authority candidate，implementation pending；它不命名为C09-1P、不新增 Gate/AT且在首个reservation write前停止。semantic-policy/recovery/cross-installation/binding-only/compromise/emergency/historical source均fail closed；candidate→formal ID mapping、prepared Registry/Catalog successor、正式Acceptance/Migration ABI、Provider authority、真实I/O、生产 Change Intelligence、双 Agent、Task-first Workbench、strong-write、production 与 release gates 仍open/locked
 >
 > 适用范围：`understand-code` 产品、Core、Agent 插件、MCP、本地服务与 Dashboard
 >
@@ -321,11 +321,11 @@ Tasks（默认） | Knowledge | Graph
 
 Incident、Impact、Change Check 和 Verification 都应成为 Task 的章节或视图。
 
-### 2.5 2026-08-13 合同状态与历史已核验证据
+### 2.5 2026-08-14 合同状态与历史已核验证据
 
 2026-07-27 的基线表保留为问题发现现场；下表将截至2026-08-06的C09-1K历史
-根质量基线与2026-08-13的C09-1O/D-39独立同SHA证据分开记录，任一证据都不外推到其后
-slice、Provider aggregate或authority。Provider合同状态另按D-38～D-40同步：
+根质量基线与截至2026-08-14的C09-1O/D-39/D-40独立同SHA证据分开记录，任一证据都不外推到其后
+slice、Provider aggregate或authority。Provider合同状态另按D-38～D-41同步：
 
 | 项目 | 当前事实 |
 |---|---|
@@ -333,7 +333,7 @@ slice、Provider aggregate或authority。Provider合同状态另按D-38～D-40�
 | Workspace 包 | 8 个：Contracts、Repository State、Artifact Store、Core、Task Engine、CLI、Dashboard、Durable Object Provider Contracts |
 | C09-1K历史根质量门禁 | 本地 macOS `CI=true pnpm quality`：194 个测试文件、2,367 passed、1 个既有 skip、0 failed；build/typecheck/Dashboard production build 全绿；Linux clean-checkout same-SHA CI run `31079755984` / job `92545638787` on `0c6474df66ce28e4a7caf4006233100194a6e493`：194 个测试文件、2,368 passed、0 skipped、0 failed，19m39s，success |
 | 修改前能力 | Repo Pulse、Persistent Task Brief、候选排序、影响路径、Evidence/Unknown、Task Lifecycle 已有正式实现 |
-| Provider Contracts | Strict Ed25519、Bootstrap Trust Bundle、Root/Registry History、signed real-FS Corpus→Suite、signed Target Discovery、unsigned Result、root-signed Runtime、QA/Release Evidence、Release Target Universe、Registry↔Evidence、Support Catalog与五链 retained current-candidate已经推进至 C09-1N committed none-authority candidate。D-38的 C09-1O single-target、Registry-exact、structure-only Acceptance candidate已在 `36588f34899f0e0de36536192841f7f188d3c128`提交并通过同 SHA CI `31625767367`。D-39可信本机 opened-root physical-target selection candidate已在 `876ce8ef4f0d8dd375fa0d7c6e25aa61c713ba70`提交，并由同 SHA CI run `31643781457`验证为 success；该 run内 Provider unit 17m46s、Provider distribution 40m12s、Workspace 9m19s、Preview 1m8s，最终 Quality 4s success。该证据只关闭D-39 none-authority candidate，不外推到Provider aggregate、authoritative current或I/O。D-40 strong-ready bootstrap/steady none-authority compare-append closure/reference Candidate已冻结、implementation in progress；真实Identity key ownership、OS Provider、mutual-auth IPC、durable I/O与Migration仍 locked，全部 strong-write/production/release gate仍 open |
+| Provider Contracts | Strict Ed25519、Bootstrap Trust Bundle、Root/Registry History、signed real-FS Corpus→Suite、signed Target Discovery、unsigned Result、root-signed Runtime、QA/Release Evidence、Release Target Universe、Registry↔Evidence、Support Catalog与五链 retained current-candidate已经推进至 C09-1N committed none-authority candidate。D-38的 C09-1O single-target、Registry-exact、structure-only Acceptance candidate已在 `36588f34899f0e0de36536192841f7f188d3c128`提交并通过同 SHA CI `31625767367`。D-39可信本机 opened-root physical-target selection candidate已在 `876ce8ef4f0d8dd375fa0d7c6e25aa61c713ba70`提交并通过同 SHA CI `31643781457`。D-40 strong-ready bootstrap/steady none-authority compare-append closure/reference Candidate已在 `58cc52f78f25fb743136a819da753e72c62eded6`提交，并由同 SHA CI run `31764659888`验证为全绿；该组证据只关闭D-40 none-authority candidate，不外推到Provider aggregate、authoritative current或I/O。D-41仅冻结`provider_decommission`-only prospective destination none-authority candidate，implementation pending，并在首个reservation write前停止；semantic-policy/recovery、candidate→formal ID mapping、prepared Registry/Catalog successor、正式Identity key ownership、OS Provider、mutual-auth IPC、durable I/O、cross/formal Migration与aggregate仍open/locked，全部 strong-write/production/release gate仍 open |
 | 修改后能力 | Change Check/Verification 有严格 Contract 和 Store 基础，但没有生产 `checkChanges()` / `recordVerification()` 执行服务 |
 | Agent Surface | 已有 `packages/cli` 自包含 stdio MCP 候选和 3 个真实 Tool；仍无 `.codex-plugin/plugin.json`、Codex/Claude Adapter 或双 Agent Task E2E |
 | 前端 | 活跃 Surface 仍为 `wiki | graph`；尚无 Tasks、Brief、Check、Verification 与 Repo Pulse 产品页面 |
@@ -3016,7 +3016,8 @@ P2 的阻断规则必须确定性执行：
 - Beta Hardening 再完成多 Worktree、并发恢复、迁移、安全、完整 Workbench 和双 Agent。
 - 接口可以按 Fixture 并行开发，但阶段门前必须切换到正式实现并通过集成测试。
 
-截至 2026-08-06 的完整同 SHA实现证据与截至2026-08-13的合同状态如下。`Closed` 只关闭该工作包写明的边界，不自动
+下表把截至2026-08-06的C09-1K历史完整同SHA基线，与截至2026-08-14的后继slice
+独立同SHA证据及合同状态分开记录。`Closed` 只关闭该工作包写明的边界，不自动
 解锁下游 capability，也不能被宣传成用户产品已经可用：
 
 | 工作包 | 当前状态 | 解释 |
@@ -3026,7 +3027,7 @@ P2 的阻断规则必须确定性执行：
 | WP2 | Closed | Repository State / Repo Pulse 已关闭 |
 | WP3 | Closed | Artifact Store / Evidence persistence 已关闭 |
 | WP4 | Closed | Persistent Task Brief 与 Lifecycle 已关闭；不包含生产 Change Check |
-| WP5-1P/C09 | **Partial / aggregate open** | C09-1L Registry↔Evidence、C09-1M Catalog exact-cover、C09-1N五链 retained current-candidate及 D-38/C09-1O singleton Registry-exact Acceptance candidate均已提交各自 none-authority candidate。D-39可信本机 opened-root physical-target selection candidate提交为 `876ce8ef4f0d8dd375fa0d7c6e25aa61c713ba70`，同 SHA CI run `31643781457`最终 Quality success；该证据不外推到 aggregate或 authority。D-40 strong-ready bootstrap/steady none-authority compare-append closure/reference Candidate、Migration及 aggregate总门仍需关闭 |
+| WP5-1P/C09 | **Partial / aggregate open** | C09-1L Registry↔Evidence、C09-1M Catalog exact-cover、C09-1N五链 retained current-candidate及 D-38/C09-1O singleton Registry-exact Acceptance candidate均已提交各自 none-authority candidate。D-39提交为 `876ce8ef4f0d8dd375fa0d7c6e25aa61c713ba70`并通过同 SHA CI `31643781457`；D-40提交为 `58cc52f78f25fb743136a819da753e72c62eded6`并通过同 SHA CI `31764659888`。这些证据均不外推到aggregate或authority。下一关闭点只实现D-41 `provider_decommission`-only、尚未Catalog/Registry admit的prospective destination none-authority candidate；semantic-policy/recovery、candidate→formal ID mapping、prepared Registry/Catalog successor、cross/formal Migration及aggregate总门继续open/locked |
 | WP3P | Not closed / capability locked | 真实 OS principal、Provider runtime 与 real-FS feasibility 尚未实现 |
 | WP5 | Contract frozen / implementation incomplete | 没有生产 Delta/Hunk/Matching、`checkChanges()`、`recordVerification()` 纵向闭环 |
 | WP6 | **Open（仅 16-A-1 candidate closed）** | `packages/cli` 已交付自包含 stdio MCP 与 Pulse/Brief 三工具；Host Adapter、完整 Tool surface、双 Agent E2E 仍未实现，不能把子切片状态外推为 WP6 candidate |
@@ -4132,7 +4133,7 @@ Symbol、Evidence、Impact 与分析完整性，而不是把 Git 文件列表包
 WP3P Provider Feasibility Gate 与 WP4 Task Intelligence；Diff→Symbol/Matching
 可在 security contracts 冻结后并行，但任何 strong mutation在 WP3P Gate关闭前
 保持 capability locked。
-估算：原 2.5 周只覆盖摘要级实现；按 D-24～D-40 的 path-safe、identity、
+估算：原 2.5 周只覆盖摘要级实现；按 D-24～D-41 的 path-safe、identity、
 SafeGit、reservation/quota 与 recovery 生产闭环修订为
 **6–8 周、12–16 person-weeks**。Contracts、Store 与 Operation kernel 串行冻结，
 Delta/Symbol/Matching 可在接口冻结后并行。
@@ -5990,7 +5991,7 @@ reflog 与未定义 quota 会让 crash recovery 存在误删或不一致结果�
 边界前移到首个 durable write，并冻结并发 ownership 与资源耗尽的唯一语义。
 
 WP5 的实现追踪、Acceptance 与 capability locks 见
-`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。D-24～D-40 不
+`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。D-24～D-41 不
 改变 D-21 的状态集合；它们冻结的是 Change/Verification 事实模型、可重建
 baseline、安全持久化、Operation 提交边界与 Alpha 兼容策略。
 
@@ -7771,8 +7772,9 @@ candidate，不证明active writer、Acceptance current、真实durability或任
 
 ### D-40：Strong-ready bootstrap/steady Acceptance compare-append closure/reference candidate
 
-状态：Frozen / implementation in progress（2026-08-13 pre-implementation Decision
-Amendment；同日implementation-safety审计后原位收窄）。D-40位于既有WP5-1P/C09
+状态：Implemented none-authority candidate / same-SHA evidence accepted（2026-08-13
+pre-implementation Decision Amendment；同日implementation-safety审计后原位收窄；
+2026-08-14 implementation commit）。D-40位于既有WP5-1P/C09
 aggregate Gate内；它**不命名为C09-1P**、不新增第18个Commit Gate或任何新AT编号。
 本slice只实现`strong_ready/bootstrap_or_steady_successor`的none-authority reference
 candidate；所有新增类型、导出、profile、digest domain与Schema ID都必须用
@@ -7939,12 +7941,1843 @@ smoke，并验证两个internal mint/state模块的deep import都拒绝；不得
 key ownership、OS provider、mutual-auth IPC、真实I/O/crash recovery、Migration、C09
 aggregate、strong-write、production与release全部继续`open/locked`。
 
+D-40 implementation固定在 commit
+`58cc52f78f25fb743136a819da753e72c62eded6`；clean-checkout same-SHA CI run
+`31764659888`的head SHA exact-equal该commit，Workspace 9m13s、Provider unit 28m21s、
+Preview 1m24s、Provider distribution 40m13s与final Quality 3s全部`success`。该组证据只
+关闭D-40 strong-ready bootstrap/steady compare-append closure none-authority candidate
+implementation evidence，不外推为正式Acceptance、Provider durability、Migration、C09
+aggregate或任何authority evidence。
+
+### D-41：Same-installation-identity current-strong-source normal pre-side-effect Plan/admission closure/reference candidate
+
+状态：Frozen / implementation pending（2026-08-14 pre-implementation Decision
+Amendment；同日implementation-safety终审后原位收窄）。D-41仍位于既有
+WP5-1P/C09 aggregate Gate内；它**不命名为C09-1P**、不新增第18个Commit Gate，
+也不新增`AT-D41`或其它AT编号。本slice只接受
+`mode="same_installation_identity"`、当前`strong_ready` Acceptance选中的source writer、
+完整签名但尚未进入current Registry Manifest/selector的prospective destination evidence
+candidate，以及`admissionClass="normal"`。本slice的reason只允许
+`provider_decommission`，并严格停止在
+`stopPoint="before_same_installation_identity_migration_history_quota_reservation_write"`，
+即首个quota reservation write之前。
+
+四个顶层canonical名字不得混用：public success type exact为
+`ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1`；
+success `profile` exact为
+`provider_migration_same_installation_identity_current_strong_source_normal_pre_side_effect_plan_admission_closure_reference_candidate_v1`；
+final closure digest domain exact为
+`provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate-v1`；
+public module filename exact为
+`provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate`。
+其它D-41 public/nested TypeScript types、underscore profile literals、hyphen digest domains与
+Schema IDs必须分别保留同一完整窄scope及其明确suffix，不得把三种命名语法互作alias。唯一authority为
+`none_provider_migration_same_installation_identity_current_strong_source_normal_pre_side_effect_plan_admission_closure_reference_candidate_only`。
+正式`ProviderMigrationPlanV1` same/cross union、正式Plan Envelope/Pin、History Quota
+Sizing/Admission/Reservation、`migration_only/recovery_only` Acceptance、progress/
+universe/rewrite/proof/receipt/tombstone及其locator/domain/profile保持原冻结文本，但
+**均未由D-41实现**。禁止用正式同名缩版、`z.unknown()`、structure-only union、
+candidate-to-formal cast或`provider-migration:<22-lower-hex>` formal brand伪装覆盖。
+
+#### D-41.1 Public exact2 seam、single-cohort capability与failure
+
+public operation只有以下exact2输入；`request`是descriptor-safe、bounded、递归detached的
+普通JSON，capability只按object identity保留，不clone：
+
+```ts
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectRequestReferenceCandidateV1 {
+  profile:
+    "provider_migration_same_installation_identity_current_strong_source_normal_pre_side_effect_request_reference_candidate_v1";
+  mode: "same_installation_identity";
+  reason: "provider_decommission";
+  admissionClass: "normal";
+  createdAt:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalCreatedAtReferenceCandidateV1;
+  migrationBudgets:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectBudgetsReferenceCandidateV1;
+  liveReferenceSchemaDigest: ContentDigestV1;
+  migrationProtocolDigest: ContentDigestV1;
+}
+
+declare const d41PrePlanReferenceCapabilityBrand: unique symbol;
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPrePlanReferenceCapabilityV1 {
+  readonly [d41PrePlanReferenceCapabilityBrand]: true;
+}
+
+interface BuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateV1Input {
+  request:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectRequestReferenceCandidateV1;
+  prePlanReferenceCapability:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPrePlanReferenceCapabilityV1;
+}
+
+function buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateV1(
+  input: unknown,
+): Promise<
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1
+>;
+```
+
+`request` key set exact8：`profile/mode/reason/admissionClass/createdAt/
+migrationBudgets/liveReferenceSchemaDigest/migrationProtocolDigest`。任何cross literal、
+`semantic_policy_change`、`emergency_recovery`、`binding_derivation_secret_compromise`、
+`post_root_compromise_rebind`、historical source、recovery-only、second descriptor、
+cross role、destination rebootstrap bundle、source retirement或其它extra field都必须在
+Schema阶段`schema_invalid`，且source stream调用exact zero。
+
+claim顺序固定：先完成outer exact2与request exact8的strict detached snapshot；Schema-invalid
+在claim前结束且source/quota read exact zero。snapshot通过后，
+`pre_plan_reference_capability` stage必须以private WeakMap原子`delete`完成capability
+claim/burn，发生在任何nested cohort/handle验证、任何`await`及source/quota read之前。并发
+consume恰一方claim成功；claim后任一验证或operation失败都永久burn且不得恢复/重新插入。
+
+一次private mint把role-bound source endpoint、destination endpoint、journal/quota
+reference machine、source streaming read host、完整retained Root/Registry material-owner/Catalog/
+Evidence/runtime verification closure、strict crypto verifier、pre/post continuity observers及同一
+private cohort ID封入一个capability。所有被封handle必须是read-only scoped capability；
+cohort record还必须封存由实际streamer/schema verifier与migration protocol verifier给出的
+`verifiedLiveReferenceSchemaDigest/verifiedMigrationProtocolDigest`常量；它们不得来自caller
+request的复制。consume在任何source stream调用前先将request两digest与这两个verified
+constant exact比较，任一不等固定internal `source_invalid`、source stream exact zero-call且
+所有write sink exact zero。
+cohort record内不得出现reservation/Plan/Acceptance/progress/receipt/object/quota/
+pending-intent writer或任何可到达write-authority handle。mint还必须绑定同一private
+side-effect audit observer，从mint开始前一直覆盖consume结束/失败清理后的完整区间，
+对九类sink的revision、count与content digest做pre/post observation。capability必须
+null-prototype、frozen、zero-own-key，
+只由单一private `WeakMap`取回完整cohort record；mint exact-once且不export。consume先验证
+record内全部handle的cohort/Identity/machine/role cross-binding，再做任何source读取。
+public不能组合多个handle；copy、JSON/structured clone、forged、另一cohort、
+cross-machine或内部role substitution全部拒绝。cohort ID、handles、raw key/HMAC/crypto
+host、filesystem path、provider handle与continuity token不得序列化、hash或输出。
+mint本身、capability validation、source/quota读取、candidate构造及post observation任一阶段
+都不得调用write sink；success的九个zero counter必须从audit observer的exact-equal
+pre/post结果派生，禁止硬编码。observer缺失、不可覆盖某一sink或发现任何delta均固定
+`side_effect_detected`，public failure仍不返回partial value。audit必须在所有success/failure
+路径的`finally`中、失败清理后执行；九sink任一delta固定覆盖此前diagnostic为
+`stage="side_effect_boundary"/reason="side_effect_detected"`，只有audit exact-zero才保留并返回
+原先internal stage/reason。
+
+operation返回captured-intrinsic hardened Promise；success递归detached/frozen。唯一public
+failure为
+`ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationError`，
+其wire语义固定`code="provider_unavailable"/reason="attestation_invalid"`。public root
+不导出failure/result/diagnostic union、mint或private machine；internal deep import在packed
+Node/browser中必须拒绝。
+
+#### D-41.2 Current strong source、prospective destination evidence与narrow value leaves
+
+D-41可复用当前源码真实导出的`ContentDigestV1`、`LowerHex22V1`、
+`LowerHex32V1`、`LowerHex64V1`、`CanonicalByteStringV1`、
+`DurableObjectIdentityProviderIdV1`、`InstallationIdentityGenerationIdV1`、
+`ProviderTargetProfileIdV1`、`ProviderRegistryIsoTimestampV1`、
+`ProviderRegistryRootMetadataPinV1`、`ProviderRegistryManifestPinV1/EnvelopeV1`、
+`StoreDurableObjectProviderRegistryEntryV1`、
+`ProviderFeasibilitySupportCatalogPinV1/EnvelopeV1`、
+`ProviderReleaseTargetUniversePinV1/EnvelopeV1`、
+`ProviderFeasibilityTargetV1`、`ProviderFeasibilitySupportCandidateV1`、
+`ProviderFeasibilityEvidencePinV1/EnvelopeV1`、
+`StoreDurableObjectProviderRuntimeAttestationPinV1`以及D-40 current-read/
+Acceptance/writer candidate types。package当前不存在的
+`PathSafeRepositoryIdV1`、`PathSafeWorktreeIdV1`、
+`StoreManifestCurrentVersionPinV1`、`ProviderMigrationLive*`与
+`ProviderMigrationHistoryQuotaUsageV1`不得被假定为existing；D-41必须定义以下窄
+candidate DTO/brand：
+
+```ts
+type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalRepositoryReferenceCandidateIdV1 =
+  `provider-migration-same-installation-identity-current-strong-source-normal-repository-reference-candidate:${LowerHex64V1}`;
+type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalWorktreeReferenceCandidateIdV1 =
+  `provider-migration-same-installation-identity-current-strong-source-normal-worktree-reference-candidate:${LowerHex64V1}`;
+type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateIdV1 =
+  `provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate:${LowerHex22V1}`;
+type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectHistoryQuotaReservationReferenceCandidateIdV1 =
+  `provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-history-quota-reservation-reference-candidate:${LowerHex22V1}`;
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalNamespaceReferenceCandidateV1 {
+  installationIdentityGenerationId: InstallationIdentityGenerationIdV1;
+  repositoryId:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalRepositoryReferenceCandidateIdV1;
+  worktreeId:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalWorktreeReferenceCandidateIdV1;
+}
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalStoreProviderBindingReferenceCandidateV1 {
+  targetProfileId: ProviderTargetProfileIdV1;
+  providerId: DurableObjectIdentityProviderIdV1;
+  registryEntryContentDigest: ContentDigestV1;
+  semanticProviderPolicyDigest: ContentDigestV1;
+  providerFeasibilityEvidence: ProviderFeasibilityEvidencePinV1;
+  runtimeAttestationContentDigest: ContentDigestV1;
+  bindingDerivationKeyGeneration: number;
+  bindingReferenceDigest: ContentDigestV1;
+}
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalStoreManifestCurrentCutReferenceCandidateV1 {
+  profile:
+    "provider_migration_same_installation_identity_current_strong_source_normal_store_manifest_current_cut_reference_candidate_v1";
+  namespace:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalNamespaceReferenceCandidateV1;
+  providerBinding:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalStoreProviderBindingReferenceCandidateV1;
+  namespaceRevision: number;
+  headContentDigest: ContentDigestV1;
+  currentVersionReferenceDigest: ContentDigestV1;
+  generationCount: number;
+  generationSetDigest: ContentDigestV1;
+  currentGeneration: {
+    generationOrdinal: number;
+    generationReferenceId:
+      `provider-migration-same-installation-identity-current-strong-source-normal-store-manifest-generation-reference-candidate:${LowerHex22V1}`;
+    contentDigest: ContentDigestV1;
+  };
+  cutContentDigest: ContentDigestV1;
+}
+```
+
+`generationReferenceId`必须匹配完整窄prefix
+`provider-migration-same-installation-identity-current-strong-source-normal-store-manifest-generation-reference-candidate:`
+加22位lower hex。`currentVersionReferenceDigest`与`bindingReferenceDigest`都只是
+non-resolving commitment；raw current-version/binding token留在cohort。Store binding前7个
+字段固定为`targetProfileId/providerId/registryEntryContentDigest/
+semanticProviderPolicyDigest/providerFeasibilityEvidence/runtimeAttestationContentDigest/
+bindingDerivationKeyGeneration`，`bindingReferenceDigest`按D-41.7专用domain从该exact7重算。
+source Store cut的exact7必须byte-identical current selected writer；destination absent/current
+cut的exact7必须byte-identical下述prospective writer projection，禁止只用相同namespace混淆
+两个provider的隔离Store。
+
+endpoint trust必须是role-correlated strict union，而不是两个独立union的笛卡尔积。
+destination在本slice中不是formal `validated_migration_destination`，而是尚未进入
+current Manifest的prospective evidence candidate：
+
+```ts
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalEndpointTrustCommonReferenceCandidateV1 {
+  profile:
+    "provider_migration_same_installation_identity_current_strong_source_normal_endpoint_trust_reference_candidate_v1";
+  installationIdentityGenerationId: InstallationIdentityGenerationIdV1;
+  currentAcceptanceRead:
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceCurrentReadReferenceCandidateV1;
+  retainedAcceptanceGenerations:
+    readonly [
+      ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1,
+      ...ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1[]
+  ];
+  targetProfileId: ProviderTargetProfileIdV1;
+  trustClosureContentDigest: ContentDigestV1;
+}
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalProspectiveWriterProjectionReferenceCandidateV1 {
+  targetProfileId: ProviderTargetProfileIdV1;
+  providerId: DurableObjectIdentityProviderIdV1;
+  registryEntryContentDigest: ContentDigestV1;
+  semanticProviderPolicyDigest: ContentDigestV1;
+  providerFeasibilityEvidence: ProviderFeasibilityEvidencePinV1;
+  runtimeAttestationContentDigest: ContentDigestV1;
+  bindingDerivationKeyGeneration: number;
+}
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalProspectiveDestinationCutReferenceCandidateV1 {
+  profile:
+    "provider_migration_same_installation_identity_current_strong_source_normal_prospective_destination_cut_reference_candidate_v1";
+  activeRootMetadata: ProviderRegistryRootMetadataPinV1;
+  currentSteadyRegistryManifestPin: ProviderRegistryManifestPinV1;
+  currentSteadyRegistryManifestEnvelope: ProviderRegistryManifestEnvelopeV1;
+  currentSupportCatalog: ProviderFeasibilitySupportCatalogPinV1;
+  currentSupportCatalogEnvelope: ProviderFeasibilitySupportCatalogEnvelopeV1;
+  currentReleaseTargetUniverse: ProviderReleaseTargetUniversePinV1;
+  currentReleaseTargetUniverseEnvelope: ProviderReleaseTargetUniverseEnvelopeV1;
+  prospectiveRegistryEntryContentDigest: ContentDigestV1;
+  prospectiveRegistryEntry:
+    StoreDurableObjectProviderRegistryEntryV1 & {
+      registryGeneration: 1;
+    };
+  releaseTargetUniverseTargetOrdinal: number;
+  target: ProviderFeasibilityTargetV1;
+  prospectiveSupportCandidate:
+    ProviderFeasibilitySupportCandidateV1 & {
+      releaseDisposition: "strong_read_write";
+    };
+  evidenceEnvelope: ProviderFeasibilityEvidenceEnvelopeV1;
+  supportAdmission:
+    "not_yet_catalog_signed_or_registry_bound";
+  registryMembership: "none";
+  migrationPreparedManifest: "none";
+  selectorDisposition:
+    "outside_current_accepted_steady_selector_cut";
+  cutContentDigest: ContentDigestV1;
+}
+
+type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalEndpointTrustReferenceCandidateV1 =
+  | (ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalEndpointTrustCommonReferenceCandidateV1 & {
+      role: "source_current_strong_writer";
+      currentWriterSelection: ProviderActiveWriterSelectionV1;
+      authorization: {
+        kind: "current_strong_writer_reference_candidate";
+        selectorOrdinal: number;
+      };
+    })
+  | (ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalEndpointTrustCommonReferenceCandidateV1 & {
+      role: "destination_prospective_not_selected";
+      prospectiveWriterProjection:
+        ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalProspectiveWriterProjectionReferenceCandidateV1;
+      authorization: {
+        kind: "prospective_migration_destination_reference_candidate";
+        prospectiveDestinationCut:
+          ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalProspectiveDestinationCutReferenceCandidateV1;
+      };
+    });
+```
+
+`retainedAcceptanceGenerations`必须1..4096、按ordinal连续，且D-40 current read指向末项。
+source/destination必须共用byte-identical Installation Identity、current
+`strong_ready` Acceptance/high-water与target；source `currentWriterSelection` exact-equal
+current steady selector的唯一target项。destination provider ID必须不同，prospective
+Registry Entry必须是current Registry tip全部member（含revoked）中从未出现的新provider
+genesis Entry（`registryGeneration=1`且无predecessor字段）；其`activeRootMetadata`与
+`registryRootKeyId`必须exact current active Root，`feasibilityApprovalKeys`必须与current source
+Entry/current Catalog byte-identical，并由同一受信Root retained history验证。
+`prospectiveRegistryEntryContentDigest`不得是自由digest leaf，必须exact-equal
+`deriveStoreDurableObjectProviderRegistryEntryContentDigestV1(prospectiveRegistryEntry)`；
+`prospectiveRegistryEntry.installationIdentityGenerationId`必须exact-equal endpoint trust common
+Identity、current steady Manifest payload Identity与current Acceptance Identity。在任何source
+stream前，same-cohort verifier必须复制完整retained Registry history material-owner/key-history/
+revocation state，并对prospective gen1 Entry执行一次只读temporary admission，复用现有Registry
+entry validator的`public_key_material_alias`、key ownership、signature、history与revocation
+invariants；不得修改retained state。prospective provider verification key的`publicKeyBytes`不得
+alias Root/recovery/approver或任何current/historical provider verification material。与current
+source Entry/Catalog byte-identical的feasibility approval key records按相同approver identity+record
+复用，是唯一明确允许的shared material；binding-derivation records只执行既有Identity/history/
+signature/revocation一致性，不新增跨provider material-unique规则。temporary admit任一失败固定
+`destination_evidence_invalid`、source stream exact zero-call且全部write sink exact zero。current accepted
+Catalog Envelope及Release Target Universe Envelope必须分别exact派生上述Pin并完整闭合；
+prospective provider必须也不存在于current Catalog全部candidate，即current Catalog candidate absence
+必须由完整candidate set重算。destination target必须
+exact命中current signed Release Target Universe的唯一ordinal；prospective support candidate
+是窄none-authority projection，而不是`ProviderFeasibilitySupportCatalogEnvelopeV1`或已签名/
+accepted Catalog Point。它固定`releaseDisposition="strong_read_write"`，Evidence result固定
+`passed`；Entry/candidate的provider、semantic policy digest、Evidence Pin、Runtime Pin及active
+binding-derivation generation逐项exact，并派生唯一`prospectiveWriterProjection`。
+`evidenceEnvelope.payload.target`必须canonical exact-equal cut `target`及current Universe该
+ordinal的完整target；outer/payload `evidenceId`必须exact-equal
+`deriveProviderFeasibilityEvidenceIdV1(evidenceEnvelope.payload)`，outer `contentDigest`必须
+exact-equal`deriveProviderFeasibilityEvidenceContentDigestV1(evidenceEnvelope.payload)`，且
+`prospectiveSupportCandidate.providerFeasibilityEvidence`必须exact-equal
+`deriveProviderFeasibilityEvidencePinV1(evidenceEnvelope)`。support candidate内完整Runtime Pin
+须与Entry及Evidence payload的runtime digest逐项闭合，不再引入额外runtime closure digest leaf；
+Evidence/Entry/root signature authenticity只由该完整cut及同次cohort opaque retained trust
+boundary验证。后继Gate只能在formal
+migration ID与prepared Registry successor闭合后，再生成并验证Catalog direct successor；
+D-41不得提前产出或接受该formal Catalog bytes。该destination明确
+`supportAdmission="not_yet_catalog_signed_or_registry_bound"`、
+`registryMembership="none"`、
+`migrationPreparedManifest="none"`并位于current accepted steady selector cut之外；因此
+它是prospective evidence，不是formal enabled member或I/O authority。
+
+`currentSteadyRegistryManifestEnvelope`必须strict验证为`routing.state="steady"`，其outer
+generation/content digest及payload Manifest ID必须exact派生
+`currentSteadyRegistryManifestPin`；该Pin、`activeRootMetadata/currentSupportCatalog`必须
+byte-identical current Acceptance core的三Pin。current Catalog/Universe Envelope的outer与
+payload Pin/target-set claims必须重算。prospective provider absence必须从Manifest Envelope
+完整member set及current Catalog Envelope全部candidates重算，`registryMembership="none"`与
+`supportAdmission`不得作为自由boolean；
+`selectorDisposition`同样必须从current Acceptance selector与prospective provider/target
+逐项重算。Envelope的signature/history authenticity仍由single-cohort retained trust closure
+证明，并在success verification boundary中明确为opaque authenticity，而不是由单个public
+Envelope自证。
+
+本slice只接受`provider_decommission`，且source/destination provider ID必须不同。
+`semantic_policy_change`、binding-only、historical、compromise/emergency与recovery分支固定
+Schema fail closed并留给后继Decision。D-41不得构造、消费或授权
+`routing.state="migration"` Manifest：现有routing bytes包含migration ID，而本candidate ID
+又覆盖endpoint trust，若把prepared Manifest放入preimage会形成hash环。D-41的长prefix
+candidate ID也不是现有`ProviderMigrationIdV1`的`provider-migration:<22hex>` formal brand，
+不得直接写入Registry routing。后继Decision必须先冻结cycle-free的candidate→formal ID
+单向映射或修订formal routing/endpoint-trust ABI，才能在Plan reservation/publication规则
+闭合后依次构造no-replace Registry prepared direct successor、正式Catalog direct successor，
+再进入独立`migration_only` Acceptance Gate。
+prepared Manifest、formal Plan/Acceptance/receipt/token全部排除于D-41 migration ID与所有
+前置digest；现有formal same-provider semantic-policy route因member provider-ID uniqueness及
+migration routing要求source/destination provider不同而不可表达，该wire矛盾继续open。
+
+namespace translation固定为：
+
+```ts
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalNamespaceTranslationReferenceCandidateV1 {
+  profile:
+    "provider_migration_same_installation_identity_current_strong_source_normal_namespace_translation_reference_candidate_v1";
+  mode: "same_installation_identity";
+  relationship:
+    "same_identity_repository_and_worktree_exact_equal";
+  sourceNamespace:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalNamespaceReferenceCandidateV1;
+  destinationNamespace:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalNamespaceReferenceCandidateV1;
+  journalAuthorityInstallationIdentityGenerationId:
+    InstallationIdentityGenerationIdV1;
+  translationReferenceDigest: ContentDigestV1;
+}
+```
+
+source/destination namespace三个字段必须byte-identical，journal authority必须等于该
+Identity。translation digest是non-resolving、non-authorizing commitment，不输出HMAC/token。
+
+#### D-41.3 Self-contained source hash-DAG与opaque completeness boundary
+
+source public projection定义完整、严格的root/object/reference value shapes：
+
+```ts
+type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalLiveObjectKindReferenceCandidateV1 =
+  | "store_manifest_generation"
+  | "quota_index_node"
+  | "quota_index_root"
+  | "quota_transition_record"
+  | "artifact_manifest_generation"
+  | "repo_pulse_immutable_version"
+  | "committed_private_blob"
+  | "committed_private_metadata"
+  | "ownership_marker"
+  | "initialization_terminal_receipt"
+  | "terminalization_handoff_record"
+  | "provider_journal_record"
+  | "provider_operation_receipt"
+  | "store_manifest_compare_append_receipt"
+  | "reservation_membership"
+  | "active_blob_entitlement"
+  | "active_metadata_plan"
+  | "active_temp_plan"
+  | "control_state";
+
+type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalLiveRootReferenceCandidateV1 =
+  | {
+      rootKind: "store_manifest_complete_set";
+      current:
+        ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalStoreManifestCurrentCutReferenceCandidateV1;
+    }
+  | {
+      rootKind: "quota_index_and_transition_chain";
+      currentQuotaIndexRootContentDigest: ContentDigestV1;
+      transitionHead:
+        | { state: "genesis" }
+        | {
+            state: "transition";
+            recordReferenceDigest: ContentDigestV1;
+            contentDigest: ContentDigestV1;
+          };
+    }
+  | {
+      rootKind: "artifact_descriptor_history_closure";
+      rootCount: number;
+      rootSetDigest: ContentDigestV1;
+    }
+  | {
+      rootKind: "initialization_terminal";
+      terminalHeadReferenceDigest: ContentDigestV1;
+    }
+  | {
+      rootKind: "store_manifest_compare_append_receipt_ledger";
+      providerId: DurableObjectIdentityProviderIdV1;
+      providerPolicyDigest: ContentDigestV1;
+      receiptCount: number;
+      receiptSetDigest: ContentDigestV1;
+      receiptLogicalBytes: number;
+    }
+  | {
+      rootKind: "active_recovery_control";
+      activeTransactionCount: 0;
+      controlUniverseDigest: ContentDigestV1;
+    };
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalLiveRootEntryReferenceCandidateV1 {
+  rootOrdinal: number;
+  root:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalLiveRootReferenceCandidateV1;
+}
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalLiveObjectEntryReferenceCandidateV1 {
+  objectOrdinal: number;
+  objectKind:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalLiveObjectKindReferenceCandidateV1;
+  locatorNamespace:
+    | "store"
+    | "provider_isolated_store_manifest_receipt_ledger";
+  logicalLocatorReferenceDigest: ContentDigestV1;
+  semanticLocatorDigest: ContentDigestV1;
+  contentDigest: ContentDigestV1;
+  logicalBytes: number;
+  providerBindingReferenceDigest: ContentDigestV1;
+}
+
+type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalLiveReferenceSourceReferenceCandidateV1 =
+  | { sourceKind: "root"; rootOrdinal: number }
+  | {
+      sourceKind: "object";
+      objectOrdinal: number;
+      objectContentDigest: ContentDigestV1;
+    };
+
+type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalLiveReferenceSlotDescriptorReferenceCandidateV1 =
+  | {
+      sourceKind: "root";
+      rootKind:
+        ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalLiveRootReferenceCandidateV1["rootKind"];
+      schemaFieldPath: CanonicalByteStringV1;
+      occurrenceOrdinal: number;
+    }
+  | {
+      sourceKind: "object";
+      objectKind:
+        ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalLiveObjectKindReferenceCandidateV1;
+      schemaFieldPath: CanonicalByteStringV1;
+      occurrenceOrdinal: number;
+    };
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalLiveReferenceEdgeReferenceCandidateV1 {
+  edgeOrdinal: number;
+  from:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalLiveReferenceSourceReferenceCandidateV1;
+  referenceSlotReferenceDigest: ContentDigestV1;
+  referenceSlotDescriptor:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalLiveReferenceSlotDescriptorReferenceCandidateV1;
+  toObjectOrdinal: number;
+}
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalCompleteSourceReadClosureReferenceCandidateV1 {
+  profile:
+    "provider_migration_same_installation_identity_current_strong_source_normal_complete_source_read_closure_reference_candidate_v1";
+  sourceInstallationIdentityGenerationId:
+    InstallationIdentityGenerationIdV1;
+  sourceTrustClosureContentDigest: ContentDigestV1;
+  sourceStoreManifest:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalStoreManifestCurrentCutReferenceCandidateV1;
+  sourceFreezeStateReferenceDigest: ContentDigestV1;
+  liveReferenceSchemaDigest: ContentDigestV1;
+  roots:
+    ReadonlyArray<ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalLiveRootEntryReferenceCandidateV1>;
+  objects:
+    ReadonlyArray<ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalLiveObjectEntryReferenceCandidateV1>;
+  references:
+    ReadonlyArray<ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalLiveReferenceEdgeReferenceCandidateV1>;
+  rootCount: number;
+  rootSetDigest: ContentDigestV1;
+  canonicalRootSetBytes: number;
+  objectCount: number;
+  objectSetDigest: ContentDigestV1;
+  canonicalObjectSetBytes: number;
+  logicalObjectBytesTotal: number;
+  referenceCount: number;
+  referenceSetDigest: ContentDigestV1;
+  canonicalReferenceSetBytes: number;
+  canonicalUniverseBytes: number;
+  activeTransactions: [];
+  completeReadClosureContentDigest: ContentDigestV1;
+}
+```
+
+root与object分别至少1项，reference允许canonical empty；root/object/reference ordinal分别
+exact `0..N-1`并按冻结comparator排序、
+strict unique。每条edge的source/target必须存在，object content、slot descriptor与
+occurrence闭合；从全部root重放必须exact reach全部objects，不得dangling、unreachable或
+隐含第二locator。absolute OS path、raw provider handle与binding token不得进入candidate或
+任一digest；cohort-private verified logical locator只允许strict两分支：Store canonical
+relative locator，或provider-isolated receipt-ledger的exact
+`providerId/repositoryId/worktreeId/operationNonce` locator。该private locator不得由caller
+提交或输出，而必须由same-cohort source streamer交给与actual verified
+`liveReferenceSchemaDigest` byte-bound的strict locator commitment deriver；该digest所指向的
+versioned schema/deriver与canonical vector corpus必须同时冻结Store与receipt-ledger两分支。
+deriver对同一private locator单次返回
+`{logicalLocatorReferenceDigest,semanticLocatorDigest}`，runtime逐项exact-equal object中的两值
+后立即丢弃private locator。public两值仍只是non-resolving leaves，JSON只能重算外层hash-DAG，
+不能脱离opaque cohort证明raw locator真实性；不得把这条boundary外推成路径解析或Provider
+authority。
+
+同一actual verified `liveReferenceSchemaDigest`还必须byte-bind strict reference-slot enumerator/
+commitment deriver。它从每个verified root与object canonical bytes枚举全部且仅全部
+provider-bound typed slots，按strict descriptor+occurrence重算`referenceSlotReferenceDigest`，
+并把private target locator经上述locator deriver映射到唯一`toObjectOrdinal`；raw slot value与
+target locator都不输出。每个schema-bound slot必须exact一条edge，不得missing/extra；public
+descriptor/digest只能作为opaque schema-bound commitment，不能由caller独立拼装。
+
+comparator无环冻结：先对每个strict root entry删除`rootOrdinal`，按
+`UTF8(JCS(remainingEntry))` bytes严格bytewise升序/unique，再依次赋`rootOrdinal=0..N-1`；
+object同理先删除`objectOrdinal`排序/unique并赋ordinal。只有root/object ordinal固定后才构造
+edge；每个strict edge删除`edgeOrdinal`后按相同JCS UTF-8 bytewise comparator严格升序/unique，
+再赋`edgeOrdinal=0..N-1`。set digest与canonical byte projection必须使用赋ordinal后的最终
+arrays；caller ordinal不得参与排序key，canonical tie/duplicate/reorder一律`source_invalid`。
+在object comparator与ordinal赋值前，还必须对完整object集合的
+`(semanticLocatorDigest,providerBindingReferenceDigest)` tuple做strict unique；同一tuple即使
+搭配不同`logicalLocatorReferenceDigest/objectKind/contentDigest/logicalBytes`也固定
+`source_invalid`。每个`logicalLocatorReferenceDigest/semanticLocatorDigest`必须来自同一次
+schema-bound private deriver调用，不接受两个独立caller leaves或cross-object substitution。
+在edge comparator与ordinal赋值前，还必须对`(from,referenceSlotDescriptor)`做strict unique，
+并与schema-bound private slot enumerator的complete set canonical exact；同一descriptor/
+occurrence携带不同digest或target、同一slot多edge、missing/extra slot一律`source_invalid`。
+每个`objects[*].providerBindingReferenceDigest`还必须exact-equal
+`completeSourceReadClosure.sourceStoreManifest.providerBinding.bindingReferenceDigest`，即source
+current-writer Store binding；任一object不得携带destination、historical或其它strict有效binding。
+object namespace discriminant固定为iff：只有
+`objectKind="store_manifest_compare_append_receipt"`可且必须使用
+`locatorNamespace="provider_isolated_store_manifest_receipt_ledger"`；其余18个object kind可且
+必须使用`locatorNamespace="store"`，禁止形成笛卡尔积。
+
+root set必须exact-cover六个`rootKind`各恰一次：`store_manifest_complete_set/
+quota_index_and_transition_chain/artifact_descriptor_history_closure/initialization_terminal/
+store_manifest_compare_append_receipt_ledger/active_recovery_control`；genesis/empty形态也必须显式
+保留，禁止省略。六项仍按上述去ordinal comparator形成最终顺序。
+`store_manifest_complete_set.current`必须canonical exact-equal closure
+`sourceStoreManifest`；receipt-ledger root的`providerId/providerPolicyDigest`必须分别exact-equal
+source Store binding的`providerId/semanticProviderPolicyDigest`；
+`active_recovery_control.activeTransactionCount=0`必须与closure `activeTransactions=[]`一致。
+
+所有source counters均为派生值而非自由数字，checked arithmetic固定为：
+
+```text
+rootCount = roots.length
+objectCount = objects.length
+referenceCount = references.length
+canonicalRootSetBytes = UTF8(JCS({entries: roots})).byteLength
+canonicalObjectSetBytes = UTF8(JCS({entries: objects})).byteLength
+canonicalReferenceSetBytes = UTF8(JCS({entries: references})).byteLength
+canonicalUniverseBytes = UTF8(JCS({roots, objects, references})).byteLength
+logicalObjectBytesTotal = checkedSafeSum(objects[*].logicalBytes)
+```
+
+每个set digest与canonical-byte projection只读取对应完整ordered entries；Universe byte
+projection只读取三套完整ordered arrays；logical total只读取各object的`logicalBytes`。
+这些projection一律排除自身count/set digest/canonical bytes/Universe bytes/logical total，
+避免fixed point；任一非safe integer或safe-sum overflow固定`source_invalid`。runtime必须对
+每个count/digest/byte/logical counter做重算exact equality，focused vectors逐项覆盖
+`B-1/B/B+1`及改值后重算外层closure仍拒绝。
+
+输出完整roots/objects/references，因而任何消费者可从输出独立重算count、ordered-set
+digest、canonical bytes、logical bytes与reachability hash-DAG；但“这是provider在同一
+freeze cut下的完整全集”不能由JSON自证。该completeness只由同一次cohort内source
+streaming capability在相同Store cut/freeze token下执行exact-once EOF、budgeted complete
+read及pre/post continuity证明。D-41明确选择“public hash-DAG可重算 + opaque streaming
+capability证明全集”，不得退化为caller DTO、cached pointer或目录扫描。
+
+#### D-41.4 Budgets、11-kind dry-run与quota sizing
+
+`ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectBudgetsReferenceCandidateV1`
+必须含profile
+`provider_migration_same_installation_identity_current_strong_source_normal_pre_side_effect_budgets_reference_candidate_v1`
+及以下全部字段：`maxRootEntries/maxLiveObjects/maxReferenceEdges/maxRewriteObjects/
+maxRewriteReferenceMappings/maxRewriteSccs/maxLogicalObjectBytesTotal/maxProgressRecords/
+maxProgressOperationReceipts/maxCanonicalUniverseBytes/maxCanonicalReferenceSetBytes/
+maxCanonicalRewritePlanBytes/maxCanonicalRewrittenReferenceSetBytesTotal/
+maxCanonicalSemanticEquivalenceProofBytesTotal/maxCanonicalRootRewriteProofSetBytes/
+maxCanonicalZeroLiveProofBytes/maxCanonicalReceiptBytesTotal/
+maxCanonicalProgressRecordSetBytes/maxCanonicalProgressOperationReceiptBytesTotal/
+maxCanonicalMigrationBytesTotal/maxRetainedMigrationHistoryLogicalBytesTotal/
+maxRetainedMigrationHistoryProviderAllocatedBytesTotal/maxSingleRecordBytes`。
+范围与正式Matrix逐字段一致；`maxSingleRecordBytes=4_194_304`，component不得大于
+对应total，`maxProgressRecords >= 2 * maxLiveObjects + 7`，
+`maxRetainedMigrationHistoryLogicalBytesTotal <= maxCanonicalMigrationBytesTotal <=
+4_294_967_296`，allocated total不得超过`8_589_934_592`。
+
+exact public DTO为：
+
+```ts
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectBudgetsReferenceCandidateV1 {
+  profile:
+    "provider_migration_same_installation_identity_current_strong_source_normal_pre_side_effect_budgets_reference_candidate_v1";
+  maxRootEntries: number;
+  maxLiveObjects: number;
+  maxReferenceEdges: number;
+  maxRewriteObjects: number;
+  maxRewriteReferenceMappings: number;
+  maxRewriteSccs: number;
+  maxLogicalObjectBytesTotal: number;
+  maxProgressRecords: number;
+  maxProgressOperationReceipts: number;
+  maxCanonicalUniverseBytes: number;
+  maxCanonicalReferenceSetBytes: number;
+  maxCanonicalRewritePlanBytes: number;
+  maxCanonicalRewrittenReferenceSetBytesTotal: number;
+  maxCanonicalSemanticEquivalenceProofBytesTotal: number;
+  maxCanonicalRootRewriteProofSetBytes: number;
+  maxCanonicalZeroLiveProofBytes: number;
+  maxCanonicalReceiptBytesTotal: number;
+  maxCanonicalProgressRecordSetBytes: number;
+  maxCanonicalProgressOperationReceiptBytesTotal: number;
+  maxCanonicalMigrationBytesTotal: number;
+  maxRetainedMigrationHistoryLogicalBytesTotal: number;
+  maxRetainedMigrationHistoryProviderAllocatedBytesTotal: number;
+  maxSingleRecordBytes: 4_194_304;
+}
+
+type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryArtifactKindReferenceCandidateV1 =
+  | "canonical_rewrite_plan"
+  | "destination_universe"
+  | "migration_plan"
+  | "object_receipt"
+  | "progress_operation_receipt"
+  | "progress_record"
+  | "sealed_progress_head"
+  | "semantic_equivalence_proof"
+  | "source_tombstone"
+  | "source_universe"
+  | "zero_live_proof";
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryArtifactUpperBoundReferenceCandidateV1 {
+  artifactKind:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryArtifactKindReferenceCandidateV1;
+  artifactCount: number;
+  canonicalEnvelopeBytesUpperBoundTotal: number;
+  providerAllocatedBytesUpperBoundTotal: number;
+}
+
+type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryArtifactUpperBoundsReferenceCandidateV1 = [
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryArtifactUpperBoundReferenceCandidateV1 & {
+    artifactKind: "canonical_rewrite_plan";
+  },
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryArtifactUpperBoundReferenceCandidateV1 & {
+    artifactKind: "destination_universe";
+  },
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryArtifactUpperBoundReferenceCandidateV1 & {
+    artifactKind: "migration_plan";
+  },
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryArtifactUpperBoundReferenceCandidateV1 & {
+    artifactKind: "object_receipt";
+  },
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryArtifactUpperBoundReferenceCandidateV1 & {
+    artifactKind: "progress_operation_receipt";
+  },
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryArtifactUpperBoundReferenceCandidateV1 & {
+    artifactKind: "progress_record";
+  },
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryArtifactUpperBoundReferenceCandidateV1 & {
+    artifactKind: "sealed_progress_head";
+  },
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryArtifactUpperBoundReferenceCandidateV1 & {
+    artifactKind: "semantic_equivalence_proof";
+  },
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryArtifactUpperBoundReferenceCandidateV1 & {
+    artifactKind: "source_tombstone";
+  },
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryArtifactUpperBoundReferenceCandidateV1 & {
+    artifactKind: "source_universe";
+  },
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryArtifactUpperBoundReferenceCandidateV1 & {
+    artifactKind: "zero_live_proof";
+  }
+];
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryQuotaChargeAmountsReferenceCandidateV1 {
+  reservedHistoryLogicalBytes: number;
+  reservedHistoryProviderAllocatedBytes: number;
+  reservedObjectReceiptCount: number;
+  reservedObjectReceiptLogicalBytes: number;
+  reservedSemanticRootZeroProofCount: number;
+  reservedSemanticRootZeroProofLogicalBytes: number;
+  reservedProgressRecordCount: number;
+  reservedProgressRecordLogicalBytes: number;
+  reservedProgressOperationReceiptCount: number;
+  reservedProgressOperationReceiptLogicalBytes: number;
+}
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalSourceDryRunCutReferenceCandidateV1 {
+  profile:
+    "provider_migration_same_installation_identity_current_strong_source_normal_source_dry_run_cut_reference_candidate_v1";
+  mode: "same_installation_identity";
+  completeSourceReadClosure:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalCompleteSourceReadClosureReferenceCandidateV1;
+  completeSourceReadClosureContentDigest: ContentDigestV1;
+  migrationBudgetsDigest: ContentDigestV1;
+  retainedArtifactUpperBounds:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryArtifactUpperBoundsReferenceCandidateV1;
+  derivedJournalChargeAmounts:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryQuotaChargeAmountsReferenceCandidateV1;
+  sourceDryRunCutContentDigest: ContentDigestV1;
+}
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryQuotaSizingReferenceCandidateV1 {
+  profile:
+    "provider_migration_same_installation_identity_current_strong_source_normal_history_quota_sizing_reference_candidate_v1";
+  sizingProfile:
+    "provider_migration_same_installation_identity_current_strong_source_normal_zero_side_effect_complete_source_streaming_dry_run_reference_candidate_v1";
+  mode: "same_installation_identity";
+  migrationBudgetsDigest: ContentDigestV1;
+  sourceDryRunCut:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalSourceDryRunCutReferenceCandidateV1;
+  sourceDryRunCutContentDigest: ContentDigestV1;
+  journalChargeAmounts:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryQuotaChargeAmountsReferenceCandidateV1;
+}
+```
+
+retained artifact upper-bound tuple必须按以下exact UTF-8顺序恰有11项：
+`canonical_rewrite_plan/destination_universe/migration_plan/object_receipt/
+progress_operation_receipt/progress_record/sealed_progress_head/
+semantic_equivalence_proof/source_tombstone/source_universe/zero_live_proof`。每项含
+`artifactKind/artifactCount/canonicalEnvelopeBytesUpperBoundTotal/
+providerAllocatedBytesUpperBoundTotal`；不适用项显式三零。`migration_plan`固定
+`artifactCount=1`、canonical upper bound `4_194_304`，绝不能读取尚未形成的实际
+Plan bytes。provider-allocated upper bound由同cohort journal capability的frozen allocation
+projection验证并进入cut digest。
+
+quota charge amount完整字段为
+`reservedHistoryLogicalBytes/reservedHistoryProviderAllocatedBytes/
+reservedObjectReceiptCount/reservedObjectReceiptLogicalBytes/
+reservedSemanticRootZeroProofCount/reservedSemanticRootZeroProofLogicalBytes/
+reservedProgressRecordCount/reservedProgressRecordLogicalBytes/
+reservedProgressOperationReceiptCount/reservedProgressOperationReceiptLogicalBytes`。
+source dry-run cut必须嵌完整source closure、其digest、budgets digest、11-kind tuple、
+derived charge与自身digest；sizing必须嵌完整cut、cut digest、budgets digest、journal
+charge、`mode="same_installation_identity"`及
+`sizingProfile="provider_migration_same_installation_identity_current_strong_source_normal_zero_side_effect_complete_source_streaming_dry_run_reference_candidate_v1"`。
+
+唯一charge公式保持：
+
+- history logical/allocated分别等于11项upper bound之和，并exact-equal budgets retained
+  totals；
+- object receipt count/bytes分别等于`maxLiveObjects`与
+  `maxCanonicalReceiptBytesTotal`；
+- semantic/root/zero count等于`maxRewriteObjects + maxRootEntries + 2`，bytes等于
+  `maxCanonicalRewritePlanBytes + maxCanonicalSemanticEquivalenceProofBytesTotal +
+  maxCanonicalRootRewriteProofSetBytes + maxCanonicalZeroLiveProofBytes`；
+- progress record count/bytes分别等于`maxProgressRecords`与
+  `maxCanonicalProgressRecordSetBytes`；
+- progress operation receipt count/bytes分别等于`maxProgressOperationReceipts`与
+  `maxCanonicalProgressOperationReceiptBytesTotal`。
+
+#### D-41.5 Complete private quota closure与cycle-free conservative admission
+
+`ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaUsageReferenceCandidateV1`
+必须逐字段包含reserved/retained/charged的account count、history logical/
+provider-allocated bytes，以及object receipt、semantic-root-zero proof、progress record、
+progress operation receipt四类count/bytes。每个public account projection含
+`accountOrdinal/reservationOrdinal/createdByOperationNonce/accountReferenceDigest/state/
+migrationSlotCount=1/contribution`；accounts按`reservationOrdinal`严格递增且unique，
+`accountOrdinal`从该顺序派生为exact `0..N-1`，`accountReferenceDigest`也必须strict unique。
+public quota snapshot含完整account projection、account
+count/set digest、重算usage、event/receipt/reservation-record count/set digest/logical
+bytes、future terminal escrow count/bytes、non-resolving high-water reference digest与
+snapshot content digest。
+
+对应public DTO不得留自由字段：
+
+```ts
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaUsageReferenceCandidateV1 {
+  reservedAccountCount: number;
+  reservedHistoryLogicalBytes: number;
+  reservedHistoryProviderAllocatedBytes: number;
+  reservedObjectReceiptCount: number;
+  reservedObjectReceiptLogicalBytes: number;
+  reservedSemanticRootZeroProofCount: number;
+  reservedSemanticRootZeroProofLogicalBytes: number;
+  reservedProgressRecordCount: number;
+  reservedProgressRecordLogicalBytes: number;
+  reservedProgressOperationReceiptCount: number;
+  reservedProgressOperationReceiptLogicalBytes: number;
+  retainedAccountCount: number;
+  retainedHistoryLogicalBytes: number;
+  retainedHistoryProviderAllocatedBytes: number;
+  chargedMigrationCount: number;
+  chargedHistoryLogicalBytes: number;
+  chargedHistoryProviderAllocatedBytes: number;
+  chargedObjectReceiptCount: number;
+  chargedObjectReceiptLogicalBytes: number;
+  chargedSemanticRootZeroProofCount: number;
+  chargedSemanticRootZeroProofLogicalBytes: number;
+  chargedProgressRecordCount: number;
+  chargedProgressRecordLogicalBytes: number;
+  chargedProgressOperationReceiptCount: number;
+  chargedProgressOperationReceiptLogicalBytes: number;
+}
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaAccountContributionReferenceCandidateV1 {
+  historyLogicalBytes: number;
+  historyProviderAllocatedBytes: number;
+  objectReceiptCount: number;
+  objectReceiptLogicalBytes: number;
+  semanticRootZeroProofCount: number;
+  semanticRootZeroProofLogicalBytes: number;
+  progressRecordCount: number;
+  progressRecordLogicalBytes: number;
+  progressOperationReceiptCount: number;
+  progressOperationReceiptLogicalBytes: number;
+}
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaAccountReferenceCandidateV1 {
+  accountOrdinal: number;
+  reservationOrdinal: number;
+  createdByOperationNonce: LowerHex32V1;
+  accountReferenceDigest: ContentDigestV1;
+  state: "reserved" | "retained";
+  migrationSlotCount: 1;
+  contribution:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaAccountContributionReferenceCandidateV1;
+}
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaSnapshotReferenceCandidateV1 {
+  profile:
+    "provider_migration_same_installation_identity_current_strong_source_normal_quota_snapshot_reference_candidate_v1";
+  installationIdentityGenerationId:
+    InstallationIdentityGenerationIdV1;
+  accounts:
+    ReadonlyArray<ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaAccountReferenceCandidateV1>;
+  accountCount: number;
+  accountSetDigest: ContentDigestV1;
+  usage:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaUsageReferenceCandidateV1;
+  reservationRecordCount: number;
+  reservationRecordSetDigest: ContentDigestV1;
+  reservationRecordLogicalBytes: number;
+  eventCount: number;
+  eventSetDigest: ContentDigestV1;
+  ledgerEventLogicalBytes: number;
+  receiptCount: number;
+  receiptSetDigest: ContentDigestV1;
+  operationReceiptLogicalBytes: number;
+  futureTerminalTransitionEscrowCount: number;
+  eventEscrowLogicalBytes: number;
+  receiptEscrowLogicalBytes: number;
+  quotaHighWaterReferenceDigest: ContentDigestV1;
+  quotaSnapshotContentDigest: ContentDigestV1;
+}
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalControlUpperBoundsReferenceCandidateV1 {
+  reservationRecordCountIncrement: 1;
+  reservationRecordLogicalBytesUpperBound: 1_048_576;
+  reserveEventCountIncrement: 1;
+  reserveEventLogicalBytesUpperBound: 262_144;
+  reserveReceiptCountIncrement: 1;
+  reserveReceiptLogicalBytesUpperBound: 1_048_576;
+  postReserveFutureTerminalTransitionEscrowCount: number;
+  prospectiveEventCountIncludingEscrow: number;
+  prospectiveEventLogicalBytesIncludingEscrow: number;
+  prospectiveReceiptCountIncludingEscrow: number;
+  prospectiveReceiptLogicalBytesIncludingEscrow: number;
+  prospectiveReservationRecordCount: number;
+  prospectiveReservationRecordLogicalBytes: number;
+  currentHighWaterLogicalBytesUpperBound: 1_048_576;
+}
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryQuotaAdmissionReferenceCandidateV1 {
+  profile:
+    "provider_migration_same_installation_identity_current_strong_source_normal_history_quota_admission_reference_candidate_v1";
+  mode: "same_installation_identity";
+  admissionClass: "normal";
+  sizingDigest: ContentDigestV1;
+  quotaSnapshot:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaSnapshotReferenceCandidateV1;
+  charges: [
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryQuotaChargeAmountsReferenceCandidateV1 & {
+      role: "same_identity_journal";
+      installationIdentityGenerationId:
+        InstallationIdentityGenerationIdV1;
+      policyDigest: ContentDigestV1;
+      migrationSlotCount: 1;
+    }
+  ];
+  prospectiveChargedUsage:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaUsageReferenceCandidateV1;
+  controlUpperBounds:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalControlUpperBoundsReferenceCandidateV1;
+  decision: "reference_admissible_at_captured_snapshot";
+}
+```
+
+account reference domain固定为
+`provider-migration-same-installation-identity-current-strong-source-normal-quota-account-reference-candidate-v1`，
+其digest preimage exact为
+`{installationIdentityGenerationId,reservationOrdinal,createdByOperationNonce}`；明确排除
+`accountOrdinal/state/migrationSlotCount/contribution`以及reservation/event/receipt content/set
+digest、token与high-water。相同Identity下reservation ordinal或creation nonce替换必须改变
+digest；不同account不得共享digest。
+
+single-cohort private machine必须在pre/post各stream一份完整cut：
+
+```ts
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaLoadedEnvelopeInternalV1<TDecodedEnvelope> {
+  locatorReferenceDigest: ContentDigestV1;
+  canonicalEnvelopeBytes: CanonicalByteStringV1;
+  canonicalLogicalBytes: number;
+  decodedEnvelope: TDecodedEnvelope;
+}
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaAccountStateProjectionInternalV1 {
+  profile:
+    "provider_migration_same_installation_identity_current_strong_source_normal_quota_account_state_reference_candidate_v1";
+  installationIdentityGenerationId:
+    InstallationIdentityGenerationIdV1;
+  accounts:
+    ReadonlyArray<ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaAccountReferenceCandidateV1>;
+  accountCount: number;
+  accountSetDigest: ContentDigestV1;
+  usage:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaUsageReferenceCandidateV1;
+  futureTerminalTransitionEscrowCount: number;
+  eventEscrowLogicalBytes: number;
+  receiptEscrowLogicalBytes: number;
+  contentDigest: ContentDigestV1;
+}
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaReservationDecodedEnvelopeInternalV1 {
+  schemaVersion: 1;
+  recordType:
+    "provider_migration_same_installation_identity_current_strong_source_normal_quota_reservation_reference_candidate";
+  installationIdentityGenerationId:
+    InstallationIdentityGenerationIdV1;
+  reservationOrdinal: number;
+  contentDigest: ContentDigestV1;
+  payload: {
+    profile:
+      "provider_migration_same_installation_identity_current_strong_source_normal_quota_reservation_payload_reference_candidate_v1";
+    installationIdentityGenerationId:
+      InstallationIdentityGenerationIdV1;
+    reservationOrdinal: number;
+    createdByOperationNonce: LowerHex32V1;
+    account:
+      ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaAccountReferenceCandidateV1;
+  };
+  recordToken: KeyedStateTokenV1;
+}
+
+type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaEventTransitionInternalV1 =
+  | {
+      kind: "reserve_reference_candidate";
+      before: { state: "absent" };
+      after: {
+        state: "account";
+        account:
+          ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaAccountReferenceCandidateV1 & {
+            state: "reserved";
+          };
+      };
+    }
+  | {
+      kind: "retain_reference_candidate";
+      before: {
+        state: "account";
+        account:
+          ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaAccountReferenceCandidateV1 & {
+            state: "reserved";
+          };
+      };
+      after: {
+        state: "account";
+        account:
+          ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaAccountReferenceCandidateV1 & {
+            state: "retained";
+          };
+      };
+    }
+  | {
+      kind: "release_reference_candidate";
+      before: {
+        state: "account";
+        account:
+          ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaAccountReferenceCandidateV1;
+      };
+      after: { state: "absent" };
+    };
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaEventDecodedEnvelopeInternalV1 {
+  schemaVersion: 1;
+  recordType:
+    "provider_migration_same_installation_identity_current_strong_source_normal_quota_event_reference_candidate";
+  installationIdentityGenerationId:
+    InstallationIdentityGenerationIdV1;
+  eventOrdinal: number;
+  contentDigest: ContentDigestV1;
+  payload: {
+    profile:
+      "provider_migration_same_installation_identity_current_strong_source_normal_quota_event_payload_reference_candidate_v1";
+    installationIdentityGenerationId:
+      InstallationIdentityGenerationIdV1;
+    eventOrdinal: number;
+    predecessor:
+      | { state: "genesis" }
+      | {
+          state: "event";
+          eventOrdinal: number;
+          contentDigest: ContentDigestV1;
+        };
+    operationNonce: LowerHex32V1;
+    requestContentDigest: ContentDigestV1;
+    transition:
+      ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaEventTransitionInternalV1;
+    beforeAccountStateContentDigest: ContentDigestV1;
+    afterAccountStateContentDigest: ContentDigestV1;
+  };
+  recordToken: KeyedStateTokenV1;
+}
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaReceiptDecodedEnvelopeInternalV1 {
+  schemaVersion: 1;
+  recordType:
+    "provider_migration_same_installation_identity_current_strong_source_normal_quota_receipt_reference_candidate";
+  installationIdentityGenerationId:
+    InstallationIdentityGenerationIdV1;
+  receiptOrdinal: number;
+  contentDigest: ContentDigestV1;
+  payload: {
+    profile:
+      "provider_migration_same_installation_identity_current_strong_source_normal_quota_receipt_payload_reference_candidate_v1";
+    installationIdentityGenerationId:
+      InstallationIdentityGenerationIdV1;
+    receiptOrdinal: number;
+    operationNonce: LowerHex32V1;
+    requestContentDigest: ContentDigestV1;
+    accountReferenceDigest: ContentDigestV1;
+    observedPreHighWaterContentDigest: ContentDigestV1;
+    outcome:
+      | {
+          state: "committed_reference_candidate";
+          eventOrdinal: number;
+          eventContentDigest: ContentDigestV1;
+          postAccountStateContentDigest: ContentDigestV1;
+        }
+      | {
+          state: "not_committed_reference_candidate";
+          reason:
+            | "expected_changed"
+            | "capacity_exhausted"
+            | "candidate_invalid"
+            | "integrity_failed";
+          observedAccountStateContentDigest: ContentDigestV1;
+        };
+  };
+  recordToken: KeyedStateTokenV1;
+}
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaHighWaterDecodedEnvelopeInternalV1 {
+  schemaVersion: 1;
+  recordType:
+    "provider_migration_same_installation_identity_current_strong_source_normal_quota_high_water_reference_candidate";
+  installationIdentityGenerationId:
+    InstallationIdentityGenerationIdV1;
+  contentDigest: ContentDigestV1;
+  payload: {
+    profile:
+      "provider_migration_same_installation_identity_current_strong_source_normal_quota_high_water_payload_reference_candidate_v1";
+    installationIdentityGenerationId:
+      InstallationIdentityGenerationIdV1;
+    stateRevision: number;
+    ledgerRevision: number;
+    currentEvent:
+      | { state: "genesis" }
+      | {
+          state: "event";
+          eventOrdinal: number;
+          contentDigest: ContentDigestV1;
+        };
+    reservationRecordCount: number;
+    reservationRecordSetDigest: ContentDigestV1;
+    reservationRecordLogicalBytes: number;
+    eventCount: number;
+    eventSetDigest: ContentDigestV1;
+    ledgerEventLogicalBytes: number;
+    receiptCount: number;
+    receiptSetDigest: ContentDigestV1;
+    operationReceiptLogicalBytes: number;
+    accountCount: number;
+    accountSetDigest: ContentDigestV1;
+    accountStateContentDigest: ContentDigestV1;
+    usage:
+      ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaUsageReferenceCandidateV1;
+    futureTerminalTransitionEscrowCount: number;
+    eventEscrowLogicalBytes: number;
+    receiptEscrowLogicalBytes: number;
+  };
+  quotaStateVersionToken: KeyedStateTokenV1;
+}
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalCompleteQuotaCutInternalV1 {
+  reservations:
+    ReadonlyArray<ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaLoadedEnvelopeInternalV1<ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaReservationDecodedEnvelopeInternalV1>>;
+  events:
+    ReadonlyArray<ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaLoadedEnvelopeInternalV1<ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaEventDecodedEnvelopeInternalV1>>;
+  receipts:
+    ReadonlyArray<ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaLoadedEnvelopeInternalV1<ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaReceiptDecodedEnvelopeInternalV1>>;
+  accountState:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaAccountStateProjectionInternalV1;
+  highWater:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaLoadedEnvelopeInternalV1<ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaHighWaterDecodedEnvelopeInternalV1>;
+}
+```
+
+loaded wrapper的`canonicalEnvelopeBytes`是machine strict candidate codec验证过的完整
+reservation/event/receipt/high-water Envelope bytes，而`decodedEnvelope`严格不含raw bytes或
+logical-byte字段，因而不存在Envelope自编码fixed point。验证方向唯一为raw bytes → strict
+decoded Envelope → content digest/token；canonical bytes与decoded Envelope byte-roundtrip必须
+exact。cohort verifier先按policy single/total cap限流，重算content digest与owner token，
+再令解析后的locator/ordinal/nonce/predecessor/account linkage与entry逐项闭合。complete
+quota cut不含原operation request，因此event/receipt `requestContentDigest`只作为经strict
+codec与record token认证的opaque non-resolving commitment；D-41只验证correlated event/
+receipt在同operation nonce下该digest exact、并闭合transition/ordinal/predecessor/account/
+high-water linkage，不从缺失request重算outcome semantics。D-41随后独立重算三套enumeration的
+排序、连续ordinal、predecessor、nonce uniqueness、count/set digest/完整canonical
+logical bytes、account-state replay/usage方程、`stateRevision=eventCount`、
+`ledgerRevision=receiptCount`、escrow方程及high-water token。missing/extra/reorder/
+duplicate/sibling或任一digest/bytes/token/linkage错误固定
+`quota_ledger_integrity_failed`。public不输出full bytes或token；账本语义与全集由
+same-cohort opaque quota machine证明，public account/snapshot只证明hash-DAG与admission
+算术可重算。
+
+上述private bytes同样不得隐式复用尚未实现的formal Migration quota ABI。reservation、
+event、receipt与high-water的outer/payload必须按各自strict narrow candidate codec解析，
+outer/payload Identity/ordinal及content digest逐项相等。event before/after与receipt outcome
+只pin account-state projection digest；该digest覆盖strict account-state DTO除自身
+`contentDigest`，即明确包含profile、Identity、ordered accounts、account count/set digest、
+usage与escrow，并排除reservation/event/receipt sets与high-water，防止ledger digest回指
+自身。最终high-water再单向
+覆盖完整三套sets与account-state digest。record token唯一覆盖
+`{recordType,installationIdentityGenerationId,ordinal,locatorReferenceDigest,contentDigest}`，
+high-water token覆盖完整payload与outer content digest。public
+`quotaHighWaterReferenceDigest`必须exact-equal decoded high-water `contentDigest`。
+
+account anchor replay必须逐分支闭合：reservation payload中的account
+`reservationOrdinal/createdByOperationNonce`分别exact-equal outer/payload reservation ordinal
+与payload creation nonce，并用该Envelope Identity按account reference domain重算digest；reserve
+event的after account必须exact同一reservation account且event operation nonce exact creation
+nonce，retain/release event只允许state转移并保持reservation ordinal/creation nonce/digest不变。
+committed receipt的`accountReferenceDigest`必须指向由其correlated reservation+event创建的
+account，receipt operation nonce/request/event ordinal逐项闭合；not-committed receipt没有account，
+其prospective reservation ordinal固定为observed pre-high-water
+`reservationRecordCount + 1`，再以receipt operation nonce与Identity重算唯一
+`accountReferenceDigest`，且该digest不得出现在post account set。任一orphan、wrong branch、
+wrong ordinal/nonce/digest或not-committed account泄漏固定`quota_ledger_integrity_failed`。
+
+reservation/event/receipt set digest
+分别覆盖按ordinal排序的`{ordinal,locatorReferenceDigest,contentDigest}` exact entries；
+account set按reservation ordinal严格递增/unique后覆盖完整ordered account projections，
+account ordinal必须等于数组位置且account reference digest strict unique。对应11个
+private/public quota candidate domain在D-41.7明确冻结；它们不注册独立public Schema，也不得
+产出formal locator/token。
+
+reference admission固定`mode="same_installation_identity"`、
+`admissionClass="normal"`、single charge role `same_identity_journal`，并嵌完整sizing
+digest、quota snapshot、prospective usage、control upper bounds及
+`decision="reference_admissible_at_captured_snapshot"`。该literal只表示当前none-authority
+reference snapshot按本slice的保守公式可容纳候选，不是正式quota admission或写入许可。
+
+令`P=quotaSnapshot.usage`、`J=charges[0]`、`U=prospectiveChargedUsage`，`⊕`表示对两个
+non-negative safe integer的checked add。`U`的每个字段必须由以下方程唯一冻结，禁止caller
+自由填写：
+
+```text
+U.reservedAccountCount = P.reservedAccountCount ⊕ 1
+U.reservedHistoryLogicalBytes = P.reservedHistoryLogicalBytes ⊕ J.reservedHistoryLogicalBytes
+U.reservedHistoryProviderAllocatedBytes = P.reservedHistoryProviderAllocatedBytes ⊕ J.reservedHistoryProviderAllocatedBytes
+U.reservedObjectReceiptCount = P.reservedObjectReceiptCount ⊕ J.reservedObjectReceiptCount
+U.reservedObjectReceiptLogicalBytes = P.reservedObjectReceiptLogicalBytes ⊕ J.reservedObjectReceiptLogicalBytes
+U.reservedSemanticRootZeroProofCount = P.reservedSemanticRootZeroProofCount ⊕ J.reservedSemanticRootZeroProofCount
+U.reservedSemanticRootZeroProofLogicalBytes = P.reservedSemanticRootZeroProofLogicalBytes ⊕ J.reservedSemanticRootZeroProofLogicalBytes
+U.reservedProgressRecordCount = P.reservedProgressRecordCount ⊕ J.reservedProgressRecordCount
+U.reservedProgressRecordLogicalBytes = P.reservedProgressRecordLogicalBytes ⊕ J.reservedProgressRecordLogicalBytes
+U.reservedProgressOperationReceiptCount = P.reservedProgressOperationReceiptCount ⊕ J.reservedProgressOperationReceiptCount
+U.reservedProgressOperationReceiptLogicalBytes = P.reservedProgressOperationReceiptLogicalBytes ⊕ J.reservedProgressOperationReceiptLogicalBytes
+U.retainedAccountCount = P.retainedAccountCount
+U.retainedHistoryLogicalBytes = P.retainedHistoryLogicalBytes
+U.retainedHistoryProviderAllocatedBytes = P.retainedHistoryProviderAllocatedBytes
+U.chargedMigrationCount = P.chargedMigrationCount ⊕ 1
+U.chargedHistoryLogicalBytes = P.chargedHistoryLogicalBytes ⊕ J.reservedHistoryLogicalBytes
+U.chargedHistoryProviderAllocatedBytes = P.chargedHistoryProviderAllocatedBytes ⊕ J.reservedHistoryProviderAllocatedBytes
+U.chargedObjectReceiptCount = P.chargedObjectReceiptCount ⊕ J.reservedObjectReceiptCount
+U.chargedObjectReceiptLogicalBytes = P.chargedObjectReceiptLogicalBytes ⊕ J.reservedObjectReceiptLogicalBytes
+U.chargedSemanticRootZeroProofCount = P.chargedSemanticRootZeroProofCount ⊕ J.reservedSemanticRootZeroProofCount
+U.chargedSemanticRootZeroProofLogicalBytes = P.chargedSemanticRootZeroProofLogicalBytes ⊕ J.reservedSemanticRootZeroProofLogicalBytes
+U.chargedProgressRecordCount = P.chargedProgressRecordCount ⊕ J.reservedProgressRecordCount
+U.chargedProgressRecordLogicalBytes = P.chargedProgressRecordLogicalBytes ⊕ J.reservedProgressRecordLogicalBytes
+U.chargedProgressOperationReceiptCount = P.chargedProgressOperationReceiptCount ⊕ J.reservedProgressOperationReceiptCount
+U.chargedProgressOperationReceiptLogicalBytes = P.chargedProgressOperationReceiptLogicalBytes ⊕ J.reservedProgressOperationReceiptLogicalBytes
+```
+
+private machine必须先从pre完整account set独立fold出`P`，再对“pre完整contribution set加
+exact一项`state="reserved"/migrationSlotCount=1`且十个contribution字段exact-equal `J`”的
+prospective result accounting set独立fold usage；该fold必须canonical exact-equal `U`。
+此处只验证account-set算术结果，不构造或写入新的identity-bearing account/nonce/digest，且
+result accounting witness不进入`admissionVectorDigest`或任何前置digest。任一operand不是non-negative safe
+integer在Schema阶段拒绝；任一`⊕`溢出或越过quota cap固定`quota_capacity_exhausted`且所有
+side-effect sink exact zero。
+
+每migration不得超过4/8 GiB；Identity hard
+cap为64 migration与8/16 GiB；active reservation最多4且reserved总量最多8/16 GiB。
+normal还必须保留最后1 slot与4/8 GiB，故prospective charged migration最多63，
+charged logical最多`8 GiB - 4 GiB`，allocated最多`16 GiB - 8 GiB`。四类category
+hard cap逐项重算。
+
+为避免reservation/event/receipt含后生成Plan digest造成hash环，D-41只用policy static
+single-object upper bounds。令`E=pre.futureTerminalTransitionEscrowCount`：
+
+```text
+postE = E + 3
+prospectiveEventCountIncludingEscrow =
+  pre.eventCount + 1 + postE
+prospectiveEventLogicalBytesIncludingEscrow =
+  pre.ledgerEventLogicalBytes + 262_144 + postE * 262_144
+prospectiveReceiptCountIncludingEscrow =
+  pre.receiptCount + 1 + postE
+prospectiveReceiptLogicalBytesIncludingEscrow =
+  pre.operationReceiptLogicalBytes + 1_048_576 + postE * 1_048_576
+prospectiveReservationRecordCount =
+  pre.reservationRecordCount + 1
+prospectiveReservationRecordLogicalBytes =
+  pre.reservationRecordLogicalBytes + 1_048_576
+```
+
+六项分别不得超过`4_096/67_108_864/4_096/268_435_456/4_096/67_108_864`；
+single event/receipt/reservation upper bounds固定
+`262_144/1_048_576/1_048_576`，current high-water upper bound固定`1_048_576`。
+这些static maxima与pre-state数字进入admission proof，但不canonicalize尚不存在的
+record/event/receipt，也不把migration ID、reservation descriptor或Plan digest放回任何
+前置digest。成功只证明captured snapshot下prospective normal admission自洽，不是durable
+admission或TOCTOU authority。
+
+#### D-41.6 Cycle-free IDs、Plan reference payload与createdAt
+
+构造顺序唯一：
+
+`pre-plan current trust/core/budgets → budgets digest → authenticated complete source
+stream cut → dry-run cut digest → sizing/digest → complete quota snapshot →
+normal admission/admissionVectorDigest → narrow migration ID → deterministic
+same_identity_journal reservation descriptor → narrow Plan payload/content digest →
+canonical Plan Envelope actual-byte hard check →
+post observation → pre/post equality → final closure digest`。
+
+candidate migration ID使用完整prefix
+`provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate:`
+加22位lower hex；reservation ID使用
+`provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-history-quota-reservation-reference-candidate:`
+加22位lower hex。reservation descriptor含完整窄profile/locator profile、
+`reservationId/migrationId/installationIdentityGenerationId/
+role="same_identity_journal"/admissionVectorDigest`，不含Plan digest、time或token。
+
+Plan payload完整含profile、`mode/reason/identityRelationship`、migration ID、
+source/destination namespace与translation、target、correlated source/destination trust、
+initial source Store cut、strict initial destination absent/current candidate cut、
+journal authority、progress-journal candidate locator profile、完整budgets/sizing/admission、
+唯一same journal descriptor、live-reference schema/protocol digest与`createdAt`。Plan
+Envelope完整含`schemaVersion=1`、窄`recordType`、same mode、migration ID、四个
+repository/worktree candidate IDs、`createdAt/contentDigest/payload`；outer字段必须与
+payload逐字段闭合，`contentDigest`唯一是Plan payload domain digest，不另造第二Envelope
+digest。D-41不生成formal locator、Pin、reservation record/token或operation nonce。
+
+static `migration_plan=4_194_304`只保持cycle-free reservation；完整source closure嵌入Plan后
+实际Envelope可能超过该值。因此Plan payload/content digest与完整Envelope生成后、任何post
+observation之前，runtime必须计算
+`UTF8(JCS(planEnvelope)).byteLength`并要求其`<= migrationBudgets.maxSingleRecordBytes`
+（exact `4_194_304`）。`B-1/B`允许继续，`B+1`固定`budget_exceeded`且九类side-effect
+sink exact zero。该actual byte length与判定不得写入Plan/admission/migration/reservation ID、
+任一前置digest或新增public字段；它只验证已形成的Envelope，避免把实际Plan bytes回流成hash环。
+
+exact DTO为：
+
+```ts
+declare const d41CreatedAtReferenceCandidateBrand: unique symbol;
+type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalCreatedAtReferenceCandidateV1 =
+  ProviderRegistryIsoTimestampV1 & {
+    readonly [d41CreatedAtReferenceCandidateBrand]: true;
+  };
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryQuotaReservationDescriptorReferenceCandidateV1 {
+  profile:
+    "provider_migration_same_installation_identity_current_strong_source_normal_history_quota_reservation_descriptor_reference_candidate_v1";
+  locatorProfile:
+    "provider_migration_same_installation_identity_current_strong_source_normal_history_quota_reservation_reference_candidate_v1";
+  reservationId:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectHistoryQuotaReservationReferenceCandidateIdV1;
+  migrationId:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateIdV1;
+  installationIdentityGenerationId:
+    InstallationIdentityGenerationIdV1;
+  role: "same_identity_journal";
+  admissionVectorDigest: ContentDigestV1;
+}
+
+type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalInitialDestinationNamespaceReferenceCandidateV1 =
+  | {
+      state: "absent";
+      namespace:
+        ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalNamespaceReferenceCandidateV1;
+      providerBinding:
+        ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalStoreProviderBindingReferenceCandidateV1;
+      absenceReferenceDigest: ContentDigestV1;
+    }
+  | {
+      state: "current";
+      current:
+        ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalStoreManifestCurrentCutReferenceCandidateV1;
+    };
+
+```
+
+absent branch的`providerBinding` exact7必须等于destination prospective writer projection；
+`absenceReferenceDigest`按D-41.7专用domain只覆盖`{namespace,providerBinding}`，不得覆盖raw
+path/handle或caller boolean。current branch的Store cut binding同样按该projection闭合。
+
+```ts
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPlanPayloadReferenceCandidateV1 {
+  profile:
+    "provider_migration_same_installation_identity_current_strong_source_normal_plan_payload_reference_candidate_v1";
+  mode: "same_installation_identity";
+  migrationId:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateIdV1;
+  reason: "provider_decommission";
+  identityRelationship: "source_destination_exact_same";
+  sourceNamespace:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalNamespaceReferenceCandidateV1;
+  destinationNamespace:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalNamespaceReferenceCandidateV1;
+  namespaceTranslation:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalNamespaceTranslationReferenceCandidateV1;
+  targetProfileId: ProviderTargetProfileIdV1;
+  sourceTrust:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalEndpointTrustReferenceCandidateV1 & {
+      role: "source_current_strong_writer";
+    };
+  destinationTrust:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalEndpointTrustReferenceCandidateV1 & {
+      role: "destination_prospective_not_selected";
+    };
+  initialSourceStoreManifest:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalStoreManifestCurrentCutReferenceCandidateV1;
+  initialDestinationNamespace:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalInitialDestinationNamespaceReferenceCandidateV1;
+  journalAuthorityInstallationIdentityGenerationId:
+    InstallationIdentityGenerationIdV1;
+  progressJournalLocatorProfile:
+    "provider_migration_same_installation_identity_current_strong_source_normal_progress_head_reference_candidate_v1";
+  migrationBudgets:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectBudgetsReferenceCandidateV1;
+  migrationBudgetsDigest: ContentDigestV1;
+  migrationHistoryQuotaSizing:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryQuotaSizingReferenceCandidateV1;
+  migrationHistoryQuotaSizingDigest: ContentDigestV1;
+  migrationHistoryQuotaAdmission:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryQuotaAdmissionReferenceCandidateV1;
+  admissionVectorDigest: ContentDigestV1;
+  migrationHistoryQuotaReservations: {
+    mode: "same_installation_identity";
+    journal:
+      ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryQuotaReservationDescriptorReferenceCandidateV1;
+  };
+  liveReferenceSchemaDigest: ContentDigestV1;
+  migrationProtocolDigest: ContentDigestV1;
+  createdAt:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalCreatedAtReferenceCandidateV1;
+}
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPlanEnvelopeReferenceCandidateV1 {
+  schemaVersion: 1;
+  recordType:
+    "provider_migration_same_installation_identity_current_strong_source_normal_plan_reference_candidate";
+  mode: "same_installation_identity";
+  migrationId:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateIdV1;
+  sourceRepositoryId:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalRepositoryReferenceCandidateIdV1;
+  sourceWorktreeId:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalWorktreeReferenceCandidateIdV1;
+  destinationRepositoryId:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalRepositoryReferenceCandidateIdV1;
+  destinationWorktreeId:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalWorktreeReferenceCandidateIdV1;
+  createdAt:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalCreatedAtReferenceCandidateV1;
+  contentDigest: ContentDigestV1;
+  payload:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPlanPayloadReferenceCandidateV1;
+}
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalObservationReferenceCandidateV1 {
+  sourceStoreCutContentDigest: ContentDigestV1;
+  sourceFreezeStateReferenceDigest: ContentDigestV1;
+  sourceTrustClosureContentDigest: ContentDigestV1;
+  destinationTrustClosureContentDigest: ContentDigestV1;
+  destinationNamespaceObservationDigest: ContentDigestV1;
+  quotaSnapshotContentDigest: ContentDigestV1;
+}
+
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPrePostObservationEqualityReferenceCandidateV1 {
+  profile:
+    "provider_migration_same_installation_identity_current_strong_source_normal_pre_post_observation_equality_reference_candidate_v1";
+  pre:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalObservationReferenceCandidateV1;
+  post:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalObservationReferenceCandidateV1;
+  equality: "exact";
+  equalityContentDigest: ContentDigestV1;
+}
+```
+
+`destinationNamespaceObservationDigest`不得是自由值。若Plan
+`initialDestinationNamespace.state="absent"`，pre/post observation该字段都必须exact-equal
+同一branch的`absenceReferenceDigest`；若state为`"current"`，则都必须exact-equal
+`initialDestinationNamespace.current.cutContentDigest`。pre/post必须与Plan保持同一branch与同一
+value，禁止absent/current互换、跨branch取digest或只在post漂移；该映射不新增domain。
+
+`createdAt`先通过现有`ProviderRegistryIsoTimestampV1Schema`，再收窄为exact
+`YYYY-MM-DDTHH:mm:ss.sssZ`、固定24 ASCII bytes、日历有效且
+`new Date(value).toISOString() === value`。它是caller提交的candidate metadata，operation
+不得读clock，也不产生`resolvedAt`。request、Plan payload、Plan Envelope与success中的
+`createdAt`必须byte-identical；它进入request digest、Plan content digest与final closure
+digest，但明确排除migration ID、reservation ID、source/dry-run/sizing/admission digests，
+因此只改变candidate Plan bytes，不改变semantic migration/reservation identity。
+
+#### D-41.7 Digest domains、exact projections与exclusions
+
+统一`D(domain,x) = sha256:lowerhex(SHA-256(UTF8(JCS([domain,x]))))`；
+`I22(prefix,domain,x)`取同一hash的前22位lower hex。JCS必须使用
+`rfc8785-jcs-safe-integer-v1`，所有value在hash前已strict parse并detached。domain literals
+exact冻结为以下35个：
+
+- `provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-request-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-endpoint-trust-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-prospective-destination-cut-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-store-manifest-current-cut-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-store-provider-binding-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-store-manifest-absence-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-namespace-translation-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-live-root-set-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-live-object-set-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-live-reference-set-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-complete-source-read-closure-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-budgets-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-history-artifact-upper-bound-set-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-source-dry-run-cut-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-history-quota-sizing-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-quota-account-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-quota-account-set-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-quota-account-state-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-quota-snapshot-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-quota-reservation-envelope-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-quota-event-envelope-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-quota-receipt-envelope-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-quota-reservation-set-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-quota-event-set-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-quota-receipt-set-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-quota-ledger-record-token-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-quota-high-water-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-quota-high-water-token-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-history-quota-admission-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate-id-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-history-quota-reservation-reference-candidate-id-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-plan-payload-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-quota-observation-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-pre-post-observation-equality-reference-candidate-v1`
+- `provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate-v1`
+
+| 输出 | exact preimage projection | 必须排除 |
+|---|---|---|
+| request content digest | 完整strict request exact8 | capability/cohort/observed snapshots |
+| endpoint trust digest | endpoint DTO除自身digest，含完整current read、retained generations、source current-writer或destination prospective-writer projection与correlated authorization | cohort/host/handle/token |
+| prospective destination cut digest | current Root/steady Manifest/Catalog/Universe pins、完整steady Manifest/current accepted Catalog/Universe Envelopes、新provider genesis Entry及其规范派生digest、Universe target、prospective support candidate（含完整Runtime Pin）、Evidence Envelope及派生absence/selector claims | raw capability、额外runtime closure digest leaf、包含prospective candidate的future Catalog Envelope、prepared Manifest、formal migration ID/token |
+| Store cut digest | current-cut DTO除`cutContentDigest` | raw version token/path |
+| Store provider-binding reference digest | binding exact7：target/provider/Entry/policy/Evidence/runtime/binding generation | raw binding token/handle、Store cut digest |
+| destination Store absence reference digest | `{namespace,providerBinding}` | raw path/handle、caller absence boolean、current Store cut |
+| translation digest | `mode/relationship/sourceNamespace/destinationNamespace/journalAuthorityInstallationIdentityGenerationId` | 自身digest、HMAC/token/path |
+| root/object/reference set digest | `{entries}`，ordinal/comparator exact | count/set digest/canonical bytes |
+| complete source closure digest | closure除自身，含三个完整sets与重算claims | raw freeze token/host/completeness token |
+| budgets digest | 完整budgets DTO | 其它输入 |
+| dry-run cut digest | cut除自身，含完整source closure、11-kind tuple、charge、budgets digest | migration/reservation IDs、descriptors、time、Plan digest |
+| sizing digest | 完整sizing DTO | 自身digest、migration/reservation/Plan/time |
+| quota account reference digest | `{installationIdentityGenerationId,reservationOrdinal,createdByOperationNonce}` | account ordinal/state/contribution、reservation/event/receipt content/set digests、token/high-water |
+| quota account set digest | `{entries}` exact ordinal/comparator | usage/count/set digest/high-water token |
+| quota account-state digest | strict account-state DTO除`contentDigest`自身，含profile/Identity/ordered accounts/count/set digest/usage/terminal escrow | reservation/event/receipt sets、high-water、raw token/handles |
+| quota snapshot digest | snapshot除自身，含account projection、usage、ledger counts/digests/bytes/escrow与non-resolving high-water reference | raw quota token/handles |
+| private reservation/event/receipt envelope digests | 各strict decoded payload与outer identity/ordinal；event含before/after account-state，receipt只pin pre-high-water及pre/post account-state | record token、loaded wrapper canonical bytes、完整quota snapshot/high-water、prepared/formal records |
+| private reservation/event/receipt set digests | 各自ordered `{ordinal,locatorReferenceDigest,contentDigest}` entries | high-water/token/usage |
+| private ledger-record token | `{recordType,installationIdentityGenerationId,ordinal,locatorReferenceDigest,contentDigest}` | canonical bytes、其它records/high-water |
+| private high-water digest/token | digest覆盖完整strict high-water payload；token覆盖payload+outer content digest | token自身、raw machine/cohort |
+| admission vector digest | 完整normal admission：sizing digest、完整quota snapshot、single charge、prospective usage、static control bounds、decision | 自身digest、migration/reservation/Plan/time |
+| migration ID | `mode/reason/identityRelationship/sourceNamespace/destinationNamespace/namespaceTranslation/targetProfileId/sourceTrust/destinationTrust/initialSourceStoreManifest/initialDestinationNamespace/journalAuthorityInstallationIdentityGenerationId/migrationBudgets/migrationBudgetsDigest/migrationHistoryQuotaSizing/migrationHistoryQuotaSizingDigest/migrationHistoryQuotaAdmission/admissionVectorDigest/liveReferenceSchemaDigest/migrationProtocolDigest` | 自身、createdAt、reservation ID/descriptor、Plan digest、prepared Registry Manifest、formal Acceptance/receipt/token、post observations、side-effect/final closure |
+| reservation ID | `migrationId/role/installationIdentityGenerationId/admissionVectorDigest` | descriptor/profile/locator/Plan/time/token/record/event/receipt |
+| Plan content digest | 完整Plan payload | digest自身、Envelope outer、final closure |
+| quota observation digest | `preSnapshotContentDigest/postSnapshotContentDigest/equality="exact"` | raw token/cohort/time |
+| pre/post equality digest | 完整source/destination/journal public pre/post reference digests及`equality="exact"` | continuity witnesses/cohort/time |
+| closure digest | success DTO除`closureContentDigest` | capability/cohort/internal diagnostic/raw token |
+
+`logicalLocatorReferenceDigest/semanticLocatorDigest/referenceSlotReferenceDigest`不是上述
+`D(domain,x)`新增domain，也不是caller提供的自由ContentDigest；它们由actual verified
+`liveReferenceSchemaDigest`所绑定的same-cohort private locator/slot schema、deriver、complete
+slot enumerator及canonical vector corpus产生。D-41 public verifier只重算这些opaque、
+non-resolving leaves进入的object/edge/set/closure digests，并检查semantic+binding与
+from+descriptor strict uniqueness/exact-cover；raw locator/slot↔commitment真实性必须由同次
+opaque source capability证明，因此domain计数仍为35且不产生新的public authority。
+
+#### D-41.8 Public success、side-effect/verification boundary与Schema inventory
+
+public success shape必须完整为：
+
+```ts
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1 {
+  authority:
+    "none_provider_migration_same_installation_identity_current_strong_source_normal_pre_side_effect_plan_admission_closure_reference_candidate_only";
+  profile:
+    "provider_migration_same_installation_identity_current_strong_source_normal_pre_side_effect_plan_admission_closure_reference_candidate_v1";
+  stopPoint:
+    "before_same_installation_identity_migration_history_quota_reservation_write";
+  requestContentDigest: ContentDigestV1;
+  mode: "same_installation_identity";
+  reason: "provider_decommission";
+  admissionClass: "normal";
+  createdAt:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalCreatedAtReferenceCandidateV1;
+  sourceTrust:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalEndpointTrustReferenceCandidateV1 & {
+      role: "source_current_strong_writer";
+    };
+  destinationTrust:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalEndpointTrustReferenceCandidateV1 & {
+      role: "destination_prospective_not_selected";
+    };
+  namespaceTranslation:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalNamespaceTranslationReferenceCandidateV1;
+  completeSourceReadClosure:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalCompleteSourceReadClosureReferenceCandidateV1;
+  sourceDryRunCut:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalSourceDryRunCutReferenceCandidateV1;
+  migrationBudgetsDigest: ContentDigestV1;
+  historyQuotaSizing:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryQuotaSizingReferenceCandidateV1;
+  historyQuotaSizingDigest: ContentDigestV1;
+  historyQuotaAdmission:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryQuotaAdmissionReferenceCandidateV1;
+  admissionVectorDigest: ContentDigestV1;
+  quotaReferenceSnapshot:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalQuotaSnapshotReferenceCandidateV1;
+  quotaReferenceObservation: {
+    preSnapshotContentDigest: ContentDigestV1;
+    postSnapshotContentDigest: ContentDigestV1;
+    equality: "exact";
+    observationContentDigest: ContentDigestV1;
+  };
+  migrationId:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateIdV1;
+  reservationDescriptors: [
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryQuotaReservationDescriptorReferenceCandidateV1
+  ];
+  planCandidate:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPlanEnvelopeReferenceCandidateV1;
+  prePostObservationEquality:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPrePostObservationEqualityReferenceCandidateV1;
+  sideEffectBoundary: {
+    policy:
+      "zero_side_effect_before_first_same_installation_identity_migration_history_quota_reservation_write_reference_candidate_v1";
+    reservationWrites: 0;
+    planPublications: 0;
+    acceptanceAppends: 0;
+    progressAppends: 0;
+    operationReceiptWrites: 0;
+    destinationObjectAllocations: 0;
+    quotaConsumptions: 0;
+    emergencyReserveConsumptions: 0;
+    pendingIntents: 0;
+  };
+  verificationBoundary: {
+    hashDag:
+      "self_contained_public_projection_recomputable_v1";
+    sourceCompleteness:
+      "same_operation_opaque_streaming_capability_exact_once_eof_and_pre_post_continuity_v1";
+    locatorAuthenticity:
+      "same_cohort_live_reference_schema_bound_strict_locator_commitment_deriver_v1";
+    referenceSlotAuthenticity:
+      "same_cohort_live_reference_schema_bound_exact_slot_enumerator_and_commitment_deriver_v1";
+    quotaCompleteness:
+      "same_cohort_opaque_quota_machine_complete_snapshot_and_pre_post_continuity_v1";
+    quotaLedgerSemantics:
+      "same_cohort_machine_opaque_request_commitment_linkage_without_public_request_replay_v1";
+    endpointTrustAuthenticity:
+      "same_cohort_opaque_retained_root_registry_catalog_universe_evidence_runtime_closure_v1";
+    prospectiveRegistryMaterialOwnership:
+      "same_cohort_copied_retained_registry_state_read_only_temporary_admit_no_public_key_material_alias_except_identical_current_feasibility_approver_records_v1";
+    prospectiveDestination:
+      "signed_genesis_registry_entry_evidence_runtime_and_universe_target_not_catalog_or_manifest_admitted_v1";
+    catalogAdmission: "none";
+    registryMembership: "none";
+    migrationPreparedManifest: "none";
+    formalMigrationIdMapping: "none";
+    providerAuthority: "none";
+    durability: "none";
+    migrationExecution: "none";
+  };
+  closureContentDigest: ContentDigestV1;
+}
+```
+
+`quotaReferenceSnapshot`必须byte-identical
+`historyQuotaAdmission.quotaSnapshot`；pre/post两份full quota cut的public snapshot
+digest必须相同。pre/post equality还必须覆盖source Store/freeze、destination trust/
+namespace与journal quota observations。任一post drift或side-effect counter非零都不得
+返回success。
+
+success不是一组各自strict但可互相矛盾的投影。final Schema的`superRefine`及runtime
+validator必须按下表做canonical byte equality；任一格不等固定`candidate_invalid`：
+
+| success字段 | 必须exact-equal的其它位置 |
+|---|---|
+| `mode/reason/admissionClass/createdAt` | captured request；对应Plan payload/Envelope字段 |
+| `requestContentDigest` | 从success mode/reason/admission/createdAt及Plan payload完整budgets/live-reference/protocol字段重建的strict request exact8后按request domain重算 |
+| `sourceTrust/destinationTrust` | Plan payload同名字段；pre/post observation各自trust digest；source current writer与destination prospective writer projection分别闭合对应Store binding exact7 |
+| prospective destination cut的Root/Manifest/Catalog/Universe pins与派生absence/selector claims | current Acceptance core三Pin、完整steady Manifest Envelope及retained trust verifier；support/catalog/Registry/prepared状态必须保持none |
+| `prospectiveRegistryEntryContentDigest`与Entry Identity/material ownership | digest exact-equal`deriveStoreDurableObjectProviderRegistryEntryContentDigestV1(prospectiveRegistryEntry)`；Entry `installationIdentityGenerationId` exact-equal endpoint common、current steady Manifest payload与current Acceptance Identity；copied retained Registry state read-only temporary admit通过既有key ownership/history/revocation/`public_key_material_alias` invariants，只有identical current feasibility approver records允许复用 |
+| `evidenceEnvelope` | payload `target` canonical exact-equal cut `target`及current Universe ordinal target；outer/payload `evidenceId`与outer `contentDigest`分别按`deriveProviderFeasibilityEvidenceIdV1`/`deriveProviderFeasibilityEvidenceContentDigestV1`重算，support candidate Evidence Pin exact-equal`deriveProviderFeasibilityEvidencePinV1(evidenceEnvelope)` |
+| `namespaceTranslation`与source/destination namespace | Plan payload、source/destination Store cut与journal authority |
+| `liveReferenceSchemaDigest/migrationProtocolDigest` | request两值exact private cohort verified constants；live-reference值再exact source closure→dry-run→sizing→Plan→migration ID链，protocol值exact request→Plan→migration ID链；不得仅在各层复制自洽 |
+| `completeSourceReadClosure` | `sourceDryRunCut.completeSourceReadClosure`；source Store/freeze/trust/schema claims；六root-kind exact-cover及Store/receipt-ledger/active-recovery cross-fields闭合；object kind↔locator namespace iff且每个object binding exact source Store current-writer binding；每个locator commitment pair由same-cohort schema-bound private deriver重算、semantic+binding tuple在ordinal前strict unique；每个slot digest/target由schema-bound complete slot enumerator重算、from+descriptor exact-cover且strict unique；三套count/digest分别由ordered entries重算，三套canonical bytes分别为`UTF8(JCS({entries}))`，Universe bytes为`UTF8(JCS({roots,objects,references}))`，logical bytes为object `logicalBytes` safe-sum |
+| `sourceDryRunCut` | `historyQuotaSizing.sourceDryRunCut`及Plan payload sizing内同一cut全文canonical exact |
+| `migrationBudgetsDigest` | request budgets重算值、dry-run cut、sizing与Plan payload同名值 |
+| `historyQuotaSizing/historyQuotaSizingDigest` | source cut charge、admission sizing digest及Plan payload |
+| `historyQuotaAdmission/admissionVectorDigest` | top-level quota snapshot、single charge、Plan payload及descriptor；`prospectiveChargedUsage`按pre usage+single journal charge逐字段checked-add、retained不变，并exact-equal prospective result accounting-set fold |
+| `quotaReferenceSnapshot/Observation` | admission snapshot、pre/post full-cut public projection及pre/post equality |
+| quota snapshot account anchors | accounts按reservation ordinal strictly increasing/unique，account ordinal为数组位置，account reference digest按Identity+reservation ordinal+creation nonce重算且unique；reservation/event/committed-or-not-committed receipt anchors按D-41.5逐分支闭合 |
+| `destinationNamespaceObservationDigest` | Plan initial destination absent branch exact `absenceReferenceDigest`，current branch exact `current.cutContentDigest`；pre/post branch/value都exact |
+| `migrationId` | Plan payload/Envelope、唯一reservation descriptor及所有ID projection |
+| `reservationDescriptors[0]` | Plan payload唯一same-journal descriptor及按migration/admission重算的reservation ID |
+| `planCandidate` outer | payload的mode/ID/repository/worktree/createdAt及payload content digest；完整Envelope生成后`UTF8(JCS(planCandidate)).byteLength <= 4_194_304`，actual bytes不回流任何前置digest |
+| `quotaReferenceObservation.observationContentDigest` | 从pre/post snapshot digest与`equality="exact"`按quota-observation domain重算 |
+| `prePostObservationEquality.equalityContentDigest` | 从完整pre/post observations与`equality="exact"`按pre/post-equality domain重算 |
+| `sideEffectBoundary` | mint-before至consume-after audit observer的九类sink exact-zero delta |
+| `closureContentDigest` | success DTO除自身后的完整strict projection |
+
+prospective destination cut必须完整包含在destination trust与Plan/migration ID preimage中；
+prepared Registry Manifest、formal Acceptance/receipt/token不得出现在任一success字段或前置
+digest中。
+
+JSON Schema registry固定以下27个key。每个`K`唯一对应
+`schemas/v1/K.schema.json`与
+`$id="urn:understand-code:provider-contract:schema:v1:K"`：
+
+1. `provider-migration-same-installation-identity-current-strong-source-normal-repository-reference-candidate-id`
+2. `provider-migration-same-installation-identity-current-strong-source-normal-worktree-reference-candidate-id`
+3. `provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-request-reference-candidate`
+4. `provider-migration-same-installation-identity-current-strong-source-normal-namespace-reference-candidate`
+5. `provider-migration-same-installation-identity-current-strong-source-normal-store-manifest-current-cut-reference-candidate`
+6. `provider-migration-same-installation-identity-current-strong-source-normal-endpoint-trust-reference-candidate`
+7. `provider-migration-same-installation-identity-current-strong-source-normal-namespace-translation-reference-candidate`
+8. `provider-migration-same-installation-identity-current-strong-source-normal-live-root-reference-candidate`
+9. `provider-migration-same-installation-identity-current-strong-source-normal-live-object-entry-reference-candidate`
+10. `provider-migration-same-installation-identity-current-strong-source-normal-live-reference-edge-reference-candidate`
+11. `provider-migration-same-installation-identity-current-strong-source-normal-complete-source-read-closure-reference-candidate`
+12. `provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-budgets-reference-candidate`
+13. `provider-migration-same-installation-identity-current-strong-source-normal-history-artifact-upper-bounds-reference-candidate`
+14. `provider-migration-same-installation-identity-current-strong-source-normal-history-quota-charge-amounts-reference-candidate`
+15. `provider-migration-same-installation-identity-current-strong-source-normal-source-dry-run-cut-reference-candidate`
+16. `provider-migration-same-installation-identity-current-strong-source-normal-history-quota-sizing-reference-candidate`
+17. `provider-migration-same-installation-identity-current-strong-source-normal-quota-usage-reference-candidate`
+18. `provider-migration-same-installation-identity-current-strong-source-normal-quota-account-reference-candidate`
+19. `provider-migration-same-installation-identity-current-strong-source-normal-quota-snapshot-reference-candidate`
+20. `provider-migration-same-installation-identity-current-strong-source-normal-control-upper-bounds-reference-candidate`
+21. `provider-migration-same-installation-identity-current-strong-source-normal-history-quota-admission-reference-candidate`
+22. `provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate-id`
+23. `provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-history-quota-reservation-reference-candidate-id`
+24. `provider-migration-same-installation-identity-current-strong-source-normal-history-quota-reservation-descriptor-reference-candidate`
+25. `provider-migration-same-installation-identity-current-strong-source-normal-plan-payload-reference-candidate`
+26. `provider-migration-same-installation-identity-current-strong-source-normal-plan-envelope-reference-candidate`
+27. `provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate`
+
+createdAt、quota account contribution、initial destination、observation、quota observation、
+pre/post equality、side-effect、verification boundary及其它未列为独立key的nested
+union/value shape，均作为其最近父Schema的strict nested schema，不单独注册；
+capability/Input/Error/private Envelope不生成JSON Schema。public module唯一使用完整文件名
+`provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate`；
+private capability/machine模块不得进入exports。
+
+#### D-41.9 Diagnostics、focused evidence与locks
+
+package-private diagnostic stage顺序exact固定为：
+`input → pre_plan_reference_capability → pre_observation → current_strong_source →
+prospective_destination_evidence → endpoint_trust → migration_budgets →
+source_complete_stream → source_dry_run_cut → history_quota_sizing →
+quota_reference_snapshot → history_quota_admission → migration_identity →
+reservation_descriptor → plan_candidate → plan_envelope_actual_size → post_observation →
+side_effect_boundary`。
+reason exact固定为`schema_invalid/capability_invalid/source_invalid/snapshot_changed/
+trust_closure_invalid/source_not_current_strong_writer/destination_evidence_invalid/
+destination_already_selected/mode_relationship_invalid/source_cut_incomplete/budget_exceeded/
+quota_ledger_integrity_failed/quota_capacity_exhausted/candidate_invalid/
+side_effect_detected`。这些diagnostic不export、不得冒充formal Migration result。
+
+focused tests至少覆盖：
+
+- exact2/exact8、single cohort、zero-key/null-prototype/frozen/single-consume，copy/clone/
+  forged/另一cohort/role/machine/Identity substitution在source call 0拒绝；Schema-invalid证明
+  claim前未burn，并发consume恰一胜，claim后nested validation失败证明capability不恢复；
+- request `liveReferenceSchemaDigest`或`migrationProtocolDigest`分别替换、两者同时替换、
+  让request/Plan/ID内部自洽但与cohort actual verified constant不等，均须source stream
+  zero-call、全部write sink zero且public opaque failure；
+- positive只允许current strong source、同target prospective signed Registry Entry/Evidence/
+  runtime destination与normal；prospective Entry必须genesis/current-root、provider在
+  current Manifest全部members中absent，target exact命中current Universe，support projection
+  必须strong/passed且明确未Catalog/Registry admit；Entry digest必须由完整Entry规范派生、Entry
+  Identity必须exact current Manifest/Acceptance/endpoint common Identity，Evidence payload target
+  必须exact cut/Universe ordinal target且其outer/payload ID、content digest与support Pin全部重算闭合；
+  `provider_decommission`要求不同provider，
+  semantic-policy/binding-only、historical、
+  recovery、compromise、emergency与全部cross输入Schema拒绝；
+- prospective provider verification `publicKeyBytes`分别alias source/其它current或historical
+  provider、Root/recovery/approver material必须在source stream前拒绝；current feasibility
+  approval records只有identity+canonical record完全相同才允许复用；binding record仅按existing
+  history/signature/revocation规则验证，不虚构跨provider public-material uniqueness；
+- source stream exact-once EOF；root/object/reference missing/extra/reorder/duplicate/
+  dangling/unreachable/count/digest/bytes`B-1/B/B+1`，三套`UTF8(JCS({entries}))`、Universe
+  `UTF8(JCS({roots,objects,references}))`及object logical-byte safe-sum逐项变异，输出删换任一
+  entry后hash-DAG重算失败；root/object先去ordinal排序赋值、edge后构造再去ordinal排序赋值的
+  reorder/duplicate/canonical tie/caller ordinal污染全部拒绝；仅替换单个object
+  `providerBindingReferenceDigest`为destination/historical/其它valid binding也必须拒绝；
+  caller自报或cross-object交换logical/semantic locator digest、private raw locator↔digest pair
+  不匹配、相同`(semanticLocatorDigest,providerBindingReferenceDigest)`搭配不同kind/content/
+  logical bytes，以及同`(from,referenceSlotDescriptor)`替换slot digest/target、同slot多edge、
+  schema-bound slot missing/extra都必须在ordinal前拒绝；六个
+  rootKind missing/duplicate/swap、empty/genesis omission、Store current或receipt provider/policy
+  substitution、active count与`activeTransactions`矛盾、receipt kind用`store`或其余18 kind用
+  provider-isolated ledger namespace的cross-branch全部拒绝；
+- private完整reservation/event/receipt Envelope及enumeration/high-water的missing/extra/
+  reorder/duplicate/sibling、ordinal/predecessor/nonce/opaque request-commitment linkage/content/
+  token/usage/escrow错误，
+  account-state digest不得覆盖ledger/high-water、loaded raw→decoded roundtrip不得自编码，
+  account ordinal/reservation ordinal/creation nonce/digest排序或唯一性错误、reservation/event/
+  committed receipt anchor错配、not-committed prospective ordinal/digest错配或post account泄漏，
+  以及pre/post full quota cut drift；不得伪造缺失原request的独立semantic replay测试；
+- 11-kind exact-cover、`migration_plan` static 4 MiB、artifact/charge/category/normal
+  hard+reserve`B-1/B/B+1`；完整canonical Plan Envelope actual bytes另做`4_194_303/
+  4_194_304/4_194_305`，B+1为`budget_exceeded`且post observation前九类sink exact zero；
+- stage/spy固定`endpoint_trust → migration_budgets → source_complete_stream →
+  source_dry_run_cut → history_quota_sizing → quota_reference_snapshot →
+  history_quota_admission`；budget失败必须source stream zero-call，禁止先stream后验caps；
+- conservative control六式`B-1/B/B+1`，并证明reservation/event/receipt upper bound不含
+  migration ID/descriptor/Plan digest，Plan digest/actual byte length不反向进入任何前置digest；
+  `prospectiveChargedUsage`每个reserved/retained/charged字段独立±1、错category、retained
+  增量、result accounting fold不等与safe-add overflow均拒绝且零副作用；
+- `createdAt` invalid calendar、非ms、非`Z`；只改time只改变request/Plan/final closure，
+  不改变migration/reservation/admission/sizing/source digests；
+- reason判别、same namespace/current source trust、prospective destination
+  Root/Manifest/Universe/Entry/Evidence/runtime关系、destination已被选/zero/multiple match；
+  initial destination absent/current branch与observation digest交叉替换、pre/post branch/value
+  drift，以及pre/post Store/freeze/destination/quota drift；extra key/getter/Proxy/after-start mutation与
+  prototype/intrinsic poisoning；
+- 分别篡改`requestContentDigest`、顶层`sourceDryRunCut`或pre/post equality digest并重算final
+  closure后仍须`candidate_invalid`；另须分别篡改Entry unsigned field/digest、替换Entry Identity、
+  替换Evidence payload target或单独篡改Evidence outer/payload ID、content digest、support Pin，
+  即使重算prospective cut/final closure仍须`candidate_invalid`；candidate ID写入formal Registry
+  routing固定Schema拒绝；
+- spy断言所有成功/失败路径的reservation/Plan/Acceptance/progress/receipt/object/quota/
+  pending-intent写调用均exact zero；success side-effect counters全部为0；
+- compound failure先注入任一早期stage/reason再分别制造九sink delta，必须统一由finally audit
+  覆盖为`side_effect_boundary/side_effect_detected`；相同早期failure且audit exact-zero保留原diagnostic；
+- 27 Schema inventory、strict extra-key/runtime parity；packed Node/browser只做public
+  export/schema/domain/authority/stage/reason smoke及private deep-import拒绝。
+
+D-41通过仍只形成same-installation-identity current-strong-source normal pre-side-effect、
+`provider_decommission`-only、尚未Catalog/Registry admit的prospective destination
+none-authority candidate。semantic-policy/recovery、candidate→formal ID mapping、prepared
+Registry/Catalog successor、binding-only、compromise/emergency、historical source、正式
+Acceptance完整union、cross-installation Migration、Plan publication与quota reservation
+saga、source read/destination publish executor、真实Identity/recovery/key custody、OS
+Provider、mutual-auth IPC、fixed-locator I/O/crash durability、progress/rewrite/
+zero-live/tombstone/final activation、C09 aggregate、strong-write、production与release
+全部继续`open/locked`。
+
 ---
 
 ## 20. M0 冻结结果与延后决策
 
 原 M0 第 1–7 项已经分别由 D-13～D-19 冻结；Task Lifecycle、WP4 持久化与
-WP5 Change Intelligence 修订由 D-21～D-40 冻结。完整证据、Owner、试点 Pin
+WP5 Change Intelligence 修订由 D-21～D-41 冻结。完整证据、Owner、试点 Pin
 和 capability lock 见
 `docs/research/2026-07-28-g0-contract-freeze-record.md`。
 

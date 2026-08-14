@@ -2,7 +2,7 @@
 
 记录 ID：`G0-2026-07-28`
 
-状态：**Closed for implementation；WP5 Decision Amendments D-24～D-40 incorporated**
+状态：**Closed for implementation；WP5 Decision Amendments D-24～D-41 incorporated**
 
 候选基线：`34da354968a6071d914e4e4a4fca738e6c2d8a29`
 
@@ -10,7 +10,7 @@
 
 WP4 修订日期：2026-07-29
 
-WP5 修订日期：2026-07-30～2026-08-13
+WP5 修订日期：2026-07-30～2026-08-14
 
 C09-1K 实施证据刷新：2026-08-06
 
@@ -47,7 +47,7 @@ generation pin Pulse，再只以唯一 maximal Store Manifest generation所 pin�
 保留为 legacy/read-only projection。该修订不新增 Artifact Type 或 Lifecycle
 状态，只冻结 Pulse 版本身份、历史可寻址性和恢复边界。
 
-2026-07-30～2026-08-13 的 D-24～D-40 是 WP5 实现前及分层实现中的证据模型、写入边界与
+2026-07-30～2026-08-14 的 D-24～D-41 是 WP5 实现前及分层实现中的证据模型、写入边界与
 Provider可行性修订。审计确认：
 原 Change Check 没有 Actual Change 实体、Hunk 或完整性证明；Repository
 Snapshot 也不能重建任务开始时已经存在的 dirty/untracked 内容。修订因此新增
@@ -122,7 +122,7 @@ Gate的 target只可 legacy/redacted read-only。这些修订不增加 D-21
 - 性能 Evidence 保存生产源文件 Hash、原始样本、预热/采样数和 expected/actual 完整性字段。
 - Host Evidence 保持 Surface 边界；Codex App Server provisional 结果和 Claude 未认证 Tool Call 不被提升为 supported。
 
-## 4. D-13～D-40 冻结结果
+## 4. D-13～D-41 冻结结果
 
 ### D-13：P0 平台
 
@@ -1146,7 +1146,8 @@ CI数字外推给这些后继提交。C09-1O另有下述commit与same-SHA CI独�
 
 ### D-38：singleton Acceptance candidate与可信本机 target边界
 
-状态：`frozen / implementation in progress`（2026-08-13 implementation-safety Decision Amendment）
+状态：`accepted / none-authority evidence accepted`（2026-08-13 implementation-safety
+Decision Amendment；C09-1O implementation commit与same-SHA CI evidence）
 
 - 实现审计确认：C09-1M/1N允许同一public bucket包含多个private full target，各
   target的Evidence/Runtime按target绑定，而steady Registry只有一个enabled Entry与
@@ -1231,8 +1232,8 @@ Provider distribution 40m12s、Workspace 9m19s、Preview 1m8s、最终 Quality 4
 
 ### D-40：Strong-ready bootstrap/steady Acceptance compare-append closure/reference candidate
 
-状态：`frozen / implementation in progress`（2026-08-13 pre-implementation Decision
-Amendment）
+状态：`implemented none-authority candidate / same-SHA evidence accepted`（2026-08-13
+pre-implementation Decision Amendment；2026-08-14 implementation commit）
 
 - D-40位于既有WP5-1P/C09 aggregate Gate内，不命名为C09-1P，不新增第18 Gate或
   新AT。implementation-safety审计后本slice原位收窄为仅实现
@@ -1314,7 +1315,231 @@ Amendment）
   fixed-locator I/O/crash durability、Migration、C09 aggregate或strong/release authority；
   全部继续`open/locked`。PRD D-40是完整normative定义。
 
-D-24～D-40 的实现与验收矩阵为
+D-40 implementation固定在 commit
+`58cc52f78f25fb743136a819da753e72c62eded6`；clean-checkout same-SHA CI run
+`31764659888`的head SHA exact-equal该commit，Workspace 9m13s、Provider unit 28m21s、
+Preview 1m24s、Provider distribution 40m13s与final Quality 3s全部`success`。该证据只
+关闭D-40 none-authority candidate implementation evidence，不外推为正式Acceptance、
+Provider durability、Migration、C09 aggregate或authority evidence。
+
+### D-41：Same-installation-identity current-strong-source normal pre-side-effect Plan/admission closure/reference candidate
+
+状态：`frozen / implementation pending`（2026-08-14 pre-implementation Decision
+Amendment；同日implementation-safety终审后原位收窄）
+
+- D-41继续位于既有WP5-1P/C09 aggregate Gate内，不命名为C09-1P、不新增第18 Gate
+  或新AT。public success type exact为
+  `ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1`；
+  success `profile` exact为
+  `provider_migration_same_installation_identity_current_strong_source_normal_pre_side_effect_plan_admission_closure_reference_candidate_v1`；
+  final closure digest domain exact为
+  `provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate-v1`；
+  public module filename exact为
+  `provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate`，
+  三种命名语法不得互作alias。唯一authority为
+  `none_provider_migration_same_installation_identity_current_strong_source_normal_pre_side_effect_plan_admission_closure_reference_candidate_only`。
+  operation只接受`mode="same_installation_identity"`、
+  `admissionClass="normal"`，并在
+  `stopPoint="before_same_installation_identity_migration_history_quota_reservation_write"`
+  停止。正式`ProviderMigrationPlanV1` same/cross union、Plan/Pin、quota reservation、
+  Acceptance、executor、progress/rewrite/proof/receipt/tombstone均未由D-41实现。
+- public输入exact2：
+  `BuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateV1Input`
+  只含`request`与单一
+  `ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPrePlanReferenceCapabilityV1`。
+  request exact8为`profile/mode/reason/admissionClass/createdAt/migrationBudgets/
+  liveReferenceSchemaDigest/migrationProtocolDigest`。一次private mint把role-bound source、
+  destination、journal/quota machine、source streaming host、完整retained trust/Registry
+  material-owner state/strict crypto verifier、continuity observers与同一
+  cohort cross-bind到单个null-prototype/frozen/zero-key capability及private WeakMap；
+  cohort另封实际streamer/schema/protocol verifier给出的live-reference schema/protocol digest
+  constants，任何source stream前与request exact比较；错误值即source zero-call/all writes zero，
+  不接受request/Plan/ID内部自洽复制。
+  outer/request strict snapshot通过后，`pre_plan_reference_capability` stage必须在nested
+  validation/await/read前以WeakMap atomic delete claim/burn；Schema-invalid发生在claim前，并发
+  consume恰一胜，claim后失败永久burn不恢复。
+  public不能组合handles。cohort只允许read-only scoped handles，并绑定从mint-before到
+  consume-after覆盖九类sink的side-effect audit observer；任何write authority不可达，
+  zero counters必须由pre/post exact equality派生而非硬编码。audit在所有路径finally执行；
+  任一delta以`side_effect_boundary/side_effect_detected`覆盖早期diagnostic，只有exact-zero
+  保留原stage/reason。copy/clone/forged/另一
+  cohort/role/machine/Identity substitution在source read前拒绝。唯一public failure仍为opaque
+  `provider_unavailable/attestation_invalid`。
+- source必须是同一current `strong_ready` Acceptance对目标唯一选中的writer；
+  destination是不同provider、current Registry全部members中从未出现的genesis Entry，
+  Entry绑定current active Root与current approval keys；
+  `prospectiveRegistryEntryContentDigest`必须exact-equal
+  `deriveStoreDurableObjectProviderRegistryEntryContentDigestV1(prospectiveRegistryEntry)`，Entry
+  Identity必须exact endpoint common、current steady Manifest与Acceptance Identity。任何source
+  stream前还须在copied retained Registry state上复用完整existing Entry validator做只读temporary
+  admit，覆盖key ownership/history/signature/revocation与`public_key_material_alias`；prospective
+  provider verification `publicKeyBytes`不得alias Root/recovery/approver或current/historical
+  provider material，只有identity+canonical record完全相同的current feasibility approver keys
+  允许共享。binding records只执行既有一致性，不新增跨provider material-unique规则；失败零写。target exact
+  命中current signed Universe，Evidence payload target必须exact cut target及Universe ordinal
+  target，outer/payload ID、content digest与support Pin必须按正式derive函数重算。prospective
+  support projection固定strong/passed，并以candidate内完整Runtime Pin与Entry/Evidence逐项闭合；
+  不允许额外runtime closure digest leaf。它不产出/复用formal Catalog Envelope，固定
+  `supportAdmission="not_yet_catalog_signed_or_registry_bound"`、
+  `registryMembership="none"/migrationPreparedManifest="none"`且位于current accepted steady
+  selector cut之外。完整steady Manifest、current accepted Catalog及Universe Envelopes与current
+  Acceptance core Pin必须exact，Registry member absence、current Catalog candidate absence、
+  Universe target membership及selector disposition由public projection重算；signature/history authenticity
+  由same-cohort opaque retained trust closure证明。source/destination Store cut须以各自writer
+  exact7绑定provider；destination absent digest只覆盖namespace+prospective binding，不接受raw
+  path/boolean。本slice reason仅`provider_decommission`；semantic-policy、binding-only、
+  historical source、recovery、compromise与emergency全部留给后继Decision。
+  cross literal及任一cross-only字段必须Schema阶段`schema_invalid`且source调用exact zero。
+  D-41不构造或消费`routing.state="migration"` Manifest；prepared Manifest含migration ID，
+  将其回填到candidate ID preimage会形成hash环。candidate长prefix ID也不是现有formal
+  `provider-migration:<22hex>`；后继Decision必须先冻结ID映射或修订routing/endpoint ABI，
+  再按prepared Registry successor → Catalog successor → migration-only Acceptance推进。
+  现有formal same-provider semantic-policy route的wire矛盾也保持open。
+- package不存在的repository/worktree、Store Manifest cut、live root/object/reference与
+  quota usage formal types不得假定为existing；D-41的每个nested DTO/brand都使用包含
+  `ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormal` scope的完整窄candidate
+  名称，不允许省略中段或复用formal名称。public source closure携带strict
+  roots/objects/references、连续ordinal、
+  locator/content/reference commitments、count/set digest/canonical bytes、logical bytes、
+  reachability与`activeTransactions=[]`。输出自身足以重算hash-DAG；“provider完整全集”
+  中三套canonical bytes分别exact
+  `UTF8(JCS({entries: roots/objects/references})).byteLength`，Universe bytes exact
+  `UTF8(JCS({roots,objects,references})).byteLength`，logical object bytes为所有
+  `object.logicalBytes` checked safe-sum；各projection排除自身count/digest/bytes并覆盖
+  `B-1/B/B+1`。root/object先去各自ordinal按remaining strict entry的JCS UTF-8 bytes严格
+  升序/unique再赋0..N-1；edge只在前两者ordinal固定后构造，去edge ordinal用同一comparator
+  排序/unique再赋值，final arrays才进入set digest/bytes。每个object
+  `providerBindingReferenceDigest`必须exact source Store current-writer binding。
+  absolute OS path不进入candidate或digest；cohort-private verified logical locator只允许strict
+  Store-relative或provider-isolated receipt-ledger两分支，并由actual verified
+  `liveReferenceSchemaDigest` byte-bound的versioned schema/deriver+canonical vectors单次产生
+  `logicalLocatorReferenceDigest/semanticLocatorDigest` pair。pair不是caller leaves，raw locator
+  不输出；public只把两值作为non-resolving hash-DAG leaves。object comparator/ordinal前必须对
+  `(semanticLocatorDigest,providerBindingReferenceDigest)` strict unique；同tuple即使kind/content/
+  logical bytes不同也拒绝。同一schema digest还绑定complete typed reference-slot enumerator/
+  commitment deriver；每个verified root/object的每个provider-bound slot必须exact一条edge，
+  `(from,referenceSlotDescriptor)`在ordinal前strict unique/exact-cover，slot digest/target替换或
+  missing/extra/multi-edge均拒绝。该opaque derivation不新增D-41 domain或authority，35-domain
+  计数不变。
+  `objectKind="store_manifest_compare_append_receipt"`当且仅当`locatorNamespace`等于
+  `"provider_isolated_store_manifest_receipt_ledger"`；其余18个object kind当且仅当
+  `locatorNamespace="store"`。root set必须exact-cover六个`rootKind`各恰一次，empty/genesis
+  形态也不得省略；`store_manifest_complete_set.current`必须exact source Store Manifest，
+  receipt-ledger root的provider/policy必须exact source Store binding，且
+  `active_recovery_control.activeTransactionCount=0`必须exact closure
+  `activeTransactions=[]`。
+  只由同一cohort source streaming capability在同一freeze/Store cut下exact-once EOF及
+  pre/post continuity证明，不由JSON自证，不接受caller DTO、cached pointer或目录扫描。
+- private quota capability在pre/post各读取完整reservation/event/receipt Envelope bytes、
+  三套complete enumeration、account set与authenticated high-water。它先按single/total cap
+  限流并验证strict codec、content digest与token，随后独立重算排序、连续ordinal、
+  predecessor、nonce uniqueness、count/set digest、完整logical bytes、account usage、
+  `stateRevision=eventCount`、`ledgerRevision=receiptCount`及terminal escrow。
+  public只投影可重算account accounting与non-resolving high-water digest；账本语义/
+  completeness由same-cohort opaque machine证明。任一missing/extra/reorder/duplicate/
+  sibling/linkage/digest/token错误固定`quota_ledger_integrity_failed`。
+  complete cut没有原operation request；event/receipt `requestContentDigest`仅为strict codec+
+  token认证的opaque non-resolving commitment，只验证同nonce correlated records exact与
+  transition/ordinal/predecessor/account/high-water linkage，不做outcome semantic request replay。
+  private codec不是formal quota ABI别名：loaded wrapper把canonical bytes与不含raw bytes的
+  strict decoded Envelope分离，验证方向仅raw→decoded→digest/token；event/receipt只pin排除
+  ledger/high-water的account-state digest，最终high-water再单向绑定完整sets，消除自编码与
+  ledger回指环。reservation/event/receipt/high-water、account-state、三套set digest、record
+  token与high-water token各有独立candidate domain/preimage；再新增完整
+  `provider-migration-same-installation-identity-current-strong-source-normal-quota-account-reference-candidate-v1`
+  domain，其preimage exact为`{installationIdentityGenerationId,reservationOrdinal,
+  createdByOperationNonce}`并排除ordinal position/state/contribution及ledger digests。
+  account按reservation ordinal strictly increasing/unique，position ordinal连续且digest unique；
+  reservation、reserve/retain/release event及committed receipt逐项闭合同一account anchor。
+  not-committed receipt用observed pre-high-water的`reservationRecordCount+1`、receipt nonce与
+  Identity重算prospective account digest，且不得出现在post account set；共11个private/public
+  quota candidate domains，不新增public Schema。
+- cycle-free顺序固定为`current trust/core/budgets → budgets digest → complete source
+  stream cut → dry-run cut digest → sizing/digest → complete quota snapshot →
+  normal admission/admissionVectorDigest → narrow migration ID → deterministic
+  same_identity_journal descriptor → narrow Plan payload/content digest → canonical Plan Envelope
+  actual-byte hard check → post observation → pre/post equality →
+  final closure digest`。source dry-run按冻结comparator exact-cover11种artifact kind；
+  `migration_plan`只用static `4_194_304` byte upper bound。reservation/event/receipt
+  admission也只用policy static `1_048_576/262_144/1_048_576` upper bounds，禁止读取
+  含后生成Plan digest的实际bytes形成hash环。Plan生成后、post observation前另验证
+  `UTF8(JCS(planEnvelope)).byteLength <= 4_194_304`；`B+1`为`budget_exceeded`且零副作用，
+  actual length不回流前置digest。destination observation不得自由填写：Plan initial destination
+  absent branch exact映射`absenceReferenceDigest`，current branch exact映射
+  `current.cutContentDigest`，pre/post必须同branch/value且与Plan exact。
+- 令`E`为pre future-terminal escrow，`postE=E+3`。prospective event count/bytes固定为
+  `pre.eventCount+1+postE`与
+  `pre.ledgerEventLogicalBytes+262_144+postE*262_144`；prospective receipt count/bytes
+  固定为`pre.receiptCount+1+postE`与
+  `pre.operationReceiptLogicalBytes+1_048_576+postE*1_048_576`；reservation record
+  count/bytes固定为`pre.reservationRecordCount+1`与
+  `pre.reservationRecordLogicalBytes+1_048_576`。六项分别受
+  `4_096/67_108_864/4_096/268_435_456/4_096/67_108_864` hard caps。normal另保留
+  最后1 migration slot与4/8 GiB，所有category与4/8 GiB single、64与8/16 GiB Identity、
+  active4与reserved8/16 GiB边界都须逐项重算。
+- `prospectiveChargedUsage`令`P=pre usage/J=single journal charge/U=result`：
+  `U.reservedAccountCount=P+1`、每个reserved charge字段=`P`对应字段+`J`对应字段，全部
+  retained字段exact `P`不变，`U.chargedMigrationCount=P+1`、每个charged history/category
+  字段=`P`对应字段+`J`对应reserved字段；全部checked safe-add并与pre account contributions加
+  一项`J`后的result accounting-set fold exact，overflow/cap fail closed且零副作用。
+- `createdAt`是request exact8中的caller candidate metadata，必须是固定24-byte
+  `YYYY-MM-DDTHH:mm:ss.sssZ`、日历有效且round-trip byte-identical；operation不得读clock。
+  它进入request/Plan/final closure digest，明确排除migration ID、reservation ID、source/
+  dry-run/sizing/admission digests。全部35个D-41 domain literal及其projection/exclusion、
+  candidate ID prefix、完整success的`quotaReferenceSnapshot/quotaReferenceObservation/
+  sideEffectBoundary/verificationBoundary`均以PRD D-41.6～D-41.8为normative定义。
+  success Schema/runtime还必须按PRD equality table把重建request digest、Plan、顶层与sizing
+  内source cut及其canonical/logical counters、quota/pre-post observation digests、
+  prospective Entry digest/Identity、Evidence target/ID/content digest/Pin、Registry/Catalog
+  absence、Universe membership/selector claims、Store provider binding、Registry temporary-admit
+  material ownership、verified schema/protocol constants全链、account anchors、
+  prospective usage equations、initial-destination branch observation、Plan actual-byte cap、sizing、
+  admission、quota snapshot、IDs、descriptor、observations与audit-derived zero counters逐项
+  canonical exact闭合，不能接受各自strict但互相矛盾的投影。
+  verificationBoundary必须分别声明copied-retained Registry temporary-admit/material ownership
+  与same-cohort opaque ledger semantics；后者明确没有public request replay证明。
+- JSON Schema inventory固定PRD D-41.8列出的27个完整key；每个key都包含
+  `provider-migration-same-installation-identity-current-strong-source-normal`窄scope且不得缩写；
+  每个key唯一映射`schemas/v1/<key>.schema.json`及
+  `urn:understand-code:provider-contract:schema:v1:<key>`。capability/Input/Error/private
+  Envelope不生成Schema，private modules不进exports。
+- internal diagnostic stage固定为`input/pre_plan_reference_capability/pre_observation/
+  current_strong_source/prospective_destination_evidence/endpoint_trust/
+  migration_budgets/source_complete_stream/source_dry_run_cut/history_quota_sizing/
+  quota_reference_snapshot/history_quota_admission/migration_identity/reservation_descriptor/
+  plan_candidate/plan_envelope_actual_size/post_observation/side_effect_boundary`；reason固定为
+  `schema_invalid/capability_invalid/source_invalid/snapshot_changed/trust_closure_invalid/
+  source_not_current_strong_writer/destination_evidence_invalid/destination_already_selected/
+  mode_relationship_invalid/source_cut_incomplete/budget_exceeded/
+  quota_ledger_integrity_failed/quota_capacity_exhausted/candidate_invalid/
+  side_effect_detected`，且不export。
+- focused evidence必须覆盖exact2/exact8/single cohort、claim前Schema-invalid/并发恰一胜/
+  claim后失败永久burn、current-source/prospective
+  destination/provider-decommission
+  判别、Entry digest/Identity/Evidence target+ID+digest+Pin、Registry public-key alias/approver
+  exception、wrong verified schema/protocol source zero-call、cross zero-call、source hash-DAG与
+  comparator reorder/duplicate/canonical tie、三套/Universe/logical byte counters
+  `B-1/B/B+1`、raw locator↔digest/caller leaf/cross-object pair substitution、duplicate
+  semantic+binding搭配不同kind/content/bytes、slot descriptor同源异digest/target与slot
+  missing/extra/multi-edge、six-root missing/duplicate/swap/cross-field substitution、object kind↔namespace
+  cross-branch、single-object destination/historical binding substitution、opaque EOF、完整quota Envelope/enumeration/
+  high-water/account-state/raw-decoded roundtrip、account domain排序/committed+not-committed anchors、
+  opaque request-commitment linkage、prospective usage逐字段/overflow、11-kind与static control
+  `B-1/B/B+1`、actual Plan Envelope `4_194_303/4_194_304/4_194_305`、initial destination
+  branch observation、`endpoint_trust→migration_budgets→source_complete_stream→source_dry_run_cut→
+  history_quota_sizing→quota_reference_snapshot→history_quota_admission`
+  precedence及budget失败source zero-call、早期failure×九sink delta的finally override与zero-delta
+  原diagnostic保留、createdAt/digest exclusions、candidate→formal ID拒绝、
+  pre/post drift、hostile container/intrinsic及全部reservation/Plan/Acceptance/progress/
+  receipt/object/quota/pending-intent写调用exact zero；packed环境验证27 Schema、public
+  module与private deep-import拒绝。
+- D-41不闭合binding-only、compromise/emergency、historical source、正式Acceptance、
+  cross-installation Migration、Plan publication/reservation saga、executor、真实Identity/
+  recovery/key custody、OS Provider、mutual-auth IPC、fixed-locator durability、progress/
+  rewrite/zero-live/tombstone/final activation、C09 aggregate或strong/release authority；
+  全部继续`open/locked`。PRD D-41是完整normative定义。
+
+D-24～D-41 的实现与验收矩阵为
 `docs/research/2026-07-30-wp5-change-intelligence-matrix.md`；其中第 3.8 节是
 必须逐字段等价实现的 normative Schema Appendix。所有 C09 provider
 contract、canonical bytes/golden与 prerequisite conformance归
@@ -1487,7 +1712,7 @@ capability gap，不是 WP0 新引入回归。对应能力在后续 Gate 关闭�
 | G0-06 Diff Overlay 断链 | 旧 Overlay deprecated，不作为 P0 数据源或完成证据 | WP5/WP7 open | Change Intelligence + Frontend | Change Check Workbench Alpha 前 |
 | G0-07 Worktree 重定向 | Task/Store 绑定当前 canonical worktree；共享只限不可变缓存 | WP3/WP4 core binding closed；WP6 Surface open | Core + Platform | Mandatory Host Surface Alpha 前 |
 | G0-08 Quality/Release | 根 quality、CI 已关闭；CLI/bin、统一版本、License、SBOM、allowlist、Marketplace 留后续 Gate | Partial | Platform + QA | Mandatory Surface Release / M4 |
-| G0-09 Durable Object Provider | strong writer必须使用 OS-isolated exact-object provider、strict Ed25519 host KAT/opaque capability、fixed Bootstrap Trust Bundle + immutable Identity retained historical trust、trust-history caps + append-only Acceptance、root-signed Registry/Taxonomy/Target Universe/Catalog、provider-isolated receipt ledger、atomic path containment、external CAS/journal seal与 bounded dual-namespace migration；未通过或 coverage incomplete target只读 | D-38/C09-1O singleton candidate已通过`36588f3`/CI `31625767367`；D-39 trusted opened-root local-target candidate已通过`876ce8e`/same-SHA CI `31643781457`，两者均仅none-authority。D-40 strong-ready bootstrap/steady none-authority compare-append closure/reference Candidate已冻结、implementation in progress；其内存reference state不等于真实durability。Identity key ownership、OS Provider、mutual-auth IPC、Migration、C09 aggregate与WP3P仍open，全部 strong mutations capability locked | Platform/Security Lead + Provider/Systems；QA/Security/Release验证 | 首个 strong Task Alpha前关闭 AT-C31/AT-Q33、签名开发 target profile并验证当前物理 volume runtime exact-match；P0前关闭全部 advertised profiles |
+| G0-09 Durable Object Provider | strong writer必须使用 OS-isolated exact-object provider、strict Ed25519 host KAT/opaque capability、fixed Bootstrap Trust Bundle + immutable Identity retained historical trust、trust-history caps + append-only Acceptance、root-signed Registry/Taxonomy/Target Universe/Catalog、provider-isolated receipt ledger、atomic path containment、external CAS/journal seal与 bounded dual-namespace migration；未通过或 coverage incomplete target只读 | D-38/C09-1O singleton candidate已通过`36588f3`/CI `31625767367`；D-39 trusted opened-root local-target candidate已通过`876ce8e`/same-SHA CI `31643781457`；D-40 strong-ready bootstrap/steady none-authority compare-append closure/reference Candidate已通过`58cc52f`/same-SHA CI `31764659888`，三者均仅none-authority且D-40内存reference state不等于真实durability。D-41仅冻结`provider_decommission`-only、尚未Catalog/Registry admit的prospective destination none-authority candidate，implementation pending；semantic-policy/recovery、candidate→formal ID mapping、prepared Registry/Catalog successor、Identity key ownership、OS Provider、mutual-auth IPC、正式/cross Migration、C09 aggregate与WP3P仍open/locked，全部 strong mutations capability locked | Platform/Security Lead + Provider/Systems；QA/Security/Release验证 | 首个 strong Task Alpha前关闭 AT-C31/AT-Q33、签名开发 target profile并验证当前物理 volume runtime exact-match；P0前关闭全部 advertised profiles |
 
 ## 8. 当前发布缺口
 
@@ -1525,7 +1750,7 @@ capability gap，不是 WP0 新引入回归。对应能力在后续 Gate 关闭�
 | 条件 | 结果 |
 |---|---|
 | Mission、P0、Non-goals 已冻结 | PASS |
-| D-13～D-19、D-21～D-39 已接受；D-40 frozen / implementation in progress；D-20 有 Owner/Gate | PASS |
+| D-13～D-19、D-21～D-41 已接受/冻结；D-40 none-authority implementation evidence accepted；D-41 implementation pending；D-20 有 Owner/Gate | PASS |
 | Task Lifecycle、Revision 与幂等语义唯一 | PASS |
 | Root/Error/Rendezvous 语义唯一 | PASS |
 | Surface mandatory/conditional、Owner、后续 Gate 完整 | PASS |
@@ -1534,7 +1759,8 @@ capability gap，不是 WP0 新引入回归。对应能力在后续 Gate 关闭�
 | C09-1K supplied-point code / local quality / same-SHA CI / independent review | PASS；不外推到 aggregate |
 | Decision D-38 singleton/Registry-exact边界与C09-1O same-SHA evidence | PASS；只关闭none-authority candidate |
 | Decision D-39 三文档 trusted opened-root physical-target selection边界与同SHA证据 | PASS；`876ce8e` / CI `31643781457`，不新增Gate/AT |
-| Decision D-40 三文档 strong-ready bootstrap/steady Acceptance compare-append closure/reference candidate边界 | PASS；implementation in progress，narrow Candidate不冒充正式ABI且不新增Gate/AT |
+| Decision D-40 三文档 strong-ready bootstrap/steady Acceptance compare-append closure/reference candidate边界 | PASS；`58cc52f` / same-SHA CI `31764659888`，只关闭none-authority narrow Candidate且不新增Gate/AT |
+| Decision D-41 三文档 same-installation-identity current-strong-source normal pre-side-effect Plan/admission closure/reference candidate边界 | PASS；仅`provider_decommission`-only prospective destination none-authority candidate冻结、implementation pending；semantic-policy/recovery/cross/binding-only/compromise/emergency/historical source fail closed，candidate→formal ID mapping与prepared Registry/Catalog successor open/locked，且不新增Gate/AT |
 | C09 aggregate、真实 Provider、strong-write、production 与 release gates | OPEN / LOCKED |
 | 用户未跟踪文件明确排除 | PASS |
 | PRD/Host Spike 状态同步 | 由包含本记录的提交完成 |

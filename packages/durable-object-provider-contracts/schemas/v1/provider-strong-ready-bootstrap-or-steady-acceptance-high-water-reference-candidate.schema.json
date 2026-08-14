@@ -1,0 +1,151 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-strong-ready-bootstrap-or-steady-acceptance-high-water-reference-candidate",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string",
+      "const": "provider_strong_ready_bootstrap_or_steady_acceptance_high_water_reference_candidate_v1"
+    },
+    "installationIdentityGenerationId": {
+      "type": "string",
+      "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+    },
+    "highWaterRevision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4096
+    },
+    "operationNonce": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "predecessor": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "genesis"
+            },
+            "expectedNamespaceState": {
+              "type": "string",
+              "const": "absent"
+            }
+          },
+          "required": [
+            "state",
+            "expectedNamespaceState"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "version"
+            },
+            "highWaterRevision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4096
+            },
+            "contentDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "currentVersionToken": {
+              "type": "string",
+              "pattern": "^hmac-sha256:[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "state",
+            "highWaterRevision",
+            "contentDigest",
+            "currentVersionToken"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "currentAcceptance": {
+      "type": "object",
+      "properties": {
+        "locatorProfile": {
+          "type": "string",
+          "const": "installation_provider_acceptance_state_v1"
+        },
+        "acceptanceOrdinal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "generationId": {
+          "type": "string",
+          "pattern": "^provider-acceptance-state:[0-9a-f]{22}$"
+        },
+        "contentDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "locatorProfile",
+        "acceptanceOrdinal",
+        "generationId",
+        "contentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "generationCount": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4096
+    },
+    "generationSetDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "acceptedGenerationFloors": {
+      "type": "object",
+      "properties": {
+        "rootMetadataGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "registryManifestGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "supportCatalogGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "rootMetadataGeneration",
+        "registryManifestGeneration",
+        "supportCatalogGeneration"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "profile",
+    "installationIdentityGenerationId",
+    "highWaterRevision",
+    "operationNonce",
+    "predecessor",
+    "currentAcceptance",
+    "generationCount",
+    "generationSetDigest",
+    "acceptedGenerationFloors"
+  ],
+  "additionalProperties": false
+}

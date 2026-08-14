@@ -1023,12 +1023,27 @@ describe("provider contract JSON Schema distribution", () => {
       "provider-strong-ready-bootstrap-or-steady-activation",
       "provider-trusted-local-physical-target-selection-candidate-invalid-reason",
       "provider-trusted-local-physical-target-selection-candidate-invalid-stage",
+      "provider-strong-ready-bootstrap-or-steady-acceptance-generation-enumeration-entry-reference-candidate",
+      "provider-strong-ready-bootstrap-or-steady-acceptance-generation-enumeration-reference-candidate",
+      "provider-strong-ready-bootstrap-or-steady-acceptance-high-water-reference-candidate",
+      "provider-strong-ready-bootstrap-or-steady-acceptance-high-water-envelope-reference-candidate",
+      "provider-strong-ready-bootstrap-or-steady-acceptance-current-read-reference-candidate",
+      "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-request-reference-candidate",
+      "provider-strong-ready-bootstrap-or-steady-acceptance-observed-high-water-reference-candidate",
+      "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-outcome-reference-candidate",
+      "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-receipt-reference-candidate",
+      "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-receipt-envelope-reference-candidate",
+      "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-receipt-pin-reference-candidate",
+      "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-result-reference-candidate",
+      "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-validation-reference-candidate",
+      "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-invalid-stage-reference-candidate",
+      "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-invalid-reason-reference-candidate",
     ] as const;
     for (const name of requiredNames) {
       expect(generated, name).toHaveProperty(name);
       expectEveryJsonSchemaObjectClosed(generated[name], name);
     }
-    expect(Object.keys(generated)).toHaveLength(313);
+    expect(Object.keys(generated)).toHaveLength(328);
 
     for (const name of [
       "store-durable-object-provider-runtime-attestation-signature-wrapper",

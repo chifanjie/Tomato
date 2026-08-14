@@ -20,6 +20,13 @@ import type {
   ProviderTrustedLocalPhysicalTargetObservationCapabilityV1,
   ProviderTrustedLocalPhysicalTargetSelectionCandidateValidationV1,
   SelectProviderTrustedLocalPhysicalTargetCandidateV1Input,
+  CreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1Input,
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureValidationReferenceCandidateV1,
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendRequestReferenceCandidateV1,
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendResultReferenceCandidateV1,
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReceiptReferenceCandidateV1,
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReceiptPinReferenceCandidateV1,
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendOutcomeReferenceCandidateV1,
   ProviderMigrationIdV1,
   ProviderRegistryManifestGenerationIdV1,
   ProviderRegistryManifestHistoryValidationV1,
@@ -86,6 +93,9 @@ import type {
 import type {
   ProviderTrustedLocalPhysicalTargetSelectionCandidateValidationV1 as ProviderTrustedLocalPhysicalTargetSelectionCandidateValidationFromSubpathV1,
 } from "../src/provider-trusted-local-physical-target-selection-candidate.js";
+import type {
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureValidationReferenceCandidateV1 as ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateValidationFromSubpathV1,
+} from "../src/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate.js";
 import {
   encodeStoreFilenameKeyV1,
   deriveInstallationIdentityGenerationIdV1,
@@ -95,6 +105,7 @@ import {
   createProviderStrongReadyAcceptanceCandidateV1,
   validateProviderStrongReadyAcceptanceCandidateV1,
   selectProviderTrustedLocalPhysicalTargetCandidateV1,
+  createProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1,
 } from "../src/index.js";
 
 declare const lowerHex22: LowerHex22V1;
@@ -202,6 +213,12 @@ declare const selectTrustedLocalTargetCandidateInput:
   SelectProviderTrustedLocalPhysicalTargetCandidateV1Input;
 declare const trustedLocalObservationCapability:
   ProviderTrustedLocalPhysicalTargetObservationCapabilityV1;
+declare const acceptanceCompareAppendClosureCandidate:
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureValidationReferenceCandidateV1;
+declare const acceptanceCompareAppendClosureCandidateFromSubpath:
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateValidationFromSubpathV1;
+declare const createAcceptanceCompareAppendClosureCandidateInput:
+  CreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1Input;
 declare const semanticProviderPolicy:
   StoreDurableObjectProviderPolicyV1;
 declare const filesystemProfileFields:
@@ -294,6 +311,53 @@ void trustedLocalTargetCandidateAuthority;
 void selectedTrustedLocalTargetCandidateResult;
 void trustedLocalCapabilityFromInput;
 void trustedLocalObservationCapability;
+const acceptanceCompareAppendClosureCandidateRootFromSubpath:
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureValidationReferenceCandidateV1 =
+    acceptanceCompareAppendClosureCandidateFromSubpath;
+const acceptanceCompareAppendClosureCandidateSubpathFromRoot:
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateValidationFromSubpathV1 =
+    acceptanceCompareAppendClosureCandidate;
+const acceptanceCompareAppendClosureCandidateAuthority:
+  "none_provider_strong_ready_bootstrap_or_steady_acceptance_compare_append_closure_reference_candidate_only" =
+    acceptanceCompareAppendClosureCandidate.authority;
+const acceptanceCompareAppendClosureRequest:
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendRequestReferenceCandidateV1 =
+    acceptanceCompareAppendClosureCandidate.acceptanceCompareAppendRequest;
+const acceptanceCompareAppendClosureResult:
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendResultReferenceCandidateV1 =
+    acceptanceCompareAppendClosureCandidate.compareAppendResult;
+const acceptanceCompareAppendClosureReceiptPin:
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReceiptPinReferenceCandidateV1 =
+    acceptanceCompareAppendClosureCandidate.compareAppendReceiptPin;
+declare const acceptanceCompareAppendReceipt:
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReceiptReferenceCandidateV1;
+const acceptanceCompareAppendLinearizationOrdinal: number =
+  acceptanceCompareAppendReceipt.linearizationOrdinal;
+const acceptanceCompareAppendRequestProjection:
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendRequestReferenceCandidateV1 =
+    acceptanceCompareAppendReceipt.requestReferenceProjection;
+const acceptanceCompareAppendReferenceOutcome:
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendOutcomeReferenceCandidateV1 =
+    acceptanceCompareAppendReceipt.referenceOutcome;
+const createdAcceptanceCompareAppendClosureCandidate:
+  Promise<ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureValidationReferenceCandidateV1> =
+    createProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1(
+      createAcceptanceCompareAppendClosureCandidateInput,
+    );
+void acceptanceCompareAppendClosureCandidateRootFromSubpath;
+void acceptanceCompareAppendClosureCandidateSubpathFromRoot;
+void acceptanceCompareAppendClosureCandidateAuthority;
+void acceptanceCompareAppendClosureRequest;
+void acceptanceCompareAppendClosureResult;
+void acceptanceCompareAppendClosureReceiptPin;
+void acceptanceCompareAppendLinearizationOrdinal;
+void acceptanceCompareAppendRequestProjection;
+void acceptanceCompareAppendReferenceOutcome;
+void createdAcceptanceCompareAppendClosureCandidate;
+// @ts-expect-error a D-40 reference candidate deliberately grants no strong authority
+const strongAcceptanceCompareAppendClosureCandidateAuthority: "strong_ready" =
+  acceptanceCompareAppendClosureCandidate.authority;
+void strongAcceptanceCompareAppendClosureCandidateAuthority;
 // @ts-expect-error a local-target candidate deliberately does not grant strong/current authority
 const strongTrustedLocalTargetCandidateAuthority: "strong_ready" =
   trustedLocalTargetCandidate.authority;

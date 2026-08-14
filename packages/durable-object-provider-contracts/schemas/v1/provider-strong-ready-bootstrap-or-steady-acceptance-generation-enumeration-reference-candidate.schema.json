@@ -1,0 +1,118 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-strong-ready-bootstrap-or-steady-acceptance-generation-enumeration-reference-candidate",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string",
+      "const": "provider_strong_ready_bootstrap_or_steady_acceptance_generation_enumeration_reference_candidate_v1"
+    },
+    "installationIdentityGenerationId": {
+      "type": "string",
+      "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+    },
+    "namespaceRevision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4096
+    },
+    "entries": {
+      "minItems": 1,
+      "maxItems": 4096,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "locatorProfile": {
+            "type": "string",
+            "const": "installation_provider_acceptance_state_v1"
+          },
+          "acceptanceOrdinal": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4096
+          },
+          "generationId": {
+            "type": "string",
+            "pattern": "^provider-acceptance-state:[0-9a-f]{22}$"
+          },
+          "contentDigest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "commitOperationNonce": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "predecessor": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "const": "genesis"
+                  }
+                },
+                "required": [
+                  "state"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "const": "acceptance"
+                  },
+                  "generationId": {
+                    "type": "string",
+                    "pattern": "^provider-acceptance-state:[0-9a-f]{22}$"
+                  },
+                  "contentDigest": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "state",
+                  "generationId",
+                  "contentDigest"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": [
+          "locatorProfile",
+          "acceptanceOrdinal",
+          "generationId",
+          "contentDigest",
+          "commitOperationNonce",
+          "predecessor"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "generationCount": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4096
+    },
+    "generationSetDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "profile",
+    "installationIdentityGenerationId",
+    "namespaceRevision",
+    "entries",
+    "generationCount",
+    "generationSetDigest"
+  ],
+  "additionalProperties": false
+}

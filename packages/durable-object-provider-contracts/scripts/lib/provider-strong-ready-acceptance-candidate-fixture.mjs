@@ -293,6 +293,57 @@ function buildSingleTargetCatalog(
   );
 }
 
+function buildMultiTargetCatalog(
+  discovery,
+  releaseTargetUniverse,
+  candidates,
+  registryEntry,
+) {
+  const targetEntries = releaseTargetUniverse.payload.targets;
+  if (targetEntries.length !== 2 || candidates.length !== 2) {
+    throw new TypeError(
+      "strong-ready multi-target fixture requires exactly two targets",
+    );
+  }
+  const unsigned = {
+    profile: "provider_feasibility_support_catalog_v1",
+    distributionRootBinding: jsonClone(discovery.distributionRootBinding),
+    activeRootMetadata: jsonClone(discovery.activeRootMetadata),
+    registryRootKeyId: discovery.activeRoot.rootKeyId,
+    catalogGeneration: 1,
+    feasibilityApprovalKeys: jsonClone(
+      registryEntry.entry.feasibilityApprovalKeys,
+    ),
+    publicSupportTaxonomy: jsonClone(
+      releaseTargetUniverse.payload.publicSupportTaxonomy,
+    ),
+    releaseTargetUniverse: {
+      locatorProfile: "distribution_provider_release_target_universe_v1",
+      universeGeneration: releaseTargetUniverse.universeGeneration,
+      contentDigest: releaseTargetUniverse.contentDigest,
+    },
+    targets: targetEntries.map((entry, index) => ({
+      target: jsonClone(entry.target),
+      candidates: [jsonClone(candidates[index].catalogCandidate)],
+    })),
+  };
+  return ProviderFeasibilitySupportCatalogEnvelopeV1Schema.parse(
+    resignProviderFeasibilitySupportCatalogEnvelopeFixture(
+      {
+        schemaVersion: 1,
+        recordType: "provider_feasibility_support_catalog",
+        catalogGeneration: 1,
+        contentDigest: `sha256:${"0".repeat(64)}`,
+        payload: unsigned,
+      },
+      {
+        rootKeyId: discovery.activeRoot.rootKeyId,
+        rootSeedHex: ROOT_3_SEED_HEX,
+      },
+    ),
+  );
+}
+
 /**
  * Build an Acceptance-only C09 current-candidate request without changing the
  * frozen multi-target Catalog/Distribution fixtures. The returned value is a
@@ -384,6 +435,93 @@ export function buildProviderStrongReadyAcceptanceSingleTargetRawRequestFixture(
     providerFeasibilitySupportCandidateArtifacts: [
       candidate.candidateArtifact,
     ],
+    providerFeasibilitySupportCatalogHistory: [catalog],
+    publicSupportTaxonomyHistory: [discovery.publicSupportTaxonomy],
+    realFilesystemFixtureCorpusManifests: [
+      discovery.fixtureCorpusManifest,
+    ],
+    realFilesystemSuiteManifests: [discovery.suiteManifest],
+    registryManifestHistory,
+    releaseMatrixHistory: [discovery.releaseMatrix],
+    releaseTargetUniverseHistory: [releaseTargetUniverse],
+    rootMetadataHistory: compatible.rootMetadataHistory,
+    targetDiscoveryFixtureManifests: [
+      discovery.targetDiscoveryFixtureManifest,
+    ],
+    targetDiscoveryResultHistory: [discovery.targetDiscoveryResult],
+    targetDiscoveryRunnerRuns: [discovery.targetDiscoveryRunnerRun],
+  });
+}
+
+/**
+ * Build a legal two-target Distribution whose steady Registry Entry is
+ * Registry-exact for the non-first target's native-b candidate.  D-40 uses
+ * this to prove local projection without running the all-Catalog selector.
+ */
+export function buildProviderStrongReadyAcceptanceMultiTargetRawRequestFixture({
+  rootGolden,
+  registryGolden,
+  sourceGolden,
+}) {
+  const builtCompatible = buildCompatibleBaseFixture({
+    rootGolden,
+    registryGolden,
+    sourceGolden,
+  });
+  const compatible = builtCompatible.compatibleBase;
+  const matrixTargets = builtCompatible.discovery.releaseMatrix.payload.targets;
+  if (matrixTargets.length < 2) {
+    throw new TypeError(
+      "strong-ready multi-target fixture requires two frozen targets",
+    );
+  }
+  const discovery = buildGoldenTargetDiscoveryPointFixture(
+    builtCompatible.source,
+    {
+      emptyObservationManifests: true,
+      targets: [jsonClone(matrixTargets[0]), jsonClone(matrixTargets[1])],
+    },
+  );
+  const releaseTargetUniverse = buildSignedUniverseEnvelope(discovery);
+  const candidateFixtures = releaseTargetUniverse.payload.targets.map(
+    (entry) =>
+      buildProviderFeasibilitySupportCandidateFixture({
+        discovery,
+        targetProfileId: entry.target.targetProfileId,
+        qaApproverPublicKey: builtCompatible.qaApproverPublicKey,
+        releaseApproverPublicKey: builtCompatible.releaseApproverPublicKey,
+        providerId: NATIVE_B_PROVIDER_ID,
+        result: "passed",
+        releaseDisposition: "strong_read_write",
+        rootSeedHex: ROOT_3_SEED_HEX,
+      }),
+  );
+  const selectedCandidate = candidateFixtures[1];
+  if (selectedCandidate === undefined) {
+    throw new TypeError("strong-ready multi-target fixture lost target 2");
+  }
+  const nativeBEntry = rebuildNativeBRegistryEntry(
+    builtCompatible,
+    selectedCandidate.catalogCandidate,
+    discovery.activeRoot,
+  );
+  const registryManifestHistory = rebuildRegistryHistory(
+    compatible,
+    nativeBEntry,
+  );
+  const catalog = buildMultiTargetCatalog(
+    discovery,
+    releaseTargetUniverse,
+    candidateFixtures,
+    nativeBEntry,
+  );
+  return jsonClone({
+    bootstrapTrustBundle: compatible.bootstrapTrustBundle,
+    distributionRootBinding: discovery.distributionRootBinding,
+    installationIdentityGenerationId:
+      compatible.installationIdentityGenerationId,
+    providerFeasibilitySupportCandidateArtifacts:
+      candidateFixtures.map(({ candidateArtifact }) => candidateArtifact),
     providerFeasibilitySupportCatalogHistory: [catalog],
     publicSupportTaxonomyHistory: [discovery.publicSupportTaxonomy],
     realFilesystemFixtureCorpusManifests: [

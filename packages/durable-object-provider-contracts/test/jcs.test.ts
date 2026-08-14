@@ -108,6 +108,124 @@ describe("rfc8785-jcs-safe-integer-v1", () => {
     },
   );
 
+  it("does not late-bind String.prototype.charCodeAt after module initialization", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      String.prototype,
+      "charCodeAt",
+    );
+    if (descriptor === undefined) throw new TypeError("charCodeAt missing");
+    let invoked = false;
+    Object.defineProperty(String.prototype, "charCodeAt", {
+      configurable: true,
+      writable: true,
+      value() {
+        invoked = true;
+        throw new Error("poisoned charCodeAt");
+      },
+    });
+    try {
+      expect(canonicalizeJcsSafeIntegerV1({ value: "😀" })).toBe(
+        '{"value":"😀"}',
+      );
+      expect(invoked).toBe(false);
+    } finally {
+      Object.defineProperty(String.prototype, "charCodeAt", descriptor);
+    }
+  });
+
+  it("does not late-bind Array.prototype iteration after module initialization", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      Array.prototype,
+      Symbol.iterator,
+    );
+    if (descriptor === undefined) throw new TypeError("Array iterator missing");
+    let invoked = false;
+    Object.defineProperty(Array.prototype, Symbol.iterator, {
+      configurable: true,
+      writable: true,
+      value: function* poisonedArrayIterator() {
+        invoked = true;
+      },
+    });
+    try {
+      expect(canonicalizeJcsSafeIntegerV1({ b: 2, a: 1 })).toBe(
+        '{"a":1,"b":2}',
+      );
+      expect(canonicalizeJcsSafeIntegerV1([3, 2, 1])).toBe("[3,2,1]");
+      expect(invoked).toBe(false);
+    } finally {
+      Object.defineProperty(Array.prototype, Symbol.iterator, descriptor);
+    }
+  });
+
+  it("does not late-bind UTF-8 and typed-array primordials after module initialization", () => {
+    const encoderDescriptor = Object.getOwnPropertyDescriptor(
+      TextEncoder.prototype,
+      "encode",
+    );
+    const decoderDescriptor = Object.getOwnPropertyDescriptor(
+      TextDecoder.prototype,
+      "decode",
+    );
+    const typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype);
+    const byteLengthDescriptor = Object.getOwnPropertyDescriptor(
+      typedArrayPrototype,
+      "byteLength",
+    );
+    if (
+      encoderDescriptor === undefined ||
+      decoderDescriptor === undefined ||
+      byteLengthDescriptor === undefined
+    ) {
+      throw new TypeError("UTF-8 or typed-array primordial missing");
+    }
+    let invoked = false;
+    Object.defineProperty(TextEncoder.prototype, "encode", {
+      configurable: true,
+      writable: true,
+      value() {
+        invoked = true;
+        throw new Error("poisoned TextEncoder.encode");
+      },
+    });
+    Object.defineProperty(TextDecoder.prototype, "decode", {
+      configurable: true,
+      writable: true,
+      value() {
+        invoked = true;
+        throw new Error("poisoned TextDecoder.decode");
+      },
+    });
+    Object.defineProperty(typedArrayPrototype, "byteLength", {
+      configurable: true,
+      get() {
+        invoked = true;
+        throw new Error("poisoned TypedArray.byteLength");
+      },
+    });
+    try {
+      const canonical = canonicalizeJcsSafeIntegerUtf8V1({ a: 1 });
+      expect(parseCanonicalJcsSafeIntegerUtf8V1(canonical)).toEqual({ a: 1 });
+      expect(invoked).toBe(false);
+    } finally {
+      Object.defineProperty(
+        TextEncoder.prototype,
+        "encode",
+        encoderDescriptor,
+      );
+      Object.defineProperty(
+        TextDecoder.prototype,
+        "decode",
+        decoderDescriptor,
+      );
+      Object.defineProperty(
+        typedArrayPrototype,
+        "byteLength",
+        byteLengthDescriptor,
+      );
+    }
+  });
+
   it("accepts only byte-for-byte canonical messages", () => {
     const canonical = encoder.encode('{"a":1,"b":[2,3]}');
     expect(parseCanonicalJcsSafeIntegerUtf8V1(canonical)).toEqual({

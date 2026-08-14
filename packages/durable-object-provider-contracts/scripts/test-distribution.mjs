@@ -58,6 +58,7 @@ const vitestCommand = join(
   process.platform === "win32" ? "vitest.CMD" : "vitest",
 );
 const MAX_UNCOMPRESSED_PACK_BYTES = 64 * 1024 * 1024;
+const NPM_PACK_FIXED_MTIME_SECONDS_V1 = 499_162_500;
 const DEFAULT_COMMAND_TIMEOUT_MS = 10 * 60 * 1_000;
 const PACK_COMMAND_TIMEOUT_MS = 20 * 60 * 1_000;
 const C09_VITE_BUILD_TIMEOUT_MS = 8 * 60 * 1_000;
@@ -5011,26 +5012,61 @@ function parsePaxAttributes(payload) {
 }
 
 function assertSupportedPaxAttributes(attributes, scope) {
-  const allowedKeys =
-    scope === "local" ? new Set(["path"]) : new Set();
-  for (const key of attributes.keys()) {
-    if (!allowedKeys.has(key)) {
-      throw new Error(
-        `${scope} PAX attribute ${key} is not supported`,
-      );
+  if (scope === "global") {
+    if (attributes.size !== 0) {
+      throw new Error("global PAX attributes are not supported");
     }
+    return;
   }
+  const keys = [...attributes.keys()];
+  const isLegacyPathOnly =
+    keys.length === 1 && keys[0] === "path";
+  const isNpmPackLongPath =
+    keys.length === 3 &&
+    keys[0] === "path" &&
+    keys[1] === "mtime" &&
+    keys[2] === "size";
   if (
-    scope === "local" &&
-    (attributes.size !== 1 ||
-      (attributes.get("path")?.length ?? 0) === 0)
+    (!isLegacyPathOnly && !isNpmPackLongPath) ||
+    (attributes.get("path")?.length ?? 0) === 0
   ) {
     throw new Error(
-      "local PAX header must contain exactly one non-empty path",
+      "local PAX header must be exact path-only or npm-pack path/mtime/size",
     );
   }
-  if (scope === "global" && attributes.size !== 0) {
-    throw new Error("global PAX attributes are not supported");
+}
+
+function resolveLocalPaxPath(attributes, header, size, headerPath) {
+  const path = attributes.get("path");
+  if (path === undefined || path.length === 0) {
+    throw new Error("local PAX path is empty");
+  }
+  if (attributes.size === 1) return path;
+  const headerMtime = readTarOctal(
+    header,
+    136,
+    12,
+    `tar mtime for ${headerPath}`,
+  );
+  if (
+    headerMtime !== NPM_PACK_FIXED_MTIME_SECONDS_V1 ||
+    attributes.get("mtime") !== String(headerMtime) ||
+    attributes.get("size") !== String(size)
+  ) {
+    throw new Error("npm-pack local PAX metadata does not match its member header");
+  }
+  return path;
+}
+
+function assertNoPendingTarPathExtension(
+  pendingLocalPaxAttributes,
+  pendingLongPath,
+) {
+  if (
+    pendingLocalPaxAttributes !== undefined ||
+    pendingLongPath !== undefined
+  ) {
+    throw new Error("stacked tar path extension");
   }
 }
 
@@ -5058,6 +5094,96 @@ expectSynchronousRejection(
       "global",
     ),
   "global PAX metadata",
+);
+const encodePaxRecordForRegression = (key, value) => {
+  const body = `${key}=${value}\n`;
+  let recordLength = Buffer.byteLength(body, "utf8") + 2;
+  while (true) {
+    const record = `${recordLength} ${body}`;
+    const actualLength = Buffer.byteLength(record, "utf8");
+    if (actualLength === recordLength) return record;
+    recordLength = actualLength;
+  }
+};
+const npmPackPaxAttributesRegression = parsePaxAttributes(
+  Buffer.from(
+    [
+      encodePaxRecordForRegression("path", "package/long-name"),
+      encodePaxRecordForRegression(
+        "mtime",
+        String(NPM_PACK_FIXED_MTIME_SECONDS_V1),
+      ),
+      encodePaxRecordForRegression("size", "12"),
+    ].join(""),
+    "utf8",
+  ),
+);
+assertSupportedPaxAttributes(npmPackPaxAttributesRegression, "local");
+const npmPackPaxHeaderRegression = Buffer.alloc(512);
+Buffer.from("00000000014\0", "ascii").copy(
+  npmPackPaxHeaderRegression,
+  124,
+);
+Buffer.from(
+  `${NPM_PACK_FIXED_MTIME_SECONDS_V1.toString(8).padStart(11, "0")}\0`,
+  "ascii",
+).copy(npmPackPaxHeaderRegression, 136);
+if (
+  resolveLocalPaxPath(
+    npmPackPaxAttributesRegression,
+    npmPackPaxHeaderRegression,
+    12,
+    "npm-pack PAX regression",
+  ) !== "package/long-name"
+) {
+  throw new Error("npm-pack PAX regression did not preserve its exact path");
+}
+expectSynchronousRejection(
+  () =>
+    resolveLocalPaxPath(
+      new Map([
+        ["path", "package/long-name"],
+        ["mtime", String(NPM_PACK_FIXED_MTIME_SECONDS_V1 - 1)],
+        ["size", "12"],
+      ]),
+      npmPackPaxHeaderRegression,
+      12,
+      "wrong-mtime PAX regression",
+    ),
+  "PAX mtime mismatch",
+);
+expectSynchronousRejection(
+  () =>
+    resolveLocalPaxPath(
+      new Map([
+        ["path", "package/long-name"],
+        ["mtime", String(NPM_PACK_FIXED_MTIME_SECONDS_V1)],
+        ["size", "012"],
+      ]),
+      npmPackPaxHeaderRegression,
+      12,
+      "wrong-size PAX regression",
+    ),
+  "PAX size mismatch",
+);
+expectSynchronousRejection(
+  () =>
+    assertSupportedPaxAttributes(
+      new Map([
+        ["path", "package/long-name"],
+        ["mtime", String(NPM_PACK_FIXED_MTIME_SECONDS_V1)],
+      ]),
+      "local",
+    ),
+  "partial npm-pack PAX profile",
+);
+expectSynchronousRejection(
+  () =>
+    assertNoPendingTarPathExtension(
+      npmPackPaxAttributesRegression,
+      undefined,
+    ),
+  "stacked PAX extension",
 );
 
 function collidesWithProviderArchivePath(path) {
@@ -5103,7 +5229,7 @@ async function assertExactProviderTarInventory(
   const providerEntries = [];
   const browserZodEntries = [];
   let offset = 0;
-  let pendingPaxPath;
+  let pendingLocalPaxAttributes;
   let pendingLongPath;
   let zeroBlockCount = 0;
 
@@ -5124,6 +5250,15 @@ async function assertExactProviderTarInventory(
     const prefix = readTarString(header, 345, 155);
     const headerPath = prefix.length === 0 ? name : `${prefix}/${name}`;
     const size = readTarOctal(header, 124, 12, `tar size for ${headerPath}`);
+    const mtime = readTarOctal(
+      header,
+      136,
+      12,
+      `tar mtime for ${headerPath}`,
+    );
+    if (mtime !== NPM_PACK_FIXED_MTIME_SECONDS_V1) {
+      throw new Error(`tar mtime for ${headerPath} is not npm's fixed epoch`);
+    }
     const typeFlag = String.fromCharCode(header[156] ?? 0);
     const linkPath = readTarString(header, 157, 100);
     const payloadStart = offset + 512;
@@ -5136,23 +5271,29 @@ async function assertExactProviderTarInventory(
       payloadStart + Math.ceil(size / 512) * 512;
 
     if (typeFlag === "x") {
-      if (pendingPaxPath !== undefined || pendingLongPath !== undefined) {
-        throw new Error("stacked tar path extension");
-      }
+      assertNoPendingTarPathExtension(
+        pendingLocalPaxAttributes,
+        pendingLongPath,
+      );
       const attributes = parsePaxAttributes(payload);
       assertSupportedPaxAttributes(attributes, "local");
-      pendingPaxPath = attributes.get("path");
+      pendingLocalPaxAttributes = attributes;
       continue;
     }
     if (typeFlag === "g") {
+      assertNoPendingTarPathExtension(
+        pendingLocalPaxAttributes,
+        pendingLongPath,
+      );
       const attributes = parsePaxAttributes(payload);
       assertSupportedPaxAttributes(attributes, "global");
       continue;
     }
     if (typeFlag === "L") {
-      if (pendingPaxPath !== undefined || pendingLongPath !== undefined) {
-        throw new Error("stacked tar path extension");
-      }
+      assertNoPendingTarPathExtension(
+        pendingLocalPaxAttributes,
+        pendingLongPath,
+      );
       const terminator = payload.indexOf(0);
       pendingLongPath = payload
         .subarray(
@@ -5163,9 +5304,15 @@ async function assertExactProviderTarInventory(
       continue;
     }
 
-    const effectivePath =
-      pendingPaxPath ?? pendingLongPath ?? headerPath;
-    pendingPaxPath = undefined;
+    const effectivePath = pendingLocalPaxAttributes === undefined
+      ? pendingLongPath ?? headerPath
+      : resolveLocalPaxPath(
+          pendingLocalPaxAttributes,
+          header,
+          size,
+          headerPath,
+        );
+    pendingLocalPaxAttributes = undefined;
     pendingLongPath = undefined;
     if (collidesWithProviderArchivePath(effectivePath)) {
       providerEntries.push({
@@ -5193,7 +5340,7 @@ async function assertExactProviderTarInventory(
   }
 
   if (
-    pendingPaxPath !== undefined ||
+    pendingLocalPaxAttributes !== undefined ||
     pendingLongPath !== undefined ||
     zeroBlockCount < 2
   ) {
@@ -5847,6 +5994,18 @@ if (process.argv[2] === "--c09-dedicated-gate-light-regressions") {
   } finally {
     await rm(coldRegressionRoot, { recursive: true, force: true });
   }
+} else if (process.argv[2] === "--verify-provider-tar-inventory") {
+  const tarballPath = process.argv[3];
+  if (tarballPath === undefined || !isAbsolute(tarballPath)) {
+    throw new Error(
+      "--verify-provider-tar-inventory requires one absolute tgz path",
+    );
+  }
+  await assertExactProviderTarInventory(
+    tarballPath,
+    "focused provider tar inventory",
+  );
+  process.stdout.write("Focused provider tar inventory passed.\n");
 } else {
 
 const temporaryRoot = await mkdtemp(
@@ -5861,9 +6020,9 @@ try {
   const sourceSchemaRelativePaths = await listRelativeSchemaPaths(
     join(packageRoot, "schemas", "v1"),
   );
-  if (sourceSchemaRelativePaths.length !== 313) {
+  if (sourceSchemaRelativePaths.length !== 328) {
     throw new Error(
-      `Source provider contracts must contain exactly 313 JSON Schemas, found ${sourceSchemaRelativePaths.length}`,
+      `Source provider contracts must contain exactly 328 JSON Schemas, found ${sourceSchemaRelativePaths.length}`,
     );
   }
   await assertExactProviderDirectory(
@@ -6112,9 +6271,9 @@ try {
   const explicitSpecifiers = Object.keys(manifest.exports)
     .filter((key) => !key.includes("*"))
     .map(packageSpecifier);
-  if (explicitSpecifiers.length !== 29) {
+  if (explicitSpecifiers.length !== 30) {
     throw new Error(
-      `Packed provider contracts must expose exactly 29 public modules, found ${explicitSpecifiers.length}`,
+      `Packed provider contracts must expose exactly 30 public modules, found ${explicitSpecifiers.length}`,
     );
   }
   const installedStrictManifestPath = await realpath(
@@ -6519,10 +6678,12 @@ try {
       'const providerDistributionHistoryCurrentCandidatePointFixtures = await import("@understand-code/durable-object-provider-contracts/provider-distribution-history-current-candidate-point-fixtures");',
       'const providerStrongReadyAcceptanceCandidate = await import("@understand-code/durable-object-provider-contracts/provider-strong-ready-acceptance-candidate");',
       'const providerTrustedLocalPhysicalTargetSelectionCandidate = await import("@understand-code/durable-object-provider-contracts/provider-trusted-local-physical-target-selection-candidate");',
+      'const providerAcceptanceCompareAppendClosureReferenceCandidate = await import("@understand-code/durable-object-provider-contracts/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate");',
       'const unavailable = providerError.createProviderUnavailableToolErrorV1("unavailable");',
       'if (providerError.ProviderUnavailableToolErrorV1Schema.parse(unavailable).details.reason !== "unavailable") throw new Error("provider error export failed");',
       'if (root.createProviderStrongReadyAcceptanceCandidateV1 !== providerStrongReadyAcceptanceCandidate.createProviderStrongReadyAcceptanceCandidateV1 || root.validateProviderStrongReadyAcceptanceCandidateV1 !== providerStrongReadyAcceptanceCandidate.validateProviderStrongReadyAcceptanceCandidateV1 || root.PROVIDER_STRONG_READY_ACCEPTANCE_CANDIDATE_AUTHORITY_V1 !== "none_provider_strong_ready_acceptance_candidate_structure_only" || root.ProviderAcceptanceStateGenerationIdV1Schema.parse(`provider-acceptance-state:${"0".repeat(22)}`) !== `provider-acceptance-state:${"0".repeat(22)}` || providerStrongReadyAcceptanceCandidate.ProviderStrongReadyAcceptanceCandidateInvalidStageV1Schema.parse("active_writer_selector") !== "active_writer_selector") throw new Error("packed strong-ready Acceptance candidate export failed");',
       'if (root.selectProviderTrustedLocalPhysicalTargetCandidateV1 !== providerTrustedLocalPhysicalTargetSelectionCandidate.selectProviderTrustedLocalPhysicalTargetCandidateV1 || root.diagnoseProviderTrustedLocalPhysicalTargetCandidateV1 !== providerTrustedLocalPhysicalTargetSelectionCandidate.diagnoseProviderTrustedLocalPhysicalTargetCandidateV1 || root.PROVIDER_TRUSTED_LOCAL_PHYSICAL_TARGET_SELECTION_CANDIDATE_AUTHORITY_V1 !== "none_provider_trusted_local_physical_target_selection_candidate_only" || providerTrustedLocalPhysicalTargetSelectionCandidate.ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidStageV1Schema.parse("physical_target_postcheck") !== "physical_target_postcheck" || providerTrustedLocalPhysicalTargetSelectionCandidate.ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidReasonV1Schema.parse("root_volume_changed") !== "root_volume_changed") throw new Error("packed trusted local physical-target candidate export failed");',
+      'if (root.createProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 !== providerAcceptanceCompareAppendClosureReferenceCandidate.createProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 || root.diagnoseCreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 !== providerAcceptanceCompareAppendClosureReferenceCandidate.diagnoseCreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 || root.PROVIDER_STRONG_READY_BOOTSTRAP_OR_STEADY_ACCEPTANCE_COMPARE_APPEND_CLOSURE_REFERENCE_CANDIDATE_AUTHORITY_V1 !== "none_provider_strong_ready_bootstrap_or_steady_acceptance_compare_append_closure_reference_candidate_only" || providerAcceptanceCompareAppendClosureReferenceCandidate.PROVIDER_STRONG_READY_BOOTSTRAP_OR_STEADY_ACCEPTANCE_COMPARE_APPEND_REQUEST_REFERENCE_CANDIDATE_DOMAIN_V1 !== "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-request-reference-candidate-v1" || providerAcceptanceCompareAppendClosureReferenceCandidate.ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureInvalidStageReferenceCandidateV1Schema.parse("physical_target_selection") !== "physical_target_selection" || providerAcceptanceCompareAppendClosureReferenceCandidate.ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureInvalidReasonReferenceCandidateV1Schema.parse("candidate_invalid") !== "candidate_invalid") throw new Error("packed Acceptance compare-append reference candidate export failed");',
       'const schemaUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/schemas/v1/canonical-byte-string.schema.json"));',
       'const providerErrorSchemaUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/schemas/v1/provider-unavailable-tool-error.schema.json"));',
       'const goldenUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/golden/manifest.json"));',
@@ -6949,7 +7110,7 @@ try {
       '}',
       'if (currentCandidateInvalidExecutedCaseCount !== 39) throw new Error(`packed distribution history current-candidate replay count drift: ${currentCandidateInvalidExecutedCaseCount}/39`);',
       '}',
-      'for (const internalExportName of ["createProviderPointRawAdmissionSessionV1", "createProviderPointPromiseV1", "createProviderTargetDiscoveryPointSnapshotV1", "assertProviderStrictEd25519CryptoCapabilityIdentityV1", "deriveProviderStrongReadyActiveWriterSelectionsInternalV1", "classifyProviderStrongReadyActiveWriterMatchCountInternalV1", "mintProviderTrustedLocalPhysicalTargetObservationCapabilityInternalV1", "deriveProviderTrustedLocalPhysicalTargetSelectionInternalV1"]) { if (Object.hasOwn(root, internalExportName)) throw new Error(`private internal helper exported from root: ${internalExportName}`); }',
+      'for (const internalExportName of ["createProviderPointRawAdmissionSessionV1", "createProviderPointPromiseV1", "createProviderTargetDiscoveryPointSnapshotV1", "assertProviderStrictEd25519CryptoCapabilityIdentityV1", "deriveProviderStrongReadyActiveWriterSelectionsInternalV1", "classifyProviderStrongReadyActiveWriterMatchCountInternalV1", "mintProviderTrustedLocalPhysicalTargetObservationCapabilityInternalV1", "deriveProviderTrustedLocalPhysicalTargetSelectionInternalV1", "mintProviderStrongReadyBootstrapOrSteadyAcceptanceIdentityVerificationCapabilityInternalV1", "mintProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineInternalV1", "deriveProviderTrustedLocalStrongWriterSelectionCandidateInternalV1"]) { if (Object.hasOwn(root, internalExportName)) throw new Error(`private internal helper exported from root: ${internalExportName}`); }',
       'if (providerRegistry.StoreFilenameKeyV1Schema.parse("id-c4") !== "id-c4" || providerRegistry.decodeShortStoreFilenameKeyV1("id-c4") !== "a") throw new Error("packed lowercase base32hex filename codec failed");',
       'const privatePackagePrefix = "@understand-code/durable-object-provider-contracts";',
       'async function assertPrivateDeepImportUnavailable(privateSpecifier) {',
@@ -6959,7 +7120,7 @@ try {
       '  const privateSubpath = `.${privateSpecifier.slice(privatePackagePrefix.length)}`;',
       '  if (rejection?.code !== "ERR_PACKAGE_PATH_NOT_EXPORTED" || typeof rejection?.message !== "string" || !rejection.message.includes(`Package subpath \'${privateSubpath}\'`)) throw new Error(`private deep import rejection mismatch for ${privateSpecifier}: ${rejection?.code ?? "no-code"}/${rejection?.message ?? String(rejection)}`);',
       '}',
-      'for (const privateSpecifier of ["@understand-code/durable-object-provider-contracts/domain-crypto", "@understand-code/durable-object-provider-contracts/provider-registry-records", "@understand-code/durable-object-provider-contracts/provider-registry-manifest-history", "@understand-code/durable-object-provider-contracts/provider-point-raw-admission-internal", "@understand-code/durable-object-provider-contracts/provider-point-runtime-internal", "@understand-code/durable-object-provider-contracts/provider-target-discovery-point-internal", "@understand-code/durable-object-provider-contracts/provider-feasibility-evidence-point-internal", "@understand-code/durable-object-provider-contracts/provider-feasibility-evidence-point-prepared-internal", "@understand-code/durable-object-provider-contracts/provider-feasibility-support-catalog-point-prepared-internal", "@understand-code/durable-object-provider-contracts/provider-real-filesystem-conformance-result-internal", "@understand-code/durable-object-provider-contracts/provider-real-filesystem-source-internal", "@understand-code/durable-object-provider-contracts/provider-registry-history-prepared-handle-internal", "@understand-code/durable-object-provider-contracts/provider-registry-history-prepared-internal", "@understand-code/durable-object-provider-contracts/provider-runtime-attestation-point-internal", "@understand-code/durable-object-provider-contracts/provider-target-discovery-point-prepared-internal", "@understand-code/durable-object-provider-contracts/provider-release-target-universe-point-prepared-internal", "@understand-code/durable-object-provider-contracts/provider-distribution-retained-accounting-internal", "@understand-code/durable-object-provider-contracts/provider-distribution-historical-semantic-internal", "@understand-code/durable-object-provider-contracts/provider-strong-ready-acceptance-candidate-internal", "@understand-code/durable-object-provider-contracts/provider-trusted-local-physical-target-observation-capability-internal", "@understand-code/durable-object-provider-contracts/provider-trusted-local-physical-target-selection-candidate-internal", "@understand-code/durable-object-provider-contracts/provider-registry-evidence-binding-topology-proof", "@understand-code/durable-object-provider-contracts/provider-registry-evidence-binding-point-budget-test-seam-internal", "@understand-code/durable-object-provider-contracts/provider-registry-evidence-binding-point-budget-witness-internal", "@understand-code/durable-object-provider-contracts/strict-ed25519-capability-internal"]) await assertPrivateDeepImportUnavailable(privateSpecifier);',
+      'for (const privateSpecifier of ["@understand-code/durable-object-provider-contracts/domain-crypto", "@understand-code/durable-object-provider-contracts/provider-registry-records", "@understand-code/durable-object-provider-contracts/provider-registry-manifest-history", "@understand-code/durable-object-provider-contracts/provider-point-raw-admission-internal", "@understand-code/durable-object-provider-contracts/provider-point-runtime-internal", "@understand-code/durable-object-provider-contracts/provider-target-discovery-point-internal", "@understand-code/durable-object-provider-contracts/provider-feasibility-evidence-point-internal", "@understand-code/durable-object-provider-contracts/provider-feasibility-evidence-point-prepared-internal", "@understand-code/durable-object-provider-contracts/provider-feasibility-support-catalog-point-prepared-internal", "@understand-code/durable-object-provider-contracts/provider-real-filesystem-conformance-result-internal", "@understand-code/durable-object-provider-contracts/provider-real-filesystem-source-internal", "@understand-code/durable-object-provider-contracts/provider-registry-history-prepared-handle-internal", "@understand-code/durable-object-provider-contracts/provider-registry-history-prepared-internal", "@understand-code/durable-object-provider-contracts/provider-runtime-attestation-point-internal", "@understand-code/durable-object-provider-contracts/provider-target-discovery-point-prepared-internal", "@understand-code/durable-object-provider-contracts/provider-release-target-universe-point-prepared-internal", "@understand-code/durable-object-provider-contracts/provider-distribution-retained-accounting-internal", "@understand-code/durable-object-provider-contracts/provider-distribution-historical-semantic-internal", "@understand-code/durable-object-provider-contracts/provider-strong-ready-acceptance-candidate-internal", "@understand-code/durable-object-provider-contracts/provider-trusted-local-physical-target-observation-capability-internal", "@understand-code/durable-object-provider-contracts/provider-trusted-local-physical-target-selection-candidate-internal", "@understand-code/durable-object-provider-contracts/provider-strong-ready-bootstrap-or-steady-acceptance-identity-verification-capability-internal", "@understand-code/durable-object-provider-contracts/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-reference-machine-internal", "@understand-code/durable-object-provider-contracts/provider-trusted-local-strong-writer-selection-candidate-internal", "@understand-code/durable-object-provider-contracts/provider-registry-evidence-binding-topology-proof", "@understand-code/durable-object-provider-contracts/provider-registry-evidence-binding-point-budget-test-seam-internal", "@understand-code/durable-object-provider-contracts/provider-registry-evidence-binding-point-budget-witness-internal", "@understand-code/durable-object-provider-contracts/strict-ed25519-capability-internal"]) await assertPrivateDeepImportUnavailable(privateSpecifier);',
     ].join("\n"),
     "utf8",
   );
@@ -7013,6 +7174,8 @@ try {
       'import type { CreateProviderStrongReadyAcceptanceCandidateV1Input, ProviderStrongReadyAcceptanceCandidateValidationV1, ValidateProviderStrongReadyAcceptanceCandidateV1Input } from "@understand-code/durable-object-provider-contracts/provider-strong-ready-acceptance-candidate";',
       'import { selectProviderTrustedLocalPhysicalTargetCandidateV1 } from "@understand-code/durable-object-provider-contracts/provider-trusted-local-physical-target-selection-candidate";',
       'import type { ProviderTrustedLocalPhysicalTargetObservationCapabilityV1, ProviderTrustedLocalPhysicalTargetSelectionCandidateValidationV1, SelectProviderTrustedLocalPhysicalTargetCandidateV1Input } from "@understand-code/durable-object-provider-contracts/provider-trusted-local-physical-target-selection-candidate";',
+      'import { createProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 } from "@understand-code/durable-object-provider-contracts/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate";',
+      'import type { CreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1Input, ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureValidationReferenceCandidateV1 } from "@understand-code/durable-object-provider-contracts/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate";',
       'const slug = DurableObjectIdentityProviderSlugV1Schema.parse("native-fs");',
       'const id = createDurableObjectIdentityProviderIdV1(slug);',
       'DurableObjectIdentityProviderIdV1Schema.parse(id);',
@@ -7068,6 +7231,7 @@ try {
       'declare const validateStrongReadyAcceptanceCandidateInput: ValidateProviderStrongReadyAcceptanceCandidateV1Input;',
       'declare const selectTrustedLocalPhysicalTargetInput: SelectProviderTrustedLocalPhysicalTargetCandidateV1Input;',
       'declare const trustedLocalPhysicalTargetObservationCapability: ProviderTrustedLocalPhysicalTargetObservationCapabilityV1;',
+      'declare const createAcceptanceCompareAppendClosureReferenceCandidateInput: CreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1Input;',
       'const registryGoldenParsed = ProviderRegistryManifestHistoryGoldenManifestV1Schema.parse(registryGoldenManifest);',
       'const registryHistoryValidation: Promise<ProviderRegistryManifestHistoryValidationV1> = validateProviderRegistryManifestHistoryV1(registryHistoryInput);',
       'const registryInvalidManifest: ProviderRegistryManifestHistoryInvalidManifestV1 = ProviderRegistryManifestHistoryInvalidManifestV1Schema.parse(verifyProviderRegistryManifestHistoryInvalidResourceV1(registryInvalidBytes));',
@@ -7132,6 +7296,7 @@ try {
       'const createdStrongReadyAcceptanceCandidate: Promise<ProviderStrongReadyAcceptanceCandidateValidationV1> = createProviderStrongReadyAcceptanceCandidateV1(createStrongReadyAcceptanceCandidateInput);',
       'const validatedStrongReadyAcceptanceCandidate: Promise<ProviderStrongReadyAcceptanceCandidateValidationV1> = validateProviderStrongReadyAcceptanceCandidateV1(validateStrongReadyAcceptanceCandidateInput);',
       'const selectedTrustedLocalPhysicalTargetCandidate: Promise<ProviderTrustedLocalPhysicalTargetSelectionCandidateValidationV1> = selectProviderTrustedLocalPhysicalTargetCandidateV1(selectTrustedLocalPhysicalTargetInput);',
+      'const createdAcceptanceCompareAppendClosureReferenceCandidate: Promise<ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureValidationReferenceCandidateV1> = createProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1(createAcceptanceCompareAppendClosureReferenceCandidateInput);',
       '// @ts-expect-error current-candidate positive IDs are an exact closed union',
       'const unknownCurrentCandidatePositiveVectorId: ProviderDistributionHistoryCurrentCandidatePointPositiveVectorIdV1 = "current-candidate-positive-unknown";',
       '// @ts-expect-error current-candidate invalid IDs are an exact closed union',
@@ -7229,6 +7394,7 @@ try {
       'void createdStrongReadyAcceptanceCandidate;',
       'void validatedStrongReadyAcceptanceCandidate;',
       'void selectedTrustedLocalPhysicalTargetCandidate;',
+      'void createdAcceptanceCompareAppendClosureReferenceCandidate;',
       'void trustedLocalPhysicalTargetObservationCapability;',
       'void rootTargetDiscoveryResultPin;',
       'void rootTargetDiscoveryTaxonomyLocator;',
@@ -7460,6 +7626,8 @@ try {
       'import { PROVIDER_STRONG_READY_ACCEPTANCE_CANDIDATE_AUTHORITY_V1 as rootStrongReadyAcceptanceCandidateAuthorityV1, ProviderAcceptanceStateGenerationIdV1Schema as rootProviderAcceptanceStateGenerationIdV1Schema, createProviderStrongReadyAcceptanceCandidateV1 as rootCreateProviderStrongReadyAcceptanceCandidateV1, validateProviderStrongReadyAcceptanceCandidateV1 as rootValidateProviderStrongReadyAcceptanceCandidateV1 } from "@understand-code/durable-object-provider-contracts";',
       'import { PROVIDER_TRUSTED_LOCAL_PHYSICAL_TARGET_SELECTION_CANDIDATE_AUTHORITY_V1, ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidReasonV1Schema, ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidStageV1Schema, diagnoseProviderTrustedLocalPhysicalTargetCandidateV1, selectProviderTrustedLocalPhysicalTargetCandidateV1 } from "@understand-code/durable-object-provider-contracts/provider-trusted-local-physical-target-selection-candidate";',
       'import { PROVIDER_TRUSTED_LOCAL_PHYSICAL_TARGET_SELECTION_CANDIDATE_AUTHORITY_V1 as rootTrustedLocalPhysicalTargetSelectionCandidateAuthorityV1, diagnoseProviderTrustedLocalPhysicalTargetCandidateV1 as rootDiagnoseProviderTrustedLocalPhysicalTargetCandidateV1, selectProviderTrustedLocalPhysicalTargetCandidateV1 as rootSelectProviderTrustedLocalPhysicalTargetCandidateV1 } from "@understand-code/durable-object-provider-contracts";',
+      'import { PROVIDER_STRONG_READY_BOOTSTRAP_OR_STEADY_ACCEPTANCE_COMPARE_APPEND_CLOSURE_REFERENCE_CANDIDATE_AUTHORITY_V1, PROVIDER_STRONG_READY_BOOTSTRAP_OR_STEADY_ACCEPTANCE_COMPARE_APPEND_REQUEST_REFERENCE_CANDIDATE_DOMAIN_V1, ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureInvalidReasonReferenceCandidateV1Schema, ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureInvalidStageReferenceCandidateV1Schema, createProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1, diagnoseCreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 } from "@understand-code/durable-object-provider-contracts/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate";',
+      'import { PROVIDER_STRONG_READY_BOOTSTRAP_OR_STEADY_ACCEPTANCE_COMPARE_APPEND_CLOSURE_REFERENCE_CANDIDATE_AUTHORITY_V1 as rootAcceptanceCompareAppendClosureReferenceCandidateAuthorityV1, createProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 as rootCreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1, diagnoseCreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 as rootDiagnoseCreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 } from "@understand-code/durable-object-provider-contracts";',
       'import { canonicalizeJcsSafeIntegerUtf8V1 } from "@understand-code/durable-object-provider-contracts/jcs";',
       'import { STRICT_ED25519_VERIFICATION_PROFILE_V1, validatePrimeSubgroupPoint, verifyRawEd25519 } from "@understand-code/durable-object-provider-contracts/strict-ed25519";',
       'import { PROVIDER_STRICT_ED25519_MANIFEST_MAX_BYTES_V1, PROVIDER_STRICT_ED25519_MANIFEST_RESOURCE_PATH_V1, attestProviderStrictEd25519CryptoHostV1, getProviderStrictEd25519CryptoCapabilityBytesV1 } from "@understand-code/durable-object-provider-contracts/strict-ed25519-conformance";',
@@ -7499,6 +7667,7 @@ try {
       `delete globalThis[${JSON.stringify(C09_BROWSER_CATALOG_INVALID_BYTES_GLOBAL_V1)}];`,
       'if (rootCreateProviderStrongReadyAcceptanceCandidateV1 !== createProviderStrongReadyAcceptanceCandidateV1 || rootValidateProviderStrongReadyAcceptanceCandidateV1 !== validateProviderStrongReadyAcceptanceCandidateV1 || rootStrongReadyAcceptanceCandidateAuthorityV1 !== PROVIDER_STRONG_READY_ACCEPTANCE_CANDIDATE_AUTHORITY_V1 || PROVIDER_STRONG_READY_ACCEPTANCE_CANDIDATE_AUTHORITY_V1 !== "none_provider_strong_ready_acceptance_candidate_structure_only" || rootProviderAcceptanceStateGenerationIdV1Schema.parse(`provider-acceptance-state:${"0".repeat(22)}`) !== `provider-acceptance-state:${"0".repeat(22)}` || ProviderStrongReadyAcceptanceCandidateInvalidStageV1Schema.parse("active_writer_selector") !== "active_writer_selector") throw new Error("browser strong-ready Acceptance candidate export mismatch");',
       'if (rootSelectProviderTrustedLocalPhysicalTargetCandidateV1 !== selectProviderTrustedLocalPhysicalTargetCandidateV1 || rootDiagnoseProviderTrustedLocalPhysicalTargetCandidateV1 !== diagnoseProviderTrustedLocalPhysicalTargetCandidateV1 || rootTrustedLocalPhysicalTargetSelectionCandidateAuthorityV1 !== PROVIDER_TRUSTED_LOCAL_PHYSICAL_TARGET_SELECTION_CANDIDATE_AUTHORITY_V1 || PROVIDER_TRUSTED_LOCAL_PHYSICAL_TARGET_SELECTION_CANDIDATE_AUTHORITY_V1 !== "none_provider_trusted_local_physical_target_selection_candidate_only" || ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidStageV1Schema.parse("physical_target_postcheck") !== "physical_target_postcheck" || ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidReasonV1Schema.parse("root_volume_changed") !== "root_volume_changed") throw new Error("browser trusted local physical-target candidate export mismatch");',
+      'if (rootCreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 !== createProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 || rootDiagnoseCreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 !== diagnoseCreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 || rootAcceptanceCompareAppendClosureReferenceCandidateAuthorityV1 !== PROVIDER_STRONG_READY_BOOTSTRAP_OR_STEADY_ACCEPTANCE_COMPARE_APPEND_CLOSURE_REFERENCE_CANDIDATE_AUTHORITY_V1 || PROVIDER_STRONG_READY_BOOTSTRAP_OR_STEADY_ACCEPTANCE_COMPARE_APPEND_CLOSURE_REFERENCE_CANDIDATE_AUTHORITY_V1 !== "none_provider_strong_ready_bootstrap_or_steady_acceptance_compare_append_closure_reference_candidate_only" || PROVIDER_STRONG_READY_BOOTSTRAP_OR_STEADY_ACCEPTANCE_COMPARE_APPEND_REQUEST_REFERENCE_CANDIDATE_DOMAIN_V1 !== "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-request-reference-candidate-v1" || ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureInvalidStageReferenceCandidateV1Schema.parse("physical_target_selection") !== "physical_target_selection" || ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureInvalidReasonReferenceCandidateV1Schema.parse("candidate_invalid") !== "candidate_invalid") throw new Error("browser Acceptance compare-append reference candidate export mismatch");',
       `const providerDistributionHistoryCurrentCandidatePointGoldenBytes = globalThis[${JSON.stringify(C09_BROWSER_CURRENT_CANDIDATE_GOLDEN_BYTES_GLOBAL_V1)}];`,
       `const providerDistributionHistoryCurrentCandidatePointInvalidBytes = globalThis[${JSON.stringify(C09_BROWSER_CURRENT_CANDIDATE_INVALID_BYTES_GLOBAL_V1)}];`,
       'if (!(providerDistributionHistoryCurrentCandidatePointGoldenBytes instanceof Uint8Array) || !(providerDistributionHistoryCurrentCandidatePointInvalidBytes instanceof Uint8Array)) throw new Error("browser distribution history current-candidate resources were not injected");',
@@ -8426,6 +8595,16 @@ try {
     "dist/provider-trusted-local-physical-target-selection-candidate-internal.d.ts",
     "dist/provider-trusted-local-physical-target-observation-capability-internal.js",
     "dist/provider-trusted-local-physical-target-observation-capability-internal.d.ts",
+    "dist/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-reference-candidate-wire.js",
+    "dist/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-reference-candidate-wire.d.ts",
+    "dist/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate.js",
+    "dist/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate.d.ts",
+    "dist/provider-strong-ready-bootstrap-or-steady-acceptance-identity-verification-capability-internal.js",
+    "dist/provider-strong-ready-bootstrap-or-steady-acceptance-identity-verification-capability-internal.d.ts",
+    "dist/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-reference-machine-internal.js",
+    "dist/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-reference-machine-internal.d.ts",
+    "dist/provider-trusted-local-strong-writer-selection-candidate-internal.js",
+    "dist/provider-trusted-local-strong-writer-selection-candidate-internal.d.ts",
     "dist/provider-feasibility-support-catalog-point-prepared-internal.js",
     "dist/provider-feasibility-support-catalog-point-prepared-internal.d.ts",
     "dist/provider-distribution-retained-accounting-internal.js",
@@ -8578,6 +8757,21 @@ try {
     "schemas/v1/provider-strong-ready-bootstrap-or-steady-activation.schema.json",
     "schemas/v1/provider-trusted-local-physical-target-selection-candidate-invalid-reason.schema.json",
     "schemas/v1/provider-trusted-local-physical-target-selection-candidate-invalid-stage.schema.json",
+    "schemas/v1/provider-strong-ready-bootstrap-or-steady-acceptance-generation-enumeration-entry-reference-candidate.schema.json",
+    "schemas/v1/provider-strong-ready-bootstrap-or-steady-acceptance-generation-enumeration-reference-candidate.schema.json",
+    "schemas/v1/provider-strong-ready-bootstrap-or-steady-acceptance-high-water-reference-candidate.schema.json",
+    "schemas/v1/provider-strong-ready-bootstrap-or-steady-acceptance-high-water-envelope-reference-candidate.schema.json",
+    "schemas/v1/provider-strong-ready-bootstrap-or-steady-acceptance-current-read-reference-candidate.schema.json",
+    "schemas/v1/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-request-reference-candidate.schema.json",
+    "schemas/v1/provider-strong-ready-bootstrap-or-steady-acceptance-observed-high-water-reference-candidate.schema.json",
+    "schemas/v1/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-outcome-reference-candidate.schema.json",
+    "schemas/v1/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-receipt-reference-candidate.schema.json",
+    "schemas/v1/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-receipt-envelope-reference-candidate.schema.json",
+    "schemas/v1/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-receipt-pin-reference-candidate.schema.json",
+    "schemas/v1/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-result-reference-candidate.schema.json",
+    "schemas/v1/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-validation-reference-candidate.schema.json",
+    "schemas/v1/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-invalid-stage-reference-candidate.schema.json",
+    "schemas/v1/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-invalid-reason-reference-candidate.schema.json",
     "schemas/v1/provider-registry-evidence-binding-point-invalid-stage.schema.json",
     "schemas/v1/provider-registry-evidence-binding-point-invalid-reason.schema.json",
     "schemas/v1/provider-registry-evidence-binding-point-compatible-base.schema.json",
@@ -8650,7 +8844,7 @@ try {
   }
 
   process.stdout.write(
-    `Verified packed provider contracts with exactly ${explicitSpecifiers.length} public module exports and ${packedSchemaRelativePaths.length} JSON Schemas, browser bundles passing the dependency scanner plus no-string-codegen runtime gate and no-global runtime probes, browser ESM trust checks for bootstrap (62 point/31 signature), root history (11 point/9 signature), 7-generation Registry history (24 point/38 signature), 89 anchored Registry invalid recipes/materialized-request digests with 3 exact opaque consumer rejections, signed real filesystem source closure (12 records/4 cases/8 cuts plus 43 invalid cases), signed target discovery point closure (1 point/6 signatures with five locators), unsigned real filesystem conformance result closure (8 tuples/1 point/6 signatures/no seventh signature/50 replayed invalid cases/Locator-only path), root-signed runtime attestation point closure (1 point/7 signatures/50 inherited plus 72 point-specific invalid recipes), QA/Release-signed feasibility evidence point closure (3 point/11 signatures per success, passed/failed/unsupported positives, 122 inherited plus 105 point-specific invalid recipes), Registry Entry/Evidence supplied-history candidate closure (24 point/46 signatures, all 354 cases replayed as the exact 12-shard aggregate in four fixed packed-Node lanes and four fixed packed-browser lanes, plus direct replay, generator check and independent minimal Vite golden replay) under the dedicated same-sample gate (${c09DedicatedGateEvidence.wallTimeMs.toFixed(1)} ms, ${c09DedicatedGateEvidence.peakTreeRssBytes} process-tree RSS bytes, ${c09DedicatedGateEvidence.sampleCount} samples), with the full main Node, type and Vite/browser regressions retained outside that dedicated resource window, release target Universe closure (4 genuine positives at 1 point/7 signatures each, 116 inherited plus 169 point-specific fresh invalid recipes replayed in Node and browser), feasibility support Catalog closure (4 exact 2/2/1 positives at 31 point/64 signatures each plus 7 diagnostic/public fresh invalid replays at 50/90 or 62/126), distribution history current-candidate closure (genesis 31/64, two-generation shared 31/70, two-generation distinct 31/72; aggregate 93/206; all 39 fresh invalid cases, including 5 historical semantic cases at 62/144, diagnosed and publicly rejected in Node and browser), C09-1O strong-ready Acceptance candidate root/subpath, branded generation, stage, and none-authority smoke, plus D-39 trusted local physical-target selection root/subpath, fixed stage/reason and none-authority smoke with both observation and selector internals unavailable.\n`,
+    `Verified packed provider contracts with exactly ${explicitSpecifiers.length} public module exports and ${packedSchemaRelativePaths.length} JSON Schemas, browser bundles passing the dependency scanner plus no-string-codegen runtime gate and no-global runtime probes, browser ESM trust checks for bootstrap (62 point/31 signature), root history (11 point/9 signature), 7-generation Registry history (24 point/38 signature), 89 anchored Registry invalid recipes/materialized-request digests with 3 exact opaque consumer rejections, signed real filesystem source closure (12 records/4 cases/8 cuts plus 43 invalid cases), signed target discovery point closure (1 point/6 signatures with five locators), unsigned real filesystem conformance result closure (8 tuples/1 point/6 signatures/no seventh signature/50 replayed invalid cases/Locator-only path), root-signed runtime attestation point closure (1 point/7 signatures/50 inherited plus 72 point-specific invalid recipes), QA/Release-signed feasibility evidence point closure (3 point/11 signatures per success, passed/failed/unsupported positives, 122 inherited plus 105 point-specific invalid recipes), Registry Entry/Evidence supplied-history candidate closure (24 point/46 signatures, all 354 cases replayed as the exact 12-shard aggregate in four fixed packed-Node lanes and four fixed packed-browser lanes, plus direct replay, generator check and independent minimal Vite golden replay) under the dedicated same-sample gate (${c09DedicatedGateEvidence.wallTimeMs.toFixed(1)} ms, ${c09DedicatedGateEvidence.peakTreeRssBytes} process-tree RSS bytes, ${c09DedicatedGateEvidence.sampleCount} samples), with the full main Node, type and Vite/browser regressions retained outside that dedicated resource window, release target Universe closure (4 genuine positives at 1 point/7 signatures each, 116 inherited plus 169 point-specific fresh invalid recipes replayed in Node and browser), feasibility support Catalog closure (4 exact 2/2/1 positives at 31 point/64 signatures each plus 7 diagnostic/public fresh invalid replays at 50/90 or 62/126), distribution history current-candidate closure (genesis 31/64, two-generation shared 31/70, two-generation distinct 31/72; aggregate 93/206; all 39 fresh invalid cases, including 5 historical semantic cases at 62/144, diagnosed and publicly rejected in Node and browser), C09-1O strong-ready Acceptance candidate root/subpath, branded generation, stage, and none-authority smoke, D-39 trusted local physical-target selection root/subpath, fixed stage/reason and none-authority smoke with both observation and selector internals unavailable, plus D-40 strong-ready bootstrap/steady compare-append reference-Candidate public wire/diagnostic root/subpath, fixed domain/stage/reason and none-authority smoke with Identity, machine and local-writer internals unavailable.\n`,
   );
   process.stdout.write(
     `C09 dedicated peak process roles: ${JSON.stringify({ countingPolicy: c09DedicatedGateEvidence.countingPolicy, processes: c09DedicatedGateEvidence.peakRoles })}\n`,

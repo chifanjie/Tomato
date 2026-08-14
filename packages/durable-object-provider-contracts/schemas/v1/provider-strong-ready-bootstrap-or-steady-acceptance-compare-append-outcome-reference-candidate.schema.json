@@ -1,0 +1,535 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-outcome-reference-candidate",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "const": "committed"
+        },
+        "committedHighWater": {
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "type": "number",
+              "const": 1
+            },
+            "recordType": {
+              "type": "string",
+              "const": "provider_strong_ready_bootstrap_or_steady_acceptance_high_water_reference_candidate"
+            },
+            "locatorProfile": {
+              "type": "string",
+              "const": "installation_provider_strong_ready_bootstrap_or_steady_acceptance_high_water_reference_candidate_v1"
+            },
+            "contentDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "currentVersionToken": {
+              "type": "string",
+              "pattern": "^hmac-sha256:[0-9a-f]{64}$"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "const": "provider_strong_ready_bootstrap_or_steady_acceptance_high_water_reference_candidate_v1"
+                },
+                "installationIdentityGenerationId": {
+                  "type": "string",
+                  "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+                },
+                "highWaterRevision": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 4096
+                },
+                "operationNonce": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{32}$"
+                },
+                "predecessor": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "genesis"
+                        },
+                        "expectedNamespaceState": {
+                          "type": "string",
+                          "const": "absent"
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "expectedNamespaceState"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "version"
+                        },
+                        "highWaterRevision": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 4096
+                        },
+                        "contentDigest": {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        "currentVersionToken": {
+                          "type": "string",
+                          "pattern": "^hmac-sha256:[0-9a-f]{64}$"
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "highWaterRevision",
+                        "contentDigest",
+                        "currentVersionToken"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "currentAcceptance": {
+                  "type": "object",
+                  "properties": {
+                    "locatorProfile": {
+                      "type": "string",
+                      "const": "installation_provider_acceptance_state_v1"
+                    },
+                    "acceptanceOrdinal": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "generationId": {
+                      "type": "string",
+                      "pattern": "^provider-acceptance-state:[0-9a-f]{22}$"
+                    },
+                    "contentDigest": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    }
+                  },
+                  "required": [
+                    "locatorProfile",
+                    "acceptanceOrdinal",
+                    "generationId",
+                    "contentDigest"
+                  ],
+                  "additionalProperties": false
+                },
+                "generationCount": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 4096
+                },
+                "generationSetDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "acceptedGenerationFloors": {
+                  "type": "object",
+                  "properties": {
+                    "rootMetadataGeneration": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "registryManifestGeneration": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "supportCatalogGeneration": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "rootMetadataGeneration",
+                    "registryManifestGeneration",
+                    "supportCatalogGeneration"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "profile",
+                "installationIdentityGenerationId",
+                "highWaterRevision",
+                "operationNonce",
+                "predecessor",
+                "currentAcceptance",
+                "generationCount",
+                "generationSetDigest",
+                "acceptedGenerationFloors"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "recordType",
+            "locatorProfile",
+            "contentDigest",
+            "currentVersionToken",
+            "payload"
+          ],
+          "additionalProperties": false
+        },
+        "appendedGeneration": {
+          "type": "object",
+          "properties": {
+            "locatorProfile": {
+              "type": "string",
+              "const": "installation_provider_acceptance_state_v1"
+            },
+            "acceptanceOrdinal": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4096
+            },
+            "generationId": {
+              "type": "string",
+              "pattern": "^provider-acceptance-state:[0-9a-f]{22}$"
+            },
+            "contentDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "commitOperationNonce": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            },
+            "predecessor": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "genesis"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "acceptance"
+                    },
+                    "generationId": {
+                      "type": "string",
+                      "pattern": "^provider-acceptance-state:[0-9a-f]{22}$"
+                    },
+                    "contentDigest": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "generationId",
+                    "contentDigest"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "locatorProfile",
+            "acceptanceOrdinal",
+            "generationId",
+            "contentDigest",
+            "commitOperationNonce",
+            "predecessor"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "outcome",
+        "committedHighWater",
+        "appendedGeneration"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "const": "not_committed"
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "expected_current_changed",
+            "candidate_invalid",
+            "generation_floor_regressed",
+            "namespace_integrity_failed"
+          ]
+        },
+        "observedHighWater": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "const": "absent"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "const": "trusted"
+                },
+                "highWater": {
+                  "type": "object",
+                  "properties": {
+                    "schemaVersion": {
+                      "type": "number",
+                      "const": 1
+                    },
+                    "recordType": {
+                      "type": "string",
+                      "const": "provider_strong_ready_bootstrap_or_steady_acceptance_high_water_reference_candidate"
+                    },
+                    "locatorProfile": {
+                      "type": "string",
+                      "const": "installation_provider_strong_ready_bootstrap_or_steady_acceptance_high_water_reference_candidate_v1"
+                    },
+                    "contentDigest": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    "currentVersionToken": {
+                      "type": "string",
+                      "pattern": "^hmac-sha256:[0-9a-f]{64}$"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "profile": {
+                          "type": "string",
+                          "const": "provider_strong_ready_bootstrap_or_steady_acceptance_high_water_reference_candidate_v1"
+                        },
+                        "installationIdentityGenerationId": {
+                          "type": "string",
+                          "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+                        },
+                        "highWaterRevision": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 4096
+                        },
+                        "operationNonce": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{32}$"
+                        },
+                        "predecessor": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "type": "string",
+                                  "const": "genesis"
+                                },
+                                "expectedNamespaceState": {
+                                  "type": "string",
+                                  "const": "absent"
+                                }
+                              },
+                              "required": [
+                                "state",
+                                "expectedNamespaceState"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "type": "string",
+                                  "const": "version"
+                                },
+                                "highWaterRevision": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 4096
+                                },
+                                "contentDigest": {
+                                  "type": "string",
+                                  "pattern": "^sha256:[0-9a-f]{64}$"
+                                },
+                                "currentVersionToken": {
+                                  "type": "string",
+                                  "pattern": "^hmac-sha256:[0-9a-f]{64}$"
+                                }
+                              },
+                              "required": [
+                                "state",
+                                "highWaterRevision",
+                                "contentDigest",
+                                "currentVersionToken"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        "currentAcceptance": {
+                          "type": "object",
+                          "properties": {
+                            "locatorProfile": {
+                              "type": "string",
+                              "const": "installation_provider_acceptance_state_v1"
+                            },
+                            "acceptanceOrdinal": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991
+                            },
+                            "generationId": {
+                              "type": "string",
+                              "pattern": "^provider-acceptance-state:[0-9a-f]{22}$"
+                            },
+                            "contentDigest": {
+                              "type": "string",
+                              "pattern": "^sha256:[0-9a-f]{64}$"
+                            }
+                          },
+                          "required": [
+                            "locatorProfile",
+                            "acceptanceOrdinal",
+                            "generationId",
+                            "contentDigest"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "generationCount": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 4096
+                        },
+                        "generationSetDigest": {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        "acceptedGenerationFloors": {
+                          "type": "object",
+                          "properties": {
+                            "rootMetadataGeneration": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991
+                            },
+                            "registryManifestGeneration": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991
+                            },
+                            "supportCatalogGeneration": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "rootMetadataGeneration",
+                            "registryManifestGeneration",
+                            "supportCatalogGeneration"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "profile",
+                        "installationIdentityGenerationId",
+                        "highWaterRevision",
+                        "operationNonce",
+                        "predecessor",
+                        "currentAcceptance",
+                        "generationCount",
+                        "generationSetDigest",
+                        "acceptedGenerationFloors"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "recordType",
+                    "locatorProfile",
+                    "contentDigest",
+                    "currentVersionToken",
+                    "payload"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "state",
+                "highWater"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "const": "integrity_failed"
+                },
+                "evidenceDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "state",
+                "evidenceDigest"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "outcome",
+        "reason",
+        "observedHighWater"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

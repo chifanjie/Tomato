@@ -2,7 +2,7 @@
 
 记录 ID：`G0-2026-07-28`
 
-状态：**Closed for implementation；WP5 Decision Amendments D-24～D-39 incorporated**
+状态：**Closed for implementation；WP5 Decision Amendments D-24～D-40 incorporated**
 
 候选基线：`34da354968a6071d914e4e4a4fca738e6c2d8a29`
 
@@ -47,7 +47,7 @@ generation pin Pulse，再只以唯一 maximal Store Manifest generation所 pin�
 保留为 legacy/read-only projection。该修订不新增 Artifact Type 或 Lifecycle
 状态，只冻结 Pulse 版本身份、历史可寻址性和恢复边界。
 
-2026-07-30～2026-08-13 的 D-24～D-39 是 WP5 实现前及分层实现中的证据模型、写入边界与
+2026-07-30～2026-08-13 的 D-24～D-40 是 WP5 实现前及分层实现中的证据模型、写入边界与
 Provider可行性修订。审计确认：
 原 Change Check 没有 Actual Change 实体、Hunk 或完整性证明；Repository
 Snapshot 也不能重建任务开始时已经存在的 dirty/untracked 内容。修订因此新增
@@ -122,7 +122,7 @@ Gate的 target只可 legacy/redacted read-only。这些修订不增加 D-21
 - 性能 Evidence 保存生产源文件 Hash、原始样本、预热/采样数和 expected/actual 完整性字段。
 - Host Evidence 保持 Surface 边界；Codex App Server provisional 结果和 Claude 未认证 Tool Call 不被提升为 supported。
 
-## 4. D-13～D-39 冻结结果
+## 4. D-13～D-40 冻结结果
 
 ### D-13：P0 平台
 
@@ -1223,7 +1223,98 @@ authoritative current、Provider/I/O authority或任何capability unlock。
   Migration、真实Provider/client/Store writer或strong/release authority；全部继续
   `open/locked`。PRD D-39是完整normative定义。
 
-D-24～D-39 的实现与验收矩阵为
+D-39已在 commit `876ce8ef4f0d8dd375fa0d7c6e25aa61c713ba70`提交；同 SHA
+clean-checkout CI run `31643781457`最终`Quality = success`，Provider unit 17m46s、
+Provider distribution 40m12s、Workspace 9m19s、Preview 1m8s、最终 Quality 4s。
+该证据只关闭trusted opened-root physical-target selection none-authority candidate，
+不外推到writer、Acceptance current、durability或I/O authority。
+
+### D-40：Strong-ready bootstrap/steady Acceptance compare-append closure/reference candidate
+
+状态：`frozen / implementation in progress`（2026-08-13 pre-implementation Decision
+Amendment）
+
+- D-40位于既有WP5-1P/C09 aggregate Gate内，不命名为C09-1P，不新增第18 Gate或
+  新AT。implementation-safety审计后本slice原位收窄为仅实现
+  `strong_ready/bootstrap_or_steady_successor` none-authority reference candidate；新增
+  request/enumeration/high-water/receipt/result的类型、profile、domain与Schema ID都须使用
+  `ProviderStrongReady...ReferenceCandidateV1` /
+  `provider-strong-ready-...-reference-candidate-v1`等价窄名；JSON Schema key与filename
+  遵循仓库既有`schema:v1`命名约定，不额外追加terminal `-v1`。正式
+  `ProviderAcceptance*V1`完整ABI、locator/domain及
+  `strong_ready/migration_only/recovery_only` union继续frozen但未实现并保持locked；禁止
+  同名缩版、`z.unknown()`或structure-only union伪装正式覆盖。
+- D-40直接消费D-39本机唯一target selection，在同一已验证C09-1N multi-target closure
+  中按C09-1O既有字段/equality只派生该local target恰一Registry-exact strong writer；
+  不调用只接受singleton Distribution的C09-1O validator，也不运行其全Catalog selector。
+  正式selector仍是非空数组，本slice固定一项。D-40不替代D-38/C09-1O；旧singleton
+  candidate仍是合法distribution evidence。local single selector→strong-ready
+  configuration/generation/digest/token/Envelope/Pin逐字复用C09-1O，request candidate必须
+  exact-equal该派生。D-39 read-only selection必须形成candidate-only
+  `not_committed/candidate_invalid` receipt，不能生成writer或推进current。
+- reference machine只做内存immutable snapshot与一次atomic state-pointer swap；
+  committed swap同时加入no-replace generation、完整enumeration、high-water和nonce
+  receipt，semantic not-committed swap只加入receipt及accounting，postcheck失败零swap。
+  它必须用紧邻本次linearization的tail barrier返回完整可重验
+  current/enumeration/high-water/generation/receipt reference closure，验证
+  连续ordinal/predecessor、count/set digest、floors、tokens及每个commit nonce回接；但不
+  宣称真实durability、OS Provider、Identity key ownership、mutual IPC或I/O。
+- identity key/crypto host只驻留internal identity authority；public API无raw key/裸host。
+  identity-verification与reference-machine是两种不可互换的opaque zero-key capability，
+  分别由private WeakMap保存，mint均不export；copy/clone、错槽、forged、cross-identity与
+  identity-machine未配对拒绝；另一份有效same-identity machine代表显式选择的独立authority；
+  该API没有expected-machine authority，不能把这个显式选择误判为可检测的substitution。
+  nonce ledger以连续`linearizationOrdinal=1..N` entries（nonce另unique）、receipt digest、count、set digest与canonical
+  logical bytes组成的candidate-only commitment封入machine capability；它只证明mint后
+  reference集合自洽连续，不证明mint前provider completeness。entry ordinal必须等于receipt
+  payload的`linearizationOrdinal`，receipt保留完整`requestReferenceProjection`与
+  `referenceOutcome`；closure从absent按该ordinal顺序重放，只有committed推进namespace。
+  sealed ledger自身损坏为
+  diagnostic `ledger_integrity_failed`且零swap；ledger完整但
+  Acceptance namespace可界定损坏时才允许candidate semantic
+  `namespace_integrity_failed` receipt；
+  prospective post-state不闭合固定`post_state_invalid`且零swap。
+- private machine mint以exact输入一次性封入
+  `retainedNonAcceptanceTrustHistoryLogicalBytes`，使reference admission可同时核算
+  Identity总history cap与4 MiB reserve；该非负scalar只是none-authority accounting
+  basis，不能冒充production已认证history，后继provider必须从完整retained closure重算。
+- exact input须在排队前做descriptor-safe detached snapshot；Distribution JSON detached，
+  opaque capabilities只保留identity，禁止after-start nested mutation改变operation。执行顺序
+  先identity/machine capability与request，再验nonce ledger；existing nonce在
+  capacity/namespace/D-39前短路。新nonce才进入capacity→namespace→expected→physical
+  selection→candidate→floors→receipt→atomic resolution→post closure。
+- same nonce/same canonical request固定返回首次receipt原始bytes；same nonce/different
+  request固定`operation_nonce_request_mismatch`并返回existing receipt，零第二receipt；
+  两条existing-nonce路径都在capacity、namespace与D-39 physical selection前结束。
+  四个candidate not-committed reason的唯一precedence为
+  `namespace_integrity_failed → expected_current_changed → candidate_invalid →
+  generation_floor_regressed`；namespace坏时不得比较expected。D-40没有durable-outcome
+  类型，diagnostic failure也不得冒充已持久化outcome。
+- admission复用`ProviderTrustHistoryPolicyV1`：4096 generations、4096 receipts、receipt
+  累计64 MiB、single receipt 1 MiB，normal update保留8 generation、8 receipt与4 MiB
+  emergency reserve，并受Identity总history cap。新nonce在swap前canonicalize完整
+  prospective receipt/closure后admit；超限零swap且不能新增第五种not-committed reason；
+  existing replay仍可读。D-40不消费reserve或删除历史。
+- internal stages按安全执行顺序固定为`input/identity_verification_capability/
+  reference_machine_capability/acceptance_compare_append_request/
+  acceptance_receipt_ledger/acceptance_capacity/acceptance_namespace/expected_current/
+  physical_target_selection/candidate/generation_floors/acceptance_receipt/
+  atomic_resolution/post_state_closure`；
+  reasons至少固定`schema_invalid/capability_invalid/source_invalid/
+  ledger_integrity_failed/receipt_capacity_exhausted/namespace_integrity_failed/
+  expected_current_changed/candidate_invalid/generation_floor_regressed/
+  operation_nonce_request_mismatch/post_state_invalid`。public authority唯一为
+  `none_provider_strong_ready_bootstrap_or_steady_acceptance_compare_append_closure_reference_candidate_only`，失败只暴露opaque
+  provider error。multi-target非首项、read-only、nonce replay/mismatch、四reason复合
+  precedence、完整closure、4096/64 MiB/1 MiB/reserve、并发linearization、crash-cut
+  模拟与hostile container均须有focused evidence。packed Node/browser因private mint只做
+  public export/schema/domain/stage/reason/authority smoke与internal deep-import拒绝，不运行
+  真实reference operation。
+- D-40不闭合真实Identity/key custody、OS-isolated Provider、versioned mutual-auth IPC、
+  fixed-locator I/O/crash durability、Migration、C09 aggregate或strong/release authority；
+  全部继续`open/locked`。PRD D-40是完整normative定义。
+
+D-24～D-40 的实现与验收矩阵为
 `docs/research/2026-07-30-wp5-change-intelligence-matrix.md`；其中第 3.8 节是
 必须逐字段等价实现的 normative Schema Appendix。所有 C09 provider
 contract、canonical bytes/golden与 prerequisite conformance归
@@ -1396,7 +1487,7 @@ capability gap，不是 WP0 新引入回归。对应能力在后续 Gate 关闭�
 | G0-06 Diff Overlay 断链 | 旧 Overlay deprecated，不作为 P0 数据源或完成证据 | WP5/WP7 open | Change Intelligence + Frontend | Change Check Workbench Alpha 前 |
 | G0-07 Worktree 重定向 | Task/Store 绑定当前 canonical worktree；共享只限不可变缓存 | WP3/WP4 core binding closed；WP6 Surface open | Core + Platform | Mandatory Host Surface Alpha 前 |
 | G0-08 Quality/Release | 根 quality、CI 已关闭；CLI/bin、统一版本、License、SBOM、allowlist、Marketplace 留后续 Gate | Partial | Platform + QA | Mandatory Surface Release / M4 |
-| G0-09 Durable Object Provider | strong writer必须使用 OS-isolated exact-object provider、strict Ed25519 host KAT/opaque capability、fixed Bootstrap Trust Bundle + immutable Identity retained historical trust、trust-history caps + append-only Acceptance、root-signed Registry/Taxonomy/Target Universe/Catalog、provider-isolated receipt ledger、atomic path containment、external CAS/journal seal与 bounded dual-namespace migration；未通过或 coverage incomplete target只读 | D-38/C09-1O singleton Registry-exact structure-only candidate已在 `36588f34899f0e0de36536192841f7f188d3c128`提交且同 SHA CI `31625767367` success，仅关闭none-authority candidate。D-39可信本机 opened-root physical-target selection candidate已冻结、implementation in progress；atomic Acceptance current/high-water/receipt、mutual-auth IPC、C09 aggregate与WP3P仍open，全部 strong mutations capability locked | Platform/Security Lead + Provider/Systems；QA/Security/Release验证 | 首个 strong Task Alpha前关闭 AT-C31/AT-Q33、签名开发 target profile并验证当前物理 volume runtime exact-match；P0前关闭全部 advertised profiles |
+| G0-09 Durable Object Provider | strong writer必须使用 OS-isolated exact-object provider、strict Ed25519 host KAT/opaque capability、fixed Bootstrap Trust Bundle + immutable Identity retained historical trust、trust-history caps + append-only Acceptance、root-signed Registry/Taxonomy/Target Universe/Catalog、provider-isolated receipt ledger、atomic path containment、external CAS/journal seal与 bounded dual-namespace migration；未通过或 coverage incomplete target只读 | D-38/C09-1O singleton candidate已通过`36588f3`/CI `31625767367`；D-39 trusted opened-root local-target candidate已通过`876ce8e`/same-SHA CI `31643781457`，两者均仅none-authority。D-40 strong-ready bootstrap/steady none-authority compare-append closure/reference Candidate已冻结、implementation in progress；其内存reference state不等于真实durability。Identity key ownership、OS Provider、mutual-auth IPC、Migration、C09 aggregate与WP3P仍open，全部 strong mutations capability locked | Platform/Security Lead + Provider/Systems；QA/Security/Release验证 | 首个 strong Task Alpha前关闭 AT-C31/AT-Q33、签名开发 target profile并验证当前物理 volume runtime exact-match；P0前关闭全部 advertised profiles |
 
 ## 8. 当前发布缺口
 
@@ -1434,7 +1525,7 @@ capability gap，不是 WP0 新引入回归。对应能力在后续 Gate 关闭�
 | 条件 | 结果 |
 |---|---|
 | Mission、P0、Non-goals 已冻结 | PASS |
-| D-13～D-19、D-21～D-38 已接受；D-39 frozen / implementation in progress；D-20 有 Owner/Gate | PASS |
+| D-13～D-19、D-21～D-39 已接受；D-40 frozen / implementation in progress；D-20 有 Owner/Gate | PASS |
 | Task Lifecycle、Revision 与幂等语义唯一 | PASS |
 | Root/Error/Rendezvous 语义唯一 | PASS |
 | Surface mandatory/conditional、Owner、后续 Gate 完整 | PASS |
@@ -1442,7 +1533,8 @@ capability gap，不是 WP0 新引入回归。对应能力在后续 Gate 关闭�
 | 根质量、CI、Host 与性能证据可复核 | PASS |
 | C09-1K supplied-point code / local quality / same-SHA CI / independent review | PASS；不外推到 aggregate |
 | Decision D-38 singleton/Registry-exact边界与C09-1O same-SHA evidence | PASS；只关闭none-authority candidate |
-| Decision D-39 三文档 trusted opened-root physical-target selection边界 | PASS；implementation in progress，不新增Gate/AT |
+| Decision D-39 三文档 trusted opened-root physical-target selection边界与同SHA证据 | PASS；`876ce8e` / CI `31643781457`，不新增Gate/AT |
+| Decision D-40 三文档 strong-ready bootstrap/steady Acceptance compare-append closure/reference candidate边界 | PASS；implementation in progress，narrow Candidate不冒充正式ABI且不新增Gate/AT |
 | C09 aggregate、真实 Provider、strong-write、production 与 release gates | OPEN / LOCKED |
 | 用户未跟踪文件明确排除 | PASS |
 | PRD/Host Spike 状态同步 | 由包含本记录的提交完成 |

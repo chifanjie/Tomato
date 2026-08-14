@@ -37,6 +37,22 @@ and a public trusted-local physical-target selection candidate. It revalidates
 the complete C09-1N source between pre/post observations, joins the observed
 eight-field target exactly across Universe, Catalog, and owner projection, and
 still grants neither active-writer nor I/O authority.
+D-40 adds narrowly named strong-ready bootstrap/steady none-authority reference
+Candidate wire values for generation enumeration, high-water, current-read,
+compare-append request/outcome/receipt, and result. It connects the D-39 local
+target to a singleton Registry-exact writer in an in-memory reference machine.
+Installation-identity verification and machine capabilities are package-private
+opaque mints. Receipts bind `linearizationOrdinal`, the complete
+`requestReferenceProjection`, and `referenceOutcome`; the ledger replays in
+ordinal order. This slice demonstrates nonce replay, compare rejection, bounded
+ledger admission, and one immutable state pointer swap. It is not filesystem,
+crash-durable, IPC, or production Provider authority.
+The private machine mint also seals a non-negative
+`retainedNonAcceptanceTrustHistoryLogicalBytes` reference-accounting basis so
+the 256 MiB Identity history cap and 4 MiB normal-update reserve include history
+outside Acceptance. That scalar is not authenticated production history and is
+never a public authority input; a real provider must recompute it from its
+complete retained trust closure.
 Every slice still returns structure-only, none-authority validation:
 
 - `rfc8785-jcs-safe-integer-v1` canonical JSON and exact canonical-byte parsing;
@@ -276,6 +292,12 @@ D-39 adds two documents for its exact stage and reason surface, bringing the
 current inventory to 313. Its successful runtime value deliberately has no
 JSON Schema: it contains the non-serializable, fully revalidated C09-1N closure
 and can only be produced by the public selector's one-shot runtime path.
+D-40 adds 15 documents: 12 narrowly named strong-ready bootstrap/steady
+Acceptance compare-append reference-Candidate wire schemas, including the
+`compare-append-outcome-reference-candidate` schema (never a durable-outcome
+schema), plus its public closure validation, stage, and reason schemas,
+bringing the current inventory to 328. The opaque Identity and reference-machine
+capabilities have no JSON Schema and remain package-private.
 
 The production sources remain ES2022 browser/worker portable. The npm/browser
 distribution gate must expose the new public API through the root and
@@ -296,16 +318,20 @@ distribution gate must expose the new public API through the root and
 `./provider-feasibility-support-catalog-point-fixtures`,
 `./provider-distribution-history-current-candidate-point`,
 `./provider-distribution-history-current-candidate-point-fixtures`,
-`./provider-strong-ready-acceptance-candidate`, and
-`./provider-trusted-local-physical-target-selection-candidate` exports, pack all
+`./provider-strong-ready-acceptance-candidate`,
+`./provider-trusted-local-physical-target-selection-candidate`, and
+`./provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate` exports, pack all
 `schemas/`, `fixtures/`, and fixed `provider/` resources, reject private deep
 imports, and execute the same Registry, real-filesystem source, and Target
 Discovery, Conformance Result, Runtime Attestation, Feasibility Evidence,
 Registry/Evidence binding, Release Target Universe, and Feasibility Support
 Catalog point validators plus the Distribution History current-candidate
-validator, strong-ready Acceptance candidate, and trusted-local target
-selection surface from clean Node and browser-bundle installs. There are exactly 29
-explicit public module exports at this checkpoint.
+validator, strong-ready Acceptance candidate, trusted-local target selection,
+and D-40 wire/diagnostic surface from clean Node and browser-bundle installs.
+The packed smoke does not mint private Identity or reference-machine
+capabilities and therefore does not claim a full successful compare-append
+transaction. There are exactly 30 explicit public module exports at this
+checkpoint.
 Node uses the exact official Zod 4.3.6 runtime. The package's browser path uses
 its shipped CSP-safe runtime, with dynamic compilation disabled and
 `util.createTransparentProxy` failing closed. Consumers should treat the
@@ -836,6 +862,12 @@ pnpm --filter @understand-code/durable-object-provider-contracts exec vitest run
   test/provider-trusted-local-physical-target-observation-capability-internal.test.ts \
   test/provider-trusted-local-physical-target-selection-candidate-internal.test.ts \
   test/provider-trusted-local-physical-target-selection-candidate.test.ts \
+  test/provider-trusted-local-strong-writer-selection-candidate-internal.test.ts \
+  test/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-reference-candidate-wire.test.ts \
+  test/provider-strong-ready-bootstrap-or-steady-acceptance-identity-verification-capability-internal.test.ts \
+  test/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-reference-machine-internal.test.ts \
+  test/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate.test.ts \
+  test/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate.integration.test.ts \
   test/runtime-boundary.test.ts \
   test/json-schema.test.ts
 pnpm --filter @understand-code/durable-object-provider-contracts test
@@ -852,7 +884,7 @@ diagnostics, and crypto call counts are checked by
 `verify:provider-registry-manifest-invalid`. The signed real-filesystem fixture
 anchors, exact source closure, and 43 materialized negative diagnostics are
 checked by `verify:provider-real-fs-source`. `test/json-schema.test.ts` freezes
-the current 313-schema inventory and `verify:schemas` rejects generated-file
+the current 328-schema inventory and `verify:schemas` rejects generated-file
 drift. `verify:provider-target-discovery-point` checks the exact five locators,
 six-signature closure, canonical empty Fixture/Runner success, typed unresolved
 projection, and all 116 ordered diagnostic/executable recipes.
@@ -1050,7 +1082,7 @@ the C09-1N validation, and after it, with witness-first drift precedence. The
 successful candidate reports the exact local owner capability, including a
 truthful read-only result, but does not select a writer or establish current.
 A signed-package resolver, offline production key ceremony, crash-safe
-installer transaction, verified Evidence/Catalog, and current Acceptance
+installer transaction, verified Evidence/Catalog, and authoritative Acceptance
 closure must all establish authority before any strong provider capability can
 be exposed.
 
@@ -1058,7 +1090,7 @@ be exposed.
 
 This package establishes the common foundation needed by AT-C21, AT-C29,
 AT-C31, and AT-Q33; it does not claim those end-to-end acceptance groups are
-complete. Through D-39 this package covers signed Registry supporting
+complete. Through D-40 this package covers signed Registry supporting
 records, Entries, Manifests, retained history, local migration/tombstone
 transitions, the independently signed real-filesystem Fixture Corpus to Suite
 source chain, one root-bound Target Discovery point across Taxonomy,
@@ -1072,10 +1104,17 @@ with exact retained-source accounting and tip projection. It also covers
 deterministic unique active-writer derivation and a keyed strong-ready
 Acceptance candidate with exact generation, content digest, token, Envelope,
 and Pin checks, followed by a one-shot trusted-local target selection
-candidate with exact Universe/Catalog/owner projection joins. It does
+candidate with exact Universe/Catalog/owner projection joins. D-40 further
+covers the narrowly scoped strong-ready bootstrap/steady compare-append
+reference-Candidate wire closure and a private-capability-gated in-memory
+reference transaction with ordinal replay and quota logic. A valid same-identity
+capability for another machine explicitly selects an independent reference
+authority; this API has no expected-machine authority with which to reject that
+choice as substitution. Its atomic immutable pointer swap is reference
+semantics, not durable I/O. It does
 not close signed-package provenance authority, atomic Installation Identity
 persistence or key binding, Conformance Result history/current selection,
-authoritative atomic Acceptance publication/enumeration/high-water/receipt,
+authoritative crash-durable Acceptance publication/enumeration/high-water/receipt,
 real runner/filesystem execution, Migration Plan
 equality or migration proofs, Provider runtime supervision, IPC endpoint
 authentication, Provider or Store I/O, or strong-read/write authority. Those

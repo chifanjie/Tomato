@@ -52,11 +52,29 @@ describe("provider contract runtime boundary", () => {
     expect(packageManifest.exports).not.toHaveProperty(
       "./provider-trusted-local-physical-target-selection-candidate-internal",
     );
+    expect(packageManifest.exports).not.toHaveProperty(
+      "./provider-strong-ready-bootstrap-or-steady-acceptance-identity-verification-capability-internal",
+    );
+    expect(packageManifest.exports).not.toHaveProperty(
+      "./provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-reference-machine-internal",
+    );
+    expect(packageManifest.exports).not.toHaveProperty(
+      "./provider-trusted-local-strong-writer-selection-candidate-internal",
+    );
     expect(publicApi).not.toHaveProperty(
       "mintProviderTrustedLocalPhysicalTargetObservationCapabilityInternalV1",
     );
     expect(publicApi).not.toHaveProperty(
       "deriveProviderTrustedLocalPhysicalTargetSelectionInternalV1",
+    );
+    expect(publicApi).not.toHaveProperty(
+      "mintProviderStrongReadyBootstrapOrSteadyAcceptanceIdentityVerificationCapabilityInternalV1",
+    );
+    expect(publicApi).not.toHaveProperty(
+      "mintProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineInternalV1",
+    );
+    expect(publicApi).not.toHaveProperty(
+      "deriveProviderTrustedLocalStrongWriterSelectionCandidateInternalV1",
     );
   });
 

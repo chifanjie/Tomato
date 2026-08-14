@@ -17,6 +17,7 @@ const CapturedObjectGetOwnPropertySymbolsV1 = Object.getOwnPropertySymbols;
 const CapturedObjectGetPrototypeOfV1 = Object.getPrototypeOf;
 const CapturedObjectIsV1 = Object.is;
 const CapturedObjectKeysV1 = Object.keys;
+const CapturedObjectPrototypeV1 = Object.prototype;
 const CapturedObjectPrototypeHasOwnPropertyV1 =
   Object.prototype.hasOwnProperty;
 const CapturedReflectApplyV1 = Reflect.apply;
@@ -25,6 +26,37 @@ const CapturedSetV1 = Set;
 const CapturedSetPrototypeAddV1 = Set.prototype.add;
 const CapturedSetPrototypeDeleteV1 = Set.prototype.delete;
 const CapturedSetPrototypeHasV1 = Set.prototype.has;
+const CapturedStringV1 = String;
+const CapturedStringPrototypeCharCodeAtV1 = String.prototype.charCodeAt;
+const CapturedTextDecoderV1 = TextDecoder;
+const CapturedTextDecoderPrototypeDecodeV1 = TextDecoder.prototype.decode;
+const CapturedTextEncoderV1 = TextEncoder;
+const CapturedTextEncoderPrototypeEncodeV1 = TextEncoder.prototype.encode;
+const CapturedTypeErrorV1 = TypeError;
+const CapturedUint8ArrayV1 = Uint8Array;
+const CapturedTypedArrayPrototypeV1 = CapturedObjectGetPrototypeOfV1(
+  CapturedUint8ArrayV1.prototype,
+);
+const CapturedTypedArrayByteLengthGetterCandidateV1 =
+  CapturedObjectGetOwnPropertyDescriptorV1(
+    CapturedTypedArrayPrototypeV1,
+    "byteLength",
+  )?.get;
+
+if (CapturedTypedArrayByteLengthGetterCandidateV1 === undefined) {
+  throw new CapturedTypeErrorV1(
+    "Uint8Array byteLength primordial unavailable",
+  );
+}
+const CapturedTypedArrayByteLengthGetterV1 =
+  CapturedTypedArrayByteLengthGetterCandidateV1;
+// TextDecoder mutates internal BOM state during decode in Node. The instance is
+// module-private and the method is captured, so freezing it would only break
+// valid decoding without adding an authority boundary.
+const CapturedUtf8DecoderV1 = new CapturedTextDecoderV1("utf-8", {
+  fatal: true,
+});
+const CapturedUtf8EncoderV1 = Object.freeze(new CapturedTextEncoderV1());
 
 function arrayJoinV1(array: readonly string[], separator: string): string {
   return CapturedReflectApplyV1(CapturedArrayPrototypeJoinV1, array, [
@@ -86,6 +118,36 @@ function setFromValuesV1<T>(values: readonly T[]): Set<T> {
   return set;
 }
 
+function stringCharCodeAtV1(value: string, index: number): number {
+  return CapturedReflectApplyV1(CapturedStringPrototypeCharCodeAtV1, value, [
+    index,
+  ]) as number;
+}
+
+function typedArrayByteLengthV1(value: Uint8Array): number {
+  return CapturedReflectApplyV1(
+    CapturedTypedArrayByteLengthGetterV1,
+    value,
+    [],
+  ) as number;
+}
+
+function decodeUtf8V1(value: Uint8Array): string {
+  return CapturedReflectApplyV1(
+    CapturedTextDecoderPrototypeDecodeV1,
+    CapturedUtf8DecoderV1,
+    [value],
+  ) as string;
+}
+
+function encodeUtf8V1(value: string): Uint8Array {
+  return CapturedReflectApplyV1(
+    CapturedTextEncoderPrototypeEncodeV1,
+    CapturedUtf8EncoderV1,
+    [value],
+  ) as Uint8Array;
+}
+
 export class ProviderCanonicalJsonError extends TypeError {
   readonly code:
     | "invalid_utf8"
@@ -116,9 +178,9 @@ function fail(
 
 function assertUnicodeScalarSequence(value: string, path: string): void {
   for (let index = 0; index < value.length; index += 1) {
-    const codeUnit = value.charCodeAt(index);
+    const codeUnit = stringCharCodeAtV1(value, index);
     if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
-      const next = value.charCodeAt(index + 1);
+      const next = stringCharCodeAtV1(value, index + 1);
       if (!(next >= 0xdc00 && next <= 0xdfff)) {
         fail("invalid_unicode", path, "contains an unpaired high surrogate");
       }
@@ -156,13 +218,14 @@ function canonicalizeArray(
     }
     const expectedKeys = setFromValuesV1(["length"]);
     for (let index = 0; index < value.length; index += 1) {
-      const key = String(index);
+      const key = CapturedStringV1(index);
       setAddV1(expectedKeys, key);
       if (!hasOwnPropertyV1(value, key)) {
         fail("invalid_object", `${path}[${index}]`, "is a sparse array slot");
       }
     }
-    for (const key of ownKeys) {
+    for (let index = 0; index < ownKeys.length; index += 1) {
+      const key = ownKeys[index]!;
       if (typeof key === "string" && !setHasV1(expectedKeys, key)) {
         fail("invalid_object", path, `contains non-index array property ${key}`);
       }
@@ -172,7 +235,7 @@ function canonicalizeArray(
     for (let index = 0; index < value.length; index += 1) {
       const descriptor = CapturedObjectGetOwnPropertyDescriptorV1(
         value,
-        String(index),
+        CapturedStringV1(index),
       );
       if (
         descriptor === undefined ||
@@ -202,7 +265,7 @@ function canonicalizeObject(
   active: Set<object>,
 ): string {
   const prototype = CapturedObjectGetPrototypeOfV1(value);
-  if (prototype !== Object.prototype && prototype !== null) {
+  if (prototype !== CapturedObjectPrototypeV1 && prototype !== null) {
     fail("invalid_object", path, "must be a plain object");
   }
   if (setHasV1(active, value)) fail("cycle", path, "contains a cycle");
@@ -215,7 +278,8 @@ function canonicalizeObject(
     const descriptors = CapturedObjectGetOwnPropertyDescriptorsV1(value);
     const keys = arraySortV1(CapturedObjectKeysV1(descriptors), compareUtf16);
     const members: string[] = [];
-    for (const key of keys) {
+    for (let index = 0; index < keys.length; index += 1) {
+      const key = keys[index]!;
       assertUnicodeScalarSequence(key, `${path} member name`);
       const descriptor = descriptors[key];
       if (
@@ -285,13 +349,14 @@ export function canonicalizeJcsSafeIntegerV1(value: unknown): string {
 export function canonicalizeJcsSafeIntegerUtf8V1(
   value: unknown,
 ): Uint8Array {
-  return new TextEncoder().encode(canonicalizeJcsSafeIntegerV1(value));
+  return encodeUtf8V1(canonicalizeJcsSafeIntegerV1(value));
 }
 
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.byteLength !== right.byteLength) return false;
+  const leftByteLength = typedArrayByteLengthV1(left);
+  if (leftByteLength !== typedArrayByteLengthV1(right)) return false;
   let difference = 0;
-  for (let index = 0; index < left.byteLength; index += 1) {
+  for (let index = 0; index < leftByteLength; index += 1) {
     difference |= left[index]! ^ right[index]!;
   }
   return difference === 0;
@@ -306,11 +371,11 @@ function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
 export function parseCanonicalJcsSafeIntegerUtf8V1(
   bytes: Uint8Array,
 ): unknown {
-  if (!(bytes instanceof Uint8Array)) {
+  if (!(bytes instanceof CapturedUint8ArrayV1)) {
     fail("unsupported_value", "$bytes", "must be a Uint8Array");
   }
   if (
-    bytes.byteLength >= 3 &&
+    typedArrayByteLengthV1(bytes) >= 3 &&
     bytes[0] === 0xef &&
     bytes[1] === 0xbb &&
     bytes[2] === 0xbf
@@ -320,7 +385,7 @@ export function parseCanonicalJcsSafeIntegerUtf8V1(
 
   let text: string;
   try {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    text = decodeUtf8V1(bytes);
   } catch {
     fail("invalid_utf8", "$bytes", "is not valid UTF-8");
   }

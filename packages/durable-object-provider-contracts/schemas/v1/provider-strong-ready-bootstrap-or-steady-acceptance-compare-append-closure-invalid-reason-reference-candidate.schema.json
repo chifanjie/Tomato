@@ -1,0 +1,18 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-invalid-reason-reference-candidate",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "schema_invalid",
+    "capability_invalid",
+    "source_invalid",
+    "ledger_integrity_failed",
+    "receipt_capacity_exhausted",
+    "namespace_integrity_failed",
+    "expected_current_changed",
+    "candidate_invalid",
+    "generation_floor_regressed",
+    "operation_nonce_request_mismatch",
+    "post_state_invalid"
+  ]
+}

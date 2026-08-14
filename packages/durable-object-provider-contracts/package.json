@@ -155,6 +155,11 @@
       "import": "./dist/provider-trusted-local-physical-target-selection-candidate.js",
       "default": "./dist/provider-trusted-local-physical-target-selection-candidate.js"
     },
+    "./provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate": {
+      "types": "./dist/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate.d.ts",
+      "import": "./dist/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate.js",
+      "default": "./dist/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate.js"
+    },
     "./public-key-digest": {
       "types": "./dist/public-key-digest.d.ts",
       "import": "./dist/public-key-digest.js",

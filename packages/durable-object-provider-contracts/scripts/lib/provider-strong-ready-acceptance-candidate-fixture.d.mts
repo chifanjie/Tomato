@@ -8,6 +8,9 @@ export type ProviderStrongReadyAcceptanceSingleTargetRawRequestFixtureV1 =
     "strictCryptoCapability"
   >;
 
+export type ProviderStrongReadyAcceptanceMultiTargetRawRequestFixtureV1 =
+  ProviderStrongReadyAcceptanceSingleTargetRawRequestFixtureV1;
+
 export function buildProviderStrongReadyAcceptanceSingleTargetRawRequestFixture(
   input: Readonly<{
     rootGolden: unknown;
@@ -15,3 +18,11 @@ export function buildProviderStrongReadyAcceptanceSingleTargetRawRequestFixture(
     sourceGolden: unknown;
   }>,
 ): ProviderStrongReadyAcceptanceSingleTargetRawRequestFixtureV1;
+
+export function buildProviderStrongReadyAcceptanceMultiTargetRawRequestFixture(
+  input: Readonly<{
+    rootGolden: unknown;
+    registryGolden: unknown;
+    sourceGolden: unknown;
+  }>,
+): ProviderStrongReadyAcceptanceMultiTargetRawRequestFixtureV1;

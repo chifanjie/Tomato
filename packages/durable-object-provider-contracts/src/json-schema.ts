@@ -316,6 +316,25 @@ import {
   ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidStageV1Schema,
 } from "./provider-trusted-local-physical-target-selection-candidate.js";
 import {
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendOutcomeReferenceCandidateV1Schema,
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReceiptReferenceCandidateV1Schema,
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReceiptEnvelopeReferenceCandidateV1Schema,
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReceiptPinReferenceCandidateV1Schema,
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendRequestReferenceCandidateV1Schema,
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendResultReferenceCandidateV1Schema,
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCurrentReadReferenceCandidateV1Schema,
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceGenerationEnumerationReferenceCandidateV1Schema,
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceGenerationEnumerationEntryReferenceCandidateV1Schema,
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceHighWaterReferenceCandidateV1Schema,
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceHighWaterEnvelopeReferenceCandidateV1Schema,
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceObservedHighWaterReferenceCandidateV1Schema,
+} from "./provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-reference-candidate-wire.js";
+import {
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureInvalidReasonReferenceCandidateV1Schema,
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureInvalidStageReferenceCandidateV1Schema,
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureValidationReferenceCandidateV1Schema,
+} from "./provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate.js";
+import {
   ProviderFeasibilityApprovalKeysV1Schema,
   ProviderFeasibilityApproverKeyIdFieldsV1Schema,
   ProviderFeasibilityApproverPublicKeySignatureWrapperV1Schema,
@@ -1000,6 +1019,36 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 =
     ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidStageV1Schema,
   "provider-trusted-local-physical-target-selection-candidate-invalid-reason":
     ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidReasonV1Schema,
+  "provider-strong-ready-bootstrap-or-steady-acceptance-generation-enumeration-entry-reference-candidate":
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceGenerationEnumerationEntryReferenceCandidateV1Schema,
+  "provider-strong-ready-bootstrap-or-steady-acceptance-generation-enumeration-reference-candidate":
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceGenerationEnumerationReferenceCandidateV1Schema,
+  "provider-strong-ready-bootstrap-or-steady-acceptance-high-water-reference-candidate":
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceHighWaterReferenceCandidateV1Schema,
+  "provider-strong-ready-bootstrap-or-steady-acceptance-high-water-envelope-reference-candidate":
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceHighWaterEnvelopeReferenceCandidateV1Schema,
+  "provider-strong-ready-bootstrap-or-steady-acceptance-current-read-reference-candidate":
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceCurrentReadReferenceCandidateV1Schema,
+  "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-request-reference-candidate":
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendRequestReferenceCandidateV1Schema,
+  "provider-strong-ready-bootstrap-or-steady-acceptance-observed-high-water-reference-candidate":
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceObservedHighWaterReferenceCandidateV1Schema,
+  "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-outcome-reference-candidate":
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendOutcomeReferenceCandidateV1Schema,
+  "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-receipt-reference-candidate":
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReceiptReferenceCandidateV1Schema,
+  "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-receipt-envelope-reference-candidate":
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReceiptEnvelopeReferenceCandidateV1Schema,
+  "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-receipt-pin-reference-candidate":
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReceiptPinReferenceCandidateV1Schema,
+  "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-result-reference-candidate":
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendResultReferenceCandidateV1Schema,
+  "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-validation-reference-candidate":
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureValidationReferenceCandidateV1Schema,
+  "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-invalid-stage-reference-candidate":
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureInvalidStageReferenceCandidateV1Schema,
+  "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-invalid-reason-reference-candidate":
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureInvalidReasonReferenceCandidateV1Schema,
   });
 
 export type ProviderContractJsonSchemaNameV1 =

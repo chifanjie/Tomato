@@ -1,8 +1,8 @@
 # Understand Code：Agent-native Code Change Intelligence 项目研制计划
 
-> 文档状态：Approved / Contract Frozen v1.19（含 WP5 Decision Amendment D-24～D-39、可信本机 opened-root physical-target selection candidate 边界与 16-A-1 实施证据重校）
+> 文档状态：Approved / Contract Frozen v1.21（含 WP5 Decision Amendment D-24～D-40、strong-ready bootstrap/steady Acceptance compare-append closure/reference candidate 边界与 16-A-1 实施证据重校）
 >
-> 最近 Provider slice 证据：C09-1O singleton Acceptance candidate 已提交并通过同 SHA CI；该证据不属于 D-39 implementation evidence
+> 最近 Provider slice 证据：D-39 trusted opened-root physical-target selection candidate 已在 `876ce8ef4f0d8dd375fa0d7c6e25aa61c713ba70` 提交并通过同 SHA CI run `31643781457`；该证据不属于 D-40 implementation evidence
 >
 > 日期：2026-07-27
 >
@@ -10,9 +10,9 @@
 >
 > WP4 Contract Amendment：2026-07-29；`build_task_brief` 的可恢复两阶段编排与可信 Operation Journal 见 D-22，Repo Pulse 不可变历史与原子切换见 D-23
 >
-> WP5 Contract Amendment：2026-07-30～2026-08-13；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host、不可变 Bootstrap Trust Bundle、签名 Target Discovery point closure、real-FS Conformance Result point closure、Provider Runtime Attestation point closure、QA/Release Provider Feasibility Evidence point closure、Release Target Universe point closure、Registry Entry↔Evidence supplied-history candidate closure、singleton Acceptance candidate与可信本机 opened-root physical-target selection candidate边界见 D-24～D-39
+> WP5 Contract Amendment：2026-07-30～2026-08-13；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host、不可变 Bootstrap Trust Bundle、签名 Target Discovery point closure、real-FS Conformance Result point closure、Provider Runtime Attestation point closure、QA/Release Provider Feasibility Evidence point closure、Release Target Universe point closure、Registry Entry↔Evidence supplied-history candidate closure、singleton Acceptance candidate、可信本机 opened-root physical-target selection candidate与 strong-ready bootstrap/steady Acceptance compare-append closure/reference candidate边界见 D-24～D-40
 >
-> Implementation Rebaseline：2026-08-03；Evidence Refresh：2026-08-13；Contract Refresh：2026-08-13。重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1L、C09-1M、C09-1N与C09-1O已形成并提交各自 none-authority候选，C09-1O已通过同 SHA CI；D-39可信本机 opened-root physical-target selection candidate已冻结、implementation in progress，但不新增 Gate或解锁 authority。Provider aggregate、真实 Provider、生产 Change Intelligence、双 Agent、Task-first Workbench、strong-write、production 与 release gates 仍未关闭
+> Implementation Rebaseline：2026-08-03；Evidence Refresh：2026-08-13；Contract Refresh：2026-08-13。重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1L、C09-1M、C09-1N、C09-1O与D-39已形成并提交各自 none-authority候选，D-39已通过同 SHA CI。D-40 strong-ready bootstrap/steady Acceptance compare-append closure/reference candidate已冻结、implementation in progress；它不命名为C09-1P、不新增 Gate/AT且不解锁 authority。Provider aggregate、真实 Provider、生产 Change Intelligence、双 Agent、Task-first Workbench、strong-write、production 与 release gates 仍未关闭
 >
 > 适用范围：`understand-code` 产品、Core、Agent 插件、MCP、本地服务与 Dashboard
 >
@@ -324,8 +324,8 @@ Incident、Impact、Change Check 和 Verification 都应成为 Task 的章节或
 ### 2.5 2026-08-13 合同状态与历史已核验证据
 
 2026-07-27 的基线表保留为问题发现现场；下表将截至2026-08-06的C09-1K历史
-根质量基线与2026-08-13的C09-1O独立同SHA证据分开记录，任一证据都不外推到其后
-slice、Provider aggregate或authority。Provider合同状态另按D-38～D-39同步：
+根质量基线与2026-08-13的C09-1O/D-39独立同SHA证据分开记录，任一证据都不外推到其后
+slice、Provider aggregate或authority。Provider合同状态另按D-38～D-40同步：
 
 | 项目 | 当前事实 |
 |---|---|
@@ -333,7 +333,7 @@ slice、Provider aggregate或authority。Provider合同状态另按D-38～D-39�
 | Workspace 包 | 8 个：Contracts、Repository State、Artifact Store、Core、Task Engine、CLI、Dashboard、Durable Object Provider Contracts |
 | C09-1K历史根质量门禁 | 本地 macOS `CI=true pnpm quality`：194 个测试文件、2,367 passed、1 个既有 skip、0 failed；build/typecheck/Dashboard production build 全绿；Linux clean-checkout same-SHA CI run `31079755984` / job `92545638787` on `0c6474df66ce28e4a7caf4006233100194a6e493`：194 个测试文件、2,368 passed、0 skipped、0 failed，19m39s，success |
 | 修改前能力 | Repo Pulse、Persistent Task Brief、候选排序、影响路径、Evidence/Unknown、Task Lifecycle 已有正式实现 |
-| Provider Contracts | Strict Ed25519、Bootstrap Trust Bundle、Root/Registry History、signed real-FS Corpus→Suite、signed Target Discovery、unsigned Result、root-signed Runtime、QA/Release Evidence、Release Target Universe、Registry↔Evidence、Support Catalog与五链 retained current-candidate已经推进至 C09-1N committed none-authority candidate。D-38的 C09-1O single-target、Registry-exact、structure-only Acceptance candidate已在 `36588f34899f0e0de36536192841f7f188d3c128`提交，并由同 SHA CI run `31625767367`验证为 success；该 run内 Provider unit 26m38s、Provider distribution 36m18s、Workspace 9m51s、Preview 1m27s，最终 Quality success。上述证据只关闭 C09-1O candidate，不外推到 Provider aggregate、authoritative current或 I/O。D-39可信本机 opened-root physical-target selection candidate已冻结、implementation in progress；atomic Acceptance current/high-water/receipt、真实 Provider与全部 strong-write/production/release gate仍 open/locked |
+| Provider Contracts | Strict Ed25519、Bootstrap Trust Bundle、Root/Registry History、signed real-FS Corpus→Suite、signed Target Discovery、unsigned Result、root-signed Runtime、QA/Release Evidence、Release Target Universe、Registry↔Evidence、Support Catalog与五链 retained current-candidate已经推进至 C09-1N committed none-authority candidate。D-38的 C09-1O single-target、Registry-exact、structure-only Acceptance candidate已在 `36588f34899f0e0de36536192841f7f188d3c128`提交并通过同 SHA CI `31625767367`。D-39可信本机 opened-root physical-target selection candidate已在 `876ce8ef4f0d8dd375fa0d7c6e25aa61c713ba70`提交，并由同 SHA CI run `31643781457`验证为 success；该 run内 Provider unit 17m46s、Provider distribution 40m12s、Workspace 9m19s、Preview 1m8s，最终 Quality 4s success。该证据只关闭D-39 none-authority candidate，不外推到Provider aggregate、authoritative current或I/O。D-40 strong-ready bootstrap/steady none-authority compare-append closure/reference Candidate已冻结、implementation in progress；真实Identity key ownership、OS Provider、mutual-auth IPC、durable I/O与Migration仍 locked，全部 strong-write/production/release gate仍 open |
 | 修改后能力 | Change Check/Verification 有严格 Contract 和 Store 基础，但没有生产 `checkChanges()` / `recordVerification()` 执行服务 |
 | Agent Surface | 已有 `packages/cli` 自包含 stdio MCP 候选和 3 个真实 Tool；仍无 `.codex-plugin/plugin.json`、Codex/Claude Adapter 或双 Agent Task E2E |
 | 前端 | 活跃 Surface 仍为 `wiki | graph`；尚无 Tasks、Brief、Check、Verification 与 Repo Pulse 产品页面 |
@@ -3026,7 +3026,7 @@ P2 的阻断规则必须确定性执行：
 | WP2 | Closed | Repository State / Repo Pulse 已关闭 |
 | WP3 | Closed | Artifact Store / Evidence persistence 已关闭 |
 | WP4 | Closed | Persistent Task Brief 与 Lifecycle 已关闭；不包含生产 Change Check |
-| WP5-1P/C09 | **Partial / aggregate open** | C09-1L Registry↔Evidence、C09-1M Catalog exact-cover、C09-1N五链 retained current-candidate及 D-38/C09-1O singleton Registry-exact Acceptance candidate均已提交各自 none-authority candidate。C09-1O提交为 `36588f34899f0e0de36536192841f7f188d3c128`，同 SHA CI run `31625767367`最终 Quality success；该证据不外推到 aggregate或 authority。D-39可信本机 opened-root physical-target selection candidate、atomic current/high-water/receipt、Migration及 aggregate总门仍需关闭 |
+| WP5-1P/C09 | **Partial / aggregate open** | C09-1L Registry↔Evidence、C09-1M Catalog exact-cover、C09-1N五链 retained current-candidate及 D-38/C09-1O singleton Registry-exact Acceptance candidate均已提交各自 none-authority candidate。D-39可信本机 opened-root physical-target selection candidate提交为 `876ce8ef4f0d8dd375fa0d7c6e25aa61c713ba70`，同 SHA CI run `31643781457`最终 Quality success；该证据不外推到 aggregate或 authority。D-40 strong-ready bootstrap/steady none-authority compare-append closure/reference Candidate、Migration及 aggregate总门仍需关闭 |
 | WP3P | Not closed / capability locked | 真实 OS principal、Provider runtime 与 real-FS feasibility 尚未实现 |
 | WP5 | Contract frozen / implementation incomplete | 没有生产 Delta/Hunk/Matching、`checkChanges()`、`recordVerification()` 纵向闭环 |
 | WP6 | **Open（仅 16-A-1 candidate closed）** | `packages/cli` 已交付自包含 stdio MCP 与 Pulse/Brief 三工具；Host Adapter、完整 Tool surface、双 Agent E2E 仍未实现，不能把子切片状态外推为 WP6 candidate |
@@ -4132,7 +4132,7 @@ Symbol、Evidence、Impact 与分析完整性，而不是把 Git 文件列表包
 WP3P Provider Feasibility Gate 与 WP4 Task Intelligence；Diff→Symbol/Matching
 可在 security contracts 冻结后并行，但任何 strong mutation在 WP3P Gate关闭前
 保持 capability locked。
-估算：原 2.5 周只覆盖摘要级实现；按 D-24～D-39 的 path-safe、identity、
+估算：原 2.5 周只覆盖摘要级实现；按 D-24～D-40 的 path-safe、identity、
 SafeGit、reservation/quota 与 recovery 生产闭环修订为
 **6–8 周、12–16 person-weeks**。Contracts、Store 与 Operation kernel 串行冻结，
 Delta/Symbol/Matching 可在接口冻结后并行。
@@ -5990,7 +5990,7 @@ reflog 与未定义 quota 会让 crash recovery 存在误删或不一致结果�
 边界前移到首个 durable write，并冻结并发 ownership 与资源耗尽的唯一语义。
 
 WP5 的实现追踪、Acceptance 与 capability locks 见
-`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。D-24～D-39 不
+`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。D-24～D-40 不
 改变 D-21 的状态集合；它们冻结的是 Change/Verification 事实模型、可重建
 baseline、安全持久化、Operation 提交边界与 Alpha 兼容策略。
 
@@ -7647,7 +7647,7 @@ authoritative current、Identity/key ownership、真实Provider或任何I/O auth
 
 ### D-39：可信本机 opened-root physical-target selection candidate
 
-状态：Frozen / implementation in progress（2026-08-13 implementation-safety Decision Amendment）。D-39是现有
+状态：Accepted（2026-08-13 implementation-safety Decision Amendment）。D-39是现有
 WP5-1P/C09 aggregate Gate内、C09-1O之后的边界收窄；它**不命名为C09-1P**、不新增
 第18个Commit Gate，也不新增`AT-D39`。
 
@@ -7763,12 +7763,188 @@ current/high-water/receipt、Migration、真实Provider/client/Store writer、st
 production与release gates继续`open/locked`；后继实现不得把本candidate冒充D-38
 Acceptance candidate或authoritative selector。
 
+D-39已在 commit `876ce8ef4f0d8dd375fa0d7c6e25aa61c713ba70`提交；同 SHA
+clean-checkout CI run `31643781457`最终`Quality = success`，其中 Provider unit
+17m46s、Provider distribution 40m12s、Workspace 9m19s、Preview 1m8s、最终 Quality
+4s。该证据只关闭 trusted opened-root physical-target selection none-authority
+candidate，不证明active writer、Acceptance current、真实durability或任何I/O authority。
+
+### D-40：Strong-ready bootstrap/steady Acceptance compare-append closure/reference candidate
+
+状态：Frozen / implementation in progress（2026-08-13 pre-implementation Decision
+Amendment；同日implementation-safety审计后原位收窄）。D-40位于既有WP5-1P/C09
+aggregate Gate内；它**不命名为C09-1P**、不新增第18个Commit Gate或任何新AT编号。
+本slice只实现`strong_ready/bootstrap_or_steady_successor`的none-authority reference
+candidate；所有新增类型、导出、profile、digest domain与Schema ID都必须用
+`ProviderStrongReady...ReferenceCandidateV1` /
+`provider-strong-ready-...-reference-candidate-v1`等价窄名明确该边界；JSON Schema
+key与filename遵循仓库既有`schema:v1`命名约定，不额外追加terminal `-v1`。正式
+`ProviderAcceptanceStateV1` / `ProviderAcceptanceGenerationEnumerationV1` /
+`ProviderAcceptanceHighWaterV1` / `ProviderAcceptanceCompareAppendRequestV1` /
+`ProviderAcceptanceCompareAppendReceiptV1` / `ProviderAcceptanceCompareAppendResultV1`
+及其正式profile/domain/fixed locator、`strong_ready/migration_only/recovery_only`完整合法
+接受集合继续冻结但**未由D-40实现**，留在后继Provider/Migration Gate。禁止用同名缩版、
+`z.unknown()`或structure-only union伪装覆盖未实现分支；后继正式实现也不得把D-40
+candidate bytes直接cast成正式durable bytes。
+
+D-40把D-39对**当前opened root本机target**的唯一选择接到一台内存reference machine：
+它直接在D-39返回的同一份已验证C09-1N closure内，只对所选local full target派生恰一
+Registry-exact strong writer。派生字段与等式逐项复用C09-1O的
+`ProviderActiveWriterSelectionV1`：provider ID、Registry Entry digest、semantic policy
+digest、完整Evidence Pin、Runtime content digest及binding derivation generation全部
+exact match；但不调用C09-1O validator，也不对multi-target Catalog的全部target运行
+C09-1O全Catalog selector算法。正式`ProviderActiveWriterSelectorV1`仍为非空排序数组，
+本slice的local projection固定`selections.length === 1`。D-40既不替代D-38/C09-1O，
+也不使其旧singleton candidate失效；前者继续是合法的distribution evidence，D-40只是
+把local projection接到atomic reference closure。以该单项selector构造
+`strong_ready/bootstrap_or_steady_successor` candidate时，configuration、generation ID、
+content digest、Acceptance token、Envelope与generation Pin的派生逐字复用C09-1O；D-40
+不得新增另一套Acceptance state shape或token domain。narrow reference request携带的
+candidate必须exact-equal这一local derivation。D-39所选owner capability若为
+`legacy_redacted_read_only`，请求必须得到candidate-only
+`not_committed/candidate_invalid` receipt，且generation/enumeration/high-water不变；
+不得以read-only target创建writer或把它改判为input error。
+
+reference machine只持有进程内immutable state snapshot。identity key与crypto host只封存在
+internal identity-verification authority中；public API明确**不接受**raw key、裸crypto host
+或serializable“verified” DTO。internal mint必须分别产生两种不可互换的opaque handle：
+`identity-verification capability`只授权指定installation identity的测试用token验证/派生，
+`reference-machine capability`只绑定指定machine instance及其private current state。两种
+handle都为null-prototype、frozen、zero-own-key object，分别由独立private `WeakMap`保存状态，
+mint不export；复制、JSON/structured clone、把一种handle填入另一槽位、forged、cross-identity
+或identity/machine未配对的substitution都必须在读取request或任何state mutation前拒绝。
+同一identity authority下另一份有效machine capability代表调用方明确选择的另一台独立reference
+machine，不能在没有额外expected-machine authority的API中伪称为可检测的替换。reference
+machine可以借二者重算candidate generation/digest/token、request digest、high-water token
+和receipt token，却不证明真实Installation Identity拥有密钥，不证明OS-isolated provider、
+进程/OS crash durability、versioned mutual-auth IPC或真实fixed-locator I/O。
+private reference-machine mint的exact输入还须一次性包含非负safe-integer
+`retainedNonAcceptanceTrustHistoryLogicalBytes`，并把它封入同一machine capability，供
+Identity总history cap与4 MiB reserve的reference accounting使用；execute不得覆盖该值。
+该scalar只是none-authority测试基数，不是已认证history：production必须由
+installation-state provider从完整retained trust closure重算并封入受信authority，禁止
+public caller提交裸claim取得写权限。
+成功authority唯一为
+`none_provider_strong_ready_bootstrap_or_steady_acceptance_compare_append_closure_reference_candidate_only`。输出必须携带可完整重验的
+namespace observation、generation enumeration、high-water、全部immutable generation与完整
+sealed reference nonce-receipt lookup closure；namespace已建立时必须包含candidate current
+read，尚未建立时只能是candidate observed absent分支，不能伪造空enumeration/high-water。
+public成功输出须在原request/digest/result/receipt pin外加入与本次linearization point相邻的
+`referenceState` detached snapshot；snapshot barrier必须同步接在该operation的machine tail后，
+不得以operation返回后的无序inspect读取后来operation的state。所有对象只是递归
+detached/frozen的reference snapshot，不能宣传为磁盘已提交、provider current或
+strong-write authority。
+
+reference machine内部receipt集合必须以candidate-only完整承诺封入同一machine capability：
+exact对象至少包含profile、installation identity、按`linearizationOrdinal`连续`1..N`排序的
+`entries[{linearizationOrdinal,operationNonce,contentDigest,receipt}]`、nonce另行unique；每项
+entry ordinal必须exact-equal receipt payload的`linearizationOrdinal`，receipt还必须保留完整
+`requestReferenceProjection`与`referenceOutcome`，
+`receiptCount`、candidate-only
+`receiptSetDigest`与`receiptLogicalBytes`；entry digest、完整receipt canonical bytes总和、
+count与set digest必须逐次重算。该封存只证明private none-authority machine在mint后所持集合的
+自洽、不可删改与本次operation前后连续性；它**不证明**mint前输入就是provider完整ledger，
+也不替代后继installation-state provider返回的authenticated complete enumeration/commitment。
+因此本slice的`ledger_integrity_failed`只关闭对sealed reference commitment的缺项、重复、篡改
+或不一致；production completeness仍为后继Gate的locked义务。
+
+安全执行顺序固定：在排入machine tail前先bounded、descriptor-safe地snapshot exact input；
+Distribution JSON closure必须detached，opaque crypto/observation/identity/machine capabilities
+只保留身份且不得clone。依次验证identity-verification capability与reference-machine
+capability，再解析narrow reference compare-append request；随后重验sealed nonce receipt
+ledger。若该nonce已存在，same request立即回放首次receipt，different request立即返回
+`operation_nonce_request_mismatch`，两者都在capacity、Acceptance namespace和D-39 local
+selection之前结束。只有新nonce继续执行capacity pre-admission、Acceptance namespace
+closure、expected current、D-39 physical-target selection、candidate、generation floors、
+prospective receipt exact admission、atomic resolution与post-state closure。在不可见的
+successor snapshot中完成全部计算与重验后，最后只以一次atomic immutable state-pointer
+swap发布。`committed` swap必须同时加入
+no-replace generation、更新reference candidate完整enumeration、推进high-water并加入
+immutable compact receipt；semantic `not_committed` swap只能加入该nonce receipt及其
+accounting，绝不加入generation或改变enumeration/high-water。postcheck失败不得发布任何
+prospective对象。两个并发请求从同一expected current出发时最多一个commit；其余请求在
+各自linearization point按已推进current解析，不能出现loser sibling、partial generation或
+半更新current。
+
+完整closure每次必须从absent/genesis按receipt的`linearizationOrdinal=1..N`重放；每个
+`not_committed.observedHighWater`必须exact-equal其当时reconstructed pre-state且不得推进namespace，
+每个`committed`才推进reconstructed generation/enumeration/high-water，最终重放结果必须
+exact-equal snapshot。另须重算并验证：Acceptance ordinal为连续`1..N`、唯一genesis、每项
+predecessor exact pin前项；enumeration entry排序/唯一、`generationCount`、
+`generationSetDigest`及`namespaceRevision`；每个entry的immutable generation Envelope、
+outer/payload identity/time等式、content digest与Acceptance token；high-water revision、
+current pin、count/set digest、predecessor token和三类accepted generation floor；每个
+`commitOperationNonce`回接固定nonce locator的committed receipt，且receipt的完整request
+projection/request digest、appended generation、committed high-water、outer/payload
+identity/nonce/time与receipt token逐项闭合。not-committed receipt的
+`observedHighWater`必须等于该linearization point的真实观察；缺/多 generation、receipt、
+enumeration entry，ordinal gap/sibling、rollback、receipt指向later state或cached pointer均
+fail closed。
+
+pre-state分类还须区分两个边界：nonce receipt ledger自身missing/duplicate/tampered时，无法
+可信定位首次outcome，必须走diagnostic `ledger_integrity_failed`且零swap；receipt ledger
+完整、但Acceptance namespace为可界定的integrity failure时，则可按candidate semantic
+`not_committed/namespace_integrity_failed`写入一个receipt，并在`observedHighWater`携带
+`integrity_failed/evidenceDigest`。post-state prospective closure重验失败一律
+`post_state_invalid`且零swap；本slice没有durable-outcome类型，也不得把尚未发布的结果包装成
+已持久化outcome。
+
+nonce语义固定：same nonce + byte-identical canonical request无论当前state后来如何变化，
+都返回第一次receipt的**原始byte-identical bytes**，不重算`resolvedAt`、token或outcome，
+也不重复计费；same nonce + different request digest返回candidate
+`request_rejected/operation_nonce_request_mismatch`及existing receipt，不写第二receipt、
+不改变state。对新nonce，四个candidate semantic not-committed reason的唯一短路顺序冻结为
+`namespace_integrity_failed` → `expected_current_changed` → `candidate_invalid` →
+`generation_floor_regressed`；namespace不可信时禁止继续比较expected/candidate/floor，
+compound fixture必须证明前项获胜。它们都是已atomic-swap进内存reference state的candidate
+outcome，不是diagnostic validation failure，也不得称为已持久化outcome。
+
+admission逐字复用immutable `ProviderTrustHistoryPolicyV1`：Acceptance generation与
+compare-append receipt分别最多4096，receipt累计logical bytes最多64 MiB，单receipt最多
+1 MiB；normal update还必须保留8个generation、8个receipt与4 MiB emergency logical-byte
+reserve，并同时满足Identity累计trust-history hard cap。`acceptance_capacity`先对新nonce做
+count/reserve与可用budget pre-admission；semantic outcome形成后，`acceptance_receipt`再对
+完整canonical prospective receipt与仍需保留closure做single/count/total-byte exact admission。
+两层都必须在任何prospective swap前完成；
+超限固定零swap、零receipt并以opaque unavailable失败，不能伪造第五种not-committed
+reason。existing nonce replay不受新admission影响。D-40不消费emergency reserve，也不实现
+compromise recovery或删除/压缩历史。
+
+internal diagnostic stage语义按安全执行顺序冻结为`input`、
+`identity_verification_capability`、`reference_machine_capability`、
+`acceptance_compare_append_request`、`acceptance_receipt_ledger`、
+`acceptance_capacity`、`acceptance_namespace`、`expected_current`、
+`physical_target_selection`、`candidate`、`generation_floors`、
+`acceptance_receipt`、`atomic_resolution`、`post_state_closure`。reason至少固定为`schema_invalid`、
+`capability_invalid`、`source_invalid`、`ledger_integrity_failed`、
+`receipt_capacity_exhausted`、`namespace_integrity_failed`、
+`expected_current_changed`、`candidate_invalid`、`generation_floor_regressed`、
+`operation_nonce_request_mismatch`与`post_state_invalid`。其中nonce mismatch与四个
+not-committed reason在diagnostic中只标记所走semantic branch；public成功值仍必须是narrow
+candidate Result/receipt union。只有schema/capability/source/ledger/capacity/post-state等无法形成
+可信receipt的reference failure映射opaque `provider_unavailable/attestation_invalid`，不得
+泄漏key、token preimage、target私有claim或内部state。
+
+focused tests必须至少覆盖：multi-target Distribution中选择非首项local target后恰一writer
+commit；read-only→`candidate_invalid`且state不前进；genesis与连续successor完整closure；
+same-request replay byte-identical、nonce mismatch返回existing receipt；四reason compound
+precedence；4096/64 MiB/1 MiB及8/8/4 MiB reserve的`B-1/B/B+1`；双writer并发至单一
+linearization；pre/post corruption与每个swap cut均无partial可见；extra key/getter/Proxy、
+after-start mutation、prototype/intrinsic poisoning、identity/machine handle互换及
+forged/cross-identity/identity-machine未配对 capability substitution，以及另一份有效same-identity
+machine作为显式独立authority的准确行为。identity与machine mint均为private，
+所以packed Node/browser只允许从public subpath做export/schema/domain/stage/reason/authority
+smoke，并验证两个internal mint/state模块的deep import都拒绝；不得宣称packed public环境执行
+了真实reference operation。D-40通过仍只形成none-authority candidate；真实Identity
+key ownership、OS provider、mutual-auth IPC、真实I/O/crash recovery、Migration、C09
+aggregate、strong-write、production与release全部继续`open/locked`。
+
 ---
 
 ## 20. M0 冻结结果与延后决策
 
 原 M0 第 1–7 项已经分别由 D-13～D-19 冻结；Task Lifecycle、WP4 持久化与
-WP5 Change Intelligence 修订由 D-21～D-39 冻结。完整证据、Owner、试点 Pin
+WP5 Change Intelligence 修订由 D-21～D-40 冻结。完整证据、Owner、试点 Pin
 和 capability lock 见
 `docs/research/2026-07-28-g0-contract-freeze-record.md`。
 

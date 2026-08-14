@@ -1,0 +1,21 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-invalid-stage-reference-candidate",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "input",
+    "identity_verification_capability",
+    "reference_machine_capability",
+    "acceptance_compare_append_request",
+    "acceptance_receipt_ledger",
+    "acceptance_capacity",
+    "acceptance_namespace",
+    "expected_current",
+    "physical_target_selection",
+    "candidate",
+    "generation_floors",
+    "acceptance_receipt",
+    "atomic_resolution",
+    "post_state_closure"
+  ]
+}

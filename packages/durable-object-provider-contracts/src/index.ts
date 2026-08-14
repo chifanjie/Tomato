@@ -302,6 +302,7 @@ export * from "./provider-distribution-history-current-candidate-point.js";
 export * from "./provider-distribution-history-current-candidate-point-fixtures.js";
 export * from "./provider-strong-ready-acceptance-candidate.js";
 export * from "./provider-trusted-local-physical-target-selection-candidate.js";
+export * from "./provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate.js";
 export {
   ProviderRegistryRootCrossSignatureWrapperV1Schema,
   ProviderRegistryRootHistoryValidationError,

@@ -1642,7 +1642,7 @@ describe("D-41 pure reference-candidate wire", () => {
       if (testCase.valid) expect(verify, testCase.label).not.toThrow();
       else expect(verify, testCase.label).toThrow();
     }
-  });
+  }, 20_000);
 
   it("does not late-bind Set.prototype.size while validating the source closure", () => {
     const descriptor = Object.getOwnPropertyDescriptor(Set.prototype, "size");

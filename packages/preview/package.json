@@ -3,6 +3,7 @@
   "version": "0.1.0-preview.1",
   "description": "Installable Understand Code Preview: local Graph/Wiki snapshot and stdio MCP tools",
   "type": "module",
+  "exports": {},
   "bin": {
     "understand-code-preview": "dist/bin.mjs",
     "understand-code": "dist/understand-code.mjs"

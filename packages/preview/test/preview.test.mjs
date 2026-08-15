@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { cp, mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -23,8 +23,12 @@ function withTimeout(promise, label, timeoutMs = PROCESS_TIMEOUT_MS) {
   ]).finally(() => clearTimeout(timer));
 }
 
-function start(args) {
-  const child = spawn(process.execPath, [bin, ...args], { cwd: "/tmp", stdio: ["ignore", "pipe", "pipe"] });
+function start(args, { environment = process.env } = {}) {
+  const child = spawn(process.execPath, [bin, ...args], {
+    cwd: "/tmp",
+    env: environment,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   let output = "";
   let stderr = "";
   child.stdout.setEncoding("utf8");
@@ -112,7 +116,17 @@ test("cold demo serves usable Graph/Wiki and protects data endpoints", async () 
     assert.equal((await fetch(`${base.origin}/knowledge-base/项目总览.md?token=bad`)).status, 403);
     assert.equal((await fetch(`${base.origin}/knowledge-base/..%2F..%2Fetc%2Fpasswd?token=${token}`)).status, 404);
     assert.equal((await fetch(`${base.origin}/file-content.json?path=../etc/passwd&token=${token}`)).status, 404);
-    for (const sensitive of [".env", ".npmrc", ".aws/credentials", "secrets/token.txt", "private.pem"]) {
+    for (const sensitive of [
+      ".env",
+      ".npmrc",
+      ".git/config",
+      ".aws/credentials",
+      "secrets/token.txt",
+      "private.pem",
+      "config/application_default_credentials.json",
+      "backups/id_rsa.bak",
+      "backups/id_ed25519.old",
+    ]) {
       assert.equal((await fetch(`${base.origin}/file-content.json?path=${encodeURIComponent(sensitive)}&token=${token}`)).status, 404);
       assert.equal((await fetch(`${base.origin}/knowledge-base/${encodeURIComponent(sensitive)}?token=${token}`)).status, 404);
     }
@@ -131,6 +145,34 @@ test("cold demo serves usable Graph/Wiki and protects data endpoints", async () 
   } finally {
     await stop(second.child);
   }
+});
+
+test("bundled stable reader rejects an intermediate parent symlink swap", async () => {
+  const { isSensitiveRepositoryPath, readStableRepositoryFile } = await import("../dist/contracts.mjs");
+  assert.equal(isSensitiveRepositoryPath("secrets/token.txt"), true);
+  assert.equal(isSensitiveRepositoryPath(".env.example"), false);
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), "preview-reader-root-")));
+  const outside = await realpath(await mkdtemp(path.join(tmpdir(), "preview-reader-outside-")));
+  const parent = path.join(root, "nested");
+  const displacedParent = path.join(root, "nested-original");
+  await mkdir(parent);
+  await writeFile(path.join(parent, "artifact.json"), "inside\n");
+  await writeFile(path.join(outside, "artifact.json"), "must-not-be-returned\n");
+  let swapped = false;
+  let failure;
+  try {
+    await readStableRepositoryFile(root, "nested/artifact.json", 1024, {
+      afterResolve: async () => {
+        await rename(parent, displacedParent);
+        await symlink(outside, parent, "dir");
+        swapped = true;
+      },
+    });
+  } catch (error) {
+    failure = error;
+  }
+  assert.equal(swapped, true);
+  assert.match(failure?.code ?? "", /^(?:changed_during_read|outside_repository)$/u);
 });
 
 async function git(root, args) {
@@ -189,6 +231,133 @@ async function createPublishedRoot() {
   return root;
 }
 
+async function createPublishedRootWithSensitiveGraphSource(repositoryPath) {
+  const root = await createPublishedRoot();
+  const absoluteSourcePath = path.join(root, ...repositoryPath.split("/"));
+  await mkdir(path.dirname(absoluteSourcePath), { recursive: true });
+  await writeFile(absoluteSourcePath, "must-not-be-served\n");
+  await git(root, ["add", "--", repositoryPath]);
+  await git(root, ["commit", "-q", "-m", "add sensitive source fixture"]);
+  const head = (await git(root, ["rev-parse", "HEAD"])).stdout.trim();
+
+  const graphPath = path.join(root, ".understand-code/knowledge-graph.json");
+  const graph = JSON.parse(await readFile(graphPath, "utf8"));
+  graph.project.gitCommitHash = head;
+  graph.nodes[0].filePath = repositoryPath;
+  await writeFile(graphPath, `${JSON.stringify(graph, null, 2)}\n`);
+  const graphDigest = createHash("sha256").update(JSON.stringify(graph)).digest("hex");
+
+  const metaPath = path.join(root, ".understand-code/meta.json");
+  const meta = JSON.parse(await readFile(metaPath, "utf8"));
+  meta.gitCommitHash = head;
+  await writeFile(metaPath, `${JSON.stringify(meta, null, 2)}\n`);
+
+  const wikiPath = path.join(root, ".understand-code/knowledge-base/wiki-index.json");
+  const wiki = JSON.parse(await readFile(wikiPath, "utf8"));
+  wiki.source.gitCommitHash = head;
+  wiki.source.graphDigest = graphDigest;
+  await writeFile(wikiPath, `${JSON.stringify(wiki, null, 2)}\n`);
+  return root;
+}
+
+test("root mode rejects staged, unstaged, untracked, rename, and delete state", async () => {
+  const dirtyCases = [
+    ["staged", async (root) => {
+      await writeFile(path.join(root, "src/app.ts"), "export const staged = true;\n");
+      await git(root, ["add", "--", "src/app.ts"]);
+    }],
+    ["unstaged", async (root) => {
+      await writeFile(path.join(root, "src/app.ts"), "export const unstaged = true;\n");
+    }],
+    ["untracked", async (root) => {
+      await writeFile(path.join(root, "src/untracked.ts"), "export const untracked = true;\n");
+    }],
+    ["rename", async (root) => {
+      await git(root, ["mv", "--", "src/app.ts", "src/renamed.ts"]);
+    }],
+    ["delete", async (root) => {
+      await git(root, ["rm", "--", "src/app.ts"]);
+    }],
+  ];
+  for (const [label, makeDirty] of dirtyCases) {
+    const root = await createPublishedRoot();
+    await makeDirty(root);
+    await assert.doesNotReject(
+      expectExit(["--root", root, "--port", "0", "--no-open"], /requires a clean Git Index and Worktree snapshot/u),
+      `${label} state must fail closed before Preview readiness`,
+    );
+  }
+});
+
+test("root rejects committed sensitive sources before Graph can authorize file-content", async () => {
+  for (const repositoryPath of [
+    "config/application_default_credentials.json",
+    "backups/id_rsa.bak",
+    "backups/id_ed25519.old",
+  ]) {
+    const root = await createPublishedRootWithSensitiveGraphSource(repositoryPath);
+    await assert.doesNotReject(
+      expectExit(["--root", root, "--port", "0", "--no-open"], /knowledge graph contains a sensitive source path/u),
+      `${repositoryPath} must be rejected before a source token is issued`,
+    );
+  }
+});
+
+test("root data endpoints fail closed after runtime HEAD drift", async () => {
+  const root = await createPublishedRoot();
+  const preview = start(["--root", root, "--port", "0", "--no-open"]);
+  try {
+    const info = await preview.ready;
+    const base = new URL(info.url);
+    await writeFile(path.join(root, "src/runtime-head.ts"), "export const runtimeHead = true;\n");
+    await git(root, ["add", "--", "src/runtime-head.ts"]);
+    await git(root, ["commit", "-q", "-m", "advance HEAD while Preview is running"]);
+    const response = await fetch(`${base.origin}/knowledge-graph.json?token=${info.token}`);
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { error: "repository_state_changed" });
+  } finally {
+    await stop(preview.child);
+  }
+});
+
+test("root snapshot ignores hostile ambient Git authority at startup and runtime", async () => {
+  const root = await createPublishedRoot();
+  const ambientRoot = await createPublishedRoot();
+  const hostileEnvironment = {
+    ...process.env,
+    GIT_DIR: path.join(ambientRoot, ".git"),
+    GIT_WORK_TREE: ambientRoot,
+    GIT_INDEX_FILE: path.join(ambientRoot, ".git/index"),
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "core.worktree",
+    GIT_CONFIG_VALUE_0: ambientRoot,
+    Git_Config_Global: path.join(ambientRoot, "mixed-case-hostile.gitconfig"),
+  };
+  const preview = start(["--root", root, "--port", "0", "--no-open"], {
+    environment: hostileEnvironment,
+  });
+  try {
+    const info = await preview.ready;
+    const base = new URL(info.url);
+    const initialSource = await fetch(`${base.origin}/file-content.json?path=src%2Fapp.ts&token=${info.token}`);
+    assert.equal(initialSource.status, 200);
+    assert.match((await initialSource.json()).content, /return 'ready'/u);
+
+    await writeFile(path.join(ambientRoot, "src/ambient-only.ts"), "export const ambientOnly = true;\n");
+    await git(ambientRoot, ["add", "--", "src/ambient-only.ts"]);
+    await git(ambientRoot, ["commit", "-q", "-m", "move hostile ambient HEAD"]);
+    const afterAmbientDrift = await fetch(`${base.origin}/knowledge-graph.json?token=${info.token}`);
+    assert.equal(afterAmbientDrift.status, 200);
+
+    await writeFile(path.join(root, "src/actual-root-drift.ts"), "export const actualRootDrift = true;\n");
+    const afterActualDrift = await fetch(`${base.origin}/knowledge-graph.json?token=${info.token}`);
+    assert.equal(afterActualDrift.status, 409);
+    assert.deepEqual(await afterActualDrift.json(), { error: "repository_state_changed" });
+  } finally {
+    await stop(preview.child);
+  }
+});
+
 test("root mode is fail-closed for non-worktree, subdirectory, stale, and unsafe artifacts", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "preview-root-"));
   await mkdir(path.join(root, ".understand-code/knowledge-base"), { recursive: true });
@@ -197,6 +366,22 @@ test("root mode is fail-closed for non-worktree, subdirectory, stale, and unsafe
 
   const published = await createPublishedRoot();
   await expectExit(["--root", path.join(published, "src"), "--no-open"], /canonical Git worktree root/u);
+
+  const projectedMetaPath = path.join(published, ".understand-code/meta.json");
+  const projectedMeta = JSON.parse(await readFile(projectedMetaPath, "utf8"));
+  projectedMeta.privateToken = "must-not-be-projected";
+  projectedMeta.theme = { presetId: "technical-document", privateThemeToken: "must-not-be-projected" };
+  await writeFile(projectedMetaPath, `${JSON.stringify(projectedMeta, null, 2)}\n`);
+  const projectedConfigPath = path.join(published, ".understand-code/config.json");
+  const projectedConfig = JSON.parse(await readFile(projectedConfigPath, "utf8"));
+  projectedConfig.privateToken = "must-not-be-projected";
+  projectedConfig.knowledgeBase = {
+    businessTerms: ["Preview", 42],
+    entryNodeIds: ["module:knowledge"],
+    route: { pin: ["page:overview"], privateRouteToken: "must-not-be-projected" },
+    privateKnowledgeToken: "must-not-be-projected",
+  };
+  await writeFile(projectedConfigPath, `${JSON.stringify(projectedConfig, null, 2)}\n`);
 
   const valid = start(["--root", published, "--port", "0", "--no-open"]);
   try {
@@ -213,17 +398,36 @@ test("root mode is fail-closed for non-worktree, subdirectory, stale, and unsafe
       assert.equal(response.status, 200);
       assert.doesNotMatch(await response.text(), new RegExp(published.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
     }
-    await writeFile(path.join(published, "src/app.ts"), "export function main() { return 'dirty'; }\n");
+    const publicMeta = await (await fetch(`${validBase.origin}/meta.json?token=${validInfo.token}`)).json();
+    assert.deepEqual(Object.keys(publicMeta).sort(), ["analyzedFiles", "gitCommitHash", "lastAnalyzedAt", "theme", "version"]);
+    assert.deepEqual(publicMeta.theme, { presetId: "technical-document" });
+    const publicConfig = await (await fetch(`${validBase.origin}/config.json?token=${validInfo.token}`)).json();
+    assert.deepEqual(publicConfig, {
+      autoUpdate: false,
+      outputLanguage: "zh-CN",
+      knowledgeBase: {
+        businessTerms: ["Preview"],
+        entryNodeIds: ["module:knowledge"],
+        route: { pin: ["page:overview"] },
+      },
+    });
     const committedSource = await fetch(`${validBase.origin}/file-content.json?path=src%2Fapp.ts&token=${validInfo.token}`);
     assert.equal(committedSource.status, 200);
     const committedContent = (await committedSource.json()).content;
     assert.match(committedContent, /return 'ready'/u);
     assert.doesNotMatch(committedContent, new RegExp(`${published.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}/private`, "u"));
     assert.match(committedContent, new RegExp(`${published.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}-sibling`, "u"));
+    await writeFile(path.join(published, "src/app.ts"), "export function main() { return 'dirty'; }\n");
+    for (const endpoint of ["/knowledge-graph.json", "/file-content.json?path=src%2Fapp.ts"]) {
+      const response = await fetch(`${validBase.origin}${endpoint}${endpoint.includes("?") ? "&" : "?"}token=${validInfo.token}`);
+      assert.equal(response.status, 409);
+      assert.deepEqual(await response.json(), { error: "repository_state_changed" });
+    }
   } finally {
     await stop(valid.child);
   }
 
+  await git(published, ["checkout", "--", "src/app.ts"]);
   await writeFile(path.join(published, "src/next.ts"), "export const next = true;\n");
   await git(published, ["add", "src/next.ts"]);
   await git(published, ["commit", "-q", "-m", "make published graph stale"]);
@@ -315,6 +519,34 @@ test("root mode is fail-closed for non-worktree, subdirectory, stale, and unsafe
   invalidGraph.project.gitCommitHash = 42;
   await writeFile(invalidGraphPath, `${JSON.stringify(invalidGraph, null, 2)}\n`);
   await expectExit(["--root", invalidGraphRoot, "--no-open"], /knowledge-graph.json failed structural validation/u);
+
+  const sensitiveGraphRoot = await createPublishedRoot();
+  const sensitiveGraphPath = path.join(sensitiveGraphRoot, ".understand-code/knowledge-graph.json");
+  const sensitiveGraph = JSON.parse(await readFile(sensitiveGraphPath, "utf8"));
+  sensitiveGraph.nodes[0].filePath = ".env";
+  await writeFile(sensitiveGraphPath, `${JSON.stringify(sensitiveGraph, null, 2)}\n`);
+  await expectExit(["--root", sensitiveGraphRoot, "--no-open"], /knowledge graph contains a sensitive source path/u);
+
+  const sensitiveWikiRoot = await createPublishedRoot();
+  const sensitiveWikiPath = path.join(sensitiveWikiRoot, ".understand-code/knowledge-base/wiki-index.json");
+  const sensitiveWiki = JSON.parse(await readFile(sensitiveWikiPath, "utf8"));
+  sensitiveWiki.evidence[0].filePath = "secrets/token.txt";
+  await writeFile(sensitiveWikiPath, `${JSON.stringify(sensitiveWiki, null, 2)}\n`);
+  await expectExit(["--root", sensitiveWikiRoot, "--no-open"], /Wiki contains a sensitive evidence path/u);
+
+  const sensitiveSearchRoot = await createPublishedRoot();
+  const sensitiveSearchPath = path.join(sensitiveSearchRoot, ".understand-code/knowledge-base/search-index.json");
+  const sensitiveSearch = JSON.parse(await readFile(sensitiveSearchPath, "utf8"));
+  sensitiveSearch.records.find((record) => record.kind === "symbol").filePath = ".aws/credentials";
+  await writeFile(sensitiveSearchPath, `${JSON.stringify(sensitiveSearch, null, 2)}\n`);
+  await expectExit(["--root", sensitiveSearchRoot, "--no-open"], /Search contains a sensitive source path/u);
+
+  const sensitiveKnowledgeRoot = await createPublishedRoot();
+  const sensitiveKnowledgePath = path.join(sensitiveKnowledgeRoot, ".understand-code/knowledge-base/wiki-index.json");
+  const sensitiveKnowledge = JSON.parse(await readFile(sensitiveKnowledgePath, "utf8"));
+  sensitiveKnowledge.pages[0].markdownPath = "knowledge-base/.ssh/config";
+  await writeFile(sensitiveKnowledgePath, `${JSON.stringify(sensitiveKnowledge, null, 2)}\n`);
+  await expectExit(["--root", sensitiveKnowledgeRoot, "--no-open"], /missing or unsafe Markdown/u);
 
   const safe = await createPublishedRoot();
   const outside = await mkdtemp(path.join(tmpdir(), "preview-outside-"));

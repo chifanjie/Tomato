@@ -7,6 +7,8 @@ export interface GitExecutionOptions {
   gitBinary: string;
   cwd: string;
   maxBufferBytes: number;
+  /** Explicit child environment; omitted preserves the ambient process behavior. */
+  environment?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
 }
 
@@ -80,7 +82,7 @@ export function executeGit(
         cwd: options.cwd,
         encoding: "buffer",
         env: {
-          ...process.env,
+          ...(options.environment ?? process.env),
           GIT_TERMINAL_PROMPT: "0",
           LC_ALL: "C",
         },

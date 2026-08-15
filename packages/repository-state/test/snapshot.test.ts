@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import {
   mkdirSync,
+  realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -12,6 +14,8 @@ import {
   __testing,
   getRepositorySnapshot,
   getRepositorySnapshotDetailed,
+  isSensitiveRepositoryPath,
+  readStableRepositoryFile,
 } from "../src/snapshot.js";
 import {
   cleanupTemporaryDirectories,
@@ -29,6 +33,24 @@ function digest(content: string): string {
 }
 
 describe("getRepositorySnapshot", () => {
+  it.each([
+    [".env", true],
+    [".ENV.production", true],
+    [".env.example", false],
+    ["config/credentials.json", true],
+    [".git/config", true],
+    ["config/application_default_credentials.json", true],
+    ["backups/id_rsa.bak", true],
+    ["backups/id_ed25519.old", true],
+    ["secrets/token.txt", true],
+    ["src\\.ssh\\id_ed25519", true],
+    ["certificates/private.pem", true],
+    ["src/secret-service.ts", false],
+    ["src/environment.ts", false],
+  ] as const)("classifies sensitive repository path %s", (path, expected) => {
+    expect(isSensitiveRepositoryPath(path)).toBe(expected);
+  });
+
   it("returns a contract-valid, deterministic clean snapshot", async () => {
     const root = initializeRepository();
     const first = await getRepositorySnapshot(root, {
@@ -510,6 +532,38 @@ describe("getRepositorySnapshot", () => {
       ),
     ).rejects.toThrow();
     expect(consumedChunks).toBe(0);
+  });
+
+  it("rejects an intermediate parent replaced by a symlink before descriptor open", async () => {
+    const root = realpathSync(initializeRepository());
+    const outside = temporaryDirectory("outside-parent-swap");
+    const repositoryPath = "nested/swap.txt";
+    const parentPath = join(root, "nested");
+    const displacedParentPath = join(root, "nested-original");
+    mkdirSync(parentPath);
+    writeFileSync(join(parentPath, "swap.txt"), "inside\n");
+    writeFileSync(join(outside, "swap.txt"), "must-not-be-returned\n");
+    let swapped = false;
+
+    let failure: unknown;
+    try {
+      await readStableRepositoryFile(root, repositoryPath, 1024, {
+        afterResolve: () => {
+          rmSync(displacedParentPath, { recursive: true, force: true });
+          // Keep the original file available under a different name while the
+          // requested parent atomically changes identity and becomes a link.
+          renameSync(parentPath, displacedParentPath);
+          symlinkSync(outside, parentPath, "dir");
+          swapped = true;
+        },
+      });
+    } catch (error) {
+      failure = error;
+    }
+    expect(swapped).toBe(true);
+    expect(failure).toMatchObject({
+      code: expect.stringMatching(/^(?:changed_during_read|outside_repository)$/u),
+    });
   });
 
   it("makes control-character paths explicit partial limitations without parser desync", async () => {

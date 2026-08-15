@@ -27,6 +27,7 @@ import {
   StableFileReadError,
   hashStableAbsoluteFile,
   hashStableRepositoryFile,
+  readStableRepositoryFile,
   type StableFileReadHooks,
 } from "./safe-file.js";
 
@@ -47,6 +48,8 @@ export interface RepositorySnapshotOptions {
   baselineRef?: string;
   gitBinary?: string;
   maxBufferBytes?: number;
+  /** Explicit environment for every Git child in this capture. */
+  environment?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
   now?: () => Date;
 }
@@ -177,39 +180,65 @@ function isManagedArtifactPath(path: string): boolean {
   return path === ".understand-code" || path.startsWith(".understand-code/");
 }
 
-function isSensitiveAnalysisPath(path: string): boolean {
-  const lowerPath = path.toLowerCase();
-  const segments = lowerPath.split("/");
-  const name = segments.at(-1) ?? "";
-  if (
-    name === ".env.example" ||
-    name === ".env.sample" ||
-    name === ".env.template"
-  ) {
-    return false;
-  }
-  if (
-    name === ".env" ||
-    name.startsWith(".env.") ||
-    name === ".npmrc" ||
-    name === ".pypirc" ||
-    name === ".netrc" ||
-    name === "credentials" ||
-    name === "credentials.json" ||
-    name === "secrets.json" ||
-    name === "auth.json" ||
-    name === "id_rsa" ||
-    name === "id_ed25519" ||
-    name.endsWith(".pem") ||
-    name.endsWith(".key") ||
-    name.endsWith(".p12") ||
-    name.endsWith(".pfx") ||
-    /^service-account.*\.json$/u.test(name)
-  ) {
-    return true;
-  }
-  return segments.some((segment) =>
-    [".ssh", ".aws", ".gnupg", ".kube"].includes(segment),
+const SENSITIVE_PATH_COMPONENTS = new Set([
+  ".aws",
+  ".git",
+  ".git-credentials",
+  ".gnupg",
+  ".kube",
+  ".netrc",
+  ".npmrc",
+  ".pypirc",
+  ".ssh",
+  "application_default_credentials.json",
+  "auth.json",
+  "credential",
+  "credentials",
+  "credentials.json",
+  "id_dsa",
+  "id_ecdsa",
+  "id_ed25519",
+  "id_rsa",
+  "secret",
+  "secrets",
+  "secrets.json",
+]);
+
+const PUBLIC_ENV_TEMPLATE_NAMES = new Set([
+  ".env.example",
+  ".env.sample",
+  ".env.template",
+]);
+
+/**
+ * Single repository-wide classifier for paths whose content must never enter
+ * analysis or Preview surfaces. Callers must pass a decoded path; both POSIX
+ * and Windows separators are accepted so persisted cross-platform paths do
+ * not bypass the same policy.
+ */
+export function isSensitiveRepositoryPath(path: string): boolean {
+  const segments = path
+    .replaceAll("\\", "/")
+    .toLowerCase()
+    .split("/")
+    .filter(Boolean);
+  return segments.some(
+    (segment, index) =>
+      SENSITIVE_PATH_COMPONENTS.has(segment) ||
+      ((segment === ".env" || segment.startsWith(".env.")) &&
+        !(
+          index === segments.length - 1 &&
+          PUBLIC_ENV_TEMPLATE_NAMES.has(segment)
+        )) ||
+      (index === segments.length - 1 &&
+        (segment.startsWith("credentials.") ||
+          segment.startsWith("secrets.") ||
+          segment.endsWith(".pem") ||
+          segment.endsWith(".key") ||
+          segment.endsWith(".p12") ||
+          segment.endsWith(".pfx") ||
+          /^id_(?:dsa|ecdsa|ed25519|rsa)(?:\..+)?$/u.test(segment) ||
+          /^service-account.*\.json$/u.test(segment))),
   );
 }
 
@@ -720,7 +749,7 @@ async function attachContentDigests(
     async (change): Promise<MutableChange> => {
       if (change.kind === "deleted") return change;
       try {
-        if (isSensitiveAnalysisPath(change.path)) {
+        if (isSensitiveRepositoryPath(change.path)) {
           const pathDigest = sha256(Buffer.from(change.path, "utf8"));
           sensitivePathDigests.push(pathDigest);
           limitations.push(
@@ -1084,6 +1113,9 @@ async function captureRepositorySnapshotDetailed(
       gitBinary,
       cwd: canonicalRoot,
       maxBufferBytes,
+      ...(options.environment === undefined
+        ? {}
+        : { environment: options.environment }),
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     };
 
@@ -1583,3 +1615,5 @@ export const __testing = {
   ) => captureRepositorySnapshotDetailed(root, options, hooks),
   hashStableRepositoryFile,
 };
+
+export { readStableRepositoryFile };

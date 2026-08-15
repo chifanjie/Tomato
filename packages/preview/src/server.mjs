@@ -1,12 +1,15 @@
 import { createServer } from "node:http";
 import { createHash, randomBytes } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { closeSync, constants as fsConstants, existsSync, fstatSync, lstatSync, openSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  getRepositorySnapshotDetailed,
+  isSensitiveRepositoryPath,
   parseWikiIndexV2,
   parseWikiSearchIndexV2,
+  readStableRepositoryFile,
   validateGraph,
 } from "../dist/contracts.mjs";
 
@@ -20,7 +23,6 @@ const DEMO_ROOT = existsSync(path.join(PACKAGE_ROOT, "dist/demo"))
 const MAX_SOURCE_BYTES = 1024 * 1024;
 const MAX_KB_BYTES = 2 * 1024 * 1024;
 const MAX_ARTIFACT_BYTES = 32 * 1024 * 1024;
-const SENSITIVE = /(^|[\\/])(?:\.env(?:\..*)?|\.npmrc|\.netrc|credentials?|secrets?|\.aws|\.ssh|id_rsa|.*\.(?:pem|key|p12|pfx))(?=$|[\\/\.])/iu;
 
 function json(res, status, body) {
   res.statusCode = status;
@@ -39,12 +41,12 @@ function safeRelative(value) {
   try { decoded = decodeURIComponent(value); } catch { return null; }
   const normalized = path.posix.normalize(decoded.replaceAll("\\", "/"));
   if (normalized === "." || normalized === ".." || normalized.startsWith("../") || normalized.startsWith("/")) return null;
-  if (SENSITIVE.test(normalized)) return null;
+  if (isSensitiveRepositoryPath(normalized)) return null;
   return normalized;
 }
 
-function readContainedJson(root, relative, maxBytes = MAX_ARTIFACT_BYTES) {
-  const bytes = readContained(root, relative, maxBytes);
+async function readContainedJson(root, relative, maxBytes = MAX_ARTIFACT_BYTES) {
+  const bytes = await readContained(root, relative, maxBytes);
   if (!bytes) return null;
   try { return JSON.parse(bytes.toString("utf8")); } catch { return null; }
 }
@@ -67,7 +69,9 @@ function optionalArtifactSymlinkIsUnsafe(artifactRoot, relative) {
 }
 
 function sanitizedGitEnvironment() {
-  const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
+  const environment = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.toUpperCase().startsWith("GIT_")),
+  );
   return {
     ...environment,
     GIT_OPTIONAL_LOCKS: "0",
@@ -149,7 +153,34 @@ function knowledgeMarkdownRelative(markdownPath) {
   return safe === relative ? safe : null;
 }
 
-function rootForMode({ root, demo }) {
+function repositoryPathForPolicy(value, projectRoot) {
+  if (typeof value !== "string") return null;
+  if (!path.isAbsolute(value)) return value.replaceAll("\\", "/");
+  const absolute = path.resolve(value);
+  return isInside(projectRoot, absolute)
+    ? path.relative(projectRoot, absolute).split(path.sep).join("/")
+    : value;
+}
+
+function containsSensitiveArtifactPath(values, projectRoot) {
+  return values.some((value) => {
+    const repositoryPath = repositoryPathForPolicy(value, projectRoot);
+    return repositoryPath !== null && isSensitiveRepositoryPath(repositoryPath);
+  });
+}
+
+function assertCleanRootCapture(capture, expectedSnapshotId) {
+  const snapshot = capture?.snapshot;
+  if (snapshot?.captureStatus !== "complete" || snapshot.changes.length !== 0) {
+    throw new Error("not_ready: Preview --root requires a clean Git Index and Worktree snapshot");
+  }
+  if (expectedSnapshotId !== undefined && snapshot.snapshotId !== expectedSnapshotId) {
+    throw new Error("not_ready: repository state changed across the Preview snapshot boundary");
+  }
+  return snapshot;
+}
+
+async function rootForMode({ root, demo }, gitEnvironment) {
   const candidate = demo ? DEMO_ROOT : root;
   if (!candidate) throw new Error("missing root");
   if (!path.isAbsolute(candidate)) throw new Error("root must be absolute");
@@ -163,7 +194,7 @@ function rootForMode({ root, demo }) {
       const gitRoot = realpathSync(execFileSync("git", ["rev-parse", "--show-toplevel"], {
         cwd: resolved,
         encoding: "utf8",
-        env: sanitizedGitEnvironment(),
+        env: gitEnvironment,
       }).trim());
       if (gitRoot !== resolved) throw new Error("root_not_worktree_top_level");
     } catch (error) {
@@ -171,6 +202,18 @@ function rootForMode({ root, demo }) {
         ? "not_ready: --root must be the canonical Git worktree root"
         : "not_ready: --root is not a readable Git worktree");
     }
+  }
+  let repositorySnapshotId = null;
+  let head = null;
+  if (!demo) {
+    const initialCapture = await getRepositorySnapshotDetailed(resolved, { environment: gitEnvironment });
+    if (initialCapture.canonicalRoot !== resolved) {
+      throw new Error("not_ready: --root must be the canonical Git worktree root");
+    }
+    const initialSnapshot = assertCleanRootCapture(initialCapture);
+    repositorySnapshotId = initialSnapshot.snapshotId;
+    head = initialSnapshot.headCommit ?? null;
+    if (head === null) throw new Error("not_ready: cannot verify published graph revision");
   }
   const artifactRoot = path.join(resolved, ".understand-code");
   let canonicalArtifactRoot;
@@ -191,46 +234,42 @@ function rootForMode({ root, demo }) {
       throw new Error("not_ready: published artifacts must not be symbolic links");
     }
   }
-  const rawGraph = readContainedJson(artifactRoot, "knowledge-graph.json");
+  const rawGraph = await readContainedJson(resolved, ".understand-code/knowledge-graph.json");
   const graphResult = validateGraph(rawGraph);
   if (!graphResult.success || graphResult.data === undefined || graphResult.issues.length > 0) {
     throw new Error("not_ready: knowledge-graph.json failed structural validation");
   }
   const graph = graphResult.data;
-  let head = null;
+  if (containsSensitiveArtifactPath(graph.nodes.map((node) => node.filePath), resolved)) {
+    throw new Error("not_ready: knowledge graph contains a sensitive source path");
+  }
   let verifiedMeta;
   if (!demo) {
-    try {
-      head = execFileSync("git", ["rev-parse", "HEAD"], {
-        cwd: resolved,
-        encoding: "utf8",
-        env: sanitizedGitEnvironment(),
-      }).trim();
-    } catch {
-      throw new Error("not_ready: cannot verify published graph revision");
-    }
     if (graph.project.gitCommitHash !== head) {
       throw new Error("not_ready: published graph is stale for the current Git HEAD");
     }
-    const meta = readContainedJson(artifactRoot, "meta.json", MAX_KB_BYTES);
+    const meta = await readContainedJson(resolved, ".understand-code/meta.json", MAX_KB_BYTES);
     if (meta === null || meta.gitCommitHash !== head) {
       throw new Error("not_ready: published metadata is stale for the current Git HEAD");
     }
     verifiedMeta = meta;
   } else {
-    verifiedMeta = readContainedJson(artifactRoot, "meta.json", MAX_KB_BYTES);
+    verifiedMeta = await readContainedJson(resolved, ".understand-code/meta.json", MAX_KB_BYTES);
   }
-  const verifiedConfig = readContainedJson(artifactRoot, "config.json", MAX_KB_BYTES);
+  const verifiedConfig = await readContainedJson(resolved, ".understand-code/config.json", MAX_KB_BYTES);
   const wikiIndexPath = path.join(artifactRoot, "knowledge-base/wiki-index.json");
   const wikiExists = existsSync(wikiIndexPath);
   const searchIndexPath = path.join(artifactRoot, "knowledge-base/search-index.json");
   const searchExists = existsSync(searchIndexPath);
-  const rawWiki = readContainedJson(artifactRoot, "knowledge-base/wiki-index.json", MAX_KB_BYTES);
+  const rawWiki = await readContainedJson(resolved, ".understand-code/knowledge-base/wiki-index.json", MAX_KB_BYTES);
   const wikiResult = rawWiki === null ? null : parseWikiIndexV2(rawWiki);
   const wiki = wikiResult?.ok ? wikiResult.value : null;
   if (wikiExists && wiki === null) throw new Error("not_ready: wiki-index.json failed V2 validation");
   if (!wikiExists && searchExists) throw new Error("not_ready: search-index.json exists without Wiki V2");
   if (wiki !== null) {
+    if (containsSensitiveArtifactPath(wiki.evidence.map((evidence) => evidence.filePath), resolved)) {
+      throw new Error("not_ready: published Wiki contains a sensitive evidence path");
+    }
     if (!wikiReferencesMatch(wiki, graph)) {
       throw new Error("not_ready: published Wiki references do not match the current knowledge graph");
     }
@@ -244,37 +283,39 @@ function rootForMode({ root, demo }) {
     if (normalizedSha256(wiki.source.graphDigest) !== expectedGraphDigest) {
       throw new Error("not_ready: published Wiki does not bind the current knowledge graph");
     }
-    const rawSearch = readContainedJson(artifactRoot, "knowledge-base/search-index.json", MAX_KB_BYTES);
+    const rawSearch = await readContainedJson(resolved, ".understand-code/knowledge-base/search-index.json", MAX_KB_BYTES);
     const searchResult = parseWikiSearchIndexV2(rawSearch);
     if (!searchResult.ok || searchResult.value.generatedAt !== wiki.generatedAt
-      || !searchResult.value.records.every((record) => wiki.pages.some((page) => page.id === record.pageId))
-      || searchResult.value.records.some((record) => record.filePath && SENSITIVE.test(record.filePath))
-      || !searchReferencesMatch(searchResult.value, wiki, graph)) {
+      || !searchResult.value.records.every((record) => wiki.pages.some((page) => page.id === record.pageId))) {
       throw new Error("not_ready: search-index.json failed V2 validation");
     }
     const search = searchResult.value;
-    const kbRoot = path.join(artifactRoot, "knowledge-base");
+    if (containsSensitiveArtifactPath(search.records.map((record) => record.filePath), resolved)) {
+      throw new Error("not_ready: published Search contains a sensitive source path");
+    }
+    if (!searchReferencesMatch(search, wiki, graph)) {
+      throw new Error("not_ready: search-index.json failed V2 validation");
+    }
     const markdownByPath = new Map();
     for (const page of wiki.pages) {
       const relative = knowledgeMarkdownRelative(page.markdownPath);
-      const bytes = relative ? readContained(kbRoot, relative, MAX_KB_BYTES) : null;
+      const bytes = relative
+        ? await readContained(resolved, `.understand-code/knowledge-base/${relative}`, MAX_KB_BYTES)
+        : null;
       if (!relative || !bytes) throw new Error("not_ready: wiki-index.json references a missing or unsafe Markdown page");
       markdownByPath.set(relative, bytes);
     }
-    return {
-      root: resolved,
-      artifactRoot,
-      graph,
-      wiki,
-      search,
-      markdownByPath,
-      meta: verifiedMeta,
-      config: verifiedConfig,
-      head,
-      mode: demo ? "demo" : "root",
-    };
+    if (!demo) assertCleanRootCapture(
+      await getRepositorySnapshotDetailed(resolved, { environment: gitEnvironment }),
+      repositorySnapshotId,
+    );
+    return { root: resolved, artifactRoot, graph, wiki, search, markdownByPath, meta: verifiedMeta, config: verifiedConfig, head, repositorySnapshotId, mode: demo ? "demo" : "root" };
   }
-  return { root: resolved, artifactRoot, graph, wiki: null, search: null, markdownByPath: new Map(), meta: verifiedMeta, config: verifiedConfig, head, mode: demo ? "demo" : "root" };
+  if (!demo) assertCleanRootCapture(
+    await getRepositorySnapshotDetailed(resolved, { environment: gitEnvironment }),
+    repositorySnapshotId,
+  );
+  return { root: resolved, artifactRoot, graph, wiki: null, search: null, markdownByPath: new Map(), meta: verifiedMeta, config: verifiedConfig, head, repositorySnapshotId, mode: demo ? "demo" : "root" };
 }
 
 function sanitizeGraph(graph, projectRoot) {
@@ -317,6 +358,52 @@ function sanitizeArtifactValue(value, projectRoot, key = "") {
   );
 }
 
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function projectedStringArray(value) {
+  return Array.isArray(value) ? value.filter((item) => typeof item === "string") : undefined;
+}
+
+function projectPublicMeta(rawMeta, graph) {
+  if (!isRecord(rawMeta)) return { version: "preview", analyzedFiles: graph.nodes.length };
+  const theme = isRecord(rawMeta.theme)
+    ? {
+        ...(typeof rawMeta.theme.presetId === "string" ? { presetId: rawMeta.theme.presetId } : {}),
+        ...(typeof rawMeta.theme.accentId === "string" ? { accentId: rawMeta.theme.accentId } : {}),
+      }
+    : undefined;
+  return {
+    ...(typeof rawMeta.lastAnalyzedAt === "string" ? { lastAnalyzedAt: rawMeta.lastAnalyzedAt } : {}),
+    ...(typeof rawMeta.gitCommitHash === "string" ? { gitCommitHash: rawMeta.gitCommitHash } : {}),
+    ...(typeof rawMeta.version === "string" ? { version: rawMeta.version } : {}),
+    ...(Number.isSafeInteger(rawMeta.analyzedFiles) && rawMeta.analyzedFiles >= 0 ? { analyzedFiles: rawMeta.analyzedFiles } : {}),
+    ...(theme && Object.keys(theme).length > 0 ? { theme } : {}),
+  };
+}
+
+function projectPublicConfig(rawConfig) {
+  if (!isRecord(rawConfig)) return { autoUpdate: false, outputLanguage: "zh" };
+  const knowledgeBase = isRecord(rawConfig.knowledgeBase) ? rawConfig.knowledgeBase : undefined;
+  const route = isRecord(knowledgeBase?.route) ? knowledgeBase.route : undefined;
+  const projectedRoute = route ? {
+    ...(projectedStringArray(route.pin) ? { pin: projectedStringArray(route.pin) } : {}),
+    ...(projectedStringArray(route.hide) ? { hide: projectedStringArray(route.hide) } : {}),
+    ...(projectedStringArray(route.order) ? { order: projectedStringArray(route.order) } : {}),
+  } : undefined;
+  const projectedKnowledgeBase = knowledgeBase ? {
+    ...(projectedStringArray(knowledgeBase.businessTerms) ? { businessTerms: projectedStringArray(knowledgeBase.businessTerms) } : {}),
+    ...(projectedStringArray(knowledgeBase.entryNodeIds) ? { entryNodeIds: projectedStringArray(knowledgeBase.entryNodeIds) } : {}),
+    ...(projectedRoute && Object.keys(projectedRoute).length > 0 ? { route: projectedRoute } : {}),
+  } : undefined;
+  return {
+    autoUpdate: typeof rawConfig.autoUpdate === "boolean" ? rawConfig.autoUpdate : false,
+    ...(typeof rawConfig.outputLanguage === "string" ? { outputLanguage: rawConfig.outputLanguage } : {}),
+    ...(projectedKnowledgeBase && Object.keys(projectedKnowledgeBase).length > 0 ? { knowledgeBase: projectedKnowledgeBase } : {}),
+  };
+}
+
 function mime(file) {
   const ext = path.extname(file).toLowerCase();
   return ({ ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".ico": "image/x-icon", ".woff": "font/woff", ".woff2": "font/woff2" })[ext] ?? "application/octet-stream";
@@ -334,7 +421,8 @@ function allowedSourcePaths(graph, projectRoot) {
     if (typeof node?.filePath !== "string") return [];
     const candidate = path.isAbsolute(node.filePath) ? path.resolve(node.filePath) : path.resolve(projectRoot, node.filePath);
     if (!isInside(projectRoot, candidate)) return [];
-    return [path.relative(projectRoot, candidate).split(path.sep).join("/")];
+    const relative = path.relative(projectRoot, candidate).split(path.sep).join("/");
+    return safeRelative(relative) === relative ? [relative] : [];
   }));
 }
 
@@ -344,7 +432,7 @@ function allowedKnowledgePaths(wiki) {
     const relative = knowledgeMarkdownRelative(page?.markdownPath);
     if (relative !== null) values.push(relative);
   }
-  return new Set(values.filter((value) => !SENSITIVE.test(value)).map((value) => path.posix.normalize(value)));
+  return new Set(values.filter((value) => !isSensitiveRepositoryPath(value)).map((value) => path.posix.normalize(value)));
 }
 
 function parseRequestUrl(rawUrl) {
@@ -357,47 +445,25 @@ function parseRequestUrl(rawUrl) {
   }
 }
 
-function readContained(root, relative, maxBytes) {
+async function readContained(root, relative, maxBytes) {
   const safe = safeRelative(relative);
-  if (!safe || SENSITIVE.test(safe)) return null;
-  const absolute = path.resolve(root, safe);
-  if (!isInside(root, absolute) || !existsSync(absolute)) return null;
-  const pathParts = path.relative(root, absolute).split(path.sep);
-  let cursor = root;
+  if (!safe) return null;
   try {
-    for (const part of pathParts) {
-      cursor = path.join(cursor, part);
-      if (lstatSync(cursor).isSymbolicLink()) return null;
-    }
+    return await readStableRepositoryFile(root, safe, maxBytes);
   } catch {
     return null;
-  }
-  let real;
-  try { real = realpathSync(absolute); } catch { return null; }
-  if (!isInside(root, real)) return null;
-  let descriptor;
-  try {
-    descriptor = openSync(real, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
-    const stat = fstatSync(descriptor);
-    if (!stat.isFile() || stat.size > maxBytes) return null;
-    const bytes = readFileSync(descriptor);
-    return bytes.byteLength <= maxBytes ? bytes : null;
-  } catch {
-    return null;
-  } finally {
-    if (descriptor !== undefined) closeSync(descriptor);
   }
 }
 
-function readCommittedSource(root, revision, relative, maxBytes) {
+function readCommittedSource(root, revision, relative, maxBytes, gitEnvironment) {
   const safe = safeRelative(relative);
-  if (!safe || SENSITIVE.test(safe)) return null;
+  if (!safe) return null;
   let bytes;
   try {
     bytes = execFileSync("git", ["show", `${revision}:${safe}`], {
       cwd: root,
       maxBuffer: maxBytes + 1,
-      env: sanitizedGitEnvironment(),
+      env: gitEnvironment,
     });
   } catch {
     return null;
@@ -405,27 +471,31 @@ function readCommittedSource(root, revision, relative, maxBytes) {
   return bytes.byteLength <= maxBytes ? bytes : null;
 }
 
-function createRequestHandler(state, token) {
+function createRequestHandler(state, token, gitEnvironment) {
   const publicGraph = sanitizeArtifactValue(sanitizeGraph(state.graph, state.root), state.root);
   const publicWiki = state.wiki === null ? null : sanitizeArtifactValue(state.wiki, state.root);
   const publicSearch = state.search === null ? null : sanitizeArtifactValue(state.search, state.root);
-  const rawMeta = state.meta;
-  const publicMeta = sanitizeArtifactValue(rawMeta && typeof rawMeta === "object" && !Array.isArray(rawMeta)
-    ? Object.fromEntries(Object.entries(rawMeta).filter(([key]) => !["canonicalRoot", "root", "sourceRootIdentity"].includes(key)))
-    : { version: "preview", analyzedFiles: state.graph.nodes.length }, state.root);
-  const rawConfig = state.config;
-  const publicConfig = sanitizeArtifactValue(rawConfig && typeof rawConfig === "object" && !Array.isArray(rawConfig)
-    ? Object.fromEntries(Object.entries(rawConfig).filter(([key]) => !["canonicalRoot", "root", "sourceRootIdentity"].includes(key)))
-    : { autoUpdate: false, outputLanguage: "zh" }, state.root);
+  const publicMeta = sanitizeArtifactValue(projectPublicMeta(state.meta, state.graph), state.root);
+  const publicConfig = sanitizeArtifactValue(projectPublicConfig(state.config), state.root);
   const sourceAllow = allowedSourcePaths(state.graph, state.root);
   const kbAllow = allowedKnowledgePaths(state.wiki);
-  return (req, res) => {
+  return async (req, res) => {
     securityHeaders(res);
     const url = parseRequestUrl(req.url ?? "/");
     if (url === null) { json(res, 400, { error: "bad_request" }); return; }
     const dataEndpoint = url.pathname === "/knowledge-graph.json" || url.pathname === "/domain-graph.json" || url.pathname === "/diff-overlay.json" || url.pathname === "/meta.json" || url.pathname === "/config.json" || url.pathname === "/file-content.json" || url.pathname.startsWith("/knowledge-base/");
     if (dataEndpoint && req.method !== "GET") { res.setHeader("Allow", "GET"); json(res, 405, { error: "method_not_allowed" }); return; }
     if (dataEndpoint && url.searchParams.get("token") !== token) { json(res, 403, { error: "forbidden" }); return; }
+    if (dataEndpoint && state.mode === "root") {
+      const currentCapture = await getRepositorySnapshotDetailed(state.root, { environment: gitEnvironment });
+      const currentSnapshot = currentCapture.snapshot;
+      if (currentCapture.canonicalRoot !== state.root
+        || currentSnapshot.captureStatus !== "complete"
+        || currentSnapshot.changes.length !== 0
+        || currentSnapshot.snapshotId !== state.repositorySnapshotId) {
+        json(res, 409, { error: "repository_state_changed" }); return;
+      }
+    }
 
     if (url.pathname === "/knowledge-graph.json") { json(res, 200, publicGraph); return; }
     if (url.pathname === "/meta.json") { json(res, 200, publicMeta); return; }
@@ -433,14 +503,15 @@ function createRequestHandler(state, token) {
     if (["/domain-graph.json", "/diff-overlay.json"].includes(url.pathname)) { json(res, 404, { error: "artifact_not_available_in_preview" }); return; }
     if (url.pathname === "/file-content.json") {
       const requested = url.searchParams.get("path");
-      if (!requested || !sourceAllow.has(path.posix.normalize(requested.replaceAll("\\", "/")))) { json(res, 404, { error: "file_not_available" }); return; }
+      const safeRequested = requested ? safeRelative(requested) : null;
+      if (!safeRequested || !sourceAllow.has(safeRequested)) { json(res, 404, { error: "file_not_available" }); return; }
       const bytes = state.mode === "root"
-        ? readCommittedSource(state.root, state.head, requested, MAX_SOURCE_BYTES)
-        : readContained(state.root, requested, MAX_SOURCE_BYTES);
+        ? readCommittedSource(state.root, state.head, safeRequested, MAX_SOURCE_BYTES, gitEnvironment)
+        : await readContained(state.root, safeRequested, MAX_SOURCE_BYTES);
       if (!bytes || bytes.includes(0)) { json(res, 404, { error: "file_not_available" }); return; }
       const rawContent = bytes.toString("utf8");
       const content = redactRootText(rawContent, state.root);
-      json(res, 200, { path: requested, content, sizeBytes: bytes.byteLength, lineCount: content ? content.split(/\r\n|\n|\r/).length : 0 }); return;
+      json(res, 200, { path: safeRequested, content, sizeBytes: bytes.byteLength, lineCount: content ? content.split(/\r\n|\n|\r/).length : 0 }); return;
     }
     if (url.pathname.startsWith("/knowledge-base/")) {
       const relative = safeRelative(url.pathname.slice("/knowledge-base/".length));
@@ -469,9 +540,16 @@ function createRequestHandler(state, token) {
 }
 
 export async function startPreview({ root = null, demo = false, port = 0 }) {
-  const state = rootForMode({ root, demo });
+  const gitEnvironment = sanitizedGitEnvironment();
+  const state = await rootForMode({ root, demo }, gitEnvironment);
   const token = randomBytes(16).toString("hex");
-  const server = createServer(createRequestHandler(state, token));
+  const handler = createRequestHandler(state, token, gitEnvironment);
+  const server = createServer((req, res) => {
+    void handler(req, res).catch(() => {
+      if (!res.headersSent) json(res, 500, { error: "preview_request_failed" });
+      else res.destroy();
+    });
+  });
   await new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, "127.0.0.1", resolve); });
   const address = server.address();
   const actualPort = typeof address === "object" && address ? address.port : port;

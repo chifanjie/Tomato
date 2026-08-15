@@ -11,6 +11,76 @@ const workspaceRoot = path.resolve(packageRoot, "../..");
 const dashboardRoot = path.resolve(packageRoot, "../dashboard");
 const distRoot = path.join(packageRoot, "dist");
 
+const SCRIPT_ELEMENT_PATTERN = /<script\b(?<attributes>[^>]*)>(?<body>[\s\S]*?)<\/script>/giu;
+const SCRIPT_SOURCE_ATTRIBUTE_PATTERN = /(?:^|\s)src\s*=\s*(["'])(?<source>[^"']+)\1/giu;
+const EXPECTED_FIRST_PAINT_THEME_BOOTSTRAP_SHA256 = "bb1806d60772d743f0dc88538ee45b10fe829a951db7a24b7131c1acdceb4e0d";
+
+function scriptSourceAttributes(attributes) {
+  return [...attributes.matchAll(SCRIPT_SOURCE_ATTRIBUTE_PATTERN)].map((match) => match.groups?.source);
+}
+
+function externalizeFirstPaintThemeBootstrap(index) {
+  const scripts = [...index.matchAll(SCRIPT_ELEMENT_PATTERN)];
+  const openingScriptCount = index.match(/<script\b/giu)?.length ?? 0;
+  const closingScriptCount = index.match(/<\/script>/giu)?.length ?? 0;
+  if (scripts.length !== openingScriptCount || scripts.length !== closingScriptCount) {
+    throw new Error("Preview dashboard contains a malformed script element");
+  }
+  const inlineScripts = scripts.filter((match) => scriptSourceAttributes(match.groups?.attributes ?? "").length === 0);
+  if (inlineScripts.length !== 1) {
+    throw new Error(`Preview dashboard must contain exactly one inline first-paint bootstrap; found ${inlineScripts.length}`);
+  }
+  const [inline] = inlineScripts;
+  const attributes = inline.groups?.attributes.trim() ?? "";
+  const body = inline.groups?.body ?? "";
+  if (attributes !== "" || !body.includes('localStorage.getItem("uc-theme")') || !body.includes("dataset.themePreset")) {
+    throw new Error("Preview dashboard inline script is not the expected first-paint theme bootstrap");
+  }
+  const source = `${body.trim()}\n`;
+  const digest = createHash("sha256").update(source).digest("hex");
+  if (digest !== EXPECTED_FIRST_PAINT_THEME_BOOTSTRAP_SHA256) {
+    throw new Error("Preview dashboard first-paint theme bootstrap differs from its reviewed source contract");
+  }
+  const fileName = `theme-bootstrap-${digest}.js`;
+  const replacement = `<script src="/assets/${fileName}"></script>`;
+  const start = inline.index;
+  if (start === undefined) throw new Error("Preview dashboard bootstrap has no source position");
+  return {
+    index: `${index.slice(0, start)}${replacement}${index.slice(start + inline[0].length)}`,
+    fileName,
+    source,
+  };
+}
+
+function assertExternalScriptOnly(index, expectedBootstrapFileName) {
+  if (/\son[a-z]+\s*=/iu.test(index) || /\b(?:href|src)\s*=\s*(["'])javascript:/iu.test(index)) {
+    throw new Error("Preview dashboard contains an inline event handler or JavaScript URL");
+  }
+  const scripts = [...index.matchAll(SCRIPT_ELEMENT_PATTERN)];
+  const openingScriptCount = index.match(/<script\b/giu)?.length ?? 0;
+  const closingScriptCount = index.match(/<\/script>/giu)?.length ?? 0;
+  if (scripts.length === 0 || scripts.length !== openingScriptCount || scripts.length !== closingScriptCount) {
+    throw new Error("Preview dashboard script elements failed post-build validation");
+  }
+  const sources = scripts.map((match) => {
+    if ((match.groups?.body ?? "").trim() !== "") {
+      throw new Error("Preview dashboard contains inline script after bootstrap extraction");
+    }
+    const attributes = match.groups?.attributes ?? "";
+    const sourceMatches = scriptSourceAttributes(attributes);
+    if (/\bon[a-z]+\s*=/iu.test(attributes)
+      || sourceMatches.length !== 1
+      || !/^\/assets\/[A-Za-z0-9_.-]+\.js$/u.test(sourceMatches[0] ?? "")) {
+      throw new Error("Preview dashboard scripts must use same-origin /assets sources");
+    }
+    return sourceMatches[0];
+  });
+  const expectedSource = `/assets/${expectedBootstrapFileName}`;
+  if (sources.filter((source) => source === expectedSource).length !== 1) {
+    throw new Error("Preview dashboard does not reference exactly one extracted theme bootstrap");
+  }
+}
+
 async function run(command, args, cwd = workspaceRoot) {
   await exec(command, args, { cwd, env: { ...process.env, CI: "true" }, maxBuffer: 32 * 1024 * 1024 });
 }
@@ -131,11 +201,20 @@ async function main() {
   await writeFile(path.join(distRoot, "demo/src/app.ts"), "// Graph/Wiki/Evidence knowledge layer\nexport function main() { return 'ready'; }\n");
   await writeFile(path.join(distRoot, "README.md"), await readFile(path.join(packageRoot, "README.md")));
   const indexPath = path.join(distRoot, "dashboard/index.html");
-  const index = (await readFile(indexPath, "utf8"))
+  const sanitizedIndex = (await readFile(indexPath, "utf8"))
     .replace(/\s*<link rel="preconnect"[^>]*>/gu, "")
     .replace(/\s*<link\s+href="https:\/\/fonts\.googleapis\.com[^>]*>/gu, "")
     .replace(/\s*<link\s+href="https:\/\/fonts\.gstatic\.com[^>]*>/gu, "");
-  await writeFile(indexPath, index);
+  const bootstrap = externalizeFirstPaintThemeBootstrap(sanitizedIndex);
+  const bootstrapPath = path.join(distRoot, "dashboard/assets", bootstrap.fileName);
+  await writeFile(bootstrapPath, bootstrap.source);
+  await writeFile(indexPath, bootstrap.index);
+  const packedIndex = await readFile(indexPath, "utf8");
+  const packedBootstrap = await readFile(bootstrapPath, "utf8");
+  if (createHash("sha256").update(packedBootstrap).digest("hex") !== bootstrap.fileName.slice("theme-bootstrap-".length, -".js".length)) {
+    throw new Error("Preview dashboard theme bootstrap content hash does not match its file name");
+  }
+  assertExternalScriptOnly(packedIndex, bootstrap.fileName);
   process.stdout.write(`built ${distRoot}\n`);
 }
 

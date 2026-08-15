@@ -60,8 +60,13 @@ const proof = ProviderRegistryEvidenceBindingTopologyProofV1Schema.parse(
 const generatedSchemas = generateProviderContractJsonSchemasV1();
 const parserRuntimeTraceTestTimeoutMilliseconds =
   PARSER_RUNTIME_WORKER_TIMEOUT_MS_V1 * 2 + 30_000;
-const standaloneGeneratorDeadlineMilliseconds = 60_000;
-const standaloneGeneratorCleanupFallbackMilliseconds = 70_000;
+// The standalone check runs two parser-runtime workers in sequence. Reuse their
+// aggregate authoritative budget, including bounded process-startup headroom,
+// so the outer process cannot preempt the second worker on slower CI runners.
+const standaloneGeneratorDeadlineMilliseconds =
+  parserRuntimeTraceTestTimeoutMilliseconds;
+const standaloneGeneratorCleanupFallbackMilliseconds =
+  standaloneGeneratorDeadlineMilliseconds + 10_000;
 const standaloneGeneratorTestTimeoutMilliseconds =
   standaloneGeneratorCleanupFallbackMilliseconds + 5_000;
 const standaloneGeneratorOutputByteLimit = 1024 * 1024;

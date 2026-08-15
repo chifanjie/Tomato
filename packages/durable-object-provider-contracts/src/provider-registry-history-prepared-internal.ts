@@ -1,5 +1,6 @@
 /**
- * Side-effect bridge for the C09-1L prepared Registry path.
+ * Side-effect bridge for the C09-1L prepared Registry path and its D42
+ * retained direct-successor continuation.
  *
  * Loading the ordinary Registry module installs its private prepared callback
  * (and, through its Root dependency, the private Root callback) into the
@@ -10,15 +11,34 @@
 import "./provider-registry-manifest-history.js";
 
 export {
+  diagnoseProviderRegistryPreparedDirectSuccessorInternalV1,
   diagnoseProviderRegistryProspectiveEntryTemporaryAdmissionInternalV1,
   mintProviderRegistryProspectiveEntryTemporaryAdmissionCapabilityInternalV1,
 } from "./provider-registry-manifest-history.js";
 export type {
+  ProviderRegistryPreparedDirectSuccessorDiagnosticResultInternalV1,
+  ProviderRegistryPreparedDirectSuccessorInputInternalV1,
+  ProviderRegistryPreparedDirectSuccessorValidationInternalV1,
   ProviderRegistryProspectiveEntryTemporaryAdmissionCapabilityInternalV1,
   ProviderRegistryProspectiveEntryTemporaryAdmissionDiagnosticResultInternalV1,
   ProviderRegistryProspectiveEntryTemporaryAdmissionInputInternalV1,
   ProviderRegistryProspectiveEntryTemporaryAdmissionValidationInternalV1,
 } from "./provider-registry-manifest-history.js";
+
+export {
+  bindProviderRegistryPreparedSuccessorCohortToFinalCandidateInternalV1,
+  bindProviderRegistryPreparedSuccessorSeedToCohortInternalV1,
+  discardProviderRegistryPreparedSuccessorCohortInternalV1,
+  discardProviderRegistryPreparedSuccessorFinalInternalV1,
+  discardProviderRegistryPreparedSuccessorSeedInternalV1,
+  takeProviderRegistryPreparedSuccessorFinalCandidateInternalV1,
+} from "./provider-registry-history-prepared-successor-handle-internal.js";
+export type {
+  ProviderRegistryPreparedSuccessorCohortCapabilityInternalV1,
+  ProviderRegistryPreparedSuccessorFinalCapabilityInternalV1,
+  ProviderRegistryPreparedSuccessorRetainedPayloadInternalV1,
+  ProviderRegistryPreparedSuccessorSeedInternalV1,
+} from "./provider-registry-history-prepared-successor-handle-internal.js";
 
 export {
   assertProviderRegistryPreparedCopyLedgerZeroInternalV1,

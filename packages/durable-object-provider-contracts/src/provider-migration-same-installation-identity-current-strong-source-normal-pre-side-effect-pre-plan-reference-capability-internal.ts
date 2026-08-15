@@ -68,6 +68,19 @@ import {
   type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPostQuotaContinuityInternalV1,
 } from "./provider-migration-same-installation-identity-current-strong-source-normal-history-quota-reference-machine-internal.js";
 import {
+  bindProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorContinuationToFinalCandidateInternalV1,
+  discardProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorContinuationIntentInternalV1,
+  takeProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorContinuationIntentInternalV1,
+  type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorContinuationIntentInternalV1,
+} from "./provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-continuation-internal.js";
+import {
+  bindProviderRegistryPreparedSuccessorSeedToCohortInternalV1,
+  discardProviderRegistryPreparedSuccessorCohortInternalV1,
+  discardProviderRegistryPreparedSuccessorSeedInternalV1,
+  type ProviderRegistryPreparedSuccessorCohortCapabilityInternalV1,
+  type ProviderRegistryPreparedSuccessorSeedInternalV1,
+} from "./provider-registry-history-prepared-internal.js";
+import {
   deepFreezeProviderPointDetachedDataTreeV1,
 } from "./provider-point-raw-admission-internal.js";
 import {
@@ -321,6 +334,8 @@ interface PrePlanCapabilityContextInternalV1 {
   readonly preAuditSnapshot: ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalSideEffectAuditSnapshotInternalV1;
   readonly sourceMachineCapability: ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalSourceReferenceMachineCapabilityInternalV1;
   readonly quotaMachineCapability: ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryQuotaReferenceMachineCapabilityInternalV1;
+  readonly preparedRegistrySuccessorCohortCapability:
+    ProviderRegistryPreparedSuccessorCohortCapabilityInternalV1;
 }
 
 interface ClaimedBuildInputInternalV1 {
@@ -450,13 +465,19 @@ function takeReadyBuildInputV1(input: unknown): ClaimedBuildInputInternalV1 {
 function takeReadyBuildInputAndPrePlanContextV1(input: unknown): Readonly<{
   claimed: ClaimedBuildInputInternalV1;
   context: PrePlanCapabilityContextInternalV1;
+  continuationIntent:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorContinuationIntentInternalV1 | undefined;
 }> {
   const claimed = takeReadyBuildInputV1(input);
   // The registered public input and its capability context are consumed as
   // one synchronous claim.  No await, reflection, schema traversal, or host
   // callback occurs between these two WeakMap deletes.
   const context = takePrePlanContextV1(claimed.capability);
-  return CapturedObjectFreezeV1({ claimed, context });
+  const continuationIntent =
+    takeProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorContinuationIntentInternalV1(
+      claimed.capability,
+    );
+  return CapturedObjectFreezeV1({ claimed, context, continuationIntent });
 }
 
 function parseEndpointObservationV1(
@@ -760,6 +781,12 @@ async function mintPrePlanReferenceCapabilityPreparedInternalV1(
   let preAuditSnapshot:
     | ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalSideEffectAuditSnapshotInternalV1
     | undefined;
+  let preparedRegistrySuccessorSeed:
+    ProviderRegistryPreparedSuccessorSeedInternalV1 | undefined;
+  let preparedRegistrySuccessorCohortIdentity: object | undefined;
+  let preparedRegistrySuccessorCohortCapability:
+    ProviderRegistryPreparedSuccessorCohortCapabilityInternalV1 | undefined;
+  let preparedRegistrySuccessorCohortTransferred = false;
   try {
     const fields = readKnownOwnDataFieldsV1(input, MINT_INPUT_KEYS_V1);
     if (fields === undefined) {
@@ -778,9 +805,13 @@ async function mintPrePlanReferenceCapabilityPreparedInternalV1(
     const capturedObserveSideEffectSinks =
       observerFields.observeSideEffectSinks as () => unknown;
     observeSideEffectSinks = capturedObserveSideEffectSinks;
-    preAuditSnapshot = parseAuditSnapshotV1(
-      capturedObserveSideEffectSinks(),
-    );
+    try {
+      preAuditSnapshot = parseAuditSnapshotV1(
+        capturedObserveSideEffectSinks(),
+      );
+    } catch {
+      return failV1("side_effect_boundary", "side_effect_detected");
+    }
 
     // Request and nested budgets are projected only after the audit interval
     // has opened.  Projection reads fixed own-data descriptors and validates a
@@ -797,6 +828,8 @@ async function mintPrePlanReferenceCapabilityPreparedInternalV1(
           sourceStreamHost: fields.sourceStreamHost,
         },
       );
+    preparedRegistrySuccessorSeed =
+      preparedEndpoint.preparedRegistrySuccessorSeed;
     const liveDigest = ContentDigestV1Schema.safeParse(
       fields.verifiedLiveReferenceSchemaDigest,
     );
@@ -808,6 +841,13 @@ async function mintPrePlanReferenceCapabilityPreparedInternalV1(
     }
     const projection = preparedEndpoint.verifiedEndpointProjection;
     const cohortIdentity = CapturedObjectFreezeV1(CapturedObjectCreateV1(null));
+    preparedRegistrySuccessorCohortIdentity = cohortIdentity;
+    preparedRegistrySuccessorCohortCapability =
+      bindProviderRegistryPreparedSuccessorSeedToCohortInternalV1(
+        preparedRegistrySuccessorSeed,
+        cohortIdentity,
+      );
+    preparedRegistrySuccessorSeed = undefined;
     const sourceMachineCapability =
       mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalSourceReferenceMachineInternalV1(
         {
@@ -861,11 +901,36 @@ async function mintPrePlanReferenceCapabilityPreparedInternalV1(
         preAuditSnapshot,
         sourceMachineCapability,
         quotaMachineCapability,
+        preparedRegistrySuccessorCohortCapability,
       }),
     );
     weakMapSetV1(readyBuildInputsInternalV1, buildInput, claimedBuildInput);
+    preparedRegistrySuccessorCohortTransferred = true;
     return ready;
   } catch (error) {
+    if (preparedRegistrySuccessorSeed !== undefined) {
+      try {
+        discardProviderRegistryPreparedSuccessorSeedInternalV1(
+          preparedRegistrySuccessorSeed,
+        );
+      } catch {
+        // The opaque diagnostic below remains intentionally non-specific.
+      }
+    }
+    if (
+      !preparedRegistrySuccessorCohortTransferred &&
+      preparedRegistrySuccessorCohortIdentity !== undefined &&
+      preparedRegistrySuccessorCohortCapability !== undefined
+    ) {
+      try {
+        discardProviderRegistryPreparedSuccessorCohortInternalV1(
+          preparedRegistrySuccessorCohortIdentity,
+          preparedRegistrySuccessorCohortCapability,
+        );
+      } catch {
+        // The opaque diagnostic below remains intentionally non-specific.
+      }
+    }
     if (observeSideEffectSinks !== undefined && preAuditSnapshot !== undefined) {
       try {
         const post = parseAuditSnapshotV1(observeSideEffectSinks());
@@ -1323,8 +1388,11 @@ async function diagnoseBuildPreparedV1(
 ): Promise<ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateDiagnosticResultInternalV1> {
   let claimed: ClaimedBuildInputInternalV1;
   let context: PrePlanCapabilityContextInternalV1;
+  let continuationIntent:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorContinuationIntentInternalV1 | undefined;
   try {
-    ({ claimed, context } = takeReadyBuildInputAndPrePlanContextV1(input));
+    ({ claimed, context, continuationIntent } =
+      takeReadyBuildInputAndPrePlanContextV1(input));
   } catch (error) {
     const diagnostic = mapOperationErrorV1(error);
     return failureResultV1(diagnostic.stage, diagnostic.reason);
@@ -1374,6 +1442,45 @@ async function diagnoseBuildPreparedV1(
         "side_effect_boundary",
         "side_effect_detected",
       );
+    }
+    try {
+      if (result?.ok === true && continuationIntent !== undefined) {
+        bindProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorContinuationToFinalCandidateInternalV1(
+          continuationIntent,
+          context.cohortIdentity,
+          context.preparedRegistrySuccessorCohortCapability,
+          result.value,
+        );
+      } else {
+        discardProviderRegistryPreparedSuccessorCohortInternalV1(
+          context.cohortIdentity,
+          context.preparedRegistrySuccessorCohortCapability,
+        );
+        if (continuationIntent !== undefined) {
+          discardProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorContinuationIntentInternalV1(
+            continuationIntent,
+          );
+        }
+      }
+    } catch {
+      try {
+        discardProviderRegistryPreparedSuccessorCohortInternalV1(
+          context.cohortIdentity,
+          context.preparedRegistrySuccessorCohortCapability,
+        );
+      } catch {
+        // The diagnostic below remains intentionally opaque.
+      }
+      if (continuationIntent !== undefined) {
+        try {
+          discardProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorContinuationIntentInternalV1(
+            continuationIntent,
+          );
+        } catch {
+          // The diagnostic below remains intentionally opaque.
+        }
+      }
+      result = failureResultV1("plan_candidate", "candidate_invalid");
     }
   }
   return result ?? failureResultV1("plan_candidate", "candidate_invalid");

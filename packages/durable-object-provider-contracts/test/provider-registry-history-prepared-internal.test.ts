@@ -9,16 +9,28 @@ import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import type { ProviderBootstrapTrustBundleV1 } from "../src/bootstrap-trust-bundle.js";
+import { canonicalizeJcsSafeIntegerUtf8V1 } from "../src/jcs.js";
+import type { ProviderMigrationIdV1 } from "../src/primitives.js";
 import {
+  createProviderRegistryPreparedDirectSuccessorExpectedMembersInternalV1,
+  isProviderRegistryPreparedDirectSuccessorEnvelopeWithinByteLimitsInternalV1,
+  isProviderRegistryPreparedDirectSuccessorGenerationWithinLimitInternalV1,
+  validateProviderRegistryPreparedDirectSuccessorMemberTransitionsInternalV1,
   validateProviderRegistryManifestHistoryV1,
   type ProviderRegistryManifestHistoryValidationV1,
   type ValidateProviderRegistryManifestHistoryV1Input,
 } from "../src/provider-registry-manifest-history.js";
 import {
+  bindProviderRegistryPreparedSuccessorCohortToFinalCandidateInternalV1,
+  bindProviderRegistryPreparedSuccessorSeedToCohortInternalV1,
   createPreparedRegistryHistorySnapshotInternalV1,
+  diagnoseProviderRegistryPreparedDirectSuccessorInternalV1,
   diagnoseProviderRegistryProspectiveEntryTemporaryAdmissionInternalV1,
   diagnoseProviderRegistryManifestHistoryPreparedInternalV1,
   discardPreparedRegistryHistoryInputInternalV1,
+  discardProviderRegistryPreparedSuccessorCohortInternalV1,
+  discardProviderRegistryPreparedSuccessorFinalInternalV1,
+  discardProviderRegistryPreparedSuccessorSeedInternalV1,
   discardRegistryHistoryVerifiedWitnessInternalV1,
   mintProviderRegistryProspectiveEntryTemporaryAdmissionCapabilityInternalV1,
   registerPreparedRegistryHistoryInputInternalV1,
@@ -27,18 +39,23 @@ import {
   type RegistryTrustWitnessHandleV1,
 } from "../src/provider-registry-history-prepared-internal.js";
 import {
+  ProviderRegistryManifestEnvelopeV1Schema,
   StoreDurableObjectProviderBindingDerivationGenerationV1Schema,
   StoreDurableObjectProviderRegistryEntryV1Schema,
   StoreDurableObjectProviderRuntimeAttestationV1Schema,
   StoreDurableObjectProviderVerificationPublicKeyV1Schema,
+  createProviderRegistryManifestSignatureMessageV1,
   createStoreDurableObjectProviderBindingDerivationGenerationSignatureMessageV1,
   createStoreDurableObjectProviderRegistryEntrySignatureMessageV1,
   createStoreDurableObjectProviderRuntimeAttestationSignatureMessageV1,
   createStoreDurableObjectProviderVerificationPublicKeySignatureMessageV1,
+  deriveProviderRegistryManifestContentDigestV1,
+  deriveProviderRegistryManifestGenerationIdV1,
   deriveStoreDurableObjectProviderRegistryEntryContentDigestV1,
   deriveStoreDurableObjectProviderRuntimeAttestationContentDigestV1,
   deriveStoreProviderVerificationKeyIdV1,
   type ProviderRegistryManifestEnvelopeV1,
+  type ProviderRegistryManifestV1,
   type StoreDurableObjectProviderRegistryEntryV1,
 } from "../src/provider-registry-records.js";
 import type { ProviderRegistryRootMetadataEnvelopeV1 } from "../src/provider-registry-trust.js";
@@ -396,8 +413,10 @@ function expectPreparedFailure(
   expect(result).toEqual({ ok: false, stage, reason });
 }
 
-async function temporaryAdmissionCapabilityV1() {
-  const prepared = createPreparedInvocation();
+async function temporaryAdmissionCapabilityV1(
+  mutate?: (draft: DetachedRegistryPreparedFieldsV1) => void,
+) {
+  const prepared = createPreparedInvocation(mutate);
   const registryResult =
     await diagnoseProviderRegistryManifestHistoryPreparedInternalV1(
       prepared.requestIdentity,
@@ -420,6 +439,172 @@ async function temporaryAdmissionCapabilityV1() {
   return {
     closure: registryResult.value.closure,
     temporaryCapability,
+  };
+}
+
+const freshFormalMigrationIdV1 =
+  `provider-migration:${"a".repeat(22)}` as ProviderMigrationIdV1;
+const retainedFormalMigrationIdV1 =
+  "provider-migration:f43247b5ad7b40b0ea13c3" as ProviderMigrationIdV1;
+
+function manifestSignatureForCurrentRootV1(message: Uint8Array): string {
+  const currentRoot = fixture.rootMetadataHistory.at(-1)!.payload.activeRoot;
+  return `provider-registry-manifest-ed25519:${currentRoot.rootKeyId}:${sign(
+    null,
+    Buffer.from(message),
+    currentRootPrivateKey,
+  ).toString("hex")}`;
+}
+
+interface PreparedSuccessorEnvelopeOptionsV1 {
+  readonly envelopeMigrationId?: ProviderMigrationIdV1;
+  readonly omitDestinationMember?: boolean;
+  readonly predecessorGenerationId?: ProviderRegistryManifestEnvelopeV1["generationId"];
+  readonly routingDestinationProviderId?: StoreDurableObjectProviderRegistryEntryV1["providerId"];
+  readonly signatureMode?: "valid" | "bitflip" | "wrong_root";
+}
+
+function preparedSuccessorEnvelopeV1(
+  destinationEntry: StoreDurableObjectProviderRegistryEntryV1,
+  formalMigrationId: ProviderMigrationIdV1,
+  options: PreparedSuccessorEnvelopeOptionsV1 = {},
+): ProviderRegistryManifestEnvelopeV1 {
+  const currentEnvelope = fixture.registryManifestHistory.at(-1)!;
+  const current = currentEnvelope.payload;
+  const source = current.members.find(
+    (member) => member.disposition === "enabled",
+  );
+  if (source === undefined || source.disposition !== "enabled") {
+    throw new Error("fixture tip must have one enabled source");
+  }
+  const destinationMember = {
+    providerId: destinationEntry.providerId,
+    disposition: "enabled" as const,
+    registryEntryContentDigest:
+      deriveStoreDurableObjectProviderRegistryEntryContentDigestV1(
+        destinationEntry,
+      ),
+    registryEntry: destinationEntry,
+  };
+  const members = structuredClone(current.members);
+  if (options.omitDestinationMember !== true) {
+    members.push(structuredClone(destinationMember));
+    members.sort((left, right) =>
+      Buffer.compare(
+        Buffer.from(left.providerId, "utf8"),
+        Buffer.from(right.providerId, "utf8"),
+      ),
+    );
+  }
+  const predecessor = {
+    state: "manifest" as const,
+    generationId:
+      options.predecessorGenerationId ?? currentEnvelope.generationId,
+    contentDigest: currentEnvelope.contentDigest,
+  };
+  const routing = {
+    state: "migration" as const,
+    migrationId: options.envelopeMigrationId ?? formalMigrationId,
+    sourceProviderId: source.providerId,
+    destinationProviderId:
+      options.routingDestinationProviderId ?? destinationEntry.providerId,
+    activeForMigrationWrites: source.providerId,
+    phase: "prepared" as const,
+  };
+  const generationId = deriveProviderRegistryManifestGenerationIdV1({
+    installationIdentityGenerationId:
+      current.installationIdentityGenerationId,
+    activeRootMetadata: current.activeRootMetadata,
+    manifestGeneration: current.manifestGeneration + 1,
+    predecessor,
+    members,
+    routing,
+  });
+  const unsigned = {
+    profile: "provider_registry_manifest_v1" as const,
+    generationId,
+    installationIdentityGenerationId:
+      current.installationIdentityGenerationId,
+    activeRootMetadata: current.activeRootMetadata,
+    manifestGeneration: current.manifestGeneration + 1,
+    predecessor,
+    members,
+    routing,
+    issuedAt: current.issuedAt,
+  };
+  let manifestSignature = manifestSignatureForCurrentRootV1(
+    createProviderRegistryManifestSignatureMessageV1(
+      unsigned,
+      fixture.rootMetadataHistory.at(-1)!.rootKeyId,
+    ),
+  );
+  if (options.signatureMode === "bitflip") {
+    manifestSignature = `${manifestSignature.slice(0, -1)}${
+      manifestSignature.endsWith("0") ? "1" : "0"
+    }`;
+  } else if (options.signatureMode === "wrong_root") {
+    manifestSignature = manifestSignature.replace(
+      fixture.rootMetadataHistory.at(-1)!.rootKeyId,
+      fixture.rootMetadataHistory[0]!.rootKeyId,
+    );
+  }
+  const payload = {
+    ...unsigned,
+    manifestSignature,
+  } as ProviderRegistryManifestV1;
+  return recursivelyFreeze(
+    ProviderRegistryManifestEnvelopeV1Schema.parse({
+      schemaVersion: 1,
+      recordType: "provider_registry_manifest",
+      generationId,
+      contentDigest: deriveProviderRegistryManifestContentDigestV1(payload),
+      payload,
+    }),
+  );
+}
+
+async function finalBoundPreparedSuccessorV1(
+  destinationEntry = prospectiveEntryV1(),
+  mutate?: (draft: DetachedRegistryPreparedFieldsV1) => void,
+) {
+  const prepared = await temporaryAdmissionCapabilityV1(mutate);
+  const admission =
+    await diagnoseProviderRegistryProspectiveEntryTemporaryAdmissionInternalV1(
+      prepared.temporaryCapability,
+      {
+        prospectiveRegistryEntryContentDigest:
+          deriveStoreDurableObjectProviderRegistryEntryContentDigestV1(
+            destinationEntry,
+          ),
+        prospectiveRegistryEntry: destinationEntry,
+      },
+    );
+  if (!admission.ok) {
+    throw new Error("prospective destination must be temporarily admitted");
+  }
+  const cohortIdentity = recursivelyFreeze({
+    profile: "prepared_registry_successor_test_cohort_v1",
+  });
+  const cohortCapability =
+    bindProviderRegistryPreparedSuccessorSeedToCohortInternalV1(
+      admission.value.preparedRegistrySuccessorSeed,
+      cohortIdentity,
+    );
+  const finalCandidateIdentity = recursivelyFreeze({
+    profile: "prepared_registry_successor_test_final_candidate_v1",
+  });
+  const finalCapability =
+    bindProviderRegistryPreparedSuccessorCohortToFinalCandidateInternalV1(
+      cohortIdentity,
+      cohortCapability,
+      finalCandidateIdentity,
+    );
+  return {
+    cohortIdentity,
+    cohortCapability,
+    destinationEntry,
+    finalCandidateIdentity,
+    finalCapability,
   };
 }
 
@@ -472,7 +657,7 @@ describe("prepared Registry/Root retained-history internals", () => {
             prospectiveRegistryEntry: candidate,
           },
         );
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         ok: true,
         value: {
           authority:
@@ -486,6 +671,21 @@ describe("prepared Registry/Root retained-history internals", () => {
           retainedStateMutationCount: 0,
         },
       });
+      if (!result.ok) throw new Error("temporary admission must succeed");
+      expect(Object.isFrozen(result.value.preparedRegistrySuccessorSeed)).toBe(
+        true,
+      );
+      expect(
+        Object.getPrototypeOf(result.value.preparedRegistrySuccessorSeed),
+      ).toBeNull();
+      expect(
+        Reflect.ownKeys(result.value.preparedRegistrySuccessorSeed),
+      ).toEqual([]);
+      expect(
+        discardProviderRegistryPreparedSuccessorSeedInternalV1(
+          result.value.preparedRegistrySuccessorSeed,
+        ),
+      ).toBe(true);
       expect(
         await diagnoseProviderRegistryProspectiveEntryTemporaryAdmissionInternalV1(
           prepared.temporaryCapability,
@@ -996,6 +1196,569 @@ describe("prepared Registry/Root retained-history internals", () => {
   });
 });
 
+describe("prepared Registry retained direct-successor continuation", () => {
+  it("validates one externally root-signed prepared successor without publishing or copying history", async () => {
+    const bound = await finalBoundPreparedSuccessorV1();
+    const envelope = preparedSuccessorEnvelopeV1(
+      bound.destinationEntry,
+      freshFormalMigrationIdV1,
+    );
+    resetCryptoCalls();
+
+    const result =
+      await diagnoseProviderRegistryPreparedDirectSuccessorInternalV1(
+        bound.finalCandidateIdentity,
+        bound.finalCapability,
+        {
+          formalMigrationId: freshFormalMigrationIdV1,
+          externallySignedManifestEnvelope: envelope,
+        },
+      );
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        authority: "none",
+        validationScope:
+          "direct_successor_of_retained_steady_tip_not_current_or_published",
+        installationIdentityGenerationId:
+          fixture.installationIdentityGenerationId,
+        formalMigrationId: freshFormalMigrationIdV1,
+        sourceProviderId: "durable-object-provider:native-b",
+        destinationProviderId: prospectiveProviderId,
+        retainedPrefixIdentityPreserved: true,
+        externallySignedEnvelopeIdentityPreserved: true,
+        copiedRetainedStateCollectionCount: 7,
+        retainedStateCopyOperationCount: 1,
+        retainedStateMutationCount: 0,
+        registryManifestPublicationCount: 0,
+        validatedManifestGenerationCountIncludingDirectSuccessor:
+          fixture.registryManifestHistory.length + 1,
+      },
+    });
+    expect(pointCalls).toBe(0);
+    expect(signatureCalls).toBe(1);
+    expect(Object.getPrototypeOf(result)).toBeNull();
+    if (!result.ok) throw new Error("prepared successor must validate");
+    expect(Object.getPrototypeOf(result.value)).toBeNull();
+    expect(result.value.retainedSteadyTipRegistryManifest).toEqual({
+      locatorProfile: "installation_provider_registry_manifest_v1",
+      manifestGeneration:
+        fixture.registryManifestHistory.at(-1)!.payload.manifestGeneration,
+      generationId: fixture.registryManifestHistory.at(-1)!.generationId,
+      contentDigest: fixture.registryManifestHistory.at(-1)!.contentDigest,
+    });
+    expect(result.value.preparedDirectSuccessorRegistryManifest).toEqual({
+      locatorProfile: "installation_provider_registry_manifest_v1",
+      manifestGeneration: envelope.payload.manifestGeneration,
+      generationId: envelope.generationId,
+      contentDigest: envelope.contentDigest,
+    });
+    expect(
+      result.value.retainedTrustHistoryCanonicalBytesIncludingDirectSuccessor,
+    ).toBeGreaterThan(result.value.preparedManifestCanonicalBytes);
+
+    expect(
+      await diagnoseProviderRegistryPreparedDirectSuccessorInternalV1(
+        bound.finalCandidateIdentity,
+        bound.finalCapability,
+        {
+          formalMigrationId: freshFormalMigrationIdV1,
+          externallySignedManifestEnvelope: envelope,
+        },
+      ),
+    ).toEqual({
+      ok: false,
+      stage: "history_input",
+      reason: "schema_invalid",
+    });
+    expect(signatureCalls).toBe(1);
+  });
+
+  it("compares foreign candidate/capability tuples before delete and gives each owner one winner", async () => {
+    const left = await finalBoundPreparedSuccessorV1();
+    const right = await finalBoundPreparedSuccessorV1();
+    const leftEnvelope = preparedSuccessorEnvelopeV1(
+      left.destinationEntry,
+      freshFormalMigrationIdV1,
+    );
+    const rightEnvelope = preparedSuccessorEnvelopeV1(
+      right.destinationEntry,
+      freshFormalMigrationIdV1,
+    );
+    const input = {
+      formalMigrationId: freshFormalMigrationIdV1,
+      externallySignedManifestEnvelope: leftEnvelope,
+    };
+
+    expect(
+      await diagnoseProviderRegistryPreparedDirectSuccessorInternalV1(
+        left.finalCandidateIdentity,
+        right.finalCapability,
+        input,
+      ),
+    ).toEqual({
+      ok: false,
+      stage: "history_input",
+      reason: "schema_invalid",
+    });
+    await expect(
+      diagnoseProviderRegistryPreparedDirectSuccessorInternalV1(
+        left.finalCandidateIdentity,
+        left.finalCapability,
+        input,
+      ),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      diagnoseProviderRegistryPreparedDirectSuccessorInternalV1(
+        right.finalCandidateIdentity,
+        right.finalCapability,
+        {
+          formalMigrationId: freshFormalMigrationIdV1,
+          externallySignedManifestEnvelope: rightEnvelope,
+        },
+      ),
+    ).resolves.toMatchObject({ ok: true });
+
+    const concurrent = await finalBoundPreparedSuccessorV1();
+    const concurrentInput = {
+      formalMigrationId: freshFormalMigrationIdV1,
+      externallySignedManifestEnvelope: preparedSuccessorEnvelopeV1(
+        concurrent.destinationEntry,
+        freshFormalMigrationIdV1,
+      ),
+    };
+    const outcomes = await Promise.all([
+      diagnoseProviderRegistryPreparedDirectSuccessorInternalV1(
+        concurrent.finalCandidateIdentity,
+        concurrent.finalCapability,
+        concurrentInput,
+      ),
+      diagnoseProviderRegistryPreparedDirectSuccessorInternalV1(
+        concurrent.finalCandidateIdentity,
+        concurrent.finalCapability,
+        concurrentInput,
+      ),
+    ]);
+    expect(outcomes.filter((outcome) => outcome.ok)).toHaveLength(1);
+    expect(outcomes.filter((outcome) => !outcome.ok)).toEqual([
+      { ok: false, stage: "history_input", reason: "schema_invalid" },
+    ]);
+  });
+
+  it("permanently burns a correct claim before Schema or signature validation", async () => {
+    const bound = await finalBoundPreparedSuccessorV1();
+    const invalidEnvelope = preparedSuccessorEnvelopeV1(
+      bound.destinationEntry,
+      freshFormalMigrationIdV1,
+      { signatureMode: "bitflip" },
+    );
+    expect(
+      await diagnoseProviderRegistryPreparedDirectSuccessorInternalV1(
+        bound.finalCandidateIdentity,
+        bound.finalCapability,
+        {
+          formalMigrationId: freshFormalMigrationIdV1,
+          externallySignedManifestEnvelope: invalidEnvelope,
+        },
+      ),
+    ).toEqual({
+      ok: false,
+      stage: "manifest_signature",
+      reason: "signature_invalid",
+    });
+    expect(
+      await diagnoseProviderRegistryPreparedDirectSuccessorInternalV1(
+        bound.finalCandidateIdentity,
+        bound.finalCapability,
+        {
+          formalMigrationId: freshFormalMigrationIdV1,
+          externallySignedManifestEnvelope: preparedSuccessorEnvelopeV1(
+            bound.destinationEntry,
+            freshFormalMigrationIdV1,
+          ),
+        },
+      ),
+    ).toEqual({
+      ok: false,
+      stage: "history_input",
+      reason: "schema_invalid",
+    });
+  });
+
+  it.each([
+    {
+      name: "wrong root signature",
+      formalMigrationId: freshFormalMigrationIdV1,
+      options: { signatureMode: "wrong_root" as const },
+      stage: "manifest_signature",
+      reason: "signature_invalid",
+    },
+    {
+      name: "wrong predecessor",
+      formalMigrationId: freshFormalMigrationIdV1,
+      options: {
+        predecessorGenerationId:
+          fixture.registryManifestHistory[0]!.generationId,
+      },
+      stage: "manifest_predecessor",
+      reason: "predecessor_pin_mismatch",
+    },
+    {
+      name: "missing admitted destination member",
+      formalMigrationId: freshFormalMigrationIdV1,
+      options: { omitDestinationMember: true },
+      stage: "routing",
+      reason: "routing_invalid",
+    },
+    {
+      name: "routing destination mismatch",
+      formalMigrationId: freshFormalMigrationIdV1,
+      options: {
+        routingDestinationProviderId:
+          "durable-object-provider:native-b" as StoreDurableObjectProviderRegistryEntryV1["providerId"],
+      },
+      stage: "routing",
+      reason: "routing_invalid",
+    },
+    {
+      name: "formal ID differs from signed routing",
+      formalMigrationId: freshFormalMigrationIdV1,
+      options: {
+        envelopeMigrationId:
+          `provider-migration:${"b".repeat(22)}` as ProviderMigrationIdV1,
+      },
+      stage: "routing",
+      reason: "routing_invalid",
+    },
+    {
+      name: "formal ID is reused anywhere in retained history",
+      formalMigrationId: retainedFormalMigrationIdV1,
+      options: {},
+      stage: "routing",
+      reason: "routing_invalid",
+    },
+  ])("rejects $name", async ({ formalMigrationId, options, stage, reason }) => {
+    const bound = await finalBoundPreparedSuccessorV1();
+    const envelope = preparedSuccessorEnvelopeV1(
+      bound.destinationEntry,
+      formalMigrationId,
+      options,
+    );
+    expect(
+      await diagnoseProviderRegistryPreparedDirectSuccessorInternalV1(
+        bound.finalCandidateIdentity,
+        bound.finalCapability,
+        {
+          formalMigrationId,
+          externallySignedManifestEnvelope: envelope,
+        },
+      ),
+    ).toEqual({ ok: false, stage, reason });
+  });
+
+  it("supports exact discard at every lifecycle state without letting a foreign identity burn its owner", async () => {
+    const destinationEntry = prospectiveEntryV1();
+    const prepared = await temporaryAdmissionCapabilityV1();
+    const admission =
+      await diagnoseProviderRegistryProspectiveEntryTemporaryAdmissionInternalV1(
+        prepared.temporaryCapability,
+        {
+          prospectiveRegistryEntryContentDigest:
+            deriveStoreDurableObjectProviderRegistryEntryContentDigestV1(
+              destinationEntry,
+            ),
+          prospectiveRegistryEntry: destinationEntry,
+        },
+      );
+    if (!admission.ok) throw new Error("temporary admission must succeed");
+    const cohortIdentity = recursivelyFreeze({ cohort: 1 });
+    const cohortCapability =
+      bindProviderRegistryPreparedSuccessorSeedToCohortInternalV1(
+        admission.value.preparedRegistrySuccessorSeed,
+        cohortIdentity,
+      );
+    expect(
+      discardProviderRegistryPreparedSuccessorCohortInternalV1(
+        recursivelyFreeze({ cohort: 1 }),
+        cohortCapability,
+      ),
+    ).toBe(false);
+    expect(
+      discardProviderRegistryPreparedSuccessorCohortInternalV1(
+        cohortIdentity,
+        cohortCapability,
+      ),
+    ).toBe(true);
+
+    const finalBound = await finalBoundPreparedSuccessorV1();
+    expect(
+      discardProviderRegistryPreparedSuccessorFinalInternalV1(
+        recursivelyFreeze({ ...finalBound.finalCandidateIdentity }),
+        finalBound.finalCapability,
+      ),
+    ).toBe(false);
+    expect(
+      discardProviderRegistryPreparedSuccessorFinalInternalV1(
+        finalBound.finalCandidateIdentity,
+        finalBound.finalCapability,
+      ),
+    ).toBe(true);
+    expect(
+      discardProviderRegistryPreparedSuccessorFinalInternalV1(
+        finalBound.finalCandidateIdentity,
+        finalBound.finalCapability,
+      ),
+    ).toBe(false);
+  });
+
+  it("enforces generation and canonical-byte limits at exact B/B+1 boundaries using captured number checks", () => {
+    const generationLimit = 4_096;
+    expect(
+      isProviderRegistryPreparedDirectSuccessorGenerationWithinLimitInternalV1(
+        generationLimit - 1,
+        generationLimit,
+      ),
+    ).toBe(true);
+    expect(
+      isProviderRegistryPreparedDirectSuccessorGenerationWithinLimitInternalV1(
+        generationLimit,
+        generationLimit,
+      ),
+    ).toBe(false);
+
+    const envelope = preparedSuccessorEnvelopeV1(
+      prospectiveEntryV1(),
+      freshFormalMigrationIdV1,
+    );
+    const envelopeBytes = canonicalizeJcsSafeIntegerUtf8V1(envelope).byteLength;
+    const retainedBytes = 100;
+    expect(
+      isProviderRegistryPreparedDirectSuccessorEnvelopeWithinByteLimitsInternalV1(
+        envelopeBytes,
+        retainedBytes,
+        envelopeBytes,
+        retainedBytes + envelopeBytes,
+      ),
+    ).toBe(true);
+    expect(
+      isProviderRegistryPreparedDirectSuccessorEnvelopeWithinByteLimitsInternalV1(
+        envelopeBytes + 1,
+        retainedBytes,
+        envelopeBytes,
+        retainedBytes + envelopeBytes + 1,
+      ),
+    ).toBe(false);
+    expect(
+      isProviderRegistryPreparedDirectSuccessorEnvelopeWithinByteLimitsInternalV1(
+        envelopeBytes + 1,
+        retainedBytes,
+        envelopeBytes + 1,
+        retainedBytes + envelopeBytes,
+      ),
+    ).toBe(false);
+
+    const originalSafeInteger = Object.getOwnPropertyDescriptor(
+      Number,
+      "isSafeInteger",
+    );
+    let capturedCheckResult = false;
+    try {
+      Object.defineProperty(Number, "isSafeInteger", {
+        configurable: true,
+        value() {
+          throw new Error("ambient Number.isSafeInteger must not be called");
+        },
+      });
+      capturedCheckResult =
+        isProviderRegistryPreparedDirectSuccessorGenerationWithinLimitInternalV1(
+          generationLimit - 1,
+          generationLimit,
+        );
+    } finally {
+      if (originalSafeInteger !== undefined) {
+        Object.defineProperty(Number, "isSafeInteger", originalSafeInteger);
+      }
+    }
+    expect(capturedCheckResult).toBe(true);
+  });
+
+  it("builds expected members without ambient Array iteration", () => {
+    const currentMembers = fixture.registryManifestHistory.at(-1)!.payload
+      .members;
+    const destinationEntry = prospectiveEntryV1();
+    const destinationMember = recursivelyFreeze({
+      providerId: destinationEntry.providerId,
+      disposition: "enabled" as const,
+      registryEntryContentDigest:
+        deriveStoreDurableObjectProviderRegistryEntryContentDigestV1(
+          destinationEntry,
+        ),
+      registryEntry: destinationEntry,
+    });
+    const originalIterator = Object.getOwnPropertyDescriptor(
+      Array.prototype,
+      Symbol.iterator,
+    );
+    let expectedMembers: ReturnType<
+      typeof createProviderRegistryPreparedDirectSuccessorExpectedMembersInternalV1
+    > = [];
+    try {
+      Object.defineProperty(Array.prototype, Symbol.iterator, {
+        configurable: true,
+        value() {
+          throw new Error("ambient Array iterator must not be called");
+        },
+      });
+      expectedMembers =
+        createProviderRegistryPreparedDirectSuccessorExpectedMembersInternalV1(
+          currentMembers,
+          destinationMember,
+        );
+    } finally {
+      if (originalIterator !== undefined) {
+        Object.defineProperty(
+          Array.prototype,
+          Symbol.iterator,
+          originalIterator,
+        );
+      }
+    }
+    expect(expectedMembers).toHaveLength(currentMembers.length + 1);
+    expect(
+      expectedMembers.find(
+        (member) => member.providerId === destinationEntry.providerId,
+      ),
+    ).toBe(destinationMember);
+  });
+
+  it("validates the retained member transition without ambient Array iteration", () => {
+    const destinationEntry = prospectiveEntryV1();
+    const previous = fixture.registryManifestHistory.at(-1)!.payload;
+    const current = preparedSuccessorEnvelopeV1(
+      destinationEntry,
+      freshFormalMigrationIdV1,
+    ).payload;
+    const originalIterator = Object.getOwnPropertyDescriptor(
+      Array.prototype,
+      Symbol.iterator,
+    );
+    let iteratorReads = 0;
+    try {
+      Object.defineProperty(Array.prototype, Symbol.iterator, {
+        configurable: true,
+        value() {
+          iteratorReads += 1;
+          throw new Error("ambient Array iterator must not be called");
+        },
+      });
+      validateProviderRegistryPreparedDirectSuccessorMemberTransitionsInternalV1(
+        previous,
+        current,
+      );
+    } finally {
+      if (originalIterator !== undefined) {
+        Object.defineProperty(
+          Array.prototype,
+          Symbol.iterator,
+          originalIterator,
+        );
+      }
+    }
+    expect(iteratorReads).toBe(0);
+  });
+
+  it("does not consult ambient Array.at or Map iteration and returns nonthenable carriers", async () => {
+    const destinationEntry = prospectiveEntryV1();
+    const prepared = await temporaryAdmissionCapabilityV1();
+    const admission =
+      await diagnoseProviderRegistryProspectiveEntryTemporaryAdmissionInternalV1(
+        prepared.temporaryCapability,
+        {
+          prospectiveRegistryEntryContentDigest:
+            deriveStoreDurableObjectProviderRegistryEntryContentDigestV1(
+              destinationEntry,
+            ),
+          prospectiveRegistryEntry: destinationEntry,
+        },
+      );
+    if (!admission.ok) throw new Error("temporary admission must succeed");
+    const envelope = preparedSuccessorEnvelopeV1(
+      destinationEntry,
+      freshFormalMigrationIdV1,
+    );
+    const cohortIdentity = recursivelyFreeze({ cohort: "at-poison" });
+    const cohortCapability =
+      bindProviderRegistryPreparedSuccessorSeedToCohortInternalV1(
+        admission.value.preparedRegistrySuccessorSeed,
+        cohortIdentity,
+      );
+    const candidateIdentity = recursivelyFreeze({ candidate: "at-poison" });
+    const finalCapability =
+      bindProviderRegistryPreparedSuccessorCohortToFinalCandidateInternalV1(
+        cohortIdentity,
+        cohortCapability,
+        candidateIdentity,
+      );
+    const originalAt = Object.getOwnPropertyDescriptor(Array.prototype, "at");
+    const originalMapIterator = Object.getOwnPropertyDescriptor(
+      Map.prototype,
+      Symbol.iterator,
+    );
+    let mapIteratorReads = 0;
+    let result:
+      | Awaited<
+          ReturnType<
+            typeof diagnoseProviderRegistryPreparedDirectSuccessorInternalV1
+          >
+        >
+      | undefined;
+    try {
+      Object.defineProperty(Array.prototype, "at", {
+        configurable: true,
+        value() {
+          throw new Error("ambient Array.prototype.at must not be called");
+        },
+      });
+      Object.defineProperty(Map.prototype, Symbol.iterator, {
+        configurable: true,
+        value() {
+          mapIteratorReads += 1;
+          throw new Error("ambient Map iterator must not be called");
+        },
+      });
+      result =
+        await diagnoseProviderRegistryPreparedDirectSuccessorInternalV1(
+          candidateIdentity,
+          finalCapability,
+          {
+            formalMigrationId: freshFormalMigrationIdV1,
+            externallySignedManifestEnvelope: envelope,
+          },
+        );
+    } finally {
+      if (originalAt === undefined) {
+        delete (Array.prototype as { at?: unknown }).at;
+      } else {
+        Object.defineProperty(Array.prototype, "at", originalAt);
+      }
+      if (originalMapIterator !== undefined) {
+        Object.defineProperty(
+          Map.prototype,
+          Symbol.iterator,
+          originalMapIterator,
+        );
+      }
+    }
+    expect(mapIteratorReads).toBe(0);
+    expect(result).toMatchObject({ ok: true });
+    expect(Object.getPrototypeOf(result)).toBeNull();
+    if (result?.ok === true) {
+      expect(Object.getPrototypeOf(result.value)).toBeNull();
+    }
+  });
+});
+
 describe("prepared Registry/Root architecture boundary", () => {
   const manifestSource = readFileSync(
     fileURLToPath(
@@ -1013,6 +1776,15 @@ describe("prepared Registry/Root architecture boundary", () => {
     fileURLToPath(
       new URL(
         "../src/provider-registry-history-prepared-handle-internal.ts",
+        import.meta.url,
+      ),
+    ),
+    "utf8",
+  );
+  const successorHandleSource = readFileSync(
+    fileURLToPath(
+      new URL(
+        "../src/provider-registry-history-prepared-successor-handle-internal.ts",
         import.meta.url,
       ),
     ),
@@ -1071,5 +1843,29 @@ describe("prepared Registry/Root architecture boundary", () => {
     expect(handleSource.match(/new CapturedWeakMapV1</gu)).toHaveLength(2);
     expect(handleSource).toContain("preparedRegistryHistorySnapshotsV1");
     expect(handleSource).toContain("registryHistoryVerifiedWitnessesV1");
+  });
+
+  it("keeps the successor continuation package-private and free of ambient at/spread/number/type-error seams", () => {
+    expect(successorHandleSource.match(/new CapturedWeakMapV1</gu)).toHaveLength(
+      3,
+    );
+    expect(successorHandleSource).not.toContain(".at(");
+    const directCore = manifestSource.slice(
+      manifestSource.indexOf(
+        "function assertExactDeepFrozenManifestEnvelopeIdentityInternalV1",
+      ),
+      manifestSource.indexOf("function validateEntryCollectionsV1"),
+    );
+    expect(directCore).not.toContain("[...current.members");
+    expect(directCore).not.toContain("Number.isSafeInteger(");
+    expect(directCore).not.toContain("new TypeError(");
+    expect(directCore).not.toContain("Array.prototype");
+    expect(directCore).not.toContain(
+      "cloneRegistryHistoryStateForTemporaryAdmissionInternalV1(",
+    );
+    expect(directCore).not.toContain("validateRegistryEntryV1(");
+    expect(directCore).not.toContain("mapSetV1(");
+    expect(directCore).not.toContain("setAddV1(");
+    expect(directCore.match(/requireRootSignatureV1\(/gu)).toHaveLength(1);
   });
 });

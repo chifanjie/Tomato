@@ -1,8 +1,8 @@
 # Understand Code：Agent-native Code Change Intelligence 项目研制计划
 
-> 文档状态：Approved / Contract Frozen v1.22（含 WP5 Decision Amendment D-24～D-41、strong-ready bootstrap/steady Acceptance compare-append closure/reference candidate、same-installation-identity current-strong-source normal pre-side-effect Plan/admission closure/reference candidate 边界与 16-A-1 实施证据重校）
+> 文档状态：Approved / Contract Frozen v1.23（含 WP5 Decision Amendment D-24～D-42、strong-ready bootstrap/steady Acceptance compare-append closure/reference candidate、same-installation-identity current-strong-source normal pre-side-effect Plan/admission closure/reference candidate、branch-specific candidate-to-formal ID / prepared Registry successor reference candidate 边界与 16-A-1 实施证据重校）
 >
-> 最近 Provider slice 证据：D-40 strong-ready bootstrap/steady Acceptance compare-append closure/reference candidate 已在 `58cc52f78f25fb743136a819da753e72c62eded6` 提交；same-SHA CI run `31764659888`全部success（Workspace 9m13s、Provider unit 28m21s、Preview 1m24s、Provider distribution 40m13s、final Quality 3s），只关闭D-40 none-authority candidate implementation evidence
+> 最近已接受 Provider slice 证据：D-41 same-installation-identity current-strong-source normal pre-side-effect Plan/admission closure/reference candidate 已在 `f13abe58aeee324f567594f56ddd23a06b095285` 提交；其后三笔只调整测试时间预算，最终验证 SHA `7d66137c8276cd33919518a52dad0659d46e8b13` 与 D-41 production source byte-identical，same-SHA CI run `31874624342`全部success（Workspace 10m0s、Provider unit 34m30s、Preview 1m22s、Provider distribution 40m21s、final Quality 3s）。该证据只关闭D-41 none-authority、zero-write candidate implementation，不外推到formal Migration或Provider aggregate
 >
 > 日期：2026-07-27
 >
@@ -10,9 +10,9 @@
 >
 > WP4 Contract Amendment：2026-07-29；`build_task_brief` 的可恢复两阶段编排与可信 Operation Journal 见 D-22，Repo Pulse 不可变历史与原子切换见 D-23
 >
-> WP5 Contract Amendment：2026-07-30～2026-08-14；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host、不可变 Bootstrap Trust Bundle、签名 Target Discovery point closure、real-FS Conformance Result point closure、Provider Runtime Attestation point closure、QA/Release Provider Feasibility Evidence point closure、Release Target Universe point closure、Registry Entry↔Evidence supplied-history candidate closure、singleton Acceptance candidate、可信本机 opened-root physical-target selection candidate、strong-ready bootstrap/steady Acceptance compare-append closure/reference candidate与 same-installation-identity current-strong-source normal pre-side-effect Plan/admission closure/reference candidate边界见 D-24～D-41
+> WP5 Contract Amendment：2026-07-30～2026-08-15；Evidence-backed Change Check、可重建 Task Baseline、Plan/Verification 语义、精确 Operation 协议、安全持久化、Durable Object Provider Gate、严格 Ed25519 host、不可变 Bootstrap Trust Bundle、签名 Target Discovery point closure、real-FS Conformance Result point closure、Provider Runtime Attestation point closure、QA/Release Provider Feasibility Evidence point closure、Release Target Universe point closure、Registry Entry↔Evidence supplied-history candidate closure、singleton Acceptance candidate、可信本机 opened-root physical-target selection candidate、strong-ready bootstrap/steady Acceptance compare-append closure/reference candidate、same-installation-identity current-strong-source normal pre-side-effect Plan/admission closure/reference candidate与branch-specific candidate-to-formal ID / prepared Registry successor reference candidate边界见 D-24～D-42
 >
-> Implementation Rebaseline：2026-08-03；Evidence Refresh：2026-08-14；Contract Refresh：2026-08-14。重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1L、C09-1M、C09-1N、C09-1O、D-39与D-40已形成并提交各自 none-authority候选。D-40 implementation commit `58cc52f78f25fb743136a819da753e72c62eded6`及same-SHA CI `31764659888` evidence accepted，只关闭该none-authority candidate。D-41仅冻结same-installation-identity current-strong-source normal pre-side-effect、`provider_decommission`-only、尚未Catalog/Registry admit的prospective destination none-authority candidate，implementation pending；它不命名为C09-1P、不新增 Gate/AT且在首个reservation write前停止。semantic-policy/recovery/cross-installation/binding-only/compromise/emergency/historical source均fail closed；candidate→formal ID mapping、prepared Registry/Catalog successor、正式Acceptance/Migration ABI、Provider authority、真实I/O、生产 Change Intelligence、双 Agent、Task-first Workbench、strong-write、production 与 release gates 仍open/locked
+> Implementation Rebaseline：2026-08-03；Evidence Refresh：2026-08-15；Contract Refresh：2026-08-15。重建并版本化 17 步执行基线，明确 `15/17` 是执行游标而非产品完成率；C09-1L、C09-1M、C09-1N、C09-1O、D-39、D-40与D-41已形成并提交各自 none-authority候选。D-41 implementation commit `f13abe58aeee324f567594f56ddd23a06b095285`及production-source-identical验证SHA `7d66137c8276cd33919518a52dad0659d46e8b13` / same-SHA CI `31874624342` evidence accepted，只关闭`provider_decommission`-only、尚未formal Catalog/Registry admit的prospective destination zero-write candidate；它不命名为C09-1P、不新增 Gate/AT且在首个reservation write前停止。D-42冻结该单一branch的candidate→formal ID mapping与externally Root-signed prepared Registry direct-successor validation candidate；D-42 implementation evidence在本次纵切完成前仍pending。semantic-policy/recovery/cross-installation/binding-only/compromise/emergency/historical source、actual Registry publication、prepared Catalog successor、正式Plan/Pin/reservation/Acceptance/Migration ABI、Provider authority、真实I/O、生产 Change Intelligence、双 Agent、Task-first Workbench、strong-write、production 与 release gates 仍open/locked
 >
 > 适用范围：`understand-code` 产品、Core、Agent 插件、MCP、本地服务与 Dashboard
 >
@@ -333,7 +333,7 @@ slice、Provider aggregate或authority。Provider合同状态另按D-38～D-41�
 | Workspace 包 | 8 个：Contracts、Repository State、Artifact Store、Core、Task Engine、CLI、Dashboard、Durable Object Provider Contracts |
 | C09-1K历史根质量门禁 | 本地 macOS `CI=true pnpm quality`：194 个测试文件、2,367 passed、1 个既有 skip、0 failed；build/typecheck/Dashboard production build 全绿；Linux clean-checkout same-SHA CI run `31079755984` / job `92545638787` on `0c6474df66ce28e4a7caf4006233100194a6e493`：194 个测试文件、2,368 passed、0 skipped、0 failed，19m39s，success |
 | 修改前能力 | Repo Pulse、Persistent Task Brief、候选排序、影响路径、Evidence/Unknown、Task Lifecycle 已有正式实现 |
-| Provider Contracts | Strict Ed25519、Bootstrap Trust Bundle、Root/Registry History、signed real-FS Corpus→Suite、signed Target Discovery、unsigned Result、root-signed Runtime、QA/Release Evidence、Release Target Universe、Registry↔Evidence、Support Catalog与五链 retained current-candidate已经推进至 C09-1N committed none-authority candidate。D-38的 C09-1O single-target、Registry-exact、structure-only Acceptance candidate已在 `36588f34899f0e0de36536192841f7f188d3c128`提交并通过同 SHA CI `31625767367`。D-39可信本机 opened-root physical-target selection candidate已在 `876ce8ef4f0d8dd375fa0d7c6e25aa61c713ba70`提交并通过同 SHA CI `31643781457`。D-40 strong-ready bootstrap/steady none-authority compare-append closure/reference Candidate已在 `58cc52f78f25fb743136a819da753e72c62eded6`提交，并由同 SHA CI run `31764659888`验证为全绿；该组证据只关闭D-40 none-authority candidate，不外推到Provider aggregate、authoritative current或I/O。D-41仅冻结`provider_decommission`-only prospective destination none-authority candidate，implementation pending，并在首个reservation write前停止；semantic-policy/recovery、candidate→formal ID mapping、prepared Registry/Catalog successor、正式Identity key ownership、OS Provider、mutual-auth IPC、durable I/O、cross/formal Migration与aggregate仍open/locked，全部 strong-write/production/release gate仍 open |
+| Provider Contracts | Strict Ed25519、Bootstrap Trust Bundle、Root/Registry History、signed real-FS Corpus→Suite、signed Target Discovery、unsigned Result、root-signed Runtime、QA/Release Evidence、Release Target Universe、Registry↔Evidence、Support Catalog与五链 retained current-candidate已经推进至 C09-1N committed none-authority candidate。D-38的 C09-1O single-target、Registry-exact、structure-only Acceptance candidate已在 `36588f34899f0e0de36536192841f7f188d3c128`提交并通过同 SHA CI `31625767367`。D-39可信本机 opened-root physical-target selection candidate已在 `876ce8ef4f0d8dd375fa0d7c6e25aa61c713ba70`提交并通过同 SHA CI `31643781457`。D-40 strong-ready bootstrap/steady none-authority compare-append closure/reference Candidate已在 `58cc52f78f25fb743136a819da753e72c62eded6`提交并通过同 SHA CI `31764659888`。D-41 `provider_decommission`-only prospective destination zero-write candidate已在 `f13abe58aeee324f567594f56ddd23a06b095285`提交，并由production-source-identical SHA `7d66137c8276cd33919518a52dad0659d46e8b13` / same-SHA CI `31874624342`验证为全绿；这些证据只关闭各自none-authority candidate，不外推到Provider aggregate、authoritative current或I/O。D-42现只冻结branch-specific candidate→formal ID mapping与externally Root-signed prepared Registry direct-successor validation candidate；actual Registry publication、prepared Catalog successor、formal Plan/Pin/reservation、semantic-policy/recovery、正式Identity key ownership、OS Provider、mutual-auth IPC、durable I/O、cross/formal Migration与aggregate仍open/locked，全部 strong-write/production/release gate仍 open |
 | 修改后能力 | Change Check/Verification 有严格 Contract 和 Store 基础，但没有生产 `checkChanges()` / `recordVerification()` 执行服务 |
 | Agent Surface | 已有 `packages/cli` 自包含 stdio MCP 候选和 3 个真实 Tool；仍无 `.codex-plugin/plugin.json`、Codex/Claude Adapter 或双 Agent Task E2E |
 | 前端 | 活跃 Surface 仍为 `wiki | graph`；尚无 Tasks、Brief、Check、Verification 与 Repo Pulse 产品页面 |
@@ -3027,7 +3027,7 @@ P2 的阻断规则必须确定性执行：
 | WP2 | Closed | Repository State / Repo Pulse 已关闭 |
 | WP3 | Closed | Artifact Store / Evidence persistence 已关闭 |
 | WP4 | Closed | Persistent Task Brief 与 Lifecycle 已关闭；不包含生产 Change Check |
-| WP5-1P/C09 | **Partial / aggregate open** | C09-1L Registry↔Evidence、C09-1M Catalog exact-cover、C09-1N五链 retained current-candidate及 D-38/C09-1O singleton Registry-exact Acceptance candidate均已提交各自 none-authority candidate。D-39提交为 `876ce8ef4f0d8dd375fa0d7c6e25aa61c713ba70`并通过同 SHA CI `31643781457`；D-40提交为 `58cc52f78f25fb743136a819da753e72c62eded6`并通过同 SHA CI `31764659888`。这些证据均不外推到aggregate或authority。下一关闭点只实现D-41 `provider_decommission`-only、尚未Catalog/Registry admit的prospective destination none-authority candidate；semantic-policy/recovery、candidate→formal ID mapping、prepared Registry/Catalog successor、cross/formal Migration及aggregate总门继续open/locked |
+| WP5-1P/C09 | **Partial / aggregate open** | C09-1L Registry↔Evidence、C09-1M Catalog exact-cover、C09-1N五链 retained current-candidate及 D-38/C09-1O singleton Registry-exact Acceptance candidate均已提交各自 none-authority candidate。D-39提交为 `876ce8ef4f0d8dd375fa0d7c6e25aa61c713ba70`并通过同 SHA CI `31643781457`；D-40提交为 `58cc52f78f25fb743136a819da753e72c62eded6`并通过同 SHA CI `31764659888`；D-41提交为 `f13abe58aeee324f567594f56ddd23a06b095285`，production-source-identical SHA `7d66137c8276cd33919518a52dad0659d46e8b13`通过same-SHA CI `31874624342`。这些证据均不外推到aggregate或authority。下一关闭点只实现D-42 branch-specific candidate→formal ID mapping与externally Root-signed prepared Registry direct-successor zero-write candidate；actual Registry publication、prepared Catalog successor、formal Plan/Pin/reservation、semantic-policy/recovery、cross/formal Migration及aggregate总门继续open/locked |
 | WP3P | Not closed / capability locked | 真实 OS principal、Provider runtime 与 real-FS feasibility 尚未实现 |
 | WP5 | Contract frozen / implementation incomplete | 没有生产 Delta/Hunk/Matching、`checkChanges()`、`recordVerification()` 纵向闭环 |
 | WP6 | **Open（仅 16-A-1 candidate closed）** | `packages/cli` 已交付自包含 stdio MCP 与 Pulse/Brief 三工具；Host Adapter、完整 Tool surface、双 Agent E2E 仍未实现，不能把子切片状态外推为 WP6 candidate |
@@ -4133,7 +4133,7 @@ Symbol、Evidence、Impact 与分析完整性，而不是把 Git 文件列表包
 WP3P Provider Feasibility Gate 与 WP4 Task Intelligence；Diff→Symbol/Matching
 可在 security contracts 冻结后并行，但任何 strong mutation在 WP3P Gate关闭前
 保持 capability locked。
-估算：原 2.5 周只覆盖摘要级实现；按 D-24～D-41 的 path-safe、identity、
+估算：原 2.5 周只覆盖摘要级实现；按 D-24～D-42 的 path-safe、identity、
 SafeGit、reservation/quota 与 recovery 生产闭环修订为
 **6–8 周、12–16 person-weeks**。Contracts、Store 与 Operation kernel 串行冻结，
 Delta/Symbol/Matching 可在接口冻结后并行。
@@ -5991,7 +5991,7 @@ reflog 与未定义 quota 会让 crash recovery 存在误删或不一致结果�
 边界前移到首个 durable write，并冻结并发 ownership 与资源耗尽的唯一语义。
 
 WP5 的实现追踪、Acceptance 与 capability locks 见
-`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。D-24～D-41 不
+`docs/research/2026-07-30-wp5-change-intelligence-matrix.md`。D-24～D-42 不
 改变 D-21 的状态集合；它们冻结的是 Change/Verification 事实模型、可重建
 baseline、安全持久化、Operation 提交边界与 Alpha 兼容策略。
 
@@ -7951,8 +7951,8 @@ aggregate或任何authority evidence。
 
 ### D-41：Same-installation-identity current-strong-source normal pre-side-effect Plan/admission closure/reference candidate
 
-状态：Frozen / implementation pending（2026-08-14 pre-implementation Decision
-Amendment；同日implementation-safety终审后原位收窄）。D-41仍位于既有
+状态：Frozen / implementation evidence accepted（2026-08-14 pre-implementation Decision
+Amendment；2026-08-15 implementation-safety终审后原位收窄并完成实现）。D-41仍位于既有
 WP5-1P/C09 aggregate Gate内；它**不命名为C09-1P**、不新增第18个Commit Gate，
 也不新增`AT-D41`或其它AT编号。本slice只接受
 `mode="same_installation_identity"`、当前`strong_ready` Acceptance选中的source writer、
@@ -8021,8 +8021,10 @@ candidate-to-formal cast或`provider-migration:<22-lower-hex>` formal brand伪�
   nominal capability/challenge的single-use、cross-seam replay与foreign-owner/binding
   compare-before-delete、exact match后burn；then getter/thenable/prototype-poison零调用与只允许
   null-prototype nonthenable fulfillment；reference host四seam同步spy、public runtime exact3、
-  wire+internal packed deep-import拒绝。保持none-authority、全write sink exact zero与
-  implementation pending，不得写成实现完成或CI evidence。
+  wire+internal packed deep-import拒绝。保持none-authority与全write sink exact zero。实现提交
+  `f13abe58aeee324f567594f56ddd23a06b095285`及production-source-identical验证SHA
+  `7d66137c8276cd33919518a52dad0659d46e8b13` / same-SHA CI `31874624342`只构成该窄
+  zero-write candidate的implementation evidence，不得外推成formal Migration或aggregate evidence。
 
 public operation只有以下exact2输入；`request`是descriptor-safe、bounded、递归detached的
 普通JSON，capability只按object identity保留，不clone：
@@ -9815,12 +9817,210 @@ Provider、mutual-auth IPC、fixed-locator I/O/crash durability、progress/rewri
 zero-live/tombstone/final activation、C09 aggregate、strong-write、production与release
 全部继续`open/locked`。
 
+### D-42：Same-installation-identity current-strong-source normal candidate-to-formal ID / prepared Registry successor reference candidate
+
+Decision D-42（2026-08-15）是D-41之后的最小必要合同修订与下一条可执行纵切，
+仍复用既有WP5-1P/C09 aggregate Gate与AT范围，不新增Gate/AT。它只命中
+`mode="same_installation_identity" + reason="provider_decommission" +
+admissionClass="normal"`且basis为完整通过D-41的branch；其它same reason、
+semantic-policy、binding-only、historical/recovery/compromise/emergency与cross branch
+继续使用原formal合同或保持`open/locked`。
+
+**原合同与可执行失败证据**：既有`provider-migration-id-v1`以formal pre-plan
+trust/quota semantic projection派生，而formal destination trust必须先pin migration
+Registry/Catalog membership；Registry `routing.state="migration"`又必须先携formal
+`ProviderMigrationIdV1`。D-41为了在Catalog/Registry admit前验证prospective destination，
+只能产出长prefix candidate ID，且prepared Manifest被明确排除于candidate ID preimage。
+若把future Registry/Catalog/Plan回填到ID会形成
+`formal ID → prepared Registry/Catalog → destination trust/Plan → formal ID`哈希环；
+若直接cast D-41字符串则不满足`provider-migration:<22hex>` brand。PRD D-41.2、
+D-41.6与D-41.9已把这组输入固定为Schema拒绝，因此不是实现可以自行绕过的类型问题。
+
+**最小修订**：D-42为上述单一branch新增显式、单向、domain-separated mapping；
+不暗改其它`provider-migration-id-v1` branch：
+
+```text
+domain =
+  provider-migration-same-installation-identity-current-strong-source-normal-
+  pre-side-effect-plan-admission-closure-reference-candidate-to-formal-id-v1
+
+preimage = { candidateMigrationId }
+
+formalMigrationId =
+  "provider-migration:" + first22LowerHex(
+    SHA-256(UTF8(JCS([domain, preimage])))
+  )
+```
+
+`candidateMigrationId`必须先由完整D-41 cycle-free semantic projection按D-41 domain
+重算，不能信任caller字符串。mapping strict record固定为：
+
+```ts
+interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalIdMappingV1 {
+  profile:
+    "provider_migration_same_installation_identity_current_strong_source_normal_pre_side_effect_plan_admission_closure_reference_candidate_to_formal_id_v1";
+  candidateMigrationId:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateIdV1;
+  formalMigrationId: ProviderMigrationIdV1;
+  derivation:
+    "sha256_jcs_domain_preimage_candidate_migration_id_only_first_22_lowercase_hex_v1";
+}
+```
+
+mapping preimage明确不含`closureContentDigest`、`createdAt`、post observation、
+D-41 candidate Plan digest、Registry/Catalog/Acceptance、formal Plan/Pin、reservation
+descriptor/record/token、prepared Manifest ID/digest/signature，也不重复mode/Identity/
+namespace/target/trust/budgets/sizing/admission/protocol字段。后者均已由D-41 candidate
+ID的唯一strict projection覆盖；重复投影会产生可漂移的第二套identity，而把closure
+digest或时间加入会使相同semantic candidate在重试时改变formal ID。
+
+这项修订的后继影响也固定：future formal same/provider-decommission Plan必须以strict
+branch携完整`formalIdMapping`，并要求`plan.migrationId ===
+formalIdMapping.formalMigrationId`；Plan content digest覆盖完整mapping与deterministic
+reservation descriptor。prepared trust由future Plan content digest绑定，不反向进入formal
+ID。该D-41 full proof是publication-time non-retained admission witness；D-42不静默新增
+第12种retained quota artifact或mapping-proof locator。历史reader重算mapped ID并验证后继
+formal Plan/provider durable closure；若未来要求独立retained D-41 proof，必须另行Decision。
+
+#### D-42.1 Public seam、fresh D-41与authority lifecycle
+
+唯一public操作是一个registered exact2 Input：
+
+```ts
+interface BuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1Input {
+  request: {
+    profile:
+      "provider_migration_same_installation_identity_current_strong_source_normal_prepared_registry_successor_request_reference_candidate_v1";
+    preSideEffectRequest:
+      ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectRequestReferenceCandidateV1;
+    expectedCandidateMigrationId:
+      ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateIdV1;
+    expectedPreparedRegistryManifestPin: ProviderRegistryManifestPinV1;
+  };
+  preparedRegistrySuccessorReferenceCapability:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCapabilityV1;
+}
+```
+
+合法Input只能由package-private mint构造为null-prototype、frozen exact2 identity；
+literal/copy/clone/extra-key在claim前拒绝且不得burn owner。public module runtime exact3
+只导出build、final success Schema与opaque Error；所有mint/diagnostic/mapping derive、
+Registry retained context、strict crypto与host仍private/deep-import locked。public failure继续
+统一`provider_unavailable/attestation_invalid`，internal stage/reason不泄漏。
+
+D-42不得把一份serialized D-41 success或其digest当authority。一次合法操作先打开12-sink
+audit，再用fresh D40/Registry/Evidence/source/quota capabilities在同一invocation完整执行D-41；
+fresh结果的candidate ID必须exact等于request expectation。D-41 temporary Entry admission
+成功后保留其exact detached retained Registry cut与恰好7集合scratch state为zero-key seed；
+seed在D-41 mint期先与该invocation的cohort identity绑定为cohort capability，但只有
+D-41最终true-`finally` zero-write audit通过后才能再绑定exact frozen D-41 candidate
+identity。standalone D-41或任一D-41失败必须discard当时所在的seed/cohort
+capability，不能留下可消费continuation。D-42随后同步claim exact candidate+cap tuple；
+foreign tuple不误烧owner，正确
+claim后的任何失败永久burn，replay/concurrency恰一胜。
+
+externally signed prepared Manifest必须通过transport-prelimited nominal capability进入；
+production没有Root signer callback、private key或补签路径。test-only fixture signer不进入
+production bundle。签名只证明record authenticity，不等于current/published/accepted authority。
+
+#### D-42.2 Prepared Registry direct-successor candidate
+
+D-42从same-cohort retained steady tip与D-41 prospective Entry内部派生唯一mandatory semantic
+successor projection，并要求外部signed Envelope的unsigned claims及request expected Pin
+exact绑定同一candidate。既有Manifest Pin不含`manifestSignature`；retained Root验签
+单独绑定authenticity，最终D-42 closure digest再绑定实际完整signed Envelope。
+既有Manifest `issuedAt`仍由外部受信signer选择strict ISO timestamp，并被content digest与signature
+覆盖；它不进入formal ID，因此不同合法issue time可形成不同unsigned claims/Pin/
+Envelope，一次request只能pin其中一份unsigned claims。D-42不得把“semantic projection唯一”
+误写成“完整unsigned bytes不含时间选择”：
+
+- `manifestGeneration=N+1`，predecessor generation ID/content digest exact当前retained tip；
+- Installation Identity与active Root Metadata exact当前值；
+- `issuedAt`只须满足既有Registry strict timestamp Schema，并由request Pin/content digest
+  exact绑定unsigned claims，由Root signature验证authenticity，由final closure digest绑定
+  完整signed Envelope；D-42不自行取时、不改写、不把它加入formal ID；
+- members保留全部current member/tombstone byte-identical，只增加一个D-41 destination
+  enabled member，按provider ID UTF-8 bytewise严格排序且unique；source member完全不变；
+- routing exact为`migration/mapped formal ID/D-41 source/D-41 destination/
+  activeForMigrationWrites=source/phase=prepared`；
+- outer/payload generation ID、content digest与Pin均用既有Registry derivation重算；
+- formal ID不得已出现在任何retained routing history；new envelope满足single/total history
+  byte cap与generation cap；
+- 仅用retained active Root验证Manifest signature一次；对D-41已复制且已完成
+  key-history/revocation/material-alias admit的7集合scratch state只做exact prospective Entry
+  lookup，增量执行member/routing/approval-snapshot successor validation，不重跑这些
+  D-41验证、raw Root/Registry history，不改变retained prefix identity，不调用signer
+  或任何writer。
+
+D-42只声明该Envelope是
+`root_signed_direct_successor_of_same_cohort_retained_steady_tip_candidate_not_current_or_published_v1`。
+它不声明验证期间live Registry tip仍current；future no-replace publication必须重新验证live
+current tip，并与Catalog/formal Plan/quota write set在后继Gate闭合。原因是prepared routing一旦
+真实发布不能直接回steady；在Catalog/Plan尚不存在时发布会留下不可恢复的半迁移状态。
+
+#### D-42.3 Plan publication prerequisite与明确stop point
+
+D-42输出可执行、strict的publication prerequisite，但不产出或命名formal
+`ProviderMigrationPlanV1`、`ProviderMigrationPlanPinV1`、reservation record/token/event/
+account/receipt。它固定future same-mode规则：
+
+- operation=`compare_reserve`、role=`same_identity_journal`、
+  publicationKind=`publish_same_identity_plan_atomically`；
+- formal Plan必须携完整mapping，Plan digest覆盖mapping与deterministic descriptor；
+- formal reservation ID继续从`{formalMigrationId, role, journal Identity,
+  admissionVectorDigest}`派生，不含Plan digest/time/record/token；
+- record/token只能在formal Plan digest形成后单向绑定该digest，Plan不反向pin record/token；
+- future真实事务必须原子写reservation、fixed-locator Plan、reserved event/account/
+  enumeration/high-water/operation receipt；对外只见all-or-none；same nonce/same canonical
+  request返回首次byte-identical receipt，same nonce/different request零写拒绝；
+- 当前state固定`locked_awaiting_formal_catalog_direct_successor`，D-41 candidate Plan明确
+  `d41_candidate_plan_is_not_a_formal_plan_v1`。
+
+success stop point固定为
+`after_external_root_signed_prepared_registry_direct_successor_validation_before_registry_manifest_publication`。
+publication gate必须逐项给出mapping verified、prepared successor verified-not-published，
+Catalog/formal destination trust/formal Plan/Pin/reservation record/token/publication均`none`，
+下一步唯一是formal Catalog direct successor。
+
+side-effect boundary固定12项exact zero：D-41九项加`rootSigningRequests`、
+`registryManifestPublications`、`catalogPublications`。audit PRE先于fresh D-41，最终POST位于
+candidate finalize与全部cleanup后的true `finally`；任一delta/observer failure覆盖原diagnostic。
+
+#### D-42.4 Focused evidence与locks
+
+focused evidence至少覆盖：mapping golden/单nibble/prefix/uppercase/extra-preimage，same candidate
+不同createdAt/closure digest映射相同formal ID；fresh D-41 drift与expected ID mismatch；prepared
+Manifest generation/predecessor/Identity/Root/member/tombstone/sort/Entry/routing/formal-ID/
+outer/digest/Pin/signature/history-cap每项tamper；wrong/historical Root、history formal-ID reuse；
+seed/cohort/final cap forged/copy/clone/cross/replay/concurrency/claim后失败永久burn；retained prefix
+identity保留、7集合copy恰一次且D-42不重拷贝、Root signature verify恰一次/raw history验证0次；
+hostile thenable/getter/Proxy/intrinsic；12 sink逐一delta与compound failure finally override；
+public exact3、Schema/runtime parity、packed Node/browser、所有private deep-import拒绝。
+
+JSON Schema inventory只新增以下exact 2 key（总registry由355变357），不得为private mapping、
+publication prerequisite、continuation或diagnostic另注册Schema：
+
+- `provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-request-reference-candidate-v1`；
+- `provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate-v1`。
+
+二者的`$id`必须exact等于仓库统一规则
+`urn:understand-code:provider-contract:schema:v1:<key>`，closed-object/strict-union与
+TypeScript/Zod/generated artifact逐项一致。package public module数由31变32；新增
+subpath只指向public facade，wire、continuation、
+Registry successor handle与orchestrator internal均必须由manifest及packed Node/browser deep-import锁拒绝。
+
+D-42通过只关闭branch-specific candidate→formal ID mapping与externally Root-signed prepared
+Registry direct-successor **reference candidate validation**。actual Registry publication/no-replace
+CAS、formal Catalog successor、formal destination trust、formal Plan/Pin、quota reservation及
+atomic reserve+publish、`migration_only` Acceptance、executor/progress/I/O、其它same/cross
+branch、C09 aggregate、Provider Gate、strong-write、production与release继续`open/locked`。
+
 ---
 
 ## 20. M0 冻结结果与延后决策
 
 原 M0 第 1–7 项已经分别由 D-13～D-19 冻结；Task Lifecycle、WP4 持久化与
-WP5 Change Intelligence 修订由 D-21～D-41 冻结。完整证据、Owner、试点 Pin
+WP5 Change Intelligence 修订由 D-21～D-42 冻结。完整证据、Owner、试点 Pin
 和 capability lock 见
 `docs/research/2026-07-28-g0-contract-freeze-record.md`。
 

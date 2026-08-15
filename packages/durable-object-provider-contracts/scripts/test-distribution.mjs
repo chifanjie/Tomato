@@ -4931,6 +4931,58 @@ async function expectAsyncRejection(operation, label) {
   throw new Error(`${label} regression was not rejected`);
 }
 
+async function assertPackedBrowserPrivateDeepImportsUnavailableV1(
+  consumerRoot,
+  privateSpecifiers,
+) {
+  const regressionRoot = join(consumerRoot, "d42-private-browser-imports");
+  await mkdir(regressionRoot, { recursive: true });
+  for (let index = 0; index < privateSpecifiers.length; index += 1) {
+    const privateSpecifier = privateSpecifiers[index];
+    const privateSubpath = `.${privateSpecifier.slice(
+      "@understand-code/durable-object-provider-contracts".length,
+    )}`;
+    const entryName = `entry-${index}.js`;
+    const configName = `vite-${index}.config.mjs`;
+    await writeFile(
+      join(regressionRoot, entryName),
+      `import * as privateModule from ${JSON.stringify(privateSpecifier)};\nexport const privateKeys = Object.keys(privateModule);\n`,
+      "utf8",
+    );
+    await writeFile(
+      join(regressionRoot, configName),
+      [
+        'import { resolve } from "node:path";',
+        "export default {",
+        `  build: { target: "es2022", outDir: ${JSON.stringify(`dist-${index}`)}, emptyOutDir: true, minify: false, lib: { entry: resolve(${JSON.stringify(entryName)}), formats: ["es"], fileName: "private-probe" } },`,
+        "};",
+      ].join("\n"),
+      "utf8",
+    );
+    let rejection;
+    try {
+      await run(viteCommand, ["build", "--config", configName], {
+        cwd: regressionRoot,
+        env: { NODE_OPTIONS: C09_NODE_OPTIONS },
+        timeoutMs: C09_VITE_BUILD_TIMEOUT_MS,
+        label: `packed browser private deep import ${privateSubpath}`,
+      });
+    } catch (error) {
+      rejection = error;
+    }
+    const message = rejection instanceof Error ? rejection.message : "";
+    if (
+      rejection === undefined ||
+      !message.includes(privateSubpath) ||
+      !/(?:missing|not defined|not exported|package subpath)/iu.test(message)
+    ) {
+      throw new Error(
+        `Packed browser private deep import rejection mismatch for ${privateSubpath}: ${message}`,
+      );
+    }
+  }
+}
+
 function readTarString(header, offset, length) {
   const field = header.subarray(offset, offset + length);
   const terminator = field.indexOf(0);
@@ -6056,9 +6108,9 @@ try {
   const sourceSchemaRelativePaths = await listRelativeSchemaPaths(
     join(packageRoot, "schemas", "v1"),
   );
-  if (sourceSchemaRelativePaths.length !== 355) {
+  if (sourceSchemaRelativePaths.length !== 357) {
     throw new Error(
-      `Source provider contracts must contain exactly 355 JSON Schemas, found ${sourceSchemaRelativePaths.length}`,
+      `Source provider contracts must contain exactly 357 JSON Schemas, found ${sourceSchemaRelativePaths.length}`,
     );
   }
   await assertExactProviderDirectory(
@@ -6307,9 +6359,9 @@ try {
   const explicitSpecifiers = Object.keys(manifest.exports)
     .filter((key) => !key.includes("*"))
     .map(packageSpecifier);
-  if (explicitSpecifiers.length !== 31) {
+  if (explicitSpecifiers.length !== 32) {
     throw new Error(
-      `Packed provider contracts must expose exactly 31 public modules, found ${explicitSpecifiers.length}`,
+      `Packed provider contracts must expose exactly 32 public modules, found ${explicitSpecifiers.length}`,
     );
   }
   for (const privateSubpath of [
@@ -6319,11 +6371,21 @@ try {
     "./provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-pre-plan-reference-capability-internal",
     "./provider-migration-same-installation-identity-current-strong-source-normal-endpoint-trust-capability-internal",
     "./provider-strong-ready-bootstrap-or-steady-acceptance-d41-endpoint-trust-basis-internal",
+    "./provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate-wire",
+    "./provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-continuation-internal",
+    "./provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-capability-internal",
+    "./provider-registry-history-prepared-successor-handle-internal",
   ]) {
     if (Object.hasOwn(manifest.exports, privateSubpath)) {
-      throw new Error(`Packed provider contracts expose private D-41 subpath ${privateSubpath}`);
+      throw new Error(`Packed provider contracts expose private D-41/D-42 subpath ${privateSubpath}`);
     }
   }
+  await assertPackedBrowserPrivateDeepImportsUnavailableV1(consumerRoot, [
+    "@understand-code/durable-object-provider-contracts/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate-wire",
+    "@understand-code/durable-object-provider-contracts/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-continuation-internal",
+    "@understand-code/durable-object-provider-contracts/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-capability-internal",
+    "@understand-code/durable-object-provider-contracts/provider-registry-history-prepared-successor-handle-internal",
+  ]);
   const installedStrictManifestPath = await realpath(
     join(
       installedRoot,
@@ -6728,6 +6790,7 @@ try {
       'const providerTrustedLocalPhysicalTargetSelectionCandidate = await import("@understand-code/durable-object-provider-contracts/provider-trusted-local-physical-target-selection-candidate");',
       'const providerAcceptanceCompareAppendClosureReferenceCandidate = await import("@understand-code/durable-object-provider-contracts/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate");',
       'const providerMigrationPreSideEffectPlanAdmissionClosureReferenceCandidate = await import("@understand-code/durable-object-provider-contracts/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate");',
+      'const providerMigrationPreparedRegistrySuccessorReferenceCandidate = await import("@understand-code/durable-object-provider-contracts/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate");',
       'const unavailable = providerError.createProviderUnavailableToolErrorV1("unavailable");',
       'if (providerError.ProviderUnavailableToolErrorV1Schema.parse(unavailable).details.reason !== "unavailable") throw new Error("provider error export failed");',
       'if (root.createProviderStrongReadyAcceptanceCandidateV1 !== providerStrongReadyAcceptanceCandidate.createProviderStrongReadyAcceptanceCandidateV1 || root.validateProviderStrongReadyAcceptanceCandidateV1 !== providerStrongReadyAcceptanceCandidate.validateProviderStrongReadyAcceptanceCandidateV1 || root.PROVIDER_STRONG_READY_ACCEPTANCE_CANDIDATE_AUTHORITY_V1 !== "none_provider_strong_ready_acceptance_candidate_structure_only" || root.ProviderAcceptanceStateGenerationIdV1Schema.parse(`provider-acceptance-state:${"0".repeat(22)}`) !== `provider-acceptance-state:${"0".repeat(22)}` || providerStrongReadyAcceptanceCandidate.ProviderStrongReadyAcceptanceCandidateInvalidStageV1Schema.parse("active_writer_selector") !== "active_writer_selector") throw new Error("packed strong-ready Acceptance candidate export failed");',
@@ -6737,9 +6800,19 @@ try {
       'const providerMigrationRuntimeExportNames = Object.freeze(["ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationError", "ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1Schema", "buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateV1"]);',
       'const providerMigrationError = new providerMigrationPreSideEffectPlanAdmissionClosureReferenceCandidate.ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationError();',
       'if (JSON.stringify(Object.keys(providerMigrationPreSideEffectPlanAdmissionClosureReferenceCandidate).sort()) !== JSON.stringify(providerMigrationRuntimeExportNames) || root.buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateV1 !== providerMigrationPreSideEffectPlanAdmissionClosureReferenceCandidate.buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateV1 || root.ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationError !== providerMigrationPreSideEffectPlanAdmissionClosureReferenceCandidate.ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationError || root.ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1Schema !== providerMigrationPreSideEffectPlanAdmissionClosureReferenceCandidate.ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1Schema || providerMigrationPreSideEffectPlanAdmissionClosureReferenceCandidate.ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1Schema.shape.authority.parse(providerMigrationAuthority) !== providerMigrationAuthority || providerMigrationError.code !== "provider_unavailable" || providerMigrationError.reason !== "attestation_invalid" || !Object.isFrozen(providerMigrationError)) throw new Error("packed provider Migration pre-side-effect reference candidate export failed");',
+      'const providerMigrationPreparedRegistrySuccessorAuthority = "none_provider_migration_same_installation_identity_current_strong_source_normal_prepared_registry_successor_reference_candidate_only";',
+      'const providerMigrationPreparedRegistrySuccessorRuntimeExportNames = Object.freeze(["ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationError", "ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1Schema", "buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1"]);',
+      'const providerMigrationPreparedRegistrySuccessorError = new providerMigrationPreparedRegistrySuccessorReferenceCandidate.ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationError();',
+      'const providerMigrationPreparedRegistrySuccessorStopPoint = "after_external_root_signed_prepared_registry_direct_successor_validation_before_registry_manifest_publication";',
+      'if (JSON.stringify(Object.keys(providerMigrationPreparedRegistrySuccessorReferenceCandidate).sort()) !== JSON.stringify(providerMigrationPreparedRegistrySuccessorRuntimeExportNames) || root.buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1 !== providerMigrationPreparedRegistrySuccessorReferenceCandidate.buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1 || root.ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationError !== providerMigrationPreparedRegistrySuccessorReferenceCandidate.ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationError || root.ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1Schema !== providerMigrationPreparedRegistrySuccessorReferenceCandidate.ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1Schema || providerMigrationPreparedRegistrySuccessorReferenceCandidate.ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1Schema.shape.authority.parse(providerMigrationPreparedRegistrySuccessorAuthority) !== providerMigrationPreparedRegistrySuccessorAuthority || providerMigrationPreparedRegistrySuccessorReferenceCandidate.ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1Schema.shape.stopPoint.parse(providerMigrationPreparedRegistrySuccessorStopPoint) !== providerMigrationPreparedRegistrySuccessorStopPoint || providerMigrationPreparedRegistrySuccessorError.code !== "provider_unavailable" || providerMigrationPreparedRegistrySuccessorError.reason !== "attestation_invalid" || !Object.isFrozen(providerMigrationPreparedRegistrySuccessorError)) throw new Error("packed provider Migration prepared Registry successor reference candidate export failed");',
+      'let providerMigrationPreparedRegistrySuccessorPublicFailure;',
+      'try { await providerMigrationPreparedRegistrySuccessorReferenceCandidate.buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1(Object.freeze({ request: Object.freeze(Object.create(null)), preparedRegistrySuccessorReferenceCapability: Object.freeze(Object.create(null)) })); } catch (error) { providerMigrationPreparedRegistrySuccessorPublicFailure = error; }',
+      'if (!(providerMigrationPreparedRegistrySuccessorPublicFailure instanceof providerMigrationPreparedRegistrySuccessorReferenceCandidate.ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationError) || providerMigrationPreparedRegistrySuccessorPublicFailure.code !== "provider_unavailable" || providerMigrationPreparedRegistrySuccessorPublicFailure.reason !== "attestation_invalid" || !Object.isFrozen(providerMigrationPreparedRegistrySuccessorPublicFailure) || ["ok", "stage", "partial", "diagnostic", "value", "cause"].some((key) => Object.hasOwn(providerMigrationPreparedRegistrySuccessorPublicFailure, key))) throw new Error("packed provider Migration prepared Registry successor opaque failure drift");',
       'const schemaUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/schemas/v1/canonical-byte-string.schema.json"));',
       'const providerErrorSchemaUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/schemas/v1/provider-unavailable-tool-error.schema.json"));',
       'const providerMigrationClosureSchemaUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/schemas/v1/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate.schema.json"));',
+      'const providerMigrationPreparedRegistrySuccessorRequestSchemaUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/schemas/v1/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-request-reference-candidate-v1.schema.json"));',
+      'const providerMigrationPreparedRegistrySuccessorSchemaUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/schemas/v1/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate-v1.schema.json"));',
       'const goldenUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/golden/manifest.json"));',
       'const providerErrorFixtureUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/reference/provider-unavailable-tool-errors.json"));',
       'const publicKeyDigestGoldenUrl = new URL(import.meta.resolve("@understand-code/durable-object-provider-contracts/fixtures/v1/golden/ed25519-public-key-digest-v1.json"));',
@@ -6802,6 +6875,8 @@ try {
       'const schema = JSON.parse(await readFile(schemaUrl, "utf8"));',
       'const providerErrorSchema = JSON.parse(await readFile(providerErrorSchemaUrl, "utf8"));',
       'const providerMigrationClosureSchema = JSON.parse(await readFile(providerMigrationClosureSchemaUrl, "utf8"));',
+      'const providerMigrationPreparedRegistrySuccessorRequestSchema = JSON.parse(await readFile(providerMigrationPreparedRegistrySuccessorRequestSchemaUrl, "utf8"));',
+      'const providerMigrationPreparedRegistrySuccessorSchema = JSON.parse(await readFile(providerMigrationPreparedRegistrySuccessorSchemaUrl, "utf8"));',
       'const golden = JSON.parse(await readFile(goldenUrl, "utf8"));',
       'const providerErrorFixture = JSON.parse(await readFile(providerErrorFixtureUrl, "utf8"));',
       'const publicKeyDigestGolden = JSON.parse(await readFile(publicKeyDigestGoldenUrl, "utf8"));',
@@ -6839,6 +6914,8 @@ try {
       'if (schema.$id !== "urn:understand-code:provider-contract:schema:v1:canonical-byte-string") throw new Error("packed schema missing");',
       'if (providerErrorSchema.$id !== "urn:understand-code:provider-contract:schema:v1:provider-unavailable-tool-error") throw new Error("packed provider error schema missing");',
       'if (providerMigrationClosureSchema.$id !== "urn:understand-code:provider-contract:schema:v1:provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate" || providerMigrationClosureSchema.properties?.authority?.const !== providerMigrationAuthority) throw new Error("packed provider Migration pre-side-effect closure schema missing");',
+      'if (providerMigrationPreparedRegistrySuccessorRequestSchema.$id !== "urn:understand-code:provider-contract:schema:v1:provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-request-reference-candidate-v1" || providerMigrationPreparedRegistrySuccessorRequestSchema.properties?.profile?.const !== "provider_migration_same_installation_identity_current_strong_source_normal_prepared_registry_successor_request_reference_candidate_v1") throw new Error("packed provider Migration prepared Registry successor request schema missing");',
+      'if (providerMigrationPreparedRegistrySuccessorSchema.$id !== "urn:understand-code:provider-contract:schema:v1:provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate-v1" || providerMigrationPreparedRegistrySuccessorSchema.properties?.authority?.const !== providerMigrationPreparedRegistrySuccessorAuthority || providerMigrationPreparedRegistrySuccessorSchema.properties?.stopPoint?.const !== providerMigrationPreparedRegistrySuccessorStopPoint) throw new Error("packed provider Migration prepared Registry successor schema missing");',
       'if (golden.profile !== "rfc8785-jcs-safe-integer-v1") throw new Error("packed golden manifest missing");',
       'if (providerErrorFixture.cases.length !== 6) throw new Error("packed provider error fixture missing");',
       'const cryptoHost = { sha256(message) { return new Uint8Array(createHash("sha256").update(message).digest()); }, hmacSha256(key, message) { return new Uint8Array(createHmac("sha256", key).update(message).digest()); } };',
@@ -7168,6 +7245,7 @@ try {
       '}',
       'for (const internalExportName of ["createProviderPointRawAdmissionSessionV1", "createProviderPointPromiseV1", "createProviderTargetDiscoveryPointSnapshotV1", "assertProviderStrictEd25519CryptoCapabilityIdentityV1", "deriveProviderStrongReadyActiveWriterSelectionsInternalV1", "classifyProviderStrongReadyActiveWriterMatchCountInternalV1", "mintProviderTrustedLocalPhysicalTargetObservationCapabilityInternalV1", "deriveProviderTrustedLocalPhysicalTargetSelectionInternalV1", "mintProviderStrongReadyBootstrapOrSteadyAcceptanceIdentityVerificationCapabilityInternalV1", "mintProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineInternalV1", "deriveProviderTrustedLocalStrongWriterSelectionCandidateInternalV1", "mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalSourceReferenceMachineInternalV1", "mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryQuotaReferenceMachineInternalV1", "mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPrePlanReferenceCapabilityInternalV1"]) { if (Object.hasOwn(root, internalExportName)) throw new Error(`private internal helper exported from root: ${internalExportName}`); }',
       'for (const internalExportName of ["PROVIDER_MIGRATION_SAME_INSTALLATION_IDENTITY_CURRENT_STRONG_SOURCE_NORMAL_PRE_SIDE_EFFECT_REQUEST_REFERENCE_CANDIDATE_DOMAIN_V1", "deriveProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalClosureContentDigestReferenceCandidateV1", "validateProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateV1", "verifyProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidatePublicHashDagAndEqualityV1", "mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalEndpointCutCapabilityInternalV1", "mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalProspectiveDestinationPreparedSourceCapabilityInternalV1", "prepareProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalEndpointTrustInternalV1", "registerProviderStrongReadyBootstrapOrSteadyAcceptanceD41EndpointTrustBasisInternalV1", "takeProviderStrongReadyBootstrapOrSteadyAcceptanceD41EndpointTrustBasisInternalV1"]) { if (Object.hasOwn(root, internalExportName)) throw new Error(`private D-41 wire/internal helper exported from root: ${internalExportName}`); }',
+      'for (const internalExportName of ["ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorRequestReferenceCandidateV1Schema", "deriveProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalMigrationIdMappingV1", "deriveProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorClosureContentDigestV1", "validateProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1", "mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorContinuationIntentInternalV1", "takeProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorFinalCapabilityInternalV1", "mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCapabilityInternalV1", "diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateInternalV1", "takeProviderRegistryPreparedSuccessorFinalCandidateInternalV1", "diagnoseProviderRegistryPreparedDirectSuccessorInternalV1"]) { if (Object.hasOwn(root, internalExportName)) throw new Error(`private D-42 request/wire/internal helper exported from root: ${internalExportName}`); }',
       'if (providerRegistry.StoreFilenameKeyV1Schema.parse("id-c4") !== "id-c4" || providerRegistry.decodeShortStoreFilenameKeyV1("id-c4") !== "a") throw new Error("packed lowercase base32hex filename codec failed");',
       'const privatePackagePrefix = "@understand-code/durable-object-provider-contracts";',
       'async function assertPrivateDeepImportUnavailable(privateSpecifier) {',
@@ -7179,6 +7257,7 @@ try {
       '}',
       'for (const privateSpecifier of ["@understand-code/durable-object-provider-contracts/domain-crypto", "@understand-code/durable-object-provider-contracts/provider-registry-records", "@understand-code/durable-object-provider-contracts/provider-registry-manifest-history", "@understand-code/durable-object-provider-contracts/provider-point-raw-admission-internal", "@understand-code/durable-object-provider-contracts/provider-point-runtime-internal", "@understand-code/durable-object-provider-contracts/provider-target-discovery-point-internal", "@understand-code/durable-object-provider-contracts/provider-feasibility-evidence-point-internal", "@understand-code/durable-object-provider-contracts/provider-feasibility-evidence-point-prepared-internal", "@understand-code/durable-object-provider-contracts/provider-feasibility-support-catalog-point-prepared-internal", "@understand-code/durable-object-provider-contracts/provider-real-filesystem-conformance-result-internal", "@understand-code/durable-object-provider-contracts/provider-real-filesystem-source-internal", "@understand-code/durable-object-provider-contracts/provider-registry-history-prepared-handle-internal", "@understand-code/durable-object-provider-contracts/provider-registry-history-prepared-internal", "@understand-code/durable-object-provider-contracts/provider-runtime-attestation-point-internal", "@understand-code/durable-object-provider-contracts/provider-target-discovery-point-prepared-internal", "@understand-code/durable-object-provider-contracts/provider-release-target-universe-point-prepared-internal", "@understand-code/durable-object-provider-contracts/provider-distribution-retained-accounting-internal", "@understand-code/durable-object-provider-contracts/provider-distribution-historical-semantic-internal", "@understand-code/durable-object-provider-contracts/provider-strong-ready-acceptance-candidate-internal", "@understand-code/durable-object-provider-contracts/provider-trusted-local-physical-target-observation-capability-internal", "@understand-code/durable-object-provider-contracts/provider-trusted-local-physical-target-selection-candidate-internal", "@understand-code/durable-object-provider-contracts/provider-strong-ready-bootstrap-or-steady-acceptance-identity-verification-capability-internal", "@understand-code/durable-object-provider-contracts/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-reference-machine-internal", "@understand-code/durable-object-provider-contracts/provider-trusted-local-strong-writer-selection-candidate-internal", "@understand-code/durable-object-provider-contracts/provider-migration-same-installation-identity-current-strong-source-normal-source-reference-machine-internal", "@understand-code/durable-object-provider-contracts/provider-migration-same-installation-identity-current-strong-source-normal-history-quota-reference-machine-internal", "@understand-code/durable-object-provider-contracts/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-pre-plan-reference-capability-internal", "@understand-code/durable-object-provider-contracts/provider-registry-evidence-binding-topology-proof", "@understand-code/durable-object-provider-contracts/provider-registry-evidence-binding-point-budget-test-seam-internal", "@understand-code/durable-object-provider-contracts/provider-registry-evidence-binding-point-budget-witness-internal", "@understand-code/durable-object-provider-contracts/strict-ed25519-capability-internal"]) await assertPrivateDeepImportUnavailable(privateSpecifier);',
       'for (const privateSpecifier of ["@understand-code/durable-object-provider-contracts/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-reference-candidate-wire", "@understand-code/durable-object-provider-contracts/provider-migration-same-installation-identity-current-strong-source-normal-endpoint-trust-capability-internal", "@understand-code/durable-object-provider-contracts/provider-strong-ready-bootstrap-or-steady-acceptance-d41-endpoint-trust-basis-internal"]) await assertPrivateDeepImportUnavailable(privateSpecifier);',
+      'for (const privateSpecifier of ["@understand-code/durable-object-provider-contracts/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate-wire", "@understand-code/durable-object-provider-contracts/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-continuation-internal", "@understand-code/durable-object-provider-contracts/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-capability-internal", "@understand-code/durable-object-provider-contracts/provider-registry-history-prepared-successor-handle-internal"]) await assertPrivateDeepImportUnavailable(privateSpecifier);',
     ].join("\n"),
     "utf8",
   );
@@ -7238,6 +7317,12 @@ try {
       'import type { BuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateV1Input, ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1, ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPrePlanReferenceCapabilityV1 } from "@understand-code/durable-object-provider-contracts/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate";',
       'import { ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationError as RootProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationError, buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateV1 as rootBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateV1 } from "@understand-code/durable-object-provider-contracts";',
       'import type { BuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateV1Input as RootBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateV1Input, ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1 as RootProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1, ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPrePlanReferenceCapabilityV1 as RootProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPrePlanReferenceCapabilityV1 } from "@understand-code/durable-object-provider-contracts";',
+      'import { ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationError, buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1 } from "@understand-code/durable-object-provider-contracts/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate";',
+      'import type { BuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1Input, ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1 } from "@understand-code/durable-object-provider-contracts/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate";',
+      '// @ts-expect-error the D-42 facade deliberately does not export its nominal capability type',
+      'import type { ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCapabilityV1 } from "@understand-code/durable-object-provider-contracts/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate";',
+      'import { ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationError as RootProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationError, buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1 as rootBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1 } from "@understand-code/durable-object-provider-contracts";',
+      'import type { BuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1Input as RootBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1Input, ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1 as RootProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1 } from "@understand-code/durable-object-provider-contracts";',
       'const slug = DurableObjectIdentityProviderSlugV1Schema.parse("native-fs");',
       'const id = createDurableObjectIdentityProviderIdV1(slug);',
       'DurableObjectIdentityProviderIdV1Schema.parse(id);',
@@ -7297,6 +7382,8 @@ try {
       'declare const buildProviderMigrationPreSideEffectPlanAdmissionClosureReferenceCandidateInput: BuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateV1Input;',
       'declare const providerMigrationPreSideEffectPlanAdmissionClosureReferenceCandidateValidation: ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1;',
       'declare const providerMigrationPreSideEffectPrePlanReferenceCapability: ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPrePlanReferenceCapabilityV1;',
+      'declare const buildProviderMigrationPreparedRegistrySuccessorReferenceCandidateInput: BuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1Input;',
+      'declare const providerMigrationPreparedRegistrySuccessorReferenceCandidateValidation: ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1;',
       'const registryGoldenParsed = ProviderRegistryManifestHistoryGoldenManifestV1Schema.parse(registryGoldenManifest);',
       'const registryHistoryValidation: Promise<ProviderRegistryManifestHistoryValidationV1> = validateProviderRegistryManifestHistoryV1(registryHistoryInput);',
       'const registryInvalidManifest: ProviderRegistryManifestHistoryInvalidManifestV1 = ProviderRegistryManifestHistoryInvalidManifestV1Schema.parse(verifyProviderRegistryManifestHistoryInvalidResourceV1(registryInvalidBytes));',
@@ -7376,6 +7463,20 @@ try {
       'buildProviderMigrationPreSideEffectPlanAdmissionClosureReferenceCandidateInput.sourceStreamHost;',
       '// @ts-expect-error the D-41 capability is opaque and cannot be structurally forged',
       'const forgedProviderMigrationPreSideEffectCapability: ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPrePlanReferenceCapabilityV1 = {};',
+      'const builtProviderMigrationPreparedRegistrySuccessorReferenceCandidate: Promise<ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1> = buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1(buildProviderMigrationPreparedRegistrySuccessorReferenceCandidateInput);',
+      'const rootBuiltProviderMigrationPreparedRegistrySuccessorReferenceCandidate: Promise<RootProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1> = rootBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1(buildProviderMigrationPreparedRegistrySuccessorReferenceCandidateInput);',
+      'const providerMigrationPreparedRegistrySuccessorReferenceCandidateAuthority: "none_provider_migration_same_installation_identity_current_strong_source_normal_prepared_registry_successor_reference_candidate_only" = providerMigrationPreparedRegistrySuccessorReferenceCandidateValidation.authority;',
+      'const rootProviderMigrationPreparedRegistrySuccessorInput: RootBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1Input = buildProviderMigrationPreparedRegistrySuccessorReferenceCandidateInput;',
+      'const subpathProviderMigrationPreparedRegistrySuccessorInput: BuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1Input = rootProviderMigrationPreparedRegistrySuccessorInput;',
+      'const providerMigrationPreparedRegistrySuccessorValidationError = new ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationError();',
+      'const rootProviderMigrationPreparedRegistrySuccessorValidationErrorConstructor: typeof ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationError = RootProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationError;',
+      'const providerMigrationPreparedRegistrySuccessorValidationErrorCode: "provider_unavailable" = providerMigrationPreparedRegistrySuccessorValidationError.code;',
+      'const providerMigrationPreparedRegistrySuccessorValidationErrorReason: "attestation_invalid" = providerMigrationPreparedRegistrySuccessorValidationError.reason;',
+      'const providerMigrationPreparedRegistrySuccessorCapability = buildProviderMigrationPreparedRegistrySuccessorReferenceCandidateInput.preparedRegistrySuccessorReferenceCapability;',
+      '// @ts-expect-error the D-42 public Input is exact2 and does not expose its audit observer',
+      'buildProviderMigrationPreparedRegistrySuccessorReferenceCandidateInput.sideEffectAuditObserver;',
+      '// @ts-expect-error the D-42 registered capability is nominal and cannot be structurally forged',
+      'const forgedProviderMigrationPreparedRegistrySuccessorCapability: BuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1Input["preparedRegistrySuccessorReferenceCapability"] = {};',
       '// @ts-expect-error current-candidate positive IDs are an exact closed union',
       'const unknownCurrentCandidatePositiveVectorId: ProviderDistributionHistoryCurrentCandidatePointPositiveVectorIdV1 = "current-candidate-positive-unknown";',
       '// @ts-expect-error current-candidate invalid IDs are an exact closed union',
@@ -7484,6 +7585,16 @@ try {
       'void providerMigrationValidationErrorCode;',
       'void providerMigrationValidationErrorReason;',
       'void forgedProviderMigrationPreSideEffectCapability;',
+      'void builtProviderMigrationPreparedRegistrySuccessorReferenceCandidate;',
+      'void rootBuiltProviderMigrationPreparedRegistrySuccessorReferenceCandidate;',
+      'void providerMigrationPreparedRegistrySuccessorReferenceCandidateAuthority;',
+      'void rootProviderMigrationPreparedRegistrySuccessorInput;',
+      'void subpathProviderMigrationPreparedRegistrySuccessorInput;',
+      'void rootProviderMigrationPreparedRegistrySuccessorValidationErrorConstructor;',
+      'void providerMigrationPreparedRegistrySuccessorValidationErrorCode;',
+      'void providerMigrationPreparedRegistrySuccessorValidationErrorReason;',
+      'void providerMigrationPreparedRegistrySuccessorCapability;',
+      'void forgedProviderMigrationPreparedRegistrySuccessorCapability;',
       'void trustedLocalPhysicalTargetObservationCapability;',
       'void rootTargetDiscoveryResultPin;',
       'void rootTargetDiscoveryTaxonomyLocator;',
@@ -7718,9 +7829,12 @@ try {
       'import { PROVIDER_STRONG_READY_BOOTSTRAP_OR_STEADY_ACCEPTANCE_COMPARE_APPEND_CLOSURE_REFERENCE_CANDIDATE_AUTHORITY_V1, PROVIDER_STRONG_READY_BOOTSTRAP_OR_STEADY_ACCEPTANCE_COMPARE_APPEND_REQUEST_REFERENCE_CANDIDATE_DOMAIN_V1, ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureInvalidReasonReferenceCandidateV1Schema, ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureInvalidStageReferenceCandidateV1Schema, createProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1, diagnoseCreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 } from "@understand-code/durable-object-provider-contracts/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate";',
       'import { PROVIDER_STRONG_READY_BOOTSTRAP_OR_STEADY_ACCEPTANCE_COMPARE_APPEND_CLOSURE_REFERENCE_CANDIDATE_AUTHORITY_V1 as rootAcceptanceCompareAppendClosureReferenceCandidateAuthorityV1, createProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 as rootCreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1, diagnoseCreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 as rootDiagnoseCreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 } from "@understand-code/durable-object-provider-contracts";',
       'import * as providerMigrationPreSideEffectPlanAdmissionClosureReferenceCandidateModule from "@understand-code/durable-object-provider-contracts/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate";',
+      'import * as providerMigrationPreparedRegistrySuccessorReferenceCandidateModule from "@understand-code/durable-object-provider-contracts/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate";',
       'import * as providerContractsRootModule from "@understand-code/durable-object-provider-contracts";',
       'import { ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationError, ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1Schema, buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateV1 } from "@understand-code/durable-object-provider-contracts/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate";',
       'import { ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationError as rootProviderMigrationPreSideEffectPlanAdmissionClosureReferenceCandidateValidationError, ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1Schema as rootProviderMigrationPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1Schema, buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateV1 as rootBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateV1 } from "@understand-code/durable-object-provider-contracts";',
+      'import { ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationError, ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1Schema, buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1 } from "@understand-code/durable-object-provider-contracts/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate";',
+      'import { ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationError as rootProviderMigrationPreparedRegistrySuccessorReferenceCandidateValidationError, ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1Schema as rootProviderMigrationPreparedRegistrySuccessorReferenceCandidateValidationV1Schema, buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1 as rootBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1 } from "@understand-code/durable-object-provider-contracts";',
       'import { canonicalizeJcsSafeIntegerUtf8V1 } from "@understand-code/durable-object-provider-contracts/jcs";',
       'import { STRICT_ED25519_VERIFICATION_PROFILE_V1, validatePrimeSubgroupPoint, verifyRawEd25519 } from "@understand-code/durable-object-provider-contracts/strict-ed25519";',
       'import { PROVIDER_STRICT_ED25519_MANIFEST_MAX_BYTES_V1, PROVIDER_STRICT_ED25519_MANIFEST_RESOURCE_PATH_V1, attestProviderStrictEd25519CryptoHostV1, getProviderStrictEd25519CryptoCapabilityBytesV1 } from "@understand-code/durable-object-provider-contracts/strict-ed25519-conformance";',
@@ -7767,6 +7881,16 @@ try {
       'for (const internalExportName of ["PROVIDER_MIGRATION_SAME_INSTALLATION_IDENTITY_CURRENT_STRONG_SOURCE_NORMAL_PRE_SIDE_EFFECT_REQUEST_REFERENCE_CANDIDATE_DOMAIN_V1", "deriveProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalClosureContentDigestReferenceCandidateV1", "validateProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateV1", "verifyProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidatePublicHashDagAndEqualityV1", "mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalSourceReferenceMachineInternalV1", "mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryQuotaReferenceMachineInternalV1", "mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPrePlanReferenceCapabilityInternalV1", "mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalEndpointCutCapabilityInternalV1", "mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalProspectiveDestinationPreparedSourceCapabilityInternalV1", "prepareProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalEndpointTrustInternalV1", "registerProviderStrongReadyBootstrapOrSteadyAcceptanceD41EndpointTrustBasisInternalV1", "takeProviderStrongReadyBootstrapOrSteadyAcceptanceD41EndpointTrustBasisInternalV1"]) { if (Object.hasOwn(providerContractsRootModule, internalExportName)) throw new Error(`private D-41 wire/internal helper exported from browser root: ${internalExportName}`); }',
       'const providerMigrationValidationError = new ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationError();',
       'if (rootBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateV1 !== buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateV1 || rootProviderMigrationPreSideEffectPlanAdmissionClosureReferenceCandidateValidationError !== ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationError || rootProviderMigrationPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1Schema !== ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1Schema || ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1Schema.shape.authority.parse(providerMigrationAuthority) !== providerMigrationAuthority || providerMigrationValidationError.code !== "provider_unavailable" || providerMigrationValidationError.reason !== "attestation_invalid" || !Object.isFrozen(providerMigrationValidationError)) throw new Error("browser provider Migration pre-side-effect reference candidate export mismatch");',
+      'const providerMigrationPreparedRegistrySuccessorAuthority = "none_provider_migration_same_installation_identity_current_strong_source_normal_prepared_registry_successor_reference_candidate_only";',
+      'const providerMigrationPreparedRegistrySuccessorStopPoint = "after_external_root_signed_prepared_registry_direct_successor_validation_before_registry_manifest_publication";',
+      'const providerMigrationPreparedRegistrySuccessorRuntimeExportNames = Object.freeze(["ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationError", "ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1Schema", "buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1"]);',
+      'if (JSON.stringify(Object.keys(providerMigrationPreparedRegistrySuccessorReferenceCandidateModule).sort()) !== JSON.stringify(providerMigrationPreparedRegistrySuccessorRuntimeExportNames)) throw new Error("browser provider Migration prepared Registry successor exact runtime export mismatch");',
+      'for (const internalExportName of ["ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorRequestReferenceCandidateV1Schema", "deriveProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalMigrationIdMappingV1", "deriveProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorClosureContentDigestV1", "validateProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1", "mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorContinuationIntentInternalV1", "takeProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorFinalCapabilityInternalV1", "mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCapabilityInternalV1", "diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateInternalV1", "takeProviderRegistryPreparedSuccessorFinalCandidateInternalV1", "diagnoseProviderRegistryPreparedDirectSuccessorInternalV1"]) { if (Object.hasOwn(providerContractsRootModule, internalExportName)) throw new Error(`private D-42 request/wire/internal helper exported from browser root: ${internalExportName}`); }',
+      'const providerMigrationPreparedRegistrySuccessorValidationError = new ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationError();',
+      'if (rootBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1 !== buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1 || rootProviderMigrationPreparedRegistrySuccessorReferenceCandidateValidationError !== ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationError || rootProviderMigrationPreparedRegistrySuccessorReferenceCandidateValidationV1Schema !== ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1Schema || ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1Schema.shape.authority.parse(providerMigrationPreparedRegistrySuccessorAuthority) !== providerMigrationPreparedRegistrySuccessorAuthority || ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1Schema.shape.stopPoint.parse(providerMigrationPreparedRegistrySuccessorStopPoint) !== providerMigrationPreparedRegistrySuccessorStopPoint || providerMigrationPreparedRegistrySuccessorValidationError.code !== "provider_unavailable" || providerMigrationPreparedRegistrySuccessorValidationError.reason !== "attestation_invalid" || !Object.isFrozen(providerMigrationPreparedRegistrySuccessorValidationError)) throw new Error("browser provider Migration prepared Registry successor reference candidate export mismatch");',
+      'let providerMigrationPreparedRegistrySuccessorPublicFailure;',
+      'try { await buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1(Object.freeze({ request: Object.freeze(Object.create(null)), preparedRegistrySuccessorReferenceCapability: Object.freeze(Object.create(null)) })); } catch (error) { providerMigrationPreparedRegistrySuccessorPublicFailure = error; }',
+      'if (!(providerMigrationPreparedRegistrySuccessorPublicFailure instanceof ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationError) || providerMigrationPreparedRegistrySuccessorPublicFailure.code !== "provider_unavailable" || providerMigrationPreparedRegistrySuccessorPublicFailure.reason !== "attestation_invalid" || !Object.isFrozen(providerMigrationPreparedRegistrySuccessorPublicFailure) || ["ok", "stage", "partial", "diagnostic", "value", "cause"].some((key) => Object.hasOwn(providerMigrationPreparedRegistrySuccessorPublicFailure, key))) throw new Error("browser provider Migration prepared Registry successor opaque failure drift");',
       `const providerDistributionHistoryCurrentCandidatePointGoldenBytes = globalThis[${JSON.stringify(C09_BROWSER_CURRENT_CANDIDATE_GOLDEN_BYTES_GLOBAL_V1)}];`,
       `const providerDistributionHistoryCurrentCandidatePointInvalidBytes = globalThis[${JSON.stringify(C09_BROWSER_CURRENT_CANDIDATE_INVALID_BYTES_GLOBAL_V1)}];`,
       'if (!(providerDistributionHistoryCurrentCandidatePointGoldenBytes instanceof Uint8Array) || !(providerDistributionHistoryCurrentCandidatePointInvalidBytes instanceof Uint8Array)) throw new Error("browser distribution history current-candidate resources were not injected");',
@@ -8718,6 +8842,26 @@ try {
     "dist/provider-migration-same-installation-identity-current-strong-source-normal-endpoint-trust-capability-internal.d.ts",
     "dist/provider-strong-ready-bootstrap-or-steady-acceptance-d41-endpoint-trust-basis-internal.js",
     "dist/provider-strong-ready-bootstrap-or-steady-acceptance-d41-endpoint-trust-basis-internal.d.ts",
+    "dist/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate-wire.js",
+    "dist/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate-wire.js.map",
+    "dist/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate-wire.d.ts",
+    "dist/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate-wire.d.ts.map",
+    "dist/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate.js",
+    "dist/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate.js.map",
+    "dist/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate.d.ts",
+    "dist/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate.d.ts.map",
+    "dist/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-continuation-internal.js",
+    "dist/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-continuation-internal.js.map",
+    "dist/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-continuation-internal.d.ts",
+    "dist/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-continuation-internal.d.ts.map",
+    "dist/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-capability-internal.js",
+    "dist/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-capability-internal.js.map",
+    "dist/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-capability-internal.d.ts",
+    "dist/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-capability-internal.d.ts.map",
+    "dist/provider-registry-history-prepared-successor-handle-internal.js",
+    "dist/provider-registry-history-prepared-successor-handle-internal.js.map",
+    "dist/provider-registry-history-prepared-successor-handle-internal.d.ts",
+    "dist/provider-registry-history-prepared-successor-handle-internal.d.ts.map",
     "dist/provider-feasibility-support-catalog-point-prepared-internal.js",
     "dist/provider-feasibility-support-catalog-point-prepared-internal.d.ts",
     "dist/provider-distribution-retained-accounting-internal.js",
@@ -8912,6 +9056,8 @@ try {
     "schemas/v1/provider-migration-same-installation-identity-current-strong-source-normal-plan-payload-reference-candidate.schema.json",
     "schemas/v1/provider-migration-same-installation-identity-current-strong-source-normal-plan-envelope-reference-candidate.schema.json",
     "schemas/v1/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate.schema.json",
+    "schemas/v1/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-request-reference-candidate-v1.schema.json",
+    "schemas/v1/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate-v1.schema.json",
     "schemas/v1/provider-registry-evidence-binding-point-invalid-stage.schema.json",
     "schemas/v1/provider-registry-evidence-binding-point-invalid-reason.schema.json",
     "schemas/v1/provider-registry-evidence-binding-point-compatible-base.schema.json",
@@ -8991,6 +9137,9 @@ try {
   );
   process.stdout.write(
     "D-41 packed public Schema/opaque none-authority smoke verified the exact runtime3 root/subpath identity, all 27 public Schemas, the fixed success authority literal, the opaque public Error, and all six unavailable private wire/internal deep imports without minting a capability or running a migration operation.\n",
+  );
+  process.stdout.write(
+    "D-42 packed public Schema/opaque none-authority smoke verified the exact runtime3 root/subpath identity, both public JSON Schemas, the fixed authority/stop literals, the opaque public Error, runtime absence of request/derivation/validation/diagnostic internals, and all four unavailable private wire/internal deep imports in Node and the browser bundle. A cold external consumer intentionally cannot fabricate the private WeakMap-registered capability; signed focused integration owns the real success path, which stops before publication or migration execution.\n",
   );
 } catch (error) {
   if (

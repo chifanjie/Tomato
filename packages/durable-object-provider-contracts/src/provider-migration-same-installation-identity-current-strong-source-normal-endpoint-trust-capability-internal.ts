@@ -38,8 +38,10 @@ import {
   hardenProviderPointPromiseV1,
 } from "./provider-point-runtime-internal.js";
 import {
+  discardProviderRegistryPreparedSuccessorSeedInternalV1,
   diagnoseProviderRegistryProspectiveEntryTemporaryAdmissionInternalV1,
   mintProviderRegistryProspectiveEntryTemporaryAdmissionCapabilityInternalV1,
+  type ProviderRegistryPreparedSuccessorSeedInternalV1,
 } from "./provider-registry-history-prepared-internal.js";
 import type {
   ProviderFeasibilityApproverPublicKeyV1,
@@ -195,6 +197,12 @@ export interface ProviderMigrationSameInstallationIdentityCurrentStrongSourceNor
     ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalVerifiedEndpointProjectionInternalV1;
   readonly sourceStreamHost:
     ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalSourceStreamHostInternalV1;
+  /**
+   * Exact-once retained Registry continuation.  It is still unbound to a
+   * migration cohort and never crosses the package-private D-41 seam.
+   */
+  readonly preparedRegistrySuccessorSeed:
+    ProviderRegistryPreparedSuccessorSeedInternalV1;
   readonly captureEndpointObservation: (
     phase: "pre" | "post",
   ) => Promise<ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalEndpointObservationInternalV1>;
@@ -999,6 +1007,9 @@ async function prepareEndpointTrustInternalV1(
   let registryCapability: ReturnType<
     typeof mintProviderRegistryProspectiveEntryTemporaryAdmissionCapabilityInternalV1
   >;
+  let preparedRegistrySuccessorSeed:
+    ProviderRegistryPreparedSuccessorSeedInternalV1 | undefined;
+  let preparedRegistrySuccessorSeedTransferred = false;
   let evidenceHandle:
     ProviderFeasibilityEvidenceRegistryTrustedApproverHandleV1 | undefined;
   let evidenceConsumed = false;
@@ -1116,6 +1127,8 @@ async function prepareEndpointTrustInternalV1(
         "destination_evidence_invalid",
       );
     }
+    preparedRegistrySuccessorSeed =
+      registry.value.preparedRegistrySuccessorSeed;
 
     evidenceConsumed = true;
     let evidence: Awaited<ReturnType<
@@ -1236,14 +1249,25 @@ async function prepareEndpointTrustInternalV1(
       }
       return endpointObservationV1(projection);
     });
-    return createProviderNonThenableFrozenRecordV1({
+    const prepared = createProviderNonThenableFrozenRecordV1({
       verifiedEndpointProjection: projection,
       sourceStreamHost:
         fields.sourceStreamHost as
           ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalSourceStreamHostInternalV1,
+      preparedRegistrySuccessorSeed,
       captureEndpointObservation,
     });
+    preparedRegistrySuccessorSeedTransferred = true;
+    return prepared;
   } finally {
+    if (
+      !preparedRegistrySuccessorSeedTransferred &&
+      preparedRegistrySuccessorSeed !== undefined
+    ) {
+      discardProviderRegistryPreparedSuccessorSeedInternalV1(
+        preparedRegistrySuccessorSeed,
+      );
+    }
     if (!evidenceConsumed && evidenceHandle !== undefined) {
       try {
         discardProviderFeasibilityEvidenceRegistryTrustedApproversInternalV1(

@@ -364,6 +364,10 @@ import {
   ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalWorktreeReferenceCandidateIdV1Schema,
 } from "./provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-reference-candidate-wire.js";
 import {
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1Schema,
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorRequestReferenceCandidateV1Schema,
+} from "./provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate-wire.js";
+import {
   ProviderFeasibilityApprovalKeysV1Schema,
   ProviderFeasibilityApproverKeyIdFieldsV1Schema,
   ProviderFeasibilityApproverPublicKeySignatureWrapperV1Schema,
@@ -1132,6 +1136,10 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 =
     ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPlanEnvelopeReferenceCandidateV1Schema,
   "provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate":
     ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1Schema,
+  "provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-request-reference-candidate-v1":
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorRequestReferenceCandidateV1Schema,
+  "provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate-v1":
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1Schema,
   });
 
 export type ProviderContractJsonSchemaNameV1 =

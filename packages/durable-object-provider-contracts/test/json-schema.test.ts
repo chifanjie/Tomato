@@ -358,23 +358,34 @@ const D41_PROVIDER_MIGRATION_JSON_SCHEMA_NAMES_V1 = [
   "provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate",
 ] as const;
 
+const D42_PROVIDER_MIGRATION_JSON_SCHEMA_NAMES_V1 = [
+  "provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-request-reference-candidate-v1",
+  "provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate-v1",
+] as const;
+
 describe("provider contract JSON Schema distribution", () => {
-  it("registers the exact 27 D-41 schemas in the 355-document in-memory registry", () => {
+  it("registers the exact 27 D-41 and two D-42 schemas in the 357-document in-memory registry", () => {
     const sourceNames = Object.keys(
       PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1,
     );
-    expect(sourceNames).toHaveLength(355);
+    expect(sourceNames).toHaveLength(357);
     expect(
       sourceNames.filter((name) =>
         name.startsWith(
           "provider-migration-same-installation-identity-current-strong-source-normal-",
         ),
       ),
-    ).toEqual(D41_PROVIDER_MIGRATION_JSON_SCHEMA_NAMES_V1);
+    ).toEqual([
+      ...D41_PROVIDER_MIGRATION_JSON_SCHEMA_NAMES_V1,
+      ...D42_PROVIDER_MIGRATION_JSON_SCHEMA_NAMES_V1,
+    ]);
 
     const generated = generateProviderContractJsonSchemasV1();
-    expect(Object.keys(generated)).toHaveLength(355);
-    for (const name of D41_PROVIDER_MIGRATION_JSON_SCHEMA_NAMES_V1) {
+    expect(Object.keys(generated)).toHaveLength(357);
+    for (const name of [
+      ...D41_PROVIDER_MIGRATION_JSON_SCHEMA_NAMES_V1,
+      ...D42_PROVIDER_MIGRATION_JSON_SCHEMA_NAMES_V1,
+    ]) {
       expect(generated[name].$id).toBe(
         `urn:understand-code:provider-contract:schema:v1:${name}`,
       );
@@ -385,6 +396,21 @@ describe("provider contract JSON Schema distribution", () => {
     ] as Record<string, any>;
     expect(closure.properties.authority.const).toBe(
       "none_provider_migration_same_installation_identity_current_strong_source_normal_pre_side_effect_plan_admission_closure_reference_candidate_only",
+    );
+    const preparedRequest = generated[
+      "provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-request-reference-candidate-v1"
+    ] as Record<string, any>;
+    expect(preparedRequest.properties.profile.const).toBe(
+      "provider_migration_same_installation_identity_current_strong_source_normal_prepared_registry_successor_request_reference_candidate_v1",
+    );
+    const preparedSuccess = generated[
+      "provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate-v1"
+    ] as Record<string, any>;
+    expect(preparedSuccess.properties.authority.const).toBe(
+      "none_provider_migration_same_installation_identity_current_strong_source_normal_prepared_registry_successor_reference_candidate_only",
+    );
+    expect(preparedSuccess.properties.stopPoint.const).toBe(
+      "after_external_root_signed_prepared_registry_direct_successor_validation_before_registry_manifest_publication",
     );
   });
 
@@ -1124,12 +1150,14 @@ describe("provider contract JSON Schema distribution", () => {
       "provider-migration-same-installation-identity-current-strong-source-normal-plan-payload-reference-candidate",
       "provider-migration-same-installation-identity-current-strong-source-normal-plan-envelope-reference-candidate",
       "provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-request-reference-candidate-v1",
+      "provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate-v1",
     ] as const;
     for (const name of requiredNames) {
       expect(generated, name).toHaveProperty(name);
       expectEveryJsonSchemaObjectClosed(generated[name], name);
     }
-    expect(Object.keys(generated)).toHaveLength(355);
+    expect(Object.keys(generated)).toHaveLength(357);
     for (const nestedOnlyName of [
       "provider-migration-same-installation-identity-current-strong-source-normal-created-at-reference-candidate",
       "provider-migration-same-installation-identity-current-strong-source-normal-quota-account-contribution-reference-candidate",

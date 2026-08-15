@@ -7,6 +7,8 @@ import { canonicalizeJcsSafeIntegerUtf8V1 } from "./jcs.js";
 import {
   InstallationIdentityGenerationIdV1Schema,
   type InstallationIdentityGenerationIdV1,
+  ProviderMigrationIdV1Schema,
+  type ProviderMigrationIdV1,
 } from "./primitives.js";
 import {
   ProviderRegistryManifestEnvelopeV1Schema,
@@ -61,6 +63,13 @@ import {
   type RegistryTrustWitnessHandleV1,
 } from "./provider-registry-history-prepared-handle-internal.js";
 import {
+  registerProviderRegistryPreparedSuccessorSeedInternalV1,
+  takeProviderRegistryPreparedSuccessorFinalCandidateInternalV1,
+  type ProviderRegistryPreparedSuccessorFinalCapabilityInternalV1,
+  type ProviderRegistryPreparedSuccessorRetainedPayloadInternalV1,
+  type ProviderRegistryPreparedSuccessorSeedInternalV1,
+} from "./provider-registry-history-prepared-successor-handle-internal.js";
+import {
   deriveProviderEd25519PublicKeyDigestInternalV1,
   type ProviderRegistryRootMetadataEnvelopeV1,
   type ProviderRegistryRootMetadataPinV1,
@@ -78,6 +87,7 @@ import {
 
 const CapturedArrayV1 = Array;
 const CapturedArrayIsArrayV1 = Array.isArray;
+const CapturedArrayPrototypeV1 = Array.prototype;
 const CapturedArrayPrototypeFilterV1 = Array.prototype.filter;
 const CapturedArrayPrototypeMapV1 = Array.prototype.map;
 const CapturedArrayPrototypePushV1 = Array.prototype.push;
@@ -88,6 +98,7 @@ const CapturedMapPrototypeGetV1 = Map.prototype.get;
 const CapturedMapPrototypeHasV1 = Map.prototype.has;
 const CapturedMapPrototypeForEachV1 = Map.prototype.forEach;
 const CapturedMapPrototypeSetV1 = Map.prototype.set;
+const CapturedNumberIsSafeIntegerV1 = Number.isSafeInteger;
 const CapturedObjectCreateV1 = Object.create;
 const CapturedObjectDefinePropertyV1 = Object.defineProperty;
 const CapturedObjectFreezeV1 = Object.freeze;
@@ -105,6 +116,7 @@ const CapturedSetV1 = Set;
 const CapturedSetPrototypeAddV1 = Set.prototype.add;
 const CapturedSetPrototypeForEachV1 = Set.prototype.forEach;
 const CapturedSetPrototypeHasV1 = Set.prototype.has;
+const CapturedTypeErrorV1 = TypeError;
 const CapturedWeakSetV1 = WeakSet;
 const CapturedWeakSetPrototypeAddV1 = WeakSet.prototype.add;
 const CapturedWeakSetPrototypeHasV1 = WeakSet.prototype.has;
@@ -320,6 +332,67 @@ export function isProviderRegistryRetainedTrustHistoryWithinBudgetInternalV1(
     return false;
   }
   return retainedRegistryBytes <= maxRetainedTrustBytes - retainedRootBytes;
+}
+
+/** Direct-module boundary seam used by the retained-successor validator/tests. */
+export function isProviderRegistryPreparedDirectSuccessorGenerationWithinLimitInternalV1(
+  retainedManifestGenerationCount: number,
+  maxManifestGenerationCount: number,
+): boolean {
+  return (
+    CapturedNumberIsSafeIntegerV1(retainedManifestGenerationCount) &&
+    CapturedNumberIsSafeIntegerV1(maxManifestGenerationCount) &&
+    retainedManifestGenerationCount >= 0 &&
+    maxManifestGenerationCount >= 0 &&
+    retainedManifestGenerationCount < maxManifestGenerationCount
+  );
+}
+
+/** Direct-module boundary seam used by the retained-successor validator/tests. */
+export function isProviderRegistryPreparedDirectSuccessorEnvelopeWithinByteLimitsInternalV1(
+  envelopeCanonicalBytes: number,
+  retainedTrustHistoryCanonicalBytes: number,
+  maxSingleEnvelopeCanonicalBytes: number,
+  maxRetainedTrustHistoryCanonicalBytes: number,
+): boolean {
+  if (
+    !CapturedNumberIsSafeIntegerV1(envelopeCanonicalBytes) ||
+    !CapturedNumberIsSafeIntegerV1(retainedTrustHistoryCanonicalBytes) ||
+    !CapturedNumberIsSafeIntegerV1(maxSingleEnvelopeCanonicalBytes) ||
+    !CapturedNumberIsSafeIntegerV1(maxRetainedTrustHistoryCanonicalBytes) ||
+    envelopeCanonicalBytes < 0 ||
+    retainedTrustHistoryCanonicalBytes < 0 ||
+    maxSingleEnvelopeCanonicalBytes < 0 ||
+    maxRetainedTrustHistoryCanonicalBytes < 0 ||
+    envelopeCanonicalBytes > maxSingleEnvelopeCanonicalBytes ||
+    retainedTrustHistoryCanonicalBytes >
+      maxRetainedTrustHistoryCanonicalBytes
+  ) {
+    return false;
+  }
+  return (
+    envelopeCanonicalBytes <=
+    maxRetainedTrustHistoryCanonicalBytes -
+      retainedTrustHistoryCanonicalBytes
+  );
+}
+
+/** Indexed-copy seam: intentionally does not consult Array iteration hooks. */
+export function createProviderRegistryPreparedDirectSuccessorExpectedMembersInternalV1(
+  retainedMembers: readonly ProviderRegistryManifestMemberV1[],
+  admittedDestinationMember: ProviderRegistryManifestMemberV1,
+): ProviderRegistryManifestMemberV1[] {
+  const expectedMembers = new CapturedArrayV1<ProviderRegistryManifestMemberV1>(
+    retainedMembers.length + 1,
+  );
+  for (let index = 0; index < retainedMembers.length; index += 1) {
+    expectedMembers[index] = retainedMembers[index]!;
+  }
+  expectedMembers[retainedMembers.length] = admittedDestinationMember;
+  arraySortV1(expectedMembers, (left, right) =>
+    utf8BytewiseCompare(left.providerId, right.providerId),
+  );
+  return expectedMembers;
 }
 
 type RegistryManifestHistoryStageV1 =
@@ -561,7 +634,7 @@ function assertExactDenseArrayOwnKeysV1(
     }
     const index = Number(key);
     if (
-      !Number.isSafeInteger(index) ||
+      !CapturedNumberIsSafeIntegerV1(index) ||
       index < 0 ||
       index >= length ||
       String(index) !== key ||
@@ -1082,6 +1155,7 @@ export interface ProviderRegistryProspectiveEntryTemporaryAdmissionValidationInt
   readonly registryGeneration: 1;
   readonly copiedRetainedStateCollectionCount: 7;
   readonly retainedStateMutationCount: 0;
+  readonly preparedRegistrySuccessorSeed: ProviderRegistryPreparedSuccessorSeedInternalV1;
 }
 
 export type ProviderRegistryProspectiveEntryTemporaryAdmissionDiagnosticResultInternalV1 =
@@ -1099,6 +1173,7 @@ interface ProviderRegistryProspectiveEntryTemporaryAdmissionContextInternalV1 {
   readonly closureIdentity: ProviderRegistryManifestHistoryValidationV1;
   readonly strictCryptoCapability: ProviderStrictEd25519OpaqueCapabilityV1;
   readonly manifestHistory: readonly ProviderRegistryManifestEnvelopeV1[];
+  readonly currentEnvelope: ProviderRegistryManifestEnvelopeV1;
   readonly currentManifest: ProviderRegistryManifestV1;
   readonly currentRoot: ProviderRegistryRootPublicKeyV1;
   readonly rootByKeyId: ReadonlyMap<
@@ -1965,7 +2040,7 @@ export async function diagnoseProviderRegistryProspectiveEntryTemporaryAdmission
         reason: "schema_invalid",
       });
     }
-    const entry = exactInput.prospectiveRegistryEntry;
+    const entry = deepFreezeJson(exactInput.prospectiveRegistryEntry);
     if (
       context.currentManifest.routing.state !== "steady" ||
       entry.registryGeneration !== 1 ||
@@ -2019,6 +2094,32 @@ export async function diagnoseProviderRegistryProspectiveEntryTemporaryAdmission
         context.strictCryptoCapability,
       ),
     );
+    const preparedRegistrySuccessorSeed =
+      registerProviderRegistryPreparedSuccessorSeedInternalV1(
+        CapturedObjectFreezeV1({
+          installationIdentityGenerationId:
+            context.currentManifest.installationIdentityGenerationId,
+          manifestHistory: context.manifestHistory,
+          currentEnvelope: context.currentEnvelope,
+          currentRoot: context.currentRoot,
+          rootByKeyId: context.rootByKeyId,
+          policy: context.policy,
+          strictCryptoCapability: context.strictCryptoCapability,
+          prospectiveRegistryEntry: entry,
+          prospectiveRegistryEntryContentDigest:
+            exactInput.prospectiveRegistryEntryContentDigest as ReturnType<
+              typeof deriveStoreDurableObjectProviderRegistryEntryContentDigestV1
+            >,
+          retainedState: copiedState,
+          retainedRegistryManifestCanonicalBytes:
+            context.closureIdentity.retainedRegistryManifestCanonicalBytes,
+          retainedTrustHistoryCanonicalBytes:
+            context.closureIdentity.retainedTrustHistoryCanonicalBytes,
+          copiedRetainedStateCollectionCount: 7 as const,
+          retainedStateCopyOperationCount: 1 as const,
+          retainedStateMutationCount: 0 as const,
+        }),
+      );
     return createProviderNonThenableFrozenRecordV1<ProviderRegistryProspectiveEntryTemporaryAdmissionDiagnosticResultInternalV1>({
       ok: true,
       value: createProviderNonThenableFrozenRecordV1<ProviderRegistryProspectiveEntryTemporaryAdmissionValidationInternalV1>({
@@ -2034,6 +2135,7 @@ export async function diagnoseProviderRegistryProspectiveEntryTemporaryAdmission
         registryGeneration: 1,
         copiedRetainedStateCollectionCount: 7,
         retainedStateMutationCount: 0,
+        preparedRegistrySuccessorSeed,
       }),
     });
   } catch (error) {
@@ -2045,6 +2147,499 @@ export async function diagnoseProviderRegistryProspectiveEntryTemporaryAdmission
       });
     }
     return createProviderNonThenableFrozenRecordV1<ProviderRegistryProspectiveEntryTemporaryAdmissionDiagnosticResultInternalV1>({
+      ok: false,
+      stage: "history_input",
+      reason: "schema_invalid",
+    });
+  }
+}
+
+export interface ProviderRegistryPreparedDirectSuccessorInputInternalV1 {
+  readonly formalMigrationId: ProviderMigrationIdV1;
+  /**
+   * Exact detached/deep-frozen identity supplied by the D42 orchestrator's
+   * nominal externally-signed-Manifest source.  This internal seam is not a
+   * hostile raw-JSON ingestion point and never snapshots or clones the tree.
+   */
+  readonly externallySignedManifestEnvelope: ProviderRegistryManifestEnvelopeV1;
+}
+
+export interface ProviderRegistryPreparedDirectSuccessorValidationInternalV1 {
+  readonly authority: "none";
+  readonly validationScope: "direct_successor_of_retained_steady_tip_not_current_or_published";
+  readonly installationIdentityGenerationId: InstallationIdentityGenerationIdV1;
+  readonly formalMigrationId: ProviderMigrationIdV1;
+  readonly sourceProviderId: StoreDurableObjectProviderRegistryEntryV1["providerId"];
+  readonly destinationProviderId: StoreDurableObjectProviderRegistryEntryV1["providerId"];
+  readonly retainedSteadyTipRegistryManifest: ProviderRegistryManifestPinV1;
+  readonly preparedDirectSuccessorRegistryManifest: ProviderRegistryManifestPinV1;
+  readonly retainedPrefixIdentityPreserved: true;
+  readonly externallySignedEnvelopeIdentityPreserved: true;
+  readonly copiedRetainedStateCollectionCount: 7;
+  readonly retainedStateCopyOperationCount: 1;
+  readonly retainedStateMutationCount: 0;
+  readonly registryManifestPublicationCount: 0;
+  readonly preparedManifestCanonicalBytes: number;
+  readonly retainedRegistryManifestCanonicalBytesIncludingDirectSuccessor: number;
+  readonly retainedTrustHistoryCanonicalBytesIncludingDirectSuccessor: number;
+  readonly validatedManifestGenerationCountIncludingDirectSuccessor: number;
+}
+
+export type ProviderRegistryPreparedDirectSuccessorDiagnosticResultInternalV1 =
+  | Readonly<{
+      readonly ok: true;
+      readonly value: ProviderRegistryPreparedDirectSuccessorValidationInternalV1;
+    }>
+  | Readonly<{
+      readonly ok: false;
+      readonly stage: RegistryManifestHistoryStageV1;
+      readonly reason: RegistryManifestHistoryReasonV1;
+    }>;
+
+function readPreparedDirectSuccessorInputInternalV1(
+  input: unknown,
+): ProviderRegistryPreparedDirectSuccessorInputInternalV1 | undefined {
+  if (
+    input === null ||
+    typeof input !== "object" ||
+    (CapturedObjectGetPrototypeOfV1(input) !== CapturedObjectPrototypeV1 &&
+      CapturedObjectGetPrototypeOfV1(input) !== null)
+  ) {
+    return undefined;
+  }
+  const keys = CapturedReflectOwnKeysV1(input);
+  let hasFormalMigrationId = false;
+  let hasExternallySignedManifestEnvelope = false;
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
+    if (key === "formalMigrationId") {
+      hasFormalMigrationId = true;
+    } else if (key === "externallySignedManifestEnvelope") {
+      hasExternallySignedManifestEnvelope = true;
+    } else {
+      return undefined;
+    }
+  }
+  if (
+    keys.length !== 2 ||
+    !hasFormalMigrationId ||
+    !hasExternallySignedManifestEnvelope
+  ) {
+    return undefined;
+  }
+  const formalIdDescriptor = CapturedObjectGetOwnPropertyDescriptorV1(
+    input,
+    "formalMigrationId",
+  );
+  const envelopeDescriptor = CapturedObjectGetOwnPropertyDescriptorV1(
+    input,
+    "externallySignedManifestEnvelope",
+  );
+  if (
+    formalIdDescriptor === undefined ||
+    !("value" in formalIdDescriptor) ||
+    formalIdDescriptor.enumerable !== true ||
+    envelopeDescriptor === undefined ||
+    !("value" in envelopeDescriptor) ||
+    envelopeDescriptor.enumerable !== true
+  ) {
+    return undefined;
+  }
+  const formalMigrationId = ProviderMigrationIdV1Schema.safeParse(
+    formalIdDescriptor.value,
+  );
+  if (
+    !formalMigrationId.success ||
+    envelopeDescriptor.value === null ||
+    typeof envelopeDescriptor.value !== "object"
+  ) {
+    return undefined;
+  }
+  return {
+    formalMigrationId: formalMigrationId.data,
+    externallySignedManifestEnvelope:
+      envelopeDescriptor.value as ProviderRegistryManifestEnvelopeV1,
+  };
+}
+
+/**
+ * Assert the nominal orchestrator source kept one exact immutable JSON tree.
+ * A global container-entry cap prevents this internal assertion from becoming
+ * accidentally unbounded if a caller violates the nominal-source contract.
+ */
+function assertExactDeepFrozenManifestEnvelopeIdentityInternalV1(
+  input: unknown,
+): asserts input is ProviderRegistryManifestEnvelopeV1 {
+  const seen = new CapturedWeakSetV1<object>();
+  let retainedContainerEntryCount = 0;
+
+  function visit(value: unknown): void {
+    if (
+      value === null ||
+      typeof value === "string" ||
+      typeof value === "boolean"
+    ) {
+      return;
+    }
+    if (typeof value === "number") {
+      if (
+        !CapturedNumberIsSafeIntegerV1(value) ||
+        CapturedObjectIsV1(value, -0)
+      ) {
+        throw new CapturedTypeErrorV1(
+          "prepared Registry Manifest must be JSON data",
+        );
+      }
+      return;
+    }
+    if (typeof value !== "object" || !CapturedObjectIsFrozenV1(value)) {
+      throw new CapturedTypeErrorV1(
+        "prepared Registry Manifest must be an exact deep-frozen JSON tree",
+      );
+    }
+    if (weakSetHasV1(seen, value)) {
+      throw new CapturedTypeErrorV1(
+        "prepared Registry Manifest must be a JSON tree",
+      );
+    }
+    weakSetAddV1(seen, value);
+    const isArray = CapturedArrayIsArrayV1(value);
+    const prototype = CapturedObjectGetPrototypeOfV1(value);
+    if (
+      (isArray && prototype !== CapturedArrayPrototypeV1) ||
+      (!isArray &&
+        prototype !== CapturedObjectPrototypeV1 &&
+        prototype !== null)
+    ) {
+      throw new CapturedTypeErrorV1(
+        "prepared Registry Manifest must use plain JSON containers",
+      );
+    }
+    const keys = CapturedReflectOwnKeysV1(value);
+    retainedContainerEntryCount += keys.length;
+    if (
+      retainedContainerEntryCount >
+      REGISTRY_MANIFEST_JSON_CONTAINER_ENTRY_HARD_CAP_V1
+    ) {
+      return fail("history_limit", "envelope_byte_limit_exceeded");
+    }
+    if (isArray) {
+      const lengthDescriptor = CapturedObjectGetOwnPropertyDescriptorV1(
+        value,
+        "length",
+      );
+      if (
+        lengthDescriptor === undefined ||
+        !("value" in lengthDescriptor) ||
+        !CapturedNumberIsSafeIntegerV1(lengthDescriptor.value) ||
+        lengthDescriptor.value < 0
+      ) {
+        throw new CapturedTypeErrorV1(
+          "prepared Registry Manifest array is invalid",
+        );
+      }
+      assertExactDenseArrayOwnKeysV1(
+        keys,
+        lengthDescriptor.value as number,
+        "prepared Registry Manifest arrays must be dense",
+      );
+    } else if (arraySomeV1(keys, (key) => typeof key !== "string")) {
+      throw new CapturedTypeErrorV1(
+        "prepared Registry Manifest must not contain symbols",
+      );
+    }
+    for (let index = 0; index < keys.length; index += 1) {
+      const key = keys[index]!;
+      if (isArray && key === "length") continue;
+      const descriptor = CapturedObjectGetOwnPropertyDescriptorV1(value, key);
+      if (
+        descriptor === undefined ||
+        !("value" in descriptor) ||
+        descriptor.enumerable !== true
+      ) {
+        throw new CapturedTypeErrorV1(
+          "prepared Registry Manifest must contain enumerable own data",
+        );
+      }
+      visit(descriptor.value);
+    }
+  }
+
+  visit(input);
+}
+
+function retainedPreparedSuccessorStateInternalV1(
+  payload: ProviderRegistryPreparedSuccessorRetainedPayloadInternalV1,
+): RegistryHistoryStateV1 {
+  const state = payload.retainedState as Partial<RegistryHistoryStateV1>;
+  if (
+    state === null ||
+    typeof state !== "object" ||
+    state.materialOwners === undefined ||
+    state.providerKeyRecords === undefined ||
+    state.bindingRecords === undefined ||
+    state.approverKeyRecords === undefined ||
+    state.runtimeAttestations === undefined ||
+    state.registryEntries === undefined ||
+    state.revocationIdentities === undefined
+  ) {
+    return fail("history_input", "schema_invalid");
+  }
+  return state as RegistryHistoryStateV1;
+}
+
+async function validateProviderRegistryPreparedDirectSuccessorInternalV1(
+  payload: ProviderRegistryPreparedSuccessorRetainedPayloadInternalV1,
+  input: unknown,
+): Promise<ProviderRegistryPreparedDirectSuccessorValidationInternalV1> {
+  const exactInput = readPreparedDirectSuccessorInputInternalV1(input);
+  if (exactInput === undefined) {
+    return fail("history_input", "schema_invalid");
+  }
+  const history = payload.manifestHistory;
+  const currentEnvelope = payload.currentEnvelope;
+  const current = currentEnvelope.payload;
+  if (
+    history.length === 0 ||
+    currentEnvelope !== history[history.length - 1] ||
+    current.routing.state !== "steady"
+  ) {
+    return fail("routing", "routing_invalid");
+  }
+  const currentEnabled = enabledMembersV1(current);
+  if (currentEnabled.length !== 1) {
+    return fail("routing", "routing_invalid");
+  }
+  for (let index = 0; index < history.length; index += 1) {
+    const routing = history[index]!.payload.routing;
+    if (
+      routing.state === "migration" &&
+      routing.migrationId === exactInput.formalMigrationId
+    ) {
+      return fail("routing", "routing_invalid");
+    }
+  }
+  if (
+    !isProviderRegistryPreparedDirectSuccessorGenerationWithinLimitInternalV1(
+      history.length,
+      payload.policy
+        .maxRegistryManifestGenerationCountPerInstallationIdentity,
+    )
+  ) {
+    return fail("history_limit", "history_generation_limit_exceeded");
+  }
+
+  const envelope = exactInput.externallySignedManifestEnvelope;
+  let envelopeCanonicalBytes: number;
+  try {
+    assertExactDeepFrozenManifestEnvelopeIdentityInternalV1(envelope);
+    envelopeCanonicalBytes = canonicalizeJcsSafeIntegerUtf8V1(envelope).byteLength;
+  } catch (error) {
+    if (error instanceof RegistryManifestHistoryDiagnosticSignal) throw error;
+    return fail("manifest_envelope", "schema_invalid");
+  }
+  if (
+    envelopeCanonicalBytes >
+    payload.policy.maxSingleTrustEnvelopeLogicalBytes
+  ) {
+    return fail("history_limit", "envelope_byte_limit_exceeded");
+  }
+  const maxRetainedTrustBytes =
+    payload.policy.maxTotalTrustHistoryLogicalBytesPerInstallationIdentity;
+  if (
+    !isProviderRegistryPreparedDirectSuccessorEnvelopeWithinByteLimitsInternalV1(
+      envelopeCanonicalBytes,
+      payload.retainedTrustHistoryCanonicalBytes,
+      payload.policy.maxSingleTrustEnvelopeLogicalBytes,
+      maxRetainedTrustBytes,
+    )
+  ) {
+    return fail("history_limit", "history_total_byte_limit_exceeded");
+  }
+  try {
+    if (!ProviderRegistryManifestEnvelopeV1Schema.safeParse(envelope).success) {
+      return fail("manifest_envelope", "schema_invalid");
+    }
+  } catch {
+    return fail("manifest_envelope", "schema_invalid");
+  }
+
+  const manifest = envelope.payload;
+  const expectedGeneration = current.manifestGeneration + 1;
+  if (manifest.manifestGeneration !== expectedGeneration) {
+    return fail("manifest_predecessor", "generation_not_contiguous");
+  }
+  if (
+    manifest.installationIdentityGenerationId !==
+      payload.installationIdentityGenerationId ||
+    manifest.installationIdentityGenerationId !==
+      current.installationIdentityGenerationId ||
+    !canonicalJsonEqual(
+      manifest.activeRootMetadata,
+      current.activeRootMetadata,
+    ) ||
+    envelope.generationId !==
+      deriveProviderRegistryManifestGenerationIdV1(
+        projectProviderRegistryManifestIdFieldsV1(manifest),
+      ) ||
+    manifest.generationId !== envelope.generationId ||
+    envelope.contentDigest !==
+      deriveProviderRegistryManifestContentDigestV1(manifest)
+  ) {
+    return fail("manifest_envelope", "envelope_mismatch");
+  }
+  if (
+    manifest.predecessor.state !== "manifest" ||
+    manifest.predecessor.generationId !== currentEnvelope.generationId ||
+    manifest.predecessor.contentDigest !== currentEnvelope.contentDigest
+  ) {
+    return fail("manifest_predecessor", "predecessor_pin_mismatch");
+  }
+
+  const source = currentEnabled[0]!;
+  const destinationEntry = payload.prospectiveRegistryEntry;
+  const destinationMember: EnabledMemberV1 = CapturedObjectFreezeV1({
+    providerId: destinationEntry.providerId,
+    disposition: "enabled" as const,
+    registryEntryContentDigest:
+      payload.prospectiveRegistryEntryContentDigest,
+    registryEntry: destinationEntry,
+  });
+  const expectedMembers =
+    createProviderRegistryPreparedDirectSuccessorExpectedMembersInternalV1(
+      current.members,
+      destinationMember,
+    );
+  if (
+    source.providerId === destinationEntry.providerId ||
+    !canonicalJsonEqual(manifest.members, expectedMembers) ||
+    manifest.routing.state !== "migration" ||
+    manifest.routing.migrationId !== exactInput.formalMigrationId ||
+    manifest.routing.sourceProviderId !== source.providerId ||
+    manifest.routing.destinationProviderId !== destinationEntry.providerId ||
+    manifest.routing.activeForMigrationWrites !== source.providerId ||
+    manifest.routing.phase !== "prepared"
+  ) {
+    return fail("routing", "routing_invalid");
+  }
+
+  const retainedState = retainedPreparedSuccessorStateInternalV1(payload);
+  const retainedProspectiveEntry = mapGetV1(
+    retainedState.registryEntries,
+    recordIdentityV1([
+      destinationEntry.providerId,
+      payload.prospectiveRegistryEntryContentDigest,
+    ]),
+  );
+  if (
+    retainedProspectiveEntry === undefined ||
+    !bytesEqual(
+      retainedProspectiveEntry,
+      canonicalizeJcsSafeIntegerUtf8V1(destinationEntry),
+    )
+  ) {
+    return fail("registry_entry", "entry_mismatch");
+  }
+
+  assertSortedUniqueStringsV1(
+    arrayMapV1(manifest.members, (member) => member.providerId),
+  );
+  validateProviderRegistryPreparedDirectSuccessorMemberTransitionsInternalV1(
+    current,
+    manifest,
+  );
+  assertRoutingShapeV1(manifest);
+  assertRoutingSuccessorV1(current, manifest);
+  assertManifestApprovalSnapshotV1(manifest);
+  await requireRootSignatureV1(
+    manifest.manifestSignature,
+    MANIFEST_SIGNATURE_PATTERN,
+    payload.currentRoot,
+    createProviderRegistryManifestSignatureMessageV1(
+      projectProviderRegistryManifestUnsignedClaimsV1(manifest),
+      payload.currentRoot.rootKeyId,
+    ),
+    payload.strictCryptoCapability,
+    "manifest_signature",
+  );
+
+  return createProviderNonThenableFrozenRecordV1<ProviderRegistryPreparedDirectSuccessorValidationInternalV1>({
+    authority: "none",
+    validationScope:
+      "direct_successor_of_retained_steady_tip_not_current_or_published",
+    installationIdentityGenerationId:
+      payload.installationIdentityGenerationId,
+    formalMigrationId: exactInput.formalMigrationId,
+    sourceProviderId: source.providerId,
+    destinationProviderId: destinationEntry.providerId,
+    retainedSteadyTipRegistryManifest: deepFreezeJson(
+      registryManifestPinV1(currentEnvelope),
+    ),
+    preparedDirectSuccessorRegistryManifest: deepFreezeJson(
+      registryManifestPinV1(envelope),
+    ),
+    retainedPrefixIdentityPreserved: true,
+    externallySignedEnvelopeIdentityPreserved: true,
+    copiedRetainedStateCollectionCount:
+      payload.copiedRetainedStateCollectionCount,
+    retainedStateCopyOperationCount: payload.retainedStateCopyOperationCount,
+    retainedStateMutationCount: payload.retainedStateMutationCount,
+    registryManifestPublicationCount: 0,
+    preparedManifestCanonicalBytes: envelopeCanonicalBytes,
+    retainedRegistryManifestCanonicalBytesIncludingDirectSuccessor:
+      payload.retainedRegistryManifestCanonicalBytes +
+      envelopeCanonicalBytes,
+    retainedTrustHistoryCanonicalBytesIncludingDirectSuccessor:
+      payload.retainedTrustHistoryCanonicalBytes + envelopeCanonicalBytes,
+    validatedManifestGenerationCountIncludingDirectSuccessor:
+      history.length + 1,
+  });
+}
+
+/**
+ * Consume one exact D41 candidate-bound capability before inspecting the
+ * externally signed envelope.  Correct claims are permanently burned on every
+ * subsequent Schema, signature, transition, or budget failure.
+ *
+ * @internal
+ */
+export async function diagnoseProviderRegistryPreparedDirectSuccessorInternalV1(
+  exactFinalCandidateIdentity: unknown,
+  finalCapability: ProviderRegistryPreparedSuccessorFinalCapabilityInternalV1,
+  input: unknown,
+): Promise<ProviderRegistryPreparedDirectSuccessorDiagnosticResultInternalV1> {
+  const payload =
+    takeProviderRegistryPreparedSuccessorFinalCandidateInternalV1(
+      exactFinalCandidateIdentity,
+      finalCapability,
+    );
+  if (payload === undefined) {
+    return createProviderNonThenableFrozenRecordV1<ProviderRegistryPreparedDirectSuccessorDiagnosticResultInternalV1>({
+      ok: false,
+      stage: "history_input",
+      reason: "schema_invalid",
+    });
+  }
+  try {
+    const value = await hardenProviderPointPromiseV1(
+      validateProviderRegistryPreparedDirectSuccessorInternalV1(
+        payload,
+        input,
+      ),
+    );
+    return createProviderNonThenableFrozenRecordV1<ProviderRegistryPreparedDirectSuccessorDiagnosticResultInternalV1>({
+      ok: true,
+      value,
+    });
+  } catch (error) {
+    if (error instanceof RegistryManifestHistoryDiagnosticSignal) {
+      return createProviderNonThenableFrozenRecordV1<ProviderRegistryPreparedDirectSuccessorDiagnosticResultInternalV1>({
+        ok: false,
+        stage: error.stage,
+        reason: error.reason,
+      });
+    }
+    return createProviderNonThenableFrozenRecordV1<ProviderRegistryPreparedDirectSuccessorDiagnosticResultInternalV1>({
       ok: false,
       stage: "history_input",
       reason: "schema_invalid",
@@ -2228,7 +2823,7 @@ function validateMemberSuccessorsV1(
 ): void {
   const previousMembers = memberMapV1(previous);
   const currentMembers = memberMapV1(current);
-  for (const [providerId, previousMember] of previousMembers) {
+  mapForEachV1(previousMembers, (previousMember, providerId) => {
     const currentMember = mapGetV1(currentMembers, providerId);
     if (currentMember === undefined) {
       return fail("member_set", "member_transition_invalid");
@@ -2240,7 +2835,7 @@ function validateMemberSuccessorsV1(
       ) {
         return fail("member_set", "member_transition_invalid");
       }
-      continue;
+      return;
     }
     if (currentMember.disposition === "revoked") {
       assertTombstoneV1(
@@ -2251,8 +2846,9 @@ function validateMemberSuccessorsV1(
     } else {
       assertEntrySuccessorV1(previousMember, currentMember);
     }
-  }
-  for (const currentMember of current.members) {
+  });
+  for (let index = 0; index < current.members.length; index += 1) {
+    const currentMember = current.members[index]!;
     if (
       !mapHasV1(previousMembers, currentMember.providerId) &&
       (currentMember.disposition !== "enabled" ||
@@ -2261,6 +2857,14 @@ function validateMemberSuccessorsV1(
       return fail("member_set", "member_transition_invalid");
     }
   }
+}
+
+/** Package-private D42 seam for the exact retained-member transition check. */
+export function validateProviderRegistryPreparedDirectSuccessorMemberTransitionsInternalV1(
+  previous: ProviderRegistryManifestV1,
+  current: ProviderRegistryManifestV1,
+): void {
+  validateMemberSuccessorsV1(previous, current);
 }
 
 async function validateInternalV1(
@@ -2973,6 +3577,7 @@ async function validatePreparedInternalV1(
       closureIdentity: closure,
       strictCryptoCapability: prepared.strictCryptoCapability,
       manifestHistory,
+      currentEnvelope: current,
       currentManifest: current.payload,
       currentRoot: suppliedHistoryTipRootEnvelope.payload.activeRoot,
       rootByKeyId,

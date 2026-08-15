@@ -123,8 +123,19 @@ import {
 import {
   diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateInternalV1,
   mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPrePlanReferenceCapabilityInternalV1,
+  type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateDiagnosticResultInternalV1,
   type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalSideEffectAuditObserverInternalV1,
 } from "../src/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-pre-plan-reference-capability-internal.js";
+import {
+  diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateInternalV1,
+  mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedPreparedRegistryManifestSourceCapabilityInternalV1,
+  mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCapabilityInternalV1,
+  type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorSideEffectAuditObserverInternalV1,
+} from "../src/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-capability-internal.js";
+import {
+  deriveProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalMigrationIdMappingV1,
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1Schema,
+} from "../src/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate-wire.js";
 import {
   mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalEndpointCutCapabilityInternalV1,
   mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalProspectiveDestinationPreparedSourceCapabilityInternalV1,
@@ -163,6 +174,9 @@ import {
   buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalSignedProspectiveDestinationFixture,
   type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalSignedProspectiveDestinationFixtureV1,
 } from "../scripts/lib/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate-fixture.mjs";
+import {
+  buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedPreparedRegistrySuccessorFixture,
+} from "../scripts/lib/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate-fixture.mjs";
 
 function resourceBytes(relativePath: string): Uint8Array {
   return new Uint8Array(
@@ -423,6 +437,11 @@ function canonicalByteStringV1(value: unknown): string {
     canonicalizeJcsSafeIntegerV1(value),
     "utf8",
   ).toString("base64url")}`;
+}
+
+function flipLastLowerHexV1(value: string): string {
+  const last = value.at(-1);
+  return `${value.slice(0, -1)}${last === "0" ? "1" : "0"}`;
 }
 
 function migrationBudgetsV1(): ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectBudgetsReferenceCandidateV1 {
@@ -1071,6 +1090,52 @@ function auditObserverV1(options: {
   return { observer, snapshot, calls };
 }
 
+const d42SinkNames = [
+  ...sinkNames,
+  "rootSigningRequests",
+  "registryManifestPublications",
+  "catalogPublications",
+] as const;
+
+function d42AuditObserverV1(options: {
+  readonly mutateOnObservation?: number;
+  readonly mutateSink?: (typeof d42SinkNames)[number];
+  readonly throwOnObservation?: number;
+} = {}) {
+  const calls = { observations: 0 };
+  const snapshot = Object.fromEntries(
+    d42SinkNames.map((name, index) => [
+      name,
+      {
+        revision: 0,
+        count: 0,
+        contentDigest: digestV1(((index + 1) % 16).toString(16)),
+      },
+    ]),
+  ) as Record<
+    (typeof d42SinkNames)[number],
+    { revision: number; count: number; contentDigest: ContentDigestV1 }
+  >;
+  const observer: ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorSideEffectAuditObserverInternalV1 = {
+    observeSideEffectSinks() {
+      calls.observations += 1;
+      if (calls.observations === options.throwOnObservation) {
+        throw new TypeError("injected D-42 audit failure");
+      }
+      if (calls.observations === options.mutateOnObservation) {
+        const sinkName = options.mutateSink ?? "registryManifestPublications";
+        snapshot[sinkName] = {
+          revision: 1,
+          count: 1,
+          contentDigest: digestV1("f"),
+        };
+      }
+      return cloneJsonV1(snapshot);
+    },
+  };
+  return { observer, snapshot, calls };
+}
+
 async function withThrowingObjectPrototypeThenV1<T>(
   reads: { count: number },
   operation: () => Promise<T>,
@@ -1094,7 +1159,7 @@ async function withThrowingObjectPrototypeThenV1<T>(
   }
 }
 
-async function operationFixtureV1(options: {
+interface OperationFixtureOptionsV1 {
   readonly aliasMaterial?: boolean;
   readonly materialAliasPublicKeyBytes?: string;
   readonly sourcePostDrift?: boolean;
@@ -1121,7 +1186,9 @@ async function operationFixtureV1(options: {
   readonly objectPrototypeThenReads?: { count: number };
   readonly trace?: string[];
   readonly auditThrowOnObservation?: number;
-} = {}) {
+}
+
+async function operationInputsV1(options: OperationFixtureOptionsV1 = {}) {
   // Every operation receives a new committed D-40 identity because the
   // endpoint-trust handoff is exact-once.
   currentFixture = options.currentD40Fixture ??
@@ -1259,35 +1326,19 @@ async function operationFixtureV1(options: {
     migrationProtocolDigest:
       options.requestMigrationProtocolDigest ?? migrationProtocolDigest,
   };
-  let ready: Awaited<ReturnType<
-    typeof mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPrePlanReferenceCapabilityInternalV1
-  >>;
-  try {
-    const mint = () =>
-      mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPrePlanReferenceCapabilityInternalV1({
-        acceptanceClosureIdentity: currentFixture.d40,
-        endpointObservationHost,
-        prospectiveDestinationPreparedSourceCapability,
-        request,
-        verifiedLiveReferenceSchemaDigest:
-          options.verifiedLiveReferenceSchemaDigest ??
-          liveReferenceSchemaDigest,
-        verifiedMigrationProtocolDigest:
-          options.verifiedMigrationProtocolDigest ?? migrationProtocolDigest,
-        sourceStreamHost: source.host,
-        quotaObservationHost: quota.host,
-        sideEffectAuditObserver: audit.observer,
-      });
-    ready = options.objectPrototypeThenReads === undefined
-      ? await mint()
-      : await withThrowingObjectPrototypeThenV1(
-          options.objectPrototypeThenReads,
-          mint,
-        );
-  } catch (error) {
-    options.onPrePlanMintFailure?.({ source, audit });
-    throw error;
-  }
+  const prePlanMintInput = {
+    acceptanceClosureIdentity: currentFixture.d40,
+    endpointObservationHost,
+    prospectiveDestinationPreparedSourceCapability,
+    request,
+    verifiedLiveReferenceSchemaDigest:
+      options.verifiedLiveReferenceSchemaDigest ?? liveReferenceSchemaDigest,
+    verifiedMigrationProtocolDigest:
+      options.verifiedMigrationProtocolDigest ?? migrationProtocolDigest,
+    sourceStreamHost: source.host,
+    quotaObservationHost: quota.host,
+    sideEffectAuditObserver: audit.observer,
+  };
   return {
     prospective,
     projection,
@@ -1296,8 +1347,37 @@ async function operationFixtureV1(options: {
     audit,
     endpointCalls,
     endpointTraps,
-    ready,
     request,
+    prePlanMintInput,
+  };
+}
+
+async function operationFixtureV1(options: OperationFixtureOptionsV1 = {}) {
+  const inputs = await operationInputsV1(options);
+  let ready: Awaited<ReturnType<
+    typeof mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPrePlanReferenceCapabilityInternalV1
+  >>;
+  try {
+    const mint = () =>
+      mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPrePlanReferenceCapabilityInternalV1(
+        inputs.prePlanMintInput,
+      );
+    ready = options.objectPrototypeThenReads === undefined
+      ? await mint()
+      : await withThrowingObjectPrototypeThenV1(
+          options.objectPrototypeThenReads,
+          mint,
+        );
+  } catch (error) {
+    options.onPrePlanMintFailure?.({
+      source: inputs.source,
+      audit: inputs.audit,
+    });
+    throw error;
+  }
+  return {
+    ...inputs,
+    ready,
   };
 }
 
@@ -1894,4 +1974,686 @@ describe("D-41 test-only signed pre-side-effect integration", () => {
     expect(drift.endpointCalls).toEqual(expectedEndpointCalls);
     expectZeroSinkSnapshotV1(drift.audit.snapshot);
   });
+});
+
+let d42BaselineCandidatePromise:
+  | Promise<
+      Extract<
+        ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateDiagnosticResultInternalV1,
+        { readonly ok: true }
+      >["value"]
+    >
+  | undefined;
+
+function d42BaselineCandidateV1() {
+  d42BaselineCandidatePromise ??= (async () => {
+    const fixture = await operationFixtureV1();
+    const result =
+      await diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateInternalV1(
+        fixture.ready.buildInput,
+      );
+    if (!result.ok) {
+      throw new TypeError("D-42 baseline D-41 candidate failed");
+    }
+    return result.value;
+  })();
+  return d42BaselineCandidatePromise;
+}
+
+async function d42MintFixtureV1(options: {
+  readonly invalidSignature?: boolean;
+  readonly mutateAuditOnObservation?: number;
+  readonly mutateAuditSink?: (typeof d42SinkNames)[number];
+  readonly throwAuditOnObservation?: number;
+} = {}) {
+  const expectedD41 = await d42BaselineCandidateV1();
+  const mapping =
+    deriveProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalMigrationIdMappingV1(
+      expectedD41.migrationId,
+    );
+  const inputs = await operationInputsV1();
+  const signed =
+    buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedPreparedRegistrySuccessorFixture({
+      distributionRawRequest,
+      prospectiveDestination: inputs.prospective,
+      formalMigrationId: mapping.formalMigrationId,
+      invalidSignature: options.invalidSignature,
+    });
+  const signedSourceCapability =
+    mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedPreparedRegistryManifestSourceCapabilityInternalV1(
+      { externallySignedManifestEnvelope: signed.envelope },
+    );
+  const audit = d42AuditObserverV1({
+    mutateOnObservation: options.mutateAuditOnObservation,
+    mutateSink: options.mutateAuditSink,
+    throwOnObservation: options.throwAuditOnObservation,
+  });
+  const request = {
+    profile:
+      "provider_migration_same_installation_identity_current_strong_source_normal_prepared_registry_successor_request_reference_candidate_v1" as const,
+    preSideEffectRequest: inputs.request,
+    expectedCandidateMigrationId: expectedD41.migrationId,
+    expectedPreparedRegistryManifestPin: signed.pin,
+  };
+  const mintInput = {
+    acceptanceClosureIdentity:
+      inputs.prePlanMintInput.acceptanceClosureIdentity,
+    endpointObservationHost:
+      inputs.prePlanMintInput.endpointObservationHost,
+    externallySignedPreparedRegistryManifestSourceCapability:
+      signedSourceCapability,
+    prospectiveDestinationPreparedSourceCapability:
+      inputs.prePlanMintInput.prospectiveDestinationPreparedSourceCapability,
+    quotaObservationHost: inputs.prePlanMintInput.quotaObservationHost,
+    request,
+    sideEffectAuditObserver: audit.observer,
+    sourceStreamHost: inputs.prePlanMintInput.sourceStreamHost,
+    verifiedLiveReferenceSchemaDigest:
+      inputs.prePlanMintInput.verifiedLiveReferenceSchemaDigest,
+    verifiedMigrationProtocolDigest:
+      inputs.prePlanMintInput.verifiedMigrationProtocolDigest,
+  };
+  return {
+    expectedD41,
+    mapping,
+    inputs,
+    signed,
+    signedSourceCapability,
+    audit,
+    request,
+    mintInput,
+  };
+}
+
+async function d42OperationFixtureV1(options: {
+  readonly invalidSignature?: boolean;
+  readonly mutateAuditOnObservation?: number;
+  readonly mutateAuditSink?: (typeof d42SinkNames)[number];
+  readonly throwAuditOnObservation?: number;
+} = {}) {
+  const fixture = await d42MintFixtureV1(options);
+  const ready =
+    await mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCapabilityInternalV1(
+      fixture.mintInput,
+    );
+  return { ...fixture, ready };
+}
+
+describe("D-42 same-cohort prepared Registry successor integration", () => {
+  it("validates one externally root-signed direct prepared successor while all twelve sinks stay zero", async () => {
+    const fixture = await d42OperationFixtureV1();
+    const result =
+      await diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateInternalV1(
+        fixture.ready.buildInput,
+      );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(
+      ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1Schema.parse(
+        result.value,
+      ),
+    ).toEqual(result.value);
+    expect(result.value.preSideEffectPlanAdmissionClosure.migrationId).toBe(
+      fixture.expectedD41.migrationId,
+    );
+    expect(result.value.formalMigrationIdMapping).toEqual(fixture.mapping);
+    expect(result.value.preparedRegistryManifestPin).toEqual(
+      fixture.signed.pin,
+    );
+    expect(result.value.preparedRegistryManifestEnvelope).toEqual(
+      fixture.signed.envelope,
+    );
+    expect(result.value.preparedRegistryManifestEnvelope.payload.routing).toEqual({
+      state: "migration",
+      migrationId: fixture.mapping.formalMigrationId,
+      sourceProviderId: fixture.signed.sourceProviderId,
+      destinationProviderId: fixture.signed.destinationProviderId,
+      activeForMigrationWrites: fixture.signed.sourceProviderId,
+      phase: "prepared",
+    });
+    expect(result.value.publicationGate).toMatchObject({
+      state: "locked_awaiting_formal_catalog_direct_successor",
+      preparedRegistryDirectSuccessor: "verified_not_published",
+      formalCatalogDirectSuccessor: "none",
+      formalDestinationTrust: "none",
+      formalPlan: "none",
+      reservationRecords: "none",
+      planPublication: "none",
+    });
+    expect(result.value.verificationBoundary).toMatchObject({
+      preparedRegistryRelationship:
+        "root_signed_direct_successor_of_same_cohort_retained_steady_tip_candidate_not_current_or_published_v1",
+      rootSigningAuthority:
+        "external_signature_verification_only_no_signer_capability_v1",
+      providerAuthority: "none",
+      durability: "none",
+      migrationExecution: "none",
+    });
+    expect(
+      distributionRawRequest.registryManifestHistory.some(
+        (entry) => entry.generationId === fixture.signed.envelope.generationId,
+      ),
+    ).toBe(false);
+    expect(Object.keys(result.value.sideEffectBoundary).sort()).toEqual(
+      ["policy", ...d42SinkNames].sort(),
+    );
+    for (const sinkName of d42SinkNames) {
+      expect(result.value.sideEffectBoundary[sinkName], sinkName).toBe(0);
+      expect(fixture.audit.snapshot[sinkName].count, sinkName).toBe(0);
+    }
+    expect(fixture.audit.calls.observations).toBe(6);
+  }, 120_000);
+
+  it("rejects a valid-but-different expected candidate ID only after fresh D-41 succeeds and keeps all sinks zero", async () => {
+    const fixture = await d42MintFixtureV1();
+    const differentCandidateMigrationId = flipLastLowerHexV1(
+      fixture.request.expectedCandidateMigrationId,
+    ) as typeof fixture.request.expectedCandidateMigrationId;
+    await expect(
+      mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCapabilityInternalV1(
+        {
+          ...fixture.mintInput,
+          request: {
+            ...fixture.request,
+            expectedCandidateMigrationId: differentCandidateMigrationId,
+          },
+        },
+      ),
+    ).rejects.toMatchObject({
+      stage: "candidate_identity",
+      reason: "candidate_invalid",
+    });
+    expect(fixture.inputs.source.calls.open).toBe(1);
+    for (const sinkName of d42SinkNames) {
+      expect(fixture.audit.snapshot[sinkName].count, sinkName).toBe(0);
+    }
+  }, 120_000);
+
+  it("rejects an expected prepared Pin mismatch before fresh D-41 reads source", async () => {
+    const fixture = await d42MintFixtureV1();
+    await expect(
+      mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCapabilityInternalV1(
+        {
+          ...fixture.mintInput,
+          request: {
+            ...fixture.request,
+            expectedPreparedRegistryManifestPin: {
+              ...fixture.request.expectedPreparedRegistryManifestPin,
+              contentDigest: flipLastLowerHexV1(
+                fixture.request.expectedPreparedRegistryManifestPin
+                  .contentDigest,
+              ) as typeof fixture.request.expectedPreparedRegistryManifestPin.contentDigest,
+            },
+          },
+        },
+      ),
+    ).rejects.toMatchObject({
+      stage: "prepared_registry_manifest",
+      reason: "successor_invalid",
+    });
+    expect(fixture.inputs.source.calls.open).toBe(0);
+    expect(fixture.audit.calls.observations).toBe(2);
+    for (const sinkName of d42SinkNames) {
+      expect(fixture.audit.snapshot[sinkName].count, sinkName).toBe(0);
+    }
+  }, 120_000);
+
+  it("does not let copied, extended, or literal exact2 inputs burn the registered owner", async () => {
+    const fixture = await d42OperationFixtureV1();
+    const copied = { ...fixture.ready.buildInput };
+    const extended = { ...fixture.ready.buildInput, unexpected: true };
+    const literal = {
+      request: fixture.ready.request,
+      preparedRegistrySuccessorReferenceCapability:
+        fixture.ready.preparedRegistrySuccessorReferenceCapability,
+    };
+    for (const forged of [copied, extended, literal]) {
+      await expect(
+        diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateInternalV1(
+          forged,
+        ),
+      ).resolves.toEqual({
+        ok: false,
+        stage: "input",
+        reason: "schema_invalid",
+      });
+    }
+    const owner =
+      await diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateInternalV1(
+        fixture.ready.buildInput,
+      );
+    expect(owner.ok).toBe(true);
+  }, 120_000);
+
+  it("lets only one concurrent exact owner claim succeed", async () => {
+    const fixture = await d42OperationFixtureV1();
+    const [left, right] = await Promise.all([
+      diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateInternalV1(
+        fixture.ready.buildInput,
+      ),
+      diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateInternalV1(
+        fixture.ready.buildInput,
+      ),
+    ]);
+    expect([left.ok, right.ok].sort()).toEqual([false, true]);
+    expect([left, right].find((entry) => !entry.ok)).toEqual({
+      ok: false,
+      stage: "input",
+      reason: "schema_invalid",
+    });
+  }, 120_000);
+
+  it("burns the exact final continuation after a correct claim reaches an invalid external signature", async () => {
+    const fixture = await d42OperationFixtureV1({ invalidSignature: true });
+    const first =
+      await diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateInternalV1(
+        fixture.ready.buildInput,
+      );
+    expect(first).toEqual({
+      ok: false,
+      stage: "prepared_registry_manifest",
+      reason: "signature_invalid",
+    });
+    await expect(
+      diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateInternalV1(
+        fixture.ready.buildInput,
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      stage: "input",
+      reason: "schema_invalid",
+    });
+    expect(fixture.audit.calls.observations).toBe(5);
+    for (const sinkName of d42SinkNames) {
+      expect(fixture.audit.snapshot[sinkName].count, sinkName).toBe(0);
+    }
+  }, 120_000);
+
+  it("keeps the trusted signed-source and public-build capabilities zero-key and exact-once", async () => {
+    const fixture = await d42OperationFixtureV1();
+    expect(Object.isFrozen(fixture.signedSourceCapability)).toBe(true);
+    expect(Reflect.ownKeys(fixture.signedSourceCapability)).toEqual([]);
+    expect(
+      Object.isFrozen(
+        fixture.ready.preparedRegistrySuccessorReferenceCapability,
+      ),
+    ).toBe(true);
+    expect(
+      Reflect.ownKeys(
+        fixture.ready.preparedRegistrySuccessorReferenceCapability,
+      ),
+    ).toEqual([]);
+
+    const replayAudit = d42AuditObserverV1();
+    await expect(
+      mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCapabilityInternalV1({
+        acceptanceClosureIdentity:
+          fixture.inputs.prePlanMintInput.acceptanceClosureIdentity,
+        endpointObservationHost:
+          fixture.inputs.prePlanMintInput.endpointObservationHost,
+        externallySignedPreparedRegistryManifestSourceCapability:
+          fixture.signedSourceCapability,
+        prospectiveDestinationPreparedSourceCapability:
+          fixture.inputs.prePlanMintInput
+            .prospectiveDestinationPreparedSourceCapability,
+        quotaObservationHost:
+          fixture.inputs.prePlanMintInput.quotaObservationHost,
+        request: fixture.request,
+        sideEffectAuditObserver: replayAudit.observer,
+        sourceStreamHost: fixture.inputs.prePlanMintInput.sourceStreamHost,
+        verifiedLiveReferenceSchemaDigest:
+          fixture.inputs.prePlanMintInput.verifiedLiveReferenceSchemaDigest,
+        verifiedMigrationProtocolDigest:
+          fixture.inputs.prePlanMintInput.verifiedMigrationProtocolDigest,
+      }),
+    ).rejects.toMatchObject({
+      stage: "prepared_registry_manifest",
+      reason: "capability_invalid",
+    });
+    expect(replayAudit.calls.observations).toBe(2);
+
+    const owner =
+      await diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateInternalV1(
+        fixture.ready.buildInput,
+      );
+    expect(owner.ok).toBe(true);
+  }, 120_000);
+
+  it("classifies a PRE audit observer failure as a side-effect-boundary failure without burning the operation inputs", async () => {
+    const fixture = await d42MintFixtureV1({
+      throwAuditOnObservation: 1,
+    });
+    await expect(
+      mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCapabilityInternalV1(
+        fixture.mintInput,
+      ),
+    ).rejects.toMatchObject({
+      stage: "side_effect_boundary",
+      reason: "side_effect_detected",
+    });
+    expect(fixture.audit.calls.observations).toBe(1);
+
+    const retryAudit = d42AuditObserverV1();
+    const ready =
+      await mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCapabilityInternalV1(
+        {
+          ...fixture.mintInput,
+          sideEffectAuditObserver: retryAudit.observer,
+        },
+      );
+    const owner =
+      await diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateInternalV1(
+        ready.buildInput,
+      );
+    expect(owner.ok).toBe(true);
+  }, 120_000);
+
+  it("preserves the side-effect-boundary diagnostic when the nested fresh D-41 PRE audit observer fails", async () => {
+    const fixture = await d42MintFixtureV1({
+      throwAuditOnObservation: 2,
+    });
+    await expect(
+      mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCapabilityInternalV1(
+        fixture.mintInput,
+      ),
+    ).rejects.toMatchObject({
+      stage: "side_effect_boundary",
+      reason: "side_effect_detected",
+    });
+    expect(fixture.audit.calls.observations).toBe(3);
+    for (const sinkName of d42SinkNames) {
+      expect(fixture.audit.snapshot[sinkName].count, sinkName).toBe(0);
+    }
+  }, 120_000);
+
+  it("lets the true-final audit preserve an intermediate observer failure as side-effect-boundary", async () => {
+    const fixture = await d42OperationFixtureV1({
+      throwAuditOnObservation: 5,
+    });
+    await expect(
+      diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateInternalV1(
+        fixture.ready.buildInput,
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      stage: "side_effect_boundary",
+      reason: "side_effect_detected",
+    });
+    expect(fixture.audit.calls.observations).toBe(6);
+    for (const sinkName of d42SinkNames) {
+      expect(fixture.audit.snapshot[sinkName].count, sinkName).toBe(0);
+    }
+  }, 120_000);
+
+  it("rejects accessor, extra-field, and Proxy request topology before consuming the trusted signed source", async () => {
+    const fixture = await d42MintFixtureV1();
+    let getterReads = 0;
+    const accessorRequest = {
+      profile: fixture.request.profile,
+      preSideEffectRequest: fixture.request.preSideEffectRequest,
+      get expectedCandidateMigrationId() {
+        getterReads += 1;
+        return fixture.request.expectedCandidateMigrationId;
+      },
+      expectedPreparedRegistryManifestPin:
+        fixture.request.expectedPreparedRegistryManifestPin,
+    };
+    await expect(
+      mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCapabilityInternalV1({
+        ...fixture.mintInput,
+        request: accessorRequest,
+      }),
+    ).rejects.toMatchObject({ stage: "input", reason: "schema_invalid" });
+    expect(getterReads).toBe(0);
+
+    await expect(
+      mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCapabilityInternalV1({
+        ...fixture.mintInput,
+        request: { ...fixture.request, unexpected: true },
+      }),
+    ).rejects.toMatchObject({ stage: "input", reason: "schema_invalid" });
+
+    let ownKeyTraps = 0;
+    const proxyRequest = new Proxy(fixture.request, {
+      ownKeys() {
+        ownKeyTraps += 1;
+        throw new TypeError("request ownKeys trap");
+      },
+    });
+    await expect(
+      mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCapabilityInternalV1({
+        ...fixture.mintInput,
+        request: proxyRequest,
+      }),
+    ).rejects.toMatchObject({ stage: "input", reason: "schema_invalid" });
+    expect(ownKeyTraps).toBe(1);
+
+    const ready =
+      await mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCapabilityInternalV1(
+        fixture.mintInput,
+      );
+    const owner =
+      await diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateInternalV1(
+        ready.buildInput,
+      );
+    expect(owner.ok).toBe(true);
+  }, 120_000);
+
+  it("rejects the complete D-42 cross-field tamper matrix even when every non-closure edit is rehashed", async () => {
+    const fixture = await d42OperationFixtureV1();
+    const result =
+      await diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateInternalV1(
+        fixture.ready.buildInput,
+      );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const rehash = (candidate: any) => {
+      const { closureContentDigest: _old, ...projection } = candidate;
+      candidate.closureContentDigest = domainDigestV1(
+        "provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate-v1",
+        projection,
+      );
+    };
+    const matrix: ReadonlyArray<{
+      readonly label: string;
+      readonly rehash: boolean;
+      readonly mutate: (candidate: any) => void;
+    }> = [
+      {
+        label: "mapping candidate",
+        rehash: true,
+        mutate(candidate) {
+          candidate.formalMigrationIdMapping.candidateMigrationId =
+            flipLastLowerHexV1(
+              candidate.formalMigrationIdMapping.candidateMigrationId,
+            );
+        },
+      },
+      {
+        label: "mapping formal",
+        rehash: true,
+        mutate(candidate) {
+          candidate.formalMigrationIdMapping.formalMigrationId =
+            flipLastLowerHexV1(
+              candidate.formalMigrationIdMapping.formalMigrationId,
+            );
+        },
+      },
+      {
+        label: "current steady pin",
+        rehash: true,
+        mutate(candidate) {
+          candidate.currentSteadyRegistryManifestPin.contentDigest =
+            flipLastLowerHexV1(
+              candidate.currentSteadyRegistryManifestPin.contentDigest,
+            );
+        },
+      },
+      {
+        label: "prepared predecessor",
+        rehash: true,
+        mutate(candidate) {
+          candidate.preparedRegistryManifestEnvelope.payload.predecessor.contentDigest =
+            flipLastLowerHexV1(
+              candidate.preparedRegistryManifestEnvelope.payload.predecessor
+                .contentDigest,
+            );
+        },
+      },
+      {
+        label: "prepared generation",
+        rehash: true,
+        mutate(candidate) {
+          candidate.preparedRegistryManifestEnvelope.payload.manifestGeneration += 1;
+        },
+      },
+      {
+        label: "prepared Identity",
+        rehash: true,
+        mutate(candidate) {
+          candidate.preparedRegistryManifestEnvelope.payload.installationIdentityGenerationId =
+            flipLastLowerHexV1(
+              candidate.preparedRegistryManifestEnvelope.payload
+                .installationIdentityGenerationId,
+            );
+        },
+      },
+      {
+        label: "prepared Root",
+        rehash: true,
+        mutate(candidate) {
+          candidate.preparedRegistryManifestEnvelope.payload.activeRootMetadata.contentDigest =
+            flipLastLowerHexV1(
+              candidate.preparedRegistryManifestEnvelope.payload
+                .activeRootMetadata.contentDigest,
+            );
+        },
+      },
+      {
+        label: "prepared destination member",
+        rehash: true,
+        mutate(candidate) {
+          const member =
+            candidate.preparedRegistryManifestEnvelope.payload.members.find(
+              (entry: any) =>
+                entry.providerId === fixture.signed.destinationProviderId,
+            );
+          member.registryEntryContentDigest = flipLastLowerHexV1(
+            member.registryEntryContentDigest,
+          );
+        },
+      },
+      {
+        label: "prepared routing",
+        rehash: true,
+        mutate(candidate) {
+          candidate.preparedRegistryManifestEnvelope.payload.routing.phase =
+            "rebinding";
+        },
+      },
+      {
+        label: "prepared Pin",
+        rehash: true,
+        mutate(candidate) {
+          candidate.preparedRegistryManifestPin.contentDigest =
+            flipLastLowerHexV1(
+              candidate.preparedRegistryManifestPin.contentDigest,
+            );
+        },
+      },
+      {
+        label: "publication prerequisite",
+        rehash: true,
+        mutate(candidate) {
+          candidate.publicationPrerequisite.candidatePlanContentDigest =
+            flipLastLowerHexV1(
+              candidate.publicationPrerequisite.candidatePlanContentDigest,
+            );
+        },
+      },
+      {
+        label: "publication gate",
+        rehash: true,
+        mutate(candidate) {
+          candidate.publicationGate.state = "open";
+        },
+      },
+      {
+        label: "side-effect boundary",
+        rehash: true,
+        mutate(candidate) {
+          candidate.sideEffectBoundary.rootSigningRequests = 1;
+        },
+      },
+      {
+        label: "closure digest",
+        rehash: false,
+        mutate(candidate) {
+          candidate.closureContentDigest = flipLastLowerHexV1(
+            candidate.closureContentDigest,
+          );
+        },
+      },
+    ];
+    for (const row of matrix) {
+      const candidate = cloneJsonV1(result.value) as any;
+      row.mutate(candidate);
+      if (row.rehash) rehash(candidate);
+      expect(
+        ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1Schema.safeParse(
+          candidate,
+        ).success,
+        row.label,
+      ).toBe(false);
+    }
+  }, 120_000);
+
+  it.each(d42SinkNames)("overrides an otherwise valid successor when final %s drifts", async (mutateAuditSink) => {
+    const fixture = await d42OperationFixtureV1({
+      mutateAuditOnObservation: 6,
+      mutateAuditSink,
+    });
+    await expect(
+      diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateInternalV1(
+        fixture.ready.buildInput,
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      stage: "side_effect_boundary",
+      reason: "side_effect_detected",
+    });
+    expect(fixture.audit.calls.observations).toBe(6);
+    expect(fixture.audit.snapshot[mutateAuditSink]).toMatchObject({
+      revision: 1,
+      count: 1,
+    });
+    for (const sinkName of d42SinkNames) {
+      if (sinkName === mutateAuditSink) continue;
+      expect(fixture.audit.snapshot[sinkName].count, sinkName).toBe(0);
+    }
+  }, 120_000);
+
+  it("lets final sink drift override an invalid external signature diagnostic", async () => {
+    const fixture = await d42OperationFixtureV1({
+      invalidSignature: true,
+      mutateAuditOnObservation: 5,
+      mutateAuditSink: "rootSigningRequests",
+    });
+    await expect(
+      diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateInternalV1(
+        fixture.ready.buildInput,
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      stage: "side_effect_boundary",
+      reason: "side_effect_detected",
+    });
+    expect(fixture.audit.calls.observations).toBe(5);
+    expect(fixture.audit.snapshot.rootSigningRequests).toMatchObject({
+      revision: 1,
+      count: 1,
+    });
+  }, 120_000);
 });

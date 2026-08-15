@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import * as publicApi from "../src/index.js";
 import * as providerMigrationPreSideEffectPlanAdmissionClosureReferenceCandidate from "../src/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate.js";
+import * as providerMigrationPreparedRegistrySuccessorReferenceCandidate from "../src/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate.js";
 
 const sourceRoot = fileURLToPath(new URL("../src", import.meta.url));
 const packageManifest = JSON.parse(
@@ -60,6 +61,57 @@ describe("provider contract runtime boundary", () => {
     expect(validationSchema.shape.authority.parse(authority)).toBe(authority);
     const validationError =
       new providerMigrationPreSideEffectPlanAdmissionClosureReferenceCandidate.ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationError();
+    expect(validationError).toMatchObject({
+      code: "provider_unavailable",
+      reason: "attestation_invalid",
+    });
+    expect(Object.isFrozen(validationError)).toBe(true);
+  });
+
+  it("exposes the single D-42 none-authority public seam from root and subpath only", () => {
+    const publicSubpath =
+      "./provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate";
+    const authority =
+      "none_provider_migration_same_installation_identity_current_strong_source_normal_prepared_registry_successor_reference_candidate_only";
+    const runtimeExportNames = [
+      "ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationError",
+      "ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1Schema",
+      "buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1",
+    ];
+    expect(packageManifest.exports).toHaveProperty(publicSubpath);
+    expect(
+      Object.keys(
+        providerMigrationPreparedRegistrySuccessorReferenceCandidate,
+      ).sort(),
+    ).toEqual(runtimeExportNames);
+    expect(
+      publicApi.buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1,
+    ).toBe(
+      providerMigrationPreparedRegistrySuccessorReferenceCandidate.buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1,
+    );
+    expect(
+      publicApi.ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationError,
+    ).toBe(
+      providerMigrationPreparedRegistrySuccessorReferenceCandidate.ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationError,
+    );
+    expect(
+      publicApi.ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1Schema,
+    ).toBe(
+      providerMigrationPreparedRegistrySuccessorReferenceCandidate.ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1Schema,
+    );
+    const validationSchema =
+      providerMigrationPreparedRegistrySuccessorReferenceCandidate.ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationV1Schema as unknown as {
+        readonly shape: {
+          readonly authority: { parse(input: unknown): unknown };
+          readonly stopPoint: { parse(input: unknown): unknown };
+        };
+      };
+    expect(validationSchema.shape.authority.parse(authority)).toBe(authority);
+    const stopPoint =
+      "after_external_root_signed_prepared_registry_direct_successor_validation_before_registry_manifest_publication";
+    expect(validationSchema.shape.stopPoint.parse(stopPoint)).toBe(stopPoint);
+    const validationError =
+      new providerMigrationPreparedRegistrySuccessorReferenceCandidate.ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateValidationError();
     expect(validationError).toMatchObject({
       code: "provider_unavailable",
       reason: "attestation_invalid",
@@ -127,6 +179,18 @@ describe("provider contract runtime boundary", () => {
     expect(packageManifest.exports).not.toHaveProperty(
       "./provider-strong-ready-bootstrap-or-steady-acceptance-d41-endpoint-trust-basis-internal",
     );
+    expect(packageManifest.exports).not.toHaveProperty(
+      "./provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate-wire",
+    );
+    expect(packageManifest.exports).not.toHaveProperty(
+      "./provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-continuation-internal",
+    );
+    expect(packageManifest.exports).not.toHaveProperty(
+      "./provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-capability-internal",
+    );
+    expect(packageManifest.exports).not.toHaveProperty(
+      "./provider-registry-history-prepared-successor-handle-internal",
+    );
     expect(publicApi).not.toHaveProperty(
       "mintProviderTrustedLocalPhysicalTargetObservationCapabilityInternalV1",
     );
@@ -177,6 +241,33 @@ describe("provider contract runtime boundary", () => {
     );
     expect(publicApi).not.toHaveProperty(
       "takeProviderStrongReadyBootstrapOrSteadyAcceptanceD41EndpointTrustBasisInternalV1",
+    );
+    expect(publicApi).not.toHaveProperty(
+      "deriveProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalMigrationIdMappingV1",
+    );
+    expect(publicApi).not.toHaveProperty(
+      "deriveProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorClosureContentDigestV1",
+    );
+    expect(publicApi).not.toHaveProperty(
+      "validateProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateV1",
+    );
+    expect(publicApi).not.toHaveProperty(
+      "mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCapabilityInternalV1",
+    );
+    expect(publicApi).not.toHaveProperty(
+      "diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateInternalV1",
+    );
+    expect(publicApi).not.toHaveProperty(
+      "mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorContinuationIntentInternalV1",
+    );
+    expect(publicApi).not.toHaveProperty(
+      "takeProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorFinalCapabilityInternalV1",
+    );
+    expect(publicApi).not.toHaveProperty(
+      "diagnoseProviderRegistryPreparedDirectSuccessorInternalV1",
+    );
+    expect(publicApi).not.toHaveProperty(
+      "takeProviderRegistryPreparedSuccessorFinalCandidateInternalV1",
     );
   });
 

@@ -308,6 +308,15 @@ capability and the public Error have no JSON Schema. The wire, source, quota,
 pre-Plan, endpoint-trust, and D-40 endpoint-trust-basis modules remain private.
 The public builder returns only a none-authority validation candidate: it does
 not mint or run a migration operation.
+D-42 adds exactly two documents for the strict prepared Registry successor
+request and complete success validation, bringing the current inventory to
+357. The request Schema is registered for interchange but is not a runtime
+export of the public facade. The facade exposes only its final success Schema,
+opaque Error, and builder; its registered one-shot capability, retained
+continuation, prepared Registry successor validator, and wire helpers remain
+package-private. Success validates an externally Root-signed prepared direct
+successor and stops before Registry publication, Catalog, formal Plan/Pin,
+reservation, Acceptance, or execution authority.
 
 The production sources remain ES2022 browser/worker portable. The npm/browser
 distribution gate must expose the new public API through the root and
@@ -331,20 +340,24 @@ distribution gate must expose the new public API through the root and
 `./provider-strong-ready-acceptance-candidate`,
 `./provider-trusted-local-physical-target-selection-candidate`, and
 `./provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate`, and
-`./provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate` exports, pack all
+`./provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate`, and
+`./provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate` exports, pack all
 `schemas/`, `fixtures/`, and fixed `provider/` resources, reject private deep
 imports, and execute the same Registry, real-filesystem source, and Target
 Discovery, Conformance Result, Runtime Attestation, Feasibility Evidence,
 Registry/Evidence binding, Release Target Universe, and Feasibility Support
 Catalog point validators plus the Distribution History current-candidate
 validator, strong-ready Acceptance candidate, trusted-local target selection,
-and the D-40 and D-41 public reference-candidate surfaces from clean Node and
+and the D-40 through D-42 public reference-candidate surfaces from clean Node and
 browser-bundle installs.
-The D-41 packed smoke checks only its exact public runtime surface, public
-Schemas, opaque Error, and none-authority success literal. It does not mint a
-private capability or run a migration operation. The broader packed smoke also
+The D-41 and D-42 packed smokes freeze their exact public runtime surfaces,
+public Schema authority/stop literals, opaque failures, and private deep-import
+locks. D-42's real registered-capability success is exercised only by the
+signed focused integration because an external cold consumer cannot fabricate
+the private WeakMap input; that success still stops before any publication or
+migration operation. The broader packed smoke also
 does not claim a full successful compare-append transaction. There are exactly
-31 explicit public module exports at this checkpoint.
+32 explicit public module exports at this checkpoint.
 Node uses the exact official Zod 4.3.6 runtime. The package's browser path uses
 its shipped CSP-safe runtime, with dynamic compilation disabled and
 `util.createTransparentProxy` failing closed. Consumers should treat the
@@ -897,7 +910,7 @@ diagnostics, and crypto call counts are checked by
 `verify:provider-registry-manifest-invalid`. The signed real-filesystem fixture
 anchors, exact source closure, and 43 materialized negative diagnostics are
 checked by `verify:provider-real-fs-source`. `test/json-schema.test.ts` freezes
-the current 355-schema inventory and `verify:schemas` rejects generated-file
+the current 357-schema inventory and `verify:schemas` rejects generated-file
 drift. `verify:provider-target-discovery-point` checks the exact five locators,
 six-signature closure, canonical empty Fixture/Runner success, typed unresolved
 projection, and all 116 ordered diagnostic/executable recipes.

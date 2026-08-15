@@ -1,0 +1,83 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-migration-same-installation-identity-current-strong-source-normal-namespace-translation-reference-candidate",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string",
+      "const": "provider_migration_same_installation_identity_current_strong_source_normal_namespace_translation_reference_candidate_v1"
+    },
+    "mode": {
+      "type": "string",
+      "const": "same_installation_identity"
+    },
+    "relationship": {
+      "type": "string",
+      "const": "same_identity_repository_and_worktree_exact_equal"
+    },
+    "sourceNamespace": {
+      "type": "object",
+      "properties": {
+        "installationIdentityGenerationId": {
+          "type": "string",
+          "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+        },
+        "repositoryId": {
+          "type": "string",
+          "pattern": "^provider-migration-same-installation-identity-current-strong-source-normal-repository-reference-candidate:[0-9a-f]{64}$"
+        },
+        "worktreeId": {
+          "type": "string",
+          "pattern": "^provider-migration-same-installation-identity-current-strong-source-normal-worktree-reference-candidate:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "installationIdentityGenerationId",
+        "repositoryId",
+        "worktreeId"
+      ],
+      "additionalProperties": false
+    },
+    "destinationNamespace": {
+      "type": "object",
+      "properties": {
+        "installationIdentityGenerationId": {
+          "type": "string",
+          "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+        },
+        "repositoryId": {
+          "type": "string",
+          "pattern": "^provider-migration-same-installation-identity-current-strong-source-normal-repository-reference-candidate:[0-9a-f]{64}$"
+        },
+        "worktreeId": {
+          "type": "string",
+          "pattern": "^provider-migration-same-installation-identity-current-strong-source-normal-worktree-reference-candidate:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "installationIdentityGenerationId",
+        "repositoryId",
+        "worktreeId"
+      ],
+      "additionalProperties": false
+    },
+    "journalAuthorityInstallationIdentityGenerationId": {
+      "type": "string",
+      "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+    },
+    "translationReferenceDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "profile",
+    "mode",
+    "relationship",
+    "sourceNamespace",
+    "destinationNamespace",
+    "journalAuthorityInstallationIdentityGenerationId",
+    "translationReferenceDigest"
+  ],
+  "additionalProperties": false
+}

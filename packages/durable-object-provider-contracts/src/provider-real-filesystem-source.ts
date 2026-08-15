@@ -53,6 +53,7 @@ import {
   registerProviderDistributionHistoricalSuiteSemanticCoreInternalV1,
 } from "./provider-distribution-historical-semantic-internal.js";
 import {
+  createProviderNonThenableFrozenRecordV1,
   hardenProviderPointPromiseV1,
 } from "./provider-point-runtime-internal.js";
 
@@ -1830,7 +1831,7 @@ async function validateSourceClosureFromSnapshotInternalV1(
       distributionRootBinding: binding,
     });
 
-  return deepFreezeV1({
+  return createProviderNonThenableFrozenRecordV1(deepFreezeV1({
     authority: "none_real_fs_source_structure_only" as const,
     distributionRootBinding: binding,
     activeRootMetadata,
@@ -1845,7 +1846,7 @@ async function validateSourceClosureFromSnapshotInternalV1(
     recordCount: corpus.recordCount,
     caseCount: suite.caseCount,
     requiredCaseCutCount: suite.requiredCaseCutCount,
-  });
+  }));
 }
 
 async function validateSourceClosureInternalV1(
@@ -1900,15 +1901,23 @@ registerProviderRealFilesystemSourcePreparedCoreInternalV1(
             input,
             context,
           );
-          return {
+          return createProviderNonThenableFrozenRecordV1({
             ok: true,
             value: await hardenPromiseV1(validation),
-          };
+          });
         } catch (error) {
           if (error instanceof SourceDiagnosticSignal) {
-            return { ok: false, stage: error.stage, reason: error.reason };
+            return createProviderNonThenableFrozenRecordV1({
+              ok: false,
+              stage: error.stage,
+              reason: error.reason,
+            });
           }
-          return { ok: false, stage: "input", reason: "schema_invalid" };
+          return createProviderNonThenableFrozenRecordV1({
+            ok: false,
+            stage: "input",
+            reason: "schema_invalid",
+          });
         }
       })(),
   ),

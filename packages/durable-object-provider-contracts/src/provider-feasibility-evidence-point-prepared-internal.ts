@@ -28,7 +28,6 @@ const CapturedTypeErrorV1 = TypeError;
 const CapturedWeakMapV1 = WeakMap;
 const CapturedWeakMapDeleteV1 = CapturedWeakMapV1.prototype.delete;
 const CapturedWeakMapGetV1 = CapturedWeakMapV1.prototype.get;
-const CapturedWeakMapHasV1 = CapturedWeakMapV1.prototype.has;
 const CapturedWeakMapSetV1 = CapturedWeakMapV1.prototype.set;
 const CapturedWeakSetV1 = WeakSet;
 const CapturedWeakSetAddV1 = CapturedWeakSetV1.prototype.add;
@@ -50,9 +49,6 @@ const weakMapDeleteV1 = bindUncurriedAtBootstrapV1(
 const weakMapGetV1 = bindUncurriedAtBootstrapV1(
   CapturedWeakMapGetV1,
 ) as <K extends object, V>(map: WeakMap<K, V>, key: K) => V | undefined;
-const weakMapHasV1 = bindUncurriedAtBootstrapV1(
-  CapturedWeakMapHasV1,
-) as <K extends object, V>(map: WeakMap<K, V>, key: K) => boolean;
 const weakMapSetV1 = bindUncurriedAtBootstrapV1(
   CapturedWeakMapSetV1,
 ) as <K extends object, V>(map: WeakMap<K, V>, key: K, value: V) => void;
@@ -189,14 +185,10 @@ function takeRegistryTrustedApproverStateV1(
   handle: ProviderFeasibilityEvidenceRegistryTrustedApproverHandleV1,
   strictCryptoCapability: ProviderStrictEd25519OpaqueCapabilityV1,
 ): RegistryTrustedApproverStateV1 | undefined {
-  if (!weakMapHasV1(pendingRegistryTrustedApproverStatesV1, input)) {
-    return undefined;
-  }
   const state = weakMapGetV1(
     pendingRegistryTrustedApproverStatesV1,
     input,
   );
-  weakMapDeleteV1(pendingRegistryTrustedApproverStatesV1, input);
   if (state === undefined) return undefined;
   try {
     if (
@@ -216,6 +208,9 @@ function takeRegistryTrustedApproverStateV1(
       return undefined;
     }
   } catch {
+    return undefined;
+  }
+  if (!weakMapDeleteV1(pendingRegistryTrustedApproverStatesV1, input)) {
     return undefined;
   }
   return state;
@@ -283,6 +278,29 @@ export function diagnoseProviderFeasibilityEvidencePointRegistryTrustedPreparedI
   );
 }
 
+/**
+ * Synchronously burn a Registry-trusted prepared Evidence claim that will not
+ * be executed.  Callers use this on an earlier cohort failure so the retained
+ * approver identities can never be replayed with a later Evidence request.
+ */
+export function discardProviderFeasibilityEvidenceRegistryTrustedApproversInternalV1(
+  input: unknown,
+  handle: ProviderFeasibilityEvidenceRegistryTrustedApproverHandleV1,
+  strictCryptoCapability: ProviderStrictEd25519OpaqueCapabilityV1,
+): boolean {
+  if (
+    input === null ||
+    (typeof input !== "object" && typeof input !== "function")
+  ) {
+    return false;
+  }
+  return takeRegistryTrustedApproverStateV1(
+    input,
+    handle,
+    strictCryptoCapability,
+  ) !== undefined;
+}
+
 CapturedObjectFreezeV1(
   registerProviderFeasibilityEvidencePointPreparedCoreInternalV1,
 );
@@ -297,4 +315,7 @@ CapturedObjectFreezeV1(
 );
 CapturedObjectFreezeV1(
   diagnoseProviderFeasibilityEvidencePointRegistryTrustedPreparedInternalV1,
+);
+CapturedObjectFreezeV1(
+  discardProviderFeasibilityEvidenceRegistryTrustedApproversInternalV1,
 );

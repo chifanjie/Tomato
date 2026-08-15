@@ -100,6 +100,7 @@ const CapturedSetAddV1 = Set.prototype.add;
 const CapturedSetHasV1 = Set.prototype.has;
 const CapturedSetV1 = Set;
 const CapturedWeakMapV1 = WeakMap;
+const CapturedWeakMapDeleteV1 = WeakMap.prototype.delete;
 const CapturedWeakMapGetV1 = WeakMap.prototype.get;
 const CapturedWeakMapHasV1 = WeakMap.prototype.has;
 const CapturedWeakMapSetV1 = WeakMap.prototype.set;
@@ -152,6 +153,9 @@ const typedArrayByteLengthV1 = bindUncurriedAtBootstrapV1(
 const weakMapGetV1 = bindUncurriedAtBootstrapV1(
   CapturedWeakMapGetV1,
 ) as <K extends object, V>(map: WeakMap<K, V>, key: K) => V | undefined;
+const weakMapDeleteV1 = bindUncurriedAtBootstrapV1(
+  CapturedWeakMapDeleteV1,
+) as <K extends object, V>(map: WeakMap<K, V>, key: K) => boolean;
 const weakMapHasV1 = bindUncurriedAtBootstrapV1(
   CapturedWeakMapHasV1,
 ) as <K extends object>(map: WeakMap<K, unknown>, key: K) => boolean;
@@ -440,6 +444,34 @@ const machineBindingsV1 = new CapturedWeakMapV1<
   object,
   ProviderStrongReadyBootstrapOrSteadyAcceptanceReferenceMachineBindingInternalV1
 >();
+
+declare const readOnlyContinuityHandleBrandInternalV1: unique symbol;
+export interface ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReadOnlyContinuityHandleInternalV1 {
+  readonly [readOnlyContinuityHandleBrandInternalV1]: true;
+}
+
+export type ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReadOnlyContinuityPhaseInternalV1 =
+  | "endpoint_claim"
+  | "pre"
+  | "post";
+
+interface ReadOnlyContinuityBindingInternalV1 {
+  readonly machineBinding:
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceReferenceMachineBindingInternalV1;
+  readonly expectedState:
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceStateInternalV1;
+  nextPhaseIndex: number;
+}
+
+const readOnlyContinuityBindingsInternalV1 = new CapturedWeakMapV1<
+  object,
+  ReadOnlyContinuityBindingInternalV1
+>();
+const READ_ONLY_CONTINUITY_PHASES_INTERNAL_V1 = CapturedObjectFreezeV1([
+  "endpoint_claim",
+  "pre",
+  "post",
+] as const);
 
 function isObjectIdentityV1(value: unknown): value is object {
   return value !== null &&
@@ -1975,6 +2007,92 @@ export function inspectProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppe
 }
 
 /**
+ * Mint a zero-key observer that can only perform the fixed
+ * endpoint_claim -> pre -> post continuity sequence against one immutable
+ * expected D-40 state. It exposes no transaction, token, identity, or write
+ * authority and cannot be converted back into the machine capability.
+ */
+export function mintProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReadOnlyContinuityHandleInternalV1(
+  capability:
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineCapabilityInternalV1,
+  expectedState: unknown,
+): ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReadOnlyContinuityHandleInternalV1 {
+  const machineBinding = requireMachineBindingV1(capability);
+  const parsedExpectedState = parseInitialStateV1(expectedState);
+  if (!canonicalEqualV1(machineBinding.current, parsedExpectedState)) {
+    return failV1("reference_machine_capability", "source_invalid");
+  }
+  const handle = CapturedObjectFreezeV1(
+    CapturedObjectCreateV1(null),
+  ) as ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReadOnlyContinuityHandleInternalV1;
+  weakMapSetV1(
+    readOnlyContinuityBindingsInternalV1,
+    handle,
+    {
+      machineBinding,
+      expectedState: parsedExpectedState,
+      nextPhaseIndex: 0,
+    },
+  );
+  return handle;
+}
+
+/**
+ * Claim one ordered read-only barrier. The phase is burned synchronously
+ * before the machine tail is observed, and any mismatch permanently
+ * invalidates the observer.
+ */
+export function captureProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReadOnlyContinuityInternalV1(
+  handle:
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReadOnlyContinuityHandleInternalV1,
+  phase:
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReadOnlyContinuityPhaseInternalV1,
+): Promise<void> {
+  if (!isObjectIdentityV1(handle)) {
+    return createProviderPointRejectedPromiseV1(
+      new ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineErrorInternalV1(
+        "reference_machine_capability",
+        "capability_invalid",
+      ),
+    );
+  }
+  const continuity = weakMapGetV1(
+    readOnlyContinuityBindingsInternalV1,
+    handle,
+  );
+  if (
+    continuity === undefined ||
+    READ_ONLY_CONTINUITY_PHASES_INTERNAL_V1[continuity.nextPhaseIndex] !==
+      phase
+  ) {
+    return createProviderPointRejectedPromiseV1(
+      new ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineErrorInternalV1(
+        "reference_machine_capability",
+        "capability_invalid",
+      ),
+    );
+  }
+  continuity.nextPhaseIndex += 1;
+  if (phase === "post") {
+    weakMapDeleteV1(readOnlyContinuityBindingsInternalV1, handle);
+  }
+  const machineBinding = continuity.machineBinding;
+  const observation = promiseThenV1(machineBinding.tail, () => {
+    if (!canonicalEqualV1(machineBinding.current, continuity.expectedState)) {
+      return failV1("reference_machine_capability", "source_invalid");
+    }
+  });
+  machineBinding.tail = promiseThenV1(
+    observation,
+    () => undefined,
+    () => {
+      weakMapDeleteV1(readOnlyContinuityBindingsInternalV1, handle);
+    },
+  );
+  return hardenProviderPointPromiseV1(observation);
+}
+
+/**
  * Package-internal linearization barrier. The snapshot task is installed as
  * the new tail synchronously, so a later execute cannot pass it and the
  * returned detached state is adjacent to all work already claimed.
@@ -2009,6 +2127,12 @@ CapturedObjectFreezeV1(
 );
 CapturedObjectFreezeV1(
   inspectProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineInternalV1,
+);
+CapturedObjectFreezeV1(
+  mintProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReadOnlyContinuityHandleInternalV1,
+);
+CapturedObjectFreezeV1(
+  captureProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReadOnlyContinuityInternalV1,
 );
 CapturedObjectFreezeV1(
   captureProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineStateAfterPendingInternalV1,

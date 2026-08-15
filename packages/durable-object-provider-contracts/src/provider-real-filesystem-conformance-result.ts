@@ -51,6 +51,7 @@ import {
   registerProviderRealFilesystemConformanceResultPreparedCoreInternalV1,
 } from "./provider-real-filesystem-conformance-result-internal.js";
 import {
+  createProviderNonThenableFrozenRecordV1,
   hardenProviderPointPromiseV1,
 } from "./provider-point-runtime-internal.js";
 import type { ProviderStrictEd25519OpaqueCapabilityV1 } from "./strict-ed25519-conformance.js";
@@ -767,7 +768,7 @@ async function validateResultClosureFromSnapshotInternalV1(
   ).length;
   const unsupportedCaseResultCount = result.caseResults.length -
     passedCaseResultCount - failedCaseResultCount;
-  return deepFreezeV1({
+  return createProviderNonThenableFrozenRecordV1(deepFreezeV1({
     authority: "none_real_fs_conformance_result_structure_only" as const,
     targetDiscoveryPoint: point,
     result: expectedPin,
@@ -780,7 +781,7 @@ async function validateResultClosureFromSnapshotInternalV1(
     passedCaseResultCount,
     failedCaseResultCount,
     unsupportedCaseResultCount,
-  });
+  }));
 }
 
 async function validateResultClosureInternalV1(
@@ -823,7 +824,7 @@ registerProviderRealFilesystemConformanceResultPreparedCoreInternalV1(
   ): Promise<ProviderRealFilesystemConformanceResultClosureDiagnosticResultV1> => {
     const operation = (async () => {
       try {
-        return {
+        return createProviderNonThenableFrozenRecordV1({
           ok: true as const,
           value: await hardenPromiseV1(
             validateResultClosureFromSnapshotInternalV1(
@@ -836,12 +837,20 @@ registerProviderRealFilesystemConformanceResultPreparedCoreInternalV1(
                 ),
             ),
           ),
-        };
+        });
       } catch (error) {
         if (error instanceof ResultDiagnosticSignal) {
-          return { ok: false as const, stage: error.stage, reason: error.reason };
+          return createProviderNonThenableFrozenRecordV1({
+            ok: false as const,
+            stage: error.stage,
+            reason: error.reason,
+          });
         }
-        return { ok: false as const, stage: "input" as const, reason: "schema_invalid" as const };
+        return createProviderNonThenableFrozenRecordV1({
+          ok: false as const,
+          stage: "input" as const,
+          reason: "schema_invalid" as const,
+        });
       }
     })();
     return hardenPromiseV1(operation);

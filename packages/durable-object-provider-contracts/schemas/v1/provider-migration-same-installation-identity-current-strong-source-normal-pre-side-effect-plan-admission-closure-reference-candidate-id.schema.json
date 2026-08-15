@@ -1,0 +1,6 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate-id",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "pattern": "^provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate:[0-9a-f]{22}$"
+}

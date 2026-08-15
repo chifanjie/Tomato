@@ -41,6 +41,7 @@ import {
   registerProviderRuntimeAttestationPreparedCoreInternalV1,
 } from "./provider-runtime-attestation-point-internal.js";
 import {
+  createProviderNonThenableFrozenRecordV1,
   hardenProviderPointPromiseV1,
 } from "./provider-point-runtime-internal.js";
 import { sha256InternalV1 } from "./sha256.js";
@@ -703,7 +704,7 @@ async function validateRuntimePointClosureFromSnapshotInternalV1(
       contentDigest: runtimeContentDigest,
       payload: runtime,
     } : snapshot.runtimeAttestation as StoreDurableObjectProviderRuntimeAttestationPinV1;
-  return deepFreezeV1({
+  return createProviderNonThenableFrozenRecordV1(deepFreezeV1({
     authority: "none_provider_runtime_attestation_structure_only" as const,
     conformanceResultClosure,
     semanticProviderPolicy,
@@ -711,7 +712,7 @@ async function validateRuntimePointClosureFromSnapshotInternalV1(
     filesystemProfile,
     filesystemProfileDigest,
     runtimeAttestation,
-  });
+  }));
 }
 
 async function validateRuntimePointClosureInternalV1(
@@ -761,7 +762,7 @@ registerProviderRuntimeAttestationPreparedCoreInternalV1(
   ): Promise<ProviderRuntimeAttestationPointClosureDiagnosticResultV1> => {
     const operation = (async () => {
       try {
-        return {
+        return createProviderNonThenableFrozenRecordV1({
           ok: true as const,
           value: await hardenPromiseV1(
             validateRuntimePointClosureFromSnapshotInternalV1(
@@ -774,12 +775,20 @@ registerProviderRuntimeAttestationPreparedCoreInternalV1(
                 ),
             ),
           ),
-        };
+        });
       } catch (error) {
         if (error instanceof RuntimePointDiagnosticSignal) {
-          return { ok: false as const, stage: error.stage, reason: error.reason };
+          return createProviderNonThenableFrozenRecordV1({
+            ok: false as const,
+            stage: error.stage,
+            reason: error.reason,
+          });
         }
-        return { ok: false as const, stage: "input" as const, reason: "schema_invalid" as const };
+        return createProviderNonThenableFrozenRecordV1({
+          ok: false as const,
+          stage: "input" as const,
+          reason: "schema_invalid" as const,
+        });
       }
     })();
     return hardenPromiseV1(operation);

@@ -10,6 +10,17 @@
 import "./provider-registry-manifest-history.js";
 
 export {
+  diagnoseProviderRegistryProspectiveEntryTemporaryAdmissionInternalV1,
+  mintProviderRegistryProspectiveEntryTemporaryAdmissionCapabilityInternalV1,
+} from "./provider-registry-manifest-history.js";
+export type {
+  ProviderRegistryProspectiveEntryTemporaryAdmissionCapabilityInternalV1,
+  ProviderRegistryProspectiveEntryTemporaryAdmissionDiagnosticResultInternalV1,
+  ProviderRegistryProspectiveEntryTemporaryAdmissionInputInternalV1,
+  ProviderRegistryProspectiveEntryTemporaryAdmissionValidationInternalV1,
+} from "./provider-registry-manifest-history.js";
+
+export {
   assertProviderRegistryPreparedCopyLedgerZeroInternalV1,
   createPreparedRegistryHistorySnapshotInternalV1,
   createProviderRegistryPreparedCopyLedgerInternalV1,

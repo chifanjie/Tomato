@@ -160,6 +160,11 @@
       "import": "./dist/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate.js",
       "default": "./dist/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate.js"
     },
+    "./provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate": {
+      "types": "./dist/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate.d.ts",
+      "import": "./dist/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate.js",
+      "default": "./dist/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate.js"
+    },
     "./public-key-digest": {
       "types": "./dist/public-key-digest.d.ts",
       "import": "./dist/public-key-digest.js",

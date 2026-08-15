@@ -1,0 +1,347 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-migration-same-installation-identity-current-strong-source-normal-live-root-reference-candidate",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "rootKind": {
+          "type": "string",
+          "const": "store_manifest_complete_set"
+        },
+        "current": {
+          "type": "object",
+          "properties": {
+            "profile": {
+              "type": "string",
+              "const": "provider_migration_same_installation_identity_current_strong_source_normal_store_manifest_current_cut_reference_candidate_v1"
+            },
+            "namespace": {
+              "type": "object",
+              "properties": {
+                "installationIdentityGenerationId": {
+                  "type": "string",
+                  "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+                },
+                "repositoryId": {
+                  "type": "string",
+                  "pattern": "^provider-migration-same-installation-identity-current-strong-source-normal-repository-reference-candidate:[0-9a-f]{64}$"
+                },
+                "worktreeId": {
+                  "type": "string",
+                  "pattern": "^provider-migration-same-installation-identity-current-strong-source-normal-worktree-reference-candidate:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "installationIdentityGenerationId",
+                "repositoryId",
+                "worktreeId"
+              ],
+              "additionalProperties": false
+            },
+            "providerBinding": {
+              "type": "object",
+              "properties": {
+                "targetProfileId": {
+                  "type": "string",
+                  "pattern": "^provider-target-profile:[0-9a-f]{64}$"
+                },
+                "providerId": {
+                  "type": "string",
+                  "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                },
+                "registryEntryContentDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "semanticProviderPolicyDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "providerFeasibilityEvidence": {
+                  "type": "object",
+                  "properties": {
+                    "locatorProfile": {
+                      "type": "string",
+                      "const": "installation_provider_feasibility_evidence_v1"
+                    },
+                    "evidenceId": {
+                      "type": "string",
+                      "pattern": "^provider-feasibility-evidence:[0-9a-f]{22}$"
+                    },
+                    "contentDigest": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    }
+                  },
+                  "required": [
+                    "locatorProfile",
+                    "evidenceId",
+                    "contentDigest"
+                  ],
+                  "additionalProperties": false
+                },
+                "runtimeAttestationContentDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "bindingDerivationKeyGeneration": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "bindingReferenceDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "targetProfileId",
+                "providerId",
+                "registryEntryContentDigest",
+                "semanticProviderPolicyDigest",
+                "providerFeasibilityEvidence",
+                "runtimeAttestationContentDigest",
+                "bindingDerivationKeyGeneration",
+                "bindingReferenceDigest"
+              ],
+              "additionalProperties": false
+            },
+            "namespaceRevision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "headContentDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "currentVersionReferenceDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "generationCount": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "generationSetDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "currentGeneration": {
+              "type": "object",
+              "properties": {
+                "generationOrdinal": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "generationReferenceId": {
+                  "type": "string",
+                  "pattern": "^provider-migration-same-installation-identity-current-strong-source-normal-store-manifest-generation-reference-candidate:[0-9a-f]{22}$"
+                },
+                "contentDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "generationOrdinal",
+                "generationReferenceId",
+                "contentDigest"
+              ],
+              "additionalProperties": false
+            },
+            "cutContentDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "profile",
+            "namespace",
+            "providerBinding",
+            "namespaceRevision",
+            "headContentDigest",
+            "currentVersionReferenceDigest",
+            "generationCount",
+            "generationSetDigest",
+            "currentGeneration",
+            "cutContentDigest"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "rootKind",
+        "current"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "rootKind": {
+          "type": "string",
+          "const": "quota_index_and_transition_chain"
+        },
+        "currentQuotaIndexRootContentDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "transitionHead": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "const": "genesis"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "const": "transition"
+                },
+                "recordReferenceDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "contentDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "state",
+                "recordReferenceDigest",
+                "contentDigest"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "rootKind",
+        "currentQuotaIndexRootContentDigest",
+        "transitionHead"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "rootKind": {
+          "type": "string",
+          "const": "artifact_descriptor_history_closure"
+        },
+        "rootCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "rootSetDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "rootKind",
+        "rootCount",
+        "rootSetDigest"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "rootKind": {
+          "type": "string",
+          "const": "initialization_terminal"
+        },
+        "terminalHeadReferenceDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "rootKind",
+        "terminalHeadReferenceDigest"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "rootKind": {
+          "type": "string",
+          "const": "store_manifest_compare_append_receipt_ledger"
+        },
+        "providerId": {
+          "type": "string",
+          "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+        },
+        "providerPolicyDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "receiptCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "receiptSetDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "receiptLogicalBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "rootKind",
+        "providerId",
+        "providerPolicyDigest",
+        "receiptCount",
+        "receiptSetDigest",
+        "receiptLogicalBytes"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "rootKind": {
+          "type": "string",
+          "const": "active_recovery_control"
+        },
+        "activeTransactionCount": {
+          "type": "number",
+          "const": 0
+        },
+        "controlUniverseDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "rootKind",
+        "activeTransactionCount",
+        "controlUniverseDigest"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

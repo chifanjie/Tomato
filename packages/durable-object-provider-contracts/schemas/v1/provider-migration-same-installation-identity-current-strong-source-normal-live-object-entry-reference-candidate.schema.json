@@ -1,0 +1,75 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-migration-same-installation-identity-current-strong-source-normal-live-object-entry-reference-candidate",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "objectOrdinal": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "objectKind": {
+      "type": "string",
+      "enum": [
+        "store_manifest_generation",
+        "quota_index_node",
+        "quota_index_root",
+        "quota_transition_record",
+        "artifact_manifest_generation",
+        "repo_pulse_immutable_version",
+        "committed_private_blob",
+        "committed_private_metadata",
+        "ownership_marker",
+        "initialization_terminal_receipt",
+        "terminalization_handoff_record",
+        "provider_journal_record",
+        "provider_operation_receipt",
+        "store_manifest_compare_append_receipt",
+        "reservation_membership",
+        "active_blob_entitlement",
+        "active_metadata_plan",
+        "active_temp_plan",
+        "control_state"
+      ]
+    },
+    "locatorNamespace": {
+      "type": "string",
+      "enum": [
+        "store",
+        "provider_isolated_store_manifest_receipt_ledger"
+      ]
+    },
+    "logicalLocatorReferenceDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semanticLocatorDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "logicalBytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "providerBindingReferenceDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "objectOrdinal",
+    "objectKind",
+    "locatorNamespace",
+    "logicalLocatorReferenceDigest",
+    "semanticLocatorDigest",
+    "contentDigest",
+    "logicalBytes",
+    "providerBindingReferenceDigest"
+  ],
+  "additionalProperties": false
+}

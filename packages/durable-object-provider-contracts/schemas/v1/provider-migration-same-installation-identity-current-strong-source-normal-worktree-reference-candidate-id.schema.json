@@ -1,0 +1,6 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-migration-same-installation-identity-current-strong-source-normal-worktree-reference-candidate-id",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "pattern": "^provider-migration-same-installation-identity-current-strong-source-normal-worktree-reference-candidate:[0-9a-f]{64}$"
+}

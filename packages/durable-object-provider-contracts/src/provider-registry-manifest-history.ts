@@ -25,6 +25,7 @@ import {
   deriveStoreDurableObjectProviderRuntimeAttestationContentDigestV1,
   projectProviderRegistryManifestIdFieldsV1,
   projectProviderRegistryManifestUnsignedClaimsV1,
+  StoreDurableObjectProviderRegistryEntryV1Schema,
   type ProviderFeasibilityApproverPublicKeyV1,
   type ProviderRegistryManifestEnvelopeV1,
   type ProviderRegistryManifestMemberV1,
@@ -70,7 +71,10 @@ import {
   verifyRawEd25519WithCapabilityV1,
   type ProviderStrictEd25519OpaqueCapabilityV1,
 } from "./strict-ed25519-conformance.js";
-import { hardenProviderPointPromiseV1 } from "./provider-point-runtime-internal.js";
+import {
+  createProviderNonThenableFrozenRecordV1,
+  hardenProviderPointPromiseV1,
+} from "./provider-point-runtime-internal.js";
 
 const CapturedArrayV1 = Array;
 const CapturedArrayIsArrayV1 = Array.isArray;
@@ -82,7 +86,9 @@ const CapturedArrayPrototypeSortV1 = Array.prototype.sort;
 const CapturedMapV1 = Map;
 const CapturedMapPrototypeGetV1 = Map.prototype.get;
 const CapturedMapPrototypeHasV1 = Map.prototype.has;
+const CapturedMapPrototypeForEachV1 = Map.prototype.forEach;
 const CapturedMapPrototypeSetV1 = Map.prototype.set;
+const CapturedObjectCreateV1 = Object.create;
 const CapturedObjectDefinePropertyV1 = Object.defineProperty;
 const CapturedObjectFreezeV1 = Object.freeze;
 const CapturedObjectGetOwnPropertyDescriptorV1 =
@@ -90,16 +96,23 @@ const CapturedObjectGetOwnPropertyDescriptorV1 =
 const CapturedObjectGetPrototypeOfV1 = Object.getPrototypeOf;
 const CapturedObjectIsV1 = Object.is;
 const CapturedObjectIsFrozenV1 = Object.isFrozen;
+const CapturedObjectPrototypeV1 = Object.prototype;
 const CapturedObjectValuesV1 = Object.values;
 const CapturedReflectApplyV1 = Reflect.apply;
 const CapturedReflectOwnKeysV1 = Reflect.ownKeys;
 const CapturedRegExpPrototypeExecV1 = RegExp.prototype.exec;
 const CapturedSetV1 = Set;
 const CapturedSetPrototypeAddV1 = Set.prototype.add;
+const CapturedSetPrototypeForEachV1 = Set.prototype.forEach;
 const CapturedSetPrototypeHasV1 = Set.prototype.has;
 const CapturedWeakSetV1 = WeakSet;
 const CapturedWeakSetPrototypeAddV1 = WeakSet.prototype.add;
 const CapturedWeakSetPrototypeHasV1 = WeakSet.prototype.has;
+const CapturedWeakMapV1 = WeakMap;
+const CapturedWeakMapPrototypeDeleteV1 = WeakMap.prototype.delete;
+const CapturedWeakMapPrototypeGetV1 = WeakMap.prototype.get;
+const CapturedWeakMapPrototypeHasV1 = WeakMap.prototype.has;
+const CapturedWeakMapPrototypeSetV1 = WeakMap.prototype.set;
 
 function arrayFilterV1<T, S extends T>(
   array: readonly T[],
@@ -167,6 +180,13 @@ function mapSetV1<K, V>(map: Map<K, V>, key: K, value: V): void {
   CapturedReflectApplyV1(CapturedMapPrototypeSetV1, map, [key, value]);
 }
 
+function mapForEachV1<K, V>(
+  map: ReadonlyMap<K, V>,
+  callback: (value: V, key: K) => void,
+): void {
+  CapturedReflectApplyV1(CapturedMapPrototypeForEachV1, map, [callback]);
+}
+
 function mapFromEntriesV1<K, V>(
   entries: readonly (readonly [K, V])[],
 ): Map<K, V> {
@@ -186,6 +206,48 @@ function setHasV1<T>(set: Set<T>, value: T): boolean {
   return CapturedReflectApplyV1(CapturedSetPrototypeHasV1, set, [
     value,
   ]) as boolean;
+}
+
+function setForEachV1<T>(
+  set: ReadonlySet<T>,
+  callback: (value: T) => void,
+): void {
+  CapturedReflectApplyV1(CapturedSetPrototypeForEachV1, set, [callback]);
+}
+
+function weakMapDeleteV1<K extends object, V>(
+  map: WeakMap<K, V>,
+  key: K,
+): boolean {
+  return CapturedReflectApplyV1(CapturedWeakMapPrototypeDeleteV1, map, [
+    key,
+  ]) as boolean;
+}
+
+function weakMapGetV1<K extends object, V>(
+  map: WeakMap<K, V>,
+  key: K,
+): V | undefined {
+  return CapturedReflectApplyV1(CapturedWeakMapPrototypeGetV1, map, [key]) as
+    | V
+    | undefined;
+}
+
+function weakMapHasV1<K extends object, V>(
+  map: WeakMap<K, V>,
+  key: K,
+): boolean {
+  return CapturedReflectApplyV1(CapturedWeakMapPrototypeHasV1, map, [
+    key,
+  ]) as boolean;
+}
+
+function weakMapSetV1<K extends object, V>(
+  map: WeakMap<K, V>,
+  key: K,
+  value: V,
+): void {
+  CapturedReflectApplyV1(CapturedWeakMapPrototypeSetV1, map, [key, value]);
 }
 
 function setFromValuesV1<T>(values: readonly T[]): Set<T> {
@@ -993,6 +1055,170 @@ interface RegistryHistoryStateV1 {
   readonly revocationIdentities: Set<string>;
 }
 
+declare const providerRegistryProspectiveEntryTemporaryAdmissionCapabilityBrandV1:
+  unique symbol;
+
+/**
+ * Opaque, process-local, one-shot authority to perform one read-only
+ * prospective Entry admission against one already verified retained Registry
+ * cut. It is intentionally absent from the package barrel/export map.
+ */
+export interface ProviderRegistryProspectiveEntryTemporaryAdmissionCapabilityInternalV1 {
+  readonly [providerRegistryProspectiveEntryTemporaryAdmissionCapabilityBrandV1]: true;
+}
+
+export interface ProviderRegistryProspectiveEntryTemporaryAdmissionInputInternalV1 {
+  readonly prospectiveRegistryEntryContentDigest: string;
+  readonly prospectiveRegistryEntry: StoreDurableObjectProviderRegistryEntryV1;
+}
+
+export interface ProviderRegistryProspectiveEntryTemporaryAdmissionValidationInternalV1 {
+  readonly authority: "none_registry_prospective_entry_temporary_admission_only";
+  readonly installationIdentityGenerationId: InstallationIdentityGenerationIdV1;
+  readonly providerId: StoreDurableObjectProviderRegistryEntryV1["providerId"];
+  readonly registryEntryContentDigest: ReturnType<
+    typeof deriveStoreDurableObjectProviderRegistryEntryContentDigestV1
+  >;
+  readonly registryGeneration: 1;
+  readonly copiedRetainedStateCollectionCount: 7;
+  readonly retainedStateMutationCount: 0;
+}
+
+export type ProviderRegistryProspectiveEntryTemporaryAdmissionDiagnosticResultInternalV1 =
+  | Readonly<{
+      readonly ok: true;
+      readonly value: ProviderRegistryProspectiveEntryTemporaryAdmissionValidationInternalV1;
+    }>
+  | Readonly<{
+      readonly ok: false;
+      readonly stage: RegistryManifestHistoryStageV1;
+      readonly reason: RegistryManifestHistoryReasonV1;
+    }>;
+
+interface ProviderRegistryProspectiveEntryTemporaryAdmissionContextInternalV1 {
+  readonly closureIdentity: ProviderRegistryManifestHistoryValidationV1;
+  readonly strictCryptoCapability: ProviderStrictEd25519OpaqueCapabilityV1;
+  readonly manifestHistory: readonly ProviderRegistryManifestEnvelopeV1[];
+  readonly currentManifest: ProviderRegistryManifestV1;
+  readonly currentRoot: ProviderRegistryRootPublicKeyV1;
+  readonly rootByKeyId: ReadonlyMap<
+    string,
+    ProviderRegistryRootMetadataEnvelopeV1
+  >;
+  readonly policy: ProviderTrustHistoryPolicyV1;
+  readonly retainedState: RegistryHistoryStateV1;
+}
+
+const prospectiveEntryTemporaryAdmissionContextsByClosureInternalV1 =
+  new CapturedWeakMapV1<
+    object,
+    ProviderRegistryProspectiveEntryTemporaryAdmissionContextInternalV1
+  >();
+const prospectiveEntryTemporaryAdmissionContextsByCapabilityInternalV1 =
+  new CapturedWeakMapV1<
+    object,
+    ProviderRegistryProspectiveEntryTemporaryAdmissionContextInternalV1
+  >();
+
+function cloneMapV1<K, V>(source: ReadonlyMap<K, V>): Map<K, V> {
+  const clone = new CapturedMapV1<K, V>();
+  mapForEachV1(source, (value, key) => {
+    mapSetV1(clone, key, value);
+  });
+  return clone;
+}
+
+function cloneSetV1<T>(source: ReadonlySet<T>): Set<T> {
+  const clone = new CapturedSetV1<T>();
+  setForEachV1(source, (value) => {
+    setAddV1(clone, value);
+  });
+  return clone;
+}
+
+/** Clone exactly the seven retained material/history collections. */
+function cloneRegistryHistoryStateForTemporaryAdmissionInternalV1(
+  source: RegistryHistoryStateV1,
+): RegistryHistoryStateV1 {
+  return {
+    materialOwners: cloneMapV1(source.materialOwners),
+    providerKeyRecords: cloneMapV1(source.providerKeyRecords),
+    bindingRecords: cloneMapV1(source.bindingRecords),
+    approverKeyRecords: cloneMapV1(source.approverKeyRecords),
+    runtimeAttestations: cloneMapV1(source.runtimeAttestations),
+    registryEntries: cloneMapV1(source.registryEntries),
+    revocationIdentities: cloneSetV1(source.revocationIdentities),
+  };
+}
+
+function registerProviderRegistryProspectiveEntryTemporaryAdmissionContextInternalV1(
+  context: ProviderRegistryProspectiveEntryTemporaryAdmissionContextInternalV1,
+): void {
+  if (
+    weakMapHasV1(
+      prospectiveEntryTemporaryAdmissionContextsByClosureInternalV1,
+      context.closureIdentity,
+    )
+  ) {
+    throw new TypeError("prospective Registry admission context already exists");
+  }
+  weakMapSetV1(
+    prospectiveEntryTemporaryAdmissionContextsByClosureInternalV1,
+    context.closureIdentity,
+    context,
+  );
+}
+
+/**
+ * Claim the private retained-state seam associated with one prepared Registry
+ * closure and mint one zero-own-key capability. A wrong binding cannot consume
+ * the closure-side registration.
+ *
+ * @internal
+ */
+export function mintProviderRegistryProspectiveEntryTemporaryAdmissionCapabilityInternalV1(
+  closureIdentity: ProviderRegistryManifestHistoryValidationV1,
+  strictCryptoCapability: ProviderStrictEd25519OpaqueCapabilityV1,
+): ProviderRegistryProspectiveEntryTemporaryAdmissionCapabilityInternalV1 {
+  if (
+    closureIdentity === null ||
+    (typeof closureIdentity !== "object" &&
+      typeof closureIdentity !== "function")
+  ) {
+    throw new TypeError("prospective Registry admission closure is invalid");
+  }
+  const context = weakMapGetV1(
+    prospectiveEntryTemporaryAdmissionContextsByClosureInternalV1,
+    closureIdentity,
+  );
+  if (context === undefined) {
+    throw new TypeError("prospective Registry admission closure is unavailable");
+  }
+  if (
+    context.closureIdentity !== closureIdentity ||
+    context.strictCryptoCapability !== strictCryptoCapability
+  ) {
+    throw new TypeError("prospective Registry admission binding is invalid");
+  }
+  if (
+    !weakMapDeleteV1(
+      prospectiveEntryTemporaryAdmissionContextsByClosureInternalV1,
+      closureIdentity,
+    )
+  ) {
+    throw new TypeError("prospective Registry admission closure is unavailable");
+  }
+  const capability = CapturedObjectFreezeV1(
+    CapturedObjectCreateV1(null),
+  ) as ProviderRegistryProspectiveEntryTemporaryAdmissionCapabilityInternalV1;
+  weakMapSetV1(
+    prospectiveEntryTemporaryAdmissionContextsByCapabilityInternalV1,
+    capability,
+    context,
+  );
+  return capability;
+}
+
 function registerMaterialV1(
   state: RegistryHistoryStateV1,
   publicKeyBytes: string,
@@ -1629,6 +1855,200 @@ async function validateRegistryEntryV1(
       ),
       capability,
     );
+  }
+}
+
+function readProspectiveEntryTemporaryAdmissionInputInternalV1(
+  input: unknown,
+): ProviderRegistryProspectiveEntryTemporaryAdmissionInputInternalV1 | undefined {
+  if (
+    input === null ||
+    typeof input !== "object" ||
+    (CapturedObjectGetPrototypeOfV1(input) !== CapturedObjectPrototypeV1 &&
+      CapturedObjectGetPrototypeOfV1(input) !== null)
+  ) {
+    return undefined;
+  }
+  const keys = CapturedReflectOwnKeysV1(input);
+  let hasDigest = false;
+  let hasEntry = false;
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
+    if (key === "prospectiveRegistryEntryContentDigest") {
+      hasDigest = true;
+    } else if (key === "prospectiveRegistryEntry") {
+      hasEntry = true;
+    } else {
+      return undefined;
+    }
+  }
+  if (keys.length !== 2 || !hasDigest || !hasEntry) {
+    return undefined;
+  }
+  const digestDescriptor = CapturedObjectGetOwnPropertyDescriptorV1(
+    input,
+    "prospectiveRegistryEntryContentDigest",
+  );
+  const entryDescriptor = CapturedObjectGetOwnPropertyDescriptorV1(
+    input,
+    "prospectiveRegistryEntry",
+  );
+  if (
+    digestDescriptor === undefined ||
+    !("value" in digestDescriptor) ||
+    digestDescriptor.enumerable !== true ||
+    entryDescriptor === undefined ||
+    !("value" in entryDescriptor) ||
+    entryDescriptor.enumerable !== true
+  ) {
+    return undefined;
+  }
+  const parsedEntry = StoreDurableObjectProviderRegistryEntryV1Schema.safeParse(
+    entryDescriptor.value,
+  );
+  if (!parsedEntry.success || typeof digestDescriptor.value !== "string") {
+    return undefined;
+  }
+  return {
+    prospectiveRegistryEntryContentDigest: digestDescriptor.value,
+    prospectiveRegistryEntry: parsedEntry.data,
+  };
+}
+
+/**
+ * Consume one temporary-admission capability before inspecting the candidate,
+ * clone exactly seven retained collections, and run the ordinary Entry
+ * validator only against that copy. No prepared Manifest or retained-state
+ * mutation is produced.
+ *
+ * @internal
+ */
+export async function diagnoseProviderRegistryProspectiveEntryTemporaryAdmissionInternalV1(
+  capability: ProviderRegistryProspectiveEntryTemporaryAdmissionCapabilityInternalV1,
+  input: unknown,
+): Promise<ProviderRegistryProspectiveEntryTemporaryAdmissionDiagnosticResultInternalV1> {
+  if (
+    capability === null ||
+    (typeof capability !== "object" && typeof capability !== "function")
+  ) {
+    return createProviderNonThenableFrozenRecordV1<ProviderRegistryProspectiveEntryTemporaryAdmissionDiagnosticResultInternalV1>({
+      ok: false,
+      stage: "history_input",
+      reason: "schema_invalid",
+    });
+  }
+  const context = weakMapGetV1(
+    prospectiveEntryTemporaryAdmissionContextsByCapabilityInternalV1,
+    capability,
+  );
+  if (
+    context === undefined ||
+    !weakMapDeleteV1(
+      prospectiveEntryTemporaryAdmissionContextsByCapabilityInternalV1,
+      capability,
+    )
+  ) {
+    return createProviderNonThenableFrozenRecordV1<ProviderRegistryProspectiveEntryTemporaryAdmissionDiagnosticResultInternalV1>({
+      ok: false,
+      stage: "history_input",
+      reason: "schema_invalid",
+    });
+  }
+
+  try {
+    const exactInput =
+      readProspectiveEntryTemporaryAdmissionInputInternalV1(input);
+    if (exactInput === undefined) {
+      return createProviderNonThenableFrozenRecordV1<ProviderRegistryProspectiveEntryTemporaryAdmissionDiagnosticResultInternalV1>({
+        ok: false,
+        stage: "history_input",
+        reason: "schema_invalid",
+      });
+    }
+    const entry = exactInput.prospectiveRegistryEntry;
+    if (
+      context.currentManifest.routing.state !== "steady" ||
+      entry.registryGeneration !== 1 ||
+      "predecessorRegistryEntryContentDigest" in entry ||
+      exactInput.prospectiveRegistryEntryContentDigest !==
+        deriveStoreDurableObjectProviderRegistryEntryContentDigestV1(entry)
+    ) {
+      return createProviderNonThenableFrozenRecordV1<ProviderRegistryProspectiveEntryTemporaryAdmissionDiagnosticResultInternalV1>({
+        ok: false,
+        stage: "registry_entry",
+        reason: "entry_mismatch",
+      });
+    }
+    for (let index = 0; index < context.manifestHistory.length; index += 1) {
+      const manifest = context.manifestHistory[index]!.payload;
+      if (
+        arraySomeV1(
+          manifest.members,
+          (member) => member.providerId === entry.providerId,
+        )
+      ) {
+        return createProviderNonThenableFrozenRecordV1<ProviderRegistryProspectiveEntryTemporaryAdmissionDiagnosticResultInternalV1>({
+          ok: false,
+          stage: "member_set",
+          reason: "member_transition_invalid",
+        });
+      }
+    }
+
+    const copiedState =
+      cloneRegistryHistoryStateForTemporaryAdmissionInternalV1(
+        context.retainedState,
+      );
+    const member: EnabledMemberV1 = {
+      providerId: entry.providerId,
+      disposition: "enabled",
+      registryEntryContentDigest:
+        exactInput.prospectiveRegistryEntryContentDigest as ReturnType<
+          typeof deriveStoreDurableObjectProviderRegistryEntryContentDigestV1
+        >,
+      registryEntry: entry,
+    };
+    await hardenProviderPointPromiseV1(
+      validateRegistryEntryV1(
+        member,
+        context.currentManifest,
+        context.currentRoot,
+        context.rootByKeyId,
+        context.policy,
+        copiedState,
+        context.strictCryptoCapability,
+      ),
+    );
+    return createProviderNonThenableFrozenRecordV1<ProviderRegistryProspectiveEntryTemporaryAdmissionDiagnosticResultInternalV1>({
+      ok: true,
+      value: createProviderNonThenableFrozenRecordV1<ProviderRegistryProspectiveEntryTemporaryAdmissionValidationInternalV1>({
+        authority:
+          "none_registry_prospective_entry_temporary_admission_only",
+        installationIdentityGenerationId:
+          context.currentManifest.installationIdentityGenerationId,
+        providerId: entry.providerId,
+        registryEntryContentDigest:
+          exactInput.prospectiveRegistryEntryContentDigest as ReturnType<
+            typeof deriveStoreDurableObjectProviderRegistryEntryContentDigestV1
+          >,
+        registryGeneration: 1,
+        copiedRetainedStateCollectionCount: 7,
+        retainedStateMutationCount: 0,
+      }),
+    });
+  } catch (error) {
+    if (error instanceof RegistryManifestHistoryDiagnosticSignal) {
+      return createProviderNonThenableFrozenRecordV1<ProviderRegistryProspectiveEntryTemporaryAdmissionDiagnosticResultInternalV1>({
+        ok: false,
+        stage: error.stage,
+        reason: error.reason,
+      });
+    }
+    return createProviderNonThenableFrozenRecordV1<ProviderRegistryProspectiveEntryTemporaryAdmissionDiagnosticResultInternalV1>({
+      ok: false,
+      stage: "history_input",
+      reason: "schema_invalid",
+    });
   }
 }
 
@@ -2548,6 +2968,18 @@ async function validatePreparedInternalV1(
   });
 
   assertProviderRegistryPreparedCopyLedgerZeroInternalV1(prepared.copyLedger);
+  registerProviderRegistryProspectiveEntryTemporaryAdmissionContextInternalV1(
+    CapturedObjectFreezeV1({
+      closureIdentity: closure,
+      strictCryptoCapability: prepared.strictCryptoCapability,
+      manifestHistory,
+      currentManifest: current.payload,
+      currentRoot: suppliedHistoryTipRootEnvelope.payload.activeRoot,
+      rootByKeyId,
+      policy: bundle.providerTrustHistoryPolicy,
+      retainedState: state,
+    }),
+  );
   return CapturedObjectFreezeV1({ closure, witness });
 }
 

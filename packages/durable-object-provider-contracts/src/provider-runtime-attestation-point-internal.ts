@@ -310,7 +310,7 @@ function decodeCanonicalPublicKeyBytes32V1(value: string): Uint8Array {
 
 async function admitPreparedActiveRootV1(
   input: ValidateProviderRuntimeAttestationPointClosureV1Input,
-): Promise<ProviderRegistryRootPublicKeyV1> {
+): Promise<Readonly<{ readonly activeRoot: ProviderRegistryRootPublicKeyV1 }>> {
   const activeRoot = input.activeRoot as ProviderRegistryRootPublicKeyV1;
   try {
     const accepted = await validateProviderStrictEd25519PointWithCapabilityV1(
@@ -323,7 +323,9 @@ async function admitPreparedActiveRootV1(
   } catch {
     throw new CapturedTypeErrorV1("prepared active root admission failed");
   }
-  return activeRoot;
+  // Never fulfill an async boundary with a caller-owned ordinary object: the
+  // Promise resolution procedure would consult an inherited `then`.
+  return createProviderNonThenableFrozenRecordV1({ activeRoot });
 }
 
 async function verifyPreparedRuntimeSignatureV1(
@@ -405,7 +407,7 @@ export function diagnoseProviderRuntimeAttestationPointPreparedInternalV1(
 
     let activeRoot: ProviderRegistryRootPublicKeyV1;
     try {
-      activeRoot = await admitPreparedActiveRootV1(input);
+      activeRoot = (await admitPreparedActiveRootV1(input)).activeRoot;
     } catch {
       return preparedPointFailureV1(
         "conformance_result_closure",

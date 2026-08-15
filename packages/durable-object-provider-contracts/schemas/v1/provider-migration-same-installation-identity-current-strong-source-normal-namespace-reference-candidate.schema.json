@@ -1,0 +1,25 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-migration-same-installation-identity-current-strong-source-normal-namespace-reference-candidate",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "installationIdentityGenerationId": {
+      "type": "string",
+      "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+    },
+    "repositoryId": {
+      "type": "string",
+      "pattern": "^provider-migration-same-installation-identity-current-strong-source-normal-repository-reference-candidate:[0-9a-f]{64}$"
+    },
+    "worktreeId": {
+      "type": "string",
+      "pattern": "^provider-migration-same-installation-identity-current-strong-source-normal-worktree-reference-candidate:[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "installationIdentityGenerationId",
+    "repositoryId",
+    "worktreeId"
+  ],
+  "additionalProperties": false
+}

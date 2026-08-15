@@ -1327,6 +1327,49 @@ Provider durability、Migration、C09 aggregate或authority evidence。
 状态：`frozen / implementation pending`（2026-08-14 pre-implementation Decision
 Amendment；同日implementation-safety终审后原位收窄）
 
+> **D-41 implementation amendment（2026-08-15；normative override）**：以下实现机械约束取代
+> 本节旧有的 caller ordinary-JSON、public reflection/snapshot、先删 capability 与笼统
+> `mint-before` audit 描述；public exact2 TypeScript shape、35个domain、27个Schema及其它
+> D-41 wire/value冻结均不变。
+
+- 唯一合法Input是private async mint安全物化并冻结request exact8后，才构造为
+  null-prototype/frozen exact2 shell并按其object identity登记到private WeakMap的对象；mint只在
+  internal wiring返回该ready build input。public builder对`unknown`只做zero-reflection identity
+  take，不枚举、不读property/prototype/descriptor/getter且不解析caller literal。copy、clone、
+  structured clone、extra-key object与手写exact2 literal均在owner claim前拒绝；invalid/foreign
+  identity不得删除或burn合法owner记录。identity match后才原子take并永久burn对应owner，后续
+  failure不恢复。
+- mint audit PRE必须是mint的第一项可观察动作，严格早于request projection/materialization、
+  D-40 retained closure、Registry、Evidence、reference host与crypto调用。mint失败由自身finally
+  完成POST；mint成功把不可伪造PRE witness与POST obligation转交ready input，public consume的
+  outermost true `finally`在所有fulfill/reject/cleanup路径执行POST。只有PRE/POST九sink exact-equal
+  才可返回success；任何delta仍覆盖为`side_effect_boundary/side_effect_detected`。
+- prospective claims/Evidence、source-stream event、EndpointCut与quota cut/bounds四个data seam
+  分别使用private nominal one-shot capability/challenge；transport-prelimited/trusted-decoded
+  adapter只提供有界数据，不提供authority。authority仍来自D-40 retained closure及Registry/
+  Evidence的真实验证。每个consume均须先比较cohort/Identity/machine/role/binding；foreign binding
+  compare失败不得delete/burn合法owner，exact match后才burn，replay与跨seam substitution拒绝。
+- D-41 reference source host的source-freeze open、locator commitment、reference-slot enumeration与
+  source-continuity observation四个seam固定同步调用；这只冻结reference host，不把
+  transport伪装成同步。真正async transport、其backpressure/cancellation与跨进程challenge状态机
+  留给后继Decision并继续locked。
+- async mint/build的每个fulfillment carrier（含ready build input与public success）只能是
+  null-prototype、frozen、nonthenable shell：无own/inherited/accessor `then`，不得把caller、host或
+  adapter object直接交给Promise resolution。then getter、thenable、prototype poisoning与
+  fulfillment assimilation不得被调用或取得authority。
+- public facade runtime export exact3：builder、success Zod Schema、唯一Error；仅Input、capability、
+  success作为type export。wire helpers、domain constants、derive/validate及mint/machine全部private，
+  packed Node/browser对wire helper与internal deep import都必须拒绝。success Zod Schema只面向
+  trusted-decoded/transport-prelimited的结构与hash-DAG校验，不是same-realm hostile-object parser；
+  bounded canonical-bytes verifier留给后继Decision并继续locked。
+- focused evidence在既有vectors上新增：mint PRE严格先于request/D-40/Registry/Evidence/host/
+  crypto且consume true-finally POST；exact identity take的copy/clone/extra/literal不burn owner；四类
+  nominal capability/challenge的single-use、cross-seam replay与foreign-owner/binding
+  compare-before-delete、exact match后burn；then getter/thenable/prototype-poison零调用与只允许
+  null-prototype nonthenable fulfillment；reference host四seam同步spy、public runtime exact3、
+  wire+internal packed deep-import拒绝。保持none-authority、全write sink exact zero与
+  implementation pending，不得写成实现完成或CI evidence。
+
 - D-41继续位于既有WP5-1P/C09 aggregate Gate内，不命名为C09-1P、不新增第18 Gate
   或新AT。public success type exact为
   `ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1`；

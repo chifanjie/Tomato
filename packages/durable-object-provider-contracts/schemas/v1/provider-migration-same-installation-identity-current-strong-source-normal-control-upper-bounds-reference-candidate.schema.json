@@ -1,0 +1,87 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-migration-same-installation-identity-current-strong-source-normal-control-upper-bounds-reference-candidate",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "reservationRecordCountIncrement": {
+      "type": "number",
+      "const": 1
+    },
+    "reservationRecordLogicalBytesUpperBound": {
+      "type": "number",
+      "const": 1048576
+    },
+    "reserveEventCountIncrement": {
+      "type": "number",
+      "const": 1
+    },
+    "reserveEventLogicalBytesUpperBound": {
+      "type": "number",
+      "const": 262144
+    },
+    "reserveReceiptCountIncrement": {
+      "type": "number",
+      "const": 1
+    },
+    "reserveReceiptLogicalBytesUpperBound": {
+      "type": "number",
+      "const": 1048576
+    },
+    "postReserveFutureTerminalTransitionEscrowCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "prospectiveEventCountIncludingEscrow": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "prospectiveEventLogicalBytesIncludingEscrow": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "prospectiveReceiptCountIncludingEscrow": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "prospectiveReceiptLogicalBytesIncludingEscrow": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "prospectiveReservationRecordCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "prospectiveReservationRecordLogicalBytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "currentHighWaterLogicalBytesUpperBound": {
+      "type": "number",
+      "const": 1048576
+    }
+  },
+  "required": [
+    "reservationRecordCountIncrement",
+    "reservationRecordLogicalBytesUpperBound",
+    "reserveEventCountIncrement",
+    "reserveEventLogicalBytesUpperBound",
+    "reserveReceiptCountIncrement",
+    "reserveReceiptLogicalBytesUpperBound",
+    "postReserveFutureTerminalTransitionEscrowCount",
+    "prospectiveEventCountIncludingEscrow",
+    "prospectiveEventLogicalBytesIncludingEscrow",
+    "prospectiveReceiptCountIncludingEscrow",
+    "prospectiveReceiptLogicalBytesIncludingEscrow",
+    "prospectiveReservationRecordCount",
+    "prospectiveReservationRecordLogicalBytes",
+    "currentHighWaterLogicalBytesUpperBound"
+  ],
+  "additionalProperties": false
+}

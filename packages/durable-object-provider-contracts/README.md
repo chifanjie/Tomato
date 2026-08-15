@@ -298,6 +298,16 @@ Acceptance compare-append reference-Candidate wire schemas, including the
 schema), plus its public closure validation, stage, and reason schemas,
 bringing the current inventory to 328. The opaque Identity and reference-machine
 capabilities have no JSON Schema and remain package-private.
+D-41 adds exactly 27 documents for the frozen same-installation-identity,
+current-strong-source normal pre-side-effect request, source hash-DAG, quota,
+Plan, identifier, and complete validation surface, bringing the current
+inventory to 355. The registered public request and success validation have
+JSON Schemas. The public Build Input is instead an exact trusted-decoded object
+registered by the private pre-Plan preparation path; its opaque one-shot
+capability and the public Error have no JSON Schema. The wire, source, quota,
+pre-Plan, endpoint-trust, and D-40 endpoint-trust-basis modules remain private.
+The public builder returns only a none-authority validation candidate: it does
+not mint or run a migration operation.
 
 The production sources remain ES2022 browser/worker portable. The npm/browser
 distribution gate must expose the new public API through the root and
@@ -320,18 +330,21 @@ distribution gate must expose the new public API through the root and
 `./provider-distribution-history-current-candidate-point-fixtures`,
 `./provider-strong-ready-acceptance-candidate`,
 `./provider-trusted-local-physical-target-selection-candidate`, and
-`./provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate` exports, pack all
+`./provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate`, and
+`./provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate` exports, pack all
 `schemas/`, `fixtures/`, and fixed `provider/` resources, reject private deep
 imports, and execute the same Registry, real-filesystem source, and Target
 Discovery, Conformance Result, Runtime Attestation, Feasibility Evidence,
 Registry/Evidence binding, Release Target Universe, and Feasibility Support
 Catalog point validators plus the Distribution History current-candidate
 validator, strong-ready Acceptance candidate, trusted-local target selection,
-and D-40 wire/diagnostic surface from clean Node and browser-bundle installs.
-The packed smoke does not mint private Identity or reference-machine
-capabilities and therefore does not claim a full successful compare-append
-transaction. There are exactly 30 explicit public module exports at this
-checkpoint.
+and the D-40 and D-41 public reference-candidate surfaces from clean Node and
+browser-bundle installs.
+The D-41 packed smoke checks only its exact public runtime surface, public
+Schemas, opaque Error, and none-authority success literal. It does not mint a
+private capability or run a migration operation. The broader packed smoke also
+does not claim a full successful compare-append transaction. There are exactly
+31 explicit public module exports at this checkpoint.
 Node uses the exact official Zod 4.3.6 runtime. The package's browser path uses
 its shipped CSP-safe runtime, with dynamic compilation disabled and
 `util.createTransparentProxy` failing closed. Consumers should treat the
@@ -884,7 +897,7 @@ diagnostics, and crypto call counts are checked by
 `verify:provider-registry-manifest-invalid`. The signed real-filesystem fixture
 anchors, exact source closure, and 43 materialized negative diagnostics are
 checked by `verify:provider-real-fs-source`. `test/json-schema.test.ts` freezes
-the current 328-schema inventory and `verify:schemas` rejects generated-file
+the current 355-schema inventory and `verify:schemas` rejects generated-file
 drift. `verify:provider-target-discovery-point` checks the exact five locators,
 six-signature closure, canonical empty Fixture/Runner success, typed unresolved
 projection, and all 116 ordered diagnostic/executable recipes.

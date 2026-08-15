@@ -43,6 +43,7 @@ import {
   deriveProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReceiptSetDigestCandidateInternalV1,
   executeProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineInternalV1,
   isProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineErrorInternalV1,
+  mintProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReadOnlyContinuityHandleInternalV1,
   type ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineCapabilityInternalV1,
   type ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceTransactionDecisionInternalV1,
 } from "./provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-reference-machine-internal.js";
@@ -77,11 +78,21 @@ import {
 import {
   diagnoseProviderTrustedLocalPhysicalTargetCandidateV1,
   type ProviderTrustedLocalPhysicalTargetObservationCapabilityV1,
+  type ProviderTrustedLocalPhysicalTargetSelectionCandidateValidationV1,
 } from "./provider-trusted-local-physical-target-selection-candidate.js";
 import {
   deriveProviderTrustedLocalStrongWriterSelectionCandidateInternalV1,
   isProviderTrustedLocalStrongWriterSelectionCandidateErrorInternalV1,
 } from "./provider-trusted-local-strong-writer-selection-candidate-internal.js";
+import {
+  registerProviderStrongReadyBootstrapOrSteadyAcceptanceD41EndpointTrustBasisInternalV1,
+} from "./provider-strong-ready-bootstrap-or-steady-acceptance-d41-endpoint-trust-basis-internal.js";
+import type {
+  ValidateProviderDistributionHistoryCurrentCandidatePointV1Input,
+} from "./provider-distribution-history-current-candidate-point.js";
+import type {
+  ProviderStrictEd25519OpaqueCapabilityV1,
+} from "./strict-ed25519-conformance.js";
 
 const CapturedObjectFreezeV1 = Object.freeze;
 const CapturedArrayPrototypeSliceV1 = Array.prototype.slice;
@@ -1046,6 +1057,9 @@ function captureCreateInputV1(
 async function deriveTransactionDecisionV1(
   fields: Readonly<Record<(typeof CREATE_INPUT_KEYS_V1)[number], unknown>>,
   request: ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendRequestReferenceCandidateV1,
+  captureCommittedSelection: (
+    selection: ProviderTrustedLocalPhysicalTargetSelectionCandidateValidationV1,
+  ) => void,
 ): Promise<ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceTransactionDecisionInternalV1> {
   const selectionDiagnostic =
     await diagnoseProviderTrustedLocalPhysicalTargetCandidateV1({
@@ -1160,6 +1174,10 @@ async function deriveTransactionDecisionV1(
         classification: "candidate_invalid" as const,
       });
     }
+    // Preserve the exact D-39 validation identity produced inside this D-40
+    // transaction. Registration for D-41 happens only after the machine and
+    // final public D-40 Validation have both succeeded.
+    captureCommittedSelection(selectionDiagnostic.value);
     return createProviderNonThenableFrozenRecordV1({
       classification: "committed" as const,
       candidate: expected,
@@ -1236,6 +1254,10 @@ async function createInternalV1(
     acceptanceCompareAppendRequest,
     distributionHistoryCandidate,
   }) as Readonly<Record<(typeof CREATE_INPUT_KEYS_V1)[number], unknown>>;
+  let committedSelection:
+    | ProviderTrustedLocalPhysicalTargetSelectionCandidateValidationV1
+    | undefined;
+  let transactionInvoked = false;
   const operation =
     executeProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineInternalV1({
       identityVerificationCapability:
@@ -1249,8 +1271,19 @@ async function createInternalV1(
       resolvedAt: fields.resolvedAt as ReturnType<
         typeof ProviderRegistryIsoTimestampV1Schema.parse
       >,
-      transaction: ({ request }) =>
-        deriveTransactionDecisionV1(capturedFields, request),
+      transaction: ({ request }) => {
+        transactionInvoked = true;
+        return deriveTransactionDecisionV1(
+          capturedFields,
+          request,
+          (selection) => {
+            if (committedSelection !== undefined) {
+              return failV1("candidate", "source_invalid");
+            }
+            committedSelection = selection;
+          },
+        );
+      },
     });
   let referenceStateOperation: Promise<unknown>;
   try {
@@ -1293,7 +1326,51 @@ async function createInternalV1(
   }
   const result = await operation;
   const referenceState = await referenceStateOperation;
-  return buildValidationV1(result, submittedRequest, referenceState);
+  const validation = buildValidationV1(
+    result,
+    submittedRequest,
+    referenceState,
+  );
+  const receipt = resultReceiptV1(result);
+  if (
+    result.resolution === "resolved" &&
+    receipt.payload.referenceOutcome.outcome === "committed"
+  ) {
+    if (committedSelection === undefined) {
+      // Existing-nonce replay returns its original committed receipt without
+      // invoking this call's transaction. It therefore has no new D-39
+      // selection to register as a D-41 one-shot endpoint-trust basis.
+      if (transactionInvoked) {
+        return failV1("post_state_closure", "post_state_invalid");
+      }
+      return validation;
+    }
+    const distributionHistoryInput =
+      capturedFields.distributionHistoryCandidate as
+        ValidateProviderDistributionHistoryCurrentCandidatePointV1Input;
+    try {
+      const readOnlyContinuityHandle =
+        mintProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReadOnlyContinuityHandleInternalV1(
+          fields.referenceMachineCapability as
+            ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineCapabilityInternalV1,
+          validation.referenceState,
+        );
+      registerProviderStrongReadyBootstrapOrSteadyAcceptanceD41EndpointTrustBasisInternalV1({
+        acceptanceClosureIdentity: validation,
+        distributionHistoryInput,
+        distributionHistoryClosure:
+          committedSelection.distributionHistoryCandidate,
+        physicalTargetSelection: committedSelection,
+        readOnlyContinuityHandle,
+        strictCryptoCapability:
+          distributionHistoryInput.strictCryptoCapability as
+            ProviderStrictEd25519OpaqueCapabilityV1,
+      });
+    } catch {
+      return failV1("post_state_closure", "post_state_invalid");
+    }
+  }
+  return validation;
 }
 
 function diagnosticFailureV1(

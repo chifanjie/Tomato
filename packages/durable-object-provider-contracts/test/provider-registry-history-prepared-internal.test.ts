@@ -1,3 +1,9 @@
+import {
+  createHash,
+  createPrivateKey,
+  createPublicKey,
+  sign,
+} from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -10,15 +16,31 @@ import {
 } from "../src/provider-registry-manifest-history.js";
 import {
   createPreparedRegistryHistorySnapshotInternalV1,
+  diagnoseProviderRegistryProspectiveEntryTemporaryAdmissionInternalV1,
   diagnoseProviderRegistryManifestHistoryPreparedInternalV1,
   discardPreparedRegistryHistoryInputInternalV1,
   discardRegistryHistoryVerifiedWitnessInternalV1,
+  mintProviderRegistryProspectiveEntryTemporaryAdmissionCapabilityInternalV1,
   registerPreparedRegistryHistoryInputInternalV1,
   takeRegistryHistoryVerifiedWitnessInternalV1,
   type PreparedRegistryHistoryInputHandleV1,
   type RegistryTrustWitnessHandleV1,
 } from "../src/provider-registry-history-prepared-internal.js";
-import type { ProviderRegistryManifestEnvelopeV1 } from "../src/provider-registry-records.js";
+import {
+  StoreDurableObjectProviderBindingDerivationGenerationV1Schema,
+  StoreDurableObjectProviderRegistryEntryV1Schema,
+  StoreDurableObjectProviderRuntimeAttestationV1Schema,
+  StoreDurableObjectProviderVerificationPublicKeyV1Schema,
+  createStoreDurableObjectProviderBindingDerivationGenerationSignatureMessageV1,
+  createStoreDurableObjectProviderRegistryEntrySignatureMessageV1,
+  createStoreDurableObjectProviderRuntimeAttestationSignatureMessageV1,
+  createStoreDurableObjectProviderVerificationPublicKeySignatureMessageV1,
+  deriveStoreDurableObjectProviderRegistryEntryContentDigestV1,
+  deriveStoreDurableObjectProviderRuntimeAttestationContentDigestV1,
+  deriveStoreProviderVerificationKeyIdV1,
+  type ProviderRegistryManifestEnvelopeV1,
+  type StoreDurableObjectProviderRegistryEntryV1,
+} from "../src/provider-registry-records.js";
 import type { ProviderRegistryRootMetadataEnvelopeV1 } from "../src/provider-registry-trust.js";
 import {
   PROVIDER_STRICT_ED25519_MANIFEST_MAX_BYTES_V1,
@@ -148,6 +170,211 @@ function fakeOpaqueIdentity<T extends object>(): T {
   return Object.freeze(Object.create(null)) as T;
 }
 
+const prospectiveProviderId = "durable-object-provider:native-c" as const;
+const prospectiveSemanticPolicyDigest =
+  `sha256:${"c".repeat(64)}` as const;
+const currentRootPrivateKey = createPrivateKey({
+  key: Buffer.concat([
+    Buffer.from("302e020100300506032b657004220420", "hex"),
+    Buffer.from("30".repeat(32), "hex"),
+  ]),
+  format: "der",
+  type: "pkcs8",
+});
+
+function registrySignatureForCurrentRootV1(message: Uint8Array): string {
+  const currentRoot = fixture.rootMetadataHistory.at(-1)!.payload.activeRoot;
+  return `provider-registry-ed25519:${currentRoot.rootKeyId}:${sign(
+    null,
+    Buffer.from(message),
+    currentRootPrivateKey,
+  ).toString("hex")}`;
+}
+
+function deterministicPublicKeyFactsV1(seedByte: number): Readonly<{
+  publicKeyBytes: `base64url:${string}`;
+  publicKeyDigest: `sha256:${string}`;
+}> {
+  const privateKey = createPrivateKey({
+    key: Buffer.concat([
+      Buffer.from("302e020100300506032b657004220420", "hex"),
+      Buffer.alloc(32, seedByte),
+    ]),
+    format: "der",
+    type: "pkcs8",
+  });
+  const spki = createPublicKey(privateKey).export({
+    format: "der",
+    type: "spki",
+  });
+  const raw = Buffer.from(spki.subarray(spki.byteLength - 32));
+  return Object.freeze({
+    publicKeyBytes: `base64url:${raw.toString("base64url")}`,
+    publicKeyDigest: `sha256:${createHash("sha256").update(raw).digest("hex")}`,
+  });
+}
+
+function canonicalPublicKeyDigestV1(
+  publicKeyBytes: string,
+): `sha256:${string}` {
+  const raw = Buffer.from(publicKeyBytes.slice("base64url:".length), "base64url");
+  return `sha256:${createHash("sha256").update(raw).digest("hex")}`;
+}
+
+function currentEnabledEntryV1(): StoreDurableObjectProviderRegistryEntryV1 {
+  const member = fixture.registryManifestHistory
+    .at(-1)!
+    .payload.members.find((candidate) => candidate.disposition === "enabled");
+  if (member === undefined || member.disposition !== "enabled") {
+    throw new Error("fixture must have one enabled tip Entry");
+  }
+  return member.registryEntry;
+}
+
+function prospectiveEntryV1(options: Readonly<{
+  aliasExistingProviderMaterial?: boolean;
+}> = {}): StoreDurableObjectProviderRegistryEntryV1 {
+  const currentEntry = currentEnabledEntryV1();
+  const usages = [
+    "containment_proof",
+    "journal_version",
+    "migration_semantic_proof",
+    "operation_receipt",
+    "state_version",
+  ] as const;
+  const verificationRecords = usages.map((usage, index) => {
+    const aliased = options.aliasExistingProviderMaterial === true &&
+      usage === "operation_receipt"
+      ? currentEntry.verificationKeys.publicKeyRecords.find(
+          (record) => record.usage === usage,
+        )
+      : undefined;
+    const key = deterministicPublicKeyFactsV1(0x90 + index);
+    const publicKeyBytes = (aliased?.publicKeyBytes ??
+      key.publicKeyBytes) as typeof key.publicKeyBytes;
+    const unsigned = {
+      profile:
+        "store_durable_object_provider_verification_public_key_v1" as const,
+      providerId: prospectiveProviderId,
+      registryGenerationIntroduced: 1,
+      keyId: deriveStoreProviderVerificationKeyIdV1({
+        providerId: prospectiveProviderId,
+        usage,
+        publicKeyBytes,
+      }),
+      usage,
+      algorithm: "ed25519" as const,
+      publicKeyBytes,
+      publicKeyDigest: aliased === undefined
+        ? key.publicKeyDigest
+        : canonicalPublicKeyDigestV1(publicKeyBytes),
+    };
+    return StoreDurableObjectProviderVerificationPublicKeyV1Schema.parse({
+      ...unsigned,
+      registrySignature: registrySignatureForCurrentRootV1(
+        createStoreDurableObjectProviderVerificationPublicKeySignatureMessageV1(
+          unsigned,
+          fixture.rootMetadataHistory.at(-1)!.rootKeyId,
+        ),
+      ),
+    });
+  });
+  verificationRecords.sort((left, right) =>
+    Buffer.compare(
+      Buffer.from(`${left.providerId}\u0000${left.usage}\u0000${left.keyId}`),
+      Buffer.from(`${right.providerId}\u0000${right.usage}\u0000${right.keyId}`),
+    ),
+  );
+  const activeByUsage = new Map(
+    verificationRecords.map((record) => [record.usage, record.keyId]),
+  );
+  const bindingUnsigned = {
+    profile:
+      "store_durable_object_provider_binding_derivation_generation_v1" as const,
+    providerId: prospectiveProviderId,
+    registryGenerationIntroduced: 1,
+    generation: 1,
+    algorithm: "hmac_sha256_provider_private" as const,
+    keyCommitmentDigest: `sha256:${"d".repeat(64)}` as const,
+  };
+  const bindingRecord =
+    StoreDurableObjectProviderBindingDerivationGenerationV1Schema.parse({
+      ...bindingUnsigned,
+      registrySignature: registrySignatureForCurrentRootV1(
+        createStoreDurableObjectProviderBindingDerivationGenerationSignatureMessageV1(
+          bindingUnsigned,
+          fixture.rootMetadataHistory.at(-1)!.rootKeyId,
+        ),
+      ),
+    });
+
+  const { registrySignature: _runtimeSignature, ...runtimeTemplate } =
+    currentEntry.runtimeAttestation.payload;
+  const runtimeUnsigned = {
+    ...runtimeTemplate,
+    providerId: prospectiveProviderId,
+    semanticProviderPolicyDigest: prospectiveSemanticPolicyDigest,
+  };
+  const runtimePayload =
+    StoreDurableObjectProviderRuntimeAttestationV1Schema.parse({
+      ...runtimeUnsigned,
+      registrySignature: registrySignatureForCurrentRootV1(
+        createStoreDurableObjectProviderRuntimeAttestationSignatureMessageV1(
+          runtimeUnsigned,
+          fixture.rootMetadataHistory.at(-1)!.rootKeyId,
+        ),
+      ),
+    });
+  const runtimeAttestation = {
+    profile:
+      "store_durable_object_provider_runtime_attestation_pin_v1" as const,
+    contentDigest:
+      deriveStoreDurableObjectProviderRuntimeAttestationContentDigestV1(
+        runtimePayload,
+      ),
+    payload: runtimePayload,
+  };
+  const entryUnsigned = {
+    profile: "store_durable_object_provider_registry_entry_v1" as const,
+    installationIdentityGenerationId:
+      fixture.installationIdentityGenerationId,
+    activeRootMetadata:
+      fixture.registryManifestHistory.at(-1)!.payload.activeRootMetadata,
+    registryRootKeyId: fixture.rootMetadataHistory.at(-1)!.rootKeyId,
+    providerId: prospectiveProviderId,
+    semanticProviderPolicyDigest: prospectiveSemanticPolicyDigest,
+    providerFeasibilityEvidence: currentEntry.providerFeasibilityEvidence,
+    runtimeAttestation,
+    verificationKeys: {
+      profile:
+        "store_durable_object_provider_verification_keys_v1" as const,
+      activeKeyIds: {
+        operationReceipt: activeByUsage.get("operation_receipt")!,
+        containmentProof: activeByUsage.get("containment_proof")!,
+        stateVersion: activeByUsage.get("state_version")!,
+        journalVersion: activeByUsage.get("journal_version")!,
+      },
+      activeBindingDerivationKeyGeneration: 1,
+      publicKeyRecords: verificationRecords,
+      bindingDerivationGenerationRecords: [bindingRecord],
+      compromisedRevokedKeyIds: [],
+      compromisedRevokedBindingDerivationGenerations: [],
+    },
+    feasibilityApprovalKeys: currentEntry.feasibilityApprovalKeys,
+    status: "enabled" as const,
+    registryGeneration: 1 as const,
+  };
+  return StoreDurableObjectProviderRegistryEntryV1Schema.parse({
+    ...entryUnsigned,
+    registrySignature: registrySignatureForCurrentRootV1(
+      createStoreDurableObjectProviderRegistryEntrySignatureMessageV1(
+        entryUnsigned,
+        fixture.rootMetadataHistory.at(-1)!.rootKeyId,
+      ),
+    ),
+  });
+}
+
 function expectHistoryCryptoCalls(multiplier = 1): void {
   expect(pointCalls).toBe(
     fixture.expected.cryptoClosure.postAttestationPointCalls * multiplier,
@@ -167,6 +394,33 @@ function expectPreparedFailure(
   reason = "schema_invalid",
 ): void {
   expect(result).toEqual({ ok: false, stage, reason });
+}
+
+async function temporaryAdmissionCapabilityV1() {
+  const prepared = createPreparedInvocation();
+  const registryResult =
+    await diagnoseProviderRegistryManifestHistoryPreparedInternalV1(
+      prepared.requestIdentity,
+      prepared.inputHandle,
+      capability,
+    );
+  if (!registryResult.ok) {
+    throw new Error("prepared Registry fixture must validate");
+  }
+  const temporaryCapability =
+    mintProviderRegistryProspectiveEntryTemporaryAdmissionCapabilityInternalV1(
+      registryResult.value.closure,
+      capability,
+    );
+  discardRegistryHistoryVerifiedWitnessInternalV1(
+    registryResult.value.closure,
+    registryResult.value.registryTrustWitnessHandle,
+    capability,
+  );
+  return {
+    closure: registryResult.value.closure,
+    temporaryCapability,
+  };
 }
 
 beforeAll(async () => {
@@ -193,6 +447,244 @@ beforeAll(async () => {
 });
 
 describe("prepared Registry/Root retained-history internals", () => {
+  it("temporarily admits a new gen1 Entry on a seven-collection copy and burns the opaque cap", async () => {
+    const candidate = prospectiveEntryV1();
+    const contentDigest =
+      deriveStoreDurableObjectProviderRegistryEntryContentDigestV1(candidate);
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const prepared = await temporaryAdmissionCapabilityV1();
+      expect(Object.isFrozen(prepared.temporaryCapability)).toBe(true);
+      expect(Object.getPrototypeOf(prepared.temporaryCapability)).toBeNull();
+      expect(Reflect.ownKeys(prepared.temporaryCapability)).toEqual([]);
+      expect(() =>
+        mintProviderRegistryProspectiveEntryTemporaryAdmissionCapabilityInternalV1(
+          prepared.closure,
+          capability,
+        ),
+      ).toThrow(TypeError);
+
+      const result =
+        await diagnoseProviderRegistryProspectiveEntryTemporaryAdmissionInternalV1(
+          prepared.temporaryCapability,
+          {
+            prospectiveRegistryEntryContentDigest: contentDigest,
+            prospectiveRegistryEntry: candidate,
+          },
+        );
+      expect(result).toEqual({
+        ok: true,
+        value: {
+          authority:
+            "none_registry_prospective_entry_temporary_admission_only",
+          installationIdentityGenerationId:
+            fixture.installationIdentityGenerationId,
+          providerId: prospectiveProviderId,
+          registryEntryContentDigest: contentDigest,
+          registryGeneration: 1,
+          copiedRetainedStateCollectionCount: 7,
+          retainedStateMutationCount: 0,
+        },
+      });
+      expect(
+        await diagnoseProviderRegistryProspectiveEntryTemporaryAdmissionInternalV1(
+          prepared.temporaryCapability,
+          {
+            prospectiveRegistryEntryContentDigest: contentDigest,
+            prospectiveRegistryEntry: candidate,
+          },
+        ),
+      ).toEqual({
+        ok: false,
+        stage: "history_input",
+        reason: "schema_invalid",
+      });
+    }
+  });
+
+  it("preserves the owner closure after a wrong temporary-admission binding", async () => {
+    const prepared = createPreparedInvocation();
+    const registryResult =
+      await diagnoseProviderRegistryManifestHistoryPreparedInternalV1(
+        prepared.requestIdentity,
+        prepared.inputHandle,
+        capability,
+      );
+    if (!registryResult.ok) {
+      throw new Error("prepared Registry fixture must validate");
+    }
+    const wrongCryptoCapability = Object.freeze(
+      Object.create(null),
+    ) as typeof capability;
+    expect(() =>
+      mintProviderRegistryProspectiveEntryTemporaryAdmissionCapabilityInternalV1(
+        registryResult.value.closure,
+        wrongCryptoCapability,
+      ),
+    ).toThrow(TypeError);
+    const temporaryCapability =
+      mintProviderRegistryProspectiveEntryTemporaryAdmissionCapabilityInternalV1(
+        registryResult.value.closure,
+        capability,
+      );
+    discardRegistryHistoryVerifiedWitnessInternalV1(
+      registryResult.value.closure,
+      registryResult.value.registryTrustWitnessHandle,
+      capability,
+    );
+    const candidate = prospectiveEntryV1();
+    await expect(
+      diagnoseProviderRegistryProspectiveEntryTemporaryAdmissionInternalV1(
+        temporaryCapability,
+        {
+          prospectiveRegistryEntryContentDigest:
+            deriveStoreDurableObjectProviderRegistryEntryContentDigestV1(
+              candidate,
+            ),
+          prospectiveRegistryEntry: candidate,
+        },
+      ),
+    ).resolves.toMatchObject({ ok: true });
+  });
+
+  it("returns nonthenable temporary-admission success and failure records", async () => {
+    const prepared = await temporaryAdmissionCapabilityV1();
+    const candidate = prospectiveEntryV1();
+    const input = {
+      prospectiveRegistryEntryContentDigest:
+        deriveStoreDurableObjectProviderRegistryEntryContentDigestV1(
+          candidate,
+        ),
+      prospectiveRegistryEntry: candidate,
+    };
+    const previousThen = Object.getOwnPropertyDescriptor(Object.prototype, "then");
+    let reads = 0;
+    let success:
+      | Awaited<
+          ReturnType<
+            typeof diagnoseProviderRegistryProspectiveEntryTemporaryAdmissionInternalV1
+          >
+        >
+      | undefined;
+    let replay:
+      | Awaited<
+          ReturnType<
+            typeof diagnoseProviderRegistryProspectiveEntryTemporaryAdmissionInternalV1
+          >
+        >
+      | undefined;
+    try {
+      Object.defineProperty(Object.prototype, "then", {
+        configurable: true,
+        get() {
+          reads += 1;
+          throw new Error("prototype then must not be read");
+        },
+      });
+      success =
+        await diagnoseProviderRegistryProspectiveEntryTemporaryAdmissionInternalV1(
+          prepared.temporaryCapability,
+          input,
+        );
+      replay =
+        await diagnoseProviderRegistryProspectiveEntryTemporaryAdmissionInternalV1(
+          prepared.temporaryCapability,
+          input,
+        );
+    } finally {
+      if (previousThen === undefined) {
+        delete (Object.prototype as { then?: unknown }).then;
+      } else {
+        Object.defineProperty(Object.prototype, "then", previousThen);
+      }
+    }
+    expect(reads).toBe(0);
+    expect(success).toMatchObject({ ok: true });
+    expect(Object.getPrototypeOf(success)).toBeNull();
+    if (success?.ok === true) {
+      expect(Object.getPrototypeOf(success.value)).toBeNull();
+    }
+    expect(replay).toEqual({
+      ok: false,
+      stage: "history_input",
+      reason: "schema_invalid",
+    });
+    expect(Object.getPrototypeOf(replay)).toBeNull();
+  });
+
+  it("checks all retained member IDs and existing material owners before temporary admission", async () => {
+    const retainedEntry = currentEnabledEntryV1();
+    const retainedCapability = await temporaryAdmissionCapabilityV1();
+    expect(
+      await diagnoseProviderRegistryProspectiveEntryTemporaryAdmissionInternalV1(
+        retainedCapability.temporaryCapability,
+        {
+          prospectiveRegistryEntryContentDigest:
+            deriveStoreDurableObjectProviderRegistryEntryContentDigestV1(
+              retainedEntry,
+            ),
+          prospectiveRegistryEntry: retainedEntry,
+        },
+      ),
+    ).toEqual({
+      ok: false,
+      stage: "member_set",
+      reason: "member_transition_invalid",
+    });
+
+    const aliasedEntry = prospectiveEntryV1({
+      aliasExistingProviderMaterial: true,
+    });
+    const aliasCapability = await temporaryAdmissionCapabilityV1();
+    expect(
+      await diagnoseProviderRegistryProspectiveEntryTemporaryAdmissionInternalV1(
+        aliasCapability.temporaryCapability,
+        {
+          prospectiveRegistryEntryContentDigest:
+            deriveStoreDurableObjectProviderRegistryEntryContentDigestV1(
+              aliasedEntry,
+            ),
+          prospectiveRegistryEntry: aliasedEntry,
+        },
+      ),
+    ).toEqual({
+      ok: false,
+      stage: "material_closure",
+      reason: "public_key_material_alias",
+    });
+  });
+
+  it("claims before input validation and never restores a failed temporary-admit cap", async () => {
+    const prepared = await temporaryAdmissionCapabilityV1();
+    expect(
+      await diagnoseProviderRegistryProspectiveEntryTemporaryAdmissionInternalV1(
+        prepared.temporaryCapability,
+        { prospectiveRegistryEntry: prospectiveEntryV1() },
+      ),
+    ).toEqual({
+      ok: false,
+      stage: "history_input",
+      reason: "schema_invalid",
+    });
+    const candidate = prospectiveEntryV1();
+    expect(
+      await diagnoseProviderRegistryProspectiveEntryTemporaryAdmissionInternalV1(
+        prepared.temporaryCapability,
+        {
+          prospectiveRegistryEntryContentDigest:
+            deriveStoreDurableObjectProviderRegistryEntryContentDigestV1(
+              candidate,
+            ),
+          prospectiveRegistryEntry: candidate,
+        },
+      ),
+    ).toEqual({
+      ok: false,
+      stage: "history_input",
+      reason: "schema_invalid",
+    });
+  });
+
   it("keeps the exact detached histories, preserves 24/38, and yields a distinct one-shot witness", async () => {
     const prepared = createPreparedInvocation();
     const impostorRequest = Object.freeze({ ...prepared.requestIdentity });

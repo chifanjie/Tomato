@@ -1,0 +1,165 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-migration-same-installation-identity-current-strong-source-normal-live-reference-edge-reference-candidate",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "edgeOrdinal": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "from": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "sourceKind": {
+              "type": "string",
+              "const": "root"
+            },
+            "rootOrdinal": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "sourceKind",
+            "rootOrdinal"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "sourceKind": {
+              "type": "string",
+              "const": "object"
+            },
+            "objectOrdinal": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "objectContentDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "sourceKind",
+            "objectOrdinal",
+            "objectContentDigest"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "referenceSlotReferenceDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "referenceSlotDescriptor": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "sourceKind": {
+              "type": "string",
+              "const": "root"
+            },
+            "rootKind": {
+              "type": "string",
+              "enum": [
+                "store_manifest_complete_set",
+                "quota_index_and_transition_chain",
+                "artifact_descriptor_history_closure",
+                "initialization_terminal",
+                "store_manifest_compare_append_receipt_ledger",
+                "active_recovery_control"
+              ]
+            },
+            "schemaFieldPath": {
+              "type": "string",
+              "pattern": "^base64url:(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$"
+            },
+            "occurrenceOrdinal": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "sourceKind",
+            "rootKind",
+            "schemaFieldPath",
+            "occurrenceOrdinal"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "sourceKind": {
+              "type": "string",
+              "const": "object"
+            },
+            "objectKind": {
+              "type": "string",
+              "enum": [
+                "store_manifest_generation",
+                "quota_index_node",
+                "quota_index_root",
+                "quota_transition_record",
+                "artifact_manifest_generation",
+                "repo_pulse_immutable_version",
+                "committed_private_blob",
+                "committed_private_metadata",
+                "ownership_marker",
+                "initialization_terminal_receipt",
+                "terminalization_handoff_record",
+                "provider_journal_record",
+                "provider_operation_receipt",
+                "store_manifest_compare_append_receipt",
+                "reservation_membership",
+                "active_blob_entitlement",
+                "active_metadata_plan",
+                "active_temp_plan",
+                "control_state"
+              ]
+            },
+            "schemaFieldPath": {
+              "type": "string",
+              "pattern": "^base64url:(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$"
+            },
+            "occurrenceOrdinal": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "sourceKind",
+            "objectKind",
+            "schemaFieldPath",
+            "occurrenceOrdinal"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "toObjectOrdinal": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "edgeOrdinal",
+    "from",
+    "referenceSlotReferenceDigest",
+    "referenceSlotDescriptor",
+    "toObjectOrdinal"
+  ],
+  "additionalProperties": false
+}

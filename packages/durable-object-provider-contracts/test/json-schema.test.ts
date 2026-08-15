@@ -328,7 +328,66 @@ function expectEveryJsonSchemaObjectClosed(
   }
 }
 
+const D41_PROVIDER_MIGRATION_JSON_SCHEMA_NAMES_V1 = [
+  "provider-migration-same-installation-identity-current-strong-source-normal-repository-reference-candidate-id",
+  "provider-migration-same-installation-identity-current-strong-source-normal-worktree-reference-candidate-id",
+  "provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-request-reference-candidate",
+  "provider-migration-same-installation-identity-current-strong-source-normal-namespace-reference-candidate",
+  "provider-migration-same-installation-identity-current-strong-source-normal-store-manifest-current-cut-reference-candidate",
+  "provider-migration-same-installation-identity-current-strong-source-normal-endpoint-trust-reference-candidate",
+  "provider-migration-same-installation-identity-current-strong-source-normal-namespace-translation-reference-candidate",
+  "provider-migration-same-installation-identity-current-strong-source-normal-live-root-reference-candidate",
+  "provider-migration-same-installation-identity-current-strong-source-normal-live-object-entry-reference-candidate",
+  "provider-migration-same-installation-identity-current-strong-source-normal-live-reference-edge-reference-candidate",
+  "provider-migration-same-installation-identity-current-strong-source-normal-complete-source-read-closure-reference-candidate",
+  "provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-budgets-reference-candidate",
+  "provider-migration-same-installation-identity-current-strong-source-normal-history-artifact-upper-bounds-reference-candidate",
+  "provider-migration-same-installation-identity-current-strong-source-normal-history-quota-charge-amounts-reference-candidate",
+  "provider-migration-same-installation-identity-current-strong-source-normal-source-dry-run-cut-reference-candidate",
+  "provider-migration-same-installation-identity-current-strong-source-normal-history-quota-sizing-reference-candidate",
+  "provider-migration-same-installation-identity-current-strong-source-normal-quota-usage-reference-candidate",
+  "provider-migration-same-installation-identity-current-strong-source-normal-quota-account-reference-candidate",
+  "provider-migration-same-installation-identity-current-strong-source-normal-quota-snapshot-reference-candidate",
+  "provider-migration-same-installation-identity-current-strong-source-normal-control-upper-bounds-reference-candidate",
+  "provider-migration-same-installation-identity-current-strong-source-normal-history-quota-admission-reference-candidate",
+  "provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate-id",
+  "provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-history-quota-reservation-reference-candidate-id",
+  "provider-migration-same-installation-identity-current-strong-source-normal-history-quota-reservation-descriptor-reference-candidate",
+  "provider-migration-same-installation-identity-current-strong-source-normal-plan-payload-reference-candidate",
+  "provider-migration-same-installation-identity-current-strong-source-normal-plan-envelope-reference-candidate",
+  "provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate",
+] as const;
+
 describe("provider contract JSON Schema distribution", () => {
+  it("registers the exact 27 D-41 schemas in the 355-document in-memory registry", () => {
+    const sourceNames = Object.keys(
+      PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1,
+    );
+    expect(sourceNames).toHaveLength(355);
+    expect(
+      sourceNames.filter((name) =>
+        name.startsWith(
+          "provider-migration-same-installation-identity-current-strong-source-normal-",
+        ),
+      ),
+    ).toEqual(D41_PROVIDER_MIGRATION_JSON_SCHEMA_NAMES_V1);
+
+    const generated = generateProviderContractJsonSchemasV1();
+    expect(Object.keys(generated)).toHaveLength(355);
+    for (const name of D41_PROVIDER_MIGRATION_JSON_SCHEMA_NAMES_V1) {
+      expect(generated[name].$id).toBe(
+        `urn:understand-code:provider-contract:schema:v1:${name}`,
+      );
+      expectEveryJsonSchemaObjectClosed(generated[name], name);
+    }
+    const closure = generated[
+      "provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate"
+    ] as Record<string, any>;
+    expect(closure.properties.authority.const).toBe(
+      "none_provider_migration_same_installation_identity_current_strong_source_normal_pre_side_effect_plan_admission_closure_reference_candidate_only",
+    );
+  });
+
   it("tracks one current document for every registered schema", () => {
     const generated = generateProviderContractJsonSchemasV1();
     const fileNames = readdirSync(schemaRoot)
@@ -1038,12 +1097,51 @@ describe("provider contract JSON Schema distribution", () => {
       "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-validation-reference-candidate",
       "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-invalid-stage-reference-candidate",
       "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-invalid-reason-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-repository-reference-candidate-id",
+      "provider-migration-same-installation-identity-current-strong-source-normal-worktree-reference-candidate-id",
+      "provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-request-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-namespace-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-store-manifest-current-cut-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-endpoint-trust-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-namespace-translation-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-live-root-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-live-object-entry-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-live-reference-edge-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-complete-source-read-closure-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-budgets-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-history-artifact-upper-bounds-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-history-quota-charge-amounts-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-source-dry-run-cut-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-history-quota-sizing-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-quota-usage-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-quota-account-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-quota-snapshot-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-control-upper-bounds-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-history-quota-admission-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate-id",
+      "provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-history-quota-reservation-reference-candidate-id",
+      "provider-migration-same-installation-identity-current-strong-source-normal-history-quota-reservation-descriptor-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-plan-payload-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-plan-envelope-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate",
     ] as const;
     for (const name of requiredNames) {
       expect(generated, name).toHaveProperty(name);
       expectEveryJsonSchemaObjectClosed(generated[name], name);
     }
-    expect(Object.keys(generated)).toHaveLength(328);
+    expect(Object.keys(generated)).toHaveLength(355);
+    for (const nestedOnlyName of [
+      "provider-migration-same-installation-identity-current-strong-source-normal-created-at-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-quota-account-contribution-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-initial-destination-namespace-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-observation-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-quota-reference-observation-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-pre-post-observation-equality-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-side-effect-boundary-reference-candidate",
+      "provider-migration-same-installation-identity-current-strong-source-normal-verification-boundary-reference-candidate",
+    ] as const) {
+      expect(generated).not.toHaveProperty(nestedOnlyName);
+    }
 
     for (const name of [
       "store-durable-object-provider-runtime-attestation-signature-wrapper",

@@ -1,0 +1,70 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-migration-same-installation-identity-current-strong-source-normal-history-quota-charge-amounts-reference-candidate",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "reservedHistoryLogicalBytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "reservedHistoryProviderAllocatedBytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "reservedObjectReceiptCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "reservedObjectReceiptLogicalBytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "reservedSemanticRootZeroProofCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "reservedSemanticRootZeroProofLogicalBytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "reservedProgressRecordCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "reservedProgressRecordLogicalBytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "reservedProgressOperationReceiptCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "reservedProgressOperationReceiptLogicalBytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "reservedHistoryLogicalBytes",
+    "reservedHistoryProviderAllocatedBytes",
+    "reservedObjectReceiptCount",
+    "reservedObjectReceiptLogicalBytes",
+    "reservedSemanticRootZeroProofCount",
+    "reservedSemanticRootZeroProofLogicalBytes",
+    "reservedProgressRecordCount",
+    "reservedProgressRecordLogicalBytes",
+    "reservedProgressOperationReceiptCount",
+    "reservedProgressOperationReceiptLogicalBytes"
+  ],
+  "additionalProperties": false
+}

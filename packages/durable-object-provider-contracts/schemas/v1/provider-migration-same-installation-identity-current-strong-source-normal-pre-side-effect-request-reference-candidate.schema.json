@@ -1,0 +1,196 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-request-reference-candidate",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string",
+      "const": "provider_migration_same_installation_identity_current_strong_source_normal_pre_side_effect_request_reference_candidate_v1"
+    },
+    "mode": {
+      "type": "string",
+      "const": "same_installation_identity"
+    },
+    "reason": {
+      "type": "string",
+      "const": "provider_decommission"
+    },
+    "admissionClass": {
+      "type": "string",
+      "const": "normal"
+    },
+    "createdAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+    },
+    "migrationBudgets": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "const": "provider_migration_same_installation_identity_current_strong_source_normal_pre_side_effect_budgets_reference_candidate_v1"
+        },
+        "maxRootEntries": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        },
+        "maxLiveObjects": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "maxReferenceEdges": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4000000
+        },
+        "maxRewriteObjects": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "maxRewriteReferenceMappings": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4000000
+        },
+        "maxRewriteSccs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "maxLogicalObjectBytesTotal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4398046511104
+        },
+        "maxProgressRecords": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2000016
+        },
+        "maxProgressOperationReceipts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4000000
+        },
+        "maxCanonicalUniverseBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1073741824
+        },
+        "maxCanonicalReferenceSetBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1073741824
+        },
+        "maxCanonicalRewritePlanBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1073741824
+        },
+        "maxCanonicalRewrittenReferenceSetBytesTotal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1073741824
+        },
+        "maxCanonicalSemanticEquivalenceProofBytesTotal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1073741824
+        },
+        "maxCanonicalRootRewriteProofSetBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1073741824
+        },
+        "maxCanonicalZeroLiveProofBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1073741824
+        },
+        "maxCanonicalReceiptBytesTotal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1073741824
+        },
+        "maxCanonicalProgressRecordSetBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1073741824
+        },
+        "maxCanonicalProgressOperationReceiptBytesTotal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1073741824
+        },
+        "maxCanonicalMigrationBytesTotal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967296
+        },
+        "maxRetainedMigrationHistoryLogicalBytesTotal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967296
+        },
+        "maxRetainedMigrationHistoryProviderAllocatedBytesTotal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8589934592
+        },
+        "maxSingleRecordBytes": {
+          "type": "number",
+          "const": 4194304
+        }
+      },
+      "required": [
+        "profile",
+        "maxRootEntries",
+        "maxLiveObjects",
+        "maxReferenceEdges",
+        "maxRewriteObjects",
+        "maxRewriteReferenceMappings",
+        "maxRewriteSccs",
+        "maxLogicalObjectBytesTotal",
+        "maxProgressRecords",
+        "maxProgressOperationReceipts",
+        "maxCanonicalUniverseBytes",
+        "maxCanonicalReferenceSetBytes",
+        "maxCanonicalRewritePlanBytes",
+        "maxCanonicalRewrittenReferenceSetBytesTotal",
+        "maxCanonicalSemanticEquivalenceProofBytesTotal",
+        "maxCanonicalRootRewriteProofSetBytes",
+        "maxCanonicalZeroLiveProofBytes",
+        "maxCanonicalReceiptBytesTotal",
+        "maxCanonicalProgressRecordSetBytes",
+        "maxCanonicalProgressOperationReceiptBytesTotal",
+        "maxCanonicalMigrationBytesTotal",
+        "maxRetainedMigrationHistoryLogicalBytesTotal",
+        "maxRetainedMigrationHistoryProviderAllocatedBytesTotal",
+        "maxSingleRecordBytes"
+      ],
+      "additionalProperties": false
+    },
+    "liveReferenceSchemaDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "migrationProtocolDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "profile",
+    "mode",
+    "reason",
+    "admissionClass",
+    "createdAt",
+    "migrationBudgets",
+    "liveReferenceSchemaDigest",
+    "migrationProtocolDigest"
+  ],
+  "additionalProperties": false
+}

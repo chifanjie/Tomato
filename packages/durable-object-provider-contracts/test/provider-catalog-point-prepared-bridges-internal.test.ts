@@ -1125,6 +1125,15 @@ describe("Catalog prepared point bridges", () => {
     });
     expect(pointCalls).toBe(0);
     expect(verifyCalls).toBe(0);
+    await expect(
+      diagnoseProviderFeasibilityEvidencePointRegistryTrustedPreparedInternalV1(
+        mismatchedInput,
+        mismatchedHandle,
+        capability,
+      ),
+    ).resolves.toMatchObject({ ok: true });
+    expect(pointCalls).toBe(3);
+    expect(verifyCalls).toBe(9);
 
     const handleMismatchInput = preparedEvidenceRequestV1(
       historicalQa,
@@ -1159,6 +1168,6 @@ describe("Catalog prepared point bridges", () => {
         handleMismatch,
         capability,
       ),
-    ).resolves.toMatchObject({ ok: false });
+    ).resolves.toMatchObject({ ok: true });
   });
 });

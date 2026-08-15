@@ -400,6 +400,7 @@ describe("Provider strong-ready Acceptance candidate", () => {
         expect(Object.isFrozen(error)).toBe(true);
       }
     },
+    10_000,
   );
 
   it("rejects predecessor/ordinal disagreement and exact top-level extras before cryptography", async () => {

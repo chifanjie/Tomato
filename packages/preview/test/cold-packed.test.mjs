@@ -32,7 +32,7 @@ const MAX_PACKED_TARBALL_BYTES = 2 * 1024 * 1024;
 const MAX_EXPANDED_TAR_BYTES = 12 * 1024 * 1024;
 const MAX_PACKED_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_PACKED_TOTAL_FILE_BYTES = 8 * 1024 * 1024;
-const EXPECTED_PACKED_FILE_COUNT = 31;
+const EXPECTED_PACKED_FILE_COUNT = 34;
 
 const packedFileRules = [
   { label: "package metadata", pattern: /^package\/(?:README\.md|package\.json)$/u, count: 2, mode: 0o644 },
@@ -50,6 +50,9 @@ const packedFileRules = [
   { label: "XYFlow stylesheet chunk", pattern: /^package\/dist\/dashboard\/assets\/xyflow-[A-Za-z0-9_-]+\.css$/u, count: 1, mode: 0o644 },
   { label: "theme bootstrap", pattern: /^package\/dist\/dashboard\/assets\/theme-bootstrap-bb1806d60772d743f0dc88538ee45b10fe829a951db7a24b7131c1acdceb4e0d\.js$/u, count: 1, mode: 0o644 },
   { label: "demo contracts", pattern: /^package\/dist\/demo\/\.understand-code\/(?:config\.json|knowledge-graph\.json|meta\.json)$/u, count: 3, mode: 0o644 },
+  { label: "demo Task Pulse", pattern: /^package\/dist\/demo\/\.understand-code\/repo-pulse\.json$/u, count: 1, mode: 0o644 },
+  { label: "demo Task manifest", pattern: /^package\/dist\/demo\/\.understand-code\/tasks\/01ARZ3NDEKTSV4RRFFQ69G5FAV\/task\.json$/u, count: 1, mode: 0o644 },
+  { label: "demo Task Brief", pattern: /^package\/dist\/demo\/\.understand-code\/tasks\/01ARZ3NDEKTSV4RRFFQ69G5FAV\/task-brief\.json$/u, count: 1, mode: 0o644 },
   { label: "demo Wiki indexes", pattern: /^package\/dist\/demo\/\.understand-code\/knowledge-base\/(?:search-index|wiki-index)\.json$/u, count: 2, mode: 0o644 },
   { label: "demo Wiki pages", pattern: /^package\/dist\/demo\/\.understand-code\/knowledge-base\/(?:参考\/app\.ts|阅读流程|项目总览)\.md$/u, count: 3, mode: 0o644 },
   { label: "demo source", pattern: /^package\/dist\/demo\/src\/app\.ts$/u, count: 1, mode: 0o644 },
@@ -630,6 +633,9 @@ test("cold packed Preview installs outside the monorepo with both usable bins", 
     const graph = await fetch(`${previewUrl.origin}/knowledge-graph.json?token=${encodeURIComponent(ready.token)}`);
     assert.equal(graph.status, 200);
     assert.equal((await graph.json()).project.name, "Preview 示例项目");
+    const task = await fetch(`${previewUrl.origin}/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAV/brief.json?token=${encodeURIComponent(ready.token)}`);
+    assert.equal(task.status, 200);
+    assert.equal((await task.json()).section, "summary");
     assert.deepEqual(await stopChild(previewChild, "cold Preview"), [0, null]);
     previewChild = null;
     await assertPortReleased(previewUrl, "cold Preview");
@@ -688,7 +694,14 @@ test("cold packed Preview installs outside the monorepo with both usable bins", 
       },
     });
     const listed = await output.waitFor((message) => message.id === 2, "MCP tools/list response");
-    assert.deepEqual(listed.result.tools.map((tool) => tool.name), ["get_repo_pulse", "build_task_brief", "get_task_brief"]);
+    assert.deepEqual(listed.result.tools.map((tool) => tool.name), [
+      "get_repo_pulse",
+      "build_task_brief",
+      "get_task_brief",
+      "check_change",
+      "record_verification",
+      "open_workbench",
+    ]);
     GetRepoPulseOutputV1Schema.parse((await output.waitFor((message) => message.id === 3, "MCP get_repo_pulse response")).result);
     const built = BuildTaskBriefOutputV1Schema.parse((await output.waitFor((message) => message.id === 4, "MCP build_task_brief response")).result);
     writeMessage(mcp, {

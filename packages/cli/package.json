@@ -29,6 +29,7 @@
     "@understand-code/core": "workspace:*",
     "@understand-code/repository-state": "workspace:*",
     "@understand-code/task-engine": "workspace:*",
+    "@understand-code/workbench-runtime": "workspace:*",
     "ajv": "^8.17.1",
     "esbuild": "^0.25.12",
     "typescript": "^5.7.0",

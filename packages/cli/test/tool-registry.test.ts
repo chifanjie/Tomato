@@ -5,6 +5,7 @@ import {
   GetRepoPulseOutputV1Schema,
   GetTaskBriefOutputV1Schema,
   McpToolErrorResultV1Schema,
+  OpenWorkbenchOutputV1Schema,
   RecordVerificationOutputV1Schema,
 } from "@understand-code/contracts/mcp";
 import { describe, expect, it } from "vitest";
@@ -47,6 +48,12 @@ const expectedOutputSchemas = {
       McpToolErrorResultV1Schema.shape.structuredContent,
     ]),
   ),
+  open_workbench: toolOutputSchema(
+    z.union([
+      OpenWorkbenchOutputV1Schema.shape.structuredContent,
+      McpToolErrorResultV1Schema.shape.structuredContent,
+    ]),
+  ),
 } as const;
 
 describe("advertised tool contracts", () => {
@@ -57,6 +64,7 @@ describe("advertised tool contracts", () => {
       "get_task_brief",
       "check_change",
       "record_verification",
+      "open_workbench",
     ]);
     for (const tool of IMPLEMENTED_TOOLS) {
       expect(tool.inputSchema).toMatchObject({

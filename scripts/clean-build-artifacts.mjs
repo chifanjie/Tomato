@@ -9,6 +9,7 @@ export const BUILD_ARTIFACT_PATHS = Object.freeze([
   "packages/durable-object-provider-runtime/dist",
   "packages/host-adapters/dist",
   "packages/contracts/dist",
+  "packages/workbench-runtime/dist",
   "packages/repository-state/dist",
   "packages/artifact-store/dist",
   "packages/core/dist",

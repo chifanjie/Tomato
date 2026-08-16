@@ -122,6 +122,7 @@ jobs:
           pnpm --filter @understand-code/durable-object-provider-runtime --fail-if-no-match build
           pnpm --filter @understand-code/host-adapters --fail-if-no-match build
           pnpm --filter @understand-code/contracts --fail-if-no-match build
+          pnpm --filter @understand-code/workbench-runtime --fail-if-no-match build
           pnpm --filter @understand-code/repository-state --fail-if-no-match build
           pnpm --filter @understand-code/artifact-store --fail-if-no-match build
           pnpm --filter @understand-code/core --fail-if-no-match build
@@ -130,6 +131,7 @@ jobs:
           pnpm --filter @understand-code/durable-object-provider-runtime --fail-if-no-match test
           pnpm --filter @understand-code/host-adapters --fail-if-no-match test
           pnpm --filter @understand-code/contracts --fail-if-no-match test
+          pnpm --filter @understand-code/workbench-runtime --fail-if-no-match test
           pnpm --filter @understand-code/repository-state --fail-if-no-match test
           pnpm --filter @understand-code/artifact-store --fail-if-no-match test
           pnpm run test:skill

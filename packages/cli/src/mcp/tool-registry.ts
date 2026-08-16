@@ -11,6 +11,8 @@ import {
   GetTaskBriefInputV1Schema,
   GetTaskBriefOutputV1Schema,
   McpToolErrorResultV1Schema,
+  OpenWorkbenchInputV1Schema,
+  OpenWorkbenchOutputV1Schema,
   RecordVerificationOutputV1Schema,
 } from "@understand-code/contracts/mcp";
 import { z } from "zod";
@@ -31,6 +33,8 @@ const descriptions: Readonly<Record<ImplementedToolName, string>> = {
     "Compare the persisted Task plan with the current Repository Snapshot and append a Change Check.",
   record_verification:
     "Append an externally executed Verification result to the current Task revision.",
+  open_workbench:
+    "Open or reuse a read-only local Workbench session at an exact Task, Knowledge, or Graph route.",
 };
 
 const inputSchemas = {
@@ -39,6 +43,7 @@ const inputSchemas = {
   get_task_brief: GetTaskBriefInputV1Schema,
   check_change: CheckChangeInputV1Schema,
   record_verification: RecordVerificationInputV1Schema,
+  open_workbench: OpenWorkbenchInputV1Schema,
 } as const;
 
 const outputSchemas = {
@@ -60,6 +65,10 @@ const outputSchemas = {
   ]),
   record_verification: z.union([
     RecordVerificationOutputV1Schema.shape.structuredContent,
+    McpToolErrorResultV1Schema.shape.structuredContent,
+  ]),
+  open_workbench: z.union([
+    OpenWorkbenchOutputV1Schema.shape.structuredContent,
     McpToolErrorResultV1Schema.shape.structuredContent,
   ]),
 } as const;

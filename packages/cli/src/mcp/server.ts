@@ -1,6 +1,7 @@
 import type { Readable, Writable } from "node:stream";
 
 import type { WorkspaceBindingReasonV1 } from "@understand-code/contracts/mcp";
+import { closeAllWorkbenchSessionsV1 } from "@understand-code/workbench-runtime";
 
 import {
   MAX_FRAME_BYTES,
@@ -429,6 +430,7 @@ export async function runStdioServer(options: StdioServerOptions): Promise<void>
       void queue.finally(resolve);
     });
   });
+  await closeAllWorkbenchSessionsV1();
 }
 
 export function bindingReasonFromInitial(initial: InitialBinding): WorkspaceBindingReasonV1 | undefined {

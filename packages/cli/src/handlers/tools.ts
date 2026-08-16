@@ -13,6 +13,8 @@ import {
   GetRepoPulseOutputV1Schema,
   GetTaskBriefInputV1Schema,
   GetTaskBriefOutputV1Schema,
+  OpenWorkbenchInputV1Schema,
+  OpenWorkbenchOutputV1Schema,
   RecordVerificationOutputV1Schema,
   type McpToolErrorResultV1,
 } from "@understand-code/contracts/mcp";
@@ -20,7 +22,9 @@ import {
   RepositoryTaskContextProviderError,
   TaskEngineError,
 } from "@understand-code/task-engine";
+import { openWorkbenchSessionV1 } from "@understand-code/workbench-runtime";
 
+import { PRODUCT_VERSION } from "../constants.js";
 import {
   ToolFailure,
   artifactUnavailableFailure,
@@ -45,6 +49,7 @@ export const IMPLEMENTED_TOOL_NAMES = Object.freeze([
   "get_task_brief",
   "check_change",
   "record_verification",
+  "open_workbench",
 ] as const);
 
 export type ImplementedToolName = (typeof IMPLEMENTED_TOOL_NAMES)[number];
@@ -266,6 +271,54 @@ async function recordVerification(
   });
 }
 
+async function openWorkbench(argumentsValue: unknown, canonicalRoot: string) {
+  const parsed = OpenWorkbenchInputV1Schema.safeParse(argumentsValue ?? {});
+  if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
+  if (parsed.data.openBrowser === true) {
+    throw new ToolFailure(
+      invalidArgumentFailure(["openBrowser"], "browser_launch_not_supported"),
+    );
+  }
+
+  const startedAt = performance.now();
+  const runtime = await openRuntime(canonicalRoot);
+  if (parsed.data.route.taskId !== undefined) {
+    const manifest = await runtime.store.readManifest({ verifyArtifacts: false });
+    const taskExists = manifest.artifacts.some(
+      (descriptor) =>
+        descriptor.artifactType === "task_manifest" &&
+        descriptor.taskId === parsed.data.route.taskId,
+    );
+    if (!taskExists) {
+      throw new ToolFailure(
+        resourceNotFoundFailure("task", parsed.data.route.taskId),
+      );
+    }
+  }
+
+  const published = await readPublishedPulse(runtime.store);
+  const session = await openWorkbenchSessionV1(parsed.data, {
+    canonicalRoot,
+    productVersion: PRODUCT_VERSION,
+    repositoryId: published.snapshot.snapshot.repositoryId,
+    worktreeId: published.snapshot.snapshot.worktreeId,
+    sourceSnapshotId: published.snapshot.snapshot.snapshotId,
+    headCommit: published.snapshot.snapshot.headCommit ?? null,
+    worktreeFingerprint: published.snapshot.worktreeFingerprint,
+    freshness: published.pulse.status,
+  });
+  return OpenWorkbenchOutputV1Schema.parse({
+    ...session.output,
+    structuredContent: {
+      ...session.output.structuredContent,
+      meta: {
+        ...session.output.structuredContent.meta,
+        durationMs: elapsed(startedAt),
+      },
+    },
+  });
+}
+
 function isDigest(value: unknown): value is string {
   return typeof value === "string" && /^sha256:[0-9a-f]{64}$/u.test(value);
 }
@@ -392,6 +445,8 @@ export async function callImplementedTool(
         return await checkChange(argumentsValue, canonicalRoot);
       case "record_verification":
         return await recordVerification(argumentsValue, canonicalRoot);
+      case "open_workbench":
+        return await openWorkbench(argumentsValue, canonicalRoot);
     }
   } catch (error) {
     if (error instanceof ToolFailure) return error.result;

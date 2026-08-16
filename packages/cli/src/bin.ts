@@ -7,7 +7,9 @@ import {
   InstallationLifecycleError,
   doctorInstallationV1,
   installInstallationV1,
+  rollbackInstallationV1,
   uninstallInstallationV1,
+  upgradeInstallationV1,
 } from "@understand-code/installation-lifecycle";
 
 function installationInput(
@@ -31,6 +33,29 @@ async function runInstallation(
       });
       process.stdout.write(`${JSON.stringify({ ok: result.status !== "refused", ...result })}\n`);
       if (result.status === "refused") process.exitCode = 1;
+      return;
+    }
+    if (invocation.operation === "upgrade") {
+      const result = await upgradeInstallationV1({
+        ...input,
+        version: PRODUCT_VERSION,
+      });
+      process.stdout.write(
+        `${JSON.stringify({ ok: result.status === "updated" || result.status === "already_current", ...result })}\n`,
+      );
+      if (result.status === "refused" || result.status === "not_installed") {
+        process.exitCode = 1;
+      }
+      return;
+    }
+    if (invocation.operation === "rollback") {
+      const result = await rollbackInstallationV1(input);
+      process.stdout.write(
+        `${JSON.stringify({ ok: result.status === "rolled_back" || result.status === "not_available", ...result })}\n`,
+      );
+      if (result.status === "refused" || result.status === "partial" || result.status === "not_installed") {
+        process.exitCode = 1;
+      }
       return;
     }
     if (invocation.operation === "doctor") {

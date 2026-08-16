@@ -20,9 +20,12 @@ export const INSTALLATION_MANIFEST_FILE = "installation-manifest.json" as const;
 export const INSTALLATION_OWNER_FILE = ".understand-code-owner" as const;
 export const INSTALLATION_WRAPPER_FILE = "bin/understand-code" as const;
 export const INSTALLATION_CONFIG_FILE = "config/mcp.json" as const;
+/** Durable, single-level snapshot used by an explicit upgrade/rollback pair. */
+export const INSTALLATION_ROLLBACK_FILE = "installation-rollback.json" as const;
 export const DEFAULT_INSTALLATION_VERSION = "0.1.0" as const;
 
 const MAX_PATH_BYTES = 4_096;
+const MAX_ROLLBACK_BYTES = 2 * 1024 * 1024;
 const HASH_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 const OWNED_RELATIVE_FILES = Object.freeze([
   INSTALLATION_OWNER_FILE,
@@ -84,6 +87,15 @@ export type InstallationManifestV1 = Readonly<{
   installationId: string;
   marker: typeof INSTALLATION_MARKER;
   files: readonly OwnedInstallationFileV1[];
+  /** Present only while a newer installation can be rolled back safely. */
+  rollback?: InstallationRollbackDescriptorV1;
+}>;
+
+export type InstallationRollbackDescriptorV1 = Readonly<{
+  path: typeof INSTALLATION_ROLLBACK_FILE;
+  sha256: string;
+  fromVersion: string;
+  owner: typeof INSTALLATION_MARKER;
 }>;
 
 export type InstallationFileStateV1 =
@@ -133,6 +145,42 @@ export type InstallResultV1 = Readonly<{
   doctor?: DoctorResultV1;
 }>;
 
+export type UpgradeStatusV1 =
+  | "updated"
+  | "already_current"
+  | "not_installed"
+  | "refused";
+
+export type UpgradeResultV1 = Readonly<{
+  status: UpgradeStatusV1;
+  root: string;
+  manifestPath: string;
+  installationId?: string;
+  fromVersion?: string;
+  version?: string;
+  rollbackAvailable?: boolean;
+  reason?: string;
+  doctor?: DoctorResultV1;
+}>;
+
+export type RollbackStatusV1 =
+  | "rolled_back"
+  | "not_available"
+  | "not_installed"
+  | "refused"
+  | "partial";
+
+export type RollbackResultV1 = Readonly<{
+  status: RollbackStatusV1;
+  root: string;
+  manifestPath: string;
+  installationId?: string;
+  version?: string;
+  removedPaths: readonly string[];
+  refusedPaths: readonly string[];
+  reason?: string;
+}>;
+
 export type UninstallStatusV1 =
   | "removed"
   | "not_installed"
@@ -152,6 +200,27 @@ type ExistingFile = Readonly<{
   bytes: Buffer;
   mode: number;
 }>;
+
+type RollbackSnapshotFileV1 = Readonly<{
+  path: (typeof OWNED_RELATIVE_FILES)[number];
+  sha256: string;
+  mode: number;
+  owner: typeof INSTALLATION_MARKER;
+  base64: string;
+}>;
+
+type RollbackSnapshotV1 = Readonly<{
+  schemaVersion: "understand-code-installation-rollback-v1";
+  marker: typeof INSTALLATION_MARKER;
+  root: string;
+  installationId: string;
+  fromVersion: string;
+  manifest: InstallationManifestV1;
+  files: readonly RollbackSnapshotFileV1[];
+}>;
+
+const ROLLBACK_SCHEMA_VERSION =
+  "understand-code-installation-rollback-v1" as const;
 
 function isSafeText(value: unknown): value is string {
   return (
@@ -373,6 +442,7 @@ function manifestFor(
   version: string,
   installationId: string,
   fileBytes: Readonly<Record<(typeof OWNED_RELATIVE_FILES)[number], Uint8Array>>,
+  rollback?: InstallationRollbackDescriptorV1,
 ): InstallationManifestV1 {
   const modes: Readonly<Record<(typeof OWNED_RELATIVE_FILES)[number], number>> = {
     [INSTALLATION_OWNER_FILE]: 0o600,
@@ -392,6 +462,31 @@ function manifestFor(
       mode: modes[filePath],
       owner: INSTALLATION_MARKER,
     })),
+    ...(rollback === undefined ? {} : { rollback }),
+  };
+}
+
+function parseRollbackDescriptor(
+  value: unknown,
+): InstallationRollbackDescriptorV1 | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    candidate.path !== INSTALLATION_ROLLBACK_FILE ||
+    !isSafeText(candidate.sha256) ||
+    !HASH_PATTERN.test(candidate.sha256) ||
+    !isSafeText(candidate.fromVersion) ||
+    candidate.owner !== INSTALLATION_MARKER
+  ) {
+    return undefined;
+  }
+  return {
+    path: INSTALLATION_ROLLBACK_FILE,
+    sha256: candidate.sha256,
+    fromVersion: candidate.fromVersion,
+    owner: INSTALLATION_MARKER,
   };
 }
 
@@ -410,6 +505,12 @@ function parseManifest(value: unknown): InstallationManifestV1 | undefined {
   ) {
     return undefined;
   }
+  const rollbackValue = candidate.rollback;
+  const rollback =
+    rollbackValue === undefined
+      ? undefined
+      : parseRollbackDescriptor(rollbackValue);
+  if (rollbackValue !== undefined && rollback === undefined) return undefined;
   const files: OwnedInstallationFileV1[] = [];
   for (const rawFile of candidate.files) {
     if (rawFile === null || typeof rawFile !== "object" || Array.isArray(rawFile)) {
@@ -450,6 +551,136 @@ function parseManifest(value: unknown): InstallationManifestV1 | undefined {
     installationId: candidate.installationId,
     marker: INSTALLATION_MARKER,
     files: Object.freeze(files),
+    ...(rollback === undefined ? {} : { rollback }),
+  };
+}
+
+function manifestWithoutRollback(
+  manifest: InstallationManifestV1,
+): InstallationManifestV1 {
+  const { rollback: _rollback, ...withoutRollback } = manifest;
+  return withoutRollback;
+}
+
+function isStrictBase64(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length % 4 === 0 &&
+    value.length <= MAX_ROLLBACK_BYTES * 2 &&
+    /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(
+      value,
+    )
+  );
+}
+
+function parseRollbackSnapshot(value: unknown): RollbackSnapshotV1 | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    candidate.schemaVersion !== ROLLBACK_SCHEMA_VERSION ||
+    candidate.marker !== INSTALLATION_MARKER ||
+    !isSafeText(candidate.root) ||
+    !isSafeText(candidate.installationId) ||
+    !isSafeText(candidate.fromVersion) ||
+    !Array.isArray(candidate.files)
+  ) {
+    return undefined;
+  }
+  const manifest = parseManifest(candidate.manifest);
+  if (
+    manifest === undefined ||
+    manifest.rollback !== undefined ||
+    manifest.root !== candidate.root ||
+    manifest.installationId !== candidate.installationId ||
+    manifest.version !== candidate.fromVersion ||
+    candidate.files.length !== OWNED_RELATIVE_FILES.length
+  ) {
+    return undefined;
+  }
+  const files: RollbackSnapshotFileV1[] = [];
+  for (const rawFile of candidate.files) {
+    if (rawFile === null || typeof rawFile !== "object" || Array.isArray(rawFile)) {
+      return undefined;
+    }
+    const file = rawFile as Record<string, unknown>;
+    if (
+      !safeRelativePath(file.path) ||
+      !isSafeText(file.sha256) ||
+      !HASH_PATTERN.test(file.sha256) ||
+      typeof file.mode !== "number" ||
+      !Number.isInteger(file.mode) ||
+      file.mode < 0 ||
+      file.mode > 0o777 ||
+      file.owner !== INSTALLATION_MARKER ||
+      !isStrictBase64(file.base64)
+    ) {
+      return undefined;
+    }
+    const bytes = Buffer.from(file.base64, "base64");
+    if (bytes.length > MAX_ROLLBACK_BYTES || digest(bytes) !== file.sha256) {
+      return undefined;
+    }
+    files.push({
+      path: file.path as (typeof OWNED_RELATIVE_FILES)[number],
+      sha256: file.sha256,
+      mode: file.mode,
+      owner: INSTALLATION_MARKER,
+      base64: file.base64,
+    });
+  }
+  const paths = files.map((file) => file.path);
+  if (
+    new Set(paths).size !== OWNED_RELATIVE_FILES.length ||
+    OWNED_RELATIVE_FILES.some((filePath) => !paths.includes(filePath))
+  ) {
+    return undefined;
+  }
+  // The snapshot carries the manifest's expected file digests as a second
+  // integrity boundary.  This prevents a forged snapshot from restoring a
+  // different byte set under an otherwise valid installation marker.
+  for (const file of files) {
+    const expected = manifest.files.find((entry) => entry.path === file.path);
+    if (
+      expected === undefined ||
+      expected.sha256 !== file.sha256 ||
+      expected.mode !== file.mode
+    ) {
+      return undefined;
+    }
+  }
+  return {
+    schemaVersion: ROLLBACK_SCHEMA_VERSION,
+    marker: INSTALLATION_MARKER,
+    root: candidate.root,
+    installationId: candidate.installationId,
+    fromVersion: candidate.fromVersion,
+    manifest,
+    files: Object.freeze(files),
+  };
+}
+
+function rollbackSnapshotFor(
+  root: string,
+  manifest: InstallationManifestV1,
+  fileBytes: Readonly<Record<(typeof OWNED_RELATIVE_FILES)[number], ExistingFile>>,
+): RollbackSnapshotV1 {
+  const baseManifest = manifestWithoutRollback(manifest);
+  return {
+    schemaVersion: ROLLBACK_SCHEMA_VERSION,
+    marker: INSTALLATION_MARKER,
+    root,
+    installationId: manifest.installationId,
+    fromVersion: manifest.version,
+    manifest: baseManifest,
+    files: OWNED_RELATIVE_FILES.map((filePath) => ({
+      path: filePath,
+      sha256: digest(fileBytes[filePath].bytes),
+      mode: fileBytes[filePath].mode,
+      owner: INSTALLATION_MARKER,
+      base64: fileBytes[filePath].bytes.toString("base64"),
+    })),
   };
 }
 
@@ -552,6 +783,77 @@ async function readManifestAt(
   }
 }
 
+async function readRollbackSnapshotAt(
+  root: string,
+  descriptor: InstallationRollbackDescriptorV1,
+  expectedManifest: InstallationManifestV1,
+): Promise<RollbackSnapshotV1 | undefined> {
+  if (descriptor.path !== INSTALLATION_ROLLBACK_FILE) return undefined;
+  const rollbackPath = path.join(root, INSTALLATION_ROLLBACK_FILE);
+  const relative = path.relative(root, rollbackPath);
+  if (
+    relative === ".." ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative)
+  ) {
+    return undefined;
+  }
+  const parentState = await ownedParentState(root, INSTALLATION_ROLLBACK_FILE, false);
+  if (parentState !== "ok") return undefined;
+  let metadata;
+  try {
+    metadata = await lstat(rollbackPath);
+  } catch {
+    return undefined;
+  }
+  if (metadata.isSymbolicLink() || !metadata.isFile() || metadata.size > MAX_ROLLBACK_BYTES) {
+    return undefined;
+  }
+  let bytes: Buffer;
+  try {
+    bytes = await readFile(rollbackPath);
+  } catch {
+    return undefined;
+  }
+  if (digest(bytes) !== descriptor.sha256) return undefined;
+  let snapshot: RollbackSnapshotV1 | undefined;
+  try {
+    snapshot = parseRollbackSnapshot(JSON.parse(bytes.toString("utf8")));
+  } catch {
+    snapshot = undefined;
+  }
+  if (
+    snapshot === undefined ||
+    snapshot.root !== root ||
+    snapshot.installationId !== expectedManifest.installationId ||
+    snapshot.fromVersion !== descriptor.fromVersion
+  ) {
+    return undefined;
+  }
+  return snapshot;
+}
+
+async function rollbackPathState(root: string): Promise<"missing" | "present" | "unsafe"> {
+  const rollbackPath = path.join(root, INSTALLATION_ROLLBACK_FILE);
+  const relative = path.relative(root, rollbackPath);
+  if (
+    relative === ".." ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative)
+  ) {
+    return "unsafe";
+  }
+  try {
+    const metadata = await lstat(rollbackPath);
+    if (metadata.isSymbolicLink() || !metadata.isFile()) return "unsafe";
+    return "present";
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT"
+      ? "missing"
+      : "unsafe";
+  }
+}
+
 async function inspectInstallation(
   root: string,
 ): Promise<DoctorResultV1> {
@@ -561,6 +863,23 @@ async function inspectInstallation(
     manifestMetadata = await lstat(manifestPath);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      const rollbackState = await rollbackPathState(root);
+      if (rollbackState !== "missing") {
+        return {
+          ok: false,
+          status: "tampered",
+          root,
+          manifestPath,
+          files: [
+            {
+              path: INSTALLATION_ROLLBACK_FILE,
+              state: rollbackState === "present" ? "modified" : "symlink",
+              expectedSha256: `sha256:${"0".repeat(64)}`,
+            },
+          ],
+          reason: "orphaned_rollback_snapshot",
+        };
+      }
       return { ok: false, status: "not_installed", root, manifestPath, files: [] };
     }
     return {
@@ -682,7 +1001,43 @@ async function inspectInstallation(
       state: "modified",
     };
   }
-  const hasModified = checks.some((check) => check.state !== "ok");
+  let rollbackValid = true;
+  const rollbackState = await rollbackPathState(root);
+  if (manifest.rollback !== undefined) {
+    if (rollbackState !== "present") {
+      rollbackValid = false;
+      checks.push({
+        path: INSTALLATION_ROLLBACK_FILE,
+        state: rollbackState === "missing" ? "missing" : "symlink",
+        expectedSha256: manifest.rollback.sha256,
+      });
+    } else {
+      const snapshot = await readRollbackSnapshotAt(root, manifest.rollback, manifest);
+      if (snapshot === undefined) {
+        rollbackValid = false;
+        checks.push({
+          path: INSTALLATION_ROLLBACK_FILE,
+          state: "modified",
+          expectedSha256: manifest.rollback.sha256,
+        });
+      } else {
+        checks.push({
+          path: INSTALLATION_ROLLBACK_FILE,
+          state: "ok",
+          expectedSha256: manifest.rollback.sha256,
+          actualSha256: manifest.rollback.sha256,
+        });
+      }
+    }
+  } else if (rollbackState !== "missing") {
+    rollbackValid = false;
+    checks.push({
+      path: INSTALLATION_ROLLBACK_FILE,
+      state: rollbackState === "present" ? "modified" : "symlink",
+      expectedSha256: `sha256:${"0".repeat(64)}`,
+    });
+  }
+  const hasModified = !rollbackValid || checks.some((check) => check.state !== "ok");
   return {
     ok: !hasModified,
     status: hasModified ? "tampered" : "healthy",
@@ -691,7 +1046,15 @@ async function inspectInstallation(
     installationId: manifest.installationId,
     version: manifest.version,
     files: Object.freeze(checks),
-    ...(hasModified ? { reason: "owned_file_check_failed" } : {}),
+    ...(hasModified
+      ? {
+          reason: rollbackValid
+            ? "owned_file_check_failed"
+            : manifest.rollback === undefined
+              ? "orphaned_rollback_snapshot"
+              : "rollback_snapshot_invalid",
+        }
+      : {}),
   };
 }
 
@@ -718,6 +1081,17 @@ export async function installInstallationV1(
     }
   } else {
     // Never claim ownership of pre-existing files when there is no manifest.
+    try {
+      const manifestMetadata = await lstat(manifestPath);
+      if (manifestMetadata.isSymbolicLink() || !manifestMetadata.isFile()) {
+        return { status: "refused", root, manifestPath, reason: "manifest_invalid" };
+      }
+      // A regular but malformed manifest is still an ownership signal; do not
+      // overwrite it and accidentally claim a partially managed installation.
+      return { status: "refused", root, manifestPath, reason: "manifest_invalid" };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
     for (const relativePath of OWNED_RELATIVE_FILES) {
       const existing = await readExistingFile(ownedAbsolutePath(root, relativePath));
       if (existing !== undefined) {
@@ -736,6 +1110,9 @@ export async function installInstallationV1(
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
+    }
+    if ((await rollbackPathState(root)) !== "missing") {
+      return { status: "refused", root, manifestPath, reason: "path_conflict" };
     }
   }
   const version = options.version ?? DEFAULT_INSTALLATION_VERSION;
@@ -758,6 +1135,28 @@ export async function installInstallationV1(
   if (existingManifest !== undefined) {
     const before = await inspectInstallation(root);
     if (before.status === "healthy" && existingManifest.version === version) {
+      const filesMatch = existingManifest.files.every(
+        (file) => file.sha256 === manifest.files.find((next) => next.path === file.path)?.sha256,
+      );
+      if (!filesMatch) {
+        const upgraded = await upgradeInstallationV1(options);
+        return {
+          status:
+            upgraded.status === "updated"
+              ? "updated"
+              : upgraded.status === "already_current"
+                ? "already_installed"
+                : "refused",
+          root: upgraded.root,
+          manifestPath: upgraded.manifestPath,
+          ...(upgraded.installationId === undefined
+            ? {}
+            : { installationId: upgraded.installationId }),
+          ...(upgraded.version === undefined ? {} : { version: upgraded.version }),
+          ...(upgraded.reason === undefined ? {} : { reason: upgraded.reason }),
+          ...(upgraded.doctor === undefined ? {} : { doctor: upgraded.doctor }),
+        };
+      }
       return {
         status: "already_installed",
         root,
@@ -765,6 +1164,25 @@ export async function installInstallationV1(
         installationId,
         version,
         doctor: before,
+      };
+    }
+    if (before.status === "healthy" && existingManifest.version !== version) {
+      const upgraded = await upgradeInstallationV1(options);
+      return {
+        status:
+          upgraded.status === "updated"
+            ? "updated"
+            : upgraded.status === "already_current"
+              ? "already_installed"
+              : "refused",
+        root: upgraded.root,
+        manifestPath: upgraded.manifestPath,
+        ...(upgraded.installationId === undefined
+          ? {}
+          : { installationId: upgraded.installationId }),
+        ...(upgraded.version === undefined ? {} : { version: upgraded.version }),
+        ...(upgraded.reason === undefined ? {} : { reason: upgraded.reason }),
+        ...(upgraded.doctor === undefined ? {} : { doctor: upgraded.doctor }),
       };
     }
   }
@@ -802,6 +1220,294 @@ export async function installInstallationV1(
     manifestPath,
     installationId,
     version,
+  };
+}
+
+/**
+ * Upgrade an existing installation while retaining a durable, integrity-bound
+ * snapshot of the previous owned set.  The snapshot is single-level: a later
+ * upgrade replaces it, and rollback always returns to the immediately prior
+ * healthy version.
+ */
+export async function upgradeInstallationV1(
+  options: InstallationOptionsV1,
+): Promise<UpgradeResultV1> {
+  const root = await resolveInstallationTargetV1(options, { create: false });
+  const manifestPath = path.join(root, INSTALLATION_MANIFEST_FILE);
+  const existingManifest = await readManifestAt(root);
+  if (existingManifest === undefined) {
+    const doctor = await inspectInstallation(root);
+    return {
+      status: doctor.status === "not_installed" ? "not_installed" : "refused",
+      root,
+      manifestPath,
+      reason:
+        doctor.status === "not_installed"
+          ? "installation_not_found"
+          : doctor.reason ?? "manifest_invalid",
+      ...(doctor.status === "not_installed" ? {} : { doctor }),
+    };
+  }
+  const before = await inspectInstallation(root);
+  if (before.status !== "healthy") {
+    return {
+      status: "refused",
+      root,
+      manifestPath,
+      installationId: existingManifest.installationId,
+      fromVersion: existingManifest.version,
+      version: existingManifest.version,
+      reason: before.reason ?? "installation_tampered",
+      doctor: before,
+    };
+  }
+  const version = options.version ?? DEFAULT_INSTALLATION_VERSION;
+  if (!isSafeText(version)) {
+    throw new InstallationLifecycleError("invalid_target", "Installation version is invalid.");
+  }
+  const cliCommand = options.cliCommand ?? "understand-code";
+  if (!isSafeText(cliCommand) || cliCommand.includes("\n")) {
+    throw new InstallationLifecycleError("invalid_target", "CLI command is invalid.");
+  }
+  const installationId = existingManifest.installationId;
+  const bytes: Readonly<Record<(typeof OWNED_RELATIVE_FILES)[number], Uint8Array>> = {
+    [INSTALLATION_OWNER_FILE]: Buffer.from(markerContent(installationId), "utf8"),
+    [INSTALLATION_WRAPPER_FILE]: Buffer.from(wrapperContent(installationId), "utf8"),
+    [INSTALLATION_CONFIG_FILE]: Buffer.from(
+      configContent(root, installationId, cliCommand),
+      "utf8",
+    ),
+  };
+  const desiredManifest = manifestFor(root, version, installationId, bytes);
+  const currentMatches =
+    existingManifest.version === version &&
+    existingManifest.files.every(
+      (file) =>
+        file.sha256 ===
+        desiredManifest.files.find((next) => next.path === file.path)?.sha256,
+    );
+  if (currentMatches) {
+    return {
+      status: "already_current",
+      root,
+      manifestPath,
+      installationId,
+      fromVersion: existingManifest.version,
+      version,
+      rollbackAvailable: existingManifest.rollback !== undefined,
+      doctor: before,
+    };
+  }
+
+  // Re-check immediately before snapshotting.  This closes the common race
+  // where a host edits a file between the initial Doctor pass and upgrade.
+  const latest = await inspectInstallation(root);
+  if (latest.status !== "healthy") {
+    return {
+      status: "refused",
+      root,
+      manifestPath,
+      installationId,
+      fromVersion: existingManifest.version,
+      version,
+      reason: "owned_file_changed_during_upgrade",
+      doctor: latest,
+    };
+  }
+  const currentFiles = {} as Record<
+    (typeof OWNED_RELATIVE_FILES)[number],
+    ExistingFile
+  >;
+  for (const relativePath of OWNED_RELATIVE_FILES) {
+    const filePath = ownedAbsolutePath(root, relativePath);
+    const current = await readExistingFile(filePath);
+    if (current === undefined) {
+      return {
+        status: "refused",
+        root,
+        manifestPath,
+        installationId,
+        fromVersion: existingManifest.version,
+        version,
+        reason: "owned_file_changed_during_upgrade",
+        doctor: await inspectInstallation(root),
+      };
+    }
+    currentFiles[relativePath] = current;
+  }
+  const oldManifestBytes = await readFile(manifestPath);
+  const rollbackPath = path.join(root, INSTALLATION_ROLLBACK_FILE);
+  const previousRollback = await readExistingFile(rollbackPath);
+  const snapshot = rollbackSnapshotFor(root, existingManifest, currentFiles);
+  const snapshotBytes = Buffer.from(canonicalJson(snapshot), "utf8");
+  const rollback: InstallationRollbackDescriptorV1 = {
+    path: INSTALLATION_ROLLBACK_FILE,
+    sha256: digest(snapshotBytes),
+    fromVersion: existingManifest.version,
+    owner: INSTALLATION_MARKER,
+  };
+  const nextManifest = manifestFor(root, version, installationId, bytes, rollback);
+  const written: string[] = [];
+  try {
+    // Commit the snapshot before publishing its descriptor.  A failed write
+    // therefore leaves the old manifest as the only authoritative state.
+    await atomicWriteFile(root, rollbackPath, snapshotBytes, 0o600);
+    for (const relativePath of OWNED_RELATIVE_FILES) {
+      const filePath = ownedAbsolutePath(root, relativePath);
+      await atomicWriteFile(
+        root,
+        filePath,
+        bytes[relativePath],
+        relativePath === INSTALLATION_WRAPPER_FILE ? 0o755 : 0o600,
+      );
+      written.push(filePath);
+    }
+    await atomicWriteFile(
+      root,
+      manifestPath,
+      Buffer.from(canonicalJson(nextManifest), "utf8"),
+      0o600,
+    );
+  } catch (error) {
+    // Best-effort in-process recovery.  The durable snapshot remains available
+    // for a later explicit rollback if recovery itself is interrupted.
+    for (const filePath of written.reverse()) {
+      const relativePath = path.relative(root, filePath).split(path.sep).join("/") as (typeof OWNED_RELATIVE_FILES)[number];
+      const previous = currentFiles[relativePath];
+      await atomicWriteFile(root, filePath, previous.bytes, previous.mode).catch(
+        () => undefined,
+      );
+    }
+    await atomicWriteFile(root, manifestPath, oldManifestBytes, 0o600).catch(
+      () => undefined,
+    );
+    if (previousRollback === undefined) {
+      await unlink(rollbackPath).catch(() => undefined);
+    } else {
+      await atomicWriteFile(root, rollbackPath, previousRollback.bytes, previousRollback.mode).catch(
+        () => undefined,
+      );
+    }
+    if (error instanceof InstallationLifecycleError) throw error;
+    throw new InstallationLifecycleError("io_error", "Upgrade failed before manifest commit.", {
+      root,
+    });
+  }
+  return {
+    status: "updated",
+    root,
+    manifestPath,
+    installationId,
+    fromVersion: existingManifest.version,
+    version,
+    rollbackAvailable: true,
+  };
+}
+
+/** Restore the immediately preceding healthy installation snapshot. */
+export async function rollbackInstallationV1(
+  input: InstallationTargetInputV1,
+): Promise<RollbackResultV1> {
+  const root = await resolveInstallationTargetV1(input, { create: false });
+  const manifestPath = path.join(root, INSTALLATION_MANIFEST_FILE);
+  const manifest = await readManifestAt(root);
+  if (manifest === undefined) {
+    const doctor = await inspectInstallation(root);
+    return {
+      status: doctor.status === "not_installed" ? "not_installed" : "refused",
+      root,
+      manifestPath,
+      removedPaths: [],
+      refusedPaths: doctor.files.map((file) => file.path),
+      reason:
+        doctor.status === "not_installed"
+          ? "installation_not_found"
+          : doctor.reason ?? "manifest_invalid",
+    };
+  }
+  if (manifest.rollback === undefined) {
+    const doctor = await inspectInstallation(root);
+    return {
+      status: doctor.status === "healthy" ? "not_available" : "refused",
+      root,
+      manifestPath,
+      installationId: manifest.installationId,
+      version: manifest.version,
+      removedPaths: [],
+      refusedPaths: doctor.status === "healthy" ? [] : doctor.files.map((file) => file.path),
+      reason:
+        doctor.status === "healthy"
+          ? "rollback_snapshot_not_available"
+          : doctor.reason ?? "installation_tampered",
+    };
+  }
+  const doctor = await inspectInstallation(root);
+  if (doctor.status !== "healthy") {
+    return {
+      status: "refused",
+      root,
+      manifestPath,
+      installationId: manifest.installationId,
+      version: manifest.version,
+      removedPaths: [],
+      refusedPaths: doctor.files
+        .filter((file) => file.state !== "missing")
+        .map((file) => file.path),
+      reason: doctor.reason ?? "installation_tampered",
+    };
+  }
+  const snapshot = await readRollbackSnapshotAt(root, manifest.rollback, manifest);
+  if (snapshot === undefined) {
+    return {
+      status: "refused",
+      root,
+      manifestPath,
+      installationId: manifest.installationId,
+      version: manifest.version,
+      removedPaths: [],
+      refusedPaths: [INSTALLATION_ROLLBACK_FILE],
+      reason: "rollback_snapshot_invalid",
+    };
+  }
+  const rollbackPath = path.join(root, INSTALLATION_ROLLBACK_FILE);
+  const restoredFiles = snapshot.files;
+  try {
+    for (const file of restoredFiles) {
+      const filePath = ownedAbsolutePath(root, file.path);
+      await atomicWriteFile(
+        root,
+        filePath,
+        Buffer.from(file.base64, "base64"),
+        file.mode,
+      );
+    }
+    await atomicWriteFile(
+      root,
+      manifestPath,
+      Buffer.from(canonicalJson(snapshot.manifest), "utf8"),
+      0o600,
+    );
+    await unlink(rollbackPath);
+  } catch {
+    return {
+      status: "partial",
+      root,
+      manifestPath,
+      installationId: manifest.installationId,
+      version: snapshot.manifest.version,
+      removedPaths: [],
+      refusedPaths: [INSTALLATION_ROLLBACK_FILE],
+      reason: "io_error_during_rollback",
+    };
+  }
+  return {
+    status: "rolled_back",
+    root,
+    manifestPath,
+    installationId: snapshot.manifest.installationId,
+    version: snapshot.manifest.version,
+    removedPaths: [INSTALLATION_ROLLBACK_FILE],
+    refusedPaths: [],
   };
 }
 
@@ -871,6 +1577,10 @@ export async function uninstallInstallationV1(
       const filePath = ownedAbsolutePath(root, file.path);
       await unlink(filePath);
       removedPaths.push(file.path);
+    }
+    if (manifest.rollback !== undefined) {
+      await unlink(path.join(root, INSTALLATION_ROLLBACK_FILE));
+      removedPaths.push(INSTALLATION_ROLLBACK_FILE);
     }
     await unlink(manifestPath);
   } catch {

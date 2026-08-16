@@ -1,4 +1,6 @@
 import { PassThrough } from "node:stream";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 
 import {
   BuildTaskBriefOutputV1Schema,
@@ -60,6 +62,27 @@ async function initialize(server: McpStdioServer): Promise<void> {
 describe("open_workbench MCP vertical", () => {
   it("opens a Task deep link bound to the published snapshot and serves its loopback route", async () => {
     const root = await createGitRepository();
+    await mkdir(path.join(root, ".understand-code/knowledge-base"), { recursive: true });
+    await writeFile(
+      path.join(root, ".understand-code/knowledge-base/wiki-index.json"),
+      `${JSON.stringify({
+        version: 2,
+        generatedAt: "2026-08-03T00:00:00.000Z",
+        projectName: "cli-fixture",
+        source: { outputLanguage: "en", generationMode: "fixture" },
+        mainReadiness: { status: "ready", reasons: [], routePageIds: [] },
+        referenceCoverage: {
+          status: "complete",
+          files: { covered: 0, total: 0, missingIds: [] },
+          functions: { covered: 0, total: 0, missingIds: [] },
+          types: { covered: 0, total: 0, missingIds: [] },
+        },
+        pages: [],
+        nodeDocumentation: [],
+        evidence: [],
+      })}\n`,
+      "utf8",
+    );
     const harness = testServer(await resolveInitialBinding([root]));
     await initialize(harness.server);
 
@@ -148,6 +171,36 @@ describe("open_workbench MCP vertical", () => {
     await expect(briefResponse.json()).resolves.toMatchObject({
       result: { task: { taskId }, section: "summary" },
     });
+    const graphResponse = await fetch(
+      new URL("/__workbench/context?surface=graph", deepLink),
+      { headers: { connection: "close", cookie: cookie! } },
+    );
+    expect(graphResponse.status).toBe(200);
+    await expect(graphResponse.json()).resolves.toMatchObject({
+      surface: "graph",
+      status: "ready",
+      artifact: { counts: { nodes: 1, edges: 0 } },
+    });
+    const knowledgeResponse = await fetch(
+      new URL("/__workbench/context?surface=knowledge", deepLink),
+      { headers: { connection: "close", cookie: cookie! } },
+    );
+    expect(knowledgeResponse.status).toBe(200);
+    await expect(knowledgeResponse.json()).resolves.toMatchObject({
+      surface: "knowledge",
+      status: "ready",
+      artifact: { counts: { pages: 0, evidence: 0 } },
+    });
+    const unauthenticatedContext = await fetch(
+      new URL("/__workbench/context?surface=graph", deepLink),
+      { headers: { connection: "close" } },
+    );
+    expect(unauthenticatedContext.status).toBe(401);
+    const mismatchedContext = await fetch(
+      new URL(`/__workbench/context?surface=graph&taskId=${encodeURIComponent("01ARZ3NDEKTSV4RRFFQ69G5FAW")}`, deepLink),
+      { headers: { connection: "close", cookie: cookie! } },
+    );
+    expect(mismatchedContext.status).toBe(409);
   });
 
   it("rejects a deep link to an unknown Task before starting a Workbench", async () => {

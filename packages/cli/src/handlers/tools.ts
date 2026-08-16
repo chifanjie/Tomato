@@ -1,4 +1,6 @@
 import { performance } from "node:perf_hooks";
+import { readFile, realpath } from "node:fs/promises";
+import path from "node:path";
 
 import { ArtifactStoreError } from "@understand-code/artifact-store";
 import {
@@ -22,7 +24,15 @@ import {
   RepositoryTaskContextProviderError,
   TaskEngineError,
 } from "@understand-code/task-engine";
-import { openWorkbenchSessionV1 } from "@understand-code/workbench-runtime";
+import { validateGraph } from "@understand-code/core";
+import { parseWikiIndexV2 } from "@understand-code/core/knowledge-base";
+import {
+  openWorkbenchSessionV1,
+  type WorkbenchContextReaderV1,
+  type WorkbenchContextRequestV1,
+  type WorkbenchContextResultV1,
+  type WorkbenchContextUnavailableReasonV1,
+} from "@understand-code/workbench-runtime";
 
 import { PRODUCT_VERSION } from "../constants.js";
 import {
@@ -271,6 +281,138 @@ async function recordVerification(
   });
 }
 
+type PublishedJsonReadV1 =
+  | { readonly ok: true; readonly value: unknown }
+  | { readonly ok: false; readonly reason: "not_published" | "invalid_artifact" | "read_failed" };
+
+/**
+ * Read a fixed ArtifactStore layout path without accepting a browser- or
+ * caller-provided path.  A realpath check also keeps a malicious symlink in
+ * the managed directory from turning the Workbench into a file oracle.
+ */
+async function readFixedPublishedJson(
+  filePath: string,
+  managedRoot: string,
+): Promise<PublishedJsonReadV1> {
+  try {
+    const canonicalRoot = await realpath(managedRoot);
+    const canonicalPath = await realpath(filePath);
+    const relative = path.relative(canonicalRoot, canonicalPath);
+    if (relative === "" || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      return { ok: false, reason: "read_failed" };
+    }
+    const text = await readFile(canonicalPath, "utf8");
+    try {
+      return { ok: true, value: JSON.parse(text) as unknown };
+    } catch {
+      return { ok: false, reason: "invalid_artifact" };
+    }
+  } catch (error) {
+    if (
+      error !== null &&
+      typeof error === "object" &&
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
+      return { ok: false, reason: "not_published" };
+    }
+    return { ok: false, reason: "read_failed" };
+  }
+}
+
+function unavailableContext(
+  input: WorkbenchContextRequestV1,
+  reason: WorkbenchContextUnavailableReasonV1,
+): WorkbenchContextResultV1 {
+  return {
+    schemaVersion: 1,
+    surface: input.surface,
+    taskId: input.taskId,
+    repositoryId: input.repositoryId,
+    worktreeId: input.worktreeId,
+    status: "unavailable",
+    reason,
+  };
+}
+
+const graphContextReader = (
+  runtime: Awaited<ReturnType<typeof openRuntime>>,
+): WorkbenchContextReaderV1 => async (input) => {
+  if (input.surface !== "graph") {
+    return unavailableContext(input, "read_failed");
+  }
+  const read = await readFixedPublishedJson(
+    runtime.store.layout.knowledgeGraph,
+    runtime.store.layout.storeRoot,
+  );
+  if (!read.ok) return unavailableContext(input, read.reason);
+  const parsed = validateGraph(read.value);
+  if (!parsed.success || parsed.data === undefined) {
+    return unavailableContext(input, "invalid_artifact");
+  }
+  const graph = parsed.data;
+  return {
+    schemaVersion: 1,
+    surface: "graph",
+    taskId: input.taskId,
+    repositoryId: input.repositoryId,
+    worktreeId: input.worktreeId,
+    status: "ready",
+    artifact: {
+      artifactPath: ".understand-code/knowledge-graph.json",
+      metadata: {
+        version: graph.version,
+        projectName: graph.project.name,
+        analyzedAt: graph.project.analyzedAt,
+        gitCommitHash: graph.project.gitCommitHash,
+      },
+      counts: {
+        nodes: graph.nodes.length,
+        edges: graph.edges.length,
+        layers: graph.layers.length,
+        tour: graph.tour.length,
+      },
+    },
+  };
+};
+
+const knowledgeContextReader = (
+  runtime: Awaited<ReturnType<typeof openRuntime>>,
+): WorkbenchContextReaderV1 => async (input) => {
+  if (input.surface !== "knowledge") {
+    return unavailableContext(input, "read_failed");
+  }
+  const read = await readFixedPublishedJson(
+    path.join(runtime.store.layout.knowledgeBase, "wiki-index.json"),
+    runtime.store.layout.storeRoot,
+  );
+  if (!read.ok) return unavailableContext(input, read.reason);
+  const parsed = parseWikiIndexV2(read.value);
+  if (!parsed.ok) return unavailableContext(input, "invalid_artifact");
+  const wiki = parsed.value;
+  return {
+    schemaVersion: 1,
+    surface: "knowledge",
+    taskId: input.taskId,
+    repositoryId: input.repositoryId,
+    worktreeId: input.worktreeId,
+    status: "ready",
+    artifact: {
+      artifactPath: ".understand-code/knowledge-base/wiki-index.json",
+      metadata: {
+        version: wiki.version,
+        projectName: wiki.projectName,
+        generatedAt: wiki.generatedAt,
+        readiness: wiki.mainReadiness.status,
+      },
+      counts: {
+        pages: wiki.pages.length,
+        nodeDocumentation: wiki.nodeDocumentation.length,
+        evidence: wiki.evidence.length,
+      },
+    },
+  };
+};
+
 async function openWorkbench(argumentsValue: unknown, canonicalRoot: string) {
   const parsed = OpenWorkbenchInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
@@ -314,6 +456,8 @@ async function openWorkbench(argumentsValue: unknown, canonicalRoot: string) {
         ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
       };
     },
+    graphReader: graphContextReader(runtime),
+    knowledgeReader: knowledgeContextReader(runtime),
   });
   return OpenWorkbenchOutputV1Schema.parse({
     ...session.output,

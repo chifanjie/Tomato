@@ -5,7 +5,7 @@ export type CliInvocation =
   | { readonly kind: "version" }
   | {
       readonly kind: "installation";
-      readonly operation: "install" | "doctor" | "uninstall";
+      readonly operation: "install" | "upgrade" | "rollback" | "doctor" | "uninstall";
       readonly root?: string;
       readonly home?: string;
     }
@@ -36,8 +36,13 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
   if (values.length === 1 && ["--version", "-V"].includes(values[0]!)) {
     return { kind: "version" };
   }
-  if (["install", "doctor", "uninstall"].includes(values[0] ?? "")) {
-    const operation = values[0] as "install" | "doctor" | "uninstall";
+  if (["install", "upgrade", "rollback", "doctor", "uninstall"].includes(values[0] ?? "")) {
+    const operation = values[0] as
+      | "install"
+      | "upgrade"
+      | "rollback"
+      | "doctor"
+      | "uninstall";
     let root: string | undefined;
     let home: string | undefined;
     for (let index = 1; index < values.length; index += 1) {
@@ -102,6 +107,8 @@ export function helpText(): string {
     "Usage:",
     "  understand-code mcp --stdio --root <absolute-worktree-path>",
     "  understand-code install [--root <absolute-install-root>|--home <absolute-install-home>]",
+    "  understand-code upgrade [--root <absolute-install-root>|--home <absolute-install-home>]",
+    "  understand-code rollback [--root <absolute-install-root>|--home <absolute-install-home>]",
     "  understand-code doctor [--root <absolute-install-root>|--home <absolute-install-home>]",
     "  understand-code uninstall [--root <absolute-install-root>|--home <absolute-install-home>]",
     "  understand-code --help",

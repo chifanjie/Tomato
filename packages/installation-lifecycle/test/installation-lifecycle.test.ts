@@ -7,10 +7,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   INSTALLATION_CONFIG_FILE,
   INSTALLATION_MANIFEST_FILE,
+  INSTALLATION_ROLLBACK_FILE,
   INSTALLATION_WRAPPER_FILE,
   doctorInstallationV1,
   installInstallationV1,
+  rollbackInstallationV1,
   uninstallInstallationV1,
+  upgradeInstallationV1,
 } from "../src/index.js";
 
 const temporaryRoots: string[] = [];
@@ -75,5 +78,54 @@ describe("installation lifecycle", () => {
       status: "not_installed",
       ok: false,
     });
+  });
+
+  it("upgrades with a durable snapshot and rolls back to the prior version", async () => {
+    const root = await temporaryRoot();
+    await installInstallationV1({
+      root,
+      version: "1.0.0",
+      cliCommand: "understand-code-v1",
+    });
+
+    const upgraded = await upgradeInstallationV1({
+      root,
+      version: "2.0.0",
+      cliCommand: "understand-code-v2",
+    });
+    expect(upgraded).toMatchObject({
+      status: "updated",
+      fromVersion: "1.0.0",
+      version: "2.0.0",
+      rollbackAvailable: true,
+    });
+    expect(await stat(path.join(root, INSTALLATION_ROLLBACK_FILE))).toBeDefined();
+
+    const rolledBack = await rollbackInstallationV1({ root });
+    expect(rolledBack).toMatchObject({ status: "rolled_back", version: "1.0.0" });
+    expect(await doctorInstallationV1({ root })).toMatchObject({
+      status: "healthy",
+      version: "1.0.0",
+    });
+    await expect(stat(path.join(root, INSTALLATION_ROLLBACK_FILE))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    const config = JSON.parse(
+      await readFile(path.join(root, INSTALLATION_CONFIG_FILE), "utf8"),
+    ) as { mcpServers?: Record<string, { command?: string }> };
+    expect(config.mcpServers?.["understand-code"]?.command).toBe("understand-code-v1");
+  });
+
+  it("refuses rollback when the durable snapshot is tampered", async () => {
+    const root = await temporaryRoot();
+    await installInstallationV1({ root, version: "1.0.0" });
+    await upgradeInstallationV1({ root, version: "2.0.0" });
+    const rollbackPath = path.join(root, INSTALLATION_ROLLBACK_FILE);
+    await writeFile(rollbackPath, `${await readFile(rollbackPath, "utf8")}\nuser-edit\n`);
+
+    const result = await rollbackInstallationV1({ root });
+    expect(result.status).toBe("refused");
+    expect(result.refusedPaths).toContain(INSTALLATION_ROLLBACK_FILE);
+    expect(await doctorInstallationV1({ root })).toMatchObject({ status: "tampered" });
   });
 });

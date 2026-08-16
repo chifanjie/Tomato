@@ -19,6 +19,15 @@ describe("CLI arguments", () => {
       kind: "installation",
       operation: "doctor",
     });
+    expect(parseCliArguments(["upgrade", "--root", "/tmp/understand-code"])).toEqual({
+      kind: "installation",
+      operation: "upgrade",
+      root: "/tmp/understand-code",
+    });
+    expect(parseCliArguments(["rollback"])).toEqual({
+      kind: "installation",
+      operation: "rollback",
+    });
   });
 
   it("keeps an omitted root as a protocol-visible binding error", () => {

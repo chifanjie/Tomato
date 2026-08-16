@@ -58,6 +58,89 @@ export type WorkbenchTaskBriefReaderV1 = (
   input: GetTaskBriefInputV1,
 ) => Promise<WorkbenchTaskBriefPageV1 | WorkbenchTaskBriefResultV1 | undefined>;
 
+/**
+ * Read-only repository context surfaces exposed by the local Workbench.
+ *
+ * The browser never receives the source artifact itself through this channel.
+ * Hosts project the published Graph/Wiki files into these small, fixed-shape
+ * summaries.  Keeping the projection here makes the loopback endpoint useful
+ * to the UI while preserving the artifact store as the source of truth.
+ */
+export type WorkbenchContextSurfaceV1 = "graph" | "knowledge";
+export type WorkbenchContextUnavailableReasonV1 =
+  | "not_published"
+  | "invalid_artifact"
+  | "read_failed";
+
+export interface WorkbenchContextRequestV1 {
+  readonly surface: WorkbenchContextSurfaceV1;
+  readonly taskId: string;
+  readonly repositoryId: string;
+  readonly worktreeId: string;
+}
+
+export interface WorkbenchGraphContextArtifactV1 {
+  readonly artifactPath: ".understand-code/knowledge-graph.json";
+  readonly metadata: {
+    readonly version: string;
+    readonly projectName: string;
+    readonly analyzedAt: string;
+    readonly gitCommitHash: string;
+  };
+  readonly counts: {
+    readonly nodes: number;
+    readonly edges: number;
+    readonly layers: number;
+    readonly tour: number;
+  };
+}
+
+export interface WorkbenchKnowledgeContextArtifactV1 {
+  readonly artifactPath: ".understand-code/knowledge-base/wiki-index.json";
+  readonly metadata: {
+    readonly version: number;
+    readonly projectName: string;
+    readonly generatedAt: string;
+    readonly readiness: "ready" | "degraded" | "blocked";
+  };
+  readonly counts: {
+    readonly pages: number;
+    readonly nodeDocumentation: number;
+    readonly evidence: number;
+  };
+}
+
+export interface WorkbenchContextReadyV1<TSurface extends WorkbenchContextSurfaceV1 = WorkbenchContextSurfaceV1> {
+  readonly schemaVersion: 1;
+  readonly surface: TSurface;
+  readonly taskId: string;
+  readonly repositoryId: string;
+  readonly worktreeId: string;
+  readonly status: "ready";
+  readonly artifact: TSurface extends "graph"
+    ? WorkbenchGraphContextArtifactV1
+    : WorkbenchKnowledgeContextArtifactV1;
+}
+
+export interface WorkbenchContextUnavailableV1 {
+  readonly schemaVersion: 1;
+  readonly surface: WorkbenchContextSurfaceV1;
+  readonly taskId: string;
+  readonly repositoryId: string;
+  readonly worktreeId: string;
+  readonly status: "unavailable";
+  readonly reason: WorkbenchContextUnavailableReasonV1;
+}
+
+export type WorkbenchContextResultV1 =
+  | WorkbenchContextReadyV1<"graph">
+  | WorkbenchContextReadyV1<"knowledge">
+  | WorkbenchContextUnavailableV1;
+
+export type WorkbenchContextReaderV1 = (
+  input: WorkbenchContextRequestV1,
+) => Promise<WorkbenchContextResultV1 | undefined>;
+
 export interface OpenWorkbenchSessionOptionsV1 extends WorkbenchRuntimeBindingV1 {
   /** Defaults to the frozen 60 second launch-token TTL. */
   readonly launchTokenTtlMs?: number;
@@ -68,6 +151,10 @@ export interface OpenWorkbenchSessionOptionsV1 extends WorkbenchRuntimeBindingV1
   readonly port?: number;
   /** Read-only callback bound by the Host to its persisted Task Engine. */
   readonly taskBriefReader?: WorkbenchTaskBriefReaderV1;
+  /** Optional read-only callback for the published Graph projection. */
+  readonly graphReader?: WorkbenchContextReaderV1;
+  /** Optional read-only callback for the published Wiki projection. */
+  readonly knowledgeReader?: WorkbenchContextReaderV1;
 }
 
 export interface WorkbenchLaunchGrantV1 {
@@ -94,6 +181,11 @@ export interface WorkbenchSessionV1 {
     sessionToken: string,
     input: GetTaskBriefInputV1,
   ) => Promise<WorkbenchTaskBriefPageV1>;
+  /** Read one authenticated, Task-bound Graph/Wiki projection. */
+  readonly readWorkbenchContext: (
+    sessionToken: string,
+    input: WorkbenchContextRequestV1,
+  ) => Promise<WorkbenchContextResultV1>;
   readonly close: () => Promise<void>;
 }
 
@@ -142,6 +234,8 @@ interface StoredSessionV1 {
   readonly launches: Map<string, PendingLaunchV1>;
   readonly now: () => number;
   taskBriefReader?: WorkbenchTaskBriefReaderV1;
+  graphReader?: WorkbenchContextReaderV1;
+  knowledgeReader?: WorkbenchContextReaderV1;
 }
 
 const sessionsByIdentity = new Map<string, StoredSessionV1>();
@@ -203,6 +297,130 @@ function validateBinding(binding: WorkbenchRuntimeBindingV1): void {
   if (!parsed.success || !ProducerVersionSchema.safeParse(binding.productVersion).success) {
     throw new WorkbenchSessionError("invalid_identity", "runtime identity is invalid");
   }
+}
+
+const GRAPH_ARTIFACT_PATH = ".understand-code/knowledge-graph.json" as const;
+const KNOWLEDGE_ARTIFACT_PATH = ".understand-code/knowledge-base/wiki-index.json" as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const expected = new Set(keys);
+  return Object.keys(value).length === expected.size &&
+    Object.keys(value).every((key) => expected.has(key));
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function isContextSurface(value: unknown): value is WorkbenchContextSurfaceV1 {
+  return value === "graph" || value === "knowledge";
+}
+
+function isUnavailableReason(value: unknown): value is WorkbenchContextUnavailableReasonV1 {
+  return value === "not_published" || value === "invalid_artifact" || value === "read_failed";
+}
+
+function unavailableContext(
+  input: WorkbenchContextRequestV1,
+  reason: WorkbenchContextUnavailableReasonV1,
+): WorkbenchContextUnavailableV1 {
+  return {
+    schemaVersion: 1,
+    surface: input.surface,
+    taskId: input.taskId,
+    repositoryId: input.repositoryId,
+    worktreeId: input.worktreeId,
+    status: "unavailable",
+    reason,
+  };
+}
+
+/**
+ * Parse a host callback result without allowing arbitrary JSON to cross the
+ * capability boundary.  The endpoint intentionally accepts only the fixed
+ * metadata/count projections declared above.
+ */
+function parseContextResult(
+  value: unknown,
+  input: WorkbenchContextRequestV1,
+): WorkbenchContextResultV1 {
+  if (value === undefined) return unavailableContext(input, "not_published");
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "schemaVersion",
+    "surface",
+    "taskId",
+    "repositoryId",
+    "worktreeId",
+    "status",
+    ...(value.status === "ready" ? ["artifact"] : ["reason"]),
+  ])) {
+    throw new WorkbenchSessionError("session_invalid", "context projection is invalid");
+  }
+  if (
+    value.schemaVersion !== 1 ||
+    value.surface !== input.surface ||
+    value.taskId !== input.taskId ||
+    value.repositoryId !== input.repositoryId ||
+    value.worktreeId !== input.worktreeId
+  ) {
+    throw new WorkbenchSessionError("session_invalid", "context projection identity does not match session");
+  }
+  if (value.status === "unavailable") {
+    if (!isUnavailableReason(value.reason)) {
+      throw new WorkbenchSessionError("session_invalid", "context unavailable reason is invalid");
+    }
+    return value as unknown as WorkbenchContextUnavailableV1;
+  }
+  if (value.status !== "ready" || !isRecord(value.artifact) || !hasExactKeys(value.artifact, [
+    "artifactPath",
+    "metadata",
+    "counts",
+  ])) {
+    throw new WorkbenchSessionError("session_invalid", "context projection is invalid");
+  }
+  const artifact = value.artifact;
+  if (!isRecord(artifact.metadata) || !isRecord(artifact.counts)) {
+    throw new WorkbenchSessionError("session_invalid", "context metadata is invalid");
+  }
+  if (input.surface === "graph") {
+    if (
+      artifact.artifactPath !== GRAPH_ARTIFACT_PATH ||
+      !hasExactKeys(artifact.metadata, ["version", "projectName", "analyzedAt", "gitCommitHash"]) ||
+      typeof artifact.metadata.version !== "string" ||
+      typeof artifact.metadata.projectName !== "string" ||
+      typeof artifact.metadata.analyzedAt !== "string" ||
+      typeof artifact.metadata.gitCommitHash !== "string" ||
+      !hasExactKeys(artifact.counts, ["nodes", "edges", "layers", "tour"]) ||
+      !isNonNegativeInteger(artifact.counts.nodes) ||
+      !isNonNegativeInteger(artifact.counts.edges) ||
+      !isNonNegativeInteger(artifact.counts.layers) ||
+      !isNonNegativeInteger(artifact.counts.tour)
+    ) {
+      throw new WorkbenchSessionError("session_invalid", "Graph projection is invalid");
+    }
+  } else {
+    if (
+      artifact.artifactPath !== KNOWLEDGE_ARTIFACT_PATH ||
+      !hasExactKeys(artifact.metadata, ["version", "projectName", "generatedAt", "readiness"]) ||
+      artifact.metadata.version !== 2 ||
+      typeof artifact.metadata.projectName !== "string" ||
+      typeof artifact.metadata.generatedAt !== "string" ||
+      (artifact.metadata.readiness !== "ready" &&
+        artifact.metadata.readiness !== "degraded" &&
+        artifact.metadata.readiness !== "blocked") ||
+      !hasExactKeys(artifact.counts, ["pages", "nodeDocumentation", "evidence"]) ||
+      !isNonNegativeInteger(artifact.counts.pages) ||
+      !isNonNegativeInteger(artifact.counts.nodeDocumentation) ||
+      !isNonNegativeInteger(artifact.counts.evidence)
+    ) {
+      throw new WorkbenchSessionError("session_invalid", "Knowledge projection is invalid");
+    }
+  }
+  return value as unknown as WorkbenchContextResultV1;
 }
 
 function routePath(route: WorkbenchRouteV1): string {
@@ -350,6 +568,40 @@ const WORKBENCH_APP_SCRIPT = String.raw`(() => {
     state.hidden = true; items.hidden = false;
     result.items.forEach((item) => { const li = document.createElement('li'); li.className = 'wb-item'; valueForItem(item).forEach(([label, value]) => { const row = document.createElement('div'); const key = document.createElement('div'); key.className = 'wb-item-label'; key.textContent = text(label); const val = document.createElement('div'); val.className = 'wb-item-value'; val.textContent = text(value); row.append(key, val); li.appendChild(row); }); items.appendChild(li); });
   };
+  const surfaceReason = (reason) => ({ not_published: 'The published artifact is not available for this repository.', invalid_artifact: 'The published artifact failed structural validation.', read_failed: 'The published artifact could not be read safely.' }[reason] || 'The published artifact is unavailable.');
+  const renderContext = (payload, label) => {
+    items.innerHTML = '';
+    if (!payload || payload.status === 'unavailable') { setState(label + ' unavailable', surfaceReason(payload && payload.reason)); return; }
+    if (payload.status !== 'ready' || !payload.artifact) throw new Error('invalid_context');
+    const artifact = payload.artifact;
+    const rows = [];
+    Object.entries(artifact.metadata || {}).forEach(([key, value]) => rows.push([key, value]));
+    Object.entries(artifact.counts || {}).forEach(([key, value]) => rows.push([key, value]));
+    if (rows.length === 0) { setState(label + ' unavailable', 'The published projection is empty.'); return; }
+    state.hidden = true; items.hidden = false;
+    rows.forEach(([key, value]) => { const li = document.createElement('li'); li.className = 'wb-item'; const name = document.createElement('div'); name.className = 'wb-item-label'; name.textContent = text(key); const val = document.createElement('div'); val.className = 'wb-item-value'; val.textContent = text(value); li.append(name, val); items.appendChild(li); });
+  };
+  const setSurfaceBadge = (button, value) => { const badge = button.querySelector('.wb-unavailable'); if (badge) badge.textContent = value; };
+  const loadSurface = async (surface, button) => {
+    const label = surface === 'graph' ? 'Graph' : 'Knowledge';
+    title.textContent = label;
+    subtitle.textContent = 'Task-bound published context is read-only.';
+    banner.hidden = true;
+    surfaces.forEach((item) => setSurfaceBadge(item, item === button ? 'loading' : 'unavailable'));
+    setStatus('Loading ' + label, 'loading'); setState('Loading ' + label, 'Reading the published projection…');
+    if (view !== 'tasks' || !taskId) { surfaces.forEach((item) => setSurfaceBadge(item, 'unavailable')); setStatus('Unavailable', 'error'); setState(label + ' unavailable', 'Open a Task deep link to load Task-bound context.'); return; }
+    try {
+      const params = new URLSearchParams({ surface, taskId });
+      const response = await fetch('/__workbench/context?' + params.toString(), { credentials: 'same-origin', headers: { accept: 'application/json' } });
+      if (response.status === 401) { setSurfaceBadge(button, 'error'); setStatus('Session expired', 'error'); setState('Session required', 'Reload the Workbench launch link to establish a new local session.'); return; }
+      if (response.status === 409) { setSurfaceBadge(button, 'stale'); setStatus('Stale route', 'stale'); setState('Route no longer matches', 'This context request is not bound to the current Task.'); return; }
+      if (!response.ok) throw new Error('request_failed');
+      const payload = await response.json();
+      renderContext(payload, label);
+      if (payload.status === 'ready') { setStatus(label + ' ready', 'ready'); setSurfaceBadge(button, 'ready'); }
+      else { setStatus(label + ' unavailable', 'error'); setSurfaceBadge(button, 'unavailable'); }
+    } catch { setStatus('Error', 'error'); setSurfaceBadge(button, 'error'); setState(label + ' error', 'Retry the context request or relaunch the local Workbench.'); }
+  };
   const load = async (requested) => {
     const section = aliases[requested] || requested;
     nav.forEach((button) => button.setAttribute('aria-current', button.dataset.section === section ? 'page' : 'false'));
@@ -376,12 +628,7 @@ const WORKBENCH_APP_SCRIPT = String.raw`(() => {
   surfaces.forEach((button) => button.addEventListener('click', () => {
     nav.forEach((item) => item.setAttribute('aria-current', 'false'));
     surfaces.forEach((item) => item.setAttribute('aria-current', item === button ? 'page' : 'false'));
-    const label = button.dataset.surface === 'graph' ? 'Graph' : 'Knowledge';
-    title.textContent = label;
-    subtitle.textContent = 'Route context: ' + (taskId || 'current Workbench session');
-    banner.hidden = true;
-    setStatus('Unavailable', 'error');
-    setState(label + ' view unavailable', 'This Task-bound slice keeps the surface visible while its persisted context is not available yet.');
+    void loadSurface(button.dataset.surface || 'knowledge', button);
   }));
   load(initialSection);
 })();`;
@@ -489,6 +736,33 @@ async function readTaskBriefForSession(
     total: page.total,
     ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
   };
+}
+
+async function readWorkbenchContextForSession(
+  stored: StoredSessionV1,
+  sessionToken: string,
+  input: WorkbenchContextRequestV1,
+): Promise<WorkbenchContextResultV1> {
+  const browser = getBrowserSession(stored.session, sessionToken, stored.now);
+  if (browser.route.view !== "tasks" || browser.route.taskId === undefined) {
+    throw new WorkbenchSessionError("session_invalid", "context requires a Task route");
+  }
+  if (
+    input.taskId !== browser.route.taskId ||
+    input.repositoryId !== stored.session.output.structuredContent.meta.repositoryId ||
+    input.worktreeId !== stored.session.output.structuredContent.meta.worktreeId
+  ) {
+    throw new WorkbenchSessionError("session_invalid", "context route does not belong to this session");
+  }
+  const reader = input.surface === "graph" ? stored.graphReader : stored.knowledgeReader;
+  if (reader === undefined) return unavailableContext(input, "not_published");
+  let value: WorkbenchContextResultV1 | undefined;
+  try {
+    value = await reader(input);
+  } catch {
+    throw new WorkbenchSessionError("server_error", "context projection is unavailable");
+  }
+  return parseContextResult(value, input);
 }
 
 function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, response: ServerResponse) => void {
@@ -666,6 +940,46 @@ function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, 
       return;
     }
 
+    if (parsedUrl.pathname === "/__workbench/context") {
+      const browser = (() => {
+        try { return getBrowserSession(stored.session, sessionToken, stored.now); } catch { return undefined; }
+      })();
+      if (browser === undefined) {
+        unauthorized(response);
+        return;
+      }
+      if (browser.route.view !== "tasks" || browser.route.taskId === undefined) {
+        writeJson(response, 409, { error: "task_route_required" });
+        return;
+      }
+      const requestedTaskId = parsedUrl.searchParams.get("taskId");
+      if (requestedTaskId !== null && requestedTaskId !== browser.route.taskId) {
+        writeJson(response, 409, { error: "task_route_mismatch" });
+        return;
+      }
+      const surfaceValue = parsedUrl.searchParams.get("surface");
+      if (!isContextSurface(surfaceValue)) {
+        writeJson(response, 409, { error: "context_surface_invalid" });
+        return;
+      }
+      const input: WorkbenchContextRequestV1 = {
+        surface: surfaceValue,
+        taskId: browser.route.taskId,
+        repositoryId: stored.session.output.structuredContent.meta.repositoryId,
+        worktreeId: stored.session.output.structuredContent.meta.worktreeId,
+      };
+      void readWorkbenchContextForSession(stored, sessionToken, input)
+        .then((result) => writeJson(response, 200, result))
+        .catch((error: unknown) => {
+          if (error instanceof WorkbenchSessionError && error.code === "session_invalid") {
+            writeJson(response, 409, { error: "context_route_mismatch" });
+            return;
+          }
+          writeJson(response, 500, { error: "context_unavailable" });
+        });
+      return;
+    }
+
     const taskMatch = /^\/tasks\/([^/]+)$/u.exec(parsedUrl.pathname);
     if (taskMatch !== null) {
       try {
@@ -775,6 +1089,12 @@ export async function openWorkbenchSessionV1(
     if (options.taskBriefReader !== undefined) {
       existing.taskBriefReader = options.taskBriefReader;
     }
+    if (options.graphReader !== undefined) {
+      existing.graphReader = options.graphReader;
+    }
+    if (options.knowledgeReader !== undefined) {
+      existing.knowledgeReader = options.knowledgeReader;
+    }
     const token = randomToken();
     const issuedAtMs = now();
     existing.launches.set(token, {
@@ -796,6 +1116,8 @@ export async function openWorkbenchSessionV1(
     launches,
     now,
     ...(options.taskBriefReader === undefined ? {} : { taskBriefReader: options.taskBriefReader }),
+    ...(options.graphReader === undefined ? {} : { graphReader: options.graphReader }),
+    ...(options.knowledgeReader === undefined ? {} : { knowledgeReader: options.knowledgeReader }),
   } as StoredSessionV1;
   const handler = createHttpHandler(stored);
   server.on("request", handler);
@@ -844,6 +1166,8 @@ export async function openWorkbenchSessionV1(
       return browser.route;
     },
     readTaskBrief: (sessionToken, input) => readTaskBriefForSession(stored, sessionToken, input),
+    readWorkbenchContext: (sessionToken, input) =>
+      readWorkbenchContextForSession(stored, sessionToken, input),
     close: async () => {
       sessionsByIdentity.delete(key);
       launches.clear();
@@ -856,7 +1180,14 @@ export async function openWorkbenchSessionV1(
   // The handler and redeem closure need the final session object, not the
   // provisional reference used while wiring the server listeners.
   (stored as { session: WorkbenchSessionV1 }).session = session;
-  sessionsByIdentity.set(key, { session, launches, now, ...(options.taskBriefReader === undefined ? {} : { taskBriefReader: options.taskBriefReader }) });
+  sessionsByIdentity.set(key, {
+    session,
+    launches,
+    now,
+    ...(options.taskBriefReader === undefined ? {} : { taskBriefReader: options.taskBriefReader }),
+    ...(options.graphReader === undefined ? {} : { graphReader: options.graphReader }),
+    ...(options.knowledgeReader === undefined ? {} : { knowledgeReader: options.knowledgeReader }),
+  });
   return session;
 }
 

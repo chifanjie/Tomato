@@ -186,4 +186,89 @@ describe("workbench runtime session", () => {
     expect([404, 409]).toContain(unknownTask.status);
     await session.close();
   });
+
+  it("serves authenticated Task-bound Graph and Wiki projections and rejects mismatched callers", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "workbench-runtime-context-"));
+    roots.push(root);
+    const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const session = await openWorkbenchSessionV1(
+      { route: { view: "tasks", taskId } },
+      {
+        ...binding(root),
+        graphReader: async (input) => ({
+          schemaVersion: 1,
+          surface: "graph" as const,
+          taskId: input.taskId,
+          repositoryId: input.repositoryId,
+          worktreeId: input.worktreeId,
+          status: "ready" as const,
+          artifact: {
+            artifactPath: ".understand-code/knowledge-graph.json" as const,
+            metadata: {
+              version: "1",
+              projectName: "fixture",
+              analyzedAt: "2026-08-03T00:00:00.000Z",
+              gitCommitHash: "abc",
+            },
+            counts: { nodes: 2, edges: 1, layers: 1, tour: 0 },
+          },
+        }),
+        knowledgeReader: async (input) => ({
+          schemaVersion: 1,
+          surface: "knowledge" as const,
+          taskId: input.taskId,
+          repositoryId: input.repositoryId,
+          worktreeId: input.worktreeId,
+          status: "ready" as const,
+          artifact: {
+            artifactPath: ".understand-code/knowledge-base/wiki-index.json" as const,
+            metadata: {
+              version: 2,
+              projectName: "fixture",
+              generatedAt: "2026-08-03T00:00:00.000Z",
+              readiness: "ready" as const,
+            },
+            counts: { pages: 3, nodeDocumentation: 2, evidence: 1 },
+          },
+        }),
+      },
+    );
+    const token = session.output.structuredContent.result.deepLink.split("#")[1]!;
+    const launch = await fetch(`http://127.0.0.1:${session.port}/__workbench/launch`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    const cookie = launch.headers.get("set-cookie")!.split(";", 1)[0]!;
+    const graph = await fetch(
+      `http://127.0.0.1:${session.port}/__workbench/context?surface=graph`,
+      { headers: { cookie } },
+    );
+    expect(graph.status).toBe(200);
+    await expect(graph.json()).resolves.toMatchObject({
+      surface: "graph",
+      status: "ready",
+      artifact: { counts: { nodes: 2, edges: 1 } },
+    });
+    const knowledge = await fetch(
+      `http://127.0.0.1:${session.port}/__workbench/context?surface=knowledge`,
+      { headers: { cookie } },
+    );
+    expect(knowledge.status).toBe(200);
+    await expect(knowledge.json()).resolves.toMatchObject({
+      surface: "knowledge",
+      status: "ready",
+      artifact: { counts: { pages: 3, evidence: 1 } },
+    });
+    const unauthenticated = await fetch(
+      `http://127.0.0.1:${session.port}/__workbench/context?surface=graph`,
+    );
+    expect(unauthenticated.status).toBe(401);
+    const mismatch = await fetch(
+      `http://127.0.0.1:${session.port}/__workbench/context?surface=graph&taskId=01ARZ3NDEKTSV4RRFFQ69G5FAW`,
+      { headers: { cookie } },
+    );
+    expect(mismatch.status).toBe(409);
+    await session.close();
+  });
 });

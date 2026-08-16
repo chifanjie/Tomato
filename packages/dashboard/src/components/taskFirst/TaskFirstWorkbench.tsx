@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type {
   RepoPulseStatusV1,
   RepoPulseV1,
@@ -138,7 +138,11 @@ function errorMessage(error: string | Error | null | undefined): string | null {
 }
 
 function routeFor(view: "knowledge" | "graph", route: TaskFirstRoute): TaskFirstRoute {
-  return { ...route, view };
+  const { findingId, evidenceId, ...safeRoute } = route;
+  return {
+    ...safeRoute,
+    view,
+  };
 }
 
 function itemText(item: TaskBriefPageItemV1): { title: string; detail?: string; meta?: string } {
@@ -328,10 +332,13 @@ export function TaskFirstWorkbench({
   const task = page?.task;
   const status = pulseStatus(pulse, explicitPulseStatus);
   const section = selectedSection(route, page);
+  const [localSection, setLocalSection] = useState<TaskFirstSection>(section);
+  useEffect(() => setLocalSection(section), [section]);
+  const activeSectionId = onSelectSection ? section : localSection;
   const staleCopy = staleMessage(stale)
     ?? (status === "stale" ? "The repository pulse is stale; reload before treating evidence as current. / 仓库状态已过期，请重新加载后再视为当前事实。" : null);
   const failure = errorMessage(error);
-  const activeSection = SECTION_ITEMS.find((item) => item.id === section) ?? SECTION_ITEMS[0];
+  const activeSection = SECTION_ITEMS.find((item) => item.id === activeSectionId) ?? SECTION_ITEMS[0];
 
   const renderPage = () => {
     if (loading) return <StatePanel state="loading" />;
@@ -386,14 +393,17 @@ export function TaskFirstWorkbench({
           <p className="px-3 pb-2 pt-2 text-xs font-semibold uppercase tracking-wide text-text-muted">Task navigation / 任务导航</p>
           <div className="flex gap-1 overflow-x-auto lg:block">
             {SECTION_ITEMS.map((item) => {
-              const selected = section === item.id;
+              const selected = activeSectionId === item.id;
               return (
                 <button
                   key={item.id}
                   type="button"
                   aria-current={selected ? "page" : undefined}
                   aria-pressed={selected}
-                  onClick={() => onSelectSection?.(item.id)}
+                  onClick={() => {
+                    setLocalSection(item.id);
+                    onSelectSection?.(item.id);
+                  }}
                   className={`min-h-11 shrink-0 rounded-md px-3 py-2 text-left text-sm font-semibold transition-colors lg:block lg:w-full ${selected ? "bg-accent/15 text-accent" : "text-text-secondary hover:bg-elevated hover:text-text-primary"}`}
                 >
                   <span className="block">{item.label}</span>

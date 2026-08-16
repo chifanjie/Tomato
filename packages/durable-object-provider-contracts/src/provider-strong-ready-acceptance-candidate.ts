@@ -14,6 +14,7 @@ import {
   InstallationIdentityGenerationIdV1Schema,
   KeyedStateTokenV1Schema,
   ProviderAcceptanceStateGenerationIdV1Schema,
+  ProviderMigrationIdV1Schema,
   ProviderTargetProfileIdV1Schema,
   type ContentDigestV1,
 } from "./primitives.js";
@@ -192,11 +193,43 @@ export type ProviderStrongReadyBootstrapOrSteadyActivationV1 = z.infer<
   typeof ProviderStrongReadyBootstrapOrSteadyActivationV1Schema
 >;
 
+export const ProviderStrongReadyMigrationTerminalSealedActivationV1Schema =
+  z.strictObject({
+    origin: z.literal("provider_migration_terminal_sealed_success_v1"),
+    formalMigrationId: ProviderMigrationIdV1Schema,
+    formalPlanPin: z.strictObject({
+      locatorProfile: z.literal(
+        "provider_migration_same_installation_identity_current_strong_source_normal_formal_plan_reference_candidate_v1",
+      ),
+      formalMigrationId: ProviderMigrationIdV1Schema,
+      contentDigest: ContentDigestV1Schema,
+    }),
+    terminalProgressReceiptContentDigest: ContentDigestV1Schema,
+    terminalJournalReceiptContentDigest: ContentDigestV1Schema,
+    sourceTombstoneRecordContentDigest: ContentDigestV1Schema,
+    readyToActivateRecordContentDigest: ContentDigestV1Schema,
+    sealedProgressHeadContentDigest: ContentDigestV1Schema,
+  });
+export type ProviderStrongReadyMigrationTerminalSealedActivationV1 = z.infer<
+  typeof ProviderStrongReadyMigrationTerminalSealedActivationV1Schema
+>;
+
+export const ProviderStrongReadyActivationV1Schema = z.discriminatedUnion(
+  "origin",
+  [
+    ProviderStrongReadyBootstrapOrSteadyActivationV1Schema,
+    ProviderStrongReadyMigrationTerminalSealedActivationV1Schema,
+  ],
+);
+export type ProviderStrongReadyActivationV1 = z.infer<
+  typeof ProviderStrongReadyActivationV1Schema
+>;
+
 export const ProviderStrongReadyAcceptedConfigurationCandidateV1Schema =
   z.strictObject({
     state: z.literal("strong_ready"),
     core: ProviderMigrationStrongReadyCoreV1Schema,
-    activation: ProviderStrongReadyBootstrapOrSteadyActivationV1Schema,
+    activation: ProviderStrongReadyActivationV1Schema,
   });
 export type ProviderStrongReadyAcceptedConfigurationCandidateV1 = z.infer<
   typeof ProviderStrongReadyAcceptedConfigurationCandidateV1Schema

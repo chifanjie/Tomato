@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "understand-code-host-adapter-v1",
+  "host": "codex",
+  "name": "understand-code",
+  "transport": "stdio",
+  "wrapper": "integrations/codex/run.mjs",
+  "cliCommand": "understand-code",
+  "cliArgs": ["mcp", "--stdio", "--root", "${WORKSPACE_ROOT}"],
+  "root": {
+    "required": true,
+    "flag": "--root",
+    "placeholder": "${WORKSPACE_ROOT}",
+    "absolute": true
+  }
+}

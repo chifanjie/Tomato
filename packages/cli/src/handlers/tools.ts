@@ -2,12 +2,18 @@ import { performance } from "node:perf_hooks";
 
 import { ArtifactStoreError } from "@understand-code/artifact-store";
 import {
+  CheckChangeInputV1Schema,
+  RecordVerificationInputV1Schema,
+} from "@understand-code/contracts";
+import {
   BuildTaskBriefInputV1Schema,
   BuildTaskBriefOutputV1Schema,
+  CheckChangeOutputV1Schema,
   GetRepoPulseInputV1Schema,
   GetRepoPulseOutputV1Schema,
   GetTaskBriefInputV1Schema,
   GetTaskBriefOutputV1Schema,
+  RecordVerificationOutputV1Schema,
   type McpToolErrorResultV1,
 } from "@understand-code/contracts/mcp";
 import {
@@ -37,6 +43,8 @@ export const IMPLEMENTED_TOOL_NAMES = Object.freeze([
   "get_repo_pulse",
   "build_task_brief",
   "get_task_brief",
+  "check_change",
+  "record_verification",
 ] as const);
 
 export type ImplementedToolName = (typeof IMPLEMENTED_TOOL_NAMES)[number];
@@ -171,6 +179,93 @@ async function getTaskBrief(argumentsValue: unknown, canonicalRoot: string) {
   });
 }
 
+async function checkChange(argumentsValue: unknown, canonicalRoot: string) {
+  const parsed = CheckChangeInputV1Schema.safeParse(argumentsValue ?? {});
+  if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
+  const startedAt = performance.now();
+  const runtime = await openRuntime(canonicalRoot);
+  const manifest = await runtime.store.readManifest({ verifyArtifacts: false });
+  const latestSnapshotId = manifest.artifacts
+    .filter((descriptor) => descriptor.artifactType === "task_manifest")
+    .find((descriptor) => descriptor.taskId === parsed.data.taskId)
+    ?.sourceSnapshotId;
+  const actualSnapshotId = parsed.data.actualSnapshotId ?? latestSnapshotId;
+  if (actualSnapshotId === undefined) {
+    throw new ToolFailure(resourceNotFoundFailure("task", parsed.data.taskId));
+  }
+  const result = await runtime.taskEngine.checkChange(
+    { ...parsed.data, actualSnapshotId },
+    {
+      actor: parsed.data.actor,
+      repositoryId: runtime.store.repositoryId,
+      worktreeId: runtime.store.worktreeId,
+      capabilities: ["task:update"],
+    },
+  );
+  const [snapshot, publishedPulse] = await Promise.all([
+    readPublishedSnapshot(runtime.store, result.changeCheck.actualSnapshotId),
+    readPublishedPulse(runtime.store),
+  ]);
+  const freshness =
+    publishedPulse.pulse.evaluatedSnapshotId === result.changeCheck.actualSnapshotId
+      ? publishedPulse.pulse.status
+      : "stale";
+  return CheckChangeOutputV1Schema.parse({
+    isError: false,
+    content: [{ type: "text", text: "Change Check recorded." }],
+    structuredContent: {
+      schemaVersion: 1,
+      meta: successMeta(snapshot, freshness, elapsed(startedAt), {
+        cacheHit: result.mutation.idempotentReplay,
+      }),
+      result,
+    },
+  });
+}
+
+async function recordVerification(
+  argumentsValue: unknown,
+  canonicalRoot: string,
+) {
+  const parsed = RecordVerificationInputV1Schema.safeParse(argumentsValue ?? {});
+  if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
+  const startedAt = performance.now();
+  const runtime = await openRuntime(canonicalRoot);
+  const manifest = await runtime.store.readManifest({ verifyArtifacts: false });
+  const latestSnapshotId = manifest.artifacts
+    .filter((descriptor) => descriptor.artifactType === "task_manifest")
+    .find((descriptor) => descriptor.taskId === parsed.data.taskId)
+    ?.sourceSnapshotId;
+  if (latestSnapshotId === undefined) {
+    throw new ToolFailure(resourceNotFoundFailure("task", parsed.data.taskId));
+  }
+  const result = await runtime.taskEngine.recordVerification(parsed.data, {
+    actor: parsed.data.actor,
+    repositoryId: runtime.store.repositoryId,
+    worktreeId: runtime.store.worktreeId,
+    capabilities: ["task:update"],
+  });
+  const [snapshot, publishedPulse] = await Promise.all([
+    readPublishedSnapshot(runtime.store, result.verification.snapshotId),
+    readPublishedPulse(runtime.store),
+  ]);
+  const freshness =
+    publishedPulse.pulse.evaluatedSnapshotId === result.verification.snapshotId
+      ? publishedPulse.pulse.status
+      : "stale";
+  return RecordVerificationOutputV1Schema.parse({
+    isError: false,
+    content: [{ type: "text", text: "Verification record appended." }],
+    structuredContent: {
+      schemaVersion: 1,
+      meta: successMeta(snapshot, freshness, elapsed(startedAt), {
+        cacheHit: result.mutation.idempotentReplay,
+      }),
+      result,
+    },
+  });
+}
+
 function isDigest(value: unknown): value is string {
   return typeof value === "string" && /^sha256:[0-9a-f]{64}$/u.test(value);
 }
@@ -293,6 +388,10 @@ export async function callImplementedTool(
         return await buildTaskBrief(argumentsValue, canonicalRoot);
       case "get_task_brief":
         return await getTaskBrief(argumentsValue, canonicalRoot);
+      case "check_change":
+        return await checkChange(argumentsValue, canonicalRoot);
+      case "record_verification":
+        return await recordVerification(argumentsValue, canonicalRoot);
     }
   } catch (error) {
     if (error instanceof ToolFailure) return error.result;

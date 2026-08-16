@@ -1,0 +1,31 @@
+{
+  "name": "@understand-code/host-adapters",
+  "version": "0.1.0",
+  "description": "Thin Codex CLI and Claude Code MCP host adapters for Understand Code",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "integrations",
+    "README.md"
+  ],
+  "bin": {
+    "understand-code-codex": "integrations/codex/run.mjs",
+    "understand-code-claude": "integrations/claude/run.mjs"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "test": "pnpm run build && vitest run"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.1.0"
+  }
+}

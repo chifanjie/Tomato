@@ -21,6 +21,13 @@ import {
   ProviderMigrationIdV1Schema,
 } from "../../dist/primitives.js";
 import {
+  ProviderFeasibilitySupportCatalogEnvelopeV1Schema,
+} from "../../dist/provider-feasibility-support-catalog-point.js";
+import {
+  deriveProviderFeasibilitySupportCatalogPinFixture,
+  resignProviderFeasibilitySupportCatalogEnvelopeFixture,
+} from "./provider-feasibility-support-catalog-point-fixture.mjs";
+import {
   ROOT_3_SEED_HEX,
 } from "./provider-registry-evidence-binding-point-fixture.mjs";
 
@@ -179,6 +186,369 @@ export function buildProviderMigrationSameInstallationIdentityCurrentStrongSourc
     formalMigrationId: parsedFormalMigrationId,
     sourceProviderId: enabled[0].providerId,
     destinationProviderId: destinationEntry.providerId,
+    invalidSignature,
+  });
+}
+
+export function buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedRebindingRegistrySuccessorFixture({
+  currentPreparedRegistryManifestEnvelope,
+  invalidSignature = false,
+}) {
+  const currentEnvelope = ProviderRegistryManifestEnvelopeV1Schema.parse(
+    jsonClone(currentPreparedRegistryManifestEnvelope),
+  );
+  const current = currentEnvelope.payload;
+  if (
+    current.routing.state !== "migration" ||
+    current.routing.phase !== "prepared" ||
+    current.routing.activeForMigrationWrites !==
+      current.routing.sourceProviderId
+  ) {
+    throw new TypeError(
+      "source-drained fixture requires the published prepared Registry tip",
+    );
+  }
+  const routing = {
+    ...jsonClone(current.routing),
+    phase: "rebinding",
+    activeForMigrationWrites: current.routing.destinationProviderId,
+  };
+  const predecessor = {
+    state: "manifest",
+    generationId: currentEnvelope.generationId,
+    contentDigest: currentEnvelope.contentDigest,
+  };
+  const idFields = {
+    installationIdentityGenerationId:
+      current.installationIdentityGenerationId,
+    activeRootMetadata: jsonClone(current.activeRootMetadata),
+    members: jsonClone(current.members),
+    routing,
+    manifestGeneration: current.manifestGeneration + 1,
+    predecessor,
+  };
+  const generationId =
+    deriveProviderRegistryManifestGenerationIdV1(idFields);
+  const unsigned = {
+    profile: "provider_registry_manifest_v1",
+    generationId,
+    installationIdentityGenerationId:
+      current.installationIdentityGenerationId,
+    activeRootMetadata: jsonClone(current.activeRootMetadata),
+    members: jsonClone(current.members),
+    routing,
+    issuedAt: nextIssuedAt(current.issuedAt),
+    manifestGeneration: current.manifestGeneration + 1,
+    predecessor,
+  };
+  const rootKeyId = current.activeRootMetadata.rootKeyId;
+  const validManifestSignature = manifestSignature(
+    rootKeyId,
+    createProviderRegistryManifestSignatureMessageV1(
+      unsigned,
+      rootKeyId,
+    ),
+  );
+  const payload = ProviderRegistryManifestV1Schema.parse({
+    ...unsigned,
+    manifestSignature: invalidSignature
+      ? mutateSignature(validManifestSignature)
+      : validManifestSignature,
+  });
+  const envelope = ProviderRegistryManifestEnvelopeV1Schema.parse({
+    schemaVersion: 1,
+    recordType: "provider_registry_manifest",
+    generationId,
+    contentDigest:
+      deriveProviderRegistryManifestContentDigestV1(payload),
+    payload,
+  });
+  const pin = ProviderRegistryManifestPinV1Schema.parse({
+    locatorProfile: "installation_provider_registry_manifest_v1",
+    manifestGeneration: payload.manifestGeneration,
+    generationId: envelope.generationId,
+    contentDigest: envelope.contentDigest,
+  });
+  return Object.freeze({
+    envelope,
+    pin,
+    currentPreparedRegistryManifestEnvelope: currentEnvelope,
+    formalMigrationId: current.routing.migrationId,
+    sourceProviderId: current.routing.sourceProviderId,
+    destinationProviderId: current.routing.destinationProviderId,
+    invalidSignature,
+  });
+}
+
+export function buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedSourceDrainedRegistrySuccessorFixture({
+  currentRebindingRegistryManifestEnvelope,
+  invalidSignature = false,
+}) {
+  const currentEnvelope = ProviderRegistryManifestEnvelopeV1Schema.parse(
+    jsonClone(currentRebindingRegistryManifestEnvelope),
+  );
+  const current = currentEnvelope.payload;
+  if (
+    current.routing.state !== "migration" ||
+    current.routing.phase !== "rebinding" ||
+    current.routing.activeForMigrationWrites !==
+      current.routing.destinationProviderId
+  ) {
+    throw new TypeError(
+      "source-drained fixture requires the published rebinding Registry tip",
+    );
+  }
+  const routing = {
+    ...jsonClone(current.routing),
+    phase: "source_drained",
+    activeForMigrationWrites: current.routing.destinationProviderId,
+  };
+  const predecessor = {
+    state: "manifest",
+    generationId: currentEnvelope.generationId,
+    contentDigest: currentEnvelope.contentDigest,
+  };
+  const idFields = {
+    installationIdentityGenerationId:
+      current.installationIdentityGenerationId,
+    activeRootMetadata: jsonClone(current.activeRootMetadata),
+    members: jsonClone(current.members),
+    routing,
+    manifestGeneration: current.manifestGeneration + 1,
+    predecessor,
+  };
+  const generationId =
+    deriveProviderRegistryManifestGenerationIdV1(idFields);
+  const unsigned = {
+    profile: "provider_registry_manifest_v1",
+    generationId,
+    installationIdentityGenerationId:
+      current.installationIdentityGenerationId,
+    activeRootMetadata: jsonClone(current.activeRootMetadata),
+    members: jsonClone(current.members),
+    routing,
+    issuedAt: nextIssuedAt(current.issuedAt),
+    manifestGeneration: current.manifestGeneration + 1,
+    predecessor,
+  };
+  const rootKeyId = current.activeRootMetadata.rootKeyId;
+  const validManifestSignature = manifestSignature(
+    rootKeyId,
+    createProviderRegistryManifestSignatureMessageV1(
+      unsigned,
+      rootKeyId,
+    ),
+  );
+  const payload = ProviderRegistryManifestV1Schema.parse({
+    ...unsigned,
+    manifestSignature: invalidSignature
+      ? mutateSignature(validManifestSignature)
+      : validManifestSignature,
+  });
+  const envelope = ProviderRegistryManifestEnvelopeV1Schema.parse({
+    schemaVersion: 1,
+    recordType: "provider_registry_manifest",
+    generationId,
+    contentDigest:
+      deriveProviderRegistryManifestContentDigestV1(payload),
+    payload,
+  });
+  const pin = ProviderRegistryManifestPinV1Schema.parse({
+    locatorProfile: "installation_provider_registry_manifest_v1",
+    manifestGeneration: payload.manifestGeneration,
+    generationId: envelope.generationId,
+    contentDigest: envelope.contentDigest,
+  });
+  return Object.freeze({
+    envelope,
+    pin,
+    currentRebindingRegistryManifestEnvelope: currentEnvelope,
+    formalMigrationId: current.routing.migrationId,
+    sourceProviderId: current.routing.sourceProviderId,
+    destinationProviderId: current.routing.destinationProviderId,
+    invalidSignature,
+  });
+}
+
+export function buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedSteadyRegistrySuccessorFixture({
+  currentSourceDrainedRegistryManifestEnvelope,
+  invalidSignature = false,
+}) {
+  const currentEnvelope = ProviderRegistryManifestEnvelopeV1Schema.parse(
+    jsonClone(currentSourceDrainedRegistryManifestEnvelope),
+  );
+  const current = currentEnvelope.payload;
+  if (
+    current.routing.state !== "migration" ||
+    current.routing.phase !== "source_drained" ||
+    current.routing.activeForMigrationWrites !==
+      current.routing.destinationProviderId
+  ) {
+    throw new TypeError(
+      "steady fixture requires the published source-drained Registry tip",
+    );
+  }
+  const source = current.members.find(
+    (member) => member.providerId === current.routing.sourceProviderId,
+  );
+  const destination = current.members.find(
+    (member) => member.providerId === current.routing.destinationProviderId,
+  );
+  const enabled = current.members.filter(
+    (member) => member.disposition === "enabled",
+  );
+  if (
+    enabled.length !== 2 ||
+    source?.disposition !== "enabled" ||
+    destination?.disposition !== "enabled"
+  ) {
+    throw new TypeError(
+      "steady fixture requires exact enabled source and destination members",
+    );
+  }
+  const manifestGeneration = current.manifestGeneration + 1;
+  const members = jsonClone(current.members).map((member) =>
+    member.providerId === current.routing.sourceProviderId
+      ? {
+          providerId: member.providerId,
+          disposition: "revoked",
+          lastEnabledRegistryEntryContentDigest:
+            member.registryEntryContentDigest,
+          revokedAtManifestGeneration: manifestGeneration,
+          reason: "migration_completed",
+        }
+      : member
+  );
+  const routing = { state: "steady" };
+  const predecessor = {
+    state: "manifest",
+    generationId: currentEnvelope.generationId,
+    contentDigest: currentEnvelope.contentDigest,
+  };
+  const idFields = {
+    installationIdentityGenerationId:
+      current.installationIdentityGenerationId,
+    activeRootMetadata: jsonClone(current.activeRootMetadata),
+    members,
+    routing,
+    manifestGeneration,
+    predecessor,
+  };
+  const generationId =
+    deriveProviderRegistryManifestGenerationIdV1(idFields);
+  const unsigned = {
+    profile: "provider_registry_manifest_v1",
+    generationId,
+    installationIdentityGenerationId:
+      current.installationIdentityGenerationId,
+    activeRootMetadata: jsonClone(current.activeRootMetadata),
+    members,
+    routing,
+    issuedAt: nextIssuedAt(current.issuedAt),
+    manifestGeneration,
+    predecessor,
+  };
+  const rootKeyId = current.activeRootMetadata.rootKeyId;
+  const validManifestSignature = manifestSignature(
+    rootKeyId,
+    createProviderRegistryManifestSignatureMessageV1(
+      unsigned,
+      rootKeyId,
+    ),
+  );
+  const payload = ProviderRegistryManifestV1Schema.parse({
+    ...unsigned,
+    manifestSignature: invalidSignature
+      ? mutateSignature(validManifestSignature)
+      : validManifestSignature,
+  });
+  const envelope = ProviderRegistryManifestEnvelopeV1Schema.parse({
+    schemaVersion: 1,
+    recordType: "provider_registry_manifest",
+    generationId,
+    contentDigest:
+      deriveProviderRegistryManifestContentDigestV1(payload),
+    payload,
+  });
+  const pin = ProviderRegistryManifestPinV1Schema.parse({
+    locatorProfile: "installation_provider_registry_manifest_v1",
+    manifestGeneration: payload.manifestGeneration,
+    generationId: envelope.generationId,
+    contentDigest: envelope.contentDigest,
+  });
+  return Object.freeze({
+    envelope,
+    pin,
+    currentSourceDrainedRegistryManifestEnvelope: currentEnvelope,
+    formalMigrationId: current.routing.migrationId,
+    sourceProviderId: current.routing.sourceProviderId,
+    destinationProviderId: current.routing.destinationProviderId,
+    invalidSignature,
+  });
+}
+
+export function buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedPreparedCatalogSuccessorFixture({
+  distributionRawRequest,
+  prospectiveDestination,
+  invalidSignature = false,
+}) {
+  const currentEnvelope =
+    distributionRawRequest.providerFeasibilitySupportCatalogHistory.at(-1);
+  if (currentEnvelope === undefined) {
+    throw new TypeError("D-43 fixture requires a retained current Catalog tip");
+  }
+  const current = currentEnvelope.payload;
+  const targetKey = JSON.stringify(prospectiveDestination.target);
+  let insertedTargetCount = 0;
+  const targets = jsonClone(current.targets).map((targetEntry) => {
+    if (JSON.stringify(targetEntry.target) !== targetKey) return targetEntry;
+    insertedTargetCount += 1;
+    if (
+      targetEntry.candidates.some(
+        (candidate) =>
+          candidate.providerId === prospectiveDestination.providerId,
+      )
+    ) {
+      throw new TypeError("D-43 fixture destination is already a Catalog candidate");
+    }
+    targetEntry.candidates = [
+      ...targetEntry.candidates,
+      jsonClone(prospectiveDestination.prospectiveSupportCandidate),
+    ].sort((left, right) => compareUtf8(left.providerId, right.providerId));
+    return targetEntry;
+  });
+  if (insertedTargetCount !== 1) {
+    throw new TypeError("D-43 fixture requires one exact destination target group");
+  }
+  const unsignedEnvelope = {
+    schemaVersion: 1,
+    recordType: "provider_feasibility_support_catalog",
+    catalogGeneration: current.catalogGeneration + 1,
+    contentDigest: currentEnvelope.contentDigest,
+    payload: {
+      ...jsonClone(current),
+      catalogGeneration: current.catalogGeneration + 1,
+      predecessorCatalogContentDigest: currentEnvelope.contentDigest,
+      targets,
+    },
+  };
+  const signed = resignProviderFeasibilitySupportCatalogEnvelopeFixture(
+    unsignedEnvelope,
+    { rootKeyId: current.registryRootKeyId },
+  );
+  if (invalidSignature) {
+    signed.payload.catalogSignature = mutateSignature(
+      signed.payload.catalogSignature,
+    );
+  }
+  const envelope = ProviderFeasibilitySupportCatalogEnvelopeV1Schema.parse(
+    signed,
+  );
+  return Object.freeze({
+    envelope,
+    pin: deriveProviderFeasibilitySupportCatalogPinFixture(envelope),
+    currentSupportCatalogEnvelope: jsonClone(currentEnvelope),
+    destinationProviderId: prospectiveDestination.providerId,
     invalidSignature,
   });
 }

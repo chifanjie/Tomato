@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "understand-code": {
+      "command": "understand-code-claude",
+      "args": ["--root", "${CLAUDE_PROJECT_DIR}"]
+    }
+  }
+}

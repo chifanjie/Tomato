@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "understand-code-host-adapter-v1",
+  "host": "claude",
+  "name": "understand-code",
+  "transport": "stdio",
+  "wrapper": "integrations/claude/run.mjs",
+  "cliCommand": "understand-code",
+  "cliArgs": ["mcp", "--stdio", "--root", "${CLAUDE_PROJECT_DIR}"],
+  "root": {
+    "required": true,
+    "flag": "--root",
+    "placeholder": "${CLAUDE_PROJECT_DIR}",
+    "absolute": true
+  }
+}

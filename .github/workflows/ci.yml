@@ -118,11 +118,17 @@ jobs:
           pnpm run build:all
           pnpm run typecheck
           pnpm --filter @understand-code/durable-object-provider-contracts --fail-if-no-match build
+          pnpm --filter @understand-code/durable-object-provider-client --fail-if-no-match build
+          pnpm --filter @understand-code/durable-object-provider-runtime --fail-if-no-match build
+          pnpm --filter @understand-code/host-adapters --fail-if-no-match build
           pnpm --filter @understand-code/contracts --fail-if-no-match build
           pnpm --filter @understand-code/repository-state --fail-if-no-match build
           pnpm --filter @understand-code/artifact-store --fail-if-no-match build
           pnpm --filter @understand-code/core --fail-if-no-match build
           pnpm --filter @understand-code/task-engine --fail-if-no-match build
+          pnpm --filter @understand-code/durable-object-provider-client --fail-if-no-match test
+          pnpm --filter @understand-code/durable-object-provider-runtime --fail-if-no-match test
+          pnpm --filter @understand-code/host-adapters --fail-if-no-match test
           pnpm --filter @understand-code/contracts --fail-if-no-match test
           pnpm --filter @understand-code/repository-state --fail-if-no-match test
           pnpm --filter @understand-code/artifact-store --fail-if-no-match test

@@ -733,6 +733,50 @@ function projectUnsignedAcceptanceStateV1(
   }
 }
 
+const MIGRATION_ONLY_ACCEPTANCE_UNSIGNED_KEYS_INTERNAL_V1 =
+  CapturedObjectFreezeV1([
+    "profile",
+    "generationId",
+    "installationIdentityGenerationId",
+    "acceptanceOrdinal",
+    "predecessor",
+    "configuration",
+    "acceptedAt",
+  ] as const);
+
+/**
+ * Package-private identity-keyed projection for the branch-specific
+ * migration-only Acceptance family. The caller must first validate the full
+ * branch schema; this authority independently enforces the exact unsigned
+ * projection and Installation Identity before touching the retained key.
+ */
+function projectUnsignedMigrationOnlyAcceptanceStateInternalV1(
+  input: unknown,
+): object {
+  const fields = captureProviderPointDetachedExactDataObjectV1(
+    input,
+    MIGRATION_ONLY_ACCEPTANCE_UNSIGNED_KEYS_INTERNAL_V1,
+  );
+  if (
+    fields.profile !==
+      "provider_migration_same_installation_identity_current_strong_source_normal_migration_only_acceptance_payload_reference_candidate_v1"
+  ) {
+    return failCapabilityV1();
+  }
+  return createFrozenRecordV1([
+    ["profile", fields.profile],
+    ["generationId", fields.generationId],
+    [
+      "installationIdentityGenerationId",
+      fields.installationIdentityGenerationId,
+    ],
+    ["acceptanceOrdinal", fields.acceptanceOrdinal],
+    ["predecessor", fields.predecessor],
+    ["configuration", fields.configuration],
+    ["acceptedAt", fields.acceptedAt],
+  ]);
+}
+
 function assertProjectedIdentityV1(
   state: ProviderStrongReadyBootstrapOrSteadyAcceptanceIdentityVerificationCapabilityStateInternalV1,
   projectedInstallationIdentityGenerationId: unknown,
@@ -824,6 +868,41 @@ export function verifyProviderAcceptanceStateTokenWithIdentityCapabilityInternal
   );
 }
 
+export function deriveProviderMigrationOnlyAcceptanceStateTokenWithIdentityCapabilityInternalV1(
+  capability: unknown,
+  installationIdentityGenerationId: unknown,
+  unsignedMigrationOnlyAcceptance: unknown,
+): Promise<KeyedStateTokenV1> {
+  return deriveProjectedTokenV1(
+    capability,
+    installationIdentityGenerationId,
+    PROVIDER_ACCEPTANCE_STATE_TOKEN_DOMAIN_V1,
+    () =>
+      projectUnsignedMigrationOnlyAcceptanceStateInternalV1(
+        unsignedMigrationOnlyAcceptance,
+      ),
+    (projection) =>
+      (projection as { readonly installationIdentityGenerationId?: unknown })
+        .installationIdentityGenerationId,
+  );
+}
+
+export function verifyProviderMigrationOnlyAcceptanceStateTokenWithIdentityCapabilityInternalV1(
+  capability: unknown,
+  installationIdentityGenerationId: unknown,
+  unsignedMigrationOnlyAcceptance: unknown,
+  suppliedToken: unknown,
+): Promise<boolean> {
+  return verifyProjectedTokenV1(
+    deriveProviderMigrationOnlyAcceptanceStateTokenWithIdentityCapabilityInternalV1(
+      capability,
+      installationIdentityGenerationId,
+      unsignedMigrationOnlyAcceptance,
+    ),
+    suppliedToken,
+  );
+}
+
 export function deriveProviderStrongReadyBootstrapOrSteadyAcceptanceCurrentVersionTokenWithIdentityCapabilityInternalV1(
   capability: unknown,
   installationIdentityGenerationId: unknown,
@@ -906,6 +985,12 @@ CapturedObjectFreezeV1(
 );
 CapturedObjectFreezeV1(
   verifyProviderAcceptanceStateTokenWithIdentityCapabilityInternalV1,
+);
+CapturedObjectFreezeV1(
+  deriveProviderMigrationOnlyAcceptanceStateTokenWithIdentityCapabilityInternalV1,
+);
+CapturedObjectFreezeV1(
+  verifyProviderMigrationOnlyAcceptanceStateTokenWithIdentityCapabilityInternalV1,
 );
 CapturedObjectFreezeV1(
   deriveProviderStrongReadyBootstrapOrSteadyAcceptanceCurrentVersionTokenWithIdentityCapabilityInternalV1,

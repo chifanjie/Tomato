@@ -1,0 +1,35 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-runtime-ipc-client-hello-v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "protocol": {
+      "type": "string",
+      "const": "understand_code_durable_provider_ipc_v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "client_hello"
+    },
+    "clientNonce": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "capabilityDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "authTag": {
+      "type": "string",
+      "pattern": "^hmac-sha256:[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "protocol",
+    "kind",
+    "clientNonce",
+    "capabilityDigest",
+    "authTag"
+  ],
+  "additionalProperties": false
+}

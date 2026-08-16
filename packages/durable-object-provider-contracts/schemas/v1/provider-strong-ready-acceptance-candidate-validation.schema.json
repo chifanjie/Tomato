@@ -364,17 +364,88 @@
                   "additionalProperties": false
                 },
                 "activation": {
-                  "type": "object",
-                  "properties": {
-                    "origin": {
-                      "type": "string",
-                      "const": "bootstrap_or_steady_successor"
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "origin": {
+                          "type": "string",
+                          "const": "bootstrap_or_steady_successor"
+                        }
+                      },
+                      "required": [
+                        "origin"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "origin": {
+                          "type": "string",
+                          "const": "provider_migration_terminal_sealed_success_v1"
+                        },
+                        "formalMigrationId": {
+                          "type": "string",
+                          "pattern": "^provider-migration:[0-9a-f]{22}$"
+                        },
+                        "formalPlanPin": {
+                          "type": "object",
+                          "properties": {
+                            "locatorProfile": {
+                              "type": "string",
+                              "const": "provider_migration_same_installation_identity_current_strong_source_normal_formal_plan_reference_candidate_v1"
+                            },
+                            "formalMigrationId": {
+                              "type": "string",
+                              "pattern": "^provider-migration:[0-9a-f]{22}$"
+                            },
+                            "contentDigest": {
+                              "type": "string",
+                              "pattern": "^sha256:[0-9a-f]{64}$"
+                            }
+                          },
+                          "required": [
+                            "locatorProfile",
+                            "formalMigrationId",
+                            "contentDigest"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "terminalProgressReceiptContentDigest": {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        "terminalJournalReceiptContentDigest": {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        "sourceTombstoneRecordContentDigest": {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        "readyToActivateRecordContentDigest": {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        "sealedProgressHeadContentDigest": {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        }
+                      },
+                      "required": [
+                        "origin",
+                        "formalMigrationId",
+                        "formalPlanPin",
+                        "terminalProgressReceiptContentDigest",
+                        "terminalJournalReceiptContentDigest",
+                        "sourceTombstoneRecordContentDigest",
+                        "readyToActivateRecordContentDigest",
+                        "sealedProgressHeadContentDigest"
+                      ],
+                      "additionalProperties": false
                     }
-                  },
-                  "required": [
-                    "origin"
-                  ],
-                  "additionalProperties": false
+                  ]
                 }
               },
               "required": [

@@ -32,6 +32,7 @@ vi.mock("../src/jcs.js", async (importOriginal) => {
 import type { ProviderCryptoHostV1 } from "../src/domain-crypto.js";
 import { canonicalizeJcsSafeIntegerV1 } from "../src/jcs.js";
 import {
+  CanonicalByteStringV1Schema,
   ContentDigestV1Schema,
   LowerHex32V1Schema,
   type ContentDigestV1,
@@ -64,10 +65,13 @@ import type {
 import {
   deriveProviderAcceptanceStateTokenWithIdentityCapabilityInternalV1,
   mintProviderStrongReadyBootstrapOrSteadyAcceptanceIdentityVerificationCapabilityInternalV1,
+  type ProviderStrongReadyBootstrapOrSteadyAcceptanceIdentityVerificationCapabilityV1,
 } from "../src/provider-strong-ready-bootstrap-or-steady-acceptance-identity-verification-capability-internal.js";
 import {
   createProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReceiptLedgerCandidateInternalV1,
+  executeProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineInternalV1,
   mintProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineInternalV1,
+  type ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineCapabilityInternalV1,
 } from "../src/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-reference-machine-internal.js";
 import {
   deriveProviderTrustedLocalStrongWriterSelectionCandidateInternalV1,
@@ -127,6 +131,61 @@ import {
   type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalSideEffectAuditObserverInternalV1,
 } from "../src/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-pre-plan-reference-capability-internal.js";
 import {
+  diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedCatalogSuccessorReferenceCandidateInternalV1,
+  mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedPreparedCatalogSourceCapabilityInternalV1,
+  mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedCatalogSuccessorReferenceCapabilityInternalV1,
+} from "../src/provider-migration-same-installation-identity-current-strong-source-normal-prepared-catalog-successor-reference-capability-internal.js";
+import {
+  diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalPlanPublicationReferenceCandidateInternalV1,
+  mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalPlanPublicationReferenceCapabilityInternalV1,
+} from "../src/provider-migration-same-installation-identity-current-strong-source-normal-formal-plan-publication-reference-capability-internal.js";
+import {
+  diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalMigrationOnlyAcceptanceReferenceCandidateInternalV1,
+  mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalMigrationOnlyAcceptanceReferenceCapabilityInternalV1,
+} from "../src/provider-migration-same-installation-identity-current-strong-source-normal-migration-only-acceptance-reference-capability-internal.js";
+import {
+  mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedRebindingRegistryManifestSourceCapabilityInternalV1,
+} from "../src/provider-migration-same-installation-identity-current-strong-source-normal-rebinding-registry-successor-validator-internal.js";
+import {
+  mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedSourceDrainedRegistryManifestSourceCapabilityInternalV1,
+} from "../src/provider-migration-same-installation-identity-current-strong-source-normal-source-drained-registry-successor-validator-internal.js";
+import {
+  mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedSteadyRegistryManifestSourceCapabilityInternalV1,
+} from "../src/provider-migration-same-installation-identity-current-strong-source-normal-steady-registry-successor-validator-internal.js";
+import {
+  diagnoseProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalZeroLiveLifecycleReferenceOrchestratorInternalV1,
+} from "../src/provider-migration-same-installation-identity-current-strong-source-normal-zero-live-lifecycle-reference-orchestrator-internal.js";
+import {
+  type ProviderMigrationDurableExecutionHostCapabilityInternalV1,
+} from "../src/provider-migration-durable-execution-orchestrator-internal.js";
+import {
+  runProviderMigrationDurableExecutionV1,
+} from "../src/provider-migration-durable-execution-entrypoint.js";
+import type {
+  ProviderRuntimeIpcCompareCommitResultV1,
+  ProviderRuntimeIpcFixedObjectLocatorV1,
+  ProviderRuntimeIpcJsonValueV1,
+  ProviderRuntimeIpcReadObjectResultV1,
+  ProviderRuntimeIpcWriteObjectResultV1,
+} from "../src/provider-runtime-ipc-v1.js";
+import {
+  takeProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFinalDestinationStrongWriterContinuationInternalV1,
+} from "../src/provider-migration-same-installation-identity-current-strong-source-normal-final-strong-ready-acceptance-reference-capability-internal.js";
+import {
+  createProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalCompoundPublicationEmptyStateInternalV1,
+  inspectProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalCompoundPublicationReferenceMachineInternalV1,
+  mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalCompoundPublicationReferenceMachineInternalV1,
+  type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalCompoundPublicationReferenceMachineCapabilityInternalV1,
+} from "../src/provider-migration-same-installation-identity-current-strong-source-normal-compound-publication-reference-machine-internal.js";
+import {
+  deriveProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalPlanReferenceCandidateV1,
+  validateProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalPlanReferenceCandidateV1,
+} from "../src/provider-migration-same-installation-identity-current-strong-source-normal-formal-plan-reference-candidate-wire.js";
+import {
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedCatalogSuccessorRequestReferenceCandidateV1Schema,
+  ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedCatalogSuccessorReferenceCandidateValidationV1Schema,
+} from "../src/provider-migration-same-installation-identity-current-strong-source-normal-prepared-catalog-successor-reference-candidate-wire.js";
+import {
   diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCandidateInternalV1,
   mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedPreparedRegistryManifestSourceCapabilityInternalV1,
   mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorReferenceCapabilityInternalV1,
@@ -175,7 +234,11 @@ import {
   type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalSignedProspectiveDestinationFixtureV1,
 } from "../scripts/lib/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate-fixture.mjs";
 import {
+  buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedPreparedCatalogSuccessorFixture,
   buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedPreparedRegistrySuccessorFixture,
+  buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedRebindingRegistrySuccessorFixture,
+  buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedSourceDrainedRegistrySuccessorFixture,
+  buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedSteadyRegistrySuccessorFixture,
 } from "../scripts/lib/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate-fixture.mjs";
 
 function resourceBytes(relativePath: string): Uint8Array {
@@ -379,6 +442,8 @@ async function buildCurrentD39D40FixtureV1() {
     selectedWriter,
     registryClosure,
     installationIdentityGenerationId,
+    identityCapability,
+    referenceMachineCapability,
   };
 }
 
@@ -2656,4 +2721,1300 @@ describe("D-42 same-cohort prepared Registry successor integration", () => {
       count: 1,
     });
   }, 120_000);
+});
+
+async function d43MintFixtureV1(options: {
+  readonly invalidCatalogSignature?: boolean;
+} = {}) {
+  const expectedD41 = await d42BaselineCandidateV1();
+  const mapping =
+    deriveProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalMigrationIdMappingV1(
+      expectedD41.migrationId,
+    );
+  const inputs = await operationInputsV1();
+  const signedRegistry =
+    buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedPreparedRegistrySuccessorFixture({
+      distributionRawRequest,
+      prospectiveDestination: inputs.prospective,
+      formalMigrationId: mapping.formalMigrationId,
+    });
+  const signedCatalog =
+    buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedPreparedCatalogSuccessorFixture({
+      distributionRawRequest,
+      prospectiveDestination: inputs.prospective,
+      invalidSignature: options.invalidCatalogSignature,
+    });
+  const signedRegistrySourceCapability =
+    mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedPreparedRegistryManifestSourceCapabilityInternalV1({
+      externallySignedManifestEnvelope: signedRegistry.envelope,
+    });
+  const signedCatalogSourceCapability =
+    mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedPreparedCatalogSourceCapabilityInternalV1({
+      externallySignedCatalogEnvelope: signedCatalog.envelope,
+    });
+  const audit = d42AuditObserverV1();
+  const preparedRegistrySuccessorRequest = {
+    profile:
+      "provider_migration_same_installation_identity_current_strong_source_normal_prepared_registry_successor_request_reference_candidate_v1" as const,
+    preSideEffectRequest: inputs.request,
+    expectedCandidateMigrationId: expectedD41.migrationId,
+    expectedPreparedRegistryManifestPin: signedRegistry.pin,
+  };
+  const request = {
+    profile:
+      "provider_migration_same_installation_identity_current_strong_source_normal_prepared_catalog_successor_request_reference_candidate_v1" as const,
+    preparedRegistrySuccessorRequest,
+    expectedPreparedCatalogPin: signedCatalog.pin,
+  };
+  const mintInput = {
+    acceptanceClosureIdentity:
+      inputs.prePlanMintInput.acceptanceClosureIdentity,
+    endpointObservationHost:
+      inputs.prePlanMintInput.endpointObservationHost,
+    externallySignedPreparedCatalogSourceCapability:
+      signedCatalogSourceCapability,
+    externallySignedPreparedRegistryManifestSourceCapability:
+      signedRegistrySourceCapability,
+    prospectiveDestinationPreparedSourceCapability:
+      inputs.prePlanMintInput.prospectiveDestinationPreparedSourceCapability,
+    quotaObservationHost: inputs.prePlanMintInput.quotaObservationHost,
+    request,
+    sideEffectAuditObserver: audit.observer,
+    sourceStreamHost: inputs.prePlanMintInput.sourceStreamHost,
+    verifiedLiveReferenceSchemaDigest:
+      inputs.prePlanMintInput.verifiedLiveReferenceSchemaDigest,
+    verifiedMigrationProtocolDigest:
+      inputs.prePlanMintInput.verifiedMigrationProtocolDigest,
+  };
+  return {
+    expectedD41,
+    mapping,
+    inputs,
+    signedRegistry,
+    signedCatalog,
+    signedRegistrySourceCapability,
+    signedCatalogSourceCapability,
+    audit,
+    request,
+    mintInput,
+  };
+}
+
+async function d43OperationFixtureV1(options: {
+  readonly invalidCatalogSignature?: boolean;
+} = {}) {
+  const fixture = await d43MintFixtureV1(options);
+  const ready =
+    await mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedCatalogSuccessorReferenceCapabilityInternalV1(
+      fixture.mintInput,
+    );
+  return { ...fixture, ready };
+}
+
+describe("D-43 same-cohort prepared Catalog successor integration", () => {
+  it("validates one externally root-signed Catalog successor after a fresh D-42 while all twelve sinks stay zero", async () => {
+    const fixture = await d43OperationFixtureV1();
+    const result =
+      await diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedCatalogSuccessorReferenceCandidateInternalV1(
+        fixture.ready.buildInput,
+      );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(
+      ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedCatalogSuccessorReferenceCandidateValidationV1Schema.parse(
+        result.value,
+      ),
+    ).toEqual(result.value);
+    expect(result.value.preparedRegistrySuccessorClosure.preparedRegistryManifestPin).toEqual(
+      fixture.signedRegistry.pin,
+    );
+    expect(result.value.preparedSupportCatalogPin).toEqual(
+      fixture.signedCatalog.pin,
+    );
+    expect(result.value.preparedSupportCatalogEnvelope).toEqual(
+      fixture.signedCatalog.envelope,
+    );
+    expect(result.value.publicationGate).toMatchObject({
+      state: "locked_awaiting_formal_destination_trust_and_plan",
+      preparedRegistryDirectSuccessor: "verified_not_published",
+      formalCatalogDirectSuccessor: "verified_not_published",
+      formalDestinationTrust: "none",
+      requiredNext: "formal_destination_trust_and_plan",
+      formalPlan: "none",
+      reservationRecords: "none",
+      registryManifestPublication: "none",
+      catalogPublication: "none",
+      migrationOnlyAcceptance: "none",
+    });
+    expect(
+      distributionRawRequest.providerFeasibilitySupportCatalogHistory.some(
+        (entry) =>
+          entry.contentDigest === fixture.signedCatalog.envelope.contentDigest,
+      ),
+    ).toBe(false);
+    for (const sinkName of d42SinkNames) {
+      expect(result.value.sideEffectBoundary[sinkName], sinkName).toBe(0);
+      expect(fixture.audit.snapshot[sinkName].count, sinkName).toBe(0);
+    }
+  }, 120_000);
+
+  it("burns a signed Catalog source after an expected Pin mismatch before fresh D-42", async () => {
+    const fixture = await d43MintFixtureV1();
+    await expect(
+      mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedCatalogSuccessorReferenceCapabilityInternalV1({
+        ...fixture.mintInput,
+        request: {
+          ...fixture.request,
+          expectedPreparedCatalogPin: {
+            ...fixture.request.expectedPreparedCatalogPin,
+            contentDigest: flipLastLowerHexV1(
+              fixture.request.expectedPreparedCatalogPin.contentDigest,
+            ),
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      stage: "prepared_catalog_successor",
+      reason: "successor_invalid",
+    });
+    await expect(
+      mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedCatalogSuccessorReferenceCapabilityInternalV1(
+        fixture.mintInput,
+      ),
+    ).rejects.toMatchObject({
+      stage: "prepared_catalog_successor",
+      reason: "capability_invalid",
+    });
+    expect(fixture.inputs.source.calls.open).toBe(0);
+    for (const sinkName of d42SinkNames) {
+      expect(fixture.audit.snapshot[sinkName].count, sinkName).toBe(0);
+    }
+  }, 120_000);
+
+  it("lets only one concurrent exact D-43 build owner claim succeed", async () => {
+    const fixture = await d43OperationFixtureV1();
+    const [left, right] = await Promise.all([
+      diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedCatalogSuccessorReferenceCandidateInternalV1(
+        fixture.ready.buildInput,
+      ),
+      diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedCatalogSuccessorReferenceCandidateInternalV1(
+        fixture.ready.buildInput,
+      ),
+    ]);
+    expect([left.ok, right.ok].sort()).toEqual([false, true]);
+    expect([left, right].find((entry) => !entry.ok)).toEqual({
+      ok: false,
+      stage: "input",
+      reason: "schema_invalid",
+    });
+  }, 120_000);
+});
+
+function d44CompoundPublicationMachineV1(
+  fixture: Awaited<ReturnType<typeof d43MintFixtureV1>>,
+): ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalCompoundPublicationReferenceMachineCapabilityInternalV1 {
+  const currentCut =
+    fixture.expectedD41.destinationTrust.authorization
+      .prospectiveDestinationCut;
+  return mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalCompoundPublicationReferenceMachineInternalV1(
+    {
+      currentRegistryManifestEnvelope:
+        currentCut.currentSteadyRegistryManifestEnvelope,
+      currentRegistryManifestPin:
+        currentCut.currentSteadyRegistryManifestPin,
+      currentSupportCatalogEnvelope:
+        currentCut.currentSupportCatalogEnvelope,
+      currentSupportCatalogPin: currentCut.currentSupportCatalog,
+      migrationPublicationState:
+        createProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalCompoundPublicationEmptyStateInternalV1(),
+    },
+  );
+}
+
+async function d44OperationFixtureV1(options: {
+  readonly compoundPublicationReferenceMachineCapability?:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalCompoundPublicationReferenceMachineCapabilityInternalV1;
+  readonly operationNonce?: string;
+}) {
+  const fixture = await d43MintFixtureV1();
+  const currentCut =
+    fixture.expectedD41.destinationTrust.authorization
+      .prospectiveDestinationCut;
+  const compoundPublicationReferenceMachineCapability =
+    options.compoundPublicationReferenceMachineCapability ??
+    d44CompoundPublicationMachineV1(fixture);
+  const ready =
+    await mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalPlanPublicationReferenceCapabilityInternalV1(
+      {
+        ...fixture.mintInput,
+        compoundPublicationReferenceMachineCapability,
+        request: {
+          profile:
+            "provider_migration_same_installation_identity_current_strong_source_normal_formal_plan_publication_reference_request_v1",
+          preparedCatalogSuccessorRequest: fixture.request,
+          operationNonce:
+            options.operationNonce ?? LowerHex32V1Schema.parse("d4".repeat(16)),
+          expectedCurrentRegistryManifestPin:
+            currentCut.currentSteadyRegistryManifestPin,
+          expectedCurrentSupportCatalogPin:
+            currentCut.currentSupportCatalog,
+        },
+      },
+    );
+  return {
+    ...fixture,
+    compoundPublicationReferenceMachineCapability,
+    ready,
+  };
+}
+
+describe("D-44 formal Plan and compound publication reference integration", () => {
+  it("derives the formal Plan from a fresh D-43 and commits, then replays the same nonce byte-identically", async () => {
+    const operationNonce = LowerHex32V1Schema.parse("d4".repeat(16));
+    const firstFixture = await d43MintFixtureV1();
+    const machine = d44CompoundPublicationMachineV1(firstFixture);
+    const first = await d44OperationFixtureV1({
+      compoundPublicationReferenceMachineCapability: machine,
+      operationNonce,
+    });
+    const firstResult =
+      await diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalPlanPublicationReferenceCandidateInternalV1(
+        first.ready.buildInput,
+      );
+    expect(firstResult).toMatchObject({ ok: true });
+    if (!firstResult.ok) return;
+
+    const value = firstResult.value;
+    const independentlyDerived =
+      deriveProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalPlanReferenceCandidateV1(
+        value.preparedCatalogSuccessorClosure,
+      );
+    expect(independentlyDerived).toEqual(value.formalPlanClosure);
+    expect(value).toMatchObject({
+      authority:
+        "in_memory_reference_machine_only_no_production_provider_authority_v1",
+      durability: "in_memory_reference_only_not_a_durable_provider_v1",
+      replay: false,
+      stateRevision: 1,
+    });
+    expect(
+      value.formalPlanEnvelope.payload.candidateToFormalMigrationIdMapping,
+    ).toEqual(
+      value.preparedCatalogSuccessorClosure.preparedRegistrySuccessorClosure
+        .formalMigrationIdMapping,
+    );
+    expect(
+      value.formalPlanClosure.formalDestinationTrust
+        .preparedRegistryMemberOrdinal,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      value.formalPlanClosure.formalDestinationTrust
+        .preparedSupportCatalogTargetOrdinal,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      value.formalPlanClosure.formalDestinationTrust
+        .preparedSupportCatalogCandidateOrdinal,
+    ).toBeGreaterThanOrEqual(0);
+    expect(value.formalPlanClosure.formalDestinationTrust.candidate.providerId).toBe(
+      first.signedCatalog.destinationProviderId,
+    );
+    expect(value.formalReservationDescriptor).toEqual(
+      value.formalPlanEnvelope.payload.migrationHistoryQuotaReservations
+        .journal,
+    );
+    expect(value.formalPlanPin.contentDigest).toBe(
+      value.formalPlanEnvelope.contentDigest,
+    );
+    expect(value.formalPlanClosure.publicationState).toMatchObject({
+      state: "constructed_not_published_or_reserved",
+      reservationRecord: "none",
+      reservationToken: "none",
+      registryManifestPublication: "none",
+      catalogPublication: "none",
+      planPublication: "none",
+    });
+    expect(value.reservationRecord.descriptor).toEqual(
+      value.formalReservationDescriptor,
+    );
+    expect(value.currentRegistryManifestPin).toEqual(
+      first.signedRegistry.pin,
+    );
+    expect(value.currentSupportCatalogPin).toEqual(first.signedCatalog.pin);
+    expect(value.committedReceipt).toMatchObject({
+      status: "committed",
+      operationNonce,
+      publishedRegistryManifestPin: first.signedRegistry.pin,
+      publishedSupportCatalogPin: first.signedCatalog.pin,
+      publishedFormalPlanPin: value.formalPlanPin,
+    });
+
+    const replay = await d44OperationFixtureV1({
+      compoundPublicationReferenceMachineCapability: machine,
+      operationNonce,
+    });
+    const replayResult =
+      await diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalPlanPublicationReferenceCandidateInternalV1(
+        replay.ready.buildInput,
+      );
+    expect(replayResult.ok).toBe(true);
+    if (!replayResult.ok) return;
+    expect(replayResult.value.replay).toBe(true);
+    expect(replayResult.value.committedReceipt).toBe(value.committedReceipt);
+    expect(
+      canonicalizeJcsSafeIntegerV1(replayResult.value.committedReceipt),
+    ).toBe(canonicalizeJcsSafeIntegerV1(value.committedReceipt));
+  }, 180_000);
+
+  it("rejects a tampered formal Plan content digest derived from the fresh D-43 closure", async () => {
+    const operation = await d44OperationFixtureV1({});
+    const result =
+      await diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalPlanPublicationReferenceCandidateInternalV1(
+        operation.ready.buildInput,
+      );
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) return;
+    const tampered = cloneJsonV1(result.value.formalPlanClosure) as any;
+    tampered.formalPlanEnvelope.contentDigest = flipLastLowerHexV1(
+      tampered.formalPlanEnvelope.contentDigest,
+    );
+    expect(() =>
+      validateProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFormalPlanReferenceCandidateV1(
+        tampered,
+      ),
+    ).toThrow();
+  }, 120_000);
+});
+
+function d45AcceptanceMachineV1(): Promise<
+  ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineCapabilityInternalV1
+> {
+  return mintProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineInternalV1(
+    {
+      identityVerificationCapability: currentFixture.identityCapability,
+      initialState: currentFixture.d40.referenceState,
+      retainedNonAcceptanceTrustHistoryLogicalBytes: 0,
+    },
+  );
+}
+
+async function d45OperationFixtureV1(options: {
+  readonly compoundPublicationReferenceMachineCapability?:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalCompoundPublicationReferenceMachineCapabilityInternalV1;
+  readonly acceptanceReferenceMachineCapability?:
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineCapabilityInternalV1;
+  readonly acceptanceIdentityVerificationCapability?:
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceIdentityVerificationCapabilityV1;
+  readonly publicationOperationNonce?: ReturnType<typeof LowerHex32V1Schema.parse>;
+  readonly acceptanceOperationNonce?: ReturnType<typeof LowerHex32V1Schema.parse>;
+}) {
+  const fixture = await d43MintFixtureV1();
+  const currentCut =
+    fixture.expectedD41.destinationTrust.authorization
+      .prospectiveDestinationCut;
+  const compoundPublicationReferenceMachineCapability =
+    options.compoundPublicationReferenceMachineCapability ??
+    d44CompoundPublicationMachineV1(fixture);
+  const acceptanceReferenceMachineCapability =
+    options.acceptanceReferenceMachineCapability ??
+    await d45AcceptanceMachineV1();
+  const acceptanceIdentityVerificationCapability =
+    options.acceptanceIdentityVerificationCapability ??
+    currentFixture.identityCapability;
+  const ready =
+    await mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalMigrationOnlyAcceptanceReferenceCapabilityInternalV1(
+      {
+        ...fixture.mintInput,
+        acceptanceIdentityVerificationCapability:
+          acceptanceIdentityVerificationCapability,
+        acceptanceReferenceMachineCapability,
+        compoundPublicationReferenceMachineCapability,
+        request: {
+          profile:
+            "provider_migration_same_installation_identity_current_strong_source_normal_migration_only_acceptance_reference_request_v1",
+          formalPlanPublicationRequest: {
+            profile:
+              "provider_migration_same_installation_identity_current_strong_source_normal_formal_plan_publication_reference_request_v1",
+            preparedCatalogSuccessorRequest:
+              ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedCatalogSuccessorRequestReferenceCandidateV1Schema.parse(
+                fixture.request,
+              ),
+            operationNonce:
+              options.publicationOperationNonce ??
+              LowerHex32V1Schema.parse("f4".repeat(16)),
+            expectedCurrentRegistryManifestPin:
+              currentCut.currentSteadyRegistryManifestPin,
+            expectedCurrentSupportCatalogPin:
+              currentCut.currentSupportCatalog,
+          },
+          acceptanceOperationNonce:
+            options.acceptanceOperationNonce ??
+            LowerHex32V1Schema.parse("a5".repeat(16)),
+          acceptedAt: ProviderRegistryIsoTimestampV1Schema.parse(
+            "2026-08-15T01:00:02Z",
+          ),
+          resolvedAt: ProviderRegistryIsoTimestampV1Schema.parse(
+            "2026-08-15T01:00:03Z",
+          ),
+        },
+      },
+    );
+  return {
+    ...fixture,
+    compoundPublicationReferenceMachineCapability,
+    acceptanceReferenceMachineCapability,
+    acceptanceIdentityVerificationCapability,
+    ready,
+  };
+}
+
+async function endToEndRebindingExecutionFixtureV1(options: {
+  readonly invalidRebindingSignature?: boolean;
+  readonly invalidSourceDrainedSignature?: boolean;
+  readonly invalidSteadySignature?: boolean;
+} = {}) {
+  const fixture = await d45OperationFixtureV1({});
+  const signedRebinding =
+    buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedRebindingRegistrySuccessorFixture(
+      {
+        currentPreparedRegistryManifestEnvelope: fixture.signedRegistry.envelope,
+        invalidSignature: options.invalidRebindingSignature,
+      },
+    );
+  const activeRootKeyId =
+    fixture.signedRegistry.envelope.payload.activeRootMetadata.rootKeyId;
+  const activeRoot = distributionRawRequest.rootMetadataHistory.find(
+    (entry) => entry.payload.activeRoot.rootKeyId === activeRootKeyId,
+  )?.payload.activeRoot;
+  if (activeRoot === undefined) {
+    throw new TypeError("rebinding fixture requires the current active Root");
+  }
+  const externallySignedRebindingRegistryManifestSourceCapability =
+    mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedRebindingRegistryManifestSourceCapabilityInternalV1(
+      {
+        externallySignedManifestEnvelope: signedRebinding.envelope,
+        activeRoot,
+        strictCryptoCapability,
+      },
+    );
+  const signedSourceDrained =
+    buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedSourceDrainedRegistrySuccessorFixture(
+      {
+        currentRebindingRegistryManifestEnvelope: signedRebinding.envelope,
+        invalidSignature: options.invalidSourceDrainedSignature,
+      },
+    );
+  const externallySignedSourceDrainedRegistryManifestSourceCapability =
+    mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedSourceDrainedRegistryManifestSourceCapabilityInternalV1(
+      {
+        externallySignedManifestEnvelope: signedSourceDrained.envelope,
+        activeRoot,
+        strictCryptoCapability,
+      },
+    );
+  const signedSteady =
+    buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedSteadyRegistrySuccessorFixture(
+      {
+        currentSourceDrainedRegistryManifestEnvelope:
+          signedSourceDrained.envelope,
+        invalidSignature: options.invalidSteadySignature,
+      },
+    );
+  const externallySignedSteadyRegistryManifestSourceCapability =
+    mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalExternallySignedSteadyRegistryManifestSourceCapabilityInternalV1(
+      {
+        externallySignedManifestEnvelope: signedSteady.envelope,
+        activeRoot,
+        strictCryptoCapability,
+      },
+    );
+  return {
+    ...fixture,
+    signedRebinding,
+    externallySignedRebindingRegistryManifestSourceCapability,
+    signedSourceDrained,
+    externallySignedSourceDrainedRegistryManifestSourceCapability,
+    signedSteady,
+    externallySignedSteadyRegistryManifestSourceCapability,
+  };
+}
+
+describe("D-45 migration-only Acceptance compare-append reference integration", () => {
+  it("appends one strict identity-keyed migration-only Acceptance after D-44 and irreversibly retires the D-40 writer", async () => {
+    const fixture = await d45OperationFixtureV1({});
+    const result =
+      await diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalMigrationOnlyAcceptanceReferenceCandidateInternalV1(
+        fixture.ready.buildInput,
+      );
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) return;
+    const value = result.value;
+    const sourceReadClosure =
+      value.formalPlanPublicationClosure.formalPlanEnvelope.payload
+        .completeSourceReadClosure;
+    expect(value).toMatchObject({
+      authority:
+        "in_memory_reference_machine_only_no_production_provider_authority_v1",
+      durability: "in_memory_reference_only_not_a_durable_provider_v1",
+      relationship:
+        "committed_d44_publication_strict_migration_only_acceptance_compare_appended_v1",
+      acceptedRegistryManifestPin: fixture.signedRegistry.pin,
+      acceptedSupportCatalogPin: fixture.signedCatalog.pin,
+      sourceObjectCount: sourceReadClosure.objectCount,
+      sourceLogicalBytes: sourceReadClosure.logicalObjectBytesTotal,
+    });
+    expect(value.sourceObjectCount).toBeGreaterThanOrEqual(1);
+    expect(value.sourceLogicalBytes).toBeGreaterThanOrEqual(0);
+    expect(
+      value.migrationOnlyAcceptanceEnvelope.payload.configuration
+        .publishedTrustPins.registryManifest,
+    ).toEqual(fixture.signedRegistry.pin);
+    expect(
+      value.migrationOnlyAcceptanceEnvelope.payload.configuration
+        .publishedTrustPins.supportCatalog,
+    ).toEqual(fixture.signedCatalog.pin);
+    expect(value.configuration).toMatchObject({
+      state: "migration_only",
+      reason: "provider_decommission",
+      publicStrongWriter: { state: "disabled" },
+      formalPlanPin: value.formalPlanPublicationClosure.formalPlanPin,
+      executor: {
+        state: "enabled_for_plan_only",
+        formalMigrationId:
+          value.formalPlanPublicationClosure.formalPlanPin.formalMigrationId,
+      },
+    });
+    expect(value.migrationOnlyAcceptanceEnvelope.payload.acceptanceToken)
+      .toMatch(/^hmac-sha256:[0-9a-f]{64}$/);
+    expect(
+      value.configuration.publicStrongWriter.previousActiveWriterSelector
+        .selections.some(
+        (selection) =>
+          selection.providerId === fixture.signedCatalog.destinationProviderId,
+      ),
+    ).toBe(false);
+    expect(value.acceptanceCompareAppendReceipt).toMatchObject({
+      outcome: { state: "committed" },
+    });
+    expect(value.acceptanceReferenceState.migrationOnlyGenerations.at(-1)).toEqual(
+      value.migrationOnlyAcceptanceEnvelope,
+    );
+    expect(value.acceptanceReferenceState.currentAcceptance).toEqual(
+      value.migrationOnlyAcceptancePin,
+    );
+
+    const retiredTransaction = vi.fn(() => ({
+      classification: "candidate_invalid" as const,
+    }));
+    await expect(
+      executeProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineInternalV1(
+        {
+          identityVerificationCapability:
+            fixture.acceptanceIdentityVerificationCapability,
+          referenceMachineCapability:
+            fixture.acceptanceReferenceMachineCapability,
+          request: {
+            ...currentFixture.d40.acceptanceCompareAppendRequest,
+            operationNonce: LowerHex32V1Schema.parse("b8".repeat(16)),
+          },
+          resolvedAt: ProviderRegistryIsoTimestampV1Schema.parse(
+            "2026-08-15T01:00:04Z",
+          ),
+          transaction: retiredTransaction,
+        },
+      ),
+    ).rejects.toMatchObject({
+      stage: "reference_machine_capability",
+      reason: "capability_invalid",
+    });
+    expect(retiredTransaction).not.toHaveBeenCalled();
+  }, 180_000);
+
+  it("fails stale when another D-45 operation wins the irreversible D-40 handoff", async () => {
+    const base = await d43MintFixtureV1();
+    const compoundPublicationReferenceMachineCapability =
+      d44CompoundPublicationMachineV1(base);
+    const acceptanceReferenceMachineCapability =
+      await d45AcceptanceMachineV1();
+    const acceptanceIdentityVerificationCapability =
+      currentFixture.identityCapability;
+    const publicationOperationNonce = LowerHex32V1Schema.parse(
+      "f5".repeat(16),
+    );
+    const first = await d45OperationFixtureV1({
+      compoundPublicationReferenceMachineCapability,
+      acceptanceReferenceMachineCapability,
+      acceptanceIdentityVerificationCapability,
+      publicationOperationNonce,
+      acceptanceOperationNonce: LowerHex32V1Schema.parse("a6".repeat(16)),
+    });
+    const stale = await d45OperationFixtureV1({
+      compoundPublicationReferenceMachineCapability,
+      acceptanceReferenceMachineCapability,
+      acceptanceIdentityVerificationCapability,
+      publicationOperationNonce,
+      acceptanceOperationNonce: LowerHex32V1Schema.parse("a7".repeat(16)),
+    });
+    const firstResult =
+      await diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalMigrationOnlyAcceptanceReferenceCandidateInternalV1(
+        first.ready.buildInput,
+      );
+    if (!firstResult.ok) {
+      throw new TypeError(
+        `first D-45 failed: ${firstResult.stage}/${firstResult.reason}`,
+      );
+    }
+    const staleResult =
+      await diagnoseBuildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalMigrationOnlyAcceptanceReferenceCandidateInternalV1(
+        stale.ready.buildInput,
+      );
+    expect(staleResult).toMatchObject({
+      ok: false,
+      stage: "acceptance_handoff",
+      reason: "stale_expected_acceptance",
+    });
+  }, 300_000);
+});
+
+describe("same-Identity migration through final destination strong-ready", () => {
+  it("executes every exact formal-Plan object, seals terminal metadata, and activates only the destination strong writer", async () => {
+    const fixture = await endToEndRebindingExecutionFixtureV1();
+    const result =
+      await diagnoseProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalZeroLiveLifecycleReferenceOrchestratorInternalV1(
+        {
+          migrationOnlyAcceptanceBuildInput: fixture.ready.buildInput,
+          externallySignedRebindingRegistryManifestSourceCapability:
+            fixture.externallySignedRebindingRegistryManifestSourceCapability,
+          rebindingRegistryOperationNonce: LowerHex32V1Schema.parse(
+            "e4".repeat(16),
+          ),
+          executionOperationNonceSeed: LowerHex32V1Schema.parse(
+            "e5".repeat(16),
+          ),
+          externallySignedSourceDrainedRegistryManifestSourceCapability:
+            fixture.externallySignedSourceDrainedRegistryManifestSourceCapability,
+          sourceDrainedRegistryOperationNonce: LowerHex32V1Schema.parse(
+            "e8".repeat(16),
+          ),
+          externallySignedSteadyRegistryManifestSourceCapability:
+            fixture.externallySignedSteadyRegistryManifestSourceCapability,
+          steadyRegistryOperationNonce: LowerHex32V1Schema.parse(
+            "ea".repeat(16),
+          ),
+          terminalJournalOperationNonce: LowerHex32V1Schema.parse(
+            "ec".repeat(16),
+          ),
+          finalStrongReadyAcceptanceOperationNonce: LowerHex32V1Schema.parse(
+            "ee".repeat(16),
+          ),
+          finalStrongReadyAcceptedAt: ProviderRegistryIsoTimestampV1Schema.parse(
+            "2026-08-15T01:00:04Z",
+          ),
+          finalStrongReadyResolvedAt: ProviderRegistryIsoTimestampV1Schema.parse(
+            "2026-08-15T01:00:05Z",
+          ),
+        },
+      );
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) return;
+
+    const lifecycle = result.value;
+    const value = lifecycle.endToEndExecutionClosure;
+    const zeroLive = lifecycle.zeroLiveClosure;
+    const sourceDrained = lifecycle.sourceDrainedRegistrySuccessorClosure;
+    const steady = lifecycle.steadyRegistryCompletionClosure;
+    const sealed = lifecycle.terminalJournalSealedClosure;
+    const finalStrongReady = lifecycle.finalStrongReadyAcceptanceClosure;
+    const acceptance = value.migrationOnlyAcceptanceClosure;
+    const state = value.executionProgressState;
+    const plan = acceptance.formalPlanPublicationClosure.formalPlanEnvelope;
+    const objects = plan.payload.completeSourceReadClosure.objects;
+    const destinationEndpoint =
+      plan.payload.formalDestinationTrust.destinationEndpointTrust;
+    expect(destinationEndpoint.role).toBe(
+      "destination_prospective_not_selected",
+    );
+    if (destinationEndpoint.role !== "destination_prospective_not_selected") {
+      return;
+    }
+    const destination = destinationEndpoint.prospectiveWriterProjection;
+    expect(value).toMatchObject({
+      authority:
+        "in_memory_reference_machine_only_no_production_provider_authority_v1",
+      durability: "in_memory_reference_only_not_a_durable_provider_v1",
+      relationship:
+        "fresh_d43_committed_d44_strict_migration_only_d45_root_signed_rebinding_registry_plan_only_execution_completed_v1",
+    });
+    expect(value.rebindingRegistrySuccessorClosure).toMatchObject({
+      relationship:
+        "externally_root_signed_rebinding_registry_direct_successor_compound_cas_published_current_v1",
+      rebindingRegistryManifestEnvelope: fixture.signedRebinding.envelope,
+      rebindingRegistryManifestPin: fixture.signedRebinding.pin,
+      currentRegistryManifestEnvelope: fixture.signedRebinding.envelope,
+      currentRegistryManifestPin: fixture.signedRebinding.pin,
+      registryManifestPublicationCount: 1,
+      registryPublicationReceipt: {
+        routingPhase: "rebinding",
+        activeForMigrationWrites:
+          fixture.signedRebinding.destinationProviderId,
+      },
+    });
+    expect(
+      acceptance.migrationOnlyAcceptanceEnvelope.payload.configuration,
+    ).toMatchObject({
+      state: "migration_only",
+      publicStrongWriter: { state: "disabled" },
+      formalPlanPin: acceptance.formalPlanPublicationClosure.formalPlanPin,
+      executor: {
+        state: "enabled_for_plan_only",
+        formalMigrationId:
+          acceptance.formalPlanPublicationClosure.formalPlanPin
+            .formalMigrationId,
+      },
+    });
+    expect(
+      acceptance.migrationOnlyAcceptanceEnvelope.payload.acceptanceToken,
+    ).toMatch(/^hmac-sha256:[0-9a-f]{64}$/);
+    expect(objects.length).toBeGreaterThanOrEqual(1);
+    expect(state.highWater).toMatchObject({
+      phase: "completed",
+      progressRevision: objects.length + 3,
+      sourceObjectCount: objects.length,
+      copiedObjectCount: objects.length,
+      remainingSourceObjectCount: 0,
+      sourceLogicalBytes: acceptance.sourceLogicalBytes,
+      copiedLogicalBytes: acceptance.sourceLogicalBytes,
+      destinationObjectPublicationCount: objects.length,
+    });
+    expect(state.destinationPublicationMode).toBe(
+      "metadata_only_in_memory_reference_no_external_destination_write_v1",
+    );
+    expect(state.destinationObjectPublications).toHaveLength(objects.length);
+    for (let ordinal = 0; ordinal < objects.length; ordinal += 1) {
+      const source = objects[ordinal]!;
+      const publication = state.destinationObjectPublications[ordinal]!;
+      expect(publication).toMatchObject({
+        resolution: "committed",
+        publicationOrdinal: ordinal,
+        sourceObjectOrdinal: ordinal,
+        sourceContentDigest: source.contentDigest,
+        sourceSemanticLocatorDigest: source.semanticLocatorDigest,
+        sourceLogicalLocatorReferenceDigest:
+          source.logicalLocatorReferenceDigest,
+        sourceProviderBindingReferenceDigest:
+          source.providerBindingReferenceDigest,
+        sourceLogicalBytes: source.logicalBytes,
+        destinationProviderId: destination.providerId,
+        destinationProviderBinding: {
+          targetProfileId: destination.targetProfileId,
+          providerId: destination.providerId,
+          registryEntryContentDigest:
+            destination.registryEntryContentDigest,
+          semanticProviderPolicyDigest:
+            destination.semanticProviderPolicyDigest,
+        },
+        formalMigrationId: plan.payload.migrationId,
+        formalPlanPin: acceptance.formalPlanPublicationClosure.formalPlanPin,
+      });
+    }
+    expect(value.terminalReceipt).toBe(state.receipts.at(-1));
+    expect(value.terminalReceipt).toMatchObject({
+      progressRecord: {
+        transition: "complete_execution",
+        phase: "completed",
+      },
+      destinationObjectPublication: "none",
+    });
+    expect(lifecycle).toMatchObject({
+      authority:
+        "in_memory_reference_machine_only_no_production_provider_authority_v1",
+      durability: "in_memory_reference_only_not_a_durable_provider_v1",
+      relationship:
+        "fresh_d43_d44_strict_d45_root_signed_rebinding_execution_completed_destination_universe_zero_live_root_signed_source_drained_root_signed_steady_registry_terminal_journal_sealed_final_destination_strong_ready_v1",
+    });
+    expect(zeroLive).toMatchObject({
+      relationship:
+        "exact_completed_execution_forms_destination_universe_and_zero_live_metadata_proof_v1",
+      currentRegistryManifestEnvelope: fixture.signedRebinding.envelope,
+      currentRegistryManifestPin: fixture.signedRebinding.pin,
+      sourceProviderId: fixture.signedRebinding.sourceProviderId,
+      destinationProviderId: fixture.signedRebinding.destinationProviderId,
+      remainingSourceLiveOrdinals: [],
+      completeDestinationPublicationReceiptSet: {
+        receiptCount: objects.length,
+      },
+      destinationUniverseMetadata: {
+        destinationProviderId: fixture.signedRebinding.destinationProviderId,
+        objectCount: objects.length,
+        logicalObjectBytesTotal: acceptance.sourceLogicalBytes,
+      },
+      zeroLiveReferenceProof: {
+        sourceObjectCount: objects.length,
+        migratedObjectCount: objects.length,
+        remainingSourceLiveObjectCount: 0,
+        remainingSourceLiveOrdinals: [],
+        remainingSourceLiveReferenceCount: 0,
+      },
+    });
+    expect(zeroLive.executionCompletedState).toBe(state);
+    expect(zeroLive.terminalProgressReceipt).toBe(value.terminalReceipt);
+    expect(zeroLive.completeDestinationPublicationReceiptSet.receipts).toBe(
+      state.destinationObjectPublications,
+    );
+    expect(sourceDrained).toMatchObject({
+      relationship:
+        "exact_zero_live_externally_root_signed_source_drained_registry_direct_successor_compound_cas_published_current_v1",
+      sourceDrainedRegistryManifestEnvelope:
+        fixture.signedSourceDrained.envelope,
+      sourceDrainedRegistryManifestPin: fixture.signedSourceDrained.pin,
+      currentRegistryManifestEnvelope: fixture.signedSourceDrained.envelope,
+      currentRegistryManifestPin: fixture.signedSourceDrained.pin,
+      registryManifestPublicationCount: 1,
+      registryPublicationReceipt: {
+        routingPhase: "source_drained",
+        activeForMigrationWrites:
+          fixture.signedSourceDrained.destinationProviderId,
+      },
+    });
+    expect(sourceDrained.zeroLiveClosure).toBe(zeroLive);
+    expect(steady).toMatchObject({
+      relationship:
+        "exact_source_drained_externally_root_signed_steady_registry_direct_successor_compound_cas_published_current_v1",
+      sourceDrainedRegistrySuccessorClosure: sourceDrained,
+      candidateValidation: {
+        sourceMemberTombstoneDisposition: "revoked_migration_completed",
+        destinationOnlyEnabledMember: true,
+        registryManifestPublicationCount: 0,
+      },
+      steadyRegistryManifestEnvelope: fixture.signedSteady.envelope,
+      steadyRegistryManifestPin: fixture.signedSteady.pin,
+      currentRegistryManifestEnvelope: fixture.signedSteady.envelope,
+      currentRegistryManifestPin: fixture.signedSteady.pin,
+      currentSupportCatalogPin: zeroLive.currentSupportCatalogPin,
+      formalPlanPin: zeroLive.formalPlanPin,
+      terminalProgressReceipt: value.terminalReceipt,
+      sourceMemberTombstoneDisposition: "revoked_migration_completed",
+      destinationOnlyEnabledMember: true,
+      registryManifestPublicationCount: 1,
+      registryPublicationReceipt: {
+        routingPhase: "steady",
+        activeForMigrationWrites: fixture.signedSteady.destinationProviderId,
+      },
+    });
+    expect(steady.sourceDrainedRegistrySuccessorClosure).toBe(sourceDrained);
+    const compoundState =
+      inspectProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalCompoundPublicationReferenceMachineInternalV1(
+        fixture.compoundPublicationReferenceMachineCapability,
+      );
+    expect(compoundState.currentRegistryManifestEnvelope).toStrictEqual(
+      fixture.signedSteady.envelope,
+    );
+    expect(compoundState.currentRegistryManifestPin).toStrictEqual(
+      fixture.signedSteady.pin,
+    );
+    expect(compoundState.currentRegistryManifestEnvelope.payload.routing).toEqual({
+      state: "steady",
+    });
+    expect(compoundState.registrySuccessorPublicationReceipts).toHaveLength(3);
+    expect(sealed).toMatchObject({
+      authority:
+        "in_memory_metadata_reference_only_no_real_provider_bytes_or_io_proof_v1",
+      durability:
+        "in_memory_terminal_journal_reference_only_not_a_durable_provider_v1",
+      relationship:
+        "exact_steady_registry_source_tombstone_ready_to_activate_and_progress_head_atomically_sealed_v1",
+      steadyRegistryCompletion: steady,
+      sourceTombstoneRecord: {
+        journalOrdinal: 1,
+        sourceProviderId: fixture.signedSteady.sourceProviderId,
+        steadyRegistryManifestPin: fixture.signedSteady.pin,
+        reason: "migration_completed",
+      },
+      readyToActivateRecord: {
+        journalOrdinal: 2,
+        state: "ready_to_activate",
+        destinationProviderId: fixture.signedSteady.destinationProviderId,
+        steadyRegistryManifestPin: fixture.signedSteady.pin,
+        formalPlanPin: zeroLive.formalPlanPin,
+      },
+      sealedProgressHead: {
+        journalOrdinal: 3,
+        state: "sealed",
+        journalRevision: 1,
+        steadyRegistryManifestPin: fixture.signedSteady.pin,
+        formalPlanPin: zeroLive.formalPlanPin,
+      },
+      terminalJournalReceipt: {
+        status: "committed",
+        operationNonce: LowerHex32V1Schema.parse("ec".repeat(16)),
+        previousJournalRevision: 0,
+        committedJournalRevision: 1,
+      },
+      currentRegistryManifestEnvelope: fixture.signedSteady.envelope,
+      currentRegistryManifestPin: fixture.signedSteady.pin,
+      currentSupportCatalogPin: zeroLive.currentSupportCatalogPin,
+      formalPlanPin: zeroLive.formalPlanPin,
+      terminalProgressReceipt: value.terminalReceipt,
+      journalRevision: 1,
+      strongWriterPublicationCount: 0,
+      acceptancePublicationCount: 0,
+    });
+    expect(sealed.steadyRegistryCompletion).toBe(steady);
+    expect(finalStrongReady).toMatchObject({
+      relationship:
+        "exact_terminal_sealed_new_destination_writer_final_strong_ready_acceptance_compare_appended_v1",
+      sealedTerminalJournal: sealed,
+      destinationProviderId: fixture.signedSteady.destinationProviderId,
+      sourceWriterRetired: true,
+      migrationOnlyWriterRetired: true,
+      destinationOnlyPublicStrongWriter: true,
+      finalSteadyRegistryAndCatalogBound: true,
+      formalPlanAndTerminalSealBound: true,
+      acceptancePublicationCount: 1,
+      publicStrongWriterPublicationCount: 1,
+      finalStrongReadyAcceptanceEnvelope: {
+        payload: {
+          configuration: {
+            state: "strong_ready",
+            core: {
+              providerRegistryManifest: fixture.signedSteady.pin,
+              providerSupportCatalog: zeroLive.currentSupportCatalogPin,
+              activeWriterSelector: {
+                selections: [
+                  {
+                    providerId: fixture.signedSteady.destinationProviderId,
+                  },
+                ],
+              },
+            },
+            activation: {
+              origin: "provider_migration_terminal_sealed_success_v1",
+              formalMigrationId: sealed.formalMigrationId,
+              formalPlanPin: sealed.formalPlanPin,
+              terminalProgressReceiptContentDigest:
+                sealed.terminalProgressReceipt.receiptContentDigest,
+              terminalJournalReceiptContentDigest:
+                sealed.terminalJournalReceiptContentDigest,
+              sourceTombstoneRecordContentDigest:
+                sealed.sourceTombstoneRecord.contentDigest,
+              readyToActivateRecordContentDigest:
+                sealed.readyToActivateRecord.contentDigest,
+              sealedProgressHeadContentDigest:
+                sealed.sealedProgressHead.contentDigest,
+            },
+          },
+        },
+      },
+      acceptanceCompareAppendReceipt: {
+        operationNonce: LowerHex32V1Schema.parse("ee".repeat(16)),
+        resolvedAt: ProviderRegistryIsoTimestampV1Schema.parse(
+          "2026-08-15T01:00:05Z",
+        ),
+        outcome: {
+          state: "committed",
+        },
+      },
+      acceptanceReferenceState: {
+        acceptancePublicationCount: 1,
+      },
+    });
+    expect(finalStrongReady.sealedTerminalJournal).toBe(sealed);
+    expect(
+      finalStrongReady.acceptanceCompareAppendReceipt.outcome.state,
+    ).toBe("committed");
+    const destinationWriterContinuation =
+      takeProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFinalDestinationStrongWriterContinuationInternalV1(
+        finalStrongReady,
+      );
+    expect(destinationWriterContinuation).toMatchObject({
+      finalStrongReadyAcceptance: finalStrongReady,
+      acceptanceStateEnvelope:
+        finalStrongReady.finalStrongReadyAcceptanceEnvelope,
+      acceptanceGenerationPin: finalStrongReady.finalStrongReadyAcceptancePin,
+      destinationProviderId: fixture.signedSteady.destinationProviderId,
+    });
+    expect(
+      takeProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalFinalDestinationStrongWriterContinuationInternalV1(
+        finalStrongReady,
+      ),
+    ).toBeUndefined();
+  }, 300_000);
+
+  it("rejects an invalid steady Root signature while the source-drained Registry tip remains current", async () => {
+    const fixture = await endToEndRebindingExecutionFixtureV1({
+      invalidSteadySignature: true,
+    });
+    const result =
+      await diagnoseProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalZeroLiveLifecycleReferenceOrchestratorInternalV1(
+        {
+          migrationOnlyAcceptanceBuildInput: fixture.ready.buildInput,
+          externallySignedRebindingRegistryManifestSourceCapability:
+            fixture.externallySignedRebindingRegistryManifestSourceCapability,
+          rebindingRegistryOperationNonce: LowerHex32V1Schema.parse(
+            "e6".repeat(16),
+          ),
+          executionOperationNonceSeed: LowerHex32V1Schema.parse(
+            "e7".repeat(16),
+          ),
+          externallySignedSourceDrainedRegistryManifestSourceCapability:
+            fixture.externallySignedSourceDrainedRegistryManifestSourceCapability,
+          sourceDrainedRegistryOperationNonce: LowerHex32V1Schema.parse(
+            "e9".repeat(16),
+          ),
+          externallySignedSteadyRegistryManifestSourceCapability:
+            fixture.externallySignedSteadyRegistryManifestSourceCapability,
+          steadyRegistryOperationNonce: LowerHex32V1Schema.parse(
+            "eb".repeat(16),
+          ),
+          terminalJournalOperationNonce: LowerHex32V1Schema.parse(
+            "ed".repeat(16),
+          ),
+          finalStrongReadyAcceptanceOperationNonce: LowerHex32V1Schema.parse(
+            "ef".repeat(16),
+          ),
+          finalStrongReadyAcceptedAt: ProviderRegistryIsoTimestampV1Schema.parse(
+            "2026-08-15T01:00:06Z",
+          ),
+          finalStrongReadyResolvedAt: ProviderRegistryIsoTimestampV1Schema.parse(
+            "2026-08-15T01:00:07Z",
+          ),
+        },
+      );
+    expect(result).toEqual({
+      ok: false,
+      stage: "steady_registry",
+      reason: "signature_invalid",
+      upstreamStage: "steady_candidate",
+    });
+    const compoundState =
+      inspectProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalCompoundPublicationReferenceMachineInternalV1(
+        fixture.compoundPublicationReferenceMachineCapability,
+      );
+    expect(compoundState.currentRegistryManifestEnvelope).toStrictEqual(
+      fixture.signedSourceDrained.envelope,
+    );
+    expect(compoundState.currentRegistryManifestPin).toStrictEqual(
+      fixture.signedSourceDrained.pin,
+    );
+    expect(compoundState.currentRegistryManifestEnvelope.payload.routing)
+      .toMatchObject({
+        state: "migration",
+        phase: "source_drained",
+        activeForMigrationWrites:
+          fixture.signedSourceDrained.destinationProviderId,
+      });
+    expect(compoundState.registrySuccessorPublicationReceipts).toHaveLength(2);
+  }, 300_000);
+});
+
+/**
+ * Minimal contracts-side seam smoke for the first durable vertical slice.
+ * The host below deliberately keeps object bytes in-memory; the runtime/client
+ * package tests cover the separate-process filesystem implementation. This
+ * test proves that the lifecycle result itself drives object reads/writes and
+ * all four durable CAS phases, including a real stale revision rejection.
+ */
+function durableExecutionSmokeHostV1(input: {
+  readonly sourceProviderId: string;
+  readonly destinationProviderId: string;
+  readonly initialRevision?: number;
+}): {
+  readonly host: ProviderMigrationDurableExecutionHostCapabilityInternalV1;
+  readonly phases: string[];
+  readonly reads: ProviderRuntimeIpcFixedObjectLocatorV1[];
+  readonly writes: Array<{
+    readonly locator: ProviderRuntimeIpcFixedObjectLocatorV1;
+    readonly logicalBytes: number;
+    readonly bytes: string;
+  }>;
+} {
+  let revision = input.initialRevision ?? 0;
+  let currentPhase = "uninitialized";
+  let currentOperationNonce: string | "none" = "none";
+  let currentArtifacts: Record<string, ProviderRuntimeIpcJsonValueV1> = {};
+  const phases: string[] = [];
+  const reads: ProviderRuntimeIpcFixedObjectLocatorV1[] = [];
+  const writes: Array<{
+    readonly locator: ProviderRuntimeIpcFixedObjectLocatorV1;
+    readonly logicalBytes: number;
+    readonly bytes: string;
+  }> = [];
+  const logicalBytesByDigestSuffix: Readonly<Record<string, number>> = {
+    "4": 10,
+    "5": 20,
+    "6": 30,
+    "7": 40,
+  };
+  const state = (): ProviderRuntimeIpcCompareCommitResultV1["state"] => ({
+    profile: "provider_runtime_durable_journal_state_v1",
+    revision,
+    phase: currentPhase,
+    operationNonce: currentOperationNonce as never,
+    mutationDigest:
+      revision === (input.initialRevision ?? 0)
+        ? "none"
+        : digestV1("d"),
+    artifacts: currentArtifacts,
+  });
+  const host: ProviderMigrationDurableExecutionHostCapabilityInternalV1 = {
+    profile: "provider_migration_durable_execution_host_capability_v1",
+    sourceProviderId: input.sourceProviderId,
+    destinationProviderId: input.destinationProviderId,
+    async readSourceObject(locator) {
+      expect(locator.providerId).toBe(input.sourceProviderId);
+      reads.push(locator);
+      const suffix = locator.contentDigest.slice(-1);
+      const logicalBytes = logicalBytesByDigestSuffix[suffix] ?? 0;
+      const bytes = Buffer.alloc(logicalBytes, suffix.charCodeAt(0));
+      const encodedBytes = CanonicalByteStringV1Schema.parse(
+        `base64url:${bytes.toString("base64url")}`,
+      );
+      return {
+        operation: "read_object" as const,
+        locator,
+        logicalBytes,
+        bytes: encodedBytes,
+        // The contracts orchestrator delegates byte/digest verification to the
+        // selected Provider host; the runtime integration tests exercise the
+        // cryptographic verification in the real host.
+        verifiedContentDigest: locator.contentDigest,
+      } satisfies ProviderRuntimeIpcReadObjectResultV1;
+    },
+    async writeDestinationObject(value) {
+      expect(value.locator.providerId).toBe(input.destinationProviderId);
+      writes.push(value);
+      return {
+        operation: "write_object" as const,
+        resolution: "committed" as const,
+        locator: value.locator,
+        logicalBytes: value.logicalBytes,
+        verifiedContentDigest: value.locator.contentDigest,
+      } satisfies ProviderRuntimeIpcWriteObjectResultV1;
+    },
+    async compareCommitDestinationJournal(value) {
+      phases.push(value.phase);
+      if (value.expectedRevision !== revision) {
+        return {
+          operation: "compare_commit" as const,
+          resolution: "stale" as const,
+          state: state(),
+        } satisfies ProviderRuntimeIpcCompareCommitResultV1;
+      }
+      revision += 1;
+      currentPhase = value.phase;
+      currentOperationNonce = value.operationNonce;
+      currentArtifacts = value.artifacts;
+      return {
+        operation: "compare_commit" as const,
+        resolution: "committed" as const,
+        state: state(),
+      } satisfies ProviderRuntimeIpcCompareCommitResultV1;
+    },
+  };
+  return { host, phases, reads, writes };
+}
+
+describe("durable migration orchestrator vertical smoke", () => {
+  it("runs lifecycle, copies the formal-Plan objects, and commits four durable phases", async () => {
+    const fixture = await endToEndRebindingExecutionFixtureV1();
+    const smoke = durableExecutionSmokeHostV1({
+      sourceProviderId: fixture.signedRebinding.sourceProviderId,
+      destinationProviderId: fixture.signedRebinding.destinationProviderId,
+    });
+    const result = await runProviderMigrationDurableExecutionV1({
+      lifecycleInput: {
+        migrationOnlyAcceptanceBuildInput: fixture.ready.buildInput,
+        externallySignedRebindingRegistryManifestSourceCapability:
+          fixture.externallySignedRebindingRegistryManifestSourceCapability,
+        rebindingRegistryOperationNonce: LowerHex32V1Schema.parse(
+          "31".repeat(16),
+        ),
+        executionOperationNonceSeed: LowerHex32V1Schema.parse("32".repeat(16)),
+        externallySignedSourceDrainedRegistryManifestSourceCapability:
+          fixture.externallySignedSourceDrainedRegistryManifestSourceCapability,
+        sourceDrainedRegistryOperationNonce: LowerHex32V1Schema.parse(
+          "33".repeat(16),
+        ),
+        externallySignedSteadyRegistryManifestSourceCapability:
+          fixture.externallySignedSteadyRegistryManifestSourceCapability,
+        steadyRegistryOperationNonce: LowerHex32V1Schema.parse("34".repeat(16)),
+        terminalJournalOperationNonce: LowerHex32V1Schema.parse("35".repeat(16)),
+        finalStrongReadyAcceptanceOperationNonce: LowerHex32V1Schema.parse(
+          "36".repeat(16),
+        ),
+        finalStrongReadyAcceptedAt: ProviderRegistryIsoTimestampV1Schema.parse(
+          "2026-08-15T01:01:04Z",
+        ),
+        finalStrongReadyResolvedAt: ProviderRegistryIsoTimestampV1Schema.parse(
+          "2026-08-15T01:01:05Z",
+        ),
+      },
+      durableHost: smoke.host,
+      expectedDurableJournalRevision: 0,
+      durableOperationNonceSeed: LowerHex32V1Schema.parse("37".repeat(16)),
+    });
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) return;
+    expect(smoke.phases).toEqual([
+      "migration_only_rebinding_prepared",
+      "execution_completed",
+      "terminal_journal_sealed",
+      "final_strong_ready",
+    ]);
+    expect(smoke.reads.length).toBeGreaterThanOrEqual(1);
+    expect(smoke.writes.length).toBe(smoke.reads.length);
+    expect(result.value.copiedObjectCount).toBe(smoke.writes.length);
+    expect(result.value.finalJournalRevision).toBe(4);
+    expect(result.value.finalJournalPhase).toBe("final_strong_ready");
+  }, 300_000);
+
+  it("returns a durable stale result before copying when the journal revision moved", async () => {
+    const fixture = await endToEndRebindingExecutionFixtureV1();
+    const smoke = durableExecutionSmokeHostV1({
+      sourceProviderId: fixture.signedRebinding.sourceProviderId,
+      destinationProviderId: fixture.signedRebinding.destinationProviderId,
+      initialRevision: 1,
+    });
+    const result = await runProviderMigrationDurableExecutionV1({
+      lifecycleInput: {
+        migrationOnlyAcceptanceBuildInput: fixture.ready.buildInput,
+        externallySignedRebindingRegistryManifestSourceCapability:
+          fixture.externallySignedRebindingRegistryManifestSourceCapability,
+        rebindingRegistryOperationNonce: LowerHex32V1Schema.parse(
+          "41".repeat(16),
+        ),
+        executionOperationNonceSeed: LowerHex32V1Schema.parse("42".repeat(16)),
+        externallySignedSourceDrainedRegistryManifestSourceCapability:
+          fixture.externallySignedSourceDrainedRegistryManifestSourceCapability,
+        sourceDrainedRegistryOperationNonce: LowerHex32V1Schema.parse(
+          "43".repeat(16),
+        ),
+        externallySignedSteadyRegistryManifestSourceCapability:
+          fixture.externallySignedSteadyRegistryManifestSourceCapability,
+        steadyRegistryOperationNonce: LowerHex32V1Schema.parse("44".repeat(16)),
+        terminalJournalOperationNonce: LowerHex32V1Schema.parse("45".repeat(16)),
+        finalStrongReadyAcceptanceOperationNonce: LowerHex32V1Schema.parse(
+          "46".repeat(16),
+        ),
+        finalStrongReadyAcceptedAt: ProviderRegistryIsoTimestampV1Schema.parse(
+          "2026-08-15T01:02:04Z",
+        ),
+        finalStrongReadyResolvedAt: ProviderRegistryIsoTimestampV1Schema.parse(
+          "2026-08-15T01:02:05Z",
+        ),
+      },
+      durableHost: smoke.host,
+      expectedDurableJournalRevision: 0,
+      durableOperationNonceSeed: LowerHex32V1Schema.parse("47".repeat(16)),
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      stage: "journal_compare_commit",
+      reason: "stale_expected_journal",
+      observedJournalRevision: 1,
+    });
+    expect(smoke.phases).toEqual(["migration_only_rebinding_prepared"]);
+    expect(smoke.reads).toHaveLength(0);
+    expect(smoke.writes).toHaveLength(0);
+  }, 300_000);
 });

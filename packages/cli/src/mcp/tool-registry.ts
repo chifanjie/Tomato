@@ -1,11 +1,17 @@
 import {
+  CheckChangeInputV1Schema,
+  RecordVerificationInputV1Schema,
+} from "@understand-code/contracts";
+import {
   BuildTaskBriefInputV1Schema,
   BuildTaskBriefOutputV1Schema,
+  CheckChangeOutputV1Schema,
   GetRepoPulseInputV1Schema,
   GetRepoPulseOutputV1Schema,
   GetTaskBriefInputV1Schema,
   GetTaskBriefOutputV1Schema,
   McpToolErrorResultV1Schema,
+  RecordVerificationOutputV1Schema,
 } from "@understand-code/contracts/mcp";
 import { z } from "zod";
 
@@ -21,12 +27,18 @@ const descriptions: Readonly<Record<ImplementedToolName, string>> = {
     "Create or idempotently resume a managed Task Brief from published repository context.",
   get_task_brief:
     "Read one paginated section of a managed Task Brief.",
+  check_change:
+    "Compare the persisted Task plan with the current Repository Snapshot and append a Change Check.",
+  record_verification:
+    "Append an externally executed Verification result to the current Task revision.",
 };
 
 const inputSchemas = {
   get_repo_pulse: GetRepoPulseInputV1Schema,
   build_task_brief: BuildTaskBriefInputV1Schema,
   get_task_brief: GetTaskBriefInputV1Schema,
+  check_change: CheckChangeInputV1Schema,
+  record_verification: RecordVerificationInputV1Schema,
 } as const;
 
 const outputSchemas = {
@@ -40,6 +52,14 @@ const outputSchemas = {
   ]),
   get_task_brief: z.union([
     GetTaskBriefOutputV1Schema.shape.structuredContent,
+    McpToolErrorResultV1Schema.shape.structuredContent,
+  ]),
+  check_change: z.union([
+    CheckChangeOutputV1Schema.shape.structuredContent,
+    McpToolErrorResultV1Schema.shape.structuredContent,
+  ]),
+  record_verification: z.union([
+    RecordVerificationOutputV1Schema.shape.structuredContent,
     McpToolErrorResultV1Schema.shape.structuredContent,
   ]),
 } as const;

@@ -5,14 +5,17 @@ import { pathToFileURL } from "node:url";
 
 import {
   BuildTaskBriefOutputV1Schema,
+  CheckChangeOutputV1Schema,
   GetRepoPulseOutputV1Schema,
   GetTaskBriefOutputV1Schema,
   McpToolErrorResultV1Schema,
+  RecordVerificationOutputV1Schema,
 } from "@understand-code/contracts/mcp";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { resolveInitialBinding } from "../src/binding/root-binding.js";
 import { McpStdioServer } from "../src/mcp/server.js";
+import { openRuntime } from "../src/runtime/context.js";
 import {
   cleanupTemporaryDirectories,
   createGitRepository,
@@ -66,7 +69,7 @@ async function initialize(
 }
 
 describe("MCP lifecycle and real handlers", () => {
-  it("initializes, lists only three tools, and runs the Pulse/Brief vertical slice", async () => {
+  it("initializes, lists the implemented tools, and runs the Pulse/Brief vertical slice", async () => {
     const root = await createGitRepository();
     const sourceBefore = await readSourceFixture(root);
     const repositoryBefore = await snapshotRepositoryFiles(root);
@@ -83,6 +86,8 @@ describe("MCP lifecycle and real handlers", () => {
       "get_repo_pulse",
       "build_task_brief",
       "get_task_brief",
+      "check_change",
+      "record_verification",
     ]);
     expect(
       harness.response(2).result.tools.every(
@@ -168,6 +173,190 @@ describe("MCP lifecycle and real handlers", () => {
     expect(await snapshotRepositoryFiles(root)).toEqual(repositoryBefore);
     expect(await git(root, ["diff", "--", "src/task.ts"])).toBe("");
 
+    // The MCP surface is intentionally read/record-only for this slice; use
+    // the same bound Task Engine to advance the fixture into its check gate,
+    // then exercise the real public check_change and record_verification
+    // handlers through JSON-RPC.
+    const runtime = await openRuntime(root);
+    const taskId = built.structuredContent.result.task.taskId;
+    const actor = "agent:cli-test";
+    const taskAuth = {
+      actor,
+      repositoryId: runtime.store.repositoryId,
+      worktreeId: runtime.store.worktreeId,
+      capabilities: [
+        "task:update",
+        "task:confirm",
+        "task:accept",
+      ] as const,
+    };
+    let taskRevision = built.structuredContent.result.task.revision;
+    const transitions = [
+      {
+        action: {
+          type: "confirm_goal" as const,
+          claimId: built.structuredContent.result.brief.goalClaimId,
+        },
+        key: "cli-ci-confirm-goal",
+      },
+      {
+        action: {
+          type: "confirm_acceptance_criteria" as const,
+          claimIds: built.structuredContent.result.brief.acceptanceClaimIds,
+        },
+        key: "cli-ci-confirm-acceptance",
+      },
+      {
+        action: {
+          type: "confirm_plan" as const,
+          plannedChangeIds: built.structuredContent.result.brief.plannedChanges.map(
+            (change) => change.id,
+          ),
+        },
+        key: "cli-ci-confirm-plan",
+      },
+      {
+        action: { type: "transition_status" as const, to: "planned" as const },
+        key: "cli-ci-planned",
+      },
+      {
+        action: {
+          type: "transition_status" as const,
+          to: "in_progress" as const,
+        },
+        key: "cli-ci-progress",
+      },
+      {
+        action: {
+          type: "transition_status" as const,
+          to: "check_required" as const,
+        },
+        key: "cli-ci-check-required",
+      },
+    ];
+    for (const transition of transitions) {
+      const mutation = await runtime.taskEngine.updateTask(
+        {
+          taskId,
+          action: transition.action,
+          expectedRevision: taskRevision,
+          idempotencyKey: transition.key,
+          actor,
+        },
+        taskAuth,
+      );
+      taskRevision = mutation.task.revision;
+    }
+    await harness.server.handleValue({
+      jsonrpc: "2.0",
+      id: 7,
+      method: "tools/call",
+      params: {
+        name: "check_change",
+        arguments: {
+          taskId,
+          includeWorktree: true,
+          expectedRevision: taskRevision,
+          idempotencyKey: "cli-ci-check",
+          actor,
+        },
+      },
+    });
+    const checked = CheckChangeOutputV1Schema.parse(harness.response(7).result);
+    expect(checked.structuredContent.result.changeCheck.taskId).toBe(taskId);
+    expect(checked.structuredContent.result.changeCheck.taskRevision).toBe(
+      checked.structuredContent.result.mutation.revision,
+    );
+    taskRevision = checked.structuredContent.result.mutation.revision;
+    for (const finding of checked.structuredContent.result.changeCheck.findings.filter(
+      (candidate) => candidate.blocking,
+    )) {
+      const accepted = await runtime.taskEngine.updateTask(
+        {
+          taskId,
+          action: {
+            type: "accept_finding",
+            findingId: finding.id,
+            reason: "CLI Change Intelligence focused fixture.",
+          },
+          expectedRevision: taskRevision,
+          idempotencyKey: `cli-ci-accept-${finding.id}`,
+          actor,
+        },
+        taskAuth,
+      );
+      taskRevision = accepted.task.revision;
+    }
+    const verificationGate = await runtime.taskEngine.updateTask(
+      {
+        taskId,
+        action: {
+          type: "transition_status",
+          to: "verification_required",
+        },
+        expectedRevision: taskRevision,
+        idempotencyKey: "cli-ci-verification-required",
+        actor,
+      },
+      taskAuth,
+    );
+    const planEntry = built.structuredContent.result.brief.verificationPlan[0]!;
+    await harness.server.handleValue({
+      jsonrpc: "2.0",
+      id: 8,
+      method: "tools/call",
+      params: {
+        name: "record_verification",
+        arguments: {
+          taskId,
+          record: {
+            verificationPlanEntryId: planEntry.id,
+            kind: planEntry.method,
+            status: "failed",
+            command: "pnpm test",
+            exitCode: 1,
+            summary: "CLI focused verification failure.",
+            claimIds: planEntry.acceptanceClaimIds,
+            snapshotId: checked.structuredContent.meta.sourceSnapshotId,
+          },
+          expectedRevision: verificationGate.task.revision,
+          idempotencyKey: "cli-ci-verification",
+          actor,
+        },
+      },
+    });
+    const recorded = RecordVerificationOutputV1Schema.parse(
+      harness.response(8).result,
+    );
+    expect(recorded.structuredContent.result.verification.status).toBe("failed");
+    await harness.server.handleValue({
+      jsonrpc: "2.0",
+      id: 9,
+      method: "tools/call",
+      params: {
+        name: "record_verification",
+        arguments: {
+          taskId,
+          record: {
+            verificationPlanEntryId: planEntry.id,
+            kind: planEntry.method,
+            status: "failed",
+            command: "pnpm test",
+            exitCode: 1,
+            summary: "Duplicate verification should be gated.",
+            claimIds: planEntry.acceptanceClaimIds,
+            snapshotId: checked.structuredContent.meta.sourceSnapshotId,
+          },
+          expectedRevision: recorded.structuredContent.result.mutation.revision,
+          idempotencyKey: "cli-ci-verification-duplicate",
+          actor,
+        },
+      },
+    });
+    expect(
+      McpToolErrorResultV1Schema.parse(harness.response(9).result).isError,
+    ).toBe(true);
+
     await harness.server.handleValue({
       jsonrpc: "2.0",
       id: 6,
@@ -196,7 +385,7 @@ describe("MCP lifecycle and real handlers", () => {
       params: { name: "get_repo_pulse", arguments: {} },
     });
 
-    expect(harness.response(2).result.tools).toHaveLength(3);
+    expect(harness.response(2).result.tools).toHaveLength(5);
     const failure = McpToolErrorResultV1Schema.parse(harness.response(3).result);
     expect(failure.structuredContent.error).toEqual({
       schemaVersion: 1,

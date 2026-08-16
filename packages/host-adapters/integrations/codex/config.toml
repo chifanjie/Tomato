@@ -1,0 +1,3 @@
+[mcp_servers.understand-code]
+command = "understand-code-codex"
+args = ["--root", "${WORKSPACE_ROOT}"]

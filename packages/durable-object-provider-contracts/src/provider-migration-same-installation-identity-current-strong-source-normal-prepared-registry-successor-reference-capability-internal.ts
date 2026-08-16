@@ -21,6 +21,16 @@ import type {
   ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalHistoryQuotaObservationHostInternalV1,
 } from "./provider-migration-same-installation-identity-current-strong-source-normal-history-quota-reference-machine-internal.js";
 import {
+  discardProviderFeasibilitySupportCatalogPreparedSuccessorSeedInternalV1,
+  type ProviderFeasibilitySupportCatalogPreparedSuccessorSeedInternalV1,
+} from "./provider-feasibility-support-catalog-prepared-successor-handle-internal.js";
+import {
+  bindProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedCatalogSuccessorContinuationToFinalCandidateInternalV1,
+  discardProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedCatalogSuccessorContinuationIntentInternalV1,
+  takeProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedCatalogSuccessorContinuationIntentInternalV1,
+  type ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedCatalogSuccessorContinuationIntentInternalV1,
+} from "./provider-migration-same-installation-identity-current-strong-source-normal-prepared-catalog-successor-continuation-internal.js";
+import {
   discardProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorContinuationIntentInternalV1,
   mintProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorContinuationIntentInternalV1,
   registerProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorContinuationIntentInternalV1,
@@ -275,6 +285,7 @@ interface SignedManifestSourceContextInternalV1 {
 }
 
 interface PreparedRegistrySuccessorContextInternalV1 {
+  readonly cohortIdentity: object;
   readonly request:
     ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorRequestReferenceCandidateV1;
   readonly preSideEffectPlanAdmissionClosure:
@@ -759,6 +770,7 @@ async function mintPreparedRegistrySuccessorCapabilityPreparedInternalV1(
       buildInput,
     });
     weakMapSetV1(preparedRegistrySuccessorContextsInternalV1, capability, {
+      cohortIdentity: capability,
       request,
       preSideEffectPlanAdmissionClosure,
       preparedRegistrySuccessorFinalCapability: finalCapability,
@@ -816,7 +828,11 @@ export function mintProviderMigrationSameInstallationIdentityCurrentStrongSource
 
 function takeBuildContextV1(
   input: unknown,
-): PreparedRegistrySuccessorContextInternalV1 {
+): Readonly<{
+  context: PreparedRegistrySuccessorContextInternalV1;
+  continuationIntent:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedCatalogSuccessorContinuationIntentInternalV1 | undefined;
+}> {
   if (!isObjectIdentityV1(input)) return failV1("input", "schema_invalid");
   const claimed = weakMapGetV1(readyBuildInputsInternalV1, input);
   if (
@@ -838,7 +854,11 @@ function takeBuildContextV1(
   ) {
     return failV1("input", "capability_invalid");
   }
-  return context;
+  const continuationIntent =
+    takeProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedCatalogSuccessorContinuationIntentInternalV1(
+      claimed.capability,
+    );
+  return CapturedObjectFreezeV1({ context, continuationIntent });
 }
 
 function failureResultV1(
@@ -907,8 +927,10 @@ async function diagnosePreparedRegistrySuccessorV1(
   input: unknown,
 ): Promise<ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorDiagnosticResultInternalV1> {
   let context: PreparedRegistrySuccessorContextInternalV1;
+  let continuationIntent:
+    ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedCatalogSuccessorContinuationIntentInternalV1 | undefined;
   try {
-    context = takeBuildContextV1(input);
+    ({ context, continuationIntent } = takeBuildContextV1(input));
   } catch (error) {
     const diagnostic = isDiagnosticSignalV1(error)
       ? error
@@ -924,6 +946,9 @@ async function diagnosePreparedRegistrySuccessorV1(
     | undefined;
   let intermediateAudit:
     | ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedRegistrySuccessorSideEffectAuditSnapshotInternalV1
+    | undefined;
+  let preparedCatalogSuccessorSeed:
+    | ProviderFeasibilitySupportCatalogPreparedSuccessorSeedInternalV1
     | undefined;
   try {
     try {
@@ -982,6 +1007,7 @@ async function diagnosePreparedRegistrySuccessorV1(
       ) {
         return failV1("prepared_registry_manifest", "successor_invalid");
       }
+      preparedCatalogSuccessorSeed = registry.value.preparedCatalogSuccessorSeed;
       try {
         intermediateAudit = parseAuditSnapshotV1(
           context.observeSideEffectSinks(),
@@ -1094,6 +1120,56 @@ async function diagnosePreparedRegistrySuccessorV1(
       result = failureResultV1(
         "side_effect_boundary",
         "side_effect_detected",
+      );
+    }
+    try {
+      if (
+        result?.ok === true &&
+        continuationIntent !== undefined &&
+        preparedCatalogSuccessorSeed !== undefined
+      ) {
+        bindProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedCatalogSuccessorContinuationToFinalCandidateInternalV1(
+          continuationIntent,
+          preparedCatalogSuccessorSeed,
+          context.cohortIdentity,
+          result.value,
+        );
+        preparedCatalogSuccessorSeed = undefined;
+      } else {
+        if (preparedCatalogSuccessorSeed !== undefined) {
+          discardProviderFeasibilitySupportCatalogPreparedSuccessorSeedInternalV1(
+            preparedCatalogSuccessorSeed,
+          );
+          preparedCatalogSuccessorSeed = undefined;
+        }
+        if (continuationIntent !== undefined) {
+          discardProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedCatalogSuccessorContinuationIntentInternalV1(
+            continuationIntent,
+          );
+        }
+      }
+    } catch {
+      if (preparedCatalogSuccessorSeed !== undefined) {
+        try {
+          discardProviderFeasibilitySupportCatalogPreparedSuccessorSeedInternalV1(
+            preparedCatalogSuccessorSeed,
+          );
+        } catch {
+          // The opaque diagnostic below remains intentionally non-specific.
+        }
+      }
+      if (continuationIntent !== undefined) {
+        try {
+          discardProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreparedCatalogSuccessorContinuationIntentInternalV1(
+            continuationIntent,
+          );
+        } catch {
+          // The opaque diagnostic below remains intentionally non-specific.
+        }
+      }
+      result = failureResultV1(
+        "prepared_registry_manifest",
+        "successor_invalid",
       );
     }
   }

@@ -70,6 +70,11 @@ import {
   type ProviderRegistryPreparedSuccessorSeedInternalV1,
 } from "./provider-registry-history-prepared-successor-handle-internal.js";
 import {
+  registerProviderFeasibilitySupportCatalogPreparedSuccessorSeedInternalV1,
+  type ProviderFeasibilitySupportCatalogPreparedSuccessorSeedInternalV1,
+} from "./provider-feasibility-support-catalog-prepared-successor-handle-internal.js";
+import type { ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1 } from "./provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-reference-candidate-wire.js";
+import {
   deriveProviderEd25519PublicKeyDigestInternalV1,
   type ProviderRegistryRootMetadataEnvelopeV1,
   type ProviderRegistryRootMetadataPinV1,
@@ -2173,6 +2178,8 @@ export interface ProviderRegistryPreparedDirectSuccessorValidationInternalV1 {
   readonly destinationProviderId: StoreDurableObjectProviderRegistryEntryV1["providerId"];
   readonly retainedSteadyTipRegistryManifest: ProviderRegistryManifestPinV1;
   readonly preparedDirectSuccessorRegistryManifest: ProviderRegistryManifestPinV1;
+  readonly preparedRegistryManifestEnvelope: ProviderRegistryManifestEnvelopeV1;
+  readonly preparedCatalogSuccessorSeed: ProviderFeasibilitySupportCatalogPreparedSuccessorSeedInternalV1;
   readonly retainedPrefixIdentityPreserved: true;
   readonly externallySignedEnvelopeIdentityPreserved: true;
   readonly copiedRetainedStateCollectionCount: 7;
@@ -2390,6 +2397,7 @@ function retainedPreparedSuccessorStateInternalV1(
 
 async function validateProviderRegistryPreparedDirectSuccessorInternalV1(
   payload: ProviderRegistryPreparedSuccessorRetainedPayloadInternalV1,
+  exactD41CandidateIdentity: ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1,
   input: unknown,
 ): Promise<ProviderRegistryPreparedDirectSuccessorValidationInternalV1> {
   const exactInput = readPreparedDirectSuccessorInputInternalV1(input);
@@ -2563,6 +2571,61 @@ async function validateProviderRegistryPreparedDirectSuccessorInternalV1(
     "manifest_signature",
   );
 
+  const prospectiveDestinationCut =
+    exactD41CandidateIdentity.destinationTrust.authorization
+      .prospectiveDestinationCut;
+  if (
+    prospectiveDestinationCut.prospectiveRegistryEntry.providerId !==
+      destinationEntry.providerId ||
+    !canonicalJsonEqual(
+      prospectiveDestinationCut.prospectiveRegistryEntry,
+      destinationEntry,
+    )
+  ) {
+    return fail("registry_entry", "entry_mismatch");
+  }
+
+  const retainedSteadyTipRegistryManifest = deepFreezeJson(
+    registryManifestPinV1(currentEnvelope),
+  );
+  const preparedDirectSuccessorRegistryManifest = deepFreezeJson(
+    registryManifestPinV1(envelope),
+  );
+  const retainedTrustHistoryCanonicalBytesIncludingDirectSuccessor =
+    payload.retainedTrustHistoryCanonicalBytes + envelopeCanonicalBytes;
+  const validatedManifestGenerationCountIncludingDirectSuccessor =
+    history.length + 1;
+  const preparedCatalogSuccessorSeed =
+    registerProviderFeasibilitySupportCatalogPreparedSuccessorSeedInternalV1(
+      CapturedObjectFreezeV1({
+        installationIdentityGenerationId:
+          payload.installationIdentityGenerationId,
+        exactD41CandidateIdentity,
+        currentRoot: payload.currentRoot,
+        strictCryptoCapability: payload.strictCryptoCapability,
+        policy: payload.policy,
+        currentSupportCatalogEnvelope:
+          prospectiveDestinationCut.currentSupportCatalogEnvelope,
+        currentSupportCatalogPin:
+          prospectiveDestinationCut.currentSupportCatalog,
+        currentReleaseTargetUniverseEnvelope:
+          prospectiveDestinationCut.currentReleaseTargetUniverseEnvelope,
+        preparedRegistryManifestEnvelope: envelope,
+        preparedRegistryManifestPin:
+          preparedDirectSuccessorRegistryManifest,
+        preparedRegistryRelationship:
+          "root_signed_direct_successor_of_same_cohort_retained_steady_tip_candidate_not_current_or_published_v1",
+        formalMigrationId: exactInput.formalMigrationId,
+        sourceProviderId: source.providerId,
+        destinationProviderId: destinationEntry.providerId,
+        prospectiveRegistryEntry: destinationEntry,
+        retainedTrustHistoryCanonicalBytesIncludingPreparedRegistry:
+          retainedTrustHistoryCanonicalBytesIncludingDirectSuccessor,
+        validatedRegistryManifestGenerationCountIncludingPreparedRegistry:
+          validatedManifestGenerationCountIncludingDirectSuccessor,
+      }),
+    );
+
   return createProviderNonThenableFrozenRecordV1<ProviderRegistryPreparedDirectSuccessorValidationInternalV1>({
     authority: "none",
     validationScope:
@@ -2572,12 +2635,10 @@ async function validateProviderRegistryPreparedDirectSuccessorInternalV1(
     formalMigrationId: exactInput.formalMigrationId,
     sourceProviderId: source.providerId,
     destinationProviderId: destinationEntry.providerId,
-    retainedSteadyTipRegistryManifest: deepFreezeJson(
-      registryManifestPinV1(currentEnvelope),
-    ),
-    preparedDirectSuccessorRegistryManifest: deepFreezeJson(
-      registryManifestPinV1(envelope),
-    ),
+    retainedSteadyTipRegistryManifest,
+    preparedDirectSuccessorRegistryManifest,
+    preparedRegistryManifestEnvelope: envelope,
+    preparedCatalogSuccessorSeed,
     retainedPrefixIdentityPreserved: true,
     externallySignedEnvelopeIdentityPreserved: true,
     copiedRetainedStateCollectionCount:
@@ -2589,10 +2650,8 @@ async function validateProviderRegistryPreparedDirectSuccessorInternalV1(
     retainedRegistryManifestCanonicalBytesIncludingDirectSuccessor:
       payload.retainedRegistryManifestCanonicalBytes +
       envelopeCanonicalBytes,
-    retainedTrustHistoryCanonicalBytesIncludingDirectSuccessor:
-      payload.retainedTrustHistoryCanonicalBytes + envelopeCanonicalBytes,
-    validatedManifestGenerationCountIncludingDirectSuccessor:
-      history.length + 1,
+    retainedTrustHistoryCanonicalBytesIncludingDirectSuccessor,
+    validatedManifestGenerationCountIncludingDirectSuccessor,
   });
 }
 
@@ -2620,10 +2679,21 @@ export async function diagnoseProviderRegistryPreparedDirectSuccessorInternalV1(
       reason: "schema_invalid",
     });
   }
+  if (
+    exactFinalCandidateIdentity === null ||
+    typeof exactFinalCandidateIdentity !== "object"
+  ) {
+    return createProviderNonThenableFrozenRecordV1<ProviderRegistryPreparedDirectSuccessorDiagnosticResultInternalV1>({
+      ok: false,
+      stage: "history_input",
+      reason: "schema_invalid",
+    });
+  }
   try {
     const value = await hardenProviderPointPromiseV1(
       validateProviderRegistryPreparedDirectSuccessorInternalV1(
         payload,
+        exactFinalCandidateIdentity as ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1,
         input,
       ),
     );

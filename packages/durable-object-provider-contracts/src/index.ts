@@ -306,6 +306,16 @@ export * from "./provider-strong-ready-bootstrap-or-steady-acceptance-compare-ap
 export * from "./provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate.js";
 export * from "./provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate.js";
 export {
+  runProviderMigrationDurableExecutionV1,
+} from "./provider-migration-durable-execution-entrypoint.js";
+export type {
+  ProviderMigrationDurableExecutionEntrypointResultV1,
+  ProviderMigrationDurableExecutionHostV1,
+  ProviderMigrationDurableExecutionLifecycleInputV1,
+  ProviderMigrationDurableExecutionSummaryV1,
+  RunProviderMigrationDurableExecutionInputV1,
+} from "./provider-migration-durable-execution-entrypoint.js";
+export {
   ProviderRegistryRootCrossSignatureWrapperV1Schema,
   ProviderRegistryRootHistoryValidationError,
   ProviderRegistryRootRecoverySignatureWrapperV1Schema,

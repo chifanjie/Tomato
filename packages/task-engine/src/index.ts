@@ -1,5 +1,6 @@
 export * from "./artifacts.js";
 export * from "./context-builder.js";
+export * from "./change-intelligence.js";
 export * from "./engine-types.js";
 export * from "./engine.js";
 export * from "./errors.js";

@@ -160,6 +160,8 @@ describe("cold packed CLI", () => {
         "get_repo_pulse",
         "build_task_brief",
         "get_task_brief",
+        "check_change",
+        "record_verification",
       ]);
       const pulseResponse = await collected.waitFor((message) => message.id === 3);
       GetRepoPulseOutputV1Schema.parse(pulseResponse.result);

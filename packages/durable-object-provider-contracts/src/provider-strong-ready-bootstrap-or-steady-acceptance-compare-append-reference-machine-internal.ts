@@ -197,6 +197,11 @@ const EXECUTE_INPUT_KEYS_V1 = CapturedObjectFreezeV1([
   "resolvedAt",
   "transaction",
 ] as const);
+const MIGRATION_HANDOFF_INPUT_KEYS_INTERNAL_V1 = CapturedObjectFreezeV1([
+  "identityVerificationCapability",
+  "referenceMachineCapability",
+  "expectedState",
+] as const);
 const INITIAL_STATE_KEYS_V1 = CapturedObjectFreezeV1([
   "namespace",
   "receiptLedger",
@@ -438,11 +443,41 @@ interface ProviderStrongReadyBootstrapOrSteadyAcceptanceReferenceMachineBindingI
   readonly retainedNonAcceptanceTrustHistoryLogicalBytes: number;
   current: ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceStateInternalV1;
   tail: Promise<void>;
+  lifecycle: "active" | "retired_for_migration";
 }
 
 const machineBindingsV1 = new CapturedWeakMapV1<
   object,
   ProviderStrongReadyBootstrapOrSteadyAcceptanceReferenceMachineBindingInternalV1
+>();
+
+declare const providerAcceptanceMigrationHandoffBrandInternalV1:
+  unique symbol;
+export interface ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendMigrationHandoffCapabilityInternalV1 {
+  readonly [providerAcceptanceMigrationHandoffBrandInternalV1]: true;
+}
+
+export interface ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendMigrationHandoffSnapshotInternalV1 {
+  readonly installationIdentityGenerationId:
+    InstallationIdentityGenerationIdV1;
+  readonly retiredState:
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceStateInternalV1;
+  readonly currentStrongReadyAcceptanceEnvelope:
+    ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1;
+  readonly currentStrongReadyHighWater:
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceHighWaterEnvelopeReferenceCandidateV1;
+}
+
+interface MigrationHandoffBindingInternalV1 {
+  readonly identityVerificationCapability:
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceIdentityVerificationCapabilityV1;
+  readonly snapshot:
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendMigrationHandoffSnapshotInternalV1;
+}
+
+const migrationHandoffBindingsInternalV1 = new CapturedWeakMapV1<
+  object,
+  MigrationHandoffBindingInternalV1
 >();
 
 declare const readOnlyContinuityHandleBrandInternalV1: unique symbol;
@@ -1870,6 +1905,7 @@ async function mintPreparedV1(
     retainedNonAcceptanceTrustHistoryLogicalBytes,
     current: initialState,
     tail: CapturedPromiseResolveV1(undefined),
+    lifecycle: "active",
   });
   return capability;
 }
@@ -1970,12 +2006,22 @@ export function executeProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppe
     }
     const transaction = fields.transaction as
       ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceTransactionInternalV1;
-    start = () => executeLinearizedV1(
-      binding,
-      request,
-      resolvedAt,
-      transaction,
-    );
+    start = () => {
+      if (binding.lifecycle !== "active") {
+        return CapturedPromiseRejectV1(
+          new ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineErrorInternalV1(
+            "reference_machine_capability",
+            "capability_invalid",
+          ),
+        );
+      }
+      return executeLinearizedV1(
+        binding,
+        request,
+        resolvedAt,
+        transaction,
+      );
+    };
   } catch (error) {
     const rejection = isProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineErrorInternalV1(
         error,
@@ -2004,6 +2050,115 @@ export function inspectProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppe
     ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineCapabilityInternalV1,
 ): ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceStateInternalV1 {
   return cloneFrozenJsonV1(requireMachineBindingV1(capability).current);
+}
+
+/**
+ * Queue-linearized, irreversible ownership transfer into the migration-only
+ * Acceptance branch. The exact expected D-40 state is compared only after all
+ * earlier operations finish. Once committed, every later execute through the
+ * old capability rejects before its transaction callback can run.
+ */
+export function retireProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineForMigrationInternalV1(
+  input: Readonly<{
+    identityVerificationCapability:
+      ProviderStrongReadyBootstrapOrSteadyAcceptanceIdentityVerificationCapabilityV1;
+    referenceMachineCapability:
+      ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineCapabilityInternalV1;
+    expectedState:
+      ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceStateInternalV1;
+  }>,
+): Promise<ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendMigrationHandoffCapabilityInternalV1> {
+  let binding: ProviderStrongReadyBootstrapOrSteadyAcceptanceReferenceMachineBindingInternalV1;
+  let expectedState:
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceStateInternalV1;
+  try {
+    const fields = captureProviderPointDetachedExactDataObjectV1(
+      input,
+      MIGRATION_HANDOFF_INPUT_KEYS_INTERNAL_V1,
+    );
+    binding = requireMachineBindingV1(fields.referenceMachineCapability);
+    if (
+      fields.identityVerificationCapability !==
+        binding.identityVerificationCapability
+    ) {
+      return createProviderPointRejectedPromiseV1(
+        new ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineErrorInternalV1(
+          "reference_machine_capability",
+          "capability_invalid",
+        ),
+      );
+    }
+    assertProviderStrongReadyBootstrapOrSteadyAcceptanceIdentityVerificationCapabilityInternalV1(
+      fields.identityVerificationCapability,
+      binding.installationIdentityGenerationId,
+    );
+    expectedState = parseInitialStateV1(fields.expectedState);
+  } catch (error) {
+    return createProviderPointRejectedPromiseV1(error);
+  }
+
+  const operation = promiseThenV1(binding.tail, () => {
+    if (
+      binding.lifecycle !== "active" ||
+      !canonicalEqualV1(binding.current, expectedState) ||
+      binding.current.namespace.state !== "current"
+    ) {
+      return failV1("reference_machine_capability", "source_invalid");
+    }
+    const namespace = binding.current.namespace;
+    const currentStrongReadyAcceptanceEnvelope =
+      namespace.generations[namespace.generations.length - 1];
+    if (currentStrongReadyAcceptanceEnvelope === undefined) {
+      return failV1("acceptance_namespace", "source_invalid");
+    }
+    const snapshot = cloneFrozenJsonV1({
+      installationIdentityGenerationId:
+        binding.installationIdentityGenerationId,
+      retiredState: binding.current,
+      currentStrongReadyAcceptanceEnvelope,
+      currentStrongReadyHighWater: namespace.currentRead.highWater,
+    });
+    const capability = CapturedObjectFreezeV1(
+      CapturedObjectCreateV1(null),
+    ) as ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendMigrationHandoffCapabilityInternalV1;
+    binding.lifecycle = "retired_for_migration";
+    weakMapSetV1(migrationHandoffBindingsInternalV1, capability, {
+      identityVerificationCapability:
+        binding.identityVerificationCapability,
+      snapshot,
+    });
+    return capability;
+  });
+  binding.tail = promiseThenV1(
+    operation,
+    () => undefined,
+    () => undefined,
+  );
+  return hardenProviderPointPromiseV1(operation);
+}
+
+/** Exact-once transfer; a foreign identity capability does not burn it. */
+export function takeProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendMigrationHandoffSnapshotInternalV1(
+  handoffCapability:
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendMigrationHandoffCapabilityInternalV1,
+  identityVerificationCapability:
+    ProviderStrongReadyBootstrapOrSteadyAcceptanceIdentityVerificationCapabilityV1,
+): ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendMigrationHandoffSnapshotInternalV1 | undefined {
+  if (!isObjectIdentityV1(handoffCapability)) return undefined;
+  const binding = weakMapGetV1(
+    migrationHandoffBindingsInternalV1,
+    handoffCapability,
+  );
+  if (
+    binding === undefined ||
+    binding.identityVerificationCapability !== identityVerificationCapability
+  ) {
+    return undefined;
+  }
+  if (!weakMapDeleteV1(migrationHandoffBindingsInternalV1, handoffCapability)) {
+    return undefined;
+  }
+  return binding.snapshot;
 }
 
 /**
@@ -2127,6 +2282,12 @@ CapturedObjectFreezeV1(
 );
 CapturedObjectFreezeV1(
   inspectProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineInternalV1,
+);
+CapturedObjectFreezeV1(
+  retireProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineForMigrationInternalV1,
+);
+CapturedObjectFreezeV1(
+  takeProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendMigrationHandoffSnapshotInternalV1,
 );
 CapturedObjectFreezeV1(
   mintProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReadOnlyContinuityHandleInternalV1,

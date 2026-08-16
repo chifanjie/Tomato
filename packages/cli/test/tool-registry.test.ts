@@ -1,9 +1,11 @@
 import Ajv2020 from "ajv/dist/2020.js";
 import {
   BuildTaskBriefOutputV1Schema,
+  CheckChangeOutputV1Schema,
   GetRepoPulseOutputV1Schema,
   GetTaskBriefOutputV1Schema,
   McpToolErrorResultV1Schema,
+  RecordVerificationOutputV1Schema,
 } from "@understand-code/contracts/mcp";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -33,6 +35,18 @@ const expectedOutputSchemas = {
       McpToolErrorResultV1Schema.shape.structuredContent,
     ]),
   ),
+  check_change: toolOutputSchema(
+    z.union([
+      CheckChangeOutputV1Schema.shape.structuredContent,
+      McpToolErrorResultV1Schema.shape.structuredContent,
+    ]),
+  ),
+  record_verification: toolOutputSchema(
+    z.union([
+      RecordVerificationOutputV1Schema.shape.structuredContent,
+      McpToolErrorResultV1Schema.shape.structuredContent,
+    ]),
+  ),
 } as const;
 
 describe("advertised tool contracts", () => {
@@ -41,6 +55,8 @@ describe("advertised tool contracts", () => {
       "get_repo_pulse",
       "build_task_brief",
       "get_task_brief",
+      "check_change",
+      "record_verification",
     ]);
     for (const tool of IMPLEMENTED_TOOLS) {
       expect(tool.inputSchema).toMatchObject({

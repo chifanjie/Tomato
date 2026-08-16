@@ -910,7 +910,7 @@ diagnostics, and crypto call counts are checked by
 `verify:provider-registry-manifest-invalid`. The signed real-filesystem fixture
 anchors, exact source closure, and 43 materialized negative diagnostics are
 checked by `verify:provider-real-fs-source`. `test/json-schema.test.ts` freezes
-the current 357-schema inventory and `verify:schemas` rejects generated-file
+the current 363-schema inventory and `verify:schemas` rejects generated-file
 drift. `verify:provider-target-discovery-point` checks the exact five locators,
 six-signature closure, canonical empty Fixture/Runner success, typed unresolved
 projection, and all 116 ordered diagnostic/executable recipes.

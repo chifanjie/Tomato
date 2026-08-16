@@ -155,6 +155,14 @@ import {
   ProviderRuntimeAttestationPointInvalidManifestV1Schema,
 } from "./provider-runtime-attestation-point-fixtures.js";
 import {
+  ProviderRuntimeIpcClientHelloV1Schema,
+  ProviderRuntimeIpcFixedObjectLocatorV1Schema,
+  ProviderRuntimeIpcJournalStateV1Schema,
+  ProviderRuntimeIpcRequestV1Schema,
+  ProviderRuntimeIpcResponseV1Schema,
+  ProviderRuntimeIpcServerHelloV1Schema,
+} from "./provider-runtime-ipc-v1.js";
+import {
   ProviderFeasibilityEvidenceEnvelopeV1Schema,
   ProviderFeasibilityEvidenceIdFieldsV1Schema,
   ProviderFeasibilityEvidencePointInvalidReasonV1Schema,
@@ -864,6 +872,16 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 =
     ProviderRuntimeAttestationPointGoldenManifestV1Schema,
   "provider-runtime-attestation-point-invalid-manifest":
     ProviderRuntimeAttestationPointInvalidManifestV1Schema,
+  "provider-runtime-ipc-fixed-object-locator-v1":
+    ProviderRuntimeIpcFixedObjectLocatorV1Schema,
+  "provider-runtime-ipc-client-hello-v1":
+    ProviderRuntimeIpcClientHelloV1Schema,
+  "provider-runtime-ipc-server-hello-v1":
+    ProviderRuntimeIpcServerHelloV1Schema,
+  "provider-runtime-ipc-request-v1": ProviderRuntimeIpcRequestV1Schema,
+  "provider-runtime-ipc-response-v1": ProviderRuntimeIpcResponseV1Schema,
+  "provider-runtime-ipc-journal-state-v1":
+    ProviderRuntimeIpcJournalStateV1Schema,
   "provider-public-linux-distribution-id":
     ProviderPublicLinuxDistributionIdV1Schema,
   "provider-public-os-release-family-descriptor":

@@ -17,6 +17,7 @@ import {
   ChangeCheckV1Schema,
   ClaimV1Schema,
   IdempotencyRecordV1Schema,
+  RepoPulseArtifactV1Schema,
   RepositorySnapshotArtifactV1Schema,
   TaskManifestV1Schema,
   TaskOperationReceiptV1Schema,
@@ -2777,4 +2778,220 @@ describe("TaskEngine persistent integration", () => {
       ),
     });
   });
+
+  it("persists planned/unplanned Change Findings and records a failed Verification", async () => {
+    const { store } = await openStore();
+    const taskEngine = engine(store);
+    const built = await taskEngine.buildTaskBrief(
+      buildInput("change-intelligence-vertical"),
+      auth(),
+    );
+    const taskId = built.task.taskId;
+    let revision = built.task.revision;
+    const updates = [
+      {
+        action: { type: "confirm_goal" as const, claimId: built.brief.goalClaimId },
+        key: "ci-confirm-goal",
+      },
+      {
+        action: {
+          type: "confirm_acceptance_criteria" as const,
+          claimIds: built.brief.acceptanceClaimIds,
+        },
+        key: "ci-confirm-acceptance",
+      },
+      {
+        action: {
+          type: "confirm_plan" as const,
+          plannedChangeIds: built.brief.plannedChanges.map((change) => change.id),
+        },
+        key: "ci-confirm-plan",
+      },
+      {
+        action: { type: "transition_status" as const, to: "planned" as const },
+        key: "ci-transition-planned",
+      },
+      {
+        action: { type: "transition_status" as const, to: "in_progress" as const },
+        key: "ci-transition-progress",
+      },
+    ];
+    for (const update of updates) {
+      const result = await taskEngine.updateTask(
+        {
+          taskId,
+          action: update.action,
+          expectedRevision: revision,
+          idempotencyKey: update.key,
+          actor: ACTOR,
+        },
+        auth(),
+      );
+      revision = result.task.revision;
+    }
+
+    const base = await advancedSnapshot("snapshot:change-intelligence");
+    if (base.artifactType !== "repository_snapshot") {
+      throw new TypeError("The fixture Snapshot must be a Repository Snapshot.");
+    }
+    const payload = {
+      ...base.payload,
+      snapshotId: "snapshot:change-intelligence",
+      changes: [
+        ...base.payload.changes,
+        {
+          id: "change:unplanned-ci",
+          path: "src/unplanned-ci.ts",
+          source: "untracked" as const,
+          kind: "added" as const,
+        },
+      ],
+    };
+    await store.persistArtifact(
+      RepositorySnapshotArtifactV1Schema.parse({
+        ...base,
+        artifactId: "artifact:repository-snapshot:snapshot:change-intelligence",
+        sourceSnapshotId: payload.snapshotId,
+        contentDigest: sha256CanonicalJson(payload),
+        payload,
+      }),
+    );
+    const pulseBase = await loadFixture("repo-pulse.json");
+    if (pulseBase.artifactType !== "repo_pulse") {
+      throw new TypeError("The fixture Pulse must be a Repo Pulse.");
+    }
+    if (pulseBase.payload.changeSummary === undefined) {
+      throw new TypeError("The fixture Pulse must include a change summary.");
+    }
+    const pulsePayload = {
+      ...pulseBase.payload,
+      evaluatedSnapshotId: "snapshot:change-intelligence",
+      changeSummary: {
+        ...pulseBase.payload.changeSummary,
+        total: 2,
+        bySource: {
+          ...pulseBase.payload.changeSummary.bySource,
+          untracked: 1,
+        },
+        byKind: {
+          ...pulseBase.payload.changeSummary.byKind,
+          added: 1,
+        },
+      },
+      evaluatedAt: "2026-07-29T09:00:01.000Z",
+    };
+    await store.persistArtifact(
+      RepoPulseArtifactV1Schema.parse({
+        ...pulseBase,
+        revision: 1,
+        sourceSnapshotId: "snapshot:change-intelligence",
+        createdAt: "2026-07-29T09:00:01.000Z",
+        contentDigest: sha256CanonicalJson(pulsePayload),
+        payload: pulsePayload,
+      }),
+      {
+        expectedRevision: 0,
+        idempotencyKey: "ci-pulse-refresh",
+        requestDigest: sha256CanonicalJson({
+          operation: "ci-pulse-refresh",
+          snapshotId: "snapshot:change-intelligence",
+        }),
+      },
+    );
+    const captured = await taskEngine.updateTask(
+      {
+        taskId,
+        action: { type: "transition_status", to: "check_required" },
+        expectedRevision: revision,
+        idempotencyKey: "ci-capture",
+        actor: ACTOR,
+      },
+      auth(),
+    );
+    revision = captured.task.revision;
+
+    const checked = await taskEngine.checkChange(
+      {
+        taskId,
+        actualSnapshotId: "snapshot:change-intelligence",
+        includeWorktree: true,
+        expectedRevision: revision,
+        idempotencyKey: "ci-check",
+        actor: ACTOR,
+      },
+      auth(["task:update"]),
+    );
+    expect(checked.changeCheck.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "unplanned_change" }),
+      ]),
+    );
+    expect(checked.changeCheck.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "possible_omission" }),
+      ]),
+    );
+    revision = checked.mutation.revision;
+
+    for (const finding of checked.changeCheck.findings.filter(
+      (candidate) => candidate.blocking,
+    )) {
+      const accepted = await taskEngine.updateTask(
+        {
+          taskId,
+          action: {
+            type: "accept_finding",
+            findingId: finding.id,
+            reason: "Focused Change Intelligence integration fixture.",
+          },
+          expectedRevision: revision,
+          idempotencyKey: `ci-accept-${finding.id}`,
+          actor: ACTOR,
+        },
+        auth(),
+      );
+      revision = accepted.task.revision;
+    }
+    const verificationRequired = await taskEngine.updateTask(
+      {
+        taskId,
+        action: { type: "transition_status", to: "verification_required" },
+        expectedRevision: revision,
+        idempotencyKey: "ci-transition-verification",
+        actor: ACTOR,
+      },
+      auth(),
+    );
+    revision = verificationRequired.task.revision;
+    const planEntry = built.brief.verificationPlan[0]!;
+    const verificationInput = {
+      taskId,
+      record: {
+        verificationPlanEntryId: planEntry.id,
+        kind: planEntry.method,
+        status: "failed" as const,
+        command: "pnpm test",
+        exitCode: 1,
+        durationMs: 10,
+        summary: "Focused verification failure fixture.",
+        claimIds: planEntry.acceptanceClaimIds,
+        snapshotId: "snapshot:change-intelligence",
+      },
+      expectedRevision: revision,
+      idempotencyKey: "ci-verification-failed",
+      actor: ACTOR,
+    };
+    const recorded = await taskEngine.recordVerification(
+      verificationInput,
+      auth(["task:update"]),
+    );
+    expect(recorded.verification.status).toBe("failed");
+    expect(recorded.verification.attempt).toBe(1);
+    await expect(
+      taskEngine.recordVerification(
+        { ...verificationInput, expectedRevision: recorded.mutation.revision, idempotencyKey: "ci-verification-duplicate" },
+        auth(["task:update"]),
+      ),
+    ).rejects.toMatchObject({ code: "task_gate_unsatisfied" });
+  }, 10_000);
 });

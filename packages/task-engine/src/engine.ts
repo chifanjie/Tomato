@@ -6,9 +6,11 @@ import {
 import {
   BuildTaskBriefInputV1Schema,
   BuildTaskBriefResultV1Schema,
+  CheckChangeInputV1Schema,
   GetTaskBriefInputV1Schema,
   GetTaskBriefResultV1Schema,
   IdempotencyRecordV1Schema,
+  RecordVerificationInputV1Schema,
   TaskManifestV1Schema,
   TaskOperationReceiptV1Schema,
   UpdateTaskInputV1Schema,
@@ -29,6 +31,12 @@ import {
   buildTaskEvent,
   mutationResult,
 } from "./artifacts.js";
+import {
+  checkTaskChange,
+  recordTaskVerification,
+  type ChangeCheckMutationOutcome,
+  type VerificationMutationOutcome,
+} from "./change-intelligence.js";
 import { buildContextDraft } from "./context-builder.js";
 import type {
   AuthorizationContext,
@@ -830,6 +838,36 @@ export class TaskEngine {
       );
     }
     return applyTaskUpdate(this.#store, input, this.#clock);
+  }
+
+  /**
+   * Compare the persisted Task Brief against the selected current Repository
+   * Snapshot and append one durable Change Check revision.
+   *
+   * Change Intelligence is deliberately exposed through the Engine so the
+   * CLI/MCP surface cannot bypass Task authorization, CAS, or the Artifact
+   * Store's append-only payload policy.
+   */
+  async checkChange(
+    inputValue: import("@understand-code/contracts").CheckChangeInputV1,
+    auth: AuthorizationContext,
+  ): Promise<ChangeCheckMutationOutcome> {
+    const input = CheckChangeInputV1Schema.parse(inputValue);
+    this.#authorize(auth, input.actor, "task:update");
+    return checkTaskChange(this.#store, input, this.#clock);
+  }
+
+  /**
+   * Record an externally executed Verification result against the current
+   * verification plan entry using the same durable Task mutation semantics.
+   */
+  async recordVerification(
+    inputValue: import("@understand-code/contracts").RecordVerificationInputV1,
+    auth: AuthorizationContext,
+  ): Promise<VerificationMutationOutcome> {
+    const input = RecordVerificationInputV1Schema.parse(inputValue);
+    this.#authorize(auth, input.actor, "task:update");
+    return recordTaskVerification(this.#store, input, this.#clock);
   }
 
   async renderTaskBriefMarkdown(taskId: string): Promise<string> {

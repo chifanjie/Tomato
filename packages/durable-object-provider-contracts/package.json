@@ -75,6 +75,16 @@
       "import": "./dist/provider-real-filesystem-conformance-result-fixtures.js",
       "default": "./dist/provider-real-filesystem-conformance-result-fixtures.js"
     },
+    "./provider-runtime-ipc-v1": {
+      "types": "./dist/provider-runtime-ipc-v1.d.ts",
+      "import": "./dist/provider-runtime-ipc-v1.js",
+      "default": "./dist/provider-runtime-ipc-v1.js"
+    },
+    "./provider-migration-durable-execution": {
+      "types": "./dist/provider-migration-durable-execution-entrypoint.d.ts",
+      "import": "./dist/provider-migration-durable-execution-entrypoint.js",
+      "default": "./dist/provider-migration-durable-execution-entrypoint.js"
+    },
     "./provider-runtime-attestation-point": {
       "types": "./dist/provider-runtime-attestation-point.d.ts",
       "import": "./dist/provider-runtime-attestation-point.js",

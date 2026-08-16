@@ -27,6 +27,7 @@
     "@understand-code/artifact-store": "workspace:*",
     "@understand-code/contracts": "workspace:*",
     "@understand-code/core": "workspace:*",
+    "@understand-code/installation-lifecycle": "workspace:*",
     "@understand-code/repository-state": "workspace:*",
     "@understand-code/task-engine": "workspace:*",
     "@understand-code/workbench-runtime": "workspace:*",

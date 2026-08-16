@@ -58,6 +58,9 @@ importers:
       '@understand-code/core':
         specifier: workspace:*
         version: link:../core
+      '@understand-code/installation-lifecycle':
+        specifier: workspace:*
+        version: link:../installation-lifecycle
       '@understand-code/repository-state':
         specifier: workspace:*
         version: link:../repository-state
@@ -300,6 +303,18 @@ importers:
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.15)(happy-dom@20.10.6)(jiti@2.6.1)(lightningcss@1.32.0)(yaml@2.8.3)
 
   packages/host-adapters:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.15
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.1.0
+        version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.15)(happy-dom@20.10.6)(jiti@2.6.1)(lightningcss@1.32.0)(yaml@2.8.3)
+
+  packages/installation-lifecycle:
     devDependencies:
       '@types/node':
         specifier: ^22.0.0

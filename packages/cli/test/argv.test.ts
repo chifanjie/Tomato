@@ -9,6 +9,18 @@ describe("CLI arguments", () => {
     ).toEqual({ kind: "mcp", rootCandidates: ["/tmp/repository"] });
   });
 
+  it("accepts installation lifecycle commands with an explicit home", () => {
+    expect(parseCliArguments(["install", "--home", "/tmp/understand-code"])).toEqual({
+      kind: "installation",
+      operation: "install",
+      home: "/tmp/understand-code",
+    });
+    expect(parseCliArguments(["doctor"])).toEqual({
+      kind: "installation",
+      operation: "doctor",
+    });
+  });
+
   it("keeps an omitted root as a protocol-visible binding error", () => {
     expect(parseCliArguments(["mcp", "--stdio"])).toEqual({
       kind: "mcp",
@@ -39,6 +51,8 @@ describe("CLI arguments", () => {
     ["unknown flag", ["mcp", "--stdio", "--token", "secret"]],
     ["missing root value", ["mcp", "--stdio", "--root"]],
     ["equals form", ["mcp", "--stdio", "--root=/tmp/repository"]],
+    ["relative install home", ["install", "--home", "relative"]],
+    ["duplicate install home", ["doctor", "--home", "/tmp/a", "--home", "/tmp/b"]],
   ])("rejects %s", (_name, values) => {
     expect(() => parseCliArguments(values)).toThrow(CliArgumentError);
   });

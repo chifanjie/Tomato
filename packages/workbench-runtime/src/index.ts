@@ -4,12 +4,18 @@ import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
 import {
+  CursorV1Schema,
+  GetTaskBriefInputV1Schema,
+  GetTaskBriefResultV1Schema,
   OpenWorkbenchInputV1Schema,
   OpenWorkbenchOutputV1Schema,
+  TaskBriefSectionV1Schema,
   ToolSuccessMetaV1Schema,
   WorkbenchRouteV1Schema,
+  type GetTaskBriefInputV1,
   type OpenWorkbenchInputV1,
   type OpenWorkbenchOutputV1,
+  type TaskBriefSectionV1,
   type ToolSuccessMetaV1,
   type WorkbenchRouteV1,
 } from "@understand-code/contracts/mcp";
@@ -33,6 +39,25 @@ export interface WorkbenchRuntimeBindingV1 {
   readonly freshness: ToolSuccessMetaV1["freshness"];
 }
 
+/**
+ * The result type is intentionally derived from the frozen MCP contract.  The
+ * runtime does not accept arbitrary JSON from a host callback: it parses this
+ * result before exposing it over the loopback HTTP endpoint.
+ */
+export type WorkbenchTaskBriefResultV1 = ReturnType<
+  typeof GetTaskBriefResultV1Schema.parse
+>;
+
+export interface WorkbenchTaskBriefPageV1 {
+  readonly result: WorkbenchTaskBriefResultV1;
+  readonly total: number;
+  readonly nextCursor?: string;
+}
+
+export type WorkbenchTaskBriefReaderV1 = (
+  input: GetTaskBriefInputV1,
+) => Promise<WorkbenchTaskBriefPageV1 | WorkbenchTaskBriefResultV1 | undefined>;
+
 export interface OpenWorkbenchSessionOptionsV1 extends WorkbenchRuntimeBindingV1 {
   /** Defaults to the frozen 60 second launch-token TTL. */
   readonly launchTokenTtlMs?: number;
@@ -41,6 +66,8 @@ export interface OpenWorkbenchSessionOptionsV1 extends WorkbenchRuntimeBindingV1
   /** Defaults to an ephemeral loopback port. Non-loopback hosts are rejected. */
   readonly host?: typeof LOOPBACK_HOST;
   readonly port?: number;
+  /** Read-only callback bound by the Host to its persisted Task Engine. */
+  readonly taskBriefReader?: WorkbenchTaskBriefReaderV1;
 }
 
 export interface WorkbenchLaunchGrantV1 {
@@ -62,6 +89,11 @@ export interface WorkbenchSessionV1 {
   readonly redeemLaunchToken: (token: string) => WorkbenchLaunchGrantV1;
   /** Read-only projection used by the HTTP task route. */
   readonly readTaskRoute: (sessionToken: string, taskId: string) => WorkbenchRouteV1;
+  /** Read one contract-validated Task Brief page for an authenticated session. */
+  readonly readTaskBrief: (
+    sessionToken: string,
+    input: GetTaskBriefInputV1,
+  ) => Promise<WorkbenchTaskBriefPageV1>;
   readonly close: () => Promise<void>;
 }
 
@@ -108,6 +140,8 @@ interface BrowserSessionV1 {
 interface StoredSessionV1 {
   readonly session: WorkbenchSessionV1;
   readonly launches: Map<string, PendingLaunchV1>;
+  readonly now: () => number;
+  taskBriefReader?: WorkbenchTaskBriefReaderV1;
 }
 
 const sessionsByIdentity = new Map<string, StoredSessionV1>();
@@ -193,7 +227,11 @@ function readCookie(request: IncomingMessage, name: string): string | undefined 
     const separator = part.indexOf("=");
     if (separator < 0) continue;
     if (part.slice(0, separator).trim() === name) {
-      return decodeURIComponent(part.slice(separator + 1).trim());
+      try {
+        return decodeURIComponent(part.slice(separator + 1).trim());
+      } catch {
+        return undefined;
+      }
     }
   }
   return undefined;
@@ -215,6 +253,150 @@ function unauthorized(response: ServerResponse): void {
 
 const BOOTSTRAP_SCRIPT = `const token=location.hash.slice(1);if(token){fetch('/__workbench/launch',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token})}).then(r=>{if(!r.ok)throw new Error('launch failed');return r.json()}).then(()=>{history.replaceState(null,'',location.pathname+location.search);location.reload()}).catch(()=>location.hash='');}`;
 
+const WORKBENCH_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'";
+
+const WORKBENCH_CSS = String.raw`:root {
+  --color-root: #0f1117;
+  --color-surface: #171a23;
+  --color-surface-raised: #202532;
+  --color-text-primary: #f4f6fb;
+  --color-text-secondary: #b4bdcf;
+  --color-text-muted: #7f8aa2;
+  --color-accent: #7dd3fc;
+  --color-accent-strong: #38bdf8;
+  --color-border-subtle: #2a3140;
+  --color-border-medium: #3a4559;
+  --radius-panel: 14px;
+  --radius-control: 9px;
+  --font-body: Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { min-height: 100%; margin: 0; }
+body { background: var(--color-root); color: var(--color-text-primary); font: 14px/1.5 var(--font-body); }
+button, a { font: inherit; }
+a { color: inherit; text-decoration: none; }
+.wb-shell { min-height: 100vh; display: grid; grid-template-rows: auto 1fr; }
+.wb-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 64px; padding: 12px 24px; border-bottom: 1px solid var(--color-border-subtle); background: var(--color-surface); }
+.wb-brand { min-width: 0; }
+.wb-kicker { color: var(--color-accent); font: 600 11px/1.2 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+.wb-title { margin: 3px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 650; }
+.wb-status { display: inline-flex; align-items: center; gap: 7px; color: var(--color-text-secondary); font-size: 12px; white-space: nowrap; }
+.wb-status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent); }
+.wb-status[data-state="stale"] .wb-status-dot { background: #f6c453; }
+.wb-status[data-state="error"] .wb-status-dot { background: #f07f7f; }
+.wb-layout { width: min(1440px, 100%); margin: 0 auto; padding: 24px; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 24px; }
+.wb-sidebar { display: flex; flex-direction: column; gap: 18px; }
+.wb-nav, .wb-surfaces { display: grid; gap: 6px; }
+.wb-nav-title { padding: 0 10px 4px; color: var(--color-text-muted); font: 600 11px/1.2 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+.wb-nav button, .wb-surface { width: 100%; min-height: 40px; padding: 9px 11px; border: 1px solid transparent; border-radius: var(--radius-control); background: transparent; color: var(--color-text-secondary); text-align: left; cursor: pointer; }
+.wb-nav button:hover, .wb-surface:hover { background: var(--color-surface); color: var(--color-text-primary); }
+.wb-nav button[aria-current="page"], .wb-surface[aria-current="page"] { border-color: var(--color-border-medium); background: var(--color-surface-raised); color: var(--color-text-primary); }
+.wb-surface { display: flex; align-items: center; justify-content: space-between; }
+.wb-unavailable { color: var(--color-text-muted); font-size: 11px; }
+.wb-main { min-width: 0; }
+.uc-panel { border: 1px solid var(--color-border-subtle); border-radius: var(--radius-panel); background: var(--color-surface); }
+.wb-panel { min-height: 360px; padding: clamp(18px, 3vw, 32px); }
+.wb-panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.wb-panel-title { margin: 0; font-size: clamp(20px, 2.5vw, 30px); line-height: 1.15; }
+.wb-panel-subtitle { margin: 6px 0 0; color: var(--color-text-secondary); }
+.wb-state { display: grid; place-items: center; min-height: 220px; padding: 28px; border: 1px dashed var(--color-border-medium); border-radius: var(--radius-control); color: var(--color-text-secondary); text-align: center; }
+.wb-state strong { display: block; margin-bottom: 6px; color: var(--color-text-primary); }
+.wb-banner { margin-bottom: 18px; padding: 10px 12px; border: 1px solid #806b31; border-radius: var(--radius-control); background: #312a18; color: #f6d889; }
+.wb-items { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.wb-item { padding: 13px 14px; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-control); background: var(--color-surface-raised); }
+.wb-item-label { color: var(--color-text-muted); font: 600 11px/1.3 var(--font-mono); text-transform: uppercase; letter-spacing: .05em; }
+.wb-item-value { margin-top: 4px; overflow-wrap: anywhere; }
+@media (max-width: 900px) { .wb-layout { grid-template-columns: 1fr; gap: 16px; } .wb-sidebar { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } .wb-nav { display: flex; overflow-x: auto; } .wb-nav-title { display: none; } .wb-nav button { min-width: max-content; } }
+@media (max-width: 560px) { .wb-header { align-items: flex-start; flex-direction: column; padding: 16px; } .wb-layout { padding: 16px; } .wb-sidebar { display: block; } .wb-surfaces { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 16px; } .wb-surface { min-width: 128px; } .wb-panel { min-height: 300px; padding: 18px; } }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
+`;
+
+const WORKBENCH_APP_SCRIPT = String.raw`(() => {
+  const body = document.body;
+  const taskId = body.dataset.taskId || '';
+  const view = body.dataset.view || 'tasks';
+  const initialSection = body.dataset.section || 'summary';
+  const sections = [
+    ['summary', 'Summary'],
+    ['goals', 'Goals'],
+    ['reading_path', 'Reading'],
+    ['planned_changes', 'Changes'],
+    ['verification_plan', 'Verification']
+  ];
+  const aliases = { reading: 'reading_path', changes: 'planned_changes', verification: 'verification_plan' };
+  const state = document.getElementById('wb-state');
+  const items = document.getElementById('wb-items');
+  const title = document.getElementById('wb-panel-title');
+  const subtitle = document.getElementById('wb-panel-subtitle');
+  const status = document.getElementById('wb-status');
+  const banner = document.getElementById('wb-banner');
+  const nav = [...document.querySelectorAll('[data-section]')];
+  const surfaces = [...document.querySelectorAll('[data-surface]')];
+  const text = (value) => value == null ? '' : String(value);
+  const setStatus = (label, kind) => { status.dataset.state = kind || 'ready'; status.querySelector('.wb-status-label').textContent = label; };
+  const setState = (heading, message) => { state.hidden = false; state.innerHTML = ''; const strong = document.createElement('strong'); strong.textContent = heading; const p = document.createElement('p'); p.textContent = message; state.append(strong, p); items.hidden = true; };
+  const valueForItem = (item) => {
+    if (item.kind === 'summary') return [['Intent', item.originalIntent], ['Acceptance claims', item.acceptanceClaimCount], ['Planned changes', item.plannedChangeCount]];
+    if (item.kind === 'claim_reference') return [['Claim', item.claimId], ['Role', item.role]];
+    if (item.kind === 'reading_path') return [['Path', item.entry.filePath || item.entry.symbolId || item.entry.impactPathId || 'Reading entry'], ['Kind', item.entry.kind || '']];
+    if (item.kind === 'planned_change') return [['Change', item.change.filePath || item.change.intent || item.change.id || 'Planned change'], ['Candidate', item.change.candidateLevel || '']];
+    if (item.kind === 'verification_plan') return [['Check', item.entry.description || item.entry.method || item.entry.id || 'Verification'], ['Required', item.entry.required === false ? 'No' : 'Yes']];
+    return [['Item', item.kind]];
+  };
+  const renderItems = (result) => {
+    items.innerHTML = '';
+    if (!result.items || result.items.length === 0) { setState('Nothing recorded yet', 'This Task section is empty.'); return; }
+    state.hidden = true; items.hidden = false;
+    result.items.forEach((item) => { const li = document.createElement('li'); li.className = 'wb-item'; valueForItem(item).forEach(([label, value]) => { const row = document.createElement('div'); const key = document.createElement('div'); key.className = 'wb-item-label'; key.textContent = text(label); const val = document.createElement('div'); val.className = 'wb-item-value'; val.textContent = text(value); row.append(key, val); li.appendChild(row); }); items.appendChild(li); });
+  };
+  const load = async (requested) => {
+    const section = aliases[requested] || requested;
+    nav.forEach((button) => button.setAttribute('aria-current', button.dataset.section === section ? 'page' : 'false'));
+    title.textContent = sections.find(([key]) => key === section)?.[1] || 'Task Brief';
+    banner.hidden = true;
+    if (view !== 'tasks' || !taskId) { setStatus('Unavailable', 'error'); setState('Task view unavailable', 'Open a Task deep link to load persisted Task Brief data.'); return; }
+    setStatus('Loading', 'loading'); setState('Loading Task Brief', 'Reading the persisted section…');
+    try {
+      const params = new URLSearchParams({ section });
+      const response = await fetch('/__workbench/task-brief?' + params.toString(), { credentials: 'same-origin', headers: { accept: 'application/json' } });
+      if (response.status === 401) { setStatus('Session expired', 'error'); setState('Session required', 'Reload the Workbench launch link to establish a new local session.'); return; }
+      if (response.status === 404) { setStatus('Unavailable', 'error'); setState('Task Brief unavailable', 'This Task or its persisted Brief could not be found.'); return; }
+      if (response.status === 409) { setStatus('Stale route', 'stale'); setState('Route no longer matches', 'The requested section is not available for this Workbench session.'); return; }
+      if (!response.ok) throw new Error('request_failed');
+      const payload = await response.json();
+      renderItems(payload.result);
+      const freshness = payload.freshness || 'fresh';
+      if (freshness === 'stale' || freshness === 'partial' || freshness === 'rebuilding') { banner.hidden = false; banner.textContent = 'This view is backed by a ' + freshness + ' repository snapshot.'; setStatus('Task ' + text(payload.result.task.status) + ' · stale', 'stale'); } else setStatus('Task ' + text(payload.result.task.status), 'ready');
+      subtitle.textContent = 'Section data is read from the persisted Task; this view is read-only.';
+      const next = new URL(location.href); next.searchParams.set('section', section); history.replaceState(null, '', next.pathname + next.search);
+    } catch { setStatus('Error', 'error'); setState('Unable to load', 'Retry the section or relaunch the local Workbench.'); }
+  };
+  nav.forEach((button) => button.addEventListener('click', () => load(button.dataset.section || 'summary')));
+  surfaces.forEach((button) => button.addEventListener('click', () => {
+    nav.forEach((item) => item.setAttribute('aria-current', 'false'));
+    surfaces.forEach((item) => item.setAttribute('aria-current', item === button ? 'page' : 'false'));
+    const label = button.dataset.surface === 'graph' ? 'Graph' : 'Knowledge';
+    title.textContent = label;
+    subtitle.textContent = 'Route context: ' + (taskId || 'current Workbench session');
+    banner.hidden = true;
+    setStatus('Unavailable', 'error');
+    setState(label + ' view unavailable', 'This Task-bound slice keeps the surface visible while its persisted context is not available yet.');
+  }));
+  load(initialSection);
+})();`;
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/gu, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
+}
+
+function workbenchHtml(route: WorkbenchRouteV1, identity: WorkbenchSessionV1["identity"]): string {
+  const taskId = route.taskId ?? "";
+  const section = route.section ?? "summary";
+  const taskTitle = taskId === "" ? "Task-first view" : `Task ${taskId}`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(taskTitle)} · Workbench</title><link rel="stylesheet" href="/__workbench/app.css"></head><body data-view="${escapeHtml(route.view)}" data-task-id="${escapeHtml(taskId)}" data-section="${escapeHtml(section)}"><div class="wb-shell"><header class="wb-header"><div class="wb-brand"><div class="wb-kicker">Understand Code · Workbench</div><h1 class="wb-title">${escapeHtml(taskTitle)}</h1></div><div id="wb-status" class="wb-status" data-state="loading"><span class="wb-status-dot" aria-hidden="true"></span><span class="wb-status-label">Loading</span><span aria-hidden="true">·</span><span>${escapeHtml(identity.worktreeId)}</span></div></header><div class="wb-layout"><aside class="wb-sidebar"><nav class="wb-nav" aria-label="Task sections"><div class="wb-nav-title">Task Brief</div><button type="button" data-section="summary" aria-current="false">Summary</button><button type="button" data-section="goals" aria-current="false">Goals</button><button type="button" data-section="reading_path" aria-current="false">Reading</button><button type="button" data-section="planned_changes" aria-current="false">Changes</button><button type="button" data-section="verification_plan" aria-current="false">Verification</button></nav><nav class="wb-surfaces" aria-label="Workbench surfaces"><button type="button" class="wb-surface" data-surface="knowledge" aria-current="false">Knowledge <span class="wb-unavailable">unavailable</span></button><button type="button" class="wb-surface" data-surface="graph" aria-current="false">Graph <span class="wb-unavailable">unavailable</span></button></nav></aside><main class="wb-main"><section class="uc-panel wb-panel" aria-live="polite"><div class="wb-panel-head"><div><h2 id="wb-panel-title" class="wb-panel-title">Task Brief</h2><p id="wb-panel-subtitle" class="wb-panel-subtitle">Loading persisted Task data…</p></div></div><div id="wb-banner" class="wb-banner" hidden></div><div id="wb-state" class="wb-state"><div><strong>Loading Task Brief</strong><p>Reading the persisted section…</p></div></div><ul id="wb-items" class="wb-items" hidden></ul><noscript><div class="wb-state"><strong>JavaScript is required</strong><p>Enable JavaScript to read the local Task Brief.</p></div></noscript></section></main></div></div><script src="/__workbench/app.js" defer></script></body></html>`;
+}
+
 function routeFromQuery(query: URLSearchParams): WorkbenchRouteV1 | undefined {
   const candidate: Record<string, string> = {};
   for (const key of ["view", "taskId", "section", "findingId", "evidenceId", "impactPathId", "focus"] as const) {
@@ -223,6 +405,90 @@ function routeFromQuery(query: URLSearchParams): WorkbenchRouteV1 | undefined {
   }
   const parsed = WorkbenchRouteV1Schema.safeParse(candidate);
   return parsed.success ? parsed.data : undefined;
+}
+
+const TASK_BRIEF_SECTION_ALIASES: Readonly<Record<string, TaskBriefSectionV1>> = {
+  summary: "summary",
+  goals: "goals",
+  reading: "reading_path",
+  reading_path: "reading_path",
+  changes: "planned_changes",
+  planned_changes: "planned_changes",
+  verification: "verification_plan",
+  verification_plan: "verification_plan",
+};
+
+function normalizeTaskBriefSection(value: string | undefined): TaskBriefSectionV1 | undefined {
+  if (value === undefined) return "summary";
+  const aliased = TASK_BRIEF_SECTION_ALIASES[value];
+  if (aliased !== undefined) return aliased;
+  const parsed = TaskBriefSectionV1Schema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
+function routeCompatible(requested: WorkbenchRouteV1, granted: WorkbenchRouteV1): boolean {
+  // Section navigation is intentionally allowed to move within the same Task;
+  // every other deep-link target remains capability-bound to the launch grant.
+  return requested.view === granted.view &&
+    requested.taskId === granted.taskId &&
+    requested.findingId === granted.findingId &&
+    requested.evidenceId === granted.evidenceId &&
+    requested.impactPathId === granted.impactPathId &&
+    requested.focus === granted.focus;
+}
+
+async function readTaskBriefForSession(
+  stored: StoredSessionV1,
+  sessionToken: string,
+  input: GetTaskBriefInputV1,
+): Promise<WorkbenchTaskBriefPageV1> {
+  const browser = getBrowserSession(stored.session, sessionToken, stored.now);
+  if (browser.route.view !== "tasks" || browser.route.taskId === undefined) {
+    throw new WorkbenchSessionError("session_invalid", "Task Brief requires a Task route");
+  }
+  if (input.taskId !== browser.route.taskId) {
+    throw new WorkbenchSessionError("session_invalid", "Task Brief route does not belong to this session");
+  }
+  const reader = stored.taskBriefReader;
+  if (reader === undefined) {
+    throw new WorkbenchSessionError("server_error", "Task Brief reader is unavailable");
+  }
+  let page: WorkbenchTaskBriefPageV1 | undefined;
+  try {
+    const read = await reader(input);
+    if (read !== undefined && "result" in read && "total" in read) {
+      page = read;
+    } else if (read !== undefined) {
+      page = { result: read, total: read.items.length };
+    }
+  } catch {
+    // Do not expose Task Engine or filesystem error details through this local
+    // capability endpoint. The caller only learns that the Task Brief is not
+    // currently available.
+    throw new WorkbenchSessionError("server_error", "Task Brief is unavailable");
+  }
+  if (page === undefined) {
+    throw new WorkbenchSessionError("server_error", "Task Brief is unavailable");
+  }
+  const parsedResult = GetTaskBriefResultV1Schema.safeParse(page.result);
+  if (!parsedResult.success ||
+      parsedResult.data.task.taskId !== browser.route.taskId ||
+      parsedResult.data.section !== input.section ||
+      parsedResult.data.task.repositoryId !== stored.session.output.structuredContent.meta.repositoryId ||
+      parsedResult.data.task.worktreeId !== stored.session.output.structuredContent.meta.worktreeId) {
+    throw new WorkbenchSessionError("session_invalid", "Task Brief identity does not match this session");
+  }
+  if (!Number.isInteger(page.total) || page.total < 0) {
+    throw new WorkbenchSessionError("session_invalid", "Task Brief page metadata is invalid");
+  }
+  if (page.nextCursor !== undefined && !CursorV1Schema.safeParse(page.nextCursor).success) {
+    throw new WorkbenchSessionError("session_invalid", "Task Brief cursor is invalid");
+  }
+  return {
+    result: parsedResult.data,
+    total: page.total,
+    ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
+  };
 }
 
 function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, response: ServerResponse) => void {
@@ -267,14 +533,47 @@ function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, 
     }
 
     if (parsedUrl.pathname === "/__workbench/bootstrap.js") {
-      response.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store" });
+      response.writeHead(200, {
+        "content-type": "text/javascript; charset=utf-8",
+        "cache-control": "no-store",
+        "content-security-policy": WORKBENCH_CSP,
+        "x-content-type-options": "nosniff",
+      });
       response.end(BOOTSTRAP_SCRIPT);
       return;
     }
 
+    if (parsedUrl.pathname === "/__workbench/app.css") {
+      response.writeHead(200, {
+        "content-type": "text/css; charset=utf-8",
+        "cache-control": "no-store",
+        "content-security-policy": WORKBENCH_CSP,
+        "x-content-type-options": "nosniff",
+      });
+      response.end(WORKBENCH_CSS);
+      return;
+    }
+
+    if (parsedUrl.pathname === "/__workbench/app.js") {
+      response.writeHead(200, {
+        "content-type": "text/javascript; charset=utf-8",
+        "cache-control": "no-store",
+        "content-security-policy": WORKBENCH_CSP,
+        "x-content-type-options": "nosniff",
+      });
+      response.end(WORKBENCH_APP_SCRIPT);
+      return;
+    }
+
     if (parsedUrl.pathname === "/workbench" && readCookie(request, "workbench_session") === undefined) {
-      response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; script-src 'self'; connect-src 'self'; base-uri 'none'" });
-      response.end('<!doctype html><title>Workbench</title><script src="/__workbench/bootstrap.js" defer></script>');
+      response.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+        "content-security-policy": WORKBENCH_CSP,
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "no-referrer",
+      });
+      response.end('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Workbench launch</title></head><body><p>Establishing the local Workbench session…</p><script src="/__workbench/bootstrap.js" defer></script></body></html>');
       return;
     }
 
@@ -285,23 +584,92 @@ function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, 
     }
     if (parsedUrl.pathname === "/workbench") {
       try {
-        const grant = getBrowserSession(stored.session, sessionToken);
+        const grant = getBrowserSession(stored.session, sessionToken, stored.now);
         const requested = routeFromQuery(parsedUrl.searchParams);
-        if (requested !== undefined && JSON.stringify(requested) !== JSON.stringify(grant.route)) {
+        if (requested !== undefined && !routeCompatible(requested, grant.route)) {
           writeJson(response, 409, { error: "route_mismatch" });
           return;
         }
-        writeJson(response, 200, { route: grant.route, runtime: grant.identity });
+        if (request.headers.accept?.includes("application/json") === true) {
+          writeJson(response, 200, { route: requested ?? grant.route, runtime: grant.identity });
+          return;
+        }
+        response.writeHead(200, {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store",
+          "content-security-policy": WORKBENCH_CSP,
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "no-referrer",
+        });
+        response.end(workbenchHtml(requested ?? grant.route, grant.identity));
       } catch {
         unauthorized(response);
       }
       return;
     }
 
+    if (parsedUrl.pathname === "/__workbench/task-brief") {
+      const browser = (() => {
+        try { return getBrowserSession(stored.session, sessionToken, stored.now); } catch { return undefined; }
+      })();
+      if (browser === undefined) {
+        unauthorized(response);
+        return;
+      }
+      if (browser.route.view !== "tasks" || browser.route.taskId === undefined) {
+        writeJson(response, 409, { error: "task_route_required" });
+        return;
+      }
+      const requestedTaskId = parsedUrl.searchParams.get("taskId");
+      if (requestedTaskId !== null && requestedTaskId !== browser.route.taskId) {
+        writeJson(response, 409, { error: "task_route_mismatch" });
+        return;
+      }
+      const section = normalizeTaskBriefSection(parsedUrl.searchParams.get("section") ?? browser.route.section);
+      if (section === undefined) {
+        writeJson(response, 409, { error: "section_invalid" });
+        return;
+      }
+      const cursorValue = parsedUrl.searchParams.get("cursor") ?? undefined;
+      const parsedInput = GetTaskBriefInputV1Schema.safeParse({
+        taskId: browser.route.taskId,
+        section,
+        ...(cursorValue === undefined ? {} : { cursor: cursorValue }),
+      });
+      if (!parsedInput.success) {
+        writeJson(response, 409, { error: "cursor_invalid" });
+        return;
+      }
+      void readTaskBriefForSession(stored, sessionToken, parsedInput.data)
+        .then((page) => {
+          writeJson(response, 200, {
+            result: page.result,
+            page: {
+              pageSize: page.result.items.length,
+              returned: page.result.items.length,
+              total: page.total,
+              hasMore: page.nextCursor !== undefined,
+              ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
+            },
+            freshness: stored.session.output.structuredContent.meta.freshness,
+          });
+        })
+        .catch((error: unknown) => {
+          if (error instanceof WorkbenchSessionError && error.code === "session_invalid") {
+            writeJson(response, 409, { error: "task_brief_route_mismatch" });
+            return;
+          }
+          // Reader failures are deliberately indistinguishable from a missing
+          // persisted Brief to avoid turning this endpoint into an oracle.
+          writeJson(response, 404, { error: "task_brief_not_found" });
+        });
+      return;
+    }
+
     const taskMatch = /^\/tasks\/([^/]+)$/u.exec(parsedUrl.pathname);
     if (taskMatch !== null) {
       try {
-        const grant = getBrowserSession(stored.session, sessionToken);
+        const grant = getBrowserSession(stored.session, sessionToken, stored.now);
         const taskId = decodeURIComponent(taskMatch[1] ?? "");
         if (grant.route.view !== "tasks" || grant.route.taskId !== taskId) {
           writeJson(response, 404, { error: "task_route_not_found" });
@@ -317,16 +685,20 @@ function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, 
   };
 }
 
-function getBrowserSession(session: WorkbenchSessionV1, token: string): BrowserSessionV1 {
+function getBrowserSession(
+  session: WorkbenchSessionV1,
+  token: string,
+  now: () => number = Date.now,
+): BrowserSessionV1 {
   const state = browserSessions.get(session);
   const browser = state?.get(token);
   if (browser === undefined) throw new WorkbenchSessionError("session_invalid");
-  const now = Date.now();
-  if (now >= browser.expiresAtMs || now - browser.lastSeenAtMs >= SESSION_IDLE_TTL_MS) {
+  const current = now();
+  if (current >= browser.expiresAtMs || current - browser.lastSeenAtMs >= SESSION_IDLE_TTL_MS) {
     state?.delete(token);
     throw new WorkbenchSessionError("session_expired");
   }
-  browser.lastSeenAtMs = now;
+  browser.lastSeenAtMs = current;
   return browser;
 }
 
@@ -400,6 +772,9 @@ export async function openWorkbenchSessionV1(
   const key = identityKey(options, canonicalRoot);
   const existing = sessionsByIdentity.get(key);
   if (existing !== undefined) {
+    if (options.taskBriefReader !== undefined) {
+      existing.taskBriefReader = options.taskBriefReader;
+    }
     const token = randomToken();
     const issuedAtMs = now();
     existing.launches.set(token, {
@@ -416,7 +791,12 @@ export async function openWorkbenchSessionV1(
   const launches = new Map<string, PendingLaunchV1>();
   const server = createServer();
   const provisional = {} as WorkbenchSessionV1;
-  const stored = { session: provisional, launches } as StoredSessionV1;
+  const stored = {
+    session: provisional,
+    launches,
+    now,
+    ...(options.taskBriefReader === undefined ? {} : { taskBriefReader: options.taskBriefReader }),
+  } as StoredSessionV1;
   const handler = createHttpHandler(stored);
   server.on("request", handler);
   await new Promise<void>((resolve, reject) => {
@@ -457,12 +837,13 @@ export async function openWorkbenchSessionV1(
     server,
     redeemLaunchToken: (candidate) => redeem(stored, candidate, now),
     readTaskRoute: (sessionToken, taskId) => {
-      const browser = getBrowserSession(session, sessionToken);
+      const browser = getBrowserSession(session, sessionToken, now);
       if (browser.route.view !== "tasks" || browser.route.taskId !== taskId) {
         throw new WorkbenchSessionError("session_invalid", "task route does not belong to session");
       }
       return browser.route;
     },
+    readTaskBrief: (sessionToken, input) => readTaskBriefForSession(stored, sessionToken, input),
     close: async () => {
       sessionsByIdentity.delete(key);
       launches.clear();
@@ -475,7 +856,7 @@ export async function openWorkbenchSessionV1(
   // The handler and redeem closure need the final session object, not the
   // provisional reference used while wiring the server listeners.
   (stored as { session: WorkbenchSessionV1 }).session = session;
-  sessionsByIdentity.set(key, { session, launches });
+  sessionsByIdentity.set(key, { session, launches, now, ...(options.taskBriefReader === undefined ? {} : { taskBriefReader: options.taskBriefReader }) });
   return session;
 }
 

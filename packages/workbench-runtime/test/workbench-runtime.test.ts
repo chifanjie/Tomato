@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
+import { GetTaskBriefResultV1Schema } from "@understand-code/contracts/mcp";
 
 import {
   WorkbenchSessionError,
@@ -53,7 +54,8 @@ describe("workbench runtime session", () => {
     const cookie = launch.headers.get("set-cookie")!.split(";", 1)[0]!;
     const route = await fetch(`http://127.0.0.1:${first.port}/workbench`, { headers: { cookie } });
     expect(route.status).toBe(200);
-    expect((await route.json() as { route: { taskId?: string } }).route.taskId).toBe("01ARZ3NDEKTSV4RRFFQ69G5FAV");
+    expect(route.headers.get("content-type")).toContain("text/html");
+    expect(await route.text()).toContain("01ARZ3NDEKTSV4RRFFQ69G5FAV");
     const replay = await fetch(`http://127.0.0.1:${first.port}/__workbench/launch`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }),
     });
@@ -91,6 +93,97 @@ describe("workbench runtime session", () => {
     expect(() => session.redeemLaunchToken(token)).toThrowError(
       expect.objectContaining({ code: "launch_token_invalid" }),
     );
+    await session.close();
+  });
+
+  it("serves an authenticated Task-first HTML shell and a contract-validated brief endpoint", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "workbench-runtime-task-"));
+    roots.push(root);
+    const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const result = GetTaskBriefResultV1Schema.parse({
+      task: {
+        schemaVersion: 1,
+        taskId,
+        title: "Task fixture",
+        originalIntent: "Read the persisted Task Brief.",
+        status: "created",
+        repositoryId: "repo:test",
+        worktreeId: "worktree:test",
+        baselineSnapshotId: "snapshot:test",
+        latestSnapshotId: "snapshot:test",
+        createdAt: "2026-08-03T00:00:00.000Z",
+        updatedAt: "2026-08-03T00:00:00.000Z",
+        producerVersion: "0.1.0",
+        revision: 1,
+      },
+      section: "summary",
+      items: [{
+        kind: "summary",
+        originalIntent: "Read the persisted Task Brief.",
+        goalClaimId: "claim:goal",
+        acceptanceClaimCount: 0,
+        plannedChangeCount: 0,
+      }],
+    });
+    const session = await openWorkbenchSessionV1(
+      { route: { view: "tasks", taskId, section: "summary" } },
+      {
+        ...binding(root),
+        taskBriefReader: async (input) => input.section === "summary"
+          ? { result, total: result.items.length }
+          : undefined,
+      },
+    );
+    const token = session.output.structuredContent.result.deepLink.split("#")[1]!;
+    const launch = await fetch(`http://127.0.0.1:${session.port}/__workbench/launch`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    const cookie = launch.headers.get("set-cookie")!.split(";", 1)[0]!;
+    const html = await fetch(`http://127.0.0.1:${session.port}/workbench`, { headers: { cookie } });
+    expect(html.status).toBe(200);
+    const htmlText = await html.text();
+    expect(htmlText).toContain("Summary");
+    expect(htmlText).toContain("/__workbench/app.js");
+    expect(htmlText).toContain("Knowledge");
+    const brief = await fetch(
+      `http://127.0.0.1:${session.port}/__workbench/task-brief?section=summary`,
+      { headers: { cookie } },
+    );
+    expect(brief.status).toBe(200);
+    expect((await brief.json() as { result: unknown }).result).toEqual(result);
+    const unauthenticatedBrief = await fetch(
+      `http://127.0.0.1:${session.port}/__workbench/task-brief?section=summary`,
+    );
+    expect(unauthenticatedBrief.status).toBe(401);
+    const unknownSection = await fetch(
+      `http://127.0.0.1:${session.port}/__workbench/task-brief?section=not-a-section`,
+      { headers: { cookie } },
+    );
+    expect(unknownSection.status).toBe(409);
+    const unknownTaskId = "01ARZ3NDEKTSV4RRFFQ69G5FAW";
+    const unknownSession = await openWorkbenchSessionV1(
+      { route: { view: "tasks", taskId: unknownTaskId } },
+      {
+        ...binding(root),
+        taskBriefReader: async (input) => input.taskId === taskId
+          ? { result, total: result.items.length }
+          : undefined,
+      },
+    );
+    const unknownToken = unknownSession.output.structuredContent.result.deepLink.split("#")[1]!;
+    const unknownLaunch = await fetch(`http://127.0.0.1:${session.port}/__workbench/launch`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: unknownToken }),
+    });
+    const unknownCookie = unknownLaunch.headers.get("set-cookie")!.split(";", 1)[0]!;
+    const unknownTask = await fetch(
+      `http://127.0.0.1:${session.port}/__workbench/task-brief?section=summary`,
+      { headers: { cookie: unknownCookie } },
+    );
+    expect([404, 409]).toContain(unknownTask.status);
     await session.close();
   });
 });

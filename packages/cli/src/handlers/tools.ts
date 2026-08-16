@@ -306,6 +306,14 @@ async function openWorkbench(argumentsValue: unknown, canonicalRoot: string) {
     headCommit: published.snapshot.snapshot.headCommit ?? null,
     worktreeFingerprint: published.snapshot.worktreeFingerprint,
     freshness: published.pulse.status,
+    taskBriefReader: async (input) => {
+      const page = await runtime.taskEngine.getTaskBrief(input);
+      return {
+        result: page.result,
+        total: page.total,
+        ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
+      };
+    },
   });
   return OpenWorkbenchOutputV1Schema.parse({
     ...session.output,

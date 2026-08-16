@@ -134,6 +134,20 @@ describe("open_workbench MCP vertical", () => {
     await expect(taskResponse.json()).resolves.toMatchObject({
       route: { view: "tasks", taskId, section: "summary" },
     });
+    const htmlResponse = await fetch(new URL("/workbench", deepLink), {
+      headers: { connection: "close", cookie: cookie! },
+    });
+    expect(htmlResponse.status).toBe(200);
+    expect(htmlResponse.headers.get("content-type")).toContain("text/html");
+    await expect(htmlResponse.text()).resolves.toContain("/__workbench/app.js");
+    const briefResponse = await fetch(
+      new URL("/__workbench/task-brief?section=summary", deepLink),
+      { headers: { connection: "close", cookie: cookie! } },
+    );
+    expect(briefResponse.status).toBe(200);
+    await expect(briefResponse.json()).resolves.toMatchObject({
+      result: { task: { taskId }, section: "summary" },
+    });
   });
 
   it("rejects a deep link to an unknown Task before starting a Workbench", async () => {

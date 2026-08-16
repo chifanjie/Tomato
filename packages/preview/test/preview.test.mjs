@@ -112,6 +112,15 @@ test("cold demo serves usable Graph/Wiki and protects data endpoints", async () 
     const wiki = await fetch(`${base.origin}/knowledge-base/wiki-index.json?token=${token}`);
     assert.equal(wiki.status, 200);
     assert.equal((await wiki.json()).version, 2);
+    const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const taskBrief = await fetch(`${base.origin}/tasks/${taskId}/brief.json?token=${token}`);
+    assert.equal(taskBrief.status, 200);
+    const taskProjection = await taskBrief.json();
+    assert.equal(taskProjection.task.taskId, taskId);
+    assert.equal(taskProjection.brief.originalIntent, taskProjection.task.originalIntent);
+    assert.equal(taskProjection.section, "summary");
+    assert.equal(taskProjection.items[0].kind, "summary");
+    assert.equal((await fetch(`${base.origin}/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAW/brief.json?token=${token}`)).status, 404);
     assert.equal((await fetch(`${base.origin}/knowledge-graph.json`)).status, 403);
     assert.equal((await fetch(`${base.origin}/knowledge-base/项目总览.md?token=bad`)).status, 403);
     assert.equal((await fetch(`${base.origin}/knowledge-base/..%2F..%2Fetc%2Fpasswd?token=${token}`)).status, 404);

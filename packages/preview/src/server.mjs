@@ -5,10 +5,14 @@ import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  canonicalizeJson,
   getRepositorySnapshotDetailed,
   isSensitiveRepositoryPath,
   parseWikiIndexV2,
   parseWikiSearchIndexV2,
+  RepoPulseArtifactV1Schema,
+  TaskBriefArtifactV1Schema,
+  TaskManifestArtifactV1Schema,
   readStableRepositoryFile,
   validateGraph,
 } from "../dist/contracts.mjs";
@@ -23,6 +27,18 @@ const DEMO_ROOT = existsSync(path.join(PACKAGE_ROOT, "dist/demo"))
 const MAX_SOURCE_BYTES = 1024 * 1024;
 const MAX_KB_BYTES = 2 * 1024 * 1024;
 const MAX_ARTIFACT_BYTES = 32 * 1024 * 1024;
+const MAX_TASK_BYTES = 4 * 1024 * 1024;
+const TASK_ID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/u;
+const TASK_BRIEF_SECTIONS = new Set([
+  "summary",
+  "goals",
+  "reading_path",
+  "planned_changes",
+  "assumptions",
+  "risks",
+  "unknowns",
+  "verification_plan",
+]);
 
 function json(res, status, body) {
   res.statusCode = status;
@@ -204,6 +220,8 @@ async function rootForMode({ root, demo }, gitEnvironment) {
     }
   }
   let repositorySnapshotId = null;
+  let repositoryId = null;
+  let worktreeId = null;
   let head = null;
   if (!demo) {
     const initialCapture = await getRepositorySnapshotDetailed(resolved, { environment: gitEnvironment });
@@ -212,6 +230,8 @@ async function rootForMode({ root, demo }, gitEnvironment) {
     }
     const initialSnapshot = assertCleanRootCapture(initialCapture);
     repositorySnapshotId = initialSnapshot.snapshotId;
+    repositoryId = initialSnapshot.repositoryId;
+    worktreeId = initialSnapshot.worktreeId;
     head = initialSnapshot.headCommit ?? null;
     if (head === null) throw new Error("not_ready: cannot verify published graph revision");
   }
@@ -309,13 +329,13 @@ async function rootForMode({ root, demo }, gitEnvironment) {
       await getRepositorySnapshotDetailed(resolved, { environment: gitEnvironment }),
       repositorySnapshotId,
     );
-    return { root: resolved, artifactRoot, graph, wiki, search, markdownByPath, meta: verifiedMeta, config: verifiedConfig, head, repositorySnapshotId, mode: demo ? "demo" : "root" };
+    return { root: resolved, artifactRoot, graph, wiki, search, markdownByPath, meta: verifiedMeta, config: verifiedConfig, head, repositorySnapshotId, repositoryId, worktreeId, mode: demo ? "demo" : "root" };
   }
   if (!demo) assertCleanRootCapture(
     await getRepositorySnapshotDetailed(resolved, { environment: gitEnvironment }),
     repositorySnapshotId,
   );
-  return { root: resolved, artifactRoot, graph, wiki: null, search: null, markdownByPath: new Map(), meta: verifiedMeta, config: verifiedConfig, head, repositorySnapshotId, mode: demo ? "demo" : "root" };
+  return { root: resolved, artifactRoot, graph, wiki: null, search: null, markdownByPath: new Map(), meta: verifiedMeta, config: verifiedConfig, head, repositorySnapshotId, repositoryId, worktreeId, mode: demo ? "demo" : "root" };
 }
 
 function sanitizeGraph(graph, projectRoot) {
@@ -455,6 +475,117 @@ async function readContained(root, relative, maxBytes) {
   }
 }
 
+function decodeTaskId(value) {
+  if (typeof value !== "string") return null;
+  try {
+    const decoded = decodeURIComponent(value);
+    return TASK_ID_PATTERN.test(decoded) ? decoded : null;
+  } catch {
+    return null;
+  }
+}
+
+function artifactContentDigestMatches(artifact) {
+  if (!artifact || typeof artifact.contentDigest !== "string") return false;
+  const actual = `sha256:${createHash("sha256").update(canonicalizeJson(artifact.payload), "utf8").digest("hex")}`;
+  return artifact.contentDigest === actual;
+}
+
+function taskBriefItems(brief, section) {
+  switch (section) {
+    case "summary":
+      return [{
+        kind: "summary",
+        originalIntent: brief.originalIntent,
+        goalClaimId: brief.goalClaimId,
+        acceptanceClaimCount: brief.acceptanceClaimIds.length,
+        plannedChangeCount: brief.plannedChanges.length,
+      }];
+    case "goals":
+      return [
+        { kind: "claim_reference", role: "goal", claimId: brief.goalClaimId },
+        ...brief.nonGoalClaimIds.map((claimId) => ({ kind: "claim_reference", role: "non_goal", claimId })),
+        ...brief.acceptanceClaimIds.map((claimId) => ({ kind: "claim_reference", role: "acceptance", claimId })),
+      ];
+    case "reading_path":
+      return brief.readingPath.map((entry) => ({ kind: "reading_path", entry }));
+    case "planned_changes":
+      return brief.plannedChanges.map((change) => ({ kind: "planned_change", change }));
+    case "assumptions":
+      return brief.assumptionClaimIds.map((claimId) => ({ kind: "claim_reference", role: "assumption", claimId }));
+    case "risks":
+      return brief.riskClaimIds.map((claimId) => ({ kind: "claim_reference", role: "risk", claimId }));
+    case "unknowns":
+      return brief.unknownClaimIds.map((claimId) => ({ kind: "claim_reference", role: "unknown", claimId }));
+    case "verification_plan":
+      return brief.verificationPlan.map((entry) => ({ kind: "verification_plan", entry }));
+    default:
+      return [];
+  }
+}
+
+async function readTaskBriefProjection(state, taskId, section) {
+  const taskRaw = await readContainedJson(
+    state.root,
+    `.understand-code/tasks/${taskId}/task.json`,
+    MAX_TASK_BYTES,
+  );
+  const briefRaw = await readContainedJson(
+    state.root,
+    `.understand-code/tasks/${taskId}/task-brief.json`,
+    MAX_TASK_BYTES,
+  );
+  if (taskRaw === null || briefRaw === null) return { status: "missing" };
+
+  const taskResult = TaskManifestArtifactV1Schema.safeParse(taskRaw);
+  const briefResult = TaskBriefArtifactV1Schema.safeParse(briefRaw);
+  if (!taskResult.success || !briefResult.success
+    || !artifactContentDigestMatches(taskResult.data)
+    || !artifactContentDigestMatches(briefResult.data)) return { status: "invalid" };
+  const task = taskResult.data;
+  const brief = briefResult.data;
+  if (task.taskId !== taskId || brief.taskId !== taskId
+    || task.repositoryId !== brief.repositoryId
+    || task.worktreeId !== brief.worktreeId
+    || task.sourceSnapshotId !== brief.sourceSnapshotId
+    || task.revision !== brief.revision) {
+    return { status: "invalid" };
+  }
+  if (state.mode === "root"
+    && (task.sourceSnapshotId !== state.repositorySnapshotId
+      || task.repositoryId !== state.repositoryId
+      || task.worktreeId !== state.worktreeId)) {
+    return { status: "stale" };
+  }
+
+  let pulse = null;
+  const pulseRaw = await readContainedJson(state.root, ".understand-code/repo-pulse.json", MAX_TASK_BYTES);
+  if (pulseRaw !== null) {
+    const pulseResult = RepoPulseArtifactV1Schema.safeParse(pulseRaw);
+    if (pulseResult.success
+      && artifactContentDigestMatches(pulseResult.data)
+      && pulseResult.data.repositoryId === task.repositoryId
+      && pulseResult.data.worktreeId === task.worktreeId
+      && pulseResult.data.sourceSnapshotId === task.sourceSnapshotId) {
+      pulse = pulseResult.data.payload;
+    }
+  }
+  return {
+    status: "ready",
+    result: {
+      task: task.payload,
+      brief: brief.payload,
+      section,
+      items: taskBriefItems(brief.payload, section),
+      pulse,
+      freshness: {
+        sourceSnapshotId: task.sourceSnapshotId,
+        current: state.mode === "demo" || task.sourceSnapshotId === state.repositorySnapshotId,
+      },
+    },
+  };
+}
+
 function readCommittedSource(root, revision, relative, maxBytes, gitEnvironment) {
   const safe = safeRelative(relative);
   if (!safe) return null;
@@ -483,9 +614,13 @@ function createRequestHandler(state, token, gitEnvironment) {
     securityHeaders(res);
     const url = parseRequestUrl(req.url ?? "/");
     if (url === null) { json(res, 400, { error: "bad_request" }); return; }
-    const dataEndpoint = url.pathname === "/knowledge-graph.json" || url.pathname === "/domain-graph.json" || url.pathname === "/diff-overlay.json" || url.pathname === "/meta.json" || url.pathname === "/config.json" || url.pathname === "/file-content.json" || url.pathname.startsWith("/knowledge-base/");
+    const taskPathMatch = /^\/tasks\/([^/]+)\/brief\.json$/u.exec(url.pathname);
+    const taskId = taskPathMatch ? decodeTaskId(taskPathMatch[1]) : null;
+    const taskEndpoint = taskPathMatch !== null;
+    const dataEndpoint = taskEndpoint || url.pathname === "/knowledge-graph.json" || url.pathname === "/domain-graph.json" || url.pathname === "/diff-overlay.json" || url.pathname === "/meta.json" || url.pathname === "/config.json" || url.pathname === "/file-content.json" || url.pathname.startsWith("/knowledge-base/");
     if (dataEndpoint && req.method !== "GET") { res.setHeader("Allow", "GET"); json(res, 405, { error: "method_not_allowed" }); return; }
     if (dataEndpoint && url.searchParams.get("token") !== token) { json(res, 403, { error: "forbidden" }); return; }
+    if (taskEndpoint && taskId === null) { json(res, 404, { error: "task_brief_not_available" }); return; }
     if (dataEndpoint && state.mode === "root") {
       const currentCapture = await getRepositorySnapshotDetailed(state.root, { environment: gitEnvironment });
       const currentSnapshot = currentCapture.snapshot;
@@ -495,6 +630,29 @@ function createRequestHandler(state, token, gitEnvironment) {
         || currentSnapshot.snapshotId !== state.repositorySnapshotId) {
         json(res, 409, { error: "repository_state_changed" }); return;
       }
+    }
+
+    if (taskEndpoint) {
+      const section = url.searchParams.get("section") ?? "summary";
+      if (!TASK_BRIEF_SECTIONS.has(section)) {
+        json(res, 400, { error: "invalid_task_brief_section" });
+        return;
+      }
+      const projection = await readTaskBriefProjection(state, taskId, section);
+      if (projection.status === "missing") {
+        json(res, 404, { error: "task_brief_not_available" });
+        return;
+      }
+      if (projection.status === "invalid") {
+        json(res, 422, { error: "task_brief_invalid" });
+        return;
+      }
+      if (projection.status === "stale") {
+        json(res, 409, { error: "task_brief_stale" });
+        return;
+      }
+      json(res, 200, projection.result);
+      return;
     }
 
     if (url.pathname === "/knowledge-graph.json") { json(res, 200, publicGraph); return; }

@@ -18,6 +18,11 @@ import { GLOBAL_WIKI_SEARCH_REQUEST_EVENT } from "./components/wiki/WikiResponsi
 import DashboardHeader from "./components/DashboardHeader";
 import TokenGate from "./components/TokenGate";
 import WarningBanner from "./components/WarningBanner";
+import TaskFirstWorkbench, {
+  type TaskFirstRoute,
+  type TaskFirstSection,
+} from "./components/taskFirst/TaskFirstWorkbench";
+import { taskFirstRouteFromLocation, taskFirstSectionPath } from "./components/taskFirst/route";
 import { normalizeLegacyGraphBranding } from "./legacyBranding";
 import { useDashboardStore } from "./store";
 import { ThemeProvider } from "./themes/index.ts";
@@ -37,6 +42,7 @@ import {
   wikiTargetHash,
   type WikiTarget,
 } from "./wiki/wikiContent";
+import { loadTaskWorkbench, type TaskWorkbenchLoadResult } from "./workbench/taskContextLoader";
 
 const GraphExplorer = lazy(() => import("./components/graphExplorer/GraphExplorer"));
 
@@ -440,8 +446,97 @@ function resolveInitialToken(): string | null {
   return urlToken;
 }
 
+function taskLocationRoute(): TaskFirstRoute | null {
+  return taskFirstRouteFromLocation({
+    pathname: window.location.pathname,
+    search: window.location.search,
+  });
+}
+
+function TaskFirstDashboard({
+  accessToken,
+  onTokenInvalid,
+  route,
+}: {
+  readonly accessToken: string;
+  readonly onTokenInvalid: () => void;
+  readonly route: TaskFirstRoute;
+}) {
+  const [loadState, setLoadState] = useState<{
+    readonly loading: boolean;
+    readonly result: TaskWorkbenchLoadResult | null;
+  }>(() => ({ loading: Boolean(route.taskId), result: null }));
+
+  const load = useCallback(() => {
+    if (!route.taskId) {
+      setLoadState({ loading: false, result: { status: "missing" } });
+      return () => undefined;
+    }
+    let cancelled = false;
+    setLoadState({ loading: true, result: null });
+    void loadTaskWorkbench(route, accessToken).then((result) => {
+      if (cancelled) return;
+      if (result.status === "forbidden") {
+        onTokenInvalid();
+        return;
+      }
+      setLoadState({ loading: false, result });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, onTokenInvalid, route]);
+
+  useEffect(() => load(), [load]);
+
+  const navigateToSurface = useCallback((surface: "knowledge" | "graph") => {
+    const target = surface === "graph" ? "/#graph" : "/#wiki";
+    window.history.pushState(null, "", target);
+    window.dispatchEvent(new Event("popstate"));
+  }, []);
+
+  const selectSection = useCallback((section: TaskFirstSection) => {
+    if (!route.taskId) return;
+    const params = new URLSearchParams();
+    params.set("section", taskFirstSectionPath(section));
+    const target = `/tasks/${encodeURIComponent(route.taskId)}?${params.toString()}`;
+    window.history.pushState(null, "", target);
+    window.dispatchEvent(new Event("popstate"));
+  }, [route.taskId]);
+
+  const result = loadState.result;
+  const payload = result?.status === "ready" ? result.payload : undefined;
+  const error = result && result.status !== "ready" && route.taskId
+    ? result.message ?? "Task Brief is unavailable."
+    : null;
+  const stale = result?.status === "stale"
+    ? result.message
+    : payload && !payload.freshness.current
+      ? "The Task Brief source Snapshot is not current."
+      : false;
+  const pulseStatus = payload?.pulse?.status
+    ?? (result?.status === "error" ? "error" : result?.status === "stale" ? "stale" : "not_ready");
+
+  return (
+    <TaskFirstWorkbench
+      route={route}
+      page={payload}
+      pulse={payload?.pulse}
+      pulseStatus={pulseStatus}
+      loading={loadState.loading}
+      error={error}
+      stale={stale}
+      onRetry={load}
+      onSelectSection={selectSection}
+      onOpenKnowledge={(nextRoute) => navigateToSurface(nextRoute.view === "knowledge" ? "knowledge" : "graph")}
+      onOpenGraph={(nextRoute) => navigateToSurface(nextRoute.view === "graph" ? "graph" : "knowledge")}
+    />
+  );
+}
+
 function App() {
   const [accessToken, setAccessToken] = useState<string | null>(resolveInitialToken);
+  const [locationRevision, setLocationRevision] = useState(0);
   const handleTokenValid = useCallback((token: string) => {
     writeStoredToken(token);
     setAccessToken(token);
@@ -451,10 +546,31 @@ function App() {
     setAccessToken(null);
   }, []);
 
+  useEffect(() => {
+    const onLocation = () => setLocationRevision((revision) => revision + 1);
+    window.addEventListener("popstate", onLocation);
+    window.addEventListener("hashchange", onLocation);
+    return () => {
+      window.removeEventListener("popstate", onLocation);
+      window.removeEventListener("hashchange", onLocation);
+    };
+  }, []);
+
+  const taskRoute = useMemo(taskLocationRoute, [locationRevision]);
+
   if (DEMO_MODE) {
     return <Dashboard accessToken="__demo__" onTokenInvalid={handleTokenInvalid} />;
   }
   if (accessToken === null) return <TokenGate onTokenValid={handleTokenValid} />;
+  if (taskRoute) {
+    return (
+      <TaskFirstDashboard
+        accessToken={accessToken}
+        onTokenInvalid={handleTokenInvalid}
+        route={taskRoute}
+      />
+    );
+  }
   return <Dashboard accessToken={accessToken} onTokenInvalid={handleTokenInvalid} />;
 }
 

@@ -197,6 +197,16 @@ async function main() {
   await writeFile(path.join(demoRoot, "knowledge-base/阅读流程.md"), "# 阅读与验证流程\n\n1. 从推荐阅读开始。\n2. 打开 Graph 节点。\n3. 查看 Evidence rail 的文件与行号。\n4. 搜索 `main` 回到入口。\n");
   await mkdir(path.join(demoRoot, "knowledge-base/参考"), { recursive: true });
   await writeFile(path.join(demoRoot, "knowledge-base/参考/app.ts.md"), "# app.ts\n\n```ts\nexport function main() { return 'ready'; }\n```\n\nEvidence: `src/app.ts:1-4`.\n");
+  // Keep one real persisted Task Brief in the packed demo so the Task-first
+  // Dashboard route exercises the same read-only artifact projection as a
+  // published worktree. The fixture is validated by the contracts package.
+  const referenceFixtures = path.join(workspaceRoot, "packages/contracts/fixtures/v1/reference");
+  const demoTaskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+  const demoTaskRoot = path.join(demoRoot, "tasks", demoTaskId);
+  await mkdir(demoTaskRoot, { recursive: true });
+  await cp(path.join(referenceFixtures, "task.json"), path.join(demoTaskRoot, "task.json"));
+  await cp(path.join(referenceFixtures, "task-brief.json"), path.join(demoTaskRoot, "task-brief.json"));
+  await cp(path.join(referenceFixtures, "repo-pulse.json"), path.join(demoRoot, "repo-pulse.json"));
   await mkdir(path.join(distRoot, "demo/src"), { recursive: true });
   await writeFile(path.join(distRoot, "demo/src/app.ts"), "// Graph/Wiki/Evidence knowledge layer\nexport function main() { return 'ready'; }\n");
   await writeFile(path.join(distRoot, "README.md"), await readFile(path.join(packageRoot, "README.md")));

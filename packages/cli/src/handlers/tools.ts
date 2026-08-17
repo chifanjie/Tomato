@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
@@ -12,6 +13,8 @@ import {
   BuildTaskBriefInputV1Schema,
   BuildTaskBriefOutputV1Schema,
   CheckChangeOutputV1Schema,
+  GetEvidenceInputV1Schema,
+  GetEvidenceOutputV1Schema,
   GetRepoPulseInputV1Schema,
   GetRepoPulseOutputV1Schema,
   GetTaskBriefInputV1Schema,
@@ -19,6 +22,10 @@ import {
   OpenWorkbenchInputV1Schema,
   OpenWorkbenchOutputV1Schema,
   RecordVerificationOutputV1Schema,
+  SearchContextInputV1Schema,
+  SearchContextOutputV1Schema,
+  TraceImpactInputV1Schema,
+  TraceImpactOutputV1Schema,
   UpdateTaskOutputV1Schema,
   type McpToolErrorResultV1,
 } from "@understand-code/contracts/mcp";
@@ -63,12 +70,516 @@ export const IMPLEMENTED_TOOL_NAMES = Object.freeze([
   "check_change",
   "record_verification",
   "open_workbench",
+  "get_evidence",
+  "search_context",
+  "trace_impact",
 ] as const);
 
 export type ImplementedToolName = (typeof IMPLEMENTED_TOOL_NAMES)[number];
 
 function elapsed(startedAt: number): number {
   return Math.max(0, performance.now() - startedAt);
+}
+
+type PageCursorIdentity = Readonly<{
+  kind: string;
+  taskId: string;
+  revision: number;
+  requestDigest: string;
+}>;
+
+function encodePageCursor(identity: PageCursorIdentity, offset: number): string {
+  return Buffer.from(
+    JSON.stringify({ version: 1, ...identity, offset }),
+    "utf8",
+  ).toString("base64url");
+}
+
+function decodePageCursor(
+  cursor: string | undefined,
+  identity: PageCursorIdentity,
+): number {
+  if (cursor === undefined) return 0;
+  try {
+    const parsed: unknown = JSON.parse(
+      Buffer.from(cursor, "base64url").toString("utf8"),
+    );
+    if (
+      parsed === null ||
+      typeof parsed !== "object" ||
+      (parsed as { version?: unknown }).version !== 1 ||
+      (parsed as { kind?: unknown }).kind !== identity.kind ||
+      (parsed as { taskId?: unknown }).taskId !== identity.taskId ||
+      (parsed as { revision?: unknown }).revision !== identity.revision ||
+      (parsed as { requestDigest?: unknown }).requestDigest !==
+        identity.requestDigest ||
+      !Number.isSafeInteger((parsed as { offset?: unknown }).offset) ||
+      ((parsed as { offset: number }).offset) < 0
+    ) {
+      throw new Error("cursor identity mismatch");
+    }
+    return (parsed as { offset: number }).offset;
+  } catch {
+    throw new ToolFailure(invalidArgumentFailure(["cursor"], "invalid_cursor"));
+  }
+}
+
+async function readTaskScopedContext(
+  runtime: Awaited<ReturnType<typeof openRuntime>>,
+  taskId: string,
+) {
+  const manifest = await runtime.store.readManifest({ verifyArtifacts: false });
+  const taskDescriptor = manifest.artifacts.find(
+    (descriptor) =>
+      descriptor.taskId === taskId && descriptor.artifactType === "task_manifest",
+  );
+  if (taskDescriptor === undefined) {
+    throw new ToolFailure(resourceNotFoundFailure("task", taskId));
+  }
+  const read = await runtime.store.readTaskBundle(taskId);
+  if (
+    read.bundle.manifest.taskId !== taskId ||
+    read.bundle.manifest.repositoryId !== runtime.store.repositoryId ||
+    read.bundle.manifest.worktreeId !== runtime.store.worktreeId ||
+    taskDescriptor.sourceSnapshotId !== read.bundle.manifest.latestSnapshotId
+  ) {
+    throw new ToolFailure(artifactUnavailableFailure("corrupt", "task_context"));
+  }
+  const publishedSnapshot = await readPublishedSnapshot(
+    runtime.store,
+    read.bundle.manifest.latestSnapshotId,
+  );
+  const publishedPulse = await readPublishedPulse(runtime.store);
+  const freshness =
+    publishedPulse.pulse.evaluatedSnapshotId ===
+    read.bundle.manifest.latestSnapshotId
+      ? publishedPulse.pulse.status
+      : "stale";
+  return { read, publishedSnapshot, freshness };
+}
+
+async function getEvidence(argumentsValue: unknown, canonicalRoot: string) {
+  const parsed = GetEvidenceInputV1Schema.safeParse(argumentsValue ?? {});
+  if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
+  const startedAt = performance.now();
+  const runtime = await openRuntime(canonicalRoot);
+  const context = await readTaskScopedContext(runtime, parsed.data.taskId);
+  const bundle = context.read.bundle;
+  if (!("evidence" in bundle)) {
+    throw new ToolFailure(artifactUnavailableFailure("missing", "evidence_ledger"));
+  }
+  const evidence = bundle.evidence;
+  const evidenceById = new Map(evidence.map((item) => [item.id, item]));
+  const requestDigest = createRequestDigest({
+    taskId: parsed.data.taskId,
+    evidenceIds: parsed.data.evidenceIds,
+    maxExcerptChars: parsed.data.maxExcerptChars ?? null,
+  });
+  const identity: PageCursorIdentity = {
+    kind: "get_evidence",
+    taskId: parsed.data.taskId,
+    revision: bundle.manifest.revision,
+    requestDigest,
+  };
+  const entries = parsed.data.evidenceIds.map((id) => ({
+    id,
+    evidence: evidenceById.get(id),
+  }));
+  const offset = decodePageCursor(parsed.data.cursor, identity);
+  if (offset > entries.length) {
+    throw new ToolFailure(invalidArgumentFailure(["cursor"], "invalid_cursor"));
+  }
+  const pageSize = parsed.data.pageSize ?? 50;
+  const pageEntries = entries.slice(offset, offset + pageSize);
+  const maxExcerptChars = parsed.data.maxExcerptChars;
+  const pageEvidence = pageEntries
+    .filter((entry): entry is { id: string; evidence: (typeof evidence)[number] } =>
+      entry.evidence !== undefined,
+    )
+    .map(({ evidence: item }) => {
+      if (maxExcerptChars === undefined || !("excerpt" in item) || item.excerpt === undefined) {
+        return item;
+      }
+      return { ...item, excerpt: item.excerpt.slice(0, maxExcerptChars) };
+    });
+  const missingEvidenceIds = pageEntries
+    .filter((entry) => entry.evidence === undefined)
+    .map((entry) => entry.id);
+  const nextOffset = offset + pageEntries.length;
+  const hasMore = nextOffset < entries.length;
+  return GetEvidenceOutputV1Schema.parse({
+    isError: false,
+    content: [{ type: "text", text: "Task evidence loaded." }],
+    structuredContent: {
+      schemaVersion: 1,
+      meta: successMeta(
+        context.publishedSnapshot,
+        context.freshness,
+        elapsed(startedAt),
+        {
+          cacheHit: true,
+          truncatedCategories: hasMore ? ["evidence"] : [],
+        },
+      ),
+      page: {
+        pageSize,
+        returned: pageEntries.length,
+        total: entries.length,
+        ...(hasMore ? { nextCursor: encodePageCursor(identity, nextOffset) } : {}),
+        hasMore,
+      },
+      result: { evidence: pageEvidence, missingEvidenceIds },
+    },
+  });
+}
+
+function createRequestDigest(value: unknown): string {
+  return `sha256:${createHash("sha256").update(JSON.stringify(value), "utf8").digest("hex")}`;
+}
+
+function normalizeSearchText(value: string): string {
+  return value
+    .normalize("NFKC")
+    .toLocaleLowerCase("en-US")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .replace(/\s+/gu, " ");
+}
+
+function searchTokens(value: string): readonly string[] {
+  const normalized = normalizeSearchText(value);
+  return normalized.length === 0 ? [] : [...new Set(normalized.split(" "))];
+}
+
+function scoreSearchCandidate(
+  query: string,
+  fields: readonly string[],
+): { readonly score: number; readonly reasons: readonly string[] } | undefined {
+  const queryPhrase = normalizeSearchText(query);
+  const tokens = searchTokens(query);
+  const haystack = normalizeSearchText(fields.join(" "));
+  if (queryPhrase.length === 0 || haystack.length === 0) return undefined;
+  const matched = tokens.filter((token) => haystack.includes(token));
+  if (matched.length === 0 && !haystack.includes(queryPhrase)) return undefined;
+  const exact = haystack.includes(queryPhrase) ? 1 : 0;
+  const lexical = tokens.length === 0 ? 0 : matched.length / tokens.length;
+  const reasons = [
+    ...(exact > 0 ? ["exact query phrase match"] : []),
+    ...(matched.length > 0 ? [`matched ${matched.length} query token${matched.length === 1 ? "" : "s"}`] : []),
+  ];
+  return {
+    score: Math.round((exact * 0.6 + lexical * 0.4) * 1_000) / 1_000,
+    reasons: reasons.length > 0 ? reasons : ["query match"],
+  };
+}
+
+function pathMatchesPrefix(filePath: string, prefix: string): boolean {
+  const pathValue = filePath.replaceAll("\\", "/").replace(/^\.\//u, "");
+  const prefixValue = prefix.replaceAll("\\", "/").replace(/^\.\//u, "").replace(/\/$/u, "");
+  return pathValue === prefixValue || pathValue.startsWith(`${prefixValue}/`);
+}
+
+type SearchCandidate = {
+  readonly kind: "file" | "symbol" | "wiki" | "graph";
+  readonly id: string;
+  readonly title: string;
+  readonly summary: string;
+  readonly score: number;
+  readonly reasons: readonly string[];
+  readonly evidenceIds: readonly string[];
+  readonly filePath?: string;
+  readonly symbolId?: string;
+  readonly documentId?: string;
+  readonly nodeId?: string;
+};
+
+async function searchContext(argumentsValue: unknown, canonicalRoot: string) {
+  const parsed = SearchContextInputV1Schema.safeParse(argumentsValue ?? {});
+  if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
+  if (parsed.data.taskId === undefined) {
+    throw new ToolFailure(artifactUnavailableFailure("missing", "task_context"));
+  }
+  const startedAt = performance.now();
+  const runtime = await openRuntime(canonicalRoot);
+  const context = await readTaskScopedContext(runtime, parsed.data.taskId);
+  const bundle = context.read.bundle;
+  if (!("brief" in bundle) || !("claims" in bundle) || !("evidence" in bundle) || !("impactPaths" in bundle)) {
+    throw new ToolFailure(artifactUnavailableFailure("missing", "task_context"));
+  }
+  const scopes = new Set(parsed.data.scopes ?? ["file", "symbol", "wiki", "graph"]);
+  const pathPrefixes = parsed.data.pathPrefixes ?? [];
+  const candidates: SearchCandidate[] = [];
+  const addCandidate = (
+    candidate: SearchCandidate,
+    fields: readonly string[],
+  ): void => {
+    if (!scopes.has(candidate.kind)) return;
+    if (
+      pathPrefixes.length > 0 &&
+      (candidate.filePath === undefined ||
+        !pathPrefixes.some((prefix) => pathMatchesPrefix(candidate.filePath!, prefix)))
+    ) {
+      return;
+    }
+    const match = scoreSearchCandidate(parsed.data.query, fields);
+    if (match === undefined) return;
+    candidates.push({ ...candidate, score: match.score, reasons: match.reasons });
+  };
+
+  for (const claim of bundle.claims) {
+    addCandidate(
+      {
+        kind: "wiki",
+        id: claim.id,
+        documentId: claim.id,
+        title: `${claim.kind} claim`,
+        summary: claim.statement.slice(0, 8_192),
+        score: 0,
+        reasons: [],
+        evidenceIds: claim.evidenceIds,
+      },
+      [claim.statement, claim.kind, claim.lifecycleStatus],
+    );
+  }
+  for (const item of bundle.evidence) {
+    const summary =
+      ("excerpt" in item && item.excerpt !== undefined
+        ? item.excerpt
+        : `${item.kind} evidence produced by ${item.producedBy}`
+      ).slice(0, 8_192);
+    if ("filePath" in item) {
+      addCandidate(
+        {
+          kind: "file",
+          id: item.id,
+          title: item.filePath,
+          filePath: item.filePath,
+          summary,
+          score: 0,
+          reasons: [],
+          evidenceIds: [item.id],
+        },
+        [item.filePath, summary, item.producedBy],
+      );
+    } else {
+      addCandidate(
+        {
+          kind: item.kind === "graph_path" ? "graph" : "wiki",
+          id: item.id,
+          ...(item.kind === "graph_path"
+            ? { nodeId: item.nodeIds[0] ?? item.id }
+            : { documentId: item.id }),
+          title: `${item.kind} evidence`,
+          summary,
+          score: 0,
+          reasons: [],
+          evidenceIds: [item.id],
+        },
+        [item.kind, summary, item.producedBy, ...item.nodeIds],
+      );
+    }
+  }
+  for (const impactPath of bundle.impactPaths) {
+    const evidenceIds = impactPath.steps.flatMap((step) =>
+      step.evidenceId === undefined ? [] : [step.evidenceId],
+    );
+    addCandidate(
+      {
+        kind: "graph",
+        id: impactPath.id,
+        nodeId: impactPath.targetNodeId,
+        title: `${impactPath.sourceNodeId} to ${impactPath.targetNodeId}`,
+        summary: `${impactPath.classification} impact path${impactPath.boundaryReason === undefined ? "" : `: ${impactPath.boundaryReason}`}`.slice(0, 8_192),
+        score: 0,
+        reasons: [],
+        evidenceIds,
+      },
+      [
+        impactPath.sourceNodeId,
+        impactPath.targetNodeId,
+        impactPath.classification,
+        ...impactPath.steps.flatMap((step) => [step.source, step.target, step.edgeType]),
+      ],
+    );
+  }
+
+  candidates.sort(
+    (left, right) =>
+      right.score - left.score ||
+      left.kind.localeCompare(right.kind) ||
+      left.id.localeCompare(right.id),
+  );
+  const requestDigest = createRequestDigest({
+    taskId: parsed.data.taskId,
+    query: parsed.data.query,
+    scopes: parsed.data.scopes ?? null,
+    pathPrefixes: parsed.data.pathPrefixes ?? null,
+    tokenBudget: parsed.data.tokenBudget ?? null,
+  });
+  const identity: PageCursorIdentity = {
+    kind: "search_context",
+    taskId: parsed.data.taskId,
+    revision: bundle.manifest.revision,
+    requestDigest,
+  };
+  const offset = decodePageCursor(parsed.data.cursor, identity);
+  if (offset > candidates.length) {
+    throw new ToolFailure(invalidArgumentFailure(["cursor"], "invalid_cursor"));
+  }
+  const pageSize = parsed.data.pageSize ?? 50;
+  const tokenBudget = parsed.data.tokenBudget ?? 8_000;
+  const pageResults: SearchCandidate[] = [];
+  let consumedTokens = 0;
+  for (let index = offset; index < candidates.length && pageResults.length < pageSize; index += 1) {
+    const candidate = candidates[index]!;
+    const estimatedTokens = Math.max(1, Math.ceil(candidate.summary.length / 4));
+    if (pageResults.length > 0 && consumedTokens + estimatedTokens > tokenBudget) break;
+    pageResults.push(candidate);
+    consumedTokens += estimatedTokens;
+  }
+  const nextOffset = offset + pageResults.length;
+  const hasMore = nextOffset < candidates.length;
+  const truncatedCategories = hasMore ? ["search_results"] : [];
+  return SearchContextOutputV1Schema.parse({
+    isError: false,
+    content: [{ type: "text", text: "Task context search completed." }],
+    structuredContent: {
+      schemaVersion: 1,
+      meta: successMeta(
+        context.publishedSnapshot,
+        context.freshness,
+        elapsed(startedAt),
+        { cacheHit: true, truncatedCategories },
+      ),
+      page: {
+        pageSize,
+        returned: pageResults.length,
+        total: candidates.length,
+        ...(hasMore ? { nextCursor: encodePageCursor(identity, nextOffset) } : {}),
+        hasMore,
+      },
+      result: {
+        results: pageResults.map(({ filePath, symbolId, documentId, nodeId, ...base }) => ({
+          ...base,
+          ...(filePath === undefined ? {} : { filePath }),
+          ...(symbolId === undefined ? {} : { symbolId, filePath: filePath! }),
+          ...(documentId === undefined ? {} : { documentId }),
+          ...(nodeId === undefined ? {} : { nodeId }),
+        })),
+      },
+    },
+  });
+}
+
+async function traceImpact(argumentsValue: unknown, canonicalRoot: string) {
+  const parsed = TraceImpactInputV1Schema.safeParse(argumentsValue ?? {});
+  if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
+  if (parsed.data.taskId === undefined) {
+    throw new ToolFailure(artifactUnavailableFailure("missing", "task_context"));
+  }
+  const startedAt = performance.now();
+  const runtime = await openRuntime(canonicalRoot);
+  const context = await readTaskScopedContext(runtime, parsed.data.taskId);
+  const bundle = context.read.bundle;
+  if (!("impactPaths" in bundle)) {
+    throw new ToolFailure(artifactUnavailableFailure("missing", "impact"));
+  }
+  const sourceIds = new Set(parsed.data.sourceNodeIds);
+  const targetIds = parsed.data.targetNodeIds === undefined ? undefined : new Set(parsed.data.targetNodeIds);
+  const direction = parsed.data.direction;
+  const maxDepth = parsed.data.maxDepth ?? 20;
+  const matchesEndpoint = (pathValue: (typeof bundle.impactPaths)[number]): boolean => {
+    const sourceMatch =
+      direction === "downstream"
+        ? sourceIds.has(pathValue.sourceNodeId)
+        : direction === "upstream"
+          ? sourceIds.has(pathValue.targetNodeId)
+          : sourceIds.has(pathValue.sourceNodeId) || sourceIds.has(pathValue.targetNodeId);
+    if (!sourceMatch) return false;
+    if (targetIds === undefined) return true;
+    return direction === "downstream"
+      ? targetIds.has(pathValue.targetNodeId)
+      : direction === "upstream"
+        ? targetIds.has(pathValue.sourceNodeId)
+        : targetIds.has(pathValue.sourceNodeId) || targetIds.has(pathValue.targetNodeId);
+  };
+  const filtered = bundle.impactPaths.filter(
+    (pathValue) => pathValue.steps.length <= maxDepth && matchesEndpoint(pathValue),
+  );
+  const maxPaths = parsed.data.maxPaths ?? filtered.length;
+  const capped = filtered.slice(0, maxPaths);
+  const knownNodeIds = new Set<string>();
+  for (const pathValue of bundle.impactPaths) {
+    knownNodeIds.add(pathValue.sourceNodeId);
+    knownNodeIds.add(pathValue.targetNodeId);
+    for (const step of pathValue.steps) {
+      knownNodeIds.add(step.source);
+      knownNodeIds.add(step.target);
+    }
+  }
+  const unresolvedNodeIds = [
+    ...new Set([
+      ...parsed.data.sourceNodeIds,
+      ...(parsed.data.targetNodeIds ?? []),
+    ]),
+  ].filter((nodeId) => !knownNodeIds.has(nodeId));
+  const requestDigest = createRequestDigest({
+    taskId: parsed.data.taskId,
+    sourceNodeIds: parsed.data.sourceNodeIds,
+    targetNodeIds: parsed.data.targetNodeIds ?? null,
+    direction,
+    maxDepth,
+    maxPaths,
+  });
+  const identity: PageCursorIdentity = {
+    kind: "trace_impact",
+    taskId: parsed.data.taskId,
+    revision: bundle.manifest.revision,
+    requestDigest,
+  };
+  const entries = [
+    ...capped.map((pathValue) => ({ kind: "path" as const, value: pathValue })),
+    ...unresolvedNodeIds.map((nodeId) => ({ kind: "unresolved" as const, value: nodeId })),
+  ];
+  const offset = decodePageCursor(parsed.data.cursor, identity);
+  if (offset > entries.length) {
+    throw new ToolFailure(invalidArgumentFailure(["cursor"], "invalid_cursor"));
+  }
+  const pageSize = parsed.data.pageSize ?? 50;
+  const pageEntries = entries.slice(offset, offset + pageSize);
+  const paths = pageEntries
+    .filter((entry): entry is { kind: "path"; value: (typeof capped)[number] } => entry.kind === "path")
+    .map((entry) => entry.value);
+  const unresolved = pageEntries
+    .filter((entry): entry is { kind: "unresolved"; value: string } => entry.kind === "unresolved")
+    .map((entry) => entry.value);
+  const nextOffset = offset + pageEntries.length;
+  const hasMore = nextOffset < entries.length;
+  const truncatedCategories = [
+    ...(filtered.length > capped.length ? ["impact_paths"] : []),
+    ...(hasMore ? ["impact_page"] : []),
+  ];
+  return TraceImpactOutputV1Schema.parse({
+    isError: false,
+    content: [{ type: "text", text: "Task impact paths loaded." }],
+    structuredContent: {
+      schemaVersion: 1,
+      meta: successMeta(
+        context.publishedSnapshot,
+        context.freshness,
+        elapsed(startedAt),
+        { cacheHit: true, truncatedCategories },
+      ),
+      page: {
+        pageSize,
+        returned: pageEntries.length,
+        total: entries.length,
+        ...(hasMore ? { nextCursor: encodePageCursor(identity, nextOffset) } : {}),
+        hasMore,
+      },
+      result: { paths, unresolvedNodeIds: unresolved },
+    },
+  });
 }
 
 function successMeta(
@@ -625,7 +1136,10 @@ function mappedArtifactStoreFailure(
 ): McpToolErrorResultV1 | undefined {
   if (error.code === "artifact_not_found") {
     if (
-      toolName === "get_task_brief" &&
+      (toolName === "get_task_brief" ||
+        toolName === "get_evidence" ||
+        toolName === "search_context" ||
+        toolName === "trace_impact") &&
       argumentsValue !== null &&
       typeof argumentsValue === "object" &&
       typeof (argumentsValue as { taskId?: unknown }).taskId === "string"
@@ -646,6 +1160,14 @@ function mappedArtifactStoreFailure(
     error.code === "manifest_inconsistent" ||
     error.code === "reference_integrity_failed"
   ) {
+    if (
+      toolName === "get_task_brief" ||
+      toolName === "get_evidence" ||
+      toolName === "search_context" ||
+      toolName === "trace_impact"
+    ) {
+      return artifactUnavailableFailure("corrupt", "task_context");
+    }
     return artifactUnavailableFailure("corrupt", "repository_context");
   }
   return undefined;
@@ -672,6 +1194,12 @@ export async function callImplementedTool(
         return await recordVerification(argumentsValue, canonicalRoot);
       case "open_workbench":
         return await openWorkbench(argumentsValue, canonicalRoot);
+      case "get_evidence":
+        return await getEvidence(argumentsValue, canonicalRoot);
+      case "search_context":
+        return await searchContext(argumentsValue, canonicalRoot);
+      case "trace_impact":
+        return await traceImpact(argumentsValue, canonicalRoot);
     }
   } catch (error) {
     if (error instanceof ToolFailure) return error.result;

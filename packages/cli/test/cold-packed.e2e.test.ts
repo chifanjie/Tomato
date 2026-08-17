@@ -164,6 +164,9 @@ describe("cold packed CLI", () => {
         "check_change",
         "record_verification",
         "open_workbench",
+        "get_evidence",
+        "search_context",
+        "trace_impact",
       ]);
       const pulseResponse = await collected.waitFor((message) => message.id === 3);
       GetRepoPulseOutputV1Schema.parse(pulseResponse.result);

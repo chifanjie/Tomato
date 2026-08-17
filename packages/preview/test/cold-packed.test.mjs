@@ -703,6 +703,9 @@ test("cold packed Preview installs outside the monorepo with both usable bins", 
       "check_change",
       "record_verification",
       "open_workbench",
+      "get_evidence",
+      "search_context",
+      "trace_impact",
     ]);
     GetRepoPulseOutputV1Schema.parse((await output.waitFor((message) => message.id === 3, "MCP get_repo_pulse response")).result);
     const built = BuildTaskBriefOutputV1Schema.parse((await output.waitFor((message) => message.id === 4, "MCP build_task_brief response")).result);

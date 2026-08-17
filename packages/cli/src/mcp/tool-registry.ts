@@ -7,6 +7,8 @@ import {
   BuildTaskBriefInputV1Schema,
   BuildTaskBriefOutputV1Schema,
   CheckChangeOutputV1Schema,
+  GetEvidenceInputV1Schema,
+  GetEvidenceOutputV1Schema,
   GetRepoPulseInputV1Schema,
   GetRepoPulseOutputV1Schema,
   GetTaskBriefInputV1Schema,
@@ -15,6 +17,10 @@ import {
   OpenWorkbenchInputV1Schema,
   OpenWorkbenchOutputV1Schema,
   RecordVerificationOutputV1Schema,
+  SearchContextInputV1Schema,
+  SearchContextOutputV1Schema,
+  TraceImpactInputV1Schema,
+  TraceImpactOutputV1Schema,
   UpdateTaskOutputV1Schema,
 } from "@understand-code/contracts/mcp";
 import { z } from "zod";
@@ -23,6 +29,30 @@ import {
   IMPLEMENTED_TOOL_NAMES,
   type ImplementedToolName,
 } from "../handlers/tools.js";
+
+/**
+ * Zod emits tuple schemas with `prefixItems`.  Ajv strict mode requires the
+ * tuple cardinality and a closed `items` schema to be explicit, so normalize
+ * generated MCP schemas without changing the contracts package ABI.
+ */
+export function normalizeToolJsonSchema<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeToolJsonSchema(item)) as T;
+  }
+  if (value === null || typeof value !== "object") return value;
+  const source = value as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(source)) {
+    result[key] = normalizeToolJsonSchema(child);
+  }
+  const prefixItems = result.prefixItems;
+  if (Array.isArray(prefixItems)) {
+    result.minItems ??= prefixItems.length;
+    result.maxItems ??= prefixItems.length;
+    result.items ??= false;
+  }
+  return result as T;
+}
 
 const descriptions: Readonly<Record<ImplementedToolName, string>> = {
   get_repo_pulse:
@@ -39,6 +69,12 @@ const descriptions: Readonly<Record<ImplementedToolName, string>> = {
     "Append an externally executed Verification result to the current Task revision.",
   open_workbench:
     "Open or reuse a read-only local Workbench session at an exact Task, Knowledge, or Graph route.",
+  get_evidence:
+    "Read exact Evidence records from a managed Task bundle with bounded pagination.",
+  search_context:
+    "Search persisted Task claims, Evidence, and impact context with deterministic ranking.",
+  trace_impact:
+    "Trace persisted Task impact paths between exact nodes with bounded pagination.",
 };
 
 const inputSchemas = {
@@ -49,6 +85,9 @@ const inputSchemas = {
   check_change: CheckChangeInputV1Schema,
   record_verification: RecordVerificationInputV1Schema,
   open_workbench: OpenWorkbenchInputV1Schema,
+  get_evidence: GetEvidenceInputV1Schema,
+  search_context: SearchContextInputV1Schema,
+  trace_impact: TraceImpactInputV1Schema,
 } as const;
 
 const outputSchemas = {
@@ -80,15 +119,27 @@ const outputSchemas = {
     OpenWorkbenchOutputV1Schema.shape.structuredContent,
     McpToolErrorResultV1Schema.shape.structuredContent,
   ]),
+  get_evidence: z.union([
+    GetEvidenceOutputV1Schema.shape.structuredContent,
+    McpToolErrorResultV1Schema.shape.structuredContent,
+  ]),
+  search_context: z.union([
+    SearchContextOutputV1Schema.shape.structuredContent,
+    McpToolErrorResultV1Schema.shape.structuredContent,
+  ]),
+  trace_impact: z.union([
+    TraceImpactOutputV1Schema.shape.structuredContent,
+    McpToolErrorResultV1Schema.shape.structuredContent,
+  ]),
 } as const;
 
 export const IMPLEMENTED_TOOLS = Object.freeze(
   IMPLEMENTED_TOOL_NAMES.map((name) => ({
     name,
     description: descriptions[name],
-    inputSchema: z.toJSONSchema(inputSchemas[name]),
+    inputSchema: normalizeToolJsonSchema(z.toJSONSchema(inputSchemas[name])),
     outputSchema: {
-      ...z.toJSONSchema(outputSchemas[name]),
+      ...normalizeToolJsonSchema(z.toJSONSchema(outputSchemas[name])),
       // MCP requires the Tool output schema root itself to declare object,
       // even when the success/error alternatives are expressed with anyOf.
       type: "object" as const,

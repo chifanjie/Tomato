@@ -91,6 +91,9 @@ describe("MCP lifecycle and real handlers", () => {
       "check_change",
       "record_verification",
       "open_workbench",
+      "get_evidence",
+      "search_context",
+      "trace_impact",
     ]);
     expect(
       harness.response(2).result.tools.every(
@@ -440,7 +443,7 @@ describe("MCP lifecycle and real handlers", () => {
       params: { name: "get_repo_pulse", arguments: {} },
     });
 
-    expect(harness.response(2).result.tools).toHaveLength(7);
+    expect(harness.response(2).result.tools).toHaveLength(10);
     const failure = McpToolErrorResultV1Schema.parse(harness.response(3).result);
     expect(failure.structuredContent.error).toEqual({
       schemaVersion: 1,

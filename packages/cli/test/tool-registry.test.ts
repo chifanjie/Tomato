@@ -2,20 +2,29 @@ import Ajv2020 from "ajv/dist/2020.js";
 import {
   BuildTaskBriefOutputV1Schema,
   CheckChangeOutputV1Schema,
+  GetEvidenceOutputV1Schema,
   GetRepoPulseOutputV1Schema,
   GetTaskBriefOutputV1Schema,
   McpToolErrorResultV1Schema,
   OpenWorkbenchOutputV1Schema,
   RecordVerificationOutputV1Schema,
+  SearchContextOutputV1Schema,
+  TraceImpactOutputV1Schema,
   UpdateTaskOutputV1Schema,
 } from "@understand-code/contracts/mcp";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { IMPLEMENTED_TOOLS } from "../src/mcp/tool-registry.js";
+import {
+  IMPLEMENTED_TOOLS,
+  normalizeToolJsonSchema,
+} from "../src/mcp/tool-registry.js";
 
 function toolOutputSchema(schema: z.ZodType) {
-  return { ...z.toJSONSchema(schema), type: "object" as const };
+  return {
+    ...normalizeToolJsonSchema(z.toJSONSchema(schema)),
+    type: "object" as const,
+  };
 }
 
 const expectedOutputSchemas = {
@@ -61,6 +70,24 @@ const expectedOutputSchemas = {
       McpToolErrorResultV1Schema.shape.structuredContent,
     ]),
   ),
+  get_evidence: toolOutputSchema(
+    z.union([
+      GetEvidenceOutputV1Schema.shape.structuredContent,
+      McpToolErrorResultV1Schema.shape.structuredContent,
+    ]),
+  ),
+  search_context: toolOutputSchema(
+    z.union([
+      SearchContextOutputV1Schema.shape.structuredContent,
+      McpToolErrorResultV1Schema.shape.structuredContent,
+    ]),
+  ),
+  trace_impact: toolOutputSchema(
+    z.union([
+      TraceImpactOutputV1Schema.shape.structuredContent,
+      McpToolErrorResultV1Schema.shape.structuredContent,
+    ]),
+  ),
 } as const;
 
 describe("advertised tool contracts", () => {
@@ -73,6 +100,9 @@ describe("advertised tool contracts", () => {
       "check_change",
       "record_verification",
       "open_workbench",
+      "get_evidence",
+      "search_context",
+      "trace_impact",
     ]);
     for (const tool of IMPLEMENTED_TOOLS) {
       expect(tool.inputSchema).toMatchObject({

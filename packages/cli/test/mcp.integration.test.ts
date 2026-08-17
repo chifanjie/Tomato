@@ -1,5 +1,5 @@
 import { PassThrough } from "node:stream";
-import { readFile, stat, utimes, writeFile } from "node:fs/promises";
+import { readFile, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -492,6 +492,24 @@ describe("MCP lifecycle and real handlers", () => {
     ).toBe(refreshed.structuredContent.meta.sourceSnapshotId);
     expect(refreshed.structuredContent.meta.freshness).toBe("not_ready");
 
+    await harness.server.handleValue({
+      jsonrpc: "2.0",
+      id: 23,
+      method: "tools/call",
+      params: {
+        name: "refresh_index",
+        arguments: {
+          mode: "incremental",
+          idempotencyKey: "cold-refresh-index",
+          actor: "agent:cli-test",
+        },
+      },
+    });
+    const replayed = RefreshIndexOutputV1Schema.parse(
+      harness.response(23).result,
+    );
+    expect(replayed.structuredContent.meta.cacheHit).toBe(true);
+
     await writeFile(
       path.join(root, "src/task.ts"),
       "export function task(): boolean { return false; }\n",
@@ -538,6 +556,77 @@ describe("MCP lifecycle and real handlers", () => {
     expect(mismatch.structuredContent.error.code).toBe(
       "artifact_unavailable",
     );
+  });
+
+  it("builds task context from a full refresh and rejects unsafe source links", async () => {
+    const root = await createGitRepository({ seedArtifacts: false });
+    const harness = testServer(await resolveInitialBinding([root]));
+    await initialize(harness.server);
+
+    await harness.server.handleValue({
+      jsonrpc: "2.0",
+      id: 24,
+      method: "tools/call",
+      params: {
+        name: "refresh_index",
+        arguments: {
+          mode: "full",
+          idempotencyKey: "cold-full-refresh-index",
+          actor: "agent:cli-test",
+        },
+      },
+    });
+    const refreshed = RefreshIndexOutputV1Schema.parse(
+      harness.response(24).result,
+    );
+    expect(refreshed.structuredContent.result.operation.status).toBe(
+      "completed",
+    );
+    expect(refreshed.structuredContent.meta.freshness).toBe("partial");
+
+    await harness.server.handleValue({
+      jsonrpc: "2.0",
+      id: 25,
+      method: "tools/call",
+      params: {
+        name: "build_task_brief",
+        arguments: {
+          task: "Change the task result while preserving its public behavior.",
+          expectedRevision: 0,
+          idempotencyKey: "cold-full-refresh-brief",
+          actor: "agent:cli-test",
+          scope: ["src/task.ts"],
+        },
+      },
+    });
+    const built = BuildTaskBriefOutputV1Schema.parse(
+      harness.response(25).result,
+    );
+    expect(built.structuredContent.result.task.status).toBe("context_ready");
+
+    await symlink("../../outside.ts", path.join(root, "src/escape.ts"));
+    await harness.server.handleValue({
+      jsonrpc: "2.0",
+      id: 26,
+      method: "tools/call",
+      params: {
+        name: "refresh_index",
+        arguments: {
+          mode: "full",
+          expectedSourceSnapshotId:
+            refreshed.structuredContent.meta.sourceSnapshotId,
+          idempotencyKey: "unsafe-full-refresh-index",
+          actor: "agent:cli-test",
+        },
+      },
+    });
+    const unsafe = McpToolErrorResultV1Schema.parse(
+      harness.response(26).result,
+    );
+    expect(unsafe.structuredContent.error).toMatchObject({
+      code: "source_access_denied",
+      details: { reason: "symlink_escape" },
+    });
   });
 
   it("enforces the lifecycle and separates protocol errors from tool errors", async () => {

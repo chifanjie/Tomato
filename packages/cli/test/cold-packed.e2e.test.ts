@@ -10,6 +10,7 @@ import {
   GetRepoPulseOutputV1Schema,
   GetTaskBriefOutputV1Schema,
   McpToolErrorResultV1Schema,
+  RefreshIndexOutputV1Schema,
 } from "@understand-code/contracts/mcp";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -142,6 +143,19 @@ describe("cold packed CLI", () => {
       });
       writeMessage(child, {
         jsonrpc: "2.0",
+        id: 6,
+        method: "tools/call",
+        params: {
+          name: "refresh_index",
+          arguments: {
+            mode: "full",
+            idempotencyKey: "cold-packed-full-refresh",
+            actor: "agent:cold-e2e",
+          },
+        },
+      });
+      writeMessage(child, {
+        jsonrpc: "2.0",
         id: 4,
         method: "tools/call",
         params: {
@@ -171,6 +185,9 @@ describe("cold packed CLI", () => {
       ]);
       const pulseResponse = await collected.waitFor((message) => message.id === 3);
       GetRepoPulseOutputV1Schema.parse(pulseResponse.result);
+      const fullRefreshResponse = await collected.waitFor((message) => message.id === 6);
+      const fullRefresh = RefreshIndexOutputV1Schema.parse(fullRefreshResponse.result);
+      expect(fullRefresh.structuredContent.result.operation.status).toBe("completed");
       const buildResponse = await collected.waitFor((message) => message.id === 4);
       const built = BuildTaskBriefOutputV1Schema.parse(buildResponse.result);
       writeMessage(child, {

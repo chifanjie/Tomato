@@ -2,6 +2,7 @@ import { performance } from "node:perf_hooks";
 
 import {
   ArtifactStore,
+  ArtifactStoreError,
   sha256CanonicalJson,
 } from "@understand-code/artifact-store";
 import {
@@ -22,18 +23,21 @@ import {
   artifactUnavailableFailure,
   invalidArgumentsFailure,
   repositoryNotReadyFailure,
+  sourceAccessDeniedFailure,
 } from "../errors/tool-errors.js";
 import {
   captureBoundRepositorySnapshot,
   fingerprintPublishedSnapshot,
 } from "../runtime/context.js";
+import {
+  RepositoryIndexError,
+  buildRepositoryIndex,
+} from "../runtime/repository-indexer.js";
 
 /**
- * Captures and publishes the repository facts that are available in this
- * installation.  The CLI does not own a parser/analyzer process, so refresh
- * deliberately never fabricates Graph/Wiki artifacts: existing artifacts are
- * re-evaluated and the resulting Pulse advertises `not_ready`/`stale` when a
- * downstream index is absent or out of date.
+ * Captures and publishes repository facts. Incremental mode re-evaluates the
+ * currently published artifact set; full mode first runs the bundled local
+ * source indexer and then publishes a Pulse over the generated Graph/Wiki set.
  */
 export async function refreshIndex(
   argumentsValue: unknown,
@@ -70,7 +74,27 @@ export async function refreshIndex(
     worktreeId: capture.snapshot.worktreeId,
     producerVersion: PRODUCT_VERSION,
   });
-  const previousManifest = await store.initialize();
+  let previousManifest;
+  try {
+    previousManifest = await store.readManifest({ verifyArtifacts: false });
+  } catch (error) {
+    if (
+      !(
+        error instanceof ArtifactStoreError &&
+        error.code === "artifact_not_found"
+      )
+    ) {
+      throw error;
+    }
+    // A stale optimistic pin must not bootstrap a new managed store as a
+    // side-effect of a failed refresh.
+    if (parsed.data.expectedSourceSnapshotId !== undefined) {
+      throw new ToolFailure(
+        artifactUnavailableFailure("stale", "repository_snapshot"),
+      );
+    }
+    previousManifest = await store.initialize();
+  }
   // OperationControl is an optimistic pin on the *published* source.  The
   // capture may legitimately produce a new Snapshot because the worktree
   // changed since that source was published.
@@ -82,20 +106,28 @@ export async function refreshIndex(
       artifactUnavailableFailure("stale", "repository_snapshot"),
     );
   }
-  const freshness = await inspectArtifactFreshness(
-    canonicalRoot,
-    capture.snapshot,
-    { manifest: previousManifest },
-  );
-  const pulse = buildRepoPulse({
-    snapshot: capture.snapshot,
-    git: capture.git,
-    artifacts: freshness,
-    ...(previousManifest.latestSnapshotId === undefined
-      ? {}
-      : { baselineSnapshotId: previousManifest.latestSnapshotId }),
-  });
-
+  if (parsed.data.mode === "full") {
+    try {
+      await buildRepositoryIndex({
+        canonicalRoot,
+        snapshot: capture.snapshot,
+      });
+    } catch (error) {
+      if (error instanceof RepositoryIndexError) {
+        if (/symbolic link|symlink|escapes bound root|unsafe/u.test(error.message)) {
+          throw new ToolFailure(sourceAccessDeniedFailure("symlink_escape"));
+        }
+        throw new ToolFailure(
+          repositoryNotReadyFailure(
+            "error",
+            ["knowledge_graph", "wiki_index"],
+            "repair_environment",
+          ),
+        );
+      }
+      throw error;
+    }
+  }
   const snapshotArtifact = RepositorySnapshotArtifactV1Schema.parse({
     schemaVersion: 1,
     artifactType: "repository_snapshot",
@@ -109,15 +141,69 @@ export async function refreshIndex(
     contentDigest: sha256CanonicalJson(capture.snapshot),
     payload: capture.snapshot,
   });
-  const snapshotPublication = await store.persistArtifact(snapshotArtifact);
+  let snapshotReplayed = false;
+  let snapshotCreatedAt = capture.snapshot.createdAt;
+  try {
+    // Snapshot IDs are content-stable and captures may differ only in their
+    // wall-clock `createdAt`; reuse already-published immutable bytes instead
+    // of attempting to replace the identity in place.
+    const existingSnapshot = await store.readArtifact("repository_snapshot", {
+      snapshotId: capture.snapshot.snapshotId,
+    });
+    if (existingSnapshot.artifact.artifactType !== "repository_snapshot") {
+      throw new ArtifactStoreError(
+        "artifact_corrupt",
+        "Repository Snapshot path resolved another Artifact type.",
+      );
+    }
+    snapshotCreatedAt = existingSnapshot.artifact.payload.createdAt;
+    snapshotReplayed = true;
+  } catch (error) {
+    if (
+      !(
+        error instanceof ArtifactStoreError &&
+        error.code === "artifact_not_found"
+      )
+    ) {
+      throw error;
+    }
+    const publication = await store.persistArtifact(snapshotArtifact);
+    snapshotReplayed = publication.replayed;
+  }
 
   const currentPulse = await readCurrentPulse(store);
+  const freshness = await inspectArtifactFreshness(
+    canonicalRoot,
+    capture.snapshot,
+    { manifest: previousManifest },
+  );
+  const pulse = buildRepoPulse({
+    snapshot: capture.snapshot,
+    git: capture.git,
+    artifacts: freshness,
+    evaluatedAt: snapshotCreatedAt,
+    ...(previousManifest.latestSnapshotId !== undefined &&
+    previousManifest.latestSnapshotId !== capture.snapshot.snapshotId
+      ? { baselineSnapshotId: previousManifest.latestSnapshotId }
+      : currentPulse?.artifact.artifactType === "repo_pulse" &&
+          currentPulse.artifact.payload.baselineSnapshotId !== undefined
+        ? { baselineSnapshotId: currentPulse.artifact.payload.baselineSnapshotId }
+        : {}),
+  });
+  const pulseDigest = sha256CanonicalJson(pulse);
+  const samePublishedPulse =
+    currentPulse !== undefined &&
+    currentPulse.artifact.sourceSnapshotId === capture.snapshot.snapshotId &&
+    currentPulse.artifact.contentDigest === pulseDigest;
   const pulseRevision =
-    currentPulse === undefined ? 0 : currentPulse.artifact.revision + 1;
+    currentPulse === undefined || samePublishedPulse
+      ? currentPulse?.artifact.revision ?? 0
+      : currentPulse.artifact.revision + 1;
   const requestDigest = sha256CanonicalJson({
     operation: "refresh_index",
     mode: parsed.data.mode,
     expectedSourceSnapshotId: parsed.data.expectedSourceSnapshotId ?? null,
+    actor: parsed.data.actor,
   });
   const pulseArtifact = RepoPulseArtifactV1Schema.parse({
     schemaVersion: 1,
@@ -132,7 +218,7 @@ export async function refreshIndex(
     revision: pulseRevision,
     producerVersion: PRODUCT_VERSION,
     createdAt: pulse.evaluatedAt,
-    contentDigest: sha256CanonicalJson(pulse),
+    contentDigest: pulseDigest,
     payload: pulse,
   });
   const pulsePublication = await store.persistArtifact(pulseArtifact, {
@@ -161,7 +247,7 @@ export async function refreshIndex(
       effect: "cooperative_stop_preserve_last_snapshot" as const,
     },
   };
-  const freshnessStatus = pulse.status as RepoPulseStatusV1;
+  const freshnessStatus = pulsePublication.artifact.payload.status as RepoPulseStatusV1;
   return RefreshIndexOutputV1Schema.parse({
     isError: false,
     content: [{
@@ -180,7 +266,7 @@ export async function refreshIndex(
         worktreeFingerprint: fingerprintPublishedSnapshot(capture.snapshot),
         freshness: freshnessStatus,
         durationMs: Math.max(0, performance.now() - startedAt),
-        cacheHit: snapshotPublication.replayed && pulsePublication.replayed,
+        cacheHit: snapshotReplayed && pulsePublication.replayed,
         truncated: false,
         truncatedCategories: [],
       },

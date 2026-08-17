@@ -52,10 +52,19 @@ import {
   sha256CanonicalJson,
   stableId,
 } from "./ids.js";
-import { applyTaskUpdate } from "./mutation.js";
+import {
+  applyTaskUpdate,
+  refreshTaskContext,
+} from "./mutation.js";
 import { renderTaskBriefMarkdown } from "./renderer.js";
 
 const DEFAULT_CREATE_SCOPE = "build_task_brief";
+
+const AVAILABLE_CONTEXT_REFRESH = Object.freeze({
+  available: true,
+  reasonCode: "task_context_rebuild_available",
+  owner: "task-engine",
+} as const);
 
 const LOCKED_CONTEXT_RECOVERY = Object.freeze({
   available: false,
@@ -66,7 +75,7 @@ const LOCKED_CONTEXT_RECOVERY = Object.freeze({
 export const TASK_ENGINE_CAPABILITIES: TaskEngineCapabilities = Object.freeze({
   schemaVersion: 1,
   actions: Object.freeze({
-    refresh_task_context: LOCKED_CONTEXT_RECOVERY,
+    refresh_task_context: AVAILABLE_CONTEXT_REFRESH,
     rebase_task: LOCKED_CONTEXT_RECOVERY,
   }),
 });
@@ -817,11 +826,114 @@ export class TaskEngine {
             ? "task:accept"
           : "task:update",
     );
+    if (input.action.type === "refresh_task_context") {
+      const targetSnapshotId = input.action.targetSnapshotId;
+      return refreshTaskContext(
+        this.#store,
+        input,
+        this.#clock,
+        async (current, occurredAt) => {
+          const repository = await this.#repositoryContext(true);
+          if (
+            repository.snapshot.snapshotId !== targetSnapshotId
+          ) {
+            throw new TaskEngineError(
+              "task_gate_unsatisfied",
+              "The requested refresh Snapshot is not the current published Repository Snapshot.",
+              {
+                taskId: input.taskId,
+                targetStatus: "context_ready",
+                failedGuards: [
+                  {
+                    code: "target_snapshot_not_current",
+                    resourceId: targetSnapshotId,
+                  },
+                ],
+              },
+            );
+          }
+          const pulse = repository.pulse!;
+          if (pulse.evaluatedSnapshotId !== targetSnapshotId) {
+            throw new TaskEngineError(
+              "task_gate_unsatisfied",
+              "Repo Pulse is not bound to the requested refresh Snapshot.",
+              {
+                taskId: input.taskId,
+                targetStatus: "context_ready",
+                failedGuards: [
+                  {
+                    code: "pulse_snapshot_mismatch",
+                    resourceId: pulse.evaluatedSnapshotId,
+                  },
+                ],
+              },
+            );
+          }
+          if (
+            ["not_ready", "unknown", "rebuilding", "error"].includes(
+              pulse.status,
+            )
+          ) {
+            throw new TaskEngineError(
+              "task_gate_unsatisfied",
+              "Repo Pulse cannot support a refreshed Task context.",
+              {
+                taskId: input.taskId,
+                targetStatus: "context_ready",
+                failedGuards: [
+                  { code: "context_not_ready", resourceId: pulse.status },
+                ],
+              },
+            );
+          }
+          let context: Awaited<
+            ReturnType<TaskEngineOptions["contextProvider"]["loadTaskContext"]>
+          >;
+          try {
+            context = await this.#contextProvider.loadTaskContext({
+              intent: current.bundle.manifest.originalIntent,
+              sourceSnapshotId: repository.snapshot.snapshotId,
+              repositorySnapshot: repository.snapshot,
+            });
+          } catch (error) {
+            throw new TaskEngineError(
+              "context_build_failed",
+              "The Task context provider could not rebuild repository context.",
+              { taskId: input.taskId, stage: "context_provider" },
+              { cause: error },
+            );
+          }
+          let draft: ReturnType<typeof buildContextDraft>;
+          try {
+            draft = buildContextDraft({
+              taskId: input.taskId,
+              intent: current.bundle.manifest.originalIntent,
+              snapshotId: repository.snapshot.snapshotId,
+              createdAt: occurredAt,
+              pulse,
+              repositorySnapshot: repository.snapshot,
+              context,
+            });
+          } catch (error) {
+            throw new TaskEngineError(
+              "context_build_failed",
+              "The rebuilt repository context could not produce a Task Brief.",
+              { taskId: input.taskId, stage: "context_draft" },
+              { cause: error },
+            );
+          }
+          return {
+            snapshotId: repository.snapshot.snapshotId,
+            brief: draft.brief,
+            claims: draft.claims,
+            evidence: draft.evidence,
+            impactPaths: draft.impactPaths,
+          };
+        },
+      );
+    }
     const recoveryCapability: TaskContextRecoveryCapability | undefined =
-      input.action.type === "refresh_task_context" ||
-        input.action.type === "rebase_task"
-        ? input.action.type
-        : undefined;
+      input.action.type === "rebase_task" ? input.action.type : undefined;
     if (recoveryCapability !== undefined) {
       const capability =
         TASK_ENGINE_CAPABILITIES.actions[recoveryCapability];

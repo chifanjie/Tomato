@@ -105,11 +105,17 @@ export type TaskContextRecoveryCapability =
   | "refresh_task_context"
   | "rebase_task";
 
-export interface TaskEngineCapabilityState {
-  readonly available: false;
-  readonly reasonCode: "task_context_rebuild_not_implemented";
-  readonly owner: "WP5";
-}
+export type TaskEngineCapabilityState =
+  | {
+      readonly available: true;
+      readonly reasonCode: "task_context_rebuild_available";
+      readonly owner: "task-engine";
+    }
+  | {
+      readonly available: false;
+      readonly reasonCode: "task_context_rebuild_not_implemented";
+      readonly owner: "WP5";
+    };
 
 export interface TaskEngineCapabilities {
   readonly schemaVersion: 1;

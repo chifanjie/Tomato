@@ -13,7 +13,9 @@ import {
   type ChangeCheckV1,
   type ClaimV1,
   type EvidenceV1,
+  type ImpactPathV1,
   type TaskArtifactBundleV1,
+  type TaskBriefV1,
   type TaskManifestV1,
   type TaskOperationReceiptV1,
   type TaskTransitionTargetV1,
@@ -42,6 +44,19 @@ interface MutableTaskData {
   changeChecks: ChangeCheckV1[];
   verificationRecords: VerificationRecordV1[];
 }
+
+export interface RefreshedTaskContextV1 {
+  snapshotId: TaskManifestV1["latestSnapshotId"];
+  brief: TaskBriefV1;
+  claims: readonly ClaimV1[];
+  evidence: readonly EvidenceV1[];
+  impactPaths: readonly ImpactPathV1[];
+}
+
+type RefreshContextLoader = (
+  current: ReadTaskBundleResult,
+  occurredAt: string,
+) => Promise<RefreshedTaskContextV1>;
 
 function fullBundle(
   read: ReadTaskBundleResult,
@@ -979,6 +994,193 @@ export async function applyTaskUpdate(
     ...(check === undefined || data.verificationRecords.length === 0
       ? {}
       : { verificationRecords: data.verificationRecords }),
+    idempotencyRecords: records,
+    receipts,
+    createdAt: occurredAt,
+  });
+  try {
+    await store.persistTaskBundle(
+      {
+        artifacts,
+        events: [...current.bundle.events, event],
+        idempotencyRecords: records,
+      },
+      {
+        expectedRevision: input.expectedRevision,
+        idempotencyKey: input.idempotencyKey,
+        requestDigest,
+      },
+    );
+  } catch (error) {
+    const raced = await store.readTaskBundle(input.taskId).catch(
+      () => undefined,
+    );
+    if (raced !== undefined) {
+      const racedReplay = existingReceipt(raced, input, requestDigest);
+      if (racedReplay !== undefined) return racedReplay;
+    }
+    throw error;
+  }
+  return result;
+}
+
+/**
+ * Rebuild the context of a stale Task against one exact, already-published
+ * Repository Snapshot.  The loader is invoked only after replay, revision,
+ * lifecycle, and target-snapshot checks have passed; it therefore cannot
+ * turn an idempotent retry into a new context read or bypass the Task CAS.
+ */
+export async function refreshTaskContext(
+  store: ArtifactStore,
+  input: UpdateTaskInputV1,
+  clock: () => Date,
+  loadContext: RefreshContextLoader,
+): Promise<TaskMutationOutcome> {
+  if (input.action.type !== "refresh_task_context") {
+    throw new TaskEngineError(
+      "context_build_failed",
+      "refreshTaskContext requires a refresh_task_context action.",
+      { taskId: input.taskId },
+    );
+  }
+  const requestDigest = sha256CanonicalJson(input);
+  const current = await store.readTaskBundle(input.taskId);
+  const replay = existingReceipt(current, input, requestDigest);
+  if (replay !== undefined) return replay;
+  if (current.bundle.manifest.revision !== input.expectedRevision) {
+    throw new TaskEngineError(
+      "revision_conflict",
+      "Task revision does not match expectedRevision.",
+      {
+        taskId: input.taskId,
+        expectedRevision: input.expectedRevision,
+        currentRevision: current.bundle.manifest.revision,
+      },
+    );
+  }
+  const data = dataFromRead(current);
+  requireMutableTaskRead(data, current);
+  if (data.manifest.status !== "stale") {
+    transitionRejected(
+      data.manifest,
+      input.action.type,
+      "transition_not_allowed",
+    );
+  }
+  if (data.manifest.latestSnapshotId !== input.action.targetSnapshotId) {
+    gateUnsatisfied(data.manifest, "context_ready", [
+      {
+        code: "target_snapshot_mismatch",
+        resourceId: input.action.targetSnapshotId,
+      },
+    ]);
+  }
+  const minimumOccurredAt = Date.parse(data.manifest.updatedAt) + 1;
+  const clockTime = clock().getTime();
+  const occurredAt = new Date(
+    Math.max(
+      minimumOccurredAt,
+      Number.isFinite(clockTime) ? clockTime : minimumOccurredAt,
+    ),
+  ).toISOString();
+  const refreshed = await loadContext(current, occurredAt);
+  if (refreshed.snapshotId !== input.action.targetSnapshotId) {
+    throw new TaskEngineError(
+      "context_build_failed",
+      "The rebuilt Task context is bound to a different Repository Snapshot.",
+      {
+        taskId: input.taskId,
+        expectedSnapshotId: input.action.targetSnapshotId,
+        actualSnapshotId: refreshed.snapshotId,
+      },
+    );
+  }
+  const revision = data.manifest.revision + 1;
+  const {
+    staleState: _staleState,
+    blockedState: _blockedState,
+    currentChangeCheckId: _currentChangeCheckId,
+    currentChangeCheckRevision: _currentChangeCheckRevision,
+    ...activeManifest
+  } = data.manifest;
+  data.manifest = TaskManifestV1Schema.parse({
+    ...activeManifest,
+    status: "context_ready",
+    latestSnapshotId: refreshed.snapshotId,
+    updatedAt: occurredAt,
+    revision,
+  });
+  data.brief = refreshed.brief;
+  data.claims = [...refreshed.claims];
+  data.evidence = [...refreshed.evidence];
+  data.impactPaths = [...refreshed.impactPaths];
+  // Change Checks and Verification records are snapshot-bound.  They are
+  // retained in the event/receipt history but must not be presented as
+  // current after a context rebuild.
+  data.changeChecks = [];
+  data.verificationRecords = [];
+  const eventId = `event:${input.taskId}:${revision}`;
+  const event = buildTaskEvent({
+    manifest: data.manifest,
+    previousManifest: current.bundle.manifest,
+    previousEvent: current.bundle.events.at(-1),
+    action: input.action,
+    actor: input.actor,
+    idempotencyKey: input.idempotencyKey,
+    requestDigest,
+    occurredAt,
+  });
+  // Keep this assertion adjacent to event construction: event IDs are part
+  // of the durable receipt identity and must remain contiguous.
+  if (event.eventId !== eventId) {
+    throw new TaskEngineError(
+      "context_build_failed",
+      "The rebuilt Task event identity was not contiguous.",
+      { taskId: input.taskId, expectedEventId: eventId, actualEventId: event.eventId },
+    );
+  }
+  const mutation = mutationResult(
+    data.manifest,
+    event,
+    current.artifacts
+      .filter(
+        (artifact) =>
+          artifact.artifactType !== "change_check" &&
+          artifact.artifactType !== "verification",
+      )
+      .map((artifact) => artifact.artifactId),
+  );
+  const result = { task: data.manifest, mutation };
+  const resultDigest = sha256CanonicalJson(result);
+  const record = IdempotencyRecordV1Schema.parse({
+    schemaVersion: 1,
+    worktreeId: store.worktreeId,
+    scope: { kind: "task", taskId: input.taskId },
+    idempotencyKey: input.idempotencyKey,
+    actor: input.actor,
+    requestDigest,
+    taskId: input.taskId,
+    resultRevision: revision,
+    eventId: event.eventId,
+    resultDigest,
+    createdAt: occurredAt,
+  });
+  const receipt = TaskOperationReceiptV1Schema.parse({
+    schemaVersion: 1,
+    operation: "update_task",
+    taskId: input.taskId,
+    eventId: event.eventId,
+    resultDigest,
+    result,
+  });
+  const records = [...current.bundle.idempotencyRecords, record];
+  const receipts = [...current.receipts, receipt];
+  const artifacts = buildTaskArtifacts({
+    manifest: data.manifest,
+    brief: data.brief,
+    claims: data.claims,
+    evidence: data.evidence,
+    impactPaths: data.impactPaths,
     idempotencyRecords: records,
     receipts,
     createdAt: occurredAt,

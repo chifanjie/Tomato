@@ -323,6 +323,44 @@ async function advancedSnapshot(
   );
 }
 
+async function publishPulseForSnapshot(
+  store: ArtifactStore,
+  snapshotId: string,
+  headCommit: string,
+): Promise<void> {
+  const current = RepoPulseArtifactV1Schema.parse(
+    await loadFixture("repo-pulse.json"),
+  );
+  const evaluatedAt = "2026-07-29T09:00:01.000Z";
+  const payload = {
+    ...current.payload,
+    evaluatedSnapshotId: snapshotId,
+    repositoryState: {
+      ...current.payload.repositoryState!,
+      headCommit,
+    },
+    evaluatedAt,
+  };
+  await store.persistArtifact(
+    RepoPulseArtifactV1Schema.parse({
+      ...current,
+      revision: 1,
+      sourceSnapshotId: snapshotId,
+      createdAt: evaluatedAt,
+      contentDigest: sha256CanonicalJson(payload),
+      payload,
+    }),
+    {
+      expectedRevision: 0,
+      idempotencyKey: `pulse-for-${snapshotId}`,
+      requestDigest: sha256CanonicalJson({
+        operation: "publish_test_pulse",
+        snapshotId,
+      }),
+    },
+  );
+}
+
 function buildInput(idempotencyKey = "build-task-brief-1") {
   return {
     task: "Harden TaskHandler persistent lifecycle and its tests",
@@ -1772,9 +1810,9 @@ describe("TaskEngine persistent integration", () => {
       schemaVersion: 1,
       actions: {
         refresh_task_context: {
-          available: false,
-          reasonCode: "task_context_rebuild_not_implemented",
-          owner: "WP5",
+          available: true,
+          reasonCode: "task_context_rebuild_available",
+          owner: "task-engine",
         },
         rebase_task: {
           available: false,
@@ -1790,10 +1828,6 @@ describe("TaskEngine persistent integration", () => {
     )!;
     const beforeRecovery = await store.readTaskBundle(recoveryCase.taskId);
     for (const action of [
-      {
-        type: "refresh_task_context" as const,
-        targetSnapshotId: advancedSnapshotId,
-      },
       {
         type: "rebase_task" as const,
         newBaselineSnapshotId: advancedSnapshotId,
@@ -1832,6 +1866,131 @@ describe("TaskEngine persistent integration", () => {
     );
     expect(afterRecovery.receipts).toEqual(beforeRecovery.receipts);
   }, 30_000);
+
+  it("rebuilds one stale Task on the exact current Snapshot and replays without reloading context", async () => {
+    const { store } = await openStore();
+    let contextLoads = 0;
+    const taskEngine = engine(store, {
+      contextProvider: {
+        async loadTaskContext(input) {
+          contextLoads += 1;
+          return contextProvider.loadTaskContext(input);
+        },
+      },
+    });
+    const built = await taskEngine.buildTaskBrief(
+      buildInput("refresh-stale-task-context"),
+      auth(),
+    );
+    expect(contextLoads).toBe(1);
+
+    const targetSnapshotId = "snapshot:refresh-task-context";
+    const targetHead = "c".repeat(40);
+    await store.persistArtifact(
+      await repositorySnapshot(
+        targetSnapshotId,
+        "2026-07-29T09:00:00.000Z",
+        targetHead,
+      ),
+    );
+    await publishPulseForSnapshot(store, targetSnapshotId, targetHead);
+    const staled = await taskEngine.updateTask(
+      {
+        taskId: built.task.taskId,
+        action: {
+          type: "block_task",
+          reasonCode: "refresh_fixture",
+          message: "Capture repository drift before refreshing context.",
+        },
+        expectedRevision: built.task.revision,
+        idempotencyKey: "capture-refresh-drift",
+        actor: ACTOR,
+      },
+      auth(),
+    );
+    expect(staled.task).toMatchObject({
+      status: "stale",
+      revision: 3,
+      latestSnapshotId: targetSnapshotId,
+    });
+
+    await expect(
+      taskEngine.updateTask(
+        {
+          taskId: built.task.taskId,
+          action: {
+            type: "refresh_task_context",
+            targetSnapshotId: "snapshot:not-current",
+          },
+          expectedRevision: staled.task.revision,
+          idempotencyKey: "refresh-wrong-target",
+          actor: ACTOR,
+        },
+        auth(),
+      ),
+    ).rejects.toMatchObject({
+      code: "task_gate_unsatisfied",
+      details: {
+        targetStatus: "context_ready",
+        failedGuards: [
+          {
+            code: "target_snapshot_mismatch",
+            resourceId: "snapshot:not-current",
+          },
+        ],
+      },
+    });
+    expect(contextLoads).toBe(1);
+
+    const refreshInput = {
+      taskId: built.task.taskId,
+      action: {
+        type: "refresh_task_context" as const,
+        targetSnapshotId,
+      },
+      expectedRevision: staled.task.revision,
+      idempotencyKey: "refresh-current-context",
+      actor: ACTOR,
+    };
+    const refreshed = await taskEngine.updateTask(refreshInput, auth());
+    expect(refreshed).toMatchObject({
+      task: {
+        status: "context_ready",
+        revision: 4,
+        latestSnapshotId: targetSnapshotId,
+      },
+      mutation: { idempotentReplay: false },
+    });
+    expect(contextLoads).toBe(2);
+    const persisted = await store.readTaskBundle(built.task.taskId);
+    expect(persisted.bundle.events.map((event) => event.action.type)).toEqual([
+      "task_created",
+      "transition_status",
+      "task_context_staled",
+      "refresh_task_context",
+    ]);
+    expect(persisted.receipts).toHaveLength(4);
+    if (!("brief" in persisted.bundle)) {
+      throw new TypeError("The refreshed Task must retain a contextual bundle.");
+    }
+    expect(
+      persisted.bundle.claims.every(
+        (claim) => claim.sourceSnapshotId === targetSnapshotId,
+      ),
+    ).toBe(true);
+    expect(persisted.bundle.changeChecks).toEqual([]);
+    expect(persisted.bundle.verificationRecords).toEqual([]);
+
+    const replay = await taskEngine.updateTask(refreshInput, auth());
+    expect(replay).toMatchObject({
+      task: { revision: 4, status: "context_ready" },
+      mutation: { idempotentReplay: true },
+    });
+    expect(contextLoads).toBe(2);
+    expect(
+      (await store.readTaskBundle(built.task.taskId)).bundle.events,
+    ).toHaveLength(4);
+  });
 
   it("uses host time monotonically and rejects ordinary actions while blocked", async () => {
     const { store } = await openStore();

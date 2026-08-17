@@ -39,6 +39,11 @@
       "import": "./dist/conformance-result-adapter.js",
       "default": "./dist/conformance-result-adapter.js"
     },
+    "./provider-gate-projection": {
+      "types": "./dist/provider-gate-projection.d.ts",
+      "import": "./dist/provider-gate-projection.js",
+      "default": "./dist/provider-gate-projection.js"
+    },
     "./feasibility-evidence-adapter": {
       "types": "./dist/feasibility-evidence-adapter.d.ts",
       "import": "./dist/feasibility-evidence-adapter.js",

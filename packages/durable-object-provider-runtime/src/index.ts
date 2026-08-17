@@ -81,6 +81,17 @@ export type {
   ProviderRuntimeRealFilesystemConformanceResultAdapterValueV1,
   ProviderRuntimeRealFilesystemConformanceResultContextV1,
 } from "./conformance-result-adapter.js";
+export {
+  diagnoseProviderRuntimeProviderGateProjectionV1,
+  projectProviderRuntimeProviderGateV1,
+  ProviderRuntimeProviderGateProjectionErrorV1,
+} from "./provider-gate-projection.js";
+export type {
+  ProviderRuntimeProviderGateProjectionBlockerV1,
+  ProviderRuntimeProviderGateProjectionDiagnosticV1,
+  ProviderRuntimeProviderGateProjectionInputV1,
+  ProviderRuntimeProviderGateProjectionValueV1,
+} from "./provider-gate-projection.js";
 export type {
   ProviderRuntimeRealFilesystemConformanceBindingsV1,
   ProviderRuntimeRealFilesystemConformanceCandidateV1,

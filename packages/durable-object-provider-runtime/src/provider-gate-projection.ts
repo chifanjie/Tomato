@@ -127,6 +127,8 @@ function validateInputV1(input: ProviderRuntimeProviderGateProjectionInputV1):
       input.serviceReadiness.authority !== "read_only" ||
       input.serviceReadiness.strongWrites !== "locked") {
     pushUniqueV1(blockers, "service_readiness_unavailable");
+  } else if (input.serviceReadiness.providerId !== providerId) {
+    pushUniqueV1(blockers, "provider_identity_mismatch");
   }
 
   const status = blockers.length === 0 ? "candidate_ready" : "blocked";

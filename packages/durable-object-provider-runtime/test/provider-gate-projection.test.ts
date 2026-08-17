@@ -90,6 +90,7 @@ describe("runtime Provider Gate projection", () => {
     const ready = projectProviderRuntimeProviderGateV1({
       ...inputV1(),
       serviceReadiness: {
+        providerId,
         status: "signed_candidate",
         authority: "read_only",
         strongWrites: "locked",
@@ -110,7 +111,7 @@ describe("runtime Provider Gate projection", () => {
           payload: { ...input.evidence.evidence.payload, providerId: "durable-object-provider:other" as never },
         },
       },
-      serviceReadiness: { status: "signed_candidate", authority: "read_only", strongWrites: "locked" } as never,
+      serviceReadiness: { providerId, status: "signed_candidate", authority: "read_only", strongWrites: "locked" } as never,
     });
     expect(diagnostic.ok).toBe(true);
     if (diagnostic.ok) expect(diagnostic.value.blockers).toContain("provider_identity_mismatch");

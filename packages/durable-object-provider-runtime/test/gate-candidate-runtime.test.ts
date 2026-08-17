@@ -5,6 +5,7 @@ const stageMocks = vi.hoisted(() => ({
   evidence: vi.fn(),
   registry: vi.fn(),
   catalog: vi.fn(),
+  liveGate: vi.fn(),
 }));
 
 vi.mock("../src/conformance-result-adapter.js", () => ({
@@ -19,8 +20,15 @@ vi.mock("../src/registry-evidence-binding-adapter.js", () => ({
 vi.mock("../src/feasibility-support-catalog-adapter.js", () => ({
   adaptProviderRuntimeFeasibilitySupportCatalogV1: stageMocks.catalog,
 }));
+vi.mock("../src/live-gate-binding.js", () => ({
+  diagnoseProviderRuntimeLiveGateBindingV1: stageMocks.liveGate,
+}));
 
-import { runProviderRuntimeGateCandidateV1 } from "../src/gate-candidate-runtime.js";
+import {
+  runProviderRuntimeGateCandidateV1,
+  runProviderRuntimeLiveGateCandidateV1,
+} from "../src/gate-candidate-runtime.js";
+import { ContentDigestV1Schema } from "@understand-code/durable-object-provider-contracts/primitives";
 
 const providerId = "durable-object-provider:local-helper";
 const targetProfileId = "provider-target-profile:target";
@@ -29,6 +37,7 @@ const resultDigest = `sha256:${"1".repeat(64)}`;
 const evidenceId = "provider-feasibility-evidence:evidence";
 const evidenceDigest = `sha256:${"2".repeat(64)}`;
 const catalogDigest = `sha256:${"3".repeat(64)}`;
+const digestV1 = (hex: string) => ContentDigestV1Schema.parse(`sha256:${hex.repeat(64)}`);
 
 function stageValuesV1() {
   const conformance = {
@@ -140,6 +149,64 @@ describe("runtime Gate candidate composition", () => {
       code: "provider_unavailable",
       reason: "attestation_invalid",
       stage: "support_catalog",
+    });
+  });
+
+  it("runs live binding only after all structure stages succeed", async () => {
+    const values = installSuccessfulStagesV1();
+    stageMocks.liveGate.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        status: "live_activation_candidate",
+        authority: "none",
+        accessMode: "read_only",
+        strongWriteStatus: "locked",
+        requiredNext: "provider_acceptance_current_and_os_peer_gate",
+        bindings: { providerId },
+      },
+    });
+    const diagnostic = await runProviderRuntimeLiveGateCandidateV1({
+      conformanceResult: {} as never,
+      feasibilityEvidenceContext: {} as never,
+      registryEvidenceBindingContext: {} as never,
+      supportCatalogContext: {} as never,
+      config: {} as never,
+      targetBaseline: {} as never,
+      expectedInstallationIdentityDigest: digestV1("4"),
+      expectedBinaryDigest: digestV1("5"),
+      expectedCapabilityDigest: digestV1("6"),
+      expectedTargetFingerprintDigest: digestV1("7"),
+    });
+    expect(diagnostic).toMatchObject({ ok: true, value: { status: "live_activation_candidate" } });
+    expect(stageMocks.liveGate).toHaveBeenCalledWith(expect.objectContaining({
+      gateValues: values,
+    }));
+  });
+
+  it("keeps a live binding failure opaque", async () => {
+    installSuccessfulStagesV1();
+    stageMocks.liveGate.mockResolvedValueOnce({
+      ok: false,
+      code: "provider_unavailable",
+      reason: "attestation_invalid",
+    });
+    const diagnostic = await runProviderRuntimeLiveGateCandidateV1({
+      conformanceResult: {} as never,
+      feasibilityEvidenceContext: {} as never,
+      registryEvidenceBindingContext: {} as never,
+      supportCatalogContext: {} as never,
+      config: {} as never,
+      targetBaseline: {} as never,
+      expectedInstallationIdentityDigest: digestV1("4"),
+      expectedBinaryDigest: digestV1("5"),
+      expectedCapabilityDigest: digestV1("6"),
+      expectedTargetFingerprintDigest: digestV1("7"),
+    });
+    expect(diagnostic).toEqual({
+      ok: false,
+      code: "provider_unavailable",
+      reason: "attestation_invalid",
+      stage: "live_gate_binding",
     });
   });
 });

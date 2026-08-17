@@ -94,11 +94,16 @@ export type {
 } from "./provider-gate-projection.js";
 export {
   diagnoseProviderRuntimeGateCandidateV1,
+  diagnoseProviderRuntimeLiveGateCandidateV1,
   runProviderRuntimeGateCandidateV1,
+  runProviderRuntimeLiveGateCandidateV1,
 } from "./gate-candidate-runtime.js";
 export type {
   ProviderRuntimeGateCandidateDiagnosticV1,
+  ProviderRuntimeGateCandidateValuesV1,
   ProviderRuntimeGateCandidateStageV1,
+  ProviderRuntimeLiveGateCandidateDiagnosticV1,
+  RunProviderRuntimeLiveGateCandidateOptionsV1,
   RunProviderRuntimeGateCandidateOptionsV1,
 } from "./gate-candidate-runtime.js";
 export type {

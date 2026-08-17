@@ -51,6 +51,18 @@ export type {
   ProviderRuntimeFeasibilityEvidenceConformanceInputV1,
   ProviderRuntimeFeasibilityEvidenceSourceContextV1,
 } from "./feasibility-evidence-adapter.js";
+export {
+  adaptProviderRuntimeRegistryEvidenceBindingV1,
+  diagnoseProviderRuntimeRegistryEvidenceBindingAdapterV1,
+  ProviderRuntimeRegistryEvidenceBindingAdapterErrorV1,
+} from "./registry-evidence-binding-adapter.js";
+export type {
+  AdaptProviderRuntimeRegistryEvidenceBindingOptionsV1,
+  ProviderRuntimeRegistryEvidenceBindingAdapterDiagnosticV1,
+  ProviderRuntimeRegistryEvidenceBindingAdapterValueV1,
+  ProviderRuntimeRegistryEvidenceBindingContextV1,
+  ProviderRuntimeValidatedFeasibilityEvidenceV1,
+} from "./registry-evidence-binding-adapter.js";
 export type {
   AdaptProviderRuntimeRealFilesystemConformanceResultOptionsV1,
   ProviderRuntimeRealFilesystemConformanceCaseBindingV1,

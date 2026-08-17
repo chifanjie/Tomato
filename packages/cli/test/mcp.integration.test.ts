@@ -10,6 +10,7 @@ import {
   GetTaskBriefOutputV1Schema,
   McpToolErrorResultV1Schema,
   RecordVerificationOutputV1Schema,
+  UpdateTaskOutputV1Schema,
 } from "@understand-code/contracts/mcp";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -86,6 +87,7 @@ describe("MCP lifecycle and real handlers", () => {
       "get_repo_pulse",
       "build_task_brief",
       "get_task_brief",
+      "update_task",
       "check_change",
       "record_verification",
       "open_workbench",
@@ -191,15 +193,67 @@ describe("MCP lifecycle and real handlers", () => {
         "task:accept",
       ] as const,
     };
-    let taskRevision = built.structuredContent.result.task.revision;
-    const transitions = [
-      {
-        action: {
-          type: "confirm_goal" as const,
-          claimId: built.structuredContent.result.brief.goalClaimId,
+    await harness.server.handleValue({
+      jsonrpc: "2.0",
+      id: 10,
+      method: "tools/call",
+      params: {
+        name: "update_task",
+        arguments: {
+          taskId,
+          action: {
+            type: "confirm_goal",
+            claimId: built.structuredContent.result.brief.goalClaimId,
+          },
+          expectedRevision: built.structuredContent.result.task.revision,
+          idempotencyKey: "cli-public-confirm-goal",
+          actor,
         },
-        key: "cli-ci-confirm-goal",
       },
+    });
+    const publicUpdate = UpdateTaskOutputV1Schema.parse(
+      harness.response(10).result,
+    );
+    expect(publicUpdate.structuredContent.result.task.status).toBe(
+      "context_ready",
+    );
+    expect(publicUpdate.structuredContent.result.mutation.idempotentReplay).toBe(
+      false,
+    );
+
+    await harness.server.handleValue({
+      jsonrpc: "2.0",
+      id: 11,
+      method: "tools/call",
+      params: {
+        name: "update_task",
+        arguments: {
+          taskId,
+          action: { type: "transition_status", to: "planned" },
+          expectedRevision:
+            publicUpdate.structuredContent.result.mutation.revision,
+          idempotencyKey: "cli-public-premature-planned",
+          actor,
+        },
+      },
+    });
+    const publicGate = McpToolErrorResultV1Schema.parse(
+      harness.response(11).result,
+    );
+    expect(publicGate.structuredContent.error).toMatchObject({
+      code: "task_gate_unsatisfied",
+      details: {
+        taskId,
+        targetStatus: "planned",
+        failedGuards: expect.arrayContaining([
+          expect.objectContaining({ code: "acceptance_not_confirmed" }),
+          expect.objectContaining({ code: "plan_not_confirmed" }),
+        ]),
+      },
+    });
+
+    let taskRevision = publicUpdate.structuredContent.result.mutation.revision;
+    const transitions = [
       {
         action: {
           type: "confirm_acceptance_criteria" as const,
@@ -386,7 +440,7 @@ describe("MCP lifecycle and real handlers", () => {
       params: { name: "get_repo_pulse", arguments: {} },
     });
 
-    expect(harness.response(2).result.tools).toHaveLength(6);
+    expect(harness.response(2).result.tools).toHaveLength(7);
     const failure = McpToolErrorResultV1Schema.parse(harness.response(3).result);
     expect(failure.structuredContent.error).toEqual({
       schemaVersion: 1,

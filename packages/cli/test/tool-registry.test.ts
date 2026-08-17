@@ -7,6 +7,7 @@ import {
   McpToolErrorResultV1Schema,
   OpenWorkbenchOutputV1Schema,
   RecordVerificationOutputV1Schema,
+  UpdateTaskOutputV1Schema,
 } from "@understand-code/contracts/mcp";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -36,6 +37,12 @@ const expectedOutputSchemas = {
       McpToolErrorResultV1Schema.shape.structuredContent,
     ]),
   ),
+  update_task: toolOutputSchema(
+    z.union([
+      UpdateTaskOutputV1Schema.shape.structuredContent,
+      McpToolErrorResultV1Schema.shape.structuredContent,
+    ]),
+  ),
   check_change: toolOutputSchema(
     z.union([
       CheckChangeOutputV1Schema.shape.structuredContent,
@@ -62,6 +69,7 @@ describe("advertised tool contracts", () => {
       "get_repo_pulse",
       "build_task_brief",
       "get_task_brief",
+      "update_task",
       "check_change",
       "record_verification",
       "open_workbench",

@@ -6,6 +6,7 @@ import { ArtifactStoreError } from "@understand-code/artifact-store";
 import {
   CheckChangeInputV1Schema,
   RecordVerificationInputV1Schema,
+  UpdateTaskInputV1Schema,
 } from "@understand-code/contracts";
 import {
   BuildTaskBriefInputV1Schema,
@@ -18,6 +19,7 @@ import {
   OpenWorkbenchInputV1Schema,
   OpenWorkbenchOutputV1Schema,
   RecordVerificationOutputV1Schema,
+  UpdateTaskOutputV1Schema,
   type McpToolErrorResultV1,
 } from "@understand-code/contracts/mcp";
 import {
@@ -57,6 +59,7 @@ export const IMPLEMENTED_TOOL_NAMES = Object.freeze([
   "get_repo_pulse",
   "build_task_brief",
   "get_task_brief",
+  "update_task",
   "check_change",
   "record_verification",
   "open_workbench",
@@ -190,6 +193,43 @@ async function getTaskBrief(argumentsValue: unknown, canonicalRoot: string) {
         hasMore,
       },
       result: page.result,
+    },
+  });
+}
+
+async function updateTask(argumentsValue: unknown, canonicalRoot: string) {
+  const parsed = UpdateTaskInputV1Schema.safeParse(argumentsValue ?? {});
+  if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
+  const startedAt = performance.now();
+  const runtime = await openRuntime(canonicalRoot);
+  const result = await runtime.taskEngine.updateTask(parsed.data, {
+    actor: parsed.data.actor,
+    repositoryId: runtime.store.repositoryId,
+    worktreeId: runtime.store.worktreeId,
+    capabilities: [
+      "task:update",
+      "task:confirm",
+      "task:accept",
+      "task:supersede",
+    ],
+  });
+  const [snapshot, publishedPulse] = await Promise.all([
+    readPublishedSnapshot(runtime.store, result.task.latestSnapshotId),
+    readPublishedPulse(runtime.store),
+  ]);
+  const freshness =
+    publishedPulse.pulse.evaluatedSnapshotId === result.task.latestSnapshotId
+      ? publishedPulse.pulse.status
+      : "stale";
+  return UpdateTaskOutputV1Schema.parse({
+    isError: false,
+    content: [{ type: "text", text: "Task updated." }],
+    structuredContent: {
+      schemaVersion: 1,
+      meta: successMeta(snapshot, freshness, elapsed(startedAt), {
+        cacheHit: result.mutation.idempotentReplay,
+      }),
+      result,
     },
   });
 }
@@ -475,6 +515,32 @@ function isDigest(value: unknown): value is string {
   return typeof value === "string" && /^sha256:[0-9a-f]{64}$/u.test(value);
 }
 
+const taskGateTargets: ReadonlySet<string> = new Set([
+  "context_ready",
+  "planned",
+  "in_progress",
+  "check_required",
+  "verification_required",
+  "verified",
+]);
+
+const taskGateGuardCodes: ReadonlySet<string> = new Set([
+  "context_not_ready",
+  "goal_not_confirmed",
+  "acceptance_not_confirmed",
+  "plan_not_confirmed",
+  "worktree_binding_invalid",
+  "snapshot_not_current",
+  "current_check_required",
+  "blocking_finding",
+  "verification_required",
+  "verification_failed",
+  "verification_blocked",
+  "verification_flaky",
+  "freshness_invalid",
+  "blocker_unresolved",
+]);
+
 function mappedTaskEngineFailure(error: TaskEngineError): McpToolErrorResultV1 | undefined {
   if (error.code === "artifact_unavailable") {
     const artifactType =
@@ -492,23 +558,28 @@ function mappedTaskEngineFailure(error: TaskEngineError): McpToolErrorResultV1 |
   }
   if (error.code === "task_gate_unsatisfied") {
     const taskId = error.details?.taskId;
+    const targetStatus = error.details?.targetStatus;
     const failedGuards = error.details?.failedGuards;
     if (
       typeof taskId === "string" &&
+      typeof targetStatus === "string" &&
+      taskGateTargets.has(targetStatus) &&
       Array.isArray(failedGuards) &&
+      failedGuards.length > 0 &&
       failedGuards.every(
         (guard) =>
           guard !== null &&
           typeof guard === "object" &&
-          (guard as { code?: unknown }).code === "context_not_ready" &&
+          typeof (guard as { code?: unknown }).code === "string" &&
+          taskGateGuardCodes.has((guard as { code: string }).code) &&
           ((guard as { resourceId?: unknown }).resourceId === undefined ||
             typeof (guard as { resourceId?: unknown }).resourceId === "string"),
       )
     ) {
       return taskGateFailure(
         taskId,
-        "context_ready",
-        failedGuards as { code: "context_not_ready"; resourceId?: string }[],
+        targetStatus as Parameters<typeof taskGateFailure>[1],
+        failedGuards as Parameters<typeof taskGateFailure>[2],
       );
     }
   }
@@ -593,6 +664,8 @@ export async function callImplementedTool(
         return await buildTaskBrief(argumentsValue, canonicalRoot);
       case "get_task_brief":
         return await getTaskBrief(argumentsValue, canonicalRoot);
+      case "update_task":
+        return await updateTask(argumentsValue, canonicalRoot);
       case "check_change":
         return await checkChange(argumentsValue, canonicalRoot);
       case "record_verification":

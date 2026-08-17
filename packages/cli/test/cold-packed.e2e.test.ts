@@ -160,6 +160,7 @@ describe("cold packed CLI", () => {
         "get_repo_pulse",
         "build_task_brief",
         "get_task_brief",
+        "update_task",
         "check_change",
         "record_verification",
         "open_workbench",

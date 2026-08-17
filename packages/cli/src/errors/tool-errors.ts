@@ -142,8 +142,31 @@ export function artifactUnavailableFailure(
 
 export function taskGateFailure(
   taskId: string,
-  targetStatus: "context_ready",
-  failedGuards: readonly { code: "context_not_ready"; resourceId?: string }[],
+  targetStatus:
+    | "context_ready"
+    | "planned"
+    | "in_progress"
+    | "check_required"
+    | "verification_required"
+    | "verified",
+  failedGuards: readonly {
+    code:
+      | "context_not_ready"
+      | "goal_not_confirmed"
+      | "acceptance_not_confirmed"
+      | "plan_not_confirmed"
+      | "worktree_binding_invalid"
+      | "snapshot_not_current"
+      | "current_check_required"
+      | "blocking_finding"
+      | "verification_required"
+      | "verification_failed"
+      | "verification_blocked"
+      | "verification_flaky"
+      | "freshness_invalid"
+      | "blocker_unresolved";
+    resourceId?: string;
+  }[],
 ): McpToolErrorResultV1 {
   return toolError(
     {
@@ -151,7 +174,7 @@ export function taskGateFailure(
       code: "task_gate_unsatisfied",
       details: { taskId, targetStatus, failedGuards: [...failedGuards] },
     },
-    "Task context gates are not satisfied.",
+    "Task lifecycle gates are not satisfied.",
   );
 }
 

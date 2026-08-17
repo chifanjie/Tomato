@@ -39,6 +39,11 @@
       "import": "./dist/conformance-result-adapter.js",
       "default": "./dist/conformance-result-adapter.js"
     },
+    "./feasibility-evidence-adapter": {
+      "types": "./dist/feasibility-evidence-adapter.d.ts",
+      "import": "./dist/feasibility-evidence-adapter.js",
+      "default": "./dist/feasibility-evidence-adapter.js"
+    },
     "./cli": {
       "types": "./dist/cli.d.ts",
       "import": "./dist/cli.js",

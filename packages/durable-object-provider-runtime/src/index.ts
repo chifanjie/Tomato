@@ -39,6 +39,18 @@ export {
   diagnoseProviderRuntimeRealFilesystemConformanceResultAdapterV1,
   ProviderRuntimeRealFilesystemConformanceResultAdapterErrorV1,
 } from "./conformance-result-adapter.js";
+export {
+  adaptProviderRuntimeFeasibilityEvidenceV1,
+  diagnoseProviderRuntimeFeasibilityEvidenceAdapterV1,
+  ProviderRuntimeFeasibilityEvidenceAdapterErrorV1,
+} from "./feasibility-evidence-adapter.js";
+export type {
+  AdaptProviderRuntimeFeasibilityEvidenceOptionsV1,
+  ProviderRuntimeFeasibilityEvidenceAdapterDiagnosticV1,
+  ProviderRuntimeFeasibilityEvidenceAdapterValueV1,
+  ProviderRuntimeFeasibilityEvidenceConformanceInputV1,
+  ProviderRuntimeFeasibilityEvidenceSourceContextV1,
+} from "./feasibility-evidence-adapter.js";
 export type {
   AdaptProviderRuntimeRealFilesystemConformanceResultOptionsV1,
   ProviderRuntimeRealFilesystemConformanceCaseBindingV1,

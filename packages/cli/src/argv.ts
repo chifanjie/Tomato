@@ -15,8 +15,12 @@ export type CliInvocation =
       readonly home?: string;
       readonly host?: "codex" | "claude";
       readonly provider?: true;
+      /** Privileged Provider Service Handoff installation entrypoint. */
+      readonly providerService?: true;
       readonly serviceConfig?: string;
       readonly serviceReadiness?: string;
+      readonly serviceKey?: string;
+      readonly serviceDescriptor?: string;
     }
   | {
       /** Private self-spawn entrypoint used only by `doctor --provider`. */
@@ -121,8 +125,11 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
     let home: string | undefined;
     let host: "codex" | "claude" | undefined;
     let provider: true | undefined;
+    let providerService: true | undefined;
     let serviceConfig: string | undefined;
     let serviceReadiness: string | undefined;
+    let serviceKey: string | undefined;
+    let serviceDescriptor: string | undefined;
     for (let index = 1; index < values.length; index += 1) {
       const flag = values[index];
       if (flag === "--provider") {
@@ -132,8 +139,28 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
         provider = true;
         continue;
       }
-      if (flag === "--service-config" || flag === "--service-readiness") {
-        if (operation !== "doctor") {
+      if (flag === "--provider-service") {
+        if (operation !== "install" || providerService !== undefined) {
+          throw new CliArgumentError();
+        }
+        providerService = true;
+        continue;
+      }
+      if (
+        flag === "--service-config" ||
+        flag === "--service-readiness" ||
+        flag === "--service-key" ||
+        flag === "--service-descriptor"
+      ) {
+        const validForDoctor =
+          operation === "doctor" &&
+          (flag === "--service-config" || flag === "--service-readiness");
+        // Collect install flags before the final providerService invariant so
+        // argv order remains irrelevant (e.g. --service-config before the
+        // --provider-service marker).
+        const validForProviderService =
+          operation === "install" && flag !== "--service-readiness";
+        if (!validForDoctor && !validForProviderService) {
           throw new CliArgumentError();
         }
         const candidate = values[index + 1];
@@ -143,9 +170,15 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
         if (flag === "--service-config") {
           if (serviceConfig !== undefined) throw new CliArgumentError();
           serviceConfig = candidate;
-        } else {
+        } else if (flag === "--service-readiness") {
           if (serviceReadiness !== undefined) throw new CliArgumentError();
           serviceReadiness = candidate;
+        } else if (flag === "--service-key") {
+          if (serviceKey !== undefined) throw new CliArgumentError();
+          serviceKey = candidate;
+        } else {
+          if (serviceDescriptor !== undefined) throw new CliArgumentError();
+          serviceDescriptor = candidate;
         }
         index += 1;
         continue;
@@ -184,7 +217,19 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
     ) {
       throw new CliArgumentError();
     }
-    if (provider !== true && (serviceConfig !== undefined || serviceReadiness !== undefined)) {
+    if (providerService === true &&
+      (root === undefined || home !== undefined || provider === true ||
+        serviceConfig === undefined || serviceKey === undefined || serviceReadiness !== undefined)) {
+      throw new CliArgumentError();
+    }
+    if (providerService !== true && (serviceKey !== undefined || serviceDescriptor !== undefined)) {
+      throw new CliArgumentError();
+    }
+    if (
+      provider !== true &&
+      providerService !== true &&
+      (serviceConfig !== undefined || serviceReadiness !== undefined)
+    ) {
       throw new CliArgumentError();
     }
     return {
@@ -194,8 +239,11 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
       ...(home === undefined ? {} : { home }),
       ...(host === undefined ? {} : { host }),
       ...(provider === undefined ? {} : { provider }),
+      ...(providerService === undefined ? {} : { providerService }),
       ...(serviceConfig === undefined ? {} : { serviceConfig }),
       ...(serviceReadiness === undefined ? {} : { serviceReadiness }),
+      ...(serviceKey === undefined ? {} : { serviceKey }),
+      ...(serviceDescriptor === undefined ? {} : { serviceDescriptor }),
     };
   }
   if (values[0] !== "mcp") throw new CliArgumentError();
@@ -241,6 +289,7 @@ export function helpText(): string {
     "  understand-code rollback [--root <absolute-install-root>|--home <absolute-install-home>]",
     "  understand-code doctor [--root <absolute-install-root>|--home <absolute-install-home>]",
     "  understand-code doctor --provider --root <absolute-target-root> [--service-config <path> --service-readiness <path>]",
+    "  understand-code install --provider-service --root <absolute-runtime-root> --service-config <signed-config> --service-key <pkcs8-key> [--service-descriptor <absolute-path>]",
     "  understand-code uninstall [--root <absolute-install-root>|--home <absolute-install-home>]",
     "  understand-code --help",
     "  understand-code --version",

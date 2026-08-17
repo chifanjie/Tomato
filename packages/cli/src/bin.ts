@@ -5,7 +5,12 @@ import { writeDiagnostic } from "./logging/stderr.js";
 import { runStdioServer } from "./mcp/server.js";
 import { runProviderDoctorV1 } from "./provider/provider-doctor.js";
 import { runProviderRuntimeChildV1 } from "./provider/runtime-child.js";
+import {
+  installProviderServiceV1,
+  ProviderServiceInstallerErrorV1,
+} from "./provider/provider-service-installer.js";
 import { runDurableObjectProviderRuntimeCliV1 } from "@understand-code/durable-object-provider-runtime/cli";
+import { ProviderServiceHandoffErrorV1 } from "@understand-code/durable-object-provider-runtime";
 import {
   InstallationLifecycleError,
   doctorInstallationV1,
@@ -43,6 +48,25 @@ async function runInstallation(
       });
       process.stdout.write(`${JSON.stringify(result)}\n`);
       if (!result.ok) process.exitCode = 1;
+      return;
+    }
+    if (invocation.operation === "install" && invocation.providerService === true) {
+      if (
+        invocation.root === undefined ||
+        invocation.serviceConfig === undefined ||
+        invocation.serviceKey === undefined
+      ) {
+        throw new CliArgumentError();
+      }
+      const result = await installProviderServiceV1({
+        root: invocation.root,
+        serviceConfig: invocation.serviceConfig,
+        serviceKey: invocation.serviceKey,
+        ...(invocation.serviceDescriptor === undefined
+          ? {}
+          : { serviceDescriptor: invocation.serviceDescriptor }),
+      });
+      process.stdout.write(`${JSON.stringify(result)}\n`);
       return;
     }
     if (invocation.operation === "install") {
@@ -92,6 +116,19 @@ async function runInstallation(
     if (error instanceof InstallationLifecycleError) {
       process.stdout.write(
         `${JSON.stringify({ ok: false, error: { code: error.code, message: error.message } })}\n`,
+      );
+      process.exitCode = 2;
+      return;
+    }
+    if (
+      error instanceof ProviderServiceInstallerErrorV1 ||
+      error instanceof ProviderServiceHandoffErrorV1
+    ) {
+      process.stdout.write(
+        `${JSON.stringify({
+          ok: false,
+          error: { code: error.code, message: error.message },
+        })}\n`,
       );
       process.exitCode = 2;
       return;

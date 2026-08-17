@@ -5,4 +5,5 @@ export * from "./handlers/tools.js";
 export * from "./mcp/server.js";
 export * from "./mcp/tool-registry.js";
 export * from "./provider/provider-doctor.js";
+export * from "./provider/provider-service-installer.js";
 export * from "./runtime/context.js";

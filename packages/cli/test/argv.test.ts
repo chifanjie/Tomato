@@ -64,6 +64,28 @@ describe("CLI arguments", () => {
       host: "claude",
       home: "/tmp/understand-code",
     });
+    expect(
+      parseCliArguments([
+        "install",
+        "--provider-service",
+        "--root",
+        "/var/lib/understand-code/provider",
+        "--service-config",
+        "/etc/understand-code/provider.json",
+        "--service-key",
+        "/etc/understand-code/provider.key",
+        "--service-descriptor",
+        "/etc/systemd/system/understand-code-provider.service",
+      ]),
+    ).toEqual({
+      kind: "installation",
+      operation: "install",
+      providerService: true,
+      root: "/var/lib/understand-code/provider",
+      serviceConfig: "/etc/understand-code/provider.json",
+      serviceKey: "/etc/understand-code/provider.key",
+      serviceDescriptor: "/etc/systemd/system/understand-code-provider.service",
+    });
     expect(parseCliArguments(["rollback"])).toEqual({
       kind: "installation",
       operation: "rollback",
@@ -105,6 +127,12 @@ describe("CLI arguments", () => {
     ["invalid install host", ["install", "--host", "unknown"]],
     ["host on doctor", ["doctor", "--host", "codex"]],
     ["provider on install", ["install", "--provider"]],
+    ["provider service on doctor", ["doctor", "--provider-service"]],
+    ["provider service without config", ["install", "--provider-service", "--root", "/tmp/a", "--service-key", "/tmp/key"]],
+    ["provider service without key", ["install", "--provider-service", "--root", "/tmp/a", "--service-config", "/tmp/config"]],
+    ["provider service with home alias", ["install", "--provider-service", "--home", "/tmp/a", "--service-config", "/tmp/config", "--service-key", "/tmp/key"]],
+    ["provider service readiness", ["install", "--provider-service", "--root", "/tmp/a", "--service-config", "/tmp/config", "--service-key", "/tmp/key", "--service-readiness", "/tmp/ready"]],
+    ["provider service relative root", ["install", "--provider-service", "--root", "relative", "--service-config", "/tmp/config", "--service-key", "/tmp/key"]],
     ["provider without target", ["doctor", "--provider"]],
     ["provider with home alias", ["doctor", "--provider", "--home", "/tmp/a"]],
     ["duplicate provider", ["doctor", "--provider", "--provider"]],

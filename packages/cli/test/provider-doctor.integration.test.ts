@@ -44,6 +44,12 @@ describe("Provider Doctor", () => {
           isolation: "same_uid_private_directory",
           targetFingerprintDigest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
         },
+        conformance: {
+          status: "candidate_passed",
+          authority: "none",
+          strongWriteStatus: "locked",
+          registryEvidenceStatus: "pending_signed_registry_evidence",
+        },
         runtime: {
           isolation: "two_child_processes",
           authenticatedIpc: "passed",
@@ -53,6 +59,13 @@ describe("Provider Doctor", () => {
           finalJournalRevision: 1,
         },
       });
+      if (!result.ok) throw new Error("provider doctor fixture unexpectedly failed");
+      expect(result.conformance.cases).toEqual(
+        expect.arrayContaining([
+          { caseId: "exact_object_write_read", outcome: "passed", resultCode: "passed" },
+          { caseId: "restart_recovery", outcome: "passed", resultCode: "passed" },
+        ]),
+      );
     },
   );
 

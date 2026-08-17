@@ -25,8 +25,10 @@ import {
   inspectProviderServiceHandoffV1,
   probeProviderRuntimeTargetV1,
   ProviderRuntimeTargetInspectionErrorV1,
+  runProviderRuntimeRealFilesystemConformanceV1,
   type ProviderRuntimeTargetInspectionV1,
   type ProviderRuntimeTargetPublicProjectionV1,
+  type ProviderRuntimeRealFilesystemConformanceCandidateV1,
   type ProviderServiceHandoffInspectionV1,
 } from "@understand-code/durable-object-provider-runtime";
 import type { ContentDigestV1 } from "@understand-code/durable-object-provider-contracts/primitives";
@@ -40,6 +42,12 @@ const SOURCE_CAPABILITY_DIGEST = digestTextV1(
 );
 const DESTINATION_CAPABILITY_DIGEST = digestTextV1(
   "understand-code-provider-doctor-destination-capability-v1",
+);
+const DOCTOR_BINARY_DIGEST = digestTextV1(
+  "understand-code-provider-doctor-runtime-binary-v1",
+);
+const DOCTOR_POLICY_DIGEST = digestTextV1(
+  "understand-code-provider-doctor-runtime-policy-v1",
 );
 
 export interface ProviderRuntimeCommandV1 {
@@ -81,6 +89,7 @@ export type ProviderDoctorResultV1 =
       evidenceFreshness: "ephemeral_process_probe";
       strongStore: StrongStoreLockV1;
       targetProbe: PassedTargetProbeV1;
+      conformance: ProviderRuntimeRealFilesystemConformanceCandidateV1;
       service?: ProviderServiceHandoffInspectionV1;
       runtime: Readonly<{
         isolation: "two_child_processes";
@@ -603,6 +612,13 @@ export async function runProviderDoctorV1(
     const currentTarget = await assertProviderRuntimeTargetContinuityV1(
       targetBaseline,
     );
+    const conformance = await runProviderRuntimeRealFilesystemConformanceV1({
+      targetInspection: currentTarget,
+      providerId: DESTINATION_PROVIDER_ID,
+      binaryDigest: DOCTOR_BINARY_DIGEST,
+      policyDigest: DOCTOR_POLICY_DIGEST,
+      capabilityDigest: DESTINATION_CAPABILITY_DIGEST,
+    });
 
     return {
       schemaVersion: 1,
@@ -617,6 +633,7 @@ export async function runProviderDoctorV1(
         error: createProviderUnavailableToolErrorV1("attestation_invalid"),
       },
       targetProbe: passedTargetProbeV1(currentTarget),
+      conformance,
       ...(service === undefined ? {} : { service }),
       runtime: {
         isolation: "two_child_processes",

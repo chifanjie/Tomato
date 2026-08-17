@@ -49,6 +49,11 @@
       "import": "./dist/registry-evidence-binding-adapter.js",
       "default": "./dist/registry-evidence-binding-adapter.js"
     },
+    "./feasibility-support-catalog-adapter": {
+      "types": "./dist/feasibility-support-catalog-adapter.d.ts",
+      "import": "./dist/feasibility-support-catalog-adapter.js",
+      "default": "./dist/feasibility-support-catalog-adapter.js"
+    },
     "./cli": {
       "types": "./dist/cli.d.ts",
       "import": "./dist/cli.js",

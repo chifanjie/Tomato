@@ -63,6 +63,17 @@ export type {
   ProviderRuntimeRegistryEvidenceBindingContextV1,
   ProviderRuntimeValidatedFeasibilityEvidenceV1,
 } from "./registry-evidence-binding-adapter.js";
+export {
+  adaptProviderRuntimeFeasibilitySupportCatalogV1,
+  diagnoseProviderRuntimeFeasibilitySupportCatalogAdapterV1,
+  ProviderRuntimeFeasibilitySupportCatalogAdapterErrorV1,
+} from "./feasibility-support-catalog-adapter.js";
+export type {
+  AdaptProviderRuntimeFeasibilitySupportCatalogOptionsV1,
+  ProviderRuntimeFeasibilitySupportCatalogAdapterDiagnosticV1,
+  ProviderRuntimeFeasibilitySupportCatalogAdapterValueV1,
+  ProviderRuntimeFeasibilitySupportCatalogContextV1,
+} from "./feasibility-support-catalog-adapter.js";
 export type {
   AdaptProviderRuntimeRealFilesystemConformanceResultOptionsV1,
   ProviderRuntimeRealFilesystemConformanceCaseBindingV1,

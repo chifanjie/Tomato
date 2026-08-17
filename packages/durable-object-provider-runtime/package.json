@@ -78,6 +78,11 @@
       "types": "./dist/live-service-readiness.d.ts",
       "import": "./dist/live-service-readiness.js",
       "default": "./dist/live-service-readiness.js"
+    },
+    "./live-gate-binding": {
+      "types": "./dist/live-gate-binding.d.ts",
+      "import": "./dist/live-gate-binding.js",
+      "default": "./dist/live-gate-binding.js"
     }
   },
   "scripts": {

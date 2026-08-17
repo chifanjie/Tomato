@@ -147,3 +147,19 @@ export type {
   ProviderRuntimeLiveServiceReadinessResultV1,
   VerifyProviderRuntimeLiveServiceReadinessOptionsV1,
 } from "./live-service-readiness.js";
+export {
+  adaptProviderRuntimeLiveGateBindingV1,
+  bindProviderRuntimeLiveGateBindingV1,
+  diagnoseProviderRuntimeLiveGateBindingV1,
+  evaluateProviderRuntimeLiveGateBindingV1,
+  projectProviderRuntimeLiveGateBindingV1,
+  ProviderRuntimeLiveGateBindingErrorV1,
+} from "./live-gate-binding.js";
+export type {
+  ProviderRuntimeLiveGateActivationCandidateV1,
+  ProviderRuntimeLiveGateBindingDiagnosticV1,
+  ProviderRuntimeLiveGateBindingGateValuesV1,
+  ProviderRuntimeLiveGateBindingOptionsV1,
+  ProviderRuntimeLiveGateBindingResultV1,
+  ProviderRuntimeLiveGateBindingUnavailableV1,
+} from "./live-gate-binding.js";

@@ -278,7 +278,6 @@ function validateLiveReadinessV1(
   const binaryDigest = ContentDigestV1Schema.parse(candidate.binaryDigest);
   if (
     providerId !== config.payload.providerId ||
-    providerId !== config.payload.providerId ||
     binaryDigest !== expectedBinaryDigest ||
     targetFingerprintDigest !== expectedTargetFingerprintDigest ||
     config.payload.binaryDigest !== expectedBinaryDigest

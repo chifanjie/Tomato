@@ -44,6 +44,11 @@
       "import": "./dist/provider-gate-projection.js",
       "default": "./dist/provider-gate-projection.js"
     },
+    "./gate-candidate-runtime": {
+      "types": "./dist/gate-candidate-runtime.d.ts",
+      "import": "./dist/gate-candidate-runtime.js",
+      "default": "./dist/gate-candidate-runtime.js"
+    },
     "./feasibility-evidence-adapter": {
       "types": "./dist/feasibility-evidence-adapter.d.ts",
       "import": "./dist/feasibility-evidence-adapter.js",

@@ -92,6 +92,15 @@ export type {
   ProviderRuntimeProviderGateProjectionInputV1,
   ProviderRuntimeProviderGateProjectionValueV1,
 } from "./provider-gate-projection.js";
+export {
+  diagnoseProviderRuntimeGateCandidateV1,
+  runProviderRuntimeGateCandidateV1,
+} from "./gate-candidate-runtime.js";
+export type {
+  ProviderRuntimeGateCandidateDiagnosticV1,
+  ProviderRuntimeGateCandidateStageV1,
+  RunProviderRuntimeGateCandidateOptionsV1,
+} from "./gate-candidate-runtime.js";
 export type {
   ProviderRuntimeRealFilesystemConformanceBindingsV1,
   ProviderRuntimeRealFilesystemConformanceCandidateV1,

@@ -70,7 +70,11 @@ function safeAbsolutePathV1(value: string, label: string): string {
     !isAbsolute(value)
   ) {
     throw new ProviderServiceInstallerErrorV1(
-      label === "root" ? "invalid_root" : "invalid_config",
+      label === "root"
+        ? "invalid_root"
+        : label === "serviceKey"
+          ? "invalid_private_key"
+          : "invalid_config",
       `${label} must be an absolute path`,
     );
   }

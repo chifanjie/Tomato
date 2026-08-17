@@ -206,6 +206,8 @@ async function main() {
   await mkdir(demoTaskRoot, { recursive: true });
   await cp(path.join(referenceFixtures, "task.json"), path.join(demoTaskRoot, "task.json"));
   await cp(path.join(referenceFixtures, "task-brief.json"), path.join(demoTaskRoot, "task-brief.json"));
+  await cp(path.join(referenceFixtures, "change-check.json"), path.join(demoTaskRoot, "change-check.json"));
+  await cp(path.join(referenceFixtures, "verification.json"), path.join(demoTaskRoot, "verification.json"));
   await cp(path.join(referenceFixtures, "repo-pulse.json"), path.join(demoRoot, "repo-pulse.json"));
   await mkdir(path.join(distRoot, "demo/src"), { recursive: true });
   await writeFile(path.join(distRoot, "demo/src/app.ts"), "// Graph/Wiki/Evidence knowledge layer\nexport function main() { return 'ready'; }\n");

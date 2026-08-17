@@ -87,4 +87,72 @@ describe("TaskFirstWorkbench", () => {
     expect(onSelectSection).toHaveBeenCalledWith("goals");
     await act(async () => root.unmount());
   });
+
+  it("renders persisted Change Check findings and Verification records", () => {
+    const html = renderToStaticMarkup(createElement(TaskFirstWorkbench, {
+      route: { ...route, section: "planned_changes" },
+      page: { ...page, section: "planned_changes" },
+      changeCheck: {
+        id: "change-check:demo",
+        taskId: task.taskId,
+        taskRevision: 1,
+        baselineSnapshotId: "snapshot:base",
+        actualSnapshotId: "snapshot:latest",
+        findings: [{
+          id: "finding:demo",
+          type: "planned_completed",
+          severity: "info",
+          blocking: false,
+          summary: "The planned change is present.",
+          claimIds: ["claim:goal"],
+          plannedChangeIds: ["planned-change:demo"],
+          actualChangeIds: ["change:demo"],
+          evidenceIds: ["evidence:demo"],
+          impactPathIds: ["impact:demo"],
+        }],
+        generatedAt: "2026-08-17T00:00:01.000Z",
+        schemaVersion: 1,
+      },
+      changeCheckStatus: "ready",
+      verificationRecords: [{
+        id: "verification:demo",
+        taskId: task.taskId,
+        verificationPlanEntryId: "verification-plan:demo",
+        attempt: 1,
+        kind: "test",
+        status: "passed",
+        command: "pnpm test",
+        exitCode: 0,
+        summary: "The focused test passed.",
+        claimIds: ["claim:goal"],
+        snapshotId: "snapshot:latest",
+        recordedAt: "2026-08-17T00:00:01.000Z",
+        actor: "developer",
+      }],
+      verificationStatus: "ready",
+    }));
+
+    expect(html).toContain("The planned change is present.");
+    const verificationHtml = renderToStaticMarkup(createElement(TaskFirstWorkbench, {
+      route: { ...route, section: "verification_plan" },
+      page: { ...page, section: "verification_plan" },
+      verificationRecords: [{
+        id: "verification:demo",
+        taskId: task.taskId,
+        verificationPlanEntryId: "verification-plan:demo",
+        attempt: 1,
+        kind: "test",
+        status: "passed",
+        command: "pnpm test",
+        exitCode: 0,
+        summary: "The focused test passed.",
+        claimIds: ["claim:goal"],
+        snapshotId: "snapshot:latest",
+        recordedAt: "2026-08-17T00:00:01.000Z",
+        actor: "developer",
+      }],
+      verificationStatus: "ready",
+    }));
+    expect(verificationHtml).toContain("The focused test passed.");
+  });
 });

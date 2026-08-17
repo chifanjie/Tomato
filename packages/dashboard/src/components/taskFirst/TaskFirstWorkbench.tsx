@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type {
+  ChangeCheckV1,
   RepoPulseStatusV1,
   RepoPulseV1,
   TaskBriefPageItemV1,
@@ -7,8 +8,17 @@ import type {
   TaskBriefV1,
   TaskManifestV1,
   TaskStatusV1,
+  VerificationRecordV1,
   WorkbenchRouteV1,
 } from "@understand-code/contracts";
+
+export type TaskArtifactSurfaceStatus =
+  | "ready"
+  | "missing"
+  | "forbidden"
+  | "stale"
+  | "invalid"
+  | "error";
 
 /** The five sections that are useful in the first Task Brief surface. */
 export type TaskFirstSection =
@@ -63,6 +73,13 @@ export interface TaskFirstWorkbenchProps {
   readonly loading?: boolean;
   readonly error?: string | Error | null;
   readonly stale?: TaskFirstStaleState;
+  /** Persisted read-only Change Intelligence projections. */
+  readonly changeCheck?: ChangeCheckV1 | null;
+  readonly changeCheckStatus?: TaskArtifactSurfaceStatus;
+  readonly changeCheckMessage?: string | null;
+  readonly verificationRecords?: readonly VerificationRecordV1[] | null;
+  readonly verificationStatus?: TaskArtifactSurfaceStatus;
+  readonly verificationMessage?: string | null;
   readonly onRetry?: () => void;
   readonly onSelectSection?: (section: TaskFirstSection) => void;
   readonly onOpenKnowledge?: (route: TaskFirstRoute) => void;
@@ -239,6 +256,139 @@ function BriefSummary({ page }: { readonly page: TaskBriefPageResult }) {
   );
 }
 
+const ARTIFACT_STATUS_LABELS: Record<TaskArtifactSurfaceStatus, string> = {
+  ready: "Published / 已发布",
+  missing: "Not published / 尚未发布",
+  forbidden: "Unavailable / 不可用",
+  stale: "Stale / 已过期",
+  invalid: "Invalid / 无效",
+  error: "Read error / 读取失败",
+};
+
+function artifactSeverity(status: TaskArtifactSurfaceStatus): "ok" | "warning" | "problem" {
+  if (status === "ready") return "ok";
+  if (status === "invalid" || status === "error" || status === "forbidden") return "problem";
+  return "warning";
+}
+
+function ChangeCheckCard({
+  check,
+  status = "missing",
+  message,
+}: {
+  readonly check?: ChangeCheckV1 | null;
+  readonly status?: TaskArtifactSurfaceStatus;
+  readonly message?: string | null;
+}) {
+  const resolvedStatus = check ? "ready" : status;
+  const findings = check?.findings ?? [];
+  const blocking = findings.filter((finding) => finding.blocking).length;
+  return (
+    <section className="mb-5 rounded-md border border-border-subtle bg-elevated/20 p-4" data-testid="task-change-check">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">Actual Change Check / 实际变更检查</p>
+          <p className="mt-1 text-sm leading-6 text-text-secondary">
+            Findings are read from the persisted Task artifact; this surface never runs a check.
+          </p>
+        </div>
+        <span className="uc-status-badge" data-severity={artifactSeverity(resolvedStatus)}>
+          {ARTIFACT_STATUS_LABELS[resolvedStatus]}
+        </span>
+      </div>
+      {check ? (
+        <>
+          <dl className="mt-4 grid gap-2 text-xs text-text-secondary sm:grid-cols-3">
+            <div><dt>Check</dt><dd className="mt-1 truncate font-mono text-text-primary" title={check.id}>{check.id}</dd></div>
+            <div><dt>Findings</dt><dd className="mt-1 text-text-primary">{findings.length}</dd></div>
+            <div><dt>Blocking</dt><dd className="mt-1 text-text-primary">{blocking}</dd></div>
+          </dl>
+          {findings.length > 0 ? (
+            <ul className="mt-4 space-y-2" aria-label="Change Check findings">
+              {findings.map((finding) => (
+                <li key={finding.id} className="rounded border border-border-subtle bg-surface/60 px-3 py-2">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <p className="text-sm font-medium text-text-primary">{finding.summary}</p>
+                    <span className="text-xs text-text-muted">{finding.type.replace(/_/g, " ")} · {finding.severity}</span>
+                  </div>
+                  {finding.blocking && <p className="mt-1 text-xs font-semibold text-danger">Blocking / 阻断</p>}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-4 text-sm text-text-muted">No findings were recorded. / 未记录变更发现。</p>
+          )}
+        </>
+      ) : (
+        <p className="mt-4 text-sm leading-6 text-text-muted">{message ?? "No current Change Check is available for this Task. / 当前任务没有可用的变更检查。"}</p>
+      )}
+    </section>
+  );
+}
+
+const VERIFICATION_STATUS_LABELS: Record<string, string> = {
+  passed: "Passed / 通过",
+  failed: "Failed / 失败",
+  skipped: "Skipped / 跳过",
+  blocked: "Blocked / 阻塞",
+  flaky: "Flaky / 不稳定",
+};
+
+function VerificationCard({
+  records,
+  status = "missing",
+  message,
+}: {
+  readonly records?: readonly VerificationRecordV1[] | null;
+  readonly status?: TaskArtifactSurfaceStatus;
+  readonly message?: string | null;
+}) {
+  const resolvedStatus = records ? "ready" : status;
+  const entries = records ?? [];
+  const passed = entries.filter((record) => record.status === "passed").length;
+  return (
+    <section className="mb-5 rounded-md border border-border-subtle bg-elevated/20 p-4" data-testid="task-verification-records">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">Actual Verification / 实际验证记录</p>
+          <p className="mt-1 text-sm leading-6 text-text-secondary">
+            Recorded outcomes are shown as evidence; commands are never executed by the Dashboard.
+          </p>
+        </div>
+        <span className="uc-status-badge" data-severity={artifactSeverity(resolvedStatus)}>
+          {ARTIFACT_STATUS_LABELS[resolvedStatus]}
+        </span>
+      </div>
+      {records ? (
+        entries.length > 0 ? (
+          <>
+            <dl className="mt-4 grid gap-2 text-xs text-text-secondary sm:grid-cols-3">
+              <div><dt>Records</dt><dd className="mt-1 text-text-primary">{entries.length}</dd></div>
+              <div><dt>Passed</dt><dd className="mt-1 text-text-primary">{passed}</dd></div>
+              <div><dt>Latest</dt><dd className="mt-1 truncate font-mono text-text-primary" title={entries.at(-1)?.id}>{entries.at(-1)?.id}</dd></div>
+            </dl>
+            <ul className="mt-4 space-y-2" aria-label="Verification records">
+              {entries.map((record) => (
+                <li key={record.id} className="rounded border border-border-subtle bg-surface/60 px-3 py-2">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <p className="text-sm font-medium text-text-primary">{record.summary}</p>
+                    <span className="text-xs text-text-muted">{VERIFICATION_STATUS_LABELS[record.status] ?? record.status}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-text-muted">{record.kind} · attempt {record.attempt} · {record.verificationPlanEntryId}</p>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <p className="mt-4 text-sm leading-6 text-text-muted">No verification records were recorded yet. / 尚未记录验证结果。</p>
+        )
+      ) : (
+        <p className="mt-4 text-sm leading-6 text-text-muted">{message ?? "No current Verification records are available for this Task. / 当前任务没有可用的验证记录。"}</p>
+      )}
+    </section>
+  );
+}
+
 function PulseCard({ pulse, status }: { readonly pulse?: RepoPulseV1 | null; readonly status: RepoPulseStatusV1 }) {
   const reasons = pulse?.reasons ?? [];
   return (
@@ -322,6 +472,12 @@ export function TaskFirstWorkbench({
   loading = false,
   error = null,
   stale = false,
+  changeCheck,
+  changeCheckStatus = "missing",
+  changeCheckMessage,
+  verificationRecords,
+  verificationStatus = "missing",
+  verificationMessage,
   onRetry,
   onSelectSection,
   onOpenKnowledge,
@@ -345,6 +501,22 @@ export function TaskFirstWorkbench({
     if (failure) return <StatePanel state="error" message={failure} onRetry={onRetry} />;
     if (!page || !task) return <StatePanel state="empty" />;
     if (activeSection.id === "summary") return <BriefSummary page={page} />;
+    if (activeSection.id === "changes") {
+      return (
+        <>
+          <ChangeCheckCard check={changeCheck} status={changeCheckStatus} message={changeCheckMessage} />
+          <BriefItems page={page} section={activeSection.id} />
+        </>
+      );
+    }
+    if (activeSection.id === "verification") {
+      return (
+        <>
+          <VerificationCard records={verificationRecords} status={verificationStatus} message={verificationMessage} />
+          <BriefItems page={page} section={activeSection.id} />
+        </>
+      );
+    }
     return <BriefItems page={page} section={activeSection.id} />;
   };
 

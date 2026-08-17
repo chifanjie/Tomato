@@ -526,6 +526,12 @@ function TaskFirstDashboard({
       loading={loadState.loading}
       error={error}
       stale={stale}
+      changeCheck={payload?.changeCheck.value}
+      changeCheckStatus={payload?.changeCheck.status}
+      changeCheckMessage={payload?.changeCheck.message}
+      verificationRecords={payload?.verification.value}
+      verificationStatus={payload?.verification.status}
+      verificationMessage={payload?.verification.message}
       onRetry={load}
       onSelectSection={selectSection}
       onOpenKnowledge={(nextRoute) => navigateToSurface(nextRoute.view === "knowledge" ? "knowledge" : "graph")}

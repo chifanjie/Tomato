@@ -32,7 +32,7 @@ const MAX_PACKED_TARBALL_BYTES = 2 * 1024 * 1024;
 const MAX_EXPANDED_TAR_BYTES = 12 * 1024 * 1024;
 const MAX_PACKED_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_PACKED_TOTAL_FILE_BYTES = 8 * 1024 * 1024;
-const EXPECTED_PACKED_FILE_COUNT = 34;
+const EXPECTED_PACKED_FILE_COUNT = 36;
 
 const packedFileRules = [
   { label: "package metadata", pattern: /^package\/(?:README\.md|package\.json)$/u, count: 2, mode: 0o644 },
@@ -53,6 +53,7 @@ const packedFileRules = [
   { label: "demo Task Pulse", pattern: /^package\/dist\/demo\/\.understand-code\/repo-pulse\.json$/u, count: 1, mode: 0o644 },
   { label: "demo Task manifest", pattern: /^package\/dist\/demo\/\.understand-code\/tasks\/01ARZ3NDEKTSV4RRFFQ69G5FAV\/task\.json$/u, count: 1, mode: 0o644 },
   { label: "demo Task Brief", pattern: /^package\/dist\/demo\/\.understand-code\/tasks\/01ARZ3NDEKTSV4RRFFQ69G5FAV\/task-brief\.json$/u, count: 1, mode: 0o644 },
+  { label: "demo Change Check and Verification", pattern: /^package\/dist\/demo\/\.understand-code\/tasks\/01ARZ3NDEKTSV4RRFFQ69G5FAV\/(?:change-check|verification)\.json$/u, count: 2, mode: 0o644 },
   { label: "demo Wiki indexes", pattern: /^package\/dist\/demo\/\.understand-code\/knowledge-base\/(?:search-index|wiki-index)\.json$/u, count: 2, mode: 0o644 },
   { label: "demo Wiki pages", pattern: /^package\/dist\/demo\/\.understand-code\/knowledge-base\/(?:参考\/app\.ts|阅读流程|项目总览)\.md$/u, count: 3, mode: 0o644 },
   { label: "demo source", pattern: /^package\/dist\/demo\/src\/app\.ts$/u, count: 1, mode: 0o644 },

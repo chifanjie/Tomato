@@ -120,7 +120,21 @@ test("cold demo serves usable Graph/Wiki and protects data endpoints", async () 
     assert.equal(taskProjection.brief.originalIntent, taskProjection.task.originalIntent);
     assert.equal(taskProjection.section, "summary");
     assert.equal(taskProjection.items[0].kind, "summary");
+    const changeCheck = await fetch(`${base.origin}/tasks/${taskId}/change-check.json?token=${token}`);
+    assert.equal(changeCheck.status, 200);
+    const changeCheckProjection = await changeCheck.json();
+    assert.equal(changeCheckProjection.artifact.artifactType, "change_check");
+    assert.equal(changeCheckProjection.artifact.payload.taskId, taskId);
+    assert.equal(changeCheckProjection.artifact.payload.findings.length, 1);
+    const verification = await fetch(`${base.origin}/tasks/${taskId}/verification.json?token=${token}`);
+    assert.equal(verification.status, 200);
+    const verificationProjection = await verification.json();
+    assert.equal(verificationProjection.artifact.artifactType, "verification");
+    assert.equal(verificationProjection.artifact.payload.records.length, 1);
+    assert.equal(verificationProjection.artifact.payload.records[0].status, "passed");
     assert.equal((await fetch(`${base.origin}/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAW/brief.json?token=${token}`)).status, 404);
+    assert.equal((await fetch(`${base.origin}/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAW/change-check.json?token=${token}`)).status, 404);
+    assert.equal((await fetch(`${base.origin}/tasks/${taskId}/change-check.json?token=bad`)).status, 403);
     assert.equal((await fetch(`${base.origin}/knowledge-graph.json`)).status, 403);
     assert.equal((await fetch(`${base.origin}/knowledge-base/项目总览.md?token=bad`)).status, 403);
     assert.equal((await fetch(`${base.origin}/knowledge-base/..%2F..%2Fetc%2Fpasswd?token=${token}`)).status, 404);
@@ -153,6 +167,28 @@ test("cold demo serves usable Graph/Wiki and protects data endpoints", async () 
     assert.notEqual(new URL(secondInfo.url).searchParams.get("token"), token);
   } finally {
     await stop(second.child);
+  }
+});
+
+test("Task Change Intelligence projections reject a tampered envelope", async () => {
+  const root = await createPublishedRoot();
+  const artifactPath = path.join(
+    root,
+    ".understand-code/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAV/change-check.json",
+  );
+  const artifact = JSON.parse(await readFile(artifactPath, "utf8"));
+  artifact.payload.findings[0].summary = "tampered";
+  await writeFile(artifactPath, `${JSON.stringify(artifact, null, 2)}\n`);
+
+  const preview = start(["--root", root, "--port", "0", "--no-open"]);
+  try {
+    const info = await preview.ready;
+    const base = new URL(info.url);
+    const response = await fetch(`${base.origin}/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAV/change-check.json?token=${info.token}`);
+    assert.equal(response.status, 422);
+    assert.deepEqual(await response.json(), { error: "change-check_invalid" });
+  } finally {
+    await stop(preview.child);
   }
 });
 

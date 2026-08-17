@@ -14,7 +14,9 @@ export {
 // JSON from the managed artifact directory.
 export {
   canonicalizeJson,
+  ChangeCheckArtifactV1Schema,
   RepoPulseArtifactV1Schema,
   TaskBriefArtifactV1Schema,
   TaskManifestArtifactV1Schema,
+  VerificationArtifactV1Schema,
 } from "../../contracts/dist/index.js";

@@ -10,9 +10,11 @@ import {
   isSensitiveRepositoryPath,
   parseWikiIndexV2,
   parseWikiSearchIndexV2,
+  ChangeCheckArtifactV1Schema,
   RepoPulseArtifactV1Schema,
   TaskBriefArtifactV1Schema,
   TaskManifestArtifactV1Schema,
+  VerificationArtifactV1Schema,
   readStableRepositoryFile,
   validateGraph,
 } from "../dist/contracts.mjs";
@@ -39,6 +41,19 @@ const TASK_BRIEF_SECTIONS = new Set([
   "unknowns",
   "verification_plan",
 ]);
+
+const TASK_ARTIFACT_DEFINITIONS = Object.freeze({
+  "change-check": Object.freeze({
+    relative: "change-check.json",
+    schema: ChangeCheckArtifactV1Schema,
+    field: "changeCheck",
+  }),
+  verification: Object.freeze({
+    relative: "verification.json",
+    schema: VerificationArtifactV1Schema,
+    field: "verification",
+  }),
+});
 
 function json(res, status, body) {
   res.statusCode = status;
@@ -586,6 +601,84 @@ async function readTaskBriefProjection(state, taskId, section) {
   };
 }
 
+/**
+ * Read one of the current, task-scoped Change Intelligence projections.
+ *
+ * The Preview surface never trusts a filename alone: the Task Manifest and
+ * requested artifact must both parse as their exact envelope schema, carry the
+ * same repository/worktree/snapshot/revision identity, and have a valid
+ * payload-only SHA-256 digest.  A missing projection is an explicit 404 so a
+ * context-ready Task can remain readable without inventing an empty Check or
+ * Verification result.
+ */
+async function readTaskArtifactProjection(state, taskId, kind) {
+  const definition = TASK_ARTIFACT_DEFINITIONS[kind];
+  if (definition === undefined) return { status: "invalid" };
+
+  const taskRaw = await readContainedJson(
+    state.root,
+    `.understand-code/tasks/${taskId}/task.json`,
+    MAX_TASK_BYTES,
+  );
+  const artifactRaw = await readContainedJson(
+    state.root,
+    `.understand-code/tasks/${taskId}/${definition.relative}`,
+    MAX_TASK_BYTES,
+  );
+  if (taskRaw === null || artifactRaw === null) return { status: "missing" };
+
+  const taskResult = TaskManifestArtifactV1Schema.safeParse(taskRaw);
+  const artifactResult = definition.schema.safeParse(artifactRaw);
+  if (!taskResult.success || !artifactResult.success
+    || !artifactContentDigestMatches(taskResult.data)
+    || !artifactContentDigestMatches(artifactResult.data)) {
+    return { status: "invalid" };
+  }
+
+  const task = taskResult.data;
+  const artifact = artifactResult.data;
+  if (task.taskId !== taskId
+    || task.payload.taskId !== taskId
+    || artifact.taskId !== taskId
+    || artifact.repositoryId !== task.repositoryId
+    || artifact.worktreeId !== task.worktreeId
+    || artifact.sourceSnapshotId !== task.sourceSnapshotId
+    || artifact.revision !== task.revision) {
+    return { status: "invalid" };
+  }
+
+  // A current Check is named by the Task Manifest.  Verification is only a
+  // valid current projection when that Check is present as well.
+  if (kind === "change-check") {
+    if (task.payload.currentChangeCheckId !== artifact.payload.id
+      || task.payload.currentChangeCheckRevision !== artifact.payload.taskRevision) {
+      return { status: "invalid" };
+    }
+  } else if (task.payload.currentChangeCheckId === undefined
+    || task.payload.currentChangeCheckRevision === undefined) {
+    return { status: "invalid" };
+  }
+
+  if (state.mode === "root"
+    && (artifact.sourceSnapshotId !== state.repositorySnapshotId
+      || artifact.repositoryId !== state.repositoryId
+      || artifact.worktreeId !== state.worktreeId)) {
+    return { status: "stale" };
+  }
+
+  return {
+    status: "ready",
+    result: {
+      task: task.payload,
+      artifact,
+      freshness: {
+        sourceSnapshotId: artifact.sourceSnapshotId,
+        current: state.mode === "demo" || artifact.sourceSnapshotId === state.repositorySnapshotId,
+      },
+    },
+  };
+}
+
 function readCommittedSource(root, revision, relative, maxBytes, gitEnvironment) {
   const safe = safeRelative(relative);
   if (!safe) return null;
@@ -614,13 +707,17 @@ function createRequestHandler(state, token, gitEnvironment) {
     securityHeaders(res);
     const url = parseRequestUrl(req.url ?? "/");
     if (url === null) { json(res, 400, { error: "bad_request" }); return; }
-    const taskPathMatch = /^\/tasks\/([^/]+)\/brief\.json$/u.exec(url.pathname);
+    const taskPathMatch = /^\/tasks\/([^/]+)\/(brief|change-check|verification)\.json$/u.exec(url.pathname);
     const taskId = taskPathMatch ? decodeTaskId(taskPathMatch[1]) : null;
     const taskEndpoint = taskPathMatch !== null;
+    const taskEndpointKind = taskPathMatch?.[2] ?? null;
     const dataEndpoint = taskEndpoint || url.pathname === "/knowledge-graph.json" || url.pathname === "/domain-graph.json" || url.pathname === "/diff-overlay.json" || url.pathname === "/meta.json" || url.pathname === "/config.json" || url.pathname === "/file-content.json" || url.pathname.startsWith("/knowledge-base/");
     if (dataEndpoint && req.method !== "GET") { res.setHeader("Allow", "GET"); json(res, 405, { error: "method_not_allowed" }); return; }
     if (dataEndpoint && url.searchParams.get("token") !== token) { json(res, 403, { error: "forbidden" }); return; }
-    if (taskEndpoint && taskId === null) { json(res, 404, { error: "task_brief_not_available" }); return; }
+    if (taskEndpoint && taskId === null) {
+      json(res, 404, { error: `${taskEndpointKind ?? "task"}_not_available` });
+      return;
+    }
     if (dataEndpoint && state.mode === "root") {
       const currentCapture = await getRepositorySnapshotDetailed(state.root, { environment: gitEnvironment });
       const currentSnapshot = currentCapture.snapshot;
@@ -633,22 +730,40 @@ function createRequestHandler(state, token, gitEnvironment) {
     }
 
     if (taskEndpoint) {
-      const section = url.searchParams.get("section") ?? "summary";
-      if (!TASK_BRIEF_SECTIONS.has(section)) {
-        json(res, 400, { error: "invalid_task_brief_section" });
+      if (taskEndpointKind === "brief") {
+        const section = url.searchParams.get("section") ?? "summary";
+        if (!TASK_BRIEF_SECTIONS.has(section)) {
+          json(res, 400, { error: "invalid_task_brief_section" });
+          return;
+        }
+        const projection = await readTaskBriefProjection(state, taskId, section);
+        if (projection.status === "missing") {
+          json(res, 404, { error: "task_brief_not_available" });
+          return;
+        }
+        if (projection.status === "invalid") {
+          json(res, 422, { error: "task_brief_invalid" });
+          return;
+        }
+        if (projection.status === "stale") {
+          json(res, 409, { error: "task_brief_stale" });
+          return;
+        }
+        json(res, 200, projection.result);
         return;
       }
-      const projection = await readTaskBriefProjection(state, taskId, section);
+
+      const projection = await readTaskArtifactProjection(state, taskId, taskEndpointKind);
       if (projection.status === "missing") {
-        json(res, 404, { error: "task_brief_not_available" });
+        json(res, 404, { error: `${taskEndpointKind}_not_available` });
         return;
       }
       if (projection.status === "invalid") {
-        json(res, 422, { error: "task_brief_invalid" });
+        json(res, 422, { error: `${taskEndpointKind}_invalid` });
         return;
       }
       if (projection.status === "stale") {
-        json(res, 409, { error: "task_brief_stale" });
+        json(res, 409, { error: `${taskEndpointKind}_stale` });
         return;
       }
       json(res, 200, projection.result);

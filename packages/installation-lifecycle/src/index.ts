@@ -26,17 +26,21 @@ export const INSTALLATION_MARKER = "understand-code-owned-v1" as const;
 export const INSTALLATION_MANIFEST_FILE = "installation-manifest.json" as const;
 export const INSTALLATION_OWNER_FILE = ".understand-code-owner" as const;
 export const INSTALLATION_WRAPPER_FILE = "bin/understand-code" as const;
+export const INSTALLATION_CLI_BUNDLE_FILE =
+  "lib/understand-code.mjs" as const;
 export const INSTALLATION_CONFIG_FILE = "config/mcp.json" as const;
 /** Durable, single-level snapshot used by an explicit upgrade/rollback pair. */
 export const INSTALLATION_ROLLBACK_FILE = "installation-rollback.json" as const;
 export const DEFAULT_INSTALLATION_VERSION = "0.1.0" as const;
 
 const MAX_PATH_BYTES = 4_096;
-const MAX_ROLLBACK_BYTES = 2 * 1024 * 1024;
+const MAX_CLI_BUNDLE_BYTES = 64 * 1024 * 1024;
+const MAX_ROLLBACK_BYTES = 96 * 1024 * 1024;
 const HASH_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 const OWNED_RELATIVE_FILES = Object.freeze([
   INSTALLATION_OWNER_FILE,
   INSTALLATION_WRAPPER_FILE,
+  INSTALLATION_CLI_BUNDLE_FILE,
   INSTALLATION_CONFIG_FILE,
 ] as const);
 
@@ -50,6 +54,8 @@ export type InstallationTargetInputV1 = Readonly<{
 export type InstallationOptionsV1 = InstallationTargetInputV1 &
   Readonly<{
     version?: string;
+    /** Absolute path to the self-contained CLI file copied into the install. */
+    cliBundlePath?: string;
     cliCommand?: string;
     /** Select a host-specific MCP config; omitted preserves legacy behavior. */
     host?: HostAdapterId;
@@ -337,6 +343,65 @@ function digest(bytes: Uint8Array): string {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
+async function readCliBundle(
+  sourcePath: string | undefined,
+): Promise<Buffer> {
+  const candidate = sourcePath ?? process.argv[1];
+  const normalized = normalizedCandidate(candidate);
+  if (normalized === undefined) {
+    throw new InstallationLifecycleError(
+      "invalid_target",
+      "A self-contained CLI bundle path is required for installation.",
+    );
+  }
+  let canonical: string;
+  try {
+    canonical = await realpath(normalized);
+  } catch {
+    throw new InstallationLifecycleError(
+      "invalid_target",
+      "The self-contained CLI bundle is unavailable.",
+    );
+  }
+  let handle;
+  try {
+    handle = await open(
+      canonical,
+      constants.O_RDONLY | constants.O_NOFOLLOW,
+    );
+    const metadata = await handle.stat();
+    if (
+      !metadata.isFile() ||
+      metadata.size <= 0 ||
+      metadata.size > MAX_CLI_BUNDLE_BYTES
+    ) {
+      throw new InstallationLifecycleError(
+        "invalid_target",
+        "The self-contained CLI bundle must be a bounded regular file.",
+      );
+    }
+    const bytes = await handle.readFile();
+    if (
+      !bytes.subarray(0, 20).toString("utf8").startsWith("#!/usr/bin/env node") ||
+      !bytes.includes(INSTALLATION_MARKER)
+    ) {
+      throw new InstallationLifecycleError(
+        "invalid_target",
+        "The self-contained CLI bundle identity is invalid.",
+      );
+    }
+    return bytes;
+  } catch (error) {
+    if (error instanceof InstallationLifecycleError) throw error;
+    throw new InstallationLifecycleError(
+      "io_error",
+      "Unable to read the self-contained CLI bundle.",
+    );
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
 function canonicalJson(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
@@ -430,7 +495,8 @@ function wrapperContent(
     `# ${INSTALLATION_MARKER}`,
     `# installation-id: ${installationId}`,
     "set -eu",
-    'cli="${UNDERSTAND_CODE_CLI:-understand-code}"',
+    'install_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)',
+    `cli="$install_root/${INSTALLATION_CLI_BUNDLE_FILE}"`,
   ];
   if (host === undefined) {
     lines.push('exec "$cli" "$@"');
@@ -504,6 +570,7 @@ function manifestFor(
   const modes: Readonly<Record<(typeof OWNED_RELATIVE_FILES)[number], number>> = {
     [INSTALLATION_OWNER_FILE]: 0o600,
     [INSTALLATION_WRAPPER_FILE]: 0o755,
+    [INSTALLATION_CLI_BUNDLE_FILE]: 0o755,
     [INSTALLATION_CONFIG_FILE]: 0o600,
   };
   return {
@@ -1224,7 +1291,7 @@ export async function installInstallationV1(
     throw new InstallationLifecycleError("invalid_target", "Host adapter is invalid.");
   }
   const host = options.host ?? existingManifest?.host;
-  const cliCommand = options.cliCommand ?? "understand-code";
+  const cliCommand = options.cliCommand;
   if (host !== undefined && options.cliCommand !== undefined) {
     throw new InstallationLifecycleError(
       "invalid_target",
@@ -1233,13 +1300,20 @@ export async function installInstallationV1(
     );
   }
   const configCommand =
-    host === undefined ? cliCommand : path.join(root, INSTALLATION_WRAPPER_FILE);
-  if (!isSafeText(cliCommand) || cliCommand.includes("\n")) {
+    host === undefined && cliCommand !== undefined
+      ? cliCommand
+      : path.join(root, INSTALLATION_WRAPPER_FILE);
+  if (
+    cliCommand !== undefined &&
+    (!isSafeText(cliCommand) || cliCommand.includes("\n"))
+  ) {
     throw new InstallationLifecycleError("invalid_target", "CLI command is invalid.");
   }
+  const cliBundle = await readCliBundle(options.cliBundlePath);
   const bytes: Readonly<Record<(typeof OWNED_RELATIVE_FILES)[number], Uint8Array>> = {
     [INSTALLATION_OWNER_FILE]: Buffer.from(markerContent(installationId), "utf8"),
     [INSTALLATION_WRAPPER_FILE]: Buffer.from(wrapperContent(installationId, host), "utf8"),
+    [INSTALLATION_CLI_BUNDLE_FILE]: cliBundle,
     [INSTALLATION_CONFIG_FILE]: Buffer.from(
       configContent(root, installationId, configCommand, host),
       "utf8",
@@ -1306,7 +1380,15 @@ export async function installInstallationV1(
     for (const relativePath of OWNED_RELATIVE_FILES) {
       const filePath = ownedAbsolutePath(root, relativePath);
       previous.set(filePath, await readExistingFile(filePath));
-      await atomicWriteFile(root, filePath, bytes[relativePath], relativePath === INSTALLATION_WRAPPER_FILE ? 0o755 : 0o600);
+      await atomicWriteFile(
+        root,
+        filePath,
+        bytes[relativePath],
+        relativePath === INSTALLATION_WRAPPER_FILE ||
+          relativePath === INSTALLATION_CLI_BUNDLE_FILE
+          ? 0o755
+          : 0o600,
+      );
       written.push(filePath);
     }
       await atomicWriteFile(
@@ -1383,7 +1465,7 @@ export async function upgradeInstallationV1(
     throw new InstallationLifecycleError("invalid_target", "Host adapter is invalid.");
   }
   const host = options.host ?? existingManifest.host;
-  const cliCommand = options.cliCommand ?? "understand-code";
+  const cliCommand = options.cliCommand;
   if (host !== undefined && options.cliCommand !== undefined) {
     throw new InstallationLifecycleError(
       "invalid_target",
@@ -1392,14 +1474,21 @@ export async function upgradeInstallationV1(
     );
   }
   const configCommand =
-    host === undefined ? cliCommand : path.join(root, INSTALLATION_WRAPPER_FILE);
-  if (!isSafeText(cliCommand) || cliCommand.includes("\n")) {
+    host === undefined && cliCommand !== undefined
+      ? cliCommand
+      : path.join(root, INSTALLATION_WRAPPER_FILE);
+  if (
+    cliCommand !== undefined &&
+    (!isSafeText(cliCommand) || cliCommand.includes("\n"))
+  ) {
     throw new InstallationLifecycleError("invalid_target", "CLI command is invalid.");
   }
+  const cliBundle = await readCliBundle(options.cliBundlePath);
   const installationId = existingManifest.installationId;
   const bytes: Readonly<Record<(typeof OWNED_RELATIVE_FILES)[number], Uint8Array>> = {
     [INSTALLATION_OWNER_FILE]: Buffer.from(markerContent(installationId), "utf8"),
     [INSTALLATION_WRAPPER_FILE]: Buffer.from(wrapperContent(installationId, host), "utf8"),
+    [INSTALLATION_CLI_BUNDLE_FILE]: cliBundle,
     [INSTALLATION_CONFIG_FILE]: Buffer.from(
       configContent(root, installationId, configCommand, host),
       "utf8",
@@ -1485,7 +1574,10 @@ export async function upgradeInstallationV1(
         root,
         filePath,
         bytes[relativePath],
-        relativePath === INSTALLATION_WRAPPER_FILE ? 0o755 : 0o600,
+        relativePath === INSTALLATION_WRAPPER_FILE ||
+          relativePath === INSTALLATION_CLI_BUNDLE_FILE
+          ? 0o755
+          : 0o600,
       );
       written.push(filePath);
     }
@@ -1720,7 +1812,11 @@ export async function uninstallInstallationV1(
       reason: "io_error_during_uninstall",
     };
   }
-  for (const directory of [path.join(root, "bin"), path.join(root, "config")]) {
+  for (const directory of [
+    path.join(root, "bin"),
+    path.join(root, "lib"),
+    path.join(root, "config"),
+  ]) {
     await rmdir(directory).catch(() => undefined);
   }
   return {

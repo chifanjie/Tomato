@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   INSTALLATION_CONFIG_FILE,
+  INSTALLATION_CLI_BUNDLE_FILE,
   INSTALLATION_MANIFEST_FILE,
   INSTALLATION_ROLLBACK_FILE,
   INSTALLATION_WRAPPER_FILE,
@@ -33,10 +34,27 @@ async function temporaryRoot(): Promise<string> {
   return path.join(root, "home");
 }
 
+async function fakeCliBundle(body = "process.exitCode = 0;"): Promise<string> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "understand-code-cli-bundle-"));
+  temporaryRoots.push(root);
+  const bundlePath = path.join(root, "understand-code.mjs");
+  await writeFile(
+    bundlePath,
+    `#!/usr/bin/env node\n// understand-code-owned-v1\n${body}\n`,
+    { mode: 0o755 },
+  );
+  return bundlePath;
+}
+
 describe("installation lifecycle", () => {
   it("installs owned files and Doctor reports a healthy installation", async () => {
     const root = await temporaryRoot();
-    const installed = await installInstallationV1({ root, version: "3.0.0-alpha.1" });
+    const cliBundlePath = await fakeCliBundle();
+    const installed = await installInstallationV1({
+      root,
+      version: "3.0.0-alpha.1",
+      cliBundlePath,
+    });
 
     expect(installed.status).toBe("installed");
     const doctor = await doctorInstallationV1({ root });
@@ -46,6 +64,9 @@ describe("installation lifecycle", () => {
     expect(await stat(path.join(root, INSTALLATION_WRAPPER_FILE))).toMatchObject({
       mode: expect.any(Number),
     });
+    expect(await readFile(path.join(root, INSTALLATION_CLI_BUNDLE_FILE))).toEqual(
+      await readFile(cliBundlePath),
+    );
     const config = JSON.parse(
       await readFile(path.join(root, INSTALLATION_CONFIG_FILE), "utf8"),
     ) as { marker?: string; mcpServers?: Record<string, unknown> };
@@ -56,7 +77,15 @@ describe("installation lifecycle", () => {
 
   it("installs and validates a Claude host projection", async () => {
     const root = await temporaryRoot();
-    const installed = await installInstallationV1({ root, host: "claude" });
+    const recordPath = path.join(root, "argv-record.json");
+    const cliBundlePath = await fakeCliBundle(
+      `import { writeFile } from "node:fs/promises";\nawait writeFile(${JSON.stringify(recordPath)}, JSON.stringify(process.argv.slice(2)));`,
+    );
+    const installed = await installInstallationV1({
+      root,
+      host: "claude",
+      cliBundlePath,
+    });
 
     expect(installed.status).toBe("installed");
     const manifest = JSON.parse(
@@ -73,17 +102,10 @@ describe("installation lifecycle", () => {
     });
     expect((await doctorInstallationV1({ root })).status).toBe("healthy");
 
-    const recordPath = path.join(root, "argv-record.json");
-    const fakeCli = path.join(root, "fake-cli.mjs");
-    await writeFile(
-      fakeCli,
-      `#!/usr/bin/env node\nimport { writeFile } from "node:fs/promises";\nawait writeFile(${JSON.stringify(recordPath)}, JSON.stringify(process.argv.slice(2)));\n`,
-      { mode: 0o755 },
-    );
     await execFile(
       path.join(installed.root, INSTALLATION_WRAPPER_FILE),
       ["--root", installed.root],
-      { env: { ...process.env, UNDERSTAND_CODE_CLI: fakeCli } },
+      { env: { PATH: process.env.PATH } },
     );
     expect(JSON.parse(await readFile(recordPath, "utf8"))).toEqual([
       "mcp",
@@ -101,22 +123,31 @@ describe("installation lifecycle", () => {
 
   it("refuses uninstall after an owned file is tampered with", async () => {
     const root = await temporaryRoot();
-    await installInstallationV1({ root });
-    const wrapper = path.join(root, INSTALLATION_WRAPPER_FILE);
-    await writeFile(wrapper, `${await readFile(wrapper, "utf8")}# user edit\n`);
+    await installInstallationV1({ root, cliBundlePath: await fakeCliBundle() });
+    const bundle = path.join(root, INSTALLATION_CLI_BUNDLE_FILE);
+    await writeFile(bundle, `${await readFile(bundle, "utf8")}# user edit\n`);
 
     const doctor = await doctorInstallationV1({ root });
     expect(doctor.status).toBe("tampered");
     const result = await uninstallInstallationV1({ root });
     expect(result.status).toBe("refused");
-    expect(result.refusedPaths).toContain(INSTALLATION_WRAPPER_FILE);
-    expect(await stat(wrapper)).toBeDefined();
+    expect(result.refusedPaths).toContain(INSTALLATION_CLI_BUNDLE_FILE);
+    expect(await stat(bundle)).toBeDefined();
   });
 
   it("is idempotent and removes an untouched installation", async () => {
     const root = await temporaryRoot();
-    const first = await installInstallationV1({ root, version: "3.0.0-alpha.1" });
-    const second = await installInstallationV1({ root, version: "3.0.0-alpha.1" });
+    const cliBundlePath = await fakeCliBundle();
+    const first = await installInstallationV1({
+      root,
+      version: "3.0.0-alpha.1",
+      cliBundlePath,
+    });
+    const second = await installInstallationV1({
+      root,
+      version: "3.0.0-alpha.1",
+      cliBundlePath,
+    });
     expect(second.status).toBe("already_installed");
     expect(second.installationId).toBe(first.installationId);
 
@@ -130,16 +161,20 @@ describe("installation lifecycle", () => {
 
   it("upgrades with a durable snapshot and rolls back to the prior version", async () => {
     const root = await temporaryRoot();
+    const firstBundle = await fakeCliBundle("// fixture version 1");
+    const secondBundle = await fakeCliBundle("// fixture version 2");
     await installInstallationV1({
       root,
       version: "1.0.0",
       cliCommand: "understand-code-v1",
+      cliBundlePath: firstBundle,
     });
 
     const upgraded = await upgradeInstallationV1({
       root,
       version: "2.0.0",
       cliCommand: "understand-code-v2",
+      cliBundlePath: secondBundle,
     });
     expect(upgraded).toMatchObject({
       status: "updated",
@@ -162,12 +197,23 @@ describe("installation lifecycle", () => {
       await readFile(path.join(root, INSTALLATION_CONFIG_FILE), "utf8"),
     ) as { mcpServers?: Record<string, { command?: string }> };
     expect(config.mcpServers?.["understand-code"]?.command).toBe("understand-code-v1");
+    expect(await readFile(path.join(root, INSTALLATION_CLI_BUNDLE_FILE))).toEqual(
+      await readFile(firstBundle),
+    );
   });
 
   it("refuses rollback when the durable snapshot is tampered", async () => {
     const root = await temporaryRoot();
-    await installInstallationV1({ root, version: "1.0.0" });
-    await upgradeInstallationV1({ root, version: "2.0.0" });
+    await installInstallationV1({
+      root,
+      version: "1.0.0",
+      cliBundlePath: await fakeCliBundle("// fixture version 1"),
+    });
+    await upgradeInstallationV1({
+      root,
+      version: "2.0.0",
+      cliBundlePath: await fakeCliBundle("// fixture version 2"),
+    });
     const rollbackPath = path.join(root, INSTALLATION_ROLLBACK_FILE);
     await writeFile(rollbackPath, `${await readFile(rollbackPath, "utf8")}\nuser-edit\n`);
 

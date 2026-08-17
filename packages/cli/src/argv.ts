@@ -213,7 +213,7 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
     if (
       provider === true &&
       (root === undefined || home !== undefined ||
-        (serviceConfig === undefined) !== (serviceReadiness === undefined))
+        (serviceConfig === undefined && serviceReadiness !== undefined))
     ) {
       throw new CliArgumentError();
     }
@@ -288,7 +288,7 @@ export function helpText(): string {
     "  understand-code upgrade [--root <absolute-install-root>|--home <absolute-install-home>] [--host codex|claude]",
     "  understand-code rollback [--root <absolute-install-root>|--home <absolute-install-home>]",
     "  understand-code doctor [--root <absolute-install-root>|--home <absolute-install-home>]",
-    "  understand-code doctor --provider --root <absolute-target-root> [--service-config <path> --service-readiness <path>]",
+    "  understand-code doctor --provider --root <absolute-target-root> [--service-config <signed-config> [--service-readiness <path>]]",
     "  understand-code install --provider-service --root <absolute-runtime-root> --service-config <signed-config> --service-key <pkcs8-key> [--service-descriptor <absolute-path>]",
     "  understand-code uninstall [--root <absolute-install-root>|--home <absolute-install-home>]",
     "  understand-code --help",

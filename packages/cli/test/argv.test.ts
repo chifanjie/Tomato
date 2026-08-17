@@ -53,6 +53,22 @@ describe("CLI arguments", () => {
       serviceConfig: "/etc/understand-code/provider.json",
       serviceReadiness: "/var/lib/understand-code/provider/ready.json",
     });
+    expect(
+      parseCliArguments([
+        "doctor",
+        "--provider",
+        "--root",
+        "/tmp/provider-target",
+        "--service-config",
+        "/etc/understand-code/provider.json",
+      ]),
+    ).toEqual({
+      kind: "installation",
+      operation: "doctor",
+      root: "/tmp/provider-target",
+      provider: true,
+      serviceConfig: "/etc/understand-code/provider.json",
+    });
     expect(parseCliArguments(["upgrade", "--root", "/tmp/understand-code"])).toEqual({
       kind: "installation",
       operation: "upgrade",
@@ -136,7 +152,6 @@ describe("CLI arguments", () => {
     ["provider without target", ["doctor", "--provider"]],
     ["provider with home alias", ["doctor", "--provider", "--home", "/tmp/a"]],
     ["duplicate provider", ["doctor", "--provider", "--provider"]],
-    ["service config without readiness", ["doctor", "--provider", "--root", "/tmp/a", "--service-config", "/tmp/config"]],
     ["service readiness without config", ["doctor", "--provider", "--root", "/tmp/a", "--service-readiness", "/tmp/ready"]],
     ["service flags without provider", ["doctor", "--root", "/tmp/a", "--service-config", "/tmp/config", "--service-readiness", "/tmp/ready"]],
     ["relative service config", ["doctor", "--provider", "--root", "/tmp/a", "--service-config", "relative", "--service-readiness", "/tmp/ready"]],

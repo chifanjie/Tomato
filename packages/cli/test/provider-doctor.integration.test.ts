@@ -109,6 +109,12 @@ describe("Provider Doctor", () => {
         strongWrites: "locked",
         reason: "service_not_provisioned",
       },
+      liveReadiness: {
+        status: "unavailable",
+        authority: "read_only",
+        strongWrites: "locked",
+        reason: "invalid_config",
+      },
       runtime: { probe: "failed" },
     });
   });

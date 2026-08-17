@@ -26,10 +26,15 @@ import {
   probeProviderRuntimeTargetV1,
   ProviderRuntimeTargetInspectionErrorV1,
   runProviderRuntimeRealFilesystemConformanceV1,
+  verifyProviderRuntimeLiveServiceReadinessV1,
+  verifyProviderServiceHandoffConfigV1,
+  type ProviderRuntimeLiveServiceReadinessResultV1,
+  type ProviderServiceHandoffConfigV1,
   type ProviderRuntimeTargetInspectionV1,
   type ProviderRuntimeTargetPublicProjectionV1,
   type ProviderRuntimeRealFilesystemConformanceCandidateV1,
   type ProviderServiceHandoffInspectionV1,
+  type VerifyProviderRuntimeLiveServiceReadinessOptionsV1,
 } from "@understand-code/durable-object-provider-runtime";
 import type { ContentDigestV1 } from "@understand-code/durable-object-provider-contracts/primitives";
 
@@ -64,6 +69,10 @@ export interface ProviderDoctorOptionsV1 {
   readonly serviceConfigPath?: string;
   readonly serviceReadinessPath?: string;
   readonly expectedInstallationIdentityDigest?: ContentDigestV1;
+  /** Narrow host-process seam for live readiness tests; production reads signed files. */
+  readonly liveReadinessReader?: NonNullable<
+    VerifyProviderRuntimeLiveServiceReadinessOptionsV1["readinessReader"]
+  >;
 }
 
 type StrongStoreLockV1 = Readonly<{
@@ -91,6 +100,7 @@ export type ProviderDoctorResultV1 =
       targetProbe: PassedTargetProbeV1;
       conformance: ProviderRuntimeRealFilesystemConformanceCandidateV1;
       service?: ProviderServiceHandoffInspectionV1;
+      liveReadiness?: ProviderRuntimeLiveServiceReadinessResultV1;
       runtime: Readonly<{
         isolation: "two_child_processes";
         authenticatedIpc: "passed";
@@ -109,6 +119,7 @@ export type ProviderDoctorResultV1 =
       strongStore: StrongStoreLockV1;
       targetProbe: PassedTargetProbeV1 | Readonly<{ status: "failed" }>;
       service?: ProviderServiceHandoffInspectionV1;
+      liveReadiness?: ProviderRuntimeLiveServiceReadinessResultV1;
       runtime: Readonly<{ probe: "failed" }>;
     }>;
 
@@ -379,6 +390,7 @@ function unavailableResultV1(
   reason: "unavailable" | "unsupported_filesystem_profile",
   targetProbe?: PassedTargetProbeV1,
   service?: ProviderServiceHandoffInspectionV1,
+  liveReadiness?: ProviderRuntimeLiveServiceReadinessResultV1,
 ): ProviderDoctorResultV1 {
   return {
     schemaVersion: 1,
@@ -398,7 +410,29 @@ function unavailableResultV1(
     },
     targetProbe: targetProbe ?? { status: "failed" },
     ...(service === undefined ? {} : { service }),
+    ...(liveReadiness === undefined ? {} : { liveReadiness }),
     runtime: { probe: "failed" },
+  };
+}
+
+type ServiceInspectionContextV1 = Readonly<{
+  readonly service?: ProviderServiceHandoffInspectionV1;
+  readonly config?: ProviderServiceHandoffConfigV1;
+}>;
+
+type LiveReadinessUnavailableReasonV1 = Extract<
+  ProviderRuntimeLiveServiceReadinessResultV1,
+  { readonly status: "unavailable" }
+>["reason"];
+
+function unavailableLiveReadinessV1(
+  reason: LiveReadinessUnavailableReasonV1,
+): ProviderRuntimeLiveServiceReadinessResultV1 {
+  return {
+    status: "unavailable",
+    authority: "read_only",
+    strongWrites: "locked",
+    reason,
   };
 }
 
@@ -406,7 +440,8 @@ function unavailableServiceReadinessV1(
   reason:
     | "service_not_provisioned"
     | "attestation_invalid"
-    | "principal_mismatch",
+    | "principal_mismatch"
+    | "identity_mismatch",
 ): ProviderServiceHandoffInspectionV1 {
   return {
     status: "unavailable",
@@ -419,25 +454,45 @@ function unavailableServiceReadinessV1(
 
 async function inspectServiceReadinessV1(
   options: ProviderDoctorOptionsV1,
-): Promise<ProviderServiceHandoffInspectionV1 | undefined> {
+): Promise<ServiceInspectionContextV1> {
   const configPath = options.serviceConfigPath;
   const readinessPath = options.serviceReadinessPath;
-  if (configPath === undefined && readinessPath === undefined) return undefined;
-  if (configPath === undefined || readinessPath === undefined) {
-    return unavailableServiceReadinessV1("service_not_provisioned");
+  if (configPath === undefined && readinessPath === undefined) {
+    return {};
+  }
+  if (configPath === undefined) {
+    return {
+      service: unavailableServiceReadinessV1("service_not_provisioned"),
+    };
   }
   try {
     const configMetadata = await lstat(configPath);
     if (!configMetadata.isFile() || configMetadata.isSymbolicLink()) {
-      return unavailableServiceReadinessV1("attestation_invalid");
+      return {
+        service: unavailableServiceReadinessV1("attestation_invalid"),
+      };
     }
-    const config = JSON.parse(await readFile(configPath, "utf8")) as unknown;
-    return await inspectProviderServiceHandoffV1({
+    const parsed = JSON.parse(await readFile(configPath, "utf8")) as unknown;
+    const config = verifyProviderServiceHandoffConfigV1(
+      parsed,
+      options.expectedInstallationIdentityDigest,
+    );
+    // The signed payload must name the exact config file that the caller
+    // selected. A valid signature on a different handoff is not sufficient.
+    if (config.payload.configPath !== configPath) {
+      // Avoid realpath on the config itself so a replacement race remains
+      // visible to the verifier.
+      return {
+        service: unavailableServiceReadinessV1("identity_mismatch"),
+      };
+    }
+    const inspection = await inspectProviderServiceHandoffV1({
       config,
-      readinessPath,
+      readinessPath: readinessPath ?? config.payload.readinessPath,
       expectedInstallationIdentityDigest:
         options.expectedInstallationIdentityDigest,
     });
+    return { service: inspection, config };
   } catch (error) {
     const code =
       typeof error === "object" &&
@@ -446,7 +501,48 @@ async function inspectServiceReadinessV1(
       (error as { readonly code?: unknown }).code === "ENOENT"
         ? "service_not_provisioned"
         : "attestation_invalid";
-    return unavailableServiceReadinessV1(code);
+    return { service: unavailableServiceReadinessV1(code) };
+  }
+}
+
+async function runLiveReadinessV1(
+  context: ServiceInspectionContextV1,
+  options: ProviderDoctorOptionsV1,
+): Promise<ProviderRuntimeLiveServiceReadinessResultV1 | undefined> {
+  if (options.serviceConfigPath === undefined) return undefined;
+  const config = context.config;
+  if (config === undefined) {
+    return unavailableLiveReadinessV1("invalid_config");
+  }
+  let targetBaseline: ProviderRuntimeTargetInspectionV1;
+  try {
+    // The signed runtimeRoot is the provider target for the live service. The
+    // ordinary Doctor target may be a broader workspace (and need not be 0700).
+    targetBaseline = await probeProviderRuntimeTargetV1(config.payload.runtimeRoot);
+  } catch {
+    return unavailableLiveReadinessV1("runtime_root_mismatch");
+  }
+  try {
+    return await verifyProviderRuntimeLiveServiceReadinessV1({
+      config,
+      // A test seam may intentionally provide a synthetic readiness reader;
+      // omit the caller-owned projection so same-UID fixtures can exercise
+      // the authenticated socket path without changing production semantics.
+      ...(options.liveReadinessReader === undefined || context.service === undefined
+        ? context.service === undefined
+          ? {}
+          : { inspection: context.service }
+        : {}),
+      targetBaseline,
+      expectedInstallationIdentityDigest:
+        options.expectedInstallationIdentityDigest,
+      timeoutMs: options.readyTimeoutMs,
+      ...(options.liveReadinessReader === undefined
+        ? {}
+        : { readinessReader: options.liveReadinessReader }),
+    });
+  } catch {
+    return unavailableLiveReadinessV1("invalid_config");
   }
 }
 
@@ -470,9 +566,16 @@ function passedTargetProbeV1(
 export async function runProviderDoctorV1(
   options: ProviderDoctorOptionsV1,
 ): Promise<ProviderDoctorResultV1> {
-  const service = await inspectServiceReadinessV1(options);
+  const serviceContext = await inspectServiceReadinessV1(options);
+  const service = serviceContext.service;
+  const liveReadiness = await runLiveReadinessV1(serviceContext, options);
   if (process.platform !== "darwin" && process.platform !== "linux") {
-    return unavailableResultV1("unsupported_filesystem_profile", undefined, service);
+    return unavailableResultV1(
+      "unsupported_filesystem_profile",
+      undefined,
+      service,
+      liveReadiness,
+    );
   }
   const command = options.runtimeCommand ?? defaultRuntimeCommandV1();
   const timeoutMs = options.readyTimeoutMs ?? 5_000;
@@ -635,6 +738,7 @@ export async function runProviderDoctorV1(
       targetProbe: passedTargetProbeV1(currentTarget),
       conformance,
       ...(service === undefined ? {} : { service }),
+      ...(liveReadiness === undefined ? {} : { liveReadiness }),
       runtime: {
         isolation: "two_child_processes",
         authenticatedIpc: "passed",
@@ -665,12 +769,13 @@ export async function runProviderDoctorV1(
           reason,
           passedTargetProbeV1(currentTarget),
           service,
+          liveReadiness,
         );
       } catch {
         // The public projection must fail closed if either target changed.
       }
     }
-    return unavailableResultV1(reason, undefined, service);
+    return unavailableResultV1(reason, undefined, service, liveReadiness);
   } finally {
     await Promise.all(children.map((child) => stopRuntimeV1(child)));
     source?.key.fill(0);

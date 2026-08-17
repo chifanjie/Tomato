@@ -1,6 +1,8 @@
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { constants as fsConstants } from "node:fs";
 import {
   lstat,
+  open,
   readFile,
   realpath,
 } from "node:fs/promises";
@@ -52,6 +54,8 @@ export type ProviderRuntimeLiveServiceReadinessResultV1 =
       readonly strongWrites: "locked";
       readonly providerId: DurableObjectIdentityProviderIdV1;
       readonly targetFingerprintDigest: ContentDigestV1;
+      readonly binaryDigest: ContentDigestV1;
+      readonly binaryIdentity: "verified";
       readonly inspectedRevision: number;
     }>
   | Readonly<{
@@ -66,6 +70,7 @@ export type ProviderRuntimeLiveServiceReadinessResultV1 =
         | "auth_identity_mismatch"
         | "authentication_failed"
         | "provider_identity_mismatch"
+        | "binary_identity_mismatch"
         | "readiness_unavailable"
         | "readiness_stale"
         | "ipc_unavailable";
@@ -94,6 +99,7 @@ type AuthenticatedWireV1 =
 
 const ZERO_AUTH_TAG_V1 = `hmac-sha256:${"0".repeat(64)}`;
 const IPC_TIMEOUT_MS_V1 = 5_000;
+const EXECUTABLE_BINARY_MAX_BYTES_V1 = 512 * 1024 * 1024;
 
 function unavailableV1(
   reason: ProviderRuntimeLiveServiceReadinessResultV1 extends infer _T
@@ -321,6 +327,80 @@ async function verifyJournalProviderIdentityV1(
   );
 }
 
+function assertExecutableMetadataV1(
+  metadata: Awaited<ReturnType<typeof lstat>>,
+): void {
+  const mode = Number(metadata.mode);
+  const size = Number(metadata.size);
+  if (
+    !metadata.isFile() ||
+    metadata.isSymbolicLink() ||
+    !Number.isSafeInteger(mode) ||
+    (mode & 0o022) !== 0 ||
+    !Number.isSafeInteger(size) ||
+    size < 0 ||
+    size > EXECUTABLE_BINARY_MAX_BYTES_V1
+  ) {
+    throw new Error("runtime executable binary identity is invalid");
+  }
+}
+
+function sameExecutableIdentityV1(
+  before: Awaited<ReturnType<typeof lstat>>,
+  after: Awaited<ReturnType<typeof lstat>>,
+): boolean {
+  return (
+    before.dev === after.dev &&
+    before.ino === after.ino &&
+    before.mode === after.mode &&
+    before.uid === after.uid &&
+    before.gid === after.gid &&
+    before.size === after.size &&
+    before.mtimeMs === after.mtimeMs &&
+    before.ctimeMs === after.ctimeMs &&
+    before.birthtimeMs === after.birthtimeMs &&
+    before.nlink === after.nlink
+  );
+}
+
+async function verifyExecutableBinaryIdentityV1(
+  config: ProviderServiceHandoffConfigV1,
+): Promise<ContentDigestV1> {
+  const pathMetadata = await lstat(config.payload.executablePath);
+  assertExecutableMetadataV1(pathMetadata);
+  const handle = await open(
+    config.payload.executablePath,
+    fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW,
+  );
+  try {
+    const before = await handle.stat();
+    assertExecutableMetadataV1(before);
+    const hash = createHash("sha256");
+    const buffer = Buffer.allocUnsafe(64 * 1024);
+    let totalBytes = 0;
+    for (;;) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, null);
+      if (bytesRead === 0) break;
+      totalBytes += bytesRead;
+      if (totalBytes > EXECUTABLE_BINARY_MAX_BYTES_V1) {
+        throw new Error("runtime executable binary identity is invalid");
+      }
+      hash.update(buffer.subarray(0, bytesRead));
+    }
+    const after = await handle.stat();
+    if (!sameExecutableIdentityV1(before, after)) {
+      throw new Error("runtime executable binary identity changed during measurement");
+    }
+    const binaryDigest = ContentDigestV1Schema.parse(`sha256:${hash.digest("hex")}`);
+    if (binaryDigest !== config.payload.binaryDigest) {
+      throw new Error("runtime executable binary digest does not match signed handoff");
+    }
+    return binaryDigest;
+  } finally {
+    await handle.close();
+  }
+}
+
 function mapFailureV1(error: unknown): Exclude<
   Exclude<ProviderRuntimeLiveServiceReadinessResultV1, { readonly status: "live_candidate" }>,
   never
@@ -328,6 +408,7 @@ function mapFailureV1(error: unknown): Exclude<
   const message = error instanceof Error ? error.message : String(error);
   if (/target continuity|target changed|baseline/u.test(message)) return "target_continuity_changed";
   if (/runtime provider identity|provider identity/u.test(message)) return "provider_identity_mismatch";
+  if (/executable binary|binary digest|binary identity/u.test(message)) return "binary_identity_mismatch";
   if (/socket identity/u.test(message)) return "socket_identity_mismatch";
   if (/auth key identity/u.test(message)) return "auth_identity_mismatch";
   if (/authentication/u.test(message)) return "authentication_failed";
@@ -372,6 +453,7 @@ export async function verifyProviderRuntimeLiveServiceReadinessV1(
     if (canonicalConfigRoot !== currentBefore.canonicalRootPath) {
       return unavailableV1("runtime_root_mismatch");
     }
+    const binaryDigest = await verifyExecutableBinaryIdentityV1(config);
     const canonicalSocketParent = await realpath(dirname(config.payload.socketPath));
     if (canonicalSocketParent !== canonicalConfigRoot) {
       return unavailableV1("runtime_root_mismatch");
@@ -412,6 +494,8 @@ export async function verifyProviderRuntimeLiveServiceReadinessV1(
       targetFingerprintDigest: ContentDigestV1Schema.parse(
         currentAfter.targetFingerprintDigest,
       ),
+      binaryDigest,
+      binaryIdentity: "verified" as const,
       inspectedRevision: ipc.revision,
     });
   } catch (error) {

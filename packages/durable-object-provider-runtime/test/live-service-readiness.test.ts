@@ -1,5 +1,5 @@
-import { randomBytes } from "node:crypto";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHash, randomBytes } from "node:crypto";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   ContentDigestV1Schema,
   DurableObjectIdentityProviderIdV1Schema,
+  type ContentDigestV1,
 } from "@understand-code/durable-object-provider-contracts/primitives";
 
 import { DurableObjectProviderRuntimeServerV1 } from "../src/server.js";
@@ -27,6 +28,14 @@ const PROVIDER = DurableObjectIdentityProviderIdV1Schema.parse(
 );
 const roots = new Set<string>();
 const servers = new Set<DurableObjectProviderRuntimeServerV1>();
+
+async function executableDigestV1(path: string): Promise<ContentDigestV1> {
+  return ContentDigestV1Schema.parse(
+    `sha256:${createHash("sha256")
+      .update(await readFile(path))
+      .digest("hex")}`,
+  );
+}
 
 afterEach(async () => {
   await Promise.all([...servers].map((server) => server.close()));
@@ -68,7 +77,7 @@ async function fixtureV1(providerId = PROVIDER): Promise<{
       readinessPath: join(root, "readiness.json"),
       signingKeyPath: join(root, "signing.key"),
       installationIdentityDigest: TARGET,
-      binaryDigest: TARGET,
+      binaryDigest: await executableDigestV1(process.execPath),
       capabilityDigest: CAPABILITY,
     },
     privateKey: keyPair.privateKey,
@@ -127,11 +136,13 @@ describe("live provider service readiness verifier", () => {
       strongWrites: "locked",
       providerId: PROVIDER,
       targetFingerprintDigest: fixture.baseline.targetFingerprintDigest,
+      binaryDigest: fixture.config.payload.binaryDigest,
+      binaryIdentity: "verified",
       inspectedRevision: 0,
     });
   });
 
-  it("rejects a live socket whose journal provider identity or signed target is wrong", async () => {
+  it("rejects a live socket whose journal provider identity, signed target, or binary digest is wrong", async () => {
     const fixture = await fixtureV1();
     const wrongConfig = createProviderServiceHandoffConfigV1({
       payload: { ...fixture.config.payload, providerId: DurableObjectIdentityProviderIdV1Schema.parse("durable-object-provider:other") },
@@ -173,5 +184,20 @@ describe("live provider service readiness verifier", () => {
         } satisfies ProviderServiceReadinessResultV1),
       }),
     ).resolves.toMatchObject({ status: "unavailable", reason: "readiness_stale" });
+
+    const wrongBinaryConfig = createProviderServiceHandoffConfigV1({
+      payload: {
+        ...fixture.config.payload,
+        binaryDigest: ContentDigestV1Schema.parse(`sha256:${"f".repeat(64)}`),
+      },
+      privateKey: fixture.signingKey,
+    });
+    await expect(
+      verifyProviderRuntimeLiveServiceReadinessV1({
+        config: wrongBinaryConfig,
+        targetBaseline: fixture.baseline,
+        authKey: fixture.key,
+      }),
+    ).resolves.toMatchObject({ status: "unavailable", reason: "binary_identity_mismatch" });
   });
 });

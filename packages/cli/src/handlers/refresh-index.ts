@@ -65,21 +65,23 @@ export async function refreshIndex(
       ),
     );
   }
-  if (
-    parsed.data.expectedSourceSnapshotId !== undefined &&
-    parsed.data.expectedSourceSnapshotId !== capture.snapshot.snapshotId
-  ) {
-    throw new ToolFailure(
-      artifactUnavailableFailure("stale", "repository_snapshot"),
-    );
-  }
-
   const store = await ArtifactStore.open(canonicalRoot, {
     repositoryId: capture.snapshot.repositoryId,
     worktreeId: capture.snapshot.worktreeId,
     producerVersion: PRODUCT_VERSION,
   });
   const previousManifest = await store.initialize();
+  // OperationControl is an optimistic pin on the *published* source.  The
+  // capture may legitimately produce a new Snapshot because the worktree
+  // changed since that source was published.
+  if (
+    parsed.data.expectedSourceSnapshotId !== undefined &&
+    parsed.data.expectedSourceSnapshotId !== previousManifest.latestSnapshotId
+  ) {
+    throw new ToolFailure(
+      artifactUnavailableFailure("stale", "repository_snapshot"),
+    );
+  }
   const freshness = await inspectArtifactFreshness(
     canonicalRoot,
     capture.snapshot,

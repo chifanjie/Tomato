@@ -17,15 +17,13 @@ import {
   OpenWorkbenchInputV1Schema,
   OpenWorkbenchOutputV1Schema,
   RecordVerificationOutputV1Schema,
+  RefreshIndexInputV1Schema,
+  RefreshIndexOutputV1Schema,
   SearchContextInputV1Schema,
   SearchContextOutputV1Schema,
   TraceImpactInputV1Schema,
   TraceImpactOutputV1Schema,
   UpdateTaskOutputV1Schema,
-} from "@understand-code/contracts/mcp";
-import {
-  RefreshIndexInputV1Schema,
-  RefreshIndexOutputV1Schema,
 } from "@understand-code/contracts/mcp";
 import { z } from "zod";
 

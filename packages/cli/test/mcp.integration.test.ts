@@ -505,6 +505,7 @@ describe("MCP lifecycle and real handlers", () => {
         name: "refresh_index",
         arguments: {
           mode: "incremental",
+          expectedSourceSnapshotId: refreshed.structuredContent.meta.sourceSnapshotId,
           idempotencyKey: "cold-refresh-index-after-change",
           actor: "agent:cli-test",
         },

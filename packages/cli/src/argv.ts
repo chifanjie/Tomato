@@ -8,6 +8,7 @@ export type CliInvocation =
       readonly operation: "install" | "upgrade" | "rollback" | "doctor" | "uninstall";
       readonly root?: string;
       readonly home?: string;
+      readonly host?: "codex" | "claude";
     }
   | {
       readonly kind: "mcp";
@@ -45,8 +46,22 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
       | "uninstall";
     let root: string | undefined;
     let home: string | undefined;
+    let host: "codex" | "claude" | undefined;
     for (let index = 1; index < values.length; index += 1) {
       const flag = values[index];
+      if (flag === "--host") {
+        if (operation !== "install" && operation !== "upgrade") {
+          throw new CliArgumentError();
+        }
+        if (host !== undefined) throw new CliArgumentError();
+        const candidate = values[index + 1];
+        if (candidate !== "codex" && candidate !== "claude") {
+          throw new CliArgumentError();
+        }
+        host = candidate;
+        index += 1;
+        continue;
+      }
       if (flag !== "--root" && flag !== "--home") throw new CliArgumentError();
       const target = values[index + 1];
       if (!safePathArgument(target) || !pathIsAbsolute(target)) {
@@ -66,6 +81,7 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
       operation,
       ...(root === undefined ? {} : { root }),
       ...(home === undefined ? {} : { home }),
+      ...(host === undefined ? {} : { host }),
     };
   }
   if (values[0] !== "mcp") throw new CliArgumentError();
@@ -106,8 +122,8 @@ export function helpText(): string {
     "",
     "Usage:",
     "  understand-code mcp --stdio --root <absolute-worktree-path>",
-    "  understand-code install [--root <absolute-install-root>|--home <absolute-install-home>]",
-    "  understand-code upgrade [--root <absolute-install-root>|--home <absolute-install-home>]",
+    "  understand-code install [--root <absolute-install-root>|--home <absolute-install-home>] [--host codex|claude]",
+    "  understand-code upgrade [--root <absolute-install-root>|--home <absolute-install-home>] [--host codex|claude]",
     "  understand-code rollback [--root <absolute-install-root>|--home <absolute-install-home>]",
     "  understand-code doctor [--root <absolute-install-root>|--home <absolute-install-home>]",
     "  understand-code uninstall [--root <absolute-install-root>|--home <absolute-install-home>]",

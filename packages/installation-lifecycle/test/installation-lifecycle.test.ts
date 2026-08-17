@@ -1,6 +1,8 @@
+import { execFile as execFileCallback } from "node:child_process";
 import { mkdtemp, readFile, stat, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -17,6 +19,7 @@ import {
 } from "../src/index.js";
 
 const temporaryRoots: string[] = [];
+const execFile = promisify(execFileCallback);
 
 afterEach(async () => {
   await Promise.all(
@@ -49,6 +52,51 @@ describe("installation lifecycle", () => {
     expect(config.marker).toBe("understand-code-owned-v1");
     expect(config.mcpServers?.["understand-code"]).toBeDefined();
     expect(await stat(path.join(root, INSTALLATION_MANIFEST_FILE))).toBeDefined();
+  });
+
+  it("installs and validates a Claude host projection", async () => {
+    const root = await temporaryRoot();
+    const installed = await installInstallationV1({ root, host: "claude" });
+
+    expect(installed.status).toBe("installed");
+    const manifest = JSON.parse(
+      await readFile(path.join(root, INSTALLATION_MANIFEST_FILE), "utf8"),
+    ) as { host?: string };
+    expect(manifest.host).toBe("claude");
+    const configPath = path.join(root, INSTALLATION_CONFIG_FILE);
+    const config = JSON.parse(await readFile(configPath, "utf8")) as {
+      mcpServers?: Record<string, { command?: string; args?: string[] }>;
+    };
+    expect(config.mcpServers?.["understand-code"]).toEqual({
+      command: path.join(installed.root, INSTALLATION_WRAPPER_FILE),
+      args: ["--root", "${CLAUDE_PROJECT_DIR}"],
+    });
+    expect((await doctorInstallationV1({ root })).status).toBe("healthy");
+
+    const recordPath = path.join(root, "argv-record.json");
+    const fakeCli = path.join(root, "fake-cli.mjs");
+    await writeFile(
+      fakeCli,
+      `#!/usr/bin/env node\nimport { writeFile } from "node:fs/promises";\nawait writeFile(${JSON.stringify(recordPath)}, JSON.stringify(process.argv.slice(2)));\n`,
+      { mode: 0o755 },
+    );
+    await execFile(
+      path.join(installed.root, INSTALLATION_WRAPPER_FILE),
+      ["--root", installed.root],
+      { env: { ...process.env, UNDERSTAND_CODE_CLI: fakeCli } },
+    );
+    expect(JSON.parse(await readFile(recordPath, "utf8"))).toEqual([
+      "mcp",
+      "--stdio",
+      "--root",
+      installed.root,
+    ]);
+
+    await writeFile(configPath, (await readFile(configPath, "utf8")).replace(
+      "${CLAUDE_PROJECT_DIR}",
+      "${WORKSPACE_ROOT}",
+    ));
+    expect((await doctorInstallationV1({ root })).status).toBe("tampered");
   });
 
   it("refuses uninstall after an owned file is tampered with", async () => {

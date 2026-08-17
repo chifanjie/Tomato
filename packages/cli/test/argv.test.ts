@@ -24,6 +24,12 @@ describe("CLI arguments", () => {
       operation: "upgrade",
       root: "/tmp/understand-code",
     });
+    expect(parseCliArguments(["install", "--host", "claude", "--home", "/tmp/understand-code"])).toEqual({
+      kind: "installation",
+      operation: "install",
+      host: "claude",
+      home: "/tmp/understand-code",
+    });
     expect(parseCliArguments(["rollback"])).toEqual({
       kind: "installation",
       operation: "rollback",
@@ -62,6 +68,8 @@ describe("CLI arguments", () => {
     ["equals form", ["mcp", "--stdio", "--root=/tmp/repository"]],
     ["relative install home", ["install", "--home", "relative"]],
     ["duplicate install home", ["doctor", "--home", "/tmp/a", "--home", "/tmp/b"]],
+    ["invalid install host", ["install", "--host", "unknown"]],
+    ["host on doctor", ["doctor", "--host", "codex"]],
   ])("rejects %s", (_name, values) => {
     expect(() => parseCliArguments(values)).toThrow(CliArgumentError);
   });

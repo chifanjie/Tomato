@@ -315,6 +315,10 @@ importers:
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.15)(happy-dom@20.10.6)(jiti@2.6.1)(lightningcss@1.32.0)(yaml@2.8.3)
 
   packages/installation-lifecycle:
+    dependencies:
+      '@understand-code/host-adapters':
+        specifier: workspace:*
+        version: link:../host-adapters
     devDependencies:
       '@types/node':
         specifier: ^22.0.0

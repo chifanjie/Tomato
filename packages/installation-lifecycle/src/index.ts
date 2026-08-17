@@ -12,6 +12,13 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 
+import {
+  buildHostMcpServerConfigV1,
+  isHostAdapterId,
+  isHostMcpServerConfigV1,
+  type HostAdapterId,
+} from "@understand-code/host-adapters";
+
 /** The on-disk format is intentionally small and independent of MCP schemas. */
 export const INSTALLATION_SCHEMA_VERSION =
   "understand-code-installation-v1" as const;
@@ -44,6 +51,8 @@ export type InstallationOptionsV1 = InstallationTargetInputV1 &
   Readonly<{
     version?: string;
     cliCommand?: string;
+    /** Select a host-specific MCP config; omitted preserves legacy behavior. */
+    host?: HostAdapterId;
   }>;
 
 export type InstallationLifecycleErrorCodeV1 =
@@ -86,6 +95,8 @@ export type InstallationManifestV1 = Readonly<{
   root: string;
   installationId: string;
   marker: typeof INSTALLATION_MARKER;
+  /** Absent on legacy installations that used the direct CLI config. */
+  host?: HostAdapterId;
   files: readonly OwnedInstallationFileV1[];
   /** Present only while a newer installation can be rolled back safely. */
   rollback?: InstallationRollbackDescriptorV1;
@@ -410,29 +421,74 @@ function markerContent(installationId: string): string {
   return `${INSTALLATION_MARKER}\nproduct=understand-code\ninstallationId=${installationId}\n`;
 }
 
-function wrapperContent(installationId: string): string {
-  return [
+function wrapperContent(
+  installationId: string,
+  host: HostAdapterId | undefined,
+): string {
+  const lines = [
     "#!/bin/sh",
     `# ${INSTALLATION_MARKER}`,
     `# installation-id: ${installationId}`,
     "set -eu",
     'cli="${UNDERSTAND_CODE_CLI:-understand-code}"',
-    'exec "$cli" "$@"',
-    "",
-  ].join("\n");
+  ];
+  if (host === undefined) {
+    lines.push('exec "$cli" "$@"');
+  } else {
+    // Host configs call this owned wrapper with the adapter's two-argument
+    // contract.  The wrapper supplies the stdio MCP verb so the installed
+    // artifact is runnable without a separately installed host-adapter bin.
+    lines.push(
+      'if [ "$#" -ne 2 ] || [ "$1" != "--root" ] || [ -z "$2" ]; then',
+      '  echo workspace_root_required >&2',
+      "  exit 2",
+      "fi",
+      'case "$2" in',
+      "  /*) ;;",
+      "  *) echo workspace_root_required >&2; exit 2 ;;",
+      "esac",
+      'exec "$cli" mcp --stdio --root "$2"',
+    );
+  }
+  lines.push("");
+  return lines.join("\n");
 }
 
-function configContent(root: string, installationId: string, cliCommand: string): string {
+function configContent(
+  root: string,
+  installationId: string,
+  command: string,
+  host: HostAdapterId | undefined,
+): string {
+  const hostProjection =
+    host === undefined
+      ? undefined
+      : buildHostMcpServerConfigV1(host, command);
+  if (
+    hostProjection !== undefined &&
+    host !== undefined &&
+    !isHostMcpServerConfigV1(hostProjection, host, command)
+  ) {
+    throw new InstallationLifecycleError(
+      "manifest_invalid",
+      "Host adapter produced an invalid MCP configuration.",
+      { host },
+    );
+  }
   return canonicalJson({
     schemaVersion: INSTALLATION_SCHEMA_VERSION,
     marker: INSTALLATION_MARKER,
     installationId,
-    mcpServers: {
-      "understand-code": {
-        command: cliCommand,
-        args: ["mcp", "--stdio", "--root", "${WORKSPACE_ROOT}"],
-      },
-    },
+    ...(hostProjection === undefined
+      ? {
+          mcpServers: {
+              "understand-code": {
+              command,
+              args: ["mcp", "--stdio", "--root", "${WORKSPACE_ROOT}"],
+            },
+          },
+        }
+      : hostProjection),
     installationRoot: root,
   });
 }
@@ -442,6 +498,7 @@ function manifestFor(
   version: string,
   installationId: string,
   fileBytes: Readonly<Record<(typeof OWNED_RELATIVE_FILES)[number], Uint8Array>>,
+  host?: HostAdapterId,
   rollback?: InstallationRollbackDescriptorV1,
 ): InstallationManifestV1 {
   const modes: Readonly<Record<(typeof OWNED_RELATIVE_FILES)[number], number>> = {
@@ -456,6 +513,7 @@ function manifestFor(
     root,
     installationId,
     marker: INSTALLATION_MARKER,
+    ...(host === undefined ? {} : { host }),
     files: OWNED_RELATIVE_FILES.map((filePath) => ({
       path: filePath,
       sha256: digest(fileBytes[filePath]),
@@ -511,6 +569,14 @@ function parseManifest(value: unknown): InstallationManifestV1 | undefined {
       ? undefined
       : parseRollbackDescriptor(rollbackValue);
   if (rollbackValue !== undefined && rollback === undefined) return undefined;
+  const hostValue = candidate.host;
+  const parsedHost =
+    hostValue === undefined
+      ? undefined
+      : isHostAdapterId(hostValue)
+        ? hostValue
+        : undefined;
+  if (hostValue !== undefined && parsedHost === undefined) return undefined;
   const files: OwnedInstallationFileV1[] = [];
   for (const rawFile of candidate.files) {
     if (rawFile === null || typeof rawFile !== "object" || Array.isArray(rawFile)) {
@@ -550,6 +616,7 @@ function parseManifest(value: unknown): InstallationManifestV1 | undefined {
     root: candidate.root,
     installationId: candidate.installationId,
     marker: INSTALLATION_MARKER,
+    ...(parsedHost === undefined ? {} : { host: parsedHost }),
     files: Object.freeze(files),
     ...(rollback === undefined ? {} : { rollback }),
   };
@@ -833,6 +900,30 @@ async function readRollbackSnapshotAt(
   return snapshot;
 }
 
+async function hostConfigIsValid(
+  root: string,
+  manifest: InstallationManifestV1,
+): Promise<boolean> {
+  if (manifest.host === undefined) return true;
+  const configPath = ownedAbsolutePath(root, INSTALLATION_CONFIG_FILE);
+  try {
+    const parsed = JSON.parse(await readFile(configPath, "utf8")) as Record<string, unknown>;
+    return (
+      parsed.schemaVersion === INSTALLATION_SCHEMA_VERSION &&
+      parsed.marker === INSTALLATION_MARKER &&
+      parsed.installationId === manifest.installationId &&
+      parsed.installationRoot === root &&
+      isHostMcpServerConfigV1(
+        parsed,
+        manifest.host,
+        path.join(root, INSTALLATION_WRAPPER_FILE),
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function rollbackPathState(root: string): Promise<"missing" | "present" | "unsafe"> {
   const rollbackPath = path.join(root, INSTALLATION_ROLLBACK_FILE);
   const relative = path.relative(root, rollbackPath);
@@ -1001,6 +1092,16 @@ async function inspectInstallation(
       state: "modified",
     };
   }
+  if (manifest.host !== undefined) {
+    const configCheck = checks.find((check) => check.path === INSTALLATION_CONFIG_FILE);
+    if (configCheck?.state === "ok" && !(await hostConfigIsValid(root, manifest))) {
+      const index = checks.findIndex((check) => check.path === INSTALLATION_CONFIG_FILE);
+      checks[index] = {
+        ...checks[index]!,
+        state: "modified",
+      };
+    }
+  }
   let rollbackValid = true;
   const rollbackState = await rollbackPathState(root);
   if (manifest.rollback !== undefined) {
@@ -1119,19 +1220,32 @@ export async function installInstallationV1(
   if (!isSafeText(version)) {
     throw new InstallationLifecycleError("invalid_target", "Installation version is invalid.");
   }
+  if (options.host !== undefined && !isHostAdapterId(options.host)) {
+    throw new InstallationLifecycleError("invalid_target", "Host adapter is invalid.");
+  }
+  const host = options.host ?? existingManifest?.host;
   const cliCommand = options.cliCommand ?? "understand-code";
+  if (host !== undefined && options.cliCommand !== undefined) {
+    throw new InstallationLifecycleError(
+      "invalid_target",
+      "Host installations use the selected adapter command.",
+      { host },
+    );
+  }
+  const configCommand =
+    host === undefined ? cliCommand : path.join(root, INSTALLATION_WRAPPER_FILE);
   if (!isSafeText(cliCommand) || cliCommand.includes("\n")) {
     throw new InstallationLifecycleError("invalid_target", "CLI command is invalid.");
   }
   const bytes: Readonly<Record<(typeof OWNED_RELATIVE_FILES)[number], Uint8Array>> = {
     [INSTALLATION_OWNER_FILE]: Buffer.from(markerContent(installationId), "utf8"),
-    [INSTALLATION_WRAPPER_FILE]: Buffer.from(wrapperContent(installationId), "utf8"),
+    [INSTALLATION_WRAPPER_FILE]: Buffer.from(wrapperContent(installationId, host), "utf8"),
     [INSTALLATION_CONFIG_FILE]: Buffer.from(
-      configContent(root, installationId, cliCommand),
+      configContent(root, installationId, configCommand, host),
       "utf8",
     ),
   };
-  const manifest = manifestFor(root, version, installationId, bytes);
+  const manifest = manifestFor(root, version, installationId, bytes, host);
   if (existingManifest !== undefined) {
     const before = await inspectInstallation(root);
     if (before.status === "healthy" && existingManifest.version === version) {
@@ -1265,20 +1379,33 @@ export async function upgradeInstallationV1(
   if (!isSafeText(version)) {
     throw new InstallationLifecycleError("invalid_target", "Installation version is invalid.");
   }
+  if (options.host !== undefined && !isHostAdapterId(options.host)) {
+    throw new InstallationLifecycleError("invalid_target", "Host adapter is invalid.");
+  }
+  const host = options.host ?? existingManifest.host;
   const cliCommand = options.cliCommand ?? "understand-code";
+  if (host !== undefined && options.cliCommand !== undefined) {
+    throw new InstallationLifecycleError(
+      "invalid_target",
+      "Host installations use the selected adapter command.",
+      { host },
+    );
+  }
+  const configCommand =
+    host === undefined ? cliCommand : path.join(root, INSTALLATION_WRAPPER_FILE);
   if (!isSafeText(cliCommand) || cliCommand.includes("\n")) {
     throw new InstallationLifecycleError("invalid_target", "CLI command is invalid.");
   }
   const installationId = existingManifest.installationId;
   const bytes: Readonly<Record<(typeof OWNED_RELATIVE_FILES)[number], Uint8Array>> = {
     [INSTALLATION_OWNER_FILE]: Buffer.from(markerContent(installationId), "utf8"),
-    [INSTALLATION_WRAPPER_FILE]: Buffer.from(wrapperContent(installationId), "utf8"),
+    [INSTALLATION_WRAPPER_FILE]: Buffer.from(wrapperContent(installationId, host), "utf8"),
     [INSTALLATION_CONFIG_FILE]: Buffer.from(
-      configContent(root, installationId, cliCommand),
+      configContent(root, installationId, configCommand, host),
       "utf8",
     ),
   };
-  const desiredManifest = manifestFor(root, version, installationId, bytes);
+  const desiredManifest = manifestFor(root, version, installationId, bytes, host);
   const currentMatches =
     existingManifest.version === version &&
     existingManifest.files.every(
@@ -1346,7 +1473,7 @@ export async function upgradeInstallationV1(
     fromVersion: existingManifest.version,
     owner: INSTALLATION_MARKER,
   };
-  const nextManifest = manifestFor(root, version, installationId, bytes, rollback);
+  const nextManifest = manifestFor(root, version, installationId, bytes, host, rollback);
   const written: string[] = [];
   try {
     // Commit the snapshot before publishing its descriptor.  A failed write

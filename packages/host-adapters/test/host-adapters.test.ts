@@ -8,9 +8,11 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   buildMcpArgv,
+  buildHostMcpServerConfigV1,
   CLAUDE_MANIFEST_V1,
   CODEX_MANIFEST_V1,
   HostAdapterArgumentError,
+  isHostMcpServerConfigV1,
   isHostAdapterManifestV1,
   parseHostAdapterArguments,
 } from "../src/index.js";
@@ -26,6 +28,21 @@ afterEach(async () => {
 });
 
 describe("host adapter contract", () => {
+  it("builds and validates the selected host MCP projection", () => {
+    const codex = buildHostMcpServerConfigV1("codex");
+    const claude = buildHostMcpServerConfigV1("claude");
+    expect(codex.mcpServers["understand-code"]).toEqual({
+      command: "understand-code-codex",
+      args: ["--root", "${WORKSPACE_ROOT}"],
+    });
+    expect(claude.mcpServers["understand-code"]).toEqual({
+      command: "understand-code-claude",
+      args: ["--root", "${CLAUDE_PROJECT_DIR}"],
+    });
+    expect(isHostMcpServerConfigV1(codex, "codex")).toBe(true);
+    expect(isHostMcpServerConfigV1(codex, "claude")).toBe(false);
+  });
+
   it("keeps both bundled manifests and configs on the one explicit-root argv contract", async () => {
     expect(isHostAdapterManifestV1(CODEX_MANIFEST_V1)).toBe(true);
     expect(isHostAdapterManifestV1(CLAUDE_MANIFEST_V1)).toBe(true);

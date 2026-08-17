@@ -14,10 +14,11 @@ import {
 
 function installationInput(
   invocation: Extract<Awaited<ReturnType<typeof parseCliArguments>>, { kind: "installation" }>,
-): { readonly root?: string; readonly home?: string } {
+): { readonly root?: string; readonly home?: string; readonly host?: "codex" | "claude" } {
   return {
     ...(invocation.root === undefined ? {} : { root: invocation.root }),
     ...(invocation.home === undefined ? {} : { home: invocation.home }),
+    ...(invocation.host === undefined ? {} : { host: invocation.host }),
   };
 }
 

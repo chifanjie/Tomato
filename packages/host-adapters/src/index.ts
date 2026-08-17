@@ -41,6 +41,71 @@ export interface HostMcpServerConfigV1 {
   };
 }
 
+/**
+ * The command names are intentionally fixed to the bundled host entrypoints.
+ * Installers may still choose a different command when they build a private
+ * config, but the default projection always points at the published adapter
+ * for the selected host.
+ */
+export const HOST_ADAPTER_COMMANDS: Readonly<Record<HostAdapterId, string>> =
+  Object.freeze({
+    codex: "understand-code-codex",
+    claude: "understand-code-claude",
+  });
+
+function hostPlaceholder(host: HostAdapterId): HostRootPlaceholder {
+  return host === "claude" ? CLAUDE_ROOT_PLACEHOLDER : CODEX_ROOT_PLACEHOLDER;
+}
+
+/** Build the exact MCP server projection consumed by a host config file. */
+export function buildHostMcpServerConfigV1(
+  host: HostAdapterId,
+  command = HOST_ADAPTER_COMMANDS[host],
+): HostMcpServerConfigV1 {
+  if (!isHostAdapterId(host) || !safeText(command)) {
+    throw new HostAdapterArgumentError("Invalid host adapter configuration.");
+  }
+  return Object.freeze({
+    mcpServers: {
+      [MCP_SERVER_NAME]: {
+        command,
+        args: [ROOT_FLAG, hostPlaceholder(host)] as const,
+      },
+    },
+  }) as HostMcpServerConfigV1;
+}
+
+/**
+ * Validate an MCP projection before it is persisted by an installer.  The
+ * check is deliberately exact: a host cannot silently receive the other
+ * host's root placeholder or an extra command argument.
+ */
+export function isHostMcpServerConfigV1(
+  value: unknown,
+  host: HostAdapterId,
+  expectedCommand = HOST_ADAPTER_COMMANDS[host],
+): value is HostMcpServerConfigV1 {
+  if (!isHostAdapterId(host) || !safeText(expectedCommand)) return false;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const servers = (value as Record<string, unknown>).mcpServers;
+  if (servers === null || typeof servers !== "object" || Array.isArray(servers)) return false;
+  const server = (servers as Record<string, unknown>)[MCP_SERVER_NAME];
+  if (server === null || typeof server !== "object" || Array.isArray(server)) return false;
+  const candidate = server as Record<string, unknown>;
+  const args = candidate.args;
+  return (
+    candidate.command === expectedCommand &&
+    Array.isArray(args) &&
+    args.length === 2 &&
+    args[0] === ROOT_FLAG &&
+    args[1] === hostPlaceholder(host)
+  );
+}
+
+export function isHostAdapterId(value: unknown): value is HostAdapterId {
+  return value === "codex" || value === "claude";
+}
+
 export class HostAdapterArgumentError extends Error {
   constructor(message = "A workspace root is required.") {
     super(message);

@@ -268,6 +268,31 @@ describe("durable Provider IPC client and migration host", () => {
     });
   });
 
+  it("locks verifiedSelection against post-construction mutation", async () => {
+    const sourceKey = randomBytes(32);
+    const sourcePaths = await prepareRootV1("provider-source-", sourceKey);
+    const sourceRuntime = await startRuntimeV1({
+      ...sourcePaths,
+      providerId: SOURCE_PROVIDER_ID,
+      capabilityDigest: SOURCE_CAPABILITY_DIGEST,
+    });
+    const verifiedSelection = {
+      verification: "caller_verified_registry_selection_v1" as const,
+      providerId: SOURCE_PROVIDER_ID,
+      capabilityDigest: SOURCE_CAPABILITY_DIGEST,
+    };
+    const client = createDurableObjectProviderRuntimeClientV1({
+      socketPath: sourceRuntime.socketPath,
+      sharedSecret: sourceKey,
+      verifiedSelection,
+    });
+    verifiedSelection.capabilityDigest = DESTINATION_CAPABILITY_DIGEST;
+    await expect(client.inspectState()).resolves.toMatchObject({
+      operation: "inspect_state",
+      state: { revision: 0 },
+    });
+  });
+
   it("returns the durable observed revision on stale compare-commit", async () => {
     const key = randomBytes(32);
     const paths = await prepareRootV1("provider-stale-", key);

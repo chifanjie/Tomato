@@ -34,6 +34,12 @@ export interface ProviderRuntimeVerifiedSelectionV1 {
   readonly capabilityDigest: `sha256:${string}`;
 }
 
+function lockVerifiedSelectionV1(
+  selection: ProviderRuntimeVerifiedSelectionV1,
+): ProviderRuntimeVerifiedSelectionV1 {
+  return Object.freeze({ ...selection });
+}
+
 export interface DurableObjectProviderRuntimeClientOptionsV1 {
   readonly socketPath: string;
   readonly sharedSecret: Uint8Array;
@@ -216,6 +222,7 @@ export function createDurableObjectProviderRuntimeClientV1(
   const copiedOptions = {
     ...options,
     sharedSecret: new Uint8Array(options.sharedSecret),
+    verifiedSelection: lockVerifiedSelectionV1(options.verifiedSelection),
   };
   return Object.freeze({
     async inspectState() {

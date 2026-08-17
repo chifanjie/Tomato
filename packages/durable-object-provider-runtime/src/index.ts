@@ -34,6 +34,18 @@ export {
   PROVIDER_RUNTIME_REAL_FILESYSTEM_CONFORMANCE_CANDIDATE_PROFILE_V1,
   runProviderRuntimeRealFilesystemConformanceV1,
 } from "./conformance-runner.js";
+export {
+  adaptProviderRuntimeRealFilesystemConformanceResultV1,
+  diagnoseProviderRuntimeRealFilesystemConformanceResultAdapterV1,
+  ProviderRuntimeRealFilesystemConformanceResultAdapterErrorV1,
+} from "./conformance-result-adapter.js";
+export type {
+  AdaptProviderRuntimeRealFilesystemConformanceResultOptionsV1,
+  ProviderRuntimeRealFilesystemConformanceCaseBindingV1,
+  ProviderRuntimeRealFilesystemConformanceResultAdapterDiagnosticV1,
+  ProviderRuntimeRealFilesystemConformanceResultAdapterValueV1,
+  ProviderRuntimeRealFilesystemConformanceResultContextV1,
+} from "./conformance-result-adapter.js";
 export type {
   ProviderRuntimeRealFilesystemConformanceBindingsV1,
   ProviderRuntimeRealFilesystemConformanceCandidateV1,

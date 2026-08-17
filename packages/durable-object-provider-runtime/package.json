@@ -34,6 +34,11 @@
       "import": "./dist/conformance-runner.js",
       "default": "./dist/conformance-runner.js"
     },
+    "./conformance-result-adapter": {
+      "types": "./dist/conformance-result-adapter.d.ts",
+      "import": "./dist/conformance-result-adapter.js",
+      "default": "./dist/conformance-result-adapter.js"
+    },
     "./cli": {
       "types": "./dist/cli.d.ts",
       "import": "./dist/cli.js",

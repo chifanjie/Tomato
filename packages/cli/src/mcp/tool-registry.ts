@@ -23,6 +23,10 @@ import {
   TraceImpactOutputV1Schema,
   UpdateTaskOutputV1Schema,
 } from "@understand-code/contracts/mcp";
+import {
+  RefreshIndexInputV1Schema,
+  RefreshIndexOutputV1Schema,
+} from "@understand-code/contracts/mcp";
 import { z } from "zod";
 
 import {
@@ -75,6 +79,8 @@ const descriptions: Readonly<Record<ImplementedToolName, string>> = {
     "Search persisted Task claims, Evidence, and impact context with deterministic ranking.",
   trace_impact:
     "Trace persisted Task impact paths between exact nodes with bounded pagination.",
+  refresh_index:
+    "Capture and publish the current Repository Snapshot and Pulse, preserving the last snapshot until commit.",
 };
 
 const inputSchemas = {
@@ -88,6 +94,7 @@ const inputSchemas = {
   get_evidence: GetEvidenceInputV1Schema,
   search_context: SearchContextInputV1Schema,
   trace_impact: TraceImpactInputV1Schema,
+  refresh_index: RefreshIndexInputV1Schema,
 } as const;
 
 const outputSchemas = {
@@ -129,6 +136,10 @@ const outputSchemas = {
   ]),
   trace_impact: z.union([
     TraceImpactOutputV1Schema.shape.structuredContent,
+    McpToolErrorResultV1Schema.shape.structuredContent,
+  ]),
+  refresh_index: z.union([
+    RefreshIndexOutputV1Schema.shape.structuredContent,
     McpToolErrorResultV1Schema.shape.structuredContent,
   ]),
 } as const;

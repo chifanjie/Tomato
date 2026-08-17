@@ -44,6 +44,7 @@ import {
 } from "@understand-code/workbench-runtime";
 
 import { PRODUCT_VERSION } from "../constants.js";
+import { refreshIndex } from "./refresh-index.js";
 import {
   ToolFailure,
   artifactUnavailableFailure,
@@ -73,6 +74,7 @@ export const IMPLEMENTED_TOOL_NAMES = Object.freeze([
   "get_evidence",
   "search_context",
   "trace_impact",
+  "refresh_index",
 ] as const);
 
 export type ImplementedToolName = (typeof IMPLEMENTED_TOOL_NAMES)[number];
@@ -1200,6 +1202,8 @@ export async function callImplementedTool(
         return await searchContext(argumentsValue, canonicalRoot);
       case "trace_impact":
         return await traceImpact(argumentsValue, canonicalRoot);
+      case "refresh_index":
+        return await refreshIndex(argumentsValue, canonicalRoot);
     }
   } catch (error) {
     if (error instanceof ToolFailure) return error.result;

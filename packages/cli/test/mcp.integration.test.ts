@@ -1,5 +1,5 @@
 import { PassThrough } from "node:stream";
-import { readFile, stat, utimes } from "node:fs/promises";
+import { readFile, stat, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -10,6 +10,7 @@ import {
   GetTaskBriefOutputV1Schema,
   McpToolErrorResultV1Schema,
   RecordVerificationOutputV1Schema,
+  RefreshIndexOutputV1Schema,
   UpdateTaskOutputV1Schema,
 } from "@understand-code/contracts/mcp";
 import { afterEach, describe, expect, it } from "vitest";
@@ -94,6 +95,7 @@ describe("MCP lifecycle and real handlers", () => {
       "get_evidence",
       "search_context",
       "trace_impact",
+      "refresh_index",
     ]);
     expect(
       harness.response(2).result.tools.every(
@@ -421,10 +423,12 @@ describe("MCP lifecycle and real handlers", () => {
       method: "tools/call",
       params: { name: "refresh_index", arguments: {} },
     });
-    expect(harness.response(6).error).toEqual({
-      code: -32_602,
-      message: "Invalid tool arguments",
-    });
+    const invalidRefresh = McpToolErrorResultV1Schema.parse(
+      harness.response(6).result,
+    );
+    expect(invalidRefresh.structuredContent.error.code).toBe(
+      "invalid_arguments",
+    );
   });
 
   it("keeps initialize and tools/list available in permanent binding_error", async () => {
@@ -443,13 +447,96 @@ describe("MCP lifecycle and real handlers", () => {
       params: { name: "get_repo_pulse", arguments: {} },
     });
 
-    expect(harness.response(2).result.tools).toHaveLength(10);
+    expect(harness.response(2).result.tools).toHaveLength(11);
     const failure = McpToolErrorResultV1Schema.parse(harness.response(3).result);
     expect(failure.structuredContent.error).toEqual({
       schemaVersion: 1,
       code: "workspace_binding_required",
       details: { reason: "root_missing" },
     });
+  });
+
+  it("bootstraps a cold repository with a real Snapshot/Pulse refresh", async () => {
+    const root = await createGitRepository({ seedArtifacts: false });
+    const harness = testServer(await resolveInitialBinding([root]));
+    await initialize(harness.server);
+
+    const previousGitDirectory = process.env.GIT_DIR;
+    process.env.GIT_DIR = path.join(root, "ambient-refresh-git-dir");
+    try {
+      await harness.server.handleValue({
+        jsonrpc: "2.0",
+        id: 20,
+        method: "tools/call",
+        params: {
+          name: "refresh_index",
+          arguments: {
+            mode: "incremental",
+            idempotencyKey: "cold-refresh-index",
+            actor: "agent:cli-test",
+          },
+        },
+      });
+    } finally {
+      if (previousGitDirectory === undefined) delete process.env.GIT_DIR;
+      else process.env.GIT_DIR = previousGitDirectory;
+    }
+    const refreshed = RefreshIndexOutputV1Schema.parse(
+      harness.response(20).result,
+    );
+    expect(refreshed.structuredContent.result.operation.status).toBe(
+      "completed",
+    );
+    expect(
+      refreshed.structuredContent.result.operation.finalSnapshotId,
+    ).toBe(refreshed.structuredContent.meta.sourceSnapshotId);
+    expect(refreshed.structuredContent.meta.freshness).toBe("not_ready");
+
+    await writeFile(
+      path.join(root, "src/task.ts"),
+      "export function task(): boolean { return false; }\n",
+      "utf8",
+    );
+    await harness.server.handleValue({
+      jsonrpc: "2.0",
+      id: 22,
+      method: "tools/call",
+      params: {
+        name: "refresh_index",
+        arguments: {
+          mode: "incremental",
+          idempotencyKey: "cold-refresh-index-after-change",
+          actor: "agent:cli-test",
+        },
+      },
+    });
+    const changed = RefreshIndexOutputV1Schema.parse(
+      harness.response(22).result,
+    );
+    expect(
+      changed.structuredContent.result.operation.finalSnapshotId,
+    ).not.toBe(refreshed.structuredContent.meta.sourceSnapshotId);
+
+    await harness.server.handleValue({
+      jsonrpc: "2.0",
+      id: 21,
+      method: "tools/call",
+      params: {
+        name: "refresh_index",
+        arguments: {
+          mode: "incremental",
+          expectedSourceSnapshotId: "snapshot:does-not-match",
+          idempotencyKey: "cold-refresh-index-mismatch",
+          actor: "agent:cli-test",
+        },
+      },
+    });
+    const mismatch = McpToolErrorResultV1Schema.parse(
+      harness.response(21).result,
+    );
+    expect(mismatch.structuredContent.error.code).toBe(
+      "artifact_unavailable",
+    );
   });
 
   it("enforces the lifecycle and separates protocol errors from tool errors", async () => {

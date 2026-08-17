@@ -8,6 +8,7 @@ import {
   McpToolErrorResultV1Schema,
   OpenWorkbenchOutputV1Schema,
   RecordVerificationOutputV1Schema,
+  RefreshIndexOutputV1Schema,
   SearchContextOutputV1Schema,
   TraceImpactOutputV1Schema,
   UpdateTaskOutputV1Schema,
@@ -88,6 +89,12 @@ const expectedOutputSchemas = {
       McpToolErrorResultV1Schema.shape.structuredContent,
     ]),
   ),
+  refresh_index: toolOutputSchema(
+    z.union([
+      RefreshIndexOutputV1Schema.shape.structuredContent,
+      McpToolErrorResultV1Schema.shape.structuredContent,
+    ]),
+  ),
 } as const;
 
 describe("advertised tool contracts", () => {
@@ -103,6 +110,7 @@ describe("advertised tool contracts", () => {
       "get_evidence",
       "search_context",
       "trace_impact",
+      "refresh_index",
     ]);
     for (const tool of IMPLEMENTED_TOOLS) {
       expect(tool.inputSchema).toMatchObject({

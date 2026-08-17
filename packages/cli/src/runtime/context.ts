@@ -111,15 +111,27 @@ async function withoutAmbientGitAuthority<T>(
   }
 }
 
+/**
+ * Capture repository facts using only the explicitly bound worktree.  Public
+ * write tools (for example refresh_index) must use the same Git authority
+ * boundary as read-only runtime opening; ambient GIT_* variables are never
+ * allowed to redirect a capture.
+ */
+export async function captureBoundRepositorySnapshot(
+  canonicalRoot: string,
+) {
+  return withoutAmbientGitAuthority(() =>
+    getRepositorySnapshotDetailed(canonicalRoot),
+  );
+}
+
 export async function openRuntime(
   canonicalRoot: string,
 ): Promise<RuntimeContext> {
   // The explicit, frozen root is the only repository authority. Repository
   // State currently inherits process.env for Git subprocesses, so strip the
   // variables that could redirect Git to a different worktree or object set.
-  const capture = await withoutAmbientGitAuthority(() =>
-    getRepositorySnapshotDetailed(canonicalRoot),
-  );
+  const capture = await captureBoundRepositorySnapshot(canonicalRoot);
   if (
     capture.snapshot.captureStatus === "error" ||
     capture.canonicalRoot !== canonicalRoot

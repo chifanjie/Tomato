@@ -18,3 +18,57 @@ export type {
   ReadFixedObjectResultV1,
   WriteFixedObjectResultV1,
 } from "./storage.js";
+export {
+  assertProviderRuntimeTargetContinuityV1,
+  probeProviderRuntimeTargetV1,
+  ProviderRuntimeTargetInspectionErrorV1,
+  PROVIDER_RUNTIME_TARGET_ISOLATION_V1,
+} from "./target-inspection.js";
+export type {
+  ProviderRuntimeTargetErrorCodeV1,
+  ProviderRuntimeTargetInspectionV1,
+  ProviderRuntimeTargetIsolationV1,
+  ProviderRuntimeTargetPublicProjectionV1,
+} from "./target-inspection.js";
+export {
+  PROVIDER_RUNTIME_REAL_FILESYSTEM_CONFORMANCE_CANDIDATE_PROFILE_V1,
+  runProviderRuntimeRealFilesystemConformanceV1,
+} from "./conformance-runner.js";
+export type {
+  ProviderRuntimeRealFilesystemConformanceBindingsV1,
+  ProviderRuntimeRealFilesystemConformanceCandidateV1,
+  ProviderRuntimeRealFilesystemConformanceCaseIdV1,
+  ProviderRuntimeRealFilesystemConformanceCaseOutcomeV1,
+  ProviderRuntimeRealFilesystemConformanceCaseResultV1,
+  ProviderRuntimeRealFilesystemConformanceResultCodeV1,
+  RunProviderRuntimeRealFilesystemConformanceOptionsV1,
+} from "./conformance-runner.js";
+export {
+  PROVIDER_SERVICE_HANDOFF_PAYLOAD_PROFILE_V1,
+  PROVIDER_SERVICE_HANDOFF_PROFILE_V1,
+  PROVIDER_SERVICE_READINESS_PROFILE_V1,
+  ProviderServiceHandoffErrorV1,
+  createProviderServiceHandoffConfigV1,
+  createProviderServiceReadinessReceiptV1,
+  defaultProviderServiceDescriptorPathV1,
+  generateProviderServiceSigningKeyPairV1,
+  inspectProviderServiceHandoffV1,
+  provisionProviderServiceHandoffV1,
+  readProviderServiceReadinessV1,
+  renderProviderServiceDescriptorV1,
+  verifyProviderServiceHandoffConfigV1,
+} from "./service-handoff.js";
+export type {
+  ProviderServiceDescriptorFormatV1,
+  ProviderServiceDescriptorV1,
+  ProviderServiceHandoffConfigV1,
+  ProviderServiceHandoffPayloadV1,
+  ProviderServiceHandoffInspectionV1,
+  ProviderServicePlatformV1,
+  ProviderServicePrincipalV1,
+  ProviderServiceProvisionOptionsV1,
+  ProviderServiceProvisionResultV1,
+  ProviderServiceReadinessPayloadV1,
+  ProviderServiceReadinessReceiptV1,
+  ProviderServiceReadinessResultV1,
+} from "./service-handoff.js";

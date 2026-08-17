@@ -58,6 +58,15 @@ importers:
       '@understand-code/core':
         specifier: workspace:*
         version: link:../core
+      '@understand-code/durable-object-provider-client':
+        specifier: workspace:*
+        version: link:../durable-object-provider-client
+      '@understand-code/durable-object-provider-contracts':
+        specifier: workspace:*
+        version: link:../durable-object-provider-contracts
+      '@understand-code/durable-object-provider-runtime':
+        specifier: workspace:*
+        version: link:../durable-object-provider-runtime
       '@understand-code/installation-lifecycle':
         specifier: workspace:*
         version: link:../installation-lifecycle

@@ -28,6 +28,21 @@
       "types": "./dist/storage.d.ts",
       "import": "./dist/storage.js",
       "default": "./dist/storage.js"
+    },
+    "./conformance-runner": {
+      "types": "./dist/conformance-runner.d.ts",
+      "import": "./dist/conformance-runner.js",
+      "default": "./dist/conformance-runner.js"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js",
+      "default": "./dist/cli.js"
+    },
+    "./service-handoff": {
+      "types": "./dist/service-handoff.d.ts",
+      "import": "./dist/service-handoff.js",
+      "default": "./dist/service-handoff.js"
     }
   },
   "scripts": {

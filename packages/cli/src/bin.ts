@@ -3,6 +3,9 @@ import { resolveInitialBinding } from "./binding/root-binding.js";
 import { PRODUCT_VERSION } from "./constants.js";
 import { writeDiagnostic } from "./logging/stderr.js";
 import { runStdioServer } from "./mcp/server.js";
+import { runProviderDoctorV1 } from "./provider/provider-doctor.js";
+import { runProviderRuntimeChildV1 } from "./provider/runtime-child.js";
+import { runDurableObjectProviderRuntimeCliV1 } from "@understand-code/durable-object-provider-runtime/cli";
 import {
   InstallationLifecycleError,
   doctorInstallationV1,
@@ -27,6 +30,21 @@ async function runInstallation(
 ): Promise<void> {
   const input = installationInput(invocation);
   try {
+    if (invocation.operation === "doctor" && invocation.provider === true) {
+      if (invocation.root === undefined) throw new CliArgumentError();
+      const result = await runProviderDoctorV1({
+        targetRoot: invocation.root,
+        ...(invocation.serviceConfig === undefined
+          ? {}
+          : { serviceConfigPath: invocation.serviceConfig }),
+        ...(invocation.serviceReadiness === undefined
+          ? {}
+          : { serviceReadinessPath: invocation.serviceReadiness }),
+      });
+      process.stdout.write(`${JSON.stringify(result)}\n`);
+      if (!result.ok) process.exitCode = 1;
+      return;
+    }
     if (invocation.operation === "install") {
       const result = await installInstallationV1({
         ...input,
@@ -101,6 +119,17 @@ async function main(): Promise<void> {
   }
   if (invocation.kind === "version") {
     process.stdout.write(`${PRODUCT_VERSION}\n`);
+    return;
+  }
+  if (invocation.kind === "provider_service_runtime") {
+    await runDurableObjectProviderRuntimeCliV1([
+      "--service-config",
+      invocation.serviceConfig,
+    ]);
+    return;
+  }
+  if (invocation.kind === "provider_runtime") {
+    await runProviderRuntimeChildV1(invocation);
     return;
   }
   if (invocation.kind === "installation") {

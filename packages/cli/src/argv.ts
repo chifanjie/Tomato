@@ -4,11 +4,28 @@ export type CliInvocation =
   | { readonly kind: "help" }
   | { readonly kind: "version" }
   | {
+      /** Private installed-service entrypoint; config remains root-owned. */
+      readonly kind: "provider_service_runtime";
+      readonly serviceConfig: string;
+    }
+  | {
       readonly kind: "installation";
       readonly operation: "install" | "upgrade" | "rollback" | "doctor" | "uninstall";
       readonly root?: string;
       readonly home?: string;
       readonly host?: "codex" | "claude";
+      readonly provider?: true;
+      readonly serviceConfig?: string;
+      readonly serviceReadiness?: string;
+    }
+  | {
+      /** Private self-spawn entrypoint used only by `doctor --provider`. */
+      readonly kind: "provider_runtime";
+      readonly root: string;
+      readonly socket: string;
+      readonly authKeyFile: string;
+      readonly providerId: string;
+      readonly capabilityDigest: `sha256:${string}`;
     }
   | {
       readonly kind: "mcp";
@@ -37,6 +54,62 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
   if (values.length === 1 && ["--version", "-V"].includes(values[0]!)) {
     return { kind: "version" };
   }
+  if (values.length === 2 && values[0] === "--service-config") {
+    const serviceConfig = values[1];
+    if (!safePathArgument(serviceConfig) || !pathIsAbsolute(serviceConfig)) {
+      throw new CliArgumentError();
+    }
+    return { kind: "provider_service_runtime", serviceConfig };
+  }
+  if (values[0] === "__provider-runtime") {
+    const parsed = new Map<string, string>();
+    for (let index = 1; index < values.length; index += 2) {
+      const flag = values[index];
+      const value = values[index + 1];
+      if (
+        flag === undefined ||
+        value === undefined ||
+        ![
+          "--root",
+          "--socket",
+          "--auth-key-file",
+          "--provider-id",
+          "--capability-digest",
+        ].includes(flag) ||
+        parsed.has(flag)
+      ) {
+        throw new CliArgumentError();
+      }
+      parsed.set(flag, value);
+    }
+    const root = parsed.get("--root");
+    const socket = parsed.get("--socket");
+    const authKeyFile = parsed.get("--auth-key-file");
+    const providerId = parsed.get("--provider-id");
+    const capabilityDigest = parsed.get("--capability-digest");
+    if (
+      !safePathArgument(root) ||
+      !pathIsAbsolute(root) ||
+      !safePathArgument(socket) ||
+      !pathIsAbsolute(socket) ||
+      !safePathArgument(authKeyFile) ||
+      !pathIsAbsolute(authKeyFile) ||
+      typeof providerId !== "string" ||
+      !/^durable-object-provider:[a-z0-9][a-z0-9._-]{0,127}$/u.test(providerId) ||
+      typeof capabilityDigest !== "string" ||
+      !/^sha256:[0-9a-f]{64}$/u.test(capabilityDigest)
+    ) {
+      throw new CliArgumentError();
+    }
+    return {
+      kind: "provider_runtime",
+      root,
+      socket,
+      authKeyFile,
+      providerId,
+      capabilityDigest: capabilityDigest as `sha256:${string}`,
+    };
+  }
   if (["install", "upgrade", "rollback", "doctor", "uninstall"].includes(values[0] ?? "")) {
     const operation = values[0] as
       | "install"
@@ -47,8 +120,36 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
     let root: string | undefined;
     let home: string | undefined;
     let host: "codex" | "claude" | undefined;
+    let provider: true | undefined;
+    let serviceConfig: string | undefined;
+    let serviceReadiness: string | undefined;
     for (let index = 1; index < values.length; index += 1) {
       const flag = values[index];
+      if (flag === "--provider") {
+        if (operation !== "doctor" || provider !== undefined) {
+          throw new CliArgumentError();
+        }
+        provider = true;
+        continue;
+      }
+      if (flag === "--service-config" || flag === "--service-readiness") {
+        if (operation !== "doctor") {
+          throw new CliArgumentError();
+        }
+        const candidate = values[index + 1];
+        if (!safePathArgument(candidate) || !pathIsAbsolute(candidate)) {
+          throw new CliArgumentError();
+        }
+        if (flag === "--service-config") {
+          if (serviceConfig !== undefined) throw new CliArgumentError();
+          serviceConfig = candidate;
+        } else {
+          if (serviceReadiness !== undefined) throw new CliArgumentError();
+          serviceReadiness = candidate;
+        }
+        index += 1;
+        continue;
+      }
       if (flag === "--host") {
         if (operation !== "install" && operation !== "upgrade") {
           throw new CliArgumentError();
@@ -76,12 +177,25 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
       }
       index += 1;
     }
+    if (
+      provider === true &&
+      (root === undefined || home !== undefined ||
+        (serviceConfig === undefined) !== (serviceReadiness === undefined))
+    ) {
+      throw new CliArgumentError();
+    }
+    if (provider !== true && (serviceConfig !== undefined || serviceReadiness !== undefined)) {
+      throw new CliArgumentError();
+    }
     return {
       kind: "installation",
       operation,
       ...(root === undefined ? {} : { root }),
       ...(home === undefined ? {} : { home }),
       ...(host === undefined ? {} : { host }),
+      ...(provider === undefined ? {} : { provider }),
+      ...(serviceConfig === undefined ? {} : { serviceConfig }),
+      ...(serviceReadiness === undefined ? {} : { serviceReadiness }),
     };
   }
   if (values[0] !== "mcp") throw new CliArgumentError();
@@ -126,6 +240,7 @@ export function helpText(): string {
     "  understand-code upgrade [--root <absolute-install-root>|--home <absolute-install-home>] [--host codex|claude]",
     "  understand-code rollback [--root <absolute-install-root>|--home <absolute-install-home>]",
     "  understand-code doctor [--root <absolute-install-root>|--home <absolute-install-home>]",
+    "  understand-code doctor --provider --root <absolute-target-root> [--service-config <path> --service-readiness <path>]",
     "  understand-code uninstall [--root <absolute-install-root>|--home <absolute-install-home>]",
     "  understand-code --help",
     "  understand-code --version",

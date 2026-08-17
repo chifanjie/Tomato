@@ -9,6 +9,21 @@ describe("CLI arguments", () => {
     ).toEqual({ kind: "mcp", rootCandidates: ["/tmp/repository"] });
   });
 
+  it("accepts only an absolute signed config for the private provider service", () => {
+    expect(
+      parseCliArguments([
+        "--service-config",
+        "/etc/understand-code/provider.json",
+      ]),
+    ).toEqual({
+      kind: "provider_service_runtime",
+      serviceConfig: "/etc/understand-code/provider.json",
+    });
+    expect(() =>
+      parseCliArguments(["--service-config", "relative.json"]),
+    ).toThrow(CliArgumentError);
+  });
+
   it("accepts installation lifecycle commands with an explicit home", () => {
     expect(parseCliArguments(["install", "--home", "/tmp/understand-code"])).toEqual({
       kind: "installation",
@@ -18,6 +33,25 @@ describe("CLI arguments", () => {
     expect(parseCliArguments(["doctor"])).toEqual({
       kind: "installation",
       operation: "doctor",
+    });
+    expect(
+      parseCliArguments([
+        "doctor",
+        "--provider",
+        "--root",
+        "/tmp/provider-target",
+        "--service-config",
+        "/etc/understand-code/provider.json",
+        "--service-readiness",
+        "/var/lib/understand-code/provider/ready.json",
+      ]),
+    ).toEqual({
+      kind: "installation",
+      operation: "doctor",
+      root: "/tmp/provider-target",
+      provider: true,
+      serviceConfig: "/etc/understand-code/provider.json",
+      serviceReadiness: "/var/lib/understand-code/provider/ready.json",
     });
     expect(parseCliArguments(["upgrade", "--root", "/tmp/understand-code"])).toEqual({
       kind: "installation",
@@ -70,6 +104,14 @@ describe("CLI arguments", () => {
     ["duplicate install home", ["doctor", "--home", "/tmp/a", "--home", "/tmp/b"]],
     ["invalid install host", ["install", "--host", "unknown"]],
     ["host on doctor", ["doctor", "--host", "codex"]],
+    ["provider on install", ["install", "--provider"]],
+    ["provider without target", ["doctor", "--provider"]],
+    ["provider with home alias", ["doctor", "--provider", "--home", "/tmp/a"]],
+    ["duplicate provider", ["doctor", "--provider", "--provider"]],
+    ["service config without readiness", ["doctor", "--provider", "--root", "/tmp/a", "--service-config", "/tmp/config"]],
+    ["service readiness without config", ["doctor", "--provider", "--root", "/tmp/a", "--service-readiness", "/tmp/ready"]],
+    ["service flags without provider", ["doctor", "--root", "/tmp/a", "--service-config", "/tmp/config", "--service-readiness", "/tmp/ready"]],
+    ["relative service config", ["doctor", "--provider", "--root", "/tmp/a", "--service-config", "relative", "--service-readiness", "/tmp/ready"]],
   ])("rejects %s", (_name, values) => {
     expect(() => parseCliArguments(values)).toThrow(CliArgumentError);
   });

@@ -73,6 +73,11 @@
       "types": "./dist/service-handoff.d.ts",
       "import": "./dist/service-handoff.js",
       "default": "./dist/service-handoff.js"
+    },
+    "./live-service-readiness": {
+      "types": "./dist/live-service-readiness.d.ts",
+      "import": "./dist/live-service-readiness.js",
+      "default": "./dist/live-service-readiness.js"
     }
   },
   "scripts": {

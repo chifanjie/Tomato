@@ -139,3 +139,11 @@ export type {
   ProviderServiceReadinessReceiptV1,
   ProviderServiceReadinessResultV1,
 } from "./service-handoff.js";
+export {
+  diagnoseProviderRuntimeLiveServiceReadinessV1,
+  verifyProviderRuntimeLiveServiceReadinessV1,
+} from "./live-service-readiness.js";
+export type {
+  ProviderRuntimeLiveServiceReadinessResultV1,
+  VerifyProviderRuntimeLiveServiceReadinessOptionsV1,
+} from "./live-service-readiness.js";

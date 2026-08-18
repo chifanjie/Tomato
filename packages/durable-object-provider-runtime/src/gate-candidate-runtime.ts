@@ -32,6 +32,10 @@ import {
   type ProviderRuntimeLiveGateBindingOptionsV1,
   type ProviderRuntimeLiveGateActivationCandidateV1,
 } from "./live-gate-binding.js";
+import {
+  diagnoseProviderRuntimeDurableAcceptanceCurrentV1,
+  type ProviderRuntimeDurableAcceptanceCurrentCandidateV1,
+} from "./durable-acceptance-current.js";
 
 export type ProviderRuntimeGateCandidateStageV1 =
   | "conformance_result"
@@ -39,7 +43,8 @@ export type ProviderRuntimeGateCandidateStageV1 =
   | "registry_evidence_binding"
   | "support_catalog"
   | "gate_projection"
-  | "live_gate_binding";
+  | "live_gate_binding"
+  | "durable_acceptance_current";
 
 export type ProviderRuntimeGateCandidateConformanceInputV1 =
   | {
@@ -91,6 +96,21 @@ export type ProviderRuntimeLiveGateCandidateDiagnosticV1 =
       readonly stage: ProviderRuntimeGateCandidateStageV1;
     };
 
+export type RunProviderRuntimeDurableAcceptanceCandidateOptionsV1 =
+  RunProviderRuntimeLiveGateCandidateOptionsV1;
+
+export type ProviderRuntimeDurableAcceptanceCandidateDiagnosticV1 =
+  | {
+      readonly ok: true;
+      readonly value: ProviderRuntimeDurableAcceptanceCurrentCandidateV1;
+    }
+  | {
+      readonly ok: false;
+      readonly code: "provider_unavailable";
+      readonly reason: "attestation_invalid";
+      readonly stage: ProviderRuntimeGateCandidateStageV1;
+    };
+
 function unavailableV1(
   stage: ProviderRuntimeGateCandidateStageV1,
 ): ProviderRuntimeGateCandidateDiagnosticV1 {
@@ -105,6 +125,17 @@ function unavailableV1(
 function unavailableLiveV1(
   stage: ProviderRuntimeGateCandidateStageV1,
 ): ProviderRuntimeLiveGateCandidateDiagnosticV1 {
+  return {
+    ok: false,
+    code: "provider_unavailable",
+    reason: "attestation_invalid",
+    stage,
+  };
+}
+
+function unavailableDurableV1(
+  stage: ProviderRuntimeGateCandidateStageV1,
+): ProviderRuntimeDurableAcceptanceCandidateDiagnosticV1 {
   return {
     ok: false,
     code: "provider_unavailable",
@@ -303,4 +334,69 @@ export async function runProviderRuntimeLiveGateCandidateV1(
   options: RunProviderRuntimeLiveGateCandidateOptionsV1,
 ): Promise<ProviderRuntimeLiveGateCandidateDiagnosticV1> {
   return diagnoseProviderRuntimeLiveGateCandidateV1(options);
+}
+
+/**
+ * Compose the complete raw Gate adapters with a fresh live probe and the
+ * destination provider's authenticated durable final-Acceptance journal.
+ * This remains a locked candidate until the keyed Acceptance token and OS
+ * peer identity are independently verified.
+ */
+export async function diagnoseProviderRuntimeDurableAcceptanceCandidateV1(
+  options: RunProviderRuntimeDurableAcceptanceCandidateOptionsV1,
+): Promise<ProviderRuntimeDurableAcceptanceCandidateDiagnosticV1> {
+  try {
+    const {
+      config,
+      liveReadiness,
+      targetBaseline,
+      authKey,
+      timeoutMs,
+      readinessReader,
+      expectedInstallationIdentityDigest,
+      expectedBinaryDigest,
+      expectedCapabilityDigest,
+      expectedTargetFingerprintDigest,
+      untrustedProjection,
+      projection,
+      gateProjection,
+      conformanceBindings,
+      candidateBindings,
+      ...candidateOptions
+    } = options;
+    const collected = await collectGateCandidateValuesV1(
+      candidateOptions as RunProviderRuntimeGateCandidateOptionsV1,
+    );
+    if (!collected.ok) return unavailableDurableV1(collected.stage);
+    const current = await diagnoseProviderRuntimeDurableAcceptanceCurrentV1({
+      liveGateBinding: {
+        config,
+        liveReadiness,
+        targetBaseline,
+        authKey,
+        timeoutMs,
+        readinessReader,
+        expectedInstallationIdentityDigest,
+        expectedBinaryDigest,
+        expectedCapabilityDigest,
+        expectedTargetFingerprintDigest,
+        gateValues: collected.values,
+        untrustedProjection,
+        projection,
+        gateProjection,
+        conformanceBindings,
+        candidateBindings,
+      },
+    });
+    if (!current.ok) return unavailableDurableV1("durable_acceptance_current");
+    return current;
+  } catch {
+    return unavailableDurableV1("durable_acceptance_current");
+  }
+}
+
+export async function runProviderRuntimeDurableAcceptanceCandidateV1(
+  options: RunProviderRuntimeDurableAcceptanceCandidateOptionsV1,
+): Promise<ProviderRuntimeDurableAcceptanceCandidateDiagnosticV1> {
+  return diagnoseProviderRuntimeDurableAcceptanceCandidateV1(options);
 }

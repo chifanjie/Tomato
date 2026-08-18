@@ -83,6 +83,11 @@
       "types": "./dist/live-gate-binding.d.ts",
       "import": "./dist/live-gate-binding.js",
       "default": "./dist/live-gate-binding.js"
+    },
+    "./durable-acceptance-current": {
+      "types": "./dist/durable-acceptance-current.d.ts",
+      "import": "./dist/durable-acceptance-current.js",
+      "default": "./dist/durable-acceptance-current.js"
     }
   },
   "scripts": {

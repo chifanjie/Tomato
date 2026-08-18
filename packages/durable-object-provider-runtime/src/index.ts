@@ -94,16 +94,20 @@ export type {
 } from "./provider-gate-projection.js";
 export {
   diagnoseProviderRuntimeGateCandidateV1,
+  diagnoseProviderRuntimeDurableAcceptanceCandidateV1,
   diagnoseProviderRuntimeLiveGateCandidateV1,
+  runProviderRuntimeDurableAcceptanceCandidateV1,
   runProviderRuntimeGateCandidateV1,
   runProviderRuntimeLiveGateCandidateV1,
 } from "./gate-candidate-runtime.js";
 export type {
   ProviderRuntimeGateCandidateDiagnosticV1,
+  ProviderRuntimeDurableAcceptanceCandidateDiagnosticV1,
   ProviderRuntimeGateCandidateValuesV1,
   ProviderRuntimeGateCandidateStageV1,
   ProviderRuntimeLiveGateCandidateDiagnosticV1,
   RunProviderRuntimeLiveGateCandidateOptionsV1,
+  RunProviderRuntimeDurableAcceptanceCandidateOptionsV1,
   RunProviderRuntimeGateCandidateOptionsV1,
 } from "./gate-candidate-runtime.js";
 export type {
@@ -168,3 +172,13 @@ export type {
   ProviderRuntimeLiveGateBindingResultV1,
   ProviderRuntimeLiveGateBindingUnavailableV1,
 } from "./live-gate-binding.js";
+export {
+  diagnoseProviderRuntimeDurableAcceptanceCurrentV1,
+  PROVIDER_RUNTIME_DURABLE_ACCEPTANCE_REQUIRED_NEXT_V1,
+  verifyProviderRuntimeDurableAcceptanceCurrentV1,
+} from "./durable-acceptance-current.js";
+export type {
+  ProviderRuntimeDurableAcceptanceCurrentCandidateV1,
+  ProviderRuntimeDurableAcceptanceCurrentDiagnosticV1,
+  VerifyProviderRuntimeDurableAcceptanceCurrentOptionsV1,
+} from "./durable-acceptance-current.js";

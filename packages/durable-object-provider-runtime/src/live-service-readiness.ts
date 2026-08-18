@@ -19,6 +19,7 @@ import {
   ProviderRuntimeIpcServerHelloV1Schema,
   canonicalizeProviderRuntimeIpcAuthenticatedClaimsV1,
   type ProviderRuntimeIpcClientHelloV1,
+  type ProviderRuntimeIpcJournalStateV1,
   type ProviderRuntimeIpcRequestV1,
   type ProviderRuntimeIpcResponseV1,
   type ProviderRuntimeIpcServerHelloV1,
@@ -197,7 +198,7 @@ async function inspectOverAuthenticatedIpcV1(input: {
   readonly authKey: Uint8Array;
   readonly capabilityDigest: ContentDigestV1;
   readonly timeoutMs: number;
-}): Promise<{ readonly revision: number }> {
+}): Promise<ProviderRuntimeIpcJournalStateV1> {
   const socket = await connectV1(input.socketPath, input.timeoutMs);
   const lines = createInterface({ input: socket, crlfDelay: Infinity });
   const iterator = lines[Symbol.asyncIterator]();
@@ -254,7 +255,7 @@ async function inspectOverAuthenticatedIpcV1(input: {
     }
     if (!response.ok) throw new Error(`runtime inspect failed: ${response.error.code}`);
     const payload = ProviderRuntimeIpcInspectStateResultV1Schema.parse(response.payload);
-    return { revision: payload.state.revision };
+    return payload.state;
   } finally {
     lines.close();
     socket.destroy();
@@ -325,6 +326,42 @@ async function verifyJournalProviderIdentityV1(
   DurableObjectIdentityProviderIdV1Schema.parse(
     (parsed as { readonly providerId: unknown }).providerId,
   );
+}
+
+/**
+ * Read the complete durable journal state over the same authenticated IPC
+ * channel used by the live-readiness probe.  This is an observation only: it
+ * does not grant Store authority and it deliberately rechecks the signed
+ * socket, key, and provider bindings before returning state.
+ */
+export async function inspectProviderRuntimeAuthenticatedJournalStateV1(
+  input: Readonly<{
+    readonly config: ProviderServiceHandoffConfigV1;
+    readonly authKey?: Uint8Array;
+    readonly expectedInstallationIdentityDigest?: ContentDigestV1;
+    readonly timeoutMs?: number;
+  }>,
+): Promise<ProviderRuntimeIpcJournalStateV1> {
+  let key: Uint8Array | undefined;
+  try {
+    const config = verifyProviderServiceHandoffConfigV1(
+      input.config,
+      input.expectedInstallationIdentityDigest,
+    );
+    await verifySocketIdentityV1(config);
+    const loaded = await readAuthKeyV1(config, input.authKey);
+    key = loaded.key;
+    const state = await inspectOverAuthenticatedIpcV1({
+      socketPath: config.payload.socketPath,
+      authKey: key,
+      capabilityDigest: config.payload.capabilityDigest,
+      timeoutMs: positiveTimeoutV1(input.timeoutMs),
+    });
+    await verifyJournalProviderIdentityV1(config);
+    return state;
+  } finally {
+    if (key !== undefined) key.fill(0);
+  }
 }
 
 function assertExecutableMetadataV1(

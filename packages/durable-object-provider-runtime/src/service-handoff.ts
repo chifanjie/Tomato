@@ -24,9 +24,18 @@ import {
   CanonicalByteStringV1Schema,
   ContentDigestV1Schema,
   DurableObjectIdentityProviderIdV1Schema,
+  InstallationIdentityGenerationIdV1Schema,
+  KeyedStateTokenV1Schema,
+  LowerHex32V1Schema,
   type ContentDigestV1,
   type DurableObjectIdentityProviderIdV1,
+  type InstallationIdentityGenerationIdV1,
+  type KeyedStateTokenV1,
+  type LowerHex32V1,
 } from "@understand-code/durable-object-provider-contracts/primitives";
+import {
+  mintProviderServiceInstallationIdentityVerificationCapabilityInternalV1,
+} from "@understand-code/durable-object-provider-contracts/provider-service-installation-identity-custody-internal";
 
 /**
  * The service handoff is an installation boundary, not a Provider Gate by
@@ -53,6 +62,14 @@ export interface ProviderServicePrincipalV1 {
   readonly gid: number;
 }
 
+export interface ProviderServiceInstallationIdentityCustodyV1 {
+  readonly keyPath: string;
+  readonly initializationNonce: LowerHex32V1;
+  readonly installationIdentityGenerationId:
+    InstallationIdentityGenerationIdV1;
+  readonly keyCheckToken: KeyedStateTokenV1;
+}
+
 export interface ProviderServiceHandoffPayloadV1 {
   readonly schemaVersion: 1;
   readonly profile: typeof PROVIDER_SERVICE_HANDOFF_PAYLOAD_PROFILE_V1;
@@ -67,6 +84,8 @@ export interface ProviderServiceHandoffPayloadV1 {
   readonly authKeyPath: string;
   readonly readinessPath: string;
   readonly signingKeyPath: string;
+  readonly installationIdentityCustody?:
+    ProviderServiceInstallationIdentityCustodyV1;
   readonly installationIdentityDigest: ContentDigestV1;
   readonly binaryDigest: ContentDigestV1;
   readonly capabilityDigest: ContentDigestV1;
@@ -142,6 +161,8 @@ export interface ProviderServiceProvisionOptionsV1 {
   readonly config: ProviderServiceHandoffConfigV1;
   /** Ed25519 key held by the dedicated service for readiness receipts. */
   readonly privateKey: KeyObject;
+  /** Exact raw key required when the signed payload delegates custody. */
+  readonly installationIdentityKey?: Uint8Array;
   /** Override only for a privileged installer/test fixture. */
   readonly descriptorPath?: string;
   /** Override only for a privileged installer/test fixture. */
@@ -225,7 +246,32 @@ const PAYLOAD_KEYS_V1 = [
   "binaryDigest",
   "capabilityDigest",
 ] as const;
+const PAYLOAD_KEYS_WITH_CUSTODY_V1 = [
+  "schemaVersion",
+  "profile",
+  "platform",
+  "serviceLabel",
+  "providerId",
+  "principal",
+  "runtimeRoot",
+  "socketPath",
+  "executablePath",
+  "configPath",
+  "authKeyPath",
+  "readinessPath",
+  "signingKeyPath",
+  "installationIdentityCustody",
+  "installationIdentityDigest",
+  "binaryDigest",
+  "capabilityDigest",
+] as const;
 const PRINCIPAL_KEYS_V1 = ["kind", "name", "uid", "gid"] as const;
+const INSTALLATION_IDENTITY_CUSTODY_KEYS_V1 = [
+  "keyPath",
+  "initializationNonce",
+  "installationIdentityGenerationId",
+  "keyCheckToken",
+] as const;
 const CONFIG_KEYS_V1 = [
   "schemaVersion",
   "profile",
@@ -363,6 +409,50 @@ function requirePrincipalV1(value: unknown): ProviderServicePrincipalV1 {
   return { kind: "dedicated_os_principal", name, uid, gid };
 }
 
+function requireInstallationIdentityCustodyV1(
+  value: unknown,
+  runtimeRoot: string,
+): ProviderServiceInstallationIdentityCustodyV1 {
+  if (!isRecordV1(value)) {
+    throw new ProviderServiceHandoffErrorV1(
+      "invalid_config",
+      "installationIdentityCustody is invalid",
+    );
+  }
+  assertExactKeysV1(
+    value,
+    INSTALLATION_IDENTITY_CUSTODY_KEYS_V1,
+    "installationIdentityCustody",
+  );
+  const keyPath = requireAbsolutePathV1(
+    value.keyPath,
+    "installationIdentityCustody.keyPath",
+  );
+  requireDirectRuntimeChildV1(
+    runtimeRoot,
+    keyPath,
+    "installationIdentityCustody.keyPath",
+  );
+  try {
+    return {
+      keyPath,
+      initializationNonce: LowerHex32V1Schema.parse(
+        value.initializationNonce,
+      ),
+      installationIdentityGenerationId:
+        InstallationIdentityGenerationIdV1Schema.parse(
+          value.installationIdentityGenerationId,
+        ),
+      keyCheckToken: KeyedStateTokenV1Schema.parse(value.keyCheckToken),
+    };
+  } catch {
+    throw new ProviderServiceHandoffErrorV1(
+      "invalid_config",
+      "installationIdentityCustody tuple is invalid",
+    );
+  }
+}
+
 function assertSupportedPlatformV1(value: unknown): ProviderServicePlatformV1 {
   if (
     value !== "darwin" &&
@@ -436,7 +526,17 @@ function validatePayloadV1(
       "service handoff payload is invalid",
     );
   }
-  assertExactKeysV1(value, PAYLOAD_KEYS_V1, "service handoff payload");
+  const hasInstallationIdentityCustody = Object.prototype.hasOwnProperty.call(
+    value,
+    "installationIdentityCustody",
+  );
+  assertExactKeysV1(
+    value,
+    hasInstallationIdentityCustody
+      ? PAYLOAD_KEYS_WITH_CUSTODY_V1
+      : PAYLOAD_KEYS_V1,
+    "service handoff payload",
+  );
   if (
     value.schemaVersion !== 1 ||
     value.profile !== PROVIDER_SERVICE_HANDOFF_PAYLOAD_PROFILE_V1
@@ -482,15 +582,36 @@ function validatePayloadV1(
     value.signingKeyPath,
     "signingKeyPath",
   );
+  const installationIdentityCustody = hasInstallationIdentityCustody
+    ? requireInstallationIdentityCustodyV1(
+        value.installationIdentityCustody,
+        runtimeRoot,
+      )
+    : undefined;
   for (const [label, candidate] of [
     ["socketPath", socketPath],
     ["authKeyPath", authKeyPath],
     ["readinessPath", readinessPath],
     ["signingKeyPath", signingKeyPath],
+    ...(installationIdentityCustody === undefined
+      ? []
+      : [[
+          "installationIdentityCustody.keyPath",
+          installationIdentityCustody.keyPath,
+        ]] as const),
   ] as const) {
     requireDirectRuntimeChildV1(runtimeRoot, candidate, label);
   }
-  if (new Set([socketPath, authKeyPath, readinessPath, signingKeyPath]).size !== 4) {
+  const runtimeOwnedPaths = [
+    socketPath,
+    authKeyPath,
+    readinessPath,
+    signingKeyPath,
+    ...(installationIdentityCustody === undefined
+      ? []
+      : [installationIdentityCustody.keyPath]),
+  ];
+  if (new Set(runtimeOwnedPaths).size !== runtimeOwnedPaths.length) {
     throw new ProviderServiceHandoffErrorV1(
       "invalid_config",
       "runtime-owned service paths must be distinct",
@@ -510,6 +631,9 @@ function validatePayloadV1(
     authKeyPath,
     readinessPath,
     signingKeyPath,
+    ...(installationIdentityCustody === undefined
+      ? {}
+      : { installationIdentityCustody }),
     installationIdentityDigest,
     binaryDigest,
     capabilityDigest,
@@ -827,28 +951,68 @@ export async function provisionProviderServiceHandoffV1(
       "service signing key does not match handoff config",
     );
   }
-  await mkdir(config.payload.runtimeRoot, { recursive: true, mode: 0o700 });
-  const runtimeRootMetadata = await lstat(config.payload.runtimeRoot);
-  if (!runtimeRootMetadata.isDirectory() || runtimeRootMetadata.isSymbolicLink()) {
-    throw new ProviderServiceHandoffErrorV1(
-      "descriptor_path_invalid",
-      "runtimeRoot must be a non-symlink directory",
-    );
+  const custody = config.payload.installationIdentityCustody;
+  let installationIdentityKey: Buffer | undefined;
+  if (custody === undefined) {
+    if (options.installationIdentityKey !== undefined) {
+      throw new ProviderServiceHandoffErrorV1(
+        "invalid_config",
+        "installation Identity key requires signed custody metadata",
+      );
+    }
+  } else {
+    if (
+      !(options.installationIdentityKey instanceof Uint8Array) ||
+      options.installationIdentityKey.byteLength !== 32
+    ) {
+      throw new ProviderServiceHandoffErrorV1(
+        "identity_mismatch",
+        "signed Installation Identity custody requires an exact 32-byte key",
+      );
+    }
+    installationIdentityKey = Buffer.from(options.installationIdentityKey);
+    try {
+      await mintProviderServiceInstallationIdentityVerificationCapabilityInternalV1({
+        installationIdentityKey,
+        initializationNonce: custody.initializationNonce,
+        installationIdentityGenerationId:
+          custody.installationIdentityGenerationId,
+        keyCheckToken: custody.keyCheckToken,
+      });
+    } catch {
+      installationIdentityKey.fill(0);
+      installationIdentityKey = undefined;
+      throw new ProviderServiceHandoffErrorV1(
+        "identity_mismatch",
+        "Installation Identity custody tuple does not match the supplied key",
+      );
+    }
   }
-  await chmod(config.payload.runtimeRoot, 0o700);
-  await chown(
-    config.payload.runtimeRoot,
-    config.payload.principal.uid,
-    config.payload.principal.gid,
-  );
-  await mkdir(dirname(configPath), { recursive: true, mode: 0o755 });
-  await mkdir(dirname(descriptorPath), { recursive: true, mode: 0o755 });
-  await atomicWriteTextV1(configPath, `${JSON.stringify(config)}\n`, 0o644);
   const authKey = randomBytes(32);
   const signingKey = Buffer.from(
     privateKey.export({ format: "der", type: "pkcs8" }),
   );
   try {
+    await mkdir(config.payload.runtimeRoot, { recursive: true, mode: 0o700 });
+    const runtimeRootMetadata = await lstat(config.payload.runtimeRoot);
+    if (
+      !runtimeRootMetadata.isDirectory() ||
+      runtimeRootMetadata.isSymbolicLink()
+    ) {
+      throw new ProviderServiceHandoffErrorV1(
+        "descriptor_path_invalid",
+        "runtimeRoot must be a non-symlink directory",
+      );
+    }
+    await chmod(config.payload.runtimeRoot, 0o700);
+    await chown(
+      config.payload.runtimeRoot,
+      config.payload.principal.uid,
+      config.payload.principal.gid,
+    );
+    await mkdir(dirname(configPath), { recursive: true, mode: 0o755 });
+    await mkdir(dirname(descriptorPath), { recursive: true, mode: 0o755 });
+    await atomicWriteTextV1(configPath, `${JSON.stringify(config)}\n`, 0o644);
     await atomicWriteBytesV1(config.payload.authKeyPath, authKey, 0o600);
     await chown(
       config.payload.authKeyPath,
@@ -865,20 +1029,30 @@ export async function provisionProviderServiceHandoffV1(
       config.payload.principal.uid,
       config.payload.principal.gid,
     );
+    if (custody !== undefined && installationIdentityKey !== undefined) {
+      await atomicWritePrincipalOwnedBytesV1(
+        custody.keyPath,
+        installationIdentityKey,
+        0o600,
+        config.payload.principal.uid,
+        config.payload.principal.gid,
+      );
+    }
+    await atomicWriteTextV1(descriptorPath, descriptor.descriptor, 0o644);
+    return {
+      status: "provisioned",
+      authority: "read_only",
+      strongWrites: "locked",
+      platform: config.payload.platform,
+      descriptorPath,
+      configPath,
+      descriptorDigest: descriptor.descriptorDigest,
+    };
   } finally {
     authKey.fill(0);
     signingKey.fill(0);
+    installationIdentityKey?.fill(0);
   }
-  await atomicWriteTextV1(descriptorPath, descriptor.descriptor, 0o644);
-  return {
-    status: "provisioned",
-    authority: "read_only",
-    strongWrites: "locked",
-    platform: config.payload.platform,
-    descriptorPath,
-    configPath,
-    descriptorDigest: descriptor.descriptorDigest,
-  };
 }
 
 async function atomicWriteBytesV1(
@@ -890,6 +1064,25 @@ async function atomicWriteBytesV1(
   await writeFile(temporary, content, { mode, flag: "wx" });
   try {
     await chmod(temporary, mode);
+    await rename(temporary, path);
+  } catch (error) {
+    await rm(temporary, { force: true });
+    throw error;
+  }
+}
+
+async function atomicWritePrincipalOwnedBytesV1(
+  path: string,
+  content: Uint8Array,
+  mode: number,
+  uid: number,
+  gid: number,
+): Promise<void> {
+  const temporary = `${path}.tmp-${process.pid}-${Date.now().toString(36)}`;
+  await writeFile(temporary, content, { mode, flag: "wx" });
+  try {
+    await chmod(temporary, mode);
+    await chown(temporary, uid, gid);
     await rename(temporary, path);
   } catch (error) {
     await rm(temporary, { force: true });

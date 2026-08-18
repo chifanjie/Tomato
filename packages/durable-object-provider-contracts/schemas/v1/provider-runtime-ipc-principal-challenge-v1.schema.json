@@ -14,6 +14,10 @@
     "challenge": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "acceptanceIdentityProofRequested": {
+      "type": "boolean",
+      "const": true
     }
   },
   "required": [

@@ -5,8 +5,10 @@ import {
   CanonicalByteStringV1Schema,
   ContentDigestV1Schema,
   DurableObjectIdentityProviderIdV1Schema,
+  InstallationIdentityGenerationIdV1Schema,
   LowerHex32V1Schema,
   LowerHex64V1Schema,
+  ProviderAcceptanceStateGenerationIdV1Schema,
 } from "./primitives.js";
 
 export const PROVIDER_RUNTIME_IPC_PROTOCOL_V1 =
@@ -94,6 +96,7 @@ export const ProviderRuntimeIpcPrincipalChallengeV1Schema = z.strictObject({
   protocol: ProviderRuntimeIpcProtocolV1Schema,
   kind: z.literal("principal_challenge"),
   challenge: LowerHex64V1Schema,
+  acceptanceIdentityProofRequested: z.literal(true).optional(),
 });
 export type ProviderRuntimeIpcPrincipalChallengeV1 = z.infer<
   typeof ProviderRuntimeIpcPrincipalChallengeV1Schema
@@ -168,6 +171,16 @@ export type ProviderRuntimeIpcJournalStateV1 = z.infer<
   typeof ProviderRuntimeIpcJournalStateV1Schema
 >;
 
+export const ProviderRuntimeIpcAcceptanceIdentityProofV1Schema = z.strictObject({
+  generationId: ProviderAcceptanceStateGenerationIdV1Schema,
+  contentDigest: ContentDigestV1Schema,
+  acceptanceOrdinal: PositiveSafeIntegerV1Schema,
+  installationIdentityGenerationId: InstallationIdentityGenerationIdV1Schema,
+});
+export type ProviderRuntimeIpcAcceptanceIdentityProofV1 = z.infer<
+  typeof ProviderRuntimeIpcAcceptanceIdentityProofV1Schema
+>;
+
 const ProviderRuntimeIpcPrincipalAttestationClaimsShapeV1 = {
   providerId: DurableObjectIdentityProviderIdV1Schema,
   capabilityDigest: ContentDigestV1Schema,
@@ -178,6 +191,8 @@ const ProviderRuntimeIpcPrincipalAttestationClaimsShapeV1 = {
   mutationDigest: z.union([ContentDigestV1Schema, z.literal("none")]),
   handoffPayloadDigest: ContentDigestV1Schema,
   publicKey: CanonicalByteStringV1Schema,
+  acceptanceIdentity:
+    ProviderRuntimeIpcAcceptanceIdentityProofV1Schema.optional(),
 } as const;
 
 export const ProviderRuntimeIpcPrincipalAttestationClaimsV1Schema =

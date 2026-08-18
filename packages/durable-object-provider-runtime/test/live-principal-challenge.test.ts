@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,11 +7,21 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   ContentDigestV1Schema,
   DurableObjectIdentityProviderIdV1Schema,
+  InstallationIdentityGenerationIdV1Schema,
+  KeyedStateTokenV1Schema,
+  LowerHex32V1Schema,
 } from "@understand-code/durable-object-provider-contracts/primitives";
+import {
+  canonicalizeJcsSafeIntegerUtf8V1,
+} from "@understand-code/durable-object-provider-contracts/jcs";
+import {
+  mintProviderServiceInstallationIdentityVerificationCapabilityInternalV1,
+} from "@understand-code/durable-object-provider-contracts/provider-service-installation-identity-custody-internal";
 import type { ProviderMigrationDurableExecutionSummaryV1 } from "@understand-code/durable-object-provider-contracts/provider-migration-durable-execution";
 import {
   ProviderStrongReadyAcceptanceGenerationPinCandidateV1Schema,
   ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1Schema,
+  PROVIDER_ACCEPTANCE_STATE_TOKEN_DOMAIN_V1,
   deriveProviderStrongReadyAcceptanceStateContentDigestV1,
   deriveProviderStrongReadyAcceptanceStateGenerationIdV1,
 } from "@understand-code/durable-object-provider-contracts/provider-strong-ready-acceptance-candidate";
@@ -19,6 +29,7 @@ import {
 import { diagnoseProviderRuntimeDurableExecutionPrincipalHeadV1 } from "../src/durable-execution-principal-head.js";
 import {
   verifyProviderRuntimeLivePrincipalChallengeV1,
+  verifyProviderRuntimeLivePrincipalKernelAcceptanceIdentityChallengeV1,
   verifyProviderRuntimeLivePrincipalKernelPeerChallengeV1,
 } from "../src/live-principal-challenge.js";
 import { DurableObjectProviderRuntimeServerV1 } from "../src/server.js";
@@ -41,8 +52,11 @@ const BINARY_DIGEST = ContentDigestV1Schema.parse(
   `sha256:${"c".repeat(64)}`,
 );
 const INSTALLATION_IDENTITY =
-  `installation-identity-generation:${"d".repeat(22)}` as const;
+  "installation-identity-generation:4fe634940e20afac35e02d" as const;
 const TARGET_PROFILE_ID = `provider-target-profile:${"e".repeat(64)}`;
+const INSTALLATION_IDENTITY_KEY = new Uint8Array(
+  Array.from({ length: 32 }, (_value, index) => index),
+);
 
 const roots = new Set<string>();
 const servers = new Set<DurableObjectProviderRuntimeServerV1>();
@@ -56,6 +70,9 @@ afterEach(async () => {
 
 async function fixtureV1(input?: {
   readonly principalUid?: number;
+  readonly acceptanceIdentityVerificationCapability?: ConstructorParameters<
+    typeof DurableObjectProviderRuntimeServerV1
+  >[0]["acceptanceIdentityVerificationCapability"];
 }): Promise<{
   readonly config: ProviderServiceHandoffConfigV1;
   readonly server: DurableObjectProviderRuntimeServerV1;
@@ -104,6 +121,8 @@ async function fixtureV1(input?: {
       handoffPayloadDigest: config.payloadDigest,
       publicKey: config.publicKey,
     },
+    acceptanceIdentityVerificationCapability:
+      input?.acceptanceIdentityVerificationCapability,
   });
   await server.start();
   servers.add(server);
@@ -162,7 +181,7 @@ function finalAcceptanceV1() {
     predecessor,
     configuration,
   });
-  const payload = {
+  const unsigned = {
     profile: "provider_acceptance_state_v1" as const,
     generationId,
     installationIdentityGenerationId: INSTALLATION_IDENTITY,
@@ -170,8 +189,18 @@ function finalAcceptanceV1() {
     predecessor,
     configuration,
     acceptedAt: "2026-08-18T09:00:00Z",
-    acceptanceToken: `hmac-sha256:${"8".repeat(64)}`,
   };
+  const acceptanceToken = KeyedStateTokenV1Schema.parse(
+    `hmac-sha256:${createHmac("sha256", INSTALLATION_IDENTITY_KEY)
+      .update(
+        canonicalizeJcsSafeIntegerUtf8V1([
+          PROVIDER_ACCEPTANCE_STATE_TOKEN_DOMAIN_V1,
+          unsigned,
+        ]),
+      )
+      .digest("hex")}`,
+  );
+  const payload = { ...unsigned, acceptanceToken };
   const envelope =
     ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1Schema.parse({
       schemaVersion: 1,
@@ -192,6 +221,32 @@ function finalAcceptanceV1() {
       contentDigest: envelope.contentDigest,
     });
   return { envelope, pin };
+}
+
+async function identityVerificationCapabilityV1() {
+  return mintProviderServiceInstallationIdentityVerificationCapabilityInternalV1({
+    installationIdentityKey: INSTALLATION_IDENTITY_KEY.slice(),
+    initializationNonce: LowerHex32V1Schema.parse(
+      "000102030405060708090a0b0c0d0e0f",
+    ),
+    installationIdentityGenerationId:
+      InstallationIdentityGenerationIdV1Schema.parse(INSTALLATION_IDENTITY),
+    keyCheckToken: KeyedStateTokenV1Schema.parse(
+      "hmac-sha256:9b585cbb13d23ae739df3988278dfdc09ed612ccd8af853ac26f570bc8ce2eef",
+    ),
+  });
+}
+
+function acceptanceIdentityProofV1(
+  acceptance: ReturnType<typeof finalAcceptanceV1>,
+) {
+  return {
+    generationId: acceptance.envelope.generationId,
+    contentDigest: acceptance.envelope.contentDigest,
+    acceptanceOrdinal: acceptance.envelope.payload.acceptanceOrdinal,
+    installationIdentityGenerationId:
+      acceptance.envelope.installationIdentityGenerationId,
+  };
 }
 
 describe("live provider principal challenge", () => {
@@ -302,6 +357,130 @@ describe("live provider principal challenge", () => {
       accessMode: "read_only",
       strongWriteStatus: "locked",
       reason: "kernel_peer_identity_mismatch",
+    });
+  });
+
+  it("joins the kernel peer and signed current Acceptance identity on one socket", async () => {
+    const { config, server } = await fixtureV1({
+      acceptanceIdentityVerificationCapability:
+        await identityVerificationCapabilityV1(),
+    });
+    const acceptance = finalAcceptanceV1();
+    await server.store.compareCommit({
+      expectedRevision: 0,
+      operationNonce: "2".repeat(32),
+      phase: "final_strong_ready",
+      artifacts: {
+        finalStrongReadyAcceptance: {
+          finalStrongReadyAcceptanceEnvelope: acceptance.envelope,
+          finalStrongReadyAcceptancePin: acceptance.pin,
+        },
+      },
+    });
+    const state = server.store.inspectState();
+
+    await expect(
+      verifyProviderRuntimeLivePrincipalKernelPeerChallengeV1({
+        config,
+        expectedJournalRevision: state.revision,
+        expectedJournalPhase: state.phase,
+        expectedJournalMutationDigest: state.mutationDigest,
+      }),
+    ).resolves.toMatchObject({
+      status: "principal_key_and_kernel_os_peer_live_candidate",
+      strongWriteStatus: "locked",
+    });
+
+    await expect(
+      verifyProviderRuntimeLivePrincipalKernelAcceptanceIdentityChallengeV1({
+        config,
+        expectedJournalRevision: state.revision,
+        expectedJournalPhase: state.phase,
+        expectedJournalMutationDigest: state.mutationDigest,
+        expectedInstallationIdentityDigest: INSTALLATION_DIGEST,
+        expectedAcceptanceIdentity: acceptanceIdentityProofV1(acceptance),
+      }),
+    ).resolves.toMatchObject({
+      status:
+        "principal_key_kernel_os_peer_and_acceptance_identity_live_candidate",
+      authority: "none",
+      accessMode: "read_only",
+      strongWriteStatus: "locked",
+      requiredNext: "final_acceptance_authority_closeout",
+      principalKey: { bindings: { processId: process.pid } },
+      kernelPeer: { bindings: { pid: process.pid } },
+      acceptanceIdentity: acceptanceIdentityProofV1(acceptance),
+    });
+  });
+
+  it("returns one locked failure when the signed Acceptance proof is absent or mismatched", async () => {
+    const missing = await fixtureV1();
+    const acceptance = finalAcceptanceV1();
+    await missing.server.store.compareCommit({
+      expectedRevision: 0,
+      operationNonce: "3".repeat(32),
+      phase: "final_strong_ready",
+      artifacts: {
+        finalStrongReadyAcceptance: {
+          finalStrongReadyAcceptanceEnvelope: acceptance.envelope,
+          finalStrongReadyAcceptancePin: acceptance.pin,
+        },
+      },
+    });
+    const missingState = missing.server.store.inspectState();
+    const options = {
+      config: missing.config,
+      expectedJournalRevision: missingState.revision,
+      expectedJournalPhase: missingState.phase,
+      expectedJournalMutationDigest: missingState.mutationDigest,
+      expectedAcceptanceIdentity: acceptanceIdentityProofV1(acceptance),
+    };
+
+    await expect(
+      verifyProviderRuntimeLivePrincipalKernelAcceptanceIdentityChallengeV1(
+        options,
+      ),
+    ).resolves.toEqual({
+      status: "unavailable",
+      authority: "none",
+      accessMode: "read_only",
+      strongWriteStatus: "locked",
+      reason: "acceptance_identity_invalid",
+    });
+
+    const valid = await fixtureV1({
+      acceptanceIdentityVerificationCapability:
+        await identityVerificationCapabilityV1(),
+    });
+    await valid.server.store.compareCommit({
+      expectedRevision: 0,
+      operationNonce: "4".repeat(32),
+      phase: "final_strong_ready",
+      artifacts: {
+        finalStrongReadyAcceptance: {
+          finalStrongReadyAcceptanceEnvelope: acceptance.envelope,
+          finalStrongReadyAcceptancePin: acceptance.pin,
+        },
+      },
+    });
+    const validState = valid.server.store.inspectState();
+    await expect(
+      verifyProviderRuntimeLivePrincipalKernelAcceptanceIdentityChallengeV1({
+        ...options,
+        config: valid.config,
+        expectedJournalRevision: validState.revision,
+        expectedJournalMutationDigest: validState.mutationDigest,
+        expectedAcceptanceIdentity: {
+          ...options.expectedAcceptanceIdentity,
+          contentDigest: ContentDigestV1Schema.parse(
+            `sha256:${"f".repeat(64)}`,
+          ),
+        },
+      }),
+    ).resolves.toMatchObject({
+      status: "unavailable",
+      strongWriteStatus: "locked",
+      reason: "acceptance_identity_invalid",
     });
   });
 

@@ -198,19 +198,25 @@ export type {
   VerifyProviderRuntimeDurableAcceptanceCurrentOptionsV1,
 } from "./durable-acceptance-current.js";
 export {
+  PROVIDER_RUNTIME_PRINCIPAL_KERNEL_ACCEPTANCE_IDENTITY_LIVE_REQUIRED_NEXT_V1,
   PROVIDER_RUNTIME_PRINCIPAL_KERNEL_PEER_LIVE_REQUIRED_NEXT_V1,
   PROVIDER_RUNTIME_PRINCIPAL_KEY_LIVE_REQUIRED_NEXT_V1,
+  verifyProviderRuntimeLivePrincipalKernelAcceptanceIdentityChallengeV1,
   verifyProviderRuntimeLivePrincipalKernelPeerChallengeV1,
   verifyProviderRuntimeLivePrincipalChallengeV1,
 } from "./live-principal-challenge.js";
 export type {
+  ProviderRuntimeLivePrincipalKernelAcceptanceIdentityChallengeResultV1,
   ProviderRuntimeLivePrincipalKernelPeerChallengeResultV1,
   ProviderRuntimeLivePrincipalChallengeResultV1,
+  ProviderRuntimePrincipalKernelAcceptanceIdentityLiveCandidateV1,
+  ProviderRuntimePrincipalKernelAcceptanceIdentityLiveUnavailableV1,
   ProviderRuntimePrincipalKernelPeerLiveCandidateV1,
   ProviderRuntimePrincipalKernelPeerLiveUnavailableV1,
   ProviderRuntimePrincipalKeyLiveCandidateV1,
   ProviderRuntimePrincipalKeyLiveUnavailableV1,
   VerifyProviderRuntimeLivePrincipalChallengeOptionsV1,
+  VerifyProviderRuntimeLivePrincipalKernelAcceptanceIdentityChallengeOptionsV1,
 } from "./live-principal-challenge.js";
 export {
   PROVIDER_RUNTIME_DURABLE_EXECUTION_PRINCIPAL_HEAD_REQUIRED_NEXT_V1,

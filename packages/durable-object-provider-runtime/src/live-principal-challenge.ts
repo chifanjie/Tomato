@@ -5,9 +5,11 @@ import { TextDecoder } from "node:util";
 import {
   PROVIDER_RUNTIME_IPC_MAX_FRAME_BYTES_V1,
   PROVIDER_RUNTIME_IPC_PROTOCOL_V1,
+  ProviderRuntimeIpcAcceptanceIdentityProofV1Schema,
   ProviderRuntimeIpcPrincipalAttestationV1Schema,
   ProviderRuntimeIpcPrincipalChallengeV1Schema,
   canonicalizeProviderRuntimeIpcPrincipalAttestationClaimsV1,
+  type ProviderRuntimeIpcAcceptanceIdentityProofV1,
   type ProviderRuntimeIpcPrincipalAttestationClaimsV1,
   type ProviderRuntimeIpcPrincipalAttestationV1,
 } from "@understand-code/durable-object-provider-contracts/provider-runtime-ipc-v1";
@@ -34,6 +36,8 @@ export const PROVIDER_RUNTIME_PRINCIPAL_KEY_LIVE_REQUIRED_NEXT_V1 =
   "kernel_os_peer_and_acceptance_token_gate" as const;
 export const PROVIDER_RUNTIME_PRINCIPAL_KERNEL_PEER_LIVE_REQUIRED_NEXT_V1 =
   PROVIDER_RUNTIME_KERNEL_PEER_REQUIRED_NEXT_V1;
+export const PROVIDER_RUNTIME_PRINCIPAL_KERNEL_ACCEPTANCE_IDENTITY_LIVE_REQUIRED_NEXT_V1 =
+  "final_acceptance_authority_closeout" as const;
 
 const DEFAULT_TIMEOUT_MS_V1 = 5_000;
 
@@ -46,6 +50,13 @@ export interface VerifyProviderRuntimeLivePrincipalChallengeOptionsV1 {
   readonly expectedJournalMutationDigest: ContentDigestV1 | "none";
   readonly expectedInstallationIdentityDigest?: ContentDigestV1;
   readonly timeoutMs?: number;
+}
+
+export interface VerifyProviderRuntimeLivePrincipalKernelAcceptanceIdentityChallengeOptionsV1
+  extends VerifyProviderRuntimeLivePrincipalChallengeOptionsV1 {
+  /** Exact current Acceptance bindings already closed by the durable Gate. */
+  readonly expectedAcceptanceIdentity:
+    ProviderRuntimeIpcAcceptanceIdentityProofV1;
 }
 
 export interface ProviderRuntimePrincipalKeyLiveCandidateV1 {
@@ -108,6 +119,34 @@ export type ProviderRuntimeLivePrincipalKernelPeerChallengeResultV1 =
   | ProviderRuntimePrincipalKernelPeerLiveCandidateV1
   | ProviderRuntimePrincipalKernelPeerLiveUnavailableV1;
 
+export interface ProviderRuntimePrincipalKernelAcceptanceIdentityLiveCandidateV1 {
+  readonly status:
+    "principal_key_kernel_os_peer_and_acceptance_identity_live_candidate";
+  readonly authority: "none";
+  readonly accessMode: "read_only";
+  readonly strongWriteStatus: "locked";
+  readonly requiredNext:
+    typeof PROVIDER_RUNTIME_PRINCIPAL_KERNEL_ACCEPTANCE_IDENTITY_LIVE_REQUIRED_NEXT_V1;
+  readonly principalKey: ProviderRuntimePrincipalKeyLiveCandidateV1;
+  readonly kernelPeer: ProviderRuntimeKernelPeerCandidateV1;
+  readonly acceptanceIdentity:
+    ProviderRuntimeIpcAcceptanceIdentityProofV1;
+}
+
+export interface ProviderRuntimePrincipalKernelAcceptanceIdentityLiveUnavailableV1 {
+  readonly status: "unavailable";
+  readonly authority: "none";
+  readonly accessMode: "read_only";
+  readonly strongWriteStatus: "locked";
+  readonly reason:
+    | ProviderRuntimePrincipalKernelPeerLiveUnavailableV1["reason"]
+    | "acceptance_identity_invalid";
+}
+
+export type ProviderRuntimeLivePrincipalKernelAcceptanceIdentityChallengeResultV1 =
+  | ProviderRuntimePrincipalKernelAcceptanceIdentityLiveCandidateV1
+  | ProviderRuntimePrincipalKernelAcceptanceIdentityLiveUnavailableV1;
+
 function unavailableV1(
   reason: ProviderRuntimePrincipalKeyLiveUnavailableV1["reason"],
 ): ProviderRuntimePrincipalKeyLiveUnavailableV1 {
@@ -123,6 +162,18 @@ function unavailableV1(
 function unavailableKernelPeerV1(
   reason: ProviderRuntimePrincipalKernelPeerLiveUnavailableV1["reason"],
 ): ProviderRuntimePrincipalKernelPeerLiveUnavailableV1 {
+  return Object.freeze({
+    status: "unavailable" as const,
+    authority: "none" as const,
+    accessMode: "read_only" as const,
+    strongWriteStatus: "locked" as const,
+    reason,
+  });
+}
+
+function unavailableKernelAcceptanceIdentityV1(
+  reason: ProviderRuntimePrincipalKernelAcceptanceIdentityLiveUnavailableV1["reason"],
+): ProviderRuntimePrincipalKernelAcceptanceIdentityLiveUnavailableV1 {
   return Object.freeze({
     status: "unavailable" as const,
     authority: "none" as const,
@@ -258,6 +309,7 @@ async function challengeOverIpcV1<T, O>(
     readonly socketPath: string;
     readonly challenge: string;
     readonly timeoutMs: number;
+    readonly acceptanceIdentityProofRequested?: true;
   },
   observeConnectedSocket: (socket: Socket) => O,
   consume: (
@@ -273,6 +325,9 @@ async function challengeOverIpcV1<T, O>(
       protocol: PROVIDER_RUNTIME_IPC_PROTOCOL_V1,
       kind: "principal_challenge",
       challenge: input.challenge,
+      ...(input.acceptanceIdentityProofRequested === true
+        ? { acceptanceIdentityProofRequested: true as const }
+        : {}),
     });
     socket.write(frameV1(request));
     const response = JSON.parse(await readSingleFrameV1(socket)) as unknown;
@@ -402,6 +457,62 @@ function verifyPrincipalResponseV1(input: {
   });
 }
 
+function verifyPrincipalKernelPeerResponseV1(input: {
+  readonly response: ProviderRuntimeIpcPrincipalAttestationV1;
+  readonly challenge: string;
+  readonly parsed: ParsedPrincipalChallengeOptionsV1;
+  readonly observed:
+    | ReturnType<typeof readProviderRuntimeNativeKernelPeerCredentialsV1>
+    | undefined;
+}): ProviderRuntimeLivePrincipalKernelPeerChallengeResultV1 {
+  const principalKey = verifyPrincipalResponseV1(input);
+  if (principalKey.status !== "principal_key_live_candidate") {
+    return unavailableKernelPeerV1(principalKey.reason);
+  }
+
+  const { observed, parsed } = input;
+  if (observed === undefined) {
+    return unavailableKernelPeerV1("kernel_peer_unavailable");
+  }
+  const platform = process.platform;
+  if (
+    (platform !== "darwin" && platform !== "linux") ||
+    parsed.config.payload.platform !== platform ||
+    observed.uid !== parsed.config.payload.principal.uid ||
+    observed.gid !== parsed.config.payload.principal.gid ||
+    observed.pid !== principalKey.bindings.processId
+  ) {
+    return unavailableKernelPeerV1("kernel_peer_identity_mismatch");
+  }
+  const kernelPeer: ProviderRuntimeKernelPeerCandidateV1 = Object.freeze({
+    status: "kernel_os_peer_candidate" as const,
+    authority: "none" as const,
+    accessMode: "read_only" as const,
+    strongWriteStatus: "locked" as const,
+    requiredNext: PROVIDER_RUNTIME_KERNEL_PEER_REQUIRED_NEXT_V1,
+    bindings: Object.freeze({
+      platform,
+      mechanism:
+        platform === "linux"
+          ? "linux_so_peercred"
+          : "darwin_getpeereid_local_peercred_peerpid",
+      uid: observed.uid,
+      gid: observed.gid,
+      pid: observed.pid,
+    }),
+  });
+  return Object.freeze({
+    status: "principal_key_and_kernel_os_peer_live_candidate" as const,
+    authority: "none" as const,
+    accessMode: "read_only" as const,
+    strongWriteStatus: "locked" as const,
+    requiredNext:
+      PROVIDER_RUNTIME_PRINCIPAL_KERNEL_PEER_LIVE_REQUIRED_NEXT_V1,
+    principalKey,
+    kernelPeer,
+  });
+}
+
 /**
  * Prove that the private key named by the signed handoff is live on the
  * configured socket. This never reads the principal-owned HMAC key and does
@@ -464,60 +575,100 @@ export async function verifyProviderRuntimeLivePrincipalKernelPeerChallengeV1(
           return undefined;
         }
       },
-      (_socket, response, observed) => {
-        const principalKey = verifyPrincipalResponseV1({
+      (_socket, response, observed) =>
+        verifyPrincipalKernelPeerResponseV1({
           response,
           challenge,
           parsed,
-        });
-        if (principalKey.status !== "principal_key_live_candidate") {
-          return unavailableKernelPeerV1(principalKey.reason);
-        }
+          observed,
+        }),
+    );
+  } catch {
+    return unavailableKernelPeerV1("ipc_unavailable");
+  }
+}
 
-        if (observed === undefined) {
-          return unavailableKernelPeerV1("kernel_peer_unavailable");
+/**
+ * Prove the signed service principal, the kernel OS peer, and the exact
+ * Installation-Identity-verified Acceptance on one connected socket. The
+ * signed proof grants no authority and leaves strong writes locked.
+ */
+export async function verifyProviderRuntimeLivePrincipalKernelAcceptanceIdentityChallengeV1(
+  input: VerifyProviderRuntimeLivePrincipalKernelAcceptanceIdentityChallengeOptionsV1,
+): Promise<ProviderRuntimeLivePrincipalKernelAcceptanceIdentityChallengeResultV1> {
+  let parsed: ParsedPrincipalChallengeOptionsV1;
+  let expectedAcceptanceIdentity:
+    ProviderRuntimeIpcAcceptanceIdentityProofV1;
+  try {
+    parsed = parsePrincipalChallengeOptionsV1(input);
+    expectedAcceptanceIdentity =
+      ProviderRuntimeIpcAcceptanceIdentityProofV1Schema.parse(
+        input.expectedAcceptanceIdentity,
+      );
+  } catch {
+    return unavailableKernelAcceptanceIdentityV1("invalid_config");
+  }
+
+  const challenge = randomBytes(32).toString("hex");
+  try {
+    return await challengeOverIpcV1(
+      {
+        socketPath: parsed.config.payload.socketPath,
+        challenge,
+        timeoutMs: parsed.timeoutMs,
+        acceptanceIdentityProofRequested: true,
+      },
+      (socket) => {
+        try {
+          return readProviderRuntimeNativeKernelPeerCredentialsV1(socket);
+        } catch {
+          return undefined;
         }
-        const platform = process.platform;
-        if (
-          (platform !== "darwin" && platform !== "linux") ||
-          parsed.config.payload.platform !== platform ||
-          observed.uid !== parsed.config.payload.principal.uid ||
-          observed.gid !== parsed.config.payload.principal.gid ||
-          observed.pid !== principalKey.bindings.processId
-        ) {
-          return unavailableKernelPeerV1("kernel_peer_identity_mismatch");
-        }
-        const kernelPeer: ProviderRuntimeKernelPeerCandidateV1 = Object.freeze({
-          status: "kernel_os_peer_candidate" as const,
-          authority: "none" as const,
-          accessMode: "read_only" as const,
-          strongWriteStatus: "locked" as const,
-          requiredNext: PROVIDER_RUNTIME_KERNEL_PEER_REQUIRED_NEXT_V1,
-          bindings: Object.freeze({
-            platform,
-            mechanism:
-              platform === "linux"
-                ? "linux_so_peercred"
-                : "darwin_getpeereid_local_peercred_peerpid",
-            uid: observed.uid,
-            gid: observed.gid,
-            pid: observed.pid,
-          }),
+      },
+      (_socket, response, observed) => {
+        const principalAndKernel = verifyPrincipalKernelPeerResponseV1({
+          response,
+          challenge,
+          parsed,
+          observed,
         });
+        if (
+          principalAndKernel.status !==
+          "principal_key_and_kernel_os_peer_live_candidate"
+        ) {
+          return unavailableKernelAcceptanceIdentityV1(
+            principalAndKernel.reason,
+          );
+        }
+        const actual = response.acceptanceIdentity;
+        if (
+          actual === undefined ||
+          actual.generationId !== expectedAcceptanceIdentity.generationId ||
+          actual.contentDigest !== expectedAcceptanceIdentity.contentDigest ||
+          actual.acceptanceOrdinal !==
+            expectedAcceptanceIdentity.acceptanceOrdinal ||
+          actual.installationIdentityGenerationId !==
+            expectedAcceptanceIdentity.installationIdentityGenerationId
+        ) {
+          return unavailableKernelAcceptanceIdentityV1(
+            "acceptance_identity_invalid",
+          );
+        }
         return Object.freeze({
           status:
-            "principal_key_and_kernel_os_peer_live_candidate" as const,
+            "principal_key_kernel_os_peer_and_acceptance_identity_live_candidate" as const,
           authority: "none" as const,
           accessMode: "read_only" as const,
           strongWriteStatus: "locked" as const,
           requiredNext:
-            PROVIDER_RUNTIME_PRINCIPAL_KERNEL_PEER_LIVE_REQUIRED_NEXT_V1,
-          principalKey,
-          kernelPeer,
+            PROVIDER_RUNTIME_PRINCIPAL_KERNEL_ACCEPTANCE_IDENTITY_LIVE_REQUIRED_NEXT_V1,
+          principalKey: principalAndKernel.principalKey,
+          kernelPeer: principalAndKernel.kernelPeer,
+          acceptanceIdentity: Object.freeze({ ...actual }),
         });
       },
     );
   } catch {
-    return unavailableKernelPeerV1("ipc_unavailable");
+    return unavailableKernelAcceptanceIdentityV1("ipc_unavailable");
   }
 }

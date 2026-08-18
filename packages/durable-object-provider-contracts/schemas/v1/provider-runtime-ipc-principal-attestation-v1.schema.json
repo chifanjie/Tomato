@@ -58,6 +58,35 @@
       "type": "string",
       "pattern": "^base64url:(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$"
     },
+    "acceptanceIdentity": {
+      "type": "object",
+      "properties": {
+        "generationId": {
+          "type": "string",
+          "pattern": "^provider-acceptance-state:[0-9a-f]{22}$"
+        },
+        "contentDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "acceptanceOrdinal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "installationIdentityGenerationId": {
+          "type": "string",
+          "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+        }
+      },
+      "required": [
+        "generationId",
+        "contentDigest",
+        "acceptanceOrdinal",
+        "installationIdentityGenerationId"
+      ],
+      "additionalProperties": false
+    },
     "signature": {
       "type": "string",
       "pattern": "^base64url:(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$"

@@ -80,6 +80,11 @@
       "import": "./dist/provider-runtime-ipc-v1.js",
       "default": "./dist/provider-runtime-ipc-v1.js"
     },
+    "./provider-service-installation-identity-custody-internal": {
+      "types": "./dist/provider-service-installation-identity-custody-internal.d.ts",
+      "import": "./dist/provider-service-installation-identity-custody-internal.js",
+      "default": "./dist/provider-service-installation-identity-custody-internal.js"
+    },
     "./provider-migration-durable-execution": {
       "types": "./dist/provider-migration-durable-execution-entrypoint.d.ts",
       "import": "./dist/provider-migration-durable-execution-entrypoint.js",

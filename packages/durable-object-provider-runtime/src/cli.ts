@@ -6,10 +6,11 @@ import {
   randomBytes,
   type KeyObject,
 } from "node:crypto";
-import { realpathSync } from "node:fs";
+import { constants as fsConstants, realpathSync } from "node:fs";
 import {
   chmod,
   lstat,
+  open,
   readFile,
   rename,
   rm,
@@ -21,6 +22,10 @@ import { fileURLToPath } from "node:url";
 
 import { PROVIDER_RUNTIME_IPC_PROTOCOL_V1 } from "@understand-code/durable-object-provider-contracts/provider-runtime-ipc-v1";
 import { ContentDigestV1Schema } from "@understand-code/durable-object-provider-contracts/primitives";
+import {
+  mintProviderServiceInstallationIdentityVerificationCapabilityInternalV1,
+  type ProviderServiceInstallationIdentityVerificationCapabilityInternalV1,
+} from "@understand-code/durable-object-provider-contracts/provider-service-installation-identity-custody-internal";
 
 import { DurableObjectProviderRuntimeServerV1 } from "./server.js";
 import {
@@ -42,9 +47,11 @@ interface ServiceConfigCliOptionsV1 {
   readonly serviceConfigPath: string;
 }
 
-interface ResolvedServiceRuntimeV1 {
+export interface ResolvedServiceRuntimeV1 {
   readonly options: RuntimeCliOptionsV1;
   readonly config: ProviderServiceHandoffConfigV1;
+  readonly acceptanceIdentityVerificationCapability?:
+    ProviderServiceInstallationIdentityVerificationCapabilityInternalV1;
 }
 
 function isServiceConfigCliOptionsV1(
@@ -155,8 +162,13 @@ async function readServiceConfigV1(
   ) {
     throw new Error("service runtime is not running as the configured principal");
   }
+  const acceptanceIdentityVerificationCapability =
+    await readProviderServiceInstallationIdentityCustodyV1(config);
   return {
     config,
+    ...(acceptanceIdentityVerificationCapability === undefined
+      ? {}
+      : { acceptanceIdentityVerificationCapability }),
     options: {
       rootPath: config.payload.runtimeRoot,
       socketPath: config.payload.socketPath,
@@ -165,6 +177,88 @@ async function readServiceConfigV1(
       authorizedCapabilityDigest: config.payload.capabilityDigest,
     },
   };
+}
+
+/**
+ * Recover only the opaque Acceptance verification capability from the
+ * principal-owned key named by the already verified signed handoff.
+ */
+export async function readProviderServiceInstallationIdentityCustodyV1(
+  config: ProviderServiceHandoffConfigV1,
+): Promise<
+  ProviderServiceInstallationIdentityVerificationCapabilityInternalV1 | undefined
+> {
+  const custody = config.payload.installationIdentityCustody;
+  if (custody === undefined) return undefined;
+  if (
+    typeof process.getuid !== "function" ||
+    typeof process.getgid !== "function" ||
+    process.getuid() !== config.payload.principal.uid ||
+    process.getgid() !== config.payload.principal.gid
+  ) {
+    throw new Error(
+      "Installation Identity custody requires the configured principal",
+    );
+  }
+  const currentUid = process.getuid();
+  const currentGid = process.getgid();
+  const handle = await open(
+    custody.keyPath,
+    fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW,
+  );
+  try {
+    const metadata = await handle.stat();
+    if (!metadata.isFile()) {
+      throw new Error("Installation Identity custody key must be a regular file");
+    }
+    if (
+      metadata.uid !== currentUid ||
+      metadata.gid !== currentGid ||
+      (metadata.mode & 0o777) !== 0o600
+    ) {
+      throw new Error(
+        "Installation Identity custody key owner or mode is invalid",
+      );
+    }
+    if (metadata.size !== 32) {
+      throw new Error(
+        "Installation Identity custody key must contain exactly 32 raw bytes",
+      );
+    }
+    const installationIdentityKey = await handle.readFile();
+    try {
+      const stableMetadata = await handle.stat();
+      if (
+        stableMetadata.dev !== metadata.dev ||
+        stableMetadata.ino !== metadata.ino ||
+        stableMetadata.size !== metadata.size ||
+        stableMetadata.mtimeMs !== metadata.mtimeMs ||
+        stableMetadata.ctimeMs !== metadata.ctimeMs ||
+        installationIdentityKey.byteLength !== 32
+      ) {
+        throw new Error(
+          "Installation Identity custody key changed while it was read",
+        );
+      }
+      try {
+        return await mintProviderServiceInstallationIdentityVerificationCapabilityInternalV1({
+          installationIdentityKey,
+          initializationNonce: custody.initializationNonce,
+          installationIdentityGenerationId:
+            custody.installationIdentityGenerationId,
+          keyCheckToken: custody.keyCheckToken,
+        });
+      } catch {
+        throw new Error(
+          "Installation Identity custody tuple does not match its key",
+        );
+      }
+    } finally {
+      installationIdentityKey.fill(0);
+    }
+  } finally {
+    await handle.close();
+  }
 }
 
 async function readServiceSigningKeyV1(
@@ -296,6 +390,12 @@ export async function runDurableObjectProviderRuntimeCliV1(
     providerId: options.providerId,
     authKey,
     authorizedCapabilityDigest: options.authorizedCapabilityDigest,
+    ...(service?.acceptanceIdentityVerificationCapability === undefined
+      ? {}
+      : {
+          acceptanceIdentityVerificationCapability:
+            service.acceptanceIdentityVerificationCapability,
+        }),
     ...(service === undefined || serviceSigningKey === undefined
       ? {}
       : {

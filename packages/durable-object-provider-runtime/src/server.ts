@@ -24,6 +24,7 @@ import {
   PROVIDER_RUNTIME_IPC_MAX_FRAME_BYTES_V1,
   PROVIDER_RUNTIME_IPC_PROTOCOL_V1,
   PROVIDER_RUNTIME_IPC_SOCKET_MODE_V1,
+  ProviderRuntimeIpcAcceptanceIdentityProofV1Schema,
   ProviderRuntimeIpcClientHelloV1Schema,
   ProviderRuntimeIpcPrincipalAttestationV1Schema,
   ProviderRuntimeIpcPrincipalAttestationClaimsV1Schema,
@@ -39,6 +40,15 @@ import {
   type ProviderRuntimeIpcResponseV1,
   type ProviderRuntimeIpcServerHelloV1,
 } from "@understand-code/durable-object-provider-contracts/provider-runtime-ipc-v1";
+import type {
+  ProviderServiceInstallationIdentityVerificationCapabilityInternalV1,
+} from "@understand-code/durable-object-provider-contracts/provider-service-installation-identity-custody-internal";
+import {
+  ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1Schema,
+} from "@understand-code/durable-object-provider-contracts/provider-strong-ready-acceptance-candidate";
+import {
+  verifyProviderStrongReadyAcceptanceEnvelopeTokenWithIdentityCapabilityV1,
+} from "@understand-code/durable-object-provider-contracts/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate";
 import { ContentDigestV1Schema } from "@understand-code/durable-object-provider-contracts/primitives";
 import { DurableObjectIdentityProviderIdV1Schema } from "@understand-code/durable-object-provider-contracts/primitives";
 
@@ -77,6 +87,9 @@ export interface DurableObjectProviderRuntimeServerOptionsV1 {
     readonly handoffPayloadDigest: string;
     readonly publicKey: string;
   };
+  /** Opaque, consume-only proof capability retained by the service process. */
+  readonly acceptanceIdentityVerificationCapability?:
+    ProviderServiceInstallationIdentityVerificationCapabilityInternalV1;
   readonly storeOptions?: Omit<
     DurableObjectProviderRuntimeStoreOptionsV1,
     "rootPath" | "providerId"
@@ -299,6 +312,9 @@ export class DurableObjectProviderRuntimeServerV1 {
         readonly publicKey: string;
       }
     | undefined;
+  readonly #acceptanceIdentityVerificationCapability:
+    | ProviderServiceInstallationIdentityVerificationCapabilityInternalV1
+    | undefined;
   readonly #connections = new Set<Socket>();
   #server: Server | undefined;
   #socketIdentity: { readonly dev: number; readonly ino: number } | undefined;
@@ -363,6 +379,8 @@ export class DurableObjectProviderRuntimeServerV1 {
         publicKey,
       };
     }
+    this.#acceptanceIdentityVerificationCapability =
+      options.acceptanceIdentityVerificationCapability;
     this.store = new DurableObjectProviderRuntimeStoreV1({
       ...options.storeOptions,
       rootPath: this.rootPath,
@@ -640,6 +658,9 @@ export class DurableObjectProviderRuntimeServerV1 {
     const principalAttestation = this.#principalAttestation;
     if (principalAttestation === undefined) return;
     const state = this.store.inspectState();
+    const acceptanceIdentity = request.acceptanceIdentityProofRequested === true
+      ? await this.#deriveAcceptanceIdentityProofV1(state)
+      : undefined;
     const claims = ProviderRuntimeIpcPrincipalAttestationClaimsV1Schema.parse({
       providerId: this.providerId,
       capabilityDigest: this.#authorizedCapabilityDigest,
@@ -650,6 +671,9 @@ export class DurableObjectProviderRuntimeServerV1 {
       mutationDigest: state.mutationDigest,
       handoffPayloadDigest: principalAttestation.handoffPayloadDigest,
       publicKey: principalAttestation.publicKey,
+      ...(acceptanceIdentity === undefined
+        ? {}
+        : { acceptanceIdentity }),
     });
     const signature = sign(
       null,
@@ -663,6 +687,45 @@ export class DurableObjectProviderRuntimeServerV1 {
       signature: `base64url:${signature.toString("base64url")}`,
     });
     await writeFrameV1(socket, response);
+  }
+
+  async #deriveAcceptanceIdentityProofV1(
+    state: ReturnType<DurableObjectProviderRuntimeStoreV1["inspectState"]>,
+  ) {
+    const capability = this.#acceptanceIdentityVerificationCapability;
+    if (capability === undefined || state.phase !== "final_strong_ready") {
+      return undefined;
+    }
+    try {
+      const closure = state.artifacts.finalStrongReadyAcceptance;
+      if (
+        closure === null ||
+        typeof closure !== "object" ||
+        Array.isArray(closure)
+      ) {
+        return undefined;
+      }
+      const envelope =
+        ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1Schema.parse(
+          (closure as Record<string, unknown>)
+            .finalStrongReadyAcceptanceEnvelope,
+        );
+      const verified =
+        await verifyProviderStrongReadyAcceptanceEnvelopeTokenWithIdentityCapabilityV1(
+          capability,
+          envelope,
+        );
+      if (!verified) return undefined;
+      return ProviderRuntimeIpcAcceptanceIdentityProofV1Schema.parse({
+        generationId: envelope.generationId,
+        contentDigest: envelope.contentDigest,
+        acceptanceOrdinal: envelope.payload.acceptanceOrdinal,
+        installationIdentityGenerationId:
+          envelope.installationIdentityGenerationId,
+      });
+    } catch {
+      return undefined;
+    }
   }
 
   #parseRequest(frame: string): ProviderRuntimeIpcRequestV1 {

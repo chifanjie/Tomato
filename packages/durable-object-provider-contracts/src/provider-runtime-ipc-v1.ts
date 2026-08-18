@@ -17,6 +17,14 @@ export const PROVIDER_RUNTIME_IPC_AUTH_DOMAIN_V1 =
   "understand-code-durable-provider-runtime-ipc-auth-v1" as const;
 export const PROVIDER_RUNTIME_IPC_PRINCIPAL_ATTESTATION_DOMAIN_V1 =
   "understand-code-durable-provider-runtime-principal-attestation-v1" as const;
+export const PROVIDER_RUNTIME_IPC_PRINCIPAL_ATTESTATION_TRANSCRIPT_DOMAIN_V1 =
+  "understand-code-durable-provider-runtime-principal-attestation-transcript-v1" as const;
+export const PROVIDER_RUNTIME_IPC_STRONG_MUTATION_REQUEST_DOMAIN_V1 =
+  "understand-code-durable-provider-runtime-strong-mutation-request-v1" as const;
+export const PROVIDER_RUNTIME_IPC_STRONG_MUTATION_SESSION_BINDING_DOMAIN_V1 =
+  "understand-code-durable-provider-runtime-strong-mutation-session-binding-v1" as const;
+export const PROVIDER_RUNTIME_IPC_STRONG_MUTATION_RESPONSE_DOMAIN_V1 =
+  "understand-code-durable-provider-runtime-strong-mutation-response-v1" as const;
 export const PROVIDER_RUNTIME_IPC_MAX_FRAME_BYTES_V1 = 8 * 1024 * 1024;
 export const PROVIDER_RUNTIME_IPC_SOCKET_MODE_V1 = 0o600;
 export const PROVIDER_RUNTIME_IPC_STORAGE_DIRECTORY_MODE_V1 = 0o700;
@@ -40,6 +48,10 @@ const PositiveSafeIntegerV1Schema = z
   .min(1)
   .max(Number.MAX_SAFE_INTEGER);
 const ProcessIdV1Schema = z.number().int().min(1).max(0x7fff_ffff);
+const ProviderRuntimeIpcStrongMutationOperationV1Schema = z.enum([
+  "write_object",
+  "compare_commit",
+]);
 
 export type ProviderRuntimeIpcJsonValueV1 =
   | null
@@ -67,6 +79,18 @@ export const ProviderRuntimeIpcFixedObjectLocatorV1Schema = z.strictObject({
 });
 export type ProviderRuntimeIpcFixedObjectLocatorV1 = z.infer<
   typeof ProviderRuntimeIpcFixedObjectLocatorV1Schema
+>;
+
+export const ProviderRuntimeIpcStrongMutationSessionBindingClaimsV1Schema =
+  z.strictObject({
+    principalAttestationDigest: ContentDigestV1Schema,
+    operation: ProviderRuntimeIpcStrongMutationOperationV1Schema,
+    operationNonce: LowerHex32V1Schema,
+    requestDigest: ContentDigestV1Schema,
+    authorityGrant: CanonicalByteStringV1Schema,
+  });
+export type ProviderRuntimeIpcStrongMutationSessionBindingClaimsV1 = z.infer<
+  typeof ProviderRuntimeIpcStrongMutationSessionBindingClaimsV1Schema
 >;
 
 export const ProviderRuntimeIpcClientHelloV1Schema = z.strictObject({
@@ -97,6 +121,7 @@ export const ProviderRuntimeIpcPrincipalChallengeV1Schema = z.strictObject({
   kind: z.literal("principal_challenge"),
   challenge: LowerHex64V1Schema,
   acceptanceIdentityProofRequested: z.literal(true).optional(),
+  sessionContinuationRequested: z.literal(true).optional(),
 });
 export type ProviderRuntimeIpcPrincipalChallengeV1 = z.infer<
   typeof ProviderRuntimeIpcPrincipalChallengeV1Schema
@@ -185,6 +210,7 @@ const ProviderRuntimeIpcPrincipalAttestationClaimsShapeV1 = {
   providerId: DurableObjectIdentityProviderIdV1Schema,
   capabilityDigest: ContentDigestV1Schema,
   challenge: LowerHex64V1Schema,
+  connectionNonce: LowerHex64V1Schema.optional(),
   processId: ProcessIdV1Schema,
   revision: NonnegativeSafeIntegerV1Schema,
   phase: z.string().min(1).max(128),
@@ -209,6 +235,76 @@ export const ProviderRuntimeIpcPrincipalAttestationV1Schema = z.strictObject({
 });
 export type ProviderRuntimeIpcPrincipalAttestationV1 = z.infer<
   typeof ProviderRuntimeIpcPrincipalAttestationV1Schema
+>;
+
+export const ProviderRuntimeIpcStrongMutationRequestClaimsV1Schema =
+  z.discriminatedUnion("operation", [
+    z.strictObject({
+      operation: z.literal("write_object"),
+      operationNonce: LowerHex32V1Schema,
+      payload: ProviderRuntimeIpcWriteObjectRequestV1Schema.shape.payload,
+    }),
+    z.strictObject({
+      operation: z.literal("compare_commit"),
+      operationNonce: LowerHex32V1Schema,
+      payload: ProviderRuntimeIpcCompareCommitRequestV1Schema.shape.payload,
+    }),
+  ]).superRefine((request, context) => {
+    if (
+      request.operation === "compare_commit" &&
+      request.operationNonce !== request.payload.operationNonce
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["operationNonce"],
+        message:
+          "strong mutation operationNonce must equal compare_commit payload operationNonce",
+      });
+    }
+  });
+export type ProviderRuntimeIpcStrongMutationRequestClaimsV1 = z.infer<
+  typeof ProviderRuntimeIpcStrongMutationRequestClaimsV1Schema
+>;
+
+const ProviderRuntimeIpcStrongMutationRequestCommonShapeV1 = {
+  protocol: ProviderRuntimeIpcProtocolV1Schema,
+  kind: z.literal("strong_mutation_request"),
+  requestId: LowerHex32V1Schema,
+  principalAttestationDigest: ContentDigestV1Schema,
+  bindingDigest: ContentDigestV1Schema,
+  operationNonce: LowerHex32V1Schema,
+  requestDigest: ContentDigestV1Schema,
+  authorityGrant: CanonicalByteStringV1Schema,
+} as const;
+
+export const ProviderRuntimeIpcStrongMutationRequestV1Schema = z
+  .discriminatedUnion("operation", [
+    z.strictObject({
+      ...ProviderRuntimeIpcStrongMutationRequestCommonShapeV1,
+      operation: z.literal("write_object"),
+      payload: ProviderRuntimeIpcWriteObjectRequestV1Schema.shape.payload,
+    }),
+    z.strictObject({
+      ...ProviderRuntimeIpcStrongMutationRequestCommonShapeV1,
+      operation: z.literal("compare_commit"),
+      payload: ProviderRuntimeIpcCompareCommitRequestV1Schema.shape.payload,
+    }),
+  ])
+  .superRefine((request, context) => {
+    if (
+      request.operation === "compare_commit" &&
+      request.operationNonce !== request.payload.operationNonce
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["operationNonce"],
+        message:
+          "strong mutation operationNonce must equal compare_commit payload operationNonce",
+      });
+    }
+  });
+export type ProviderRuntimeIpcStrongMutationRequestV1 = z.infer<
+  typeof ProviderRuntimeIpcStrongMutationRequestV1Schema
 >;
 
 export const ProviderRuntimeIpcInspectStateResultV1Schema = z.strictObject({
@@ -259,6 +355,64 @@ export type ProviderRuntimeIpcSuccessPayloadV1 = z.infer<
   typeof ProviderRuntimeIpcSuccessPayloadV1Schema
 >;
 
+const ProviderRuntimeIpcErrorBodyV1Schema = z.strictObject({
+  code: z.enum([
+    "authentication_failed",
+    "capability_mismatch",
+    "frame_invalid",
+    "object_not_found",
+    "object_digest_mismatch",
+    "object_length_mismatch",
+    "operation_nonce_conflict",
+    "storage_failure",
+    "unsupported_operation",
+  ]),
+  message: z.string().min(1).max(1024),
+});
+
+const ProviderRuntimeIpcStrongMutationResponseCommonShapeV1 = {
+  protocol: ProviderRuntimeIpcProtocolV1Schema,
+  kind: z.literal("strong_mutation_response"),
+  requestId: LowerHex32V1Schema,
+  principalAttestationDigest: ContentDigestV1Schema,
+  bindingDigest: ContentDigestV1Schema,
+  operation: ProviderRuntimeIpcStrongMutationOperationV1Schema,
+  operationNonce: LowerHex32V1Schema,
+  requestDigest: ContentDigestV1Schema,
+  signature: CanonicalByteStringV1Schema,
+} as const;
+const ProviderRuntimeIpcStrongMutationSuccessPayloadV1Schema =
+  z.discriminatedUnion("operation", [
+    ProviderRuntimeIpcWriteObjectResultV1Schema,
+    ProviderRuntimeIpcCompareCommitResultV1Schema,
+  ]);
+export const ProviderRuntimeIpcStrongMutationResponseV1Schema = z
+  .discriminatedUnion("ok", [
+    z.strictObject({
+      ...ProviderRuntimeIpcStrongMutationResponseCommonShapeV1,
+      ok: z.literal(true),
+      payload: ProviderRuntimeIpcStrongMutationSuccessPayloadV1Schema,
+    }),
+    z.strictObject({
+      ...ProviderRuntimeIpcStrongMutationResponseCommonShapeV1,
+      ok: z.literal(false),
+      error: ProviderRuntimeIpcErrorBodyV1Schema,
+    }),
+  ])
+  .superRefine((response, context) => {
+    if (response.ok && response.operation !== response.payload.operation) {
+      context.addIssue({
+        code: "custom",
+        path: ["payload", "operation"],
+        message:
+          "strong mutation response operation must equal payload operation",
+      });
+    }
+  });
+export type ProviderRuntimeIpcStrongMutationResponseV1 = z.infer<
+  typeof ProviderRuntimeIpcStrongMutationResponseV1Schema
+>;
+
 const ProviderRuntimeIpcResponseCommonShapeV1 = {
   protocol: ProviderRuntimeIpcProtocolV1Schema,
   kind: z.literal("response"),
@@ -275,20 +429,7 @@ export const ProviderRuntimeIpcSuccessResponseV1Schema = z.strictObject({
 export const ProviderRuntimeIpcErrorResponseV1Schema = z.strictObject({
   ...ProviderRuntimeIpcResponseCommonShapeV1,
   ok: z.literal(false),
-  error: z.strictObject({
-    code: z.enum([
-      "authentication_failed",
-      "capability_mismatch",
-      "frame_invalid",
-      "object_not_found",
-      "object_digest_mismatch",
-      "object_length_mismatch",
-      "operation_nonce_conflict",
-      "storage_failure",
-      "unsupported_operation",
-    ]),
-    message: z.string().min(1).max(1024),
-  }),
+  error: ProviderRuntimeIpcErrorBodyV1Schema,
 });
 export const ProviderRuntimeIpcResponseV1Schema = z.discriminatedUnion("ok", [
   ProviderRuntimeIpcSuccessResponseV1Schema,
@@ -322,5 +463,58 @@ export function canonicalizeProviderRuntimeIpcPrincipalAttestationClaimsV1(
   return canonicalizeJcsSafeIntegerUtf8V1({
     domain: PROVIDER_RUNTIME_IPC_PRINCIPAL_ATTESTATION_DOMAIN_V1,
     claims: ProviderRuntimeIpcPrincipalAttestationClaimsV1Schema.parse(claims),
+  });
+}
+
+/** Canonical transcript bytes; callers apply SHA-256 for the wire digest. */
+export function canonicalizeProviderRuntimeIpcPrincipalAttestationTranscriptV1(
+  attestation: ProviderRuntimeIpcPrincipalAttestationV1,
+): Uint8Array {
+  return canonicalizeJcsSafeIntegerUtf8V1({
+    domain: PROVIDER_RUNTIME_IPC_PRINCIPAL_ATTESTATION_TRANSCRIPT_DOMAIN_V1,
+    attestation: ProviderRuntimeIpcPrincipalAttestationV1Schema.parse(
+      attestation,
+    ),
+  });
+}
+
+/** Stable logical-mutation bytes; connection/session fields are excluded. */
+export function canonicalizeProviderRuntimeIpcStrongMutationRequestV1(
+  request: ProviderRuntimeIpcStrongMutationRequestClaimsV1,
+): Uint8Array {
+  const parsed =
+    ProviderRuntimeIpcStrongMutationRequestClaimsV1Schema.parse(request);
+  return canonicalizeJcsSafeIntegerUtf8V1({
+    domain: PROVIDER_RUNTIME_IPC_STRONG_MUTATION_REQUEST_DOMAIN_V1,
+    operation: parsed.operation,
+    operationNonce: parsed.operationNonce,
+    payload: parsed.payload,
+  });
+}
+
+/** Canonical same-connection grant binding bytes; callers apply SHA-256. */
+export function canonicalizeProviderRuntimeIpcStrongMutationSessionBindingV1(
+  claims: ProviderRuntimeIpcStrongMutationSessionBindingClaimsV1,
+): Uint8Array {
+  return canonicalizeJcsSafeIntegerUtf8V1({
+    domain: PROVIDER_RUNTIME_IPC_STRONG_MUTATION_SESSION_BINDING_DOMAIN_V1,
+    claims:
+      ProviderRuntimeIpcStrongMutationSessionBindingClaimsV1Schema.parse(
+        claims,
+      ),
+  });
+}
+
+/** Canonical claims signed by the live service key for a strong response. */
+export function canonicalizeProviderRuntimeIpcStrongMutationResponseClaimsV1(
+  response: ProviderRuntimeIpcStrongMutationResponseV1,
+): Uint8Array {
+  const parsed = ProviderRuntimeIpcStrongMutationResponseV1Schema.parse(
+    response,
+  );
+  const { signature: _signature, ...claims } = parsed;
+  return canonicalizeJcsSafeIntegerUtf8V1({
+    domain: PROVIDER_RUNTIME_IPC_STRONG_MUTATION_RESPONSE_DOMAIN_V1,
+    claims,
   });
 }

@@ -18,6 +18,10 @@
     "acceptanceIdentityProofRequested": {
       "type": "boolean",
       "const": true
+    },
+    "sessionContinuationRequested": {
+      "type": "boolean",
+      "const": true
     }
   },
   "required": [

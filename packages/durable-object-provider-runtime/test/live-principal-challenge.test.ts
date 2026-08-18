@@ -1,10 +1,19 @@
-import { createHmac, randomBytes } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  createPublicKey,
+  randomBytes,
+  verify,
+} from "node:crypto";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createConnection, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  CanonicalByteStringV1Schema,
   ContentDigestV1Schema,
   DurableObjectIdentityProviderIdV1Schema,
   InstallationIdentityGenerationIdV1Schema,
@@ -25,6 +34,23 @@ import {
   deriveProviderStrongReadyAcceptanceStateContentDigestV1,
   deriveProviderStrongReadyAcceptanceStateGenerationIdV1,
 } from "@understand-code/durable-object-provider-contracts/provider-strong-ready-acceptance-candidate";
+import {
+  PROVIDER_RUNTIME_IPC_PROTOCOL_V1,
+  ProviderRuntimeIpcClientHelloV1Schema,
+  ProviderRuntimeIpcPrincipalAttestationV1Schema,
+  ProviderRuntimeIpcPrincipalChallengeV1Schema,
+  ProviderRuntimeIpcRequestV1Schema,
+  ProviderRuntimeIpcResponseV1Schema,
+  ProviderRuntimeIpcServerHelloV1Schema,
+  ProviderRuntimeIpcStrongMutationRequestClaimsV1Schema,
+  ProviderRuntimeIpcStrongMutationRequestV1Schema,
+  ProviderRuntimeIpcStrongMutationResponseV1Schema,
+  canonicalizeProviderRuntimeIpcAuthenticatedClaimsV1,
+  canonicalizeProviderRuntimeIpcPrincipalAttestationTranscriptV1,
+  canonicalizeProviderRuntimeIpcStrongMutationRequestV1,
+  canonicalizeProviderRuntimeIpcStrongMutationResponseClaimsV1,
+  canonicalizeProviderRuntimeIpcStrongMutationSessionBindingV1,
+} from "@understand-code/durable-object-provider-contracts/provider-runtime-ipc-v1";
 
 import { diagnoseProviderRuntimeDurableExecutionPrincipalHeadV1 } from "../src/durable-execution-principal-head.js";
 import {
@@ -33,6 +59,9 @@ import {
   verifyProviderRuntimeLivePrincipalKernelPeerChallengeV1,
 } from "../src/live-principal-challenge.js";
 import { DurableObjectProviderRuntimeServerV1 } from "../src/server.js";
+import {
+  mintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1,
+} from "../src/strong-mutation-session-authority-internal.js";
 import {
   createProviderServiceHandoffConfigV1,
   generateProviderServiceSigningKeyPairV1,
@@ -73,6 +102,12 @@ async function fixtureV1(input?: {
   readonly acceptanceIdentityVerificationCapability?: ConstructorParameters<
     typeof DurableObjectProviderRuntimeServerV1
   >[0]["acceptanceIdentityVerificationCapability"];
+  readonly mutationPolicy?: ConstructorParameters<
+    typeof DurableObjectProviderRuntimeServerV1
+  >[0]["mutationPolicy"];
+  readonly strongMutationAuthorityVerifier?: ConstructorParameters<
+    typeof DurableObjectProviderRuntimeServerV1
+  >[0]["strongMutationAuthorityVerifier"];
 }): Promise<{
   readonly config: ProviderServiceHandoffConfigV1;
   readonly server: DurableObjectProviderRuntimeServerV1;
@@ -123,6 +158,9 @@ async function fixtureV1(input?: {
     },
     acceptanceIdentityVerificationCapability:
       input?.acceptanceIdentityVerificationCapability,
+    mutationPolicy: input?.mutationPolicy,
+    strongMutationAuthorityVerifier:
+      input?.strongMutationAuthorityVerifier,
   });
   await server.start();
   servers.add(server);
@@ -247,6 +285,189 @@ function acceptanceIdentityProofV1(
     installationIdentityGenerationId:
       acceptance.envelope.installationIdentityGenerationId,
   };
+}
+
+function sha256V1(bytes: Uint8Array) {
+  return ContentDigestV1Schema.parse(
+    `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+  );
+}
+
+async function connectSocketV1(socketPath: string): Promise<Socket> {
+  return new Promise<Socket>((resolvePromise, rejectPromise) => {
+    const socket = createConnection(socketPath);
+    socket.once("connect", () => resolvePromise(socket));
+    socket.once("error", rejectPromise);
+  });
+}
+
+async function openStrongContinuationV1(
+  socketPath: string,
+  challengeValue = randomBytes(32).toString("hex"),
+) {
+  const socket = await connectSocketV1(socketPath);
+  const lines = createInterface({ input: socket, crlfDelay: Infinity });
+  const iterator = lines[Symbol.asyncIterator]();
+  const challenge = ProviderRuntimeIpcPrincipalChallengeV1Schema.parse({
+    protocol: PROVIDER_RUNTIME_IPC_PROTOCOL_V1,
+    kind: "principal_challenge",
+    challenge: challengeValue,
+    acceptanceIdentityProofRequested: true,
+    sessionContinuationRequested: true,
+  });
+  socket.write(`${JSON.stringify(challenge)}\n`);
+  const line = await iterator.next();
+  if (line.done) throw new Error("principal continuation closed");
+  const attestation = ProviderRuntimeIpcPrincipalAttestationV1Schema.parse(
+    JSON.parse(line.value),
+  );
+  return { socket, lines, iterator, attestation };
+}
+
+function signHmacWireV1<T extends Readonly<Record<string, unknown>>>(
+  authKey: Uint8Array,
+  unsigned: T,
+) {
+  const placeholder = {
+    ...unsigned,
+    authTag: `hmac-sha256:${"0".repeat(64)}`,
+  } as unknown as Parameters<
+    typeof canonicalizeProviderRuntimeIpcAuthenticatedClaimsV1
+  >[0];
+  return {
+    ...unsigned,
+    authTag: `hmac-sha256:${createHmac("sha256", authKey)
+      .update(canonicalizeProviderRuntimeIpcAuthenticatedClaimsV1(placeholder))
+      .digest("hex")}`,
+  };
+}
+
+async function callHmacCompareCommitV1(
+  socketPath: string,
+  authKey: Uint8Array,
+  payload: {
+    readonly expectedRevision: number;
+    readonly operationNonce: string;
+    readonly phase: string;
+    readonly artifacts: Readonly<Record<string, unknown>>;
+  },
+) {
+  const socket = await connectSocketV1(socketPath);
+  const lines = createInterface({ input: socket, crlfDelay: Infinity });
+  const iterator = lines[Symbol.asyncIterator]();
+  try {
+    const clientNonce = randomBytes(32).toString("hex");
+    const hello = ProviderRuntimeIpcClientHelloV1Schema.parse(
+      signHmacWireV1(authKey, {
+        protocol: PROVIDER_RUNTIME_IPC_PROTOCOL_V1,
+        kind: "client_hello",
+        clientNonce,
+        capabilityDigest: CAPABILITY_DIGEST,
+      }),
+    );
+    socket.write(`${JSON.stringify(hello)}\n`);
+    const helloLine = await iterator.next();
+    if (helloLine.done) throw new Error("runtime closed before HMAC hello");
+    const serverHello = ProviderRuntimeIpcServerHelloV1Schema.parse(
+      JSON.parse(helloLine.value),
+    );
+    const request = ProviderRuntimeIpcRequestV1Schema.parse(
+      signHmacWireV1(authKey, {
+        protocol: PROVIDER_RUNTIME_IPC_PROTOCOL_V1,
+        kind: "request",
+        sessionId: serverHello.sessionId,
+        requestId: randomBytes(16).toString("hex"),
+        sequence: 1,
+        capabilityDigest: CAPABILITY_DIGEST,
+        operation: "compare_commit",
+        payload,
+      }),
+    );
+    socket.write(`${JSON.stringify(request)}\n`);
+    const responseLine = await iterator.next();
+    if (responseLine.done) throw new Error("runtime closed before HMAC response");
+    return ProviderRuntimeIpcResponseV1Schema.parse(
+      JSON.parse(responseLine.value),
+    );
+  } finally {
+    lines.close();
+    socket.destroy();
+  }
+}
+
+function strongWriteRequestV1(
+  attestation: ReturnType<
+    typeof ProviderRuntimeIpcPrincipalAttestationV1Schema.parse
+  >,
+  bytes: Uint8Array,
+  nonceDigit: string,
+) {
+  const operationNonce = LowerHex32V1Schema.parse(nonceDigit.repeat(32));
+  const payload = {
+    locator: {
+      providerId: PROVIDER_ID,
+      contentDigest: sha256V1(bytes),
+    },
+    logicalBytes: bytes.byteLength,
+    bytes: CanonicalByteStringV1Schema.parse(
+      `base64url:${Buffer.from(bytes).toString("base64url")}`,
+    ),
+  };
+  const requestDigest = sha256V1(
+    canonicalizeProviderRuntimeIpcStrongMutationRequestV1(
+      ProviderRuntimeIpcStrongMutationRequestClaimsV1Schema.parse({
+        operation: "write_object",
+        operationNonce,
+        payload,
+      }),
+    ),
+  );
+  const principalAttestationDigest = sha256V1(
+    canonicalizeProviderRuntimeIpcPrincipalAttestationTranscriptV1(
+      attestation,
+    ),
+  );
+  const authorityGrant = CanonicalByteStringV1Schema.parse("base64url:AQ");
+  const bindingDigest = sha256V1(
+    canonicalizeProviderRuntimeIpcStrongMutationSessionBindingV1({
+      principalAttestationDigest,
+      operation: "write_object",
+      operationNonce,
+      requestDigest,
+      authorityGrant,
+    }),
+  );
+  return ProviderRuntimeIpcStrongMutationRequestV1Schema.parse({
+    protocol: PROVIDER_RUNTIME_IPC_PROTOCOL_V1,
+    kind: "strong_mutation_request",
+    requestId: randomBytes(16).toString("hex"),
+    principalAttestationDigest,
+    bindingDigest,
+    operation: "write_object",
+    operationNonce,
+    requestDigest,
+    authorityGrant,
+    payload,
+  });
+}
+
+function verifyStrongResponseSignatureV1(
+  publicKeyValue: string,
+  response: ReturnType<
+    typeof ProviderRuntimeIpcStrongMutationResponseV1Schema.parse
+  >,
+): boolean {
+  const publicKey = createPublicKey({
+    key: Buffer.from(publicKeyValue.slice("base64url:".length), "base64url"),
+    format: "der",
+    type: "spki",
+  });
+  return verify(
+    null,
+    canonicalizeProviderRuntimeIpcStrongMutationResponseClaimsV1(response),
+    publicKey,
+    Buffer.from(response.signature.slice("base64url:".length), "base64url"),
+  );
 }
 
 describe("live provider principal challenge", () => {
@@ -482,6 +703,367 @@ describe("live provider principal challenge", () => {
       strongWriteStatus: "locked",
       reason: "acceptance_identity_invalid",
     });
+  });
+
+  it("executes one grant-consumed strong mutation without reading the service HMAC key", async () => {
+    const verifierCapability =
+      mintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1({
+        consumeGrant(context) {
+          return context.authorityGrant === "base64url:AQ" &&
+            context.journalHead.phase === "final_strong_ready";
+        },
+      });
+    const { config, server } = await fixtureV1({
+      acceptanceIdentityVerificationCapability:
+        await identityVerificationCapabilityV1(),
+      mutationPolicy: "acceptance_authority_session_required",
+      strongMutationAuthorityVerifier: verifierCapability,
+    });
+    const acceptance = finalAcceptanceV1();
+    await server.store.compareCommit({
+      expectedRevision: 0,
+      operationNonce: "7".repeat(32),
+      phase: "final_strong_ready",
+      artifacts: {
+        finalStrongReadyAcceptance: {
+          finalStrongReadyAcceptanceEnvelope: acceptance.envelope,
+          finalStrongReadyAcceptancePin: acceptance.pin,
+        },
+      },
+    });
+
+    const continuation = await openStrongContinuationV1(server.socketPath);
+    try {
+      expect(continuation.attestation.acceptanceIdentity).toEqual(
+        acceptanceIdentityProofV1(acceptance),
+      );
+      const request = strongWriteRequestV1(
+        continuation.attestation,
+        Buffer.from("non-HMAC authorized object", "utf8"),
+        "8",
+      );
+      continuation.socket.write(`${JSON.stringify(request)}\n`);
+      const line = await continuation.iterator.next();
+      expect(line.done).toBe(false);
+      const response =
+        ProviderRuntimeIpcStrongMutationResponseV1Schema.parse(
+          JSON.parse(line.value!),
+        );
+      expect(response).toMatchObject({
+        ok: true,
+        operation: "write_object",
+        requestId: request.requestId,
+        principalAttestationDigest: request.principalAttestationDigest,
+        bindingDigest: request.bindingDigest,
+        requestDigest: request.requestDigest,
+        payload: { operation: "write_object", resolution: "committed" },
+      });
+      expect(verifyStrongResponseSignatureV1(config.publicKey, response)).toBe(
+        true,
+      );
+    } finally {
+      continuation.lines.close();
+      continuation.socket.destroy();
+    }
+  });
+
+  it("binds an unconsumed exact request to its original continuation socket", async () => {
+    let consumeCalls = 0;
+    const consumedGrants = new Set<string>();
+    const verifierCapability =
+      mintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1({
+        consumeGrant(context) {
+          consumeCalls += 1;
+          if (consumedGrants.has(context.authorityGrant)) return false;
+          consumedGrants.add(context.authorityGrant);
+          return true;
+        },
+      });
+    const { server } = await fixtureV1({
+      acceptanceIdentityVerificationCapability:
+        await identityVerificationCapabilityV1(),
+      mutationPolicy: "acceptance_authority_session_required",
+      strongMutationAuthorityVerifier: verifierCapability,
+    });
+    const acceptance = finalAcceptanceV1();
+    await server.store.compareCommit({
+      expectedRevision: 0,
+      operationNonce: "1".repeat(32),
+      phase: "final_strong_ready",
+      artifacts: {
+        finalStrongReadyAcceptance: {
+          finalStrongReadyAcceptanceEnvelope: acceptance.envelope,
+          finalStrongReadyAcceptancePin: acceptance.pin,
+        },
+      },
+    });
+
+    const challenge = "2".repeat(64);
+    const first = await openStrongContinuationV1(server.socketPath, challenge);
+    const request = strongWriteRequestV1(
+      first.attestation,
+      Buffer.from("one socket-bound committed object", "utf8"),
+      "3",
+    );
+    const transplanted = await openStrongContinuationV1(
+      server.socketPath,
+      challenge,
+    );
+    const writeObject = vi.spyOn(server.store, "writeFixedObject");
+    try {
+      expect(first.attestation.connectionNonce).toMatch(/^[0-9a-f]{64}$/u);
+      expect(transplanted.attestation.connectionNonce).toMatch(
+        /^[0-9a-f]{64}$/u,
+      );
+      expect(transplanted.attestation.connectionNonce).not.toBe(
+        first.attestation.connectionNonce,
+      );
+      expect(transplanted.attestation).not.toEqual(first.attestation);
+
+      transplanted.socket.write(`${JSON.stringify(request)}\n`);
+      const transplantedLine = await transplanted.iterator.next();
+      expect(transplantedLine.done).toBe(false);
+      expect(
+        ProviderRuntimeIpcStrongMutationResponseV1Schema.parse(
+          JSON.parse(transplantedLine.value!),
+        ),
+      ).toMatchObject({
+        ok: false,
+        bindingDigest: request.bindingDigest,
+        error: { code: "capability_mismatch" },
+      });
+      expect(consumeCalls).toBe(0);
+      expect(writeObject).not.toHaveBeenCalled();
+
+      first.socket.write(`${JSON.stringify(request)}\n`);
+      const firstLine = await first.iterator.next();
+      expect(firstLine.done).toBe(false);
+      expect(
+        ProviderRuntimeIpcStrongMutationResponseV1Schema.parse(
+          JSON.parse(firstLine.value!),
+        ),
+      ).toMatchObject({
+        ok: true,
+        bindingDigest: request.bindingDigest,
+      });
+      expect(consumeCalls).toBe(1);
+      expect(consumedGrants).toEqual(new Set([request.authorityGrant]));
+      expect(writeObject).toHaveBeenCalledTimes(1);
+    } finally {
+      first.lines.close();
+      first.socket.destroy();
+      transplanted.lines.close();
+      transplanted.socket.destroy();
+    }
+  });
+
+  it("rechecks the attested head after a queued plain wire mutation commits", async () => {
+    let consumeCalls = 0;
+    const verifierCapability =
+      mintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1({
+        consumeGrant() {
+          consumeCalls += 1;
+          return true;
+        },
+      });
+    const { server, authKey } = await fixtureV1({
+      acceptanceIdentityVerificationCapability:
+        await identityVerificationCapabilityV1(),
+      mutationPolicy: "hmac_candidate",
+      strongMutationAuthorityVerifier: verifierCapability,
+    });
+    const acceptance = finalAcceptanceV1();
+    await server.store.compareCommit({
+      expectedRevision: 0,
+      operationNonce: "4".repeat(32),
+      phase: "final_strong_ready",
+      artifacts: {
+        finalStrongReadyAcceptance: {
+          finalStrongReadyAcceptanceEnvelope: acceptance.envelope,
+          finalStrongReadyAcceptancePin: acceptance.pin,
+        },
+      },
+    });
+    const continuation = await openStrongContinuationV1(server.socketPath);
+    const request = strongWriteRequestV1(
+      continuation.attestation,
+      Buffer.from("must remain absent after queued head drift", "utf8"),
+      "5",
+    );
+
+    let signalPlainEntered!: () => void;
+    const plainEntered = new Promise<void>((resolvePromise) => {
+      signalPlainEntered = resolvePromise;
+    });
+    let releasePlain!: () => void;
+    const plainRelease = new Promise<void>((resolvePromise) => {
+      releasePlain = resolvePromise;
+    });
+    const compareCommit = server.store.compareCommit.bind(server.store);
+    vi.spyOn(server.store, "compareCommit").mockImplementationOnce(
+      async (input) => {
+        signalPlainEntered();
+        await plainRelease;
+        return compareCommit(input);
+      },
+    );
+    const plainCommit = callHmacCompareCommitV1(
+      server.socketPath,
+      authKey,
+      {
+        expectedRevision: 1,
+        operationNonce: "6".repeat(32),
+        phase: "plain_wire_won_queue",
+        artifacts: { winner: "plain" },
+      },
+    );
+    await plainEntered;
+
+    let signalStrongPrecheck!: () => void;
+    const strongPrechecked = new Promise<void>((resolvePromise) => {
+      signalStrongPrecheck = resolvePromise;
+    });
+    const inspectState = server.store.inspectState.bind(server.store);
+    vi.spyOn(server.store, "inspectState").mockImplementation(() => {
+      signalStrongPrecheck();
+      return inspectState();
+    });
+    const writeObject = vi.spyOn(server.store, "writeFixedObject");
+    try {
+      continuation.socket.write(`${JSON.stringify(request)}\n`);
+      await strongPrechecked;
+      releasePlain();
+      await expect(plainCommit).resolves.toMatchObject({
+        ok: true,
+        payload: {
+          operation: "compare_commit",
+          state: { revision: 2, phase: "plain_wire_won_queue" },
+        },
+      });
+      const strongLine = await continuation.iterator.next();
+      expect(strongLine.done).toBe(false);
+      expect(
+        ProviderRuntimeIpcStrongMutationResponseV1Schema.parse(
+          JSON.parse(strongLine.value!),
+        ),
+      ).toMatchObject({
+        ok: false,
+        error: { code: "capability_mismatch" },
+      });
+      expect(consumeCalls).toBe(0);
+      expect(writeObject).not.toHaveBeenCalled();
+    } finally {
+      releasePlain();
+      continuation.lines.close();
+      continuation.socket.destroy();
+    }
+  });
+
+  it("keeps a public grant and signed proof locked when no verifier is injected", async () => {
+    const { server } = await fixtureV1({
+      acceptanceIdentityVerificationCapability:
+        await identityVerificationCapabilityV1(),
+      mutationPolicy: "acceptance_authority_session_required",
+    });
+    const acceptance = finalAcceptanceV1();
+    await server.store.compareCommit({
+      expectedRevision: 0,
+      operationNonce: "c".repeat(32),
+      phase: "final_strong_ready",
+      artifacts: {
+        finalStrongReadyAcceptance: {
+          finalStrongReadyAcceptanceEnvelope: acceptance.envelope,
+          finalStrongReadyAcceptancePin: acceptance.pin,
+        },
+      },
+    });
+    const continuation = await openStrongContinuationV1(server.socketPath);
+    const request = strongWriteRequestV1(
+      continuation.attestation,
+      Buffer.from("must remain absent without verifier", "utf8"),
+      "d",
+    );
+    const writeObject = vi.spyOn(server.store, "writeFixedObject");
+    try {
+      continuation.socket.write(`${JSON.stringify(request)}\n`);
+      const line = await continuation.iterator.next();
+      expect(line.done).toBe(false);
+      expect(
+        ProviderRuntimeIpcStrongMutationResponseV1Schema.parse(
+          JSON.parse(line.value!),
+        ),
+      ).toMatchObject({
+        ok: false,
+        error: { code: "capability_mismatch" },
+      });
+      expect(writeObject).not.toHaveBeenCalled();
+    } finally {
+      continuation.lines.close();
+      continuation.socket.destroy();
+    }
+  });
+
+  it("rejects journal-head drift before consuming the authority grant", async () => {
+    let consumeCalls = 0;
+    const verifierCapability =
+      mintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1({
+        consumeGrant() {
+          consumeCalls += 1;
+          return true;
+        },
+      });
+    const { server } = await fixtureV1({
+      acceptanceIdentityVerificationCapability:
+        await identityVerificationCapabilityV1(),
+      mutationPolicy: "acceptance_authority_session_required",
+      strongMutationAuthorityVerifier: verifierCapability,
+    });
+    const acceptance = finalAcceptanceV1();
+    await server.store.compareCommit({
+      expectedRevision: 0,
+      operationNonce: "9".repeat(32),
+      phase: "final_strong_ready",
+      artifacts: {
+        finalStrongReadyAcceptance: {
+          finalStrongReadyAcceptanceEnvelope: acceptance.envelope,
+          finalStrongReadyAcceptancePin: acceptance.pin,
+        },
+      },
+    });
+    const continuation = await openStrongContinuationV1(server.socketPath);
+    const request = strongWriteRequestV1(
+      continuation.attestation,
+      Buffer.from("must remain absent after drift", "utf8"),
+      "a",
+    );
+    await server.store.compareCommit({
+      expectedRevision: 1,
+      operationNonce: "b".repeat(32),
+      phase: "head_drifted",
+      artifacts: { drift: true },
+    });
+    const writeObject = vi.spyOn(server.store, "writeFixedObject");
+    try {
+      continuation.socket.write(`${JSON.stringify(request)}\n`);
+      const line = await continuation.iterator.next();
+      expect(line.done).toBe(false);
+      const response =
+        ProviderRuntimeIpcStrongMutationResponseV1Schema.parse(
+          JSON.parse(line.value!),
+        );
+      expect(response).toMatchObject({
+        ok: false,
+        error: {
+          code: "capability_mismatch",
+          message: "runtime mutation capability is unavailable",
+        },
+      });
+      expect(consumeCalls).toBe(0);
+      expect(writeObject).not.toHaveBeenCalled();
+    } finally {
+      continuation.lines.close();
+      continuation.socket.destroy();
+    }
   });
 
   it("binds a public durable execution result to the same live journal head", async () => {

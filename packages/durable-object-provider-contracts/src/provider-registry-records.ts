@@ -156,6 +156,7 @@ export const StoreDurableObjectProviderVerificationKeyUsageV1Schema = z.enum([
   "state_version",
   "journal_version",
   "migration_semantic_proof",
+  "strong_mutation_authority_grant",
 ]);
 export type StoreDurableObjectProviderVerificationKeyUsageV1 = z.infer<
   typeof StoreDurableObjectProviderVerificationKeyUsageV1Schema
@@ -360,6 +361,8 @@ export const StoreDurableObjectProviderVerificationKeysV1Schema =
       containmentProof: StoreProviderVerificationKeyIdV1Schema,
       stateVersion: StoreProviderVerificationKeyIdV1Schema,
       journalVersion: StoreProviderVerificationKeyIdV1Schema,
+      strongMutationAuthorityGrant:
+        StoreProviderVerificationKeyIdV1Schema.optional(),
     }),
     activeBindingDerivationKeyGeneration: PositiveSafeIntegerV1Schema,
     publicKeyRecords: z

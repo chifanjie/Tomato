@@ -1587,6 +1587,77 @@ function assertEntrySuccessorV1(
     currentEntry.feasibilityApprovalKeys.compromisedRevokedKeyIds,
     (keyId) => keyId,
   );
+  assertStrongMutationAuthorityGrantKeySuccessorV1(
+    previousEntry,
+    currentEntry,
+  );
+}
+
+const STRONG_MUTATION_AUTHORITY_GRANT_KEY_USAGE_V1 =
+  "strong_mutation_authority_grant" as const;
+
+function strongMutationAuthorityGrantKeyRecordsV1(
+  entry: StoreDurableObjectProviderRegistryEntryV1,
+): readonly StoreDurableObjectProviderVerificationPublicKeyV1[] {
+  return arrayFilterV1(
+    entry.verificationKeys.publicKeyRecords,
+    (record) =>
+      record.usage === STRONG_MUTATION_AUTHORITY_GRANT_KEY_USAGE_V1,
+  );
+}
+
+/**
+ * The optional active field preserves legacy Registry V1 histories. Once a
+ * grant key exists, however, every activation is either carried forward or
+ * introduced in this exact Entry generation. Removing an active key is a
+ * fail-closed transition and therefore requires its append-only revocation.
+ */
+function assertStrongMutationAuthorityGrantKeySuccessorV1(
+  previousEntry: StoreDurableObjectProviderRegistryEntryV1,
+  currentEntry: StoreDurableObjectProviderRegistryEntryV1,
+): void {
+  const previousActive =
+    previousEntry.verificationKeys.activeKeyIds
+      .strongMutationAuthorityGrant;
+  const currentActive =
+    currentEntry.verificationKeys.activeKeyIds
+      .strongMutationAuthorityGrant;
+  const newlyIntroduced = arrayFilterV1(
+    strongMutationAuthorityGrantKeyRecordsV1(currentEntry),
+    (record) =>
+      record.registryGenerationIntroduced ===
+      currentEntry.registryGeneration,
+  );
+
+  if (currentActive === previousActive) {
+    if (newlyIntroduced.length !== 0) {
+      return fail("registry_entry", "entry_successor_invalid");
+    }
+    return;
+  }
+
+  if (currentActive === undefined) {
+    if (
+      newlyIntroduced.length !== 0 ||
+      (previousActive !== undefined &&
+        (!currentEntry.verificationKeys.compromisedRevokedKeyIds.includes(
+          previousActive,
+        ) ||
+          previousEntry.verificationKeys.compromisedRevokedKeyIds.includes(
+            previousActive,
+          )))
+    ) {
+      return fail("registry_entry", "entry_successor_invalid");
+    }
+    return;
+  }
+
+  if (
+    newlyIntroduced.length !== 1 ||
+    newlyIntroduced[0]?.keyId !== currentActive
+  ) {
+    return fail("registry_entry", "entry_successor_invalid");
+  }
 }
 
 function verifyRegistrySignedRecordV1(
@@ -1765,6 +1836,14 @@ function validateActiveRecordClosureV1(
     ["containment_proof", entry.verificationKeys.activeKeyIds.containmentProof],
     ["state_version", entry.verificationKeys.activeKeyIds.stateVersion],
     ["journal_version", entry.verificationKeys.activeKeyIds.journalVersion],
+    ...(entry.verificationKeys.activeKeyIds
+      .strongMutationAuthorityGrant === undefined
+      ? []
+      : [[
+          STRONG_MUTATION_AUTHORITY_GRANT_KEY_USAGE_V1,
+          entry.verificationKeys.activeKeyIds
+            .strongMutationAuthorityGrant,
+        ] as const]),
   ] as const;
   for (const [usage, keyId] of activeByUsage) {
     if (
@@ -2751,6 +2830,7 @@ function validateEntryCollectionsV1(
     "state_version",
     "journal_version",
     "migration_semantic_proof",
+    STRONG_MUTATION_AUTHORITY_GRANT_KEY_USAGE_V1,
   ] as const) {
     if (
       arrayFilterV1(verificationRecords, (record) => record.usage === usage)

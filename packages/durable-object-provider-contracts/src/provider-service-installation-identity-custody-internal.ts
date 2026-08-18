@@ -1,12 +1,10 @@
 /**
- * Node-service-only Installation Identity custody recovery seam.
+ * Service-only Installation Identity custody recovery seam.
  *
  * The caller supplies the complete signed tuple and exact raw key.  Successful
  * minting returns only the existing opaque verification capability; neither
  * the key nor the captured crypto host can be projected through this facade.
  */
-
-import { createHash, createHmac } from "node:crypto";
 
 import type {
   InstallationIdentityGenerationIdV1,
@@ -17,6 +15,33 @@ import {
   mintProviderStrongReadyBootstrapOrSteadyAcceptanceIdentityVerificationCapabilityInternalV1,
   type ProviderStrongReadyBootstrapOrSteadyAcceptanceIdentityVerificationCapabilityV1,
 } from "./provider-strong-ready-bootstrap-or-steady-acceptance-identity-verification-capability-internal.js";
+import { sha256InternalV1 } from "./sha256.js";
+
+const SHA256_BLOCK_BYTES_V1 = 64;
+
+function hmacSha256InternalV1(
+  key: Uint8Array,
+  message: Uint8Array,
+): Uint8Array {
+  const normalizedKey =
+    key.byteLength > SHA256_BLOCK_BYTES_V1 ? sha256InternalV1(key) : key;
+  const innerPad = new Uint8Array(SHA256_BLOCK_BYTES_V1);
+  const outerPad = new Uint8Array(SHA256_BLOCK_BYTES_V1);
+  for (let index = 0; index < SHA256_BLOCK_BYTES_V1; index += 1) {
+    const keyByte = index < normalizedKey.byteLength ? normalizedKey[index]! : 0;
+    innerPad[index] = keyByte ^ 0x36;
+    outerPad[index] = keyByte ^ 0x5c;
+  }
+
+  const innerMessage = new Uint8Array(innerPad.byteLength + message.byteLength);
+  innerMessage.set(innerPad);
+  innerMessage.set(message, innerPad.byteLength);
+  const innerDigest = sha256InternalV1(innerMessage);
+  const outerMessage = new Uint8Array(outerPad.byteLength + innerDigest.byteLength);
+  outerMessage.set(outerPad);
+  outerMessage.set(innerDigest, outerPad.byteLength);
+  return sha256InternalV1(outerMessage);
+}
 
 export interface MintProviderServiceInstallationIdentityVerificationCapabilityInternalV1Input {
   readonly installationIdentityKey: Uint8Array;
@@ -40,12 +65,10 @@ export function mintProviderServiceInstallationIdentityVerificationCapabilityInt
     installationIdentityKey: input.installationIdentityKey,
     cryptoHost: {
       sha256(message: Uint8Array): Uint8Array {
-        return new Uint8Array(createHash("sha256").update(message).digest());
+        return sha256InternalV1(message);
       },
       hmacSha256(key: Uint8Array, message: Uint8Array): Uint8Array {
-        return new Uint8Array(
-          createHmac("sha256", key).update(message).digest(),
-        );
+        return hmacSha256InternalV1(key, message);
       },
     },
   });

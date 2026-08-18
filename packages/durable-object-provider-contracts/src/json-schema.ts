@@ -163,6 +163,8 @@ import {
   ProviderRuntimeIpcRequestV1Schema,
   ProviderRuntimeIpcResponseV1Schema,
   ProviderRuntimeIpcServerHelloV1Schema,
+  ProviderRuntimeIpcStrongMutationRequestV1Schema,
+  ProviderRuntimeIpcStrongMutationResponseV1Schema,
 } from "./provider-runtime-ipc-v1.js";
 import {
   ProviderFeasibilityEvidenceEnvelopeV1Schema,
@@ -884,6 +886,10 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 =
     ProviderRuntimeIpcPrincipalChallengeV1Schema,
   "provider-runtime-ipc-principal-attestation-v1":
     ProviderRuntimeIpcPrincipalAttestationV1Schema,
+  "provider-runtime-ipc-strong-mutation-request-v1":
+    ProviderRuntimeIpcStrongMutationRequestV1Schema,
+  "provider-runtime-ipc-strong-mutation-response-v1":
+    ProviderRuntimeIpcStrongMutationResponseV1Schema,
   "provider-runtime-ipc-request-v1": ProviderRuntimeIpcRequestV1Schema,
   "provider-runtime-ipc-response-v1": ProviderRuntimeIpcResponseV1Schema,
   "provider-runtime-ipc-journal-state-v1":

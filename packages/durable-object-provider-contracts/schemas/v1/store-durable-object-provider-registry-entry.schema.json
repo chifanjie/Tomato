@@ -212,6 +212,10 @@
                 "journalVersion": {
                   "type": "string",
                   "pattern": "^[0-9a-f]{22}$"
+                },
+                "strongMutationAuthorityGrant": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{22}$"
                 }
               },
               "required": [
@@ -257,7 +261,8 @@
                       "containment_proof",
                       "state_version",
                       "journal_version",
-                      "migration_semantic_proof"
+                      "migration_semantic_proof",
+                      "strong_mutation_authority_grant"
                     ]
                   },
                   "algorithm": {
@@ -704,6 +709,10 @@
                 "journalVersion": {
                   "type": "string",
                   "pattern": "^[0-9a-f]{22}$"
+                },
+                "strongMutationAuthorityGrant": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{22}$"
                 }
               },
               "required": [
@@ -749,7 +758,8 @@
                       "containment_proof",
                       "state_version",
                       "journal_version",
-                      "migration_semantic_proof"
+                      "migration_semantic_proof",
+                      "strong_mutation_authority_grant"
                     ]
                   },
                   "algorithm": {

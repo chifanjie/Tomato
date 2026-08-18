@@ -4272,6 +4272,9 @@
             },
             "journalVersion": {
               "$ref": "#/$defs/__schema60"
+            },
+            "strongMutationAuthorityGrant": {
+              "$ref": "#/$defs/__schema60"
             }
           },
           "required": [
@@ -4350,7 +4353,8 @@
             "containment_proof",
             "state_version",
             "journal_version",
-            "migration_semantic_proof"
+            "migration_semantic_proof",
+            "strong_mutation_authority_grant"
           ]
         },
         "algorithm": {

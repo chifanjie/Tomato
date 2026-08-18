@@ -59,7 +59,7 @@ const vitestCommand = join(
 );
 // This bounds the complete gunzip output, including tar headers, PAX records,
 // 512-byte payload padding, and terminal blocks. npm's unpackedSize is payload-only.
-const MAX_UNCOMPRESSED_PACK_BYTES = 68 * 1024 * 1024;
+const MAX_UNCOMPRESSED_PACK_BYTES = 72 * 1024 * 1024;
 const NPM_PACK_FIXED_MTIME_SECONDS_V1 = 499_162_500;
 const DEFAULT_COMMAND_TIMEOUT_MS = 10 * 60 * 1_000;
 const PACK_COMMAND_TIMEOUT_MS = 20 * 60 * 1_000;
@@ -68,8 +68,8 @@ const C09_RUNTIME_TIMEOUT_MS = 12 * 60 * 1_000;
 const C09_MINIMAL_RUNTIME_TIMEOUT_MS = 4 * 60 * 1_000;
 const C09_DEDICATED_GATE_MAX_WALL_MS = 10 * 60 * 1_000;
 const C09_DEDICATED_GATE_MAX_TREE_RSS_BYTES = 1_536 * 1024 * 1024;
-const C09_DEDICATED_MAX_LIVE_REPLAY_WORKERS = 2;
-const C09_DEDICATED_BROWSER_MAX_LIVE_REPLAY_WORKERS = 3;
+const C09_DEDICATED_MAX_LIVE_REPLAY_WORKERS = 1;
+const C09_DEDICATED_BROWSER_MAX_LIVE_REPLAY_WORKERS = 2;
 const C09_DEDICATED_WORKER_OUTPUT_MAX_BYTES = 2 * 1024 * 1024;
 const C09_DEDICATED_MONITOR_READY_TIMEOUT_MS = 10_000;
 const C09_DEDICATED_MONITOR_STOP_TIMEOUT_MS = 10_000;
@@ -1065,13 +1065,14 @@ async function runParallelC09WorkersV1(
   }
   if (
     !Number.isSafeInteger(maxLiveWorkers) ||
-    (maxLiveWorkers !== 2 && maxLiveWorkers !== 3) ||
+    maxLiveWorkers < 1 ||
+    maxLiveWorkers > 3 ||
     maxLiveWorkers > specifications.length ||
     typeof diagnosticPhase !== "string" ||
     diagnosticPhase.length === 0
   ) {
     throw new TypeError(
-      "C09 distribution replay requires an explicit two- or three-worker limit within four workers",
+      "C09 distribution replay requires an explicit one- to three-worker limit within four workers",
     );
   }
   const reports = new Array(specifications.length);
@@ -5909,7 +5910,7 @@ async function runC09DedicatedGateLightRegressionsV1() {
       diagnosticPhases: [],
       diagnosticLanes: [],
     });
-    for (const maxLiveWorkers of [2, 3]) {
+    for (const maxLiveWorkers of [1, 2, 3]) {
       const boundedSchedulerGate = createLightSchedulerGateV1();
       const boundedSchedulerReports = await runParallelC09WorkersV1(
         boundedSchedulerGate,
@@ -6108,9 +6109,9 @@ try {
   const sourceSchemaRelativePaths = await listRelativeSchemaPaths(
     join(packageRoot, "schemas", "v1"),
   );
-  if (sourceSchemaRelativePaths.length !== 357) {
+  if (sourceSchemaRelativePaths.length !== 367) {
     throw new Error(
-      `Source provider contracts must contain exactly 357 JSON Schemas, found ${sourceSchemaRelativePaths.length}`,
+      `Source provider contracts must contain exactly 367 JSON Schemas, found ${sourceSchemaRelativePaths.length}`,
     );
   }
   await assertExactProviderDirectory(
@@ -6359,9 +6360,9 @@ try {
   const explicitSpecifiers = Object.keys(manifest.exports)
     .filter((key) => !key.includes("*"))
     .map(packageSpecifier);
-  if (explicitSpecifiers.length !== 32) {
+  if (explicitSpecifiers.length !== 35) {
     throw new Error(
-      `Packed provider contracts must expose exactly 32 public modules, found ${explicitSpecifiers.length}`,
+      `Packed provider contracts must expose exactly 35 public modules, found ${explicitSpecifiers.length}`,
     );
   }
   for (const privateSubpath of [

@@ -1,4 +1,5 @@
 import {
+  createHash,
   createPublicKey,
   createHmac,
   randomBytes,
@@ -32,13 +33,25 @@ import {
   ProviderRuntimeIpcRequestV1Schema,
   ProviderRuntimeIpcResponseV1Schema,
   ProviderRuntimeIpcServerHelloV1Schema,
+  ProviderRuntimeIpcStrongMutationRequestV1Schema,
+  ProviderRuntimeIpcStrongMutationRequestClaimsV1Schema,
+  ProviderRuntimeIpcStrongMutationResponseV1Schema,
   canonicalizeProviderRuntimeIpcAuthenticatedClaimsV1,
   canonicalizeProviderRuntimeIpcPrincipalAttestationClaimsV1,
+  canonicalizeProviderRuntimeIpcPrincipalAttestationTranscriptV1,
+  canonicalizeProviderRuntimeIpcStrongMutationRequestV1,
+  canonicalizeProviderRuntimeIpcStrongMutationResponseClaimsV1,
+  canonicalizeProviderRuntimeIpcStrongMutationSessionBindingV1,
+  type ProviderRuntimeIpcAcceptanceIdentityProofV1,
   type ProviderRuntimeIpcClientHelloV1,
+  type ProviderRuntimeIpcJournalStateV1,
+  type ProviderRuntimeIpcPrincipalAttestationV1,
   type ProviderRuntimeIpcPrincipalChallengeV1,
   type ProviderRuntimeIpcRequestV1,
   type ProviderRuntimeIpcResponseV1,
   type ProviderRuntimeIpcServerHelloV1,
+  type ProviderRuntimeIpcStrongMutationRequestV1,
+  type ProviderRuntimeIpcStrongMutationResponseV1,
 } from "@understand-code/durable-object-provider-contracts/provider-runtime-ipc-v1";
 import type {
   ProviderServiceInstallationIdentityVerificationCapabilityInternalV1,
@@ -49,14 +62,22 @@ import {
 import {
   verifyProviderStrongReadyAcceptanceEnvelopeTokenWithIdentityCapabilityV1,
 } from "@understand-code/durable-object-provider-contracts/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate";
-import { ContentDigestV1Schema } from "@understand-code/durable-object-provider-contracts/primitives";
-import { DurableObjectIdentityProviderIdV1Schema } from "@understand-code/durable-object-provider-contracts/primitives";
+import {
+  ContentDigestV1Schema,
+  DurableObjectIdentityProviderIdV1Schema,
+  type ContentDigestV1,
+} from "@understand-code/durable-object-provider-contracts/primitives";
 
 import {
   DurableObjectProviderRuntimeStoreV1,
   ProviderRuntimeStorageErrorV1,
   type DurableObjectProviderRuntimeStoreOptionsV1,
 } from "./storage.js";
+import {
+  consumeProviderRuntimeStrongMutationSessionCapabilityInternalV1,
+  consumeProviderRuntimeStrongMutationAuthorityGrantInternalV1,
+  type ProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1,
+} from "./strong-mutation-session-authority-internal.js";
 
 const ZERO_AUTH_TAG_V1 = `hmac-sha256:${"0".repeat(64)}` as const;
 const ZERO_REQUEST_ID_V1 = "0".repeat(32);
@@ -73,6 +94,17 @@ type ErrorCodeV1 = Extract<
   ProviderRuntimeIpcResponseV1,
   { readonly ok: false }
 >["error"]["code"];
+
+interface ProviderRuntimePrincipalContinuationV1 {
+  readonly state: ProviderRuntimeIpcJournalStateV1;
+  readonly attestation: ProviderRuntimeIpcPrincipalAttestationV1;
+  readonly connectionNonce:
+    ProviderRuntimeIpcPrincipalAttestationV1["connectionNonce"];
+  readonly principalAttestationDigest: ContentDigestV1;
+  readonly acceptanceIdentity:
+    | ProviderRuntimeIpcAcceptanceIdentityProofV1
+    | undefined;
+}
 
 export interface DurableObjectProviderRuntimeServerOptionsV1 {
   readonly rootPath: string;
@@ -98,6 +130,9 @@ export interface DurableObjectProviderRuntimeServerOptionsV1 {
   readonly mutationPolicy?:
     | "hmac_candidate"
     | "acceptance_authority_session_required";
+  /** Runtime-private verifier; an unregistered structural object has no authority. */
+  readonly strongMutationAuthorityVerifier?:
+    ProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1;
   readonly storeOptions?: Omit<
     DurableObjectProviderRuntimeStoreOptionsV1,
     "rootPath" | "providerId"
@@ -168,6 +203,21 @@ function verifyAuthTagV1(
   const actual = Buffer.from(actualHex, "hex");
   const expected = Buffer.from(expectedHex, "hex");
   return actual.byteLength === expected.byteLength && timingSafeEqual(actual, expected);
+}
+
+function sha256DigestV1(bytes: Uint8Array): ContentDigestV1 {
+  return ContentDigestV1Schema.parse(
+    `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+  );
+}
+
+function exactJournalHeadV1(
+  left: ProviderRuntimeIpcJournalStateV1,
+  right: ProviderRuntimeIpcJournalStateV1,
+): boolean {
+  return left.revision === right.revision &&
+    left.phase === right.phase &&
+    left.mutationDigest === right.mutationDigest;
 }
 
 function assertPositiveSafeIntegerV1(value: number, label: string): void {
@@ -333,7 +383,12 @@ export class DurableObjectProviderRuntimeServerV1 {
   readonly #mutationPolicy:
     | "hmac_candidate"
     | "acceptance_authority_session_required";
+  readonly #strongMutationAuthorityVerifier:
+    | ProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1
+    | undefined;
   readonly #connections = new Set<Socket>();
+  readonly #mutationQueueWaiters: Array<() => void> = [];
+  #mutationQueueActive = false;
   #server: Server | undefined;
   #socketIdentity: { readonly dev: number; readonly ino: number } | undefined;
 
@@ -408,6 +463,8 @@ export class DurableObjectProviderRuntimeServerV1 {
         "runtime mutation policy is invalid",
       );
     }
+    this.#strongMutationAuthorityVerifier =
+      options.strongMutationAuthorityVerifier;
     this.store = new DurableObjectProviderRuntimeStoreV1({
       ...options.storeOptions,
       rootPath: this.rootPath,
@@ -552,7 +609,19 @@ export class DurableObjectProviderRuntimeServerV1 {
       const firstFrame = await reader.readFrame();
       const principalChallenge = this.#parsePrincipalChallenge(firstFrame);
       if (principalChallenge !== undefined) {
-        await this.#servePrincipalChallenge(socket, principalChallenge);
+        const principalContinuation = await this.#servePrincipalChallenge(
+          socket,
+          principalChallenge,
+        );
+        if (principalChallenge.sessionContinuationRequested !== true) return;
+        const strongMutationRequest = this.#parseStrongMutationRequest(
+          await reader.readFrame(),
+        );
+        await this.#serveStrongMutationRequestV1(
+          socket,
+          strongMutationRequest,
+          principalContinuation,
+        );
         return;
       }
       const hello = this.#parseClientHello(firstFrame);
@@ -678,20 +747,45 @@ export class DurableObjectProviderRuntimeServerV1 {
     return result.success ? result.data : undefined;
   }
 
+  #parseStrongMutationRequest(
+    frame: string,
+  ): ProviderRuntimeIpcStrongMutationRequestV1 {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(frame) as unknown;
+    } catch {
+      throw new ProviderRuntimeServerErrorV1(
+        "strong mutation request is not JSON",
+      );
+    }
+    const result =
+      ProviderRuntimeIpcStrongMutationRequestV1Schema.safeParse(parsed);
+    if (!result.success) {
+      throw new ProviderRuntimeServerErrorV1(
+        "strong mutation request is invalid",
+      );
+    }
+    return result.data;
+  }
+
   async #servePrincipalChallenge(
     socket: Socket,
     request: ProviderRuntimeIpcPrincipalChallengeV1,
-  ): Promise<void> {
+  ): Promise<ProviderRuntimePrincipalContinuationV1 | undefined> {
     const principalAttestation = this.#principalAttestation;
-    if (principalAttestation === undefined) return;
+    if (principalAttestation === undefined) return undefined;
     const state = this.store.inspectState();
     const acceptanceIdentity = request.acceptanceIdentityProofRequested === true
       ? await this.#deriveAcceptanceIdentityProofV1(state)
+      : undefined;
+    const connectionNonce = request.sessionContinuationRequested === true
+      ? randomBytes(32).toString("hex")
       : undefined;
     const claims = ProviderRuntimeIpcPrincipalAttestationClaimsV1Schema.parse({
       providerId: this.providerId,
       capabilityDigest: this.#authorizedCapabilityDigest,
       challenge: request.challenge,
+      ...(connectionNonce === undefined ? {} : { connectionNonce }),
       processId: process.pid,
       revision: state.revision,
       phase: state.phase,
@@ -714,6 +808,17 @@ export class DurableObjectProviderRuntimeServerV1 {
       signature: `base64url:${signature.toString("base64url")}`,
     });
     await writeFrameV1(socket, response);
+    return Object.freeze({
+      state,
+      attestation: response,
+      connectionNonce: response.connectionNonce,
+      principalAttestationDigest: sha256DigestV1(
+        canonicalizeProviderRuntimeIpcPrincipalAttestationTranscriptV1(
+          response,
+        ),
+      ),
+      acceptanceIdentity,
+    });
   }
 
   async #deriveAcceptanceIdentityProofV1(
@@ -755,6 +860,163 @@ export class DurableObjectProviderRuntimeServerV1 {
     }
   }
 
+  async #serveStrongMutationRequestV1(
+    socket: Socket,
+    request: ProviderRuntimeIpcStrongMutationRequestV1,
+    principal: ProviderRuntimePrincipalContinuationV1 | undefined,
+  ): Promise<void> {
+    try {
+      const payload = await this.#executeStrongMutationRequestV1(
+        request,
+        principal,
+      );
+      await this.#writeStrongMutationResponseV1(socket, request, {
+        ok: true,
+        payload,
+      });
+    } catch (error) {
+      const mapped = this.#mapError(error);
+      await this.#writeStrongMutationResponseV1(socket, request, {
+        ok: false,
+        error: mapped,
+      });
+    }
+  }
+
+  async #executeStrongMutationRequestV1(
+    request: ProviderRuntimeIpcStrongMutationRequestV1,
+    principal: ProviderRuntimePrincipalContinuationV1 | undefined,
+  ): Promise<unknown> {
+    const verifier = this.#strongMutationAuthorityVerifier;
+    const acceptanceIdentity = principal?.acceptanceIdentity;
+    if (
+      verifier === undefined ||
+      principal === undefined ||
+      principal.connectionNonce === undefined ||
+      principal.attestation.connectionNonce !== principal.connectionNonce ||
+      acceptanceIdentity === undefined ||
+      request.principalAttestationDigest !==
+        principal.principalAttestationDigest
+    ) {
+      throw new ProviderRuntimeMutationCapabilityUnavailableErrorV1();
+    }
+    const requestDigest = sha256DigestV1(
+      canonicalizeProviderRuntimeIpcStrongMutationRequestV1(
+        ProviderRuntimeIpcStrongMutationRequestClaimsV1Schema.parse({
+          operation: request.operation,
+          operationNonce: request.operationNonce,
+          payload: request.payload,
+        }),
+      ),
+    );
+    const bindingDigest = sha256DigestV1(
+      canonicalizeProviderRuntimeIpcStrongMutationSessionBindingV1({
+        principalAttestationDigest: request.principalAttestationDigest,
+        operation: request.operation,
+        operationNonce: request.operationNonce,
+        requestDigest: request.requestDigest,
+        authorityGrant: request.authorityGrant,
+      }),
+    );
+    if (
+      request.requestDigest !== requestDigest ||
+      request.bindingDigest !== bindingDigest ||
+      !exactJournalHeadV1(principal.state, this.store.inspectState())
+    ) {
+      throw new ProviderRuntimeMutationCapabilityUnavailableErrorV1();
+    }
+
+    return this.#withMutationQueueV1(async () => {
+      if (!exactJournalHeadV1(principal.state, this.store.inspectState())) {
+        throw new ProviderRuntimeMutationCapabilityUnavailableErrorV1();
+      }
+      const capability =
+        await consumeProviderRuntimeStrongMutationAuthorityGrantInternalV1(
+          verifier,
+          {
+            providerId: DurableObjectIdentityProviderIdV1Schema.parse(
+              this.providerId,
+            ),
+            capabilityDigest: ContentDigestV1Schema.parse(
+              this.#authorizedCapabilityDigest,
+            ),
+            principalAttestationDigest: request.principalAttestationDigest,
+            bindingDigest: request.bindingDigest,
+            operation: request.operation,
+            operationNonce: request.operationNonce,
+            requestDigest: request.requestDigest,
+            authorityGrant: request.authorityGrant,
+            journalHead: {
+              revision: principal.state.revision,
+              phase: principal.state.phase,
+              mutationDigest: principal.state.mutationDigest,
+            },
+            acceptanceIdentity,
+          },
+        );
+      if (
+        capability === undefined ||
+        !exactJournalHeadV1(principal.state, this.store.inspectState()) ||
+        !consumeProviderRuntimeStrongMutationSessionCapabilityInternalV1(
+          capability,
+          request.bindingDigest,
+        )
+      ) {
+        throw new ProviderRuntimeMutationCapabilityUnavailableErrorV1();
+      }
+      if (request.operation === "write_object") {
+        const result = await this.store.writeFixedObject(
+          request.payload.locator,
+          request.payload.logicalBytes,
+          request.payload.bytes,
+        );
+        return { operation: "write_object" as const, ...result };
+      }
+      const result = await this.store.compareCommit(request.payload);
+      return { operation: "compare_commit" as const, ...result };
+    });
+  }
+
+  async #writeStrongMutationResponseV1(
+    socket: Socket,
+    request: ProviderRuntimeIpcStrongMutationRequestV1,
+    result:
+      | { readonly ok: true; readonly payload: unknown }
+      | {
+          readonly ok: false;
+          readonly error: {
+            readonly code: ErrorCodeV1;
+            readonly message: string;
+          };
+        },
+  ): Promise<void> {
+    const principalAttestation = this.#principalAttestation;
+    if (principalAttestation === undefined) return;
+    const unsigned = ProviderRuntimeIpcStrongMutationResponseV1Schema.parse({
+      protocol: PROVIDER_RUNTIME_IPC_PROTOCOL_V1,
+      kind: "strong_mutation_response",
+      requestId: request.requestId,
+      principalAttestationDigest: request.principalAttestationDigest,
+      bindingDigest: request.bindingDigest,
+      operation: request.operation,
+      operationNonce: request.operationNonce,
+      requestDigest: request.requestDigest,
+      ...result,
+      signature: `base64url:${Buffer.alloc(64).toString("base64url")}`,
+    });
+    const signature = sign(
+      null,
+      canonicalizeProviderRuntimeIpcStrongMutationResponseClaimsV1(unsigned),
+      principalAttestation.privateKey,
+    );
+    const response: ProviderRuntimeIpcStrongMutationResponseV1 =
+      ProviderRuntimeIpcStrongMutationResponseV1Schema.parse({
+        ...unsigned,
+        signature: `base64url:${signature.toString("base64url")}`,
+      });
+    await writeFrameV1(socket, response);
+  }
+
   #parseRequest(frame: string): ProviderRuntimeIpcRequestV1 {
     let parsed: unknown;
     try {
@@ -772,16 +1034,6 @@ export class DurableObjectProviderRuntimeServerV1 {
   async #dispatch(
     request: ProviderRuntimeIpcRequestV1,
   ): Promise<unknown> {
-    if (
-      this.#mutationPolicy === "acceptance_authority_session_required" &&
-      (request.operation === "write_object" ||
-        request.operation === "compare_commit")
-    ) {
-      // HMAC possession is intentionally insufficient in a service handoff.
-      // No unlock exists until an Acceptance-bound, same-connection session
-      // is introduced; reject before invoking either mutating store method.
-      throw new ProviderRuntimeMutationCapabilityUnavailableErrorV1();
-    }
     switch (request.operation) {
       case "inspect_state":
         return {
@@ -793,19 +1045,54 @@ export class DurableObjectProviderRuntimeServerV1 {
         return { operation: "read_object", ...result };
       }
       case "write_object": {
-        const result = await this.store.writeFixedObject(
-          request.payload.locator,
-          request.payload.logicalBytes,
-          request.payload.bytes,
-        );
-        return { operation: "write_object", ...result };
+        return this.#withMutationQueueV1(async () => {
+          this.#assertHmacMutationAllowedV1();
+          const result = await this.store.writeFixedObject(
+            request.payload.locator,
+            request.payload.logicalBytes,
+            request.payload.bytes,
+          );
+          return { operation: "write_object", ...result };
+        });
       }
       case "compare_commit": {
-        const result = await this.store.compareCommit(request.payload);
-        return { operation: "compare_commit", ...result };
+        return this.#withMutationQueueV1(async () => {
+          this.#assertHmacMutationAllowedV1();
+          const result = await this.store.compareCommit(request.payload);
+          return { operation: "compare_commit", ...result };
+        });
       }
       default:
         throw new ProviderRuntimeServerErrorV1("unsupported runtime operation");
+    }
+  }
+
+  async #withMutationQueueV1<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.#mutationQueueActive) {
+      await new Promise<void>((resolvePromise) => {
+        this.#mutationQueueWaiters.push(resolvePromise);
+      });
+    } else {
+      this.#mutationQueueActive = true;
+    }
+    try {
+      return await operation();
+    } finally {
+      const next = this.#mutationQueueWaiters.shift();
+      if (next === undefined) {
+        this.#mutationQueueActive = false;
+      } else {
+        next();
+      }
+    }
+  }
+
+  #assertHmacMutationAllowedV1(): void {
+    if (this.#mutationPolicy === "acceptance_authority_session_required") {
+      // The production service never upgrades shared-HMAC possession into a
+      // mutation capability. Its only mutation path is the signed-principal
+      // continuation handled separately above.
+      throw new ProviderRuntimeMutationCapabilityUnavailableErrorV1();
     }
   }
 

@@ -5,6 +5,7 @@ import {
   mkdir,
   open,
   readFile,
+  readdir,
   realpath,
   rename,
   rmdir,
@@ -28,6 +29,8 @@ export const INSTALLATION_OWNER_FILE = ".understand-code-owner" as const;
 export const INSTALLATION_WRAPPER_FILE = "bin/understand-code" as const;
 export const INSTALLATION_CLI_BUNDLE_FILE =
   "lib/understand-code.mjs" as const;
+export const INSTALLATION_NATIVE_KERNEL_PEER_FILE =
+  `lib/native/${process.platform}-${process.arch}/provider_kernel_peer.node` as const;
 export const INSTALLATION_CONFIG_FILE = "config/mcp.json" as const;
 /** Durable, single-level snapshot used by an explicit upgrade/rollback pair. */
 export const INSTALLATION_ROLLBACK_FILE = "installation-rollback.json" as const;
@@ -35,14 +38,34 @@ export const DEFAULT_INSTALLATION_VERSION = "0.1.0" as const;
 
 const MAX_PATH_BYTES = 4_096;
 const MAX_CLI_BUNDLE_BYTES = 64 * 1024 * 1024;
-const MAX_ROLLBACK_BYTES = 96 * 1024 * 1024;
+const MAX_NATIVE_KERNEL_PEER_BYTES = 32 * 1024 * 1024;
+const MAX_ROLLBACK_BYTES = 160 * 1024 * 1024;
 const HASH_PATTERN = /^sha256:[0-9a-f]{64}$/u;
-const OWNED_RELATIVE_FILES = Object.freeze([
+const LEGACY_OWNED_RELATIVE_FILES = Object.freeze([
   INSTALLATION_OWNER_FILE,
   INSTALLATION_WRAPPER_FILE,
   INSTALLATION_CLI_BUNDLE_FILE,
   INSTALLATION_CONFIG_FILE,
 ] as const);
+const OWNED_RELATIVE_FILES = Object.freeze([
+  INSTALLATION_OWNER_FILE,
+  INSTALLATION_WRAPPER_FILE,
+  INSTALLATION_CLI_BUNDLE_FILE,
+  INSTALLATION_NATIVE_KERNEL_PEER_FILE,
+  INSTALLATION_CONFIG_FILE,
+] as const);
+
+function ownedFileMode(
+  filePath: (typeof OWNED_RELATIVE_FILES)[number],
+): number {
+  if (
+    filePath === INSTALLATION_WRAPPER_FILE ||
+    filePath === INSTALLATION_CLI_BUNDLE_FILE
+  ) {
+    return 0o755;
+  }
+  return filePath === INSTALLATION_NATIVE_KERNEL_PEER_FILE ? 0o644 : 0o600;
+}
 
 export type InstallationTargetInputV1 = Readonly<{
   /** Exact installation directory. `root` and `home` are aliases. */
@@ -343,9 +366,130 @@ function digest(bytes: Uint8Array): string {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
+type CliInstallationAssetsV1 = Readonly<{
+  cliBundle: Buffer;
+  nativeKernelPeer: Buffer;
+}>;
+
+function nativeKernelPeerBinaryIsValid(bytes: Uint8Array): boolean {
+  if (
+    bytes.byteLength < 64 ||
+    bytes.byteLength > MAX_NATIVE_KERNEL_PEER_BYTES ||
+    (process.arch !== "arm64" && process.arch !== "x64")
+  ) {
+    return false;
+  }
+  const view = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (process.platform === "darwin") {
+    const expectedCpu = process.arch === "arm64" ? 0x0100000c : 0x01000007;
+    return (
+      view.subarray(0, 4).equals(Buffer.from([0xcf, 0xfa, 0xed, 0xfe])) &&
+      view.readUInt32LE(4) === expectedCpu
+    );
+  }
+  if (process.platform === "linux") {
+    const expectedMachine = process.arch === "arm64" ? 183 : 62;
+    return (
+      view.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46])) &&
+      view[4] === 2 &&
+      view[5] === 1 &&
+      view.readUInt16LE(18) === expectedMachine
+    );
+  }
+  return false;
+}
+
+async function readNativeKernelPeerAsset(
+  canonicalCliBundlePath: string,
+): Promise<Buffer> {
+  if (
+    (process.platform !== "darwin" && process.platform !== "linux") ||
+    (process.arch !== "arm64" && process.arch !== "x64")
+  ) {
+    throw new InstallationLifecycleError(
+      "invalid_target",
+      "The provider kernel-peer native asset does not support this platform tuple.",
+    );
+  }
+  const tuple = `${process.platform}-${process.arch}`;
+  const nativeRoot = path.join(path.dirname(canonicalCliBundlePath), "native");
+  const tupleRoot = path.join(nativeRoot, tuple);
+  const sourcePath = path.join(tupleRoot, "provider_kernel_peer.node");
+  try {
+    for (const directory of [nativeRoot, tupleRoot]) {
+      const metadata = await lstat(directory);
+      if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
+        throw new InstallationLifecycleError(
+          "invalid_target",
+          "The provider kernel-peer native source inventory is unsafe.",
+        );
+      }
+      if ((await realpath(directory)) !== directory) {
+        throw new InstallationLifecycleError(
+          "invalid_target",
+          "The provider kernel-peer native source inventory is non-canonical.",
+        );
+      }
+    }
+    const tuples = await readdir(nativeRoot);
+    const files = await readdir(tupleRoot);
+    if (
+      tuples.length !== 1 ||
+      tuples[0] !== tuple ||
+      files.length !== 1 ||
+      files[0] !== "provider_kernel_peer.node"
+    ) {
+      throw new InstallationLifecycleError(
+        "invalid_target",
+        "The provider kernel-peer native source must contain exactly the current platform tuple.",
+      );
+    }
+    const sourceMetadata = await lstat(sourcePath);
+    if (sourceMetadata.isSymbolicLink() || !sourceMetadata.isFile()) {
+      throw new InstallationLifecycleError(
+        "invalid_target",
+        "The provider kernel-peer native source must be a regular non-symlink file.",
+      );
+    }
+    const handle = await open(
+      sourcePath,
+      constants.O_RDONLY | constants.O_NOFOLLOW,
+    );
+    try {
+      const metadata = await handle.stat();
+      if (
+        !metadata.isFile() ||
+        metadata.size < 64 ||
+        metadata.size > MAX_NATIVE_KERNEL_PEER_BYTES
+      ) {
+        throw new InstallationLifecycleError(
+          "invalid_target",
+          "The provider kernel-peer native source must be a bounded regular file.",
+        );
+      }
+      const bytes = await handle.readFile();
+      if (!nativeKernelPeerBinaryIsValid(bytes)) {
+        throw new InstallationLifecycleError(
+          "invalid_target",
+          "The provider kernel-peer native source does not match the current platform tuple.",
+        );
+      }
+      return bytes;
+    } finally {
+      await handle.close().catch(() => undefined);
+    }
+  } catch (error) {
+    if (error instanceof InstallationLifecycleError) throw error;
+    throw new InstallationLifecycleError(
+      "invalid_target",
+      "The provider kernel-peer native source is unavailable.",
+    );
+  }
+}
+
 async function readCliBundle(
   sourcePath: string | undefined,
-): Promise<Buffer> {
+): Promise<CliInstallationAssetsV1> {
   const candidate = sourcePath ?? process.argv[1];
   const normalized = normalizedCandidate(candidate);
   if (normalized === undefined) {
@@ -390,7 +534,10 @@ async function readCliBundle(
         "The self-contained CLI bundle identity is invalid.",
       );
     }
-    return bytes;
+    return {
+      cliBundle: bytes,
+      nativeKernelPeer: await readNativeKernelPeerAsset(canonical),
+    };
   } catch (error) {
     if (error instanceof InstallationLifecycleError) throw error;
     throw new InstallationLifecycleError(
@@ -413,6 +560,26 @@ function safeRelativePath(value: unknown): value is string {
     normalized === value &&
     !normalized.split("/").some((segment) => segment === ".." || segment === "") &&
     (OWNED_RELATIVE_FILES as readonly string[]).includes(normalized)
+  );
+}
+
+function hasExactOwnedPathSet(
+  paths: readonly string[],
+  expected: readonly string[],
+): boolean {
+  return (
+    paths.length === expected.length &&
+    new Set(paths).size === expected.length &&
+    expected.every((filePath) => paths.includes(filePath))
+  );
+}
+
+function isLegacyManifest(
+  manifest: InstallationManifestV1,
+): boolean {
+  return hasExactOwnedPathSet(
+    manifest.files.map((file) => file.path),
+    LEGACY_OWNED_RELATIVE_FILES,
   );
 }
 
@@ -567,12 +734,6 @@ function manifestFor(
   host?: HostAdapterId,
   rollback?: InstallationRollbackDescriptorV1,
 ): InstallationManifestV1 {
-  const modes: Readonly<Record<(typeof OWNED_RELATIVE_FILES)[number], number>> = {
-    [INSTALLATION_OWNER_FILE]: 0o600,
-    [INSTALLATION_WRAPPER_FILE]: 0o755,
-    [INSTALLATION_CLI_BUNDLE_FILE]: 0o755,
-    [INSTALLATION_CONFIG_FILE]: 0o600,
-  };
   return {
     schemaVersion: INSTALLATION_SCHEMA_VERSION,
     product: "understand-code",
@@ -583,8 +744,8 @@ function manifestFor(
     ...(host === undefined ? {} : { host }),
     files: OWNED_RELATIVE_FILES.map((filePath) => ({
       path: filePath,
-      sha256: digest(fileBytes[filePath]),
-      mode: modes[filePath],
+      sha256: digest(fileBytes[filePath]!),
+      mode: ownedFileMode(filePath),
       owner: INSTALLATION_MARKER,
     })),
     ...(rollback === undefined ? {} : { rollback }),
@@ -626,7 +787,8 @@ function parseManifest(value: unknown): InstallationManifestV1 | undefined {
     !isSafeText(candidate.installationId) ||
     candidate.marker !== INSTALLATION_MARKER ||
     !Array.isArray(candidate.files) ||
-    candidate.files.length !== OWNED_RELATIVE_FILES.length
+    (candidate.files.length !== OWNED_RELATIVE_FILES.length &&
+      candidate.files.length !== LEGACY_OWNED_RELATIVE_FILES.length)
   ) {
     return undefined;
   }
@@ -670,10 +832,11 @@ function parseManifest(value: unknown): InstallationManifestV1 | undefined {
     });
   }
   const paths = files.map((file) => file.path);
-  if (
-    new Set(paths).size !== OWNED_RELATIVE_FILES.length ||
-    OWNED_RELATIVE_FILES.some((filePath) => !paths.includes(filePath))
-  ) {
+  const expectedPaths =
+    files.length === LEGACY_OWNED_RELATIVE_FILES.length
+      ? LEGACY_OWNED_RELATIVE_FILES
+      : OWNED_RELATIVE_FILES;
+  if (!hasExactOwnedPathSet(paths, expectedPaths)) {
     return undefined;
   }
   return {
@@ -729,7 +892,7 @@ function parseRollbackSnapshot(value: unknown): RollbackSnapshotV1 | undefined {
     manifest.root !== candidate.root ||
     manifest.installationId !== candidate.installationId ||
     manifest.version !== candidate.fromVersion ||
-    candidate.files.length !== OWNED_RELATIVE_FILES.length
+    candidate.files.length !== manifest.files.length
   ) {
     return undefined;
   }
@@ -765,10 +928,8 @@ function parseRollbackSnapshot(value: unknown): RollbackSnapshotV1 | undefined {
     });
   }
   const paths = files.map((file) => file.path);
-  if (
-    new Set(paths).size !== OWNED_RELATIVE_FILES.length ||
-    OWNED_RELATIVE_FILES.some((filePath) => !paths.includes(filePath))
-  ) {
+  const expectedPaths = manifest.files.map((file) => file.path);
+  if (!hasExactOwnedPathSet(paths, expectedPaths)) {
     return undefined;
   }
   // The snapshot carries the manifest's expected file digests as a second
@@ -798,7 +959,7 @@ function parseRollbackSnapshot(value: unknown): RollbackSnapshotV1 | undefined {
 function rollbackSnapshotFor(
   root: string,
   manifest: InstallationManifestV1,
-  fileBytes: Readonly<Record<(typeof OWNED_RELATIVE_FILES)[number], ExistingFile>>,
+  fileBytes: Readonly<Record<string, ExistingFile>>,
 ): RollbackSnapshotV1 {
   const baseManifest = manifestWithoutRollback(manifest);
   return {
@@ -808,12 +969,12 @@ function rollbackSnapshotFor(
     installationId: manifest.installationId,
     fromVersion: manifest.version,
     manifest: baseManifest,
-    files: OWNED_RELATIVE_FILES.map((filePath) => ({
+    files: manifest.files.map(({ path: filePath }) => ({
       path: filePath,
-      sha256: digest(fileBytes[filePath].bytes),
-      mode: fileBytes[filePath].mode,
+      sha256: digest(fileBytes[filePath]!.bytes),
+      mode: fileBytes[filePath]!.mode,
       owner: INSTALLATION_MARKER,
-      base64: fileBytes[filePath].bytes.toString("base64"),
+      base64: fileBytes[filePath]!.bytes.toString("base64"),
     })),
   };
 }
@@ -1014,6 +1175,7 @@ async function rollbackPathState(root: string): Promise<"missing" | "present" | 
 
 async function inspectInstallation(
   root: string,
+  options: Readonly<{ allowLegacy?: boolean }> = {},
 ): Promise<DoctorResultV1> {
   const manifestPath = path.join(root, INSTALLATION_MANIFEST_FILE);
   let manifestMetadata;
@@ -1087,6 +1249,8 @@ async function inspectInstallation(
       reason: "manifest_root_mismatch",
     };
   }
+  const legacyNativeUpgradeRequired =
+    isLegacyManifest(manifest) && options.allowLegacy !== true;
   const checks: InstallationFileCheckV1[] = [];
   for (const file of manifest.files) {
     const filePath = ownedAbsolutePath(root, file.path);
@@ -1134,12 +1298,23 @@ async function inspectInstallation(
       continue;
     }
     const actualSha256 = digest(bytes);
-    const hasMarker = bytes.toString("utf8").includes(INSTALLATION_MARKER);
+    const hasOwnedIdentity =
+      file.path === INSTALLATION_NATIVE_KERNEL_PEER_FILE
+        ? nativeKernelPeerBinaryIsValid(bytes)
+        : bytes.toString("utf8").includes(INSTALLATION_MARKER);
     checks.push({
       path: file.path,
-      state: actualSha256 === file.sha256 && hasMarker ? "ok" : "modified",
+      state:
+        actualSha256 === file.sha256 && hasOwnedIdentity ? "ok" : "modified",
       expectedSha256: file.sha256,
       actualSha256,
+    });
+  }
+  if (legacyNativeUpgradeRequired) {
+    checks.push({
+      path: INSTALLATION_NATIVE_KERNEL_PEER_FILE,
+      state: "missing",
+      expectedSha256: `sha256:${"0".repeat(64)}`,
     });
   }
   const markerCheck = checks.find((check) => check.path === INSTALLATION_OWNER_FILE);
@@ -1205,7 +1380,18 @@ async function inspectInstallation(
       expectedSha256: `sha256:${"0".repeat(64)}`,
     });
   }
-  const hasModified = !rollbackValid || checks.some((check) => check.state !== "ok");
+  const hasModified =
+    legacyNativeUpgradeRequired ||
+    !rollbackValid ||
+    checks.some((check) => check.state !== "ok");
+  const legacyOnlyMissingNative =
+    legacyNativeUpgradeRequired &&
+    checks.every(
+      (check) =>
+        check.path === INSTALLATION_NATIVE_KERNEL_PEER_FILE
+          ? check.state === "missing"
+          : check.state === "ok",
+    );
   return {
     ok: !hasModified,
     status: hasModified ? "tampered" : "healthy",
@@ -1217,7 +1403,9 @@ async function inspectInstallation(
     ...(hasModified
       ? {
           reason: rollbackValid
-            ? "owned_file_check_failed"
+            ? legacyOnlyMissingNative
+              ? "native_asset_upgrade_required"
+              : "owned_file_check_failed"
             : manifest.rollback === undefined
               ? "orphaned_rollback_snapshot"
               : "rollback_snapshot_invalid",
@@ -1235,7 +1423,7 @@ export async function installInstallationV1(
   const existingManifest = await readManifestAt(root);
   let installationId = existingManifest?.installationId ?? randomUUID();
   if (existingManifest !== undefined) {
-    const before = await inspectInstallation(root);
+    const before = await inspectInstallation(root, { allowLegacy: true });
     if (before.status !== "healthy") {
       return {
         status: "refused",
@@ -1309,11 +1497,12 @@ export async function installInstallationV1(
   ) {
     throw new InstallationLifecycleError("invalid_target", "CLI command is invalid.");
   }
-  const cliBundle = await readCliBundle(options.cliBundlePath);
-  const bytes: Readonly<Record<(typeof OWNED_RELATIVE_FILES)[number], Uint8Array>> = {
+  const cliAssets = await readCliBundle(options.cliBundlePath);
+  const bytes: Readonly<Record<string, Uint8Array>> = {
     [INSTALLATION_OWNER_FILE]: Buffer.from(markerContent(installationId), "utf8"),
     [INSTALLATION_WRAPPER_FILE]: Buffer.from(wrapperContent(installationId, host), "utf8"),
-    [INSTALLATION_CLI_BUNDLE_FILE]: cliBundle,
+    [INSTALLATION_CLI_BUNDLE_FILE]: cliAssets.cliBundle,
+    [INSTALLATION_NATIVE_KERNEL_PEER_FILE]: cliAssets.nativeKernelPeer,
     [INSTALLATION_CONFIG_FILE]: Buffer.from(
       configContent(root, installationId, configCommand, host),
       "utf8",
@@ -1321,11 +1510,15 @@ export async function installInstallationV1(
   };
   const manifest = manifestFor(root, version, installationId, bytes, host);
   if (existingManifest !== undefined) {
-    const before = await inspectInstallation(root);
+    const before = await inspectInstallation(root, { allowLegacy: true });
     if (before.status === "healthy" && existingManifest.version === version) {
-      const filesMatch = existingManifest.files.every(
-        (file) => file.sha256 === manifest.files.find((next) => next.path === file.path)?.sha256,
-      );
+      const filesMatch =
+        existingManifest.files.length === manifest.files.length &&
+        existingManifest.files.every(
+          (file) =>
+            file.sha256 ===
+            manifest.files.find((next) => next.path === file.path)?.sha256,
+        );
       if (!filesMatch) {
         const upgraded = await upgradeInstallationV1(options);
         return {
@@ -1383,11 +1576,8 @@ export async function installInstallationV1(
       await atomicWriteFile(
         root,
         filePath,
-        bytes[relativePath],
-        relativePath === INSTALLATION_WRAPPER_FILE ||
-          relativePath === INSTALLATION_CLI_BUNDLE_FILE
-          ? 0o755
-          : 0o600,
+        bytes[relativePath]!,
+        ownedFileMode(relativePath),
       );
       written.push(filePath);
     }
@@ -1444,7 +1634,7 @@ export async function upgradeInstallationV1(
       ...(doctor.status === "not_installed" ? {} : { doctor }),
     };
   }
-  const before = await inspectInstallation(root);
+  const before = await inspectInstallation(root, { allowLegacy: true });
   if (before.status !== "healthy") {
     return {
       status: "refused",
@@ -1483,12 +1673,13 @@ export async function upgradeInstallationV1(
   ) {
     throw new InstallationLifecycleError("invalid_target", "CLI command is invalid.");
   }
-  const cliBundle = await readCliBundle(options.cliBundlePath);
+  const cliAssets = await readCliBundle(options.cliBundlePath);
   const installationId = existingManifest.installationId;
-  const bytes: Readonly<Record<(typeof OWNED_RELATIVE_FILES)[number], Uint8Array>> = {
+  const bytes: Readonly<Record<string, Uint8Array>> = {
     [INSTALLATION_OWNER_FILE]: Buffer.from(markerContent(installationId), "utf8"),
     [INSTALLATION_WRAPPER_FILE]: Buffer.from(wrapperContent(installationId, host), "utf8"),
-    [INSTALLATION_CLI_BUNDLE_FILE]: cliBundle,
+    [INSTALLATION_CLI_BUNDLE_FILE]: cliAssets.cliBundle,
+    [INSTALLATION_NATIVE_KERNEL_PEER_FILE]: cliAssets.nativeKernelPeer,
     [INSTALLATION_CONFIG_FILE]: Buffer.from(
       configContent(root, installationId, configCommand, host),
       "utf8",
@@ -1497,6 +1688,7 @@ export async function upgradeInstallationV1(
   const desiredManifest = manifestFor(root, version, installationId, bytes, host);
   const currentMatches =
     existingManifest.version === version &&
+    existingManifest.files.length === desiredManifest.files.length &&
     existingManifest.files.every(
       (file) =>
         file.sha256 ===
@@ -1517,7 +1709,7 @@ export async function upgradeInstallationV1(
 
   // Re-check immediately before snapshotting.  This closes the common race
   // where a host edits a file between the initial Doctor pass and upgrade.
-  const latest = await inspectInstallation(root);
+  const latest = await inspectInstallation(root, { allowLegacy: true });
   if (latest.status !== "healthy") {
     return {
       status: "refused",
@@ -1530,11 +1722,27 @@ export async function upgradeInstallationV1(
       doctor: latest,
     };
   }
-  const currentFiles = {} as Record<
-    (typeof OWNED_RELATIVE_FILES)[number],
-    ExistingFile
-  >;
-  for (const relativePath of OWNED_RELATIVE_FILES) {
+  if (isLegacyManifest(existingManifest)) {
+    try {
+      await lstat(
+        ownedAbsolutePath(root, INSTALLATION_NATIVE_KERNEL_PEER_FILE),
+      );
+      return {
+        status: "refused",
+        root,
+        manifestPath,
+        installationId,
+        fromVersion: existingManifest.version,
+        version,
+        reason: "path_conflict",
+        doctor: await inspectInstallation(root),
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  const currentFiles: Record<string, ExistingFile> = {};
+  for (const { path: relativePath } of existingManifest.files) {
     const filePath = ownedAbsolutePath(root, relativePath);
     const current = await readExistingFile(filePath);
     if (current === undefined) {
@@ -1573,11 +1781,8 @@ export async function upgradeInstallationV1(
       await atomicWriteFile(
         root,
         filePath,
-        bytes[relativePath],
-        relativePath === INSTALLATION_WRAPPER_FILE ||
-          relativePath === INSTALLATION_CLI_BUNDLE_FILE
-          ? 0o755
-          : 0o600,
+        bytes[relativePath]!,
+        ownedFileMode(relativePath),
       );
       written.push(filePath);
     }
@@ -1593,9 +1798,13 @@ export async function upgradeInstallationV1(
     for (const filePath of written.reverse()) {
       const relativePath = path.relative(root, filePath).split(path.sep).join("/") as (typeof OWNED_RELATIVE_FILES)[number];
       const previous = currentFiles[relativePath];
-      await atomicWriteFile(root, filePath, previous.bytes, previous.mode).catch(
-        () => undefined,
-      );
+      if (previous === undefined) {
+        await unlink(filePath).catch(() => undefined);
+      } else {
+        await atomicWriteFile(root, filePath, previous.bytes, previous.mode).catch(
+          () => undefined,
+        );
+      }
     }
     await atomicWriteFile(root, manifestPath, oldManifestBytes, 0o600).catch(
       () => undefined,
@@ -1690,6 +1899,11 @@ export async function rollbackInstallationV1(
   }
   const rollbackPath = path.join(root, INSTALLATION_ROLLBACK_FILE);
   const restoredFiles = snapshot.files;
+  const restoredPaths = new Set(restoredFiles.map((file) => file.path));
+  const extraCurrentFiles = manifest.files.filter(
+    (file) => !restoredPaths.has(file.path),
+  );
+  const removedPaths: string[] = [];
   try {
     for (const file of restoredFiles) {
       const filePath = ownedAbsolutePath(root, file.path);
@@ -1700,6 +1914,21 @@ export async function rollbackInstallationV1(
         file.mode,
       );
     }
+    for (const file of extraCurrentFiles) {
+      await unlink(ownedAbsolutePath(root, file.path));
+      removedPaths.push(file.path);
+    }
+    if (
+      extraCurrentFiles.some(
+        (file) => file.path === INSTALLATION_NATIVE_KERNEL_PEER_FILE,
+      )
+    ) {
+      const nativeTupleDirectory = path.dirname(
+        ownedAbsolutePath(root, INSTALLATION_NATIVE_KERNEL_PEER_FILE),
+      );
+      await rmdir(nativeTupleDirectory);
+      await rmdir(path.dirname(nativeTupleDirectory));
+    }
     await atomicWriteFile(
       root,
       manifestPath,
@@ -1707,6 +1936,7 @@ export async function rollbackInstallationV1(
       0o600,
     );
     await unlink(rollbackPath);
+    removedPaths.push(INSTALLATION_ROLLBACK_FILE);
   } catch {
     return {
       status: "partial",
@@ -1714,7 +1944,7 @@ export async function rollbackInstallationV1(
       manifestPath,
       installationId: manifest.installationId,
       version: snapshot.manifest.version,
-      removedPaths: [],
+      removedPaths,
       refusedPaths: [INSTALLATION_ROLLBACK_FILE],
       reason: "io_error_during_rollback",
     };
@@ -1725,7 +1955,7 @@ export async function rollbackInstallationV1(
     manifestPath,
     installationId: snapshot.manifest.installationId,
     version: snapshot.manifest.version,
-    removedPaths: [INSTALLATION_ROLLBACK_FILE],
+    removedPaths,
     refusedPaths: [],
   };
 }
@@ -1747,7 +1977,7 @@ export async function uninstallInstallationV1(
 ): Promise<UninstallResultV1> {
   const root = await resolveInstallationTargetV1(input, { create: false });
   const manifestPath = path.join(root, INSTALLATION_MANIFEST_FILE);
-  const doctor = await inspectInstallation(root);
+  const doctor = await inspectInstallation(root, { allowLegacy: true });
   if (doctor.status === "not_installed") {
     return { status: "not_installed", root, manifestPath, removedPaths: [], refusedPaths: [] };
   }
@@ -1766,7 +1996,7 @@ export async function uninstallInstallationV1(
   }
   // Re-check immediately before unlinking so a simple concurrent edit cannot
   // turn a safe uninstall into deletion of user-modified content.
-  const latest = await inspectInstallation(root);
+  const latest = await inspectInstallation(root, { allowLegacy: true });
   if (latest.status !== "healthy") {
     return {
       status: "refused",
@@ -1812,7 +2042,12 @@ export async function uninstallInstallationV1(
       reason: "io_error_during_uninstall",
     };
   }
+  const nativeTupleDirectory = path.dirname(
+    ownedAbsolutePath(root, INSTALLATION_NATIVE_KERNEL_PEER_FILE),
+  );
   for (const directory of [
+    nativeTupleDirectory,
+    path.dirname(nativeTupleDirectory),
     path.join(root, "bin"),
     path.join(root, "lib"),
     path.join(root, "config"),

@@ -1,5 +1,13 @@
 import { execFile as execFileCallback } from "node:child_process";
-import { mkdtemp, readFile, stat, writeFile, rm } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -10,6 +18,7 @@ import {
   INSTALLATION_CONFIG_FILE,
   INSTALLATION_CLI_BUNDLE_FILE,
   INSTALLATION_MANIFEST_FILE,
+  INSTALLATION_NATIVE_KERNEL_PEER_FILE,
   INSTALLATION_ROLLBACK_FILE,
   INSTALLATION_WRAPPER_FILE,
   doctorInstallationV1,
@@ -34,7 +43,27 @@ async function temporaryRoot(): Promise<string> {
   return path.join(root, "home");
 }
 
-async function fakeCliBundle(body = "process.exitCode = 0;"): Promise<string> {
+function fakeNativeKernelPeerBinary(revision: number): Buffer {
+  const bytes = Buffer.alloc(64);
+  if (process.platform === "darwin") {
+    Buffer.from([0xcf, 0xfa, 0xed, 0xfe]).copy(bytes);
+    bytes.writeUInt32LE(process.arch === "arm64" ? 0x0100000c : 0x01000007, 4);
+  } else if (process.platform === "linux") {
+    Buffer.from([0x7f, 0x45, 0x4c, 0x46]).copy(bytes);
+    bytes[4] = 2;
+    bytes[5] = 1;
+    bytes.writeUInt16LE(process.arch === "arm64" ? 183 : 62, 18);
+  } else {
+    throw new Error(`unsupported test platform ${process.platform}`);
+  }
+  bytes[63] = revision;
+  return bytes;
+}
+
+async function fakeCliBundle(
+  body = "process.exitCode = 0;",
+  nativeRevision = 1,
+): Promise<string> {
   const root = await mkdtemp(path.join(os.tmpdir(), "understand-code-cli-bundle-"));
   temporaryRoots.push(root);
   const bundlePath = path.join(root, "understand-code.mjs");
@@ -43,6 +72,16 @@ async function fakeCliBundle(body = "process.exitCode = 0;"): Promise<string> {
     `#!/usr/bin/env node\n// understand-code-owned-v1\n${body}\n`,
     { mode: 0o755 },
   );
+  const nativePath = path.join(
+    root,
+    "native",
+    `${process.platform}-${process.arch}`,
+    "provider_kernel_peer.node",
+  );
+  await mkdir(path.dirname(nativePath), { recursive: true });
+  await writeFile(nativePath, fakeNativeKernelPeerBinary(nativeRevision), {
+    mode: 0o644,
+  });
   return bundlePath;
 }
 
@@ -67,6 +106,22 @@ describe("installation lifecycle", () => {
     expect(await readFile(path.join(root, INSTALLATION_CLI_BUNDLE_FILE))).toEqual(
       await readFile(cliBundlePath),
     );
+    expect(
+      await readFile(path.join(root, INSTALLATION_NATIVE_KERNEL_PEER_FILE)),
+    ).toEqual(
+      await readFile(
+        path.join(
+          path.dirname(cliBundlePath),
+          "native",
+          `${process.platform}-${process.arch}`,
+          "provider_kernel_peer.node",
+        ),
+      ),
+    );
+    expect(
+      (await stat(path.join(root, INSTALLATION_NATIVE_KERNEL_PEER_FILE))).mode &
+        0o777,
+    ).toBe(0o644);
     const config = JSON.parse(
       await readFile(path.join(root, INSTALLATION_CONFIG_FILE), "utf8"),
     ) as { marker?: string; mcpServers?: Record<string, unknown> };
@@ -135,6 +190,28 @@ describe("installation lifecycle", () => {
     expect(await stat(bundle)).toBeDefined();
   });
 
+  it("fails closed when the installed native kernel-peer asset is tampered", async () => {
+    const root = await temporaryRoot();
+    await installInstallationV1({ root, cliBundlePath: await fakeCliBundle() });
+    const nativePath = path.join(root, INSTALLATION_NATIVE_KERNEL_PEER_FILE);
+    const nativeBytes = await readFile(nativePath);
+    nativeBytes[63] = nativeBytes[63] === 1 ? 2 : 1;
+    await writeFile(nativePath, nativeBytes);
+
+    const doctor = await doctorInstallationV1({ root });
+    expect(doctor.status).toBe("tampered");
+    expect(doctor.files).toContainEqual(
+      expect.objectContaining({
+        path: INSTALLATION_NATIVE_KERNEL_PEER_FILE,
+        state: "modified",
+      }),
+    );
+    const removed = await uninstallInstallationV1({ root });
+    expect(removed.status).toBe("refused");
+    expect(removed.refusedPaths).toContain(INSTALLATION_NATIVE_KERNEL_PEER_FILE);
+    expect(await stat(nativePath)).toBeDefined();
+  });
+
   it("is idempotent and removes an untouched installation", async () => {
     const root = await temporaryRoot();
     const cliBundlePath = await fakeCliBundle();
@@ -161,8 +238,8 @@ describe("installation lifecycle", () => {
 
   it("upgrades with a durable snapshot and rolls back to the prior version", async () => {
     const root = await temporaryRoot();
-    const firstBundle = await fakeCliBundle("// fixture version 1");
-    const secondBundle = await fakeCliBundle("// fixture version 2");
+    const firstBundle = await fakeCliBundle("// fixture version 1", 1);
+    const secondBundle = await fakeCliBundle("// fixture version 2", 2);
     await installInstallationV1({
       root,
       version: "1.0.0",
@@ -200,6 +277,63 @@ describe("installation lifecycle", () => {
     expect(await readFile(path.join(root, INSTALLATION_CLI_BUNDLE_FILE))).toEqual(
       await readFile(firstBundle),
     );
+    expect(
+      await readFile(path.join(root, INSTALLATION_NATIVE_KERNEL_PEER_FILE)),
+    ).toEqual(
+      await readFile(
+        path.join(
+          path.dirname(firstBundle),
+          "native",
+          `${process.platform}-${process.arch}`,
+          "provider_kernel_peer.node",
+        ),
+      ),
+    );
+  });
+
+  it("migrates a healthy legacy four-file installation and can roll it back", async () => {
+    const root = await temporaryRoot();
+    await installInstallationV1({
+      root,
+      version: "1.0.0",
+      cliBundlePath: await fakeCliBundle("// legacy fixture", 1),
+    });
+    const manifestPath = path.join(root, INSTALLATION_MANIFEST_FILE);
+    const legacyManifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+      files: Array<{ path: string }>;
+    };
+    legacyManifest.files = legacyManifest.files.filter(
+      (file) => file.path !== INSTALLATION_NATIVE_KERNEL_PEER_FILE,
+    );
+    await writeFile(manifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`);
+    await unlink(path.join(root, INSTALLATION_NATIVE_KERNEL_PEER_FILE));
+
+    expect(await doctorInstallationV1({ root })).toMatchObject({
+      status: "tampered",
+      reason: "native_asset_upgrade_required",
+    });
+    const upgraded = await upgradeInstallationV1({
+      root,
+      version: "2.0.0",
+      cliBundlePath: await fakeCliBundle("// migrated fixture", 2),
+    });
+    expect(upgraded.status).toBe("updated");
+    expect(await doctorInstallationV1({ root })).toMatchObject({
+      status: "healthy",
+      version: "2.0.0",
+    });
+
+    const rolledBack = await rollbackInstallationV1({ root });
+    expect(rolledBack).toMatchObject({ status: "rolled_back", version: "1.0.0" });
+    expect(rolledBack.removedPaths).toContain(INSTALLATION_NATIVE_KERNEL_PEER_FILE);
+    await expect(
+      stat(path.join(root, INSTALLATION_NATIVE_KERNEL_PEER_FILE)),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await doctorInstallationV1({ root })).toMatchObject({
+      status: "tampered",
+      reason: "native_asset_upgrade_required",
+    });
+    expect((await uninstallInstallationV1({ root })).status).toBe("removed");
   });
 
   it("refuses rollback when the durable snapshot is tampered", async () => {

@@ -90,6 +90,14 @@ export interface DurableObjectProviderRuntimeServerOptionsV1 {
   /** Opaque, consume-only proof capability retained by the service process. */
   readonly acceptanceIdentityVerificationCapability?:
     ProviderServiceInstallationIdentityVerificationCapabilityInternalV1;
+  /**
+   * Plain/reference runtimes retain the existing HMAC candidate behavior.
+   * Production service handoffs select the locked policy until a future
+   * same-connection Acceptance authority session is implemented.
+   */
+  readonly mutationPolicy?:
+    | "hmac_candidate"
+    | "acceptance_authority_session_required";
   readonly storeOptions?: Omit<
     DurableObjectProviderRuntimeStoreOptionsV1,
     "rootPath" | "providerId"
@@ -105,6 +113,13 @@ export class ProviderRuntimeServerErrorV1 extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ProviderRuntimeServerErrorV1";
+  }
+}
+
+class ProviderRuntimeMutationCapabilityUnavailableErrorV1 extends Error {
+  constructor() {
+    super("runtime mutation capability is unavailable");
+    this.name = "ProviderRuntimeMutationCapabilityUnavailableErrorV1";
   }
 }
 
@@ -315,6 +330,9 @@ export class DurableObjectProviderRuntimeServerV1 {
   readonly #acceptanceIdentityVerificationCapability:
     | ProviderServiceInstallationIdentityVerificationCapabilityInternalV1
     | undefined;
+  readonly #mutationPolicy:
+    | "hmac_candidate"
+    | "acceptance_authority_session_required";
   readonly #connections = new Set<Socket>();
   #server: Server | undefined;
   #socketIdentity: { readonly dev: number; readonly ino: number } | undefined;
@@ -381,6 +399,15 @@ export class DurableObjectProviderRuntimeServerV1 {
     }
     this.#acceptanceIdentityVerificationCapability =
       options.acceptanceIdentityVerificationCapability;
+    this.#mutationPolicy = options.mutationPolicy ?? "hmac_candidate";
+    if (
+      this.#mutationPolicy !== "hmac_candidate" &&
+      this.#mutationPolicy !== "acceptance_authority_session_required"
+    ) {
+      throw new ProviderRuntimeServerErrorV1(
+        "runtime mutation policy is invalid",
+      );
+    }
     this.store = new DurableObjectProviderRuntimeStoreV1({
       ...options.storeOptions,
       rootPath: this.rootPath,
@@ -745,6 +772,16 @@ export class DurableObjectProviderRuntimeServerV1 {
   async #dispatch(
     request: ProviderRuntimeIpcRequestV1,
   ): Promise<unknown> {
+    if (
+      this.#mutationPolicy === "acceptance_authority_session_required" &&
+      (request.operation === "write_object" ||
+        request.operation === "compare_commit")
+    ) {
+      // HMAC possession is intentionally insufficient in a service handoff.
+      // No unlock exists until an Acceptance-bound, same-connection session
+      // is introduced; reject before invoking either mutating store method.
+      throw new ProviderRuntimeMutationCapabilityUnavailableErrorV1();
+    }
     switch (request.operation) {
       case "inspect_state":
         return {
@@ -796,6 +833,12 @@ export class DurableObjectProviderRuntimeServerV1 {
   }
 
   #mapError(error: unknown): { readonly code: ErrorCodeV1; readonly message: string } {
+    if (error instanceof ProviderRuntimeMutationCapabilityUnavailableErrorV1) {
+      return {
+        code: "capability_mismatch",
+        message: "runtime mutation capability is unavailable",
+      };
+    }
     if (error instanceof ProviderRuntimeStorageErrorV1) {
       switch (error.code) {
         case "object_not_found":

@@ -390,6 +390,12 @@ export async function runDurableObjectProviderRuntimeCliV1(
     providerId: options.providerId,
     authKey,
     authorizedCapabilityDigest: options.authorizedCapabilityDigest,
+    ...(service === undefined
+      ? {}
+      : {
+          mutationPolicy:
+            "acceptance_authority_session_required" as const,
+        }),
     ...(service?.acceptanceIdentityVerificationCapability === undefined
       ? {}
       : {

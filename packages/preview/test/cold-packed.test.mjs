@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
+import { once } from "node:events";
 import { createInterface } from "node:readline";
 import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
-import { createServer as createNetServer } from "node:net";
+import { createRequire } from "node:module";
+import { connect as connectNet, createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,12 +34,15 @@ const MAX_PACKED_TARBALL_BYTES = 2 * 1024 * 1024;
 const MAX_EXPANDED_TAR_BYTES = 12 * 1024 * 1024;
 const MAX_PACKED_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_PACKED_TOTAL_FILE_BYTES = 8 * 1024 * 1024;
-const EXPECTED_PACKED_FILE_COUNT = 36;
+const EXPECTED_PACKED_FILE_COUNT = 37;
+const NATIVE_KERNEL_PEER_PACKED_PATH = `package/dist/native/${process.platform}-${process.arch}/provider_kernel_peer.node`;
+const requireV1 = createRequire(import.meta.url);
 
 const packedFileRules = [
   { label: "package metadata", pattern: /^package\/(?:README\.md|package\.json)$/u, count: 2, mode: 0o644 },
   { label: "runtime modules", pattern: /^package\/dist\/(?:README\.md|bin\.mjs|contracts\.mjs|server\.mjs)$/u, count: 4, mode: 0o644 },
   { label: "MCP executable", pattern: /^package\/dist\/understand-code\.mjs$/u, count: 1, mode: 0o755 },
+  { label: "kernel peer native addon", pattern: new RegExp(`^${NATIVE_KERNEL_PEER_PACKED_PATH.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}$`, "u"), count: 1, mode: 0o644 },
   { label: "dashboard roots", pattern: /^package\/dist\/dashboard\/(?:config\.json|favicon\.ico|favicon\.svg|index\.html|meta\.json)$/u, count: 5, mode: 0o644 },
   { label: "Graph Explorer chunk", pattern: /^package\/dist\/dashboard\/assets\/GraphExplorer-[A-Za-z0-9_-]+\.js$/u, count: 1, mode: 0o644 },
   { label: "graph layout chunk", pattern: /^package\/dist\/dashboard\/assets\/graph-layout-[A-Za-z0-9_-]+\.js$/u, count: 1, mode: 0o644 },
@@ -299,6 +304,50 @@ function startPreview(executable, cwd, args = ["--demo", "--port", "0", "--no-op
     });
   }), "cold Preview ready");
   return { child, ready };
+}
+
+async function assertInstalledNativeKernelPeer(installedPackageRoot, packedFiles) {
+  const nativePath = path.join(
+    installedPackageRoot,
+    "dist/native",
+    `${process.platform}-${process.arch}`,
+    "provider_kernel_peer.node",
+  );
+  assert.deepEqual(
+    await readFile(nativePath),
+    packedFiles.get(NATIVE_KERNEL_PEER_PACKED_PATH),
+    "installed native addon must equal its reviewed tgz entry",
+  );
+  const addon = requireV1(nativePath);
+  assert.equal(typeof addon.readPeerCredentials, "function");
+
+  const socketRoot = await mkdtemp(path.join(tmpdir(), "preview-native-peer-"));
+  const socketPath = path.join(socketRoot, "peer.sock");
+  const server = createNetServer();
+  let client;
+  let accepted;
+  try {
+    const acceptedPromise = once(server, "connection").then(([socket]) => socket);
+    server.listen(socketPath);
+    await once(server, "listening");
+    client = connectNet(socketPath);
+    await once(client, "connect");
+    accepted = await acceptedPromise;
+    const fileDescriptor = Reflect.get(accepted, "_handle")?.fd;
+    assert.ok(Number.isSafeInteger(fileDescriptor) && fileDescriptor >= 0);
+    assert.deepEqual(addon.readPeerCredentials(fileDescriptor), {
+      uid: process.getuid?.(),
+      gid: process.getgid?.(),
+      pid: process.pid,
+    });
+  } finally {
+    client?.destroy();
+    accepted?.destroy();
+    if (server.listening) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    await rm(socketRoot, { force: true, recursive: true });
+  }
 }
 
 function writeMessage(child, message) {
@@ -620,6 +669,7 @@ test("cold packed Preview installs outside the monorepo with both usable bins", 
     assert.doesNotMatch(bundle, new RegExp(packageRoot.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
     const installedPreviewBundle = await readFile(path.join(installedPackageRoot, "dist/bin.mjs"), "utf8");
     assert.doesNotMatch(installedPreviewBundle, new RegExp(packageRoot.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+    await assertInstalledNativeKernelPeer(installedPackageRoot, packedFiles);
     const preview = startPreview(previewBin, installDirectory);
     previewChild = preview.child;
     const ready = await preview.ready;

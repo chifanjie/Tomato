@@ -96,11 +96,13 @@ export {
   diagnoseProviderRuntimeGateCandidateV1,
   diagnoseProviderRuntimeDurableAcceptanceCandidateV1,
   diagnoseProviderRuntimeIdentityPrincipalAcceptanceCandidateV1,
+  diagnoseProviderRuntimeKernelIdentityPrincipalAcceptanceCandidateV1,
   diagnoseProviderRuntimeLiveGateCandidateV1,
   diagnoseProviderRuntimePrincipalAcceptanceCandidateV1,
   runProviderRuntimeDurableAcceptanceCandidateV1,
   runProviderRuntimeGateCandidateV1,
   runProviderRuntimeIdentityPrincipalAcceptanceCandidateV1,
+  runProviderRuntimeKernelIdentityPrincipalAcceptanceCandidateV1,
   runProviderRuntimeLiveGateCandidateV1,
   runProviderRuntimePrincipalAcceptanceCandidateV1,
 } from "./gate-candidate-runtime.js";
@@ -112,12 +114,15 @@ export type {
   ProviderRuntimeLiveGateCandidateDiagnosticV1,
   ProviderRuntimeIdentityPrincipalAcceptanceCandidateDiagnosticV1,
   ProviderRuntimeIdentityPrincipalAcceptanceCandidateV1,
+  ProviderRuntimeKernelIdentityPrincipalAcceptanceCandidateDiagnosticV1,
+  ProviderRuntimeKernelIdentityPrincipalAcceptanceCandidateV1,
   ProviderRuntimePrincipalAcceptanceCandidateDiagnosticV1,
   ProviderRuntimePrincipalAcceptanceCandidateV1,
   RunProviderRuntimeLiveGateCandidateOptionsV1,
   RunProviderRuntimeDurableAcceptanceCandidateOptionsV1,
   RunProviderRuntimeGateCandidateOptionsV1,
   RunProviderRuntimeIdentityPrincipalAcceptanceCandidateOptionsV1,
+  RunProviderRuntimeKernelIdentityPrincipalAcceptanceCandidateOptionsV1,
   RunProviderRuntimePrincipalAcceptanceCandidateOptionsV1,
 } from "./gate-candidate-runtime.js";
 export type {
@@ -193,11 +198,16 @@ export type {
   VerifyProviderRuntimeDurableAcceptanceCurrentOptionsV1,
 } from "./durable-acceptance-current.js";
 export {
+  PROVIDER_RUNTIME_PRINCIPAL_KERNEL_PEER_LIVE_REQUIRED_NEXT_V1,
   PROVIDER_RUNTIME_PRINCIPAL_KEY_LIVE_REQUIRED_NEXT_V1,
+  verifyProviderRuntimeLivePrincipalKernelPeerChallengeV1,
   verifyProviderRuntimeLivePrincipalChallengeV1,
 } from "./live-principal-challenge.js";
 export type {
+  ProviderRuntimeLivePrincipalKernelPeerChallengeResultV1,
   ProviderRuntimeLivePrincipalChallengeResultV1,
+  ProviderRuntimePrincipalKernelPeerLiveCandidateV1,
+  ProviderRuntimePrincipalKernelPeerLiveUnavailableV1,
   ProviderRuntimePrincipalKeyLiveCandidateV1,
   ProviderRuntimePrincipalKeyLiveUnavailableV1,
   VerifyProviderRuntimeLivePrincipalChallengeOptionsV1,

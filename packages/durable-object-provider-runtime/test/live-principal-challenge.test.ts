@@ -17,7 +17,10 @@ import {
 } from "@understand-code/durable-object-provider-contracts/provider-strong-ready-acceptance-candidate";
 
 import { diagnoseProviderRuntimeDurableExecutionPrincipalHeadV1 } from "../src/durable-execution-principal-head.js";
-import { verifyProviderRuntimeLivePrincipalChallengeV1 } from "../src/live-principal-challenge.js";
+import {
+  verifyProviderRuntimeLivePrincipalChallengeV1,
+  verifyProviderRuntimeLivePrincipalKernelPeerChallengeV1,
+} from "../src/live-principal-challenge.js";
 import { DurableObjectProviderRuntimeServerV1 } from "../src/server.js";
 import {
   createProviderServiceHandoffConfigV1,
@@ -51,7 +54,9 @@ afterEach(async () => {
   roots.clear();
 });
 
-async function fixtureV1(): Promise<{
+async function fixtureV1(input?: {
+  readonly principalUid?: number;
+}): Promise<{
   readonly config: ProviderServiceHandoffConfigV1;
   readonly server: DurableObjectProviderRuntimeServerV1;
   readonly authKey: Uint8Array;
@@ -71,7 +76,7 @@ async function fixtureV1(): Promise<{
       principal: {
         kind: "dedicated_os_principal",
         name: "ucprovider",
-        uid: process.getuid!(),
+        uid: input?.principalUid ?? process.getuid!(),
         gid: process.getgid!(),
       },
       runtimeRoot: root,
@@ -212,9 +217,37 @@ describe("live provider principal challenge", () => {
         capabilityDigest: CAPABILITY_DIGEST,
         handoffPayloadDigest: config.payloadDigest,
         servicePublicKey: config.publicKey,
+        processId: process.pid,
         journalRevision: 0,
         journalPhase: "uninitialized",
         journalMutationDigest: "none",
+      },
+    });
+
+    await expect(
+      verifyProviderRuntimeLivePrincipalKernelPeerChallengeV1({
+        config,
+        expectedJournalRevision: 0,
+        expectedJournalPhase: "uninitialized",
+        expectedJournalMutationDigest: "none",
+        expectedInstallationIdentityDigest: INSTALLATION_DIGEST,
+      }),
+    ).resolves.toMatchObject({
+      status: "principal_key_and_kernel_os_peer_live_candidate",
+      authority: "none",
+      accessMode: "read_only",
+      strongWriteStatus: "locked",
+      requiredNext: "acceptance_identity_token_gate",
+      principalKey: { bindings: { processId: process.pid } },
+      kernelPeer: {
+        authority: "none",
+        accessMode: "read_only",
+        strongWriteStatus: "locked",
+        bindings: {
+          uid: process.getuid!(),
+          gid: process.getgid!(),
+          pid: process.pid,
+        },
       },
     });
   });
@@ -251,6 +284,24 @@ describe("live provider principal challenge", () => {
       status: "unavailable",
       reason: "binding_mismatch",
       strongWriteStatus: "locked",
+    });
+
+    const mismatched = await fixtureV1({
+      principalUid: process.getuid!() + 1,
+    });
+    await expect(
+      verifyProviderRuntimeLivePrincipalKernelPeerChallengeV1({
+        config: mismatched.config,
+        expectedJournalRevision: 0,
+        expectedJournalPhase: "uninitialized",
+        expectedJournalMutationDigest: "none",
+      }),
+    ).resolves.toEqual({
+      status: "unavailable",
+      authority: "none",
+      accessMode: "read_only",
+      strongWriteStatus: "locked",
+      reason: "kernel_peer_identity_mismatch",
     });
   });
 

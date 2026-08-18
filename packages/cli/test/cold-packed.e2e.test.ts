@@ -1,6 +1,8 @@
 import { spawn, execFile } from "node:child_process";
 import { once } from "node:events";
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, readdir, readFile, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { connect, createServer, type Socket } from "node:net";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -29,6 +31,55 @@ const packageRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
+const requireV1 = createRequire(import.meta.url);
+
+async function assertInstalledNativeKernelPeerV1(
+  packageDirectory: string,
+): Promise<void> {
+  const tuple = `${process.platform}-${process.arch}`;
+  const nativeRoot = path.join(packageDirectory, "dist/native");
+  const nativeTupleRoot = path.join(nativeRoot, tuple);
+  const nativePath = path.join(nativeTupleRoot, "provider_kernel_peer.node");
+  expect(await readdir(nativeRoot)).toEqual([tuple]);
+  expect(await readdir(nativeTupleRoot)).toEqual(["provider_kernel_peer.node"]);
+  const metadata = await lstat(nativePath);
+  expect(metadata.isFile()).toBe(true);
+  expect(metadata.isSymbolicLink()).toBe(false);
+  expect(metadata.mode & 0o777).toBe(0o644);
+
+  const addon = requireV1(nativePath) as {
+    readonly readPeerCredentials?: (fileDescriptor: number) => unknown;
+  };
+  expect(addon.readPeerCredentials).toBeTypeOf("function");
+  const socketRoot = await createTemporaryDirectory("understand-code-native-");
+  const socketPath = path.join(socketRoot, "peer.sock");
+  const server = createServer();
+  let client: Socket | undefined;
+  let accepted: Socket | undefined;
+  try {
+    const acceptedPromise = once(server, "connection").then(
+      ([socket]) => socket as Socket,
+    );
+    server.listen(socketPath);
+    await once(server, "listening");
+    client = connect(socketPath);
+    await once(client, "connect");
+    accepted = await acceptedPromise;
+    const handle = Reflect.get(accepted, "_handle") as { readonly fd?: unknown };
+    expect(handle?.fd).toBeTypeOf("number");
+    expect(addon.readPeerCredentials!(handle.fd as number)).toEqual({
+      uid: process.getuid?.(),
+      gid: process.getgid?.(),
+      pid: process.pid,
+    });
+  } finally {
+    client?.destroy();
+    accepted?.destroy();
+    if (server.listening) {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
+}
 
 afterEach(cleanupTemporaryDirectories);
 
@@ -114,6 +165,7 @@ describe("cold packed CLI", () => {
       );
       expect(bundle).not.toContain("workspace:*");
       expect(bundle).not.toContain(packageRoot);
+      await assertInstalledNativeKernelPeerV1(installed.packageDirectory);
 
       const child = spawn(
         installed.executable,

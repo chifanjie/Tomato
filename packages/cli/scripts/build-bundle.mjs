@@ -5,10 +5,13 @@ import { fileURLToPath } from "node:url";
 
 import { build } from "esbuild";
 
+import { copyCurrentNativeKernelPeerAssetV1 } from "./native-kernel-peer-asset.mjs";
+
 const packageRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
+const workspaceRoot = path.resolve(packageRoot, "../..");
 const output = path.join(packageRoot, "dist/understand-code.mjs");
 
 await mkdir(path.dirname(output), { recursive: true });
@@ -49,3 +52,10 @@ if (/workspace:\*/u.test(bytes)) {
   throw new Error("The CLI bundle contains an unresolved workspace dependency.");
 }
 await chmod(output, 0o755);
+await copyCurrentNativeKernelPeerAssetV1({
+  sourceNativeRoot: path.join(
+    workspaceRoot,
+    "packages/durable-object-provider-runtime/dist/native",
+  ),
+  destinationNativeRoot: path.join(packageRoot, "dist/native"),
+});

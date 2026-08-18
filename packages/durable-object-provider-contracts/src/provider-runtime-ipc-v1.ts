@@ -37,6 +37,7 @@ const PositiveSafeIntegerV1Schema = z
   .int()
   .min(1)
   .max(Number.MAX_SAFE_INTEGER);
+const ProcessIdV1Schema = z.number().int().min(1).max(0x7fff_ffff);
 
 export type ProviderRuntimeIpcJsonValueV1 =
   | null
@@ -171,6 +172,7 @@ const ProviderRuntimeIpcPrincipalAttestationClaimsShapeV1 = {
   providerId: DurableObjectIdentityProviderIdV1Schema,
   capabilityDigest: ContentDigestV1Schema,
   challenge: LowerHex64V1Schema,
+  processId: ProcessIdV1Schema,
   revision: NonnegativeSafeIntegerV1Schema,
   phase: z.string().min(1).max(128),
   mutationDigest: z.union([ContentDigestV1Schema, z.literal("none")]),

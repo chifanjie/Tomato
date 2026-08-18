@@ -121,6 +121,7 @@ describe("provider runtime principal challenge", () => {
       providerId: PROVIDER_ID,
       capabilityDigest: CAPABILITY_DIGEST,
       challenge,
+      processId: process.pid,
       revision: state.revision,
       phase: state.phase,
       mutationDigest: state.mutationDigest,

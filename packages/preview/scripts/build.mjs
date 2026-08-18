@@ -5,6 +5,8 @@ import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
+import { copyCurrentNativeKernelPeerAssetV1 } from "../../cli/scripts/native-kernel-peer-asset.mjs";
+
 const exec = promisify(execFile);
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const workspaceRoot = path.resolve(packageRoot, "../..");
@@ -163,6 +165,7 @@ async function main() {
   await rm(distRoot, { recursive: true, force: true });
   await mkdir(distRoot, { recursive: true });
   await run("pnpm", ["--filter", "@understand-code/durable-object-provider-contracts", "build"]);
+  await run("pnpm", ["--filter", "@understand-code/durable-object-provider-runtime", "build"]);
   await run("pnpm", ["--filter", "@understand-code/contracts", "build"]);
   await run("pnpm", ["--filter", "@understand-code/repository-state", "build"]);
   await run("pnpm", ["--filter", "@understand-code/artifact-store", "build"]);
@@ -184,6 +187,10 @@ async function main() {
   const meta = { lastAnalyzedAt: wiki.generatedAt, gitCommitHash: "preview-fixture", version: "1.0.0", analyzedFiles: 1, theme: { presetId: "technical-document" } };
   await cp(path.join(workspaceRoot, "packages/cli/dist/understand-code.mjs"), path.join(distRoot, "understand-code.mjs"));
   await chmod(path.join(distRoot, "understand-code.mjs"), 0o755);
+  await copyCurrentNativeKernelPeerAssetV1({
+    sourceNativeRoot: path.join(workspaceRoot, "packages/cli/dist/native"),
+    destinationNativeRoot: path.join(distRoot, "native"),
+  });
   await cp(path.join(packageRoot, "src/bin.mjs"), path.join(distRoot, "bin.mjs"));
   await cp(path.join(packageRoot, "src/server.mjs"), path.join(distRoot, "server.mjs"));
   const demoRoot = path.join(distRoot, "demo/.understand-code");

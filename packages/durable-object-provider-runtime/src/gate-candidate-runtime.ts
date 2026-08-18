@@ -37,7 +37,9 @@ import {
   type ProviderRuntimeDurableAcceptanceCurrentCandidateV1,
 } from "./durable-acceptance-current.js";
 import {
+  verifyProviderRuntimeLivePrincipalKernelPeerChallengeV1,
   verifyProviderRuntimeLivePrincipalChallengeV1,
+  type ProviderRuntimePrincipalKernelPeerLiveCandidateV1,
   type ProviderRuntimePrincipalKeyLiveCandidateV1,
 } from "./live-principal-challenge.js";
 import {
@@ -55,7 +57,8 @@ export type ProviderRuntimeGateCandidateStageV1 =
   | "live_gate_binding"
   | "durable_acceptance_current"
   | "principal_key_live"
-  | "acceptance_identity_token";
+  | "acceptance_identity_token"
+  | "kernel_os_peer";
 
 export type ProviderRuntimeGateCandidateConformanceInputV1 =
   | {
@@ -176,6 +179,36 @@ export type ProviderRuntimeIdentityPrincipalAcceptanceCandidateDiagnosticV1 =
       readonly stage: ProviderRuntimeGateCandidateStageV1;
     };
 
+export type RunProviderRuntimeKernelIdentityPrincipalAcceptanceCandidateOptionsV1 =
+  RunProviderRuntimeIdentityPrincipalAcceptanceCandidateOptionsV1;
+
+export interface ProviderRuntimeKernelIdentityPrincipalAcceptanceCandidateV1 {
+  readonly status:
+    "kernel_peer_identity_token_principal_and_durable_acceptance_candidate";
+  readonly authority: "none";
+  readonly accessMode: "read_only";
+  readonly strongWriteStatus: "locked";
+  readonly requiredNext: "final_acceptance_authority_closeout";
+  readonly acceptanceIdentity:
+    ProviderRuntimeAcceptanceIdentityTokenCurrentCandidateV1;
+  readonly principalKey: ProviderRuntimePrincipalKeyLiveCandidateV1;
+  readonly kernelPeer:
+    ProviderRuntimePrincipalKernelPeerLiveCandidateV1["kernelPeer"];
+}
+
+export type ProviderRuntimeKernelIdentityPrincipalAcceptanceCandidateDiagnosticV1 =
+  | {
+      readonly ok: true;
+      readonly value:
+        ProviderRuntimeKernelIdentityPrincipalAcceptanceCandidateV1;
+    }
+  | {
+      readonly ok: false;
+      readonly code: "provider_unavailable";
+      readonly reason: "attestation_invalid";
+      readonly stage: ProviderRuntimeGateCandidateStageV1;
+    };
+
 function unavailableV1(
   stage: ProviderRuntimeGateCandidateStageV1,
 ): ProviderRuntimeGateCandidateDiagnosticV1 {
@@ -223,6 +256,17 @@ function unavailablePrincipalV1(
 function unavailableIdentityPrincipalV1(
   stage: ProviderRuntimeGateCandidateStageV1,
 ): ProviderRuntimeIdentityPrincipalAcceptanceCandidateDiagnosticV1 {
+  return {
+    ok: false,
+    code: "provider_unavailable",
+    reason: "attestation_invalid",
+    stage,
+  };
+}
+
+function unavailableKernelIdentityPrincipalV1(
+  stage: ProviderRuntimeGateCandidateStageV1,
+): ProviderRuntimeKernelIdentityPrincipalAcceptanceCandidateDiagnosticV1 {
   return {
     ok: false,
     code: "provider_unavailable",
@@ -543,15 +587,19 @@ export async function runProviderRuntimePrincipalAcceptanceCandidateV1(
   return diagnoseProviderRuntimePrincipalAcceptanceCandidateV1(options);
 }
 
-/**
- * Close the complete raw Gate chain over the current durable Acceptance,
- * freshly verify its keyed token with the opaque Installation Identity
- * capability, and challenge the live service key at that exact journal head.
- * Kernel peer credentials remain the sole explicit successor gate.
- */
-export async function diagnoseProviderRuntimeIdentityPrincipalAcceptanceCandidateV1(
+async function diagnoseIdentityAcceptanceCandidateV1(
   options: RunProviderRuntimeIdentityPrincipalAcceptanceCandidateOptionsV1,
-): Promise<ProviderRuntimeIdentityPrincipalAcceptanceCandidateDiagnosticV1> {
+): Promise<
+  | {
+      readonly ok: true;
+      readonly value:
+        ProviderRuntimeAcceptanceIdentityTokenCurrentCandidateV1;
+    }
+  | {
+      readonly ok: false;
+      readonly stage: ProviderRuntimeGateCandidateStageV1;
+    }
+> {
   try {
     const {
       identityVerificationCapability,
@@ -575,9 +623,7 @@ export async function diagnoseProviderRuntimeIdentityPrincipalAcceptanceCandidat
     const collected = await collectGateCandidateValuesV1(
       candidateOptions as RunProviderRuntimeGateCandidateOptionsV1,
     );
-    if (!collected.ok) {
-      return unavailableIdentityPrincipalV1(collected.stage);
-    }
+    if (!collected.ok) return collected;
     const acceptanceIdentity =
       await diagnoseProviderRuntimeAcceptanceIdentityTokenCurrentV1({
         liveGateBinding: {
@@ -600,24 +646,47 @@ export async function diagnoseProviderRuntimeIdentityPrincipalAcceptanceCandidat
         },
         identityVerificationCapability,
       });
+    return acceptanceIdentity.ok
+      ? { ok: true, value: acceptanceIdentity.value }
+      : { ok: false, stage: "acceptance_identity_token" };
+  } catch {
+    return { ok: false, stage: "acceptance_identity_token" };
+  }
+}
+
+/**
+ * Close the complete raw Gate chain over the current durable Acceptance,
+ * freshly verify its keyed token with the opaque Installation Identity
+ * capability, and challenge the live service key at that exact journal head.
+ * Kernel peer credentials remain the sole explicit successor gate.
+ */
+export async function diagnoseProviderRuntimeIdentityPrincipalAcceptanceCandidateV1(
+  options: RunProviderRuntimeIdentityPrincipalAcceptanceCandidateOptionsV1,
+): Promise<ProviderRuntimeIdentityPrincipalAcceptanceCandidateDiagnosticV1> {
+  try {
+    const acceptanceIdentity = await diagnoseIdentityAcceptanceCandidateV1(
+      options,
+    );
     if (!acceptanceIdentity.ok) {
-      return unavailableIdentityPrincipalV1("acceptance_identity_token");
+      return unavailableIdentityPrincipalV1(acceptanceIdentity.stage);
     }
     const principalKey = await verifyProviderRuntimeLivePrincipalChallengeV1({
-      config,
+      config: options.config,
       expectedJournalRevision:
         acceptanceIdentity.value.bindings.journalRevision,
       expectedJournalPhase: "final_strong_ready",
       expectedJournalMutationDigest:
         acceptanceIdentity.value.bindings.journalMutationDigest,
-      expectedInstallationIdentityDigest,
-      timeoutMs,
+      expectedInstallationIdentityDigest:
+        options.expectedInstallationIdentityDigest,
+      timeoutMs: options.timeoutMs,
     });
     if (
       principalKey.status !== "principal_key_live_candidate" ||
       principalKey.bindings.providerId !==
         acceptanceIdentity.value.bindings.providerId ||
-      principalKey.bindings.capabilityDigest !== expectedCapabilityDigest ||
+      principalKey.bindings.capabilityDigest !==
+        options.expectedCapabilityDigest ||
       principalKey.bindings.journalRevision !==
         acceptanceIdentity.value.bindings.journalRevision ||
       principalKey.bindings.journalPhase !== "final_strong_ready" ||
@@ -648,6 +717,91 @@ export async function runProviderRuntimeIdentityPrincipalAcceptanceCandidateV1(
   options: RunProviderRuntimeIdentityPrincipalAcceptanceCandidateOptionsV1,
 ): Promise<ProviderRuntimeIdentityPrincipalAcceptanceCandidateDiagnosticV1> {
   return diagnoseProviderRuntimeIdentityPrincipalAcceptanceCandidateV1(
+    options,
+  );
+}
+
+/**
+ * Close the current durable Acceptance token, live principal key, and kernel
+ * peer identity over one exact journal head. Even this aggregate is only the
+ * final locked candidate; authority closeout is deliberately separate.
+ */
+export async function diagnoseProviderRuntimeKernelIdentityPrincipalAcceptanceCandidateV1(
+  options: RunProviderRuntimeKernelIdentityPrincipalAcceptanceCandidateOptionsV1,
+): Promise<ProviderRuntimeKernelIdentityPrincipalAcceptanceCandidateDiagnosticV1> {
+  try {
+    const acceptanceIdentity = await diagnoseIdentityAcceptanceCandidateV1(
+      options,
+    );
+    if (!acceptanceIdentity.ok) {
+      return unavailableKernelIdentityPrincipalV1(
+        acceptanceIdentity.stage,
+      );
+    }
+    const principalAndKernelPeer =
+      await verifyProviderRuntimeLivePrincipalKernelPeerChallengeV1({
+        config: options.config,
+        expectedJournalRevision:
+          acceptanceIdentity.value.bindings.journalRevision,
+        expectedJournalPhase: "final_strong_ready",
+        expectedJournalMutationDigest:
+          acceptanceIdentity.value.bindings.journalMutationDigest,
+        expectedInstallationIdentityDigest:
+          options.expectedInstallationIdentityDigest,
+        timeoutMs: options.timeoutMs,
+      });
+    if (
+      principalAndKernelPeer.status !==
+      "principal_key_and_kernel_os_peer_live_candidate"
+    ) {
+      return unavailableKernelIdentityPrincipalV1(
+        principalAndKernelPeer.reason === "kernel_peer_unavailable" ||
+          principalAndKernelPeer.reason ===
+            "kernel_peer_identity_mismatch"
+          ? "kernel_os_peer"
+          : "principal_key_live",
+      );
+    }
+    const { principalKey, kernelPeer } = principalAndKernelPeer;
+    if (
+      principalKey.bindings.providerId !==
+        acceptanceIdentity.value.bindings.providerId ||
+      principalKey.bindings.capabilityDigest !==
+        options.expectedCapabilityDigest ||
+      principalKey.bindings.journalRevision !==
+        acceptanceIdentity.value.bindings.journalRevision ||
+      principalKey.bindings.journalPhase !== "final_strong_ready" ||
+      principalKey.bindings.journalMutationDigest !==
+        acceptanceIdentity.value.bindings.journalMutationDigest ||
+      principalKey.bindings.processId !== kernelPeer.bindings.pid ||
+      kernelPeer.bindings.uid !== options.config.payload.principal.uid ||
+      kernelPeer.bindings.gid !== options.config.payload.principal.gid
+    ) {
+      return unavailableKernelIdentityPrincipalV1("kernel_os_peer");
+    }
+    return {
+      ok: true,
+      value: Object.freeze({
+        status:
+          "kernel_peer_identity_token_principal_and_durable_acceptance_candidate" as const,
+        authority: "none" as const,
+        accessMode: "read_only" as const,
+        strongWriteStatus: "locked" as const,
+        requiredNext: "final_acceptance_authority_closeout" as const,
+        acceptanceIdentity: acceptanceIdentity.value,
+        principalKey,
+        kernelPeer,
+      }),
+    };
+  } catch {
+    return unavailableKernelIdentityPrincipalV1("kernel_os_peer");
+  }
+}
+
+export async function runProviderRuntimeKernelIdentityPrincipalAcceptanceCandidateV1(
+  options: RunProviderRuntimeKernelIdentityPrincipalAcceptanceCandidateOptionsV1,
+): Promise<ProviderRuntimeKernelIdentityPrincipalAcceptanceCandidateDiagnosticV1> {
+  return diagnoseProviderRuntimeKernelIdentityPrincipalAcceptanceCandidateV1(
     options,
   );
 }

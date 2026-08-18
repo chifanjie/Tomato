@@ -644,6 +644,7 @@ export class DurableObjectProviderRuntimeServerV1 {
       providerId: this.providerId,
       capabilityDigest: this.#authorizedCapabilityDigest,
       challenge: request.challenge,
+      processId: process.pid,
       revision: state.revision,
       phase: state.phase,
       mutationDigest: state.mutationDigest,

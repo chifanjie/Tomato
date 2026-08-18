@@ -36,6 +36,7 @@ import {
 import {
   deriveProviderAcceptanceStateTokenWithIdentityCapabilityInternalV1,
   isProviderStrongReadyBootstrapOrSteadyAcceptanceIdentityVerificationCapabilityErrorInternalV1,
+  verifyProviderAcceptanceStateTokenWithIdentityCapabilityInternalV1,
   type ProviderStrongReadyBootstrapOrSteadyAcceptanceIdentityVerificationCapabilityV1,
 } from "./provider-strong-ready-bootstrap-or-steady-acceptance-identity-verification-capability-internal.js";
 import {
@@ -818,6 +819,44 @@ export interface CreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppe
     ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReferenceMachineCapabilityInternalV1;
 }
 
+/**
+ * Consume an already-minted, package-authentic Installation Identity
+ * capability to verify one exact strong-ready Acceptance envelope.  The
+ * capability remains opaque: this seam neither serializes nor mints it and
+ * grants no provider or compare-append authority.
+ */
+export async function verifyProviderStrongReadyAcceptanceEnvelopeTokenWithIdentityCapabilityV1(
+  identityVerificationCapability: ProviderStrongReadyBootstrapOrSteadyAcceptanceIdentityVerificationCapabilityV1,
+  acceptanceStateEnvelope: unknown,
+): Promise<boolean> {
+  try {
+    const envelope =
+      ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1Schema.parse(
+        acceptanceStateEnvelope,
+      );
+    if (
+      envelope.generationId !== envelope.payload.generationId ||
+      envelope.installationIdentityGenerationId !==
+        envelope.payload.installationIdentityGenerationId ||
+      envelope.acceptedAt !== envelope.payload.acceptedAt ||
+      envelope.contentDigest !==
+        deriveProviderStrongReadyAcceptanceStateContentDigestV1(
+          envelope.payload,
+        )
+    ) {
+      return false;
+    }
+    return await verifyProviderAcceptanceStateTokenWithIdentityCapabilityInternalV1(
+      identityVerificationCapability,
+      envelope.installationIdentityGenerationId,
+      envelope.payload,
+      envelope.payload.acceptanceToken,
+    );
+  } catch {
+    return false;
+  }
+}
+
 interface AcceptanceCompareAppendClosureDiagnosticFailureV1 {
   readonly ok: false;
   readonly stage:
@@ -1448,4 +1487,7 @@ CapturedObjectFreezeV1(
 );
 CapturedObjectFreezeV1(
   createProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1,
+);
+CapturedObjectFreezeV1(
+  verifyProviderStrongReadyAcceptanceEnvelopeTokenWithIdentityCapabilityV1,
 );

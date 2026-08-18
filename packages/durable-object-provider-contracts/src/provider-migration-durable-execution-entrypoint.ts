@@ -9,10 +9,14 @@
 import type {
   ProviderRuntimeIpcCompareCommitResultV1,
   ProviderRuntimeIpcFixedObjectLocatorV1,
+  ProviderRuntimeIpcJournalStateV1,
   ProviderRuntimeIpcJsonValueV1,
   ProviderRuntimeIpcReadObjectResultV1,
   ProviderRuntimeIpcWriteObjectResultV1,
 } from "./provider-runtime-ipc-v1.js";
+import type {
+  ProviderStrongReadyAcceptanceGenerationPinCandidateV1,
+} from "./provider-strong-ready-acceptance-candidate.js";
 import {
   diagnoseProviderMigrationDurableExecutionOrchestratorInternalV1,
   type ProviderMigrationDurableExecutionDiagnosticResultInternalV1,
@@ -63,6 +67,10 @@ export interface ProviderMigrationDurableExecutionSummaryV1 {
   readonly copiedLogicalBytes: number;
   readonly finalJournalRevision: number;
   readonly finalJournalPhase: string;
+  readonly finalJournalMutationDigest:
+    ProviderRuntimeIpcJournalStateV1["mutationDigest"];
+  readonly finalStrongReadyAcceptancePin:
+    ProviderStrongReadyAcceptanceGenerationPinCandidateV1;
 }
 
 export type ProviderMigrationDurableExecutionEntrypointResultV1 =
@@ -145,6 +153,11 @@ export async function runProviderMigrationDurableExecutionV1(
       copiedLogicalBytes: value.copiedLogicalBytes,
       finalJournalRevision: value.finalJournalState.revision,
       finalJournalPhase: value.finalJournalState.phase,
+      finalJournalMutationDigest: value.finalJournalState.mutationDigest,
+      finalStrongReadyAcceptancePin: Object.freeze({
+        ...value.referenceLifecycle.finalStrongReadyAcceptanceClosure
+          .finalStrongReadyAcceptancePin,
+      }),
     }),
   });
 }

@@ -1,0 +1,75 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-runtime-ipc-principal-attestation-v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "protocol": {
+      "type": "string",
+      "const": "understand_code_durable_provider_ipc_v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "principal_attestation"
+    },
+    "providerId": {
+      "type": "string",
+      "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+    },
+    "capabilityDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "challenge": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "phase": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "mutationDigest": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        {
+          "type": "string",
+          "const": "none"
+        }
+      ]
+    },
+    "handoffPayloadDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "publicKey": {
+      "type": "string",
+      "pattern": "^base64url:(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$"
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^base64url:(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$"
+    }
+  },
+  "required": [
+    "protocol",
+    "kind",
+    "providerId",
+    "capabilityDigest",
+    "challenge",
+    "revision",
+    "phase",
+    "mutationDigest",
+    "handoffPayloadDigest",
+    "publicKey",
+    "signature"
+  ],
+  "additionalProperties": false
+}

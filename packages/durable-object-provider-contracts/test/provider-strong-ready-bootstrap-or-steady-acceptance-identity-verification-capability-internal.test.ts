@@ -22,6 +22,9 @@ import {
   type ProviderStrongReadyBootstrapOrSteadyAcceptanceHighWaterEnvelopeReferenceCandidateV1,
 } from "../src/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-reference-candidate-wire.js";
 import {
+  verifyProviderStrongReadyAcceptanceEnvelopeTokenWithIdentityCapabilityV1,
+} from "../src/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate.js";
+import {
   ProviderStrongReadyBootstrapOrSteadyAcceptanceIdentityVerificationCapabilityErrorInternalV1,
   assertProviderStrongReadyBootstrapOrSteadyAcceptanceIdentityVerificationCapabilityInternalV1,
   deriveProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendReceiptTokenWithIdentityCapabilityInternalV1,
@@ -38,6 +41,10 @@ import {
   INSTALLATION_IDENTITY_GENERATION_DOMAIN_V1,
   INSTALLATION_IDENTITY_KEY_CHECK_DOMAIN_V1,
 } from "../src/provider-foundation.js";
+import {
+  KeyedStateTokenV1Schema,
+  type KeyedStateTokenV1,
+} from "../src/primitives.js";
 import {
   PROVIDER_ACCEPTANCE_STATE_TOKEN_DOMAIN_V1,
   ProviderStrongReadyAcceptanceStateUnsignedCandidateV1Schema,
@@ -60,8 +67,8 @@ function digestV1(nibble: string): `sha256:${string}` {
   return `sha256:${nibble.repeat(64)}`;
 }
 
-function tokenV1(nibble: string): `hmac-sha256:${string}` {
-  return `hmac-sha256:${nibble.repeat(64)}`;
+function tokenV1(nibble: string): KeyedStateTokenV1 {
+  return KeyedStateTokenV1Schema.parse(`hmac-sha256:${nibble.repeat(64)}`);
 }
 
 function cryptoHostV1(): ProviderCryptoHostV1 {
@@ -172,7 +179,7 @@ function acceptanceStateV1(): ProviderStrongReadyAcceptanceStateUnsignedCandidat
 
 function acceptanceEnvelopeV1(
   state: ProviderStrongReadyAcceptanceStateUnsignedCandidateV1,
-  acceptanceToken = tokenV1("a"),
+  acceptanceToken: KeyedStateTokenV1 = tokenV1("a"),
 ) {
   return {
     schemaVersion: 1 as const,
@@ -282,6 +289,36 @@ function expectCapabilityErrorV1(error: unknown): boolean {
 }
 
 describe("D-40 Acceptance identity-verification capability internal", () => {
+  it("verifies an exact Acceptance envelope through the consume-only public capability seam", async () => {
+    const capability = await mintV1();
+    const state = acceptanceStateV1();
+    const token =
+      await deriveProviderAcceptanceStateTokenWithIdentityCapabilityInternalV1(
+        capability,
+        INSTALLATION_IDENTITY_GENERATION_ID_V1,
+        state,
+      );
+
+    await expect(
+      verifyProviderStrongReadyAcceptanceEnvelopeTokenWithIdentityCapabilityV1(
+        capability,
+        acceptanceEnvelopeV1(state, token),
+      ),
+    ).resolves.toBe(true);
+  });
+
+  it("rejects a tampered Acceptance token through the consume-only public capability seam", async () => {
+    const capability = await mintV1();
+    const state = acceptanceStateV1();
+
+    await expect(
+      verifyProviderStrongReadyAcceptanceEnvelopeTokenWithIdentityCapabilityV1(
+        capability,
+        acceptanceEnvelopeV1(state, tokenV1("0")),
+      ),
+    ).resolves.toBe(false);
+  });
+
   it("mints a reusable frozen null-prototype zero-key shell only for the exact recomputed tuple", async () => {
     const capability = await mintV1();
     expect(Object.getPrototypeOf(capability)).toBeNull();

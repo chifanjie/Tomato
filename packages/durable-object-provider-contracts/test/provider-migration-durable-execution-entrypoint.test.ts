@@ -47,6 +47,17 @@ describe("package-level durable migration execution entrypoint", () => {
         finalJournalState: {
           revision: 4,
           phase: "final_strong_ready",
+          mutationDigest: `sha256:${"a".repeat(64)}`,
+        },
+        referenceLifecycle: {
+          finalStrongReadyAcceptanceClosure: {
+            finalStrongReadyAcceptancePin: {
+              locatorProfile: "installation_provider_acceptance_state_v1",
+              acceptanceOrdinal: 2,
+              generationId: `provider-acceptance-state:${"b".repeat(22)}`,
+              contentDigest: `sha256:${"c".repeat(64)}`,
+            },
+          },
         },
       },
     });
@@ -64,6 +75,13 @@ describe("package-level durable migration execution entrypoint", () => {
         copiedLogicalBytes: 12,
         finalJournalRevision: 4,
         finalJournalPhase: "final_strong_ready",
+        finalJournalMutationDigest: `sha256:${"a".repeat(64)}`,
+        finalStrongReadyAcceptancePin: {
+          locatorProfile: "installation_provider_acceptance_state_v1",
+          acceptanceOrdinal: 2,
+          generationId: `provider-acceptance-state:${"b".repeat(22)}`,
+          contentDigest: `sha256:${"c".repeat(64)}`,
+        },
       },
     });
   });

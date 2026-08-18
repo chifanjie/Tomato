@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { chmod, mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,7 +8,15 @@ import {
   ContentDigestV1Schema,
   DurableObjectIdentityProviderIdV1Schema,
 } from "@understand-code/durable-object-provider-contracts/primitives";
+import type { ProviderMigrationDurableExecutionSummaryV1 } from "@understand-code/durable-object-provider-contracts/provider-migration-durable-execution";
+import {
+  ProviderStrongReadyAcceptanceGenerationPinCandidateV1Schema,
+  ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1Schema,
+  deriveProviderStrongReadyAcceptanceStateContentDigestV1,
+  deriveProviderStrongReadyAcceptanceStateGenerationIdV1,
+} from "@understand-code/durable-object-provider-contracts/provider-strong-ready-acceptance-candidate";
 
+import { diagnoseProviderRuntimeDurableExecutionPrincipalHeadV1 } from "../src/durable-execution-principal-head.js";
 import { verifyProviderRuntimeLivePrincipalChallengeV1 } from "../src/live-principal-challenge.js";
 import { DurableObjectProviderRuntimeServerV1 } from "../src/server.js";
 import {
@@ -29,6 +37,9 @@ const INSTALLATION_DIGEST = ContentDigestV1Schema.parse(
 const BINARY_DIGEST = ContentDigestV1Schema.parse(
   `sha256:${"c".repeat(64)}`,
 );
+const INSTALLATION_IDENTITY =
+  `installation-identity-generation:${"d".repeat(22)}` as const;
+const TARGET_PROFILE_ID = `provider-target-profile:${"e".repeat(64)}`;
 
 const roots = new Set<string>();
 const servers = new Set<DurableObjectProviderRuntimeServerV1>();
@@ -43,6 +54,7 @@ afterEach(async () => {
 async function fixtureV1(): Promise<{
   readonly config: ProviderServiceHandoffConfigV1;
   readonly server: DurableObjectProviderRuntimeServerV1;
+  readonly authKey: Uint8Array;
 }> {
   const root = await mkdtemp(join(tmpdir(), "uc-principal-live-"));
   roots.add(root);
@@ -74,11 +86,13 @@ async function fixtureV1(): Promise<{
       capabilityDigest: CAPABILITY_DIGEST,
     },
   });
+  const authKey = randomBytes(32);
+  await writeFile(config.payload.authKeyPath, authKey, { mode: 0o600 });
   const server = new DurableObjectProviderRuntimeServerV1({
     rootPath: root,
     socketPath: config.payload.socketPath,
     providerId: PROVIDER_ID,
-    authKey: randomBytes(32),
+    authKey,
     authorizedCapabilityDigest: CAPABILITY_DIGEST,
     principalAttestation: {
       privateKey: signing.privateKey,
@@ -88,7 +102,91 @@ async function fixtureV1(): Promise<{
   });
   await server.start();
   servers.add(server);
-  return { config, server };
+  return { config, server, authKey };
+}
+
+function finalAcceptanceV1() {
+  const configuration = {
+    state: "strong_ready" as const,
+    core: {
+      activeRootMetadata: {
+        locatorProfile:
+          "installation_provider_registry_root_metadata_v1" as const,
+        rootGeneration: 1,
+        rootKeyId: "1".repeat(22),
+        contentDigest: `sha256:${"1".repeat(64)}` as const,
+      },
+      providerRegistryManifest: {
+        locatorProfile:
+          "installation_provider_registry_manifest_v1" as const,
+        manifestGeneration: 1,
+        generationId: `provider-registry-manifest:${"2".repeat(22)}`,
+        contentDigest: `sha256:${"2".repeat(64)}` as const,
+      },
+      providerSupportCatalog: {
+        locatorProfile:
+          "distribution_provider_feasibility_support_catalog_v1" as const,
+        catalogGeneration: 1,
+        contentDigest: `sha256:${"3".repeat(64)}` as const,
+      },
+      activeWriterSelector: {
+        profile: "provider_active_writer_selector_v1" as const,
+        selections: [{
+          targetProfileId: TARGET_PROFILE_ID,
+          providerId: PROVIDER_ID,
+          registryEntryContentDigest: `sha256:${"4".repeat(64)}` as const,
+          semanticProviderPolicyDigest: `sha256:${"5".repeat(64)}` as const,
+          providerFeasibilityEvidence: {
+            locatorProfile:
+              "installation_provider_feasibility_evidence_v1" as const,
+            evidenceId: `provider-feasibility-evidence:${"6".repeat(22)}`,
+            contentDigest: `sha256:${"6".repeat(64)}` as const,
+          },
+          runtimeAttestationContentDigest:
+            `sha256:${"7".repeat(64)}` as const,
+          bindingDerivationKeyGeneration: 1,
+        }],
+      },
+    },
+    activation: { origin: "bootstrap_or_steady_successor" as const },
+  };
+  const predecessor = { state: "genesis" as const };
+  const generationId = deriveProviderStrongReadyAcceptanceStateGenerationIdV1({
+    installationIdentityGenerationId: INSTALLATION_IDENTITY,
+    acceptanceOrdinal: 1,
+    predecessor,
+    configuration,
+  });
+  const payload = {
+    profile: "provider_acceptance_state_v1" as const,
+    generationId,
+    installationIdentityGenerationId: INSTALLATION_IDENTITY,
+    acceptanceOrdinal: 1,
+    predecessor,
+    configuration,
+    acceptedAt: "2026-08-18T09:00:00Z",
+    acceptanceToken: `hmac-sha256:${"8".repeat(64)}`,
+  };
+  const envelope =
+    ProviderStrongReadyAcceptanceStateEnvelopeCandidateV1Schema.parse({
+      schemaVersion: 1,
+      recordType: "provider_acceptance_state",
+      generationId,
+      installationIdentityGenerationId: INSTALLATION_IDENTITY,
+      acceptedAt: payload.acceptedAt,
+      contentDigest: deriveProviderStrongReadyAcceptanceStateContentDigestV1(
+        payload,
+      ),
+      payload,
+    });
+  const pin =
+    ProviderStrongReadyAcceptanceGenerationPinCandidateV1Schema.parse({
+      locatorProfile: "installation_provider_acceptance_state_v1",
+      acceptanceOrdinal: envelope.payload.acceptanceOrdinal,
+      generationId: envelope.generationId,
+      contentDigest: envelope.contentDigest,
+    });
+  return { envelope, pin };
 }
 
 describe("live provider principal challenge", () => {
@@ -153,6 +251,104 @@ describe("live provider principal challenge", () => {
       status: "unavailable",
       reason: "binding_mismatch",
       strongWriteStatus: "locked",
+    });
+  });
+
+  it("binds a public durable execution result to the same live journal head", async () => {
+    const { config, server, authKey } = await fixtureV1();
+    const acceptance = finalAcceptanceV1();
+    const committed = await server.store.compareCommit({
+      expectedRevision: 0,
+      operationNonce: "1".repeat(32),
+      phase: "final_strong_ready",
+      artifacts: {
+        finalStrongReadyAcceptance: {
+          finalStrongReadyAcceptanceEnvelope: acceptance.envelope,
+          finalStrongReadyAcceptancePin: acceptance.pin,
+        },
+      },
+    });
+    expect(committed.resolution).toBe("committed");
+    const state = server.store.inspectState();
+    const execution: ProviderMigrationDurableExecutionSummaryV1 = {
+      profile: "provider_migration_durable_execution_summary_v1" as const,
+      durability:
+        "separate_process_private_filesystem_durable_candidate_v1" as const,
+      osIsolationAuthority:
+        "not_yet_proven_service_principal_v1" as const,
+      strongWriteCapability:
+        "locked_to_verified_runtime_selection_v1" as const,
+      sourceProviderId: "durable-object-provider:source",
+      destinationProviderId: PROVIDER_ID,
+      copiedObjectCount: 1,
+      copiedLogicalBytes: 7,
+      finalJournalRevision: state.revision,
+      finalJournalPhase: "final_strong_ready",
+      finalJournalMutationDigest: ContentDigestV1Schema.parse(
+        state.mutationDigest,
+      ),
+      finalStrongReadyAcceptancePin: acceptance.pin,
+    };
+
+    await expect(
+      diagnoseProviderRuntimeDurableExecutionPrincipalHeadV1({
+        config,
+        authKey,
+        execution,
+        expectedInstallationIdentityDigest: INSTALLATION_DIGEST,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      value: {
+        status: "durable_execution_principal_head_candidate",
+        authority: "none",
+        strongWriteStatus: "locked",
+        acceptanceTokenStatus: "not_verified",
+        kernelPeerStatus: "not_verified",
+        bindings: {
+          providerId: PROVIDER_ID,
+          journalRevision: state.revision,
+          journalMutationDigest: state.mutationDigest,
+          finalStrongReadyAcceptancePin:
+            execution.finalStrongReadyAcceptancePin,
+        },
+      },
+    });
+
+    await expect(
+      diagnoseProviderRuntimeDurableExecutionPrincipalHeadV1({
+        config,
+        authKey,
+        execution: {
+          ...execution,
+          finalJournalMutationDigest: ContentDigestV1Schema.parse(
+            `sha256:${"f".repeat(64)}`,
+          ),
+        },
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      code: "provider_unavailable",
+      reason: "attestation_invalid",
+    });
+
+    await expect(
+      diagnoseProviderRuntimeDurableExecutionPrincipalHeadV1({
+        config,
+        authKey,
+        execution: {
+          ...execution,
+          finalStrongReadyAcceptancePin:
+            ProviderStrongReadyAcceptanceGenerationPinCandidateV1Schema.parse({
+              ...execution.finalStrongReadyAcceptancePin,
+              contentDigest: `sha256:${"f".repeat(64)}`,
+            }),
+        },
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      code: "provider_unavailable",
+      reason: "attestation_invalid",
     });
   });
 });

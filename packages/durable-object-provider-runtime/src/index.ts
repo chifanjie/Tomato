@@ -95,10 +95,12 @@ export type {
 export {
   diagnoseProviderRuntimeGateCandidateV1,
   diagnoseProviderRuntimeDurableAcceptanceCandidateV1,
+  diagnoseProviderRuntimeIdentityPrincipalAcceptanceCandidateV1,
   diagnoseProviderRuntimeLiveGateCandidateV1,
   diagnoseProviderRuntimePrincipalAcceptanceCandidateV1,
   runProviderRuntimeDurableAcceptanceCandidateV1,
   runProviderRuntimeGateCandidateV1,
+  runProviderRuntimeIdentityPrincipalAcceptanceCandidateV1,
   runProviderRuntimeLiveGateCandidateV1,
   runProviderRuntimePrincipalAcceptanceCandidateV1,
 } from "./gate-candidate-runtime.js";
@@ -108,11 +110,14 @@ export type {
   ProviderRuntimeGateCandidateValuesV1,
   ProviderRuntimeGateCandidateStageV1,
   ProviderRuntimeLiveGateCandidateDiagnosticV1,
+  ProviderRuntimeIdentityPrincipalAcceptanceCandidateDiagnosticV1,
+  ProviderRuntimeIdentityPrincipalAcceptanceCandidateV1,
   ProviderRuntimePrincipalAcceptanceCandidateDiagnosticV1,
   ProviderRuntimePrincipalAcceptanceCandidateV1,
   RunProviderRuntimeLiveGateCandidateOptionsV1,
   RunProviderRuntimeDurableAcceptanceCandidateOptionsV1,
   RunProviderRuntimeGateCandidateOptionsV1,
+  RunProviderRuntimeIdentityPrincipalAcceptanceCandidateOptionsV1,
   RunProviderRuntimePrincipalAcceptanceCandidateOptionsV1,
 } from "./gate-candidate-runtime.js";
 export type {
@@ -197,3 +202,24 @@ export type {
   ProviderRuntimePrincipalKeyLiveUnavailableV1,
   VerifyProviderRuntimeLivePrincipalChallengeOptionsV1,
 } from "./live-principal-challenge.js";
+export {
+  PROVIDER_RUNTIME_DURABLE_EXECUTION_PRINCIPAL_HEAD_REQUIRED_NEXT_V1,
+  diagnoseProviderRuntimeDurableExecutionPrincipalHeadV1,
+  verifyProviderRuntimeDurableExecutionPrincipalHeadV1,
+} from "./durable-execution-principal-head.js";
+export type {
+  ProviderRuntimeDurableExecutionPrincipalHeadCandidateV1,
+  ProviderRuntimeDurableExecutionPrincipalHeadDiagnosticV1,
+  VerifyProviderRuntimeDurableExecutionPrincipalHeadOptionsV1,
+} from "./durable-execution-principal-head.js";
+export {
+  PROVIDER_RUNTIME_ACCEPTANCE_IDENTITY_TOKEN_REQUIRED_NEXT_V1,
+  diagnoseProviderRuntimeAcceptanceIdentityTokenCurrentV1,
+  verifyProviderRuntimeAcceptanceIdentityTokenCurrentV1,
+} from "./acceptance-identity-token-current.js";
+export type {
+  ProviderRuntimeAcceptanceIdentityTokenCurrentCandidateV1,
+  ProviderRuntimeAcceptanceIdentityTokenCurrentDiagnosticV1,
+  ProviderRuntimeAcceptanceIdentityVerificationCapabilityV1,
+  VerifyProviderRuntimeAcceptanceIdentityTokenCurrentOptionsV1,
+} from "./acceptance-identity-token-current.js";

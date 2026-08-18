@@ -6,6 +6,8 @@ const stageMocks = vi.hoisted(() => ({
   registry: vi.fn(),
   catalog: vi.fn(),
   liveGate: vi.fn(),
+  acceptanceIdentity: vi.fn(),
+  principalKey: vi.fn(),
 }));
 
 vi.mock("../src/conformance-result-adapter.js", () => ({
@@ -23,9 +25,17 @@ vi.mock("../src/feasibility-support-catalog-adapter.js", () => ({
 vi.mock("../src/live-gate-binding.js", () => ({
   diagnoseProviderRuntimeLiveGateBindingV1: stageMocks.liveGate,
 }));
+vi.mock("../src/acceptance-identity-token-current.js", () => ({
+  diagnoseProviderRuntimeAcceptanceIdentityTokenCurrentV1:
+    stageMocks.acceptanceIdentity,
+}));
+vi.mock("../src/live-principal-challenge.js", () => ({
+  verifyProviderRuntimeLivePrincipalChallengeV1: stageMocks.principalKey,
+}));
 
 import {
   runProviderRuntimeGateCandidateV1,
+  runProviderRuntimeIdentityPrincipalAcceptanceCandidateV1,
   runProviderRuntimeLiveGateCandidateV1,
 } from "../src/gate-candidate-runtime.js";
 import { ContentDigestV1Schema } from "@understand-code/durable-object-provider-contracts/primitives";
@@ -207,6 +217,115 @@ describe("runtime Gate candidate composition", () => {
       code: "provider_unavailable",
       reason: "attestation_invalid",
       stage: "live_gate_binding",
+    });
+  });
+
+  it("joins the Installation Identity token and live principal at one durable head", async () => {
+    installSuccessfulStagesV1();
+    const capabilityDigest = digestV1("6");
+    const journalMutationDigest = digestV1("8");
+    stageMocks.acceptanceIdentity.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        status: "acceptance_identity_token_current_candidate",
+        authority: "none",
+        accessMode: "read_only",
+        strongWriteStatus: "locked",
+        acceptanceTokenStatus:
+          "verified_with_installation_identity_capability",
+        requiredNext: "kernel_os_peer_gate",
+        bindings: {
+          providerId,
+          journalRevision: 7,
+          journalMutationDigest,
+        },
+      },
+    });
+    stageMocks.principalKey.mockResolvedValueOnce({
+      status: "principal_key_live_candidate",
+      authority: "none",
+      accessMode: "read_only",
+      strongWriteStatus: "locked",
+      bindings: {
+        providerId,
+        capabilityDigest,
+        journalRevision: 7,
+        journalPhase: "final_strong_ready",
+        journalMutationDigest,
+      },
+    });
+
+    await expect(
+      runProviderRuntimeIdentityPrincipalAcceptanceCandidateV1({
+        conformanceResult: {} as never,
+        feasibilityEvidenceContext: {} as never,
+        registryEvidenceBindingContext: {} as never,
+        supportCatalogContext: {} as never,
+        config: {} as never,
+        targetBaseline: {} as never,
+        authKey: new Uint8Array(32),
+        identityVerificationCapability: Object.freeze({}) as never,
+        expectedInstallationIdentityDigest: digestV1("4"),
+        expectedBinaryDigest: digestV1("5"),
+        expectedCapabilityDigest: capabilityDigest,
+        expectedTargetFingerprintDigest: digestV1("7"),
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      value: {
+        status:
+          "identity_token_principal_and_durable_acceptance_candidate",
+        authority: "none",
+        strongWriteStatus: "locked",
+        requiredNext: "kernel_os_peer_gate",
+      },
+    });
+  });
+
+  it("fails closed when the principal answers for a different journal head", async () => {
+    installSuccessfulStagesV1();
+    const capabilityDigest = digestV1("6");
+    stageMocks.acceptanceIdentity.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        bindings: {
+          providerId,
+          journalRevision: 7,
+          journalMutationDigest: digestV1("8"),
+        },
+      },
+    });
+    stageMocks.principalKey.mockResolvedValueOnce({
+      status: "principal_key_live_candidate",
+      bindings: {
+        providerId,
+        capabilityDigest,
+        journalRevision: 8,
+        journalPhase: "final_strong_ready",
+        journalMutationDigest: digestV1("9"),
+      },
+    });
+
+    await expect(
+      runProviderRuntimeIdentityPrincipalAcceptanceCandidateV1({
+        conformanceResult: {} as never,
+        feasibilityEvidenceContext: {} as never,
+        registryEvidenceBindingContext: {} as never,
+        supportCatalogContext: {} as never,
+        config: {} as never,
+        targetBaseline: {} as never,
+        authKey: new Uint8Array(32),
+        identityVerificationCapability: Object.freeze({}) as never,
+        expectedInstallationIdentityDigest: digestV1("4"),
+        expectedBinaryDigest: digestV1("5"),
+        expectedCapabilityDigest: capabilityDigest,
+        expectedTargetFingerprintDigest: digestV1("7"),
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      code: "provider_unavailable",
+      reason: "attestation_invalid",
+      stage: "principal_key_live",
     });
   });
 });

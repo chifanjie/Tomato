@@ -40,6 +40,11 @@ import {
   verifyProviderRuntimeLivePrincipalChallengeV1,
   type ProviderRuntimePrincipalKeyLiveCandidateV1,
 } from "./live-principal-challenge.js";
+import {
+  diagnoseProviderRuntimeAcceptanceIdentityTokenCurrentV1,
+  type ProviderRuntimeAcceptanceIdentityTokenCurrentCandidateV1,
+  type ProviderRuntimeAcceptanceIdentityVerificationCapabilityV1,
+} from "./acceptance-identity-token-current.js";
 
 export type ProviderRuntimeGateCandidateStageV1 =
   | "conformance_result"
@@ -49,7 +54,8 @@ export type ProviderRuntimeGateCandidateStageV1 =
   | "gate_projection"
   | "live_gate_binding"
   | "durable_acceptance_current"
-  | "principal_key_live";
+  | "principal_key_live"
+  | "acceptance_identity_token";
 
 export type ProviderRuntimeGateCandidateConformanceInputV1 =
   | {
@@ -141,6 +147,35 @@ export type ProviderRuntimePrincipalAcceptanceCandidateDiagnosticV1 =
       readonly stage: ProviderRuntimeGateCandidateStageV1;
     };
 
+export type RunProviderRuntimeIdentityPrincipalAcceptanceCandidateOptionsV1 =
+  RunProviderRuntimePrincipalAcceptanceCandidateOptionsV1 & {
+    readonly identityVerificationCapability:
+      ProviderRuntimeAcceptanceIdentityVerificationCapabilityV1;
+  };
+
+export interface ProviderRuntimeIdentityPrincipalAcceptanceCandidateV1 {
+  readonly status: "identity_token_principal_and_durable_acceptance_candidate";
+  readonly authority: "none";
+  readonly accessMode: "read_only";
+  readonly strongWriteStatus: "locked";
+  readonly requiredNext: "kernel_os_peer_gate";
+  readonly acceptanceIdentity:
+    ProviderRuntimeAcceptanceIdentityTokenCurrentCandidateV1;
+  readonly principalKey: ProviderRuntimePrincipalKeyLiveCandidateV1;
+}
+
+export type ProviderRuntimeIdentityPrincipalAcceptanceCandidateDiagnosticV1 =
+  | {
+      readonly ok: true;
+      readonly value: ProviderRuntimeIdentityPrincipalAcceptanceCandidateV1;
+    }
+  | {
+      readonly ok: false;
+      readonly code: "provider_unavailable";
+      readonly reason: "attestation_invalid";
+      readonly stage: ProviderRuntimeGateCandidateStageV1;
+    };
+
 function unavailableV1(
   stage: ProviderRuntimeGateCandidateStageV1,
 ): ProviderRuntimeGateCandidateDiagnosticV1 {
@@ -177,6 +212,17 @@ function unavailableDurableV1(
 function unavailablePrincipalV1(
   stage: ProviderRuntimeGateCandidateStageV1,
 ): ProviderRuntimePrincipalAcceptanceCandidateDiagnosticV1 {
+  return {
+    ok: false,
+    code: "provider_unavailable",
+    reason: "attestation_invalid",
+    stage,
+  };
+}
+
+function unavailableIdentityPrincipalV1(
+  stage: ProviderRuntimeGateCandidateStageV1,
+): ProviderRuntimeIdentityPrincipalAcceptanceCandidateDiagnosticV1 {
   return {
     ok: false,
     code: "provider_unavailable",
@@ -495,4 +541,113 @@ export async function runProviderRuntimePrincipalAcceptanceCandidateV1(
   options: RunProviderRuntimePrincipalAcceptanceCandidateOptionsV1,
 ): Promise<ProviderRuntimePrincipalAcceptanceCandidateDiagnosticV1> {
   return diagnoseProviderRuntimePrincipalAcceptanceCandidateV1(options);
+}
+
+/**
+ * Close the complete raw Gate chain over the current durable Acceptance,
+ * freshly verify its keyed token with the opaque Installation Identity
+ * capability, and challenge the live service key at that exact journal head.
+ * Kernel peer credentials remain the sole explicit successor gate.
+ */
+export async function diagnoseProviderRuntimeIdentityPrincipalAcceptanceCandidateV1(
+  options: RunProviderRuntimeIdentityPrincipalAcceptanceCandidateOptionsV1,
+): Promise<ProviderRuntimeIdentityPrincipalAcceptanceCandidateDiagnosticV1> {
+  try {
+    const {
+      identityVerificationCapability,
+      config,
+      liveReadiness,
+      targetBaseline,
+      authKey,
+      timeoutMs,
+      readinessReader,
+      expectedInstallationIdentityDigest,
+      expectedBinaryDigest,
+      expectedCapabilityDigest,
+      expectedTargetFingerprintDigest,
+      untrustedProjection,
+      projection,
+      gateProjection,
+      conformanceBindings,
+      candidateBindings,
+      ...candidateOptions
+    } = options;
+    const collected = await collectGateCandidateValuesV1(
+      candidateOptions as RunProviderRuntimeGateCandidateOptionsV1,
+    );
+    if (!collected.ok) {
+      return unavailableIdentityPrincipalV1(collected.stage);
+    }
+    const acceptanceIdentity =
+      await diagnoseProviderRuntimeAcceptanceIdentityTokenCurrentV1({
+        liveGateBinding: {
+          config,
+          liveReadiness,
+          targetBaseline,
+          authKey,
+          timeoutMs,
+          readinessReader,
+          expectedInstallationIdentityDigest,
+          expectedBinaryDigest,
+          expectedCapabilityDigest,
+          expectedTargetFingerprintDigest,
+          gateValues: collected.values,
+          untrustedProjection,
+          projection,
+          gateProjection,
+          conformanceBindings,
+          candidateBindings,
+        },
+        identityVerificationCapability,
+      });
+    if (!acceptanceIdentity.ok) {
+      return unavailableIdentityPrincipalV1("acceptance_identity_token");
+    }
+    const principalKey = await verifyProviderRuntimeLivePrincipalChallengeV1({
+      config,
+      expectedJournalRevision:
+        acceptanceIdentity.value.bindings.journalRevision,
+      expectedJournalPhase: "final_strong_ready",
+      expectedJournalMutationDigest:
+        acceptanceIdentity.value.bindings.journalMutationDigest,
+      expectedInstallationIdentityDigest,
+      timeoutMs,
+    });
+    if (
+      principalKey.status !== "principal_key_live_candidate" ||
+      principalKey.bindings.providerId !==
+        acceptanceIdentity.value.bindings.providerId ||
+      principalKey.bindings.capabilityDigest !== expectedCapabilityDigest ||
+      principalKey.bindings.journalRevision !==
+        acceptanceIdentity.value.bindings.journalRevision ||
+      principalKey.bindings.journalPhase !== "final_strong_ready" ||
+      principalKey.bindings.journalMutationDigest !==
+        acceptanceIdentity.value.bindings.journalMutationDigest
+    ) {
+      return unavailableIdentityPrincipalV1("principal_key_live");
+    }
+    return {
+      ok: true,
+      value: Object.freeze({
+        status:
+          "identity_token_principal_and_durable_acceptance_candidate" as const,
+        authority: "none" as const,
+        accessMode: "read_only" as const,
+        strongWriteStatus: "locked" as const,
+        requiredNext: "kernel_os_peer_gate" as const,
+        acceptanceIdentity: acceptanceIdentity.value,
+        principalKey,
+      }),
+    };
+  } catch {
+    return unavailableIdentityPrincipalV1("acceptance_identity_token");
+  }
+}
+
+export async function runProviderRuntimeIdentityPrincipalAcceptanceCandidateV1(
+  options: RunProviderRuntimeIdentityPrincipalAcceptanceCandidateOptionsV1,
+): Promise<ProviderRuntimeIdentityPrincipalAcceptanceCandidateDiagnosticV1> {
+  return diagnoseProviderRuntimeIdentityPrincipalAcceptanceCandidateV1(
+    options,
+  );
 }

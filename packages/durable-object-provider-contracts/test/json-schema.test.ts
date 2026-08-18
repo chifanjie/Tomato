@@ -370,6 +370,8 @@ const PROVIDER_RUNTIME_IPC_JSON_SCHEMA_NAMES_V1 = [
   "provider-runtime-ipc-request-v1",
   "provider-runtime-ipc-response-v1",
   "provider-runtime-ipc-journal-state-v1",
+  "provider-runtime-ipc-principal-challenge-v1",
+  "provider-runtime-ipc-principal-attestation-v1",
 ] as const;
 
 describe("provider contract JSON Schema distribution", () => {
@@ -377,7 +379,7 @@ describe("provider contract JSON Schema distribution", () => {
     const sourceNames = Object.keys(
       PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1,
     );
-    expect(sourceNames).toHaveLength(363);
+    expect(sourceNames).toHaveLength(365);
     expect(
       sourceNames.filter((name) =>
         name.startsWith(
@@ -390,7 +392,7 @@ describe("provider contract JSON Schema distribution", () => {
     ]);
 
     const generated = generateProviderContractJsonSchemasV1();
-    expect(Object.keys(generated)).toHaveLength(363);
+    expect(Object.keys(generated)).toHaveLength(365);
     for (const name of PROVIDER_RUNTIME_IPC_JSON_SCHEMA_NAMES_V1) {
       expect(generated[name].$id).toBe(
         `urn:understand-code:provider-contract:schema:v1:${name}`,
@@ -1187,7 +1189,7 @@ describe("provider contract JSON Schema distribution", () => {
       expect(generated, name).toHaveProperty(name);
       expectEveryJsonSchemaObjectClosed(generated[name], name);
     }
-    expect(Object.keys(generated)).toHaveLength(363);
+    expect(Object.keys(generated)).toHaveLength(365);
     for (const nestedOnlyName of [
       "provider-migration-same-installation-identity-current-strong-source-normal-created-at-reference-candidate",
       "provider-migration-same-installation-identity-current-strong-source-normal-quota-account-contribution-reference-candidate",

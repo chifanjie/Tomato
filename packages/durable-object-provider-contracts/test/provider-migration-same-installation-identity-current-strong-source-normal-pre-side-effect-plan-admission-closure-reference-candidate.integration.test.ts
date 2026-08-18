@@ -3966,6 +3966,11 @@ describe("durable migration orchestrator vertical smoke", () => {
     expect(result.value.copiedObjectCount).toBe(smoke.writes.length);
     expect(result.value.finalJournalRevision).toBe(4);
     expect(result.value.finalJournalPhase).toBe("final_strong_ready");
+    expect(result.value.finalJournalMutationDigest).toBe(digestV1("d"));
+    expect(result.value.finalStrongReadyAcceptancePin).toMatchObject({
+      locatorProfile: "installation_provider_acceptance_state_v1",
+      acceptanceOrdinal: 3,
+    });
   }, 300_000);
 
   it("returns a durable stale result before copying when the journal revision moved", async () => {

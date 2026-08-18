@@ -187,6 +187,25 @@ function fakeOpaqueIdentity<T extends object>(): T {
   return Object.freeze(Object.create(null)) as T;
 }
 
+function preparedSuccessorFinalCandidateIdentityV1(
+  destinationEntry: StoreDurableObjectProviderRegistryEntryV1,
+  marker: string,
+): object {
+  return recursivelyFreeze({
+    marker,
+    destinationTrust: {
+      authorization: {
+        prospectiveDestinationCut: {
+          prospectiveRegistryEntry: destinationEntry,
+          currentSupportCatalogEnvelope: {},
+          currentSupportCatalog: {},
+          currentReleaseTargetUniverseEnvelope: {},
+        },
+      },
+    },
+  });
+}
+
 const prospectiveProviderId = "durable-object-provider:native-c" as const;
 const prospectiveSemanticPolicyDigest =
   `sha256:${"c".repeat(64)}` as const;
@@ -590,9 +609,10 @@ async function finalBoundPreparedSuccessorV1(
       admission.value.preparedRegistrySuccessorSeed,
       cohortIdentity,
     );
-  const finalCandidateIdentity = recursivelyFreeze({
-    profile: "prepared_registry_successor_test_final_candidate_v1",
-  });
+  const finalCandidateIdentity = preparedSuccessorFinalCandidateIdentityV1(
+    destinationEntry,
+    "prepared_registry_successor_test_final_candidate_v1",
+  );
   const finalCapability =
     bindProviderRegistryPreparedSuccessorCohortToFinalCandidateInternalV1(
       cohortIdentity,
@@ -1693,7 +1713,10 @@ describe("prepared Registry retained direct-successor continuation", () => {
         admission.value.preparedRegistrySuccessorSeed,
         cohortIdentity,
       );
-    const candidateIdentity = recursivelyFreeze({ candidate: "at-poison" });
+    const candidateIdentity = preparedSuccessorFinalCandidateIdentityV1(
+      destinationEntry,
+      "at-poison",
+    );
     const finalCapability =
       bindProviderRegistryPreparedSuccessorCohortToFinalCandidateInternalV1(
         cohortIdentity,

@@ -93,6 +93,16 @@
       "types": "./dist/live-principal-challenge.d.ts",
       "import": "./dist/live-principal-challenge.js",
       "default": "./dist/live-principal-challenge.js"
+    },
+    "./durable-execution-principal-head": {
+      "types": "./dist/durable-execution-principal-head.d.ts",
+      "import": "./dist/durable-execution-principal-head.js",
+      "default": "./dist/durable-execution-principal-head.js"
+    },
+    "./acceptance-identity-token-current": {
+      "types": "./dist/acceptance-identity-token-current.d.ts",
+      "import": "./dist/acceptance-identity-token-current.js",
+      "default": "./dist/acceptance-identity-token-current.js"
     }
   },
   "scripts": {

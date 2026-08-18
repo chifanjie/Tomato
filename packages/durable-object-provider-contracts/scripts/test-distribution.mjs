@@ -6109,9 +6109,9 @@ try {
   const sourceSchemaRelativePaths = await listRelativeSchemaPaths(
     join(packageRoot, "schemas", "v1"),
   );
-  if (sourceSchemaRelativePaths.length !== 367) {
+  if (sourceSchemaRelativePaths.length !== 368) {
     throw new Error(
-      `Source provider contracts must contain exactly 367 JSON Schemas, found ${sourceSchemaRelativePaths.length}`,
+      `Source provider contracts must contain exactly 368 JSON Schemas, found ${sourceSchemaRelativePaths.length}`,
     );
   }
   await assertExactProviderDirectory(

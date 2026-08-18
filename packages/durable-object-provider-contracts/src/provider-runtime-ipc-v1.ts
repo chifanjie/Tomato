@@ -1,5 +1,6 @@
 import { z } from "./zod-runtime.js";
 
+import { createDomainPreimageBytesV1 } from "./domain-crypto.js";
 import { canonicalizeJcsSafeIntegerUtf8V1 } from "./jcs.js";
 import {
   CanonicalByteStringV1Schema,
@@ -9,7 +10,11 @@ import {
   LowerHex32V1Schema,
   LowerHex64V1Schema,
   ProviderAcceptanceStateGenerationIdV1Schema,
+  ProviderTargetProfileIdV1Schema,
+  StoreProviderVerificationKeyIdV1Schema,
 } from "./primitives.js";
+import { ProviderRegistryManifestPinV1Schema } from "./provider-registry-records.js";
+import { sha256InternalV1 } from "./sha256.js";
 
 export const PROVIDER_RUNTIME_IPC_PROTOCOL_V1 =
   "understand_code_durable_provider_ipc_v1" as const;
@@ -21,6 +26,12 @@ export const PROVIDER_RUNTIME_IPC_PRINCIPAL_ATTESTATION_TRANSCRIPT_DOMAIN_V1 =
   "understand-code-durable-provider-runtime-principal-attestation-transcript-v1" as const;
 export const PROVIDER_RUNTIME_IPC_STRONG_MUTATION_REQUEST_DOMAIN_V1 =
   "understand-code-durable-provider-runtime-strong-mutation-request-v1" as const;
+export const PROVIDER_RUNTIME_IPC_STRONG_MUTATION_AUTHORITY_GRANT_ID_DOMAIN_V1 =
+  "understand-code-durable-provider-runtime-strong-mutation-authority-grant-id-v1" as const;
+export const PROVIDER_RUNTIME_IPC_STRONG_MUTATION_AUTHORITY_GRANT_SIGNATURE_DOMAIN_V1 =
+  "understand-code-durable-provider-runtime-strong-mutation-authority-grant-signature-v1" as const;
+export const PROVIDER_RUNTIME_IPC_STRONG_MUTATION_AUTHORITY_GRANT_DOMAIN_V1 =
+  "understand-code-durable-provider-runtime-strong-mutation-authority-grant-v1" as const;
 export const PROVIDER_RUNTIME_IPC_STRONG_MUTATION_SESSION_BINDING_DOMAIN_V1 =
   "understand-code-durable-provider-runtime-strong-mutation-session-binding-v1" as const;
 export const PROVIDER_RUNTIME_IPC_STRONG_MUTATION_RESPONSE_DOMAIN_V1 =
@@ -79,18 +90,6 @@ export const ProviderRuntimeIpcFixedObjectLocatorV1Schema = z.strictObject({
 });
 export type ProviderRuntimeIpcFixedObjectLocatorV1 = z.infer<
   typeof ProviderRuntimeIpcFixedObjectLocatorV1Schema
->;
-
-export const ProviderRuntimeIpcStrongMutationSessionBindingClaimsV1Schema =
-  z.strictObject({
-    principalAttestationDigest: ContentDigestV1Schema,
-    operation: ProviderRuntimeIpcStrongMutationOperationV1Schema,
-    operationNonce: LowerHex32V1Schema,
-    requestDigest: ContentDigestV1Schema,
-    authorityGrant: CanonicalByteStringV1Schema,
-  });
-export type ProviderRuntimeIpcStrongMutationSessionBindingClaimsV1 = z.infer<
-  typeof ProviderRuntimeIpcStrongMutationSessionBindingClaimsV1Schema
 >;
 
 export const ProviderRuntimeIpcClientHelloV1Schema = z.strictObject({
@@ -206,6 +205,196 @@ export type ProviderRuntimeIpcAcceptanceIdentityProofV1 = z.infer<
   typeof ProviderRuntimeIpcAcceptanceIdentityProofV1Schema
 >;
 
+export const ProviderRuntimeIpcStrongMutationAuthorityGrantIdV1Schema = z
+  .string()
+  .regex(/^sha256:[0-9a-f]{64}$/u)
+  .brand<"ProviderRuntimeIpcStrongMutationAuthorityGrantIdV1">();
+export type ProviderRuntimeIpcStrongMutationAuthorityGrantIdV1 = z.infer<
+  typeof ProviderRuntimeIpcStrongMutationAuthorityGrantIdV1Schema
+>;
+
+export const ProviderRuntimeIpcStrongMutationAuthorityGrantSignatureV1Schema =
+  CanonicalByteStringV1Schema.refine(
+    (value) => {
+      const bodyLength = value.length - "base64url:".length;
+      return Math.floor((bodyLength * 6) / 8) === 64;
+    },
+    { message: "must contain exactly 64 canonical Ed25519 signature bytes" },
+  ).brand<"ProviderRuntimeIpcStrongMutationAuthorityGrantSignatureV1">();
+export type ProviderRuntimeIpcStrongMutationAuthorityGrantSignatureV1 =
+  z.infer<
+    typeof ProviderRuntimeIpcStrongMutationAuthorityGrantSignatureV1Schema
+  >;
+
+const ProviderRuntimeIpcStrongMutationAuthorityGrantJournalHeadShapeV1 = {
+  revision: NonnegativeSafeIntegerV1Schema,
+  phase: z.string().min(1).max(128),
+  mutationDigest: z.union([ContentDigestV1Schema, z.literal("none")]),
+} as const;
+
+export const ProviderRuntimeIpcStrongMutationAuthorityGrantJournalHeadV1Schema =
+  z.strictObject(
+    ProviderRuntimeIpcStrongMutationAuthorityGrantJournalHeadShapeV1,
+  );
+export type ProviderRuntimeIpcStrongMutationAuthorityGrantJournalHeadV1 =
+  z.infer<
+    typeof ProviderRuntimeIpcStrongMutationAuthorityGrantJournalHeadV1Schema
+  >;
+
+const ProviderRuntimeIpcStrongMutationAuthorityGrantIdFieldsShapeV1 = {
+  signerKeyId: StoreProviderVerificationKeyIdV1Schema,
+  providerId: DurableObjectIdentityProviderIdV1Schema,
+  targetProfileId: ProviderTargetProfileIdV1Schema,
+  targetFingerprintDigest: ContentDigestV1Schema,
+  registryManifest: ProviderRegistryManifestPinV1Schema,
+  acceptanceIdentity: ProviderRuntimeIpcAcceptanceIdentityProofV1Schema,
+  capabilityDigest: ContentDigestV1Schema,
+  principalAttestationDigest: ContentDigestV1Schema,
+  journalHead:
+    ProviderRuntimeIpcStrongMutationAuthorityGrantJournalHeadV1Schema,
+  operation: ProviderRuntimeIpcStrongMutationOperationV1Schema,
+  operationNonce: LowerHex32V1Schema,
+  requestDigest: ContentDigestV1Schema,
+} as const;
+
+export const ProviderRuntimeIpcStrongMutationAuthorityGrantIdFieldsV1Schema =
+  z.strictObject(
+    ProviderRuntimeIpcStrongMutationAuthorityGrantIdFieldsShapeV1,
+  );
+export type ProviderRuntimeIpcStrongMutationAuthorityGrantIdFieldsV1 = z.infer<
+  typeof ProviderRuntimeIpcStrongMutationAuthorityGrantIdFieldsV1Schema
+>;
+
+const ProviderRuntimeIpcStrongMutationAuthorityGrantUnsignedClaimsShapeV1 = {
+  profile: z.literal(
+    "provider_runtime_ipc_strong_mutation_authority_grant_v1",
+  ),
+  grantId: ProviderRuntimeIpcStrongMutationAuthorityGrantIdV1Schema,
+  ...ProviderRuntimeIpcStrongMutationAuthorityGrantIdFieldsShapeV1,
+} as const;
+
+function projectStrongMutationAuthorityGrantIdFieldsV1(
+  claims: z.infer<
+    typeof ProviderRuntimeIpcStrongMutationAuthorityGrantUnsignedClaimsBaseV1Schema
+  > & {
+    readonly signature?: ProviderRuntimeIpcStrongMutationAuthorityGrantSignatureV1;
+  },
+): ProviderRuntimeIpcStrongMutationAuthorityGrantIdFieldsV1 {
+  const {
+    profile: _profile,
+    grantId: _grantId,
+    signature: _signature,
+    ...fields
+  } = claims;
+  return ProviderRuntimeIpcStrongMutationAuthorityGrantIdFieldsV1Schema.parse(
+    fields,
+  );
+}
+
+function addStrongMutationAuthorityGrantIdIssueV1(
+  claims: z.infer<
+    typeof ProviderRuntimeIpcStrongMutationAuthorityGrantUnsignedClaimsBaseV1Schema
+  > & {
+    readonly signature?: ProviderRuntimeIpcStrongMutationAuthorityGrantSignatureV1;
+  },
+  context: z.RefinementCtx,
+): void {
+  if (
+    claims.grantId !==
+    deriveProviderRuntimeIpcStrongMutationAuthorityGrantIdV1(
+      projectStrongMutationAuthorityGrantIdFieldsV1(claims),
+    )
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["grantId"],
+      message: "strong mutation authority grantId must bind the exact claims",
+    });
+  }
+}
+
+const ProviderRuntimeIpcStrongMutationAuthorityGrantUnsignedClaimsBaseV1Schema =
+  z.strictObject(
+    ProviderRuntimeIpcStrongMutationAuthorityGrantUnsignedClaimsShapeV1,
+  );
+
+export const ProviderRuntimeIpcStrongMutationAuthorityGrantUnsignedClaimsV1Schema =
+  ProviderRuntimeIpcStrongMutationAuthorityGrantUnsignedClaimsBaseV1Schema.superRefine(
+    addStrongMutationAuthorityGrantIdIssueV1,
+  );
+export type ProviderRuntimeIpcStrongMutationAuthorityGrantUnsignedClaimsV1 =
+  z.infer<
+    typeof ProviderRuntimeIpcStrongMutationAuthorityGrantUnsignedClaimsV1Schema
+  >;
+
+const ProviderRuntimeIpcStrongMutationAuthorityGrantPayloadBaseV1Schema =
+  z.strictObject({
+    ...ProviderRuntimeIpcStrongMutationAuthorityGrantUnsignedClaimsShapeV1,
+    signature:
+      ProviderRuntimeIpcStrongMutationAuthorityGrantSignatureV1Schema,
+  });
+
+export const ProviderRuntimeIpcStrongMutationAuthorityGrantPayloadV1Schema =
+  ProviderRuntimeIpcStrongMutationAuthorityGrantPayloadBaseV1Schema.superRefine(
+    addStrongMutationAuthorityGrantIdIssueV1,
+  );
+export type ProviderRuntimeIpcStrongMutationAuthorityGrantPayloadV1 = z.infer<
+  typeof ProviderRuntimeIpcStrongMutationAuthorityGrantPayloadV1Schema
+>;
+
+const ProviderRuntimeIpcStrongMutationAuthorityGrantEnvelopeBaseV1Schema =
+  z.strictObject({
+    schemaVersion: z.literal(1),
+    recordType: z.literal(
+      "provider_runtime_ipc_strong_mutation_authority_grant",
+    ),
+    grantId: ProviderRuntimeIpcStrongMutationAuthorityGrantIdV1Schema,
+    contentDigest: ContentDigestV1Schema,
+    payload: ProviderRuntimeIpcStrongMutationAuthorityGrantPayloadV1Schema,
+  });
+
+export const ProviderRuntimeIpcStrongMutationAuthorityGrantEnvelopeV1Schema =
+  ProviderRuntimeIpcStrongMutationAuthorityGrantEnvelopeBaseV1Schema.superRefine(
+    (envelope, context) => {
+      if (envelope.grantId !== envelope.payload.grantId) {
+        context.addIssue({
+          code: "custom",
+          path: ["grantId"],
+          message: "authority grant Envelope grantId must equal payload grantId",
+        });
+      }
+      if (
+        envelope.contentDigest !==
+        deriveProviderRuntimeIpcStrongMutationAuthorityGrantContentDigestV1(
+          envelope.payload,
+        )
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["contentDigest"],
+          message:
+            "authority grant Envelope contentDigest must bind the complete payload",
+        });
+      }
+    },
+  );
+export type ProviderRuntimeIpcStrongMutationAuthorityGrantEnvelopeV1 = z.infer<
+  typeof ProviderRuntimeIpcStrongMutationAuthorityGrantEnvelopeV1Schema
+>;
+
+export const ProviderRuntimeIpcStrongMutationSessionBindingClaimsV1Schema =
+  z.strictObject({
+    principalAttestationDigest: ContentDigestV1Schema,
+    operation: ProviderRuntimeIpcStrongMutationOperationV1Schema,
+    operationNonce: LowerHex32V1Schema,
+    requestDigest: ContentDigestV1Schema,
+    authorityGrant:
+      ProviderRuntimeIpcStrongMutationAuthorityGrantEnvelopeV1Schema,
+  });
+export type ProviderRuntimeIpcStrongMutationSessionBindingClaimsV1 = z.infer<
+  typeof ProviderRuntimeIpcStrongMutationSessionBindingClaimsV1Schema
+>;
+
 const ProviderRuntimeIpcPrincipalAttestationClaimsShapeV1 = {
   providerId: DurableObjectIdentityProviderIdV1Schema,
   capabilityDigest: ContentDigestV1Schema,
@@ -274,7 +463,8 @@ const ProviderRuntimeIpcStrongMutationRequestCommonShapeV1 = {
   bindingDigest: ContentDigestV1Schema,
   operationNonce: LowerHex32V1Schema,
   requestDigest: ContentDigestV1Schema,
-  authorityGrant: CanonicalByteStringV1Schema,
+  authorityGrant:
+    ProviderRuntimeIpcStrongMutationAuthorityGrantEnvelopeV1Schema,
 } as const;
 
 export const ProviderRuntimeIpcStrongMutationRequestV1Schema = z
@@ -490,6 +680,96 @@ export function canonicalizeProviderRuntimeIpcStrongMutationRequestV1(
     operationNonce: parsed.operationNonce,
     payload: parsed.payload,
   });
+}
+
+function bytesToLowerHexV1(bytes: Uint8Array): string {
+  let output = "";
+  for (const byte of bytes) output += byte.toString(16).padStart(2, "0");
+  return output;
+}
+
+function deriveStrongMutationAuthorityGrantDigestV1(
+  domain: string,
+  fields: object,
+): string {
+  return `sha256:${bytesToLowerHexV1(
+    sha256InternalV1(createDomainPreimageBytesV1(domain, fields)),
+  )}`;
+}
+
+/** Deterministic identifier over every authority claim except profile/grantId. */
+export function deriveProviderRuntimeIpcStrongMutationAuthorityGrantIdV1(
+  input: unknown,
+): ProviderRuntimeIpcStrongMutationAuthorityGrantIdV1 {
+  const fields =
+    ProviderRuntimeIpcStrongMutationAuthorityGrantIdFieldsV1Schema.parse(
+      input,
+    );
+  return ProviderRuntimeIpcStrongMutationAuthorityGrantIdV1Schema.parse(
+    deriveStrongMutationAuthorityGrantDigestV1(
+      PROVIDER_RUNTIME_IPC_STRONG_MUTATION_AUTHORITY_GRANT_ID_DOMAIN_V1,
+      fields,
+    ),
+  );
+}
+
+/** Projects the exact claims signed by a Registry-selected authority key. */
+export function projectProviderRuntimeIpcStrongMutationAuthorityGrantUnsignedClaimsV1(
+  input: unknown,
+): ProviderRuntimeIpcStrongMutationAuthorityGrantUnsignedClaimsV1 {
+  const payload =
+    ProviderRuntimeIpcStrongMutationAuthorityGrantPayloadV1Schema.safeParse(
+      input,
+    );
+  if (payload.success) {
+    const { signature: _signature, ...claims } = payload.data;
+    return ProviderRuntimeIpcStrongMutationAuthorityGrantUnsignedClaimsV1Schema.parse(
+      claims,
+    );
+  }
+  return ProviderRuntimeIpcStrongMutationAuthorityGrantUnsignedClaimsV1Schema.parse(
+    input,
+  );
+}
+
+/** Canonical raw Ed25519 message; no signer or private-key operation is exposed. */
+export function createProviderRuntimeIpcStrongMutationAuthorityGrantSignatureMessageV1(
+  input: unknown,
+): Uint8Array {
+  const claims =
+    projectProviderRuntimeIpcStrongMutationAuthorityGrantUnsignedClaimsV1(
+      input,
+    );
+  return createDomainPreimageBytesV1(
+    PROVIDER_RUNTIME_IPC_STRONG_MUTATION_AUTHORITY_GRANT_SIGNATURE_DOMAIN_V1,
+    {
+      signerKeyId: claims.signerKeyId,
+      claims,
+    },
+  );
+}
+
+/** Content digest binds the complete signed payload, including the raw signature. */
+export function deriveProviderRuntimeIpcStrongMutationAuthorityGrantContentDigestV1(
+  input: unknown,
+): z.infer<typeof ContentDigestV1Schema> {
+  const payload =
+    ProviderRuntimeIpcStrongMutationAuthorityGrantPayloadV1Schema.parse(input);
+  return ContentDigestV1Schema.parse(
+    deriveStrongMutationAuthorityGrantDigestV1(
+      PROVIDER_RUNTIME_IPC_STRONG_MUTATION_AUTHORITY_GRANT_DOMAIN_V1,
+      payload,
+    ),
+  );
+}
+
+/** Strict structural and self-binding parse; cryptographic verification is separate. */
+export function parseProviderRuntimeIpcStrongMutationAuthorityGrantEnvelopeV1(
+  input: unknown,
+): ProviderRuntimeIpcStrongMutationAuthorityGrantEnvelopeV1 {
+  return ProviderRuntimeIpcStrongMutationAuthorityGrantEnvelopeV1Schema.parse(
+    input,
+  );
 }
 
 /** Canonical same-connection grant binding bytes; callers apply SHA-256. */

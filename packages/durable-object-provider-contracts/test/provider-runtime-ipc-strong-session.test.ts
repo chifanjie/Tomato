@@ -14,11 +14,14 @@ import {
   ProviderRuntimeIpcClientHelloV1Schema,
   ProviderRuntimeIpcPrincipalAttestationV1Schema,
   ProviderRuntimeIpcPrincipalChallengeV1Schema,
+  ProviderRuntimeIpcStrongMutationAuthorityGrantEnvelopeV1Schema,
   ProviderRuntimeIpcStrongMutationRequestV1Schema,
   ProviderRuntimeIpcStrongMutationResponseV1Schema,
   canonicalizeProviderRuntimeIpcStrongMutationRequestV1,
   canonicalizeProviderRuntimeIpcStrongMutationResponseClaimsV1,
   canonicalizeProviderRuntimeIpcStrongMutationSessionBindingV1,
+  deriveProviderRuntimeIpcStrongMutationAuthorityGrantContentDigestV1,
+  deriveProviderRuntimeIpcStrongMutationAuthorityGrantIdV1,
 } from "../src/provider-runtime-ipc-v1.js";
 
 const PRINCIPAL_ATTESTATION_DIGEST = ContentDigestV1Schema.parse(
@@ -54,7 +57,56 @@ function writeMutationV1() {
       payload,
     }),
   );
-  const authorityGrant = CanonicalByteStringV1Schema.parse("base64url:AQ");
+  const grantFields = {
+    signerKeyId: "a".repeat(22),
+    providerId: PROVIDER_ID,
+    targetProfileId: `provider-target-profile:${"5".repeat(64)}`,
+    targetFingerprintDigest: `sha256:${"6".repeat(64)}`,
+    registryManifest: {
+      locatorProfile: "installation_provider_registry_manifest_v1" as const,
+      manifestGeneration: 1,
+      generationId: `provider-registry-manifest:${"6".repeat(22)}`,
+      contentDigest: `sha256:${"7".repeat(64)}`,
+    },
+    acceptanceIdentity: {
+      generationId: `provider-acceptance-state:${"8".repeat(22)}`,
+      contentDigest: `sha256:${"9".repeat(64)}`,
+      acceptanceOrdinal: 1,
+      installationIdentityGenerationId:
+        `installation-identity-generation:${"a".repeat(22)}`,
+    },
+    capabilityDigest: `sha256:${"a".repeat(64)}`,
+    principalAttestationDigest: PRINCIPAL_ATTESTATION_DIGEST,
+    journalHead: {
+      revision: 0,
+      phase: "ready",
+      mutationDigest: "none" as const,
+    },
+    operation: "write_object" as const,
+    operationNonce: OPERATION_NONCE,
+    requestDigest,
+  };
+  const grantId =
+    deriveProviderRuntimeIpcStrongMutationAuthorityGrantIdV1(grantFields);
+  const grantPayload = {
+    profile:
+      "provider_runtime_ipc_strong_mutation_authority_grant_v1" as const,
+    grantId,
+    ...grantFields,
+    signature: `base64url:${Buffer.alloc(64).toString("base64url")}`,
+  };
+  const authorityGrant =
+    ProviderRuntimeIpcStrongMutationAuthorityGrantEnvelopeV1Schema.parse({
+      schemaVersion: 1,
+      recordType:
+        "provider_runtime_ipc_strong_mutation_authority_grant",
+      grantId,
+      contentDigest:
+        deriveProviderRuntimeIpcStrongMutationAuthorityGrantContentDigestV1(
+          grantPayload,
+        ),
+      payload: grantPayload,
+    });
   const bindingDigest = sha256V1(
     canonicalizeProviderRuntimeIpcStrongMutationSessionBindingV1({
       principalAttestationDigest: PRINCIPAL_ATTESTATION_DIGEST,

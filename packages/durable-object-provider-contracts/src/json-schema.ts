@@ -163,6 +163,7 @@ import {
   ProviderRuntimeIpcRequestV1Schema,
   ProviderRuntimeIpcResponseV1Schema,
   ProviderRuntimeIpcServerHelloV1Schema,
+  ProviderRuntimeIpcStrongMutationAuthorityGrantEnvelopeV1Schema,
   ProviderRuntimeIpcStrongMutationRequestV1Schema,
   ProviderRuntimeIpcStrongMutationResponseV1Schema,
 } from "./provider-runtime-ipc-v1.js";
@@ -886,6 +887,8 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 =
     ProviderRuntimeIpcPrincipalChallengeV1Schema,
   "provider-runtime-ipc-principal-attestation-v1":
     ProviderRuntimeIpcPrincipalAttestationV1Schema,
+  "provider-runtime-ipc-strong-mutation-authority-grant-v1":
+    ProviderRuntimeIpcStrongMutationAuthorityGrantEnvelopeV1Schema,
   "provider-runtime-ipc-strong-mutation-request-v1":
     ProviderRuntimeIpcStrongMutationRequestV1Schema,
   "provider-runtime-ipc-strong-mutation-response-v1":

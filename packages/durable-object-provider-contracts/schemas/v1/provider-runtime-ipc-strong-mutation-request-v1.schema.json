@@ -34,8 +34,198 @@
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
         "authorityGrant": {
-          "type": "string",
-          "pattern": "^base64url:(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$"
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "type": "number",
+              "const": 1
+            },
+            "recordType": {
+              "type": "string",
+              "const": "provider_runtime_ipc_strong_mutation_authority_grant"
+            },
+            "grantId": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "contentDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "const": "provider_runtime_ipc_strong_mutation_authority_grant_v1"
+                },
+                "grantId": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "signerKeyId": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{22}$"
+                },
+                "providerId": {
+                  "type": "string",
+                  "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                },
+                "targetProfileId": {
+                  "type": "string",
+                  "pattern": "^provider-target-profile:[0-9a-f]{64}$"
+                },
+                "targetFingerprintDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "registryManifest": {
+                  "type": "object",
+                  "properties": {
+                    "locatorProfile": {
+                      "type": "string",
+                      "const": "installation_provider_registry_manifest_v1"
+                    },
+                    "manifestGeneration": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "generationId": {
+                      "type": "string",
+                      "pattern": "^provider-registry-manifest:[0-9a-f]{22}$"
+                    },
+                    "contentDigest": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    }
+                  },
+                  "required": [
+                    "locatorProfile",
+                    "manifestGeneration",
+                    "generationId",
+                    "contentDigest"
+                  ],
+                  "additionalProperties": false
+                },
+                "acceptanceIdentity": {
+                  "type": "object",
+                  "properties": {
+                    "generationId": {
+                      "type": "string",
+                      "pattern": "^provider-acceptance-state:[0-9a-f]{22}$"
+                    },
+                    "contentDigest": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    "acceptanceOrdinal": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "installationIdentityGenerationId": {
+                      "type": "string",
+                      "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+                    }
+                  },
+                  "required": [
+                    "generationId",
+                    "contentDigest",
+                    "acceptanceOrdinal",
+                    "installationIdentityGenerationId"
+                  ],
+                  "additionalProperties": false
+                },
+                "capabilityDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "principalAttestationDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "journalHead": {
+                  "type": "object",
+                  "properties": {
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "phase": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "mutationDigest": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        {
+                          "type": "string",
+                          "const": "none"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "revision",
+                    "phase",
+                    "mutationDigest"
+                  ],
+                  "additionalProperties": false
+                },
+                "operation": {
+                  "type": "string",
+                  "enum": [
+                    "write_object",
+                    "compare_commit"
+                  ]
+                },
+                "operationNonce": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{32}$"
+                },
+                "requestDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "signature": {
+                  "type": "string",
+                  "pattern": "^base64url:(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$"
+                }
+              },
+              "required": [
+                "profile",
+                "grantId",
+                "signerKeyId",
+                "providerId",
+                "targetProfileId",
+                "targetFingerprintDigest",
+                "registryManifest",
+                "acceptanceIdentity",
+                "capabilityDigest",
+                "principalAttestationDigest",
+                "journalHead",
+                "operation",
+                "operationNonce",
+                "requestDigest",
+                "signature"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "recordType",
+            "grantId",
+            "contentDigest",
+            "payload"
+          ],
+          "additionalProperties": false
         },
         "operation": {
           "type": "string",
@@ -126,8 +316,198 @@
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
         "authorityGrant": {
-          "type": "string",
-          "pattern": "^base64url:(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$"
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "type": "number",
+              "const": 1
+            },
+            "recordType": {
+              "type": "string",
+              "const": "provider_runtime_ipc_strong_mutation_authority_grant"
+            },
+            "grantId": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "contentDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "const": "provider_runtime_ipc_strong_mutation_authority_grant_v1"
+                },
+                "grantId": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "signerKeyId": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{22}$"
+                },
+                "providerId": {
+                  "type": "string",
+                  "pattern": "^durable-object-provider:(?!.*\\.\\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+                },
+                "targetProfileId": {
+                  "type": "string",
+                  "pattern": "^provider-target-profile:[0-9a-f]{64}$"
+                },
+                "targetFingerprintDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "registryManifest": {
+                  "type": "object",
+                  "properties": {
+                    "locatorProfile": {
+                      "type": "string",
+                      "const": "installation_provider_registry_manifest_v1"
+                    },
+                    "manifestGeneration": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "generationId": {
+                      "type": "string",
+                      "pattern": "^provider-registry-manifest:[0-9a-f]{22}$"
+                    },
+                    "contentDigest": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    }
+                  },
+                  "required": [
+                    "locatorProfile",
+                    "manifestGeneration",
+                    "generationId",
+                    "contentDigest"
+                  ],
+                  "additionalProperties": false
+                },
+                "acceptanceIdentity": {
+                  "type": "object",
+                  "properties": {
+                    "generationId": {
+                      "type": "string",
+                      "pattern": "^provider-acceptance-state:[0-9a-f]{22}$"
+                    },
+                    "contentDigest": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    "acceptanceOrdinal": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "installationIdentityGenerationId": {
+                      "type": "string",
+                      "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+                    }
+                  },
+                  "required": [
+                    "generationId",
+                    "contentDigest",
+                    "acceptanceOrdinal",
+                    "installationIdentityGenerationId"
+                  ],
+                  "additionalProperties": false
+                },
+                "capabilityDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "principalAttestationDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "journalHead": {
+                  "type": "object",
+                  "properties": {
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "phase": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "mutationDigest": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        {
+                          "type": "string",
+                          "const": "none"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "revision",
+                    "phase",
+                    "mutationDigest"
+                  ],
+                  "additionalProperties": false
+                },
+                "operation": {
+                  "type": "string",
+                  "enum": [
+                    "write_object",
+                    "compare_commit"
+                  ]
+                },
+                "operationNonce": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{32}$"
+                },
+                "requestDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "signature": {
+                  "type": "string",
+                  "pattern": "^base64url:(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$"
+                }
+              },
+              "required": [
+                "profile",
+                "grantId",
+                "signerKeyId",
+                "providerId",
+                "targetProfileId",
+                "targetFingerprintDigest",
+                "registryManifest",
+                "acceptanceIdentity",
+                "capabilityDigest",
+                "principalAttestationDigest",
+                "journalHead",
+                "operation",
+                "operationNonce",
+                "requestDigest",
+                "signature"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "recordType",
+            "grantId",
+            "contentDigest",
+            "payload"
+          ],
+          "additionalProperties": false
         },
         "operation": {
           "type": "string",

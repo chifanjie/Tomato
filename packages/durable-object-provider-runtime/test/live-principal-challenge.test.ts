@@ -36,12 +36,14 @@ import {
 } from "@understand-code/durable-object-provider-contracts/provider-strong-ready-acceptance-candidate";
 import {
   PROVIDER_RUNTIME_IPC_PROTOCOL_V1,
+  ProviderRuntimeIpcAcceptanceIdentityProofV1Schema,
   ProviderRuntimeIpcClientHelloV1Schema,
   ProviderRuntimeIpcPrincipalAttestationV1Schema,
   ProviderRuntimeIpcPrincipalChallengeV1Schema,
   ProviderRuntimeIpcRequestV1Schema,
   ProviderRuntimeIpcResponseV1Schema,
   ProviderRuntimeIpcServerHelloV1Schema,
+  ProviderRuntimeIpcStrongMutationAuthorityGrantEnvelopeV1Schema,
   ProviderRuntimeIpcStrongMutationRequestClaimsV1Schema,
   ProviderRuntimeIpcStrongMutationRequestV1Schema,
   ProviderRuntimeIpcStrongMutationResponseV1Schema,
@@ -50,6 +52,8 @@ import {
   canonicalizeProviderRuntimeIpcStrongMutationRequestV1,
   canonicalizeProviderRuntimeIpcStrongMutationResponseClaimsV1,
   canonicalizeProviderRuntimeIpcStrongMutationSessionBindingV1,
+  deriveProviderRuntimeIpcStrongMutationAuthorityGrantContentDigestV1,
+  deriveProviderRuntimeIpcStrongMutationAuthorityGrantIdV1,
 } from "@understand-code/durable-object-provider-contracts/provider-runtime-ipc-v1";
 
 import { diagnoseProviderRuntimeDurableExecutionPrincipalHeadV1 } from "../src/durable-execution-principal-head.js";
@@ -83,6 +87,9 @@ const BINARY_DIGEST = ContentDigestV1Schema.parse(
 const INSTALLATION_IDENTITY =
   "installation-identity-generation:4fe634940e20afac35e02d" as const;
 const TARGET_PROFILE_ID = `provider-target-profile:${"e".repeat(64)}`;
+const TARGET_FINGERPRINT_DIGEST = ContentDigestV1Schema.parse(
+  `sha256:${"d".repeat(64)}`,
+);
 const INSTALLATION_IDENTITY_KEY = new Uint8Array(
   Array.from({ length: 32 }, (_value, index) => index),
 );
@@ -427,7 +434,53 @@ function strongWriteRequestV1(
       attestation,
     ),
   );
-  const authorityGrant = CanonicalByteStringV1Schema.parse("base64url:AQ");
+  const grantFields = {
+    signerKeyId: "a".repeat(22),
+    providerId: PROVIDER_ID,
+    targetProfileId: TARGET_PROFILE_ID,
+    targetFingerprintDigest: TARGET_FINGERPRINT_DIGEST,
+    registryManifest: {
+      locatorProfile: "installation_provider_registry_manifest_v1" as const,
+      manifestGeneration: 1,
+      generationId: `provider-registry-manifest:${"b".repeat(22)}`,
+      contentDigest: `sha256:${"c".repeat(64)}`,
+    },
+    acceptanceIdentity:
+      ProviderRuntimeIpcAcceptanceIdentityProofV1Schema.parse(
+        attestation.acceptanceIdentity,
+      ),
+    capabilityDigest: CAPABILITY_DIGEST,
+    principalAttestationDigest,
+    journalHead: {
+      revision: attestation.revision,
+      phase: attestation.phase,
+      mutationDigest: attestation.mutationDigest,
+    },
+    operation: "write_object" as const,
+    operationNonce,
+    requestDigest,
+  };
+  const grantId =
+    deriveProviderRuntimeIpcStrongMutationAuthorityGrantIdV1(grantFields);
+  const grantPayload = {
+    profile:
+      "provider_runtime_ipc_strong_mutation_authority_grant_v1" as const,
+    grantId,
+    ...grantFields,
+    signature: `base64url:${Buffer.alloc(64).toString("base64url")}`,
+  };
+  const authorityGrant =
+    ProviderRuntimeIpcStrongMutationAuthorityGrantEnvelopeV1Schema.parse({
+      schemaVersion: 1,
+      recordType:
+        "provider_runtime_ipc_strong_mutation_authority_grant",
+      grantId,
+      contentDigest:
+        deriveProviderRuntimeIpcStrongMutationAuthorityGrantContentDigestV1(
+          grantPayload,
+        ),
+      payload: grantPayload,
+    });
   const bindingDigest = sha256V1(
     canonicalizeProviderRuntimeIpcStrongMutationSessionBindingV1({
       principalAttestationDigest,
@@ -709,7 +762,7 @@ describe("live provider principal challenge", () => {
     const verifierCapability =
       mintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1({
         consumeGrant(context) {
-          return context.authorityGrant === "base64url:AQ" &&
+          return context.authorityGrant.payload.providerId === PROVIDER_ID &&
             context.journalHead.phase === "final_strong_ready";
         },
       });
@@ -774,8 +827,8 @@ describe("live provider principal challenge", () => {
       mintProviderRuntimeStrongMutationAuthorityVerifierCapabilityInternalV1({
         consumeGrant(context) {
           consumeCalls += 1;
-          if (consumedGrants.has(context.authorityGrant)) return false;
-          consumedGrants.add(context.authorityGrant);
+          if (consumedGrants.has(context.authorityGrant.grantId)) return false;
+          consumedGrants.add(context.authorityGrant.grantId);
           return true;
         },
       });
@@ -847,7 +900,9 @@ describe("live provider principal challenge", () => {
         bindingDigest: request.bindingDigest,
       });
       expect(consumeCalls).toBe(1);
-      expect(consumedGrants).toEqual(new Set([request.authorityGrant]));
+      expect(consumedGrants).toEqual(
+        new Set([request.authorityGrant.grantId]),
+      );
       expect(writeObject).toHaveBeenCalledTimes(1);
     } finally {
       first.lines.close();

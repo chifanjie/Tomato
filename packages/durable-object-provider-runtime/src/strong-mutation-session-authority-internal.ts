@@ -35,7 +35,8 @@ export interface ProviderRuntimeStrongMutationAuthorityGrantContextInternalV1 {
     ProviderRuntimeIpcStrongMutationRequestV1["operation"];
   readonly operationNonce: string;
   readonly requestDigest: ContentDigestV1;
-  readonly authorityGrant: string;
+  readonly authorityGrant:
+    ProviderRuntimeIpcStrongMutationRequestV1["authorityGrant"];
   readonly journalHead: Readonly<{
     readonly revision: number;
     readonly phase: string;

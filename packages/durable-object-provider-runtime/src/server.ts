@@ -1,7 +1,10 @@
 import {
+  createPublicKey,
   createHmac,
   randomBytes,
+  sign,
   timingSafeEqual,
+  type KeyObject,
 } from "node:crypto";
 import {
   chmod,
@@ -22,11 +25,16 @@ import {
   PROVIDER_RUNTIME_IPC_PROTOCOL_V1,
   PROVIDER_RUNTIME_IPC_SOCKET_MODE_V1,
   ProviderRuntimeIpcClientHelloV1Schema,
+  ProviderRuntimeIpcPrincipalAttestationV1Schema,
+  ProviderRuntimeIpcPrincipalAttestationClaimsV1Schema,
+  ProviderRuntimeIpcPrincipalChallengeV1Schema,
   ProviderRuntimeIpcRequestV1Schema,
   ProviderRuntimeIpcResponseV1Schema,
   ProviderRuntimeIpcServerHelloV1Schema,
   canonicalizeProviderRuntimeIpcAuthenticatedClaimsV1,
+  canonicalizeProviderRuntimeIpcPrincipalAttestationClaimsV1,
   type ProviderRuntimeIpcClientHelloV1,
+  type ProviderRuntimeIpcPrincipalChallengeV1,
   type ProviderRuntimeIpcRequestV1,
   type ProviderRuntimeIpcResponseV1,
   type ProviderRuntimeIpcServerHelloV1,
@@ -64,6 +72,11 @@ export interface DurableObjectProviderRuntimeServerOptionsV1 {
   readonly authorizedCapabilityDigest: string;
   readonly requestTimeoutMs?: number;
   readonly maxConnections?: number;
+  readonly principalAttestation?: {
+    readonly privateKey: KeyObject;
+    readonly handoffPayloadDigest: string;
+    readonly publicKey: string;
+  };
   readonly storeOptions?: Omit<
     DurableObjectProviderRuntimeStoreOptionsV1,
     "rootPath" | "providerId"
@@ -279,6 +292,13 @@ export class DurableObjectProviderRuntimeServerV1 {
   readonly #authorizedCapabilityDigest: string;
   readonly #requestTimeoutMs: number;
   readonly #maxConnections: number;
+  readonly #principalAttestation:
+    | {
+        readonly privateKey: KeyObject;
+        readonly handoffPayloadDigest: string;
+        readonly publicKey: string;
+      }
+    | undefined;
   readonly #connections = new Set<Socket>();
   #server: Server | undefined;
   #socketIdentity: { readonly dev: number; readonly ino: number } | undefined;
@@ -314,6 +334,35 @@ export class DurableObjectProviderRuntimeServerV1 {
     this.#maxConnections = options.maxConnections ?? DEFAULT_MAX_CONNECTIONS_V1;
     assertPositiveSafeIntegerV1(this.#requestTimeoutMs, "requestTimeoutMs");
     assertPositiveSafeIntegerV1(this.#maxConnections, "maxConnections");
+    if (options.principalAttestation === undefined) {
+      this.#principalAttestation = undefined;
+    } else {
+      const { privateKey } = options.principalAttestation;
+      if (
+        privateKey.type !== "private" ||
+        privateKey.asymmetricKeyType !== "ed25519"
+      ) {
+        throw new ProviderRuntimeServerErrorV1(
+          "principal attestation key must be an Ed25519 private key",
+        );
+      }
+      const handoffPayloadDigest = ContentDigestV1Schema.parse(
+        options.principalAttestation.handoffPayloadDigest,
+      );
+      const publicKey = `base64url:${createPublicKey(privateKey)
+        .export({ format: "der", type: "spki" })
+        .toString("base64url")}`;
+      if (publicKey !== options.principalAttestation.publicKey) {
+        throw new ProviderRuntimeServerErrorV1(
+          "principal attestation public key does not match its private key",
+        );
+      }
+      this.#principalAttestation = {
+        privateKey,
+        handoffPayloadDigest,
+        publicKey,
+      };
+    }
     this.store = new DurableObjectProviderRuntimeStoreV1({
       ...options.storeOptions,
       rootPath: this.rootPath,
@@ -455,7 +504,13 @@ export class DurableObjectProviderRuntimeServerV1 {
     socket.setTimeout(this.#requestTimeoutMs, () => socket.destroy());
     socket.setNoDelay(true);
     try {
-      const hello = this.#parseClientHello(await reader.readFrame());
+      const firstFrame = await reader.readFrame();
+      const principalChallenge = this.#parsePrincipalChallenge(firstFrame);
+      if (principalChallenge !== undefined) {
+        await this.#servePrincipalChallenge(socket, principalChallenge);
+        return;
+      }
+      const hello = this.#parseClientHello(firstFrame);
       if (
         !verifyAuthTagV1(this.#authKey, hello) ||
         hello.capabilityDigest !== this.#authorizedCapabilityDigest
@@ -563,6 +618,50 @@ export class DurableObjectProviderRuntimeServerV1 {
       throw new ProviderRuntimeServerErrorV1("client hello is invalid");
     }
     return result.data;
+  }
+
+  #parsePrincipalChallenge(
+    frame: string,
+  ): ProviderRuntimeIpcPrincipalChallengeV1 | undefined {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(frame) as unknown;
+    } catch {
+      return undefined;
+    }
+    const result = ProviderRuntimeIpcPrincipalChallengeV1Schema.safeParse(parsed);
+    return result.success ? result.data : undefined;
+  }
+
+  async #servePrincipalChallenge(
+    socket: Socket,
+    request: ProviderRuntimeIpcPrincipalChallengeV1,
+  ): Promise<void> {
+    const principalAttestation = this.#principalAttestation;
+    if (principalAttestation === undefined) return;
+    const state = this.store.inspectState();
+    const claims = ProviderRuntimeIpcPrincipalAttestationClaimsV1Schema.parse({
+      providerId: this.providerId,
+      capabilityDigest: this.#authorizedCapabilityDigest,
+      challenge: request.challenge,
+      revision: state.revision,
+      phase: state.phase,
+      mutationDigest: state.mutationDigest,
+      handoffPayloadDigest: principalAttestation.handoffPayloadDigest,
+      publicKey: principalAttestation.publicKey,
+    });
+    const signature = sign(
+      null,
+      canonicalizeProviderRuntimeIpcPrincipalAttestationClaimsV1(claims),
+      principalAttestation.privateKey,
+    );
+    const response = ProviderRuntimeIpcPrincipalAttestationV1Schema.parse({
+      protocol: PROVIDER_RUNTIME_IPC_PROTOCOL_V1,
+      kind: "principal_attestation",
+      ...claims,
+      signature: `base64url:${signature.toString("base64url")}`,
+    });
+    await writeFrameV1(socket, response);
   }
 
   #parseRequest(frame: string): ProviderRuntimeIpcRequestV1 {

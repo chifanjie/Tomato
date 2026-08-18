@@ -13,6 +13,8 @@ export const PROVIDER_RUNTIME_IPC_PROTOCOL_V1 =
   "understand_code_durable_provider_ipc_v1" as const;
 export const PROVIDER_RUNTIME_IPC_AUTH_DOMAIN_V1 =
   "understand-code-durable-provider-runtime-ipc-auth-v1" as const;
+export const PROVIDER_RUNTIME_IPC_PRINCIPAL_ATTESTATION_DOMAIN_V1 =
+  "understand-code-durable-provider-runtime-principal-attestation-v1" as const;
 export const PROVIDER_RUNTIME_IPC_MAX_FRAME_BYTES_V1 = 8 * 1024 * 1024;
 export const PROVIDER_RUNTIME_IPC_SOCKET_MODE_V1 = 0o600;
 export const PROVIDER_RUNTIME_IPC_STORAGE_DIRECTORY_MODE_V1 = 0o700;
@@ -87,6 +89,15 @@ export type ProviderRuntimeIpcServerHelloV1 = z.infer<
   typeof ProviderRuntimeIpcServerHelloV1Schema
 >;
 
+export const ProviderRuntimeIpcPrincipalChallengeV1Schema = z.strictObject({
+  protocol: ProviderRuntimeIpcProtocolV1Schema,
+  kind: z.literal("principal_challenge"),
+  challenge: LowerHex64V1Schema,
+});
+export type ProviderRuntimeIpcPrincipalChallengeV1 = z.infer<
+  typeof ProviderRuntimeIpcPrincipalChallengeV1Schema
+>;
+
 const ProviderRuntimeIpcRequestCommonShapeV1 = {
   protocol: ProviderRuntimeIpcProtocolV1Schema,
   kind: z.literal("request"),
@@ -154,6 +165,33 @@ export const ProviderRuntimeIpcJournalStateV1Schema = z.strictObject({
 });
 export type ProviderRuntimeIpcJournalStateV1 = z.infer<
   typeof ProviderRuntimeIpcJournalStateV1Schema
+>;
+
+const ProviderRuntimeIpcPrincipalAttestationClaimsShapeV1 = {
+  providerId: DurableObjectIdentityProviderIdV1Schema,
+  capabilityDigest: ContentDigestV1Schema,
+  challenge: LowerHex64V1Schema,
+  revision: NonnegativeSafeIntegerV1Schema,
+  phase: z.string().min(1).max(128),
+  mutationDigest: z.union([ContentDigestV1Schema, z.literal("none")]),
+  handoffPayloadDigest: ContentDigestV1Schema,
+  publicKey: CanonicalByteStringV1Schema,
+} as const;
+
+export const ProviderRuntimeIpcPrincipalAttestationClaimsV1Schema =
+  z.strictObject(ProviderRuntimeIpcPrincipalAttestationClaimsShapeV1);
+export type ProviderRuntimeIpcPrincipalAttestationClaimsV1 = z.infer<
+  typeof ProviderRuntimeIpcPrincipalAttestationClaimsV1Schema
+>;
+
+export const ProviderRuntimeIpcPrincipalAttestationV1Schema = z.strictObject({
+  protocol: ProviderRuntimeIpcProtocolV1Schema,
+  kind: z.literal("principal_attestation"),
+  ...ProviderRuntimeIpcPrincipalAttestationClaimsShapeV1,
+  signature: CanonicalByteStringV1Schema,
+});
+export type ProviderRuntimeIpcPrincipalAttestationV1 = z.infer<
+  typeof ProviderRuntimeIpcPrincipalAttestationV1Schema
 >;
 
 export const ProviderRuntimeIpcInspectStateResultV1Schema = z.strictObject({
@@ -257,5 +295,15 @@ export function canonicalizeProviderRuntimeIpcAuthenticatedClaimsV1(
   return canonicalizeJcsSafeIntegerUtf8V1({
     domain: PROVIDER_RUNTIME_IPC_AUTH_DOMAIN_V1,
     claims,
+  });
+}
+
+/** Canonical bytes signed by the configured principal-owned Ed25519 key. */
+export function canonicalizeProviderRuntimeIpcPrincipalAttestationClaimsV1(
+  claims: ProviderRuntimeIpcPrincipalAttestationClaimsV1,
+): Uint8Array {
+  return canonicalizeJcsSafeIntegerUtf8V1({
+    domain: PROVIDER_RUNTIME_IPC_PRINCIPAL_ATTESTATION_DOMAIN_V1,
+    claims: ProviderRuntimeIpcPrincipalAttestationClaimsV1Schema.parse(claims),
   });
 }

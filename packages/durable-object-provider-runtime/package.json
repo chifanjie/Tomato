@@ -88,6 +88,11 @@
       "types": "./dist/durable-acceptance-current.d.ts",
       "import": "./dist/durable-acceptance-current.js",
       "default": "./dist/durable-acceptance-current.js"
+    },
+    "./live-principal-challenge": {
+      "types": "./dist/live-principal-challenge.d.ts",
+      "import": "./dist/live-principal-challenge.js",
+      "default": "./dist/live-principal-challenge.js"
     }
   },
   "scripts": {

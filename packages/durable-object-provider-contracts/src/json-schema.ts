@@ -158,6 +158,8 @@ import {
   ProviderRuntimeIpcClientHelloV1Schema,
   ProviderRuntimeIpcFixedObjectLocatorV1Schema,
   ProviderRuntimeIpcJournalStateV1Schema,
+  ProviderRuntimeIpcPrincipalAttestationV1Schema,
+  ProviderRuntimeIpcPrincipalChallengeV1Schema,
   ProviderRuntimeIpcRequestV1Schema,
   ProviderRuntimeIpcResponseV1Schema,
   ProviderRuntimeIpcServerHelloV1Schema,
@@ -878,6 +880,10 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 =
     ProviderRuntimeIpcClientHelloV1Schema,
   "provider-runtime-ipc-server-hello-v1":
     ProviderRuntimeIpcServerHelloV1Schema,
+  "provider-runtime-ipc-principal-challenge-v1":
+    ProviderRuntimeIpcPrincipalChallengeV1Schema,
+  "provider-runtime-ipc-principal-attestation-v1":
+    ProviderRuntimeIpcPrincipalAttestationV1Schema,
   "provider-runtime-ipc-request-v1": ProviderRuntimeIpcRequestV1Schema,
   "provider-runtime-ipc-response-v1": ProviderRuntimeIpcResponseV1Schema,
   "provider-runtime-ipc-journal-state-v1":

@@ -296,6 +296,15 @@ export async function runDurableObjectProviderRuntimeCliV1(
     providerId: options.providerId,
     authKey,
     authorizedCapabilityDigest: options.authorizedCapabilityDigest,
+    ...(service === undefined || serviceSigningKey === undefined
+      ? {}
+      : {
+          principalAttestation: {
+            privateKey: serviceSigningKey,
+            handoffPayloadDigest: service.config.payloadDigest,
+            publicKey: service.config.publicKey,
+          },
+        }),
   });
 
   let resolveStop!: () => void;

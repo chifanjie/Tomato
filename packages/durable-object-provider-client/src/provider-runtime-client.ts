@@ -7,6 +7,8 @@ import {
   ProviderRuntimeIpcClientHelloV1Schema,
   ProviderRuntimeIpcCompareCommitResultV1Schema,
   ProviderRuntimeIpcInspectStateResultV1Schema,
+  ProviderRuntimeIpcPrincipalAttestationV1Schema,
+  ProviderRuntimeIpcPrincipalChallengeV1Schema,
   ProviderRuntimeIpcReadObjectResultV1Schema,
   ProviderRuntimeIpcRequestV1Schema,
   ProviderRuntimeIpcResponseV1Schema,
@@ -16,6 +18,7 @@ import {
   type ProviderRuntimeIpcFixedObjectLocatorV1,
   type ProviderRuntimeIpcInspectStateResultV1,
   type ProviderRuntimeIpcJsonValueV1,
+  type ProviderRuntimeIpcPrincipalAttestationV1,
   type ProviderRuntimeIpcReadObjectResultV1,
   type ProviderRuntimeIpcRequestV1,
   type ProviderRuntimeIpcSuccessPayloadV1,
@@ -73,6 +76,9 @@ export interface ProviderRuntimeCompareCommitInputV1 {
 }
 
 export interface DurableObjectProviderRuntimeClientV1 {
+  attestPrincipal(
+    challenge: string,
+  ): Promise<ProviderRuntimeIpcPrincipalAttestationV1>;
   inspectState(): Promise<ProviderRuntimeIpcInspectStateResultV1>;
   readObject(
     locator: ProviderRuntimeIpcFixedObjectLocatorV1,
@@ -107,6 +113,77 @@ function connectSocketV1(socketPath: string, timeoutMs: number): Promise<Socket>
       resolve(socket);
     });
   });
+}
+
+async function exchangePrincipalChallengeV1(
+  options: DurableObjectProviderRuntimeClientOptionsV1,
+  challenge: string,
+): Promise<ProviderRuntimeIpcPrincipalAttestationV1> {
+  const timeoutMs = options.timeoutMs ?? 5_000;
+  const socket = await connectSocketV1(options.socketPath, timeoutMs);
+  const lines = createInterface({ input: socket, crlfDelay: Infinity });
+  const iterator = lines[Symbol.asyncIterator]();
+  try {
+    const request = ProviderRuntimeIpcPrincipalChallengeV1Schema.parse({
+      protocol: PROVIDER_RUNTIME_IPC_PROTOCOL_V1,
+      kind: "principal_challenge",
+      challenge,
+    });
+    socket.write(encodeProviderRuntimeIpcFrameV1(request));
+    const responseLine = await iterator.next();
+    if (responseLine.done) {
+      throw new ProviderRuntimeTransportErrorV1(
+        "provider runtime closed before principal attestation",
+      );
+    }
+    assertProviderRuntimeIpcFrameSizeV1(responseLine.value);
+    const response = ProviderRuntimeIpcPrincipalAttestationV1Schema.parse(
+      JSON.parse(responseLine.value),
+    );
+    if (response.challenge !== request.challenge) {
+      throw new ProviderRuntimeIpcErrorV1(
+        "challenge_mismatch",
+        "provider runtime principal attestation did not match the challenge",
+      );
+    }
+    return response;
+  } catch (error) {
+    if (
+      error instanceof ProviderRuntimeIpcErrorV1 ||
+      error instanceof ProviderRuntimeTransportErrorV1
+    ) {
+      throw error;
+    }
+    throw new ProviderRuntimeTransportErrorV1(
+      "provider runtime principal attestation exchange failed",
+      { cause: error },
+    );
+  } finally {
+    lines.close();
+    socket.destroy();
+  }
+}
+
+async function attestPrincipalWithTransportRetryV1(
+  options: DurableObjectProviderRuntimeClientOptionsV1,
+  challenge: string,
+): Promise<ProviderRuntimeIpcPrincipalAttestationV1> {
+  const retryCount = options.transportRetryCount ?? 1;
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await exchangePrincipalChallengeV1(options, challenge);
+    } catch (error) {
+      if (
+        !(error instanceof ProviderRuntimeTransportErrorV1) ||
+        attempt >= retryCount
+      ) {
+        throw error;
+      }
+      attempt += 1;
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    }
+  }
 }
 
 async function exchangeV1(
@@ -225,6 +302,9 @@ export function createDurableObjectProviderRuntimeClientV1(
     verifiedSelection: lockVerifiedSelectionV1(options.verifiedSelection),
   };
   return Object.freeze({
+    async attestPrincipal(challenge: string) {
+      return attestPrincipalWithTransportRetryV1(copiedOptions, challenge);
+    },
     async inspectState() {
       return ProviderRuntimeIpcInspectStateResultV1Schema.parse(
         await callWithTransportRetryV1(copiedOptions, "inspect_state", {}),

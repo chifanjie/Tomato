@@ -36,6 +36,10 @@ import {
   diagnoseProviderRuntimeDurableAcceptanceCurrentV1,
   type ProviderRuntimeDurableAcceptanceCurrentCandidateV1,
 } from "./durable-acceptance-current.js";
+import {
+  verifyProviderRuntimeLivePrincipalChallengeV1,
+  type ProviderRuntimePrincipalKeyLiveCandidateV1,
+} from "./live-principal-challenge.js";
 
 export type ProviderRuntimeGateCandidateStageV1 =
   | "conformance_result"
@@ -44,7 +48,8 @@ export type ProviderRuntimeGateCandidateStageV1 =
   | "support_catalog"
   | "gate_projection"
   | "live_gate_binding"
-  | "durable_acceptance_current";
+  | "durable_acceptance_current"
+  | "principal_key_live";
 
 export type ProviderRuntimeGateCandidateConformanceInputV1 =
   | {
@@ -111,6 +116,31 @@ export type ProviderRuntimeDurableAcceptanceCandidateDiagnosticV1 =
       readonly stage: ProviderRuntimeGateCandidateStageV1;
     };
 
+export type RunProviderRuntimePrincipalAcceptanceCandidateOptionsV1 =
+  RunProviderRuntimeDurableAcceptanceCandidateOptionsV1;
+
+export interface ProviderRuntimePrincipalAcceptanceCandidateV1 {
+  readonly status: "principal_key_and_durable_acceptance_candidate";
+  readonly authority: "none";
+  readonly accessMode: "read_only";
+  readonly strongWriteStatus: "locked";
+  readonly requiredNext: "kernel_os_peer_and_acceptance_token_gate";
+  readonly durableAcceptance: ProviderRuntimeDurableAcceptanceCurrentCandidateV1;
+  readonly principalKey: ProviderRuntimePrincipalKeyLiveCandidateV1;
+}
+
+export type ProviderRuntimePrincipalAcceptanceCandidateDiagnosticV1 =
+  | {
+      readonly ok: true;
+      readonly value: ProviderRuntimePrincipalAcceptanceCandidateV1;
+    }
+  | {
+      readonly ok: false;
+      readonly code: "provider_unavailable";
+      readonly reason: "attestation_invalid";
+      readonly stage: ProviderRuntimeGateCandidateStageV1;
+    };
+
 function unavailableV1(
   stage: ProviderRuntimeGateCandidateStageV1,
 ): ProviderRuntimeGateCandidateDiagnosticV1 {
@@ -136,6 +166,17 @@ function unavailableLiveV1(
 function unavailableDurableV1(
   stage: ProviderRuntimeGateCandidateStageV1,
 ): ProviderRuntimeDurableAcceptanceCandidateDiagnosticV1 {
+  return {
+    ok: false,
+    code: "provider_unavailable",
+    reason: "attestation_invalid",
+    stage,
+  };
+}
+
+function unavailablePrincipalV1(
+  stage: ProviderRuntimeGateCandidateStageV1,
+): ProviderRuntimePrincipalAcceptanceCandidateDiagnosticV1 {
   return {
     ok: false,
     code: "provider_unavailable",
@@ -399,4 +440,59 @@ export async function runProviderRuntimeDurableAcceptanceCandidateV1(
   options: RunProviderRuntimeDurableAcceptanceCandidateOptionsV1,
 ): Promise<ProviderRuntimeDurableAcceptanceCandidateDiagnosticV1> {
   return diagnoseProviderRuntimeDurableAcceptanceCandidateV1(options);
+}
+
+/**
+ * Join the durable Acceptance-current observation to a fresh Ed25519
+ * challenge answered by the configured service key.  This removes the need
+ * to read the principal-owned HMAC key, but deliberately does not equate key
+ * possession with kernel peer identity or verify the keyed Acceptance token.
+ */
+export async function diagnoseProviderRuntimePrincipalAcceptanceCandidateV1(
+  options: RunProviderRuntimePrincipalAcceptanceCandidateOptionsV1,
+): Promise<ProviderRuntimePrincipalAcceptanceCandidateDiagnosticV1> {
+  const durable = await diagnoseProviderRuntimeDurableAcceptanceCandidateV1(
+    options,
+  );
+  if (!durable.ok) return unavailablePrincipalV1(durable.stage);
+  const principal = await verifyProviderRuntimeLivePrincipalChallengeV1({
+    config: options.config,
+    expectedJournalRevision: durable.value.bindings.journalRevision,
+    expectedJournalPhase: "final_strong_ready",
+    expectedJournalMutationDigest:
+      durable.value.bindings.journalMutationDigest,
+    expectedInstallationIdentityDigest:
+      options.expectedInstallationIdentityDigest,
+    timeoutMs: options.timeoutMs,
+  });
+  if (
+    principal.status !== "principal_key_live_candidate" ||
+    principal.bindings.providerId !== durable.value.bindings.providerId ||
+    principal.bindings.capabilityDigest !== options.expectedCapabilityDigest ||
+    principal.bindings.journalRevision !==
+      durable.value.bindings.journalRevision ||
+    principal.bindings.journalPhase !== "final_strong_ready" ||
+    principal.bindings.journalMutationDigest !==
+      durable.value.bindings.journalMutationDigest
+  ) {
+    return unavailablePrincipalV1("principal_key_live");
+  }
+  return {
+    ok: true,
+    value: Object.freeze({
+      status: "principal_key_and_durable_acceptance_candidate" as const,
+      authority: "none" as const,
+      accessMode: "read_only" as const,
+      strongWriteStatus: "locked" as const,
+      requiredNext: "kernel_os_peer_and_acceptance_token_gate" as const,
+      durableAcceptance: durable.value,
+      principalKey: principal,
+    }),
+  };
+}
+
+export async function runProviderRuntimePrincipalAcceptanceCandidateV1(
+  options: RunProviderRuntimePrincipalAcceptanceCandidateOptionsV1,
+): Promise<ProviderRuntimePrincipalAcceptanceCandidateDiagnosticV1> {
+  return diagnoseProviderRuntimePrincipalAcceptanceCandidateV1(options);
 }

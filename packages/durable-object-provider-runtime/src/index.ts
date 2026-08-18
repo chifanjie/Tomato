@@ -96,9 +96,11 @@ export {
   diagnoseProviderRuntimeGateCandidateV1,
   diagnoseProviderRuntimeDurableAcceptanceCandidateV1,
   diagnoseProviderRuntimeLiveGateCandidateV1,
+  diagnoseProviderRuntimePrincipalAcceptanceCandidateV1,
   runProviderRuntimeDurableAcceptanceCandidateV1,
   runProviderRuntimeGateCandidateV1,
   runProviderRuntimeLiveGateCandidateV1,
+  runProviderRuntimePrincipalAcceptanceCandidateV1,
 } from "./gate-candidate-runtime.js";
 export type {
   ProviderRuntimeGateCandidateDiagnosticV1,
@@ -106,9 +108,12 @@ export type {
   ProviderRuntimeGateCandidateValuesV1,
   ProviderRuntimeGateCandidateStageV1,
   ProviderRuntimeLiveGateCandidateDiagnosticV1,
+  ProviderRuntimePrincipalAcceptanceCandidateDiagnosticV1,
+  ProviderRuntimePrincipalAcceptanceCandidateV1,
   RunProviderRuntimeLiveGateCandidateOptionsV1,
   RunProviderRuntimeDurableAcceptanceCandidateOptionsV1,
   RunProviderRuntimeGateCandidateOptionsV1,
+  RunProviderRuntimePrincipalAcceptanceCandidateOptionsV1,
 } from "./gate-candidate-runtime.js";
 export type {
   ProviderRuntimeRealFilesystemConformanceBindingsV1,
@@ -182,3 +187,13 @@ export type {
   ProviderRuntimeDurableAcceptanceCurrentDiagnosticV1,
   VerifyProviderRuntimeDurableAcceptanceCurrentOptionsV1,
 } from "./durable-acceptance-current.js";
+export {
+  PROVIDER_RUNTIME_PRINCIPAL_KEY_LIVE_REQUIRED_NEXT_V1,
+  verifyProviderRuntimeLivePrincipalChallengeV1,
+} from "./live-principal-challenge.js";
+export type {
+  ProviderRuntimeLivePrincipalChallengeResultV1,
+  ProviderRuntimePrincipalKeyLiveCandidateV1,
+  ProviderRuntimePrincipalKeyLiveUnavailableV1,
+  VerifyProviderRuntimeLivePrincipalChallengeOptionsV1,
+} from "./live-principal-challenge.js";

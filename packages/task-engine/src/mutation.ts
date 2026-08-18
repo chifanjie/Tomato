@@ -45,7 +45,7 @@ interface MutableTaskData {
   verificationRecords: VerificationRecordV1[];
 }
 
-export interface RefreshedTaskContextV1 {
+export interface RebuiltTaskContextV1 {
   snapshotId: TaskManifestV1["latestSnapshotId"];
   brief: TaskBriefV1;
   claims: readonly ClaimV1[];
@@ -53,10 +53,10 @@ export interface RefreshedTaskContextV1 {
   impactPaths: readonly ImpactPathV1[];
 }
 
-type RefreshContextLoader = (
+type RebuildContextLoader = (
   current: ReadTaskBundleResult,
   occurredAt: string,
-) => Promise<RefreshedTaskContextV1>;
+) => Promise<RebuiltTaskContextV1>;
 
 function fullBundle(
   read: ReadTaskBundleResult,
@@ -1030,19 +1030,23 @@ export async function applyTaskUpdate(
  * lifecycle, and target-snapshot checks have passed; it therefore cannot
  * turn an idempotent retry into a new context read or bypass the Task CAS.
  */
-export async function refreshTaskContext(
+export async function rebuildTaskContext(
   store: ArtifactStore,
   input: UpdateTaskInputV1,
   clock: () => Date,
-  loadContext: RefreshContextLoader,
+  loadContext: RebuildContextLoader,
 ): Promise<TaskMutationOutcome> {
-  if (input.action.type !== "refresh_task_context") {
+  if (
+    input.action.type !== "refresh_task_context" &&
+    input.action.type !== "rebase_task"
+  ) {
     throw new TaskEngineError(
       "context_build_failed",
-      "refreshTaskContext requires a refresh_task_context action.",
+      "rebuildTaskContext requires a context recovery action.",
       { taskId: input.taskId },
     );
   }
+  const targetSnapshotId = input.action.targetSnapshotId;
   const requestDigest = sha256CanonicalJson(input);
   const current = await store.readTaskBundle(input.taskId);
   const replay = existingReceipt(current, input, requestDigest);
@@ -1067,11 +1071,22 @@ export async function refreshTaskContext(
       "transition_not_allowed",
     );
   }
-  if (data.manifest.latestSnapshotId !== input.action.targetSnapshotId) {
+  if (data.manifest.latestSnapshotId !== targetSnapshotId) {
     gateUnsatisfied(data.manifest, "context_ready", [
       {
         code: "target_snapshot_mismatch",
-        resourceId: input.action.targetSnapshotId,
+        resourceId: targetSnapshotId,
+      },
+    ]);
+  }
+  if (
+    input.action.type === "rebase_task" &&
+    input.action.newBaselineSnapshotId !== targetSnapshotId
+  ) {
+    gateUnsatisfied(data.manifest, "context_ready", [
+      {
+        code: "baseline_snapshot_mismatch",
+        resourceId: input.action.newBaselineSnapshotId,
       },
     ]);
   }
@@ -1084,13 +1099,13 @@ export async function refreshTaskContext(
     ),
   ).toISOString();
   const refreshed = await loadContext(current, occurredAt);
-  if (refreshed.snapshotId !== input.action.targetSnapshotId) {
+  if (refreshed.snapshotId !== targetSnapshotId) {
     throw new TaskEngineError(
       "context_build_failed",
       "The rebuilt Task context is bound to a different Repository Snapshot.",
       {
         taskId: input.taskId,
-        expectedSnapshotId: input.action.targetSnapshotId,
+        expectedSnapshotId: targetSnapshotId,
         actualSnapshotId: refreshed.snapshotId,
       },
     );
@@ -1107,6 +1122,10 @@ export async function refreshTaskContext(
     ...activeManifest,
     status: "context_ready",
     latestSnapshotId: refreshed.snapshotId,
+    baselineSnapshotId:
+      input.action.type === "rebase_task"
+        ? input.action.newBaselineSnapshotId
+        : activeManifest.baselineSnapshotId,
     updatedAt: occurredAt,
     revision,
   });

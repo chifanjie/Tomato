@@ -1527,6 +1527,7 @@ function rebaseCandidate(
     manifest,
     {
       type: "rebase_task",
+      targetSnapshotId: sourceSnapshotId,
       newBaselineSnapshotId,
       reason: "Reconfirm the trusted logical baseline.",
     },

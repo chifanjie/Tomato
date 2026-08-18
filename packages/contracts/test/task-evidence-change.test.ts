@@ -716,6 +716,7 @@ describe("Task V1 contracts", () => {
       { type: "refresh_task_context", targetSnapshotId: "snapshot-2" },
       {
         type: "rebase_task",
+        targetSnapshotId: "snapshot-2",
         newBaselineSnapshotId: "snapshot-2",
         reason: "The baseline changed.",
       },

@@ -556,6 +556,7 @@ const RefreshTaskContextActionV1Schema = z.strictObject({
 
 const RebaseTaskActionV1Schema = z.strictObject({
   type: z.literal("rebase_task"),
+  targetSnapshotId: SnapshotIdSchema,
   newBaselineSnapshotId: SnapshotIdSchema,
   reason: NonEmptyStringSchema,
 });

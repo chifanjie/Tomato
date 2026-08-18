@@ -1039,6 +1039,10 @@ const taskGateTargets: ReadonlySet<string> = new Set([
 
 const taskGateGuardCodes: ReadonlySet<string> = new Set([
   "context_not_ready",
+  "target_snapshot_mismatch",
+  "target_snapshot_not_current",
+  "pulse_snapshot_mismatch",
+  "baseline_snapshot_mismatch",
   "goal_not_confirmed",
   "acceptance_not_confirmed",
   "plan_not_confirmed",

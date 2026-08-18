@@ -604,7 +604,11 @@ describe("MCP lifecycle and real handlers", () => {
     );
     expect(built.structuredContent.result.task.status).toBe("context_ready");
 
-    await symlink("../../outside.ts", path.join(root, "src/escape.ts"));
+    await writeFile(
+      path.join(root, "src/task.ts"),
+      "export function task(): boolean { return false; }\n",
+      "utf8",
+    );
     await harness.server.handleValue({
       jsonrpc: "2.0",
       id: 26,
@@ -615,13 +619,127 @@ describe("MCP lifecycle and real handlers", () => {
           mode: "full",
           expectedSourceSnapshotId:
             refreshed.structuredContent.meta.sourceSnapshotId,
+          idempotencyKey: "full-refresh-after-task-change",
+          actor: "agent:cli-test",
+        },
+      },
+    });
+    const advanced = RefreshIndexOutputV1Schema.parse(
+      harness.response(26).result,
+    );
+    const targetSnapshotId =
+      advanced.structuredContent.result.operation.finalSnapshotId;
+    expect(targetSnapshotId).not.toBe(
+      refreshed.structuredContent.meta.sourceSnapshotId,
+    );
+
+    await harness.server.handleValue({
+      jsonrpc: "2.0",
+      id: 27,
+      method: "tools/call",
+      params: {
+        name: "update_task",
+        arguments: {
+          taskId: built.structuredContent.result.task.taskId,
+          action: {
+            type: "block_task",
+            reasonCode: "public_refresh_smoke",
+            message: "Capture the advanced repository Snapshot.",
+          },
+          expectedRevision: built.structuredContent.result.task.revision,
+          idempotencyKey: "public-refresh-capture-drift",
+          actor: "agent:cli-test",
+        },
+      },
+    });
+    const staled = UpdateTaskOutputV1Schema.parse(
+      harness.response(27).result,
+    );
+    expect(staled.structuredContent.result.task).toMatchObject({
+      status: "stale",
+      latestSnapshotId: targetSnapshotId,
+    });
+
+    await harness.server.handleValue({
+      jsonrpc: "2.0",
+      id: 28,
+      method: "tools/call",
+      params: {
+        name: "update_task",
+        arguments: {
+          taskId: built.structuredContent.result.task.taskId,
+          action: {
+            type: "refresh_task_context",
+            targetSnapshotId: "snapshot:not-current",
+          },
+          expectedRevision: staled.structuredContent.result.task.revision,
+          idempotencyKey: "public-refresh-wrong-target",
+          actor: "agent:cli-test",
+        },
+      },
+    });
+    const wrongTarget = McpToolErrorResultV1Schema.parse(
+      harness.response(28).result,
+    );
+    expect(wrongTarget.structuredContent.error).toMatchObject({
+      code: "task_gate_unsatisfied",
+      details: {
+        targetStatus: "context_ready",
+        failedGuards: [
+          {
+            code: "target_snapshot_mismatch",
+            resourceId: "snapshot:not-current",
+          },
+        ],
+      },
+    });
+
+    await harness.server.handleValue({
+      jsonrpc: "2.0",
+      id: 29,
+      method: "tools/call",
+      params: {
+        name: "update_task",
+        arguments: {
+          taskId: built.structuredContent.result.task.taskId,
+          action: {
+            type: "refresh_task_context",
+            targetSnapshotId,
+          },
+          expectedRevision: staled.structuredContent.result.task.revision,
+          idempotencyKey: "public-refresh-current-target",
+          actor: "agent:cli-test",
+        },
+      },
+    });
+    const recovered = UpdateTaskOutputV1Schema.parse(
+      harness.response(29).result,
+    );
+    expect(recovered.structuredContent.result.task).toMatchObject({
+      status: "context_ready",
+      latestSnapshotId: targetSnapshotId,
+      baselineSnapshotId:
+        built.structuredContent.result.task.baselineSnapshotId,
+    });
+
+    await symlink("../../outside.ts", path.join(root, "src/escape.ts"));
+    await harness.server.handleValue({
+      jsonrpc: "2.0",
+      id: 30,
+      method: "tools/call",
+      params: {
+        name: "refresh_index",
+        arguments: {
+          mode: "full",
+          expectedSourceSnapshotId:
+            advanced.structuredContent.meta.sourceSnapshotId,
           idempotencyKey: "unsafe-full-refresh-index",
           actor: "agent:cli-test",
         },
       },
     });
     const unsafe = McpToolErrorResultV1Schema.parse(
-      harness.response(26).result,
+      harness.response(30).result,
     );
     expect(unsafe.structuredContent.error).toMatchObject({
       code: "source_access_denied",

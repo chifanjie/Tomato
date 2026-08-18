@@ -1815,56 +1815,14 @@ describe("TaskEngine persistent integration", () => {
           owner: "task-engine",
         },
         rebase_task: {
-          available: false,
-          reasonCode: "task_context_rebuild_not_implemented",
-          owner: "WP5",
+          available: true,
+          reasonCode: "task_context_rebuild_available",
+          owner: "task-engine",
         },
       },
     });
     expect(Object.isFrozen(capabilities)).toBe(true);
     expect(Object.isFrozen(capabilities.actions)).toBe(true);
-    const recoveryCase = cases.find(
-      (item) => item.status === "context_ready",
-    )!;
-    const beforeRecovery = await store.readTaskBundle(recoveryCase.taskId);
-    for (const action of [
-      {
-        type: "rebase_task" as const,
-        newBaselineSnapshotId: advancedSnapshotId,
-        reason: "Rebuild on the current repository baseline.",
-      },
-    ]) {
-      await expect(
-        taskEngine.updateTask(
-          {
-            taskId: recoveryCase.taskId,
-            action,
-            expectedRevision: beforeRecovery.bundle.manifest.revision,
-            idempotencyKey:
-              `capability-lock-${action.type}`,
-            actor: ACTOR,
-          },
-          auth(),
-        ),
-      ).rejects.toMatchObject({
-        code: "capability_unavailable",
-        details: {
-          taskId: recoveryCase.taskId,
-          capability: action.type,
-          available: false,
-          reasonCode: "task_context_rebuild_not_implemented",
-          owner: "WP5",
-        },
-      });
-    }
-    const afterRecovery = await store.readTaskBundle(recoveryCase.taskId);
-    expect(afterRecovery.bundle.manifest.revision).toBe(
-      beforeRecovery.bundle.manifest.revision,
-    );
-    expect(afterRecovery.bundle.events).toEqual(
-      beforeRecovery.bundle.events,
-    );
-    expect(afterRecovery.receipts).toEqual(beforeRecovery.receipts);
   }, 30_000);
 
   it("rebuilds one stale Task on the exact current Snapshot and replays without reloading context", async () => {
@@ -1990,6 +1948,130 @@ describe("TaskEngine persistent integration", () => {
     expect(
       (await store.readTaskBundle(built.task.taskId)).bundle.events,
     ).toHaveLength(4);
+  });
+
+  it("rebases one stale Task only when target and new baseline equal the current Snapshot", async () => {
+    const { store } = await openStore();
+    let contextLoads = 0;
+    const taskEngine = engine(store, {
+      contextProvider: {
+        async loadTaskContext(input) {
+          contextLoads += 1;
+          return contextProvider.loadTaskContext(input);
+        },
+      },
+    });
+    const built = await taskEngine.buildTaskBrief(
+      buildInput("rebase-stale-task-context"),
+      auth(),
+    );
+    const previousBaselineSnapshotId = built.task.baselineSnapshotId;
+    const targetSnapshotId = "snapshot:rebase-task-context";
+    const targetHead = "d".repeat(40);
+    await store.persistArtifact(
+      await repositorySnapshot(
+        targetSnapshotId,
+        "2026-07-29T09:00:00.000Z",
+        targetHead,
+      ),
+    );
+    await publishPulseForSnapshot(store, targetSnapshotId, targetHead);
+    const staled = await taskEngine.updateTask(
+      {
+        taskId: built.task.taskId,
+        action: {
+          type: "block_task",
+          reasonCode: "rebase_fixture",
+          message: "Capture repository drift before rebasing context.",
+        },
+        expectedRevision: built.task.revision,
+        idempotencyKey: "capture-rebase-drift",
+        actor: ACTOR,
+      },
+      auth(),
+    );
+    expect(staled.task).toMatchObject({
+      status: "stale",
+      revision: 3,
+      baselineSnapshotId: previousBaselineSnapshotId,
+      latestSnapshotId: targetSnapshotId,
+    });
+
+    await expect(
+      taskEngine.updateTask(
+        {
+          taskId: built.task.taskId,
+          action: {
+            type: "rebase_task",
+            targetSnapshotId,
+            newBaselineSnapshotId: previousBaselineSnapshotId,
+            reason: "Attempt to retain a non-current baseline.",
+          },
+          expectedRevision: staled.task.revision,
+          idempotencyKey: "rebase-wrong-baseline",
+          actor: ACTOR,
+        },
+        auth(),
+      ),
+    ).rejects.toMatchObject({
+      code: "task_gate_unsatisfied",
+      details: {
+        targetStatus: "context_ready",
+        failedGuards: [
+          {
+            code: "baseline_snapshot_mismatch",
+            resourceId: previousBaselineSnapshotId,
+          },
+        ],
+      },
+    });
+    expect(contextLoads).toBe(1);
+
+    const rebased = await taskEngine.updateTask(
+      {
+        taskId: built.task.taskId,
+        action: {
+          type: "rebase_task",
+          targetSnapshotId,
+          newBaselineSnapshotId: targetSnapshotId,
+          reason: "Adopt the exact current Snapshot as the new baseline.",
+        },
+        expectedRevision: staled.task.revision,
+        idempotencyKey: "rebase-current-context",
+        actor: ACTOR,
+      },
+      auth(),
+    );
+    expect(rebased).toMatchObject({
+      task: {
+        status: "context_ready",
+        revision: 4,
+        baselineSnapshotId: targetSnapshotId,
+        latestSnapshotId: targetSnapshotId,
+      },
+      mutation: { idempotentReplay: false },
+    });
+    expect(contextLoads).toBe(2);
+    const persisted = await store.readTaskBundle(built.task.taskId);
+    expect(persisted.bundle.events.at(-1)).toMatchObject({
+      previousStatus: "stale",
+      resultingStatus: "context_ready",
+      action: {
+        type: "rebase_task",
+        targetSnapshotId,
+        newBaselineSnapshotId: targetSnapshotId,
+      },
+    });
+    if (!("brief" in persisted.bundle)) {
+      throw new TypeError("The rebased Task must retain a contextual bundle.");
+    }
+    expect(
+      persisted.bundle.claims.every(
+        (claim) => claim.sourceSnapshotId === targetSnapshotId,
+      ),
+    ).toBe(true);
+    expect(persisted.bundle.changeChecks).toEqual([]);
+    expect(persisted.bundle.verificationRecords).toEqual([]);
   });
 
   it("uses host time monotonically and rejects ordinary actions while blocked", async () => {
@@ -2187,6 +2269,7 @@ describe("TaskEngine persistent integration", () => {
       },
       {
         type: "rebase_task" as const,
+        targetSnapshotId: staleManifest.latestSnapshotId,
         newBaselineSnapshotId: staleManifest.latestSnapshotId,
         reason: "Rebuild context on the current baseline.",
       },

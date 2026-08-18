@@ -41,7 +41,6 @@ import { buildContextDraft } from "./context-builder.js";
 import type {
   AuthorizationContext,
   TaskBriefPage,
-  TaskContextRecoveryCapability,
   TaskEngineCapabilities,
   TaskEngineOptions,
   TaskMutationOutcome,
@@ -54,29 +53,23 @@ import {
 } from "./ids.js";
 import {
   applyTaskUpdate,
-  refreshTaskContext,
+  rebuildTaskContext,
 } from "./mutation.js";
 import { renderTaskBriefMarkdown } from "./renderer.js";
 
 const DEFAULT_CREATE_SCOPE = "build_task_brief";
 
-const AVAILABLE_CONTEXT_REFRESH = Object.freeze({
+const AVAILABLE_CONTEXT_RECOVERY = Object.freeze({
   available: true,
   reasonCode: "task_context_rebuild_available",
   owner: "task-engine",
 } as const);
 
-const LOCKED_CONTEXT_RECOVERY = Object.freeze({
-  available: false,
-  reasonCode: "task_context_rebuild_not_implemented",
-  owner: "WP5",
-} as const);
-
 export const TASK_ENGINE_CAPABILITIES: TaskEngineCapabilities = Object.freeze({
   schemaVersion: 1,
   actions: Object.freeze({
-    refresh_task_context: AVAILABLE_CONTEXT_REFRESH,
-    rebase_task: LOCKED_CONTEXT_RECOVERY,
+    refresh_task_context: AVAILABLE_CONTEXT_RECOVERY,
+    rebase_task: AVAILABLE_CONTEXT_RECOVERY,
   }),
 });
 
@@ -826,9 +819,12 @@ export class TaskEngine {
             ? "task:accept"
           : "task:update",
     );
-    if (input.action.type === "refresh_task_context") {
+    if (
+      input.action.type === "refresh_task_context" ||
+      input.action.type === "rebase_task"
+    ) {
       const targetSnapshotId = input.action.targetSnapshotId;
-      return refreshTaskContext(
+      return rebuildTaskContext(
         this.#store,
         input,
         this.#clock,
@@ -929,23 +925,6 @@ export class TaskEngine {
             evidence: draft.evidence,
             impactPaths: draft.impactPaths,
           };
-        },
-      );
-    }
-    const recoveryCapability: TaskContextRecoveryCapability | undefined =
-      input.action.type === "rebase_task" ? input.action.type : undefined;
-    if (recoveryCapability !== undefined) {
-      const capability =
-        TASK_ENGINE_CAPABILITIES.actions[recoveryCapability];
-      throw new TaskEngineError(
-        "capability_unavailable",
-        `${recoveryCapability} is capability-locked until Task context rebuilding is implemented.`,
-        {
-          taskId: input.taskId,
-          capability: recoveryCapability,
-          available: capability.available,
-          reasonCode: capability.reasonCode,
-          owner: capability.owner,
         },
       );
     }

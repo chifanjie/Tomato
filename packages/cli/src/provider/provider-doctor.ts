@@ -26,6 +26,7 @@ import {
   probeProviderRuntimeTargetV1,
   ProviderRuntimeTargetInspectionErrorV1,
   runProviderRuntimeRealFilesystemConformanceV1,
+  verifyProviderRuntimeLivePrincipalKernelPeerChallengeV1,
   verifyProviderRuntimeLiveServiceReadinessV1,
   verifyProviderServiceHandoffConfigV1,
   type ProviderRuntimeLiveServiceReadinessResultV1,
@@ -78,7 +79,11 @@ export interface ProviderDoctorOptionsV1 {
 type StrongStoreLockV1 = Readonly<{
   available: false;
   authority: "read_only";
-  reason: "os_principal_unverified" | "runtime_probe_failed" | "unsupported_platform";
+  reason:
+    | "os_principal_unverified"
+    | "acceptance_identity_unverified"
+    | "runtime_probe_failed"
+    | "unsupported_platform";
   error: ProviderUnavailableToolErrorV1;
 }>;
 
@@ -88,6 +93,31 @@ type PassedTargetProbeV1 = ProviderRuntimeTargetPublicProjectionV1 &
     continuity: "stable";
     targetFingerprintDigest: `sha256:${string}`;
   }>;
+
+/**
+ * Redacted public projection of the live service principal/kernel join. Raw
+ * uid/gid/pid values and the journal head never leave Doctor output.
+ */
+export type ProviderDoctorKernelPeerIdentityV1 =
+  | Readonly<{
+      status: "candidate";
+      authority: "none";
+      accessMode: "read_only";
+      strongWrites: "locked";
+      mechanism:
+        | "linux_so_peercred"
+        | "darwin_getpeereid_local_peercred_peerpid";
+      identityBinding: "exact";
+      journalHead: "exact";
+      requiredNext: "acceptance_identity_token_gate";
+    }>
+  | Readonly<{
+      status: "unavailable";
+      authority: "none";
+      accessMode: "read_only";
+      strongWrites: "locked";
+      reason: "unavailable";
+    }>;
 
 export type ProviderDoctorResultV1 =
   | Readonly<{
@@ -101,6 +131,7 @@ export type ProviderDoctorResultV1 =
       conformance: ProviderRuntimeRealFilesystemConformanceCandidateV1;
       service?: ProviderServiceHandoffInspectionV1;
       liveReadiness?: ProviderRuntimeLiveServiceReadinessResultV1;
+      kernelPeerIdentity?: ProviderDoctorKernelPeerIdentityV1;
       runtime: Readonly<{
         isolation: "two_child_processes";
         authenticatedIpc: "passed";
@@ -120,6 +151,7 @@ export type ProviderDoctorResultV1 =
       targetProbe: PassedTargetProbeV1 | Readonly<{ status: "failed" }>;
       service?: ProviderServiceHandoffInspectionV1;
       liveReadiness?: ProviderRuntimeLiveServiceReadinessResultV1;
+      kernelPeerIdentity?: ProviderDoctorKernelPeerIdentityV1;
       runtime: Readonly<{ probe: "failed" }>;
     }>;
 
@@ -391,6 +423,7 @@ function unavailableResultV1(
   targetProbe?: PassedTargetProbeV1,
   service?: ProviderServiceHandoffInspectionV1,
   liveReadiness?: ProviderRuntimeLiveServiceReadinessResultV1,
+  kernelPeerIdentity?: ProviderDoctorKernelPeerIdentityV1,
 ): ProviderDoctorResultV1 {
   return {
     schemaVersion: 1,
@@ -411,6 +444,7 @@ function unavailableResultV1(
     targetProbe: targetProbe ?? { status: "failed" },
     ...(service === undefined ? {} : { service }),
     ...(liveReadiness === undefined ? {} : { liveReadiness }),
+    ...(kernelPeerIdentity === undefined ? {} : { kernelPeerIdentity }),
     runtime: { probe: "failed" },
   };
 }
@@ -546,6 +580,96 @@ async function runLiveReadinessV1(
   }
 }
 
+function unavailableKernelPeerIdentityV1(): ProviderDoctorKernelPeerIdentityV1 {
+  return Object.freeze({
+    status: "unavailable" as const,
+    authority: "none" as const,
+    accessMode: "read_only" as const,
+    strongWrites: "locked" as const,
+    reason: "unavailable" as const,
+  });
+}
+
+async function runKernelPeerIdentityV1(
+  context: ServiceInspectionContextV1,
+  liveReadiness: ProviderRuntimeLiveServiceReadinessResultV1 | undefined,
+  options: ProviderDoctorOptionsV1,
+): Promise<ProviderDoctorKernelPeerIdentityV1 | undefined> {
+  if (options.serviceConfigPath === undefined) return undefined;
+  const config = context.config;
+  if (config === undefined || liveReadiness?.status !== "live_candidate") {
+    return unavailableKernelPeerIdentityV1();
+  }
+
+  let authKey: Buffer | undefined;
+  try {
+    // Live readiness has already checked the signed key locator and its
+    // metadata. Authenticate one fresh read so the principal challenge closes
+    // over the complete, current head rather than a public revision alone.
+    authKey = await readFile(config.payload.authKeyPath);
+    if (authKey.byteLength !== 32) return unavailableKernelPeerIdentityV1();
+    const client = createDurableObjectProviderRuntimeClientV1({
+      socketPath: config.payload.socketPath,
+      sharedSecret: authKey,
+      verifiedSelection: {
+        verification: "caller_verified_registry_selection_v1",
+        providerId: config.payload.providerId,
+        capabilityDigest: config.payload.capabilityDigest as `sha256:${string}`,
+      },
+      ...(options.readyTimeoutMs === undefined
+        ? {}
+        : { timeoutMs: options.readyTimeoutMs }),
+    });
+    const head = (await client.inspectState()).state;
+    if (head.revision !== liveReadiness.inspectedRevision) {
+      return unavailableKernelPeerIdentityV1();
+    }
+
+    const verified =
+      await verifyProviderRuntimeLivePrincipalKernelPeerChallengeV1({
+        config,
+        expectedJournalRevision: head.revision,
+        expectedJournalPhase: head.phase,
+        expectedJournalMutationDigest: head.mutationDigest,
+        expectedInstallationIdentityDigest:
+          options.expectedInstallationIdentityDigest,
+        timeoutMs: options.readyTimeoutMs,
+      });
+    if (
+      verified.status !==
+        "principal_key_and_kernel_os_peer_live_candidate" ||
+      verified.principalKey.bindings.providerId !== config.payload.providerId ||
+      verified.principalKey.bindings.capabilityDigest !==
+        config.payload.capabilityDigest ||
+      verified.principalKey.bindings.journalRevision !== head.revision ||
+      verified.principalKey.bindings.journalPhase !== head.phase ||
+      verified.principalKey.bindings.journalMutationDigest !==
+        head.mutationDigest ||
+      verified.principalKey.bindings.processId !==
+        verified.kernelPeer.bindings.pid ||
+      verified.kernelPeer.bindings.uid !== config.payload.principal.uid ||
+      verified.kernelPeer.bindings.gid !== config.payload.principal.gid
+    ) {
+      return unavailableKernelPeerIdentityV1();
+    }
+
+    return Object.freeze({
+      status: "candidate" as const,
+      authority: "none" as const,
+      accessMode: "read_only" as const,
+      strongWrites: "locked" as const,
+      mechanism: verified.kernelPeer.bindings.mechanism,
+      identityBinding: "exact" as const,
+      journalHead: "exact" as const,
+      requiredNext: "acceptance_identity_token_gate" as const,
+    });
+  } catch {
+    return unavailableKernelPeerIdentityV1();
+  } finally {
+    authKey?.fill(0);
+  }
+}
+
 function passedTargetProbeV1(
   inspection: ProviderRuntimeTargetInspectionV1,
 ): PassedTargetProbeV1 {
@@ -569,12 +693,18 @@ export async function runProviderDoctorV1(
   const serviceContext = await inspectServiceReadinessV1(options);
   const service = serviceContext.service;
   const liveReadiness = await runLiveReadinessV1(serviceContext, options);
+  const kernelPeerIdentity = await runKernelPeerIdentityV1(
+    serviceContext,
+    liveReadiness,
+    options,
+  );
   if (process.platform !== "darwin" && process.platform !== "linux") {
     return unavailableResultV1(
       "unsupported_filesystem_profile",
       undefined,
       service,
       liveReadiness,
+      kernelPeerIdentity,
     );
   }
   const command = options.runtimeCommand ?? defaultRuntimeCommandV1();
@@ -732,13 +862,17 @@ export async function runProviderDoctorV1(
       strongStore: {
         available: false,
         authority: "read_only",
-        reason: "os_principal_unverified",
+        reason:
+          kernelPeerIdentity?.status === "candidate"
+            ? "acceptance_identity_unverified"
+            : "os_principal_unverified",
         error: createProviderUnavailableToolErrorV1("attestation_invalid"),
       },
       targetProbe: passedTargetProbeV1(currentTarget),
       conformance,
       ...(service === undefined ? {} : { service }),
       ...(liveReadiness === undefined ? {} : { liveReadiness }),
+      ...(kernelPeerIdentity === undefined ? {} : { kernelPeerIdentity }),
       runtime: {
         isolation: "two_child_processes",
         authenticatedIpc: "passed",
@@ -770,12 +904,19 @@ export async function runProviderDoctorV1(
           passedTargetProbeV1(currentTarget),
           service,
           liveReadiness,
+          kernelPeerIdentity,
         );
       } catch {
         // The public projection must fail closed if either target changed.
       }
     }
-    return unavailableResultV1(reason, undefined, service, liveReadiness);
+    return unavailableResultV1(
+      reason,
+      undefined,
+      service,
+      liveReadiness,
+      kernelPeerIdentity,
+    );
   } finally {
     await Promise.all(children.map((child) => stopRuntimeV1(child)));
     source?.key.fill(0);

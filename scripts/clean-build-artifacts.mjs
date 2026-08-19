@@ -7,6 +7,7 @@ export const BUILD_ARTIFACT_PATHS = Object.freeze([
   "packages/durable-object-provider-contracts/dist",
   "packages/durable-object-provider-client/dist",
   "packages/durable-object-provider-runtime/dist",
+  "packages/durable-object-provider-authority/dist",
   "packages/host-adapters/dist",
   "packages/contracts/dist",
   "packages/installation-lifecycle/dist",

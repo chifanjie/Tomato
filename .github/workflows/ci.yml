@@ -120,6 +120,7 @@ jobs:
           pnpm --filter @understand-code/durable-object-provider-contracts --fail-if-no-match build
           pnpm --filter @understand-code/durable-object-provider-client --fail-if-no-match build
           pnpm --filter @understand-code/durable-object-provider-runtime --fail-if-no-match build
+          pnpm --filter @understand-code/durable-object-provider-authority --fail-if-no-match build
           pnpm --filter @understand-code/host-adapters --fail-if-no-match build
           pnpm --filter @understand-code/contracts --fail-if-no-match build
           pnpm --filter @understand-code/workbench-runtime --fail-if-no-match build
@@ -129,6 +130,7 @@ jobs:
           pnpm --filter @understand-code/task-engine --fail-if-no-match build
           pnpm --filter @understand-code/durable-object-provider-client --fail-if-no-match test
           pnpm --filter @understand-code/durable-object-provider-runtime --fail-if-no-match test
+          pnpm --filter @understand-code/durable-object-provider-authority --fail-if-no-match test
           pnpm --filter @understand-code/host-adapters --fail-if-no-match test
           pnpm --filter @understand-code/contracts --fail-if-no-match test
           pnpm --filter @understand-code/workbench-runtime --fail-if-no-match test

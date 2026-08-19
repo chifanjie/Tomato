@@ -860,14 +860,34 @@ function manifestWithoutRollback(
 }
 
 function isStrictBase64(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    value.length % 4 === 0 &&
-    value.length <= MAX_ROLLBACK_BYTES * 2 &&
-    /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(
-      value,
-    )
-  );
+  if (
+    typeof value !== "string" ||
+    value.length % 4 !== 0 ||
+    value.length > MAX_ROLLBACK_BYTES * 2
+  ) {
+    return false;
+  }
+  if (value.length === 0) return true;
+  // Avoid a repeated-group RegExp here: a real self-contained CLI produces a
+  // multi-megabyte snapshot field that can exhaust the JavaScript RegExp stack.
+  let payloadLength = value.length;
+  if (value.endsWith("=")) payloadLength -= 1;
+  if (value.endsWith("==")) payloadLength -= 1;
+  if (payloadLength < 2 || value.length - payloadLength > 2) return false;
+  for (let index = 0; index < payloadLength; index += 1) {
+    const code = value.charCodeAt(index);
+    const allowed =
+      (code >= 0x41 && code <= 0x5a) ||
+      (code >= 0x61 && code <= 0x7a) ||
+      (code >= 0x30 && code <= 0x39) ||
+      code === 0x2b ||
+      code === 0x2f;
+    if (!allowed) return false;
+  }
+  for (let index = payloadLength; index < value.length; index += 1) {
+    if (value.charCodeAt(index) !== 0x3d) return false;
+  }
+  return true;
 }
 
 function parseRollbackSnapshot(value: unknown): RollbackSnapshotV1 | undefined {

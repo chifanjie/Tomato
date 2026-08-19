@@ -291,6 +291,34 @@ describe("installation lifecycle", () => {
     );
   });
 
+  it("rolls back a release-sized bundle without exhausting the snapshot parser", async () => {
+    const root = await temporaryRoot();
+    const releaseBody = `// ${"x".repeat(4 * 1024 * 1024)}`;
+    const firstBundle = await fakeCliBundle(releaseBody, 1);
+    const secondBundle = await fakeCliBundle(`${releaseBody}\n// upgraded`, 2);
+    await installInstallationV1({
+      root,
+      version: "1.0.0",
+      cliBundlePath: firstBundle,
+    });
+    expect(
+      await upgradeInstallationV1({
+        root,
+        version: "2.0.0",
+        cliBundlePath: secondBundle,
+      }),
+    ).toMatchObject({ status: "updated", rollbackAvailable: true });
+
+    expect(await rollbackInstallationV1({ root })).toMatchObject({
+      status: "rolled_back",
+      version: "1.0.0",
+    });
+    expect(await doctorInstallationV1({ root })).toMatchObject({
+      status: "healthy",
+      version: "1.0.0",
+    });
+  });
+
   it("migrates a healthy legacy four-file installation and can roll it back", async () => {
     const root = await temporaryRoot();
     await installInstallationV1({

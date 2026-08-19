@@ -239,3 +239,31 @@ export type {
   ProviderRuntimeAcceptanceIdentityVerificationCapabilityV1,
   VerifyProviderRuntimeAcceptanceIdentityTokenCurrentOptionsV1,
 } from "./acceptance-identity-token-current.js";
+export {
+  PROVIDER_SERVICE_INSTALLATION_MANIFEST_FILE_V1,
+  PROVIDER_SERVICE_INSTALLATION_MANIFEST_PROFILE_V1,
+  PROVIDER_SERVICE_INSTALLATION_ROLLBACK_FILE_V1,
+  PROVIDER_SERVICE_INSTALLATION_ROLLBACK_PROFILE_V1,
+  ProviderServiceInstallationLifecycleErrorV1,
+  doctorProviderServiceInstallationV1,
+  installProviderServiceInstallationV1,
+  rollbackProviderServiceInstallationV1,
+  uninstallProviderServiceInstallationV1,
+  upgradeProviderServiceInstallationV1,
+} from "./provider-service-installation-lifecycle.js";
+export type {
+  ProviderServiceInstallationArtifactCheckV1,
+  ProviderServiceInstallationArtifactKindV1,
+  ProviderServiceInstallationArtifactStateV1,
+  ProviderServiceInstallationDoctorResultV1,
+  ProviderServiceInstallationInstallOptionsV1,
+  ProviderServiceInstallationInstallResultV1,
+  ProviderServiceInstallationLifecycleErrorCodeV1,
+  ProviderServiceInstallationManagedArtifactKindV1,
+  ProviderServiceInstallationRetainedStateKindV1,
+  ProviderServiceInstallationRollbackResultV1,
+  ProviderServiceInstallationTargetOptionsV1,
+  ProviderServiceInstallationUninstallResultV1,
+  ProviderServiceInstallationUpgradeOptionsV1,
+  ProviderServiceInstallationUpgradeResultV1,
+} from "./provider-service-installation-lifecycle.js";

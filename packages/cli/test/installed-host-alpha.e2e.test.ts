@@ -1,6 +1,6 @@
 import { execFile as execFileCallback, spawn } from "node:child_process";
 import { once } from "node:events";
-import { chmod, readFile, unlink, writeFile } from "node:fs/promises";
+import { chmod, cp, readFile, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -78,6 +78,9 @@ async function makeReleaseCopies(): Promise<{
   const releaseRoot = await createTemporaryDirectory("understand-code-alpha-releases-");
   const initial = path.join(releaseRoot, "understand-code-initial.mjs");
   const upgraded = path.join(releaseRoot, "understand-code-upgraded.mjs");
+  await cp(path.join(packageRoot, "dist/native"), path.join(releaseRoot, "native"), {
+    recursive: true,
+  });
   await writeFile(initial, bytes, { mode: 0o755 });
   await writeFile(
     upgraded,

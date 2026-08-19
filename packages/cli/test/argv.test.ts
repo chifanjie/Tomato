@@ -86,6 +86,8 @@ describe("CLI arguments", () => {
         "--provider-service",
         "--root",
         "/var/lib/understand-code/provider",
+        "--service-manifest",
+        "/etc/understand-code/provider-service-installation-manifest-v1.json",
         "--service-config",
         "/etc/understand-code/provider.json",
         "--service-key",
@@ -98,9 +100,58 @@ describe("CLI arguments", () => {
       operation: "install",
       providerService: true,
       root: "/var/lib/understand-code/provider",
+      serviceManifest:
+        "/etc/understand-code/provider-service-installation-manifest-v1.json",
       serviceConfig: "/etc/understand-code/provider.json",
       serviceKey: "/etc/understand-code/provider.key",
       serviceDescriptor: "/etc/systemd/system/understand-code-provider.service",
+    });
+    const providerServiceTarget = [
+      "--provider-service",
+      "--root",
+      "/var/lib/understand-code/provider",
+      "--service-manifest",
+      "/etc/understand-code/provider-service-installation-manifest-v1.json",
+    ] as const;
+    expect(parseCliArguments(["doctor", ...providerServiceTarget])).toEqual({
+      kind: "installation",
+      operation: "doctor",
+      providerService: true,
+      root: "/var/lib/understand-code/provider",
+      serviceManifest:
+        "/etc/understand-code/provider-service-installation-manifest-v1.json",
+    });
+    expect(
+      parseCliArguments([
+        "upgrade",
+        ...providerServiceTarget,
+        "--service-config",
+        "/etc/understand-code/provider-v2.json",
+      ]),
+    ).toEqual({
+      kind: "installation",
+      operation: "upgrade",
+      providerService: true,
+      root: "/var/lib/understand-code/provider",
+      serviceManifest:
+        "/etc/understand-code/provider-service-installation-manifest-v1.json",
+      serviceConfig: "/etc/understand-code/provider-v2.json",
+    });
+    expect(parseCliArguments(["rollback", ...providerServiceTarget])).toEqual({
+      kind: "installation",
+      operation: "rollback",
+      providerService: true,
+      root: "/var/lib/understand-code/provider",
+      serviceManifest:
+        "/etc/understand-code/provider-service-installation-manifest-v1.json",
+    });
+    expect(parseCliArguments(["uninstall", ...providerServiceTarget])).toEqual({
+      kind: "installation",
+      operation: "uninstall",
+      providerService: true,
+      root: "/var/lib/understand-code/provider",
+      serviceManifest:
+        "/etc/understand-code/provider-service-installation-manifest-v1.json",
     });
     expect(parseCliArguments(["rollback"])).toEqual({
       kind: "installation",
@@ -143,12 +194,16 @@ describe("CLI arguments", () => {
     ["invalid install host", ["install", "--host", "unknown"]],
     ["host on doctor", ["doctor", "--host", "codex"]],
     ["provider on install", ["install", "--provider"]],
-    ["provider service on doctor", ["doctor", "--provider-service"]],
-    ["provider service without config", ["install", "--provider-service", "--root", "/tmp/a", "--service-key", "/tmp/key"]],
-    ["provider service without key", ["install", "--provider-service", "--root", "/tmp/a", "--service-config", "/tmp/config"]],
-    ["provider service with home alias", ["install", "--provider-service", "--home", "/tmp/a", "--service-config", "/tmp/config", "--service-key", "/tmp/key"]],
-    ["provider service readiness", ["install", "--provider-service", "--root", "/tmp/a", "--service-config", "/tmp/config", "--service-key", "/tmp/key", "--service-readiness", "/tmp/ready"]],
-    ["provider service relative root", ["install", "--provider-service", "--root", "relative", "--service-config", "/tmp/config", "--service-key", "/tmp/key"]],
+    ["provider service doctor without target", ["doctor", "--provider-service"]],
+    ["provider service without manifest", ["install", "--provider-service", "--root", "/tmp/a", "--service-config", "/tmp/config", "--service-key", "/tmp/key"]],
+    ["provider service without config", ["install", "--provider-service", "--root", "/tmp/a", "--service-manifest", "/tmp/provider-service-installation-manifest-v1.json", "--service-key", "/tmp/key"]],
+    ["provider service without key", ["install", "--provider-service", "--root", "/tmp/a", "--service-manifest", "/tmp/provider-service-installation-manifest-v1.json", "--service-config", "/tmp/config"]],
+    ["provider service with home alias", ["install", "--provider-service", "--home", "/tmp/a", "--service-manifest", "/tmp/provider-service-installation-manifest-v1.json", "--service-config", "/tmp/config", "--service-key", "/tmp/key"]],
+    ["provider service readiness", ["install", "--provider-service", "--root", "/tmp/a", "--service-manifest", "/tmp/provider-service-installation-manifest-v1.json", "--service-config", "/tmp/config", "--service-key", "/tmp/key", "--service-readiness", "/tmp/ready"]],
+    ["provider service relative root", ["install", "--provider-service", "--root", "relative", "--service-manifest", "/tmp/provider-service-installation-manifest-v1.json", "--service-config", "/tmp/config", "--service-key", "/tmp/key"]],
+    ["provider service relative manifest", ["doctor", "--provider-service", "--root", "/tmp/a", "--service-manifest", "relative"]],
+    ["provider service upgrade with key", ["upgrade", "--provider-service", "--root", "/tmp/a", "--service-manifest", "/tmp/provider-service-installation-manifest-v1.json", "--service-config", "/tmp/config", "--service-key", "/tmp/key"]],
+    ["provider service doctor with config", ["doctor", "--provider-service", "--root", "/tmp/a", "--service-manifest", "/tmp/provider-service-installation-manifest-v1.json", "--service-config", "/tmp/config"]],
     ["provider without target", ["doctor", "--provider"]],
     ["provider with home alias", ["doctor", "--provider", "--home", "/tmp/a"]],
     ["duplicate provider", ["doctor", "--provider", "--provider"]],

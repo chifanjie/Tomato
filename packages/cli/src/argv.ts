@@ -21,6 +21,7 @@ export type CliInvocation =
       readonly serviceReadiness?: string;
       readonly serviceKey?: string;
       readonly serviceDescriptor?: string;
+      readonly serviceManifest?: string;
     }
   | {
       /** Private self-spawn entrypoint used only by `doctor --provider`. */
@@ -130,6 +131,7 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
     let serviceReadiness: string | undefined;
     let serviceKey: string | undefined;
     let serviceDescriptor: string | undefined;
+    let serviceManifest: string | undefined;
     for (let index = 1; index < values.length; index += 1) {
       const flag = values[index];
       if (flag === "--provider") {
@@ -140,7 +142,7 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
         continue;
       }
       if (flag === "--provider-service") {
-        if (operation !== "install" || providerService !== undefined) {
+        if (providerService !== undefined) {
           throw new CliArgumentError();
         }
         providerService = true;
@@ -150,16 +152,19 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
         flag === "--service-config" ||
         flag === "--service-readiness" ||
         flag === "--service-key" ||
-        flag === "--service-descriptor"
+        flag === "--service-descriptor" ||
+        flag === "--service-manifest"
       ) {
         const validForDoctor =
           operation === "doctor" &&
           (flag === "--service-config" || flag === "--service-readiness");
-        // Collect install flags before the final providerService invariant so
-        // argv order remains irrelevant (e.g. --service-config before the
-        // --provider-service marker).
+        // Collect lifecycle flags before the final providerService invariant
+        // so argv order remains irrelevant (for example, --service-manifest
+        // may precede the --provider-service marker).
         const validForProviderService =
-          operation === "install" && flag !== "--service-readiness";
+          flag === "--service-manifest" ||
+          ((operation === "install" || operation === "upgrade") &&
+            flag !== "--service-readiness");
         if (!validForDoctor && !validForProviderService) {
           throw new CliArgumentError();
         }
@@ -176,9 +181,12 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
         } else if (flag === "--service-key") {
           if (serviceKey !== undefined) throw new CliArgumentError();
           serviceKey = candidate;
-        } else {
+        } else if (flag === "--service-descriptor") {
           if (serviceDescriptor !== undefined) throw new CliArgumentError();
           serviceDescriptor = candidate;
+        } else {
+          if (serviceManifest !== undefined) throw new CliArgumentError();
+          serviceManifest = candidate;
         }
         index += 1;
         continue;
@@ -217,12 +225,41 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
     ) {
       throw new CliArgumentError();
     }
-    if (providerService === true &&
-      (root === undefined || home !== undefined || provider === true ||
-        serviceConfig === undefined || serviceKey === undefined || serviceReadiness !== undefined)) {
-      throw new CliArgumentError();
+    if (providerService === true) {
+      const installInputsInvalid =
+        operation === "install" &&
+        (serviceConfig === undefined || serviceKey === undefined);
+      const upgradeInputsInvalid =
+        operation === "upgrade" &&
+        (serviceConfig === undefined ||
+          serviceKey !== undefined ||
+          serviceDescriptor !== undefined);
+      const targetOnlyInputsInvalid =
+        operation !== "install" &&
+        operation !== "upgrade" &&
+        (serviceConfig !== undefined ||
+          serviceKey !== undefined ||
+          serviceDescriptor !== undefined);
+      if (
+        root === undefined ||
+        home !== undefined ||
+        host !== undefined ||
+        provider === true ||
+        serviceManifest === undefined ||
+        serviceReadiness !== undefined ||
+        installInputsInvalid ||
+        upgradeInputsInvalid ||
+        targetOnlyInputsInvalid
+      ) {
+        throw new CliArgumentError();
+      }
     }
-    if (providerService !== true && (serviceKey !== undefined || serviceDescriptor !== undefined)) {
+    if (
+      providerService !== true &&
+      (serviceKey !== undefined ||
+        serviceDescriptor !== undefined ||
+        serviceManifest !== undefined)
+    ) {
       throw new CliArgumentError();
     }
     if (
@@ -244,6 +281,7 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
       ...(serviceReadiness === undefined ? {} : { serviceReadiness }),
       ...(serviceKey === undefined ? {} : { serviceKey }),
       ...(serviceDescriptor === undefined ? {} : { serviceDescriptor }),
+      ...(serviceManifest === undefined ? {} : { serviceManifest }),
     };
   }
   if (values[0] !== "mcp") throw new CliArgumentError();
@@ -289,7 +327,11 @@ export function helpText(): string {
     "  understand-code rollback [--root <absolute-install-root>|--home <absolute-install-home>]",
     "  understand-code doctor [--root <absolute-install-root>|--home <absolute-install-home>]",
     "  understand-code doctor --provider --root <absolute-target-root> [--service-config <signed-config> [--service-readiness <path>]]",
-    "  understand-code install --provider-service --root <absolute-runtime-root> --service-config <signed-config> --service-key <pkcs8-key> [--service-descriptor <absolute-path>]",
+    "  understand-code install --provider-service --root <absolute-runtime-root> --service-manifest <absolute-path> --service-config <signed-config> --service-key <pkcs8-key> [--service-descriptor <absolute-path>]",
+    "  understand-code doctor --provider-service --root <absolute-runtime-root> --service-manifest <absolute-path>",
+    "  understand-code upgrade --provider-service --root <absolute-runtime-root> --service-manifest <absolute-path> --service-config <signed-config>",
+    "  understand-code rollback --provider-service --root <absolute-runtime-root> --service-manifest <absolute-path>",
+    "  understand-code uninstall --provider-service --root <absolute-runtime-root> --service-manifest <absolute-path>",
     "  understand-code uninstall [--root <absolute-install-root>|--home <absolute-install-home>]",
     "  understand-code --help",
     "  understand-code --version",

@@ -6,11 +6,18 @@ import { runStdioServer } from "./mcp/server.js";
 import { runProviderDoctorV1 } from "./provider/provider-doctor.js";
 import { runProviderRuntimeChildV1 } from "./provider/runtime-child.js";
 import {
+  doctorProviderServiceV1,
   installProviderServiceV1,
   ProviderServiceInstallerErrorV1,
+  rollbackProviderServiceV1,
+  uninstallProviderServiceV1,
+  upgradeProviderServiceV1,
 } from "./provider/provider-service-installer.js";
 import { runDurableObjectProviderRuntimeCliV1 } from "@understand-code/durable-object-provider-runtime/cli";
-import { ProviderServiceHandoffErrorV1 } from "@understand-code/durable-object-provider-runtime";
+import {
+  ProviderServiceHandoffErrorV1,
+  ProviderServiceInstallationLifecycleErrorV1,
+} from "@understand-code/durable-object-provider-runtime";
 import {
   InstallationLifecycleError,
   doctorInstallationV1,
@@ -50,23 +57,61 @@ async function runInstallation(
       if (!result.ok) process.exitCode = 1;
       return;
     }
-    if (invocation.operation === "install" && invocation.providerService === true) {
+    if (invocation.providerService === true) {
       if (
         invocation.root === undefined ||
-        invocation.serviceConfig === undefined ||
-        invocation.serviceKey === undefined
+        invocation.serviceManifest === undefined
       ) {
         throw new CliArgumentError();
       }
-      const result = await installProviderServiceV1({
+      const target = {
         root: invocation.root,
-        serviceConfig: invocation.serviceConfig,
-        serviceKey: invocation.serviceKey,
-        ...(invocation.serviceDescriptor === undefined
-          ? {}
-          : { serviceDescriptor: invocation.serviceDescriptor }),
-      });
+        serviceManifest: invocation.serviceManifest,
+      };
+      if (invocation.operation === "install") {
+        if (
+          invocation.serviceConfig === undefined ||
+          invocation.serviceKey === undefined
+        ) {
+          throw new CliArgumentError();
+        }
+        const result = await installProviderServiceV1({
+          ...target,
+          serviceConfig: invocation.serviceConfig,
+          serviceKey: invocation.serviceKey,
+          ...(invocation.serviceDescriptor === undefined
+            ? {}
+            : { serviceDescriptor: invocation.serviceDescriptor }),
+        });
+        process.stdout.write(`${JSON.stringify(result)}\n`);
+        if (!result.ok) process.exitCode = 1;
+        return;
+      }
+      if (invocation.operation === "upgrade") {
+        if (invocation.serviceConfig === undefined) throw new CliArgumentError();
+        const result = await upgradeProviderServiceV1({
+          ...target,
+          serviceConfig: invocation.serviceConfig,
+        });
+        process.stdout.write(`${JSON.stringify(result)}\n`);
+        if (!result.ok) process.exitCode = 1;
+        return;
+      }
+      if (invocation.operation === "doctor") {
+        const result = await doctorProviderServiceV1(target);
+        process.stdout.write(`${JSON.stringify(result)}\n`);
+        if (!result.ok) process.exitCode = 1;
+        return;
+      }
+      if (invocation.operation === "rollback") {
+        const result = await rollbackProviderServiceV1(target);
+        process.stdout.write(`${JSON.stringify(result)}\n`);
+        if (!result.ok) process.exitCode = 1;
+        return;
+      }
+      const result = await uninstallProviderServiceV1(target);
       process.stdout.write(`${JSON.stringify(result)}\n`);
+      if (!result.ok) process.exitCode = 1;
       return;
     }
     if (invocation.operation === "install") {
@@ -122,12 +167,16 @@ async function runInstallation(
     }
     if (
       error instanceof ProviderServiceInstallerErrorV1 ||
-      error instanceof ProviderServiceHandoffErrorV1
+      error instanceof ProviderServiceHandoffErrorV1 ||
+      error instanceof ProviderServiceInstallationLifecycleErrorV1
     ) {
       process.stdout.write(
         `${JSON.stringify({
           ok: false,
-          error: { code: error.code, message: error.message },
+          error: {
+            code: error.code,
+            message: "Provider service lifecycle request was rejected.",
+          },
         })}\n`,
       );
       process.exitCode = 2;

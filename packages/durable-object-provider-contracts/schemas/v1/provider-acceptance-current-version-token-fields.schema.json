@@ -1,0 +1,72 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-acceptance-current-version-token-fields",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "locatorProfile": {
+      "type": "string",
+      "const": "installation_provider_acceptance_high_water_v1"
+    },
+    "installationIdentityGenerationId": {
+      "type": "string",
+      "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+    },
+    "highWaterRevision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4096
+    },
+    "highWaterContentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "currentAcceptance": {
+      "type": "object",
+      "properties": {
+        "locatorProfile": {
+          "type": "string",
+          "const": "installation_provider_acceptance_state_v1"
+        },
+        "acceptanceOrdinal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "generationId": {
+          "type": "string",
+          "pattern": "^provider-acceptance-state:[0-9a-f]{22}$"
+        },
+        "contentDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "locatorProfile",
+        "acceptanceOrdinal",
+        "generationId",
+        "contentDigest"
+      ],
+      "additionalProperties": false
+    },
+    "generationCount": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4096
+    },
+    "generationSetDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "locatorProfile",
+    "installationIdentityGenerationId",
+    "highWaterRevision",
+    "highWaterContentDigest",
+    "currentAcceptance",
+    "generationCount",
+    "generationSetDigest"
+  ],
+  "additionalProperties": false
+}

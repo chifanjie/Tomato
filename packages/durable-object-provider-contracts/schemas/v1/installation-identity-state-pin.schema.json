@@ -1,0 +1,25 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:installation-identity-state-pin",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "locatorProfile": {
+      "type": "string",
+      "const": "installation_identity_state_v1"
+    },
+    "generationId": {
+      "type": "string",
+      "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "locatorProfile",
+    "generationId",
+    "contentDigest"
+  ],
+  "additionalProperties": false
+}

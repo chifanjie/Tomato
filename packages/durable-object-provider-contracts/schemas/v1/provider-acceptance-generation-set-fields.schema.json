@@ -1,0 +1,91 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-acceptance-generation-set-fields",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "entries": {
+      "minItems": 1,
+      "maxItems": 4096,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "locatorProfile": {
+            "type": "string",
+            "const": "installation_provider_acceptance_state_v1"
+          },
+          "acceptanceOrdinal": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4096
+          },
+          "generationId": {
+            "type": "string",
+            "pattern": "^provider-acceptance-state:[0-9a-f]{22}$"
+          },
+          "contentDigest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "commitOperationNonce": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "predecessor": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "const": "genesis"
+                  }
+                },
+                "required": [
+                  "state"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "const": "acceptance"
+                  },
+                  "generationId": {
+                    "type": "string",
+                    "pattern": "^provider-acceptance-state:[0-9a-f]{22}$"
+                  },
+                  "contentDigest": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "state",
+                  "generationId",
+                  "contentDigest"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": [
+          "locatorProfile",
+          "acceptanceOrdinal",
+          "generationId",
+          "contentDigest",
+          "commitOperationNonce",
+          "predecessor"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "entries"
+  ],
+  "additionalProperties": false
+}

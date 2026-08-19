@@ -1,0 +1,478 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-acceptance-strong-ready-activation",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "origin": {
+          "type": "string",
+          "const": "bootstrap_or_steady_successor"
+        }
+      },
+      "required": [
+        "origin"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "origin": {
+          "type": "string",
+          "const": "completed_provider_migration"
+        },
+        "migrationPlan": {
+          "type": "object",
+          "properties": {
+            "locatorProfile": {
+              "type": "string",
+              "const": "installation_provider_migration_plan_v1"
+            },
+            "migrationId": {
+              "type": "string",
+              "pattern": "^provider-migration:[0-9a-f]{22}$"
+            },
+            "mode": {
+              "type": "string",
+              "const": "same_installation_identity"
+            },
+            "contentDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "locatorProfile",
+            "migrationId",
+            "mode",
+            "contentDigest"
+          ],
+          "additionalProperties": false
+        },
+        "sealedProgressHead": {
+          "type": "object",
+          "properties": {
+            "locatorProfile": {
+              "type": "string",
+              "const": "installation_provider_migration_progress_head_v1"
+            },
+            "migrationId": {
+              "type": "string",
+              "pattern": "^provider-migration:[0-9a-f]{22}$"
+            },
+            "versionOrdinal": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "headContentDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "currentVersionToken": {
+              "type": "string",
+              "pattern": "^hmac-sha256:[0-9a-f]{64}$"
+            },
+            "readyToActivateRecord": {
+              "type": "object",
+              "properties": {
+                "locatorProfile": {
+                  "type": "string",
+                  "const": "installation_provider_migration_progress_record_v1"
+                },
+                "migrationId": {
+                  "type": "string",
+                  "pattern": "^provider-migration:[0-9a-f]{22}$"
+                },
+                "recordOrdinal": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "recordId": {
+                  "type": "string",
+                  "pattern": "^provider-migration-progress:[0-9a-f]{22}$"
+                },
+                "contentDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "locatorProfile",
+                "migrationId",
+                "recordOrdinal",
+                "recordId",
+                "contentDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "locatorProfile",
+            "migrationId",
+            "versionOrdinal",
+            "headContentDigest",
+            "currentVersionToken",
+            "readyToActivateRecord"
+          ],
+          "additionalProperties": false
+        },
+        "migrationHistoryQuotaCommits": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "const": "same_installation_identity"
+            },
+            "journalCommit": {
+              "type": "object",
+              "properties": {
+                "locatorProfile": {
+                  "type": "string",
+                  "const": "installation_provider_migration_history_quota_operation_receipt_v1"
+                },
+                "installationIdentityGenerationId": {
+                  "type": "string",
+                  "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+                },
+                "operationNonce": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{32}$"
+                },
+                "contentDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "receiptToken": {
+                  "type": "string",
+                  "pattern": "^hmac-sha256:[0-9a-f]{64}$"
+                },
+                "migrationId": {
+                  "type": "string",
+                  "pattern": "^provider-migration:[0-9a-f]{22}$"
+                },
+                "reservationId": {
+                  "type": "string",
+                  "pattern": "^provider-migration-history-reservation:[0-9a-f]{22}$"
+                },
+                "migrationPlanContentDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "compare_commit"
+                },
+                "outcome": {
+                  "type": "string",
+                  "const": "committed"
+                },
+                "role": {
+                  "type": "string",
+                  "const": "same_identity_journal"
+                },
+                "commitKind": {
+                  "type": "string",
+                  "const": "commit_retained_history"
+                }
+              },
+              "required": [
+                "locatorProfile",
+                "installationIdentityGenerationId",
+                "operationNonce",
+                "contentDigest",
+                "receiptToken",
+                "migrationId",
+                "reservationId",
+                "migrationPlanContentDigest",
+                "operation",
+                "outcome",
+                "role",
+                "commitKind"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "mode",
+            "journalCommit"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "origin",
+        "migrationPlan",
+        "sealedProgressHead",
+        "migrationHistoryQuotaCommits"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "origin": {
+          "type": "string",
+          "const": "completed_provider_migration"
+        },
+        "migrationPlan": {
+          "type": "object",
+          "properties": {
+            "locatorProfile": {
+              "type": "string",
+              "const": "installation_provider_migration_plan_v1"
+            },
+            "migrationId": {
+              "type": "string",
+              "pattern": "^provider-migration:[0-9a-f]{22}$"
+            },
+            "mode": {
+              "type": "string",
+              "const": "cross_installation_rebootstrap"
+            },
+            "contentDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "locatorProfile",
+            "migrationId",
+            "mode",
+            "contentDigest"
+          ],
+          "additionalProperties": false
+        },
+        "sealedProgressHead": {
+          "type": "object",
+          "properties": {
+            "locatorProfile": {
+              "type": "string",
+              "const": "installation_provider_migration_progress_head_v1"
+            },
+            "migrationId": {
+              "type": "string",
+              "pattern": "^provider-migration:[0-9a-f]{22}$"
+            },
+            "versionOrdinal": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "headContentDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "currentVersionToken": {
+              "type": "string",
+              "pattern": "^hmac-sha256:[0-9a-f]{64}$"
+            },
+            "readyToActivateRecord": {
+              "type": "object",
+              "properties": {
+                "locatorProfile": {
+                  "type": "string",
+                  "const": "installation_provider_migration_progress_record_v1"
+                },
+                "migrationId": {
+                  "type": "string",
+                  "pattern": "^provider-migration:[0-9a-f]{22}$"
+                },
+                "recordOrdinal": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "recordId": {
+                  "type": "string",
+                  "pattern": "^provider-migration-progress:[0-9a-f]{22}$"
+                },
+                "contentDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "locatorProfile",
+                "migrationId",
+                "recordOrdinal",
+                "recordId",
+                "contentDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "locatorProfile",
+            "migrationId",
+            "versionOrdinal",
+            "headContentDigest",
+            "currentVersionToken",
+            "readyToActivateRecord"
+          ],
+          "additionalProperties": false
+        },
+        "migrationHistoryQuotaCommits": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "const": "cross_installation_rebootstrap"
+            },
+            "destinationCommit": {
+              "type": "object",
+              "properties": {
+                "locatorProfile": {
+                  "type": "string",
+                  "const": "installation_provider_migration_history_quota_operation_receipt_v1"
+                },
+                "installationIdentityGenerationId": {
+                  "type": "string",
+                  "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+                },
+                "operationNonce": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{32}$"
+                },
+                "contentDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "receiptToken": {
+                  "type": "string",
+                  "pattern": "^hmac-sha256:[0-9a-f]{64}$"
+                },
+                "migrationId": {
+                  "type": "string",
+                  "pattern": "^provider-migration:[0-9a-f]{22}$"
+                },
+                "reservationId": {
+                  "type": "string",
+                  "pattern": "^provider-migration-history-reservation:[0-9a-f]{22}$"
+                },
+                "migrationPlanContentDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "compare_commit"
+                },
+                "outcome": {
+                  "type": "string",
+                  "const": "committed"
+                },
+                "role": {
+                  "type": "string",
+                  "const": "cross_destination_journal"
+                },
+                "commitKind": {
+                  "type": "string",
+                  "const": "commit_retained_history"
+                }
+              },
+              "required": [
+                "locatorProfile",
+                "installationIdentityGenerationId",
+                "operationNonce",
+                "contentDigest",
+                "receiptToken",
+                "migrationId",
+                "reservationId",
+                "migrationPlanContentDigest",
+                "operation",
+                "outcome",
+                "role",
+                "commitKind"
+              ],
+              "additionalProperties": false
+            },
+            "sourceCommit": {
+              "type": "object",
+              "properties": {
+                "locatorProfile": {
+                  "type": "string",
+                  "const": "installation_provider_migration_history_quota_operation_receipt_v1"
+                },
+                "installationIdentityGenerationId": {
+                  "type": "string",
+                  "pattern": "^installation-identity-generation:[0-9a-f]{22}$"
+                },
+                "operationNonce": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{32}$"
+                },
+                "contentDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "receiptToken": {
+                  "type": "string",
+                  "pattern": "^hmac-sha256:[0-9a-f]{64}$"
+                },
+                "migrationId": {
+                  "type": "string",
+                  "pattern": "^provider-migration:[0-9a-f]{22}$"
+                },
+                "reservationId": {
+                  "type": "string",
+                  "pattern": "^provider-migration-history-reservation:[0-9a-f]{22}$"
+                },
+                "migrationPlanContentDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "operation": {
+                  "type": "string",
+                  "const": "compare_commit"
+                },
+                "outcome": {
+                  "type": "string",
+                  "const": "committed"
+                },
+                "role": {
+                  "type": "string",
+                  "const": "cross_source_anchor"
+                },
+                "commitKind": {
+                  "type": "string",
+                  "const": "commit_cross_source_anchor"
+                }
+              },
+              "required": [
+                "locatorProfile",
+                "installationIdentityGenerationId",
+                "operationNonce",
+                "contentDigest",
+                "receiptToken",
+                "migrationId",
+                "reservationId",
+                "migrationPlanContentDigest",
+                "operation",
+                "outcome",
+                "role",
+                "commitKind"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "mode",
+            "destinationCommit",
+            "sourceCommit"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "origin",
+        "migrationPlan",
+        "sealedProgressHead",
+        "migrationHistoryQuotaCommits"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

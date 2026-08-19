@@ -4,23 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import {
-  TOPOLOGY_PROOF_RESOURCE_PATH_V1,
-  assertGeneratedSchemaInventoryFreshV1,
-  generateProviderRegistryEvidenceBindingTopologyProofV1,
-  precomputeProviderRegistryEvidenceBindingParserRuntimeTraceTokenV1,
-  serializeTopologyProofV1,
-} from "./lib/provider-registry-evidence-binding-topology-proof.mjs";
-
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const resourcePath = join(
-  packageRoot,
-  ...TOPOLOGY_PROOF_RESOURCE_PATH_V1.split("/"),
-);
-const sourcePath = join(
-  packageRoot,
-  "src/provider-registry-evidence-binding-topology-proof.ts",
-);
 const checkOnly = process.argv.includes("--check");
 const printOnly = process.argv.includes("--stdout");
 
@@ -75,28 +59,37 @@ async function generateSchemasFromFreshSourceEmit() {
   }
 }
 
-const precomputedParserRuntimeTraceToken =
-  await precomputeProviderRegistryEvidenceBindingParserRuntimeTraceTokenV1({
-    packageRoot,
-  });
-const distModule = await import(
-  `${pathToFileURL(join(packageRoot, "dist/json-schema.js")).href}?topology-proof-dist=${Date.now()}`
-);
-const distGeneratedSchemas =
-  distModule.generateProviderContractJsonSchemasV1();
-let generatedSchemas = distGeneratedSchemas;
-let freshRuntimeModuleRoot;
+const freshSourceEmit = checkOnly
+  ? await generateSchemasFromFreshSourceEmit()
+  : undefined;
+const freshRuntimeModuleRoot = freshSourceEmit?.runtimeModuleRoot;
+let topologyProofModule;
 let proof;
 try {
-  if (checkOnly) {
-    const freshSourceEmit = await generateSchemasFromFreshSourceEmit();
-    const sourceGeneratedSchemas = freshSourceEmit.generatedSchemas;
-    freshRuntimeModuleRoot = freshSourceEmit.runtimeModuleRoot;
+  topologyProofModule = await import(
+    "./lib/provider-registry-evidence-binding-topology-proof.mjs"
+  );
+  const {
+    assertGeneratedSchemaInventoryFreshV1,
+    generateProviderRegistryEvidenceBindingTopologyProofV1,
+    precomputeProviderRegistryEvidenceBindingParserRuntimeTraceTokenV1,
+  } = topologyProofModule;
+  const precomputedParserRuntimeTraceToken =
+    await precomputeProviderRegistryEvidenceBindingParserRuntimeTraceTokenV1({
+      packageRoot,
+    });
+  const distModule = await import(
+    `${pathToFileURL(join(packageRoot, "dist/json-schema.js")).href}?topology-proof-dist=${Date.now()}`
+  );
+  const distGeneratedSchemas =
+    distModule.generateProviderContractJsonSchemasV1();
+  let generatedSchemas = distGeneratedSchemas;
+  if (freshSourceEmit !== undefined) {
     assertGeneratedSchemaInventoryFreshV1(
-      sourceGeneratedSchemas,
+      freshSourceEmit.generatedSchemas,
       distGeneratedSchemas,
     );
-    generatedSchemas = sourceGeneratedSchemas;
+    generatedSchemas = freshSourceEmit.generatedSchemas;
   }
   proof = await generateProviderRegistryEvidenceBindingTopologyProofV1({
     packageRoot,
@@ -109,6 +102,18 @@ try {
     await rm(freshRuntimeModuleRoot, { recursive: true, force: true });
   }
 }
+const {
+  TOPOLOGY_PROOF_RESOURCE_PATH_V1,
+  serializeTopologyProofV1,
+} = topologyProofModule;
+const resourcePath = join(
+  packageRoot,
+  ...TOPOLOGY_PROOF_RESOURCE_PATH_V1.split("/"),
+);
+const sourcePath = join(
+  packageRoot,
+  "src/provider-registry-evidence-binding-topology-proof.ts",
+);
 const bytes = Buffer.from(serializeTopologyProofV1(proof), "utf8");
 if (printOnly) {
   await new Promise((resolveWrite, rejectWrite) => {

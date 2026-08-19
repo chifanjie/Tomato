@@ -90,11 +90,13 @@ const C09_NODE_OPTIONS =
   "--max-old-space-size=1024 --max-semi-space-size=16";
 const C09_BROWSER_RUNTIME_NODE_OPTIONS =
   `${C09_NODE_OPTIONS} --disallow-code-generation-from-strings`;
-// npm prepack runs the topology proof parent beside its fixed-heap parser
-// worker.  A tighter parent heap forces collection before that overlap while
-// retaining the complete prepack verifier chain and worker protocol.
+// The normative resource gate remains the 1,536 MiB same-sample aggregate RSS
+// limit above.  The topology --check-only emit completes before loading the
+// heavy proof parent state, eliminating their heap overlap.  This is the
+// stable full semantic/declaration build profile for TypeScript 5.9 on the
+// Node.js 22 toolchain.
 const C09_PACK_NODE_OPTIONS =
-  "--max-old-space-size=640 --max-semi-space-size=16";
+  "--max-old-space-size=768 --max-semi-space-size=16";
 // The prepack chain runs the exact binding-point generator check under this
 // cap before D37 starts.  Reuse that proven complete run profile so the
 // dedicated generator retains process-tree headroom without changing output.
@@ -6109,9 +6111,9 @@ try {
   const sourceSchemaRelativePaths = await listRelativeSchemaPaths(
     join(packageRoot, "schemas", "v1"),
   );
-  if (sourceSchemaRelativePaths.length !== 368) {
+  if (sourceSchemaRelativePaths.length !== 396) {
     throw new Error(
-      `Source provider contracts must contain exactly 368 JSON Schemas, found ${sourceSchemaRelativePaths.length}`,
+      `Source provider contracts must contain exactly 396 JSON Schemas, found ${sourceSchemaRelativePaths.length}`,
     );
   }
   await assertExactProviderDirectory(
@@ -6360,9 +6362,9 @@ try {
   const explicitSpecifiers = Object.keys(manifest.exports)
     .filter((key) => !key.includes("*"))
     .map(packageSpecifier);
-  if (explicitSpecifiers.length !== 35) {
+  if (explicitSpecifiers.length !== 36) {
     throw new Error(
-      `Packed provider contracts must expose exactly 35 public modules, found ${explicitSpecifiers.length}`,
+      `Packed provider contracts must expose exactly 36 public modules, found ${explicitSpecifiers.length}`,
     );
   }
   for (const privateSubpath of [
@@ -6788,6 +6790,7 @@ try {
       'const providerDistributionHistoryCurrentCandidatePoint = await import("@understand-code/durable-object-provider-contracts/provider-distribution-history-current-candidate-point");',
       'const providerDistributionHistoryCurrentCandidatePointFixtures = await import("@understand-code/durable-object-provider-contracts/provider-distribution-history-current-candidate-point-fixtures");',
       'const providerStrongReadyAcceptanceCandidate = await import("@understand-code/durable-object-provider-contracts/provider-strong-ready-acceptance-candidate");',
+      'const providerAcceptance = await import("@understand-code/durable-object-provider-contracts/provider-acceptance");',
       'const providerTrustedLocalPhysicalTargetSelectionCandidate = await import("@understand-code/durable-object-provider-contracts/provider-trusted-local-physical-target-selection-candidate");',
       'const providerAcceptanceCompareAppendClosureReferenceCandidate = await import("@understand-code/durable-object-provider-contracts/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate");',
       'const providerMigrationPreSideEffectPlanAdmissionClosureReferenceCandidate = await import("@understand-code/durable-object-provider-contracts/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate");',
@@ -6795,6 +6798,7 @@ try {
       'const unavailable = providerError.createProviderUnavailableToolErrorV1("unavailable");',
       'if (providerError.ProviderUnavailableToolErrorV1Schema.parse(unavailable).details.reason !== "unavailable") throw new Error("provider error export failed");',
       'if (root.createProviderStrongReadyAcceptanceCandidateV1 !== providerStrongReadyAcceptanceCandidate.createProviderStrongReadyAcceptanceCandidateV1 || root.validateProviderStrongReadyAcceptanceCandidateV1 !== providerStrongReadyAcceptanceCandidate.validateProviderStrongReadyAcceptanceCandidateV1 || root.PROVIDER_STRONG_READY_ACCEPTANCE_CANDIDATE_AUTHORITY_V1 !== "none_provider_strong_ready_acceptance_candidate_structure_only" || root.ProviderAcceptanceStateGenerationIdV1Schema.parse(`provider-acceptance-state:${"0".repeat(22)}`) !== `provider-acceptance-state:${"0".repeat(22)}` || providerStrongReadyAcceptanceCandidate.ProviderStrongReadyAcceptanceCandidateInvalidStageV1Schema.parse("active_writer_selector") !== "active_writer_selector") throw new Error("packed strong-ready Acceptance candidate export failed");',
+      'if (root.ProviderAcceptanceCompareAppendRequestV1Schema !== providerAcceptance.ProviderAcceptanceCompareAppendRequestV1Schema || root.createProviderAcceptanceCurrentVersionTokenMessageV1 !== providerAcceptance.createProviderAcceptanceCurrentVersionTokenMessageV1 || providerAcceptance.PROVIDER_ACCEPTANCE_COMPARE_APPEND_REQUEST_DOMAIN_V1 !== "provider-acceptance-compare-append-request-v1" || providerAcceptance.PROVIDER_ACCEPTANCE_CURRENT_VERSION_TOKEN_DOMAIN_V1 !== "provider-acceptance-current-version-v1" || Object.hasOwn(providerAcceptance, "deriveKeyedStateTokenForDomainV1")) throw new Error("packed formal Provider Acceptance export failed");',
       'if (root.selectProviderTrustedLocalPhysicalTargetCandidateV1 !== providerTrustedLocalPhysicalTargetSelectionCandidate.selectProviderTrustedLocalPhysicalTargetCandidateV1 || root.diagnoseProviderTrustedLocalPhysicalTargetCandidateV1 !== providerTrustedLocalPhysicalTargetSelectionCandidate.diagnoseProviderTrustedLocalPhysicalTargetCandidateV1 || root.PROVIDER_TRUSTED_LOCAL_PHYSICAL_TARGET_SELECTION_CANDIDATE_AUTHORITY_V1 !== "none_provider_trusted_local_physical_target_selection_candidate_only" || providerTrustedLocalPhysicalTargetSelectionCandidate.ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidStageV1Schema.parse("physical_target_postcheck") !== "physical_target_postcheck" || providerTrustedLocalPhysicalTargetSelectionCandidate.ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidReasonV1Schema.parse("root_volume_changed") !== "root_volume_changed") throw new Error("packed trusted local physical-target candidate export failed");',
       'if (root.createProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 !== providerAcceptanceCompareAppendClosureReferenceCandidate.createProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 || root.diagnoseCreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 !== providerAcceptanceCompareAppendClosureReferenceCandidate.diagnoseCreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 || root.PROVIDER_STRONG_READY_BOOTSTRAP_OR_STEADY_ACCEPTANCE_COMPARE_APPEND_CLOSURE_REFERENCE_CANDIDATE_AUTHORITY_V1 !== "none_provider_strong_ready_bootstrap_or_steady_acceptance_compare_append_closure_reference_candidate_only" || providerAcceptanceCompareAppendClosureReferenceCandidate.PROVIDER_STRONG_READY_BOOTSTRAP_OR_STEADY_ACCEPTANCE_COMPARE_APPEND_REQUEST_REFERENCE_CANDIDATE_DOMAIN_V1 !== "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-request-reference-candidate-v1" || providerAcceptanceCompareAppendClosureReferenceCandidate.ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureInvalidStageReferenceCandidateV1Schema.parse("physical_target_selection") !== "physical_target_selection" || providerAcceptanceCompareAppendClosureReferenceCandidate.ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureInvalidReasonReferenceCandidateV1Schema.parse("candidate_invalid") !== "candidate_invalid") throw new Error("packed Acceptance compare-append reference candidate export failed");',
       'const providerMigrationAuthority = "none_provider_migration_same_installation_identity_current_strong_source_normal_pre_side_effect_plan_admission_closure_reference_candidate_only";',
@@ -7310,6 +7314,10 @@ try {
       'import type { ProviderDistributionHistoryCurrentCandidatePointGoldenManifestV1, ProviderDistributionHistoryCurrentCandidatePointInvalidCaseIdV1, ProviderDistributionHistoryCurrentCandidatePointInvalidManifestV1, ProviderDistributionHistoryCurrentCandidatePointPositiveVectorIdV1 } from "@understand-code/durable-object-provider-contracts/provider-distribution-history-current-candidate-point-fixtures";',
       'import { createProviderStrongReadyAcceptanceCandidateV1, validateProviderStrongReadyAcceptanceCandidateV1 } from "@understand-code/durable-object-provider-contracts/provider-strong-ready-acceptance-candidate";',
       'import type { CreateProviderStrongReadyAcceptanceCandidateV1Input, ProviderStrongReadyAcceptanceCandidateValidationV1, ValidateProviderStrongReadyAcceptanceCandidateV1Input } from "@understand-code/durable-object-provider-contracts/provider-strong-ready-acceptance-candidate";',
+      'import { ProviderAcceptanceCompareAppendRequestV1Schema, createProviderAcceptanceCurrentVersionTokenMessageV1 } from "@understand-code/durable-object-provider-contracts/provider-acceptance";',
+      'import type { ProviderAcceptanceCompareAppendRequestV1, ProviderAcceptanceCurrentPinV1 } from "@understand-code/durable-object-provider-contracts/provider-acceptance";',
+      'import { ProviderAcceptanceCompareAppendRequestV1Schema as RootProviderAcceptanceCompareAppendRequestV1Schema, createProviderAcceptanceCurrentVersionTokenMessageV1 as rootCreateProviderAcceptanceCurrentVersionTokenMessageV1 } from "@understand-code/durable-object-provider-contracts";',
+      'import type { ProviderAcceptanceCompareAppendRequestV1 as RootProviderAcceptanceCompareAppendRequestV1, ProviderAcceptanceCurrentPinV1 as RootProviderAcceptanceCurrentPinV1 } from "@understand-code/durable-object-provider-contracts";',
       'import { selectProviderTrustedLocalPhysicalTargetCandidateV1 } from "@understand-code/durable-object-provider-contracts/provider-trusted-local-physical-target-selection-candidate";',
       'import type { ProviderTrustedLocalPhysicalTargetObservationCapabilityV1, ProviderTrustedLocalPhysicalTargetSelectionCandidateValidationV1, SelectProviderTrustedLocalPhysicalTargetCandidateV1Input } from "@understand-code/durable-object-provider-contracts/provider-trusted-local-physical-target-selection-candidate";',
       'import { createProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 } from "@understand-code/durable-object-provider-contracts/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate";',
@@ -7448,6 +7456,12 @@ try {
       'const currentCandidateProjectionAuthority: "none_provider_feasibility_support_catalog_structure_only" = currentCandidatePointProjection.authority;',
       'const createdStrongReadyAcceptanceCandidate: Promise<ProviderStrongReadyAcceptanceCandidateValidationV1> = createProviderStrongReadyAcceptanceCandidateV1(createStrongReadyAcceptanceCandidateInput);',
       'const validatedStrongReadyAcceptanceCandidate: Promise<ProviderStrongReadyAcceptanceCandidateValidationV1> = validateProviderStrongReadyAcceptanceCandidateV1(validateStrongReadyAcceptanceCandidateInput);',
+      'const providerAcceptanceRequestSchemaIdentity: typeof ProviderAcceptanceCompareAppendRequestV1Schema = RootProviderAcceptanceCompareAppendRequestV1Schema;',
+      'const providerAcceptanceCurrentVersionMessageIdentity: typeof createProviderAcceptanceCurrentVersionTokenMessageV1 = rootCreateProviderAcceptanceCurrentVersionTokenMessageV1;',
+      'const providerAcceptanceRequestRootToSubpath = (value: RootProviderAcceptanceCompareAppendRequestV1): ProviderAcceptanceCompareAppendRequestV1 => value;',
+      'const providerAcceptanceRequestSubpathToRoot = (value: ProviderAcceptanceCompareAppendRequestV1): RootProviderAcceptanceCompareAppendRequestV1 => value;',
+      'const providerAcceptanceCurrentPinRootToSubpath = (value: RootProviderAcceptanceCurrentPinV1): ProviderAcceptanceCurrentPinV1 => value;',
+      'const providerAcceptanceCurrentPinSubpathToRoot = (value: ProviderAcceptanceCurrentPinV1): RootProviderAcceptanceCurrentPinV1 => value;',
       'const selectedTrustedLocalPhysicalTargetCandidate: Promise<ProviderTrustedLocalPhysicalTargetSelectionCandidateValidationV1> = selectProviderTrustedLocalPhysicalTargetCandidateV1(selectTrustedLocalPhysicalTargetInput);',
       'const createdAcceptanceCompareAppendClosureReferenceCandidate: Promise<ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureValidationReferenceCandidateV1> = createProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1(createAcceptanceCompareAppendClosureReferenceCandidateInput);',
       'const builtProviderMigrationPreSideEffectPlanAdmissionClosureReferenceCandidate: Promise<ProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateValidationV1> = buildProviderMigrationSameInstallationIdentityCurrentStrongSourceNormalPreSideEffectPlanAdmissionClosureReferenceCandidateV1(buildProviderMigrationPreSideEffectPlanAdmissionClosureReferenceCandidateInput);',
@@ -7825,6 +7839,9 @@ try {
       'import { PROVIDER_DISTRIBUTION_HISTORY_CURRENT_CANDIDATE_POINT_HISTORICAL_SEMANTIC_CASE_IDS_V1 as rootProviderDistributionHistoryCurrentCandidatePointHistoricalSemanticCaseIdsV1, PROVIDER_DISTRIBUTION_HISTORY_CURRENT_CANDIDATE_POINT_INVALID_CASE_IDS_V1 as rootProviderDistributionHistoryCurrentCandidatePointInvalidCaseIdsV1, PROVIDER_DISTRIBUTION_HISTORY_CURRENT_CANDIDATE_POINT_POSITIVE_VECTOR_IDS_V1 as rootProviderDistributionHistoryCurrentCandidatePointPositiveVectorIdsV1, ProviderDistributionHistoryCurrentCandidatePointFixtureError as RootProviderDistributionHistoryCurrentCandidatePointFixtureError, ProviderDistributionHistoryCurrentCandidatePointValidationError as RootProviderDistributionHistoryCurrentCandidatePointValidationError, diagnoseProviderDistributionHistoryCurrentCandidatePointV1 as rootDiagnoseProviderDistributionHistoryCurrentCandidatePointV1, executeProviderDistributionHistoryCurrentCandidatePointInvalidCaseV1 as rootExecuteProviderDistributionHistoryCurrentCandidatePointInvalidCaseV1, materializeProviderDistributionHistoryCurrentCandidatePointInvalidCaseRequestV1 as rootMaterializeProviderDistributionHistoryCurrentCandidatePointInvalidCaseRequestV1, materializeProviderDistributionHistoryCurrentCandidatePointPositiveVectorRequestV1 as rootMaterializeProviderDistributionHistoryCurrentCandidatePointPositiveVectorRequestV1, validateProviderDistributionHistoryCurrentCandidatePointV1 as rootValidateProviderDistributionHistoryCurrentCandidatePointV1, verifyProviderDistributionHistoryCurrentCandidatePointGoldenResourceV1 as rootVerifyProviderDistributionHistoryCurrentCandidatePointGoldenResourceV1, verifyProviderDistributionHistoryCurrentCandidatePointInvalidResourceV1 as rootVerifyProviderDistributionHistoryCurrentCandidatePointInvalidResourceV1, verifyProviderDistributionHistoryCurrentCandidatePointPositiveVectorsV1 as rootVerifyProviderDistributionHistoryCurrentCandidatePointPositiveVectorsV1 } from "@understand-code/durable-object-provider-contracts";',
       'import { PROVIDER_STRONG_READY_ACCEPTANCE_CANDIDATE_AUTHORITY_V1, ProviderStrongReadyAcceptanceCandidateInvalidStageV1Schema, createProviderStrongReadyAcceptanceCandidateV1, validateProviderStrongReadyAcceptanceCandidateV1 } from "@understand-code/durable-object-provider-contracts/provider-strong-ready-acceptance-candidate";',
       'import { PROVIDER_STRONG_READY_ACCEPTANCE_CANDIDATE_AUTHORITY_V1 as rootStrongReadyAcceptanceCandidateAuthorityV1, ProviderAcceptanceStateGenerationIdV1Schema as rootProviderAcceptanceStateGenerationIdV1Schema, createProviderStrongReadyAcceptanceCandidateV1 as rootCreateProviderStrongReadyAcceptanceCandidateV1, validateProviderStrongReadyAcceptanceCandidateV1 as rootValidateProviderStrongReadyAcceptanceCandidateV1 } from "@understand-code/durable-object-provider-contracts";',
+      'import * as providerAcceptanceModule from "@understand-code/durable-object-provider-contracts/provider-acceptance";',
+      'import { PROVIDER_ACCEPTANCE_COMPARE_APPEND_REQUEST_DOMAIN_V1, PROVIDER_ACCEPTANCE_CURRENT_VERSION_TOKEN_DOMAIN_V1, ProviderAcceptanceCompareAppendRequestV1Schema, createProviderAcceptanceCurrentVersionTokenMessageV1 } from "@understand-code/durable-object-provider-contracts/provider-acceptance";',
+      'import { ProviderAcceptanceCompareAppendRequestV1Schema as rootProviderAcceptanceCompareAppendRequestV1Schema, createProviderAcceptanceCurrentVersionTokenMessageV1 as rootCreateProviderAcceptanceCurrentVersionTokenMessageV1 } from "@understand-code/durable-object-provider-contracts";',
       'import { PROVIDER_TRUSTED_LOCAL_PHYSICAL_TARGET_SELECTION_CANDIDATE_AUTHORITY_V1, ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidReasonV1Schema, ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidStageV1Schema, diagnoseProviderTrustedLocalPhysicalTargetCandidateV1, selectProviderTrustedLocalPhysicalTargetCandidateV1 } from "@understand-code/durable-object-provider-contracts/provider-trusted-local-physical-target-selection-candidate";',
       'import { PROVIDER_TRUSTED_LOCAL_PHYSICAL_TARGET_SELECTION_CANDIDATE_AUTHORITY_V1 as rootTrustedLocalPhysicalTargetSelectionCandidateAuthorityV1, diagnoseProviderTrustedLocalPhysicalTargetCandidateV1 as rootDiagnoseProviderTrustedLocalPhysicalTargetCandidateV1, selectProviderTrustedLocalPhysicalTargetCandidateV1 as rootSelectProviderTrustedLocalPhysicalTargetCandidateV1 } from "@understand-code/durable-object-provider-contracts";',
       'import { PROVIDER_STRONG_READY_BOOTSTRAP_OR_STEADY_ACCEPTANCE_COMPARE_APPEND_CLOSURE_REFERENCE_CANDIDATE_AUTHORITY_V1, PROVIDER_STRONG_READY_BOOTSTRAP_OR_STEADY_ACCEPTANCE_COMPARE_APPEND_REQUEST_REFERENCE_CANDIDATE_DOMAIN_V1, ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureInvalidReasonReferenceCandidateV1Schema, ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureInvalidStageReferenceCandidateV1Schema, createProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1, diagnoseCreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 } from "@understand-code/durable-object-provider-contracts/provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-closure-reference-candidate";',
@@ -7874,6 +7891,7 @@ try {
       `delete globalThis[${JSON.stringify(C09_BROWSER_CATALOG_GOLDEN_BYTES_GLOBAL_V1)}];`,
       `delete globalThis[${JSON.stringify(C09_BROWSER_CATALOG_INVALID_BYTES_GLOBAL_V1)}];`,
       'if (rootCreateProviderStrongReadyAcceptanceCandidateV1 !== createProviderStrongReadyAcceptanceCandidateV1 || rootValidateProviderStrongReadyAcceptanceCandidateV1 !== validateProviderStrongReadyAcceptanceCandidateV1 || rootStrongReadyAcceptanceCandidateAuthorityV1 !== PROVIDER_STRONG_READY_ACCEPTANCE_CANDIDATE_AUTHORITY_V1 || PROVIDER_STRONG_READY_ACCEPTANCE_CANDIDATE_AUTHORITY_V1 !== "none_provider_strong_ready_acceptance_candidate_structure_only" || rootProviderAcceptanceStateGenerationIdV1Schema.parse(`provider-acceptance-state:${"0".repeat(22)}`) !== `provider-acceptance-state:${"0".repeat(22)}` || ProviderStrongReadyAcceptanceCandidateInvalidStageV1Schema.parse("active_writer_selector") !== "active_writer_selector") throw new Error("browser strong-ready Acceptance candidate export mismatch");',
+      'if (rootProviderAcceptanceCompareAppendRequestV1Schema !== ProviderAcceptanceCompareAppendRequestV1Schema || rootCreateProviderAcceptanceCurrentVersionTokenMessageV1 !== createProviderAcceptanceCurrentVersionTokenMessageV1 || PROVIDER_ACCEPTANCE_COMPARE_APPEND_REQUEST_DOMAIN_V1 !== "provider-acceptance-compare-append-request-v1" || PROVIDER_ACCEPTANCE_CURRENT_VERSION_TOKEN_DOMAIN_V1 !== "provider-acceptance-current-version-v1" || Object.hasOwn(providerAcceptanceModule, "deriveKeyedStateTokenForDomainV1") || Object.hasOwn(providerContractsRootModule, "deriveKeyedStateTokenForDomainV1")) throw new Error("browser formal Provider Acceptance root/subpath parity mismatch");',
       'if (rootSelectProviderTrustedLocalPhysicalTargetCandidateV1 !== selectProviderTrustedLocalPhysicalTargetCandidateV1 || rootDiagnoseProviderTrustedLocalPhysicalTargetCandidateV1 !== diagnoseProviderTrustedLocalPhysicalTargetCandidateV1 || rootTrustedLocalPhysicalTargetSelectionCandidateAuthorityV1 !== PROVIDER_TRUSTED_LOCAL_PHYSICAL_TARGET_SELECTION_CANDIDATE_AUTHORITY_V1 || PROVIDER_TRUSTED_LOCAL_PHYSICAL_TARGET_SELECTION_CANDIDATE_AUTHORITY_V1 !== "none_provider_trusted_local_physical_target_selection_candidate_only" || ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidStageV1Schema.parse("physical_target_postcheck") !== "physical_target_postcheck" || ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidReasonV1Schema.parse("root_volume_changed") !== "root_volume_changed") throw new Error("browser trusted local physical-target candidate export mismatch");',
       'if (rootCreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 !== createProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 || rootDiagnoseCreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 !== diagnoseCreateProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureReferenceCandidateV1 || rootAcceptanceCompareAppendClosureReferenceCandidateAuthorityV1 !== PROVIDER_STRONG_READY_BOOTSTRAP_OR_STEADY_ACCEPTANCE_COMPARE_APPEND_CLOSURE_REFERENCE_CANDIDATE_AUTHORITY_V1 || PROVIDER_STRONG_READY_BOOTSTRAP_OR_STEADY_ACCEPTANCE_COMPARE_APPEND_CLOSURE_REFERENCE_CANDIDATE_AUTHORITY_V1 !== "none_provider_strong_ready_bootstrap_or_steady_acceptance_compare_append_closure_reference_candidate_only" || PROVIDER_STRONG_READY_BOOTSTRAP_OR_STEADY_ACCEPTANCE_COMPARE_APPEND_REQUEST_REFERENCE_CANDIDATE_DOMAIN_V1 !== "provider-strong-ready-bootstrap-or-steady-acceptance-compare-append-request-reference-candidate-v1" || ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureInvalidStageReferenceCandidateV1Schema.parse("physical_target_selection") !== "physical_target_selection" || ProviderStrongReadyBootstrapOrSteadyAcceptanceCompareAppendClosureInvalidReasonReferenceCandidateV1Schema.parse("candidate_invalid") !== "candidate_invalid") throw new Error("browser Acceptance compare-append reference candidate export mismatch");',
       'const providerMigrationAuthority = "none_provider_migration_same_installation_identity_current_strong_source_normal_pre_side_effect_plan_admission_closure_reference_candidate_only";',
@@ -8811,6 +8829,8 @@ try {
     "dist/provider-distribution-history-current-candidate-point-fixtures.d.ts",
     "dist/provider-strong-ready-acceptance-candidate.js",
     "dist/provider-strong-ready-acceptance-candidate.d.ts",
+    "dist/provider-acceptance.js",
+    "dist/provider-acceptance.d.ts",
     "dist/provider-strong-ready-acceptance-candidate-internal.js",
     "dist/provider-strong-ready-acceptance-candidate-internal.d.ts",
     "dist/provider-trusted-local-physical-target-selection-candidate.js",
@@ -8996,10 +9016,38 @@ try {
     "schemas/v1/provider-distribution-history-current-candidate-point-invalid-reason.schema.json",
     "schemas/v1/provider-distribution-history-current-candidate-point-golden-manifest.schema.json",
     "schemas/v1/provider-distribution-history-current-candidate-point-invalid-manifest.schema.json",
+    "schemas/v1/installation-identity-state-pin.schema.json",
     "schemas/v1/provider-acceptance-generation-predecessor.schema.json",
     "schemas/v1/provider-acceptance-genesis-predecessor.schema.json",
     "schemas/v1/provider-acceptance-predecessor.schema.json",
     "schemas/v1/provider-acceptance-state-generation-id.schema.json",
+    "schemas/v1/provider-migration-plan-pin.schema.json",
+    "schemas/v1/provider-migration-progress-record-pin.schema.json",
+    "schemas/v1/provider-migration-sealed-progress-head-pin.schema.json",
+    "schemas/v1/provider-migration-history-quota-committed-receipt-set.schema.json",
+    "schemas/v1/provider-acceptance-strong-ready-activation.schema.json",
+    "schemas/v1/provider-accepted-configuration.schema.json",
+    "schemas/v1/provider-acceptance-state-generation-id-fields.schema.json",
+    "schemas/v1/provider-acceptance-state-unsigned.schema.json",
+    "schemas/v1/provider-acceptance-state.schema.json",
+    "schemas/v1/provider-acceptance-state-envelope.schema.json",
+    "schemas/v1/provider-acceptance-generation-pin.schema.json",
+    "schemas/v1/provider-acceptance-generation-enumeration-entry.schema.json",
+    "schemas/v1/provider-acceptance-generation-set-fields.schema.json",
+    "schemas/v1/provider-acceptance-generation-enumeration.schema.json",
+    "schemas/v1/provider-acceptance-high-water.schema.json",
+    "schemas/v1/provider-acceptance-high-water-envelope.schema.json",
+    "schemas/v1/provider-acceptance-current-read.schema.json",
+    "schemas/v1/provider-acceptance-current-pin.schema.json",
+    "schemas/v1/provider-acceptance-compare-append-request.schema.json",
+    "schemas/v1/provider-acceptance-observed-high-water.schema.json",
+    "schemas/v1/provider-acceptance-compare-append-durable-outcome.schema.json",
+    "schemas/v1/provider-acceptance-compare-append-receipt-unsigned.schema.json",
+    "schemas/v1/provider-acceptance-compare-append-receipt.schema.json",
+    "schemas/v1/provider-acceptance-compare-append-receipt-envelope.schema.json",
+    "schemas/v1/provider-acceptance-compare-append-receipt-pin.schema.json",
+    "schemas/v1/provider-acceptance-compare-append-result.schema.json",
+    "schemas/v1/provider-acceptance-current-version-token-fields.schema.json",
     "schemas/v1/provider-active-writer-selection.schema.json",
     "schemas/v1/provider-active-writer-selector.schema.json",
     "schemas/v1/provider-migration-strong-ready-core.schema.json",

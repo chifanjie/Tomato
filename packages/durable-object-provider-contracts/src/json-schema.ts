@@ -325,6 +325,36 @@ import {
   ProviderStrongReadyBootstrapOrSteadyActivationV1Schema,
 } from "./provider-strong-ready-acceptance-candidate.js";
 import {
+  InstallationIdentityStatePinV1Schema,
+  ProviderAcceptanceCompareAppendDurableOutcomeV1Schema,
+  ProviderAcceptanceCompareAppendReceiptEnvelopeV1Schema,
+  ProviderAcceptanceCompareAppendReceiptPinV1Schema,
+  ProviderAcceptanceCompareAppendReceiptUnsignedV1Schema,
+  ProviderAcceptanceCompareAppendReceiptV1Schema,
+  ProviderAcceptanceCompareAppendRequestV1Schema,
+  ProviderAcceptanceCompareAppendResultV1Schema,
+  ProviderAcceptanceCurrentPinV1Schema,
+  ProviderAcceptanceCurrentReadV1Schema,
+  ProviderAcceptanceCurrentVersionTokenFieldsV1Schema,
+  ProviderAcceptanceGenerationEnumerationEntryV1Schema,
+  ProviderAcceptanceGenerationEnumerationV1Schema,
+  ProviderAcceptanceGenerationPinV1Schema,
+  ProviderAcceptanceGenerationSetFieldsV1Schema,
+  ProviderAcceptanceHighWaterEnvelopeV1Schema,
+  ProviderAcceptanceHighWaterV1Schema,
+  ProviderAcceptanceObservedHighWaterV1Schema,
+  ProviderAcceptanceStateEnvelopeV1Schema,
+  ProviderAcceptanceStateGenerationIdFieldsV1Schema,
+  ProviderAcceptanceStateUnsignedV1Schema,
+  ProviderAcceptanceStateV1Schema,
+  ProviderAcceptanceStrongReadyActivationV1Schema,
+  ProviderAcceptedConfigurationV1Schema,
+  ProviderMigrationHistoryQuotaCommittedReceiptSetV1Schema,
+  ProviderMigrationPlanPinV1Schema,
+  ProviderMigrationProgressRecordPinV1Schema,
+  ProviderMigrationSealedProgressHeadPinV1Schema,
+} from "./provider-acceptance.js";
+import {
   ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidReasonV1Schema,
   ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidStageV1Schema,
 } from "./provider-trusted-local-physical-target-selection-candidate.js";
@@ -1081,6 +1111,62 @@ export const PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1 =
     ProviderStrongReadyAcceptanceCandidateInvalidStageV1Schema,
   "provider-strong-ready-acceptance-candidate-invalid-reason":
     ProviderStrongReadyAcceptanceCandidateInvalidReasonV1Schema,
+  "installation-identity-state-pin":
+    InstallationIdentityStatePinV1Schema,
+  "provider-migration-plan-pin":
+    ProviderMigrationPlanPinV1Schema,
+  "provider-migration-progress-record-pin":
+    ProviderMigrationProgressRecordPinV1Schema,
+  "provider-migration-sealed-progress-head-pin":
+    ProviderMigrationSealedProgressHeadPinV1Schema,
+  "provider-migration-history-quota-committed-receipt-set":
+    ProviderMigrationHistoryQuotaCommittedReceiptSetV1Schema,
+  "provider-acceptance-strong-ready-activation":
+    ProviderAcceptanceStrongReadyActivationV1Schema,
+  "provider-accepted-configuration":
+    ProviderAcceptedConfigurationV1Schema,
+  "provider-acceptance-state-generation-id-fields":
+    ProviderAcceptanceStateGenerationIdFieldsV1Schema,
+  "provider-acceptance-state-unsigned":
+    ProviderAcceptanceStateUnsignedV1Schema,
+  "provider-acceptance-state":
+    ProviderAcceptanceStateV1Schema,
+  "provider-acceptance-state-envelope":
+    ProviderAcceptanceStateEnvelopeV1Schema,
+  "provider-acceptance-generation-pin":
+    ProviderAcceptanceGenerationPinV1Schema,
+  "provider-acceptance-generation-enumeration-entry":
+    ProviderAcceptanceGenerationEnumerationEntryV1Schema,
+  "provider-acceptance-generation-set-fields":
+    ProviderAcceptanceGenerationSetFieldsV1Schema,
+  "provider-acceptance-generation-enumeration":
+    ProviderAcceptanceGenerationEnumerationV1Schema,
+  "provider-acceptance-high-water":
+    ProviderAcceptanceHighWaterV1Schema,
+  "provider-acceptance-high-water-envelope":
+    ProviderAcceptanceHighWaterEnvelopeV1Schema,
+  "provider-acceptance-current-read":
+    ProviderAcceptanceCurrentReadV1Schema,
+  "provider-acceptance-current-pin":
+    ProviderAcceptanceCurrentPinV1Schema,
+  "provider-acceptance-compare-append-request":
+    ProviderAcceptanceCompareAppendRequestV1Schema,
+  "provider-acceptance-observed-high-water":
+    ProviderAcceptanceObservedHighWaterV1Schema,
+  "provider-acceptance-compare-append-durable-outcome":
+    ProviderAcceptanceCompareAppendDurableOutcomeV1Schema,
+  "provider-acceptance-compare-append-receipt-unsigned":
+    ProviderAcceptanceCompareAppendReceiptUnsignedV1Schema,
+  "provider-acceptance-compare-append-receipt":
+    ProviderAcceptanceCompareAppendReceiptV1Schema,
+  "provider-acceptance-compare-append-receipt-envelope":
+    ProviderAcceptanceCompareAppendReceiptEnvelopeV1Schema,
+  "provider-acceptance-compare-append-receipt-pin":
+    ProviderAcceptanceCompareAppendReceiptPinV1Schema,
+  "provider-acceptance-compare-append-result":
+    ProviderAcceptanceCompareAppendResultV1Schema,
+  "provider-acceptance-current-version-token-fields":
+    ProviderAcceptanceCurrentVersionTokenFieldsV1Schema,
   "provider-trusted-local-physical-target-selection-candidate-invalid-stage":
     ProviderTrustedLocalPhysicalTargetSelectionCandidateInvalidStageV1Schema,
   "provider-trusted-local-physical-target-selection-candidate-invalid-reason":

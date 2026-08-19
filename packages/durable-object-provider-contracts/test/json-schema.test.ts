@@ -377,12 +377,43 @@ const PROVIDER_RUNTIME_IPC_JSON_SCHEMA_NAMES_V1 = [
   "provider-runtime-ipc-strong-mutation-response-v1",
 ] as const;
 
+const FORMAL_PROVIDER_ACCEPTANCE_JSON_SCHEMA_NAMES_V1 = [
+  "installation-identity-state-pin",
+  "provider-migration-plan-pin",
+  "provider-migration-progress-record-pin",
+  "provider-migration-sealed-progress-head-pin",
+  "provider-migration-history-quota-committed-receipt-set",
+  "provider-acceptance-strong-ready-activation",
+  "provider-accepted-configuration",
+  "provider-acceptance-state-generation-id-fields",
+  "provider-acceptance-state-unsigned",
+  "provider-acceptance-state",
+  "provider-acceptance-state-envelope",
+  "provider-acceptance-generation-pin",
+  "provider-acceptance-generation-enumeration-entry",
+  "provider-acceptance-generation-set-fields",
+  "provider-acceptance-generation-enumeration",
+  "provider-acceptance-high-water",
+  "provider-acceptance-high-water-envelope",
+  "provider-acceptance-current-read",
+  "provider-acceptance-current-pin",
+  "provider-acceptance-compare-append-request",
+  "provider-acceptance-observed-high-water",
+  "provider-acceptance-compare-append-durable-outcome",
+  "provider-acceptance-compare-append-receipt-unsigned",
+  "provider-acceptance-compare-append-receipt",
+  "provider-acceptance-compare-append-receipt-envelope",
+  "provider-acceptance-compare-append-receipt-pin",
+  "provider-acceptance-compare-append-result",
+  "provider-acceptance-current-version-token-fields",
+] as const;
+
 describe("provider contract JSON Schema distribution", () => {
   it("registers the exact D-41/D-42 and IPC schemas in the in-memory registry", () => {
     const sourceNames = Object.keys(
       PROVIDER_CONTRACT_JSON_SCHEMA_SOURCES_V1,
     );
-    expect(sourceNames).toHaveLength(368);
+    expect(sourceNames).toHaveLength(396);
     expect(
       sourceNames.filter((name) =>
         name.startsWith(
@@ -395,7 +426,7 @@ describe("provider contract JSON Schema distribution", () => {
     ]);
 
     const generated = generateProviderContractJsonSchemasV1();
-    expect(Object.keys(generated)).toHaveLength(368);
+    expect(Object.keys(generated)).toHaveLength(396);
     for (const name of PROVIDER_RUNTIME_IPC_JSON_SCHEMA_NAMES_V1) {
       expect(generated[name].$id).toBe(
         `urn:understand-code:provider-contract:schema:v1:${name}`,
@@ -420,11 +451,17 @@ describe("provider contract JSON Schema distribution", () => {
     for (const name of [
       ...D41_PROVIDER_MIGRATION_JSON_SCHEMA_NAMES_V1,
       ...D42_PROVIDER_MIGRATION_JSON_SCHEMA_NAMES_V1,
+      ...FORMAL_PROVIDER_ACCEPTANCE_JSON_SCHEMA_NAMES_V1,
     ]) {
       expect(generated[name].$id).toBe(
         `urn:understand-code:provider-contract:schema:v1:${name}`,
       );
       expectEveryJsonSchemaObjectClosed(generated[name], name);
+    }
+    for (const name of FORMAL_PROVIDER_ACCEPTANCE_JSON_SCHEMA_NAMES_V1) {
+      expect(JSON.stringify(generated[name]), name).not.toMatch(
+        /reference[_-]candidate/u,
+      );
     }
     const closure = generated[
       "provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate"
@@ -1002,6 +1039,7 @@ describe("provider contract JSON Schema distribution", () => {
   it("registers the complete C09-1F primitive, record, wrapper, and locator surface", () => {
     const generated = generateProviderContractJsonSchemasV1();
     const requiredNames = [
+      ...FORMAL_PROVIDER_ACCEPTANCE_JSON_SCHEMA_NAMES_V1,
       "provider-registry-manifest-generation-id",
       "provider-migration-id",
       "provider-feasibility-evidence-id",
@@ -1192,7 +1230,7 @@ describe("provider contract JSON Schema distribution", () => {
       expect(generated, name).toHaveProperty(name);
       expectEveryJsonSchemaObjectClosed(generated[name], name);
     }
-    expect(Object.keys(generated)).toHaveLength(368);
+    expect(Object.keys(generated)).toHaveLength(396);
     for (const nestedOnlyName of [
       "provider-migration-same-installation-identity-current-strong-source-normal-created-at-reference-candidate",
       "provider-migration-same-installation-identity-current-strong-source-normal-quota-account-contribution-reference-candidate",

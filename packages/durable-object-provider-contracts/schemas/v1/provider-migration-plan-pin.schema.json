@@ -1,0 +1,33 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-migration-plan-pin",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "locatorProfile": {
+      "type": "string",
+      "const": "installation_provider_migration_plan_v1"
+    },
+    "migrationId": {
+      "type": "string",
+      "pattern": "^provider-migration:[0-9a-f]{22}$"
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "same_installation_identity",
+        "cross_installation_rebootstrap"
+      ]
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "locatorProfile",
+    "migrationId",
+    "mode",
+    "contentDigest"
+  ],
+  "additionalProperties": false
+}

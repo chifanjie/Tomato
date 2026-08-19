@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import * as publicApi from "../src/index.js";
+import * as providerAcceptance from "../src/provider-acceptance.js";
 import * as providerMigrationPreSideEffectPlanAdmissionClosureReferenceCandidate from "../src/provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate.js";
 import * as providerMigrationPreparedRegistrySuccessorReferenceCandidate from "../src/provider-migration-same-installation-identity-current-strong-source-normal-prepared-registry-successor-reference-candidate.js";
 
@@ -21,6 +22,75 @@ function sourceFiles(directory: string): string[] {
 }
 
 describe("provider contract runtime boundary", () => {
+  it("exposes the formal Provider Acceptance wire from root and its public subpath without a raw-key mint", () => {
+    const runtimeExportNames = [
+      "InstallationIdentityStatePinV1Schema",
+      "PROVIDER_ACCEPTANCE_COMPARE_APPEND_RECEIPT_DOMAIN_V1",
+      "PROVIDER_ACCEPTANCE_COMPARE_APPEND_RECEIPT_TOKEN_DOMAIN_V1",
+      "PROVIDER_ACCEPTANCE_COMPARE_APPEND_REQUEST_DOMAIN_V1",
+      "PROVIDER_ACCEPTANCE_CURRENT_VERSION_TOKEN_DOMAIN_V1",
+      "PROVIDER_ACCEPTANCE_GENERATION_SET_DOMAIN_V1",
+      "PROVIDER_ACCEPTANCE_HIGH_WATER_DOMAIN_V1",
+      "PROVIDER_ACCEPTANCE_STATE_DOMAIN_V1",
+      "PROVIDER_ACCEPTANCE_STATE_GENERATION_ID_DOMAIN_V1",
+      "PROVIDER_ACCEPTANCE_STATE_TOKEN_DOMAIN_V1",
+      "ProviderAcceptanceCompareAppendDurableOutcomeV1Schema",
+      "ProviderAcceptanceCompareAppendReceiptEnvelopeV1Schema",
+      "ProviderAcceptanceCompareAppendReceiptPinV1Schema",
+      "ProviderAcceptanceCompareAppendReceiptUnsignedV1Schema",
+      "ProviderAcceptanceCompareAppendReceiptV1Schema",
+      "ProviderAcceptanceCompareAppendRequestV1Schema",
+      "ProviderAcceptanceCompareAppendResultV1Schema",
+      "ProviderAcceptanceCurrentPinV1Schema",
+      "ProviderAcceptanceCurrentReadV1Schema",
+      "ProviderAcceptanceCurrentVersionTokenFieldsV1Schema",
+      "ProviderAcceptanceGenerationEnumerationEntryV1Schema",
+      "ProviderAcceptanceGenerationEnumerationV1Schema",
+      "ProviderAcceptanceGenerationPinV1Schema",
+      "ProviderAcceptanceGenerationSetFieldsV1Schema",
+      "ProviderAcceptanceHighWaterEnvelopeV1Schema",
+      "ProviderAcceptanceHighWaterV1Schema",
+      "ProviderAcceptanceObservedHighWaterV1Schema",
+      "ProviderAcceptanceStateEnvelopeV1Schema",
+      "ProviderAcceptanceStateGenerationIdFieldsV1Schema",
+      "ProviderAcceptanceStateUnsignedV1Schema",
+      "ProviderAcceptanceStateV1Schema",
+      "ProviderAcceptanceStrongReadyActivationV1Schema",
+      "ProviderAcceptedConfigurationV1Schema",
+      "ProviderMigrationHistoryQuotaCommittedReceiptSetV1Schema",
+      "ProviderMigrationPlanPinV1Schema",
+      "ProviderMigrationProgressRecordPinV1Schema",
+      "ProviderMigrationSealedProgressHeadPinV1Schema",
+      "createProviderAcceptanceCompareAppendReceiptTokenMessageV1",
+      "createProviderAcceptanceCurrentVersionTokenMessageV1",
+      "createProviderAcceptanceStateTokenMessageV1",
+      "deriveProviderAcceptanceCompareAppendReceiptContentDigestV1",
+      "deriveProviderAcceptanceCompareAppendReceiptPinV1",
+      "deriveProviderAcceptanceCompareAppendRequestContentDigestV1",
+      "deriveProviderAcceptanceCurrentPinV1",
+      "deriveProviderAcceptanceGenerationSetDigestV1",
+      "deriveProviderAcceptanceHighWaterContentDigestV1",
+      "deriveProviderAcceptanceStateContentDigestV1",
+      "deriveProviderAcceptanceStateGenerationIdV1",
+      "projectProviderAcceptanceCompareAppendReceiptUnsignedV1",
+      "projectProviderAcceptanceCurrentVersionTokenFieldsV1",
+      "projectProviderAcceptanceStateUnsignedV1",
+    ] as const;
+    expect(packageManifest.exports).toHaveProperty("./provider-acceptance");
+    expect(Object.keys(providerAcceptance).sort()).toEqual(runtimeExportNames);
+    for (const runtimeExportName of runtimeExportNames) {
+      expect(publicApi[runtimeExportName]).toBe(
+        providerAcceptance[runtimeExportName],
+      );
+    }
+    expect(
+      providerAcceptance.PROVIDER_ACCEPTANCE_COMPARE_APPEND_REQUEST_DOMAIN_V1,
+    ).toBe("provider-acceptance-compare-append-request-v1");
+    expect(providerAcceptance).not.toHaveProperty(
+      "deriveKeyedStateTokenForDomainV1",
+    );
+  });
+
   it("exposes the single D-41 none-authority public seam from root and subpath only", () => {
     const publicSubpath =
       "./provider-migration-same-installation-identity-current-strong-source-normal-pre-side-effect-plan-admission-closure-reference-candidate";

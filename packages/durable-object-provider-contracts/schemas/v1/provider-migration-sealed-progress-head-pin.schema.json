@@ -1,0 +1,71 @@
+{
+  "$id": "urn:understand-code:provider-contract:schema:v1:provider-migration-sealed-progress-head-pin",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "locatorProfile": {
+      "type": "string",
+      "const": "installation_provider_migration_progress_head_v1"
+    },
+    "migrationId": {
+      "type": "string",
+      "pattern": "^provider-migration:[0-9a-f]{22}$"
+    },
+    "versionOrdinal": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "headContentDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "currentVersionToken": {
+      "type": "string",
+      "pattern": "^hmac-sha256:[0-9a-f]{64}$"
+    },
+    "readyToActivateRecord": {
+      "type": "object",
+      "properties": {
+        "locatorProfile": {
+          "type": "string",
+          "const": "installation_provider_migration_progress_record_v1"
+        },
+        "migrationId": {
+          "type": "string",
+          "pattern": "^provider-migration:[0-9a-f]{22}$"
+        },
+        "recordOrdinal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "recordId": {
+          "type": "string",
+          "pattern": "^provider-migration-progress:[0-9a-f]{22}$"
+        },
+        "contentDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "locatorProfile",
+        "migrationId",
+        "recordOrdinal",
+        "recordId",
+        "contentDigest"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "locatorProfile",
+    "migrationId",
+    "versionOrdinal",
+    "headContentDigest",
+    "currentVersionToken",
+    "readyToActivateRecord"
+  ],
+  "additionalProperties": false
+}

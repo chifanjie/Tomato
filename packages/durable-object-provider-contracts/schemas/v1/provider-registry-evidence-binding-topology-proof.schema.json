@@ -10443,7 +10443,7 @@
     },
     "aggregateSemanticDigest": {
       "type": "string",
-      "const": "sha256:b879cd212b0241075c26d3ca15d3cc111f9f38fae1d018faaeb7e417db61578c"
+      "const": "sha256:077835291fbfb208ebea48d14dfebe210ddefe5964e5012290354e54408f0cf5"
     }
   },
   "required": [

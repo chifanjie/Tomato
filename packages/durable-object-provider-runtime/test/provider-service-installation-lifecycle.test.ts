@@ -4,16 +4,17 @@ import {
   chmod,
   chown,
   link,
+  mkdir,
   mkdtemp,
   readFile,
   realpath,
   rm,
+  rename,
   stat,
   symlink,
   unlink,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
 import {
@@ -121,6 +122,8 @@ function platformV1(): ProviderServicePlatformV1 {
 
 async function fixtureV1(options?: {
   readonly failActivate?: boolean;
+  readonly separateAuthorityArtifactParents?: boolean;
+  readonly separateRuntimeParent?: boolean;
   readonly controlService?: (
     action: ProviderServiceInstallationControlActionInternalV1,
   ) => void | Promise<void>;
@@ -128,7 +131,10 @@ async function fixtureV1(options?: {
     phase: ProviderServiceInstallationDurablePhaseInternalV1,
   ) => void | Promise<void>;
 }): Promise<LifecycleFixtureV1> {
-  const createdRoot = await mkdtemp(join(tmpdir(), "uc-provider-lifecycle-"));
+  const createdRoot = await mkdtemp(join(
+    process.cwd(),
+    ".uc-provider-lifecycle-",
+  ));
   roots.add(createdRoot);
   const root = await realpath(createdRoot);
   await chmod(root, 0o700);
@@ -137,10 +143,26 @@ async function fixtureV1(options?: {
   const principalUid = authorityUid > 0 ? authorityUid : 501;
   const principalGid = authorityGid > 0 ? authorityGid : principalUid;
   const installationRoot = join(root, "authority");
-  const runtimeRoot = join(root, "runtime");
-  const configPath = join(root, "provider-config.json");
+  const runtimeParent = options?.separateRuntimeParent === true
+    ? join(root, "runtime-parent")
+    : root;
+  if (options?.separateRuntimeParent === true) {
+    await mkdir(runtimeParent, { mode: 0o700 });
+  }
+  const runtimeRoot = join(runtimeParent, "runtime");
+  const configParent = options?.separateAuthorityArtifactParents === true
+    ? join(root, "config-parent")
+    : root;
+  const descriptorParent = options?.separateAuthorityArtifactParents === true
+    ? join(root, "descriptor-parent")
+    : root;
+  if (options?.separateAuthorityArtifactParents === true) {
+    await mkdir(configParent, { mode: 0o700 });
+    await mkdir(descriptorParent, { mode: 0o700 });
+  }
+  const configPath = join(configParent, "provider-config.json");
   const descriptorPath = join(
-    root,
+    descriptorParent,
     platformV1() === "darwin" ? "provider.plist" : "provider.service",
   );
   const identityPath = join(runtimeRoot, "installation-identity.key");
@@ -540,6 +562,137 @@ describe("provider service owned-manifest lifecycle", () => {
     }
   });
 
+  it("refuses a same-uid runtime-root swap at files-pending install custody", async () => {
+    let swapPending = true;
+    let fixture!: LifecycleFixtureV1;
+    const movedRoot = "runtime-install-files-pending-pinned";
+    const foreignBytes = Buffer.from("foreign-install-files-pending");
+    fixture = await fixtureV1({
+      async afterDurablePhase(phase) {
+        if (
+          phase !== "install_runtime_root_custody_acquired" ||
+          !swapPending
+        ) return;
+        swapPending = false;
+        await rename(fixture.runtimeRoot, join(fixture.root, movedRoot));
+        await mkdir(fixture.runtimeRoot, { mode: 0o700 });
+        await writeFile(fixture.authPath, foreignBytes, { mode: 0o600 });
+        await writeFile(fixture.readinessPath, foreignBytes, { mode: 0o600 });
+      },
+    });
+
+    await expect(installFixtureV1(fixture)).resolves.toMatchObject({
+      status: "recovery_required",
+      reason: "install_cleanup_pending",
+    });
+    await expect(readFile(fixture.authPath)).resolves.toEqual(foreignBytes);
+    await expect(readFile(fixture.readinessPath)).resolves.toEqual(foreignBytes);
+    await expect(access(join(fixture.root, movedRoot))).resolves.toBeUndefined();
+    await expectMissingV1(fixture.configPath);
+    await expectMissingV1(fixture.descriptorPath);
+    await expect(access(join(
+      fixture.installationRoot,
+      PROVIDER_SERVICE_INSTALLATION_CONTROL_JOURNAL_FILE_V1,
+    ))).resolves.toBeUndefined();
+  });
+
+  it("refuses a same-uid runtime-root swap during lost-activate compensation", async () => {
+    let failFirstActivation = true;
+    let custodyCount = 0;
+    let fixture!: LifecycleFixtureV1;
+    const movedRoot = "runtime-install-compensation-pinned";
+    const foreignBytes = Buffer.from("foreign-install-compensation");
+    fixture = await fixtureV1({
+      controlService(action) {
+        if (action === "activate" && failFirstActivation) {
+          failFirstActivation = false;
+          throw new Error("simulated lost activation");
+        }
+      },
+      async afterDurablePhase(phase) {
+        if (phase !== "install_runtime_root_custody_acquired") return;
+        custodyCount += 1;
+        if (custodyCount !== 2) return;
+        await rename(fixture.runtimeRoot, join(fixture.root, movedRoot));
+        await mkdir(fixture.runtimeRoot, { mode: 0o700 });
+        await writeFile(fixture.authPath, foreignBytes, { mode: 0o600 });
+        await writeFile(fixture.readinessPath, foreignBytes, { mode: 0o600 });
+      },
+    });
+
+    await expect(installFixtureV1(fixture)).resolves.toMatchObject({
+      status: "recovery_required",
+      reason: "install_cleanup_pending",
+    });
+    expect(custodyCount).toBe(2);
+    await expect(readFile(fixture.authPath)).resolves.toEqual(foreignBytes);
+    await expect(readFile(fixture.readinessPath)).resolves.toEqual(foreignBytes);
+    await expect(access(join(
+      fixture.root,
+      movedRoot,
+      basename(fixture.authPath),
+    ))).resolves.toBeUndefined();
+    await expect(access(fixture.configPath)).resolves.toBeUndefined();
+    await expect(access(fixture.descriptorPath)).resolves.toBeUndefined();
+    await expect(access(join(
+      fixture.installationRoot,
+      PROVIDER_SERVICE_INSTALLATION_CONTROL_JOURNAL_FILE_V1,
+    ))).resolves.toBeUndefined();
+  });
+
+  it("converges fresh install cleanup cuts after root and marker removal", async () => {
+    for (const cut of [
+      "install_runtime_root_removed",
+      "install_runtime_root_marker_removed",
+    ] as const) {
+      let failFirstActivation = true;
+      let cutPending = true;
+      const fixture = await fixtureV1({
+        controlService(action) {
+          if (action === "activate" && failFirstActivation) {
+            failFirstActivation = false;
+            throw new Error("simulated initial activation failure");
+          }
+        },
+        afterDurablePhase(phase) {
+          if (phase === cut && cutPending) {
+            cutPending = false;
+            throw new Error(`simulated ${cut} process cut`);
+          }
+        },
+      });
+      const markerPath = join(
+        dirname(fixture.runtimeRoot),
+        `.${basename(fixture.runtimeRoot)}.provider-service-runtime-root-creation-v1`,
+      );
+      const journalPath = join(
+        fixture.installationRoot,
+        PROVIDER_SERVICE_INSTALLATION_CONTROL_JOURNAL_FILE_V1,
+      );
+
+      await expect(installFixtureV1(fixture)).resolves.toMatchObject({
+        status: "recovery_required",
+        reason: "install_cleanup_pending",
+      });
+      await expectMissingV1(fixture.runtimeRoot);
+      await expect(access(journalPath)).resolves.toBeUndefined();
+      if (cut === "install_runtime_root_removed") {
+        await expect(access(markerPath)).resolves.toBeUndefined();
+      } else {
+        await expectMissingV1(markerPath);
+      }
+      await expect(installFixtureV1(fixture)).resolves.toMatchObject({
+        status: "refused",
+        reason: "service_control_failed",
+      });
+      await expectMissingV1(journalPath);
+      await expectMissingV1(markerPath);
+      await expect(installFixtureV1(fixture)).resolves.toMatchObject({
+        status: "installed",
+      });
+    }
+  });
+
   it("converges exact atomic publish cuts and refuses independent same-byte inodes", async () => {
     for (const cut of ["stage_only", "published_pair", "incomplete"] as const) {
       let cutPending = true;
@@ -718,6 +871,71 @@ describe("provider service owned-manifest lifecycle", () => {
     await expect(installFixtureV1(fixture)).resolves.toMatchObject({
       status: "installed",
     });
+  });
+
+  it("converges a retained Identity publish pair only after install custody", async () => {
+    const fixture = await fixtureV1();
+    await installFixtureV1(fixture);
+    const identityBefore = await readFile(fixture.identityPath);
+    const identityInodeBefore = (await stat(fixture.identityPath)).ino;
+    await uninstallProviderServiceInstallationWithPrivilegeInternalV1(
+      fixture.capability,
+      {
+        installationRoot: fixture.installationRoot,
+        expectedRuntimeRoot: fixture.runtimeRoot,
+      },
+    );
+    const identityStage = atomicPublishStagingPathV1(fixture.identityPath);
+    await link(fixture.identityPath, identityStage);
+
+    await expect(installFixtureV1(fixture)).resolves.toMatchObject({
+      status: "installed",
+    });
+    await expectMissingV1(identityStage);
+    await expect(readFile(fixture.identityPath)).resolves.toEqual(identityBefore);
+    expect((await stat(fixture.identityPath)).ino).toBe(identityInodeBefore);
+  });
+
+  it("keeps retained Identity and foreign paths on a pre-custody root swap", async () => {
+    let swapPending = false;
+    let fixture!: LifecycleFixtureV1;
+    const movedRoot = "runtime-retained-identity-pinned";
+    const foreignIdentity = Buffer.alloc(32, 0xa5);
+    const foreignAuth = Buffer.from("foreign-pre-custody-auth");
+    fixture = await fixtureV1({
+      async afterDurablePhase(phase) {
+        if (phase !== "install_journal_published" || !swapPending) return;
+        swapPending = false;
+        await rename(fixture.runtimeRoot, join(fixture.root, movedRoot));
+        await mkdir(fixture.runtimeRoot, { mode: 0o700 });
+        await writeFile(fixture.identityPath, foreignIdentity, { mode: 0o600 });
+        await writeFile(fixture.authPath, foreignAuth, { mode: 0o600 });
+      },
+    });
+    await installFixtureV1(fixture);
+    const identityBefore = await readFile(fixture.identityPath);
+    await uninstallProviderServiceInstallationWithPrivilegeInternalV1(
+      fixture.capability,
+      {
+        installationRoot: fixture.installationRoot,
+        expectedRuntimeRoot: fixture.runtimeRoot,
+      },
+    );
+    const identityStage = atomicPublishStagingPathV1(fixture.identityPath);
+    await link(fixture.identityPath, identityStage);
+    swapPending = true;
+
+    await expect(installFixtureV1(fixture)).resolves.toMatchObject({
+      status: "recovery_required",
+      reason: "install_cleanup_pending",
+    });
+    await expect(readFile(fixture.identityPath)).resolves.toEqual(foreignIdentity);
+    await expect(readFile(fixture.authPath)).resolves.toEqual(foreignAuth);
+    const movedIdentity = join(fixture.root, movedRoot, basename(fixture.identityPath));
+    const movedStage = atomicPublishStagingPathV1(movedIdentity);
+    await expect(readFile(movedIdentity)).resolves.toEqual(identityBefore);
+    await expect(readFile(movedStage)).resolves.toEqual(identityBefore);
+    expect((await stat(movedIdentity)).ino).toBe((await stat(movedStage)).ino);
   });
 
   it("recovers an install when activation may have succeeded but its reply is lost", async () => {
@@ -931,6 +1149,474 @@ describe("provider service owned-manifest lifecycle", () => {
     expect(await readFile(fixture.signingPath)).toEqual(signingBefore);
     expect(await readFile(fixture.identityPath)).toEqual(identityBefore);
     expect(await readFile(durablePath, "utf8")).toBe("survives recovery");
+  });
+
+  it("converges snapshot-pinned rollback config and manifest stages", async () => {
+    for (const cut of [
+      "config_stage_only",
+      "config_metadata_cut",
+      "manifest_published_pair",
+    ] as const) {
+      const fixture = await fixtureV1();
+      await installFixtureV1(fixture);
+      await upgradeProviderServiceInstallationWithPrivilegeInternalV1(
+        fixture.capability,
+        {
+          installationRoot: fixture.installationRoot,
+          expectedRuntimeRoot: fixture.runtimeRoot,
+          config: fixture.configV2,
+        },
+      );
+      const rollbackPath = join(
+        fixture.installationRoot,
+        PROVIDER_SERVICE_INSTALLATION_ROLLBACK_FILE_V1,
+      );
+      const rollback = JSON.parse(await readFile(rollbackPath, "utf8")) as {
+        readonly payload: {
+          readonly files: readonly [
+            { readonly bytes: `base64url:${string}` },
+            { readonly bytes: `base64url:${string}` },
+          ];
+          readonly fromManifest: unknown;
+        };
+      };
+      const configBytes = Buffer.from(
+        rollback.payload.files[0].bytes.slice("base64url:".length),
+        "base64url",
+      );
+      const descriptorBytes = Buffer.from(
+        rollback.payload.files[1].bytes.slice("base64url:".length),
+        "base64url",
+      );
+      const manifestPath = join(
+        fixture.installationRoot,
+        PROVIDER_SERVICE_INSTALLATION_MANIFEST_FILE_V1,
+      );
+      const manifestBytes = Buffer.from(
+        `${canonicalizeJcsSafeIntegerV1(rollback.payload.fromManifest)}\n`,
+      );
+      let stagingPath: string;
+      if (cut === "config_stage_only" || cut === "config_metadata_cut") {
+        stagingPath = atomicPublishStagingPathV1(fixture.configPath);
+        await writeFile(stagingPath, configBytes, {
+          mode: cut === "config_metadata_cut" ? 0o400 : 0o644,
+        });
+      } else {
+        await writeFile(fixture.configPath, configBytes, { mode: 0o644 });
+        await writeFile(fixture.descriptorPath, descriptorBytes, { mode: 0o644 });
+        await writeFile(manifestPath, manifestBytes, { mode: 0o600 });
+        stagingPath = atomicPublishStagingPathV1(manifestPath);
+        await link(manifestPath, stagingPath);
+      }
+
+      const result = await rollbackProviderServiceInstallationWithPrivilegeInternalV1(
+        fixture.capability,
+        {
+          installationRoot: fixture.installationRoot,
+          expectedRuntimeRoot: fixture.runtimeRoot,
+        },
+      );
+      expect(result, `${cut}: ${JSON.stringify(result)}`).toMatchObject({
+        status: "rolled_back",
+      });
+      await expectMissingV1(stagingPath);
+    }
+  });
+
+  it("converges pinned rollback publication cuts and retries stage-first deletion", async () => {
+    for (const cut of ["stage_only", "published_pair", "metadata_cut"] as const) {
+      const fixture = await fixtureV1();
+      await installFixtureV1(fixture);
+      await upgradeProviderServiceInstallationWithPrivilegeInternalV1(
+        fixture.capability,
+        {
+          installationRoot: fixture.installationRoot,
+          expectedRuntimeRoot: fixture.runtimeRoot,
+          config: fixture.configV2,
+        },
+      );
+      const rollbackPath = join(
+        fixture.installationRoot,
+        PROVIDER_SERVICE_INSTALLATION_ROLLBACK_FILE_V1,
+      );
+      const stagingPath = atomicPublishStagingPathV1(rollbackPath);
+      const bytes = await readFile(rollbackPath);
+      if (cut === "published_pair") {
+        await link(rollbackPath, stagingPath);
+      } else {
+        await unlink(rollbackPath);
+        await writeFile(stagingPath, bytes, {
+          mode: cut === "metadata_cut" ? 0o400 : 0o600,
+        });
+      }
+      await expect(
+        rollbackProviderServiceInstallationWithPrivilegeInternalV1(
+          fixture.capability,
+          {
+            installationRoot: fixture.installationRoot,
+            expectedRuntimeRoot: fixture.runtimeRoot,
+          },
+        ),
+      ).resolves.toMatchObject({ status: "rolled_back" });
+      await expectMissingV1(rollbackPath);
+      await expectMissingV1(stagingPath);
+    }
+
+    let armRemovalPair = false;
+    let cutAfterStageRemoval = true;
+    let deletionFixture!: LifecycleFixtureV1;
+    deletionFixture = await fixtureV1({
+      async controlService(action) {
+        if (action === "restart" && armRemovalPair) {
+          armRemovalPair = false;
+          const rollbackPath = join(
+            deletionFixture.installationRoot,
+            PROVIDER_SERVICE_INSTALLATION_ROLLBACK_FILE_V1,
+          );
+          await link(rollbackPath, atomicPublishStagingPathV1(rollbackPath));
+        }
+      },
+      afterDurablePhase(phase) {
+        if (phase === "rollback_publish_stage_removed" && cutAfterStageRemoval) {
+          cutAfterStageRemoval = false;
+          throw new Error("simulated cut after rollback stage removal");
+        }
+      },
+    });
+    await installFixtureV1(deletionFixture);
+    await upgradeProviderServiceInstallationWithPrivilegeInternalV1(
+      deletionFixture.capability,
+      {
+        installationRoot: deletionFixture.installationRoot,
+        expectedRuntimeRoot: deletionFixture.runtimeRoot,
+        config: deletionFixture.configV2,
+      },
+    );
+    armRemovalPair = true;
+    await expect(
+      rollbackProviderServiceInstallationWithPrivilegeInternalV1(
+        deletionFixture.capability,
+        {
+          installationRoot: deletionFixture.installationRoot,
+          expectedRuntimeRoot: deletionFixture.runtimeRoot,
+        },
+      ),
+    ).resolves.toMatchObject({ status: "partial" });
+    const deletionRollbackPath = join(
+      deletionFixture.installationRoot,
+      PROVIDER_SERVICE_INSTALLATION_ROLLBACK_FILE_V1,
+    );
+    await expect(access(deletionRollbackPath)).resolves.toBeUndefined();
+    expect((await stat(deletionRollbackPath)).nlink).toBe(1);
+    await expectMissingV1(atomicPublishStagingPathV1(deletionRollbackPath));
+    await expect(
+      rollbackProviderServiceInstallationWithPrivilegeInternalV1(
+        deletionFixture.capability,
+        {
+          installationRoot: deletionFixture.installationRoot,
+          expectedRuntimeRoot: deletionFixture.runtimeRoot,
+        },
+      ),
+    ).resolves.toMatchObject({ status: "rolled_back" });
+
+    const uninstallFixture = await fixtureV1();
+    await installFixtureV1(uninstallFixture);
+    await upgradeProviderServiceInstallationWithPrivilegeInternalV1(
+      uninstallFixture.capability,
+      {
+        installationRoot: uninstallFixture.installationRoot,
+        expectedRuntimeRoot: uninstallFixture.runtimeRoot,
+        config: uninstallFixture.configV2,
+      },
+    );
+    const uninstallRollbackPath = join(
+      uninstallFixture.installationRoot,
+      PROVIDER_SERVICE_INSTALLATION_ROLLBACK_FILE_V1,
+    );
+    const uninstallStage = atomicPublishStagingPathV1(uninstallRollbackPath);
+    const uninstallRollbackBytes = await readFile(uninstallRollbackPath);
+    await unlink(uninstallRollbackPath);
+    await writeFile(uninstallStage, uninstallRollbackBytes, { mode: 0o600 });
+    await expect(
+      uninstallProviderServiceInstallationWithPrivilegeInternalV1(
+        uninstallFixture.capability,
+        {
+          installationRoot: uninstallFixture.installationRoot,
+          expectedRuntimeRoot: uninstallFixture.runtimeRoot,
+        },
+      ),
+    ).resolves.toMatchObject({ status: "removed_with_retained_state" });
+    await expectMissingV1(uninstallStage);
+  });
+
+  it("refuses foreign canonical baselines beside valid pinned stages", async () => {
+    const rollbackFixture = await fixtureV1();
+    await installFixtureV1(rollbackFixture);
+    await upgradeProviderServiceInstallationWithPrivilegeInternalV1(
+      rollbackFixture.capability,
+      {
+        installationRoot: rollbackFixture.installationRoot,
+        expectedRuntimeRoot: rollbackFixture.runtimeRoot,
+        config: rollbackFixture.configV2,
+      },
+    );
+    const rollbackPath = join(
+      rollbackFixture.installationRoot,
+      PROVIDER_SERVICE_INSTALLATION_ROLLBACK_FILE_V1,
+    );
+    const rollback = JSON.parse(await readFile(rollbackPath, "utf8")) as {
+      readonly payload: {
+        readonly files: readonly [{ readonly bytes: `base64url:${string}` }];
+      };
+    };
+    const expectedConfig = Buffer.from(
+      rollback.payload.files[0].bytes.slice("base64url:".length),
+      "base64url",
+    );
+    const configStage = atomicPublishStagingPathV1(rollbackFixture.configPath);
+    const foreignConfig = Buffer.from("foreign-but-correctly-shaped-owner-mode\n");
+    await writeFile(configStage, expectedConfig, { mode: 0o644 });
+    await writeFile(rollbackFixture.configPath, foreignConfig, { mode: 0o644 });
+    await expect(
+      rollbackProviderServiceInstallationWithPrivilegeInternalV1(
+        rollbackFixture.capability,
+        {
+          installationRoot: rollbackFixture.installationRoot,
+          expectedRuntimeRoot: rollbackFixture.runtimeRoot,
+        },
+      ),
+    ).resolves.toMatchObject({
+      status: "refused",
+      reason: "rollback_snapshot_invalid",
+    });
+    await expect(readFile(rollbackFixture.configPath)).resolves.toEqual(foreignConfig);
+    await expect(readFile(configStage)).resolves.toEqual(expectedConfig);
+
+    const foreignFixture = await fixtureV1();
+    await installFixtureV1(foreignFixture);
+    await upgradeProviderServiceInstallationWithPrivilegeInternalV1(
+      foreignFixture.capability,
+      {
+        installationRoot: foreignFixture.installationRoot,
+        expectedRuntimeRoot: foreignFixture.runtimeRoot,
+        config: foreignFixture.configV2,
+      },
+    );
+    const foreignRollback = await readFile(join(
+      foreignFixture.installationRoot,
+      PROVIDER_SERVICE_INSTALLATION_ROLLBACK_FILE_V1,
+    ));
+    let injectForeignBaseline = true;
+    let upgradeFixture!: LifecycleFixtureV1;
+    upgradeFixture = await fixtureV1({
+      async afterDurablePhase(phase) {
+        if (phase !== "upgrade_snapshot_published" || !injectForeignBaseline) return;
+        injectForeignBaseline = false;
+        const path = join(
+          upgradeFixture.installationRoot,
+          PROVIDER_SERVICE_INSTALLATION_ROLLBACK_FILE_V1,
+        );
+        const expected = await readFile(path);
+        await unlink(path);
+        await writeFile(path, foreignRollback, { mode: 0o600 });
+        await writeFile(atomicPublishStagingPathV1(path), expected, { mode: 0o600 });
+        throw new Error("simulated foreign rollback canonical at journal cut");
+      },
+    });
+    await installFixtureV1(upgradeFixture);
+    await expect(
+      upgradeProviderServiceInstallationWithPrivilegeInternalV1(
+        upgradeFixture.capability,
+        {
+          installationRoot: upgradeFixture.installationRoot,
+          expectedRuntimeRoot: upgradeFixture.runtimeRoot,
+          config: upgradeFixture.configV2,
+        },
+      ),
+    ).resolves.toMatchObject({ status: "recovery_required" });
+    const upgradeRollbackPath = join(
+      upgradeFixture.installationRoot,
+      PROVIDER_SERVICE_INSTALLATION_ROLLBACK_FILE_V1,
+    );
+    const upgradeStage = atomicPublishStagingPathV1(upgradeRollbackPath);
+    const expectedStage = await readFile(upgradeStage);
+    await expect(
+      upgradeProviderServiceInstallationWithPrivilegeInternalV1(
+        upgradeFixture.capability,
+        {
+          installationRoot: upgradeFixture.installationRoot,
+          expectedRuntimeRoot: upgradeFixture.runtimeRoot,
+          config: upgradeFixture.configV2,
+        },
+      ),
+    ).resolves.toMatchObject({ status: "recovery_required" });
+    await expect(readFile(upgradeRollbackPath)).resolves.toEqual(foreignRollback);
+    await expect(readFile(upgradeStage)).resolves.toEqual(expectedStage);
+  });
+
+  it("pins runtime-root custody across same-uid swaps without deleting foreign paths", async () => {
+    for (const boundary of ["before_custody", "after_custody"] as const) {
+      let swapPending = true;
+      let fixture!: LifecycleFixtureV1;
+      const movedRootName = `runtime-pinned-${boundary}`;
+      const foreignBytes = Buffer.from(`foreign-${boundary}`);
+      const swapRuntimeRoot = async (): Promise<void> => {
+        if (!swapPending) return;
+        swapPending = false;
+        await rename(fixture.runtimeRoot, join(fixture.root, movedRootName));
+        await mkdir(fixture.runtimeRoot, { mode: 0o700 });
+        await writeFile(fixture.authPath, foreignBytes, { mode: 0o600 });
+        await writeFile(fixture.readinessPath, foreignBytes, { mode: 0o600 });
+      };
+      fixture = await fixtureV1({
+        async controlService(action) {
+          if (boundary === "before_custody" && action === "deactivate") {
+            await swapRuntimeRoot();
+          }
+        },
+        async afterDurablePhase(phase) {
+          if (
+            boundary === "after_custody" &&
+            phase === "uninstall_runtime_root_custody_acquired"
+          ) {
+            await swapRuntimeRoot();
+          }
+        },
+      });
+      await installFixtureV1(fixture);
+      const originalAuth = await readFile(fixture.authPath);
+      await writeFile(fixture.readinessPath, "original-readiness", {
+        mode: 0o600,
+      });
+
+      await expect(
+        uninstallProviderServiceInstallationWithPrivilegeInternalV1(
+          fixture.capability,
+          {
+            installationRoot: fixture.installationRoot,
+            expectedRuntimeRoot: fixture.runtimeRoot,
+          },
+        ),
+      ).resolves.toMatchObject({
+        status: "recovery_required",
+        reason: "uninstall_cleanup_pending",
+        removedPaths: [],
+      });
+      await expect(readFile(fixture.authPath)).resolves.toEqual(foreignBytes);
+      await expect(readFile(fixture.readinessPath)).resolves.toEqual(foreignBytes);
+      await expect(readFile(join(
+        fixture.root,
+        movedRootName,
+        basename(fixture.authPath),
+      ))).resolves.toEqual(originalAuth);
+      await expect(access(fixture.configPath)).resolves.toBeUndefined();
+      await expect(access(join(
+        fixture.installationRoot,
+        PROVIDER_SERVICE_INSTALLATION_CONTROL_JOURNAL_FILE_V1,
+      ))).resolves.toBeUndefined();
+    }
+  });
+
+  it("fails closed when the runtime root direct parent becomes writable", async () => {
+    const fixture = await fixtureV1({ separateRuntimeParent: true });
+    await installFixtureV1(fixture);
+    const authBefore = await readFile(fixture.authPath);
+    await chmod(dirname(fixture.runtimeRoot), 0o777);
+    await expect(
+      doctorProviderServiceInstallationWithPrivilegeInternalV1(
+        fixture.capability,
+        {
+          installationRoot: fixture.installationRoot,
+          expectedRuntimeRoot: fixture.runtimeRoot,
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, status: "tampered" });
+    await expect(
+      uninstallProviderServiceInstallationWithPrivilegeInternalV1(
+        fixture.capability,
+        {
+          installationRoot: fixture.installationRoot,
+          expectedRuntimeRoot: fixture.runtimeRoot,
+        },
+      ),
+    ).resolves.toMatchObject({ status: "refused" });
+    await expect(readFile(fixture.authPath)).resolves.toEqual(authBefore);
+    await expect(access(fixture.configPath)).resolves.toBeUndefined();
+  });
+
+  it("rejects pre-existing installation roots beneath unsafe authority ancestry", async () => {
+    const directFixture = await fixtureV1();
+    await mkdir(directFixture.installationRoot, { mode: 0o700 });
+    await chmod(directFixture.root, 0o777);
+    await expect(installFixtureV1(directFixture)).rejects.toMatchObject({
+      code: "invalid_target",
+    });
+    await expect(
+      doctorProviderServiceInstallationWithPrivilegeInternalV1(
+        directFixture.capability,
+        {
+          installationRoot: directFixture.installationRoot,
+          expectedRuntimeRoot: directFixture.runtimeRoot,
+        },
+      ),
+    ).rejects.toMatchObject({ code: "invalid_target" });
+
+    const ancestorFixture = await fixtureV1();
+    const unsafeGrandparent = join(ancestorFixture.root, "unsafe-grandparent");
+    const safeParent = join(unsafeGrandparent, "safe-parent");
+    const nestedInstallationRoot = join(safeParent, "authority");
+    await mkdir(unsafeGrandparent, { mode: 0o700 });
+    await mkdir(safeParent, { mode: 0o700 });
+    await mkdir(nestedInstallationRoot, { mode: 0o700 });
+    await chmod(unsafeGrandparent, 0o777);
+    await expect(
+      installProviderServiceInstallationWithPrivilegeInternalV1(
+        ancestorFixture.capability,
+        {
+          installationRoot: nestedInstallationRoot,
+          expectedRuntimeRoot: ancestorFixture.runtimeRoot,
+          config: ancestorFixture.configV1,
+          privateKey: ancestorFixture.privateKey,
+          installationIdentityKey: INSTALLATION_IDENTITY_KEY,
+          descriptorPath: ancestorFixture.descriptorPath,
+        },
+      ),
+    ).rejects.toMatchObject({ code: "invalid_target" });
+  });
+
+  it("refuses authority artifacts after their direct parent becomes unsafe", async () => {
+    const fixture = await fixtureV1({
+      separateAuthorityArtifactParents: true,
+    });
+    await installFixtureV1(fixture);
+    const configBefore = await readFile(fixture.configPath);
+    const authBefore = await readFile(fixture.authPath);
+    await chmod(dirname(fixture.configPath), 0o777);
+
+    await expect(
+      doctorProviderServiceInstallationWithPrivilegeInternalV1(
+        fixture.capability,
+        {
+          installationRoot: fixture.installationRoot,
+          expectedRuntimeRoot: fixture.runtimeRoot,
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, status: "tampered" });
+    await expect(
+      uninstallProviderServiceInstallationWithPrivilegeInternalV1(
+        fixture.capability,
+        {
+          installationRoot: fixture.installationRoot,
+          expectedRuntimeRoot: fixture.runtimeRoot,
+        },
+      ),
+    ).resolves.toMatchObject({ status: "refused" });
+    await expect(readFile(fixture.configPath)).resolves.toEqual(configBefore);
+    await expect(readFile(fixture.authPath)).resolves.toEqual(authBefore);
+    await expectMissingV1(join(
+      fixture.installationRoot,
+      PROVIDER_SERVICE_INSTALLATION_CONTROL_JOURNAL_FILE_V1,
+    ));
   });
 
   it("reports a live lifecycle lock as busy while another operation owns it", async () => {
@@ -1201,6 +1887,12 @@ describe("provider service owned-manifest lifecycle", () => {
       reason: "uninstall_cleanup_pending",
       removedPaths: [fixture.configPath],
     });
+    // Model the historical canonical-first deletion cut: only the exact
+    // journal-pinned deterministic stage survives into uninstall replay.
+    await unlink(join(
+      fixture.installationRoot,
+      PROVIDER_SERVICE_INSTALLATION_ROLLBACK_FILE_V1,
+    ));
     await expect(
       doctorProviderServiceInstallationWithPrivilegeInternalV1(
         fixture.capability,

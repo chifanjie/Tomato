@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, open, rm } from "node:fs/promises";
 import { createServer, connect, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,7 +11,10 @@ import {
   verifyProviderRuntimeKernelPeerCredentialsV1,
   type ProviderRuntimeKernelPeerCredentialReaderV1,
 } from "../src/kernel-peer-credentials.js";
-import { readProviderRuntimeNativeKernelPeerCredentialsV1 } from "../src/native-kernel-peer.js";
+import {
+  assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1,
+  readProviderRuntimeNativeKernelPeerCredentialsV1,
+} from "../src/native-kernel-peer.js";
 
 interface UnixSocketPairV1 {
   readonly accepted: Socket;
@@ -131,5 +134,160 @@ describe.runIf(process.platform === "darwin" || process.platform === "linux")(
         }),
       );
     });
+
+    it("admits only the exact opened directory or regular-file kind without extended access control", async () => {
+      const directory = await mkdtemp(join(tmpdir(), "uc-native-fd-acl-"));
+      const filePath = join(directory, "control.json");
+      const directoryHandle = await open(directory, "r");
+      const fileHandle = await open(filePath, "w+");
+      let fileHandleOpen = true;
+
+      try {
+        expect(() =>
+          assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(
+            directoryHandle.fd,
+            { expectedKind: "directory" },
+          ),
+        ).not.toThrow();
+        expect(() =>
+          assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(
+            fileHandle.fd,
+            { expectedKind: "regular-file" },
+          ),
+        ).not.toThrow();
+
+        for (const [fileDescriptor, expectedKind] of [
+          [directoryHandle.fd, "regular-file"],
+          [fileHandle.fd, "directory"],
+        ] as const) {
+          expect(() =>
+            assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(
+              fileDescriptor,
+              { expectedKind },
+            ),
+          ).toThrowError(
+            expect.objectContaining({
+              code: "ERR_PROVIDER_RUNTIME_NATIVE_FD_ACCESS_CONTROL_UNAVAILABLE",
+            }),
+          );
+        }
+
+        const closedFileDescriptor = fileHandle.fd;
+        await fileHandle.close();
+        fileHandleOpen = false;
+        expect(() =>
+          assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(
+            closedFileDescriptor,
+            { expectedKind: "regular-file" },
+          ),
+        ).toThrowError(
+          expect.objectContaining({
+            code: "ERR_PROVIDER_RUNTIME_NATIVE_FD_ACCESS_CONTROL_UNAVAILABLE",
+          }),
+        );
+
+        for (const invalidFileDescriptor of [
+          -1,
+          0.5,
+          Number.NaN,
+          Number.POSITIVE_INFINITY,
+          0x8000_0000,
+        ]) {
+          expect(() =>
+            assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(
+              invalidFileDescriptor,
+              { expectedKind: "regular-file" },
+            ),
+          ).toThrowError(
+            expect.objectContaining({
+              code: "ERR_PROVIDER_RUNTIME_NATIVE_FD_ACCESS_CONTROL_UNAVAILABLE",
+            }),
+          );
+        }
+      } finally {
+        if (fileHandleOpen) {
+          await fileHandle.close();
+        }
+        await directoryHandle.close();
+        await rm(directory, { force: true, recursive: true });
+      }
+    });
+
+    it.runIf(process.platform === "darwin")(
+      "admits a deny-only ACL but rejects an allow ACL and immutable flag",
+      async () => {
+        const directory = await mkdtemp(join(tmpdir(), "uc-native-fd-acl-"));
+        const filePath = join(directory, "control.json");
+        const directoryHandle = await open(directory, "r");
+        const fileHandle = await open(filePath, "w+");
+
+        try {
+          execFileSync("/bin/chmod", [
+            "+a",
+            "everyone deny delete",
+            directory,
+          ]);
+          expect(() =>
+            assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(
+              directoryHandle.fd,
+              { expectedKind: "directory" },
+            ),
+          ).not.toThrow();
+
+          execFileSync("/bin/chmod", [
+            "+a",
+            "everyone allow read,write",
+            directory,
+          ]);
+          expect(() =>
+            assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(
+              directoryHandle.fd,
+              { expectedKind: "directory" },
+            ),
+          ).toThrowError(
+            expect.objectContaining({
+              code: "ERR_PROVIDER_RUNTIME_NATIVE_FD_ACCESS_CONTROL_UNAVAILABLE",
+            }),
+          );
+          execFileSync("/bin/chmod", ["-N", directory]);
+
+          execFileSync("/bin/chmod", [
+            "+a",
+            "everyone allow read,write",
+            filePath,
+          ]);
+          expect(() =>
+            assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(
+              fileHandle.fd,
+              { expectedKind: "regular-file" },
+            ),
+          ).toThrowError(
+            expect.objectContaining({
+              code: "ERR_PROVIDER_RUNTIME_NATIVE_FD_ACCESS_CONTROL_UNAVAILABLE",
+            }),
+          );
+
+          execFileSync("/bin/chmod", ["-N", filePath]);
+          execFileSync("/usr/bin/chflags", ["uchg", filePath]);
+          expect(() =>
+            assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(
+              fileHandle.fd,
+              { expectedKind: "regular-file" },
+            ),
+          ).toThrowError(
+            expect.objectContaining({
+              code: "ERR_PROVIDER_RUNTIME_NATIVE_FD_ACCESS_CONTROL_UNAVAILABLE",
+            }),
+          );
+        } finally {
+          execFileSync("/usr/bin/chflags", ["nouchg", filePath]);
+          execFileSync("/bin/chmod", ["-N", filePath]);
+          execFileSync("/bin/chmod", ["-N", directory]);
+          await fileHandle.close();
+          await directoryHandle.close();
+          await rm(directory, { force: true, recursive: true });
+        }
+      },
+    );
   },
 );

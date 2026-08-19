@@ -15,8 +15,13 @@ export type ProviderServiceInstallationControlActionInternalV1 =
 export type ProviderServiceInstallationDurablePhaseInternalV1 =
   | "install_journal_published"
   | "install_runtime_root_marker_published"
+  | "install_runtime_root_removed"
+  | "install_runtime_root_marker_removed"
   | "upgrade_snapshot_published"
-  | "uninstall_first_artifact_removed";
+  | "uninstall_first_artifact_removed"
+  | "rollback_publish_stage_removed"
+  | "uninstall_runtime_root_custody_acquired"
+  | "install_runtime_root_custody_acquired";
 
 export interface ProviderServiceInstallationControlContextInternalV1 {
   readonly platform: ProviderServicePlatformV1;

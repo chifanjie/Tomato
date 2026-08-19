@@ -8,7 +8,15 @@ export interface ProviderRuntimeNativeKernelPeerCredentialsV1 {
   readonly pid: number;
 }
 
+export interface ProviderRuntimeNativeFdAccessControlOptionsV1 {
+  readonly expectedKind: "directory" | "regular-file";
+}
+
 interface NativeKernelPeerAddonV1 {
+  readonly assertFdHasNoExtendedAccessControl: (
+    fileDescriptor: number,
+    expectedKind: ProviderRuntimeNativeFdAccessControlOptionsV1["expectedKind"],
+  ) => unknown;
   readonly readPeerCredentials: (fileDescriptor: number) => unknown;
 }
 
@@ -44,6 +52,19 @@ function unavailableV1(): Error {
   return error;
 }
 
+function fdAccessControlUnavailableV1(): Error {
+  const error = new Error(
+    "native file-descriptor access-control admission is unavailable",
+  );
+  Object.defineProperty(error, "code", {
+    configurable: false,
+    enumerable: true,
+    value: "ERR_PROVIDER_RUNTIME_NATIVE_FD_ACCESS_CONTROL_UNAVAILABLE",
+    writable: false,
+  });
+  return error;
+}
+
 function loadNativeAddonV1(): NativeKernelPeerAddonV1 {
   if (process.platform !== "darwin" && process.platform !== "linux") {
     throw unavailableV1();
@@ -57,10 +78,15 @@ function loadNativeAddonV1(): NativeKernelPeerAddonV1 {
       const candidate = requireV1(
         nativeAddonPath,
       ) as Partial<NativeKernelPeerAddonV1>;
-      if (typeof candidate.readPeerCredentials !== "function") {
+      if (
+        typeof candidate.readPeerCredentials !== "function" ||
+        typeof candidate.assertFdHasNoExtendedAccessControl !== "function"
+      ) {
         continue;
       }
       loadedAddonV1 = Object.freeze({
+        assertFdHasNoExtendedAccessControl:
+          candidate.assertFdHasNoExtendedAccessControl,
         readPeerCredentials: candidate.readPeerCredentials,
       });
       return loadedAddonV1;
@@ -69,6 +95,37 @@ function loadNativeAddonV1(): NativeKernelPeerAddonV1 {
     }
   }
   throw unavailableV1();
+}
+
+function accessControlFileDescriptorV1(fileDescriptor: unknown): number {
+  if (
+    typeof fileDescriptor !== "number" ||
+    !Number.isSafeInteger(fileDescriptor) ||
+    fileDescriptor < 0 ||
+    fileDescriptor > 0x7fff_ffff
+  ) {
+    throw fdAccessControlUnavailableV1();
+  }
+  return fileDescriptor;
+}
+
+function accessControlExpectedKindV1(
+  options: unknown,
+): ProviderRuntimeNativeFdAccessControlOptionsV1["expectedKind"] {
+  if (typeof options !== "object" || options === null || Array.isArray(options)) {
+    throw fdAccessControlUnavailableV1();
+  }
+  const candidate = options as Record<string, unknown>;
+  const keys = Object.keys(candidate);
+  if (
+    keys.length !== 1 ||
+    keys[0] !== "expectedKind" ||
+    (candidate.expectedKind !== "directory" &&
+      candidate.expectedKind !== "regular-file")
+  ) {
+    throw fdAccessControlUnavailableV1();
+  }
+  return candidate.expectedKind;
 }
 
 function connectedSocketFileDescriptorV1(socket: Socket): number {
@@ -156,5 +213,34 @@ export function readProviderRuntimeNativeKernelPeerCredentialsV1(
     return parseCredentialsV1(addon.readPeerCredentials(fileDescriptor));
   } catch {
     throw unavailableV1();
+  }
+}
+
+/**
+ * Admits the exact inode referenced by an already-open descriptor only when
+ * the kernel can prove its expected kind, dangerous file flags are absent,
+ * and no platform extended access-control entry grants access. No pathname is
+ * accepted or resolved here; descriptor provenance and continued custody
+ * stay with the caller.
+ */
+export function assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(
+  fileDescriptor: number,
+  options: ProviderRuntimeNativeFdAccessControlOptionsV1,
+): void {
+  try {
+    const addon = loadNativeAddonV1();
+    const validatedFileDescriptor =
+      accessControlFileDescriptorV1(fileDescriptor);
+    const expectedKind = accessControlExpectedKindV1(options);
+    if (
+      addon.assertFdHasNoExtendedAccessControl(
+        validatedFileDescriptor,
+        expectedKind,
+      ) !== true
+    ) {
+      throw fdAccessControlUnavailableV1();
+    }
+  } catch {
+    throw fdAccessControlUnavailableV1();
   }
 }

@@ -44,6 +44,9 @@ import {
   type ProviderServiceInstallationPrivilegeCapabilityInternalV1,
 } from "./provider-service-installation-privilege-internal.js";
 import {
+  assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1,
+} from "./native-kernel-peer.js";
+import {
   defaultProviderServiceDescriptorPathV1,
   renderProviderServiceDescriptorV1,
   verifyProviderServiceHandoffConfigV1,
@@ -239,6 +242,10 @@ interface ProviderServiceInstallationControlJournalPayloadV1 {
   readonly installationIdentityDisposition: "create" | "reuse" | null;
   readonly createdRuntimeRoot: boolean;
   readonly runtimeRootCreationNonce: `base64url:${string}` | null;
+  readonly runtimeRootCustodyPin: Readonly<{
+    readonly dev: number;
+    readonly ino: number;
+  }> | null;
 }
 
 interface ProviderServiceInstallationControlJournalEnvelopeV1 {
@@ -424,8 +431,13 @@ interface AuthorityStateV1 {
     phase:
       | "install_journal_published"
       | "install_runtime_root_marker_published"
+      | "install_runtime_root_removed"
+      | "install_runtime_root_marker_removed"
       | "upgrade_snapshot_published"
-      | "uninstall_first_artifact_removed",
+      | "uninstall_first_artifact_removed"
+      | "rollback_publish_stage_removed"
+      | "uninstall_runtime_root_custody_acquired"
+      | "install_runtime_root_custody_acquired",
   ) => void | Promise<void>;
   readonly controlService: ReturnType<
     typeof requireProviderServiceInstallationPrivilegeInternalV1
@@ -488,7 +500,9 @@ class ProviderServiceInstallationCrashCutInternalV1 extends Error {
 async function observeCrashCutPhaseInternalV1(
   authority: AuthorityStateV1,
   phase: "install_journal_published" |
-    "install_runtime_root_marker_published",
+    "install_runtime_root_marker_published" |
+    "install_runtime_root_removed" |
+    "install_runtime_root_marker_removed",
 ): Promise<void> {
   try {
     await authority.afterDurablePhase?.(phase);
@@ -1544,24 +1558,53 @@ async function checkedDirectoryV1(
   mode: number,
   label: string,
 ): Promise<void> {
+  let handle: FileHandle | undefined;
   try {
-    const metadata = await lstat(path);
+    const before = await lstat(path);
     if (
-      metadata.isSymbolicLink() ||
-      !metadata.isDirectory() ||
-      metadata.uid !== uid ||
-      metadata.gid !== gid ||
-      exactModeV1(metadata.mode) !== mode ||
+      before.isSymbolicLink() ||
+      !before.isDirectory() ||
+      before.uid !== uid ||
+      before.gid !== gid ||
+      exactModeV1(before.mode) !== mode ||
       await realpath(path) !== path
     ) {
       throw new Error("metadata mismatch");
     }
+    handle = await open(
+      path,
+      constants.O_RDONLY |
+        (typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0) |
+        (typeof constants.O_DIRECTORY === "number" ? constants.O_DIRECTORY : 0),
+    );
+    const opened = await handle.stat();
+    assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(handle.fd, {
+      expectedKind: "directory",
+    });
+    const after = await lstat(path);
+    if (
+      !opened.isDirectory() ||
+      opened.dev !== before.dev ||
+      opened.ino !== before.ino ||
+      opened.uid !== before.uid ||
+      opened.gid !== before.gid ||
+      exactModeV1(opened.mode) !== exactModeV1(before.mode) ||
+      after.isSymbolicLink() ||
+      !after.isDirectory() ||
+      after.dev !== opened.dev ||
+      after.ino !== opened.ino ||
+      after.uid !== opened.uid ||
+      after.gid !== opened.gid ||
+      exactModeV1(after.mode) !== exactModeV1(opened.mode)
+    ) throw new Error("directory changed while checking");
   } catch (error) {
     throw new ProviderServiceInstallationLifecycleErrorV1(
       "invalid_target",
       `${label} is not the exact owned directory`,
       { cause: error },
     );
+  } finally {
+    await handle?.close().catch(() => undefined);
   }
 }
 
@@ -1576,6 +1619,11 @@ async function installationRootPresentV1(
       authority.authorityGid,
       0o700,
       "provider service installation root",
+    );
+    await checkedWritableParentV1(
+      root,
+      authority.authorityUid,
+      authority.authorityGid,
     );
     return true;
   } catch (error) {
@@ -1618,6 +1666,11 @@ async function ensureInstallationRootV1(
         0o700,
         "provider service installation root",
       );
+      await checkedWritableParentV1(
+        root,
+        authority.authorityUid,
+        authority.authorityGid,
+      );
       return false;
     }
     throw error;
@@ -1632,7 +1685,77 @@ async function ensureInstallationRootV1(
     0o700,
     "provider service installation root",
   );
+  await checkedWritableParentV1(
+    root,
+    authority.authorityUid,
+    authority.authorityGid,
+  );
   return true;
+}
+
+async function checkedAuthorityPathChainV1(
+  directoryPath: string,
+  uid: number,
+  gid: number,
+): Promise<void> {
+  if (!isAbsolute(directoryPath) || resolve(directoryPath) !== directoryPath) {
+    throw new Error("directory path is not canonical absolute syntax");
+  }
+  const components = directoryPath.split("/").filter((item) => item.length > 0);
+  const chain = [
+    "/",
+    ...components.map((_item, index) =>
+      `/${components.slice(0, index + 1).join("/")}`
+    ),
+  ];
+  for (const [index, candidate] of chain.entries()) {
+    const final = index === chain.length - 1;
+    let handle: FileHandle | undefined;
+    try {
+      const before = await lstat(candidate);
+      const ownerAllowed = final
+        ? before.uid === uid && before.gid === gid
+        : before.uid === 0 ||
+          (before.uid === uid && before.gid === gid);
+      if (
+        before.isSymbolicLink() ||
+        !before.isDirectory() ||
+        !ownerAllowed ||
+        (exactModeV1(before.mode) & 0o022) !== 0
+      ) throw new Error("unsafe authority path component");
+      handle = await open(
+        candidate,
+        constants.O_RDONLY |
+          (typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0) |
+          (typeof constants.O_DIRECTORY === "number" ? constants.O_DIRECTORY : 0),
+      );
+      const opened = await handle.stat();
+      assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(handle.fd, {
+        expectedKind: "directory",
+      });
+      const after = await lstat(candidate);
+      if (
+        !opened.isDirectory() ||
+        opened.dev !== before.dev ||
+        opened.ino !== before.ino ||
+        opened.uid !== before.uid ||
+        opened.gid !== before.gid ||
+        exactModeV1(opened.mode) !== exactModeV1(before.mode) ||
+        after.isSymbolicLink() ||
+        !after.isDirectory() ||
+        after.dev !== opened.dev ||
+        after.ino !== opened.ino ||
+        after.uid !== opened.uid ||
+        after.gid !== opened.gid ||
+        exactModeV1(after.mode) !== exactModeV1(opened.mode)
+      ) throw new Error("authority path component changed");
+    } finally {
+      await handle?.close().catch(() => undefined);
+    }
+  }
+  if (await realpath(directoryPath) !== directoryPath) {
+    throw new Error("authority path chain is not canonical");
+  }
 }
 
 async function checkedWritableParentV1(
@@ -1642,15 +1765,7 @@ async function checkedWritableParentV1(
 ): Promise<void> {
   const parent = dirname(path);
   try {
-    const metadata = await lstat(parent);
-    if (
-      metadata.isSymbolicLink() ||
-      !metadata.isDirectory() ||
-      metadata.uid !== uid ||
-      metadata.gid !== gid ||
-      (exactModeV1(metadata.mode) & 0o022) !== 0 ||
-      await realpath(parent) !== parent
-    ) throw new Error("unsafe parent");
+    await checkedAuthorityPathChainV1(parent, uid, gid);
   } catch (error) {
     throw new ProviderServiceInstallationLifecycleErrorV1(
       "invalid_target",
@@ -1700,6 +1815,9 @@ async function discardIncompleteAuthorityStageV1(input: {
         (typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0),
     );
     const opened = await handle.stat();
+    assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(handle.fd, {
+      expectedKind: "regular-file",
+    });
     if (
       !opened.isFile() ||
       opened.dev !== before.dev ||
@@ -1766,6 +1884,9 @@ async function convergePinnedAtomicStageMetadataV1(input: {
         (typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0),
     );
     const opened = await handle.stat();
+    assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(handle.fd, {
+      expectedKind: "regular-file",
+    });
     if (
       !opened.isFile() ||
       opened.dev !== before.dev ||
@@ -1787,16 +1908,10 @@ async function convergePinnedAtomicStageMetadataV1(input: {
     // A cut after chown or chmod is classified and resumed above.  The
     // read-only descriptor is sufficient for fchown/fchmod even when the
     // service-owned intermediate is deliberately 0400.
-    if (
-      transition === "complete_owner_then_mode" ||
-      transition === "complete_owner"
-    ) {
+    if (opened.uid !== input.ownerUid || opened.gid !== input.ownerGid) {
       await handle.chown(input.ownerUid, input.ownerGid);
     }
-    if (
-      transition === "complete_owner_then_mode" ||
-      transition === "complete_mode"
-    ) {
+    if (exactModeV1(opened.mode) !== input.finalMode) {
       await handle.chmod(input.finalMode);
     }
     const transitioned = await handle.stat();
@@ -1843,10 +1958,8 @@ async function convergePinnedAtomicStageMetadataV1(input: {
   }
 }
 
-async function readPinnedAtomicStageTransitionV1(input: {
+async function readAtomicStageTransitionCandidateV1(input: {
   readonly path: string;
-  readonly expectedDigest: ContentDigestV1;
-  readonly expectedByteLength: number;
   readonly authorityUid: number;
   readonly authorityGid: number;
   readonly ownerUid: number;
@@ -1879,6 +1992,7 @@ async function readPinnedAtomicStageTransitionV1(input: {
     observedMode: exactModeV1(before.mode),
   });
   if (
+    transition !== "complete_owner_then_mode" &&
     transition !== "complete_owner" &&
     transition !== "complete_mode"
   ) return undefined;
@@ -1890,6 +2004,9 @@ async function readPinnedAtomicStageTransitionV1(input: {
         (typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0),
     );
     const opened = await handle.stat();
+    assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(handle.fd, {
+      expectedKind: "regular-file",
+    });
     if (
       !opened.isFile() ||
       opened.dev !== before.dev ||
@@ -1902,15 +2019,6 @@ async function readPinnedAtomicStageTransitionV1(input: {
     ) return undefined;
     const bytes = await handle.readFile();
     const contentDigest = digestBytesV1(bytes);
-    if (
-      bytes.byteLength !== input.expectedByteLength ||
-      contentDigest !== input.expectedDigest
-    ) {
-      throw new ProviderServiceInstallationLifecycleErrorV1(
-        "installation_tampered",
-        "provider service publish staging transition is not journal-pinned",
-      );
-    }
     const after = await lstat(input.path);
     if (
       after.dev !== opened.dev ||
@@ -1934,6 +2042,31 @@ async function readPinnedAtomicStageTransitionV1(input: {
   } finally {
     await handle?.close().catch(() => undefined);
   }
+}
+
+async function readPinnedAtomicStageTransitionV1(input: {
+  readonly path: string;
+  readonly expectedDigest: ContentDigestV1;
+  readonly expectedByteLength: number;
+  readonly authorityUid: number;
+  readonly authorityGid: number;
+  readonly ownerUid: number;
+  readonly ownerGid: number;
+  readonly finalMode: number;
+  readonly maximumBytes: number;
+}): Promise<FileObservationV1 | undefined> {
+  const observation = await readAtomicStageTransitionCandidateV1(input);
+  if (observation === undefined) return undefined;
+  if (
+    observation.bytes.byteLength !== input.expectedByteLength ||
+    observation.contentDigest !== input.expectedDigest
+  ) {
+    throw new ProviderServiceInstallationLifecycleErrorV1(
+      "installation_tampered",
+      "provider service publish staging transition is not transaction-pinned",
+    );
+  }
+  return observation;
 }
 
 async function atomicWriteOwnedFileV1(input: {
@@ -2118,6 +2251,176 @@ async function atomicWriteOwnedFileV1(input: {
   }
 }
 
+async function readExactPinnedAtomicStageIfPresentV1(input: {
+  readonly path: string;
+  readonly expectedDigest: ContentDigestV1;
+  readonly expectedByteLength: number;
+  readonly uid: number;
+  readonly gid: number;
+  readonly mode: number;
+  readonly maximumBytes: number;
+  readonly label: string;
+  readonly authorityUid: number;
+  readonly authorityGid: number;
+}): Promise<FileObservationV1 | undefined> {
+  let observation: FileObservationV1 | undefined;
+  try {
+    observation = await readCheckedFileV1({
+      path: input.path,
+      uid: input.uid,
+      gid: input.gid,
+      mode: input.mode,
+      maximumBytes: input.maximumBytes,
+      allowedLinkCounts: [1, 2],
+    });
+  } catch (error) {
+    if (isMissingV1(error)) return undefined;
+    try {
+      observation = await readPinnedAtomicStageTransitionV1({
+        path: input.path,
+        expectedDigest: input.expectedDigest,
+        expectedByteLength: input.expectedByteLength,
+        authorityUid: input.authorityUid,
+        authorityGid: input.authorityGid,
+        ownerUid: input.uid,
+        ownerGid: input.gid,
+        finalMode: input.mode,
+        maximumBytes: input.maximumBytes,
+      });
+    } catch (transitionError) {
+      throw new ProviderServiceInstallationLifecycleErrorV1(
+        "installation_tampered",
+        `${input.label} staging transition is not transaction-pinned`,
+        { cause: transitionError },
+      );
+    }
+    if (observation === undefined) {
+      throw new ProviderServiceInstallationLifecycleErrorV1(
+        "installation_tampered",
+        `${input.label} staging metadata is unsafe`,
+        { cause: error },
+      );
+    }
+  }
+  if (
+    observation.contentDigest !== input.expectedDigest ||
+    observation.bytes.byteLength !== input.expectedByteLength
+  ) {
+    throw new ProviderServiceInstallationLifecycleErrorV1(
+      "installation_tampered",
+      `${input.label} staging content is not transaction-pinned`,
+    );
+  }
+  return observation;
+}
+
+async function convergePinnedAtomicPublicationStageIfPresentV1(input: {
+  readonly path: string;
+  readonly bytes: Uint8Array;
+  readonly uid: number;
+  readonly gid: number;
+  readonly mode: number;
+  readonly maximumBytes: number;
+  readonly label: string;
+  readonly authorityUid: number;
+  readonly authorityGid: number;
+  readonly allowCreate: boolean;
+  readonly expectedReplaceBaseline?: Readonly<{
+    readonly contentDigest: ContentDigestV1;
+    readonly byteLength: number;
+  }>;
+}): Promise<boolean> {
+  const expectedDigest = digestBytesV1(input.bytes);
+  const stagingPath = atomicPublishStagingPathV1(input.path);
+  const staging = await readExactPinnedAtomicStageIfPresentV1({
+    path: stagingPath,
+    expectedDigest,
+    expectedByteLength: input.bytes.byteLength,
+    uid: input.uid,
+    gid: input.gid,
+    mode: input.mode,
+    maximumBytes: input.maximumBytes,
+    label: input.label,
+    authorityUid: input.authorityUid,
+    authorityGid: input.authorityGid,
+  });
+  if (staging === undefined) return false;
+
+  let target: FileObservationV1 | undefined;
+  try {
+    target = await readCheckedFileV1({
+      path: input.path,
+      uid: input.uid,
+      gid: input.gid,
+      mode: input.mode,
+      maximumBytes: input.maximumBytes,
+    });
+  } catch (error) {
+    if (!isMissingV1(error)) {
+      throw new ProviderServiceInstallationLifecycleErrorV1(
+        "installation_tampered",
+        `${input.label} canonical metadata is unsafe during recovery`,
+        { cause: error },
+      );
+    }
+  }
+
+  if (staging.nlink === 2 || target?.nlink === 2) {
+    if (
+      target === undefined ||
+      staging.nlink !== 2 ||
+      target.nlink !== 2 ||
+      staging.dev !== target.dev ||
+      staging.ino !== target.ino ||
+      target.contentDigest !== expectedDigest ||
+      target.bytes.byteLength !== input.bytes.byteLength
+    ) {
+      throw new ProviderServiceInstallationLifecycleErrorV1(
+        "installation_tampered",
+        `${input.label} publish pair is not the pinned inode`,
+      );
+    }
+  } else if (target === undefined) {
+    if (!input.allowCreate) {
+      throw new ProviderServiceInstallationLifecycleErrorV1(
+        "installation_tampered",
+        `${input.label} replacement baseline disappeared`,
+      );
+    }
+  } else {
+    const targetIsExpected = target.contentDigest === expectedDigest &&
+      target.bytes.byteLength === input.bytes.byteLength;
+    if (targetIsExpected) {
+      throw new ProviderServiceInstallationLifecycleErrorV1(
+        "installation_tampered",
+        `${input.label} has independent canonical and staging inodes`,
+      );
+    }
+    if (
+      input.expectedReplaceBaseline === undefined ||
+      target.contentDigest !== input.expectedReplaceBaseline.contentDigest ||
+      target.bytes.byteLength !== input.expectedReplaceBaseline.byteLength
+    ) {
+      throw new ProviderServiceInstallationLifecycleErrorV1(
+        "installation_tampered",
+        `${input.label} replacement baseline is not transaction-pinned`,
+      );
+    }
+  }
+
+  await atomicWriteOwnedFileV1({
+    path: input.path,
+    bytes: input.bytes,
+    mode: input.mode,
+    ownerUid: input.uid,
+    ownerGid: input.gid,
+    parentUid: input.authorityUid,
+    parentGid: input.authorityGid,
+    replace: target !== undefined && staging.nlink === 1,
+  });
+  return true;
+}
+
 /** Test-only filesystem seam; unavailable from the runtime package index. */
 export async function writeProviderServiceAtomicOwnedFileForTestInternalV1(
   capability: ProviderServiceInstallationPrivilegeCapabilityInternalV1,
@@ -2166,6 +2469,9 @@ async function readCheckedFileV1(input: {
         (typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0),
     );
     const opened = await handle.stat();
+    assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(handle.fd, {
+      expectedKind: "regular-file",
+    });
     if (
       !opened.isFile() ||
       opened.dev !== before.dev ||
@@ -2217,6 +2523,9 @@ async function readCheckedFileV1(input: {
         exactModeV1(stagingAfter.mode) !== input.mode
       ) throw new Error("atomic publish pair changed while reading");
     }
+    assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(handle.fd, {
+      expectedKind: "regular-file",
+    });
     return Object.freeze({
       bytes,
       contentDigest: digestBytesV1(bytes),
@@ -2611,6 +2920,63 @@ async function readRollbackV1(
   }
 }
 
+interface RollbackPublicationCandidateV1 {
+  readonly snapshot: ProviderServiceInstallationRollbackEnvelopeV1;
+  readonly observation: FileObservationV1;
+}
+
+async function readRollbackPublicationCandidateV1(
+  path: string,
+  authority: AuthorityStateV1,
+  staged: boolean,
+): Promise<RollbackPublicationCandidateV1 | undefined> {
+  let observation: FileObservationV1 | undefined;
+  try {
+    observation = await readCheckedFileV1({
+      path,
+      uid: authority.authorityUid,
+      gid: authority.authorityGid,
+      mode: 0o600,
+      maximumBytes: MAX_ROLLBACK_BYTES_V1,
+      ...(staged ? { allowedLinkCounts: [1, 2] } : {}),
+    });
+  } catch (error) {
+    if (isMissingV1(error) || isMissingV1((error as { cause?: unknown }).cause)) {
+      return undefined;
+    }
+    if (staged) {
+      observation = await readAtomicStageTransitionCandidateV1({
+        path,
+        authorityUid: authority.authorityUid,
+        authorityGid: authority.authorityGid,
+        ownerUid: authority.authorityUid,
+        ownerGid: authority.authorityGid,
+        finalMode: 0o600,
+        maximumBytes: MAX_ROLLBACK_BYTES_V1,
+      });
+    }
+    if (observation === undefined) {
+      throw new ProviderServiceInstallationLifecycleErrorV1(
+        "manifest_invalid",
+        "provider service rollback publication is unavailable or unsafe",
+        { cause: error },
+      );
+    }
+  }
+  try {
+    const snapshot = parseRollbackValueV1(
+      parseCanonicalFileV1(observation.bytes, MAX_ROLLBACK_BYTES_V1),
+    );
+    return Object.freeze({ snapshot, observation });
+  } catch (error) {
+    throw new ProviderServiceInstallationLifecycleErrorV1(
+      "manifest_invalid",
+      "provider service rollback publication is invalid",
+      { cause: error },
+    );
+  }
+}
+
 function makeControlJournalV1(
   payload: ProviderServiceInstallationControlJournalPayloadV1,
 ): ProviderServiceInstallationControlJournalEnvelopeV1 {
@@ -2658,6 +3024,7 @@ function parseControlJournalValueV1(
       "installationIdentityDisposition",
       "createdRuntimeRoot",
       "runtimeRootCreationNonce",
+      "runtimeRootCustodyPin",
     ]) ||
     payload.schemaVersion !== 1 ||
     payload.profile !==
@@ -2702,6 +3069,15 @@ function parseControlJournalValueV1(
     runtimeRootCreationNonce !== null &&
     decodeBytesV1(runtimeRootCreationNonce).byteLength !== 16
   ) throw new TypeError("control journal runtime root nonce is invalid");
+  const runtimeRootCustodyPin = payload.runtimeRootCustodyPin;
+  if (
+    runtimeRootCustodyPin !== null &&
+    (!exactKeysV1(runtimeRootCustodyPin, ["dev", "ino"]) ||
+      !Number.isSafeInteger(runtimeRootCustodyPin.dev) ||
+      (runtimeRootCustodyPin.dev as number) < 0 ||
+      !Number.isSafeInteger(runtimeRootCustodyPin.ino) ||
+      (runtimeRootCustodyPin.ino as number) < 0)
+  ) throw new TypeError("control journal runtime root custody pin is invalid");
   const operation = payload.operation as
     ProviderServiceInstallationControlOperationV1;
   const phase = payload.phase as ProviderServiceInstallationControlPhaseV1;
@@ -2719,6 +3095,8 @@ function parseControlJournalValueV1(
       targetManifest === null ||
       rollbackContentDigest !== null ||
       rollbackSnapshot !== null ||
+      (!payload.createdRuntimeRoot && runtimeRootCustodyPin === null) ||
+      (phase !== "files_pending" && runtimeRootCustodyPin === null) ||
       (phase === "compensation_confirmed" && targetManifest === null)
     )) ||
     (operation === "upgrade" && (
@@ -2730,6 +3108,7 @@ function parseControlJournalValueV1(
       installationIdentityDisposition !== null ||
       payload.createdRuntimeRoot ||
       runtimeRootCreationNonce !== null ||
+      runtimeRootCustodyPin !== null ||
       phase === "compensation_confirmed"
     )) ||
     (operation === "uninstall" && (
@@ -2740,6 +3119,7 @@ function parseControlJournalValueV1(
       installationIdentityDisposition !== null ||
       payload.createdRuntimeRoot ||
       runtimeRootCreationNonce !== null ||
+      runtimeRootCustodyPin === null ||
       phase === "compensation_confirmed"
     ))
   ) throw new TypeError("control journal operation tuple is invalid");
@@ -2810,6 +3190,12 @@ function parseControlJournalValueV1(
       installationIdentityDisposition,
       createdRuntimeRoot: payload.createdRuntimeRoot,
       runtimeRootCreationNonce,
+      runtimeRootCustodyPin: runtimeRootCustodyPin === null
+        ? null
+        : Object.freeze({
+          dev: runtimeRootCustodyPin.dev as number,
+          ino: runtimeRootCustodyPin.ino as number,
+        }),
     });
   const contentDigest = ContentDigestV1Schema.parse(value.contentDigest);
   if (
@@ -2874,6 +3260,27 @@ function sameControlJournalTransactionV1(
     canonicalizeJcsSafeIntegerV1({ ...right.payload, phase: null });
 }
 
+function validInstallRuntimeRootPinAdvanceV1(
+  previous: ProviderServiceInstallationControlJournalEnvelopeV1,
+  next: ProviderServiceInstallationControlJournalEnvelopeV1,
+): boolean {
+  if (
+    previous.payload.operation !== "install" ||
+    next.payload.operation !== "install" ||
+    previous.payload.phase !== "files_pending" ||
+    next.payload.phase !== "files_pending" ||
+    previous.payload.runtimeRootCustodyPin !== null ||
+    next.payload.runtimeRootCustodyPin === null
+  ) return false;
+  return canonicalizeJcsSafeIntegerV1({
+    ...previous.payload,
+    runtimeRootCustodyPin: null,
+  }) === canonicalizeJcsSafeIntegerV1({
+    ...next.payload,
+    runtimeRootCustodyPin: null,
+  });
+}
+
 function validControlJournalPhaseAdvanceV1(
   previous: ProviderServiceInstallationControlPhaseV1,
   next: ProviderServiceInstallationControlPhaseV1,
@@ -2928,13 +3335,17 @@ async function readControlJournalV1(
         "provider service staged control journal has no baseline",
       );
     }
-  } else if (
-    !sameControlJournalTransactionV1(canonical.journal, staged.journal) ||
-    !validControlJournalPhaseAdvanceV1(
-      canonical.journal.payload.phase,
-      staged.journal.payload.phase,
+  } else if (!(
+    (sameControlJournalTransactionV1(canonical.journal, staged.journal) &&
+      validControlJournalPhaseAdvanceV1(
+        canonical.journal.payload.phase,
+        staged.journal.payload.phase,
+      )) ||
+    validInstallRuntimeRootPinAdvanceV1(
+      canonical.journal,
+      staged.journal,
     )
-  ) {
+  )) {
     throw new ProviderServiceInstallationLifecycleErrorV1(
       "manifest_invalid",
       "provider service staged control journal transition is invalid",
@@ -3028,6 +3439,19 @@ function ownerForArtifactV1(
     : { uid: manifest.principal.uid, gid: manifest.principal.gid };
 }
 
+async function checkManagedArtifactParentV1(
+  artifact: ManagedArtifactV1,
+  authority: AuthorityStateV1,
+): Promise<void> {
+  if (artifact.owner === "authority") {
+    await checkedWritableParentV1(
+      artifact.path,
+      authority.authorityUid,
+      authority.authorityGid,
+    );
+  }
+}
+
 function maximumForKindV1(kind: ManagedArtifactKindV1): number {
   if (kind === "service_config") return MAX_CONFIG_BYTES_V1;
   if (kind === "service_descriptor") return MAX_DESCRIPTOR_BYTES_V1;
@@ -3110,18 +3534,47 @@ async function installationIdentityDispositionV1(
         "retained Installation Identity has an independent publish staging inode",
       );
     }
+  }
+  return "reuse";
+}
+
+async function convergeRetainedInstallationIdentityUnderCustodyV1(
+  config: ProviderServiceHandoffConfigV1,
+  bytes: Uint8Array,
+  authority: AuthorityStateV1,
+): Promise<void> {
+  const custody = config.payload.installationIdentityCustody;
+  if (
+    custody === undefined ||
+    await installationIdentityDispositionV1(config, bytes) !== "reuse"
+  ) {
+    throw new ProviderServiceInstallationLifecycleErrorV1(
+      "installation_tampered",
+      "retained Installation Identity changed before install custody",
+    );
+  }
+  const stagingPath = atomicPublishStagingPathV1(custody.keyPath);
+  if (await pathExistsV1(stagingPath)) {
     await atomicWriteOwnedFileV1({
       path: custody.keyPath,
       bytes,
       mode: 0o600,
       ownerUid: config.payload.principal.uid,
       ownerGid: config.payload.principal.gid,
-      parentUid: config.payload.principal.uid,
-      parentGid: config.payload.principal.gid,
+      parentUid: authority.authorityUid,
+      parentGid: authority.authorityGid,
       replace: false,
     });
   }
-  return "reuse";
+  if (
+    await installationIdentityDispositionV1(config, bytes) !== "reuse" ||
+    await pathExistsV1(stagingPath)
+  ) {
+    throw new ProviderServiceInstallationLifecycleErrorV1(
+      "installation_tampered",
+      "retained Installation Identity did not converge exactly",
+    );
+  }
 }
 
 function configMatchesManifestV1(
@@ -3158,6 +3611,7 @@ async function inspectInstallationV1(
   expectedRuntimeRoot: string,
   authority: AuthorityStateV1,
   ignoreControlJournal = false,
+  runtimeRootUnderAuthorityCustody = false,
 ): Promise<ProviderServiceInstallationDoctorResultV1> {
   const base = commonResultV1(root, expectedRuntimeRoot);
   if (!ignoreControlJournal) {
@@ -3303,6 +3757,7 @@ async function inspectInstallationV1(
   for (const artifact of manifest.payload.managedArtifacts) {
     const owner = ownerForArtifactV1(artifact, manifest.payload, authority);
     try {
+      await checkManagedArtifactParentV1(artifact, authority);
       const observed = await readCheckedFileV1({
         path: artifact.path,
         uid: owner.uid,
@@ -3351,10 +3806,19 @@ async function inspectInstallationV1(
   try {
     await checkedDirectoryV1(
       expectedRuntimeRoot,
-      manifest.payload.principal.uid,
-      manifest.payload.principal.gid,
+      runtimeRootUnderAuthorityCustody
+        ? authority.authorityUid
+        : manifest.payload.principal.uid,
+      runtimeRootUnderAuthorityCustody
+        ? authority.authorityGid
+        : manifest.payload.principal.gid,
       0o700,
       "provider runtime root",
+    );
+    await checkedWritableParentV1(
+      expectedRuntimeRoot,
+      authority.authorityUid,
+      authority.authorityGid,
     );
     checks.push(Object.freeze({
       kind: "runtime_root" as const,
@@ -3588,6 +4052,11 @@ async function runtimeRootNeedsCreationV1(
       0o700,
       "provider runtime root",
     );
+    await checkedWritableParentV1(
+      root,
+      authority.authorityUid,
+      authority.authorityGid,
+    );
     return false;
   } catch (error) {
     try {
@@ -3633,12 +4102,17 @@ async function createRuntimeRootV1(
   );
   await mkdir(root, { mode: 0o700 });
   await chmod(root, 0o700);
-  await chown(root, config.payload.principal.uid, config.payload.principal.gid);
+  if (
+    authority.authorityUid !== (process.geteuid?.() ?? authority.authorityUid) ||
+    authority.authorityGid !== (process.getegid?.() ?? authority.authorityGid)
+  ) {
+    await chown(root, authority.authorityUid, authority.authorityGid);
+  }
   await syncDirectoryV1(dirname(root));
   await checkedDirectoryV1(
     root,
-    config.payload.principal.uid,
-    config.payload.principal.gid,
+    authority.authorityUid,
+    authority.authorityGid,
     0o700,
     "provider runtime root",
   );
@@ -3661,6 +4135,7 @@ async function removeExactAtomicPublicationIfPresentV1(input: {
   readonly authorityUid: number;
   readonly authorityGid: number;
   readonly remove?: boolean;
+  readonly afterStagingRemoved?: () => void | Promise<void>;
 }): Promise<void> {
   const stagingPath = atomicPublishStagingPathV1(input.path);
   await discardIncompleteAuthorityStageV1({
@@ -3753,7 +4228,6 @@ async function removeExactAtomicPublicationIfPresentV1(input: {
     );
   }
   if (input.remove === false) return;
-  if (target !== undefined) await unlinkAndSyncV1(input.path);
   if (staging !== undefined) {
     const latest = await lstat(stagingPath);
     if (latest.dev !== staging.dev || latest.ino !== staging.ino) {
@@ -3763,7 +4237,13 @@ async function removeExactAtomicPublicationIfPresentV1(input: {
       );
     }
     await unlinkAndSyncV1(stagingPath);
+    await input.afterStagingRemoved?.();
   }
+  // For a published nlink=2 pair, removing the deterministic stage first
+  // leaves the canonical name as the durable recovery anchor.  A crash at
+  // this boundary therefore retries from canonical-only nlink=1 instead of
+  // stranding a stage-only snapshot that ordinary exact reads cannot see.
+  if (target !== undefined) await unlinkAndSyncV1(input.path);
 }
 
 async function validatePinnedArtifactPublicationV1(
@@ -3771,6 +4251,7 @@ async function validatePinnedArtifactPublicationV1(
   manifest: ProviderServiceInstallationManifestPayloadV1,
   authority: AuthorityStateV1,
 ): Promise<void> {
+  await checkManagedArtifactParentV1(artifact, authority);
   const owner = ownerForArtifactV1(artifact, manifest, authority);
   await removeExactAtomicPublicationIfPresentV1({
     path: artifact.path,
@@ -3792,6 +4273,7 @@ async function removePinnedArtifactIfPresentV1(
   manifest: ProviderServiceInstallationManifestPayloadV1,
   authority: AuthorityStateV1,
 ): Promise<void> {
+  await checkManagedArtifactParentV1(artifact, authority);
   const owner = ownerForArtifactV1(artifact, manifest, authority);
   await removeExactAtomicPublicationIfPresentV1({
     path: artifact.path,
@@ -3851,20 +4333,16 @@ async function removePinnedManifestIfPresentV1(
 async function removePinnedRollbackIfPresentV1(
   root: string,
   authority: AuthorityStateV1,
+  manifest: ProviderServiceInstallationManifestEnvelopeV1,
   expected: ProviderServiceInstallationRollbackEnvelopeV1,
 ): Promise<void> {
-  const bytes = canonicalFileV1(expected);
-  await removeExactAtomicPublicationIfPresentV1({
-    path: rollbackPathV1(root),
-    expectedDigest: digestBytesV1(bytes),
-    expectedByteLength: bytes.byteLength,
-    uid: authority.authorityUid,
-    gid: authority.authorityGid,
-    mode: 0o600,
-    maximumBytes: MAX_ROLLBACK_BYTES_V1,
-    label: "provider service rollback snapshot",
-    authorityUid: authority.authorityUid,
-    authorityGid: authority.authorityGid,
+  await readPinnedRollbackPublicationV1({
+    root,
+    authority,
+    manifest,
+    expectedDigest: expected.contentDigest,
+    expectedEnvelope: expected,
+    action: "remove",
   });
 }
 
@@ -3986,86 +4464,148 @@ async function cleanupInstallJournalV1(
   authority: AuthorityStateV1,
   journal: ProviderServiceInstallationControlJournalEnvelopeV1,
   removeEphemeral: boolean,
+  existingCustody?: FileHandle,
 ): Promise<void> {
-  const target = journal.payload.targetManifest;
-  if (journal.payload.operation !== "install" || target === null) {
+  let pinnedJournal = journal;
+  const initialTarget = pinnedJournal.payload.targetManifest;
+  if (pinnedJournal.payload.operation !== "install" || initialTarget === null) {
     throw new ProviderServiceInstallationLifecycleErrorV1(
       "manifest_invalid",
       "install recovery journal is invalid",
     );
   }
-  await removePinnedManifestIfPresentV1(root, authority, target);
-  for (const artifact of [...target.payload.managedArtifacts].reverse()) {
-    await removePinnedArtifactIfPresentV1(artifact, target.payload, authority);
-  }
-  if (journal.payload.installationIdentityDisposition === "create") {
-    await removePinnedIdentityIfPresentV1(
-      target.payload,
-      journal.payload.installationIdentityKeyDigest,
-      authority,
-    );
-  }
-  if (removeEphemeral) {
-    for (const item of [
-      { path: target.payload.ephemeralPaths.socketPath, kind: "socket" as const },
-      { path: target.payload.ephemeralPaths.readinessPath, kind: "readiness" as const },
-    ]) {
-      if (!(await validateEphemeralForRemovalV1(
-        item.path,
-        item.kind,
-        target.payload.principal,
-      ))) {
-        throw new ProviderServiceInstallationLifecycleErrorV1(
-          "installation_tampered",
-          "provider service ephemeral path is unsafe during recovery",
+  pinnedJournal = await ensureInstallRuntimeRootPinV1(
+    root,
+    authority,
+    pinnedJournal,
+  );
+  const target = pinnedJournal.payload.targetManifest!;
+  const custodyPin = pinnedJournal.payload.runtimeRootCustodyPin;
+  if (custodyPin === null) {
+    // A null pin is authorized only before a fresh runtime root exists.  No
+    // runtime-root service pathname has been published yet.  Historical cuts
+    // may have published exact authority-owned config/descriptor/manifest
+    // stages, which remain journal-pinned and safe to converge by deletion.
+    await removePinnedManifestIfPresentV1(root, authority, target);
+    for (const artifact of target.payload.managedArtifacts) {
+      if (artifact.owner === "authority") {
+        await removePinnedArtifactIfPresentV1(
+          artifact,
+          target.payload,
+          authority,
         );
       }
-      await unlinkAndSyncV1(item.path).catch((error) => {
-        if (!isMissingV1(error)) throw error;
-      });
     }
+    await removeRuntimeRootCreationMarkerV1(pinnedJournal, authority);
+    return;
   }
-  if (journal.payload.createdRuntimeRoot) {
-    const markerPublished = await inspectRuntimeRootCreationMarkerV1(
-      journal,
-      authority,
-    );
-    let runtimeRootPresent = false;
+  if (pinnedJournal.payload.createdRuntimeRoot) {
+    let runtimeRootMissing = false;
     try {
-      const metadata = await lstat(target.payload.runtimeRoot);
-      runtimeRootPresent = true;
-      const ownerIsPrincipal =
-        metadata.uid === target.payload.principal.uid &&
-        metadata.gid === target.payload.principal.gid;
-      const ownerIsAuthority =
-        metadata.uid === authority.authorityUid &&
-        metadata.gid === authority.authorityGid;
-      if (
-        metadata.isSymbolicLink() ||
-        !metadata.isDirectory() ||
-        (!ownerIsPrincipal && !ownerIsAuthority) ||
-        exactModeV1(metadata.mode) !== 0o700 ||
-        await realpath(target.payload.runtimeRoot) !== target.payload.runtimeRoot
-      ) {
-        throw new ProviderServiceInstallationLifecycleErrorV1(
-          "installation_tampered",
-          "created runtime root changed during recovery",
-        );
-      }
+      await lstat(target.payload.runtimeRoot);
     } catch (error) {
       if (!isMissingV1(error)) throw error;
+      runtimeRootMissing = true;
     }
-    if (runtimeRootPresent && !markerPublished) {
-      throw new ProviderServiceInstallationLifecycleErrorV1(
-        "installation_tampered",
-        "runtime root exists without its creation marker",
+    if (runtimeRootMissing) {
+      await ensureInstallPathsAbsentV1([
+        manifestPathV1(root),
+        ...target.payload.managedArtifacts.map((artifact) => artifact.path),
+        target.payload.ephemeralPaths.socketPath,
+        target.payload.ephemeralPaths.readinessPath,
+        ...(pinnedJournal.payload.installationIdentityDisposition === "create" &&
+            target.payload.retainedState.installationIdentityKeyPath !== null
+          ? [target.payload.retainedState.installationIdentityKeyPath]
+          : []),
+      ]);
+      // A pinned fresh root can be absent only after this transaction durably
+      // removed it.  All transaction-owned publications must already be gone;
+      // the exact marker (if the cut preceded its unlink) is the last anchor.
+      await removeRuntimeRootCreationMarkerV1(pinnedJournal, authority);
+      await observeCrashCutPhaseInternalV1(
+        authority,
+        "install_runtime_root_marker_removed",
+      );
+      return;
+    }
+  }
+  if (
+    pinnedJournal.payload.createdRuntimeRoot &&
+    !(await inspectRuntimeRootCreationMarkerV1(pinnedJournal, authority))
+  ) {
+    throw new ProviderServiceInstallationLifecycleErrorV1(
+      "installation_tampered",
+      "created runtime root has no exact creation marker",
+    );
+  }
+  let custody = existingCustody;
+  if (custody === undefined) {
+    custody = await acquireRuntimeRootCustodyV1(
+      target,
+      authority,
+      custodyPin,
+      "install_runtime_root_custody_acquired",
+    );
+  } else {
+    await assertRuntimeRootCustodyV1(custody, target, authority, custodyPin);
+  }
+  try {
+    await removePinnedManifestIfPresentV1(root, authority, target);
+    for (const artifact of [...target.payload.managedArtifacts].reverse()) {
+      await removePinnedArtifactIfPresentV1(artifact, target.payload, authority);
+    }
+    if (pinnedJournal.payload.installationIdentityDisposition === "create") {
+      await removePinnedIdentityIfPresentV1(
+        target.payload,
+        pinnedJournal.payload.installationIdentityKeyDigest,
+        authority,
       );
     }
-    if (runtimeRootPresent) {
+    if (removeEphemeral) {
+      for (const item of [
+        { path: target.payload.ephemeralPaths.socketPath, kind: "socket" as const },
+        { path: target.payload.ephemeralPaths.readinessPath, kind: "readiness" as const },
+      ]) {
+        if (!(await validateEphemeralForRemovalV1(
+          item.path,
+          item.kind,
+          target.payload.principal,
+        ))) {
+          throw new ProviderServiceInstallationLifecycleErrorV1(
+            "installation_tampered",
+            "provider service ephemeral path is unsafe during recovery",
+          );
+        }
+        await unlinkAndSyncV1(item.path).catch((error) => {
+          if (!isMissingV1(error)) throw error;
+        });
+      }
+    }
+    await assertRuntimeRootCustodyV1(custody, target, authority, custodyPin);
+    if (pinnedJournal.payload.createdRuntimeRoot) {
       await rmdir(target.payload.runtimeRoot);
       await syncDirectoryV1(dirname(target.payload.runtimeRoot));
+      await observeCrashCutPhaseInternalV1(
+        authority,
+        "install_runtime_root_removed",
+      );
+    } else {
+      await restoreRuntimeRootCustodyV1(
+        custody,
+        target,
+        authority,
+        custodyPin,
+      );
     }
-    await removeRuntimeRootCreationMarkerV1(journal, authority);
+  } finally {
+    await custody.close().catch(() => undefined);
+  }
+  if (pinnedJournal.payload.createdRuntimeRoot) {
+    await removeRuntimeRootCreationMarkerV1(pinnedJournal, authority);
+    await observeCrashCutPhaseInternalV1(
+      authority,
+      "install_runtime_root_marker_removed",
+    );
   }
 }
 
@@ -4158,12 +4698,42 @@ async function resumeInstallJournalV1(
   } catch {
     return { ...base, status: "recovery_required", reason: "deactivation_unconfirmed" };
   }
-  const exact = await inspectInstallationV1(
-    root,
-    expectedRuntimeRoot,
-    authority,
-    true,
-  );
+  const runtimeRootCustodyPin = journal.payload.runtimeRootCustodyPin;
+  if (runtimeRootCustodyPin === null) {
+    return { ...base, status: "recovery_required", reason: "install_cleanup_pending" };
+  }
+  let resumeCustody: FileHandle | undefined;
+  let exact: ProviderServiceInstallationDoctorResultV1;
+  try {
+    resumeCustody = await acquireRuntimeRootCustodyV1(
+      target,
+      authority,
+      runtimeRootCustodyPin,
+      "install_runtime_root_custody_acquired",
+    );
+    exact = await inspectInstallationV1(
+      root,
+      expectedRuntimeRoot,
+      authority,
+      true,
+      true,
+    );
+    if (
+      exact.status === "healthy" &&
+      exact.handoffPayloadDigest === target.payload.handoffPayloadDigest
+    ) {
+      await restoreRuntimeRootCustodyV1(
+        resumeCustody,
+        target,
+        authority,
+        runtimeRootCustodyPin,
+      );
+    }
+  } catch {
+    return { ...base, status: "recovery_required", reason: "install_cleanup_pending" };
+  } finally {
+    await resumeCustody?.close().catch(() => undefined);
+  }
   if (
     exact.status !== "healthy" ||
     exact.handoffPayloadDigest !== target.payload.handoffPayloadDigest
@@ -4207,6 +4777,10 @@ async function resumeInstallJournalV1(
         "deactivate",
         controlContextFromManifestV1(target),
       );
+    } catch {
+      return { ...base, status: "recovery_required", reason: "deactivation_unconfirmed" };
+    }
+    try {
       const compensated = await advanceControlJournalV1(
         root,
         authority,
@@ -4217,7 +4791,7 @@ async function resumeInstallJournalV1(
       await removeControlJournalV1(root, authority);
       return { ...base, status: "refused", reason: "service_control_failed" };
     } catch {
-      return { ...base, status: "recovery_required", reason: "deactivation_unconfirmed" };
+      return { ...base, status: "recovery_required", reason: "install_cleanup_pending" };
     }
   }
 }
@@ -4431,6 +5005,9 @@ async function installInternalV1(
       signingBytes,
       previous: null,
     }));
+    const initialRuntimeRootCustodyPin = createdRuntimeRoot
+      ? null
+      : await pinRuntimeRootForJournalV1(manifest, authority, "principal");
     let controlJournal = makeControlJournalV1(Object.freeze({
       schemaVersion: 1 as const,
       profile: PROVIDER_SERVICE_INSTALLATION_CONTROL_JOURNAL_PROFILE_V1,
@@ -4446,9 +5023,11 @@ async function installInternalV1(
       installationIdentityDisposition: identityDisposition,
       createdRuntimeRoot,
       runtimeRootCreationNonce,
+      runtimeRootCustodyPin: initialRuntimeRootCustodyPin,
     }));
     let journalWritten = false;
     let activationReturned = false;
+    let runtimeRootCustody: FileHandle | undefined;
     try {
       await writeControlJournalV1(root, authority, controlJournal, false);
       journalWritten = true;
@@ -4463,14 +5042,51 @@ async function installInternalV1(
           runtimeRootCreationNonce!,
         );
       }
+      controlJournal = await ensureInstallRuntimeRootPinV1(
+        root,
+        authority,
+        controlJournal,
+      );
+      const runtimeRootCustodyPin = controlJournal.payload.runtimeRootCustodyPin;
+      if (runtimeRootCustodyPin === null) {
+        throw new ProviderServiceInstallationLifecycleErrorV1(
+          "installation_tampered",
+          "provider runtime root was not durably pinned before install writes",
+        );
+      }
+      runtimeRootCustody = await acquireRuntimeRootCustodyV1(
+        manifest,
+        authority,
+        runtimeRootCustodyPin,
+        "install_runtime_root_custody_acquired",
+      );
+      if (
+        identityDisposition === "reuse" &&
+        identityBytes !== undefined
+      ) {
+        await convergeRetainedInstallationIdentityUnderCustodyV1(
+          config,
+          identityBytes,
+          authority,
+        );
+      }
+      await ensureInstallPathsAbsentV1([
+        config.payload.authKeyPath,
+        config.payload.signingKeyPath,
+        config.payload.socketPath,
+        config.payload.readinessPath,
+        ...(custody === undefined || identityDisposition === "reuse"
+          ? []
+          : [custody.keyPath]),
+      ]);
       await atomicWriteOwnedFileV1({
         path: config.payload.authKeyPath,
         bytes: authBytes,
         mode: 0o600,
         ownerUid: config.payload.principal.uid,
         ownerGid: config.payload.principal.gid,
-        parentUid: config.payload.principal.uid,
-        parentGid: config.payload.principal.gid,
+        parentUid: authority.authorityUid,
+        parentGid: authority.authorityGid,
         replace: false,
       });
       await atomicWriteOwnedFileV1({
@@ -4479,8 +5095,8 @@ async function installInternalV1(
         mode: 0o600,
         ownerUid: config.payload.principal.uid,
         ownerGid: config.payload.principal.gid,
-        parentUid: config.payload.principal.uid,
-        parentGid: config.payload.principal.gid,
+        parentUid: authority.authorityUid,
+        parentGid: authority.authorityGid,
         replace: false,
       });
       if (
@@ -4494,8 +5110,8 @@ async function installInternalV1(
           mode: 0o600,
           ownerUid: config.payload.principal.uid,
           ownerGid: config.payload.principal.gid,
-          parentUid: config.payload.principal.uid,
-          parentGid: config.payload.principal.gid,
+          parentUid: authority.authorityUid,
+          parentGid: authority.authorityGid,
           replace: false,
         });
         // Custody becomes retained only after the manifest and service
@@ -4531,6 +5147,20 @@ async function installInternalV1(
         parentGid: authority.authorityGid,
         replace: false,
       });
+      await assertRuntimeRootCustodyV1(
+        runtimeRootCustody,
+        manifest,
+        authority,
+        runtimeRootCustodyPin,
+      );
+      await restoreRuntimeRootCustodyV1(
+        runtimeRootCustody,
+        manifest,
+        authority,
+        runtimeRootCustodyPin,
+      );
+      await runtimeRootCustody.close();
+      runtimeRootCustody = undefined;
       controlJournal = await advanceControlJournalV1(
         root,
         authority,
@@ -4599,6 +5229,8 @@ async function installInternalV1(
       };
     } catch (error) {
       if (error instanceof ProviderServiceInstallationCrashCutInternalV1) {
+        await runtimeRootCustody?.close().catch(() => undefined);
+        runtimeRootCustody = undefined;
         retainInstallationRoot = true;
         return {
           ...base,
@@ -4616,11 +5248,14 @@ async function installInternalV1(
       }
       if (journalWritten) {
         try {
+          const cleanupCustody = runtimeRootCustody;
+          runtimeRootCustody = undefined;
           await cleanupInstallJournalV1(
             root,
             authority,
             controlJournal,
             controlJournal.payload.phase !== "files_pending",
+            cleanupCustody,
           );
           await removeControlJournalV1(root, authority);
         } catch {
@@ -4634,6 +5269,7 @@ async function installInternalV1(
       }
       throw error;
     } finally {
+      await runtimeRootCustody?.close().catch(() => undefined);
       authBytes.fill(0);
       signingBytes.fill(0);
       identityBytes?.fill(0);
@@ -4757,6 +5393,52 @@ async function ensureUpgradeRollbackSnapshotV1(
       "upgrade rollback journal is incomplete",
     );
   }
+  const snapshotBytes = canonicalFileV1(snapshot);
+  const canonical = await readRollbackPublicationCandidateV1(
+    rollbackPathV1(root),
+    authority,
+    false,
+  );
+  let expectedReplaceBaseline: Readonly<{
+    readonly contentDigest: ContentDigestV1;
+    readonly byteLength: number;
+  }> | undefined;
+  if (canonical !== undefined && !canonical.observation.bytes.equals(snapshotBytes)) {
+    if (
+      source.payload.previous === null ||
+      canonical.snapshot.contentDigest !== source.payload.previous.contentDigest ||
+      !rollbackSnapshotMatchesManifestV1(root, source, canonical.snapshot)
+    ) {
+      throw new ProviderServiceInstallationLifecycleErrorV1(
+        "installation_tampered",
+        "upgrade rollback replacement baseline is not manifest-pinned",
+      );
+    }
+    expectedReplaceBaseline = Object.freeze({
+      contentDigest: canonical.observation.contentDigest,
+      byteLength: canonical.observation.bytes.byteLength,
+    });
+  } else if (canonical === undefined && source.payload.previous !== null) {
+    throw new ProviderServiceInstallationLifecycleErrorV1(
+      "installation_tampered",
+      "upgrade rollback replacement baseline disappeared",
+    );
+  }
+  await convergePinnedAtomicPublicationStageIfPresentV1({
+    path: rollbackPathV1(root),
+    bytes: snapshotBytes,
+    uid: authority.authorityUid,
+    gid: authority.authorityGid,
+    mode: 0o600,
+    maximumBytes: MAX_ROLLBACK_BYTES_V1,
+    label: "provider service rollback snapshot",
+    authorityUid: authority.authorityUid,
+    authorityGid: authority.authorityGid,
+    allowCreate: source.payload.previous === null,
+    ...(expectedReplaceBaseline === undefined
+      ? {}
+      : { expectedReplaceBaseline }),
+  });
   const existing = await readRollbackV1(root, authority);
   if (
     existing !== undefined &&
@@ -5082,6 +5764,7 @@ async function upgradeInternalV1(
         installationIdentityDisposition: null,
         createdRuntimeRoot: false,
         runtimeRootCreationNonce: null,
+        runtimeRootCustodyPin: null,
       }));
       await writeControlJournalV1(root, authority, journal, false);
       return resumeUpgradeJournalV1(
@@ -5138,6 +5821,139 @@ function rollbackSnapshotMatchesManifestV1(
     target.contentDigest === interruptedUpgradeBaseline.contentDigest;
 }
 
+type PinnedRollbackPublicationActionV1 =
+  | "inspect"
+  | "converge"
+  | "remove";
+
+async function readPinnedRollbackPublicationV1(input: {
+  readonly root: string;
+  readonly authority: AuthorityStateV1;
+  readonly manifest: ProviderServiceInstallationManifestEnvelopeV1;
+  readonly expectedDigest?: ContentDigestV1;
+  readonly expectedEnvelope?: ProviderServiceInstallationRollbackEnvelopeV1;
+  readonly action: PinnedRollbackPublicationActionV1;
+}): Promise<ProviderServiceInstallationRollbackEnvelopeV1 | undefined> {
+  const canonicalPath = rollbackPathV1(input.root);
+  const stagingPath = atomicPublishStagingPathV1(canonicalPath);
+  const canonical = await readRollbackPublicationCandidateV1(
+    canonicalPath,
+    input.authority,
+    false,
+  );
+  const staged = await readRollbackPublicationCandidateV1(
+    stagingPath,
+    input.authority,
+    true,
+  );
+  if (canonical === undefined && staged === undefined) return undefined;
+
+  const expectedBytes = input.expectedEnvelope === undefined
+    ? undefined
+    : canonicalFileV1(input.expectedEnvelope);
+  for (const candidate of [canonical, staged]) {
+    if (candidate === undefined) continue;
+    if (
+      (input.expectedDigest !== undefined &&
+        candidate.snapshot.contentDigest !== input.expectedDigest) ||
+      (expectedBytes !== undefined &&
+        !candidate.observation.bytes.equals(expectedBytes)) ||
+      !rollbackSnapshotMatchesManifestV1(
+        input.root,
+        input.manifest,
+        candidate.snapshot,
+      )
+    ) {
+      throw new ProviderServiceInstallationLifecycleErrorV1(
+        "installation_tampered",
+        "provider service rollback publication is not manifest-pinned",
+      );
+    }
+  }
+
+  if (
+    canonical !== undefined &&
+    staged !== undefined &&
+    canonical.observation.nlink === 1 &&
+    staged.observation.nlink === 1
+  ) {
+    throw new ProviderServiceInstallationLifecycleErrorV1(
+      "installation_tampered",
+      "provider service rollback has independent canonical and staging inodes",
+    );
+  }
+  if (
+    canonical?.observation.nlink === 2 ||
+    staged?.observation.nlink === 2
+  ) {
+    if (
+      canonical === undefined ||
+      staged === undefined ||
+      canonical.observation.nlink !== 2 ||
+      staged.observation.nlink !== 2 ||
+      canonical.observation.dev !== staged.observation.dev ||
+      canonical.observation.ino !== staged.observation.ino ||
+      !canonical.observation.bytes.equals(staged.observation.bytes)
+    ) {
+      throw new ProviderServiceInstallationLifecycleErrorV1(
+        "installation_tampered",
+        "provider service rollback publish pair is not one pinned inode",
+      );
+    }
+  }
+
+  const selected = staged ?? canonical!;
+  if (input.action === "converge" && staged !== undefined) {
+    await atomicWriteOwnedFileV1({
+      path: canonicalPath,
+      bytes: selected.observation.bytes,
+      mode: 0o600,
+      ownerUid: input.authority.authorityUid,
+      ownerGid: input.authority.authorityGid,
+      parentUid: input.authority.authorityUid,
+      parentGid: input.authority.authorityGid,
+      replace: canonical !== undefined && staged.observation.nlink === 1,
+    });
+  } else if (input.action === "remove") {
+    await removeExactAtomicPublicationIfPresentV1({
+      path: canonicalPath,
+      expectedDigest: digestBytesV1(selected.observation.bytes),
+      expectedByteLength: selected.observation.bytes.byteLength,
+      uid: input.authority.authorityUid,
+      gid: input.authority.authorityGid,
+      mode: 0o600,
+      maximumBytes: MAX_ROLLBACK_BYTES_V1,
+      label: "provider service rollback snapshot",
+      authorityUid: input.authority.authorityUid,
+      authorityGid: input.authority.authorityGid,
+      afterStagingRemoved: () => input.authority.afterDurablePhase?.(
+        "rollback_publish_stage_removed",
+      ),
+    });
+  }
+  return selected.snapshot;
+}
+
+async function assertRollbackPublicationAbsentV1(
+  root: string,
+): Promise<void> {
+  for (const path of [
+    rollbackPathV1(root),
+    atomicPublishStagingPathV1(rollbackPathV1(root)),
+  ]) {
+    try {
+      await lstat(path);
+    } catch (error) {
+      if (isMissingV1(error)) continue;
+      throw error;
+    }
+    throw new ProviderServiceInstallationLifecycleErrorV1(
+      "installation_tampered",
+      "unexpected provider service rollback publication appeared",
+    );
+  }
+}
+
 function doctorAllowsRollbackRecoveryV1(
   doctor: ProviderServiceInstallationDoctorResultV1,
 ): boolean {
@@ -5187,30 +6003,106 @@ async function rollbackInternalV1(
         reason: "control_recovery_pending",
       };
     }
-    const doctor = await inspectInstallationV1(root, expectedRuntimeRoot, authority);
-    if (doctor.status === "not_installed") return { ...base, status: "not_installed", removedPaths: [], refusedPaths: [] };
-    const manifest = await readManifestV1(root, authority);
+    let manifest: ProviderServiceInstallationManifestEnvelopeV1 | undefined;
+    try {
+      manifest = await readManifestV1(root, authority);
+    } catch {
+      return { ...base, status: "refused", removedPaths: [], refusedPaths: [manifestPathV1(root)], reason: "rollback_snapshot_invalid" };
+    }
     if (manifest === undefined) return { ...base, status: "not_installed", removedPaths: [], refusedPaths: [] };
+    if (
+      manifest.payload.installationRoot !== root ||
+      manifest.payload.runtimeRoot !== expectedRuntimeRoot ||
+      manifest.payload.retainedState.runtimeRoot !== expectedRuntimeRoot ||
+      manifest.payload.platform !== authority.platform
+    ) {
+      return { ...base, status: "refused", removedPaths: [], refusedPaths: [manifestPathV1(root)], reason: "rollback_snapshot_invalid" };
+    }
     let snapshot: ProviderServiceInstallationRollbackEnvelopeV1 | undefined;
     try {
-      snapshot = await readRollbackV1(root, authority);
+      snapshot = await readPinnedRollbackPublicationV1({
+        root,
+        authority,
+        manifest,
+        ...(manifest.payload.previous === null
+          ? {}
+          : { expectedDigest: manifest.payload.previous.contentDigest }),
+        action: "converge",
+      });
     } catch {
       return { ...base, status: "refused", removedPaths: [], refusedPaths: [rollbackPathV1(root)], reason: "rollback_snapshot_invalid" };
     }
+    let doctor = await inspectInstallationV1(root, expectedRuntimeRoot, authority);
     if (snapshot === undefined) {
       if (doctor.status === "healthy" && manifest.payload.previous === null) {
         return { ...base, status: "not_available", removedPaths: [], refusedPaths: [], reason: "rollback_not_available" };
       }
       return { ...base, status: "refused", removedPaths: [], refusedPaths: doctor.artifacts.filter((item) => item.state !== "ok").map((item) => item.path), reason: doctor.reason ?? "installation_tampered" };
     }
+    const configFile = snapshot.payload.files[0]!;
+    const descriptorFile = snapshot.payload.files[1]!;
+    try {
+      const currentConfig = manifest.payload.managedArtifacts[0]!;
+      const currentDescriptor = manifest.payload.managedArtifacts[1]!;
+      const currentManifestBytes = canonicalFileV1(manifest);
+      for (const publication of [
+        {
+          path: configFile.path,
+          bytes: decodeBytesV1(configFile.bytes),
+          mode: configFile.mode,
+          maximumBytes: MAX_CONFIG_BYTES_V1,
+          label: "provider service rollback config",
+          expectedReplaceBaseline: Object.freeze({
+            contentDigest: currentConfig.contentDigest,
+            byteLength: currentConfig.byteLength,
+          }),
+        },
+        {
+          path: descriptorFile.path,
+          bytes: decodeBytesV1(descriptorFile.bytes),
+          mode: descriptorFile.mode,
+          maximumBytes: MAX_DESCRIPTOR_BYTES_V1,
+          label: "provider service rollback descriptor",
+          expectedReplaceBaseline: Object.freeze({
+            contentDigest: currentDescriptor.contentDigest,
+            byteLength: currentDescriptor.byteLength,
+          }),
+        },
+        {
+          path: manifestPathV1(root),
+          bytes: canonicalFileV1(snapshot.payload.fromManifest),
+          mode: 0o600,
+          maximumBytes: MAX_MANIFEST_BYTES_V1,
+          label: "provider service rollback manifest",
+          expectedReplaceBaseline: Object.freeze({
+            contentDigest: digestBytesV1(currentManifestBytes),
+            byteLength: currentManifestBytes.byteLength,
+          }),
+        },
+      ]) {
+        await convergePinnedAtomicPublicationStageIfPresentV1({
+          ...publication,
+          uid: authority.authorityUid,
+          gid: authority.authorityGid,
+          authorityUid: authority.authorityUid,
+          authorityGid: authority.authorityGid,
+          allowCreate: false,
+        });
+      }
+      manifest = await readManifestV1(root, authority);
+    } catch {
+      return { ...base, status: "refused", removedPaths: [], refusedPaths: [rollbackPathV1(root)], reason: "rollback_snapshot_invalid" };
+    }
+    if (manifest === undefined) {
+      return { ...base, status: "refused", removedPaths: [], refusedPaths: [manifestPathV1(root)], reason: "rollback_snapshot_invalid" };
+    }
+    doctor = await inspectInstallationV1(root, expectedRuntimeRoot, authority);
     if (
       !doctorAllowsRollbackRecoveryV1(doctor) ||
       !rollbackSnapshotMatchesManifestV1(root, manifest, snapshot)
     ) {
       return { ...base, status: "refused", removedPaths: [], refusedPaths: doctor.artifacts.filter((item) => item.state !== "ok").map((item) => item.path), reason: "rollback_snapshot_invalid" };
     }
-    const configFile = snapshot.payload.files[0]!;
-    const descriptorFile = snapshot.payload.files[1]!;
     try {
       await atomicWriteOwnedFileV1({ path: configFile.path, bytes: decodeBytesV1(configFile.bytes), mode: configFile.mode, ownerUid: authority.authorityUid, ownerGid: authority.authorityGid, parentUid: authority.authorityUid, parentGid: authority.authorityGid, replace: true });
       await atomicWriteOwnedFileV1({ path: descriptorFile.path, bytes: decodeBytesV1(descriptorFile.bytes), mode: descriptorFile.mode, ownerUid: authority.authorityUid, ownerGid: authority.authorityGid, parentUid: authority.authorityUid, parentGid: authority.authorityGid, replace: true });
@@ -5220,7 +6112,12 @@ async function rollbackInternalV1(
         serviceLabel: snapshot.payload.fromManifest.payload.serviceLabel,
         descriptorPath: descriptorFile.path,
       });
-      await removePinnedRollbackIfPresentV1(root, authority, snapshot);
+      await removePinnedRollbackIfPresentV1(
+        root,
+        authority,
+        snapshot.payload.fromManifest,
+        snapshot,
+      );
     } catch {
       // The strict snapshot remains the only recovery authority.  Retrying
       // rollback is idempotent across every config/descriptor/manifest cut.
@@ -5248,12 +6145,298 @@ async function validateEphemeralForRemovalV1(
   }
 }
 
+async function pinRuntimeRootForJournalV1(
+  manifest: ProviderServiceInstallationManifestEnvelopeV1,
+  authority: AuthorityStateV1,
+  expectedOwner: "principal" | "authority",
+): Promise<Readonly<{ readonly dev: number; readonly ino: number }>> {
+  const root = manifest.payload.runtimeRoot;
+  const owner = expectedOwner === "authority"
+    ? { uid: authority.authorityUid, gid: authority.authorityGid }
+    : manifest.payload.principal;
+  await checkedWritableParentV1(
+    root,
+    authority.authorityUid,
+    authority.authorityGid,
+  );
+  const before = await lstat(root);
+  if (
+    before.isSymbolicLink() ||
+    !before.isDirectory() ||
+    before.uid !== owner.uid ||
+    before.gid !== owner.gid ||
+    exactModeV1(before.mode) !== 0o700 ||
+    !Number.isSafeInteger(before.dev) ||
+    !Number.isSafeInteger(before.ino) ||
+    await realpath(root) !== root
+  ) {
+    throw new ProviderServiceInstallationLifecycleErrorV1(
+      "installation_tampered",
+      "provider runtime root cannot be pinned for the control journal",
+    );
+  }
+  let handle: FileHandle | undefined;
+  try {
+    handle = await open(
+      root,
+      constants.O_RDONLY |
+        (typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0) |
+        (typeof constants.O_DIRECTORY === "number" ? constants.O_DIRECTORY : 0),
+    );
+    const opened = await handle.stat();
+    assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(handle.fd, {
+      expectedKind: "directory",
+    });
+    const after = await lstat(root);
+    if (
+      !opened.isDirectory() ||
+      opened.dev !== before.dev ||
+      opened.ino !== before.ino ||
+      opened.uid !== before.uid ||
+      opened.gid !== before.gid ||
+      exactModeV1(opened.mode) !== 0o700 ||
+      after.isSymbolicLink() ||
+      !after.isDirectory() ||
+      after.dev !== opened.dev ||
+      after.ino !== opened.ino ||
+      after.uid !== opened.uid ||
+      after.gid !== opened.gid ||
+      exactModeV1(after.mode) !== 0o700
+    ) {
+      throw new ProviderServiceInstallationLifecycleErrorV1(
+        "installation_tampered",
+        "provider runtime root changed while pinning the control journal",
+      );
+    }
+    return Object.freeze({ dev: opened.dev, ino: opened.ino });
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+async function pinRuntimeRootForUninstallV1(
+  manifest: ProviderServiceInstallationManifestEnvelopeV1,
+  authority: AuthorityStateV1,
+): Promise<Readonly<{ readonly dev: number; readonly ino: number }>> {
+  return pinRuntimeRootForJournalV1(manifest, authority, "principal");
+}
+
+async function ensureInstallRuntimeRootPinV1(
+  root: string,
+  authority: AuthorityStateV1,
+  journal: ProviderServiceInstallationControlJournalEnvelopeV1,
+): Promise<ProviderServiceInstallationControlJournalEnvelopeV1> {
+  const target = journal.payload.targetManifest;
+  if (
+    journal.payload.operation !== "install" ||
+    target === null
+  ) {
+    throw new ProviderServiceInstallationLifecycleErrorV1(
+      "manifest_invalid",
+      "install runtime root pin transition is invalid",
+    );
+  }
+  if (journal.payload.runtimeRootCustodyPin !== null) return journal;
+  if (
+    journal.payload.phase !== "files_pending" ||
+    !journal.payload.createdRuntimeRoot
+  ) {
+    throw new ProviderServiceInstallationLifecycleErrorV1(
+      "manifest_invalid",
+      "reused install runtime root has no durable pin",
+    );
+  }
+  try {
+    await lstat(target.payload.runtimeRoot);
+  } catch (error) {
+    if (isMissingV1(error)) return journal;
+    throw error;
+  }
+  if (!(await inspectRuntimeRootCreationMarkerV1(journal, authority))) {
+    throw new ProviderServiceInstallationLifecycleErrorV1(
+      "installation_tampered",
+      "created runtime root exists without its creation marker",
+    );
+  }
+  const runtimeRootCustodyPin = await pinRuntimeRootForJournalV1(
+    target,
+    authority,
+    "authority",
+  );
+  const next = makeControlJournalV1(Object.freeze({
+    ...journal.payload,
+    runtimeRootCustodyPin,
+  }));
+  await writeControlJournalV1(root, authority, next, true);
+  return next;
+}
+
+async function assertRuntimeRootCustodyV1(
+  handle: FileHandle,
+  manifest: ProviderServiceInstallationManifestEnvelopeV1,
+  authority: AuthorityStateV1,
+  pin: Readonly<{ readonly dev: number; readonly ino: number }>,
+): Promise<void> {
+  const root = manifest.payload.runtimeRoot;
+  await checkedWritableParentV1(
+    root,
+    authority.authorityUid,
+    authority.authorityGid,
+  );
+  const opened = await handle.stat();
+  assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(handle.fd, {
+    expectedKind: "directory",
+  });
+  const path = await lstat(root);
+  if (
+    !opened.isDirectory() ||
+    opened.dev !== pin.dev ||
+    opened.ino !== pin.ino ||
+    opened.uid !== authority.authorityUid ||
+    opened.gid !== authority.authorityGid ||
+    exactModeV1(opened.mode) !== 0o700 ||
+    path.isSymbolicLink() ||
+    !path.isDirectory() ||
+    path.dev !== opened.dev ||
+    path.ino !== opened.ino ||
+    path.uid !== opened.uid ||
+    path.gid !== opened.gid ||
+    exactModeV1(path.mode) !== 0o700 ||
+    await realpath(root) !== root
+  ) {
+    throw new ProviderServiceInstallationLifecycleErrorV1(
+      "installation_tampered",
+      "provider runtime root custody path changed",
+    );
+  }
+}
+
+async function acquireRuntimeRootCustodyV1(
+  manifest: ProviderServiceInstallationManifestEnvelopeV1,
+  authority: AuthorityStateV1,
+  pin: Readonly<{ readonly dev: number; readonly ino: number }>,
+  phase:
+    | "uninstall_runtime_root_custody_acquired"
+    | "install_runtime_root_custody_acquired",
+): Promise<FileHandle> {
+  const root = manifest.payload.runtimeRoot;
+  await checkedWritableParentV1(
+    root,
+    authority.authorityUid,
+    authority.authorityGid,
+  );
+  const before = await lstat(root);
+  const principal = manifest.payload.principal;
+  const ownerAllowed =
+    (before.uid === principal.uid && before.gid === principal.gid) ||
+    (before.uid === authority.authorityUid && before.gid === authority.authorityGid);
+  if (
+    before.isSymbolicLink() ||
+    !before.isDirectory() ||
+    before.dev !== pin.dev ||
+    before.ino !== pin.ino ||
+    !ownerAllowed ||
+    exactModeV1(before.mode) !== 0o700 ||
+    await realpath(root) !== root
+  ) {
+    throw new ProviderServiceInstallationLifecycleErrorV1(
+      "installation_tampered",
+      "provider runtime root no longer matches the control journal pin",
+    );
+  }
+  let handle: FileHandle | undefined;
+  try {
+    handle = await open(
+      root,
+      constants.O_RDONLY |
+        (typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0) |
+        (typeof constants.O_DIRECTORY === "number" ? constants.O_DIRECTORY : 0),
+    );
+    const opened = await handle.stat();
+    assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(handle.fd, {
+      expectedKind: "directory",
+    });
+    const openedOwnerAllowed =
+      (opened.uid === principal.uid && opened.gid === principal.gid) ||
+      (opened.uid === authority.authorityUid && opened.gid === authority.authorityGid);
+    if (
+      !opened.isDirectory() ||
+      opened.dev !== before.dev ||
+      opened.ino !== before.ino ||
+      !openedOwnerAllowed ||
+      exactModeV1(opened.mode) !== 0o700
+    ) {
+      throw new ProviderServiceInstallationLifecycleErrorV1(
+        "installation_tampered",
+        "provider runtime root changed before custody",
+      );
+    }
+    if (
+      opened.uid !== authority.authorityUid ||
+      opened.gid !== authority.authorityGid
+    ) {
+      await handle.chown(authority.authorityUid, authority.authorityGid);
+    }
+    if (exactModeV1(opened.mode) !== 0o700) await handle.chmod(0o700);
+    await handle.sync();
+    await syncDirectoryV1(dirname(root));
+    await assertRuntimeRootCustodyV1(handle, manifest, authority, pin);
+    await authority.afterDurablePhase?.(phase);
+    await assertRuntimeRootCustodyV1(handle, manifest, authority, pin);
+    const result = handle;
+    handle = undefined;
+    return result;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+async function restoreRuntimeRootCustodyV1(
+  handle: FileHandle,
+  manifest: ProviderServiceInstallationManifestEnvelopeV1,
+  authority: AuthorityStateV1,
+  pin: Readonly<{ readonly dev: number; readonly ino: number }>,
+): Promise<void> {
+  await assertRuntimeRootCustodyV1(handle, manifest, authority, pin);
+  const principal = manifest.payload.principal;
+  const before = await handle.stat();
+  if (before.uid !== principal.uid || before.gid !== principal.gid) {
+    await handle.chown(principal.uid, principal.gid);
+  }
+  if (exactModeV1(before.mode) !== 0o700) await handle.chmod(0o700);
+  await handle.sync();
+  await syncDirectoryV1(dirname(manifest.payload.runtimeRoot));
+  const restored = await handle.stat();
+  assertProviderRuntimeNativeFdHasNoExtendedAccessControlV1(handle.fd, {
+    expectedKind: "directory",
+  });
+  const path = await lstat(manifest.payload.runtimeRoot);
+  if (
+    restored.dev !== pin.dev ||
+    restored.ino !== pin.ino ||
+    restored.uid !== principal.uid ||
+    restored.gid !== principal.gid ||
+    exactModeV1(restored.mode) !== 0o700 ||
+    path.dev !== restored.dev ||
+    path.ino !== restored.ino ||
+    path.uid !== restored.uid ||
+    path.gid !== restored.gid ||
+    exactModeV1(path.mode) !== 0o700
+  ) {
+    throw new ProviderServiceInstallationLifecycleErrorV1(
+      "installation_tampered",
+      "provider runtime root custody did not restore exactly",
+    );
+  }
+}
+
 function uninstallJournalTupleValidV1(
   journal: ProviderServiceInstallationControlJournalEnvelopeV1,
 ): boolean {
   const source = journal.payload.sourceManifest;
   return journal.payload.operation === "uninstall" &&
     source !== null &&
+    journal.payload.runtimeRootCustodyPin !== null &&
     journal.payload.targetManifest === null &&
     journal.payload.rollbackContentDigest ===
       (source.payload.previous?.contentDigest ?? null);
@@ -5339,36 +6522,16 @@ async function validateUninstallJournalArtifactsV1(
       );
     }
   }
-  const rollbackExists = await pathExistsV1(rollbackPathV1(root));
   const expectedRollback = journal.payload.rollbackContentDigest;
   if (expectedRollback === null) {
-    if (rollbackExists) {
-      throw new ProviderServiceInstallationLifecycleErrorV1(
-        "installation_tampered",
-        "unexpected rollback appeared during uninstall recovery",
-      );
-    }
-  } else if (rollbackExists) {
-    const rollback = await readRollbackV1(root, authority);
-    if (rollback === undefined || rollback.contentDigest !== expectedRollback) {
-      throw new ProviderServiceInstallationLifecycleErrorV1(
-        "installation_tampered",
-        "provider service rollback changed during uninstall recovery",
-      );
-    }
-    const rollbackBytes = canonicalFileV1(rollback);
-    await removeExactAtomicPublicationIfPresentV1({
-      path: rollbackPathV1(root),
-      expectedDigest: digestBytesV1(rollbackBytes),
-      expectedByteLength: rollbackBytes.byteLength,
-      uid: authority.authorityUid,
-      gid: authority.authorityGid,
-      mode: 0o600,
-      maximumBytes: MAX_ROLLBACK_BYTES_V1,
-      label: "provider service rollback snapshot",
-      authorityUid: authority.authorityUid,
-      authorityGid: authority.authorityGid,
-      remove: false,
+    await assertRollbackPublicationAbsentV1(root);
+  } else {
+    await readPinnedRollbackPublicationV1({
+      root,
+      authority,
+      manifest: source,
+      expectedDigest: expectedRollback,
+      action: "inspect",
     });
   }
 }
@@ -5380,69 +6543,70 @@ async function removeUninstallJournalArtifactsV1(
   removedPaths: string[],
 ): Promise<void> {
   const source = journal.payload.sourceManifest!;
-  await validateUninstallJournalArtifactsV1(root, authority, journal);
-  let firstManagedRemovalObserved = false;
-  for (const artifact of source.payload.managedArtifacts) {
-    const existed = await pathExistsV1(artifact.path);
-    await removePinnedArtifactIfPresentV1(artifact, source.payload, authority);
-    if (existed) {
-      removedPaths.push(artifact.path);
-      if (!firstManagedRemovalObserved) {
-        firstManagedRemovalObserved = true;
-        await authority.afterDurablePhase?.(
-          "uninstall_first_artifact_removed",
-        );
+  const custodyPin = journal.payload.runtimeRootCustodyPin!;
+  const custody = await acquireRuntimeRootCustodyV1(
+    source,
+    authority,
+    custodyPin,
+    "uninstall_runtime_root_custody_acquired",
+  );
+  try {
+    // Custody changes the service-writable parent into an authority-owned
+    // 0700 directory before the complete removal set is re-read.  No pathname
+    // unlink below is authorized by an observation made before this barrier.
+    await validateUninstallJournalArtifactsV1(root, authority, journal);
+    let firstManagedRemovalObserved = false;
+    for (const artifact of source.payload.managedArtifacts) {
+      const existed = await pathExistsV1(artifact.path);
+      await removePinnedArtifactIfPresentV1(artifact, source.payload, authority);
+      if (existed) {
+        removedPaths.push(artifact.path);
+        if (!firstManagedRemovalObserved) {
+          firstManagedRemovalObserved = true;
+          await authority.afterDurablePhase?.(
+            "uninstall_first_artifact_removed",
+          );
+        }
       }
     }
-  }
-  for (const item of [
-    { path: source.payload.ephemeralPaths.socketPath, kind: "socket" as const },
-    { path: source.payload.ephemeralPaths.readinessPath, kind: "readiness" as const },
-  ]) {
-    if (!(await validateEphemeralForRemovalV1(
-      item.path,
-      item.kind,
-      source.payload.principal,
-    ))) {
-      throw new ProviderServiceInstallationLifecycleErrorV1(
-        "installation_tampered",
-        "provider service ephemeral path is unsafe during uninstall recovery",
-      );
+    for (const item of [
+      { path: source.payload.ephemeralPaths.socketPath, kind: "socket" as const },
+      { path: source.payload.ephemeralPaths.readinessPath, kind: "readiness" as const },
+    ]) {
+      if (!(await validateEphemeralForRemovalV1(
+        item.path,
+        item.kind,
+        source.payload.principal,
+      ))) {
+        throw new ProviderServiceInstallationLifecycleErrorV1(
+          "installation_tampered",
+          "provider service ephemeral path is unsafe during uninstall recovery",
+        );
+      }
+      try {
+        await unlinkAndSyncV1(item.path);
+        removedPaths.push(item.path);
+      } catch (error) {
+        if (!isMissingV1(error)) throw error;
+      }
     }
-    try {
-      await unlinkAndSyncV1(item.path);
-      removedPaths.push(item.path);
-    } catch (error) {
-      if (!isMissingV1(error)) throw error;
-    }
+    await assertRuntimeRootCustodyV1(custody, source, authority, custodyPin);
+    await restoreRuntimeRootCustodyV1(custody, source, authority, custodyPin);
+  } finally {
+    await custody.close().catch(() => undefined);
   }
   const expectedRollback = journal.payload.rollbackContentDigest;
-  let rollback: ProviderServiceInstallationRollbackEnvelopeV1 | undefined;
-  try {
-    rollback = await readRollbackV1(root, authority);
-  } catch (error) {
-    throw new ProviderServiceInstallationLifecycleErrorV1(
-      "installation_tampered",
-      "provider service rollback changed during uninstall recovery",
-      { cause: error },
-    );
-  }
   if (expectedRollback === null) {
-    if (rollback !== undefined) {
-      throw new ProviderServiceInstallationLifecycleErrorV1(
-        "installation_tampered",
-        "unexpected rollback appeared during uninstall recovery",
-      );
-    }
-  } else if (rollback !== undefined) {
-    if (rollback.contentDigest !== expectedRollback) {
-      throw new ProviderServiceInstallationLifecycleErrorV1(
-        "installation_tampered",
-        "provider service rollback changed during uninstall recovery",
-      );
-    }
-    await removePinnedRollbackIfPresentV1(root, authority, rollback);
-    removedPaths.push(rollbackPathV1(root));
+    await assertRollbackPublicationAbsentV1(root);
+  } else {
+    const rollback = await readPinnedRollbackPublicationV1({
+      root,
+      authority,
+      manifest: source,
+      expectedDigest: expectedRollback,
+      action: "remove",
+    });
+    if (rollback !== undefined) removedPaths.push(rollbackPathV1(root));
   }
   const manifestExisted = await pathExistsV1(manifestPathV1(root));
   await removePinnedManifestIfPresentV1(root, authority, source);
@@ -5568,6 +6732,37 @@ async function uninstallInternalV1(
           pending,
         );
       }
+      let source: ProviderServiceInstallationManifestEnvelopeV1 | undefined;
+      try {
+        source = await readManifestV1(root, authority);
+      } catch {
+        return { ...base, status: "refused", removedPaths: [], refusedPaths: [manifestPathV1(root)], reason: "installation_tampered" };
+      }
+      if (source === undefined) {
+        return { ...base, status: "not_installed", removedPaths: [], refusedPaths: [] };
+      }
+      if (
+        source.payload.installationRoot === root &&
+        source.payload.runtimeRoot === expectedRuntimeRoot &&
+        source.payload.retainedState.runtimeRoot === expectedRuntimeRoot &&
+        source.payload.platform === authority.platform
+      ) {
+        try {
+          if (source.payload.previous === null) {
+            await assertRollbackPublicationAbsentV1(root);
+          } else {
+            await readPinnedRollbackPublicationV1({
+              root,
+              authority,
+              manifest: source,
+              expectedDigest: source.payload.previous.contentDigest,
+              action: "converge",
+            });
+          }
+        } catch {
+          return { ...base, status: "refused", removedPaths: [], refusedPaths: [rollbackPathV1(root)], reason: "installation_tampered" };
+        }
+      }
       const doctor = await inspectInstallationV1(
         root,
         expectedRuntimeRoot,
@@ -5579,9 +6774,21 @@ async function uninstallInternalV1(
       if (doctor.status !== "healthy") {
         return { ...base, status: "refused", removedPaths: [], refusedPaths: doctor.artifacts.filter((item) => item.state !== "ok").map((item) => item.path), reason: doctor.reason ?? "installation_tampered" };
       }
-      const source = await readManifestV1(root, authority);
+      source = await readManifestV1(root, authority);
       if (source === undefined) {
         return { ...base, status: "not_installed", removedPaths: [], refusedPaths: [] };
+      }
+      let runtimeRootCustodyPin: Readonly<{
+        readonly dev: number;
+        readonly ino: number;
+      }>;
+      try {
+        runtimeRootCustodyPin = await pinRuntimeRootForUninstallV1(
+          source,
+          authority,
+        );
+      } catch {
+        return { ...base, status: "refused", removedPaths: [], refusedPaths: [source.payload.runtimeRoot], reason: "installation_tampered" };
       }
       const journal = makeControlJournalV1(Object.freeze({
         schemaVersion: 1 as const,
@@ -5597,6 +6804,7 @@ async function uninstallInternalV1(
         installationIdentityDisposition: null,
         createdRuntimeRoot: false,
         runtimeRootCreationNonce: null,
+        runtimeRootCustodyPin,
       }));
       await writeControlJournalV1(root, authority, journal, false);
       return resumeUninstallJournalV1(

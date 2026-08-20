@@ -63,12 +63,17 @@ export function cloneJsonV1<T>(value: T): T {
 export function acceptanceEnvelopeV1(options: Readonly<{
   acceptanceOrdinal: number;
   predecessor: ProviderAcceptanceStateEnvelopeV1["payload"]["predecessor"];
+  installationIdentityGenerationId?:
+    ProviderAcceptanceStateEnvelopeV1["installationIdentityGenerationId"];
   key?: Uint8Array;
   floors?: AcceptanceGenerationFloorsV1;
   acceptedAt?: string;
   configuration?: ProviderAcceptedConfigurationV1;
 }>): ProviderAcceptanceStateEnvelopeV1 {
   const floors = options.floors ?? TEST_GENESIS_FLOORS;
+  const installationIdentityGenerationId =
+    options.installationIdentityGenerationId ??
+    TEST_INSTALLATION_IDENTITY_GENERATION_ID;
   const configuration = options.configuration ?? {
     state: "recovery_only" as const,
     reason: "root_compromise_pending_resign_or_migration" as const,
@@ -95,8 +100,7 @@ export function acceptanceEnvelopeV1(options: Readonly<{
     publicStrongWriter: { state: "disabled" as const },
   };
   const generationId = deriveProviderAcceptanceStateGenerationIdV1({
-    installationIdentityGenerationId:
-      TEST_INSTALLATION_IDENTITY_GENERATION_ID,
+    installationIdentityGenerationId,
     acceptanceOrdinal: options.acceptanceOrdinal,
     predecessor: options.predecessor,
     configuration,
@@ -104,8 +108,7 @@ export function acceptanceEnvelopeV1(options: Readonly<{
   const unsigned = {
     profile: "provider_acceptance_state_v1" as const,
     generationId,
-    installationIdentityGenerationId:
-      TEST_INSTALLATION_IDENTITY_GENERATION_ID,
+    installationIdentityGenerationId,
     acceptanceOrdinal: options.acceptanceOrdinal,
     predecessor: options.predecessor,
     configuration,
@@ -123,8 +126,7 @@ export function acceptanceEnvelopeV1(options: Readonly<{
     schemaVersion: 1,
     recordType: "provider_acceptance_state",
     generationId,
-    installationIdentityGenerationId:
-      TEST_INSTALLATION_IDENTITY_GENERATION_ID,
+    installationIdentityGenerationId,
     acceptedAt: payload.acceptedAt,
     contentDigest: deriveProviderAcceptanceStateContentDigestV1(payload),
     payload,
@@ -133,20 +135,27 @@ export function acceptanceEnvelopeV1(options: Readonly<{
 
 export function genesisRequestV1(options: Readonly<{
   operationNonce?: string;
+  installationIdentityGenerationId?:
+    ProviderAcceptanceStateEnvelopeV1["installationIdentityGenerationId"];
   key?: Uint8Array;
   floors?: AcceptanceGenerationFloorsV1;
+  configuration?: ProviderAcceptedConfigurationV1;
 }> = {}): ProviderAcceptanceCompareAppendRequestV1 {
   return ProviderAcceptanceCompareAppendRequestV1Schema.parse({
     profile: "provider_acceptance_compare_append_request_v1",
     operationNonce: options.operationNonce ?? operationNonceV1(1),
     installationIdentityGenerationId:
+      options.installationIdentityGenerationId ??
       TEST_INSTALLATION_IDENTITY_GENERATION_ID,
     expected: { state: "genesis", expectedNamespaceState: "absent" },
     candidate: acceptanceEnvelopeV1({
       acceptanceOrdinal: 1,
       predecessor: { state: "genesis" },
+      installationIdentityGenerationId:
+        options.installationIdentityGenerationId,
       key: options.key,
       floors: options.floors,
+      configuration: options.configuration,
     }),
   });
 }
@@ -156,15 +165,17 @@ export function successorRequestV1(options: Readonly<{
   operationNonce: string;
   key?: Uint8Array;
   floors?: AcceptanceGenerationFloorsV1;
+  configuration?: ProviderAcceptedConfigurationV1;
 }>): ProviderAcceptanceCompareAppendRequestV1 {
   const current = ProviderAcceptanceCurrentReadV1Schema.parse(options.current);
   const previous = current.enumeration.entries.at(-1)!;
   const highWater = current.highWater;
+  const installationIdentityGenerationId =
+    highWater.payload.installationIdentityGenerationId;
   return ProviderAcceptanceCompareAppendRequestV1Schema.parse({
     profile: "provider_acceptance_compare_append_request_v1",
     operationNonce: options.operationNonce,
-    installationIdentityGenerationId:
-      TEST_INSTALLATION_IDENTITY_GENERATION_ID,
+    installationIdentityGenerationId,
     expected: {
       state: "current",
       highWaterRevision: highWater.payload.highWaterRevision,
@@ -180,8 +191,10 @@ export function successorRequestV1(options: Readonly<{
         generationId: previous.generationId,
         contentDigest: previous.contentDigest,
       },
+      installationIdentityGenerationId,
       key: options.key,
       floors: options.floors,
+      configuration: options.configuration,
     }),
   });
 }

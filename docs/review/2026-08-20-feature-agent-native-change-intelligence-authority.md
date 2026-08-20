@@ -1,85 +1,67 @@
 # feature/agent-native-change-intelligence-authority Review Brief
 
-> 生成时间：2026-08-20 12:03 CST
+> 生成时间：2026-08-20 17:45 CST
 > 分支：feature/agent-native-change-intelligence-authority
-> 基于 commit：59c9d56 fix: freeze preview candidate surface
-> 确认的审查意图：仅交付 source-internal、未接 runtime 的 locked broker transaction/recovery candidate
+> 基于 commit：2882f54 feat: add locked strong-mutation broker journal
+> 审查意图：交付 package-internal 的 locked trust verification 增量，并最小修复已复现的 authority lock 竞态
 
-## 背景与动机
+## 背景与边界
 
-长期目标仍处于第 15 步 Provider Gate/WP5 生产闭环。现有 runtime 的强写顺序是先 durable consume/burn grant，再执行 provider side effect；若进程在两者之间崩溃，会留下“grant 已消费但 mutation outcome 未知”的不可恢复状态。本切片先在 Installation-owner authority 包内建立一个不公开、不授权 I/O 的 transaction substrate，把 fresh Acceptance basis、完整 request/grant、自绑定摘要和 pending/resolved outcome 作为可崩溃恢复的同一持久化状态机。
+本切片把既有 locked broker intent 与 Installation-owner 已认证 Acceptance 历史、完整 Root/Registry 历史、active writer/key、grant、principal attestation 和 provider response 做严格密码学闭合。它仍不执行 provider I/O，也没有 authority execution fence、production lifecycle 或 live-socket principal 证明。
 
-确认的边界是：本切片只承诺 durable pending/resolved 绑定、exact replay 与冲突零写拒绝；grant/response 签名真实性、provider execution fence、runtime/server/client 接线和公开强写均未建立，所有公开 Surface 继续保持 `strongWrites: "locked"`。
+因此公开能力保持：
 
-## 改动策略
+- `strongWrites: "locked"`；
+- `executionFence: "not_established"`；
+- 无新增 package root/export-map/CLI/runtime/client/contracts Surface；
+- 不宣称 Provider Authority production-ready，也不宣称 Provider Gate 已解锁。
 
-- `begin` 与 Acceptance compare-append 复用同一跨进程 authority lock，在锁内重读已认证 current；新 grant 只能绑定 exact fresh Acceptance identity。
-- full strict request、request content digest、formal request digest、session binding digest 与 grant claims 全量重算并持久化；相同 grant + 相同 canonical request byte-exact replay，不同请求零写拒绝。
-- `resolve` 只允许既有 pending intent；common response fields 必须回指原请求，write success 精确绑定 locator/logicalBytes/content digest，compare committed 精确绑定 next revision/phase/nonce/artifacts 且拒绝空 mutation digest。
-- broker 使用独立 HMAC snapshot + 独立 publication pin，并以 deterministic prepare/stage/rename/fsync 顺序发布；恢复只接受完整、精确连接的状态。
-- load 重新解析所有 intent、重算 accounting/capacity、验证 Acceptance 历史仍在 complete enumeration 中，并要求唯一 revision 公式 `snapshotRevision = intentCount + resolvedCount`。
-- broker locator、opener 与 test seam 都保持 package-private；未修改 package export map、root index、CLI、runtime、client、contracts、lockfile 或公开 capability 状态。
+完整 package 门禁曾复现一项真实并发故障：loser 读取 canonical lock `nlink=2` 后，winner 正常 unlink deterministic stage，旧实现把 stage 缺失误判为 `authority_busy`。按产品纵切优先策略，本轮只做最小修复并保留一条确定性回归，未继续扩展边缘竞态矩阵。
 
-## 改动范围
+## 主要改动
 
-| 模块/职责 | 文件 | 做了什么 |
-|-----------|------|----------|
-| Broker durable core | `packages/durable-object-provider-authority/src/strong-mutation-broker-core-internal.ts` | pending/resolved 状态机、两层 publication、replay/mismatch、load closure 与 local capacity |
-| Shared Acceptance serialization | `src/acceptance-store-core-internal.ts` | 在同一 authority lock 内投影最小 current view 与 callback-only key custody |
-| Durable filesystem cuts | `src/filesystem-internal.ts` | broker crash phases；大 snapshot stage 的 exact checked cleanup 上限 |
-| Fixed internal layout | `src/platform-layout.ts` | 增加不进入 public locator set 的 broker snapshot/pin locators |
-| Identity fail-closed classification | `src/key-custody-internal.ts` | broker canonical/stage/prepare 和真实随机 lock/recovery preparation 残留不再误判 unprovisioned |
-| Test-only composition | `src/test-seam-internal.ts` | 仅 `NODE_ENV=test` 可取得 broker opener/inspection/admission seam |
-| Scope documentation | `README.md` | 明确 locked/not-established、local capacity 和 mutation-digest residual |
-| Regression evidence | `test/strong-mutation-broker-*.ts`, `test/strong-mutation-broker-worker.mjs` | bindings、authenticated tamper、capacity、双进程线性化与 SIGKILL recovery |
+| 模块 | 结果 |
+|---|---|
+| `strong-mutation-trust-verifier-core-internal.ts` | 验证 historical/current strong-ready Acceptance、完整 Root/Registry history、唯一 active writer/key、strict grant signature、principal transcript/self-signature 与 response signature |
+| `acceptance-store-core-internal.ts` | 在既有 key-custody/authority lock 内投影完整、已认证 generation envelopes，不泄露 owner key |
+| `strong-mutation-broker-core-internal.ts` | `begin`/`resolve` 持久化可重导的 deterministic certificate；每次 load/operation 重读 evidence、重验并 exact compare；G1 pending 可在 G2 后按历史 pin 闭合 |
+| `test-seam-internal.ts` | 仅测试环境注入 opaque strict verifier capability/evidence reader；公开入口不变 |
+| `cross-process-lock-internal.ts` | stage 消失后重新验证 canonical；同一已认证 inode 收敛到 `nlink=1` 时按 contention 等待，已释放或合法 successor 走 bounded retry，异常 metadata/HMAC/read 仍 fail closed |
+| `filesystem-internal.ts` | 只增加一个 package-internal deterministic race hook |
+| tests/README | strict trust、历史 pin、零写拒绝、恢复和唯一已复现 lock race 回归；文档继续明确 locked residual |
 
-## Review 重点
+## 审查结论
 
-1. **Fresh current 与 replay 顺序** — 新 grant 必须先绑定锁内 fresh current；既有 exact intent 在 Acceptance 追加后仍能重放/完成。
-2. **没有 standalone burn** — 每个 durable consume candidate 必须至少包含完整 pending request；崩溃后只能恢复为 absent/pending/resolved 完整态。
-3. **Outcome 不是只看 common fields** — schema-valid success 也必须与原 write/compare request 的本地可推导语义闭合。
-4. **Publication 与 identity residue fail closed** — canonical/stage/pin/revision、随机 lock prepare、nlink=2 与大 snapshot cut 不得被降级为 unprovisioned 或静默采纳。
-5. **Surface 不被误解锁** — package root、export map、CLI、runtime 与 public locator set 必须保持无 broker API；状态仍是 locked/not-established。
+独立 change-intent/security 复核未发现 P0、P1、P2，也未发现数据损坏、越权或错误成功路径。
 
-## 已识别风险
+已确认：
 
-独立审查未发现剩余 P0、P1 或影响当前确认范围的 P2。审查过程中发现并已修复：
+1. fresh begin 必须绑定锁内当前 Acceptance；既有 G1 pending 在 G2 后仍按 retained G1 history 验证、resolve 和 restart replay。
+2. grant、principal 与 response 的严格验证失败发生在 broker 首写前；invalid evidence 保持零 intent。
+3. durable certificate 只含可从 formal inputs/validated history 重导的 pin/material，不保存 raw owner key、private key、路径或 capability identity。
+4. 每次 load/operation 都创建短生命周期 validation session；cache 不跨 load，且只复用 exact history pin closure。
+5. lock regression 确实命中 `canonical nlink=2 → stage unlink` 窗口，loser 进入正常 contention/retry；winner 提交后旧 begin 返回 `invalid_request`，broker 仍为零 intent，而不是错误 `authority_busy`。
+6. public exports、CLI、runtime、client、contracts 未被解锁或扩面。
 
-- snapshot revision 原先只校验范围，现收紧为 exact `intentCount + resolvedCount`；
-- response 原先只绑定 common fields，现加入 write/committed compare 的可推导 success 语义；
-- broker/随机 lock preparation 残留原先可能误判 unprovisioned，现均 fail closed；
-- compare committed 现拒绝 `mutationDigest: "none"`，并撤销“所有 digest 均已精确验证”的过度声明。
+## 验证证据
 
-明确保留的 locked residual：
-
-- active Registry grant key/signature、provider response signature和 exact runtime-private mutation-digest derivation尚未验证；
-- begin 到 provider execution/resolve 之间没有 authority execution fence；
-- 4,096 intent / 8 MiB frame / 256 MiB snapshot 只是 broker-local guard，不代表 Root/Registry/Catalog/Acceptance 全局 D-40 admission；
-- PID reuse 保守 false-busy、协调回放整个 root-owned snapshot+pin 的 OS rollback 边界仍未建立硬件/OS monotonic anchor。
-
-非阻塞 Test Gap：没有构造 independently authenticated 的 4,096-intent、8 MiB frame、256 MiB snapshot load-time N/N+1 全量 fixture；已有纯 classifier N/N+1、load-time re-canonicalization、多 intent、正式大 receipt 和大 deterministic stage 覆盖。本候选不据此声称 global capacity authority。
-
-## 测试情况
-
-**已覆盖：**
-
-- authority source + test TypeScript：通过。
-- authority 整包：10 files，193 passed / 3 skipped；skip 仅为非-root环境无法制造的 owner-mismatch negative fixtures。
-- broker focused：unit 30/30、authenticated integrity 22/22、process/crash 23/23。
-- 双真实 Node process：同 G1 的 broker begin 与 G2 Acceptance compare-append 只产生两种合法线性化终态。
-- G1 pending 在 Acceptance 推进到 G2 后仍可 resolve，并在重启后 exact replay；`executionFence` 保持 `not_established`。
-- begin/resolve 各九个 deterministic publication SIGKILL phase、lock acquisition/recovery preparation SIGKILL、nlink=2 与大 snapshot stage 均完成恢复验证。
-- independent Node JCS/SHA/HMAC oracle 重签 semantic tamper，覆盖 duplicate grant、accounting/revision、request/response join 与 Acceptance enumeration closure。
-- root `pnpm run build:all`：通过。
-- root `pnpm run typecheck`：通过。
+- authority package typecheck：通过。
+- authority package build：通过。
+- authority package test：11 files，219 passed / 3 skipped；skip 仅为非-root环境无法制造的 owner-mismatch negative fixtures。
+- lock focused process：23/23；唯一新增 race regression 通过。
 - `git diff --check`：通过。
-- 独立 change-intent/security 终审：当前冻结快照无未解决 P0/P1/P2。
+- 独立只读终审：无阻断 finding。
 
-**未运行/不适用：**
+按新的分层门禁策略，本次 package-internal 小切片没有重复运行 root/distribution/cross-platform 重门；这些只在 Alpha 里程碑或发布前运行。
 
-- 未重复运行与本 package 内部改动无直接依赖的全仓长测试；受影响 package 已完整跑完，root build/typecheck 已闭合。
-- 未运行 production broker/runtime E2E，因为本切片刻意没有 IPC、signature verification、execution fence 或 runtime wiring；将其伪装成 E2E 会违反确认边界。
+## 明确保留的 backlog
+
+- authority-to-provider execution fence 与 crash-recoverable provider outcome 尚未建立；
+- production lifecycle、live-socket kernel peer、target fingerprint 与安装信任来源尚未闭合；
+- global Root/Registry/Catalog/Acceptance D-40 admission 与 OS/hardware rollback anchor 尚未建立；
+- open-FD、canonical fully released、三方 authenticated turnover 的额外动态矩阵，以及显式 cross-load cache 失效回归，按用户裁定作为非阻断 test backlog；
+- 以上能力在真正接入产品路径并进入正式解锁/发布门前补齐，当前不据此宣称 production authority。
 
 ## 结论
 
-🟢 Effective within confirmed scope：locked broker transaction/recovery candidate 已建立完整 durable pending/resolved 记录、共享 Acceptance 线性化、exact replay、semantic join 与 crash recovery，且没有扩大公开 Surface。该结论不等同于 production authority、Provider Gate 解锁、Step 15 完成或总 Goal 完成；下一切片仍需在完整 trust closure 下建立 grant/response verification、execution outcome fence 与 exact-object provider I/O。
+🟢 Effective within confirmed scope：locked trust verification 与 durable broker binding 已闭合其内部承诺；已复现的 lock 竞态完成最小修复和确定性回归。该增量可以提交，随后应停止扩展内部 candidate，转向可安装、可启动、可体验的 Alpha 产品纵切。

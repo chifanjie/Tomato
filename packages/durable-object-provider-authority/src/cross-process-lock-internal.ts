@@ -982,21 +982,60 @@ async function acquireLockV1(
     await recoverLockPublishStageV1(layout, key, hooks);
     const created = await tryCreateLockV1(layout, key, hooks);
     if (created !== undefined) return created;
-    const observed = await observeLockV1(
+    let observed = await observeLockV1(
       layout,
       key,
       layout.transactionLockPath,
       [1, 2],
     );
     if (observed?.nlink === 2) {
+      await afterLockDurablePhaseV1(
+        hooks,
+        "lock_canonical_nlink2_observed_before_stage_observe",
+      );
       const staged = await observeLockV1(
         layout,
         key,
         layout.transactionLockStagePath,
-        [2],
+        // If the owner unlinks stage after this observer opens it, fstat sees
+        // the still-authenticated inode at nlink=1. The exact same-lock join
+        // below distinguishes that legal convergence from every other file.
+        [1, 2],
       );
-      if (staged === undefined || !sameLockV1(observed, staged)) {
-        throw new ProviderAcceptanceAuthorityErrorV1("authority_busy");
+      if (staged === undefined) {
+        // The live owner may legally unlink the publication stage between
+        // observing canonical at nlink=2 and observing the stage. Accept a
+        // present continuation of that observation only when the exact same
+        // authenticated inode has converged to canonical-only nlink=1;
+        // absence is a completed release and a different authenticated object
+        // is a later contender.
+        const converged = await observeLockV1(
+          layout,
+          key,
+          layout.transactionLockPath,
+          [1, 2],
+        );
+        if (converged === undefined) {
+          // The owner may also have completed and released canonical in the
+          // same observation window. Retry through the normal contended path;
+          // its close-the-watch-race lstat observes the now-absent lock.
+          throw new ProviderAcceptanceAuthorityContendedInternalV1();
+        }
+        if (converged.nlink !== 1) {
+          throw new ProviderAcceptanceAuthorityContendedInternalV1();
+        }
+        if (!sameLockV1(observed, converged)) {
+          // Three-contender turnover is legal: B can retain an observation of
+          // A at nlink=2 while A releases and C publishes a different, fully
+          // authenticated lock. Re-enter the bounded contention path rather
+          // than misclassifying C's valid object as namespace corruption.
+          throw new ProviderAcceptanceAuthorityContendedInternalV1();
+        }
+        observed = converged;
+      } else if (!sameLockV1(observed, staged)) {
+        // The deterministic stage may already belong to a later authenticated
+        // contender after the formerly observed owner released it.
+        throw new ProviderAcceptanceAuthorityContendedInternalV1();
       }
     }
     if (observed === undefined || !processDefinitelyExitedV1(observed.envelope.pid)) {

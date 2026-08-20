@@ -22,14 +22,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   createProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1,
   inspectProviderAcceptanceAuthorityCandidateForTestInternalV1,
-  inspectProviderStrongMutationBrokerSnapshotForTestInternalV1,
+  inspectProviderStrongMutationBrokerSnapshotForTestInternalV1 as inspectProviderStrongMutationBrokerSnapshotWithVerifierV1,
   openProviderAcceptanceAuthorityStoreForTestInternalV1,
-  openProviderStrongMutationBrokerStoreForTestInternalV1,
+  openProviderStrongMutationBrokerStoreForTestInternalV1 as openProviderStrongMutationBrokerStoreWithVerifierV1,
   provisionProviderAcceptanceAuthorityForTestInternalV1,
   type ProviderAcceptanceAuthorityStoreOpenOptionsInternalV1,
 } from "../src/test-seam-internal.js";
 import {
-  TEST_INSTALLATION_IDENTITY_GENERATION_ID,
   TEST_INSTALLATION_IDENTITY_KEY,
   genesisRequestV1,
   operationNonceV1,
@@ -38,8 +37,14 @@ import {
 } from "./acceptance-store-fixtures.js";
 import {
   brokerResolveRequestV1,
+  TEST_BROKER_INSTALLATION_IDENTITY_GENERATION_ID,
+  currentAcceptanceIdentityV1,
   strongMutationRequestV1,
   strongMutationResponseV1,
+  strongMutationTrustedConfigurationV1,
+  strongMutationTrustedGenerationFloorsV1,
+  strongMutationTrustEvidenceV1,
+  strongMutationTrustVerifierV1,
 } from "./strong-mutation-broker-fixtures.js";
 
 type DurablePhaseV1 = Parameters<
@@ -62,6 +67,42 @@ const workerPath = fileURLToPath(
 );
 const fixtureRoots = new Set<string>();
 const childProcesses = new Set<ChildProcess>();
+const brokerVerifierByLayoutV1 = new WeakMap<object, Awaited<
+  ReturnType<typeof strongMutationTrustVerifierV1>
+>>();
+const workerEvidenceByAuthorityRootV1 = new Map<string, string>();
+
+function verifierForLayoutV1(capability: object) {
+  const verifier = brokerVerifierByLayoutV1.get(capability);
+  if (verifier === undefined) throw new Error("broker verifier absent");
+  return verifier;
+}
+
+function openProviderStrongMutationBrokerStoreForTestInternalV1(
+  capability: Parameters<
+    typeof openProviderStrongMutationBrokerStoreWithVerifierV1
+  >[0],
+  options: Parameters<
+    typeof openProviderStrongMutationBrokerStoreWithVerifierV1
+  >[2] = {},
+) {
+  return openProviderStrongMutationBrokerStoreWithVerifierV1(
+    capability,
+    verifierForLayoutV1(capability),
+    options,
+  );
+}
+
+function inspectProviderStrongMutationBrokerSnapshotForTestInternalV1(
+  capability: Parameters<
+    typeof inspectProviderStrongMutationBrokerSnapshotWithVerifierV1
+  >[0],
+) {
+  return inspectProviderStrongMutationBrokerSnapshotWithVerifierV1(
+    capability,
+    verifierForLayoutV1(capability),
+  );
+}
 
 const BROKER_PHASES = [
   "broker_publication_stage_preparation_opened_before_complete_write",
@@ -98,6 +139,7 @@ afterEach(async () => {
     [...fixtureRoots].map((root) => rm(root, { recursive: true, force: true })),
   );
   fixtureRoots.clear();
+  workerEvidenceByAuthorityRootV1.clear();
 });
 
 async function fixtureV1() {
@@ -105,19 +147,38 @@ async function fixtureV1() {
   fixtureRoots.add(root);
   const capability =
     createProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1(root);
+  brokerVerifierByLayoutV1.set(
+    capability,
+    await strongMutationTrustVerifierV1(),
+  );
   await provisionProviderAcceptanceAuthorityForTestInternalV1(capability, {
     installationIdentityGenerationId:
-      TEST_INSTALLATION_IDENTITY_GENERATION_ID,
+      TEST_BROKER_INSTALLATION_IDENTITY_GENERATION_ID,
     installationIdentityKey: TEST_INSTALLATION_IDENTITY_KEY,
   });
   const acceptance =
     await openProviderAcceptanceAuthorityStoreForTestInternalV1(capability, {
       clock: testAuthorityClockV1,
     });
-  await acceptance.compareAppend(genesisRequestV1());
+  await acceptance.compareAppend(genesisRequestV1({
+    installationIdentityGenerationId:
+      TEST_BROKER_INSTALLATION_IDENTITY_GENERATION_ID,
+    configuration: strongMutationTrustedConfigurationV1(),
+  }));
   const read = await acceptance.readCurrent();
   if (read.state !== "current") throw new Error("expected current");
   const current = ProviderAcceptanceCurrentReadV1Schema.parse(read.current);
+  const evidenceRoot = await mkdtemp(join(tmpdir(), "broker-evidence-"));
+  fixtureRoots.add(evidenceRoot);
+  const evidencePath = join(evidenceRoot, "trust-evidence.json");
+  await writeFile(
+    evidencePath,
+    JSON.stringify(
+      strongMutationTrustEvidenceV1(currentAcceptanceIdentityV1(current)),
+    ),
+    { mode: 0o600 },
+  );
+  workerEvidenceByAuthorityRootV1.set(root, evidencePath);
   const broker =
     await openProviderStrongMutationBrokerStoreForTestInternalV1(capability, {
       clock: testAuthorityClockV1,
@@ -130,13 +191,17 @@ function startWorkerV1(input: Readonly<{
   root: string;
   request: unknown;
   phase?: DurablePhaseV1;
+  phaseSequence?: readonly DurablePhaseV1[];
 }>): ChildProcess {
+  const evidencePath = workerEvidenceByAuthorityRootV1.get(input.root);
+  if (evidencePath === undefined) throw new Error("worker evidence absent");
   const child = fork(workerPath, [], {
     env: {
       ...process.env,
       NODE_ENV: "test",
       AUTHORITY_BROKER_WORKER_ACTION: input.action,
       AUTHORITY_BROKER_WORKER_ROOT: input.root,
+      AUTHORITY_BROKER_WORKER_EVIDENCE_PATH: evidencePath,
       AUTHORITY_BROKER_WORKER_INPUT_BASE64: Buffer.from(
         JSON.stringify(input.request),
         "utf8",
@@ -144,6 +209,15 @@ function startWorkerV1(input: Readonly<{
       ...(input.phase === undefined
         ? {}
         : { AUTHORITY_BROKER_WORKER_TARGET_PHASE: input.phase }),
+      ...(input.phaseSequence === undefined
+        ? {}
+        : {
+            AUTHORITY_BROKER_WORKER_PHASE_SEQUENCE_BASE64: Buffer.from(
+              JSON.stringify(input.phaseSequence),
+              "utf8",
+            ).toString("base64"),
+            AUTHORITY_BROKER_WORKER_ARM_PHASES_AFTER_GO: "1",
+          }),
     },
     stdio: ["ignore", "pipe", "pipe", "ipc"],
   });
@@ -216,6 +290,15 @@ function waitForExitV1(child: ChildProcess) {
   });
 }
 
+async function continueToPhaseV1(
+  child: ChildProcess,
+  phase: DurablePhaseV1,
+): Promise<void> {
+  const reached = waitForMessageV1(child, "phase");
+  child.send({ type: "continue" });
+  await expect(reached).resolves.toEqual({ type: "phase", phase });
+}
+
 function waitForOutcomeV1(
   child: ChildProcess,
 ): Promise<Extract<WorkerMessageV1, { readonly type: "result" | "error" }>> {
@@ -256,6 +339,23 @@ function waitForOutcomeV1(
     child.on("message", onMessage);
     child.once("exit", onExit);
   });
+}
+
+function expectCommittedAcceptanceOutcomeV1(
+  message: Extract<WorkerMessageV1, { readonly type: "result" | "error" }>,
+): void {
+  expect(message.type).toBe("result");
+  if (message.type !== "result") {
+    throw new Error("Acceptance append unexpectedly failed");
+  }
+  const result = ProviderAcceptanceCompareAppendResultV1Schema.parse(
+    message.result,
+  );
+  expect(result.resolution).toBe("resolved");
+  if (result.resolution !== "resolved") {
+    throw new Error("expected resolved Acceptance append");
+  }
+  expect(result.receipt.payload.durableOutcome.outcome).toBe("committed");
 }
 
 async function killAtPhaseV1(input: Readonly<{
@@ -438,7 +538,7 @@ describe("strong-mutation broker SIGKILL recovery", () => {
 });
 
 describe("strong-mutation broker cross-process Acceptance serialization", () => {
-  it("linearizes a barrier-synchronized G1 begin against the G2 Acceptance append", async () => {
+  it("serializes when the winner unlinks stage after the loser observes canonical at nlink=2", async () => {
     const { root, capability, current } = await fixtureV1();
     const beginRequest = strongMutationRequestV1(current, {
       nonceDigit: "c",
@@ -447,65 +547,103 @@ describe("strong-mutation broker cross-process Acceptance serialization", () => 
     const acceptanceRequest = successorRequestV1({
       current,
       operationNonce: operationNonceV1(2),
-      floors: {
-        rootMetadataGeneration: 2,
-        registryManifestGeneration: 2,
-        supportCatalogGeneration: 2,
-      },
+      floors: strongMutationTrustedGenerationFloorsV1(),
     });
-    const beginChild = startWorkerV1({
-      action: "begin",
-      root,
-      request: beginRequest,
-    });
-    await waitForMessageV1(beginChild, "ready");
     const acceptanceChild = startWorkerV1({
       action: "acceptance_append",
       root,
       request: acceptanceRequest,
+      phaseSequence: [
+        "lock_preparation_file_fsynced",
+        "lock_canonical_linked_before_stage_unlink",
+        "publication_stage_preparation_opened_before_complete_write",
+      ],
     });
     await waitForMessageV1(acceptanceChild, "ready");
+    const beginChild = startWorkerV1({
+      action: "begin",
+      root,
+      request: beginRequest,
+      phaseSequence: [
+        "lock_preparation_file_fsynced",
+        "lock_canonical_nlink2_observed_before_stage_observe",
+        "lock_preparation_file_fsynced",
+      ],
+    });
+    await waitForMessageV1(beginChild, "ready");
     const beginOutcome = waitForOutcomeV1(beginChild);
     const acceptanceOutcome = waitForOutcomeV1(acceptanceChild);
     const beginExit = waitForExitV1(beginChild);
     const acceptanceExit = waitForExitV1(acceptanceChild);
+    const acceptancePrepared = waitForMessageV1(acceptanceChild, "phase");
+    const beginPrepared = waitForMessageV1(beginChild, "phase");
     beginChild.send({ type: "go" });
     acceptanceChild.send({ type: "go" });
+    await expect(Promise.all([acceptancePrepared, beginPrepared])).resolves
+      .toEqual([
+        { type: "phase", phase: "lock_preparation_file_fsynced" },
+        { type: "phase", phase: "lock_preparation_file_fsynced" },
+      ]);
+    await continueToPhaseV1(
+      acceptanceChild,
+      "lock_canonical_linked_before_stage_unlink",
+    );
+    await continueToPhaseV1(
+      beginChild,
+      "lock_canonical_nlink2_observed_before_stage_observe",
+    );
+    await continueToPhaseV1(
+      acceptanceChild,
+      "publication_stage_preparation_opened_before_complete_write",
+    );
+
+    // Keep the winner's canonical nlink=1 lock held while the loser leaves
+    // its nlink=2 observation. Repeated unrelated directory events make the
+    // bounded watcher retry observable without a timing delay: the fixed path
+    // reaches a second preparation hook, while the original regression exits
+    // immediately with authority_busy.
+    const retryPrepared = waitForMessageV1(beginChild, "phase");
+    const wakePath = join(
+      root,
+      "runtime-state/private/.strong-mutation-lock-test-wakeup",
+    );
+    let stopWakeups = false;
+    const wakeups = (async () => {
+      let sequence = 0;
+      while (!stopWakeups) {
+        await writeFile(wakePath, String(sequence), { mode: 0o600 });
+        sequence += 1;
+        await new Promise<void>((resolvePromise) => setImmediate(resolvePromise));
+      }
+      await rm(wakePath, { force: true });
+    })();
+    beginChild.send({ type: "continue" });
+    try {
+      await expect(retryPrepared).resolves.toEqual({
+        type: "phase",
+        phase: "lock_preparation_file_fsynced",
+      });
+    } finally {
+      stopWakeups = true;
+      await wakeups;
+    }
+
+    acceptanceChild.send({ type: "continue" });
+    await expect(acceptanceExit).resolves.toEqual({ code: 0, signal: null });
+    beginChild.send({ type: "continue" });
+
     const [beginMessage, acceptanceMessage] = await Promise.all([
       beginOutcome,
       acceptanceOutcome,
     ]);
-    expect(acceptanceMessage.type).toBe("result");
-    if (acceptanceMessage.type !== "result") {
-      throw new Error("Acceptance append unexpectedly failed");
-    }
-    const acceptanceResult =
-      ProviderAcceptanceCompareAppendResultV1Schema.parse(
-        acceptanceMessage.result,
-      );
-    expect(acceptanceResult.resolution).toBe("resolved");
-    if (acceptanceResult.resolution !== "resolved") {
-      throw new Error("expected resolved Acceptance append");
-    }
-    expect(acceptanceResult.receipt.payload.durableOutcome.outcome).toBe(
-      "committed",
-    );
+    expectCommittedAcceptanceOutcomeV1(acceptanceMessage);
 
-    const beginWon = beginMessage.type === "result";
-    if (beginWon) {
-      expect(beginMessage.result).toMatchObject({
-        resolution: "recorded",
-        disposition: "created",
-        intent: { state: "pending", executionFence: "not_established" },
-      });
-    } else {
-      expect(beginMessage.error).toMatchObject({ code: "invalid_request" });
-    }
-    await expect(acceptanceExit).resolves.toEqual({ code: 0, signal: null });
-    await expect(beginExit).resolves.toEqual({
-      code: beginWon ? 0 : 1,
-      signal: null,
+    expect(beginMessage).toMatchObject({
+      type: "error",
+      error: { code: "invalid_request" },
     });
+    await expect(acceptanceExit).resolves.toEqual({ code: 0, signal: null });
+    await expect(beginExit).resolves.toEqual({ code: 1, signal: null });
 
     const reopenedAcceptance =
       await openProviderAcceptanceAuthorityStoreForTestInternalV1(capability, {
@@ -523,30 +661,15 @@ describe("strong-mutation broker cross-process Acceptance serialization", () => 
       );
     await expect(
       inspectProviderStrongMutationBrokerSnapshotForTestInternalV1(capability),
-    ).resolves.toMatchObject(beginWon
-      ? {
-          snapshotRevision: 1,
-          intentCount: 1,
-          pendingCount: 1,
-          resolvedCount: 0,
-        }
-      : {
-          snapshotRevision: 0,
-          intentCount: 0,
-          pendingCount: 0,
-          resolvedCount: 0,
-        });
-    if (beginWon) {
-      await expect(reopenedBroker.begin(beginRequest)).resolves.toMatchObject({
-        resolution: "recorded",
-        disposition: "replayed",
-        intent: { state: "pending" },
-      });
-    } else {
-      await expect(reopenedBroker.begin(beginRequest)).rejects.toMatchObject({
-        code: "invalid_request",
-      });
-    }
+    ).resolves.toMatchObject({
+      snapshotRevision: 0,
+      intentCount: 0,
+      pendingCount: 0,
+      resolvedCount: 0,
+    });
+    await expect(reopenedBroker.begin(beginRequest)).rejects.toMatchObject({
+      code: "invalid_request",
+    });
     await expectNoBrokerTransientsV1(root);
   });
 });

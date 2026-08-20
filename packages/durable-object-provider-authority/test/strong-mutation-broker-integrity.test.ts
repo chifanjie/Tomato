@@ -19,11 +19,10 @@ import {
   createProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1,
   inspectProviderAcceptanceAuthorityCandidateForTestInternalV1,
   openProviderAcceptanceAuthorityStoreForTestInternalV1,
-  openProviderStrongMutationBrokerStoreForTestInternalV1,
+  openProviderStrongMutationBrokerStoreForTestInternalV1 as openProviderStrongMutationBrokerStoreWithVerifierV1,
   provisionProviderAcceptanceAuthorityForTestInternalV1,
 } from "../src/test-seam-internal.js";
 import {
-  TEST_INSTALLATION_IDENTITY_GENERATION_ID,
   TEST_INSTALLATION_IDENTITY_KEY,
   cloneJsonV1,
   genesisRequestV1,
@@ -31,14 +30,42 @@ import {
 } from "./acceptance-store-fixtures.js";
 import {
   brokerResolveRequestV1,
+  TEST_BROKER_INSTALLATION_IDENTITY_GENERATION_ID,
   canonicalDigestOracleV1,
+  resignStrongMutationResponseV1,
   strongMutationCompareRequestV1,
   strongMutationCompareResponseV1,
   strongMutationRequestV1,
   strongMutationResponseV1,
+  strongMutationTrustedConfigurationV1,
+  strongMutationTrustVerifierV1,
 } from "./strong-mutation-broker-fixtures.js";
 
 const fixtureRoots = new Set<string>();
+const brokerVerifierByLayoutV1 = new WeakMap<object, Awaited<
+  ReturnType<typeof strongMutationTrustVerifierV1>
+>>();
+
+function verifierForLayoutV1(capability: object) {
+  const verifier = brokerVerifierByLayoutV1.get(capability);
+  if (verifier === undefined) throw new Error("broker verifier absent");
+  return verifier;
+}
+
+function openProviderStrongMutationBrokerStoreForTestInternalV1(
+  capability: Parameters<
+    typeof openProviderStrongMutationBrokerStoreWithVerifierV1
+  >[0],
+  options: Parameters<
+    typeof openProviderStrongMutationBrokerStoreWithVerifierV1
+  >[2] = {},
+) {
+  return openProviderStrongMutationBrokerStoreWithVerifierV1(
+    capability,
+    verifierForLayoutV1(capability),
+    options,
+  );
+}
 const BROKER_SNAPSHOT =
   "runtime-state/private/provider-strong-mutation-broker-v1.snapshot.json";
 const BROKER_PUBLICATION =
@@ -65,16 +92,24 @@ async function fixtureV1() {
   fixtureRoots.add(root);
   const capability =
     createProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1(root);
+  brokerVerifierByLayoutV1.set(
+    capability,
+    await strongMutationTrustVerifierV1(),
+  );
   await provisionProviderAcceptanceAuthorityForTestInternalV1(capability, {
     installationIdentityGenerationId:
-      TEST_INSTALLATION_IDENTITY_GENERATION_ID,
+      TEST_BROKER_INSTALLATION_IDENTITY_GENERATION_ID,
     installationIdentityKey: TEST_INSTALLATION_IDENTITY_KEY,
   });
   const acceptance =
     await openProviderAcceptanceAuthorityStoreForTestInternalV1(capability, {
       clock: testAuthorityClockV1,
     });
-  await acceptance.compareAppend(genesisRequestV1());
+  await acceptance.compareAppend(genesisRequestV1({
+    installationIdentityGenerationId:
+      TEST_BROKER_INSTALLATION_IDENTITY_GENERATION_ID,
+    configuration: strongMutationTrustedConfigurationV1(),
+  }));
   const read = await acceptance.readCurrent();
   if (read.state !== "current") throw new Error("expected current");
   const current = ProviderAcceptanceCurrentReadV1Schema.parse(read.current);
@@ -336,6 +371,50 @@ describe("strong-mutation broker authenticated recovery closure", () => {
     await expectIntegrityFailureV1(fixture.capability);
   });
 
+  it.each([
+    "verification certificate",
+    "retained principal attestation",
+    "resolved response signature",
+  ] as const)(
+    "rejects independently authenticated %s tamper after fresh evidence re-verification",
+    async (material) => {
+    const fixture = await fixtureV1();
+    if (material === "resolved response signature") {
+      await fixture.broker.resolve(
+        brokerResolveRequestV1(
+          fixture.intent,
+          strongMutationResponseV1(fixture.request),
+        ),
+      );
+    }
+    await rewriteAuthenticatedBrokerClosureV1(fixture, (payload) => {
+      const intent = payload.intents[0];
+      if (material === "verification certificate") {
+        intent.verificationCertificate.grantSigner.publicKeyDigest =
+          `sha256:${"0".repeat(64)}`;
+      } else if (material === "retained principal attestation") {
+        const signature = Buffer.from(
+          intent.principalAttestation.signature.slice("base64url:".length),
+          "base64url",
+        );
+        signature[0] = (signature[0] ?? 0) ^ 1;
+        intent.principalAttestation.signature =
+          `base64url:${signature.toString("base64url")}`;
+      } else {
+        const signature = Buffer.from(
+          intent.response.signature.slice("base64url:".length),
+          "base64url",
+        );
+        signature[0] = (signature[0] ?? 0) ^ 1;
+        intent.response.signature =
+          `base64url:${signature.toString("base64url")}`;
+        intent.responseContentDigest = canonicalDigestOracleV1(intent.response);
+      }
+    });
+    await expectIntegrityFailureV1(fixture.capability);
+    },
+  );
+
   it("rejects an independently authenticated write-success digest semantic mismatch", async () => {
     const fixture = await fixtureV1();
     await fixture.broker.resolve(
@@ -348,6 +427,7 @@ describe("strong-mutation broker authenticated recovery closure", () => {
       const intent = payload.intents[0];
       intent.response.payload.verifiedContentDigest =
         `sha256:${"e".repeat(64)}`;
+      intent.response = resignStrongMutationResponseV1(intent.response);
       intent.responseContentDigest = canonicalDigestOracleV1(intent.response);
       payload.accounting = accountingOracleV1(payload.intents);
     });
@@ -375,6 +455,7 @@ describe("strong-mutation broker authenticated recovery closure", () => {
         throw new Error("expected resolved compare intent");
       }
       intent.response.payload.state.mutationDigest = "none";
+      intent.response = resignStrongMutationResponseV1(intent.response);
       intent.responseContentDigest = canonicalDigestOracleV1(intent.response);
       payload.accounting = accountingOracleV1(payload.intents);
     });

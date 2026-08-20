@@ -250,6 +250,7 @@ export type ProviderAcceptanceAuthorityDurablePhaseInternalV1 =
   | "lock_preparation_file_fsynced"
   | "lock_stage_linked_before_preparation_unlink"
   | "lock_canonical_linked_before_stage_unlink"
+  | "lock_canonical_nlink2_observed_before_stage_observe"
   | "recovery_preparation_file_fsynced"
   | "recovery_claim_linked_before_preparation_unlink"
   | "recovery_quarantine_linked_before_canonical_unlink"

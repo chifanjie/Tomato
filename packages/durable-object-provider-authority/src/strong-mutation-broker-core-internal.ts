@@ -1,11 +1,13 @@
 import {
   PROVIDER_RUNTIME_IPC_MAX_FRAME_BYTES_V1,
   ProviderRuntimeIpcAcceptanceIdentityProofV1Schema,
+  ProviderRuntimeIpcPrincipalAttestationV1Schema,
   ProviderRuntimeIpcStrongMutationRequestV1Schema,
   ProviderRuntimeIpcStrongMutationResponseV1Schema,
   canonicalizeProviderRuntimeIpcStrongMutationRequestV1,
   canonicalizeProviderRuntimeIpcStrongMutationSessionBindingV1,
   type ProviderRuntimeIpcAcceptanceIdentityProofV1,
+  type ProviderRuntimeIpcPrincipalAttestationV1,
   type ProviderRuntimeIpcStrongMutationRequestV1,
   type ProviderRuntimeIpcStrongMutationResponseV1,
 } from "@understand-code/durable-object-provider-contracts/provider-runtime-ipc-v1";
@@ -40,6 +42,17 @@ import {
   replaceDurableAuthoritySnapshotInternalV1,
 } from "./filesystem-internal.js";
 import type { ProviderAcceptanceAuthorityLayoutInternalV1 } from "./platform-layout.js";
+import {
+  PROVIDER_STRONG_MUTATION_TRUST_VERIFICATION_MARKERS_INTERNAL_V1,
+  assertProviderStrongMutationTrustVerifierCapabilityInternalV1,
+  createProviderStrongMutationTrustVerificationSessionInternalV1,
+  parseProviderStrongMutationVerificationCertificateInternalV1,
+  verifyProviderStrongMutationBeginTrustInternalV1,
+  verifyProviderStrongMutationResponseTrustInternalV1,
+  type ProviderStrongMutationTrustVerifierCapabilityInternalV1,
+  type ProviderStrongMutationTrustVerificationSessionInternalV1,
+  type ProviderStrongMutationVerificationCertificateInternalV1,
+} from "./strong-mutation-trust-verifier-core-internal.js";
 
 const GENESIS_CHAIN_V1 = "genesis" as const;
 const BROKER_SNAPSHOT_PROFILE_V1 =
@@ -84,7 +97,11 @@ interface ProviderStrongMutationBrokerIntentCommonInternalV1 {
   readonly bindingDigest: string;
   readonly acceptanceIdentity: ProviderRuntimeIpcAcceptanceIdentityProofV1;
   readonly request: ProviderRuntimeIpcStrongMutationRequestV1;
-  readonly grantVerification: "not_established";
+  readonly verificationCertificate:
+    ProviderStrongMutationVerificationCertificateInternalV1;
+  readonly principalAttestation: ProviderRuntimeIpcPrincipalAttestationV1;
+  readonly grantVerification:
+    typeof PROVIDER_STRONG_MUTATION_TRUST_VERIFICATION_MARKERS_INTERNAL_V1.grant;
   readonly executionFence: "not_established";
   readonly strongWrites: "locked";
   readonly recordedAt: string;
@@ -100,7 +117,8 @@ export interface ProviderStrongMutationBrokerResolvedIntentInternalV1
   readonly state: "resolved";
   readonly responseContentDigest: Sha256ContentDigestInternalV1;
   readonly response: ProviderRuntimeIpcStrongMutationResponseV1;
-  readonly responseVerification: "not_established";
+  readonly responseVerification:
+    typeof PROVIDER_STRONG_MUTATION_TRUST_VERIFICATION_MARKERS_INTERNAL_V1.response;
   readonly resolvedAt: string;
 }
 
@@ -208,7 +226,8 @@ export type ProviderStrongMutationBrokerResolveResultInternalV1 =
 export interface ProviderStrongMutationBrokerStoreInternalV1 {
   readonly authority: "installation_owner_candidate";
   readonly strongWrites: "locked";
-  readonly grantVerification: "not_established";
+  readonly grantVerification:
+    typeof PROVIDER_STRONG_MUTATION_TRUST_VERIFICATION_MARKERS_INTERNAL_V1.grant;
   readonly executionFence: "not_established";
   readonly begin: (
     request: unknown,
@@ -462,6 +481,14 @@ function verifyIntentRequestBindingsV1(
     intent.bindingDigest !== request.bindingDigest ||
     intent.bindingDigest !== bindingDigestV1(request) ||
     !acceptanceIdentityMatchesV1(intent.acceptanceIdentity, grant.acceptanceIdentity) ||
+    !acceptanceIdentityMatchesV1(
+      intent.verificationCertificate.acceptanceIdentity,
+      intent.acceptanceIdentity,
+    ) ||
+    intent.verificationCertificate.grantContentDigest !==
+      request.authorityGrant.contentDigest ||
+    intent.verificationCertificate.principalAttestationDigest !==
+      request.principalAttestationDigest ||
     grant.principalAttestationDigest !== request.principalAttestationDigest ||
     grant.operation !== request.operation ||
     grant.operationNonce !== request.operationNonce ||
@@ -529,6 +556,8 @@ function parseIntentV1(
       "bindingDigest",
       "acceptanceIdentity",
       "request",
+      "verificationCertificate",
+      "principalAttestation",
       "grantVerification",
       "executionFence",
       "strongWrites",
@@ -552,7 +581,8 @@ function parseIntentV1(
       !isDigestV1(raw.requestContentDigest) ||
       !isDigestV1(raw.requestDigest) ||
       !isDigestV1(raw.bindingDigest) ||
-      raw.grantVerification !== "not_established" ||
+      raw.grantVerification !==
+        PROVIDER_STRONG_MUTATION_TRUST_VERIFICATION_MARKERS_INTERNAL_V1.grant ||
       raw.executionFence !== "not_established" ||
       raw.strongWrites !== "locked" ||
       !isCanonicalTimestampV1(raw.recordedAt)
@@ -566,6 +596,14 @@ function parseIntentV1(
       ProviderRuntimeIpcAcceptanceIdentityProofV1Schema.parse(
         raw.acceptanceIdentity,
       );
+    const verificationCertificate =
+      parseProviderStrongMutationVerificationCertificateInternalV1(
+        raw.verificationCertificate,
+      );
+    const principalAttestation =
+      ProviderRuntimeIpcPrincipalAttestationV1Schema.parse(
+        raw.principalAttestation,
+      );
     const common = {
       profile: BROKER_INTENT_PROFILE_V1,
       grantId: raw.grantId,
@@ -574,7 +612,10 @@ function parseIntentV1(
       bindingDigest: raw.bindingDigest,
       acceptanceIdentity,
       request,
-      grantVerification: "not_established" as const,
+      verificationCertificate,
+      principalAttestation,
+      grantVerification:
+        PROVIDER_STRONG_MUTATION_TRUST_VERIFICATION_MARKERS_INTERNAL_V1.grant,
       executionFence: "not_established" as const,
       strongWrites: "locked" as const,
       recordedAt: raw.recordedAt,
@@ -585,7 +626,8 @@ function parseIntentV1(
     } else {
       if (
         !isDigestV1(raw.responseContentDigest) ||
-        raw.responseVerification !== "not_established" ||
+        raw.responseVerification !==
+          PROVIDER_STRONG_MUTATION_TRUST_VERIFICATION_MARKERS_INTERNAL_V1.response ||
         !isCanonicalTimestampV1(raw.resolvedAt)
       ) {
         throw new ProviderAcceptanceAuthorityErrorV1(
@@ -600,7 +642,8 @@ function parseIntentV1(
         state: "resolved" as const,
         responseContentDigest: raw.responseContentDigest,
         response,
-        responseVerification: "not_established" as const,
+        responseVerification:
+          PROVIDER_STRONG_MUTATION_TRUST_VERIFICATION_MARKERS_INTERNAL_V1.response,
         resolvedAt: raw.resolvedAt,
       });
       if (
@@ -1124,6 +1167,66 @@ function verifyAcceptanceHistoryClosureV1(
   }
 }
 
+async function verifyBrokerTrustClosureV1(
+  snapshot: LoadedProviderStrongMutationBrokerSnapshotInternalV1 | undefined,
+  view: ProviderAcceptanceAuthorityLockedCurrentViewCoreInternalV1,
+  verifierCapability:
+    ProviderStrongMutationTrustVerifierCapabilityInternalV1,
+  verificationSession:
+    ProviderStrongMutationTrustVerificationSessionInternalV1,
+): Promise<void> {
+  if (snapshot === undefined) return;
+  const acceptanceHistory = Object.freeze({
+    installationIdentityGenerationId:
+      view.installationIdentityGenerationId,
+    generationEnvelopes: view.verifiedGenerationEnvelopes,
+  });
+  try {
+    for (const intent of snapshot.envelope.payload.intents) {
+      const verified = await verifyProviderStrongMutationBeginTrustInternalV1(
+        verifierCapability,
+        {
+          acceptanceHistory,
+          request: intent.request,
+          verificationSession,
+        },
+      );
+      if (
+        !sameCanonicalV1(
+          verified.certificate,
+          intent.verificationCertificate,
+        ) ||
+        !sameCanonicalV1(
+          verified.principalAttestation,
+          intent.principalAttestation,
+        )
+      ) {
+        throw new ProviderAcceptanceAuthorityErrorV1(
+          "namespace_integrity_failed",
+        );
+      }
+      if (intent.state === "resolved") {
+        await verifyProviderStrongMutationResponseTrustInternalV1(
+          verifierCapability,
+          {
+            certificate: intent.verificationCertificate,
+            principalAttestation: intent.principalAttestation,
+            response: intent.response,
+          },
+        );
+      }
+    }
+  } catch (error) {
+    if (
+      error instanceof ProviderAcceptanceAuthorityErrorV1 &&
+      error.code === "namespace_integrity_failed"
+    ) throw error;
+    throw new ProviderAcceptanceAuthorityErrorV1(
+      "namespace_integrity_failed",
+    );
+  }
+}
+
 function nowIsoV1(clock: (() => Date) | undefined): string {
   const value = (clock ?? (() => new Date()))();
   if (!(value instanceof Date) || !Number.isFinite(value.getTime())) {
@@ -1250,6 +1353,8 @@ function parseResolveRequestV1(
 
 async function withBrokerViewV1<T>(
   layout: ProviderAcceptanceAuthorityLayoutInternalV1,
+  verifierCapability:
+    ProviderStrongMutationTrustVerifierCapabilityInternalV1,
   options: ProviderAcceptanceAuthorityStoreOpenOptionsInternalV1,
   callback: (
     view: ProviderAcceptanceAuthorityLockedCurrentViewCoreInternalV1,
@@ -1257,6 +1362,8 @@ async function withBrokerViewV1<T>(
       snapshot: LoadedProviderStrongMutationBrokerSnapshotInternalV1 | undefined;
       publication: ProviderStrongMutationBrokerPublicationPinEnvelopeInternalV1 | undefined;
     }>,
+    verificationSession:
+      ProviderStrongMutationTrustVerificationSessionInternalV1,
   ) => T | Promise<T>,
 ): Promise<T> {
   return withProviderAcceptanceAuthorityLockedCurrentViewCoreInternalV1(
@@ -1270,33 +1377,51 @@ async function withBrokerViewV1<T>(
         key: view.key,
       });
       verifyAcceptanceHistoryClosureV1(converged.snapshot, view.current);
-      return callback(view, converged);
+      const verificationSession =
+        createProviderStrongMutationTrustVerificationSessionInternalV1(
+          verifierCapability,
+        );
+      await verifyBrokerTrustClosureV1(
+        converged.snapshot,
+        view,
+        verifierCapability,
+        verificationSession,
+      );
+      return callback(view, converged, verificationSession);
     },
   );
 }
 
 export async function openProviderStrongMutationBrokerStoreWithLayoutCoreInternalV1(
   layout: ProviderAcceptanceAuthorityLayoutInternalV1,
+  verifierCapability:
+    ProviderStrongMutationTrustVerifierCapabilityInternalV1,
   options: ProviderAcceptanceAuthorityStoreOpenOptionsInternalV1 = {},
 ): Promise<ProviderStrongMutationBrokerStoreInternalV1> {
-  await withBrokerViewV1(layout, options, () => undefined);
+  try {
+    assertProviderStrongMutationTrustVerifierCapabilityInternalV1(
+      verifierCapability,
+    );
+  } catch {
+    throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+  }
+  await withBrokerViewV1(
+    layout,
+    verifierCapability,
+    options,
+    () => undefined,
+  );
 
   const begin = async (
     input: unknown,
   ): Promise<ProviderStrongMutationBrokerBeginResultInternalV1> => {
     const request = parseStrongMutationRequestV1(input);
     const requestBytes = canonicalAuthorityBytesInternalV1(request).byteLength;
-    return withProviderAcceptanceAuthorityLockedCurrentViewCoreInternalV1(
+    return withBrokerViewV1(
       layout,
+      verifierCapability,
       options,
-      async (view) => {
-        const converged = await loadConvergedBrokerSnapshotV1({
-          layout,
-          installationIdentityGenerationId:
-            view.installationIdentityGenerationId,
-          key: view.key,
-        });
-        verifyAcceptanceHistoryClosureV1(converged.snapshot, view.current);
+      async (view, converged, verificationSession) => {
         const existing = findIntentV1(
           converged.snapshot,
           request.authorityGrant.grantId,
@@ -1330,6 +1455,23 @@ export async function openProviderStrongMutationBrokerStoreWithLayoutCoreInterna
         if (!admission.admitted) {
           throw new ProviderAcceptanceAuthorityErrorV1("capacity_exhausted");
         }
+        let verified;
+        try {
+          verified = await verifyProviderStrongMutationBeginTrustInternalV1(
+            verifierCapability,
+            {
+              acceptanceHistory: Object.freeze({
+                installationIdentityGenerationId:
+                  view.installationIdentityGenerationId,
+                generationEnvelopes: view.verifiedGenerationEnvelopes,
+              }),
+              request,
+              verificationSession,
+            },
+          );
+        } catch {
+          throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+        }
         const intent: ProviderStrongMutationBrokerPendingIntentInternalV1 =
           Object.freeze({
             profile: BROKER_INTENT_PROFILE_V1,
@@ -1339,7 +1481,10 @@ export async function openProviderStrongMutationBrokerStoreWithLayoutCoreInterna
             bindingDigest: request.bindingDigest,
             acceptanceIdentity,
             request,
-            grantVerification: "not_established" as const,
+            verificationCertificate: verified.certificate,
+            principalAttestation: verified.principalAttestation,
+            grantVerification:
+              PROVIDER_STRONG_MUTATION_TRUST_VERIFICATION_MARKERS_INTERNAL_V1.grant,
             executionFence: "not_established" as const,
             strongWrites: "locked" as const,
             recordedAt: nowIsoV1(options.clock),
@@ -1394,6 +1539,7 @@ export async function openProviderStrongMutationBrokerStoreWithLayoutCoreInterna
     }
     return withBrokerViewV1(
       layout,
+      verifierCapability,
       options,
       async (view, converged) => {
         const existing = findIntentV1(converged.snapshot, resolution.grantId);
@@ -1420,6 +1566,20 @@ export async function openProviderStrongMutationBrokerStoreWithLayoutCoreInterna
             intent: existing,
           });
         }
+        let responseVerification;
+        try {
+          responseVerification =
+            await verifyProviderStrongMutationResponseTrustInternalV1(
+              verifierCapability,
+              {
+                certificate: existing.verificationCertificate,
+                principalAttestation: existing.principalAttestation,
+                response: resolution.response,
+              },
+            );
+        } catch {
+          throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+        }
         const resolved: ProviderStrongMutationBrokerResolvedIntentInternalV1 =
           Object.freeze({
             ...existing,
@@ -1428,7 +1588,7 @@ export async function openProviderStrongMutationBrokerStoreWithLayoutCoreInterna
               resolution.response,
             ),
             response: resolution.response,
-            responseVerification: "not_established" as const,
+            responseVerification,
             resolvedAt: nowIsoV1(options.clock),
           });
         verifyIntentRequestBindingsV1(resolved);
@@ -1468,7 +1628,8 @@ export async function openProviderStrongMutationBrokerStoreWithLayoutCoreInterna
   return Object.freeze({
     authority: "installation_owner_candidate" as const,
     strongWrites: "locked" as const,
-    grantVerification: "not_established" as const,
+    grantVerification:
+      PROVIDER_STRONG_MUTATION_TRUST_VERIFICATION_MARKERS_INTERNAL_V1.grant,
     executionFence: "not_established" as const,
     begin,
     resolve,
@@ -1477,16 +1638,30 @@ export async function openProviderStrongMutationBrokerStoreWithLayoutCoreInterna
 
 export async function inspectProviderStrongMutationBrokerSnapshotWithLayoutCoreInternalV1(
   layout: ProviderAcceptanceAuthorityLayoutInternalV1,
+  verifierCapability:
+    ProviderStrongMutationTrustVerifierCapabilityInternalV1,
 ): Promise<ProviderStrongMutationBrokerSnapshotInspectionInternalV1> {
-  return withBrokerViewV1(layout, {}, (_view, converged) => {
-    const accounting = converged.snapshot?.envelope.payload.accounting;
-    return Object.freeze({
-      snapshotRevision:
-        converged.snapshot?.envelope.payload.snapshotRevision ?? 0,
-      intentCount: accounting?.intentCount ?? 0,
-      pendingCount: accounting?.pendingCount ?? 0,
-      resolvedCount: accounting?.resolvedCount ?? 0,
-      intentLogicalBytes: accounting?.intentLogicalBytes ?? 0,
-    });
-  });
+  try {
+    assertProviderStrongMutationTrustVerifierCapabilityInternalV1(
+      verifierCapability,
+    );
+  } catch {
+    throw new ProviderAcceptanceAuthorityErrorV1("invalid_request");
+  }
+  return withBrokerViewV1(
+    layout,
+    verifierCapability,
+    {},
+    (_view, converged) => {
+      const accounting = converged.snapshot?.envelope.payload.accounting;
+      return Object.freeze({
+        snapshotRevision:
+          converged.snapshot?.envelope.payload.snapshotRevision ?? 0,
+        intentCount: accounting?.intentCount ?? 0,
+        pendingCount: accounting?.pendingCount ?? 0,
+        resolvedCount: accounting?.resolvedCount ?? 0,
+        intentLogicalBytes: accounting?.intentLogicalBytes ?? 0,
+      });
+    },
+  );
 }

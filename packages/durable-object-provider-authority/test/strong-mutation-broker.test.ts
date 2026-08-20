@@ -11,13 +11,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import * as publicAuthorityApi from "../src/index.js";
 import {
   createProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1,
-  inspectProviderStrongMutationBrokerSnapshotForTestInternalV1,
+  inspectProviderStrongMutationBrokerSnapshotForTestInternalV1 as inspectProviderStrongMutationBrokerSnapshotWithVerifierV1,
   openProviderAcceptanceAuthorityStoreForTestInternalV1,
-  openProviderStrongMutationBrokerStoreForTestInternalV1,
+  openProviderStrongMutationBrokerStoreForTestInternalV1 as openProviderStrongMutationBrokerStoreWithVerifierV1,
   provisionProviderAcceptanceAuthorityForTestInternalV1,
 } from "../src/test-seam-internal.js";
 import {
-  TEST_INSTALLATION_IDENTITY_GENERATION_ID,
   TEST_INSTALLATION_IDENTITY_KEY,
   cloneJsonV1,
   genesisRequestV1,
@@ -32,12 +31,51 @@ import {
   strongMutationCompareRequestV1,
   strongMutationCompareResponseV1,
   strongMutationBindingDigestOracleV1,
+  TEST_BROKER_INSTALLATION_IDENTITY_GENERATION_ID,
   strongMutationRequestDigestOracleV1,
   strongMutationRequestV1,
   strongMutationResponseV1,
+  strongMutationTrustedConfigurationV1,
+  strongMutationTrustedGenerationFloorsV1,
+  strongMutationTrustVerifierV1,
 } from "./strong-mutation-broker-fixtures.js";
 
 const fixtureRoots = new Set<string>();
+const brokerVerifierByLayoutV1 = new WeakMap<object, Awaited<
+  ReturnType<typeof strongMutationTrustVerifierV1>
+>>();
+
+function verifierForLayoutV1(capability: object) {
+  const verifier = brokerVerifierByLayoutV1.get(capability);
+  if (verifier === undefined) throw new Error("broker verifier absent");
+  return verifier;
+}
+
+function openProviderStrongMutationBrokerStoreForTestInternalV1(
+  capability: Parameters<
+    typeof openProviderStrongMutationBrokerStoreWithVerifierV1
+  >[0],
+  options: Parameters<
+    typeof openProviderStrongMutationBrokerStoreWithVerifierV1
+  >[2] = {},
+) {
+  return openProviderStrongMutationBrokerStoreWithVerifierV1(
+    capability,
+    verifierForLayoutV1(capability),
+    options,
+  );
+}
+
+function inspectProviderStrongMutationBrokerSnapshotForTestInternalV1(
+  capability: Parameters<
+    typeof inspectProviderStrongMutationBrokerSnapshotWithVerifierV1
+  >[0],
+) {
+  return inspectProviderStrongMutationBrokerSnapshotWithVerifierV1(
+    capability,
+    verifierForLayoutV1(capability),
+  );
+}
 
 afterEach(async () => {
   await Promise.all(
@@ -51,16 +89,24 @@ async function fixtureV1() {
   fixtureRoots.add(root);
   const capability =
     createProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1(root);
+  brokerVerifierByLayoutV1.set(
+    capability,
+    await strongMutationTrustVerifierV1(),
+  );
   await provisionProviderAcceptanceAuthorityForTestInternalV1(capability, {
     installationIdentityGenerationId:
-      TEST_INSTALLATION_IDENTITY_GENERATION_ID,
+      TEST_BROKER_INSTALLATION_IDENTITY_GENERATION_ID,
     installationIdentityKey: TEST_INSTALLATION_IDENTITY_KEY,
   });
   const acceptance =
     await openProviderAcceptanceAuthorityStoreForTestInternalV1(capability, {
       clock: testAuthorityClockV1,
     });
-  await acceptance.compareAppend(genesisRequestV1());
+  await acceptance.compareAppend(genesisRequestV1({
+    installationIdentityGenerationId:
+      TEST_BROKER_INSTALLATION_IDENTITY_GENERATION_ID,
+    configuration: strongMutationTrustedConfigurationV1(),
+  }));
   const read = await acceptance.readCurrent();
   if (read.state !== "current") throw new Error("expected Acceptance current");
   const current = ProviderAcceptanceCurrentReadV1Schema.parse(read.current);
@@ -99,7 +145,8 @@ describe("locked strong-mutation broker transaction candidate", () => {
     expect(broker).toMatchObject({
       authority: "installation_owner_candidate",
       strongWrites: "locked",
-      grantVerification: "not_established",
+      grantVerification:
+        "strict_registry_acceptance_grant_bound_principal_self_signature_verified_v1",
       executionFence: "not_established",
     });
     const request = strongMutationRequestV1(current);
@@ -114,7 +161,8 @@ describe("locked strong-mutation broker transaction candidate", () => {
       acceptanceIdentity: currentAcceptanceIdentityV1(current),
       requestDigest: request.requestDigest,
       bindingDigest: request.bindingDigest,
-      grantVerification: "not_established",
+      grantVerification:
+        "strict_registry_acceptance_grant_bound_principal_self_signature_verified_v1",
       executionFence: "not_established",
       strongWrites: "locked",
       state: "pending",
@@ -136,11 +184,18 @@ describe("locked strong-mutation broker transaction candidate", () => {
     expect(intent.requestDigest).toBe(independentRequestDigest);
     expect(intent.bindingDigest).toBe(independentBindingDigest);
 
-    // The deliberately synthetic grant signature is only structurally parsed.
-    // This slice neither verifies an active Registry key nor authorizes a write.
-    expect(intent.request.authorityGrant.payload.signature).toBe(
-      `base64url:${Buffer.alloc(64, 7).toString("base64url")}`,
-    );
+    expect(intent.verificationCertificate).toMatchObject({
+      profile:
+        "understand_code_provider_strong_mutation_verification_certificate_v1",
+      verificationAlgorithm: "strict_ed25519_v1",
+      acceptanceIdentity: currentAcceptanceIdentityV1(current),
+      grantContentDigest: request.authorityGrant.contentDigest,
+      principalAttestationDigest: request.principalAttestationDigest,
+    });
+    expect(intent.principalAttestation).toMatchObject({
+      kind: "principal_attestation",
+      acceptanceIdentity: currentAcceptanceIdentityV1(current),
+    });
     expect(await allFilesV1(root)).toEqual([
       "runtime-state/private/installation-identity-v1.init",
       "runtime-state/private/installation-identity-v1.json",
@@ -269,11 +324,7 @@ describe("locked strong-mutation broker transaction candidate", () => {
     await acceptance.compareAppend(successorRequestV1({
       current,
       operationNonce: operationNonceV1(2),
-      floors: {
-        rootMetadataGeneration: 2,
-        registryManifestGeneration: 2,
-        supportCatalogGeneration: 2,
-      },
+      floors: strongMutationTrustedGenerationFloorsV1(),
     }));
     const before =
       await inspectProviderStrongMutationBrokerSnapshotForTestInternalV1(
@@ -316,11 +367,7 @@ describe("locked strong-mutation broker transaction candidate", () => {
     await acceptance.compareAppend(successorRequestV1({
       current,
       operationNonce: operationNonceV1(2),
-      floors: {
-        rootMetadataGeneration: 2,
-        registryManifestGeneration: 2,
-        supportCatalogGeneration: 2,
-      },
+      floors: strongMutationTrustedGenerationFloorsV1(),
     }));
     const beforeReplay =
       await inspectProviderStrongMutationBrokerSnapshotForTestInternalV1(
@@ -374,11 +421,7 @@ describe("locked strong-mutation broker transaction candidate", () => {
     await acceptance.compareAppend(successorRequestV1({
       current,
       operationNonce: operationNonceV1(2),
-      floors: {
-        rootMetadataGeneration: 2,
-        registryManifestGeneration: 2,
-        supportCatalogGeneration: 2,
-      },
+      floors: strongMutationTrustedGenerationFloorsV1(),
     }));
 
     const resolveRequest = brokerResolveRequestV1(
@@ -393,7 +436,8 @@ describe("locked strong-mutation broker transaction candidate", () => {
         state: "resolved",
         acceptanceIdentity: pending.acceptanceIdentity,
         executionFence: "not_established",
-        responseVerification: "not_established",
+        responseVerification:
+          "strict_grant_bound_principal_response_signature_verified_v1",
         strongWrites: "locked",
       },
     });
@@ -463,7 +507,7 @@ describe("locked strong-mutation broker transaction candidate", () => {
     ).resolves.toEqual(before);
   });
 
-  it("durably resolves pending to resolved, binds every response field, and marks signature verification unestablished", async () => {
+  it("durably resolves pending to resolved, binds every response field, and records strict response verification", async () => {
     const { capability, current, broker } = await fixtureV1();
     const request = strongMutationRequestV1(current);
     const pending = expectPendingV1(await broker.begin(request));
@@ -477,8 +521,10 @@ describe("locked strong-mutation broker transaction candidate", () => {
       intent: {
         state: "resolved",
         response,
-        responseVerification: "not_established",
-        grantVerification: "not_established",
+        responseVerification:
+          "strict_grant_bound_principal_response_signature_verified_v1",
+        grantVerification:
+          "strict_registry_acceptance_grant_bound_principal_self_signature_verified_v1",
         executionFence: "not_established",
         strongWrites: "locked",
       },
@@ -508,7 +554,7 @@ describe("locked strong-mutation broker transaction candidate", () => {
       disposition: "replayed",
     });
     const differentUnverifiedSignature = strongMutationResponseV1(request, {
-      signatureByte: 10,
+      signatureBitFlip: true,
     });
     await expect(
       broker.resolve(
@@ -638,7 +684,8 @@ describe("locked strong-mutation broker transaction candidate", () => {
           state: "resolved",
           response,
           executionFence: "not_established",
-          responseVerification: "not_established",
+          responseVerification:
+            "strict_grant_bound_principal_response_signature_verified_v1",
         },
       });
     },
@@ -709,6 +756,9 @@ describe("locked broker public boundary", () => {
       "resolve",
       "openProviderStrongMutationBrokerStoreWithLayoutCoreInternalV1",
       "openProviderStrongMutationBrokerStoreForTestInternalV1",
+      "mintProviderStrongMutationTrustVerifierCapabilityInternalV1",
+      "mintProviderStrongMutationTrustVerifierForTestInternalV1",
+      "PROVIDER_STRONG_MUTATION_TRUST_VERIFICATION_MARKERS_INTERNAL_V1",
     ]) {
       expect(publicAuthorityApi).not.toHaveProperty(name);
     }
@@ -736,6 +786,8 @@ describe("locked broker public boundary", () => {
       new URL("../src/cli.ts", import.meta.url),
       "utf8",
     );
-    expect(cliSource).not.toMatch(/strong.?mutation|broker|\bbegin\b|\bresolve\b/ui);
+    expect(cliSource).not.toMatch(
+      /strong.?mutation|broker|verifier|\bbegin\b|\bresolve\b/ui,
+    );
   });
 });

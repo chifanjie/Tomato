@@ -33,7 +33,10 @@ Acceptance compare-append, `begin` independently reads the authenticated
 Acceptance current and requires the structurally valid grant's Acceptance
 identity to equal that fresh current exactly. It also recomputes the formal
 logical request digest and same-session binding digest before recording the
-strictly parsed full request.
+strictly parsed full request. The locked Acceptance view additionally projects
+the complete, already snapshot/HMAC/history-verified generation envelopes to a
+package-private verifier without exposing the Installation Identity key, a
+filesystem path, or a custody capability.
 
 Each new grant ID first becomes a durable `pending` intent; a later strict
 provider response can only move that exact intent to `resolved` when each
@@ -47,17 +50,62 @@ authenticated publication pin with deterministic crash-recovery stages. Thus
 the candidate never creates a standalone durable grant burn without the full
 pending request record.
 
-This transaction substrate performs structural and self-binding validation
-only. It does **not** verify the grant signature against an active
-Registry-selected authority key, and it does not verify the provider response
-signature. Stored records therefore say
-`grantVerification: "not_established"`, resolved records say
-`responseVerification: "not_established"`, and the broker store and records
-say `executionFence: "not_established"`. Every public surface continues to say
+The broker opener requires an opaque package-private trust-verifier
+capability. Before a new intent is published, that verifier obtains per-grant
+evidence, validates the complete Root/Registry history under the supplied
+strict-Ed25519 capability, and requires the history's current Root and Registry
+pins to equal the exact historical `strong_ready` Acceptance envelope and the
+grant's Registry pin. It then joins the enabled Registry member and unique
+active-writer selection, selects exactly one active, non-revoked
+`strong_mutation_authority_grant` Ed25519 key, and verifies the grant's exact
+claims and signature.
+
+The same evidence supplies the complete principal attestation. The verifier
+hashes its full transcript, joins that digest to both grant and request, joins
+its provider, capability, journal head, and Acceptance identity claims, requires
+a connection nonce and the exact Ed25519 SPKI DER profile, and verifies the
+self-signature with the extracted raw-32 key. The active Registry grant key has
+signed the exact principal-attestation digest; this establishes only a
+**grant-bound principal self-signature**, not a lifecycle-pinned or live-socket
+principal identity. Pending records therefore say
+`grantVerification:
+"strict_registry_acceptance_grant_bound_principal_self_signature_verified_v1"`.
+Before publishing a resolved outcome, the verifier uses that same retained
+principal raw-32 key to verify the formal complete response claims and records
+`responseVerification:
+"strict_grant_bound_principal_response_signature_verified_v1"`.
+
+Each intent retains the complete canonical request and principal attestation
+plus a minimal deterministic certificate containing the selected
+Acceptance/Root/Registry/active-writer, Registry-entry and signer-material
+pins. It never serializes the opaque crypto capability or invents a digest for
+its identity. Every open, load, replay, begin, resolve, and inspection reads
+the evidence source for every retained intent. Within one locked load, an
+ephemeral cache validates each unique Installation Identity/active-Root/
+Registry-manifest pin's complete history once; same-pin intents still parse
+their complete attestation and independently reverify request, grant,
+principal, and certificate bindings. The cache never crosses a load. The
+untrusted-evidence detacher reuses the formal Registry evidence point's
+268,435,456 preclone-work-unit budget and 64-level raw-history depth, with only
+the two broker wrapper levels added; it does not introduce a hidden narrower
+history cap. The
+verifier derives each certificate again and requires exact canonical equality
+with the durable certificate and attestation. Thus a G1
+intent remains loadable and resolvable after Acceptance advances to G2 only
+when the evidence source returns the complete history prefix ending at G1's
+durable Registry pin. A new begin must still bind fresh G2 current. Older
+structural-only broker snapshots lack the exact certificate/attestation fields
+and verification markers and are rejected rather than adopted.
+
+The broker store and every record still say
+`executionFence: "not_established"`, and every public surface continues to say
 `strongWrites: "locked"`. Acceptance can advance between `begin` and
 `resolve`; this slice does not fence that span with provider execution or an
-atomic outcome transaction. Nothing in this candidate is a consume decision,
-session capability, or authorization to execute provider I/O.
+atomic outcome transaction. Production lifecycle/native-peer evidence-source
+composition, a lifecycle-pinned live service principal, and exact
+`targetFingerprintDigest` readiness binding remain unavailable. Nothing in
+this candidate is a consume decision, session capability, or authorization to
+execute provider I/O.
 
 For a structurally successful compare-commit response, the locked substrate
 requires the proposed next revision, phase, operation nonce, and artifacts and

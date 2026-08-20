@@ -26,6 +26,15 @@ import {
   type ProviderStrongMutationBrokerAdmissionResultInternalV1,
   type ProviderStrongMutationBrokerStoreInternalV1,
 } from "./strong-mutation-broker-core-internal.js";
+import {
+  PROVIDER_STRONG_MUTATION_TRUST_EVIDENCE_SNAPSHOT_LIMITS_INTERNAL_V1,
+  classifyProviderStrongMutationTrustEvidenceSnapshotAdmissionInternalV1,
+  mintProviderStrongMutationTrustVerifierCapabilityInternalV1,
+  type MintProviderStrongMutationTrustVerifierCapabilityInternalV1Input,
+  type ProviderStrongMutationTrustEvidenceSnapshotAdmissionInputInternalV1,
+  type ProviderStrongMutationTrustEvidenceSnapshotAdmissionResultInternalV1,
+  type ProviderStrongMutationTrustVerifierCapabilityInternalV1,
+} from "./strong-mutation-trust-verifier-core-internal.js";
 
 declare const providerAcceptanceAuthorityTestLayoutCapabilityBrandInternalV1:
   unique symbol;
@@ -146,19 +155,46 @@ export function classifyProviderAcceptanceAuthorityAdmissionForTestInternalV1(
 
 export function openProviderStrongMutationBrokerStoreForTestInternalV1(
   capability: ProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1,
+  verifierCapability:
+    ProviderStrongMutationTrustVerifierCapabilityInternalV1,
   options: ProviderAcceptanceAuthorityStoreOpenOptionsInternalV1 = {},
 ): Promise<ProviderStrongMutationBrokerStoreInternalV1> {
   return openProviderStrongMutationBrokerStoreWithLayoutCoreInternalV1(
     requireCapabilityV1(capability),
+    verifierCapability,
     options,
   );
 }
 
+export function mintProviderStrongMutationTrustVerifierForTestInternalV1(
+  input: MintProviderStrongMutationTrustVerifierCapabilityInternalV1Input,
+): ProviderStrongMutationTrustVerifierCapabilityInternalV1 {
+  requireTestProcessV1();
+  return mintProviderStrongMutationTrustVerifierCapabilityInternalV1(input);
+}
+
+export function classifyProviderStrongMutationTrustEvidenceSnapshotAdmissionForTestInternalV1(
+  input: ProviderStrongMutationTrustEvidenceSnapshotAdmissionInputInternalV1,
+): ProviderStrongMutationTrustEvidenceSnapshotAdmissionResultInternalV1 {
+  requireTestProcessV1();
+  return classifyProviderStrongMutationTrustEvidenceSnapshotAdmissionInternalV1(
+    input,
+  );
+}
+
+export function providerStrongMutationTrustEvidenceSnapshotLimitsForTestInternalV1() {
+  requireTestProcessV1();
+  return PROVIDER_STRONG_MUTATION_TRUST_EVIDENCE_SNAPSHOT_LIMITS_INTERNAL_V1;
+}
+
 export function inspectProviderStrongMutationBrokerSnapshotForTestInternalV1(
   capability: ProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1,
+  verifierCapability:
+    ProviderStrongMutationTrustVerifierCapabilityInternalV1,
 ) {
   return inspectProviderStrongMutationBrokerSnapshotWithLayoutCoreInternalV1(
     requireCapabilityV1(capability),
+    verifierCapability,
   );
 }
 
@@ -173,6 +209,10 @@ export type {
   ProviderAcceptanceAuthorityAdmissionInputInternalV1,
   ProviderAcceptanceAuthorityAdmissionResultInternalV1,
   ProviderAcceptanceAuthorityStoreOpenOptionsInternalV1,
+  MintProviderStrongMutationTrustVerifierCapabilityInternalV1Input,
+  ProviderStrongMutationTrustEvidenceSnapshotAdmissionInputInternalV1,
+  ProviderStrongMutationTrustEvidenceSnapshotAdmissionResultInternalV1,
+  ProviderStrongMutationTrustVerifierCapabilityInternalV1,
   ProviderStrongMutationBrokerAdmissionInputInternalV1,
   ProviderStrongMutationBrokerAdmissionResultInternalV1,
 };

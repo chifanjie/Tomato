@@ -196,6 +196,14 @@ export interface ProviderAcceptanceAuthorityLockedCurrentViewCoreInternalV1 {
     InstallationIdentityGenerationIdV1;
   readonly key: Uint8Array;
   readonly current: ProviderAcceptanceCurrentReadV1 | null;
+  /**
+   * Complete generation history after the Acceptance snapshot, chain, HMAC,
+   * enumeration, and high-water closure have been verified under this lock.
+   * This keyless projection is the only Acceptance material passed to the
+   * strong-mutation trust verifier.
+   */
+  readonly verifiedGenerationEnvelopes:
+    readonly ProviderAcceptanceStateEnvelopeV1[];
 }
 
 export interface ProviderAcceptanceAuthorityAdmissionInputInternalV1 {
@@ -1247,6 +1255,11 @@ export async function withProviderAcceptanceAuthorityLockedCurrentViewCoreIntern
             identity.installationIdentityGenerationId,
           key,
           current: snapshot?.envelope.payload.current ?? null,
+          verifiedGenerationEnvelopes: Object.freeze(
+            (snapshot?.envelope.payload.generations ?? []).map(
+              (generation) => generation.envelope,
+            ),
+          ),
         }));
       },
       openOptions,

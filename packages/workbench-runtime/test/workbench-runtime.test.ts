@@ -271,4 +271,94 @@ describe("workbench runtime session", () => {
     expect(mismatch.status).toBe(409);
     await session.close();
   });
+
+  it("serves authenticated Task-bound Change Check and Verification trace projection", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "workbench-runtime-trace-"));
+    roots.push(root);
+    const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const session = await openWorkbenchSessionV1(
+      { route: { view: "tasks", taskId } },
+      {
+        ...binding(root),
+        traceReader: async (input) => ({
+          schemaVersion: 1,
+          surface: "trace" as const,
+          taskId: input.taskId,
+          repositoryId: input.repositoryId,
+          worktreeId: input.worktreeId,
+          snapshotId: input.snapshotId,
+          status: "ready" as const,
+          changeCheck: {
+            sourceArtifactId: "artifact:change_check:task",
+            id: "change-check:task:1",
+            taskId: input.taskId,
+            taskRevision: 2,
+            baselineSnapshotId: "snapshot:base",
+            actualSnapshotId: input.snapshotId,
+            generatedAt: "2026-08-03T00:00:00.000Z",
+            findings: [
+              {
+                id: "finding:1",
+                type: "planned_completed",
+                severity: "warning",
+                blocking: true,
+                resolution: "unresolved" as const,
+              },
+            ],
+            counts: { total: 1, blocking: 1, openBlocking: 1 },
+          },
+          verification: {
+            disposition: "externally_reported" as const,
+            records: [
+              {
+                sourceArtifactId: "artifact:verification:task",
+                sourceRecordId: "verification:task:1",
+                taskId: input.taskId,
+                verificationPlanEntryId: "verification-plan:1",
+                attempt: 1,
+                method: "test" as const,
+                status: "passed" as const,
+                claimIds: ["claim:1"],
+                snapshotId: input.snapshotId,
+                recordedAt: "2026-08-03T00:00:00.000Z",
+                detailStatus: "legacy_redacted" as const,
+                disposition: "externally_reported" as const,
+              },
+            ],
+            requiredCount: 1,
+            passedCount: 1,
+            failedCount: 0,
+            pendingCount: 0,
+          },
+        }),
+      },
+    );
+    const token = session.output.structuredContent.result.deepLink.split("#")[1]!;
+    const launch = await fetch(`http://127.0.0.1:${session.port}/__workbench/launch`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    const cookie = launch.headers.get("set-cookie")!.split(";", 1)[0]!;
+    const html = await fetch(`http://127.0.0.1:${session.port}/workbench`, { headers: { cookie } });
+    expect(await html.text()).toContain("Trace");
+    const trace = await fetch(
+      `http://127.0.0.1:${session.port}/__workbench/trace?taskId=${encodeURIComponent(taskId)}`,
+      { headers: { cookie } },
+    );
+    expect(trace.status).toBe(200);
+    await expect(trace.json()).resolves.toMatchObject({
+      surface: "trace",
+      status: "ready",
+      verification: {
+        disposition: "externally_reported",
+        records: [
+          {
+            detailStatus: "legacy_redacted",
+            disposition: "externally_reported",
+          },
+        ],
+      },
+    });
+  });
 });

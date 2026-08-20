@@ -9,6 +9,7 @@ import {
   GetRepoPulseOutputV1Schema,
   GetTaskBriefOutputV1Schema,
   McpToolErrorResultV1Schema,
+  OpenWorkbenchOutputV1Schema,
   RecordVerificationOutputV1Schema,
   RefreshIndexOutputV1Schema,
   UpdateTaskOutputV1Schema,
@@ -416,6 +417,61 @@ describe("MCP lifecycle and real handlers", () => {
     expect(
       McpToolErrorResultV1Schema.parse(harness.response(9).result).isError,
     ).toBe(true);
+
+    await harness.server.handleValue({
+      jsonrpc: "2.0",
+      id: 31,
+      method: "tools/call",
+      params: {
+        name: "open_workbench",
+        arguments: {
+          route: { view: "tasks", taskId },
+        },
+      },
+    });
+    const workbench = OpenWorkbenchOutputV1Schema.parse(
+      harness.response(31).result,
+    );
+    const deepLink = new URL(workbench.structuredContent.result.deepLink);
+    const launch = await fetch(new URL("/__workbench/launch", deepLink), {
+      method: "POST",
+      headers: {
+        connection: "close",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ token: deepLink.hash.slice(1) }),
+    });
+    expect(launch.status).toBe(200);
+    const cookie = launch.headers.get("set-cookie")!.split(";", 1)[0]!;
+    const html = await fetch(new URL("/workbench", deepLink), {
+      headers: { connection: "close", cookie },
+    });
+    expect(await html.text()).toContain("Trace");
+    const trace = await fetch(new URL("/__workbench/trace?taskId=" + encodeURIComponent(taskId), deepLink), {
+      headers: { connection: "close", cookie },
+    });
+    expect(trace.status).toBe(200);
+    const tracePayload = await trace.json();
+    expect(JSON.stringify(tracePayload)).not.toContain("pnpm test");
+    expect(JSON.stringify(tracePayload)).not.toContain("Duplicate verification should be gated.");
+    expect(tracePayload).toMatchObject({
+      surface: "trace",
+      status: "ready",
+      changeCheck: {
+        taskId,
+      },
+      verification: {
+        disposition: "externally_reported",
+        pendingCount: 0,
+        records: [
+          expect.objectContaining({
+            taskId,
+            disposition: "externally_reported",
+            detailStatus: "legacy_redacted",
+          }),
+        ],
+      },
+    });
 
     await harness.server.handleValue({
       jsonrpc: "2.0",

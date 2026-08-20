@@ -141,6 +141,110 @@ export type WorkbenchContextReaderV1 = (
   input: WorkbenchContextRequestV1,
 ) => Promise<WorkbenchContextResultV1 | undefined>;
 
+/**
+ * Read-only Change Check/Verification projection for the local Workbench.
+ *
+ * This is deliberately an internal Workbench DTO rather than a new MCP
+ * contract.  Verification detail (command, output, exit code, duration and
+ * summary) is never exposed here; the `externally_reported` disposition tells
+ * the user that the host recorded a result and that this runtime did not run
+ * the command.
+ */
+export interface WorkbenchTraceRequestV1 {
+  readonly surface: "trace";
+  readonly taskId: string;
+  readonly repositoryId: string;
+  readonly worktreeId: string;
+  /** Snapshot pinned by the authenticated Workbench session. */
+  readonly snapshotId: string;
+}
+
+export type WorkbenchTraceStatusV1 =
+  | "ready"
+  | "empty"
+  | "stale"
+  | "unavailable";
+
+export type WorkbenchTraceUnavailableReasonV1 =
+  | "not_published"
+  | "invalid_projection"
+  | "read_failed";
+
+export interface WorkbenchTraceFindingV1 {
+  readonly id: string;
+  readonly type:
+    | "planned_completed"
+    | "planned_partial"
+    | "unplanned_change"
+    | "possible_omission"
+    | "verification_gap"
+    | "cannot_determine";
+  readonly severity: "info" | "warning" | "error" | "critical";
+  readonly blocking: boolean;
+  /** No finding text/path is returned over the Workbench projection. */
+  readonly resolution: "unresolved" | "fixed" | "accepted";
+}
+
+export interface WorkbenchTraceChangeCheckV1 {
+  readonly sourceArtifactId: string;
+  readonly id: string;
+  readonly taskId: string;
+  readonly taskRevision: number;
+  readonly baselineSnapshotId: string;
+  readonly actualSnapshotId: string;
+  readonly generatedAt: string;
+  readonly findings: readonly WorkbenchTraceFindingV1[];
+  readonly counts: {
+    readonly total: number;
+    readonly blocking: number;
+    readonly openBlocking: number;
+  };
+}
+
+/** Public legacy-safe Verification shape; transient execution detail is redacted. */
+export interface WorkbenchTraceVerificationRecordV1 {
+  readonly sourceArtifactId: string;
+  readonly sourceRecordId: string;
+  readonly taskId: string;
+  readonly verificationPlanEntryId: string;
+  readonly attempt: number;
+  readonly supersedesVerificationRecordId?: string;
+  readonly method: "test" | "build" | "lint" | "manual" | "runtime";
+  readonly status: "passed" | "failed" | "skipped" | "blocked" | "flaky";
+  readonly claimIds: readonly string[];
+  readonly snapshotId: string;
+  readonly recordedAt: string;
+  readonly detailStatus: "legacy_redacted";
+  readonly disposition: "externally_reported";
+}
+
+export interface WorkbenchTraceResultV1 {
+  readonly schemaVersion: 1;
+  readonly surface: "trace";
+  readonly taskId: string;
+  readonly repositoryId: string;
+  readonly worktreeId: string;
+  /** Always equals the session-pinned snapshotId, including stale results. */
+  readonly snapshotId: string;
+  readonly status: WorkbenchTraceStatusV1;
+  readonly reason?: WorkbenchTraceUnavailableReasonV1;
+  /** Present only when the Task bundle is newer than the session snapshot. */
+  readonly observedSnapshotId?: string;
+  readonly changeCheck?: WorkbenchTraceChangeCheckV1;
+  readonly verification: {
+    readonly disposition: "externally_reported";
+    readonly records: readonly WorkbenchTraceVerificationRecordV1[];
+    readonly requiredCount: number;
+    readonly passedCount: number;
+    readonly failedCount: number;
+    readonly pendingCount: number;
+  };
+}
+
+export type WorkbenchTraceReaderV1 = (
+  input: WorkbenchTraceRequestV1,
+) => Promise<WorkbenchTraceResultV1 | undefined>;
+
 export interface OpenWorkbenchSessionOptionsV1 extends WorkbenchRuntimeBindingV1 {
   /** Defaults to the frozen 60 second launch-token TTL. */
   readonly launchTokenTtlMs?: number;
@@ -155,6 +259,8 @@ export interface OpenWorkbenchSessionOptionsV1 extends WorkbenchRuntimeBindingV1
   readonly graphReader?: WorkbenchContextReaderV1;
   /** Optional read-only callback for the published Wiki projection. */
   readonly knowledgeReader?: WorkbenchContextReaderV1;
+  /** Optional read-only callback for the Task-bound Check/Verification trace. */
+  readonly traceReader?: WorkbenchTraceReaderV1;
 }
 
 export interface WorkbenchLaunchGrantV1 {
@@ -186,6 +292,11 @@ export interface WorkbenchSessionV1 {
     sessionToken: string,
     input: WorkbenchContextRequestV1,
   ) => Promise<WorkbenchContextResultV1>;
+  /** Read one authenticated, Task- and Snapshot-bound trace projection. */
+  readonly readWorkbenchTrace: (
+    sessionToken: string,
+    input: WorkbenchTraceRequestV1,
+  ) => Promise<WorkbenchTraceResultV1>;
   readonly close: () => Promise<void>;
 }
 
@@ -236,6 +347,7 @@ interface StoredSessionV1 {
   taskBriefReader?: WorkbenchTaskBriefReaderV1;
   graphReader?: WorkbenchContextReaderV1;
   knowledgeReader?: WorkbenchContextReaderV1;
+  traceReader?: WorkbenchTraceReaderV1;
 }
 
 const sessionsByIdentity = new Map<string, StoredSessionV1>();
@@ -540,9 +652,10 @@ const WORKBENCH_APP_SCRIPT = String.raw`(() => {
     ['goals', 'Goals'],
     ['reading_path', 'Reading'],
     ['planned_changes', 'Changes'],
-    ['verification_plan', 'Verification']
+    ['verification_plan', 'Verification'],
+    ['trace', 'Trace']
   ];
-  const aliases = { reading: 'reading_path', changes: 'planned_changes', verification: 'verification_plan' };
+  const aliases = { reading: 'reading_path', changes: 'planned_changes', verification: 'verification_plan', trace: 'trace' };
   const state = document.getElementById('wb-state');
   const items = document.getElementById('wb-items');
   const title = document.getElementById('wb-panel-title');
@@ -554,6 +667,7 @@ const WORKBENCH_APP_SCRIPT = String.raw`(() => {
   const text = (value) => value == null ? '' : String(value);
   const setStatus = (label, kind) => { status.dataset.state = kind || 'ready'; status.querySelector('.wb-status-label').textContent = label; };
   const setState = (heading, message) => { state.hidden = false; state.innerHTML = ''; const strong = document.createElement('strong'); strong.textContent = heading; const p = document.createElement('p'); p.textContent = message; state.append(strong, p); items.hidden = true; };
+  const appendItem = (rows) => { const li = document.createElement('li'); li.className = 'wb-item'; rows.forEach(([label, value]) => { const row = document.createElement('div'); const key = document.createElement('div'); key.className = 'wb-item-label'; key.textContent = text(label); const val = document.createElement('div'); val.className = 'wb-item-value'; val.textContent = text(value); row.append(key, val); li.appendChild(row); }); items.appendChild(li); };
   const valueForItem = (item) => {
     if (item.kind === 'summary') return [['Intent', item.originalIntent], ['Acceptance claims', item.acceptanceClaimCount], ['Planned changes', item.plannedChangeCount]];
     if (item.kind === 'claim_reference') return [['Claim', item.claimId], ['Role', item.role]];
@@ -566,7 +680,7 @@ const WORKBENCH_APP_SCRIPT = String.raw`(() => {
     items.innerHTML = '';
     if (!result.items || result.items.length === 0) { setState('Nothing recorded yet', 'This Task section is empty.'); return; }
     state.hidden = true; items.hidden = false;
-    result.items.forEach((item) => { const li = document.createElement('li'); li.className = 'wb-item'; valueForItem(item).forEach(([label, value]) => { const row = document.createElement('div'); const key = document.createElement('div'); key.className = 'wb-item-label'; key.textContent = text(label); const val = document.createElement('div'); val.className = 'wb-item-value'; val.textContent = text(value); row.append(key, val); li.appendChild(row); }); items.appendChild(li); });
+    result.items.forEach((item) => appendItem(valueForItem(item)));
   };
   const surfaceReason = (reason) => ({ not_published: 'The published artifact is not available for this repository.', invalid_artifact: 'The published artifact failed structural validation.', read_failed: 'The published artifact could not be read safely.' }[reason] || 'The published artifact is unavailable.');
   const renderContext = (payload, label) => {
@@ -581,9 +695,72 @@ const WORKBENCH_APP_SCRIPT = String.raw`(() => {
     state.hidden = true; items.hidden = false;
     rows.forEach(([key, value]) => { const li = document.createElement('li'); li.className = 'wb-item'; const name = document.createElement('div'); name.className = 'wb-item-label'; name.textContent = text(key); const val = document.createElement('div'); val.className = 'wb-item-value'; val.textContent = text(value); li.append(name, val); items.appendChild(li); });
   };
+  const renderTrace = (payload) => {
+    items.innerHTML = '';
+    if (!payload || payload.status === 'unavailable') {
+      setState('Trace unavailable', surfaceReason(payload && payload.reason));
+      return;
+    }
+    if (payload.status !== 'ready' && payload.status !== 'empty' && payload.status !== 'stale') throw new Error('invalid_trace');
+    state.hidden = true; items.hidden = false;
+    const summaryRows = [
+      ['Task', payload.taskId],
+      ['Repository', payload.repositoryId],
+      ['Worktree', payload.worktreeId],
+      ['Snapshot', payload.snapshotId],
+      ['Status', payload.status],
+      ['Verification', payload.verification.disposition]
+    ];
+    if (payload.status === 'stale' && payload.observedSnapshotId) summaryRows.push(['Observed snapshot', payload.observedSnapshotId]);
+    appendItem(summaryRows);
+    if (payload.changeCheck) {
+      appendItem([
+        ['Change Check', payload.changeCheck.id],
+        ['Baseline snapshot', payload.changeCheck.baselineSnapshotId],
+        ['Actual snapshot', payload.changeCheck.actualSnapshotId],
+        ['Generated at', payload.changeCheck.generatedAt],
+        ['Findings', payload.changeCheck.counts.total],
+        ['Blocking', payload.changeCheck.counts.blocking],
+        ['Open blocking', payload.changeCheck.counts.openBlocking]
+      ]);
+      payload.changeCheck.findings.forEach((finding) => appendItem([
+        ['Finding', finding.id],
+        ['Type', finding.type],
+        ['Severity', finding.severity],
+        ['Blocking', finding.blocking ? 'Yes' : 'No'],
+        ['Resolution', finding.resolution]
+      ]));
+    }
+    appendItem([
+      ['Required checks', payload.verification.requiredCount],
+      ['Passed', payload.verification.passedCount],
+      ['Failed', payload.verification.failedCount],
+      ['Pending', payload.verification.pendingCount]
+    ]);
+    payload.verification.records.forEach((record) => appendItem([
+      ['Verification record', record.sourceRecordId],
+      ['Plan entry', record.verificationPlanEntryId],
+      ['Attempt', record.attempt],
+      ['Method', record.method],
+      ['Status', record.status],
+      ['Claims', record.claimIds.length],
+      ['Snapshot', record.snapshotId]
+    ]));
+    if ((!payload.changeCheck || payload.changeCheck.findings.length === 0) && payload.verification.records.length === 0) {
+      appendItem([['Details', 'No published Change Check or Verification records are available yet.']]);
+    }
+    if (payload.status === 'stale') {
+      banner.hidden = false;
+      banner.textContent = 'This trace is backed by a stale repository snapshot.';
+      setStatus('Trace stale', 'stale');
+    } else {
+      setStatus(payload.status === 'empty' ? 'Trace empty' : 'Trace ready', 'ready');
+    }
+    subtitle.textContent = 'Task-bound Change Check and Verification trace. Execution detail is redacted.';
+  };
   const setSurfaceBadge = (button, value) => { const badge = button.querySelector('.wb-unavailable'); if (badge) badge.textContent = value; };
   const loadSurface = async (surface, button) => {
-    const label = surface === 'graph' ? 'Graph' : 'Knowledge';
+    const label = surface === 'graph' ? 'Graph' : surface === 'trace' ? 'Trace' : 'Knowledge';
     title.textContent = label;
     subtitle.textContent = 'Task-bound published context is read-only.';
     banner.hidden = true;
@@ -592,14 +769,20 @@ const WORKBENCH_APP_SCRIPT = String.raw`(() => {
     if (view !== 'tasks' || !taskId) { surfaces.forEach((item) => setSurfaceBadge(item, 'unavailable')); setStatus('Unavailable', 'error'); setState(label + ' unavailable', 'Open a Task deep link to load Task-bound context.'); return; }
     try {
       const params = new URLSearchParams({ surface, taskId });
-      const response = await fetch('/__workbench/context?' + params.toString(), { credentials: 'same-origin', headers: { accept: 'application/json' } });
+      const endpoint = surface === 'trace' ? '/__workbench/trace?' : '/__workbench/context?';
+      const response = await fetch(endpoint + params.toString(), { credentials: 'same-origin', headers: { accept: 'application/json' } });
       if (response.status === 401) { setSurfaceBadge(button, 'error'); setStatus('Session expired', 'error'); setState('Session required', 'Reload the Workbench launch link to establish a new local session.'); return; }
       if (response.status === 409) { setSurfaceBadge(button, 'stale'); setStatus('Stale route', 'stale'); setState('Route no longer matches', 'This context request is not bound to the current Task.'); return; }
       if (!response.ok) throw new Error('request_failed');
       const payload = await response.json();
-      renderContext(payload, label);
-      if (payload.status === 'ready') { setStatus(label + ' ready', 'ready'); setSurfaceBadge(button, 'ready'); }
-      else { setStatus(label + ' unavailable', 'error'); setSurfaceBadge(button, 'unavailable'); }
+      if (surface === 'trace') {
+        renderTrace(payload);
+        setSurfaceBadge(button, payload.status === 'stale' ? 'stale' : payload.status === 'ready' || payload.status === 'empty' ? 'ready' : 'unavailable');
+      } else {
+        renderContext(payload, label);
+        if (payload.status === 'ready') { setStatus(label + ' ready', 'ready'); setSurfaceBadge(button, 'ready'); }
+        else { setStatus(label + ' unavailable', 'error'); setSurfaceBadge(button, 'unavailable'); }
+      }
     } catch { setStatus('Error', 'error'); setSurfaceBadge(button, 'error'); setState(label + ' error', 'Retry the context request or relaunch the local Workbench.'); }
   };
   const load = async (requested) => {
@@ -641,7 +824,7 @@ function workbenchHtml(route: WorkbenchRouteV1, identity: WorkbenchSessionV1["id
   const taskId = route.taskId ?? "";
   const section = route.section ?? "summary";
   const taskTitle = taskId === "" ? "Task-first view" : `Task ${taskId}`;
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(taskTitle)} · Workbench</title><link rel="stylesheet" href="/__workbench/app.css"></head><body data-view="${escapeHtml(route.view)}" data-task-id="${escapeHtml(taskId)}" data-section="${escapeHtml(section)}"><div class="wb-shell"><header class="wb-header"><div class="wb-brand"><div class="wb-kicker">Understand Code · Workbench</div><h1 class="wb-title">${escapeHtml(taskTitle)}</h1></div><div id="wb-status" class="wb-status" data-state="loading"><span class="wb-status-dot" aria-hidden="true"></span><span class="wb-status-label">Loading</span><span aria-hidden="true">·</span><span>${escapeHtml(identity.worktreeId)}</span></div></header><div class="wb-layout"><aside class="wb-sidebar"><nav class="wb-nav" aria-label="Task sections"><div class="wb-nav-title">Task Brief</div><button type="button" data-section="summary" aria-current="false">Summary</button><button type="button" data-section="goals" aria-current="false">Goals</button><button type="button" data-section="reading_path" aria-current="false">Reading</button><button type="button" data-section="planned_changes" aria-current="false">Changes</button><button type="button" data-section="verification_plan" aria-current="false">Verification</button></nav><nav class="wb-surfaces" aria-label="Workbench surfaces"><button type="button" class="wb-surface" data-surface="knowledge" aria-current="false">Knowledge <span class="wb-unavailable">unavailable</span></button><button type="button" class="wb-surface" data-surface="graph" aria-current="false">Graph <span class="wb-unavailable">unavailable</span></button></nav></aside><main class="wb-main"><section class="uc-panel wb-panel" aria-live="polite"><div class="wb-panel-head"><div><h2 id="wb-panel-title" class="wb-panel-title">Task Brief</h2><p id="wb-panel-subtitle" class="wb-panel-subtitle">Loading persisted Task data…</p></div></div><div id="wb-banner" class="wb-banner" hidden></div><div id="wb-state" class="wb-state"><div><strong>Loading Task Brief</strong><p>Reading the persisted section…</p></div></div><ul id="wb-items" class="wb-items" hidden></ul><noscript><div class="wb-state"><strong>JavaScript is required</strong><p>Enable JavaScript to read the local Task Brief.</p></div></noscript></section></main></div></div><script src="/__workbench/app.js" defer></script></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(taskTitle)} · Workbench</title><link rel="stylesheet" href="/__workbench/app.css"></head><body data-view="${escapeHtml(route.view)}" data-task-id="${escapeHtml(taskId)}" data-section="${escapeHtml(section)}"><div class="wb-shell"><header class="wb-header"><div class="wb-brand"><div class="wb-kicker">Understand Code · Workbench</div><h1 class="wb-title">${escapeHtml(taskTitle)}</h1></div><div id="wb-status" class="wb-status" data-state="loading"><span class="wb-status-dot" aria-hidden="true"></span><span class="wb-status-label">Loading</span><span aria-hidden="true">·</span><span>${escapeHtml(identity.worktreeId)}</span></div></header><div class="wb-layout"><aside class="wb-sidebar"><nav class="wb-nav" aria-label="Task sections"><div class="wb-nav-title">Task Brief</div><button type="button" data-section="summary" aria-current="false">Summary</button><button type="button" data-section="goals" aria-current="false">Goals</button><button type="button" data-section="reading_path" aria-current="false">Reading</button><button type="button" data-section="planned_changes" aria-current="false">Changes</button><button type="button" data-section="verification_plan" aria-current="false">Verification</button></nav><nav class="wb-surfaces" aria-label="Workbench surfaces"><button type="button" class="wb-surface" data-surface="knowledge" aria-current="false">Knowledge <span class="wb-unavailable">unavailable</span></button><button type="button" class="wb-surface" data-surface="graph" aria-current="false">Graph <span class="wb-unavailable">unavailable</span></button><button type="button" class="wb-surface" data-surface="trace" aria-current="false">Trace <span class="wb-unavailable">unavailable</span></button></nav></aside><main class="wb-main"><section class="uc-panel wb-panel" aria-live="polite"><div class="wb-panel-head"><div><h2 id="wb-panel-title" class="wb-panel-title">Task Brief</h2><p id="wb-panel-subtitle" class="wb-panel-subtitle">Loading persisted Task data…</p></div></div><div id="wb-banner" class="wb-banner" hidden></div><div id="wb-state" class="wb-state"><div><strong>Loading Task Brief</strong><p>Reading the persisted section…</p></div></div><ul id="wb-items" class="wb-items" hidden></ul><noscript><div class="wb-state"><strong>JavaScript is required</strong><p>Enable JavaScript to read the local Task Brief.</p></div></noscript></section></main></div></div><script src="/__workbench/app.js" defer></script></body></html>`;
 }
 
 function routeFromQuery(query: URLSearchParams): WorkbenchRouteV1 | undefined {
@@ -763,6 +946,299 @@ async function readWorkbenchContextForSession(
     throw new WorkbenchSessionError("server_error", "context projection is unavailable");
   }
   return parseContextResult(value, input);
+}
+
+const TRACE_FINDING_TYPES = new Set([
+  "planned_completed",
+  "planned_partial",
+  "unplanned_change",
+  "possible_omission",
+  "verification_gap",
+  "cannot_determine",
+]);
+const TRACE_SEVERITIES = new Set(["info", "warning", "error", "critical"]);
+const TRACE_RESOLUTIONS = new Set(["unresolved", "fixed", "accepted"]);
+const TRACE_METHODS = new Set(["test", "build", "lint", "manual", "runtime"]);
+const TRACE_STATUSES = new Set(["passed", "failed", "skipped", "blocked", "flaky"]);
+
+function isBoundedString(value: unknown, max = 512): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= max &&
+    !/[\u0000-\u001f\u007f]/u.test(value);
+}
+
+function isBoundedIdentifier(value: unknown): value is string {
+  return isBoundedString(value, 512);
+}
+
+function isSafeTimestamp(value: unknown): value is string {
+  return typeof value === "string" && IsoTimestampSchema.safeParse(value).success;
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const expected = new Set(keys);
+  return Object.keys(value).every((key) => expected.has(key));
+}
+
+function parseTraceFinding(value: unknown): WorkbenchTraceFindingV1 | undefined {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["id", "type", "severity", "blocking", "resolution"])) {
+    return undefined;
+  }
+  if (
+    !isBoundedIdentifier(value.id) ||
+    typeof value.type !== "string" || !TRACE_FINDING_TYPES.has(value.type) ||
+    typeof value.severity !== "string" || !TRACE_SEVERITIES.has(value.severity) ||
+    typeof value.blocking !== "boolean" ||
+    typeof value.resolution !== "string" || !TRACE_RESOLUTIONS.has(value.resolution)
+  ) {
+    return undefined;
+  }
+  return value as unknown as WorkbenchTraceFindingV1;
+}
+
+function parseTraceChangeCheck(value: unknown): WorkbenchTraceChangeCheckV1 | undefined {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, [
+      "sourceArtifactId",
+      "id",
+      "taskId",
+      "taskRevision",
+      "baselineSnapshotId",
+      "actualSnapshotId",
+      "generatedAt",
+      "findings",
+      "counts",
+    ]) ||
+    !isBoundedIdentifier(value.sourceArtifactId) ||
+    !isBoundedIdentifier(value.id) ||
+    !isBoundedIdentifier(value.taskId) ||
+    !Number.isSafeInteger(value.taskRevision) || (value.taskRevision as number) < 1 ||
+    !isBoundedIdentifier(value.baselineSnapshotId) ||
+    !isBoundedIdentifier(value.actualSnapshotId) ||
+    !isSafeTimestamp(value.generatedAt) ||
+    !Array.isArray(value.findings) ||
+    !isRecord(value.counts) ||
+    !hasOnlyKeys(value.counts, ["total", "blocking", "openBlocking"]) ||
+    !isNonNegativeInteger(value.counts.total) ||
+    !isNonNegativeInteger(value.counts.blocking) ||
+    !isNonNegativeInteger(value.counts.openBlocking)
+  ) {
+    return undefined;
+  }
+  const findings = value.findings.map(parseTraceFinding);
+  if (findings.some((finding) => finding === undefined)) return undefined;
+  if (
+    value.counts.total !== findings.length ||
+    value.counts.blocking !== findings.filter((finding) => finding!.blocking).length ||
+    value.counts.openBlocking !== findings.filter((finding) => finding!.blocking && finding!.resolution === "unresolved").length
+  ) {
+    return undefined;
+  }
+  return {
+    ...(value as unknown as WorkbenchTraceChangeCheckV1),
+    findings: findings as WorkbenchTraceFindingV1[],
+  };
+}
+
+function parseTraceVerificationRecord(
+  value: unknown,
+): WorkbenchTraceVerificationRecordV1 | undefined {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, [
+      "sourceArtifactId",
+      "sourceRecordId",
+      "taskId",
+      "verificationPlanEntryId",
+      "attempt",
+      "supersedesVerificationRecordId",
+      "method",
+      "status",
+      "claimIds",
+      "snapshotId",
+      "recordedAt",
+      "detailStatus",
+      "disposition",
+    ]) ||
+    !isBoundedIdentifier(value.sourceArtifactId) ||
+    !isBoundedIdentifier(value.sourceRecordId) ||
+    !isBoundedIdentifier(value.taskId) ||
+    !isBoundedIdentifier(value.verificationPlanEntryId) ||
+    !Number.isSafeInteger(value.attempt) || (value.attempt as number) < 1 ||
+    (value.supersedesVerificationRecordId !== undefined && !isBoundedIdentifier(value.supersedesVerificationRecordId)) ||
+    typeof value.method !== "string" || !TRACE_METHODS.has(value.method) ||
+    typeof value.status !== "string" || !TRACE_STATUSES.has(value.status) ||
+    !Array.isArray(value.claimIds) || value.claimIds.some((id) => !isBoundedIdentifier(id)) ||
+    !isBoundedIdentifier(value.snapshotId) ||
+    !isSafeTimestamp(value.recordedAt) ||
+    value.detailStatus !== "legacy_redacted" ||
+    value.disposition !== "externally_reported"
+  ) {
+    return undefined;
+  }
+  return value as unknown as WorkbenchTraceVerificationRecordV1;
+}
+
+function parseTraceResult(
+  value: unknown,
+  input: WorkbenchTraceRequestV1,
+): WorkbenchTraceResultV1 {
+  if (value === undefined) {
+    return {
+      schemaVersion: 1,
+      surface: "trace",
+      taskId: input.taskId,
+      repositoryId: input.repositoryId,
+      worktreeId: input.worktreeId,
+      snapshotId: input.snapshotId,
+      status: "unavailable",
+      reason: "not_published",
+      verification: {
+        disposition: "externally_reported",
+        records: [],
+        requiredCount: 0,
+        passedCount: 0,
+        failedCount: 0,
+        pendingCount: 0,
+      },
+    };
+  }
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, [
+      "schemaVersion",
+      "surface",
+      "taskId",
+      "repositoryId",
+      "worktreeId",
+      "snapshotId",
+      "status",
+      "reason",
+      "observedSnapshotId",
+      "changeCheck",
+      "verification",
+    ]) ||
+    value.schemaVersion !== 1 ||
+    value.surface !== "trace" ||
+    value.taskId !== input.taskId ||
+    value.repositoryId !== input.repositoryId ||
+    value.worktreeId !== input.worktreeId ||
+    value.snapshotId !== input.snapshotId ||
+    typeof value.status !== "string" ||
+    !new Set(["ready", "empty", "stale", "unavailable"]).has(value.status) ||
+    !isRecord(value.verification) ||
+    !hasOnlyKeys(value.verification, [
+      "disposition",
+      "records",
+      "requiredCount",
+      "passedCount",
+      "failedCount",
+      "pendingCount",
+    ]) ||
+    value.verification.disposition !== "externally_reported" ||
+    !Array.isArray(value.verification.records) ||
+    !isNonNegativeInteger(value.verification.requiredCount) ||
+    !isNonNegativeInteger(value.verification.passedCount) ||
+    !isNonNegativeInteger(value.verification.failedCount) ||
+    !isNonNegativeInteger(value.verification.pendingCount)
+  ) {
+    throw new WorkbenchSessionError("session_invalid", "trace projection is invalid");
+  }
+  const status = value.status as WorkbenchTraceStatusV1;
+  const reason = value.reason;
+  if (
+    status === "unavailable" &&
+    (reason !== "not_published" && reason !== "invalid_projection" && reason !== "read_failed")
+  ) {
+    throw new WorkbenchSessionError("session_invalid", "trace unavailable reason is invalid");
+  }
+  if (status !== "unavailable" && reason !== undefined) {
+    throw new WorkbenchSessionError("session_invalid", "trace reason is invalid");
+  }
+  if (status === "stale" &&
+      (!isBoundedIdentifier(value.observedSnapshotId) || value.observedSnapshotId === input.snapshotId)) {
+    throw new WorkbenchSessionError("session_invalid", "stale trace snapshot is invalid");
+  }
+  if (status !== "stale" && value.observedSnapshotId !== undefined) {
+    throw new WorkbenchSessionError("session_invalid", "trace observed snapshot is invalid");
+  }
+  const records = value.verification.records.map(parseTraceVerificationRecord);
+  if (records.some((record) => record === undefined)) {
+    throw new WorkbenchSessionError("session_invalid", "verification trace record is invalid");
+  }
+  const check = value.changeCheck === undefined ? undefined : parseTraceChangeCheck(value.changeCheck);
+  if (value.changeCheck !== undefined && check === undefined) {
+    throw new WorkbenchSessionError("session_invalid", "change check trace is invalid");
+  }
+  if (status === "empty" && (check !== undefined || records.length > 0)) {
+    throw new WorkbenchSessionError("session_invalid", "empty trace cannot contain records");
+  }
+  if (status === "stale" && (check !== undefined || records.length > 0)) {
+    throw new WorkbenchSessionError("session_invalid", "stale trace cannot expose foreign snapshot records");
+  }
+  if (check !== undefined) {
+    if (
+      check.taskId !== input.taskId ||
+      check.actualSnapshotId !== input.snapshotId ||
+      check.baselineSnapshotId.length === 0
+    ) {
+      throw new WorkbenchSessionError("session_invalid", "change check identity does not match trace snapshot");
+    }
+  }
+  for (const record of records) {
+    if (record!.taskId !== input.taskId || record!.snapshotId !== input.snapshotId) {
+      throw new WorkbenchSessionError("session_invalid", "verification identity does not match trace snapshot");
+    }
+  }
+  if (
+    value.verification.passedCount > records.length ||
+    value.verification.failedCount > records.length ||
+    value.verification.pendingCount > value.verification.requiredCount ||
+    value.verification.passedCount + value.verification.failedCount > records.length
+  ) {
+    throw new WorkbenchSessionError("session_invalid", "verification trace counts are invalid");
+  }
+  return {
+    ...(value as unknown as WorkbenchTraceResultV1),
+    ...(check === undefined ? {} : { changeCheck: check }),
+    verification: {
+      disposition: "externally_reported",
+      records: records as WorkbenchTraceVerificationRecordV1[],
+      requiredCount: value.verification.requiredCount,
+      passedCount: value.verification.passedCount,
+      failedCount: value.verification.failedCount,
+      pendingCount: value.verification.pendingCount,
+    },
+  };
+}
+
+async function readWorkbenchTraceForSession(
+  stored: StoredSessionV1,
+  sessionToken: string,
+  input: WorkbenchTraceRequestV1,
+): Promise<WorkbenchTraceResultV1> {
+  const browser = getBrowserSession(stored.session, sessionToken, stored.now);
+  if (browser.route.view !== "tasks" || browser.route.taskId === undefined) {
+    throw new WorkbenchSessionError("session_invalid", "trace requires a Task route");
+  }
+  if (
+    input.surface !== "trace" ||
+    input.taskId !== browser.route.taskId ||
+    input.repositoryId !== stored.session.output.structuredContent.meta.repositoryId ||
+    input.worktreeId !== stored.session.output.structuredContent.meta.worktreeId ||
+    input.snapshotId !== stored.session.output.structuredContent.meta.sourceSnapshotId
+  ) {
+    throw new WorkbenchSessionError("session_invalid", "trace route does not belong to this session");
+  }
+  const reader = stored.traceReader;
+  if (reader === undefined) return parseTraceResult(undefined, input);
+  let value: WorkbenchTraceResultV1 | undefined;
+  try {
+    value = await reader(input);
+  } catch {
+    throw new WorkbenchSessionError("server_error", "trace projection is unavailable");
+  }
+  return parseTraceResult(value, input);
 }
 
 function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, response: ServerResponse) => void {
@@ -980,6 +1456,42 @@ function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, 
       return;
     }
 
+    if (parsedUrl.pathname === "/__workbench/trace") {
+      const browser = (() => {
+        try { return getBrowserSession(stored.session, sessionToken, stored.now); } catch { return undefined; }
+      })();
+      if (browser === undefined) {
+        unauthorized(response);
+        return;
+      }
+      if (browser.route.view !== "tasks" || browser.route.taskId === undefined) {
+        writeJson(response, 409, { error: "task_route_required" });
+        return;
+      }
+      const requestedTaskId = parsedUrl.searchParams.get("taskId");
+      if (requestedTaskId !== null && requestedTaskId !== browser.route.taskId) {
+        writeJson(response, 409, { error: "task_route_mismatch" });
+        return;
+      }
+      const input: WorkbenchTraceRequestV1 = {
+        surface: "trace",
+        taskId: browser.route.taskId,
+        repositoryId: stored.session.output.structuredContent.meta.repositoryId,
+        worktreeId: stored.session.output.structuredContent.meta.worktreeId,
+        snapshotId: stored.session.output.structuredContent.meta.sourceSnapshotId,
+      };
+      void readWorkbenchTraceForSession(stored, sessionToken, input)
+        .then((result) => writeJson(response, 200, result))
+        .catch((error: unknown) => {
+          if (error instanceof WorkbenchSessionError && error.code === "session_invalid") {
+            writeJson(response, 409, { error: "trace_route_mismatch" });
+            return;
+          }
+          writeJson(response, 500, { error: "trace_unavailable" });
+        });
+      return;
+    }
+
     const taskMatch = /^\/tasks\/([^/]+)$/u.exec(parsedUrl.pathname);
     if (taskMatch !== null) {
       try {
@@ -1095,6 +1607,9 @@ export async function openWorkbenchSessionV1(
     if (options.knowledgeReader !== undefined) {
       existing.knowledgeReader = options.knowledgeReader;
     }
+    if (options.traceReader !== undefined) {
+      existing.traceReader = options.traceReader;
+    }
     const token = randomToken();
     const issuedAtMs = now();
     existing.launches.set(token, {
@@ -1118,6 +1633,7 @@ export async function openWorkbenchSessionV1(
     ...(options.taskBriefReader === undefined ? {} : { taskBriefReader: options.taskBriefReader }),
     ...(options.graphReader === undefined ? {} : { graphReader: options.graphReader }),
     ...(options.knowledgeReader === undefined ? {} : { knowledgeReader: options.knowledgeReader }),
+    ...(options.traceReader === undefined ? {} : { traceReader: options.traceReader }),
   } as StoredSessionV1;
   const handler = createHttpHandler(stored);
   server.on("request", handler);
@@ -1168,6 +1684,8 @@ export async function openWorkbenchSessionV1(
     readTaskBrief: (sessionToken, input) => readTaskBriefForSession(stored, sessionToken, input),
     readWorkbenchContext: (sessionToken, input) =>
       readWorkbenchContextForSession(stored, sessionToken, input),
+    readWorkbenchTrace: (sessionToken, input) =>
+      readWorkbenchTraceForSession(stored, sessionToken, input),
     close: async () => {
       sessionsByIdentity.delete(key);
       launches.clear();

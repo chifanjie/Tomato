@@ -59,3 +59,43 @@
 ## 结论
 
 🟢 Effective：改动达成已确认的 Alpha 纵切意图，可以精确提交和推送。它证明的是可安装的本地 Alpha 与 Snapshot-bound Check / durable externally reported Verification，不是正式 Release，也不构成 production strong write 或 Provider Authority 解锁。
+
+---
+
+## Workbench Trace 纵切复审（2026-08-20）
+
+### 意图基线
+
+在已推送的 Alpha 产物之上，增加一个用户可观察的只读 Workbench Trace：用户从既有
+`open_workbench` Task 深链进入后，可以看到当前 Snapshot 绑定的 Change Check 摘要、
+blocking/open-blocking 计数、Verification attempts/status/pending，以及明确的
+`externally_reported` 标记。该切片不增加 MCP 工具、不执行命令、不写 Artifact，也不改变
+Graph/Knowledge surfaces 或 `strongWrites: locked` 边界。
+
+### 审查范围与结论
+
+审查了 `packages/workbench-runtime/src/index.ts` 的 session-bound `/__workbench/trace`
+路由、Trace UI、严格 projection parsing，以及
+`packages/cli/src/handlers/tools.ts` 的 Task bundle reader wiring。当前路径未发现
+P0/P1 或会导致错误成功、越权、数据损坏的 P2。Trace 只投影 artifact/record identity、
+类型、状态、计数、claim IDs 和 snapshot IDs；command、exit code、duration、output digest
+与 summary 均不穿过 Workbench DTO。Session task/repository/worktree/snapshot 不匹配会
+拒绝或降级为 stale；底层 bundle 缺失/损坏不会被显示为 clean/verified。
+
+### 门禁证据
+
+- `pnpm --filter @understand-code/workbench-runtime typecheck`：通过。
+- `pnpm --filter @understand-code/workbench-runtime test`：5/5 通过。
+- `pnpm --filter @understand-code/cli typecheck`：通过。
+- `pnpm --filter @understand-code/cli build`：通过。
+- `pnpm --filter @understand-code/cli exec vitest run test/mcp.integration.test.ts test/open-workbench.integration.test.ts`：8/8 通过。
+- `pnpm --filter @understand-code/cli test`：11 files / 80 tests 通过；包含 installed-host Alpha E2E。
+- Trace 集成回归还断言了实际 artifact ID 可追溯，并确认 command/summary 不出现在响应。
+- `git diff --check`：通过。
+
+### 已知限制与 backlog
+
+Verification 仍是宿主报告的证据，Workbench 不独立执行或证明命令；Provider Authority、
+execution fence、全局 rollback anchor、跨平台安全加固和真正 provider-side Store writer
+继续 locked。Trace 当前是只读摘要，不承诺完整命令日志、独立执行、跨进程恢复或发行级
+安全证明；这些属于后续产品纵切/发布门禁，不阻塞本次提交。

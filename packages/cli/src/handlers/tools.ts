@@ -41,6 +41,7 @@ import {
   type WorkbenchContextRequestV1,
   type WorkbenchContextResultV1,
   type WorkbenchContextUnavailableReasonV1,
+  type WorkbenchTraceReaderV1,
 } from "@understand-code/workbench-runtime";
 
 import { PRODUCT_VERSION } from "../constants.js";
@@ -966,6 +967,260 @@ const knowledgeContextReader = (
   };
 };
 
+type WorkbenchTraceRequestLike = {
+  readonly surface: "trace";
+  readonly taskId: string;
+  readonly repositoryId: string;
+  readonly worktreeId: string;
+  readonly snapshotId: string;
+};
+
+type WorkbenchTraceResultLike = {
+  readonly schemaVersion: 1;
+  readonly surface: "trace";
+  readonly taskId: string;
+  readonly repositoryId: string;
+  readonly worktreeId: string;
+  readonly snapshotId: string;
+  readonly status: "ready" | "empty" | "stale" | "unavailable";
+  readonly reason?: "not_published" | "invalid_projection" | "read_failed";
+  readonly observedSnapshotId?: string;
+  readonly changeCheck?: {
+    readonly sourceArtifactId: string;
+    readonly id: string;
+    readonly taskId: string;
+    readonly taskRevision: number;
+    readonly baselineSnapshotId: string;
+    readonly actualSnapshotId: string;
+    readonly generatedAt: string;
+    readonly findings: ReadonlyArray<{
+      readonly id: string;
+      readonly type:
+        | "planned_completed"
+        | "planned_partial"
+        | "unplanned_change"
+        | "possible_omission"
+        | "verification_gap"
+        | "cannot_determine";
+      readonly severity: "info" | "warning" | "error" | "critical";
+      readonly blocking: boolean;
+      readonly resolution: "unresolved" | "fixed" | "accepted";
+    }>;
+    readonly counts: {
+      readonly total: number;
+      readonly blocking: number;
+      readonly openBlocking: number;
+    };
+  };
+  readonly verification: {
+    readonly disposition: "externally_reported";
+    readonly records: ReadonlyArray<{
+      readonly sourceArtifactId: string;
+      readonly sourceRecordId: string;
+      readonly taskId: string;
+      readonly verificationPlanEntryId: string;
+      readonly attempt: number;
+      readonly supersedesVerificationRecordId?: string;
+      readonly method: "test" | "build" | "lint" | "manual" | "runtime";
+      readonly status: "passed" | "failed" | "skipped" | "blocked" | "flaky";
+      readonly claimIds: readonly string[];
+      readonly snapshotId: string;
+      readonly recordedAt: string;
+      readonly detailStatus: "legacy_redacted";
+      readonly disposition: "externally_reported";
+    }>;
+    readonly requiredCount: number;
+    readonly passedCount: number;
+    readonly failedCount: number;
+    readonly pendingCount: number;
+  };
+};
+
+const traceChangeResolution = (
+  value: { readonly resolution?: { readonly kind: string } | undefined },
+): "unresolved" | "fixed" | "accepted" => {
+  if (value.resolution?.kind === "fixed") return "fixed";
+  if (value.resolution?.kind === "accepted") return "accepted";
+  return "unresolved";
+};
+
+const traceReader = (
+  runtime: Awaited<ReturnType<typeof openRuntime>>,
+): WorkbenchTraceReaderV1 => async (input: WorkbenchTraceRequestLike) => {
+  if (input.surface !== "trace") {
+    return undefined;
+  }
+  const context = await readTaskScopedContext(runtime, input.taskId);
+  const read = context.read;
+  const bundle = read.bundle;
+  if (
+    bundle.manifest.repositoryId !== input.repositoryId ||
+    bundle.manifest.worktreeId !== input.worktreeId
+  ) {
+    return undefined;
+  }
+  const traceArtifacts = read.artifacts as ReadonlyArray<{
+    readonly artifactType: string;
+    readonly artifactId: string;
+    readonly sourceSnapshotId: string;
+    readonly payload: unknown;
+  }>;
+  const currentChangeCheckArtifact = [...traceArtifacts]
+    .reverse()
+    .find((artifact) =>
+      artifact.artifactType === "change_check" &&
+      artifact.sourceSnapshotId === input.snapshotId,
+    );
+  const currentVerificationArtifact = [...traceArtifacts]
+    .reverse()
+    .find((artifact) =>
+      artifact.artifactType === "verification" &&
+      artifact.sourceSnapshotId === input.snapshotId,
+    );
+  const traceBundle = bundle as {
+    readonly manifest: { readonly taskId: string; readonly latestSnapshotId: string };
+    readonly brief?: {
+      readonly verificationPlan: readonly {
+        readonly id: string;
+        readonly required?: boolean;
+      }[];
+    };
+  };
+  if (traceBundle.manifest.latestSnapshotId !== input.snapshotId) {
+    return {
+      schemaVersion: 1,
+      surface: "trace",
+      taskId: input.taskId,
+      repositoryId: input.repositoryId,
+      worktreeId: input.worktreeId,
+      snapshotId: input.snapshotId,
+      status: "stale",
+      observedSnapshotId: bundle.manifest.latestSnapshotId,
+      verification: {
+        disposition: "externally_reported",
+        records: [],
+        requiredCount: 0,
+        passedCount: 0,
+        failedCount: 0,
+        pendingCount: 0,
+      },
+    };
+  }
+
+  const changeCheck = currentChangeCheckArtifact?.payload as {
+    readonly id: string;
+    readonly taskId: string;
+    readonly taskRevision: number;
+    readonly baselineSnapshotId: string;
+    readonly actualSnapshotId: string;
+    readonly generatedAt: string;
+    readonly findings: ReadonlyArray<{
+      readonly id: string;
+      readonly type:
+        | "planned_completed"
+        | "planned_partial"
+        | "unplanned_change"
+        | "possible_omission"
+        | "verification_gap"
+        | "cannot_determine";
+      readonly severity: "info" | "warning" | "error" | "critical";
+      readonly blocking: boolean;
+      readonly resolution?: { readonly kind: string };
+    }>;
+  } | undefined;
+  const verificationRecords = (
+    currentVerificationArtifact?.payload as
+      | { readonly records: ReadonlyArray<{
+          readonly id: string;
+          readonly taskId: string;
+          readonly verificationPlanEntryId: string;
+          readonly attempt: number;
+          readonly supersedesVerificationRecordId?: string;
+          readonly kind: "test" | "build" | "lint" | "manual" | "runtime";
+          readonly status: "passed" | "failed" | "skipped" | "blocked" | "flaky";
+          readonly claimIds: readonly string[];
+          readonly snapshotId: string;
+          readonly recordedAt: string;
+        }> }
+      | undefined
+  )?.records ?? [];
+  const requiredPlanEntryIds = new Set(
+    traceBundle.brief?.verificationPlan
+      .filter((entry) => entry.required !== false)
+      .map((entry) => entry.id) ?? [],
+  );
+  const requiredVerificationRecords = verificationRecords.filter((record) =>
+    requiredPlanEntryIds.has(record.verificationPlanEntryId),
+  );
+  const passedCount = requiredVerificationRecords.filter((record) => record.status === "passed").length;
+  const failedCount = requiredVerificationRecords.filter((record) => record.status === "failed").length;
+  const pendingCount = Math.max(
+    0,
+    requiredPlanEntryIds.size -
+      new Set(requiredVerificationRecords.map((record) => record.verificationPlanEntryId)).size,
+  );
+  const result: WorkbenchTraceResultLike = {
+    schemaVersion: 1,
+    surface: "trace",
+    taskId: input.taskId,
+    repositoryId: input.repositoryId,
+    worktreeId: input.worktreeId,
+    snapshotId: input.snapshotId,
+    status: changeCheck === undefined && verificationRecords.length === 0 ? "empty" : "ready",
+    ...(changeCheck === undefined ? {} : {
+      changeCheck: {
+        sourceArtifactId: currentChangeCheckArtifact!.artifactId,
+        id: changeCheck.id,
+        taskId: changeCheck.taskId,
+        taskRevision: changeCheck.taskRevision,
+        baselineSnapshotId: changeCheck.baselineSnapshotId,
+        actualSnapshotId: changeCheck.actualSnapshotId,
+        generatedAt: changeCheck.generatedAt,
+        findings: changeCheck.findings.map((finding) => ({
+          id: finding.id,
+          type: finding.type,
+          severity: finding.severity,
+          blocking: finding.blocking,
+          resolution: traceChangeResolution(finding),
+        })),
+        counts: {
+          total: changeCheck.findings.length,
+          blocking: changeCheck.findings.filter((finding: { readonly blocking: boolean }) => finding.blocking).length,
+          openBlocking: changeCheck.findings.filter(
+            (finding: { readonly blocking: boolean; readonly resolution?: { readonly kind: string } }) =>
+              finding.blocking && traceChangeResolution(finding) === "unresolved",
+          ).length,
+        },
+      },
+    }),
+    verification: {
+      disposition: "externally_reported",
+      records: verificationRecords.map((record) => ({
+        sourceArtifactId: currentVerificationArtifact!.artifactId,
+        sourceRecordId: record.id,
+        taskId: record.taskId,
+        verificationPlanEntryId: record.verificationPlanEntryId,
+        attempt: record.attempt,
+        ...(record.supersedesVerificationRecordId === undefined ? {} : {
+          supersedesVerificationRecordId: record.supersedesVerificationRecordId,
+        }),
+        method: record.kind,
+        status: record.status,
+        claimIds: [...record.claimIds],
+        snapshotId: record.snapshotId,
+        recordedAt: record.recordedAt,
+        detailStatus: "legacy_redacted",
+        disposition: "externally_reported",
+      })),
+      requiredCount: requiredPlanEntryIds.size,
+      passedCount,
+      failedCount,
+      pendingCount,
+    },
+  };
+  return result;
+};
+
 async function openWorkbench(argumentsValue: unknown, canonicalRoot: string) {
   const parsed = OpenWorkbenchInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
@@ -1011,7 +1266,8 @@ async function openWorkbench(argumentsValue: unknown, canonicalRoot: string) {
     },
     graphReader: graphContextReader(runtime),
     knowledgeReader: knowledgeContextReader(runtime),
-  });
+    traceReader: traceReader(runtime),
+  } as Parameters<typeof openWorkbenchSessionV1>[1]);
   return OpenWorkbenchOutputV1Schema.parse({
     ...session.output,
     structuredContent: {

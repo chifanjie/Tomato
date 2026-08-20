@@ -1,11 +1,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
-import { once } from "node:events";
 import { createInterface } from "node:readline";
 import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
-import { connect as connectNet, createServer as createNetServer } from "node:net";
+import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,15 +32,12 @@ const MAX_PACKED_TARBALL_BYTES = 2 * 1024 * 1024;
 const MAX_EXPANDED_TAR_BYTES = 12 * 1024 * 1024;
 const MAX_PACKED_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_PACKED_TOTAL_FILE_BYTES = 8 * 1024 * 1024;
-const EXPECTED_PACKED_FILE_COUNT = 37;
-const NATIVE_KERNEL_PEER_PACKED_PATH = `package/dist/native/${process.platform}-${process.arch}/provider_kernel_peer.node`;
-const requireV1 = createRequire(import.meta.url);
+const EXPECTED_PACKED_FILE_COUNT = 36;
 
 const packedFileRules = [
   { label: "package metadata", pattern: /^package\/(?:README\.md|package\.json)$/u, count: 2, mode: 0o644 },
   { label: "runtime modules", pattern: /^package\/dist\/(?:README\.md|bin\.mjs|contracts\.mjs|server\.mjs)$/u, count: 4, mode: 0o644 },
   { label: "MCP executable", pattern: /^package\/dist\/understand-code\.mjs$/u, count: 1, mode: 0o755 },
-  { label: "kernel peer native addon", pattern: new RegExp(`^${NATIVE_KERNEL_PEER_PACKED_PATH.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}$`, "u"), count: 1, mode: 0o644 },
   { label: "dashboard roots", pattern: /^package\/dist\/dashboard\/(?:config\.json|favicon\.ico|favicon\.svg|index\.html|meta\.json)$/u, count: 5, mode: 0o644 },
   { label: "Graph Explorer chunk", pattern: /^package\/dist\/dashboard\/assets\/GraphExplorer-[A-Za-z0-9_-]+\.js$/u, count: 1, mode: 0o644 },
   { label: "graph layout chunk", pattern: /^package\/dist\/dashboard\/assets\/graph-layout-[A-Za-z0-9_-]+\.js$/u, count: 1, mode: 0o644 },
@@ -304,50 +299,6 @@ function startPreview(executable, cwd, args = ["--demo", "--port", "0", "--no-op
     });
   }), "cold Preview ready");
   return { child, ready };
-}
-
-async function assertInstalledNativeKernelPeer(installedPackageRoot, packedFiles) {
-  const nativePath = path.join(
-    installedPackageRoot,
-    "dist/native",
-    `${process.platform}-${process.arch}`,
-    "provider_kernel_peer.node",
-  );
-  assert.deepEqual(
-    await readFile(nativePath),
-    packedFiles.get(NATIVE_KERNEL_PEER_PACKED_PATH),
-    "installed native addon must equal its reviewed tgz entry",
-  );
-  const addon = requireV1(nativePath);
-  assert.equal(typeof addon.readPeerCredentials, "function");
-
-  const socketRoot = await mkdtemp(path.join(tmpdir(), "preview-native-peer-"));
-  const socketPath = path.join(socketRoot, "peer.sock");
-  const server = createNetServer();
-  let client;
-  let accepted;
-  try {
-    const acceptedPromise = once(server, "connection").then(([socket]) => socket);
-    server.listen(socketPath);
-    await once(server, "listening");
-    client = connectNet(socketPath);
-    await once(client, "connect");
-    accepted = await acceptedPromise;
-    const fileDescriptor = Reflect.get(accepted, "_handle")?.fd;
-    assert.ok(Number.isSafeInteger(fileDescriptor) && fileDescriptor >= 0);
-    assert.deepEqual(addon.readPeerCredentials(fileDescriptor), {
-      uid: process.getuid?.(),
-      gid: process.getgid?.(),
-      pid: process.pid,
-    });
-  } finally {
-    client?.destroy();
-    accepted?.destroy();
-    if (server.listening) {
-      await new Promise((resolve) => server.close(resolve));
-    }
-    await rm(socketRoot, { force: true, recursive: true });
-  }
 }
 
 function writeMessage(child, message) {
@@ -651,10 +602,39 @@ test("cold packed Preview installs outside the monorepo with both usable bins", 
     assert.equal(mcpVersion.stdout, "0.1.0\n");
     const help = await execFileBounded(previewBin, ["--help"], { cwd: installDirectory, encoding: "utf8" });
     assert.match(help.stdout, /understand-code-preview --demo/u);
+    const mcpHelp = await execFileBounded(mcpBin, ["--help"], { cwd: installDirectory, encoding: "utf8" });
+    assert.match(mcpHelp.stdout, /understand-code mcp --stdio --root/u);
+    assert.doesNotMatch(
+      mcpHelp.stdout,
+      /(?:install|upgrade|rollback|doctor|uninstall|provider|service-config)/iu,
+      "Preview MCP help must not advertise lifecycle or Provider commands",
+    );
     await assert.rejects(
       execFileBounded(previewBin, ["--unknown"], { cwd: installDirectory, encoding: "utf8" }),
       (error) => error && error.code === 2 && error.stderr === "preview_error unknown option: --unknown\n",
     );
+    for (const argumentsValue of [
+      ["install"],
+      ["upgrade"],
+      ["rollback"],
+      ["doctor"],
+      ["uninstall"],
+      ["--service-config", "/tmp/provider-service.json"],
+      ["__provider-runtime"],
+    ]) {
+      await assert.rejects(
+        execFileBounded(mcpBin, argumentsValue, {
+          cwd: installDirectory,
+          encoding: "utf8",
+        }),
+        (error) =>
+          error &&
+          error.code === 2 &&
+          error.stdout === "" &&
+          error.stderr === "understand-code: configuration_error\n",
+        `Preview MCP must reject command surface: ${argumentsValue[0]}`,
+      );
+    }
     const manifest = JSON.parse(await readFile(path.join(installedPackageRoot, "package.json"), "utf8"));
     assert.deepEqual(manifest.dependencies ?? {}, {});
     assert.deepEqual(manifest.exports, {});
@@ -667,9 +647,20 @@ test("cold packed Preview installs outside the monorepo with both usable bins", 
     const bundle = await readFile(path.join(installedPackageRoot, "dist/understand-code.mjs"), "utf8");
     assert.doesNotMatch(bundle, /workspace:\*/u);
     assert.doesNotMatch(bundle, new RegExp(packageRoot.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+    assert.doesNotMatch(
+      bundle,
+      /(?:__provider-runtime|ProviderServiceInstallationLifecycleErrorV1|runDurableObjectProviderRuntimeCliV1|understand-code install)/u,
+      "Preview MCP bundle must not contain lifecycle or private Provider entrypoints",
+    );
+    assert.equal(
+      [...packedFiles.keys()].some(
+        (entry) => entry.includes("/dist/native/") || entry.endsWith("provider_kernel_peer.node"),
+      ),
+      false,
+      "Preview tgz must not carry Provider native assets",
+    );
     const installedPreviewBundle = await readFile(path.join(installedPackageRoot, "dist/bin.mjs"), "utf8");
     assert.doesNotMatch(installedPreviewBundle, new RegExp(packageRoot.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
-    await assertInstalledNativeKernelPeer(installedPackageRoot, packedFiles);
     const preview = startPreview(previewBin, installDirectory);
     previewChild = preview.child;
     const ready = await preview.ready;
@@ -749,6 +740,8 @@ test("cold packed Preview installs outside the monorepo with both usable bins", 
       "get_repo_pulse",
       "build_task_brief",
       "get_task_brief",
+    ]);
+    const excludedPreviewTools = [
       "update_task",
       "check_change",
       "record_verification",
@@ -757,7 +750,28 @@ test("cold packed Preview installs outside the monorepo with both usable bins", 
       "search_context",
       "trace_impact",
       "refresh_index",
-    ]);
+    ];
+    for (const [index, name] of excludedPreviewTools.entries()) {
+      writeMessage(mcp, {
+        jsonrpc: "2.0",
+        id: 100 + index,
+        method: "tools/call",
+        params: { name, arguments: {} },
+      });
+    }
+    for (const [index, name] of excludedPreviewTools.entries()) {
+      assert.deepEqual(
+        await output.waitFor(
+          (message) => message.id === 100 + index,
+          `MCP excluded ${name} response`,
+        ),
+        {
+          jsonrpc: "2.0",
+          id: 100 + index,
+          error: { code: -32_602, message: "Invalid tool arguments" },
+        },
+      );
+    }
     GetRepoPulseOutputV1Schema.parse((await output.waitFor((message) => message.id === 3, "MCP get_repo_pulse response")).result);
     const built = BuildTaskBriefOutputV1Schema.parse((await output.waitFor((message) => message.id === 4, "MCP build_task_brief response")).result);
     writeMessage(mcp, {

@@ -135,18 +135,53 @@ describe("root quality gate", () => {
   });
 
   it("cleans stale artifacts and builds foundation packages before their consumers", () => {
+    const foundationBuildSteps = [
+      "pnpm --filter @understand-code/durable-object-provider-contracts --fail-if-no-match build",
+      "pnpm --filter @understand-code/durable-object-provider-client --fail-if-no-match build",
+      "pnpm --filter @understand-code/durable-object-provider-runtime --fail-if-no-match build",
+      "pnpm --filter @understand-code/durable-object-provider-authority --fail-if-no-match build",
+      "pnpm --filter @understand-code/host-adapters --fail-if-no-match build",
+      "pnpm --filter @understand-code/contracts --fail-if-no-match build",
+      "pnpm --filter @understand-code/installation-lifecycle --fail-if-no-match build",
+      "pnpm --filter @understand-code/workbench-runtime --fail-if-no-match build",
+      "pnpm --filter @understand-code/repository-state --fail-if-no-match build",
+      "pnpm --filter @understand-code/artifact-store --fail-if-no-match build",
+      "pnpm --filter @understand-code/core --fail-if-no-match build",
+      "pnpm --filter @understand-code/task-engine --fail-if-no-match build",
+    ];
     expect(scripts["build:all"]).toBe(
-      "pnpm run clean:build && pnpm --filter @understand-code/durable-object-provider-contracts --fail-if-no-match build && pnpm --filter @understand-code/contracts --fail-if-no-match build && pnpm --filter @understand-code/repository-state --fail-if-no-match build && pnpm --filter @understand-code/artifact-store --fail-if-no-match build && pnpm --filter @understand-code/core --fail-if-no-match build && pnpm --filter @understand-code/task-engine --fail-if-no-match build && pnpm --filter @understand-code/cli --fail-if-no-match build && pnpm run build && pnpm --filter @understand-code/dashboard --fail-if-no-match build && pnpm --filter @understand-code/preview --fail-if-no-match build",
+      [
+        "pnpm run clean:build",
+        ...foundationBuildSteps,
+        "pnpm --filter @understand-code/cli --fail-if-no-match build",
+        "pnpm run build",
+        "pnpm --filter @understand-code/dashboard --fail-if-no-match build",
+        "pnpm --filter @understand-code/preview --fail-if-no-match build",
+      ].join(" && "),
     );
     expect(scripts["clean:build"]).toBe("node scripts/clean-build-artifacts.mjs");
-    expect(scripts.test).toMatch(
-      /^pnpm --filter @understand-code\/durable-object-provider-contracts --fail-if-no-match build && pnpm --filter @understand-code\/contracts --fail-if-no-match build && pnpm --filter @understand-code\/repository-state --fail-if-no-match build && pnpm --filter @understand-code\/artifact-store --fail-if-no-match build && pnpm --filter @understand-code\/core --fail-if-no-match build && pnpm --filter @understand-code\/task-engine --fail-if-no-match build && /,
-    );
-    expect(scripts.typecheck).toMatch(
-      /^pnpm --filter @understand-code\/durable-object-provider-contracts --fail-if-no-match build && pnpm --filter @understand-code\/contracts --fail-if-no-match build && pnpm --filter @understand-code\/repository-state --fail-if-no-match build && pnpm --filter @understand-code\/artifact-store --fail-if-no-match build && pnpm --filter @understand-code\/core --fail-if-no-match build && pnpm --filter @understand-code\/task-engine --fail-if-no-match build && /,
-    );
+    expect(scripts.test.startsWith(`${foundationBuildSteps.join(" && ")} && `)).toBe(true);
+    expect(scripts.typecheck.startsWith(`${foundationBuildSteps.join(" && ")} && `)).toBe(true);
     expect(scripts.typecheck).toBe(
-      "pnpm --filter @understand-code/durable-object-provider-contracts --fail-if-no-match build && pnpm --filter @understand-code/contracts --fail-if-no-match build && pnpm --filter @understand-code/repository-state --fail-if-no-match build && pnpm --filter @understand-code/artifact-store --fail-if-no-match build && pnpm --filter @understand-code/core --fail-if-no-match build && pnpm --filter @understand-code/task-engine --fail-if-no-match build && pnpm --filter @understand-code/durable-object-provider-contracts --fail-if-no-match typecheck && pnpm --filter @understand-code/contracts --fail-if-no-match exec tsc --noEmit && pnpm --filter @understand-code/repository-state --fail-if-no-match exec tsc --noEmit && pnpm --filter @understand-code/artifact-store --fail-if-no-match typecheck && pnpm run typecheck:skill && pnpm --filter @understand-code/core --fail-if-no-match exec tsc --noEmit && pnpm --filter @understand-code/task-engine --fail-if-no-match typecheck && pnpm --filter @understand-code/cli --fail-if-no-match typecheck && pnpm --filter @understand-code/dashboard --fail-if-no-match exec tsc -b --pretty false && pnpm --filter @understand-code/preview --fail-if-no-match typecheck",
+      [
+        ...foundationBuildSteps,
+        "pnpm --filter @understand-code/durable-object-provider-contracts --fail-if-no-match typecheck",
+        "pnpm --filter @understand-code/durable-object-provider-client --fail-if-no-match typecheck",
+        "pnpm --filter @understand-code/durable-object-provider-runtime --fail-if-no-match typecheck",
+        "pnpm --filter @understand-code/durable-object-provider-authority --fail-if-no-match typecheck",
+        "pnpm --filter @understand-code/host-adapters --fail-if-no-match typecheck",
+        "pnpm --filter @understand-code/contracts --fail-if-no-match exec tsc --noEmit",
+        "pnpm --filter @understand-code/installation-lifecycle --fail-if-no-match typecheck",
+        "pnpm --filter @understand-code/workbench-runtime --fail-if-no-match typecheck",
+        "pnpm --filter @understand-code/repository-state --fail-if-no-match exec tsc --noEmit",
+        "pnpm --filter @understand-code/artifact-store --fail-if-no-match typecheck",
+        "pnpm run typecheck:skill",
+        "pnpm --filter @understand-code/core --fail-if-no-match exec tsc --noEmit",
+        "pnpm --filter @understand-code/task-engine --fail-if-no-match typecheck",
+        "pnpm --filter @understand-code/cli --fail-if-no-match typecheck",
+        "pnpm --filter @understand-code/dashboard --fail-if-no-match exec tsc -b --pretty false",
+        "pnpm --filter @understand-code/preview --fail-if-no-match typecheck",
+      ].join(" && "),
     );
   });
 
@@ -154,7 +189,13 @@ describe("root quality gate", () => {
     expect(BUILD_ARTIFACT_PATHS).toEqual([
       "dist",
       "packages/durable-object-provider-contracts/dist",
+      "packages/durable-object-provider-client/dist",
+      "packages/durable-object-provider-runtime/dist",
+      "packages/durable-object-provider-authority/dist",
+      "packages/host-adapters/dist",
       "packages/contracts/dist",
+      "packages/installation-lifecycle/dist",
+      "packages/workbench-runtime/dist",
       "packages/repository-state/dist",
       "packages/artifact-store/dist",
       "packages/core/dist",

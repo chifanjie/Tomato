@@ -32,6 +32,36 @@ import {
   type ImplementedToolName,
 } from "../handlers/tools.js";
 
+export type McpToolSurfaceProfileV1 =
+  | "full"
+  | "preview_three_tool_v1";
+
+declare const __UNDERSTAND_CODE_MCP_TOOL_SURFACE_PROFILE__:
+  | McpToolSurfaceProfileV1
+  | undefined;
+
+export const PREVIEW_THREE_TOOL_NAMES_V1 = Object.freeze([
+  "get_repo_pulse",
+  "build_task_brief",
+  "get_task_brief",
+] as const satisfies readonly ImplementedToolName[]);
+
+export function implementedToolNamesForSurfaceProfileV1(
+  profile: McpToolSurfaceProfileV1,
+): readonly ImplementedToolName[] {
+  return profile === "preview_three_tool_v1"
+    ? PREVIEW_THREE_TOOL_NAMES_V1
+    : IMPLEMENTED_TOOL_NAMES;
+}
+
+const compiledToolSurfaceProfileV1: McpToolSurfaceProfileV1 =
+  typeof __UNDERSTAND_CODE_MCP_TOOL_SURFACE_PROFILE__ === "undefined"
+    ? "full"
+    : __UNDERSTAND_CODE_MCP_TOOL_SURFACE_PROFILE__;
+
+const activeImplementedToolNamesV1 =
+  implementedToolNamesForSurfaceProfileV1(compiledToolSurfaceProfileV1);
+
 /**
  * Zod emits tuple schemas with `prefixItems`.  Ajv strict mode requires the
  * tuple cardinality and a closed `items` schema to be explicit, so normalize
@@ -143,7 +173,7 @@ const outputSchemas = {
 } as const;
 
 export const IMPLEMENTED_TOOLS = Object.freeze(
-  IMPLEMENTED_TOOL_NAMES.map((name) => ({
+  activeImplementedToolNamesV1.map((name) => ({
     name,
     description: descriptions[name],
     inputSchema: normalizeToolJsonSchema(z.toJSONSchema(inputSchemas[name])),
@@ -156,7 +186,7 @@ export const IMPLEMENTED_TOOLS = Object.freeze(
   })),
 );
 
-const toolNames = new Set<string>(IMPLEMENTED_TOOL_NAMES);
+const toolNames = new Set<string>(activeImplementedToolNamesV1);
 
 export function isImplementedToolName(value: unknown): value is ImplementedToolName {
   return typeof value === "string" && toolNames.has(value);

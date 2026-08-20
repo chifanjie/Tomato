@@ -18,6 +18,8 @@ import { z } from "zod";
 
 import {
   IMPLEMENTED_TOOLS,
+  PREVIEW_THREE_TOOL_NAMES_V1,
+  implementedToolNamesForSurfaceProfileV1,
   normalizeToolJsonSchema,
 } from "../src/mcp/tool-registry.js";
 
@@ -98,6 +100,30 @@ const expectedOutputSchemas = {
 } as const;
 
 describe("advertised tool contracts", () => {
+  it("keeps the Preview Candidate surface pinned to the original three tools", () => {
+    expect(implementedToolNamesForSurfaceProfileV1("preview_three_tool_v1")).toBe(
+      PREVIEW_THREE_TOOL_NAMES_V1,
+    );
+    expect(PREVIEW_THREE_TOOL_NAMES_V1).toEqual([
+      "get_repo_pulse",
+      "build_task_brief",
+      "get_task_brief",
+    ]);
+    expect(implementedToolNamesForSurfaceProfileV1("full")).toEqual([
+      "get_repo_pulse",
+      "build_task_brief",
+      "get_task_brief",
+      "update_task",
+      "check_change",
+      "record_verification",
+      "open_workbench",
+      "get_evidence",
+      "search_context",
+      "trace_impact",
+      "refresh_index",
+    ]);
+  });
+
   it("publishes only the implemented allowlist with generated input and structured output schemas", () => {
     expect(IMPLEMENTED_TOOLS.map((tool) => tool.name)).toEqual([
       "get_repo_pulse",

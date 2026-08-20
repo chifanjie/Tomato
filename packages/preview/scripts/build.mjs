@@ -1,11 +1,9 @@
-import { chmod, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
-
-import { copyCurrentNativeKernelPeerAssetV1 } from "../../cli/scripts/native-kernel-peer-asset.mjs";
 
 const exec = promisify(execFile);
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -165,13 +163,19 @@ async function main() {
   await rm(distRoot, { recursive: true, force: true });
   await mkdir(distRoot, { recursive: true });
   await run("pnpm", ["--filter", "@understand-code/durable-object-provider-contracts", "build"]);
-  await run("pnpm", ["--filter", "@understand-code/durable-object-provider-runtime", "build"]);
   await run("pnpm", ["--filter", "@understand-code/contracts", "build"]);
+  await run("pnpm", ["--filter", "@understand-code/workbench-runtime", "build"]);
   await run("pnpm", ["--filter", "@understand-code/repository-state", "build"]);
   await run("pnpm", ["--filter", "@understand-code/artifact-store", "build"]);
   await run("pnpm", ["--filter", "@understand-code/core", "build"]);
   await run("pnpm", ["--filter", "@understand-code/task-engine", "build"]);
-  await run("pnpm", ["--filter", "@understand-code/cli", "build"]);
+  await run(process.execPath, [
+    path.join(workspaceRoot, "packages/cli/scripts/build-bundle.mjs"),
+    "--output",
+    path.join(distRoot, "understand-code.mjs"),
+    "--bundle-profile",
+    "preview_three_tool_v1",
+  ]);
   await run("pnpm", ["exec", "vite", "build", "--config", path.join(dashboardRoot, "vite.config.preview.mjs")], dashboardRoot);
   await run("pnpm", ["exec", "vite", "build", "--config", path.join(packageRoot, "vite.config.contracts.mjs")], dashboardRoot);
   const { parseWikiIndexV2, parseWikiSearchIndexV2, validateGraph } = await import(path.join(distRoot, "contracts.mjs"));
@@ -185,12 +189,6 @@ async function main() {
     throw new Error("Preview demo Wiki/Search failed its production V2 contract");
   }
   const meta = { lastAnalyzedAt: wiki.generatedAt, gitCommitHash: "preview-fixture", version: "1.0.0", analyzedFiles: 1, theme: { presetId: "technical-document" } };
-  await cp(path.join(workspaceRoot, "packages/cli/dist/understand-code.mjs"), path.join(distRoot, "understand-code.mjs"));
-  await chmod(path.join(distRoot, "understand-code.mjs"), 0o755);
-  await copyCurrentNativeKernelPeerAssetV1({
-    sourceNativeRoot: path.join(workspaceRoot, "packages/cli/dist/native"),
-    destinationNativeRoot: path.join(distRoot, "native"),
-  });
   await cp(path.join(packageRoot, "src/bin.mjs"), path.join(distRoot, "bin.mjs"));
   await cp(path.join(packageRoot, "src/server.mjs"), path.join(distRoot, "server.mjs"));
   const demoRoot = path.join(distRoot, "demo/.understand-code");

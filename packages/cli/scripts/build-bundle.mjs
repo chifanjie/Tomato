@@ -12,11 +12,53 @@ const packageRoot = path.resolve(
   "..",
 );
 const workspaceRoot = path.resolve(packageRoot, "../..");
-const output = path.join(packageRoot, "dist/understand-code.mjs");
+
+const bundleProfiles = Object.freeze({
+  full: Object.freeze({
+    entryPoint: path.join(packageRoot, "src/bin.ts"),
+    toolSurfaceProfile: "full",
+    copyNativeKernelPeer: true,
+  }),
+  preview_three_tool_v1: Object.freeze({
+    entryPoint: path.join(packageRoot, "src/preview-bin.ts"),
+    toolSurfaceProfile: "preview_three_tool_v1",
+    copyNativeKernelPeer: false,
+  }),
+});
+
+function parseArguments(values) {
+  const result = {
+    output: path.join(packageRoot, "dist/understand-code.mjs"),
+    bundleProfile: "full",
+  };
+  for (let index = 0; index < values.length; index += 1) {
+    const flag = values[index];
+    const value = values[index + 1];
+    if (value === undefined || value.startsWith("--")) {
+      throw new Error(`Missing value for ${flag ?? "bundle option"}`);
+    }
+    if (flag === "--output") result.output = path.resolve(value);
+    else if (
+      flag === "--bundle-profile" &&
+      Object.hasOwn(bundleProfiles, value)
+    ) {
+      result.bundleProfile = value;
+    } else {
+      throw new Error(`Unknown or invalid bundle option: ${flag ?? ""}`);
+    }
+    index += 1;
+  }
+  return result;
+}
+
+const bundleOptions = parseArguments(process.argv.slice(2));
+const output = bundleOptions.output;
+const bundleProfile = bundleProfiles[bundleOptions.bundleProfile];
+if (bundleProfile === undefined) throw new Error("Unknown bundle profile.");
 
 await mkdir(path.dirname(output), { recursive: true });
 const result = await build({
-  entryPoints: [path.join(packageRoot, "src/bin.ts")],
+  entryPoints: [bundleProfile.entryPoint],
   outfile: output,
   bundle: true,
   platform: "node",
@@ -26,6 +68,11 @@ const result = await build({
   legalComments: "none",
   sourcemap: false,
   metafile: true,
+  define: {
+    __UNDERSTAND_CODE_MCP_TOOL_SURFACE_PROFILE__: JSON.stringify(
+      bundleProfile.toolSurfaceProfile,
+    ),
+  },
   banner: {
     js: [
       "#!/usr/bin/env node",
@@ -52,10 +99,12 @@ if (/workspace:\*/u.test(bytes)) {
   throw new Error("The CLI bundle contains an unresolved workspace dependency.");
 }
 await chmod(output, 0o755);
-await copyCurrentNativeKernelPeerAssetV1({
-  sourceNativeRoot: path.join(
-    workspaceRoot,
-    "packages/durable-object-provider-runtime/dist/native",
-  ),
-  destinationNativeRoot: path.join(packageRoot, "dist/native"),
-});
+if (bundleProfile.copyNativeKernelPeer) {
+  await copyCurrentNativeKernelPeerAssetV1({
+    sourceNativeRoot: path.join(
+      workspaceRoot,
+      "packages/durable-object-provider-runtime/dist/native",
+    ),
+    destinationNativeRoot: path.join(path.dirname(output), "native"),
+  });
+}

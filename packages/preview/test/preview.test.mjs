@@ -8,6 +8,8 @@ import path from "node:path";
 import { test } from "node:test";
 import { spawn } from "node:child_process";
 
+import { getRepositorySnapshotDetailed } from "../../repository-state/dist/index.js";
+
 const packageRoot = path.resolve(new URL("..", import.meta.url).pathname);
 const bin = path.join(packageRoot, "dist/bin.mjs");
 const execFileAsync = promisify(execFile);
@@ -246,6 +248,8 @@ async function createPublishedRoot() {
   await git(root, ["init", "-q"]);
   await git(root, ["add", "src/app.ts"]);
   await git(root, ["commit", "-q", "-m", "preview fixture"]);
+  const launchSnapshot = await getRepositorySnapshotDetailed(root);
+  assert.equal(launchSnapshot.snapshot.captureStatus, "complete");
   await cp(path.join(packageRoot, "dist/demo/.understand-code"), path.join(root, ".understand-code"), { recursive: true });
   const head = (await git(root, ["rev-parse", "HEAD"])).stdout.trim();
   const graphPath = path.join(root, ".understand-code/knowledge-graph.json");
@@ -263,7 +267,7 @@ async function createPublishedRoot() {
   const kbRoot = path.join(root, ".understand-code/knowledge-base");
   const wikiPath = path.join(kbRoot, "wiki-index.json");
   const wiki = JSON.parse(await readFile(wikiPath, "utf8"));
-  wiki.source.sourceRootIdentity = root;
+  wiki.source.sourceRootIdentity = launchSnapshot.snapshot.rootIdentity;
   wiki.source.gitCommitHash = head;
   wiki.source.graphDigest = graphDigest;
   wiki.evidence[0].filePath = path.join(root, "src/app.ts");
@@ -502,7 +506,8 @@ test("root mode is fail-closed for non-worktree, subdirectory, stale, and unsafe
   const wrongRootWiki = await createPublishedRoot();
   const wrongRootWikiPath = path.join(wrongRootWiki, ".understand-code/knowledge-base/wiki-index.json");
   const wrongRootIndex = JSON.parse(await readFile(wrongRootWikiPath, "utf8"));
-  wrongRootIndex.source.sourceRootIdentity = "/different/worktree";
+  const boundRootIdentity = wrongRootIndex.source.sourceRootIdentity;
+  wrongRootIndex.source.sourceRootIdentity = `${boundRootIdentity.slice(0, -1)}${boundRootIdentity.endsWith("0") ? "1" : "0"}`;
   await writeFile(wrongRootWikiPath, `${JSON.stringify(wrongRootIndex, null, 2)}\n`);
   await expectExit(["--root", wrongRootWiki, "--no-open"], /bound to a different source root/u);
 

@@ -163,7 +163,11 @@ async function main() {
   await rm(distRoot, { recursive: true, force: true });
   await mkdir(distRoot, { recursive: true });
   await run("pnpm", ["--filter", "@understand-code/durable-object-provider-contracts", "build"]);
+  await run("pnpm", ["--filter", "@understand-code/durable-object-provider-client", "build"]);
+  await run("pnpm", ["--filter", "@understand-code/durable-object-provider-runtime", "build"]);
+  await run("pnpm", ["--filter", "@understand-code/host-adapters", "build"]);
   await run("pnpm", ["--filter", "@understand-code/contracts", "build"]);
+  await run("pnpm", ["--filter", "@understand-code/installation-lifecycle", "build"]);
   await run("pnpm", ["--filter", "@understand-code/workbench-runtime", "build"]);
   await run("pnpm", ["--filter", "@understand-code/repository-state", "build"]);
   await run("pnpm", ["--filter", "@understand-code/artifact-store", "build"]);
@@ -174,7 +178,7 @@ async function main() {
     "--output",
     path.join(distRoot, "understand-code.mjs"),
     "--bundle-profile",
-    "preview_three_tool_v1",
+    "full",
   ]);
   await run("pnpm", ["exec", "vite", "build", "--config", path.join(dashboardRoot, "vite.config.preview.mjs")], dashboardRoot);
   await run("pnpm", ["exec", "vite", "build", "--config", path.join(packageRoot, "vite.config.contracts.mjs")], dashboardRoot);

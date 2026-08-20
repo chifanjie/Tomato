@@ -14,10 +14,15 @@ import { gunzipSync } from "node:zlib";
 import { ArtifactStore, sha256CanonicalJson } from "../../artifact-store/dist/index.js";
 import {
   BuildTaskBriefOutputV1Schema,
+  CheckChangeOutputV1Schema,
   GetRepoPulseOutputV1Schema,
   GetTaskBriefOutputV1Schema,
+  OpenWorkbenchOutputV1Schema,
+  RecordVerificationOutputV1Schema,
+  RefreshIndexOutputV1Schema,
   RepoPulseArtifactV1Schema,
   RepositorySnapshotArtifactV1Schema,
+  UpdateTaskOutputV1Schema,
 } from "../../contracts/dist/index.js";
 import { buildRepoPulse, getRepositorySnapshotDetailed } from "../../repository-state/dist/index.js";
 
@@ -32,12 +37,14 @@ const MAX_PACKED_TARBALL_BYTES = 2 * 1024 * 1024;
 const MAX_EXPANDED_TAR_BYTES = 12 * 1024 * 1024;
 const MAX_PACKED_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_PACKED_TOTAL_FILE_BYTES = 8 * 1024 * 1024;
-const EXPECTED_PACKED_FILE_COUNT = 36;
+const EXPECTED_PACKED_FILE_COUNT = 37;
+const NATIVE_TUPLE = `${process.platform}-${process.arch}`;
 
 const packedFileRules = [
   { label: "package metadata", pattern: /^package\/(?:README\.md|package\.json)$/u, count: 2, mode: 0o644 },
   { label: "runtime modules", pattern: /^package\/dist\/(?:README\.md|bin\.mjs|contracts\.mjs|server\.mjs)$/u, count: 4, mode: 0o644 },
   { label: "MCP executable", pattern: /^package\/dist\/understand-code\.mjs$/u, count: 1, mode: 0o755 },
+  { label: "native kernel peer", pattern: new RegExp(`^package/dist/native/${NATIVE_TUPLE}/provider_kernel_peer\\.node$`, "u"), count: 1, mode: 0o644 },
   { label: "dashboard roots", pattern: /^package\/dist\/dashboard\/(?:config\.json|favicon\.ico|favicon\.svg|index\.html|meta\.json)$/u, count: 5, mode: 0o644 },
   { label: "Graph Explorer chunk", pattern: /^package\/dist\/dashboard\/assets\/GraphExplorer-[A-Za-z0-9_-]+\.js$/u, count: 1, mode: 0o644 },
   { label: "graph layout chunk", pattern: /^package\/dist\/dashboard\/assets\/graph-layout-[A-Za-z0-9_-]+\.js$/u, count: 1, mode: 0o644 },
@@ -371,6 +378,32 @@ function collectMessages(child) {
   };
 }
 
+async function callTool(child, output, id, name, argumentsValue, schema) {
+  writeMessage(child, {
+    jsonrpc: "2.0",
+    id,
+    method: "tools/call",
+    params: { name, arguments: argumentsValue },
+  });
+  const message = await output.waitFor(
+    (candidate) => candidate.id === id,
+    `MCP ${name} response`,
+  );
+  assert.equal(message.jsonrpc, "2.0");
+  assert.equal(Object.hasOwn(message, "error"), false, `${name} must return a tool result`);
+  return schema.parse(message.result);
+}
+
+async function runCliJson(executable, argumentsValue, cwd) {
+  const result = await execFileBounded(executable, argumentsValue, {
+    cwd,
+    encoding: "utf8",
+    env: { ...process.env, GIT_DIR: undefined, GIT_WORK_TREE: undefined },
+  });
+  assert.equal(result.stderr, "");
+  return JSON.parse(result.stdout);
+}
+
 async function git(root, args) {
   return execFileBounded("git", args, {
     cwd: root,
@@ -464,6 +497,8 @@ async function createPublishedPreviewRoot(installedPackageRoot) {
   await git(root, ["init", "-q"]);
   await git(root, ["add", ".gitignore", "src/app.ts"]);
   await git(root, ["commit", "-q", "-m", "cold Preview root fixture"]);
+  const launchCapture = await getRepositorySnapshotDetailed(root);
+  assert.equal(launchCapture.snapshot.captureStatus, "complete");
   await cp(path.join(installedPackageRoot, "dist/demo/.understand-code"), path.join(root, ".understand-code"), { recursive: true });
   const head = (await git(root, ["rev-parse", "HEAD"])).stdout.trim();
   const graphPath = path.join(root, ".understand-code/knowledge-graph.json");
@@ -477,7 +512,7 @@ async function createPublishedPreviewRoot(installedPackageRoot) {
   await writeFile(metaPath, `${JSON.stringify(meta, null, 2)}\n`);
   const wikiPath = path.join(root, ".understand-code/knowledge-base/wiki-index.json");
   const wiki = JSON.parse(await readFile(wikiPath, "utf8"));
-  wiki.source.sourceRootIdentity = root;
+  wiki.source.sourceRootIdentity = launchCapture.snapshot.rootIdentity;
   wiki.source.gitCommitHash = head;
   wiki.source.graphDigest = graphDigest;
   await writeFile(wikiPath, `${JSON.stringify(wiki, null, 2)}\n`);
@@ -559,13 +594,14 @@ async function assertPackedDashboard(indexResponse, indexHtml, previewUrl, packe
   assert.match(bootstrap.bytes.toString("utf8"), /localStorage\.getItem\("uc-theme"\)/u);
 }
 
-test("cold packed Preview installs outside the monorepo with both usable bins", async () => {
+test("cold packed Alpha runs the install-to-verification vertical outside the monorepo", async () => {
   const packDirectory = await mkdtemp(path.join(tmpdir(), "preview-pack-"));
   const installDirectory = await mkdtemp(path.join(tmpdir(), "preview-install-"));
   const mcpRoot = await createMcpRoot();
   let publishedRoot = null;
   let previewChild = null;
   let mcpChild = null;
+  let managedInstallRoot = null;
   try {
     const suppliedTarball = process.env.UNDERSTAND_CODE_PREVIEW_TARBALL;
     let packRecord = null;
@@ -604,37 +640,25 @@ test("cold packed Preview installs outside the monorepo with both usable bins", 
     assert.match(help.stdout, /understand-code-preview --demo/u);
     const mcpHelp = await execFileBounded(mcpBin, ["--help"], { cwd: installDirectory, encoding: "utf8" });
     assert.match(mcpHelp.stdout, /understand-code mcp --stdio --root/u);
-    assert.doesNotMatch(
-      mcpHelp.stdout,
-      /(?:install|upgrade|rollback|doctor|uninstall|provider|service-config)/iu,
-      "Preview MCP help must not advertise lifecycle or Provider commands",
-    );
+    assert.match(mcpHelp.stdout, /understand-code install/u);
+    assert.match(mcpHelp.stdout, /understand-code doctor/u);
+    assert.match(mcpHelp.stdout, /understand-code uninstall/u);
     await assert.rejects(
       execFileBounded(previewBin, ["--unknown"], { cwd: installDirectory, encoding: "utf8" }),
       (error) => error && error.code === 2 && error.stderr === "preview_error unknown option: --unknown\n",
     );
-    for (const argumentsValue of [
-      ["install"],
-      ["upgrade"],
-      ["rollback"],
-      ["doctor"],
-      ["uninstall"],
-      ["--service-config", "/tmp/provider-service.json"],
-      ["__provider-runtime"],
-    ]) {
-      await assert.rejects(
-        execFileBounded(mcpBin, argumentsValue, {
-          cwd: installDirectory,
-          encoding: "utf8",
-        }),
-        (error) =>
-          error &&
-          error.code === 2 &&
-          error.stdout === "" &&
-          error.stderr === "understand-code: configuration_error\n",
-        `Preview MCP must reject command surface: ${argumentsValue[0]}`,
-      );
-    }
+    await assert.rejects(
+      execFileBounded(mcpBin, ["--service-config", "relative-provider-service.json"], {
+        cwd: installDirectory,
+        encoding: "utf8",
+      }),
+      (error) =>
+        error &&
+        error.code === 2 &&
+        error.stdout === "" &&
+        error.stderr === "understand-code: configuration_error\n",
+      "the public CLI must reject the private service entrypoint without an exact invocation",
+    );
     const manifest = JSON.parse(await readFile(path.join(installedPackageRoot, "package.json"), "utf8"));
     assert.deepEqual(manifest.dependencies ?? {}, {});
     assert.deepEqual(manifest.exports, {});
@@ -647,18 +671,42 @@ test("cold packed Preview installs outside the monorepo with both usable bins", 
     const bundle = await readFile(path.join(installedPackageRoot, "dist/understand-code.mjs"), "utf8");
     assert.doesNotMatch(bundle, /workspace:\*/u);
     assert.doesNotMatch(bundle, new RegExp(packageRoot.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
-    assert.doesNotMatch(
-      bundle,
-      /(?:__provider-runtime|ProviderServiceInstallationLifecycleErrorV1|runDurableObjectProviderRuntimeCliV1|understand-code install)/u,
-      "Preview MCP bundle must not contain lifecycle or private Provider entrypoints",
-    );
-    assert.equal(
-      [...packedFiles.keys()].some(
+    assert.match(bundle, /understand-code-owned-v1/u, "the packed CLI must carry its managed-install identity");
+    assert.deepEqual(
+      [...packedFiles.keys()].filter(
         (entry) => entry.includes("/dist/native/") || entry.endsWith("provider_kernel_peer.node"),
       ),
-      false,
-      "Preview tgz must not carry Provider native assets",
+      [`package/dist/native/${NATIVE_TUPLE}/provider_kernel_peer.node`],
+      "the Alpha tgz must carry exactly the current platform native tuple",
     );
+    const requestedInstallRoot = path.join(installDirectory, "managed-install");
+    const installed = await runCliJson(
+      mcpBin,
+      ["install", "--root", requestedInstallRoot, "--host", "codex"],
+      installDirectory,
+    );
+    assert.equal(installed.ok, true);
+    assert.equal(installed.status, "installed");
+    assert.equal(installed.root, await realpath(requestedInstallRoot));
+    managedInstallRoot = installed.root;
+    const installedWrapper = path.join(managedInstallRoot, "bin/understand-code");
+    const installedBundle = path.join(managedInstallRoot, "lib/understand-code.mjs");
+    const installedNativePeer = path.join(
+      managedInstallRoot,
+      `lib/native/${NATIVE_TUPLE}/provider_kernel_peer.node`,
+    );
+    assert.deepEqual(
+      await readFile(installedNativePeer),
+      packedFiles.get(`package/dist/native/${NATIVE_TUPLE}/provider_kernel_peer.node`),
+      "managed install must copy the exact native peer from the single tgz",
+    );
+    const initialDoctor = await runCliJson(
+      installedBundle,
+      ["doctor", "--root", managedInstallRoot],
+      installDirectory,
+    );
+    assert.equal(initialDoctor.ok, true);
+    assert.equal(initialDoctor.status, "healthy");
     const installedPreviewBundle = await readFile(path.join(installedPackageRoot, "dist/bin.mjs"), "utf8");
     assert.doesNotMatch(installedPreviewBundle, new RegExp(packageRoot.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
     const preview = startPreview(previewBin, installDirectory);
@@ -700,9 +748,10 @@ test("cold packed Preview installs outside the monorepo with both usable bins", 
     previewChild = null;
     await assertPortReleased(rootUrl, "cold root Preview");
 
-    const sourceBefore = await readFile(path.join(mcpRoot, "src/task.ts"));
+    const sourcePath = path.join(mcpRoot, "src/task.ts");
+    const sourceBefore = await readFile(sourcePath);
     const indexBefore = digest(await readFile(path.join(mcpRoot, ".git/index")));
-    const mcp = spawn(mcpBin, ["mcp", "--stdio", "--root", mcpRoot], {
+    const mcp = spawn(installedWrapper, ["--root", mcpRoot], {
       cwd: installDirectory,
       env: { PATH: process.env.PATH, GIT_DIR: path.join(mcpRoot, "ambient-git-dir-must-not-be-authority") },
       stdio: ["pipe", "pipe", "pipe"],
@@ -724,24 +773,11 @@ test("cold packed Preview installs outside the monorepo with both usable bins", 
     });
     writeMessage(mcp, { jsonrpc: "2.0", method: "notifications/initialized", params: {} });
     writeMessage(mcp, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
-    writeMessage(mcp, { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "get_repo_pulse", arguments: {} } });
-    writeMessage(mcp, {
-      jsonrpc: "2.0", id: 4, method: "tools/call",
-      params: {
-        name: "build_task_brief",
-        arguments: {
-          task: "Prepare a safe change to the task function.", expectedRevision: 0,
-          idempotencyKey: "preview-cold-brief", actor: "agent:preview-cold", scope: ["src/task.ts"],
-        },
-      },
-    });
     const listed = await output.waitFor((message) => message.id === 2, "MCP tools/list response");
     assert.deepEqual(listed.result.tools.map((tool) => tool.name), [
       "get_repo_pulse",
       "build_task_brief",
       "get_task_brief",
-    ]);
-    const excludedPreviewTools = [
       "update_task",
       "check_change",
       "record_verification",
@@ -750,40 +786,333 @@ test("cold packed Preview installs outside the monorepo with both usable bins", 
       "search_context",
       "trace_impact",
       "refresh_index",
-    ];
-    for (const [index, name] of excludedPreviewTools.entries()) {
-      writeMessage(mcp, {
-        jsonrpc: "2.0",
-        id: 100 + index,
-        method: "tools/call",
-        params: { name, arguments: {} },
-      });
-    }
-    for (const [index, name] of excludedPreviewTools.entries()) {
-      assert.deepEqual(
-        await output.waitFor(
-          (message) => message.id === 100 + index,
-          `MCP excluded ${name} response`,
-        ),
+    ]);
+
+    const initialRefresh = await callTool(
+      mcp,
+      output,
+      3,
+      "refresh_index",
+      {
+        mode: "full",
+        idempotencyKey: "preview-alpha-initial-refresh",
+        actor: "agent:preview-alpha",
+      },
+      RefreshIndexOutputV1Schema,
+    );
+    assert.equal(initialRefresh.structuredContent.result.operation.status, "completed");
+    const pulse = await callTool(mcp, output, 4, "get_repo_pulse", {}, GetRepoPulseOutputV1Schema);
+    assert.equal(
+      pulse.structuredContent.meta.sourceSnapshotId,
+      initialRefresh.structuredContent.meta.sourceSnapshotId,
+    );
+    const built = await callTool(
+      mcp,
+      output,
+      5,
+      "build_task_brief",
+      {
+        task: "Prepare and verify a safe change to the task function.",
+        expectedRevision: 0,
+        idempotencyKey: "preview-alpha-brief",
+        actor: "agent:preview-alpha",
+        scope: ["src/task.ts"],
+      },
+      BuildTaskBriefOutputV1Schema,
+    );
+    const taskId = built.structuredContent.result.task.taskId;
+    const readBrief = await callTool(
+      mcp,
+      output,
+      6,
+      "get_task_brief",
+      { taskId, section: "summary" },
+      GetTaskBriefOutputV1Schema,
+    );
+    assert.equal(readBrief.structuredContent.result.task.taskId, taskId);
+
+    const liveRootPreview = startPreview(previewBin, installDirectory, ["--root", mcpRoot, "--port", "0", "--no-open"]);
+    previewChild = liveRootPreview.child;
+    const liveRootReady = await liveRootPreview.ready;
+    assert.equal(liveRootReady.mode, "root");
+    assert.equal(liveRootReady.wiki, "ready");
+    const liveRootUrl = new URL(liveRootReady.url);
+    const [liveGraph, liveWiki] = await Promise.all([
+      fetch(`${liveRootUrl.origin}/knowledge-graph.json?token=${encodeURIComponent(liveRootReady.token)}`),
+      fetch(`${liveRootUrl.origin}/knowledge-base/wiki-index.json?token=${encodeURIComponent(liveRootReady.token)}`),
+    ]);
+    assert.equal(liveGraph.status, 200);
+    assert.equal(liveWiki.status, 200);
+    assert.equal((await liveWiki.json()).source.sourceRootIdentity.startsWith("root-"), true);
+    assert.deepEqual(await stopChild(previewChild, "full-indexed root Preview"), [0, null]);
+    previewChild = null;
+    await assertPortReleased(liveRootUrl, "full-indexed root Preview");
+
+    const opened = await callTool(
+      mcp,
+      output,
+      7,
+      "open_workbench",
+      { route: { view: "tasks", taskId, section: "summary" }, openBrowser: false },
+      OpenWorkbenchOutputV1Schema,
+    );
+    const workbenchUrl = new URL(opened.structuredContent.result.deepLink);
+    assert.equal(workbenchUrl.hostname, "127.0.0.1");
+    const launch = await fetch(new URL("/__workbench/launch", workbenchUrl), {
+      method: "POST",
+      headers: { "content-type": "application/json", connection: "close" },
+      body: JSON.stringify({ token: workbenchUrl.hash.slice(1) }),
+    });
+    assert.equal(launch.status, 200);
+    const workbenchCookie = launch.headers.get("set-cookie")?.split(";", 1)[0];
+    assert.ok(workbenchCookie);
+    const [workbenchGraph, workbenchWiki] = await Promise.all([
+      fetch(new URL("/__workbench/context?surface=graph", workbenchUrl), {
+        headers: { cookie: workbenchCookie, connection: "close" },
+      }),
+      fetch(new URL("/__workbench/context?surface=knowledge", workbenchUrl), {
+        headers: { cookie: workbenchCookie, connection: "close" },
+      }),
+    ]);
+    assert.equal(workbenchGraph.status, 200);
+    assert.equal(workbenchWiki.status, 200);
+    assert.equal((await workbenchGraph.json()).status, "ready");
+    assert.equal((await workbenchWiki.json()).status, "ready");
+
+    const actor = "agent:preview-alpha";
+    let taskRevision = built.structuredContent.result.task.revision;
+    let nextRequestId = 20;
+    const updateTask = async (action, idempotencyKey) => {
+      const updated = await callTool(
+        mcp,
+        output,
+        nextRequestId++,
+        "update_task",
+        { taskId, action, expectedRevision: taskRevision, idempotencyKey, actor },
+        UpdateTaskOutputV1Schema,
+      );
+      taskRevision = updated.structuredContent.result.mutation.revision;
+      return updated;
+    };
+    await updateTask(
+      { type: "confirm_goal", claimId: built.structuredContent.result.brief.goalClaimId },
+      "preview-alpha-confirm-goal",
+    );
+    await updateTask(
+      {
+        type: "confirm_acceptance_criteria",
+        claimIds: built.structuredContent.result.brief.acceptanceClaimIds,
+      },
+      "preview-alpha-confirm-acceptance",
+    );
+    await updateTask(
+      {
+        type: "confirm_plan",
+        plannedChangeIds: built.structuredContent.result.brief.plannedChanges.map((change) => change.id),
+      },
+      "preview-alpha-confirm-plan",
+    );
+    await updateTask({ type: "transition_status", to: "planned" }, "preview-alpha-planned");
+    await updateTask({ type: "transition_status", to: "in_progress" }, "preview-alpha-in-progress");
+
+    const externallyChangedSource = "export function task() { return 'alpha-verified'; }\n";
+    await writeFile(sourcePath, externallyChangedSource, "utf8");
+    assert.notDeepEqual(await readFile(sourcePath), sourceBefore);
+    assert.equal(digest(await readFile(path.join(mcpRoot, ".git/index"))), indexBefore);
+    const changedRefresh = await callTool(
+      mcp,
+      output,
+      nextRequestId++,
+      "refresh_index",
+      {
+        mode: "full",
+        expectedSourceSnapshotId: initialRefresh.structuredContent.meta.sourceSnapshotId,
+        idempotencyKey: "preview-alpha-changed-refresh",
+        actor,
+      },
+      RefreshIndexOutputV1Schema,
+    );
+    assert.equal(changedRefresh.structuredContent.result.operation.status, "completed");
+    assert.notEqual(
+      changedRefresh.structuredContent.meta.sourceSnapshotId,
+      initialRefresh.structuredContent.meta.sourceSnapshotId,
+    );
+    await updateTask(
+      { type: "transition_status", to: "check_required" },
+      "preview-alpha-check-required",
+    );
+    const checked = await callTool(
+      mcp,
+      output,
+      nextRequestId++,
+      "check_change",
+      {
+        taskId,
+        includeWorktree: true,
+        expectedRevision: taskRevision,
+        idempotencyKey: "preview-alpha-check",
+        actor,
+      },
+      CheckChangeOutputV1Schema,
+    );
+    taskRevision = checked.structuredContent.result.mutation.revision;
+    assert.equal(
+      checked.structuredContent.result.changeCheck.actualSnapshotId,
+      changedRefresh.structuredContent.meta.sourceSnapshotId,
+    );
+    for (const finding of checked.structuredContent.result.changeCheck.findings.filter(
+      (candidate) => candidate.blocking && candidate.resolution === undefined,
+    )) {
+      await updateTask(
         {
-          jsonrpc: "2.0",
-          id: 100 + index,
-          error: { code: -32_602, message: "Invalid tool arguments" },
+          type: "accept_finding",
+          findingId: finding.id,
+          reason: "Accepted by the Alpha happy-path fixture after reviewing the exact diff.",
         },
+        `preview-alpha-accept-${finding.id}`,
       );
     }
-    GetRepoPulseOutputV1Schema.parse((await output.waitFor((message) => message.id === 3, "MCP get_repo_pulse response")).result);
-    const built = BuildTaskBriefOutputV1Schema.parse((await output.waitFor((message) => message.id === 4, "MCP build_task_brief response")).result);
-    writeMessage(mcp, {
-      jsonrpc: "2.0", id: 5, method: "tools/call",
-      params: { name: "get_task_brief", arguments: { taskId: built.structuredContent.result.task.taskId, section: "summary" } },
-    });
-    GetTaskBriefOutputV1Schema.parse((await output.waitFor((message) => message.id === 5, "MCP get_task_brief response")).result);
+    await updateTask(
+      { type: "transition_status", to: "verification_required" },
+      "preview-alpha-verification-required",
+    );
+
+    const verificationStartedAt = Date.now();
+    const verificationProgram = [
+      "const { task } = await import('./src/task.ts');",
+      "if (task() !== 'alpha-verified') throw new Error('unexpected task result');",
+    ].join(" ");
+    const verificationExecution = await execFileBounded(
+      process.execPath,
+      ["--input-type=module", "--eval", verificationProgram],
+      { cwd: mcpRoot, encoding: "utf8" },
+    );
+    const verificationDurationMs = Date.now() - verificationStartedAt;
+    assert.equal(verificationExecution.stderr, "");
+    const verificationOutputDigest = `sha256:${digest(Buffer.from(`${verificationExecution.stdout}${verificationExecution.stderr}`, "utf8"))}`;
+    const verificationRequests = [];
+    const verificationResults = [];
+    for (const [index, planEntry] of built.structuredContent.result.brief.verificationPlan
+      .filter((entry) => entry.required)
+      .entries()) {
+      const request = {
+        taskId,
+        record: {
+          verificationPlanEntryId: planEntry.id,
+          kind: planEntry.method,
+          status: "passed",
+          command: `node --input-type=module --eval ${JSON.stringify(verificationProgram)}`,
+          exitCode: 0,
+          durationMs: verificationDurationMs,
+          outputDigest: verificationOutputDigest,
+          summary: "The external Alpha verification command completed successfully.",
+          claimIds: planEntry.acceptanceClaimIds,
+          snapshotId: changedRefresh.structuredContent.meta.sourceSnapshotId,
+        },
+        expectedRevision: taskRevision,
+        idempotencyKey: `preview-alpha-verification-${index}`,
+        actor,
+      };
+      const recorded = await callTool(
+        mcp,
+        output,
+        nextRequestId++,
+        "record_verification",
+        request,
+        RecordVerificationOutputV1Schema,
+      );
+      assert.equal(recorded.structuredContent.result.verification.status, "passed");
+      assert.equal(
+        recorded.structuredContent.result.verification.snapshotId,
+        changedRefresh.structuredContent.meta.sourceSnapshotId,
+      );
+      assert.equal(recorded.structuredContent.result.mutation.idempotentReplay, false);
+      taskRevision = recorded.structuredContent.result.mutation.revision;
+      verificationRequests.push(request);
+      verificationResults.push(recorded);
+    }
+    assert.ok(verificationRequests.length > 0, "the Task must carry at least one required verification entry");
+    const verified = await updateTask(
+      { type: "transition_status", to: "verified" },
+      "preview-alpha-verified",
+    );
+    assert.equal(verified.structuredContent.result.task.status, "verified");
+
     mcp.stdin.end();
     assert.deepEqual(await waitForExit(mcp, "MCP clean exit"), [0, null]);
     mcpChild = null;
     assert.equal(output.stderr.join(""), "");
-    assert.deepEqual(await readFile(path.join(mcpRoot, "src/task.ts")), sourceBefore);
+
+    const restarted = spawn(installedWrapper, ["--root", mcpRoot], {
+      cwd: installDirectory,
+      env: { PATH: process.env.PATH },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    mcpChild = restarted;
+    const restartedOutput = collectMessages(restarted);
+    writeMessage(restarted, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-11-25",
+        capabilities: {},
+        clientInfo: { name: "preview-alpha-restart", version: "1.0.0" },
+      },
+    });
+    await restartedOutput.waitFor((message) => message.id === 1, "restarted MCP initialize response");
+    writeMessage(restarted, { jsonrpc: "2.0", method: "notifications/initialized", params: {} });
+    for (const [index, request] of verificationRequests.entries()) {
+      const replayed = await callTool(
+        restarted,
+        restartedOutput,
+        100 + index,
+        "record_verification",
+        request,
+        RecordVerificationOutputV1Schema,
+      );
+      assert.equal(replayed.structuredContent.result.mutation.idempotentReplay, true);
+      assert.equal(
+        replayed.structuredContent.result.verification.id,
+        verificationResults[index].structuredContent.result.verification.id,
+      );
+      assert.equal(replayed.structuredContent.result.verification.status, "passed");
+    }
+    restarted.stdin.end();
+    assert.deepEqual(await waitForExit(restarted, "restarted MCP clean exit"), [0, null]);
+    mcpChild = null;
+    assert.equal(restartedOutput.stderr.join(""), "");
+
+    const finalDoctor = await runCliJson(
+      installedBundle,
+      ["doctor", "--root", managedInstallRoot],
+      installDirectory,
+    );
+    assert.equal(finalDoctor.ok, true);
+    assert.equal(finalDoctor.status, "healthy");
+    const uninstalled = await runCliJson(
+      mcpBin,
+      ["uninstall", "--root", managedInstallRoot],
+      installDirectory,
+    );
+    assert.equal(uninstalled.ok, true);
+    assert.equal(uninstalled.status, "removed");
+    for (const relative of [
+      ".understand-code-owner",
+      "bin/understand-code",
+      "lib/understand-code.mjs",
+      `lib/native/${NATIVE_TUPLE}/provider_kernel_peer.node`,
+      "config/mcp.json",
+      "installation-manifest.json",
+    ]) {
+      await assert.rejects(
+        readFile(path.join(managedInstallRoot, relative)),
+        (error) => error?.code === "ENOENT",
+        `uninstall must remove owned path ${relative}`,
+      );
+    }
+
+    assert.equal(await readFile(sourcePath, "utf8"), externallyChangedSource);
     assert.equal(digest(await readFile(path.join(mcpRoot, ".git/index"))), indexBefore);
     assert.deepEqual(await readFile(tarballPath), tarballBefore);
   } finally {

@@ -235,6 +235,7 @@ async function rootForMode({ root, demo }, gitEnvironment) {
     }
   }
   let repositorySnapshotId = null;
+  let repositoryRootIdentity = null;
   let repositoryId = null;
   let worktreeId = null;
   let head = null;
@@ -245,6 +246,7 @@ async function rootForMode({ root, demo }, gitEnvironment) {
     }
     const initialSnapshot = assertCleanRootCapture(initialCapture);
     repositorySnapshotId = initialSnapshot.snapshotId;
+    repositoryRootIdentity = initialSnapshot.rootIdentity;
     repositoryId = initialSnapshot.repositoryId;
     worktreeId = initialSnapshot.worktreeId;
     head = initialSnapshot.headCommit ?? null;
@@ -311,7 +313,7 @@ async function rootForMode({ root, demo }, gitEnvironment) {
     if (!demo && wiki.source.gitCommitHash !== head) {
       throw new Error("not_ready: published Wiki is stale for the current Git HEAD");
     }
-    if (!demo && wiki.source.sourceRootIdentity !== resolved) {
+    if (!demo && wiki.source.sourceRootIdentity !== repositoryRootIdentity) {
       throw new Error("not_ready: published Wiki is bound to a different source root");
     }
     const expectedGraphDigest = graphDigestV1(graph);
@@ -344,13 +346,13 @@ async function rootForMode({ root, demo }, gitEnvironment) {
       await getRepositorySnapshotDetailed(resolved, { environment: gitEnvironment }),
       repositorySnapshotId,
     );
-    return { root: resolved, artifactRoot, graph, wiki, search, markdownByPath, meta: verifiedMeta, config: verifiedConfig, head, repositorySnapshotId, repositoryId, worktreeId, mode: demo ? "demo" : "root" };
+    return { root: resolved, artifactRoot, graph, wiki, search, markdownByPath, meta: verifiedMeta, config: verifiedConfig, head, repositorySnapshotId, repositoryRootIdentity, repositoryId, worktreeId, mode: demo ? "demo" : "root" };
   }
   if (!demo) assertCleanRootCapture(
     await getRepositorySnapshotDetailed(resolved, { environment: gitEnvironment }),
     repositorySnapshotId,
   );
-  return { root: resolved, artifactRoot, graph, wiki: null, search: null, markdownByPath: new Map(), meta: verifiedMeta, config: verifiedConfig, head, repositorySnapshotId, repositoryId, worktreeId, mode: demo ? "demo" : "root" };
+  return { root: resolved, artifactRoot, graph, wiki: null, search: null, markdownByPath: new Map(), meta: verifiedMeta, config: verifiedConfig, head, repositorySnapshotId, repositoryRootIdentity, repositoryId, worktreeId, mode: demo ? "demo" : "root" };
 }
 
 function sanitizeGraph(graph, projectRoot) {

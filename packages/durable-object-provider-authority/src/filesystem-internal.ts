@@ -263,6 +263,15 @@ export type ProviderAcceptanceAuthorityDurablePhaseInternalV1 =
   | "publication_stage_file_fsynced"
   | "publication_canonical_renamed_before_directory_fsync"
   | "publication_directory_fsynced"
+  | "broker_snapshot_stage_preparation_opened_before_complete_write"
+  | "broker_snapshot_stage_file_fsynced"
+  | "broker_snapshot_canonical_renamed_before_directory_fsync"
+  | "broker_snapshot_directory_fsynced_before_publication"
+  | "broker_publication_stage_preparation_opened_before_complete_write"
+  | "broker_publication_stage_file_fsynced"
+  | "broker_publication_canonical_renamed_before_directory_fsync"
+  | "broker_publication_directory_fsynced"
+  | "broker_snapshot_directory_fsynced_before_response"
   | "snapshot_directory_fsynced_before_response";
 
 export interface ProviderAcceptanceAuthorityDurabilityHooksInternalV1 {
@@ -377,6 +386,7 @@ export async function normalizeDurableAuthorityStagePreparationInternalV1(
         expectedDev: preparation.dev,
         expectedIno: preparation.ino,
         allowedLinkCounts: [1],
+        maximumBytes: input.maximumBytes,
       });
     }
     return;
@@ -398,6 +408,7 @@ export async function normalizeDurableAuthorityStagePreparationInternalV1(
       expectedDev: preparation.dev,
       expectedIno: preparation.ino,
       allowedLinkCounts: [2],
+      maximumBytes: input.maximumBytes,
     });
     return;
   }
@@ -412,6 +423,7 @@ export async function normalizeDurableAuthorityStagePreparationInternalV1(
       layout: input.layout,
       expectedDev: preparation.dev,
       expectedIno: preparation.ino,
+      maximumBytes: input.maximumBytes,
     });
   }
 }
@@ -516,13 +528,14 @@ export async function removeCheckedAuthorityFileInternalV1(input: Readonly<{
   expectedDev: number;
   expectedIno: number;
   allowedLinkCounts?: readonly number[];
+  maximumBytes?: number;
 }>): Promise<void> {
   let observed: CheckedFileInternalV1;
   try {
     observed = await readCheckedAuthorityFileInternalV1({
       path: input.path,
       layout: input.layout,
-      maximumBytes: 64 * 1024,
+      maximumBytes: input.maximumBytes ?? 64 * 1024,
       allowedLinkCounts: input.allowedLinkCounts,
     });
   } catch (error) {

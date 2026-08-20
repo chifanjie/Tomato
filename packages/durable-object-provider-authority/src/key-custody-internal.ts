@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { lstat, unlink } from "node:fs/promises";
+import { lstat, readdir, unlink } from "node:fs/promises";
+import { dirname } from "node:path";
 
 import {
   InstallationIdentityGenerationIdV1Schema,
@@ -34,6 +35,10 @@ const IDENTITY_STATE_DIGEST_DOMAIN_V1 =
 const IDENTITY_MARKER_TOKEN_DOMAIN_V1 =
   "understand-code-provider-acceptance-authority-identity-marker-v1";
 const MAX_IDENTITY_RECORD_BYTES_V1 = 16 * 1024;
+const LOCK_PREPARATION_NAME_V1 =
+  /^\.provider-acceptance-authority-v1\.lock\.prepare-[1-9][0-9]*-[0-9a-f]{32}$/u;
+const RECOVERY_PREPARATION_NAME_V1 =
+  /^\.provider-acceptance-authority-v1\.lock\.recovery\.prepare-[1-9][0-9]*-[0-9a-f]{32}$/u;
 
 interface InstallationIdentityAuthorityStateInternalV1 {
   readonly schemaVersion: 1;
@@ -170,6 +175,12 @@ async function hasFixedAuthorityStoreArtifactV1(
     layout.canonicalPublicationPinPath,
     layout.deterministicPublicationPinStagePath,
     `${layout.deterministicPublicationPinStagePath}.prepare`,
+    layout.canonicalStrongMutationBrokerSnapshotPath,
+    layout.deterministicStrongMutationBrokerSnapshotStagePath,
+    `${layout.deterministicStrongMutationBrokerSnapshotStagePath}.prepare`,
+    layout.canonicalStrongMutationBrokerPublicationPinPath,
+    layout.deterministicStrongMutationBrokerPublicationPinStagePath,
+    `${layout.deterministicStrongMutationBrokerPublicationPinStagePath}.prepare`,
     layout.transactionLockPath,
     layout.transactionLockStagePath,
     layout.transactionLockRecoveryClaimPath,
@@ -184,7 +195,17 @@ async function hasFixedAuthorityStoreArtifactV1(
       throw new ProviderAcceptanceAuthorityErrorV1("identity_key_invalid");
     }
   }
-  return false;
+  try {
+    const names = await readdir(dirname(layout.transactionLockPath));
+    return names.some((name) =>
+      LOCK_PREPARATION_NAME_V1.test(name) ||
+      RECOVERY_PREPARATION_NAME_V1.test(name)
+    );
+  } catch {
+    // Identity absence is only "not provisioned" for an observed empty
+    // authority namespace. An unobservable private directory fails closed.
+    throw new ProviderAcceptanceAuthorityErrorV1("identity_key_invalid");
+  }
 }
 
 export interface ProviderAcceptanceInstallationIdentityInternalV1 {

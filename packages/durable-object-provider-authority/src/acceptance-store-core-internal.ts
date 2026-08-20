@@ -191,6 +191,13 @@ export interface ProviderAcceptanceAuthorityStoreInternalV1 {
   readonly doctor: () => Promise<ProviderAcceptanceAuthorityDoctorResultInternalV1>;
 }
 
+export interface ProviderAcceptanceAuthorityLockedCurrentViewCoreInternalV1 {
+  readonly installationIdentityGenerationId:
+    InstallationIdentityGenerationIdV1;
+  readonly key: Uint8Array;
+  readonly current: ProviderAcceptanceCurrentReadV1 | null;
+}
+
 export interface ProviderAcceptanceAuthorityAdmissionInputInternalV1 {
   readonly generationCount: number;
   readonly receiptCount: number;
@@ -1207,6 +1214,43 @@ async function loadConvergedSnapshotV1(input: Readonly<{
   }
   throw new ProviderAcceptanceAuthorityErrorV1(
     "namespace_integrity_failed",
+  );
+}
+
+/**
+ * Package-private composition boundary for stores that must observe the exact
+ * authenticated Acceptance current while holding the same authority lock as
+ * compareAppend. Only the identity generation scalar is projected; the key
+ * reference is zeroed by identity custody after the callback settles.
+ */
+export async function withProviderAcceptanceAuthorityLockedCurrentViewCoreInternalV1<T>(
+  layout: ProviderAcceptanceAuthorityLayoutInternalV1,
+  openOptions: ProviderAcceptanceAuthorityStoreOpenOptionsInternalV1,
+  callback: (
+    view: ProviderAcceptanceAuthorityLockedCurrentViewCoreInternalV1,
+  ) => T | Promise<T>,
+): Promise<T> {
+  const identity =
+    await openProviderAcceptanceInstallationIdentityInternalV1(layout);
+  return identity.withKey(async (key) =>
+    withProviderAcceptanceAuthorityCrossProcessLockInternalV1(
+      layout,
+      key,
+      async () => {
+        const { snapshot } = await loadConvergedSnapshotV1({
+          layout,
+          identity,
+          key,
+        });
+        return callback(Object.freeze({
+          installationIdentityGenerationId:
+            identity.installationIdentityGenerationId,
+          key,
+          current: snapshot?.envelope.payload.current ?? null,
+        }));
+      },
+      openOptions,
+    )
   );
 }
 

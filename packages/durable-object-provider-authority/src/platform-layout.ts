@@ -32,6 +32,19 @@ export const PROVIDER_ACCEPTANCE_AUTHORITY_LOGICAL_LOCATORS_V1 = Object.freeze({
     "runtime-state/private/.provider-acceptance-authority-v1.lock.stale",
 } as const);
 
+/** Source-internal only; deliberately absent from the package-root locator set. */
+export const PROVIDER_STRONG_MUTATION_BROKER_LOGICAL_LOCATORS_INTERNAL_V1 =
+  Object.freeze({
+    canonicalSnapshot:
+      "runtime-state/private/provider-strong-mutation-broker-v1.snapshot.json",
+    deterministicSnapshotStage:
+      "runtime-state/private/.provider-strong-mutation-broker-v1.snapshot.stage",
+    canonicalPublicationPin:
+      "runtime-state/private/provider-strong-mutation-broker-v1.publication.json",
+    deterministicPublicationPinStage:
+      "runtime-state/private/.provider-strong-mutation-broker-v1.publication.stage",
+  } as const);
+
 export interface ProviderAcceptanceAuthorityLayoutInternalV1 {
   readonly authorityRoot: string;
   readonly authorityUid: number;
@@ -44,6 +57,10 @@ export interface ProviderAcceptanceAuthorityLayoutInternalV1 {
   readonly deterministicSnapshotStagePath: string;
   readonly canonicalPublicationPinPath: string;
   readonly deterministicPublicationPinStagePath: string;
+  readonly canonicalStrongMutationBrokerSnapshotPath: string;
+  readonly deterministicStrongMutationBrokerSnapshotStagePath: string;
+  readonly canonicalStrongMutationBrokerPublicationPinPath: string;
+  readonly deterministicStrongMutationBrokerPublicationPinStagePath: string;
   readonly transactionLockPath: string;
   readonly transactionLockStagePath: string;
   readonly transactionLockRecoveryClaimPath: string;
@@ -130,6 +147,26 @@ function createLayoutV1(
     deterministicPublicationPinStagePath: join(
       root,
       PROVIDER_ACCEPTANCE_AUTHORITY_LOGICAL_LOCATORS_V1
+        .deterministicPublicationPinStage,
+    ),
+    canonicalStrongMutationBrokerSnapshotPath: join(
+      root,
+      PROVIDER_STRONG_MUTATION_BROKER_LOGICAL_LOCATORS_INTERNAL_V1
+        .canonicalSnapshot,
+    ),
+    deterministicStrongMutationBrokerSnapshotStagePath: join(
+      root,
+      PROVIDER_STRONG_MUTATION_BROKER_LOGICAL_LOCATORS_INTERNAL_V1
+        .deterministicSnapshotStage,
+    ),
+    canonicalStrongMutationBrokerPublicationPinPath: join(
+      root,
+      PROVIDER_STRONG_MUTATION_BROKER_LOGICAL_LOCATORS_INTERNAL_V1
+        .canonicalPublicationPin,
+    ),
+    deterministicStrongMutationBrokerPublicationPinStagePath: join(
+      root,
+      PROVIDER_STRONG_MUTATION_BROKER_LOGICAL_LOCATORS_INTERNAL_V1
         .deterministicPublicationPinStage,
     ),
     transactionLockPath: join(

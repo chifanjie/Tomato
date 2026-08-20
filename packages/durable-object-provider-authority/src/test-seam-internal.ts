@@ -18,6 +18,14 @@ import {
   createProviderAcceptanceAuthorityTestLayoutInternalV1,
   type ProviderAcceptanceAuthorityLayoutInternalV1,
 } from "./platform-layout.js";
+import {
+  classifyProviderStrongMutationBrokerAdmissionInternalV1,
+  inspectProviderStrongMutationBrokerSnapshotWithLayoutCoreInternalV1,
+  openProviderStrongMutationBrokerStoreWithLayoutCoreInternalV1,
+  type ProviderStrongMutationBrokerAdmissionInputInternalV1,
+  type ProviderStrongMutationBrokerAdmissionResultInternalV1,
+  type ProviderStrongMutationBrokerStoreInternalV1,
+} from "./strong-mutation-broker-core-internal.js";
 
 declare const providerAcceptanceAuthorityTestLayoutCapabilityBrandInternalV1:
   unique symbol;
@@ -136,8 +144,35 @@ export function classifyProviderAcceptanceAuthorityAdmissionForTestInternalV1(
   return classifyProviderAcceptanceAuthorityAdmissionInternalV1(input);
 }
 
+export function openProviderStrongMutationBrokerStoreForTestInternalV1(
+  capability: ProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1,
+  options: ProviderAcceptanceAuthorityStoreOpenOptionsInternalV1 = {},
+): Promise<ProviderStrongMutationBrokerStoreInternalV1> {
+  return openProviderStrongMutationBrokerStoreWithLayoutCoreInternalV1(
+    requireCapabilityV1(capability),
+    options,
+  );
+}
+
+export function inspectProviderStrongMutationBrokerSnapshotForTestInternalV1(
+  capability: ProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1,
+) {
+  return inspectProviderStrongMutationBrokerSnapshotWithLayoutCoreInternalV1(
+    requireCapabilityV1(capability),
+  );
+}
+
+export function classifyProviderStrongMutationBrokerAdmissionForTestInternalV1(
+  input: ProviderStrongMutationBrokerAdmissionInputInternalV1,
+): ProviderStrongMutationBrokerAdmissionResultInternalV1 {
+  requireTestProcessV1();
+  return classifyProviderStrongMutationBrokerAdmissionInternalV1(input);
+}
+
 export type {
   ProviderAcceptanceAuthorityAdmissionInputInternalV1,
   ProviderAcceptanceAuthorityAdmissionResultInternalV1,
   ProviderAcceptanceAuthorityStoreOpenOptionsInternalV1,
+  ProviderStrongMutationBrokerAdmissionInputInternalV1,
+  ProviderStrongMutationBrokerAdmissionResultInternalV1,
 };

@@ -26,6 +26,53 @@ Production layout is derived from trusted OS account information; arbitrary
 filesystem roots and test provisioning are available only through the explicit
 internal test seam while `NODE_ENV=test`.
 
+The package also contains a source-internal, locked strong-mutation broker
+transaction candidate. It is intentionally absent from the package root,
+export map, and executable. While holding the same cross-process lock as
+Acceptance compare-append, `begin` independently reads the authenticated
+Acceptance current and requires the structurally valid grant's Acceptance
+identity to equal that fresh current exactly. It also recomputes the formal
+logical request digest and same-session binding digest before recording the
+strictly parsed full request.
+
+Each new grant ID first becomes a durable `pending` intent; a later strict
+provider response can only move that exact intent to `resolved` when each
+request/binding identifier and each locally derivable success semantic
+described below joins exactly. The complete response is retained. Identical
+requests and responses replay the same record, while reuse of a grant ID with
+different canonical request bytes or a different resolved response is rejected
+without publishing a successor.
+Broker state uses its own authenticated snapshot and independently
+authenticated publication pin with deterministic crash-recovery stages. Thus
+the candidate never creates a standalone durable grant burn without the full
+pending request record.
+
+This transaction substrate performs structural and self-binding validation
+only. It does **not** verify the grant signature against an active
+Registry-selected authority key, and it does not verify the provider response
+signature. Stored records therefore say
+`grantVerification: "not_established"`, resolved records say
+`responseVerification: "not_established"`, and the broker store and records
+say `executionFence: "not_established"`. Every public surface continues to say
+`strongWrites: "locked"`. Acceptance can advance between `begin` and
+`resolve`; this slice does not fence that span with provider execution or an
+atomic outcome transaction. Nothing in this candidate is a consume decision,
+session capability, or authorization to execute provider I/O.
+
+For a structurally successful compare-commit response, the locked substrate
+requires the proposed next revision, phase, operation nonce, and artifacts and
+rejects a `mutationDigest` of `"none"`. The exact mutation-digest derivation is
+currently runtime-private, so independently deriving and verifying that digest
+is not established here; it remains part of the explicit execution-fence
+residual rather than an authority claim.
+
+Broker retention limits are likewise local guards, not global D-40 admission:
+at most 4,096 intents, 8 MiB for each strict request or response, and a
+256 MiB physical broker snapshot. Load re-derives each record's canonical size
+and the complete accounting before accepting a snapshot. These bytes are not
+aggregated with Acceptance, Root, Registry, or Catalog history, so satisfying
+the broker-local limits does not establish global capacity authority.
+
 Capacity enforcement in this package is deliberately Acceptance-local. The
 store derives its own retained Acceptance bytes and enforces the literal
 generation, receipt, single-envelope, and receipt-byte policy caps. It also

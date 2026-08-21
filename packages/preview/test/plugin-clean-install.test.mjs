@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { access, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { createInterface } from "node:readline";
@@ -15,6 +16,19 @@ const PROCESS_TIMEOUT_MS = 20_000;
 const EXTERNAL_TIMEOUT_MS = 60_000;
 const PLUGIN_NAME = "understand-code";
 const MARKETPLACE_NAME = "understand-code-alpha";
+const EXPECTED_TOOL_NAMES = [
+  "get_repo_pulse",
+  "build_task_brief",
+  "get_task_brief",
+  "update_task",
+  "check_change",
+  "record_verification",
+  "open_workbench",
+  "get_evidence",
+  "search_context",
+  "trace_impact",
+  "refresh_index",
+];
 
 function execBounded(command, args, options = {}) {
   return execFileAsync(command, args, {
@@ -175,7 +189,10 @@ async function callTool(child, output, id, name, argumentsValue) {
 
 async function createRepository(root) {
   await mkdir(path.join(root, "src"), { recursive: true });
-  await writeFile(path.join(root, "src/index.ts"), "export const alpha = true;\n");
+  await writeFile(
+    path.join(root, "src/index.ts"),
+    "export function alpha() { return true; }\n",
+  );
   const gitEnv = {
     ...process.env,
     GIT_AUTHOR_NAME: "Understand Code Plugin E2E",
@@ -213,7 +230,10 @@ async function resolveMcpServer(installedRoot, host) {
   return { executable, args: server.args ?? [] };
 }
 
-async function exerciseInstalledMcp({ host, installedRoot, version, repositoryRoot, cwd, env, clientName }) {
+async function withInstalledMcp(
+  { host, installedRoot, version, repositoryRoot, cwd, env, clientName },
+  exercise,
+) {
   const server = await resolveMcpServer(installedRoot, host);
   const child = spawn(server.executable, server.args, {
     cwd,
@@ -239,28 +259,269 @@ async function exerciseInstalledMcp({ host, installedRoot, version, repositoryRo
     writeMessage(child, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
     const listed = await output.waitFor((message) => message.id === 2, `${clientName} tools/list`);
     assert.equal(Object.hasOwn(listed, "error"), false);
-    assert.equal(listed.result.tools.some((tool) => tool.name === "get_repo_pulse"), true);
-    assert.equal(listed.result.tools.some((tool) => tool.name === "refresh_index"), true);
-    const refreshed = await callTool(child, output, 3, "refresh_index", {
-      mode: "full",
-      idempotencyKey: `${clientName}-refresh`,
-      actor: `agent:${clientName}`,
-    });
-    assert.equal(refreshed.structuredContent.result.operation.status, "completed");
-    const pulse = await callTool(child, output, 4, "get_repo_pulse", {});
-    assert.equal(
-      pulse.structuredContent.meta.sourceSnapshotId,
-      refreshed.structuredContent.meta.sourceSnapshotId,
-      "the installed Host plugin must read the exact snapshot it created for the bound repository",
-    );
+    assert.deepEqual(listed.result.tools.map((tool) => tool.name), EXPECTED_TOOL_NAMES);
     assert.equal(await realpath(repositoryRoot), repositoryRoot);
+    const result = await exercise({ child, output });
     child.stdin.end();
     assert.deepEqual(await waitForExit(child, `${clientName} clean exit`), [0, null]);
     assert.equal(output.stderr.join(""), "");
+    return { server, result };
   } finally {
     await stopChild(child);
   }
-  return server;
+}
+
+async function exerciseInstalledAlpha(options) {
+  const { repositoryRoot, clientName } = options;
+  const sourcePath = path.join(repositoryRoot, "src/index.ts");
+  const sourceBefore = await readFile(sourcePath);
+  const indexBefore = createHash("sha256")
+    .update(await readFile(path.join(repositoryRoot, ".git/index")))
+    .digest("hex");
+  return withInstalledMcp(options, async ({ child, output }) => {
+    const actor = `agent:${clientName}`;
+    let requestId = 3;
+    const initialRefresh = await callTool(child, output, requestId++, "refresh_index", {
+      mode: "full",
+      idempotencyKey: `${clientName}-initial-refresh`,
+      actor,
+    });
+    assert.equal(initialRefresh.structuredContent.result.operation.status, "completed");
+    const initialSnapshotId = initialRefresh.structuredContent.meta.sourceSnapshotId;
+    const pulse = await callTool(child, output, requestId++, "get_repo_pulse", {});
+    assert.equal(
+      pulse.structuredContent.meta.sourceSnapshotId,
+      initialSnapshotId,
+      "the installed Host plugin must read the exact snapshot it created for the bound repository",
+    );
+
+    const built = await callTool(child, output, requestId++, "build_task_brief", {
+      task: "Change src/index.ts and verify its observable behavior.",
+      expectedRevision: 0,
+      idempotencyKey: `${clientName}-brief`,
+      actor,
+      scope: ["src/index.ts"],
+    });
+    const taskId = built.structuredContent.result.task.taskId;
+    const brief = built.structuredContent.result.brief;
+    const readBrief = await callTool(child, output, requestId++, "get_task_brief", {
+      taskId,
+      section: "summary",
+    });
+    assert.equal(readBrief.structuredContent.result.task.taskId, taskId);
+
+    let taskRevision = built.structuredContent.result.task.revision;
+    const updateTask = async (action, idempotencyKey) => {
+      const updated = await callTool(child, output, requestId++, "update_task", {
+        taskId,
+        action,
+        expectedRevision: taskRevision,
+        idempotencyKey,
+        actor,
+      });
+      taskRevision = updated.structuredContent.result.mutation.revision;
+      return updated;
+    };
+    await updateTask(
+      { type: "confirm_goal", claimId: brief.goalClaimId },
+      `${clientName}-confirm-goal`,
+    );
+    await updateTask(
+      { type: "confirm_acceptance_criteria", claimIds: brief.acceptanceClaimIds },
+      `${clientName}-confirm-acceptance`,
+    );
+    assert.ok(brief.plannedChanges.length > 0, "the Brief must contain a confirmable plan");
+    await updateTask(
+      { type: "confirm_plan", plannedChangeIds: brief.plannedChanges.map((change) => change.id) },
+      `${clientName}-confirm-plan`,
+    );
+    await updateTask({ type: "transition_status", to: "planned" }, `${clientName}-planned`);
+    await updateTask({ type: "transition_status", to: "in_progress" }, `${clientName}-in-progress`);
+
+    await writeFile(
+      sourcePath,
+      "export function alpha() { return 'verified'; }\n",
+      "utf8",
+    );
+    assert.notDeepEqual(await readFile(sourcePath), sourceBefore);
+    assert.equal(
+      createHash("sha256")
+        .update(await readFile(path.join(repositoryRoot, ".git/index")))
+        .digest("hex"),
+      indexBefore,
+      "the external source edit must not mutate the Git index",
+    );
+    const changedRefresh = await callTool(child, output, requestId++, "refresh_index", {
+      mode: "full",
+      expectedSourceSnapshotId: initialSnapshotId,
+      idempotencyKey: `${clientName}-changed-refresh`,
+      actor,
+    });
+    assert.equal(changedRefresh.structuredContent.result.operation.status, "completed");
+    const changedSnapshotId = changedRefresh.structuredContent.meta.sourceSnapshotId;
+    assert.notEqual(changedSnapshotId, initialSnapshotId);
+
+    await updateTask(
+      { type: "transition_status", to: "check_required" },
+      `${clientName}-check-required`,
+    );
+    const checked = await callTool(child, output, requestId++, "check_change", {
+      taskId,
+      actualSnapshotId: changedSnapshotId,
+      includeWorktree: true,
+      expectedRevision: taskRevision,
+      idempotencyKey: `${clientName}-check`,
+      actor,
+    });
+    taskRevision = checked.structuredContent.result.mutation.revision;
+    const changeCheck = checked.structuredContent.result.changeCheck;
+    assert.equal(changeCheck.actualSnapshotId, changedSnapshotId);
+    const targetPlannedChanges = brief.plannedChanges.filter(
+      (change) => change.filePath === "src/index.ts",
+    );
+    assert.ok(targetPlannedChanges.length > 0, "the Brief must plan the edited source file");
+    for (const plannedChange of targetPlannedChanges) {
+      const finding = changeCheck.findings.find(
+        (candidate) =>
+          candidate.plannedChangeIds.includes(plannedChange.id) &&
+          candidate.actualChangeIds.length > 0,
+      );
+      assert.ok(finding, `the Check must link actual change evidence to ${plannedChange.id}`);
+      assert.ok(
+        finding.type === "planned_completed" || finding.type === "planned_partial",
+        `the edited planned file must have a reachable planned classification, got ${finding.type}`,
+      );
+      assert.equal(finding.blocking, false);
+    }
+    assert.deepEqual(
+      changeCheck.findings.filter((finding) => finding.blocking && finding.resolution === undefined),
+      [],
+      "the exact single-file happy path must not auto-accept an unexpected blocking finding",
+    );
+    await updateTask(
+      { type: "transition_status", to: "verification_required" },
+      `${clientName}-verification-required`,
+    );
+
+    const requiredPlanEntries = brief.verificationPlan.filter((entry) => entry.required);
+    assert.ok(requiredPlanEntries.length > 0, "the Brief must require external verification");
+    for (const planEntry of requiredPlanEntries) {
+      assert.equal(
+        planEntry.method,
+        "test",
+        "the Node behavior assertion must only satisfy a test verification plan entry",
+      );
+    }
+    const verificationProgram = [
+      "const { alpha } = await import('./src/index.ts');",
+      "if (alpha() !== 'verified') throw new Error('unexpected alpha result');",
+    ].join(" ");
+    const verificationArgs = ["--input-type=module", "--eval", verificationProgram];
+    const verificationCommand = `node --input-type=module --eval ${JSON.stringify(verificationProgram)}`;
+    const verificationStartedAt = Date.now();
+    const verificationExecution = await execBounded("node", verificationArgs, {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+    });
+    const verificationDurationMs = Date.now() - verificationStartedAt;
+    assert.equal(verificationExecution.stderr, "");
+    const outputDigest = `sha256:${createHash("sha256")
+      .update(`${verificationExecution.stdout}${verificationExecution.stderr}`, "utf8")
+      .digest("hex")}`;
+    const verificationRequests = [];
+    const verificationResults = [];
+    for (const [index, planEntry] of requiredPlanEntries.entries()) {
+      const request = {
+        taskId,
+        record: {
+          verificationPlanEntryId: planEntry.id,
+          kind: "test",
+          status: "passed",
+          command: verificationCommand,
+          exitCode: 0,
+          durationMs: verificationDurationMs,
+          outputDigest,
+          summary: "The installed-Host Node behavior assertion completed successfully.",
+          claimIds: planEntry.acceptanceClaimIds,
+          snapshotId: changedSnapshotId,
+        },
+        expectedRevision: taskRevision,
+        idempotencyKey: `${clientName}-verification-${index}`,
+        actor,
+      };
+      assert.equal(request.record.kind, planEntry.method);
+      assert.equal(request.record.command, verificationCommand);
+      const recorded = await callTool(child, output, requestId++, "record_verification", request);
+      assert.equal(recorded.structuredContent.result.verification.status, "passed");
+      assert.equal(recorded.structuredContent.result.verification.snapshotId, changedSnapshotId);
+      assert.equal(recorded.structuredContent.result.mutation.idempotentReplay, false);
+      taskRevision = recorded.structuredContent.result.mutation.revision;
+      verificationRequests.push(request);
+      verificationResults.push(recorded);
+    }
+    const verified = await updateTask(
+      { type: "transition_status", to: "verified" },
+      `${clientName}-verified`,
+    );
+    assert.equal(verified.structuredContent.result.task.status, "verified");
+    return {
+      taskId,
+      baselineSnapshotId: built.structuredContent.result.task.baselineSnapshotId,
+      changedSnapshotId,
+      verifiedRevision: verified.structuredContent.result.task.revision,
+      verificationRequests,
+      verificationResults,
+    };
+  });
+}
+
+async function resumeInstalledAlpha(options, alpha) {
+  return withInstalledMcp(options, async ({ child, output }) => {
+    const resumed = await callTool(child, output, 3, "get_task_brief", {
+      taskId: alpha.taskId,
+      section: "summary",
+    });
+    assert.equal(resumed.structuredContent.result.task.taskId, alpha.taskId);
+    assert.equal(resumed.structuredContent.result.task.status, "verified");
+    assert.equal(resumed.structuredContent.result.task.revision, alpha.verifiedRevision);
+    assert.equal(
+      resumed.structuredContent.result.task.baselineSnapshotId,
+      alpha.baselineSnapshotId,
+    );
+    assert.equal(resumed.structuredContent.meta.sourceSnapshotId, alpha.changedSnapshotId);
+    for (const [index, request] of alpha.verificationRequests.entries()) {
+      const replayed = await callTool(
+        child,
+        output,
+        4 + index,
+        "record_verification",
+        request,
+      );
+      const original = alpha.verificationResults[index];
+      assert.equal(replayed.structuredContent.result.mutation.idempotentReplay, true);
+      assert.deepEqual(
+        replayed.structuredContent.result.verification,
+        original.structuredContent.result.verification,
+        "an exact replay must return the original Verification record",
+      );
+      assert.deepEqual(
+        replayed.structuredContent.result.mutation,
+        {
+          ...original.structuredContent.result.mutation,
+          idempotentReplay: true,
+        },
+        "an exact replay must not append another Task mutation",
+      );
+    }
+    const afterReplay = await callTool(
+      child,
+      output,
+      4 + alpha.verificationRequests.length,
+      "get_task_brief",
+      { taskId: alpha.taskId, section: "summary" },
+    );
+    assert.equal(afterReplay.structuredContent.result.task.revision, alpha.verifiedRevision);
+  });
 }
 
 async function expectRootFailure(server, cwd, env, label) {
@@ -436,7 +697,7 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
     assert.equal(registeredCodexMcpDetail.name, PLUGIN_NAME);
     assert.equal(registeredCodexMcpDetail.enabled, true);
     assert.deepEqual(registeredCodexMcpDetail.transport, registeredCodexMcp.transport);
-    const codexServer = await exerciseInstalledMcp({
+    const codexAlpha = await exerciseInstalledAlpha({
       host: "codex",
       installedRoot: codexInstalledRoot,
       version,
@@ -450,7 +711,7 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
       clientName: "codex-plugin-e2e",
     });
     await expectRootFailure(
-      codexServer,
+      codexAlpha.server,
       differentCwd,
       cleanHostEnvironment(codexUserHome, { CODEX_HOME: codexHome }),
       "Codex plugin must reject a non-repository working root",
@@ -490,20 +751,23 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
     assert.match(JSON.stringify(claudePlugins), /understand-code@understand-code-alpha/u);
     claudeInstalledRoot = await findClaudeInstalledRoot(claudeConfig, version);
     assert.equal(claudeInstalledRoot.startsWith(`${await realpath(claudeConfig)}${path.sep}`), true);
-    const claudeServer = await exerciseInstalledMcp({
-      host: "claude",
-      installedRoot: claudeInstalledRoot,
-      version,
-      repositoryRoot,
-      cwd: differentCwd,
-      env: cleanHostEnvironment(claudeUserHome, {
-        CLAUDE_CONFIG_DIR: claudeConfig,
-        CLAUDE_PROJECT_DIR: repositoryRoot,
-        GIT_DIR: path.join(ambientRepositoryRoot, ".git"),
-        GIT_WORK_TREE: ambientRepositoryRoot,
-      }),
-      clientName: "claude-plugin-e2e",
-    });
+    const claudeAlpha = await resumeInstalledAlpha(
+      {
+        host: "claude",
+        installedRoot: claudeInstalledRoot,
+        version,
+        repositoryRoot,
+        cwd: differentCwd,
+        env: cleanHostEnvironment(claudeUserHome, {
+          CLAUDE_CONFIG_DIR: claudeConfig,
+          CLAUDE_PROJECT_DIR: repositoryRoot,
+          GIT_DIR: path.join(ambientRepositoryRoot, ".git"),
+          GIT_WORK_TREE: ambientRepositoryRoot,
+        }),
+        clientName: "claude-plugin-e2e",
+      },
+      codexAlpha.result,
+    );
     assert.equal(
       (await stat(path.join(repositoryRoot, ".understand-code"))).isDirectory(),
       true,
@@ -514,7 +778,7 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
       "ambient Git authority must not redirect artifacts into another real repository",
     );
     await expectRootFailure(
-      claudeServer,
+      claudeAlpha.server,
       differentCwd,
       cleanHostEnvironment(claudeUserHome, { CLAUDE_CONFIG_DIR: claudeConfig }),
       "Claude plugin must reject a missing CLAUDE_PROJECT_DIR",

@@ -19,7 +19,19 @@ import {
   type ToolSuccessMetaV1,
   type WorkbenchRouteV1,
 } from "@understand-code/contracts/mcp";
-import { IsoTimestampSchema, ProducerVersionSchema } from "@understand-code/contracts/primitives";
+import {
+  ContentDigestSchema,
+  EvidenceIdSchema,
+  GitObjectIdSchema,
+  IsoTimestampSchema,
+  LineRangeSchema,
+  ProducerVersionSchema,
+  RepositoryIdSchema,
+  RepositoryRelativePathSchema,
+  SnapshotIdSchema,
+  TaskIdSchema,
+  WorktreeIdSchema,
+} from "@understand-code/contracts/primitives";
 
 const DEFAULT_LAUNCH_TTL_MS = 60_000;
 const MAX_LAUNCH_TTL_MS = 60_000;
@@ -245,6 +257,97 @@ export type WorkbenchTraceReaderV1 = (
   input: WorkbenchTraceRequestV1,
 ) => Promise<WorkbenchTraceResultV1 | undefined>;
 
+/**
+ * Task Evidence -> Source is an intentionally internal, read-only Workbench
+ * projection.  Callers provide only the Task and Evidence identifiers; the
+ * runtime supplies the repository/worktree/snapshot/head binding from the
+ * redeemed browser session before invoking the host reader.
+ */
+export interface WorkbenchEvidenceRequestV1 {
+  readonly taskId: string;
+  readonly evidenceId: string;
+  readonly repositoryId: string;
+  readonly worktreeId: string;
+  readonly snapshotId: string;
+  readonly headCommit: string | null;
+}
+
+export type WorkbenchEvidenceStatusV1 =
+  | "ready"
+  | "stale"
+  | "invalid"
+  | "unavailable"
+  | "redacted";
+
+export type WorkbenchEvidenceUnavailableReasonV1 =
+  | "not_published"
+  | "not_found"
+  | "snapshot_mismatch"
+  | "evidence_stale"
+  | "evidence_invalid"
+  | "source_unanchored"
+  | "source_missing"
+  | "content_changed"
+  | "sensitive"
+  | "binary"
+  | "too_large"
+  | "read_failed"
+  | "redacted";
+
+export interface WorkbenchEvidenceRecordV1 {
+  readonly id: string;
+  readonly kind: "source" | "config" | "test" | "document";
+  readonly epistemicStatus: "observed" | "inferred";
+  readonly freshness: "current" | "changed" | "stale" | "invalid";
+  /** Repository-relative only; never an absolute path. */
+  readonly filePath: string;
+  readonly lineRange: readonly [number, number];
+  readonly contentHash: `sha256:${string}`;
+  readonly observedAtSnapshotId: string;
+}
+
+export interface WorkbenchSourceProjectionV1 {
+  readonly filePath: string;
+  readonly lineRange: readonly [number, number];
+  readonly content: string;
+  readonly sizeBytes: number;
+  readonly lineCount: number;
+  readonly truncated: false;
+}
+
+interface WorkbenchEvidenceResultBaseV1 {
+  readonly schemaVersion: 1;
+  readonly surface: "evidence";
+  readonly taskId: string;
+  readonly evidenceId: string;
+  readonly repositoryId: string;
+  readonly worktreeId: string;
+  readonly snapshotId: string;
+  readonly headCommit: string | null;
+}
+
+export interface WorkbenchEvidenceReadyV1 extends WorkbenchEvidenceResultBaseV1 {
+  readonly status: "ready";
+  readonly evidence: WorkbenchEvidenceRecordV1;
+  readonly source: WorkbenchSourceProjectionV1;
+}
+
+export interface WorkbenchEvidenceNotReadyV1 extends WorkbenchEvidenceResultBaseV1 {
+  readonly status: Exclude<WorkbenchEvidenceStatusV1, "ready">;
+  readonly reason: WorkbenchEvidenceUnavailableReasonV1;
+  readonly observedSnapshotId?: string;
+  /** Metadata may be retained for stale/invalid states, but never source text. */
+  readonly evidence?: WorkbenchEvidenceRecordV1;
+}
+
+export type WorkbenchEvidenceResultV1 =
+  | WorkbenchEvidenceReadyV1
+  | WorkbenchEvidenceNotReadyV1;
+
+export type WorkbenchEvidenceReaderV1 = (
+  input: WorkbenchEvidenceRequestV1,
+) => Promise<WorkbenchEvidenceResultV1 | undefined>;
+
 export interface OpenWorkbenchSessionOptionsV1 extends WorkbenchRuntimeBindingV1 {
   /** Defaults to the frozen 60 second launch-token TTL. */
   readonly launchTokenTtlMs?: number;
@@ -261,6 +364,8 @@ export interface OpenWorkbenchSessionOptionsV1 extends WorkbenchRuntimeBindingV1
   readonly knowledgeReader?: WorkbenchContextReaderV1;
   /** Optional read-only callback for the Task-bound Check/Verification trace. */
   readonly traceReader?: WorkbenchTraceReaderV1;
+  /** Optional read-only callback for Task Evidence and its guarded Source preview. */
+  readonly evidenceReader?: WorkbenchEvidenceReaderV1;
 }
 
 export interface WorkbenchLaunchGrantV1 {
@@ -297,6 +402,11 @@ export interface WorkbenchSessionV1 {
     sessionToken: string,
     input: WorkbenchTraceRequestV1,
   ) => Promise<WorkbenchTraceResultV1>;
+  /** Read one authenticated, Task- and Snapshot-bound Evidence/Source projection. */
+  readonly readWorkbenchEvidence: (
+    sessionToken: string,
+    input: WorkbenchEvidenceRequestV1,
+  ) => Promise<WorkbenchEvidenceResultV1>;
   readonly close: () => Promise<void>;
 }
 
@@ -365,6 +475,7 @@ interface StoredSessionV1 {
   graphReader?: WorkbenchContextReaderV1;
   knowledgeReader?: WorkbenchContextReaderV1;
   traceReader?: WorkbenchTraceReaderV1;
+  evidenceReader?: WorkbenchEvidenceReaderV1;
 }
 
 const sessionsByIdentity = new Map<string, StoredSessionV1>();
@@ -571,6 +682,200 @@ function parseContextResult(
   return value as unknown as WorkbenchContextResultV1;
 }
 
+const MAX_EVIDENCE_SOURCE_BYTES = 256 * 1024;
+const EVIDENCE_KINDS = new Set(["source", "config", "test", "document"]);
+const EVIDENCE_EPISTEMIC_STATUSES = new Set(["observed", "inferred"]);
+const EVIDENCE_FRESHNESS = new Set(["current", "changed", "stale", "invalid"]);
+const EVIDENCE_STATUSES = new Set(["ready", "stale", "invalid", "unavailable", "redacted"]);
+const EVIDENCE_REASONS = new Set([
+  "not_published",
+  "not_found",
+  "snapshot_mismatch",
+  "evidence_stale",
+  "evidence_invalid",
+  "source_unanchored",
+  "source_missing",
+  "content_changed",
+  "sensitive",
+  "binary",
+  "too_large",
+  "read_failed",
+  "redacted",
+]);
+
+/** Deliberately conservative path screening for source previews. */
+const SENSITIVE_PATH_COMPONENTS = new Set([
+  ".aws", ".git-credentials", ".gnupg", ".kube", ".netrc", ".npmrc", ".pypirc", ".ssh",
+  "application_default_credentials.json", "auth.json", "credential", "credentials",
+  "credentials.json", "id_dsa", "id_ecdsa", "id_ed25519", "id_rsa", "secret", "secrets",
+  "secrets.json",
+]);
+
+function isSensitiveEvidencePath(filePath: string): boolean {
+  const lower = filePath.toLowerCase();
+  const components = lower.split("/");
+  if (components.some((component) => SENSITIVE_PATH_COMPONENTS.has(component))) return true;
+  const basename = components[components.length - 1] ?? "";
+  return basename === ".env" || basename.startsWith(".env.") && !basename.endsWith(".example") &&
+    !basename.endsWith(".sample") && !basename.endsWith(".template") ||
+    /(?:^|[-_.])(secret|token|password|credential|private[-_]?key)(?:[-_.]|$)/u.test(basename) ||
+    /\.(?:pem|key|p12|pfx)$/u.test(basename) || /^id_[a-z0-9]+$/u.test(basename) ||
+    /^service-account(?:[-_.].*)?\.json$/u.test(basename);
+}
+
+function evidenceBase(input: WorkbenchEvidenceRequestV1): WorkbenchEvidenceResultBaseV1 {
+  return {
+    schemaVersion: 1,
+    surface: "evidence",
+    taskId: input.taskId,
+    evidenceId: input.evidenceId,
+    repositoryId: input.repositoryId,
+    worktreeId: input.worktreeId,
+    snapshotId: input.snapshotId,
+    headCommit: input.headCommit,
+  };
+}
+
+function unavailableEvidence(
+  input: WorkbenchEvidenceRequestV1,
+  status: Exclude<WorkbenchEvidenceStatusV1, "ready">,
+  reason: WorkbenchEvidenceUnavailableReasonV1,
+  extras: { readonly observedSnapshotId?: string; readonly evidence?: WorkbenchEvidenceRecordV1 } = {},
+): WorkbenchEvidenceNotReadyV1 {
+  return {
+    ...evidenceBase(input),
+    status,
+    reason,
+    ...(extras.observedSnapshotId === undefined ? {} : { observedSnapshotId: extras.observedSnapshotId }),
+    ...(extras.evidence === undefined ? {} : { evidence: extras.evidence }),
+  };
+}
+
+function evidenceIdentityIsValid(input: WorkbenchEvidenceRequestV1): boolean {
+  return TaskIdSchema.safeParse(input.taskId).success &&
+    EvidenceIdSchema.safeParse(input.evidenceId).success &&
+    RepositoryIdSchema.safeParse(input.repositoryId).success &&
+    WorktreeIdSchema.safeParse(input.worktreeId).success &&
+    SnapshotIdSchema.safeParse(input.snapshotId).success &&
+    (input.headCommit === null || GitObjectIdSchema.safeParse(input.headCommit).success);
+}
+
+function parseEvidenceRecord(value: unknown): WorkbenchEvidenceRecordV1 | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "id", "kind", "epistemicStatus", "freshness", "filePath", "lineRange",
+    "contentHash", "observedAtSnapshotId",
+  ])) return undefined;
+  const pathResult = RepositoryRelativePathSchema.safeParse(value.filePath);
+  const rangeResult = LineRangeSchema.safeParse(value.lineRange);
+  const hashResult = ContentDigestSchema.safeParse(value.contentHash);
+  const snapshotResult = SnapshotIdSchema.safeParse(value.observedAtSnapshotId);
+  const idResult = EvidenceIdSchema.safeParse(value.id);
+  if (
+    !idResult.success ||
+    typeof value.kind !== "string" || !EVIDENCE_KINDS.has(value.kind) ||
+    typeof value.epistemicStatus !== "string" || !EVIDENCE_EPISTEMIC_STATUSES.has(value.epistemicStatus) ||
+    typeof value.freshness !== "string" || !EVIDENCE_FRESHNESS.has(value.freshness) ||
+    !pathResult.success || !rangeResult.success || !hashResult.success || !snapshotResult.success
+  ) return undefined;
+  return {
+    id: idResult.data,
+    kind: value.kind as WorkbenchEvidenceRecordV1["kind"],
+    epistemicStatus: value.epistemicStatus as WorkbenchEvidenceRecordV1["epistemicStatus"],
+    freshness: value.freshness as WorkbenchEvidenceRecordV1["freshness"],
+    filePath: pathResult.data,
+    lineRange: rangeResult.data,
+    contentHash: hashResult.data as `sha256:${string}`,
+    observedAtSnapshotId: snapshotResult.data,
+  };
+}
+
+function parseSourceProjection(value: unknown): WorkbenchSourceProjectionV1 | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "filePath", "lineRange", "content", "sizeBytes", "lineCount", "truncated",
+  ])) return undefined;
+  const pathResult = RepositoryRelativePathSchema.safeParse(value.filePath);
+  const rangeResult = LineRangeSchema.safeParse(value.lineRange);
+  if (
+    !pathResult.success || !rangeResult.success || typeof value.content !== "string" ||
+    !Number.isSafeInteger(value.sizeBytes) || (value.sizeBytes as number) < 0 ||
+    !Number.isSafeInteger(value.lineCount) || (value.lineCount as number) < 0 ||
+    value.truncated !== false || value.content.includes("\u0000")
+  ) return undefined;
+  const sizeBytes = Buffer.byteLength(value.content, "utf8");
+  if (sizeBytes !== value.sizeBytes || sizeBytes > MAX_EVIDENCE_SOURCE_BYTES) return undefined;
+  const lineCount = value.content === "" ? 0 : value.content.split("\n").length;
+  if (lineCount !== value.lineCount) return undefined;
+  return {
+    filePath: pathResult.data,
+    lineRange: rangeResult.data,
+    content: value.content,
+    sizeBytes,
+    lineCount,
+    truncated: false,
+  };
+}
+
+function parseEvidenceResult(
+  value: unknown,
+  input: WorkbenchEvidenceRequestV1,
+): WorkbenchEvidenceResultV1 {
+  if (!evidenceIdentityIsValid(input)) {
+    throw new WorkbenchSessionError("invalid_input", "evidence request identity is invalid");
+  }
+  if (value === undefined) return unavailableEvidence(input, "unavailable", "not_published");
+  if (!isRecord(value) || value.schemaVersion !== 1 || value.surface !== "evidence" ||
+      value.taskId !== input.taskId || value.evidenceId !== input.evidenceId ||
+      value.repositoryId !== input.repositoryId || value.worktreeId !== input.worktreeId ||
+      value.snapshotId !== input.snapshotId || value.headCommit !== input.headCommit ||
+      typeof value.status !== "string" || !EVIDENCE_STATUSES.has(value.status)) {
+    throw new WorkbenchSessionError("session_invalid", "evidence projection identity is invalid");
+  }
+  const status = value.status as WorkbenchEvidenceStatusV1;
+  if (status === "ready") {
+    if (!hasExactKeys(value, ["schemaVersion", "surface", "taskId", "evidenceId", "repositoryId", "worktreeId", "snapshotId", "headCommit", "status", "evidence", "source"])) {
+      throw new WorkbenchSessionError("session_invalid", "evidence ready projection is invalid");
+    }
+    const evidence = parseEvidenceRecord(value.evidence);
+    const source = parseSourceProjection(value.source);
+    if (evidence === undefined || source === undefined || evidence.id !== input.evidenceId ||
+        evidence.freshness !== "current" || evidence.observedAtSnapshotId !== input.snapshotId ||
+        evidence.filePath !== source.filePath || evidence.lineRange[0] !== source.lineRange[0] ||
+        evidence.lineRange[1] !== source.lineRange[1]) {
+      throw new WorkbenchSessionError("session_invalid", "evidence ready projection is invalid");
+    }
+    if (isSensitiveEvidencePath(evidence.filePath) || isSensitiveEvidencePath(source.filePath)) {
+      return unavailableEvidence(input, "redacted", "sensitive");
+    }
+    return { ...evidenceBase(input), status: "ready", evidence, source };
+  }
+  if (!hasOnlyKeys(value, ["schemaVersion", "surface", "taskId", "evidenceId", "repositoryId", "worktreeId", "snapshotId", "headCommit", "status", "reason", "observedSnapshotId", "evidence"]) ||
+      typeof value.reason !== "string" || !EVIDENCE_REASONS.has(value.reason)) {
+    throw new WorkbenchSessionError("session_invalid", "evidence unavailable projection is invalid");
+  }
+  const reason = value.reason as WorkbenchEvidenceUnavailableReasonV1;
+  const evidence = value.evidence === undefined ? undefined : parseEvidenceRecord(value.evidence);
+  if (value.evidence !== undefined && evidence === undefined) {
+    throw new WorkbenchSessionError("session_invalid", "evidence metadata is invalid");
+  }
+  if (evidence !== undefined && (evidence.id !== input.evidenceId || isSensitiveEvidencePath(evidence.filePath))) {
+    return unavailableEvidence(input, "redacted", "sensitive");
+  }
+  const observedSnapshotResult = value.observedSnapshotId === undefined
+    ? undefined
+    : SnapshotIdSchema.safeParse(value.observedSnapshotId);
+  const observedSnapshotId = observedSnapshotResult?.success === true ? observedSnapshotResult.data : value.observedSnapshotId;
+  if (value.observedSnapshotId !== undefined && (observedSnapshotResult?.success !== true || observedSnapshotId === input.snapshotId)) {
+    throw new WorkbenchSessionError("session_invalid", "evidence observed snapshot is invalid");
+  }
+  if (status !== "stale" && observedSnapshotId !== undefined) {
+    throw new WorkbenchSessionError("session_invalid", "only stale evidence may expose an observed snapshot");
+  }
+  return unavailableEvidence(input, status, reason, {
+    ...(observedSnapshotResult?.success === true ? { observedSnapshotId: observedSnapshotResult.data } : {}),
+    ...(evidence === undefined ? {} : { evidence }),
+  });
+}
+
 function routePath(route: WorkbenchRouteV1): string {
   const params = new URLSearchParams({ view: route.view });
   if (route.taskId !== undefined) params.set("taskId", route.taskId);
@@ -673,6 +978,10 @@ a { color: inherit; text-decoration: none; }
 .wb-item { padding: 13px 14px; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-control); background: var(--color-surface-raised); }
 .wb-item-label { color: var(--color-text-muted); font: 600 11px/1.3 var(--font-mono); text-transform: uppercase; letter-spacing: .05em; }
 .wb-item-value { margin-top: 4px; overflow-wrap: anywhere; }
+.wb-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+.wb-button { min-height: 36px; padding: 7px 11px; border: 1px solid var(--color-border-medium); border-radius: var(--radius-control); background: var(--color-surface-raised); color: var(--color-text-primary); cursor: pointer; }
+.wb-button:hover, .wb-button:focus-visible { border-color: var(--color-accent-strong); outline: 2px solid transparent; }
+.wb-source { margin: 12px 0 0; padding: 14px; overflow: auto; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-control); background: #0b0d12; color: var(--color-text-primary); font: 12px/1.55 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 900px) { .wb-layout { grid-template-columns: 1fr; gap: 16px; } .wb-sidebar { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } .wb-nav { display: flex; overflow-x: auto; } .wb-nav-title { display: none; } .wb-nav button { min-width: max-content; } }
 @media (max-width: 560px) { .wb-header { align-items: flex-start; flex-direction: column; padding: 16px; } .wb-layout { padding: 16px; } .wb-sidebar { display: block; } .wb-surfaces { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 16px; } .wb-surface { min-width: 128px; } .wb-panel { min-height: 300px; padding: 18px; } }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
@@ -683,6 +992,7 @@ const WORKBENCH_APP_SCRIPT = String.raw`(() => {
   const taskId = body.dataset.taskId || '';
   const view = body.dataset.view || 'tasks';
   const initialSection = body.dataset.section || 'summary';
+  let activeEvidenceId = body.dataset.evidenceId || '';
   const sections = [
     ['summary', 'Summary'],
     ['goals', 'Goals'],
@@ -698,12 +1008,13 @@ const WORKBENCH_APP_SCRIPT = String.raw`(() => {
   const subtitle = document.getElementById('wb-panel-subtitle');
   const status = document.getElementById('wb-status');
   const banner = document.getElementById('wb-banner');
+  const actions = document.getElementById('wb-actions');
   const nav = [...document.querySelectorAll('[data-section]')];
   const surfaces = [...document.querySelectorAll('[data-surface]')];
   const text = (value) => value == null ? '' : String(value);
   const setStatus = (label, kind) => { status.dataset.state = kind || 'ready'; status.querySelector('.wb-status-label').textContent = label; };
   const setState = (heading, message) => { state.hidden = false; state.innerHTML = ''; const strong = document.createElement('strong'); strong.textContent = heading; const p = document.createElement('p'); p.textContent = message; state.append(strong, p); items.hidden = true; };
-  const appendItem = (rows) => { const li = document.createElement('li'); li.className = 'wb-item'; rows.forEach(([label, value]) => { const row = document.createElement('div'); const key = document.createElement('div'); key.className = 'wb-item-label'; key.textContent = text(label); const val = document.createElement('div'); val.className = 'wb-item-value'; val.textContent = text(value); row.append(key, val); li.appendChild(row); }); items.appendChild(li); };
+  const appendItem = (rows, evidenceId) => { const li = document.createElement('li'); li.className = 'wb-item'; rows.forEach(([label, value]) => { const row = document.createElement('div'); const key = document.createElement('div'); key.className = 'wb-item-label'; key.textContent = text(label); const val = document.createElement('div'); val.className = 'wb-item-value'; val.textContent = text(value); row.append(key, val); li.appendChild(row); }); if (evidenceId) { const button = document.createElement('button'); button.type = 'button'; button.className = 'wb-button'; button.textContent = 'Open evidence'; button.setAttribute('aria-label', 'Open evidence ' + text(evidenceId)); button.addEventListener('click', () => { const evidenceButton = surfaces.find((item) => item.dataset.surface === 'evidence'); void loadEvidence(evidenceId, evidenceButton); }); li.appendChild(button); } items.appendChild(li); };
   const valueForItem = (item) => {
     if (item.kind === 'summary') return [['Intent', item.originalIntent], ['Acceptance claims', item.acceptanceClaimCount], ['Planned changes', item.plannedChangeCount]];
     if (item.kind === 'claim_reference') return [['Claim', item.claimId], ['Role', item.role]];
@@ -716,7 +1027,7 @@ const WORKBENCH_APP_SCRIPT = String.raw`(() => {
     items.innerHTML = '';
     if (!result.items || result.items.length === 0) { setState('Nothing recorded yet', 'This Task section is empty.'); return; }
     state.hidden = true; items.hidden = false;
-    result.items.forEach((item) => appendItem(valueForItem(item)));
+    result.items.forEach((item) => appendItem(valueForItem(item), item.kind === 'reading_path' ? item.entry.evidenceIds?.[0] : undefined));
   };
   const surfaceReason = (reason) => ({ not_published: 'The published artifact is not available for this repository.', invalid_artifact: 'The published artifact failed structural validation.', read_failed: 'The published artifact could not be read safely.' }[reason] || 'The published artifact is unavailable.');
   const renderContext = (payload, label) => {
@@ -794,8 +1105,59 @@ const WORKBENCH_APP_SCRIPT = String.raw`(() => {
     }
     subtitle.textContent = 'Task-bound Change Check and Verification trace. Execution detail is redacted.';
   };
+  const clearActions = () => { if (actions) { actions.hidden = true; actions.innerHTML = ''; } };
+  const addAction = (label, handler) => { if (!actions) return; const button = document.createElement('button'); button.type = 'button'; button.className = 'wb-button'; button.textContent = label; button.addEventListener('click', handler); actions.appendChild(button); actions.hidden = false; };
+  const renderEvidence = (payload) => {
+    items.innerHTML = '';
+    clearActions();
+    addAction('Back to Task', () => { activeEvidenceId = ''; const next = new URL(location.href); next.searchParams.delete('evidenceId'); history.replaceState(null, '', next.pathname + next.search); void load(initialSection); });
+    addAction('Open Graph', () => { const graphButton = surfaces.find((item) => item.dataset.surface === 'graph'); if (graphButton) void loadSurface('graph', graphButton); });
+    if (!payload || payload.status !== 'ready') {
+      const reason = payload && payload.reason ? text(payload.reason).replaceAll('_', ' ') : 'not published';
+      if (payload && payload.status === 'stale') { banner.hidden = false; banner.textContent = 'This evidence is backed by a stale repository snapshot.'; setStatus('Evidence stale', 'stale'); }
+      else { banner.hidden = true; setStatus('Evidence unavailable', 'error'); }
+      setState('Evidence ' + (payload && payload.status ? text(payload.status) : 'unavailable'), 'Source preview is fail-closed: ' + reason + '.');
+      subtitle.textContent = 'Task-bound Evidence and guarded Source preview.';
+      return;
+    }
+    state.hidden = true; items.hidden = false; banner.hidden = true;
+    appendItem([
+      ['Evidence', payload.evidence.id],
+      ['Kind', payload.evidence.kind],
+      ['Freshness', payload.evidence.freshness],
+      ['File', payload.evidence.filePath],
+      ['Lines', payload.evidence.lineRange.join('–')],
+      ['Snapshot', payload.evidence.observedAtSnapshotId],
+      ['Content hash', payload.evidence.contentHash]
+    ]);
+    const sourceItem = document.createElement('li'); sourceItem.className = 'wb-item';
+    const sourceLabel = document.createElement('div'); sourceLabel.className = 'wb-item-label'; sourceLabel.textContent = 'Source preview';
+    const sourceMeta = document.createElement('div'); sourceMeta.className = 'wb-item-value'; sourceMeta.textContent = text(payload.source.sizeBytes) + ' bytes · ' + text(payload.source.lineCount) + ' lines';
+    const pre = document.createElement('pre'); pre.className = 'wb-source'; pre.setAttribute('aria-label', 'Source preview for ' + text(payload.source.filePath)); pre.textContent = text(payload.source.content);
+    sourceItem.append(sourceLabel, sourceMeta, pre); items.appendChild(sourceItem);
+    subtitle.textContent = 'Task-bound Evidence and guarded Source preview.';
+    setStatus('Evidence ready', 'ready');
+  };
+  const loadEvidence = async (evidenceId, button) => {
+    activeEvidenceId = text(evidenceId);
+    nav.forEach((item) => item.setAttribute('aria-current', 'false'));
+    surfaces.forEach((item) => item.setAttribute('aria-current', item === button ? 'page' : 'false'));
+    title.textContent = 'Evidence / Source'; subtitle.textContent = 'Loading task evidence…'; banner.hidden = true;
+    setStatus('Loading Evidence', 'loading'); setState('Loading Evidence', 'Reading the guarded source projection…');
+    const next = new URL(location.href); next.searchParams.set('evidenceId', activeEvidenceId); history.replaceState(null, '', next.pathname + next.search);
+    if (view !== 'tasks' || !taskId || !activeEvidenceId) { setStatus('Unavailable', 'error'); setState('Evidence unavailable', 'Open a Task reading path with a published evidence identifier.'); return; }
+    try {
+      const params = new URLSearchParams({ taskId, evidenceId: activeEvidenceId });
+      const response = await fetch('/__workbench/evidence?' + params.toString(), { credentials: 'same-origin', headers: { accept: 'application/json' } });
+      if (response.status === 401) { setStatus('Session expired', 'error'); setState('Session required', 'Reload the Workbench launch link to establish a new local session.'); return; }
+      if (response.status === 409) { setStatus('Invalid evidence route', 'error'); setState('Evidence route rejected', 'The evidence identifier is not valid for this Task session.'); return; }
+      if (!response.ok) throw new Error('request_failed');
+      renderEvidence(await response.json());
+    } catch { setStatus('Error', 'error'); setState('Evidence error', 'Retry the evidence request or relaunch the local Workbench.'); }
+  };
   const setSurfaceBadge = (button, value) => { const badge = button.querySelector('.wb-unavailable'); if (badge) badge.textContent = value; };
   const loadSurface = async (surface, button) => {
+    if (surface === 'evidence') { await loadEvidence(activeEvidenceId, button); return; }
     const label = surface === 'graph' ? 'Graph' : surface === 'trace' ? 'Trace' : 'Knowledge';
     title.textContent = label;
     subtitle.textContent = 'Task-bound published context is read-only.';
@@ -822,6 +1184,9 @@ const WORKBENCH_APP_SCRIPT = String.raw`(() => {
     } catch { setStatus('Error', 'error'); setSurfaceBadge(button, 'error'); setState(label + ' error', 'Retry the context request or relaunch the local Workbench.'); }
   };
   const load = async (requested) => {
+    activeEvidenceId = '';
+    clearActions();
+    surfaces.forEach((item) => item.setAttribute('aria-current', 'false'));
     const section = aliases[requested] || requested;
     nav.forEach((button) => button.setAttribute('aria-current', button.dataset.section === section ? 'page' : 'false'));
     title.textContent = sections.find(([key]) => key === section)?.[1] || 'Task Brief';
@@ -843,13 +1208,18 @@ const WORKBENCH_APP_SCRIPT = String.raw`(() => {
       const next = new URL(location.href); next.searchParams.set('section', section); history.replaceState(null, '', next.pathname + next.search);
     } catch { setStatus('Error', 'error'); setState('Unable to load', 'Retry the section or relaunch the local Workbench.'); }
   };
-  nav.forEach((button) => button.addEventListener('click', () => load(button.dataset.section || 'summary')));
+  nav.forEach((button) => button.addEventListener('click', () => { const next = new URL(location.href); next.searchParams.delete('evidenceId'); history.replaceState(null, '', next.pathname + next.search); void load(button.dataset.section || 'summary'); }));
   surfaces.forEach((button) => button.addEventListener('click', () => {
     nav.forEach((item) => item.setAttribute('aria-current', 'false'));
     surfaces.forEach((item) => item.setAttribute('aria-current', item === button ? 'page' : 'false'));
     void loadSurface(button.dataset.surface || 'knowledge', button);
   }));
-  load(initialSection);
+  if (activeEvidenceId) {
+    const evidenceButton = surfaces.find((item) => item.dataset.surface === 'evidence');
+    void loadEvidence(activeEvidenceId, evidenceButton);
+  } else {
+    void load(initialSection);
+  }
 })();`;
 
 function escapeHtml(value: string): string {
@@ -860,7 +1230,7 @@ function workbenchHtml(route: WorkbenchRouteV1, identity: WorkbenchSessionV1["id
   const taskId = route.taskId ?? "";
   const section = route.section ?? "summary";
   const taskTitle = taskId === "" ? "Task-first view" : `Task ${taskId}`;
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(taskTitle)} · Workbench</title><link rel="stylesheet" href="/__workbench/app.css"></head><body data-view="${escapeHtml(route.view)}" data-task-id="${escapeHtml(taskId)}" data-section="${escapeHtml(section)}"><div class="wb-shell"><header class="wb-header"><div class="wb-brand"><div class="wb-kicker">Understand Code · Workbench</div><h1 class="wb-title">${escapeHtml(taskTitle)}</h1></div><div id="wb-status" class="wb-status" data-state="loading"><span class="wb-status-dot" aria-hidden="true"></span><span class="wb-status-label">Loading</span><span aria-hidden="true">·</span><span>${escapeHtml(identity.worktreeId)}</span></div></header><div class="wb-layout"><aside class="wb-sidebar"><nav class="wb-nav" aria-label="Task sections"><div class="wb-nav-title">Task Brief</div><button type="button" data-section="summary" aria-current="false">Summary</button><button type="button" data-section="goals" aria-current="false">Goals</button><button type="button" data-section="reading_path" aria-current="false">Reading</button><button type="button" data-section="planned_changes" aria-current="false">Changes</button><button type="button" data-section="verification_plan" aria-current="false">Verification</button></nav><nav class="wb-surfaces" aria-label="Workbench surfaces"><button type="button" class="wb-surface" data-surface="knowledge" aria-current="false">Knowledge <span class="wb-unavailable">unavailable</span></button><button type="button" class="wb-surface" data-surface="graph" aria-current="false">Graph <span class="wb-unavailable">unavailable</span></button><button type="button" class="wb-surface" data-surface="trace" aria-current="false">Trace <span class="wb-unavailable">unavailable</span></button></nav></aside><main class="wb-main"><section class="uc-panel wb-panel" aria-live="polite"><div class="wb-panel-head"><div><h2 id="wb-panel-title" class="wb-panel-title">Task Brief</h2><p id="wb-panel-subtitle" class="wb-panel-subtitle">Loading persisted Task data…</p></div></div><div id="wb-banner" class="wb-banner" hidden></div><div id="wb-state" class="wb-state"><div><strong>Loading Task Brief</strong><p>Reading the persisted section…</p></div></div><ul id="wb-items" class="wb-items" hidden></ul><noscript><div class="wb-state"><strong>JavaScript is required</strong><p>Enable JavaScript to read the local Task Brief.</p></div></noscript></section></main></div></div><script src="/__workbench/app.js" defer></script></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(taskTitle)} · Workbench</title><link rel="stylesheet" href="/__workbench/app.css"></head><body data-view="${escapeHtml(route.view)}" data-task-id="${escapeHtml(taskId)}" data-section="${escapeHtml(section)}" data-evidence-id="${escapeHtml(route.evidenceId ?? "")}"><div class="wb-shell"><header class="wb-header"><div class="wb-brand"><div class="wb-kicker">Understand Code · Workbench</div><h1 class="wb-title">${escapeHtml(taskTitle)}</h1></div><div id="wb-status" class="wb-status" data-state="loading"><span class="wb-status-dot" aria-hidden="true"></span><span class="wb-status-label">Loading</span><span aria-hidden="true">·</span><span>${escapeHtml(identity.worktreeId)}</span></div></header><div class="wb-layout"><aside class="wb-sidebar"><nav class="wb-nav" aria-label="Task sections"><div class="wb-nav-title">Task Brief</div><button type="button" data-section="summary" aria-current="false">Summary</button><button type="button" data-section="goals" aria-current="false">Goals</button><button type="button" data-section="reading_path" aria-current="false">Reading</button><button type="button" data-section="planned_changes" aria-current="false">Changes</button><button type="button" data-section="verification_plan" aria-current="false">Verification</button></nav><nav class="wb-surfaces" aria-label="Workbench surfaces"><button type="button" class="wb-surface" data-surface="knowledge" aria-current="false">Knowledge <span class="wb-unavailable">unavailable</span></button><button type="button" class="wb-surface" data-surface="graph" aria-current="false">Graph <span class="wb-unavailable">unavailable</span></button><button type="button" class="wb-surface" data-surface="evidence" aria-current="false">Evidence / Source <span class="wb-unavailable">unavailable</span></button><button type="button" class="wb-surface" data-surface="trace" aria-current="false">Trace <span class="wb-unavailable">unavailable</span></button></nav></aside><main class="wb-main"><section class="uc-panel wb-panel" aria-live="polite"><div class="wb-panel-head"><div><h2 id="wb-panel-title" class="wb-panel-title">Task Brief</h2><p id="wb-panel-subtitle" class="wb-panel-subtitle">Loading persisted Task data…</p></div></div><div id="wb-actions" class="wb-actions" hidden></div><div id="wb-banner" class="wb-banner" hidden></div><div id="wb-state" class="wb-state"><div><strong>Loading Task Brief</strong><p>Reading the persisted section…</p></div></div><ul id="wb-items" class="wb-items" hidden></ul><noscript><div class="wb-state"><strong>JavaScript is required</strong><p>Enable JavaScript to read the local Task Brief.</p></div></noscript></section></main></div></div><script src="/__workbench/app.js" defer></script></body></html>`;
 }
 
 function routeFromQuery(query: URLSearchParams): WorkbenchRouteV1 | undefined {
@@ -894,11 +1264,20 @@ function normalizeTaskBriefSection(value: string | undefined): TaskBriefSectionV
 
 function routeCompatible(requested: WorkbenchRouteV1, granted: WorkbenchRouteV1): boolean {
   // Section navigation is intentionally allowed to move within the same Task;
-  // every other deep-link target remains capability-bound to the launch grant.
+  // an Evidence id selected from the Task reading path is also allowed to be
+  // persisted in the browser URL.  The actual Evidence reader still resolves
+  // the id against the authenticated Task bundle, so this does not authorize
+  // an arbitrary repository path or cross-Task object. Other deep-link targets
+  // remain capability-bound to the launch grant.
+  const taskEvidenceRoute =
+    granted.evidenceId === undefined &&
+    requested.evidenceId !== undefined &&
+    requested.findingId === undefined &&
+    requested.impactPathId === undefined;
   return requested.view === granted.view &&
     requested.taskId === granted.taskId &&
     requested.findingId === granted.findingId &&
-    requested.evidenceId === granted.evidenceId &&
+    (requested.evidenceId === granted.evidenceId || taskEvidenceRoute) &&
     requested.impactPathId === granted.impactPathId &&
     requested.focus === granted.focus;
 }
@@ -1278,6 +1657,35 @@ async function readWorkbenchTraceForSession(
   return parseTraceResult(value, input);
 }
 
+async function readWorkbenchEvidenceForSession(
+  stored: StoredSessionV1,
+  sessionToken: string,
+  input: WorkbenchEvidenceRequestV1,
+): Promise<WorkbenchEvidenceResultV1> {
+  const browser = getBrowserSession(stored.session, sessionToken, stored.now);
+  if (browser.route.view !== "tasks" || browser.route.taskId === undefined) {
+    throw new WorkbenchSessionError("session_invalid", "evidence requires a Task route");
+  }
+  if (
+    input.taskId !== browser.route.taskId ||
+    input.repositoryId !== browser.binding.repositoryId ||
+    input.worktreeId !== browser.binding.worktreeId ||
+    input.snapshotId !== browser.binding.sourceSnapshotId ||
+    input.headCommit !== browser.binding.headCommit
+  ) {
+    throw new WorkbenchSessionError("session_invalid", "evidence route does not belong to this session");
+  }
+  const reader = stored.evidenceReader;
+  if (reader === undefined) return parseEvidenceResult(undefined, input);
+  let value: WorkbenchEvidenceResultV1 | undefined;
+  try {
+    value = await reader(input);
+  } catch {
+    throw new WorkbenchSessionError("server_error", "evidence projection is unavailable");
+  }
+  return parseEvidenceResult(value, input);
+}
+
 function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, response: ServerResponse) => void {
   return (request, response) => {
     if (request.method !== "GET") {
@@ -1493,6 +1901,66 @@ function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, 
       return;
     }
 
+    if (parsedUrl.pathname === "/__workbench/evidence") {
+      const browser = (() => {
+        try { return getBrowserSession(stored.session, sessionToken, stored.now); } catch { return undefined; }
+      })();
+      if (browser === undefined) {
+        unauthorized(response);
+        return;
+      }
+      if (browser.route.view !== "tasks" || browser.route.taskId === undefined) {
+        writeJson(response, 409, { error: "task_route_required" });
+        return;
+      }
+      // The browser may submit exactly two public identifiers. Repository,
+      // snapshot, head and root values are session-bound and never accepted
+      // from query parameters.
+      const allowed = new Set(["taskId", "evidenceId"]);
+      let queryShapeValid = true;
+      for (const [key] of parsedUrl.searchParams) {
+        if (!allowed.has(key) || parsedUrl.searchParams.getAll(key).length !== 1) {
+          queryShapeValid = false;
+          break;
+        }
+      }
+      const requestedTaskId = parsedUrl.searchParams.get("taskId");
+      const requestedEvidenceId = parsedUrl.searchParams.get("evidenceId");
+      const parsedTaskId = requestedTaskId === null ? undefined : TaskIdSchema.safeParse(requestedTaskId);
+      const parsedEvidenceId = requestedEvidenceId === null ? undefined : EvidenceIdSchema.safeParse(requestedEvidenceId);
+      if (!queryShapeValid || requestedTaskId === null || requestedEvidenceId === null ||
+          parsedTaskId?.success !== true || parsedEvidenceId?.success !== true) {
+        writeJson(response, 409, { error: "evidence_input_invalid" });
+        return;
+      }
+      if (parsedTaskId.data !== browser.route.taskId) {
+        writeJson(response, 409, { error: "evidence_route_mismatch" });
+        return;
+      }
+      const input: WorkbenchEvidenceRequestV1 = {
+        taskId: parsedTaskId.data,
+        evidenceId: parsedEvidenceId.data,
+        repositoryId: browser.binding.repositoryId,
+        worktreeId: browser.binding.worktreeId,
+        snapshotId: browser.binding.sourceSnapshotId,
+        headCommit: browser.binding.headCommit,
+      };
+      void readWorkbenchEvidenceForSession(stored, sessionToken, input)
+        .then((result) => writeJson(response, 200, result))
+        .catch((error: unknown) => {
+          if (error instanceof WorkbenchSessionError && error.code === "session_invalid") {
+            writeJson(response, 409, { error: "evidence_route_mismatch" });
+            return;
+          }
+          if (error instanceof WorkbenchSessionError && error.code === "invalid_input") {
+            writeJson(response, 409, { error: "evidence_input_invalid" });
+            return;
+          }
+          writeJson(response, 500, { error: "evidence_unavailable" });
+        });
+      return;
+    }
+
     if (parsedUrl.pathname === "/__workbench/trace") {
       const browser = (() => {
         try { return getBrowserSession(stored.session, sessionToken, stored.now); } catch { return undefined; }
@@ -1650,6 +2118,9 @@ export async function openWorkbenchSessionV1(
     if (options.traceReader !== undefined) {
       existing.traceReader = options.traceReader;
     }
+    if (options.evidenceReader !== undefined) {
+      existing.evidenceReader = options.evidenceReader;
+    }
     const token = randomToken();
     const issuedAtMs = now();
     existing.launches.set(token, {
@@ -1675,6 +2146,7 @@ export async function openWorkbenchSessionV1(
     ...(options.graphReader === undefined ? {} : { graphReader: options.graphReader }),
     ...(options.knowledgeReader === undefined ? {} : { knowledgeReader: options.knowledgeReader }),
     ...(options.traceReader === undefined ? {} : { traceReader: options.traceReader }),
+    ...(options.evidenceReader === undefined ? {} : { evidenceReader: options.evidenceReader }),
   } as StoredSessionV1;
   const handler = createHttpHandler(stored);
   server.on("request", handler);
@@ -1728,6 +2200,8 @@ export async function openWorkbenchSessionV1(
       readWorkbenchContextForSession(stored, sessionToken, input),
     readWorkbenchTrace: (sessionToken, input) =>
       readWorkbenchTraceForSession(stored, sessionToken, input),
+    readWorkbenchEvidence: (sessionToken, input) =>
+      readWorkbenchEvidenceForSession(stored, sessionToken, input),
     close: async () => {
       sessionsByIdentity.delete(key);
       launches.clear();

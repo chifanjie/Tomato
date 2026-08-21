@@ -15,6 +15,7 @@ import { McpStdioServer } from "../src/mcp/server.js";
 import {
   cleanupTemporaryDirectories,
   createGitRepository,
+  seedPublishedContext,
 } from "./helpers.js";
 
 afterEach(async () => {
@@ -61,7 +62,15 @@ async function initialize(server: McpStdioServer): Promise<void> {
 
 describe("open_workbench MCP vertical", () => {
   it("opens a Task deep link bound to the published snapshot and serves its loopback route", async () => {
-    const root = await createGitRepository();
+    const root = await createGitRepository({ seedArtifacts: false });
+    // Seed the published snapshot after a concrete worktree edit so the
+    // fixture carries a trusted file digest and can produce source Evidence.
+    await writeFile(
+      path.join(root, "src/task.ts"),
+      "export function task(): boolean { return true; }\n// evidence anchor\n",
+      "utf8",
+    );
+    await seedPublishedContext(root);
     await mkdir(path.join(root, ".understand-code/knowledge-base"), { recursive: true });
     await writeFile(
       path.join(root, ".understand-code/knowledge-base/wiki-index.json"),
@@ -103,6 +112,21 @@ describe("open_workbench MCP vertical", () => {
     });
     const built = BuildTaskBriefOutputV1Schema.parse(harness.response(2).result);
     const taskId = built.structuredContent.result.task.taskId;
+    await harness.server.handleValue({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "tools/call",
+      params: {
+        name: "get_evidence",
+        arguments: {
+          taskId,
+          evidenceIds: built.structuredContent.result.evidenceIds,
+        },
+      },
+    });
+    const evidenceLookup = harness.response(4).result.structuredContent.result.evidence as readonly Record<string, unknown>[];
+    const sourceEvidence = evidenceLookup.find((item) => typeof item.filePath === "string");
+    expect(sourceEvidence).toBeDefined();
 
     await harness.server.handleValue({
       jsonrpc: "2.0",
@@ -189,8 +213,65 @@ describe("open_workbench MCP vertical", () => {
     await expect(knowledgeResponse.json()).resolves.toMatchObject({
       surface: "knowledge",
       status: "ready",
-      artifact: { counts: { pages: 0, evidence: 0 } },
+      artifact: {
+        counts: {
+          pages: 0,
+          evidence: 0,
+        },
+      },
     });
+    const evidenceId = sourceEvidence!.id as string;
+    expect(evidenceId).toBeDefined();
+    const evidenceResponse = await fetch(
+      new URL(
+        `/__workbench/evidence?taskId=${encodeURIComponent(taskId)}&evidenceId=${encodeURIComponent(evidenceId!)}`,
+        deepLink,
+      ),
+      { headers: { connection: "close", cookie: cookie! } },
+    );
+    expect(evidenceResponse.status).toBe(200);
+    const evidenceProjection = await evidenceResponse.json();
+    expect(evidenceProjection).toMatchObject({
+      schemaVersion: 1,
+      surface: "evidence",
+      taskId,
+      evidenceId,
+      status: "ready",
+      evidence: {
+        id: evidenceId,
+        filePath: "src/task.ts",
+        lineRange: [1, 1],
+        observedAtSnapshotId: opened.structuredContent.meta.sourceSnapshotId,
+      },
+      source: {
+        filePath: "src/task.ts",
+        lineRange: [1, 1],
+        content: expect.stringContaining("task"),
+        truncated: false,
+      },
+    });
+    expect(JSON.stringify(evidenceProjection)).not.toContain(root);
+    const missingEvidenceResponse = await fetch(
+      new URL(
+        `/__workbench/evidence?taskId=${encodeURIComponent(taskId)}&evidenceId=${encodeURIComponent("01ARZ3NDEKTSV4RRFFQ69G5FBZ")}`,
+        deepLink,
+      ),
+      { headers: { connection: "close", cookie: cookie! } },
+    );
+    expect(missingEvidenceResponse.status).toBe(200);
+    await expect(missingEvidenceResponse.json()).resolves.toMatchObject({
+      surface: "evidence",
+      status: "unavailable",
+      reason: "not_found",
+    });
+    const unauthenticatedEvidence = await fetch(
+      new URL(
+        `/__workbench/evidence?taskId=${encodeURIComponent(taskId)}&evidenceId=${encodeURIComponent(evidenceId!)}`,
+        deepLink,
+      ),
+      { headers: { connection: "close" } },
+    );
+    expect(unauthenticatedEvidence.status).toBe(401);
     const unauthenticatedContext = await fetch(
       new URL("/__workbench/context?surface=graph", deepLink),
       { headers: { connection: "close" } },

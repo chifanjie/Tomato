@@ -30,6 +30,10 @@ import {
   type McpToolErrorResultV1,
 } from "@understand-code/contracts/mcp";
 import {
+  isSensitiveRepositoryPath,
+  readStableRepositoryFile,
+} from "@understand-code/repository-state";
+import {
   RepositoryTaskContextProviderError,
   TaskEngineError,
 } from "@understand-code/task-engine";
@@ -41,6 +45,9 @@ import {
   type WorkbenchContextRequestV1,
   type WorkbenchContextResultV1,
   type WorkbenchContextUnavailableReasonV1,
+  type WorkbenchEvidenceReaderV1,
+  type WorkbenchEvidenceRequestV1,
+  type WorkbenchEvidenceResultV1,
   type WorkbenchTraceReaderV1,
 } from "@understand-code/workbench-runtime";
 
@@ -1221,6 +1228,279 @@ const traceReader = (
   return result;
 };
 
+/**
+ * The Workbench source projection is deliberately narrower than get_evidence:
+ * it can only resolve a file-backed Evidence item from the same, published
+ * Task bundle and snapshot that authenticated the browser session.  The
+ * callback never accepts a path or a commit from the browser.
+ */
+const WORKBENCH_SOURCE_MAX_BYTES = 1 * 1024 * 1024;
+const WORKBENCH_SOURCE_PREVIEW_MAX_BYTES = 256 * 1024;
+
+type WorkbenchEvidenceRecord = Extract<
+  WorkbenchEvidenceResultV1,
+  { readonly status: "ready" }
+>["evidence"];
+
+type FileEvidenceLike = {
+  readonly id: string;
+  readonly kind: "source" | "config" | "test" | "document";
+  readonly epistemicStatus: "observed" | "inferred";
+  readonly freshness: string;
+  readonly filePath: string;
+  readonly lineRange?: readonly [number, number];
+  readonly contentHash: string;
+  readonly observedAtSnapshotId: string;
+  readonly commit?: string;
+};
+
+function workbenchEvidenceBase(input: WorkbenchEvidenceRequestV1) {
+  return {
+    schemaVersion: 1 as const,
+    surface: "evidence" as const,
+    taskId: input.taskId,
+    evidenceId: input.evidenceId,
+    repositoryId: input.repositoryId,
+    worktreeId: input.worktreeId,
+    snapshotId: input.snapshotId,
+    headCommit: input.headCommit,
+  };
+}
+
+function workbenchEvidenceNotReady(
+  input: WorkbenchEvidenceRequestV1,
+  status: "stale" | "invalid" | "unavailable" | "redacted",
+  reason:
+    | "not_published"
+    | "not_found"
+    | "snapshot_mismatch"
+    | "evidence_stale"
+    | "evidence_invalid"
+    | "source_unanchored"
+    | "source_missing"
+    | "content_changed"
+    | "sensitive"
+    | "binary"
+    | "too_large"
+    | "read_failed"
+    | "redacted",
+  extra: Readonly<Record<string, unknown>> = {},
+): WorkbenchEvidenceResultV1 {
+  return {
+    ...workbenchEvidenceBase(input),
+    status,
+    reason,
+    ...extra,
+  } as WorkbenchEvidenceResultV1;
+}
+
+function isSafeWorkbenchRelativePath(value: string): boolean {
+  if (
+    value.length === 0 ||
+    value.startsWith("/") ||
+    /^[A-Za-z]:/u.test(value) ||
+    value.includes("\\") ||
+    /[\u0000-\u001f\u007f]/u.test(value)
+  ) {
+    return false;
+  }
+  return !value.split("/").some((segment) => segment.length === 0 || segment === "." || segment === "..");
+}
+
+function isBinaryWorkbenchSource(bytes: Buffer): boolean {
+  if (bytes.includes(0)) return true;
+  const text = bytes.toString("utf8");
+  // Invalid UTF-8 is decoded with replacement characters by Buffer.  A
+  // round-trip mismatch is a conservative binary guard without exposing raw
+  // bytes through the browser projection.
+  return !Buffer.from(text, "utf8").equals(bytes);
+}
+
+function workbenchSourceReadFailure(
+  error: unknown,
+): { readonly status: "unavailable" | "redacted"; readonly reason: "source_missing" | "too_large" | "read_failed" | "redacted" } {
+  const code =
+    error !== null && typeof error === "object" && "code" in error
+      ? (error as { readonly code?: unknown }).code
+      : undefined;
+  if (code === "too_large") return { status: "redacted", reason: "too_large" };
+  if (code === "symlink_path" || code === "outside_repository") {
+    return { status: "redacted", reason: "redacted" };
+  }
+  if (code === "ENOENT" || code === "not_found") {
+    return { status: "unavailable", reason: "source_missing" };
+  }
+  return { status: "unavailable", reason: "read_failed" };
+}
+
+const evidenceReader = (
+  runtime: Awaited<ReturnType<typeof openRuntime>>,
+  canonicalRoot: string,
+): WorkbenchEvidenceReaderV1 => async (input) => {
+  const base = workbenchEvidenceBase(input);
+  if (
+    runtime.store.repositoryId !== input.repositoryId ||
+    runtime.store.worktreeId !== input.worktreeId
+  ) {
+    return workbenchEvidenceNotReady(input, "invalid", "snapshot_mismatch");
+  }
+
+  let context: Awaited<ReturnType<typeof readTaskScopedContext>>;
+  try {
+    context = await readTaskScopedContext(runtime, input.taskId);
+  } catch {
+    // Do not turn artifact-store errors into a filesystem or root-path oracle.
+    return workbenchEvidenceNotReady(input, "unavailable", "not_published");
+  }
+  const bundle = context.read.bundle;
+  const manifest = bundle.manifest;
+  if (
+    manifest.taskId !== input.taskId ||
+    manifest.repositoryId !== input.repositoryId ||
+    manifest.worktreeId !== input.worktreeId
+  ) {
+    return workbenchEvidenceNotReady(input, "invalid", "snapshot_mismatch");
+  }
+
+  const observedSnapshotId = manifest.latestSnapshotId;
+  const snapshot = context.publishedSnapshot.snapshot;
+  if (
+    observedSnapshotId !== input.snapshotId ||
+    snapshot.snapshotId !== input.snapshotId ||
+    snapshot.repositoryId !== input.repositoryId ||
+    snapshot.worktreeId !== input.worktreeId ||
+    (snapshot.headCommit ?? null) !== input.headCommit
+  ) {
+    return workbenchEvidenceNotReady(input, "stale", "snapshot_mismatch", {
+      observedSnapshotId,
+    });
+  }
+
+  const evidenceArtifact = context.read.artifacts.find(
+    (artifact) => artifact.artifactType === "evidence_ledger",
+  );
+  if (
+    evidenceArtifact === undefined ||
+    evidenceArtifact.taskId !== input.taskId ||
+    evidenceArtifact.repositoryId !== input.repositoryId ||
+    evidenceArtifact.worktreeId !== input.worktreeId ||
+    evidenceArtifact.sourceSnapshotId !== input.snapshotId
+  ) {
+    return workbenchEvidenceNotReady(input, "invalid", "snapshot_mismatch");
+  }
+  if (!("evidence" in bundle) || !Array.isArray(bundle.evidence)) {
+    return workbenchEvidenceNotReady(input, "unavailable", "not_published");
+  }
+
+  const item = bundle.evidence.find((candidate) => candidate.id === input.evidenceId);
+  if (item === undefined) {
+    return workbenchEvidenceNotReady(input, "unavailable", "not_found");
+  }
+  if (!("filePath" in item) || !("contentHash" in item)) {
+    return workbenchEvidenceNotReady(input, "invalid", "source_unanchored");
+  }
+  const sourceEvidence = item as FileEvidenceLike;
+  if (
+    !["source", "config", "test", "document"].includes(sourceEvidence.kind) ||
+    !["observed", "inferred"].includes(sourceEvidence.epistemicStatus) ||
+    !/^sha256:[0-9a-f]{64}$/u.test(sourceEvidence.contentHash)
+  ) {
+    return workbenchEvidenceNotReady(input, "invalid", "evidence_invalid");
+  }
+  if (sourceEvidence.observedAtSnapshotId !== input.snapshotId) {
+    return workbenchEvidenceNotReady(input, "stale", "evidence_stale", {
+      observedSnapshotId: sourceEvidence.observedAtSnapshotId,
+    });
+  }
+  if (sourceEvidence.freshness !== "current") {
+    return workbenchEvidenceNotReady(input, "stale", "evidence_stale");
+  }
+  if (
+    sourceEvidence.commit !== undefined &&
+    sourceEvidence.commit !== input.headCommit
+  ) {
+    return workbenchEvidenceNotReady(input, "stale", "snapshot_mismatch", {
+      observedSnapshotId: sourceEvidence.observedAtSnapshotId,
+    });
+  }
+  if (
+    !isSafeWorkbenchRelativePath(sourceEvidence.filePath) ||
+    isSensitiveRepositoryPath(sourceEvidence.filePath) ||
+    sourceEvidence.filePath === ".understand-code" ||
+    sourceEvidence.filePath.startsWith(".understand-code/")
+  ) {
+    return workbenchEvidenceNotReady(input, "redacted", "sensitive");
+  }
+
+  let bytes: Buffer;
+  try {
+    bytes = await readStableRepositoryFile(
+      canonicalRoot,
+      sourceEvidence.filePath,
+      WORKBENCH_SOURCE_MAX_BYTES,
+    );
+  } catch (error) {
+    const failure = workbenchSourceReadFailure(error);
+    return workbenchEvidenceNotReady(input, failure.status, failure.reason);
+  }
+  if (isBinaryWorkbenchSource(bytes)) {
+    return workbenchEvidenceNotReady(input, "redacted", "binary");
+  }
+  const digest = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+  if (digest !== sourceEvidence.contentHash) {
+    return workbenchEvidenceNotReady(input, "invalid", "content_changed");
+  }
+
+  const text = bytes.toString("utf8");
+  if (text.includes(canonicalRoot)) {
+    return workbenchEvidenceNotReady(input, "redacted", "redacted");
+  }
+  const lines = text.split(/\r\n|\n|\r/u);
+  const requestedRange = sourceEvidence.lineRange;
+  if (requestedRange === undefined) {
+    return workbenchEvidenceNotReady(input, "invalid", "source_unanchored");
+  }
+  const lineRange: readonly [number, number] = [
+    requestedRange[0],
+    requestedRange[1],
+  ];
+  if (
+    lineRange[0] < 1 ||
+    lineRange[1] < lineRange[0] ||
+    lineRange[1] > lines.length
+  ) {
+    return workbenchEvidenceNotReady(input, "invalid", "source_unanchored");
+  }
+  const content = lines.slice(lineRange[0] - 1, lineRange[1]).join("\n");
+  const sizeBytes = Buffer.byteLength(content, "utf8");
+  if (sizeBytes > WORKBENCH_SOURCE_PREVIEW_MAX_BYTES) {
+    return workbenchEvidenceNotReady(input, "redacted", "too_large");
+  }
+  const evidence: WorkbenchEvidenceRecord = {
+    id: sourceEvidence.id,
+    kind: sourceEvidence.kind,
+    epistemicStatus: sourceEvidence.epistemicStatus,
+    freshness: "current",
+    filePath: sourceEvidence.filePath,
+    lineRange,
+    contentHash: digest as `sha256:${string}`,
+    observedAtSnapshotId: sourceEvidence.observedAtSnapshotId,
+  };
+  return {
+    ...base,
+    status: "ready",
+    evidence,
+    source: {
+      filePath: sourceEvidence.filePath,
+      lineRange,
+      content,
+      sizeBytes,
+      lineCount: content === "" ? 0 : lineRange[1] - lineRange[0] + 1,
+      truncated: false,
+    },
+  };
+};
+
 async function openWorkbench(argumentsValue: unknown, canonicalRoot: string) {
   const parsed = OpenWorkbenchInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
@@ -1267,6 +1547,7 @@ async function openWorkbench(argumentsValue: unknown, canonicalRoot: string) {
     graphReader: graphContextReader(runtime),
     knowledgeReader: knowledgeContextReader(runtime),
     traceReader: traceReader(runtime),
+    evidenceReader: evidenceReader(runtime, canonicalRoot),
   } as Parameters<typeof openWorkbenchSessionV1>[1]);
   return OpenWorkbenchOutputV1Schema.parse({
     ...session.output,

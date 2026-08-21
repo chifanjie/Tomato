@@ -473,4 +473,172 @@ describe("workbench runtime session", () => {
       },
     });
   });
+
+  it("serves a session-bound Evidence to Source projection with fail-closed states", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "workbench-runtime-evidence-"));
+    roots.push(root);
+    const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const calls: Array<{
+      taskId: string;
+      evidenceId: string;
+      repositoryId: string;
+      worktreeId: string;
+      snapshotId: string;
+      headCommit: string | null;
+    }> = [];
+    const digest = `sha256:${"b".repeat(64)}` as `sha256:${string}`;
+    const session = await openWorkbenchSessionV1(
+      { route: { view: "tasks", taskId } },
+      {
+        ...binding(root),
+        evidenceReader: async (input) => {
+          calls.push(input);
+          const base = {
+            schemaVersion: 1 as const,
+            surface: "evidence" as const,
+            taskId: input.taskId,
+            evidenceId: input.evidenceId,
+            repositoryId: input.repositoryId,
+            worktreeId: input.worktreeId,
+            snapshotId: input.snapshotId,
+            headCommit: input.headCommit,
+          };
+          if (input.evidenceId === "evidence:ready") {
+            return {
+              ...base,
+              status: "ready" as const,
+              evidence: {
+                id: input.evidenceId,
+                kind: "source" as const,
+                epistemicStatus: "observed" as const,
+                freshness: "current" as const,
+                filePath: "src/example.ts",
+                lineRange: [1, 1] as [number, number],
+                contentHash: digest,
+                observedAtSnapshotId: input.snapshotId,
+              },
+              source: {
+                filePath: "src/example.ts",
+                lineRange: [1, 1] as [number, number],
+                content: "export const answer = 42;",
+                sizeBytes: 25,
+                lineCount: 1,
+                truncated: false as const,
+              },
+            };
+          }
+          if (input.evidenceId === "evidence:stale") {
+            return {
+              ...base,
+              status: "stale" as const,
+              reason: "evidence_stale" as const,
+              observedSnapshotId: "snapshot:old",
+            };
+          }
+          if (input.evidenceId === "evidence:secret") {
+            return {
+              ...base,
+              status: "ready" as const,
+              evidence: {
+                id: input.evidenceId,
+                kind: "config" as const,
+                epistemicStatus: "observed" as const,
+                freshness: "current" as const,
+                filePath: ".env",
+                lineRange: [1, 1] as [number, number],
+                contentHash: digest,
+                observedAtSnapshotId: input.snapshotId,
+              },
+              source: {
+                filePath: ".env",
+                lineRange: [1, 1] as [number, number],
+                content: "TOKEN=do-not-leak",
+                sizeBytes: 17,
+                lineCount: 1,
+                truncated: false as const,
+              },
+            };
+          }
+          return undefined;
+        },
+      },
+    );
+    const token = session.output.structuredContent.result.deepLink.split("#")[1]!;
+    const launch = await fetch(`http://127.0.0.1:${session.port}/__workbench/launch`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    expect(launch.status).toBe(200);
+    const cookie = launch.headers.get("set-cookie")!.split(";", 1)[0]!;
+    const html = await fetch(`http://127.0.0.1:${session.port}/workbench`, { headers: { cookie } });
+    const htmlText = await html.text();
+    expect(htmlText).toContain("Evidence / Source");
+    expect(htmlText).toContain("wb-actions");
+    const evidenceRoute = await fetch(
+      `http://127.0.0.1:${session.port}/workbench?view=tasks&taskId=${taskId}&section=summary&evidenceId=${encodeURIComponent("evidence:ready")}`,
+      { headers: { cookie } },
+    );
+    expect(evidenceRoute.status).toBe(200);
+    expect(await evidenceRoute.text()).toContain('data-evidence-id="evidence:ready"');
+
+    const ready = await fetch(
+      `http://127.0.0.1:${session.port}/__workbench/evidence?taskId=${taskId}&evidenceId=evidence%3Aready`,
+      { headers: { cookie } },
+    );
+    expect(ready.status).toBe(200);
+    await expect(ready.json()).resolves.toMatchObject({
+      status: "ready",
+      evidence: { filePath: "src/example.ts", lineRange: [1, 1] },
+      source: { content: "export const answer = 42;" },
+    });
+    expect(calls[0]).toMatchObject({
+      taskId,
+      evidenceId: "evidence:ready",
+      repositoryId: "repo:test",
+      worktreeId: "worktree:test",
+      snapshotId: "snapshot:test",
+      headCommit: null,
+    });
+
+    const stale = await fetch(
+      `http://127.0.0.1:${session.port}/__workbench/evidence?taskId=${taskId}&evidenceId=evidence%3Astale`,
+      { headers: { cookie } },
+    );
+    expect(stale.status).toBe(200);
+    await expect(stale.json()).resolves.toMatchObject({ status: "stale", reason: "evidence_stale", observedSnapshotId: "snapshot:old" });
+
+    const redacted = await fetch(
+      `http://127.0.0.1:${session.port}/__workbench/evidence?taskId=${taskId}&evidenceId=evidence%3Asecret`,
+      { headers: { cookie } },
+    );
+    expect(redacted.status).toBe(200);
+    const redactedPayload = await redacted.json() as { status: string; source?: unknown; evidence?: unknown };
+    expect(redactedPayload).toMatchObject({ status: "redacted" });
+    expect(redactedPayload.source).toBeUndefined();
+    expect(redactedPayload.evidence).toBeUndefined();
+
+    const unavailable = await fetch(
+      `http://127.0.0.1:${session.port}/__workbench/evidence?taskId=${taskId}&evidenceId=evidence%3Amissing`,
+      { headers: { cookie } },
+    );
+    expect(unavailable.status).toBe(200);
+    await expect(unavailable.json()).resolves.toMatchObject({ status: "unavailable", reason: "not_published" });
+
+    const extraInput = await fetch(
+      `http://127.0.0.1:${session.port}/__workbench/evidence?taskId=${taskId}&evidenceId=evidence%3Aready&path=src%2Fexample.ts`,
+      { headers: { cookie } },
+    );
+    expect(extraInput.status).toBe(409);
+    const mismatch = await fetch(
+      "http://127.0.0.1:" + session.port + "/__workbench/evidence?taskId=01ARZ3NDEKTSV4RRFFQ69G5FAW&evidenceId=evidence%3Aready",
+      { headers: { cookie } },
+    );
+    expect(mismatch.status).toBe(409);
+    const unauthenticated = await fetch(
+      `http://127.0.0.1:${session.port}/__workbench/evidence?taskId=${taskId}&evidenceId=evidence%3Aready`,
+    );
+    expect(unauthenticated.status).toBe(401);
+    await session.close();
+  });
 });

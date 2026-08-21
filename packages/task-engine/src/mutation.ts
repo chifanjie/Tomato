@@ -349,8 +349,19 @@ function applyTransition(
   data: MutableTaskData,
   to: TaskTransitionTargetV1,
   read: ReadTaskBundleResult,
+  verificationRecordId?: string,
 ): void {
   const from = data.manifest.status;
+  if (
+    verificationRecordId !== undefined &&
+    !(from === "verification_required" && to === "in_progress")
+  ) {
+    transitionRejected(
+      data.manifest,
+      `transition_status:${to}`,
+      "transition_not_allowed",
+    );
+  }
   if (
     ![
       "context_ready",
@@ -497,14 +508,35 @@ function applyTransition(
     (to === "in_progress" || to === "check_required")
   ) {
     if (to === "in_progress") {
-      const failed = data.verificationRecords.some(
-        (record) =>
-          record.snapshotId === data.manifest.latestSnapshotId &&
-          ["failed", "blocked", "flaky"].includes(record.status),
+      const record = data.verificationRecords.find(
+        (candidate) => candidate.id === verificationRecordId,
       );
-      if (!failed) {
+      const planEntry = data.brief?.verificationPlan.find(
+        (candidate) => candidate.id === record?.verificationPlanEntryId,
+      );
+      const latest =
+        record === undefined
+          ? undefined
+          : latestVerification(
+              data.verificationRecords,
+              record.verificationPlanEntryId,
+              data.manifest.latestSnapshotId,
+            );
+      if (
+        verificationRecordId === undefined ||
+        record === undefined ||
+        planEntry === undefined ||
+        record.snapshotId !== data.manifest.latestSnapshotId ||
+        latest?.id !== record.id ||
+        !["failed", "blocked", "flaky"].includes(record.status)
+      ) {
         gateUnsatisfied(data.manifest, to, [
-          { code: "verification_required" },
+          {
+            code: "verification_required",
+            ...(verificationRecordId === undefined
+              ? {}
+              : { resourceId: verificationRecordId }),
+          },
         ]);
       }
     } else if (
@@ -545,8 +577,14 @@ function applyTransition(
         entry.id,
         data.manifest.latestSnapshotId,
       );
+      const recordClaimIds = new Set(record?.claimIds ?? []);
       if (
         record === undefined ||
+        recordClaimIds.size !== record.claimIds.length ||
+        recordClaimIds.size !== entry.acceptanceClaimIds.length ||
+        !entry.acceptanceClaimIds.every((claimId) =>
+          recordClaimIds.has(claimId),
+        ) ||
         (record.status !== "passed" &&
           !(
             record.status === "skipped" &&
@@ -673,7 +711,12 @@ function applyAction(
       );
       return;
     case "transition_status":
-      applyTransition(data, action.to, read);
+      applyTransition(
+        data,
+        action.to,
+        read,
+        action.verificationRecordId,
+      );
       return;
     case "accept_finding": {
       const check = latestCheck(data);

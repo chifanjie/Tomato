@@ -3,6 +3,8 @@ import { readFile, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { ArtifactStore } from "@understand-code/artifact-store";
+import { VerificationRecordV1Schema } from "@understand-code/contracts";
 import {
   BuildTaskBriefOutputV1Schema,
   CheckChangeOutputV1Schema,
@@ -14,7 +16,7 @@ import {
   RefreshIndexOutputV1Schema,
   UpdateTaskOutputV1Schema,
 } from "@understand-code/contracts/mcp";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { resolveInitialBinding } from "../src/binding/root-binding.js";
 import { McpStdioServer } from "../src/mcp/server.js";
@@ -422,6 +424,53 @@ describe("MCP lifecycle and real handlers", () => {
 
     await harness.server.handleValue({
       jsonrpc: "2.0",
+      id: 12,
+      method: "tools/call",
+      params: {
+        name: "record_verification",
+        arguments: {
+          taskId,
+          record: {
+            verificationPlanEntryId: planEntry.id,
+            supersedesVerificationRecordId:
+              recorded.structuredContent.result.verification.id,
+            kind: planEntry.method,
+            status: "passed",
+            command: "pnpm test",
+            exitCode: 0,
+            summary: "CLI focused verification retry passed.",
+            claimIds: planEntry.acceptanceClaimIds,
+            snapshotId: checked.structuredContent.meta.sourceSnapshotId,
+          },
+          expectedRevision: recorded.structuredContent.result.mutation.revision,
+          idempotencyKey: "cli-ci-verification-retry",
+          actor,
+        },
+      },
+    });
+    const retried = RecordVerificationOutputV1Schema.parse(
+      harness.response(12).result,
+    );
+    expect(retried.structuredContent.result.verification).toMatchObject({
+      attempt: 2,
+      supersedesVerificationRecordId:
+        recorded.structuredContent.result.verification.id,
+      status: "passed",
+    });
+    const verified = await runtime.taskEngine.updateTask(
+      {
+        taskId,
+        action: { type: "transition_status", to: "verified" },
+        expectedRevision: retried.structuredContent.result.mutation.revision,
+        idempotencyKey: "cli-ci-verified",
+        actor,
+      },
+      taskAuth,
+    );
+    expect(verified.task.status).toBe("verified");
+
+    await harness.server.handleValue({
+      jsonrpc: "2.0",
       id: 31,
       method: "tools/call",
       params: {
@@ -458,6 +507,7 @@ describe("MCP lifecycle and real handlers", () => {
     const tracePayload = await trace.json();
     expect(JSON.stringify(tracePayload)).not.toContain("pnpm test");
     expect(JSON.stringify(tracePayload)).not.toContain("Duplicate verification should be gated.");
+    expect(JSON.stringify(tracePayload)).not.toContain("CLI focused verification retry passed.");
     expect(tracePayload).toMatchObject({
       surface: "trace",
       status: "ready",
@@ -466,16 +516,226 @@ describe("MCP lifecycle and real handlers", () => {
       },
       verification: {
         disposition: "externally_reported",
+        requiredCount: 1,
+        passedCount: 1,
+        failedCount: 0,
         pendingCount: 0,
         records: [
           expect.objectContaining({
             taskId,
+            sourceRecordId: recorded.structuredContent.result.verification.id,
+            attempt: 1,
+            status: "failed",
+            disposition: "externally_reported",
+            detailStatus: "legacy_redacted",
+          }),
+          expect.objectContaining({
+            taskId,
+            sourceRecordId: retried.structuredContent.result.verification.id,
+            attempt: 2,
+            supersedesVerificationRecordId:
+              recorded.structuredContent.result.verification.id,
+            status: "passed",
             disposition: "externally_reported",
             detailStatus: "legacy_redacted",
           }),
         ],
       },
     });
+
+    const persistedRead = await runtime.store.readTaskBundle(taskId);
+    if (!("brief" in persistedRead.bundle)) {
+      throw new TypeError("The Workbench trace fixture must remain contextual.");
+    }
+    const verificationArtifact = [...persistedRead.artifacts]
+      .reverse()
+      .find(
+        (artifact) =>
+          artifact.artifactType === "verification" &&
+          artifact.sourceSnapshotId === checked.structuredContent.meta.sourceSnapshotId,
+      );
+    if (
+      verificationArtifact === undefined ||
+      verificationArtifact.artifactType !== "verification"
+    ) {
+      throw new TypeError("The Workbench trace fixture requires a Verification artifact.");
+    }
+    const persistedVerificationRecords = verificationArtifact.payload.records;
+    const verificationRecordTemplate = persistedVerificationRecords[0];
+    if (verificationRecordTemplate === undefined) {
+      throw new TypeError("The Workbench trace fixture requires a Verification record.");
+    }
+    const currentSnapshotId = checked.structuredContent.meta.sourceSnapshotId;
+    const partialAcceptanceClaimId = "claim:cli-trace-partial-acceptance";
+    const syntheticPlanEntry = (
+      suffix: string,
+      acceptanceClaimIds: readonly string[],
+    ) => ({
+      ...planEntry,
+      id: `verification-plan:cli-trace-${suffix}`,
+      acceptanceClaimIds: [...acceptanceClaimIds],
+    });
+    const excessEntry = syntheticPlanEntry("excess", ["claim:cli-trace-excess"]);
+    const blockedEntry = syntheticPlanEntry("blocked", ["claim:cli-trace-blocked"]);
+    const flakyEntry = syntheticPlanEntry("flaky", ["claim:cli-trace-flaky"]);
+    const acceptedSkipEntry = syntheticPlanEntry("accepted-skip", ["claim:cli-trace-accepted-skip"]);
+    const unacceptedSkipEntry = syntheticPlanEntry("unaccepted-skip", ["claim:cli-trace-unaccepted-skip"]);
+    const staleOnlyEntry = syntheticPlanEntry("stale-only", ["claim:cli-trace-stale-only"]);
+    const syntheticRecord = (
+      entry: typeof planEntry,
+      status: "passed" | "failed" | "skipped" | "blocked" | "flaky",
+      claimIds: readonly string[],
+      options: {
+        readonly snapshotId?: string;
+        readonly skipAcceptance?: unknown;
+      } = {},
+    ) => VerificationRecordV1Schema.parse({
+      ...verificationRecordTemplate,
+      id: `verification:cli-trace-${entry.id.split(":").at(-1)}`,
+      taskId,
+      verificationPlanEntryId: entry.id,
+      attempt: 1,
+      supersedesVerificationRecordId: undefined,
+      kind: entry.method,
+      status,
+      exitCode:
+        status === "passed"
+          ? 0
+          : status === "failed" || status === "flaky"
+            ? 1
+            : undefined,
+      summary: `CLI mixed trace ${status} fixture.`,
+      claimIds: [...claimIds],
+      snapshotId: options.snapshotId ?? currentSnapshotId,
+      recordedAt: "2026-08-03T00:00:01.000Z",
+      ...(options.skipAcceptance === undefined
+        ? { skipAcceptance: undefined }
+        : { skipAcceptance: options.skipAcceptance }),
+    });
+    const staleRecord = syntheticRecord(
+      staleOnlyEntry,
+      "passed",
+      staleOnlyEntry.acceptanceClaimIds,
+      { snapshotId: "snapshot:cli-trace-stale" },
+    );
+    const mixedVerificationRecords = [
+      ...persistedVerificationRecords,
+      syntheticRecord(excessEntry, "passed", [
+        ...excessEntry.acceptanceClaimIds,
+        "claim:cli-trace-unexpected",
+      ]),
+      syntheticRecord(blockedEntry, "blocked", blockedEntry.acceptanceClaimIds),
+      syntheticRecord(flakyEntry, "flaky", flakyEntry.acceptanceClaimIds),
+      syntheticRecord(
+        acceptedSkipEntry,
+        "skipped",
+        acceptedSkipEntry.acceptanceClaimIds,
+        {
+          skipAcceptance: {
+            actor,
+            reason: "The focused trace fixture explicitly accepts this skip.",
+            acceptedAt: "2026-08-03T00:00:01.000Z",
+            eventId: "event:cli-trace-accepted-skip",
+          },
+        },
+      ),
+      syntheticRecord(
+        unacceptedSkipEntry,
+        "skipped",
+        unacceptedSkipEntry.acceptanceClaimIds,
+      ),
+      staleRecord,
+    ];
+    const projectedRead: typeof persistedRead = {
+      ...persistedRead,
+      bundle: {
+        ...persistedRead.bundle,
+        brief: {
+          ...persistedRead.bundle.brief,
+          verificationPlan: [
+            {
+              ...planEntry,
+              acceptanceClaimIds: [
+                ...planEntry.acceptanceClaimIds,
+                partialAcceptanceClaimId,
+              ],
+            },
+            excessEntry,
+            blockedEntry,
+            flakyEntry,
+            acceptedSkipEntry,
+            unacceptedSkipEntry,
+            staleOnlyEntry,
+          ],
+        },
+      },
+      artifacts: persistedRead.artifacts.map((artifact) =>
+        artifact.artifactType === "verification" &&
+        artifact.artifactId === verificationArtifact.artifactId
+          ? {
+              ...artifact,
+              payload: { records: mixedVerificationRecords },
+            }
+          : artifact,
+      ),
+    };
+    const readTaskBundle = vi
+      .spyOn(ArtifactStore.prototype, "readTaskBundle")
+      .mockResolvedValue(projectedRead);
+    try {
+      const mixedTraceResponse = await fetch(
+        new URL("/__workbench/trace?taskId=" + encodeURIComponent(taskId), deepLink),
+        { headers: { connection: "close", cookie } },
+      );
+      expect(mixedTraceResponse.status).toBe(200);
+      const mixedTraceValue: unknown = await mixedTraceResponse.json();
+      if (
+        mixedTraceValue === null ||
+        typeof mixedTraceValue !== "object" ||
+        !("verification" in mixedTraceValue) ||
+        mixedTraceValue.verification === null ||
+        typeof mixedTraceValue.verification !== "object" ||
+        !("records" in mixedTraceValue.verification) ||
+        !Array.isArray(mixedTraceValue.verification.records)
+      ) {
+        throw new TypeError("The mixed Workbench trace response is invalid.");
+      }
+      const mixedTrace = mixedTraceValue as {
+        verification: {
+          requiredCount: number;
+          passedCount: number;
+          failedCount: number;
+          pendingCount: number;
+          records: Array<{
+            sourceRecordId: string;
+            attempt: number;
+            status: string;
+          }>;
+        };
+      };
+      expect(mixedTrace.verification).toMatchObject({
+        requiredCount: 7,
+        passedCount: 1,
+        failedCount: 2,
+        pendingCount: 4,
+      });
+      expect(mixedTrace.verification.records).toHaveLength(7);
+      expect(
+        mixedTrace.verification.records.map(
+          (record: { sourceRecordId: string }) => record.sourceRecordId,
+        ),
+      ).not.toContain(staleRecord.id);
+      expect(mixedTrace.verification.records).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ attempt: 1, status: "failed" }),
+          expect.objectContaining({ attempt: 2, status: "passed" }),
+          expect.objectContaining({ status: "blocked" }),
+          expect.objectContaining({ status: "flaky" }),
+        ]),
+      );
+    } finally {
+      readTaskBundle.mockRestore();
+    }
 
     await harness.server.handleValue({
       jsonrpc: "2.0",

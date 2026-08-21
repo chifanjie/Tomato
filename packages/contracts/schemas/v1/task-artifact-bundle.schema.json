@@ -2520,6 +2520,11 @@
                           "verification_required",
                           "verified"
                         ]
+                      },
+                      "verificationRecordId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
                       }
                     },
                     "required": [
@@ -3395,6 +3400,11 @@
                           "verification_required",
                           "verified"
                         ]
+                      },
+                      "verificationRecordId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
                       }
                     },
                     "required": [

@@ -701,6 +701,55 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       { type: "transition_status", to: "verification_required" },
       "preview-workbench-browser-verification-required",
     );
+    const requiredVerificationEntries = brief.verificationPlan.filter((entry) => entry.required);
+    assert.ok(requiredVerificationEntries.length > 0, "the Task must carry a required Verification entry");
+    const firstRequiredVerificationEntry = requiredVerificationEntries[0];
+    const failedVerificationProgram = [
+      "const { foo } = await import('./src/index.ts');",
+      "if (foo() !== 'foo-before') throw new Error('expected the pre-change foo result');",
+    ].join(" ");
+    const failedVerificationStartedAt = Date.now();
+    let failedVerificationExecution;
+    try {
+      await execBounded(
+        process.execPath,
+        ["--input-type=module", "--eval", failedVerificationProgram],
+        { cwd: repositoryRoot, encoding: "utf8" },
+      );
+      assert.fail("the first required Verification attempt must fail before the corrected retry");
+    } catch (error) {
+      assert.equal(error?.code, 1, "the first required Verification command must exit 1");
+      failedVerificationExecution = {
+        stdout: error?.stdout ?? "",
+        stderr: error?.stderr ?? "",
+      };
+    }
+    assert.match(failedVerificationExecution.stderr, /expected the pre-change foo result/u);
+    const failedVerification = await callTool(mcp, output, requestId++, "record_verification", {
+      taskId,
+      record: {
+        verificationPlanEntryId: firstRequiredVerificationEntry.id,
+        kind: firstRequiredVerificationEntry.method,
+        status: "failed",
+        command: `node --input-type=module --eval ${JSON.stringify(failedVerificationProgram)}`,
+        exitCode: 1,
+        durationMs: Date.now() - failedVerificationStartedAt,
+        outputDigest: contentDigest(Buffer.from(
+          `${failedVerificationExecution.stdout}${failedVerificationExecution.stderr}`,
+          "utf8",
+        )),
+        summary: "The first external foo verification attempt failed as expected.",
+        claimIds: firstRequiredVerificationEntry.acceptanceClaimIds,
+        snapshotId: changedSnapshotId,
+      },
+      expectedRevision: taskRevision,
+      idempotencyKey: "preview-workbench-browser-verification-failed-first-attempt",
+      actor,
+    }, RecordVerificationOutputV1Schema);
+    assert.equal(failedVerification.structuredContent.result.verification.status, "failed");
+    assert.equal(failedVerification.structuredContent.result.verification.attempt, 1);
+    taskRevision = failedVerification.structuredContent.result.mutation.revision;
+
     const verificationProgram = [
       "const { foo } = await import('./src/index.ts');",
       "if (foo() !== 'browser-ready') throw new Error('unexpected foo result');",
@@ -713,13 +762,15 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     );
     assert.equal(verificationExecution.stderr, "");
     const verificationDurationMs = Date.now() - verificationStartedAt;
-    const requiredVerificationEntries = brief.verificationPlan.filter((entry) => entry.required);
-    assert.ok(requiredVerificationEntries.length > 0, "the Task must carry a required Verification entry");
     for (const [index, planEntry] of requiredVerificationEntries.entries()) {
       const recorded = await callTool(mcp, output, requestId++, "record_verification", {
         taskId,
         record: {
           verificationPlanEntryId: planEntry.id,
+          ...(index === 0 ? {
+            supersedesVerificationRecordId:
+              failedVerification.structuredContent.result.verification.id,
+          } : {}),
           kind: planEntry.method,
           status: "passed",
           command: `node --input-type=module --eval ${JSON.stringify(verificationProgram)}`,
@@ -736,6 +787,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       }, RecordVerificationOutputV1Schema);
       assert.equal(recorded.structuredContent.result.verification.status, "passed");
       assert.equal(recorded.structuredContent.result.verification.snapshotId, changedSnapshotId);
+      assert.equal(recorded.structuredContent.result.verification.attempt, index === 0 ? 2 : 1);
       taskRevision = recorded.structuredContent.result.mutation.revision;
     }
     const verified = await updateTask(
@@ -833,7 +885,27 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     assert.equal(workbenchTrace.payload.verification.passedCount, requiredVerificationEntries.length);
     assert.equal(workbenchTrace.payload.verification.failedCount, 0);
     assert.equal(workbenchTrace.payload.verification.pendingCount, 0);
-    assert.equal(workbenchTrace.payload.verification.records.length, requiredVerificationEntries.length);
+    assert.equal(workbenchTrace.payload.verification.records.length, requiredVerificationEntries.length + 1);
+    const firstRequiredAttempts = workbenchTrace.payload.verification.records.filter(
+      (record) => record.verificationPlanEntryId === firstRequiredVerificationEntry.id,
+    );
+    assert.deepEqual(
+      firstRequiredAttempts.map((record) => ({
+        attempt: record.attempt,
+        status: record.status,
+        supersedesVerificationRecordId: record.supersedesVerificationRecordId,
+      })),
+      [
+        { attempt: 1, status: "failed", supersedesVerificationRecordId: undefined },
+        {
+          attempt: 2,
+          status: "passed",
+          supersedesVerificationRecordId:
+            failedVerification.structuredContent.result.verification.id,
+        },
+      ],
+      "Workbench trace must retain both attempts while summarizing only the current retry",
+    );
 
     const focusedNodeId = workbenchEvidence.payload.evidence.nodeIds[0];
     await browser.click(`[data-testid="task-evidence-open-graph"][data-node-id="${focusedNodeId}"]`);

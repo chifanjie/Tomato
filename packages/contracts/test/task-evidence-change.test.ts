@@ -711,6 +711,11 @@ describe("Task V1 contracts", () => {
   it("accepts only strong typed lifecycle actions and rejects unknown fields", () => {
     const validActions = [
       { type: "transition_status", to: "in_progress" },
+      {
+        type: "transition_status",
+        to: "in_progress",
+        verificationRecordId: "verification-1",
+      },
       { type: "block_task", reasonCode: "dependency", message: "Waiting." },
       { type: "resume_task" },
       { type: "refresh_task_context", targetSnapshotId: "snapshot-2" },
@@ -751,6 +756,13 @@ describe("Task V1 contracts", () => {
       UpdateTaskActionV1Schema.safeParse({
         type: "transition_status",
         to: "created",
+      }).success,
+    ).toBe(false);
+    expect(
+      UpdateTaskActionV1Schema.safeParse({
+        type: "transition_status",
+        to: "verified",
+        verificationRecordId: "verification-1",
       }).success,
     ).toBe(false);
   });

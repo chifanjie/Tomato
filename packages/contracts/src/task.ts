@@ -531,6 +531,7 @@ const ConfirmUnknownActionV1Schema = z.strictObject({
 const TransitionStatusActionV1Schema = z.strictObject({
   type: z.literal("transition_status"),
   to: TaskTransitionTargetV1Schema,
+  verificationRecordId: VerificationRecordIdSchema.optional(),
 });
 
 const AcceptFindingActionV1Schema = z.strictObject({
@@ -587,7 +588,20 @@ export const UpdateTaskActionV1Schema = z.discriminatedUnion("type", [
   RebaseTaskActionV1Schema,
   SupersedeTaskActionV1Schema,
   AcceptVerificationSkipActionV1Schema,
-]);
+]).superRefine((action, context) => {
+  if (
+    action.type === "transition_status" &&
+    action.verificationRecordId !== undefined &&
+    action.to !== "in_progress"
+  ) {
+    context.addIssue({
+      code: "custom",
+      message:
+        "verificationRecordId is only valid when transitioning to in_progress",
+      path: ["verificationRecordId"],
+    });
+  }
+});
 
 export type UpdateTaskActionV1 = z.infer<typeof UpdateTaskActionV1Schema>;
 

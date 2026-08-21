@@ -1294,6 +1294,26 @@ describe("TaskEngine persistent integration", () => {
     );
     expect(resumed.task).toMatchObject({ revision: 8, status: "planned" });
 
+    await expect(
+      taskEngine.updateTask(
+        {
+          taskId,
+          action: {
+            type: "transition_status",
+            to: "in_progress",
+            verificationRecordId: "verification:unrelated",
+          },
+          expectedRevision: 8,
+          idempotencyKey: "transition-in-progress-unrelated-verification",
+          actor: ACTOR,
+        },
+        auth(),
+      ),
+    ).rejects.toMatchObject({
+      code: "task_transition_rejected",
+      details: { guard: "transition_not_allowed" },
+    });
+
     const inProgress = await taskEngine.updateTask(
       {
         taskId,
@@ -1438,6 +1458,7 @@ describe("TaskEngine persistent integration", () => {
         action: {
           type: "transition_status",
           to: "in_progress",
+          verificationRecordId: previousVerificationId,
         },
         expectedRevision: verifiedProjection.bundle.manifest.revision,
         idempotencyKey: "actual-resume-after-failed-verification",
@@ -3232,5 +3253,158 @@ describe("TaskEngine persistent integration", () => {
         auth(["task:update"]),
       ),
     ).rejects.toMatchObject({ code: "task_gate_unsatisfied" });
+
+    const passed = await taskEngine.recordVerification(
+      {
+        ...verificationInput,
+        record: {
+          ...verificationInput.record,
+          supersedesVerificationRecordId: recorded.verification.id,
+          status: "passed",
+          exitCode: 0,
+          summary: "Focused verification recovery passed.",
+        },
+        expectedRevision: recorded.mutation.revision,
+        idempotencyKey: "ci-verification-recovered",
+      },
+      auth(["task:update"]),
+    );
+    expect(passed.verification).toMatchObject({
+      attempt: 2,
+      status: "passed",
+      supersedesVerificationRecordId: recorded.verification.id,
+    });
+
+    for (const [name, verificationRecordId] of [
+      ["missing", undefined],
+      ["superseded", recorded.verification.id],
+      ["passed", passed.verification.id],
+    ] as const) {
+      await expect(
+        taskEngine.updateTask(
+          {
+            taskId,
+            action: {
+              type: "transition_status",
+              to: "in_progress",
+              ...(verificationRecordId === undefined
+                ? {}
+                : { verificationRecordId }),
+            },
+            expectedRevision: passed.mutation.revision,
+            idempotencyKey: `ci-verification-recovery-${name}`,
+            actor: ACTOR,
+          },
+          auth(),
+        ),
+      ).rejects.toMatchObject({ code: "task_gate_unsatisfied" });
+    }
+
+    const current = await store.readTaskBundle(taskId);
+    if (!("brief" in current.bundle)) {
+      throw new TypeError("The recovery fixture must remain contextual.");
+    }
+    const coveredClaim = current.bundle.claims.find(
+      (claim) => claim.id === planEntry.acceptanceClaimIds[0],
+    );
+    if (coveredClaim === undefined) {
+      throw new TypeError("The recovery fixture requires an acceptance Claim.");
+    }
+    const additionalClaim = ClaimV1Schema.parse({
+      ...coveredClaim,
+      id: "claim:verification-additional-acceptance",
+      statement:
+        "The recovered Verification must cover an additional acceptance criterion.",
+      verificationRecordIds: [],
+    });
+    const incompleteCoverageRead: ReadTaskBundleResult = {
+      ...current,
+      bundle: {
+        ...current.bundle,
+        brief: {
+          ...current.bundle.brief,
+          acceptanceClaimIds: [
+            ...current.bundle.brief.acceptanceClaimIds,
+            additionalClaim.id,
+          ],
+          verificationPlan: current.bundle.brief.verificationPlan.map((entry) =>
+            entry.id === planEntry.id
+              ? {
+                  ...entry,
+                  acceptanceClaimIds: [
+                    ...entry.acceptanceClaimIds,
+                    additionalClaim.id,
+                  ],
+                }
+              : entry,
+          ),
+        },
+        claims: [...current.bundle.claims, additionalClaim],
+      },
+    };
+    const expectCoverageRejected = async (
+      read: ReadTaskBundleResult,
+      idempotencyKey: string,
+    ): Promise<void> => {
+      let persistCount = 0;
+      const harness = {
+        worktreeId: store.worktreeId,
+        async readTaskBundle() {
+          return read;
+        },
+        async persistTaskBundle() {
+          persistCount += 1;
+        },
+      } as unknown as ArtifactStore;
+      await expect(
+        applyTaskUpdate(
+          harness,
+          {
+            taskId,
+            action: { type: "transition_status", to: "verified" },
+            expectedRevision: passed.mutation.revision,
+            idempotencyKey,
+            actor: ACTOR,
+          },
+          () => new Date("2026-07-29T09:00:02.000Z"),
+        ),
+      ).rejects.toMatchObject({ code: "task_gate_unsatisfied" });
+      expect(persistCount).toBe(0);
+    };
+    await expectCoverageRejected(
+      incompleteCoverageRead,
+      "ci-verification-incomplete-coverage",
+    );
+
+    const excessCoverageRead: ReadTaskBundleResult = {
+      ...current,
+      bundle: {
+        ...current.bundle,
+        verificationRecords: current.bundle.verificationRecords.map((record) =>
+          record.id === passed.verification.id
+            ? {
+                ...record,
+                claimIds: [...record.claimIds, built.brief.goalClaimId],
+              }
+            : record,
+        ),
+      },
+    };
+    await expectCoverageRejected(
+      excessCoverageRead,
+      "ci-verification-excess-coverage",
+    );
+
+    const verified = await taskEngine.updateTask(
+      {
+        taskId,
+        action: { type: "transition_status", to: "verified" },
+        expectedRevision: passed.mutation.revision,
+        idempotencyKey: "ci-verification-recovery-verified",
+        actor: ACTOR,
+      },
+      auth(),
+    );
+    expect(verified.task.status).toBe("verified");
   }, 10_000);
 });

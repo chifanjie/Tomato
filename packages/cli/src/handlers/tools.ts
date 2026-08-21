@@ -1459,6 +1459,7 @@ const traceReader = (
       readonly verificationPlan: readonly {
         readonly id: string;
         readonly required?: boolean;
+        readonly acceptanceClaimIds: readonly string[];
       }[];
     };
   };
@@ -1515,25 +1516,56 @@ const traceReader = (
           readonly kind: "test" | "build" | "lint" | "manual" | "runtime";
           readonly status: "passed" | "failed" | "skipped" | "blocked" | "flaky";
           readonly claimIds: readonly string[];
+          readonly skipAcceptance?: unknown;
           readonly snapshotId: string;
           readonly recordedAt: string;
         }> }
       | undefined
-  )?.records ?? [];
-  const requiredPlanEntryIds = new Set(
+  )?.records.filter((record) => record.snapshotId === input.snapshotId) ?? [];
+  const requiredPlanEntries = new Map(
     traceBundle.brief?.verificationPlan
       .filter((entry) => entry.required !== false)
-      .map((entry) => entry.id) ?? [],
+      .map((entry) => [entry.id, entry] as const) ?? [],
   );
   const requiredVerificationRecords = verificationRecords.filter((record) =>
-    requiredPlanEntryIds.has(record.verificationPlanEntryId),
+    requiredPlanEntries.has(record.verificationPlanEntryId),
   );
-  const passedCount = requiredVerificationRecords.filter((record) => record.status === "passed").length;
-  const failedCount = requiredVerificationRecords.filter((record) => record.status === "failed").length;
+  const latestRequiredVerificationRecords = new Map<
+    string,
+    (typeof requiredVerificationRecords)[number]
+  >();
+  for (const record of requiredVerificationRecords) {
+    const current = latestRequiredVerificationRecords.get(
+      record.verificationPlanEntryId,
+    );
+    if (current === undefined || current.attempt < record.attempt) {
+      latestRequiredVerificationRecords.set(
+        record.verificationPlanEntryId,
+        record,
+      );
+    }
+  }
+  const latestRequiredAttempts = [...latestRequiredVerificationRecords.values()];
+  const passedCount = latestRequiredAttempts.filter((record) => {
+    const planEntry = requiredPlanEntries.get(record.verificationPlanEntryId)!;
+    const recordClaimIds = new Set(record.claimIds);
+    const hasExactAcceptanceCoverage =
+      recordClaimIds.size === record.claimIds.length &&
+      recordClaimIds.size === planEntry.acceptanceClaimIds.length &&
+      planEntry.acceptanceClaimIds.every((claimId) => recordClaimIds.has(claimId));
+    return hasExactAcceptanceCoverage && (
+      record.status === "passed" ||
+      (record.status === "skipped" && record.skipAcceptance !== undefined)
+    );
+  }).length;
+  const failedCount = latestRequiredAttempts.filter((record) =>
+    record.status === "failed" ||
+    record.status === "blocked" ||
+    record.status === "flaky",
+  ).length;
   const pendingCount = Math.max(
     0,
-    requiredPlanEntryIds.size -
-      new Set(requiredVerificationRecords.map((record) => record.verificationPlanEntryId)).size,
+    requiredPlanEntries.size - passedCount - failedCount,
   );
   const result: WorkbenchTraceResultLike = {
     schemaVersion: 1,
@@ -1588,7 +1620,7 @@ const traceReader = (
         detailStatus: "legacy_redacted",
         disposition: "externally_reported",
       })),
-      requiredCount: requiredPlanEntryIds.size,
+      requiredCount: requiredPlanEntries.size,
       passedCount,
       failedCount,
       pendingCount,

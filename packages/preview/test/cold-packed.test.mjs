@@ -771,6 +771,18 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
         );
       }
     }
+    const dashboardInventory = [...packedFiles.entries()]
+      .filter(([entryPath]) =>
+        entryPath.startsWith("package/dist/dashboard/"),
+      )
+      .map(([entryPath, bytes]) => ({
+        path: entryPath.slice("package/dist/dashboard/".length),
+        sha256: `sha256:${digest(bytes)}`,
+        bytes: bytes.byteLength,
+      }))
+      .sort((left, right) =>
+        left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
+      );
     const releaseManifest = JSON.parse(
       await readFile(path.join(installedPackageRoot, "dist/release-manifest.json"), "utf8"),
     );
@@ -783,6 +795,38 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
         bin: "understand-code-preview",
         path: "dist/bin.mjs",
         sha256: `sha256:${digest(previewEntrypointBytes)}`,
+      },
+      native: {
+        tuple: NATIVE_TUPLE,
+        path: `dist/native/${NATIVE_TUPLE}/provider_kernel_peer.node`,
+        sha256: `sha256:${digest(
+          packedFiles.get(
+            `package/dist/native/${NATIVE_TUPLE}/provider_kernel_peer.node`,
+          ),
+        )}`,
+      },
+      runtime: {
+        productVersion: manifest.version,
+        server: {
+          path: "dist/server.mjs",
+          sha256: `sha256:${digest(
+            packedFiles.get("package/dist/server.mjs"),
+          )}`,
+        },
+        contracts: {
+          path: "dist/contracts.mjs",
+          sha256: `sha256:${digest(
+            packedFiles.get("package/dist/contracts.mjs"),
+          )}`,
+        },
+      },
+      dashboard: {
+        productVersion: manifest.version,
+        root: "dist/dashboard",
+        fileCount: dashboardInventory.length,
+        inventorySha256: `sha256:${digest(
+          Buffer.from(JSON.stringify(dashboardInventory), "utf8"),
+        )}`,
       },
       hostAdapters: {
         codex: {
@@ -1094,6 +1138,94 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
     assert.deepEqual(await stopChild(previewChild, "full-indexed root Preview"), [0, null]);
     previewChild = null;
     await assertPortReleased(liveRootUrl, "full-indexed root Preview");
+
+    const releaseDoctor = await runCliJson(mcpBin, ["doctor"], mcpRoot);
+    assert.deepEqual(
+      {
+        schemaVersion: releaseDoctor.schemaVersion,
+        product: releaseDoctor.product,
+        version: releaseDoctor.version,
+        readiness: releaseDoctor.readiness,
+        releaseReady: releaseDoctor.releaseReady,
+        strongWrites: releaseDoctor.strongWrites,
+        hostRegistration: releaseDoctor.hostRegistration,
+        ok: releaseDoctor.ok,
+        status: releaseDoctor.status,
+      },
+      {
+        schemaVersion: "understand-code-release-doctor-v1",
+        product: "understand-code",
+        version: manifest.version,
+        readiness: "alpha",
+        releaseReady: false,
+        strongWrites: "locked",
+        hostRegistration: "not_checked",
+        ok: true,
+        status: "healthy",
+      },
+    );
+    const releaseDoctorById = new Map(
+      releaseDoctor.checks.map((check) => [check.id, check]),
+    );
+    assert.deepEqual([...releaseDoctorById.keys()], [
+      "node_runtime",
+      "git",
+      "repository_root",
+      "artifact_schema",
+      "loopback_port",
+      "package_metadata",
+      "release_manifest",
+      "bundle_integrity",
+      "native_tuple",
+      "codex_plugin_payload",
+      "claude_plugin_payload",
+      "release_authenticity",
+      "provider_strong_writes",
+    ]);
+    for (const id of [
+      "node_runtime",
+      "git",
+      "repository_root",
+      "artifact_schema",
+      "loopback_port",
+      "package_metadata",
+      "release_manifest",
+      "bundle_integrity",
+      "native_tuple",
+      "codex_plugin_payload",
+      "claude_plugin_payload",
+    ]) {
+      assert.equal(releaseDoctorById.get(id)?.status, "pass", `${id} must pass`);
+    }
+    assert.deepEqual(
+      {
+        status: releaseDoctorById.get("release_authenticity")?.status,
+        code: releaseDoctorById.get("release_authenticity")?.code,
+      },
+      {
+        status: "locked",
+        code: "release_attestation_unavailable",
+      },
+    );
+    assert.deepEqual(
+      {
+        status: releaseDoctorById.get("provider_strong_writes")?.status,
+        code: releaseDoctorById.get("provider_strong_writes")?.code,
+      },
+      {
+        status: "locked",
+        code: "provider_strong_writes_locked",
+      },
+    );
+    const releaseDoctorBytes = JSON.stringify(releaseDoctor);
+    assert.doesNotMatch(
+      releaseDoctorBytes,
+      /"strongWrites"\s*:\s*"(?:enabled|supported|unlocked)"/u,
+    );
+    assert.doesNotMatch(
+      releaseDoctorBytes,
+      new RegExp(mcpRoot.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"),
+    );
 
     const opened = await callTool(
       mcp,

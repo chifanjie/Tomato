@@ -1,4 +1,4 @@
-import { chmod, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -110,14 +110,62 @@ function sha256(bytes) {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
+async function buildDirectoryInventory(root) {
+  const inventory = [];
+  async function walk(current, relativeDirectory) {
+    const metadata = await lstat(current);
+    if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
+      throw new Error("release inventory root must be a real directory");
+    }
+    const entries = await readdir(current, { withFileTypes: true });
+    entries.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) {
+        throw new Error("release inventory must not contain symbolic links");
+      }
+      const relativePath = relativeDirectory === ""
+        ? entry.name
+        : `${relativeDirectory}/${entry.name}`;
+      const absolutePath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        await walk(absolutePath, relativePath);
+        continue;
+      }
+      if (!entry.isFile()) {
+        throw new Error("release inventory must contain only directories and regular files");
+      }
+      const bytes = await readFile(absolutePath);
+      inventory.push({ path: relativePath, sha256: sha256(bytes), bytes: bytes.byteLength });
+    }
+  }
+  await walk(root, "");
+  inventory.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
+  return inventory;
+}
+
 async function writeReleaseMetadata() {
   const cliPath = path.join(distRoot, "understand-code.mjs");
   const previewBinPath = path.join(distRoot, "bin.mjs");
   const hostBinPath = path.join(distRoot, "host-bin.mjs");
-  const [cliBytes, previewBinBytes, hostBinBytes] = await Promise.all([
+  const nativeTuple = `${process.platform}-${process.arch}`;
+  const nativePath =
+    `dist/native/${nativeTuple}/provider_kernel_peer.node`;
+  const [
+    cliBytes,
+    previewBinBytes,
+    hostBinBytes,
+    nativeBytes,
+    serverBytes,
+    contractsBytes,
+    dashboardInventory,
+  ] = await Promise.all([
     readFile(cliPath),
     readFile(previewBinPath),
     readFile(hostBinPath),
+    readFile(path.join(packageRoot, nativePath)),
+    readFile(path.join(distRoot, "server.mjs")),
+    readFile(path.join(distRoot, "contracts.mjs")),
+    buildDirectoryInventory(path.join(distRoot, "dashboard")),
   ]);
   const cli = Object.freeze({
     bin: "understand-code",
@@ -187,6 +235,30 @@ async function writeReleaseMetadata() {
       bin: "understand-code-preview",
       path: "dist/bin.mjs",
       sha256: sha256(previewBinBytes),
+    },
+    native: {
+      tuple: nativeTuple,
+      path: nativePath,
+      sha256: sha256(nativeBytes),
+    },
+    runtime: {
+      productVersion: PRODUCT_VERSION,
+      server: {
+        path: "dist/server.mjs",
+        sha256: sha256(serverBytes),
+      },
+      contracts: {
+        path: "dist/contracts.mjs",
+        sha256: sha256(contractsBytes),
+      },
+    },
+    dashboard: {
+      productVersion: PRODUCT_VERSION,
+      root: "dist/dashboard",
+      fileCount: dashboardInventory.length,
+      inventorySha256: sha256(
+        Buffer.from(JSON.stringify(dashboardInventory), "utf8"),
+      ),
     },
     hostAdapters,
     pluginRoots: {},
@@ -477,7 +549,6 @@ async function main() {
     ),
   ]);
   await buildPluginRoots();
-  await writeReleaseMetadata();
   const demoRoot = path.join(distRoot, "demo/.understand-code");
   await mkdir(path.join(demoRoot, "knowledge-base/参考"), { recursive: true });
   await writeFile(path.join(demoRoot, "knowledge-graph.json"), `${JSON.stringify(validatedGraph, null, 2)}\n`);
@@ -519,6 +590,7 @@ async function main() {
     throw new Error("Preview dashboard theme bootstrap content hash does not match its file name");
   }
   assertExternalScriptOnly(packedIndex, bootstrap.fileName);
+  await writeReleaseMetadata();
   process.stdout.write(`built ${distRoot}\n`);
 }
 

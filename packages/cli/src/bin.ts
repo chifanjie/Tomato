@@ -3,6 +3,7 @@ import { resolveInitialBinding } from "./binding/root-binding.js";
 import { PRODUCT_VERSION } from "./constants.js";
 import { writeDiagnostic } from "./logging/stderr.js";
 import { runStdioServer } from "./mcp/server.js";
+import { runReleaseDoctorV1 } from "./release-doctor.js";
 import { runProviderDoctorV1 } from "./provider/provider-doctor.js";
 import { runProviderRuntimeChildV1 } from "./provider/runtime-child.js";
 import {
@@ -40,6 +41,18 @@ function installationInput(
 async function runInstallation(
   invocation: Extract<Awaited<ReturnType<typeof parseCliArguments>>, { kind: "installation" }>,
 ): Promise<void> {
+  if (
+    invocation.operation === "doctor" &&
+    invocation.root === undefined &&
+    invocation.home === undefined &&
+    invocation.provider !== true &&
+    invocation.providerService !== true
+  ) {
+    const result = await runReleaseDoctorV1();
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    if (!result.ok) process.exitCode = 1;
+    return;
+  }
   const input = installationInput(invocation);
   try {
     if (invocation.operation === "doctor" && invocation.provider === true) {

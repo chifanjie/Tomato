@@ -77,7 +77,9 @@ stops the Host and MCP processes cleanly.
 `dist/host-adapters/{codex,claude}/manifest.json` files, and the two
 `dist/plugin-roots/{codex,claude}` trees bind the package, Preview, CLI, Host
 entrypoint, marketplace/plugin configuration paths, product version, and the
-reviewed payload SHA-256 digests.
+reviewed payload SHA-256 digests. The release manifest also binds the one native
+provider-peer tuple carried by this platform-specific Alpha tgz, the bundled
+Server/contracts runtime, and the exact final Dashboard file inventory.
 They provide Alpha artifact traceability; they are not a signature, SBOM, provenance,
 or formal Release attestation.
 
@@ -90,6 +92,25 @@ does not edit repository source files or unlock strong writes.
 Verification records are externally reported evidence. The Alpha persists and
 replays their command descriptor, exit code, output digest, duration, claims, and
 Snapshot binding; it does not independently execute or attest the reported command.
+
+After `refresh_index` has published Graph, Wiki, Search, and Repo Pulse artifacts,
+run the installed-package Doctor from any directory inside that Git worktree:
+
+```sh
+cd /absolute/path/to/worktree/or/subdirectory
+understand-code doctor
+```
+
+The zero-option Doctor checks Node.js 22+, Git, current worktree binding, published
+Artifact schemas, loopback port availability, package/release metadata, bundled
+executables, the current native tuple, and both self-contained Plugin payloads. It
+prints one redacted JSON report and exits nonzero when a required check fails. The
+report intentionally shows release authenticity and Provider-backed strong writes
+as `locked`; those expected Alpha limitations do not make an otherwise intact
+read-only/check installation unhealthy. Top-level `readiness: "alpha"`,
+`releaseReady: false`, `strongWrites: "locked"`, and
+`hostRegistration: "not_checked"` fields prevent an Alpha-healthy report from
+being interpreted as a formal Release or as proof of Host registration.
 
 For a managed local installation and host wrapper:
 

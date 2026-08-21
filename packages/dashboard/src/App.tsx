@@ -22,7 +22,13 @@ import TaskFirstWorkbench, {
   type TaskFirstRoute,
   type TaskFirstSection,
 } from "./components/taskFirst/TaskFirstWorkbench";
-import { taskFirstRouteFromLocation, taskFirstSectionPath } from "./components/taskFirst/route";
+import {
+  taskFirstLocationStateFromLocation,
+  taskFirstLocationUrl,
+  taskFirstSectionPath,
+  type TaskFirstLocationState,
+  type TaskLocalSurface,
+} from "./components/taskFirst/route";
 import { normalizeLegacyGraphBranding } from "./legacyBranding";
 import { useDashboardStore } from "./store";
 import { ThemeProvider } from "./themes/index.ts";
@@ -43,6 +49,13 @@ import {
   type WikiTarget,
 } from "./wiki/wikiContent";
 import { loadTaskWorkbench, type TaskWorkbenchLoadResult } from "./workbench/taskContextLoader";
+import {
+  COOKIE_WORKBENCH_ACCESS,
+  dashboardFetchInit,
+  isCookieWorkbenchAccess,
+  isCookieWorkbenchLocation,
+  withDashboardAccess,
+} from "./workbench/transport";
 
 const GraphExplorer = lazy(() => import("./components/graphExplorer/GraphExplorer"));
 
@@ -393,7 +406,7 @@ function dataUrl(fileName: string, token: string | null): string {
     if (url) return url;
   }
   const path = `/${fileName}`;
-  return token ? `${path}?token=${encodeURIComponent(token)}` : path;
+  return withDashboardAccess(path, token);
 }
 
 function readStoredToken(): string | null {
@@ -432,6 +445,7 @@ function clearStoredToken(): void {
 
 function resolveInitialToken(): string | null {
   if (DEMO_MODE) return "__demo__";
+  if (isCookieWorkbenchLocation(window.location)) return COOKIE_WORKBENCH_ACCESS;
   const params = new URLSearchParams(window.location.search);
   const urlToken = params.get("token");
   if (!urlToken) return readStoredToken();
@@ -446,21 +460,64 @@ function resolveInitialToken(): string | null {
   return urlToken;
 }
 
-function taskLocationRoute(): TaskFirstRoute | null {
-  return taskFirstRouteFromLocation({
+function taskLocationState(): TaskFirstLocationState | null {
+  return taskFirstLocationStateFromLocation({
     pathname: window.location.pathname,
     search: window.location.search,
   });
+}
+
+interface TaskDashboardContext {
+  readonly route: TaskFirstRoute;
+  readonly surface: Exclude<TaskLocalSurface, "task">;
+  readonly stale: boolean;
+  readonly focusNodeId: string | null;
+  readonly focusUnavailable: boolean;
+  readonly onSelectSurface: (surface: "wiki" | "graph", focus?: string) => void;
+  readonly onSelectWikiTarget: (target: WikiTarget) => void;
+  readonly onSelectedGraphNode: (nodeId: string | null) => void;
+  readonly onBackToFinding: () => void;
+}
+
+function TaskContextBanner({ context }: { readonly context: TaskDashboardContext }) {
+  return (
+    <section
+      className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle bg-surface px-4 py-2 sm:px-6"
+      aria-label="任务上下文"
+      data-testid="task-context-overlay"
+      data-state={context.stale ? "stale" : context.focusUnavailable ? "unavailable" : "ready"}
+    >
+      <div className="min-w-0 text-xs text-text-secondary">
+        <span className="font-semibold text-accent">任务</span>
+        <span className="mx-1" aria-hidden="true">/</span>
+        <span className="font-mono" title={context.route.taskId}>{context.route.taskId}</span>
+        {context.route.findingId && <><span className="mx-1" aria-hidden="true">/</span><span className="font-mono" title={context.route.findingId}>{context.route.findingId}</span></>}
+        {context.route.evidenceId && <><span className="mx-1" aria-hidden="true">/</span><span className="font-mono" title={context.route.evidenceId}>{context.route.evidenceId}</span></>}
+        {context.stale && <span className="ml-2 font-semibold text-warning">已过期</span>}
+        {!context.stale && context.focusUnavailable && <span className="ml-2 font-semibold text-warning">目标不可用</span>}
+      </div>
+      <button
+        type="button"
+        onClick={context.onBackToFinding}
+        className="min-h-11 rounded-md border border-accent/35 bg-accent/10 px-3 py-2 text-sm font-semibold text-accent"
+        data-testid="workbench-back-to-task"
+      >
+        返回任务发现
+      </button>
+    </section>
+  );
 }
 
 function TaskFirstDashboard({
   accessToken,
   onTokenInvalid,
   route,
+  surface,
 }: {
   readonly accessToken: string;
   readonly onTokenInvalid: () => void;
   readonly route: TaskFirstRoute;
+  readonly surface: TaskLocalSurface;
 }) {
   const [loadState, setLoadState] = useState<{
     readonly loading: boolean;
@@ -485,24 +542,54 @@ function TaskFirstDashboard({
     return () => {
       cancelled = true;
     };
-  }, [accessToken, onTokenInvalid, route]);
+  }, [accessToken, onTokenInvalid, route.evidenceId, route.section, route.taskId]);
 
   useEffect(() => load(), [load]);
 
-  const navigateToSurface = useCallback((surface: "knowledge" | "graph") => {
-    const target = surface === "graph" ? "/#graph" : "/#wiki";
+  const cookieMode = isCookieWorkbenchAccess(accessToken);
+  const navigate = useCallback((nextRoute: TaskFirstRoute, nextSurface: TaskLocalSurface) => {
+    const target = taskFirstLocationUrl(
+      { route: nextRoute, surface: nextSurface },
+      { workbenchCookieMode: cookieMode },
+    );
     window.history.pushState(null, "", target);
     window.dispatchEvent(new Event("popstate"));
-  }, []);
+  }, [cookieMode]);
+
+  const navigateToSurface = useCallback((nextSurface: "wiki" | "graph", nextRoute: TaskFirstRoute, focus?: string) => {
+    const { focus: _oldFocus, ...routeWithoutFocus } = nextRoute;
+    navigate({
+      ...routeWithoutFocus,
+      ...(focus ? { focus } : {}),
+    }, nextSurface);
+  }, [navigate]);
 
   const selectSection = useCallback((section: TaskFirstSection) => {
     if (!route.taskId) return;
-    const params = new URLSearchParams();
-    params.set("section", taskFirstSectionPath(section));
-    const target = `/tasks/${encodeURIComponent(route.taskId)}?${params.toString()}`;
-    window.history.pushState(null, "", target);
-    window.dispatchEvent(new Event("popstate"));
-  }, [route.taskId]);
+    const contractSection = taskFirstSectionPath(section);
+    navigate({
+      view: "tasks",
+      taskId: route.taskId,
+      section: contractSection,
+      ...(contractSection === "planned_changes" && route.findingId ? { findingId: route.findingId } : {}),
+    }, "task");
+  }, [navigate, route.findingId, route.taskId]);
+
+  const selectFinding = useCallback((findingId: string) => {
+    if (!route.taskId) return;
+    navigate({ view: "tasks", taskId: route.taskId, section: "planned_changes", findingId }, "task");
+  }, [navigate, route.taskId]);
+
+  const openEvidence = useCallback((findingId: string | undefined, evidenceId: string) => {
+    if (!route.taskId) return;
+    navigate({
+      view: "tasks",
+      taskId: route.taskId,
+      section: "planned_changes",
+      ...(findingId ? { findingId } : {}),
+      evidenceId,
+    }, "task");
+  }, [navigate, route.taskId]);
 
   const result = loadState.result;
   const payload = result?.status === "ready" ? result.payload : undefined;
@@ -517,6 +604,46 @@ function TaskFirstDashboard({
   const pulseStatus = payload?.pulse?.status
     ?? (result?.status === "error" ? "error" : result?.status === "stale" ? "stale" : "not_ready");
 
+  const focusNodeId = surface === "graph" && route.focus && payload && !stale
+    ? route.focus
+    : null;
+  const focusUnavailable = Boolean(
+    route.focus && (!payload || stale),
+  );
+  const backToFinding = useCallback(() => {
+    if (!route.taskId) return;
+    navigate({
+      view: "tasks",
+      taskId: route.taskId,
+      section: "planned_changes",
+      ...(route.findingId ? { findingId: route.findingId } : {}),
+    }, "task");
+  }, [navigate, route.findingId, route.taskId]);
+
+  const taskContext = useMemo<TaskDashboardContext | null>(() => (
+    surface === "task" ? null : {
+      route,
+      surface,
+      stale: Boolean(stale),
+      focusNodeId,
+      focusUnavailable,
+      onSelectSurface: (nextSurface, focus) => navigateToSurface(nextSurface, route, focus),
+      onSelectWikiTarget: (target) => navigateToSurface("wiki", route, target.pageId),
+      onSelectedGraphNode: (nodeId) => navigateToSurface("graph", route, nodeId ?? undefined),
+      onBackToFinding: backToFinding,
+    }
+  ), [backToFinding, focusNodeId, focusUnavailable, navigateToSurface, route, stale, surface]);
+
+  if (taskContext) {
+    return (
+      <Dashboard
+        accessToken={accessToken}
+        onTokenInvalid={onTokenInvalid}
+        taskContext={taskContext}
+      />
+    );
+  }
+
   return (
     <TaskFirstWorkbench
       route={route}
@@ -526,28 +653,38 @@ function TaskFirstDashboard({
       loading={loadState.loading}
       error={error}
       stale={stale}
+      sourceSnapshotId={payload?.freshness.sourceSnapshotId}
       changeCheck={payload?.changeCheck.value}
       changeCheckStatus={payload?.changeCheck.status}
       changeCheckMessage={payload?.changeCheck.message}
       verificationRecords={payload?.verification.value}
       verificationStatus={payload?.verification.status}
       verificationMessage={payload?.verification.message}
+      evidence={payload?.evidence}
       onRetry={load}
       onSelectSection={selectSection}
-      onOpenKnowledge={(nextRoute) => navigateToSurface(nextRoute.view === "knowledge" ? "knowledge" : "graph")}
-      onOpenGraph={(nextRoute) => navigateToSurface(nextRoute.view === "graph" ? "graph" : "knowledge")}
+      onSelectFinding={selectFinding}
+      onOpenEvidence={openEvidence}
+      onOpenEvidenceGraph={(nodeId) => navigateToSurface("graph", route, nodeId)}
+      onOpenKnowledge={(nextRoute) => navigateToSurface("wiki", nextRoute)}
+      onOpenGraph={(nextRoute) => navigateToSurface("graph", nextRoute)}
     />
   );
 }
 
 function App() {
   const [accessToken, setAccessToken] = useState<string | null>(resolveInitialToken);
+  const [cookieSessionExpired, setCookieSessionExpired] = useState(false);
   const [locationRevision, setLocationRevision] = useState(0);
   const handleTokenValid = useCallback((token: string) => {
     writeStoredToken(token);
     setAccessToken(token);
   }, []);
   const handleTokenInvalid = useCallback(() => {
+    if (isCookieWorkbenchLocation(window.location)) {
+      setCookieSessionExpired(true);
+      return;
+    }
     clearStoredToken();
     setAccessToken(null);
   }, []);
@@ -562,18 +699,29 @@ function App() {
     };
   }, []);
 
-  const taskRoute = useMemo(taskLocationRoute, [locationRevision]);
+  const taskLocation = useMemo(taskLocationState, [locationRevision]);
 
   if (DEMO_MODE) {
     return <Dashboard accessToken="__demo__" onTokenInvalid={handleTokenInvalid} />;
   }
+  if (cookieSessionExpired) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-root px-5 text-text-primary">
+        <section className="uc-panel max-w-lg p-6 text-center" role="alert" data-testid="workbench-session-expired">
+          <h1 className="text-xl font-semibold">工作台会话已过期</h1>
+          <p className="mt-3 text-sm leading-6 text-text-secondary">请从宿主智能体重新打开工作台链接。本页面不会保存启动令牌。</p>
+        </section>
+      </main>
+    );
+  }
   if (accessToken === null) return <TokenGate onTokenValid={handleTokenValid} />;
-  if (taskRoute) {
+  if (taskLocation) {
     return (
       <TaskFirstDashboard
         accessToken={accessToken}
         onTokenInvalid={handleTokenInvalid}
-        route={taskRoute}
+        route={taskLocation.route}
+        surface={taskLocation.surface}
       />
     );
   }
@@ -588,9 +736,11 @@ export const GRAPH_LOAD_ERROR_COPY = {
 function Dashboard({
   accessToken,
   onTokenInvalid,
+  taskContext,
 }: {
   accessToken: string;
   onTokenInvalid: () => void;
+  taskContext?: TaskDashboardContext;
 }) {
   const setConsoleGraph = useDashboardStore((state) => state.setConsoleGraph);
   const setWikiIndex = useDashboardStore((state) => state.setWikiIndex);
@@ -629,9 +779,9 @@ function Dashboard({
 
   useEffect(() => {
     let cancelled = false;
-    void fetch(dataUrl("knowledge-graph.json", accessToken))
+    void fetch(dataUrl("knowledge-graph.json", accessToken), dashboardFetchInit(accessToken))
       .then((response) => {
-        if (response.status === 403) {
+        if (response.status === 401 || response.status === 403) {
           onTokenInvalid();
           throw new Error("TOKEN_INVALID");
         }
@@ -669,6 +819,7 @@ function Dashboard({
             loadError={loadError}
             graphIssues={graphIssues}
             wikiAvailability={wikiAvailability}
+            taskContext={taskContext}
           />
         </ThemeProvider>
       )}
@@ -682,12 +833,14 @@ function DashboardContent({
   loadError,
   graphIssues,
   wikiAvailability,
+  taskContext,
 }: {
   accessToken: string;
   onTokenInvalid: () => void;
   loadError: string | null;
   graphIssues: GraphIssue[];
   wikiAvailability: WikiAvailabilityStatus;
+  taskContext?: TaskDashboardContext;
 }) {
   const graph = useDashboardStore((state) => state.graph);
   const dashboardSurface = useDashboardStore((state) => state.dashboardSurface);
@@ -731,7 +884,19 @@ function DashboardContent({
     ],
   );
 
-  useEffect(() => routingController.start(), [routingController]);
+  useEffect(() => {
+    if (taskContext) return undefined;
+    return routingController.start();
+  }, [routingController, taskContext]);
+
+  useEffect(() => {
+    if (!taskContext) return;
+    setDashboardSurface(taskContext.surface);
+    if (taskContext.surface !== "wiki" || taskContext.stale || !taskContext.route.focus) return;
+    if (wikiIndex.pagesById.has(taskContext.route.focus)) {
+      openWikiTarget({ pageId: taskContext.route.focus });
+    }
+  }, [openWikiTarget, setDashboardSurface, taskContext, wikiIndex]);
 
   useEffect(() => {
     searchControllerRef.current.reset(accessToken);
@@ -797,8 +962,58 @@ function DashboardContent({
   }, [requestGlobalSearch]);
 
   const selectSearchTarget = useCallback((target: WikiTarget) => {
+    if (taskContext) {
+      if (!wikiIndex.pagesById.has(target.pageId)) return;
+      openWikiTarget(target);
+      taskContext.onSelectWikiTarget(target);
+      setSearchOpen(false);
+      return;
+    }
     if (routingController.selectWikiTarget(target)) setSearchOpen(false);
-  }, [routingController]);
+  }, [openWikiTarget, routingController, taskContext, wikiIndex]);
+
+  const selectSurface = useCallback((surface: "wiki" | "graph") => {
+    if (!taskContext) {
+      routingController.selectSurface(surface);
+      return;
+    }
+    setDashboardSurface(surface);
+    taskContext.onSelectSurface(surface);
+  }, [routingController, setDashboardSurface, taskContext]);
+
+  const selectWikiTarget = useCallback((target: WikiTarget): boolean => {
+    if (!taskContext) return routingController.selectWikiTarget(target);
+    if (!wikiIndex.pagesById.has(target.pageId)) return false;
+    openWikiTarget(target);
+    taskContext.onSelectWikiTarget(target);
+    return true;
+  }, [openWikiTarget, routingController, taskContext, wikiIndex]);
+
+  const selectWikiHome = useCallback(() => {
+    if (!taskContext) {
+      routingController.selectWikiHome();
+      return;
+    }
+    selectWikiPage(null);
+    taskContext.onSelectSurface("wiki");
+  }, [routingController, selectWikiPage, taskContext]);
+
+  const selectGraphForWikiPage = useCallback((pageId: string) => {
+    if (!taskContext) return routingController.selectGraphForWikiPage(pageId);
+    const page = wikiIndex.pagesById.get(pageId);
+    if (!page) return false;
+    openGraphForWikiPage(pageId);
+    taskContext.onSelectSurface("graph", page.directNodeIds[0]);
+    return true;
+  }, [openGraphForWikiPage, routingController, taskContext, wikiIndex]);
+
+  const taskWikiTargetUnavailable = Boolean(
+    taskContext?.surface === "wiki"
+    && taskContext.route.focus
+    && !taskContext.stale
+    && wikiAvailability === "ready"
+    && !wikiIndex.pagesById.has(taskContext.route.focus),
+  );
 
   return (
     <div className="h-screen w-screen flex flex-col bg-root text-text-primary">
@@ -807,9 +1022,16 @@ function DashboardContent({
         activeSurface={dashboardSurface}
         searchButtonRef={searchButtonRef}
         themeInert={wikiDrawerOpen || searchOpen}
-        onSelectSurface={routingController.selectSurface}
+        onSelectSurface={selectSurface}
         onRequestSearch={requestGlobalSearch}
       />
+
+      {taskContext && !taskContext.stale && <TaskContextBanner context={taskContext} />}
+      {taskWikiTargetUnavailable && (
+        <div className="uc-status-banner" data-severity="warning" role="status">
+          当前快照中不存在任务关联的 Wiki 页面。
+        </div>
+      )}
 
       {graphIssues.length > 0 && !loadError && <WarningBanner issues={graphIssues} />}
       {loadError && (
@@ -830,12 +1052,12 @@ function DashboardContent({
           ) : wikiAvailability === "ready" ? (
             <KnowledgeConsole
               onSelectWikiPage={(pageId) => {
-                if (pageId) routingController.selectWikiTarget({ pageId });
-                else routingController.selectWikiHome();
+                if (pageId) selectWikiTarget({ pageId });
+                else selectWikiHome();
               }}
-              onSelectWikiTarget={(target) => routingController.selectWikiTarget(target)}
-              onOpenGraphHome={() => routingController.selectSurface("graph")}
-              onOpenGraphForPage={(pageId) => routingController.selectGraphForWikiPage(pageId)}
+              onSelectWikiTarget={(target) => selectWikiTarget(target)}
+              onOpenGraphHome={() => selectSurface("graph")}
+              onOpenGraphForPage={selectGraphForWikiPage}
               externalModalOpen={searchOpen}
               onDrawerOpenChange={setWikiDrawerOpen}
               wikiNavigationRevision={wikiNavigationRevision}
@@ -844,7 +1066,7 @@ function DashboardContent({
             <WikiAvailabilityView status={wikiAvailability} />
           )
         ) : (
-          <GraphChunkErrorBoundary onBackToWiki={() => routingController.selectSurface("wiki")}>
+          <GraphChunkErrorBoundary onBackToWiki={() => selectSurface("wiki")}>
             <Suspense
               fallback={(
                 <main
@@ -856,8 +1078,10 @@ function DashboardContent({
               )}
             >
               <GraphExplorer
-                onSelectWikiTarget={(target) => routingController.selectWikiTarget(target)}
+                onSelectWikiTarget={(target) => selectWikiTarget(target)}
                 onRequestGlobalSearch={requestGlobalSearch}
+                focusNodeId={taskContext?.stale ? null : taskContext?.focusNodeId}
+                onSelectedNodeChange={taskContext?.onSelectedGraphNode}
               />
             </Suspense>
           </GraphChunkErrorBoundary>

@@ -35,6 +35,8 @@ import {
 interface GraphExplorerProps {
   onSelectWikiTarget: (target: WikiTarget) => unknown;
   onRequestGlobalSearch: () => void;
+  focusNodeId?: string | null;
+  onSelectedNodeChange?: (nodeId: string | null) => void;
 }
 
 const OVERVIEW_NAVIGATION: GraphExplorerNavigation = { level: "overview" };
@@ -212,6 +214,8 @@ export function shouldClearVisibleSelectionProvenance(
 export default function GraphExplorer({
   onSelectWikiTarget,
   onRequestGlobalSearch,
+  focusNodeId = null,
+  onSelectedNodeChange,
 }: GraphExplorerProps) {
   const graph = useDashboardStore((state) => state.graph);
   const wikiIndex = useDashboardStore((state) => state.wikiIndex);
@@ -252,6 +256,7 @@ export default function GraphExplorer({
   const handledLayoutReadyRequestIdRef = useRef<number | null>(null);
   const failedMaterializationRequestIdRef = useRef<number | null>(null);
   const lastAppliedGraphFocusRevisionRef = useRef(0);
+  const lastAppliedTaskFocusRef = useRef<string | null>(null);
   const previousGraphFocusPageIdRef = useRef<string | null>(null);
   const previousEffectiveModeRef = useRef<GraphExplorerDisplayMode | null>(null);
   const selectedNavigationSnapshotRef = useRef<{
@@ -562,6 +567,25 @@ export default function GraphExplorer({
     selectNode(null);
   }, [clearVisibleSelectionProvenance, selectNode]);
 
+  useEffect(() => {
+    if (!focusNodeId || lastAppliedTaskFocusRef.current === focusNodeId) return;
+    const intent = navigationIntentById.get(focusNodeId);
+    if (intent) {
+      lastAppliedTaskFocusRef.current = focusNodeId;
+      applyNavigationIntent(intent);
+      return;
+    }
+    if (!graph) return;
+    lastAppliedTaskFocusRef.current = focusNodeId;
+    setWikiFocusNotice("任务证据引用的图谱节点当前不可用。");
+    selectNode(null);
+  }, [applyNavigationIntent, focusNodeId, graph, navigationIntentById, selectNode]);
+
+  useEffect(() => {
+    if (focusNodeId) return;
+    lastAppliedTaskFocusRef.current = null;
+  }, [focusNodeId]);
+
   const selectVisibleNode = useCallback((nodeId: string | null) => {
     const isVisible = Boolean(
       nodeId && view?.semanticGraph.nodes.some((node) => node.id === nodeId),
@@ -572,7 +596,8 @@ export default function GraphExplorer({
     setVisibleSelectionContextKey(isVisible ? selectionContextKeyFor(null) : null);
     setInspectorOpen(nodeId !== null);
     selectNode(nodeId);
-  }, [selectNode, selectionContextKeyFor, view]);
+    onSelectedNodeChange?.(nodeId);
+  }, [onSelectedNodeChange, selectNode, selectionContextKeyFor, view]);
 
   const clearSelection = useCallback(() => {
     setPendingNavigationRequest(null);
@@ -582,7 +607,8 @@ export default function GraphExplorer({
     setReportedSelectedScreenBounds(null);
     setInspectorOpen(false);
     selectNode(null);
-  }, [selectNode]);
+    onSelectedNodeChange?.(null);
+  }, [onSelectedNodeChange, selectNode]);
   const handleGraphQuickJumpOpenRequest = useCallback((handledRequestId: number) => {
     setQuickJumpOpenRequestId((currentRequestId) =>
       currentRequestId === handledRequestId ? 0 : currentRequestId);

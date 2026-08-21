@@ -175,7 +175,13 @@ describe("open_workbench MCP vertical", () => {
     expect(cookie).toContain("workbench_session=");
     const taskResponse = await fetch(
       new URL(`/tasks/${encodeURIComponent(taskId)}`, deepLink),
-      { headers: { connection: "close", cookie: cookie! } },
+      {
+        headers: {
+          accept: "application/json",
+          connection: "close",
+          cookie: cookie!,
+        },
+      },
     );
     expect(taskResponse.status).toBe(200);
     await expect(taskResponse.json()).resolves.toMatchObject({
@@ -186,7 +192,25 @@ describe("open_workbench MCP vertical", () => {
     });
     expect(htmlResponse.status).toBe(200);
     expect(htmlResponse.headers.get("content-type")).toContain("text/html");
-    await expect(htmlResponse.text()).resolves.toContain("/__workbench/app.js");
+    const workbenchHtml = await htmlResponse.text();
+    expect(workbenchHtml).toContain("/assets/");
+    expect(workbenchHtml).not.toContain("/__workbench/app.js");
+    const reactTaskResponse = await fetch(
+      new URL(`/tasks/${encodeURIComponent(taskId)}`, deepLink),
+      { headers: { connection: "close", cookie: cookie! } },
+    );
+    expect(reactTaskResponse.status).toBe(200);
+    expect(reactTaskResponse.headers.get("content-type")).toContain("text/html");
+    expect(await reactTaskResponse.text()).toBe(workbenchHtml);
+    const dashboardGraphResponse = await fetch(
+      new URL("/knowledge-graph.json", deepLink),
+      { headers: { connection: "close", cookie: cookie! } },
+    );
+    expect(dashboardGraphResponse.status).toBe(200);
+    await expect(dashboardGraphResponse.json()).resolves.toMatchObject({
+      nodes: expect.any(Array),
+      edges: expect.any(Array),
+    });
     const briefResponse = await fetch(
       new URL("/__workbench/task-brief?section=summary", deepLink),
       { headers: { connection: "close", cookie: cookie! } },

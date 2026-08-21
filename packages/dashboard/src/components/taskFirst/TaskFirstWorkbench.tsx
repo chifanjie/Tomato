@@ -11,6 +11,11 @@ import type {
   VerificationRecordV1,
   WorkbenchRouteV1,
 } from "@understand-code/contracts";
+import type {
+  TaskArtifactLoadResult,
+  TaskEvidenceProjection,
+} from "../../workbench/taskContextLoader";
+import TaskEvidencePanel from "./TaskEvidencePanel";
 
 export type TaskArtifactSurfaceStatus =
   | "ready"
@@ -73,6 +78,8 @@ export interface TaskFirstWorkbenchProps {
   readonly loading?: boolean;
   readonly error?: string | Error | null;
   readonly stale?: TaskFirstStaleState;
+  readonly sourceSnapshotId?: string;
+  readonly observedSnapshotId?: string;
   /** Persisted read-only Change Intelligence projections. */
   readonly changeCheck?: ChangeCheckV1 | null;
   readonly changeCheckStatus?: TaskArtifactSurfaceStatus;
@@ -80,8 +87,12 @@ export interface TaskFirstWorkbenchProps {
   readonly verificationRecords?: readonly VerificationRecordV1[] | null;
   readonly verificationStatus?: TaskArtifactSurfaceStatus;
   readonly verificationMessage?: string | null;
+  readonly evidence?: TaskArtifactLoadResult<TaskEvidenceProjection>;
   readonly onRetry?: () => void;
   readonly onSelectSection?: (section: TaskFirstSection) => void;
+  readonly onSelectFinding?: (findingId: string) => void;
+  readonly onOpenEvidence?: (findingId: string | undefined, evidenceId: string) => void;
+  readonly onOpenEvidenceGraph?: (nodeId: string) => void;
   readonly onOpenKnowledge?: (route: TaskFirstRoute) => void;
   readonly onOpenGraph?: (route: TaskFirstRoute) => void;
   /** Optional host-provided content for a future evidence rail. */
@@ -124,6 +135,8 @@ const TASK_LABELS: Record<TaskStatusV1, string> = {
   superseded: "Superseded / 已替代",
 };
 
+const PASSED_VERIFICATION_STATUS: VerificationRecordV1["status"] = "passed";
+
 function pageResult(page: TaskBriefPage | null | undefined): TaskBriefPageResult | null {
   if (!page) return null;
   if ("result" in page) return page.result;
@@ -154,11 +167,13 @@ function errorMessage(error: string | Error | null | undefined): string | null {
   return typeof error === "string" ? error : error.message;
 }
 
-function routeFor(view: "knowledge" | "graph", route: TaskFirstRoute): TaskFirstRoute {
-  const { findingId, evidenceId, ...safeRoute } = route;
+function routeFor(_view: "knowledge" | "graph", route: TaskFirstRoute): TaskFirstRoute {
+  const { focus: _focus, ...taskRoute } = route;
   return {
-    ...safeRoute,
-    view,
+    ...taskRoute,
+    // Graph/Wiki are local Task surfaces. The shared authority route must stay
+    // `tasks` so finding/evidence identifiers remain Task-bound.
+    view: "tasks",
   };
 }
 
@@ -275,10 +290,18 @@ function ChangeCheckCard({
   check,
   status = "missing",
   message,
+  selectedFindingId,
+  selectedEvidenceId,
+  onSelectFinding,
+  onOpenEvidence,
 }: {
   readonly check?: ChangeCheckV1 | null;
   readonly status?: TaskArtifactSurfaceStatus;
   readonly message?: string | null;
+  readonly selectedFindingId?: string;
+  readonly selectedEvidenceId?: string;
+  readonly onSelectFinding?: (findingId: string) => void;
+  readonly onOpenEvidence?: (findingId: string, evidenceId: string) => void;
 }) {
   const resolvedStatus = check ? "ready" : status;
   const findings = check?.findings ?? [];
@@ -304,16 +327,47 @@ function ChangeCheckCard({
             <div><dt>Blocking</dt><dd className="mt-1 text-text-primary">{blocking}</dd></div>
           </dl>
           {findings.length > 0 ? (
-            <ul className="mt-4 space-y-2" aria-label="Change Check findings">
-              {findings.map((finding) => (
-                <li key={finding.id} className="rounded border border-border-subtle bg-surface/60 px-3 py-2">
+            <ul className="mt-4 space-y-2" aria-label="Change Check findings" data-testid="task-change-findings">
+              {findings.map((finding) => {
+                const selected = selectedFindingId === finding.id;
+                return (
+                <li key={finding.id} className={`rounded border px-3 py-2 ${selected ? "border-accent/45 bg-accent/10" : "border-border-subtle bg-surface/60"}`}>
                   <div className="flex flex-wrap items-start justify-between gap-2">
-                    <p className="text-sm font-medium text-text-primary">{finding.summary}</p>
+                    <button
+                      type="button"
+                      onClick={() => onSelectFinding?.(finding.id)}
+                      disabled={!onSelectFinding}
+                      aria-current={selected ? "true" : undefined}
+                      className="min-h-11 min-w-0 flex-1 rounded px-1 py-1 text-left text-sm font-medium text-text-primary disabled:cursor-default"
+                      data-testid="task-finding-open"
+                      data-finding-id={finding.id}
+                    >
+                      {finding.summary}
+                    </button>
                     <span className="text-xs text-text-muted">{finding.type.replace(/_/g, " ")} · {finding.severity}</span>
                   </div>
                   {finding.blocking && <p className="mt-1 text-xs font-semibold text-danger">Blocking / 阻断</p>}
+                  {selected && finding.evidenceIds.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2" aria-label="Finding evidence / 发现项证据">
+                      {finding.evidenceIds.map((evidenceId) => (
+                        <button
+                          key={evidenceId}
+                          type="button"
+                          onClick={() => onOpenEvidence?.(finding.id, evidenceId)}
+                          disabled={!onOpenEvidence}
+                          aria-pressed={selectedEvidenceId === evidenceId}
+                          className="min-h-11 rounded border border-border-medium px-2.5 py-2 text-left font-mono text-xs text-accent hover:bg-accent/10 disabled:cursor-default"
+                          data-testid="task-evidence-open"
+                          data-evidence-id={evidenceId}
+                        >
+                          {evidenceId}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </li>
-              ))}
+                );
+              })}
             </ul>
           ) : (
             <p className="mt-4 text-sm text-text-muted">No findings were recorded. / 未记录变更发现。</p>
@@ -345,7 +399,7 @@ function VerificationCard({
 }) {
   const resolvedStatus = records ? "ready" : status;
   const entries = records ?? [];
-  const passed = entries.filter((record) => record.status === "passed").length;
+  const passed = entries.filter((record) => record.status === PASSED_VERIFICATION_STATUS).length;
   return (
     <section className="mb-5 rounded-md border border-border-subtle bg-elevated/20 p-4" data-testid="task-verification-records">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -472,14 +526,20 @@ export function TaskFirstWorkbench({
   loading = false,
   error = null,
   stale = false,
+  sourceSnapshotId,
+  observedSnapshotId,
   changeCheck,
   changeCheckStatus = "missing",
   changeCheckMessage,
   verificationRecords,
   verificationStatus = "missing",
   verificationMessage,
+  evidence = { status: "missing" },
   onRetry,
   onSelectSection,
+  onSelectFinding,
+  onOpenEvidence,
+  onOpenEvidenceGraph,
   onOpenKnowledge,
   onOpenGraph,
   children,
@@ -491,10 +551,13 @@ export function TaskFirstWorkbench({
   const [localSection, setLocalSection] = useState<TaskFirstSection>(section);
   useEffect(() => setLocalSection(section), [section]);
   const activeSectionId = onSelectSection ? section : localSection;
-  const staleCopy = staleMessage(stale)
-    ?? (status === "stale" ? "The repository pulse is stale; reload before treating evidence as current. / 仓库状态已过期，请重新加载后再视为当前事实。" : null);
+  const staleCopy = staleMessage(stale);
   const failure = errorMessage(error);
   const activeSection = SECTION_ITEMS.find((item) => item.id === activeSectionId) ?? SECTION_ITEMS[0];
+  const selectedFinding = changeCheck?.findings.find((finding) => finding.id === route.findingId);
+  const selectedEvidenceIsRelated = route.evidenceId !== undefined && (
+    selectedFinding ? selectedFinding.evidenceIds.includes(route.evidenceId) : route.findingId === undefined
+  );
 
   const renderPage = () => {
     if (loading) return <StatePanel state="loading" />;
@@ -504,7 +567,24 @@ export function TaskFirstWorkbench({
     if (activeSection.id === "changes") {
       return (
         <>
-          <ChangeCheckCard check={changeCheck} status={changeCheckStatus} message={changeCheckMessage} />
+          <ChangeCheckCard
+            check={changeCheck}
+            status={changeCheckStatus}
+            message={changeCheckMessage}
+            selectedFindingId={route.findingId}
+            selectedEvidenceId={route.evidenceId}
+            onSelectFinding={onSelectFinding}
+            onOpenEvidence={(findingId, evidenceId) => onOpenEvidence?.(findingId, evidenceId)}
+          />
+          {route.evidenceId && (
+            <TaskEvidencePanel
+              evidenceId={route.evidenceId}
+              result={evidence}
+              relationValid={selectedEvidenceIsRelated}
+              stale={staleCopy !== null}
+              onOpenGraph={onOpenEvidenceGraph}
+            />
+          )}
           <BriefItems page={page} section={activeSection.id} />
         </>
       );
@@ -552,7 +632,13 @@ export function TaskFirstWorkbench({
       </header>
 
       {staleCopy && (
-        <div className="mx-auto mt-4 flex w-full max-w-[1600px] items-start gap-2 px-4 sm:px-6" role="status" data-testid="task-first-stale">
+        <div
+          className="mx-auto mt-4 flex w-full max-w-[1600px] items-start gap-2 px-4 sm:px-6"
+          role="status"
+          data-testid="task-first-stale"
+          data-source-snapshot-id={sourceSnapshotId}
+          data-observed-snapshot-id={observedSnapshotId}
+        >
           <div className="uc-status-banner w-full px-3 py-2" data-severity="warning">
             <span className="text-sm font-medium">Stale / 内容可能已过期：</span>
             <span className="ml-1 text-sm text-text-secondary">{staleCopy}</span>

@@ -20,9 +20,11 @@ import {
   INSTALLATION_MANIFEST_FILE,
   INSTALLATION_NATIVE_KERNEL_PEER_FILE,
   INSTALLATION_ROLLBACK_FILE,
+  INSTALLATION_WORKBENCH_UI,
   INSTALLATION_WRAPPER_FILE,
   doctorInstallationV1,
   installInstallationV1,
+  managedLegacyWorkbenchUiAllowedV1,
   rollbackInstallationV1,
   uninstallInstallationV1,
   upgradeInstallationV1,
@@ -127,7 +129,28 @@ describe("installation lifecycle", () => {
     ) as { marker?: string; mcpServers?: Record<string, unknown> };
     expect(config.marker).toBe("understand-code-owned-v1");
     expect(config.mcpServers?.["understand-code"]).toBeDefined();
-    expect(await stat(path.join(root, INSTALLATION_MANIFEST_FILE))).toBeDefined();
+    const manifest = JSON.parse(
+      await readFile(path.join(root, INSTALLATION_MANIFEST_FILE), "utf8"),
+    ) as { workbenchUi?: string };
+    expect(manifest.workbenchUi).toBe(INSTALLATION_WORKBENCH_UI);
+    await expect(
+      managedLegacyWorkbenchUiAllowedV1(
+        path.join(root, INSTALLATION_CLI_BUNDLE_FILE),
+      ),
+    ).resolves.toBe(true);
+
+    delete manifest.workbenchUi;
+    await writeFile(
+      path.join(root, INSTALLATION_MANIFEST_FILE),
+      `${JSON.stringify(manifest)}\n`,
+      { mode: 0o600 },
+    );
+    expect((await doctorInstallationV1({ root })).status).toBe("healthy");
+    await expect(
+      managedLegacyWorkbenchUiAllowedV1(
+        path.join(root, INSTALLATION_CLI_BUNDLE_FILE),
+      ),
+    ).resolves.toBe(false);
   });
 
   it("installs and validates a Claude host projection", async () => {

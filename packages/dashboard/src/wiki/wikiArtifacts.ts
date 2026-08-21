@@ -5,6 +5,7 @@ import type {
   WikiSearchRecordV2,
 } from "@understand-code/core/knowledge-base";
 import { normalizeLegacySearchRecordsBranding } from "../legacyBranding";
+import { dashboardFetchInit, withDashboardAccess } from "../workbench/transport";
 
 export type SearchLoadStatus = "idle" | "loading" | "ready" | "fallback";
 
@@ -82,7 +83,7 @@ function searchUrl(token: string): string {
   const normalizedBase = base.endsWith("/") ? base : `${base}/`;
   const path = `${normalizedBase}knowledge-base/search-index.json`;
   if (import.meta.env.VITE_DEMO_MODE === "true") return path;
-  return `${path}?token=${encodeURIComponent(token)}`;
+  return withDashboardAccess(path, token);
 }
 
 export async function loadSearchArtifact(
@@ -90,9 +91,9 @@ export async function loadSearchArtifact(
   fetcher: typeof fetch = fetch,
 ): Promise<SearchArtifactLoadResult> {
   try {
-    const response = await fetcher(searchUrl(accessToken));
+    const response = await fetcher(searchUrl(accessToken), dashboardFetchInit(accessToken));
     if (response.status === 404) return { status: "missing", records: [] };
-    if (response.status === 403) return { status: "forbidden", records: [] };
+    if (response.status === 401 || response.status === 403) return { status: "forbidden", records: [] };
     if (!response.ok) return { status: "error", records: [] };
 
     let value: unknown;

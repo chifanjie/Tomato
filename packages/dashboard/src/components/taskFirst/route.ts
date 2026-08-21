@@ -2,6 +2,13 @@ import type { WorkbenchRouteV1 } from "@understand-code/contracts";
 
 export type TaskFirstLocation = Pick<Location, "pathname" | "search">;
 
+export type TaskLocalSurface = "task" | "graph" | "wiki";
+
+export interface TaskFirstLocationState {
+  readonly route: WorkbenchRouteV1;
+  readonly surface: TaskLocalSurface;
+}
+
 const TASK_SECTION_ALIASES: Readonly<Record<string, string>> = {
   summary: "summary",
   goals: "goals",
@@ -34,6 +41,12 @@ function decodeSegment(value: string | null): string | undefined {
 export function taskFirstRouteFromLocation(
   location: TaskFirstLocation,
 ): WorkbenchRouteV1 | null {
+  return taskFirstLocationStateFromLocation(location)?.route ?? null;
+}
+
+export function taskFirstLocationStateFromLocation(
+  location: TaskFirstLocation,
+): TaskFirstLocationState | null {
   const query = new URLSearchParams(location.search);
   const pathMatch = /^\/(?:workbench\/)?tasks(?:\/([^/]+)(?:\/(brief|check|evidence)(?:\/[^/]+)?)?)?\/?$/u.exec(location.pathname);
   const isWorkbenchQuery = location.pathname === "/workbench" && query.get("view") === "tasks";
@@ -57,9 +70,38 @@ export function taskFirstRouteFromLocation(
       (route as Record<string, string>)[key] = value;
     }
   }
-  return route;
+  const surfaceValue = query.get("surface");
+  const surface: TaskLocalSurface = surfaceValue === "graph" || surfaceValue === "wiki"
+    ? surfaceValue
+    : "task";
+  return { route, surface };
 }
 
 export function taskFirstSectionPath(section: string): string {
   return TASK_SECTION_ALIASES[section] ?? section;
+}
+
+export function taskFirstLocationUrl(
+  state: TaskFirstLocationState,
+  options: { readonly workbenchCookieMode?: boolean } = {},
+): string {
+  const { route, surface } = state;
+  const params = new URLSearchParams();
+  if (options.workbenchCookieMode) {
+    params.set("view", "tasks");
+    if (route.taskId) params.set("taskId", route.taskId);
+  }
+  if (route.section) params.set("section", taskFirstSectionPath(route.section));
+  if (route.findingId) params.set("findingId", route.findingId);
+  if (route.evidenceId) params.set("evidenceId", route.evidenceId);
+  if (route.impactPathId) params.set("impactPathId", route.impactPathId);
+  if (surface !== "task") params.set("surface", surface);
+  if (surface !== "task" && route.focus) params.set("focus", route.focus);
+  const search = params.toString();
+  const pathname = options.workbenchCookieMode
+    ? "/workbench"
+    : route.taskId
+      ? `/tasks/${encodeURIComponent(route.taskId)}`
+      : "/tasks";
+  return `${pathname}${search ? `?${search}` : ""}`;
 }

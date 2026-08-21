@@ -15,6 +15,8 @@ import {
 import {
   INSTALLATION_CLI_BUNDLE_FILE,
   INSTALLATION_CONFIG_FILE,
+  INSTALLATION_MANIFEST_FILE,
+  INSTALLATION_WORKBENCH_UI,
   INSTALLATION_WRAPPER_FILE,
 } from "@understand-code/installation-lifecycle";
 import { afterEach, describe, expect, it } from "vitest";
@@ -174,6 +176,15 @@ describe("installed dual-host alpha", () => {
       await expect(
         runLifecycle(releases.initial, "install", claudeRoot, "claude"),
       ).resolves.toMatchObject({ ok: true, status: "installed" });
+      for (const installationRoot of [codexRoot, claudeRoot]) {
+        const manifest = JSON.parse(
+          await readFile(
+            path.join(installationRoot, INSTALLATION_MANIFEST_FILE),
+            "utf8",
+          ),
+        ) as { workbenchUi?: string };
+        expect(manifest.workbenchUi).toBe(INSTALLATION_WORKBENCH_UI);
+      }
       const initialReleaseBytes = await readFile(releases.initial);
       expect(initialReleaseBytes.toString("utf8")).not.toContain(packageRoot);
       expect(initialReleaseBytes.toString("utf8")).not.toContain("workspace:*");

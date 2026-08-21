@@ -4,6 +4,7 @@ import {
   type WikiRuntimeIndex,
 } from "../wiki/wikiIndex";
 import { normalizeLegacyWikiIndexBranding } from "../legacyBranding";
+import { dashboardFetchInit, withDashboardAccess } from "./transport";
 
 type Fetcher = typeof fetch;
 
@@ -30,14 +31,18 @@ function optionalDataUrl(path: string, token: string | null): string {
   const normalizedBase = base.endsWith("/") ? base : `${base}/`;
   const url = `${normalizedBase}${normalizedPath}`;
   if (import.meta.env.VITE_DEMO_MODE === "true") return url;
-  return token ? `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}` : url;
+  return withDashboardAccess(url, token);
 }
 
-async function fetchJsonWithStatus(url: string, fetcher: Fetcher): Promise<JsonLoadResult> {
+async function fetchJsonWithStatus(
+  url: string,
+  accessToken: string,
+  fetcher: Fetcher,
+): Promise<JsonLoadResult> {
   try {
-    const response = await fetcher(url);
+    const response = await fetcher(url, dashboardFetchInit(accessToken));
     if (response.status === 404) return { status: "missing", value: null };
-    if (response.status === 403) return { status: "forbidden", value: null };
+    if (response.status === 401 || response.status === 403) return { status: "forbidden", value: null };
     if (!response.ok) return { status: "error", value: null };
     try {
       return { status: "ok", value: await response.json() };
@@ -55,6 +60,7 @@ export async function loadDashboardKnowledge(
 ): Promise<DashboardKnowledge> {
   const wikiLoad = await fetchJsonWithStatus(
     optionalDataUrl("knowledge-base/wiki-index.json", accessToken),
+    accessToken,
     fetcher,
   );
   if (wikiLoad.status !== "ok") {

@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
-import { readFile, realpath } from "node:fs/promises";
+import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { ArtifactStoreError } from "@understand-code/artifact-store";
 import {
@@ -38,9 +39,16 @@ import {
   TaskEngineError,
 } from "@understand-code/task-engine";
 import { validateGraph } from "@understand-code/core";
-import { parseWikiIndexV2 } from "@understand-code/core/knowledge-base";
+import {
+  parseWikiIndexV2,
+  parseWikiSearchIndexV2,
+} from "@understand-code/core/knowledge-base";
 import {
   openWorkbenchSessionV1,
+  type WorkbenchDashboardBundleV1,
+  type WorkbenchDashboardReadRequestV1,
+  type WorkbenchDashboardReadResultV1,
+  type WorkbenchDashboardReaderV1,
   type WorkbenchContextReaderV1,
   type WorkbenchContextRequestV1,
   type WorkbenchContextResultV1,
@@ -50,6 +58,10 @@ import {
   type WorkbenchEvidenceResultV1,
   type WorkbenchTraceReaderV1,
 } from "@understand-code/workbench-runtime";
+import {
+  INSTALLATION_WORKBENCH_UI,
+  managedLegacyWorkbenchUiAllowedV1,
+} from "@understand-code/installation-lifecycle";
 
 import { PRODUCT_VERSION } from "../constants.js";
 import { refreshIndex } from "./refresh-index.js";
@@ -846,6 +858,136 @@ type PublishedJsonReadV1 =
   | { readonly ok: true; readonly value: unknown }
   | { readonly ok: false; readonly reason: "not_published" | "invalid_artifact" | "read_failed" };
 
+const DASHBOARD_BUNDLE_SCHEMA_VERSION = "understand-code-dashboard-bundle-v1";
+const DASHBOARD_MAX_FILES = 4_096;
+const DASHBOARD_MAX_FILE_BYTES = 32 * 1024 * 1024;
+const DASHBOARD_MAX_TOTAL_BYTES = 96 * 1024 * 1024;
+
+function recordValue(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+async function dashboardInventoryDescriptor(
+  root: string,
+): Promise<Pick<WorkbenchDashboardBundleV1, "fileCount" | "inventorySha256">> {
+  const entries: Array<{ path: string; sha256: `sha256:${string}`; bytes: number }> = [];
+  let totalBytes = 0;
+  const walk = async (directory: string, relativeDirectory: string): Promise<void> => {
+    const children = await readdir(directory, { withFileTypes: true });
+    children.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
+    for (const child of children) {
+      if (
+        child.name === "" || child.name === "." || child.name === ".." ||
+        child.name.includes("/") || child.name.includes("\\") || child.name.includes("\u0000")
+      ) throw new Error("dashboard_path_invalid");
+      const relativePath = relativeDirectory === ""
+        ? child.name
+        : `${relativeDirectory}/${child.name}`;
+      const absolutePath = path.join(directory, child.name);
+      const metadata = await lstat(absolutePath);
+      if (metadata.isSymbolicLink()) throw new Error("dashboard_symlink");
+      if (metadata.isDirectory()) {
+        await walk(absolutePath, relativePath);
+        continue;
+      }
+      if (!metadata.isFile() || metadata.size > DASHBOARD_MAX_FILE_BYTES || entries.length >= DASHBOARD_MAX_FILES) {
+        throw new Error("dashboard_file_invalid");
+      }
+      const bytes = await readFile(absolutePath);
+      totalBytes += bytes.byteLength;
+      if (totalBytes > DASHBOARD_MAX_TOTAL_BYTES) throw new Error("dashboard_too_large");
+      entries.push({
+        path: relativePath,
+        sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+        bytes: bytes.byteLength,
+      });
+    }
+  };
+  await walk(root, "");
+  entries.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
+  return {
+    fileCount: entries.length,
+    inventorySha256: `sha256:${createHash("sha256")
+      .update(Buffer.from(JSON.stringify(entries), "utf8"))
+      .digest("hex")}`,
+  };
+}
+
+let dashboardBundlePromise: Promise<WorkbenchDashboardBundleV1> | undefined;
+
+function resolveWorkbenchDashboardBundle(): Promise<WorkbenchDashboardBundleV1> {
+  dashboardBundlePromise ??= (async () => {
+    const modulePath = fileURLToPath(import.meta.url);
+    const bundled = path.extname(modulePath) === ".mjs";
+    const packageDirectory = path.dirname(modulePath);
+    const root = await realpath(
+      bundled
+        ? path.join(packageDirectory, "dashboard")
+        : path.resolve(packageDirectory, "../../../dashboard/dist"),
+    );
+    if (!bundled) {
+      return Object.freeze({ root, productVersion: PRODUCT_VERSION, ...await dashboardInventoryDescriptor(root) });
+    }
+    const manifestValue: unknown = JSON.parse(
+      await readFile(path.join(packageDirectory, "dashboard-manifest.json"), "utf8"),
+    );
+    if (
+      !recordValue(manifestValue) ||
+      Object.keys(manifestValue).sort().join(",") !==
+        "fileCount,inventorySha256,productVersion,root,schemaVersion" ||
+      manifestValue.schemaVersion !== DASHBOARD_BUNDLE_SCHEMA_VERSION ||
+      manifestValue.productVersion !== PRODUCT_VERSION ||
+      manifestValue.root !== "dashboard" ||
+      !Number.isSafeInteger(manifestValue.fileCount) ||
+      typeof manifestValue.fileCount !== "number" ||
+      manifestValue.fileCount < 1 ||
+      manifestValue.fileCount > DASHBOARD_MAX_FILES ||
+      typeof manifestValue.inventorySha256 !== "string" ||
+      !/^sha256:[0-9a-f]{64}$/u.test(manifestValue.inventorySha256)
+    ) throw new Error("dashboard_manifest_invalid");
+    return Object.freeze({
+      root,
+      productVersion: PRODUCT_VERSION,
+      fileCount: manifestValue.fileCount,
+      inventorySha256: manifestValue.inventorySha256 as `sha256:${string}`,
+    });
+  })();
+  return dashboardBundlePromise;
+}
+
+type ResolvedWorkbenchUiV1 =
+  | Readonly<{ dashboardBundle: WorkbenchDashboardBundleV1 }>
+  | Readonly<{ workbenchUi: typeof INSTALLATION_WORKBENCH_UI }>;
+
+async function pathIsAbsent(filePath: string): Promise<boolean> {
+  try {
+    await lstat(filePath);
+    return false;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT";
+  }
+}
+
+async function resolveWorkbenchUi(): Promise<ResolvedWorkbenchUiV1> {
+  try {
+    return { dashboardBundle: await resolveWorkbenchDashboardBundle() };
+  } catch (error) {
+    const modulePath = fileURLToPath(import.meta.url);
+    const packageDirectory = path.dirname(modulePath);
+    const bundledDashboardIsAbsent =
+      path.extname(modulePath) === ".mjs" &&
+      await pathIsAbsent(path.join(packageDirectory, "dashboard")) &&
+      await pathIsAbsent(path.join(packageDirectory, "dashboard-manifest.json"));
+    if (
+      !bundledDashboardIsAbsent ||
+      !(await managedLegacyWorkbenchUiAllowedV1(modulePath))
+    ) {
+      throw error;
+    }
+    return { workbenchUi: INSTALLATION_WORKBENCH_UI };
+  }
+}
+
 /**
  * Read a fixed ArtifactStore layout path without accepting a browser- or
  * caller-provided path.  A realpath check also keeps a malicious symlink in
@@ -971,6 +1113,242 @@ const knowledgeContextReader = (
         evidence: wiki.evidence.length,
       },
     },
+  };
+};
+
+const DASHBOARD_ARTIFACT_MAX_BYTES = 64 * 1024 * 1024;
+
+async function readFixedPublishedText(
+  filePath: string,
+  managedRoot: string,
+  maxBytes = DASHBOARD_ARTIFACT_MAX_BYTES,
+): Promise<{ readonly ok: true; readonly text: string } | { readonly ok: false; readonly reason: "missing" | "invalid" | "unavailable" }> {
+  try {
+    const canonicalRoot = await realpath(managedRoot);
+    const canonicalPath = await realpath(filePath);
+    const relative = path.relative(canonicalRoot, canonicalPath);
+    if (relative === "" || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      return { ok: false, reason: "invalid" };
+    }
+    const metadata = await lstat(canonicalPath);
+    if (!metadata.isFile() || metadata.size > maxBytes) return { ok: false, reason: "invalid" };
+    const bytes = await readFile(canonicalPath);
+    if (bytes.includes(0) || !Buffer.from(bytes.toString("utf8"), "utf8").equals(bytes)) {
+      return { ok: false, reason: "invalid" };
+    }
+    return { ok: true, text: bytes.toString("utf8") };
+  } catch (error) {
+    return error !== null && typeof error === "object" && (error as NodeJS.ErrnoException).code === "ENOENT"
+      ? { ok: false, reason: "missing" }
+      : { ok: false, reason: "unavailable" };
+  }
+}
+
+function dashboardReadFailure(
+  status: "missing" | "stale" | "invalid" | "unavailable",
+): WorkbenchDashboardReadResultV1 {
+  return { status };
+}
+
+async function dashboardBindingStatus(
+  runtime: Awaited<ReturnType<typeof openRuntime>>,
+  input: WorkbenchDashboardReadRequestV1,
+): Promise<"ready" | "stale" | "invalid" | "unavailable"> {
+  if (
+    input.productVersion !== PRODUCT_VERSION ||
+    input.repositoryId !== runtime.store.repositoryId ||
+    input.worktreeId !== runtime.store.worktreeId
+  ) return "invalid";
+  try {
+    const [snapshot, pulse] = await Promise.all([
+      readPublishedSnapshot(runtime.store, input.sourceSnapshotId),
+      readPublishedPulse(runtime.store),
+    ]);
+    if (
+      snapshot.snapshot.repositoryId !== input.repositoryId ||
+      snapshot.snapshot.worktreeId !== input.worktreeId ||
+      snapshot.snapshot.snapshotId !== input.sourceSnapshotId ||
+      (snapshot.snapshot.headCommit ?? null) !== input.headCommit
+    ) return "invalid";
+    if (pulse.pulse.evaluatedSnapshotId !== input.sourceSnapshotId) return "stale";
+    return "ready";
+  } catch {
+    return "unavailable";
+  }
+}
+
+async function readDashboardJsonFile(
+  filePath: string,
+  managedRoot: string,
+): Promise<{ readonly status: "ready"; readonly value: unknown } | { readonly status: "missing" | "invalid" | "unavailable" }> {
+  const read = await readFixedPublishedText(filePath, managedRoot);
+  if (!read.ok) return { status: read.reason };
+  try {
+    return { status: "ready", value: JSON.parse(read.text) as unknown };
+  } catch {
+    return { status: "invalid" };
+  }
+}
+
+function publicDashboardMeta(value: unknown, graphNodeCount: number): Record<string, unknown> {
+  if (!recordValue(value)) return { version: "alpha", analyzedFiles: graphNodeCount };
+  const theme = recordValue(value.theme)
+    ? {
+        ...(typeof value.theme.presetId === "string" ? { presetId: value.theme.presetId } : {}),
+        ...(typeof value.theme.accentId === "string" ? { accentId: value.theme.accentId } : {}),
+      }
+    : undefined;
+  return {
+    ...(typeof value.lastAnalyzedAt === "string" ? { lastAnalyzedAt: value.lastAnalyzedAt } : {}),
+    ...(typeof value.gitCommitHash === "string" ? { gitCommitHash: value.gitCommitHash } : {}),
+    ...(typeof value.version === "string" ? { version: value.version } : {}),
+    ...(Number.isSafeInteger(value.analyzedFiles) && (value.analyzedFiles as number) >= 0
+      ? { analyzedFiles: value.analyzedFiles }
+      : {}),
+    ...(theme !== undefined && Object.keys(theme).length > 0 ? { theme } : {}),
+  };
+}
+
+async function taskDashboardProjection(
+  runtime: Awaited<ReturnType<typeof openRuntime>>,
+  input: Extract<WorkbenchDashboardReadRequestV1, { kind: "task_brief" | "task_change_check" | "task_verification" }>,
+): Promise<WorkbenchDashboardReadResultV1> {
+  let context: Awaited<ReturnType<typeof readTaskScopedContext>>;
+  try {
+    context = await readTaskScopedContext(runtime, input.taskId);
+  } catch {
+    return dashboardReadFailure("missing");
+  }
+  const bundle = context.read.bundle;
+  if (
+    bundle.manifest.repositoryId !== input.repositoryId ||
+    bundle.manifest.worktreeId !== input.worktreeId ||
+    bundle.manifest.latestSnapshotId !== input.sourceSnapshotId
+  ) return dashboardReadFailure("stale");
+
+  const freshness = {
+    sourceSnapshotId: input.sourceSnapshotId,
+    current: true,
+  };
+  if (input.kind === "task_brief") {
+    if (!("brief" in bundle)) return dashboardReadFailure("missing");
+    const items: unknown[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await runtime.taskEngine.getTaskBrief({
+        taskId: input.taskId,
+        section: input.section,
+        pageSize: 100,
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      items.push(...page.result.items);
+      if (items.length > 4_096) return dashboardReadFailure("invalid");
+      cursor = page.nextCursor;
+    } while (cursor !== undefined);
+    const pulse = await readPublishedPulse(runtime.store);
+    return {
+      status: "ready",
+      json: {
+        task: bundle.manifest,
+        brief: bundle.brief,
+        section: input.section,
+        items,
+        pulse: pulse.pulse,
+        freshness,
+      },
+    };
+  }
+
+  const artifactType = input.kind === "task_change_check" ? "change_check" : "verification";
+  const artifact = context.read.artifacts.find((candidate) => candidate.artifactType === artifactType);
+  if (artifact === undefined) return dashboardReadFailure("missing");
+  return { status: "ready", json: { task: bundle.manifest, artifact, freshness } };
+}
+
+const dashboardReader = (
+  runtime: Awaited<ReturnType<typeof openRuntime>>,
+): WorkbenchDashboardReaderV1 => async (input) => {
+  const binding = await dashboardBindingStatus(runtime, input);
+  if (binding !== "ready") return dashboardReadFailure(binding);
+  if (
+    input.kind === "task_brief" ||
+    input.kind === "task_change_check" ||
+    input.kind === "task_verification"
+  ) return taskDashboardProjection(runtime, input);
+
+  const graphRead = await readDashboardJsonFile(
+    runtime.store.layout.knowledgeGraph,
+    runtime.store.layout.storeRoot,
+  );
+  if (graphRead.status !== "ready") return dashboardReadFailure(graphRead.status);
+  const graphResult = validateGraph(graphRead.value);
+  if (!graphResult.success || graphResult.data === undefined || graphResult.issues.length > 0) {
+    return dashboardReadFailure("invalid");
+  }
+  const graph = graphResult.data;
+  if (input.headCommit !== null && graph.project.gitCommitHash !== input.headCommit) {
+    return dashboardReadFailure("stale");
+  }
+  if (input.kind === "graph") return { status: "ready", json: graph };
+  if (input.kind === "meta") {
+    const meta = await readDashboardJsonFile(
+      path.join(runtime.store.layout.storeRoot, "meta.json"),
+      runtime.store.layout.storeRoot,
+    );
+    if (meta.status !== "ready") return dashboardReadFailure(meta.status);
+    if (
+      input.headCommit !== null &&
+      recordValue(meta.value) &&
+      meta.value.gitCommitHash !== input.headCommit
+    ) return dashboardReadFailure("stale");
+    return { status: "ready", json: publicDashboardMeta(meta.value, graph.nodes.length) };
+  }
+  if (input.kind === "config") {
+    return { status: "ready", json: { autoUpdate: false, outputLanguage: "zh" } };
+  }
+
+  const wikiRead = await readDashboardJsonFile(
+    path.join(runtime.store.layout.knowledgeBase, "wiki-index.json"),
+    runtime.store.layout.storeRoot,
+  );
+  if (wikiRead.status !== "ready") return dashboardReadFailure(wikiRead.status);
+  const wikiResult = parseWikiIndexV2(wikiRead.value);
+  if (!wikiResult.ok) return dashboardReadFailure("invalid");
+  const wiki = wikiResult.value;
+  if (input.headCommit !== null && wiki.source.gitCommitHash !== input.headCommit) {
+    return dashboardReadFailure("stale");
+  }
+  if (input.kind === "wiki_index") return { status: "ready", json: wiki };
+  if (input.kind === "wiki_search") {
+    const searchRead = await readDashboardJsonFile(
+      path.join(runtime.store.layout.knowledgeBase, "search-index.json"),
+      runtime.store.layout.storeRoot,
+    );
+    if (searchRead.status !== "ready") return dashboardReadFailure(searchRead.status);
+    const searchResult = parseWikiSearchIndexV2(searchRead.value);
+    if (
+      !searchResult.ok ||
+      searchResult.value.generatedAt !== wiki.generatedAt ||
+      !searchResult.value.records.every((record) =>
+        wiki.pages.some((page) => page.id === record.pageId),
+      )
+    ) return dashboardReadFailure("invalid");
+    return { status: "ready", json: searchResult.value };
+  }
+
+  if (
+    isSensitiveRepositoryPath(input.relativePath) ||
+    !wiki.pages.some((page) => page.markdownPath === input.relativePath)
+  ) return dashboardReadFailure("missing");
+  const pageRead = await readFixedPublishedText(
+    path.join(runtime.store.layout.storeRoot, input.relativePath),
+    runtime.store.layout.storeRoot,
+  );
+  if (!pageRead.ok) return dashboardReadFailure(pageRead.reason);
+  return {
+    status: "ready",
+    text: pageRead.text,
+    contentType: "text/markdown; charset=utf-8",
   };
 };
 
@@ -1247,6 +1625,7 @@ type FileEvidenceLike = {
   readonly kind: "source" | "config" | "test" | "document";
   readonly epistemicStatus: "observed" | "inferred";
   readonly freshness: string;
+  readonly nodeIds: readonly string[];
   readonly filePath: string;
   readonly lineRange?: readonly [number, number];
   readonly contentHash: string;
@@ -1457,12 +1836,9 @@ const evidenceReader = (
   }
   const lines = text.split(/\r\n|\n|\r/u);
   const requestedRange = sourceEvidence.lineRange;
-  if (requestedRange === undefined) {
-    return workbenchEvidenceNotReady(input, "invalid", "source_unanchored");
-  }
   const lineRange: readonly [number, number] = [
-    requestedRange[0],
-    requestedRange[1],
+    requestedRange?.[0] ?? 1,
+    requestedRange?.[1] ?? Math.max(1, lines.length),
   ];
   if (
     lineRange[0] < 1 ||
@@ -1476,11 +1852,37 @@ const evidenceReader = (
   if (sizeBytes > WORKBENCH_SOURCE_PREVIEW_MAX_BYTES) {
     return workbenchEvidenceNotReady(input, "redacted", "too_large");
   }
+  let nodeIds = [...sourceEvidence.nodeIds];
+  if (nodeIds.length === 0) {
+    const graphRead = await readFixedPublishedJson(
+      runtime.store.layout.knowledgeGraph,
+      runtime.store.layout.storeRoot,
+    );
+    if (graphRead.ok) {
+      const graphResult = validateGraph(graphRead.value);
+      if (
+        graphResult.success &&
+        graphResult.data !== undefined &&
+        (input.headCommit === null || graphResult.data.project.gitCommitHash === input.headCommit)
+      ) {
+        nodeIds = graphResult.data.nodes
+          .filter((node) => {
+            if (node.filePath !== sourceEvidence.filePath) return false;
+            if (node.lineRange === undefined) return true;
+            return node.lineRange[0] <= lineRange[1] && node.lineRange[1] >= lineRange[0];
+          })
+          .map((node) => node.id)
+          .sort((left, right) => left.localeCompare(right, "en"))
+          .slice(0, 256);
+      }
+    }
+  }
   const evidence: WorkbenchEvidenceRecord = {
     id: sourceEvidence.id,
     kind: sourceEvidence.kind,
     epistemicStatus: sourceEvidence.epistemicStatus,
     freshness: "current",
+    nodeIds,
     filePath: sourceEvidence.filePath,
     lineRange,
     contentHash: digest as `sha256:${string}`,
@@ -1526,7 +1928,16 @@ async function openWorkbench(argumentsValue: unknown, canonicalRoot: string) {
     }
   }
 
-  const published = await readPublishedPulse(runtime.store);
+  const [published, workbenchUi] = await Promise.all([
+    readPublishedPulse(runtime.store),
+    resolveWorkbenchUi(),
+  ]);
+  const workbenchUiOptions = "dashboardBundle" in workbenchUi
+    ? {
+        dashboardBundle: workbenchUi.dashboardBundle,
+        dashboardReader: dashboardReader(runtime),
+      }
+    : workbenchUi;
   const session = await openWorkbenchSessionV1(parsed.data, {
     canonicalRoot,
     productVersion: PRODUCT_VERSION,
@@ -1536,6 +1947,7 @@ async function openWorkbench(argumentsValue: unknown, canonicalRoot: string) {
     headCommit: published.snapshot.snapshot.headCommit ?? null,
     worktreeFingerprint: published.snapshot.worktreeFingerprint,
     freshness: published.pulse.status,
+    ...workbenchUiOptions,
     taskBriefReader: async (input) => {
       const page = await runtime.taskEngine.getTaskBrief(input);
       return {

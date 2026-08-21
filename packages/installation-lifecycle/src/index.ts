@@ -32,6 +32,8 @@ export const INSTALLATION_CLI_BUNDLE_FILE =
 export const INSTALLATION_NATIVE_KERNEL_PEER_FILE =
   `lib/native/${process.platform}-${process.arch}/provider_kernel_peer.node` as const;
 export const INSTALLATION_CONFIG_FILE = "config/mcp.json" as const;
+export const INSTALLATION_WORKBENCH_UI =
+  "legacy_embedded_read_only_v1" as const;
 /** Durable, single-level snapshot used by an explicit upgrade/rollback pair. */
 export const INSTALLATION_ROLLBACK_FILE = "installation-rollback.json" as const;
 export const DEFAULT_INSTALLATION_VERSION = "0.1.0" as const;
@@ -126,6 +128,8 @@ export type InstallationManifestV1 = Readonly<{
   marker: typeof INSTALLATION_MARKER;
   /** Absent on legacy installations that used the direct CLI config. */
   host?: HostAdapterId;
+  /** Explicitly permits only the bundled, limited read-only Workbench UI. */
+  workbenchUi?: typeof INSTALLATION_WORKBENCH_UI;
   files: readonly OwnedInstallationFileV1[];
   /** Present only while a newer installation can be rolled back safely. */
   rollback?: InstallationRollbackDescriptorV1;
@@ -742,6 +746,7 @@ function manifestFor(
     installationId,
     marker: INSTALLATION_MARKER,
     ...(host === undefined ? {} : { host }),
+    workbenchUi: INSTALLATION_WORKBENCH_UI,
     files: OWNED_RELATIVE_FILES.map((filePath) => ({
       path: filePath,
       sha256: digest(fileBytes[filePath]!),
@@ -806,6 +811,11 @@ function parseManifest(value: unknown): InstallationManifestV1 | undefined {
         ? hostValue
         : undefined;
   if (hostValue !== undefined && parsedHost === undefined) return undefined;
+  const workbenchUiValue = candidate.workbenchUi;
+  if (
+    workbenchUiValue !== undefined &&
+    workbenchUiValue !== INSTALLATION_WORKBENCH_UI
+  ) return undefined;
   const files: OwnedInstallationFileV1[] = [];
   for (const rawFile of candidate.files) {
     if (rawFile === null || typeof rawFile !== "object" || Array.isArray(rawFile)) {
@@ -847,6 +857,9 @@ function parseManifest(value: unknown): InstallationManifestV1 | undefined {
     installationId: candidate.installationId,
     marker: INSTALLATION_MARKER,
     ...(parsedHost === undefined ? {} : { host: parsedHost }),
+    ...(workbenchUiValue === INSTALLATION_WORKBENCH_UI
+      ? { workbenchUi: INSTALLATION_WORKBENCH_UI }
+      : {}),
     files: Object.freeze(files),
     ...(rollback === undefined ? {} : { rollback }),
   };
@@ -1533,6 +1546,7 @@ export async function installInstallationV1(
     const before = await inspectInstallation(root, { allowLegacy: true });
     if (before.status === "healthy" && existingManifest.version === version) {
       const filesMatch =
+        existingManifest.workbenchUi === manifest.workbenchUi &&
         existingManifest.files.length === manifest.files.length &&
         existingManifest.files.every(
           (file) =>
@@ -1708,6 +1722,7 @@ export async function upgradeInstallationV1(
   const desiredManifest = manifestFor(root, version, installationId, bytes, host);
   const currentMatches =
     existingManifest.version === version &&
+    existingManifest.workbenchUi === desiredManifest.workbenchUi &&
     existingManifest.files.length === desiredManifest.files.length &&
     existingManifest.files.every(
       (file) =>
@@ -1986,6 +2001,57 @@ export async function doctorInstallationV1(
 ): Promise<DoctorResultV1> {
   const root = await resolveInstallationTargetV1(input, { create: false });
   return inspectInstallation(root);
+}
+
+/**
+ * Prove that an executing CLI bundle is the exact, healthy managed bundle
+ * whose manifest explicitly opts into the limited embedded Workbench UI.
+ * Legacy manifests remain valid installations, but do not gain this opt-in.
+ */
+export async function managedLegacyWorkbenchUiAllowedV1(
+  modulePath: string,
+): Promise<boolean> {
+  const normalizedModulePath = normalizedCandidate(modulePath);
+  if (normalizedModulePath === undefined) return false;
+
+  try {
+    const [moduleMetadata, canonicalModulePath] = await Promise.all([
+      lstat(normalizedModulePath),
+      realpath(normalizedModulePath),
+    ]);
+    if (moduleMetadata.isSymbolicLink() || !moduleMetadata.isFile()) return false;
+    const root = path.dirname(path.dirname(canonicalModulePath));
+    if (
+      normalizedCandidate(root) === undefined ||
+      canonicalModulePath !== path.join(root, INSTALLATION_CLI_BUNDLE_FILE)
+    ) {
+      return false;
+    }
+    const [rootMetadata, canonicalRoot] = await Promise.all([
+      lstat(root),
+      realpath(root),
+    ]);
+    if (
+      rootMetadata.isSymbolicLink() ||
+      !rootMetadata.isDirectory() ||
+      canonicalRoot !== root
+    ) {
+      return false;
+    }
+
+    const before = await readManifestAt(root);
+    if (before?.workbenchUi !== INSTALLATION_WORKBENCH_UI) return false;
+    const doctor = await inspectInstallation(root);
+    if (!doctor.ok || doctor.status !== "healthy") return false;
+    const after = await readManifestAt(root);
+    return (
+      after?.workbenchUi === INSTALLATION_WORKBENCH_UI &&
+      after.installationId === before.installationId &&
+      after.version === before.version
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**

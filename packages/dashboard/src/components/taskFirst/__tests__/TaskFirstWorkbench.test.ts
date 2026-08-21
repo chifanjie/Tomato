@@ -78,12 +78,14 @@ describe("TaskFirstWorkbench", () => {
       onSelectSection,
     })));
     const buttons = [...container.querySelectorAll<HTMLButtonElement>("button")];
-    buttons.find((button) => button.textContent?.includes("Knowledge"))?.click();
-    buttons.find((button) => button.textContent?.includes("Graph"))?.click();
-    buttons.find((button) => button.textContent?.includes("Goals"))?.click();
+    await act(async () => {
+      buttons.find((button) => button.textContent?.includes("Knowledge"))?.click();
+      buttons.find((button) => button.textContent?.includes("Graph"))?.click();
+      buttons.find((button) => button.textContent?.includes("Goals"))?.click();
+    });
 
-    expect(onOpenKnowledge).toHaveBeenCalledWith({ ...route, view: "knowledge" });
-    expect(onOpenGraph).toHaveBeenCalledWith({ ...route, view: "graph" });
+    expect(onOpenKnowledge).toHaveBeenCalledWith(route);
+    expect(onOpenGraph).toHaveBeenCalledWith(route);
     expect(onSelectSection).toHaveBeenCalledWith("goals");
     await act(async () => root.unmount());
   });

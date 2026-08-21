@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { randomBytes, randomUUID } from "node:crypto";
-import { realpath, stat } from "node:fs/promises";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -299,6 +299,8 @@ export interface WorkbenchEvidenceRecordV1 {
   readonly kind: "source" | "config" | "test" | "document";
   readonly epistemicStatus: "observed" | "inferred";
   readonly freshness: "current" | "changed" | "stale" | "invalid";
+  /** Stable Graph node ids that this Evidence can focus, never display labels. */
+  readonly nodeIds: readonly string[];
   /** Repository-relative only; never an absolute path. */
   readonly filePath: string;
   readonly lineRange: readonly [number, number];
@@ -348,7 +350,58 @@ export type WorkbenchEvidenceReaderV1 = (
   input: WorkbenchEvidenceRequestV1,
 ) => Promise<WorkbenchEvidenceResultV1 | undefined>;
 
-export interface OpenWorkbenchSessionOptionsV1 extends WorkbenchRuntimeBindingV1 {
+/**
+ * Immutable metadata for the precompiled React Dashboard shipped beside the
+ * bundled CLI. The caller discovers this descriptor from its own package
+ * location; the browser can never provide or override a filesystem root.
+ */
+export interface WorkbenchDashboardBundleV1 {
+  readonly root: string;
+  readonly productVersion: string;
+  readonly fileCount: number;
+  readonly inventorySha256: `sha256:${string}`;
+}
+
+/** Binding injected from the redeemed browser session for every data read. */
+export interface WorkbenchDashboardRequestBindingV1 {
+  readonly productVersion: string;
+  readonly repositoryId: string;
+  readonly worktreeId: string;
+  readonly sourceSnapshotId: string;
+  readonly headCommit: string | null;
+  readonly freshness: ToolSuccessMetaV1["freshness"];
+  readonly route: WorkbenchRouteV1;
+}
+
+export type WorkbenchDashboardReadRequestV1 = WorkbenchDashboardRequestBindingV1 & (
+  | { readonly kind: "graph" }
+  | { readonly kind: "meta" }
+  | { readonly kind: "config" }
+  | { readonly kind: "wiki_index" }
+  | { readonly kind: "wiki_search" }
+  | { readonly kind: "wiki_page"; readonly relativePath: string }
+  | { readonly kind: "task_brief"; readonly taskId: string; readonly section: TaskBriefSectionV1 }
+  | { readonly kind: "task_change_check"; readonly taskId: string }
+  | { readonly kind: "task_verification"; readonly taskId: string }
+);
+
+export type WorkbenchDashboardReadResultV1 =
+  | { readonly status: "ready"; readonly json: unknown }
+  | { readonly status: "ready"; readonly text: string; readonly contentType: "text/markdown; charset=utf-8" }
+  | { readonly status: "missing" | "stale" | "invalid" | "unavailable" };
+
+export type WorkbenchDashboardReaderV1 = (
+  input: WorkbenchDashboardReadRequestV1,
+) => Promise<WorkbenchDashboardReadResultV1 | undefined>;
+
+export const LEGACY_EMBEDDED_READ_ONLY_WORKBENCH_UI_V1 =
+  "legacy_embedded_read_only_v1" as const;
+
+export type WorkbenchUiModeV1 =
+  | "react_dashboard_v1"
+  | typeof LEGACY_EMBEDDED_READ_ONLY_WORKBENCH_UI_V1;
+
+interface OpenWorkbenchSessionBaseOptionsV1 extends WorkbenchRuntimeBindingV1 {
   /** Defaults to the frozen 60 second launch-token TTL. */
   readonly launchTokenTtlMs?: number;
   /** Injected clock is intentionally kept local/test-only and never serialized. */
@@ -367,6 +420,23 @@ export interface OpenWorkbenchSessionOptionsV1 extends WorkbenchRuntimeBindingV1
   /** Optional read-only callback for Task Evidence and its guarded Source preview. */
   readonly evidenceReader?: WorkbenchEvidenceReaderV1;
 }
+
+export type OpenWorkbenchSessionOptionsV1 = OpenWorkbenchSessionBaseOptionsV1 & (
+  | {
+      /** React remains the default, but always requires an exact Dashboard bundle. */
+      readonly workbenchUi?: "react_dashboard_v1";
+      /** Precompiled React Dashboard located beside this installed CLI payload. */
+      readonly dashboardBundle: WorkbenchDashboardBundleV1;
+      /** Read-only, session-bound data source used by the React Dashboard routes. */
+      readonly dashboardReader?: WorkbenchDashboardReaderV1;
+    }
+  | {
+      /** Explicit, limited fallback used only by policy-approved managed installs. */
+      readonly workbenchUi: typeof LEGACY_EMBEDDED_READ_ONLY_WORKBENCH_UI_V1;
+      readonly dashboardBundle?: never;
+      readonly dashboardReader?: never;
+    }
+);
 
 export interface WorkbenchLaunchGrantV1 {
   readonly sessionId: string;
@@ -471,6 +541,9 @@ interface StoredSessionV1 {
   readonly session: WorkbenchSessionV1;
   readonly launches: Map<string, PendingLaunchV1>;
   readonly now: () => number;
+  readonly workbenchUi: WorkbenchUiModeV1;
+  readonly dashboardBundle?: ValidatedWorkbenchDashboardBundleV1;
+  dashboardReader?: WorkbenchDashboardReaderV1;
   taskBriefReader?: WorkbenchTaskBriefReaderV1;
   graphReader?: WorkbenchContextReaderV1;
   knowledgeReader?: WorkbenchContextReaderV1;
@@ -480,8 +553,12 @@ interface StoredSessionV1 {
 
 const sessionsByIdentity = new Map<string, StoredSessionV1>();
 
-function identityKey(binding: WorkbenchRuntimeBindingV1, canonicalRoot: string): string {
-  return `${canonicalRoot}\u0000${binding.productVersion}\u0000${binding.worktreeId}`;
+function identityKey(
+  binding: WorkbenchRuntimeBindingV1,
+  canonicalRoot: string,
+  workbenchUi: WorkbenchUiModeV1,
+): string {
+  return `${canonicalRoot}\u0000${binding.productVersion}\u0000${binding.worktreeId}\u0000${workbenchUi}`;
 }
 
 function launchBinding(binding: WorkbenchRuntimeBindingV1): WorkbenchLaunchBindingV1 {
@@ -556,6 +633,110 @@ function validateBinding(binding: WorkbenchRuntimeBindingV1): void {
   if (!parsed.success || !ProducerVersionSchema.safeParse(binding.productVersion).success) {
     throw new WorkbenchSessionError("invalid_identity", "runtime identity is invalid");
   }
+}
+
+interface ValidatedWorkbenchDashboardBundleV1 extends WorkbenchDashboardBundleV1 {
+  readonly files: ReadonlyMap<string, Buffer>;
+}
+
+interface DashboardInventoryEntryV1 {
+  readonly path: string;
+  readonly sha256: `sha256:${string}`;
+  readonly bytes: number;
+}
+
+const MAX_DASHBOARD_FILES = 4_096;
+const MAX_DASHBOARD_FILE_BYTES = 32 * 1024 * 1024;
+const MAX_DASHBOARD_TOTAL_BYTES = 96 * 1024 * 1024;
+
+function sha256(bytes: Uint8Array): `sha256:${string}` {
+  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+}
+
+async function validateDashboardBundle(
+  descriptor: WorkbenchDashboardBundleV1,
+  productVersion: string,
+): Promise<ValidatedWorkbenchDashboardBundleV1> {
+  if (
+    !isRecord(descriptor) ||
+    !path.isAbsolute(descriptor.root) ||
+    descriptor.productVersion !== productVersion ||
+    !ProducerVersionSchema.safeParse(descriptor.productVersion).success ||
+    !Number.isSafeInteger(descriptor.fileCount) ||
+    descriptor.fileCount < 1 ||
+    descriptor.fileCount > MAX_DASHBOARD_FILES ||
+    !ContentDigestSchema.safeParse(descriptor.inventorySha256).success
+  ) {
+    throw new WorkbenchSessionError(
+      descriptor?.productVersion !== productVersion ? "invalid_identity" : "server_error",
+      descriptor?.productVersion !== productVersion
+        ? "Dashboard product version does not match the Workbench runtime"
+        : "Dashboard bundle descriptor is invalid",
+    );
+  }
+
+  let canonicalRoot: string;
+  try {
+    const metadata = await stat(descriptor.root);
+    if (!metadata.isDirectory()) throw new Error("not_directory");
+    canonicalRoot = await realpath(descriptor.root);
+  } catch {
+    throw new WorkbenchSessionError("server_error", "Dashboard bundle is unavailable");
+  }
+
+  const inventory: DashboardInventoryEntryV1[] = [];
+  const files = new Map<string, Buffer>();
+  let totalBytes = 0;
+  const walk = async (directory: string, relativeDirectory: string): Promise<void> => {
+    const entries = await readdir(directory, { withFileTypes: true });
+    entries.sort((left, right) => left.name.localeCompare(right.name, "en"));
+    for (const entry of entries) {
+      const relativePath = relativeDirectory === ""
+        ? entry.name
+        : `${relativeDirectory}/${entry.name}`;
+      if (
+        entry.name === "" || entry.name === "." || entry.name === ".." ||
+        entry.name.includes("/") || entry.name.includes("\\") || entry.name.includes("\u0000")
+      ) {
+        throw new Error("unsafe_path");
+      }
+      const absolutePath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await walk(absolutePath, relativePath);
+        continue;
+      }
+      if (!entry.isFile()) throw new Error("unsafe_file_type");
+      if (inventory.length >= MAX_DASHBOARD_FILES) throw new Error("too_many_files");
+      const bytes = await readFile(absolutePath);
+      if (bytes.byteLength > MAX_DASHBOARD_FILE_BYTES) throw new Error("file_too_large");
+      totalBytes += bytes.byteLength;
+      if (totalBytes > MAX_DASHBOARD_TOTAL_BYTES) throw new Error("bundle_too_large");
+      inventory.push({ path: relativePath, sha256: sha256(bytes), bytes: bytes.byteLength });
+      files.set(relativePath, bytes);
+    }
+  };
+
+  try {
+    await walk(canonicalRoot, "");
+  } catch {
+    throw new WorkbenchSessionError("server_error", "Dashboard bundle inventory is unreadable");
+  }
+  inventory.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
+  const inventorySha256 = sha256(Buffer.from(JSON.stringify(inventory), "utf8"));
+  if (
+    inventory.length !== descriptor.fileCount ||
+    inventorySha256 !== descriptor.inventorySha256 ||
+    !files.has("index.html")
+  ) {
+    throw new WorkbenchSessionError("server_error", "Dashboard bundle failed integrity validation");
+  }
+  return Object.freeze({
+    root: canonicalRoot,
+    productVersion: descriptor.productVersion,
+    fileCount: descriptor.fileCount,
+    inventorySha256,
+    files,
+  });
 }
 
 const GRAPH_ARTIFACT_PATH = ".understand-code/knowledge-graph.json" as const;
@@ -762,7 +943,7 @@ function evidenceIdentityIsValid(input: WorkbenchEvidenceRequestV1): boolean {
 
 function parseEvidenceRecord(value: unknown): WorkbenchEvidenceRecordV1 | undefined {
   if (!isRecord(value) || !hasExactKeys(value, [
-    "id", "kind", "epistemicStatus", "freshness", "filePath", "lineRange",
+    "id", "kind", "epistemicStatus", "freshness", "nodeIds", "filePath", "lineRange",
     "contentHash", "observedAtSnapshotId",
   ])) return undefined;
   const pathResult = RepositoryRelativePathSchema.safeParse(value.filePath);
@@ -775,6 +956,9 @@ function parseEvidenceRecord(value: unknown): WorkbenchEvidenceRecordV1 | undefi
     typeof value.kind !== "string" || !EVIDENCE_KINDS.has(value.kind) ||
     typeof value.epistemicStatus !== "string" || !EVIDENCE_EPISTEMIC_STATUSES.has(value.epistemicStatus) ||
     typeof value.freshness !== "string" || !EVIDENCE_FRESHNESS.has(value.freshness) ||
+    !Array.isArray(value.nodeIds) || value.nodeIds.length > 256 ||
+    value.nodeIds.some((nodeId) => !isBoundedIdentifier(nodeId)) ||
+    new Set(value.nodeIds).size !== value.nodeIds.length ||
     !pathResult.success || !rangeResult.success || !hashResult.success || !snapshotResult.success
   ) return undefined;
   return {
@@ -782,6 +966,7 @@ function parseEvidenceRecord(value: unknown): WorkbenchEvidenceRecordV1 | undefi
     kind: value.kind as WorkbenchEvidenceRecordV1["kind"],
     epistemicStatus: value.epistemicStatus as WorkbenchEvidenceRecordV1["epistemicStatus"],
     freshness: value.freshness as WorkbenchEvidenceRecordV1["freshness"],
+    nodeIds: value.nodeIds as string[],
     filePath: pathResult.data,
     lineRange: rangeResult.data,
     contentHash: hashResult.data as `sha256:${string}`,
@@ -922,9 +1107,64 @@ function unauthorized(response: ServerResponse): void {
   writeJson(response, 401, { error: "workbench_session_required" });
 }
 
+function dashboardSecurityHeaders(contentType: string): Record<string, string> {
+  return {
+    "content-type": contentType,
+    "cache-control": "no-store",
+    "content-security-policy": WORKBENCH_CSP,
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "no-referrer",
+  };
+}
+
+function dashboardMime(relativePath: string): string {
+  const extension = path.posix.extname(relativePath).toLowerCase();
+  return ({
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+  } as Readonly<Record<string, string>>)[extension] ?? "application/octet-stream";
+}
+
+function writeDashboardFile(
+  response: ServerResponse,
+  bundle: ValidatedWorkbenchDashboardBundleV1,
+  relativePath: string,
+): boolean {
+  const bytes = bundle.files.get(relativePath);
+  if (bytes === undefined) return false;
+  response.writeHead(200, dashboardSecurityHeaders(dashboardMime(relativePath)));
+  response.end(bytes);
+  return true;
+}
+
+function dashboardStaticRelativePath(pathname: string): string | undefined {
+  if (
+    !pathname.startsWith("/assets/") &&
+    pathname !== "/favicon.svg" &&
+    pathname !== "/favicon.ico"
+  ) return undefined;
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(pathname.slice(1));
+  } catch {
+    return "";
+  }
+  if (
+    decoded === "" || decoded.startsWith("/") || decoded.includes("\\") ||
+    decoded.includes("\u0000") || decoded.split("/").some((segment) => segment === "" || segment === "." || segment === "..")
+  ) return "";
+  return decoded;
+}
+
 const BOOTSTRAP_SCRIPT = `const token=location.hash.slice(1);if(token){fetch('/__workbench/launch',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token})}).then(r=>{if(!r.ok)throw new Error('launch failed');return r.json()}).then(()=>{history.replaceState(null,'',location.pathname+location.search);location.reload()}).catch(()=>location.hash='');}`;
 
-const WORKBENCH_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'";
+const WORKBENCH_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; font-src 'self' data:; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
 
 const WORKBENCH_CSS = String.raw`:root {
   --color-root: #0f1117;
@@ -1230,7 +1470,16 @@ function workbenchHtml(route: WorkbenchRouteV1, identity: WorkbenchSessionV1["id
   const taskId = route.taskId ?? "";
   const section = route.section ?? "summary";
   const taskTitle = taskId === "" ? "Task-first view" : `Task ${taskId}`;
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(taskTitle)} · Workbench</title><link rel="stylesheet" href="/__workbench/app.css"></head><body data-view="${escapeHtml(route.view)}" data-task-id="${escapeHtml(taskId)}" data-section="${escapeHtml(section)}" data-evidence-id="${escapeHtml(route.evidenceId ?? "")}"><div class="wb-shell"><header class="wb-header"><div class="wb-brand"><div class="wb-kicker">Understand Code · Workbench</div><h1 class="wb-title">${escapeHtml(taskTitle)}</h1></div><div id="wb-status" class="wb-status" data-state="loading"><span class="wb-status-dot" aria-hidden="true"></span><span class="wb-status-label">Loading</span><span aria-hidden="true">·</span><span>${escapeHtml(identity.worktreeId)}</span></div></header><div class="wb-layout"><aside class="wb-sidebar"><nav class="wb-nav" aria-label="Task sections"><div class="wb-nav-title">Task Brief</div><button type="button" data-section="summary" aria-current="false">Summary</button><button type="button" data-section="goals" aria-current="false">Goals</button><button type="button" data-section="reading_path" aria-current="false">Reading</button><button type="button" data-section="planned_changes" aria-current="false">Changes</button><button type="button" data-section="verification_plan" aria-current="false">Verification</button></nav><nav class="wb-surfaces" aria-label="Workbench surfaces"><button type="button" class="wb-surface" data-surface="knowledge" aria-current="false">Knowledge <span class="wb-unavailable">unavailable</span></button><button type="button" class="wb-surface" data-surface="graph" aria-current="false">Graph <span class="wb-unavailable">unavailable</span></button><button type="button" class="wb-surface" data-surface="evidence" aria-current="false">Evidence / Source <span class="wb-unavailable">unavailable</span></button><button type="button" class="wb-surface" data-surface="trace" aria-current="false">Trace <span class="wb-unavailable">unavailable</span></button></nav></aside><main class="wb-main"><section class="uc-panel wb-panel" aria-live="polite"><div class="wb-panel-head"><div><h2 id="wb-panel-title" class="wb-panel-title">Task Brief</h2><p id="wb-panel-subtitle" class="wb-panel-subtitle">Loading persisted Task data…</p></div></div><div id="wb-actions" class="wb-actions" hidden></div><div id="wb-banner" class="wb-banner" hidden></div><div id="wb-state" class="wb-state"><div><strong>Loading Task Brief</strong><p>Reading the persisted section…</p></div></div><ul id="wb-items" class="wb-items" hidden></ul><noscript><div class="wb-state"><strong>JavaScript is required</strong><p>Enable JavaScript to read the local Task Brief.</p></div></noscript></section></main></div></div><script src="/__workbench/app.js" defer></script></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(taskTitle)} · Workbench</title><link rel="stylesheet" href="/__workbench/app.css"></head><body data-workbench-ui="${LEGACY_EMBEDDED_READ_ONLY_WORKBENCH_UI_V1}" data-view="${escapeHtml(route.view)}" data-task-id="${escapeHtml(taskId)}" data-section="${escapeHtml(section)}" data-evidence-id="${escapeHtml(route.evidenceId ?? "")}"><div class="wb-shell"><header class="wb-header"><div class="wb-brand"><div class="wb-kicker">Understand Code · Limited read-only Workbench</div><h1 class="wb-title">${escapeHtml(taskTitle)}</h1></div><div id="wb-status" class="wb-status" data-state="loading"><span class="wb-status-dot" aria-hidden="true"></span><span class="wb-status-label">Loading</span><span aria-hidden="true">·</span><span>${escapeHtml(identity.worktreeId)}</span></div></header><div class="wb-layout"><aside class="wb-sidebar"><nav class="wb-nav" aria-label="Task sections"><div class="wb-nav-title">Task Brief</div><button type="button" data-section="summary" aria-current="false">Summary</button><button type="button" data-section="goals" aria-current="false">Goals</button><button type="button" data-section="reading_path" aria-current="false">Reading</button><button type="button" data-section="planned_changes" aria-current="false">Changes</button><button type="button" data-section="verification_plan" aria-current="false">Verification</button></nav><nav class="wb-surfaces" aria-label="Workbench surfaces"><button type="button" class="wb-surface" data-surface="knowledge" aria-current="false">Knowledge <span class="wb-unavailable">unavailable</span></button><button type="button" class="wb-surface" data-surface="graph" aria-current="false">Graph <span class="wb-unavailable">unavailable</span></button><button type="button" class="wb-surface" data-surface="evidence" aria-current="false">Evidence / Source <span class="wb-unavailable">unavailable</span></button><button type="button" class="wb-surface" data-surface="trace" aria-current="false">Trace <span class="wb-unavailable">unavailable</span></button></nav></aside><main class="wb-main"><section class="uc-panel wb-panel" aria-live="polite"><div class="wb-panel-head"><div><h2 id="wb-panel-title" class="wb-panel-title">Task Brief</h2><p id="wb-panel-subtitle" class="wb-panel-subtitle">Loading persisted Task data…</p></div></div><div id="wb-actions" class="wb-actions" hidden></div><div id="wb-banner" class="wb-banner" hidden></div><div id="wb-state" class="wb-state"><div><strong>Loading Task Brief</strong><p>Reading the persisted section…</p></div></div><ul id="wb-items" class="wb-items" hidden></ul><noscript><div class="wb-state"><strong>JavaScript is required</strong><p>Enable JavaScript to read the local Task Brief.</p></div></noscript></section></main></div></div><script src="/__workbench/app.js" defer></script></body></html>`;
+}
+
+function writeLegacyWorkbenchHtml(
+  response: ServerResponse,
+  route: WorkbenchRouteV1,
+  identity: WorkbenchSessionV1["identity"],
+): void {
+  response.writeHead(200, dashboardSecurityHeaders("text/html; charset=utf-8"));
+  response.end(workbenchHtml(route, identity));
 }
 
 function routeFromQuery(query: URLSearchParams): WorkbenchRouteV1 | undefined {
@@ -1263,21 +1512,22 @@ function normalizeTaskBriefSection(value: string | undefined): TaskBriefSectionV
 }
 
 function routeCompatible(requested: WorkbenchRouteV1, granted: WorkbenchRouteV1): boolean {
-  // Section navigation is intentionally allowed to move within the same Task;
-  // an Evidence id selected from the Task reading path is also allowed to be
-  // persisted in the browser URL.  The actual Evidence reader still resolves
-  // the id against the authenticated Task bundle, so this does not authorize
-  // an arbitrary repository path or cross-Task object. Other deep-link targets
-  // remain capability-bound to the launch grant.
-  const taskEvidenceRoute =
-    granted.evidenceId === undefined &&
-    requested.evidenceId !== undefined &&
-    requested.findingId === undefined &&
-    requested.impactPathId === undefined;
+  // A redeemed Task session may navigate among that Task's sections, Findings,
+  // and Evidence deep links. Finding -> Evidence membership is still resolved
+  // from the authenticated artifact reader; this HTML route grants no data on
+  // its own. View, Task, impact-path and Graph focus capabilities stay pinned.
+  const sameTaskBrowserSelection =
+    granted.view === "tasks" &&
+    requested.view === "tasks" &&
+    granted.taskId !== undefined &&
+    requested.taskId === granted.taskId &&
+    requested.impactPathId === granted.impactPathId &&
+    requested.focus === granted.focus;
+  if (sameTaskBrowserSelection) return true;
   return requested.view === granted.view &&
     requested.taskId === granted.taskId &&
     requested.findingId === granted.findingId &&
-    (requested.evidenceId === granted.evidenceId || taskEvidenceRoute) &&
+    requested.evidenceId === granted.evidenceId &&
     requested.impactPathId === granted.impactPathId &&
     requested.focus === granted.focus;
 }
@@ -1686,6 +1936,205 @@ async function readWorkbenchEvidenceForSession(
   return parseEvidenceResult(value, input);
 }
 
+type DashboardRequestMappingV1 =
+  | { readonly status: "matched"; readonly request: WorkbenchDashboardReadRequestV1 }
+  | { readonly status: "invalid" }
+  | { readonly status: "not_matched" };
+
+function hasOnlySingleQueryValues(url: URL, allowed: ReadonlySet<string>): boolean {
+  for (const [name] of url.searchParams) {
+    if (!allowed.has(name) || url.searchParams.getAll(name).length !== 1) return false;
+  }
+  return true;
+}
+
+function dashboardRequestBinding(browser: BrowserSessionV1): WorkbenchDashboardRequestBindingV1 {
+  return Object.freeze({
+    productVersion: browser.binding.productVersion,
+    repositoryId: browser.binding.repositoryId,
+    worktreeId: browser.binding.worktreeId,
+    sourceSnapshotId: browser.binding.sourceSnapshotId,
+    headCommit: browser.binding.headCommit,
+    freshness: browser.binding.freshness,
+    route: browser.route,
+  });
+}
+
+function dashboardRequestFromUrl(url: URL, browser: BrowserSessionV1): DashboardRequestMappingV1 {
+  const binding = dashboardRequestBinding(browser);
+  const fixedJsonKinds = new Map<string, WorkbenchDashboardReadRequestV1["kind"]>([
+    ["/knowledge-graph.json", "graph"],
+    ["/meta.json", "meta"],
+    ["/config.json", "config"],
+    ["/knowledge-base/wiki-index.json", "wiki_index"],
+    ["/knowledge-base/search-index.json", "wiki_search"],
+  ]);
+  const fixedKind = fixedJsonKinds.get(url.pathname);
+  if (fixedKind !== undefined) {
+    if (!hasOnlySingleQueryValues(url, new Set())) return { status: "invalid" };
+    return {
+      status: "matched",
+      request: { ...binding, kind: fixedKind } as WorkbenchDashboardReadRequestV1,
+    };
+  }
+
+  if (url.pathname.startsWith("/knowledge-base/")) {
+    if (!hasOnlySingleQueryValues(url, new Set())) return { status: "invalid" };
+    let relativePath: string;
+    try {
+      relativePath = decodeURIComponent(url.pathname.slice(1));
+    } catch {
+      return { status: "invalid" };
+    }
+    if (
+      !relativePath.endsWith(".md") || relativePath.includes("\\") ||
+      !RepositoryRelativePathSchema.safeParse(relativePath).success
+    ) return { status: "invalid" };
+    return { status: "matched", request: { ...binding, kind: "wiki_page", relativePath } };
+  }
+
+  const taskArtifact = /^\/tasks\/([^/]+)\/(brief|change-check|verification)\.json$/u.exec(url.pathname);
+  if (taskArtifact === null) return { status: "not_matched" };
+  let taskId: string;
+  try {
+    taskId = decodeURIComponent(taskArtifact[1] ?? "");
+  } catch {
+    return { status: "invalid" };
+  }
+  if (
+    !TaskIdSchema.safeParse(taskId).success ||
+    browser.route.taskId !== taskId
+  ) return { status: "invalid" };
+
+  const artifactKind = taskArtifact[2];
+  if (artifactKind === "brief") {
+    if (!hasOnlySingleQueryValues(url, new Set(["section"]))) return { status: "invalid" };
+    const section = normalizeTaskBriefSection(
+      url.searchParams.get("section") ?? browser.route.section,
+    );
+    if (section === undefined) return { status: "invalid" };
+    return {
+      status: "matched",
+      request: { ...binding, kind: "task_brief", taskId, section },
+    };
+  }
+  if (!hasOnlySingleQueryValues(url, new Set())) return { status: "invalid" };
+  return {
+    status: "matched",
+    request: {
+      ...binding,
+      kind: artifactKind === "change-check" ? "task_change_check" : "task_verification",
+      taskId,
+    },
+  };
+}
+
+const MAX_DASHBOARD_RESPONSE_BYTES = 32 * 1024 * 1024;
+
+function writeDashboardJson(response: ServerResponse, status: number, value: unknown): void {
+  const body = JSON.stringify(value);
+  response.writeHead(status, dashboardSecurityHeaders("application/json; charset=utf-8"));
+  response.end(body);
+}
+
+function writeDashboardReadFailure(
+  response: ServerResponse,
+  status: Exclude<WorkbenchDashboardReadResultV1["status"], "ready">,
+): void {
+  const mapping = {
+    missing: [404, "dashboard_resource_missing"],
+    stale: [409, "dashboard_resource_stale"],
+    invalid: [422, "dashboard_resource_invalid"],
+    unavailable: [503, "dashboard_resource_unavailable"],
+  } as const;
+  const [httpStatus, error] = mapping[status];
+  writeDashboardJson(response, httpStatus, { error });
+}
+
+async function serveDashboardRead(
+  stored: StoredSessionV1,
+  response: ServerResponse,
+  request: WorkbenchDashboardReadRequestV1,
+): Promise<void> {
+  const reader = stored.dashboardReader;
+  if (reader === undefined) {
+    writeDashboardReadFailure(response, "unavailable");
+    return;
+  }
+  let result: WorkbenchDashboardReadResultV1 | undefined;
+  try {
+    result = await reader(Object.freeze(request));
+  } catch {
+    writeDashboardReadFailure(response, "unavailable");
+    return;
+  }
+  if (result === undefined) {
+    writeDashboardReadFailure(response, "unavailable");
+    return;
+  }
+  if (!isRecord(result) || typeof result.status !== "string") {
+    writeDashboardReadFailure(response, "unavailable");
+    return;
+  }
+  if (result.status !== "ready") {
+    if (
+      !hasExactKeys(result, ["status"]) ||
+      !new Set(["missing", "stale", "invalid", "unavailable"]).has(result.status)
+    ) {
+      writeDashboardReadFailure(response, "unavailable");
+      return;
+    }
+    writeDashboardReadFailure(
+      response,
+      result.status as Exclude<WorkbenchDashboardReadResultV1["status"], "ready">,
+    );
+    return;
+  }
+
+  if (request.kind === "wiki_page") {
+    const textResult = result as Extract<
+      WorkbenchDashboardReadResultV1,
+      { readonly text: string }
+    >;
+    if (
+      !hasExactKeys(result, ["status", "text", "contentType"]) ||
+      typeof textResult.text !== "string" || textResult.text.includes("\u0000") ||
+      textResult.contentType !== "text/markdown; charset=utf-8" ||
+      Buffer.byteLength(textResult.text, "utf8") > MAX_DASHBOARD_RESPONSE_BYTES ||
+      textResult.text.includes(stored.session.canonicalRoot)
+    ) {
+      writeDashboardReadFailure(response, "invalid");
+      return;
+    }
+    response.writeHead(200, dashboardSecurityHeaders(textResult.contentType));
+    response.end(textResult.text);
+    return;
+  }
+
+  if (!hasExactKeys(result, ["status", "json"])) {
+    writeDashboardReadFailure(response, "invalid");
+    return;
+  }
+  let body: string | undefined;
+  try {
+    body = JSON.stringify((result as Extract<
+      WorkbenchDashboardReadResultV1,
+      { readonly json: unknown }
+    >).json);
+  } catch {
+    body = undefined;
+  }
+  if (
+    body === undefined || Buffer.byteLength(body, "utf8") > MAX_DASHBOARD_RESPONSE_BYTES ||
+    body.includes(stored.session.canonicalRoot)
+  ) {
+    writeDashboardReadFailure(response, "invalid");
+    return;
+  }
+  response.writeHead(200, dashboardSecurityHeaders("application/json; charset=utf-8"));
+  response.end(body);
+}
+
 function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, response: ServerResponse) => void {
   return (request, response) => {
     if (request.method !== "GET") {
@@ -1738,7 +2187,10 @@ function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, 
       return;
     }
 
-    if (parsedUrl.pathname === "/__workbench/app.css") {
+    if (
+      parsedUrl.pathname === "/__workbench/app.css" &&
+      stored.workbenchUi === LEGACY_EMBEDDED_READ_ONLY_WORKBENCH_UI_V1
+    ) {
       response.writeHead(200, {
         "content-type": "text/css; charset=utf-8",
         "cache-control": "no-store",
@@ -1749,7 +2201,10 @@ function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, 
       return;
     }
 
-    if (parsedUrl.pathname === "/__workbench/app.js") {
+    if (
+      parsedUrl.pathname === "/__workbench/app.js" &&
+      stored.workbenchUi === LEGACY_EMBEDDED_READ_ONLY_WORKBENCH_UI_V1
+    ) {
       response.writeHead(200, {
         "content-type": "text/javascript; charset=utf-8",
         "cache-control": "no-store",
@@ -1777,6 +2232,24 @@ function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, 
       unauthorized(response);
       return;
     }
+
+    const staticRelativePath = dashboardStaticRelativePath(parsedUrl.pathname);
+    if (stored.workbenchUi === "react_dashboard_v1" && staticRelativePath !== undefined) {
+      try {
+        getBrowserSession(stored.session, sessionToken, stored.now);
+      } catch {
+        unauthorized(response);
+        return;
+      }
+      if (
+        staticRelativePath === "" || stored.dashboardBundle === undefined ||
+        !writeDashboardFile(response, stored.dashboardBundle, staticRelativePath)
+      ) {
+        writeDashboardJson(response, 404, { error: "dashboard_asset_not_found" });
+      }
+      return;
+    }
+
     if (parsedUrl.pathname === "/workbench") {
       try {
         const grant = getBrowserSession(stored.session, sessionToken, stored.now);
@@ -1789,18 +2262,37 @@ function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, 
           writeJson(response, 200, { route: requested ?? grant.route, runtime: grant.identity });
           return;
         }
-        response.writeHead(200, {
-          "content-type": "text/html; charset=utf-8",
-          "cache-control": "no-store",
-          "content-security-policy": WORKBENCH_CSP,
-          "x-content-type-options": "nosniff",
-          "referrer-policy": "no-referrer",
-        });
-        response.end(workbenchHtml(requested ?? grant.route, grant.identity));
+        if (stored.workbenchUi === LEGACY_EMBEDDED_READ_ONLY_WORKBENCH_UI_V1) {
+          writeLegacyWorkbenchHtml(response, requested ?? grant.route, grant.identity);
+        } else if (
+          stored.dashboardBundle === undefined ||
+          !writeDashboardFile(response, stored.dashboardBundle, "index.html")
+        ) {
+          writeDashboardJson(response, 503, { error: "dashboard_bundle_unavailable" });
+        }
       } catch {
         unauthorized(response);
       }
       return;
+    }
+
+    if (stored.workbenchUi === "react_dashboard_v1") {
+      const dashboardBrowser = (() => {
+        try { return getBrowserSession(stored.session, sessionToken, stored.now); } catch { return undefined; }
+      })();
+      if (dashboardBrowser === undefined) {
+        unauthorized(response);
+        return;
+      }
+      const dashboardMapping = dashboardRequestFromUrl(parsedUrl, dashboardBrowser);
+      if (dashboardMapping.status === "invalid") {
+        writeDashboardJson(response, 409, { error: "dashboard_route_invalid" });
+        return;
+      }
+      if (dashboardMapping.status === "matched") {
+        void serveDashboardRead(stored, response, dashboardMapping.request);
+        return;
+      }
     }
 
     if (parsedUrl.pathname === "/__workbench/task-brief") {
@@ -2006,7 +2498,18 @@ function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, 
           writeJson(response, 404, { error: "task_route_not_found" });
           return;
         }
-        writeJson(response, 200, { route: grant.route, runtime: grant.identity });
+        if (request.headers.accept?.includes("application/json") === true) {
+          writeJson(response, 200, { route: grant.route, runtime: grant.identity });
+          return;
+        }
+        if (stored.workbenchUi === LEGACY_EMBEDDED_READ_ONLY_WORKBENCH_UI_V1) {
+          writeLegacyWorkbenchHtml(response, grant.route, grant.identity);
+        } else if (
+          stored.dashboardBundle === undefined ||
+          !writeDashboardFile(response, stored.dashboardBundle, "index.html")
+        ) {
+          writeDashboardJson(response, 503, { error: "dashboard_bundle_unavailable" });
+        }
       } catch {
         unauthorized(response);
       }
@@ -2081,6 +2584,39 @@ function redeem(stored: StoredSessionV1, token: string, now: () => number): Work
   };
 }
 
+type ValidatedWorkbenchUiV1 =
+  | {
+      readonly mode: "react_dashboard_v1";
+      readonly dashboardBundle: ValidatedWorkbenchDashboardBundleV1;
+    }
+  | {
+      readonly mode: typeof LEGACY_EMBEDDED_READ_ONLY_WORKBENCH_UI_V1;
+    };
+
+async function validateWorkbenchUi(
+  options: OpenWorkbenchSessionOptionsV1,
+): Promise<ValidatedWorkbenchUiV1> {
+  if (options.workbenchUi === LEGACY_EMBEDDED_READ_ONLY_WORKBENCH_UI_V1) {
+    if (options.dashboardBundle !== undefined || options.dashboardReader !== undefined) {
+      throw new WorkbenchSessionError(
+        "invalid_input",
+        "Legacy Workbench UI cannot accept React Dashboard inputs",
+      );
+    }
+    return { mode: LEGACY_EMBEDDED_READ_ONLY_WORKBENCH_UI_V1 };
+  }
+  if (options.workbenchUi !== undefined && options.workbenchUi !== "react_dashboard_v1") {
+    throw new WorkbenchSessionError("invalid_input", "Workbench UI mode is invalid");
+  }
+  return {
+    mode: "react_dashboard_v1",
+    dashboardBundle: await validateDashboardBundle(
+      options.dashboardBundle,
+      options.productVersion,
+    ),
+  };
+}
+
 /**
  * Open (or reuse) a read-only local Workbench runtime. The function is kept
  * intentionally local to this package: it binds only an already-canonical
@@ -2095,6 +2631,7 @@ export async function openWorkbenchSessionV1(
   if (!parsedInput.success) throw new WorkbenchSessionError("invalid_input", "invalid open_workbench input");
   validateBinding(options);
   const canonicalRoot = await canonicalizeRoot(options.canonicalRoot);
+  const workbenchUi = await validateWorkbenchUi(options);
   const host = options.host ?? LOOPBACK_HOST;
   if (host !== LOOPBACK_HOST) throw new WorkbenchSessionError("server_error", "Workbench binds only to loopback");
   const requestedTtl = options.launchTokenTtlMs ?? DEFAULT_LAUNCH_TTL_MS;
@@ -2102,10 +2639,27 @@ export async function openWorkbenchSessionV1(
     throw new WorkbenchSessionError("invalid_input", "launch token TTL is invalid");
   }
   const now = options.now ?? Date.now;
-  const key = identityKey(options, canonicalRoot);
+  const key = identityKey(options, canonicalRoot, workbenchUi.mode);
   const currentBinding = launchBinding(options);
   const existing = sessionsByIdentity.get(key);
   if (existing !== undefined) {
+    if (
+      existing.workbenchUi !== workbenchUi.mode ||
+      (workbenchUi.mode === "react_dashboard_v1" && (
+        existing.dashboardBundle === undefined ||
+        existing.dashboardBundle.productVersion !== workbenchUi.dashboardBundle.productVersion ||
+        existing.dashboardBundle.fileCount !== workbenchUi.dashboardBundle.fileCount ||
+        existing.dashboardBundle.inventorySha256 !== workbenchUi.dashboardBundle.inventorySha256
+      ))
+    ) {
+      throw new WorkbenchSessionError(
+        "invalid_identity",
+        "Workbench UI does not match the running Workbench runtime",
+      );
+    }
+    if (workbenchUi.mode === "react_dashboard_v1" && options.dashboardReader !== undefined) {
+      existing.dashboardReader = options.dashboardReader;
+    }
     if (options.taskBriefReader !== undefined) {
       existing.taskBriefReader = options.taskBriefReader;
     }
@@ -2142,6 +2696,13 @@ export async function openWorkbenchSessionV1(
     session: provisional,
     launches,
     now,
+    workbenchUi: workbenchUi.mode,
+    ...(workbenchUi.mode === "react_dashboard_v1"
+      ? { dashboardBundle: workbenchUi.dashboardBundle }
+      : {}),
+    ...(workbenchUi.mode !== "react_dashboard_v1" || options.dashboardReader === undefined
+      ? {}
+      : { dashboardReader: options.dashboardReader }),
     ...(options.taskBriefReader === undefined ? {} : { taskBriefReader: options.taskBriefReader }),
     ...(options.graphReader === undefined ? {} : { graphReader: options.graphReader }),
     ...(options.knowledgeReader === undefined ? {} : { knowledgeReader: options.knowledgeReader }),

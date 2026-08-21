@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -6,11 +7,53 @@ import { afterEach, describe, expect, it } from "vitest";
 import { GetTaskBriefResultV1Schema } from "@understand-code/contracts/mcp";
 
 import {
+  LEGACY_EMBEDDED_READ_ONLY_WORKBENCH_UI_V1,
   WorkbenchSessionError,
   openWorkbenchSessionV1,
+  type WorkbenchDashboardReadRequestV1,
 } from "../src/index.js";
 
 const roots: string[] = [];
+
+const DASHBOARD_INDEX = '<!doctype html><html><body><div id="root" data-dashboard="react"></div><script type="module" src="/assets/index-test.js"></script></body></html>';
+const DASHBOARD_ASSET = "window.__UNDERSTAND_CODE_REACT_DASHBOARD__ = true;";
+
+function digest(value: string | Buffer): `sha256:${string}` {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+function dashboardBundle(root: string) {
+  const inventory = [
+    {
+      path: "assets/index-test.js",
+      sha256: digest(DASHBOARD_ASSET),
+      bytes: Buffer.byteLength(DASHBOARD_ASSET, "utf8"),
+    },
+    {
+      path: "index.html",
+      sha256: digest(DASHBOARD_INDEX),
+      bytes: Buffer.byteLength(DASHBOARD_INDEX, "utf8"),
+    },
+  ];
+  return {
+    root: path.join(root, "dashboard"),
+    productVersion: "0.1.0",
+    fileCount: inventory.length,
+    inventorySha256: digest(JSON.stringify(inventory)),
+  };
+}
+
+async function runtimeRoot(prefix: string): Promise<string> {
+  const root = await mkdtemp(path.join(os.tmpdir(), prefix));
+  roots.push(root);
+  const dashboardRoot = path.join(root, "dashboard");
+  await mkdir(path.join(dashboardRoot, "assets"), { recursive: true });
+  await Promise.all([
+    writeFile(path.join(dashboardRoot, "index.html"), DASHBOARD_INDEX),
+    writeFile(path.join(dashboardRoot, "assets/index-test.js"), DASHBOARD_ASSET),
+  ]);
+  return root;
+}
 
 const binding = (canonicalRoot: string) => ({
   canonicalRoot,
@@ -21,6 +64,7 @@ const binding = (canonicalRoot: string) => ({
   headCommit: null,
   worktreeFingerprint: `sha256:${"a".repeat(64)}` as `sha256:${string}`,
   freshness: "fresh" as const,
+  dashboardBundle: dashboardBundle(canonicalRoot),
 });
 
 afterEach(async () => {
@@ -29,8 +73,7 @@ afterEach(async () => {
 
 describe("workbench runtime session", () => {
   it("starts a loopback session, emits a fragment token, and reuses identity", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "workbench-runtime-"));
-    roots.push(root);
+    const root = await runtimeRoot("workbench-runtime-");
     const first = await openWorkbenchSessionV1(
       { route: { view: "tasks", taskId: "01ARZ3NDEKTSV4RRFFQ69G5FAV" } },
       binding(root),
@@ -55,7 +98,7 @@ describe("workbench runtime session", () => {
     const route = await fetch(`http://127.0.0.1:${first.port}/workbench`, { headers: { cookie } });
     expect(route.status).toBe(200);
     expect(route.headers.get("content-type")).toContain("text/html");
-    expect(await route.text()).toContain("01ARZ3NDEKTSV4RRFFQ69G5FAV");
+    expect(await route.text()).toBe(DASHBOARD_INDEX);
     const replay = await fetch(`http://127.0.0.1:${first.port}/__workbench/launch`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }),
     });
@@ -70,9 +113,60 @@ describe("workbench runtime session", () => {
     await first.close();
   });
 
+  it("enables the embedded UI only explicitly and keeps React sessions fail-closed and mode-bound", async () => {
+    const root = await runtimeRoot("workbench-runtime-legacy-");
+    const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const reactBinding = binding(root);
+    await expect(
+      openWorkbenchSessionV1(
+        { route: { view: "tasks", taskId } },
+        { ...reactBinding, dashboardBundle: undefined } as unknown as Parameters<
+          typeof openWorkbenchSessionV1
+        >[1],
+      ),
+    ).rejects.toMatchObject({ code: "invalid_identity" });
+
+    const react = await openWorkbenchSessionV1(
+      { route: { view: "tasks", taskId } },
+      reactBinding,
+    );
+    const { dashboardBundle: _omittedDashboardBundle, ...legacyBinding } = reactBinding;
+    const legacy = await openWorkbenchSessionV1(
+      { route: { view: "tasks", taskId } },
+      {
+        ...legacyBinding,
+        workbenchUi: LEGACY_EMBEDDED_READ_ONLY_WORKBENCH_UI_V1,
+      },
+    );
+    expect(legacy.output.structuredContent.result.runtime.disposition).toBe("started");
+    expect(legacy.port).not.toBe(react.port);
+
+    const token = legacy.output.structuredContent.result.deepLink.split("#")[1]!;
+    const launch = await fetch(`http://127.0.0.1:${legacy.port}/__workbench/launch`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    const cookie = launch.headers.get("set-cookie")!.split(";", 1)[0]!;
+    const headers = { cookie };
+    const workbench = await fetch(`http://127.0.0.1:${legacy.port}/workbench`, { headers });
+    expect(await workbench.text()).toContain(
+      `data-workbench-ui="${LEGACY_EMBEDDED_READ_ONLY_WORKBENCH_UI_V1}"`,
+    );
+    const task = await fetch(`http://127.0.0.1:${legacy.port}/tasks/${taskId}`, { headers });
+    expect(await task.text()).toContain("/__workbench/app.js");
+    const reactAsset = await fetch(
+      `http://127.0.0.1:${legacy.port}/assets/index-test.js`,
+      { headers },
+    );
+    expect(reactAsset.status).toBe(404);
+    await expect(reactAsset.json()).resolves.toEqual({ error: "not_found" });
+
+    await Promise.all([react.close(), legacy.close()]);
+  });
+
   it("pins redeemed browser sessions to their launch generation when the D-12 runtime is reused", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "workbench-runtime-generation-"));
-    roots.push(root);
+    const root = await runtimeRoot("workbench-runtime-generation-");
     const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
     const readerCalls: string[] = [];
     const trace = (
@@ -182,6 +276,158 @@ describe("workbench runtime session", () => {
     await first.close();
   });
 
+  it("serves the packed React bundle and Preview-compatible data routes through the cookie gateway", async () => {
+    const root = await runtimeRoot("workbench-runtime-dashboard-");
+    const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const calls: WorkbenchDashboardReadRequestV1[] = [];
+    let graphIsStale = false;
+    const session = await openWorkbenchSessionV1(
+      { route: { view: "tasks", taskId, section: "summary" } },
+      {
+        ...binding(root),
+        dashboardReader: async (input) => {
+          calls.push(input);
+          if (input.kind === "graph" && graphIsStale) return { status: "stale" };
+          if (input.kind === "wiki_page") {
+            return {
+              status: "ready",
+              text: "# Overview\n",
+              contentType: "text/markdown; charset=utf-8",
+            };
+          }
+          return {
+            status: "ready",
+            json: input.kind === "task_brief"
+              ? { task: { taskId: input.taskId }, section: input.section }
+              : { kind: input.kind },
+          };
+        },
+      },
+    );
+    const base = `http://127.0.0.1:${session.port}`;
+    const token = session.output.structuredContent.result.deepLink.split("#")[1]!;
+
+    const tokenOnlyAsset = await fetch(`${base}/assets/index-test.js?token=${token}`);
+    expect(tokenOnlyAsset.status).toBe(401);
+    const tokenOnlyGraph = await fetch(`${base}/knowledge-graph.json?token=${token}`);
+    expect(tokenOnlyGraph.status).toBe(401);
+
+    const launch = await fetch(`${base}/__workbench/launch`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    expect(launch.status).toBe(200);
+    const cookie = launch.headers.get("set-cookie")!.split(";", 1)[0]!;
+    const headers = { cookie };
+
+    const index = await fetch(`${base}/workbench?view=tasks&taskId=${taskId}&section=summary`, { headers });
+    expect(index.status).toBe(200);
+    expect(await index.text()).toBe(DASHBOARD_INDEX);
+    const asset = await fetch(`${base}/assets/index-test.js`, { headers });
+    expect(asset.status).toBe(200);
+    expect(await asset.text()).toBe(DASHBOARD_ASSET);
+    const taskIndex = await fetch(`${base}/tasks/${taskId}`, { headers });
+    expect(await taskIndex.text()).toBe(DASHBOARD_INDEX);
+    const taskRoute = await fetch(`${base}/tasks/${taskId}`, {
+      headers: { ...headers, accept: "application/json" },
+    });
+    await expect(taskRoute.json()).resolves.toMatchObject({ route: { taskId, section: "summary" } });
+
+    const jsonRoutes = [
+      "/knowledge-graph.json",
+      "/meta.json",
+      "/config.json",
+      "/knowledge-base/wiki-index.json",
+      "/knowledge-base/search-index.json",
+      `/tasks/${taskId}/brief.json?section=summary`,
+      `/tasks/${taskId}/change-check.json`,
+      `/tasks/${taskId}/verification.json`,
+    ];
+    for (const route of jsonRoutes) {
+      const response = await fetch(`${base}${route}`, { headers });
+      expect(response.status, route).toBe(200);
+      expect(response.headers.get("content-type"), route).toContain("application/json");
+    }
+    const page = await fetch(`${base}/knowledge-base/Overview.md`, { headers });
+    expect(page.status).toBe(200);
+    expect(page.headers.get("content-type")).toBe("text/markdown; charset=utf-8");
+    expect(await page.text()).toBe("# Overview\n");
+
+    expect(calls.map((call) => call.kind)).toEqual([
+      "graph",
+      "meta",
+      "config",
+      "wiki_index",
+      "wiki_search",
+      "task_brief",
+      "task_change_check",
+      "task_verification",
+      "wiki_page",
+    ]);
+    expect(calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        repositoryId: "repo:test",
+        worktreeId: "worktree:test",
+        sourceSnapshotId: "snapshot:test",
+        headCommit: null,
+        route: expect.objectContaining({ taskId }),
+      }),
+      expect.objectContaining({ kind: "wiki_page", relativePath: "knowledge-base/Overview.md" }),
+      expect.objectContaining({ kind: "task_brief", taskId, section: "summary" }),
+    ]));
+
+    graphIsStale = true;
+    const stale = await fetch(`${base}/knowledge-graph.json`, { headers });
+    expect(stale.status).toBe(409);
+    await expect(stale.json()).resolves.toEqual({ error: "dashboard_resource_stale" });
+    await session.close();
+  });
+
+  it("reloads same-Task Finding and Evidence URLs without widening the launch capability", async () => {
+    const root = await runtimeRoot("workbench-runtime-task-route-");
+    const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const session = await openWorkbenchSessionV1(
+      { route: { view: "tasks", taskId } },
+      binding(root),
+    );
+    const base = `http://127.0.0.1:${session.port}`;
+    const token = session.output.structuredContent.result.deepLink.split("#")[1]!;
+    const launch = await fetch(`${base}/__workbench/launch`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    const cookie = launch.headers.get("set-cookie")!.split(";", 1)[0]!;
+    const headers = { cookie };
+
+    const finding = await fetch(
+      `${base}/workbench?view=tasks&taskId=${taskId}&findingId=finding%3A1`,
+      { headers },
+    );
+    expect(finding.status).toBe(200);
+    expect(await finding.text()).toBe(DASHBOARD_INDEX);
+    const evidence = await fetch(
+      `${base}/workbench?view=tasks&taskId=${taskId}&findingId=finding%3A1&evidenceId=evidence%3A1`,
+      { headers },
+    );
+    expect(evidence.status).toBe(200);
+    expect(await evidence.text()).toBe(DASHBOARD_INDEX);
+
+    const deniedRoutes = [
+      "/workbench?view=tasks&taskId=01ARZ3NDEKTSV4RRFFQ69G5FAW&findingId=finding%3A1",
+      `/workbench?view=graph&taskId=${taskId}`,
+      `/workbench?view=tasks&taskId=${taskId}&impactPathId=impact%3A1`,
+      `/workbench?view=tasks&taskId=${taskId}&focus=node%3Aother`,
+    ];
+    for (const route of deniedRoutes) {
+      const denied = await fetch(`${base}${route}`, { headers });
+      expect(denied.status, route).toBe(409);
+      await expect(denied.json()).resolves.toEqual({ error: "route_mismatch" });
+    }
+    await session.close();
+  });
+
   it("rejects relative roots and expires launch tokens without allowing replay", async () => {
     await expect(
       openWorkbenchSessionV1(
@@ -190,8 +436,7 @@ describe("workbench runtime session", () => {
       ),
     ).rejects.toMatchObject({ code: "invalid_root" });
 
-    const root = await mkdtemp(path.join(os.tmpdir(), "workbench-runtime-expiry-"));
-    roots.push(root);
+    const root = await runtimeRoot("workbench-runtime-expiry-");
     let clock = 1_000;
     const session = await openWorkbenchSessionV1(
       { route: { view: "tasks" } },
@@ -208,9 +453,8 @@ describe("workbench runtime session", () => {
     await session.close();
   });
 
-  it("serves an authenticated Task-first HTML shell and a contract-validated brief endpoint", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "workbench-runtime-task-"));
-    roots.push(root);
+  it("serves the authenticated React Dashboard and preserves the contract-validated brief endpoint", async () => {
+    const root = await runtimeRoot("workbench-runtime-task-");
     const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
     const result = GetTaskBriefResultV1Schema.parse({
       task: {
@@ -256,9 +500,8 @@ describe("workbench runtime session", () => {
     const html = await fetch(`http://127.0.0.1:${session.port}/workbench`, { headers: { cookie } });
     expect(html.status).toBe(200);
     const htmlText = await html.text();
-    expect(htmlText).toContain("Summary");
-    expect(htmlText).toContain("/__workbench/app.js");
-    expect(htmlText).toContain("Knowledge");
+    expect(htmlText).toBe(DASHBOARD_INDEX);
+    expect(htmlText).not.toContain("/__workbench/app.js");
     const brief = await fetch(
       `http://127.0.0.1:${session.port}/__workbench/task-brief?section=summary`,
       { headers: { cookie } },
@@ -300,8 +543,7 @@ describe("workbench runtime session", () => {
   });
 
   it("serves authenticated Task-bound Graph and Wiki projections and rejects mismatched callers", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "workbench-runtime-context-"));
-    roots.push(root);
+    const root = await runtimeRoot("workbench-runtime-context-");
     const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
     const session = await openWorkbenchSessionV1(
       { route: { view: "tasks", taskId } },
@@ -385,8 +627,7 @@ describe("workbench runtime session", () => {
   });
 
   it("serves authenticated Task-bound Change Check and Verification trace projection", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "workbench-runtime-trace-"));
-    roots.push(root);
+    const root = await runtimeRoot("workbench-runtime-trace-");
     const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
     const session = await openWorkbenchSessionV1(
       { route: { view: "tasks", taskId } },
@@ -453,7 +694,7 @@ describe("workbench runtime session", () => {
     });
     const cookie = launch.headers.get("set-cookie")!.split(";", 1)[0]!;
     const html = await fetch(`http://127.0.0.1:${session.port}/workbench`, { headers: { cookie } });
-    expect(await html.text()).toContain("Trace");
+    expect(await html.text()).toBe(DASHBOARD_INDEX);
     const trace = await fetch(
       `http://127.0.0.1:${session.port}/__workbench/trace?taskId=${encodeURIComponent(taskId)}`,
       { headers: { cookie } },
@@ -475,8 +716,7 @@ describe("workbench runtime session", () => {
   });
 
   it("serves a session-bound Evidence to Source projection with fail-closed states", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "workbench-runtime-evidence-"));
-    roots.push(root);
+    const root = await runtimeRoot("workbench-runtime-evidence-");
     const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
     const calls: Array<{
       taskId: string;
@@ -512,6 +752,7 @@ describe("workbench runtime session", () => {
                 kind: "source" as const,
                 epistemicStatus: "observed" as const,
                 freshness: "current" as const,
+                nodeIds: ["node:answer"],
                 filePath: "src/example.ts",
                 lineRange: [1, 1] as [number, number],
                 contentHash: digest,
@@ -544,6 +785,7 @@ describe("workbench runtime session", () => {
                 kind: "config" as const,
                 epistemicStatus: "observed" as const,
                 freshness: "current" as const,
+                nodeIds: [],
                 filePath: ".env",
                 lineRange: [1, 1] as [number, number],
                 contentHash: digest,
@@ -573,14 +815,13 @@ describe("workbench runtime session", () => {
     const cookie = launch.headers.get("set-cookie")!.split(";", 1)[0]!;
     const html = await fetch(`http://127.0.0.1:${session.port}/workbench`, { headers: { cookie } });
     const htmlText = await html.text();
-    expect(htmlText).toContain("Evidence / Source");
-    expect(htmlText).toContain("wb-actions");
+    expect(htmlText).toBe(DASHBOARD_INDEX);
     const evidenceRoute = await fetch(
       `http://127.0.0.1:${session.port}/workbench?view=tasks&taskId=${taskId}&section=summary&evidenceId=${encodeURIComponent("evidence:ready")}`,
       { headers: { cookie } },
     );
     expect(evidenceRoute.status).toBe(200);
-    expect(await evidenceRoute.text()).toContain('data-evidence-id="evidence:ready"');
+    expect(await evidenceRoute.text()).toBe(DASHBOARD_INDEX);
 
     const ready = await fetch(
       `http://127.0.0.1:${session.port}/__workbench/evidence?taskId=${taskId}&evidenceId=evidence%3Aready`,
@@ -589,7 +830,7 @@ describe("workbench runtime session", () => {
     expect(ready.status).toBe(200);
     await expect(ready.json()).resolves.toMatchObject({
       status: "ready",
-      evidence: { filePath: "src/example.ts", lineRange: [1, 1] },
+      evidence: { nodeIds: ["node:answer"], filePath: "src/example.ts", lineRange: [1, 1] },
       source: { content: "export const answer = 42;" },
     });
     expect(calls[0]).toMatchObject({

@@ -33,12 +33,12 @@ const EXTERNAL_COMMAND_TIMEOUT_MS = 30_000;
 const EXPECTED_CONTENT_SECURITY_POLICY = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; font-src 'self' data:; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
 const EXPECTED_FIRST_PAINT_THEME_BOOTSTRAP_SHA256 = "bb1806d60772d743f0dc88538ee45b10fe829a951db7a24b7131c1acdceb4e0d";
 const SCRIPT_SOURCE_ATTRIBUTE_PATTERN = /(?:^|\s)src\s*=\s*(["'])(?<source>[^"']+)\1/giu;
-const MAX_PACKED_TARBALL_BYTES = 3 * 1024 * 1024;
+const MAX_PACKED_TARBALL_BYTES = 4 * 1024 * 1024;
 const MAX_EXPANDED_TAR_BYTES = 20 * 1024 * 1024;
 const MAX_PACKED_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_BASE_PACKED_TOTAL_FILE_BYTES = 8 * 1024 * 1024;
-const MAX_PLUGIN_PACKED_TOTAL_FILE_BYTES = 8 * 1024 * 1024;
-const EXPECTED_PACKED_FILE_COUNT = 54;
+const MAX_PLUGIN_PACKED_TOTAL_FILE_BYTES = 12 * 1024 * 1024;
+const EXPECTED_PACKED_FILE_COUNT = 87;
 const NATIVE_TUPLE = `${process.platform}-${process.arch}`;
 
 const packedFileRules = [
@@ -48,11 +48,24 @@ const packedFileRules = [
   { label: "MCP executable", pattern: /^package\/dist\/understand-code\.mjs$/u, count: 1, mode: 0o755 },
   { label: "host executable", pattern: /^package\/dist\/host-bin\.mjs$/u, count: 1, mode: 0o755 },
   { label: "release manifest", pattern: /^package\/dist\/release-manifest\.json$/u, count: 1, mode: 0o644 },
+  { label: "Dashboard bundle manifest", pattern: /^package\/dist\/dashboard-manifest\.json$/u, count: 1, mode: 0o644 },
   { label: "Codex host release", pattern: /^package\/dist\/host-adapters\/codex\/(?:config\.toml|manifest\.json|mcp\.json)$/u, count: 3, mode: 0o644 },
   { label: "Claude host release", pattern: /^package\/dist\/host-adapters\/claude\/(?:\.mcp\.json|manifest\.json)$/u, count: 2, mode: 0o644 },
   { label: "Codex plugin contracts", pattern: /^package\/dist\/plugin-roots\/codex\/(?:\.agents\/plugins\/marketplace\.json|plugins\/understand-code\/(?:\.codex-plugin\/plugin\.json|\.mcp\.json))$/u, count: 3, mode: 0o644 },
   { label: "Claude plugin contracts", pattern: /^package\/dist\/plugin-roots\/claude\/(?:\.claude-plugin\/marketplace\.json|plugins\/understand-code\/(?:\.claude-plugin\/plugin\.json|\.mcp\.json))$/u, count: 3, mode: 0o644 },
   { label: "self-contained plugin executables", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/(?:understand-code-plugin|understand-code)\.mjs$/u, count: 4, mode: 0o755 },
+  { label: "self-contained plugin Dashboard manifests", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/dashboard-manifest\.json$/u, count: 2, mode: 0o644 },
+  { label: "self-contained plugin Dashboard roots", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/dashboard\/(?:config\.json|favicon\.ico|favicon\.svg|index\.html|meta\.json)$/u, count: 10, mode: 0o644 },
+  { label: "self-contained plugin Graph Explorer chunks", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/dashboard\/assets\/GraphExplorer-[A-Za-z0-9_-]+\.js$/u, count: 2, mode: 0o644 },
+  { label: "self-contained plugin graph layout chunks", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/dashboard\/assets\/graph-layout-[A-Za-z0-9_-]+\.js$/u, count: 2, mode: 0o644 },
+  { label: "self-contained plugin Dashboard JavaScript entries", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/dashboard\/assets\/index-[A-Za-z0-9_-]+\.js$/u, count: 2, mode: 0o644 },
+  { label: "self-contained plugin Dashboard stylesheet entries", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/dashboard\/assets\/index-[A-Za-z0-9_-]+\.css$/u, count: 2, mode: 0o644 },
+  { label: "self-contained plugin layout worker chunks", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/dashboard\/assets\/layout\.worker-[A-Za-z0-9_-]+\.js$/u, count: 2, mode: 0o644 },
+  { label: "self-contained plugin markdown chunks", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/dashboard\/assets\/markdown-[A-Za-z0-9_-]+\.js$/u, count: 2, mode: 0o644 },
+  { label: "self-contained plugin React vendor chunks", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/dashboard\/assets\/react-vendor-[A-Za-z0-9_-]+\.js$/u, count: 2, mode: 0o644 },
+  { label: "self-contained plugin XYFlow JavaScript chunks", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/dashboard\/assets\/xyflow-[A-Za-z0-9_-]+\.js$/u, count: 2, mode: 0o644 },
+  { label: "self-contained plugin XYFlow stylesheet chunks", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/dashboard\/assets\/xyflow-[A-Za-z0-9_-]+\.css$/u, count: 2, mode: 0o644 },
+  { label: "self-contained plugin theme bootstraps", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/dashboard\/assets\/theme-bootstrap-bb1806d60772d743f0dc88538ee45b10fe829a951db7a24b7131c1acdceb4e0d\.js$/u, count: 2, mode: 0o644 },
   { label: "native kernel peer", pattern: new RegExp(`^package/dist/native/${NATIVE_TUPLE}/provider_kernel_peer\\.node$`, "u"), count: 1, mode: 0o644 },
   { label: "dashboard roots", pattern: /^package\/dist\/dashboard\/(?:config\.json|favicon\.ico|favicon\.svg|index\.html|meta\.json)$/u, count: 5, mode: 0o644 },
   { label: "Graph Explorer chunk", pattern: /^package\/dist\/dashboard\/assets\/GraphExplorer-[A-Za-z0-9_-]+\.js$/u, count: 1, mode: 0o644 },
@@ -157,7 +170,7 @@ function validatePackedTarball(tarballBytes) {
       terminated = true;
       break;
     }
-    assert.ok(entries.length < 64, "tar raw-entry count must remain bounded");
+    assert.ok(entries.length < 128, "tar raw-entry count must remain bounded");
     const declaredChecksum = tarOctal(header, 148, 8, "tar checksum");
     let checksum = 0;
     for (let index = 0; index < header.byteLength; index += 1) {
@@ -727,20 +740,39 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
       const mcp = `${definition.pluginRoot}/.mcp.json`;
       const entrypoint = `${definition.pluginRoot}/bin/understand-code-plugin.mjs`;
       const pluginCli = `${definition.pluginRoot}/bin/understand-code.mjs`;
-      const [marketplaceBytes, pluginManifestBytes, mcpBytes, entrypointBytes, pluginCliBytes] =
+      const dashboardRoot = `${definition.pluginRoot}/bin/dashboard`;
+      const dashboardManifest = `${definition.pluginRoot}/bin/dashboard-manifest.json`;
+      const [marketplaceBytes, pluginManifestBytes, mcpBytes, entrypointBytes, pluginCliBytes,
+        pluginDashboardManifestBytes] =
         await Promise.all([
           readFile(path.join(installedPackageRoot, definition.marketplace)),
           readFile(path.join(installedPackageRoot, definition.manifest)),
           readFile(path.join(installedPackageRoot, mcp)),
           readFile(path.join(installedPackageRoot, entrypoint)),
           readFile(path.join(installedPackageRoot, pluginCli)),
+          readFile(path.join(installedPackageRoot, dashboardManifest)),
         ]);
       assert.deepEqual(pluginCliBytes, bundleBytes, `${host} plugin must carry the exact release CLI bytes`);
+      const pluginDashboardPrefix = `package/${dashboardRoot}/`;
+      const pluginDashboardInventory = [...packedFiles.entries()]
+        .filter(([entryPath]) => entryPath.startsWith(pluginDashboardPrefix))
+        .map(([entryPath, bytes]) => ({
+          path: entryPath.slice(pluginDashboardPrefix.length),
+          sha256: `sha256:${digest(bytes)}`,
+          bytes: bytes.byteLength,
+        }))
+        .sort((left, right) =>
+          left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
+        );
       const payloadFiles = {
         manifestSha256: `sha256:${digest(pluginManifestBytes)}`,
         mcpSha256: `sha256:${digest(mcpBytes)}`,
         entrypointSha256: `sha256:${digest(entrypointBytes)}`,
         cliSha256: `sha256:${digest(pluginCliBytes)}`,
+        dashboardManifestSha256: `sha256:${digest(pluginDashboardManifestBytes)}`,
+        dashboardInventorySha256: `sha256:${digest(
+          Buffer.from(JSON.stringify(pluginDashboardInventory), "utf8"),
+        )}`,
       };
       pluginRoots[host] = {
         marketplaceRoot: definition.marketplaceRoot,
@@ -755,6 +787,11 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
         entrypointSha256: payloadFiles.entrypointSha256,
         cli: pluginCli,
         cliSha256: payloadFiles.cliSha256,
+        dashboardRoot,
+        dashboardManifest,
+        dashboardManifestSha256: payloadFiles.dashboardManifestSha256,
+        dashboardFileCount: pluginDashboardInventory.length,
+        dashboardInventorySha256: payloadFiles.dashboardInventorySha256,
         payloadSha256: `sha256:${digest(Buffer.from(JSON.stringify(payloadFiles), "utf8"))}`,
       };
       for (const relativePath of [
@@ -763,11 +800,20 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
         mcp,
         entrypoint,
         pluginCli,
+        dashboardManifest,
       ]) {
         assert.deepEqual(
           await readFile(path.join(installedPackageRoot, relativePath)),
           packedFiles.get(`package/${relativePath}`),
           `${host} plugin file must equal its exact tgz entry: ${relativePath}`,
+        );
+      }
+      for (const entry of pluginDashboardInventory) {
+        const relativePath = `${dashboardRoot}/${entry.path}`;
+        assert.deepEqual(
+          await readFile(path.join(installedPackageRoot, relativePath)),
+          packedFiles.get(`package/${relativePath}`),
+          `${host} plugin Dashboard file must equal its exact tgz entry: ${relativePath}`,
         );
       }
     }
@@ -823,6 +869,10 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
       dashboard: {
         productVersion: manifest.version,
         root: "dist/dashboard",
+        manifest: "dist/dashboard-manifest.json",
+        manifestSha256: `sha256:${digest(
+          packedFiles.get("package/dist/dashboard-manifest.json"),
+        )}`,
         fileCount: dashboardInventory.length,
         inventorySha256: `sha256:${digest(
           Buffer.from(JSON.stringify(dashboardInventory), "utf8"),

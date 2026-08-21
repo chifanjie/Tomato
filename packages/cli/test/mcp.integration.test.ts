@@ -446,7 +446,9 @@ describe("MCP lifecycle and real handlers", () => {
     const html = await fetch(new URL("/workbench", deepLink), {
       headers: { connection: "close", cookie },
     });
-    expect(await html.text()).toContain("Trace");
+    const workbenchHtml = await html.text();
+    expect(workbenchHtml).toContain("/assets/");
+    expect(workbenchHtml).not.toContain("/__workbench/app.js");
     const trace = await fetch(new URL("/__workbench/trace?taskId=" + encodeURIComponent(taskId), deepLink), {
       headers: { connection: "close", cookie },
     });

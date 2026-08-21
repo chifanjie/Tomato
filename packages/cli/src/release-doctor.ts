@@ -90,7 +90,20 @@ type PluginReleaseReferenceV1 = Readonly<{
   entrypointSha256: string;
   cli: string;
   cliSha256: string;
+  dashboardRoot: string;
+  dashboardManifest: string;
+  dashboardManifestSha256: string;
+  dashboardFileCount: number;
+  dashboardInventorySha256: string;
   payloadSha256: string;
+}>;
+
+type DashboardBundleManifestV1 = Readonly<{
+  schemaVersion: "understand-code-dashboard-bundle-v1";
+  productVersion: string;
+  root: "dashboard";
+  fileCount: number;
+  inventorySha256: string;
 }>;
 
 type HostAdapterReleaseReferenceV1 = Readonly<{
@@ -116,6 +129,8 @@ type ReleaseManifestV1 = Readonly<{
   dashboard: Readonly<{
     productVersion: string;
     root: "dist/dashboard";
+    manifest: "dist/dashboard-manifest.json";
+    manifestSha256: string;
     fileCount: number;
     inventorySha256: string;
   }>;
@@ -262,14 +277,14 @@ async function readContainedRegularFile(
 
 async function buildDashboardInventory(
   packageRoot: string,
+  dashboardRoot = "dist/dashboard",
 ): Promise<readonly Readonly<{ path: string; sha256: string; bytes: number }>[]> {
   const inventory: Array<Readonly<{ path: string; sha256: string; bytes: number }>> = [];
   let totalBytes = 0;
   async function walk(relativeDirectory: string): Promise<void> {
-    const directoryRelative =
-      relativeDirectory === ""
-        ? "dist/dashboard"
-        : `dist/dashboard/${relativeDirectory}`;
+    const directoryRelative = relativeDirectory === ""
+      ? dashboardRoot
+      : `${dashboardRoot}/${relativeDirectory}`;
     const directory = path.join(packageRoot, ...directoryRelative.split("/"));
     const metadata = await lstat(directory);
     if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
@@ -294,7 +309,7 @@ async function buildDashboardInventory(
       }
       const bytes = await readContainedRegularFile(
         packageRoot,
-        `dist/dashboard/${relativePath}`,
+        `${dashboardRoot}/${relativePath}`,
         MAX_JSON_BYTES,
       );
       totalBytes += bytes.byteLength;
@@ -313,6 +328,23 @@ async function buildDashboardInventory(
     left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
   );
   return inventory;
+}
+
+function validDashboardBundleManifest(
+  value: unknown,
+  fileCount: number,
+  inventorySha256: string,
+): value is DashboardBundleManifestV1 {
+  return (
+    isRecord(value) &&
+    Object.keys(value).sort().join(",") ===
+      "fileCount,inventorySha256,productVersion,root,schemaVersion" &&
+    value.schemaVersion === "understand-code-dashboard-bundle-v1" &&
+    value.productVersion === PRODUCT_VERSION &&
+    value.root === "dashboard" &&
+    value.fileCount === fileCount &&
+    value.inventorySha256 === inventorySha256
+  );
 }
 
 function parseJson(bytes: Uint8Array): unknown {
@@ -343,6 +375,9 @@ const PLUGIN_PATHS = Object.freeze({
     entrypoint:
       "dist/plugin-roots/codex/plugins/understand-code/bin/understand-code-plugin.mjs",
     cli: "dist/plugin-roots/codex/plugins/understand-code/bin/understand-code.mjs",
+    dashboardRoot: "dist/plugin-roots/codex/plugins/understand-code/bin/dashboard",
+    dashboardManifest:
+      "dist/plugin-roots/codex/plugins/understand-code/bin/dashboard-manifest.json",
   }),
   claude: Object.freeze({
     marketplaceRoot: "dist/plugin-roots/claude",
@@ -354,6 +389,9 @@ const PLUGIN_PATHS = Object.freeze({
     entrypoint:
       "dist/plugin-roots/claude/plugins/understand-code/bin/understand-code-plugin.mjs",
     cli: "dist/plugin-roots/claude/plugins/understand-code/bin/understand-code.mjs",
+    dashboardRoot: "dist/plugin-roots/claude/plugins/understand-code/bin/dashboard",
+    dashboardManifest:
+      "dist/plugin-roots/claude/plugins/understand-code/bin/dashboard-manifest.json",
   }),
 });
 
@@ -376,6 +414,14 @@ function validPluginReference(
     isDigest(value.entrypointSha256) &&
     value.cli === expected.cli &&
     isDigest(value.cliSha256) &&
+    value.dashboardRoot === expected.dashboardRoot &&
+    value.dashboardManifest === expected.dashboardManifest &&
+    isDigest(value.dashboardManifestSha256) &&
+    Number.isSafeInteger(value.dashboardFileCount) &&
+    typeof value.dashboardFileCount === "number" &&
+    value.dashboardFileCount > 0 &&
+    value.dashboardFileCount <= 4_096 &&
+    isDigest(value.dashboardInventorySha256) &&
     isDigest(value.payloadSha256)
   );
 }
@@ -438,6 +484,8 @@ function parseReleaseManifest(value: unknown): ReleaseManifestV1 | undefined {
     !isRecord(dashboard) ||
     dashboard.productVersion !== PRODUCT_VERSION ||
     dashboard.root !== "dist/dashboard" ||
+    dashboard.manifest !== "dist/dashboard-manifest.json" ||
+    !isDigest(dashboard.manifestSha256) ||
     !Number.isSafeInteger(dashboard.fileCount) ||
     typeof dashboard.fileCount !== "number" ||
     dashboard.fileCount <= 0 ||
@@ -824,6 +872,7 @@ async function inspectBundleIntegrity(
         serverBytes,
         contractsBytes,
         dashboardInventory,
+        dashboardManifestBytes,
       ] = await Promise.all([
         readContainedRegularFile(packageRoot, release.cli.path, MAX_JSON_BYTES),
         readContainedRegularFile(packageRoot, release.preview.path, MAX_JSON_BYTES),
@@ -868,6 +917,11 @@ async function inspectBundleIntegrity(
           MAX_JSON_BYTES,
         ),
         buildDashboardInventory(packageRoot),
+        readContainedRegularFile(
+          packageRoot,
+          release.dashboard.manifest,
+          MAX_METADATA_BYTES,
+        ),
       ]);
       const codexToml = codexTomlBytes.toString("utf8").trim();
       if (
@@ -887,6 +941,12 @@ async function inspectBundleIntegrity(
         dashboardInventory.length !== release.dashboard.fileCount ||
         digest(Buffer.from(JSON.stringify(dashboardInventory), "utf8")) !==
           release.dashboard.inventorySha256 ||
+        digest(dashboardManifestBytes) !== release.dashboard.manifestSha256 ||
+        !validDashboardBundleManifest(
+          parseJson(dashboardManifestBytes),
+          release.dashboard.fileCount,
+          release.dashboard.inventorySha256,
+        ) ||
         codexToml !==
           '[mcp_servers.understand-code]\ncommand = "understand-code-codex"\nargs = ["--root", "${WORKSPACE_ROOT}"]'
       ) {
@@ -1029,7 +1089,8 @@ async function inspectPluginPayload(
   if (packageRoot !== undefined && release !== undefined) {
     try {
       const reference = release.pluginRoots[host];
-      const [marketplace, manifest, mcp, entrypoint, cli] = await Promise.all([
+      const [marketplace, manifest, mcp, entrypoint, cli, dashboardManifest,
+        dashboardInventory] = await Promise.all([
         readContainedRegularFile(
           packageRoot,
           reference.marketplace,
@@ -1039,12 +1100,22 @@ async function inspectPluginPayload(
         readContainedRegularFile(packageRoot, reference.mcp, MAX_METADATA_BYTES),
         readContainedRegularFile(packageRoot, reference.entrypoint, MAX_JSON_BYTES),
         readContainedRegularFile(packageRoot, reference.cli, MAX_JSON_BYTES),
+        readContainedRegularFile(
+          packageRoot,
+          reference.dashboardManifest,
+          MAX_METADATA_BYTES,
+        ),
+        buildDashboardInventory(packageRoot, reference.dashboardRoot),
       ]);
       const payloadFiles = {
         manifestSha256: digest(manifest),
         mcpSha256: digest(mcp),
         entrypointSha256: digest(entrypoint),
         cliSha256: digest(cli),
+        dashboardManifestSha256: digest(dashboardManifest),
+        dashboardInventorySha256: digest(
+          Buffer.from(JSON.stringify(dashboardInventory), "utf8"),
+        ),
       };
       if (
         digest(marketplace) !== reference.marketplaceSha256 ||
@@ -1053,6 +1124,16 @@ async function inspectPluginPayload(
         payloadFiles.entrypointSha256 !== reference.entrypointSha256 ||
         payloadFiles.cliSha256 !== reference.cliSha256 ||
         payloadFiles.cliSha256 !== release.cli.sha256 ||
+        payloadFiles.dashboardManifestSha256 !== reference.dashboardManifestSha256 ||
+        dashboardInventory.length !== reference.dashboardFileCount ||
+        payloadFiles.dashboardInventorySha256 !== reference.dashboardInventorySha256 ||
+        reference.dashboardFileCount !== release.dashboard.fileCount ||
+        reference.dashboardInventorySha256 !== release.dashboard.inventorySha256 ||
+        !validDashboardBundleManifest(
+          parseJson(dashboardManifest),
+          reference.dashboardFileCount,
+          reference.dashboardInventorySha256,
+        ) ||
         digest(Buffer.from(JSON.stringify(payloadFiles), "utf8")) !==
           reference.payloadSha256 ||
         !validPluginDocuments(

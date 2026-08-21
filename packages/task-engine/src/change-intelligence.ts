@@ -309,6 +309,8 @@ function buildFindingEvidence(
   findingId: string,
   occurredAt: string,
   unknown: boolean,
+  actualChange: RepositoryChangeV1 | undefined,
+  nodeIds: readonly string[],
 ): EvidenceV1 {
   const id = stableId("evidence:change-check", {
     taskId,
@@ -330,6 +332,21 @@ function buildFindingEvidence(
         actualSnapshot.limitations[0] ??
         "Repository Snapshot capture was incomplete for Change Intelligence.",
       relationPath: [],
+    });
+  }
+  if (actualChange?.contentDigest !== undefined) {
+    return EvidenceV1Schema.parse({
+      id,
+      kind: "source",
+      epistemicStatus: "observed",
+      freshness: "current",
+      claimIds: [],
+      nodeIds: [...new Set(nodeIds)],
+      producedBy: "task-engine",
+      createdAt: occurredAt,
+      observedAtSnapshotId: actualSnapshot.snapshotId,
+      filePath: actualChange.path,
+      contentHash: actualChange.contentDigest,
     });
   }
   return EvidenceV1Schema.parse({
@@ -455,6 +472,9 @@ function makeFindings(
   const findingEvidenceItems: EvidenceV1[] = [];
   const baseFindingLinks = new Map<string, string[]>();
   for (const [index, draft] of draftFindings.entries()) {
+    const sourceChange = actual.changes.find((change) =>
+      draft.actualChangeIds.includes(change.id),
+    );
     const findingId = stableId("finding", {
       taskId: data.manifest.taskId,
       revision: data.manifest.revision + 1,
@@ -469,6 +489,14 @@ function makeFindings(
       findingId,
       occurredAt,
       draft.unknown === true || actual.captureStatus !== "complete",
+      sourceChange,
+      data.evidence
+        .filter((item) =>
+          "filePath" in item &&
+          sourceChange !== undefined &&
+          sourceChange.path === item.filePath,
+        )
+        .flatMap((item) => item.nodeIds),
     );
     const claimId = stableId("claim:finding", {
       taskId: data.manifest.taskId,

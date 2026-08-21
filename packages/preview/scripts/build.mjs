@@ -35,6 +35,7 @@ const PRODUCT_VERSION = packageMetadata.version;
 const SCRIPT_ELEMENT_PATTERN = /<script\b(?<attributes>[^>]*)>(?<body>[\s\S]*?)<\/script>/giu;
 const SCRIPT_SOURCE_ATTRIBUTE_PATTERN = /(?:^|\s)src\s*=\s*(["'])(?<source>[^"']+)\1/giu;
 const EXPECTED_FIRST_PAINT_THEME_BOOTSTRAP_SHA256 = "bb1806d60772d743f0dc88538ee45b10fe829a951db7a24b7131c1acdceb4e0d";
+const DASHBOARD_BUNDLE_SCHEMA_VERSION = "understand-code-dashboard-bundle-v1";
 
 function scriptSourceAttributes(attributes) {
   return [...attributes.matchAll(SCRIPT_SOURCE_ATTRIBUTE_PATTERN)].map((match) => match.groups?.source);
@@ -143,6 +144,22 @@ async function buildDirectoryInventory(root) {
   return inventory;
 }
 
+async function writeDashboardBundleManifest() {
+  const inventory = await buildDirectoryInventory(path.join(distRoot, "dashboard"));
+  const manifest = {
+    schemaVersion: DASHBOARD_BUNDLE_SCHEMA_VERSION,
+    productVersion: PRODUCT_VERSION,
+    root: "dashboard",
+    fileCount: inventory.length,
+    inventorySha256: sha256(Buffer.from(JSON.stringify(inventory), "utf8")),
+  };
+  await writeFile(
+    path.join(distRoot, "dashboard-manifest.json"),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  );
+  return Object.freeze({ manifest, inventory });
+}
+
 async function writeReleaseMetadata() {
   const cliPath = path.join(distRoot, "understand-code.mjs");
   const previewBinPath = path.join(distRoot, "bin.mjs");
@@ -158,6 +175,7 @@ async function writeReleaseMetadata() {
     serverBytes,
     contractsBytes,
     dashboardInventory,
+    dashboardManifestBytes,
   ] = await Promise.all([
     readFile(cliPath),
     readFile(previewBinPath),
@@ -166,6 +184,7 @@ async function writeReleaseMetadata() {
     readFile(path.join(distRoot, "server.mjs")),
     readFile(path.join(distRoot, "contracts.mjs")),
     buildDirectoryInventory(path.join(distRoot, "dashboard")),
+    readFile(path.join(distRoot, "dashboard-manifest.json")),
   ]);
   const cli = Object.freeze({
     bin: "understand-code",
@@ -255,6 +274,8 @@ async function writeReleaseMetadata() {
     dashboard: {
       productVersion: PRODUCT_VERSION,
       root: "dist/dashboard",
+      manifest: "dist/dashboard-manifest.json",
+      manifestSha256: sha256(dashboardManifestBytes),
       fileCount: dashboardInventory.length,
       inventorySha256: sha256(
         Buffer.from(JSON.stringify(dashboardInventory), "utf8"),
@@ -281,13 +302,18 @@ async function writeReleaseMetadata() {
     const mcp = `${definition.pluginRoot}/.mcp.json`;
     const entrypoint = `${definition.pluginRoot}/bin/understand-code-plugin.mjs`;
     const pluginCli = `${definition.pluginRoot}/bin/understand-code.mjs`;
-    const [marketplaceBytes, manifestBytes, mcpBytes, entrypointBytes, pluginCliBytes] =
+    const dashboardRoot = `${definition.pluginRoot}/bin/dashboard`;
+    const dashboardManifest = `${definition.pluginRoot}/bin/dashboard-manifest.json`;
+    const [marketplaceBytes, manifestBytes, mcpBytes, entrypointBytes, pluginCliBytes,
+      pluginDashboardManifestBytes, pluginDashboardInventory] =
       await Promise.all([
         readFile(path.join(packageRoot, definition.marketplace)),
         readFile(path.join(packageRoot, definition.manifest)),
         readFile(path.join(packageRoot, mcp)),
         readFile(path.join(packageRoot, entrypoint)),
         readFile(path.join(packageRoot, pluginCli)),
+        readFile(path.join(packageRoot, dashboardManifest)),
+        buildDirectoryInventory(path.join(packageRoot, dashboardRoot)),
       ]);
     const pluginCliSha256 = sha256(pluginCliBytes);
     if (pluginCliSha256 !== cli.sha256) {
@@ -298,7 +324,18 @@ async function writeReleaseMetadata() {
       mcpSha256: sha256(mcpBytes),
       entrypointSha256: sha256(entrypointBytes),
       cliSha256: pluginCliSha256,
+      dashboardManifestSha256: sha256(pluginDashboardManifestBytes),
+      dashboardInventorySha256: sha256(
+        Buffer.from(JSON.stringify(pluginDashboardInventory), "utf8"),
+      ),
     };
+    if (
+      pluginDashboardInventory.length !== dashboardInventory.length ||
+      payloadFiles.dashboardInventorySha256 !== releaseManifest.dashboard.inventorySha256 ||
+      !pluginDashboardManifestBytes.equals(dashboardManifestBytes)
+    ) {
+      throw new Error(`${host} plugin Dashboard differs from the release Dashboard`);
+    }
     releaseManifest.pluginRoots[host] = {
       marketplaceRoot: definition.marketplaceRoot,
       marketplace: definition.marketplace,
@@ -312,6 +349,11 @@ async function writeReleaseMetadata() {
       entrypointSha256: payloadFiles.entrypointSha256,
       cli: pluginCli,
       cliSha256: payloadFiles.cliSha256,
+      dashboardRoot,
+      dashboardManifest,
+      dashboardManifestSha256: payloadFiles.dashboardManifestSha256,
+      dashboardFileCount: pluginDashboardInventory.length,
+      dashboardInventorySha256: payloadFiles.dashboardInventorySha256,
       payloadSha256: sha256(Buffer.from(JSON.stringify(payloadFiles), "utf8")),
     };
   }
@@ -404,6 +446,15 @@ async function buildPluginRoots() {
       cp(
         path.join(distRoot, "understand-code.mjs"),
         path.join(pluginBinRoot, "understand-code.mjs"),
+      ),
+      cp(
+        path.join(distRoot, "dashboard"),
+        path.join(pluginBinRoot, "dashboard"),
+        { recursive: true },
+      ),
+      cp(
+        path.join(distRoot, "dashboard-manifest.json"),
+        path.join(pluginBinRoot, "dashboard-manifest.json"),
       ),
     ]);
     await Promise.all([
@@ -548,7 +599,6 @@ async function main() {
       path.join(distRoot, "host-adapters/claude/.mcp.json"),
     ),
   ]);
-  await buildPluginRoots();
   const demoRoot = path.join(distRoot, "demo/.understand-code");
   await mkdir(path.join(demoRoot, "knowledge-base/参考"), { recursive: true });
   await writeFile(path.join(demoRoot, "knowledge-graph.json"), `${JSON.stringify(validatedGraph, null, 2)}\n`);
@@ -590,6 +640,8 @@ async function main() {
     throw new Error("Preview dashboard theme bootstrap content hash does not match its file name");
   }
   assertExternalScriptOnly(packedIndex, bootstrap.fileName);
+  await writeDashboardBundleManifest();
+  await buildPluginRoots();
   await writeReleaseMetadata();
   process.stdout.write(`built ${distRoot}\n`);
 }

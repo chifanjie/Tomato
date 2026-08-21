@@ -24,7 +24,8 @@
     "test": "npm run build && npm run test:runtime && npm run test:plugins && npm run test:cold",
     "test:runtime": "node --test test/preview.test.mjs",
     "test:plugins": "node --test test/plugin-clean-install.test.mjs",
-    "test:cold": "node --test test/cold-packed.test.mjs"
+    "test:cold": "node --test test/cold-packed.test.mjs",
+    "test:workbench-browser": "node --test test/workbench-browser-packed.test.mjs"
   },
   "dependencies": {}
 }

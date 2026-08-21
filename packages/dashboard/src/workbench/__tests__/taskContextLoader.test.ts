@@ -78,4 +78,77 @@ describe("loadTaskWorkbench", () => {
     expect(result.status).toBe("missing");
     expect(result.message).toContain("No persisted Task Brief");
   });
+
+  it("uses only the HttpOnly-cookie transport and reads the selected Evidence projection", async () => {
+    const evidenceId = "evidence:source";
+    const cookieRoute = {
+      ...route,
+      section: "planned_changes",
+      findingId: "finding:source",
+      evidenceId,
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/__workbench/evidence?")) {
+        return new Response(JSON.stringify({
+          schemaVersion: 1,
+          surface: "evidence",
+          taskId,
+          evidenceId,
+          repositoryId: task.repositoryId,
+          worktreeId: task.worktreeId,
+          snapshotId: task.latestSnapshotId,
+          headCommit: null,
+          status: "ready",
+          evidence: {
+            id: evidenceId,
+            kind: "source",
+            epistemicStatus: "observed",
+            freshness: "current",
+            nodeIds: ["file:src/index.ts"],
+            filePath: "src/index.ts",
+            lineRange: [1, 1],
+            contentHash: `sha256:${"a".repeat(64)}`,
+            observedAtSnapshotId: task.latestSnapshotId,
+          },
+          source: {
+            filePath: "src/index.ts",
+            lineRange: [1, 1],
+            content: "export const ready = true;",
+            sizeBytes: 26,
+            lineCount: 1,
+            truncated: false,
+          },
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (url.endsWith("change-check.json") || url.endsWith("verification.json")) {
+        return new Response("{}", { status: 404 });
+      }
+      return new Response(JSON.stringify({
+        task,
+        brief,
+        section: "planned_changes",
+        items: [],
+        pulse: null,
+        freshness: { sourceSnapshotId: task.latestSnapshotId, current: true },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    const fetcher = fetchMock as unknown as typeof fetch;
+
+    const result = await loadTaskWorkbench(cookieRoute, "__workbench_cookie__", fetcher);
+
+    expect(result.status).toBe("ready");
+    expect(result.payload?.evidence).toMatchObject({
+      status: "ready",
+      value: {
+        status: "ready",
+        evidenceId,
+        evidence: { filePath: "src/index.ts", nodeIds: ["file:src/index.ts"] },
+      },
+    });
+    for (const [url, init] of fetchMock.mock.calls) {
+      expect(String(url)).not.toContain("token=");
+      expect(init).toMatchObject({ credentials: "same-origin" });
+    }
+  });
 });

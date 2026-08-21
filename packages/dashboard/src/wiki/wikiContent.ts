@@ -1,4 +1,5 @@
 import { normalizeLegacyMarkdownBranding } from "../legacyBranding";
+import { isCookieWorkbenchLocation } from "../workbench/transport";
 
 const TOKEN_STORAGE_KEY = "understand-code-token";
 const LEGACY_WIKI_PAGE_HASH_PREFIX = "#wiki-page=";
@@ -204,6 +205,7 @@ export function wikiMarkdownUrl(
 
   if (import.meta.env.VITE_DEMO_MODE === "true") return url;
 
+  if (typeof window !== "undefined" && isCookieWorkbenchLocation(window.location)) return url;
   const search = options.search ?? browserSearch();
   const queryToken = new URLSearchParams(search).get("token");
   const token = queryToken ?? options.storedToken ?? browserStoredToken();

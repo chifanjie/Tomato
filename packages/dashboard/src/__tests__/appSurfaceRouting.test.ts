@@ -587,7 +587,7 @@ describe("App peer shell contracts", () => {
   it("keeps Graph Explorer behind React.lazy", () => {
     expect(lazyGraphProbe.moduleLoads).toBe(0);
     expect(APP_SOURCE).toMatch(
-      /<GraphExplorer\s+onSelectWikiTarget=\{\(target\) => routingController\.selectWikiTarget\(target\)\}/,
+      /<GraphExplorer\s+onSelectWikiTarget=\{\(target\) => selectWikiTarget\(target\)\}/,
     );
   });
 
@@ -651,7 +651,7 @@ describe("App peer shell contracts", () => {
 
   it("routes Markdown page-and-anchor targets through the App owner", () => {
     expect(APP_SOURCE).toContain(
-      "onSelectWikiTarget={(target) => routingController.selectWikiTarget(target)}",
+      "onSelectWikiTarget={(target) => selectWikiTarget(target)}",
     );
   });
 

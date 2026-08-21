@@ -93,6 +93,15 @@ Verification records are externally reported evidence. The Alpha persists and
 replays their command descriptor, exit code, output digest, duration, claims, and
 Snapshot binding; it does not independently execute or attest the reported command.
 
+`open_workbench` exchanges its one-time fragment token for an HttpOnly loopback
+session cookie and serves the exact precompiled React Dashboard carried by the
+installed CLI payload. From a Task Change Check, the installed-browser Alpha can
+open the Finding's own Evidence and guarded Source range, focus a stable Graph
+node associated with that Source, continue into Wiki, and return to the original
+Task/Finding context. A
+repository refresh leaves an older browser session pinned to its original
+Snapshot and shows a stale state instead of silently rebinding Source or overlays.
+
 After `refresh_index` has published Graph, Wiki, Search, and Repo Pulse artifacts,
 run the installed-package Doctor from any directory inside that Git worktree:
 
@@ -125,7 +134,11 @@ Use `--host claude` for the Claude wrapper. Ending MCP stdin stops the stdio
 server; stopping `understand-code-preview` terminates its loopback HTTP server.
 Install, upgrade, rollback, Doctor, and uninstall operate only on the explicitly
 selected managed installation root and fail closed when owned files are replaced
-or modified.
+or modified. The managed-copy lifecycle currently retains the earlier limited,
+read-only embedded Workbench because it does not yet copy the React Dashboard
+inventory through upgrade and rollback. That fallback is allowed only by an
+explicit healthy installation manifest; a missing or invalid Dashboard beside a
+global or Plugin CLI remains an error.
 
 The Graph/Wiki process token remains a Preview-only, query-parameter, local
 process-lifetime access token. In root mode it is bound to the clean repository
@@ -138,9 +151,11 @@ writes therefore remain locked. The bundled CLI may contain internal Provider
 lifecycle candidates, but this Alpha does not claim that they are ready for
 production use or that a live Provider execution path has been established.
 
-The Alpha's UI evidence is the same-tarball HTTP/CSP contract plus the existing
-Dashboard test suite. It does **not** claim that the formal real-browser Surface
-E2E, release, distribution, or cross-platform gates are closed.
+The Alpha's UI evidence includes a same-tarball, monorepo-external real-browser
+gate that drives the public MCP flow through Finding → Evidence/Source → Graph →
+Wiki → Task and verifies Snapshot drift handling. This does **not** close the
+formal Release, signed distribution, cross-platform, or full Host-mediated browser
+gates.
 
 ## Preview commands
 

@@ -37,13 +37,18 @@ const MAX_PACKED_TARBALL_BYTES = 2 * 1024 * 1024;
 const MAX_EXPANDED_TAR_BYTES = 12 * 1024 * 1024;
 const MAX_PACKED_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_PACKED_TOTAL_FILE_BYTES = 8 * 1024 * 1024;
-const EXPECTED_PACKED_FILE_COUNT = 37;
+const EXPECTED_PACKED_FILE_COUNT = 44;
 const NATIVE_TUPLE = `${process.platform}-${process.arch}`;
 
 const packedFileRules = [
   { label: "package metadata", pattern: /^package\/(?:README\.md|package\.json)$/u, count: 2, mode: 0o644 },
-  { label: "runtime modules", pattern: /^package\/dist\/(?:README\.md|bin\.mjs|contracts\.mjs|server\.mjs)$/u, count: 4, mode: 0o644 },
+  { label: "runtime modules", pattern: /^package\/dist\/(?:README\.md|contracts\.mjs|server\.mjs)$/u, count: 3, mode: 0o644 },
+  { label: "Preview executable", pattern: /^package\/dist\/bin\.mjs$/u, count: 1, mode: 0o755 },
   { label: "MCP executable", pattern: /^package\/dist\/understand-code\.mjs$/u, count: 1, mode: 0o755 },
+  { label: "host executable", pattern: /^package\/dist\/host-bin\.mjs$/u, count: 1, mode: 0o755 },
+  { label: "release manifest", pattern: /^package\/dist\/release-manifest\.json$/u, count: 1, mode: 0o644 },
+  { label: "Codex host release", pattern: /^package\/dist\/host-adapters\/codex\/(?:config\.toml|manifest\.json|mcp\.json)$/u, count: 3, mode: 0o644 },
+  { label: "Claude host release", pattern: /^package\/dist\/host-adapters\/claude\/(?:\.mcp\.json|manifest\.json)$/u, count: 2, mode: 0o644 },
   { label: "native kernel peer", pattern: new RegExp(`^package/dist/native/${NATIVE_TUPLE}/provider_kernel_peer\\.node$`, "u"), count: 1, mode: 0o644 },
   { label: "dashboard roots", pattern: /^package\/dist\/dashboard\/(?:config\.json|favicon\.ico|favicon\.svg|index\.html|meta\.json)$/u, count: 5, mode: 0o644 },
   { label: "Graph Explorer chunk", pattern: /^package\/dist\/dashboard\/assets\/GraphExplorer-[A-Za-z0-9_-]+\.js$/u, count: 1, mode: 0o644 },
@@ -630,12 +635,14 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
     const installedPackageRoot = path.join(globalModulesRoot, "@understand-code/preview");
     const previewBin = path.join(globalBinRoot, "understand-code-preview");
     const mcpBin = path.join(globalBinRoot, "understand-code");
+    const codexBin = path.join(globalBinRoot, "understand-code-codex");
+    const claudeBin = path.join(globalBinRoot, "understand-code-claude");
     const [previewVersion, mcpVersion] = await Promise.all([
       execFileBounded(previewBin, ["--version"], { cwd: installDirectory, encoding: "utf8" }),
       execFileBounded(mcpBin, ["--version"], { cwd: installDirectory, encoding: "utf8" }),
     ]);
     assert.equal(previewVersion.stdout, "0.1.0-preview.1\n");
-    assert.equal(mcpVersion.stdout, "0.1.0\n");
+    assert.equal(mcpVersion.stdout, "0.1.0-preview.1\n");
     const help = await execFileBounded(previewBin, ["--help"], { cwd: installDirectory, encoding: "utf8" });
     assert.match(help.stdout, /understand-code-preview --demo/u);
     const mcpHelp = await execFileBounded(mcpBin, ["--help"], { cwd: installDirectory, encoding: "utf8" });
@@ -663,15 +670,144 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
     assert.deepEqual(manifest.dependencies ?? {}, {});
     assert.deepEqual(manifest.exports, {});
     assert.equal(Object.hasOwn(manifest, "main"), false);
+    assert.equal(manifest.version, "0.1.0-preview.1");
+    assert.deepEqual(manifest.bin, {
+      "understand-code-preview": "dist/bin.mjs",
+      "understand-code": "dist/understand-code.mjs",
+      "understand-code-codex": "dist/host-bin.mjs",
+      "understand-code-claude": "dist/host-bin.mjs",
+    });
     const importConsumerRoot = path.join(installDirectory, "import-consumer");
     await mkdir(importConsumerRoot, { recursive: true });
     await execFileBounded("npm", ["install", "--prefix", importConsumerRoot, "--ignore-scripts", "--no-package-lock", "--no-audit", "--no-fund", tarballPath], { cwd: importConsumerRoot, encoding: "utf8" });
     assert.deepEqual(await probePackageImport(importConsumerRoot, "@understand-code/preview"), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
     assert.deepEqual(await probePackageImport(importConsumerRoot, "@understand-code/preview/dist/bin.mjs"), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
-    const bundle = await readFile(path.join(installedPackageRoot, "dist/understand-code.mjs"), "utf8");
+    const bundlePath = path.join(installedPackageRoot, "dist/understand-code.mjs");
+    const hostEntrypointPath = path.join(installedPackageRoot, "dist/host-bin.mjs");
+    const previewEntrypointPath = path.join(installedPackageRoot, "dist/bin.mjs");
+    const bundleBytes = await readFile(bundlePath);
+    const hostEntrypointBytes = await readFile(hostEntrypointPath);
+    const previewEntrypointBytes = await readFile(previewEntrypointPath);
+    const bundle = bundleBytes.toString("utf8");
     assert.doesNotMatch(bundle, /workspace:\*/u);
     assert.doesNotMatch(bundle, new RegExp(packageRoot.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
     assert.match(bundle, /understand-code-owned-v1/u, "the packed CLI must carry its managed-install identity");
+    const cliRelease = {
+      bin: "understand-code",
+      path: "dist/understand-code.mjs",
+      sha256: `sha256:${digest(bundleBytes)}`,
+    };
+    const hostEntrypointSha256 = `sha256:${digest(hostEntrypointBytes)}`;
+    const releaseManifest = JSON.parse(
+      await readFile(path.join(installedPackageRoot, "dist/release-manifest.json"), "utf8"),
+    );
+    assert.deepEqual(releaseManifest, {
+      schemaVersion: "understand-code-alpha-release-v1",
+      product: "understand-code",
+      package: { name: "@understand-code/preview", version: manifest.version },
+      cli: cliRelease,
+      preview: {
+        bin: "understand-code-preview",
+        path: "dist/bin.mjs",
+        sha256: `sha256:${digest(previewEntrypointBytes)}`,
+      },
+      hostAdapters: {
+        codex: {
+          bin: "understand-code-codex",
+          entrypoint: "dist/host-bin.mjs",
+          entrypointSha256: hostEntrypointSha256,
+          manifest: "dist/host-adapters/codex/manifest.json",
+          configs: [
+            "dist/host-adapters/codex/mcp.json",
+            "dist/host-adapters/codex/config.toml",
+          ],
+        },
+        claude: {
+          bin: "understand-code-claude",
+          entrypoint: "dist/host-bin.mjs",
+          entrypointSha256: hostEntrypointSha256,
+          manifest: "dist/host-adapters/claude/manifest.json",
+          configs: ["dist/host-adapters/claude/.mcp.json"],
+        },
+      },
+    });
+    const hostDefinitions = {
+      codex: {
+        bin: "understand-code-codex",
+        placeholder: "${WORKSPACE_ROOT}",
+        configs: ["mcp.json", "config.toml"],
+      },
+      claude: {
+        bin: "understand-code-claude",
+        placeholder: "${CLAUDE_PROJECT_DIR}",
+        configs: [".mcp.json"],
+      },
+    };
+    for (const [host, definition] of Object.entries(hostDefinitions)) {
+      const hostRoot = path.join(installedPackageRoot, "dist/host-adapters", host);
+      const hostManifest = JSON.parse(await readFile(path.join(hostRoot, "manifest.json"), "utf8"));
+      assert.deepEqual(hostManifest, {
+        schemaVersion: "understand-code-host-adapter-release-v1",
+        product: "understand-code",
+        productVersion: manifest.version,
+        host,
+        name: "understand-code",
+        transport: "stdio",
+        bin: definition.bin,
+        entrypoint: "dist/host-bin.mjs",
+        entrypointSha256: hostEntrypointSha256,
+        cli: cliRelease,
+        args: ["--root", definition.placeholder],
+        root: {
+          required: true,
+          flag: "--root",
+          placeholder: definition.placeholder,
+          absolute: true,
+        },
+      });
+      assert.deepEqual(
+        await readFile(path.join(hostRoot, "manifest.json")),
+        packedFiles.get(`package/dist/host-adapters/${host}/manifest.json`),
+      );
+      for (const config of definition.configs) {
+        assert.deepEqual(
+          await readFile(path.join(hostRoot, config)),
+          packedFiles.get(`package/dist/host-adapters/${host}/${config}`),
+        );
+      }
+    }
+    assert.deepEqual(
+      await readFile(path.join(installedPackageRoot, "dist/release-manifest.json")),
+      packedFiles.get("package/dist/release-manifest.json"),
+    );
+    const codexConfig = JSON.parse(
+      await readFile(path.join(installedPackageRoot, "dist/host-adapters/codex/mcp.json"), "utf8"),
+    );
+    const claudeConfig = JSON.parse(
+      await readFile(path.join(installedPackageRoot, "dist/host-adapters/claude/.mcp.json"), "utf8"),
+    );
+    assert.deepEqual(codexConfig.mcpServers["understand-code"], {
+      command: "understand-code-codex",
+      args: ["--root", "${WORKSPACE_ROOT}"],
+    });
+    assert.deepEqual(claudeConfig.mcpServers["understand-code"], {
+      command: "understand-code-claude",
+      args: ["--root", "${CLAUDE_PROJECT_DIR}"],
+    });
+    for (const [hostBin, args] of [
+      [codexBin, []],
+      [claudeBin, ["--root", "relative/worktree"]],
+      [codexBin, ["--root", "${WORKSPACE_ROOT}"]],
+    ]) {
+      await assert.rejects(
+        execFileBounded(hostBin, args, { cwd: installDirectory, encoding: "utf8" }),
+        (error) =>
+          error?.code === 2 &&
+          error.stdout === "" &&
+          error.stderr === "workspace_root_required\n",
+        "packed Host entrypoints must reject missing, non-absolute, or unexpanded Roots",
+      );
+    }
     assert.deepEqual(
       [...packedFiles.keys()].filter(
         (entry) => entry.includes("/dist/native/") || entry.endsWith("provider_kernel_peer.node"),
@@ -687,6 +823,7 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
     );
     assert.equal(installed.ok, true);
     assert.equal(installed.status, "installed");
+    assert.equal(installed.version, manifest.version);
     assert.equal(installed.root, await realpath(requestedInstallRoot));
     managedInstallRoot = installed.root;
     const installedWrapper = path.join(managedInstallRoot, "bin/understand-code");
@@ -707,6 +844,38 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
     );
     assert.equal(initialDoctor.ok, true);
     assert.equal(initialDoctor.status, "healthy");
+    assert.equal(initialDoctor.version, manifest.version);
+    const managedMcp = spawn(installedWrapper, ["--root", mcpRoot], {
+      cwd: installDirectory,
+      env: { PATH: process.env.PATH },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    mcpChild = managedMcp;
+    const managedOutput = collectMessages(managedMcp);
+    writeMessage(managedMcp, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-11-25",
+        capabilities: {},
+        clientInfo: { name: "preview-managed-install-smoke", version: "1.0.0" },
+      },
+    });
+    const managedInitialized = await managedOutput.waitFor(
+      (message) => message.id === 1,
+      "managed install MCP initialize response",
+    );
+    assert.equal(managedInitialized.result.serverInfo.version, manifest.version);
+    writeMessage(managedMcp, {
+      jsonrpc: "2.0",
+      method: "notifications/initialized",
+      params: {},
+    });
+    managedMcp.stdin.end();
+    assert.deepEqual(await waitForExit(managedMcp, "managed install MCP clean exit"), [0, null]);
+    mcpChild = null;
+    assert.equal(managedOutput.stderr.join(""), "");
     const installedPreviewBundle = await readFile(path.join(installedPackageRoot, "dist/bin.mjs"), "utf8");
     assert.doesNotMatch(installedPreviewBundle, new RegExp(packageRoot.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
     const preview = startPreview(previewBin, installDirectory);
@@ -751,16 +920,20 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
     const sourcePath = path.join(mcpRoot, "src/task.ts");
     const sourceBefore = await readFile(sourcePath);
     const indexBefore = digest(await readFile(path.join(mcpRoot, ".git/index")));
-    const mcp = spawn(installedWrapper, ["--root", mcpRoot], {
+    const mcp = spawn(codexBin, ["--root", mcpRoot], {
       cwd: installDirectory,
-      env: { PATH: process.env.PATH, GIT_DIR: path.join(mcpRoot, "ambient-git-dir-must-not-be-authority") },
+      env: {
+        PATH: process.env.PATH,
+        GIT_DIR: path.join(mcpRoot, "ambient-git-dir-must-not-be-authority"),
+        UNDERSTAND_CODE_CLI: path.join(installDirectory, "must-not-redirect-packed-host"),
+      },
       stdio: ["pipe", "pipe", "pipe"],
     });
     mcpChild = mcp;
     const output = collectMessages(mcp);
     writeMessage(mcp, {
       jsonrpc: "2.0", id: 1, method: "initialize",
-      params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "preview-cold", version: "1.0.0" } },
+      params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "preview-cold-codex", version: "1.0.0" } },
     });
     assert.deepEqual(await output.waitFor((message) => message.id === 1, "MCP initialize response"), {
       jsonrpc: "2.0",
@@ -768,7 +941,7 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
       result: {
         protocolVersion: "2025-11-25",
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "understand-code", version: "0.1.0" },
+        serverInfo: { name: "understand-code", version: manifest.version },
       },
     });
     writeMessage(mcp, { jsonrpc: "2.0", method: "notifications/initialized", params: {} });
@@ -1097,8 +1270,10 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
     mcpChild = null;
     assert.equal(output.stderr.join(""), "");
 
-    const restarted = spawn(installedWrapper, ["--root", mcpRoot], {
-      cwd: installDirectory,
+    const claudeCwd = path.join(installDirectory, "claude-host-cwd");
+    await mkdir(claudeCwd);
+    const restarted = spawn(claudeBin, ["--root", mcpRoot], {
+      cwd: claudeCwd,
       env: { PATH: process.env.PATH },
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -1114,8 +1289,33 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
         clientInfo: { name: "preview-alpha-restart", version: "1.0.0" },
       },
     });
-    await restartedOutput.waitFor((message) => message.id === 1, "restarted MCP initialize response");
+    const claudeInitialized = await restartedOutput.waitFor(
+      (message) => message.id === 1,
+      "Claude Host MCP initialize response",
+    );
+    assert.equal(claudeInitialized.result.serverInfo.version, manifest.version);
     writeMessage(restarted, { jsonrpc: "2.0", method: "notifications/initialized", params: {} });
+    const claudeBrief = await callTool(
+      restarted,
+      restartedOutput,
+      99,
+      "get_task_brief",
+      { taskId, section: "summary" },
+      GetTaskBriefOutputV1Schema,
+    );
+    assert.equal(claudeBrief.structuredContent.result.task.taskId, taskId);
+    assert.equal(
+      claudeBrief.structuredContent.result.task.baselineSnapshotId,
+      built.structuredContent.result.task.baselineSnapshotId,
+      "Claude must preserve the Task baseline created by Codex even when cwd differs",
+    );
+    assert.equal(claudeBrief.structuredContent.result.task.revision, verified.structuredContent.result.task.revision);
+    assert.equal(claudeBrief.structuredContent.result.task.status, "verified");
+    assert.equal(
+      claudeBrief.structuredContent.meta.sourceSnapshotId,
+      changedRefresh.structuredContent.meta.sourceSnapshotId,
+      "Claude must bind current response freshness to the explicit Root rather than its cwd",
+    );
     for (const [index, request] of verificationRequests.entries()) {
       const replayed = await callTool(
         restarted,
@@ -1144,6 +1344,7 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
     );
     assert.equal(finalDoctor.ok, true);
     assert.equal(finalDoctor.status, "healthy");
+    assert.equal(finalDoctor.version, manifest.version);
     const uninstalled = await runCliJson(
       mcpBin,
       ["uninstall", "--root", managedInstallRoot],

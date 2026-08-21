@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -10,6 +10,23 @@ const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const workspaceRoot = path.resolve(packageRoot, "../..");
 const dashboardRoot = path.resolve(packageRoot, "../dashboard");
 const distRoot = path.join(packageRoot, "dist");
+const hostAdapterIntegrationsRoot = path.join(
+  workspaceRoot,
+  "packages/host-adapters/integrations",
+);
+const packageMetadata = JSON.parse(
+  await readFile(path.join(packageRoot, "package.json"), "utf8"),
+);
+const SEMVER_PATTERN =
+  /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
+if (
+  packageMetadata.name !== "@understand-code/preview" ||
+  typeof packageMetadata.version !== "string" ||
+  !SEMVER_PATTERN.test(packageMetadata.version)
+) {
+  throw new Error("Preview package identity is invalid");
+}
+const PRODUCT_VERSION = packageMetadata.version;
 
 const SCRIPT_ELEMENT_PATTERN = /<script\b(?<attributes>[^>]*)>(?<body>[\s\S]*?)<\/script>/giu;
 const SCRIPT_SOURCE_ATTRIBUTE_PATTERN = /(?:^|\s)src\s*=\s*(["'])(?<source>[^"']+)\1/giu;
@@ -83,6 +100,96 @@ function assertExternalScriptOnly(index, expectedBootstrapFileName) {
 
 async function run(command, args, cwd = workspaceRoot) {
   await exec(command, args, { cwd, env: { ...process.env, CI: "true" }, maxBuffer: 32 * 1024 * 1024 });
+}
+
+function sha256(bytes) {
+  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+}
+
+async function writeReleaseMetadata() {
+  const cliPath = path.join(distRoot, "understand-code.mjs");
+  const previewBinPath = path.join(distRoot, "bin.mjs");
+  const hostBinPath = path.join(distRoot, "host-bin.mjs");
+  const [cliBytes, previewBinBytes, hostBinBytes] = await Promise.all([
+    readFile(cliPath),
+    readFile(previewBinPath),
+    readFile(hostBinPath),
+  ]);
+  const cli = Object.freeze({
+    bin: "understand-code",
+    path: "dist/understand-code.mjs",
+    sha256: sha256(cliBytes),
+  });
+  const entrypoint = "dist/host-bin.mjs";
+  const entrypointSha256 = sha256(hostBinBytes);
+  const hostDefinitions = Object.freeze({
+    codex: Object.freeze({
+      bin: "understand-code-codex",
+      placeholder: "${WORKSPACE_ROOT}",
+      configs: Object.freeze([
+        "dist/host-adapters/codex/mcp.json",
+        "dist/host-adapters/codex/config.toml",
+      ]),
+    }),
+    claude: Object.freeze({
+      bin: "understand-code-claude",
+      placeholder: "${CLAUDE_PROJECT_DIR}",
+      configs: Object.freeze(["dist/host-adapters/claude/.mcp.json"]),
+    }),
+  });
+  const hostAdapters = {};
+  for (const [host, definition] of Object.entries(hostDefinitions)) {
+    const manifestRelative = `dist/host-adapters/${host}/manifest.json`;
+    const manifest = {
+      schemaVersion: "understand-code-host-adapter-release-v1",
+      product: "understand-code",
+      productVersion: PRODUCT_VERSION,
+      host,
+      name: "understand-code",
+      transport: "stdio",
+      bin: definition.bin,
+      entrypoint,
+      entrypointSha256,
+      cli,
+      args: ["--root", definition.placeholder],
+      root: {
+        required: true,
+        flag: "--root",
+        placeholder: definition.placeholder,
+        absolute: true,
+      },
+    };
+    await writeFile(
+      path.join(packageRoot, manifestRelative),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+    );
+    hostAdapters[host] = {
+      bin: definition.bin,
+      entrypoint,
+      entrypointSha256,
+      manifest: manifestRelative,
+      configs: definition.configs,
+    };
+  }
+  const releaseManifest = {
+    schemaVersion: "understand-code-alpha-release-v1",
+    product: "understand-code",
+    package: {
+      name: packageMetadata.name,
+      version: PRODUCT_VERSION,
+    },
+    cli,
+    preview: {
+      bin: "understand-code-preview",
+      path: "dist/bin.mjs",
+      sha256: sha256(previewBinBytes),
+    },
+    hostAdapters,
+  };
+  await writeFile(
+    path.join(distRoot, "release-manifest.json"),
+    `${JSON.stringify(releaseManifest, null, 2)}\n`,
+  );
 }
 
 const graph = {
@@ -179,6 +286,8 @@ async function main() {
     path.join(distRoot, "understand-code.mjs"),
     "--bundle-profile",
     "full",
+    "--product-version",
+    PRODUCT_VERSION,
   ]);
   await run("pnpm", ["exec", "vite", "build", "--config", path.join(dashboardRoot, "vite.config.preview.mjs")], dashboardRoot);
   await run("pnpm", ["exec", "vite", "build", "--config", path.join(packageRoot, "vite.config.contracts.mjs")], dashboardRoot);
@@ -194,7 +303,31 @@ async function main() {
   }
   const meta = { lastAnalyzedAt: wiki.generatedAt, gitCommitHash: "preview-fixture", version: "1.0.0", analyzedFiles: 1, theme: { presetId: "technical-document" } };
   await cp(path.join(packageRoot, "src/bin.mjs"), path.join(distRoot, "bin.mjs"));
+  await cp(path.join(packageRoot, "src/host-bin.mjs"), path.join(distRoot, "host-bin.mjs"));
   await cp(path.join(packageRoot, "src/server.mjs"), path.join(distRoot, "server.mjs"));
+  await Promise.all([
+    chmod(path.join(distRoot, "bin.mjs"), 0o755),
+    chmod(path.join(distRoot, "host-bin.mjs"), 0o755),
+  ]);
+  await Promise.all([
+    mkdir(path.join(distRoot, "host-adapters/codex"), { recursive: true }),
+    mkdir(path.join(distRoot, "host-adapters/claude"), { recursive: true }),
+  ]);
+  await Promise.all([
+    cp(
+      path.join(hostAdapterIntegrationsRoot, "codex/mcp.json"),
+      path.join(distRoot, "host-adapters/codex/mcp.json"),
+    ),
+    cp(
+      path.join(hostAdapterIntegrationsRoot, "codex/config.toml"),
+      path.join(distRoot, "host-adapters/codex/config.toml"),
+    ),
+    cp(
+      path.join(hostAdapterIntegrationsRoot, "claude/.mcp.json"),
+      path.join(distRoot, "host-adapters/claude/.mcp.json"),
+    ),
+  ]);
+  await writeReleaseMetadata();
   const demoRoot = path.join(distRoot, "demo/.understand-code");
   await mkdir(path.join(demoRoot, "knowledge-base/参考"), { recursive: true });
   await writeFile(path.join(demoRoot, "knowledge-graph.json"), `${JSON.stringify(validatedGraph, null, 2)}\n`);

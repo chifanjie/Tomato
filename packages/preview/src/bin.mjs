@@ -1,7 +1,16 @@
 #!/usr/bin/env node
 import { startPreview } from "./server.mjs";
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
+
+const packageMetadata = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+);
+if (typeof packageMetadata.version !== "string" || packageMetadata.version.length === 0) {
+  throw new Error("Preview package version is unavailable");
+}
+const PRODUCT_VERSION = packageMetadata.version;
 
 function help() {
   return [
@@ -53,7 +62,7 @@ function parseArgs(values) {
 try {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) { process.stdout.write(`${help()}\n`); }
-  else if (args.version) { process.stdout.write("0.1.0-preview.1\n"); }
+  else if (args.version) { process.stdout.write(`${PRODUCT_VERSION}\n`); }
   else {
     const preview = await startPreview({ root: args.root, demo: args.demo, port: args.port });
     if (!args.noOpen) {

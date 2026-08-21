@@ -1,5 +1,10 @@
+declare const __UNDERSTAND_CODE_PRODUCT_VERSION__: string | undefined;
+
 export const PRODUCT_NAME = "understand-code";
-export const PRODUCT_VERSION = "0.1.0";
+export const PRODUCT_VERSION =
+  typeof __UNDERSTAND_CODE_PRODUCT_VERSION__ === "undefined"
+    ? "0.1.0"
+    : __UNDERSTAND_CODE_PRODUCT_VERSION__;
 
 export const SUPPORTED_PROTOCOL_VERSIONS = Object.freeze([
   "2025-11-25",

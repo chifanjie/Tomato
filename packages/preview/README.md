@@ -34,6 +34,27 @@ The same installation exposes the full Alpha MCP command:
 understand-code mcp --stdio --root /absolute/path/to/worktree
 ```
 
+It also installs the two mandatory CLI Host entrypoints from the same tarball:
+
+```sh
+understand-code-codex --root /absolute/path/to/worktree
+understand-code-claude --root /absolute/path/to/worktree
+```
+
+Both entrypoints launch the bundled MCP executable and require one explicit absolute
+worktree root. They do not fall back to the process working directory or to an
+`UNDERSTAND_CODE_CLI` override. Codex and Claude can therefore resume the same
+persisted Task even when their working directories differ. Missing, relative, or
+unexpanded placeholder roots fail with `workspace_root_required`; ending stdin
+stops the Host and MCP processes cleanly.
+
+`dist/release-manifest.json` and the two
+`dist/host-adapters/{codex,claude}/manifest.json` files bind the package, Preview,
+CLI, Host entrypoint, configuration template paths, product version, and the
+reviewed executable SHA-256 digests.
+They provide Alpha artifact traceability; they are not a signature, SBOM, provenance,
+or formal Release attestation.
+
 The MCP server advertises `get_repo_pulse`, `build_task_brief`, `get_task_brief`,
 `update_task`, `check_change`, `record_verification`, `open_workbench`,
 `get_evidence`, `search_context`, `trace_impact`, and `refresh_index`. A full

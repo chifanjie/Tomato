@@ -12,6 +12,23 @@ const packageRoot = path.resolve(
   "..",
 );
 const workspaceRoot = path.resolve(packageRoot, "../..");
+const packageMetadata = JSON.parse(
+  await readFile(path.join(packageRoot, "package.json"), "utf8"),
+);
+const SEMVER_PATTERN =
+  /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
+
+function validProductVersion(value) {
+  return (
+    typeof value === "string" &&
+    Buffer.byteLength(value, "utf8") <= 128 &&
+    SEMVER_PATTERN.test(value)
+  );
+}
+
+if (!validProductVersion(packageMetadata.version)) {
+  throw new Error("CLI package version is not a valid product version.");
+}
 
 const bundleProfiles = Object.freeze({
   full: Object.freeze({
@@ -30,6 +47,7 @@ function parseArguments(values) {
   const result = {
     output: path.join(packageRoot, "dist/understand-code.mjs"),
     bundleProfile: "full",
+    productVersion: packageMetadata.version,
   };
   for (let index = 0; index < values.length; index += 1) {
     const flag = values[index];
@@ -38,7 +56,9 @@ function parseArguments(values) {
       throw new Error(`Missing value for ${flag ?? "bundle option"}`);
     }
     if (flag === "--output") result.output = path.resolve(value);
-    else if (
+    else if (flag === "--product-version" && validProductVersion(value)) {
+      result.productVersion = value;
+    } else if (
       flag === "--bundle-profile" &&
       Object.hasOwn(bundleProfiles, value)
     ) {
@@ -69,6 +89,9 @@ const result = await build({
   sourcemap: false,
   metafile: true,
   define: {
+    __UNDERSTAND_CODE_PRODUCT_VERSION__: JSON.stringify(
+      bundleOptions.productVersion,
+    ),
     __UNDERSTAND_CODE_MCP_TOOL_SURFACE_PROFILE__: JSON.stringify(
       bundleProfile.toolSurfaceProfile,
     ),

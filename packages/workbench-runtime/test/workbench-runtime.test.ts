@@ -86,6 +86,11 @@ describe("workbench runtime session", () => {
     const bootstrap = await fetch(deepLink.split("#")[0]!);
     expect(bootstrap.status).toBe(200);
     expect(bootstrap.headers.get("content-security-policy")).toContain("script-src 'self'");
+    const staleRuntimeCookie = await fetch(deepLink.split("#")[0]!, {
+      headers: { cookie: "workbench_session=stopped-runtime-session" },
+    });
+    expect(staleRuntimeCookie.status).toBe(200);
+    expect(await staleRuntimeCookie.text()).toContain("/__workbench/bootstrap.js");
     const script = await fetch(`http://127.0.0.1:${first.port}/__workbench/bootstrap.js`);
     expect(await script.text()).toContain("/__workbench/launch");
     const launch = await fetch(`http://127.0.0.1:${first.port}/__workbench/launch`, {

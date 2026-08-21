@@ -1,4 +1,5 @@
 import { execFile as execFileCallback } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   mkdir,
   mkdtemp,
@@ -17,8 +18,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   INSTALLATION_CONFIG_FILE,
   INSTALLATION_CLI_BUNDLE_FILE,
+  INSTALLATION_DASHBOARD_MANIFEST_FILE,
+  INSTALLATION_DASHBOARD_ROOT,
   INSTALLATION_MANIFEST_FILE,
   INSTALLATION_NATIVE_KERNEL_PEER_FILE,
+  INSTALLATION_REACT_WORKBENCH_UI,
   INSTALLATION_ROLLBACK_FILE,
   INSTALLATION_WORKBENCH_UI,
   INSTALLATION_WRAPPER_FILE,
@@ -32,6 +36,17 @@ import {
 
 const temporaryRoots: string[] = [];
 const execFile = promisify(execFileCallback);
+const INSTALLED_DASHBOARD_INDEX_FILE = `${INSTALLATION_DASHBOARD_ROOT}/index.html`;
+
+type FakeDashboardOptions = Readonly<{
+  productVersion: string;
+  revision: string;
+  assetPath: `assets/${string}.js`;
+}>;
+
+function contentDigest(bytes: Uint8Array): `sha256:${string}` {
+  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+}
 
 afterEach(async () => {
   await Promise.all(
@@ -65,6 +80,7 @@ function fakeNativeKernelPeerBinary(revision: number): Buffer {
 async function fakeCliBundle(
   body = "process.exitCode = 0;",
   nativeRevision = 1,
+  dashboard?: FakeDashboardOptions,
 ): Promise<string> {
   const root = await mkdtemp(path.join(os.tmpdir(), "understand-code-cli-bundle-"));
   temporaryRoots.push(root);
@@ -84,6 +100,61 @@ async function fakeCliBundle(
   await writeFile(nativePath, fakeNativeKernelPeerBinary(nativeRevision), {
     mode: 0o644,
   });
+  if (dashboard !== undefined) {
+    const dashboardRoot = path.join(root, "dashboard");
+    await mkdir(dashboardRoot, { recursive: true });
+    const files = new Map<string, Buffer>([
+      [
+        "index.html",
+        Buffer.from(
+          `<!doctype html><html><head><meta name="fixture-release" content="${dashboard.revision}"></head><body><div id="root"></div></body></html>\n`,
+          "utf8",
+        ),
+      ],
+      [
+        "config.json",
+        Buffer.from(
+          `${JSON.stringify({ autoUpdate: false, revision: dashboard.revision })}\n`,
+          "utf8",
+        ),
+      ],
+      [
+        dashboard.assetPath,
+        Buffer.from(`globalThis.__dashboardRevision = ${JSON.stringify(dashboard.revision)};\n`, "utf8"),
+      ],
+    ]);
+    const inventory = [...files]
+      .map(([filePath, bytes]) => ({
+        path: filePath,
+        sha256: contentDigest(bytes),
+        bytes: bytes.byteLength,
+      }))
+      .sort((left, right) => left.path.localeCompare(right.path, "en"));
+    await Promise.all(
+      [...files].map(async ([filePath, bytes]) => {
+        const outputPath = path.join(dashboardRoot, filePath);
+        await mkdir(path.dirname(outputPath), { recursive: true });
+        await writeFile(outputPath, bytes, { mode: 0o644 });
+      }),
+    );
+    await writeFile(
+      path.join(root, "dashboard-manifest.json"),
+      `${JSON.stringify(
+        {
+          schemaVersion: "understand-code-dashboard-bundle-v1",
+          productVersion: dashboard.productVersion,
+          root: "dashboard",
+          fileCount: inventory.length,
+          inventorySha256: contentDigest(
+            Buffer.from(JSON.stringify(inventory), "utf8"),
+          ),
+        },
+        null,
+        2,
+      )}\n`,
+      { mode: 0o644 },
+    );
+  }
   return bundlePath;
 }
 
@@ -261,13 +332,55 @@ describe("installation lifecycle", () => {
 
   it("upgrades with a durable snapshot and rolls back to the prior version", async () => {
     const root = await temporaryRoot();
-    const firstBundle = await fakeCliBundle("// fixture version 1", 1);
-    const secondBundle = await fakeCliBundle("// fixture version 2", 2);
+    const firstBundle = await fakeCliBundle("// fixture version 1", 1, {
+      productVersion: "1.0.0",
+      revision: "dashboard-v1",
+      assetPath: "assets/old.js",
+    });
+    const secondBundle = await fakeCliBundle("// fixture version 2", 2, {
+      productVersion: "2.0.0",
+      revision: "dashboard-v2",
+      assetPath: "assets/new.js",
+    });
+    const oldAssetPath = `${INSTALLATION_DASHBOARD_ROOT}/assets/old.js`;
+    const newAssetPath = `${INSTALLATION_DASHBOARD_ROOT}/assets/new.js`;
     await installInstallationV1({
       root,
       version: "1.0.0",
       cliCommand: "understand-code-v1",
       cliBundlePath: firstBundle,
+    });
+    const initialManifestBytes = await readFile(
+      path.join(root, INSTALLATION_DASHBOARD_MANIFEST_FILE),
+    );
+    const initialIndexBytes = await readFile(
+      path.join(root, INSTALLED_DASHBOARD_INDEX_FILE),
+    );
+    const initialOldAssetBytes = await readFile(path.join(root, oldAssetPath));
+    expect(initialManifestBytes).toEqual(
+      await readFile(path.join(path.dirname(firstBundle), "dashboard-manifest.json")),
+    );
+    expect(initialIndexBytes).toEqual(
+      await readFile(path.join(path.dirname(firstBundle), "dashboard/index.html")),
+    );
+    expect(initialOldAssetBytes).toEqual(
+      await readFile(path.join(path.dirname(firstBundle), "dashboard/assets/old.js")),
+    );
+    const installedManifest = JSON.parse(
+      await readFile(path.join(root, INSTALLATION_MANIFEST_FILE), "utf8"),
+    ) as { workbenchUi?: string; files: Array<{ path: string }> };
+    expect(installedManifest.workbenchUi).toBe(INSTALLATION_REACT_WORKBENCH_UI);
+    expect(installedManifest.files.map((file) => file.path)).toEqual(
+      expect.arrayContaining([
+        INSTALLATION_DASHBOARD_MANIFEST_FILE,
+        `${INSTALLATION_DASHBOARD_ROOT}/config.json`,
+        INSTALLED_DASHBOARD_INDEX_FILE,
+        oldAssetPath,
+      ]),
+    );
+    expect(await doctorInstallationV1({ root })).toMatchObject({
+      status: "healthy",
+      version: "1.0.0",
     });
 
     const upgraded = await upgradeInstallationV1({
@@ -283,6 +396,30 @@ describe("installation lifecycle", () => {
       rollbackAvailable: true,
     });
     expect(await stat(path.join(root, INSTALLATION_ROLLBACK_FILE))).toBeDefined();
+    const upgradedManifestBytes = await readFile(
+      path.join(root, INSTALLATION_DASHBOARD_MANIFEST_FILE),
+    );
+    const upgradedIndexBytes = await readFile(
+      path.join(root, INSTALLED_DASHBOARD_INDEX_FILE),
+    );
+    expect(upgradedManifestBytes).toEqual(
+      await readFile(path.join(path.dirname(secondBundle), "dashboard-manifest.json")),
+    );
+    expect(upgradedIndexBytes).toEqual(
+      await readFile(path.join(path.dirname(secondBundle), "dashboard/index.html")),
+    );
+    await expect(stat(path.join(root, oldAssetPath))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(await readFile(path.join(root, newAssetPath))).toEqual(
+      await readFile(path.join(path.dirname(secondBundle), "dashboard/assets/new.js")),
+    );
+    expect(upgradedManifestBytes).not.toEqual(initialManifestBytes);
+    expect(upgradedIndexBytes).not.toEqual(initialIndexBytes);
+    expect(await doctorInstallationV1({ root })).toMatchObject({
+      status: "healthy",
+      version: "2.0.0",
+    });
 
     const rolledBack = await rollbackInstallationV1({ root });
     expect(rolledBack).toMatchObject({ status: "rolled_back", version: "1.0.0" });
@@ -291,6 +428,18 @@ describe("installation lifecycle", () => {
       version: "1.0.0",
     });
     await expect(stat(path.join(root, INSTALLATION_ROLLBACK_FILE))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(
+      await readFile(path.join(root, INSTALLATION_DASHBOARD_MANIFEST_FILE)),
+    ).toEqual(initialManifestBytes);
+    expect(await readFile(path.join(root, INSTALLED_DASHBOARD_INDEX_FILE))).toEqual(
+      initialIndexBytes,
+    );
+    expect(await readFile(path.join(root, oldAssetPath))).toEqual(
+      initialOldAssetBytes,
+    );
+    await expect(stat(path.join(root, newAssetPath))).rejects.toMatchObject({
       code: "ENOENT",
     });
     const config = JSON.parse(
@@ -312,6 +461,30 @@ describe("installation lifecycle", () => {
         ),
       ),
     );
+    const restoredManifest = JSON.parse(
+      await readFile(path.join(root, INSTALLATION_MANIFEST_FILE), "utf8"),
+    ) as { workbenchUi?: string; files: Array<{ path: string }> };
+    expect(restoredManifest.workbenchUi).toBe(INSTALLATION_REACT_WORKBENCH_UI);
+    const sentinelPath = path.join(root, "user-owned.txt");
+    await writeFile(sentinelPath, "preserve me\n", "utf8");
+    expect(await uninstallInstallationV1({ root })).toMatchObject({
+      status: "removed",
+      refusedPaths: [],
+    });
+    for (const { path: ownedPath } of restoredManifest.files) {
+      await expect(stat(path.join(root, ownedPath))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    }
+    for (const relativePath of [
+      INSTALLATION_MANIFEST_FILE,
+      INSTALLATION_ROLLBACK_FILE,
+    ]) {
+      await expect(stat(path.join(root, relativePath))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    }
+    expect(await readFile(sentinelPath, "utf8")).toBe("preserve me\n");
   });
 
   it("rolls back a release-sized bundle without exhausting the snapshot parser", async () => {

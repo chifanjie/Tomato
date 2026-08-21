@@ -34,6 +34,10 @@ export const INSTALLATION_NATIVE_KERNEL_PEER_FILE =
 export const INSTALLATION_CONFIG_FILE = "config/mcp.json" as const;
 export const INSTALLATION_WORKBENCH_UI =
   "legacy_embedded_read_only_v1" as const;
+export const INSTALLATION_REACT_WORKBENCH_UI = "react_dashboard_v1" as const;
+export const INSTALLATION_DASHBOARD_MANIFEST_FILE =
+  "lib/dashboard-manifest.json" as const;
+export const INSTALLATION_DASHBOARD_ROOT = "lib/dashboard" as const;
 /** Durable, single-level snapshot used by an explicit upgrade/rollback pair. */
 export const INSTALLATION_ROLLBACK_FILE = "installation-rollback.json" as const;
 export const DEFAULT_INSTALLATION_VERSION = "0.1.0" as const;
@@ -42,6 +46,11 @@ const MAX_PATH_BYTES = 4_096;
 const MAX_CLI_BUNDLE_BYTES = 64 * 1024 * 1024;
 const MAX_NATIVE_KERNEL_PEER_BYTES = 32 * 1024 * 1024;
 const MAX_ROLLBACK_BYTES = 160 * 1024 * 1024;
+const MAX_DASHBOARD_FILES = 4_096;
+const MAX_DASHBOARD_FILE_BYTES = 32 * 1024 * 1024;
+const MAX_DASHBOARD_TOTAL_BYTES = 96 * 1024 * 1024;
+const DASHBOARD_BUNDLE_SCHEMA_VERSION =
+  "understand-code-dashboard-bundle-v1" as const;
 const HASH_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 const LEGACY_OWNED_RELATIVE_FILES = Object.freeze([
   INSTALLATION_OWNER_FILE,
@@ -58,7 +67,7 @@ const OWNED_RELATIVE_FILES = Object.freeze([
 ] as const);
 
 function ownedFileMode(
-  filePath: (typeof OWNED_RELATIVE_FILES)[number],
+  filePath: string,
 ): number {
   if (
     filePath === INSTALLATION_WRAPPER_FILE ||
@@ -113,7 +122,7 @@ export class InstallationLifecycleError extends Error {
 }
 
 export type OwnedInstallationFileV1 = Readonly<{
-  path: (typeof OWNED_RELATIVE_FILES)[number];
+  path: string;
   sha256: string;
   mode: number;
   owner: typeof INSTALLATION_MARKER;
@@ -128,8 +137,10 @@ export type InstallationManifestV1 = Readonly<{
   marker: typeof INSTALLATION_MARKER;
   /** Absent on legacy installations that used the direct CLI config. */
   host?: HostAdapterId;
-  /** Explicitly permits only the bundled, limited read-only Workbench UI. */
-  workbenchUi?: typeof INSTALLATION_WORKBENCH_UI;
+  /** Explicitly identifies the UI inventory owned by this installation. */
+  workbenchUi?:
+    | typeof INSTALLATION_WORKBENCH_UI
+    | typeof INSTALLATION_REACT_WORKBENCH_UI;
   files: readonly OwnedInstallationFileV1[];
   /** Present only while a newer installation can be rolled back safely. */
   rollback?: InstallationRollbackDescriptorV1;
@@ -246,7 +257,7 @@ type ExistingFile = Readonly<{
 }>;
 
 type RollbackSnapshotFileV1 = Readonly<{
-  path: (typeof OWNED_RELATIVE_FILES)[number];
+  path: string;
   sha256: string;
   mode: number;
   owner: typeof INSTALLATION_MARKER;
@@ -373,6 +384,10 @@ function digest(bytes: Uint8Array): string {
 type CliInstallationAssetsV1 = Readonly<{
   cliBundle: Buffer;
   nativeKernelPeer: Buffer;
+  workbenchUi:
+    | typeof INSTALLATION_WORKBENCH_UI
+    | typeof INSTALLATION_REACT_WORKBENCH_UI;
+  dashboardFiles: ReadonlyMap<string, Buffer>;
 }>;
 
 function nativeKernelPeerBinaryIsValid(bytes: Uint8Array): boolean {
@@ -491,8 +506,244 @@ async function readNativeKernelPeerAsset(
   }
 }
 
+type DashboardInventoryEntryV1 = Readonly<{
+  path: string;
+  sha256: string;
+  bytes: number;
+}>;
+
+type DashboardBundleManifestV1 = Readonly<{
+  schemaVersion: typeof DASHBOARD_BUNDLE_SCHEMA_VERSION;
+  productVersion: string;
+  root: "dashboard";
+  fileCount: number;
+  inventorySha256: string;
+}>;
+
+function parseDashboardBundleManifest(
+  value: unknown,
+  productVersion: string,
+): DashboardBundleManifestV1 | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    Object.keys(candidate).sort().join(",") !==
+      "fileCount,inventorySha256,productVersion,root,schemaVersion" ||
+    candidate.schemaVersion !== DASHBOARD_BUNDLE_SCHEMA_VERSION ||
+    candidate.productVersion !== productVersion ||
+    candidate.root !== "dashboard" ||
+    typeof candidate.fileCount !== "number" ||
+    !Number.isSafeInteger(candidate.fileCount) ||
+    candidate.fileCount < 1 ||
+    candidate.fileCount > MAX_DASHBOARD_FILES ||
+    typeof candidate.inventorySha256 !== "string" ||
+    !HASH_PATTERN.test(candidate.inventorySha256)
+  ) {
+    return undefined;
+  }
+  return {
+    schemaVersion: DASHBOARD_BUNDLE_SCHEMA_VERSION,
+    productVersion,
+    root: "dashboard",
+    fileCount: candidate.fileCount,
+    inventorySha256: candidate.inventorySha256,
+  };
+}
+
+function safeDashboardRelativePath(value: string): boolean {
+  return (
+    isSafeText(value) &&
+    !path.isAbsolute(value) &&
+    !value.includes("\\") &&
+    value.split("/").every(
+      (segment) => segment !== "" && segment !== "." && segment !== "..",
+    )
+  );
+}
+
+async function optionalPathMetadata(
+  filePath: string,
+): Promise<Awaited<ReturnType<typeof lstat>> | undefined> {
+  try {
+    return await lstat(filePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+async function readDashboardAssets(
+  canonicalCliBundlePath: string,
+  productVersion: string,
+): Promise<Readonly<{
+  workbenchUi:
+    | typeof INSTALLATION_WORKBENCH_UI
+    | typeof INSTALLATION_REACT_WORKBENCH_UI;
+  files: ReadonlyMap<string, Buffer>;
+}>> {
+  const sourceRoot = path.dirname(canonicalCliBundlePath);
+  const dashboardRoot = path.join(sourceRoot, "dashboard");
+  const dashboardManifestPath = path.join(
+    sourceRoot,
+    "dashboard-manifest.json",
+  );
+  const [rootMetadata, manifestMetadata] = await Promise.all([
+    optionalPathMetadata(dashboardRoot),
+    optionalPathMetadata(dashboardManifestPath),
+  ]);
+  if (rootMetadata === undefined && manifestMetadata === undefined) {
+    return {
+      workbenchUi: INSTALLATION_WORKBENCH_UI,
+      files: new Map(),
+    };
+  }
+  if (
+    rootMetadata === undefined ||
+    manifestMetadata === undefined ||
+    rootMetadata.isSymbolicLink() ||
+    !rootMetadata.isDirectory() ||
+    manifestMetadata.isSymbolicLink() ||
+    !manifestMetadata.isFile() ||
+    (await realpath(dashboardRoot)) !== dashboardRoot ||
+    (await realpath(dashboardManifestPath)) !== dashboardManifestPath
+  ) {
+    throw new InstallationLifecycleError(
+      "invalid_target",
+      "The React Dashboard source inventory is incomplete or unsafe.",
+    );
+  }
+
+  let manifestBytes: Buffer;
+  let manifest: DashboardBundleManifestV1 | undefined;
+  try {
+    const handle = await open(
+      dashboardManifestPath,
+      constants.O_RDONLY | constants.O_NOFOLLOW,
+    );
+    try {
+      const metadata = await handle.stat();
+      if (!metadata.isFile() || metadata.size <= 0 || metadata.size > 64 * 1024) {
+        throw new Error("dashboard_manifest_size_invalid");
+      }
+      manifestBytes = await handle.readFile();
+    } finally {
+      await handle.close().catch(() => undefined);
+    }
+    manifest = parseDashboardBundleManifest(
+      JSON.parse(manifestBytes.toString("utf8")),
+      productVersion,
+    );
+  } catch {
+    manifest = undefined;
+    manifestBytes = Buffer.alloc(0);
+  }
+  if (manifest === undefined) {
+    throw new InstallationLifecycleError(
+      "invalid_target",
+      "The React Dashboard source manifest is invalid.",
+    );
+  }
+
+  const inventory: DashboardInventoryEntryV1[] = [];
+  const files = new Map<string, Buffer>();
+  let totalBytes = 0;
+  const walk = async (
+    directory: string,
+    relativeDirectory: string,
+  ): Promise<void> => {
+    const children = await readdir(directory, { withFileTypes: true });
+    children.sort((left, right) =>
+      left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+    );
+    for (const child of children) {
+      const relativePath =
+        relativeDirectory === ""
+          ? child.name
+          : `${relativeDirectory}/${child.name}`;
+      if (!safeDashboardRelativePath(relativePath)) {
+        throw new Error("dashboard_path_invalid");
+      }
+      const absolutePath = path.join(directory, child.name);
+      const metadata = await lstat(absolutePath);
+      if (metadata.isSymbolicLink()) throw new Error("dashboard_symlink");
+      if (metadata.isDirectory()) {
+        if ((await realpath(absolutePath)) !== absolutePath) {
+          throw new Error("dashboard_directory_noncanonical");
+        }
+        await walk(absolutePath, relativePath);
+        continue;
+      }
+      if (
+        !metadata.isFile() ||
+        metadata.size > MAX_DASHBOARD_FILE_BYTES ||
+        inventory.length >= MAX_DASHBOARD_FILES
+      ) {
+        throw new Error("dashboard_file_invalid");
+      }
+      const handle = await open(
+        absolutePath,
+        constants.O_RDONLY | constants.O_NOFOLLOW,
+      );
+      let bytes: Buffer;
+      try {
+        const openedMetadata = await handle.stat();
+        if (
+          !openedMetadata.isFile() ||
+          openedMetadata.size > MAX_DASHBOARD_FILE_BYTES
+        ) {
+          throw new Error("dashboard_file_invalid");
+        }
+        bytes = await handle.readFile();
+      } finally {
+        await handle.close().catch(() => undefined);
+      }
+      totalBytes += bytes.byteLength;
+      if (totalBytes > MAX_DASHBOARD_TOTAL_BYTES) {
+        throw new Error("dashboard_too_large");
+      }
+      inventory.push({
+        path: relativePath,
+        sha256: digest(bytes),
+        bytes: bytes.byteLength,
+      });
+      files.set(`${INSTALLATION_DASHBOARD_ROOT}/${relativePath}`, bytes);
+    }
+  };
+  try {
+    await walk(dashboardRoot, "");
+  } catch (error) {
+    if (error instanceof InstallationLifecycleError) throw error;
+    throw new InstallationLifecycleError(
+      "invalid_target",
+      "The React Dashboard source inventory is invalid.",
+    );
+  }
+  inventory.sort((left, right) =>
+    left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
+  );
+  if (
+    inventory.length !== manifest.fileCount ||
+    !files.has(`${INSTALLATION_DASHBOARD_ROOT}/index.html`) ||
+    digest(Buffer.from(JSON.stringify(inventory), "utf8")) !==
+      manifest.inventorySha256
+  ) {
+    throw new InstallationLifecycleError(
+      "invalid_target",
+      "The React Dashboard source inventory does not match its manifest.",
+    );
+  }
+  files.set(INSTALLATION_DASHBOARD_MANIFEST_FILE, manifestBytes);
+  return {
+    workbenchUi: INSTALLATION_REACT_WORKBENCH_UI,
+    files,
+  };
+}
+
 async function readCliBundle(
   sourcePath: string | undefined,
+  productVersion: string,
 ): Promise<CliInstallationAssetsV1> {
   const candidate = sourcePath ?? process.argv[1];
   const normalized = normalizedCandidate(candidate);
@@ -538,9 +789,12 @@ async function readCliBundle(
         "The self-contained CLI bundle identity is invalid.",
       );
     }
+    const dashboard = await readDashboardAssets(canonical, productVersion);
     return {
       cliBundle: bytes,
       nativeKernelPeer: await readNativeKernelPeerAsset(canonical),
+      workbenchUi: dashboard.workbenchUi,
+      dashboardFiles: dashboard.files,
     };
   } catch (error) {
     if (error instanceof InstallationLifecycleError) throw error;
@@ -563,7 +817,12 @@ function safeRelativePath(value: unknown): value is string {
   return (
     normalized === value &&
     !normalized.split("/").some((segment) => segment === ".." || segment === "") &&
-    (OWNED_RELATIVE_FILES as readonly string[]).includes(normalized)
+    ((OWNED_RELATIVE_FILES as readonly string[]).includes(normalized) ||
+      normalized === INSTALLATION_DASHBOARD_MANIFEST_FILE ||
+      (normalized.startsWith(`${INSTALLATION_DASHBOARD_ROOT}/`) &&
+        safeDashboardRelativePath(
+          normalized.slice(INSTALLATION_DASHBOARD_ROOT.length + 1),
+        )))
   );
 }
 
@@ -734,10 +993,21 @@ function manifestFor(
   root: string,
   version: string,
   installationId: string,
-  fileBytes: Readonly<Record<(typeof OWNED_RELATIVE_FILES)[number], Uint8Array>>,
+  fileBytes: ReadonlyMap<string, Uint8Array>,
+  workbenchUi:
+    | typeof INSTALLATION_WORKBENCH_UI
+    | typeof INSTALLATION_REACT_WORKBENCH_UI,
   host?: HostAdapterId,
   rollback?: InstallationRollbackDescriptorV1,
 ): InstallationManifestV1 {
+  const dashboardPaths = [...fileBytes.keys()]
+    .filter(
+      (filePath) =>
+        filePath === INSTALLATION_DASHBOARD_MANIFEST_FILE ||
+        filePath.startsWith(`${INSTALLATION_DASHBOARD_ROOT}/`),
+    )
+    .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+  const ownedPaths = [...OWNED_RELATIVE_FILES, ...dashboardPaths];
   return {
     schemaVersion: INSTALLATION_SCHEMA_VERSION,
     product: "understand-code",
@@ -746,10 +1016,10 @@ function manifestFor(
     installationId,
     marker: INSTALLATION_MARKER,
     ...(host === undefined ? {} : { host }),
-    workbenchUi: INSTALLATION_WORKBENCH_UI,
-    files: OWNED_RELATIVE_FILES.map((filePath) => ({
+    workbenchUi,
+    files: ownedPaths.map((filePath) => ({
       path: filePath,
-      sha256: digest(fileBytes[filePath]!),
+      sha256: digest(fileBytes.get(filePath)!),
       mode: ownedFileMode(filePath),
       owner: INSTALLATION_MARKER,
     })),
@@ -792,8 +1062,9 @@ function parseManifest(value: unknown): InstallationManifestV1 | undefined {
     !isSafeText(candidate.installationId) ||
     candidate.marker !== INSTALLATION_MARKER ||
     !Array.isArray(candidate.files) ||
-    (candidate.files.length !== OWNED_RELATIVE_FILES.length &&
-      candidate.files.length !== LEGACY_OWNED_RELATIVE_FILES.length)
+    candidate.files.length < LEGACY_OWNED_RELATIVE_FILES.length ||
+    candidate.files.length >
+      OWNED_RELATIVE_FILES.length + MAX_DASHBOARD_FILES + 1
   ) {
     return undefined;
   }
@@ -814,7 +1085,8 @@ function parseManifest(value: unknown): InstallationManifestV1 | undefined {
   const workbenchUiValue = candidate.workbenchUi;
   if (
     workbenchUiValue !== undefined &&
-    workbenchUiValue !== INSTALLATION_WORKBENCH_UI
+    workbenchUiValue !== INSTALLATION_WORKBENCH_UI &&
+    workbenchUiValue !== INSTALLATION_REACT_WORKBENCH_UI
   ) return undefined;
   const files: OwnedInstallationFileV1[] = [];
   for (const rawFile of candidate.files) {
@@ -835,18 +1107,33 @@ function parseManifest(value: unknown): InstallationManifestV1 | undefined {
       return undefined;
     }
     files.push({
-      path: file.path as (typeof OWNED_RELATIVE_FILES)[number],
+      path: file.path,
       sha256: file.sha256,
       mode: file.mode,
       owner: INSTALLATION_MARKER,
     });
   }
   const paths = files.map((file) => file.path);
-  const expectedPaths =
-    files.length === LEGACY_OWNED_RELATIVE_FILES.length
-      ? LEGACY_OWNED_RELATIVE_FILES
-      : OWNED_RELATIVE_FILES;
-  if (!hasExactOwnedPathSet(paths, expectedPaths)) {
+  const legacyShape =
+    hasExactOwnedPathSet(paths, LEGACY_OWNED_RELATIVE_FILES) ||
+    hasExactOwnedPathSet(paths, OWNED_RELATIVE_FILES);
+  const dashboardPaths = paths.filter((filePath) =>
+    filePath.startsWith(`${INSTALLATION_DASHBOARD_ROOT}/`),
+  );
+  const reactShape =
+    workbenchUiValue === INSTALLATION_REACT_WORKBENCH_UI &&
+    dashboardPaths.length >= 1 &&
+    dashboardPaths.length <= MAX_DASHBOARD_FILES &&
+    paths.length === OWNED_RELATIVE_FILES.length + dashboardPaths.length + 1 &&
+    new Set(paths).size === paths.length &&
+    OWNED_RELATIVE_FILES.every((filePath) => paths.includes(filePath)) &&
+    paths.includes(INSTALLATION_DASHBOARD_MANIFEST_FILE) &&
+    dashboardPaths.includes(`${INSTALLATION_DASHBOARD_ROOT}/index.html`);
+  if (
+    (!legacyShape && !reactShape) ||
+    (legacyShape && workbenchUiValue === INSTALLATION_REACT_WORKBENCH_UI) ||
+    (reactShape && workbenchUiValue !== INSTALLATION_REACT_WORKBENCH_UI)
+  ) {
     return undefined;
   }
   return {
@@ -859,7 +1146,9 @@ function parseManifest(value: unknown): InstallationManifestV1 | undefined {
     ...(parsedHost === undefined ? {} : { host: parsedHost }),
     ...(workbenchUiValue === INSTALLATION_WORKBENCH_UI
       ? { workbenchUi: INSTALLATION_WORKBENCH_UI }
-      : {}),
+      : workbenchUiValue === INSTALLATION_REACT_WORKBENCH_UI
+        ? { workbenchUi: INSTALLATION_REACT_WORKBENCH_UI }
+        : {}),
     files: Object.freeze(files),
     ...(rollback === undefined ? {} : { rollback }),
   };
@@ -953,7 +1242,7 @@ function parseRollbackSnapshot(value: unknown): RollbackSnapshotV1 | undefined {
       return undefined;
     }
     files.push({
-      path: file.path as (typeof OWNED_RELATIVE_FILES)[number],
+      path: file.path,
       sha256: file.sha256,
       mode: file.mode,
       owner: INSTALLATION_MARKER,
@@ -1087,6 +1376,36 @@ async function atomicWriteFile(
     throw new InstallationLifecycleError("io_error", "Atomic installation write failed.", {
       filePath,
     });
+  }
+}
+
+async function pruneOwnedDirectories(
+  root: string,
+  relativeFilePaths: readonly string[],
+): Promise<void> {
+  const directories = new Set<string>();
+  for (const relativeFilePath of relativeFilePaths) {
+    if (!safeRelativePath(relativeFilePath)) continue;
+    let relativeDirectory = path.posix.dirname(relativeFilePath);
+    while (relativeDirectory !== ".") {
+      directories.add(relativeDirectory);
+      relativeDirectory = path.posix.dirname(relativeDirectory);
+    }
+  }
+  const ordered = [...directories].sort((left, right) => {
+    const depth = right.split("/").length - left.split("/").length;
+    return depth !== 0 ? depth : right.localeCompare(left, "en");
+  });
+  for (const relativeDirectory of ordered) {
+    const directory = path.join(root, ...relativeDirectory.split("/"));
+    try {
+      await rmdir(directory);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ENOTEMPTY" && code !== "EEXIST") {
+        throw error;
+      }
+    }
   }
 }
 
@@ -1334,7 +1653,9 @@ async function inspectInstallation(
     const hasOwnedIdentity =
       file.path === INSTALLATION_NATIVE_KERNEL_PEER_FILE
         ? nativeKernelPeerBinaryIsValid(bytes)
-        : bytes.toString("utf8").includes(INSTALLATION_MARKER);
+        : (OWNED_RELATIVE_FILES as readonly string[]).includes(file.path)
+          ? bytes.toString("utf8").includes(INSTALLATION_MARKER)
+          : true;
     checks.push({
       path: file.path,
       state:
@@ -1375,6 +1696,50 @@ async function inspectInstallation(
         ...checks[index]!,
         state: "modified",
       };
+    }
+  }
+  if (manifest.workbenchUi === INSTALLATION_REACT_WORKBENCH_UI) {
+    let dashboardInventoryMatches = false;
+    try {
+      const installed = await readDashboardAssets(
+        ownedAbsolutePath(root, INSTALLATION_CLI_BUNDLE_FILE),
+        manifest.version,
+      );
+      const expected = manifest.files
+        .filter(
+          (file) =>
+            file.path === INSTALLATION_DASHBOARD_MANIFEST_FILE ||
+            file.path.startsWith(`${INSTALLATION_DASHBOARD_ROOT}/`),
+        )
+        .map((file) => file.path)
+        .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+      const actual = [...installed.files.keys()].sort((left, right) =>
+        left < right ? -1 : left > right ? 1 : 0,
+      );
+      dashboardInventoryMatches =
+        installed.workbenchUi === INSTALLATION_REACT_WORKBENCH_UI &&
+        hasExactOwnedPathSet(actual, expected) &&
+        expected.every((filePath) => {
+          const manifestFile = manifest.files.find(
+            (file) => file.path === filePath,
+          );
+          const bytes = installed.files.get(filePath);
+          return (
+            manifestFile !== undefined &&
+            bytes !== undefined &&
+            manifestFile.sha256 === digest(bytes)
+          );
+        });
+    } catch {
+      dashboardInventoryMatches = false;
+    }
+    if (!dashboardInventoryMatches) {
+      const index = checks.findIndex(
+        (check) => check.path === INSTALLATION_DASHBOARD_MANIFEST_FILE,
+      );
+      if (index >= 0) {
+        checks[index] = { ...checks[index]!, state: "modified" };
+      }
     }
   }
   let rollbackValid = true;
@@ -1530,18 +1895,43 @@ export async function installInstallationV1(
   ) {
     throw new InstallationLifecycleError("invalid_target", "CLI command is invalid.");
   }
-  const cliAssets = await readCliBundle(options.cliBundlePath);
-  const bytes: Readonly<Record<string, Uint8Array>> = {
-    [INSTALLATION_OWNER_FILE]: Buffer.from(markerContent(installationId), "utf8"),
-    [INSTALLATION_WRAPPER_FILE]: Buffer.from(wrapperContent(installationId, host), "utf8"),
-    [INSTALLATION_CLI_BUNDLE_FILE]: cliAssets.cliBundle,
-    [INSTALLATION_NATIVE_KERNEL_PEER_FILE]: cliAssets.nativeKernelPeer,
-    [INSTALLATION_CONFIG_FILE]: Buffer.from(
-      configContent(root, installationId, configCommand, host),
-      "utf8",
-    ),
-  };
-  const manifest = manifestFor(root, version, installationId, bytes, host);
+  const cliAssets = await readCliBundle(options.cliBundlePath, version);
+  const bytes = new Map<string, Uint8Array>([
+    [INSTALLATION_OWNER_FILE, Buffer.from(markerContent(installationId), "utf8")],
+    [INSTALLATION_WRAPPER_FILE, Buffer.from(wrapperContent(installationId, host), "utf8")],
+    [INSTALLATION_CLI_BUNDLE_FILE, cliAssets.cliBundle],
+    [INSTALLATION_NATIVE_KERNEL_PEER_FILE, cliAssets.nativeKernelPeer],
+    [
+      INSTALLATION_CONFIG_FILE,
+      Buffer.from(
+        configContent(root, installationId, configCommand, host),
+        "utf8",
+      ),
+    ],
+    ...cliAssets.dashboardFiles.entries(),
+  ]);
+  const manifest = manifestFor(
+    root,
+    version,
+    installationId,
+    bytes,
+    cliAssets.workbenchUi,
+    host,
+  );
+  if (
+    existingManifest === undefined &&
+    cliAssets.workbenchUi === INSTALLATION_REACT_WORKBENCH_UI
+  ) {
+    const [dashboardRootState, dashboardManifestState] = await Promise.all([
+      optionalPathMetadata(path.join(root, INSTALLATION_DASHBOARD_ROOT)),
+      optionalPathMetadata(
+        path.join(root, INSTALLATION_DASHBOARD_MANIFEST_FILE),
+      ),
+    ]);
+    if (dashboardRootState !== undefined || dashboardManifestState !== undefined) {
+      return { status: "refused", root, manifestPath, reason: "path_conflict" };
+    }
+  }
   if (existingManifest !== undefined) {
     const before = await inspectInstallation(root, { allowLegacy: true });
     if (before.status === "healthy" && existingManifest.version === version) {
@@ -1604,13 +1994,13 @@ export async function installInstallationV1(
   const previous = new Map<string, ExistingFile | undefined>();
   const written: string[] = [];
   try {
-    for (const relativePath of OWNED_RELATIVE_FILES) {
+    for (const { path: relativePath } of manifest.files) {
       const filePath = ownedAbsolutePath(root, relativePath);
       previous.set(filePath, await readExistingFile(filePath));
       await atomicWriteFile(
         root,
         filePath,
-        bytes[relativePath]!,
+        bytes.get(relativePath)!,
         ownedFileMode(relativePath),
       );
       written.push(filePath);
@@ -1629,6 +2019,14 @@ export async function installInstallationV1(
       if (old === undefined) await unlink(filePath).catch(() => undefined);
       else await atomicWriteFile(root, filePath, old.bytes, old.mode).catch(() => undefined);
     }
+    await pruneOwnedDirectories(
+      root,
+      manifest.files
+        .map((file) => file.path)
+        .filter((filePath) =>
+          filePath.startsWith(`${INSTALLATION_DASHBOARD_ROOT}/`),
+        ),
+    ).catch(() => undefined);
     if (error instanceof InstallationLifecycleError) throw error;
     throw new InstallationLifecycleError("io_error", "Installation failed before manifest commit.", {
       root,
@@ -1707,19 +2105,30 @@ export async function upgradeInstallationV1(
   ) {
     throw new InstallationLifecycleError("invalid_target", "CLI command is invalid.");
   }
-  const cliAssets = await readCliBundle(options.cliBundlePath);
+  const cliAssets = await readCliBundle(options.cliBundlePath, version);
   const installationId = existingManifest.installationId;
-  const bytes: Readonly<Record<string, Uint8Array>> = {
-    [INSTALLATION_OWNER_FILE]: Buffer.from(markerContent(installationId), "utf8"),
-    [INSTALLATION_WRAPPER_FILE]: Buffer.from(wrapperContent(installationId, host), "utf8"),
-    [INSTALLATION_CLI_BUNDLE_FILE]: cliAssets.cliBundle,
-    [INSTALLATION_NATIVE_KERNEL_PEER_FILE]: cliAssets.nativeKernelPeer,
-    [INSTALLATION_CONFIG_FILE]: Buffer.from(
-      configContent(root, installationId, configCommand, host),
-      "utf8",
-    ),
-  };
-  const desiredManifest = manifestFor(root, version, installationId, bytes, host);
+  const bytes = new Map<string, Uint8Array>([
+    [INSTALLATION_OWNER_FILE, Buffer.from(markerContent(installationId), "utf8")],
+    [INSTALLATION_WRAPPER_FILE, Buffer.from(wrapperContent(installationId, host), "utf8")],
+    [INSTALLATION_CLI_BUNDLE_FILE, cliAssets.cliBundle],
+    [INSTALLATION_NATIVE_KERNEL_PEER_FILE, cliAssets.nativeKernelPeer],
+    [
+      INSTALLATION_CONFIG_FILE,
+      Buffer.from(
+        configContent(root, installationId, configCommand, host),
+        "utf8",
+      ),
+    ],
+    ...cliAssets.dashboardFiles.entries(),
+  ]);
+  const desiredManifest = manifestFor(
+    root,
+    version,
+    installationId,
+    bytes,
+    cliAssets.workbenchUi,
+    host,
+  );
   const currentMatches =
     existingManifest.version === version &&
     existingManifest.workbenchUi === desiredManifest.workbenchUi &&
@@ -1757,11 +2166,17 @@ export async function upgradeInstallationV1(
       doctor: latest,
     };
   }
-  if (isLegacyManifest(existingManifest)) {
-    try {
-      await lstat(
-        ownedAbsolutePath(root, INSTALLATION_NATIVE_KERNEL_PEER_FILE),
-      );
+  if (
+    existingManifest.workbenchUi !== INSTALLATION_REACT_WORKBENCH_UI &&
+    desiredManifest.workbenchUi === INSTALLATION_REACT_WORKBENCH_UI
+  ) {
+    const [dashboardRootState, dashboardManifestState] = await Promise.all([
+      optionalPathMetadata(path.join(root, INSTALLATION_DASHBOARD_ROOT)),
+      optionalPathMetadata(
+        path.join(root, INSTALLATION_DASHBOARD_MANIFEST_FILE),
+      ),
+    ]);
+    if (dashboardRootState !== undefined || dashboardManifestState !== undefined) {
       return {
         status: "refused",
         root,
@@ -1770,10 +2185,29 @@ export async function upgradeInstallationV1(
         fromVersion: existingManifest.version,
         version,
         reason: "path_conflict",
-        doctor: await inspectInstallation(root),
+        doctor: await inspectInstallation(root, { allowLegacy: true }),
       };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  const existingPaths = new Set(
+    existingManifest.files.map((file) => file.path),
+  );
+  for (const { path: relativePath } of desiredManifest.files) {
+    if (existingPaths.has(relativePath)) continue;
+    if (
+      (await optionalPathMetadata(ownedAbsolutePath(root, relativePath))) !==
+      undefined
+    ) {
+      return {
+        status: "refused",
+        root,
+        manifestPath,
+        installationId,
+        fromVersion: existingManifest.version,
+        version,
+        reason: "path_conflict",
+        doctor: await inspectInstallation(root, { allowLegacy: true }),
+      };
     }
   }
   const currentFiles: Record<string, ExistingFile> = {};
@@ -1805,22 +2239,42 @@ export async function upgradeInstallationV1(
     fromVersion: existingManifest.version,
     owner: INSTALLATION_MARKER,
   };
-  const nextManifest = manifestFor(root, version, installationId, bytes, host, rollback);
+  const nextManifest = manifestFor(
+    root,
+    version,
+    installationId,
+    bytes,
+    cliAssets.workbenchUi,
+    host,
+    rollback,
+  );
   const written: string[] = [];
+  const removedStale: string[] = [];
+  const desiredPaths = new Set(
+    desiredManifest.files.map((file) => file.path),
+  );
+  const staleFiles = existingManifest.files.filter(
+    (file) => !desiredPaths.has(file.path),
+  );
   try {
     // Commit the snapshot before publishing its descriptor.  A failed write
     // therefore leaves the old manifest as the only authoritative state.
     await atomicWriteFile(root, rollbackPath, snapshotBytes, 0o600);
-    for (const relativePath of OWNED_RELATIVE_FILES) {
+    for (const { path: relativePath } of desiredManifest.files) {
       const filePath = ownedAbsolutePath(root, relativePath);
       await atomicWriteFile(
         root,
         filePath,
-        bytes[relativePath]!,
+        bytes.get(relativePath)!,
         ownedFileMode(relativePath),
       );
       written.push(filePath);
     }
+    for (const { path: relativePath } of staleFiles) {
+      await unlink(ownedAbsolutePath(root, relativePath));
+      removedStale.push(relativePath);
+    }
+    await pruneOwnedDirectories(root, removedStale);
     await atomicWriteFile(
       root,
       manifestPath,
@@ -1831,7 +2285,7 @@ export async function upgradeInstallationV1(
     // Best-effort in-process recovery.  The durable snapshot remains available
     // for a later explicit rollback if recovery itself is interrupted.
     for (const filePath of written.reverse()) {
-      const relativePath = path.relative(root, filePath).split(path.sep).join("/") as (typeof OWNED_RELATIVE_FILES)[number];
+      const relativePath = path.relative(root, filePath).split(path.sep).join("/");
       const previous = currentFiles[relativePath];
       if (previous === undefined) {
         await unlink(filePath).catch(() => undefined);
@@ -1841,6 +2295,21 @@ export async function upgradeInstallationV1(
         );
       }
     }
+    for (const relativePath of removedStale) {
+      const previous = currentFiles[relativePath];
+      if (previous !== undefined) {
+        await atomicWriteFile(
+          root,
+          ownedAbsolutePath(root, relativePath),
+          previous.bytes,
+          previous.mode,
+        ).catch(() => undefined);
+      }
+    }
+    const newPaths = desiredManifest.files
+      .map((file) => file.path)
+      .filter((relativePath) => !existingPaths.has(relativePath));
+    await pruneOwnedDirectories(root, newPaths).catch(() => undefined);
     await atomicWriteFile(root, manifestPath, oldManifestBytes, 0o600).catch(
       () => undefined,
     );
@@ -1953,17 +2422,10 @@ export async function rollbackInstallationV1(
       await unlink(ownedAbsolutePath(root, file.path));
       removedPaths.push(file.path);
     }
-    if (
-      extraCurrentFiles.some(
-        (file) => file.path === INSTALLATION_NATIVE_KERNEL_PEER_FILE,
-      )
-    ) {
-      const nativeTupleDirectory = path.dirname(
-        ownedAbsolutePath(root, INSTALLATION_NATIVE_KERNEL_PEER_FILE),
-      );
-      await rmdir(nativeTupleDirectory);
-      await rmdir(path.dirname(nativeTupleDirectory));
-    }
+    await pruneOwnedDirectories(
+      root,
+      extraCurrentFiles.map((file) => file.path),
+    );
     await atomicWriteFile(
       root,
       manifestPath,
@@ -2117,6 +2579,10 @@ export async function uninstallInstallationV1(
       await unlink(path.join(root, INSTALLATION_ROLLBACK_FILE));
       removedPaths.push(INSTALLATION_ROLLBACK_FILE);
     }
+    await pruneOwnedDirectories(
+      root,
+      manifest.files.map((file) => file.path),
+    );
     await unlink(manifestPath);
   } catch {
     return {
@@ -2127,18 +2593,6 @@ export async function uninstallInstallationV1(
       refusedPaths: [INSTALLATION_MANIFEST_FILE],
       reason: "io_error_during_uninstall",
     };
-  }
-  const nativeTupleDirectory = path.dirname(
-    ownedAbsolutePath(root, INSTALLATION_NATIVE_KERNEL_PEER_FILE),
-  );
-  for (const directory of [
-    nativeTupleDirectory,
-    path.dirname(nativeTupleDirectory),
-    path.join(root, "bin"),
-    path.join(root, "lib"),
-    path.join(root, "config"),
-  ]) {
-    await rmdir(directory).catch(() => undefined);
   }
   return {
     status: "removed",

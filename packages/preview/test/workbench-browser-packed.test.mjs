@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,6 +14,7 @@ import {
   BuildTaskBriefOutputV1Schema,
   CheckChangeOutputV1Schema,
   GetEvidenceOutputV1Schema,
+  GetTaskBriefOutputV1Schema,
   OpenWorkbenchOutputV1Schema,
   RefreshIndexOutputV1Schema,
   UpdateTaskOutputV1Schema,
@@ -28,6 +29,10 @@ const REQUIRE_REAL_BROWSER = process.env.UNDERSTAND_CODE_REQUIRE_REAL_BROWSER ==
 
 function digest(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function contentDigest(bytes) {
+  return `sha256:${digest(bytes)}`;
 }
 
 function execBounded(command, args, options = {}) {
@@ -138,6 +143,23 @@ async function callTool(child, output, id, name, argumentsValue, schema) {
   return schema.parse(message.result);
 }
 
+async function initializeMcp(child, output, clientName, expectedVersion) {
+  writeMessage(child, {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: clientName, version: "1.0.0" },
+    },
+  });
+  const initialized = await output.waitFor((message) => message.id === 1, `${clientName} initialize`);
+  assert.equal(initialized.result.serverInfo.name, "understand-code");
+  assert.equal(initialized.result.serverInfo.version, expectedVersion);
+  writeMessage(child, { jsonrpc: "2.0", method: "notifications/initialized", params: {} });
+}
+
 async function git(root, args) {
   return execBounded("git", args, {
     cwd: root,
@@ -231,9 +253,85 @@ function installedLocations(installDirectory) {
     ? path.join(installDirectory, "node_modules")
     : path.join(installDirectory, "lib/node_modules");
   return {
+    cliBin: path.join(binRoot, process.platform === "win32" ? "understand-code.cmd" : "understand-code"),
     codexBin: path.join(binRoot, process.platform === "win32" ? "understand-code-codex.cmd" : "understand-code-codex"),
     packageRoot: path.join(modulesRoot, "@understand-code/preview"),
   };
+}
+
+async function runCliJson(executable, args, cwd, env) {
+  const result = await execBounded(executable, args, {
+    cwd,
+    encoding: "utf8",
+    env,
+  });
+  assert.equal(result.stderr, "");
+  return JSON.parse(result.stdout);
+}
+
+async function dashboardInventory(root) {
+  const inventory = [];
+  async function walk(directory, relativeDirectory) {
+    const entries = await readdir(directory, { withFileTypes: true });
+    entries.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
+    for (const entry of entries) {
+      assert.equal(entry.isSymbolicLink(), false, "Dashboard fixture must not contain symlinks");
+      const relativePath = relativeDirectory === "" ? entry.name : `${relativeDirectory}/${entry.name}`;
+      const absolutePath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await walk(absolutePath, relativePath);
+        continue;
+      }
+      assert.equal(entry.isFile(), true, "Dashboard fixture must contain regular files only");
+      const bytes = await readFile(absolutePath);
+      inventory.push({ path: relativePath, sha256: contentDigest(bytes), bytes: bytes.byteLength });
+    }
+  }
+  await walk(root, "");
+  inventory.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
+  return {
+    inventory,
+    fileCount: inventory.length,
+    inventorySha256: contentDigest(Buffer.from(JSON.stringify(inventory), "utf8")),
+  };
+}
+
+async function createUpgradeRelease(installedPackageRoot, baseVersion) {
+  const releaseRoot = await realpath(await mkdtemp(path.join(tmpdir(), "uc-managed-dashboard-upgrade-")));
+  const upgradedVersion = "9.9.9-managed-lifecycle.2";
+  assert.notEqual(upgradedVersion, baseVersion);
+  const sourceRoot = path.join(installedPackageRoot, "dist");
+  const bundlePath = path.join(releaseRoot, "understand-code.mjs");
+  const dashboardRoot = path.join(releaseRoot, "dashboard");
+  await Promise.all([
+    cp(path.join(sourceRoot, "understand-code.mjs"), bundlePath),
+    cp(path.join(sourceRoot, "native"), path.join(releaseRoot, "native"), { recursive: true }),
+    cp(path.join(sourceRoot, "dashboard"), dashboardRoot, { recursive: true }),
+  ]);
+  const bundle = await readFile(bundlePath, "utf8");
+  const versionOccurrences = bundle.split(baseVersion).length - 1;
+  assert.ok(versionOccurrences > 0, "the packed CLI must carry its product version literal");
+  await writeFile(bundlePath, bundle.replaceAll(baseVersion, upgradedVersion), "utf8");
+  await chmod(bundlePath, 0o755);
+
+  const indexPath = path.join(dashboardRoot, "index.html");
+  const index = await readFile(indexPath, "utf8");
+  const marker = `<meta name="understand-code-lifecycle-release" content="${upgradedVersion}">`;
+  assert.match(index, /<\/head>/iu);
+  await writeFile(indexPath, index.replace(/<\/head>/iu, `${marker}</head>`), "utf8");
+  const descriptor = await dashboardInventory(dashboardRoot);
+  await writeFile(
+    path.join(releaseRoot, "dashboard-manifest.json"),
+    `${JSON.stringify({
+      schemaVersion: "understand-code-dashboard-bundle-v1",
+      productVersion: upgradedVersion,
+      root: "dashboard",
+      fileCount: descriptor.fileCount,
+      inventorySha256: descriptor.inventorySha256,
+    }, null, 2)}\n`,
+    "utf8",
+  );
+  return { releaseRoot, bundlePath, upgradedVersion, descriptor };
 }
 
 function expectedReactEntry(indexHtml) {
@@ -265,6 +363,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
   const repositoryRoot = await createRepositoryFixture();
   let browser = null;
   let mcp = null;
+  let upgradeReleaseRoot = null;
   let retainPackDirectory = false;
   try {
     const tarball = await resolveTarball(packDirectory);
@@ -278,28 +377,71 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       { cwd: installDirectory, encoding: "utf8" },
     );
     const installed = installedLocations(installDirectory);
+    const packageManifest = JSON.parse(
+      await readFile(path.join(installed.packageRoot, "package.json"), "utf8"),
+    );
+    const baseVersion = packageManifest.version;
+    assert.equal(typeof baseVersion, "string");
     const installedIndexHtml = await readFile(path.join(installed.packageRoot, "dist/dashboard/index.html"), "utf8");
     const reactEntry = expectedReactEntry(installedIndexHtml);
+    const lifecycleEnv = cleanMcpEnvironment(home, repositoryRoot);
+    const requestedManagedRoot = path.join(installDirectory, "managed-install");
+    const managedInstall = await runCliJson(
+      installed.cliBin,
+      ["install", "--root", requestedManagedRoot, "--host", "codex"],
+      installDirectory,
+      lifecycleEnv,
+    );
+    assert.deepEqual(
+      {
+        ok: managedInstall.ok,
+        status: managedInstall.status,
+        version: managedInstall.version,
+      },
+      { ok: true, status: "installed", version: baseVersion },
+    );
+    const managedInstallRoot = await realpath(requestedManagedRoot);
+    const managedWrapper = path.join(managedInstallRoot, "bin/understand-code");
+    const managedBundle = path.join(managedInstallRoot, "lib/understand-code.mjs");
+    const managedDashboardRoot = path.join(managedInstallRoot, "lib/dashboard");
+    const managedDashboardManifestPath = path.join(managedInstallRoot, "lib/dashboard-manifest.json");
+    const managedManifestPath = path.join(managedInstallRoot, "installation-manifest.json");
+    const rollbackPath = path.join(managedInstallRoot, "installation-rollback.json");
+    const sentinelPath = path.join(managedInstallRoot, "user-owned.txt");
+    await writeFile(sentinelPath, "preserve user bytes\n", "utf8");
+    const initialManagedBundle = await readFile(managedBundle);
+    const initialManagedDashboardManifest = await readFile(managedDashboardManifestPath);
+    const initialManagedDashboard = await dashboardInventory(managedDashboardRoot);
+    assert.deepEqual(
+      initialManagedDashboard,
+      await dashboardInventory(path.join(installed.packageRoot, "dist/dashboard")),
+      "managed install must copy the exact Dashboard inventory from the same tgz",
+    );
+    assert.deepEqual(
+      initialManagedDashboardManifest,
+      await readFile(path.join(installed.packageRoot, "dist/dashboard-manifest.json")),
+      "managed install must copy the exact Dashboard manifest from the same tgz",
+    );
+    const initialManagedManifest = JSON.parse(await readFile(managedManifestPath, "utf8"));
+    assert.equal(initialManagedManifest.workbenchUi, "react_dashboard_v1");
+    const initialDoctor = await runCliJson(
+      managedBundle,
+      ["doctor", "--root", managedInstallRoot],
+      installDirectory,
+      lifecycleEnv,
+    );
+    assert.deepEqual(
+      { ok: initialDoctor.ok, status: initialDoctor.status, version: initialDoctor.version },
+      { ok: true, status: "healthy", version: baseVersion },
+    );
 
-    mcp = spawn(installed.codexBin, ["--root", repositoryRoot], {
+    mcp = spawn(managedWrapper, ["--root", repositoryRoot], {
       cwd: installDirectory,
-      env: cleanMcpEnvironment(home, repositoryRoot),
+      env: lifecycleEnv,
       stdio: ["pipe", "pipe", "pipe"],
     });
-    const output = collectMessages(mcp);
-    writeMessage(mcp, {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: {
-        protocolVersion: "2025-11-25",
-        capabilities: {},
-        clientInfo: { name: "preview-workbench-browser", version: "1.0.0" },
-      },
-    });
-    const initialized = await output.waitFor((message) => message.id === 1, "MCP initialize");
-    assert.equal(initialized.result.serverInfo.name, "understand-code");
-    writeMessage(mcp, { jsonrpc: "2.0", method: "notifications/initialized", params: {} });
+    let output = collectMessages(mcp);
+    await initializeMcp(mcp, output, "preview-workbench-browser", baseVersion);
 
     let requestId = 2;
     const actor = "agent:preview-workbench-browser";
@@ -502,11 +644,204 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       `document.querySelector('[data-testid="task-evidence-view"][data-evidence-id="${expectedEvidence.id}"]') !== null`,
       "restored finding Evidence context",
     );
-    const pinnedPage = new URL(await browser.evaluate("location.href"));
+    let pinnedPage = new URL(await browser.evaluate("location.href"));
     assert.equal(pinnedPage.pathname, "/workbench");
     assert.equal(pinnedPage.searchParams.get("taskId"), taskId);
     assert.equal(pinnedPage.searchParams.get("findingId"), finding.id);
     assert.equal(pinnedPage.searchParams.get("evidenceId"), expectedEvidence.id);
+
+    await browser.navigate("about:blank");
+    await stopChild(mcp);
+    assert.equal(output.stderr.join(""), "");
+    mcp = null;
+
+    const upgradeRelease = await createUpgradeRelease(installed.packageRoot, baseVersion);
+    upgradeReleaseRoot = upgradeRelease.releaseRoot;
+    assert.notEqual(
+      upgradeRelease.descriptor.inventorySha256,
+      initialManagedDashboard.inventorySha256,
+      "the upgrade fixture must carry different Dashboard bytes",
+    );
+    const upgraded = await runCliJson(
+      upgradeRelease.bundlePath,
+      ["upgrade", "--root", managedInstallRoot, "--host", "codex"],
+      installDirectory,
+      lifecycleEnv,
+    );
+    assert.deepEqual(
+      {
+        ok: upgraded.ok,
+        status: upgraded.status,
+        fromVersion: upgraded.fromVersion,
+        version: upgraded.version,
+        rollbackAvailable: upgraded.rollbackAvailable,
+      },
+      {
+        ok: true,
+        status: "updated",
+        fromVersion: baseVersion,
+        version: upgradeRelease.upgradedVersion,
+        rollbackAvailable: true,
+      },
+    );
+    assert.notDeepEqual(await readFile(managedBundle), initialManagedBundle);
+    assert.deepEqual(
+      await dashboardInventory(managedDashboardRoot),
+      upgradeRelease.descriptor,
+      "upgrade must install the exact v2 Dashboard inventory",
+    );
+    assert.deepEqual(
+      await readFile(managedDashboardManifestPath),
+      await readFile(path.join(upgradeRelease.releaseRoot, "dashboard-manifest.json")),
+    );
+    const upgradedDoctor = await runCliJson(
+      managedBundle,
+      ["doctor", "--root", managedInstallRoot],
+      installDirectory,
+      lifecycleEnv,
+    );
+    assert.deepEqual(
+      { ok: upgradedDoctor.ok, status: upgradedDoctor.status, version: upgradedDoctor.version },
+      { ok: true, status: "healthy", version: upgradeRelease.upgradedVersion },
+    );
+
+    mcp = spawn(managedWrapper, ["--root", repositoryRoot], {
+      cwd: installDirectory,
+      env: lifecycleEnv,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    output = collectMessages(mcp);
+    await initializeMcp(
+      mcp,
+      output,
+      "preview-managed-dashboard-upgrade",
+      upgradeRelease.upgradedVersion,
+    );
+    let upgradedRequestId = 2;
+    const upgradedBrief = await callTool(
+      mcp,
+      output,
+      upgradedRequestId++,
+      "get_task_brief",
+      { taskId, section: "summary" },
+      GetTaskBriefOutputV1Schema,
+    );
+    assert.equal(upgradedBrief.structuredContent.result.task.taskId, taskId);
+    const upgradedWorkbench = await callTool(
+      mcp,
+      output,
+      upgradedRequestId++,
+      "open_workbench",
+      {
+        route: {
+          view: "tasks",
+          taskId,
+          section: "planned_changes",
+          findingId: finding.id,
+          evidenceId: expectedEvidence.id,
+        },
+        openBrowser: false,
+      },
+      OpenWorkbenchOutputV1Schema,
+    );
+    await browser.navigate(upgradedWorkbench.structuredContent.result.deepLink);
+    await browser.waitFor(
+      "document.querySelector('[data-testid=\"task-first-workbench\"]') !== null",
+      "upgraded managed React Task Workbench",
+      30_000,
+    );
+    await browser.waitFor(bodyContains(finding.summary), "same Task through upgraded Dashboard");
+    await browser.waitFor(
+      `document.querySelector('meta[name="understand-code-lifecycle-release"][content="${upgradeRelease.upgradedVersion}"]') !== null`,
+      "v2 Dashboard marker",
+    );
+    await browser.navigate("about:blank");
+    await stopChild(mcp);
+    assert.equal(output.stderr.join(""), "");
+    mcp = null;
+
+    const rolledBack = await runCliJson(
+      managedBundle,
+      ["rollback", "--root", managedInstallRoot],
+      installDirectory,
+      lifecycleEnv,
+    );
+    assert.deepEqual(
+      { ok: rolledBack.ok, status: rolledBack.status, version: rolledBack.version },
+      { ok: true, status: "rolled_back", version: baseVersion },
+    );
+    assert.deepEqual(await readFile(managedBundle), initialManagedBundle);
+    assert.deepEqual(
+      await readFile(managedDashboardManifestPath),
+      initialManagedDashboardManifest,
+    );
+    assert.deepEqual(
+      await dashboardInventory(managedDashboardRoot),
+      initialManagedDashboard,
+    );
+    await assert.rejects(stat(rollbackPath), (error) => error?.code === "ENOENT");
+
+    mcp = spawn(managedWrapper, ["--root", repositoryRoot], {
+      cwd: installDirectory,
+      env: lifecycleEnv,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    output = collectMessages(mcp);
+    await initializeMcp(mcp, output, "preview-managed-dashboard-rollback", baseVersion);
+    requestId = 2;
+    const restoredBrief = await callTool(
+      mcp,
+      output,
+      requestId++,
+      "get_task_brief",
+      { taskId, section: "summary" },
+      GetTaskBriefOutputV1Schema,
+    );
+    assert.equal(restoredBrief.structuredContent.result.task.taskId, taskId);
+    const restoredWorkbench = await callTool(
+      mcp,
+      output,
+      requestId++,
+      "open_workbench",
+      {
+        route: {
+          view: "tasks",
+          taskId,
+          section: "planned_changes",
+          findingId: finding.id,
+          evidenceId: expectedEvidence.id,
+        },
+        openBrowser: false,
+      },
+      OpenWorkbenchOutputV1Schema,
+    );
+    await browser.navigate(restoredWorkbench.structuredContent.result.deepLink);
+    await browser.waitFor(
+      "document.querySelector('[data-testid=\"task-first-workbench\"]') !== null",
+      "rolled-back managed React Task Workbench",
+      30_000,
+    );
+    await browser.waitFor(bodyContains(finding.summary), "same Task after Dashboard rollback");
+    assert.equal(
+      await browser.evaluate(
+        "document.querySelector('meta[name=\"understand-code-lifecycle-release\"]') === null",
+      ),
+      true,
+    );
+    pinnedPage = new URL(await browser.evaluate("location.href"));
+    assert.equal(pinnedPage.searchParams.get("taskId"), taskId);
+    assert.equal(pinnedPage.searchParams.get("findingId"), finding.id);
+    assert.equal(pinnedPage.searchParams.get("evidenceId"), expectedEvidence.id);
+    const restoredDoctor = await runCliJson(
+      managedBundle,
+      ["doctor", "--root", managedInstallRoot],
+      installDirectory,
+      lifecycleEnv,
+    );
+    assert.deepEqual(
+      { ok: restoredDoctor.ok, status: restoredDoctor.status, version: restoredDoctor.version },
+      { ok: true, status: "healthy", version: baseVersion },
+    );
 
     await writeFile(sourcePath, "export function alpha() { return 'newer-snapshot'; }\n", "utf8");
     const staleRefresh = await callTool(mcp, output, requestId++, "refresh_index", {
@@ -544,12 +879,39 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       entryCount,
     })}`);
 
+    const restoredInstallationManifest = JSON.parse(
+      await readFile(managedManifestPath, "utf8"),
+    );
     await browser.close();
     browser = null;
     mcp.stdin.end();
     assert.deepEqual(await waitForExit(mcp, "MCP EOF"), [0, null]);
     assert.equal(output.stderr.join(""), "");
     mcp = null;
+    const uninstalled = await runCliJson(
+      installed.cliBin,
+      ["uninstall", "--root", managedInstallRoot],
+      installDirectory,
+      lifecycleEnv,
+    );
+    assert.deepEqual(
+      { ok: uninstalled.ok, status: uninstalled.status, refusedPaths: uninstalled.refusedPaths },
+      { ok: true, status: "removed", refusedPaths: [] },
+    );
+    for (const file of restoredInstallationManifest.files) {
+      await assert.rejects(
+        stat(path.join(managedInstallRoot, file.path)),
+        (error) => error?.code === "ENOENT",
+        `uninstall must remove owned path ${file.path}`,
+      );
+    }
+    for (const ownedMetadataPath of [managedManifestPath, rollbackPath]) {
+      await assert.rejects(
+        stat(ownedMetadataPath),
+        (error) => error?.code === "ENOENT",
+      );
+    }
+    assert.equal(await readFile(sentinelPath, "utf8"), "preserve user bytes\n");
   } finally {
     if (browser) await browser.close().catch(() => undefined);
     await stopChild(mcp);
@@ -559,6 +921,9 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       rm(browserProfile, { recursive: true, force: true }),
       rm(home, { recursive: true, force: true }),
       rm(repositoryRoot, { recursive: true, force: true }),
+      ...(upgradeReleaseRoot === null
+        ? []
+        : [rm(upgradeReleaseRoot, { recursive: true, force: true })]),
     ]);
   }
 });

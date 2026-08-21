@@ -134,11 +134,12 @@ Use `--host claude` for the Claude wrapper. Ending MCP stdin stops the stdio
 server; stopping `understand-code-preview` terminates its loopback HTTP server.
 Install, upgrade, rollback, Doctor, and uninstall operate only on the explicitly
 selected managed installation root and fail closed when owned files are replaced
-or modified. The managed-copy lifecycle currently retains the earlier limited,
-read-only embedded Workbench because it does not yet copy the React Dashboard
-inventory through upgrade and rollback. That fallback is allowed only by an
-explicit healthy installation manifest; a missing or invalid Dashboard beside a
-global or Plugin CLI remains an error.
+or modified. A release-managed installation copies the exact version-bound React
+Dashboard inventory beside its owned CLI; upgrade, rollback, Doctor, and uninstall
+track that inventory as part of the same installation manifest. Older managed
+installations may retain the limited read-only embedded Workbench only when an
+explicit healthy legacy manifest permits it. A missing or invalid Dashboard beside
+a global or Plugin CLI remains an error.
 
 The Graph/Wiki process token remains a Preview-only, query-parameter, local
 process-lifetime access token. In root mode it is bound to the clean repository

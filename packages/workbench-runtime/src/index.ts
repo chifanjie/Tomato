@@ -2215,16 +2215,32 @@ function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, 
       return;
     }
 
-    if (parsedUrl.pathname === "/workbench" && readCookie(request, "workbench_session") === undefined) {
-      response.writeHead(200, {
-        "content-type": "text/html; charset=utf-8",
-        "cache-control": "no-store",
-        "content-security-policy": WORKBENCH_CSP,
-        "x-content-type-options": "nosniff",
-        "referrer-policy": "no-referrer",
-      });
-      response.end('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Workbench launch</title></head><body><p>Establishing the local Workbench session…</p><script src="/__workbench/bootstrap.js" defer></script></body></html>');
-      return;
+    if (parsedUrl.pathname === "/workbench") {
+      const candidate = readCookie(request, "workbench_session");
+      let currentRuntimeSession = false;
+      if (candidate !== undefined) {
+        try {
+          getBrowserSession(stored.session, candidate, stored.now);
+          currentRuntimeSession = true;
+        } catch {
+          // Cookies are scoped to the loopback host, not its port. A browser
+          // may therefore carry a valid cookie from a stopped Workbench into
+          // a newly started runtime. Treat that cookie like no session at this
+          // HTML entry point so the one-time fragment token can establish the
+          // new runtime; every data/asset endpoint remains authenticated.
+        }
+      }
+      if (!currentRuntimeSession) {
+        response.writeHead(200, {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store",
+          "content-security-policy": WORKBENCH_CSP,
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "no-referrer",
+        });
+        response.end('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Workbench launch</title></head><body><p>Establishing the local Workbench session…</p><script src="/__workbench/bootstrap.js" defer></script></body></html>');
+        return;
+      }
     }
 
     const sessionToken = readCookie(request, "workbench_session");

@@ -325,6 +325,8 @@ export class WorkbenchSessionError extends Error {
 interface PendingLaunchV1 {
   readonly token: string;
   readonly route: WorkbenchRouteV1;
+  /** Immutable repository generation captured by the open that minted this token. */
+  readonly binding: WorkbenchLaunchBindingV1;
   readonly issuedAtMs: number;
   readonly expiresAtMs: number;
   redeemed: boolean;
@@ -335,10 +337,25 @@ interface BrowserSessionV1 {
   readonly sessionToken: string;
   readonly route: WorkbenchRouteV1;
   readonly identity: { readonly productVersion: string; readonly worktreeId: string };
+  /** Preserves the redeemed launch generation even when the runtime is reused. */
+  readonly binding: WorkbenchLaunchBindingV1;
   readonly issuedAtMs: number;
   lastSeenAtMs: number;
   readonly expiresAtMs: number;
 }
+
+type WorkbenchLaunchBindingV1 = Readonly<
+  Pick<
+    WorkbenchRuntimeBindingV1,
+    | "productVersion"
+    | "repositoryId"
+    | "worktreeId"
+    | "sourceSnapshotId"
+    | "headCommit"
+    | "worktreeFingerprint"
+    | "freshness"
+  >
+>;
 
 interface StoredSessionV1 {
   readonly session: WorkbenchSessionV1;
@@ -354,6 +371,25 @@ const sessionsByIdentity = new Map<string, StoredSessionV1>();
 
 function identityKey(binding: WorkbenchRuntimeBindingV1, canonicalRoot: string): string {
   return `${canonicalRoot}\u0000${binding.productVersion}\u0000${binding.worktreeId}`;
+}
+
+function launchBinding(binding: WorkbenchRuntimeBindingV1): WorkbenchLaunchBindingV1 {
+  return Object.freeze({
+    productVersion: binding.productVersion,
+    repositoryId: binding.repositoryId,
+    worktreeId: binding.worktreeId,
+    sourceSnapshotId: binding.sourceSnapshotId,
+    headCommit: binding.headCommit,
+    worktreeFingerprint: binding.worktreeFingerprint,
+    freshness: binding.freshness,
+  });
+}
+
+function runtimeIdentity(binding: WorkbenchLaunchBindingV1): BrowserSessionV1["identity"] {
+  return Object.freeze({
+    productVersion: binding.productVersion,
+    worktreeId: binding.worktreeId,
+  });
 }
 
 function randomToken(): string {
@@ -904,8 +940,9 @@ async function readTaskBriefForSession(
   if (!parsedResult.success ||
       parsedResult.data.task.taskId !== browser.route.taskId ||
       parsedResult.data.section !== input.section ||
-      parsedResult.data.task.repositoryId !== stored.session.output.structuredContent.meta.repositoryId ||
-      parsedResult.data.task.worktreeId !== stored.session.output.structuredContent.meta.worktreeId) {
+      parsedResult.data.task.repositoryId !== browser.binding.repositoryId ||
+      parsedResult.data.task.worktreeId !== browser.binding.worktreeId ||
+      parsedResult.data.task.latestSnapshotId !== browser.binding.sourceSnapshotId) {
     throw new WorkbenchSessionError("session_invalid", "Task Brief identity does not match this session");
   }
   if (!Number.isInteger(page.total) || page.total < 0) {
@@ -932,8 +969,8 @@ async function readWorkbenchContextForSession(
   }
   if (
     input.taskId !== browser.route.taskId ||
-    input.repositoryId !== stored.session.output.structuredContent.meta.repositoryId ||
-    input.worktreeId !== stored.session.output.structuredContent.meta.worktreeId
+    input.repositoryId !== browser.binding.repositoryId ||
+    input.worktreeId !== browser.binding.worktreeId
   ) {
     throw new WorkbenchSessionError("session_invalid", "context route does not belong to this session");
   }
@@ -1224,9 +1261,9 @@ async function readWorkbenchTraceForSession(
   if (
     input.surface !== "trace" ||
     input.taskId !== browser.route.taskId ||
-    input.repositoryId !== stored.session.output.structuredContent.meta.repositoryId ||
-    input.worktreeId !== stored.session.output.structuredContent.meta.worktreeId ||
-    input.snapshotId !== stored.session.output.structuredContent.meta.sourceSnapshotId
+    input.repositoryId !== browser.binding.repositoryId ||
+    input.worktreeId !== browser.binding.worktreeId ||
+    input.snapshotId !== browser.binding.sourceSnapshotId
   ) {
     throw new WorkbenchSessionError("session_invalid", "trace route does not belong to this session");
   }
@@ -1401,7 +1438,7 @@ function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, 
               hasMore: page.nextCursor !== undefined,
               ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
             },
-            freshness: stored.session.output.structuredContent.meta.freshness,
+            freshness: browser.binding.freshness,
           });
         })
         .catch((error: unknown) => {
@@ -1441,8 +1478,8 @@ function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, 
       const input: WorkbenchContextRequestV1 = {
         surface: surfaceValue,
         taskId: browser.route.taskId,
-        repositoryId: stored.session.output.structuredContent.meta.repositoryId,
-        worktreeId: stored.session.output.structuredContent.meta.worktreeId,
+        repositoryId: browser.binding.repositoryId,
+        worktreeId: browser.binding.worktreeId,
       };
       void readWorkbenchContextForSession(stored, sessionToken, input)
         .then((result) => writeJson(response, 200, result))
@@ -1476,9 +1513,9 @@ function createHttpHandler(stored: StoredSessionV1): (request: IncomingMessage, 
       const input: WorkbenchTraceRequestV1 = {
         surface: "trace",
         taskId: browser.route.taskId,
-        repositoryId: stored.session.output.structuredContent.meta.repositoryId,
-        worktreeId: stored.session.output.structuredContent.meta.worktreeId,
-        snapshotId: stored.session.output.structuredContent.meta.sourceSnapshotId,
+        repositoryId: browser.binding.repositoryId,
+        worktreeId: browser.binding.worktreeId,
+        snapshotId: browser.binding.sourceSnapshotId,
       };
       void readWorkbenchTraceForSession(stored, sessionToken, input)
         .then((result) => writeJson(response, 200, result))
@@ -1549,11 +1586,13 @@ function redeem(stored: StoredSessionV1, token: string, now: () => number): Work
   stored.launches.delete(token);
   const sessionToken = randomToken();
   const sessionId = `wb-${randomUUID()}`;
+  const identity = runtimeIdentity(pending.binding);
   const browser: BrowserSessionV1 = {
     sessionId,
     sessionToken,
     route: pending.route,
-    identity: stored.session.identity,
+    identity,
+    binding: pending.binding,
     issuedAtMs: current,
     lastSeenAtMs: current,
     expiresAtMs: current + SESSION_TTL_MS,
@@ -1568,7 +1607,7 @@ function redeem(stored: StoredSessionV1, token: string, now: () => number): Work
     sessionId,
     sessionToken,
     route: pending.route,
-    identity: stored.session.identity,
+    identity,
     issuedAt: timestamp(current),
     expiresAt: timestamp(browser.expiresAtMs),
   };
@@ -1596,6 +1635,7 @@ export async function openWorkbenchSessionV1(
   }
   const now = options.now ?? Date.now;
   const key = identityKey(options, canonicalRoot);
+  const currentBinding = launchBinding(options);
   const existing = sessionsByIdentity.get(key);
   if (existing !== undefined) {
     if (options.taskBriefReader !== undefined) {
@@ -1615,11 +1655,12 @@ export async function openWorkbenchSessionV1(
     existing.launches.set(token, {
       token,
       route: parsedInput.data.route,
+      binding: currentBinding,
       issuedAtMs,
       expiresAtMs: issuedAtMs + requestedTtl,
       redeemed: false,
     });
-    const output = makeOutput(options, existing.session.port, parsedInput.data.route, token, "reused", issuedAtMs, issuedAtMs + requestedTtl);
+    const output = makeOutput(currentBinding, existing.session.port, parsedInput.data.route, token, "reused", issuedAtMs, issuedAtMs + requestedTtl);
     return { ...existing.session, output, redeemLaunchToken: (candidate) => redeem(existing, candidate, now) };
   }
 
@@ -1661,14 +1702,15 @@ export async function openWorkbenchSessionV1(
   launches.set(token, {
     token,
     route: parsedInput.data.route,
+    binding: currentBinding,
     issuedAtMs,
     expiresAtMs: issuedAtMs + requestedTtl,
     redeemed: false,
   });
 
-  const identity = { productVersion: options.productVersion, worktreeId: options.worktreeId } as const;
+  const identity = runtimeIdentity(currentBinding);
   const session: WorkbenchSessionV1 = {
-    output: makeOutput(options, port, parsedInput.data.route, token, "started", issuedAtMs, issuedAtMs + requestedTtl),
+    output: makeOutput(currentBinding, port, parsedInput.data.route, token, "started", issuedAtMs, issuedAtMs + requestedTtl),
     canonicalRoot,
     identity,
     port,
@@ -1698,19 +1740,15 @@ export async function openWorkbenchSessionV1(
   // The handler and redeem closure need the final session object, not the
   // provisional reference used while wiring the server listeners.
   (stored as { session: WorkbenchSessionV1 }).session = session;
-  sessionsByIdentity.set(key, {
-    session,
-    launches,
-    now,
-    ...(options.taskBriefReader === undefined ? {} : { taskBriefReader: options.taskBriefReader }),
-    ...(options.graphReader === undefined ? {} : { graphReader: options.graphReader }),
-    ...(options.knowledgeReader === undefined ? {} : { knowledgeReader: options.knowledgeReader }),
-  });
+  // Keep the exact object captured by the HTTP handler. Reuse updates its
+  // readers in place, so the singleton never serves callbacks from a copied,
+  // stale registry entry.
+  sessionsByIdentity.set(key, stored);
   return session;
 }
 
 function makeOutput(
-  options: WorkbenchRuntimeBindingV1,
+  options: WorkbenchLaunchBindingV1,
   port: number,
   route: WorkbenchRouteV1,
   token: string,

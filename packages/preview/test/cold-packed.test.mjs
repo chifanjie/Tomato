@@ -1038,6 +1038,60 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
     );
     assert.equal(verified.structuredContent.result.task.status, "verified");
 
+    const reopened = await callTool(
+      mcp,
+      output,
+      nextRequestId++,
+      "open_workbench",
+      { route: { view: "tasks", taskId, section: "summary" }, openBrowser: false },
+      OpenWorkbenchOutputV1Schema,
+    );
+    assert.equal(reopened.structuredContent.result.runtime.disposition, "reused");
+    const reopenedWorkbenchUrl = new URL(reopened.structuredContent.result.deepLink);
+    assert.notEqual(
+      reopenedWorkbenchUrl.toString(),
+      workbenchUrl.toString(),
+      "reopening Workbench must issue a fresh launch link",
+    );
+    const reopenedLaunch = await fetch(new URL("/__workbench/launch", reopenedWorkbenchUrl), {
+      method: "POST",
+      headers: { "content-type": "application/json", connection: "close" },
+      body: JSON.stringify({ token: reopenedWorkbenchUrl.hash.slice(1) }),
+    });
+    assert.equal(reopenedLaunch.status, 200);
+    const reopenedCookie = reopenedLaunch.headers.get("set-cookie")?.split(";", 1)[0];
+    assert.ok(reopenedCookie);
+    const traceResponse = await fetch(
+      new URL(`/__workbench/trace?taskId=${encodeURIComponent(taskId)}`, reopenedWorkbenchUrl),
+      { headers: { cookie: reopenedCookie, connection: "close" } },
+    );
+    assert.equal(traceResponse.status, 200);
+    const tracePayload = await traceResponse.json();
+    const serializedTrace = JSON.stringify(tracePayload);
+    assert.equal(tracePayload.status, "ready");
+    assert.equal(tracePayload.taskId, taskId);
+    assert.equal(tracePayload.snapshotId, changedRefresh.structuredContent.meta.sourceSnapshotId);
+    assert.equal(tracePayload.changeCheck.actualSnapshotId, changedRefresh.structuredContent.meta.sourceSnapshotId);
+    const checkedFindings = checked.structuredContent.result.changeCheck.findings;
+    assert.deepEqual(tracePayload.changeCheck.counts, {
+      total: checkedFindings.length,
+      blocking: checkedFindings.filter((finding) => finding.blocking).length,
+      openBlocking: 0,
+    });
+    assert.equal(tracePayload.verification.disposition, "externally_reported");
+    assert.equal(tracePayload.verification.requiredCount, verificationRequests.length);
+    assert.equal(tracePayload.verification.passedCount, verificationRequests.length);
+    assert.equal(tracePayload.verification.failedCount, 0);
+    assert.equal(tracePayload.verification.pendingCount, 0);
+    assert.equal(tracePayload.verification.records.length, verificationRequests.length);
+    for (const forbiddenField of ["command", "outputDigest", "summary", "exitCode", "durationMs"]) {
+      assert.equal(
+        serializedTrace.includes(`"${forbiddenField}"`),
+        false,
+        `Workbench Trace must redact ${forbiddenField}`,
+      );
+    }
+
     mcp.stdin.end();
     assert.deepEqual(await waitForExit(mcp, "MCP clean exit"), [0, null]);
     mcpChild = null;

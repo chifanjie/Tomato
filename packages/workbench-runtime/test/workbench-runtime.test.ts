@@ -70,6 +70,118 @@ describe("workbench runtime session", () => {
     await first.close();
   });
 
+  it("pins redeemed browser sessions to their launch generation when the D-12 runtime is reused", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "workbench-runtime-generation-"));
+    roots.push(root);
+    const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const readerCalls: string[] = [];
+    const trace = (
+      generation: "g1" | "g2",
+      input: {
+        readonly taskId: string;
+        readonly repositoryId: string;
+        readonly worktreeId: string;
+        readonly snapshotId: string;
+      },
+    ) => {
+      readerCalls.push(`${generation}:${input.repositoryId}:${input.snapshotId}`);
+      return {
+        schemaVersion: 1 as const,
+        surface: "trace" as const,
+        taskId: input.taskId,
+        repositoryId: input.repositoryId,
+        worktreeId: input.worktreeId,
+        snapshotId: input.snapshotId,
+        status: "empty" as const,
+        verification: {
+          disposition: "externally_reported" as const,
+          records: [],
+          requiredCount: 0,
+          passedCount: 0,
+          failedCount: 0,
+          pendingCount: 0,
+        },
+      };
+    };
+    const generationOne = {
+      ...binding(root),
+      repositoryId: "repo:g1",
+      sourceSnapshotId: "snapshot:g1",
+      worktreeFingerprint: `sha256:${"1".repeat(64)}` as `sha256:${string}`,
+    };
+    const first = await openWorkbenchSessionV1(
+      { route: { view: "tasks", taskId } },
+      {
+        ...generationOne,
+        traceReader: async (input) => trace("g1", input),
+      },
+    );
+    const redeem = async (token: string): Promise<string> => {
+      const response = await fetch(`http://127.0.0.1:${first.port}/__workbench/launch`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      expect(response.status).toBe(200);
+      return response.headers.get("set-cookie")!.split(";", 1)[0]!;
+    };
+    const readTrace = async (cookie: string) => {
+      const response = await fetch(
+        `http://127.0.0.1:${first.port}/__workbench/trace?taskId=${encodeURIComponent(taskId)}`,
+        { headers: { cookie } },
+      );
+      expect(response.status).toBe(200);
+      return response.json() as Promise<{ repositoryId: string; snapshotId: string }>;
+    };
+
+    const firstCookie = await redeem(
+      first.output.structuredContent.result.deepLink.split("#")[1]!,
+    );
+    await expect(readTrace(firstCookie)).resolves.toMatchObject({
+      repositoryId: "repo:g1",
+      snapshotId: "snapshot:g1",
+    });
+    expect(readerCalls).toEqual(["g1:repo:g1:snapshot:g1"]);
+    readerCalls.length = 0;
+
+    const generationTwo = {
+      ...binding(root),
+      repositoryId: "repo:g2",
+      sourceSnapshotId: "snapshot:g2",
+      worktreeFingerprint: `sha256:${"2".repeat(64)}` as `sha256:${string}`,
+    };
+    const second = await openWorkbenchSessionV1(
+      { route: { view: "tasks", taskId } },
+      {
+        ...generationTwo,
+        traceReader: async (input) => trace("g2", input),
+      },
+    );
+    expect(second.port).toBe(first.port);
+    expect(second.output.structuredContent.result.runtime.disposition).toBe("reused");
+    expect(second.output.structuredContent.meta).toMatchObject({
+      repositoryId: "repo:g2",
+      sourceSnapshotId: "snapshot:g2",
+    });
+    const secondCookie = await redeem(
+      second.output.structuredContent.result.deepLink.split("#")[1]!,
+    );
+
+    await expect(readTrace(firstCookie)).resolves.toMatchObject({
+      repositoryId: "repo:g1",
+      snapshotId: "snapshot:g1",
+    });
+    await expect(readTrace(secondCookie)).resolves.toMatchObject({
+      repositoryId: "repo:g2",
+      snapshotId: "snapshot:g2",
+    });
+    expect(readerCalls).toEqual([
+      "g2:repo:g1:snapshot:g1",
+      "g2:repo:g2:snapshot:g2",
+    ]);
+    await first.close();
+  });
+
   it("rejects relative roots and expires launch tokens without allowing replay", async () => {
     await expect(
       openWorkbenchSessionV1(

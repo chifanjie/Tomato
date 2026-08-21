@@ -30,18 +30,11 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 256
-    },
-    "verificationRecordIds": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 256
-      }
     }
   },
   "required": [
     "taskId",
+    "actualSnapshotId",
     "includeWorktree",
     "expectedRevision",
     "idempotencyKey",

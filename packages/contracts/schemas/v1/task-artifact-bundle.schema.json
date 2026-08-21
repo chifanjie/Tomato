@@ -2617,6 +2617,11 @@
                         "type": "string",
                         "const": "rebase_task"
                       },
+                      "targetSnapshotId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
                       "newBaselineSnapshotId": {
                         "type": "string",
                         "minLength": 1,
@@ -2630,6 +2635,7 @@
                     },
                     "required": [
                       "type",
+                      "targetSnapshotId",
                       "newBaselineSnapshotId",
                       "reason"
                     ],
@@ -3486,6 +3492,11 @@
                         "type": "string",
                         "const": "rebase_task"
                       },
+                      "targetSnapshotId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
                       "newBaselineSnapshotId": {
                         "type": "string",
                         "minLength": 1,
@@ -3499,6 +3510,7 @@
                     },
                     "required": [
                       "type",
+                      "targetSnapshotId",
                       "newBaselineSnapshotId",
                       "reason"
                     ],

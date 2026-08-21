@@ -945,7 +945,15 @@ export class TaskEngine {
   ): Promise<ChangeCheckMutationOutcome> {
     const input = CheckChangeInputV1Schema.parse(inputValue);
     this.#authorize(auth, input.actor, "task:update");
-    return checkTaskChange(this.#store, input, this.#clock);
+    const analyzer = this.#contextProvider.analyzeTaskChanges;
+    return checkTaskChange(
+      this.#store,
+      input,
+      this.#clock,
+      analyzer === undefined
+        ? undefined
+        : (analysisInput) => analyzer.call(this.#contextProvider, analysisInput),
+    );
   }
 
   /**

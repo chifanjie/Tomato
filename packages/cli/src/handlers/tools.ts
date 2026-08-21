@@ -772,17 +772,8 @@ async function checkChange(argumentsValue: unknown, canonicalRoot: string) {
   if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
   const startedAt = performance.now();
   const runtime = await openRuntime(canonicalRoot);
-  const manifest = await runtime.store.readManifest({ verifyArtifacts: false });
-  const latestSnapshotId = manifest.artifacts
-    .filter((descriptor) => descriptor.artifactType === "task_manifest")
-    .find((descriptor) => descriptor.taskId === parsed.data.taskId)
-    ?.sourceSnapshotId;
-  const actualSnapshotId = parsed.data.actualSnapshotId ?? latestSnapshotId;
-  if (actualSnapshotId === undefined) {
-    throw new ToolFailure(resourceNotFoundFailure("task", parsed.data.taskId));
-  }
   const result = await runtime.taskEngine.checkChange(
-    { ...parsed.data, actualSnapshotId },
+    parsed.data,
     {
       actor: parsed.data.actor,
       repositoryId: runtime.store.repositoryId,

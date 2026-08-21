@@ -16,6 +16,7 @@ import {
   GetEvidenceOutputV1Schema,
   GetTaskBriefOutputV1Schema,
   OpenWorkbenchOutputV1Schema,
+  RecordVerificationOutputV1Schema,
   RefreshIndexOutputV1Schema,
   UpdateTaskOutputV1Schema,
 } from "../../contracts/dist/index.js";
@@ -26,6 +27,23 @@ const packageRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const PROCESS_TIMEOUT_MS = 60_000;
 const EXTERNAL_TIMEOUT_MS = 120_000;
 const REQUIRE_REAL_BROWSER = process.env.UNDERSTAND_CODE_REQUIRE_REAL_BROWSER === "1";
+const INITIAL_SOURCE = [
+  "export function foo() { return 'foo-before'; }",
+  "export function bar() { return 'bar-before'; }",
+  "",
+].join("\n");
+const BAR_ONLY_SOURCE = [
+  "export function foo() { return 'foo-before'; }",
+  "export function bar() { return 'bar-wrong-hunk'; }",
+  "",
+].join("\n");
+const FOO_ONLY_SOURCE = [
+  "export function foo() { return 'browser-ready'; }",
+  "export function bar() { return 'bar-before'; }",
+  "",
+].join("\n");
+const FOO_NODE_ID = "function:src/index.ts:foo";
+const BAR_NODE_ID = "function:src/index.ts:bar";
 
 function digest(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -140,6 +158,11 @@ async function callTool(child, output, id, name, argumentsValue, schema) {
   const message = await output.waitFor((candidate) => candidate.id === id, `MCP ${name}`);
   assert.equal(message.jsonrpc, "2.0");
   assert.equal(Object.hasOwn(message, "error"), false, `${name} must return a tool result`);
+  assert.notEqual(
+    message.result?.isError,
+    true,
+    `${name} returned an MCP tool error: ${JSON.stringify(message.result?.structuredContent?.error ?? message.result)}`,
+  );
   return schema.parse(message.result);
 }
 
@@ -187,7 +210,7 @@ async function createRepositoryFixture() {
   );
   await writeFile(
     path.join(root, "src/index.ts"),
-    "export function alpha() { return 'before'; }\n",
+    INITIAL_SOURCE,
     "utf8",
   );
   await git(root, ["init", "-q"]);
@@ -360,7 +383,8 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
   const installDirectory = await mkdtemp(path.join(tmpdir(), "uc-workbench-browser-install-"));
   const browserProfile = await mkdtemp(path.join(tmpdir(), "uc-workbench-browser-profile-"));
   const home = await mkdtemp(path.join(tmpdir(), "uc-workbench-browser-home-"));
-  const repositoryRoot = await createRepositoryFixture();
+  let repositoryRoot = await createRepositoryFixture();
+  const repositoryRoots = [repositoryRoot];
   let browser = null;
   let mcp = null;
   let upgradeReleaseRoot = null;
@@ -384,7 +408,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     assert.equal(typeof baseVersion, "string");
     const installedIndexHtml = await readFile(path.join(installed.packageRoot, "dist/dashboard/index.html"), "utf8");
     const reactEntry = expectedReactEntry(installedIndexHtml);
-    const lifecycleEnv = cleanMcpEnvironment(home, repositoryRoot);
+    let lifecycleEnv = cleanMcpEnvironment(home, repositoryRoot);
     const requestedManagedRoot = path.join(installDirectory, "managed-install");
     const managedInstall = await runCliJson(
       installed.cliBin,
@@ -445,24 +469,154 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
 
     let requestId = 2;
     const actor = "agent:preview-workbench-browser";
-    const initialRefresh = await callTool(mcp, output, requestId++, "refresh_index", {
+    const wrongInitialRefresh = await callTool(mcp, output, requestId++, "refresh_index", {
       mode: "full",
       idempotencyKey: "preview-workbench-browser-initial-refresh",
+      actor,
+    }, RefreshIndexOutputV1Schema);
+    assert.equal(wrongInitialRefresh.structuredContent.result.operation.status, "completed");
+    const wrongInitialSnapshotId = wrongInitialRefresh.structuredContent.meta.sourceSnapshotId;
+
+    const wrongBuilt = await callTool(mcp, output, requestId++, "build_task_brief", {
+      task: "Change the foo function behavior.",
+      expectedRevision: 0,
+      idempotencyKey: "preview-workbench-browser-wrong-hunk-brief",
+      actor,
+      scope: ["src/index.ts"],
+      maxCandidates: 1,
+    }, BuildTaskBriefOutputV1Schema);
+    const wrongTaskId = wrongBuilt.structuredContent.result.task.taskId;
+    const wrongBrief = wrongBuilt.structuredContent.result.brief;
+    assert.deepEqual(
+      wrongBrief.plannedChanges.map((change) => change.symbolId),
+      [FOO_NODE_ID],
+      "the mismatch regression must carry one confirmed foo-symbol obligation",
+    );
+    let wrongRevision = wrongBuilt.structuredContent.result.task.revision;
+    const updateWrongTask = async (action, idempotencyKey) => {
+      const updated = await callTool(mcp, output, requestId++, "update_task", {
+        taskId: wrongTaskId,
+        action,
+        expectedRevision: wrongRevision,
+        idempotencyKey,
+        actor,
+      }, UpdateTaskOutputV1Schema);
+      wrongRevision = updated.structuredContent.result.mutation.revision;
+      return updated;
+    };
+    await updateWrongTask(
+      { type: "confirm_goal", claimId: wrongBrief.goalClaimId },
+      "preview-workbench-browser-wrong-confirm-goal",
+    );
+    await updateWrongTask(
+      { type: "confirm_acceptance_criteria", claimIds: wrongBrief.acceptanceClaimIds },
+      "preview-workbench-browser-wrong-confirm-acceptance",
+    );
+    await updateWrongTask(
+      { type: "confirm_plan", plannedChangeIds: wrongBrief.plannedChanges.map((change) => change.id) },
+      "preview-workbench-browser-wrong-confirm-plan",
+    );
+    await updateWrongTask(
+      { type: "transition_status", to: "planned" },
+      "preview-workbench-browser-wrong-planned",
+    );
+    await updateWrongTask(
+      { type: "transition_status", to: "in_progress" },
+      "preview-workbench-browser-wrong-in-progress",
+    );
+
+    let sourcePath = path.join(repositoryRoot, "src/index.ts");
+    await writeFile(sourcePath, BAR_ONLY_SOURCE, "utf8");
+    const wrongRefresh = await callTool(mcp, output, requestId++, "refresh_index", {
+      mode: "full",
+      expectedSourceSnapshotId: wrongInitialSnapshotId,
+      idempotencyKey: "preview-workbench-browser-wrong-hunk-refresh",
+      actor,
+    }, RefreshIndexOutputV1Schema);
+    const wrongSnapshotId = wrongRefresh.structuredContent.meta.sourceSnapshotId;
+    assert.notEqual(wrongSnapshotId, wrongInitialSnapshotId);
+    await updateWrongTask(
+      { type: "transition_status", to: "check_required" },
+      "preview-workbench-browser-wrong-check-required",
+    );
+    const wrongChecked = await callTool(mcp, output, requestId++, "check_change", {
+      taskId: wrongTaskId,
+      actualSnapshotId: wrongSnapshotId,
+      includeWorktree: true,
+      expectedRevision: wrongRevision,
+      idempotencyKey: "preview-workbench-browser-wrong-check",
+      actor,
+    }, CheckChangeOutputV1Schema);
+    const wrongFindings = wrongChecked.structuredContent.result.changeCheck.findings;
+    assert.equal(
+      wrongFindings.some((finding) => finding.type === "planned_completed"),
+      false,
+      "changing bar in the planned foo file must not report the foo obligation completed",
+    );
+    const barFinding = wrongFindings.find((finding) => finding.type === "unplanned_change");
+    assert.ok(barFinding, "the same-file bar hunk must be reported as an unplanned change");
+    assert.ok(
+      wrongFindings.some((finding) =>
+        finding.type === "cannot_determine" &&
+        finding.blocking &&
+        finding.plannedChangeIds.includes(wrongBrief.plannedChanges[0].id)),
+      "the legacy foo plan lacks a required-change expectation and must remain an explicit blocking unknown",
+    );
+    const barEvidenceRead = await callTool(mcp, output, requestId++, "get_evidence", {
+      taskId: wrongTaskId,
+      evidenceIds: barFinding.evidenceIds,
+      maxExcerptChars: 8_192,
+      pageSize: barFinding.evidenceIds.length,
+    }, GetEvidenceOutputV1Schema);
+    const barEvidence = barEvidenceRead.structuredContent.result.evidence.find((evidence) =>
+      "filePath" in evidence && evidence.filePath === "src/index.ts",
+    );
+    assert.ok(barEvidence && "filePath" in barEvidence, "the unplanned bar Finding must resolve to source Evidence");
+    assert.deepEqual(barEvidence.lineRange, [2, 2]);
+    assert.deepEqual(barEvidence.nodeIds, [BAR_NODE_ID]);
+    assert.equal(barEvidence.contentHash, contentDigest(Buffer.from(BAR_ONLY_SOURCE, "utf8")));
+    assert.equal(barEvidence.observedAtSnapshotId, wrongSnapshotId);
+
+    mcp.stdin.end();
+    assert.deepEqual(await waitForExit(mcp, "mismatch repository MCP EOF"), [0, null]);
+    assert.equal(output.stderr.join(""), "");
+    mcp = null;
+
+    repositoryRoot = await createRepositoryFixture();
+    repositoryRoots.push(repositoryRoot);
+    lifecycleEnv = cleanMcpEnvironment(home, repositoryRoot);
+    sourcePath = path.join(repositoryRoot, "src/index.ts");
+    mcp = spawn(managedWrapper, ["--root", repositoryRoot], {
+      cwd: installDirectory,
+      env: lifecycleEnv,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    output = collectMessages(mcp);
+    await initializeMcp(mcp, output, "preview-workbench-browser-happy", baseVersion);
+    requestId = 2;
+    const initialRefresh = await callTool(mcp, output, requestId++, "refresh_index", {
+      mode: "full",
+      idempotencyKey: "preview-workbench-browser-happy-initial-refresh",
       actor,
     }, RefreshIndexOutputV1Schema);
     assert.equal(initialRefresh.structuredContent.result.operation.status, "completed");
     const initialSnapshotId = initialRefresh.structuredContent.meta.sourceSnapshotId;
 
     const built = await callTool(mcp, output, requestId++, "build_task_brief", {
-      task: "Change src/index.ts and verify its observable alpha function behavior.",
+      task: "Change the foo function and verify its observable behavior.",
       expectedRevision: 0,
       idempotencyKey: "preview-workbench-browser-brief",
       actor,
       scope: ["src/index.ts"],
+      maxCandidates: 1,
     }, BuildTaskBriefOutputV1Schema);
     const taskId = built.structuredContent.result.task.taskId;
     const brief = built.structuredContent.result.brief;
-    assert.ok(brief.plannedChanges.some((change) => change.filePath === "src/index.ts"));
+    assert.deepEqual(
+      brief.plannedChanges.map((change) => change.symbolId),
+      [FOO_NODE_ID],
+      "the happy path must carry one confirmed foo-symbol obligation",
+    );
 
     let taskRevision = built.structuredContent.result.task.revision;
     const updateTask = async (action, idempotencyKey) => {
@@ -488,8 +642,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     await updateTask({ type: "transition_status", to: "planned" }, "preview-workbench-browser-planned");
     await updateTask({ type: "transition_status", to: "in_progress" }, "preview-workbench-browser-in-progress");
 
-    const sourcePath = path.join(repositoryRoot, "src/index.ts");
-    await writeFile(sourcePath, "export function alpha() { return 'browser-ready'; }\n", "utf8");
+    await writeFile(sourcePath, FOO_ONLY_SOURCE, "utf8");
     const changedRefresh = await callTool(mcp, output, requestId++, "refresh_index", {
       mode: "full",
       expectedSourceSnapshotId: initialSnapshotId,
@@ -512,10 +665,22 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       actor,
     }, CheckChangeOutputV1Schema);
     taskRevision = checked.structuredContent.result.mutation.revision;
-    const finding = checked.structuredContent.result.changeCheck.findings.find((candidate) =>
-      candidate.actualChangeIds.length > 0 && candidate.evidenceIds.length > 0,
+    assert.equal(
+      checked.structuredContent.result.changeCheck.findings.some((candidate) => candidate.blocking),
+      false,
+      "the exact foo hunk must not leave a blocking Change Finding",
     );
-    assert.ok(finding, "the public Check must publish one source-backed finding for the browser path");
+    assert.equal(
+      checked.structuredContent.result.changeCheck.findings.some((candidate) => candidate.type === "unplanned_change"),
+      false,
+      "the exact foo-only edit must not be classified as unplanned",
+    );
+    const finding = checked.structuredContent.result.changeCheck.findings.find((candidate) =>
+      candidate.type === "planned_completed" &&
+      candidate.actualChangeIds.length > 0 &&
+      candidate.evidenceIds.length > 0,
+    );
+    assert.ok(finding, "the public Check must publish one source-backed completed foo Finding");
     const evidenceRead = await callTool(mcp, output, requestId++, "get_evidence", {
       taskId,
       evidenceIds: finding.evidenceIds,
@@ -527,7 +692,57 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     );
     assert.ok(expectedEvidence && "filePath" in expectedEvidence, "the finding must resolve to the edited source file");
     assert.equal(expectedEvidence.freshness, "current");
-    assert.match(expectedEvidence.contentHash, /^sha256:[0-9a-f]{64}$/u);
+    assert.deepEqual(expectedEvidence.lineRange, [1, 1]);
+    assert.deepEqual(expectedEvidence.nodeIds, [FOO_NODE_ID]);
+    assert.equal(expectedEvidence.contentHash, contentDigest(Buffer.from(FOO_ONLY_SOURCE, "utf8")));
+    assert.equal(expectedEvidence.observedAtSnapshotId, changedSnapshotId);
+
+    await updateTask(
+      { type: "transition_status", to: "verification_required" },
+      "preview-workbench-browser-verification-required",
+    );
+    const verificationProgram = [
+      "const { foo } = await import('./src/index.ts');",
+      "if (foo() !== 'browser-ready') throw new Error('unexpected foo result');",
+    ].join(" ");
+    const verificationStartedAt = Date.now();
+    const verificationExecution = await execBounded(
+      process.execPath,
+      ["--input-type=module", "--eval", verificationProgram],
+      { cwd: repositoryRoot, encoding: "utf8" },
+    );
+    assert.equal(verificationExecution.stderr, "");
+    const verificationDurationMs = Date.now() - verificationStartedAt;
+    const requiredVerificationEntries = brief.verificationPlan.filter((entry) => entry.required);
+    assert.ok(requiredVerificationEntries.length > 0, "the Task must carry a required Verification entry");
+    for (const [index, planEntry] of requiredVerificationEntries.entries()) {
+      const recorded = await callTool(mcp, output, requestId++, "record_verification", {
+        taskId,
+        record: {
+          verificationPlanEntryId: planEntry.id,
+          kind: planEntry.method,
+          status: "passed",
+          command: `node --input-type=module --eval ${JSON.stringify(verificationProgram)}`,
+          exitCode: 0,
+          durationMs: verificationDurationMs,
+          outputDigest: contentDigest(Buffer.from(`${verificationExecution.stdout}${verificationExecution.stderr}`, "utf8")),
+          summary: "The external foo verification command completed successfully.",
+          claimIds: planEntry.acceptanceClaimIds,
+          snapshotId: changedSnapshotId,
+        },
+        expectedRevision: taskRevision,
+        idempotencyKey: `preview-workbench-browser-verification-${index}`,
+        actor,
+      }, RecordVerificationOutputV1Schema);
+      assert.equal(recorded.structuredContent.result.verification.status, "passed");
+      assert.equal(recorded.structuredContent.result.verification.snapshotId, changedSnapshotId);
+      taskRevision = recorded.structuredContent.result.mutation.revision;
+    }
+    const verified = await updateTask(
+      { type: "transition_status", to: "verified" },
+      "preview-workbench-browser-verified",
+    );
+    assert.equal(verified.structuredContent.result.task.status, "verified");
 
     const opened = await callTool(mcp, output, requestId++, "open_workbench", {
       route: { view: "tasks", taskId, section: "planned_changes" },
@@ -593,14 +808,32 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     assert.equal(workbenchEvidence.payload.status, "ready");
     assert.equal(workbenchEvidence.payload.evidence.id, expectedEvidence.id);
     assert.equal(workbenchEvidence.payload.source.filePath, expectedEvidence.filePath);
-    assert.match(workbenchEvidence.payload.source.content, /browser-ready/u);
-    assert.ok(
-      workbenchEvidence.payload.evidence.nodeIds.length > 0,
-      "the session-bound Evidence projection must derive a stable Graph node binding",
+    assert.deepEqual(workbenchEvidence.payload.evidence.lineRange, [1, 1]);
+    assert.deepEqual(workbenchEvidence.payload.source.lineRange, [1, 1]);
+    assert.equal(workbenchEvidence.payload.source.content, "export function foo() { return 'browser-ready'; }");
+    assert.doesNotMatch(workbenchEvidence.payload.source.content, /bar/u);
+    assert.deepEqual(
+      workbenchEvidence.payload.evidence.nodeIds,
+      [FOO_NODE_ID],
+      "the session-bound Evidence projection must retain the exact foo Graph node binding",
     );
     for (const nodeId of workbenchEvidence.payload.evidence.nodeIds) {
       assert.equal(await browser.evaluate(bodyContains(nodeId)), true, `Evidence must expose node ${nodeId}`);
     }
+
+    const workbenchTrace = await browser.evaluate(`fetch(
+      '/__workbench/trace?taskId=' + encodeURIComponent(${JSON.stringify(taskId)}),
+      { credentials: 'same-origin', headers: { accept: 'application/json' } },
+    ).then(async (response) => ({ statusCode: response.status, payload: await response.json() }))`);
+    assert.equal(workbenchTrace.statusCode, 200);
+    assert.equal(workbenchTrace.payload.status, "ready");
+    assert.equal(workbenchTrace.payload.snapshotId, changedSnapshotId);
+    assert.equal(workbenchTrace.payload.verification.disposition, "externally_reported");
+    assert.equal(workbenchTrace.payload.verification.requiredCount, requiredVerificationEntries.length);
+    assert.equal(workbenchTrace.payload.verification.passedCount, requiredVerificationEntries.length);
+    assert.equal(workbenchTrace.payload.verification.failedCount, 0);
+    assert.equal(workbenchTrace.payload.verification.pendingCount, 0);
+    assert.equal(workbenchTrace.payload.verification.records.length, requiredVerificationEntries.length);
 
     const focusedNodeId = workbenchEvidence.payload.evidence.nodeIds[0];
     await browser.click(`[data-testid="task-evidence-open-graph"][data-node-id="${focusedNodeId}"]`);
@@ -843,7 +1076,15 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       { ok: true, status: "healthy", version: baseVersion },
     );
 
-    await writeFile(sourcePath, "export function alpha() { return 'newer-snapshot'; }\n", "utf8");
+    await writeFile(
+      sourcePath,
+      [
+        "export function foo() { return 'newer-snapshot'; }",
+        "export function bar() { return 'bar-before'; }",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
     const staleRefresh = await callTool(mcp, output, requestId++, "refresh_index", {
       mode: "full",
       expectedSourceSnapshotId: changedSnapshotId,
@@ -920,7 +1161,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       rm(installDirectory, { recursive: true, force: true }),
       rm(browserProfile, { recursive: true, force: true }),
       rm(home, { recursive: true, force: true }),
-      rm(repositoryRoot, { recursive: true, force: true }),
+      ...repositoryRoots.map((root) => rm(root, { recursive: true, force: true })),
       ...(upgradeReleaseRoot === null
         ? []
         : [rm(upgradeReleaseRoot, { recursive: true, force: true })]),

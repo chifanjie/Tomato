@@ -14,6 +14,7 @@ import {
   type FingerprintStore,
   type GeneratedDocument,
   type KnowledgeGraph,
+  type StructuralAnalysis,
 } from "@understand-code/core";
 import { type RepositorySnapshotV1 } from "@understand-code/contracts";
 import {
@@ -122,6 +123,184 @@ function lineRange(content: string): [number, number] {
 
 function sourceExcerpt(content: string): string {
   return content.length <= 800 ? content : `${content.slice(0, 800)}\n…`;
+}
+
+/**
+ * The single-file Alpha bundle intentionally does not ship Tree-sitter WASM.
+ * Keep a deliberately small, fail-safe structural fallback for ordinary
+ * top-level TypeScript/JavaScript function and class declarations so a cold
+ * install can retain stable Graph symbol identities. Complex or ambiguous
+ * syntax is omitted instead of being guessed.
+ */
+function conservativeTypeScriptAnalysis(content: string): StructuralAnalysis | null {
+  const masked = maskTypeScriptStructure(content);
+  const lines = masked.split(/\r?\n/u);
+  const functions: StructuralAnalysis["functions"] = [];
+  const classes: StructuralAnalysis["classes"] = [];
+  let outerDepth = 0;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]!;
+    if (outerDepth === 0) {
+      const functionMatch = line.match(
+        /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([$_\p{ID_Start}][$_\u200c\u200d\p{ID_Continue}]*)\b[^;{]*\{/u,
+      );
+      const classMatch = line.match(
+        /^\s*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([$_\p{ID_Start}][$_\u200c\u200d\p{ID_Continue}]*)\b[^;{]*\{/u,
+      );
+      const match = functionMatch ?? classMatch;
+      if (match !== null) {
+        const openingBrace = line.indexOf("{", match.index ?? 0);
+        const endLine = declarationEndLine(lines, index, openingBrace);
+        if (endLine !== undefined) {
+          const record = {
+            name: match[1]!,
+            lineRange: [index + 1, endLine + 1] as [number, number],
+          };
+          if (functionMatch !== null) {
+            functions.push({ ...record, params: [] });
+          } else {
+            classes.push({ ...record, methods: [], properties: [] });
+          }
+        }
+      }
+    }
+    outerDepth += braceDelta(line);
+    if (outerDepth < 0) return null;
+  }
+  if (outerDepth !== 0) return null;
+
+  const uniqueFunctions = uniqueDeclarations(functions);
+  const uniqueClasses = uniqueDeclarations(classes);
+  if (uniqueFunctions.length === 0 && uniqueClasses.length === 0) return null;
+  return {
+    functions: uniqueFunctions,
+    classes: uniqueClasses,
+    imports: [],
+    exports: [],
+  };
+}
+
+function uniqueDeclarations<T extends { readonly name: string }>(values: readonly T[]): T[] {
+  const counts = new Map<string, number>();
+  for (const value of values) counts.set(value.name, (counts.get(value.name) ?? 0) + 1);
+  return values.filter((value) => counts.get(value.name) === 1);
+}
+
+function declarationEndLine(
+  lines: readonly string[],
+  startLine: number,
+  openingBrace: number,
+): number | undefined {
+  if (openingBrace < 0) return undefined;
+  let depth = 0;
+  for (let lineIndex = startLine; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex]!;
+    const slice = lineIndex === startLine ? line.slice(openingBrace) : line;
+    depth += braceDelta(slice);
+    if (depth === 0) return lineIndex;
+    if (depth < 0) return undefined;
+  }
+  return undefined;
+}
+
+function braceDelta(value: string): number {
+  let result = 0;
+  for (const character of value) {
+    if (character === "{") result += 1;
+    if (character === "}") result -= 1;
+  }
+  return result;
+}
+
+function maskTypeScriptStructure(source: string): string {
+  type State = "code" | "line_comment" | "block_comment" | "single" | "double" | "template" | "regex";
+  let state: State = "code";
+  let escaped = false;
+  let regexCharacterClass = false;
+  let result = "";
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index]!;
+    const next = source[index + 1];
+    const newline = character === "\n" || character === "\r";
+    if (state === "line_comment") {
+      result += newline ? character : " ";
+      if (newline) state = "code";
+      continue;
+    }
+    if (state === "block_comment") {
+      if (character === "*" && next === "/") {
+        result += "  ";
+        index += 1;
+        state = "code";
+      } else {
+        result += newline ? character : " ";
+      }
+      continue;
+    }
+    if (state === "regex") {
+      result += newline ? character : " ";
+      if (newline) {
+        state = "code";
+        escaped = false;
+        regexCharacterClass = false;
+      } else if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === "[") {
+        regexCharacterClass = true;
+      } else if (character === "]") {
+        regexCharacterClass = false;
+      } else if (character === "/" && !regexCharacterClass) {
+        state = "code";
+      }
+      continue;
+    }
+    if (state === "single" || state === "double" || state === "template") {
+      const terminator = state === "single" ? "'" : state === "double" ? "\"" : "`";
+      result += newline ? character : " ";
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === terminator) state = "code";
+      continue;
+    }
+    if (character === "/" && next === "/") {
+      result += "  ";
+      index += 1;
+      state = "line_comment";
+    } else if (character === "/" && next === "*") {
+      result += "  ";
+      index += 1;
+      state = "block_comment";
+    } else if (character === "/" && isLikelyTypeScriptRegex(source, index)) {
+      result += " ";
+      state = "regex";
+      escaped = false;
+      regexCharacterClass = false;
+    } else if (character === "'") {
+      result += " ";
+      state = "single";
+    } else if (character === "\"") {
+      result += " ";
+      state = "double";
+    } else if (character === "`") {
+      result += " ";
+      state = "template";
+    } else {
+      result += character;
+    }
+  }
+  return result;
+}
+
+function isLikelyTypeScriptRegex(source: string, slashIndex: number): boolean {
+  let cursor = slashIndex - 1;
+  while (cursor >= 0 && /\s/u.test(source[cursor]!)) cursor -= 1;
+  if (cursor < 0) return true;
+  if (/[=([{,:;!?&|^~<>%*+\-]/u.test(source[cursor]!)) return true;
+  return /(?:^|[^\p{ID_Continue}])(?:return|case|throw|yield|await|typeof|instanceof|in|of)\s*$/u
+    .test(source.slice(0, slashIndex));
 }
 
 function resolveImportPath(relativePath: string, source: string, known: ReadonlySet<string>): string | undefined {
@@ -290,6 +469,7 @@ export async function buildRepositoryIndex(
   for (const source of sourceFiles) {
     const analysis = CODE_EXTENSIONS.has(path.extname(source.relativePath).toLowerCase())
       ? registry.analyzeFile(source.relativePath, source.content)
+        ?? conservativeTypeScriptAnalysis(source.content)
       : null;
     analyses.set(source.relativePath, analysis);
     const summary = `${source.relativePath} 的源码节点（${source.content.split(/\r?\n/u).length} 行）`;

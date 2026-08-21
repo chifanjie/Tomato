@@ -316,6 +316,8 @@ describe("MCP lifecycle and real handlers", () => {
         name: "check_change",
         arguments: {
           taskId,
+          actualSnapshotId:
+            built.structuredContent.result.task.latestSnapshotId,
           includeWorktree: true,
           expectedRevision: taskRevision,
           idempotencyKey: "cli-ci-check",

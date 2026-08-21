@@ -3021,7 +3021,7 @@ describe("TaskEngine persistent integration", () => {
     });
   });
 
-  it("persists planned/unplanned Change Findings and records a failed Verification", async () => {
+  it("fails closed without a trusted change analyzer and records a failed Verification", async () => {
     const { store } = await openStore();
     const taskEngine = engine(store);
     const built = await taskEngine.buildTaskBrief(
@@ -3163,16 +3163,13 @@ describe("TaskEngine persistent integration", () => {
       },
       auth(["task:update"]),
     );
-    expect(checked.changeCheck.findings).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ type: "unplanned_change" }),
-      ]),
-    );
-    expect(checked.changeCheck.findings).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ type: "possible_omission" }),
-      ]),
-    );
+    expect(checked.changeCheck.findings.length).toBeGreaterThan(0);
+    expect(checked.changeCheck.findings.every(
+      (finding) => finding.type === "cannot_determine" && finding.blocking,
+    )).toBe(true);
+    expect(checked.changeCheck.findings.some((finding) =>
+      ["planned_completed", "unplanned_change", "possible_omission"].includes(finding.type),
+    )).toBe(false);
     revision = checked.mutation.revision;
 
     for (const finding of checked.changeCheck.findings.filter(

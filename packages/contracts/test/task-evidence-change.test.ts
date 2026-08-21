@@ -1094,6 +1094,17 @@ describe("Impact, Change Check, and Verification V1 contracts", () => {
         includeWorktree: false,
       }).success,
     ).toBe(false);
+    const { actualSnapshotId: _actualSnapshotId, ...withoutActualSnapshot } =
+      input;
+    expect(
+      CheckChangeInputV1Schema.safeParse(withoutActualSnapshot).success,
+    ).toBe(false);
+    expect(
+      CheckChangeInputV1Schema.safeParse({
+        ...input,
+        verificationRecordIds: ["verification-legacy-caller-proof"],
+      }).success,
+    ).toBe(false);
   });
 
   it("provides concrete Impact, Change Check, and Verification envelopes", () => {

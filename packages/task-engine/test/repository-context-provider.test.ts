@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
 import {
   mkdir,
   mkdtemp,
@@ -78,6 +79,10 @@ function graphFixture(
 function snapshot(
   contentDigest: string,
   snapshotId = "snapshot:provider-fixture",
+  options: {
+    headCommit?: string;
+    changes?: RepositorySnapshotV1["changes"];
+  } = {},
 ): RepositorySnapshotV1 {
   return RepositorySnapshotV1Schema.parse({
     schemaVersion: 1,
@@ -85,7 +90,7 @@ function snapshot(
     repositoryId: "repository:provider-fixture",
     worktreeId: "worktree:provider-fixture",
     rootIdentity: "root:provider-fixture",
-    headCommit: HEAD_COMMIT,
+    headCommit: options.headCommit ?? HEAD_COMMIT,
     indexDigest: digest("index"),
     worktreeDigest: digest("worktree"),
     untrackedDigest: digest("untracked"),
@@ -93,7 +98,7 @@ function snapshot(
     createdAt: "2026-07-29T00:00:00.000Z",
     captureStatus: "complete",
     limitations: [],
-    changes: [
+    changes: options.changes ?? [
       {
         id: "change:task",
         path: "src/task.ts",
@@ -102,6 +107,23 @@ function snapshot(
         contentDigest,
       },
     ],
+  });
+}
+
+function git(
+  root: string,
+  arguments_: readonly string[],
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "git",
+      [...arguments_],
+      { cwd: root, encoding: "utf8" },
+      (error, stdout) => {
+        if (error !== null) reject(error);
+        else resolve(stdout.trim());
+      },
+    );
   });
 }
 
@@ -175,6 +197,109 @@ afterEach(async () => {
 });
 
 describe("RepositoryTaskContextProvider", () => {
+  it("derives deterministic changed-line hunks and current Graph symbol IDs from exact unstaged bytes", async () => {
+    const baselineSource = [
+      "export function foo() { return 'old foo'; }",
+      "export function bar() { return 'old bar'; }",
+    ].join("\n");
+    const actualSource = baselineSource
+      .replace("old foo", "new foo")
+      .replace("old bar", "new bar");
+    const graph = graphFixture();
+    graph.nodes = [
+      {
+        id: "function:foo",
+        type: "function",
+        name: "foo",
+        filePath: "src/task.ts",
+        lineRange: [1, 1],
+        summary: "Returns foo.",
+        tags: [],
+        complexity: "simple",
+      },
+      {
+        id: "function:bar",
+        type: "function",
+        name: "bar",
+        filePath: "src/task.ts",
+        lineRange: [2, 2],
+        summary: "Returns bar.",
+        tags: [],
+        complexity: "simple",
+      },
+    ];
+    const { root } = await fixtureRoot(graph, baselineSource);
+    await git(root, ["init", "--quiet"]);
+    await git(root, ["add", "src/task.ts"]);
+    await git(root, [
+      "-c",
+      "user.name=Understand Code Test",
+      "-c",
+      "user.email=test@understand-code.invalid",
+      "commit",
+      "--quiet",
+      "-m",
+      "baseline",
+    ]);
+    const headCommit = await git(root, ["rev-parse", "HEAD"]);
+    await writeFile(path.join(root, "src/task.ts"), actualSource, "utf8");
+    const baselineSnapshot = snapshot(
+      digest(baselineSource),
+      "snapshot:baseline-analysis",
+      { headCommit, changes: [] },
+    );
+    const actualSnapshot = snapshot(
+      digest(actualSource),
+      "snapshot:actual-analysis",
+      {
+        headCommit,
+        changes: [
+          {
+            id: "change:task",
+            path: "src/task.ts",
+            source: "unstaged",
+            kind: "modified",
+            contentDigest: digest(actualSource),
+            previousContentDigest: digest(baselineSource),
+          },
+        ],
+      },
+    );
+    const provider = await RepositoryTaskContextProvider.open({
+      canonicalRoot: root,
+    });
+
+    const first = await provider.analyzeTaskChanges({
+      taskId: "task:analysis",
+      baselineSnapshot,
+      actualSnapshot,
+    });
+    const second = await provider.analyzeTaskChanges({
+      taskId: "task:analysis",
+      baselineSnapshot,
+      actualSnapshot,
+    });
+
+    expect(second).toEqual(first);
+    expect(first).toMatchObject({ status: "complete", boundaries: [] });
+    expect(first.hunks).toEqual([
+      expect.objectContaining({
+        actualChangeIds: ["change:task"],
+        filePath: "src/task.ts",
+        newLineRange: [1, 1],
+        nodeIds: ["function:foo"],
+        contentHash: digest(actualSource),
+      }),
+      expect.objectContaining({
+        actualChangeIds: ["change:task"],
+        filePath: "src/task.ts",
+        newLineRange: [2, 2],
+        nodeIds: ["function:bar"],
+        contentHash: digest(actualSource),
+      }),
+    ]);
+  });
+
   it("loads a validated real Graph, adapts Wiki, and emits only digest-bound Source Evidence", async () => {
     const { root, source } = await fixtureRoot();
     const repositorySnapshot = snapshot(digest(source));

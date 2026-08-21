@@ -1377,6 +1377,7 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
       "check_change",
       {
         taskId,
+        actualSnapshotId: changedRefresh.structuredContent.meta.sourceSnapshotId,
         includeWorktree: true,
         expectedRevision: taskRevision,
         idempotencyKey: "preview-alpha-check",

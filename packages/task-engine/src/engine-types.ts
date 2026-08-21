@@ -93,6 +93,53 @@ export interface TaskContextProviderBinding {
 export interface TaskContextProvider {
   readonly binding: TaskContextProviderBinding;
   loadTaskContext(input: TaskContextLoadInput): Promise<TaskContextData>;
+  /**
+   * Optional trusted, worktree-bound post-change analyzer. Public Check input
+   * never carries diff or symbol assertions; providers derive them from the
+   * exact persisted Snapshots and repository bytes instead.
+   */
+  analyzeTaskChanges?(
+    input: TaskChangeAnalysisInput,
+  ): Promise<TaskChangeAnalysisResult>;
+}
+
+export interface TaskChangeAnalysisInput {
+  readonly taskId: string;
+  readonly baselineSnapshot: RepositorySnapshotV1;
+  readonly actualSnapshot: RepositorySnapshotV1;
+}
+
+export type TaskChangeAnalysisBoundaryCode =
+  | "unsupported_source"
+  | "baseline_overlay_unavailable"
+  | "head_mismatch"
+  | "unsafe_path"
+  | "content_changed"
+  | "binary_or_invalid_utf8"
+  | "budget_exhausted"
+  | "symbol_mapping_unknown";
+
+export interface TaskChangeAnalysisBoundary {
+  readonly code: TaskChangeAnalysisBoundaryCode;
+  readonly filePath?: string;
+  readonly actualChangeIds: readonly string[];
+  readonly reason: string;
+}
+
+export interface TaskChangeHunk {
+  readonly id: string;
+  readonly actualChangeIds: readonly string[];
+  readonly filePath: string;
+  readonly oldLineRange?: readonly [number, number];
+  readonly newLineRange: readonly [number, number];
+  readonly nodeIds: readonly string[];
+  readonly contentHash: string;
+}
+
+export interface TaskChangeAnalysisResult {
+  readonly status: "complete" | "partial" | "unknown";
+  readonly hunks: readonly TaskChangeHunk[];
+  readonly boundaries: readonly TaskChangeAnalysisBoundary[];
 }
 
 export interface TaskEngineOptions {

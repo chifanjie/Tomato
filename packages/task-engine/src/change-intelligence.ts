@@ -12,7 +12,6 @@ import {
   TaskManifestV1Schema,
   TaskOperationReceiptV1Schema,
   VerificationRecordV1Schema,
-  canonicalizeJson,
   type ChangeCheckV1,
   type ChangeFindingV1,
   type CheckChangeInputV1,
@@ -21,7 +20,6 @@ import {
   type IdempotencyRecordV1,
   type MutationResultV1,
   type RecordVerificationInputV1,
-  type RepositoryChangeV1,
   type RepositorySnapshotV1,
   type TaskArtifactBundleV1,
   type TaskManifestV1,
@@ -35,7 +33,13 @@ import {
   mutationResult,
 } from "./artifacts.js";
 import { TaskEngineError } from "./errors.js";
+import type {
+  TaskChangeAnalysisInput,
+  TaskChangeAnalysisResult,
+  TaskChangeHunk,
+} from "./engine-types.js";
 import { sha256CanonicalJson, stableId } from "./ids.js";
+import { compareUnicodeCodeUnits } from "./stable-order.js";
 
 export interface ChangeCheckMutationOutcome {
   readonly changeCheck: ChangeCheckV1;
@@ -224,60 +228,6 @@ async function snapshotFor(
   return read.artifact.payload;
 }
 
-function changeShape(change: RepositoryChangeV1): string {
-  return canonicalizeJson({
-    path: change.path,
-    ...(change.oldPath === undefined ? {} : { oldPath: change.oldPath }),
-    source: change.source,
-    kind: change.kind,
-    ...(change.contentDigest === undefined
-      ? {}
-      : { contentDigest: change.contentDigest }),
-    ...(change.previousContentDigest === undefined
-      ? {}
-      : { previousContentDigest: change.previousContentDigest }),
-  });
-}
-
-interface SnapshotDelta {
-  readonly path: string;
-  readonly actual: readonly RepositoryChangeV1[];
-  readonly baseline: readonly RepositoryChangeV1[];
-}
-
-function snapshotDelta(
-  baseline: RepositorySnapshotV1,
-  actual: RepositorySnapshotV1,
-): SnapshotDelta[] {
-  const baselineByPath = new Map<string, RepositoryChangeV1[]>();
-  const actualByPath = new Map<string, RepositoryChangeV1[]>();
-  for (const change of baseline.changes) {
-    const list = baselineByPath.get(change.path) ?? [];
-    list.push(change);
-    baselineByPath.set(change.path, list);
-  }
-  for (const change of actual.changes) {
-    const list = actualByPath.get(change.path) ?? [];
-    list.push(change);
-    actualByPath.set(change.path, list);
-  }
-  const paths = new Set([...baselineByPath.keys(), ...actualByPath.keys()]);
-  return [...paths]
-    .sort((left, right) => left.localeCompare(right, "en"))
-    .flatMap((path) => {
-      const before = [...(baselineByPath.get(path) ?? [])].sort((a, b) =>
-        changeShape(a).localeCompare(changeShape(b), "en"),
-      );
-      const after = [...(actualByPath.get(path) ?? [])].sort((a, b) =>
-        changeShape(a).localeCompare(changeShape(b), "en"),
-      );
-      if (canonicalizeJson(after.map(changeShape)) === canonicalizeJson(before.map(changeShape))) {
-        return [];
-      }
-      return [{ path, actual: after, baseline: before }];
-    });
-}
-
 function claimForPlannedChange(
   data: FullTaskData,
   plannedIds: readonly string[],
@@ -308,16 +258,17 @@ function buildFindingEvidence(
   actualSnapshot: RepositorySnapshotV1,
   findingId: string,
   occurredAt: string,
-  unknown: boolean,
-  actualChange: RepositoryChangeV1 | undefined,
-  nodeIds: readonly string[],
+  input:
+    | { readonly kind: "source"; readonly hunk: TaskChangeHunk }
+    | { readonly kind: "boundary"; readonly reason: string },
 ): EvidenceV1 {
   const id = stableId("evidence:change-check", {
     taskId,
     actualSnapshotId: actualSnapshot.snapshotId,
     findingId,
+    anchor: input.kind === "source" ? input.hunk.id : input.reason,
   });
-  if (unknown || actualSnapshot.headCommit === undefined) {
+  if (input.kind === "boundary") {
     return EvidenceV1Schema.parse({
       id,
       kind: "analysis_boundary",
@@ -328,61 +279,88 @@ function buildFindingEvidence(
       producedBy: "task-engine",
       createdAt: occurredAt,
       observedAtSnapshotId: actualSnapshot.snapshotId,
-      boundaryReason:
-        actualSnapshot.limitations[0] ??
-        "Repository Snapshot capture was incomplete for Change Intelligence.",
+      boundaryReason: input.reason,
       relationPath: [],
-    });
-  }
-  if (actualChange?.contentDigest !== undefined) {
-    return EvidenceV1Schema.parse({
-      id,
-      kind: "source",
-      epistemicStatus: "observed",
-      freshness: "current",
-      claimIds: [],
-      nodeIds: [...new Set(nodeIds)],
-      producedBy: "task-engine",
-      createdAt: occurredAt,
-      observedAtSnapshotId: actualSnapshot.snapshotId,
-      filePath: actualChange.path,
-      contentHash: actualChange.contentDigest,
     });
   }
   return EvidenceV1Schema.parse({
     id,
-    kind: "git",
+    kind: "source",
     epistemicStatus: "observed",
     freshness: "current",
     claimIds: [],
-    nodeIds: [],
+    nodeIds: [...input.hunk.nodeIds],
     producedBy: "task-engine",
     createdAt: occurredAt,
     observedAtSnapshotId: actualSnapshot.snapshotId,
-    commit: actualSnapshot.headCommit,
+    filePath: input.hunk.filePath,
+    lineRange: [...input.hunk.newLineRange],
+    contentHash: input.hunk.contentHash,
   });
+}
+
+function analysisIsConsistent(
+  analysis: TaskChangeAnalysisResult,
+  actual: RepositorySnapshotV1,
+): boolean {
+  if (
+    (analysis.status === "complete") !== (analysis.boundaries.length === 0) ||
+    (analysis.status === "unknown" && analysis.hunks.length !== 0) ||
+    (analysis.status === "partial" &&
+      (analysis.hunks.length === 0 || analysis.boundaries.length === 0))
+  ) {
+    return false;
+  }
+  const actualById = new Map(actual.changes.map((change) => [change.id, change]));
+  const coveredIds = new Set<string>();
+  const hunkIds = new Set<string>();
+  for (const hunk of analysis.hunks) {
+    if (
+      hunkIds.has(hunk.id) ||
+      hunk.actualChangeIds.length === 0 ||
+      hunk.nodeIds.length === 0 ||
+      new Set(hunk.actualChangeIds).size !== hunk.actualChangeIds.length ||
+      new Set(hunk.nodeIds).size !== hunk.nodeIds.length ||
+      hunk.newLineRange[0] < 1 ||
+      hunk.newLineRange[1] < hunk.newLineRange[0] ||
+      !/^sha256:[0-9a-f]{64}$/u.test(hunk.contentHash)
+    ) {
+      return false;
+    }
+    hunkIds.add(hunk.id);
+    for (const actualChangeId of hunk.actualChangeIds) {
+      const change = actualById.get(actualChangeId);
+      if (
+        change === undefined ||
+        change.path !== hunk.filePath ||
+        change.contentDigest !== hunk.contentHash
+      ) {
+        return false;
+      }
+      coveredIds.add(actualChangeId);
+    }
+  }
+  for (const boundary of analysis.boundaries) {
+    for (const actualChangeId of boundary.actualChangeIds) {
+      if (!actualById.has(actualChangeId)) return false;
+      coveredIds.add(actualChangeId);
+    }
+  }
+  return actual.changes.every((change) => coveredIds.has(change.id));
 }
 
 function makeFindings(
   data: FullTaskData,
   baseline: RepositorySnapshotV1,
   actual: RepositorySnapshotV1,
+  analysis: TaskChangeAnalysisResult,
   occurredAt: string,
-  requestedVerificationIds: readonly string[] | undefined,
 ): {
   findings: ChangeFindingV1[];
   findingClaims: ClaimV1[];
   findingEvidence: EvidenceV1[];
   baseFindingLinks: ReadonlyMap<string, readonly string[]>;
 } {
-  const deltas = snapshotDelta(baseline, actual);
-  const plannedByPath = new Map<string, typeof data.brief.plannedChanges>();
-  for (const planned of data.brief.plannedChanges) {
-    const list = plannedByPath.get(planned.filePath) ?? [];
-    list.push(planned);
-    plannedByPath.set(planned.filePath, list);
-  }
-  const matched = new Set<string>();
   const draftFindings: Array<{
     type: ChangeFindingV1["type"];
     severity: ChangeFindingV1["severity"];
@@ -391,52 +369,114 @@ function makeFindings(
     plannedChangeIds: string[];
     actualChangeIds: string[];
     baseClaimIds: string[];
-    unknown?: boolean;
+    hunks: TaskChangeHunk[];
+    boundaryReason?: string;
   }> = [];
-  for (const delta of deltas) {
-    const planned = plannedByPath.get(delta.path) ?? [];
-    if (planned.length === 0) {
+
+  const orderedPlans = [...data.brief.plannedChanges].sort((left, right) =>
+    compareUnicodeCodeUnits(left.filePath, right.filePath) ||
+    compareUnicodeCodeUnits(left.id, right.id),
+  );
+  const globalBoundaries = analysis.boundaries.filter(
+    (boundary) => boundary.filePath === undefined,
+  );
+  const boundariesByPath = new Map<string, typeof analysis.boundaries>();
+  for (const boundary of analysis.boundaries) {
+    if (boundary.filePath === undefined) continue;
+    const current = boundariesByPath.get(boundary.filePath) ?? [];
+    boundariesByPath.set(boundary.filePath, [...current, boundary]);
+  }
+  const matchedHunkIds = new Set<string>();
+  for (const planned of orderedPlans) {
+    const relevantBoundaries = [
+      ...globalBoundaries,
+      ...(boundariesByPath.get(planned.filePath) ?? []),
+    ];
+    const samePathHunks = analysis.hunks.filter(
+      (hunk) => hunk.filePath === planned.filePath,
+    );
+    const matchingHunks = samePathHunks.filter(
+      (hunk) =>
+        planned.symbolId === undefined ||
+        hunk.nodeIds.includes(planned.symbolId),
+    );
+    if (relevantBoundaries.length > 0) {
       draftFindings.push({
-        type: "unplanned_change",
-        severity: "warning",
+        type: "cannot_determine",
+        severity: "error",
         blocking: true,
-        summary: `Repository change at ${delta.path} was not present in the persisted Task plan.`,
-        plannedChangeIds: [],
-        actualChangeIds: (delta.actual.length > 0 ? delta.actual : delta.baseline).map((change) => change.id),
-        baseClaimIds: [claimForPlannedChange(data, [])],
+        summary: `Change Intelligence cannot determine whether planned change ${planned.id} was completed at ${planned.filePath}.`,
+        plannedChangeIds: [planned.id],
+        actualChangeIds: [...new Set(relevantBoundaries.flatMap((item) => item.actualChangeIds))]
+          .sort(compareUnicodeCodeUnits),
+        baseClaimIds: [claimForPlannedChange(data, [planned.id])],
+        hunks: [],
+        boundaryReason: relevantBoundaries.map((item) => item.reason).join("; "),
       });
       continue;
     }
-    for (const change of planned) matched.add(change.id);
-    const plannedIds = planned.map((change) => change.id);
-    const baseClaimIds = [...new Set(planned.flatMap((change) => change.claimIds))].filter((id) =>
-      data.claims.some((claim) => claim.id === id),
-    );
-    draftFindings.push({
-      type: planned.length === 1 ? "planned_completed" : "planned_partial",
-      severity: "info",
-      blocking: false,
-      summary:
-        planned.length === 1
-          ? `Planned change at ${delta.path} is present in the actual Snapshot.`
-          : `Actual change at ${delta.path} covers only part of the planned change set.`,
-      plannedChangeIds: plannedIds,
-      actualChangeIds: (delta.actual.length > 0 ? delta.actual : delta.baseline).map((change) => change.id),
-      baseClaimIds: baseClaimIds.length > 0 ? baseClaimIds : [claimForPlannedChange(data, plannedIds)],
-    });
+    if (matchingHunks.length > 0) {
+      for (const hunk of matchingHunks) matchedHunkIds.add(hunk.id);
+      draftFindings.push({
+        type: "planned_completed",
+        severity: "info",
+        blocking: false,
+        summary: `Planned change ${planned.id} is anchored to the actual changed lines in ${planned.filePath}.`,
+        plannedChangeIds: [planned.id],
+        actualChangeIds: [...new Set(matchingHunks.flatMap((hunk) => hunk.actualChangeIds))]
+          .sort(compareUnicodeCodeUnits),
+        baseClaimIds: [claimForPlannedChange(data, [planned.id])],
+        hunks: matchingHunks,
+      });
+    } else {
+      draftFindings.push({
+        type: "cannot_determine",
+        severity: "error",
+        blocking: true,
+        summary: `Change Intelligence cannot prove whether unmatched legacy planned change ${planned.id} was required at ${planned.filePath}.`,
+        plannedChangeIds: [planned.id],
+        actualChangeIds: [...new Set(samePathHunks.flatMap((hunk) => hunk.actualChangeIds))]
+          .sort(compareUnicodeCodeUnits),
+        baseClaimIds: [claimForPlannedChange(data, [planned.id])],
+        hunks: [],
+        boundaryReason:
+          "Legacy PlannedChange has no confirmed required-change expectation, and no changed-line hunk mapped to its stable symbol.",
+      });
+    }
   }
-  for (const planned of data.brief.plannedChanges) {
-    if (matched.has(planned.id)) continue;
-    const evidenceRequired = planned.impactPathIds.length > 0 || planned.claimIds.length > 0;
+  for (const hunk of analysis.hunks) {
+    if (matchedHunkIds.has(hunk.id)) continue;
     draftFindings.push({
-      type: "possible_omission",
+      type: "unplanned_change",
       severity: "warning",
       blocking: true,
-      summary: `Planned change ${planned.filePath} was not observed in the actual Snapshot.`,
-      plannedChangeIds: [planned.id],
-      actualChangeIds: [],
-      baseClaimIds: [claimForPlannedChange(data, [planned.id])],
-      unknown: !evidenceRequired,
+      summary: `Changed lines ${hunk.newLineRange[0]}-${hunk.newLineRange[1]} at ${hunk.filePath} were not present in the persisted Task plan.`,
+      plannedChangeIds: [],
+      actualChangeIds: [...hunk.actualChangeIds],
+      baseClaimIds: [claimForPlannedChange(data, [])],
+      hunks: [hunk],
+    });
+  }
+  for (const boundary of analysis.boundaries) {
+    if (
+      boundary.filePath !== undefined &&
+      orderedPlans.some((planned) => planned.filePath === boundary.filePath)
+    ) {
+      continue;
+    }
+    draftFindings.push({
+      type: "cannot_determine",
+      severity: "error",
+      blocking: true,
+      summary:
+        boundary.filePath === undefined
+          ? "Change Intelligence could not complete trusted repository analysis."
+          : `Change Intelligence could not analyze the repository change at ${boundary.filePath}.`,
+      plannedChangeIds: [],
+      actualChangeIds: [...boundary.actualChangeIds],
+      baseClaimIds: [claimForPlannedChange(data, [])],
+      hunks: [],
+      boundaryReason: boundary.reason,
     });
   }
   if (actual.captureStatus === "error" || baseline.captureStatus === "error") {
@@ -448,33 +488,15 @@ function makeFindings(
       plannedChangeIds: [],
       actualChangeIds: [],
       baseClaimIds: [claimForPlannedChange(data, [])],
-      unknown: true,
+      hunks: [],
+      boundaryReason: "Repository Snapshot capture reported an error.",
     });
   }
-  for (const verificationId of requestedVerificationIds ?? []) {
-    const record = data.verificationRecords.find((candidate) => candidate.id === verificationId);
-    if (record === undefined) {
-      draftFindings.push({
-        type: "verification_gap",
-        severity: "warning",
-        blocking: true,
-        summary: `Verification record ${verificationId} was not found in the persisted Task history.`,
-        plannedChangeIds: [],
-        actualChangeIds: [],
-        baseClaimIds: [claimForPlannedChange(data, [])],
-        unknown: true,
-      });
-    }
-  }
-
   const findings: ChangeFindingV1[] = [];
   const findingClaims: ClaimV1[] = [];
   const findingEvidenceItems: EvidenceV1[] = [];
   const baseFindingLinks = new Map<string, string[]>();
   for (const [index, draft] of draftFindings.entries()) {
-    const sourceChange = actual.changes.find((change) =>
-      draft.actualChangeIds.includes(change.id),
-    );
     const findingId = stableId("finding", {
       taskId: data.manifest.taskId,
       revision: data.manifest.revision + 1,
@@ -482,38 +504,54 @@ function makeFindings(
       type: draft.type,
       plannedChangeIds: draft.plannedChangeIds,
       actualChangeIds: draft.actualChangeIds,
+      hunkIds: draft.hunks.map((hunk) => hunk.id),
     });
-    const evidence = buildFindingEvidence(
-      data.manifest.taskId,
-      actual,
-      findingId,
-      occurredAt,
-      draft.unknown === true || actual.captureStatus !== "complete",
-      sourceChange,
-      data.evidence
-        .filter((item) =>
-          "filePath" in item &&
-          sourceChange !== undefined &&
-          sourceChange.path === item.filePath,
-        )
-        .flatMap((item) => item.nodeIds),
-    );
+    const evidences =
+      draft.hunks.length > 0 && actual.captureStatus === "complete"
+        ? draft.hunks.map((hunk) =>
+            buildFindingEvidence(
+              data.manifest.taskId,
+              actual,
+              findingId,
+              occurredAt,
+              { kind: "source", hunk },
+            ),
+          )
+        : [
+            buildFindingEvidence(
+              data.manifest.taskId,
+              actual,
+              findingId,
+              occurredAt,
+              {
+                kind: "boundary",
+                reason:
+                  draft.boundaryReason ??
+                  actual.limitations[0] ??
+                  "Change Intelligence does not have complete byte-level proof for this finding.",
+              },
+            ),
+          ];
     const claimId = stableId("claim:finding", {
       taskId: data.manifest.taskId,
       revision: data.manifest.revision + 1,
       findingId,
     });
-    const epistemicStatus = evidence.epistemicStatus === "observed" ? "observed" : "unknown";
+    const epistemicStatus = evidences.every(
+      (evidence) => evidence.epistemicStatus === "observed",
+    )
+      ? "observed"
+      : "unknown";
     const findingClaim = ClaimV1Schema.parse({
       id: claimId,
       taskId: data.manifest.taskId,
       kind: "finding",
       statement: draft.summary,
       epistemicStatus,
-      lifecycleStatus: evidence.epistemicStatus === "observed" ? "supported" : "draft",
+      lifecycleStatus: epistemicStatus === "observed" ? "supported" : "draft",
       freshness: "current",
       sourceSnapshotId: actual.snapshotId,
-      evidenceIds: [evidence.id],
+      evidenceIds: evidences.map((evidence) => evidence.id),
       findingIds: [findingId],
       verificationRecordIds: [],
       ...(epistemicStatus === "unknown"
@@ -532,13 +570,15 @@ function makeFindings(
       claimIds,
       plannedChangeIds: draft.plannedChangeIds,
       actualChangeIds: draft.actualChangeIds,
-      evidenceIds: [evidence.id],
+      evidenceIds: evidences.map((evidence) => evidence.id),
       impactPathIds: [],
     });
     findings.push(finding);
     findingClaims.push(findingClaim);
     findingEvidenceItems.push(
-      EvidenceV1Schema.parse({ ...evidence, claimIds: [claimId] }),
+      ...evidences.map((evidence) =>
+        EvidenceV1Schema.parse({ ...evidence, claimIds: [claimId] }),
+      ),
     );
     for (const baseClaimId of draft.baseClaimIds) {
       const links = baseFindingLinks.get(baseClaimId) ?? [];
@@ -618,6 +658,9 @@ export async function checkTaskChange(
   store: ArtifactStore,
   inputValue: CheckChangeInputV1,
   clock: () => Date,
+  analyzeTaskChanges?: (
+    input: TaskChangeAnalysisInput,
+  ) => Promise<TaskChangeAnalysisResult>,
 ): Promise<ChangeCheckMutationOutcome> {
   const input = CheckChangeInputV1Schema.parse(inputValue);
   const requestDigest = sha256CanonicalJson(input);
@@ -647,7 +690,7 @@ export async function checkTaskChange(
   if (data.manifest.status !== "check_required") {
     gate(data.manifest, "check_required", "current_check_required");
   }
-  const actualSnapshotId = input.actualSnapshotId ?? data.manifest.latestSnapshotId;
+  const actualSnapshotId = input.actualSnapshotId;
   if (actualSnapshotId !== data.manifest.latestSnapshotId) {
     gate(data.manifest, "check_required", "snapshot_not_current", actualSnapshotId);
   }
@@ -655,14 +698,70 @@ export async function checkTaskChange(
     snapshotFor(store, data.manifest.baselineSnapshotId),
     snapshotFor(store, actualSnapshotId),
   ]);
+  let repositoryAnalysis: TaskChangeAnalysisResult;
+  if (analyzeTaskChanges === undefined) {
+    repositoryAnalysis = {
+      status: "unknown",
+      hunks: [],
+      boundaries: [
+        {
+          code: "unsupported_source",
+          actualChangeIds: actual.changes
+            .map((change) => change.id)
+            .sort(compareUnicodeCodeUnits),
+          reason:
+            "The bound Task context provider does not implement trusted post-change analysis.",
+        },
+      ],
+    };
+  } else {
+    try {
+      repositoryAnalysis = await analyzeTaskChanges({
+        taskId: data.manifest.taskId,
+        baselineSnapshot: baseline,
+        actualSnapshot: actual,
+      });
+    } catch {
+      repositoryAnalysis = {
+        status: "unknown",
+        hunks: [],
+        boundaries: [
+          {
+            code: "unsupported_source",
+            actualChangeIds: actual.changes
+              .map((change) => change.id)
+              .sort(compareUnicodeCodeUnits),
+            reason:
+              "The bound Task context provider could not complete trusted post-change analysis.",
+          },
+        ],
+      };
+    }
+  }
+  if (!analysisIsConsistent(repositoryAnalysis, actual)) {
+    repositoryAnalysis = {
+      status: "unknown",
+      hunks: [],
+      boundaries: [
+        {
+          code: "unsupported_source",
+          actualChangeIds: actual.changes
+            .map((change) => change.id)
+            .sort(compareUnicodeCodeUnits),
+          reason:
+            "The trusted post-change analyzer returned an inconsistent coverage result.",
+        },
+      ],
+    };
+  }
   const occurredAt = nextTimestamp(data.manifest.updatedAt, clock);
   const revision = data.manifest.revision + 1;
   const analysis = makeFindings(
     data,
     baseline,
     actual,
+    repositoryAnalysis,
     occurredAt,
-    input.verificationRecordIds,
   );
   const changeCheck = ChangeCheckV1Schema.parse({
     schemaVersion: 1,

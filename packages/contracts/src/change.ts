@@ -354,21 +354,11 @@ export type ChangeCheckArtifactV1 = z.infer<
 
 export const CheckChangeInputV1Schema = z.strictObject({
   taskId: TaskIdSchema,
-  actualSnapshotId: SnapshotIdSchema.optional(),
+  actualSnapshotId: SnapshotIdSchema,
   includeWorktree: z.literal(true),
   expectedRevision: RevisionSchema,
   idempotencyKey: IdempotencyKeySchema,
   actor: ActorSchema,
-  verificationRecordIds: z.array(VerificationRecordIdSchema).optional(),
-}).superRefine((input, context) => {
-  if (input.verificationRecordIds !== undefined) {
-    uniqueValues(
-      input.verificationRecordIds,
-      context,
-      ["verificationRecordIds"],
-      "verificationRecordIds",
-    );
-  }
 });
 
 export type CheckChangeInputV1 = z.infer<typeof CheckChangeInputV1Schema>;

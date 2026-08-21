@@ -241,6 +241,7 @@ describe("P0 MCP tool inventory", () => {
       },
       check_change: {
         taskId: TASK_ID,
+        actualSnapshotId: referenceTask.latestSnapshotId,
         includeWorktree: true,
         expectedRevision: 3,
         idempotencyKey: "check-1",

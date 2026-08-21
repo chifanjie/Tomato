@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
 import {
   constants,
   type BigIntStats,
@@ -35,11 +36,21 @@ import {
 
 import type {
   SourceEvidenceRecord,
+  TaskChangeAnalysisBoundary,
+  TaskChangeAnalysisInput,
+  TaskChangeAnalysisResult,
+  TaskChangeHunk,
   TaskContextData,
   TaskContextLoadInput,
   TaskContextProvider,
   TaskContextProviderBinding,
 } from "./engine-types.js";
+import {
+  CHANGE_ANALYSIS_LIMITS,
+  compareTaskChangeHunks,
+  deterministicLineDiff,
+  graphSymbolClustersForRange,
+} from "./change-analysis.js";
 import { compareUnicodeCodeUnits } from "./stable-order.js";
 import type {
   WikiIndexLike,
@@ -117,6 +128,100 @@ interface VerifiedFile {
 interface OptionalJson {
   present: boolean;
   value?: unknown;
+}
+
+function changeAnalysisBoundary(
+  code: TaskChangeAnalysisBoundary["code"],
+  reason: string,
+  filePath: string | undefined,
+  actualChangeIds: readonly string[],
+): TaskChangeAnalysisBoundary {
+  return {
+    code,
+    reason,
+    ...(filePath === undefined ? {} : { filePath }),
+    actualChangeIds: [...actualChangeIds].sort(compareUnicodeCodeUnits),
+  };
+}
+
+function gitEnvironment(): NodeJS.ProcessEnv {
+  const environment: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!key.toUpperCase().startsWith("GIT_")) environment[key] = value;
+  }
+  return {
+    ...environment,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_COUNT: "0",
+    GIT_NO_REPLACE_OBJECTS: "1",
+    GIT_OPTIONAL_LOCKS: "0",
+    GIT_TERMINAL_PROMPT: "0",
+    LC_ALL: "C",
+  };
+}
+
+function readGitBlob(
+  canonicalRoot: string,
+  headCommit: string,
+  relativePath: string,
+): Promise<Buffer> {
+  if (
+    !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(headCommit) ||
+    relativePath.startsWith("-") ||
+    /[:\0\r\n]/u.test(relativePath)
+  ) {
+    return Promise.reject(
+      providerErrorForPath(
+        "unsafe_repository_path",
+        "A repository path is ambiguous for exact Git object lookup.",
+        relativePath,
+      ),
+    );
+  }
+  return new Promise((resolve, reject) => {
+    execFile(
+      "git",
+      [
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "core.attributesFile=/dev/null",
+        "-c",
+        "core.excludesFile=/dev/null",
+        "--no-optional-locks",
+        "cat-file",
+        "blob",
+        `${headCommit}:${relativePath}`,
+      ],
+      {
+        cwd: canonicalRoot,
+        encoding: "buffer",
+        env: gitEnvironment(),
+        maxBuffer: CHANGE_ANALYSIS_LIMITS.maxFileBytes + 1,
+        windowsHide: true,
+      },
+      (error, stdout) => {
+        if (error !== null) {
+          reject(
+            (error as NodeJS.ErrnoException).code ===
+              "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"
+              ? new RangeError("baseline Git blob exceeds analysis budget")
+              : error,
+          );
+          return;
+        }
+        const bytes = Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout);
+        if (bytes.byteLength > CHANGE_ANALYSIS_LIMITS.maxFileBytes) {
+          reject(new RangeError("baseline Git blob exceeds analysis budget"));
+          return;
+        }
+        resolve(bytes);
+      },
+    );
+  });
 }
 
 function isInside(root: string, candidate: string): boolean {
@@ -933,6 +1038,278 @@ implements TaskContextProvider {
         "maxSourceFileBytes",
       ),
     });
+  }
+
+  async analyzeTaskChanges(
+    input: TaskChangeAnalysisInput,
+  ): Promise<TaskChangeAnalysisResult> {
+    const baseline = RepositorySnapshotV1Schema.safeParse(
+      input.baselineSnapshot,
+    );
+    const actual = RepositorySnapshotV1Schema.safeParse(input.actualSnapshot);
+    if (!baseline.success || !actual.success) {
+      return {
+        status: "unknown",
+        hunks: [],
+        boundaries: [
+          changeAnalysisBoundary(
+            "unsupported_source",
+            "Change analysis requires valid persisted Repository Snapshots.",
+            undefined,
+            [],
+          ),
+        ],
+      };
+    }
+    const actualChangeIds = actual.data.changes.map((change) => change.id);
+    if (
+      baseline.data.captureStatus !== "complete" ||
+      actual.data.captureStatus !== "complete"
+    ) {
+      return {
+        status: "unknown",
+        hunks: [],
+        boundaries: [
+          changeAnalysisBoundary(
+            "unsupported_source",
+            "Alpha line analysis requires complete baseline and actual Repository Snapshots.",
+            undefined,
+            actualChangeIds,
+          ),
+        ],
+      };
+    }
+    if (baseline.data.changes.length !== 0) {
+      return {
+        status: "unknown",
+        hunks: [],
+        boundaries: [
+          changeAnalysisBoundary(
+            "baseline_overlay_unavailable",
+            "Alpha line analysis requires a globally clean Task baseline; dirty baseline overlays are not reconstructable from Snapshot metadata.",
+            undefined,
+            actualChangeIds,
+          ),
+        ],
+      };
+    }
+    if (
+      baseline.data.repositoryId !== actual.data.repositoryId ||
+      baseline.data.worktreeId !== actual.data.worktreeId ||
+      baseline.data.headCommit === undefined ||
+      actual.data.headCommit === undefined ||
+      baseline.data.headCommit !== actual.data.headCommit
+    ) {
+      return {
+        status: "unknown",
+        hunks: [],
+        boundaries: [
+          changeAnalysisBoundary(
+            "head_mismatch",
+            "Alpha line analysis requires the baseline and actual Snapshot to share one exact HEAD.",
+            undefined,
+            actualChangeIds,
+          ),
+        ],
+      };
+    }
+
+    let graph: KnowledgeGraph;
+    try {
+      graph = validateGraphArtifact(
+        await readRequiredJson(
+          this.#canonicalRoot,
+          this.#options.graphPath,
+          this.#options.maxGraphBytes,
+        ),
+        this.#options.graphPath,
+      );
+    } catch {
+      return {
+        status: "unknown",
+        hunks: [],
+        boundaries: [
+          changeAnalysisBoundary(
+            "symbol_mapping_unknown",
+            "The current validated Graph is unavailable for symbol mapping.",
+            undefined,
+            actualChangeIds,
+          ),
+        ],
+      };
+    }
+
+    const changesByPath = new Map<string, typeof actual.data.changes>();
+    for (const change of actual.data.changes) {
+      const changes = changesByPath.get(change.path) ?? [];
+      changes.push(change);
+      changesByPath.set(change.path, changes);
+    }
+    const hunks: TaskChangeHunk[] = [];
+    const boundaries: TaskChangeAnalysisBoundary[] = [];
+    for (const filePath of [...changesByPath.keys()].sort(compareUnicodeCodeUnits)) {
+      const changes = changesByPath.get(filePath)!;
+      const ids = changes.map((change) => change.id);
+      const supported =
+        changes.length === 1 &&
+        changes[0]!.source === "unstaged" &&
+        changes[0]!.kind === "modified" &&
+        changes[0]!.contentDigest !== undefined;
+      if (!supported) {
+        boundaries.push(
+          changeAnalysisBoundary(
+            "unsupported_source",
+            "Alpha line analysis only supports one unstaged modified change per path.",
+            filePath,
+            ids,
+          ),
+        );
+        continue;
+      }
+      let actualFile: VerifiedFile;
+      let baselineBytes: Buffer;
+      try {
+        actualFile = (await openVerifiedFile(this.#canonicalRoot, filePath, {
+          allowMissing: false,
+          readBytes: true,
+          maxBytes: CHANGE_ANALYSIS_LIMITS.maxFileBytes,
+        }))!;
+      } catch (error) {
+        const code =
+          error instanceof RepositoryTaskContextProviderError &&
+          error.code === "repository_file_too_large"
+            ? "budget_exhausted"
+            : error instanceof RepositoryTaskContextProviderError &&
+                error.code === "unsafe_repository_path"
+              ? "unsafe_path"
+              : "content_changed";
+        boundaries.push(
+          changeAnalysisBoundary(
+            code,
+            "The actual worktree file could not be read and verified safely.",
+            filePath,
+            ids,
+          ),
+        );
+        continue;
+      }
+      const actualDigest =
+        `sha256:${createHash("sha256").update(actualFile.bytes!).digest("hex")}`;
+      if (actualDigest !== changes[0]!.contentDigest) {
+        boundaries.push(
+          changeAnalysisBoundary(
+            "content_changed",
+            "The worktree bytes no longer match the exact actual Snapshot digest.",
+            filePath,
+            ids,
+          ),
+        );
+        continue;
+      }
+      try {
+        baselineBytes = await readGitBlob(
+          this.#canonicalRoot,
+          baseline.data.headCommit,
+          filePath,
+        );
+      } catch (error) {
+        boundaries.push(
+          changeAnalysisBoundary(
+            error instanceof RepositoryTaskContextProviderError &&
+              error.code === "unsafe_repository_path"
+              ? "unsafe_path"
+              : error instanceof RangeError
+                ? "budget_exhausted"
+                : "unsupported_source",
+            "The exact baseline Git blob could not be read within the Alpha profile.",
+            filePath,
+            ids,
+          ),
+        );
+        continue;
+      }
+      const diff = deterministicLineDiff({
+        baselineSnapshotId: baseline.data.snapshotId,
+        actualSnapshotId: actual.data.snapshotId,
+        filePath,
+        before: baselineBytes,
+        after: actualFile.bytes!,
+      });
+      if (!diff.ok) {
+        boundaries.push(
+          changeAnalysisBoundary(
+            diff.code,
+            diff.code === "budget_exhausted"
+              ? "Deterministic line analysis exceeded its fixed budget."
+              : "The changed file is binary or is not valid UTF-8.",
+            filePath,
+            ids,
+          ),
+        );
+        continue;
+      }
+      const pathHunks: TaskChangeHunk[] = [];
+      let pathBoundary: TaskChangeAnalysisBoundary | undefined;
+      for (const hunk of diff.hunks) {
+        if (hunk.newLineRange === undefined) {
+          pathBoundary = changeAnalysisBoundary(
+            "unsupported_source",
+            "Deletion-only hunks have no actual source range in the Alpha profile.",
+            filePath,
+            ids,
+          );
+          break;
+        }
+        const clusters = graphSymbolClustersForRange(
+          hunk.id,
+          graph.nodes,
+          filePath,
+          hunk.newLineRange,
+          (node) => sourceAnchorMatches(node, actualFile.bytes!),
+        );
+        if (clusters === undefined || clusters.length === 0) {
+          pathBoundary = changeAnalysisBoundary(
+            "symbol_mapping_unknown",
+            "A changed line hunk could not be mapped to a current validated Graph symbol.",
+            filePath,
+            ids,
+          );
+          break;
+        }
+        for (const cluster of clusters) {
+          pathHunks.push({
+            id: cluster.id,
+            actualChangeIds: [...ids].sort(compareUnicodeCodeUnits),
+            filePath,
+            newLineRange: [...cluster.lineRange] as [number, number],
+            nodeIds: [...cluster.nodeIds].sort(compareUnicodeCodeUnits),
+            contentHash: actualDigest,
+          });
+        }
+      }
+      if (pathBoundary !== undefined) {
+        boundaries.push(pathBoundary);
+      } else {
+        hunks.push(...pathHunks);
+      }
+    }
+
+    hunks.sort(compareTaskChangeHunks);
+    boundaries.sort((left, right) =>
+      compareUnicodeCodeUnits(left.filePath ?? "", right.filePath ?? "") ||
+      compareUnicodeCodeUnits(left.code, right.code) ||
+      compareUnicodeCodeUnits(left.actualChangeIds.join("\0"), right.actualChangeIds.join("\0")),
+    );
+    return {
+      status:
+        boundaries.length === 0
+          ? "complete"
+          : hunks.length === 0
+            ? "unknown"
+            : "partial",
+      hunks,
+      boundaries,
+    };
   }
 
   async loadTaskContext(

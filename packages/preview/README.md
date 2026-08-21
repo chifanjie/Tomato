@@ -34,6 +34,31 @@ The same installation exposes the full Alpha MCP command:
 understand-code mcp --stdio --root /absolute/path/to/worktree
 ```
 
+It also contains self-contained Codex and Claude Code plugin marketplaces. The
+installed plugins carry their own exact-version MCP executable, so Host plugin
+caches do not depend on the monorepo, a globally installed Understand Code
+command, or the original tarball location:
+
+```sh
+PREVIEW_ROOT="$(npm root -g)/@understand-code/preview"
+
+codex plugin marketplace add "$PREVIEW_ROOT/dist/plugin-roots/codex" --json
+codex plugin add understand-code@understand-code-alpha --json
+
+claude plugin validate --strict "$PREVIEW_ROOT/dist/plugin-roots/claude"
+claude plugin marketplace add "$PREVIEW_ROOT/dist/plugin-roots/claude" --scope user
+claude plugin install understand-code@understand-code-alpha --scope user
+```
+
+Start a new Host session after installation. The Codex plugin binds to the Git
+worktree containing the Host working directory; the Claude plugin binds to the
+absolute `CLAUDE_PROJECT_DIR` supplied by Claude Code. Both resolve the canonical
+Git worktree top-level and reject a missing or non-repository root. Ambient
+`GIT_*` variables are not allowed to redirect the selected repository. The Alpha
+gate validates real isolated marketplace install/list/remove operations and starts
+the MCP from each Host's installed plugin cache. It does not yet claim a
+credentialed, model-selected tool call inside a complete Codex or Claude chat.
+
 It also installs the two mandatory CLI Host entrypoints from the same tarball:
 
 ```sh
@@ -48,10 +73,11 @@ persisted Task even when their working directories differ. Missing, relative, or
 unexpanded placeholder roots fail with `workspace_root_required`; ending stdin
 stops the Host and MCP processes cleanly.
 
-`dist/release-manifest.json` and the two
-`dist/host-adapters/{codex,claude}/manifest.json` files bind the package, Preview,
-CLI, Host entrypoint, configuration template paths, product version, and the
-reviewed executable SHA-256 digests.
+`dist/release-manifest.json`, the two
+`dist/host-adapters/{codex,claude}/manifest.json` files, and the two
+`dist/plugin-roots/{codex,claude}` trees bind the package, Preview, CLI, Host
+entrypoint, marketplace/plugin configuration paths, product version, and the
+reviewed payload SHA-256 digests.
 They provide Alpha artifact traceability; they are not a signature, SBOM, provenance,
 or formal Release attestation.
 

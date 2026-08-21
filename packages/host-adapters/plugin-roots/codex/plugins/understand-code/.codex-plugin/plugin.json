@@ -1,0 +1,21 @@
+{
+  "name": "understand-code",
+  "version": "0.1.0-preview.1",
+  "description": "Repo-scoped Pulse, Brief, Graph, Wiki, Check, and Verification for Codex CLI.",
+  "author": {
+    "name": "Understand Code contributors"
+  },
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Understand Code Alpha",
+    "shortDescription": "Understand and verify changes in the active repository.",
+    "longDescription": "Connects Codex CLI to a local, repo-scoped Understand Code MCP server for Pulse, Task Brief, Graph, Wiki, Check, and Verification workflows.",
+    "developerName": "Understand Code contributors",
+    "category": "Developer Tools",
+    "defaultPrompt": [
+      "Get the Repo Pulse and create a Task Brief for this change.",
+      "Use Graph and Wiki evidence to explain this code path.",
+      "Check my change and report its Verification evidence."
+    ]
+  }
+}

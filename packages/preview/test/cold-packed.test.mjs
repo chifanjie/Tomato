@@ -33,11 +33,12 @@ const EXTERNAL_COMMAND_TIMEOUT_MS = 30_000;
 const EXPECTED_CONTENT_SECURITY_POLICY = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; font-src 'self' data:; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
 const EXPECTED_FIRST_PAINT_THEME_BOOTSTRAP_SHA256 = "bb1806d60772d743f0dc88538ee45b10fe829a951db7a24b7131c1acdceb4e0d";
 const SCRIPT_SOURCE_ATTRIBUTE_PATTERN = /(?:^|\s)src\s*=\s*(["'])(?<source>[^"']+)\1/giu;
-const MAX_PACKED_TARBALL_BYTES = 2 * 1024 * 1024;
-const MAX_EXPANDED_TAR_BYTES = 12 * 1024 * 1024;
+const MAX_PACKED_TARBALL_BYTES = 3 * 1024 * 1024;
+const MAX_EXPANDED_TAR_BYTES = 20 * 1024 * 1024;
 const MAX_PACKED_FILE_BYTES = 4 * 1024 * 1024;
-const MAX_PACKED_TOTAL_FILE_BYTES = 8 * 1024 * 1024;
-const EXPECTED_PACKED_FILE_COUNT = 44;
+const MAX_BASE_PACKED_TOTAL_FILE_BYTES = 8 * 1024 * 1024;
+const MAX_PLUGIN_PACKED_TOTAL_FILE_BYTES = 8 * 1024 * 1024;
+const EXPECTED_PACKED_FILE_COUNT = 54;
 const NATIVE_TUPLE = `${process.platform}-${process.arch}`;
 
 const packedFileRules = [
@@ -49,6 +50,9 @@ const packedFileRules = [
   { label: "release manifest", pattern: /^package\/dist\/release-manifest\.json$/u, count: 1, mode: 0o644 },
   { label: "Codex host release", pattern: /^package\/dist\/host-adapters\/codex\/(?:config\.toml|manifest\.json|mcp\.json)$/u, count: 3, mode: 0o644 },
   { label: "Claude host release", pattern: /^package\/dist\/host-adapters\/claude\/(?:\.mcp\.json|manifest\.json)$/u, count: 2, mode: 0o644 },
+  { label: "Codex plugin contracts", pattern: /^package\/dist\/plugin-roots\/codex\/(?:\.agents\/plugins\/marketplace\.json|plugins\/understand-code\/(?:\.codex-plugin\/plugin\.json|\.mcp\.json))$/u, count: 3, mode: 0o644 },
+  { label: "Claude plugin contracts", pattern: /^package\/dist\/plugin-roots\/claude\/(?:\.claude-plugin\/marketplace\.json|plugins\/understand-code\/(?:\.claude-plugin\/plugin\.json|\.mcp\.json))$/u, count: 3, mode: 0o644 },
+  { label: "self-contained plugin executables", pattern: /^package\/dist\/plugin-roots\/(?:codex|claude)\/plugins\/understand-code\/bin\/(?:understand-code-plugin|understand-code)\.mjs$/u, count: 4, mode: 0o755 },
   { label: "native kernel peer", pattern: new RegExp(`^package/dist/native/${NATIVE_TUPLE}/provider_kernel_peer\\.node$`, "u"), count: 1, mode: 0o644 },
   { label: "dashboard roots", pattern: /^package\/dist\/dashboard\/(?:config\.json|favicon\.ico|favicon\.svg|index\.html|meta\.json)$/u, count: 5, mode: 0o644 },
   { label: "Graph Explorer chunk", pattern: /^package\/dist\/dashboard\/assets\/GraphExplorer-[A-Za-z0-9_-]+\.js$/u, count: 1, mode: 0o644 },
@@ -184,7 +188,8 @@ function validatePackedTarball(tarballBytes) {
   const seenPaxHeaders = new Set();
   let pendingPax = null;
   let fileCount = 0;
-  let totalFileBytes = 0;
+  let baseFileBytes = 0;
+  let pluginFileBytes = 0;
   for (const entry of entries) {
     assert.equal(entry.linkName, "", `${entry.path} must not carry a hard-link or symbolic-link target`);
     if (entry.type === "x") {
@@ -218,13 +223,18 @@ function validatePackedTarball(tarballBytes) {
     assert.equal(entry.mode, rule.mode, `${entry.path} has an unexpected file mode`);
     assert.ok(entry.size <= MAX_PACKED_FILE_BYTES, `${entry.path} exceeds the per-file size bound`);
     ruleCounts.set(rule.label, (ruleCounts.get(rule.label) ?? 0) + 1);
-    totalFileBytes += entry.size;
+    if (entry.path.startsWith("package/dist/plugin-roots/")) {
+      pluginFileBytes += entry.size;
+    } else {
+      baseFileBytes += entry.size;
+    }
     fileCount += 1;
   }
   assert.equal(pendingPax, null, "tar must not end with an unapplied PAX header");
   assert.equal(fileCount, EXPECTED_PACKED_FILE_COUNT, "packed logical file count must remain exact");
   assert.equal(seenPaxHeaders.size, expectedPaxPaths.size, "packed PAX header count must remain exact");
-  assert.ok(totalFileBytes <= MAX_PACKED_TOTAL_FILE_BYTES, "packed logical files must satisfy the total-size bound");
+  assert.ok(baseFileBytes <= MAX_BASE_PACKED_TOTAL_FILE_BYTES, "pre-plugin packed files must retain their original total-size bound");
+  assert.ok(pluginFileBytes <= MAX_PLUGIN_PACKED_TOTAL_FILE_BYTES, "self-contained plugin files must satisfy their separate total-size bound");
   for (const rule of packedFileRules) {
     assert.equal(ruleCounts.get(rule.label), rule.count, `${rule.label} packed-entry count must remain exact`);
   }
@@ -698,6 +708,69 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
       sha256: `sha256:${digest(bundleBytes)}`,
     };
     const hostEntrypointSha256 = `sha256:${digest(hostEntrypointBytes)}`;
+    const pluginDefinitions = {
+      codex: {
+        marketplaceRoot: "dist/plugin-roots/codex",
+        marketplace: "dist/plugin-roots/codex/.agents/plugins/marketplace.json",
+        pluginRoot: "dist/plugin-roots/codex/plugins/understand-code",
+        manifest: "dist/plugin-roots/codex/plugins/understand-code/.codex-plugin/plugin.json",
+      },
+      claude: {
+        marketplaceRoot: "dist/plugin-roots/claude",
+        marketplace: "dist/plugin-roots/claude/.claude-plugin/marketplace.json",
+        pluginRoot: "dist/plugin-roots/claude/plugins/understand-code",
+        manifest: "dist/plugin-roots/claude/plugins/understand-code/.claude-plugin/plugin.json",
+      },
+    };
+    const pluginRoots = {};
+    for (const [host, definition] of Object.entries(pluginDefinitions)) {
+      const mcp = `${definition.pluginRoot}/.mcp.json`;
+      const entrypoint = `${definition.pluginRoot}/bin/understand-code-plugin.mjs`;
+      const pluginCli = `${definition.pluginRoot}/bin/understand-code.mjs`;
+      const [marketplaceBytes, pluginManifestBytes, mcpBytes, entrypointBytes, pluginCliBytes] =
+        await Promise.all([
+          readFile(path.join(installedPackageRoot, definition.marketplace)),
+          readFile(path.join(installedPackageRoot, definition.manifest)),
+          readFile(path.join(installedPackageRoot, mcp)),
+          readFile(path.join(installedPackageRoot, entrypoint)),
+          readFile(path.join(installedPackageRoot, pluginCli)),
+        ]);
+      assert.deepEqual(pluginCliBytes, bundleBytes, `${host} plugin must carry the exact release CLI bytes`);
+      const payloadFiles = {
+        manifestSha256: `sha256:${digest(pluginManifestBytes)}`,
+        mcpSha256: `sha256:${digest(mcpBytes)}`,
+        entrypointSha256: `sha256:${digest(entrypointBytes)}`,
+        cliSha256: `sha256:${digest(pluginCliBytes)}`,
+      };
+      pluginRoots[host] = {
+        marketplaceRoot: definition.marketplaceRoot,
+        marketplace: definition.marketplace,
+        marketplaceSha256: `sha256:${digest(marketplaceBytes)}`,
+        pluginRoot: definition.pluginRoot,
+        manifest: definition.manifest,
+        manifestSha256: payloadFiles.manifestSha256,
+        mcp,
+        mcpSha256: payloadFiles.mcpSha256,
+        entrypoint,
+        entrypointSha256: payloadFiles.entrypointSha256,
+        cli: pluginCli,
+        cliSha256: payloadFiles.cliSha256,
+        payloadSha256: `sha256:${digest(Buffer.from(JSON.stringify(payloadFiles), "utf8"))}`,
+      };
+      for (const relativePath of [
+        definition.marketplace,
+        definition.manifest,
+        mcp,
+        entrypoint,
+        pluginCli,
+      ]) {
+        assert.deepEqual(
+          await readFile(path.join(installedPackageRoot, relativePath)),
+          packedFiles.get(`package/${relativePath}`),
+          `${host} plugin file must equal its exact tgz entry: ${relativePath}`,
+        );
+      }
+    }
     const releaseManifest = JSON.parse(
       await readFile(path.join(installedPackageRoot, "dist/release-manifest.json"), "utf8"),
     );
@@ -730,6 +803,7 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
           configs: ["dist/host-adapters/claude/.mcp.json"],
         },
       },
+      pluginRoots,
     });
     const hostDefinitions = {
       codex: {

@@ -1,0 +1,9 @@
+{
+  "understand-code": {
+    "command": "${CLAUDE_PLUGIN_ROOT}/bin/understand-code-plugin.mjs",
+    "args": [
+      "--host",
+      "claude"
+    ]
+  }
+}

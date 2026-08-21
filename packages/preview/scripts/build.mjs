@@ -14,6 +14,10 @@ const hostAdapterIntegrationsRoot = path.join(
   workspaceRoot,
   "packages/host-adapters/integrations",
 );
+const pluginRootsSourceRoot = path.join(
+  workspaceRoot,
+  "packages/host-adapters/plugin-roots",
+);
 const packageMetadata = JSON.parse(
   await readFile(path.join(packageRoot, "package.json"), "utf8"),
 );
@@ -185,11 +189,156 @@ async function writeReleaseMetadata() {
       sha256: sha256(previewBinBytes),
     },
     hostAdapters,
+    pluginRoots: {},
   };
+  const pluginDefinitions = Object.freeze({
+    codex: Object.freeze({
+      marketplaceRoot: "dist/plugin-roots/codex",
+      marketplace: "dist/plugin-roots/codex/.agents/plugins/marketplace.json",
+      pluginRoot: "dist/plugin-roots/codex/plugins/understand-code",
+      manifest: "dist/plugin-roots/codex/plugins/understand-code/.codex-plugin/plugin.json",
+    }),
+    claude: Object.freeze({
+      marketplaceRoot: "dist/plugin-roots/claude",
+      marketplace: "dist/plugin-roots/claude/.claude-plugin/marketplace.json",
+      pluginRoot: "dist/plugin-roots/claude/plugins/understand-code",
+      manifest: "dist/plugin-roots/claude/plugins/understand-code/.claude-plugin/plugin.json",
+    }),
+  });
+  for (const [host, definition] of Object.entries(pluginDefinitions)) {
+    const mcp = `${definition.pluginRoot}/.mcp.json`;
+    const entrypoint = `${definition.pluginRoot}/bin/understand-code-plugin.mjs`;
+    const pluginCli = `${definition.pluginRoot}/bin/understand-code.mjs`;
+    const [marketplaceBytes, manifestBytes, mcpBytes, entrypointBytes, pluginCliBytes] =
+      await Promise.all([
+        readFile(path.join(packageRoot, definition.marketplace)),
+        readFile(path.join(packageRoot, definition.manifest)),
+        readFile(path.join(packageRoot, mcp)),
+        readFile(path.join(packageRoot, entrypoint)),
+        readFile(path.join(packageRoot, pluginCli)),
+      ]);
+    const pluginCliSha256 = sha256(pluginCliBytes);
+    if (pluginCliSha256 !== cli.sha256) {
+      throw new Error(`${host} plugin CLI differs from the release CLI`);
+    }
+    const payloadFiles = {
+      manifestSha256: sha256(manifestBytes),
+      mcpSha256: sha256(mcpBytes),
+      entrypointSha256: sha256(entrypointBytes),
+      cliSha256: pluginCliSha256,
+    };
+    releaseManifest.pluginRoots[host] = {
+      marketplaceRoot: definition.marketplaceRoot,
+      marketplace: definition.marketplace,
+      marketplaceSha256: sha256(marketplaceBytes),
+      pluginRoot: definition.pluginRoot,
+      manifest: definition.manifest,
+      manifestSha256: payloadFiles.manifestSha256,
+      mcp,
+      mcpSha256: payloadFiles.mcpSha256,
+      entrypoint,
+      entrypointSha256: payloadFiles.entrypointSha256,
+      cli: pluginCli,
+      cliSha256: payloadFiles.cliSha256,
+      payloadSha256: sha256(Buffer.from(JSON.stringify(payloadFiles), "utf8")),
+    };
+  }
   await writeFile(
     path.join(distRoot, "release-manifest.json"),
     `${JSON.stringify(releaseManifest, null, 2)}\n`,
   );
+}
+
+async function buildPluginRoots() {
+  const outputRoot = path.join(distRoot, "plugin-roots");
+  await cp(pluginRootsSourceRoot, outputRoot, { recursive: true });
+  const definitions = Object.freeze({
+    codex: Object.freeze({
+      root: path.join(outputRoot, "codex"),
+      marketplace: ".agents/plugins/marketplace.json",
+      manifest: "plugins/understand-code/.codex-plugin/plugin.json",
+      mcp: "plugins/understand-code/.mcp.json",
+      expectedCommand: "./bin/understand-code-plugin.mjs",
+      expectedArgs: ["--host", "codex"],
+      expectedMarketplaceSource: {
+        source: "local",
+        path: "./plugins/understand-code",
+      },
+    }),
+    claude: Object.freeze({
+      root: path.join(outputRoot, "claude"),
+      marketplace: ".claude-plugin/marketplace.json",
+      manifest: "plugins/understand-code/.claude-plugin/plugin.json",
+      mcp: "plugins/understand-code/.mcp.json",
+      expectedCommand: "${CLAUDE_PLUGIN_ROOT}/bin/understand-code-plugin.mjs",
+      expectedArgs: ["--host", "claude"],
+      expectedMarketplaceSource: "./plugins/understand-code",
+    }),
+  });
+  for (const [host, definition] of Object.entries(definitions)) {
+    const marketplace = JSON.parse(
+      await readFile(path.join(definition.root, definition.marketplace), "utf8"),
+    );
+    const manifest = JSON.parse(
+      await readFile(path.join(definition.root, definition.manifest), "utf8"),
+    );
+    const mcp = JSON.parse(
+      await readFile(path.join(definition.root, definition.mcp), "utf8"),
+    );
+    if (
+      marketplace.name !== "understand-code-alpha" ||
+      !Array.isArray(marketplace.plugins) ||
+      marketplace.plugins.length !== 1 ||
+      marketplace.plugins[0]?.name !== "understand-code" ||
+      JSON.stringify(marketplace.plugins[0]?.source) !==
+        JSON.stringify(definition.expectedMarketplaceSource)
+    ) {
+      throw new Error(`${host} plugin marketplace identity is invalid`);
+    }
+    if (
+      manifest.name !== "understand-code" ||
+      manifest.version !== PRODUCT_VERSION
+    ) {
+      throw new Error(`${host} plugin version differs from the release version`);
+    }
+    if (
+      host === "claude" &&
+      marketplace.plugins[0]?.version !== PRODUCT_VERSION
+    ) {
+      throw new Error("Claude marketplace version differs from the release version");
+    }
+    if (
+      Object.keys(mcp).length !== 1 ||
+      typeof mcp["understand-code"] !== "object" ||
+      mcp["understand-code"] === null ||
+      "mcpServers" in mcp ||
+      "mcp_servers" in mcp ||
+      mcp["understand-code"].command !== definition.expectedCommand ||
+      JSON.stringify(mcp["understand-code"].args) !==
+        JSON.stringify(definition.expectedArgs)
+    ) {
+      throw new Error(`${host} plugin MCP config must be a direct server map`);
+    }
+    const pluginBinRoot = path.join(
+      definition.root,
+      "plugins/understand-code/bin",
+    );
+    await mkdir(pluginBinRoot, { recursive: true });
+    await Promise.all([
+      cp(
+        path.join(packageRoot, "src/codex-plugin-bin.mjs"),
+        path.join(pluginBinRoot, "understand-code-plugin.mjs"),
+      ),
+      cp(
+        path.join(distRoot, "understand-code.mjs"),
+        path.join(pluginBinRoot, "understand-code.mjs"),
+      ),
+    ]);
+    await Promise.all([
+      chmod(path.join(pluginBinRoot, "understand-code-plugin.mjs"), 0o755),
+      chmod(path.join(pluginBinRoot, "understand-code.mjs"), 0o755),
+    ]);
+  }
 }
 
 const graph = {
@@ -327,6 +476,7 @@ async function main() {
       path.join(distRoot, "host-adapters/claude/.mcp.json"),
     ),
   ]);
+  await buildPluginRoots();
   await writeReleaseMetadata();
   const demoRoot = path.join(distRoot, "demo/.understand-code");
   await mkdir(path.join(demoRoot, "knowledge-base/参考"), { recursive: true });

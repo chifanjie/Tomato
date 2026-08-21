@@ -1,0 +1,19 @@
+{
+  "name": "understand-code-alpha",
+  "description": "Installable Understand Code Alpha plugin for Claude Code.",
+  "owner": {
+    "name": "Understand Code contributors"
+  },
+  "plugins": [
+    {
+      "name": "understand-code",
+      "source": "./plugins/understand-code",
+      "description": "Repo-scoped Pulse, Brief, Graph, Wiki, Check, and Verification for Claude Code.",
+      "version": "0.1.0-preview.1",
+      "author": {
+        "name": "Understand Code contributors"
+      },
+      "category": "development"
+    }
+  ]
+}

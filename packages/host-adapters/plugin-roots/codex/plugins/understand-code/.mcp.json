@@ -1,0 +1,9 @@
+{
+  "understand-code": {
+    "command": "./bin/understand-code-plugin.mjs",
+    "args": [
+      "--host",
+      "codex"
+    ]
+  }
+}

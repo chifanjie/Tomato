@@ -1,0 +1,8 @@
+{
+  "name": "understand-code",
+  "version": "0.1.0-preview.1",
+  "description": "Repo-scoped Pulse, Brief, Graph, Wiki, Check, and Verification for Claude Code.",
+  "author": {
+    "name": "Understand Code contributors"
+  }
+}

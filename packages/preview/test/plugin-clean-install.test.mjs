@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { createInterface } from "node:readline";
 import { tmpdir } from "node:os";
@@ -16,6 +16,7 @@ const PROCESS_TIMEOUT_MS = 20_000;
 const EXTERNAL_TIMEOUT_MS = 60_000;
 const PLUGIN_NAME = "understand-code";
 const MARKETPLACE_NAME = "understand-code-alpha";
+const LIFECYCLE_V2_VERSION = "0.1.0-preview.2+codex.lifecycle-v2";
 const HOST_DOCTOR_CHECK_IDS = [
   "host_cli",
   "plugin_registration",
@@ -644,6 +645,188 @@ async function findClaudeInstalledRoot(claudeConfig, version) {
   return realpath(candidates[0]);
 }
 
+async function writeJson(target, value) {
+  await writeFile(target, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+async function updateJson(target, update) {
+  const value = JSON.parse(await readFile(target, "utf8"));
+  update(value);
+  await writeJson(target, value);
+}
+
+async function fileSha256(target) {
+  return `sha256:${createHash("sha256").update(await readFile(target)).digest("hex")}`;
+}
+
+function releasePluginRoot(releaseRoot, host) {
+  return path.join(releaseRoot, "dist/plugin-roots", host);
+}
+
+async function assertReleaseVersion(releaseRoot, version) {
+  const topLevelCli = path.join(releaseRoot, "dist/understand-code.mjs");
+  const hostCliPaths = ["codex", "claude"].map((host) =>
+    path.join(releasePluginRoot(releaseRoot, host), "plugins/understand-code/bin/understand-code.mjs")
+  );
+  for (const hostCliPath of hostCliPaths) {
+    assert.deepEqual(
+      await readFile(hostCliPath),
+      await readFile(topLevelCli),
+      "both Host plugin payloads must embed the exact release CLI bytes",
+    );
+  }
+  const codexManifest = JSON.parse(await readFile(
+    path.join(releasePluginRoot(releaseRoot, "codex"), "plugins/understand-code/.codex-plugin/plugin.json"),
+    "utf8",
+  ));
+  const claudeManifest = JSON.parse(await readFile(
+    path.join(releasePluginRoot(releaseRoot, "claude"), "plugins/understand-code/.claude-plugin/plugin.json"),
+    "utf8",
+  ));
+  const claudeMarketplace = JSON.parse(await readFile(
+    path.join(releasePluginRoot(releaseRoot, "claude"), ".claude-plugin/marketplace.json"),
+    "utf8",
+  ));
+  assert.equal(codexManifest.version, version);
+  assert.equal(claudeManifest.version, version);
+  assert.equal(claudeMarketplace.plugins[0].version, version);
+  for (const manifestPath of [
+    path.join(releaseRoot, "dist/dashboard-manifest.json"),
+    ...["codex", "claude"].map((host) =>
+      path.join(releasePluginRoot(releaseRoot, host), "plugins/understand-code/bin/dashboard-manifest.json")
+    ),
+  ]) {
+    assert.equal(JSON.parse(await readFile(manifestPath, "utf8")).productVersion, version);
+  }
+  const versionResult = await execBounded(process.execPath, [topLevelCli, "--version"], {
+    encoding: "utf8",
+  });
+  assert.equal(versionResult.stdout, `${version}\n`);
+  assert.equal(versionResult.stderr, "");
+  return { topLevelCli, cliSha256: await fileSha256(topLevelCli) };
+}
+
+async function createLifecycleReleases(installedPackageRoot, releasesRoot, v1Version) {
+  const v1Root = path.join(releasesRoot, "v1");
+  const v2Root = path.join(releasesRoot, "v2");
+  await cp(installedPackageRoot, v1Root, { recursive: true });
+  await cp(v1Root, v2Root, { recursive: true });
+
+  const v2Cli = path.join(v2Root, "dist/understand-code.mjs");
+  await execBounded(
+    process.execPath,
+    [
+      path.resolve(packageRoot, "../cli/scripts/build-bundle.mjs"),
+      "--output",
+      v2Cli,
+      "--product-version",
+      LIFECYCLE_V2_VERSION,
+    ],
+    { cwd: packageRoot, encoding: "utf8", timeout: 120_000 },
+  );
+  for (const host of ["codex", "claude"]) {
+    await cp(
+      v2Cli,
+      path.join(releasePluginRoot(v2Root, host), "plugins/understand-code/bin/understand-code.mjs"),
+    );
+  }
+  await updateJson(path.join(v2Root, "package.json"), (manifest) => {
+    manifest.version = LIFECYCLE_V2_VERSION;
+  });
+  await updateJson(
+    path.join(releasePluginRoot(v2Root, "codex"), "plugins/understand-code/.codex-plugin/plugin.json"),
+    (manifest) => {
+      manifest.version = LIFECYCLE_V2_VERSION;
+    },
+  );
+  await updateJson(
+    path.join(releasePluginRoot(v2Root, "claude"), "plugins/understand-code/.claude-plugin/plugin.json"),
+    (manifest) => {
+      manifest.version = LIFECYCLE_V2_VERSION;
+    },
+  );
+  await updateJson(
+    path.join(releasePluginRoot(v2Root, "claude"), ".claude-plugin/marketplace.json"),
+    (marketplace) => {
+      marketplace.plugins[0].version = LIFECYCLE_V2_VERSION;
+    },
+  );
+  for (const manifestPath of [
+    path.join(v2Root, "dist/dashboard-manifest.json"),
+    ...["codex", "claude"].map((host) =>
+      path.join(releasePluginRoot(v2Root, host), "plugins/understand-code/bin/dashboard-manifest.json")
+    ),
+  ]) {
+    await updateJson(manifestPath, (manifest) => {
+      manifest.productVersion = LIFECYCLE_V2_VERSION;
+    });
+  }
+
+  const v1 = { root: v1Root, version: v1Version, ...(await assertReleaseVersion(v1Root, v1Version)) };
+  const v2 = {
+    root: v2Root,
+    version: LIFECYCLE_V2_VERSION,
+    ...(await assertReleaseVersion(v2Root, LIFECYCLE_V2_VERSION)),
+  };
+  assert.notEqual(v2.cliSha256, v1.cliSha256, "v2 must contain genuinely version-distinct CLI bytes");
+  for (const host of ["codex", "claude"]) {
+    const manifest = host === "codex"
+      ? "plugins/understand-code/.codex-plugin/plugin.json"
+      : "plugins/understand-code/.claude-plugin/plugin.json";
+    for (const relativePath of [manifest, "plugins/understand-code/.mcp.json", "plugins/understand-code/bin/understand-code.mjs"]) {
+      assert.deepEqual(
+        await readFile(path.join(releasePluginRoot(v1Root, host), relativePath)),
+        await readFile(path.join(releasePluginRoot(installedPackageRoot, host), relativePath)),
+        `v1 ${host} ${relativePath} must be the exact tgz plugin payload`,
+      );
+    }
+  }
+  return { v1, v2 };
+}
+
+async function activateMarketplaceFacade(facadeRoot, release) {
+  for (const host of ["codex", "claude"]) {
+    const target = path.join(facadeRoot, host);
+    await rm(target, { recursive: true, force: true });
+    await cp(releasePluginRoot(release.root, host), target, { recursive: true });
+  }
+}
+
+async function activeCodexPlugin(codexCli, cwd, env, version) {
+  const value = JSON.parse((await execBounded(codexCli, ["plugin", "list", "--json"], {
+    cwd,
+    env,
+    encoding: "utf8",
+  })).stdout);
+  assert.equal(Array.isArray(value.installed), true);
+  const entries = value.installed.filter((entry) => entry.pluginId === `${PLUGIN_NAME}@${MARKETPLACE_NAME}`);
+  assert.equal(entries.length, 1, "Codex plugin list must expose one canonical active installation");
+  const entry = entries[0];
+  assert.deepEqual(
+    { version: entry.version, installed: entry.installed, enabled: entry.enabled },
+    { version, installed: true, enabled: true },
+  );
+  return entry;
+}
+
+async function activeClaudePlugin(claudeCli, cwd, env, version) {
+  const value = JSON.parse((await execBounded(claudeCli, ["plugin", "list", "--json"], {
+    cwd,
+    env,
+    encoding: "utf8",
+  })).stdout);
+  assert.equal(Array.isArray(value), true);
+  const entries = value.filter((entry) => entry.id === `${PLUGIN_NAME}@${MARKETPLACE_NAME}`);
+  assert.equal(entries.length, 1, "Claude plugin list must expose one canonical active installation");
+  const entry = entries[0];
+  assert.deepEqual(
+    { version: entry.version, scope: entry.scope, enabled: entry.enabled },
+    { version, scope: "user", enabled: true },
+  );
+  assert.equal(typeof entry.installPath, "string");
+  return { entry, installedRoot: await realpath(entry.installPath) };
+}
+
 async function assertMissing(target, label) {
   await assert.rejects(access(target), (error) => error?.code === "ENOENT", label);
 }
@@ -674,6 +857,8 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
   const codexUserHome = path.join(sandbox, "codex-user");
   const claudeConfig = path.join(sandbox, "claude-config");
   const claudeUserHome = path.join(sandbox, "claude-user");
+  const releasesRoot = path.join(sandbox, "releases");
+  const marketplaceFacadeRoot = path.join(sandbox, "marketplace-facade");
   const repositoryRoot = await createRepository(path.join(sandbox, "repository"));
   const ambientRepositoryRoot = await createRepository(path.join(sandbox, "ambient-repository"));
   const differentCwd = path.join(sandbox, "not-the-repository");
@@ -687,6 +872,8 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
       mkdir(codexUserHome, { recursive: true }),
       mkdir(claudeConfig, { recursive: true }),
       mkdir(claudeUserHome, { recursive: true }),
+      mkdir(releasesRoot, { recursive: true }),
+      mkdir(marketplaceFacadeRoot, { recursive: true }),
       mkdir(differentCwd, { recursive: true }),
     ]);
     let tarballPath;
@@ -713,9 +900,11 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
       "@understand-code/preview",
     );
     const packageManifest = JSON.parse(await readFile(path.join(installedPackageRoot, "package.json"), "utf8"));
-    const version = packageManifest.version;
-    const codexMarketplaceRoot = path.join(installedPackageRoot, "dist/plugin-roots/codex");
-    const claudeMarketplaceRoot = path.join(installedPackageRoot, "dist/plugin-roots/claude");
+    const v1Version = packageManifest.version;
+    const releases = await createLifecycleReleases(installedPackageRoot, releasesRoot, v1Version);
+    await activateMarketplaceFacade(marketplaceFacadeRoot, releases.v1);
+    const codexMarketplaceRoot = path.join(marketplaceFacadeRoot, "codex");
+    const claudeMarketplaceRoot = path.join(marketplaceFacadeRoot, "claude");
 
     const codexEnv = cleanHostEnvironment(codexUserHome, {
       CODEX_HOME: codexHome,
@@ -737,7 +926,8 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
       })).stdout,
     );
     assert.equal(codexInstall.pluginId, `${PLUGIN_NAME}@${MARKETPLACE_NAME}`);
-    assert.equal(codexInstall.version, version);
+    assert.equal(codexInstall.version, v1Version);
+    await activeCodexPlugin(codexCli, differentCwd, codexEnv, v1Version);
     codexInstalledRoot = await realpath(codexInstall.installedPath);
     assert.equal(codexInstalledRoot.startsWith(`${await realpath(codexHome)}${path.sep}`), true);
     const codexList = await execBounded(codexCli, ["plugin", "list"], {
@@ -770,9 +960,9 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
     assert.equal(registeredCodexMcpDetail.enabled, true);
     assert.deepEqual(registeredCodexMcpDetail.transport, registeredCodexMcp.transport);
     await runInstalledHostDoctor({
-      installedPackageRoot,
+      installedPackageRoot: releases.v1.root,
       host: "codex",
-      version,
+      version: v1Version,
       cwd: differentCwd,
       env: codexEnv,
       expectedStatus: "healthy",
@@ -780,7 +970,7 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
     const codexAlpha = await exerciseInstalledAlpha({
       host: "codex",
       installedRoot: codexInstalledRoot,
-      version,
+      version: v1Version,
       repositoryRoot,
       cwd: repositoryRoot,
       env: cleanHostEnvironment(codexUserHome, {
@@ -824,20 +1014,18 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
       env: claudeEnv,
       encoding: "utf8",
     });
-    const claudePlugins = JSON.parse(
-      (await execBounded(claudeCli, ["plugin", "list", "--json"], {
-        cwd: differentCwd,
-        env: claudeEnv,
-        encoding: "utf8",
-      })).stdout,
+    const activeClaudeV1 = await activeClaudePlugin(
+      claudeCli,
+      differentCwd,
+      claudeEnv,
+      v1Version,
     );
-    assert.match(JSON.stringify(claudePlugins), /understand-code@understand-code-alpha/u);
-    claudeInstalledRoot = await findClaudeInstalledRoot(claudeConfig, version);
+    claudeInstalledRoot = activeClaudeV1.installedRoot;
     assert.equal(claudeInstalledRoot.startsWith(`${await realpath(claudeConfig)}${path.sep}`), true);
     await runInstalledHostDoctor({
-      installedPackageRoot,
+      installedPackageRoot: releases.v1.root,
       host: "claude",
-      version,
+      version: v1Version,
       cwd: differentCwd,
       env: claudeEnv,
       expectedStatus: "healthy",
@@ -846,7 +1034,7 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
       {
         host: "claude",
         installedRoot: claudeInstalledRoot,
-        version,
+        version: v1Version,
         repositoryRoot,
         cwd: differentCwd,
         env: cleanHostEnvironment(claudeUserHome, {
@@ -881,6 +1069,229 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
       "both mandatory Host plugins must install the same-version bundled MCP executable",
     );
 
+    const claudeV1InstalledRoot = claudeInstalledRoot;
+    await activateMarketplaceFacade(marketplaceFacadeRoot, releases.v2);
+
+    const codexV2Reinstall = JSON.parse(
+      (await execBounded(codexCli, ["plugin", "add", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`, "--json"], {
+        cwd: differentCwd,
+        env: codexEnv,
+        encoding: "utf8",
+      })).stdout,
+    );
+    assert.equal(codexV2Reinstall.pluginId, `${PLUGIN_NAME}@${MARKETPLACE_NAME}`);
+    assert.equal(codexV2Reinstall.version, releases.v2.version);
+    await activeCodexPlugin(
+      codexCli,
+      differentCwd,
+      codexEnv,
+      releases.v2.version,
+    );
+    codexInstalledRoot = await realpath(codexV2Reinstall.installedPath);
+    assert.equal(
+      await fileSha256(path.join(codexInstalledRoot, "bin/understand-code.mjs")),
+      releases.v2.cliSha256,
+    );
+    await runInstalledHostDoctor({
+      installedPackageRoot: releases.v2.root,
+      host: "codex",
+      version: releases.v2.version,
+      cwd: differentCwd,
+      env: codexEnv,
+      expectedStatus: "healthy",
+    });
+    await resumeInstalledAlpha(
+      {
+        host: "codex",
+        installedRoot: codexInstalledRoot,
+        version: releases.v2.version,
+        repositoryRoot,
+        cwd: repositoryRoot,
+        env: cleanHostEnvironment(codexUserHome, {
+          CODEX_HOME: codexHome,
+          GIT_DIR: path.join(ambientRepositoryRoot, ".git"),
+          GIT_WORK_TREE: ambientRepositoryRoot,
+        }),
+        clientName: "codex-plugin-e2e-lifecycle-v2",
+      },
+      codexAlpha.result,
+    );
+
+    await execBounded(claudeCli, ["plugin", "marketplace", "update", MARKETPLACE_NAME], {
+      cwd: differentCwd,
+      env: claudeEnv,
+      encoding: "utf8",
+    });
+    await execBounded(
+      claudeCli,
+      ["plugin", "update", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`, "--scope", "user"],
+      { cwd: differentCwd, env: claudeEnv, encoding: "utf8" },
+    );
+    const activeClaudeV2 = await activeClaudePlugin(
+      claudeCli,
+      differentCwd,
+      claudeEnv,
+      releases.v2.version,
+    );
+    claudeInstalledRoot = activeClaudeV2.installedRoot;
+    assert.notEqual(claudeInstalledRoot, claudeV1InstalledRoot);
+    assert.equal(
+      await fileSha256(path.join(claudeInstalledRoot, "bin/understand-code.mjs")),
+      releases.v2.cliSha256,
+    );
+    assert.equal(
+      await findClaudeInstalledRoot(claudeConfig, v1Version),
+      claudeV1InstalledRoot,
+      "Claude v1 cache may remain only as an inert non-authoritative residual",
+    );
+    await runInstalledHostDoctor({
+      installedPackageRoot: releases.v2.root,
+      host: "claude",
+      version: releases.v2.version,
+      cwd: differentCwd,
+      env: claudeEnv,
+      expectedStatus: "healthy",
+    });
+    await resumeInstalledAlpha(
+      {
+        host: "claude",
+        installedRoot: claudeInstalledRoot,
+        version: releases.v2.version,
+        repositoryRoot,
+        cwd: differentCwd,
+        env: cleanHostEnvironment(claudeUserHome, {
+          CLAUDE_CONFIG_DIR: claudeConfig,
+          CLAUDE_PROJECT_DIR: repositoryRoot,
+          GIT_DIR: path.join(ambientRepositoryRoot, ".git"),
+          GIT_WORK_TREE: ambientRepositoryRoot,
+        }),
+        clientName: "claude-plugin-e2e-lifecycle-v2",
+      },
+      codexAlpha.result,
+    );
+    assert.deepEqual(
+      await readFile(path.join(codexInstalledRoot, "bin/understand-code.mjs")),
+      await readFile(path.join(claudeInstalledRoot, "bin/understand-code.mjs")),
+      "both active v2 Host installations must execute the exact same bundle bytes",
+    );
+
+    await execBounded(codexCli, ["plugin", "remove", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`, "--json"], {
+      cwd: differentCwd,
+      env: codexEnv,
+      encoding: "utf8",
+    });
+    await assertMissing(codexInstalledRoot, "Codex remove must delete the active v2 official installedPath");
+    await activateMarketplaceFacade(marketplaceFacadeRoot, releases.v1);
+    const codexPinnedV1Install = JSON.parse(
+      (await execBounded(codexCli, ["plugin", "add", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`, "--json"], {
+        cwd: differentCwd,
+        env: codexEnv,
+        encoding: "utf8",
+      })).stdout,
+    );
+    assert.equal(codexPinnedV1Install.version, v1Version);
+    await activeCodexPlugin(
+      codexCli,
+      differentCwd,
+      codexEnv,
+      v1Version,
+    );
+    codexInstalledRoot = await realpath(codexPinnedV1Install.installedPath);
+    assert.equal(
+      await fileSha256(path.join(codexInstalledRoot, "bin/understand-code.mjs")),
+      releases.v1.cliSha256,
+    );
+    await runInstalledHostDoctor({
+      installedPackageRoot: releases.v1.root,
+      host: "codex",
+      version: v1Version,
+      cwd: differentCwd,
+      env: codexEnv,
+      expectedStatus: "healthy",
+    });
+    await resumeInstalledAlpha(
+      {
+        host: "codex",
+        installedRoot: codexInstalledRoot,
+        version: v1Version,
+        repositoryRoot,
+        cwd: repositoryRoot,
+        env: cleanHostEnvironment(codexUserHome, {
+          CODEX_HOME: codexHome,
+          GIT_DIR: path.join(ambientRepositoryRoot, ".git"),
+          GIT_WORK_TREE: ambientRepositoryRoot,
+        }),
+        clientName: "codex-plugin-e2e-pinned-v1-reinstall",
+      },
+      codexAlpha.result,
+    );
+
+    await execBounded(
+      claudeCli,
+      ["plugin", "uninstall", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`, "--scope", "user", "--yes"],
+      { cwd: differentCwd, env: claudeEnv, encoding: "utf8" },
+    );
+    assert.deepEqual(
+      JSON.parse((await execBounded(claudeCli, ["plugin", "list", "--json"], {
+        cwd: differentCwd,
+        env: claudeEnv,
+        encoding: "utf8",
+      })).stdout),
+      [],
+      "Claude uninstall must clear the authoritative active registration before pinned-v1 reinstall",
+    );
+    await execBounded(claudeCli, ["plugin", "marketplace", "update", MARKETPLACE_NAME], {
+      cwd: differentCwd,
+      env: claudeEnv,
+      encoding: "utf8",
+    });
+    await execBounded(
+      claudeCli,
+      ["plugin", "install", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`, "--scope", "user"],
+      { cwd: differentCwd, env: claudeEnv, encoding: "utf8" },
+    );
+    const activeClaudePinnedV1 = await activeClaudePlugin(
+      claudeCli,
+      differentCwd,
+      claudeEnv,
+      v1Version,
+    );
+    claudeInstalledRoot = activeClaudePinnedV1.installedRoot;
+    assert.equal(
+      await fileSha256(path.join(claudeInstalledRoot, "bin/understand-code.mjs")),
+      releases.v1.cliSha256,
+    );
+    await runInstalledHostDoctor({
+      installedPackageRoot: releases.v1.root,
+      host: "claude",
+      version: v1Version,
+      cwd: differentCwd,
+      env: claudeEnv,
+      expectedStatus: "healthy",
+    });
+    await resumeInstalledAlpha(
+      {
+        host: "claude",
+        installedRoot: claudeInstalledRoot,
+        version: v1Version,
+        repositoryRoot,
+        cwd: differentCwd,
+        env: cleanHostEnvironment(claudeUserHome, {
+          CLAUDE_CONFIG_DIR: claudeConfig,
+          CLAUDE_PROJECT_DIR: repositoryRoot,
+          GIT_DIR: path.join(ambientRepositoryRoot, ".git"),
+          GIT_WORK_TREE: ambientRepositoryRoot,
+        }),
+        clientName: "claude-plugin-e2e-pinned-v1-reinstall",
+      },
+      codexAlpha.result,
+    );
+    assert.deepEqual(
+      await readFile(path.join(codexInstalledRoot, "bin/understand-code.mjs")),
+      await readFile(path.join(claudeInstalledRoot, "bin/understand-code.mjs")),
+      "both pinned-v1 Host reinstalls must execute the exact v1 bundle bytes",
+    );
+
     await execBounded(codexCli, ["plugin", "remove", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`, "--json"], {
       cwd: differentCwd,
       env: codexEnv,
@@ -894,9 +1305,9 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
     await assertMissing(codexInstalledRoot, "Codex remove must clean the installed plugin cache");
     codexInstalledRoot = null;
     await runInstalledHostDoctor({
-      installedPackageRoot,
+      installedPackageRoot: releases.v1.root,
       host: "codex",
-      version,
+      version: v1Version,
       cwd: differentCwd,
       env: codexEnv,
       expectedStatus: "not_registered",
@@ -928,9 +1339,9 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
     );
     assert.deepEqual(claudeMarketplacesAfter, []);
     await runInstalledHostDoctor({
-      installedPackageRoot,
+      installedPackageRoot: releases.v1.root,
       host: "claude",
-      version,
+      version: v1Version,
       cwd: differentCwd,
       env: claudeEnv,
       expectedStatus: "not_registered",

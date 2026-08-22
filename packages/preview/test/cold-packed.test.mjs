@@ -40,6 +40,8 @@ const MAX_BASE_PACKED_TOTAL_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_PLUGIN_PACKED_TOTAL_FILE_BYTES = 12 * 1024 * 1024;
 const EXPECTED_PACKED_FILE_COUNT = 87;
 const NATIVE_TUPLE = `${process.platform}-${process.arch}`;
+const PRODUCT_VERSION_PATTERN =
+  /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
 
 const packedFileRules = [
   { label: "package metadata", pattern: /^package\/(?:README\.md|package\.json)$/u, count: 2, mode: 0o644 },
@@ -252,6 +254,32 @@ function validatePackedTarball(tarballBytes) {
     assert.equal(ruleCounts.get(rule.label), rule.count, `${rule.label} packed-entry count must remain exact`);
   }
   return packedFiles;
+}
+
+function expectedPackedVersion(packedFiles) {
+  const bytes = packedFiles.get("package/package.json");
+  assert.ok(Buffer.isBuffer(bytes), "packed package metadata must be present");
+  assert.ok(bytes.byteLength > 0 && bytes.byteLength <= 4_096, "packed package metadata must remain bounded");
+  const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  const manifest = JSON.parse(text);
+  assert.equal(
+    manifest !== null && typeof manifest === "object" && !Array.isArray(manifest),
+    true,
+    "packed package metadata must be one JSON object",
+  );
+  assert.equal(manifest.name, "@understand-code/preview");
+  assert.equal(typeof manifest.version, "string");
+  assert.equal(
+    manifest.version.length > 0 && manifest.version.length <= 64,
+    true,
+    "packed product version must remain bounded",
+  );
+  assert.equal(
+    PRODUCT_VERSION_PATTERN.test(manifest.version),
+    true,
+    "packed product version must be strict SemVer",
+  );
+  return manifest.version;
 }
 
 function waitForExit(child, label, timeoutMs = PROCESS_TIMEOUT_MS) {
@@ -652,6 +680,7 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
     if (packRecord !== null) assert.equal(packRecord.filename, tarball);
     const tarballBefore = await readFile(tarballPath);
     const packedFiles = validatePackedTarball(tarballBefore);
+    const expectedVersion = expectedPackedVersion(packedFiles);
     await execFileBounded("npm", ["install", "--global", "--prefix", installDirectory, "--ignore-scripts", "--no-package-lock", "--no-audit", "--no-fund", tarballPath], { cwd: installDirectory, encoding: "utf8" });
     const globalBinRoot = process.platform === "win32" ? installDirectory : path.join(installDirectory, "bin");
     const globalModulesRoot = process.platform === "win32" ? path.join(installDirectory, "node_modules") : path.join(installDirectory, "lib/node_modules");
@@ -664,8 +693,8 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
       execFileBounded(previewBin, ["--version"], { cwd: installDirectory, encoding: "utf8" }),
       execFileBounded(mcpBin, ["--version"], { cwd: installDirectory, encoding: "utf8" }),
     ]);
-    assert.equal(previewVersion.stdout, "0.1.0-preview.1\n");
-    assert.equal(mcpVersion.stdout, "0.1.0-preview.1\n");
+    assert.equal(previewVersion.stdout, `${expectedVersion}\n`);
+    assert.equal(mcpVersion.stdout, `${expectedVersion}\n`);
     const help = await execFileBounded(previewBin, ["--help"], { cwd: installDirectory, encoding: "utf8" });
     assert.match(help.stdout, /understand-code-preview --demo/u);
     const mcpHelp = await execFileBounded(mcpBin, ["--help"], { cwd: installDirectory, encoding: "utf8" });
@@ -693,7 +722,7 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
     assert.deepEqual(manifest.dependencies ?? {}, {});
     assert.deepEqual(manifest.exports, {});
     assert.equal(Object.hasOwn(manifest, "main"), false);
-    assert.equal(manifest.version, "0.1.0-preview.1");
+    assert.equal(manifest.version, expectedVersion);
     assert.deepEqual(manifest.bin, {
       "understand-code-preview": "dist/bin.mjs",
       "understand-code": "dist/understand-code.mjs",

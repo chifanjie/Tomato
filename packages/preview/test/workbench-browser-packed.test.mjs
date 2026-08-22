@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { chmod, cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,6 +25,7 @@ import { launchBrowser, resolveBrowserExecutable } from "./browser-harness.mjs";
 
 const execFileAsync = promisify(execFile);
 const packageRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
+const sourceRoot = path.resolve(packageRoot, "../..");
 const PROCESS_TIMEOUT_MS = 60_000;
 const EXTERNAL_TIMEOUT_MS = 120_000;
 const REQUIRE_REAL_BROWSER = process.env.UNDERSTAND_CODE_REQUIRE_REAL_BROWSER === "1";
@@ -53,6 +54,22 @@ const FOO_NODE_ID = "function:src/index.ts:foo";
 const BAR_NODE_ID = "function:src/index.ts:bar";
 const ADDED_NODE_ID = "function:src/added.ts:added";
 const UNTRACKED_NODE_ID = "function:src/untracked.ts:untrackedAdded";
+const LIFECYCLE_V2_VERSION = "0.1.0-preview.2.workbench.lifecycle-v2";
+const CANDIDATE_SCRIPT = "packages/preview/scripts/alpha-candidate.mjs";
+const CANDIDATE_MANIFEST = "understand-code-alpha-candidate.json";
+const CANDIDATE_SCHEMA = "understand-code-alpha-candidate-v1.schema.json";
+const CANDIDATE_CHECKSUMS = "SHA256SUMS";
+const V1_OVERLAY_FILES = [
+  "packages/preview/test/cold-packed.test.mjs",
+  "packages/preview/test/workbench-browser-packed.test.mjs",
+];
+const V2_SOURCE_FILES = [
+  "packages/preview/package.json",
+  "packages/host-adapters/plugin-roots/codex/plugins/understand-code/.codex-plugin/plugin.json",
+  "packages/host-adapters/plugin-roots/claude/plugins/understand-code/.claude-plugin/plugin.json",
+  "packages/host-adapters/plugin-roots/claude/.claude-plugin/marketplace.json",
+  "packages/dashboard/index.html",
+];
 
 function digest(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -239,21 +256,6 @@ async function createRepositoryFixture() {
   return root;
 }
 
-async function resolveTarball(packDirectory) {
-  const supplied = process.env.UNDERSTAND_CODE_PREVIEW_TARBALL;
-  if (supplied !== undefined) return { path: path.resolve(supplied), supplied: true };
-  const packed = await execBounded(
-    "npm",
-    ["pack", ".", "--ignore-scripts", "--pack-destination", packDirectory, "--json"],
-    { cwd: packageRoot, encoding: "utf8" },
-  );
-  const records = JSON.parse(packed.stdout);
-  assert.equal(records.length, 1, "npm pack must produce one Preview tgz");
-  const tarballs = (await readdir(packDirectory)).filter((entry) => entry.endsWith(".tgz"));
-  assert.deepEqual(tarballs, [records[0].filename]);
-  return { path: path.join(packDirectory, tarballs[0]), supplied: false, entryCount: records[0].entryCount };
-}
-
 function packedRegularFileCount(bytes) {
   const archive = gunzipSync(bytes);
   let offset = 0;
@@ -269,6 +271,207 @@ function packedRegularFileCount(bytes) {
     offset += 512 + Math.ceil(size / 512) * 512;
   }
   return count;
+}
+
+function sanitizedGitEnvironment() {
+  return {
+    ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_"))),
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_COUNT: "0",
+    GIT_NO_LAZY_FETCH: "1",
+    GIT_NO_REPLACE_OBJECTS: "1",
+    GIT_OPTIONAL_LOCKS: "0",
+    GIT_TERMINAL_PROMPT: "0",
+  };
+}
+
+async function candidateGit(cwd, args, timeout = EXTERNAL_TIMEOUT_MS) {
+  return execBounded(
+    "git",
+    ["--no-pager", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", ...args],
+    { cwd, env: sanitizedGitEnvironment(), encoding: "utf8", timeout },
+  );
+}
+
+async function commitCandidateSource(cwd, message, files) {
+  await candidateGit(cwd, ["add", "--", ...files]);
+  await candidateGit(cwd, [
+    "-c",
+    "user.name=Understand Code Workbench Candidate",
+    "-c",
+    "user.email=workbench-candidate@example.invalid",
+    "commit",
+    "--quiet",
+    "--allow-empty",
+    "-m",
+    message,
+  ]);
+  return (await candidateGit(cwd, ["rev-parse", "HEAD"])).stdout.trim();
+}
+
+async function updateJsonFile(filePath, update) {
+  const value = JSON.parse(await readFile(filePath, "utf8"));
+  update(value);
+  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+async function runCandidate(scriptPath, operation, candidateRoot, cwd, environment) {
+  const flag = operation === "assemble" ? "--output" : "--candidate";
+  const result = await execBounded(
+    process.execPath,
+    [scriptPath, operation, flag, candidateRoot],
+    { cwd, env: environment, encoding: "utf8", timeout: 15 * 60 * 1000 },
+  );
+  assert.equal(result.stderr, "");
+  assert.deepEqual(JSON.parse(result.stdout), {
+    ok: true,
+    operation,
+    disposition: "unsigned_alpha_candidate",
+    releaseReady: false,
+  });
+}
+
+async function readCandidate(candidateRoot, expectedVersion, sourceCommit, sourceTree) {
+  const names = (await readdir(candidateRoot)).sort();
+  const tarballs = names.filter((name) => name.endsWith(".tgz"));
+  assert.equal(tarballs.length, 1);
+  assert.deepEqual(names, [CANDIDATE_CHECKSUMS, CANDIDATE_MANIFEST, CANDIDATE_SCHEMA, tarballs[0]].sort());
+  const tarballPath = path.join(candidateRoot, tarballs[0]);
+  const [tarballBytes, manifestBytes, schemaBytes, checksumBytes] = await Promise.all([
+    readFile(tarballPath),
+    readFile(path.join(candidateRoot, CANDIDATE_MANIFEST)),
+    readFile(path.join(candidateRoot, CANDIDATE_SCHEMA)),
+    readFile(path.join(candidateRoot, CANDIDATE_CHECKSUMS)),
+  ]);
+  const manifest = JSON.parse(manifestBytes.toString("utf8"));
+  assert.deepEqual(Object.keys(manifest).sort(), [
+    "build",
+    "disposition",
+    "embeddedReleaseManifest",
+    "gates",
+    "limitations",
+    "package",
+    "releaseReady",
+    "schemaVersion",
+    "source",
+    "subject",
+  ]);
+  assert.deepEqual(manifest.package, { name: "@understand-code/preview", version: expectedVersion });
+  assert.deepEqual(
+    { clean: manifest.source.clean, commit: manifest.source.commit, tree: manifest.source.tree },
+    { clean: true, commit: sourceCommit, tree: sourceTree },
+  );
+  assert.deepEqual(manifest.gates, { coldPacked: "passed", checksum: "passed" });
+  assert.deepEqual(manifest.subject, {
+    file: tarballs[0],
+    mediaType: "application/vnd.npm.package+gzip",
+    bytes: tarballBytes.byteLength,
+    sha256: contentDigest(tarballBytes),
+  });
+  assert.equal(manifest.releaseReady, false);
+  assert.equal(manifest.disposition, "unsigned_alpha_candidate");
+  assert.equal(manifest.build.nativeTuple, `${manifest.build.platform}-${manifest.build.arch}`);
+  const expectedChecksums = [
+    [CANDIDATE_MANIFEST, manifestBytes],
+    [CANDIDATE_SCHEMA, schemaBytes],
+    [tarballs[0], tarballBytes],
+  ].sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0).map(
+    ([name, bytes]) => `${digest(bytes)}  ${name}`,
+  );
+  assert.deepEqual(checksumBytes.toString("utf8").trimEnd().split("\n"), expectedChecksums);
+  return {
+    root: candidateRoot,
+    manifest,
+    tarballPath,
+    tarballBytes,
+    entryCount: packedRegularFileCount(tarballBytes),
+  };
+}
+
+async function createLifecycleCandidates() {
+  assert.match(
+    LIFECYCLE_V2_VERSION,
+    /^[A-Za-z0-9][A-Za-z0-9._-]*$/u,
+    "the v2 version must remain safe in the npm-derived candidate tarball filename",
+  );
+  const parent = await realpath(await mkdtemp(path.join(tmpdir(), "uc-workbench-real-candidates-")));
+  try {
+    const cloneRoot = path.join(parent, "source");
+    const v1Root = path.join(parent, "candidate-v1");
+    const v2Root = path.join(parent, "candidate-v2");
+    const sourceHead = (await candidateGit(sourceRoot, ["rev-parse", "HEAD^{commit}"])).stdout.trim();
+    await candidateGit(parent, ["clone", "--no-local", "--no-checkout", "--no-tags", sourceRoot, cloneRoot], 2 * 60 * 1000);
+    await candidateGit(cloneRoot, ["checkout", "--detach", sourceHead]);
+    await Promise.all(V1_OVERLAY_FILES.map((relativePath) =>
+      cp(path.join(sourceRoot, relativePath), path.join(cloneRoot, relativePath)),
+    ));
+    const overlayOutput = (await candidateGit(
+      cloneRoot,
+      ["diff", "--name-only", "HEAD"],
+    )).stdout.trim();
+    const overlayDelta = overlayOutput === "" ? [] : overlayOutput.split("\n").sort();
+    assert.equal(
+      overlayDelta.every((relativePath) => V1_OVERLAY_FILES.includes(relativePath)),
+      true,
+      "the ephemeral v1 source delta may only contain the two reviewed packed tests",
+    );
+    const v1Commit = await commitCandidateSource(
+      cloneRoot,
+      "bind candidate to reviewed packed lifecycle tests",
+      V1_OVERLAY_FILES,
+    );
+    assert.equal((await candidateGit(cloneRoot, ["rev-parse", "HEAD^"])).stdout.trim(), sourceHead);
+    const committedOverlayOutput = (await candidateGit(
+      cloneRoot,
+      ["diff", "--name-only", `${sourceHead}..${v1Commit}`],
+    )).stdout.trim();
+    assert.deepEqual(
+      committedOverlayOutput === "" ? [] : committedOverlayOutput.split("\n").sort(),
+      overlayDelta,
+      "the v1 candidate must bind its clean ephemeral commit, not claim direct HEAD provenance",
+    );
+    const v1Tree = (await candidateGit(cloneRoot, ["rev-parse", "HEAD^{tree}"])).stdout.trim();
+    assert.equal((await candidateGit(cloneRoot, ["status", "--porcelain=v1", "--untracked-files=all"])).stdout, "");
+    const environment = { ...process.env, CI: "true" };
+    await execBounded("pnpm", ["install", "--offline", "--frozen-lockfile"], {
+      cwd: cloneRoot,
+      env: environment,
+      encoding: "utf8",
+      timeout: 10 * 60 * 1000,
+    });
+    const scriptPath = path.join(cloneRoot, CANDIDATE_SCRIPT);
+    await runCandidate(scriptPath, "assemble", v1Root, cloneRoot, environment);
+    await runCandidate(scriptPath, "verify", v1Root, cloneRoot, environment);
+    const v1Package = JSON.parse(await readFile(path.join(cloneRoot, "packages/preview/package.json"), "utf8"));
+    const v1 = await readCandidate(v1Root, v1Package.version, v1Commit, v1Tree);
+
+    await updateJsonFile(path.join(cloneRoot, V2_SOURCE_FILES[0]), (value) => { value.version = LIFECYCLE_V2_VERSION; });
+    await updateJsonFile(path.join(cloneRoot, V2_SOURCE_FILES[1]), (value) => { value.version = LIFECYCLE_V2_VERSION; });
+    await updateJsonFile(path.join(cloneRoot, V2_SOURCE_FILES[2]), (value) => { value.version = LIFECYCLE_V2_VERSION; });
+    await updateJsonFile(path.join(cloneRoot, V2_SOURCE_FILES[3]), (value) => { value.plugins[0].version = LIFECYCLE_V2_VERSION; });
+    const dashboardIndexPath = path.join(cloneRoot, V2_SOURCE_FILES[4]);
+    const dashboardIndex = await readFile(dashboardIndexPath, "utf8");
+    const marker = `<meta name="understand-code-lifecycle-release" content="${LIFECYCLE_V2_VERSION}">`;
+    assert.match(dashboardIndex, /<\/head>/iu);
+    await writeFile(dashboardIndexPath, dashboardIndex.replace(/<\/head>/iu, `${marker}</head>`), "utf8");
+    const v2Commit = await commitCandidateSource(cloneRoot, "test real v2 lifecycle candidate", V2_SOURCE_FILES);
+    assert.equal((await candidateGit(cloneRoot, ["rev-parse", "HEAD^"])).stdout.trim(), v1Commit);
+    assert.deepEqual(
+      (await candidateGit(cloneRoot, ["diff", "--name-only", `${v1Commit}..${v2Commit}`])).stdout.trim().split("\n").sort(),
+      [...V2_SOURCE_FILES].sort(),
+    );
+    assert.equal((await candidateGit(cloneRoot, ["status", "--porcelain=v1", "--untracked-files=all"])).stdout, "");
+    const v2Tree = (await candidateGit(cloneRoot, ["rev-parse", "HEAD^{tree}"])).stdout.trim();
+    await runCandidate(scriptPath, "assemble", v2Root, cloneRoot, environment);
+    await runCandidate(scriptPath, "verify", v2Root, cloneRoot, environment);
+    const v2 = await readCandidate(v2Root, LIFECYCLE_V2_VERSION, v2Commit, v2Tree);
+    assert.notEqual(contentDigest(v1.tarballBytes), contentDigest(v2.tarballBytes));
+    return { parent, cloneRoot, v1, v2 };
+  } catch (error) {
+    await rm(parent, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 function cleanMcpEnvironment(home, repositoryRoot) {
@@ -339,44 +542,6 @@ async function dashboardInventory(root) {
   };
 }
 
-async function createUpgradeRelease(installedPackageRoot, baseVersion) {
-  const releaseRoot = await realpath(await mkdtemp(path.join(tmpdir(), "uc-managed-dashboard-upgrade-")));
-  const upgradedVersion = "9.9.9-managed-lifecycle.2";
-  assert.notEqual(upgradedVersion, baseVersion);
-  const sourceRoot = path.join(installedPackageRoot, "dist");
-  const bundlePath = path.join(releaseRoot, "understand-code.mjs");
-  const dashboardRoot = path.join(releaseRoot, "dashboard");
-  await Promise.all([
-    cp(path.join(sourceRoot, "understand-code.mjs"), bundlePath),
-    cp(path.join(sourceRoot, "native"), path.join(releaseRoot, "native"), { recursive: true }),
-    cp(path.join(sourceRoot, "dashboard"), dashboardRoot, { recursive: true }),
-  ]);
-  const bundle = await readFile(bundlePath, "utf8");
-  const versionOccurrences = bundle.split(baseVersion).length - 1;
-  assert.ok(versionOccurrences > 0, "the packed CLI must carry its product version literal");
-  await writeFile(bundlePath, bundle.replaceAll(baseVersion, upgradedVersion), "utf8");
-  await chmod(bundlePath, 0o755);
-
-  const indexPath = path.join(dashboardRoot, "index.html");
-  const index = await readFile(indexPath, "utf8");
-  const marker = `<meta name="understand-code-lifecycle-release" content="${upgradedVersion}">`;
-  assert.match(index, /<\/head>/iu);
-  await writeFile(indexPath, index.replace(/<\/head>/iu, `${marker}</head>`), "utf8");
-  const descriptor = await dashboardInventory(dashboardRoot);
-  await writeFile(
-    path.join(releaseRoot, "dashboard-manifest.json"),
-    `${JSON.stringify({
-      schemaVersion: "understand-code-dashboard-bundle-v1",
-      productVersion: upgradedVersion,
-      root: "dashboard",
-      fileCount: descriptor.fileCount,
-      inventorySha256: descriptor.inventorySha256,
-    }, null, 2)}\n`,
-    "utf8",
-  );
-  return { releaseRoot, bundlePath, upgradedVersion, descriptor };
-}
-
 function expectedReactEntry(indexHtml) {
   const match = indexHtml.match(/<script\b[^>]*\bsrc=["'](?<source>\/assets\/index-[A-Za-z0-9_-]+\.js)["'][^>]*>/iu);
   assert.ok(match?.groups?.source, "the installed Dashboard must name one hashed React entry asset");
@@ -387,7 +552,60 @@ function bodyContains(value) {
   return `document.body?.innerText?.includes(${JSON.stringify(value)}) === true`;
 }
 
-test("installed tgz opens the React Workbench and preserves snapshot-bound Task evidence", { timeout: 240_000 }, async (t) => {
+async function assertInstalledCandidateBindings(installed, candidate) {
+  const packageManifest = JSON.parse(await readFile(path.join(installed.packageRoot, "package.json"), "utf8"));
+  const releaseManifestBytes = await readFile(path.join(installed.packageRoot, "dist/release-manifest.json"));
+  const releaseManifest = JSON.parse(releaseManifestBytes.toString("utf8"));
+  assert.deepEqual(
+    { name: packageManifest.name, version: packageManifest.version },
+    candidate.manifest.package,
+  );
+  assert.deepEqual(releaseManifest.package, candidate.manifest.package);
+  assert.deepEqual(candidate.manifest.embeddedReleaseManifest, {
+    path: "package/dist/release-manifest.json",
+    schemaVersion: "understand-code-alpha-release-v1",
+    sha256: contentDigest(releaseManifestBytes),
+  });
+  assert.equal(releaseManifest.native.tuple, candidate.manifest.build.nativeTuple);
+  const nativeBytes = await readFile(path.join(installed.packageRoot, releaseManifest.native.path));
+  assert.equal(contentDigest(nativeBytes), releaseManifest.native.sha256);
+  const cliBytes = await readFile(path.join(installed.packageRoot, releaseManifest.cli.path));
+  assert.equal(contentDigest(cliBytes), releaseManifest.cli.sha256);
+  const dashboardRoot = path.join(installed.packageRoot, releaseManifest.dashboard.root);
+  const dashboardManifestBytes = await readFile(path.join(installed.packageRoot, releaseManifest.dashboard.manifest));
+  assert.equal(contentDigest(dashboardManifestBytes), releaseManifest.dashboard.manifestSha256);
+  assert.equal(releaseManifest.dashboard.productVersion, candidate.manifest.package.version);
+  const dashboard = await dashboardInventory(dashboardRoot);
+  assert.deepEqual(
+    { fileCount: dashboard.fileCount, inventorySha256: dashboard.inventorySha256 },
+    {
+      fileCount: releaseManifest.dashboard.fileCount,
+      inventorySha256: releaseManifest.dashboard.inventorySha256,
+    },
+  );
+  for (const host of ["codex", "claude"]) {
+    const plugin = releaseManifest.pluginRoots[host];
+    for (const [file, expectedDigest] of [
+      [plugin.marketplace, plugin.marketplaceSha256],
+      [plugin.manifest, plugin.manifestSha256],
+      [plugin.mcp, plugin.mcpSha256],
+      [plugin.entrypoint, plugin.entrypointSha256],
+      [plugin.cli, plugin.cliSha256],
+      [plugin.dashboardManifest, plugin.dashboardManifestSha256],
+    ]) {
+      assert.equal(contentDigest(await readFile(path.join(installed.packageRoot, file))), expectedDigest);
+    }
+    assert.equal(plugin.cliSha256, releaseManifest.cli.sha256);
+    const pluginDashboard = await dashboardInventory(path.join(installed.packageRoot, plugin.dashboardRoot));
+    assert.deepEqual(
+      { fileCount: pluginDashboard.fileCount, inventorySha256: pluginDashboard.inventorySha256 },
+      { fileCount: plugin.dashboardFileCount, inventorySha256: plugin.dashboardInventorySha256 },
+    );
+  }
+  return { packageManifest, releaseManifest, cliBytes, nativeBytes, dashboard };
+}
+
+test("installed tgz opens the React Workbench and preserves snapshot-bound Task evidence", { timeout: 15 * 60 * 1000 }, async (t) => {
   const browserExecutable = await resolveBrowserExecutable();
   if (browserExecutable === null) {
     assert.equal(
@@ -399,35 +617,49 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     return;
   }
 
-  const packDirectory = await mkdtemp(path.join(tmpdir(), "uc-workbench-browser-pack-"));
   const installDirectory = await mkdtemp(path.join(tmpdir(), "uc-workbench-browser-install-"));
+  const upgradeInstallDirectory = await mkdtemp(path.join(tmpdir(), "uc-workbench-browser-upgrade-install-"));
   const browserProfile = await mkdtemp(path.join(tmpdir(), "uc-workbench-browser-profile-"));
   const home = await mkdtemp(path.join(tmpdir(), "uc-workbench-browser-home-"));
   let repositoryRoot = await createRepositoryFixture();
   const repositoryRoots = [repositoryRoot];
   let browser = null;
   let mcp = null;
-  let upgradeReleaseRoot = null;
-  let retainPackDirectory = false;
+  let lifecycleCandidates = null;
+  let retainLifecycleCandidates = false;
   try {
-    const tarball = await resolveTarball(packDirectory);
-    const tarballPath = tarball.path;
-    const tarballBefore = await readFile(tarballPath);
-    const entryCount = packedRegularFileCount(tarballBefore);
-    if (tarball.entryCount !== undefined) assert.equal(entryCount, tarball.entryCount);
+    lifecycleCandidates = await createLifecycleCandidates();
+    const tarballPath = lifecycleCandidates.v1.tarballPath;
+    const tarballBefore = lifecycleCandidates.v1.tarballBytes;
+    const entryCount = lifecycleCandidates.v1.entryCount;
+    const upgradeTarballPath = lifecycleCandidates.v2.tarballPath;
+    const upgradeTarballBefore = lifecycleCandidates.v2.tarballBytes;
+    const upgradeEntryCount = lifecycleCandidates.v2.entryCount;
+    assert.equal(entryCount, upgradeEntryCount, "both real candidates must carry the same bounded release inventory size");
     await execBounded(
       "npm",
       ["install", "--global", "--prefix", installDirectory, "--ignore-scripts", "--no-package-lock", "--no-audit", "--no-fund", tarballPath],
       { cwd: installDirectory, encoding: "utf8" },
     );
-    const installed = installedLocations(installDirectory);
-    const packageManifest = JSON.parse(
-      await readFile(path.join(installed.packageRoot, "package.json"), "utf8"),
+    await execBounded(
+      "npm",
+      ["install", "--global", "--prefix", upgradeInstallDirectory, "--ignore-scripts", "--no-package-lock", "--no-audit", "--no-fund", upgradeTarballPath],
+      { cwd: upgradeInstallDirectory, encoding: "utf8" },
     );
-    const baseVersion = packageManifest.version;
-    assert.equal(typeof baseVersion, "string");
+    const installed = installedLocations(installDirectory);
+    const upgradeInstalled = installedLocations(upgradeInstallDirectory);
+    const v1Bindings = await assertInstalledCandidateBindings(installed, lifecycleCandidates.v1);
+    const v2Bindings = await assertInstalledCandidateBindings(upgradeInstalled, lifecycleCandidates.v2);
+    const baseVersion = v1Bindings.packageManifest.version;
+    const upgradedVersion = v2Bindings.packageManifest.version;
+    assert.equal(upgradedVersion, LIFECYCLE_V2_VERSION);
+    assert.notEqual(baseVersion, upgradedVersion);
+    assert.notDeepEqual(v1Bindings.cliBytes, v2Bindings.cliBytes);
     const installedIndexHtml = await readFile(path.join(installed.packageRoot, "dist/dashboard/index.html"), "utf8");
     const reactEntry = expectedReactEntry(installedIndexHtml);
+    const initialReactDigest = contentDigest(await readFile(
+      path.join(installed.packageRoot, "dist/dashboard", reactEntry.slice(1)),
+    ));
     let lifecycleEnv = cleanMcpEnvironment(home, repositoryRoot);
     const requestedManagedRoot = path.join(installDirectory, "managed-install");
     const managedInstall = await runCliJson(
@@ -447,6 +679,16 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     const managedInstallRoot = await realpath(requestedManagedRoot);
     const managedWrapper = path.join(managedInstallRoot, "bin/understand-code");
     const managedBundle = path.join(managedInstallRoot, "lib/understand-code.mjs");
+    assert.match(v1Bindings.releaseManifest.native.path, /^dist\/native\/[^/]+\/[^/]+$/u);
+    assert.equal(
+      v2Bindings.releaseManifest.native.path,
+      v1Bindings.releaseManifest.native.path,
+      "both candidates must bind the same current-platform native destination",
+    );
+    const managedNative = path.join(
+      managedInstallRoot,
+      `lib/${v1Bindings.releaseManifest.native.path.slice("dist/".length)}`,
+    );
     const managedDashboardRoot = path.join(managedInstallRoot, "lib/dashboard");
     const managedDashboardManifestPath = path.join(managedInstallRoot, "lib/dashboard-manifest.json");
     const managedManifestPath = path.join(managedInstallRoot, "installation-manifest.json");
@@ -454,6 +696,16 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     const sentinelPath = path.join(managedInstallRoot, "user-owned.txt");
     await writeFile(sentinelPath, "preserve user bytes\n", "utf8");
     const initialManagedBundle = await readFile(managedBundle);
+    assert.deepEqual(
+      initialManagedBundle,
+      v1Bindings.cliBytes,
+      "managed install must copy the exact CLI bytes from the real v1 tgz",
+    );
+    assert.deepEqual(
+      await readFile(managedNative),
+      v1Bindings.nativeBytes,
+      "managed install must copy the exact native bytes named by the v1 release manifest",
+    );
     const initialManagedDashboardManifest = await readFile(managedDashboardManifestPath);
     const initialManagedDashboard = await dashboardInventory(managedDashboardRoot);
     assert.deepEqual(
@@ -466,8 +718,15 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       await readFile(path.join(installed.packageRoot, "dist/dashboard-manifest.json")),
       "managed install must copy the exact Dashboard manifest from the same tgz",
     );
-    const initialManagedManifest = JSON.parse(await readFile(managedManifestPath, "utf8"));
+    const initialManagedManifestBytes = await readFile(managedManifestPath);
+    const initialManagedManifest = JSON.parse(initialManagedManifestBytes.toString("utf8"));
     assert.equal(initialManagedManifest.workbenchUi, "react_dashboard_v1");
+    const initialOwnedBytes = new Map(await Promise.all(
+      initialManagedManifest.files.map(async (file) => [
+        file.path,
+        await readFile(path.join(managedInstallRoot, file.path)),
+      ]),
+    ));
     const initialDoctor = await runCliJson(
       managedBundle,
       ["doctor", "--root", managedInstallRoot],
@@ -1014,6 +1273,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       maxCandidates: 1,
     }, BuildTaskBriefOutputV1Schema);
     const taskId = built.structuredContent.result.task.taskId;
+    const baselineSnapshotId = built.structuredContent.result.task.baselineSnapshotId;
     const brief = built.structuredContent.result.brief;
     assert.equal(brief.plannedChanges.length, 1);
     const initialFooPlan = brief.plannedChanges.find((change) => change.filePath === "src/index.ts");
@@ -1307,6 +1567,8 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       "preview-workbench-browser-verified",
     );
     assert.equal(verified.structuredContent.result.task.status, "verified");
+    const verifiedRevision = verified.structuredContent.result.task.revision;
+    assert.equal(verifiedRevision, taskRevision);
 
     const opened = await callTool(mcp, output, requestId++, "open_workbench", {
       route: { view: "tasks", taskId, section: "planned_changes" },
@@ -1439,6 +1701,121 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       "Workbench trace must retain both attempts while summarizing only the current retry",
     );
 
+    let stableLifecycleProjection = null;
+    const assertLifecycleContinuity = async (label) => {
+      const projection = await browser.evaluate(`Promise.all([
+        fetch('/tasks/' + encodeURIComponent(${JSON.stringify(taskId)}) + '/brief.json?section=summary', {
+          credentials: 'same-origin', headers: { accept: 'application/json' },
+        }),
+        fetch('/tasks/' + encodeURIComponent(${JSON.stringify(taskId)}) + '/change-check.json', {
+          credentials: 'same-origin', headers: { accept: 'application/json' },
+        }),
+        fetch('/tasks/' + encodeURIComponent(${JSON.stringify(taskId)}) + '/verification.json', {
+          credentials: 'same-origin', headers: { accept: 'application/json' },
+        }),
+        fetch('/__workbench/trace?taskId=' + encodeURIComponent(${JSON.stringify(taskId)}), {
+          credentials: 'same-origin', headers: { accept: 'application/json' },
+        }),
+        fetch('/__workbench/evidence?taskId=' + encodeURIComponent(${JSON.stringify(taskId)})
+          + '&evidenceId=' + encodeURIComponent(${JSON.stringify(expectedEvidence.id)}), {
+          credentials: 'same-origin', headers: { accept: 'application/json' },
+        }),
+      ]).then(async ([briefResponse, checkResponse, verificationResponse, traceResponse, evidenceResponse]) => ({
+        statuses: [
+          briefResponse.status,
+          checkResponse.status,
+          verificationResponse.status,
+          traceResponse.status,
+          evidenceResponse.status,
+        ],
+        brief: await briefResponse.json(),
+        check: await checkResponse.json(),
+        verification: await verificationResponse.json(),
+        trace: await traceResponse.json(),
+        evidence: await evidenceResponse.json(),
+      }))`);
+      assert.deepEqual(projection.statuses, [200, 200, 200, 200, 200], `${label} continuity HTTP status`);
+      assert.deepEqual(
+        {
+          taskId: projection.brief.task.taskId,
+          status: projection.brief.task.status,
+          revision: projection.brief.task.revision,
+          baselineSnapshotId: projection.brief.task.baselineSnapshotId,
+          latestSnapshotId: projection.brief.task.latestSnapshotId,
+        },
+        {
+          taskId,
+          status: "verified",
+          revision: verifiedRevision,
+          baselineSnapshotId,
+          latestSnapshotId: changedSnapshotId,
+        },
+        `${label} Task identity`,
+      );
+      assert.equal(projection.check.task.taskId, taskId, `${label} Change Check Task`);
+      assert.equal(projection.check.artifact.sourceSnapshotId, changedSnapshotId, `${label} Change Check Snapshot`);
+      const projectedFinding = projection.check.artifact.payload.findings.find(
+        (candidate) => candidate.id === finding.id,
+      );
+      assert.ok(projectedFinding, `${label} exact Finding`);
+      assert.deepEqual(projectedFinding.evidenceIds, finding.evidenceIds, `${label} Finding Evidence links`);
+      assert.equal(projection.trace.snapshotId, changedSnapshotId, `${label} Verification Snapshot`);
+      assert.equal(projection.trace.verification.disposition, "externally_reported", `${label} Verification disposition`);
+      assert.deepEqual(
+        {
+          requiredCount: projection.trace.verification.requiredCount,
+          passedCount: projection.trace.verification.passedCount,
+          failedCount: projection.trace.verification.failedCount,
+          pendingCount: projection.trace.verification.pendingCount,
+          records: projection.trace.verification.records.map((record) => ({
+            id: record.id,
+            attempt: record.attempt,
+            status: record.status,
+            snapshotId: record.snapshotId,
+            verificationPlanEntryId: record.verificationPlanEntryId,
+            supersedesVerificationRecordId: record.supersedesVerificationRecordId,
+          })),
+        },
+        {
+          requiredCount: workbenchTrace.payload.verification.requiredCount,
+          passedCount: workbenchTrace.payload.verification.passedCount,
+          failedCount: workbenchTrace.payload.verification.failedCount,
+          pendingCount: workbenchTrace.payload.verification.pendingCount,
+          records: workbenchTrace.payload.verification.records.map((record) => ({
+            id: record.id,
+            attempt: record.attempt,
+            status: record.status,
+            snapshotId: record.snapshotId,
+            verificationPlanEntryId: record.verificationPlanEntryId,
+            supersedesVerificationRecordId: record.supersedesVerificationRecordId,
+          })),
+        },
+        `${label} Verification trace`,
+      );
+      assert.equal(projection.evidence.status, "ready", `${label} Evidence status`);
+      assert.equal(projection.evidence.snapshotId, changedSnapshotId, `${label} Evidence Snapshot`);
+      assert.equal(projection.evidence.evidence.id, expectedEvidence.id, `${label} Evidence identity`);
+      assert.equal(projection.evidence.evidence.contentHash, expectedEvidence.contentHash, `${label} Evidence hash`);
+      assert.deepEqual(projection.evidence.evidence.nodeIds, expectedEvidence.nodeIds, `${label} Evidence nodes`);
+      const completeProjection = {
+        brief: projection.brief,
+        check: projection.check,
+        verification: projection.verification,
+        trace: projection.trace,
+        evidence: projection.evidence,
+      };
+      if (stableLifecycleProjection === null) {
+        stableLifecycleProjection = completeProjection;
+      } else {
+        assert.deepEqual(
+          completeProjection,
+          stableLifecycleProjection,
+          `${label} must preserve the complete Task/Check/Verification/Trace/Evidence projection`,
+        );
+      }
+    };
+    await assertLifecycleContinuity("v1 candidate");
+
     const focusedNodeId = workbenchEvidence.payload.evidence.nodeIds[0];
     await browser.click(`[data-testid="task-evidence-open-graph"][data-node-id="${focusedNodeId}"]`);
     await browser.waitFor(
@@ -1492,17 +1869,21 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     assert.equal(output.stderr.join(""), "");
     mcp = null;
 
-    const upgradeRelease = await createUpgradeRelease(installed.packageRoot, baseVersion);
-    upgradeReleaseRoot = upgradeRelease.releaseRoot;
+    const upgradedDashboard = await dashboardInventory(path.join(upgradeInstalled.packageRoot, "dist/dashboard"));
     assert.notEqual(
-      upgradeRelease.descriptor.inventorySha256,
+      upgradedDashboard.inventorySha256,
       initialManagedDashboard.inventorySha256,
-      "the upgrade fixture must carry different Dashboard bytes",
+      "the real v2 candidate must carry different Dashboard bytes",
+    );
+    assert.equal(
+      (await realpath(upgradeInstalled.cliBin)).startsWith(`${await realpath(upgradeInstalled.packageRoot)}${path.sep}`),
+      true,
+      "upgrade must execute the CLI installed from the real v2 candidate tgz",
     );
     const upgraded = await runCliJson(
-      upgradeRelease.bundlePath,
+      upgradeInstalled.cliBin,
       ["upgrade", "--root", managedInstallRoot, "--host", "codex"],
-      installDirectory,
+      upgradeInstallDirectory,
       lifecycleEnv,
     );
     assert.deepEqual(
@@ -1517,19 +1898,28 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
         ok: true,
         status: "updated",
         fromVersion: baseVersion,
-        version: upgradeRelease.upgradedVersion,
+        version: upgradedVersion,
         rollbackAvailable: true,
       },
     );
-    assert.notDeepEqual(await readFile(managedBundle), initialManagedBundle);
+    assert.deepEqual(
+      await readFile(managedBundle),
+      v2Bindings.cliBytes,
+      "upgrade must copy the exact CLI bytes from the real v2 tgz",
+    );
+    assert.deepEqual(
+      await readFile(managedNative),
+      v2Bindings.nativeBytes,
+      "upgrade must copy the exact native bytes named by the v2 release manifest",
+    );
     assert.deepEqual(
       await dashboardInventory(managedDashboardRoot),
-      upgradeRelease.descriptor,
+      upgradedDashboard,
       "upgrade must install the exact v2 Dashboard inventory",
     );
     assert.deepEqual(
       await readFile(managedDashboardManifestPath),
-      await readFile(path.join(upgradeRelease.releaseRoot, "dashboard-manifest.json")),
+      await readFile(path.join(upgradeInstalled.packageRoot, "dist/dashboard-manifest.json")),
     );
     const upgradedDoctor = await runCliJson(
       managedBundle,
@@ -1539,7 +1929,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     );
     assert.deepEqual(
       { ok: upgradedDoctor.ok, status: upgradedDoctor.status, version: upgradedDoctor.version },
-      { ok: true, status: "healthy", version: upgradeRelease.upgradedVersion },
+      { ok: true, status: "healthy", version: upgradedVersion },
     );
 
     mcp = spawn(managedWrapper, ["--root", repositoryRoot], {
@@ -1552,7 +1942,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       mcp,
       output,
       "preview-managed-dashboard-upgrade",
-      upgradeRelease.upgradedVersion,
+      upgradedVersion,
     );
     let upgradedRequestId = 2;
     const upgradedBrief = await callTool(
@@ -1581,6 +1971,14 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       },
       OpenWorkbenchOutputV1Schema,
     );
+    const upgradedIndexHtml = await readFile(
+      path.join(upgradeInstalled.packageRoot, "dist/dashboard/index.html"),
+      "utf8",
+    );
+    const upgradedReactEntry = expectedReactEntry(upgradedIndexHtml);
+    const upgradedReactDigest = contentDigest(await readFile(
+      path.join(upgradeInstalled.packageRoot, "dist/dashboard", upgradedReactEntry.slice(1)),
+    ));
     await browser.navigate(upgradedWorkbench.structuredContent.result.deepLink);
     await browser.waitFor(
       "document.querySelector('[data-testid=\"task-first-workbench\"]') !== null",
@@ -1589,9 +1987,32 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     );
     await browser.waitFor(bodyContains(finding.summary), "same Task through upgraded Dashboard");
     await browser.waitFor(
-      `document.querySelector('meta[name="understand-code-lifecycle-release"][content="${upgradeRelease.upgradedVersion}"]') !== null`,
+      `document.querySelector('meta[name="understand-code-lifecycle-release"][content="${upgradedVersion}"]') !== null`,
       "v2 Dashboard marker",
     );
+    assert.ok(
+      browser.networkResponses.some((response) => {
+        try {
+          return new URL(response.url).pathname === upgradedReactEntry && response.status === 200;
+        } catch {
+          return false;
+        }
+      }),
+      `the upgraded Workbench must load the v2 candidate React entry ${upgradedReactEntry}`,
+    );
+    assert.equal(
+      await browser.evaluate(`fetch(${JSON.stringify(upgradedReactEntry)}, {
+        credentials: 'same-origin', cache: 'no-store',
+      }).then(async (response) => {
+        if (!response.ok) throw new Error('v2 React asset fetch failed: ' + response.status);
+        const value = await crypto.subtle.digest('SHA-256', await response.arrayBuffer());
+        return 'sha256:' + [...new Uint8Array(value)]
+          .map((byte) => byte.toString(16).padStart(2, '0')).join('');
+      })`),
+      upgradedReactDigest,
+      "Chrome must receive the exact React bytes installed from the real v2 tgz",
+    );
+    await assertLifecycleContinuity("v2 candidate");
     await browser.navigate("about:blank");
     await stopChild(mcp);
     assert.equal(output.stderr.join(""), "");
@@ -1609,13 +2030,35 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     );
     assert.deepEqual(await readFile(managedBundle), initialManagedBundle);
     assert.deepEqual(
+      await readFile(managedBundle),
+      v1Bindings.cliBytes,
+      "rollback must restore the exact CLI bytes from the real v1 tgz",
+    );
+    assert.deepEqual(
+      await readFile(managedNative),
+      v1Bindings.nativeBytes,
+      "rollback must restore the exact native bytes named by the v1 release manifest",
+    );
+    assert.deepEqual(
       await readFile(managedDashboardManifestPath),
       initialManagedDashboardManifest,
+    );
+    assert.deepEqual(
+      await readFile(managedManifestPath),
+      initialManagedManifestBytes,
+      "rollback must restore the exact v1 installation manifest bytes",
     );
     assert.deepEqual(
       await dashboardInventory(managedDashboardRoot),
       initialManagedDashboard,
     );
+    for (const [relativePath, expectedBytes] of initialOwnedBytes) {
+      assert.deepEqual(
+        await readFile(path.join(managedInstallRoot, relativePath)),
+        expectedBytes,
+        `rollback must restore the exact v1 owned bytes for ${relativePath}`,
+      );
+    }
     await assert.rejects(stat(rollbackPath), (error) => error?.code === "ENOENT");
 
     mcp = spawn(managedWrapper, ["--root", repositoryRoot], {
@@ -1665,6 +2108,19 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       ),
       true,
     );
+    assert.equal(
+      await browser.evaluate(`fetch(${JSON.stringify(reactEntry)}, {
+        credentials: 'same-origin', cache: 'no-store',
+      }).then(async (response) => {
+        if (!response.ok) throw new Error('v1 rollback React asset fetch failed: ' + response.status);
+        const value = await crypto.subtle.digest('SHA-256', await response.arrayBuffer());
+        return 'sha256:' + [...new Uint8Array(value)]
+          .map((byte) => byte.toString(16).padStart(2, '0')).join('');
+      })`),
+      initialReactDigest,
+      "Chrome must receive the exact React bytes restored from the real v1 tgz",
+    );
+    await assertLifecycleContinuity("v1 rollback");
     pinnedPage = new URL(await browser.evaluate("location.href"));
     assert.equal(pinnedPage.searchParams.get("taskId"), taskId);
     assert.equal(pinnedPage.searchParams.get("findingId"), finding.id);
@@ -1716,13 +2172,8 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     assert.equal(staleProjection.graphActionVisible, false, "stale Evidence must hide Graph navigation");
     assert.equal(staleProjection.taskOverlayVisible, false, "stale Task must not render a fresh Graph/Wiki overlay");
     assert.deepEqual(browser.pageErrors, [], "the installed React Workbench must not throw a page exception");
-    assert.equal(digest(await readFile(tarballPath)), digest(tarballBefore), "the supplied tgz must remain unchanged");
-    retainPackDirectory = !tarball.supplied;
-    console.log(`WORKBENCH_BROWSER_TARBALL ${JSON.stringify({
-      path: tarballPath,
-      sha256: `sha256:${digest(tarballBefore)}`,
-      entryCount,
-    })}`);
+    assert.deepEqual(await readFile(tarballPath), tarballBefore, "the v1 candidate tgz must remain unchanged");
+    assert.deepEqual(await readFile(upgradeTarballPath), upgradeTarballBefore, "the v2 candidate tgz must remain unchanged");
 
     const restoredInstallationManifest = JSON.parse(
       await readFile(managedManifestPath, "utf8"),
@@ -1757,18 +2208,34 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       );
     }
     assert.equal(await readFile(sentinelPath, "utf8"), "preserve user bytes\n");
+    assert.equal((await stat(tarballPath)).isFile(), true, "logged v1 candidate tgz must exist");
+    assert.equal((await stat(upgradeTarballPath)).isFile(), true, "logged v2 candidate tgz must exist");
+    console.log(`WORKBENCH_BROWSER_TARBALL ${JSON.stringify({
+      path: tarballPath,
+      sha256: `sha256:${digest(tarballBefore)}`,
+      entryCount,
+    })}`);
+    console.log(`WORKBENCH_BROWSER_UPGRADE_TARBALL ${JSON.stringify({
+      path: upgradeTarballPath,
+      sha256: `sha256:${digest(upgradeTarballBefore)}`,
+      entryCount: upgradeEntryCount,
+    })}`);
+    retainLifecycleCandidates = true;
   } finally {
     if (browser) await browser.close().catch(() => undefined);
     await stopChild(mcp);
+    if (lifecycleCandidates !== null) {
+      await rm(lifecycleCandidates.cloneRoot, { recursive: true, force: true });
+      if (!retainLifecycleCandidates) {
+        await rm(lifecycleCandidates.parent, { recursive: true, force: true });
+      }
+    }
     await Promise.all([
-      ...(retainPackDirectory ? [] : [rm(packDirectory, { recursive: true, force: true })]),
       rm(installDirectory, { recursive: true, force: true }),
+      rm(upgradeInstallDirectory, { recursive: true, force: true }),
       rm(browserProfile, { recursive: true, force: true }),
       rm(home, { recursive: true, force: true }),
       ...repositoryRoots.map((root) => rm(root, { recursive: true, force: true })),
-      ...(upgradeReleaseRoot === null
-        ? []
-        : [rm(upgradeReleaseRoot, { recursive: true, force: true })]),
     ]);
   }
 });

@@ -423,6 +423,122 @@ test("assembles and verifies one unsigned Alpha candidate from an exact clean so
       cwd: worktreeRoot,
       env: commandEnvironment,
     });
+    const candidateBytesBeforeHistoricalVerify = new Map([
+      [tarballFile, tarballBytes],
+      [candidateManifestFile, manifestBytes],
+      [candidateSchemaFile, schemaBytes],
+      [checksumFile, checksumBytes],
+    ]);
+    const readmePath = path.join(worktreeRoot, "packages/preview/README.md");
+    const readmeBytes = await readFile(readmePath);
+    const lockfilePath = path.join(worktreeRoot, "pnpm-lock.yaml");
+    const lockfileBytes = await readFile(lockfilePath);
+    await writeFile(
+      readmePath,
+      Buffer.concat([
+        readmeBytes,
+        Buffer.from(
+          "\n<!-- retained historical Alpha candidate verification fixture -->\n",
+          "utf8",
+        ),
+      ]),
+    );
+    await writeFile(
+      lockfilePath,
+      Buffer.concat([
+        lockfileBytes,
+        Buffer.from(
+          "\n# retained historical Alpha candidate verification fixture\n",
+          "utf8",
+        ),
+      ]),
+    );
+    await runGit(["add", "--", "packages/preview/README.md", "pnpm-lock.yaml"], {
+      cwd: worktreeRoot,
+    });
+    await runGit(
+      [
+        "-c",
+        "user.name=Understand Code Candidate Test",
+        "-c",
+        "user.email=alpha-candidate@example.invalid",
+        "commit",
+        "--quiet",
+        "-m",
+        "test retained historical Alpha candidate",
+      ],
+      { cwd: worktreeRoot },
+    );
+    const historicalVerificationHead = (await runGit(["rev-parse", "HEAD"], {
+      cwd: worktreeRoot,
+    })).stdout.trim();
+    const historicalVerificationTree = (await runGit(["rev-parse", "HEAD^{tree}"], {
+      cwd: worktreeRoot,
+    })).stdout.trim();
+    assert.notEqual(historicalVerificationHead, sourceCommit);
+    assert.notEqual(historicalVerificationTree, sourceTree);
+    assert.deepEqual(
+      (await runGit(
+        ["diff", "--name-only", `${sourceCommit}..${historicalVerificationHead}`, "--"],
+        { cwd: worktreeRoot },
+      )).stdout.trimEnd().split("\n").sort(),
+      ["packages/preview/README.md", "pnpm-lock.yaml"],
+      "the descendant commit must change only the package-visible fixture and lockfile",
+    );
+    assert.equal(
+      (await runGit(["rev-parse", "HEAD^"], { cwd: worktreeRoot })).stdout.trim(),
+      sourceCommit,
+      "the candidate source commit must be the direct parent of the verification HEAD",
+    );
+    await runGit(
+      ["merge-base", "--is-ancestor", sourceCommit, historicalVerificationHead],
+      { cwd: worktreeRoot },
+    );
+    assert.equal(
+      (await runGit(["status", "--porcelain=v1", "--untracked-files=all"], {
+        cwd: worktreeRoot,
+      })).stdout,
+      "",
+      "historical verification must run from a clean descendant commit",
+    );
+    await runGit(["cat-file", "-e", `${sourceCommit}^{commit}`], {
+      cwd: worktreeRoot,
+    });
+    await runGit(["cat-file", "-e", `${sourceTree}^{tree}`], {
+      cwd: worktreeRoot,
+    });
+    await runGit(["cat-file", "-e", `${candidate.source.lockfile.objectId}^{blob}`], {
+      cwd: worktreeRoot,
+    });
+    const historicalLockfileObjectId = (
+      await runGit(["rev-parse", "HEAD:pnpm-lock.yaml"], { cwd: worktreeRoot })
+    ).stdout.trim();
+    assert.notEqual(
+      historicalLockfileObjectId,
+      candidate.source.lockfile.objectId,
+      "the descendant HEAD must not reuse the candidate's recorded lockfile blob",
+    );
+    assert.notEqual(
+      sha256(await readFile(lockfilePath)),
+      candidate.source.lockfile.sha256,
+      "the descendant HEAD lockfile bytes must differ from the candidate's recorded lockfile",
+    );
+    await runCandidate(scriptPath, "verify", candidateRoot, {
+      cwd: worktreeRoot,
+      env: commandEnvironment,
+    });
+    assert.deepEqual(
+      (await readdir(candidateRoot)).sort(),
+      names,
+      "historical verification must not change the candidate inventory",
+    );
+    for (const [file, bytes] of candidateBytesBeforeHistoricalVerify) {
+      assert.deepEqual(
+        await readFile(path.join(candidateRoot, file)),
+        bytes,
+        `historical verification must not change ${file}`,
+      );
+    }
     const tamperCases = [
       { path: tarballPath, bytes: tarballBytes, needle: undefined },
       {

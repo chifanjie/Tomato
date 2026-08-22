@@ -342,6 +342,18 @@ hashes. Because the metadata is unsigned, a coordinated rewrite of the
 artifacts together with recomputed unsigned metadata and checksums is not
 detectable or authenticated by `verify`.
 
+`verify` is source-aware rather than a self-contained check of the candidate
+directory. Run it from a checkout whose Git object format matches the candidate,
+whose object database still retains the recorded commit, tree, and committed
+lockfile blob, and whose reviewed `understand-code-alpha-candidate-v1` schema
+bytes are unchanged. The checkout's current `HEAD` may be newer and may have a
+different tree or lockfile; verification continues to resolve the exact
+recorded objects.
+Copying only the four candidate files, pruning those Git objects, or changing
+the reviewed schema does not provide a portable historical verification path.
+This mechanism is not a history-retention policy, an anti-rollback control, or
+independent provenance/authenticity proof.
+
 This output is a local, unsigned Alpha Candidate only. It is not an RC or formal
 Release, has no signature, SBOM, or trusted provenance, and evaluates only the
 current platform/native tuple. It does not establish cross-platform readiness,

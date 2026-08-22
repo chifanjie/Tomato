@@ -276,14 +276,14 @@ async function callTool(child, output, id, name, argumentsValue) {
   return message.result;
 }
 
-async function createRepository(root) {
+async function createRepository(root, source = INITIAL_SOURCE) {
   await mkdir(path.join(root, "src"), { recursive: true });
   await writeFile(
     path.join(root, "src/index.ts"),
-    INITIAL_SOURCE,
+    source,
   );
   const gitEnv = {
-    ...process.env,
+    ...repositoryGitEnvironment(),
     GIT_AUTHOR_NAME: "Understand Code Plugin E2E",
     GIT_AUTHOR_EMAIL: "plugin-e2e@example.invalid",
     GIT_COMMITTER_NAME: "Understand Code Plugin E2E",
@@ -293,6 +293,43 @@ async function createRepository(root) {
   await execBounded("git", ["add", "src/index.ts"], { cwd: root, env: gitEnv });
   await execBounded("git", ["commit", "-q", "-m", "initial"], { cwd: root, env: gitEnv });
   return realpath(root);
+}
+
+function repositoryGitEnvironment() {
+  const environment = { ...process.env };
+  for (const name of Object.keys(environment)) {
+    if (name.toUpperCase().startsWith("GIT_")) delete environment[name];
+  }
+  return {
+    ...environment,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_OPTIONAL_LOCKS: "0",
+    GIT_TERMINAL_PROMPT: "0",
+    LC_ALL: "C",
+  };
+}
+
+async function repositoryGit(root, args) {
+  return execBounded("git", ["-C", root, ...args], {
+    env: repositoryGitEnvironment(),
+    encoding: "utf8",
+  });
+}
+
+async function absoluteGitPath(root, name) {
+  const value = (await repositoryGit(
+    root,
+    ["rev-parse", "--path-format=absolute", "--git-path", name],
+  )).stdout.trim();
+  assert.equal(path.isAbsolute(value), true, `Git ${name} path must be absolute`);
+  assert.doesNotMatch(value, /[\u0000\r\n]/u);
+  return realpath(value);
+}
+
+async function createLinkedWorktree(primaryRoot, linkedRoot) {
+  await repositoryGit(primaryRoot, ["worktree", "add", "--detach", linkedRoot, "HEAD"]);
+  return realpath(linkedRoot);
 }
 
 async function resolveMcpServer(installedRoot, host) {
@@ -361,11 +398,13 @@ async function withInstalledMcp(
 }
 
 async function exerciseInstalledAlpha(options) {
-  const { repositoryRoot, clientName } = options;
+  const { repositoryRoot, clientName, expectedIndexPath } = options;
   const sourcePath = path.join(repositoryRoot, "src/index.ts");
   const sourceBefore = await readFile(sourcePath);
+  const indexPath = await absoluteGitPath(repositoryRoot, "index");
+  assert.equal(indexPath, expectedIndexPath, "Alpha must use the pre-audited linked-worktree index");
   const indexBefore = createHash("sha256")
-    .update(await readFile(path.join(repositoryRoot, ".git/index")))
+    .update(await readFile(indexPath))
     .digest("hex");
   return withInstalledMcp(options, async ({ child, output }) => {
     const actor = `agent:${clientName}`;
@@ -377,11 +416,25 @@ async function exerciseInstalledAlpha(options) {
     });
     assert.equal(initialRefresh.structuredContent.result.operation.status, "completed");
     const initialSnapshotId = initialRefresh.structuredContent.meta.sourceSnapshotId;
+    const repositoryId = initialRefresh.structuredContent.meta.repositoryId;
+    const worktreeId = initialRefresh.structuredContent.meta.worktreeId;
+    for (const [label, value] of [["repositoryId", repositoryId], ["worktreeId", worktreeId]]) {
+      assert.equal(typeof value, "string", `${label} must be a string`);
+      assert.ok(value.length > 0, `${label} must be nonempty`);
+    }
     const pulse = await callTool(child, output, requestId++, "get_repo_pulse", {});
     assert.equal(
       pulse.structuredContent.meta.sourceSnapshotId,
       initialSnapshotId,
       "the installed Host plugin must read the exact snapshot it created for the bound repository",
+    );
+    assert.deepEqual(
+      {
+        repositoryId: pulse.structuredContent.meta.repositoryId,
+        worktreeId: pulse.structuredContent.meta.worktreeId,
+      },
+      { repositoryId, worktreeId },
+      "Pulse must retain the exact linked-worktree identity selected during refresh",
     );
 
     const built = await callTool(child, output, requestId++, "build_task_brief", {
@@ -393,6 +446,14 @@ async function exerciseInstalledAlpha(options) {
       maxCandidates: 1,
     });
     const taskId = built.structuredContent.result.task.taskId;
+    assert.deepEqual(
+      {
+        repositoryId: built.structuredContent.result.task.repositoryId,
+        worktreeId: built.structuredContent.result.task.worktreeId,
+      },
+      { repositoryId, worktreeId },
+      "the Task must bind the exact linked-worktree identity",
+    );
     const brief = built.structuredContent.result.brief;
     const readBrief = await callTool(child, output, requestId++, "get_task_brief", {
       taskId,
@@ -443,7 +504,7 @@ async function exerciseInstalledAlpha(options) {
     assert.notDeepEqual(await readFile(sourcePath), sourceBefore);
     assert.equal(
       createHash("sha256")
-        .update(await readFile(path.join(repositoryRoot, ".git/index")))
+        .update(await readFile(indexPath))
         .digest("hex"),
       indexBefore,
       "the external source edit must not mutate the Git index",
@@ -457,6 +518,14 @@ async function exerciseInstalledAlpha(options) {
     assert.equal(changedRefresh.structuredContent.result.operation.status, "completed");
     const changedSnapshotId = changedRefresh.structuredContent.meta.sourceSnapshotId;
     assert.notEqual(changedSnapshotId, initialSnapshotId);
+    assert.deepEqual(
+      {
+        repositoryId: changedRefresh.structuredContent.meta.repositoryId,
+        worktreeId: changedRefresh.structuredContent.meta.worktreeId,
+      },
+      { repositoryId, worktreeId },
+      "the changed Snapshot must retain the exact linked-worktree identity",
+    );
 
     await updateTask(
       { type: "transition_status", to: "check_required" },
@@ -558,6 +627,8 @@ async function exerciseInstalledAlpha(options) {
     assert.equal(verified.structuredContent.result.task.status, "verified");
     return {
       taskId,
+      repositoryId,
+      worktreeId,
       baselineSnapshotId: built.structuredContent.result.task.baselineSnapshotId,
       changedSnapshotId,
       verifiedRevision: verified.structuredContent.result.task.revision,
@@ -579,14 +650,27 @@ async function resumeInstalledAlpha(options, alpha, workbenchSurface) {
       taskId: alpha.taskId,
       section: "summary",
     });
-    assert.equal(resumed.structuredContent.result.task.taskId, alpha.taskId);
-    assert.equal(resumed.structuredContent.result.task.status, "verified");
-    assert.equal(resumed.structuredContent.result.task.revision, alpha.verifiedRevision);
-    assert.equal(
-      resumed.structuredContent.result.task.baselineSnapshotId,
-      alpha.baselineSnapshotId,
+    assert.deepEqual(
+      {
+        taskId: resumed.structuredContent.result.task.taskId,
+        repositoryId: resumed.structuredContent.result.task.repositoryId,
+        worktreeId: resumed.structuredContent.result.task.worktreeId,
+        status: resumed.structuredContent.result.task.status,
+        revision: resumed.structuredContent.result.task.revision,
+        baselineSnapshotId: resumed.structuredContent.result.task.baselineSnapshotId,
+        sourceSnapshotId: resumed.structuredContent.meta.sourceSnapshotId,
+      },
+      {
+        taskId: alpha.taskId,
+        repositoryId: alpha.repositoryId,
+        worktreeId: alpha.worktreeId,
+        status: "verified",
+        revision: alpha.verifiedRevision,
+        baselineSnapshotId: alpha.baselineSnapshotId,
+        sourceSnapshotId: alpha.changedSnapshotId,
+      },
+      "every fresh active-cache MCP must resume the exact linked-worktree Task and Snapshot",
     );
-    assert.equal(resumed.structuredContent.meta.sourceSnapshotId, alpha.changedSnapshotId);
     for (const [index, request] of alpha.verificationRequests.entries()) {
       const replayed = await callTool(
         child,
@@ -1199,12 +1283,90 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
   const marketplaceFacadeRoot = path.join(sandbox, "marketplace-facade");
   const codexBrowserProfile = path.join(sandbox, "chrome-profile-codex");
   const claudeBrowserProfile = path.join(sandbox, "chrome-profile-claude");
-  const repositoryRoot = await createRepository(path.join(sandbox, "repository"));
-  const ambientRepositoryRoot = await createRepository(path.join(sandbox, "ambient-repository"));
   const differentCwd = path.join(sandbox, "not-the-repository");
   let codexInstalledRoot = null;
   let claudeInstalledRoot = null;
   try {
+    const primaryRepositoryRoot = await createRepository(
+      path.join(sandbox, "主仓库 primary with space"),
+    );
+    const repositoryRoot = await createLinkedWorktree(
+      primaryRepositoryRoot,
+      path.join(sandbox, "链接工作树 linked with space"),
+    );
+    const nestedCwd = path.join(repositoryRoot, "src", "嵌套 目录");
+    await mkdir(nestedCwd, { recursive: true });
+    assert.equal(await realpath(nestedCwd), nestedCwd);
+    for (const candidate of [primaryRepositoryRoot, repositoryRoot, nestedCwd]) {
+      assert.match(candidate, / /u, "the Root fixture must retain a path-space boundary");
+      assert.match(candidate, /\p{Script=Han}/u, "the Root fixture must retain a Chinese path boundary");
+    }
+    assert.equal((await stat(path.join(repositoryRoot, ".git"))).isFile(), true);
+    const linkedTopLevel = await realpath((await repositoryGit(
+      repositoryRoot,
+      ["rev-parse", "--show-toplevel"],
+    )).stdout.trim());
+    assert.equal(linkedTopLevel, repositoryRoot);
+    assert.equal(
+      (await repositoryGit(repositoryRoot, ["rev-parse", "--abbrev-ref", "HEAD"])).stdout.trim(),
+      "HEAD",
+      "the Root fixture must be a detached linked worktree",
+    );
+    const linkedGitDirRaw = (await repositoryGit(
+      repositoryRoot,
+      ["rev-parse", "--path-format=absolute", "--git-dir"],
+    )).stdout.trim();
+    const linkedCommonDirRaw = (await repositoryGit(
+      repositoryRoot,
+      ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )).stdout.trim();
+    assert.equal(path.isAbsolute(linkedGitDirRaw), true);
+    assert.equal(path.isAbsolute(linkedCommonDirRaw), true);
+    const linkedGitDir = await realpath(linkedGitDirRaw);
+    const linkedCommonDir = await realpath(linkedCommonDirRaw);
+    assert.notEqual(linkedGitDir, linkedCommonDir);
+    assert.equal(linkedCommonDir, await realpath(path.join(primaryRepositoryRoot, ".git")));
+    const linkedGitFile = await readFile(path.join(repositoryRoot, ".git"), "utf8");
+    assert.match(linkedGitFile, /^gitdir: [^\u0000\r\n]+\n$/u);
+    assert.equal(
+      await realpath(linkedGitFile.slice("gitdir: ".length).trimEnd()),
+      linkedGitDir,
+    );
+    const primarySourcePath = path.join(primaryRepositoryRoot, "src/index.ts");
+    const linkedSourcePath = path.join(repositoryRoot, "src/index.ts");
+    const primaryIndexPath = await absoluteGitPath(primaryRepositoryRoot, "index");
+    const linkedIndexPath = await absoluteGitPath(repositoryRoot, "index");
+    assert.equal(linkedIndexPath, await realpath(path.join(linkedGitDir, "index")));
+    assert.notEqual(linkedIndexPath, primaryIndexPath);
+    const [primarySourceBefore, primaryIndexBefore, linkedSourceBefore] = await Promise.all([
+      readFile(primarySourcePath),
+      readFile(primaryIndexPath),
+      readFile(linkedSourcePath),
+    ]);
+    const ambientRepositoryRoot = await createRepository(
+      path.join(sandbox, "ambient-repository"),
+      "export function ambient() { return 'poison-authority'; }\n",
+    );
+    assert.notEqual(
+      (await repositoryGit(ambientRepositoryRoot, ["rev-parse", "HEAD"])).stdout.trim(),
+      (await repositoryGit(repositoryRoot, ["rev-parse", "HEAD"])).stdout.trim(),
+      "the poisoned ambient repository must have an unrelated commit authority",
+    );
+    const ambientIndexPath = await absoluteGitPath(ambientRepositoryRoot, "index");
+    assert.notEqual(
+      contentDigest(await readFile(ambientIndexPath)),
+      contentDigest(await readFile(linkedIndexPath)),
+      "the poisoned ambient repository must have unrelated index bytes",
+    );
+    const ambientObjectsPath = path.join(ambientRepositoryRoot, ".git", "objects");
+    const poisonGitAuthority = Object.freeze({
+      GIT_DIR: path.join(ambientRepositoryRoot, ".git"),
+      GIT_WORK_TREE: ambientRepositoryRoot,
+      GIT_COMMON_DIR: path.join(ambientRepositoryRoot, ".git"),
+      GIT_INDEX_FILE: ambientIndexPath,
+      GIT_OBJECT_DIRECTORY: ambientObjectsPath,
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: ambientObjectsPath,
+    });
     await Promise.all([
       mkdir(packDirectory, { recursive: true }),
       mkdir(installDirectory, { recursive: true }),
@@ -1327,11 +1489,11 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
       installedRoot: codexInstalledRoot,
       version: v1Version,
       repositoryRoot,
-      cwd: repositoryRoot,
+      expectedIndexPath: linkedIndexPath,
+      cwd: nestedCwd,
       env: cleanHostEnvironment(codexUserHome, {
         CODEX_HOME: codexHome,
-        GIT_DIR: path.join(ambientRepositoryRoot, ".git"),
-        GIT_WORK_TREE: ambientRepositoryRoot,
+        ...poisonGitAuthority,
       }),
       clientName: "codex-plugin-e2e",
     });
@@ -1341,11 +1503,10 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
         installedRoot: codexInstalledRoot,
         version: v1Version,
         repositoryRoot,
-        cwd: repositoryRoot,
+        cwd: nestedCwd,
         env: cleanHostEnvironment(codexUserHome, {
           CODEX_HOME: codexHome,
-          GIT_DIR: path.join(ambientRepositoryRoot, ".git"),
-          GIT_WORK_TREE: ambientRepositoryRoot,
+          ...poisonGitAuthority,
         }),
         clientName: "codex-plugin-e2e-workbench",
       },
@@ -1421,9 +1582,8 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
         cwd: differentCwd,
         env: cleanHostEnvironment(claudeUserHome, {
           CLAUDE_CONFIG_DIR: claudeConfig,
-          CLAUDE_PROJECT_DIR: repositoryRoot,
-          GIT_DIR: path.join(ambientRepositoryRoot, ".git"),
-          GIT_WORK_TREE: ambientRepositoryRoot,
+          CLAUDE_PROJECT_DIR: nestedCwd,
+          ...poisonGitAuthority,
         }),
         clientName: "claude-plugin-e2e",
       },
@@ -1440,6 +1600,10 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
     await assertMissing(
       path.join(ambientRepositoryRoot, ".understand-code"),
       "ambient Git authority must not redirect artifacts into another real repository",
+    );
+    await assertMissing(
+      path.join(primaryRepositoryRoot, ".understand-code"),
+      "the linked-worktree session must not publish into the primary worktree",
     );
     await expectRootFailure(
       claudeAlpha.server,
@@ -1491,11 +1655,10 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
         installedRoot: codexInstalledRoot,
         version: releases.v2.version,
         repositoryRoot,
-        cwd: repositoryRoot,
+        cwd: nestedCwd,
         env: cleanHostEnvironment(codexUserHome, {
           CODEX_HOME: codexHome,
-          GIT_DIR: path.join(ambientRepositoryRoot, ".git"),
-          GIT_WORK_TREE: ambientRepositoryRoot,
+          ...poisonGitAuthority,
         }),
         clientName: "codex-plugin-e2e-lifecycle-v2",
       },
@@ -1546,9 +1709,8 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
         cwd: differentCwd,
         env: cleanHostEnvironment(claudeUserHome, {
           CLAUDE_CONFIG_DIR: claudeConfig,
-          CLAUDE_PROJECT_DIR: repositoryRoot,
-          GIT_DIR: path.join(ambientRepositoryRoot, ".git"),
-          GIT_WORK_TREE: ambientRepositoryRoot,
+          CLAUDE_PROJECT_DIR: nestedCwd,
+          ...poisonGitAuthority,
         }),
         clientName: "claude-plugin-e2e-lifecycle-v2",
       },
@@ -1600,11 +1762,10 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
         installedRoot: codexInstalledRoot,
         version: v1Version,
         repositoryRoot,
-        cwd: repositoryRoot,
+        cwd: nestedCwd,
         env: cleanHostEnvironment(codexUserHome, {
           CODEX_HOME: codexHome,
-          GIT_DIR: path.join(ambientRepositoryRoot, ".git"),
-          GIT_WORK_TREE: ambientRepositoryRoot,
+          ...poisonGitAuthority,
         }),
         clientName: "codex-plugin-e2e-pinned-v1-reinstall",
       },
@@ -1663,9 +1824,8 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
         cwd: differentCwd,
         env: cleanHostEnvironment(claudeUserHome, {
           CLAUDE_CONFIG_DIR: claudeConfig,
-          CLAUDE_PROJECT_DIR: repositoryRoot,
-          GIT_DIR: path.join(ambientRepositoryRoot, ".git"),
-          GIT_WORK_TREE: ambientRepositoryRoot,
+          CLAUDE_PROJECT_DIR: nestedCwd,
+          ...poisonGitAuthority,
         }),
         clientName: "claude-plugin-e2e-pinned-v1-reinstall",
       },
@@ -1734,6 +1894,33 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
     // Claude Code keeps an inert version cache after uninstall; the isolated config sandbox below
     // is the cleanup boundary, while plugin list is the authoritative installation state.
     claudeInstalledRoot = null;
+    assert.equal(
+      (await stat(path.join(repositoryRoot, ".understand-code"))).isDirectory(),
+      true,
+      "the complete Host lifecycle must retain its Task artifacts only in the linked worktree",
+    );
+    await Promise.all([
+      assertMissing(
+        path.join(primaryRepositoryRoot, ".understand-code"),
+        "the primary worktree must remain free of linked-worktree artifacts",
+      ),
+      assertMissing(
+        path.join(ambientRepositoryRoot, ".understand-code"),
+        "the poisoned ambient repository must remain free of artifacts",
+      ),
+    ]);
+    assert.equal(
+      (await repositoryGit(
+        primaryRepositoryRoot,
+        ["status", "--porcelain=v1", "--untracked-files=all"],
+      )).stdout,
+      "",
+      "the primary worktree must remain completely clean",
+    );
+    assert.deepEqual(await readFile(primarySourcePath), primarySourceBefore);
+    assert.deepEqual(await readFile(primaryIndexPath), primaryIndexBefore);
+    assert.notDeepEqual(await readFile(linkedSourcePath), linkedSourceBefore);
+    assert.deepEqual(await readFile(linkedSourcePath), Buffer.from(VERIFIED_SOURCE, "utf8"));
   } finally {
     await rm(sandbox, { recursive: true, force: true });
   }

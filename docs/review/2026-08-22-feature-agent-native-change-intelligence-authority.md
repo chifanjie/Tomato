@@ -1,109 +1,103 @@
 # feature/agent-native-change-intelligence-authority Review Brief
 
-> 生成时间：2026-08-22 CST
-> 分支：feature/agent-native-change-intelligence-authority
-> 基于 commit：9361c3e test: prove Codex active-cache workbench parity
+> 生成时间：2026-08-23 CST
+> 分支：`feature/agent-native-change-intelligence-authority`
+> 基于 commit：`1abfe495 test: prove two-package managed continuity`
 
 ## 背景与动机
 
-现有 managed lifecycle 浏览器门禁虽然覆盖 install、upgrade、rollback 与 Task 恢复，但 v2
-只是复制 v1 已安装目录后替换版本字符串、注入 Dashboard marker 的 synthetic release，没有
-跨越第二个真实 npm tgz 边界。因此它无法证明“由另一份实际可安装包执行升级，再回滚到原包”
-这一 mandatory package lifecycle。
+权威 Step16/WP6 要求 mandatory Codex、Claude Host 的 Root E2E 覆盖 linked worktree、
+空格/中文路径，以及 Claude 进程 cwd 与 `CLAUDE_PROJECT_DIR` 分离。现有真实 Host 门禁虽已覆盖
+官方 cache、Task、Verification、Workbench 与版本生命周期，但仍只在普通 ASCII repository root
+上运行；linked worktree 仅有低层 identity 测试，不能证明官方安装产物的完整用户路径。
 
-本切片把 synthetic v2 替换为两个独立组装、校验和冷安装的
-`unsigned_alpha_candidate`。它只增强真实发布包边界与恢复证据，不改生产 lifecycle、协议、
-Provider 或强写策略。
+本切片不改生产实现，只把现有双 Host + Chrome 全链迁移到更强的 detached linked-worktree fixture，
+并补齐测试自身对 gitfile、独立 index、common-dir、污染 Git authority 与 primary/ambient 隔离的
+精确证明。
 
 ## 改动策略
 
-- 在隔离的 `--no-local` clean clone 中，把当前两份 reviewed packed tests 固化为诚实的
-  ephemeral v1 commit；无论 overlay 是否为空都创建同一形态的 clean commit，并将 candidate
-  manifest 绑定其 commit/tree，不冒充 direct HEAD provenance。
-- 复用 `alpha-candidate.mjs assemble/verify` 分别生成 v1、v2：每份都执行 sanitized build、
-  单次 pack、同一 tgz cold gate、自校验和 exact-four sidecars。
-- v2 只允许五个 source delta：Preview package version、Codex plugin version、Claude plugin
-  version、Claude marketplace version，以及 Dashboard source HTML lifecycle marker；禁止 patch
-  dist 或打包后 manifest。
-- `cold-packed.test.mjs` 从 tgz 内有界 `package/package.json` 解析 strict SemVer，使同一冷门禁
-  能验证不同合法版本，同时继续把 CLI、MCP、release manifest、native、Dashboard 与双 Host
-  payload 绑定到该版本和 tgz bytes。
-- 两份 tgz 分别安装到独立 prefix。初始 v1 CLI 安装 managed root；停止 v1 MCP 后，必须由
-  v2 cold-installed CLI 执行 upgrade，再启动 fresh v2 MCP；随后停止 v2 并显式 rollback。
-- install、upgrade、rollback 三阶段逐字节比较 managed CLI、当前 native tuple、Dashboard
-  manifest/inventory；rollback 额外恢复 installation manifest 和全部 v1-owned bytes。
-- v1 首次冻结完整 Brief、Change Check、Verification artifact、Trace、Evidence/Source HTTP
-  projection；v2 与 rollback 对五个完整对象 `deepEqual`，并继续验证 Task revision/Snapshot、
-  Finding/Evidence/Verification 语义。
-- Chrome 对 v2 与 rollback 后的当前 hashed React asset 主动 `no-store` fetch，并与各自 tgz
-  冷安装目录中的本地 bytes SHA 精确比较，避免缓存或累计 network response 假绿。
-- helper 失败时清理 clone/candidate；成功后删除 clone/node_modules，仅保留并输出两份已通过
-  全链的 candidate tgz。
+- 在隔离 sandbox 中创建名称同时含空格和中文的 primary repository，再创建同样含空格和中文的
+  detached linked worktree；Host 选择入口位于 linked root 下的 nested 中文/空格目录。
+- 用 fixed argv、无 shell、清除 ambient `GIT_*` 的 Git helper 检查：linked `.git` 是 gitfile，
+  `show-toplevel` 精确为 linked root，HEAD detached，git-dir 与 common-dir 分离，common-dir 精确指向
+  primary `.git`。
+- 不再假设 `<root>/.git/index`。通过 `rev-parse --path-format=absolute --git-path index` 解析
+  linked index，要求它等于 `linkedGitDir/index` 且不同于 primary index；Alpha 执行前后复核同一路径。
+- 为 ambient repository 使用确定性不同的源码、HEAD 与 index，并在 7 次 fresh MCP 启动中统一注入
+  `GIT_DIR`、`GIT_WORK_TREE`、`GIT_COMMON_DIR`、`GIT_INDEX_FILE`、
+  `GIT_OBJECT_DIRECTORY`、`GIT_ALTERNATE_OBJECT_DIRECTORIES`。只有 Host wrapper 正确清除这些 authority
+  才能选中 linked root。
+- Codex v1 创建、Workbench 恢复、v2 恢复和 pinned-v1 恢复全部从 nested cwd 启动；Claude v1、v2、
+  pinned-v1 全部从无关 cwd 启动，并把 nested 路径放入 `CLAUDE_PROJECT_DIR`。
+- 从首次 refresh 起冻结非空 `repositoryId`、`worktreeId`，贯穿 Pulse、Task、changed Snapshot 与每次
+  fresh active-cache MCP 的 taskId/status/revision/baseline/current Snapshot exact replay。
+- 保留原 Task→Check→Verification、Codex/Claude 独立 Chrome profile、cookie Workbench、
+  Evidence/Source→Graph/Wiki→Back、v2 update、pinned-v1 reinstall、remove 与 Doctor 全部断言。
+- 最终要求 artifact 只存在于 linked root；primary source/index 原始字节不变且 Git status clean，
+  primary 与 poisoned ambient repository 都没有 `.understand-code`。
+- `mkdtemp` 后所有有副作用的 repository/worktree/Host/browser setup 都位于同一 `try/finally` cleanup
+  authority 内，setup 任一步失败也会删除 exact sandbox。
 
 ## 改动范围
 
 | 模块/职责 | 文件 | 做了什么 |
 |---|---|---|
-| Packed cold gate | `packages/preview/test/cold-packed.test.mjs` | 从 tgz 解析有界 strict SemVer，移除三处 v1 版本硬编码 |
-| Managed browser lifecycle | `packages/preview/test/workbench-browser-packed.test.mjs` | 组装/校验/冷装两份真实 candidate，执行 v1→v2→v1 exact continuity，并保留既有 Task/Workbench/stale/uninstall 全链 |
+| Mandatory Host Root E2E | `packages/preview/test/plugin-clean-install.test.mjs` | 将现有真实双 Host + Chrome 全链迁移到 spaces/CJK detached linked worktree；补 gitfile/index/common-dir、六类 poisoned Git authority、身份连续性、primary/ambient 隔离与 setup cleanup 断言 |
 
 ## Review 重点
 
-1. **真实包 authority** — v1/v2 必须分别来自 clean source-bound Alpha Candidate 和独立
-   cold install；upgrade executable 的 realpath 必须位于 v2 prefix。
-2. **v2 source 边界** — 只有冻结的五个 source files 可变化，Dashboard marker 必须从 source
-   build 进入 tgz，不能再次 patch dist。
-3. **managed bytes** — CLI、native、Dashboard、manifest 在 upgrade 后必须等于 v2 tgz，在
-   rollback 后必须等于 v1 tgz；rollback descriptor 必须消失。
-4. **完整状态连续性** — 不能只比较 taskId 或 Finding ID；Brief/Check/Verification/Trace/
-   Evidence 五个完整稳定 projection 必须在 v1、v2、rollback 间相等。
-5. **浏览器 cache 防假绿** — v2 与 rollback 后都需从当前 origin 主动 fetch hashed asset，
-   SHA 分别绑定 v2/v1 冷安装 bytes。
-6. **失败与产物生命周期** — 失败不得遗留 clone/node_modules；成功日志指向的两份 tgz 必须
-   仍存在并能独立复核 SHA/entry count。
+1. **Root authority** — Codex 必须从 nested cwd、Claude 必须从 divergent cwd + nested
+   `CLAUDE_PROJECT_DIR` 选择同一个 linked top-level；poisoned `GIT_*` 不能改写 authority。
+2. **Linked identity** — gitfile、git-dir/common-dir、detached HEAD、linked index 与 Task
+   `repositoryId/worktreeId` 必须形成连续证据，不能用普通 `.git/index` 假设。
+3. **产品全链未弱化** — 原 install/Doctor、Task/Check/Verification、双 Workbench、v2/pinned-v1、
+   remove/not_registered 的调用与断言必须全部保留。
+4. **隔离** — 源码变更与 `.understand-code` 只能落在 linked root；primary 必须保持 source/index/status
+   clean，ambient repository 不得出现产品 artifact。
+5. **失败清理** — linked worktree 注册、node_modules/cache、Chrome profile 或 Host setup 失败时，
+   不得因 `try/finally` 起点过晚而遗留 sandbox。
 
 ## 已识别风险
 
 终审结果：P0 0、P1 0、current-path executable P2 0、blocking Test Gap 0。
 
-首轮重门在 v2 candidate build 后、cold 前失败：原测试版本
-`0.1.0-preview.2+workbench.lifecycle-v2` 会让 npm 把 `+` 原样写入 tgz basename，而 Alpha
-Candidate 的生产/schema 安全文件名合同禁止 `+`。修复选择 npm-safe 的合法 prerelease
-`0.1.0-preview.2.workbench.lifecycle-v2`，并在 helper 入口增加同合同 fail-fast 断言；未放宽
-assembler 或 schema。完整重门随后从头通过。
+终审前关闭的防假绿问题包括：setup 原先位于 cleanup authority 之前；linked index 未精确绑定
+linked git-dir；Git poison 变量不足；ambient repository 可能与 primary 生成相同 HEAD/index，且
+alternate object DB 曾指向合法 primary objects。最终 fixture 使用确定性不同 ambient source/HEAD/index，
+六类 authority 都指向 unrelated ambient Git state，并在全部 7 次 MCP 启动中复用。
 
-非阻塞残余：两份产物只是在当前本机 tuple 上生成的 unsigned Alpha test candidates；不是
-正式 RC/Release，也不证明 signature、SBOM、SLSA/trusted provenance、reproducibility、
-cross-platform 或 CI 发布。删除隔离 clone 后，ephemeral source commit 不是长期独立 verify
-锚点。本切片也不证明 schema migration、原子/hot upgrade、crash recovery、官方 Host
-marketplace upgrade、Provider authority 或 execution fence；`strongWrites` 保持 locked，
-`releaseReady` 保持 false。
+非阻塞残余：本 E2E 不独立计算 primary checkout 的 public `worktreeId`；已有 repository-state
+identity 测试覆盖底层计算，本门禁以 gitdir/common-dir/index/source/artifact 隔离证明 Host 实际选中
+linked worktree。本切片不扩为 full Root/error/symlink/dynamic Roots 矩阵，也不增加第二条普通 repo
+Host 重门；普通路径继续由既有 CLI root-binding、installed-host 与 packed-browser 证据覆盖。
 
 ## 测试情况
 
 **已覆盖：**
 
+- `node --check packages/preview/test/plugin-clean-install.test.mjs`：通过。
+- scoped `git diff --check`：通过。
 - Preview `typecheck`：通过。
-- Preview fresh `build`：通过。
-- 两个改动测试文件 `node --check`：通过。
-- Scoped `git diff --check`：通过。
-- 唯一真实浏览器门禁：
-  `UNDERSTAND_CODE_REQUIRE_REAL_BROWSER=1 pnpm --filter @understand-code/preview test:workbench-browser`
-- 结果：1/1 pass，0 fail，0 skip，385.958 秒。
-- v1 tgz：87 entries，SHA256
-  `cc327fe8ab2cdcf62bc8f2e8dd72f15203b0d286bd3a9115510dbda782ce47b2`。
-- v2 tgz：87 entries，SHA256
-  `03bd319743a0e8811eaa5c3fe931afa633c764d52df30b81bd84053bde519de5`。
-- 独立 `shasum -a 256` 与 `tar -tzf | wc -l` 复核和测试输出一致。
+- Preview fresh `build`：通过，fresh `packages/preview/dist` 已生成。
+- 唯一真实 Host + Browser 门禁：
+  `UNDERSTAND_CODE_REQUIRE_PLUGIN_HOSTS=1 UNDERSTAND_CODE_REQUIRE_REAL_BROWSER=1 pnpm --filter @understand-code/preview test:plugins`
+- 结果：1/1 pass，0 fail，0 skip；test 34.809 秒，总计 34.900 秒。
+- 双 flag 同时强制，因此 Codex CLI、Claude CLI 或 Chrome 缺失都会失败，不能静默 skip。
 
-**缺失：**
+**不可声明：**
 
-- 无本切片 blocking Test Gap；上述 nonclaims 继续作为后续 release/authority 工作，而不是本次
-  Alpha continuity 的隐含声明。
+- 不是 credentialed/model-selected Codex/Claude chat 或 Gold/G2/G3 质量证据。
+- 不是 full Root/六 reason/dynamic Roots/additional-root/list-changed、多 worktree 并发矩阵。
+- 不外推到所有 Host/Git 版本、其他 OS/filesystem、Windows 或 cross-platform Release。
+- 不证明 RC、signature、SBOM、SLSA/trusted provenance、reproducibility、CI 发布或 publisher authenticity。
+- 不证明 Provider Authority、execution fence 或 strong writes；`strongWrites` 继续 locked。
+- 这是 test-only 证据增强，不宣称新增 runtime 安全机制。
 
 ## 结论
 
-🟢 Effective。当前本机 tuple 上，两份独立、真实可安装且自校验的 unsigned Alpha tgz 已在
-同一真实 Chrome 门禁中完成 v1 managed install → v2 cold-installed CLI upgrade → fresh
-MCP/Workbench exact continuity → explicit rollback to exact v1，并保留原 Task、Verification、
-Evidence、Graph/Wiki、stale 与 uninstall 链。可以精确提交。
+🟢 Effective。当前本机真实 Codex、Claude 与 Chrome tuple 上，两套官方 active plugin cache 已在一条
+spaces/CJK detached linked worktree 上完成同一 Alpha Task 的完整闭环：Codex nested cwd 创建并验证，
+Claude divergent cwd + nested project root 精确恢复；两 Host 保持 repository/worktree/Task/Snapshot/revision
+identity，并完成 Evidence/Source→Graph/Wiki→Back、v2 与 pinned-v1 恢复及最终 remove/Doctor。primary 和
+poisoned ambient repository 保持隔离。可以精确提交。

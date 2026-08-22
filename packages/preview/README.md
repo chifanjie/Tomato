@@ -310,6 +310,45 @@ officially active Claude cache has been shown to keep its bundled MCP alive
 while opening the cookie-authenticated browser Workbench, but this is not yet a
 credentialed, model-selected tool call from a complete Codex or Claude chat.
 
+## Assemble an unsigned Alpha Candidate
+
+From an exact clean Git checkout with the committed `pnpm-lock.yaml`, install
+only the locked dependencies and assemble into a new absolute directory outside
+the checkout:
+
+```sh
+pnpm install --frozen-lockfile
+node packages/preview/scripts/alpha-candidate.mjs assemble --output /ABSOLUTE/NEW/understand-code-alpha-candidate
+node packages/preview/scripts/alpha-candidate.mjs verify --candidate /ABSOLUTE/NEW/understand-code-alpha-candidate
+```
+
+`assemble` refuses an existing output directory. `verify` requires that exact
+directory to contain four regular files and nothing else:
+
+- one `understand-code-preview-*.tgz` npm package;
+- `understand-code-alpha-candidate.json`;
+- `understand-code-alpha-candidate-v1.schema.json` copied byte-for-byte from
+  the reviewed source schema; and
+- `SHA256SUMS`, which binds the other three files.
+
+Both successful commands print one JSON object with
+`disposition: "unsigned_alpha_candidate"` and `releaseReady: false`. The
+candidate manifest binds the clean Git commit/tree and committed lockfile, the
+tgz SHA-256 and size, package identity, embedded release-manifest digest, native
+tuple, and the successful cold-package/checksum gates. Re-run `verify` after
+copying or transporting the directory. It rejects missing, additional, or
+schema-invalid files and byte changes that are inconsistent with the recorded
+hashes. Because the metadata is unsigned, a coordinated rewrite of the
+artifacts together with recomputed unsigned metadata and checksums is not
+detectable or authenticated by `verify`.
+
+This output is a local, unsigned Alpha Candidate only. It is not an RC or formal
+Release, has no signature, SBOM, or trusted provenance, and evaluates only the
+current platform/native tuple. It does not establish cross-platform readiness,
+publisher authenticity, Provider Authority, an execution fence, or unlocked
+strong writes. Keep those limitations visible; do not rename or present this
+directory as a signed or release-ready distribution.
+
 ## Preview commands
 
 ```text

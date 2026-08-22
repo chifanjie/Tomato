@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://understand-code.local/schemas/alpha-candidate-v1.schema.json",
+  "title": "Understand Code unsigned Alpha candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "disposition",
+    "releaseReady",
+    "package",
+    "subject",
+    "embeddedReleaseManifest",
+    "source",
+    "build",
+    "gates",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "understand-code-alpha-candidate-v1"
+    },
+    "disposition": {
+      "const": "unsigned_alpha_candidate"
+    },
+    "releaseReady": {
+      "const": false
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$"
+        }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "mediaType", "bytes", "sha256"],
+      "properties": {
+        "file": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*\\.tgz$"
+        },
+        "mediaType": {
+          "const": "application/vnd.npm.package+gzip"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 33554432
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "embeddedReleaseManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "schemaVersion", "sha256"],
+      "properties": {
+        "path": {
+          "const": "package/dist/release-manifest.json"
+        },
+        "schemaVersion": {
+          "const": "understand-code-alpha-release-v1"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "vcs",
+        "objectFormat",
+        "commit",
+        "tree",
+        "clean",
+        "lockfile"
+      ],
+      "properties": {
+        "vcs": { "const": "git" },
+        "objectFormat": { "enum": ["sha1", "sha256"] },
+        "commit": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "tree": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "clean": { "const": true },
+        "lockfile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "objectId", "sha256"],
+          "properties": {
+            "path": { "const": "pnpm-lock.yaml" },
+            "objectId": {
+              "type": "string",
+              "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "objectFormat": { "const": "sha1" } },
+            "required": ["objectFormat"]
+          },
+          "then": {
+            "properties": {
+              "commit": { "pattern": "^[0-9a-f]{40}$" },
+              "tree": { "pattern": "^[0-9a-f]{40}$" },
+              "lockfile": {
+                "properties": {
+                  "objectId": { "pattern": "^[0-9a-f]{40}$" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "objectFormat": { "const": "sha256" } },
+            "required": ["objectFormat"]
+          },
+          "then": {
+            "properties": {
+              "commit": { "pattern": "^[0-9a-f]{64}$" },
+              "tree": { "pattern": "^[0-9a-f]{64}$" },
+              "lockfile": {
+                "properties": {
+                  "objectId": { "pattern": "^[0-9a-f]{64}$" }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "arch", "nativeTuple", "node", "npm", "pnpm"],
+      "properties": {
+        "platform": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$"
+        },
+        "arch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$"
+        },
+        "nativeTuple": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 64,
+          "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$",
+          "$comment": "The runtime verifier additionally requires nativeTuple to equal platform + '-' + arch."
+        },
+        "node": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$"
+        },
+        "npm": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$"
+        },
+        "pnpm": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$"
+        }
+      }
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coldPacked", "checksum"],
+      "properties": {
+        "coldPacked": { "const": "passed" },
+        "checksum": { "const": "passed" }
+      }
+    },
+    "limitations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["signature", "sbom", "trustedProvenance", "crossPlatform"],
+      "properties": {
+        "signature": { "const": "unavailable" },
+        "sbom": { "const": "unavailable" },
+        "trustedProvenance": { "const": "unavailable" },
+        "crossPlatform": { "const": "not_evaluated" }
+      }
+    }
+  }
+}

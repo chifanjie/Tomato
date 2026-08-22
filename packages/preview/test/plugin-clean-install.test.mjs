@@ -620,6 +620,7 @@ async function resumeInstalledAlpha(options, alpha, workbenchSurface) {
     );
     assert.equal(afterReplay.structuredContent.result.task.revision, alpha.verifiedRevision);
     if (workbenchSurface === undefined) return;
+    const hostLabel = options.host === "codex" ? "Codex" : "Claude";
     const activeRoot = await realpath(options.installedRoot);
     assert.equal(
       server.executable.startsWith(`${activeRoot}${path.sep}`),
@@ -662,7 +663,7 @@ async function resumeInstalledAlpha(options, alpha, workbenchSurface) {
         nodeIds: [ALPHA_NODE_ID],
         observedAtSnapshotId: alpha.changedSnapshotId,
       },
-      "the fresh Claude cache must read the exact source Evidence created through Codex",
+      `the fresh ${hostLabel} cache must read the exact source Evidence created through Codex`,
     );
 
     const opened = await callTool(child, output, requestId++, "open_workbench", {
@@ -675,7 +676,42 @@ async function resumeInstalledAlpha(options, alpha, workbenchSurface) {
     });
     assert.equal(opened.structuredContent.meta.sourceSnapshotId, alpha.changedSnapshotId);
     const deepLink = opened.structuredContent.result.deepLink;
-    assert.equal(new URL(deepLink).hostname, "127.0.0.1");
+    const deepLinkUrl = new URL(deepLink);
+    assert.deepEqual(
+      {
+        protocol: deepLinkUrl.protocol,
+        hostname: deepLinkUrl.hostname,
+        pathname: deepLinkUrl.pathname,
+        view: deepLinkUrl.searchParams.get("view"),
+        taskId: deepLinkUrl.searchParams.get("taskId"),
+        section: deepLinkUrl.searchParams.get("section"),
+      },
+      {
+        protocol: "http:",
+        hostname: "127.0.0.1",
+        pathname: "/workbench",
+        view: "tasks",
+        taskId: alpha.taskId,
+        section: "planned_changes",
+      },
+      "the Host cache must expose the exact loopback Task Workbench route",
+    );
+    assert.equal(
+      /^[1-9][0-9]{0,4}$/u.test(deepLinkUrl.port) && Number(deepLinkUrl.port) <= 65_535,
+      true,
+      "the Workbench deep link must contain a bounded loopback port",
+    );
+    const launchToken = deepLinkUrl.hash.slice(1);
+    assert.equal(
+      launchToken.length >= 32 && launchToken.length <= 256,
+      true,
+      "the Workbench launch fragment must be nonempty and bounded",
+    );
+    assert.equal(
+      /^[A-Za-z0-9_-]+$/u.test(launchToken),
+      true,
+      "the Workbench launch fragment must be base64url",
+    );
 
     let browser;
     try {
@@ -687,15 +723,47 @@ async function resumeInstalledAlpha(options, alpha, workbenchSurface) {
       await browser.navigate(deepLink);
       await browser.waitFor(
         "document.querySelector('[data-testid=\"task-first-workbench\"]') !== null",
-        "Claude cache React Task Workbench",
+        `${hostLabel} cache React Task Workbench`,
         30_000,
       );
-      assert.equal(child.exitCode, null, "the active Claude cache MCP must remain alive for the Browser session");
+      assert.equal(child.exitCode, null, `the active ${hostLabel} cache MCP must remain alive for the Browser session`);
       assert.equal(await browser.evaluate("location.hash"), "", "the launch fragment token must be cleared");
-      assert.doesNotMatch(
-        await browser.evaluate("document.cookie"),
-        /workbench_session/u,
+      assert.equal(
+        await browser.evaluate(`document.cookie.split(';').some((part) =>
+          part.trimStart().startsWith('workbench_session='))`),
+        false,
         "the Workbench session cookie must remain HttpOnly",
+      );
+      const cookieScopeUrl = `${deepLinkUrl.origin}${deepLinkUrl.pathname}${deepLinkUrl.search}`;
+      const sessionCookies = (await browser.getCookies([cookieScopeUrl]))
+        .filter((cookie) => cookie.name === "workbench_session");
+      assert.equal(sessionCookies.length, 1, "the loopback Workbench must set exactly one session cookie");
+      const [sessionCookie] = sessionCookies;
+      assert.deepEqual(
+        {
+          name: sessionCookie.name,
+          domain: sessionCookie.domain,
+          path: sessionCookie.path,
+          httpOnly: sessionCookie.httpOnly,
+          secure: sessionCookie.secure,
+          session: sessionCookie.session,
+          sameSite: sessionCookie.sameSite,
+        },
+        {
+          name: "workbench_session",
+          domain: "127.0.0.1",
+          path: "/",
+          httpOnly: true,
+          secure: false,
+          session: true,
+          sameSite: "Strict",
+        },
+        "Chrome must retain the exact loopback HttpOnly Workbench session policy",
+      );
+      assert.equal(
+        sessionCookie.valueLength >= 32 && sessionCookie.valueLength <= 256,
+        true,
+        "the Workbench session cookie value must be nonempty and bounded",
       );
       const loadedReactEntry = browser.networkResponses.find((response) => {
         try {
@@ -704,7 +772,7 @@ async function resumeInstalledAlpha(options, alpha, workbenchSurface) {
           return false;
         }
       });
-      assert.ok(loadedReactEntry, `the active Claude cache must serve its hashed React entry ${reactEntry}`);
+      assert.ok(loadedReactEntry, `the active ${hostLabel} cache must serve its hashed React entry ${reactEntry}`);
       const servedReactDigest = await browser.evaluate(`fetch(${JSON.stringify(reactEntry)}, {
         credentials: 'same-origin',
       }).then(async (response) => {
@@ -714,7 +782,7 @@ async function resumeInstalledAlpha(options, alpha, workbenchSurface) {
           .map((byte) => byte.toString(16).padStart(2, '0')).join('');
       })`);
       assert.equal(servedReactDigest, cachedReactDigest, "Chrome must execute the exact active-cache React bytes");
-      await browser.waitFor(bodyContains(alpha.finding.summary), "Codex-created Finding through Claude cache");
+      await browser.waitFor(bodyContains(alpha.finding.summary), `Codex-created Finding through ${hostLabel} cache`);
       assert.equal(await browser.evaluate(bodyContains(alpha.changedSnapshotId)), true);
       const taskArtifacts = await browser.evaluate(`Promise.all([
         fetch('/tasks/' + encodeURIComponent(${JSON.stringify(alpha.taskId)}) + '/brief.json?section=summary', {
@@ -813,7 +881,7 @@ async function resumeInstalledAlpha(options, alpha, workbenchSurface) {
       await browser.click(`[data-testid="task-evidence-open-graph"][data-node-id="${ALPHA_NODE_ID}"]`);
       await browser.waitFor(
         "document.querySelector('[aria-label=\"项目图谱\"]') !== null",
-        "Claude cache Graph surface",
+        `${hostLabel} cache Graph surface`,
         30_000,
       );
       await browser.waitFor(
@@ -824,13 +892,13 @@ async function resumeInstalledAlpha(options, alpha, workbenchSurface) {
               .some((node) => node.getAttribute('data-graph-node-id') === expected
                 && node.getAttribute('data-selected') === 'true');
         })()`,
-        "exact alpha Graph focus through Claude cache",
+        `exact alpha Graph focus through ${hostLabel} cache`,
         30_000,
       );
       await browser.clickText('nav[aria-label="主要界面"] button', "知识库");
       await browser.waitFor(
         "document.querySelector('[aria-label=\"理解项目的五个阶段\"], [aria-label=\"文档正文\"]') !== null",
-        "Claude cache Wiki surface",
+        `${hostLabel} cache Wiki surface`,
         30_000,
       );
       await browser.evaluate(`(() => {
@@ -841,7 +909,7 @@ async function resumeInstalledAlpha(options, alpha, workbenchSurface) {
       })()`);
       await browser.waitFor(
         `document.querySelector('[data-testid="task-first-workbench"]')?.textContent?.includes(${JSON.stringify(alpha.finding.summary)}) === true`,
-        "Codex-created Task after Claude Graph and Wiki",
+        `Codex-created Task after ${hostLabel} Graph and Wiki`,
         30_000,
       );
       const returnedRoute = new URL(await browser.evaluate("location.href"));
@@ -1129,7 +1197,8 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
   const claudeUserHome = path.join(sandbox, "claude-user");
   const releasesRoot = path.join(sandbox, "releases");
   const marketplaceFacadeRoot = path.join(sandbox, "marketplace-facade");
-  const browserProfile = path.join(sandbox, "chrome-profile");
+  const codexBrowserProfile = path.join(sandbox, "chrome-profile-codex");
+  const claudeBrowserProfile = path.join(sandbox, "chrome-profile-claude");
   const repositoryRoot = await createRepository(path.join(sandbox, "repository"));
   const ambientRepositoryRoot = await createRepository(path.join(sandbox, "ambient-repository"));
   const differentCwd = path.join(sandbox, "not-the-repository");
@@ -1145,7 +1214,8 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
       mkdir(claudeUserHome, { recursive: true }),
       mkdir(releasesRoot, { recursive: true }),
       mkdir(marketplaceFacadeRoot, { recursive: true }),
-      mkdir(browserProfile, { recursive: true }),
+      mkdir(codexBrowserProfile, { recursive: true }),
+      mkdir(claudeBrowserProfile, { recursive: true }),
       mkdir(differentCwd, { recursive: true }),
     ]);
     let tarballPath;
@@ -1202,6 +1272,19 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
     await activeCodexPlugin(codexCli, differentCwd, codexEnv, v1Version);
     codexInstalledRoot = await realpath(codexInstall.installedPath);
     assert.equal(codexInstalledRoot.startsWith(`${await realpath(codexHome)}${path.sep}`), true);
+    assert.equal(
+      await fileSha256(path.join(codexInstalledRoot, "bin/understand-code.mjs")),
+      releases.v1.cliSha256,
+      "the official Codex add installedPath must contain the exact v1 bundled CLI bytes",
+    );
+    assert.deepEqual(
+      await readFile(path.join(codexInstalledRoot, "bin/dashboard-manifest.json")),
+      await readFile(path.join(
+        releasePluginRoot(releases.v1.root, "codex"),
+        "plugins/understand-code/bin/dashboard-manifest.json",
+      )),
+      "the official Codex add installedPath must contain the exact v1 Dashboard manifest",
+    );
     const codexList = await execBounded(codexCli, ["plugin", "list"], {
       cwd: differentCwd,
       env: codexEnv,
@@ -1252,6 +1335,25 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
       }),
       clientName: "codex-plugin-e2e",
     });
+    await resumeInstalledAlpha(
+      {
+        host: "codex",
+        installedRoot: codexInstalledRoot,
+        version: v1Version,
+        repositoryRoot,
+        cwd: repositoryRoot,
+        env: cleanHostEnvironment(codexUserHome, {
+          CODEX_HOME: codexHome,
+          GIT_DIR: path.join(ambientRepositoryRoot, ".git"),
+          GIT_WORK_TREE: ambientRepositoryRoot,
+        }),
+        clientName: "codex-plugin-e2e-workbench",
+      },
+      codexAlpha.result,
+      browserExecutable === null
+        ? undefined
+        : { browserExecutable, browserProfile: codexBrowserProfile },
+    );
     await expectRootFailure(
       codexAlpha.server,
       differentCwd,
@@ -1326,7 +1428,9 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
         clientName: "claude-plugin-e2e",
       },
       codexAlpha.result,
-      browserExecutable === null ? undefined : { browserExecutable, browserProfile },
+      browserExecutable === null
+        ? undefined
+        : { browserExecutable, browserProfile: claudeBrowserProfile },
     );
     assert.equal(
       (await stat(path.join(repositoryRoot, ".understand-code"))).isDirectory(),

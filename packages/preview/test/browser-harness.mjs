@@ -263,6 +263,35 @@ export async function launchBrowser({ executable, userDataDir, timeoutMs = DEFAU
     await withTimeout(loaded, `Chrome load ${safeUrl}`, timeoutMs);
   }
 
+  async function getCookies(urls) {
+    if (urls !== undefined) {
+      assert.equal(Array.isArray(urls), true, "cookie URLs must be an array");
+      for (const url of urls) {
+        assert.equal(typeof url, "string", "cookie URLs must be strings");
+        new URL(url);
+      }
+    }
+    const result = await command(
+      "Network.getCookies",
+      urls === undefined ? {} : { urls },
+      sessionId,
+    );
+    assert.equal(Array.isArray(result.cookies), true, "CDP Network.getCookies must return cookies");
+    return result.cookies.map((cookie) => {
+      assert.equal(typeof cookie.value, "string", "CDP cookies must include string values");
+      return {
+        name: cookie.name,
+        valueLength: cookie.value.length,
+        domain: cookie.domain,
+        path: cookie.path,
+        httpOnly: cookie.httpOnly,
+        secure: cookie.secure,
+        session: cookie.session,
+        sameSite: cookie.sameSite,
+      };
+    });
+  }
+
   async function click(selector) {
     return evaluate(`(() => {
       const element = document.querySelector(${JSON.stringify(selector)});
@@ -306,6 +335,7 @@ export async function launchBrowser({ executable, userDataDir, timeoutMs = DEFAU
     evaluate,
     waitFor,
     navigate,
+    getCookies,
     click,
     clickText,
     close,

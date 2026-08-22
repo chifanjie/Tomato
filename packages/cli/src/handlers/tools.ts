@@ -9,6 +9,9 @@ import {
   CheckChangeInputV1Schema,
   RecordVerificationInputV1Schema,
   UpdateTaskInputV1Schema,
+  classifyChangeCheckV1,
+  type ChangeCheckV1,
+  type ChangeCheckReadClassificationV1,
 } from "@understand-code/contracts";
 import {
   BuildTaskBriefInputV1Schema,
@@ -791,7 +794,11 @@ async function checkChange(argumentsValue: unknown, canonicalRoot: string) {
       : "stale";
   return CheckChangeOutputV1Schema.parse({
     isError: false,
-    content: [{ type: "text", text: "Change Check recorded." }],
+    content: [{
+      type: "text",
+      text:
+        "Change Check recorded as a legacy summary; empty findings are not clean evidence.",
+    }],
     structuredContent: {
       schemaVersion: 1,
       meta: successMeta(snapshot, freshness, elapsed(startedAt), {
@@ -1361,6 +1368,7 @@ type WorkbenchTraceResultLike = {
   readonly status: "ready" | "empty" | "stale" | "unavailable";
   readonly reason?: "not_published" | "invalid_projection" | "read_failed";
   readonly observedSnapshotId?: string;
+  readonly changeCheckClassification?: ChangeCheckReadClassificationV1;
   readonly changeCheck?: {
     readonly sourceArtifactId: string;
     readonly id: string;
@@ -1484,27 +1492,9 @@ const traceReader = (
     };
   }
 
-  const changeCheck = currentChangeCheckArtifact?.payload as {
-    readonly id: string;
-    readonly taskId: string;
-    readonly taskRevision: number;
-    readonly baselineSnapshotId: string;
-    readonly actualSnapshotId: string;
-    readonly generatedAt: string;
-    readonly findings: ReadonlyArray<{
-      readonly id: string;
-      readonly type:
-        | "planned_completed"
-        | "planned_partial"
-        | "unplanned_change"
-        | "possible_omission"
-        | "verification_gap"
-        | "cannot_determine";
-      readonly severity: "info" | "warning" | "error" | "critical";
-      readonly blocking: boolean;
-      readonly resolution?: { readonly kind: string };
-    }>;
-  } | undefined;
+  const changeCheck = currentChangeCheckArtifact?.payload as
+    | ChangeCheckV1
+    | undefined;
   const verificationRecords = (
     currentVerificationArtifact?.payload as
       | { readonly records: ReadonlyArray<{
@@ -1576,6 +1566,7 @@ const traceReader = (
     snapshotId: input.snapshotId,
     status: changeCheck === undefined && verificationRecords.length === 0 ? "empty" : "ready",
     ...(changeCheck === undefined ? {} : {
+      changeCheckClassification: classifyChangeCheckV1(changeCheck),
       changeCheck: {
         sourceArtifactId: currentChangeCheckArtifact!.artifactId,
         id: changeCheck.id,

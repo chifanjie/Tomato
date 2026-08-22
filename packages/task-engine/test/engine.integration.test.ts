@@ -416,7 +416,7 @@ async function expectContextReadyBundle(
 async function appendTrustedChangeCheck(
   store: ArtifactStore,
   taskId: string,
-  options: { blocking?: boolean } = {},
+  options: { blocking?: boolean; empty?: boolean } = {},
 ): Promise<ReadTaskBundleResult> {
   const current = await store.readTaskBundle(taskId);
   if (!("brief" in current.bundle)) {
@@ -462,7 +462,7 @@ async function appendTrustedChangeCheck(
     taskRevision: revision,
     baselineSnapshotId: manifest.baselineSnapshotId,
     actualSnapshotId: manifest.latestSnapshotId,
-    findings: [
+    findings: options.empty === true ? [] : [
       {
         id: findingId,
         type: "cannot_determine",
@@ -542,8 +542,11 @@ async function appendTrustedChangeCheck(
   const artifacts = buildTaskArtifacts({
     manifest,
     brief: current.bundle.brief,
-    claims: [...current.bundle.claims, findingClaim],
-    evidence,
+    claims:
+      options.empty === true
+        ? current.bundle.claims
+        : [...current.bundle.claims, findingClaim],
+    evidence: options.empty === true ? current.bundle.evidence : evidence,
     impactPaths: current.bundle.impactPaths,
     changeCheck,
     idempotencyRecords: records,
@@ -3418,6 +3421,294 @@ describe("TaskEngine persistent integration", () => {
     );
     expect(verified.task.status).toBe("verified");
   }, 10_000);
+
+  it("records an explicit boundary instead of an empty legacy Check and replays without analysis", async () => {
+    const { store } = await openStore();
+    let analysisCalls = 0;
+    const taskEngine = engine(store, {
+      contextProvider: {
+        async loadTaskContext() {
+          return {
+            graph: { ...graphFixture(), nodes: [], edges: [] },
+            existingFilePaths: [],
+            sourceEvidence: [],
+          };
+        },
+        async analyzeTaskChanges() {
+          analysisCalls += 1;
+          return { status: "complete", hunks: [], boundaries: [] };
+        },
+      },
+    });
+    const built = await taskEngine.buildTaskBrief(
+      buildInput("legacy-empty-writer"),
+      auth(),
+    );
+    expect(built.brief.plannedChanges).toEqual([]);
+    let revision = built.task.revision;
+    for (const [action, key] of [
+      [
+        { type: "confirm_goal", claimId: built.brief.goalClaimId },
+        "legacy-empty-confirm-goal",
+      ],
+      [
+        {
+          type: "confirm_acceptance_criteria",
+          claimIds: built.brief.acceptanceClaimIds,
+        },
+        "legacy-empty-confirm-acceptance",
+      ],
+      [
+        { type: "transition_status", to: "planned" },
+        "legacy-empty-planned",
+      ],
+      [
+        { type: "transition_status", to: "in_progress" },
+        "legacy-empty-progress",
+      ],
+    ] as const) {
+      const updated = await taskEngine.updateTask(
+        {
+          taskId: built.task.taskId,
+          action,
+          expectedRevision: revision,
+          idempotencyKey: key,
+          actor: ACTOR,
+        },
+        auth(),
+      );
+      revision = updated.task.revision;
+    }
+
+    const snapshot = RepositorySnapshotArtifactV1Schema.parse(
+      await repositorySnapshot(
+        "snapshot:legacy-empty",
+        "2026-07-29T09:00:00.000Z",
+        "a".repeat(40),
+      ),
+    );
+    const emptyPayload = { ...snapshot.payload, changes: [] };
+    await store.persistArtifact(
+      RepositorySnapshotArtifactV1Schema.parse({
+        ...snapshot,
+        contentDigest: sha256CanonicalJson(emptyPayload),
+        payload: emptyPayload,
+      }),
+    );
+    await publishPulseForSnapshot(
+      store,
+      "snapshot:legacy-empty",
+      "a".repeat(40),
+    );
+    const captured = await taskEngine.updateTask(
+      {
+        taskId: built.task.taskId,
+        action: { type: "transition_status", to: "check_required" },
+        expectedRevision: revision,
+        idempotencyKey: "legacy-empty-check-required",
+        actor: ACTOR,
+      },
+      auth(),
+    );
+    const checkInput = {
+      taskId: built.task.taskId,
+      actualSnapshotId: "snapshot:legacy-empty",
+      includeWorktree: true as const,
+      expectedRevision: captured.task.revision,
+      idempotencyKey: "legacy-empty-check",
+      actor: ACTOR,
+    };
+    const checked = await taskEngine.checkChange(
+      checkInput,
+      auth(["task:update"]),
+    );
+    expect(checked.changeCheckClassification).toEqual({
+      profile: "legacy_summary",
+      emptyFindingsAreClean: false,
+    });
+    expect(checked.changeCheck.findings).toEqual([
+      expect.objectContaining({
+        type: "cannot_determine",
+        blocking: true,
+        actualChangeIds: [],
+      }),
+    ]);
+    const persisted = await store.readTaskBundle(built.task.taskId);
+    if (!("brief" in persisted.bundle)) {
+      throw new TypeError("The checked Task must remain contextual.");
+    }
+    const boundary = persisted.bundle.evidence.find((evidence) =>
+      checked.changeCheck.findings[0]!.evidenceIds.includes(evidence.id),
+    );
+    expect(boundary).toMatchObject({
+      kind: "analysis_boundary",
+      epistemicStatus: "unknown",
+      observedAtSnapshotId: "snapshot:legacy-empty",
+    });
+    expect(analysisCalls).toBe(1);
+
+    const replay = await taskEngine.checkChange(
+      checkInput,
+      auth(["task:update"]),
+    );
+    expect(replay).toEqual({
+      ...checked,
+      mutation: { ...checked.mutation, idempotentReplay: true },
+    });
+    expect(analysisCalls).toBe(1);
+  });
+
+  it("rejects empty legacy Checks at both Verification lifecycle gates", async () => {
+    const { store } = await openStore();
+    const taskEngine = engine(store);
+    const built = await taskEngine.buildTaskBrief(
+      buildInput("legacy-empty-lifecycle"),
+      auth(),
+    );
+    let revision = built.task.revision;
+    for (const [action, key] of [
+      [
+        { type: "confirm_goal", claimId: built.brief.goalClaimId },
+        "legacy-gate-confirm-goal",
+      ],
+      [
+        {
+          type: "confirm_acceptance_criteria",
+          claimIds: built.brief.acceptanceClaimIds,
+        },
+        "legacy-gate-confirm-acceptance",
+      ],
+      [
+        {
+          type: "confirm_plan",
+          plannedChangeIds: built.brief.plannedChanges.map((change) => change.id),
+        },
+        "legacy-gate-confirm-plan",
+      ],
+      [
+        { type: "transition_status", to: "planned" },
+        "legacy-gate-planned",
+      ],
+      [
+        { type: "transition_status", to: "in_progress" },
+        "legacy-gate-progress",
+      ],
+      [
+        { type: "transition_status", to: "check_required" },
+        "legacy-gate-check-required",
+      ],
+    ] as const) {
+      const updated = await taskEngine.updateTask(
+        {
+          taskId: built.task.taskId,
+          action,
+          expectedRevision: revision,
+          idempotencyKey: key,
+          actor: ACTOR,
+        },
+        auth(),
+      );
+      revision = updated.task.revision;
+    }
+    const checked = await appendTrustedChangeCheck(
+      store,
+      built.task.taskId,
+      { empty: true },
+    );
+    const checkedRevision = checked.bundle.manifest.revision;
+    await expect(
+      taskEngine.updateTask(
+        {
+          taskId: built.task.taskId,
+          action: { type: "transition_status", to: "verification_required" },
+          expectedRevision: checkedRevision,
+          idempotencyKey: "legacy-empty-enter-verification",
+          actor: ACTOR,
+        },
+        auth(),
+      ),
+    ).rejects.toMatchObject({
+      code: "task_gate_unsatisfied",
+      details: {
+        failedGuards: expect.arrayContaining([
+          expect.objectContaining({ code: "current_check_required" }),
+        ]),
+      },
+    });
+    expect(
+      (await store.readTaskBundle(built.task.taskId)).bundle.manifest.revision,
+    ).toBe(checkedRevision);
+
+    if (!("brief" in checked.bundle)) {
+      throw new TypeError("The checked Task must remain contextual.");
+    }
+    const check = checked.bundle.changeChecks.at(-1)!;
+    const entry = checked.bundle.brief.verificationPlan[0]!;
+    const verification = VerificationRecordV1Schema.parse({
+      id: "verification:legacy-empty-history",
+      taskId: built.task.taskId,
+      verificationPlanEntryId: entry.id,
+      attempt: 1,
+      kind: entry.method,
+      status: "passed",
+      command: "pnpm test",
+      exitCode: 0,
+      durationMs: 1,
+      summary: "Historical verification fixture passed.",
+      claimIds: entry.acceptanceClaimIds,
+      snapshotId: checked.bundle.manifest.latestSnapshotId,
+      recordedAt: checked.bundle.manifest.updatedAt,
+      actor: ACTOR,
+    });
+    const historicalRead: ReadTaskBundleResult = {
+      ...checked,
+      bundle: {
+        ...checked.bundle,
+        manifest: TaskManifestV1Schema.parse({
+          ...checked.bundle.manifest,
+          status: "verification_required",
+          currentChangeCheckId: check.id,
+          currentChangeCheckRevision: check.taskRevision,
+        }),
+        verificationRecords: [verification],
+      },
+    };
+    let readCalls = 0;
+    let persistCalls = 0;
+    const transitionStore = {
+      worktreeId: store.worktreeId,
+      async readTaskBundle() {
+        readCalls += 1;
+        return historicalRead;
+      },
+      async persistTaskBundle() {
+        persistCalls += 1;
+      },
+    } as unknown as ArtifactStore;
+    await expect(
+      applyTaskUpdate(
+        transitionStore,
+        {
+          taskId: built.task.taskId,
+          action: { type: "transition_status", to: "verified" },
+          expectedRevision: checkedRevision,
+          idempotencyKey: "legacy-empty-historical-verified",
+          actor: ACTOR,
+        },
+        () => FIXED_NOW,
+      ),
+    ).rejects.toMatchObject({
+      code: "task_gate_unsatisfied",
+      details: {
+        failedGuards: expect.arrayContaining([
+          expect.objectContaining({ code: "current_check_required" }),
+        ]),
+      },
+    });
+    expect(readCalls).toBe(1);
+    expect(persistCalls).toBe(0);
+    expect(historicalRead.bundle.manifest.revision).toBe(checkedRevision);
+  });
 
   it("does not consume a same-file hunk for a path-only planned change", async () => {
     const { store } = await openStore();

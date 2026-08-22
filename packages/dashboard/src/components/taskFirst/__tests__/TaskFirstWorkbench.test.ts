@@ -135,6 +135,10 @@ describe("TaskFirstWorkbench", () => {
     }));
 
     expect(html).toContain("The planned change is present.");
+    expect(html).toContain('data-testid="task-change-check-classification"');
+    expect(html).toContain('data-profile="legacy_summary"');
+    expect(html).toContain('data-empty-findings-are-clean="false"');
+    expect(html).toContain("Empty findings are not clean evidence.");
     const verificationHtml = renderToStaticMarkup(createElement(TaskFirstWorkbench, {
       route: { ...route, section: "verification_plan" },
       page: { ...page, section: "verification_plan" },

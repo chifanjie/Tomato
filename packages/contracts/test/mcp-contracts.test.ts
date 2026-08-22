@@ -619,6 +619,10 @@ describe("task workflow MCP success outputs", () => {
   it("binds check_change Check, mutation, and Snapshot identity", () => {
     const result = {
       changeCheck: referenceChangeCheck,
+      changeCheckClassification: {
+        profile: "legacy_summary",
+        emptyFindingsAreClean: false,
+      },
       mutation: mutationResult(
         referenceChangeCheck.taskId,
         referenceChangeCheck.taskRevision,
@@ -627,6 +631,12 @@ describe("task workflow MCP success outputs", () => {
     const output = successOutput(result);
 
     expect(CheckChangeOutputV1Schema.safeParse(output).success).toBe(true);
+    const { changeCheckClassification: _classification, ...withoutClassification } =
+      result;
+    expect(
+      CheckChangeOutputV1Schema.safeParse(successOutput(withoutClassification))
+        .success,
+    ).toBe(false);
     expect(
       CheckChangeOutputV1Schema.safeParse({
         ...output,

@@ -327,6 +327,29 @@ export const ChangeCheckV1Schema = z.strictObject({
 
 export type ChangeCheckV1 = z.infer<typeof ChangeCheckV1Schema>;
 
+/**
+ * Ephemeral reader classification for the compatible legacy Change Check.
+ * This value must never be injected into the persisted payload because doing
+ * so would rewrite historical bytes and their content digest.
+ */
+export const ChangeCheckReadClassificationV1Schema = z.strictObject({
+  profile: z.literal("legacy_summary"),
+  emptyFindingsAreClean: z.literal(false),
+});
+
+export type ChangeCheckReadClassificationV1 = z.infer<
+  typeof ChangeCheckReadClassificationV1Schema
+>;
+
+export function classifyChangeCheckV1(
+  _check: ChangeCheckV1,
+): ChangeCheckReadClassificationV1 {
+  return {
+    profile: "legacy_summary",
+    emptyFindingsAreClean: false,
+  };
+}
+
 export const ChangeCheckArtifactV1Schema = createArtifactEnvelopeV1Schema(
   "change_check",
   ChangeCheckV1Schema,

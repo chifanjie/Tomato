@@ -328,6 +328,14 @@ describe("MCP lifecycle and real handlers", () => {
       },
     });
     const checked = CheckChangeOutputV1Schema.parse(harness.response(7).result);
+    expect(checked.structuredContent.result.changeCheckClassification).toEqual({
+      profile: "legacy_summary",
+      emptyFindingsAreClean: false,
+    });
+    expect(checked.content).toEqual([{
+      type: "text",
+      text: "Change Check recorded as a legacy summary; empty findings are not clean evidence.",
+    }]);
     expect(checked.structuredContent.result.changeCheck.taskId).toBe(taskId);
     expect(checked.structuredContent.result.changeCheck.taskRevision).toBe(
       checked.structuredContent.result.mutation.revision,
@@ -511,6 +519,10 @@ describe("MCP lifecycle and real handlers", () => {
     expect(tracePayload).toMatchObject({
       surface: "trace",
       status: "ready",
+      changeCheckClassification: {
+        profile: "legacy_summary",
+        emptyFindingsAreClean: false,
+      },
       changeCheck: {
         taskId,
       },

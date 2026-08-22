@@ -9,6 +9,7 @@ import {
   TaskManifestV1Schema,
   TaskNormalStatusV1Schema,
   TaskOperationReceiptV1Schema,
+  classifyChangeCheckV1,
   isTaskOrdinaryTransitionV1,
   type ChangeCheckV1,
   type ClaimV1,
@@ -331,6 +332,16 @@ function latestCheck(data: MutableTaskData): ChangeCheckV1 | undefined {
   )[0];
 }
 
+function isLegacyEmptyChangeCheck(
+  check: ChangeCheckV1 | undefined,
+): boolean {
+  return (
+    check !== undefined &&
+    classifyChangeCheckV1(check).profile === "legacy_summary" &&
+    check.findings.length === 0
+  );
+}
+
 function latestVerification(
   records: readonly VerificationRecordV1[],
   planEntryId: string,
@@ -479,17 +490,20 @@ function applyTransition(
   }
   if (from === "check_required" && to === "verification_required") {
     const check = latestCheck(data);
+    const legacyEmptyCheck = isLegacyEmptyChangeCheck(check);
     const unresolved = check?.findings.find(
       (finding) => finding.blocking && finding.resolution === undefined,
     );
     if (
       check === undefined ||
       check.actualSnapshotId !== data.manifest.latestSnapshotId ||
+      legacyEmptyCheck ||
       unresolved !== undefined
     ) {
       gateUnsatisfied(data.manifest, to, [
         ...(check === undefined ||
-        check.actualSnapshotId !== data.manifest.latestSnapshotId
+        check.actualSnapshotId !== data.manifest.latestSnapshotId ||
+        legacyEmptyCheck
           ? [{ code: "current_check_required" }]
           : []),
         ...(unresolved === undefined
@@ -565,7 +579,8 @@ function applyTransition(
     if (
       check === undefined ||
       data.manifest.currentChangeCheckId !== check.id ||
-      check.actualSnapshotId !== data.manifest.latestSnapshotId
+      check.actualSnapshotId !== data.manifest.latestSnapshotId ||
+      isLegacyEmptyChangeCheck(check)
     ) {
       guards.push({ code: "current_check_required" });
     }

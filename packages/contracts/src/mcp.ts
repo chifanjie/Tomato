@@ -17,6 +17,7 @@ export type {
 
 import {
   ChangeCheckV1Schema,
+  ChangeCheckReadClassificationV1Schema,
   CheckChangeInputV1Schema,
   ImpactPathV1Schema,
   RecordVerificationInputV1Schema,
@@ -1031,6 +1032,7 @@ export const CheckChangeOutputV1Schema =
   createMcpToolSuccessResultV1Schema(
     z.strictObject({
       changeCheck: ChangeCheckV1Schema,
+      changeCheckClassification: ChangeCheckReadClassificationV1Schema,
       mutation: MutationResultV1Schema,
     }),
   ).superRefine((output, context) => {

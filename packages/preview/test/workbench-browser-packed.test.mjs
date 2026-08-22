@@ -728,6 +728,14 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       actor,
     }, CheckChangeOutputV1Schema);
     taskRevision = checked.structuredContent.result.mutation.revision;
+    assert.deepEqual(checked.structuredContent.result.changeCheckClassification, {
+      profile: "legacy_summary",
+      emptyFindingsAreClean: false,
+    });
+    assert.deepEqual(checked.content, [{
+      type: "text",
+      text: "Change Check recorded as a legacy summary; empty findings are not clean evidence.",
+    }]);
     const findingDiagnostics = checked.structuredContent.result.changeCheck.findings.map((candidate) => ({
       type: candidate.type,
       blocking: candidate.blocking,
@@ -950,6 +958,22 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     );
 
     await browser.waitFor(bodyContains(finding.summary), "published Change Check finding");
+    assert.deepEqual(
+      await browser.evaluate(`(() => {
+        const marker = document.querySelector('[data-testid="task-change-check-classification"]');
+        return marker === null ? null : {
+          profile: marker.getAttribute('data-profile'),
+          emptyFindingsAreClean: marker.getAttribute('data-empty-findings-are-clean'),
+          text: marker.textContent,
+        };
+      })()`),
+      {
+        profile: "legacy_summary",
+        emptyFindingsAreClean: "false",
+        text: "Legacy summary / 旧版摘要。 Empty findings are not clean evidence. / 空 findings 不代表变更已被完整证明为 clean。",
+      },
+      "the React Workbench must not present a legacy summary as clean evidence",
+    );
     assert.equal(
       await browser.evaluate(bodyContains(changedSnapshotId)),
       true,
@@ -999,6 +1023,10 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     assert.equal(workbenchTrace.statusCode, 200);
     assert.equal(workbenchTrace.payload.status, "ready");
     assert.equal(workbenchTrace.payload.snapshotId, changedSnapshotId);
+    assert.deepEqual(workbenchTrace.payload.changeCheckClassification, {
+      profile: "legacy_summary",
+      emptyFindingsAreClean: false,
+    });
     assert.equal(workbenchTrace.payload.verification.disposition, "externally_reported");
     assert.equal(workbenchTrace.payload.verification.requiredCount, requiredVerificationEntries.length);
     assert.equal(workbenchTrace.payload.verification.passedCount, requiredVerificationEntries.length);

@@ -12,7 +12,9 @@ import {
   TaskManifestV1Schema,
   TaskOperationReceiptV1Schema,
   VerificationRecordV1Schema,
+  classifyChangeCheckV1,
   type ChangeCheckV1,
+  type ChangeCheckReadClassificationV1,
   type ChangeFindingV1,
   type CheckChangeInputV1,
   type ClaimV1,
@@ -43,6 +45,7 @@ import { compareUnicodeCodeUnits } from "./stable-order.js";
 
 export interface ChangeCheckMutationOutcome {
   readonly changeCheck: ChangeCheckV1;
+  readonly changeCheckClassification: ChangeCheckReadClassificationV1;
   readonly mutation: MutationResultV1;
 }
 
@@ -198,6 +201,7 @@ function taskReplay(
     ).result;
     return {
       changeCheck: result.changeCheck,
+      changeCheckClassification: classifyChangeCheckV1(result.changeCheck),
       mutation: { ...result.mutation, idempotentReplay: true },
     };
   }
@@ -490,6 +494,23 @@ function makeFindings(
       baseClaimIds: [claimForPlannedChange(data, [])],
       hunks: [],
       boundaryReason: "Repository Snapshot capture reported an error.",
+    });
+  }
+  if (draftFindings.length === 0) {
+    draftFindings.push({
+      type: "cannot_determine",
+      severity: "error",
+      blocking: true,
+      summary:
+        "The legacy Change Check cannot establish clean evidence from an empty finding set.",
+      plannedChangeIds: [],
+      actualChangeIds: actual.changes
+        .map((change) => change.id)
+        .sort(compareUnicodeCodeUnits),
+      baseClaimIds: [claimForPlannedChange(data, [])],
+      hunks: [],
+      boundaryReason:
+        "Legacy Change Check summaries do not include the five evidence-backed completeness dimensions.",
     });
   }
   const findings: ChangeFindingV1[] = [];
@@ -802,12 +823,16 @@ export async function checkTaskChange(
     event,
     artifactIds(current, data.manifest.taskId, "change_check"),
   );
-  const result: ChangeCheckMutationOutcome = { changeCheck, mutation };
+  const receiptResult = { changeCheck, mutation };
+  const result: ChangeCheckMutationOutcome = {
+    ...receiptResult,
+    changeCheckClassification: classifyChangeCheckV1(changeCheck),
+  };
   const journal = appendRecord(
     current,
     manifest,
     event,
-    result,
+    receiptResult,
     "check_change",
     input.actor,
     input.idempotencyKey,

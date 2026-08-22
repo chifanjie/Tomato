@@ -160,6 +160,13 @@ describe("workbench runtime session", () => {
     );
     const task = await fetch(`http://127.0.0.1:${legacy.port}/tasks/${taskId}`, { headers });
     expect(await task.text()).toContain("/__workbench/app.js");
+    const embeddedApp = await fetch(
+      `http://127.0.0.1:${legacy.port}/__workbench/app.js`,
+      { headers },
+    );
+    const embeddedAppText = await embeddedApp.text();
+    expect(embeddedAppText).toContain("legacy summary findings are not clean evidence");
+    expect(embeddedAppText).toContain("Empty findings are clean evidence");
     const reactAsset = await fetch(
       `http://127.0.0.1:${legacy.port}/assets/index-test.js`,
       { headers },
@@ -646,6 +653,10 @@ describe("workbench runtime session", () => {
           worktreeId: input.worktreeId,
           snapshotId: input.snapshotId,
           status: "ready" as const,
+          changeCheckClassification: {
+            profile: "legacy_summary" as const,
+            emptyFindingsAreClean: false as const,
+          },
           changeCheck: {
             sourceArtifactId: "artifact:change_check:task",
             id: "change-check:task:1",
@@ -708,6 +719,10 @@ describe("workbench runtime session", () => {
     await expect(trace.json()).resolves.toMatchObject({
       surface: "trace",
       status: "ready",
+      changeCheckClassification: {
+        profile: "legacy_summary",
+        emptyFindingsAreClean: false,
+      },
       verification: {
         disposition: "externally_reported",
         records: [

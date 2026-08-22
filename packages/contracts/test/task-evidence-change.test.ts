@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ChangeCheckArtifactV1Schema,
+  ChangeCheckReadClassificationV1Schema,
   ChangeCheckV1Schema,
   ChangeFindingV1Schema,
   CheckChangeInputV1Schema,
@@ -11,6 +12,7 @@ import {
   RecordVerificationInputV1Schema,
   VerificationArtifactV1Schema,
   VerificationRecordV1Schema,
+  classifyChangeCheckV1,
 } from "../src/change.js";
 import {
   ClaimLedgerArtifactV1Schema,
@@ -1088,6 +1090,32 @@ describe("Impact, Change Check, and Verification V1 contracts", () => {
         generatedAt: timestamp,
       }).success,
     ).toBe(false);
+  });
+
+  it("classifies legacy Change Checks without mutating persisted bytes", () => {
+    const check = ChangeCheckV1Schema.parse({
+      schemaVersion: 1,
+      id: "change-check-legacy-empty",
+      taskId,
+      taskRevision: baseManifest.revision,
+      baselineSnapshotId: "snapshot-1",
+      actualSnapshotId: "snapshot-2",
+      findings: [],
+      generatedAt: timestamp,
+    });
+    const before = JSON.stringify(check);
+
+    expect(classifyChangeCheckV1(check)).toEqual({
+      profile: "legacy_summary",
+      emptyFindingsAreClean: false,
+    });
+    expect(
+      ChangeCheckReadClassificationV1Schema.safeParse(
+        classifyChangeCheckV1(check),
+      ).success,
+    ).toBe(true);
+    expect(JSON.stringify(check)).toBe(before);
+    expect(check).not.toHaveProperty("profile");
   });
 
   it("makes Worktree inclusion mandatory for P0 Change Check", () => {

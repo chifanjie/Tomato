@@ -4,6 +4,10 @@ import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
 import {
+  ChangeCheckReadClassificationV1Schema,
+  type ChangeCheckReadClassificationV1,
+} from "@understand-code/contracts";
+import {
   CursorV1Schema,
   GetTaskBriefInputV1Schema,
   GetTaskBriefResultV1Schema,
@@ -242,6 +246,8 @@ export interface WorkbenchTraceResultV1 {
   readonly reason?: WorkbenchTraceUnavailableReasonV1;
   /** Present only when the Task bundle is newer than the session snapshot. */
   readonly observedSnapshotId?: string;
+  /** Reader-only semantics for the compatible persisted Change Check. */
+  readonly changeCheckClassification?: ChangeCheckReadClassificationV1;
   readonly changeCheck?: WorkbenchTraceChangeCheckV1;
   readonly verification: {
     readonly disposition: "externally_reported";
@@ -1303,6 +1309,8 @@ const WORKBENCH_APP_SCRIPT = String.raw`(() => {
     if (payload.changeCheck) {
       appendItem([
         ['Change Check', payload.changeCheck.id],
+        ['Check profile', payload.changeCheckClassification.profile],
+        ['Empty findings are clean evidence', payload.changeCheckClassification.emptyFindingsAreClean ? 'Yes' : 'No — legacy summary findings are not clean evidence'],
         ['Baseline snapshot', payload.changeCheck.baselineSnapshotId],
         ['Actual snapshot', payload.changeCheck.actualSnapshotId],
         ['Generated at', payload.changeCheck.generatedAt],
@@ -1661,6 +1669,13 @@ function parseTraceFinding(value: unknown): WorkbenchTraceFindingV1 | undefined 
   return value as unknown as WorkbenchTraceFindingV1;
 }
 
+function parseTraceChangeCheckClassification(value: unknown):
+  | ChangeCheckReadClassificationV1
+  | undefined {
+  const parsed = ChangeCheckReadClassificationV1Schema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
 function parseTraceChangeCheck(value: unknown): WorkbenchTraceChangeCheckV1 | undefined {
   if (
     !isRecord(value) ||
@@ -1781,6 +1796,7 @@ function parseTraceResult(
       "status",
       "reason",
       "observedSnapshotId",
+      "changeCheckClassification",
       "changeCheck",
       "verification",
     ]) ||
@@ -1836,6 +1852,15 @@ function parseTraceResult(
   if (value.changeCheck !== undefined && check === undefined) {
     throw new WorkbenchSessionError("session_invalid", "change check trace is invalid");
   }
+  const checkClassification = value.changeCheckClassification === undefined
+    ? undefined
+    : parseTraceChangeCheckClassification(value.changeCheckClassification);
+  if (
+    (value.changeCheckClassification !== undefined && checkClassification === undefined) ||
+    (check === undefined) !== (checkClassification === undefined)
+  ) {
+    throw new WorkbenchSessionError("session_invalid", "change check trace classification is invalid");
+  }
   if (status === "empty" && (check !== undefined || records.length > 0)) {
     throw new WorkbenchSessionError("session_invalid", "empty trace cannot contain records");
   }
@@ -1866,6 +1891,9 @@ function parseTraceResult(
   }
   return {
     ...(value as unknown as WorkbenchTraceResultV1),
+    ...(checkClassification === undefined ? {} : {
+      changeCheckClassification: checkClassification,
+    }),
     ...(check === undefined ? {} : { changeCheck: check }),
     verification: {
       disposition: "externally_reported",

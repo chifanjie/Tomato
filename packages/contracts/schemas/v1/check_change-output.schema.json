@@ -355,6 +355,24 @@
               ],
               "additionalProperties": false
             },
+            "changeCheckClassification": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "const": "legacy_summary"
+                },
+                "emptyFindingsAreClean": {
+                  "type": "boolean",
+                  "const": false
+                }
+              },
+              "required": [
+                "profile",
+                "emptyFindingsAreClean"
+              ],
+              "additionalProperties": false
+            },
             "mutation": {
               "type": "object",
               "properties": {
@@ -396,6 +414,7 @@
           },
           "required": [
             "changeCheck",
+            "changeCheckClassification",
             "mutation"
           ],
           "additionalProperties": false

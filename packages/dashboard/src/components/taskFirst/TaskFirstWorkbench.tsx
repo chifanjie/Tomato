@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { classifyChangeCheckV1 } from "@understand-code/contracts";
 import type {
   ChangeCheckV1,
   RepoPulseStatusV1,
@@ -306,6 +307,7 @@ function ChangeCheckCard({
   const resolvedStatus = check ? "ready" : status;
   const findings = check?.findings ?? [];
   const blocking = findings.filter((finding) => finding.blocking).length;
+  const classification = check ? classifyChangeCheckV1(check) : undefined;
   return (
     <section className="mb-5 rounded-md border border-border-subtle bg-elevated/20 p-4" data-testid="task-change-check">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -326,6 +328,15 @@ function ChangeCheckCard({
             <div><dt>Findings</dt><dd className="mt-1 text-text-primary">{findings.length}</dd></div>
             <div><dt>Blocking</dt><dd className="mt-1 text-text-primary">{blocking}</dd></div>
           </dl>
+          <div
+            className="mt-4 rounded border border-border-medium bg-surface/60 px-3 py-2 text-sm text-text-secondary"
+            data-testid="task-change-check-classification"
+            data-profile={classification?.profile}
+            data-empty-findings-are-clean={String(classification?.emptyFindingsAreClean)}
+          >
+            <span className="font-semibold text-text-primary">Legacy summary / 旧版摘要。</span>{" "}
+            Empty findings are not clean evidence. / 空 findings 不代表变更已被完整证明为 clean。
+          </div>
           {findings.length > 0 ? (
             <ul className="mt-4 space-y-2" aria-label="Change Check findings" data-testid="task-change-findings">
               {findings.map((finding) => {

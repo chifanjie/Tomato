@@ -47,9 +47,12 @@ const INITIAL_EXTRA_SOURCE =
   "export function extra() { return 'extra-before'; }\n";
 const ADDED_SOURCE =
   "export function added() { return 'added-unplanned'; }\n";
+const UNTRACKED_SOURCE =
+  "export function untrackedAdded() { return 'untracked-ready'; }\n";
 const FOO_NODE_ID = "function:src/index.ts:foo";
 const BAR_NODE_ID = "function:src/index.ts:bar";
 const ADDED_NODE_ID = "function:src/added.ts:added";
+const UNTRACKED_NODE_ID = "function:src/untracked.ts:untrackedAdded";
 
 function digest(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -596,6 +599,388 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
 
     mcp.stdin.end();
     assert.deepEqual(await waitForExit(mcp, "mismatch repository MCP EOF"), [0, null]);
+    assert.equal(output.stderr.join(""), "");
+    mcp = null;
+
+    repositoryRoot = await createRepositoryFixture();
+    repositoryRoots.push(repositoryRoot);
+    lifecycleEnv = cleanMcpEnvironment(home, repositoryRoot);
+    sourcePath = path.join(repositoryRoot, "src/index.ts");
+    const untrackedPath = path.join(repositoryRoot, "src/untracked.ts");
+    mcp = spawn(managedWrapper, ["--root", repositoryRoot], {
+      cwd: installDirectory,
+      env: lifecycleEnv,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    output = collectMessages(mcp);
+    await initializeMcp(
+      mcp,
+      output,
+      "preview-workbench-browser-untracked",
+      baseVersion,
+    );
+    requestId = 2;
+    const untrackedInitialRefresh = await callTool(
+      mcp,
+      output,
+      requestId++,
+      "refresh_index",
+      {
+        mode: "full",
+        idempotencyKey: "preview-workbench-browser-untracked-initial-refresh",
+        actor,
+      },
+      RefreshIndexOutputV1Schema,
+    );
+    const untrackedInitialSnapshotId =
+      untrackedInitialRefresh.structuredContent.meta.sourceSnapshotId;
+    const untrackedBuilt = await callTool(
+      mcp,
+      output,
+      requestId++,
+      "build_task_brief",
+      {
+        task: "Change the foo function behavior.",
+        expectedRevision: 0,
+        idempotencyKey: "preview-workbench-browser-untracked-brief",
+        actor,
+        scope: ["src/index.ts"],
+        maxCandidates: 1,
+      },
+      BuildTaskBriefOutputV1Schema,
+    );
+    const untrackedTaskId = untrackedBuilt.structuredContent.result.task.taskId;
+    const untrackedBrief = untrackedBuilt.structuredContent.result.brief;
+    assert.equal(untrackedBrief.plannedChanges.length, 1);
+    const untrackedFooPlan = untrackedBrief.plannedChanges[0];
+    assert.equal(untrackedFooPlan.filePath, "src/index.ts");
+    assert.equal(untrackedFooPlan.symbolId, FOO_NODE_ID);
+    assert.equal(
+      untrackedBrief.plannedChanges.some(
+        (change) => change.filePath === "src/untracked.ts",
+      ),
+      false,
+      "the Brief must not plan a file that does not exist yet",
+    );
+    let untrackedRevision =
+      untrackedBuilt.structuredContent.result.task.revision;
+    const updateUntrackedTask = async (action, idempotencyKey) => {
+      const updated = await callTool(
+        mcp,
+        output,
+        requestId++,
+        "update_task",
+        {
+          taskId: untrackedTaskId,
+          action,
+          expectedRevision: untrackedRevision,
+          idempotencyKey,
+          actor,
+        },
+        UpdateTaskOutputV1Schema,
+      );
+      untrackedRevision = updated.structuredContent.result.mutation.revision;
+      return updated;
+    };
+    await updateUntrackedTask(
+      { type: "confirm_goal", claimId: untrackedBrief.goalClaimId },
+      "preview-workbench-browser-untracked-confirm-goal",
+    );
+    await updateUntrackedTask(
+      {
+        type: "confirm_acceptance_criteria",
+        claimIds: untrackedBrief.acceptanceClaimIds,
+      },
+      "preview-workbench-browser-untracked-confirm-acceptance",
+    );
+    await updateUntrackedTask(
+      {
+        type: "confirm_plan",
+        plannedChangeIds: untrackedBrief.plannedChanges.map(
+          (change) => change.id,
+        ),
+      },
+      "preview-workbench-browser-untracked-confirm-plan",
+    );
+    await updateUntrackedTask(
+      { type: "transition_status", to: "planned" },
+      "preview-workbench-browser-untracked-planned",
+    );
+    await updateUntrackedTask(
+      { type: "transition_status", to: "in_progress" },
+      "preview-workbench-browser-untracked-in-progress",
+    );
+
+    await Promise.all([
+      writeFile(sourcePath, FOO_ONLY_SOURCE, "utf8"),
+      writeFile(untrackedPath, UNTRACKED_SOURCE, "utf8"),
+    ]);
+    assert.equal(
+      (await git(repositoryRoot, ["diff", "--cached", "--name-only"]))
+        .stdout,
+      "",
+      "the untracked vertical must not stage either changed path",
+    );
+    assert.equal(
+      (await git(repositoryRoot, ["status", "--porcelain", "--untracked-files=all"]))
+        .stdout,
+      " M src/index.ts\n?? src/untracked.ts\n",
+      "the real repository must contain exactly one unstaged edit and one untracked add",
+    );
+    const untrackedChangedRefresh = await callTool(
+      mcp,
+      output,
+      requestId++,
+      "refresh_index",
+      {
+        mode: "full",
+        expectedSourceSnapshotId: untrackedInitialSnapshotId,
+        idempotencyKey: "preview-workbench-browser-untracked-changed-refresh",
+        actor,
+      },
+      RefreshIndexOutputV1Schema,
+    );
+    const untrackedChangedSnapshotId =
+      untrackedChangedRefresh.structuredContent.meta.sourceSnapshotId;
+    const untrackedSnapshotArtifact =
+      RepositorySnapshotArtifactV1Schema.parse(JSON.parse(await readFile(
+        path.join(
+          repositoryRoot,
+          ".understand-code",
+          "snapshots",
+          `${untrackedChangedSnapshotId}.json`,
+        ),
+        "utf8",
+      )));
+    assert.equal(untrackedSnapshotArtifact.payload.captureStatus, "complete");
+    assert.equal(untrackedSnapshotArtifact.payload.changes.length, 2);
+    const untrackedFooChange =
+      untrackedSnapshotArtifact.payload.changes.find(
+        (change) => change.path === "src/index.ts",
+      );
+    const untrackedAddedChange =
+      untrackedSnapshotArtifact.payload.changes.find(
+        (change) => change.path === "src/untracked.ts",
+      );
+    assert.deepEqual(untrackedFooChange, {
+      id: untrackedFooChange?.id,
+      path: "src/index.ts",
+      source: "unstaged",
+      kind: "modified",
+      contentDigest: contentDigest(Buffer.from(FOO_ONLY_SOURCE, "utf8")),
+    });
+    assert.deepEqual(untrackedAddedChange, {
+      id: untrackedAddedChange?.id,
+      path: "src/untracked.ts",
+      source: "untracked",
+      kind: "added",
+      contentDigest: contentDigest(Buffer.from(UNTRACKED_SOURCE, "utf8")),
+    });
+
+    await updateUntrackedTask(
+      { type: "transition_status", to: "check_required" },
+      "preview-workbench-browser-untracked-check-required",
+    );
+    const untrackedChecked = await callTool(
+      mcp,
+      output,
+      requestId++,
+      "check_change",
+      {
+        taskId: untrackedTaskId,
+        actualSnapshotId: untrackedChangedSnapshotId,
+        includeWorktree: true,
+        expectedRevision: untrackedRevision,
+        idempotencyKey: "preview-workbench-browser-untracked-check",
+        actor,
+      },
+      CheckChangeOutputV1Schema,
+    );
+    untrackedRevision =
+      untrackedChecked.structuredContent.result.mutation.revision;
+    const untrackedFindings =
+      untrackedChecked.structuredContent.result.changeCheck.findings;
+    const untrackedCompleted = untrackedFindings.filter(
+      (finding) => finding.type === "planned_completed",
+    );
+    const untrackedUnplanned = untrackedFindings.filter(
+      (finding) => finding.type === "unplanned_change",
+    );
+    assert.equal(untrackedCompleted.length, 1);
+    assert.equal(untrackedUnplanned.length, 1);
+    assert.equal(untrackedFindings.length, 2);
+    const untrackedFooFinding = untrackedCompleted[0];
+    const untrackedAddedFinding = untrackedUnplanned[0];
+    assert.deepEqual(untrackedFooFinding.plannedChangeIds, [untrackedFooPlan.id]);
+    assert.deepEqual(untrackedFooFinding.actualChangeIds, [untrackedFooChange.id]);
+    assert.equal(untrackedFooFinding.blocking, false);
+    assert.deepEqual(untrackedAddedFinding.plannedChangeIds, []);
+    assert.deepEqual(
+      untrackedAddedFinding.actualChangeIds,
+      [untrackedAddedChange.id],
+    );
+    assert.equal(untrackedAddedFinding.blocking, true);
+    assert.equal(
+      untrackedFindings.some((finding) => finding.type === "cannot_determine"),
+      false,
+      `the exact unstaged+untracked bytes must be fully classified: ${JSON.stringify(untrackedFindings)}`,
+    );
+    const untrackedEvidenceRead = await callTool(
+      mcp,
+      output,
+      requestId++,
+      "get_evidence",
+      {
+        taskId: untrackedTaskId,
+        evidenceIds: [
+          ...untrackedFooFinding.evidenceIds,
+          ...untrackedAddedFinding.evidenceIds,
+        ],
+        maxExcerptChars: 8_192,
+        pageSize:
+          untrackedFooFinding.evidenceIds.length +
+          untrackedAddedFinding.evidenceIds.length,
+      },
+      GetEvidenceOutputV1Schema,
+    );
+    const untrackedFooEvidence =
+      untrackedEvidenceRead.structuredContent.result.evidence.find(
+        (evidence) =>
+          "filePath" in evidence && evidence.filePath === "src/index.ts",
+      );
+    const untrackedAddedEvidence =
+      untrackedEvidenceRead.structuredContent.result.evidence.find(
+        (evidence) =>
+          "filePath" in evidence && evidence.filePath === "src/untracked.ts",
+      );
+    assert.ok(
+      untrackedFooEvidence && "filePath" in untrackedFooEvidence,
+      "the planned unstaged edit must have exact Source Evidence",
+    );
+    assert.deepEqual(untrackedFooEvidence.lineRange, [1, 1]);
+    assert.deepEqual(untrackedFooEvidence.nodeIds, [FOO_NODE_ID]);
+    assert.equal(
+      untrackedFooEvidence.contentHash,
+      contentDigest(Buffer.from(FOO_ONLY_SOURCE, "utf8")),
+    );
+    assert.equal(
+      untrackedFooEvidence.observedAtSnapshotId,
+      untrackedChangedSnapshotId,
+    );
+    assert.deepEqual(
+      untrackedFooFinding.evidenceIds,
+      [untrackedFooEvidence.id],
+    );
+    assert.ok(
+      untrackedAddedEvidence && "filePath" in untrackedAddedEvidence,
+      "the untracked add must have exact Source Evidence",
+    );
+    assert.deepEqual(untrackedAddedEvidence.lineRange, [1, 1]);
+    assert.deepEqual(untrackedAddedEvidence.nodeIds, [UNTRACKED_NODE_ID]);
+    assert.equal(
+      untrackedAddedEvidence.contentHash,
+      contentDigest(Buffer.from(UNTRACKED_SOURCE, "utf8")),
+    );
+    assert.equal(
+      untrackedAddedEvidence.observedAtSnapshotId,
+      untrackedChangedSnapshotId,
+    );
+    assert.deepEqual(
+      untrackedAddedFinding.evidenceIds,
+      [untrackedAddedEvidence.id],
+    );
+
+    await updateUntrackedTask(
+      {
+        type: "accept_finding",
+        findingId: untrackedAddedFinding.id,
+        reason:
+          "The untracked source file is intentional and explicitly accepted for this Alpha flow.",
+      },
+      "preview-workbench-browser-untracked-accept-added",
+    );
+    await updateUntrackedTask(
+      { type: "transition_status", to: "verification_required" },
+      "preview-workbench-browser-untracked-verification-required",
+    );
+    const untrackedVerificationEntries =
+      untrackedBrief.verificationPlan.filter((entry) => entry.required);
+    assert.ok(
+      untrackedVerificationEntries.length > 0,
+      "the untracked Task must carry a required Verification entry",
+    );
+    const untrackedVerificationProgram = [
+      "const { foo } = await import('./src/index.ts');",
+      "const { untrackedAdded } = await import('./src/untracked.ts');",
+      "if (foo() !== 'browser-ready') throw new Error('unexpected foo result');",
+      "if (untrackedAdded() !== 'untracked-ready') throw new Error('unexpected untracked result');",
+    ].join(" ");
+    const untrackedVerificationStartedAt = Date.now();
+    const untrackedVerificationExecution = await execBounded(
+      process.execPath,
+      ["--input-type=module", "--eval", untrackedVerificationProgram],
+      { cwd: repositoryRoot, encoding: "utf8" },
+    );
+    assert.equal(untrackedVerificationExecution.stderr, "");
+    const untrackedVerificationDurationMs =
+      Date.now() - untrackedVerificationStartedAt;
+    for (const [index, planEntry] of untrackedVerificationEntries.entries()) {
+      const recorded = await callTool(
+        mcp,
+        output,
+        requestId++,
+        "record_verification",
+        {
+          taskId: untrackedTaskId,
+          record: {
+            verificationPlanEntryId: planEntry.id,
+            kind: planEntry.method,
+            status: "passed",
+            command:
+              `node --input-type=module --eval ${JSON.stringify(untrackedVerificationProgram)}`,
+            exitCode: 0,
+            durationMs: untrackedVerificationDurationMs,
+            outputDigest: contentDigest(Buffer.from(
+              `${untrackedVerificationExecution.stdout}${untrackedVerificationExecution.stderr}`,
+              "utf8",
+            )),
+            summary:
+              "The external unstaged and untracked verification completed successfully.",
+            claimIds: planEntry.acceptanceClaimIds,
+            snapshotId: untrackedChangedSnapshotId,
+          },
+          expectedRevision: untrackedRevision,
+          idempotencyKey:
+            `preview-workbench-browser-untracked-verification-${index}`,
+          actor,
+        },
+        RecordVerificationOutputV1Schema,
+      );
+      assert.equal(
+        recorded.structuredContent.result.verification.status,
+        "passed",
+      );
+      assert.equal(
+        recorded.structuredContent.result.verification.snapshotId,
+        untrackedChangedSnapshotId,
+      );
+      untrackedRevision =
+        recorded.structuredContent.result.mutation.revision;
+    }
+    const untrackedVerified = await updateUntrackedTask(
+      { type: "transition_status", to: "verified" },
+      "preview-workbench-browser-untracked-verified",
+    );
+    assert.equal(
+      untrackedVerified.structuredContent.result.task.status,
+      "verified",
+    );
+
+    mcp.stdin.end();
+    assert.deepEqual(
+      await waitForExit(mcp, "untracked repository MCP EOF"),
+      [0, null],
+    );
     assert.equal(output.stderr.join(""), "");
     mcp = null;
 

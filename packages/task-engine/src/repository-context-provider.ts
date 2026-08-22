@@ -70,8 +70,8 @@ const MAX_CHANGE_ANALYSIS_HEAD_BYTES = 256;
 const MAX_CHANGE_ANALYSIS_PATH_BYTES = 4_096;
 const MAX_CHANGE_ANALYSIS_TREE_ENTRY_BYTES =
   MAX_CHANGE_ANALYSIS_PATH_BYTES + 256;
-const MAX_STAGED_CHANGE_PATHS = 16;
-const MAX_STAGED_SEMANTIC_BYTES = 32 * 1024 * 1024;
+const MAX_BOUNDED_CHANGE_PATHS = 16;
+const MAX_BOUNDED_SEMANTIC_BYTES = 32 * 1024 * 1024;
 const GIT_READ_ARGUMENT_PREFIX = Object.freeze([
   "-c",
   "core.hooksPath=/dev/null",
@@ -275,7 +275,7 @@ async function readCurrentIndexDigest(
   );
 }
 
-type StagedAnalysisFence =
+type LiveAnalysisFence =
   | { readonly ok: true }
   | {
       readonly ok: false;
@@ -283,11 +283,11 @@ type StagedAnalysisFence =
       readonly reason: string;
     };
 
-async function sampleStagedAnalysisFence(
+async function sampleLiveAnalysisFence(
   canonicalRoot: string,
   expectedHead: string,
   expectedIndexDigest: string,
-): Promise<StagedAnalysisFence> {
+): Promise<LiveAnalysisFence> {
   let currentHead: string;
   try {
     currentHead = await readCurrentHead(canonicalRoot);
@@ -1312,6 +1312,41 @@ implements TaskContextProvider {
     const includesStagedChange = actual.data.changes.some(
       (change) => change.source === "staged",
     );
+    const includesUntrackedChange = actual.data.changes.some(
+      (change) => change.source === "untracked",
+    );
+    const livePaths = new Set(
+      actual.data.changes.map((change) => change.path),
+    );
+    const liveUntrackedChanges =
+      includesUntrackedChange &&
+      actual.data.changes.length >= 1 &&
+      actual.data.changes.length <= MAX_BOUNDED_CHANGE_PATHS &&
+      livePaths.size === actual.data.changes.length &&
+      actual.data.changes.every(
+        (change) =>
+          ((change.source === "untracked" && change.kind === "added") ||
+            (change.source === "unstaged" && change.kind === "modified")) &&
+          change.contentDigest !== undefined,
+      )
+        ? [...actual.data.changes].sort((left, right) =>
+            compareUnicodeCodeUnits(left.path, right.path),
+          )
+        : undefined;
+    if (includesUntrackedChange && liveUntrackedChanges === undefined) {
+      return {
+        status: "unknown",
+        hunks: [],
+        boundaries: [
+          changeAnalysisBoundary(
+            "unsupported_source",
+            "Alpha live untracked analysis requires one to sixteen unique untracked added or unstaged modified paths, including at least one untracked path and no other changes.",
+            undefined,
+            actualChangeIds,
+          ),
+        ],
+      };
+    }
     const stagedPaths = new Set(
       actual.data.changes
         .filter((change) => change.source === "staged")
@@ -1320,7 +1355,7 @@ implements TaskContextProvider {
     const stagedChanges =
       includesStagedChange &&
       actual.data.changes.length >= 1 &&
-      actual.data.changes.length <= MAX_STAGED_CHANGE_PATHS &&
+      actual.data.changes.length <= MAX_BOUNDED_CHANGE_PATHS &&
       stagedPaths.size === actual.data.changes.length &&
       actual.data.changes.every(
         (change) =>
@@ -1346,9 +1381,12 @@ implements TaskContextProvider {
         ],
       };
     }
+    const boundedBatchChanges = stagedChanges ?? liveUntrackedChanges;
     if (
-      stagedChanges !== undefined &&
-      stagedChanges.some((change) => !safeChangeAnalysisPath(change.path))
+      boundedBatchChanges !== undefined &&
+      boundedBatchChanges.some(
+        (change) => !safeChangeAnalysisPath(change.path),
+      )
     ) {
       return {
         status: "unknown",
@@ -1356,7 +1394,9 @@ implements TaskContextProvider {
         boundaries: [
           changeAnalysisBoundary(
             "unsafe_path",
-            "A staged repository path is unsafe for exact Git index lookup.",
+            stagedChanges !== undefined
+              ? "A staged repository path is unsafe for exact Git index lookup."
+              : "A live untracked repository path is unsafe for exact Git analysis.",
             undefined,
             actualChangeIds,
           ),
@@ -1389,8 +1429,8 @@ implements TaskContextProvider {
       };
     }
 
-    if (stagedChanges !== undefined) {
-      const fence = await sampleStagedAnalysisFence(
+    if (boundedBatchChanges !== undefined) {
+      const fence = await sampleLiveAnalysisFence(
         this.#canonicalRoot,
         actual.data.headCommit,
         actual.data.indexDigest,
@@ -1419,24 +1459,33 @@ implements TaskContextProvider {
     }
     const hunks: TaskChangeHunk[] = [];
     const boundaries: TaskChangeAnalysisBoundary[] = [];
-    let stagedSemanticBytes = 0;
+    let boundedSemanticBytes = 0;
     for (const filePath of [...changesByPath.keys()].sort(compareUnicodeCodeUnits)) {
       const changes = changesByPath.get(filePath)!;
       const ids = changes.map((change) => change.id);
       const supported =
         changes.length === 1 &&
-        changes[0]!.source ===
-          (stagedChanges === undefined ? "unstaged" : "staged") &&
-        (changes[0]!.kind === "modified" ||
-          (stagedChanges !== undefined && changes[0]!.kind === "added")) &&
+        (stagedChanges !== undefined
+          ? changes[0]!.source === "staged" &&
+            (changes[0]!.kind === "modified" ||
+              changes[0]!.kind === "added")
+          : liveUntrackedChanges !== undefined
+            ? (changes[0]!.source === "untracked" &&
+                changes[0]!.kind === "added") ||
+              (changes[0]!.source === "unstaged" &&
+                changes[0]!.kind === "modified")
+            : changes[0]!.source === "unstaged" &&
+              changes[0]!.kind === "modified") &&
         changes[0]!.contentDigest !== undefined;
       if (!supported) {
         boundaries.push(
           changeAnalysisBoundary(
             "unsupported_source",
-            stagedChanges === undefined
+            boundedBatchChanges === undefined
               ? "Alpha line analysis only supports one unstaged modified change per path."
-              : "Alpha staged line analysis only supports unique staged modified or added paths.",
+              : stagedChanges !== undefined
+                ? "Alpha staged line analysis only supports unique staged modified or added paths."
+                : "Alpha live untracked analysis only supports unique untracked added or unstaged modified paths.",
             filePath,
             ids,
           ),
@@ -1587,14 +1636,16 @@ implements TaskContextProvider {
           continue;
         }
       }
-      if (stagedChanges !== undefined) {
-        stagedSemanticBytes +=
+      if (boundedBatchChanges !== undefined) {
+        boundedSemanticBytes +=
           baselineBytes.byteLength + actualBytes.byteLength;
-        if (stagedSemanticBytes > MAX_STAGED_SEMANTIC_BYTES) {
+        if (boundedSemanticBytes > MAX_BOUNDED_SEMANTIC_BYTES) {
           boundaries.push(
             changeAnalysisBoundary(
               "budget_exhausted",
-              "Staged semantic bytes exceeded the fixed aggregate Alpha budget.",
+              stagedChanges !== undefined
+                ? "Staged semantic bytes exceeded the fixed aggregate Alpha budget."
+                : "Live untracked semantic bytes exceeded the fixed aggregate Alpha budget.",
               filePath,
               ids,
             ),
@@ -1676,13 +1727,15 @@ implements TaskContextProvider {
         boundaries.push(pathBoundary);
       } else {
         if (
-          stagedChanges !== undefined &&
+          boundedBatchChanges !== undefined &&
           hunks.length + pathHunks.length > CHANGE_ANALYSIS_LIMITS.maxHunks
         ) {
           boundaries.push(
             changeAnalysisBoundary(
               "budget_exhausted",
-              "Staged line hunks exceeded the fixed aggregate Alpha budget.",
+              stagedChanges !== undefined
+                ? "Staged line hunks exceeded the fixed aggregate Alpha budget."
+                : "Live untracked line hunks exceeded the fixed aggregate Alpha budget.",
               filePath,
               ids,
             ),
@@ -1693,8 +1746,8 @@ implements TaskContextProvider {
       }
     }
 
-    if (stagedChanges !== undefined) {
-      const fence = await sampleStagedAnalysisFence(
+    if (boundedBatchChanges !== undefined) {
+      const fence = await sampleLiveAnalysisFence(
         this.#canonicalRoot,
         actual.data.headCommit,
         actual.data.indexDigest,

@@ -1,87 +1,79 @@
 # feature/agent-native-change-intelligence-authority Review Brief
 
-> 生成时间：2026-08-22 15:59 CST
+> 生成时间：2026-08-22 16:42 CST
 > 分支：feature/agent-native-change-intelligence-authority
-> 基于 commit：51b2cec docs: document host plugin lifecycle
+> 基于 commit：4373c1f fix: fail closed on legacy empty checks
 
 ## 背景与动机
 
-当前 Change Check 仍是兼容的 legacy payload，但此前没有按 D-24 标注为
-`legacy_summary`。更严重的是，空 Findings 会被生命周期误当成没有阻塞项：历史
-Task 可进入 `verification_required`，已处于该状态的历史 Task 还可继续进入
-`verified`。冻结合同明确规定 legacy 空 Findings 不构成 clean evidence。
+单一路径的 unstaged/staged 修改以及 bounded staged added 已能产生 Snapshot-bound
+Change Check，但常见的“修改一个已跟踪文件，同时新增一个未跟踪文件”仍被整体降为
+unknown。该组合经公开 `refresh_index` 可达，且 Snapshot 已为安全 untracked 文件保存
+content digest；它是 Step 15 当前最短的真实 availability 缺口。
 
-本切片关闭这条 false-clean 路径，同时保持历史 Change Check、Artifact、operation
-receipt 的持久化 bytes 与 digest 完全不变；它不伪装成尚未实现的
-`evidence_backed_v1` strong profile。
+本切片只扩展 Alpha source coverage，不改变 public contract，也不宣称 formal
+`evidence_backed_v1`、execution fence 或 strong writes。
 
 ## 改动策略
 
-- 新增纯内存 `classifyChangeCheckV1()`，当前兼容 payload 固定投影为
-  `{ profile: "legacy_summary", emptyFindingsAreClean: false }`。
-- `check_change` 的 strict MCP 输出携带该读取分类；receipt 仍只保存原有
-  `{ changeCheck, mutation }`。
-- legacy writer 在原本会得到零 Findings 时，改写一个 blocking
-  `cannot_determine`，并复用既有 Claim/Evidence 管线生成 snapshot-bound
-  `analysis_boundary`。
-- 同一 predicate 同时守住 `check_required → verification_required` 与历史已 pin
-  空 Check 的 `verification_required → verified`。
-- replay 从 durable receipt 重建读取分类，不重新读取或分析当前仓库状态，不写入
-  Artifact，也不推进 revision。
-- MCP 文本、CLI trace、embedded Workbench、React Task-first Workbench 都明确展示
-  legacy summary 与“空 Findings 不是 clean evidence”。
+- 当 actual Snapshot 包含 untracked change 时，启用 bounded live profile：1–16 个
+  唯一路径，全部只能是 `untracked added` 或 `unstaged modified`，并且至少一个
+  untracked；staged/mixed/其他 source/kind/duplicate/超限整批 unknown。
+- 分析前后各核对 exact HEAD 与 Snapshot-bound global relevant Index digest，捕获同
+  bytes 被 `git add`、HEAD 漂移或 Index 变化。
+- 每个路径都做稳定 no-follow worktree 读取并要求 bytes digest 与 Snapshot exact；
+  added 还必须由 exact HEAD 的 literal `ls-tree` 证明不存在，modified 从 exact
+  `<HEAD>:path` 读取 baseline blob。
+- 复用确定性 line diff、Graph symbol anchor、actual Snapshot content hash 与 Source
+  Evidence 管线。
+- 全批次预算固定为 32 MiB semantic bytes 与 1024 hunks；任一路径、Graph、预算或
+  fence 失败都丢弃已生成 hunks，返回一个覆盖全部 actual IDs 的 global boundary。
+- pure staged 与 pure unstaged 路径保持原语义和原 boundary reason，避免稳定
+  Evidence/Finding ID 漂移。
 
 ## 改动范围
 
 | 模块/职责 | 文件 | 做了什么 |
 |---|---|---|
-| Contracts | `packages/contracts/src/change.ts`, `packages/contracts/src/mcp.ts`, `packages/contracts/schemas/v1/check_change-output.schema.json` | 读取分类与 strict MCP 输出字段 |
-| Contract tests | `packages/contracts/test/task-evidence-change.test.ts`, `packages/contracts/test/mcp-contracts.test.ts` | 不改 persisted payload、分类必填与输出 identity 回归 |
-| Task Engine | `packages/task-engine/src/change-intelligence.ts`, `packages/task-engine/src/mutation.ts` | zero-draft boundary、receipt 隔离、两处生命周期拒绝 |
-| Engine tests | `packages/task-engine/test/engine.integration.test.ts` | writer、replay、历史两门 fail-closed 回归 |
-| CLI projection | `packages/cli/src/handlers/tools.ts`, `packages/cli/test/mcp.integration.test.ts` | MCP 文本/结构化分类与 trace 投影 |
-| Workbench runtime | `packages/workbench-runtime/src/index.ts`, `packages/workbench-runtime/test/workbench-runtime.test.ts` | strict pair parser 与 embedded UI 文案 |
-| React Dashboard | `packages/dashboard/src/components/taskFirst/TaskFirstWorkbench.tsx`, `packages/dashboard/src/components/taskFirst/__tests__/TaskFirstWorkbench.test.ts` | Task Check legacy/no-clean 可见标识 |
-| Packed E2E | `packages/preview/test/workbench-browser-packed.test.mjs` | 同一 tgz 的 MCP、React DOM、trace 三层断言 |
+| Repository provider | `packages/task-engine/src/repository-context-provider.ts` | bounded live profile、HEAD/Index fences、aggregate fail-closed |
+| Focused regression | `packages/task-engine/test/repository-context-provider.test.ts` | 逆序双路径 happy 与同 bytes `git add` Index drift whole-unknown |
+| Packed E2E | `packages/preview/test/workbench-browser-packed.test.mjs` | 真实 unstaged+untracked Snapshot→Check→accept→Verification 纵切 |
 
 ## Review 重点
 
-1. **持久化兼容** — Change Check payload、Artifact schema、receipt schema、reference
-   fixtures 都不得变化；classification 只能是 reader projection。
-2. **空 Check fail-closed** — 新 writer 不得产出空成功；历史空 Check 在两个成功门都
-   必须 `current_check_required`，且 revision 不推进。
-3. **Replay 纯度** — replay 不重新跑 Snapshot/analyzer，不生成新持久化内容。
-4. **Surface 一致性** — MCP、trace parser、fallback Workbench 与 React Dashboard
-   必须对相同字段给出相同语义。
-5. **不越权声明** — 本切片不是 formal Actual Change、Diff Hunk、五维
-   Completeness、Provider authority 或 strong writes。
+1. **来源边界** — 只有 untracked added + unstaged modified 的 bounded 集合可以成功；
+   staged 混入或其他 change kind 必须 whole unknown。
+2. **Snapshot 权威** — worktree、Snapshot digest、HEAD baseline 与 global Index fence
+   必须同时成立，不能只看当前文件 bytes。
+3. **全批次原子失败** — 后排序路径或 post-fence 失败时，先前 hunks 不得泄出为
+   partial success。
+4. **稳定兼容** — existing pure staged/unstaged reason 与 ID 语义不得变化。
+5. **用户语义** — 新文件必须是 blocking `unplanned_change`；只有 foo 是
+   `planned_completed`，随后必须显式 accept finding 才能继续 Verification。
 
 ## 已识别风险
 
 未发现 P0、P1、current-path executable P2 或 blocking Test Gap。
 
-非阻塞残余：`check_change` V1 新增 required reader-projection 字段；当前单一 tgz 内
-producer/consumer 同版本，旧 strict 外部 client 需要随包升级。正式稳定 API 前需纳入
-版本兼容策略。Formal `evidence_backed_v1`、repository final-tree Delta、strong
-Evidence、五维 Completeness、Provider authority、execution fence 与
-`strongWrites` 继续 open/locked。
+非阻塞残余：本实现证明持久 actual Snapshot 对所列路径的 exact bytes 与前后
+HEAD/Index continuity，不是全局 worktree/untracked execution fence；分析后新增的其他
+live 变化仍不构成 strong current-state 证明。staged+untracked、staged+unstaged、
+delete/rename/conflict/binary/超预算继续 fail closed。Provider authority、formal
+Completeness 与 `strongWrites` 保持 locked。
 
 ## 测试情况
 
-- Contracts focused：58/58。
-- Contracts package：136/136；52 schemas、28 fixtures、14 packed entrypoints 全绿。
-- Task Engine focused：30/30；package：69/69。
-- CLI focused：6/6。
-- Workbench runtime focused：10/10。
-- Dashboard focused：2/2。
-- Contracts、Task Engine、CLI、Workbench runtime、Dashboard typecheck/build 全绿。
-- Fresh Preview typecheck/build 全绿。
-- 唯一 packed Chrome E2E：1/1，0 skip，29.17s。
-- tgz SHA-256：`1fea3bd5a0aaf08e76effd2381337a16e6fd9cbc51b27c7f0ae8c7c3a4aea50b`；87 entries。
-- scoped `git diff --check` 通过。
+- Repository provider focused：11/11。
+- Task Engine typecheck/build 与 package tests：70/70。
+- Fresh Preview typecheck/build 通过。
+- 唯一 packed Chrome E2E：1/1，0 skip，33.77s。
+- packed E2E 保留 wrong-hunk、staged-added、Workbench 与 lifecycle 既有链路，并新增
+  真实 unstaged+untracked verified 纵切。
+- tgz SHA-256：`44c10323f3f5486a7ecf4a2d2d49c8593142bbdb751253cf308af11477d449c7`；87 entries。
+- final `node --check` 与 scoped `git diff --check` 通过。
 
 ## 结论
 
-🟢 Effective。legacy Change Check 现在被诚实标识，空 Findings 不再能被解释为
-clean evidence；新写入、历史生命周期、replay 与用户可见 Surface 均已闭合，且没有
-改写历史持久化语义。可以精确提交。
+🟢 Effective。常见的 unstaged 修改加 untracked 新文件现在可产生精确、
+Snapshot-bound 的 planned/unplanned Findings 与 Source Evidence；任一不确定条件仍整批
+fail closed，且没有改变既有 staged/unstaged 语义。可以精确提交。

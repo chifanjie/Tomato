@@ -718,6 +718,136 @@ describe("RepositoryTaskContextProvider", () => {
     });
   });
 
+  it("derives path-sorted unstaged and untracked hunks only while the live Index still matches the Snapshot", async () => {
+    const baselineFooSource =
+      "export function foo() { return 'foo-before'; }\n";
+    const actualFooSource =
+      "export function foo() { return 'foo-after'; }\n";
+    const untrackedSource =
+      "export function newlyAdded() { return 'new-file'; }\n";
+    const graph = graphFixture();
+    graph.nodes = [
+      {
+        id: "function:foo",
+        type: "function",
+        name: "foo",
+        filePath: "src/task.ts",
+        lineRange: [1, 1],
+        summary: "Returns the changed foo value.",
+        tags: [],
+        complexity: "simple",
+      },
+      {
+        id: "function:newly-added",
+        type: "function",
+        name: "newlyAdded",
+        filePath: "src/new.ts",
+        lineRange: [1, 1],
+        summary: "Returns the new file value.",
+        tags: [],
+        complexity: "simple",
+      },
+    ];
+    const { root } = await fixtureRoot(graph, baselineFooSource);
+    await git(root, ["init", "--quiet"]);
+    await git(root, ["add", "src/task.ts"]);
+    await git(root, [
+      "-c",
+      "user.name=Understand Code Test",
+      "-c",
+      "user.email=test@understand-code.invalid",
+      "commit",
+      "--quiet",
+      "-m",
+      "baseline",
+    ]);
+    const headCommit = await git(root, ["rev-parse", "HEAD"]);
+    const baselineSnapshot = snapshot(
+      digest(baselineFooSource),
+      "snapshot:untracked-baseline",
+      {
+        headCommit,
+        indexDigest: await currentIndexDigest(root),
+        changes: [],
+      },
+    );
+    await Promise.all([
+      writeFile(path.join(root, "src/task.ts"), actualFooSource, "utf8"),
+      writeFile(path.join(root, "src/new.ts"), untrackedSource, "utf8"),
+    ]);
+    const actualChangeIds = [
+      "change:unstaged-foo",
+      "change:untracked-new",
+    ].sort();
+    const actualSnapshot = snapshot(
+      digest(actualFooSource),
+      "snapshot:untracked-actual",
+      {
+        headCommit,
+        indexDigest: await currentIndexDigest(root),
+        // Deliberately reverse path order: output must remain path-sorted.
+        changes: [
+          {
+            id: "change:unstaged-foo",
+            path: "src/task.ts",
+            source: "unstaged",
+            kind: "modified",
+            contentDigest: digest(actualFooSource),
+            previousContentDigest: digest(baselineFooSource),
+          },
+          {
+            id: "change:untracked-new",
+            path: "src/new.ts",
+            source: "untracked",
+            kind: "added",
+            contentDigest: digest(untrackedSource),
+          },
+        ],
+      },
+    );
+    const provider = await RepositoryTaskContextProvider.open({
+      canonicalRoot: root,
+    });
+
+    const complete = await provider.analyzeTaskChanges({
+      taskId: "task:untracked-analysis",
+      baselineSnapshot,
+      actualSnapshot,
+    });
+    expect(complete).toMatchObject({ status: "complete", boundaries: [] });
+    expect(complete.hunks).toEqual([
+      expect.objectContaining({
+        actualChangeIds: ["change:untracked-new"],
+        filePath: "src/new.ts",
+        newLineRange: [1, 1],
+        nodeIds: ["function:newly-added"],
+        contentHash: digest(untrackedSource),
+      }),
+      expect.objectContaining({
+        actualChangeIds: ["change:unstaged-foo"],
+        filePath: "src/task.ts",
+        newLineRange: [1, 1],
+        nodeIds: ["function:foo"],
+        contentHash: digest(actualFooSource),
+      }),
+    ]);
+
+    await git(root, ["add", "--", "src/new.ts"]);
+    const liveIndexDrift = await provider.analyzeTaskChanges({
+      taskId: "task:untracked-analysis",
+      baselineSnapshot,
+      actualSnapshot,
+    });
+    expect(liveIndexDrift).toMatchObject({
+      status: "unknown",
+      hunks: [],
+      boundaries: [expect.objectContaining({
+        code: "content_changed",
+        actualChangeIds,
+      })],
+    });
+  });
+
   it("loads a validated real Graph, adapts Wiki, and emits only digest-bound Source Evidence", async () => {
     const { root, source } = await fixtureRoot();
     const repositorySnapshot = snapshot(digest(source));

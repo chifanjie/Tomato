@@ -592,6 +592,132 @@ describe("RepositoryTaskContextProvider", () => {
     });
   });
 
+  it("derives an exact staged-added hunk only when the baseline path is absent and live bytes remain unchanged", async () => {
+    const baselineSource = "export function task() { return true; }\n";
+    const addedSource = "export function added() { return 'added'; }\n";
+    const graph = graphFixture();
+    graph.nodes = [
+      {
+        id: "function:added",
+        type: "function",
+        name: "added",
+        filePath: "src/added.ts",
+        lineRange: [1, 1],
+        summary: "Returns the added value.",
+        tags: [],
+        complexity: "simple",
+      },
+    ];
+    const { root } = await fixtureRoot(graph, baselineSource);
+    await git(root, ["init", "--quiet"]);
+    await git(root, ["add", "src/task.ts"]);
+    await git(root, [
+      "-c",
+      "user.name=Understand Code Test",
+      "-c",
+      "user.email=test@understand-code.invalid",
+      "commit",
+      "--quiet",
+      "-m",
+      "baseline",
+    ]);
+    const headCommit = await git(root, ["rev-parse", "HEAD"]);
+    await writeFile(path.join(root, "src/added.ts"), addedSource, "utf8");
+    await git(root, ["add", "--", "src/added.ts"]);
+    const indexDigest = await currentIndexDigest(root);
+    const baselineSnapshot = snapshot(
+      digest(baselineSource),
+      "snapshot:staged-add-baseline",
+      { headCommit, changes: [] },
+    );
+    const actualSnapshot = snapshot(
+      digest(addedSource),
+      "snapshot:staged-add-actual",
+      {
+        headCommit,
+        indexDigest,
+        changes: [
+          {
+            id: "change:staged-add",
+            path: "src/added.ts",
+            source: "staged",
+            kind: "added",
+            contentDigest: digest(addedSource),
+          },
+        ],
+      },
+    );
+    const provider = await RepositoryTaskContextProvider.open({
+      canonicalRoot: root,
+    });
+
+    const complete = await provider.analyzeTaskChanges({
+      taskId: "task:staged-add",
+      baselineSnapshot,
+      actualSnapshot,
+    });
+    expect(complete).toMatchObject({ status: "complete", boundaries: [] });
+    expect(complete.hunks).toEqual([
+      expect.objectContaining({
+        actualChangeIds: ["change:staged-add"],
+        filePath: "src/added.ts",
+        newLineRange: [1, 1],
+        nodeIds: ["function:added"],
+        contentHash: digest(addedSource),
+      }),
+    ]);
+
+    await writeFile(
+      path.join(root, "src/added.ts"),
+      `${addedSource}// worktree drift\n`,
+      "utf8",
+    );
+    const drifted = await provider.analyzeTaskChanges({
+      taskId: "task:staged-add",
+      baselineSnapshot,
+      actualSnapshot,
+    });
+    expect(drifted).toMatchObject({
+      status: "unknown",
+      hunks: [],
+      boundaries: [expect.objectContaining({
+        code: "content_changed",
+        actualChangeIds: ["change:staged-add"],
+      })],
+    });
+
+    await writeFile(path.join(root, "src/added.ts"), addedSource, "utf8");
+    const baselineExists = await provider.analyzeTaskChanges({
+      taskId: "task:staged-add",
+      baselineSnapshot,
+      actualSnapshot: snapshot(
+        digest(baselineSource),
+        "snapshot:misclassified-add",
+        {
+          headCommit,
+          indexDigest,
+          changes: [
+            {
+              id: "change:misclassified-add",
+              path: "src/task.ts",
+              source: "staged",
+              kind: "added",
+              contentDigest: digest(baselineSource),
+            },
+          ],
+        },
+      ),
+    });
+    expect(baselineExists).toMatchObject({
+      status: "unknown",
+      hunks: [],
+      boundaries: [expect.objectContaining({
+        code: "unsupported_source",
+        actualChangeIds: ["change:misclassified-add"],
+      })],
+    });
+  });
+
   it("loads a validated real Graph, adapts Wiki, and emits only digest-bound Source Evidence", async () => {
     const { root, source } = await fixtureRoot();
     const repositorySnapshot = snapshot(digest(source));

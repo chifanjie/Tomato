@@ -68,6 +68,8 @@ const DEFAULT_MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const MAX_CHANGE_ANALYSIS_INDEX_BYTES = 64 * 1024 * 1024;
 const MAX_CHANGE_ANALYSIS_HEAD_BYTES = 256;
 const MAX_CHANGE_ANALYSIS_PATH_BYTES = 4_096;
+const MAX_CHANGE_ANALYSIS_TREE_ENTRY_BYTES =
+  MAX_CHANGE_ANALYSIS_PATH_BYTES + 256;
 const MAX_STAGED_CHANGE_PATHS = 16;
 const MAX_STAGED_SEMANTIC_BYTES = 32 * 1024 * 1024;
 const GIT_READ_ARGUMENT_PREFIX = Object.freeze([
@@ -382,6 +384,39 @@ function readGitBlob(
     }
     return bytes;
   });
+}
+
+async function baselinePathIsAbsent(
+  canonicalRoot: string,
+  headCommit: string,
+  relativePath: string,
+): Promise<boolean> {
+  if (
+    !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(headCommit) ||
+    !safeChangeAnalysisPath(relativePath)
+  ) {
+    throw providerErrorForPath(
+      "unsafe_repository_path",
+      "A repository path is ambiguous for exact Git tree lookup.",
+      relativePath,
+    );
+  }
+  const output = await readGitOutput(
+    canonicalRoot,
+    [
+      "--literal-pathspecs",
+      "ls-tree",
+      "-z",
+      "--full-tree",
+      headCommit,
+      "--",
+      relativePath,
+    ],
+    MAX_CHANGE_ANALYSIS_TREE_ENTRY_BYTES,
+    "baseline Git tree entry exceeds analysis budget",
+  );
+  if (output.byteLength === 0) return true;
+  return false;
 }
 
 function isInside(root: string, candidate: string): boolean {
@@ -1290,7 +1325,7 @@ implements TaskContextProvider {
       actual.data.changes.every(
         (change) =>
           change.source === "staged" &&
-          change.kind === "modified" &&
+          (change.kind === "modified" || change.kind === "added") &&
           change.contentDigest !== undefined,
       )
         ? [...actual.data.changes].sort((left, right) =>
@@ -1304,7 +1339,7 @@ implements TaskContextProvider {
         boundaries: [
           changeAnalysisBoundary(
             "unsupported_source",
-            "Alpha staged line analysis requires one to sixteen unique staged modified paths and no other changes.",
+            "Alpha staged line analysis requires one to sixteen unique staged modified or added paths and no other changes.",
             undefined,
             actualChangeIds,
           ),
@@ -1392,7 +1427,8 @@ implements TaskContextProvider {
         changes.length === 1 &&
         changes[0]!.source ===
           (stagedChanges === undefined ? "unstaged" : "staged") &&
-        changes[0]!.kind === "modified" &&
+        (changes[0]!.kind === "modified" ||
+          (stagedChanges !== undefined && changes[0]!.kind === "added")) &&
         changes[0]!.contentDigest !== undefined;
       if (!supported) {
         boundaries.push(
@@ -1400,7 +1436,7 @@ implements TaskContextProvider {
             "unsupported_source",
             stagedChanges === undefined
               ? "Alpha line analysis only supports one unstaged modified change per path."
-              : "Alpha staged line analysis only supports unique staged modified paths.",
+              : "Alpha staged line analysis only supports unique staged modified or added paths.",
             filePath,
             ids,
           ),
@@ -1491,27 +1527,65 @@ implements TaskContextProvider {
         );
         continue;
       }
-      try {
-        baselineBytes = await readGitBlob(
-          this.#canonicalRoot,
-          baseline.data.headCommit,
-          filePath,
-        );
-      } catch (error) {
-        boundaries.push(
-          changeAnalysisBoundary(
-            error instanceof RepositoryTaskContextProviderError &&
-              error.code === "unsafe_repository_path"
-              ? "unsafe_path"
-              : error instanceof RangeError
-                ? "budget_exhausted"
-                : "unsupported_source",
-            "The exact baseline Git blob could not be read within the Alpha profile.",
+      if (changes[0]!.kind === "added") {
+        try {
+          if (
+            !(await baselinePathIsAbsent(
+              this.#canonicalRoot,
+              baseline.data.headCommit,
+              filePath,
+            ))
+          ) {
+            boundaries.push(
+              changeAnalysisBoundary(
+                "unsupported_source",
+                "The exact baseline Git tree already contains a path classified as added.",
+                filePath,
+                ids,
+              ),
+            );
+            continue;
+          }
+          baselineBytes = Buffer.alloc(0);
+        } catch (error) {
+          boundaries.push(
+            changeAnalysisBoundary(
+              error instanceof RepositoryTaskContextProviderError &&
+                error.code === "unsafe_repository_path"
+                ? "unsafe_path"
+                : error instanceof RangeError
+                  ? "budget_exhausted"
+                  : "unsupported_source",
+              "The exact baseline Git tree could not prove that the added path was absent.",
+              filePath,
+              ids,
+            ),
+          );
+          continue;
+        }
+      } else {
+        try {
+          baselineBytes = await readGitBlob(
+            this.#canonicalRoot,
+            baseline.data.headCommit,
             filePath,
-            ids,
-          ),
-        );
-        continue;
+          );
+        } catch (error) {
+          boundaries.push(
+            changeAnalysisBoundary(
+              error instanceof RepositoryTaskContextProviderError &&
+                error.code === "unsafe_repository_path"
+                ? "unsafe_path"
+                : error instanceof RangeError
+                  ? "budget_exhausted"
+                  : "unsupported_source",
+              "The exact baseline Git blob could not be read within the Alpha profile.",
+              filePath,
+              ids,
+            ),
+          );
+          continue;
+        }
       }
       if (stagedChanges !== undefined) {
         stagedSemanticBytes +=

@@ -18,6 +18,7 @@ import {
   OpenWorkbenchOutputV1Schema,
   RecordVerificationOutputV1Schema,
   RefreshIndexOutputV1Schema,
+  RepositorySnapshotArtifactV1Schema,
   UpdateTaskOutputV1Schema,
 } from "../../contracts/dist/index.js";
 import { launchBrowser, resolveBrowserExecutable } from "./browser-harness.mjs";
@@ -44,11 +45,11 @@ const FOO_ONLY_SOURCE = [
 ].join("\n");
 const INITIAL_EXTRA_SOURCE =
   "export function extra() { return 'extra-before'; }\n";
-const EXTRA_CHANGED_SOURCE =
-  "export function extra() { return 'extra-ready'; }\n";
+const ADDED_SOURCE =
+  "export function added() { return 'added-unplanned'; }\n";
 const FOO_NODE_ID = "function:src/index.ts:foo";
 const BAR_NODE_ID = "function:src/index.ts:bar";
-const EXTRA_NODE_ID = "function:src/extra.ts:extra";
+const ADDED_NODE_ID = "function:src/added.ts:added";
 
 function digest(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -602,7 +603,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     repositoryRoots.push(repositoryRoot);
     lifecycleEnv = cleanMcpEnvironment(home, repositoryRoot);
     sourcePath = path.join(repositoryRoot, "src/index.ts");
-    const extraPath = path.join(repositoryRoot, "src/extra.ts");
+    const addedPath = path.join(repositoryRoot, "src/added.ts");
     mcp = spawn(managedWrapper, ["--root", repositoryRoot], {
       cwd: installDirectory,
       env: lifecycleEnv,
@@ -620,25 +621,23 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     const initialSnapshotId = initialRefresh.structuredContent.meta.sourceSnapshotId;
 
     const built = await callTool(mcp, output, requestId++, "build_task_brief", {
-      task: "foo extra",
+      task: "Change the foo function behavior.",
       expectedRevision: 0,
       idempotencyKey: "preview-workbench-browser-brief",
       actor,
-      scope: ["src/index.ts", "src/extra.ts"],
-      maxCandidates: 2,
+      scope: ["src/index.ts"],
+      maxCandidates: 1,
     }, BuildTaskBriefOutputV1Schema);
     const taskId = built.structuredContent.result.task.taskId;
     const brief = built.structuredContent.result.brief;
-    assert.equal(brief.plannedChanges.length, 2);
+    assert.equal(brief.plannedChanges.length, 1);
     const initialFooPlan = brief.plannedChanges.find((change) => change.filePath === "src/index.ts");
-    const initialExtraPlan = brief.plannedChanges.find((change) => change.filePath === "src/extra.ts");
     assert.ok(initialFooPlan, `the Brief must plan src/index.ts: ${JSON.stringify(brief.plannedChanges)}`);
-    assert.ok(initialExtraPlan, `the Brief must plan src/extra.ts: ${JSON.stringify(brief.plannedChanges)}`);
     assert.equal(initialFooPlan.symbolId, FOO_NODE_ID);
     assert.equal(
-      initialExtraPlan.symbolId,
-      EXTRA_NODE_ID,
-      "the exact extra intent must select the extra Graph symbol",
+      brief.plannedChanges.some((change) => change.filePath === "src/added.ts"),
+      false,
+      "the Brief created before src/added.ts exists must not plan that later-added file",
     );
 
     let taskRevision = built.structuredContent.result.task.revision;
@@ -667,19 +666,19 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
 
     await Promise.all([
       writeFile(sourcePath, FOO_ONLY_SOURCE, "utf8"),
-      writeFile(extraPath, EXTRA_CHANGED_SOURCE, "utf8"),
+      writeFile(addedPath, ADDED_SOURCE, "utf8"),
     ]);
-    await git(repositoryRoot, ["add", "--", "src/extra.ts", "src/index.ts"]);
+    await git(repositoryRoot, ["add", "--", "src/added.ts", "src/index.ts"]);
     assert.deepEqual(
       (await git(repositoryRoot, ["diff", "--cached", "--name-only"]))
         .stdout.trim().split("\n").filter(Boolean),
-      ["src/extra.ts", "src/index.ts"],
-      "the happy Change Check must bind exactly both staged planned paths",
+      ["src/added.ts", "src/index.ts"],
+      "the happy Change Check must bind exactly the planned edit and later-added staged path",
     );
     assert.equal(
       (await git(repositoryRoot, ["diff", "--name-only"])).stdout,
       "",
-      "the staged planned bytes must have no same-path worktree divergence",
+      "the staged bytes must have no same-path worktree divergence",
     );
     const changedRefresh = await callTool(mcp, output, requestId++, "refresh_index", {
       mode: "full",
@@ -689,6 +688,32 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     }, RefreshIndexOutputV1Schema);
     const changedSnapshotId = changedRefresh.structuredContent.meta.sourceSnapshotId;
     assert.notEqual(changedSnapshotId, initialSnapshotId);
+    const changedSnapshotArtifact = RepositorySnapshotArtifactV1Schema.parse(JSON.parse(await readFile(
+      path.join(repositoryRoot, ".understand-code", "snapshots", `${changedSnapshotId}.json`),
+      "utf8",
+    )));
+    assert.equal(changedSnapshotArtifact.payload.captureStatus, "complete");
+    assert.equal(changedSnapshotArtifact.payload.changes.length, 2);
+    const addedSnapshotChange = changedSnapshotArtifact.payload.changes.find((change) =>
+      change.path === "src/added.ts",
+    );
+    const fooSnapshotChange = changedSnapshotArtifact.payload.changes.find((change) =>
+      change.path === "src/index.ts",
+    );
+    assert.deepEqual(addedSnapshotChange, {
+      id: addedSnapshotChange?.id,
+      path: "src/added.ts",
+      source: "staged",
+      kind: "added",
+      contentDigest: contentDigest(Buffer.from(ADDED_SOURCE, "utf8")),
+    });
+    assert.deepEqual(fooSnapshotChange, {
+      id: fooSnapshotChange?.id,
+      path: "src/index.ts",
+      source: "staged",
+      kind: "modified",
+      contentDigest: contentDigest(Buffer.from(FOO_ONLY_SOURCE, "utf8")),
+    });
 
     await updateTask(
       { type: "transition_status", to: "check_required" },
@@ -710,46 +735,56 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       actualChangeIds: candidate.actualChangeIds,
       summary: candidate.summary,
     }));
-    assert.equal(
-      checked.structuredContent.result.changeCheck.findings.some((candidate) => candidate.blocking),
-      false,
-      `the exact two-path hunks must not leave a blocking Change Finding: ${JSON.stringify(findingDiagnostics)}`,
-    );
-    assert.equal(
-      checked.structuredContent.result.changeCheck.findings.some((candidate) => candidate.type === "unplanned_change"),
-      false,
-      "the exact two-path edit must not be classified as unplanned",
-    );
     const completedFindings = checked.structuredContent.result.changeCheck.findings.filter(
       (candidate) => candidate.type === "planned_completed",
     );
-    assert.equal(completedFindings.length, 2, "the public Check must complete both planned symbols");
+    assert.equal(completedFindings.length, 1, "the public Check must complete only the planned foo symbol");
+    const unplannedFindings = checked.structuredContent.result.changeCheck.findings.filter(
+      (candidate) => candidate.type === "unplanned_change",
+    );
+    assert.equal(
+      unplannedFindings.length,
+      1,
+      `the public Check must publish exactly one unplanned added-file Finding: ${JSON.stringify(findingDiagnostics)}`,
+    );
+    assert.equal(
+      checked.structuredContent.result.changeCheck.findings.length,
+      2,
+      `the exact two-path change must publish only the completed foo and unplanned added-file Findings: ${JSON.stringify(findingDiagnostics)}`,
+    );
     const fooPlannedChange = brief.plannedChanges.find((change) =>
       change.filePath === "src/index.ts" && change.symbolId === FOO_NODE_ID,
     );
-    const extraPlannedChange = brief.plannedChanges.find((change) =>
-      change.filePath === "src/extra.ts" && change.symbolId === EXTRA_NODE_ID,
-    );
-    assert.ok(fooPlannedChange && extraPlannedChange, "both exact planned changes must remain addressable");
+    assert.ok(fooPlannedChange, "the exact foo planned change must remain addressable");
     const finding = completedFindings.find((candidate) =>
       candidate.plannedChangeIds.includes(fooPlannedChange.id),
     );
-    const extraFinding = completedFindings.find((candidate) =>
-      candidate.plannedChangeIds.includes(extraPlannedChange.id),
-    );
+    const addedFinding = unplannedFindings[0];
     assert.ok(finding, "the public Check must publish a source-backed completed foo Finding");
-    assert.ok(extraFinding, "the public Check must publish a source-backed completed extra Finding");
+    assert.ok(
+      addedFinding,
+      `the public Check must publish the later-added file as unplanned: ${JSON.stringify(findingDiagnostics)}`,
+    );
     assert.deepEqual(finding.plannedChangeIds, [fooPlannedChange.id]);
-    assert.deepEqual(extraFinding.plannedChangeIds, [extraPlannedChange.id]);
-    assert.equal(finding.actualChangeIds.length, 1);
-    assert.equal(extraFinding.actualChangeIds.length, 1);
+    assert.deepEqual(addedFinding.plannedChangeIds, []);
+    assert.equal(addedFinding.blocking, true);
+    assert.deepEqual(finding.actualChangeIds, [fooSnapshotChange.id]);
+    assert.deepEqual(addedFinding.actualChangeIds, [addedSnapshotChange.id]);
     assert.equal(finding.evidenceIds.length, 1);
-    assert.equal(extraFinding.evidenceIds.length, 1);
+    assert.equal(addedFinding.evidenceIds.length, 1);
+    assert.equal(
+      checked.structuredContent.result.changeCheck.findings.some((candidate) =>
+        candidate.type === "cannot_determine" ||
+        (candidate.blocking && candidate.id !== addedFinding.id)
+      ),
+      false,
+      `the exact staged bytes must leave only the added-file Finding blocking: ${JSON.stringify(findingDiagnostics)}`,
+    );
     const evidenceRead = await callTool(mcp, output, requestId++, "get_evidence", {
       taskId,
-      evidenceIds: [...finding.evidenceIds, ...extraFinding.evidenceIds],
+      evidenceIds: [...finding.evidenceIds, ...addedFinding.evidenceIds],
       maxExcerptChars: 8_192,
-      pageSize: finding.evidenceIds.length + extraFinding.evidenceIds.length,
+      pageSize: finding.evidenceIds.length + addedFinding.evidenceIds.length,
     }, GetEvidenceOutputV1Schema);
     const expectedEvidence = evidenceRead.structuredContent.result.evidence.find((evidence) =>
       "filePath" in evidence && evidence.filePath === "src/index.ts",
@@ -760,15 +795,26 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     assert.deepEqual(expectedEvidence.nodeIds, [FOO_NODE_ID]);
     assert.equal(expectedEvidence.contentHash, contentDigest(Buffer.from(FOO_ONLY_SOURCE, "utf8")));
     assert.equal(expectedEvidence.observedAtSnapshotId, changedSnapshotId);
-    const extraEvidence = evidenceRead.structuredContent.result.evidence.find((evidence) =>
-      "filePath" in evidence && evidence.filePath === "src/extra.ts",
+    assert.deepEqual(finding.evidenceIds, [expectedEvidence.id]);
+    const addedEvidence = evidenceRead.structuredContent.result.evidence.find((evidence) =>
+      "filePath" in evidence && evidence.filePath === "src/added.ts",
     );
-    assert.ok(extraEvidence && "filePath" in extraEvidence, "the extra Finding must resolve to its edited source file");
-    assert.equal(extraEvidence.freshness, "current");
-    assert.deepEqual(extraEvidence.lineRange, [1, 1]);
-    assert.deepEqual(extraEvidence.nodeIds, [EXTRA_NODE_ID]);
-    assert.equal(extraEvidence.contentHash, contentDigest(Buffer.from(EXTRA_CHANGED_SOURCE, "utf8")));
-    assert.equal(extraEvidence.observedAtSnapshotId, changedSnapshotId);
+    assert.ok(addedEvidence && "filePath" in addedEvidence, "the unplanned Finding must resolve to the added source file");
+    assert.equal(addedEvidence.freshness, "current");
+    assert.deepEqual(addedEvidence.lineRange, [1, 1]);
+    assert.deepEqual(addedEvidence.nodeIds, [ADDED_NODE_ID]);
+    assert.equal(addedEvidence.contentHash, contentDigest(Buffer.from(ADDED_SOURCE, "utf8")));
+    assert.equal(addedEvidence.observedAtSnapshotId, changedSnapshotId);
+    assert.deepEqual(addedFinding.evidenceIds, [addedEvidence.id]);
+
+    await updateTask(
+      {
+        type: "accept_finding",
+        findingId: addedFinding.id,
+        reason: "The added source file is intentional and is explicitly accepted for this Alpha flow.",
+      },
+      "preview-workbench-browser-accept-added-file-finding",
+    );
 
     await updateTask(
       { type: "transition_status", to: "verification_required" },
@@ -825,9 +871,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
 
     const verificationProgram = [
       "const { foo } = await import('./src/index.ts');",
-      "const { extra } = await import('./src/extra.ts');",
       "if (foo() !== 'browser-ready') throw new Error('unexpected foo result');",
-      "if (extra() !== 'extra-ready') throw new Error('unexpected extra result');",
     ].join(" ");
     const verificationStartedAt = Date.now();
     const verificationExecution = await execBounded(

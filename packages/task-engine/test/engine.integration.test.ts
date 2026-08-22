@@ -132,7 +132,10 @@ function graphFixture(): KnowledgeGraph {
   };
 }
 
-type ContextLoader = Pick<TaskContextProvider, "loadTaskContext">;
+type ContextLoader = Pick<
+  TaskContextProvider,
+  "loadTaskContext" | "analyzeTaskChanges"
+>;
 
 const contextProvider: ContextLoader = {
   async loadTaskContext() {
@@ -160,6 +163,7 @@ function bindContextProvider(
   store: ArtifactStore,
   loader: ContextLoader,
 ): TaskContextProvider {
+  const analyzer = loader.analyzeTaskChanges;
   return {
     binding: {
       schemaVersion: 1,
@@ -169,6 +173,13 @@ function bindContextProvider(
     loadTaskContext(input) {
       return loader.loadTaskContext(input);
     },
+    ...(analyzer === undefined
+      ? {}
+      : {
+          analyzeTaskChanges(input) {
+            return analyzer.call(loader, input);
+          },
+        }),
   };
 }
 
@@ -3407,4 +3418,163 @@ describe("TaskEngine persistent integration", () => {
     );
     expect(verified.task.status).toBe("verified");
   }, 10_000);
+
+  it("does not consume a same-file hunk for a path-only planned change", async () => {
+    const { store } = await openStore();
+    const fileGraph: KnowledgeGraph = {
+      ...graphFixture(),
+      nodes: [
+        node("file:task", "TaskHandler", "src/task.ts", {
+          type: "file",
+          lineRange: [1, 1],
+        }),
+      ],
+      edges: [],
+    };
+    const taskEngine = engine(store, {
+      contextProvider: {
+        async loadTaskContext() {
+          return {
+            graph: fileGraph,
+            existingFilePaths: ["src/task.ts"],
+            sourceEvidence: [
+              {
+                nodeId: "file:task",
+                filePath: "src/task.ts",
+                lineRange: [1, 1] as [number, number],
+                contentHash: SOURCE_DIGEST,
+                kind: "source" as const,
+              },
+            ],
+          };
+        },
+        async analyzeTaskChanges() {
+          return {
+            status: "complete" as const,
+            hunks: [
+              {
+                id: "hunk:path-only-regression",
+                actualChangeIds: ["change:implementation"],
+                filePath: "src/task.ts",
+                newLineRange: [1, 1] as [number, number],
+                nodeIds: ["task-handler"],
+                contentHash: SOURCE_DIGEST,
+              },
+            ],
+            boundaries: [],
+          };
+        },
+      },
+    });
+    const built = await taskEngine.buildTaskBrief(
+      buildInput("path-only-check"),
+      auth(),
+    );
+    const pathOnlyPlan = built.brief.plannedChanges.find(
+      (change) => change.filePath === "src/task.ts",
+    );
+    expect(pathOnlyPlan).toBeDefined();
+    expect(pathOnlyPlan).not.toHaveProperty("symbolId");
+
+    let revision = built.task.revision;
+    for (const [action, key] of [
+      [
+        { type: "confirm_goal", claimId: built.brief.goalClaimId },
+        "path-only-confirm-goal",
+      ],
+      [
+        {
+          type: "confirm_acceptance_criteria",
+          claimIds: built.brief.acceptanceClaimIds,
+        },
+        "path-only-confirm-acceptance",
+      ],
+      [
+        {
+          type: "confirm_plan",
+          plannedChangeIds: built.brief.plannedChanges.map(
+            (change) => change.id,
+          ),
+        },
+        "path-only-confirm-plan",
+      ],
+      [
+        { type: "transition_status", to: "planned" },
+        "path-only-transition-planned",
+      ],
+      [
+        { type: "transition_status", to: "in_progress" },
+        "path-only-transition-progress",
+      ],
+      [
+        { type: "transition_status", to: "check_required" },
+        "path-only-transition-check",
+      ],
+    ] as const) {
+      const result = await taskEngine.updateTask(
+        {
+          taskId: built.task.taskId,
+          action,
+          expectedRevision: revision,
+          idempotencyKey: key,
+          actor: ACTOR,
+        },
+        auth(),
+      );
+      revision = result.task.revision;
+    }
+
+    const checked = await taskEngine.checkChange(
+      {
+        taskId: built.task.taskId,
+        actualSnapshotId: "snapshot:actual",
+        includeWorktree: true,
+        expectedRevision: revision,
+        idempotencyKey: "path-only-change-check",
+        actor: ACTOR,
+      },
+      auth(["task:update"]),
+    );
+    expect(checked.changeCheck.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "cannot_determine",
+          plannedChangeIds: [pathOnlyPlan!.id],
+          blocking: true,
+        }),
+        expect.objectContaining({
+          type: "unplanned_change",
+          plannedChangeIds: [],
+          actualChangeIds: ["change:implementation"],
+          blocking: true,
+        }),
+      ]),
+    );
+    expect(checked.changeCheck.findings).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "planned_completed" }),
+      ]),
+    );
+    const unplanned = checked.changeCheck.findings.find(
+      (finding) => finding.type === "unplanned_change",
+    );
+    if (unplanned === undefined) {
+      throw new TypeError("The same-file hunk must remain unplanned.");
+    }
+    const persisted = await store.readTaskBundle(built.task.taskId);
+    if (!("brief" in persisted.bundle)) {
+      throw new TypeError("The checked Task must remain contextual.");
+    }
+    const sourceEvidence = persisted.bundle.evidence.find(
+      (evidence) => unplanned.evidenceIds.includes(evidence.id),
+    );
+    expect(sourceEvidence).toMatchObject({
+      kind: "source",
+      observedAtSnapshotId: "snapshot:actual",
+      filePath: "src/task.ts",
+      lineRange: [1, 1],
+      nodeIds: ["task-handler"],
+      contentHash: SOURCE_DIGEST,
+    });
+  });
 });

@@ -397,7 +397,7 @@ function makeFindings(
     );
     const matchingHunks = samePathHunks.filter(
       (hunk) =>
-        planned.symbolId === undefined ||
+        planned.symbolId !== undefined &&
         hunk.nodeIds.includes(planned.symbolId),
     );
     if (relevantBoundaries.length > 0) {

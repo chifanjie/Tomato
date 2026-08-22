@@ -37,21 +37,162 @@ understand-code mcp --stdio --root /absolute/path/to/worktree
 It also contains self-contained Codex and Claude Code plugin marketplaces. The
 installed plugins carry their own exact-version MCP executable, so Host plugin
 caches do not depend on the monorepo, a globally installed Understand Code
-command, or the original tarball location:
+command, or the original tarball location.
+
+## Packaged Host lifecycle
+
+The commands below use visibly invalid absolute placeholders so an unexpanded
+shell variable cannot silently select another package. Run `npm root -g`, then
+replace every `/ABSOLUTE/NPM/GLOBAL/ROOT` occurrence with that command's exact
+absolute output. Replace the tarball and repository placeholders before running
+any command. After every npm install below, `understand-code --version` must
+print the intended tarball's exact package version before any Host command is
+run. Keep the old tarball if pinned recovery may be needed.
+
+### 1. First install, Doctor, and a new Host session
 
 ```sh
-PREVIEW_ROOT="$(npm root -g)/@understand-code/preview"
+npm install -g "/ABSOLUTE/PATH/TO/understand-code-preview-X.Y.Z.tgz"
+understand-code --version
 
-codex plugin marketplace add "$PREVIEW_ROOT/dist/plugin-roots/codex" --json
+codex plugin marketplace add "/ABSOLUTE/NPM/GLOBAL/ROOT/@understand-code/preview/dist/plugin-roots/codex" --json
 codex plugin add understand-code@understand-code-alpha --json
 
-claude plugin validate --strict "$PREVIEW_ROOT/dist/plugin-roots/claude"
-claude plugin marketplace add "$PREVIEW_ROOT/dist/plugin-roots/claude" --scope user
+claude plugin validate --strict "/ABSOLUTE/NPM/GLOBAL/ROOT/@understand-code/preview/dist/plugin-roots/claude"
+claude plugin marketplace add "/ABSOLUTE/NPM/GLOBAL/ROOT/@understand-code/preview/dist/plugin-roots/claude" --scope user
 claude plugin install understand-code@understand-code-alpha --scope user
 
 understand-code doctor --host codex
 understand-code doctor --host claude
 ```
+
+The Codex marketplace JSON must report
+`marketplaceName: "understand-code-alpha"`; the plugin JSON must report the
+canonical `pluginId`, exact `version`, and active `installedPath`. Both Doctor
+commands must exit 0 and report
+`hostRegistration: "registered"`, `status: "healthy"`, the installed package
+version, `strongWrites: "locked"`, and `releaseReady: false`. Close any Host
+session that was open during installation. Start a new Codex or Claude session
+inside `/ABSOLUTE/PATH/TO/GIT/WORKTREE`; for Claude, the Host must supply that
+same canonical worktree as `CLAUDE_PROJECT_DIR`. A new session is the supported
+boundary for loading the newly cached plugin and its MCP tools.
+
+### 2. Install a newer packaged plugin
+
+Install the new tarball at the same global npm location first:
+
+```sh
+npm install -g "/ABSOLUTE/PATH/TO/understand-code-preview-NEW-VERSION.tgz"
+understand-code --version
+```
+
+For Codex, reinstall from the already configured marketplace:
+
+```sh
+codex plugin add understand-code@understand-code-alpha --json
+understand-code doctor --host codex
+```
+
+This is an official `plugin add` cache replacement/reinstall flow. It is not an
+atomic plugin upgrade and `codex plugin marketplace upgrade` only refreshes a
+Git-backed marketplace; it is not the packaged local update command. Doctor
+must exit 0 with the new exact version before starting a new Codex session.
+
+For Claude, refresh the configured marketplace and use the Host's update
+command:
+
+```sh
+claude plugin marketplace update understand-code-alpha
+claude plugin update understand-code@understand-code-alpha --scope user
+understand-code doctor --host claude
+```
+
+Claude reports that a restart is required. Close the old session; Doctor must
+exit 0 with the new exact version before a new Claude session starts.
+
+### 3. Recover a retained pinned package
+
+Reinstall the retained old tarball so the configured local marketplaces again
+expose its exact payload:
+
+```sh
+npm install -g "/ABSOLUTE/PATH/TO/understand-code-preview-PINNED-VERSION.tgz"
+understand-code --version
+```
+
+For Codex, remove the active cached version and add the pinned payload again:
+
+```sh
+codex plugin remove understand-code@understand-code-alpha --json
+codex plugin add understand-code@understand-code-alpha --json
+understand-code doctor --host codex
+```
+
+For Claude, clear the active registration, refresh the local marketplace, and
+install the pinned payload:
+
+```sh
+claude plugin uninstall understand-code@understand-code-alpha --scope user --yes
+claude plugin list --json
+claude plugin marketplace update understand-code-alpha
+claude plugin install understand-code@understand-code-alpha --scope user
+understand-code doctor --host claude
+```
+
+The intermediate Claude list must contain no
+`understand-code@understand-code-alpha` entry before reinstall; leave unrelated
+plugins untouched. These are official reinstall recovery procedures, not an
+atomic downgrade or rollback. Each Doctor must exit 0 with the pinned exact
+version. Start a new Host session in the original Git worktree. Ask the Host to
+call `get_task_brief` with the exact persisted Task ID recorded before the version
+change. Recovery is successful only when the returned Task ID, revision,
+baseline Snapshot, and current Snapshot remain the expected persisted values;
+do not substitute a newly created Task as proof of recovery.
+
+### 4. Remove Host registration
+
+Remove the Codex registration and its configured marketplace, then verify that
+only the target plugin entry is absent. Preserve every unrelated plugin:
+
+```sh
+codex plugin remove understand-code@understand-code-alpha --json
+codex plugin marketplace remove understand-code-alpha
+codex plugin list --json
+```
+
+Remove the Claude registration and marketplace separately, again preserving
+unrelated plugins:
+
+```sh
+claude plugin uninstall understand-code@understand-code-alpha --scope user --yes
+claude plugin marketplace remove understand-code-alpha --scope user
+claude plugin list --json
+```
+
+Finally, run both expected-nonzero Doctor checks. These POSIX assertions keep
+the documented exit status 1 from triggering `set -e`; an argv error exit
+status 2 still fails. Also inspect the required JSON state described below:
+
+```sh
+doctor_status=0
+understand-code doctor --host codex || doctor_status=$?
+test "$doctor_status" -eq 1
+
+doctor_status=0
+understand-code doctor --host claude || doctor_status=$?
+test "$doctor_status" -eq 1
+```
+
+After removal, each Doctor intentionally exits with process status 1 and reports
+`hostRegistration: "not_registered"`; this is expected and must not be bypassed
+as a successful healthy check. Codex removal must remove the exact active
+`installedPath` reported by the most recent `plugin add`. For Claude,
+`plugin list --json` is the authority for active registration and must no
+longer contain `understand-code@understand-code-alpha`. The Codex list must also
+contain no target entry; unrelated Codex and Claude plugins must remain intact.
+Claude may retain an inert version cache after uninstall; do not treat that
+inactive cache as a registered plugin, never execute it directly, and do not
+delete unrelated Host cache content manually.
 
 Host Registration Doctor only reads the selected Host CLI's bounded JSON Plugin
 state. A healthy result means the current Host reports the canonical Plugin,
@@ -164,8 +305,10 @@ production use or that a live Provider execution path has been established.
 The Alpha's UI evidence includes a same-tarball, monorepo-external real-browser
 gate that drives the public MCP flow through Finding → Evidence/Source → Graph →
 Wiki → Task and verifies Snapshot drift handling. This does **not** close the
-formal Release, signed distribution, cross-platform, or full Host-mediated browser
-gates.
+formal Release, signed distribution, cross-platform, or Gold gates. The
+officially active Claude cache has been shown to keep its bundled MCP alive
+while opening the cookie-authenticated browser Workbench, but this is not yet a
+credentialed, model-selected tool call from a complete Codex or Claude chat.
 
 ## Preview commands
 

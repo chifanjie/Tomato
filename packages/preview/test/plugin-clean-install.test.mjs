@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { createInterface } from "node:readline";
 import { tmpdir } from "node:os";
@@ -1133,6 +1133,174 @@ async function expectUnsafeWrapperRootFailure(server, cwd, env, label) {
   }
 }
 
+async function expectSecondarySessionFailure({
+  server,
+  version,
+  cwd,
+  env,
+  clientName,
+  taskId,
+  afterFirstFailure,
+}) {
+  const child = spawn(server.executable, server.args, {
+    cwd,
+    env,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  const output = collectMessages(child);
+  const expectedFailure = {
+    isError: true,
+    content: [{ type: "text", text: "Workspace binding is required." }],
+    structuredContent: {
+      error: {
+        schemaVersion: 1,
+        code: "workspace_binding_required",
+        details: { reason: "secondary_session_required" },
+      },
+    },
+  };
+  try {
+    writeMessage(child, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-11-25",
+        capabilities: {},
+        clientInfo: { name: clientName, version: "1.0.0" },
+      },
+    });
+    const initialized = await output.waitFor(
+      (message) => message.id === 1,
+      `${clientName} secondary-session initialize`,
+    );
+    assert.equal(initialized.result.serverInfo.name, "understand-code");
+    assert.equal(initialized.result.serverInfo.version, version);
+    writeMessage(child, { jsonrpc: "2.0", method: "notifications/initialized", params: {} });
+    writeMessage(child, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
+    const listed = await output.waitFor(
+      (message) => message.id === 2,
+      `${clientName} secondary-session tools/list`,
+    );
+    assert.equal(Object.hasOwn(listed, "error"), false);
+    assert.deepEqual(listed.result.tools.map((tool) => tool.name), EXPECTED_TOOL_NAMES);
+
+    writeMessage(child, {
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: {
+        name: "get_task_brief",
+        arguments: { taskId, section: "summary" },
+      },
+    });
+    const taskFailure = await output.waitFor(
+      (message) => message.id === 3,
+      `${clientName} secondary-session get_task_brief`,
+    );
+    assert.equal(Object.hasOwn(taskFailure, "error"), false);
+    assert.deepEqual(taskFailure.result, expectedFailure);
+
+    await afterFirstFailure();
+
+    writeMessage(child, {
+      jsonrpc: "2.0",
+      id: 4,
+      method: "tools/call",
+      params: { name: "get_repo_pulse", arguments: {} },
+    });
+    const pulseFailure = await output.waitFor(
+      (message) => message.id === 4,
+      `${clientName} secondary-session get_repo_pulse`,
+    );
+    assert.equal(Object.hasOwn(pulseFailure, "error"), false);
+    assert.deepEqual(pulseFailure.result, expectedFailure);
+
+    child.stdin.end();
+    assert.deepEqual(
+      await waitForExit(child, `${clientName} secondary-session clean exit`),
+      [0, null],
+    );
+    assert.equal(output.stderr.join(""), "");
+  } finally {
+    await stopChild(child);
+  }
+}
+
+async function recursiveByteInventory(root) {
+  const inventory = [];
+  async function visit(directory, relativeDirectory) {
+    const entries = await readdir(directory, { withFileTypes: true });
+    entries.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
+    for (const entry of entries) {
+      const relativePath = relativeDirectory === ""
+        ? entry.name
+        : `${relativeDirectory}/${entry.name}`;
+      const absolutePath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        inventory.push({ relativePath, type: "directory", bytes: null, contentDigest: null });
+        await visit(absolutePath, relativePath);
+        continue;
+      }
+      assert.equal(entry.isFile(), true, `foreign Store inventory rejects ${relativePath}`);
+      const bytes = await readFile(absolutePath);
+      inventory.push({
+        relativePath,
+        type: "file",
+        bytes: bytes.length,
+        contentDigest: contentDigest(bytes),
+      });
+    }
+  }
+  await visit(root, "");
+  return inventory;
+}
+
+async function initializeRepositoryContext(options) {
+  return withInstalledMcp(options, async ({ child, output }) => {
+    const refreshed = await callTool(child, output, 3, "refresh_index", {
+      mode: "full",
+      idempotencyKey: `${options.clientName}-initialize-repository-context`,
+      actor: `agent:${options.clientName}`,
+    });
+    assert.equal(refreshed.structuredContent.result.operation.status, "completed");
+    const pulse = await callTool(child, output, 4, "get_repo_pulse", {});
+    assert.deepEqual(
+      {
+        repositoryId: pulse.structuredContent.meta.repositoryId,
+        worktreeId: pulse.structuredContent.meta.worktreeId,
+        sourceSnapshotId: pulse.structuredContent.meta.sourceSnapshotId,
+      },
+      {
+        repositoryId: refreshed.structuredContent.meta.repositoryId,
+        worktreeId: refreshed.structuredContent.meta.worktreeId,
+        sourceSnapshotId: refreshed.structuredContent.meta.sourceSnapshotId,
+      },
+      "the fresh secondary Store must publish one exact Repository identity",
+    );
+    return {
+      repositoryId: refreshed.structuredContent.meta.repositoryId,
+      worktreeId: refreshed.structuredContent.meta.worktreeId,
+      sourceSnapshotId: refreshed.structuredContent.meta.sourceSnapshotId,
+    };
+  });
+}
+
+async function expectRepositoryPulse(options, expectedIdentity) {
+  return withInstalledMcp(options, async ({ child, output }) => {
+    const pulse = await callTool(child, output, 3, "get_repo_pulse", {});
+    assert.deepEqual(
+      {
+        repositoryId: pulse.structuredContent.meta.repositoryId,
+        worktreeId: pulse.structuredContent.meta.worktreeId,
+        sourceSnapshotId: pulse.structuredContent.meta.sourceSnapshotId,
+      },
+      expectedIdentity,
+      "a fresh repaired MCP must bind the exact secondary Repository identity",
+    );
+  });
+}
+
 async function findClaudeInstalledRoot(claudeConfig, version) {
   const cacheRoot = path.join(claudeConfig, "plugins/cache");
   const candidates = [];
@@ -1460,6 +1628,27 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
       contentDigest(await readFile(linkedIndexPath)),
       "the poisoned ambient repository must have unrelated index bytes",
     );
+    const secondaryRepositoryRoot = await createRepository(
+      path.join(sandbox, "secondary-session-repository"),
+      "export function secondary() { return 'unrelated-worktree'; }\n",
+    );
+    const secondarySourcePath = path.join(secondaryRepositoryRoot, "src/index.ts");
+    const secondaryIndexPath = await absoluteGitPath(secondaryRepositoryRoot, "index");
+    assert.notEqual(
+      (await repositoryGit(secondaryRepositoryRoot, ["rev-parse", "HEAD"])).stdout.trim(),
+      (await repositoryGit(repositoryRoot, ["rev-parse", "HEAD"])).stdout.trim(),
+      "the secondary-session repository must have an unrelated commit identity",
+    );
+    assert.notEqual(
+      contentDigest(await readFile(secondaryIndexPath)),
+      contentDigest(await readFile(linkedIndexPath)),
+      "the secondary-session repository must have unrelated index bytes",
+    );
+    const [secondarySourceBefore, secondaryIndexBefore] = await Promise.all([
+      readFile(secondarySourcePath),
+      readFile(secondaryIndexPath),
+    ]);
+    const secondaryStoreRoot = path.join(secondaryRepositoryRoot, ".understand-code");
     const ambientObjectsPath = path.join(ambientRepositoryRoot, ".git", "objects");
     const poisonGitAuthority = Object.freeze({
       GIT_DIR: path.join(ambientRepositoryRoot, ".git"),
@@ -1652,6 +1841,182 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
       },
       codexAlpha.result,
     );
+    const linkedStoreRoot = path.join(repositoryRoot, ".understand-code");
+    const secondaryContext = (await initializeRepositoryContext({
+      host: "codex",
+      installedRoot: codexInstalledRoot,
+      version: v1Version,
+      repositoryRoot: secondaryRepositoryRoot,
+      cwd: secondaryRepositoryRoot,
+      env: cleanHostEnvironment(codexUserHome, {
+        CODEX_HOME: codexHome,
+        ...poisonGitAuthority,
+      }),
+      clientName: "codex-plugin-e2e-secondary-store-initializer",
+    })).result;
+    for (const [label, value] of [
+      ["repositoryId", secondaryContext.repositoryId],
+      ["worktreeId", secondaryContext.worktreeId],
+    ]) {
+      assert.equal(typeof value, "string", `secondary ${label} must be a string`);
+      assert.ok(value.length > 0, `secondary ${label} must be nonempty`);
+    }
+    assert.notEqual(secondaryContext.repositoryId, codexAlpha.result.repositoryId);
+    assert.notEqual(secondaryContext.worktreeId, codexAlpha.result.worktreeId);
+    const secondaryManifestPath = path.join(secondaryStoreRoot, "artifact-manifest.json");
+    const secondaryManifest = JSON.parse(await readFile(secondaryManifestPath, "utf8"));
+    assert.deepEqual(
+      {
+        repositoryId: secondaryManifest.repositoryId,
+        worktreeId: secondaryManifest.worktreeId,
+      },
+      {
+        repositoryId: secondaryContext.repositoryId,
+        worktreeId: secondaryContext.worktreeId,
+      },
+      "the valid secondary Store Manifest must bind the exact refreshed Repository identity",
+    );
+    const validSecondaryStoreInventory = await recursiveByteInventory(secondaryStoreRoot);
+    assert.deepEqual(await readFile(secondarySourcePath), secondarySourceBefore);
+    assert.deepEqual(await readFile(secondaryIndexPath), secondaryIndexBefore);
+    const validSecondaryStoreBackup = path.join(sandbox, "secondary-valid-store-backup");
+    await rename(secondaryStoreRoot, validSecondaryStoreBackup);
+    assert.deepEqual(
+      await recursiveByteInventory(validSecondaryStoreBackup),
+      validSecondaryStoreInventory,
+      "the sandbox backup must preserve the exact valid secondary Store",
+    );
+    await assertMissing(
+      secondaryStoreRoot,
+      "moving the valid secondary Store to its sandbox backup must vacate the repository",
+    );
+
+    const linkedStoreInventory = await recursiveByteInventory(linkedStoreRoot);
+    const linkedManifest = JSON.parse(
+      await readFile(path.join(linkedStoreRoot, "artifact-manifest.json"), "utf8"),
+    );
+    assert.deepEqual(
+      {
+        repositoryId: linkedManifest.repositoryId,
+        worktreeId: linkedManifest.worktreeId,
+      },
+      {
+        repositoryId: codexAlpha.result.repositoryId,
+        worktreeId: codexAlpha.result.worktreeId,
+      },
+      "the foreign Manifest must bind the original linked-worktree Task identity",
+    );
+    assert.notEqual(linkedManifest.repositoryId, secondaryManifest.repositoryId);
+    assert.notEqual(linkedManifest.worktreeId, secondaryManifest.worktreeId);
+
+    await cp(linkedStoreRoot, secondaryStoreRoot, { recursive: true });
+    const foreignStoreInventory = await recursiveByteInventory(secondaryStoreRoot);
+    assert.deepEqual(
+      foreignStoreInventory,
+      linkedStoreInventory,
+      "the secondary-session fixture must be an exact relative-path/type/byte copy of the linked Store",
+    );
+    const foreignManifest = JSON.parse(await readFile(secondaryManifestPath, "utf8"));
+    assert.deepEqual(
+      {
+        repositoryId: foreignManifest.repositoryId,
+        worktreeId: foreignManifest.worktreeId,
+      },
+      {
+        repositoryId: codexAlpha.result.repositoryId,
+        worktreeId: codexAlpha.result.worktreeId,
+      },
+      "the copied foreign Manifest must retain the original linked-worktree identity",
+    );
+    const restoreValidSecondaryStore = async (hostLabel) => {
+      assert.deepEqual(await readFile(secondarySourcePath), secondarySourceBefore);
+      assert.deepEqual(await readFile(secondaryIndexPath), secondaryIndexBefore);
+      assert.deepEqual(
+        await recursiveByteInventory(secondaryStoreRoot),
+        foreignStoreInventory,
+        `${hostLabel} first failure must not modify the foreign Store`,
+      );
+      assert.deepEqual(
+        await recursiveByteInventory(validSecondaryStoreBackup),
+        validSecondaryStoreInventory,
+        `${hostLabel} first failure must not modify the valid Store backup`,
+      );
+      const foreignStoreBackup = path.join(
+        sandbox,
+        `${hostLabel.toLowerCase()}-foreign-store-backup`,
+      );
+      await rename(secondaryStoreRoot, foreignStoreBackup);
+      assert.deepEqual(
+        await recursiveByteInventory(foreignStoreBackup),
+        foreignStoreInventory,
+        `${hostLabel} foreign Store backup must preserve the exact failed bytes`,
+      );
+      await cp(validSecondaryStoreBackup, secondaryStoreRoot, { recursive: true });
+      assert.deepEqual(
+        await recursiveByteInventory(secondaryStoreRoot),
+        validSecondaryStoreInventory,
+        `${hostLabel} explicit repair must restore the exact valid secondary Store`,
+      );
+    };
+    await expectSecondarySessionFailure({
+      server: codexAlpha.server,
+      version: v1Version,
+      cwd: secondaryRepositoryRoot,
+      env: cleanHostEnvironment(codexUserHome, {
+        CODEX_HOME: codexHome,
+        ...poisonGitAuthority,
+      }),
+      clientName: "codex-plugin-e2e-secondary-session",
+      taskId: codexAlpha.result.taskId,
+      afterFirstFailure: () => restoreValidSecondaryStore("Codex"),
+    });
+    assert.deepEqual(await readFile(secondarySourcePath), secondarySourceBefore);
+    assert.deepEqual(await readFile(secondaryIndexPath), secondaryIndexBefore);
+    assert.deepEqual(
+      await recursiveByteInventory(secondaryStoreRoot),
+      validSecondaryStoreInventory,
+      "the explicitly repaired Store must remain valid after the locked Codex session exits",
+    );
+    assert.deepEqual(
+      await recursiveByteInventory(validSecondaryStoreBackup),
+      validSecondaryStoreInventory,
+      "the Codex secondary-session flow must not modify the valid Store backup",
+    );
+    await expectRepositoryPulse(
+      {
+        host: "codex",
+        installedRoot: codexInstalledRoot,
+        version: v1Version,
+        repositoryRoot: secondaryRepositoryRoot,
+        cwd: secondaryRepositoryRoot,
+        env: cleanHostEnvironment(codexUserHome, {
+          CODEX_HOME: codexHome,
+          ...poisonGitAuthority,
+        }),
+        clientName: "codex-plugin-e2e-secondary-session-repaired",
+      },
+      secondaryContext,
+    );
+    assert.deepEqual(
+      await recursiveByteInventory(secondaryStoreRoot),
+      validSecondaryStoreInventory,
+      "the fresh repaired Codex Pulse must not modify the valid secondary Store",
+    );
+    await resumeInstalledAlpha(
+      {
+        host: "codex",
+        installedRoot: codexInstalledRoot,
+        version: v1Version,
+        repositoryRoot,
+        cwd: nestedCwd,
+        env: cleanHostEnvironment(codexUserHome, {
+          CODEX_HOME: codexHome,
+          ...poisonGitAuthority,
+        }),
+        clientName: "codex-plugin-e2e-secondary-session-recovery",
+      },
+      codexAlpha.result,
+    );
 
     const claudeEnv = cleanHostEnvironment(claudeUserHome, {
       CLAUDE_CONFIG_DIR: claudeConfig,
@@ -1787,6 +2152,81 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
         `Claude plugin must reject an unsafe ${label} Root before starting MCP`,
       );
     }
+    assert.deepEqual(
+      await recursiveByteInventory(secondaryStoreRoot),
+      validSecondaryStoreInventory,
+      "the repaired secondary Store must remain valid before preparing Claude's foreign copy",
+    );
+    assert.deepEqual(
+      await recursiveByteInventory(validSecondaryStoreBackup),
+      validSecondaryStoreInventory,
+      "the valid Store backup must remain frozen before the Claude secondary-session launch",
+    );
+    await rm(secondaryStoreRoot, { recursive: true, force: true });
+    await cp(linkedStoreRoot, secondaryStoreRoot, { recursive: true });
+    assert.deepEqual(
+      await recursiveByteInventory(secondaryStoreRoot),
+      foreignStoreInventory,
+      "Claude must receive the same exact foreign Store fixture as Codex",
+    );
+    const claudeForeignManifest = JSON.parse(await readFile(secondaryManifestPath, "utf8"));
+    assert.deepEqual(
+      {
+        repositoryId: claudeForeignManifest.repositoryId,
+        worktreeId: claudeForeignManifest.worktreeId,
+      },
+      {
+        repositoryId: codexAlpha.result.repositoryId,
+        worktreeId: codexAlpha.result.worktreeId,
+      },
+      "Claude's foreign Manifest must retain the original linked-worktree identity",
+    );
+    await expectSecondarySessionFailure({
+      server: claudeAlpha.server,
+      version: v1Version,
+      cwd: differentCwd,
+      env: cleanHostEnvironment(claudeUserHome, {
+        CLAUDE_CONFIG_DIR: claudeConfig,
+        CLAUDE_PROJECT_DIR: secondaryRepositoryRoot,
+        ...poisonGitAuthority,
+      }),
+      clientName: "claude-plugin-e2e-secondary-session",
+      taskId: codexAlpha.result.taskId,
+      afterFirstFailure: () => restoreValidSecondaryStore("Claude"),
+    });
+    assert.deepEqual(await readFile(secondarySourcePath), secondarySourceBefore);
+    assert.deepEqual(await readFile(secondaryIndexPath), secondaryIndexBefore);
+    assert.deepEqual(
+      await recursiveByteInventory(secondaryStoreRoot),
+      validSecondaryStoreInventory,
+      "the explicitly repaired Store must remain valid after the locked Claude session exits",
+    );
+    assert.deepEqual(
+      await recursiveByteInventory(validSecondaryStoreBackup),
+      validSecondaryStoreInventory,
+      "the Claude secondary-session flow must not modify the valid Store backup",
+    );
+    await expectRepositoryPulse(
+      {
+        host: "claude",
+        installedRoot: claudeInstalledRoot,
+        version: v1Version,
+        repositoryRoot: secondaryRepositoryRoot,
+        cwd: differentCwd,
+        env: cleanHostEnvironment(claudeUserHome, {
+          CLAUDE_CONFIG_DIR: claudeConfig,
+          CLAUDE_PROJECT_DIR: secondaryRepositoryRoot,
+          ...poisonGitAuthority,
+        }),
+        clientName: "claude-plugin-e2e-secondary-session-repaired",
+      },
+      secondaryContext,
+    );
+    assert.deepEqual(
+      await recursiveByteInventory(secondaryStoreRoot),
+      validSecondaryStoreInventory,
+      "the fresh repaired Claude Pulse must not modify the valid secondary Store",
+    );
     await resumeInstalledAlpha(
       {
         host: "claude",
@@ -1799,9 +2239,21 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
           CLAUDE_PROJECT_DIR: nestedCwd,
           ...poisonGitAuthority,
         }),
-        clientName: "claude-plugin-e2e-root-recovery",
+        clientName: "claude-plugin-e2e-root-and-secondary-session-recovery",
       },
       codexAlpha.result,
+    );
+    for (const host of ["codex", "claude"]) {
+      assert.deepEqual(
+        await recursiveByteInventory(path.join(sandbox, `${host}-foreign-store-backup`)),
+        foreignStoreInventory,
+        `${host} foreign Store evidence must remain byte-exact after recovery`,
+      );
+    }
+    assert.deepEqual(
+      await recursiveByteInventory(linkedStoreRoot),
+      linkedStoreInventory,
+      "secondary-session exercises and exact Task replay must not modify the linked Store",
     );
 
     assert.deepEqual(

@@ -50,10 +50,14 @@ const ADDED_SOURCE =
   "export function added() { return 'added-unplanned'; }\n";
 const UNTRACKED_SOURCE =
   "export function untrackedAdded() { return 'untracked-ready'; }\n";
+const INTENT_TO_ADD_SOURCE =
+  "export function intentToAdd() { return 'intent-ready'; }\n";
 const FOO_NODE_ID = "function:src/index.ts:foo";
 const BAR_NODE_ID = "function:src/index.ts:bar";
 const ADDED_NODE_ID = "function:src/added.ts:added";
 const UNTRACKED_NODE_ID = "function:src/untracked.ts:untrackedAdded";
+const INTENT_TO_ADD_NODE_ID =
+  "function:src/intent-to-add.ts:intentToAdd";
 const LIFECYCLE_V2_VERSION = "0.1.0-preview.2.workbench.lifecycle-v2";
 const CANDIDATE_SCRIPT = "packages/preview/scripts/alpha-candidate.mjs";
 const CANDIDATE_MANIFEST = "understand-code-alpha-candidate.json";
@@ -62,6 +66,7 @@ const CANDIDATE_CHECKSUMS = "SHA256SUMS";
 const V1_OVERLAY_FILES = [
   "packages/preview/test/cold-packed.test.mjs",
   "packages/preview/test/workbench-browser-packed.test.mjs",
+  "packages/task-engine/src/repository-context-provider.ts",
 ];
 const V2_SOURCE_FILES = [
   "packages/preview/package.json",
@@ -414,11 +419,11 @@ async function createLifecycleCandidates() {
     assert.equal(
       overlayDelta.every((relativePath) => V1_OVERLAY_FILES.includes(relativePath)),
       true,
-      "the ephemeral v1 source delta may only contain the two reviewed packed tests",
+      "the ephemeral v1 source delta may only contain the reviewed packed gates and provider implementation",
     );
     const v1Commit = await commitCandidateSource(
       cloneRoot,
-      "bind candidate to reviewed packed lifecycle tests",
+      "bind candidate to reviewed packed lifecycle slice",
       V1_OVERLAY_FILES,
     );
     assert.equal((await candidateGit(cloneRoot, ["rev-parse", "HEAD^"])).stdout.trim(), sourceHead);
@@ -866,6 +871,10 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     lifecycleEnv = cleanMcpEnvironment(home, repositoryRoot);
     sourcePath = path.join(repositoryRoot, "src/index.ts");
     const untrackedPath = path.join(repositoryRoot, "src/untracked.ts");
+    const intentToAddPath = path.join(
+      repositoryRoot,
+      "src/intent-to-add.ts",
+    );
     mcp = spawn(managedWrapper, ["--root", repositoryRoot], {
       cwd: installDirectory,
       env: lifecycleEnv,
@@ -916,10 +925,12 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     assert.equal(untrackedFooPlan.symbolId, FOO_NODE_ID);
     assert.equal(
       untrackedBrief.plannedChanges.some(
-        (change) => change.filePath === "src/untracked.ts",
+        (change) =>
+          change.filePath === "src/untracked.ts" ||
+          change.filePath === "src/intent-to-add.ts",
       ),
       false,
-      "the Brief must not plan a file that does not exist yet",
+      "the Brief must not plan either file that does not exist yet",
     );
     let untrackedRevision =
       untrackedBuilt.structuredContent.result.task.revision;
@@ -973,18 +984,31 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     await Promise.all([
       writeFile(sourcePath, FOO_ONLY_SOURCE, "utf8"),
       writeFile(untrackedPath, UNTRACKED_SOURCE, "utf8"),
+      writeFile(intentToAddPath, INTENT_TO_ADD_SOURCE, "utf8"),
     ]);
+    await git(repositoryRoot, ["add", "-N", "--", "src/intent-to-add.ts"]);
     assert.equal(
       (await git(repositoryRoot, ["diff", "--cached", "--name-only"]))
         .stdout,
       "",
-      "the untracked vertical must not stage either changed path",
+      "intent-to-add must not introduce cached content for any changed path",
+    );
+    assert.equal(
+      (await git(repositoryRoot, [
+        "diff",
+        "--cached",
+        "--name-only",
+        "--",
+        "src/intent-to-add.ts",
+      ])).stdout,
+      "",
+      "the intent-to-add path must have no staged content",
     );
     assert.equal(
       (await git(repositoryRoot, ["status", "--porcelain", "--untracked-files=all"]))
         .stdout,
-      " M src/index.ts\n?? src/untracked.ts\n",
-      "the real repository must contain exactly one unstaged edit and one untracked add",
+      " M src/index.ts\n A src/intent-to-add.ts\n?? src/untracked.ts\n",
+      "the real repository must contain exactly one unstaged edit, one intent-to-add, and one untracked add",
     );
     const untrackedChangedRefresh = await callTool(
       mcp,
@@ -1012,7 +1036,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
         "utf8",
       )));
     assert.equal(untrackedSnapshotArtifact.payload.captureStatus, "complete");
-    assert.equal(untrackedSnapshotArtifact.payload.changes.length, 2);
+    assert.equal(untrackedSnapshotArtifact.payload.changes.length, 3);
     const untrackedFooChange =
       untrackedSnapshotArtifact.payload.changes.find(
         (change) => change.path === "src/index.ts",
@@ -1020,6 +1044,10 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     const untrackedAddedChange =
       untrackedSnapshotArtifact.payload.changes.find(
         (change) => change.path === "src/untracked.ts",
+      );
+    const intentToAddChange =
+      untrackedSnapshotArtifact.payload.changes.find(
+        (change) => change.path === "src/intent-to-add.ts",
       );
     assert.deepEqual(untrackedFooChange, {
       id: untrackedFooChange?.id,
@@ -1035,6 +1063,20 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       kind: "added",
       contentDigest: contentDigest(Buffer.from(UNTRACKED_SOURCE, "utf8")),
     });
+    assert.deepEqual(intentToAddChange, {
+      id: intentToAddChange?.id,
+      path: "src/intent-to-add.ts",
+      source: "unstaged",
+      kind: "added",
+      contentDigest: contentDigest(Buffer.from(INTENT_TO_ADD_SOURCE, "utf8")),
+    });
+    assert.equal(
+      untrackedSnapshotArtifact.payload.changes.filter(
+        (change) => change.path === "src/intent-to-add.ts",
+      ).length,
+      1,
+      "intent-to-add must publish one change without a staged duplicate",
+    );
 
     await updateUntrackedTask(
       { type: "transition_status", to: "check_required" },
@@ -1066,10 +1108,17 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       (finding) => finding.type === "unplanned_change",
     );
     assert.equal(untrackedCompleted.length, 1);
-    assert.equal(untrackedUnplanned.length, 1);
-    assert.equal(untrackedFindings.length, 2);
+    assert.equal(untrackedUnplanned.length, 2);
+    assert.equal(untrackedFindings.length, 3);
     const untrackedFooFinding = untrackedCompleted[0];
-    const untrackedAddedFinding = untrackedUnplanned[0];
+    const untrackedAddedFinding = untrackedUnplanned.find((finding) =>
+      finding.actualChangeIds.includes(untrackedAddedChange.id),
+    );
+    const intentToAddFinding = untrackedUnplanned.find((finding) =>
+      finding.actualChangeIds.includes(intentToAddChange.id),
+    );
+    assert.ok(untrackedAddedFinding, "the untracked add must be unplanned");
+    assert.ok(intentToAddFinding, "the intent-to-add path must be unplanned");
     assert.deepEqual(untrackedFooFinding.plannedChangeIds, [untrackedFooPlan.id]);
     assert.deepEqual(untrackedFooFinding.actualChangeIds, [untrackedFooChange.id]);
     assert.equal(untrackedFooFinding.blocking, false);
@@ -1079,10 +1128,16 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       [untrackedAddedChange.id],
     );
     assert.equal(untrackedAddedFinding.blocking, true);
+    assert.deepEqual(intentToAddFinding.plannedChangeIds, []);
+    assert.deepEqual(
+      intentToAddFinding.actualChangeIds,
+      [intentToAddChange.id],
+    );
+    assert.equal(intentToAddFinding.blocking, true);
     assert.equal(
       untrackedFindings.some((finding) => finding.type === "cannot_determine"),
       false,
-      `the exact unstaged+untracked bytes must be fully classified: ${JSON.stringify(untrackedFindings)}`,
+      `the exact unstaged+intent-to-add+untracked bytes must be fully classified: ${JSON.stringify(untrackedFindings)}`,
     );
     const untrackedEvidenceRead = await callTool(
       mcp,
@@ -1094,11 +1149,13 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
         evidenceIds: [
           ...untrackedFooFinding.evidenceIds,
           ...untrackedAddedFinding.evidenceIds,
+          ...intentToAddFinding.evidenceIds,
         ],
         maxExcerptChars: 8_192,
         pageSize:
           untrackedFooFinding.evidenceIds.length +
-          untrackedAddedFinding.evidenceIds.length,
+          untrackedAddedFinding.evidenceIds.length +
+          intentToAddFinding.evidenceIds.length,
       },
       GetEvidenceOutputV1Schema,
     );
@@ -1111,6 +1168,12 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       untrackedEvidenceRead.structuredContent.result.evidence.find(
         (evidence) =>
           "filePath" in evidence && evidence.filePath === "src/untracked.ts",
+      );
+    const intentToAddEvidence =
+      untrackedEvidenceRead.structuredContent.result.evidence.find(
+        (evidence) =>
+          "filePath" in evidence &&
+          evidence.filePath === "src/intent-to-add.ts",
       );
     assert.ok(
       untrackedFooEvidence && "filePath" in untrackedFooEvidence,
@@ -1148,6 +1211,24 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       untrackedAddedFinding.evidenceIds,
       [untrackedAddedEvidence.id],
     );
+    assert.ok(
+      intentToAddEvidence && "filePath" in intentToAddEvidence,
+      "the intent-to-add file must have exact Source Evidence",
+    );
+    assert.deepEqual(intentToAddEvidence.lineRange, [1, 1]);
+    assert.deepEqual(intentToAddEvidence.nodeIds, [INTENT_TO_ADD_NODE_ID]);
+    assert.equal(
+      intentToAddEvidence.contentHash,
+      contentDigest(Buffer.from(INTENT_TO_ADD_SOURCE, "utf8")),
+    );
+    assert.equal(
+      intentToAddEvidence.observedAtSnapshotId,
+      untrackedChangedSnapshotId,
+    );
+    assert.deepEqual(
+      intentToAddFinding.evidenceIds,
+      [intentToAddEvidence.id],
+    );
 
     await updateUntrackedTask(
       {
@@ -1157,6 +1238,15 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
           "The untracked source file is intentional and explicitly accepted for this Alpha flow.",
       },
       "preview-workbench-browser-untracked-accept-added",
+    );
+    await updateUntrackedTask(
+      {
+        type: "accept_finding",
+        findingId: intentToAddFinding.id,
+        reason:
+          "The intent-to-add source file is intentional and explicitly accepted for this Alpha flow.",
+      },
+      "preview-workbench-browser-untracked-accept-intent-to-add",
     );
     await updateUntrackedTask(
       { type: "transition_status", to: "verification_required" },
@@ -1171,8 +1261,10 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     const untrackedVerificationProgram = [
       "const { foo } = await import('./src/index.ts');",
       "const { untrackedAdded } = await import('./src/untracked.ts');",
+      "const { intentToAdd } = await import('./src/intent-to-add.ts');",
       "if (foo() !== 'browser-ready') throw new Error('unexpected foo result');",
       "if (untrackedAdded() !== 'untracked-ready') throw new Error('unexpected untracked result');",
+      "if (intentToAdd() !== 'intent-ready') throw new Error('unexpected intent-to-add result');",
     ].join(" ");
     const untrackedVerificationStartedAt = Date.now();
     const untrackedVerificationExecution = await execBounded(
@@ -1204,7 +1296,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
               "utf8",
             )),
             summary:
-              "The external unstaged and untracked verification completed successfully.",
+              "The external unstaged, intent-to-add, and untracked verification completed successfully.",
             claimIds: planEntry.acceptanceClaimIds,
             snapshotId: untrackedChangedSnapshotId,
           },

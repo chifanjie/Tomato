@@ -886,6 +886,169 @@ describe("RepositoryTaskContextProvider", () => {
     });
   });
 
+  it("derives path-sorted unstaged, intent-to-add, and untracked hunks and rejects a reset intent", async () => {
+    const baselineFooSource =
+      "export function foo() { return 'foo-before'; }\n";
+    const actualFooSource =
+      "export function foo() { return 'foo-after'; }\n";
+    const untrackedSource =
+      "export function newlyAdded() { return 'new-file'; }\n";
+    const intentToAddSource =
+      "export function intentToAdd() { return 'intent-ready'; }\n";
+    const graph = graphFixture();
+    graph.nodes = [
+      {
+        id: "function:foo",
+        type: "function",
+        name: "foo",
+        filePath: "src/task.ts",
+        lineRange: [1, 1],
+        summary: "Returns the changed foo value.",
+        tags: [],
+        complexity: "simple",
+      },
+      {
+        id: "function:intent-to-add",
+        type: "function",
+        name: "intentToAdd",
+        filePath: "src/intent.ts",
+        lineRange: [1, 1],
+        summary: "Returns the intent-to-add value.",
+        tags: [],
+        complexity: "simple",
+      },
+      {
+        id: "function:newly-added",
+        type: "function",
+        name: "newlyAdded",
+        filePath: "src/new.ts",
+        lineRange: [1, 1],
+        summary: "Returns the new file value.",
+        tags: [],
+        complexity: "simple",
+      },
+    ];
+    const { root } = await fixtureRoot(graph, baselineFooSource);
+    await git(root, ["init", "--quiet"]);
+    await git(root, ["add", "src/task.ts"]);
+    await git(root, [
+      "-c",
+      "user.name=Understand Code Test",
+      "-c",
+      "user.email=test@understand-code.invalid",
+      "commit",
+      "--quiet",
+      "-m",
+      "baseline",
+    ]);
+    const headCommit = await git(root, ["rev-parse", "HEAD"]);
+    const baselineSnapshot = await captureFencedSnapshot(root, headCommit);
+    expect(baselineSnapshot.changes).toEqual([]);
+    await Promise.all([
+      writeFile(path.join(root, "src/task.ts"), actualFooSource, "utf8"),
+      writeFile(path.join(root, "src/intent.ts"), intentToAddSource, "utf8"),
+      writeFile(path.join(root, "src/new.ts"), untrackedSource, "utf8"),
+    ]);
+    await git(root, ["add", "-N", "--", "src/intent.ts"]);
+    expect(
+      await git(root, [
+        "diff",
+        "--cached",
+        "--name-only",
+        "--",
+        "src/intent.ts",
+      ]),
+    ).toBe("");
+    const actualSnapshot = await captureFencedSnapshot(root, headCommit);
+    expect(actualSnapshot.changes).toHaveLength(3);
+    const intentToAddChange = actualSnapshot.changes.find(
+      (change) => change.path === "src/intent.ts",
+    );
+    const untrackedNewChange = actualSnapshot.changes.find(
+      (change) => change.path === "src/new.ts",
+    );
+    const unstagedFooChange = actualSnapshot.changes.find(
+      (change) => change.path === "src/task.ts",
+    );
+    expect(untrackedNewChange).toMatchObject({
+      source: "untracked",
+      kind: "added",
+      contentDigest: digest(untrackedSource),
+    });
+    expect(intentToAddChange).toMatchObject({
+      source: "unstaged",
+      kind: "added",
+      contentDigest: digest(intentToAddSource),
+    });
+    expect(
+      actualSnapshot.changes.filter((change) => change.path === "src/intent.ts"),
+    ).toHaveLength(1);
+    expect(
+      actualSnapshot.changes.some(
+        (change) => change.path === "src/intent.ts" && change.source === "staged",
+      ),
+    ).toBe(false);
+    expect(unstagedFooChange).toMatchObject({
+      source: "unstaged",
+      kind: "modified",
+      contentDigest: digest(actualFooSource),
+    });
+    const untrackedNewChangeId = untrackedNewChange!.id;
+    const intentToAddChangeId = intentToAddChange!.id;
+    const unstagedFooChangeId = unstagedFooChange!.id;
+    const actualChangeIds = actualSnapshot.changes
+      .map((change) => change.id)
+      .sort();
+    const provider = await RepositoryTaskContextProvider.open({
+      canonicalRoot: root,
+    });
+
+    const complete = await provider.analyzeTaskChanges({
+      taskId: "task:untracked-analysis",
+      baselineSnapshot,
+      actualSnapshot,
+    });
+    expect(complete).toMatchObject({ status: "complete", boundaries: [] });
+    expect(complete.hunks).toEqual([
+      expect.objectContaining({
+        actualChangeIds: [intentToAddChangeId],
+        filePath: "src/intent.ts",
+        newLineRange: [1, 1],
+        nodeIds: ["function:intent-to-add"],
+        contentHash: digest(intentToAddSource),
+      }),
+      expect.objectContaining({
+        actualChangeIds: [untrackedNewChangeId],
+        filePath: "src/new.ts",
+        newLineRange: [1, 1],
+        nodeIds: ["function:newly-added"],
+        contentHash: digest(untrackedSource),
+      }),
+      expect.objectContaining({
+        actualChangeIds: [unstagedFooChangeId],
+        filePath: "src/task.ts",
+        newLineRange: [1, 1],
+        nodeIds: ["function:foo"],
+        contentHash: digest(actualFooSource),
+      }),
+    ]);
+
+    await git(root, ["reset", "--quiet", "--", "src/intent.ts"]);
+    const liveIndexDrift = await provider.analyzeTaskChanges({
+      taskId: "task:untracked-analysis",
+      baselineSnapshot,
+      actualSnapshot,
+    });
+    expect(liveIndexDrift).toMatchObject({
+      status: "unknown",
+      hunks: [],
+      boundaries: [expect.objectContaining({
+        code: "content_changed",
+        actualChangeIds,
+      })],
+    });
+  });
+
   it("loads a validated real Graph, adapts Wiki, and emits only digest-bound Source Evidence", async () => {
     const { root, source } = await fixtureRoot();
     const repositorySnapshot = snapshot(digest(source));

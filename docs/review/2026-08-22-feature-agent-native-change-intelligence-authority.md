@@ -2,117 +2,125 @@
 
 > 生成时间：2026-08-23 CST
 > 分支：`feature/agent-native-change-intelligence-authority`
-> 基于 commit：`6d4055f fix: preserve Host root error envelopes`
+> 基于 commit：`3638d57 test: prove secondary-session Host isolation`
 
 ## 背景与动机
 
-权威 Step16/WP6 要求对 `root_missing`、`root_not_directory`、`root_unavailable`、
-`root_not_allowed`、`root_conflict` 与 `secondary_session_required` 逐项触发并核对稳定 Tool Error
-Envelope。上一切片已从真实 official Host cache 闭合前三项；生产代码也已把 Store manifest 的
-repository/worktree identity 与当前绑定 Root 不一致映射为 `secondary_session_required`，但全仓没有
-对应测试，无法证明 official cache Surface、会话永久锁定、无副作用与 fresh recovery。
+权威 Step15 要求 Change Check 对当前可达的 Git 变化源保持“能精确证明才判定、不能证明就阻塞”。
+`git add -N`（intent-to-add）是 Git 用户可直接进入的真实状态：Index 中只有空 blob 占位，实际内容仍来自
+worktree。现有 Snapshot 已能诚实发布一条 `unstaged/added` 变化，但 Task Engine 只分析
+`unstaged/modified`、staged added/modified 和 untracked added，因此该状态只能返回 blocking
+`cannot_determine`。
 
-本切片不改生产实现，只扩现有唯一双 Host + Chrome 生命周期 E2E。测试用身份不同的第三仓库承载一个
-结构合法但属于原 linked worktree 的 foreign Store，真实触发 Runtime binding mismatch，并以
-“首错后修复 Store、旧进程仍失败、新进程成功”的反事实关闭重复坏状态造成的假绿。
+本切片增加一个内部、有限、fail-closed 的 live intent-to-add profile；不改变公开 contracts、MCP API、
+持久化 schema 或 legacy analysis profile。目标是让一次普通的 planned unstaged edit、intent-to-add 新文件与
+untracked 新文件可以在同一 Snapshot 中得到精确行级分析与 Source Evidence，同时保持所有既有 profile 的
+reason、稳定 ID 和 partial/whole-unknown 语义不变。
 
 ## 改动策略
 
-- 在现有 sandbox 内建立确定性不同的第三 Git repository，要求 source、HEAD、index 与原 linked
-  worktree 均不同，并冻结 source/index 原始字节。
-- 先从 official Codex active cache 启动 fresh MCP，在第三仓库执行 `refresh_index` 与 Pulse，生成
-  该仓库自己的合法 Store；冻结 repositoryId、worktreeId、sourceSnapshotId、Manifest identity 和
-  递归 byte inventory，再将合法 Store 移到 sandbox backup。
-- 对 Store inventory 按相对路径稳定排序，记录 file/directory type；regular file 记录 byte length 与
-  SHA-256，拒绝 symlink 和特殊文件。原 linked Store、foreign copy、合法 Store 和两份 Host failure
-  backup 均使用同一精确清单。
-- 复制原 linked `.understand-code` 到第三仓库；要求 foreign Manifest identity 精确等于原
-  Codex-created Task 的 repository/worktree identity，并与第三仓库 identity 均不相同。
-- Codex 与 Claude 分别从各自 official active cache 启动 fresh MCP：
-  - initialize/serverInfo、initialized、exact 11 tools/list 正常；
-  - 首次 `get_task_brief(original taskId)` 返回完整 exact
-    `workspace_binding_required/secondary_session_required` result；
-  - callback 在任何修复前证明 foreign Store、合法 backup、source 与 index 零变化，把 foreign Store
-    原子移到 Host 专属 backup，再复制合法 Store 回第三仓库；
-  - 同一旧进程调用 `get_repo_pulse` 仍返回同一完整 Envelope，证明 RootBindingSession 已永久锁定；
-  - EOF 后 exit 0、stderr 为空。
-- 每个旧进程退出后，从同一 Host official cache 新启 MCP 绑定已修复的第三仓库，Pulse 必须成功且
-  exact 返回先前冻结的第三仓库 identity；随后再 fresh 绑定正确 linked root，exact replay 原
-  Task/repository/worktree/Snapshot/revision/Verification。
-- Claude 测试前重新放回同一 linked foreign Store，确保两 Host 使用相同故障输入。最终再次核对
-  两份 foreign backup、合法 backup、第三仓库 Store 与原 linked Store inventory；显式 repair 写入和
-  failure no-side-effect 分开计算。
-- 原 spaces/CJK linked Root、六类 poisoned Git authority、Root missing/file/unavailable、双 Browser、
-  Evidence/Graph/Wiki、v2 update、pinned-v1 reinstall、remove 与 Doctor 全链均保留。
+- 仅当 actual Snapshot 满足以下条件时启用 `liveIntentToAddChanges`：
+  - 1–16 个唯一路径，至少一条 `unstaged/added`；
+  - 不含 staged/committed/conflict 或其他 kind；
+  - 全集只允许 `unstaged/added`、`unstaged/modified`、`untracked/added`；
+  - 每条变化均有 `contentDigest`。
+- intent-to-add 的 actual bytes 始终从安全、no-follow 的 worktree 读取，并要求 SHA-256 与 Snapshot
+  完全一致；不把 Index 中的空占位当成源码。
+- added baseline 必须由 exact HEAD tree lookup 证明路径不存在，然后使用 empty-before → actual 的
+  deterministic line diff；Graph symbol 必须与 actual bytes/range 精确锚定。
+- 复用现有 full live Snapshot pre/post fence，精确比较 root、repository/worktree identity、HEAD、
+  index/worktree/untracked/ignore digests 与 snapshotId；`git reset`、fully stage、字节漂移或任何全局
+  live-state 漂移均整批返回 `unknown`、空 hunks、覆盖全部 actual IDs 的 global boundary。
+- 复用每文件 8 MiB、整批 semantic bytes 32 MiB 和 1024 hunks 上限。任一路径、预算、Graph 或 fence
+  失败都不保留部分成功 hunks。
+- `liveIntentToAddChanges` 与旧 live-untracked profile 互斥；旧 staged、live-untracked、pure-unstaged
+  分支及其 reason 字符串保持原样。
 
 ## 改动范围
 
 | 模块/职责 | 文件 | 做了什么 |
 |---|---|---|
-| Mandatory Host Root E2E | `packages/preview/test/plugin-clean-install.test.mjs` | 新增合法/foreign Store identity 与 byte inventory fixture；双 official Host cache 的 `secondary_session_required`、永久锁定、显式修复、fresh secondary Pulse 与 linked Task recovery 纵切 |
+| Snapshot producer regression | `packages/repository-state/test/snapshot.test.ts` | 用真实 `git add -N` 冻结 `.A` 状态、空 Index blob、唯一 `unstaged/added`、digest 与稳定 recapture |
+| Change analysis | `packages/task-engine/src/repository-context-provider.ts` | 新增 bounded live intent-to-add profile，复用现有 HEAD absence、worktree bytes、Graph、预算与 full Snapshot fence |
+| Provider regression | `packages/task-engine/test/repository-context-provider.test.ts` | 保留原 live-untracked 用例，并新增 modified + ITA + untracked 三路径完整分析及 reset 后 whole-unknown |
+| Packed user vertical | `packages/preview/test/workbench-browser-packed.test.mjs` | 在唯一真实 Browser E2E 中加入 ITA Snapshot/Finding/Evidence/accept/Verification，并把当前 provider 源码绑定到 ephemeral candidate commit |
 
-生产证据链未修改：
-`openRuntime` 捕获当前 Root identity → `ArtifactStore.readManifest` 对 foreign identity 抛
-`manifest_inconsistent` → `RuntimeBindingError("secondary_session_required")` →
-MCP `RootBindingSession.lockError` 永久锁定并返回固定脱敏 Envelope。
+公开 contracts、ChangeCheck artifact、operation receipt、MCP shape、Dashboard production 与生命周期实现均未修改。
 
 ## Review 重点与结论
 
-1. **真实 Runtime trigger** — foreign Manifest 必须结构合法、字节等于 linked Store，且 identity
-   明确不同于第三仓库；不能用 corrupt/missing Artifact 冒充 secondary session。
-2. **永久锁定反事实** — 首错后必须先恢复第三仓库合法 Store，再由同一旧进程调用第二个 Tool；若没有
-   lock，第二次应成功或返回其他结果，因此仍为 secondary 才能证明锁定。
-3. **Fresh recovery** — 不能只回原 linked root；fresh 同 Host 进程还必须在修复后的第三仓库成功
-   Pulse 并 exact 返回第三仓库 identity。
-4. **无副作用** — failure 前后 foreign Store/source/index/合法 backup 必须 byte-exact；测试自身的
-   rename/copy repair 必须显式区分，原 linked Store也必须在全链后保持精确 inventory。
-5. **Surface authority** — Codex server 来源于官方 `plugin add` installedPath，Claude server 来源于
-   官方 active list installedPath；两者都保留现有 Git authority poison 和 Root 选择合同。
-6. **旧能力未弱化** — 双 Browser 与完整生命周期链保持同一条 mandatory gate，不增加第二条重 E2E。
+1. **Producer truth** — 真实 `git add -N` 必须产生唯一 `unstaged/added`，cached diff 为空，
+   `git show :path` 为 empty blob，且不能同时出现 staged duplicate。
+2. **Index 不冒充 actual** — actual content、line range、Graph node 与 Evidence hash 均来自 worktree bytes；
+   Index placeholder 只通过全局 Snapshot fence参与状态绑定。
+3. **旧 profile 不回归** — 原 live-untracked focused 用例完整保留；旧 staged/live-untracked/pure-unstaged
+   reason、collapse 路径与稳定 Finding/Evidence ID 不漂移。
+4. **Whole-batch fail closed** — ITA reset 为普通 untracked、stage transition 或其他 live drift 后复用旧
+   Snapshot，必须丢弃所有 hunks并对全部 actual IDs 返回 global boundary。
+5. **不把新增文件误报 planned** — packed Brief 只计划既有 `foo` symbol；Check 中只有 `foo` 为
+   `planned_completed`，ITA 与 untracked 文件各自是 blocking `unplanned_change`，必须逐条显式 accept。
+6. **真实 candidate authority** — 第一次 packed 重门暴露 candidate clone 只 overlay packed tests、遗漏未提交
+   provider 的 fixture 缺口，导致 tgz 仍运行旧 provider并 whole-unknown。最终修复把 provider 源码加入
+   `V1_OVERLAY_FILES`；v1 clean ephemeral commit及其派生 v2 candidate 均绑定当前生产字节，再从头通过
+   assemble、verify、cold install、upgrade、rollback 与 Browser 全链。
 
 独立 contract 与 change-intent 终审一致：P0 0、P1 0、current-path executable P2 0、
-blocking Test Gap 0。
+blocking Test Gap 0；结论为 SAFE TO COMMIT。
 
 ## 测试情况
 
 **已通过：**
 
-- `node --check packages/preview/test/plugin-clean-install.test.mjs`
+- repository-state ITA focused：1 passed，41 skipped。
+- task-engine provider focused：12/12 passed；原 live-untracked 与新增 ITA mixed 两条真实 Git 路径均执行。
+- `pnpm --filter @understand-code/repository-state typecheck`
+- `pnpm --filter @understand-code/repository-state test`：82 passed，1 个既有 skip。
+- `pnpm --filter @understand-code/task-engine typecheck`
+- `pnpm --filter @understand-code/task-engine test`：命令 exit 0；传输保留其余 7 files/41 tests，随后单独
+  `engine.integration.test.ts` 也 exit 0，用于补齐丢失的末尾 runner evidence。
+- `node --check packages/preview/test/workbench-browser-packed.test.mjs`
 - scoped `git diff --check`
 - `pnpm --filter @understand-code/preview typecheck`
 - `pnpm --filter @understand-code/preview build`（fresh dist）
-- 唯一真实 Host + Browser 门禁：
-  `UNDERSTAND_CODE_REQUIRE_PLUGIN_HOSTS=1 UNDERSTAND_CODE_REQUIRE_REAL_BROWSER=1 pnpm --filter @understand-code/preview test:plugins`
-- 命令成功完成，wall 约 38.8 秒，无残留进程。该 script 精确运行一个普通 top-level Node test；唯一
-  `t.skip` 在 require-hosts flag 下会先失败，Chrome 缺失在 require-browser flag 下也会失败。因此
-  成功退出等价于 1 passed、0 skipped。工具传输未保留 reporter 汇总文本；代码和输入未变，按分层门禁
-  纪律未为显示性摘要重复同一重门。
+- 唯一真实 packed Browser 门禁：
+  `UNDERSTAND_CODE_REQUIRE_REAL_BROWSER=1 pnpm --filter @understand-code/preview test:workbench-browser`
+  - 1 passed / 0 failed / 0 skipped，180.81 秒；
+  - v1 tgz：87 entries，`sha256:2828066d2291207d828f9c5f9638e4592eddc47b5c1d95e4606b98ea1589510b`；
+  - v2 tgz：87 entries，`sha256:c13d89bb163743dec5d83db44ac300c405a234d30d1240513b97220de859e33f`。
+
+第一次 Browser 重门在 `planned_completed` 数量断言处失败并按首错停止。根因不是 Graph 或 matcher，
+而是 candidate fixture 未把未提交 provider 带入 exact-HEAD clone。修复 overlay authority 后从头重建两份
+candidate，同一完整门禁通过；未复用失败产物或放宽断言。
 
 ## 可声明与不可声明
 
 **可声明：**
 
-- 当前本机真实 Codex/Claude official active cache 遇到结构合法但属于另一 repository/worktree identity
-  的 Store 时，能在 initialize/tools/list 后稳定返回完整 `secondary_session_required` Tool Envelope。
-- 首错后即使磁盘已恢复为当前仓库合法 Store，旧 MCP 进程仍永久 fail-closed；只有 fresh 进程可读取
-  修复后的第三仓库 Pulse。
-- failure 不修改 foreign Store、第三仓库 source/index、合法 Store backup 或原 linked Store；fresh
-  correct-root 进程可以 exact 恢复原 Task 与 Verification。
+- 当前 Alpha 能对 1–16 个 bounded live paths 中的 intent-to-add added、unstaged modified 与 untracked
+  added 进行 Snapshot-bound 行级分析；每条 actual bytes、range、Graph node 与 Source Evidence hash
+  均精确绑定。
+- 真实 `git add -N` 新文件不会被误报为 planned completion；在本次公开纵切中，它与普通 untracked
+  新文件均形成精确 blocking unplanned Finding，经显式 accept 后才进入 Verification。
+- Index/worktree/untracked/ignore 或 Snapshot identity 漂移会整批 fail closed；既有 staged、
+  live-untracked 和 pure-unstaged 分析行为未被扩写或弱化。
+- 当前本机 tuple 上，两份真实 unsigned Alpha candidate 均包含该 provider，实现可跨 managed
+  v1→v2 upgrade→rollback 保持 Task/Finding/Evidence/Verification/Workbench 连续。
 
 **不可声明：**
 
-- Store 复制或迁移是受支持产品功能；复制只用于构造结构合法的 foreign identity fixture。
-- 不是会话内动态重绑、自动修复、quarantine 或删除 foreign Store；恢复需要测试显式 repair 与新进程。
-- 不证明 additional-root 通用路由、`root_not_allowed`、`root_conflict`、并发/race、所有 Host/Git
-  版本、OS、filesystem 或跨平台矩阵。
-- 不是 credentialed/model-selected Host chat、Gold/G2/G3、dynamic Roots 或正式 Surface Release gate。
-- 不证明 Provider Authority、execution fence、strongWrites、signature、SBOM、provenance、
-  reproducibility 或 release-ready；`strongWrites` 继续 locked。
+- 不支持超过 16 路径、staged + ITA 混合、delete、rename/copy、type change、conflict、binary、超预算、
+  Graph ambiguity 或 committed delta。
+- ITA 新文件不是 Brief 中已计划的新 symbol；本切片只诚实证明 `unplanned_change` + explicit accept，
+  不宣称 planned add completion、required-change expectation 或 possible omission。
+- 结果仍为 `legacy_summary`，不是 formal `evidence_backed_v1`、structured `diff_hunk` 或五维
+  Completeness 证明。
+- 两个 candidate 仍是当前本机 tuple 的 unsigned Alpha 测试产物；不证明 RC/Release、signature、SBOM、
+  SLSA/trusted provenance、reproducibility 或 cross-platform。
+- 不证明 current execution fence、Provider Authority 或 strong write；`strongWrites` 继续 locked。
 
 ## 结论
 
-🟢 Effective。真实 official Codex 与 Claude active cache 均已证明：绑定第三仓库却读取原 linked
-worktree 的合法 foreign Store 时，首个 Task Tool 触发固定 `secondary_session_required`；即使随后把
-磁盘恢复为第三仓库自己的合法 Store，同一 MCP 进程仍保持锁定。fresh 同 Host 进程可成功读取第三仓库
-Pulse，fresh linked-root 进程可 exact replay 原 Task/Verification；全部失败输入、备份、source/index 与
-原 Store 字节均有前后证据。可以精确提交。
+🟢 Effective。真实 `git add -N` 现在可以沿完整 Snapshot → Graph → Change Check → Finding → Source
+Evidence → explicit accept → external Verification 路径工作；任何 live-state 或语义不确定性仍整批
+fail closed。原 staged/live-untracked/pure-unstaged 合同未回归，最终 packed candidate 与 Browser 生命周期
+已从头通过。可以精确提交。

@@ -1312,9 +1312,30 @@ implements TaskContextProvider {
     const includesUntrackedChange = actual.data.changes.some(
       (change) => change.source === "untracked",
     );
+    const includesIntentToAddChange = actual.data.changes.some(
+      (change) =>
+        change.source === "unstaged" && change.kind === "added",
+    );
     const livePaths = new Set(
       actual.data.changes.map((change) => change.path),
     );
+    const liveIntentToAddChanges =
+      includesIntentToAddChange &&
+      !includesStagedChange &&
+      actual.data.changes.length >= 1 &&
+      actual.data.changes.length <= MAX_BOUNDED_CHANGE_PATHS &&
+      livePaths.size === actual.data.changes.length &&
+      actual.data.changes.every(
+        (change) =>
+          ((change.source === "unstaged" &&
+            (change.kind === "added" || change.kind === "modified")) ||
+            (change.source === "untracked" && change.kind === "added")) &&
+          change.contentDigest !== undefined,
+      )
+        ? [...actual.data.changes].sort((left, right) =>
+            compareUnicodeCodeUnits(left.path, right.path),
+          )
+        : undefined;
     const liveUntrackedChanges =
       includesUntrackedChange &&
       actual.data.changes.length >= 1 &&
@@ -1330,7 +1351,11 @@ implements TaskContextProvider {
             compareUnicodeCodeUnits(left.path, right.path),
           )
         : undefined;
-    if (includesUntrackedChange && liveUntrackedChanges === undefined) {
+    if (
+      includesUntrackedChange &&
+      liveUntrackedChanges === undefined &&
+      liveIntentToAddChanges === undefined
+    ) {
       return {
         status: "unknown",
         hunks: [],
@@ -1338,6 +1363,25 @@ implements TaskContextProvider {
           changeAnalysisBoundary(
             "unsupported_source",
             "Alpha live untracked analysis requires one to sixteen unique untracked added or unstaged modified paths, including at least one untracked path and no other changes.",
+            undefined,
+            actualChangeIds,
+          ),
+        ],
+      };
+    }
+    if (
+      !includesStagedChange &&
+      !includesUntrackedChange &&
+      includesIntentToAddChange &&
+      liveIntentToAddChanges === undefined
+    ) {
+      return {
+        status: "unknown",
+        hunks: [],
+        boundaries: [
+          changeAnalysisBoundary(
+            "unsupported_source",
+            "Alpha live intent-to-add analysis requires one to sixteen unique unstaged added, unstaged modified, or untracked added paths, including at least one unstaged added path and no other changes.",
             undefined,
             actualChangeIds,
           ),
@@ -1378,7 +1422,8 @@ implements TaskContextProvider {
         ],
       };
     }
-    const boundedBatchChanges = stagedChanges ?? liveUntrackedChanges;
+    const boundedBatchChanges =
+      stagedChanges ?? liveUntrackedChanges ?? liveIntentToAddChanges;
     const pureUnstagedChanges =
       !includesStagedChange &&
       !includesUntrackedChange &&
@@ -1406,7 +1451,9 @@ implements TaskContextProvider {
             "unsafe_path",
             stagedChanges !== undefined
               ? "A staged repository path is unsafe for exact Git index lookup."
-              : "A live untracked repository path is unsafe for exact Git analysis.",
+              : liveUntrackedChanges !== undefined
+                ? "A live untracked repository path is unsafe for exact Git analysis."
+                : "A live intent-to-add repository path is unsafe for exact Git analysis.",
             undefined,
             actualChangeIds,
           ),
@@ -1483,8 +1530,14 @@ implements TaskContextProvider {
                 changes[0]!.kind === "added") ||
               (changes[0]!.source === "unstaged" &&
                 changes[0]!.kind === "modified")
-            : changes[0]!.source === "unstaged" &&
-              changes[0]!.kind === "modified") &&
+            : liveIntentToAddChanges !== undefined
+              ? (changes[0]!.source === "untracked" &&
+                  changes[0]!.kind === "added") ||
+                (changes[0]!.source === "unstaged" &&
+                  (changes[0]!.kind === "added" ||
+                    changes[0]!.kind === "modified"))
+              : changes[0]!.source === "unstaged" &&
+                changes[0]!.kind === "modified") &&
         changes[0]!.contentDigest !== undefined;
       if (!supported) {
         boundaries.push(
@@ -1494,7 +1547,9 @@ implements TaskContextProvider {
               ? "Alpha line analysis only supports one unstaged modified change per path."
               : stagedChanges !== undefined
                 ? "Alpha staged line analysis only supports unique staged modified or added paths."
-                : "Alpha live untracked analysis only supports unique untracked added or unstaged modified paths.",
+                : liveUntrackedChanges !== undefined
+                  ? "Alpha live untracked analysis only supports unique untracked added or unstaged modified paths."
+                  : "Alpha live intent-to-add analysis only supports unique unstaged added, unstaged modified, or untracked added paths.",
             filePath,
             ids,
           ),
@@ -1654,7 +1709,9 @@ implements TaskContextProvider {
               "budget_exhausted",
               stagedChanges !== undefined
                 ? "Staged semantic bytes exceeded the fixed aggregate Alpha budget."
-                : "Live untracked semantic bytes exceeded the fixed aggregate Alpha budget.",
+                : liveUntrackedChanges !== undefined
+                  ? "Live untracked semantic bytes exceeded the fixed aggregate Alpha budget."
+                  : "Live intent-to-add semantic bytes exceeded the fixed aggregate Alpha budget.",
               filePath,
               ids,
             ),
@@ -1744,7 +1801,9 @@ implements TaskContextProvider {
               "budget_exhausted",
               stagedChanges !== undefined
                 ? "Staged line hunks exceeded the fixed aggregate Alpha budget."
-                : "Live untracked line hunks exceeded the fixed aggregate Alpha budget.",
+                : liveUntrackedChanges !== undefined
+                  ? "Live untracked line hunks exceeded the fixed aggregate Alpha budget."
+                  : "Live intent-to-add line hunks exceeded the fixed aggregate Alpha budget.",
               filePath,
               ids,
             ),

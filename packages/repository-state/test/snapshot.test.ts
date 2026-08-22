@@ -140,6 +140,42 @@ describe("getRepositorySnapshot", () => {
     );
   });
 
+  it("captures an intent-to-add file once as an unstaged added change", async () => {
+    const root = initializeRepository();
+    const before = await getRepositorySnapshot(root);
+    const filePath = "src/intent-to-add.ts";
+    const source = "export function intentToAdd() { return 'ready'; }\n";
+    writeRepositoryFile(root, filePath, source);
+    git(root, ["add", "-N", "--", filePath]);
+
+    expect(git(root, ["diff", "--cached", "--name-only", "--", filePath])).toBe("");
+    expect(git(root, ["show", `:${filePath}`])).toBe("");
+    expect(git(root, ["diff", "--name-only", "--", filePath])).toBe(filePath);
+    const first = await getRepositorySnapshot(root);
+    const second = await getRepositorySnapshot(root);
+    expect(first.captureStatus).toBe("complete");
+    expect(first.changes).toEqual([
+      {
+        id: first.changes[0]?.id,
+        path: filePath,
+        source: "unstaged",
+        kind: "added",
+        contentDigest: digest(source),
+      },
+    ]);
+    expect(first.changes.some((change) => change.source === "staged")).toBe(false);
+    expect(first.indexDigest).not.toBe(before.indexDigest);
+    expect(first.worktreeDigest).not.toBe(before.worktreeDigest);
+    expect(first.untrackedDigest).toBe(before.untrackedDigest);
+    expect(second).toMatchObject({
+      snapshotId: first.snapshotId,
+      indexDigest: first.indexDigest,
+      worktreeDigest: first.worktreeDigest,
+      untrackedDigest: first.untrackedDigest,
+      changes: first.changes,
+    });
+  });
+
   it("parses the second NUL path of a staged rename", async () => {
     const root = initializeRepository({ "src/old name.ts": "export {};\n" });
     git(root, ["mv", "--", "src/old name.ts", "src/新 name.ts"]);

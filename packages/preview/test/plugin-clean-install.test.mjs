@@ -1010,7 +1010,109 @@ async function resumeInstalledAlpha(options, alpha, workbenchSurface) {
   });
 }
 
-async function expectRootFailure(server, cwd, env, label) {
+async function expectCacheBindingFailure({
+  server,
+  version,
+  cwd,
+  env,
+  clientName,
+  reason,
+  artifactRoots,
+  afterFirstFailure,
+}) {
+  const child = spawn(server.executable, server.args, {
+    cwd,
+    env,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  const output = collectMessages(child);
+  const expectedFailure = {
+    isError: true,
+    content: [{ type: "text", text: "Workspace binding is required." }],
+    structuredContent: {
+      error: {
+        schemaVersion: 1,
+        code: "workspace_binding_required",
+        details: { reason },
+      },
+    },
+  };
+  try {
+    writeMessage(child, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-11-25",
+        capabilities: {},
+        clientInfo: { name: clientName, version: "1.0.0" },
+      },
+    });
+    const initialized = await output.waitFor(
+      (message) => message.id === 1,
+      `${clientName} binding-error initialize`,
+    );
+    assert.equal(initialized.result.serverInfo.name, "understand-code");
+    assert.equal(initialized.result.serverInfo.version, version);
+    writeMessage(child, { jsonrpc: "2.0", method: "notifications/initialized", params: {} });
+    writeMessage(child, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
+    const listed = await output.waitFor(
+      (message) => message.id === 2,
+      `${clientName} binding-error tools/list`,
+    );
+    assert.equal(Object.hasOwn(listed, "error"), false);
+    assert.deepEqual(listed.result.tools.map((tool) => tool.name), EXPECTED_TOOL_NAMES);
+
+    writeMessage(child, {
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: { name: "get_repo_pulse", arguments: {} },
+    });
+    const pulseFailure = await output.waitFor(
+      (message) => message.id === 3,
+      `${clientName} binding-error get_repo_pulse`,
+    );
+    assert.equal(Object.hasOwn(pulseFailure, "error"), false);
+    assert.deepEqual(pulseFailure.result, expectedFailure);
+
+    await afterFirstFailure?.();
+
+    writeMessage(child, {
+      jsonrpc: "2.0",
+      id: 4,
+      method: "tools/call",
+      params: {
+        name: "refresh_index",
+        arguments: {
+          mode: "full",
+          idempotencyKey: `${clientName}-binding-error-refresh`,
+          actor: `agent:${clientName}`,
+        },
+      },
+    });
+    const refreshFailure = await output.waitFor(
+      (message) => message.id === 4,
+      `${clientName} binding-error refresh_index`,
+    );
+    assert.equal(Object.hasOwn(refreshFailure, "error"), false);
+    assert.deepEqual(refreshFailure.result, expectedFailure);
+
+    child.stdin.end();
+    assert.deepEqual(await waitForExit(child, `${clientName} binding-error clean exit`), [0, null]);
+    assert.equal(output.stderr.join(""), "");
+    for (const artifactRoot of artifactRoots) {
+      await assertMissing(
+        path.join(artifactRoot, ".understand-code"),
+        `${clientName} binding-error session must not create repository artifacts`,
+      );
+    }
+  } finally {
+    await stopChild(child);
+  }
+}
+
+async function expectUnsafeWrapperRootFailure(server, cwd, env, label) {
   const child = spawn(server.executable, server.args, {
     cwd,
     env,
@@ -1515,11 +1617,40 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
         ? undefined
         : { browserExecutable, browserProfile: codexBrowserProfile },
     );
-    await expectRootFailure(
-      codexAlpha.server,
-      differentCwd,
-      cleanHostEnvironment(codexUserHome, { CODEX_HOME: codexHome }),
-      "Codex plugin must reject a non-repository working root",
+    await expectCacheBindingFailure({
+      server: codexAlpha.server,
+      version: v1Version,
+      cwd: differentCwd,
+      env: cleanHostEnvironment(codexUserHome, { CODEX_HOME: codexHome }),
+      clientName: "codex-plugin-e2e-root-unavailable",
+      reason: "root_unavailable",
+      artifactRoots: [differentCwd],
+      afterFirstFailure: async () => {
+        await repositoryGit(differentCwd, ["init", "-q"]);
+        assert.equal(
+          await realpath((await repositoryGit(
+            differentCwd,
+            ["rev-parse", "--show-toplevel"],
+          )).stdout.trim()),
+          differentCwd,
+          "the Codex negative cwd must become a valid unrelated repository after the first failure",
+        );
+      },
+    });
+    await resumeInstalledAlpha(
+      {
+        host: "codex",
+        installedRoot: codexInstalledRoot,
+        version: v1Version,
+        repositoryRoot,
+        cwd: nestedCwd,
+        env: cleanHostEnvironment(codexUserHome, {
+          CODEX_HOME: codexHome,
+          ...poisonGitAuthority,
+        }),
+        clientName: "codex-plugin-e2e-root-recovery",
+      },
+      codexAlpha.result,
     );
 
     const claudeEnv = cleanHostEnvironment(claudeUserHome, {
@@ -1605,11 +1736,72 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
       path.join(primaryRepositoryRoot, ".understand-code"),
       "the linked-worktree session must not publish into the primary worktree",
     );
-    await expectRootFailure(
-      claudeAlpha.server,
-      differentCwd,
-      cleanHostEnvironment(claudeUserHome, { CLAUDE_CONFIG_DIR: claudeConfig }),
-      "Claude plugin must reject a missing CLAUDE_PROJECT_DIR",
+    const claudeBindingEnvironment = cleanHostEnvironment(claudeUserHome, {
+      CLAUDE_CONFIG_DIR: claudeConfig,
+    });
+    await expectCacheBindingFailure({
+      server: claudeAlpha.server,
+      version: v1Version,
+      cwd: differentCwd,
+      env: claudeBindingEnvironment,
+      clientName: "claude-plugin-e2e-root-missing",
+      reason: "root_missing",
+      artifactRoots: [differentCwd],
+    });
+    await expectCacheBindingFailure({
+      server: claudeAlpha.server,
+      version: v1Version,
+      cwd: differentCwd,
+      env: { ...claudeBindingEnvironment, CLAUDE_PROJECT_DIR: "" },
+      clientName: "claude-plugin-e2e-root-empty",
+      reason: "root_missing",
+      artifactRoots: [differentCwd],
+    });
+    const invalidRootContainer = path.join(sandbox, "invalid-root-file-container");
+    const invalidRootFile = path.join(invalidRootContainer, "not-a-directory.ts");
+    const invalidRootBytes = Buffer.from("export const notARepository = true;\n", "utf8");
+    await mkdir(invalidRootContainer, { recursive: true });
+    await writeFile(invalidRootFile, invalidRootBytes);
+    await expectCacheBindingFailure({
+      server: claudeAlpha.server,
+      version: v1Version,
+      cwd: differentCwd,
+      env: { ...claudeBindingEnvironment, CLAUDE_PROJECT_DIR: invalidRootFile },
+      clientName: "claude-plugin-e2e-root-not-directory",
+      reason: "root_not_directory",
+      artifactRoots: [invalidRootContainer],
+    });
+    assert.deepEqual(
+      await readFile(invalidRootFile),
+      invalidRootBytes,
+      "a regular-file Root candidate must remain byte-identical after fail-closed MCP calls",
+    );
+    for (const [unsafeRoot, label] of [
+      ["relative/repository", "relative"],
+      ["${CLAUDE_PROJECT_DIR}", "unexpanded placeholder"],
+    ]) {
+      await expectUnsafeWrapperRootFailure(
+        claudeAlpha.server,
+        differentCwd,
+        { ...claudeBindingEnvironment, CLAUDE_PROJECT_DIR: unsafeRoot },
+        `Claude plugin must reject an unsafe ${label} Root before starting MCP`,
+      );
+    }
+    await resumeInstalledAlpha(
+      {
+        host: "claude",
+        installedRoot: claudeInstalledRoot,
+        version: v1Version,
+        repositoryRoot,
+        cwd: differentCwd,
+        env: cleanHostEnvironment(claudeUserHome, {
+          CLAUDE_CONFIG_DIR: claudeConfig,
+          CLAUDE_PROJECT_DIR: nestedCwd,
+          ...poisonGitAuthority,
+        }),
+        clientName: "claude-plugin-e2e-root-recovery",
+      },
+      codexAlpha.result,
     );
 
     assert.deepEqual(

@@ -54,16 +54,26 @@ function validateRoot(root, environment = process.env) {
         timeout: 5_000,
       },
     ).trim();
+    if (
+      gitTopLevel.length === 0 ||
+      Buffer.byteLength(gitTopLevel, "utf8") > MAX_ROOT_BYTES ||
+      /[\u0000-\u001f\u007f]/u.test(gitTopLevel) ||
+      !path.isAbsolute(gitTopLevel)
+    ) {
+      throw new TypeError("workspace_root_required");
+    }
     gitTopLevel = realpathSync(gitTopLevel);
   } catch {
-    throw new TypeError("workspace_root_required");
+    return root;
   }
   return gitTopLevel;
 }
 
 function selectRoot(host, { env = process.env, cwd = process.cwd() } = {}) {
   if (host === "claude") {
-    return validateRoot(env.CLAUDE_PROJECT_DIR, env);
+    const projectRoot = env.CLAUDE_PROJECT_DIR;
+    if (projectRoot === undefined || projectRoot === "") return undefined;
+    return validateRoot(projectRoot, env);
   }
   if (host === "codex") {
     return validateRoot(cwd, env);
@@ -92,9 +102,11 @@ async function run() {
   const cliPath = fileURLToPath(new URL("./understand-code.mjs", import.meta.url));
   let child;
   try {
+    const childArguments = [cliPath, "mcp", "--stdio"];
+    if (root !== undefined) childArguments.push("--root", root);
     child = spawn(
       process.execPath,
-      [cliPath, "mcp", "--stdio", "--root", root],
+      childArguments,
       {
         env: childEnvironment,
         shell: false,

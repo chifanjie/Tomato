@@ -2,102 +2,107 @@
 
 > 生成时间：2026-08-23 CST
 > 分支：`feature/agent-native-change-intelligence-authority`
-> 基于 commit：`1abfe495 test: prove two-package managed continuity`
+> 基于 commit：`775e140 test: prove linked-worktree host root parity`
 
 ## 背景与动机
 
-权威 Step16/WP6 要求 mandatory Codex、Claude Host 的 Root E2E 覆盖 linked worktree、
-空格/中文路径，以及 Claude 进程 cwd 与 `CLAUDE_PROJECT_DIR` 分离。现有真实 Host 门禁虽已覆盖
-官方 cache、Task、Verification、Workbench 与版本生命周期，但仍只在普通 ASCII repository root
-上运行；linked worktree 仅有低层 identity 测试，不能证明官方安装产物的完整用户路径。
+权威 Step16/WP6 要求 Root 绑定失败时仍能完成 MCP initialize 与 tools/list，并由 repository tools
+返回稳定、结构化的 `workspace_binding_required` Tool Error Envelope。启动期 stderr/exit 2 只用于
+语法上不安全、无法安全传给 CLI 的 Host 配置。
 
-本切片不改生产实现，只把现有双 Host + Chrome 全链迁移到更强的 detached linked-worktree fixture，
-并补齐测试自身对 gitfile、独立 index、common-dir、污染 Git authority 与 primary/ambient 隔离的
-精确证明。
+此前 Preview plugin adapter 会在启动 bundled MCP 前对所有 Root 做 `realpath` 与 Git 验证，并把
+missing、regular file、non-repository 等合法形状但不可绑定的候选统一折叠成
+`workspace_root_required` + exit 2。这样真实 official Host cache 无法暴露冻结的
+`root_missing`、`root_not_directory`、`root_unavailable` 分类，也无法证明失败会话锁定与 fresh
+进程恢复。
+
+本切片在不改变公共 MCP/CLI schema 的前提下，把安全的绝对 Root 候选交给 bundled CLI 分类；同时
+保留 adapter 对 relative、placeholder、control、oversize 与 option-like 输入的启动期拒绝。
 
 ## 改动策略
 
-- 在隔离 sandbox 中创建名称同时含空格和中文的 primary repository，再创建同样含空格和中文的
-  detached linked worktree；Host 选择入口位于 linked root 下的 nested 中文/空格目录。
-- 用 fixed argv、无 shell、清除 ambient `GIT_*` 的 Git helper 检查：linked `.git` 是 gitfile，
-  `show-toplevel` 精确为 linked root，HEAD detached，git-dir 与 common-dir 分离，common-dir 精确指向
-  primary `.git`。
-- 不再假设 `<root>/.git/index`。通过 `rev-parse --path-format=absolute --git-path index` 解析
-  linked index，要求它等于 `linkedGitDir/index` 且不同于 primary index；Alpha 执行前后复核同一路径。
-- 为 ambient repository 使用确定性不同的源码、HEAD 与 index，并在 7 次 fresh MCP 启动中统一注入
-  `GIT_DIR`、`GIT_WORK_TREE`、`GIT_COMMON_DIR`、`GIT_INDEX_FILE`、
-  `GIT_OBJECT_DIRECTORY`、`GIT_ALTERNATE_OBJECT_DIRECTORIES`。只有 Host wrapper 正确清除这些 authority
-  才能选中 linked root。
-- Codex v1 创建、Workbench 恢复、v2 恢复和 pinned-v1 恢复全部从 nested cwd 启动；Claude v1、v2、
-  pinned-v1 全部从无关 cwd 启动，并把 nested 路径放入 `CLAUDE_PROJECT_DIR`。
-- 从首次 refresh 起冻结非空 `repositoryId`、`worktreeId`，贯穿 Pulse、Task、changed Snapshot 与每次
-  fresh active-cache MCP 的 taskId/status/revision/baseline/current Snapshot exact replay。
-- 保留原 Task→Check→Verification、Codex/Claude 独立 Chrome profile、cookie Workbench、
-  Evidence/Source→Graph/Wiki→Back、v2 update、pinned-v1 reinstall、remove 与 Doctor 全部断言。
-- 最终要求 artifact 只存在于 linked root；primary source/index 原始字节不变且 Git status clean，
-  primary 与 poisoned ambient repository 都没有 `.understand-code`。
-- `mkdtemp` 后所有有副作用的 repository/worktree/Host/browser setup 都位于同一 `try/finally` cleanup
-  authority 内，setup 任一步失败也会删除 exact sandbox。
+- Claude 的 `CLAUDE_PROJECT_DIR` 为 undefined 或空字符串时，不再伪造 Root；child argv 省略
+  `--root`，由 CLI 返回 `root_missing`。
+- 语法安全的绝对候选仍先 best-effort 执行 bounded `realpath` 与固定参数 Git top-level 探测：
+  成功时传 canonical linked-worktree top-level；任一 FS/Git/输出校验失败时传回原绝对候选，由
+  CLI 区分 `root_not_directory` 与 `root_unavailable`。
+- relative、`${...}` placeholder、control、UTF-8 超长和 `--` 开头输入仍在 plugin adapter 中
+  以 redacted `workspace_root_required` + exit 2 拒绝。
+- 保持 `shell:false`、固定 argv、Git authority 环境清洗、timeout/maxBuffer、stderr 脱敏与现有 exports。
+- 真实 official cache E2E 新增统一 binding-failure helper：完成 initialize、initialized、exact 11
+  tools/list，并用合法参数调用 `get_repo_pulse` 与 `refresh_index`，对两次完整 Tool result 做 exact
+  deep equality；随后 EOF 干净退出，stderr 为空且不得生成 `.understand-code`。
+- Codex 在 existing non-repository cwd 得到 `root_unavailable` 后，测试把同一 cwd 变成有效 Git repo；
+  同一 MCP 会话仍返回原错误，证明 RootBindingSession 永久 fail-closed。fresh valid linked-worktree MCP
+  随后精确恢复原 Task。
+- Claude 分别覆盖 absent 与 empty project root 的 `root_missing`、absolute regular file 的
+  `root_not_directory`，并证明 file bytes 不变；relative 与 literal placeholder 继续走 adapter exit 2。
+  每组错误后都由 fresh valid linked-worktree MCP 精确恢复原 Task、repository/worktree、Snapshot、
+  revision 与 Verification replay。
+- 原 linked spaces/CJK Root、六类 poisoned Git authority、双 Host official active cache、双 Chrome
+  Workbench、v2 update、pinned-v1 reinstall、remove 与 Doctor 链全部保留。
 
 ## 改动范围
 
 | 模块/职责 | 文件 | 做了什么 |
 |---|---|---|
-| Mandatory Host Root E2E | `packages/preview/test/plugin-clean-install.test.mjs` | 将现有真实双 Host + Chrome 全链迁移到 spaces/CJK detached linked worktree；补 gitfile/index/common-dir、六类 poisoned Git authority、身份连续性、primary/ambient 隔离与 setup cleanup 断言 |
+| Preview Host adapter | `packages/preview/src/codex-plugin-bin.mjs` | 对 safe absolute Root 做 best-effort canonicalization，失败时交由 CLI 分类；Claude missing/empty 时省略 `--root`；保留 syntactically unsafe exit 2 |
+| Mandatory Host E2E | `packages/preview/test/plugin-clean-install.test.mjs` | 从真实 official cache 验证三类 Tool Error Envelope、会话永久锁定、无 Artifact 副作用与 fresh exact recovery，并保留原 Browser/lifecycle 全链 |
 
-## Review 重点
+## Review 重点与结论
 
-1. **Root authority** — Codex 必须从 nested cwd、Claude 必须从 divergent cwd + nested
-   `CLAUDE_PROJECT_DIR` 选择同一个 linked top-level；poisoned `GIT_*` 不能改写 authority。
-2. **Linked identity** — gitfile、git-dir/common-dir、detached HEAD、linked index 与 Task
-   `repositoryId/worktreeId` 必须形成连续证据，不能用普通 `.git/index` 假设。
-3. **产品全链未弱化** — 原 install/Doctor、Task/Check/Verification、双 Workbench、v2/pinned-v1、
-   remove/not_registered 的调用与断言必须全部保留。
-4. **隔离** — 源码变更与 `.understand-code` 只能落在 linked root；primary 必须保持 source/index/status
-   clean，ambient repository 不得出现产品 artifact。
-5. **失败清理** — linked worktree 注册、node_modules/cache、Chrome profile 或 Host setup 失败时，
-   不得因 `try/finally` 起点过晚而遗留 sandbox。
+1. **分层正确性** — adapter 只拒绝不能安全转交的语法输入；安全绝对候选由 CLI 的 Root binding
+   classifier 决定 reason，避免提前吞掉 Tool Envelope。
+2. **稳定错误合同** — initialize/tools/list 必须可用，Pulse 与 Refresh 必须返回完整相同的
+   `workspace_binding_required` result；不能只比 reason 子字段。
+3. **永久失败与恢复** — 同进程环境改变后不得静默重绑；恢复必须由 fresh MCP 进程完成并 exact replay
+   既有 Task identity。
+4. **无副作用与脱敏** — binding failure 不得创建 `.understand-code`、修改 regular file 或泄露路径；
+   unsafe adapter 失败仍只输出固定 redacted 文案。
+5. **旧纵切未弱化** — linked-worktree authority、双 Browser、Evidence/Graph/Wiki、版本切换与最终清理必须
+   继续通过。
 
-## 已识别风险
-
-终审结果：P0 0、P1 0、current-path executable P2 0、blocking Test Gap 0。
-
-终审前关闭的防假绿问题包括：setup 原先位于 cleanup authority 之前；linked index 未精确绑定
-linked git-dir；Git poison 变量不足；ambient repository 可能与 primary 生成相同 HEAD/index，且
-alternate object DB 曾指向合法 primary objects。最终 fixture 使用确定性不同 ambient source/HEAD/index，
-六类 authority 都指向 unrelated ambient Git state，并在全部 7 次 MCP 启动中复用。
-
-非阻塞残余：本 E2E 不独立计算 primary checkout 的 public `worktreeId`；已有 repository-state
-identity 测试覆盖底层计算，本门禁以 gitdir/common-dir/index/source/artifact 隔离证明 Host 实际选中
-linked worktree。本切片不扩为 full Root/error/symlink/dynamic Roots 矩阵，也不增加第二条普通 repo
-Host 重门；普通路径继续由既有 CLI root-binding、installed-host 与 packed-browser 证据覆盖。
+独立 change-intent 与 contract 终审一致：P0 0、P1 0、current-path executable P2 0、blocking Test Gap 0。
 
 ## 测试情况
 
-**已覆盖：**
+**已通过：**
 
-- `node --check packages/preview/test/plugin-clean-install.test.mjs`：通过。
-- scoped `git diff --check`：通过。
-- Preview `typecheck`：通过。
-- Preview fresh `build`：通过，fresh `packages/preview/dist` 已生成。
+- `node --check packages/preview/src/codex-plugin-bin.mjs`
+- `node --check packages/preview/test/plugin-clean-install.test.mjs`
+- scoped `git diff --check`
+- `pnpm --filter @understand-code/preview typecheck`
+- `pnpm --filter @understand-code/preview build`（fresh dist）
 - 唯一真实 Host + Browser 门禁：
   `UNDERSTAND_CODE_REQUIRE_PLUGIN_HOSTS=1 UNDERSTAND_CODE_REQUIRE_REAL_BROWSER=1 pnpm --filter @understand-code/preview test:plugins`
-- 结果：1/1 pass，0 fail，0 skip；test 34.809 秒，总计 34.900 秒。
+- 结果：1/1 pass，0 fail，0 skip；test 37.066 秒，总计 37.157 秒。
 - 双 flag 同时强制，因此 Codex CLI、Claude CLI 或 Chrome 缺失都会失败，不能静默 skip。
+
+## 可声明与不可声明
+
+**可声明：**
+
+- 当前本机真实 Codex/Claude official active cache 中的 bundled MCP 可以在 invalid Root 下完成
+  initialize/tools/list，并稳定返回 `root_unavailable`、`root_missing`、`root_not_directory` Tool Envelope。
+- Root error 在同一 MCP 会话内永久锁定且不产生 UC Artifact；fresh valid linked-worktree MCP 可以精确恢复
+  原 Task/repository/worktree/Snapshot/revision/Verification。
+- relative 与 unexpanded placeholder 仍被 adapter 安全拒绝；原双 Host Browser 与 lifecycle 没有回归。
 
 **不可声明：**
 
-- 不是 credentialed/model-selected Codex/Claude chat 或 Gold/G2/G3 质量证据。
-- 不是 full Root/六 reason/dynamic Roots/additional-root/list-changed、多 worktree 并发矩阵。
-- 不外推到所有 Host/Git 版本、其他 OS/filesystem、Windows 或 cross-platform Release。
-- 不证明 RC、signature、SBOM、SLSA/trusted provenance、reproducibility、CI 发布或 publisher authenticity。
-- 不证明 Provider Authority、execution fence 或 strong writes；`strongWrites` 继续 locked。
-- 这是 test-only 证据增强，不宣称新增 runtime 安全机制。
+- 不是会话内动态重绑或自动恢复；恢复需要新 MCP 进程。
+- 不是所有 invalid Root 都进入 Tool Envelope；语法不安全输入仍是 startup exit 2。
+- 未穷举 control/oversize、absolute missing/broken symlink、malformed fake-Git、所有 Host/Git 版本、OS、
+  filesystem 与跨平台矩阵。
+- 不是 credentialed/model-selected Codex/Claude chat、Gold/G2/G3、dynamic Roots 或正式 Surface Release gate。
+- adapter Git 探测是 best-effort canonicalization，不是新的 authority、execution fence 或信任证明。
+- 不证明 Provider Authority、strongWrites、signature、SBOM、SLSA/provenance、reproducibility 或 release-ready；
+  `strongWrites` 继续 locked。
 
 ## 结论
 
-🟢 Effective。当前本机真实 Codex、Claude 与 Chrome tuple 上，两套官方 active plugin cache 已在一条
-spaces/CJK detached linked worktree 上完成同一 Alpha Task 的完整闭环：Codex nested cwd 创建并验证，
-Claude divergent cwd + nested project root 精确恢复；两 Host 保持 repository/worktree/Task/Snapshot/revision
-identity，并完成 Evidence/Source→Graph/Wiki→Back、v2 与 pinned-v1 恢复及最终 remove/Doctor。primary 和
-poisoned ambient repository 保持隔离。可以精确提交。
+🟢 Effective。真实 official Codex cache 在 existing non-repository cwd 中仍可完成 MCP 握手并对两个
+repository tools 返回稳定 `root_unavailable`；同一 cwd 后来成为 Git repo 时会话仍保持原错误。真实
+official Claude cache 对 missing、empty 与 regular-file project root 分别返回冻结的 `root_missing` 与
+`root_not_directory`。全部失败路径无 Artifact 副作用并干净退出，fresh valid linked-worktree Host cache
+随后 exact replay 原 Task；既有双 Host Workbench 与 v2/pinned/remove 生命周期保持全绿。可以精确提交。

@@ -2,86 +2,84 @@
 
 > 生成时间：2026-08-22 CST
 > 分支：feature/agent-native-change-intelligence-authority
-> 基于 commit：d478a99 feat: analyze untracked additions safely
+> 基于 commit：0f67021 feat: assemble unsigned alpha candidates
 
 ## 背景与动机
 
-现有 CI 可以内联构建 Preview tgz 并运行 cold gate，但本地没有一个可复用的命令把
-源码身份、锁文件、唯一 tgz、内嵌 release manifest、当前 native tuple 和 gate 结果
-闭合成可传输、可复核的候选目录。直接把该产物称为 RC、Release、SBOM 或 provenance
-又会超出当前证据。
+现有 Change Check 会验证 persisted Actual Snapshot 中已列出的 change IDs 与目标文件
+bytes，但 live fence 只覆盖 staged/live-untracked 的 HEAD 与 Index。pure unstaged 没有
+全局 fence，所有 profile 也没有复核 `worktreeDigest`、`untrackedDigest` 与
+`ignoreDigest`。
 
-本切片新增一个本地 **unsigned Alpha Candidate assembler**。它只证明当前本机 tuple
-上、一次 clean source 构建得到的候选目录内部自洽；`releaseReady` 继续为 false，
-Provider Authority 与 `strongWrites` 继续 locked。
+因此用户在捕获只含 `src/task.ts` 的 Actual Snapshot 后，可以保持该文件不变，再修改
+另一个 tracked 文件或新增 untracked 文件；旧实现仍可能返回 `complete` 并持久化
+`planned_completed`。这是公开 Pulse → Brief → 修改 → Check 路径上的错误成功。
+
+本切片为所有当前可成功分析的 Alpha profile 增加完整 Repository Snapshot pre/post
+fence，不扩 delete/rename/committed 等 source kind，也不解锁 strong writes。
 
 ## 改动策略
 
-- `assemble --output <absolute-new-dir>` 要求 clean Git commit/tree、无 tracked 或
-  untracked dirt、无 assume-unchanged/skip-worktree，并精确绑定 working/committed
-  `pnpm-lock.yaml`。
-- 构建子进程使用最小隔离环境，剥离 ambient `VITE_*`/secret 输入，并拒绝 Preview 与
-  Dashboard 根目录下的 `.env*` 文件。
-- 只执行一次 build、一次 `npm pack --ignore-scripts`，再把同一 tgz 传给既有 cold
-  packed gate。
-- verifier 使用有界的 in-process gzip/tar parser，校验 header checksum、entry type、
-  link/path、raw/logical duplicate、entry count、单文件与 aggregate bytes；不调用系统
-  tar 解包不可信归档。
-- 输出固定为唯一 tgz、candidate JSON、reviewed schema 和 `SHA256SUMS` 四个 regular
-  files；临时目录先自验，清理 tool root，最终再次核对 `.env*` 与 source state，然后
-  一次 rename 原子发布。
-- `verify --candidate <absolute-dir>` 校验 exact-four、schema/checksums、tgz package 与
-  release/native 绑定，以及 manifest 记录的 Git commit/tree/lock objects。
-- README 明确该目录是 unsigned Alpha Candidate；协同重写并重算 unsigned metadata
-  无法被检测或认证。
+- `task-engine` 以无环依赖复用 `repository-state` 的
+  `getRepositorySnapshotDetailed`，不复制另一套 worktree/untracked/ignore digest 算法。
+- live capture 环境精确镜像 persisted CLI Snapshot：保留 system/global Git config 与
+  `core.excludesfile`，只移除 6 个可重定向 repository authority 的 `GIT_*` 变量，并固定
+  optional locks、terminal prompt 与 locale。
+- 使用 Actual HEAD 作为 `baselineRef`，固定 64 MiB Git 输出预算，并要求 pre/post
+  capture 均为 `complete`。
+- 精确比较 canonical root、HEAD、repository/worktree/root identity、Index/Worktree/
+  Untracked/Ignore 四项 digest，最后比较稳定 `snapshotId`。
+- pure unstaged、bounded staged 与 bounded live-untracked 三类成功 profile 都执行
+  pre/post fence；任一 fence 失败都返回一个无 `filePath` 的 global boundary，覆盖全部
+  actual IDs，且 `hunks: []`。
+- fence 成功时保持原语义：pure unstaged 仍可返回既有 partial semantic result；staged
+  与 live-untracked 继续使用既有 whole-batch boundary collapse。
+- hardened Git blob/index 读取环境保持不变；只有 Snapshot fence 使用 CLI-equivalent
+  capture 环境。
 
 ## 改动范围
 
 | 模块/职责 | 文件 | 做了什么 |
 |---|---|---|
-| Candidate assembler | `packages/preview/scripts/alpha-candidate.mjs` | clean-source capture、隔离 build/pack/cold、bounded verify、atomic publish |
-| Public schema | `packages/preview/schemas/alpha-candidate-v1.schema.json` | strict candidate contract、32 MiB 上限、OID format/length 约束 |
-| Package commands | `packages/preview/package.json` | candidate assemble/verify/focused scripts与typecheck接线 |
-| Focused regression | `packages/preview/test/alpha-candidate.test.mjs` | 隔离 clone、真实 build/cold、no-leak、四类 single-bit tamper |
-| Packaged guide | `packages/preview/README.md` | 使用命令、exact-four 输出与 unsigned 能力边界 |
+| Task Engine dependency | `packages/task-engine/package.json` | 增加 acyclic `repository-state` runtime dependency |
+| Live-state fence | `packages/task-engine/src/repository-context-provider.ts` | 完整 Snapshot pre/post capture、identity/digest/snapshotId 比较、global fail-closed |
+| Focused regression | `packages/task-engine/test/repository-context-provider.test.ts` | 四类 happy fixture 迁移到真实 Snapshot，并新增 unrelated tracked+untracked drift 回归 |
+| Workspace lock | `pnpm-lock.yaml` | 记录 task-engine 的 workspace dependency |
 
 ## Review 重点
 
-1. **源码绑定** — candidate 只能从 exact clean commit/tree 与 committed lock 构建；
-   工作锁文件、index flags 或最终 source recapture 不一致都必须 fail closed。
-2. **未记录输入** — ambient Vite 环境与 `.env*` 不得进入 Dashboard/CLI bytes，错误输出
-   不得泄露路径、环境值或 secret。
-3. **归档边界** — verifier 必须在解压、entry count、type、path、payload 和 aggregate
-   bytes 上有界，且拒绝 symlink/hardlink/device/duplicate/PAX alias。
-4. **单一产物** — build/pack/cold 必须使用同一 tgz；候选目录只有四个 regular files，
-   checksum 与 embedded release/native identity 必须精确。
-5. **发布恢复** — 所有 staging setup 都在 cleanup authority 内；tool cleanup 在最终
-   source fence 之前完成，rename 后不能再因 fallible cleanup 把成功报告成失败。
-6. **声明诚实性** — 该能力只证明 unsigned self-consistency，不得升级为 authenticity、
-   provenance、reproducibility、cross-platform、RC 或 Release 结论。
+1. **捕获语义一致** — fence 必须复用与 public refresh 相同的 Git config/ignore 语义；
+   不能用 hardened blob 环境禁掉 global excludes 后制造无漂移 false unknown。
+2. **覆盖完整** — pre/post 必须覆盖 pure unstaged、staged、live-untracked 三个可成功
+   profile，不能继续只包住 `boundedBatchChanges`。
+3. **错误成功关闭** — selected file bytes 不变但未选中 tracked/untracked state 漂移时，
+   不得保留任何 hunk 或 `complete` 结果。
+4. **行为兼容** — 只有 fence failure whole-unknown；fence 成功后 pure unstaged 原有
+   partial semantic behavior 必须保留。
+5. **真实 fixture** — fenced happy path 必须使用 repository-state 生成的真实 identity、
+   digest、snapshotId 与 change ID，不能放宽生产比较来迁就 fake Snapshot。
 
 ## 已识别风险
 
 终审结果：P0 0、P1 0、current-path executable P2 0、blocking Test Gap 0。
 
-非阻塞残余：candidate metadata 与 checksums 未签名，协同重写并重算 metadata 无法被
-认证；尚无 SBOM、trusted/SLSA provenance、可复现构建、第二个历史 tgz、跨平台或正式
-RC/Release 证据。只验证当前 platform/native tuple；same-user TOCTOU 与完整 execution
-fence 未建立。Provider Authority 与 `strongWrites` 保持 locked。
+非阻塞残余：post-sample 到 ArtifactStore append 之间仍不是持续 execution fence；随后
+发生的新变化会使结果 stale，但本切片不提供强写授权。Graph 读取与 Git/worktree 之间
+也没有正式 Provider Authority。delete/rename/intent-to-add/committed 与 formal
+`evidence_backed_v1` 继续 fail closed 或留待后续；`strongWrites` 保持 locked。
 
 ## 测试情况
 
-- Preview package typecheck 通过。
-- 唯一 Alpha Candidate focused：1/1，0 skip，60.37s。
-- focused 使用完全隔离 clone，完成 frozen install、`.env.local` fail-close、唯一
-  build/pack/cold、exact-four/source/release/native 绑定与 no-leak 检查。
-- tgz、candidate JSON、schema、`SHA256SUMS` 四类 single-bit tamper 均被拒绝；恢复原
-  bytes 后再次 verify 通过。
-- final production/test `node --check` 与 scoped `git diff --check` 通过。
-- 按切片策略未重复运行 Host/browser/full-package 重门。
+- Repository provider focused：11/11，0 skip，7.28s。
+- Task Engine typecheck 通过；package coverage 8 files / 70 tests 全部通过。
+- Fresh Preview typecheck/build 通过。
+- 唯一 packed Chrome E2E：1/1，0 skip，34.729s。
+- packed tgz SHA-256：`cc327fe8ab2cdcf62bc8f2e8dd72f15203b0d286bd3a9115510dbda782ce47b2`；87 entries。
+- final scoped `git diff --check` 通过。
 
 ## 结论
 
-🟢 Effective。当前本机 tuple 现在可以从 clean source 生成一个边界明确、可传输、可
-复核的 unsigned Alpha Candidate；失败路径保持有界和 fail closed，文档没有把它误报为
-正式 Release、真实性或 provenance 证明。可以精确提交。
+🟢 Effective。Change Check 现在会在分析前后精确确认完整 live repository state 仍等于
+persisted Actual Snapshot；任何未选中的 tracked、untracked、Index、ignore、identity 或
+HEAD 漂移都会整体 fail closed，不再把过期 change set 写成 `planned_completed`。可以
+精确提交。

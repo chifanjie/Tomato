@@ -20,6 +20,7 @@ import {
 import {
   RepositoryRelativePathSchema,
   RepositorySnapshotV1Schema,
+  type RepositorySnapshotV1,
 } from "@understand-code/contracts";
 import {
   KnowledgeGraphSchema,
@@ -33,6 +34,7 @@ import {
   type WikiIndexV2,
   type WikiSearchIndexV2,
 } from "@understand-code/core/knowledge-base";
+import { getRepositorySnapshotDetailed } from "@understand-code/repository-state";
 
 import type {
   SourceEvidenceRecord,
@@ -65,8 +67,7 @@ const DEFAULT_WIKI_SEARCH_PATH =
 const DEFAULT_MAX_GRAPH_BYTES = 32 * 1024 * 1024;
 const DEFAULT_MAX_WIKI_BYTES = 32 * 1024 * 1024;
 const DEFAULT_MAX_SOURCE_BYTES = 8 * 1024 * 1024;
-const MAX_CHANGE_ANALYSIS_INDEX_BYTES = 64 * 1024 * 1024;
-const MAX_CHANGE_ANALYSIS_HEAD_BYTES = 256;
+const MAX_CHANGE_ANALYSIS_SNAPSHOT_BYTES = 64 * 1024 * 1024;
 const MAX_CHANGE_ANALYSIS_PATH_BYTES = 4_096;
 const MAX_CHANGE_ANALYSIS_TREE_ENTRY_BYTES =
   MAX_CHANGE_ANALYSIS_PATH_BYTES + 256;
@@ -180,6 +181,24 @@ function gitEnvironment(): NodeJS.ProcessEnv {
   };
 }
 
+function snapshotFenceEnvironment(): NodeJS.ProcessEnv {
+  const environment = { ...process.env };
+  for (const name of [
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_COMMON_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  ]) {
+    delete environment[name];
+  }
+  environment.GIT_OPTIONAL_LOCKS = "0";
+  environment.GIT_TERMINAL_PROMPT = "0";
+  environment.LC_ALL = "C";
+  return environment;
+}
+
 function readGitOutput(
   canonicalRoot: string,
   args: readonly string[],
@@ -223,58 +242,6 @@ function safeChangeAnalysisPath(relativePath: string): boolean {
   );
 }
 
-function digestRelevantIndex(output: Buffer): string {
-  const hash = createHash("sha256");
-  let offset = 0;
-  while (offset < output.length) {
-    const terminator = output.indexOf(0, offset);
-    if (terminator < 0) {
-      throw new Error("Git index output is not NUL terminated.");
-    }
-    const record = output.subarray(offset, terminator);
-    const tab = record.indexOf(0x09);
-    if (tab < 0) throw new Error("Git index output is malformed.");
-    const filePath = record.subarray(tab + 1).toString("utf8");
-    if (
-      filePath !== ".understand-code" &&
-      !filePath.startsWith(".understand-code/")
-    ) {
-      hash.update(record);
-      hash.update(Buffer.from([0]));
-    }
-    offset = terminator + 1;
-  }
-  return `sha256:${hash.digest("hex")}`;
-}
-
-async function readCurrentHead(canonicalRoot: string): Promise<string> {
-  const output = await readGitOutput(
-    canonicalRoot,
-    ["rev-parse", "--verify", "--end-of-options", "HEAD^{commit}"],
-    MAX_CHANGE_ANALYSIS_HEAD_BYTES,
-    "Git HEAD output exceeds analysis budget",
-  );
-  const match = /^(?:([0-9a-f]{40})|([0-9a-f]{64}))\r?\n?$/u.exec(
-    output.toString("utf8"),
-  );
-  const head = match?.[1] ?? match?.[2];
-  if (head === undefined) throw new Error("Git HEAD output is invalid.");
-  return head;
-}
-
-async function readCurrentIndexDigest(
-  canonicalRoot: string,
-): Promise<string> {
-  return digestRelevantIndex(
-    await readGitOutput(
-      canonicalRoot,
-      ["ls-files", "--stage", "-z"],
-      MAX_CHANGE_ANALYSIS_INDEX_BYTES,
-      "Git index output exceeds analysis budget",
-    ),
-  );
-}
-
 type LiveAnalysisFence =
   | { readonly ok: true }
   | {
@@ -285,45 +252,75 @@ type LiveAnalysisFence =
 
 async function sampleLiveAnalysisFence(
   canonicalRoot: string,
-  expectedHead: string,
-  expectedIndexDigest: string,
+  expected: RepositorySnapshotV1,
 ): Promise<LiveAnalysisFence> {
-  let currentHead: string;
+  let capture: Awaited<ReturnType<typeof getRepositorySnapshotDetailed>>;
   try {
-    currentHead = await readCurrentHead(canonicalRoot);
-  } catch (error) {
+    capture = await getRepositorySnapshotDetailed(canonicalRoot, {
+      baselineRef: expected.headCommit,
+      environment: snapshotFenceEnvironment(),
+      maxBufferBytes: MAX_CHANGE_ANALYSIS_SNAPSHOT_BYTES,
+    });
+  } catch {
     return {
       ok: false,
-      code: error instanceof RangeError
-        ? "budget_exhausted"
-        : "unsupported_source",
-      reason: "The current Git HEAD could not be read within the Alpha profile.",
+      code: "unsupported_source",
+      reason: "The current repository state could not be captured within the Alpha profile.",
     };
   }
-  if (currentHead !== expectedHead) {
+  if (capture.snapshot.captureStatus !== "complete") {
+    return {
+      ok: false,
+      code: capture.diagnostics.some(
+        (diagnostic) => diagnostic.code === "git_output_too_large",
+      )
+        ? "budget_exhausted"
+        : "unsupported_source",
+      reason: "The current repository state could not be captured completely within the Alpha profile.",
+    };
+  }
+  if (capture.snapshot.headCommit !== expected.headCommit) {
     return {
       ok: false,
       code: "head_mismatch",
       reason: "The current Git HEAD no longer matches the actual Snapshot.",
     };
   }
-  let currentIndexDigest: string;
-  try {
-    currentIndexDigest = await readCurrentIndexDigest(canonicalRoot);
-  } catch (error) {
+  if (
+    capture.canonicalRoot !== canonicalRoot ||
+    capture.snapshot.repositoryId !== expected.repositoryId ||
+    capture.snapshot.worktreeId !== expected.worktreeId ||
+    capture.snapshot.rootIdentity !== expected.rootIdentity
+  ) {
     return {
       ok: false,
-      code: error instanceof RangeError
-        ? "budget_exhausted"
-        : "unsupported_source",
-      reason: "The current Git Index could not be read within the Alpha profile.",
+      code: "content_changed",
+      reason: "The current repository identity no longer matches the actual Snapshot.",
     };
   }
-  if (currentIndexDigest !== expectedIndexDigest) {
+  if (capture.snapshot.indexDigest !== expected.indexDigest) {
     return {
       ok: false,
       code: "content_changed",
       reason: "The current Git Index no longer matches the actual Snapshot.",
+    };
+  }
+  if (
+    capture.snapshot.worktreeDigest !== expected.worktreeDigest ||
+    capture.snapshot.untrackedDigest !== expected.untrackedDigest ||
+    capture.snapshot.ignoreDigest !== expected.ignoreDigest
+  ) {
+    return {
+      ok: false,
+      code: "content_changed",
+      reason: "The current worktree, untracked, or ignore state no longer matches the actual Snapshot.",
+    };
+  }
+  if (capture.snapshot.snapshotId !== expected.snapshotId) {
+    return {
+      ok: false,
+      code: "content_changed",
+      reason: "The current repository state no longer matches the exact actual Snapshot.",
     };
   }
   return { ok: true };
@@ -1382,6 +1379,19 @@ implements TaskContextProvider {
       };
     }
     const boundedBatchChanges = stagedChanges ?? liveUntrackedChanges;
+    const pureUnstagedChanges =
+      !includesStagedChange &&
+      !includesUntrackedChange &&
+      actual.data.changes.length > 0 &&
+      livePaths.size === actual.data.changes.length &&
+      actual.data.changes.every(
+        (change) =>
+          change.source === "unstaged" &&
+          change.kind === "modified" &&
+          change.contentDigest !== undefined,
+      );
+    const requiresLiveSnapshotFence =
+      boundedBatchChanges !== undefined || pureUnstagedChanges;
     if (
       boundedBatchChanges !== undefined &&
       boundedBatchChanges.some(
@@ -1429,11 +1439,10 @@ implements TaskContextProvider {
       };
     }
 
-    if (boundedBatchChanges !== undefined) {
+    if (requiresLiveSnapshotFence) {
       const fence = await sampleLiveAnalysisFence(
         this.#canonicalRoot,
-        actual.data.headCommit,
-        actual.data.indexDigest,
+        actual.data,
       );
       if (!fence.ok) {
         return {
@@ -1746,22 +1755,27 @@ implements TaskContextProvider {
       }
     }
 
-    if (boundedBatchChanges !== undefined) {
+    if (requiresLiveSnapshotFence) {
       const fence = await sampleLiveAnalysisFence(
         this.#canonicalRoot,
-        actual.data.headCommit,
-        actual.data.indexDigest,
+        actual.data,
       );
       if (!fence.ok) {
-        boundaries.push(
-          changeAnalysisBoundary(
-            fence.code,
-            fence.reason,
-            undefined,
-            actualChangeIds,
-          ),
-        );
+        return {
+          status: "unknown",
+          hunks: [],
+          boundaries: [
+            changeAnalysisBoundary(
+              fence.code,
+              fence.reason,
+              undefined,
+              actualChangeIds,
+            ),
+          ],
+        };
       }
+    }
+    if (boundedBatchChanges !== undefined) {
       if (boundaries.length > 0) {
         const orderedBoundaries = [...boundaries].sort((left, right) =>
           compareUnicodeCodeUnits(left.filePath ?? "", right.filePath ?? "") ||

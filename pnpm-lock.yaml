@@ -384,6 +384,9 @@ importers:
       '@understand-code/core':
         specifier: workspace:*
         version: link:../core
+      '@understand-code/repository-state':
+        specifier: workspace:*
+        version: link:../repository-state
     devDependencies:
       '@types/node':
         specifier: ^25.5.0

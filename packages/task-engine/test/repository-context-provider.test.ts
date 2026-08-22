@@ -16,6 +16,7 @@ import {
   type RepositorySnapshotV1,
 } from "@understand-code/contracts";
 import type { KnowledgeGraph } from "@understand-code/core";
+import { getRepositorySnapshotDetailed } from "@understand-code/repository-state";
 import {
   afterEach,
   describe,
@@ -149,6 +150,38 @@ async function currentIndexDigest(root: string): Promise<`sha256:${string}`> {
   return digest(await gitBytes(root, ["ls-files", "--stage", "-z"]));
 }
 
+function mirroredSnapshotFenceEnvironment(): NodeJS.ProcessEnv {
+  const environment = { ...process.env };
+  for (const name of [
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_COMMON_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  ]) {
+    delete environment[name];
+  }
+  environment.GIT_OPTIONAL_LOCKS = "0";
+  environment.GIT_TERMINAL_PROMPT = "0";
+  environment.LC_ALL = "C";
+  return environment;
+}
+
+async function captureFencedSnapshot(
+  root: string,
+  baselineRef?: string,
+): Promise<RepositorySnapshotV1> {
+  const capture = await getRepositorySnapshotDetailed(root, {
+    ...(baselineRef === undefined ? {} : { baselineRef }),
+    environment: mirroredSnapshotFenceEnvironment(),
+    now: () => new Date("2026-08-22T00:00:00.000Z"),
+  });
+  expect(capture.snapshot.captureStatus).toBe("complete");
+  expect(capture.snapshot.limitations).toEqual([]);
+  return capture.snapshot;
+}
+
 async function fixtureRoot(
   graph: KnowledgeGraph = graphFixture(),
   source = "export function task() { return true; }\n",
@@ -227,6 +260,7 @@ describe("RepositoryTaskContextProvider", () => {
     const actualSource = baselineSource
       .replace("old foo", "new foo")
       .replace("old bar", "new bar");
+    const unrelatedSource = "export const unrelated = 'baseline';\n";
     const graph = graphFixture();
     graph.nodes = [
       {
@@ -251,8 +285,13 @@ describe("RepositoryTaskContextProvider", () => {
       },
     ];
     const { root } = await fixtureRoot(graph, baselineSource);
+    await writeFile(
+      path.join(root, "src/unrelated.ts"),
+      unrelatedSource,
+      "utf8",
+    );
     await git(root, ["init", "--quiet"]);
-    await git(root, ["add", "src/task.ts"]);
+    await git(root, ["add", "src/task.ts", "src/unrelated.ts"]);
     await git(root, [
       "-c",
       "user.name=Understand Code Test",
@@ -264,29 +303,19 @@ describe("RepositoryTaskContextProvider", () => {
       "baseline",
     ]);
     const headCommit = await git(root, ["rev-parse", "HEAD"]);
+    const baselineSnapshot = await captureFencedSnapshot(root, headCommit);
+    expect(baselineSnapshot.changes).toEqual([]);
     await writeFile(path.join(root, "src/task.ts"), actualSource, "utf8");
-    const baselineSnapshot = snapshot(
-      digest(baselineSource),
-      "snapshot:baseline-analysis",
-      { headCommit, changes: [] },
-    );
-    const actualSnapshot = snapshot(
-      digest(actualSource),
-      "snapshot:actual-analysis",
-      {
-        headCommit,
-        changes: [
-          {
-            id: "change:task",
-            path: "src/task.ts",
-            source: "unstaged",
-            kind: "modified",
-            contentDigest: digest(actualSource),
-            previousContentDigest: digest(baselineSource),
-          },
-        ],
-      },
-    );
+    const actualSnapshot = await captureFencedSnapshot(root, headCommit);
+    expect(actualSnapshot.changes).toHaveLength(1);
+    const taskChange = actualSnapshot.changes[0]!;
+    expect(taskChange).toMatchObject({
+      path: "src/task.ts",
+      source: "unstaged",
+      kind: "modified",
+      contentDigest: digest(actualSource),
+    });
+    const taskChangeId = taskChange.id;
     const provider = await RepositoryTaskContextProvider.open({
       canonicalRoot: root,
     });
@@ -306,20 +335,53 @@ describe("RepositoryTaskContextProvider", () => {
     expect(first).toMatchObject({ status: "complete", boundaries: [] });
     expect(first.hunks).toEqual([
       expect.objectContaining({
-        actualChangeIds: ["change:task"],
+        actualChangeIds: [taskChangeId],
         filePath: "src/task.ts",
         newLineRange: [1, 1],
         nodeIds: ["function:foo"],
         contentHash: digest(actualSource),
       }),
       expect.objectContaining({
-        actualChangeIds: ["change:task"],
+        actualChangeIds: [taskChangeId],
         filePath: "src/task.ts",
         newLineRange: [2, 2],
         nodeIds: ["function:bar"],
         contentHash: digest(actualSource),
       }),
     ]);
+
+    await Promise.all([
+      writeFile(
+        path.join(root, "src/unrelated.ts"),
+        "export const unrelated = 'drifted';\n",
+        "utf8",
+      ),
+      writeFile(
+        path.join(root, "src/untracked-drift.ts"),
+        "export const untrackedDrift = true;\n",
+        "utf8",
+      ),
+    ]);
+    expect(await readFile(path.join(root, "src/task.ts"), "utf8")).toBe(
+      actualSource,
+    );
+    const unrelatedLiveDrift = await provider.analyzeTaskChanges({
+      taskId: "task:analysis",
+      baselineSnapshot,
+      actualSnapshot,
+    });
+    expect(unrelatedLiveDrift).toEqual({
+      status: "unknown",
+      hunks: [],
+      boundaries: [
+        {
+          code: "content_changed",
+          reason:
+            "The current worktree, untracked, or ignore state no longer matches the actual Snapshot.",
+          actualChangeIds: [taskChangeId],
+        },
+      ],
+    });
   });
 
   it("derives multi-path staged hunks from exact Index bytes and fails closed across live drift", async () => {
@@ -336,7 +398,6 @@ describe("RepositoryTaskContextProvider", () => {
     );
     const indexDriftSource = baselineSource.replace("old foo", "newer foo");
     const worktreeDriftSource = stagedSource.replace("old bar", "worktree bar");
-    const stagedChangeIds = ["change:staged-foo", "change:staged-extra"].sort();
     const graph = graphFixture();
     graph.nodes = [
       {
@@ -379,6 +440,8 @@ describe("RepositoryTaskContextProvider", () => {
       "baseline",
     ]);
     const headCommit = await git(root, ["rev-parse", "HEAD"]);
+    const baselineSnapshot = await captureFencedSnapshot(root, headCommit);
+    expect(baselineSnapshot.changes).toEqual([]);
     await Promise.all([
       writeFile(path.join(root, "src/task.ts"), stagedSource, "utf8"),
       writeFile(
@@ -388,37 +451,29 @@ describe("RepositoryTaskContextProvider", () => {
       ),
     ]);
     await git(root, ["add", "--", "src/extra.ts", "src/task.ts"]);
-    const baselineSnapshot = snapshot(
-      digest(baselineSource),
-      "snapshot:staged-baseline",
-      { headCommit, changes: [] },
+    const actualSnapshot = await captureFencedSnapshot(root, headCommit);
+    expect(actualSnapshot.changes).toHaveLength(2);
+    const stagedExtraChange = actualSnapshot.changes.find(
+      (change) => change.path === "src/extra.ts",
     );
-    const actualSnapshot = snapshot(
-      digest(stagedSource),
-      "snapshot:staged-actual",
-      {
-        headCommit,
-        indexDigest: await currentIndexDigest(root),
-        changes: [
-          {
-            id: "change:staged-foo",
-            path: "src/task.ts",
-            source: "staged",
-            kind: "modified",
-            contentDigest: digest(stagedSource),
-            previousContentDigest: digest(baselineSource),
-          },
-          {
-            id: "change:staged-extra",
-            path: "src/extra.ts",
-            source: "staged",
-            kind: "modified",
-            contentDigest: digest(stagedExtraSource),
-            previousContentDigest: digest(baselineExtraSource),
-          },
-        ],
-      },
+    const stagedTaskChange = actualSnapshot.changes.find(
+      (change) => change.path === "src/task.ts",
     );
+    expect(stagedExtraChange).toMatchObject({
+      source: "staged",
+      kind: "modified",
+      contentDigest: digest(stagedExtraSource),
+    });
+    expect(stagedTaskChange).toMatchObject({
+      source: "staged",
+      kind: "modified",
+      contentDigest: digest(stagedSource),
+    });
+    const stagedExtraChangeId = stagedExtraChange!.id;
+    const stagedTaskChangeId = stagedTaskChange!.id;
+    const stagedChangeIds = actualSnapshot.changes
+      .map((change) => change.id)
+      .sort();
     const provider = await RepositoryTaskContextProvider.open({
       canonicalRoot: root,
     });
@@ -437,14 +492,14 @@ describe("RepositoryTaskContextProvider", () => {
     expect(first).toMatchObject({ status: "complete", boundaries: [] });
     expect(first.hunks).toEqual([
       expect.objectContaining({
-        actualChangeIds: ["change:staged-extra"],
+        actualChangeIds: [stagedExtraChangeId],
         filePath: "src/extra.ts",
         newLineRange: [1, 1],
         nodeIds: ["function:extra"],
         contentHash: digest(stagedExtraSource),
       }),
       expect.objectContaining({
-        actualChangeIds: ["change:staged-foo"],
+        actualChangeIds: [stagedTaskChangeId],
         filePath: "src/task.ts",
         newLineRange: [1, 1],
         nodeIds: ["function:foo"],
@@ -622,31 +677,20 @@ describe("RepositoryTaskContextProvider", () => {
       "baseline",
     ]);
     const headCommit = await git(root, ["rev-parse", "HEAD"]);
+    const baselineSnapshot = await captureFencedSnapshot(root, headCommit);
+    expect(baselineSnapshot.changes).toEqual([]);
     await writeFile(path.join(root, "src/added.ts"), addedSource, "utf8");
     await git(root, ["add", "--", "src/added.ts"]);
-    const indexDigest = await currentIndexDigest(root);
-    const baselineSnapshot = snapshot(
-      digest(baselineSource),
-      "snapshot:staged-add-baseline",
-      { headCommit, changes: [] },
-    );
-    const actualSnapshot = snapshot(
-      digest(addedSource),
-      "snapshot:staged-add-actual",
-      {
-        headCommit,
-        indexDigest,
-        changes: [
-          {
-            id: "change:staged-add",
-            path: "src/added.ts",
-            source: "staged",
-            kind: "added",
-            contentDigest: digest(addedSource),
-          },
-        ],
-      },
-    );
+    const actualSnapshot = await captureFencedSnapshot(root, headCommit);
+    expect(actualSnapshot.changes).toHaveLength(1);
+    const stagedAddedChange = actualSnapshot.changes[0]!;
+    expect(stagedAddedChange).toMatchObject({
+      path: "src/added.ts",
+      source: "staged",
+      kind: "added",
+      contentDigest: digest(addedSource),
+    });
+    const stagedAddedChangeId = stagedAddedChange.id;
     const provider = await RepositoryTaskContextProvider.open({
       canonicalRoot: root,
     });
@@ -659,7 +703,7 @@ describe("RepositoryTaskContextProvider", () => {
     expect(complete).toMatchObject({ status: "complete", boundaries: [] });
     expect(complete.hunks).toEqual([
       expect.objectContaining({
-        actualChangeIds: ["change:staged-add"],
+        actualChangeIds: [stagedAddedChangeId],
         filePath: "src/added.ts",
         newLineRange: [1, 1],
         nodeIds: ["function:added"],
@@ -682,31 +726,39 @@ describe("RepositoryTaskContextProvider", () => {
       hunks: [],
       boundaries: [expect.objectContaining({
         code: "content_changed",
-        actualChangeIds: ["change:staged-add"],
+        actualChangeIds: [stagedAddedChangeId],
       })],
     });
 
     await writeFile(path.join(root, "src/added.ts"), addedSource, "utf8");
+    await git(root, ["reset", "--quiet", "HEAD", "--", "src/added.ts"]);
+    await rm(path.join(root, "src/added.ts"));
+    const misclassifiedSource = baselineSource.replace("true", "false");
+    await writeFile(path.join(root, "src/task.ts"), misclassifiedSource, "utf8");
+    await git(root, ["add", "--", "src/task.ts"]);
+    const realModifiedSnapshot = await captureFencedSnapshot(root, headCommit);
+    expect(realModifiedSnapshot.changes).toHaveLength(1);
+    const realModifiedChange = realModifiedSnapshot.changes[0]!;
+    expect(realModifiedChange).toMatchObject({
+      path: "src/task.ts",
+      source: "staged",
+      kind: "modified",
+      contentDigest: digest(misclassifiedSource),
+    });
+    const misclassifiedSnapshot = RepositorySnapshotV1Schema.parse({
+      ...realModifiedSnapshot,
+      changes: [
+        {
+          ...realModifiedChange,
+          id: "change:misclassified-add",
+          kind: "added",
+        },
+      ],
+    });
     const baselineExists = await provider.analyzeTaskChanges({
       taskId: "task:staged-add",
       baselineSnapshot,
-      actualSnapshot: snapshot(
-        digest(baselineSource),
-        "snapshot:misclassified-add",
-        {
-          headCommit,
-          indexDigest,
-          changes: [
-            {
-              id: "change:misclassified-add",
-              path: "src/task.ts",
-              source: "staged",
-              kind: "added",
-              contentDigest: digest(baselineSource),
-            },
-          ],
-        },
-      ),
+      actualSnapshot: misclassifiedSnapshot,
     });
     expect(baselineExists).toMatchObject({
       status: "unknown",
@@ -718,7 +770,7 @@ describe("RepositoryTaskContextProvider", () => {
     });
   });
 
-  it("derives path-sorted unstaged and untracked hunks only while the live Index still matches the Snapshot", async () => {
+  it("derives path-sorted unstaged and untracked hunks only while the live repository state matches the Snapshot", async () => {
     const baselineFooSource =
       "export function foo() { return 'foo-before'; }\n";
     const actualFooSource =
@@ -762,49 +814,35 @@ describe("RepositoryTaskContextProvider", () => {
       "baseline",
     ]);
     const headCommit = await git(root, ["rev-parse", "HEAD"]);
-    const baselineSnapshot = snapshot(
-      digest(baselineFooSource),
-      "snapshot:untracked-baseline",
-      {
-        headCommit,
-        indexDigest: await currentIndexDigest(root),
-        changes: [],
-      },
-    );
+    const baselineSnapshot = await captureFencedSnapshot(root, headCommit);
+    expect(baselineSnapshot.changes).toEqual([]);
     await Promise.all([
       writeFile(path.join(root, "src/task.ts"), actualFooSource, "utf8"),
       writeFile(path.join(root, "src/new.ts"), untrackedSource, "utf8"),
     ]);
-    const actualChangeIds = [
-      "change:unstaged-foo",
-      "change:untracked-new",
-    ].sort();
-    const actualSnapshot = snapshot(
-      digest(actualFooSource),
-      "snapshot:untracked-actual",
-      {
-        headCommit,
-        indexDigest: await currentIndexDigest(root),
-        // Deliberately reverse path order: output must remain path-sorted.
-        changes: [
-          {
-            id: "change:unstaged-foo",
-            path: "src/task.ts",
-            source: "unstaged",
-            kind: "modified",
-            contentDigest: digest(actualFooSource),
-            previousContentDigest: digest(baselineFooSource),
-          },
-          {
-            id: "change:untracked-new",
-            path: "src/new.ts",
-            source: "untracked",
-            kind: "added",
-            contentDigest: digest(untrackedSource),
-          },
-        ],
-      },
+    const actualSnapshot = await captureFencedSnapshot(root, headCommit);
+    expect(actualSnapshot.changes).toHaveLength(2);
+    const untrackedNewChange = actualSnapshot.changes.find(
+      (change) => change.path === "src/new.ts",
     );
+    const unstagedFooChange = actualSnapshot.changes.find(
+      (change) => change.path === "src/task.ts",
+    );
+    expect(untrackedNewChange).toMatchObject({
+      source: "untracked",
+      kind: "added",
+      contentDigest: digest(untrackedSource),
+    });
+    expect(unstagedFooChange).toMatchObject({
+      source: "unstaged",
+      kind: "modified",
+      contentDigest: digest(actualFooSource),
+    });
+    const untrackedNewChangeId = untrackedNewChange!.id;
+    const unstagedFooChangeId = unstagedFooChange!.id;
+    const actualChangeIds = actualSnapshot.changes
+      .map((change) => change.id)
+      .sort();
     const provider = await RepositoryTaskContextProvider.open({
       canonicalRoot: root,
     });
@@ -817,14 +855,14 @@ describe("RepositoryTaskContextProvider", () => {
     expect(complete).toMatchObject({ status: "complete", boundaries: [] });
     expect(complete.hunks).toEqual([
       expect.objectContaining({
-        actualChangeIds: ["change:untracked-new"],
+        actualChangeIds: [untrackedNewChangeId],
         filePath: "src/new.ts",
         newLineRange: [1, 1],
         nodeIds: ["function:newly-added"],
         contentHash: digest(untrackedSource),
       }),
       expect.objectContaining({
-        actualChangeIds: ["change:unstaged-foo"],
+        actualChangeIds: [unstagedFooChangeId],
         filePath: "src/task.ts",
         newLineRange: [1, 1],
         nodeIds: ["function:foo"],

@@ -643,6 +643,18 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     await updateTask({ type: "transition_status", to: "in_progress" }, "preview-workbench-browser-in-progress");
 
     await writeFile(sourcePath, FOO_ONLY_SOURCE, "utf8");
+    await git(repositoryRoot, ["add", "--", "src/index.ts"]);
+    assert.deepEqual(
+      (await git(repositoryRoot, ["diff", "--cached", "--name-only"]))
+        .stdout.trim().split("\n").filter(Boolean),
+      ["src/index.ts"],
+      "the happy Change Check must bind exactly the staged foo path",
+    );
+    assert.equal(
+      (await git(repositoryRoot, ["diff", "--name-only"])).stdout,
+      "",
+      "the staged foo bytes must have no same-path worktree divergence",
+    );
     const changedRefresh = await callTool(mcp, output, requestId++, "refresh_index", {
       mode: "full",
       expectedSourceSnapshotId: initialSnapshotId,

@@ -65,6 +65,20 @@ const DEFAULT_WIKI_SEARCH_PATH =
 const DEFAULT_MAX_GRAPH_BYTES = 32 * 1024 * 1024;
 const DEFAULT_MAX_WIKI_BYTES = 32 * 1024 * 1024;
 const DEFAULT_MAX_SOURCE_BYTES = 8 * 1024 * 1024;
+const MAX_CHANGE_ANALYSIS_INDEX_BYTES = 64 * 1024 * 1024;
+const MAX_CHANGE_ANALYSIS_HEAD_BYTES = 256;
+const MAX_CHANGE_ANALYSIS_PATH_BYTES = 4_096;
+const GIT_READ_ARGUMENT_PREFIX = Object.freeze([
+  "-c",
+  "core.hooksPath=/dev/null",
+  "-c",
+  "core.fsmonitor=false",
+  "-c",
+  "core.attributesFile=/dev/null",
+  "-c",
+  "core.excludesFile=/dev/null",
+  "--no-optional-locks",
+] as const);
 
 export type RepositoryTaskContextProviderErrorCode =
   | "invalid_root"
@@ -155,10 +169,186 @@ function gitEnvironment(): NodeJS.ProcessEnv {
     GIT_CONFIG_GLOBAL: "/dev/null",
     GIT_CONFIG_COUNT: "0",
     GIT_NO_REPLACE_OBJECTS: "1",
+    GIT_NO_LAZY_FETCH: "1",
     GIT_OPTIONAL_LOCKS: "0",
     GIT_TERMINAL_PROMPT: "0",
     LC_ALL: "C",
   };
+}
+
+function readGitOutput(
+  canonicalRoot: string,
+  args: readonly string[],
+  maxBuffer: number,
+  budgetMessage: string,
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "git",
+      [...GIT_READ_ARGUMENT_PREFIX, ...args],
+      {
+        cwd: canonicalRoot,
+        encoding: "buffer",
+        env: gitEnvironment(),
+        maxBuffer,
+        windowsHide: true,
+      },
+      (error, stdout) => {
+        if (error !== null) {
+          reject(
+            (error as NodeJS.ErrnoException).code ===
+              "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"
+              ? new RangeError(budgetMessage)
+              : error,
+          );
+          return;
+        }
+        resolve(Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout));
+      },
+    );
+  });
+}
+
+function safeChangeAnalysisPath(relativePath: string): boolean {
+  return (
+    RepositoryRelativePathSchema.safeParse(relativePath).success &&
+    Buffer.byteLength(relativePath, "utf8") <=
+      MAX_CHANGE_ANALYSIS_PATH_BYTES &&
+    !relativePath.startsWith("-") &&
+    !/[:\u0000-\u001f\u007f]/u.test(relativePath)
+  );
+}
+
+function digestRelevantIndex(output: Buffer): string {
+  const hash = createHash("sha256");
+  let offset = 0;
+  while (offset < output.length) {
+    const terminator = output.indexOf(0, offset);
+    if (terminator < 0) {
+      throw new Error("Git index output is not NUL terminated.");
+    }
+    const record = output.subarray(offset, terminator);
+    const tab = record.indexOf(0x09);
+    if (tab < 0) throw new Error("Git index output is malformed.");
+    const filePath = record.subarray(tab + 1).toString("utf8");
+    if (
+      filePath !== ".understand-code" &&
+      !filePath.startsWith(".understand-code/")
+    ) {
+      hash.update(record);
+      hash.update(Buffer.from([0]));
+    }
+    offset = terminator + 1;
+  }
+  return `sha256:${hash.digest("hex")}`;
+}
+
+async function readCurrentHead(canonicalRoot: string): Promise<string> {
+  const output = await readGitOutput(
+    canonicalRoot,
+    ["rev-parse", "--verify", "--end-of-options", "HEAD^{commit}"],
+    MAX_CHANGE_ANALYSIS_HEAD_BYTES,
+    "Git HEAD output exceeds analysis budget",
+  );
+  const match = /^(?:([0-9a-f]{40})|([0-9a-f]{64}))\r?\n?$/u.exec(
+    output.toString("utf8"),
+  );
+  const head = match?.[1] ?? match?.[2];
+  if (head === undefined) throw new Error("Git HEAD output is invalid.");
+  return head;
+}
+
+async function readCurrentIndexDigest(
+  canonicalRoot: string,
+): Promise<string> {
+  return digestRelevantIndex(
+    await readGitOutput(
+      canonicalRoot,
+      ["ls-files", "--stage", "-z"],
+      MAX_CHANGE_ANALYSIS_INDEX_BYTES,
+      "Git index output exceeds analysis budget",
+    ),
+  );
+}
+
+type StagedAnalysisFence =
+  | { readonly ok: true }
+  | {
+      readonly ok: false;
+      readonly code: TaskChangeAnalysisBoundary["code"];
+      readonly reason: string;
+    };
+
+async function sampleStagedAnalysisFence(
+  canonicalRoot: string,
+  expectedHead: string,
+  expectedIndexDigest: string,
+): Promise<StagedAnalysisFence> {
+  let currentHead: string;
+  try {
+    currentHead = await readCurrentHead(canonicalRoot);
+  } catch (error) {
+    return {
+      ok: false,
+      code: error instanceof RangeError
+        ? "budget_exhausted"
+        : "unsupported_source",
+      reason: "The current Git HEAD could not be read within the Alpha profile.",
+    };
+  }
+  if (currentHead !== expectedHead) {
+    return {
+      ok: false,
+      code: "head_mismatch",
+      reason: "The current Git HEAD no longer matches the actual Snapshot.",
+    };
+  }
+  let currentIndexDigest: string;
+  try {
+    currentIndexDigest = await readCurrentIndexDigest(canonicalRoot);
+  } catch (error) {
+    return {
+      ok: false,
+      code: error instanceof RangeError
+        ? "budget_exhausted"
+        : "unsupported_source",
+      reason: "The current Git Index could not be read within the Alpha profile.",
+    };
+  }
+  if (currentIndexDigest !== expectedIndexDigest) {
+    return {
+      ok: false,
+      code: "content_changed",
+      reason: "The current Git Index no longer matches the actual Snapshot.",
+    };
+  }
+  return { ok: true };
+}
+
+function readGitIndexBlob(
+  canonicalRoot: string,
+  relativePath: string,
+): Promise<Buffer> {
+  if (!safeChangeAnalysisPath(relativePath)) {
+    return Promise.reject(
+      providerErrorForPath(
+        "unsafe_repository_path",
+        "A repository path is ambiguous for exact Git index lookup.",
+        relativePath,
+      ),
+    );
+  }
+  return readGitOutput(
+    canonicalRoot,
+    ["cat-file", "blob", `:${relativePath}`],
+    CHANGE_ANALYSIS_LIMITS.maxFileBytes + 1,
+    "Git index blob exceeds analysis budget",
+  ).then((bytes) => {
+    if (bytes.byteLength > CHANGE_ANALYSIS_LIMITS.maxFileBytes) {
+      throw new RangeError("Git index blob exceeds analysis budget");
+    }
+    return bytes;
+  });
 }
 
 function readGitBlob(
@@ -179,48 +369,16 @@ function readGitBlob(
       ),
     );
   }
-  return new Promise((resolve, reject) => {
-    execFile(
-      "git",
-      [
-        "-c",
-        "core.hooksPath=/dev/null",
-        "-c",
-        "core.fsmonitor=false",
-        "-c",
-        "core.attributesFile=/dev/null",
-        "-c",
-        "core.excludesFile=/dev/null",
-        "--no-optional-locks",
-        "cat-file",
-        "blob",
-        `${headCommit}:${relativePath}`,
-      ],
-      {
-        cwd: canonicalRoot,
-        encoding: "buffer",
-        env: gitEnvironment(),
-        maxBuffer: CHANGE_ANALYSIS_LIMITS.maxFileBytes + 1,
-        windowsHide: true,
-      },
-      (error, stdout) => {
-        if (error !== null) {
-          reject(
-            (error as NodeJS.ErrnoException).code ===
-              "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"
-              ? new RangeError("baseline Git blob exceeds analysis budget")
-              : error,
-          );
-          return;
-        }
-        const bytes = Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout);
-        if (bytes.byteLength > CHANGE_ANALYSIS_LIMITS.maxFileBytes) {
-          reject(new RangeError("baseline Git blob exceeds analysis budget"));
-          return;
-        }
-        resolve(bytes);
-      },
-    );
+  return readGitOutput(
+    canonicalRoot,
+    ["cat-file", "blob", `${headCommit}:${relativePath}`],
+    CHANGE_ANALYSIS_LIMITS.maxFileBytes + 1,
+    "baseline Git blob exceeds analysis budget",
+  ).then((bytes) => {
+    if (bytes.byteLength > CHANGE_ANALYSIS_LIMITS.maxFileBytes) {
+      throw new RangeError("baseline Git blob exceeds analysis budget");
+    }
+    return bytes;
   });
 }
 
@@ -1114,6 +1272,49 @@ implements TaskContextProvider {
       };
     }
 
+    const includesStagedChange = actual.data.changes.some(
+      (change) => change.source === "staged",
+    );
+    const stagedChange =
+      includesStagedChange &&
+      actual.data.changes.length === 1 &&
+      actual.data.changes[0]!.source === "staged" &&
+      actual.data.changes[0]!.kind === "modified" &&
+      actual.data.changes[0]!.contentDigest !== undefined
+        ? actual.data.changes[0]!
+        : undefined;
+    if (includesStagedChange && stagedChange === undefined) {
+      return {
+        status: "unknown",
+        hunks: [],
+        boundaries: [
+          changeAnalysisBoundary(
+            "unsupported_source",
+            "Alpha staged line analysis requires exactly one staged modified change and no other changes.",
+            undefined,
+            actualChangeIds,
+          ),
+        ],
+      };
+    }
+    if (
+      stagedChange !== undefined &&
+      !safeChangeAnalysisPath(stagedChange.path)
+    ) {
+      return {
+        status: "unknown",
+        hunks: [],
+        boundaries: [
+          changeAnalysisBoundary(
+            "unsafe_path",
+            "The staged repository path is unsafe for exact Git index lookup.",
+            stagedChange.path,
+            actualChangeIds,
+          ),
+        ],
+      };
+    }
+
     let graph: KnowledgeGraph;
     try {
       graph = validateGraphArtifact(
@@ -1139,6 +1340,28 @@ implements TaskContextProvider {
       };
     }
 
+    if (stagedChange !== undefined) {
+      const fence = await sampleStagedAnalysisFence(
+        this.#canonicalRoot,
+        actual.data.headCommit,
+        actual.data.indexDigest,
+      );
+      if (!fence.ok) {
+        return {
+          status: "unknown",
+          hunks: [],
+          boundaries: [
+            changeAnalysisBoundary(
+              fence.code,
+              fence.reason,
+              stagedChange.path,
+              actualChangeIds,
+            ),
+          ],
+        };
+      }
+    }
+
     const changesByPath = new Map<string, typeof actual.data.changes>();
     for (const change of actual.data.changes) {
       const changes = changesByPath.get(change.path) ?? [];
@@ -1152,14 +1375,17 @@ implements TaskContextProvider {
       const ids = changes.map((change) => change.id);
       const supported =
         changes.length === 1 &&
-        changes[0]!.source === "unstaged" &&
+        changes[0]!.source ===
+          (stagedChange === undefined ? "unstaged" : "staged") &&
         changes[0]!.kind === "modified" &&
         changes[0]!.contentDigest !== undefined;
       if (!supported) {
         boundaries.push(
           changeAnalysisBoundary(
             "unsupported_source",
-            "Alpha line analysis only supports one unstaged modified change per path.",
+            stagedChange === undefined
+              ? "Alpha line analysis only supports one unstaged modified change per path."
+              : "Alpha staged line analysis only supports its one staged modified path.",
             filePath,
             ids,
           ),
@@ -1167,6 +1393,7 @@ implements TaskContextProvider {
         continue;
       }
       let actualFile: VerifiedFile;
+      let actualBytes: Buffer;
       let baselineBytes: Buffer;
       try {
         actualFile = (await openVerifiedFile(this.#canonicalRoot, filePath, {
@@ -1193,8 +1420,51 @@ implements TaskContextProvider {
         );
         continue;
       }
-      const actualDigest =
+      const worktreeDigest =
         `sha256:${createHash("sha256").update(actualFile.bytes!).digest("hex")}`;
+      if (stagedChange === undefined) {
+        actualBytes = actualFile.bytes!;
+      } else {
+        let indexBytes: Buffer;
+        try {
+          indexBytes = await readGitIndexBlob(this.#canonicalRoot, filePath);
+        } catch (error) {
+          boundaries.push(
+            changeAnalysisBoundary(
+              error instanceof RepositoryTaskContextProviderError &&
+                error.code === "unsafe_repository_path"
+                ? "unsafe_path"
+                : error instanceof RangeError
+                  ? "budget_exhausted"
+                  : "unsupported_source",
+              "The exact staged Git index blob could not be read within the Alpha profile.",
+              filePath,
+              ids,
+            ),
+          );
+          continue;
+        }
+        const indexDigest =
+          `sha256:${createHash("sha256").update(indexBytes).digest("hex")}`;
+        if (
+          indexDigest !== changes[0]!.contentDigest ||
+          worktreeDigest !== changes[0]!.contentDigest ||
+          !indexBytes.equals(actualFile.bytes!)
+        ) {
+          boundaries.push(
+            changeAnalysisBoundary(
+              "content_changed",
+              "The staged Index, worktree file, and actual Snapshot do not contain the same exact bytes.",
+              filePath,
+              ids,
+            ),
+          );
+          continue;
+        }
+        actualBytes = indexBytes;
+      }
+      const actualDigest =
+        `sha256:${createHash("sha256").update(actualBytes).digest("hex")}`;
       if (actualDigest !== changes[0]!.contentDigest) {
         boundaries.push(
           changeAnalysisBoundary(
@@ -1233,7 +1503,7 @@ implements TaskContextProvider {
         actualSnapshotId: actual.data.snapshotId,
         filePath,
         before: baselineBytes,
-        after: actualFile.bytes!,
+        after: actualBytes,
       });
       if (!diff.ok) {
         boundaries.push(
@@ -1242,6 +1512,17 @@ implements TaskContextProvider {
             diff.code === "budget_exhausted"
               ? "Deterministic line analysis exceeded its fixed budget."
               : "The changed file is binary or is not valid UTF-8.",
+            filePath,
+            ids,
+          ),
+        );
+        continue;
+      }
+      if (diff.hunks.length === 0) {
+        boundaries.push(
+          changeAnalysisBoundary(
+            "unsupported_source",
+            "A mode-only or empty textual change has no analyzable line hunk.",
             filePath,
             ids,
           ),
@@ -1265,7 +1546,7 @@ implements TaskContextProvider {
           graph.nodes,
           filePath,
           hunk.newLineRange,
-          (node) => sourceAnchorMatches(node, actualFile.bytes!),
+          (node) => sourceAnchorMatches(node, actualBytes),
         );
         if (clusters === undefined || clusters.length === 0) {
           pathBoundary = changeAnalysisBoundary(
@@ -1291,6 +1572,36 @@ implements TaskContextProvider {
         boundaries.push(pathBoundary);
       } else {
         hunks.push(...pathHunks);
+      }
+    }
+
+    if (stagedChange !== undefined) {
+      const fence = await sampleStagedAnalysisFence(
+        this.#canonicalRoot,
+        actual.data.headCommit,
+        actual.data.indexDigest,
+      );
+      if (!fence.ok) {
+        boundaries.push(
+          changeAnalysisBoundary(
+            fence.code,
+            fence.reason,
+            stagedChange.path,
+            actualChangeIds,
+          ),
+        );
+      }
+      if (boundaries.length > 0) {
+        boundaries.sort((left, right) =>
+          compareUnicodeCodeUnits(left.filePath ?? "", right.filePath ?? "") ||
+          compareUnicodeCodeUnits(left.code, right.code) ||
+          compareUnicodeCodeUnits(left.actualChangeIds.join("\0"), right.actualChangeIds.join("\0")),
+        );
+        return {
+          status: "unknown",
+          hunks: [],
+          boundaries,
+        };
       }
     }
 

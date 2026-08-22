@@ -2,6 +2,7 @@ export * from "./argv.js";
 export * from "./binding/root-binding.js";
 export * from "./constants.js";
 export * from "./handlers/tools.js";
+export * from "./host-registration-doctor.js";
 export * from "./mcp/server.js";
 export * from "./mcp/tool-registry.js";
 export * from "./provider/provider-doctor.js";

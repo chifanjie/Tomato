@@ -2,74 +2,74 @@
 
 > 生成时间：2026-08-22 CST
 > 分支：feature/agent-native-change-intelligence-authority
-> 基于 commit：c87e025 feat: bind change checks to exact code hunks
+> 基于 commit：408a85e feat: make verification retries recoverable
 
 ## 背景与目标
 
-Alpha 已能记录外部执行的 Verification，但恢复路径此前不够精确：任意历史 failed/blocked/flaky 记录都可能让
-`verification_required` 退回 `in_progress`，即使该记录已被后续 passed attempt supersede；进入 `verified` 时也没有
-要求 latest record 对 Plan Entry 的 Acceptance Claims 做双向精确覆盖。Workbench 同时按历史记录计数，可能把 partial
-passed 显示为成功，或遗漏 blocked/flaky 的当前失败处置。
+单一 Preview tgz 已能安装 Codex 与 Claude Code Plugin，并从两个 Host 的真实缓存启动同版本 MCP；但用户完成安装后，
+现有 Release Doctor 仍固定显示 `hostRegistration: not_checked`。当 Plugin 未注册、被禁用、版本漂移或 MCP 配置残留时，
+用户无法从 Understand Code 获得明确、脱敏、可操作的诊断。
 
-本切片把失败恢复绑定到调用方显式指定的、当前 Snapshot 与当前 Plan Entry 的 exact latest attempt，并让 Engine gate
-与 Workbench 当前处置使用同一套覆盖语义。Verification 仍然是 externally reported，不提升为受信执行或 strong write。
+本切片新增独立的 `understand-code doctor --host codex|claude`。它只读询问目标 Host 当前报告的 Plugin 状态，验证
+canonical registration、产品版本、enabled 与 bundled MCP profile；不改变 zero-argument Release Doctor、managed
+installation Doctor 或 Provider Doctor，也不把 Host 注册提升为 provenance、authority 或 execution fence。
 
 ## 实现策略
 
-- `transition_status` 增加可选 `verificationRecordId`；仅 exact
-  `verification_required → in_progress` 可以携带该字段。
-- 恢复记录必须属于当前 Snapshot、当前 Plan Entry，必须是 exact latest attempt，且状态为
-  `failed | blocked | flaky`；缺失、未知、已 supersede、passed 或错误 transition 均 fail closed。
-- `verified` gate 要求每个 required Plan Entry 的 latest record 为 passed，或为已明确接受的 skipped，并且
-  `claimIds` 无重复、与 Entry 的 `acceptanceClaimIds` 双向精确相等。
-- Workbench Trace 保留当前 Snapshot 内的全部 attempts，但 summary 只按每个 required Entry 的 latest attempt 计算：
-  exact-covered passed/accepted skip 计为 passed，failed/blocked/flaky 计为 failed，其余计为 pending。
-- 跨 Snapshot 历史仍保留在持久 Verification ledger 中；Workbench 投影不输出它们，以满足 session 的严格
-  Snapshot 绑定，不会改写或删除持久记录。
+- `doctor --host codex|claude` 与 `--root`、`--home`、`--provider`、`--provider-service` 和全部 service flags 互斥；
+  argv 配置错误保持 exit 2。
+- Host probe 使用固定 argv 的 `execFile`，无 shell，固定临时 cwd、5 秒默认超时、30 秒硬上限、1 MiB 输出上限，
+  且只传递 allowlist 环境变量。
+- Codex 只读取 `plugin list --json` 与 `mcp list --json`；Claude 只读取 `plugin list --json` 内的 `mcpServers`，
+  不调用可能启动或健康探测 MCP 的文本命令。
+- JSON 允许 additive 字段，但 canonical ID、已知字段类型、exact-one registration、版本、enabled、stdio command/args
+  必须严格匹配；重复、畸形、drift 与 orphan MCP 均 fail closed。
+- 稳定结果区分 `healthy`、`not_registered`、`unhealthy` 与 `unavailable`；只有 healthy 返回 `ok: true` / exit 0，
+  其他诊断返回 JSON / exit 1。
+- 输出不包含 source、marketplace source、install path、时间戳、原始 stdout/stderr、环境或用户路径；顶层始终明确
+  `readiness: alpha`、`releaseReady: false`、`strongWrites: locked`。
 
 ## 改动范围
 
 | 模块 | 主要文件 | 作用 |
 |---|---|---|
-| Contracts | `packages/contracts/src/task.ts`、generated schemas/tests | 为恢复 transition 增加显式 Verification record ID，并限制合法目标状态 |
-| Task Engine | `packages/task-engine/src/mutation.ts`、integration test | exact-latest recovery gate 与 verified exact claim coverage |
-| CLI / Workbench | `packages/cli/src/handlers/tools.ts`、MCP integration test | current-Snapshot attempts 投影与 latest disposition 汇总 |
-| Packed E2E | `packages/preview/test/workbench-browser-packed.test.mjs` | 真实失败命令、显式 superseding retry、verified 与 Trace 恢复链 |
+| CLI command | `packages/cli/src/argv.ts`、`bin.ts`、`index.ts` | 新 Host Doctor 路由，保留既有 Doctor 行为 |
+| Host diagnostic | `packages/cli/src/host-registration-doctor.ts` | bounded Host probes、严格投影、稳定脱敏结果 |
+| Focused tests | `packages/cli/test/argv.test.ts`、`host-registration-doctor.test.ts` | healthy、absence/orphan、version drift、timeout/redaction 与 argv 互斥 |
+| Packed E2E | `packages/preview/test/plugin-clean-install.test.mjs` | 同一 tgz 的双 Host install→Doctor→MCP→remove→Doctor |
+| User docs | `packages/preview/README.md` | 安装后诊断命令与 capability boundary |
 
 ## Review 结论
 
-🟢 Effective。定向独立终审确认前次两个 current-surface blocking 均已关闭，无 remaining blocker：
+🟢 Effective。独立跨 Host 边界复审未发现 P0、P1 或 current-surface P2 blocking finding：
 
-1. partial/excess claim coverage 与未接受的 skipped 不再显示为 passed，而是保守进入 pending。
-2. latest blocked/flaky 与 failed 一起计入 failed，不会产生 `required=1 / passed=0 / failed=0 / pending=0`。
-3. Workbench 输出当前 Snapshot 的全部 attempts，与 runtime strict Snapshot parser 一致；过滤只生成投影视图，
-   不改变持久 ledger。
-4. older failed attempt 在 latest passed 后不能再次授权恢复；错误 ID 或错误 transition 均零推进拒绝。
-5. passed record 缺少、重复或额外 Acceptance Claim 时，`verified` gate structured fail closed。
+1. 新 Host selector 不会误入 Release、managed 或 Provider Doctor，冲突参数全部 fail fast。
+2. Codex clean absence 与 orphan MCP 被区分；duplicate、invalid JSON、版本、enabled 和 MCP drift 不会误报 healthy。
+3. Claude 不执行 `mcp list/get`，不会由 Doctor 意外启动 MCP；只消费 Plugin list 的 bounded JSON 投影。
+4. 子进程固定参数、无 shell、超时与输出有界；公开结果没有原始 Host 字段或本机路径。
+5. 真实 E2E 从仓外安装产物运行 Doctor，随后实际启动 Host cache 内 MCP；remove 后再次得到 not_registered，
+   不是只比较安装文件的 false-green。
 
 ## 门禁证据
 
-- Contracts package：13 files / 135 tests；52 generated schemas 与 28 fixtures verify 通过。
-- Task Engine package：8 files / 64 tests；最终 integration focused 27/27。
-- CLI typecheck/build；CLI package：12 files / 81 tests。
+- CLI typecheck/build。
+- CLI package：13 files / 93 tests。
 - Preview typecheck/build。
-- 单一仓外安装的真实 Chrome packed E2E：1/1，0 skipped；真实执行 attempt 1 失败命令，再用显式
-  superseding attempt 2 成功恢复到 verified，并在 Workbench 保留两次尝试、显示 latest 全绿处置。
-- 最终安装产物 SHA-256：`08a7a3f15289699cbb1c5ec46dd96af05b0c1069c7175cf32cc93a729db69df9`；
-  87 entries。
+- 强制真实 Host packed E2E：1/1，0 skipped；Codex 与 Claude 均完成 install→healthy Doctor→cached MCP
+  Alpha/Task 路径→remove/uninstall→not_registered Doctor。
 - `git diff --check` 通过。
 
 ## 明确限制与后续 backlog
 
-- Verification 结果仍由外部执行者报告；Workbench 明示 `externally_reported`，没有 execution fence 或独立命令证明。
-- 跨 Snapshot Verification 历史保留在持久 ledger，但当前 Workbench session 只投影其绑定 Snapshot 的 attempts。
-- Provider Authority、全局 rollback anchor、正式执行 fence、签名/SBOM/provenance 与跨平台发行加固仍未闭合；
-  `strongWrites` 必须继续保持 locked。
-- 当前 Alpha 完成的是可恢复的本地 Task/Verification 用户闭环，不宣称完整 Step 15 Provider-backed production gate，
-  也不提前关闭 Step 16/17 的 Gold Set、正式 Host 模型调用或 Release Gate。
+- `registered` 仅表示当前 PATH 命中的 Host CLI 报告一个 canonical registration；不证明 tgz provenance、签名、
+  Host 二进制身份、authority 或 execution fence。
+- Host CLI JSON 是外部兼容面；未来字段可 additive，但必需字段变化会保守返回 unavailable/unhealthy，需随受支持版本更新。
+- 两次 Codex JSON probe 之间没有 Host 侧原子 Snapshot；外部状态竞态会产生保守失败，不会产生强注册证明。
+- 真实 credentialed/model-selected Host Tool call、正式 Gold Set、Host upgrade/reload/downgrade、SBOM/provenance/signing、
+  跨平台发行加固与 Provider strong-write gate 仍属后续里程碑；`strongWrites` 继续 locked。
 
 ## 最终判断
 
-用户现在可以在真实安装产物中看到一次失败 Verification，明确选择该 Plan Entry 的当前失败 attempt 回到修改状态，
-执行修复并以 superseding passed attempt 恢复到 `verified`。Workbench 保留可追溯尝试链，同时只把当前有效处置计入
-summary；失败、partial coverage 与过期记录不会被误报为成功。能力边界保持诚实，适合精确提交。
+用户现在可以在安装后运行同一条 Understand Code CLI，明确知道 Codex 或 Claude Code 是否注册了正确版本、是否启用、
+MCP 配置是否匹配；清理后也能得到稳定的 not_registered 结果。该能力直接关闭了安装与实际 Host 可调用之间的诊断断点，
+同时没有扩大信任声明，适合精确提交。

@@ -48,7 +48,16 @@ codex plugin add understand-code@understand-code-alpha --json
 claude plugin validate --strict "$PREVIEW_ROOT/dist/plugin-roots/claude"
 claude plugin marketplace add "$PREVIEW_ROOT/dist/plugin-roots/claude" --scope user
 claude plugin install understand-code@understand-code-alpha --scope user
+
+understand-code doctor --host codex
+understand-code doctor --host claude
 ```
+
+Host Registration Doctor only reads the selected Host CLI's bounded JSON Plugin
+state. A healthy result means the current Host reports the canonical Plugin,
+matching package version, enabled state, and bundled MCP profile. It does not
+establish publisher authenticity, Provider authority, or an execution fence;
+`strongWrites` remains locked.
 
 Start a new Host session after installation. The Codex plugin binds to the Git
 worktree containing the Host working directory; the Claude plugin binds to the

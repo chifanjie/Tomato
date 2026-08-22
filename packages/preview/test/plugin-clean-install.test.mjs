@@ -16,6 +16,13 @@ const PROCESS_TIMEOUT_MS = 20_000;
 const EXTERNAL_TIMEOUT_MS = 60_000;
 const PLUGIN_NAME = "understand-code";
 const MARKETPLACE_NAME = "understand-code-alpha";
+const HOST_DOCTOR_CHECK_IDS = [
+  "host_cli",
+  "plugin_registration",
+  "plugin_version",
+  "plugin_enabled",
+  "plugin_mcp",
+];
 const EXPECTED_TOOL_NAMES = [
   "get_repo_pulse",
   "build_task_brief",
@@ -89,6 +96,68 @@ function cleanHostEnvironment(home, extra = {}) {
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
     ...extra,
   };
+}
+
+async function runInstalledHostDoctor({ installedPackageRoot, host, version, cwd, env, expectedStatus }) {
+  const executable = path.join(installedPackageRoot, "dist/understand-code.mjs");
+  let stdout;
+  let exitCode = 0;
+  try {
+    stdout = (await execBounded(process.execPath, [executable, "doctor", "--host", host], {
+      cwd,
+      env,
+      encoding: "utf8",
+    })).stdout;
+  } catch (error) {
+    exitCode = error?.code;
+    stdout = error?.stdout;
+  }
+  assert.equal(exitCode, expectedStatus === "healthy" ? 0 : 1, `${host} Doctor exit code`);
+  assert.equal(typeof stdout, "string", `${host} Doctor must emit one JSON result`);
+  const result = JSON.parse(stdout);
+  assert.deepEqual(
+    {
+      schemaVersion: result.schemaVersion,
+      product: result.product,
+      version: result.version,
+      readiness: result.readiness,
+      releaseReady: result.releaseReady,
+      strongWrites: result.strongWrites,
+      host: result.host,
+      status: result.status,
+      ok: result.ok,
+    },
+    {
+      schemaVersion: "understand-code-host-registration-doctor-v1",
+      product: "understand-code",
+      version,
+      readiness: "alpha",
+      releaseReady: false,
+      strongWrites: "locked",
+      host,
+      status: expectedStatus,
+      ok: expectedStatus === "healthy",
+    },
+    `${host} Doctor must preserve the Alpha safety envelope`,
+  );
+  assert.deepEqual(result.checks.map(({ id }) => id), HOST_DOCTOR_CHECK_IDS);
+  if (expectedStatus === "healthy") {
+    assert.equal(result.hostRegistration, "registered");
+    assert.equal(result.checks.every(({ status, code }) => status === "pass" && code === "ok"), true);
+  } else {
+    assert.equal(result.hostRegistration, "not_registered");
+    assert.deepEqual(
+      result.checks.map(({ status, code }) => ({ status, code })),
+      [
+        { status: "pass", code: "ok" },
+        { status: "fail", code: "plugin_not_registered" },
+        { status: "not_checked", code: "not_checked" },
+        { status: "not_checked", code: "not_checked" },
+        { status: "not_checked", code: "not_checked" },
+      ],
+    );
+  }
+  return result;
 }
 
 function withTimeout(promise, label, timeoutMs = PROCESS_TIMEOUT_MS) {
@@ -648,7 +717,10 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
     const codexMarketplaceRoot = path.join(installedPackageRoot, "dist/plugin-roots/codex");
     const claudeMarketplaceRoot = path.join(installedPackageRoot, "dist/plugin-roots/claude");
 
-    const codexEnv = cleanHostEnvironment(codexUserHome, { CODEX_HOME: codexHome });
+    const codexEnv = cleanHostEnvironment(codexUserHome, {
+      CODEX_HOME: codexHome,
+      PATH: `${path.dirname(codexCli)}${path.delimiter}${process.env.PATH ?? "/usr/bin:/bin"}`,
+    });
     const codexMarketplace = JSON.parse(
       (await execBounded(codexCli, ["plugin", "marketplace", "add", codexMarketplaceRoot, "--json"], {
         cwd: differentCwd,
@@ -697,6 +769,14 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
     assert.equal(registeredCodexMcpDetail.name, PLUGIN_NAME);
     assert.equal(registeredCodexMcpDetail.enabled, true);
     assert.deepEqual(registeredCodexMcpDetail.transport, registeredCodexMcp.transport);
+    await runInstalledHostDoctor({
+      installedPackageRoot,
+      host: "codex",
+      version,
+      cwd: differentCwd,
+      env: codexEnv,
+      expectedStatus: "healthy",
+    });
     const codexAlpha = await exerciseInstalledAlpha({
       host: "codex",
       installedRoot: codexInstalledRoot,
@@ -717,7 +797,10 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
       "Codex plugin must reject a non-repository working root",
     );
 
-    const claudeEnv = cleanHostEnvironment(claudeUserHome, { CLAUDE_CONFIG_DIR: claudeConfig });
+    const claudeEnv = cleanHostEnvironment(claudeUserHome, {
+      CLAUDE_CONFIG_DIR: claudeConfig,
+      PATH: `${path.dirname(claudeCli)}${path.delimiter}${process.env.PATH ?? "/usr/bin:/bin"}`,
+    });
     await execBounded(claudeCli, ["plugin", "validate", "--strict", claudeMarketplaceRoot], {
       cwd: differentCwd,
       env: claudeEnv,
@@ -751,6 +834,14 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
     assert.match(JSON.stringify(claudePlugins), /understand-code@understand-code-alpha/u);
     claudeInstalledRoot = await findClaudeInstalledRoot(claudeConfig, version);
     assert.equal(claudeInstalledRoot.startsWith(`${await realpath(claudeConfig)}${path.sep}`), true);
+    await runInstalledHostDoctor({
+      installedPackageRoot,
+      host: "claude",
+      version,
+      cwd: differentCwd,
+      env: claudeEnv,
+      expectedStatus: "healthy",
+    });
     const claudeAlpha = await resumeInstalledAlpha(
       {
         host: "claude",
@@ -802,6 +893,14 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
     });
     await assertMissing(codexInstalledRoot, "Codex remove must clean the installed plugin cache");
     codexInstalledRoot = null;
+    await runInstalledHostDoctor({
+      installedPackageRoot,
+      host: "codex",
+      version,
+      cwd: differentCwd,
+      env: codexEnv,
+      expectedStatus: "not_registered",
+    });
     assert.match(
       (await execBounded(codexCli, ["plugin", "marketplace", "list"], { env: codexEnv, encoding: "utf8" })).stdout,
       /No plugin marketplaces in scope\./u,
@@ -828,6 +927,14 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
       })).stdout,
     );
     assert.deepEqual(claudeMarketplacesAfter, []);
+    await runInstalledHostDoctor({
+      installedPackageRoot,
+      host: "claude",
+      version,
+      cwd: differentCwd,
+      env: claudeEnv,
+      expectedStatus: "not_registered",
+    });
     // Claude Code keeps an inert version cache after uninstall; the isolated config sandbox below
     // is the cleanup boundary, while plugin list is the authoritative installation state.
     claudeInstalledRoot = null;

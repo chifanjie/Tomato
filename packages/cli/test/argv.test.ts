@@ -80,6 +80,16 @@ describe("CLI arguments", () => {
       host: "claude",
       home: "/tmp/understand-code",
     });
+    expect(parseCliArguments(["doctor", "--host", "codex"])).toEqual({
+      kind: "installation",
+      operation: "doctor",
+      host: "codex",
+    });
+    expect(parseCliArguments(["doctor", "--host", "claude"])).toEqual({
+      kind: "installation",
+      operation: "doctor",
+      host: "claude",
+    });
     expect(
       parseCliArguments([
         "install",
@@ -192,7 +202,14 @@ describe("CLI arguments", () => {
     ["relative install home", ["install", "--home", "relative"]],
     ["duplicate install home", ["doctor", "--home", "/tmp/a", "--home", "/tmp/b"]],
     ["invalid install host", ["install", "--host", "unknown"]],
-    ["host on doctor", ["doctor", "--host", "codex"]],
+    ["invalid doctor host", ["doctor", "--host", "unknown"]],
+    ["duplicate doctor host", ["doctor", "--host", "codex", "--host", "claude"]],
+    ["doctor host with root", ["doctor", "--host", "codex", "--root", "/tmp/a"]],
+    ["doctor host with home", ["doctor", "--host", "claude", "--home", "/tmp/a"]],
+    ["doctor host with provider", ["doctor", "--host", "codex", "--provider", "--root", "/tmp/a"]],
+    ["doctor host with provider service", ["doctor", "--host", "claude", "--provider-service", "--root", "/tmp/a", "--service-manifest", "/tmp/provider-service-installation-manifest-v1.json"]],
+    ["host on rollback", ["rollback", "--host", "codex"]],
+    ["host on uninstall", ["uninstall", "--host", "claude"]],
     ["provider on install", ["install", "--provider"]],
     ["provider service doctor without target", ["doctor", "--provider-service"]],
     ["provider service without manifest", ["install", "--provider-service", "--root", "/tmp/a", "--service-config", "/tmp/config", "--service-key", "/tmp/key"]],

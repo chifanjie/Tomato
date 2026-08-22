@@ -4,6 +4,7 @@ import { PRODUCT_VERSION } from "./constants.js";
 import { writeDiagnostic } from "./logging/stderr.js";
 import { runStdioServer } from "./mcp/server.js";
 import { runReleaseDoctorV1 } from "./release-doctor.js";
+import { runHostRegistrationDoctorV1 } from "./host-registration-doctor.js";
 import { runProviderDoctorV1 } from "./provider/provider-doctor.js";
 import { runProviderRuntimeChildV1 } from "./provider/runtime-child.js";
 import {
@@ -45,10 +46,19 @@ async function runInstallation(
     invocation.operation === "doctor" &&
     invocation.root === undefined &&
     invocation.home === undefined &&
+    invocation.host === undefined &&
     invocation.provider !== true &&
     invocation.providerService !== true
   ) {
     const result = await runReleaseDoctorV1();
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    if (!result.ok) process.exitCode = 1;
+    return;
+  }
+  if (invocation.operation === "doctor" && invocation.host !== undefined) {
+    const result = await runHostRegistrationDoctorV1({
+      host: invocation.host,
+    });
     process.stdout.write(`${JSON.stringify(result)}\n`);
     if (!result.ok) process.exitCode = 1;
     return;

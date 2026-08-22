@@ -192,7 +192,11 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
         continue;
       }
       if (flag === "--host") {
-        if (operation !== "install" && operation !== "upgrade") {
+        if (
+          operation !== "install" &&
+          operation !== "upgrade" &&
+          operation !== "doctor"
+        ) {
           throw new CliArgumentError();
         }
         if (host !== undefined) throw new CliArgumentError();
@@ -269,6 +273,21 @@ export function parseCliArguments(values: readonly string[]): CliInvocation {
     ) {
       throw new CliArgumentError();
     }
+    if (
+      operation === "doctor" &&
+      host !== undefined &&
+      (root !== undefined ||
+        home !== undefined ||
+        provider === true ||
+        providerService === true ||
+        serviceConfig !== undefined ||
+        serviceReadiness !== undefined ||
+        serviceKey !== undefined ||
+        serviceDescriptor !== undefined ||
+        serviceManifest !== undefined)
+    ) {
+      throw new CliArgumentError();
+    }
     return {
       kind: "installation",
       operation,
@@ -326,6 +345,7 @@ export function helpText(): string {
     "  understand-code upgrade [--root <absolute-install-root>|--home <absolute-install-home>] [--host codex|claude]",
     "  understand-code rollback [--root <absolute-install-root>|--home <absolute-install-home>]",
     "  understand-code doctor [--root <absolute-install-root>|--home <absolute-install-home>]",
+    "  understand-code doctor --host codex|claude",
     "  understand-code doctor --provider --root <absolute-target-root> [--service-config <signed-config> [--service-readiness <path>]]",
     "  understand-code install --provider-service --root <absolute-runtime-root> --service-manifest <absolute-path> --service-config <signed-config> --service-key <pkcs8-key> [--service-descriptor <absolute-path>]",
     "  understand-code doctor --provider-service --root <absolute-runtime-root> --service-manifest <absolute-path>",

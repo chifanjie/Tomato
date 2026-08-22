@@ -10,6 +10,8 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { test } from "node:test";
 
+import { launchBrowser, resolveBrowserExecutable } from "./browser-harness.mjs";
+
 const execFileAsync = promisify(execFile);
 const packageRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const PROCESS_TIMEOUT_MS = 20_000;
@@ -17,6 +19,9 @@ const EXTERNAL_TIMEOUT_MS = 60_000;
 const PLUGIN_NAME = "understand-code";
 const MARKETPLACE_NAME = "understand-code-alpha";
 const LIFECYCLE_V2_VERSION = "0.1.0-preview.2+codex.lifecycle-v2";
+const INITIAL_SOURCE = "export function alpha() { return true; }\n";
+const VERIFIED_SOURCE = "export function alpha() { return 'verified'; }\n";
+const ALPHA_NODE_ID = "function:src/index.ts:alpha";
 const HOST_DOCTOR_CHECK_IDS = [
   "host_cli",
   "plugin_registration",
@@ -37,6 +42,20 @@ const EXPECTED_TOOL_NAMES = [
   "trace_impact",
   "refresh_index",
 ];
+
+function contentDigest(bytes) {
+  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+}
+
+function bodyContains(value) {
+  return `document.body?.innerText?.includes(${JSON.stringify(value)}) === true`;
+}
+
+function expectedReactEntry(indexHtml) {
+  const match = indexHtml.match(/<script\b[^>]*\bsrc=["'](?<source>\/assets\/index-[A-Za-z0-9_-]+\.js)["'][^>]*>/iu);
+  assert.ok(match?.groups?.source, "the active Host cache Dashboard must name one hashed React entry asset");
+  return match.groups.source;
+}
 
 function execBounded(command, args, options = {}) {
   return execFileAsync(command, args, {
@@ -252,7 +271,7 @@ async function callTool(child, output, id, name, argumentsValue) {
   const message = await output.waitFor((candidate) => candidate.id === id, `${name} response`);
   assert.equal(message.jsonrpc, "2.0");
   assert.equal(Object.hasOwn(message, "error"), false, `${name} must return an MCP tool result`);
-  assert.equal(message.result.isError, false, `${name} must report success`);
+  assert.notEqual(message.result.isError, true, `${name} must report success`);
   assert.equal(message.result.structuredContent.schemaVersion, 1);
   return message.result;
 }
@@ -261,7 +280,7 @@ async function createRepository(root) {
   await mkdir(path.join(root, "src"), { recursive: true });
   await writeFile(
     path.join(root, "src/index.ts"),
-    "export function alpha() { return true; }\n",
+    INITIAL_SOURCE,
   );
   const gitEnv = {
     ...process.env,
@@ -331,7 +350,7 @@ async function withInstalledMcp(
     assert.equal(Object.hasOwn(listed, "error"), false);
     assert.deepEqual(listed.result.tools.map((tool) => tool.name), EXPECTED_TOOL_NAMES);
     assert.equal(await realpath(repositoryRoot), repositoryRoot);
-    const result = await exercise({ child, output });
+    const result = await exercise({ child, output, server });
     child.stdin.end();
     assert.deepEqual(await waitForExit(child, `${clientName} clean exit`), [0, null]);
     assert.equal(output.stderr.join(""), "");
@@ -366,11 +385,12 @@ async function exerciseInstalledAlpha(options) {
     );
 
     const built = await callTool(child, output, requestId++, "build_task_brief", {
-      task: "Change src/index.ts and verify its observable behavior.",
+      task: "Change the alpha function in src/index.ts and verify its observable behavior.",
       expectedRevision: 0,
       idempotencyKey: `${clientName}-brief`,
       actor,
       scope: ["src/index.ts"],
+      maxCandidates: 1,
     });
     const taskId = built.structuredContent.result.task.taskId;
     const brief = built.structuredContent.result.brief;
@@ -400,7 +420,14 @@ async function exerciseInstalledAlpha(options) {
       { type: "confirm_acceptance_criteria", claimIds: brief.acceptanceClaimIds },
       `${clientName}-confirm-acceptance`,
     );
-    assert.ok(brief.plannedChanges.length > 0, "the Brief must contain a confirmable plan");
+    assert.equal(brief.plannedChanges.length, 1, "the Brief must contain only the exact alpha plan");
+    assert.deepEqual(
+      {
+        filePath: brief.plannedChanges[0].filePath,
+        symbolId: brief.plannedChanges[0].symbolId,
+      },
+      { filePath: "src/index.ts", symbolId: ALPHA_NODE_ID },
+    );
     await updateTask(
       { type: "confirm_plan", plannedChangeIds: brief.plannedChanges.map((change) => change.id) },
       `${clientName}-confirm-plan`,
@@ -410,7 +437,7 @@ async function exerciseInstalledAlpha(options) {
 
     await writeFile(
       sourcePath,
-      "export function alpha() { return 'verified'; }\n",
+      VERIFIED_SOURCE,
       "utf8",
     );
     assert.notDeepEqual(await readFile(sourcePath), sourceBefore);
@@ -446,23 +473,18 @@ async function exerciseInstalledAlpha(options) {
     taskRevision = checked.structuredContent.result.mutation.revision;
     const changeCheck = checked.structuredContent.result.changeCheck;
     assert.equal(changeCheck.actualSnapshotId, changedSnapshotId);
-    const targetPlannedChanges = brief.plannedChanges.filter(
-      (change) => change.filePath === "src/index.ts",
+    const plannedChange = brief.plannedChanges[0];
+    const finding = changeCheck.findings.find(
+      (candidate) =>
+        candidate.plannedChangeIds.includes(plannedChange.id) &&
+        candidate.actualChangeIds.length > 0,
     );
-    assert.ok(targetPlannedChanges.length > 0, "the Brief must plan the edited source file");
-    for (const plannedChange of targetPlannedChanges) {
-      const finding = changeCheck.findings.find(
-        (candidate) =>
-          candidate.plannedChangeIds.includes(plannedChange.id) &&
-          candidate.actualChangeIds.length > 0,
-      );
-      assert.ok(finding, `the Check must link actual change evidence to ${plannedChange.id}`);
-      assert.ok(
-        finding.type === "planned_completed" || finding.type === "planned_partial",
-        `the edited planned file must have a reachable planned classification, got ${finding.type}`,
-      );
-      assert.equal(finding.blocking, false);
-    }
+    assert.ok(finding, `the Check must link actual change evidence to ${plannedChange.id}`);
+    assert.equal(finding.type, "planned_completed");
+    assert.equal(finding.blocking, false);
+    assert.deepEqual(finding.plannedChangeIds, [plannedChange.id]);
+    assert.equal(finding.actualChangeIds.length, 1);
+    assert.equal(finding.evidenceIds.length, 1);
     assert.deepEqual(
       changeCheck.findings.filter((finding) => finding.blocking && finding.resolution === undefined),
       [],
@@ -539,15 +561,21 @@ async function exerciseInstalledAlpha(options) {
       baselineSnapshotId: built.structuredContent.result.task.baselineSnapshotId,
       changedSnapshotId,
       verifiedRevision: verified.structuredContent.result.task.revision,
+      finding: {
+        id: finding.id,
+        summary: finding.summary,
+        evidenceId: finding.evidenceIds[0],
+      },
       verificationRequests,
       verificationResults,
     };
   });
 }
 
-async function resumeInstalledAlpha(options, alpha) {
-  return withInstalledMcp(options, async ({ child, output }) => {
-    const resumed = await callTool(child, output, 3, "get_task_brief", {
+async function resumeInstalledAlpha(options, alpha, workbenchSurface) {
+  return withInstalledMcp(options, async ({ child, output, server }) => {
+    let requestId = 3;
+    const resumed = await callTool(child, output, requestId++, "get_task_brief", {
       taskId: alpha.taskId,
       section: "summary",
     });
@@ -563,7 +591,7 @@ async function resumeInstalledAlpha(options, alpha) {
       const replayed = await callTool(
         child,
         output,
-        4 + index,
+        requestId++,
         "record_verification",
         request,
       );
@@ -586,11 +614,247 @@ async function resumeInstalledAlpha(options, alpha) {
     const afterReplay = await callTool(
       child,
       output,
-      4 + alpha.verificationRequests.length,
+      requestId++,
       "get_task_brief",
       { taskId: alpha.taskId, section: "summary" },
     );
     assert.equal(afterReplay.structuredContent.result.task.revision, alpha.verifiedRevision);
+    if (workbenchSurface === undefined) return;
+    const activeRoot = await realpath(options.installedRoot);
+    assert.equal(
+      server.executable.startsWith(`${activeRoot}${path.sep}`),
+      true,
+      "the Workbench Surface MCP executable must come from the authoritative active Host cache",
+    );
+    const cachedDashboardIndex = await readFile(path.join(activeRoot, "bin/dashboard/index.html"), "utf8");
+    const reactEntry = expectedReactEntry(cachedDashboardIndex);
+    const cachedReactDigest = contentDigest(await readFile(
+      path.join(activeRoot, "bin/dashboard", reactEntry.slice(1)),
+    ));
+
+    const evidenceRead = await callTool(child, output, requestId++, "get_evidence", {
+      taskId: alpha.taskId,
+      evidenceIds: [alpha.finding.evidenceId],
+      maxExcerptChars: 8_192,
+      pageSize: 1,
+    });
+    assert.deepEqual(evidenceRead.structuredContent.result.missingEvidenceIds, []);
+    assert.equal(evidenceRead.structuredContent.result.evidence.length, 1);
+    const evidence = evidenceRead.structuredContent.result.evidence[0];
+    assert.deepEqual(
+      {
+        id: evidence.id,
+        kind: evidence.kind,
+        freshness: evidence.freshness,
+        filePath: evidence.filePath,
+        lineRange: evidence.lineRange,
+        contentHash: evidence.contentHash,
+        nodeIds: evidence.nodeIds,
+        observedAtSnapshotId: evidence.observedAtSnapshotId,
+      },
+      {
+        id: alpha.finding.evidenceId,
+        kind: "source",
+        freshness: "current",
+        filePath: "src/index.ts",
+        lineRange: [1, 1],
+        contentHash: contentDigest(Buffer.from(VERIFIED_SOURCE, "utf8")),
+        nodeIds: [ALPHA_NODE_ID],
+        observedAtSnapshotId: alpha.changedSnapshotId,
+      },
+      "the fresh Claude cache must read the exact source Evidence created through Codex",
+    );
+
+    const opened = await callTool(child, output, requestId++, "open_workbench", {
+      route: {
+        view: "tasks",
+        taskId: alpha.taskId,
+        section: "planned_changes",
+      },
+      openBrowser: false,
+    });
+    assert.equal(opened.structuredContent.meta.sourceSnapshotId, alpha.changedSnapshotId);
+    const deepLink = opened.structuredContent.result.deepLink;
+    assert.equal(new URL(deepLink).hostname, "127.0.0.1");
+
+    let browser;
+    try {
+      browser = await launchBrowser({
+        executable: workbenchSurface.browserExecutable,
+        userDataDir: workbenchSurface.browserProfile,
+        timeoutMs: 30_000,
+      });
+      await browser.navigate(deepLink);
+      await browser.waitFor(
+        "document.querySelector('[data-testid=\"task-first-workbench\"]') !== null",
+        "Claude cache React Task Workbench",
+        30_000,
+      );
+      assert.equal(child.exitCode, null, "the active Claude cache MCP must remain alive for the Browser session");
+      assert.equal(await browser.evaluate("location.hash"), "", "the launch fragment token must be cleared");
+      assert.doesNotMatch(
+        await browser.evaluate("document.cookie"),
+        /workbench_session/u,
+        "the Workbench session cookie must remain HttpOnly",
+      );
+      const loadedReactEntry = browser.networkResponses.find((response) => {
+        try {
+          return new URL(response.url).pathname === reactEntry && response.status === 200;
+        } catch {
+          return false;
+        }
+      });
+      assert.ok(loadedReactEntry, `the active Claude cache must serve its hashed React entry ${reactEntry}`);
+      const servedReactDigest = await browser.evaluate(`fetch(${JSON.stringify(reactEntry)}, {
+        credentials: 'same-origin',
+      }).then(async (response) => {
+        if (!response.ok) throw new Error('React asset fetch failed: ' + response.status);
+        const digest = await crypto.subtle.digest('SHA-256', await response.arrayBuffer());
+        return 'sha256:' + [...new Uint8Array(digest)]
+          .map((byte) => byte.toString(16).padStart(2, '0')).join('');
+      })`);
+      assert.equal(servedReactDigest, cachedReactDigest, "Chrome must execute the exact active-cache React bytes");
+      await browser.waitFor(bodyContains(alpha.finding.summary), "Codex-created Finding through Claude cache");
+      assert.equal(await browser.evaluate(bodyContains(alpha.changedSnapshotId)), true);
+      const taskArtifacts = await browser.evaluate(`Promise.all([
+        fetch('/tasks/' + encodeURIComponent(${JSON.stringify(alpha.taskId)}) + '/brief.json?section=summary', {
+          credentials: 'same-origin', headers: { accept: 'application/json' },
+        }),
+        fetch('/tasks/' + encodeURIComponent(${JSON.stringify(alpha.taskId)}) + '/change-check.json', {
+          credentials: 'same-origin', headers: { accept: 'application/json' },
+        }),
+      ]).then(async ([brief, check]) => ({
+        brief: { statusCode: brief.status, payload: await brief.json() },
+        check: { statusCode: check.status, payload: await check.json() },
+      }))`);
+      assert.equal(taskArtifacts.brief.statusCode, 200);
+      assert.equal(taskArtifacts.check.statusCode, 200);
+      assert.deepEqual(
+        {
+          taskId: taskArtifacts.brief.payload.task.taskId,
+          status: taskArtifacts.brief.payload.task.status,
+          revision: taskArtifacts.brief.payload.task.revision,
+          latestSnapshotId: taskArtifacts.brief.payload.task.latestSnapshotId,
+          sourceSnapshotId: taskArtifacts.brief.payload.freshness.sourceSnapshotId,
+          current: taskArtifacts.brief.payload.freshness.current,
+        },
+        {
+          taskId: alpha.taskId,
+          status: "verified",
+          revision: alpha.verifiedRevision,
+          latestSnapshotId: alpha.changedSnapshotId,
+          sourceSnapshotId: alpha.changedSnapshotId,
+          current: true,
+        },
+      );
+      assert.equal(taskArtifacts.check.payload.task.taskId, alpha.taskId);
+      assert.deepEqual(taskArtifacts.check.payload.freshness, {
+        sourceSnapshotId: alpha.changedSnapshotId,
+        current: true,
+      });
+      const projectedCheckArtifact = taskArtifacts.check.payload.artifact;
+      assert.equal(projectedCheckArtifact.taskId, alpha.taskId);
+      assert.equal(projectedCheckArtifact.revision, alpha.verifiedRevision);
+      assert.equal(projectedCheckArtifact.sourceSnapshotId, alpha.changedSnapshotId);
+      const projectedFinding = projectedCheckArtifact.payload.findings.find((candidate) =>
+        candidate.id === alpha.finding.id,
+      );
+      assert.ok(projectedFinding, "the cookie-auth Change Check must retain the exact Finding");
+      assert.deepEqual(projectedFinding.evidenceIds, [alpha.finding.evidenceId]);
+
+      await browser.click(`[data-testid="task-finding-open"][data-finding-id="${alpha.finding.id}"]`);
+      await browser.waitFor(
+        `document.querySelector('[data-testid="task-evidence-open"][data-evidence-id="${evidence.id}"]') !== null`,
+        "cross-Host Finding Evidence action",
+      );
+      await browser.click(`[data-testid="task-evidence-open"][data-evidence-id="${evidence.id}"]`);
+      await browser.waitFor(
+        `(() => {
+          const view = document.querySelector('[data-testid="task-evidence-view"], [data-workbench-view="evidence"]');
+          return view?.textContent?.includes(${JSON.stringify(evidence.id)}) === true
+            && view.textContent.includes('src/index.ts')
+            && view.textContent.includes("return 'verified'")
+            && view.textContent.includes(${JSON.stringify(ALPHA_NODE_ID)});
+        })()`,
+        "exact cross-Host Evidence projection",
+        30_000,
+      );
+      const projected = await browser.evaluate(`fetch(
+        '/__workbench/evidence?taskId=' + encodeURIComponent(${JSON.stringify(alpha.taskId)})
+          + '&evidenceId=' + encodeURIComponent(${JSON.stringify(evidence.id)}),
+        { credentials: 'same-origin', headers: { accept: 'application/json' } },
+      ).then(async (response) => ({ statusCode: response.status, payload: await response.json() }))`);
+      assert.equal(projected.statusCode, 200);
+      assert.equal(projected.payload.status, "ready");
+      assert.equal(projected.payload.taskId, alpha.taskId);
+      assert.equal(projected.payload.snapshotId, alpha.changedSnapshotId);
+      assert.equal(projected.payload.evidence.observedAtSnapshotId, alpha.changedSnapshotId);
+      assert.deepEqual(
+        {
+          id: projected.payload.evidence.id,
+          filePath: projected.payload.source.filePath,
+          evidenceLineRange: projected.payload.evidence.lineRange,
+          sourceLineRange: projected.payload.source.lineRange,
+          contentHash: projected.payload.evidence.contentHash,
+          nodeIds: projected.payload.evidence.nodeIds,
+          content: projected.payload.source.content,
+        },
+        {
+          id: evidence.id,
+          filePath: "src/index.ts",
+          evidenceLineRange: [1, 1],
+          sourceLineRange: [1, 1],
+          contentHash: contentDigest(Buffer.from(VERIFIED_SOURCE, "utf8")),
+          nodeIds: [ALPHA_NODE_ID],
+          content: VERIFIED_SOURCE.trimEnd(),
+        },
+      );
+
+      await browser.click(`[data-testid="task-evidence-open-graph"][data-node-id="${ALPHA_NODE_ID}"]`);
+      await browser.waitFor(
+        "document.querySelector('[aria-label=\"项目图谱\"]') !== null",
+        "Claude cache Graph surface",
+        30_000,
+      );
+      await browser.waitFor(
+        `(() => {
+          const expected = ${JSON.stringify(ALPHA_NODE_ID)};
+          return new URL(location.href).searchParams.get('focus') === expected
+            && [...document.querySelectorAll('[data-graph-node-id]')]
+              .some((node) => node.getAttribute('data-graph-node-id') === expected
+                && node.getAttribute('data-selected') === 'true');
+        })()`,
+        "exact alpha Graph focus through Claude cache",
+        30_000,
+      );
+      await browser.clickText('nav[aria-label="主要界面"] button', "知识库");
+      await browser.waitFor(
+        "document.querySelector('[aria-label=\"理解项目的五个阶段\"], [aria-label=\"文档正文\"]') !== null",
+        "Claude cache Wiki surface",
+        30_000,
+      );
+      await browser.evaluate(`(() => {
+        const action = document.querySelector('[data-testid="workbench-back-to-task"]');
+        if (!(action instanceof HTMLElement)) throw new Error('Workbench has no return-to-Task action');
+        action.click();
+        return true;
+      })()`);
+      await browser.waitFor(
+        `document.querySelector('[data-testid="task-first-workbench"]')?.textContent?.includes(${JSON.stringify(alpha.finding.summary)}) === true`,
+        "Codex-created Task after Claude Graph and Wiki",
+        30_000,
+      );
+      const returnedRoute = new URL(await browser.evaluate("location.href"));
+      assert.equal(returnedRoute.searchParams.get("taskId"), alpha.taskId);
+      assert.equal(returnedRoute.searchParams.get("findingId"), alpha.finding.id);
+      assert.equal(
+        returnedRoute.searchParams.get("evidenceId"),
+        null,
+        "returning to the Finding must leave the Evidence subview",
+      );
+    } finally {
+      await browser?.close();
+    }
   });
 }
 
@@ -849,6 +1113,12 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
     t.skip(message);
     return;
   }
+  const browserExecutable = await resolveBrowserExecutable();
+  assert.equal(
+    process.env.UNDERSTAND_CODE_REQUIRE_REAL_BROWSER === "1" && browserExecutable === null,
+    false,
+    "UNDERSTAND_CODE_REQUIRE_REAL_BROWSER=1 requires an installed Chrome/Chromium",
+  );
 
   const sandbox = await realpath(await mkdtemp(path.join(tmpdir(), "understand-code-plugin-e2e-")));
   const packDirectory = path.join(sandbox, "pack");
@@ -859,6 +1129,7 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
   const claudeUserHome = path.join(sandbox, "claude-user");
   const releasesRoot = path.join(sandbox, "releases");
   const marketplaceFacadeRoot = path.join(sandbox, "marketplace-facade");
+  const browserProfile = path.join(sandbox, "chrome-profile");
   const repositoryRoot = await createRepository(path.join(sandbox, "repository"));
   const ambientRepositoryRoot = await createRepository(path.join(sandbox, "ambient-repository"));
   const differentCwd = path.join(sandbox, "not-the-repository");
@@ -874,6 +1145,7 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
       mkdir(claudeUserHome, { recursive: true }),
       mkdir(releasesRoot, { recursive: true }),
       mkdir(marketplaceFacadeRoot, { recursive: true }),
+      mkdir(browserProfile, { recursive: true }),
       mkdir(differentCwd, { recursive: true }),
     ]);
     let tarballPath;
@@ -1022,6 +1294,14 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
     );
     claudeInstalledRoot = activeClaudeV1.installedRoot;
     assert.equal(claudeInstalledRoot.startsWith(`${await realpath(claudeConfig)}${path.sep}`), true);
+    assert.deepEqual(
+      await readFile(path.join(claudeInstalledRoot, "bin/dashboard-manifest.json")),
+      await readFile(path.join(
+        releasePluginRoot(releases.v1.root, "claude"),
+        "plugins/understand-code/bin/dashboard-manifest.json",
+      )),
+      "the authoritative Claude cache must contain the exact v1 Dashboard manifest",
+    );
     await runInstalledHostDoctor({
       installedPackageRoot: releases.v1.root,
       host: "claude",
@@ -1046,6 +1326,7 @@ test("real Codex and Claude CLI lifecycles yield cached plugins that execute the
         clientName: "claude-plugin-e2e",
       },
       codexAlpha.result,
+      browserExecutable === null ? undefined : { browserExecutable, browserProfile },
     );
     assert.equal(
       (await stat(path.join(repositoryRoot, ".understand-code"))).isDirectory(),

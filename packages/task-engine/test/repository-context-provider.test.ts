@@ -322,14 +322,21 @@ describe("RepositoryTaskContextProvider", () => {
     ]);
   });
 
-  it("derives staged hunks from exact Index bytes and fails closed across live drift", async () => {
+  it("derives multi-path staged hunks from exact Index bytes and fails closed across live drift", async () => {
     const baselineSource = [
       "export function foo() { return 'old foo'; }",
       "export function bar() { return 'old bar'; }",
     ].join("\n");
+    const baselineExtraSource =
+      "export function extra() { return 'old extra'; }\n";
     const stagedSource = baselineSource.replace("old foo", "new foo");
+    const stagedExtraSource = baselineExtraSource.replace(
+      "old extra",
+      "new extra",
+    );
     const indexDriftSource = baselineSource.replace("old foo", "newer foo");
     const worktreeDriftSource = stagedSource.replace("old bar", "worktree bar");
+    const stagedChangeIds = ["change:staged-foo", "change:staged-extra"].sort();
     const graph = graphFixture();
     graph.nodes = [
       {
@@ -343,19 +350,24 @@ describe("RepositoryTaskContextProvider", () => {
         complexity: "simple",
       },
       {
-        id: "function:bar",
+        id: "function:extra",
         type: "function",
-        name: "bar",
-        filePath: "src/task.ts",
-        lineRange: [2, 2],
-        summary: "Returns bar.",
+        name: "extra",
+        filePath: "src/extra.ts",
+        lineRange: [1, 1],
+        summary: "Returns extra.",
         tags: [],
         complexity: "simple",
       },
     ];
     const { root } = await fixtureRoot(graph, baselineSource);
+    await writeFile(
+      path.join(root, "src/extra.ts"),
+      baselineExtraSource,
+      "utf8",
+    );
     await git(root, ["init", "--quiet"]);
-    await git(root, ["add", "src/task.ts"]);
+    await git(root, ["add", "src/extra.ts", "src/task.ts"]);
     await git(root, [
       "-c",
       "user.name=Understand Code Test",
@@ -367,8 +379,15 @@ describe("RepositoryTaskContextProvider", () => {
       "baseline",
     ]);
     const headCommit = await git(root, ["rev-parse", "HEAD"]);
-    await writeFile(path.join(root, "src/task.ts"), stagedSource, "utf8");
-    await git(root, ["add", "--", "src/task.ts"]);
+    await Promise.all([
+      writeFile(path.join(root, "src/task.ts"), stagedSource, "utf8"),
+      writeFile(
+        path.join(root, "src/extra.ts"),
+        stagedExtraSource,
+        "utf8",
+      ),
+    ]);
+    await git(root, ["add", "--", "src/extra.ts", "src/task.ts"]);
     const baselineSnapshot = snapshot(
       digest(baselineSource),
       "snapshot:staged-baseline",
@@ -388,6 +407,14 @@ describe("RepositoryTaskContextProvider", () => {
             kind: "modified",
             contentDigest: digest(stagedSource),
             previousContentDigest: digest(baselineSource),
+          },
+          {
+            id: "change:staged-extra",
+            path: "src/extra.ts",
+            source: "staged",
+            kind: "modified",
+            contentDigest: digest(stagedExtraSource),
+            previousContentDigest: digest(baselineExtraSource),
           },
         ],
       },
@@ -410,6 +437,13 @@ describe("RepositoryTaskContextProvider", () => {
     expect(first).toMatchObject({ status: "complete", boundaries: [] });
     expect(first.hunks).toEqual([
       expect.objectContaining({
+        actualChangeIds: ["change:staged-extra"],
+        filePath: "src/extra.ts",
+        newLineRange: [1, 1],
+        nodeIds: ["function:extra"],
+        contentHash: digest(stagedExtraSource),
+      }),
+      expect.objectContaining({
         actualChangeIds: ["change:staged-foo"],
         filePath: "src/task.ts",
         newLineRange: [1, 1],
@@ -427,7 +461,10 @@ describe("RepositoryTaskContextProvider", () => {
     expect(worktreeDrift).toMatchObject({
       status: "unknown",
       hunks: [],
-      boundaries: [expect.objectContaining({ code: "content_changed" })],
+      boundaries: [expect.objectContaining({
+        code: "content_changed",
+        actualChangeIds: stagedChangeIds,
+      })],
     });
 
     await writeFile(path.join(root, "src/task.ts"), indexDriftSource, "utf8");
@@ -441,10 +478,13 @@ describe("RepositoryTaskContextProvider", () => {
     expect(indexDrift).toMatchObject({
       status: "unknown",
       hunks: [],
-      boundaries: [expect.objectContaining({ code: "content_changed" })],
+      boundaries: [expect.objectContaining({
+        code: "content_changed",
+        actualChangeIds: stagedChangeIds,
+      })],
     });
 
-    await git(root, ["add", "--", "src/task.ts"]);
+    await git(root, ["add", "--", "src/extra.ts", "src/task.ts"]);
     await git(root, [
       "-c",
       "user.name=Understand Code Test",
@@ -463,7 +503,10 @@ describe("RepositoryTaskContextProvider", () => {
     expect(headDrift).toMatchObject({
       status: "unknown",
       hunks: [],
-      boundaries: [expect.objectContaining({ code: "head_mismatch" })],
+      boundaries: [expect.objectContaining({
+        code: "head_mismatch",
+        actualChangeIds: stagedChangeIds,
+      })],
     });
 
     const mixedHeadCommit = await git(root, ["rev-parse", "HEAD"]);
@@ -509,7 +552,43 @@ describe("RepositoryTaskContextProvider", () => {
     expect(mixed).toMatchObject({
       status: "unknown",
       hunks: [],
-      boundaries: [expect.objectContaining({ code: "unsupported_source" })],
+      boundaries: [expect.objectContaining({
+        code: "unsupported_source",
+        actualChangeIds: ["change:mixed-staged", "change:mixed-unstaged"],
+      })],
+    });
+
+    const tooManyChangeIds = Array.from(
+      { length: 17 },
+      (_, index) => `change:staged-${String(index).padStart(2, "0")}`,
+    );
+    const tooMany = await provider.analyzeTaskChanges({
+      taskId: "task:too-many-staged-analysis",
+      baselineSnapshot: mixedBaselineSnapshot,
+      actualSnapshot: snapshot(
+        digest("unused"),
+        "snapshot:too-many-staged",
+        {
+          headCommit: mixedHeadCommit,
+          indexDigest: await currentIndexDigest(root),
+          changes: tooManyChangeIds.map((id, index) => ({
+            id,
+            path: `src/synthetic-${String(index).padStart(2, "0")}.ts`,
+            source: "staged" as const,
+            kind: "modified" as const,
+            contentDigest: digest(`synthetic-${index}`),
+            previousContentDigest: digest(`baseline-${index}`),
+          })),
+        },
+      ),
+    });
+    expect(tooMany).toMatchObject({
+      status: "unknown",
+      hunks: [],
+      boundaries: [expect.objectContaining({
+        code: "unsupported_source",
+        actualChangeIds: tooManyChangeIds,
+      })],
     });
   });
 

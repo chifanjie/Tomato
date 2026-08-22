@@ -68,6 +68,8 @@ const DEFAULT_MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 const MAX_CHANGE_ANALYSIS_INDEX_BYTES = 64 * 1024 * 1024;
 const MAX_CHANGE_ANALYSIS_HEAD_BYTES = 256;
 const MAX_CHANGE_ANALYSIS_PATH_BYTES = 4_096;
+const MAX_STAGED_CHANGE_PATHS = 16;
+const MAX_STAGED_SEMANTIC_BYTES = 32 * 1024 * 1024;
 const GIT_READ_ARGUMENT_PREFIX = Object.freeze([
   "-c",
   "core.hooksPath=/dev/null",
@@ -1275,22 +1277,34 @@ implements TaskContextProvider {
     const includesStagedChange = actual.data.changes.some(
       (change) => change.source === "staged",
     );
-    const stagedChange =
+    const stagedPaths = new Set(
+      actual.data.changes
+        .filter((change) => change.source === "staged")
+        .map((change) => change.path),
+    );
+    const stagedChanges =
       includesStagedChange &&
-      actual.data.changes.length === 1 &&
-      actual.data.changes[0]!.source === "staged" &&
-      actual.data.changes[0]!.kind === "modified" &&
-      actual.data.changes[0]!.contentDigest !== undefined
-        ? actual.data.changes[0]!
+      actual.data.changes.length >= 1 &&
+      actual.data.changes.length <= MAX_STAGED_CHANGE_PATHS &&
+      stagedPaths.size === actual.data.changes.length &&
+      actual.data.changes.every(
+        (change) =>
+          change.source === "staged" &&
+          change.kind === "modified" &&
+          change.contentDigest !== undefined,
+      )
+        ? [...actual.data.changes].sort((left, right) =>
+            compareUnicodeCodeUnits(left.path, right.path),
+          )
         : undefined;
-    if (includesStagedChange && stagedChange === undefined) {
+    if (includesStagedChange && stagedChanges === undefined) {
       return {
         status: "unknown",
         hunks: [],
         boundaries: [
           changeAnalysisBoundary(
             "unsupported_source",
-            "Alpha staged line analysis requires exactly one staged modified change and no other changes.",
+            "Alpha staged line analysis requires one to sixteen unique staged modified paths and no other changes.",
             undefined,
             actualChangeIds,
           ),
@@ -1298,8 +1312,8 @@ implements TaskContextProvider {
       };
     }
     if (
-      stagedChange !== undefined &&
-      !safeChangeAnalysisPath(stagedChange.path)
+      stagedChanges !== undefined &&
+      stagedChanges.some((change) => !safeChangeAnalysisPath(change.path))
     ) {
       return {
         status: "unknown",
@@ -1307,8 +1321,8 @@ implements TaskContextProvider {
         boundaries: [
           changeAnalysisBoundary(
             "unsafe_path",
-            "The staged repository path is unsafe for exact Git index lookup.",
-            stagedChange.path,
+            "A staged repository path is unsafe for exact Git index lookup.",
+            undefined,
             actualChangeIds,
           ),
         ],
@@ -1340,7 +1354,7 @@ implements TaskContextProvider {
       };
     }
 
-    if (stagedChange !== undefined) {
+    if (stagedChanges !== undefined) {
       const fence = await sampleStagedAnalysisFence(
         this.#canonicalRoot,
         actual.data.headCommit,
@@ -1354,7 +1368,7 @@ implements TaskContextProvider {
             changeAnalysisBoundary(
               fence.code,
               fence.reason,
-              stagedChange.path,
+              undefined,
               actualChangeIds,
             ),
           ],
@@ -1370,22 +1384,23 @@ implements TaskContextProvider {
     }
     const hunks: TaskChangeHunk[] = [];
     const boundaries: TaskChangeAnalysisBoundary[] = [];
+    let stagedSemanticBytes = 0;
     for (const filePath of [...changesByPath.keys()].sort(compareUnicodeCodeUnits)) {
       const changes = changesByPath.get(filePath)!;
       const ids = changes.map((change) => change.id);
       const supported =
         changes.length === 1 &&
         changes[0]!.source ===
-          (stagedChange === undefined ? "unstaged" : "staged") &&
+          (stagedChanges === undefined ? "unstaged" : "staged") &&
         changes[0]!.kind === "modified" &&
         changes[0]!.contentDigest !== undefined;
       if (!supported) {
         boundaries.push(
           changeAnalysisBoundary(
             "unsupported_source",
-            stagedChange === undefined
+            stagedChanges === undefined
               ? "Alpha line analysis only supports one unstaged modified change per path."
-              : "Alpha staged line analysis only supports its one staged modified path.",
+              : "Alpha staged line analysis only supports unique staged modified paths.",
             filePath,
             ids,
           ),
@@ -1422,7 +1437,7 @@ implements TaskContextProvider {
       }
       const worktreeDigest =
         `sha256:${createHash("sha256").update(actualFile.bytes!).digest("hex")}`;
-      if (stagedChange === undefined) {
+      if (stagedChanges === undefined) {
         actualBytes = actualFile.bytes!;
       } else {
         let indexBytes: Buffer;
@@ -1498,6 +1513,21 @@ implements TaskContextProvider {
         );
         continue;
       }
+      if (stagedChanges !== undefined) {
+        stagedSemanticBytes +=
+          baselineBytes.byteLength + actualBytes.byteLength;
+        if (stagedSemanticBytes > MAX_STAGED_SEMANTIC_BYTES) {
+          boundaries.push(
+            changeAnalysisBoundary(
+              "budget_exhausted",
+              "Staged semantic bytes exceeded the fixed aggregate Alpha budget.",
+              filePath,
+              ids,
+            ),
+          );
+          break;
+        }
+      }
       const diff = deterministicLineDiff({
         baselineSnapshotId: baseline.data.snapshotId,
         actualSnapshotId: actual.data.snapshotId,
@@ -1571,11 +1601,25 @@ implements TaskContextProvider {
       if (pathBoundary !== undefined) {
         boundaries.push(pathBoundary);
       } else {
+        if (
+          stagedChanges !== undefined &&
+          hunks.length + pathHunks.length > CHANGE_ANALYSIS_LIMITS.maxHunks
+        ) {
+          boundaries.push(
+            changeAnalysisBoundary(
+              "budget_exhausted",
+              "Staged line hunks exceeded the fixed aggregate Alpha budget.",
+              filePath,
+              ids,
+            ),
+          );
+          break;
+        }
         hunks.push(...pathHunks);
       }
     }
 
-    if (stagedChange !== undefined) {
+    if (stagedChanges !== undefined) {
       const fence = await sampleStagedAnalysisFence(
         this.#canonicalRoot,
         actual.data.headCommit,
@@ -1586,21 +1630,29 @@ implements TaskContextProvider {
           changeAnalysisBoundary(
             fence.code,
             fence.reason,
-            stagedChange.path,
+            undefined,
             actualChangeIds,
           ),
         );
       }
       if (boundaries.length > 0) {
-        boundaries.sort((left, right) =>
+        const orderedBoundaries = [...boundaries].sort((left, right) =>
           compareUnicodeCodeUnits(left.filePath ?? "", right.filePath ?? "") ||
           compareUnicodeCodeUnits(left.code, right.code) ||
           compareUnicodeCodeUnits(left.actualChangeIds.join("\0"), right.actualChangeIds.join("\0")),
         );
+        const primary = orderedBoundaries[0]!;
         return {
           status: "unknown",
           hunks: [],
-          boundaries,
+          boundaries: [
+            changeAnalysisBoundary(
+              primary.code,
+              primary.reason,
+              undefined,
+              actualChangeIds,
+            ),
+          ],
         };
       }
     }

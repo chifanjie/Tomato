@@ -373,6 +373,7 @@ describe("RepositoryTaskContextProvider", () => {
     expect(unrelatedLiveDrift).toEqual({
       status: "unknown",
       hunks: [],
+      deletedFiles: [],
       boundaries: [
         {
           code: "content_changed",
@@ -1042,6 +1043,184 @@ describe("RepositoryTaskContextProvider", () => {
     expect(liveIndexDrift).toMatchObject({
       status: "unknown",
       hunks: [],
+      boundaries: [expect.objectContaining({
+        code: "content_changed",
+        actualChangeIds,
+      })],
+    });
+  });
+
+  it("derives an exact baseline-bound deletion observation beside an unstaged hunk and rejects live drift", async () => {
+    const baselineTaskSource =
+      "export function task() { return 'task-before'; }\n";
+    const actualTaskSource =
+      "export function task() { return 'task-after'; }\n";
+    const deletedSource =
+      "export function removed() { return 'baseline-only'; }\n";
+    const graph = graphFixture();
+    graph.nodes = [
+      {
+        id: "function:task",
+        type: "function",
+        name: "task",
+        filePath: "src/task.ts",
+        lineRange: [1, 1],
+        summary: "Returns the changed Task value.",
+        tags: [],
+        complexity: "simple",
+      },
+      {
+        id: "function:removed",
+        type: "function",
+        name: "removed",
+        filePath: "src/removed.ts",
+        lineRange: [1, 1],
+        summary: "Returns the baseline-only value.",
+        tags: [],
+        complexity: "simple",
+      },
+    ];
+    const { root } = await fixtureRoot(graph, baselineTaskSource);
+    const deletedPath = path.join(root, "src/removed.ts");
+    await writeFile(deletedPath, deletedSource, "utf8");
+    await git(root, ["init", "--quiet"]);
+    await git(root, ["add", "src/task.ts", "src/removed.ts"]);
+    await git(root, [
+      "-c",
+      "user.name=Understand Code Test",
+      "-c",
+      "user.email=test@understand-code.invalid",
+      "commit",
+      "--quiet",
+      "-m",
+      "baseline",
+    ]);
+    const headCommit = await git(root, ["rev-parse", "HEAD"]);
+    const baselineSnapshot = await captureFencedSnapshot(root, headCommit);
+    expect(baselineSnapshot.changes).toEqual([]);
+    await Promise.all([
+      writeFile(path.join(root, "src/task.ts"), actualTaskSource, "utf8"),
+      rm(deletedPath),
+    ]);
+    const actualSnapshot = await captureFencedSnapshot(root, headCommit);
+    expect(actualSnapshot.changes).toHaveLength(2);
+    const deletedChange = actualSnapshot.changes.find(
+      (change) => change.path === "src/removed.ts",
+    );
+    const modifiedChange = actualSnapshot.changes.find(
+      (change) => change.path === "src/task.ts",
+    );
+    expect(deletedChange).toEqual({
+      id: deletedChange?.id,
+      path: "src/removed.ts",
+      source: "unstaged",
+      kind: "deleted",
+    });
+    expect(modifiedChange).toEqual({
+      id: modifiedChange?.id,
+      path: "src/task.ts",
+      source: "unstaged",
+      kind: "modified",
+      contentDigest: digest(actualTaskSource),
+    });
+    const actualChangeIds = actualSnapshot.changes
+      .map((change) => change.id)
+      .sort();
+    const provider = await RepositoryTaskContextProvider.open({
+      canonicalRoot: root,
+    });
+
+    const complete = await provider.analyzeTaskChanges({
+      taskId: "task:deleted-analysis",
+      baselineSnapshot,
+      actualSnapshot,
+    });
+    expect(complete).toMatchObject({ status: "complete", boundaries: [] });
+    expect(complete.hunks).toEqual([
+      expect.objectContaining({
+        actualChangeIds: [modifiedChange!.id],
+        filePath: "src/task.ts",
+        newLineRange: [1, 1],
+        nodeIds: ["function:task"],
+        contentHash: digest(actualTaskSource),
+      }),
+    ]);
+    const deletedFiles = complete.deletedFiles ?? [];
+    expect(deletedFiles).toHaveLength(1);
+    const deletedFile = deletedFiles[0]!;
+    expect(deletedFile).toEqual({
+      id: deletedFile.id,
+      actualChangeIds: [deletedChange!.id],
+      filePath: "src/removed.ts",
+      oldLineRange: [1, 1],
+      contentHash: digest(deletedSource),
+    });
+
+    const mixedUnsupportedSnapshot = RepositorySnapshotV1Schema.parse({
+      ...actualSnapshot,
+      changes: [
+        modifiedChange!,
+        {
+          id: "change:committed-deletion",
+          path: "src/committed.ts",
+          source: "committed",
+          kind: "deleted",
+        },
+        {
+          id: "change:conflict-deletion",
+          path: "src/conflict.ts",
+          source: "conflict",
+          kind: "deleted",
+        },
+      ],
+    });
+    const mixedUnsupportedChangeIds = mixedUnsupportedSnapshot.changes
+      .map((change) => change.id)
+      .sort();
+    const mixedUnsupported = await provider.analyzeTaskChanges({
+      taskId: "task:deleted-analysis",
+      baselineSnapshot,
+      actualSnapshot: mixedUnsupportedSnapshot,
+    });
+    expect(mixedUnsupported).toMatchObject({
+      status: "unknown",
+      hunks: [],
+      deletedFiles: [],
+      boundaries: [expect.objectContaining({
+        code: "unsupported_source",
+        actualChangeIds: mixedUnsupportedChangeIds,
+      })],
+    });
+
+    const mismatchedBaselineIndex = RepositorySnapshotV1Schema.parse({
+      ...baselineSnapshot,
+      indexDigest: digest("mismatched-baseline-index"),
+    });
+    const baselineIndexMismatch = await provider.analyzeTaskChanges({
+      taskId: "task:deleted-analysis",
+      baselineSnapshot: mismatchedBaselineIndex,
+      actualSnapshot,
+    });
+    expect(baselineIndexMismatch).toMatchObject({
+      status: "unknown",
+      hunks: [],
+      deletedFiles: [],
+      boundaries: [expect.objectContaining({
+        code: "content_changed",
+        actualChangeIds,
+      })],
+    });
+
+    await writeFile(deletedPath, deletedSource, "utf8");
+    const drifted = await provider.analyzeTaskChanges({
+      taskId: "task:deleted-analysis",
+      baselineSnapshot,
+      actualSnapshot,
+    });
+    expect(drifted).toMatchObject({
+      status: "unknown",
+      hunks: [],
+      deletedFiles: [],
       boundaries: [expect.objectContaining({
         code: "content_changed",
         actualChangeIds,

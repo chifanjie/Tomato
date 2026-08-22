@@ -136,9 +136,24 @@ export interface TaskChangeHunk {
   readonly contentHash: string;
 }
 
+/**
+ * A trusted observation of a whole file that existed at the Task baseline and
+ * is absent from the exact live actual Snapshot. It is deliberately separate
+ * from an actual-side hunk because a deletion has no current source range or
+ * current Graph symbol anchor.
+ */
+export interface TaskDeletedFileObservation {
+  readonly id: string;
+  readonly actualChangeIds: readonly string[];
+  readonly filePath: string;
+  readonly oldLineRange: readonly [number, number];
+  readonly contentHash: string;
+}
+
 export interface TaskChangeAnalysisResult {
   readonly status: "complete" | "partial" | "unknown";
   readonly hunks: readonly TaskChangeHunk[];
+  readonly deletedFiles?: readonly TaskDeletedFileObservation[];
   readonly boundaries: readonly TaskChangeAnalysisBoundary[];
 }
 

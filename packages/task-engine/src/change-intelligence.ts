@@ -39,6 +39,7 @@ import type {
   TaskChangeAnalysisInput,
   TaskChangeAnalysisResult,
   TaskChangeHunk,
+  TaskDeletedFileObservation,
 } from "./engine-types.js";
 import { sha256CanonicalJson, stableId } from "./ids.js";
 import { compareUnicodeCodeUnits } from "./stable-order.js";
@@ -259,18 +260,29 @@ function claimForPlannedChange(
 
 function buildFindingEvidence(
   taskId: string,
+  baselineSnapshot: RepositorySnapshotV1,
   actualSnapshot: RepositorySnapshotV1,
   findingId: string,
   occurredAt: string,
   input:
     | { readonly kind: "source"; readonly hunk: TaskChangeHunk }
+    | {
+        readonly kind: "deleted_source";
+        readonly deletedFile: TaskDeletedFileObservation;
+      }
     | { readonly kind: "boundary"; readonly reason: string },
 ): EvidenceV1 {
+  const anchor =
+    input.kind === "source"
+      ? input.hunk.id
+      : input.kind === "deleted_source"
+        ? input.deletedFile.id
+        : input.reason;
   const id = stableId("evidence:change-check", {
     taskId,
     actualSnapshotId: actualSnapshot.snapshotId,
     findingId,
-    anchor: input.kind === "source" ? input.hunk.id : input.reason,
+    anchor,
   });
   if (input.kind === "boundary") {
     return EvidenceV1Schema.parse({
@@ -285,6 +297,25 @@ function buildFindingEvidence(
       observedAtSnapshotId: actualSnapshot.snapshotId,
       boundaryReason: input.reason,
       relationPath: [],
+    });
+  }
+  if (input.kind === "deleted_source") {
+    return EvidenceV1Schema.parse({
+      id,
+      kind: "source",
+      epistemicStatus: "observed",
+      freshness: "changed",
+      freshnessReason:
+        "The source existed at the Task baseline and is absent from the exact actual Snapshot.",
+      claimIds: [],
+      nodeIds: [],
+      producedBy: "task-engine",
+      createdAt: occurredAt,
+      observedAtSnapshotId: baselineSnapshot.snapshotId,
+      filePath: input.deletedFile.filePath,
+      lineRange: [...input.deletedFile.oldLineRange],
+      commit: baselineSnapshot.headCommit,
+      contentHash: input.deletedFile.contentHash,
     });
   }
   return EvidenceV1Schema.parse({
@@ -305,13 +336,17 @@ function buildFindingEvidence(
 
 function analysisIsConsistent(
   analysis: TaskChangeAnalysisResult,
+  baseline: RepositorySnapshotV1,
   actual: RepositorySnapshotV1,
 ): boolean {
+  const deletedFiles = analysis.deletedFiles ?? [];
   if (
     (analysis.status === "complete") !== (analysis.boundaries.length === 0) ||
-    (analysis.status === "unknown" && analysis.hunks.length !== 0) ||
+    (analysis.status === "unknown" &&
+      (analysis.hunks.length !== 0 || deletedFiles.length !== 0)) ||
     (analysis.status === "partial" &&
-      (analysis.hunks.length === 0 || analysis.boundaries.length === 0))
+      (analysis.hunks.length + deletedFiles.length === 0 ||
+        analysis.boundaries.length === 0))
   ) {
     return false;
   }
@@ -344,6 +379,34 @@ function analysisIsConsistent(
       coveredIds.add(actualChangeId);
     }
   }
+  for (const deletedFile of deletedFiles) {
+    if (
+      hunkIds.has(deletedFile.id) ||
+      deletedFile.actualChangeIds.length === 0 ||
+      new Set(deletedFile.actualChangeIds).size !==
+        deletedFile.actualChangeIds.length ||
+      deletedFile.oldLineRange[0] < 1 ||
+      deletedFile.oldLineRange[1] < deletedFile.oldLineRange[0] ||
+      !/^sha256:[0-9a-f]{64}$/u.test(deletedFile.contentHash) ||
+      baseline.headCommit === undefined
+    ) {
+      return false;
+    }
+    hunkIds.add(deletedFile.id);
+    for (const actualChangeId of deletedFile.actualChangeIds) {
+      const change = actualById.get(actualChangeId);
+      if (
+        change === undefined ||
+        change.path !== deletedFile.filePath ||
+        change.source !== "unstaged" ||
+        change.kind !== "deleted" ||
+        change.contentDigest !== undefined
+      ) {
+        return false;
+      }
+      coveredIds.add(actualChangeId);
+    }
+  }
   for (const boundary of analysis.boundaries) {
     for (const actualChangeId of boundary.actualChangeIds) {
       if (!actualById.has(actualChangeId)) return false;
@@ -365,6 +428,7 @@ function makeFindings(
   findingEvidence: EvidenceV1[];
   baseFindingLinks: ReadonlyMap<string, readonly string[]>;
 } {
+  const deletedFiles = analysis.deletedFiles ?? [];
   const draftFindings: Array<{
     type: ChangeFindingV1["type"];
     severity: ChangeFindingV1["severity"];
@@ -374,6 +438,7 @@ function makeFindings(
     actualChangeIds: string[];
     baseClaimIds: string[];
     hunks: TaskChangeHunk[];
+    deletedFiles: TaskDeletedFileObservation[];
     boundaryReason?: string;
   }> = [];
 
@@ -399,6 +464,9 @@ function makeFindings(
     const samePathHunks = analysis.hunks.filter(
       (hunk) => hunk.filePath === planned.filePath,
     );
+    const samePathDeletedFiles = deletedFiles.filter(
+      (deletedFile) => deletedFile.filePath === planned.filePath,
+    );
     const matchingHunks = samePathHunks.filter(
       (hunk) =>
         planned.symbolId !== undefined &&
@@ -415,6 +483,7 @@ function makeFindings(
           .sort(compareUnicodeCodeUnits),
         baseClaimIds: [claimForPlannedChange(data, [planned.id])],
         hunks: [],
+        deletedFiles: [],
         boundaryReason: relevantBoundaries.map((item) => item.reason).join("; "),
       });
       continue;
@@ -431,6 +500,7 @@ function makeFindings(
           .sort(compareUnicodeCodeUnits),
         baseClaimIds: [claimForPlannedChange(data, [planned.id])],
         hunks: matchingHunks,
+        deletedFiles: [],
       });
     } else {
       draftFindings.push({
@@ -439,10 +509,16 @@ function makeFindings(
         blocking: true,
         summary: `Change Intelligence cannot prove whether unmatched legacy planned change ${planned.id} was required at ${planned.filePath}.`,
         plannedChangeIds: [planned.id],
-        actualChangeIds: [...new Set(samePathHunks.flatMap((hunk) => hunk.actualChangeIds))]
+        actualChangeIds: [...new Set([
+          ...samePathHunks.flatMap((hunk) => hunk.actualChangeIds),
+          ...samePathDeletedFiles.flatMap(
+            (deletedFile) => deletedFile.actualChangeIds,
+          ),
+        ])]
           .sort(compareUnicodeCodeUnits),
         baseClaimIds: [claimForPlannedChange(data, [planned.id])],
         hunks: [],
+        deletedFiles: [],
         boundaryReason:
           "Legacy PlannedChange has no confirmed required-change expectation, and no changed-line hunk mapped to its stable symbol.",
       });
@@ -459,6 +535,20 @@ function makeFindings(
       actualChangeIds: [...hunk.actualChangeIds],
       baseClaimIds: [claimForPlannedChange(data, [])],
       hunks: [hunk],
+      deletedFiles: [],
+    });
+  }
+  for (const deletedFile of deletedFiles) {
+    draftFindings.push({
+      type: "unplanned_change",
+      severity: "warning",
+      blocking: true,
+      summary: `Deleting baseline lines ${deletedFile.oldLineRange[0]}-${deletedFile.oldLineRange[1]} at ${deletedFile.filePath} was not proven as an authorized planned deletion.`,
+      plannedChangeIds: [],
+      actualChangeIds: [...deletedFile.actualChangeIds],
+      baseClaimIds: [claimForPlannedChange(data, [])],
+      hunks: [],
+      deletedFiles: [deletedFile],
     });
   }
   for (const boundary of analysis.boundaries) {
@@ -480,6 +570,7 @@ function makeFindings(
       actualChangeIds: [...boundary.actualChangeIds],
       baseClaimIds: [claimForPlannedChange(data, [])],
       hunks: [],
+      deletedFiles: [],
       boundaryReason: boundary.reason,
     });
   }
@@ -493,6 +584,7 @@ function makeFindings(
       actualChangeIds: [],
       baseClaimIds: [claimForPlannedChange(data, [])],
       hunks: [],
+      deletedFiles: [],
       boundaryReason: "Repository Snapshot capture reported an error.",
     });
   }
@@ -509,6 +601,7 @@ function makeFindings(
         .sort(compareUnicodeCodeUnits),
       baseClaimIds: [claimForPlannedChange(data, [])],
       hunks: [],
+      deletedFiles: [],
       boundaryReason:
         "Legacy Change Check summaries do not include the five evidence-backed completeness dimensions.",
     });
@@ -526,21 +619,43 @@ function makeFindings(
       plannedChangeIds: draft.plannedChangeIds,
       actualChangeIds: draft.actualChangeIds,
       hunkIds: draft.hunks.map((hunk) => hunk.id),
+      ...(draft.deletedFiles.length === 0
+        ? {}
+        : {
+            deletedFileIds: draft.deletedFiles.map(
+              (deletedFile) => deletedFile.id,
+            ),
+          }),
     });
     const evidences =
       draft.hunks.length > 0 && actual.captureStatus === "complete"
         ? draft.hunks.map((hunk) =>
             buildFindingEvidence(
               data.manifest.taskId,
+              baseline,
               actual,
               findingId,
               occurredAt,
               { kind: "source", hunk },
             ),
           )
+        : draft.deletedFiles.length > 0 &&
+            baseline.captureStatus === "complete" &&
+            actual.captureStatus === "complete"
+          ? draft.deletedFiles.map((deletedFile) =>
+              buildFindingEvidence(
+                data.manifest.taskId,
+                baseline,
+                actual,
+                findingId,
+                occurredAt,
+                { kind: "deleted_source", deletedFile },
+              ),
+            )
         : [
             buildFindingEvidence(
               data.manifest.taskId,
+              baseline,
               actual,
               findingId,
               occurredAt,
@@ -570,7 +685,7 @@ function makeFindings(
       statement: draft.summary,
       epistemicStatus,
       lifecycleStatus: epistemicStatus === "observed" ? "supported" : "draft",
-      freshness: "current",
+      freshness: draft.deletedFiles.length > 0 ? "changed" : "current",
       sourceSnapshotId: actual.snapshotId,
       evidenceIds: evidences.map((evidence) => evidence.id),
       findingIds: [findingId],
@@ -724,6 +839,7 @@ export async function checkTaskChange(
     repositoryAnalysis = {
       status: "unknown",
       hunks: [],
+      deletedFiles: [],
       boundaries: [
         {
           code: "unsupported_source",
@@ -746,6 +862,7 @@ export async function checkTaskChange(
       repositoryAnalysis = {
         status: "unknown",
         hunks: [],
+        deletedFiles: [],
         boundaries: [
           {
             code: "unsupported_source",
@@ -759,10 +876,11 @@ export async function checkTaskChange(
       };
     }
   }
-  if (!analysisIsConsistent(repositoryAnalysis, actual)) {
+  if (!analysisIsConsistent(repositoryAnalysis, baseline, actual)) {
     repositoryAnalysis = {
       status: "unknown",
       hunks: [],
+      deletedFiles: [],
       boundaries: [
         {
           code: "unsupported_source",

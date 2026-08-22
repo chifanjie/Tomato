@@ -42,6 +42,7 @@ import type {
   TaskChangeAnalysisInput,
   TaskChangeAnalysisResult,
   TaskChangeHunk,
+  TaskDeletedFileObservation,
   TaskContextData,
   TaskContextLoadInput,
   TaskContextProvider,
@@ -1243,6 +1244,7 @@ implements TaskContextProvider {
       return {
         status: "unknown",
         hunks: [],
+        deletedFiles: [],
         boundaries: [
           changeAnalysisBoundary(
             "unsupported_source",
@@ -1261,6 +1263,7 @@ implements TaskContextProvider {
       return {
         status: "unknown",
         hunks: [],
+        deletedFiles: [],
         boundaries: [
           changeAnalysisBoundary(
             "unsupported_source",
@@ -1275,6 +1278,7 @@ implements TaskContextProvider {
       return {
         status: "unknown",
         hunks: [],
+        deletedFiles: [],
         boundaries: [
           changeAnalysisBoundary(
             "baseline_overlay_unavailable",
@@ -1295,6 +1299,7 @@ implements TaskContextProvider {
       return {
         status: "unknown",
         hunks: [],
+        deletedFiles: [],
         boundaries: [
           changeAnalysisBoundary(
             "head_mismatch",
@@ -1315,6 +1320,9 @@ implements TaskContextProvider {
     const includesIntentToAddChange = actual.data.changes.some(
       (change) =>
         change.source === "unstaged" && change.kind === "added",
+    );
+    const includesDeletedChange = actual.data.changes.some(
+      (change) => change.kind === "deleted",
     );
     const livePaths = new Set(
       actual.data.changes.map((change) => change.path),
@@ -1359,6 +1367,7 @@ implements TaskContextProvider {
       return {
         status: "unknown",
         hunks: [],
+        deletedFiles: [],
         boundaries: [
           changeAnalysisBoundary(
             "unsupported_source",
@@ -1378,6 +1387,7 @@ implements TaskContextProvider {
       return {
         status: "unknown",
         hunks: [],
+        deletedFiles: [],
         boundaries: [
           changeAnalysisBoundary(
             "unsupported_source",
@@ -1412,6 +1422,7 @@ implements TaskContextProvider {
       return {
         status: "unknown",
         hunks: [],
+        deletedFiles: [],
         boundaries: [
           changeAnalysisBoundary(
             "unsupported_source",
@@ -1422,8 +1433,62 @@ implements TaskContextProvider {
         ],
       };
     }
+    const liveDeletedChanges =
+      includesDeletedChange &&
+      !includesStagedChange &&
+      !includesUntrackedChange &&
+      !includesIntentToAddChange &&
+      actual.data.changes.length >= 1 &&
+      actual.data.changes.length <= MAX_BOUNDED_CHANGE_PATHS &&
+      livePaths.size === actual.data.changes.length &&
+      actual.data.changes.every(
+        (change) =>
+          change.source === "unstaged" &&
+          ((change.kind === "modified" && change.contentDigest !== undefined) ||
+            (change.kind === "deleted" && change.contentDigest === undefined)),
+      )
+        ? [...actual.data.changes].sort((left, right) =>
+            compareUnicodeCodeUnits(left.path, right.path),
+          )
+        : undefined;
+    if (includesDeletedChange && liveDeletedChanges === undefined) {
+      return {
+        status: "unknown",
+        hunks: [],
+        deletedFiles: [],
+        boundaries: [
+          changeAnalysisBoundary(
+            "unsupported_source",
+            "Alpha live deletion analysis requires one to sixteen unique unstaged modified or deleted paths, including at least one deleted path and no other changes.",
+            undefined,
+            actualChangeIds,
+          ),
+        ],
+      };
+    }
+    if (
+      liveDeletedChanges !== undefined &&
+      actual.data.indexDigest !== baseline.data.indexDigest
+    ) {
+      return {
+        status: "unknown",
+        hunks: [],
+        deletedFiles: [],
+        boundaries: [
+          changeAnalysisBoundary(
+            "content_changed",
+            "Live deletion analysis requires the exact clean baseline Index.",
+            undefined,
+            actualChangeIds,
+          ),
+        ],
+      };
+    }
     const boundedBatchChanges =
-      stagedChanges ?? liveUntrackedChanges ?? liveIntentToAddChanges;
+      stagedChanges ??
+      liveUntrackedChanges ??
+      liveIntentToAddChanges ??
+      liveDeletedChanges;
     const pureUnstagedChanges =
       !includesStagedChange &&
       !includesUntrackedChange &&
@@ -1446,6 +1511,7 @@ implements TaskContextProvider {
       return {
         status: "unknown",
         hunks: [],
+        deletedFiles: [],
         boundaries: [
           changeAnalysisBoundary(
             "unsafe_path",
@@ -1453,7 +1519,9 @@ implements TaskContextProvider {
               ? "A staged repository path is unsafe for exact Git index lookup."
               : liveUntrackedChanges !== undefined
                 ? "A live untracked repository path is unsafe for exact Git analysis."
-                : "A live intent-to-add repository path is unsafe for exact Git analysis.",
+                : liveIntentToAddChanges !== undefined
+                  ? "A live intent-to-add repository path is unsafe for exact Git analysis."
+                  : "A live deleted repository path is unsafe for exact Git analysis.",
             undefined,
             actualChangeIds,
           ),
@@ -1475,6 +1543,7 @@ implements TaskContextProvider {
       return {
         status: "unknown",
         hunks: [],
+        deletedFiles: [],
         boundaries: [
           changeAnalysisBoundary(
             "symbol_mapping_unknown",
@@ -1495,6 +1564,7 @@ implements TaskContextProvider {
         return {
           status: "unknown",
           hunks: [],
+          deletedFiles: [],
           boundaries: [
             changeAnalysisBoundary(
               fence.code,
@@ -1514,6 +1584,7 @@ implements TaskContextProvider {
       changesByPath.set(change.path, changes);
     }
     const hunks: TaskChangeHunk[] = [];
+    const deletedFiles: TaskDeletedFileObservation[] = [];
     const boundaries: TaskChangeAnalysisBoundary[] = [];
     let boundedSemanticBytes = 0;
     for (const filePath of [...changesByPath.keys()].sort(compareUnicodeCodeUnits)) {
@@ -1536,9 +1607,15 @@ implements TaskContextProvider {
                 (changes[0]!.source === "unstaged" &&
                   (changes[0]!.kind === "added" ||
                     changes[0]!.kind === "modified"))
+              : liveDeletedChanges !== undefined
+                ? changes[0]!.source === "unstaged" &&
+                  (changes[0]!.kind === "modified" ||
+                    changes[0]!.kind === "deleted")
               : changes[0]!.source === "unstaged" &&
                 changes[0]!.kind === "modified") &&
-        changes[0]!.contentDigest !== undefined;
+        (changes[0]!.kind === "deleted"
+          ? changes[0]!.contentDigest === undefined
+          : changes[0]!.contentDigest !== undefined);
       if (!supported) {
         boundaries.push(
           changeAnalysisBoundary(
@@ -1549,11 +1626,145 @@ implements TaskContextProvider {
                 ? "Alpha staged line analysis only supports unique staged modified or added paths."
                 : liveUntrackedChanges !== undefined
                   ? "Alpha live untracked analysis only supports unique untracked added or unstaged modified paths."
-                  : "Alpha live intent-to-add analysis only supports unique unstaged added, unstaged modified, or untracked added paths.",
+                  : liveIntentToAddChanges !== undefined
+                    ? "Alpha live intent-to-add analysis only supports unique unstaged added, unstaged modified, or untracked added paths."
+                    : "Alpha live deletion analysis only supports unique unstaged modified or deleted paths.",
             filePath,
             ids,
           ),
         );
+        continue;
+      }
+      if (changes[0]!.kind === "deleted") {
+        let baselineBytes: Buffer;
+        let indexBytes: Buffer;
+        try {
+          const currentFile = await openVerifiedFile(
+            this.#canonicalRoot,
+            filePath,
+            {
+              allowMissing: true,
+              readBytes: false,
+              maxBytes: CHANGE_ANALYSIS_LIMITS.maxFileBytes,
+            },
+          );
+          if (currentFile !== undefined) {
+            boundaries.push(
+              changeAnalysisBoundary(
+                "content_changed",
+                "The deleted worktree path exists after the actual Snapshot capture.",
+                filePath,
+                ids,
+              ),
+            );
+            continue;
+          }
+          [baselineBytes, indexBytes] = await Promise.all([
+            readGitBlob(
+              this.#canonicalRoot,
+              baseline.data.headCommit,
+              filePath,
+            ),
+            readGitIndexBlob(this.#canonicalRoot, filePath),
+          ]);
+        } catch (error) {
+          boundaries.push(
+            changeAnalysisBoundary(
+              error instanceof RepositoryTaskContextProviderError &&
+                error.code === "unsafe_repository_path"
+                ? "unsafe_path"
+                : error instanceof RangeError
+                  ? "budget_exhausted"
+                  : "unsupported_source",
+              "The deleted path could not be proven against the exact baseline HEAD, Index, and worktree.",
+              filePath,
+              ids,
+            ),
+          );
+          continue;
+        }
+        if (!baselineBytes.equals(indexBytes)) {
+          boundaries.push(
+            changeAnalysisBoundary(
+              "content_changed",
+              "The current Index blob no longer matches the exact baseline bytes for the deleted path.",
+              filePath,
+              ids,
+            ),
+          );
+          continue;
+        }
+        boundedSemanticBytes += baselineBytes.byteLength;
+        if (boundedSemanticBytes > MAX_BOUNDED_SEMANTIC_BYTES) {
+          boundaries.push(
+            changeAnalysisBoundary(
+              "budget_exhausted",
+              "Live deletion semantic bytes exceeded the fixed aggregate Alpha budget.",
+              filePath,
+              ids,
+            ),
+          );
+          break;
+        }
+        const diff = deterministicLineDiff({
+          baselineSnapshotId: baseline.data.snapshotId,
+          actualSnapshotId: actual.data.snapshotId,
+          filePath,
+          before: baselineBytes,
+          after: Buffer.alloc(0),
+        });
+        if (!diff.ok) {
+          boundaries.push(
+            changeAnalysisBoundary(
+              diff.code,
+              diff.code === "budget_exhausted"
+                ? "Deterministic deletion analysis exceeded its fixed budget."
+                : "The deleted baseline file is binary or is not valid UTF-8.",
+              filePath,
+              ids,
+            ),
+          );
+          continue;
+        }
+        const deletionHunk = diff.hunks[0];
+        if (
+          diff.hunks.length !== 1 ||
+          deletionHunk?.oldLineRange === undefined ||
+          deletionHunk.newLineRange !== undefined
+        ) {
+          boundaries.push(
+            changeAnalysisBoundary(
+              "unsupported_source",
+              "An empty or non-textual deletion has no exact baseline source range in the Alpha profile.",
+              filePath,
+              ids,
+            ),
+          );
+          continue;
+        }
+        if (
+          hunks.length + deletedFiles.length + 1 >
+          CHANGE_ANALYSIS_LIMITS.maxHunks
+        ) {
+          boundaries.push(
+            changeAnalysisBoundary(
+              "budget_exhausted",
+              "Live deletion observations exceeded the fixed aggregate Alpha budget.",
+              filePath,
+              ids,
+            ),
+          );
+          break;
+        }
+        deletedFiles.push({
+          id: deletionHunk.id,
+          actualChangeIds: [...ids].sort(compareUnicodeCodeUnits),
+          filePath,
+          oldLineRange: [...deletionHunk.oldLineRange] as [number, number],
+          contentHash: `sha256:${createHash("sha256")
+            .update(baselineBytes)
+            .digest("hex")}`,
+        });
         continue;
       }
       let actualFile: VerifiedFile;
@@ -1711,7 +1922,9 @@ implements TaskContextProvider {
                 ? "Staged semantic bytes exceeded the fixed aggregate Alpha budget."
                 : liveUntrackedChanges !== undefined
                   ? "Live untracked semantic bytes exceeded the fixed aggregate Alpha budget."
-                  : "Live intent-to-add semantic bytes exceeded the fixed aggregate Alpha budget.",
+                  : liveIntentToAddChanges !== undefined
+                    ? "Live intent-to-add semantic bytes exceeded the fixed aggregate Alpha budget."
+                    : "Live deletion semantic bytes exceeded the fixed aggregate Alpha budget.",
               filePath,
               ids,
             ),
@@ -1794,7 +2007,8 @@ implements TaskContextProvider {
       } else {
         if (
           boundedBatchChanges !== undefined &&
-          hunks.length + pathHunks.length > CHANGE_ANALYSIS_LIMITS.maxHunks
+          hunks.length + deletedFiles.length + pathHunks.length >
+            CHANGE_ANALYSIS_LIMITS.maxHunks
         ) {
           boundaries.push(
             changeAnalysisBoundary(
@@ -1803,7 +2017,9 @@ implements TaskContextProvider {
                 ? "Staged line hunks exceeded the fixed aggregate Alpha budget."
                 : liveUntrackedChanges !== undefined
                   ? "Live untracked line hunks exceeded the fixed aggregate Alpha budget."
-                  : "Live intent-to-add line hunks exceeded the fixed aggregate Alpha budget.",
+                  : liveIntentToAddChanges !== undefined
+                    ? "Live intent-to-add line hunks exceeded the fixed aggregate Alpha budget."
+                    : "Live deletion line hunks exceeded the fixed aggregate Alpha budget.",
               filePath,
               ids,
             ),
@@ -1823,6 +2039,7 @@ implements TaskContextProvider {
         return {
           status: "unknown",
           hunks: [],
+          deletedFiles: [],
           boundaries: [
             changeAnalysisBoundary(
               fence.code,
@@ -1845,6 +2062,7 @@ implements TaskContextProvider {
         return {
           status: "unknown",
           hunks: [],
+          deletedFiles: [],
           boundaries: [
             changeAnalysisBoundary(
               primary.code,
@@ -1858,6 +2076,10 @@ implements TaskContextProvider {
     }
 
     hunks.sort(compareTaskChangeHunks);
+    deletedFiles.sort((left, right) =>
+      compareUnicodeCodeUnits(left.filePath, right.filePath) ||
+      compareUnicodeCodeUnits(left.id, right.id),
+    );
     boundaries.sort((left, right) =>
       compareUnicodeCodeUnits(left.filePath ?? "", right.filePath ?? "") ||
       compareUnicodeCodeUnits(left.code, right.code) ||
@@ -1867,10 +2089,11 @@ implements TaskContextProvider {
       status:
         boundaries.length === 0
           ? "complete"
-          : hunks.length === 0
+          : hunks.length === 0 && deletedFiles.length === 0
             ? "unknown"
             : "partial",
       hunks,
+      deletedFiles,
       boundaries,
     };
   }

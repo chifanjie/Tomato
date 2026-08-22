@@ -3436,7 +3436,12 @@ describe("TaskEngine persistent integration", () => {
         },
         async analyzeTaskChanges() {
           analysisCalls += 1;
-          return { status: "complete", hunks: [], boundaries: [] };
+          return {
+            status: "complete",
+            hunks: [],
+            deletedFiles: [],
+            boundaries: [],
+          };
         },
       },
     });
@@ -3752,6 +3757,7 @@ describe("TaskEngine persistent integration", () => {
                 contentHash: SOURCE_DIGEST,
               },
             ],
+            deletedFiles: [],
             boundaries: [],
           };
         },
@@ -3867,5 +3873,234 @@ describe("TaskEngine persistent integration", () => {
       nodeIds: ["task-handler"],
       contentHash: SOURCE_DIGEST,
     });
+  });
+
+  it("keeps a same-path deletion unplanned and binds its Evidence to baseline bytes", async () => {
+    const { store } = await openStore();
+    const deletedDigest =
+      "sha256:bb103bae86db4b319ce6ec4b17e5c4547d061a07a3b4a08e49308579dcaa4864";
+    const deletedGraph: KnowledgeGraph = {
+      ...graphFixture(),
+      nodes: [
+        node("removed-handler", "RemovedHandler", "src/removed.ts", {
+          lineRange: [1, 1],
+        }),
+      ],
+      edges: [],
+    };
+    const taskEngine = engine(store, {
+      contextProvider: {
+        async loadTaskContext() {
+          return {
+            graph: deletedGraph,
+            existingFilePaths: ["src/removed.ts"],
+            sourceEvidence: [
+              {
+                nodeId: "removed-handler",
+                filePath: "src/removed.ts",
+                lineRange: [1, 1] as [number, number],
+                contentHash: deletedDigest,
+                commit: "a".repeat(40),
+                kind: "source" as const,
+              },
+            ],
+          };
+        },
+        async analyzeTaskChanges() {
+          return {
+            status: "complete" as const,
+            hunks: [],
+            deletedFiles: [
+              {
+                id: "deleted-file:removed-handler",
+                actualChangeIds: ["change:deleted-handler"],
+                filePath: "src/removed.ts",
+                oldLineRange: [1, 1] as [number, number],
+                contentHash: deletedDigest,
+              },
+            ],
+            boundaries: [],
+          };
+        },
+      },
+    });
+    const built = await taskEngine.buildTaskBrief(
+      {
+        ...buildInput("deleted-file-check"),
+        task: "Remove the RemovedHandler implementation.",
+        scope: ["src/removed.ts"],
+        maxCandidates: 1,
+      },
+      auth(),
+    );
+    const deletedPlan = built.brief.plannedChanges.find(
+      (change) => change.filePath === "src/removed.ts",
+    );
+    expect(deletedPlan).toBeDefined();
+    expect(deletedPlan?.symbolId).toBe("removed-handler");
+
+    let revision = built.task.revision;
+    for (const [action, key] of [
+      [
+        { type: "confirm_goal", claimId: built.brief.goalClaimId },
+        "deleted-confirm-goal",
+      ],
+      [
+        {
+          type: "confirm_acceptance_criteria",
+          claimIds: built.brief.acceptanceClaimIds,
+        },
+        "deleted-confirm-acceptance",
+      ],
+      [
+        {
+          type: "confirm_plan",
+          plannedChangeIds: built.brief.plannedChanges.map(
+            (change) => change.id,
+          ),
+        },
+        "deleted-confirm-plan",
+      ],
+      [
+        { type: "transition_status", to: "planned" },
+        "deleted-transition-planned",
+      ],
+      [
+        { type: "transition_status", to: "in_progress" },
+        "deleted-transition-progress",
+      ],
+    ] as const) {
+      const result = await taskEngine.updateTask(
+        {
+          taskId: built.task.taskId,
+          action,
+          expectedRevision: revision,
+          idempotencyKey: key,
+          actor: ACTOR,
+        },
+        auth(),
+      );
+      revision = result.task.revision;
+    }
+
+    const base = RepositorySnapshotArtifactV1Schema.parse(
+      await repositorySnapshot(
+        "snapshot:deleted-handler",
+        "2026-07-29T09:00:00.000Z",
+        "a".repeat(40),
+      ),
+    );
+    const deletedPayload = {
+      ...base.payload,
+      changes: [
+        {
+          id: "change:deleted-handler",
+          path: "src/removed.ts",
+          source: "unstaged" as const,
+          kind: "deleted" as const,
+        },
+      ],
+    };
+    await store.persistArtifact(
+      RepositorySnapshotArtifactV1Schema.parse({
+        ...base,
+        contentDigest: sha256CanonicalJson(deletedPayload),
+        payload: deletedPayload,
+      }),
+    );
+    await publishPulseForSnapshot(
+      store,
+      "snapshot:deleted-handler",
+      "a".repeat(40),
+    );
+    const captured = await taskEngine.updateTask(
+      {
+        taskId: built.task.taskId,
+        action: { type: "transition_status", to: "check_required" },
+        expectedRevision: revision,
+        idempotencyKey: "deleted-transition-check",
+        actor: ACTOR,
+      },
+      auth(),
+    );
+    const checked = await taskEngine.checkChange(
+      {
+        taskId: built.task.taskId,
+        actualSnapshotId: "snapshot:deleted-handler",
+        includeWorktree: true,
+        expectedRevision: captured.task.revision,
+        idempotencyKey: "deleted-change-check",
+        actor: ACTOR,
+      },
+      auth(["task:update"]),
+    );
+    const cannotDetermine = checked.changeCheck.findings.find(
+      (finding) =>
+        finding.type === "cannot_determine" &&
+        finding.plannedChangeIds.includes(deletedPlan!.id),
+    );
+    const unplannedDeletion = checked.changeCheck.findings.find(
+      (finding) => finding.type === "unplanned_change",
+    );
+    expect(cannotDetermine).toMatchObject({
+      blocking: true,
+      plannedChangeIds: [deletedPlan!.id],
+      actualChangeIds: ["change:deleted-handler"],
+    });
+    expect(unplannedDeletion).toMatchObject({
+      blocking: true,
+      plannedChangeIds: [],
+      actualChangeIds: ["change:deleted-handler"],
+    });
+    expect(
+      checked.changeCheck.findings.map((finding) => finding.type).sort(),
+    ).toEqual(["cannot_determine", "unplanned_change"]);
+    expect(checked.changeCheck.findings).toHaveLength(2);
+    expect(checked.changeCheck.findings.some(
+      (finding) =>
+        finding.type === "planned_completed" ||
+        finding.type === "possible_omission",
+    )).toBe(false);
+    expect(unplannedDeletion?.evidenceIds).toHaveLength(1);
+
+    const persisted = await store.readTaskBundle(built.task.taskId);
+    if (!("brief" in persisted.bundle) || unplannedDeletion === undefined) {
+      throw new TypeError("The deletion Check must remain contextual.");
+    }
+    const deletionEvidence = persisted.bundle.evidence.find(
+      (evidence) => unplannedDeletion.evidenceIds.includes(evidence.id),
+    );
+    if (deletionEvidence === undefined) {
+      throw new TypeError("The deletion Finding must retain its baseline Evidence.");
+    }
+    expect(deletionEvidence).toEqual(expect.objectContaining({
+      kind: "source",
+      epistemicStatus: "observed",
+      freshness: "changed",
+      freshnessReason:
+        "The source existed at the Task baseline and is absent from the exact actual Snapshot.",
+      observedAtSnapshotId: built.task.baselineSnapshotId,
+      filePath: "src/removed.ts",
+      lineRange: [1, 1],
+      commit: "a".repeat(40),
+      nodeIds: [],
+      contentHash: deletedDigest,
+    }));
+    const deletionFindingClaims = persisted.bundle.claims.filter(
+      (claim) =>
+        claim.kind === "finding" &&
+        unplannedDeletion.claimIds.includes(claim.id) &&
+        claim.findingIds.includes(unplannedDeletion.id),
+    );
+    expect(deletionFindingClaims).toHaveLength(1);
+    const deletionFindingClaim = deletionFindingClaims[0];
+    expect(deletionFindingClaim).toEqual(expect.objectContaining({
+      epistemicStatus: "observed",
+      lifecycleStatus: "supported",
+      freshness: "changed",
+      sourceSnapshotId: "snapshot:deleted-handler",
+      findingIds: [unplannedDeletion.id],
+      evidenceIds: [deletionEvidence.id],
+    }));
   });
 });

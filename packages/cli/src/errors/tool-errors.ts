@@ -6,6 +6,9 @@ import {
   type ToolErrorEnvelopeV1,
   type WorkspaceBindingReasonV1,
 } from "@understand-code/contracts/mcp";
+import {
+  createProviderUnavailableToolErrorV1,
+} from "@understand-code/durable-object-provider-contracts/provider-error";
 import { z } from "zod";
 
 export class ToolFailure extends Error {
@@ -27,6 +30,13 @@ export function toolError(
     content: [{ type: "text", text }],
     structuredContent: { error },
   });
+}
+
+export function strongStoreUnavailableFailure(): McpToolErrorResultV1 {
+  return toolError(
+    createProviderUnavailableToolErrorV1("unavailable"),
+    "The strong Store is unavailable. Run Doctor for details.",
+  );
 }
 
 export function workspaceBindingFailure(

@@ -1,16 +1,26 @@
 import assert from "node:assert/strict";
-import { spawn, execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
-import { createInterface } from "node:readline";
+import {
+  access,
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createInterface } from "node:readline";
+import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { test } from "node:test";
-
-import { launchBrowser, resolveBrowserExecutable } from "./browser-harness.mjs";
 
 const execFileAsync = promisify(execFile);
 const packageRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -20,8 +30,6 @@ const PLUGIN_NAME = "understand-code";
 const MARKETPLACE_NAME = "understand-code-alpha";
 const LIFECYCLE_V2_VERSION = "0.1.0-preview.2+codex.lifecycle-v2";
 const INITIAL_SOURCE = "export function alpha() { return true; }\n";
-const VERIFIED_SOURCE = "export function alpha() { return 'verified'; }\n";
-const ALPHA_NODE_ID = "function:src/index.ts:alpha";
 const HOST_DOCTOR_CHECK_IDS = [
   "host_cli",
   "plugin_registration",
@@ -42,19 +50,104 @@ const EXPECTED_TOOL_NAMES = [
   "trace_impact",
   "refresh_index",
 ];
+const EXPECTED_PUBLIC_MUTATION_FAILURE = {
+  isError: true,
+  content: [{
+    type: "text",
+    text: "The strong Store is unavailable. Run Doctor for details.",
+  }],
+  structuredContent: {
+    error: {
+      schemaVersion: 1,
+      code: "provider_unavailable",
+      details: { reason: "unavailable" },
+    },
+  },
+};
+const CANDIDATE_MANIFEST_FILE = "understand-code-alpha-candidate.json";
+const CANDIDATE_SCHEMA_FILE = "understand-code-alpha-candidate-v1.schema.json";
+const CANDIDATE_CHECKSUM_FILE = "SHA256SUMS";
 
 function contentDigest(bytes) {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
-function bodyContains(value) {
-  return `document.body?.innerText?.includes(${JSON.stringify(value)}) === true`;
-}
-
-function expectedReactEntry(indexHtml) {
-  const match = indexHtml.match(/<script\b[^>]*\bsrc=["'](?<source>\/assets\/index-[A-Za-z0-9_-]+\.js)["'][^>]*>/iu);
-  assert.ok(match?.groups?.source, "the active Host cache Dashboard must name one hashed React entry asset");
-  return match.groups.source;
+async function verifiedCandidateSubject(candidateDirectory) {
+  assert.equal(
+    path.isAbsolute(candidateDirectory) &&
+      path.normalize(candidateDirectory) === candidateDirectory,
+    true,
+    "verified candidate directory must be canonical and absolute",
+  );
+  const [candidateRoot, candidateMetadata] = await Promise.all([
+    realpath(candidateDirectory),
+    lstat(candidateDirectory),
+  ]);
+  assert.equal(candidateRoot, candidateDirectory);
+  assert.equal(candidateMetadata.isDirectory(), true);
+  assert.equal(candidateMetadata.isSymbolicLink(), false);
+  const names = (await readdir(candidateRoot)).sort();
+  const tarballs = names.filter((name) => name.endsWith(".tgz"));
+  assert.equal(tarballs.length, 1, "verified candidate must contain one tgz");
+  assert.deepEqual(
+    names,
+    [
+      CANDIDATE_CHECKSUM_FILE,
+      CANDIDATE_MANIFEST_FILE,
+      CANDIDATE_SCHEMA_FILE,
+      tarballs[0],
+    ].sort(),
+  );
+  const tarballPath = path.join(candidateRoot, tarballs[0]);
+  const [tarballMetadata, tarballBytes, manifestBytes, schemaBytes, checksumBytes] =
+    await Promise.all([
+      lstat(tarballPath),
+      readFile(tarballPath),
+      readFile(path.join(candidateRoot, CANDIDATE_MANIFEST_FILE)),
+      readFile(path.join(candidateRoot, CANDIDATE_SCHEMA_FILE)),
+      readFile(path.join(candidateRoot, CANDIDATE_CHECKSUM_FILE)),
+    ]);
+  assert.equal(tarballMetadata.isFile(), true);
+  assert.equal(tarballMetadata.isSymbolicLink(), false);
+  const manifest = JSON.parse(manifestBytes.toString("utf8"));
+  assert.equal(manifest.schemaVersion, "understand-code-alpha-candidate-v1");
+  assert.equal(manifest.disposition, "unsigned_alpha_candidate");
+  assert.equal(manifest.releaseReady, false);
+  assert.equal(manifest.package?.name, "@understand-code/preview");
+  assert.match(manifest.package?.version ?? "", /^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$/u);
+  assert.equal(manifest.source?.clean, true);
+  assert.match(manifest.source?.commit ?? "", /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u);
+  assert.match(manifest.source?.tree ?? "", /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u);
+  if (process.env.UNDERSTAND_CODE_EXPECTED_CANDIDATE_COMMIT !== undefined) {
+    assert.equal(
+      manifest.source.commit,
+      process.env.UNDERSTAND_CODE_EXPECTED_CANDIDATE_COMMIT,
+    );
+  }
+  if (process.env.UNDERSTAND_CODE_EXPECTED_CANDIDATE_TREE !== undefined) {
+    assert.equal(
+      manifest.source.tree,
+      process.env.UNDERSTAND_CODE_EXPECTED_CANDIDATE_TREE,
+    );
+  }
+  assert.deepEqual(manifest.subject, {
+    file: tarballs[0],
+    mediaType: "application/vnd.npm.package+gzip",
+    bytes: tarballBytes.byteLength,
+    sha256: contentDigest(tarballBytes),
+  });
+  const checksumLines = [
+    [CANDIDATE_MANIFEST_FILE, manifestBytes],
+    [CANDIDATE_SCHEMA_FILE, schemaBytes],
+    [tarballs[0], tarballBytes],
+  ]
+    .sort(([left], [right]) => left.localeCompare(right, "en"))
+    .map(([name, bytes]) => `${contentDigest(bytes).slice("sha256:".length)}  ${name}`);
+  assert.deepEqual(
+    checksumBytes.toString("utf8").trimEnd().split("\n"),
+    checksumLines,
+  );
+  return { manifest, tarballPath };
 }
 
 function execBounded(command, args, options = {}) {
@@ -79,11 +172,15 @@ async function isExecutable(candidate) {
 async function findExecutable(explicit, candidates, name) {
   if (explicit !== undefined) {
     const resolved = path.resolve(explicit);
-    assert.equal(await isExecutable(resolved), true, `${name} override must name an executable`);
+    assert.equal(
+      await isExecutable(resolved),
+      true,
+      `${name} override must name an executable`,
+    );
     return resolved;
   }
   for (const candidate of candidates) {
-    if (await isExecutable(candidate)) return await realpath(candidate);
+    if (await isExecutable(candidate)) return realpath(candidate);
   }
   try {
     const located = await execBounded("sh", ["-c", `command -v ${name}`], {
@@ -91,9 +188,9 @@ async function findExecutable(explicit, candidates, name) {
       timeout: 5_000,
     });
     const resolved = located.stdout.trim();
-    if (await isExecutable(resolved)) return await realpath(resolved);
+    if (await isExecutable(resolved)) return realpath(resolved);
   } catch {
-    // The release gate can explicitly require Host CLIs; ordinary package CI may not carry them.
+    // The release gate explicitly requires Host CLIs; ordinary package CI may not.
   }
   return null;
 }
@@ -118,21 +215,32 @@ function cleanHostEnvironment(home, extra = {}) {
   };
 }
 
-async function runInstalledHostDoctor({ installedPackageRoot, host, version, cwd, env, expectedStatus }) {
+async function runInstalledHostDoctor({
+  installedPackageRoot,
+  host,
+  version,
+  cwd,
+  env,
+  expectedStatus,
+}) {
   const executable = path.join(installedPackageRoot, "dist/understand-code.mjs");
   let stdout;
   let exitCode = 0;
   try {
-    stdout = (await execBounded(process.execPath, [executable, "doctor", "--host", host], {
-      cwd,
-      env,
-      encoding: "utf8",
-    })).stdout;
+    stdout = (await execBounded(
+      process.execPath,
+      [executable, "doctor", "--host", host],
+      { cwd, env, encoding: "utf8" },
+    )).stdout;
   } catch (error) {
     exitCode = error?.code;
     stdout = error?.stdout;
   }
-  assert.equal(exitCode, expectedStatus === "healthy" ? 0 : 1, `${host} Doctor exit code`);
+  assert.equal(
+    exitCode,
+    expectedStatus === "healthy" ? 0 : 1,
+    `${host} Doctor exit code`,
+  );
   assert.equal(typeof stdout, "string", `${host} Doctor must emit one JSON result`);
   const result = JSON.parse(stdout);
   assert.deepEqual(
@@ -163,11 +271,20 @@ async function runInstalledHostDoctor({ installedPackageRoot, host, version, cwd
   assert.deepEqual(result.checks.map(({ id }) => id), HOST_DOCTOR_CHECK_IDS);
   if (expectedStatus === "healthy") {
     assert.equal(result.hostRegistration, "registered");
-    assert.equal(result.checks.every(({ status, code }) => status === "pass" && code === "ok"), true);
+    assert.equal(
+      result.checks.every(
+        ({ status: checkStatus, code }) =>
+          checkStatus === "pass" && code === "ok",
+      ),
+      true,
+    );
   } else {
     assert.equal(result.hostRegistration, "not_registered");
     assert.deepEqual(
-      result.checks.map(({ status, code }) => ({ status, code })),
+      result.checks.map(({ status: checkStatus, code }) => ({
+        status: checkStatus,
+        code,
+      })),
       [
         { status: "pass", code: "ok" },
         { status: "fail", code: "plugin_not_registered" },
@@ -185,7 +302,10 @@ function withTimeout(promise, label, timeoutMs = PROCESS_TIMEOUT_MS) {
   return Promise.race([
     promise,
     new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+      timer = setTimeout(
+        () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
+        timeoutMs,
+      );
     }),
   ]).finally(() => clearTimeout(timer));
 }
@@ -229,7 +349,9 @@ function collectMessages(child) {
     try {
       message = JSON.parse(line);
     } catch (error) {
-      terminalError = new Error(`MCP emitted invalid JSON: ${line}`, { cause: error });
+      terminalError = new Error(`MCP emitted invalid JSON: ${line}`, {
+        cause: error,
+      });
       for (const waiter of waiters.splice(0)) waiter.reject(terminalError);
       return;
     }
@@ -245,7 +367,9 @@ function collectMessages(child) {
     for (const waiter of waiters.splice(0)) waiter.reject(error);
   });
   child.once("exit", (code, signal) => {
-    terminalError = new Error(`MCP exited before the expected response (code=${code}, signal=${signal})`);
+    terminalError = new Error(
+      `MCP exited before the expected response (code=${code}, signal=${signal})`,
+    );
     for (const waiter of waiters.splice(0)) waiter.reject(terminalError);
   });
   return {
@@ -261,27 +385,29 @@ function collectMessages(child) {
   };
 }
 
-async function callTool(child, output, id, name, argumentsValue) {
+async function callToolResult(child, output, id, name, argumentsValue) {
   writeMessage(child, {
     jsonrpc: "2.0",
     id,
     method: "tools/call",
     params: { name, arguments: argumentsValue },
   });
-  const message = await output.waitFor((candidate) => candidate.id === id, `${name} response`);
+  const message = await output.waitFor(
+    (candidate) => candidate.id === id,
+    `${name} response`,
+  );
   assert.equal(message.jsonrpc, "2.0");
-  assert.equal(Object.hasOwn(message, "error"), false, `${name} must return an MCP tool result`);
-  assert.notEqual(message.result.isError, true, `${name} must report success`);
-  assert.equal(message.result.structuredContent.schemaVersion, 1);
+  assert.equal(
+    Object.hasOwn(message, "error"),
+    false,
+    `${name} must return an MCP tool result`,
+  );
   return message.result;
 }
 
 async function createRepository(root, source = INITIAL_SOURCE) {
   await mkdir(path.join(root, "src"), { recursive: true });
-  await writeFile(
-    path.join(root, "src/index.ts"),
-    source,
-  );
+  await writeFile(path.join(root, "src/index.ts"), source);
   const gitEnv = {
     ...repositoryGitEnvironment(),
     GIT_AUTHOR_NAME: "Understand Code Plugin E2E",
@@ -291,7 +417,10 @@ async function createRepository(root, source = INITIAL_SOURCE) {
   };
   await execBounded("git", ["init", "-q"], { cwd: root, env: gitEnv });
   await execBounded("git", ["add", "src/index.ts"], { cwd: root, env: gitEnv });
-  await execBounded("git", ["commit", "-q", "-m", "initial"], { cwd: root, env: gitEnv });
+  await execBounded("git", ["commit", "-q", "-m", "initial"], {
+    cwd: root,
+    env: gitEnv,
+  });
   return realpath(root);
 }
 
@@ -328,29 +457,57 @@ async function absoluteGitPath(root, name) {
 }
 
 async function createLinkedWorktree(primaryRoot, linkedRoot) {
-  await repositoryGit(primaryRoot, ["worktree", "add", "--detach", linkedRoot, "HEAD"]);
+  await repositoryGit(
+    primaryRoot,
+    ["worktree", "add", "--detach", linkedRoot, "HEAD"],
+  );
   return realpath(linkedRoot);
 }
 
 async function resolveMcpServer(installedRoot, host) {
-  const config = JSON.parse(await readFile(path.join(installedRoot, ".mcp.json"), "utf8"));
-  assert.equal(Object.hasOwn(config, "mcpServers"), false, "plugin MCP config must use the official direct server map");
-  assert.equal(Object.hasOwn(config, "mcp_servers"), false, "plugin MCP config must use the official direct server map");
+  const config = JSON.parse(
+    await readFile(path.join(installedRoot, ".mcp.json"), "utf8"),
+  );
+  assert.equal(
+    Object.hasOwn(config, "mcpServers"),
+    false,
+    "plugin MCP config must use the official direct server map",
+  );
+  assert.equal(
+    Object.hasOwn(config, "mcp_servers"),
+    false,
+    "plugin MCP config must use the official direct server map",
+  );
   assert.deepEqual(Object.keys(config), [PLUGIN_NAME]);
   const server = config[PLUGIN_NAME];
   assert.equal(typeof server, "object");
   assert.deepEqual(server.args, ["--host", host]);
   let command = server.command;
   if (host === "claude") {
-    assert.match(command, /^\$\{CLAUDE_PLUGIN_ROOT\}\/[A-Za-z0-9_./-]+$/u);
+    assert.match(
+      command,
+      /^\$\{CLAUDE_PLUGIN_ROOT\}\/[A-Za-z0-9_./-]+$/u,
+    );
     command = command.replace("${CLAUDE_PLUGIN_ROOT}", installedRoot);
   } else {
-    assert.match(command, /^\.\/[A-Za-z0-9_./-]+$/u, "Codex bundled command must be plugin-root relative");
+    assert.match(
+      command,
+      /^\.\/[A-Za-z0-9_./-]+$/u,
+      "Codex bundled command must be plugin-root relative",
+    );
   }
-  assert.doesNotMatch(command, /\$\{[^}]+\}/u, "bundled MCP command must not retain an unknown Host placeholder");
+  assert.doesNotMatch(
+    command,
+    /\$\{[^}]+\}/u,
+    "bundled MCP command must not retain an unknown Host placeholder",
+  );
   const executable = await realpath(path.resolve(installedRoot, command));
   const canonicalRoot = `${await realpath(installedRoot)}${path.sep}`;
-  assert.equal(executable.startsWith(canonicalRoot), true, "bundled command must resolve inside the installed cache root");
+  assert.equal(
+    executable.startsWith(canonicalRoot),
+    true,
+    "bundled command must resolve inside the installed cache root",
+  );
   assert.equal((await stat(executable)).isFile(), true);
   await access(executable, fsConstants.X_OK);
   return { executable, args: server.args ?? [] };
@@ -378,18 +535,39 @@ async function withInstalledMcp(
         clientInfo: { name: clientName, version: "1.0.0" },
       },
     });
-    const initialized = await output.waitFor((message) => message.id === 1, `${clientName} initialize`);
+    const initialized = await output.waitFor(
+      (message) => message.id === 1,
+      `${clientName} initialize`,
+    );
     assert.equal(initialized.result.serverInfo.name, "understand-code");
     assert.equal(initialized.result.serverInfo.version, version);
-    writeMessage(child, { jsonrpc: "2.0", method: "notifications/initialized", params: {} });
-    writeMessage(child, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
-    const listed = await output.waitFor((message) => message.id === 2, `${clientName} tools/list`);
+    writeMessage(child, {
+      jsonrpc: "2.0",
+      method: "notifications/initialized",
+      params: {},
+    });
+    writeMessage(child, {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/list",
+      params: {},
+    });
+    const listed = await output.waitFor(
+      (message) => message.id === 2,
+      `${clientName} tools/list`,
+    );
     assert.equal(Object.hasOwn(listed, "error"), false);
-    assert.deepEqual(listed.result.tools.map((tool) => tool.name), EXPECTED_TOOL_NAMES);
+    assert.deepEqual(
+      listed.result.tools.map((tool) => tool.name),
+      EXPECTED_TOOL_NAMES,
+    );
     assert.equal(await realpath(repositoryRoot), repositoryRoot);
     const result = await exercise({ child, output, server });
     child.stdin.end();
-    assert.deepEqual(await waitForExit(child, `${clientName} clean exit`), [0, null]);
+    assert.deepEqual(
+      await waitForExit(child, `${clientName} clean exit`),
+      [0, null],
+    );
     assert.equal(output.stderr.join(""), "");
     return { server, result };
   } finally {
@@ -397,617 +575,223 @@ async function withInstalledMcp(
   }
 }
 
-async function exerciseInstalledAlpha(options) {
-  const { repositoryRoot, clientName, expectedIndexPath } = options;
-  const sourcePath = path.join(repositoryRoot, "src/index.ts");
-  const sourceBefore = await readFile(sourcePath);
-  const indexPath = await absoluteGitPath(repositoryRoot, "index");
-  assert.equal(indexPath, expectedIndexPath, "Alpha must use the pre-audited linked-worktree index");
-  const indexBefore = createHash("sha256")
-    .update(await readFile(indexPath))
-    .digest("hex");
-  return withInstalledMcp(options, async ({ child, output }) => {
-    const actor = `agent:${clientName}`;
-    let requestId = 3;
-    const initialRefresh = await callTool(child, output, requestId++, "refresh_index", {
-      mode: "full",
-      idempotencyKey: `${clientName}-initial-refresh`,
-      actor,
-    });
-    assert.equal(initialRefresh.structuredContent.result.operation.status, "completed");
-    const initialSnapshotId = initialRefresh.structuredContent.meta.sourceSnapshotId;
-    const repositoryId = initialRefresh.structuredContent.meta.repositoryId;
-    const worktreeId = initialRefresh.structuredContent.meta.worktreeId;
-    for (const [label, value] of [["repositoryId", repositoryId], ["worktreeId", worktreeId]]) {
-      assert.equal(typeof value, "string", `${label} must be a string`);
-      assert.ok(value.length > 0, `${label} must be nonempty`);
-    }
-    const pulse = await callTool(child, output, requestId++, "get_repo_pulse", {});
-    assert.equal(
-      pulse.structuredContent.meta.sourceSnapshotId,
-      initialSnapshotId,
-      "the installed Host plugin must read the exact snapshot it created for the bound repository",
+async function recursiveByteInventory(root) {
+  const inventory = [];
+  async function visit(directory, relativeDirectory) {
+    const entries = await readdir(directory, { withFileTypes: true });
+    entries.sort((left, right) =>
+      left.name < right.name ? -1 : left.name > right.name ? 1 : 0
     );
-    assert.deepEqual(
-      {
-        repositoryId: pulse.structuredContent.meta.repositoryId,
-        worktreeId: pulse.structuredContent.meta.worktreeId,
-      },
-      { repositoryId, worktreeId },
-      "Pulse must retain the exact linked-worktree identity selected during refresh",
-    );
-
-    const built = await callTool(child, output, requestId++, "build_task_brief", {
-      task: "Change the alpha function in src/index.ts and verify its observable behavior.",
-      expectedRevision: 0,
-      idempotencyKey: `${clientName}-brief`,
-      actor,
-      scope: ["src/index.ts"],
-      maxCandidates: 1,
-    });
-    const taskId = built.structuredContent.result.task.taskId;
-    assert.deepEqual(
-      {
-        repositoryId: built.structuredContent.result.task.repositoryId,
-        worktreeId: built.structuredContent.result.task.worktreeId,
-      },
-      { repositoryId, worktreeId },
-      "the Task must bind the exact linked-worktree identity",
-    );
-    const brief = built.structuredContent.result.brief;
-    const readBrief = await callTool(child, output, requestId++, "get_task_brief", {
-      taskId,
-      section: "summary",
-    });
-    assert.equal(readBrief.structuredContent.result.task.taskId, taskId);
-
-    let taskRevision = built.structuredContent.result.task.revision;
-    const updateTask = async (action, idempotencyKey) => {
-      const updated = await callTool(child, output, requestId++, "update_task", {
-        taskId,
-        action,
-        expectedRevision: taskRevision,
-        idempotencyKey,
-        actor,
-      });
-      taskRevision = updated.structuredContent.result.mutation.revision;
-      return updated;
-    };
-    await updateTask(
-      { type: "confirm_goal", claimId: brief.goalClaimId },
-      `${clientName}-confirm-goal`,
-    );
-    await updateTask(
-      { type: "confirm_acceptance_criteria", claimIds: brief.acceptanceClaimIds },
-      `${clientName}-confirm-acceptance`,
-    );
-    assert.equal(brief.plannedChanges.length, 1, "the Brief must contain only the exact alpha plan");
-    assert.deepEqual(
-      {
-        filePath: brief.plannedChanges[0].filePath,
-        symbolId: brief.plannedChanges[0].symbolId,
-      },
-      { filePath: "src/index.ts", symbolId: ALPHA_NODE_ID },
-    );
-    await updateTask(
-      { type: "confirm_plan", plannedChangeIds: brief.plannedChanges.map((change) => change.id) },
-      `${clientName}-confirm-plan`,
-    );
-    await updateTask({ type: "transition_status", to: "planned" }, `${clientName}-planned`);
-    await updateTask({ type: "transition_status", to: "in_progress" }, `${clientName}-in-progress`);
-
-    await writeFile(
-      sourcePath,
-      VERIFIED_SOURCE,
-      "utf8",
-    );
-    assert.notDeepEqual(await readFile(sourcePath), sourceBefore);
-    assert.equal(
-      createHash("sha256")
-        .update(await readFile(indexPath))
-        .digest("hex"),
-      indexBefore,
-      "the external source edit must not mutate the Git index",
-    );
-    const changedRefresh = await callTool(child, output, requestId++, "refresh_index", {
-      mode: "full",
-      expectedSourceSnapshotId: initialSnapshotId,
-      idempotencyKey: `${clientName}-changed-refresh`,
-      actor,
-    });
-    assert.equal(changedRefresh.structuredContent.result.operation.status, "completed");
-    const changedSnapshotId = changedRefresh.structuredContent.meta.sourceSnapshotId;
-    assert.notEqual(changedSnapshotId, initialSnapshotId);
-    assert.deepEqual(
-      {
-        repositoryId: changedRefresh.structuredContent.meta.repositoryId,
-        worktreeId: changedRefresh.structuredContent.meta.worktreeId,
-      },
-      { repositoryId, worktreeId },
-      "the changed Snapshot must retain the exact linked-worktree identity",
-    );
-
-    await updateTask(
-      { type: "transition_status", to: "check_required" },
-      `${clientName}-check-required`,
-    );
-    const checked = await callTool(child, output, requestId++, "check_change", {
-      taskId,
-      actualSnapshotId: changedSnapshotId,
-      includeWorktree: true,
-      expectedRevision: taskRevision,
-      idempotencyKey: `${clientName}-check`,
-      actor,
-    });
-    taskRevision = checked.structuredContent.result.mutation.revision;
-    const changeCheck = checked.structuredContent.result.changeCheck;
-    assert.equal(changeCheck.actualSnapshotId, changedSnapshotId);
-    const plannedChange = brief.plannedChanges[0];
-    const finding = changeCheck.findings.find(
-      (candidate) =>
-        candidate.plannedChangeIds.includes(plannedChange.id) &&
-        candidate.actualChangeIds.length > 0,
-    );
-    assert.ok(finding, `the Check must link actual change evidence to ${plannedChange.id}`);
-    assert.equal(finding.type, "planned_completed");
-    assert.equal(finding.blocking, false);
-    assert.deepEqual(finding.plannedChangeIds, [plannedChange.id]);
-    assert.equal(finding.actualChangeIds.length, 1);
-    assert.equal(finding.evidenceIds.length, 1);
-    assert.deepEqual(
-      changeCheck.findings.filter((finding) => finding.blocking && finding.resolution === undefined),
-      [],
-      "the exact single-file happy path must not auto-accept an unexpected blocking finding",
-    );
-    await updateTask(
-      { type: "transition_status", to: "verification_required" },
-      `${clientName}-verification-required`,
-    );
-
-    const requiredPlanEntries = brief.verificationPlan.filter((entry) => entry.required);
-    assert.ok(requiredPlanEntries.length > 0, "the Brief must require external verification");
-    for (const planEntry of requiredPlanEntries) {
+    for (const entry of entries) {
+      const relativePath = relativeDirectory === ""
+        ? entry.name
+        : `${relativeDirectory}/${entry.name}`;
+      const absolutePath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        inventory.push({
+          relativePath,
+          type: "directory",
+          bytes: null,
+          contentDigest: null,
+        });
+        await visit(absolutePath, relativePath);
+        continue;
+      }
       assert.equal(
-        planEntry.method,
-        "test",
-        "the Node behavior assertion must only satisfy a test verification plan entry",
+        entry.isFile(),
+        true,
+        `managed artifact inventory rejects ${relativePath}`,
       );
+      const bytes = await readFile(absolutePath);
+      inventory.push({
+        relativePath,
+        type: "file",
+        bytes: bytes.length,
+        contentDigest: contentDigest(bytes),
+      });
     }
-    const verificationProgram = [
-      "const { alpha } = await import('./src/index.ts');",
-      "if (alpha() !== 'verified') throw new Error('unexpected alpha result');",
-    ].join(" ");
-    const verificationArgs = ["--input-type=module", "--eval", verificationProgram];
-    const verificationCommand = `node --input-type=module --eval ${JSON.stringify(verificationProgram)}`;
-    const verificationStartedAt = Date.now();
-    const verificationExecution = await execBounded("node", verificationArgs, {
-      cwd: repositoryRoot,
-      encoding: "utf8",
-    });
-    const verificationDurationMs = Date.now() - verificationStartedAt;
-    assert.equal(verificationExecution.stderr, "");
-    const outputDigest = `sha256:${createHash("sha256")
-      .update(`${verificationExecution.stdout}${verificationExecution.stderr}`, "utf8")
-      .digest("hex")}`;
-    const verificationRequests = [];
-    const verificationResults = [];
-    for (const [index, planEntry] of requiredPlanEntries.entries()) {
-      const request = {
-        taskId,
-        record: {
-          verificationPlanEntryId: planEntry.id,
-          kind: "test",
-          status: "passed",
-          command: verificationCommand,
-          exitCode: 0,
-          durationMs: verificationDurationMs,
-          outputDigest,
-          summary: "The installed-Host Node behavior assertion completed successfully.",
-          claimIds: planEntry.acceptanceClaimIds,
-          snapshotId: changedSnapshotId,
-        },
-        expectedRevision: taskRevision,
-        idempotencyKey: `${clientName}-verification-${index}`,
-        actor,
-      };
-      assert.equal(request.record.kind, planEntry.method);
-      assert.equal(request.record.command, verificationCommand);
-      const recorded = await callTool(child, output, requestId++, "record_verification", request);
-      assert.equal(recorded.structuredContent.result.verification.status, "passed");
-      assert.equal(recorded.structuredContent.result.verification.snapshotId, changedSnapshotId);
-      assert.equal(recorded.structuredContent.result.mutation.idempotentReplay, false);
-      taskRevision = recorded.structuredContent.result.mutation.revision;
-      verificationRequests.push(request);
-      verificationResults.push(recorded);
-    }
-    const verified = await updateTask(
-      { type: "transition_status", to: "verified" },
-      `${clientName}-verified`,
-    );
-    assert.equal(verified.structuredContent.result.task.status, "verified");
-    return {
-      taskId,
-      repositoryId,
-      worktreeId,
-      baselineSnapshotId: built.structuredContent.result.task.baselineSnapshotId,
-      changedSnapshotId,
-      verifiedRevision: verified.structuredContent.result.task.revision,
-      finding: {
-        id: finding.id,
-        summary: finding.summary,
-        evidenceId: finding.evidenceIds[0],
-      },
-      verificationRequests,
-      verificationResults,
-    };
-  });
+  }
+  await visit(root, "");
+  return inventory;
 }
 
-async function resumeInstalledAlpha(options, alpha, workbenchSurface) {
-  return withInstalledMcp(options, async ({ child, output, server }) => {
-    let requestId = 3;
-    const resumed = await callTool(child, output, requestId++, "get_task_brief", {
-      taskId: alpha.taskId,
-      section: "summary",
-    });
-    assert.deepEqual(
-      {
-        taskId: resumed.structuredContent.result.task.taskId,
-        repositoryId: resumed.structuredContent.result.task.repositoryId,
-        worktreeId: resumed.structuredContent.result.task.worktreeId,
-        status: resumed.structuredContent.result.task.status,
-        revision: resumed.structuredContent.result.task.revision,
-        baselineSnapshotId: resumed.structuredContent.result.task.baselineSnapshotId,
-        sourceSnapshotId: resumed.structuredContent.meta.sourceSnapshotId,
-      },
-      {
-        taskId: alpha.taskId,
-        repositoryId: alpha.repositoryId,
-        worktreeId: alpha.worktreeId,
-        status: "verified",
-        revision: alpha.verifiedRevision,
-        baselineSnapshotId: alpha.baselineSnapshotId,
-        sourceSnapshotId: alpha.changedSnapshotId,
-      },
-      "every fresh active-cache MCP must resume the exact linked-worktree Task and Snapshot",
-    );
-    for (const [index, request] of alpha.verificationRequests.entries()) {
-      const replayed = await callTool(
-        child,
-        output,
-        requestId++,
-        "record_verification",
-        request,
-      );
-      const original = alpha.verificationResults[index];
-      assert.equal(replayed.structuredContent.result.mutation.idempotentReplay, true);
-      assert.deepEqual(
-        replayed.structuredContent.result.verification,
-        original.structuredContent.result.verification,
-        "an exact replay must return the original Verification record",
-      );
-      assert.deepEqual(
-        replayed.structuredContent.result.mutation,
-        {
-          ...original.structuredContent.result.mutation,
-          idempotentReplay: true,
-        },
-        "an exact replay must not append another Task mutation",
-      );
-    }
-    const afterReplay = await callTool(
-      child,
-      output,
-      requestId++,
-      "get_task_brief",
-      { taskId: alpha.taskId, section: "summary" },
-    );
-    assert.equal(afterReplay.structuredContent.result.task.revision, alpha.verifiedRevision);
-    if (workbenchSurface === undefined) return;
-    const hostLabel = options.host === "codex" ? "Codex" : "Claude";
-    const activeRoot = await realpath(options.installedRoot);
-    assert.equal(
-      server.executable.startsWith(`${activeRoot}${path.sep}`),
-      true,
-      "the Workbench Surface MCP executable must come from the authoritative active Host cache",
-    );
-    const cachedDashboardIndex = await readFile(path.join(activeRoot, "bin/dashboard/index.html"), "utf8");
-    const reactEntry = expectedReactEntry(cachedDashboardIndex);
-    const cachedReactDigest = contentDigest(await readFile(
-      path.join(activeRoot, "bin/dashboard", reactEntry.slice(1)),
-    ));
+async function snapshotManagedArtifactTree(repositoryRoot) {
+  const artifactRoot = path.join(repositoryRoot, ".understand-code");
+  let metadata;
+  try {
+    metadata = await stat(artifactRoot);
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+  assert.equal(metadata.isDirectory(), true, "managed artifact root must be a directory");
+  return recursiveByteInventory(artifactRoot);
+}
 
-    const evidenceRead = await callTool(child, output, requestId++, "get_evidence", {
-      taskId: alpha.taskId,
-      evidenceIds: [alpha.finding.evidenceId],
-      maxExcerptChars: 8_192,
-      pageSize: 1,
-    });
-    assert.deepEqual(evidenceRead.structuredContent.result.missingEvidenceIds, []);
-    assert.equal(evidenceRead.structuredContent.result.evidence.length, 1);
-    const evidence = evidenceRead.structuredContent.result.evidence[0];
-    assert.deepEqual(
-      {
-        id: evidence.id,
-        kind: evidence.kind,
-        freshness: evidence.freshness,
-        filePath: evidence.filePath,
-        lineRange: evidence.lineRange,
-        contentHash: evidence.contentHash,
-        nodeIds: evidence.nodeIds,
-        observedAtSnapshotId: evidence.observedAtSnapshotId,
-      },
-      {
-        id: alpha.finding.evidenceId,
-        kind: "source",
-        freshness: "current",
-        filePath: "src/index.ts",
-        lineRange: [1, 1],
-        contentHash: contentDigest(Buffer.from(VERIFIED_SOURCE, "utf8")),
-        nodeIds: [ALPHA_NODE_ID],
-        observedAtSnapshotId: alpha.changedSnapshotId,
-      },
-      `the fresh ${hostLabel} cache must read the exact source Evidence created through Codex`,
-    );
-
-    const opened = await callTool(child, output, requestId++, "open_workbench", {
-      route: {
-        view: "tasks",
-        taskId: alpha.taskId,
-        section: "planned_changes",
-      },
-      openBrowser: false,
-    });
-    assert.equal(opened.structuredContent.meta.sourceSnapshotId, alpha.changedSnapshotId);
-    const deepLink = opened.structuredContent.result.deepLink;
-    const deepLinkUrl = new URL(deepLink);
-    assert.deepEqual(
-      {
-        protocol: deepLinkUrl.protocol,
-        hostname: deepLinkUrl.hostname,
-        pathname: deepLinkUrl.pathname,
-        view: deepLinkUrl.searchParams.get("view"),
-        taskId: deepLinkUrl.searchParams.get("taskId"),
-        section: deepLinkUrl.searchParams.get("section"),
-      },
-      {
-        protocol: "http:",
-        hostname: "127.0.0.1",
-        pathname: "/workbench",
-        view: "tasks",
-        taskId: alpha.taskId,
-        section: "planned_changes",
-      },
-      "the Host cache must expose the exact loopback Task Workbench route",
-    );
-    assert.equal(
-      /^[1-9][0-9]{0,4}$/u.test(deepLinkUrl.port) && Number(deepLinkUrl.port) <= 65_535,
-      true,
-      "the Workbench deep link must contain a bounded loopback port",
-    );
-    const launchToken = deepLinkUrl.hash.slice(1);
-    assert.equal(
-      launchToken.length >= 32 && launchToken.length <= 256,
-      true,
-      "the Workbench launch fragment must be nonempty and bounded",
-    );
-    assert.equal(
-      /^[A-Za-z0-9_-]+$/u.test(launchToken),
-      true,
-      "the Workbench launch fragment must be base64url",
-    );
-
-    let browser;
-    try {
-      browser = await launchBrowser({
-        executable: workbenchSurface.browserExecutable,
-        userDataDir: workbenchSurface.browserProfile,
-        timeoutMs: 30_000,
-      });
-      await browser.navigate(deepLink);
-      await browser.waitFor(
-        "document.querySelector('[data-testid=\"task-first-workbench\"]') !== null",
-        `${hostLabel} cache React Task Workbench`,
-        30_000,
-      );
-      assert.equal(child.exitCode, null, `the active ${hostLabel} cache MCP must remain alive for the Browser session`);
-      assert.equal(await browser.evaluate("location.hash"), "", "the launch fragment token must be cleared");
-      assert.equal(
-        await browser.evaluate(`document.cookie.split(';').some((part) =>
-          part.trimStart().startsWith('workbench_session='))`),
-        false,
-        "the Workbench session cookie must remain HttpOnly",
-      );
-      const cookieScopeUrl = `${deepLinkUrl.origin}${deepLinkUrl.pathname}${deepLinkUrl.search}`;
-      const sessionCookies = (await browser.getCookies([cookieScopeUrl]))
-        .filter((cookie) => cookie.name === "workbench_session");
-      assert.equal(sessionCookies.length, 1, "the loopback Workbench must set exactly one session cookie");
-      const [sessionCookie] = sessionCookies;
-      assert.deepEqual(
+async function exerciseInstalledMutationLocks(options) {
+  const { repositoryRoot, clientName, expectedIndexPath } = options;
+  const sourcePath = path.join(repositoryRoot, "src/index.ts");
+  const indexPath = await absoluteGitPath(repositoryRoot, "index");
+  assert.equal(
+    indexPath,
+    expectedIndexPath,
+    "the installed plugin must use the pre-audited linked-worktree index",
+  );
+  const [sourceBefore, indexBefore, artifactTreeBefore] = await Promise.all([
+    readFile(sourcePath),
+    readFile(indexPath),
+    snapshotManagedArtifactTree(repositoryRoot),
+  ]);
+  const execution = await withInstalledMcp(
+    options,
+    async ({ child, output }) => {
+      const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+      const snapshotId = `snapshot:${clientName}:strong-store-unavailable`;
+      const baselineSnapshotId =
+        `snapshot:${clientName}:rebase-baseline-strong-store-unavailable`;
+      const publicMutations = [
         {
-          name: sessionCookie.name,
-          domain: sessionCookie.domain,
-          path: sessionCookie.path,
-          httpOnly: sessionCookie.httpOnly,
-          secure: sessionCookie.secure,
-          session: sessionCookie.session,
-          sameSite: sessionCookie.sameSite,
+          name: "refresh_index",
+          arguments: {
+            mode: "full",
+            idempotencyKey: `${clientName}-refresh-locked`,
+            actor: `agent:${clientName}`,
+          },
         },
         {
-          name: "workbench_session",
-          domain: "127.0.0.1",
-          path: "/",
-          httpOnly: true,
-          secure: false,
-          session: true,
-          sameSite: "Strict",
-        },
-        "Chrome must retain the exact loopback HttpOnly Workbench session policy",
-      );
-      assert.equal(
-        sessionCookie.valueLength >= 32 && sessionCookie.valueLength <= 256,
-        true,
-        "the Workbench session cookie value must be nonempty and bounded",
-      );
-      const loadedReactEntry = browser.networkResponses.find((response) => {
-        try {
-          return new URL(response.url).pathname === reactEntry && response.status === 200;
-        } catch {
-          return false;
-        }
-      });
-      assert.ok(loadedReactEntry, `the active ${hostLabel} cache must serve its hashed React entry ${reactEntry}`);
-      const servedReactDigest = await browser.evaluate(`fetch(${JSON.stringify(reactEntry)}, {
-        credentials: 'same-origin',
-      }).then(async (response) => {
-        if (!response.ok) throw new Error('React asset fetch failed: ' + response.status);
-        const digest = await crypto.subtle.digest('SHA-256', await response.arrayBuffer());
-        return 'sha256:' + [...new Uint8Array(digest)]
-          .map((byte) => byte.toString(16).padStart(2, '0')).join('');
-      })`);
-      assert.equal(servedReactDigest, cachedReactDigest, "Chrome must execute the exact active-cache React bytes");
-      await browser.waitFor(bodyContains(alpha.finding.summary), `Codex-created Finding through ${hostLabel} cache`);
-      assert.equal(await browser.evaluate(bodyContains(alpha.changedSnapshotId)), true);
-      const taskArtifacts = await browser.evaluate(`Promise.all([
-        fetch('/tasks/' + encodeURIComponent(${JSON.stringify(alpha.taskId)}) + '/brief.json?section=summary', {
-          credentials: 'same-origin', headers: { accept: 'application/json' },
-        }),
-        fetch('/tasks/' + encodeURIComponent(${JSON.stringify(alpha.taskId)}) + '/change-check.json', {
-          credentials: 'same-origin', headers: { accept: 'application/json' },
-        }),
-      ]).then(async ([brief, check]) => ({
-        brief: { statusCode: brief.status, payload: await brief.json() },
-        check: { statusCode: check.status, payload: await check.json() },
-      }))`);
-      assert.equal(taskArtifacts.brief.statusCode, 200);
-      assert.equal(taskArtifacts.check.statusCode, 200);
-      assert.deepEqual(
-        {
-          taskId: taskArtifacts.brief.payload.task.taskId,
-          status: taskArtifacts.brief.payload.task.status,
-          revision: taskArtifacts.brief.payload.task.revision,
-          latestSnapshotId: taskArtifacts.brief.payload.task.latestSnapshotId,
-          sourceSnapshotId: taskArtifacts.brief.payload.freshness.sourceSnapshotId,
-          current: taskArtifacts.brief.payload.freshness.current,
+          name: "build_task_brief",
+          arguments: {
+            task: "Prepare an installed plugin mutation that must remain locked.",
+            expectedRevision: 0,
+            idempotencyKey: `${clientName}-build-locked`,
+            actor: `agent:${clientName}`,
+            scope: ["src/index.ts"],
+          },
         },
         {
-          taskId: alpha.taskId,
-          status: "verified",
-          revision: alpha.verifiedRevision,
-          latestSnapshotId: alpha.changedSnapshotId,
-          sourceSnapshotId: alpha.changedSnapshotId,
-          current: true,
-        },
-      );
-      assert.equal(taskArtifacts.check.payload.task.taskId, alpha.taskId);
-      assert.deepEqual(taskArtifacts.check.payload.freshness, {
-        sourceSnapshotId: alpha.changedSnapshotId,
-        current: true,
-      });
-      const projectedCheckArtifact = taskArtifacts.check.payload.artifact;
-      assert.equal(projectedCheckArtifact.taskId, alpha.taskId);
-      assert.equal(projectedCheckArtifact.revision, alpha.verifiedRevision);
-      assert.equal(projectedCheckArtifact.sourceSnapshotId, alpha.changedSnapshotId);
-      const projectedFinding = projectedCheckArtifact.payload.findings.find((candidate) =>
-        candidate.id === alpha.finding.id,
-      );
-      assert.ok(projectedFinding, "the cookie-auth Change Check must retain the exact Finding");
-      assert.deepEqual(projectedFinding.evidenceIds, [alpha.finding.evidenceId]);
-
-      await browser.click(`[data-testid="task-finding-open"][data-finding-id="${alpha.finding.id}"]`);
-      await browser.waitFor(
-        `document.querySelector('[data-testid="task-evidence-open"][data-evidence-id="${evidence.id}"]') !== null`,
-        "cross-Host Finding Evidence action",
-      );
-      await browser.click(`[data-testid="task-evidence-open"][data-evidence-id="${evidence.id}"]`);
-      await browser.waitFor(
-        `(() => {
-          const view = document.querySelector('[data-testid="task-evidence-view"], [data-workbench-view="evidence"]');
-          return view?.textContent?.includes(${JSON.stringify(evidence.id)}) === true
-            && view.textContent.includes('src/index.ts')
-            && view.textContent.includes("return 'verified'")
-            && view.textContent.includes(${JSON.stringify(ALPHA_NODE_ID)});
-        })()`,
-        "exact cross-Host Evidence projection",
-        30_000,
-      );
-      const projected = await browser.evaluate(`fetch(
-        '/__workbench/evidence?taskId=' + encodeURIComponent(${JSON.stringify(alpha.taskId)})
-          + '&evidenceId=' + encodeURIComponent(${JSON.stringify(evidence.id)}),
-        { credentials: 'same-origin', headers: { accept: 'application/json' } },
-      ).then(async (response) => ({ statusCode: response.status, payload: await response.json() }))`);
-      assert.equal(projected.statusCode, 200);
-      assert.equal(projected.payload.status, "ready");
-      assert.equal(projected.payload.taskId, alpha.taskId);
-      assert.equal(projected.payload.snapshotId, alpha.changedSnapshotId);
-      assert.equal(projected.payload.evidence.observedAtSnapshotId, alpha.changedSnapshotId);
-      assert.deepEqual(
-        {
-          id: projected.payload.evidence.id,
-          filePath: projected.payload.source.filePath,
-          evidenceLineRange: projected.payload.evidence.lineRange,
-          sourceLineRange: projected.payload.source.lineRange,
-          contentHash: projected.payload.evidence.contentHash,
-          nodeIds: projected.payload.evidence.nodeIds,
-          content: projected.payload.source.content,
+          name: "update_task",
+          arguments: {
+            taskId,
+            action: { type: "transition_status", to: "planned" },
+            expectedRevision: 0,
+            idempotencyKey: `${clientName}-update-locked`,
+            actor: `agent:${clientName}`,
+          },
         },
         {
-          id: evidence.id,
-          filePath: "src/index.ts",
-          evidenceLineRange: [1, 1],
-          sourceLineRange: [1, 1],
-          contentHash: contentDigest(Buffer.from(VERIFIED_SOURCE, "utf8")),
-          nodeIds: [ALPHA_NODE_ID],
-          content: VERIFIED_SOURCE.trimEnd(),
+          label: "update_task refresh_task_context",
+          name: "update_task",
+          arguments: {
+            taskId,
+            action: {
+              type: "refresh_task_context",
+              targetSnapshotId: snapshotId,
+            },
+            expectedRevision: 0,
+            idempotencyKey: `${clientName}-context-refresh-locked`,
+            actor: `agent:${clientName}`,
+          },
         },
-      );
-
-      await browser.click(`[data-testid="task-evidence-open-graph"][data-node-id="${ALPHA_NODE_ID}"]`);
-      await browser.waitFor(
-        "document.querySelector('[aria-label=\"项目图谱\"]') !== null",
-        `${hostLabel} cache Graph surface`,
-        30_000,
-      );
-      await browser.waitFor(
-        `(() => {
-          const expected = ${JSON.stringify(ALPHA_NODE_ID)};
-          return new URL(location.href).searchParams.get('focus') === expected
-            && [...document.querySelectorAll('[data-graph-node-id]')]
-              .some((node) => node.getAttribute('data-graph-node-id') === expected
-                && node.getAttribute('data-selected') === 'true');
-        })()`,
-        `exact alpha Graph focus through ${hostLabel} cache`,
-        30_000,
-      );
-      await browser.clickText('nav[aria-label="主要界面"] button', "知识库");
-      await browser.waitFor(
-        "document.querySelector('[aria-label=\"理解项目的五个阶段\"], [aria-label=\"文档正文\"]') !== null",
-        `${hostLabel} cache Wiki surface`,
-        30_000,
-      );
-      await browser.evaluate(`(() => {
-        const action = document.querySelector('[data-testid="workbench-back-to-task"]');
-        if (!(action instanceof HTMLElement)) throw new Error('Workbench has no return-to-Task action');
-        action.click();
-        return true;
-      })()`);
-      await browser.waitFor(
-        `document.querySelector('[data-testid="task-first-workbench"]')?.textContent?.includes(${JSON.stringify(alpha.finding.summary)}) === true`,
-        `Codex-created Task after ${hostLabel} Graph and Wiki`,
-        30_000,
-      );
-      const returnedRoute = new URL(await browser.evaluate("location.href"));
-      assert.equal(returnedRoute.searchParams.get("taskId"), alpha.taskId);
-      assert.equal(returnedRoute.searchParams.get("findingId"), alpha.finding.id);
-      assert.equal(
-        returnedRoute.searchParams.get("evidenceId"),
-        null,
-        "returning to the Finding must leave the Evidence subview",
-      );
-    } finally {
-      await browser?.close();
-    }
-  });
+        {
+          label: "update_task rebase_task",
+          name: "update_task",
+          arguments: {
+            taskId,
+            action: {
+              type: "rebase_task",
+              targetSnapshotId: snapshotId,
+              newBaselineSnapshotId: baselineSnapshotId,
+              reason: "Strong Store authority is unavailable.",
+            },
+            expectedRevision: 0,
+            idempotencyKey: `${clientName}-context-rebase-locked`,
+            actor: `agent:${clientName}`,
+          },
+        },
+        {
+          name: "check_change",
+          arguments: {
+            taskId,
+            actualSnapshotId: snapshotId,
+            includeWorktree: true,
+            expectedRevision: 0,
+            idempotencyKey: `${clientName}-check-locked`,
+            actor: `agent:${clientName}`,
+          },
+        },
+        {
+          name: "record_verification",
+          arguments: {
+            taskId,
+            record: {
+              verificationPlanEntryId: `verification-plan:${clientName}:locked`,
+              kind: "manual",
+              status: "blocked",
+              summary: "Strong Store authority is unavailable.",
+              claimIds: [],
+              snapshotId,
+            },
+            expectedRevision: 0,
+            idempotencyKey: `${clientName}-verification-locked`,
+            actor: `agent:${clientName}`,
+          },
+        },
+      ];
+      let requestId = 3;
+      for (const mutation of publicMutations) {
+        const mutationLabel = mutation.label ?? mutation.name;
+        const [mutationSourceBefore, mutationIndexBefore, mutationTreeBefore] =
+          await Promise.all([
+            readFile(sourcePath),
+            readFile(indexPath),
+            snapshotManagedArtifactTree(repositoryRoot),
+          ]);
+        const failure = await callToolResult(
+          child,
+          output,
+          requestId++,
+          mutation.name,
+          mutation.arguments,
+        );
+        assert.deepEqual(
+          failure,
+          EXPECTED_PUBLIC_MUTATION_FAILURE,
+          `${mutationLabel} must remain locked behind the unavailable strong Store`,
+        );
+        assert.deepEqual(
+          await readFile(sourcePath),
+          mutationSourceBefore,
+          `${mutationLabel} must not mutate source bytes`,
+        );
+        assert.deepEqual(
+          await readFile(indexPath),
+          mutationIndexBefore,
+          `${mutationLabel} must not mutate Git index bytes`,
+        );
+        assert.deepEqual(
+          await snapshotManagedArtifactTree(repositoryRoot),
+          mutationTreeBefore,
+          `${mutationLabel} must leave the managed artifact tree byte-identical`,
+        );
+      }
+    },
+  );
+  assert.deepEqual(
+    await readFile(sourcePath),
+    sourceBefore,
+    "failed public mutations must not mutate source bytes",
+  );
+  assert.deepEqual(
+    await readFile(indexPath),
+    indexBefore,
+    "failed public mutations must not mutate Git index bytes",
+  );
+  assert.deepEqual(
+    await snapshotManagedArtifactTree(repositoryRoot),
+    artifactTreeBefore,
+    "failed public mutations must leave the managed artifact tree byte-identical",
+  );
+  return execution;
 }
 
 async function expectCacheBindingFailure({
@@ -1018,7 +802,6 @@ async function expectCacheBindingFailure({
   clientName,
   reason,
   artifactRoots,
-  afterFirstFailure,
 }) {
   const child = spawn(server.executable, server.args, {
     cwd,
@@ -1054,52 +837,39 @@ async function expectCacheBindingFailure({
     );
     assert.equal(initialized.result.serverInfo.name, "understand-code");
     assert.equal(initialized.result.serverInfo.version, version);
-    writeMessage(child, { jsonrpc: "2.0", method: "notifications/initialized", params: {} });
-    writeMessage(child, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
+    writeMessage(child, {
+      jsonrpc: "2.0",
+      method: "notifications/initialized",
+      params: {},
+    });
+    writeMessage(child, {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/list",
+      params: {},
+    });
     const listed = await output.waitFor(
       (message) => message.id === 2,
       `${clientName} binding-error tools/list`,
     );
     assert.equal(Object.hasOwn(listed, "error"), false);
-    assert.deepEqual(listed.result.tools.map((tool) => tool.name), EXPECTED_TOOL_NAMES);
-
-    writeMessage(child, {
-      jsonrpc: "2.0",
-      id: 3,
-      method: "tools/call",
-      params: { name: "get_repo_pulse", arguments: {} },
-    });
-    const pulseFailure = await output.waitFor(
-      (message) => message.id === 3,
-      `${clientName} binding-error get_repo_pulse`,
+    assert.deepEqual(
+      listed.result.tools.map((tool) => tool.name),
+      EXPECTED_TOOL_NAMES,
     );
-    assert.equal(Object.hasOwn(pulseFailure, "error"), false);
-    assert.deepEqual(pulseFailure.result, expectedFailure);
-
-    await afterFirstFailure?.();
-
-    writeMessage(child, {
-      jsonrpc: "2.0",
-      id: 4,
-      method: "tools/call",
-      params: {
-        name: "refresh_index",
-        arguments: {
-          mode: "full",
-          idempotencyKey: `${clientName}-binding-error-refresh`,
-          actor: `agent:${clientName}`,
-        },
-      },
-    });
-    const refreshFailure = await output.waitFor(
-      (message) => message.id === 4,
-      `${clientName} binding-error refresh_index`,
+    const pulseFailure = await callToolResult(
+      child,
+      output,
+      3,
+      "get_repo_pulse",
+      {},
     );
-    assert.equal(Object.hasOwn(refreshFailure, "error"), false);
-    assert.deepEqual(refreshFailure.result, expectedFailure);
-
+    assert.deepEqual(pulseFailure, expectedFailure);
     child.stdin.end();
-    assert.deepEqual(await waitForExit(child, `${clientName} binding-error clean exit`), [0, null]);
+    assert.deepEqual(
+      await waitForExit(child, `${clientName} binding-error clean exit`),
+      [0, null],
+    );
     assert.equal(output.stderr.join(""), "");
     for (const artifactRoot of artifactRoots) {
       await assertMissing(
@@ -1133,174 +903,6 @@ async function expectUnsafeWrapperRootFailure(server, cwd, env, label) {
   }
 }
 
-async function expectSecondarySessionFailure({
-  server,
-  version,
-  cwd,
-  env,
-  clientName,
-  taskId,
-  afterFirstFailure,
-}) {
-  const child = spawn(server.executable, server.args, {
-    cwd,
-    env,
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  const output = collectMessages(child);
-  const expectedFailure = {
-    isError: true,
-    content: [{ type: "text", text: "Workspace binding is required." }],
-    structuredContent: {
-      error: {
-        schemaVersion: 1,
-        code: "workspace_binding_required",
-        details: { reason: "secondary_session_required" },
-      },
-    },
-  };
-  try {
-    writeMessage(child, {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: {
-        protocolVersion: "2025-11-25",
-        capabilities: {},
-        clientInfo: { name: clientName, version: "1.0.0" },
-      },
-    });
-    const initialized = await output.waitFor(
-      (message) => message.id === 1,
-      `${clientName} secondary-session initialize`,
-    );
-    assert.equal(initialized.result.serverInfo.name, "understand-code");
-    assert.equal(initialized.result.serverInfo.version, version);
-    writeMessage(child, { jsonrpc: "2.0", method: "notifications/initialized", params: {} });
-    writeMessage(child, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
-    const listed = await output.waitFor(
-      (message) => message.id === 2,
-      `${clientName} secondary-session tools/list`,
-    );
-    assert.equal(Object.hasOwn(listed, "error"), false);
-    assert.deepEqual(listed.result.tools.map((tool) => tool.name), EXPECTED_TOOL_NAMES);
-
-    writeMessage(child, {
-      jsonrpc: "2.0",
-      id: 3,
-      method: "tools/call",
-      params: {
-        name: "get_task_brief",
-        arguments: { taskId, section: "summary" },
-      },
-    });
-    const taskFailure = await output.waitFor(
-      (message) => message.id === 3,
-      `${clientName} secondary-session get_task_brief`,
-    );
-    assert.equal(Object.hasOwn(taskFailure, "error"), false);
-    assert.deepEqual(taskFailure.result, expectedFailure);
-
-    await afterFirstFailure();
-
-    writeMessage(child, {
-      jsonrpc: "2.0",
-      id: 4,
-      method: "tools/call",
-      params: { name: "get_repo_pulse", arguments: {} },
-    });
-    const pulseFailure = await output.waitFor(
-      (message) => message.id === 4,
-      `${clientName} secondary-session get_repo_pulse`,
-    );
-    assert.equal(Object.hasOwn(pulseFailure, "error"), false);
-    assert.deepEqual(pulseFailure.result, expectedFailure);
-
-    child.stdin.end();
-    assert.deepEqual(
-      await waitForExit(child, `${clientName} secondary-session clean exit`),
-      [0, null],
-    );
-    assert.equal(output.stderr.join(""), "");
-  } finally {
-    await stopChild(child);
-  }
-}
-
-async function recursiveByteInventory(root) {
-  const inventory = [];
-  async function visit(directory, relativeDirectory) {
-    const entries = await readdir(directory, { withFileTypes: true });
-    entries.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
-    for (const entry of entries) {
-      const relativePath = relativeDirectory === ""
-        ? entry.name
-        : `${relativeDirectory}/${entry.name}`;
-      const absolutePath = path.join(directory, entry.name);
-      if (entry.isDirectory()) {
-        inventory.push({ relativePath, type: "directory", bytes: null, contentDigest: null });
-        await visit(absolutePath, relativePath);
-        continue;
-      }
-      assert.equal(entry.isFile(), true, `foreign Store inventory rejects ${relativePath}`);
-      const bytes = await readFile(absolutePath);
-      inventory.push({
-        relativePath,
-        type: "file",
-        bytes: bytes.length,
-        contentDigest: contentDigest(bytes),
-      });
-    }
-  }
-  await visit(root, "");
-  return inventory;
-}
-
-async function initializeRepositoryContext(options) {
-  return withInstalledMcp(options, async ({ child, output }) => {
-    const refreshed = await callTool(child, output, 3, "refresh_index", {
-      mode: "full",
-      idempotencyKey: `${options.clientName}-initialize-repository-context`,
-      actor: `agent:${options.clientName}`,
-    });
-    assert.equal(refreshed.structuredContent.result.operation.status, "completed");
-    const pulse = await callTool(child, output, 4, "get_repo_pulse", {});
-    assert.deepEqual(
-      {
-        repositoryId: pulse.structuredContent.meta.repositoryId,
-        worktreeId: pulse.structuredContent.meta.worktreeId,
-        sourceSnapshotId: pulse.structuredContent.meta.sourceSnapshotId,
-      },
-      {
-        repositoryId: refreshed.structuredContent.meta.repositoryId,
-        worktreeId: refreshed.structuredContent.meta.worktreeId,
-        sourceSnapshotId: refreshed.structuredContent.meta.sourceSnapshotId,
-      },
-      "the fresh secondary Store must publish one exact Repository identity",
-    );
-    return {
-      repositoryId: refreshed.structuredContent.meta.repositoryId,
-      worktreeId: refreshed.structuredContent.meta.worktreeId,
-      sourceSnapshotId: refreshed.structuredContent.meta.sourceSnapshotId,
-    };
-  });
-}
-
-async function expectRepositoryPulse(options, expectedIdentity) {
-  return withInstalledMcp(options, async ({ child, output }) => {
-    const pulse = await callTool(child, output, 3, "get_repo_pulse", {});
-    assert.deepEqual(
-      {
-        repositoryId: pulse.structuredContent.meta.repositoryId,
-        worktreeId: pulse.structuredContent.meta.worktreeId,
-        sourceSnapshotId: pulse.structuredContent.meta.sourceSnapshotId,
-      },
-      expectedIdentity,
-      "a fresh repaired MCP must bind the exact secondary Repository identity",
-    );
-  });
-}
-
 async function findClaudeInstalledRoot(claudeConfig, version) {
   const cacheRoot = path.join(claudeConfig, "plugins/cache");
   const candidates = [];
@@ -1319,7 +921,9 @@ async function findClaudeInstalledRoot(claudeConfig, version) {
       const manifestPath = path.join(child, ".claude-plugin/plugin.json");
       try {
         const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-        if (manifest.name === PLUGIN_NAME && manifest.version === version) candidates.push(child);
+        if (manifest.name === PLUGIN_NAME && manifest.version === version) {
+          candidates.push(child);
+        }
       } catch (error) {
         if (error?.code !== "ENOENT") throw error;
       }
@@ -1327,7 +931,11 @@ async function findClaudeInstalledRoot(claudeConfig, version) {
     }
   }
   await visit(cacheRoot, 0);
-  assert.equal(candidates.length, 1, "Claude CLI must install exactly one versioned plugin cache root");
+  assert.equal(
+    candidates.length,
+    1,
+    "Claude CLI must install exactly one versioned plugin cache root",
+  );
   return realpath(candidates[0]);
 }
 
@@ -1342,7 +950,7 @@ async function updateJson(target, update) {
 }
 
 async function fileSha256(target) {
-  return `sha256:${createHash("sha256").update(await readFile(target)).digest("hex")}`;
+  return contentDigest(await readFile(target));
 }
 
 function releasePluginRoot(releaseRoot, host) {
@@ -1352,7 +960,10 @@ function releasePluginRoot(releaseRoot, host) {
 async function assertReleaseVersion(releaseRoot, version) {
   const topLevelCli = path.join(releaseRoot, "dist/understand-code.mjs");
   const hostCliPaths = ["codex", "claude"].map((host) =>
-    path.join(releasePluginRoot(releaseRoot, host), "plugins/understand-code/bin/understand-code.mjs")
+    path.join(
+      releasePluginRoot(releaseRoot, host),
+      "plugins/understand-code/bin/understand-code.mjs",
+    )
   );
   for (const hostCliPath of hostCliPaths) {
     assert.deepEqual(
@@ -1362,15 +973,24 @@ async function assertReleaseVersion(releaseRoot, version) {
     );
   }
   const codexManifest = JSON.parse(await readFile(
-    path.join(releasePluginRoot(releaseRoot, "codex"), "plugins/understand-code/.codex-plugin/plugin.json"),
+    path.join(
+      releasePluginRoot(releaseRoot, "codex"),
+      "plugins/understand-code/.codex-plugin/plugin.json",
+    ),
     "utf8",
   ));
   const claudeManifest = JSON.parse(await readFile(
-    path.join(releasePluginRoot(releaseRoot, "claude"), "plugins/understand-code/.claude-plugin/plugin.json"),
+    path.join(
+      releasePluginRoot(releaseRoot, "claude"),
+      "plugins/understand-code/.claude-plugin/plugin.json",
+    ),
     "utf8",
   ));
   const claudeMarketplace = JSON.parse(await readFile(
-    path.join(releasePluginRoot(releaseRoot, "claude"), ".claude-plugin/marketplace.json"),
+    path.join(
+      releasePluginRoot(releaseRoot, "claude"),
+      ".claude-plugin/marketplace.json",
+    ),
     "utf8",
   ));
   assert.equal(codexManifest.version, version);
@@ -1379,20 +999,35 @@ async function assertReleaseVersion(releaseRoot, version) {
   for (const manifestPath of [
     path.join(releaseRoot, "dist/dashboard-manifest.json"),
     ...["codex", "claude"].map((host) =>
-      path.join(releasePluginRoot(releaseRoot, host), "plugins/understand-code/bin/dashboard-manifest.json")
+      path.join(
+        releasePluginRoot(releaseRoot, host),
+        "plugins/understand-code/bin/dashboard-manifest.json",
+      )
     ),
   ]) {
-    assert.equal(JSON.parse(await readFile(manifestPath, "utf8")).productVersion, version);
+    assert.equal(
+      JSON.parse(await readFile(manifestPath, "utf8")).productVersion,
+      version,
+    );
   }
-  const versionResult = await execBounded(process.execPath, [topLevelCli, "--version"], {
-    encoding: "utf8",
-  });
+  const versionResult = await execBounded(
+    process.execPath,
+    [topLevelCli, "--version"],
+    { encoding: "utf8" },
+  );
   assert.equal(versionResult.stdout, `${version}\n`);
   assert.equal(versionResult.stderr, "");
-  return { topLevelCli, cliSha256: await fileSha256(topLevelCli) };
+  return {
+    topLevelCli,
+    cliSha256: await fileSha256(topLevelCli),
+  };
 }
 
-async function createLifecycleReleases(installedPackageRoot, releasesRoot, v1Version) {
+async function createLifecycleReleases(
+  installedPackageRoot,
+  releasesRoot,
+  v1Version,
+) {
   const v1Root = path.join(releasesRoot, "v1");
   const v2Root = path.join(releasesRoot, "v2");
   await cp(installedPackageRoot, v1Root, { recursive: true });
@@ -1413,26 +1048,38 @@ async function createLifecycleReleases(installedPackageRoot, releasesRoot, v1Ver
   for (const host of ["codex", "claude"]) {
     await cp(
       v2Cli,
-      path.join(releasePluginRoot(v2Root, host), "plugins/understand-code/bin/understand-code.mjs"),
+      path.join(
+        releasePluginRoot(v2Root, host),
+        "plugins/understand-code/bin/understand-code.mjs",
+      ),
     );
   }
   await updateJson(path.join(v2Root, "package.json"), (manifest) => {
     manifest.version = LIFECYCLE_V2_VERSION;
   });
   await updateJson(
-    path.join(releasePluginRoot(v2Root, "codex"), "plugins/understand-code/.codex-plugin/plugin.json"),
+    path.join(
+      releasePluginRoot(v2Root, "codex"),
+      "plugins/understand-code/.codex-plugin/plugin.json",
+    ),
     (manifest) => {
       manifest.version = LIFECYCLE_V2_VERSION;
     },
   );
   await updateJson(
-    path.join(releasePluginRoot(v2Root, "claude"), "plugins/understand-code/.claude-plugin/plugin.json"),
+    path.join(
+      releasePluginRoot(v2Root, "claude"),
+      "plugins/understand-code/.claude-plugin/plugin.json",
+    ),
     (manifest) => {
       manifest.version = LIFECYCLE_V2_VERSION;
     },
   );
   await updateJson(
-    path.join(releasePluginRoot(v2Root, "claude"), ".claude-plugin/marketplace.json"),
+    path.join(
+      releasePluginRoot(v2Root, "claude"),
+      ".claude-plugin/marketplace.json",
+    ),
     (marketplace) => {
       marketplace.plugins[0].version = LIFECYCLE_V2_VERSION;
     },
@@ -1440,7 +1087,10 @@ async function createLifecycleReleases(installedPackageRoot, releasesRoot, v1Ver
   for (const manifestPath of [
     path.join(v2Root, "dist/dashboard-manifest.json"),
     ...["codex", "claude"].map((host) =>
-      path.join(releasePluginRoot(v2Root, host), "plugins/understand-code/bin/dashboard-manifest.json")
+      path.join(
+        releasePluginRoot(v2Root, host),
+        "plugins/understand-code/bin/dashboard-manifest.json",
+      )
     ),
   ]) {
     await updateJson(manifestPath, (manifest) => {
@@ -1448,21 +1098,35 @@ async function createLifecycleReleases(installedPackageRoot, releasesRoot, v1Ver
     });
   }
 
-  const v1 = { root: v1Root, version: v1Version, ...(await assertReleaseVersion(v1Root, v1Version)) };
+  const v1 = {
+    root: v1Root,
+    version: v1Version,
+    ...(await assertReleaseVersion(v1Root, v1Version)),
+  };
   const v2 = {
     root: v2Root,
     version: LIFECYCLE_V2_VERSION,
     ...(await assertReleaseVersion(v2Root, LIFECYCLE_V2_VERSION)),
   };
-  assert.notEqual(v2.cliSha256, v1.cliSha256, "v2 must contain genuinely version-distinct CLI bytes");
+  assert.notEqual(
+    v2.cliSha256,
+    v1.cliSha256,
+    "v2 must contain genuinely version-distinct CLI bytes",
+  );
   for (const host of ["codex", "claude"]) {
     const manifest = host === "codex"
       ? "plugins/understand-code/.codex-plugin/plugin.json"
       : "plugins/understand-code/.claude-plugin/plugin.json";
-    for (const relativePath of [manifest, "plugins/understand-code/.mcp.json", "plugins/understand-code/bin/understand-code.mjs"]) {
+    for (const relativePath of [
+      manifest,
+      "plugins/understand-code/.mcp.json",
+      "plugins/understand-code/bin/understand-code.mjs",
+    ]) {
       assert.deepEqual(
         await readFile(path.join(releasePluginRoot(v1Root, host), relativePath)),
-        await readFile(path.join(releasePluginRoot(installedPackageRoot, host), relativePath)),
+        await readFile(
+          path.join(releasePluginRoot(installedPackageRoot, host), relativePath),
+        ),
         `v1 ${host} ${relativePath} must be the exact tgz plugin payload`,
       );
     }
@@ -1479,14 +1143,20 @@ async function activateMarketplaceFacade(facadeRoot, release) {
 }
 
 async function activeCodexPlugin(codexCli, cwd, env, version) {
-  const value = JSON.parse((await execBounded(codexCli, ["plugin", "list", "--json"], {
-    cwd,
-    env,
-    encoding: "utf8",
-  })).stdout);
+  const value = JSON.parse((await execBounded(
+    codexCli,
+    ["plugin", "list", "--json"],
+    { cwd, env, encoding: "utf8" },
+  )).stdout);
   assert.equal(Array.isArray(value.installed), true);
-  const entries = value.installed.filter((entry) => entry.pluginId === `${PLUGIN_NAME}@${MARKETPLACE_NAME}`);
-  assert.equal(entries.length, 1, "Codex plugin list must expose one canonical active installation");
+  const entries = value.installed.filter(
+    (entry) => entry.pluginId === `${PLUGIN_NAME}@${MARKETPLACE_NAME}`,
+  );
+  assert.equal(
+    entries.length,
+    1,
+    "Codex plugin list must expose one canonical active installation",
+  );
   const entry = entries[0];
   assert.deepEqual(
     { version: entry.version, installed: entry.installed, enabled: entry.enabled },
@@ -1496,1076 +1166,904 @@ async function activeCodexPlugin(codexCli, cwd, env, version) {
 }
 
 async function activeClaudePlugin(claudeCli, cwd, env, version) {
-  const value = JSON.parse((await execBounded(claudeCli, ["plugin", "list", "--json"], {
-    cwd,
-    env,
-    encoding: "utf8",
-  })).stdout);
+  const value = JSON.parse((await execBounded(
+    claudeCli,
+    ["plugin", "list", "--json"],
+    { cwd, env, encoding: "utf8" },
+  )).stdout);
   assert.equal(Array.isArray(value), true);
-  const entries = value.filter((entry) => entry.id === `${PLUGIN_NAME}@${MARKETPLACE_NAME}`);
-  assert.equal(entries.length, 1, "Claude plugin list must expose one canonical active installation");
+  const entries = value.filter(
+    (entry) => entry.id === `${PLUGIN_NAME}@${MARKETPLACE_NAME}`,
+  );
+  assert.equal(
+    entries.length,
+    1,
+    "Claude plugin list must expose one canonical active installation",
+  );
   const entry = entries[0];
   assert.deepEqual(
     { version: entry.version, scope: entry.scope, enabled: entry.enabled },
     { version, scope: "user", enabled: true },
   );
   assert.equal(typeof entry.installPath, "string");
-  return { entry, installedRoot: await realpath(entry.installPath) };
+  return {
+    entry,
+    installedRoot: await realpath(entry.installPath),
+  };
 }
 
 async function assertMissing(target, label) {
-  await assert.rejects(access(target), (error) => error?.code === "ENOENT", label);
+  await assert.rejects(
+    access(target),
+    (error) => error?.code === "ENOENT",
+    label,
+  );
 }
 
-test("real Codex and Claude CLI lifecycles yield cached plugins that execute the packed MCP", async (t) => {
-  const originalHome = process.env.HOME ?? "";
-  const codexCli = await findExecutable(
-    process.env.UNDERSTAND_CODE_CODEX_CLI,
-    ["/Applications/ChatGPT.app/Contents/Resources/codex", path.join(originalHome, ".local/bin/codex")],
-    "codex",
-  );
-  const claudeCli = await findExecutable(
-    process.env.UNDERSTAND_CODE_CLAUDE_CLI,
-    [path.join(originalHome, ".local/bin/claude")],
-    "claude",
-  );
-  if (codexCli === null || claudeCli === null) {
-    const message = `real Host CLIs unavailable (codex=${codexCli !== null}, claude=${claudeCli !== null})`;
-    if (process.env.UNDERSTAND_CODE_REQUIRE_PLUGIN_HOSTS === "1") assert.fail(message);
-    t.skip(message);
-    return;
-  }
-  const browserExecutable = await resolveBrowserExecutable();
-  assert.equal(
-    process.env.UNDERSTAND_CODE_REQUIRE_REAL_BROWSER === "1" && browserExecutable === null,
-    false,
-    "UNDERSTAND_CODE_REQUIRE_REAL_BROWSER=1 requires an installed Chrome/Chromium",
-  );
-
-  const sandbox = await realpath(await mkdtemp(path.join(tmpdir(), "understand-code-plugin-e2e-")));
-  const packDirectory = path.join(sandbox, "pack");
-  const installDirectory = path.join(sandbox, "npm-prefix");
-  const codexHome = path.join(sandbox, "codex-home");
-  const codexUserHome = path.join(sandbox, "codex-user");
-  const claudeConfig = path.join(sandbox, "claude-config");
-  const claudeUserHome = path.join(sandbox, "claude-user");
-  const releasesRoot = path.join(sandbox, "releases");
-  const marketplaceFacadeRoot = path.join(sandbox, "marketplace-facade");
-  const codexBrowserProfile = path.join(sandbox, "chrome-profile-codex");
-  const claudeBrowserProfile = path.join(sandbox, "chrome-profile-claude");
-  const differentCwd = path.join(sandbox, "not-the-repository");
-  let codexInstalledRoot = null;
-  let claudeInstalledRoot = null;
-  try {
-    const primaryRepositoryRoot = await createRepository(
-      path.join(sandbox, "主仓库 primary with space"),
+test(
+  "real Codex and Claude plugin lifecycles preserve the public strong-writer lock",
+  async (t) => {
+    const originalHome = process.env.HOME ?? "";
+    const codexCli = await findExecutable(
+      process.env.UNDERSTAND_CODE_CODEX_CLI,
+      [
+        "/Applications/ChatGPT.app/Contents/Resources/codex",
+        path.join(originalHome, ".local/bin/codex"),
+      ],
+      "codex",
     );
-    const repositoryRoot = await createLinkedWorktree(
-      primaryRepositoryRoot,
-      path.join(sandbox, "链接工作树 linked with space"),
+    const claudeCli = await findExecutable(
+      process.env.UNDERSTAND_CODE_CLAUDE_CLI,
+      [path.join(originalHome, ".local/bin/claude")],
+      "claude",
     );
-    const nestedCwd = path.join(repositoryRoot, "src", "嵌套 目录");
-    await mkdir(nestedCwd, { recursive: true });
-    assert.equal(await realpath(nestedCwd), nestedCwd);
-    for (const candidate of [primaryRepositoryRoot, repositoryRoot, nestedCwd]) {
-      assert.match(candidate, / /u, "the Root fixture must retain a path-space boundary");
-      assert.match(candidate, /\p{Script=Han}/u, "the Root fixture must retain a Chinese path boundary");
+    if (codexCli === null || claudeCli === null) {
+      const message =
+        `real Host CLIs unavailable (codex=${codexCli !== null}, claude=${claudeCli !== null})`;
+      if (process.env.UNDERSTAND_CODE_REQUIRE_PLUGIN_HOSTS === "1") {
+        assert.fail(message);
+      }
+      t.skip(message);
+      return;
     }
-    assert.equal((await stat(path.join(repositoryRoot, ".git"))).isFile(), true);
-    const linkedTopLevel = await realpath((await repositoryGit(
-      repositoryRoot,
-      ["rev-parse", "--show-toplevel"],
-    )).stdout.trim());
-    assert.equal(linkedTopLevel, repositoryRoot);
-    assert.equal(
-      (await repositoryGit(repositoryRoot, ["rev-parse", "--abbrev-ref", "HEAD"])).stdout.trim(),
-      "HEAD",
-      "the Root fixture must be a detached linked worktree",
+
+    const sandbox = await realpath(
+      await mkdtemp(path.join(tmpdir(), "understand-code-plugin-e2e-")),
     );
-    const linkedGitDirRaw = (await repositoryGit(
-      repositoryRoot,
-      ["rev-parse", "--path-format=absolute", "--git-dir"],
-    )).stdout.trim();
-    const linkedCommonDirRaw = (await repositoryGit(
-      repositoryRoot,
-      ["rev-parse", "--path-format=absolute", "--git-common-dir"],
-    )).stdout.trim();
-    assert.equal(path.isAbsolute(linkedGitDirRaw), true);
-    assert.equal(path.isAbsolute(linkedCommonDirRaw), true);
-    const linkedGitDir = await realpath(linkedGitDirRaw);
-    const linkedCommonDir = await realpath(linkedCommonDirRaw);
-    assert.notEqual(linkedGitDir, linkedCommonDir);
-    assert.equal(linkedCommonDir, await realpath(path.join(primaryRepositoryRoot, ".git")));
-    const linkedGitFile = await readFile(path.join(repositoryRoot, ".git"), "utf8");
-    assert.match(linkedGitFile, /^gitdir: [^\u0000\r\n]+\n$/u);
-    assert.equal(
-      await realpath(linkedGitFile.slice("gitdir: ".length).trimEnd()),
-      linkedGitDir,
-    );
-    const primarySourcePath = path.join(primaryRepositoryRoot, "src/index.ts");
-    const linkedSourcePath = path.join(repositoryRoot, "src/index.ts");
-    const primaryIndexPath = await absoluteGitPath(primaryRepositoryRoot, "index");
-    const linkedIndexPath = await absoluteGitPath(repositoryRoot, "index");
-    assert.equal(linkedIndexPath, await realpath(path.join(linkedGitDir, "index")));
-    assert.notEqual(linkedIndexPath, primaryIndexPath);
-    const [primarySourceBefore, primaryIndexBefore, linkedSourceBefore] = await Promise.all([
-      readFile(primarySourcePath),
-      readFile(primaryIndexPath),
-      readFile(linkedSourcePath),
-    ]);
-    const ambientRepositoryRoot = await createRepository(
-      path.join(sandbox, "ambient-repository"),
-      "export function ambient() { return 'poison-authority'; }\n",
-    );
-    assert.notEqual(
-      (await repositoryGit(ambientRepositoryRoot, ["rev-parse", "HEAD"])).stdout.trim(),
-      (await repositoryGit(repositoryRoot, ["rev-parse", "HEAD"])).stdout.trim(),
-      "the poisoned ambient repository must have an unrelated commit authority",
-    );
-    const ambientIndexPath = await absoluteGitPath(ambientRepositoryRoot, "index");
-    assert.notEqual(
-      contentDigest(await readFile(ambientIndexPath)),
-      contentDigest(await readFile(linkedIndexPath)),
-      "the poisoned ambient repository must have unrelated index bytes",
-    );
-    const secondaryRepositoryRoot = await createRepository(
-      path.join(sandbox, "secondary-session-repository"),
-      "export function secondary() { return 'unrelated-worktree'; }\n",
-    );
-    const secondarySourcePath = path.join(secondaryRepositoryRoot, "src/index.ts");
-    const secondaryIndexPath = await absoluteGitPath(secondaryRepositoryRoot, "index");
-    assert.notEqual(
-      (await repositoryGit(secondaryRepositoryRoot, ["rev-parse", "HEAD"])).stdout.trim(),
-      (await repositoryGit(repositoryRoot, ["rev-parse", "HEAD"])).stdout.trim(),
-      "the secondary-session repository must have an unrelated commit identity",
-    );
-    assert.notEqual(
-      contentDigest(await readFile(secondaryIndexPath)),
-      contentDigest(await readFile(linkedIndexPath)),
-      "the secondary-session repository must have unrelated index bytes",
-    );
-    const [secondarySourceBefore, secondaryIndexBefore] = await Promise.all([
-      readFile(secondarySourcePath),
-      readFile(secondaryIndexPath),
-    ]);
-    const secondaryStoreRoot = path.join(secondaryRepositoryRoot, ".understand-code");
-    const ambientObjectsPath = path.join(ambientRepositoryRoot, ".git", "objects");
-    const poisonGitAuthority = Object.freeze({
-      GIT_DIR: path.join(ambientRepositoryRoot, ".git"),
-      GIT_WORK_TREE: ambientRepositoryRoot,
-      GIT_COMMON_DIR: path.join(ambientRepositoryRoot, ".git"),
-      GIT_INDEX_FILE: ambientIndexPath,
-      GIT_OBJECT_DIRECTORY: ambientObjectsPath,
-      GIT_ALTERNATE_OBJECT_DIRECTORIES: ambientObjectsPath,
-    });
-    await Promise.all([
-      mkdir(packDirectory, { recursive: true }),
-      mkdir(installDirectory, { recursive: true }),
-      mkdir(codexHome, { recursive: true }),
-      mkdir(codexUserHome, { recursive: true }),
-      mkdir(claudeConfig, { recursive: true }),
-      mkdir(claudeUserHome, { recursive: true }),
-      mkdir(releasesRoot, { recursive: true }),
-      mkdir(marketplaceFacadeRoot, { recursive: true }),
-      mkdir(codexBrowserProfile, { recursive: true }),
-      mkdir(claudeBrowserProfile, { recursive: true }),
-      mkdir(differentCwd, { recursive: true }),
-    ]);
-    let tarballPath;
-    if (process.env.UNDERSTAND_CODE_PREVIEW_TARBALL !== undefined) {
-      tarballPath = await realpath(path.resolve(process.env.UNDERSTAND_CODE_PREVIEW_TARBALL));
-    } else {
-      const packed = await execBounded(
-        "npm",
-        ["pack", ".", "--ignore-scripts", "--pack-destination", packDirectory, "--json"],
-        { cwd: packageRoot, encoding: "utf8", timeout: 120_000 },
+    const packDirectory = path.join(sandbox, "pack");
+    const installDirectory = path.join(sandbox, "npm-prefix");
+    const codexHome = path.join(sandbox, "codex-home");
+    const codexUserHome = path.join(sandbox, "codex-user");
+    const claudeConfig = path.join(sandbox, "claude-config");
+    const claudeUserHome = path.join(sandbox, "claude-user");
+    const releasesRoot = path.join(sandbox, "releases");
+    const marketplaceFacadeRoot = path.join(sandbox, "marketplace-facade");
+    const differentCwd = path.join(sandbox, "not-the-repository");
+    let codexInstalledRoot = null;
+    let claudeInstalledRoot = null;
+    try {
+      const primaryRepositoryRoot = await createRepository(
+        path.join(sandbox, "主仓库 primary with space"),
       );
-      const records = JSON.parse(packed.stdout);
-      assert.equal(records.length, 1);
-      tarballPath = path.join(packDirectory, records[0].filename);
-    }
-    await execBounded(
-      "npm",
-      ["install", "--global", "--prefix", installDirectory, "--ignore-scripts", "--no-package-lock", "--no-audit", "--no-fund", tarballPath],
-      { cwd: installDirectory, encoding: "utf8", timeout: 120_000 },
-    );
-    const installedPackageRoot = path.join(
-      installDirectory,
-      process.platform === "win32" ? "node_modules" : "lib/node_modules",
-      "@understand-code/preview",
-    );
-    const packageManifest = JSON.parse(await readFile(path.join(installedPackageRoot, "package.json"), "utf8"));
-    const v1Version = packageManifest.version;
-    const releases = await createLifecycleReleases(installedPackageRoot, releasesRoot, v1Version);
-    await activateMarketplaceFacade(marketplaceFacadeRoot, releases.v1);
-    const codexMarketplaceRoot = path.join(marketplaceFacadeRoot, "codex");
-    const claudeMarketplaceRoot = path.join(marketplaceFacadeRoot, "claude");
-
-    const codexEnv = cleanHostEnvironment(codexUserHome, {
-      CODEX_HOME: codexHome,
-      PATH: `${path.dirname(codexCli)}${path.delimiter}${process.env.PATH ?? "/usr/bin:/bin"}`,
-    });
-    const codexMarketplace = JSON.parse(
-      (await execBounded(codexCli, ["plugin", "marketplace", "add", codexMarketplaceRoot, "--json"], {
-        cwd: differentCwd,
-        env: codexEnv,
-        encoding: "utf8",
-      })).stdout,
-    );
-    assert.equal(codexMarketplace.marketplaceName, MARKETPLACE_NAME);
-    const codexInstall = JSON.parse(
-      (await execBounded(codexCli, ["plugin", "add", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`, "--json"], {
-        cwd: differentCwd,
-        env: codexEnv,
-        encoding: "utf8",
-      })).stdout,
-    );
-    assert.equal(codexInstall.pluginId, `${PLUGIN_NAME}@${MARKETPLACE_NAME}`);
-    assert.equal(codexInstall.version, v1Version);
-    await activeCodexPlugin(codexCli, differentCwd, codexEnv, v1Version);
-    codexInstalledRoot = await realpath(codexInstall.installedPath);
-    assert.equal(codexInstalledRoot.startsWith(`${await realpath(codexHome)}${path.sep}`), true);
-    assert.equal(
-      await fileSha256(path.join(codexInstalledRoot, "bin/understand-code.mjs")),
-      releases.v1.cliSha256,
-      "the official Codex add installedPath must contain the exact v1 bundled CLI bytes",
-    );
-    assert.deepEqual(
-      await readFile(path.join(codexInstalledRoot, "bin/dashboard-manifest.json")),
-      await readFile(path.join(
-        releasePluginRoot(releases.v1.root, "codex"),
-        "plugins/understand-code/bin/dashboard-manifest.json",
-      )),
-      "the official Codex add installedPath must contain the exact v1 Dashboard manifest",
-    );
-    const codexList = await execBounded(codexCli, ["plugin", "list"], {
-      cwd: differentCwd,
-      env: codexEnv,
-      encoding: "utf8",
-    });
-    assert.match(codexList.stdout, /understand-code@understand-code-alpha\s+installed, enabled/u);
-    const codexMcpList = JSON.parse(
-      (await execBounded(codexCli, ["mcp", "list", "--json"], {
-        cwd: differentCwd,
-        env: codexEnv,
-        encoding: "utf8",
-      })).stdout,
-    );
-    const registeredCodexMcp = codexMcpList.find((server) => server.name === PLUGIN_NAME);
-    assert.ok(registeredCodexMcp, "Codex CLI must register the installed plugin MCP server");
-    assert.equal(registeredCodexMcp.enabled, true);
-    assert.equal(registeredCodexMcp.transport.type, "stdio");
-    assert.equal(registeredCodexMcp.transport.command, "./bin/understand-code-plugin.mjs");
-    assert.deepEqual(registeredCodexMcp.transport.args, ["--host", "codex"]);
-    const registeredCodexMcpDetail = JSON.parse(
-      (await execBounded(codexCli, ["mcp", "get", PLUGIN_NAME, "--json"], {
-        cwd: differentCwd,
-        env: codexEnv,
-        encoding: "utf8",
-      })).stdout,
-    );
-    assert.equal(registeredCodexMcpDetail.name, PLUGIN_NAME);
-    assert.equal(registeredCodexMcpDetail.enabled, true);
-    assert.deepEqual(registeredCodexMcpDetail.transport, registeredCodexMcp.transport);
-    await runInstalledHostDoctor({
-      installedPackageRoot: releases.v1.root,
-      host: "codex",
-      version: v1Version,
-      cwd: differentCwd,
-      env: codexEnv,
-      expectedStatus: "healthy",
-    });
-    const codexAlpha = await exerciseInstalledAlpha({
-      host: "codex",
-      installedRoot: codexInstalledRoot,
-      version: v1Version,
-      repositoryRoot,
-      expectedIndexPath: linkedIndexPath,
-      cwd: nestedCwd,
-      env: cleanHostEnvironment(codexUserHome, {
-        CODEX_HOME: codexHome,
-        ...poisonGitAuthority,
-      }),
-      clientName: "codex-plugin-e2e",
-    });
-    await resumeInstalledAlpha(
-      {
-        host: "codex",
-        installedRoot: codexInstalledRoot,
-        version: v1Version,
-        repositoryRoot,
-        cwd: nestedCwd,
-        env: cleanHostEnvironment(codexUserHome, {
-          CODEX_HOME: codexHome,
-          ...poisonGitAuthority,
-        }),
-        clientName: "codex-plugin-e2e-workbench",
-      },
-      codexAlpha.result,
-      browserExecutable === null
-        ? undefined
-        : { browserExecutable, browserProfile: codexBrowserProfile },
-    );
-    await expectCacheBindingFailure({
-      server: codexAlpha.server,
-      version: v1Version,
-      cwd: differentCwd,
-      env: cleanHostEnvironment(codexUserHome, { CODEX_HOME: codexHome }),
-      clientName: "codex-plugin-e2e-root-unavailable",
-      reason: "root_unavailable",
-      artifactRoots: [differentCwd],
-      afterFirstFailure: async () => {
-        await repositoryGit(differentCwd, ["init", "-q"]);
-        assert.equal(
-          await realpath((await repositoryGit(
-            differentCwd,
-            ["rev-parse", "--show-toplevel"],
-          )).stdout.trim()),
-          differentCwd,
-          "the Codex negative cwd must become a valid unrelated repository after the first failure",
-        );
-      },
-    });
-    await resumeInstalledAlpha(
-      {
-        host: "codex",
-        installedRoot: codexInstalledRoot,
-        version: v1Version,
-        repositoryRoot,
-        cwd: nestedCwd,
-        env: cleanHostEnvironment(codexUserHome, {
-          CODEX_HOME: codexHome,
-          ...poisonGitAuthority,
-        }),
-        clientName: "codex-plugin-e2e-root-recovery",
-      },
-      codexAlpha.result,
-    );
-    const linkedStoreRoot = path.join(repositoryRoot, ".understand-code");
-    const secondaryContext = (await initializeRepositoryContext({
-      host: "codex",
-      installedRoot: codexInstalledRoot,
-      version: v1Version,
-      repositoryRoot: secondaryRepositoryRoot,
-      cwd: secondaryRepositoryRoot,
-      env: cleanHostEnvironment(codexUserHome, {
-        CODEX_HOME: codexHome,
-        ...poisonGitAuthority,
-      }),
-      clientName: "codex-plugin-e2e-secondary-store-initializer",
-    })).result;
-    for (const [label, value] of [
-      ["repositoryId", secondaryContext.repositoryId],
-      ["worktreeId", secondaryContext.worktreeId],
-    ]) {
-      assert.equal(typeof value, "string", `secondary ${label} must be a string`);
-      assert.ok(value.length > 0, `secondary ${label} must be nonempty`);
-    }
-    assert.notEqual(secondaryContext.repositoryId, codexAlpha.result.repositoryId);
-    assert.notEqual(secondaryContext.worktreeId, codexAlpha.result.worktreeId);
-    const secondaryManifestPath = path.join(secondaryStoreRoot, "artifact-manifest.json");
-    const secondaryManifest = JSON.parse(await readFile(secondaryManifestPath, "utf8"));
-    assert.deepEqual(
-      {
-        repositoryId: secondaryManifest.repositoryId,
-        worktreeId: secondaryManifest.worktreeId,
-      },
-      {
-        repositoryId: secondaryContext.repositoryId,
-        worktreeId: secondaryContext.worktreeId,
-      },
-      "the valid secondary Store Manifest must bind the exact refreshed Repository identity",
-    );
-    const validSecondaryStoreInventory = await recursiveByteInventory(secondaryStoreRoot);
-    assert.deepEqual(await readFile(secondarySourcePath), secondarySourceBefore);
-    assert.deepEqual(await readFile(secondaryIndexPath), secondaryIndexBefore);
-    const validSecondaryStoreBackup = path.join(sandbox, "secondary-valid-store-backup");
-    await rename(secondaryStoreRoot, validSecondaryStoreBackup);
-    assert.deepEqual(
-      await recursiveByteInventory(validSecondaryStoreBackup),
-      validSecondaryStoreInventory,
-      "the sandbox backup must preserve the exact valid secondary Store",
-    );
-    await assertMissing(
-      secondaryStoreRoot,
-      "moving the valid secondary Store to its sandbox backup must vacate the repository",
-    );
-
-    const linkedStoreInventory = await recursiveByteInventory(linkedStoreRoot);
-    const linkedManifest = JSON.parse(
-      await readFile(path.join(linkedStoreRoot, "artifact-manifest.json"), "utf8"),
-    );
-    assert.deepEqual(
-      {
-        repositoryId: linkedManifest.repositoryId,
-        worktreeId: linkedManifest.worktreeId,
-      },
-      {
-        repositoryId: codexAlpha.result.repositoryId,
-        worktreeId: codexAlpha.result.worktreeId,
-      },
-      "the foreign Manifest must bind the original linked-worktree Task identity",
-    );
-    assert.notEqual(linkedManifest.repositoryId, secondaryManifest.repositoryId);
-    assert.notEqual(linkedManifest.worktreeId, secondaryManifest.worktreeId);
-
-    await cp(linkedStoreRoot, secondaryStoreRoot, { recursive: true });
-    const foreignStoreInventory = await recursiveByteInventory(secondaryStoreRoot);
-    assert.deepEqual(
-      foreignStoreInventory,
-      linkedStoreInventory,
-      "the secondary-session fixture must be an exact relative-path/type/byte copy of the linked Store",
-    );
-    const foreignManifest = JSON.parse(await readFile(secondaryManifestPath, "utf8"));
-    assert.deepEqual(
-      {
-        repositoryId: foreignManifest.repositoryId,
-        worktreeId: foreignManifest.worktreeId,
-      },
-      {
-        repositoryId: codexAlpha.result.repositoryId,
-        worktreeId: codexAlpha.result.worktreeId,
-      },
-      "the copied foreign Manifest must retain the original linked-worktree identity",
-    );
-    const restoreValidSecondaryStore = async (hostLabel) => {
-      assert.deepEqual(await readFile(secondarySourcePath), secondarySourceBefore);
-      assert.deepEqual(await readFile(secondaryIndexPath), secondaryIndexBefore);
-      assert.deepEqual(
-        await recursiveByteInventory(secondaryStoreRoot),
-        foreignStoreInventory,
-        `${hostLabel} first failure must not modify the foreign Store`,
-      );
-      assert.deepEqual(
-        await recursiveByteInventory(validSecondaryStoreBackup),
-        validSecondaryStoreInventory,
-        `${hostLabel} first failure must not modify the valid Store backup`,
-      );
-      const foreignStoreBackup = path.join(
-        sandbox,
-        `${hostLabel.toLowerCase()}-foreign-store-backup`,
-      );
-      await rename(secondaryStoreRoot, foreignStoreBackup);
-      assert.deepEqual(
-        await recursiveByteInventory(foreignStoreBackup),
-        foreignStoreInventory,
-        `${hostLabel} foreign Store backup must preserve the exact failed bytes`,
-      );
-      await cp(validSecondaryStoreBackup, secondaryStoreRoot, { recursive: true });
-      assert.deepEqual(
-        await recursiveByteInventory(secondaryStoreRoot),
-        validSecondaryStoreInventory,
-        `${hostLabel} explicit repair must restore the exact valid secondary Store`,
-      );
-    };
-    await expectSecondarySessionFailure({
-      server: codexAlpha.server,
-      version: v1Version,
-      cwd: secondaryRepositoryRoot,
-      env: cleanHostEnvironment(codexUserHome, {
-        CODEX_HOME: codexHome,
-        ...poisonGitAuthority,
-      }),
-      clientName: "codex-plugin-e2e-secondary-session",
-      taskId: codexAlpha.result.taskId,
-      afterFirstFailure: () => restoreValidSecondaryStore("Codex"),
-    });
-    assert.deepEqual(await readFile(secondarySourcePath), secondarySourceBefore);
-    assert.deepEqual(await readFile(secondaryIndexPath), secondaryIndexBefore);
-    assert.deepEqual(
-      await recursiveByteInventory(secondaryStoreRoot),
-      validSecondaryStoreInventory,
-      "the explicitly repaired Store must remain valid after the locked Codex session exits",
-    );
-    assert.deepEqual(
-      await recursiveByteInventory(validSecondaryStoreBackup),
-      validSecondaryStoreInventory,
-      "the Codex secondary-session flow must not modify the valid Store backup",
-    );
-    await expectRepositoryPulse(
-      {
-        host: "codex",
-        installedRoot: codexInstalledRoot,
-        version: v1Version,
-        repositoryRoot: secondaryRepositoryRoot,
-        cwd: secondaryRepositoryRoot,
-        env: cleanHostEnvironment(codexUserHome, {
-          CODEX_HOME: codexHome,
-          ...poisonGitAuthority,
-        }),
-        clientName: "codex-plugin-e2e-secondary-session-repaired",
-      },
-      secondaryContext,
-    );
-    assert.deepEqual(
-      await recursiveByteInventory(secondaryStoreRoot),
-      validSecondaryStoreInventory,
-      "the fresh repaired Codex Pulse must not modify the valid secondary Store",
-    );
-    await resumeInstalledAlpha(
-      {
-        host: "codex",
-        installedRoot: codexInstalledRoot,
-        version: v1Version,
-        repositoryRoot,
-        cwd: nestedCwd,
-        env: cleanHostEnvironment(codexUserHome, {
-          CODEX_HOME: codexHome,
-          ...poisonGitAuthority,
-        }),
-        clientName: "codex-plugin-e2e-secondary-session-recovery",
-      },
-      codexAlpha.result,
-    );
-
-    const claudeEnv = cleanHostEnvironment(claudeUserHome, {
-      CLAUDE_CONFIG_DIR: claudeConfig,
-      PATH: `${path.dirname(claudeCli)}${path.delimiter}${process.env.PATH ?? "/usr/bin:/bin"}`,
-    });
-    await execBounded(claudeCli, ["plugin", "validate", "--strict", claudeMarketplaceRoot], {
-      cwd: differentCwd,
-      env: claudeEnv,
-      encoding: "utf8",
-    });
-    await execBounded(claudeCli, ["plugin", "marketplace", "add", claudeMarketplaceRoot, "--scope", "user"], {
-      cwd: differentCwd,
-      env: claudeEnv,
-      encoding: "utf8",
-    });
-    const claudeMarketplaces = JSON.parse(
-      (await execBounded(claudeCli, ["plugin", "marketplace", "list", "--json"], {
-        cwd: differentCwd,
-        env: claudeEnv,
-        encoding: "utf8",
-      })).stdout,
-    );
-    assert.match(JSON.stringify(claudeMarketplaces), new RegExp(MARKETPLACE_NAME, "u"));
-    await execBounded(claudeCli, ["plugin", "install", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`, "--scope", "user"], {
-      cwd: differentCwd,
-      env: claudeEnv,
-      encoding: "utf8",
-    });
-    const activeClaudeV1 = await activeClaudePlugin(
-      claudeCli,
-      differentCwd,
-      claudeEnv,
-      v1Version,
-    );
-    claudeInstalledRoot = activeClaudeV1.installedRoot;
-    assert.equal(claudeInstalledRoot.startsWith(`${await realpath(claudeConfig)}${path.sep}`), true);
-    assert.deepEqual(
-      await readFile(path.join(claudeInstalledRoot, "bin/dashboard-manifest.json")),
-      await readFile(path.join(
-        releasePluginRoot(releases.v1.root, "claude"),
-        "plugins/understand-code/bin/dashboard-manifest.json",
-      )),
-      "the authoritative Claude cache must contain the exact v1 Dashboard manifest",
-    );
-    await runInstalledHostDoctor({
-      installedPackageRoot: releases.v1.root,
-      host: "claude",
-      version: v1Version,
-      cwd: differentCwd,
-      env: claudeEnv,
-      expectedStatus: "healthy",
-    });
-    const claudeAlpha = await resumeInstalledAlpha(
-      {
-        host: "claude",
-        installedRoot: claudeInstalledRoot,
-        version: v1Version,
-        repositoryRoot,
-        cwd: differentCwd,
-        env: cleanHostEnvironment(claudeUserHome, {
-          CLAUDE_CONFIG_DIR: claudeConfig,
-          CLAUDE_PROJECT_DIR: nestedCwd,
-          ...poisonGitAuthority,
-        }),
-        clientName: "claude-plugin-e2e",
-      },
-      codexAlpha.result,
-      browserExecutable === null
-        ? undefined
-        : { browserExecutable, browserProfile: claudeBrowserProfile },
-    );
-    assert.equal(
-      (await stat(path.join(repositoryRoot, ".understand-code"))).isDirectory(),
-      true,
-      "both cached MCP launches must publish only inside the explicitly selected repository",
-    );
-    await assertMissing(
-      path.join(ambientRepositoryRoot, ".understand-code"),
-      "ambient Git authority must not redirect artifacts into another real repository",
-    );
-    await assertMissing(
-      path.join(primaryRepositoryRoot, ".understand-code"),
-      "the linked-worktree session must not publish into the primary worktree",
-    );
-    const claudeBindingEnvironment = cleanHostEnvironment(claudeUserHome, {
-      CLAUDE_CONFIG_DIR: claudeConfig,
-    });
-    await expectCacheBindingFailure({
-      server: claudeAlpha.server,
-      version: v1Version,
-      cwd: differentCwd,
-      env: claudeBindingEnvironment,
-      clientName: "claude-plugin-e2e-root-missing",
-      reason: "root_missing",
-      artifactRoots: [differentCwd],
-    });
-    await expectCacheBindingFailure({
-      server: claudeAlpha.server,
-      version: v1Version,
-      cwd: differentCwd,
-      env: { ...claudeBindingEnvironment, CLAUDE_PROJECT_DIR: "" },
-      clientName: "claude-plugin-e2e-root-empty",
-      reason: "root_missing",
-      artifactRoots: [differentCwd],
-    });
-    const invalidRootContainer = path.join(sandbox, "invalid-root-file-container");
-    const invalidRootFile = path.join(invalidRootContainer, "not-a-directory.ts");
-    const invalidRootBytes = Buffer.from("export const notARepository = true;\n", "utf8");
-    await mkdir(invalidRootContainer, { recursive: true });
-    await writeFile(invalidRootFile, invalidRootBytes);
-    await expectCacheBindingFailure({
-      server: claudeAlpha.server,
-      version: v1Version,
-      cwd: differentCwd,
-      env: { ...claudeBindingEnvironment, CLAUDE_PROJECT_DIR: invalidRootFile },
-      clientName: "claude-plugin-e2e-root-not-directory",
-      reason: "root_not_directory",
-      artifactRoots: [invalidRootContainer],
-    });
-    assert.deepEqual(
-      await readFile(invalidRootFile),
-      invalidRootBytes,
-      "a regular-file Root candidate must remain byte-identical after fail-closed MCP calls",
-    );
-    for (const [unsafeRoot, label] of [
-      ["relative/repository", "relative"],
-      ["${CLAUDE_PROJECT_DIR}", "unexpanded placeholder"],
-    ]) {
-      await expectUnsafeWrapperRootFailure(
-        claudeAlpha.server,
-        differentCwd,
-        { ...claudeBindingEnvironment, CLAUDE_PROJECT_DIR: unsafeRoot },
-        `Claude plugin must reject an unsafe ${label} Root before starting MCP`,
-      );
-    }
-    assert.deepEqual(
-      await recursiveByteInventory(secondaryStoreRoot),
-      validSecondaryStoreInventory,
-      "the repaired secondary Store must remain valid before preparing Claude's foreign copy",
-    );
-    assert.deepEqual(
-      await recursiveByteInventory(validSecondaryStoreBackup),
-      validSecondaryStoreInventory,
-      "the valid Store backup must remain frozen before the Claude secondary-session launch",
-    );
-    await rm(secondaryStoreRoot, { recursive: true, force: true });
-    await cp(linkedStoreRoot, secondaryStoreRoot, { recursive: true });
-    assert.deepEqual(
-      await recursiveByteInventory(secondaryStoreRoot),
-      foreignStoreInventory,
-      "Claude must receive the same exact foreign Store fixture as Codex",
-    );
-    const claudeForeignManifest = JSON.parse(await readFile(secondaryManifestPath, "utf8"));
-    assert.deepEqual(
-      {
-        repositoryId: claudeForeignManifest.repositoryId,
-        worktreeId: claudeForeignManifest.worktreeId,
-      },
-      {
-        repositoryId: codexAlpha.result.repositoryId,
-        worktreeId: codexAlpha.result.worktreeId,
-      },
-      "Claude's foreign Manifest must retain the original linked-worktree identity",
-    );
-    await expectSecondarySessionFailure({
-      server: claudeAlpha.server,
-      version: v1Version,
-      cwd: differentCwd,
-      env: cleanHostEnvironment(claudeUserHome, {
-        CLAUDE_CONFIG_DIR: claudeConfig,
-        CLAUDE_PROJECT_DIR: secondaryRepositoryRoot,
-        ...poisonGitAuthority,
-      }),
-      clientName: "claude-plugin-e2e-secondary-session",
-      taskId: codexAlpha.result.taskId,
-      afterFirstFailure: () => restoreValidSecondaryStore("Claude"),
-    });
-    assert.deepEqual(await readFile(secondarySourcePath), secondarySourceBefore);
-    assert.deepEqual(await readFile(secondaryIndexPath), secondaryIndexBefore);
-    assert.deepEqual(
-      await recursiveByteInventory(secondaryStoreRoot),
-      validSecondaryStoreInventory,
-      "the explicitly repaired Store must remain valid after the locked Claude session exits",
-    );
-    assert.deepEqual(
-      await recursiveByteInventory(validSecondaryStoreBackup),
-      validSecondaryStoreInventory,
-      "the Claude secondary-session flow must not modify the valid Store backup",
-    );
-    await expectRepositoryPulse(
-      {
-        host: "claude",
-        installedRoot: claudeInstalledRoot,
-        version: v1Version,
-        repositoryRoot: secondaryRepositoryRoot,
-        cwd: differentCwd,
-        env: cleanHostEnvironment(claudeUserHome, {
-          CLAUDE_CONFIG_DIR: claudeConfig,
-          CLAUDE_PROJECT_DIR: secondaryRepositoryRoot,
-          ...poisonGitAuthority,
-        }),
-        clientName: "claude-plugin-e2e-secondary-session-repaired",
-      },
-      secondaryContext,
-    );
-    assert.deepEqual(
-      await recursiveByteInventory(secondaryStoreRoot),
-      validSecondaryStoreInventory,
-      "the fresh repaired Claude Pulse must not modify the valid secondary Store",
-    );
-    await resumeInstalledAlpha(
-      {
-        host: "claude",
-        installedRoot: claudeInstalledRoot,
-        version: v1Version,
-        repositoryRoot,
-        cwd: differentCwd,
-        env: cleanHostEnvironment(claudeUserHome, {
-          CLAUDE_CONFIG_DIR: claudeConfig,
-          CLAUDE_PROJECT_DIR: nestedCwd,
-          ...poisonGitAuthority,
-        }),
-        clientName: "claude-plugin-e2e-root-and-secondary-session-recovery",
-      },
-      codexAlpha.result,
-    );
-    for (const host of ["codex", "claude"]) {
-      assert.deepEqual(
-        await recursiveByteInventory(path.join(sandbox, `${host}-foreign-store-backup`)),
-        foreignStoreInventory,
-        `${host} foreign Store evidence must remain byte-exact after recovery`,
-      );
-    }
-    assert.deepEqual(
-      await recursiveByteInventory(linkedStoreRoot),
-      linkedStoreInventory,
-      "secondary-session exercises and exact Task replay must not modify the linked Store",
-    );
-
-    assert.deepEqual(
-      await readFile(path.join(codexInstalledRoot, "bin/understand-code.mjs")),
-      await readFile(path.join(claudeInstalledRoot, "bin/understand-code.mjs")),
-      "both mandatory Host plugins must install the same-version bundled MCP executable",
-    );
-
-    const claudeV1InstalledRoot = claudeInstalledRoot;
-    await activateMarketplaceFacade(marketplaceFacadeRoot, releases.v2);
-
-    const codexV2Reinstall = JSON.parse(
-      (await execBounded(codexCli, ["plugin", "add", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`, "--json"], {
-        cwd: differentCwd,
-        env: codexEnv,
-        encoding: "utf8",
-      })).stdout,
-    );
-    assert.equal(codexV2Reinstall.pluginId, `${PLUGIN_NAME}@${MARKETPLACE_NAME}`);
-    assert.equal(codexV2Reinstall.version, releases.v2.version);
-    await activeCodexPlugin(
-      codexCli,
-      differentCwd,
-      codexEnv,
-      releases.v2.version,
-    );
-    codexInstalledRoot = await realpath(codexV2Reinstall.installedPath);
-    assert.equal(
-      await fileSha256(path.join(codexInstalledRoot, "bin/understand-code.mjs")),
-      releases.v2.cliSha256,
-    );
-    await runInstalledHostDoctor({
-      installedPackageRoot: releases.v2.root,
-      host: "codex",
-      version: releases.v2.version,
-      cwd: differentCwd,
-      env: codexEnv,
-      expectedStatus: "healthy",
-    });
-    await resumeInstalledAlpha(
-      {
-        host: "codex",
-        installedRoot: codexInstalledRoot,
-        version: releases.v2.version,
-        repositoryRoot,
-        cwd: nestedCwd,
-        env: cleanHostEnvironment(codexUserHome, {
-          CODEX_HOME: codexHome,
-          ...poisonGitAuthority,
-        }),
-        clientName: "codex-plugin-e2e-lifecycle-v2",
-      },
-      codexAlpha.result,
-    );
-
-    await execBounded(claudeCli, ["plugin", "marketplace", "update", MARKETPLACE_NAME], {
-      cwd: differentCwd,
-      env: claudeEnv,
-      encoding: "utf8",
-    });
-    await execBounded(
-      claudeCli,
-      ["plugin", "update", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`, "--scope", "user"],
-      { cwd: differentCwd, env: claudeEnv, encoding: "utf8" },
-    );
-    const activeClaudeV2 = await activeClaudePlugin(
-      claudeCli,
-      differentCwd,
-      claudeEnv,
-      releases.v2.version,
-    );
-    claudeInstalledRoot = activeClaudeV2.installedRoot;
-    assert.notEqual(claudeInstalledRoot, claudeV1InstalledRoot);
-    assert.equal(
-      await fileSha256(path.join(claudeInstalledRoot, "bin/understand-code.mjs")),
-      releases.v2.cliSha256,
-    );
-    assert.equal(
-      await findClaudeInstalledRoot(claudeConfig, v1Version),
-      claudeV1InstalledRoot,
-      "Claude v1 cache may remain only as an inert non-authoritative residual",
-    );
-    await runInstalledHostDoctor({
-      installedPackageRoot: releases.v2.root,
-      host: "claude",
-      version: releases.v2.version,
-      cwd: differentCwd,
-      env: claudeEnv,
-      expectedStatus: "healthy",
-    });
-    await resumeInstalledAlpha(
-      {
-        host: "claude",
-        installedRoot: claudeInstalledRoot,
-        version: releases.v2.version,
-        repositoryRoot,
-        cwd: differentCwd,
-        env: cleanHostEnvironment(claudeUserHome, {
-          CLAUDE_CONFIG_DIR: claudeConfig,
-          CLAUDE_PROJECT_DIR: nestedCwd,
-          ...poisonGitAuthority,
-        }),
-        clientName: "claude-plugin-e2e-lifecycle-v2",
-      },
-      codexAlpha.result,
-    );
-    assert.deepEqual(
-      await readFile(path.join(codexInstalledRoot, "bin/understand-code.mjs")),
-      await readFile(path.join(claudeInstalledRoot, "bin/understand-code.mjs")),
-      "both active v2 Host installations must execute the exact same bundle bytes",
-    );
-
-    await execBounded(codexCli, ["plugin", "remove", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`, "--json"], {
-      cwd: differentCwd,
-      env: codexEnv,
-      encoding: "utf8",
-    });
-    await assertMissing(codexInstalledRoot, "Codex remove must delete the active v2 official installedPath");
-    await activateMarketplaceFacade(marketplaceFacadeRoot, releases.v1);
-    const codexPinnedV1Install = JSON.parse(
-      (await execBounded(codexCli, ["plugin", "add", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`, "--json"], {
-        cwd: differentCwd,
-        env: codexEnv,
-        encoding: "utf8",
-      })).stdout,
-    );
-    assert.equal(codexPinnedV1Install.version, v1Version);
-    await activeCodexPlugin(
-      codexCli,
-      differentCwd,
-      codexEnv,
-      v1Version,
-    );
-    codexInstalledRoot = await realpath(codexPinnedV1Install.installedPath);
-    assert.equal(
-      await fileSha256(path.join(codexInstalledRoot, "bin/understand-code.mjs")),
-      releases.v1.cliSha256,
-    );
-    await runInstalledHostDoctor({
-      installedPackageRoot: releases.v1.root,
-      host: "codex",
-      version: v1Version,
-      cwd: differentCwd,
-      env: codexEnv,
-      expectedStatus: "healthy",
-    });
-    await resumeInstalledAlpha(
-      {
-        host: "codex",
-        installedRoot: codexInstalledRoot,
-        version: v1Version,
-        repositoryRoot,
-        cwd: nestedCwd,
-        env: cleanHostEnvironment(codexUserHome, {
-          CODEX_HOME: codexHome,
-          ...poisonGitAuthority,
-        }),
-        clientName: "codex-plugin-e2e-pinned-v1-reinstall",
-      },
-      codexAlpha.result,
-    );
-
-    await execBounded(
-      claudeCli,
-      ["plugin", "uninstall", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`, "--scope", "user", "--yes"],
-      { cwd: differentCwd, env: claudeEnv, encoding: "utf8" },
-    );
-    assert.deepEqual(
-      JSON.parse((await execBounded(claudeCli, ["plugin", "list", "--json"], {
-        cwd: differentCwd,
-        env: claudeEnv,
-        encoding: "utf8",
-      })).stdout),
-      [],
-      "Claude uninstall must clear the authoritative active registration before pinned-v1 reinstall",
-    );
-    await execBounded(claudeCli, ["plugin", "marketplace", "update", MARKETPLACE_NAME], {
-      cwd: differentCwd,
-      env: claudeEnv,
-      encoding: "utf8",
-    });
-    await execBounded(
-      claudeCli,
-      ["plugin", "install", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`, "--scope", "user"],
-      { cwd: differentCwd, env: claudeEnv, encoding: "utf8" },
-    );
-    const activeClaudePinnedV1 = await activeClaudePlugin(
-      claudeCli,
-      differentCwd,
-      claudeEnv,
-      v1Version,
-    );
-    claudeInstalledRoot = activeClaudePinnedV1.installedRoot;
-    assert.equal(
-      await fileSha256(path.join(claudeInstalledRoot, "bin/understand-code.mjs")),
-      releases.v1.cliSha256,
-    );
-    await runInstalledHostDoctor({
-      installedPackageRoot: releases.v1.root,
-      host: "claude",
-      version: v1Version,
-      cwd: differentCwd,
-      env: claudeEnv,
-      expectedStatus: "healthy",
-    });
-    await resumeInstalledAlpha(
-      {
-        host: "claude",
-        installedRoot: claudeInstalledRoot,
-        version: v1Version,
-        repositoryRoot,
-        cwd: differentCwd,
-        env: cleanHostEnvironment(claudeUserHome, {
-          CLAUDE_CONFIG_DIR: claudeConfig,
-          CLAUDE_PROJECT_DIR: nestedCwd,
-          ...poisonGitAuthority,
-        }),
-        clientName: "claude-plugin-e2e-pinned-v1-reinstall",
-      },
-      codexAlpha.result,
-    );
-    assert.deepEqual(
-      await readFile(path.join(codexInstalledRoot, "bin/understand-code.mjs")),
-      await readFile(path.join(claudeInstalledRoot, "bin/understand-code.mjs")),
-      "both pinned-v1 Host reinstalls must execute the exact v1 bundle bytes",
-    );
-
-    await execBounded(codexCli, ["plugin", "remove", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`, "--json"], {
-      cwd: differentCwd,
-      env: codexEnv,
-      encoding: "utf8",
-    });
-    await execBounded(codexCli, ["plugin", "marketplace", "remove", MARKETPLACE_NAME], {
-      cwd: differentCwd,
-      env: codexEnv,
-      encoding: "utf8",
-    });
-    await assertMissing(codexInstalledRoot, "Codex remove must clean the installed plugin cache");
-    codexInstalledRoot = null;
-    await runInstalledHostDoctor({
-      installedPackageRoot: releases.v1.root,
-      host: "codex",
-      version: v1Version,
-      cwd: differentCwd,
-      env: codexEnv,
-      expectedStatus: "not_registered",
-    });
-    assert.match(
-      (await execBounded(codexCli, ["plugin", "marketplace", "list"], { env: codexEnv, encoding: "utf8" })).stdout,
-      /No plugin marketplaces in scope\./u,
-    );
-
-    await execBounded(claudeCli, ["plugin", "uninstall", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`, "--scope", "user", "--yes"], {
-      cwd: differentCwd,
-      env: claudeEnv,
-      encoding: "utf8",
-    });
-    await execBounded(claudeCli, ["plugin", "marketplace", "remove", MARKETPLACE_NAME, "--scope", "user"], {
-      cwd: differentCwd,
-      env: claudeEnv,
-      encoding: "utf8",
-    });
-    const claudeAfter = JSON.parse(
-      (await execBounded(claudeCli, ["plugin", "list", "--json"], { env: claudeEnv, encoding: "utf8" })).stdout,
-    );
-    assert.deepEqual(claudeAfter, []);
-    const claudeMarketplacesAfter = JSON.parse(
-      (await execBounded(claudeCli, ["plugin", "marketplace", "list", "--json"], {
-        env: claudeEnv,
-        encoding: "utf8",
-      })).stdout,
-    );
-    assert.deepEqual(claudeMarketplacesAfter, []);
-    await runInstalledHostDoctor({
-      installedPackageRoot: releases.v1.root,
-      host: "claude",
-      version: v1Version,
-      cwd: differentCwd,
-      env: claudeEnv,
-      expectedStatus: "not_registered",
-    });
-    // Claude Code keeps an inert version cache after uninstall; the isolated config sandbox below
-    // is the cleanup boundary, while plugin list is the authoritative installation state.
-    claudeInstalledRoot = null;
-    assert.equal(
-      (await stat(path.join(repositoryRoot, ".understand-code"))).isDirectory(),
-      true,
-      "the complete Host lifecycle must retain its Task artifacts only in the linked worktree",
-    );
-    await Promise.all([
-      assertMissing(
-        path.join(primaryRepositoryRoot, ".understand-code"),
-        "the primary worktree must remain free of linked-worktree artifacts",
-      ),
-      assertMissing(
-        path.join(ambientRepositoryRoot, ".understand-code"),
-        "the poisoned ambient repository must remain free of artifacts",
-      ),
-    ]);
-    assert.equal(
-      (await repositoryGit(
+      const repositoryRoot = await createLinkedWorktree(
         primaryRepositoryRoot,
-        ["status", "--porcelain=v1", "--untracked-files=all"],
-      )).stdout,
-      "",
-      "the primary worktree must remain completely clean",
-    );
-    assert.deepEqual(await readFile(primarySourcePath), primarySourceBefore);
-    assert.deepEqual(await readFile(primaryIndexPath), primaryIndexBefore);
-    assert.notDeepEqual(await readFile(linkedSourcePath), linkedSourceBefore);
-    assert.deepEqual(await readFile(linkedSourcePath), Buffer.from(VERIFIED_SOURCE, "utf8"));
-  } finally {
-    await rm(sandbox, { recursive: true, force: true });
-  }
-});
+        path.join(sandbox, "链接工作树 linked with space"),
+      );
+      const nestedCwd = path.join(repositoryRoot, "src", "嵌套 目录");
+      await mkdir(nestedCwd, { recursive: true });
+      assert.equal(await realpath(nestedCwd), nestedCwd);
+      for (const candidate of [
+        primaryRepositoryRoot,
+        repositoryRoot,
+        nestedCwd,
+      ]) {
+        assert.match(candidate, / /u, "Root fixture must retain a path-space boundary");
+        assert.match(
+          candidate,
+          /\p{Script=Han}/u,
+          "Root fixture must retain a Chinese path boundary",
+        );
+      }
+      assert.equal((await stat(path.join(repositoryRoot, ".git"))).isFile(), true);
+      assert.equal(
+        await realpath((await repositoryGit(
+          repositoryRoot,
+          ["rev-parse", "--show-toplevel"],
+        )).stdout.trim()),
+        repositoryRoot,
+      );
+      assert.equal(
+        (await repositoryGit(
+          repositoryRoot,
+          ["rev-parse", "--abbrev-ref", "HEAD"],
+        )).stdout.trim(),
+        "HEAD",
+        "Root fixture must be a detached linked worktree",
+      );
+      const primarySourcePath = path.join(primaryRepositoryRoot, "src/index.ts");
+      const linkedSourcePath = path.join(repositoryRoot, "src/index.ts");
+      const primaryIndexPath = await absoluteGitPath(primaryRepositoryRoot, "index");
+      const linkedIndexPath = await absoluteGitPath(repositoryRoot, "index");
+      assert.notEqual(linkedIndexPath, primaryIndexPath);
+      const [
+        primarySourceBefore,
+        primaryIndexBefore,
+        linkedSourceBefore,
+        linkedIndexBefore,
+      ] = await Promise.all([
+        readFile(primarySourcePath),
+        readFile(primaryIndexPath),
+        readFile(linkedSourcePath),
+        readFile(linkedIndexPath),
+      ]);
+      const ambientRepositoryRoot = await createRepository(
+        path.join(sandbox, "ambient-repository"),
+        "export function ambient() { return 'poison-authority'; }\n",
+      );
+      const ambientIndexPath = await absoluteGitPath(
+        ambientRepositoryRoot,
+        "index",
+      );
+      assert.notEqual(
+        contentDigest(await readFile(ambientIndexPath)),
+        contentDigest(await readFile(linkedIndexPath)),
+        "poisoned ambient repository must have unrelated index bytes",
+      );
+      const ambientObjectsPath = path.join(
+        ambientRepositoryRoot,
+        ".git",
+        "objects",
+      );
+      const poisonGitAuthority = Object.freeze({
+        GIT_DIR: path.join(ambientRepositoryRoot, ".git"),
+        GIT_WORK_TREE: ambientRepositoryRoot,
+        GIT_COMMON_DIR: path.join(ambientRepositoryRoot, ".git"),
+        GIT_INDEX_FILE: ambientIndexPath,
+        GIT_OBJECT_DIRECTORY: ambientObjectsPath,
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ambientObjectsPath,
+      });
+      await Promise.all([
+        mkdir(packDirectory, { recursive: true }),
+        mkdir(installDirectory, { recursive: true }),
+        mkdir(codexHome, { recursive: true }),
+        mkdir(codexUserHome, { recursive: true }),
+        mkdir(claudeConfig, { recursive: true }),
+        mkdir(claudeUserHome, { recursive: true }),
+        mkdir(releasesRoot, { recursive: true }),
+        mkdir(marketplaceFacadeRoot, { recursive: true }),
+        mkdir(differentCwd, { recursive: true }),
+      ]);
+
+      assert.equal(
+        process.env.UNDERSTAND_CODE_PREVIEW_TARBALL,
+        undefined,
+        "arbitrary tarball overrides are forbidden; provide a verified candidate directory",
+      );
+      let tarballPath;
+      let verifiedCandidate = null;
+      if (process.env.UNDERSTAND_CODE_PREVIEW_CANDIDATE_DIR !== undefined) {
+        verifiedCandidate = await verifiedCandidateSubject(
+          process.env.UNDERSTAND_CODE_PREVIEW_CANDIDATE_DIR,
+        );
+        tarballPath = verifiedCandidate.tarballPath;
+      } else {
+        assert.notEqual(
+          process.env.UNDERSTAND_CODE_REQUIRE_VERIFIED_CANDIDATE,
+          "1",
+          "the release Surface gate requires the Browser-verified candidate directory",
+        );
+        const packed = await execBounded(
+          "npm",
+          [
+            "pack",
+            ".",
+            "--ignore-scripts",
+            "--pack-destination",
+            packDirectory,
+            "--json",
+          ],
+          { cwd: packageRoot, encoding: "utf8", timeout: 120_000 },
+        );
+        const records = JSON.parse(packed.stdout);
+        assert.equal(records.length, 1);
+        tarballPath = path.join(packDirectory, records[0].filename);
+      }
+      await execBounded(
+        "npm",
+        [
+          "install",
+          "--global",
+          "--prefix",
+          installDirectory,
+          "--ignore-scripts",
+          "--no-package-lock",
+          "--no-audit",
+          "--no-fund",
+          tarballPath,
+        ],
+        { cwd: installDirectory, encoding: "utf8", timeout: 120_000 },
+      );
+      const installedPackageRoot = path.join(
+        installDirectory,
+        process.platform === "win32" ? "node_modules" : "lib/node_modules",
+        "@understand-code/preview",
+      );
+      const packageManifest = JSON.parse(
+        await readFile(path.join(installedPackageRoot, "package.json"), "utf8"),
+      );
+      if (verifiedCandidate !== null) {
+        assert.deepEqual(
+          { name: packageManifest.name, version: packageManifest.version },
+          verifiedCandidate.manifest.package,
+          "Host lifecycle must install the exact candidate package identity",
+        );
+        const installedReleaseManifestBytes = await readFile(
+          path.join(installedPackageRoot, "dist", "release-manifest.json"),
+        );
+        assert.equal(
+          contentDigest(installedReleaseManifestBytes),
+          verifiedCandidate.manifest.embeddedReleaseManifest.sha256,
+          "installed release manifest must match the candidate binding",
+        );
+        const installedReleaseManifest = JSON.parse(
+          installedReleaseManifestBytes.toString("utf8"),
+        );
+        assert.equal(installedReleaseManifest.schemaVersion, "understand-code-alpha-release-v1");
+        assert.equal(
+          contentDigest(
+            await readFile(
+              path.join(installedPackageRoot, installedReleaseManifest.cli.path),
+            ),
+          ),
+          installedReleaseManifest.cli.sha256,
+          "installed CLI bytes must match the embedded release manifest",
+        );
+      }
+      const v1Version = packageManifest.version;
+      const releases = await createLifecycleReleases(
+        installedPackageRoot,
+        releasesRoot,
+        v1Version,
+      );
+      await activateMarketplaceFacade(marketplaceFacadeRoot, releases.v1);
+      const codexMarketplaceRoot = path.join(marketplaceFacadeRoot, "codex");
+      const claudeMarketplaceRoot = path.join(marketplaceFacadeRoot, "claude");
+
+      const codexEnv = cleanHostEnvironment(codexUserHome, {
+        CODEX_HOME: codexHome,
+        PATH: `${path.dirname(codexCli)}${path.delimiter}${process.env.PATH ?? "/usr/bin:/bin"}`,
+      });
+      const codexMarketplace = JSON.parse(
+        (await execBounded(
+          codexCli,
+          ["plugin", "marketplace", "add", codexMarketplaceRoot, "--json"],
+          { cwd: differentCwd, env: codexEnv, encoding: "utf8" },
+        )).stdout,
+      );
+      assert.equal(codexMarketplace.marketplaceName, MARKETPLACE_NAME);
+      const codexInstall = JSON.parse(
+        (await execBounded(
+          codexCli,
+          ["plugin", "add", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`, "--json"],
+          { cwd: differentCwd, env: codexEnv, encoding: "utf8" },
+        )).stdout,
+      );
+      assert.equal(codexInstall.pluginId, `${PLUGIN_NAME}@${MARKETPLACE_NAME}`);
+      assert.equal(codexInstall.version, v1Version);
+      await activeCodexPlugin(codexCli, differentCwd, codexEnv, v1Version);
+      codexInstalledRoot = await realpath(codexInstall.installedPath);
+      assert.equal(
+        codexInstalledRoot.startsWith(`${await realpath(codexHome)}${path.sep}`),
+        true,
+      );
+      assert.equal(
+        await fileSha256(
+          path.join(codexInstalledRoot, "bin/understand-code.mjs"),
+        ),
+        releases.v1.cliSha256,
+        "official Codex cache must contain exact v1 CLI bytes",
+      );
+      assert.deepEqual(
+        await readFile(
+          path.join(codexInstalledRoot, "bin/dashboard-manifest.json"),
+        ),
+        await readFile(path.join(
+          releasePluginRoot(releases.v1.root, "codex"),
+          "plugins/understand-code/bin/dashboard-manifest.json",
+        )),
+        "official Codex cache must contain exact v1 Dashboard manifest",
+      );
+      assert.match(
+        (await execBounded(codexCli, ["plugin", "list"], {
+          cwd: differentCwd,
+          env: codexEnv,
+          encoding: "utf8",
+        })).stdout,
+        /understand-code@understand-code-alpha\s+installed, enabled/u,
+      );
+      const codexMcpList = JSON.parse(
+        (await execBounded(codexCli, ["mcp", "list", "--json"], {
+          cwd: differentCwd,
+          env: codexEnv,
+          encoding: "utf8",
+        })).stdout,
+      );
+      const registeredCodexMcp = codexMcpList.find(
+        (server) => server.name === PLUGIN_NAME,
+      );
+      assert.ok(registeredCodexMcp, "Codex CLI must register the plugin MCP server");
+      assert.equal(registeredCodexMcp.enabled, true);
+      assert.equal(registeredCodexMcp.transport.type, "stdio");
+      assert.equal(
+        registeredCodexMcp.transport.command,
+        "./bin/understand-code-plugin.mjs",
+      );
+      assert.deepEqual(
+        registeredCodexMcp.transport.args,
+        ["--host", "codex"],
+      );
+      const registeredCodexMcpDetail = JSON.parse(
+        (await execBounded(
+          codexCli,
+          ["mcp", "get", PLUGIN_NAME, "--json"],
+          { cwd: differentCwd, env: codexEnv, encoding: "utf8" },
+        )).stdout,
+      );
+      assert.equal(registeredCodexMcpDetail.name, PLUGIN_NAME);
+      assert.equal(registeredCodexMcpDetail.enabled, true);
+      assert.deepEqual(
+        registeredCodexMcpDetail.transport,
+        registeredCodexMcp.transport,
+      );
+      await runInstalledHostDoctor({
+        installedPackageRoot: releases.v1.root,
+        host: "codex",
+        version: v1Version,
+        cwd: differentCwd,
+        env: codexEnv,
+        expectedStatus: "healthy",
+      });
+      const codexV1 = await exerciseInstalledMutationLocks({
+        host: "codex",
+        installedRoot: codexInstalledRoot,
+        version: v1Version,
+        repositoryRoot,
+        expectedIndexPath: linkedIndexPath,
+        cwd: nestedCwd,
+        env: cleanHostEnvironment(codexUserHome, {
+          CODEX_HOME: codexHome,
+          ...poisonGitAuthority,
+        }),
+        clientName: "codex-plugin-e2e-v1",
+      });
+      await expectCacheBindingFailure({
+        server: codexV1.server,
+        version: v1Version,
+        cwd: differentCwd,
+        env: cleanHostEnvironment(codexUserHome, { CODEX_HOME: codexHome }),
+        clientName: "codex-plugin-e2e-root-unavailable",
+        reason: "root_unavailable",
+        artifactRoots: [differentCwd],
+      });
+
+      const claudeEnv = cleanHostEnvironment(claudeUserHome, {
+        CLAUDE_CONFIG_DIR: claudeConfig,
+        PATH: `${path.dirname(claudeCli)}${path.delimiter}${process.env.PATH ?? "/usr/bin:/bin"}`,
+      });
+      await execBounded(
+        claudeCli,
+        ["plugin", "validate", "--strict", claudeMarketplaceRoot],
+        { cwd: differentCwd, env: claudeEnv, encoding: "utf8" },
+      );
+      await execBounded(
+        claudeCli,
+        [
+          "plugin",
+          "marketplace",
+          "add",
+          claudeMarketplaceRoot,
+          "--scope",
+          "user",
+        ],
+        { cwd: differentCwd, env: claudeEnv, encoding: "utf8" },
+      );
+      const claudeMarketplaces = JSON.parse(
+        (await execBounded(
+          claudeCli,
+          ["plugin", "marketplace", "list", "--json"],
+          { cwd: differentCwd, env: claudeEnv, encoding: "utf8" },
+        )).stdout,
+      );
+      assert.match(
+        JSON.stringify(claudeMarketplaces),
+        new RegExp(MARKETPLACE_NAME, "u"),
+      );
+      await execBounded(
+        claudeCli,
+        [
+          "plugin",
+          "install",
+          `${PLUGIN_NAME}@${MARKETPLACE_NAME}`,
+          "--scope",
+          "user",
+        ],
+        { cwd: differentCwd, env: claudeEnv, encoding: "utf8" },
+      );
+      const activeClaudeV1 = await activeClaudePlugin(
+        claudeCli,
+        differentCwd,
+        claudeEnv,
+        v1Version,
+      );
+      claudeInstalledRoot = activeClaudeV1.installedRoot;
+      assert.equal(
+        claudeInstalledRoot.startsWith(
+          `${await realpath(claudeConfig)}${path.sep}`,
+        ),
+        true,
+      );
+      assert.deepEqual(
+        await readFile(
+          path.join(claudeInstalledRoot, "bin/dashboard-manifest.json"),
+        ),
+        await readFile(path.join(
+          releasePluginRoot(releases.v1.root, "claude"),
+          "plugins/understand-code/bin/dashboard-manifest.json",
+        )),
+        "authoritative Claude cache must contain exact v1 Dashboard manifest",
+      );
+      await runInstalledHostDoctor({
+        installedPackageRoot: releases.v1.root,
+        host: "claude",
+        version: v1Version,
+        cwd: differentCwd,
+        env: claudeEnv,
+        expectedStatus: "healthy",
+      });
+      const claudeV1 = await exerciseInstalledMutationLocks({
+        host: "claude",
+        installedRoot: claudeInstalledRoot,
+        version: v1Version,
+        repositoryRoot,
+        expectedIndexPath: linkedIndexPath,
+        cwd: differentCwd,
+        env: cleanHostEnvironment(claudeUserHome, {
+          CLAUDE_CONFIG_DIR: claudeConfig,
+          CLAUDE_PROJECT_DIR: nestedCwd,
+          ...poisonGitAuthority,
+        }),
+        clientName: "claude-plugin-e2e-v1",
+      });
+      const claudeBindingEnvironment = cleanHostEnvironment(claudeUserHome, {
+        CLAUDE_CONFIG_DIR: claudeConfig,
+      });
+      await expectCacheBindingFailure({
+        server: claudeV1.server,
+        version: v1Version,
+        cwd: differentCwd,
+        env: claudeBindingEnvironment,
+        clientName: "claude-plugin-e2e-root-missing",
+        reason: "root_missing",
+        artifactRoots: [differentCwd],
+      });
+      const invalidRootContainer = path.join(
+        sandbox,
+        "invalid-root-file-container",
+      );
+      const invalidRootFile = path.join(
+        invalidRootContainer,
+        "not-a-directory.ts",
+      );
+      const invalidRootBytes = Buffer.from(
+        "export const notARepository = true;\n",
+        "utf8",
+      );
+      await mkdir(invalidRootContainer, { recursive: true });
+      await writeFile(invalidRootFile, invalidRootBytes);
+      await expectCacheBindingFailure({
+        server: claudeV1.server,
+        version: v1Version,
+        cwd: differentCwd,
+        env: {
+          ...claudeBindingEnvironment,
+          CLAUDE_PROJECT_DIR: invalidRootFile,
+        },
+        clientName: "claude-plugin-e2e-root-not-directory",
+        reason: "root_not_directory",
+        artifactRoots: [invalidRootContainer],
+      });
+      assert.deepEqual(await readFile(invalidRootFile), invalidRootBytes);
+      for (const [unsafeRoot, label] of [
+        ["relative/repository", "relative"],
+        ["${CLAUDE_PROJECT_DIR}", "unexpanded placeholder"],
+      ]) {
+        await expectUnsafeWrapperRootFailure(
+          claudeV1.server,
+          differentCwd,
+          {
+            ...claudeBindingEnvironment,
+            CLAUDE_PROJECT_DIR: unsafeRoot,
+          },
+          `Claude plugin must reject an unsafe ${label} Root before MCP`,
+        );
+      }
+      assert.deepEqual(
+        await readFile(
+          path.join(codexInstalledRoot, "bin/understand-code.mjs"),
+        ),
+        await readFile(
+          path.join(claudeInstalledRoot, "bin/understand-code.mjs"),
+        ),
+        "both v1 Host installations must execute exact same bundle bytes",
+      );
+
+      const claudeV1InstalledRoot = claudeInstalledRoot;
+      await activateMarketplaceFacade(marketplaceFacadeRoot, releases.v2);
+      const codexV2Reinstall = JSON.parse(
+        (await execBounded(
+          codexCli,
+          ["plugin", "add", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`, "--json"],
+          { cwd: differentCwd, env: codexEnv, encoding: "utf8" },
+        )).stdout,
+      );
+      assert.equal(codexV2Reinstall.version, releases.v2.version);
+      await activeCodexPlugin(
+        codexCli,
+        differentCwd,
+        codexEnv,
+        releases.v2.version,
+      );
+      codexInstalledRoot = await realpath(codexV2Reinstall.installedPath);
+      assert.equal(
+        await fileSha256(
+          path.join(codexInstalledRoot, "bin/understand-code.mjs"),
+        ),
+        releases.v2.cliSha256,
+      );
+      await runInstalledHostDoctor({
+        installedPackageRoot: releases.v2.root,
+        host: "codex",
+        version: releases.v2.version,
+        cwd: differentCwd,
+        env: codexEnv,
+        expectedStatus: "healthy",
+      });
+      await exerciseInstalledMutationLocks({
+        host: "codex",
+        installedRoot: codexInstalledRoot,
+        version: releases.v2.version,
+        repositoryRoot,
+        expectedIndexPath: linkedIndexPath,
+        cwd: nestedCwd,
+        env: cleanHostEnvironment(codexUserHome, {
+          CODEX_HOME: codexHome,
+          ...poisonGitAuthority,
+        }),
+        clientName: "codex-plugin-e2e-v2",
+      });
+
+      await execBounded(
+        claudeCli,
+        ["plugin", "marketplace", "update", MARKETPLACE_NAME],
+        { cwd: differentCwd, env: claudeEnv, encoding: "utf8" },
+      );
+      await execBounded(
+        claudeCli,
+        [
+          "plugin",
+          "update",
+          `${PLUGIN_NAME}@${MARKETPLACE_NAME}`,
+          "--scope",
+          "user",
+        ],
+        { cwd: differentCwd, env: claudeEnv, encoding: "utf8" },
+      );
+      const activeClaudeV2 = await activeClaudePlugin(
+        claudeCli,
+        differentCwd,
+        claudeEnv,
+        releases.v2.version,
+      );
+      claudeInstalledRoot = activeClaudeV2.installedRoot;
+      assert.notEqual(claudeInstalledRoot, claudeV1InstalledRoot);
+      assert.equal(
+        await fileSha256(
+          path.join(claudeInstalledRoot, "bin/understand-code.mjs"),
+        ),
+        releases.v2.cliSha256,
+      );
+      assert.equal(
+        await findClaudeInstalledRoot(claudeConfig, v1Version),
+        claudeV1InstalledRoot,
+        "Claude v1 cache may remain only as inert non-authoritative residual",
+      );
+      await runInstalledHostDoctor({
+        installedPackageRoot: releases.v2.root,
+        host: "claude",
+        version: releases.v2.version,
+        cwd: differentCwd,
+        env: claudeEnv,
+        expectedStatus: "healthy",
+      });
+      await exerciseInstalledMutationLocks({
+        host: "claude",
+        installedRoot: claudeInstalledRoot,
+        version: releases.v2.version,
+        repositoryRoot,
+        expectedIndexPath: linkedIndexPath,
+        cwd: differentCwd,
+        env: cleanHostEnvironment(claudeUserHome, {
+          CLAUDE_CONFIG_DIR: claudeConfig,
+          CLAUDE_PROJECT_DIR: nestedCwd,
+          ...poisonGitAuthority,
+        }),
+        clientName: "claude-plugin-e2e-v2",
+      });
+      assert.deepEqual(
+        await readFile(
+          path.join(codexInstalledRoot, "bin/understand-code.mjs"),
+        ),
+        await readFile(
+          path.join(claudeInstalledRoot, "bin/understand-code.mjs"),
+        ),
+        "both active v2 Host installations must execute same bundle bytes",
+      );
+
+      await execBounded(
+        codexCli,
+        [
+          "plugin",
+          "remove",
+          `${PLUGIN_NAME}@${MARKETPLACE_NAME}`,
+          "--json",
+        ],
+        { cwd: differentCwd, env: codexEnv, encoding: "utf8" },
+      );
+      await assertMissing(
+        codexInstalledRoot,
+        "Codex remove must delete active v2 official installedPath",
+      );
+      await activateMarketplaceFacade(marketplaceFacadeRoot, releases.v1);
+      const codexPinnedV1Install = JSON.parse(
+        (await execBounded(
+          codexCli,
+          ["plugin", "add", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`, "--json"],
+          { cwd: differentCwd, env: codexEnv, encoding: "utf8" },
+        )).stdout,
+      );
+      assert.equal(codexPinnedV1Install.version, v1Version);
+      await activeCodexPlugin(codexCli, differentCwd, codexEnv, v1Version);
+      codexInstalledRoot = await realpath(codexPinnedV1Install.installedPath);
+      assert.equal(
+        await fileSha256(
+          path.join(codexInstalledRoot, "bin/understand-code.mjs"),
+        ),
+        releases.v1.cliSha256,
+      );
+      await runInstalledHostDoctor({
+        installedPackageRoot: releases.v1.root,
+        host: "codex",
+        version: v1Version,
+        cwd: differentCwd,
+        env: codexEnv,
+        expectedStatus: "healthy",
+      });
+      await exerciseInstalledMutationLocks({
+        host: "codex",
+        installedRoot: codexInstalledRoot,
+        version: v1Version,
+        repositoryRoot,
+        expectedIndexPath: linkedIndexPath,
+        cwd: nestedCwd,
+        env: cleanHostEnvironment(codexUserHome, {
+          CODEX_HOME: codexHome,
+          ...poisonGitAuthority,
+        }),
+        clientName: "codex-plugin-e2e-pinned-v1",
+      });
+
+      await execBounded(
+        claudeCli,
+        [
+          "plugin",
+          "uninstall",
+          `${PLUGIN_NAME}@${MARKETPLACE_NAME}`,
+          "--scope",
+          "user",
+          "--yes",
+        ],
+        { cwd: differentCwd, env: claudeEnv, encoding: "utf8" },
+      );
+      assert.deepEqual(
+        JSON.parse((await execBounded(
+          claudeCli,
+          ["plugin", "list", "--json"],
+          { cwd: differentCwd, env: claudeEnv, encoding: "utf8" },
+        )).stdout),
+        [],
+        "Claude uninstall must clear active registration before rollback",
+      );
+      await execBounded(
+        claudeCli,
+        ["plugin", "marketplace", "update", MARKETPLACE_NAME],
+        { cwd: differentCwd, env: claudeEnv, encoding: "utf8" },
+      );
+      await execBounded(
+        claudeCli,
+        [
+          "plugin",
+          "install",
+          `${PLUGIN_NAME}@${MARKETPLACE_NAME}`,
+          "--scope",
+          "user",
+        ],
+        { cwd: differentCwd, env: claudeEnv, encoding: "utf8" },
+      );
+      const activeClaudePinnedV1 = await activeClaudePlugin(
+        claudeCli,
+        differentCwd,
+        claudeEnv,
+        v1Version,
+      );
+      claudeInstalledRoot = activeClaudePinnedV1.installedRoot;
+      assert.equal(
+        await fileSha256(
+          path.join(claudeInstalledRoot, "bin/understand-code.mjs"),
+        ),
+        releases.v1.cliSha256,
+      );
+      await runInstalledHostDoctor({
+        installedPackageRoot: releases.v1.root,
+        host: "claude",
+        version: v1Version,
+        cwd: differentCwd,
+        env: claudeEnv,
+        expectedStatus: "healthy",
+      });
+      await exerciseInstalledMutationLocks({
+        host: "claude",
+        installedRoot: claudeInstalledRoot,
+        version: v1Version,
+        repositoryRoot,
+        expectedIndexPath: linkedIndexPath,
+        cwd: differentCwd,
+        env: cleanHostEnvironment(claudeUserHome, {
+          CLAUDE_CONFIG_DIR: claudeConfig,
+          CLAUDE_PROJECT_DIR: nestedCwd,
+          ...poisonGitAuthority,
+        }),
+        clientName: "claude-plugin-e2e-pinned-v1",
+      });
+      assert.deepEqual(
+        await readFile(
+          path.join(codexInstalledRoot, "bin/understand-code.mjs"),
+        ),
+        await readFile(
+          path.join(claudeInstalledRoot, "bin/understand-code.mjs"),
+        ),
+        "both pinned-v1 Host reinstalls must execute exact same bundle bytes",
+      );
+
+      await execBounded(
+        codexCli,
+        [
+          "plugin",
+          "remove",
+          `${PLUGIN_NAME}@${MARKETPLACE_NAME}`,
+          "--json",
+        ],
+        { cwd: differentCwd, env: codexEnv, encoding: "utf8" },
+      );
+      await execBounded(
+        codexCli,
+        ["plugin", "marketplace", "remove", MARKETPLACE_NAME],
+        { cwd: differentCwd, env: codexEnv, encoding: "utf8" },
+      );
+      await assertMissing(
+        codexInstalledRoot,
+        "Codex remove must clean installed plugin cache",
+      );
+      codexInstalledRoot = null;
+      await runInstalledHostDoctor({
+        installedPackageRoot: releases.v1.root,
+        host: "codex",
+        version: v1Version,
+        cwd: differentCwd,
+        env: codexEnv,
+        expectedStatus: "not_registered",
+      });
+      assert.match(
+        (await execBounded(
+          codexCli,
+          ["plugin", "marketplace", "list"],
+          { env: codexEnv, encoding: "utf8" },
+        )).stdout,
+        /No plugin marketplaces in scope\./u,
+      );
+
+      await execBounded(
+        claudeCli,
+        [
+          "plugin",
+          "uninstall",
+          `${PLUGIN_NAME}@${MARKETPLACE_NAME}`,
+          "--scope",
+          "user",
+          "--yes",
+        ],
+        { cwd: differentCwd, env: claudeEnv, encoding: "utf8" },
+      );
+      await execBounded(
+        claudeCli,
+        [
+          "plugin",
+          "marketplace",
+          "remove",
+          MARKETPLACE_NAME,
+          "--scope",
+          "user",
+        ],
+        { cwd: differentCwd, env: claudeEnv, encoding: "utf8" },
+      );
+      assert.deepEqual(
+        JSON.parse((await execBounded(
+          claudeCli,
+          ["plugin", "list", "--json"],
+          { env: claudeEnv, encoding: "utf8" },
+        )).stdout),
+        [],
+      );
+      assert.deepEqual(
+        JSON.parse((await execBounded(
+          claudeCli,
+          ["plugin", "marketplace", "list", "--json"],
+          { env: claudeEnv, encoding: "utf8" },
+        )).stdout),
+        [],
+      );
+      await runInstalledHostDoctor({
+        installedPackageRoot: releases.v1.root,
+        host: "claude",
+        version: v1Version,
+        cwd: differentCwd,
+        env: claudeEnv,
+        expectedStatus: "not_registered",
+      });
+      claudeInstalledRoot = null;
+
+      for (const root of [
+        primaryRepositoryRoot,
+        repositoryRoot,
+        ambientRepositoryRoot,
+      ]) {
+        assert.equal(
+          await snapshotManagedArtifactTree(root),
+          null,
+          "locked public mutations must not create a managed Store in any repository",
+        );
+      }
+      assert.equal(
+        (await repositoryGit(
+          primaryRepositoryRoot,
+          ["status", "--porcelain=v1", "--untracked-files=all"],
+        )).stdout,
+        "",
+        "primary worktree must remain completely clean",
+      );
+      assert.equal(
+        (await repositoryGit(
+          repositoryRoot,
+          ["status", "--porcelain=v1", "--untracked-files=all"],
+        )).stdout,
+        "",
+        "linked worktree must remain completely clean",
+      );
+      assert.deepEqual(await readFile(primarySourcePath), primarySourceBefore);
+      assert.deepEqual(await readFile(primaryIndexPath), primaryIndexBefore);
+      assert.deepEqual(await readFile(linkedSourcePath), linkedSourceBefore);
+      assert.deepEqual(await readFile(linkedIndexPath), linkedIndexBefore);
+    } finally {
+      await rm(sandbox, { recursive: true, force: true });
+    }
+  },
+);

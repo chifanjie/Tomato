@@ -1,165 +1,152 @@
 # feature/agent-native-change-intelligence-authority Review Brief
 
-> 生成时间：2026-08-23 CST
+> 生成时间：2026-08-24 CST
 > 分支：feature/agent-native-change-intelligence-authority
-> 基于 commit：5b4c7d49b07ad4b9317afab9a63bb562a7ffa8c2
+> 基于 commit：88a3ebee1571a5b9c6fe0cfebeda1d3953e062bc `feat(task-engine): persist explicit plan obligations`
 
-## 背景与切片边界
+## 背景与动机
 
-对 D-24～D-26 的实现审计确认：现有 legacy Task/Snapshot 没有 strong task baseline、完整
-Actual/Hunk/Completeness，也不能诚实写入 `evidence_backed_v1`。因此本切片不继续扩张 legacy
-Change Check，而先关闭一个可独立交付的 D-26 Plan obligation：
+D-29 要求 strong Repository Snapshot/Pulse 使用 path-safe profile，并要求 raw legacy
+Snapshot/Pulse 仅保留 owner-only lossless reader；通用 MCP、Workbench、Preview 与日志只能看到
+strict aggregate redacted Surface。accepted Provider、HMAC identity、SafeGit、安全扫描、strong Store
+writer 与 strong Task baseline 尚未闭合，因此任何公开 Task 读写、Workbench 或 legacy refresh 成功路径
+都会虚报 strong authority。
 
-- 新 Task Brief writer 为每个 Planned Change 显式写 `expectation`；
-- 新 Verification Plan writer 继续显式写 `required: true`；
-- legacy reader 允许两字段缺失，但不得注入默认值、追溯推断、改变 canonical bytes 或 digest；
-- legacy Verification Entry 缺少 `required` 时，生命周期仍保守地按 required 门禁；
-- MCP 返回、Markdown handoff 与安装后的 React Workbench 都可观察显式义务或 legacy 缺失。
+本切片冻结合同并关闭这些不具备 authority 的能力：定义 strong persisted profile 和 public
+Surface；只保留严格脱敏的 `get_repo_pulse`；让所有公开 Task 读取、Task 变更、Workbench 与 Preview
+Task endpoint fail closed；同时保留 Graph/Wiki 的安全公开投影。它不实现或解锁 strong writer、
+Provider ownership、HMAC key lifecycle、SafeGit 或 strong Task baseline。
 
-本切片不新增 `contextGenerationId`、strong Task baseline、formal Actual/Hunk/Check，也不解锁
-strongWrites。
+## 改动策略
 
-## 冻结合同
-
-### Planned Change
-
-新公开枚举为：
-
-- `required_change`
-- `optional_change`
-- `inspect_only`
-- `verification_only`
-
-字段在 V1 reader 中保持 optional，以便无损读取历史 Brief；新 writer 使用唯一确定映射：
-
-| CandidateLevel | expectation |
-|---|---|
-| `likely_change` | `required_change` |
-| `possible_change` | `optional_change` |
-| `must_inspect` | `inspect_only` |
-| `context_only` | `inspect_only` |
-| `test_or_verify` | `verification_only` |
-
-### Verification Plan
-
-- `required` 从 parse-time `default(true)` 改为 optional、无 default。
-- 新 writer 必须显式写 boolean；当前 writer 写 `true`。
-- reader 遇到 legacy 缺失时保留字段不存在。
-- lifecycle/invariant gate 只把显式 `false` 视为 optional；`true` 与缺失都必须满足当前
-  final-Snapshot Verification。
+1. **persisted 与 Surface 分离**：Snapshot/Pulse 各自使用 `legacy | strong` persisted union；public
+   response 使用独立 discriminated Surface union，projector 逐字段构造，禁止 spread raw Envelope。
+2. **legacy strict redaction**：legacy Snapshot/Pulse Surface 仅保留 aggregate status/count/safe time 和
+   `strongOperationSupported=false`；MCP Pulse meta 精确限制为 `durationMs` 与 `cacheHit`。
+3. **strong structural closure**：冻结 path-safe HMAC/ID/token grammar、UTF-8 scalar path、Git object
+   format、accounting/order/capture invariants、Snapshot ID recomputation 和 Pulse-to-Snapshot binding。
+   legacy path reader 不继承 strong UTF-8 scalar 限制，继续保持历史接受与 canonical bytes。
+4. **统一公开能力锁**：`build_task_brief`、三类 `update_task`（普通、context refresh、rebase）、
+   `check_change`、`record_verification`、`refresh_index`，以及全部 Task reads、Evidence/search/impact 和
+   `open_workbench`，都在 private Store read、Git capture 或写入之前返回同一 exact
+   `provider_unavailable/{reason:"unavailable"}`。
+5. **Task Engine 边界**：公开 context refresh/rebase capability 显式为 false；底层 rebuild/rebase
+   correctness 仅由内部完整性测试保留。legacy Engine/Change Check 对 strong Snapshot/Pulse 在 analyzer、
+   context load 与 manifest write 前拒绝。
+6. **Preview/Workbench 边界**：Task brief/check/verification HTTP endpoint 返回 exact HTTP 503；UI 保持
+   error state且不泄漏 persisted canary。Graph/Wiki smoke 保留，Wiki 移除 legacy root identity，只公开
+   安全相对路径和允许的 provenance 字段。
+7. **同一候选发布链**：仓内 `test:surface-release` 强制真实 Browser 先组装、校验并导出唯一 candidate，
+   再把同一私有 candidate directory 交给强制 Codex/Claude Host gate；禁止任意 tarball override、
+   ambient/stale dist 替代和 host/browser skip。
 
 ## 改动范围
 
-| 模块 | 文件 | 作用 |
+| 模块/职责 | 文件 | 做了什么 |
 |---|---|---|
-| Contracts | `packages/contracts/src/task.ts` | 新增 expectation 枚举；两字段使用 optional/no-default reader |
-| Invariants | `packages/contracts/src/invariants.ts` | legacy 缺失 required 保守门禁 |
-| Generated schemas | 8 个 Task/MCP JSON Schema | 发布 expectation enum，并移除 required 的 default/required-list 注入 |
-| Task writer | `packages/task-engine/src/context-builder.ts` | 五种 CandidateLevel 显式、确定性映射 |
-| Lifecycle | `packages/task-engine/src/mutation.ts` | live transition 与 contract invariant 使用同一 `!== false` 规则 |
-| Handoff | `packages/task-engine/src/renderer.ts` | 显示显式值；legacy 缺失保持可见且说明按 required 门禁 |
-| Workbench | `packages/dashboard/src/components/taskFirst/TaskFirstWorkbench.tsx` | 简体中文显示 candidate/expectation 与 Verification obligation |
-| Packed vertical | `packages/preview/test/workbench-browser-packed.test.mjs` | installed MCP writer、字段映射、React 可见性与候选源 overlay fidelity |
+| Contracts primitives | `packages/contracts/src/primitives.ts` | 新增 path-safe ID/token grammar、Unicode scalar helper 与仅 strong 使用的 path-safe path schema |
+| Snapshot/Pulse contracts | `packages/contracts/src/repository.ts` | 新增 legacy/strong persisted unions、strong invariants/trusted validators、strict Surface unions |
+| MCP/JSON Schema | `packages/contracts/src/mcp.ts`、`src/json-schema.ts`、`schemas/v1/*` | `get_repo_pulse` 改用 strict Surface/meta；发布 6 个新 Schema 并更新 3 个既有 Schema |
+| Surface projector | `packages/repository-state/src/surface.ts`、`src/index.ts` | 逐字段投影 legacy redacted/strong safe view |
+| CLI capability boundary | `packages/cli/src/errors/tool-errors.ts`、handlers、runtime、registry | 统一 exact provider error；公开 Task 读写、refresh 和 Workbench 在副作用前锁定；工具描述与能力一致 |
+| Task quarantine | `packages/task-engine/src/engine.ts`、`src/change-intelligence.ts` | public context recovery capability lock；底层强 Artifact 拒绝与零写保护 |
+| Workbench/Preview | Dashboard component/loader、`packages/preview/src/server.mjs` | Task fail closed；legacy/unauthorized strong state 不进入 HTTP/HTML/DOM；保留安全 Graph/Wiki |
+| Distribution gates | CLI/Preview/Contracts/Repository State/Task Engine tests | 覆盖 cold pack、双 Host lifecycle、真实 Browser、泄漏 canary、7 类 mutation、Task reads 与逐次零写 |
 
-对应 contracts、engine、renderer、Dashboard 和 packed gate 均新增回归断言。
+## Review 意图与重点
 
-## Review 重点
+Review baseline 由 D-29 accepted authority 明确：
 
-1. **无损兼容**：legacy Brief parse 后仍不拥有 `expectation/required` 自有属性；canonical JSON
-   和 SHA-256 digest 与 parse 前相等。
-2. **新写入显式**：writer 不依赖 Zod default；五种 CandidateLevel 全部有精确 expectation；
-   Verification Entry 全部拥有 boolean `required:true`。
-3. **门禁不降级**：contract bundle invariant 与 live Task mutation 都证明缺失 required 仍拒绝
-   `verified`；对照用例证明只有显式 false 才跳过该 Entry。
-4. **不追溯猜造**：renderer/Workbench 对 legacy expectation 显示“未指定”，不从历史
-   candidateLevel 反推 obligation。
-5. **公开可观察**：MCP `build_task_brief` 返回显式字段；安装后的 Workbench 显示
-   `必须检查 · 仅检查` 等实际计划义务。
-6. **候选忠实**：packed gate 从 HEAD clone 后显式 overlay 本切片全部 20 个产品文件；候选不再出现
-   “新断言 + 旧 bundle”的伪验证。
-7. **不越权宣称**：legacy Change Check 仍是 `legacy_summary`；本切片没有产生 formal omission
-   或 semantic correctness 证明。
+- legacy persisted bytes 必须 lossless，但不能进入 strong Basis；
+- 非 owner Surface 不得泄露 legacy/unauthorized strong ID、branch、path、OID、digest 或 free-text；
+- Provider/strong Store 未闭合时 public Task read/write 与 Workbench 必须 fail closed 且零写；
+- structural strong contract 不能被表述成已具备 strong authority；
+- packed、installed、Browser 证据必须消费同一份完整候选，不能靠 stale dist 或 skip 假绿。
 
-## 测试证据
+重点核验：
 
-通过：
+1. **兼容性** — legacy reference JSON、canonical payload 和 digest 不变；strong path 的额外 Unicode
+   scalar 要求不得误加到 legacy reader。
+2. **隐私边界** — MCP meta、Pulse DTO、Task Workbench、Preview HTTP/HTML/DOM 均无 raw persisted
+   canary；schema-valid 但无 terminal authority 的 strong Pulse 也不能宣称 supported。
+3. **副作用顺序** — 所有公开 capability lock 位于 runtime/private Store、capture/index 与 repository
+   write 之前；安装、升级、回滚后的每次调用都保持 source、Git index 与 Store tree 不变。
+4. **能力诚实性** — context refresh/rebase 的 public capability 与实际实现一致，不从测试开关、旧
+   runtime overlay 或隐藏入口恢复。
+5. **候选忠实性** — Browser exact overlay 为 29 个路径（28 个生产/分发路径加 1 个 candidate cold
+   acceptance test）；clean commit/tree、单一 tgz/checksum、manifest inventory 与安装后 runtime bytes
+   均可复核，双 Host 只消费 Browser 导出的同一 candidate。
 
-- Contracts focused：1 file / 33 tests。
-- Contracts package：52 schemas、28 fixtures、13 files / 137 tests、14 packed entry points。
-- Task Engine focused：2 files / 37 tests；typecheck。
-- Task Engine package（串行 fresh build）：8 files / 81 tests。
-- Artifact Store：typecheck；12 files / 129 tests。
-- CLI：typecheck；13 files / 93 tests。
-- Dashboard：production build；affected component 1 file / 3 tests。
-- Preview：typecheck；runtime 8/8、plugin clean install 1/1、cold packed 1/1。
-- `node --check packages/preview/test/workbench-browser-packed.test.mjs`。
-- `git diff --check`。
-- 唯一真实 packed Browser 路径的最终运行：
-  `pnpm --filter @understand-code/preview test:workbench-browser`
-  - 终审修复后的最终运行 1 passed / 0 failed / 0 skipped，246.222 秒；
-  - v1：87 entries，
-    `sha256:a46ff2053b612a56329b42b00695eaf9efdd8d6bb0d850050d535c21050c936d`；
-  - v2：87 entries，
-    `sha256:60983f327a720ed846db6ae928666d27c970aa564622590aa13b2007fdb39035`。
+## 已识别并修复的风险
 
-Dashboard 全包存在一个父提交即可复现的红灯：
+1. Browser gate 曾只 overlay 部分文件，可能形成“新测试 + 旧 bundle”混合候选；现为 exact
+   29-path closure，并核验 untracked/staged/commit/tree 一致。
+2. Preview 曾把任意 schema-valid strong Pulse 投影为 supported；现由 server authority boundary
+   返回不透明 unavailable，并补 HTTP/DOM 负例。
+3. Contracts packed distribution 没有 `TextEncoder` global；UTF-8 排序改用对 Unicode scalar 序列
+   等价的 code-point lexicographic ordering，lone surrogate 在 strong path schema 前置拒绝。
+4. Unicode scalar 校验一度放在通用 `RepositoryRelativePath`，会缩窄 legacy reader；现拆成
+   `PathSafeRepositoryRelativePathV1Schema`，并补“legacy 接受、strong 拒绝”回归。
+5. plugin clean-install 曾假设 public refresh 成功；已替换为 6 个 Codex/Claude install/upgrade/
+   rollback lifecycle 点上的 7-case capability matrix，并逐次校验零写。
+6. Browser 与 plugin 曾可消费不同 candidate，且默认条件允许 skip；现有 checked-in orchestrator
+   强制 real Browser、同一 verified candidate 与 real Hosts，任一阶段非零即整体失败。
+7. 首次最终 gate 暴露 strong canary 前置自检只读取 Pulse、却同时检查 Task baseline；修复为与
+   legacy 夹具相同的 Task/Brief/Pulse 三文件合并自检，保留全部 canary，完整重跑通过。
 
-- `simplifiedChineseSurface.test.ts` 对
-  `TaskFirstWorkbench.tsx` 的 56 条既有英文静态文案报错；
-- `git show HEAD:packages/dashboard/src/components/taskFirst/TaskFirstWorkbench.tsx` 可直接看到同一批文案；
-- 本切片新增标签已改为简体中文，复跑该门禁仍是同一 56 条；新增标签没有进入违规集合；
-- Dashboard build 与本片 affected component tests 均为绿色。
+没有使用测试侧 unlock、旧 runtime overlay、放宽 Schema/timeout、恢复 legacy writer 或 skip 取得
+绿色结果。
 
-该既有本地化债务不在本切片中伪装为已关闭，需由终审判断是否阻断当前 bounded commit。
+## 测试情况
 
-## 失败轨迹与最小修复
+已通过：
 
-1. 首轮 Task Engine typecheck 暴露测试夹具把已收窄 bundle 重新注解为联合类型；改为从已收窄
-   `current.bundle` 构造，production 未变，随后 typecheck 与 37 个 focused tests 全绿。
-2. 四包并发时 Task Engine 有 7 个测试超过既有 5 秒 timeout；未放宽 timeout。待 Artifact Store
-   长测试结束后串行重跑，8 files / 81 tests 全绿。
-3. 首次 packed Browser 在约 226 秒处发现 candidate clone 未 overlay 新 writer，安装包缺少
-   expectation；补齐本片完整 overlay 后不再复现。
-4. 第二次 packed Browser 已显示 `必须检查 · 仅检查`，但测试错误固定期待
-   `likely_change · required_change`；断言改为按已验证的 Brief candidateLevel 选择冻结 UI
-   映射，第三次同路径 1/1 通过。
-5. 独立终审指出 optional 正向对照复用了 failed Verification Record，而 fake Store 不执行完整
-   bundle invariant，可能让测试证据假绿。对照已改为来自真实 Store 的“尚无 Record”
-   verification-required bundle；另补完整 bundle 回归，证明 optional Entry 的 latest failed Record
-   仍被全局 unresolved-attempt 规则阻断。修后 Contracts 33/33、Engine integration 35/35 与
-   Task Engine typecheck 全绿；同一 packed Browser 路径最终 1/1，且两份 tarball hash 未变化。
-
-没有通过放宽 schema、gate、timeout、预算或跳过断言取得绿色结果。
+- Contracts：typecheck；58 generated schemas；28 fixtures；13 files / 147 tests；14 packed entry
+  points distribution smoke。
+- Repository State：typecheck；5 files / 87 passed，1 个既有平台条件 skip。
+- CLI：typecheck；15 files / 93 tests，包含 cold packed、installed dual-host、全部公开 capability
+  locks 与 runtime-context negatives。
+- Task Engine：typecheck/build；8 files / 84 tests。并发运行产生的 5 秒资源竞争超时已在无竞争
+  串行完整复跑中全部通过，未修改 timeout。
+- Dashboard：production build；affected loader/component 2 files / 9 tests。
+- Artifact Store、Workbench Runtime：typecheck。
+- Preview：typecheck/build；runtime 8/8；cold packed 1/1。
+- checked-in `test:surface-release`（exit 0）：
+  - Browser：1 passed / 0 failed / 0 skipped；
+  - Codex + Claude plugin lifecycle：1 passed / 0 failed / 0 skipped；
+  - candidate commit：`c18fb3c9d7ee18e241320023c47c272acd1208e2`；
+  - candidate tree：`bbdd73389fa0145619ce748b19a285dcd2c20930`；
+  - tgz：`sha256:751e16577934c20414f6df56af050d1e49ce6fa0eb2029b38923a5bd817c6823`；
+  - regular files：87。
+- Preview gate `node --check`、`git diff --check`。
+- 最终独立 change-intent review：剩余 P0/P1 为 0。
 
 ## 可声明
 
-- 新 Task Brief 对所有 Planned Change 写入显式 D-26 obligation。
-- 新 Verification Plan Entry 写入显式 `required:true`。
-- legacy Brief 可无损读取缺失字段，且不会因缺失 required 绕过 verified 门禁。
-- MCP、Markdown 与安装后的 React Workbench 能区分显式 obligation 和 legacy omission。
-- 本片涉及的 Contracts、Store、Engine、CLI、Preview 打包/冷安装和真实 Browser vertical 已通过。
+- Contracts 能 lossless 读取 legacy Snapshot/Pulse，并识别 strict path-safe strong variants。
+- `get_repo_pulse` 只返回 strict aggregate legacy redacted Surface；missing/strong Store 仍返回 exact
+  opaque provider error。
+- 全部公开 Task reads/writes、Evidence/search/impact 与 Workbench 在 strong Store unavailable 时稳定
+  fail closed，且在 source、Git index、Store 层面零副作用。
+- Preview Task endpoint 返回 exact HTTP 503，Graph/Wiki 仍可安全使用，legacy/unauthorized strong
+  persisted state 不进入 HTTP/HTML/DOM。
+- 当前源码的 cold pack、真实 Browser 与 Codex/Claude lifecycle 已在同一 verified candidate 上通过。
 
-## 不可声明
+## 不可声明与剩余边界
 
-- 不得称为 strong Task、strong Brief 或 `evidence_backed_v1`。
-- 不具备 `contextGenerationId`、strong task baseline、path-safe Snapshot/Pulse、formal
-  Actual Change、Diff Span/Hunk 或五维 Completeness。
-- legacy 缺失 expectation 不得反推为 required，也不得据此生成 possible omission。
-- 本片不证明模型选择、双 Host 凭证链、cross-platform、CI same-SHA、签名、SBOM、provenance 或 Release。
-- Provider Authority 与 strongWrites 继续 locked。
+- 不得声称 HMAC identity/key lifecycle、SafeGit、security scanner、strong Snapshot/Pulse writer、
+  Provider Store bootstrap/ownership/recovery 已实现。
+- 不得声称 `strongWrites`、strong Task baseline、formal Actual/Hunk/Check 或
+  `evidence_backed_v1` 已开放。
+- strong Surface projector 是冻结的结构投影；当前 public runtime 仍拒绝无 terminal Store authority
+  的 strong payload。
+- 本切片不证明 model-selected 双 Host、cross-platform、same-SHA CI、签名、SBOM、provenance 或
+  正式 Release Gate。
+- Step 16 仍受真实 model/Claude 凭证与授权语料阻塞；Step 17 GitHub Actions 仍受 billing/payment
+  阻塞。
 
-## 外部阻塞保持
+## 结论
 
-- Step16 真实 model-selected 双 Host 仍缺隔离凭证；Claude 版本与受审语料/Owner 授权条件未闭合。
-- Step17 GitHub Actions 仍被 billing/payment 阻塞，same-SHA CI、signing、SBOM、provenance、
-  cross-platform 和正式 RC/Release 均未关闭。
-
-## 终审状态
-
-独立 change-intent review：P0=0、P1=0；唯一 P2 测试语义 finding 已修复并复测。终审结论为
-`SAFE TO COMMIT`。可接受残余测试缺口：真实 packed Browser 只走一个 CandidateLevel，其余四级由
-focused writer test 覆盖。
-
-Dashboard 的 56 条父提交既有 localization debt 不按 change-intent 归因阻断本 bounded commit，且不得
-宣称 Dashboard 全包绿色。目标保持 active；本切片提交后继续推进 path-safe Snapshot 与 strong
-task_baseline eligibility，不将总体目标标记 complete。
+最终独立 review 未发现剩余 P0/P1。本 bounded D-29 security/capability slice 可提交；总体目标保持
+active，继续 Step 15 的 HMAC identity、SafeGit/path-safe writer、Task baseline 与 strong Check，
+不得将总目标标记 complete。

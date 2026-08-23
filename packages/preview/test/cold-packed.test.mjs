@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm, writeFile } from "node:fs/promises";
 import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -13,16 +13,10 @@ import { gunzipSync } from "node:zlib";
 
 import { ArtifactStore, sha256CanonicalJson } from "../../artifact-store/dist/index.js";
 import {
-  BuildTaskBriefOutputV1Schema,
-  CheckChangeOutputV1Schema,
   GetRepoPulseOutputV1Schema,
-  GetTaskBriefOutputV1Schema,
-  OpenWorkbenchOutputV1Schema,
-  RecordVerificationOutputV1Schema,
-  RefreshIndexOutputV1Schema,
+  McpToolErrorResultV1Schema,
   RepoPulseArtifactV1Schema,
   RepositorySnapshotArtifactV1Schema,
-  UpdateTaskOutputV1Schema,
 } from "../../contracts/dist/index.js";
 import { buildRepoPulse, getRepositorySnapshotDetailed } from "../../repository-state/dist/index.js";
 
@@ -42,6 +36,20 @@ const EXPECTED_PACKED_FILE_COUNT = 87;
 const NATIVE_TUPLE = `${process.platform}-${process.arch}`;
 const PRODUCT_VERSION_PATTERN =
   /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
+const EXPECTED_PUBLIC_MUTATION_FAILURE = {
+  isError: true,
+  content: [{
+    type: "text",
+    text: "The strong Store is unavailable. Run Doctor for details.",
+  }],
+  structuredContent: {
+    error: {
+      schemaVersion: 1,
+      code: "provider_unavailable",
+      details: { reason: "unavailable" },
+    },
+  },
+};
 
 const packedFileRules = [
   { label: "package metadata", pattern: /^package\/(?:README\.md|package\.json)$/u, count: 2, mode: 0o644 },
@@ -460,6 +468,23 @@ async function runCliJson(executable, argumentsValue, cwd) {
   return JSON.parse(result.stdout);
 }
 
+async function runCliJsonFailure(executable, argumentsValue, cwd, exitCode) {
+  let failure;
+  try {
+    await execFileBounded(executable, argumentsValue, {
+      cwd,
+      encoding: "utf8",
+      env: { ...process.env, GIT_DIR: undefined, GIT_WORK_TREE: undefined },
+    });
+  } catch (error) {
+    failure = error;
+  }
+  assert.ok(failure, `${executable} must exit unsuccessfully`);
+  assert.equal(failure.code, exitCode);
+  assert.equal(failure.stderr, "");
+  return JSON.parse(failure.stdout);
+}
+
 async function git(root, args) {
   return execFileBounded("git", args, {
     cwd: root,
@@ -542,7 +567,14 @@ async function createMcpRoot() {
     contentDigest: sha256CanonicalJson(pulse),
     payload: pulse,
   }));
-  return root;
+  return {
+    root,
+    rawLegacyIds: [
+      capture.snapshot.repositoryId,
+      capture.snapshot.worktreeId,
+      capture.snapshot.snapshotId,
+    ],
+  };
 }
 
 async function createPublishedPreviewRoot(installedPackageRoot) {
@@ -577,6 +609,36 @@ async function createPublishedPreviewRoot(installedPackageRoot) {
 
 function digest(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+async function snapshotManagedStoreTree(root) {
+  const snapshot = {};
+  const storeRoot = path.join(root, ".understand-code");
+  const walk = async (relativeDirectory) => {
+    const absoluteDirectory = relativeDirectory === ""
+      ? storeRoot
+      : path.join(storeRoot, ...relativeDirectory.split("/"));
+    const entries = await readdir(absoluteDirectory, { withFileTypes: true });
+    entries.sort((left, right) => left.name.localeCompare(right.name, "en"));
+    for (const entry of entries) {
+      const relativePath = relativeDirectory === ""
+        ? entry.name
+        : `${relativeDirectory}/${entry.name}`;
+      const absolutePath = path.join(storeRoot, ...relativePath.split("/"));
+      if (entry.isDirectory()) {
+        snapshot[relativePath] = "directory";
+        await walk(relativePath);
+      } else if (entry.isFile()) {
+        snapshot[relativePath] = `file:sha256:${digest(await readFile(absolutePath))}`;
+      } else if (entry.isSymbolicLink()) {
+        snapshot[relativePath] = `symlink:sha256:${digest(await readlink(absolutePath, "buffer"))}`;
+      } else {
+        snapshot[relativePath] = "special";
+      }
+    }
+  };
+  await walk("");
+  return snapshot;
 }
 
 async function probePackageImport(consumerRoot, specifier) {
@@ -650,10 +712,10 @@ async function assertPackedDashboard(indexResponse, indexHtml, previewUrl, packe
   assert.match(bootstrap.bytes.toString("utf8"), /localStorage\.getItem\("uc-theme"\)/u);
 }
 
-test("cold packed Alpha runs the install-to-verification vertical outside the monorepo", async () => {
+test("cold packed Alpha validates the installed fail-closed lifecycle outside the monorepo", async () => {
   const packDirectory = await mkdtemp(path.join(tmpdir(), "preview-pack-"));
   const installDirectory = await mkdtemp(path.join(tmpdir(), "preview-install-"));
-  const mcpRoot = await createMcpRoot();
+  const { root: mcpRoot, rawLegacyIds } = await createMcpRoot();
   let publishedRoot = null;
   let previewChild = null;
   let mcpChild = null;
@@ -1090,8 +1152,11 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
     assert.equal(graph.status, 200);
     assert.equal((await graph.json()).project.name, "Preview 示例项目");
     const task = await fetch(`${previewUrl.origin}/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAV/brief.json?token=${encodeURIComponent(ready.token)}`);
-    assert.equal(task.status, 200);
-    assert.equal((await task.json()).section, "summary");
+    assert.equal(task.status, 503);
+    assert.deepEqual(await task.json(), {
+      error: "provider_unavailable",
+      reason: "unavailable",
+    });
     assert.deepEqual(await stopChild(previewChild, "cold Preview"), [0, null]);
     previewChild = null;
     await assertPortReleased(previewUrl, "cold Preview");
@@ -1158,67 +1223,177 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
       "refresh_index",
     ]);
 
-    const initialRefresh = await callTool(
+    const pulse = await callTool(
       mcp,
       output,
       3,
-      "refresh_index",
-      {
-        mode: "full",
-        idempotencyKey: "preview-alpha-initial-refresh",
-        actor: "agent:preview-alpha",
-      },
-      RefreshIndexOutputV1Schema,
+      "get_repo_pulse",
+      {},
+      GetRepoPulseOutputV1Schema,
     );
-    assert.equal(initialRefresh.structuredContent.result.operation.status, "completed");
-    const pulse = await callTool(mcp, output, 4, "get_repo_pulse", {}, GetRepoPulseOutputV1Schema);
-    assert.equal(
-      pulse.structuredContent.meta.sourceSnapshotId,
-      initialRefresh.structuredContent.meta.sourceSnapshotId,
+    assert.deepEqual(
+      Object.keys(pulse.structuredContent.meta).sort(),
+      ["cacheHit", "durationMs"],
     );
-    const built = await callTool(
-      mcp,
-      output,
-      5,
-      "build_task_brief",
-      {
-        task: "Prepare and verify a safe change to the task function.",
-        expectedRevision: 0,
-        idempotencyKey: "preview-alpha-brief",
-        actor: "agent:preview-alpha",
-        scope: ["src/task.ts"],
-      },
-      BuildTaskBriefOutputV1Schema,
+    assert.equal(pulse.structuredContent.meta.cacheHit, true);
+    assert.equal(typeof pulse.structuredContent.meta.durationMs, "number");
+    assert.ok(pulse.structuredContent.meta.durationMs >= 0);
+    assert.deepEqual(pulse.structuredContent.result.pulse, {
+      viewVersion: 1,
+      viewKind: "legacy_repo_pulse_redacted",
+      status: "partial",
+      aggregateChangeCount: 0,
+      evaluatedAt: "2026-08-12T00:00:00.000Z",
+      strongOperationSupported: false,
+    });
+    const publicPulseJson = JSON.stringify(pulse);
+    assert.doesNotMatch(
+      publicPulseJson,
+      /"[^"]*(?:repository|worktree|snapshot|root|branch|path|oid|digest|diagnostic)[^"]*"\s*:/iu,
     );
-    const taskId = built.structuredContent.result.task.taskId;
-    const readBrief = await callTool(
-      mcp,
-      output,
-      6,
-      "get_task_brief",
-      { taskId, section: "summary" },
-      GetTaskBriefOutputV1Schema,
-    );
-    assert.equal(readBrief.structuredContent.result.task.taskId, taskId);
+    assert.equal(publicPulseJson.includes(mcpRoot), false);
+    assert.equal(publicPulseJson.includes("src/task.ts"), false);
+    for (const rawLegacyId of rawLegacyIds) {
+      assert.equal(publicPulseJson.includes(rawLegacyId), false);
+    }
 
-    const liveRootPreview = startPreview(previewBin, installDirectory, ["--root", mcpRoot, "--port", "0", "--no-open"]);
-    previewChild = liveRootPreview.child;
-    const liveRootReady = await liveRootPreview.ready;
-    assert.equal(liveRootReady.mode, "root");
-    assert.equal(liveRootReady.wiki, "ready");
-    const liveRootUrl = new URL(liveRootReady.url);
-    const [liveGraph, liveWiki] = await Promise.all([
-      fetch(`${liveRootUrl.origin}/knowledge-graph.json?token=${encodeURIComponent(liveRootReady.token)}`),
-      fetch(`${liveRootUrl.origin}/knowledge-base/wiki-index.json?token=${encodeURIComponent(liveRootReady.token)}`),
-    ]);
-    assert.equal(liveGraph.status, 200);
-    assert.equal(liveWiki.status, 200);
-    assert.equal((await liveWiki.json()).source.sourceRootIdentity.startsWith("root-"), true);
-    assert.deepEqual(await stopChild(previewChild, "full-indexed root Preview"), [0, null]);
-    previewChild = null;
-    await assertPortReleased(liveRootUrl, "full-indexed root Preview");
+    const lockedTaskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const lockedSnapshotId = "snapshot:preview-alpha-strong-store-unavailable";
+    const lockedBaselineSnapshotId =
+      "snapshot:preview-alpha-rebase-baseline-strong-store-unavailable";
+    const publicMutations = [
+      {
+        name: "refresh_index",
+        arguments: {
+          mode: "full",
+          idempotencyKey: "preview-alpha-refresh-locked",
+          actor: "agent:preview-alpha",
+        },
+      },
+      {
+        name: "build_task_brief",
+        arguments: {
+          task: "Prepare and verify a safe change to the task function.",
+          expectedRevision: 0,
+          idempotencyKey: "preview-alpha-build-locked",
+          actor: "agent:preview-alpha",
+          scope: ["src/task.ts"],
+        },
+      },
+      {
+        name: "update_task",
+        arguments: {
+          taskId: lockedTaskId,
+          action: { type: "transition_status", to: "planned" },
+          expectedRevision: 0,
+          idempotencyKey: "preview-alpha-update-locked",
+          actor: "agent:preview-alpha",
+        },
+      },
+      {
+        label: "update_task refresh_task_context",
+        name: "update_task",
+        arguments: {
+          taskId: lockedTaskId,
+          action: {
+            type: "refresh_task_context",
+            targetSnapshotId: lockedSnapshotId,
+          },
+          expectedRevision: 0,
+          idempotencyKey: "preview-alpha-context-refresh-locked",
+          actor: "agent:preview-alpha",
+        },
+      },
+      {
+        label: "update_task rebase_task",
+        name: "update_task",
+        arguments: {
+          taskId: lockedTaskId,
+          action: {
+            type: "rebase_task",
+            targetSnapshotId: lockedSnapshotId,
+            newBaselineSnapshotId: lockedBaselineSnapshotId,
+            reason: "Strong Store authority is unavailable.",
+          },
+          expectedRevision: 0,
+          idempotencyKey: "preview-alpha-context-rebase-locked",
+          actor: "agent:preview-alpha",
+        },
+      },
+      {
+        name: "check_change",
+        arguments: {
+          taskId: lockedTaskId,
+          actualSnapshotId: lockedSnapshotId,
+          includeWorktree: true,
+          expectedRevision: 0,
+          idempotencyKey: "preview-alpha-check-locked",
+          actor: "agent:preview-alpha",
+        },
+      },
+      {
+        name: "record_verification",
+        arguments: {
+          taskId: lockedTaskId,
+          record: {
+            verificationPlanEntryId: "verification-plan:preview-alpha-locked",
+            kind: "manual",
+            status: "blocked",
+            summary: "Strong Store authority is unavailable.",
+            claimIds: [],
+            snapshotId: lockedSnapshotId,
+          },
+          expectedRevision: 0,
+          idempotencyKey: "preview-alpha-verification-locked",
+          actor: "agent:preview-alpha",
+        },
+      },
+    ];
+    let nextMutationRequestId = 4;
+    for (const mutation of publicMutations) {
+      const mutationLabel = mutation.label ?? mutation.name;
+      const [mutationSourceBefore, mutationIndexBefore, mutationStoreBefore] =
+        await Promise.all([
+          readFile(sourcePath),
+          readFile(path.join(mcpRoot, ".git/index")),
+          snapshotManagedStoreTree(mcpRoot),
+        ]);
+      const failure = await callTool(
+        mcp,
+        output,
+        nextMutationRequestId++,
+        mutation.name,
+        mutation.arguments,
+        McpToolErrorResultV1Schema,
+      );
+      assert.deepEqual(
+        failure,
+        EXPECTED_PUBLIC_MUTATION_FAILURE,
+        `${mutationLabel} must fail closed behind the unavailable strong Store`,
+      );
+      assert.deepEqual(
+        await readFile(sourcePath),
+        mutationSourceBefore,
+        `${mutationLabel} must not mutate source bytes`,
+      );
+      assert.deepEqual(
+        await readFile(path.join(mcpRoot, ".git/index")),
+        mutationIndexBefore,
+        `${mutationLabel} must not mutate Git index bytes`,
+      );
+      assert.deepEqual(
+        await snapshotManagedStoreTree(mcpRoot),
+        mutationStoreBefore,
+        `${mutationLabel} must leave the managed Store tree byte-identical`,
+      );
+    }
 
-    const releaseDoctor = await runCliJson(mcpBin, ["doctor"], mcpRoot);
+    const releaseDoctor = await runCliJsonFailure(
+      mcpBin,
+      ["doctor"],
+      mcpRoot,
+      1,
+    );
     assert.deepEqual(
       {
         schemaVersion: releaseDoctor.schemaVersion,
@@ -1239,8 +1414,8 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
         releaseReady: false,
         strongWrites: "locked",
         hostRegistration: "not_checked",
-        ok: true,
-        status: "healthy",
+        ok: false,
+        status: "unhealthy",
       },
     );
     const releaseDoctorById = new Map(
@@ -1265,7 +1440,6 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
       "node_runtime",
       "git",
       "repository_root",
-      "artifact_schema",
       "loopback_port",
       "package_metadata",
       "release_manifest",
@@ -1276,6 +1450,16 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
     ]) {
       assert.equal(releaseDoctorById.get(id)?.status, "pass", `${id} must pass`);
     }
+    assert.deepEqual(
+      {
+        status: releaseDoctorById.get("artifact_schema")?.status,
+        code: releaseDoctorById.get("artifact_schema")?.code,
+      },
+      {
+        status: "fail",
+        code: "artifact_schema_incompatible",
+      },
+    );
     assert.deepEqual(
       {
         status: releaseDoctorById.get("release_authenticity")?.status,
@@ -1306,322 +1490,10 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
       new RegExp(mcpRoot.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"),
     );
 
-    const opened = await callTool(
-      mcp,
-      output,
-      7,
-      "open_workbench",
-      { route: { view: "tasks", taskId, section: "summary" }, openBrowser: false },
-      OpenWorkbenchOutputV1Schema,
-    );
-    const workbenchUrl = new URL(opened.structuredContent.result.deepLink);
-    assert.equal(workbenchUrl.hostname, "127.0.0.1");
-    const launch = await fetch(new URL("/__workbench/launch", workbenchUrl), {
-      method: "POST",
-      headers: { "content-type": "application/json", connection: "close" },
-      body: JSON.stringify({ token: workbenchUrl.hash.slice(1) }),
-    });
-    assert.equal(launch.status, 200);
-    const workbenchCookie = launch.headers.get("set-cookie")?.split(";", 1)[0];
-    assert.ok(workbenchCookie);
-    const [workbenchGraph, workbenchWiki] = await Promise.all([
-      fetch(new URL("/__workbench/context?surface=graph", workbenchUrl), {
-        headers: { cookie: workbenchCookie, connection: "close" },
-      }),
-      fetch(new URL("/__workbench/context?surface=knowledge", workbenchUrl), {
-        headers: { cookie: workbenchCookie, connection: "close" },
-      }),
-    ]);
-    assert.equal(workbenchGraph.status, 200);
-    assert.equal(workbenchWiki.status, 200);
-    assert.equal((await workbenchGraph.json()).status, "ready");
-    assert.equal((await workbenchWiki.json()).status, "ready");
-
-    const actor = "agent:preview-alpha";
-    let taskRevision = built.structuredContent.result.task.revision;
-    let nextRequestId = 20;
-    const updateTask = async (action, idempotencyKey) => {
-      const updated = await callTool(
-        mcp,
-        output,
-        nextRequestId++,
-        "update_task",
-        { taskId, action, expectedRevision: taskRevision, idempotencyKey, actor },
-        UpdateTaskOutputV1Schema,
-      );
-      taskRevision = updated.structuredContent.result.mutation.revision;
-      return updated;
-    };
-    await updateTask(
-      { type: "confirm_goal", claimId: built.structuredContent.result.brief.goalClaimId },
-      "preview-alpha-confirm-goal",
-    );
-    await updateTask(
-      {
-        type: "confirm_acceptance_criteria",
-        claimIds: built.structuredContent.result.brief.acceptanceClaimIds,
-      },
-      "preview-alpha-confirm-acceptance",
-    );
-    await updateTask(
-      {
-        type: "confirm_plan",
-        plannedChangeIds: built.structuredContent.result.brief.plannedChanges.map((change) => change.id),
-      },
-      "preview-alpha-confirm-plan",
-    );
-    await updateTask({ type: "transition_status", to: "planned" }, "preview-alpha-planned");
-    await updateTask({ type: "transition_status", to: "in_progress" }, "preview-alpha-in-progress");
-
-    const externallyChangedSource = "export function task() { return 'alpha-verified'; }\n";
-    await writeFile(sourcePath, externallyChangedSource, "utf8");
-    assert.notDeepEqual(await readFile(sourcePath), sourceBefore);
-    assert.equal(digest(await readFile(path.join(mcpRoot, ".git/index"))), indexBefore);
-    const changedRefresh = await callTool(
-      mcp,
-      output,
-      nextRequestId++,
-      "refresh_index",
-      {
-        mode: "full",
-        expectedSourceSnapshotId: initialRefresh.structuredContent.meta.sourceSnapshotId,
-        idempotencyKey: "preview-alpha-changed-refresh",
-        actor,
-      },
-      RefreshIndexOutputV1Schema,
-    );
-    assert.equal(changedRefresh.structuredContent.result.operation.status, "completed");
-    assert.notEqual(
-      changedRefresh.structuredContent.meta.sourceSnapshotId,
-      initialRefresh.structuredContent.meta.sourceSnapshotId,
-    );
-    await updateTask(
-      { type: "transition_status", to: "check_required" },
-      "preview-alpha-check-required",
-    );
-    const checked = await callTool(
-      mcp,
-      output,
-      nextRequestId++,
-      "check_change",
-      {
-        taskId,
-        actualSnapshotId: changedRefresh.structuredContent.meta.sourceSnapshotId,
-        includeWorktree: true,
-        expectedRevision: taskRevision,
-        idempotencyKey: "preview-alpha-check",
-        actor,
-      },
-      CheckChangeOutputV1Schema,
-    );
-    taskRevision = checked.structuredContent.result.mutation.revision;
-    assert.equal(
-      checked.structuredContent.result.changeCheck.actualSnapshotId,
-      changedRefresh.structuredContent.meta.sourceSnapshotId,
-    );
-    for (const finding of checked.structuredContent.result.changeCheck.findings.filter(
-      (candidate) => candidate.blocking && candidate.resolution === undefined,
-    )) {
-      await updateTask(
-        {
-          type: "accept_finding",
-          findingId: finding.id,
-          reason: "Accepted by the Alpha happy-path fixture after reviewing the exact diff.",
-        },
-        `preview-alpha-accept-${finding.id}`,
-      );
-    }
-    await updateTask(
-      { type: "transition_status", to: "verification_required" },
-      "preview-alpha-verification-required",
-    );
-
-    const verificationStartedAt = Date.now();
-    const verificationProgram = [
-      "const { task } = await import('./src/task.ts');",
-      "if (task() !== 'alpha-verified') throw new Error('unexpected task result');",
-    ].join(" ");
-    const verificationExecution = await execFileBounded(
-      process.execPath,
-      ["--input-type=module", "--eval", verificationProgram],
-      { cwd: mcpRoot, encoding: "utf8" },
-    );
-    const verificationDurationMs = Date.now() - verificationStartedAt;
-    assert.equal(verificationExecution.stderr, "");
-    const verificationOutputDigest = `sha256:${digest(Buffer.from(`${verificationExecution.stdout}${verificationExecution.stderr}`, "utf8"))}`;
-    const verificationRequests = [];
-    const verificationResults = [];
-    for (const [index, planEntry] of built.structuredContent.result.brief.verificationPlan
-      .filter((entry) => entry.required)
-      .entries()) {
-      const request = {
-        taskId,
-        record: {
-          verificationPlanEntryId: planEntry.id,
-          kind: planEntry.method,
-          status: "passed",
-          command: `node --input-type=module --eval ${JSON.stringify(verificationProgram)}`,
-          exitCode: 0,
-          durationMs: verificationDurationMs,
-          outputDigest: verificationOutputDigest,
-          summary: "The external Alpha verification command completed successfully.",
-          claimIds: planEntry.acceptanceClaimIds,
-          snapshotId: changedRefresh.structuredContent.meta.sourceSnapshotId,
-        },
-        expectedRevision: taskRevision,
-        idempotencyKey: `preview-alpha-verification-${index}`,
-        actor,
-      };
-      const recorded = await callTool(
-        mcp,
-        output,
-        nextRequestId++,
-        "record_verification",
-        request,
-        RecordVerificationOutputV1Schema,
-      );
-      assert.equal(recorded.structuredContent.result.verification.status, "passed");
-      assert.equal(
-        recorded.structuredContent.result.verification.snapshotId,
-        changedRefresh.structuredContent.meta.sourceSnapshotId,
-      );
-      assert.equal(recorded.structuredContent.result.mutation.idempotentReplay, false);
-      taskRevision = recorded.structuredContent.result.mutation.revision;
-      verificationRequests.push(request);
-      verificationResults.push(recorded);
-    }
-    assert.ok(verificationRequests.length > 0, "the Task must carry at least one required verification entry");
-    const verified = await updateTask(
-      { type: "transition_status", to: "verified" },
-      "preview-alpha-verified",
-    );
-    assert.equal(verified.structuredContent.result.task.status, "verified");
-
-    const reopened = await callTool(
-      mcp,
-      output,
-      nextRequestId++,
-      "open_workbench",
-      { route: { view: "tasks", taskId, section: "summary" }, openBrowser: false },
-      OpenWorkbenchOutputV1Schema,
-    );
-    assert.equal(reopened.structuredContent.result.runtime.disposition, "reused");
-    const reopenedWorkbenchUrl = new URL(reopened.structuredContent.result.deepLink);
-    assert.notEqual(
-      reopenedWorkbenchUrl.toString(),
-      workbenchUrl.toString(),
-      "reopening Workbench must issue a fresh launch link",
-    );
-    const reopenedLaunch = await fetch(new URL("/__workbench/launch", reopenedWorkbenchUrl), {
-      method: "POST",
-      headers: { "content-type": "application/json", connection: "close" },
-      body: JSON.stringify({ token: reopenedWorkbenchUrl.hash.slice(1) }),
-    });
-    assert.equal(reopenedLaunch.status, 200);
-    const reopenedCookie = reopenedLaunch.headers.get("set-cookie")?.split(";", 1)[0];
-    assert.ok(reopenedCookie);
-    const traceResponse = await fetch(
-      new URL(`/__workbench/trace?taskId=${encodeURIComponent(taskId)}`, reopenedWorkbenchUrl),
-      { headers: { cookie: reopenedCookie, connection: "close" } },
-    );
-    assert.equal(traceResponse.status, 200);
-    const tracePayload = await traceResponse.json();
-    const serializedTrace = JSON.stringify(tracePayload);
-    assert.equal(tracePayload.status, "ready");
-    assert.equal(tracePayload.taskId, taskId);
-    assert.equal(tracePayload.snapshotId, changedRefresh.structuredContent.meta.sourceSnapshotId);
-    assert.equal(tracePayload.changeCheck.actualSnapshotId, changedRefresh.structuredContent.meta.sourceSnapshotId);
-    const checkedFindings = checked.structuredContent.result.changeCheck.findings;
-    assert.deepEqual(tracePayload.changeCheck.counts, {
-      total: checkedFindings.length,
-      blocking: checkedFindings.filter((finding) => finding.blocking).length,
-      openBlocking: 0,
-    });
-    assert.equal(tracePayload.verification.disposition, "externally_reported");
-    assert.equal(tracePayload.verification.requiredCount, verificationRequests.length);
-    assert.equal(tracePayload.verification.passedCount, verificationRequests.length);
-    assert.equal(tracePayload.verification.failedCount, 0);
-    assert.equal(tracePayload.verification.pendingCount, 0);
-    assert.equal(tracePayload.verification.records.length, verificationRequests.length);
-    for (const forbiddenField of ["command", "outputDigest", "summary", "exitCode", "durationMs"]) {
-      assert.equal(
-        serializedTrace.includes(`"${forbiddenField}"`),
-        false,
-        `Workbench Trace must redact ${forbiddenField}`,
-      );
-    }
-
     mcp.stdin.end();
     assert.deepEqual(await waitForExit(mcp, "MCP clean exit"), [0, null]);
     mcpChild = null;
     assert.equal(output.stderr.join(""), "");
-
-    const claudeCwd = path.join(installDirectory, "claude-host-cwd");
-    await mkdir(claudeCwd);
-    const restarted = spawn(claudeBin, ["--root", mcpRoot], {
-      cwd: claudeCwd,
-      env: { PATH: process.env.PATH },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    mcpChild = restarted;
-    const restartedOutput = collectMessages(restarted);
-    writeMessage(restarted, {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: {
-        protocolVersion: "2025-11-25",
-        capabilities: {},
-        clientInfo: { name: "preview-alpha-restart", version: "1.0.0" },
-      },
-    });
-    const claudeInitialized = await restartedOutput.waitFor(
-      (message) => message.id === 1,
-      "Claude Host MCP initialize response",
-    );
-    assert.equal(claudeInitialized.result.serverInfo.version, manifest.version);
-    writeMessage(restarted, { jsonrpc: "2.0", method: "notifications/initialized", params: {} });
-    const claudeBrief = await callTool(
-      restarted,
-      restartedOutput,
-      99,
-      "get_task_brief",
-      { taskId, section: "summary" },
-      GetTaskBriefOutputV1Schema,
-    );
-    assert.equal(claudeBrief.structuredContent.result.task.taskId, taskId);
-    assert.equal(
-      claudeBrief.structuredContent.result.task.baselineSnapshotId,
-      built.structuredContent.result.task.baselineSnapshotId,
-      "Claude must preserve the Task baseline created by Codex even when cwd differs",
-    );
-    assert.equal(claudeBrief.structuredContent.result.task.revision, verified.structuredContent.result.task.revision);
-    assert.equal(claudeBrief.structuredContent.result.task.status, "verified");
-    assert.equal(
-      claudeBrief.structuredContent.meta.sourceSnapshotId,
-      changedRefresh.structuredContent.meta.sourceSnapshotId,
-      "Claude must bind current response freshness to the explicit Root rather than its cwd",
-    );
-    for (const [index, request] of verificationRequests.entries()) {
-      const replayed = await callTool(
-        restarted,
-        restartedOutput,
-        100 + index,
-        "record_verification",
-        request,
-        RecordVerificationOutputV1Schema,
-      );
-      assert.equal(replayed.structuredContent.result.mutation.idempotentReplay, true);
-      assert.equal(
-        replayed.structuredContent.result.verification.id,
-        verificationResults[index].structuredContent.result.verification.id,
-      );
-      assert.equal(replayed.structuredContent.result.verification.status, "passed");
-    }
-    restarted.stdin.end();
-    assert.deepEqual(await waitForExit(restarted, "restarted MCP clean exit"), [0, null]);
-    mcpChild = null;
-    assert.equal(restartedOutput.stderr.join(""), "");
 
     const finalDoctor = await runCliJson(
       installedBundle,
@@ -1653,7 +1525,7 @@ test("cold packed Alpha runs the install-to-verification vertical outside the mo
       );
     }
 
-    assert.equal(await readFile(sourcePath, "utf8"), externallyChangedSource);
+    assert.deepEqual(await readFile(sourcePath), sourceBefore);
     assert.equal(digest(await readFile(path.join(mcpRoot, ".git/index"))), indexBefore);
     assert.deepEqual(await readFile(tarballPath), tarballBefore);
   } finally {

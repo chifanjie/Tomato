@@ -20,6 +20,7 @@ import {
   ToolFailure,
   artifactUnavailableFailure,
   repositoryNotReadyFailure,
+  strongStoreUnavailableFailure,
 } from "../errors/tool-errors.js";
 
 export class RuntimeBindingError extends Error {
@@ -63,13 +64,7 @@ export function fingerprintPublishedSnapshot(
 }
 
 function missingRepositoryContext(): ToolFailure {
-  return new ToolFailure(
-    repositoryNotReadyFailure(
-      "not_ready",
-      ["repository_snapshot", "repo_pulse"],
-      "refresh_index",
-    ),
-  );
+  return new ToolFailure(strongStoreUnavailableFailure());
 }
 
 const AMBIENT_GIT_AUTHORITY_VARIABLES = Object.freeze([
@@ -188,6 +183,9 @@ export async function readPublishedSnapshot(
         artifactUnavailableFailure("corrupt", "repository_snapshot"),
       );
     }
+    if ("profile" in read.artifact.payload) {
+      throw new ToolFailure(strongStoreUnavailableFailure());
+    }
     return {
       snapshot: read.artifact.payload,
       worktreeFingerprint: fingerprintPublishedSnapshot(read.artifact.payload),
@@ -221,6 +219,9 @@ export async function readPublishedPulse(
     if (read.artifact.artifactType !== "repo_pulse") {
       throw new ToolFailure(artifactUnavailableFailure("corrupt", "repo_pulse"));
     }
+    if ("profile" in read.artifact.payload) {
+      throw new ToolFailure(strongStoreUnavailableFailure());
+    }
     return {
       pulse: read.artifact.payload,
       snapshot: await readPublishedSnapshot(
@@ -232,13 +233,7 @@ export async function readPublishedPulse(
     if (error instanceof ToolFailure) throw error;
     if (error instanceof ArtifactStoreError) {
       if (error.code === "artifact_not_found") {
-        throw new ToolFailure(
-          repositoryNotReadyFailure(
-            "not_ready",
-            ["repo_pulse"],
-            "refresh_index",
-          ),
-        );
+        throw new ToolFailure(strongStoreUnavailableFailure());
       }
       if (
         error.code === "artifact_corrupt" ||

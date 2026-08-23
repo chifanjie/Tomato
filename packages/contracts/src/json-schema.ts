@@ -36,9 +36,15 @@ import {
 } from "./descriptors.js";
 import {
   RepoPulseArtifactV1Schema,
+  RepoPulsePersistedPayloadV1Schema,
+  RepoPulseSurfaceResponseV1Schema,
   RepoPulseV1Schema,
   RepositorySnapshotArtifactV1Schema,
+  RepositorySnapshotPersistedPayloadV1Schema,
+  RepositorySnapshotSurfaceResponseV1Schema,
   RepositorySnapshotV1Schema,
+  StrongRepoPulseV1Schema,
+  StrongRepositorySnapshotV1Schema,
 } from "./repository.js";
 import {
   TaskBriefArtifactV1Schema,
@@ -54,8 +60,14 @@ export const CONTRACT_JSON_SCHEMA_SOURCES_V1 = {
   "artifact-manifest": ArtifactManifestV1Schema,
   "legacy-raw-artifact-descriptor": LegacyRawArtifactDescriptorV1Schema,
   "repository-snapshot": RepositorySnapshotV1Schema,
+  "strong-repository-snapshot": StrongRepositorySnapshotV1Schema,
+  "repository-snapshot-persisted-payload": RepositorySnapshotPersistedPayloadV1Schema,
+  "repository-snapshot-surface-response": RepositorySnapshotSurfaceResponseV1Schema,
   "repository-snapshot-artifact": RepositorySnapshotArtifactV1Schema,
   "repo-pulse": RepoPulseV1Schema,
+  "strong-repo-pulse": StrongRepoPulseV1Schema,
+  "repo-pulse-persisted-payload": RepoPulsePersistedPayloadV1Schema,
+  "repo-pulse-surface-response": RepoPulseSurfaceResponseV1Schema,
   "repo-pulse-artifact": RepoPulseArtifactV1Schema,
   "task-manifest": TaskManifestV1Schema,
   "task-manifest-artifact": TaskManifestArtifactV1Schema,

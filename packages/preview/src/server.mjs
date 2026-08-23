@@ -10,6 +10,7 @@ import {
   isSensitiveRepositoryPath,
   parseWikiIndexV2,
   parseWikiSearchIndexV2,
+  projectRepoPulseSurface,
   ChangeCheckArtifactV1Schema,
   RepoPulseArtifactV1Schema,
   TaskBriefArtifactV1Schema,
@@ -441,6 +442,12 @@ function projectPublicConfig(rawConfig) {
   };
 }
 
+function projectPublicWiki(rawWiki) {
+  if (!isRecord(rawWiki) || !isRecord(rawWiki.source)) return rawWiki;
+  const { sourceRootIdentity: _legacyRootIdentity, ...publicSource } = rawWiki.source;
+  return { ...rawWiki, source: publicSource };
+}
+
 function mime(file) {
   const ext = path.extname(file).toLowerCase();
   return ({ ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".ico": "image/x-icon", ".woff": "font/woff", ".woff2": "font/woff2" })[ext] ?? "application/octet-stream";
@@ -580,11 +587,16 @@ async function readTaskBriefProjection(state, taskId, section) {
   if (pulseRaw !== null) {
     const pulseResult = RepoPulseArtifactV1Schema.safeParse(pulseRaw);
     if (pulseResult.success
+      // A structurally valid strong Pulse is not sufficient authority to open
+      // a strong Surface.  Until the Preview can revalidate the terminalized
+      // Store chain and sealed journal token, only owner-read legacy bytes may
+      // cross this boundary through their strict redacted projection.
+      && !("profile" in pulseResult.data.payload)
       && artifactContentDigestMatches(pulseResult.data)
       && pulseResult.data.repositoryId === task.repositoryId
       && pulseResult.data.worktreeId === task.worktreeId
       && pulseResult.data.sourceSnapshotId === task.sourceSnapshotId) {
-      pulse = pulseResult.data.payload;
+      pulse = projectRepoPulseSurface(pulseResult.data.payload);
     }
   }
   return {
@@ -699,7 +711,9 @@ function readCommittedSource(root, revision, relative, maxBytes, gitEnvironment)
 
 function createRequestHandler(state, token, gitEnvironment) {
   const publicGraph = sanitizeArtifactValue(sanitizeGraph(state.graph, state.root), state.root);
-  const publicWiki = state.wiki === null ? null : sanitizeArtifactValue(state.wiki, state.root);
+  const publicWiki = state.wiki === null
+    ? null
+    : sanitizeArtifactValue(projectPublicWiki(state.wiki), state.root);
   const publicSearch = state.search === null ? null : sanitizeArtifactValue(state.search, state.root);
   const publicMeta = sanitizeArtifactValue(projectPublicMeta(state.meta, state.graph), state.root);
   const publicConfig = sanitizeArtifactValue(projectPublicConfig(state.config), state.root);
@@ -718,6 +732,14 @@ function createRequestHandler(state, token, gitEnvironment) {
     if (dataEndpoint && url.searchParams.get("token") !== token) { json(res, 403, { error: "forbidden" }); return; }
     if (taskEndpoint && taskId === null) {
       json(res, 404, { error: `${taskEndpointKind ?? "task"}_not_available` });
+      return;
+    }
+    if (taskEndpoint) {
+      // Legacy Task, Change Check, and Verification payloads have no accepted
+      // non-owner projection.  Fail before repository drift checks or any
+      // `.understand-code/tasks/**`/Pulse read so no private lineage or detail
+      // can cross the Preview boundary.
+      json(res, 503, { error: "provider_unavailable", reason: "unavailable" });
       return;
     }
     if (dataEndpoint && state.mode === "root") {

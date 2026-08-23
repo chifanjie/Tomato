@@ -88,27 +88,27 @@ export function normalizeToolJsonSchema<T>(value: T): T {
 
 const descriptions: Readonly<Record<ImplementedToolName, string>> = {
   get_repo_pulse:
-    "Read the current published repository pulse and its exact snapshot metadata.",
+    "Read the current repository pulse through its strict redacted public Surface.",
   build_task_brief:
-    "Create or idempotently resume a managed Task Brief from published repository context.",
+    "Unavailable until the accepted strong Store can create a managed Task Brief.",
   get_task_brief:
-    "Read one paginated section of a managed Task Brief.",
+    "Unavailable until the accepted strong Store can validate managed Task reads.",
   update_task:
-    "Advance a managed Task through confirmations, lifecycle transitions, findings, and recovery actions.",
+    "Unavailable until the accepted strong Store can authorize managed Task mutations.",
   check_change:
-    "Compare the persisted Task plan with the current Repository Snapshot and append a Change Check.",
+    "Unavailable until the accepted strong Store can append a Change Check.",
   record_verification:
-    "Append an externally executed Verification result to the current Task revision.",
+    "Unavailable until the accepted strong Store can append a Verification result.",
   open_workbench:
-    "Open or reuse a read-only local Workbench session at an exact Task, Knowledge, or Graph route.",
+    "Unavailable until the accepted strong Store can project a safe Task Workbench session.",
   get_evidence:
-    "Read exact Evidence records from a managed Task bundle with bounded pagination.",
+    "Unavailable until the accepted strong Store can validate managed Evidence reads.",
   search_context:
-    "Search persisted Task claims, Evidence, and impact context with deterministic ranking.",
+    "Unavailable until the accepted strong Store can validate managed Task context reads.",
   trace_impact:
-    "Trace persisted Task impact paths between exact nodes with bounded pagination.",
+    "Unavailable until the accepted strong Store can validate managed Task impact reads.",
   refresh_index:
-    "Capture and publish the current Repository Snapshot and Pulse, preserving the last snapshot until commit.",
+    "Unavailable until the accepted strong Store can capture and publish Repository state.",
 };
 
 const inputSchemas = {

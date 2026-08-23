@@ -8,6 +8,7 @@ export {
   isSensitiveRepositoryPath,
   readStableRepositoryFile,
 } from "../../repository-state/dist/snapshot.js";
+export { projectRepoPulseSurface } from "../../repository-state/dist/surface.js";
 // Task/Pulse contracts are bundled into the Preview server so read-only Task
 // routes can validate persisted envelopes before projecting them to the
 // browser. Keeping validation in the packed server avoids exposing arbitrary

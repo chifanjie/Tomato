@@ -230,6 +230,17 @@ async function snapshotFor(
       { artifactType: "repository_snapshot", snapshotId },
     );
   }
+  if ("profile" in read.artifact.payload) {
+    throw new TaskEngineError(
+      "artifact_unavailable",
+      "The legacy Change Check cannot consume a strong Repository Snapshot.",
+      {
+        reason: "unsupported_schema",
+        artifactType: "repository_snapshot",
+        snapshotId,
+      },
+    );
+  }
   return read.artifact.payload;
 }
 

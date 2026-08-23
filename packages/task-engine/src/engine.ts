@@ -59,17 +59,17 @@ import { renderTaskBriefMarkdown } from "./renderer.js";
 
 const DEFAULT_CREATE_SCOPE = "build_task_brief";
 
-const AVAILABLE_CONTEXT_RECOVERY = Object.freeze({
-  available: true,
-  reasonCode: "task_context_rebuild_available",
-  owner: "task-engine",
+const LOCKED_CONTEXT_RECOVERY = Object.freeze({
+  available: false,
+  reasonCode: "task_context_rebuild_not_implemented",
+  owner: "WP5",
 } as const);
 
 export const TASK_ENGINE_CAPABILITIES: TaskEngineCapabilities = Object.freeze({
   schemaVersion: 1,
   actions: Object.freeze({
-    refresh_task_context: AVAILABLE_CONTEXT_RECOVERY,
-    rebase_task: AVAILABLE_CONTEXT_RECOVERY,
+    refresh_task_context: LOCKED_CONTEXT_RECOVERY,
+    rebase_task: LOCKED_CONTEXT_RECOVERY,
   }),
 });
 
@@ -220,13 +220,28 @@ export class TaskEngine {
         { reason: "corrupt", artifactType: "repository_snapshot" },
       );
     }
+    if ("profile" in snapshotRead.artifact.payload) {
+      throw new TaskEngineError(
+        "artifact_unavailable",
+        "The legacy Task engine cannot consume a strong Repository Snapshot.",
+        { reason: "unsupported_schema", artifactType: "repository_snapshot" },
+      );
+    }
     let pulse: RepoPulseV1 | undefined;
     try {
       const pulseRead = await this.#store.readArtifact("repo_pulse");
       if (pulseRead.artifact.artifactType === "repo_pulse") {
+        if ("profile" in pulseRead.artifact.payload) {
+          throw new TaskEngineError(
+            "artifact_unavailable",
+            "The legacy Task engine cannot consume a strong Repo Pulse.",
+            { reason: "unsupported_schema", artifactType: "repo_pulse" },
+          );
+        }
         pulse = pulseRead.artifact.payload;
       }
     } catch (error) {
+      if (error instanceof TaskEngineError) throw error;
       if (requirePulse) {
         throw new TaskEngineError(
           "artifact_unavailable",
@@ -823,6 +838,18 @@ export class TaskEngine {
       input.action.type === "refresh_task_context" ||
       input.action.type === "rebase_task"
     ) {
+      const capability = TASK_ENGINE_CAPABILITIES.actions[input.action.type];
+      if (!capability.available) {
+        throw new TaskEngineError(
+          "capability_unavailable",
+          "Task context recovery is not available.",
+          {
+            taskId: input.taskId,
+            capability: input.action.type,
+            ...capability,
+          },
+        );
+      }
       const targetSnapshotId = input.action.targetSnapshotId;
       return rebuildTaskContext(
         this.#store,

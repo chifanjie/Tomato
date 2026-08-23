@@ -3,6 +3,7 @@ import {
   ContentDigestSchema,
   IsoTimestampSchema,
   LineRangeSchema,
+  PathSafeRepositoryRelativePathV1Schema,
   ProducerVersionSchema,
   RepositoryRelativePathSchema,
   TaskIdSchema,
@@ -38,6 +39,24 @@ describe("contract primitives", () => {
     "./src/index.ts",
   ])("rejects unsafe repository-relative path %s", (path) => {
     expect(RepositoryRelativePathSchema.safeParse(path).success).toBe(false);
+  });
+
+  it("keeps legacy path parsing lossless while path-safe identities reject lone surrogates", () => {
+    expect(RepositoryRelativePathSchema.parse("src/\ud800.ts")).toBe(
+      "src/\ud800.ts",
+    );
+    expect(
+      PathSafeRepositoryRelativePathV1Schema.safeParse("src/\ud800.ts").success,
+    ).toBe(false);
+    expect(
+      PathSafeRepositoryRelativePathV1Schema.safeParse("src/\udfff.ts").success,
+    ).toBe(false);
+  });
+
+  it("accepts a well-formed supplementary Unicode path for path-safe identity", () => {
+    expect(PathSafeRepositoryRelativePathV1Schema.parse("src/\ud83e\uddea.ts")).toBe(
+      "src/\ud83e\uddea.ts",
+    );
   });
 
   it("rejects noncanonical scalar representations", () => {

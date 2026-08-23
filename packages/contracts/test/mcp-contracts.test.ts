@@ -8,6 +8,7 @@ import {
   BuildTaskBriefOutputV1Schema,
   CheckChangeOutputV1Schema,
   GetEvidenceOutputV1Schema,
+  GetRepoPulsePublicMetaV1Schema,
   GetRepoPulseOutputV1Schema,
   GetTaskBriefOutputV1Schema,
   McpCancelledNotificationV1Schema,
@@ -50,6 +51,17 @@ function referenceFixture(fileName: string): unknown {
     readFileSync(
       fileURLToPath(
         new URL(`../fixtures/v1/reference/${fileName}`, import.meta.url),
+      ),
+      "utf8",
+    ),
+  ) as unknown;
+}
+
+function surfaceFixture(fileName: string): unknown {
+  return JSON.parse(
+    readFileSync(
+      fileURLToPath(
+        new URL(`../fixtures/v1/surface/${fileName}`, import.meta.url),
       ),
       "utf8",
     ),
@@ -99,6 +111,14 @@ const successMeta = {
   truncated: false,
   truncatedCategories: [],
 } as const;
+
+const repoPulsePublicMeta = {
+  durationMs: 12.5,
+  cacheHit: false,
+} as const;
+const legacyRepoPulseSurface = surfaceFixture(
+  "legacy-repo-pulse-redacted.json",
+);
 
 const referenceTask = referencePayload<{
   taskId: string;
@@ -316,21 +336,14 @@ describe("common MCP response contracts", () => {
     ).toThrow();
   });
 
-  it("parses the same reference Repo Pulse facts consumed by Core and Dashboard", () => {
-    const artifact = referenceFixture("repo-pulse.json") as {
-      sourceSnapshotId: string;
-      payload: unknown;
-    };
+  it("parses the strict legacy-redacted Repo Pulse Surface", () => {
     expect(
       GetRepoPulseOutputV1Schema.safeParse({
         content: [{ type: "text", text: "Repository pulse is fresh." }],
         structuredContent: {
           schemaVersion: 1,
-          meta: {
-            ...successMeta,
-            sourceSnapshotId: artifact.sourceSnapshotId,
-          },
-          result: { pulse: artifact.payload },
+          meta: repoPulsePublicMeta,
+          result: { pulse: legacyRepoPulseSurface },
         },
       }).success,
     ).toBe(true);
@@ -350,6 +363,26 @@ describe("common MCP response contracts", () => {
         durationMs: undefined,
       }).success,
     ).toBe(false);
+  });
+
+  it("uses Pulse-specific public metadata with no legacy identity or digest fields", () => {
+    expect(
+      GetRepoPulsePublicMetaV1Schema.safeParse(repoPulsePublicMeta).success,
+    ).toBe(true);
+    for (const leaked of [
+      { repositoryId: "repository:legacy" },
+      { worktreeId: "worktree:legacy" },
+      { sourceSnapshotId: "snapshot:legacy" },
+      { headCommit: HEAD_COMMIT },
+      { worktreeFingerprint: DIGEST },
+    ]) {
+      expect(
+        GetRepoPulsePublicMetaV1Schema.safeParse({
+          ...repoPulsePublicMeta,
+          ...leaked,
+        }).success,
+      ).toBe(false);
+    }
   });
 
   it("keeps pagination continuation state internally consistent", () => {
@@ -378,20 +411,13 @@ describe("common MCP response contracts", () => {
   });
 
   it("parses a complete success envelope and rejects undeclared structured fields", () => {
-    const referencePulseArtifact = referenceFixture("repo-pulse.json") as {
-      sourceSnapshotId: string;
-      payload: Record<string, unknown>;
-    };
     const result = {
       content: [{ type: "text", text: "Repository pulse is fresh." }],
       structuredContent: {
         schemaVersion: 1,
-        meta: {
-          ...successMeta,
-          sourceSnapshotId: referencePulseArtifact.sourceSnapshotId,
-        },
+        meta: repoPulsePublicMeta,
         result: {
-          pulse: referencePulseArtifact.payload,
+          pulse: legacyRepoPulseSurface,
         },
       },
     };
@@ -413,10 +439,34 @@ describe("common MCP response contracts", () => {
           ...result.structuredContent,
           result: {
             pulse: {
-              ...result.structuredContent.result.pulse,
-              evaluatedSnapshotId: "snapshot-other",
+              ...(result.structuredContent.result.pulse as Record<string, unknown>),
+              evaluatedSnapshotId: "snapshot:legacy",
             },
           },
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      GetRepoPulseOutputV1Schema.safeParse({
+        ...result,
+        structuredContent: {
+          ...result.structuredContent,
+          meta: {
+            ...repoPulsePublicMeta,
+            sourceSnapshotId: "snapshot:legacy",
+          },
+        },
+      }).success,
+    ).toBe(false);
+    const rawLegacyPulse = referencePayload<Record<string, unknown>>(
+      "repo-pulse.json",
+    );
+    expect(
+      GetRepoPulseOutputV1Schema.safeParse({
+        ...result,
+        structuredContent: {
+          ...result.structuredContent,
+          result: { pulse: rawLegacyPulse },
         },
       }).success,
     ).toBe(false);

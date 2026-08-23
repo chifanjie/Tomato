@@ -4,8 +4,8 @@ import type {
   CandidateLevelV1,
   ChangeCheckV1,
   PlannedChangeExpectationV1,
+  RepoPulseSurfaceResponseV1,
   RepoPulseStatusV1,
-  RepoPulseV1,
   TaskBriefPageItemV1,
   TaskBriefSectionV1,
   TaskBriefV1,
@@ -75,7 +75,7 @@ export interface TaskFirstWorkbenchProps {
   readonly route: TaskFirstRoute;
   /** The current Task Brief page/result. Omit while loading or on the Task Home. */
   readonly page?: TaskBriefPage | null;
-  readonly pulse?: RepoPulseV1 | null;
+  readonly pulse?: RepoPulseSurfaceResponseV1 | null;
   /** Explicit pulse status is useful while the pulse payload is still loading. */
   readonly pulseStatus?: RepoPulseStatusV1;
   readonly loading?: boolean;
@@ -152,7 +152,7 @@ function selectedSection(route: TaskFirstRoute, page: TaskBriefPageResult | null
 }
 
 function pulseStatus(
-  pulse: RepoPulseV1 | null | undefined,
+  pulse: RepoPulseSurfaceResponseV1 | null | undefined,
   explicitStatus: RepoPulseStatusV1 | undefined,
 ): RepoPulseStatusV1 {
   return explicitStatus ?? pulse?.status ?? "unknown";
@@ -477,8 +477,15 @@ function VerificationCard({
   );
 }
 
-function PulseCard({ pulse, status }: { readonly pulse?: RepoPulseV1 | null; readonly status: RepoPulseStatusV1 }) {
-  const reasons = pulse?.reasons ?? [];
+function PulseCard({ pulse, status }: { readonly pulse?: RepoPulseSurfaceResponseV1 | null; readonly status: RepoPulseStatusV1 }) {
+  const strongPulse = pulse?.viewKind === "strong_repo_pulse" ? pulse : null;
+  const branch = strongPulse?.branchState.status === "safe"
+    ? strongPulse.branchState.name
+    : strongPulse?.branchState.status === "detached"
+      ? "Detached / 游离"
+      : strongPulse?.branchState.status === "redacted"
+        ? "Redacted / 已隐藏"
+        : null;
   return (
     <section className="uc-panel p-4" aria-labelledby="task-first-pulse-title">
       <div className="flex items-start justify-between gap-3">
@@ -494,17 +501,17 @@ function PulseCard({ pulse, status }: { readonly pulse?: RepoPulseV1 | null; rea
       </div>
       {pulse ? (
         <dl className="mt-4 grid gap-2 text-xs text-text-secondary">
-          <div className="flex justify-between gap-3"><dt>Snapshot</dt><dd className="max-w-[12rem] truncate font-mono text-text-primary" title={pulse.evaluatedSnapshotId}>{pulse.evaluatedSnapshotId}</dd></div>
+          {strongPulse && <div className="flex justify-between gap-3"><dt>Snapshot</dt><dd className="max-w-[12rem] truncate font-mono text-text-primary" title={strongPulse.evaluatedSnapshotId}>{strongPulse.evaluatedSnapshotId}</dd></div>}
           <div className="flex justify-between gap-3"><dt>Evaluated</dt><dd className="text-text-primary">{new Date(pulse.evaluatedAt).toLocaleString()}</dd></div>
-          {pulse.repositoryState?.branch && <div className="flex justify-between gap-3"><dt>Branch</dt><dd className="max-w-[12rem] truncate text-text-primary">{pulse.repositoryState.branch}</dd></div>}
+          {branch && <div className="flex justify-between gap-3"><dt>Branch</dt><dd className="max-w-[12rem] truncate text-text-primary">{branch}</dd></div>}
+          {strongPulse ? (
+            <div className="flex justify-between gap-3"><dt>Changes</dt><dd className="text-text-primary">{strongPulse.safeChangeCount} safe · {strongPulse.redactedChangeCount} redacted · {strongPulse.unknownStateCount} unknown</dd></div>
+          ) : (
+            <div className="flex justify-between gap-3"><dt>Details</dt><dd className="text-text-primary">Legacy details redacted / 旧版详情已隐藏</dd></div>
+          )}
         </dl>
       ) : (
         <p className="mt-3 text-sm leading-6 text-text-muted">Pulse details are not available yet. / 暂无仓库状态详情。</p>
-      )}
-      {reasons.length > 0 && (
-        <ul className="mt-3 space-y-1 text-xs leading-5 text-text-muted">
-          {reasons.slice(0, 3).map((reason) => <li key={reason}>{reason}</li>)}
-        </ul>
       )}
     </section>
   );

@@ -20,12 +20,13 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "prepack": "npm run build",
-    "typecheck": "node --check src/bin.mjs && node --check src/codex-plugin-bin.mjs && node --check src/contracts.mjs && node --check src/host-bin.mjs && node --check src/server.mjs && node --check scripts/alpha-candidate.mjs && node --check scripts/build.mjs && node --check vite.config.contracts.mjs",
+    "typecheck": "node --check src/bin.mjs && node --check src/codex-plugin-bin.mjs && node --check src/contracts.mjs && node --check src/host-bin.mjs && node --check src/server.mjs && node --check scripts/alpha-candidate.mjs && node --check scripts/build.mjs && node --check scripts/surface-release-gate.mjs && node --check vite.config.contracts.mjs",
     "test": "npm run build && npm run test:runtime && npm run test:plugins && npm run test:cold",
     "test:runtime": "node --test test/preview.test.mjs",
     "test:plugins": "node --test test/plugin-clean-install.test.mjs",
     "test:cold": "node --test test/cold-packed.test.mjs",
     "test:workbench-browser": "node --test test/workbench-browser-packed.test.mjs",
+    "test:surface-release": "node scripts/surface-release-gate.mjs",
     "candidate:alpha": "node scripts/alpha-candidate.mjs assemble",
     "candidate:verify": "node scripts/alpha-candidate.mjs verify",
     "test:alpha-candidate": "node --test test/alpha-candidate.test.mjs"

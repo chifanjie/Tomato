@@ -1,12 +1,12 @@
 import {
   ChangeCheckArtifactV1Schema,
-  RepoPulseV1Schema,
+  RepoPulseSurfaceResponseV1Schema,
   TaskBriefPageItemV1Schema,
   TaskBriefSectionV1Schema,
   TaskBriefV1Schema,
   TaskManifestV1Schema,
   VerificationArtifactV1Schema,
-  type RepoPulseV1,
+  type RepoPulseSurfaceResponseV1,
   type ChangeCheckV1,
   type TaskBriefPageItemV1,
   type TaskBriefSectionV1,
@@ -80,7 +80,7 @@ export interface TaskWorkbenchPayload {
   readonly brief: TaskBriefV1;
   readonly section: TaskBriefSectionV1;
   readonly items: readonly TaskBriefPageItemV1[];
-  readonly pulse: RepoPulseV1 | null;
+  readonly pulse: RepoPulseSurfaceResponseV1 | null;
   readonly freshness: {
     readonly sourceSnapshotId: string;
     readonly current: boolean;
@@ -203,7 +203,7 @@ function parsePayload(value: unknown): TaskWorkbenchPayload | null {
   if (typeof freshnessRecord.sourceSnapshotId !== "string" || typeof freshnessRecord.current !== "boolean") return null;
   const pulseResult = record.pulse === null || record.pulse === undefined
     ? null
-    : RepoPulseV1Schema.safeParse(record.pulse);
+    : RepoPulseSurfaceResponseV1Schema.safeParse(record.pulse);
   if (pulseResult !== null && !pulseResult.success) return null;
   const parsedItems: TaskBriefPageItemV1[] = [];
   for (const item of items) {

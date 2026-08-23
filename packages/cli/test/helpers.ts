@@ -21,7 +21,9 @@ import {
   RepoPulseArtifactV1Schema,
   RepositorySnapshotArtifactV1Schema,
 } from "@understand-code/contracts";
+import type { BuildTaskBriefInputV1 } from "@understand-code/contracts/mcp";
 import { buildRepoPulse, getRepositorySnapshotDetailed } from "@understand-code/repository-state";
+import { openRuntime } from "../src/runtime/context.js";
 
 const execFileAsync = promisify(execFile);
 const PRODUCT_VERSION = "0.1.0";
@@ -85,7 +87,16 @@ export async function seedPublishedContext(root: string): Promise<void> {
     producerVersion: PRODUCT_VERSION,
     clock: () => new Date("2026-08-03T00:00:00.000Z"),
   });
-  await store.initialize();
+  const manifest = await store.initialize();
+  const currentPulse = manifest.artifacts.find(
+    (descriptor) =>
+      descriptor.artifactType === "repo_pulse" &&
+      descriptor.state === "current",
+  );
+  if (currentPulse !== undefined && currentPulse.revision === undefined) {
+    throw new TypeError("The current Pulse fixture is missing its revision.");
+  }
+  const currentPulseRevision = currentPulse?.revision;
   const graph = {
     version: "1",
     project: {
@@ -153,14 +164,37 @@ export async function seedPublishedContext(root: string): Promise<void> {
     repositoryId: capture.snapshot.repositoryId,
     worktreeId: capture.snapshot.worktreeId,
     sourceSnapshotId: capture.snapshot.snapshotId,
-    revision: 0,
+    revision:
+      currentPulseRevision === undefined ? 0 : currentPulseRevision + 1,
     producerVersion: PRODUCT_VERSION,
     createdAt: pulse.evaluatedAt,
     contentDigest: sha256CanonicalJson(pulse),
     payload: pulse,
   });
   await store.persistArtifact(snapshotArtifact);
-  await store.persistArtifact(pulseArtifact);
+  await store.persistArtifact(pulseArtifact, {
+    ...(currentPulseRevision === undefined
+      ? {}
+      : { expectedRevision: currentPulseRevision }),
+  });
+}
+
+/**
+ * Owner-only fixture writer. Public MCP mutations remain capability-locked;
+ * read-surface tests use the production TaskEngine directly to prepare trusted
+ * legacy artifacts without adding a shipped bypass.
+ */
+export async function seedLegacyTask(
+  root: string,
+  input: BuildTaskBriefInputV1,
+) {
+  const runtime = await openRuntime(root);
+  return runtime.taskEngine.buildTaskBrief(input, {
+    actor: input.actor,
+    repositoryId: runtime.store.repositoryId,
+    worktreeId: runtime.store.worktreeId,
+    capabilities: ["task:create"],
+  });
 }
 
 export function writeMessage(
@@ -234,6 +268,49 @@ export async function snapshotRepositoryFiles(
       }
       const absolutePath = path.join(root, ...relativePath.split("/"));
       if (entry.isDirectory()) {
+        await walk(relativePath);
+      } else if (entry.isFile()) {
+        const bytes = await readFile(absolutePath);
+        snapshot[relativePath] = `file:sha256:${createHash("sha256")
+          .update(bytes)
+          .digest("hex")}`;
+      } else if (entry.isSymbolicLink()) {
+        const target = await readlink(absolutePath, "buffer");
+        snapshot[relativePath] = `symlink:sha256:${createHash("sha256")
+          .update(target)
+          .digest("hex")}`;
+      } else {
+        snapshot[relativePath] = "special";
+      }
+    }
+  };
+  await walk("");
+  return Object.freeze(snapshot);
+}
+
+export async function snapshotManagedStoreTree(
+  root: string,
+): Promise<Readonly<Record<string, string>>> {
+  const snapshot: Record<string, string> = {};
+  const storeRoot = path.join(root, ".understand-code");
+  const walk = async (relativeDirectory: string): Promise<void> => {
+    const absoluteDirectory =
+      relativeDirectory.length === 0
+        ? storeRoot
+        : path.join(storeRoot, ...relativeDirectory.split("/"));
+    const entries = await readdir(absoluteDirectory, { withFileTypes: true });
+    entries.sort((left, right) => left.name.localeCompare(right.name, "en"));
+    for (const entry of entries) {
+      const relativePath =
+        relativeDirectory.length === 0
+          ? entry.name
+          : `${relativeDirectory}/${entry.name}`;
+      const absolutePath = path.join(
+        storeRoot,
+        ...relativePath.split("/"),
+      );
+      if (entry.isDirectory()) {
+        snapshot[relativePath] = "directory";
         await walk(relativePath);
       } else if (entry.isFile()) {
         const bytes = await readFile(absolutePath);

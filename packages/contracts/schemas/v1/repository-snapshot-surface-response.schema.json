@@ -1,0 +1,409 @@
+{
+  "$id": "urn:understand-code:schema:v1:repository-snapshot-surface-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "viewVersion": {
+          "type": "number",
+          "const": 1
+        },
+        "viewKind": {
+          "type": "string",
+          "const": "legacy_repository_snapshot_redacted"
+        },
+        "sourceCaptureStatus": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "partial",
+            "error"
+          ]
+        },
+        "aggregateChangeCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "capturedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+        },
+        "strongOperationSupported": {
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "required": [
+        "viewVersion",
+        "viewKind",
+        "sourceCaptureStatus",
+        "aggregateChangeCount",
+        "capturedAt",
+        "strongOperationSupported"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "viewVersion": {
+          "type": "number",
+          "const": 1
+        },
+        "viewKind": {
+          "type": "string",
+          "const": "strong_repository_snapshot"
+        },
+        "snapshotId": {
+          "type": "string",
+          "pattern": "^snapshot-[0-9a-f]{64}$"
+        },
+        "repositoryId": {
+          "type": "string",
+          "pattern": "^repo-hmac-[0-9a-f]{64}$"
+        },
+        "worktreeId": {
+          "type": "string",
+          "pattern": "^worktree-hmac-[0-9a-f]{64}$"
+        },
+        "branchState": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "const": "detached"
+                }
+              },
+              "required": [
+                "status"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "const": "safe"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 16384
+                }
+              },
+              "required": [
+                "status",
+                "name"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "const": "redacted"
+                },
+                "boundaryCode": {
+                  "type": "string",
+                  "enum": [
+                    "sensitive_path",
+                    "secret_content",
+                    "invalid_utf8",
+                    "control_character",
+                    "branch_value_oversized",
+                    "unsafe_git_ref"
+                  ]
+                }
+              },
+              "required": [
+                "status",
+                "boundaryCode"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "objectFormat": {
+          "type": "string",
+          "enum": [
+            "sha1",
+            "sha256"
+          ]
+        },
+        "headState": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "commit"
+                },
+                "commit": {
+                  "type": "string",
+                  "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+                }
+              },
+              "required": [
+                "kind",
+                "commit"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "unborn"
+                },
+                "emptyTreeObjectId": {
+                  "type": "string",
+                  "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+                }
+              },
+              "required": [
+                "kind",
+                "emptyTreeObjectId"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "captureStatus": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "partial"
+          ]
+        },
+        "accounting": {
+          "type": "object",
+          "properties": {
+            "rawLayerUnitCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "candidateUnitCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "safeChangeCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "redactedKnownChangeCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "unknownStateCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "rawLayerUnitCount",
+            "candidateUnitCount",
+            "safeChangeCount",
+            "redactedKnownChangeCount",
+            "unknownStateCount"
+          ],
+          "additionalProperties": false
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^change-[0-9a-f]{64}$"
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "oldPath": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "committed",
+                  "staged",
+                  "unstaged",
+                  "untracked",
+                  "conflict"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "added",
+                  "modified",
+                  "deleted",
+                  "renamed",
+                  "copied",
+                  "type_changed"
+                ]
+              },
+              "contentDigest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "previousContentDigest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "id",
+              "path",
+              "source",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "redactedChanges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^snapshot-redaction-[0-9a-f]{64}$"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "committed",
+                  "staged",
+                  "unstaged",
+                  "untracked",
+                  "conflict"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "added",
+                  "modified",
+                  "deleted",
+                  "renamed",
+                  "copied",
+                  "type_changed"
+                ]
+              },
+              "boundaryCode": {
+                "type": "string",
+                "enum": [
+                  "hard_deny_path",
+                  "sensitive_path",
+                  "secret_content",
+                  "invalid_utf8",
+                  "control_character",
+                  "branch_value_oversized",
+                  "unsafe_git_ref",
+                  "scan_unit_oversized",
+                  "scan_capture_limit",
+                  "unstable_read",
+                  "unrepresentable_path",
+                  "unsafe_file_kind"
+                ]
+              },
+              "count": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "source",
+              "kind",
+              "boundaryCode",
+              "count"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "unknownStates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^snapshot-unknown-state-[0-9a-f]{64}$"
+              },
+              "code": {
+                "type": "string",
+                "enum": [
+                  "hard_deny_equality_unprovable",
+                  "scan_unit_limit_equality_unprovable",
+                  "scan_capture_limit_equality_unprovable",
+                  "unstable_read",
+                  "unreadable",
+                  "unrepresentable_path",
+                  "unsafe_file_kind"
+                ]
+              },
+              "count": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "count"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "capturedAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$"
+        },
+        "strongOperationSupported": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "required": [
+        "viewVersion",
+        "viewKind",
+        "snapshotId",
+        "repositoryId",
+        "worktreeId",
+        "branchState",
+        "objectFormat",
+        "headState",
+        "captureStatus",
+        "accounting",
+        "changes",
+        "redactedChanges",
+        "unknownStates",
+        "capturedAt",
+        "strongOperationSupported"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

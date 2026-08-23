@@ -8,11 +8,8 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import {
-  BuildTaskBriefOutputV1Schema,
   GetRepoPulseOutputV1Schema,
-  GetTaskBriefOutputV1Schema,
   McpToolErrorResultV1Schema,
-  RefreshIndexOutputV1Schema,
 } from "@understand-code/contracts/mcp";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -22,6 +19,8 @@ import {
   createGitRepository,
   createTemporaryDirectory,
   readSourceFixture,
+  seedLegacyTask,
+  snapshotManagedStoreTree,
   snapshotRepositoryFiles,
   writeMessage,
 } from "./helpers.js";
@@ -136,9 +135,16 @@ function initialize(child: ReturnType<typeof spawn>): void {
 
 describe("cold packed CLI", () => {
   it(
-    "installs outside the monorepo and executes the complete three-tool stdio slice",
+    "installs outside the monorepo and runs the strict Pulse/locked refresh/Task slice",
     async () => {
       const root = await createGitRepository();
+      const built = await seedLegacyTask(root, {
+        task: "Prepare a safe change to the task function.",
+        expectedRevision: 0,
+        idempotencyKey: "cold-packed-owner-brief",
+        actor: "agent:cold-e2e-owner",
+        scope: ["src/task.ts"],
+      });
       const sourceBefore = await readSourceFixture(root);
       const repositoryBefore = await snapshotRepositoryFiles(root);
       const installed = await installPackedCli();
@@ -193,34 +199,6 @@ describe("cold packed CLI", () => {
         method: "tools/call",
         params: { name: "get_repo_pulse", arguments: {} },
       });
-      writeMessage(child, {
-        jsonrpc: "2.0",
-        id: 6,
-        method: "tools/call",
-        params: {
-          name: "refresh_index",
-          arguments: {
-            mode: "full",
-            idempotencyKey: "cold-packed-full-refresh",
-            actor: "agent:cold-e2e",
-          },
-        },
-      });
-      writeMessage(child, {
-        jsonrpc: "2.0",
-        id: 4,
-        method: "tools/call",
-        params: {
-          name: "build_task_brief",
-          arguments: {
-            task: "Prepare a safe change to the task function.",
-            expectedRevision: 0,
-            idempotencyKey: "cold-packed-brief",
-            actor: "agent:cold-e2e",
-            scope: ["src/task.ts"],
-          },
-        },
-      });
       const listResponse = await collected.waitFor((message) => message.id === 2);
       expect(listResponse.result.tools.map((tool: any) => tool.name)).toEqual([
         "get_repo_pulse",
@@ -236,26 +214,146 @@ describe("cold packed CLI", () => {
         "refresh_index",
       ]);
       const pulseResponse = await collected.waitFor((message) => message.id === 3);
-      GetRepoPulseOutputV1Schema.parse(pulseResponse.result);
-      const fullRefreshResponse = await collected.waitFor((message) => message.id === 6);
-      const fullRefresh = RefreshIndexOutputV1Schema.parse(fullRefreshResponse.result);
-      expect(fullRefresh.structuredContent.result.operation.status).toBe("completed");
-      const buildResponse = await collected.waitFor((message) => message.id === 4);
-      const built = BuildTaskBriefOutputV1Schema.parse(buildResponse.result);
+      const pulse = GetRepoPulseOutputV1Schema.parse(pulseResponse.result);
+      expect(pulse.structuredContent.meta).toEqual({
+        durationMs: expect.any(Number),
+        cacheHit: true,
+      });
+      expect(pulse.structuredContent.result.pulse).toEqual({
+        viewVersion: 1,
+        viewKind: "legacy_repo_pulse_redacted",
+        status: "fresh",
+        aggregateChangeCount: 0,
+        evaluatedAt: "2026-08-03T00:00:00.000Z",
+        strongOperationSupported: false,
+      });
+      const publicPulseJson = JSON.stringify(pulseResponse.result);
+      expect(publicPulseJson).not.toMatch(
+        /"[^"]*(?:repository|worktree|snapshot|root|branch|path|oid|digest|diagnostic)[^"]*"\s*:/iu,
+      );
+      expect(publicPulseJson).not.toContain(root);
+      expect(publicPulseJson).not.toContain("src/task.ts");
+
+      const managedStoreBeforeMutation = await snapshotManagedStoreTree(root);
+      const taskId = built.task.taskId;
+      const actor = "agent:cold-e2e";
+      const mutationCalls = [
+        ["build_task_brief", {
+          task: "Capability lock fixture.",
+          expectedRevision: 0,
+          idempotencyKey: "cold-packed-locked-build",
+          actor,
+          scope: ["src/task.ts"],
+        }],
+        ["update_task", {
+          taskId,
+          action: { type: "transition_status", to: "planned" },
+          expectedRevision: built.task.revision,
+          idempotencyKey: "cold-packed-locked-update",
+          actor,
+        }],
+        ["update_task", {
+          taskId,
+          action: {
+            type: "refresh_task_context",
+            targetSnapshotId: built.task.latestSnapshotId,
+          },
+          expectedRevision: built.task.revision,
+          idempotencyKey: "cold-packed-locked-context-refresh",
+          actor,
+        }],
+        ["update_task", {
+          taskId,
+          action: {
+            type: "rebase_task",
+            targetSnapshotId: built.task.latestSnapshotId,
+            newBaselineSnapshotId: built.task.latestSnapshotId,
+            reason: "Strong Store authority is unavailable.",
+          },
+          expectedRevision: built.task.revision,
+          idempotencyKey: "cold-packed-locked-context-rebase",
+          actor,
+        }],
+        ["check_change", {
+          taskId,
+          actualSnapshotId: built.task.latestSnapshotId,
+          includeWorktree: true,
+          expectedRevision: built.task.revision,
+          idempotencyKey: "cold-packed-locked-check",
+          actor,
+        }],
+        ["record_verification", {
+          taskId,
+          record: {
+            verificationPlanEntryId: built.brief.verificationPlan[0]!.id,
+            kind: "test",
+            status: "passed",
+            command: "pnpm test",
+            exitCode: 0,
+            summary: "Capability lock fixture.",
+            claimIds: [],
+            snapshotId: built.task.latestSnapshotId,
+          },
+          expectedRevision: built.task.revision,
+          idempotencyKey: "cold-packed-locked-verification",
+          actor,
+        }],
+        ["refresh_index", {
+          mode: "full",
+          idempotencyKey: "cold-packed-locked-refresh",
+          actor,
+        }],
+      ] as const;
+      const expectedMutationFailure = {
+        isError: true,
+        content: [{
+          type: "text",
+          text: "The strong Store is unavailable. Run Doctor for details.",
+        }],
+        structuredContent: {
+          error: {
+            schemaVersion: 1,
+            code: "provider_unavailable",
+            details: { reason: "unavailable" },
+          },
+        },
+      };
+      for (const [index, [name, argumentsValue]] of mutationCalls.entries()) {
+        const id = 6 + index;
+        writeMessage(child, {
+          jsonrpc: "2.0",
+          id,
+          method: "tools/call",
+          params: { name, arguments: argumentsValue },
+        });
+        const response = await collected.waitFor((message) => message.id === id);
+        expect(McpToolErrorResultV1Schema.parse(response.result)).toEqual(
+          expectedMutationFailure,
+        );
+        expect(await snapshotManagedStoreTree(root)).toEqual(
+          managedStoreBeforeMutation,
+        );
+      }
+
       writeMessage(child, {
         jsonrpc: "2.0",
-        id: 5,
+        id: 14,
         method: "tools/call",
         params: {
           name: "get_task_brief",
           arguments: {
-            taskId: built.structuredContent.result.task.taskId,
+            taskId,
             section: "summary",
           },
         },
       });
-      const getResponse = await collected.waitFor((message) => message.id === 5);
-      GetTaskBriefOutputV1Schema.parse(getResponse.result);
+      const getResponse = await collected.waitFor((message) => message.id === 14);
+      expect(McpToolErrorResultV1Schema.parse(getResponse.result)).toEqual(
+        expectedMutationFailure,
+      );
+      expect(await snapshotManagedStoreTree(root)).toEqual(
+        managedStoreBeforeMutation,
+      );
       child.stdin.end();
       const [exitCode] = await once(child, "close");
       expect(exitCode).toBe(0);

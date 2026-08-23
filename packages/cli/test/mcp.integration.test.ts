@@ -1,22 +1,13 @@
 import { PassThrough } from "node:stream";
-import { readFile, stat, symlink, utimes, writeFile } from "node:fs/promises";
+import { readFile, stat, utimes } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { ArtifactStore } from "@understand-code/artifact-store";
-import { VerificationRecordV1Schema } from "@understand-code/contracts";
 import {
-  BuildTaskBriefOutputV1Schema,
-  CheckChangeOutputV1Schema,
   GetRepoPulseOutputV1Schema,
-  GetTaskBriefOutputV1Schema,
   McpToolErrorResultV1Schema,
-  OpenWorkbenchOutputV1Schema,
-  RecordVerificationOutputV1Schema,
-  RefreshIndexOutputV1Schema,
-  UpdateTaskOutputV1Schema,
 } from "@understand-code/contracts/mcp";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { resolveInitialBinding } from "../src/binding/root-binding.js";
 import { McpStdioServer } from "../src/mcp/server.js";
@@ -26,6 +17,7 @@ import {
   createGitRepository,
   git,
   readSourceFixture,
+  snapshotManagedStoreTree,
   snapshotRepositoryFiles,
 } from "./helpers.js";
 
@@ -106,6 +98,16 @@ describe("MCP lifecycle and real handlers", () => {
       ),
     ).toBe(true);
 
+    const runtime = await openRuntime(root);
+    const persistedPulse = await runtime.store.readArtifact("repo_pulse");
+    if (persistedPulse.artifact.artifactType !== "repo_pulse") {
+      throw new TypeError("The Pulse fixture resolved another Artifact type.");
+    }
+    const persistedPulsePayload = persistedPulse.artifact.payload;
+    if ("profile" in persistedPulsePayload) {
+      throw new TypeError("The Pulse canary requires a legacy fixture.");
+    }
+
     const sourcePath = path.join(root, "src/task.ts");
     const indexPath = path.join(root, ".git/index");
     const sourceMetadata = await stat(sourcePath);
@@ -140,26 +142,74 @@ describe("MCP lifecycle and real handlers", () => {
     }
     expect(await readFile(indexPath)).toEqual(indexBeforeReadTool);
     const pulse = GetRepoPulseOutputV1Schema.parse(harness.response(3).result);
-    expect(pulse.structuredContent.meta.sourceSnapshotId).toBe(
-      pulse.structuredContent.result.pulse.evaluatedSnapshotId,
-    );
-
-    await harness.server.handleValue({
-      jsonrpc: "2.0",
-      id: 4,
-      method: "tools/call",
-      params: {
-        name: "build_task_brief",
-        arguments: {
-          task: "Change the task result while preserving its public behavior.",
-          expectedRevision: 0,
-          idempotencyKey: "cli-integration-brief",
-          actor: "agent:cli-test",
-          scope: ["src/task.ts"],
-        },
-      },
+    expect(pulse.structuredContent.meta).toEqual({
+      durationMs: expect.any(Number),
+      cacheHit: true,
     });
-    const built = BuildTaskBriefOutputV1Schema.parse(harness.response(4).result);
+    expect(pulse.structuredContent.result.pulse).toEqual({
+      viewVersion: 1,
+      viewKind: "legacy_repo_pulse_redacted",
+      status: "fresh",
+      aggregateChangeCount: 0,
+      evaluatedAt: "2026-08-03T00:00:00.000Z",
+      strongOperationSupported: false,
+    });
+
+    const publicPulseJson = JSON.stringify(harness.response(3).result);
+    expect(publicPulseJson).not.toMatch(
+      /"[^"]*(?:repository|worktree|snapshot|root|branch|path|oid|digest|diagnostic)[^"]*"\s*:/iu,
+    );
+    const legacyState = persistedPulsePayload.repositoryState;
+    const legacyDiagnostics = [
+      ...(persistedPulsePayload.errors ?? []),
+      ...(persistedPulsePayload.unknowns ?? []),
+    ].flatMap((diagnostic) => [
+      diagnostic.code,
+      diagnostic.scope,
+      diagnostic.message,
+    ]);
+    const forbiddenLegacyValues = [
+      root,
+      "src/task.ts",
+      runtime.store.repositoryId,
+      runtime.store.worktreeId,
+      persistedPulse.artifact.sourceSnapshotId,
+      persistedPulse.artifact.contentDigest,
+      persistedPulsePayload.evaluatedSnapshotId,
+      persistedPulsePayload.baselineSnapshotId,
+      legacyState?.rootIdentity,
+      legacyState?.branch,
+      legacyState?.baselineCommit,
+      legacyState?.headCommit,
+      legacyState?.mergeBase,
+      ...legacyDiagnostics,
+    ].filter(
+      (value): value is string =>
+        typeof value === "string" && value.length > 0,
+    );
+    for (const forbiddenValue of forbiddenLegacyValues) {
+      expect(publicPulseJson).not.toContain(forbiddenValue);
+    }
+
+    const built = {
+      structuredContent: {
+        result: await runtime.taskEngine.buildTaskBrief(
+          {
+            task: "Change the task result while preserving its public behavior.",
+            expectedRevision: 0,
+            idempotencyKey: "cli-integration-brief",
+            actor: "agent:cli-test",
+            scope: ["src/task.ts"],
+          },
+          {
+            actor: "agent:cli-test",
+            repositoryId: runtime.store.repositoryId,
+            worktreeId: runtime.store.worktreeId,
+            capabilities: ["task:create"],
+          },
+        ),
+      },
+    };
     expect(built.structuredContent.result.task.status).toBe("context_ready");
 
     await harness.server.handleValue({
@@ -175,20 +225,30 @@ describe("MCP lifecycle and real handlers", () => {
         },
       },
     });
-    const read = GetTaskBriefOutputV1Schema.parse(harness.response(5).result);
-    expect(read.structuredContent.result.task.taskId).toBe(
-      built.structuredContent.result.task.taskId,
+    const lockedRead = McpToolErrorResultV1Schema.parse(
+      harness.response(5).result,
     );
-    expect(read.structuredContent.result.items).toHaveLength(1);
+    expect(lockedRead).toEqual({
+      isError: true,
+      content: [{
+        type: "text",
+        text: "The strong Store is unavailable. Run Doctor for details.",
+      }],
+      structuredContent: {
+        error: {
+          schemaVersion: 1,
+          code: "provider_unavailable",
+          details: { reason: "unavailable" },
+        },
+      },
+    });
     expect(await readSourceFixture(root)).toBe(sourceBefore);
     expect(await snapshotRepositoryFiles(root)).toEqual(repositoryBefore);
     expect(await git(root, ["diff", "--", "src/task.ts"])).toBe("");
 
-    // The MCP surface is intentionally read/record-only for this slice; use
-    // the same bound Task Engine to advance the fixture into its check gate,
-    // then exercise the real public check_change and record_verification
-    // handlers through JSON-RPC.
-    const runtime = await openRuntime(root);
+    // Public Task reads and mutations are capability-locked. The owner fixture
+    // uses the production TaskEngine directly to retain legacy lifecycle
+    // integrity coverage without a shipped public bypass.
     const taskId = built.structuredContent.result.task.taskId;
     const actor = "agent:cli-test";
     const taskAuth = {
@@ -201,13 +261,10 @@ describe("MCP lifecycle and real handlers", () => {
         "task:accept",
       ] as const,
     };
-    await harness.server.handleValue({
-      jsonrpc: "2.0",
-      id: 10,
-      method: "tools/call",
-      params: {
-        name: "update_task",
-        arguments: {
+    const publicUpdate = {
+      structuredContent: {
+        result: await runtime.taskEngine.updateTask(
+          {
           taskId,
           action: {
             type: "confirm_goal",
@@ -216,49 +273,17 @@ describe("MCP lifecycle and real handlers", () => {
           expectedRevision: built.structuredContent.result.task.revision,
           idempotencyKey: "cli-public-confirm-goal",
           actor,
-        },
+          },
+          taskAuth,
+        ),
       },
-    });
-    const publicUpdate = UpdateTaskOutputV1Schema.parse(
-      harness.response(10).result,
-    );
+    };
     expect(publicUpdate.structuredContent.result.task.status).toBe(
       "context_ready",
     );
     expect(publicUpdate.structuredContent.result.mutation.idempotentReplay).toBe(
       false,
     );
-
-    await harness.server.handleValue({
-      jsonrpc: "2.0",
-      id: 11,
-      method: "tools/call",
-      params: {
-        name: "update_task",
-        arguments: {
-          taskId,
-          action: { type: "transition_status", to: "planned" },
-          expectedRevision:
-            publicUpdate.structuredContent.result.mutation.revision,
-          idempotencyKey: "cli-public-premature-planned",
-          actor,
-        },
-      },
-    });
-    const publicGate = McpToolErrorResultV1Schema.parse(
-      harness.response(11).result,
-    );
-    expect(publicGate.structuredContent.error).toMatchObject({
-      code: "task_gate_unsatisfied",
-      details: {
-        taskId,
-        targetStatus: "planned",
-        failedGuards: expect.arrayContaining([
-          expect.objectContaining({ code: "acceptance_not_confirmed" }),
-          expect.objectContaining({ code: "plan_not_confirmed" }),
-        ]),
-      },
-    });
 
     let taskRevision = publicUpdate.structuredContent.result.mutation.revision;
     const transitions = [
@@ -310,24 +335,27 @@ describe("MCP lifecycle and real handlers", () => {
       );
       taskRevision = mutation.task.revision;
     }
-    await harness.server.handleValue({
-      jsonrpc: "2.0",
-      id: 7,
-      method: "tools/call",
-      params: {
-        name: "check_change",
-        arguments: {
+    const actualSnapshotId = built.structuredContent.result.task.latestSnapshotId;
+    const checked = {
+      content: [{
+        type: "text" as const,
+        text: "Change Check recorded as a legacy summary; empty findings are not clean evidence.",
+      }],
+      structuredContent: {
+        meta: { sourceSnapshotId: actualSnapshotId },
+        result: await runtime.taskEngine.checkChange(
+          {
           taskId,
-          actualSnapshotId:
-            built.structuredContent.result.task.latestSnapshotId,
+          actualSnapshotId,
           includeWorktree: true,
           expectedRevision: taskRevision,
           idempotencyKey: "cli-ci-check",
           actor,
-        },
+          },
+          taskAuth,
+        ),
       },
-    });
-    const checked = CheckChangeOutputV1Schema.parse(harness.response(7).result);
+    };
     expect(checked.structuredContent.result.changeCheckClassification).toEqual({
       profile: "legacy_summary",
       emptyFindingsAreClean: false,
@@ -374,13 +402,10 @@ describe("MCP lifecycle and real handlers", () => {
       taskAuth,
     );
     const planEntry = built.structuredContent.result.brief.verificationPlan[0]!;
-    await harness.server.handleValue({
-      jsonrpc: "2.0",
-      id: 8,
-      method: "tools/call",
-      params: {
-        name: "record_verification",
-        arguments: {
+    const recorded = {
+      structuredContent: {
+        result: await runtime.taskEngine.recordVerification(
+          {
           taskId,
           record: {
             verificationPlanEntryId: planEntry.id,
@@ -395,12 +420,11 @@ describe("MCP lifecycle and real handlers", () => {
           expectedRevision: verificationGate.task.revision,
           idempotencyKey: "cli-ci-verification",
           actor,
-        },
+          },
+          taskAuth,
+        ),
       },
-    });
-    const recorded = RecordVerificationOutputV1Schema.parse(
-      harness.response(8).result,
-    );
+    };
     expect(recorded.structuredContent.result.verification.status).toBe("failed");
     await harness.server.handleValue({
       jsonrpc: "2.0",
@@ -430,13 +454,10 @@ describe("MCP lifecycle and real handlers", () => {
       McpToolErrorResultV1Schema.parse(harness.response(9).result).isError,
     ).toBe(true);
 
-    await harness.server.handleValue({
-      jsonrpc: "2.0",
-      id: 12,
-      method: "tools/call",
-      params: {
-        name: "record_verification",
-        arguments: {
+    const retried = {
+      structuredContent: {
+        result: await runtime.taskEngine.recordVerification(
+          {
           taskId,
           record: {
             verificationPlanEntryId: planEntry.id,
@@ -453,12 +474,11 @@ describe("MCP lifecycle and real handlers", () => {
           expectedRevision: recorded.structuredContent.result.mutation.revision,
           idempotencyKey: "cli-ci-verification-retry",
           actor,
-        },
+          },
+          taskAuth,
+        ),
       },
-    });
-    const retried = RecordVerificationOutputV1Schema.parse(
-      harness.response(12).result,
-    );
+    };
     expect(retried.structuredContent.result.verification).toMatchObject({
       attempt: 2,
       supersedesVerificationRecordId:
@@ -488,266 +508,24 @@ describe("MCP lifecycle and real handlers", () => {
         },
       },
     });
-    const workbench = OpenWorkbenchOutputV1Schema.parse(
-      harness.response(31).result,
+    const workbenchResponse = harness.response(31).result;
+    const workbenchFailure = McpToolErrorResultV1Schema.parse(
+      workbenchResponse,
     );
-    const deepLink = new URL(workbench.structuredContent.result.deepLink);
-    const launch = await fetch(new URL("/__workbench/launch", deepLink), {
-      method: "POST",
-      headers: {
-        connection: "close",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ token: deepLink.hash.slice(1) }),
-    });
-    expect(launch.status).toBe(200);
-    const cookie = launch.headers.get("set-cookie")!.split(";", 1)[0]!;
-    const html = await fetch(new URL("/workbench", deepLink), {
-      headers: { connection: "close", cookie },
-    });
-    const workbenchHtml = await html.text();
-    expect(workbenchHtml).toContain("/assets/");
-    expect(workbenchHtml).not.toContain("/__workbench/app.js");
-    const trace = await fetch(new URL("/__workbench/trace?taskId=" + encodeURIComponent(taskId), deepLink), {
-      headers: { connection: "close", cookie },
-    });
-    expect(trace.status).toBe(200);
-    const tracePayload = await trace.json();
-    expect(JSON.stringify(tracePayload)).not.toContain("pnpm test");
-    expect(JSON.stringify(tracePayload)).not.toContain("Duplicate verification should be gated.");
-    expect(JSON.stringify(tracePayload)).not.toContain("CLI focused verification retry passed.");
-    expect(tracePayload).toMatchObject({
-      surface: "trace",
-      status: "ready",
-      changeCheckClassification: {
-        profile: "legacy_summary",
-        emptyFindingsAreClean: false,
-      },
-      changeCheck: {
-        taskId,
-      },
-      verification: {
-        disposition: "externally_reported",
-        requiredCount: 1,
-        passedCount: 1,
-        failedCount: 0,
-        pendingCount: 0,
-        records: [
-          expect.objectContaining({
-            taskId,
-            sourceRecordId: recorded.structuredContent.result.verification.id,
-            attempt: 1,
-            status: "failed",
-            disposition: "externally_reported",
-            detailStatus: "legacy_redacted",
-          }),
-          expect.objectContaining({
-            taskId,
-            sourceRecordId: retried.structuredContent.result.verification.id,
-            attempt: 2,
-            supersedesVerificationRecordId:
-              recorded.structuredContent.result.verification.id,
-            status: "passed",
-            disposition: "externally_reported",
-            detailStatus: "legacy_redacted",
-          }),
-        ],
-      },
-    });
-
-    const persistedRead = await runtime.store.readTaskBundle(taskId);
-    if (!("brief" in persistedRead.bundle)) {
-      throw new TypeError("The Workbench trace fixture must remain contextual.");
-    }
-    const verificationArtifact = [...persistedRead.artifacts]
-      .reverse()
-      .find(
-        (artifact) =>
-          artifact.artifactType === "verification" &&
-          artifact.sourceSnapshotId === checked.structuredContent.meta.sourceSnapshotId,
-      );
-    if (
-      verificationArtifact === undefined ||
-      verificationArtifact.artifactType !== "verification"
-    ) {
-      throw new TypeError("The Workbench trace fixture requires a Verification artifact.");
-    }
-    const persistedVerificationRecords = verificationArtifact.payload.records;
-    const verificationRecordTemplate = persistedVerificationRecords[0];
-    if (verificationRecordTemplate === undefined) {
-      throw new TypeError("The Workbench trace fixture requires a Verification record.");
-    }
-    const currentSnapshotId = checked.structuredContent.meta.sourceSnapshotId;
-    const partialAcceptanceClaimId = "claim:cli-trace-partial-acceptance";
-    const syntheticPlanEntry = (
-      suffix: string,
-      acceptanceClaimIds: readonly string[],
-    ) => ({
-      ...planEntry,
-      id: `verification-plan:cli-trace-${suffix}`,
-      acceptanceClaimIds: [...acceptanceClaimIds],
-    });
-    const excessEntry = syntheticPlanEntry("excess", ["claim:cli-trace-excess"]);
-    const blockedEntry = syntheticPlanEntry("blocked", ["claim:cli-trace-blocked"]);
-    const flakyEntry = syntheticPlanEntry("flaky", ["claim:cli-trace-flaky"]);
-    const acceptedSkipEntry = syntheticPlanEntry("accepted-skip", ["claim:cli-trace-accepted-skip"]);
-    const unacceptedSkipEntry = syntheticPlanEntry("unaccepted-skip", ["claim:cli-trace-unaccepted-skip"]);
-    const staleOnlyEntry = syntheticPlanEntry("stale-only", ["claim:cli-trace-stale-only"]);
-    const syntheticRecord = (
-      entry: typeof planEntry,
-      status: "passed" | "failed" | "skipped" | "blocked" | "flaky",
-      claimIds: readonly string[],
-      options: {
-        readonly snapshotId?: string;
-        readonly skipAcceptance?: unknown;
-      } = {},
-    ) => VerificationRecordV1Schema.parse({
-      ...verificationRecordTemplate,
-      id: `verification:cli-trace-${entry.id.split(":").at(-1)}`,
-      taskId,
-      verificationPlanEntryId: entry.id,
-      attempt: 1,
-      supersedesVerificationRecordId: undefined,
-      kind: entry.method,
-      status,
-      exitCode:
-        status === "passed"
-          ? 0
-          : status === "failed" || status === "flaky"
-            ? 1
-            : undefined,
-      summary: `CLI mixed trace ${status} fixture.`,
-      claimIds: [...claimIds],
-      snapshotId: options.snapshotId ?? currentSnapshotId,
-      recordedAt: "2026-08-03T00:00:01.000Z",
-      ...(options.skipAcceptance === undefined
-        ? { skipAcceptance: undefined }
-        : { skipAcceptance: options.skipAcceptance }),
-    });
-    const staleRecord = syntheticRecord(
-      staleOnlyEntry,
-      "passed",
-      staleOnlyEntry.acceptanceClaimIds,
-      { snapshotId: "snapshot:cli-trace-stale" },
-    );
-    const mixedVerificationRecords = [
-      ...persistedVerificationRecords,
-      syntheticRecord(excessEntry, "passed", [
-        ...excessEntry.acceptanceClaimIds,
-        "claim:cli-trace-unexpected",
-      ]),
-      syntheticRecord(blockedEntry, "blocked", blockedEntry.acceptanceClaimIds),
-      syntheticRecord(flakyEntry, "flaky", flakyEntry.acceptanceClaimIds),
-      syntheticRecord(
-        acceptedSkipEntry,
-        "skipped",
-        acceptedSkipEntry.acceptanceClaimIds,
-        {
-          skipAcceptance: {
-            actor,
-            reason: "The focused trace fixture explicitly accepts this skip.",
-            acceptedAt: "2026-08-03T00:00:01.000Z",
-            eventId: "event:cli-trace-accepted-skip",
-          },
-        },
-      ),
-      syntheticRecord(
-        unacceptedSkipEntry,
-        "skipped",
-        unacceptedSkipEntry.acceptanceClaimIds,
-      ),
-      staleRecord,
-    ];
-    const projectedRead: typeof persistedRead = {
-      ...persistedRead,
-      bundle: {
-        ...persistedRead.bundle,
-        brief: {
-          ...persistedRead.bundle.brief,
-          verificationPlan: [
-            {
-              ...planEntry,
-              acceptanceClaimIds: [
-                ...planEntry.acceptanceClaimIds,
-                partialAcceptanceClaimId,
-              ],
-            },
-            excessEntry,
-            blockedEntry,
-            flakyEntry,
-            acceptedSkipEntry,
-            unacceptedSkipEntry,
-            staleOnlyEntry,
-          ],
+    expect(workbenchFailure).toEqual({
+      isError: true,
+      content: [{
+        type: "text",
+        text: "The strong Store is unavailable. Run Doctor for details.",
+      }],
+      structuredContent: {
+        error: {
+          schemaVersion: 1,
+          code: "provider_unavailable",
+          details: { reason: "unavailable" },
         },
       },
-      artifacts: persistedRead.artifacts.map((artifact) =>
-        artifact.artifactType === "verification" &&
-        artifact.artifactId === verificationArtifact.artifactId
-          ? {
-              ...artifact,
-              payload: { records: mixedVerificationRecords },
-            }
-          : artifact,
-      ),
-    };
-    const readTaskBundle = vi
-      .spyOn(ArtifactStore.prototype, "readTaskBundle")
-      .mockResolvedValue(projectedRead);
-    try {
-      const mixedTraceResponse = await fetch(
-        new URL("/__workbench/trace?taskId=" + encodeURIComponent(taskId), deepLink),
-        { headers: { connection: "close", cookie } },
-      );
-      expect(mixedTraceResponse.status).toBe(200);
-      const mixedTraceValue: unknown = await mixedTraceResponse.json();
-      if (
-        mixedTraceValue === null ||
-        typeof mixedTraceValue !== "object" ||
-        !("verification" in mixedTraceValue) ||
-        mixedTraceValue.verification === null ||
-        typeof mixedTraceValue.verification !== "object" ||
-        !("records" in mixedTraceValue.verification) ||
-        !Array.isArray(mixedTraceValue.verification.records)
-      ) {
-        throw new TypeError("The mixed Workbench trace response is invalid.");
-      }
-      const mixedTrace = mixedTraceValue as {
-        verification: {
-          requiredCount: number;
-          passedCount: number;
-          failedCount: number;
-          pendingCount: number;
-          records: Array<{
-            sourceRecordId: string;
-            attempt: number;
-            status: string;
-          }>;
-        };
-      };
-      expect(mixedTrace.verification).toMatchObject({
-        requiredCount: 7,
-        passedCount: 1,
-        failedCount: 2,
-        pendingCount: 4,
-      });
-      expect(mixedTrace.verification.records).toHaveLength(7);
-      expect(
-        mixedTrace.verification.records.map(
-          (record: { sourceRecordId: string }) => record.sourceRecordId,
-        ),
-      ).not.toContain(staleRecord.id);
-      expect(mixedTrace.verification.records).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ attempt: 1, status: "failed" }),
-          expect.objectContaining({ attempt: 2, status: "passed" }),
-          expect.objectContaining({ status: "blocked" }),
-          expect.objectContaining({ status: "flaky" }),
-        ]),
-      );
-    } finally {
-      readTaskBundle.mockRestore();
-    }
+    });
 
     await harness.server.handleValue({
       jsonrpc: "2.0",
@@ -788,10 +566,20 @@ describe("MCP lifecycle and real handlers", () => {
     });
   });
 
-  it("bootstraps a cold repository with a real Snapshot/Pulse refresh", async () => {
+  it("fails cold Repository reads and refresh closed without bootstrapping a legacy Store", async () => {
     const root = await createGitRepository({ seedArtifacts: false });
     const harness = testServer(await resolveInitialBinding([root]));
     await initialize(harness.server);
+    await expect(
+      stat(path.join(root, ".understand-code")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+
+    await harness.server.handleValue({
+      jsonrpc: "2.0",
+      id: 19,
+      method: "tools/call",
+      params: { name: "get_repo_pulse", arguments: {} },
+    });
 
     const previousGitDirectory = process.env.GIT_DIR;
     process.env.GIT_DIR = path.join(root, "ambient-refresh-git-dir");
@@ -813,270 +601,166 @@ describe("MCP lifecycle and real handlers", () => {
       if (previousGitDirectory === undefined) delete process.env.GIT_DIR;
       else process.env.GIT_DIR = previousGitDirectory;
     }
-    const refreshed = RefreshIndexOutputV1Schema.parse(
+    const failure = McpToolErrorResultV1Schema.parse(
       harness.response(20).result,
     );
-    expect(refreshed.structuredContent.result.operation.status).toBe(
-      "completed",
-    );
+    const expectedFailure = {
+      isError: true,
+      content: [
+        {
+          type: "text",
+          text: "The strong Store is unavailable. Run Doctor for details.",
+        },
+      ],
+      structuredContent: {
+        error: {
+          schemaVersion: 1,
+          code: "provider_unavailable",
+          details: { reason: "unavailable" },
+        },
+      },
+    };
     expect(
-      refreshed.structuredContent.result.operation.finalSnapshotId,
-    ).toBe(refreshed.structuredContent.meta.sourceSnapshotId);
-    expect(refreshed.structuredContent.meta.freshness).toBe("not_ready");
-
-    await harness.server.handleValue({
-      jsonrpc: "2.0",
-      id: 23,
-      method: "tools/call",
-      params: {
-        name: "refresh_index",
-        arguments: {
-          mode: "incremental",
-          idempotencyKey: "cold-refresh-index",
-          actor: "agent:cli-test",
-        },
-      },
-    });
-    const replayed = RefreshIndexOutputV1Schema.parse(
-      harness.response(23).result,
-    );
-    expect(replayed.structuredContent.meta.cacheHit).toBe(true);
-
-    await writeFile(
-      path.join(root, "src/task.ts"),
-      "export function task(): boolean { return false; }\n",
-      "utf8",
-    );
-    await harness.server.handleValue({
-      jsonrpc: "2.0",
-      id: 22,
-      method: "tools/call",
-      params: {
-        name: "refresh_index",
-        arguments: {
-          mode: "incremental",
-          expectedSourceSnapshotId: refreshed.structuredContent.meta.sourceSnapshotId,
-          idempotencyKey: "cold-refresh-index-after-change",
-          actor: "agent:cli-test",
-        },
-      },
-    });
-    const changed = RefreshIndexOutputV1Schema.parse(
-      harness.response(22).result,
-    );
-    expect(
-      changed.structuredContent.result.operation.finalSnapshotId,
-    ).not.toBe(refreshed.structuredContent.meta.sourceSnapshotId);
-
-    await harness.server.handleValue({
-      jsonrpc: "2.0",
-      id: 21,
-      method: "tools/call",
-      params: {
-        name: "refresh_index",
-        arguments: {
-          mode: "incremental",
-          expectedSourceSnapshotId: "snapshot:does-not-match",
-          idempotencyKey: "cold-refresh-index-mismatch",
-          actor: "agent:cli-test",
-        },
-      },
-    });
-    const mismatch = McpToolErrorResultV1Schema.parse(
-      harness.response(21).result,
-    );
-    expect(mismatch.structuredContent.error.code).toBe(
-      "artifact_unavailable",
-    );
+      McpToolErrorResultV1Schema.parse(harness.response(19).result),
+    ).toEqual(expectedFailure);
+    expect(failure).toEqual(expectedFailure);
+    await expect(
+      stat(path.join(root, ".understand-code")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("builds task context from a full refresh and rejects unsafe source links", async () => {
-    const root = await createGitRepository({ seedArtifacts: false });
+  it("locks every public mutation before reading or changing a seeded legacy Store", async () => {
+    const root = await createGitRepository();
     const harness = testServer(await resolveInitialBinding([root]));
     await initialize(harness.server);
-
-    await harness.server.handleValue({
-      jsonrpc: "2.0",
-      id: 24,
-      method: "tools/call",
-      params: {
-        name: "refresh_index",
-        arguments: {
-          mode: "full",
-          idempotencyKey: "cold-full-refresh-index",
-          actor: "agent:cli-test",
-        },
-      },
-    });
-    const refreshed = RefreshIndexOutputV1Schema.parse(
-      harness.response(24).result,
-    );
-    expect(refreshed.structuredContent.result.operation.status).toBe(
-      "completed",
-    );
-    expect(refreshed.structuredContent.meta.freshness).toBe("partial");
-
-    await harness.server.handleValue({
-      jsonrpc: "2.0",
-      id: 25,
-      method: "tools/call",
-      params: {
-        name: "build_task_brief",
-        arguments: {
-          task: "Change the task result while preserving its public behavior.",
+    const sourcePath = path.join(root, "src/task.ts");
+    const indexPath = path.join(root, ".git/index");
+    const before = await Promise.all([
+      readFile(sourcePath),
+      readFile(indexPath),
+      snapshotManagedStoreTree(root),
+    ]);
+    const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const actor = "agent:cli-test";
+    const calls = [
+      [
+        "build_task_brief",
+        {
+          task: "Capability lock fixture.",
           expectedRevision: 0,
-          idempotencyKey: "cold-full-refresh-brief",
-          actor: "agent:cli-test",
+          idempotencyKey: "locked-build",
+          actor,
           scope: ["src/task.ts"],
         },
-      },
-    });
-    const built = BuildTaskBriefOutputV1Schema.parse(
-      harness.response(25).result,
-    );
-    expect(built.structuredContent.result.task.status).toBe("context_ready");
-
-    await writeFile(
-      path.join(root, "src/task.ts"),
-      "export function task(): boolean { return false; }\n",
-      "utf8",
-    );
-    await harness.server.handleValue({
-      jsonrpc: "2.0",
-      id: 26,
-      method: "tools/call",
-      params: {
-        name: "refresh_index",
-        arguments: {
-          mode: "full",
-          expectedSourceSnapshotId:
-            refreshed.structuredContent.meta.sourceSnapshotId,
-          idempotencyKey: "full-refresh-after-task-change",
-          actor: "agent:cli-test",
+      ],
+      [
+        "update_task",
+        {
+          taskId,
+          action: { type: "transition_status", to: "planned" },
+          expectedRevision: 0,
+          idempotencyKey: "locked-update",
+          actor,
         },
-      },
-    });
-    const advanced = RefreshIndexOutputV1Schema.parse(
-      harness.response(26).result,
-    );
-    const targetSnapshotId =
-      advanced.structuredContent.result.operation.finalSnapshotId;
-    expect(targetSnapshotId).not.toBe(
-      refreshed.structuredContent.meta.sourceSnapshotId,
-    );
-
-    await harness.server.handleValue({
-      jsonrpc: "2.0",
-      id: 27,
-      method: "tools/call",
-      params: {
-        name: "update_task",
-        arguments: {
-          taskId: built.structuredContent.result.task.taskId,
-          action: {
-            type: "block_task",
-            reasonCode: "public_refresh_smoke",
-            message: "Capture the advanced repository Snapshot.",
-          },
-          expectedRevision: built.structuredContent.result.task.revision,
-          idempotencyKey: "public-refresh-capture-drift",
-          actor: "agent:cli-test",
-        },
-      },
-    });
-    const staled = UpdateTaskOutputV1Schema.parse(
-      harness.response(27).result,
-    );
-    expect(staled.structuredContent.result.task).toMatchObject({
-      status: "stale",
-      latestSnapshotId: targetSnapshotId,
-    });
-
-    await harness.server.handleValue({
-      jsonrpc: "2.0",
-      id: 28,
-      method: "tools/call",
-      params: {
-        name: "update_task",
-        arguments: {
-          taskId: built.structuredContent.result.task.taskId,
+      ],
+      [
+        "update_task",
+        {
+          taskId,
           action: {
             type: "refresh_task_context",
-            targetSnapshotId: "snapshot:not-current",
+            targetSnapshotId: "snapshot:locked",
           },
-          expectedRevision: staled.structuredContent.result.task.revision,
-          idempotencyKey: "public-refresh-wrong-target",
-          actor: "agent:cli-test",
+          expectedRevision: 0,
+          idempotencyKey: "locked-context-refresh",
+          actor,
         },
-      },
-    });
-    const wrongTarget = McpToolErrorResultV1Schema.parse(
-      harness.response(28).result,
-    );
-    expect(wrongTarget.structuredContent.error).toMatchObject({
-      code: "task_gate_unsatisfied",
-      details: {
-        targetStatus: "context_ready",
-        failedGuards: [
-          {
-            code: "target_snapshot_mismatch",
-            resourceId: "snapshot:not-current",
-          },
-        ],
-      },
-    });
-
-    await harness.server.handleValue({
-      jsonrpc: "2.0",
-      id: 29,
-      method: "tools/call",
-      params: {
-        name: "update_task",
-        arguments: {
-          taskId: built.structuredContent.result.task.taskId,
+      ],
+      [
+        "update_task",
+        {
+          taskId,
           action: {
-            type: "refresh_task_context",
-            targetSnapshotId,
+            type: "rebase_task",
+            targetSnapshotId: "snapshot:locked",
+            newBaselineSnapshotId: "snapshot:locked",
+            reason: "Capability lock fixture.",
           },
-          expectedRevision: staled.structuredContent.result.task.revision,
-          idempotencyKey: "public-refresh-current-target",
-          actor: "agent:cli-test",
+          expectedRevision: 0,
+          idempotencyKey: "locked-context-rebase",
+          actor,
         },
-      },
-    });
-    const recovered = UpdateTaskOutputV1Schema.parse(
-      harness.response(29).result,
-    );
-    expect(recovered.structuredContent.result.task).toMatchObject({
-      status: "context_ready",
-      latestSnapshotId: targetSnapshotId,
-      baselineSnapshotId:
-        built.structuredContent.result.task.baselineSnapshotId,
-    });
-
-    await symlink("../../outside.ts", path.join(root, "src/escape.ts"));
-    await harness.server.handleValue({
-      jsonrpc: "2.0",
-      id: 30,
-      method: "tools/call",
-      params: {
-        name: "refresh_index",
-        arguments: {
+      ],
+      [
+        "check_change",
+        {
+          taskId,
+          actualSnapshotId: "snapshot:locked",
+          includeWorktree: true,
+          expectedRevision: 0,
+          idempotencyKey: "locked-check",
+          actor,
+        },
+      ],
+      [
+        "record_verification",
+        {
+          taskId,
+          record: {
+            verificationPlanEntryId: "verification-plan:locked",
+            kind: "test",
+            status: "passed",
+            command: "pnpm test",
+            exitCode: 0,
+            summary: "Capability lock fixture.",
+            claimIds: [],
+            snapshotId: "snapshot:locked",
+          },
+          expectedRevision: 0,
+          idempotencyKey: "locked-verification",
+          actor,
+        },
+      ],
+      [
+        "refresh_index",
+        {
           mode: "full",
-          expectedSourceSnapshotId:
-            advanced.structuredContent.meta.sourceSnapshotId,
-          idempotencyKey: "unsafe-full-refresh-index",
-          actor: "agent:cli-test",
+          idempotencyKey: "locked-refresh",
+          actor,
+        },
+      ],
+    ] as const;
+    const expected = {
+      isError: true,
+      content: [{
+        type: "text",
+        text: "The strong Store is unavailable. Run Doctor for details.",
+      }],
+      structuredContent: {
+        error: {
+          schemaVersion: 1,
+          code: "provider_unavailable",
+          details: { reason: "unavailable" },
         },
       },
-    });
-    const unsafe = McpToolErrorResultV1Schema.parse(
-      harness.response(30).result,
-    );
-    expect(unsafe.structuredContent.error).toMatchObject({
-      code: "source_access_denied",
-      details: { reason: "symlink_escape" },
-    });
+    };
+    for (const [index, [name, argumentsValue]] of calls.entries()) {
+      const id = 25 + index;
+      await harness.server.handleValue({
+        jsonrpc: "2.0",
+        id,
+        method: "tools/call",
+        params: { name, arguments: argumentsValue },
+      });
+      expect(McpToolErrorResultV1Schema.parse(harness.response(id).result)).toEqual(
+        expected,
+      );
+      expect(await Promise.all([
+        readFile(sourcePath),
+        readFile(indexPath),
+        snapshotManagedStoreTree(root),
+      ])).toEqual(before);
+    }
   });
 
   it("enforces the lifecycle and separates protocol errors from tool errors", async () => {

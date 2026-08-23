@@ -21,6 +21,20 @@ const PATTERN_SAMPLES = new Map<string, string>([
   ],
   ["^[0-9A-HJKMNP-TV-Z]{26}$", "01ARZ3NDEKTSV4RRFFQ69G5FAV"],
   ["^sha256:[0-9a-f]{64}$", `sha256:${"0".repeat(64)}`],
+  ["^hmac-sha256:[0-9a-f]{64}$", `hmac-sha256:${"0".repeat(64)}`],
+  ["^repo-hmac-[0-9a-f]{64}$", `repo-hmac-${"0".repeat(64)}`],
+  ["^worktree-hmac-[0-9a-f]{64}$", `worktree-hmac-${"0".repeat(64)}`],
+  ["^root-hmac-[0-9a-f]{64}$", `root-hmac-${"0".repeat(64)}`],
+  ["^snapshot-[0-9a-f]{64}$", `snapshot-${"0".repeat(64)}`],
+  ["^change-[0-9a-f]{64}$", `change-${"0".repeat(64)}`],
+  [
+    "^snapshot-redaction-[0-9a-f]{64}$",
+    `snapshot-redaction-${"0".repeat(64)}`,
+  ],
+  [
+    "^snapshot-unknown-state-[0-9a-f]{64}$",
+    `snapshot-unknown-state-${"0".repeat(64)}`,
+  ],
   [
     "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
     "2026-07-28T08:00:00Z",

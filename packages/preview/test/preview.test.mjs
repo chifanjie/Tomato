@@ -113,29 +113,28 @@ test("cold demo serves usable Graph/Wiki and protects data endpoints", async () 
     assert.equal((await graph.json()).nodes.length, 3);
     const wiki = await fetch(`${base.origin}/knowledge-base/wiki-index.json?token=${token}`);
     assert.equal(wiki.status, 200);
-    assert.equal((await wiki.json()).version, 2);
+    const publicWiki = await wiki.json();
+    assert.equal(publicWiki.version, 2);
+    assert.equal(Object.hasOwn(publicWiki.source, "sourceRootIdentity"), false);
     const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
-    const taskBrief = await fetch(`${base.origin}/tasks/${taskId}/brief.json?token=${token}`);
-    assert.equal(taskBrief.status, 200);
-    const taskProjection = await taskBrief.json();
-    assert.equal(taskProjection.task.taskId, taskId);
-    assert.equal(taskProjection.brief.originalIntent, taskProjection.task.originalIntent);
-    assert.equal(taskProjection.section, "summary");
-    assert.equal(taskProjection.items[0].kind, "summary");
-    const changeCheck = await fetch(`${base.origin}/tasks/${taskId}/change-check.json?token=${token}`);
-    assert.equal(changeCheck.status, 200);
-    const changeCheckProjection = await changeCheck.json();
-    assert.equal(changeCheckProjection.artifact.artifactType, "change_check");
-    assert.equal(changeCheckProjection.artifact.payload.taskId, taskId);
-    assert.equal(changeCheckProjection.artifact.payload.findings.length, 1);
-    const verification = await fetch(`${base.origin}/tasks/${taskId}/verification.json?token=${token}`);
-    assert.equal(verification.status, 200);
-    const verificationProjection = await verification.json();
-    assert.equal(verificationProjection.artifact.artifactType, "verification");
-    assert.equal(verificationProjection.artifact.payload.records.length, 1);
-    assert.equal(verificationProjection.artifact.payload.records[0].status, "passed");
-    assert.equal((await fetch(`${base.origin}/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAW/brief.json?token=${token}`)).status, 404);
-    assert.equal((await fetch(`${base.origin}/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAW/change-check.json?token=${token}`)).status, 404);
+    for (const endpoint of ["brief", "change-check", "verification"]) {
+      const response = await fetch(
+        `${base.origin}/tasks/${taskId}/${endpoint}.json?token=${token}`,
+      );
+      assert.equal(response.status, 503);
+      assert.deepEqual(await response.json(), {
+        error: "provider_unavailable",
+        reason: "unavailable",
+      });
+    }
+    const unknownTask = await fetch(
+      `${base.origin}/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAW/brief.json?token=${token}`,
+    );
+    assert.equal(unknownTask.status, 503);
+    assert.deepEqual(await unknownTask.json(), {
+      error: "provider_unavailable",
+      reason: "unavailable",
+    });
     assert.equal((await fetch(`${base.origin}/tasks/${taskId}/change-check.json?token=bad`)).status, 403);
     assert.equal((await fetch(`${base.origin}/knowledge-graph.json`)).status, 403);
     assert.equal((await fetch(`${base.origin}/knowledge-base/项目总览.md?token=bad`)).status, 403);
@@ -172,7 +171,7 @@ test("cold demo serves usable Graph/Wiki and protects data endpoints", async () 
   }
 });
 
-test("Task Change Intelligence projections reject a tampered envelope", async () => {
+test("Task endpoints fail before reading a tampered legacy envelope", async () => {
   const root = await createPublishedRoot();
   const artifactPath = path.join(
     root,
@@ -187,8 +186,11 @@ test("Task Change Intelligence projections reject a tampered envelope", async ()
     const info = await preview.ready;
     const base = new URL(info.url);
     const response = await fetch(`${base.origin}/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAV/change-check.json?token=${info.token}`);
-    assert.equal(response.status, 422);
-    assert.deepEqual(await response.json(), { error: "change-check_invalid" });
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), {
+      error: "provider_unavailable",
+      reason: "unavailable",
+    });
   } finally {
     await stop(preview.child);
   }

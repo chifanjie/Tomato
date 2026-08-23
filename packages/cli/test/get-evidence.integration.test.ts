@@ -1,12 +1,8 @@
+import { access } from "node:fs/promises";
+import path from "node:path";
 import { PassThrough } from "node:stream";
 
-import {
-  BuildTaskBriefOutputV1Schema,
-  GetEvidenceOutputV1Schema,
-  McpToolErrorResultV1Schema,
-  SearchContextOutputV1Schema,
-  TraceImpactOutputV1Schema,
-} from "@understand-code/contracts/mcp";
+import { McpToolErrorResultV1Schema } from "@understand-code/contracts/mcp";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { resolveInitialBinding } from "../src/binding/root-binding.js";
@@ -14,11 +10,15 @@ import { McpStdioServer } from "../src/mcp/server.js";
 import {
   cleanupTemporaryDirectories,
   createGitRepository,
+  git,
+  snapshotRepositoryFiles,
 } from "./helpers.js";
 
 afterEach(cleanupTemporaryDirectories);
 
-function testServer(initialBinding: Awaited<ReturnType<typeof resolveInitialBinding>>) {
+function testServer(
+  initialBinding: Awaited<ReturnType<typeof resolveInitialBinding>>,
+) {
   const output = new PassThrough();
   const chunks: string[] = [];
   output.setEncoding("utf8");
@@ -55,152 +55,87 @@ async function initialize(server: McpStdioServer): Promise<void> {
   });
 }
 
-describe("get_evidence MCP vertical", () => {
-  it("reads exact Task evidence with bounded pagination and reports missing IDs", async () => {
-    const root = await createGitRepository();
+const PROVIDER_UNAVAILABLE = Object.freeze({
+  isError: true,
+  content: [
+    {
+      type: "text",
+      text: "The strong Store is unavailable. Run Doctor for details.",
+    },
+  ],
+  structuredContent: {
+    error: {
+      schemaVersion: 1,
+      code: "provider_unavailable",
+      details: { reason: "unavailable" },
+    },
+  },
+});
+
+describe("managed Task read capability lock", () => {
+  it("locks Evidence, search, and impact reads before private Store access", async () => {
+    const root = await createGitRepository({ seedArtifacts: false });
+    const sourceBefore = await snapshotRepositoryFiles(root);
+    const indexBefore = await git(root, ["write-tree"]);
     const harness = testServer(await resolveInitialBinding([root]));
     await initialize(harness.server);
 
-    await harness.server.handleValue({
-      jsonrpc: "2.0",
-      id: 2,
-      method: "tools/call",
-      params: {
-        name: "build_task_brief",
-        arguments: {
-          task: "Read evidence for this task.",
-          expectedRevision: 0,
-          idempotencyKey: "get-evidence-build",
-          actor: "agent:evidence-test",
-          scope: ["src/task.ts"],
-        },
-      },
-    });
-    const built = BuildTaskBriefOutputV1Schema.parse(harness.response(2).result);
-    const { task, evidenceIds } = built.structuredContent.result;
-    expect(evidenceIds.length).toBeGreaterThan(0);
-
-    await harness.server.handleValue({
-      jsonrpc: "2.0",
-      id: 3,
-      method: "tools/call",
-      params: {
-        name: "get_evidence",
-        arguments: {
-          taskId: task.taskId,
-          evidenceIds: [evidenceIds[0], "evidence:missing"],
-          pageSize: 2,
-          maxExcerptChars: 32,
-        },
-      },
-    });
-    const result = GetEvidenceOutputV1Schema.parse(harness.response(3).result);
-    expect(result.structuredContent.page.returned).toBe(2);
-    expect(result.structuredContent.result.evidence).toHaveLength(1);
-    expect(result.structuredContent.result.missingEvidenceIds).toEqual([
-      "evidence:missing",
-    ]);
-    expect(result.structuredContent.meta.repositoryId).toBe(
-      task.repositoryId,
-    );
-    expect(result.structuredContent.meta.worktreeId).toBe(task.worktreeId);
-  });
-
-  it("fails closed for an invalid cursor and an unknown Task", async () => {
-    const root = await createGitRepository();
-    const harness = testServer(await resolveInitialBinding([root]));
-    await initialize(harness.server);
-
-    await harness.server.handleValue({
-      jsonrpc: "2.0",
-      id: 2,
-      method: "tools/call",
-      params: {
+    const calls = [
+      {
         name: "get_evidence",
         arguments: {
           taskId: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
           evidenceIds: ["evidence:any"],
-          cursor: "not-a-valid-cursor",
+          pageSize: 2,
         },
       },
-    });
-    const invalid = McpToolErrorResultV1Schema.parse(harness.response(2).result);
-    expect(invalid.structuredContent.error.code).toBe("resource_not_found");
-  });
-
-  it("searches persisted Task context and traces bounded impact paths", async () => {
-    const root = await createGitRepository();
-    const harness = testServer(await resolveInitialBinding([root]));
-    await initialize(harness.server);
-    await harness.server.handleValue({
-      jsonrpc: "2.0",
-      id: 2,
-      method: "tools/call",
-      params: {
-        name: "build_task_brief",
-        arguments: {
-          task: "Search and trace this task context.",
-          expectedRevision: 0,
-          idempotencyKey: "context-tools-build",
-          actor: "agent:context-tools-test",
-          scope: ["src/task.ts"],
-        },
-      },
-    });
-    const built = BuildTaskBriefOutputV1Schema.parse(harness.response(2).result);
-    const taskId = built.structuredContent.result.task.taskId;
-
-    await harness.server.handleValue({
-      jsonrpc: "2.0",
-      id: 3,
-      method: "tools/call",
-      params: {
+      {
         name: "search_context",
-        arguments: { taskId, query: "task", pageSize: 10 },
+        arguments: {
+          taskId: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+          query: "task",
+          pageSize: 10,
+        },
       },
-    });
-    const search = SearchContextOutputV1Schema.parse(harness.response(3).result);
-    expect(search.structuredContent.meta.sourceSnapshotId).toBe(
-      built.structuredContent.result.task.latestSnapshotId,
-    );
-    expect(search.structuredContent.page.returned).toBeGreaterThan(0);
-
-    await harness.server.handleValue({
-      jsonrpc: "2.0",
-      id: 4,
-      method: "tools/call",
-      params: {
+      {
         name: "trace_impact",
         arguments: {
-          taskId,
+          taskId: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
           sourceNodeIds: ["function:task"],
           direction: "downstream",
           pageSize: 10,
         },
       },
-    });
-    const trace = TraceImpactOutputV1Schema.parse(harness.response(4).result);
-    expect(trace.structuredContent.meta.worktreeId).toBe(
-      built.structuredContent.result.task.worktreeId,
-    );
-  });
+      {
+        name: "search_context",
+        arguments: { query: "task" },
+      },
+      {
+        name: "trace_impact",
+        arguments: {
+          sourceNodeIds: ["function:task"],
+          direction: "both",
+        },
+      },
+    ] as const;
 
-  it("rejects unscoped context search and impact tracing", async () => {
-    const root = await createGitRepository();
-    const harness = testServer(await resolveInitialBinding([root]));
-    await initialize(harness.server);
-    for (const [id, name, argumentsValue] of [
-      [2, "search_context", { query: "task" }],
-      [3, "trace_impact", { sourceNodeIds: ["function:task"], direction: "both" }],
-    ] as const) {
+    for (const [offset, call] of calls.entries()) {
+      const id = offset + 2;
       await harness.server.handleValue({
         jsonrpc: "2.0",
         id,
         method: "tools/call",
-        params: { name, arguments: argumentsValue },
+        params: { name: call.name, arguments: call.arguments },
       });
-      const failure = McpToolErrorResultV1Schema.parse(harness.response(id).result);
-      expect(failure.structuredContent.error.code).toBe("artifact_unavailable");
+      const failure = McpToolErrorResultV1Schema.parse(
+        harness.response(id).result,
+      );
+      expect(failure).toEqual(PROVIDER_UNAVAILABLE);
+      expect(await snapshotRepositoryFiles(root)).toEqual(sourceBefore);
+      expect(await git(root, ["write-tree"])).toBe(indexBefore);
+      await expect(
+        access(path.join(root, ".understand-code")),
+      ).rejects.toMatchObject({ code: "ENOENT" });
     }
   });
 });

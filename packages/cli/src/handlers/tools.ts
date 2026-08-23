@@ -35,6 +35,7 @@ import {
 } from "@understand-code/contracts/mcp";
 import {
   isSensitiveRepositoryPath,
+  projectRepoPulseSurface,
   readStableRepositoryFile,
 } from "@understand-code/repository-state";
 import {
@@ -67,7 +68,10 @@ import {
 } from "@understand-code/installation-lifecycle";
 
 import { PRODUCT_VERSION } from "../constants.js";
-import { refreshIndex } from "./refresh-index.js";
+import {
+  failStrongStoreUnavailableV1,
+  refreshIndex,
+} from "./refresh-index.js";
 import {
   ToolFailure,
   artifactUnavailableFailure,
@@ -186,6 +190,7 @@ async function readTaskScopedContext(
 async function getEvidence(argumentsValue: unknown, canonicalRoot: string) {
   const parsed = GetEvidenceInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
+  failStrongStoreUnavailableV1();
   const startedAt = performance.now();
   const runtime = await openRuntime(canonicalRoot);
   const context = await readTaskScopedContext(runtime, parsed.data.taskId);
@@ -321,6 +326,7 @@ type SearchCandidate = {
 async function searchContext(argumentsValue: unknown, canonicalRoot: string) {
   const parsed = SearchContextInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
+  failStrongStoreUnavailableV1();
   if (parsed.data.taskId === undefined) {
     throw new ToolFailure(artifactUnavailableFailure("missing", "task_context"));
   }
@@ -499,6 +505,7 @@ async function searchContext(argumentsValue: unknown, canonicalRoot: string) {
 async function traceImpact(argumentsValue: unknown, canonicalRoot: string) {
   const parsed = TraceImpactInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
+  failStrongStoreUnavailableV1();
   if (parsed.data.taskId === undefined) {
     throw new ToolFailure(artifactUnavailableFailure("missing", "task_context"));
   }
@@ -638,18 +645,17 @@ async function getRepoPulse(argumentsValue: unknown, canonicalRoot: string) {
   const startedAt = performance.now();
   const runtime = await openRuntime(canonicalRoot);
   const published = await readPublishedPulse(runtime.store);
+  const pulse = projectRepoPulseSurface(published.pulse);
   return GetRepoPulseOutputV1Schema.parse({
     isError: false,
     content: [{ type: "text", text: "Repository pulse loaded." }],
     structuredContent: {
       schemaVersion: 1,
-      meta: successMeta(
-        published.snapshot,
-        published.pulse.status,
-        elapsed(startedAt),
-        { cacheHit: true },
-      ),
-      result: { pulse: published.pulse },
+      meta: {
+        durationMs: elapsed(startedAt),
+        cacheHit: true,
+      },
+      result: { pulse },
     },
   });
 }
@@ -657,6 +663,7 @@ async function getRepoPulse(argumentsValue: unknown, canonicalRoot: string) {
 async function buildTaskBrief(argumentsValue: unknown, canonicalRoot: string) {
   const parsed = BuildTaskBriefInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
+  failStrongStoreUnavailableV1();
   const startedAt = performance.now();
   const runtime = await openRuntime(canonicalRoot);
   const result = await runtime.taskEngine.buildTaskBrief(parsed.data, {
@@ -689,6 +696,7 @@ async function buildTaskBrief(argumentsValue: unknown, canonicalRoot: string) {
 async function getTaskBrief(argumentsValue: unknown, canonicalRoot: string) {
   const parsed = GetTaskBriefInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
+  failStrongStoreUnavailableV1();
   const startedAt = performance.now();
   const runtime = await openRuntime(canonicalRoot);
   const manifest = await runtime.store.readManifest({ verifyArtifacts: false });
@@ -736,6 +744,7 @@ async function getTaskBrief(argumentsValue: unknown, canonicalRoot: string) {
 async function updateTask(argumentsValue: unknown, canonicalRoot: string) {
   const parsed = UpdateTaskInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
+  failStrongStoreUnavailableV1();
   const startedAt = performance.now();
   const runtime = await openRuntime(canonicalRoot);
   const result = await runtime.taskEngine.updateTask(parsed.data, {
@@ -773,6 +782,7 @@ async function updateTask(argumentsValue: unknown, canonicalRoot: string) {
 async function checkChange(argumentsValue: unknown, canonicalRoot: string) {
   const parsed = CheckChangeInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
+  failStrongStoreUnavailableV1();
   const startedAt = performance.now();
   const runtime = await openRuntime(canonicalRoot);
   const result = await runtime.taskEngine.checkChange(
@@ -815,6 +825,7 @@ async function recordVerification(
 ) {
   const parsed = RecordVerificationInputV1Schema.safeParse(argumentsValue ?? {});
   if (!parsed.success) throw new ToolFailure(invalidArgumentsFailure(parsed.error));
+  failStrongStoreUnavailableV1();
   const startedAt = performance.now();
   const runtime = await openRuntime(canonicalRoot);
   const manifest = await runtime.store.readManifest({ verifyArtifacts: false });
@@ -1251,7 +1262,7 @@ async function taskDashboardProjection(
         brief: bundle.brief,
         section: input.section,
         items,
-        pulse: pulse.pulse,
+        pulse: projectRepoPulseSurface(pulse.pulse),
         freshness,
       },
     };
@@ -1925,6 +1936,12 @@ async function openWorkbench(argumentsValue: unknown, canonicalRoot: string) {
       invalidArgumentFailure(["openBrowser"], "browser_launch_not_supported"),
     );
   }
+
+  // A legacy Task/Workbench session carries repository, worktree, Snapshot,
+  // Check, and Verification lineage that has no accepted public projection.
+  // Do not open the legacy Store or start a browser session until the strong
+  // Store can validate and project that lineage.
+  failStrongStoreUnavailableV1();
 
   const startedAt = performance.now();
   const runtime = await openRuntime(canonicalRoot);

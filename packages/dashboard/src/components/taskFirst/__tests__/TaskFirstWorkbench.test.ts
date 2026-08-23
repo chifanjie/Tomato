@@ -8,7 +8,11 @@ import TaskFirstWorkbench, {
   type TaskBriefPageResult,
   type TaskFirstRoute,
 } from "../TaskFirstWorkbench";
-import type { TaskManifestV1 } from "@understand-code/contracts";
+import {
+  RepoPulseSurfaceResponseV1Schema,
+  type RepoPulseSurfaceResponseV1,
+  type TaskManifestV1,
+} from "@understand-code/contracts";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -40,6 +44,38 @@ const page: TaskBriefPageResult = {
     plannedChangeCount: 1,
   }],
 };
+
+const LEGACY_SNAPSHOT_CANARY = "snapshot:legacy-private-canary";
+const LEGACY_BRANCH_CANARY = "legacy/private-branch-canary";
+const LEGACY_FREE_TEXT_CANARY = "legacy private diagnostic canary";
+const PATH_SAFE_SNAPSHOT_ID = `snapshot-${"a".repeat(64)}`;
+
+const legacyPulse = {
+  viewVersion: 1,
+  viewKind: "legacy_repo_pulse_redacted",
+  status: "partial",
+  aggregateChangeCount: 4,
+  evaluatedAt: "2026-08-23T12:00:00Z",
+  strongOperationSupported: false,
+} satisfies RepoPulseSurfaceResponseV1;
+
+const strongPulse = RepoPulseSurfaceResponseV1Schema.parse({
+  viewVersion: 1,
+  viewKind: "strong_repo_pulse",
+  evaluatedSnapshotId: PATH_SAFE_SNAPSHOT_ID,
+  status: "partial",
+  branchState: {
+    status: "safe",
+    name: "feature/path-safe-surface",
+  },
+  safeChangeCount: 7,
+  redactedChangeCount: 2,
+  unknownStateCount: 3,
+  redactionBoundaryCodes: ["secret_content"],
+  uncertaintyCodes: ["unreadable"],
+  evaluatedAt: "2026-08-23T12:01:00Z",
+  strongOperationSupported: true,
+});
 
 afterEach(() => document.body.replaceChildren());
 
@@ -88,6 +124,42 @@ describe("TaskFirstWorkbench", () => {
     expect(onOpenGraph).toHaveBeenCalledWith(route);
     expect(onSelectSection).toHaveBeenCalledWith("goals");
     await act(async () => root.unmount());
+  });
+
+  it("loads a legacy redacted Pulse without rendering private legacy detail", () => {
+    const pulseWithLegacyCanaries = Object.assign({}, legacyPulse, {
+      evaluatedSnapshotId: LEGACY_SNAPSHOT_CANARY,
+      repositoryState: {
+        branch: LEGACY_BRANCH_CANARY,
+      },
+      reasons: [LEGACY_FREE_TEXT_CANARY],
+    });
+
+    const html = renderToStaticMarkup(createElement(TaskFirstWorkbench, {
+      route,
+      page,
+      pulse: pulseWithLegacyCanaries,
+    }));
+
+    expect(html).toContain("旧版详情已隐藏");
+    expect(html).not.toContain("<dt>Snapshot</dt>");
+    expect(html).not.toContain("<dt>Branch</dt>");
+    expect(html).not.toContain(LEGACY_SNAPSHOT_CANARY);
+    expect(html).not.toContain(LEGACY_BRANCH_CANARY);
+    expect(html).not.toContain(LEGACY_FREE_TEXT_CANARY);
+  });
+
+  it("renders a strong Pulse with its path-safe Snapshot and three counts", () => {
+    const html = renderToStaticMarkup(createElement(TaskFirstWorkbench, {
+      route,
+      page,
+      pulse: strongPulse,
+    }));
+
+    expect(html).toContain(PATH_SAFE_SNAPSHOT_ID);
+    expect(html).toContain("feature/path-safe-surface");
+    expect(html).toContain("7 safe · 2 redacted · 3 unknown");
+    expect(html).not.toContain("旧版详情已隐藏");
   });
 
   it("renders persisted Change Check findings and Verification records", () => {

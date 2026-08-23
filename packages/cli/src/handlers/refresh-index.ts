@@ -24,6 +24,7 @@ import {
   invalidArgumentsFailure,
   repositoryNotReadyFailure,
   sourceAccessDeniedFailure,
+  strongStoreUnavailableFailure,
 } from "../errors/tool-errors.js";
 import {
   captureBoundRepositorySnapshot,
@@ -34,11 +35,7 @@ import {
   buildRepositoryIndex,
 } from "../runtime/repository-indexer.js";
 
-/**
- * Captures and publishes repository facts. Incremental mode re-evaluates the
- * currently published artifact set; full mode first runs the bundled local
- * source indexer and then publishes a Pulse over the generated Graph/Wiki set.
- */
+/** Keeps refresh fail-closed until a path-safe strong writer is available. */
 export async function refreshIndex(
   argumentsValue: unknown,
   canonicalRoot: string,
@@ -47,6 +44,12 @@ export async function refreshIndex(
   if (!parsed.success) {
     throw new ToolFailure(invalidArgumentsFailure(parsed.error));
   }
+
+  // The legacy capture/publish path below cannot establish the path-safe
+  // Snapshot/Pulse and accepted Provider authority required by strong writes.
+  // Keep the public operation fail-closed until that writer is available; in
+  // particular, do not capture Git state or open/initialize the legacy Store.
+  failStrongStoreUnavailableV1();
 
   const startedAt = performance.now();
   const startedIso = new Date().toISOString();
@@ -273,6 +276,16 @@ export async function refreshIndex(
       result: { operation },
     },
   });
+}
+
+/**
+ * Shared public Task/mutation gate while the accepted strong Store authority
+ * is unavailable. Callers validate public input first, then invoke this before
+ * opening legacy Store state, reading private Task data, or causing a side
+ * effect. Strict redacted Repository reads use their separate Surface path.
+ */
+export function failStrongStoreUnavailableV1(): void {
+  throw new ToolFailure(strongStoreUnavailableFailure());
 }
 
 async function readCurrentPulse(

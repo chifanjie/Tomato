@@ -47,8 +47,8 @@ import {
   WorktreeIdSchema,
 } from "./primitives.js";
 import {
+  RepoPulseSurfaceResponseV1Schema,
   RepoPulseStatusV1Schema,
-  RepoPulseV1Schema,
 } from "./repository.js";
 import {
   MutationResultV1Schema,
@@ -602,28 +602,36 @@ export type McpToolErrorResultV1 = z.infer<
 export const GetRepoPulseInputV1Schema = z.strictObject({});
 
 export const GetRepoPulseResultV1Schema = z.strictObject({
-  pulse: RepoPulseV1Schema,
+  pulse: RepoPulseSurfaceResponseV1Schema,
 });
 
 export type GetRepoPulseResultV1 = z.infer<
   typeof GetRepoPulseResultV1Schema
 >;
 
-export const GetRepoPulseOutputV1Schema =
-  createMcpToolSuccessResultV1Schema(GetRepoPulseResultV1Schema).superRefine(
-    (output, context) => {
-      if (
-        output.structuredContent.meta.sourceSnapshotId !==
-        output.structuredContent.result.pulse.evaluatedSnapshotId
-      ) {
-        context.addIssue({
-          code: "custom",
-          message: "MCP meta snapshot must match Repo Pulse evaluatedSnapshotId",
-          path: ["structuredContent", "meta", "sourceSnapshotId"],
-        });
-      }
-    },
-  );
+/**
+ * Repo Pulse is a public Surface. Its metadata deliberately excludes the
+ * generic success envelope's repository/worktree/Snapshot IDs, Git OID, and
+ * worktree digest so a legacy Pulse can never re-export path-derived identity.
+ */
+export const GetRepoPulsePublicMetaV1Schema = z.strictObject({
+  durationMs: z.number().nonnegative(),
+  cacheHit: z.boolean(),
+});
+
+export type GetRepoPulsePublicMetaV1 = z.infer<
+  typeof GetRepoPulsePublicMetaV1Schema
+>;
+
+export const GetRepoPulseOutputV1Schema = z.strictObject({
+  isError: z.literal(false).optional(),
+  content: z.array(McpTextContentV1Schema).min(1),
+  structuredContent: z.strictObject({
+    schemaVersion: SchemaVersionV1Schema,
+    meta: GetRepoPulsePublicMetaV1Schema,
+    result: GetRepoPulseResultV1Schema,
+  }),
+});
 
 export type GetRepoPulseInputV1 = z.input<
   typeof GetRepoPulseInputV1Schema

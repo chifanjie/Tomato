@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { RepoPulseSurfaceResponseV1 } from "@understand-code/contracts";
 import { loadTaskWorkbench } from "../taskContextLoader";
 
 const taskId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
@@ -42,6 +43,15 @@ const brief = {
 
 const route = { view: "tasks" as const, taskId, section: "summary" };
 
+const legacyPulse = {
+  viewVersion: 1,
+  viewKind: "legacy_repo_pulse_redacted",
+  status: "partial",
+  aggregateChangeCount: 4,
+  evaluatedAt: "2026-08-23T12:00:00Z",
+  strongOperationSupported: false,
+} satisfies RepoPulseSurfaceResponseV1;
+
 describe("loadTaskWorkbench", () => {
   it("loads and validates a persisted Task Brief projection", async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({
@@ -68,6 +78,28 @@ describe("loadTaskWorkbench", () => {
       expect.stringContaining(`/tasks/${taskId}/brief.json`),
       expect.objectContaining({ headers: { accept: "application/json" } }),
     );
+  });
+
+  it("loads a legacy redacted Repo Pulse Surface", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (!String(input).includes("/brief.json")) {
+        return new Response("{}", { status: 404 });
+      }
+      return new Response(JSON.stringify({
+        task,
+        brief,
+        section: "summary",
+        items: [],
+        pulse: legacyPulse,
+        freshness: { sourceSnapshotId: "snapshot:actual", current: true },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+
+    const result = await loadTaskWorkbench(route, "token", fetcher);
+
+    expect(result.status).toBe("ready");
+    expect(result.payload?.pulse).toEqual(legacyPulse);
+    expect(result.payload?.pulse?.strongOperationSupported).toBe(false);
   });
 
   it("surfaces a missing persisted Task as unavailable", async () => {

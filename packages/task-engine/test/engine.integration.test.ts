@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   lstat,
   mkdir,
@@ -17,12 +18,25 @@ import {
   ChangeCheckV1Schema,
   ClaimV1Schema,
   IdempotencyRecordV1Schema,
+  KeyedStateTokenV1Schema,
+  PathSafeRepositoryIdV1Schema,
+  PathSafeRootIdentityV1Schema,
+  PathSafeWorktreeIdV1Schema,
   RepoPulseArtifactV1Schema,
   RepositorySnapshotArtifactV1Schema,
+  StrongRepoPulseV1Schema,
+  StrongRepositorySnapshotV1Schema,
   TaskManifestV1Schema,
   TaskOperationReceiptV1Schema,
   VerificationRecordV1Schema,
+  canonicalizeJson,
+  derivePathSafeRepositoryChangeIdV1,
+  derivePathSafeRepositorySnapshotIdV1,
+  parseTrustedRepositorySnapshotArtifactV1,
+  parseTrustedStrongRepoPulseV1,
+  parseTrustedStrongRepositorySnapshotV1,
   type PersistedArtifactV1,
+  type StrongRepositorySnapshotV1,
 } from "@understand-code/contracts";
 import type {
   GraphEdge,
@@ -46,7 +60,10 @@ import {
   type TaskContextProvider,
 } from "../src/index.js";
 import * as TaskEnginePackage from "../src/index.js";
-import { applyTaskUpdate } from "../src/mutation.js";
+import {
+  applyTaskUpdate,
+  rebuildTaskContext,
+} from "../src/mutation.js";
 
 const REPOSITORY_ID = "repository:fixture";
 const WORKTREE_ID = "worktree:fixture";
@@ -63,6 +80,31 @@ const ALL_CAPABILITIES = [
   "task:accept",
   "task:supersede",
 ] as const;
+
+const STRONG_REPOSITORY_ID = PathSafeRepositoryIdV1Schema.parse(
+  `repo-hmac-${"1".repeat(64)}`,
+);
+const STRONG_WORKTREE_ID = PathSafeWorktreeIdV1Schema.parse(
+  `worktree-hmac-${"2".repeat(64)}`,
+);
+const STRONG_ROOT_IDENTITY = PathSafeRootIdentityV1Schema.parse(
+  `root-hmac-${"3".repeat(64)}`,
+);
+const STRONG_REPOSITORY_STATE_TOKEN = KeyedStateTokenV1Schema.parse(
+  `hmac-sha256:${"4".repeat(64)}`,
+);
+const STRONG_INDEX_TOKEN = KeyedStateTokenV1Schema.parse(
+  `hmac-sha256:${"5".repeat(64)}`,
+);
+const STRONG_WORKTREE_TOKEN = KeyedStateTokenV1Schema.parse(
+  `hmac-sha256:${"6".repeat(64)}`,
+);
+const STRONG_UNTRACKED_TOKEN = KeyedStateTokenV1Schema.parse(
+  `hmac-sha256:${"7".repeat(64)}`,
+);
+const STRONG_IGNORE_TOKEN = KeyedStateTokenV1Schema.parse(
+  `hmac-sha256:${"8".repeat(64)}`,
+);
 
 const temporaryRoots: string[] = [];
 
@@ -205,6 +247,279 @@ async function loadFixture(
   return JSON.parse(await readFile(url, "utf8")) as PersistedArtifactV1;
 }
 
+function digestCanonicalJson(canonicalJson: string): string {
+  return `sha256:${createHash("sha256")
+    .update(canonicalJson, "utf8")
+    .digest("hex")}`;
+}
+
+function strongSnapshotFixture(): StrongRepositorySnapshotV1 {
+  const changeFields = {
+    path: "src/path-safe.ts",
+    source: "staged",
+    kind: "modified",
+    contentDigest: `sha256:${"a".repeat(64)}`,
+    previousContentDigest: `sha256:${"b".repeat(64)}`,
+  } as const;
+  const change = {
+    id: derivePathSafeRepositoryChangeIdV1(
+      changeFields,
+      digestCanonicalJson,
+    ),
+    ...changeFields,
+  };
+  const draft = StrongRepositorySnapshotV1Schema.parse({
+    schemaVersion: 1,
+    profile: "repository_snapshot_path_safe_v1",
+    snapshotId: `snapshot-${"0".repeat(64)}`,
+    repositoryId: STRONG_REPOSITORY_ID,
+    worktreeId: STRONG_WORKTREE_ID,
+    rootIdentity: STRONG_ROOT_IDENTITY,
+    branchState: { status: "safe", name: "feature/path-safe-contracts" },
+    objectFormat: "sha1",
+    headState: { kind: "commit", commit: "1".repeat(40) },
+    repositoryStateToken: STRONG_REPOSITORY_STATE_TOKEN,
+    indexToken: STRONG_INDEX_TOKEN,
+    worktreeToken: STRONG_WORKTREE_TOKEN,
+    untrackedToken: STRONG_UNTRACKED_TOKEN,
+    ignoreToken: STRONG_IGNORE_TOKEN,
+    securityScanPolicyDigest: `sha256:${"9".repeat(64)}`,
+    safeGitExecutionDigest: `sha256:${"c".repeat(64)}`,
+    createdAt: "2026-07-28T08:30:00Z",
+    captureStatus: "complete",
+    accounting: {
+      rawLayerUnitCount: 1,
+      candidateUnitCount: 1,
+      safeChangeCount: 1,
+      redactedKnownChangeCount: 0,
+      unknownStateCount: 0,
+    },
+    changes: [change],
+    redactedChanges: [],
+    unknownStates: [],
+  });
+  return parseTrustedStrongRepositorySnapshotV1(
+    {
+      ...draft,
+      snapshotId: derivePathSafeRepositorySnapshotIdV1(
+        draft,
+        digestCanonicalJson,
+      ),
+    },
+    digestCanonicalJson,
+  );
+}
+
+function strongPulseFixture(snapshot: StrongRepositorySnapshotV1) {
+  const pulse = StrongRepoPulseV1Schema.parse({
+    profile: "repo_pulse_path_safe_v1",
+    evaluatedSnapshotId: snapshot.snapshotId,
+    evaluatedSnapshotContentDigest: digestCanonicalJson(
+      canonicalizeJson(snapshot),
+    ),
+    status: "fresh",
+    artifactFreshness: {
+      graph: "fresh",
+      wiki: "fresh",
+      evidence: "fresh",
+      diff: "fresh",
+      task: "fresh",
+    },
+    repositoryState: {
+      repositoryId: snapshot.repositoryId,
+      worktreeId: snapshot.worktreeId,
+      rootIdentity: snapshot.rootIdentity,
+      branchState: snapshot.branchState,
+      objectFormat: snapshot.objectFormat,
+      headState: snapshot.headState,
+      repositoryStateToken: snapshot.repositoryStateToken,
+      captureStatus: snapshot.captureStatus,
+    },
+    changeSummary: {
+      total: 1,
+      bySource: {
+        committed: 0,
+        staged: 1,
+        unstaged: 0,
+        untracked: 0,
+        conflict: 0,
+      },
+      byKind: {
+        added: 0,
+        modified: 1,
+        deleted: 0,
+        renamed: 0,
+        copied: 0,
+        type_changed: 0,
+      },
+    },
+    security: {
+      snapshotProfile: "repository_snapshot_path_safe_v1",
+      safeChangeCount: 1,
+      redactedChangeCount: 0,
+      unknownStateCount: 0,
+      redactionBoundaryCodes: [],
+      uncertaintyCodes: [],
+    },
+    securityScanPolicyDigest: snapshot.securityScanPolicyDigest,
+    safeGitExecutionDigest: snapshot.safeGitExecutionDigest,
+    completeness: {
+      parser: { status: "complete", coverage: 1, reasonCodes: [] },
+      callGraph: { status: "complete", coverage: 1, reasonCodes: [] },
+    },
+    recommendedRefresh: "none",
+    diagnosticCodes: [],
+    evaluatedAt: "2026-07-28T08:31:00Z",
+  });
+  return parseTrustedStrongRepoPulseV1(
+    pulse,
+    snapshot,
+    digestCanonicalJson,
+  );
+}
+
+function strongSnapshotArtifact(snapshot: StrongRepositorySnapshotV1) {
+  return parseTrustedRepositorySnapshotArtifactV1(
+    {
+      schemaVersion: 1,
+      artifactType: "repository_snapshot",
+      artifactId: `artifact:repository-snapshot:${snapshot.snapshotId}`,
+      repositoryId: snapshot.repositoryId,
+      worktreeId: snapshot.worktreeId,
+      sourceSnapshotId: snapshot.snapshotId,
+      revision: 0,
+      producerVersion: PRODUCER_VERSION,
+      createdAt: snapshot.createdAt,
+      contentDigest: sha256CanonicalJson(snapshot),
+      payload: snapshot,
+    },
+    digestCanonicalJson,
+  );
+}
+
+function strongPulseArtifact(snapshot: StrongRepositorySnapshotV1) {
+  const payload = strongPulseFixture(snapshot);
+  return RepoPulseArtifactV1Schema.parse({
+    schemaVersion: 1,
+    artifactType: "repo_pulse",
+    artifactId: "artifact:repo-pulse:path-safe-fixture",
+    repositoryId: snapshot.repositoryId,
+    worktreeId: snapshot.worktreeId,
+    sourceSnapshotId: snapshot.snapshotId,
+    revision: 0,
+    producerVersion: PRODUCER_VERSION,
+    createdAt: payload.evaluatedAt,
+    contentDigest: sha256CanonicalJson(payload),
+    payload,
+  });
+}
+
+async function openEmptyBoundStore(
+  repositoryId: string,
+  worktreeId: string,
+): Promise<{ root: string; store: ArtifactStore }> {
+  const root = await mkdtemp(path.join(tmpdir(), "task-engine-strong-profile-"));
+  temporaryRoots.push(root);
+  await Promise.all([
+    mkdir(path.join(root, "src"), { recursive: true }),
+    mkdir(path.join(root, "test"), { recursive: true }),
+  ]);
+  await Promise.all([
+    writeFile(
+      path.join(root, "src/task.ts"),
+      "export class TaskHandler {}\n",
+      "utf8",
+    ),
+    writeFile(
+      path.join(root, "src/task-update.ts"),
+      "export function updateTask() {}\n",
+      "utf8",
+    ),
+    writeFile(
+      path.join(root, "test/task.test.ts"),
+      "export const taskLifecycleTest = true;\n",
+      "utf8",
+    ),
+  ]);
+  const store = await ArtifactStore.open(root, {
+    repositoryId,
+    worktreeId,
+    producerVersion: PRODUCER_VERSION,
+  });
+  await store.initialize();
+  return { root, store };
+}
+
+function authForStore(
+  store: ArtifactStore,
+  capabilities: AuthorizationContext["capabilities"] = ALL_CAPABILITIES,
+): AuthorizationContext {
+  return {
+    actor: ACTOR,
+    repositoryId: store.repositoryId,
+    worktreeId: store.worktreeId,
+    capabilities,
+  };
+}
+
+async function legacySnapshotForBoundStore(
+  store: ArtifactStore,
+  snapshotId: string,
+  headCommit = "1".repeat(40),
+): Promise<PersistedArtifactV1> {
+  const current = RepositorySnapshotArtifactV1Schema.parse(
+    await loadFixture("repository-snapshot.json"),
+  );
+  const payload = {
+    ...current.payload,
+    snapshotId,
+    repositoryId: store.repositoryId,
+    worktreeId: store.worktreeId,
+    rootIdentity: STRONG_ROOT_IDENTITY,
+    branch: "feature/path-safe-contracts",
+    headCommit,
+  };
+  return RepositorySnapshotArtifactV1Schema.parse({
+    ...current,
+    artifactId: `artifact:repository-snapshot:${snapshotId}`,
+    repositoryId: store.repositoryId,
+    worktreeId: store.worktreeId,
+    sourceSnapshotId: snapshotId,
+    contentDigest: sha256CanonicalJson(payload),
+    payload,
+  });
+}
+
+async function legacyPulseForBoundStore(
+  store: ArtifactStore,
+  snapshotId: string,
+  headCommit = "1".repeat(40),
+): Promise<PersistedArtifactV1> {
+  const current = RepoPulseArtifactV1Schema.parse(
+    await loadFixture("repo-pulse.json"),
+  );
+  const payload = {
+    ...current.payload,
+    evaluatedSnapshotId: snapshotId,
+    baselineSnapshotId: snapshotId,
+    repositoryState: {
+      ...current.payload.repositoryState!,
+      rootIdentity: STRONG_ROOT_IDENTITY,
+      branch: "feature/path-safe-contracts",
+      headCommit,
+    },
+  };
+  return RepoPulseArtifactV1Schema.parse({
+    ...current,
+    artifactId: "artifact:repo-pulse:path-safe-legacy-fixture",
+    repositoryId: store.repositoryId,
+    worktreeId: store.worktreeId,
+    sourceSnapshotId: snapshotId,
+    contentDigest: sha256CanonicalJson(payload),
+    payload,
+  });
+}
+
 async function openStore(
   options: {
     publishPulse?: boolean;
@@ -274,6 +589,44 @@ function engine(
     ),
     clock: options.clock ?? (() => FIXED_NOW),
   });
+}
+
+function legacyContextRecoveryIntegrityHarness(
+  store: ArtifactStore,
+  onContextLoad: () => void,
+) {
+  return {
+    async updateTask(
+      input: Parameters<TaskEngine["updateTask"]>[0],
+      _auth: AuthorizationContext,
+    ) {
+      return rebuildTaskContext(store, input, () => FIXED_NOW, async (current) => {
+        onContextLoad();
+        if (!("brief" in current.bundle)) {
+          throw new TypeError("Legacy context recovery requires a contextual Task.");
+        }
+        const snapshotId = input.action.type === "refresh_task_context" ||
+            input.action.type === "rebase_task"
+          ? input.action.targetSnapshotId
+          : current.bundle.manifest.latestSnapshotId;
+        return {
+          snapshotId,
+          brief: current.bundle.brief,
+          claims: current.bundle.claims.map((claim) => ({
+            ...claim,
+            freshness: "current" as const,
+            sourceSnapshotId: snapshotId,
+          })),
+          evidence: current.bundle.evidence.map((evidence) => ({
+            ...evidence,
+            freshness: "current" as const,
+            observedAtSnapshotId: snapshotId,
+          })),
+          impactPaths: current.bundle.impactPaths,
+        };
+      });
+    },
+  };
 }
 
 async function expectStoreLocksReleased(
@@ -731,6 +1084,219 @@ afterEach(async () => {
 describe("TaskEngine persistent integration", () => {
   it("does not expose the internal mutation kernel from the package root", () => {
     expect(TaskEnginePackage).not.toHaveProperty("applyTaskUpdate");
+  });
+
+  it("rejects a trusted strong Snapshot before loading context or writing a Task", async () => {
+    const snapshot = strongSnapshotFixture();
+    const { store } = await openEmptyBoundStore(
+      snapshot.repositoryId,
+      snapshot.worktreeId,
+    );
+    await store.persistArtifact(strongSnapshotArtifact(snapshot));
+    const manifestBefore = await store.readManifest();
+    let loadCount = 0;
+    const guardedProvider: ContextLoader = {
+      async loadTaskContext(input) {
+        loadCount += 1;
+        return contextProvider.loadTaskContext(input);
+      },
+    };
+
+    await expect(
+      engine(store, { contextProvider: guardedProvider }).buildTaskBrief(
+        buildInput("reject-strong-snapshot-before-task-write"),
+        authForStore(store, ["task:create"]),
+      ),
+    ).rejects.toMatchObject({
+      code: "artifact_unavailable",
+      details: {
+        reason: "unsupported_schema",
+        artifactType: "repository_snapshot",
+      },
+    });
+
+    expect(loadCount).toBe(0);
+    expect(await store.readManifest()).toEqual(manifestBefore);
+    expect(
+      manifestBefore.artifacts.some(
+        (descriptor) => descriptor.artifactType === "task_manifest",
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects a trusted strong Pulse instead of swallowing it before a Task write", async () => {
+    const strongSource = strongSnapshotFixture();
+    const { store } = await openEmptyBoundStore(
+      strongSource.repositoryId,
+      strongSource.worktreeId,
+    );
+    await store.persistArtifact(
+      await legacySnapshotForBoundStore(store, strongSource.snapshotId),
+    );
+    await store.persistArtifact(strongPulseArtifact(strongSource));
+    let loadCount = 0;
+    const guardedProvider: ContextLoader = {
+      async loadTaskContext(input) {
+        loadCount += 1;
+        return contextProvider.loadTaskContext(input);
+      },
+    };
+    const taskEngine = engine(store, { contextProvider: guardedProvider });
+    const input = buildInput("reject-strong-pulse-before-task-write");
+    const manifestBefore = await store.readManifest();
+
+    await expect(
+      taskEngine.buildTaskBrief(input, authForStore(store, ["task:create"])),
+    ).rejects.toMatchObject({
+      code: "artifact_unavailable",
+      details: {
+        reason: "unsupported_schema",
+        artifactType: "repo_pulse",
+      },
+    });
+
+    expect(loadCount).toBe(0);
+    expect(await store.readManifest()).toEqual(manifestBefore);
+    expect(
+      manifestBefore.artifacts.some(
+        (descriptor) => descriptor.artifactType === "task_manifest",
+      ),
+    ).toBe(false);
+
+    await expect(
+      taskEngine.buildTaskBrief(input, authForStore(store, ["task:create"])),
+    ).rejects.toMatchObject({
+      code: "artifact_unavailable",
+      details: {
+        reason: "unsupported_schema",
+        artifactType: "repo_pulse",
+      },
+    });
+    expect(await store.readManifest()).toEqual(manifestBefore);
+  });
+
+  it("rejects a trusted strong actual Snapshot before Change Check analysis or write", async () => {
+    const strongActual = strongSnapshotFixture();
+    const { store } = await openEmptyBoundStore(
+      strongActual.repositoryId,
+      strongActual.worktreeId,
+    );
+    const baselineSnapshotId = "snapshot:legacy-path-safe-task-baseline";
+    await store.persistArtifact(
+      await legacySnapshotForBoundStore(store, baselineSnapshotId),
+    );
+    await store.persistArtifact(
+      await legacyPulseForBoundStore(store, baselineSnapshotId),
+    );
+    let analyzeCount = 0;
+    const guardedProvider: ContextLoader = {
+      loadTaskContext: contextProvider.loadTaskContext,
+      async analyzeTaskChanges() {
+        analyzeCount += 1;
+        throw new Error("strong Snapshot guard must run before analysis");
+      },
+    };
+    const taskEngine = engine(store, { contextProvider: guardedProvider });
+    const built = await taskEngine.buildTaskBrief(
+      buildInput("reject-strong-change-check-snapshot"),
+      authForStore(store),
+    );
+    const updates = [
+      {
+        action: {
+          type: "confirm_goal" as const,
+          claimId: built.brief.goalClaimId,
+        },
+        key: "strong-check-confirm-goal",
+      },
+      {
+        action: {
+          type: "confirm_acceptance_criteria" as const,
+          claimIds: built.brief.acceptanceClaimIds,
+        },
+        key: "strong-check-confirm-acceptance",
+      },
+      {
+        action: {
+          type: "confirm_plan" as const,
+          plannedChangeIds: built.brief.plannedChanges.map(
+            (change) => change.id,
+          ),
+        },
+        key: "strong-check-confirm-plan",
+      },
+      {
+        action: {
+          type: "transition_status" as const,
+          to: "planned" as const,
+        },
+        key: "strong-check-transition-planned",
+      },
+      {
+        action: {
+          type: "transition_status" as const,
+          to: "in_progress" as const,
+        },
+        key: "strong-check-transition-progress",
+      },
+    ];
+    let revision = built.task.revision;
+    for (const update of updates) {
+      const result = await taskEngine.updateTask(
+        {
+          taskId: built.task.taskId,
+          action: update.action,
+          expectedRevision: revision,
+          idempotencyKey: update.key,
+          actor: ACTOR,
+        },
+        authForStore(store),
+      );
+      revision = result.task.revision;
+    }
+
+    await store.persistArtifact(strongSnapshotArtifact(strongActual));
+    const captured = await taskEngine.updateTask(
+      {
+        taskId: built.task.taskId,
+        action: { type: "transition_status", to: "check_required" },
+        expectedRevision: revision,
+        idempotencyKey: "strong-check-capture-actual",
+        actor: ACTOR,
+      },
+      authForStore(store),
+    );
+    expect(captured.task).toMatchObject({
+      status: "check_required",
+      latestSnapshotId: strongActual.snapshotId,
+    });
+    const manifestBefore = await store.readManifest();
+    const bundleBefore = await store.readTaskBundle(built.task.taskId);
+
+    await expect(
+      taskEngine.checkChange(
+        {
+          taskId: built.task.taskId,
+          actualSnapshotId: strongActual.snapshotId,
+          includeWorktree: true,
+          expectedRevision: captured.task.revision,
+          idempotencyKey: "reject-strong-change-check-analysis",
+          actor: ACTOR,
+        },
+        authForStore(store, ["task:update"]),
+      ),
+    ).rejects.toMatchObject({
+      code: "artifact_unavailable",
+      details: {
+        reason: "unsupported_schema",
+        artifactType: "repository_snapshot",
+        snapshotId: strongActual.snapshotId,
+      },
+    });
+
+    expect(analyzeCount).toBe(0);
+    expect(await store.readManifest()).toEqual(manifestBefore);
+    expect(await store.readTaskBundle(built.task.taskId)).toEqual(bundleBefore);
   });
 
   it("fails closed before loading context when the provider belongs to another worktree", async () => {
@@ -1845,19 +2411,58 @@ describe("TaskEngine persistent integration", () => {
       schemaVersion: 1,
       actions: {
         refresh_task_context: {
-          available: true,
-          reasonCode: "task_context_rebuild_available",
-          owner: "task-engine",
+          available: false,
+          reasonCode: "task_context_rebuild_not_implemented",
+          owner: "WP5",
         },
         rebase_task: {
-          available: true,
-          reasonCode: "task_context_rebuild_available",
-          owner: "task-engine",
+          available: false,
+          reasonCode: "task_context_rebuild_not_implemented",
+          owner: "WP5",
         },
       },
     });
     expect(Object.isFrozen(capabilities)).toBe(true);
     expect(Object.isFrozen(capabilities.actions)).toBe(true);
+    const recoveryCase = cases[0]!;
+    const beforeRecovery = await store.readTaskBundle(recoveryCase.taskId);
+    for (const action of [
+      {
+        type: "refresh_task_context" as const,
+        targetSnapshotId: advancedSnapshotId,
+      },
+      {
+        type: "rebase_task" as const,
+        targetSnapshotId: advancedSnapshotId,
+        newBaselineSnapshotId: advancedSnapshotId,
+        reason: "Capability lock fixture.",
+      },
+    ]) {
+      await expect(
+        taskEngine.updateTask(
+          {
+            taskId: recoveryCase.taskId,
+            action,
+            expectedRevision: beforeRecovery.bundle.manifest.revision,
+            idempotencyKey: `capability-lock-${action.type}`,
+            actor: ACTOR,
+          },
+          auth(),
+        ),
+      ).rejects.toMatchObject({
+        code: "capability_unavailable",
+        details: {
+          taskId: recoveryCase.taskId,
+          capability: action.type,
+          available: false,
+          reasonCode: "task_context_rebuild_not_implemented",
+          owner: "WP5",
+        },
+      });
+    }
+    expect(await store.readTaskBundle(recoveryCase.taskId)).toEqual(
+      beforeRecovery,
+    );
   }, 30_000);
 
   it("rebuilds one stale Task on the exact current Snapshot and replays without reloading context", async () => {
@@ -1871,6 +2476,12 @@ describe("TaskEngine persistent integration", () => {
         },
       },
     });
+    const recoveryHarness = legacyContextRecoveryIntegrityHarness(
+      store,
+      () => {
+        contextLoads += 1;
+      },
+    );
     const built = await taskEngine.buildTaskBrief(
       buildInput("refresh-stale-task-context"),
       auth(),
@@ -1908,7 +2519,7 @@ describe("TaskEngine persistent integration", () => {
     });
 
     await expect(
-      taskEngine.updateTask(
+      recoveryHarness.updateTask(
         {
           taskId: built.task.taskId,
           action: {
@@ -1945,7 +2556,7 @@ describe("TaskEngine persistent integration", () => {
       idempotencyKey: "refresh-current-context",
       actor: ACTOR,
     };
-    const refreshed = await taskEngine.updateTask(refreshInput, auth());
+    const refreshed = await recoveryHarness.updateTask(refreshInput, auth());
     expect(refreshed).toMatchObject({
       task: {
         status: "context_ready",
@@ -1974,7 +2585,7 @@ describe("TaskEngine persistent integration", () => {
     expect(persisted.bundle.changeChecks).toEqual([]);
     expect(persisted.bundle.verificationRecords).toEqual([]);
 
-    const replay = await taskEngine.updateTask(refreshInput, auth());
+    const replay = await recoveryHarness.updateTask(refreshInput, auth());
     expect(replay).toMatchObject({
       task: { revision: 4, status: "context_ready" },
       mutation: { idempotentReplay: true },
@@ -1996,6 +2607,12 @@ describe("TaskEngine persistent integration", () => {
         },
       },
     });
+    const recoveryHarness = legacyContextRecoveryIntegrityHarness(
+      store,
+      () => {
+        contextLoads += 1;
+      },
+    );
     const built = await taskEngine.buildTaskBrief(
       buildInput("rebase-stale-task-context"),
       auth(),
@@ -2033,7 +2650,7 @@ describe("TaskEngine persistent integration", () => {
     });
 
     await expect(
-      taskEngine.updateTask(
+      recoveryHarness.updateTask(
         {
           taskId: built.task.taskId,
           action: {
@@ -2062,7 +2679,7 @@ describe("TaskEngine persistent integration", () => {
     });
     expect(contextLoads).toBe(1);
 
-    const rebased = await taskEngine.updateTask(
+    const rebased = await recoveryHarness.updateTask(
       {
         taskId: built.task.taskId,
         action: {

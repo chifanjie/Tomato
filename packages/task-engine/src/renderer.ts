@@ -89,11 +89,11 @@ export function renderTaskBriefMarkdown(
   });
   const planned = bundle.brief.plannedChanges.map(
     (change) =>
-      `\`${change.filePath}\` — ${change.intent} _(${change.candidateLevel})_`,
+      `\`${change.filePath}\` — ${change.intent} _(${change.candidateLevel}; expectation=${change.expectation ?? "unspecified/legacy"})_`,
   );
   const verification = bundle.brief.verificationPlan.map(
     (entry) =>
-      `${entry.description} _(${entry.method}${entry.required ? ", required" : ""})_`,
+      `${entry.description} _(${entry.method}, ${entry.required === true ? "required" : entry.required === false ? "optional" : "unspecified/legacy; gated as required"})_`,
   );
   const impactBoundaries = bundle.impactPaths
     .filter(

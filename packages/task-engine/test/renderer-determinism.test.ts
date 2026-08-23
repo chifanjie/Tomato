@@ -250,6 +250,38 @@ describe("Task Brief Markdown determinism", () => {
     expect(first).not.toContain(SOURCE_SECRET);
     expect(first).not.toContain("SOURCE_ONLY_SECRET");
     expect(first).not.toContain("/opt/company/private");
+    const firstPlan = draft.brief.plannedChanges[0]!;
+    expect(first).toContain(
+      `expectation=${firstPlan.expectation}`,
+    );
+    expect(first).toContain("_(test, required)_");
+
+    const legacyMarkdown = renderTaskBriefMarkdown({
+      ...read,
+      bundle: {
+        ...read.bundle,
+        brief: {
+          ...draft.brief,
+          plannedChanges: draft.brief.plannedChanges.map((change) => {
+            const { expectation: _expectation, ...legacyChange } = change;
+            return legacyChange;
+          }),
+          verificationPlan: draft.brief.verificationPlan.map((entry) => {
+            const { required: _required, ...legacyEntry } = entry;
+            return legacyEntry;
+          }),
+        },
+      },
+    } as unknown as ReadTaskBundleResult);
+    expect(legacyMarkdown).toContain(
+      `(${firstPlan.candidateLevel}; expectation=unspecified/legacy)`,
+    );
+    expect(legacyMarkdown).not.toContain(
+      `expectation=${firstPlan.expectation}`,
+    );
+    expect(legacyMarkdown).toContain(
+      "_(test, unspecified/legacy; gated as required)_",
+    );
   });
 
   it("keeps ranking/context Unknown reasons visible when no ImpactPath exists", async () => {

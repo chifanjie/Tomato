@@ -3237,6 +3237,10 @@ describe("TaskEngine persistent integration", () => {
       auth(),
     );
     revision = verificationRequired.task.revision;
+    const verificationRequiredRead = await store.readTaskBundle(taskId);
+    if (!("brief" in verificationRequiredRead.bundle)) {
+      throw new TypeError("The verification fixture must remain contextual.");
+    }
     const planEntry = built.brief.verificationPlan[0]!;
     const verificationInput = {
       taskId,
@@ -3385,6 +3389,65 @@ describe("TaskEngine persistent integration", () => {
       ).rejects.toMatchObject({ code: "task_gate_unsatisfied" });
       expect(persistCount).toBe(0);
     };
+
+    const legacyRequiredVerificationRead: ReadTaskBundleResult = {
+      ...current,
+      bundle: {
+        ...current.bundle,
+        brief: {
+          ...current.bundle.brief,
+          verificationPlan: current.bundle.brief.verificationPlan.map(
+            (entry) => {
+              const { required: _required, ...legacyEntry } = entry;
+              return legacyEntry;
+            },
+          ),
+        },
+        verificationRecords: [recorded.verification],
+      },
+    };
+    await expectCoverageRejected(
+      legacyRequiredVerificationRead,
+      "ci-verification-legacy-required",
+    );
+
+    const explicitlyOptionalVerificationRead: ReadTaskBundleResult = {
+      ...verificationRequiredRead,
+      bundle: {
+        ...verificationRequiredRead.bundle,
+        brief: {
+          ...verificationRequiredRead.bundle.brief,
+          verificationPlan: verificationRequiredRead.bundle.brief.verificationPlan.map(
+            (entry) => ({ ...entry, required: false }),
+          ),
+        },
+      },
+    };
+    let optionalPersistCount = 0;
+    const optionalHarness = {
+      worktreeId: store.worktreeId,
+      async readTaskBundle() {
+        return explicitlyOptionalVerificationRead;
+      },
+      async persistTaskBundle() {
+        optionalPersistCount += 1;
+      },
+    } as unknown as ArtifactStore;
+    await expect(
+      applyTaskUpdate(
+        optionalHarness,
+        {
+          taskId,
+          action: { type: "transition_status", to: "verified" },
+          expectedRevision: verificationRequired.mutation.revision,
+          idempotencyKey: "ci-verification-explicitly-optional",
+          actor: ACTOR,
+        },
+        () => new Date("2026-07-29T09:00:02.000Z"),
+      ),
+    ).resolves.toMatchObject({ task: { status: "verified" } });
+    expect(optionalPersistCount).toBe(1);
+
     await expectCoverageRejected(
       incompleteCoverageRead,
       "ci-verification-incomplete-coverage",

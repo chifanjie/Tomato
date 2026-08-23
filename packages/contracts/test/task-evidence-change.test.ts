@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
+import { canonicalizeJson } from "../src/canonical-json.js";
+
 import {
   ChangeCheckArtifactV1Schema,
   ChangeCheckReadClassificationV1Schema,
@@ -27,13 +29,17 @@ import {
   verifyTaskArtifactBundleIntegrityV1,
 } from "../src/invariants.js";
 import {
+  PlannedChangeExpectationV1Schema,
+  PlannedChangeV1Schema,
   canonicalTaskEventDigestJsonV1,
   TaskBriefArtifactV1Schema,
+  TaskBriefV1Schema,
   TaskEventV1Schema,
   TaskManifestArtifactV1Schema,
   TaskManifestV1Schema,
   TaskOrdinaryTransitionV1Schema,
   UpdateTaskActionV1Schema,
+  VerificationPlanEntryV1Schema,
   isTaskOrdinaryTransitionV1,
 } from "../src/task.js";
 
@@ -657,6 +663,66 @@ const verifiedRetryBundle = () => {
 };
 
 describe("Task V1 contracts", () => {
+  it("preserves explicit plan obligations without rewriting legacy fields", () => {
+    const expectations = [
+      "required_change",
+      "optional_change",
+      "inspect_only",
+      "verification_only",
+    ] as const;
+    expect(PlannedChangeExpectationV1Schema.options).toEqual(expectations);
+
+    for (const expectation of expectations) {
+      const parsed = PlannedChangeV1Schema.parse({
+        ...brief.plannedChanges[0],
+        expectation,
+      });
+      expect(parsed.expectation).toBe(expectation);
+    }
+    expect(
+      PlannedChangeV1Schema.safeParse({
+        ...brief.plannedChanges[0],
+        expectation: "required",
+      }).success,
+    ).toBe(false);
+
+    for (const required of [true, false] as const) {
+      expect(
+        VerificationPlanEntryV1Schema.parse({
+          ...brief.verificationPlan[0],
+          required,
+        }).required,
+      ).toBe(required);
+    }
+    expect(
+      VerificationPlanEntryV1Schema.safeParse({
+        ...brief.verificationPlan[0],
+        required: "yes",
+      }).success,
+    ).toBe(false);
+
+    const { required: _required, ...legacyVerificationPlanEntry } =
+      brief.verificationPlan[0];
+    const legacyBrief = {
+      ...brief,
+      verificationPlan: [legacyVerificationPlanEntry],
+    };
+    const before = canonicalizeJson(legacyBrief);
+    const beforeDigest = digestCanonicalJson(before);
+    const parsedLegacyBrief = TaskBriefV1Schema.parse(legacyBrief);
+
+    expect(
+      Object.hasOwn(parsedLegacyBrief.plannedChanges[0]!, "expectation"),
+    ).toBe(false);
+    expect(
+      Object.hasOwn(parsedLegacyBrief.verificationPlan[0]!, "required"),
+    ).toBe(false);
+    expect(canonicalizeJson(parsedLegacyBrief)).toBe(before);
+    expect(digestCanonicalJson(canonicalizeJson(parsedLegacyBrief))).toBe(
+      beforeDigest,
+    );
+  });
+
   it("enforces conditional exceptional state fields", () => {
     expect(
       TaskManifestV1Schema.safeParse({
@@ -1287,6 +1353,45 @@ describe("Impact, Change Check, and Verification V1 contracts", () => {
       expect(
         result.error.issues.some((issue) =>
           issue.message.includes("latest final-snapshot attempt"),
+        ),
+      ).toBe(true);
+    }
+
+    const legacyRequiredBundle = verifiedBundle(false);
+    delete legacyRequiredBundle.brief.verificationPlan[0]!.required;
+    const legacyRequiredResult =
+      TaskArtifactBundleV1Schema.safeParse(legacyRequiredBundle);
+    expect(legacyRequiredResult.success).toBe(false);
+    if (!legacyRequiredResult.success) {
+      expect(
+        legacyRequiredResult.error.issues.some((issue) =>
+          issue.message.includes("latest final-snapshot attempt"),
+        ),
+      ).toBe(true);
+    }
+
+    const explicitlyOptionalBundle = verifiedBundle(false);
+    explicitlyOptionalBundle.brief.verificationPlan[0]!.required = false;
+    expect(
+      TaskArtifactBundleV1Schema.safeParse(explicitlyOptionalBundle).success,
+    ).toBe(true);
+
+    const optionalWithFailedAttempt = verifiedRetryBundle();
+    optionalWithFailedAttempt.brief.verificationPlan[0]!.required = false;
+    optionalWithFailedAttempt.verificationRecords[1] = {
+      ...optionalWithFailedAttempt.verificationRecords[1]!,
+      status: "failed",
+      exitCode: 1,
+      summary: "The latest optional attempt still failed.",
+    };
+    const optionalFailedResult = TaskArtifactBundleV1Schema.safeParse(
+      optionalWithFailedAttempt,
+    );
+    expect(optionalFailedResult.success).toBe(false);
+    if (!optionalFailedResult.success) {
+      expect(
+        optionalFailedResult.error.issues.some((issue) =>
+          issue.message.includes("unresolved latest verification attempt"),
         ),
       ).toBe(true);
     }

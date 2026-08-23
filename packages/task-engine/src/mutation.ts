@@ -585,7 +585,9 @@ function applyTransition(
       guards.push({ code: "current_check_required" });
     }
     for (const entry of data.brief.verificationPlan.filter(
-      (candidate) => candidate.required,
+      // Legacy entries can omit `required`; do not weaken their verification
+      // gate merely because the compatibility reader preserves that absence.
+      (candidate) => candidate.required !== false,
     )) {
       const record = latestVerification(
         data.verificationRecords,

@@ -756,6 +756,15 @@
                         "minLength": 1,
                         "maxLength": 256
                       },
+                      "expectation": {
+                        "type": "string",
+                        "enum": [
+                          "required_change",
+                          "optional_change",
+                          "inspect_only",
+                          "verification_only"
+                        ]
+                      },
                       "candidateLevel": {
                         "type": "string",
                         "enum": [
@@ -869,7 +878,6 @@
                         "maxLength": 16384
                       },
                       "required": {
-                        "default": true,
                         "type": "boolean"
                       }
                     },
@@ -877,8 +885,7 @@
                       "id",
                       "acceptanceClaimIds",
                       "method",
-                      "description",
-                      "required"
+                      "description"
                     ],
                     "additionalProperties": false
                   }

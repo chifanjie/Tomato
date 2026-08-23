@@ -1,7 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { classifyChangeCheckV1 } from "@understand-code/contracts";
 import type {
+  CandidateLevelV1,
   ChangeCheckV1,
+  PlannedChangeExpectationV1,
   RepoPulseStatusV1,
   RepoPulseV1,
   TaskBriefPageItemV1,
@@ -178,6 +180,21 @@ function routeFor(_view: "knowledge" | "graph", route: TaskFirstRoute): TaskFirs
   };
 }
 
+const CANDIDATE_LEVEL_LABELS: Record<CandidateLevelV1, string> = {
+  must_inspect: "必须检查",
+  likely_change: "很可能需要变更",
+  possible_change: "可能需要变更",
+  test_or_verify: "测试或验证",
+  context_only: "仅供上下文",
+};
+
+const EXPECTATION_LABELS: Record<PlannedChangeExpectationV1, string> = {
+  required_change: "必须变更",
+  optional_change: "可选变更",
+  inspect_only: "仅检查",
+  verification_only: "仅验证",
+};
+
 function itemText(item: TaskBriefPageItemV1): { title: string; detail?: string; meta?: string } {
   switch (item.kind) {
     case "summary":
@@ -197,12 +214,18 @@ function itemText(item: TaskBriefPageItemV1): { title: string; detail?: string; 
       return {
         title: item.change.filePath,
         detail: item.change.intent,
-        meta: item.change.candidateLevel.replace(/_/g, " "),
+        meta: `${CANDIDATE_LEVEL_LABELS[item.change.candidateLevel]} · ${item.change.expectation === undefined ? "预期未指定（旧版）" : EXPECTATION_LABELS[item.change.expectation]}`,
       };
     case "verification_plan":
       return {
         title: item.entry.description,
-        meta: `${item.entry.method}${item.entry.required ? " · required" : " · optional"}`,
+        meta: `${item.entry.method}${
+          item.entry.required === false
+            ? " · 可选"
+            : item.entry.required === true
+              ? " · 必需"
+              : " · 要求未指定（旧版；按必需项门禁）"
+        }`,
       };
   }
 }

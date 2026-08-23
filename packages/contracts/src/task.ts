@@ -344,6 +344,17 @@ export const CandidateLevelV1Schema = z.enum([
 
 export type CandidateLevelV1 = z.infer<typeof CandidateLevelV1Schema>;
 
+export const PlannedChangeExpectationV1Schema = z.enum([
+  "required_change",
+  "optional_change",
+  "inspect_only",
+  "verification_only",
+]);
+
+export type PlannedChangeExpectationV1 = z.infer<
+  typeof PlannedChangeExpectationV1Schema
+>;
+
 export const ReadingPathEntryV1Schema = z.strictObject({
   id: OpaqueIdentifierSchema,
   order: z.number().int().nonnegative(),
@@ -390,6 +401,7 @@ export type ReadingPathEntryV1 = z.infer<typeof ReadingPathEntryV1Schema>;
 
 export const PlannedChangeV1Schema = z.strictObject({
   id: PlannedChangeIdSchema,
+  expectation: PlannedChangeExpectationV1Schema.optional(),
   candidateLevel: CandidateLevelV1Schema,
   filePath: RepositoryRelativePathSchema,
   symbolId: OpaqueIdentifierSchema.optional(),
@@ -418,7 +430,7 @@ export const VerificationPlanEntryV1Schema = z.strictObject({
   acceptanceClaimIds: z.array(ClaimIdSchema).min(1),
   method: VerificationMethodV1Schema,
   description: NonEmptyStringSchema,
-  required: z.boolean().default(true),
+  required: z.boolean().optional(),
 }).superRefine((entry, context) => {
   uniqueValues(
     entry.acceptanceClaimIds,

@@ -1251,7 +1251,10 @@ const FullTaskArtifactBundleV1Schema = z.strictObject({
 
   if (bundle.manifest.status === "verified") {
     bundle.brief.verificationPlan
-      .filter((entry) => entry.required)
+      // Historical V1 entries may omit `required`. The lossless reader must not
+      // inject a default into persisted bytes, while lifecycle validation keeps
+      // the original conservative meaning: only an explicit false is optional.
+      .filter((entry) => entry.required !== false)
       .forEach((entry, planIndex) => {
         const latestAttempt = bundle.verificationRecords
           .filter(

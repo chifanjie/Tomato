@@ -65,11 +65,30 @@ const CANDIDATE_MANIFEST = "understand-code-alpha-candidate.json";
 const CANDIDATE_SCHEMA = "understand-code-alpha-candidate-v1.schema.json";
 const CANDIDATE_CHECKSUMS = "SHA256SUMS";
 const V1_OVERLAY_FILES = [
+  "packages/contracts/schemas/v1/build_task_brief-output.schema.json",
+  "packages/contracts/schemas/v1/get_task_brief-output.schema.json",
+  "packages/contracts/schemas/v1/task-artifact-bundle.schema.json",
+  "packages/contracts/schemas/v1/task-brief-artifact.schema.json",
+  "packages/contracts/schemas/v1/task-brief.schema.json",
+  "packages/contracts/schemas/v1/task-operation-journal-artifact.schema.json",
+  "packages/contracts/schemas/v1/task-operation-journal.schema.json",
+  "packages/contracts/schemas/v1/task-operation-receipt.schema.json",
+  "packages/contracts/src/invariants.ts",
+  "packages/contracts/src/task.ts",
+  "packages/contracts/test/task-evidence-change.test.ts",
+  "packages/dashboard/src/components/taskFirst/TaskFirstWorkbench.tsx",
+  "packages/dashboard/src/components/taskFirst/__tests__/TaskFirstWorkbench.test.ts",
   "packages/preview/test/cold-packed.test.mjs",
   "packages/preview/test/workbench-browser-packed.test.mjs",
   "packages/task-engine/src/change-intelligence.ts",
+  "packages/task-engine/src/context-builder.ts",
   "packages/task-engine/src/engine-types.ts",
+  "packages/task-engine/src/mutation.ts",
   "packages/task-engine/src/repository-context-provider.ts",
+  "packages/task-engine/src/renderer.ts",
+  "packages/task-engine/test/context-boundary.test.ts",
+  "packages/task-engine/test/engine.integration.test.ts",
+  "packages/task-engine/test/renderer-determinism.test.ts",
 ];
 const V2_SOURCE_FILES = [
   "packages/preview/package.json",
@@ -2184,6 +2203,49 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     const baselineSnapshotId = built.structuredContent.result.task.baselineSnapshotId;
     const brief = built.structuredContent.result.brief;
     assert.equal(brief.plannedChanges.length, 1);
+    const expectedExpectationByCandidateLevel = {
+      likely_change: "required_change",
+      possible_change: "optional_change",
+      must_inspect: "inspect_only",
+      context_only: "inspect_only",
+      test_or_verify: "verification_only",
+    };
+    const expectedWorkbenchObligationByCandidateLevel = {
+      likely_change: "很可能需要变更 · 必须变更",
+      possible_change: "可能需要变更 · 可选变更",
+      must_inspect: "必须检查 · 仅检查",
+      context_only: "仅供上下文 · 仅检查",
+      test_or_verify: "测试或验证 · 仅验证",
+    };
+    for (const plannedChange of brief.plannedChanges) {
+      assert.equal(
+        Object.hasOwn(plannedChange, "expectation"),
+        true,
+        `build_task_brief must write an explicit expectation for ${plannedChange.id}`,
+      );
+      assert.equal(
+        plannedChange.expectation,
+        expectedExpectationByCandidateLevel[plannedChange.candidateLevel],
+        `build_task_brief must map ${plannedChange.candidateLevel} to the frozen expectation`,
+      );
+    }
+    for (const verificationPlanEntry of brief.verificationPlan) {
+      assert.equal(
+        Object.hasOwn(verificationPlanEntry, "required"),
+        true,
+        `build_task_brief must write required for ${verificationPlanEntry.id}`,
+      );
+      assert.equal(
+        typeof verificationPlanEntry.required,
+        "boolean",
+        `build_task_brief must write required as a boolean for ${verificationPlanEntry.id}`,
+      );
+      assert.equal(
+        verificationPlanEntry.required,
+        true,
+        `build_task_brief must keep the current verification writer mandatory for ${verificationPlanEntry.id}`,
+      );
+    }
     const initialFooPlan = brief.plannedChanges.find((change) => change.filePath === "src/index.ts");
     assert.ok(initialFooPlan, `the Brief must plan src/index.ts: ${JSON.stringify(brief.plannedChanges)}`);
     assert.equal(initialFooPlan.symbolId, FOO_NODE_ID);
@@ -2583,6 +2645,19 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       browser.networkResponses.some((response) => new URL(response.url).pathname === "/__workbench/app.js"),
       false,
       "the installed gate must not fall back to the legacy embedded Workbench app",
+    );
+    await browser.waitFor(
+      bodyContains(
+        expectedWorkbenchObligationByCandidateLevel[
+          initialFooPlan.candidateLevel
+        ],
+      ),
+      "explicit PlannedChange obligation in the installed Workbench",
+    );
+    assert.equal(
+      await browser.evaluate(bodyContains("预期未指定（旧版）")),
+      false,
+      "a newly written PlannedChange must not be presented as a legacy omission",
     );
 
     const happyDeletedWorkbenchEvidence = await browser.evaluate(`fetch(

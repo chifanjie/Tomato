@@ -169,6 +169,23 @@ function candidateLevel(
   return "context_only";
 }
 
+function plannedChangeExpectation(
+  level: ReturnType<typeof candidateLevel>,
+): "required_change" | "optional_change" | "inspect_only" |
+  "verification_only" {
+  switch (level) {
+    case "likely_change":
+      return "required_change";
+    case "possible_change":
+      return "optional_change";
+    case "must_inspect":
+    case "context_only":
+      return "inspect_only";
+    case "test_or_verify":
+      return "verification_only";
+  }
+}
+
 function truncationForContract(
   reasons: readonly string[],
   hiddenCount: number,
@@ -609,25 +626,29 @@ export function buildContextDraft(
       evidenceIds: [evidenceByNode.get(candidate.nodeId)!],
     }));
   const plannedChanges = verifiedCandidates
-    .map((candidate) => ({
-      id: stableId("planned-change", {
-        taskId: input.taskId,
-        nodeId: candidate.nodeId,
-      }),
-      candidateLevel: candidateLevel(
+    .map((candidate) => {
+      const level = candidateLevel(
         candidate.rank,
         candidateFilePaths.get(candidate.nodeId)!,
         candidate.freshConclusion,
-      ),
-      filePath: candidateFilePaths.get(candidate.nodeId)!,
-      ...(candidate.node.type === "file"
-        ? {}
-        : { symbolId: candidate.nodeId }),
-      intent:
-        `Inspect and, if confirmed, update ${candidate.node.name} for the requested task.`,
-      claimIds: [recommendationByNode.get(candidate.nodeId)!],
-      impactPathIds: impactIdsByStart.get(candidate.nodeId) ?? [],
-    }));
+      );
+      return {
+        id: stableId("planned-change", {
+          taskId: input.taskId,
+          nodeId: candidate.nodeId,
+        }),
+        expectation: plannedChangeExpectation(level),
+        candidateLevel: level,
+        filePath: candidateFilePaths.get(candidate.nodeId)!,
+        ...(candidate.node.type === "file"
+          ? {}
+          : { symbolId: candidate.nodeId }),
+        intent:
+          `Inspect and, if confirmed, update ${candidate.node.name} for the requested task.`,
+        claimIds: [recommendationByNode.get(candidate.nodeId)!],
+        impactPathIds: impactIdsByStart.get(candidate.nodeId) ?? [],
+      };
+    });
 
   const brief = TaskBriefV1Schema.parse({
     originalIntent: input.intent,

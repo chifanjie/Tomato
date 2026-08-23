@@ -161,4 +161,76 @@ describe("TaskFirstWorkbench", () => {
     }));
     expect(verificationHtml).toContain("The focused test passed.");
   });
+
+  it("shows explicit plan obligations while keeping legacy omissions visible", () => {
+    const plannedHtml = renderToStaticMarkup(createElement(TaskFirstWorkbench, {
+      route: { ...route, section: "planned_changes" },
+      page: {
+        ...page,
+        section: "planned_changes",
+        items: [
+          {
+            kind: "planned_change",
+            change: {
+              id: "planned-change:required",
+              expectation: "required_change",
+              candidateLevel: "likely_change",
+              filePath: "src/required.ts",
+              intent: "Implement the required behavior.",
+              claimIds: ["claim:goal"],
+              impactPathIds: [],
+            },
+          },
+          {
+            kind: "planned_change",
+            change: {
+              id: "planned-change:legacy",
+              candidateLevel: "possible_change",
+              filePath: "src/legacy.ts",
+              intent: "Read a historical plan without inventing an obligation.",
+              claimIds: ["claim:goal"],
+              impactPathIds: [],
+            },
+          },
+        ],
+      },
+    }));
+    expect(plannedHtml).toContain("很可能需要变更 · 必须变更");
+    expect(plannedHtml).toContain(
+      "可能需要变更 · 预期未指定（旧版）",
+    );
+
+    const verificationHtml = renderToStaticMarkup(createElement(TaskFirstWorkbench, {
+      route: { ...route, section: "verification_plan" },
+      page: {
+        ...page,
+        section: "verification_plan",
+        items: [
+          {
+            kind: "verification_plan",
+            entry: {
+              id: "verification-plan:explicit",
+              acceptanceClaimIds: ["claim:goal"],
+              method: "test",
+              description: "Run the explicit verification.",
+              required: false,
+            },
+          },
+          {
+            kind: "verification_plan",
+            entry: {
+              id: "verification-plan:legacy",
+              acceptanceClaimIds: ["claim:goal"],
+              method: "manual",
+              description: "Read a historical verification entry.",
+            },
+          },
+        ],
+      },
+    }));
+    expect(verificationHtml).toContain("test · 可选");
+    expect(verificationHtml).toContain(
+      "manual · 要求未指定（旧版；按必需项门禁）",
+    );
+  });
 });

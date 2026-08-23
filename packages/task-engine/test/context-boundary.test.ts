@@ -131,7 +131,95 @@ function wideImpactGraph(): KnowledgeGraph {
   };
 }
 
+function obligationMappingGraph(): KnowledgeGraph {
+  const sourceNodes = Array.from({ length: 12 }, (_, index) => {
+    const suffix = String(index).padStart(2, "0");
+    return {
+      id: `obligation-handler-${suffix}`,
+      type: "function" as const,
+      name: `Obligation Mapping Handler ${suffix}`,
+      filePath: `src/obligation-handler-${suffix}.ts`,
+      lineRange: [1, 20] as [number, number],
+      summary: "Handles the obligation mapping request.",
+      tags: ["obligation", "mapping", "handler"],
+      complexity: "simple" as const,
+    };
+  });
+  const testNode = {
+    id: "obligation-handler-test",
+    type: "function" as const,
+    name: "Obligation Mapping Fixture",
+    filePath: "test/obligation-handler.test.ts",
+    lineRange: [1, 20] as [number, number],
+    summary: "Covers the obligation mapping request.",
+    tags: ["obligation", "mapping"],
+    complexity: "simple" as const,
+  };
+  return {
+    version: "1",
+    project: {
+      name: "obligation-mapping",
+      languages: ["TypeScript"],
+      frameworks: [],
+      description: "Deterministic CandidateLevel obligation mapping fixture",
+      analyzedAt: "2026-07-29T00:00:00Z",
+      gitCommitHash: "a".repeat(40),
+    },
+    nodes: [...sourceNodes, testNode],
+    edges: [],
+    layers: [],
+    tour: [],
+  };
+}
+
 describe("Task context impact boundaries", () => {
+  it("maps every CandidateLevel to an explicit PlannedChange expectation", async () => {
+    const { repositorySnapshot, pulse } = await repositoryFixtures();
+    const graph = obligationMappingGraph();
+    const draft = buildContextDraft({
+      taskId: TASK_ID,
+      intent: "Update obligation mapping safely",
+      snapshotId: repositorySnapshot.snapshotId,
+      createdAt: "2026-07-29T08:00:00.001Z",
+      pulse,
+      repositorySnapshot,
+      context: {
+        graph,
+        existingFilePaths: graph.nodes.map((node) => node.filePath!),
+      },
+      maxCandidates: graph.nodes.length,
+      tokenBudget: 8_000,
+    });
+
+    expect(draft.brief.plannedChanges).toHaveLength(graph.nodes.length);
+    const mappings = Object.fromEntries(
+      [
+        "must_inspect",
+        "likely_change",
+        "possible_change",
+        "test_or_verify",
+        "context_only",
+      ].map((level) => [
+        level,
+        [...new Set(
+          draft.brief.plannedChanges
+            .filter((change) => change.candidateLevel === level)
+            .map((change) => change.expectation),
+        )],
+      ]),
+    );
+    expect(mappings).toEqual({
+      must_inspect: ["inspect_only"],
+      likely_change: ["required_change"],
+      possible_change: ["optional_change"],
+      test_or_verify: ["verification_only"],
+      context_only: ["inspect_only"],
+    });
+    expect(
+      draft.brief.verificationPlan.every((entry) => entry.required === true),
+    ).toBe(true);
+  });
+
   it("keeps a global incomplete-Call-Graph boundary when traversal returns zero paths", async () => {
     const { repositorySnapshot, pulse } = await repositoryFixtures();
     const createdAt = "2026-07-29T08:00:00.001Z";

@@ -35,6 +35,11 @@
       "types": "./dist/pulse.d.ts",
       "import": "./dist/pulse.js",
       "default": "./dist/pulse.js"
+    },
+    "./safe-git-bootstrap": {
+      "types": "./dist/safe-git-bootstrap.d.ts",
+      "import": "./dist/safe-git-bootstrap.js",
+      "default": "./dist/safe-git-bootstrap.js"
     }
   },
   "scripts": {

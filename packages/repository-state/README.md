@@ -20,6 +20,9 @@ payloads defined by `@understand-code/contracts`.
 - Evaluates Graph/Wiki/Evidence/Diff/Task freshness through an explicit DAG,
   including legacy Graph/Meta/Fingerprint, Wiki V1/V2 support files and Diff
   Overlay mismatch detection.
+- Provides a filesystem-only SafeGit bootstrap candidate that validates an
+  ordinary `.git` directory layout or linked-worktree control relationship
+  without launching Git.
 
 ## Snapshot
 
@@ -77,9 +80,27 @@ Diff recomputation as `refresh_index`. When one of those downstream families is
 stale but the index remains current, Pulse keeps `recommendedRefresh: "none"`
 and records an explicit downstream-recomputation reason.
 
+## SafeGit filesystem bootstrap candidate
+
+`bootstrapSafeGitFilesystemCandidateV1()` performs a bounded, read-only
+preflight before a future strong identity can be derived. It rejects relative
+roots, symbolic-link control entries, unsafe owners or modes, malformed pointer files,
+external administrative targets, broken linked-worktree backpointers, and
+binding changes observed before capability publication. A successful result
+contains an opaque, explicitly closable capability and a path-redacted
+inspection projection.
+
+This candidate is not the complete SafeGit adapter. Its projection keeps
+descriptor-relative traversal, handle-bound execution, OS sandboxing, HMAC
+identity, extended-access-control checks, repository-control-shape checks, and
+strong writes explicitly `locked`. It is not connected to the
+legacy Snapshot producer and does not authorize Git execution, Provider I/O,
+or any public strong capability.
+
 ## Security and boundaries
 
-Git is invoked only through `execFile` argv arrays. Paths come from `-z`
+The legacy Snapshot producer invokes Git only through `execFile` argv arrays.
+That legacy path is not SafeGit authority. Paths come from `-z`
 protocols, and repository file reads reject symbolic-link parents. Git can
 represent control characters that the public V1 path contract intentionally
 rejects; those paths produce a partial capture plus a non-sensitive diagnostic

@@ -2,7 +2,7 @@
 
 > 生成时间：2026-08-24 CST
 > 分支：feature/agent-native-change-intelligence-authority
-> 基于 commit：88a3ebee1571a5b9c6fe0cfebeda1d3953e062bc `feat(task-engine): persist explicit plan obligations`
+> 基于 commit：fe60ce8ec5f8b64f0a61d028732849eb15ee03c2 `feat(change-intelligence): quarantine legacy authority`
 
 ## 背景与动机
 
@@ -16,6 +16,12 @@ writer 与 strong Task baseline 尚未闭合，因此任何公开 Task 读写、
 Surface；只保留严格脱敏的 `get_repo_pulse`；让所有公开 Task 读取、Task 变更、Workbench 与 Preview
 Task endpoint fail closed；同时保留 Graph/Wiki 的安全公开投影。它不实现或解锁 strong writer、
 Provider ownership、HMAC key lifecycle、SafeGit 或 strong Task baseline。
+
+后续 Step 15 增量新增 filesystem-only SafeGit bootstrap candidate：在任何 Git 调用之前，对普通
+`.git` directory layout 或真实 linked-worktree 的 `.git → worktrees/<entry> → commondir` 与反向
+`gitdir` backpointer 做有界、路径脱敏的 point-in-time preflight。它只返回可关闭的 opaque capability；
+descriptor-relative traversal、ACL/control-shape/local ODB、handle-bound execution、OS sandbox、HMAC
+identity 与 strong writer 继续显式锁定，不接入 legacy Snapshot producer，也不解锁任何 public capability。
 
 ## 改动策略
 
@@ -48,6 +54,7 @@ Provider ownership、HMAC key lifecycle、SafeGit 或 strong Task baseline。
 | Snapshot/Pulse contracts | `packages/contracts/src/repository.ts` | 新增 legacy/strong persisted unions、strong invariants/trusted validators、strict Surface unions |
 | MCP/JSON Schema | `packages/contracts/src/mcp.ts`、`src/json-schema.ts`、`schemas/v1/*` | `get_repo_pulse` 改用 strict Surface/meta；发布 6 个新 Schema 并更新 3 个既有 Schema |
 | Surface projector | `packages/repository-state/src/surface.ts`、`src/index.ts` | 逐字段投影 legacy redacted/strong safe view |
+| SafeGit bootstrap candidate | `packages/repository-state/src/safe-git-bootstrap.ts`、testing internal、package export | 零 Git filesystem preflight、真实 linked-worktree 双向绑定、opaque handle capability 与显式 remaining locks |
 | CLI capability boundary | `packages/cli/src/errors/tool-errors.ts`、handlers、runtime、registry | 统一 exact provider error；公开 Task 读写、refresh 和 Workbench 在副作用前锁定；工具描述与能力一致 |
 | Task quarantine | `packages/task-engine/src/engine.ts`、`src/change-intelligence.ts` | public context recovery capability lock；底层强 Artifact 拒绝与零写保护 |
 | Workbench/Preview | Dashboard component/loader、`packages/preview/src/server.mjs` | Task fail closed；legacy/unauthorized strong state 不进入 HTTP/HTML/DOM；保留安全 Graph/Wiki |
@@ -93,6 +100,12 @@ Review baseline 由 D-29 accepted authority 明确：
    强制 real Browser、同一 verified candidate 与 real Hosts，任一阶段非零即整体失败。
 7. 首次最终 gate 暴露 strong canary 前置自检只读取 Pulse、却同时检查 Task baseline；修复为与
    legacy 夹具相同的 Task/Brief/Pulse 三文件合并自检，保留全部 canary，完整重跑通过。
+8. SafeGit bootstrap 最初会把相对 root 隐式绑定到 ambient cwd；现 public root 必须是绝对路径，
+   OS 缺少 `O_NOFOLLOW/O_DIRECTORY` 时 fail closed。
+9. `.git` 首次 `lstat` 与实际 open 之间曾可被同类型对象替换；现 ordinary directory 与 linked
+   pointer 都把首次 identity exact 比对 opened handle，并用两个确定性 race 用例覆盖。
+10. 初版 fault-injection hook 会进入 public export，且 close failure 会被吞成假 closed；现 hook 仅存
+    package-internal test seam，失败 handle 保留并可重试，成功后才撤销 capability authenticity。
 
 没有使用测试侧 unlock、旧 runtime overlay、放宽 Schema/timeout、恢复 legacy writer 或 skip 取得
 绿色结果。
@@ -103,7 +116,8 @@ Review baseline 由 D-29 accepted authority 明确：
 
 - Contracts：typecheck；58 generated schemas；28 fixtures；13 files / 147 tests；14 packed entry
   points distribution smoke。
-- Repository State：typecheck；5 files / 87 passed，1 个既有平台条件 skip。
+- Repository State：typecheck/build；6 files / 106 passed，1 个既有 Linux-only 平台条件 skip；其中
+  SafeGit bootstrap focused 19/19，并通过 public subpath export smoke（test hook 未外泄）。
 - CLI：typecheck；15 files / 93 tests，包含 cold packed、installed dual-host、全部公开 capability
   locks 与 runtime-context negatives。
 - Task Engine：typecheck/build；8 files / 84 tests。并发运行产生的 5 秒资源竞争超时已在无竞争
@@ -131,11 +145,16 @@ Review baseline 由 D-29 accepted authority 明确：
 - Preview Task endpoint 返回 exact HTTP 503，Graph/Wiki 仍可安全使用，legacy/unauthorized strong
   persisted state 不进入 HTTP/HTML/DOM。
 - 当前源码的 cold pack、真实 Browser 与 Codex/Claude lifecycle 已在同一 verified candidate 上通过。
+- SafeGit filesystem bootstrap candidate 可在不调用 Git 的情况下验证 ordinary layout 与真实 linked
+  worktree 双向 backpointer；错误和 inspection 均不含 Host path/inode/digest，capability close 后失效。
 
 ## 不可声明与剩余边界
 
-- 不得声称 HMAC identity/key lifecycle、SafeGit、security scanner、strong Snapshot/Pulse writer、
+- 不得声称 HMAC identity/key lifecycle、完整 SafeGit adapter、security scanner、strong Snapshot/Pulse writer、
   Provider Store bootstrap/ownership/recovery 已实现。
+- SafeGit candidate 仍是 POSIX pathname + pre/post identity 的 point-in-time preflight；不得声称
+  descriptor-relative/openat traversal、extended ACL、完整 repository control shape、local ODB/ref backend、
+  pinned binary/handle exec、fixed env/argv、OS sandbox/resource containment 或八类 control read-set 已闭合。
 - 不得声称 `strongWrites`、strong Task baseline、formal Actual/Hunk/Check 或
   `evidence_backed_v1` 已开放。
 - strong Surface projector 是冻结的结构投影；当前 public runtime 仍拒绝无 terminal Store authority
@@ -147,6 +166,6 @@ Review baseline 由 D-29 accepted authority 明确：
 
 ## 结论
 
-最终独立 review 未发现剩余 P0/P1。本 bounded D-29 security/capability slice 可提交；总体目标保持
-active，继续 Step 15 的 HMAC identity、SafeGit/path-safe writer、Task baseline 与 strong Check，
-不得将总目标标记 complete。
+最终独立 review 未发现剩余 P0/P1。本 bounded D-29 security/capability + SafeGit filesystem bootstrap
+slice 可提交；总体目标保持 active，继续 Step 15 的 descriptor-relative SafeGit adapter、HMAC identity、
+path-safe writer、Task baseline 与 strong Check，不得将总目标标记 complete。

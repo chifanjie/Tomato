@@ -874,6 +874,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     repositoryRoots.push(repositoryRoot);
     lifecycleEnv = cleanMcpEnvironment(home, repositoryRoot);
     const deletedExtraPath = path.join(repositoryRoot, "src/extra.ts");
+    const deletedUntrackedPath = path.join(repositoryRoot, "src/untracked.ts");
     mcp = spawn(managedWrapper, ["--root", repositoryRoot], {
       cwd: installDirectory,
       env: lifecycleEnv,
@@ -973,7 +974,10 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       "preview-workbench-browser-deleted-in-progress",
     );
 
-    await rm(deletedExtraPath);
+    await Promise.all([
+      rm(deletedExtraPath),
+      writeFile(deletedUntrackedPath, UNTRACKED_SOURCE, "utf8"),
+    ]);
     assert.equal(
       (await git(repositoryRoot, ["diff", "--cached", "--name-only"])).stdout,
       "",
@@ -985,8 +989,8 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
         "--porcelain",
         "--untracked-files=all",
       ])).stdout,
-      " D src/extra.ts\n",
-      "the real repository must contain exactly one unstaged tracked deletion",
+      " D src/extra.ts\n?? src/untracked.ts\n",
+      "the real repository must contain exactly one unstaged tracked deletion and one untracked add",
     );
     const deletedChangedRefresh = await callTool(
       mcp,
@@ -1014,11 +1018,17 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
         "utf8",
       )));
     assert.equal(deletedSnapshotArtifact.payload.captureStatus, "complete");
-    assert.equal(deletedSnapshotArtifact.payload.changes.length, 1);
+    assert.equal(deletedSnapshotArtifact.payload.changes.length, 2);
     const deletedSnapshotChange =
-      deletedSnapshotArtifact.payload.changes[0];
+      deletedSnapshotArtifact.payload.changes.find(
+        (change) => change.path === "src/extra.ts",
+      );
+    const deletedUntrackedSnapshotChange =
+      deletedSnapshotArtifact.payload.changes.find(
+        (change) => change.path === "src/untracked.ts",
+      );
     assert.deepEqual(deletedSnapshotChange, {
-      id: deletedSnapshotChange.id,
+      id: deletedSnapshotChange?.id,
       path: "src/extra.ts",
       source: "unstaged",
       kind: "deleted",
@@ -1028,6 +1038,13 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       false,
       "a deleted Snapshot change must not invent actual-side content bytes",
     );
+    assert.deepEqual(deletedUntrackedSnapshotChange, {
+      id: deletedUntrackedSnapshotChange?.id,
+      path: "src/untracked.ts",
+      source: "untracked",
+      kind: "added",
+      contentDigest: contentDigest(Buffer.from(UNTRACKED_SOURCE, "utf8")),
+    });
 
     await updateDeletedTask(
       { type: "transition_status", to: "check_required" },
@@ -1058,12 +1075,23 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
         finding.plannedChangeIds.includes(deletedExtraPlan.id),
     );
     const deletedUnplanned = deletedFindings.find(
-      (finding) => finding.type === "unplanned_change",
+      (finding) =>
+        finding.type === "unplanned_change" &&
+        finding.actualChangeIds.includes(deletedSnapshotChange.id),
+    );
+    const deletedAddedUnplanned = deletedFindings.find(
+      (finding) =>
+        finding.type === "unplanned_change" &&
+        finding.actualChangeIds.includes(deletedUntrackedSnapshotChange.id),
     );
     assert.equal(
-      deletedFindings.some((finding) => finding.type === "planned_completed"),
+      deletedFindings.some(
+        (finding) =>
+          finding.type === "planned_completed" ||
+          finding.type === "possible_omission",
+      ),
       false,
-      "a same-path deletion must never satisfy a legacy planned change",
+      "the live add/delete profile must neither satisfy nor invent omission for a legacy planned change",
     );
     assert.deepEqual(
       {
@@ -1093,9 +1121,30 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
         actualChangeIds: [deletedSnapshotChange.id],
       },
     );
-    assert.equal(deletedFindings.length, 2);
+    assert.deepEqual(
+      {
+        type: deletedAddedUnplanned?.type,
+        blocking: deletedAddedUnplanned?.blocking,
+        plannedChangeIds: deletedAddedUnplanned?.plannedChangeIds,
+        actualChangeIds: deletedAddedUnplanned?.actualChangeIds,
+      },
+      {
+        type: "unplanned_change",
+        blocking: true,
+        plannedChangeIds: [],
+        actualChangeIds: [deletedUntrackedSnapshotChange.id],
+      },
+    );
+    assert.deepEqual(
+      deletedFindings.map((finding) => finding.type).sort(),
+      ["cannot_determine", "unplanned_change", "unplanned_change"],
+    );
+    assert.equal(deletedFindings.length, 3);
+    assert.ok(deletedCannotDetermine, "the legacy deletion plan must remain blocking");
     assert.ok(deletedUnplanned, "the deleted baseline file must remain independently unplanned");
+    assert.ok(deletedAddedUnplanned, "the untracked source file must remain independently unplanned");
     assert.equal(deletedUnplanned.evidenceIds.length, 1);
+    assert.equal(deletedAddedUnplanned.evidenceIds.length, 1);
     const deletedEvidenceRead = await callTool(
       mcp,
       output,
@@ -1103,9 +1152,14 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       "get_evidence",
       {
         taskId: deletedTaskId,
-        evidenceIds: deletedUnplanned.evidenceIds,
+        evidenceIds: [
+          ...deletedUnplanned.evidenceIds,
+          ...deletedAddedUnplanned.evidenceIds,
+        ],
         maxExcerptChars: 8_192,
-        pageSize: deletedUnplanned.evidenceIds.length,
+        pageSize:
+          deletedUnplanned.evidenceIds.length +
+          deletedAddedUnplanned.evidenceIds.length,
       },
       GetEvidenceOutputV1Schema,
     );
@@ -1115,10 +1169,20 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     );
     assert.equal(
       deletedEvidenceRead.structuredContent.result.evidence.length,
-      1,
+      2,
     );
     const deletedEvidence =
-      deletedEvidenceRead.structuredContent.result.evidence[0];
+      deletedEvidenceRead.structuredContent.result.evidence.find(
+        (evidence) =>
+          "filePath" in evidence && evidence.filePath === "src/extra.ts",
+      );
+    const deletedAddedEvidence =
+      deletedEvidenceRead.structuredContent.result.evidence.find(
+        (evidence) =>
+          "filePath" in evidence && evidence.filePath === "src/untracked.ts",
+      );
+    assert.ok(deletedEvidence, "the deletion Finding must resolve to baseline Evidence");
+    assert.ok(deletedAddedEvidence, "the untracked Finding must resolve to current Evidence");
     assert.deepEqual(
       {
         kind: deletedEvidence.kind,
@@ -1155,6 +1219,127 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       },
     );
     assert.deepEqual(deletedUnplanned.evidenceIds, [deletedEvidence.id]);
+    assert.deepEqual(
+      {
+        kind: deletedAddedEvidence.kind,
+        epistemicStatus: deletedAddedEvidence.epistemicStatus,
+        freshness: deletedAddedEvidence.freshness,
+        observedAtSnapshotId: deletedAddedEvidence.observedAtSnapshotId,
+        filePath: "filePath" in deletedAddedEvidence
+          ? deletedAddedEvidence.filePath
+          : undefined,
+        lineRange: "lineRange" in deletedAddedEvidence
+          ? deletedAddedEvidence.lineRange
+          : undefined,
+        nodeIds: deletedAddedEvidence.nodeIds,
+        contentHash: "contentHash" in deletedAddedEvidence
+          ? deletedAddedEvidence.contentHash
+          : undefined,
+      },
+      {
+        kind: "source",
+        epistemicStatus: "observed",
+        freshness: "current",
+        observedAtSnapshotId: deletedChangedSnapshotId,
+        filePath: "src/untracked.ts",
+        lineRange: [1, 1],
+        nodeIds: [UNTRACKED_NODE_ID],
+        contentHash: contentDigest(Buffer.from(UNTRACKED_SOURCE, "utf8")),
+      },
+    );
+    assert.deepEqual(deletedAddedUnplanned.evidenceIds, [deletedAddedEvidence.id]);
+
+    for (const [finding, key, reason] of [
+      [
+        deletedCannotDetermine,
+        "preview-workbench-browser-deleted-accept-cannot-determine",
+        "The legacy deletion obligation remains explicitly accepted as unresolved for this Alpha flow.",
+      ],
+      [
+        deletedUnplanned,
+        "preview-workbench-browser-deleted-accept-deletion",
+        "The unstaged deletion is intentional and explicitly accepted for this Alpha flow.",
+      ],
+      [
+        deletedAddedUnplanned,
+        "preview-workbench-browser-deleted-accept-untracked-add",
+        "The untracked source addition is intentional and explicitly accepted for this Alpha flow.",
+      ],
+    ]) {
+      await updateDeletedTask(
+        { type: "accept_finding", findingId: finding.id, reason },
+        key,
+      );
+    }
+    await updateDeletedTask(
+      { type: "transition_status", to: "verification_required" },
+      "preview-workbench-browser-deleted-verification-required",
+    );
+    const deletedVerificationEntries =
+      deletedBrief.verificationPlan.filter((entry) => entry.required);
+    assert.ok(
+      deletedVerificationEntries.length > 0,
+      "the live add/delete Task must carry a required Verification entry",
+    );
+    const deletedVerificationProgram = [
+      "const { untrackedAdded } = await import('./src/untracked.ts');",
+      "if (untrackedAdded() !== 'untracked-ready') throw new Error('unexpected untracked result');",
+      "const { access } = await import('node:fs/promises');",
+      "await access('./src/extra.ts').then(() => { throw new Error('deleted source still exists'); }, (error) => { if (error?.code !== 'ENOENT') throw error; });",
+    ].join(" ");
+    const deletedVerificationStartedAt = Date.now();
+    const deletedVerificationExecution = await execBounded(
+      process.execPath,
+      ["--input-type=module", "--eval", deletedVerificationProgram],
+      { cwd: repositoryRoot, encoding: "utf8" },
+    );
+    assert.equal(deletedVerificationExecution.stderr, "");
+    const deletedVerificationDurationMs =
+      Date.now() - deletedVerificationStartedAt;
+    for (const [index, planEntry] of deletedVerificationEntries.entries()) {
+      const recorded = await callTool(
+        mcp,
+        output,
+        requestId++,
+        "record_verification",
+        {
+          taskId: deletedTaskId,
+          record: {
+            verificationPlanEntryId: planEntry.id,
+            kind: planEntry.method,
+            status: "passed",
+            command:
+              `node --input-type=module --eval ${JSON.stringify(deletedVerificationProgram)}`,
+            exitCode: 0,
+            durationMs: deletedVerificationDurationMs,
+            outputDigest: contentDigest(Buffer.from(
+              `${deletedVerificationExecution.stdout}${deletedVerificationExecution.stderr}`,
+              "utf8",
+            )),
+            summary:
+              "The external untracked-add and unstaged-delete verification completed successfully.",
+            claimIds: planEntry.acceptanceClaimIds,
+            snapshotId: deletedChangedSnapshotId,
+          },
+          expectedRevision: deletedRevision,
+          idempotencyKey:
+            `preview-workbench-browser-deleted-verification-${index}`,
+          actor,
+        },
+        RecordVerificationOutputV1Schema,
+      );
+      assert.equal(recorded.structuredContent.result.verification.status, "passed");
+      assert.equal(
+        recorded.structuredContent.result.verification.snapshotId,
+        deletedChangedSnapshotId,
+      );
+      deletedRevision = recorded.structuredContent.result.mutation.revision;
+    }
+    const deletedVerified = await updateDeletedTask(
+      { type: "transition_status", to: "verified" },
+      "preview-workbench-browser-deleted-verified",
+    );
+    assert.equal(deletedVerified.structuredContent.result.task.status, "verified");
 
     const deletedOpened = await callTool(
       mcp,
@@ -1232,6 +1417,41 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       ),
       false,
       "deleted Evidence has no current Graph node navigation",
+    );
+    const deletedAddedOpened = await callTool(
+      mcp,
+      output,
+      requestId++,
+      "open_workbench",
+      {
+        route: {
+          view: "tasks",
+          taskId: deletedTaskId,
+          section: "planned_changes",
+          findingId: deletedAddedUnplanned.id,
+          evidenceId: deletedAddedEvidence.id,
+        },
+        openBrowser: false,
+      },
+      OpenWorkbenchOutputV1Schema,
+    );
+    assert.equal(
+      deletedAddedOpened.structuredContent.meta.sourceSnapshotId,
+      deletedChangedSnapshotId,
+    );
+    await browser.navigate(deletedAddedOpened.structuredContent.result.deepLink);
+    await browser.waitFor(
+      `document.querySelector('[data-testid="task-evidence-view"][data-evidence-id="${deletedAddedEvidence.id}"]')?.textContent?.includes('untracked-ready') === true`,
+      "live untracked addition current Source projection",
+      30_000,
+    );
+    await browser.click(
+      `[data-testid="task-evidence-open-graph"][data-node-id="${UNTRACKED_NODE_ID}"]`,
+    );
+    await browser.waitFor(
+      `document.querySelector('[data-graph-node-id="${UNTRACKED_NODE_ID}"][data-selected="true"]') !== null`,
+      "live untracked addition exact Graph focus",
+      30_000,
     );
     await browser.close();
     browser = null;

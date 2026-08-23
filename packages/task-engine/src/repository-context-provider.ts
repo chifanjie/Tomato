@@ -1386,10 +1386,33 @@ implements TaskContextProvider {
             compareUnicodeCodeUnits(left.path, right.path),
           )
         : undefined;
+    const liveDeletedUntrackedChanges =
+      includesUntrackedChange &&
+      includesDeletedChange &&
+      !includesStagedChange &&
+      !includesIntentToAddChange &&
+      actual.data.changes.length >= 2 &&
+      actual.data.changes.length <= MAX_BOUNDED_CHANGE_PATHS &&
+      livePaths.size === actual.data.changes.length &&
+      actual.data.changes.every(
+        (change) =>
+          (((change.source === "untracked" && change.kind === "added") ||
+              (change.source === "unstaged" &&
+                change.kind === "modified")) &&
+            change.contentDigest !== undefined) ||
+          (change.source === "unstaged" &&
+            change.kind === "deleted" &&
+            change.contentDigest === undefined),
+      )
+        ? [...actual.data.changes].sort((left, right) =>
+            compareUnicodeCodeUnits(left.path, right.path),
+          )
+        : undefined;
     if (
       includesUntrackedChange &&
       liveUntrackedChanges === undefined &&
-      liveIntentToAddChanges === undefined
+      liveIntentToAddChanges === undefined &&
+      liveDeletedUntrackedChanges === undefined
     ) {
       return {
         status: "unknown",
@@ -1503,7 +1526,8 @@ implements TaskContextProvider {
     if (
       includesDeletedChange &&
       liveDeletedChanges === undefined &&
-      stagedDeletedChanges === undefined
+      stagedDeletedChanges === undefined &&
+      liveDeletedUntrackedChanges === undefined
     ) {
       return {
         status: "unknown",
@@ -1520,7 +1544,8 @@ implements TaskContextProvider {
       };
     }
     if (
-      liveDeletedChanges !== undefined &&
+      (liveDeletedChanges !== undefined ||
+        liveDeletedUntrackedChanges !== undefined) &&
       actual.data.indexDigest !== baseline.data.indexDigest
     ) {
       return {
@@ -1530,7 +1555,9 @@ implements TaskContextProvider {
         boundaries: [
           changeAnalysisBoundary(
             "content_changed",
-            "Live deletion analysis requires the exact clean baseline Index.",
+            liveDeletedUntrackedChanges !== undefined
+              ? "Live deleted and untracked analysis requires the exact clean baseline Index."
+              : "Live deletion analysis requires the exact clean baseline Index.",
             undefined,
             actualChangeIds,
           ),
@@ -1541,6 +1568,7 @@ implements TaskContextProvider {
       stagedChanges ??
       stagedDeletedChanges ??
       liveUntrackedChanges ??
+      liveDeletedUntrackedChanges ??
       liveIntentToAddChanges ??
       liveDeletedChanges;
     const pureUnstagedChanges =
@@ -1575,6 +1603,8 @@ implements TaskContextProvider {
                 ? "A staged deletion repository path is unsafe for exact Git analysis."
               : liveUntrackedChanges !== undefined
                 ? "A live untracked repository path is unsafe for exact Git analysis."
+                : liveDeletedUntrackedChanges !== undefined
+                  ? "A live deleted and untracked repository path is unsafe for exact Git analysis."
                 : liveIntentToAddChanges !== undefined
                   ? "A live intent-to-add repository path is unsafe for exact Git analysis."
                   : "A live deleted repository path is unsafe for exact Git analysis.",
@@ -1662,6 +1692,12 @@ implements TaskContextProvider {
                 changes[0]!.kind === "added") ||
               (changes[0]!.source === "unstaged" &&
                 changes[0]!.kind === "modified")
+            : liveDeletedUntrackedChanges !== undefined
+              ? (changes[0]!.source === "untracked" &&
+                  changes[0]!.kind === "added") ||
+                (changes[0]!.source === "unstaged" &&
+                  (changes[0]!.kind === "modified" ||
+                    changes[0]!.kind === "deleted"))
             : liveIntentToAddChanges !== undefined
               ? (changes[0]!.source === "untracked" &&
                   changes[0]!.kind === "added") ||
@@ -1689,6 +1725,8 @@ implements TaskContextProvider {
                   ? "Alpha staged deletion analysis only supports unique staged modified, added, or deleted paths."
                 : liveUntrackedChanges !== undefined
                   ? "Alpha live untracked analysis only supports unique untracked added or unstaged modified paths."
+                  : liveDeletedUntrackedChanges !== undefined
+                    ? "Alpha live deleted and untracked analysis only supports unique untracked added, unstaged modified, or unstaged deleted paths."
                   : liveIntentToAddChanges !== undefined
                     ? "Alpha live intent-to-add analysis only supports unique unstaged added, unstaged modified, or untracked added paths."
                     : "Alpha live deletion analysis only supports unique unstaged modified or deleted paths.",
@@ -1788,6 +1826,8 @@ implements TaskContextProvider {
               "budget_exhausted",
               stagedDeletedChanges !== undefined
                 ? "Staged deletion semantic bytes exceeded the fixed aggregate Alpha budget."
+                : liveDeletedUntrackedChanges !== undefined
+                  ? "Live deleted and untracked semantic bytes exceeded the fixed aggregate Alpha budget."
                 : "Live deletion semantic bytes exceeded the fixed aggregate Alpha budget.",
               filePath,
               ids,
@@ -1840,6 +1880,8 @@ implements TaskContextProvider {
               "budget_exhausted",
               stagedDeletedChanges !== undefined
                 ? "Staged deletion observations exceeded the fixed aggregate Alpha budget."
+                : liveDeletedUntrackedChanges !== undefined
+                  ? "Live deleted and untracked observations exceeded the fixed aggregate Alpha budget."
                 : "Live deletion observations exceeded the fixed aggregate Alpha budget.",
               filePath,
               ids,
@@ -2018,6 +2060,8 @@ implements TaskContextProvider {
                   ? "Staged deletion batch semantic bytes exceeded the fixed aggregate Alpha budget."
                 : liveUntrackedChanges !== undefined
                   ? "Live untracked semantic bytes exceeded the fixed aggregate Alpha budget."
+                  : liveDeletedUntrackedChanges !== undefined
+                    ? "Live deleted and untracked semantic bytes exceeded the fixed aggregate Alpha budget."
                   : liveIntentToAddChanges !== undefined
                     ? "Live intent-to-add semantic bytes exceeded the fixed aggregate Alpha budget."
                     : "Live deletion semantic bytes exceeded the fixed aggregate Alpha budget.",
@@ -2115,6 +2159,8 @@ implements TaskContextProvider {
                   ? "Staged deletion batch line hunks exceeded the fixed aggregate Alpha budget."
                 : liveUntrackedChanges !== undefined
                   ? "Live untracked line hunks exceeded the fixed aggregate Alpha budget."
+                  : liveDeletedUntrackedChanges !== undefined
+                    ? "Live deleted and untracked line hunks exceeded the fixed aggregate Alpha budget."
                   : liveIntentToAddChanges !== undefined
                     ? "Live intent-to-add line hunks exceeded the fixed aggregate Alpha budget."
                     : "Live deletion line hunks exceeded the fixed aggregate Alpha budget.",

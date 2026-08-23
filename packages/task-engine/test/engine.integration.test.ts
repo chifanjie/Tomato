@@ -4353,4 +4353,254 @@ describe("TaskEngine persistent integration", () => {
       contentHash: deletedDigest,
     }));
   });
+
+  it("keeps a live planned modification complete while an untracked addition and unstaged deletion remain independently unplanned", async () => {
+    const { store } = await openStore();
+    const addedDigest =
+      "sha256:dd103bae86db4b319ce6ec4b17e5c4547d061a07a3b4a08e49308579dcaa4866";
+    const deletedDigest =
+      "sha256:ee103bae86db4b319ce6ec4b17e5c4547d061a07a3b4a08e49308579dcaa4867";
+    const liveGraph: KnowledgeGraph = {
+      ...graphFixture(),
+      nodes: [
+        ...graphFixture().nodes,
+        node("live-added-handler", "LiveAddedHandler", "src/live-added.ts", {
+          lineRange: [1, 1],
+        }),
+        node("live-removed-handler", "LiveRemovedHandler", "src/live-removed.ts", {
+          lineRange: [1, 1],
+        }),
+      ],
+    };
+    const taskEngine = engine(store, {
+      contextProvider: {
+        async loadTaskContext() {
+          return {
+            graph: liveGraph,
+            existingFilePaths: ["src/task.ts", "src/live-removed.ts"],
+            sourceEvidence: [
+              {
+                nodeId: "task-handler",
+                filePath: "src/task.ts",
+                lineRange: [1, 1] as [number, number],
+                contentHash: SOURCE_DIGEST,
+                commit: "a".repeat(40),
+                kind: "source" as const,
+              },
+            ],
+          };
+        },
+        async analyzeTaskChanges() {
+          return {
+            status: "complete" as const,
+            hunks: [
+              {
+                id: "hunk:live-added-handler",
+                actualChangeIds: ["change:live-added-handler"],
+                filePath: "src/live-added.ts",
+                newLineRange: [1, 1] as [number, number],
+                nodeIds: ["live-added-handler"],
+                contentHash: addedDigest,
+              },
+              {
+                id: "hunk:live-task-handler",
+                actualChangeIds: ["change:live-task-handler"],
+                filePath: "src/task.ts",
+                newLineRange: [1, 1] as [number, number],
+                nodeIds: ["task-handler"],
+                contentHash: SOURCE_DIGEST,
+              },
+            ],
+            deletedFiles: [
+              {
+                id: "deleted-file:live-removed-handler",
+                actualChangeIds: ["change:live-removed-handler"],
+                filePath: "src/live-removed.ts",
+                oldLineRange: [1, 1] as [number, number],
+                contentHash: deletedDigest,
+              },
+            ],
+            boundaries: [],
+          };
+        },
+      },
+    });
+    const built = await taskEngine.buildTaskBrief(
+      {
+        ...buildInput("live-untracked-add-modify-delete"),
+        task: "Update TaskHandler behavior.",
+        scope: ["src/task.ts"],
+        maxCandidates: 1,
+      },
+      auth(),
+    );
+    expect(built.brief.plannedChanges).toHaveLength(1);
+    const taskPlan = built.brief.plannedChanges[0]!;
+    expect(taskPlan).toMatchObject({
+      filePath: "src/task.ts",
+      symbolId: "task-handler",
+    });
+
+    let revision = built.task.revision;
+    for (const [action, key] of [
+      [{ type: "confirm_goal", claimId: built.brief.goalClaimId }, "live-combined-goal"],
+      [{
+        type: "confirm_acceptance_criteria",
+        claimIds: built.brief.acceptanceClaimIds,
+      }, "live-combined-acceptance"],
+      [{
+        type: "confirm_plan",
+        plannedChangeIds: [taskPlan.id] as string[],
+      }, "live-combined-plan"],
+      [{ type: "transition_status", to: "planned" }, "live-combined-planned"],
+      [{ type: "transition_status", to: "in_progress" }, "live-combined-progress"],
+    ] as const) {
+      const updated = await taskEngine.updateTask({
+        taskId: built.task.taskId,
+        action,
+        expectedRevision: revision,
+        idempotencyKey: key,
+        actor: ACTOR,
+      }, auth());
+      revision = updated.task.revision;
+    }
+
+    const actualSnapshotId = "snapshot:live-untracked-combined";
+    const base = RepositorySnapshotArtifactV1Schema.parse(
+      await repositorySnapshot(
+        actualSnapshotId,
+        "2026-07-29T09:00:00.000Z",
+        "a".repeat(40),
+      ),
+    );
+    const livePayload = {
+      ...base.payload,
+      changes: [
+        {
+          id: "change:live-added-handler",
+          path: "src/live-added.ts",
+          source: "untracked" as const,
+          kind: "added" as const,
+          contentDigest: addedDigest,
+        },
+        {
+          id: "change:live-removed-handler",
+          path: "src/live-removed.ts",
+          source: "unstaged" as const,
+          kind: "deleted" as const,
+        },
+        {
+          id: "change:live-task-handler",
+          path: "src/task.ts",
+          source: "unstaged" as const,
+          kind: "modified" as const,
+          contentDigest: SOURCE_DIGEST,
+        },
+      ],
+    };
+    await store.persistArtifact(RepositorySnapshotArtifactV1Schema.parse({
+      ...base,
+      contentDigest: sha256CanonicalJson(livePayload),
+      payload: livePayload,
+    }));
+    await publishPulseForSnapshot(
+      store,
+      actualSnapshotId,
+      "a".repeat(40),
+    );
+    const captured = await taskEngine.updateTask({
+      taskId: built.task.taskId,
+      action: { type: "transition_status", to: "check_required" },
+      expectedRevision: revision,
+      idempotencyKey: "live-combined-check-required",
+      actor: ACTOR,
+    }, auth());
+    const checked = await taskEngine.checkChange({
+      taskId: built.task.taskId,
+      actualSnapshotId,
+      includeWorktree: true,
+      expectedRevision: captured.task.revision,
+      idempotencyKey: "live-combined-check",
+      actor: ACTOR,
+    }, auth(["task:update"]));
+    expect(checked.changeCheck.findings.map((finding) => finding.type).sort())
+      .toEqual(["planned_completed", "unplanned_change", "unplanned_change"]);
+    expect(checked.changeCheck.findings.some(
+      (finding) =>
+        finding.type === "cannot_determine" ||
+        finding.type === "possible_omission",
+    )).toBe(false);
+    const completed = checked.changeCheck.findings.find(
+      (finding) => finding.type === "planned_completed",
+    );
+    expect(completed).toMatchObject({
+      blocking: false,
+      plannedChangeIds: [taskPlan.id],
+      actualChangeIds: ["change:live-task-handler"],
+    });
+    const addedFinding = checked.changeCheck.findings.find(
+      (finding) => finding.actualChangeIds.includes("change:live-added-handler"),
+    );
+    const deletedFinding = checked.changeCheck.findings.find(
+      (finding) => finding.actualChangeIds.includes("change:live-removed-handler"),
+    );
+    for (const [finding, changeId] of [
+      [addedFinding, "change:live-added-handler"],
+      [deletedFinding, "change:live-removed-handler"],
+    ] as const) {
+      expect(finding).toMatchObject({
+        type: "unplanned_change",
+        blocking: true,
+        plannedChangeIds: [],
+        actualChangeIds: [changeId],
+      });
+      expect(finding?.evidenceIds).toHaveLength(1);
+    }
+    const persisted = await store.readTaskBundle(built.task.taskId);
+    if (!('brief' in persisted.bundle) ||
+        completed === undefined ||
+        addedFinding === undefined ||
+        deletedFinding === undefined) {
+      throw new TypeError("The live combined Check must remain contextual.");
+    }
+    const completedEvidence = persisted.bundle.evidence.find(
+      (evidence) => completed.evidenceIds.includes(evidence.id),
+    );
+    expect(completedEvidence).toEqual(expect.objectContaining({
+      kind: "source",
+      freshness: "current",
+      observedAtSnapshotId: actualSnapshotId,
+      filePath: "src/task.ts",
+      lineRange: [1, 1],
+      nodeIds: ["task-handler"],
+      contentHash: SOURCE_DIGEST,
+    }));
+    const addedEvidence = persisted.bundle.evidence.find(
+      (evidence) => addedFinding.evidenceIds.includes(evidence.id),
+    );
+    expect(addedEvidence).toEqual(expect.objectContaining({
+      kind: "source",
+      freshness: "current",
+      observedAtSnapshotId: actualSnapshotId,
+      filePath: "src/live-added.ts",
+      lineRange: [1, 1],
+      nodeIds: ["live-added-handler"],
+      contentHash: addedDigest,
+    }));
+    const deletedEvidence = persisted.bundle.evidence.find(
+      (evidence) => deletedFinding.evidenceIds.includes(evidence.id),
+    );
+    expect(deletedEvidence).toEqual(expect.objectContaining({
+      kind: "source",
+      freshness: "changed",
+      freshnessReason:
+        "The source existed at the Task baseline and is absent from the exact actual Snapshot.",
+      observedAtSnapshotId: built.task.baselineSnapshotId,
+      filePath: "src/live-removed.ts",
+      lineRange: [1, 1],
+      commit: "a".repeat(40),
+      nodeIds: [],
+      contentHash: deletedDigest,
+    }));
+  });
 });

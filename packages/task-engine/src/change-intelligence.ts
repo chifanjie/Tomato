@@ -398,7 +398,7 @@ function analysisIsConsistent(
       if (
         change === undefined ||
         change.path !== deletedFile.filePath ||
-        change.source !== "unstaged" ||
+        (change.source !== "unstaged" && change.source !== "staged") ||
         change.kind !== "deleted" ||
         change.contentDigest !== undefined
       ) {

@@ -2,54 +2,65 @@
 
 > 生成时间：2026-08-23 CST
 > 分支：`feature/agent-native-change-intelligence-authority`
-> 基于 commit：`c0c3334 feat(task-engine): surface bounded unstaged deletions in checks`
+> 基于 commit：`b09a970 test(preview): verify retained historical candidates`
 
 ## 背景与动机
 
-Step17 要求 Alpha candidate 的生成、验证与生命周期证据保持诚实。现有
-`alpha-candidate verify` 已按 manifest 记录的 Git commit/tree/lockfile object验证，而不是要求
-current `HEAD` 等于候选来源；但回归只在候选刚生成、HEAD尚未前进时执行。若实现以后错误地改成读取
-current HEAD/tree/lockfile，旧测试仍会通过。
+Step15 已能把 bounded unstaged tracked-file deletion表达为 baseline-bound、blocking observation，但真实用户
+也常用 `git rm` 或 `git add -u` 把删除直接写入 Index。Snapshot能诚实发布 `staged/deleted`，旧 provider
+却把它整批判为 unsupported，因此 Check无法给出具体删除路径与基线 Evidence。
 
-本切片补一条 source-aware historical verification 回归：从 clean source组装候选 A，随后把 checkout
-推进到 tree 与 lockfile都不同的 clean descendant B，再用当前 verifier重新验证 A。候选目录的四个文件
-必须逐字不变。README同时明确：候选目录不是自包含的历史证明；成功依赖保留 recorded Git objects与
-字节一致的 reviewed v1 schema。
+本切片在不改变公开 contracts、持久化 schema或 deletion授权语义的前提下，增加一个独立 bounded staged
+deletion profile。删除仍不是 actual-side hunk，也绝不会成为 `planned_completed`：同路径 legacy plan得到
+blocking `cannot_determine`，删除本身始终是独立 blocking `unplanned_change`，Evidence只绑定 baseline。
 
 ## 改动策略
 
-- 复用现有单一 `alpha-candidate` focused，不新增 production API、schema或第二条重 E2E。
-- 候选 A 仍从隔离、clean、detached checkout assemble，并先完成真实 build、pack、cold gate与初次 verify。
-- 冻结 A 的 exact-four inventory与每个文件 bytes：唯一 tgz、candidate manifest、reviewed schema、
-  `SHA256SUMS`。
-- 在同一隔离 checkout创建真实后继 commit B，只修改 package-visible Preview README与
-  `pnpm-lock.yaml` 的合法 YAML comment；断言 exact diff只有这两条路径。
-- B 的 commit/tree必须不同于 A，A 必须是 direct parent与 ancestor，checkout必须 clean。
-- current `HEAD:pnpm-lock.yaml` object ID与 bytes SHA必须同时不同于 A manifest记录的 lock blob；这会
-  确定性击穿任何错误读取 current HEAD lockfile的 verifier。
-- 明确证明 A recorded commit/tree/lock blob仍可由 object database读取，然后在 B HEAD调用 production
-  `verify`；要求 exact success JSON、candidate inventory与四文件 bytes完全不变。
-- 原 tgz/manifest/schema/checksum四类 single-bit tamper拒绝循环原样保留，并自然在 historical B HEAD执行。
+- 仅当 actual Snapshot为 1–16 个唯一路径、全部 source=`staged`、至少一条 deletion，且全集只含
+  staged modified（有 digest）或 staged deleted（无 digest）时启用 `stagedDeletedChanges`。
+- staged added+deleted、任意 staged/unstaged/untracked/committed/conflict混合、重复路径或其他 kind整批
+  `unknown`；无delete的 staged modified/added继续走旧 `stagedChanges`分支与原 reason字符串。
+- 删除路径必须通过安全路径校验；worktree必须确实不存在。provider以 hardened fixed-env/no-shell Git执行
+  global `--literal-pathspecs ls-files --stage -z -- <path>`，只有 exact zero stdout才能证明 Index中既无
+  stage-0条目也无conflict stages。
+- baseline bytes只从 exact baseline HEAD blob读取；staged companion modified仍要求 Index、worktree与
+  actual Snapshot digest三方逐字相等。
+- 复用 full live Snapshot pre/post fence，精确比较 root、repository/worktree identity、HEAD、Index/
+  worktree/untracked/ignore digests与snapshotId；任一 drift、path、预算、Git或语义失败都整批折叠成
+  global boundary、全部 actual IDs、空 hunks与空 deletion observations。
+- 复用每文件 8 MiB、整批 32 MiB与 1024个 hunk/observation上限。
+- `change-intelligence`只把 deletion observation允许关联的 actual source从 `unstaged`扩为
+  `unstaged|staged`；仍要求 exact path、kind deleted、无 contentDigest。matcher、Finding、Evidence、Claim
+  与 stable-ID条件逻辑不变。
+- Source Evidence继续为 `observed/changed`，绑定 baseline Snapshot/HEAD/old range/hash；Finding Claim为
+  `observed/supported/changed`。Workbench固定返回 stale/evidence_stale，不读或返回已删 live source/Graph。
 
 ## 改动范围
 
 | 模块/职责 | 文件 | 做了什么 |
 |---|---|---|
-| Focused release evidence | `packages/preview/test/alpha-candidate.test.mjs` | 新增不同HEAD/tree/lockfile下重验旧候选与exact-four不变回归 |
-| Packaged operator guidance | `packages/preview/README.md` | 说明source-aware验证前提、current HEAD可前进，以及非自包含/non-provenance边界 |
+| Repository analysis | `packages/task-engine/src/repository-context-provider.ts` | 新增独立 staged-deletion profile、Index exact-absence证明及既有 fence/budget/whole-unknown接线 |
+| Finding consistency | `packages/task-engine/src/change-intelligence.ts` | 允许严格的 staged deleted actual关联既有 deletion observation |
+| Provider regression | `packages/task-engine/test/repository-context-provider.test.ts` | 真实 staged modified+deleted happy、authority drift与 add+delete/mixed whole-unknown |
+| Engine regression | `packages/task-engine/test/engine.integration.test.ts` | 将完整删除 Finding/Evidence/Claim合同分别用于 unstaged与staged source |
+| Packed user vertical | `packages/preview/test/workbench-browser-packed.test.mjs` | 在唯一真实 Browser E2E中以独立repo/profile执行 unstaged与staged deletion stale/no-source纵切 |
 
-production verifier、candidate schema、package scripts、CI、Host/Workbench与其他产品代码均未修改。
+`engine-types`、公开 contracts、MCP shape、artifact schema、Dashboard production与生命周期实现均未修改。
 
 ## Review 重点与结论
 
-1. **不是 current-HEAD 假绿** — B 的 tree与 lock blob均不同；test同时锁 object ID与 SHA差异。若 verifier
-   改为读取 current HEAD，历史 A 的 manifest lock binding会失败。
-2. **recorded objects真实可用** — test对 A commit、tree与 lock blob分别执行 `git cat-file -e`，再由
-   production verifier按 manifest记录对象完成验证。
-3. **验证是只读的** — successful historical verify前后 candidate exact-four inventory与四份 bytes逐项相等。
-4. **原安全门未弱化** — build/pack/cold、schema、checksum、archive、secret扫描和四类 tamper拒绝全部保留。
-5. **文档不夸大** — README明确 object format、retained object DB与 reviewed schema byte equality前提；
-   candidate-only copy、对象prune或schema变化不构成portable historical verification。
+1. **Index absence是肯定证明** — helper使用literal pathspec、`-z`与有界stdout；任何非空entry、Git失败或
+   budget失败都不承认删除。真实 focused与packed均直接断言 `ls-files --stage` exact empty。
+2. **worktree与baseline不混淆** — worktree必须ENOENT；old range/hash只来自baseline HEAD blob。staged
+   deletion不会伪装成 current source hunk。
+3. **全局fence与整批失败** — pre/post Snapshot fence覆盖Index、worktree、untracked与ignore；worktree重建、
+   Index restore或无关live drift都会清空所有成功结果并覆盖全部actual IDs。
+4. **scope确实收窄** — 真实 fresh Snapshot加入 staged added后，exact三变化批次必须whole unknown；这会
+   阻止未来无测试地扩大为 add+delete组合。
+5. **旧profile不漂移** — 无delete staged added/modified仍优先走旧predicate/reason；unstaged deletion的
+   Index=baseline证明、reason、Finding/Evidence/Claim ID构造均保持。
+6. **真实candidate authority** — packed ephemeral v1 overlay已包含 `repository-context-provider.ts`、
+   `change-intelligence.ts`与既有 `engine-types.ts`，v2从该commit派生；最终tgz真实执行本轮production字节。
 
 独立 contract 与 change-intent 终审一致：P0 0、P1 0、current-path executable P2 0、
 blocking Test Gap 0；结论为 Effective / SAFE TO COMMIT。
@@ -58,50 +69,63 @@ blocking Test Gap 0；结论为 Effective / SAFE TO COMMIT。
 
 **已通过：**
 
-- `pnpm --filter @understand-code/preview test:alpha-candidate`
-  - 1 passed / 0 failed / 0 skipped，62.18 秒；
-  - 真实 isolated clone、assemble/build/pack/cold、historical verify、exact-four与四类 tamper均执行。
-- `node --check packages/preview/test/alpha-candidate.test.mjs`
+- task-engine provider focused：14/14 passed，包含真实 staged deletion与所有新authority边界。
+- task-engine engine focused：32/32 passed，分别覆盖 unstaged/staged deletion完整语义。
+- `pnpm --filter @understand-code/task-engine typecheck`
+- `pnpm --filter @understand-code/task-engine test`：8 files / 75 tests passed。
+- `node --check packages/preview/test/workbench-browser-packed.test.mjs`
 - scoped `git diff --check`
 - `pnpm --filter @understand-code/preview typecheck`
 - `pnpm --filter @understand-code/preview build`（fresh dist）
-- source `packages/preview/README.md` 与 fresh `dist/README.md` 字节完全一致：
-  SHA-256 `3b18422c98cbd0658eab082ff09e03287c397a78db1ca2b35376c9c74a61fc00`。
+- 唯一真实 packed Browser门禁：
+  `UNDERSTAND_CODE_REQUIRE_REAL_BROWSER=1 pnpm --filter @understand-code/preview test:workbench-browser`
+  - 1 passed / 0 failed / 0 skipped，190.69 秒；
+  - v1 tgz：87 entries，`sha256:a6de7f8dd3099018260b050f4097491c1e635d0e26284ab2395fc61b37fa0f39`；
+  - v2 tgz：87 entries，`sha256:7c141241daca18e8f9e6538ab89af83af0909e2b35713d1ea0d9fc283a28b958`。
 
-未运行 Browser、Plugin Host、root full或cross-platform矩阵：本切片只改变 focused release evidence与
-packaged README；唯一 focused本身已执行真实 build/pack/cold。输入不变时不重复重门。
+未运行 Plugin Host、root full或cross-platform矩阵：本切片不修改这些surface，唯一packed E2E已从真实
+candidate覆盖MCP→Check→Evidence→Workbench与既有upgrade/rollback链。
 
-## 首个 Test Gap 与修复
+## Pre-focused Test Gap 与修复
 
-初版后继 commit只修改 README。这样 current HEAD的 lockfile blob仍与 A相同；即使 verifier错误地从
-current HEAD读取 lockfile，测试也可能假绿。终审将其识别为 blocking Test Gap。最终 B commit同时加入
-合法 lockfile comment drift，并断言 current lock object ID与 SHA均不同于 A recorded lock；之后唯一
-focused从头通过。未修改或放宽 production verifier。
+终审在functional门禁前识别并关闭两处blocking Test Gap：
+
+1. 初版没有直接断言 deleted path 的 Index inventory与worktree absence。最终 provider focused明确锁定
+   `git ls-files --stage -- path`为空且 `readFile`为ENOENT；packed staged vertical也直接锁Index empty。
+2. 实现被收窄为 modified+deleted，但初版没有证明 add+delete被排除。最终在同一真实Git fixture恢复合法
+   staged deletion后新增并stage `src/added.ts`，fresh capture锁三条变化，再断言唯一global
+   `unsupported_source`覆盖全部IDs且无hunks/deletion observations。
+
+修复只增强测试；没有放宽production边界或新增矩阵。
 
 ## 可声明与不可声明
 
 **可声明：**
 
-- 当 checkout的 Git object format匹配候选、object database仍保留 manifest记录的 commit/tree/lock
-  blob、reviewed v1 schema bytes不变时，current HEAD可以前进到不同 tree与 lockfile，旧 unsigned Alpha
-  candidate仍可由 production verifier精确重验。
-- historical verify不会改写候选目录；tgz、manifest、schema与checksums保持逐字不变。
-- tgz、manifest、schema或checksum任一单bit不一致仍被 fail closed拒绝。
-- README的source与fresh dist字节一致，operator能看到上述source-aware前提与限制。
+- 当前 Alpha能对 1–16 个unique staged modified/deleted变化（至少一条delete）进行 bounded、
+  Snapshot-bound分析。
+- staged deleted path由 exact Index absence、worktree absence与baseline HEAD bytes三方证明；companion
+  modified仍由Index/worktree/Snapshot bytes精确绑定。
+- 删除不会被误报为plan完成；它形成独立blocking unplanned Finding与baseline changed Evidence/Claim。
+- unsupported组合或任一live authority drift都会whole-analysis fail closed。
+- 真实Chrome Workbench对unstaged与staged deleted Evidence均显示stale/evidence_stale，且不读取/展示
+  live source或Graph action。
 
 **不可声明：**
 
-- candidate目录不是自包含、portable或独立离线可验的 provenance bundle。
-- 不提供 Git object retention/GC lease、history index、latest selection、promotion、anti-rollback或schema
-  migration机制；对象被prune或reviewed schema变化后不保证验证。
-- metadata/checksums仍unsigned；协调重写artifact与unsigned metadata/checksums仍不可检测或认证。
-- 不证明publisher authenticity、signature、SBOM、SLSA/trusted provenance、reproducibility、CI same-SHA、
-  cross-platform、RC或正式Release。
-- 本切片不改变 Provider Authority、execution fence或strong writes；`strongWrites`继续 locked。
+- 本切片不授权 planned deletion，不生成formal actual deletion hunk，也不证明possible omission或五维
+  Completeness。
+- 不支持 staged added+deleted、delete+untracked replacement、mixed staged/unstaged、rename/copy、
+  committed delta、conflict、empty、binary、mode-only、oversize或Graph unavailable deletion；继续unknown。
+- Workbench不会hydrated历史删除源码；baseline Evidence不是current source/Graph proof。
+- 结果仍为 `legacy_summary`，不是 `evidence_backed_v1`或structured `diff_hunk`。
+- 不证明Provider Authority、execution fence或strong write；`strongWrites`继续 locked。
+- 两个candidate仍是当前本机tuple的unsigned Alpha测试产物，不证明Release、signature、SBOM、provenance、
+  reproducibility或cross-platform。
 
 ## 结论
 
-🟢 Effective。保留 recorded Git objects与reviewed schema的 source checkout现在有真实回归证明：即使
-current HEAD、tree与 lockfile均已前进，production verifier仍按候选 A 的精确历史绑定完成验证，且不修改
-candidate exact-four bytes。能力边界已在 packaged README中明确，不被误述为自包含、可信 provenance、
-anti-rollback或Release。可以精确提交。
+🟢 Effective。真实 staged tracked-file deletion现在能在严格Index/worktree/HEAD/Snapshot authority下形成
+可追溯、baseline-bound、blocking observation；同路径plan仍不能授权删除，所有不受支持组合与live drift
+继续整批fail closed。旧 staged added/modified、unstaged deletion与既有Workbench/lifecycle均未回归。
+可以精确提交。

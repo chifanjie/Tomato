@@ -353,6 +353,33 @@ function readGitIndexBlob(
   });
 }
 
+async function indexPathIsAbsent(
+  canonicalRoot: string,
+  relativePath: string,
+): Promise<boolean> {
+  if (!safeChangeAnalysisPath(relativePath)) {
+    throw providerErrorForPath(
+      "unsafe_repository_path",
+      "A repository path is ambiguous for exact Git index lookup.",
+      relativePath,
+    );
+  }
+  const output = await readGitOutput(
+    canonicalRoot,
+    [
+      "--literal-pathspecs",
+      "ls-files",
+      "--stage",
+      "-z",
+      "--",
+      relativePath,
+    ],
+    MAX_CHANGE_ANALYSIS_TREE_ENTRY_BYTES * 4,
+    "Git index entries exceed analysis budget",
+  );
+  return output.byteLength === 0;
+}
+
 function readGitBlob(
   canonicalRoot: string,
   headCommit: string,
@@ -1418,7 +1445,29 @@ implements TaskContextProvider {
             compareUnicodeCodeUnits(left.path, right.path),
           )
         : undefined;
-    if (includesStagedChange && stagedChanges === undefined) {
+    const stagedDeletedChanges =
+      includesStagedChange &&
+      includesDeletedChange &&
+      actual.data.changes.length >= 1 &&
+      actual.data.changes.length <= MAX_BOUNDED_CHANGE_PATHS &&
+      stagedPaths.size === actual.data.changes.length &&
+      actual.data.changes.every(
+        (change) =>
+          change.source === "staged" &&
+          (change.kind === "modified"
+            ? change.contentDigest !== undefined
+            : change.kind === "deleted" &&
+              change.contentDigest === undefined),
+      )
+        ? [...actual.data.changes].sort((left, right) =>
+            compareUnicodeCodeUnits(left.path, right.path),
+          )
+        : undefined;
+    if (
+      includesStagedChange &&
+      stagedChanges === undefined &&
+      stagedDeletedChanges === undefined
+    ) {
       return {
         status: "unknown",
         hunks: [],
@@ -1451,7 +1500,11 @@ implements TaskContextProvider {
             compareUnicodeCodeUnits(left.path, right.path),
           )
         : undefined;
-    if (includesDeletedChange && liveDeletedChanges === undefined) {
+    if (
+      includesDeletedChange &&
+      liveDeletedChanges === undefined &&
+      stagedDeletedChanges === undefined
+    ) {
       return {
         status: "unknown",
         hunks: [],
@@ -1486,6 +1539,7 @@ implements TaskContextProvider {
     }
     const boundedBatchChanges =
       stagedChanges ??
+      stagedDeletedChanges ??
       liveUntrackedChanges ??
       liveIntentToAddChanges ??
       liveDeletedChanges;
@@ -1517,6 +1571,8 @@ implements TaskContextProvider {
             "unsafe_path",
             stagedChanges !== undefined
               ? "A staged repository path is unsafe for exact Git index lookup."
+              : stagedDeletedChanges !== undefined
+                ? "A staged deletion repository path is unsafe for exact Git analysis."
               : liveUntrackedChanges !== undefined
                 ? "A live untracked repository path is unsafe for exact Git analysis."
                 : liveIntentToAddChanges !== undefined
@@ -1596,6 +1652,10 @@ implements TaskContextProvider {
           ? changes[0]!.source === "staged" &&
             (changes[0]!.kind === "modified" ||
               changes[0]!.kind === "added")
+          : stagedDeletedChanges !== undefined
+            ? changes[0]!.source === "staged" &&
+              (changes[0]!.kind === "modified" ||
+                changes[0]!.kind === "deleted")
           : liveUntrackedChanges !== undefined
             ? (changes[0]!.source === "untracked" &&
                 changes[0]!.kind === "added") ||
@@ -1624,6 +1684,8 @@ implements TaskContextProvider {
               ? "Alpha line analysis only supports one unstaged modified change per path."
               : stagedChanges !== undefined
                 ? "Alpha staged line analysis only supports unique staged modified or added paths."
+                : stagedDeletedChanges !== undefined
+                  ? "Alpha staged deletion analysis only supports unique staged modified or deleted paths."
                 : liveUntrackedChanges !== undefined
                   ? "Alpha live untracked analysis only supports unique untracked added or unstaged modified paths."
                   : liveIntentToAddChanges !== undefined
@@ -1637,7 +1699,7 @@ implements TaskContextProvider {
       }
       if (changes[0]!.kind === "deleted") {
         let baselineBytes: Buffer;
-        let indexBytes: Buffer;
+        let indexBytes: Buffer | undefined;
         try {
           const currentFile = await openVerifiedFile(
             this.#canonicalRoot,
@@ -1659,14 +1721,33 @@ implements TaskContextProvider {
             );
             continue;
           }
-          [baselineBytes, indexBytes] = await Promise.all([
-            readGitBlob(
+          if (stagedDeletedChanges !== undefined) {
+            baselineBytes = await readGitBlob(
               this.#canonicalRoot,
               baseline.data.headCommit,
               filePath,
-            ),
-            readGitIndexBlob(this.#canonicalRoot, filePath),
-          ]);
+            );
+            if (!(await indexPathIsAbsent(this.#canonicalRoot, filePath))) {
+              boundaries.push(
+                changeAnalysisBoundary(
+                  "content_changed",
+                  "The staged deleted path is still present in the current Git Index.",
+                  filePath,
+                  ids,
+                ),
+              );
+              continue;
+            }
+          } else {
+            [baselineBytes, indexBytes] = await Promise.all([
+              readGitBlob(
+                this.#canonicalRoot,
+                baseline.data.headCommit,
+                filePath,
+              ),
+              readGitIndexBlob(this.#canonicalRoot, filePath),
+            ]);
+          }
         } catch (error) {
           boundaries.push(
             changeAnalysisBoundary(
@@ -1676,14 +1757,19 @@ implements TaskContextProvider {
                 : error instanceof RangeError
                   ? "budget_exhausted"
                   : "unsupported_source",
-              "The deleted path could not be proven against the exact baseline HEAD, Index, and worktree.",
+              stagedDeletedChanges !== undefined
+                ? "The staged deleted path could not be proven absent from the exact Index and worktree against the baseline HEAD."
+                : "The deleted path could not be proven against the exact baseline HEAD, Index, and worktree.",
               filePath,
               ids,
             ),
           );
           continue;
         }
-        if (!baselineBytes.equals(indexBytes)) {
+        if (
+          stagedDeletedChanges === undefined &&
+          (indexBytes === undefined || !baselineBytes.equals(indexBytes))
+        ) {
           boundaries.push(
             changeAnalysisBoundary(
               "content_changed",
@@ -1699,7 +1785,9 @@ implements TaskContextProvider {
           boundaries.push(
             changeAnalysisBoundary(
               "budget_exhausted",
-              "Live deletion semantic bytes exceeded the fixed aggregate Alpha budget.",
+              stagedDeletedChanges !== undefined
+                ? "Staged deletion semantic bytes exceeded the fixed aggregate Alpha budget."
+                : "Live deletion semantic bytes exceeded the fixed aggregate Alpha budget.",
               filePath,
               ids,
             ),
@@ -1749,7 +1837,9 @@ implements TaskContextProvider {
           boundaries.push(
             changeAnalysisBoundary(
               "budget_exhausted",
-              "Live deletion observations exceeded the fixed aggregate Alpha budget.",
+              stagedDeletedChanges !== undefined
+                ? "Staged deletion observations exceeded the fixed aggregate Alpha budget."
+                : "Live deletion observations exceeded the fixed aggregate Alpha budget.",
               filePath,
               ids,
             ),
@@ -1797,7 +1887,10 @@ implements TaskContextProvider {
       }
       const worktreeDigest =
         `sha256:${createHash("sha256").update(actualFile.bytes!).digest("hex")}`;
-      if (stagedChanges === undefined) {
+      if (
+        stagedChanges === undefined &&
+        stagedDeletedChanges === undefined
+      ) {
         actualBytes = actualFile.bytes!;
       } else {
         let indexBytes: Buffer;
@@ -1920,6 +2013,8 @@ implements TaskContextProvider {
               "budget_exhausted",
               stagedChanges !== undefined
                 ? "Staged semantic bytes exceeded the fixed aggregate Alpha budget."
+                : stagedDeletedChanges !== undefined
+                  ? "Staged deletion batch semantic bytes exceeded the fixed aggregate Alpha budget."
                 : liveUntrackedChanges !== undefined
                   ? "Live untracked semantic bytes exceeded the fixed aggregate Alpha budget."
                   : liveIntentToAddChanges !== undefined
@@ -2015,6 +2110,8 @@ implements TaskContextProvider {
               "budget_exhausted",
               stagedChanges !== undefined
                 ? "Staged line hunks exceeded the fixed aggregate Alpha budget."
+                : stagedDeletedChanges !== undefined
+                  ? "Staged deletion batch line hunks exceeded the fixed aggregate Alpha budget."
                 : liveUntrackedChanges !== undefined
                   ? "Live untracked line hunks exceeded the fixed aggregate Alpha budget."
                   : liveIntentToAddChanges !== undefined

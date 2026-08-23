@@ -629,6 +629,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
   const upgradeInstallDirectory = await mkdtemp(path.join(tmpdir(), "uc-workbench-browser-upgrade-install-"));
   const browserProfile = await mkdtemp(path.join(tmpdir(), "uc-workbench-browser-profile-"));
   const deletionBrowserProfile = await mkdtemp(path.join(tmpdir(), "uc-workbench-browser-deletion-profile-"));
+  const stagedDeletionBrowserProfile = await mkdtemp(path.join(tmpdir(), "uc-workbench-browser-staged-deletion-profile-"));
   const home = await mkdtemp(path.join(tmpdir(), "uc-workbench-browser-home-"));
   let repositoryRoot = await createRepositoryFixture();
   const repositoryRoots = [repositoryRoot];
@@ -870,10 +871,22 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     assert.equal(output.stderr.join(""), "");
     mcp = null;
 
-    repositoryRoot = await createRepositoryFixture();
-    repositoryRoots.push(repositoryRoot);
-    lifecycleEnv = cleanMcpEnvironment(home, repositoryRoot);
-    const deletedExtraPath = path.join(repositoryRoot, "src/extra.ts");
+    for (const deletionProfile of [
+      {
+        label: "unstaged",
+        source: "unstaged",
+        browserProfile: deletionBrowserProfile,
+      },
+      {
+        label: "staged",
+        source: "staged",
+        browserProfile: stagedDeletionBrowserProfile,
+      },
+    ]) {
+      repositoryRoot = await createRepositoryFixture();
+      repositoryRoots.push(repositoryRoot);
+      lifecycleEnv = cleanMcpEnvironment(home, repositoryRoot);
+      const deletedExtraPath = path.join(repositoryRoot, "src/extra.ts");
     mcp = spawn(managedWrapper, ["--root", repositoryRoot], {
       cwd: installDirectory,
       env: lifecycleEnv,
@@ -883,7 +896,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     await initializeMcp(
       mcp,
       output,
-      "preview-workbench-browser-deleted",
+      `preview-workbench-browser-${deletionProfile.label}-deleted`,
       baseVersion,
     );
     requestId = 2;
@@ -974,10 +987,23 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     );
 
     await rm(deletedExtraPath);
+    if (deletionProfile.source === "staged") {
+      await git(repositoryRoot, ["add", "--", "src/extra.ts"]);
+      assert.equal(
+        (await git(repositoryRoot, [
+          "ls-files",
+          "--stage",
+          "--",
+          "src/extra.ts",
+        ])).stdout,
+        "",
+        "the staged deletion must remove the path from the Index stage-0 inventory",
+      );
+    }
     assert.equal(
       (await git(repositoryRoot, ["diff", "--cached", "--name-only"])).stdout,
-      "",
-      "the deletion vertical must not stage the removed path",
+      deletionProfile.source === "staged" ? "src/extra.ts\n" : "",
+      `the ${deletionProfile.label} deletion vertical must retain its exact Index authority`,
     );
     assert.equal(
       (await git(repositoryRoot, [
@@ -985,8 +1011,10 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
         "--porcelain",
         "--untracked-files=all",
       ])).stdout,
-      " D src/extra.ts\n",
-      "the real repository must contain exactly one unstaged tracked deletion",
+      deletionProfile.source === "staged"
+        ? "D  src/extra.ts\n"
+        : " D src/extra.ts\n",
+      `the real repository must contain exactly one ${deletionProfile.label} tracked deletion`,
     );
     const deletedChangedRefresh = await callTool(
       mcp,
@@ -1020,7 +1048,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     assert.deepEqual(deletedSnapshotChange, {
       id: deletedSnapshotChange.id,
       path: "src/extra.ts",
-      source: "unstaged",
+      source: deletionProfile.source,
       kind: "deleted",
     });
     assert.equal(
@@ -1179,7 +1207,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     );
     browser = await launchBrowser({
       executable: browserExecutable,
-      userDataDir: deletionBrowserProfile,
+      userDataDir: deletionProfile.browserProfile,
       timeoutMs: 30_000,
     });
     await browser.navigate(deletedOpened.structuredContent.result.deepLink);
@@ -1242,6 +1270,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     );
     assert.equal(output.stderr.join(""), "");
     mcp = null;
+    }
 
     repositoryRoot = await createRepositoryFixture();
     repositoryRoots.push(repositoryRoot);
@@ -2704,6 +2733,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       rm(upgradeInstallDirectory, { recursive: true, force: true }),
       rm(browserProfile, { recursive: true, force: true }),
       rm(deletionBrowserProfile, { recursive: true, force: true }),
+      rm(stagedDeletionBrowserProfile, { recursive: true, force: true }),
       rm(home, { recursive: true, force: true }),
       ...repositoryRoots.map((root) => rm(root, { recursive: true, force: true })),
     ]);

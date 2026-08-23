@@ -3875,7 +3875,9 @@ describe("TaskEngine persistent integration", () => {
     });
   });
 
-  it("keeps a same-path deletion unplanned and binds its Evidence to baseline bytes", async () => {
+  it.each(["unstaged", "staged"] as const)(
+    "keeps a same-path %s deletion unplanned and binds its Evidence to baseline bytes",
+    async (deletionSource) => {
     const { store } = await openStore();
     const deletedDigest =
       "sha256:bb103bae86db4b319ce6ec4b17e5c4547d061a07a3b4a08e49308579dcaa4864";
@@ -3996,7 +3998,7 @@ describe("TaskEngine persistent integration", () => {
         {
           id: "change:deleted-handler",
           path: "src/removed.ts",
-          source: "unstaged" as const,
+          source: deletionSource,
           kind: "deleted" as const,
         },
       ],
@@ -4102,5 +4104,6 @@ describe("TaskEngine persistent integration", () => {
       findingIds: [unplannedDeletion.id],
       evidenceIds: [deletionEvidence.id],
     }));
-  });
+    },
+  );
 });

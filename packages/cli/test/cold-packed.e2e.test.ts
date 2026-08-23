@@ -1,6 +1,6 @@
 import { spawn, execFile } from "node:child_process";
 import { once } from "node:events";
-import { lstat, readdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { connect, createServer, type Socket } from "node:net";
 import path from "node:path";
@@ -34,6 +34,7 @@ const requireV1 = createRequire(import.meta.url);
 
 async function assertInstalledNativeKernelPeerV1(
   packageDirectory: string,
+  repositoryRoot: string,
 ): Promise<void> {
   const tuple = `${process.platform}-${process.arch}`;
   const nativeRoot = path.join(packageDirectory, "dist/native");
@@ -47,9 +48,26 @@ async function assertInstalledNativeKernelPeerV1(
   expect(metadata.mode & 0o777).toBe(0o644);
 
   const addon = requireV1(nativePath) as {
+    readonly closeSafeGitDescriptorBootstrap?: (binding: object) => unknown;
+    readonly getKernelBridgeProfile?: () => unknown;
+    readonly openSafeGitDescriptorBootstrap?: (root: string) => unknown;
     readonly readPeerCredentials?: (fileDescriptor: number) => unknown;
+    readonly revalidateSafeGitDescriptorBootstrap?: (binding: object) => unknown;
   };
+  expect(addon.getKernelBridgeProfile?.()).toBe("native_kernel_bridge_v1");
   expect(addon.readPeerCredentials).toBeTypeOf("function");
+  expect(addon.openSafeGitDescriptorBootstrap).toBeTypeOf("function");
+  expect(addon.revalidateSafeGitDescriptorBootstrap).toBeTypeOf("function");
+  expect(addon.closeSafeGitDescriptorBootstrap).toBeTypeOf("function");
+  const opened = addon.openSafeGitDescriptorBootstrap!(
+    await realpath(repositoryRoot),
+  ) as { readonly binding?: unknown; readonly layout?: unknown };
+  expect(opened.layout).toBe("ordinary");
+  expect(opened.binding).toBeTypeOf("object");
+  expect(addon.revalidateSafeGitDescriptorBootstrap!(opened.binding as object)).toEqual({
+    layout: "ordinary",
+  });
+  expect(addon.closeSafeGitDescriptorBootstrap!(opened.binding as object)).toBe(true);
   const socketRoot = await createTemporaryDirectory("understand-code-native-");
   const socketPath = path.join(socketRoot, "peer.sock");
   const server = createServer();
@@ -171,7 +189,7 @@ describe("cold packed CLI", () => {
       );
       expect(bundle).not.toContain("workspace:*");
       expect(bundle).not.toContain(packageRoot);
-      await assertInstalledNativeKernelPeerV1(installed.packageDirectory);
+      await assertInstalledNativeKernelPeerV1(installed.packageDirectory, root);
 
       const child = spawn(
         installed.executable,

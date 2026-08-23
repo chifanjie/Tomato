@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 
 const nativeDirectory = dirname(fileURLToPath(import.meta.url));
 const packageDirectory = resolve(nativeDirectory, "..");
-const sourcePath = join(nativeDirectory, "kernel_peer_credentials.c");
+const sourcePath = join(nativeDirectory, "kernel_bridge.c");
 const outputDirectory = join(
   packageDirectory,
   "dist",
@@ -39,7 +39,7 @@ if (headerDirectory === undefined) {
   throw new Error("Node N-API headers are unavailable");
 }
 if (process.platform !== "darwin" && process.platform !== "linux") {
-  throw new Error("native kernel peer credentials require Darwin or Linux");
+  throw new Error("native kernel bridge requires Darwin or Linux");
 }
 
 mkdirSync(outputDirectory, { recursive: true });
@@ -79,8 +79,8 @@ if (result.error !== undefined || result.status !== 0) {
     .join("\n");
   throw new Error(
     detail.length > 0
-      ? `native kernel peer build failed\n${detail}`
-      : "native kernel peer build failed",
+      ? `native kernel bridge build failed\n${detail}`
+      : "native kernel bridge build failed",
   );
 }
 
@@ -93,7 +93,7 @@ if (
   outputMetadata.size < 4 ||
   magic !== expectedMagic
 ) {
-  throw new Error("native kernel peer build produced an invalid binary");
+  throw new Error("native kernel bridge build produced an invalid binary");
 }
 
 process.stdout.write(`${outputPath}\n`);

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import {
   chmodSync,
   linkSync,
@@ -11,10 +12,10 @@ import {
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  SAFE_GIT_FILESYSTEM_BOOTSTRAP_PROFILE_V1,
+  SAFE_GIT_DESCRIPTOR_BOOTSTRAP_PROFILE_V1,
   SafeGitBootstrapErrorV1,
-  bootstrapSafeGitFilesystemCandidateV1,
-  isSafeGitBootstrapCapabilityV1,
+  bootstrapSafeGitDescriptorBoundCandidateV1 as bootstrapSafeGitFilesystemCandidateV1,
+  isSafeGitDescriptorBoundCapabilityV1 as isSafeGitBootstrapCapabilityV1,
 } from "../src/safe-git-bootstrap.js";
 import { withSafeGitBootstrapTestHooksInternalV1 } from "../src/safe-git-bootstrap-testing-internal.js";
 import {
@@ -41,27 +42,42 @@ async function expectBootstrapFailure(
   }
 }
 
-describe("filesystem-only SafeGit bootstrap candidate", () => {
-  it("binds an ordinary repository while every stronger authority remains locked", async () => {
+describe("descriptor-bound SafeGit bootstrap candidate", () => {
+  it("uses a distinct versioned descriptor-bound profile", async () => {
+    expect(SAFE_GIT_DESCRIPTOR_BOOTSTRAP_PROFILE_V1).toBe(
+      "descriptor_bound_safe_git_bootstrap_candidate_v1",
+    );
+    const root = initializeRepository();
+    const result = await bootstrapSafeGitFilesystemCandidateV1(root);
+    expect(result.inspection.profile).toBe(
+      SAFE_GIT_DESCRIPTOR_BOOTSTRAP_PROFILE_V1,
+    );
+    await result.capability.close();
+  });
+
+  it("binds an ordinary repository while later SafeGit authorities remain locked", async () => {
     const root = initializeRepository();
     const result = await bootstrapSafeGitFilesystemCandidateV1(root);
 
     expect(result.inspection).toEqual({
-      profile: SAFE_GIT_FILESYSTEM_BOOTSTRAP_PROFILE_V1,
+      profile: SAFE_GIT_DESCRIPTOR_BOOTSTRAP_PROFILE_V1,
       status: "verified_candidate",
       layout: "ordinary",
       filesystemBinding: "verified",
       linkedWorktreeBackpointer: "not_applicable",
-      descriptorRelativeTraversal: "locked",
-      extendedAccessControl: "locked",
+      descriptorRelativeTraversal: "verified",
+      extendedAccessControl: "verified",
+      nativeHandleCustody: "verified",
       repositoryControlShape: "locked",
+      repositoryControlReader: "locked",
+      localObjectDatabase: "locked",
+      refBackend: "locked",
       handleBoundExecution: "locked",
       osSandbox: "locked",
       hmacIdentity: "locked",
       strongWrites: "locked",
       requiredNext: [
-        "descriptor_relative_traversal",
-        "extended_access_control_verification",
+        "repository_control_reader",
         "local_odb_and_ref_backend_verification",
         "handle_bound_execution",
         "os_sandbox",
@@ -71,11 +87,22 @@ describe("filesystem-only SafeGit bootstrap candidate", () => {
     });
     expect(isSafeGitBootstrapCapabilityV1(result.capability)).toBe(true);
     expect(JSON.stringify(result)).not.toContain(root);
+    expect(JSON.parse(JSON.stringify(result.capability))).toEqual({
+      profile: SAFE_GIT_DESCRIPTOR_BOOTSTRAP_PROFILE_V1,
+    });
     expect(result.capability.closed).toBe(false);
+    await expect(result.capability.revalidate()).resolves.toEqual(
+      result.inspection,
+    );
     await result.capability.close();
     expect(result.capability.closed).toBe(true);
     expect(isSafeGitBootstrapCapabilityV1(result.capability)).toBe(false);
     await result.capability.close();
+    await expectBootstrapFailure(
+      result.capability.revalidate(),
+      "binding_changed",
+      root,
+    );
   });
 
   it("verifies both backpointers of a real linked worktree", async () => {
@@ -89,9 +116,13 @@ describe("filesystem-only SafeGit bootstrap candidate", () => {
       layout: "linked_worktree",
       filesystemBinding: "verified",
       linkedWorktreeBackpointer: "verified",
-      descriptorRelativeTraversal: "locked",
-      extendedAccessControl: "locked",
+      descriptorRelativeTraversal: "verified",
+      extendedAccessControl: "verified",
+      nativeHandleCustody: "verified",
       repositoryControlShape: "locked",
+      repositoryControlReader: "locked",
+      localObjectDatabase: "locked",
+      refBackend: "locked",
       handleBoundExecution: "locked",
       osSandbox: "locked",
       hmacIdentity: "locked",
@@ -99,6 +130,52 @@ describe("filesystem-only SafeGit bootstrap candidate", () => {
     });
     expect(JSON.stringify(result)).not.toContain(linkedRoot);
     expect(JSON.stringify(result)).not.toContain(root);
+    await expect(result.capability.revalidate()).resolves.toMatchObject({
+      layout: "linked_worktree",
+      descriptorRelativeTraversal: "verified",
+      extendedAccessControl: "verified",
+      nativeHandleCustody: "verified",
+    });
+    await result.capability.close();
+  });
+
+  it("fails closed when a descriptor-bound ordinary .git directory is replaced", async () => {
+    const root = initializeRepository();
+    const result = await bootstrapSafeGitFilesystemCandidateV1(root);
+    const dotGitPath = join(root, ".git");
+    renameSync(dotGitPath, join(root, ".git.bound"));
+    mkdirSync(dotGitPath, { mode: 0o700 });
+
+    await expectBootstrapFailure(
+      result.capability.revalidate(),
+      "binding_changed",
+      root,
+    );
+    expect(result.capability.closed).toBe(true);
+    expect(isSafeGitBootstrapCapabilityV1(result.capability)).toBe(false);
+    await result.capability.close();
+  });
+
+  it("fails closed when a descriptor-bound linked-worktree pointer is replaced", async () => {
+    const root = initializeRepository();
+    const linkedParent = temporaryDirectory("safe-git-revalidate-linked");
+    const linkedRoot = join(linkedParent, "worktree");
+    git(root, ["worktree", "add", "-q", linkedRoot]);
+    const result = await bootstrapSafeGitFilesystemCandidateV1(linkedRoot);
+    const dotGitPath = join(linkedRoot, ".git");
+    const original = readFileSync(dotGitPath);
+    renameSync(dotGitPath, join(linkedRoot, ".git.bound"));
+    writeFileSync(dotGitPath, original, { mode: 0o600 });
+
+    await expectBootstrapFailure(
+      result.capability.revalidate(),
+      "binding_changed",
+      linkedParent,
+    );
+    expect(JSON.stringify(result)).not.toContain(linkedRoot);
+    expect(JSON.stringify(result)).not.toContain(root);
+    expect(result.capability.closed).toBe(true);
+    expect(isSafeGitBootstrapCapabilityV1(result.capability)).toBe(false);
     await result.capability.close();
   });
 
@@ -158,6 +235,25 @@ describe("filesystem-only SafeGit bootstrap candidate", () => {
       "symlink_detected",
       parent,
     );
+  });
+
+  it("rejects a special .git file without a blocking regular-file open", async () => {
+    const parent = temporaryDirectory("safe-git-fifo");
+    const root = join(parent, "workspace");
+    mkdirSync(root, { mode: 0o700 });
+    execFileSync("mkfifo", [join(root, ".git")], { stdio: "pipe" });
+
+    await expectBootstrapFailure(
+      bootstrapSafeGitFilesystemCandidateV1(root),
+      "unsafe_file_kind",
+      parent,
+    );
+    const source = readFileSync(
+      new URL("../src/safe-git-bootstrap.ts", import.meta.url),
+      "utf8",
+    );
+    expect(source).toContain("openFlags.nonBlock");
+    expect(source).toContain("openFlags.noControllingTerminal");
   });
 
   it("rejects group- or other-writable repository control metadata", async () => {
@@ -284,6 +380,48 @@ describe("filesystem-only SafeGit bootstrap candidate", () => {
       ),
       "binding_changed",
       linkedParent,
+    );
+  });
+
+  it("rejects a root namespace swap during native capability publication", async () => {
+    const root = initializeRepository();
+    const observedRoot = join(dirname(root), "repository.native-bound");
+
+    await expectBootstrapFailure(
+      withSafeGitBootstrapTestHooksInternalV1(
+        root,
+        {
+          afterNativeBindingOpened: () => {
+            renameSync(root, observedRoot);
+            mkdirSync(root, { mode: 0o700 });
+            git(root, ["init", "-q", "-b", "main"]);
+          },
+        },
+        () => bootstrapSafeGitFilesystemCandidateV1(root),
+      ),
+      "binding_changed",
+      dirname(root),
+    );
+  });
+
+  it("revalidates native custody after legacy descriptor cleanup", async () => {
+    const root = initializeRepository();
+    const observedRoot = join(dirname(root), "repository.legacy-closed");
+
+    await expectBootstrapFailure(
+      withSafeGitBootstrapTestHooksInternalV1(
+        root,
+        {
+          afterLegacyBindingsClosed: () => {
+            renameSync(root, observedRoot);
+            mkdirSync(root, { mode: 0o700 });
+            git(root, ["init", "-q", "-b", "main"]);
+          },
+        },
+        () => bootstrapSafeGitFilesystemCandidateV1(root),
+      ),
+      "binding_changed",
+      dirname(root),
     );
   });
 

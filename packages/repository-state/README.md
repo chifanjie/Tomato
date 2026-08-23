@@ -20,9 +20,9 @@ payloads defined by `@understand-code/contracts`.
 - Evaluates Graph/Wiki/Evidence/Diff/Task freshness through an explicit DAG,
   including legacy Graph/Meta/Fingerprint, Wiki V1/V2 support files and Diff
   Overlay mismatch detection.
-- Provides a filesystem-only SafeGit bootstrap candidate that validates an
-  ordinary `.git` directory layout or linked-worktree control relationship
-  without launching Git.
+- Provides a descriptor-bound SafeGit bootstrap candidate that validates an
+  ordinary `.git` directory layout or linked-worktree control relationship,
+  retains native handle custody, and never launches Git.
 
 ## Snapshot
 
@@ -80,20 +80,28 @@ Diff recomputation as `refresh_index`. When one of those downstream families is
 stale but the index remains current, Pulse keeps `recommendedRefresh: "none"`
 and records an explicit downstream-recomputation reason.
 
-## SafeGit filesystem bootstrap candidate
+## SafeGit descriptor-bound bootstrap candidate
 
-`bootstrapSafeGitFilesystemCandidateV1()` performs a bounded, read-only
+`bootstrapSafeGitDescriptorBoundCandidateV1()` performs a bounded, read-only
 preflight before a future strong identity can be derived. It rejects relative
 roots, symbolic-link control entries, unsafe owners or modes, malformed pointer files,
 external administrative targets, broken linked-worktree backpointers, and
 binding changes observed before capability publication. A successful result
-contains an opaque, explicitly closable capability and a path-redacted
-inspection projection.
+contains an opaque, explicitly closable capability with fail-closed
+`revalidate()` and a path-redacted inspection projection. Native
+descriptor-relative traversal retains the repository binding without exposing
+paths, file descriptors, or native handles.
+
+Successful results carry the distinct
+`descriptor_bound_safe_git_bootstrap_candidate_v1` profile; the earlier
+filesystem-only candidate API is intentionally replaced rather than silently
+changing its V1 contract.
 
 This candidate is not the complete SafeGit adapter. Its projection keeps
-descriptor-relative traversal, handle-bound execution, OS sandboxing, HMAC
-identity, extended-access-control checks, repository-control-shape checks, and
-strong writes explicitly `locked`. It is not connected to the
+descriptor-relative traversal, native handle custody, and extended-access-
+control admission `verified`. The repository control reader, local ODB and ref
+backend verification, handle-bound execution, OS sandboxing, HMAC identity,
+and strong writes remain explicitly `locked`. It is not connected to the
 legacy Snapshot producer and does not authorize Git execution, Provider I/O,
 or any public strong capability.
 

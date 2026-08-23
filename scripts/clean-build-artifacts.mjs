@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 export const BUILD_ARTIFACT_PATHS = Object.freeze([
   "dist",
+  "packages/native-kernel-bridge/dist",
   "packages/durable-object-provider-contracts/dist",
   "packages/durable-object-provider-client/dist",
   "packages/durable-object-provider-runtime/dist",

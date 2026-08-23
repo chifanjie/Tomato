@@ -541,6 +541,7 @@ const config = { autoUpdate: false, outputLanguage: "zh-CN" };
 async function main() {
   await rm(distRoot, { recursive: true, force: true });
   await mkdir(distRoot, { recursive: true });
+  await run("pnpm", ["--filter", "@understand-code/native-kernel-bridge", "build"]);
   await run("pnpm", ["--filter", "@understand-code/durable-object-provider-contracts", "build"]);
   await run("pnpm", ["--filter", "@understand-code/durable-object-provider-client", "build"]);
   await run("pnpm", ["--filter", "@understand-code/durable-object-provider-runtime", "build"]);

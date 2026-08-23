@@ -12,6 +12,49 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  native_kernel_bridge:
+    name: Native SafeGit bridge (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    env:
+      CI: true
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.x
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run native descriptor-binding gate
+        run: |
+          pnpm --filter @understand-code/native-kernel-bridge --fail-if-no-match typecheck
+          pnpm --filter @understand-code/native-kernel-bridge --fail-if-no-match test
+          pnpm --filter @understand-code/contracts --fail-if-no-match build
+          pnpm --filter @understand-code/repository-state --fail-if-no-match build
+          pnpm --filter @understand-code/repository-state --fail-if-no-match exec vitest run test/safe-git-bootstrap.test.ts --maxWorkers=1
+
   provider_unit:
     name: Provider unit gate
     runs-on: ubuntu-latest
@@ -204,6 +247,7 @@ jobs:
     name: Quality gate
     if: ${{ always() }}
     needs:
+      - native_kernel_bridge
       - provider_unit
       - provider_distribution
       - workspace_quality
@@ -212,6 +256,7 @@ jobs:
     timeout-minutes: 5
     env:
       PROVIDER_UNIT_RESULT: ${{ needs.provider_unit.result }}
+      NATIVE_KERNEL_BRIDGE_RESULT: ${{ needs.native_kernel_bridge.result }}
       PROVIDER_DISTRIBUTION_RESULT: ${{ needs.provider_distribution.result }}
       WORKSPACE_QUALITY_RESULT: ${{ needs.workspace_quality.result }}
       PREVIEW_CANDIDATE_RESULT: ${{ needs.preview_candidate.result }}
@@ -219,6 +264,7 @@ jobs:
     steps:
       - name: Require every quality shard
         run: |
+          test "$NATIVE_KERNEL_BRIDGE_RESULT" = "success"
           test "$PROVIDER_UNIT_RESULT" = "success"
           test "$PROVIDER_DISTRIBUTION_RESULT" = "success"
           test "$WORKSPACE_QUALITY_RESULT" = "success"

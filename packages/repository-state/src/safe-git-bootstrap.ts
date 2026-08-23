@@ -13,6 +13,14 @@ import {
 } from "node:path";
 import { TextDecoder } from "node:util";
 
+import {
+  closeNativeSafeGitDescriptorBootstrapV1,
+  openNativeSafeGitDescriptorBootstrapV1,
+  revalidateNativeSafeGitDescriptorBootstrapV1,
+  type NativeSafeGitDescriptorBindingV1,
+  type NativeSafeGitDescriptorLayoutV1,
+} from "@understand-code/native-kernel-bridge";
+
 import { getSafeGitBootstrapTestHooksInternalV1 } from "./safe-git-bootstrap-testing-internal.js";
 
 const MAX_POINTER_BYTES_V1 = 4_096;
@@ -23,13 +31,18 @@ const NOFOLLOW_V1 = (constants as unknown as Record<string, number>)[
 const DIRECTORY_V1 = (constants as unknown as Record<string, number>)[
   "O_DIRECTORY"
 ];
+const NONBLOCK_V1 = (constants as unknown as Record<string, number>)[
+  "O_NONBLOCK"
+];
+const NO_CONTROLLING_TERMINAL_V1 = (
+  constants as unknown as Record<string, number>
+)["O_NOCTTY"];
 const FATAL_UTF8_DECODER_V1 = new TextDecoder("utf-8", { fatal: true });
 
-export const SAFE_GIT_FILESYSTEM_BOOTSTRAP_PROFILE_V1 =
-  "filesystem_only_safe_git_bootstrap_candidate_v1" as const;
-export const SAFE_GIT_FILESYSTEM_BOOTSTRAP_REQUIRED_NEXT_V1 = Object.freeze([
-  "descriptor_relative_traversal",
-  "extended_access_control_verification",
+export const SAFE_GIT_DESCRIPTOR_BOOTSTRAP_PROFILE_V1 =
+  "descriptor_bound_safe_git_bootstrap_candidate_v1" as const;
+export const SAFE_GIT_DESCRIPTOR_BOOTSTRAP_REQUIRED_NEXT_V1 = Object.freeze([
+  "repository_control_reader",
   "local_odb_and_ref_backend_verification",
   "handle_bound_execution",
   "os_sandbox",
@@ -82,22 +95,25 @@ export class SafeGitBootstrapErrorV1 extends Error {
   }
 }
 
-export interface SafeGitBootstrapInspectionV1 {
-  readonly profile: typeof SAFE_GIT_FILESYSTEM_BOOTSTRAP_PROFILE_V1;
+export interface SafeGitDescriptorBootstrapInspectionV1 {
+  readonly profile: typeof SAFE_GIT_DESCRIPTOR_BOOTSTRAP_PROFILE_V1;
   readonly status: "verified_candidate";
   readonly layout: "ordinary" | "linked_worktree";
   readonly filesystemBinding: "verified";
   readonly linkedWorktreeBackpointer: "not_applicable" | "verified";
-  readonly descriptorRelativeTraversal: "locked";
-  readonly extendedAccessControl: "locked";
+  readonly descriptorRelativeTraversal: "verified";
+  readonly extendedAccessControl: "verified";
+  readonly nativeHandleCustody: "verified";
   readonly repositoryControlShape: "locked";
+  readonly repositoryControlReader: "locked";
+  readonly localObjectDatabase: "locked";
+  readonly refBackend: "locked";
   readonly handleBoundExecution: "locked";
   readonly osSandbox: "locked";
   readonly hmacIdentity: "locked";
   readonly strongWrites: "locked";
   readonly requiredNext: readonly [
-    "descriptor_relative_traversal",
-    "extended_access_control_verification",
+    "repository_control_reader",
     "local_odb_and_ref_backend_verification",
     "handle_bound_execution",
     "os_sandbox",
@@ -106,15 +122,16 @@ export interface SafeGitBootstrapInspectionV1 {
   ];
 }
 
-export interface SafeGitBootstrapCapabilityV1 {
-  readonly profile: typeof SAFE_GIT_FILESYSTEM_BOOTSTRAP_PROFILE_V1;
+export interface SafeGitDescriptorBoundCapabilityV1 {
+  readonly profile: typeof SAFE_GIT_DESCRIPTOR_BOOTSTRAP_PROFILE_V1;
   readonly closed: boolean;
+  revalidate(): Promise<SafeGitDescriptorBootstrapInspectionV1>;
   close(): Promise<void>;
 }
 
-export interface SafeGitFilesystemBootstrapCandidateV1 {
-  readonly capability: SafeGitBootstrapCapabilityV1;
-  readonly inspection: SafeGitBootstrapInspectionV1;
+export interface SafeGitDescriptorBoundBootstrapCandidateV1 {
+  readonly capability: SafeGitDescriptorBoundCapabilityV1;
+  readonly inspection: SafeGitDescriptorBootstrapInspectionV1;
 }
 
 type BigIntStatsV1 = Awaited<ReturnType<typeof lstatBigIntV1>>;
@@ -129,21 +146,52 @@ interface BoundNodeV1 {
 const CAPABILITIES_V1 = new WeakSet<object>();
 
 class SafeGitBootstrapCapabilityInternalV1
-  implements SafeGitBootstrapCapabilityV1
+  implements SafeGitDescriptorBoundCapabilityV1
 {
-  readonly profile = SAFE_GIT_FILESYSTEM_BOOTSTRAP_PROFILE_V1;
-  #handles: FileHandle[];
+  readonly profile = SAFE_GIT_DESCRIPTOR_BOOTSTRAP_PROFILE_V1;
+  #binding: NativeSafeGitDescriptorBindingV1 | undefined;
+  readonly #layout: NativeSafeGitDescriptorLayoutV1;
+  #usable = true;
   #closed = false;
   #closing: Promise<void> | undefined;
 
-  constructor(handles: readonly FileHandle[]) {
-    this.#handles = [...handles];
+  constructor(
+    binding: NativeSafeGitDescriptorBindingV1,
+    layout: NativeSafeGitDescriptorLayoutV1,
+  ) {
+    this.#binding = binding;
+    this.#layout = layout;
     CAPABILITIES_V1.add(this);
     Object.freeze(this);
   }
 
   get closed(): boolean {
     return this.#closed;
+  }
+
+  async revalidate(): Promise<SafeGitDescriptorBootstrapInspectionV1> {
+    const binding = this.#binding;
+    if (this.#closed || !this.#usable || binding === undefined) {
+      throw new SafeGitBootstrapErrorV1("binding_changed");
+    }
+    try {
+      const layout = revalidateNativeSafeGitDescriptorBootstrapV1(binding);
+      if (layout !== this.#layout) {
+        throw new SafeGitBootstrapErrorV1("binding_changed");
+      }
+      return inspectionV1(layout);
+    } catch {
+      this.#usable = false;
+      try {
+        closeNativeSafeGitDescriptorBootstrapV1(binding);
+        this.#binding = undefined;
+        this.#closed = true;
+        CAPABILITIES_V1.delete(this);
+      } catch {
+        // Keep the genuine capability recognizable so close() can be retried.
+      }
+      throw new SafeGitBootstrapErrorV1("binding_changed");
+    }
   }
 
   async close(): Promise<void> {
@@ -159,27 +207,29 @@ class SafeGitBootstrapCapabilityInternalV1
   }
 
   async #closeHandles(): Promise<void> {
-    const failed: FileHandle[] = [];
-    for (const handle of this.#handles.reverse()) {
-      try {
-        await handle.close();
-      } catch {
-        failed.push(handle);
-      }
+    const binding = this.#binding;
+    if (binding === undefined) {
+      this.#closed = true;
+      this.#usable = false;
+      CAPABILITIES_V1.delete(this);
+      return;
     }
-    this.#handles = failed;
-    if (failed.length !== 0) {
+    try {
+      closeNativeSafeGitDescriptorBootstrapV1(binding);
+    } catch {
       throw new SafeGitBootstrapErrorV1("filesystem_binding_invalid");
     }
+    this.#binding = undefined;
     this.#closed = true;
+    this.#usable = false;
     CAPABILITIES_V1.delete(this);
   }
 }
 
 /** Runtime authenticity check for the otherwise opaque bootstrap capability. */
-export function isSafeGitBootstrapCapabilityV1(
+export function isSafeGitDescriptorBoundCapabilityV1(
   value: unknown,
-): value is SafeGitBootstrapCapabilityV1 {
+): value is SafeGitDescriptorBoundCapabilityV1 {
   return typeof value === "object" && value !== null && CAPABILITIES_V1.has(value);
 }
 
@@ -194,20 +244,30 @@ function exactModeV1(mode: bigint): number {
 function requiredFilesystemOpenFlagsV1(): Readonly<{
   readonly noFollow: number;
   readonly directory: number;
+  readonly nonBlock: number;
+  readonly noControllingTerminal: number;
 }> {
   const noFollow = NOFOLLOW_V1;
   const directory = DIRECTORY_V1;
+  const nonBlock = NONBLOCK_V1;
+  const noControllingTerminal = NO_CONTROLLING_TERMINAL_V1;
   if (
     noFollow === undefined ||
     !Number.isSafeInteger(noFollow) ||
     noFollow === 0 ||
     directory === undefined ||
     !Number.isSafeInteger(directory) ||
-    directory === 0
+    directory === 0 ||
+    nonBlock === undefined ||
+    !Number.isSafeInteger(nonBlock) ||
+    nonBlock === 0 ||
+    noControllingTerminal === undefined ||
+    !Number.isSafeInteger(noControllingTerminal) ||
+    noControllingTerminal === 0
   ) {
     throw new SafeGitBootstrapErrorV1("unsupported_platform");
   }
-  return { noFollow, directory };
+  return { noFollow, directory, nonBlock, noControllingTerminal };
 }
 
 function effectiveUidV1(): bigint {
@@ -329,7 +389,9 @@ async function openBoundNodeV1(
       path,
       constants.O_RDONLY |
         openFlags.noFollow |
-        (kind === "directory" ? openFlags.directory : 0),
+        (kind === "directory"
+          ? openFlags.directory
+          : openFlags.nonBlock | openFlags.noControllingTerminal),
     );
     const opened = await handle.stat({ bigint: true });
     if (!sameOpenedNodeV1(before, opened, kind)) {
@@ -465,31 +527,37 @@ async function validateBindingsV1(
 }
 
 function inspectionV1(
-  layout: SafeGitBootstrapInspectionV1["layout"],
-): SafeGitBootstrapInspectionV1 {
+  layout: SafeGitDescriptorBootstrapInspectionV1["layout"],
+): SafeGitDescriptorBootstrapInspectionV1 {
   return Object.freeze({
-    profile: SAFE_GIT_FILESYSTEM_BOOTSTRAP_PROFILE_V1,
+    profile: SAFE_GIT_DESCRIPTOR_BOOTSTRAP_PROFILE_V1,
     status: "verified_candidate",
     layout,
     filesystemBinding: "verified",
     linkedWorktreeBackpointer:
       layout === "ordinary" ? "not_applicable" : "verified",
-    descriptorRelativeTraversal: "locked",
-    extendedAccessControl: "locked",
+    descriptorRelativeTraversal: "verified",
+    extendedAccessControl: "verified",
+    nativeHandleCustody: "verified",
     repositoryControlShape: "locked",
+    repositoryControlReader: "locked",
+    localObjectDatabase: "locked",
+    refBackend: "locked",
     handleBoundExecution: "locked",
     osSandbox: "locked",
     hmacIdentity: "locked",
     strongWrites: "locked",
-    requiredNext: SAFE_GIT_FILESYSTEM_BOOTSTRAP_REQUIRED_NEXT_V1,
+    requiredNext: SAFE_GIT_DESCRIPTOR_BOOTSTRAP_REQUIRED_NEXT_V1,
   });
 }
 
-async function bootstrapSafeGitFilesystemCandidateCoreV1(
+async function bootstrapSafeGitDescriptorBoundCandidateCoreV1(
   rootInput: string,
-): Promise<SafeGitFilesystemBootstrapCandidateV1> {
+): Promise<SafeGitDescriptorBoundBootstrapCandidateV1> {
   const nodes = new Map<string, BoundNodeV1>();
   const absentPaths: string[] = [];
+  let nativeBinding: NativeSafeGitDescriptorBindingV1 | undefined;
+  let nativeBindingTransferred = false;
   try {
     const uid = effectiveUidV1();
     if (typeof rootInput !== "string" || rootInput.length === 0) {
@@ -519,7 +587,7 @@ async function bootstrapSafeGitFilesystemCandidateCoreV1(
     }
     await hooks.afterDotGitObserved?.();
 
-    let layout: SafeGitBootstrapInspectionV1["layout"];
+    let layout: SafeGitDescriptorBootstrapInspectionV1["layout"];
     if (dotGitStat.isDirectory()) {
       const gitDirectory = await bindDirectoryChainV1(dotGitPath, nodes);
       if (!sameOpenedNodeV1(dotGitStat, gitDirectory.opened, "directory")) {
@@ -611,11 +679,47 @@ async function bootstrapSafeGitFilesystemCandidateCoreV1(
       requestedRoot,
       root.opened,
     );
-    const capability = new SafeGitBootstrapCapabilityInternalV1(
-      [...nodes.values()].map((node) => node.handle),
+    const nativeBootstrap = openNativeSafeGitDescriptorBootstrapV1(canonicalRoot);
+    nativeBinding = nativeBootstrap.binding;
+    if (nativeBootstrap.layout !== layout) {
+      throw new SafeGitBootstrapErrorV1("binding_changed");
+    }
+    await hooks.afterNativeBindingOpened?.();
+    await validateBindingsV1(
+      nodes,
+      absentPaths,
+      requestedRoot,
+      root.opened,
     );
+    await Promise.all(
+      [...nodes.values()].map(async (node) => node.handle.close()),
+    );
+    nodes.clear();
+    await hooks.afterLegacyBindingsClosed?.();
+    try {
+      if (
+        revalidateNativeSafeGitDescriptorBootstrapV1(nativeBinding) !==
+        nativeBootstrap.layout
+      ) {
+        throw new SafeGitBootstrapErrorV1("binding_changed");
+      }
+    } catch {
+      throw new SafeGitBootstrapErrorV1("binding_changed");
+    }
+    const capability = new SafeGitBootstrapCapabilityInternalV1(
+      nativeBinding,
+      nativeBootstrap.layout,
+    );
+    nativeBindingTransferred = true;
     return Object.freeze({ capability, inspection: inspectionV1(layout) });
   } catch (error) {
+    if (nativeBinding !== undefined && !nativeBindingTransferred) {
+      try {
+        closeNativeSafeGitDescriptorBootstrapV1(nativeBinding);
+      } catch {
+        // The public failure remains path-redacted and fail-closed.
+      }
+    }
     await Promise.all(
       [...nodes.values()].map(async (node) => node.handle.close().catch(() => undefined)),
     );
@@ -634,8 +738,8 @@ async function bootstrapSafeGitFilesystemCandidateCoreV1(
  * Verifies only the filesystem bootstrap needed before SafeGit identity exists.
  * It never launches Git and deliberately does not authorize execution or writes.
  */
-export async function bootstrapSafeGitFilesystemCandidateV1(
+export async function bootstrapSafeGitDescriptorBoundCandidateV1(
   root: string,
-): Promise<SafeGitFilesystemBootstrapCandidateV1> {
-  return bootstrapSafeGitFilesystemCandidateCoreV1(root);
+): Promise<SafeGitDescriptorBoundBootstrapCandidateV1> {
+  return bootstrapSafeGitDescriptorBoundCandidateCoreV1(root);
 }

@@ -2,6 +2,8 @@ export interface SafeGitBootstrapTestHooksInternalV1 {
   readonly afterRootObserved?: () => void | Promise<void>;
   readonly afterDotGitObserved?: () => void | Promise<void>;
   readonly afterBindingsOpened?: () => void | Promise<void>;
+  readonly afterNativeBindingOpened?: () => void | Promise<void>;
+  readonly afterLegacyBindingsClosed?: () => void | Promise<void>;
 }
 
 const EMPTY_HOOKS_V1 = Object.freeze({});

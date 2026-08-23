@@ -48,7 +48,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@understand-code/contracts": "workspace:*"
+    "@understand-code/contracts": "workspace:*",
+    "@understand-code/native-kernel-bridge": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

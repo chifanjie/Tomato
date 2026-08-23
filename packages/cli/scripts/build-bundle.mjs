@@ -126,7 +126,7 @@ if (bundleProfile.copyNativeKernelPeer) {
   await copyCurrentNativeKernelPeerAssetV1({
     sourceNativeRoot: path.join(
       workspaceRoot,
-      "packages/durable-object-provider-runtime/dist/native",
+      "packages/native-kernel-bridge/dist/native",
     ),
     destinationNativeRoot: path.join(path.dirname(output), "native"),
   });

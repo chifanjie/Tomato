@@ -25,7 +25,10 @@ interface UnixSocketPairV1 {
 
 const openPairsV1 = new Set<UnixSocketPairV1>();
 const nativeBuildScriptV1 = fileURLToPath(
-  new URL("../native/build-native-kernel-peer.mjs", import.meta.url),
+  new URL(
+    "../../native-kernel-bridge/native/build-native-kernel-bridge.mjs",
+    import.meta.url,
+  ),
 );
 
 function closeServerV1(server: Server): Promise<void> {

@@ -2,65 +2,62 @@
 
 > 生成时间：2026-08-23 CST
 > 分支：`feature/agent-native-change-intelligence-authority`
-> 基于 commit：`b09a970 test(preview): verify retained historical candidates`
+> 基于 commit：`0cffd9c feat(task-engine): surface bounded staged deletions in checks`
 
 ## 背景与动机
 
-Step15 已能把 bounded unstaged tracked-file deletion表达为 baseline-bound、blocking observation，但真实用户
-也常用 `git rm` 或 `git add -u` 把删除直接写入 Index。Snapshot能诚实发布 `staged/deleted`，旧 provider
-却把它整批判为 unsupported，因此 Check无法给出具体删除路径与基线 Evidence。
+Step15 已分别证明纯 staged added/modified 与 staged modified/deleted 批次，但真实用户经常在一次
+`git add` 中同时新增、修改和删除不同文件。旧的 deletion profile 刻意排除了 added，因此这种完全由
+Index 权威约束的三类组合仍会整批 `unknown`。
 
-本切片在不改变公开 contracts、持久化 schema或 deletion授权语义的前提下，增加一个独立 bounded staged
-deletion profile。删除仍不是 actual-side hunk，也绝不会成为 `planned_completed`：同路径 legacy plan得到
-blocking `cannot_determine`，删除本身始终是独立 blocking `unplanned_change`，Evidence只绑定 baseline。
+本切片把既有 staged-deletion profile 最小扩为 unique all-staged added|modified|deleted（至少一条
+deletion），不新增公开 contract、持久化 schema或 matcher 语义。新增文件仍不会因为 current Graph
+出现节点就自动满足旧计划；正常 Brief 只计划原有 modified symbol，所以真实 Check 应得到一个
+`planned_completed` 与两个独立 blocking `unplanned_change`（added、deleted）。
 
 ## 改动策略
 
-- 仅当 actual Snapshot为 1–16 个唯一路径、全部 source=`staged`、至少一条 deletion，且全集只含
-  staged modified（有 digest）或 staged deleted（无 digest）时启用 `stagedDeletedChanges`。
-- staged added+deleted、任意 staged/unstaged/untracked/committed/conflict混合、重复路径或其他 kind整批
-  `unknown`；无delete的 staged modified/added继续走旧 `stagedChanges`分支与原 reason字符串。
-- 删除路径必须通过安全路径校验；worktree必须确实不存在。provider以 hardened fixed-env/no-shell Git执行
-  global `--literal-pathspecs ls-files --stage -z -- <path>`，只有 exact zero stdout才能证明 Index中既无
-  stage-0条目也无conflict stages。
-- baseline bytes只从 exact baseline HEAD blob读取；staged companion modified仍要求 Index、worktree与
-  actual Snapshot digest三方逐字相等。
-- 复用 full live Snapshot pre/post fence，精确比较 root、repository/worktree identity、HEAD、Index/
-  worktree/untracked/ignore digests与snapshotId；任一 drift、path、预算、Git或语义失败都整批折叠成
-  global boundary、全部 actual IDs、空 hunks与空 deletion observations。
-- 复用每文件 8 MiB、整批 32 MiB与 1024个 hunk/observation上限。
-- `change-intelligence`只把 deletion observation允许关联的 actual source从 `unstaged`扩为
-  `unstaged|staged`；仍要求 exact path、kind deleted、无 contentDigest。matcher、Finding、Evidence、Claim
-  与 stable-ID条件逻辑不变。
-- Source Evidence继续为 `observed/changed`，绑定 baseline Snapshot/HEAD/old range/hash；Finding Claim为
-  `observed/supported/changed`。Workbench固定返回 stale/evidence_stale，不读或返回已删 live source/Graph。
+- `stagedDeletedChanges` 仍要求 actual Snapshot complete、1–16 个唯一路径、全部 source=`staged`、至少一条
+  deletion；允许集合从 modified|deleted 扩为 added|modified|deleted。
+- added/modified 必须有 exact `contentDigest`，deleted 必须没有 actual-side digest。无 deletion 的
+  added/modified 仍优先进入旧 `stagedChanges`，其 predicate、reason与稳定 ID 输入不变。
+- staged added 复用既有 HEAD tree absence + Index/worktree/Snapshot exact bytes；modified 复用 baseline HEAD
+  blob + Index/worktree/Snapshot exact bytes；deleted 复用 Index exact-empty + worktree absence + baseline HEAD
+  bytes。三类共同使用相同的 pre/post full live Snapshot fence、32 MiB aggregate与 1024 observations上限。
+- 任一重复路径、same-path replacement、mixed source、rename/copy/conflict、路径/预算/Git失败或 live drift
+  均 whole-analysis `unknown`：单一 global boundary覆盖全部 actual IDs，且 `hunks=[]`、`deletedFiles=[]`。
+- `change-intelligence` 无需修改。既有 matcher继续让 exact planned modified hunk完成；Brief创建时不存在的
+  added path形成 current Source Evidence的 blocking unplanned；deleted path形成 baseline-bound changed
+  Evidence的 blocking unplanned，绝不成为 `planned_completed`或 `possible_omission`。
+- packed user vertical复用既有 staged happy repo与同一个 Chrome profile，不新增 Browser矩阵；同时保留
+  原 unstaged deletion stale/no-source纵切。
 
 ## 改动范围
 
 | 模块/职责 | 文件 | 做了什么 |
 |---|---|---|
-| Repository analysis | `packages/task-engine/src/repository-context-provider.ts` | 新增独立 staged-deletion profile、Index exact-absence证明及既有 fence/budget/whole-unknown接线 |
-| Finding consistency | `packages/task-engine/src/change-intelligence.ts` | 允许严格的 staged deleted actual关联既有 deletion observation |
-| Provider regression | `packages/task-engine/test/repository-context-provider.test.ts` | 真实 staged modified+deleted happy、authority drift与 add+delete/mixed whole-unknown |
-| Engine regression | `packages/task-engine/test/engine.integration.test.ts` | 将完整删除 Finding/Evidence/Claim合同分别用于 unstaged与staged source |
-| Packed user vertical | `packages/preview/test/workbench-browser-packed.test.mjs` | 在唯一真实 Browser E2E中以独立repo/profile执行 unstaged与staged deletion stale/no-source纵切 |
+| Repository analysis | `packages/task-engine/src/repository-context-provider.ts` | 在既有 bounded staged-deletion profile中允许 digest-bound staged added |
+| Provider regression | `packages/task-engine/test/repository-context-provider.test.ts` | 真实 add+modify+delete complete、determinism、drift与same-path replacement fail-close |
+| Engine regression | `packages/task-engine/test/engine.integration.test.ts` | 独立组合测试锁定1 completed + 2 unplanned及三类Evidence |
+| Packed user vertical | `packages/preview/test/workbench-browser-packed.test.mjs` | 现有 staged happy扩为三路径，真实Verification与同一Workbench会话验证added/deleted语义 |
 
-`engine-types`、公开 contracts、MCP shape、artifact schema、Dashboard production与生命周期实现均未修改。
+公开 contracts、`engine-types`、`change-intelligence`、MCP shape、artifact schema、Dashboard production与生命周期
+实现均未修改。
 
 ## Review 重点与结论
 
-1. **Index absence是肯定证明** — helper使用literal pathspec、`-z`与有界stdout；任何非空entry、Git失败或
-   budget失败都不承认删除。真实 focused与packed均直接断言 `ls-files --stage` exact empty。
-2. **worktree与baseline不混淆** — worktree必须ENOENT；old range/hash只来自baseline HEAD blob。staged
-   deletion不会伪装成 current source hunk。
-3. **全局fence与整批失败** — pre/post Snapshot fence覆盖Index、worktree、untracked与ignore；worktree重建、
-   Index restore或无关live drift都会清空所有成功结果并覆盖全部actual IDs。
-4. **scope确实收窄** — 真实 fresh Snapshot加入 staged added后，exact三变化批次必须whole unknown；这会
-   阻止未来无测试地扩大为 add+delete组合。
-5. **旧profile不漂移** — 无delete staged added/modified仍优先走旧predicate/reason；unstaged deletion的
-   Index=baseline证明、reason、Finding/Evidence/Claim ID构造均保持。
-6. **真实candidate authority** — packed ephemeral v1 overlay已包含 `repository-context-provider.ts`、
-   `change-intelligence.ts`与既有 `engine-types.ts`，v2从该commit派生；最终tgz真实执行本轮production字节。
+1. **三类authority可组合而不降级** — 每种kind继续走已独立证明的bytes/absence逻辑；整批仍受同一个
+   actual Snapshot及pre/post full fence约束，不以Graph或路径推断Index事实。
+2. **旧profile与稳定ID不漂移** — 无delete的staged add/modify仍先命中旧profile；旧top-level
+   unsupported/unsafe/budget reason与成功ID输入无diff。新增文案只描述新profile的kind allowlist。
+3. **same-path replacement明确fail closed** — 真实Git产生同路径 `staged/deleted` + `untracked/added`
+   （另有 staged modified）；fresh Repository Snapshot被整批判为单一 `unsupported_source`，无部分成功。
+4. **新文件不会冒充计划完成** — Engine组合只计划已有TaskHandler；modified精确完成，added/deleted各自
+   blocking unplanned，且actual IDs互斥、没有cannot_determine或possible_omission。
+5. **Evidence路由准确** — planned modified与unplanned added都绑定actual Snapshot/current source/node/hash；
+   deletion只绑定baseline Snapshot/HEAD/old range/hash、freshness changed、nodeIds=[]。
+6. **真实candidate authority** — packed v1 overlay包含本轮provider production与packed gate，v2从该clean
+   ephemeral commit派生；若tgz仍带旧provider，三路径Check会whole unknown并击穿exact Finding/Evidence断言。
 
 独立 contract 与 change-intent 终审一致：P0 0、P1 0、current-path executable P2 0、
 blocking Test Gap 0；结论为 Effective / SAFE TO COMMIT。
@@ -69,63 +66,68 @@ blocking Test Gap 0；结论为 Effective / SAFE TO COMMIT。
 
 **已通过：**
 
-- task-engine provider focused：14/14 passed，包含真实 staged deletion与所有新authority边界。
-- task-engine engine focused：32/32 passed，分别覆盖 unstaged/staged deletion完整语义。
+- task-engine provider focused：14/14 passed，14.12 秒。
+- task-engine engine focused：33/33 passed，55.92 秒。
 - `pnpm --filter @understand-code/task-engine typecheck`
-- `pnpm --filter @understand-code/task-engine test`：8 files / 75 tests passed。
+- `pnpm --filter @understand-code/task-engine test`：包含 fresh build，8 files / 76 tests passed，55.84 秒。
 - `node --check packages/preview/test/workbench-browser-packed.test.mjs`
 - scoped `git diff --check`
 - `pnpm --filter @understand-code/preview typecheck`
 - `pnpm --filter @understand-code/preview build`（fresh dist）
 - 唯一真实 packed Browser门禁：
   `UNDERSTAND_CODE_REQUIRE_REAL_BROWSER=1 pnpm --filter @understand-code/preview test:workbench-browser`
-  - 1 passed / 0 failed / 0 skipped，190.69 秒；
-  - v1 tgz：87 entries，`sha256:a6de7f8dd3099018260b050f4097491c1e635d0e26284ab2395fc61b37fa0f39`；
-  - v2 tgz：87 entries，`sha256:7c141241daca18e8f9e6538ab89af83af0909e2b35713d1ea0d9fc283a28b958`。
+  - 受控最终运行：1 passed / 0 failed / 0 skipped，230.91 秒；
+  - v1 tgz：87 entries，`sha256:73e2b9b569704c68fd24c680dd6ab84f201a4b3e45a803e226c69b6988eded22`；
+  - v2 tgz：87 entries，`sha256:8d3333ddd86e5a968009cd77997f2959d620995c48f29e0aa473d5488df3464b`。
+
+第一次同门运行在659.7秒时由v2 assembler返回脱敏 `verification_failed`；该次没有保留安全phase artifact，
+因此不能把根因过度定性。冻结输入未改变，经终审允许的唯一受控重跑完整通过；只读进程观察确认重跑中的
+v2 build持续推进并正常越过旧失败点。该事件作为非阻塞gate-observability residual记录；若再现，先补只输出
+安全阶段码的candidate诊断，不盲目重跑、不提高production timeout。
 
 未运行 Plugin Host、root full或cross-platform矩阵：本切片不修改这些surface，唯一packed E2E已从真实
-candidate覆盖MCP→Check→Evidence→Workbench与既有upgrade/rollback链。
+candidate覆盖MCP→Check→Evidence→Workbench、真实外部Verification与既有upgrade/rollback链。
 
-## Pre-focused Test Gap 与修复
+## 失败轨迹与最小修复
 
-终审在functional门禁前识别并关闭两处blocking Test Gap：
+1. Pre-focused review发现三路径Snapshot不能复用先前两路径Snapshot的ordinal-based change IDs。最终测试从
+   fresh三路径Snapshot分别derive并exact-assert added/modified/deleted，再仅使用fresh IDs。
+2. 初版same-path replacement使用schema-valid synthetic Snapshot，未证明producer真实shape。最终改为真实
+   `captureFencedSnapshot`，锁定Git/Repository State发布的 staged deleted + untracked added同路径组合。
+3. provider focused首次13/14失败，因为测试把replacement错误期望为 `unstaged/added`。真实porcelain包含独立
+   `?` record，public Snapshot正确为 `untracked/added`；只修两处test expectation，production未改；同一
+   focused随后14/14通过。
+4. packed heavy首次generic失败见上一节。未修改产品/fixture/timeout；同一冻结输入的唯一受控重跑通过。
 
-1. 初版没有直接断言 deleted path 的 Index inventory与worktree absence。最终 provider focused明确锁定
-   `git ls-files --stage -- path`为空且 `readFile`为ENOENT；packed staged vertical也直接锁Index empty。
-2. 实现被收窄为 modified+deleted，但初版没有证明 add+delete被排除。最终在同一真实Git fixture恢复合法
-   staged deletion后新增并stage `src/added.ts`，fresh capture锁三条变化，再断言唯一global
-   `unsupported_source`覆盖全部IDs且无hunks/deletion observations。
-
-修复只增强测试；没有放宽production边界或新增矩阵。
+这些修复均未放宽production边界或弱化断言。
 
 ## 可声明与不可声明
 
 **可声明：**
 
-- 当前 Alpha能对 1–16 个unique staged modified/deleted变化（至少一条delete）进行 bounded、
+- 当前Alpha能对1–16个unique all-staged added|modified|deleted变化（至少一条delete）进行 bounded、
   Snapshot-bound分析。
-- staged deleted path由 exact Index absence、worktree absence与baseline HEAD bytes三方证明；companion
-  modified仍由Index/worktree/Snapshot bytes精确绑定。
-- 删除不会被误报为plan完成；它形成独立blocking unplanned Finding与baseline changed Evidence/Claim。
-- unsupported组合或任一live authority drift都会whole-analysis fail closed。
-- 真实Chrome Workbench对unstaged与staged deleted Evidence均显示stale/evidence_stale，且不读取/展示
-  live source或Graph action。
+- added、modified、deleted分别由HEAD/Index/worktree/Snapshot的对应exact proof组成，并共享full live fence；
+  任一漂移或unsupported组合都会whole-analysis fail closed。
+- 正常Brief下，planned modified可以精确完成；后来新增与删除的文件保持独立blocking unplanned，Evidence
+  分别为current actual与baseline changed。
+- 真实tgz/MCP链完成Check、两项Finding acceptance与外部Verification；同一Chrome会话显示added current
+  source/Graph，并对deleted Evidence固定stale/evidence_stale、无source/Graph。
 
 **不可声明：**
 
-- 本切片不授权 planned deletion，不生成formal actual deletion hunk，也不证明possible omission或五维
-  Completeness。
-- 不支持 staged added+deleted、delete+untracked replacement、mixed staged/unstaged、rename/copy、
-  committed delta、conflict、empty、binary、mode-only、oversize或Graph unavailable deletion；继续unknown。
-- Workbench不会hydrated历史删除源码；baseline Evidence不是current source/Graph proof。
-- 结果仍为 `legacy_summary`，不是 `evidence_backed_v1`或structured `diff_hunk`。
-- 不证明Provider Authority、execution fence或strong write；`strongWrites`继续 locked。
+- 不支持或配对same-path replacement、rename/copy、mixed staged/untracked/unstaged、committed delta、
+  conflict、binary、mode-only、partial/oversize或Graph unavailable组合；继续unknown。
+- 本切片不授权planned deletion，不证明path-only/new-file计划完成、possible omission或五维Completeness。
+- 结果仍为 `legacy_summary`，不是 `evidence_backed_v1`或formal structured `diff_hunk`。
+- 不证明Provider Authority、execution fence或strong write；`strongWrites`继续locked。
 - 两个candidate仍是当前本机tuple的unsigned Alpha测试产物，不证明Release、signature、SBOM、provenance、
-  reproducibility或cross-platform。
+  reproducibility、CI same-SHA或cross-platform。
+- 首次heavy generic失败的精确内部stage/root cause未被本切片证明。
 
 ## 结论
 
-🟢 Effective。真实 staged tracked-file deletion现在能在严格Index/worktree/HEAD/Snapshot authority下形成
-可追溯、baseline-bound、blocking observation；同路径plan仍不能授权删除，所有不受支持组合与live drift
-继续整批fail closed。旧 staged added/modified、unstaged deletion与既有Workbench/lifecycle均未回归。
-可以精确提交。
+🟢 Effective。真实 all-staged add+modify+delete 批次现在能在各kind的精确Git authority与统一Snapshot fence下
+完成bounded Change Check：只完成已计划modified，added/deleted保持独立blocking unplanned；所有mixed、
+same-path replacement与live drift继续整批fail closed。旧staged与deletion路径、Evidence语义、真实Workbench及
+lifecycle未回归。可以精确提交。

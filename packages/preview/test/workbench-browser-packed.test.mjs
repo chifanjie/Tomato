@@ -629,7 +629,6 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
   const upgradeInstallDirectory = await mkdtemp(path.join(tmpdir(), "uc-workbench-browser-upgrade-install-"));
   const browserProfile = await mkdtemp(path.join(tmpdir(), "uc-workbench-browser-profile-"));
   const deletionBrowserProfile = await mkdtemp(path.join(tmpdir(), "uc-workbench-browser-deletion-profile-"));
-  const stagedDeletionBrowserProfile = await mkdtemp(path.join(tmpdir(), "uc-workbench-browser-staged-deletion-profile-"));
   const home = await mkdtemp(path.join(tmpdir(), "uc-workbench-browser-home-"));
   let repositoryRoot = await createRepositoryFixture();
   const repositoryRoots = [repositoryRoot];
@@ -871,22 +870,10 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     assert.equal(output.stderr.join(""), "");
     mcp = null;
 
-    for (const deletionProfile of [
-      {
-        label: "unstaged",
-        source: "unstaged",
-        browserProfile: deletionBrowserProfile,
-      },
-      {
-        label: "staged",
-        source: "staged",
-        browserProfile: stagedDeletionBrowserProfile,
-      },
-    ]) {
-      repositoryRoot = await createRepositoryFixture();
-      repositoryRoots.push(repositoryRoot);
-      lifecycleEnv = cleanMcpEnvironment(home, repositoryRoot);
-      const deletedExtraPath = path.join(repositoryRoot, "src/extra.ts");
+    repositoryRoot = await createRepositoryFixture();
+    repositoryRoots.push(repositoryRoot);
+    lifecycleEnv = cleanMcpEnvironment(home, repositoryRoot);
+    const deletedExtraPath = path.join(repositoryRoot, "src/extra.ts");
     mcp = spawn(managedWrapper, ["--root", repositoryRoot], {
       cwd: installDirectory,
       env: lifecycleEnv,
@@ -896,7 +883,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     await initializeMcp(
       mcp,
       output,
-      `preview-workbench-browser-${deletionProfile.label}-deleted`,
+      "preview-workbench-browser-deleted",
       baseVersion,
     );
     requestId = 2;
@@ -987,23 +974,10 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     );
 
     await rm(deletedExtraPath);
-    if (deletionProfile.source === "staged") {
-      await git(repositoryRoot, ["add", "--", "src/extra.ts"]);
-      assert.equal(
-        (await git(repositoryRoot, [
-          "ls-files",
-          "--stage",
-          "--",
-          "src/extra.ts",
-        ])).stdout,
-        "",
-        "the staged deletion must remove the path from the Index stage-0 inventory",
-      );
-    }
     assert.equal(
       (await git(repositoryRoot, ["diff", "--cached", "--name-only"])).stdout,
-      deletionProfile.source === "staged" ? "src/extra.ts\n" : "",
-      `the ${deletionProfile.label} deletion vertical must retain its exact Index authority`,
+      "",
+      "the deletion vertical must not stage the removed path",
     );
     assert.equal(
       (await git(repositoryRoot, [
@@ -1011,10 +985,8 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
         "--porcelain",
         "--untracked-files=all",
       ])).stdout,
-      deletionProfile.source === "staged"
-        ? "D  src/extra.ts\n"
-        : " D src/extra.ts\n",
-      `the real repository must contain exactly one ${deletionProfile.label} tracked deletion`,
+      " D src/extra.ts\n",
+      "the real repository must contain exactly one unstaged tracked deletion",
     );
     const deletedChangedRefresh = await callTool(
       mcp,
@@ -1048,7 +1020,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     assert.deepEqual(deletedSnapshotChange, {
       id: deletedSnapshotChange.id,
       path: "src/extra.ts",
-      source: deletionProfile.source,
+      source: "unstaged",
       kind: "deleted",
     });
     assert.equal(
@@ -1207,7 +1179,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     );
     browser = await launchBrowser({
       executable: browserExecutable,
-      userDataDir: deletionProfile.browserProfile,
+      userDataDir: deletionBrowserProfile,
       timeoutMs: 30_000,
     });
     await browser.navigate(deletedOpened.structuredContent.result.deepLink);
@@ -1270,8 +1242,6 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     );
     assert.equal(output.stderr.join(""), "");
     mcp = null;
-    }
-
     repositoryRoot = await createRepositoryFixture();
     repositoryRoots.push(repositoryRoot);
     lifecycleEnv = cleanMcpEnvironment(home, repositoryRoot);
@@ -1746,6 +1716,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     lifecycleEnv = cleanMcpEnvironment(home, repositoryRoot);
     sourcePath = path.join(repositoryRoot, "src/index.ts");
     const addedPath = path.join(repositoryRoot, "src/added.ts");
+    const happyDeletedPath = path.join(repositoryRoot, "src/extra.ts");
     mcp = spawn(managedWrapper, ["--root", repositoryRoot], {
       cwd: installDirectory,
       env: lifecycleEnv,
@@ -1810,13 +1781,30 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     await Promise.all([
       writeFile(sourcePath, FOO_ONLY_SOURCE, "utf8"),
       writeFile(addedPath, ADDED_SOURCE, "utf8"),
+      rm(happyDeletedPath),
     ]);
-    await git(repositoryRoot, ["add", "--", "src/added.ts", "src/index.ts"]);
+    await git(repositoryRoot, [
+      "add",
+      "--",
+      "src/added.ts",
+      "src/extra.ts",
+      "src/index.ts",
+    ]);
+    assert.equal(
+      (await git(repositoryRoot, [
+        "ls-files",
+        "--stage",
+        "--",
+        "src/extra.ts",
+      ])).stdout,
+      "",
+      "the all-staged happy path must remove the deleted file from Index stage-0",
+    );
     assert.deepEqual(
       (await git(repositoryRoot, ["diff", "--cached", "--name-only"]))
         .stdout.trim().split("\n").filter(Boolean),
-      ["src/added.ts", "src/index.ts"],
-      "the happy Change Check must bind exactly the planned edit and later-added staged path",
+      ["src/added.ts", "src/extra.ts", "src/index.ts"],
+      "the happy Change Check must bind exactly the staged add, delete, and planned edit",
     );
     assert.equal(
       (await git(repositoryRoot, ["diff", "--name-only"])).stdout,
@@ -1836,12 +1824,15 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       "utf8",
     )));
     assert.equal(changedSnapshotArtifact.payload.captureStatus, "complete");
-    assert.equal(changedSnapshotArtifact.payload.changes.length, 2);
+    assert.equal(changedSnapshotArtifact.payload.changes.length, 3);
     const addedSnapshotChange = changedSnapshotArtifact.payload.changes.find((change) =>
       change.path === "src/added.ts",
     );
     const fooSnapshotChange = changedSnapshotArtifact.payload.changes.find((change) =>
       change.path === "src/index.ts",
+    );
+    const happyDeletedSnapshotChange = changedSnapshotArtifact.payload.changes.find((change) =>
+      change.path === "src/extra.ts",
     );
     assert.deepEqual(addedSnapshotChange, {
       id: addedSnapshotChange?.id,
@@ -1856,6 +1847,12 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       source: "staged",
       kind: "modified",
       contentDigest: contentDigest(Buffer.from(FOO_ONLY_SOURCE, "utf8")),
+    });
+    assert.deepEqual(happyDeletedSnapshotChange, {
+      id: happyDeletedSnapshotChange?.id,
+      path: "src/extra.ts",
+      source: "staged",
+      kind: "deleted",
     });
 
     await updateTask(
@@ -1895,13 +1892,13 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     );
     assert.equal(
       unplannedFindings.length,
-      1,
-      `the public Check must publish exactly one unplanned added-file Finding: ${JSON.stringify(findingDiagnostics)}`,
+      2,
+      `the public Check must publish exact independent unplanned add/delete Findings: ${JSON.stringify(findingDiagnostics)}`,
     );
     assert.equal(
       checked.structuredContent.result.changeCheck.findings.length,
-      2,
-      `the exact two-path change must publish only the completed foo and unplanned added-file Findings: ${JSON.stringify(findingDiagnostics)}`,
+      3,
+      `the exact three-path change must publish one completed foo and two unplanned Findings: ${JSON.stringify(findingDiagnostics)}`,
     );
     const fooPlannedChange = brief.plannedChanges.find((change) =>
       change.filePath === "src/index.ts" && change.symbolId === FOO_NODE_ID,
@@ -1910,32 +1907,54 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     const finding = completedFindings.find((candidate) =>
       candidate.plannedChangeIds.includes(fooPlannedChange.id),
     );
-    const addedFinding = unplannedFindings[0];
+    const addedFinding = unplannedFindings.find((candidate) =>
+      candidate.actualChangeIds.includes(addedSnapshotChange.id),
+    );
+    const happyDeletedFinding = unplannedFindings.find((candidate) =>
+      candidate.actualChangeIds.includes(happyDeletedSnapshotChange.id),
+    );
     assert.ok(finding, "the public Check must publish a source-backed completed foo Finding");
     assert.ok(
       addedFinding,
       `the public Check must publish the later-added file as unplanned: ${JSON.stringify(findingDiagnostics)}`,
+    );
+    assert.ok(
+      happyDeletedFinding,
+      `the public Check must publish the removed baseline file as unplanned: ${JSON.stringify(findingDiagnostics)}`,
     );
     assert.deepEqual(finding.plannedChangeIds, [fooPlannedChange.id]);
     assert.deepEqual(addedFinding.plannedChangeIds, []);
     assert.equal(addedFinding.blocking, true);
     assert.deepEqual(finding.actualChangeIds, [fooSnapshotChange.id]);
     assert.deepEqual(addedFinding.actualChangeIds, [addedSnapshotChange.id]);
+    assert.deepEqual(happyDeletedFinding.plannedChangeIds, []);
+    assert.equal(happyDeletedFinding.blocking, true);
+    assert.deepEqual(happyDeletedFinding.actualChangeIds, [happyDeletedSnapshotChange.id]);
     assert.equal(finding.evidenceIds.length, 1);
     assert.equal(addedFinding.evidenceIds.length, 1);
+    assert.equal(happyDeletedFinding.evidenceIds.length, 1);
     assert.equal(
       checked.structuredContent.result.changeCheck.findings.some((candidate) =>
         candidate.type === "cannot_determine" ||
-        (candidate.blocking && candidate.id !== addedFinding.id)
+        (candidate.blocking &&
+          candidate.id !== addedFinding.id &&
+          candidate.id !== happyDeletedFinding.id)
       ),
       false,
-      `the exact staged bytes must leave only the added-file Finding blocking: ${JSON.stringify(findingDiagnostics)}`,
+      `the exact staged bytes must leave only the added/deleted Findings blocking: ${JSON.stringify(findingDiagnostics)}`,
     );
     const evidenceRead = await callTool(mcp, output, requestId++, "get_evidence", {
       taskId,
-      evidenceIds: [...finding.evidenceIds, ...addedFinding.evidenceIds],
+      evidenceIds: [
+        ...finding.evidenceIds,
+        ...addedFinding.evidenceIds,
+        ...happyDeletedFinding.evidenceIds,
+      ],
       maxExcerptChars: 8_192,
-      pageSize: finding.evidenceIds.length + addedFinding.evidenceIds.length,
+      pageSize:
+        finding.evidenceIds.length +
+        addedFinding.evidenceIds.length +
+        happyDeletedFinding.evidenceIds.length,
     }, GetEvidenceOutputV1Schema);
     const expectedEvidence = evidenceRead.structuredContent.result.evidence.find((evidence) =>
       "filePath" in evidence && evidence.filePath === "src/index.ts",
@@ -1957,6 +1976,19 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     assert.equal(addedEvidence.contentHash, contentDigest(Buffer.from(ADDED_SOURCE, "utf8")));
     assert.equal(addedEvidence.observedAtSnapshotId, changedSnapshotId);
     assert.deepEqual(addedFinding.evidenceIds, [addedEvidence.id]);
+    const happyDeletedEvidence = evidenceRead.structuredContent.result.evidence.find((evidence) =>
+      "filePath" in evidence && evidence.filePath === "src/extra.ts",
+    );
+    assert.ok(happyDeletedEvidence && "filePath" in happyDeletedEvidence, "the deletion Finding must resolve to baseline Source Evidence");
+    assert.equal(happyDeletedEvidence.freshness, "changed");
+    assert.deepEqual(happyDeletedEvidence.lineRange, [1, 1]);
+    assert.deepEqual(happyDeletedEvidence.nodeIds, []);
+    assert.equal(
+      happyDeletedEvidence.contentHash,
+      contentDigest(Buffer.from(INITIAL_EXTRA_SOURCE, "utf8")),
+    );
+    assert.equal(happyDeletedEvidence.observedAtSnapshotId, initialSnapshotId);
+    assert.deepEqual(happyDeletedFinding.evidenceIds, [happyDeletedEvidence.id]);
 
     await updateTask(
       {
@@ -1965,6 +1997,14 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
         reason: "The added source file is intentional and is explicitly accepted for this Alpha flow.",
       },
       "preview-workbench-browser-accept-added-file-finding",
+    );
+    await updateTask(
+      {
+        type: "accept_finding",
+        findingId: happyDeletedFinding.id,
+        reason: "The staged source deletion is intentional and explicitly accepted for this Alpha flow.",
+      },
+      "preview-workbench-browser-accept-deleted-file-finding",
     );
 
     await updateTask(
@@ -2022,7 +2062,11 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
 
     const verificationProgram = [
       "const { foo } = await import('./src/index.ts');",
+      "const { added } = await import('./src/added.ts');",
       "if (foo() !== 'browser-ready') throw new Error('unexpected foo result');",
+      "if (added() !== 'added-unplanned') throw new Error('unexpected added result');",
+      "const { access } = await import('node:fs/promises');",
+      "await access('./src/extra.ts').then(() => { throw new Error('deleted source still exists'); }, (error) => { if (error?.code !== 'ENOENT') throw error; });",
     ].join(" ");
     const verificationStartedAt = Date.now();
     const verificationExecution = await execBounded(
@@ -2047,7 +2091,7 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
           exitCode: 0,
           durationMs: verificationDurationMs,
           outputDigest: contentDigest(Buffer.from(`${verificationExecution.stdout}${verificationExecution.stderr}`, "utf8")),
-          summary: "The external foo verification command completed successfully.",
+          summary: "The external add, modify, and delete verification command completed successfully.",
           claimIds: planEntry.acceptanceClaimIds,
           snapshotId: changedSnapshotId,
         },
@@ -2100,6 +2144,85 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       browser.networkResponses.some((response) => new URL(response.url).pathname === "/__workbench/app.js"),
       false,
       "the installed gate must not fall back to the legacy embedded Workbench app",
+    );
+
+    const happyDeletedWorkbenchEvidence = await browser.evaluate(`fetch(
+      '/__workbench/evidence?taskId=' + encodeURIComponent(${JSON.stringify(taskId)})
+        + '&evidenceId=' + encodeURIComponent(${JSON.stringify(happyDeletedEvidence.id)}),
+      { credentials: 'same-origin', headers: { accept: 'application/json' } },
+    ).then(async (response) => ({ statusCode: response.status, payload: await response.json() }))`);
+    assert.equal(happyDeletedWorkbenchEvidence.statusCode, 200);
+    assert.deepEqual(
+      {
+        status: happyDeletedWorkbenchEvidence.payload.status,
+        reason: happyDeletedWorkbenchEvidence.payload.reason,
+        observedSnapshotId: happyDeletedWorkbenchEvidence.payload.observedSnapshotId,
+      },
+      {
+        status: "stale",
+        reason: "evidence_stale",
+        observedSnapshotId: initialSnapshotId,
+      },
+    );
+    assert.equal(
+      Object.hasOwn(happyDeletedWorkbenchEvidence.payload, "source"),
+      false,
+      "the all-staged Workbench must never return source bytes for the deleted file",
+    );
+    await browser.waitFor(bodyContains(happyDeletedFinding.summary), "unplanned staged deletion Finding");
+    await browser.click(`[data-testid="task-finding-open"][data-finding-id="${happyDeletedFinding.id}"]`);
+    await browser.waitFor(
+      `document.querySelector('[data-testid="task-evidence-open"][data-evidence-id="${happyDeletedEvidence.id}"]') !== null`,
+      "staged deletion Evidence action",
+    );
+    await browser.click(`[data-testid="task-evidence-open"][data-evidence-id="${happyDeletedEvidence.id}"]`);
+    await browser.waitFor(
+      `document.querySelector('[data-testid="task-evidence-view"][data-evidence-id="${happyDeletedEvidence.id}"]') !== null`,
+      "staged deletion stale Evidence view",
+    );
+    assert.equal(
+      await browser.evaluate(
+        "document.querySelector('[aria-label=\"证据源码行\"]') !== null",
+      ),
+      false,
+      "the staged deletion Evidence must not render guarded source lines",
+    );
+    assert.equal(
+      await browser.evaluate(
+        "document.querySelector('[data-testid=\"task-evidence-open-graph\"]') !== null",
+      ),
+      false,
+      "the staged deletion Evidence has no current Graph navigation",
+    );
+    await browser.navigate(deepLink);
+    await browser.waitFor(
+      "document.querySelector('[data-testid=\"task-first-workbench\"]') !== null",
+      "Task Workbench after staged deletion Evidence",
+      30_000,
+    );
+
+    await browser.waitFor(bodyContains(addedFinding.summary), "unplanned staged addition Finding");
+    await browser.click(`[data-testid="task-finding-open"][data-finding-id="${addedFinding.id}"]`);
+    await browser.waitFor(
+      `document.querySelector('[data-testid="task-evidence-open"][data-evidence-id="${addedEvidence.id}"]') !== null`,
+      "staged addition Evidence action",
+    );
+    await browser.click(`[data-testid="task-evidence-open"][data-evidence-id="${addedEvidence.id}"]`);
+    await browser.waitFor(
+      `document.querySelector('[data-testid="task-evidence-view"][data-evidence-id="${addedEvidence.id}"]')?.textContent?.includes('added-unplanned') === true`,
+      "staged addition current Source projection",
+    );
+    await browser.click(`[data-testid="task-evidence-open-graph"][data-node-id="${ADDED_NODE_ID}"]`);
+    await browser.waitFor(
+      `document.querySelector('[data-graph-node-id="${ADDED_NODE_ID}"][data-selected="true"]') !== null`,
+      "staged addition exact Graph focus",
+      30_000,
+    );
+    await browser.navigate(deepLink);
+    await browser.waitFor(
+      "document.querySelector('[data-testid=\"task-first-workbench\"]') !== null",
+      "Task Workbench after staged addition Graph",
+      30_000,
     );
 
     await browser.waitFor(bodyContains(finding.summary), "published Change Check finding");
@@ -2733,7 +2856,6 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       rm(upgradeInstallDirectory, { recursive: true, force: true }),
       rm(browserProfile, { recursive: true, force: true }),
       rm(deletionBrowserProfile, { recursive: true, force: true }),
-      rm(stagedDeletionBrowserProfile, { recursive: true, force: true }),
       rm(home, { recursive: true, force: true }),
       ...repositoryRoots.map((root) => rm(root, { recursive: true, force: true })),
     ]);

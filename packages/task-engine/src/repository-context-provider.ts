@@ -1454,7 +1454,7 @@ implements TaskContextProvider {
       actual.data.changes.every(
         (change) =>
           change.source === "staged" &&
-          (change.kind === "modified"
+          (change.kind === "modified" || change.kind === "added"
             ? change.contentDigest !== undefined
             : change.kind === "deleted" &&
               change.contentDigest === undefined),
@@ -1655,6 +1655,7 @@ implements TaskContextProvider {
           : stagedDeletedChanges !== undefined
             ? changes[0]!.source === "staged" &&
               (changes[0]!.kind === "modified" ||
+                changes[0]!.kind === "added" ||
                 changes[0]!.kind === "deleted")
           : liveUntrackedChanges !== undefined
             ? (changes[0]!.source === "untracked" &&
@@ -1685,7 +1686,7 @@ implements TaskContextProvider {
               : stagedChanges !== undefined
                 ? "Alpha staged line analysis only supports unique staged modified or added paths."
                 : stagedDeletedChanges !== undefined
-                  ? "Alpha staged deletion analysis only supports unique staged modified or deleted paths."
+                  ? "Alpha staged deletion analysis only supports unique staged modified, added, or deleted paths."
                 : liveUntrackedChanges !== undefined
                   ? "Alpha live untracked analysis only supports unique untracked added or unstaged modified paths."
                   : liveIntentToAddChanges !== undefined

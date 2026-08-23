@@ -4042,7 +4042,9 @@ describe("TaskEngine persistent integration", () => {
         finding.plannedChangeIds.includes(deletedPlan!.id),
     );
     const unplannedDeletion = checked.changeCheck.findings.find(
-      (finding) => finding.type === "unplanned_change",
+      (finding) =>
+        finding.type === "unplanned_change" &&
+        finding.actualChangeIds.includes("change:deleted-handler"),
     );
     expect(cannotDetermine).toMatchObject({
       blocking: true,
@@ -4106,4 +4108,249 @@ describe("TaskEngine persistent integration", () => {
     }));
     },
   );
+
+  it("keeps an all-staged planned modification complete while additions and deletions remain independently unplanned", async () => {
+    const { store } = await openStore();
+    const addedDigest =
+      "sha256:cc103bae86db4b319ce6ec4b17e5c4547d061a07a3b4a08e49308579dcaa4865";
+    const deletedDigest =
+      "sha256:bb103bae86db4b319ce6ec4b17e5c4547d061a07a3b4a08e49308579dcaa4864";
+    const combinedGraph: KnowledgeGraph = {
+      ...graphFixture(),
+      nodes: [
+        ...graphFixture().nodes,
+        node("added-handler", "AddedHandler", "src/added.ts", {
+          lineRange: [1, 1],
+        }),
+        node("removed-handler", "RemovedHandler", "src/removed.ts", {
+          lineRange: [1, 1],
+        }),
+      ],
+    };
+    const taskEngine = engine(store, {
+      contextProvider: {
+        async loadTaskContext() {
+          return {
+            graph: combinedGraph,
+            existingFilePaths: ["src/task.ts", "src/removed.ts"],
+            sourceEvidence: [
+              {
+                nodeId: "task-handler",
+                filePath: "src/task.ts",
+                lineRange: [1, 1] as [number, number],
+                contentHash: SOURCE_DIGEST,
+                commit: "a".repeat(40),
+                kind: "source" as const,
+              },
+            ],
+          };
+        },
+        async analyzeTaskChanges() {
+          return {
+            status: "complete" as const,
+            hunks: [
+              {
+                id: "hunk:added-handler",
+                actualChangeIds: ["change:added-handler"],
+                filePath: "src/added.ts",
+                newLineRange: [1, 1] as [number, number],
+                nodeIds: ["added-handler"],
+                contentHash: addedDigest,
+              },
+              {
+                id: "hunk:task-handler",
+                actualChangeIds: ["change:task-handler"],
+                filePath: "src/task.ts",
+                newLineRange: [1, 1] as [number, number],
+                nodeIds: ["task-handler"],
+                contentHash: SOURCE_DIGEST,
+              },
+            ],
+            deletedFiles: [
+              {
+                id: "deleted-file:removed-handler",
+                actualChangeIds: ["change:removed-handler"],
+                filePath: "src/removed.ts",
+                oldLineRange: [1, 1] as [number, number],
+                contentHash: deletedDigest,
+              },
+            ],
+            boundaries: [],
+          };
+        },
+      },
+    });
+    const built = await taskEngine.buildTaskBrief(
+      {
+        ...buildInput("all-staged-add-modify-delete"),
+        task: "Update TaskHandler behavior.",
+        scope: ["src/task.ts"],
+        maxCandidates: 1,
+      },
+      auth(),
+    );
+    expect(built.brief.plannedChanges).toHaveLength(1);
+    const taskPlan = built.brief.plannedChanges[0]!;
+    expect(taskPlan).toMatchObject({
+      filePath: "src/task.ts",
+      symbolId: "task-handler",
+    });
+
+    let revision = built.task.revision;
+    for (const [action, key] of [
+      [{ type: "confirm_goal", claimId: built.brief.goalClaimId }, "combined-goal"],
+      [{
+        type: "confirm_acceptance_criteria",
+        claimIds: built.brief.acceptanceClaimIds,
+      }, "combined-acceptance"],
+      [{
+        type: "confirm_plan",
+        plannedChangeIds: [taskPlan.id] as string[],
+      }, "combined-plan"],
+      [{ type: "transition_status", to: "planned" }, "combined-planned"],
+      [{ type: "transition_status", to: "in_progress" }, "combined-progress"],
+    ] as const) {
+      const updated = await taskEngine.updateTask({
+        taskId: built.task.taskId,
+        action,
+        expectedRevision: revision,
+        idempotencyKey: key,
+        actor: ACTOR,
+      }, auth());
+      revision = updated.task.revision;
+    }
+
+    const base = RepositorySnapshotArtifactV1Schema.parse(
+      await repositorySnapshot(
+        "snapshot:all-staged-combined",
+        "2026-07-29T09:00:00.000Z",
+        "a".repeat(40),
+      ),
+    );
+    const combinedPayload = {
+      ...base.payload,
+      changes: [
+        {
+          id: "change:added-handler",
+          path: "src/added.ts",
+          source: "staged" as const,
+          kind: "added" as const,
+          contentDigest: addedDigest,
+        },
+        {
+          id: "change:removed-handler",
+          path: "src/removed.ts",
+          source: "staged" as const,
+          kind: "deleted" as const,
+        },
+        {
+          id: "change:task-handler",
+          path: "src/task.ts",
+          source: "staged" as const,
+          kind: "modified" as const,
+          contentDigest: SOURCE_DIGEST,
+        },
+      ],
+    };
+    await store.persistArtifact(RepositorySnapshotArtifactV1Schema.parse({
+      ...base,
+      contentDigest: sha256CanonicalJson(combinedPayload),
+      payload: combinedPayload,
+    }));
+    await publishPulseForSnapshot(
+      store,
+      "snapshot:all-staged-combined",
+      "a".repeat(40),
+    );
+    const captured = await taskEngine.updateTask({
+      taskId: built.task.taskId,
+      action: { type: "transition_status", to: "check_required" },
+      expectedRevision: revision,
+      idempotencyKey: "combined-check-required",
+      actor: ACTOR,
+    }, auth());
+    const checked = await taskEngine.checkChange({
+      taskId: built.task.taskId,
+      actualSnapshotId: "snapshot:all-staged-combined",
+      includeWorktree: true,
+      expectedRevision: captured.task.revision,
+      idempotencyKey: "combined-check",
+      actor: ACTOR,
+    }, auth(["task:update"]));
+    expect(checked.changeCheck.findings.map((finding) => finding.type).sort())
+      .toEqual(["planned_completed", "unplanned_change", "unplanned_change"]);
+    expect(checked.changeCheck.findings.some(
+      (finding) =>
+        finding.type === "cannot_determine" ||
+        finding.type === "possible_omission",
+    )).toBe(false);
+    const completed = checked.changeCheck.findings.find(
+      (finding) => finding.type === "planned_completed",
+    );
+    expect(completed).toMatchObject({
+      blocking: false,
+      plannedChangeIds: [taskPlan.id],
+      actualChangeIds: ["change:task-handler"],
+    });
+    const addedFinding = checked.changeCheck.findings.find(
+      (finding) => finding.actualChangeIds.includes("change:added-handler"),
+    );
+    const deletedFinding = checked.changeCheck.findings.find(
+      (finding) => finding.actualChangeIds.includes("change:removed-handler"),
+    );
+    for (const [finding, changeId] of [
+      [addedFinding, "change:added-handler"],
+      [deletedFinding, "change:removed-handler"],
+    ] as const) {
+      expect(finding).toMatchObject({
+        type: "unplanned_change",
+        blocking: true,
+        plannedChangeIds: [],
+        actualChangeIds: [changeId],
+      });
+      expect(finding?.evidenceIds).toHaveLength(1);
+    }
+    const persisted = await store.readTaskBundle(built.task.taskId);
+    if (!("brief" in persisted.bundle) ||
+        addedFinding === undefined || deletedFinding === undefined) {
+      throw new TypeError("The all-staged Check must remain contextual.");
+    }
+    expect(completed?.evidenceIds).toHaveLength(1);
+    const completedEvidence = persisted.bundle.evidence.find(
+      (evidence) => completed?.evidenceIds.includes(evidence.id) === true,
+    );
+    expect(completedEvidence).toEqual(expect.objectContaining({
+      kind: "source",
+      freshness: "current",
+      observedAtSnapshotId: "snapshot:all-staged-combined",
+      filePath: "src/task.ts",
+      lineRange: [1, 1],
+      nodeIds: ["task-handler"],
+      contentHash: SOURCE_DIGEST,
+    }));
+    const addedEvidence = persisted.bundle.evidence.find(
+      (evidence) => addedFinding.evidenceIds.includes(evidence.id),
+    );
+    expect(addedEvidence).toEqual(expect.objectContaining({
+      kind: "source",
+      freshness: "current",
+      observedAtSnapshotId: "snapshot:all-staged-combined",
+      filePath: "src/added.ts",
+      lineRange: [1, 1],
+      nodeIds: ["added-handler"],
+      contentHash: addedDigest,
+    }));
+    const deletedEvidence = persisted.bundle.evidence.find(
+      (evidence) => deletedFinding.evidenceIds.includes(evidence.id),
+    );
+    expect(deletedEvidence).toEqual(expect.objectContaining({
+      kind: "source",
+      freshness: "changed",
+      observedAtSnapshotId: built.task.baselineSnapshotId,
+      filePath: "src/removed.ts",
+      lineRange: [1, 1],
+      nodeIds: [],
+      contentHash: deletedDigest,
+    }));
+  });
 });

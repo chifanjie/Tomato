@@ -814,7 +814,35 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     );
 
     let sourcePath = path.join(repositoryRoot, "src/index.ts");
-    await writeFile(sourcePath, BAR_ONLY_SOURCE, "utf8");
+    const wrongUntrackedPath = path.join(repositoryRoot, "src/untracked.ts");
+    await Promise.all([
+      writeFile(sourcePath, BAR_ONLY_SOURCE, "utf8"),
+      writeFile(wrongUntrackedPath, UNTRACKED_SOURCE, "utf8"),
+    ]);
+    await git(repositoryRoot, ["add", "--", "src/index.ts"]);
+    assert.equal(
+      (await git(repositoryRoot, ["diff", "--cached", "--name-only"])).stdout,
+      "src/index.ts\n",
+    );
+    assert.equal(
+      (await git(repositoryRoot, ["diff", "--name-only", "--", "src/index.ts"])).stdout,
+      "",
+      "the staged bar bytes must not carry a same-path unstaged delta",
+    );
+    assert.equal(
+      (await git(repositoryRoot, [
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "--",
+        "src/untracked.ts",
+      ])).stdout,
+      "src/untracked.ts\n",
+    );
+    assert.equal(
+      (await git(repositoryRoot, ["status", "--porcelain=v1", "--untracked-files=all"])).stdout,
+      "M  src/index.ts\n?? src/untracked.ts\n",
+    );
     const wrongRefresh = await callTool(mcp, output, requestId++, "refresh_index", {
       mode: "full",
       expectedSourceSnapshotId: wrongInitialSnapshotId,
@@ -823,6 +851,39 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
     }, RefreshIndexOutputV1Schema);
     const wrongSnapshotId = wrongRefresh.structuredContent.meta.sourceSnapshotId;
     assert.notEqual(wrongSnapshotId, wrongInitialSnapshotId);
+    const wrongSnapshotArtifact = RepositorySnapshotArtifactV1Schema.parse(JSON.parse(
+      await readFile(
+        path.join(
+          repositoryRoot,
+          ".understand-code",
+          "snapshots",
+          `${wrongSnapshotId}.json`,
+        ),
+        "utf8",
+      ),
+    ));
+    assert.equal(wrongSnapshotArtifact.payload.captureStatus, "complete");
+    assert.equal(wrongSnapshotArtifact.payload.changes.length, 2);
+    const wrongBarChange = wrongSnapshotArtifact.payload.changes.find(
+      (change) => change.path === "src/index.ts",
+    );
+    const wrongUntrackedChange = wrongSnapshotArtifact.payload.changes.find(
+      (change) => change.path === "src/untracked.ts",
+    );
+    assert.deepEqual(wrongBarChange, {
+      id: wrongBarChange?.id,
+      path: "src/index.ts",
+      source: "staged",
+      kind: "modified",
+      contentDigest: contentDigest(Buffer.from(BAR_ONLY_SOURCE, "utf8")),
+    });
+    assert.deepEqual(wrongUntrackedChange, {
+      id: wrongUntrackedChange?.id,
+      path: "src/untracked.ts",
+      source: "untracked",
+      kind: "added",
+      contentDigest: contentDigest(Buffer.from(UNTRACKED_SOURCE, "utf8")),
+    });
     await updateWrongTask(
       { type: "transition_status", to: "check_required" },
       "preview-workbench-browser-wrong-check-required",
@@ -835,35 +896,193 @@ test("installed tgz opens the React Workbench and preserves snapshot-bound Task 
       idempotencyKey: "preview-workbench-browser-wrong-check",
       actor,
     }, CheckChangeOutputV1Schema);
+    wrongRevision = wrongChecked.structuredContent.result.mutation.revision;
     const wrongFindings = wrongChecked.structuredContent.result.changeCheck.findings;
     assert.equal(
       wrongFindings.some((finding) => finding.type === "planned_completed"),
       false,
       "changing bar in the planned foo file must not report the foo obligation completed",
     );
-    const barFinding = wrongFindings.find((finding) => finding.type === "unplanned_change");
+    assert.equal(
+      wrongFindings.some((finding) => finding.type === "possible_omission"),
+      false,
+    );
+    assert.deepEqual(
+      wrongFindings.map((finding) => finding.type).sort(),
+      ["cannot_determine", "unplanned_change", "unplanned_change"],
+    );
+    assert.equal(wrongFindings.length, 3);
+    const barFinding = wrongFindings.find((finding) =>
+      finding.type === "unplanned_change" &&
+      finding.actualChangeIds.includes(wrongBarChange.id),
+    );
     assert.ok(barFinding, "the same-file bar hunk must be reported as an unplanned change");
+    const wrongUntrackedFinding = wrongFindings.find((finding) =>
+      finding.type === "unplanned_change" &&
+      finding.actualChangeIds.includes(wrongUntrackedChange.id),
+    );
     assert.ok(
-      wrongFindings.some((finding) =>
+      wrongUntrackedFinding,
+      "the different-path untracked hunk must be independently unplanned",
+    );
+    const wrongCannotDetermine = wrongFindings.find((finding) =>
         finding.type === "cannot_determine" &&
         finding.blocking &&
-        finding.plannedChangeIds.includes(wrongBrief.plannedChanges[0].id)),
+        finding.plannedChangeIds.includes(wrongBrief.plannedChanges[0].id));
+    assert.ok(
+      wrongCannotDetermine,
       "the legacy foo plan lacks a required-change expectation and must remain an explicit blocking unknown",
     );
+    assert.deepEqual(
+      {
+        blocking: wrongCannotDetermine.blocking,
+        plannedChangeIds: wrongCannotDetermine.plannedChangeIds,
+        actualChangeIds: wrongCannotDetermine.actualChangeIds,
+      },
+      {
+        blocking: true,
+        plannedChangeIds: [wrongBrief.plannedChanges[0].id],
+        actualChangeIds: [wrongBarChange.id],
+      },
+    );
+    for (const [finding, changeId] of [
+      [barFinding, wrongBarChange.id],
+      [wrongUntrackedFinding, wrongUntrackedChange.id],
+    ]) {
+      assert.deepEqual(
+        {
+          blocking: finding.blocking,
+          plannedChangeIds: finding.plannedChangeIds,
+          actualChangeIds: finding.actualChangeIds,
+        },
+        {
+          blocking: true,
+          plannedChangeIds: [],
+          actualChangeIds: [changeId],
+        },
+      );
+      assert.equal(finding.evidenceIds.length, 1);
+    }
     const barEvidenceRead = await callTool(mcp, output, requestId++, "get_evidence", {
       taskId: wrongTaskId,
-      evidenceIds: barFinding.evidenceIds,
+      evidenceIds: [...barFinding.evidenceIds, ...wrongUntrackedFinding.evidenceIds],
       maxExcerptChars: 8_192,
-      pageSize: barFinding.evidenceIds.length,
+      pageSize: barFinding.evidenceIds.length + wrongUntrackedFinding.evidenceIds.length,
     }, GetEvidenceOutputV1Schema);
+    assert.deepEqual(barEvidenceRead.structuredContent.result.missingEvidenceIds, []);
+    assert.equal(barEvidenceRead.structuredContent.result.evidence.length, 2);
     const barEvidence = barEvidenceRead.structuredContent.result.evidence.find((evidence) =>
       "filePath" in evidence && evidence.filePath === "src/index.ts",
     );
+    const wrongUntrackedEvidence = barEvidenceRead.structuredContent.result.evidence.find((evidence) =>
+      "filePath" in evidence && evidence.filePath === "src/untracked.ts",
+    );
     assert.ok(barEvidence && "filePath" in barEvidence, "the unplanned bar Finding must resolve to source Evidence");
+    assert.equal(barEvidence.kind, "source");
+    assert.equal(barEvidence.epistemicStatus, "observed");
+    assert.equal(barEvidence.freshness, "current");
     assert.deepEqual(barEvidence.lineRange, [2, 2]);
     assert.deepEqual(barEvidence.nodeIds, [BAR_NODE_ID]);
     assert.equal(barEvidence.contentHash, contentDigest(Buffer.from(BAR_ONLY_SOURCE, "utf8")));
     assert.equal(barEvidence.observedAtSnapshotId, wrongSnapshotId);
+    assert.deepEqual(barFinding.evidenceIds, [barEvidence.id]);
+    assert.ok(
+      wrongUntrackedEvidence && "filePath" in wrongUntrackedEvidence,
+      "the untracked Finding must resolve to source Evidence",
+    );
+    assert.equal(wrongUntrackedEvidence.kind, "source");
+    assert.equal(wrongUntrackedEvidence.epistemicStatus, "observed");
+    assert.equal(wrongUntrackedEvidence.freshness, "current");
+    assert.deepEqual(wrongUntrackedEvidence.lineRange, [1, 1]);
+    assert.deepEqual(wrongUntrackedEvidence.nodeIds, [UNTRACKED_NODE_ID]);
+    assert.equal(
+      wrongUntrackedEvidence.contentHash,
+      contentDigest(Buffer.from(UNTRACKED_SOURCE, "utf8")),
+    );
+    assert.equal(wrongUntrackedEvidence.observedAtSnapshotId, wrongSnapshotId);
+    assert.deepEqual(wrongUntrackedFinding.evidenceIds, [wrongUntrackedEvidence.id]);
+
+    for (const [finding, key, reason] of [
+      [
+        wrongCannotDetermine,
+        "preview-workbench-browser-wrong-accept-cannot-determine",
+        "The legacy foo obligation remains explicitly unresolved for this Alpha flow.",
+      ],
+      [
+        barFinding,
+        "preview-workbench-browser-wrong-accept-bar",
+        "The staged bar change is intentional and explicitly accepted for this Alpha flow.",
+      ],
+      [
+        wrongUntrackedFinding,
+        "preview-workbench-browser-wrong-accept-untracked",
+        "The untracked source addition is intentional and explicitly accepted for this Alpha flow.",
+      ],
+    ]) {
+      await updateWrongTask(
+        { type: "accept_finding", findingId: finding.id, reason },
+        key,
+      );
+    }
+    await updateWrongTask(
+      { type: "transition_status", to: "verification_required" },
+      "preview-workbench-browser-wrong-verification-required",
+    );
+    const wrongVerificationEntries = wrongBrief.verificationPlan.filter(
+      (entry) => entry.required,
+    );
+    assert.ok(
+      wrongVerificationEntries.length > 0,
+      "the wrong-hunk Task must carry a required Verification entry",
+    );
+    const wrongVerificationProgram = [
+      "const { foo, bar } = await import('./src/index.ts');",
+      "const { untrackedAdded } = await import('./src/untracked.ts');",
+      "if (foo() !== 'foo-before') throw new Error('unexpected foo result');",
+      "if (bar() !== 'bar-wrong-hunk') throw new Error('unexpected bar result');",
+      "if (untrackedAdded() !== 'untracked-ready') throw new Error('unexpected untracked result');",
+    ].join(" ");
+    const wrongVerificationStartedAt = Date.now();
+    const wrongVerificationExecution = await execBounded(
+      process.execPath,
+      ["--input-type=module", "--eval", wrongVerificationProgram],
+      { cwd: repositoryRoot, encoding: "utf8" },
+    );
+    assert.equal(wrongVerificationExecution.stderr, "");
+    const wrongVerificationDurationMs = Date.now() - wrongVerificationStartedAt;
+    for (const [index, planEntry] of wrongVerificationEntries.entries()) {
+      const recorded = await callTool(mcp, output, requestId++, "record_verification", {
+        taskId: wrongTaskId,
+        record: {
+          verificationPlanEntryId: planEntry.id,
+          kind: planEntry.method,
+          status: "passed",
+          command:
+            `node --input-type=module --eval ${JSON.stringify(wrongVerificationProgram)}`,
+          exitCode: 0,
+          durationMs: wrongVerificationDurationMs,
+          outputDigest: contentDigest(Buffer.from(
+            `${wrongVerificationExecution.stdout}${wrongVerificationExecution.stderr}`,
+            "utf8",
+          )),
+          summary:
+            "The snapshot-bound staged-bar and untracked-add verification completed successfully.",
+          claimIds: planEntry.acceptanceClaimIds,
+          snapshotId: wrongSnapshotId,
+        },
+        expectedRevision: wrongRevision,
+        idempotencyKey: `preview-workbench-browser-wrong-verification-${index}`,
+        actor,
+      }, RecordVerificationOutputV1Schema);
+      assert.equal(recorded.structuredContent.result.verification.status, "passed");
+      assert.equal(recorded.structuredContent.result.verification.snapshotId, wrongSnapshotId);
+      wrongRevision = recorded.structuredContent.result.mutation.revision;
+    }
+    const wrongVerified = await updateWrongTask(
+      { type: "transition_status", to: "verified" },
+      "preview-workbench-browser-wrong-verified",
+    );
+    assert.equal(wrongVerified.structuredContent.result.task.status, "verified");
 
     mcp.stdin.end();
     assert.deepEqual(await waitForExit(mcp, "mismatch repository MCP EOF"), [0, null]);

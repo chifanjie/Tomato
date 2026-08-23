@@ -1408,11 +1408,36 @@ implements TaskContextProvider {
             compareUnicodeCodeUnits(left.path, right.path),
           )
         : undefined;
+    const heterogeneousStagedLiveChanges =
+      includesStagedChange &&
+      !includesDeletedChange &&
+      !includesIntentToAddChange &&
+      actual.data.changes.length >= 2 &&
+      actual.data.changes.length <= MAX_BOUNDED_CHANGE_PATHS &&
+      livePaths.size === actual.data.changes.length &&
+      actual.data.changes.some(
+        (change) =>
+          (change.source === "unstaged" && change.kind === "modified") ||
+          (change.source === "untracked" && change.kind === "added"),
+      ) &&
+      actual.data.changes.every(
+        (change) =>
+          ((change.source === "staged" &&
+            (change.kind === "added" || change.kind === "modified")) ||
+            (change.source === "unstaged" && change.kind === "modified") ||
+            (change.source === "untracked" && change.kind === "added")) &&
+          change.contentDigest !== undefined,
+      )
+        ? [...actual.data.changes].sort((left, right) =>
+            compareUnicodeCodeUnits(left.path, right.path),
+          )
+        : undefined;
     if (
       includesUntrackedChange &&
       liveUntrackedChanges === undefined &&
       liveIntentToAddChanges === undefined &&
-      liveDeletedUntrackedChanges === undefined
+      liveDeletedUntrackedChanges === undefined &&
+      heterogeneousStagedLiveChanges === undefined
     ) {
       return {
         status: "unknown",
@@ -1489,7 +1514,8 @@ implements TaskContextProvider {
     if (
       includesStagedChange &&
       stagedChanges === undefined &&
-      stagedDeletedChanges === undefined
+      stagedDeletedChanges === undefined &&
+      heterogeneousStagedLiveChanges === undefined
     ) {
       return {
         status: "unknown",
@@ -1567,6 +1593,7 @@ implements TaskContextProvider {
     const boundedBatchChanges =
       stagedChanges ??
       stagedDeletedChanges ??
+      heterogeneousStagedLiveChanges ??
       liveUntrackedChanges ??
       liveDeletedUntrackedChanges ??
       liveIntentToAddChanges ??
@@ -1601,6 +1628,8 @@ implements TaskContextProvider {
               ? "A staged repository path is unsafe for exact Git index lookup."
               : stagedDeletedChanges !== undefined
                 ? "A staged deletion repository path is unsafe for exact Git analysis."
+              : heterogeneousStagedLiveChanges !== undefined
+                ? "A heterogeneous staged and live repository path is unsafe for exact Git analysis."
               : liveUntrackedChanges !== undefined
                 ? "A live untracked repository path is unsafe for exact Git analysis."
                 : liveDeletedUntrackedChanges !== undefined
@@ -1687,6 +1716,14 @@ implements TaskContextProvider {
               (changes[0]!.kind === "modified" ||
                 changes[0]!.kind === "added" ||
                 changes[0]!.kind === "deleted")
+          : heterogeneousStagedLiveChanges !== undefined
+            ? (changes[0]!.source === "staged" &&
+                (changes[0]!.kind === "added" ||
+                  changes[0]!.kind === "modified")) ||
+              (changes[0]!.source === "unstaged" &&
+                changes[0]!.kind === "modified") ||
+              (changes[0]!.source === "untracked" &&
+                changes[0]!.kind === "added")
           : liveUntrackedChanges !== undefined
             ? (changes[0]!.source === "untracked" &&
                 changes[0]!.kind === "added") ||
@@ -1723,6 +1760,8 @@ implements TaskContextProvider {
                 ? "Alpha staged line analysis only supports unique staged modified or added paths."
                 : stagedDeletedChanges !== undefined
                   ? "Alpha staged deletion analysis only supports unique staged modified, added, or deleted paths."
+                : heterogeneousStagedLiveChanges !== undefined
+                  ? "Alpha heterogeneous staged and live analysis only supports unique staged modified or added, unstaged modified, or untracked added paths."
                 : liveUntrackedChanges !== undefined
                   ? "Alpha live untracked analysis only supports unique untracked added or unstaged modified paths."
                   : liveDeletedUntrackedChanges !== undefined
@@ -1930,10 +1969,12 @@ implements TaskContextProvider {
       }
       const worktreeDigest =
         `sha256:${createHash("sha256").update(actualFile.bytes!).digest("hex")}`;
-      if (
-        stagedChanges === undefined &&
-        stagedDeletedChanges === undefined
-      ) {
+      const usesStagedBytes =
+        stagedChanges !== undefined ||
+        stagedDeletedChanges !== undefined ||
+        (heterogeneousStagedLiveChanges !== undefined &&
+          changes[0]!.source === "staged");
+      if (!usesStagedBytes) {
         actualBytes = actualFile.bytes!;
       } else {
         let indexBytes: Buffer;
@@ -2058,6 +2099,8 @@ implements TaskContextProvider {
                 ? "Staged semantic bytes exceeded the fixed aggregate Alpha budget."
                 : stagedDeletedChanges !== undefined
                   ? "Staged deletion batch semantic bytes exceeded the fixed aggregate Alpha budget."
+                : heterogeneousStagedLiveChanges !== undefined
+                  ? "Heterogeneous staged and live semantic bytes exceeded the fixed aggregate Alpha budget."
                 : liveUntrackedChanges !== undefined
                   ? "Live untracked semantic bytes exceeded the fixed aggregate Alpha budget."
                   : liveDeletedUntrackedChanges !== undefined
@@ -2157,6 +2200,8 @@ implements TaskContextProvider {
                 ? "Staged line hunks exceeded the fixed aggregate Alpha budget."
                 : stagedDeletedChanges !== undefined
                   ? "Staged deletion batch line hunks exceeded the fixed aggregate Alpha budget."
+                : heterogeneousStagedLiveChanges !== undefined
+                  ? "Heterogeneous staged and live line hunks exceeded the fixed aggregate Alpha budget."
                 : liveUntrackedChanges !== undefined
                   ? "Live untracked line hunks exceeded the fixed aggregate Alpha budget."
                   : liveDeletedUntrackedChanges !== undefined

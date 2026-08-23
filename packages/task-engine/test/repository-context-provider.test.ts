@@ -648,6 +648,365 @@ describe("RepositoryTaskContextProvider", () => {
     });
   });
 
+  it("derives deterministic hunks across different-path staged, unstaged, and untracked changes and rejects authority drift", async () => {
+    const baselineStagedSource =
+      "export function staged() { return 'staged-before'; }\n";
+    const actualStagedSource =
+      "export function staged() { return 'staged-after'; }\n";
+    const baselineLiveSource =
+      "export function live() { return 'live-before'; }\n";
+    const actualLiveSource =
+      "export function live() { return 'live-after'; }\n";
+    const stagedAddedSource =
+      "export function stagedAdded() { return 'staged-added'; }\n";
+    const untrackedSource =
+      "export function untracked() { return 'untracked-after'; }\n";
+    const graph = graphFixture();
+    graph.nodes = [
+      {
+        id: "function:untracked",
+        type: "function",
+        name: "untracked",
+        filePath: "src/added.ts",
+        lineRange: [1, 1],
+        summary: "Returns the untracked value.",
+        tags: [],
+        complexity: "simple",
+      },
+      {
+        id: "function:live",
+        type: "function",
+        name: "live",
+        filePath: "src/live.ts",
+        lineRange: [1, 1],
+        summary: "Returns the live value.",
+        tags: [],
+        complexity: "simple",
+      },
+      {
+        id: "function:staged-added",
+        type: "function",
+        name: "stagedAdded",
+        filePath: "src/staged-added.ts",
+        lineRange: [1, 1],
+        summary: "Returns the staged-added value.",
+        tags: [],
+        complexity: "simple",
+      },
+      {
+        id: "function:staged",
+        type: "function",
+        name: "staged",
+        filePath: "src/staged.ts",
+        lineRange: [1, 1],
+        summary: "Returns the staged value.",
+        tags: [],
+        complexity: "simple",
+      },
+    ];
+    const { root } = await fixtureRoot(graph, baselineStagedSource);
+    const addedPath = path.join(root, "src/added.ts");
+    const livePath = path.join(root, "src/live.ts");
+    const stagedAddedPath = path.join(root, "src/staged-added.ts");
+    const stagedPath = path.join(root, "src/staged.ts");
+    await Promise.all([
+      writeFile(livePath, baselineLiveSource, "utf8"),
+      writeFile(stagedPath, baselineStagedSource, "utf8"),
+    ]);
+    await git(root, ["init", "--quiet"]);
+    await git(root, ["add", "src/live.ts", "src/staged.ts", "src/task.ts"]);
+    await git(root, [
+      "-c",
+      "user.name=Understand Code Test",
+      "-c",
+      "user.email=test@understand-code.invalid",
+      "commit",
+      "--quiet",
+      "-m",
+      "baseline",
+    ]);
+    const headCommit = await git(root, ["rev-parse", "HEAD"]);
+    const baselineSnapshot = await captureFencedSnapshot(root, headCommit);
+    expect(baselineSnapshot.changes).toEqual([]);
+    await Promise.all([
+      writeFile(livePath, actualLiveSource, "utf8"),
+      writeFile(stagedAddedPath, stagedAddedSource, "utf8"),
+      writeFile(stagedPath, actualStagedSource, "utf8"),
+    ]);
+    await git(root, ["add", "--", "src/staged-added.ts", "src/staged.ts"]);
+    expect(await git(root, ["diff", "--cached", "--name-only"]))
+      .toBe("src/staged-added.ts\nsrc/staged.ts");
+    expect(await git(root, ["diff", "--name-only"]))
+      .toBe("src/live.ts");
+    expect(await git(root, [
+      "ls-files",
+      "--others",
+      "--exclude-standard",
+      "--",
+      "src/added.ts",
+    ])).toBe("");
+
+    const withoutUntrackedSnapshot = await captureFencedSnapshot(root, headCommit);
+    expect(withoutUntrackedSnapshot.changes).toHaveLength(3);
+    const withoutUntrackedLiveChange = withoutUntrackedSnapshot.changes.find(
+      (change) => change.path === "src/live.ts",
+    );
+    const withoutUntrackedStagedAddedChange =
+      withoutUntrackedSnapshot.changes.find(
+        (change) => change.path === "src/staged-added.ts",
+      );
+    const withoutUntrackedStagedChange = withoutUntrackedSnapshot.changes.find(
+      (change) => change.path === "src/staged.ts",
+    );
+    expect(withoutUntrackedLiveChange).toEqual({
+      id: withoutUntrackedLiveChange?.id,
+      path: "src/live.ts",
+      source: "unstaged",
+      kind: "modified",
+      contentDigest: digest(actualLiveSource),
+    });
+    expect(withoutUntrackedStagedAddedChange).toEqual({
+      id: withoutUntrackedStagedAddedChange?.id,
+      path: "src/staged-added.ts",
+      source: "staged",
+      kind: "added",
+      contentDigest: digest(stagedAddedSource),
+    });
+    expect(withoutUntrackedStagedChange).toEqual({
+      id: withoutUntrackedStagedChange?.id,
+      path: "src/staged.ts",
+      source: "staged",
+      kind: "modified",
+      contentDigest: digest(actualStagedSource),
+    });
+    const provider = await RepositoryTaskContextProvider.open({
+      canonicalRoot: root,
+    });
+    const withoutUntrackedInput = {
+      taskId: "task:mixed-staged-live-without-untracked",
+      baselineSnapshot,
+      actualSnapshot: withoutUntrackedSnapshot,
+    };
+    const withoutUntracked = await provider.analyzeTaskChanges(
+      withoutUntrackedInput,
+    );
+    expect(await provider.analyzeTaskChanges(withoutUntrackedInput))
+      .toEqual(withoutUntracked);
+    expect(withoutUntracked).toEqual({
+      status: "complete",
+      hunks: [
+        expect.objectContaining({
+          actualChangeIds: [withoutUntrackedLiveChange!.id],
+          filePath: "src/live.ts",
+          newLineRange: [1, 1],
+          nodeIds: ["function:live"],
+          contentHash: digest(actualLiveSource),
+        }),
+        expect.objectContaining({
+          actualChangeIds: [withoutUntrackedStagedAddedChange!.id],
+          filePath: "src/staged-added.ts",
+          newLineRange: [1, 1],
+          nodeIds: ["function:staged-added"],
+          contentHash: digest(stagedAddedSource),
+        }),
+        expect.objectContaining({
+          actualChangeIds: [withoutUntrackedStagedChange!.id],
+          filePath: "src/staged.ts",
+          newLineRange: [1, 1],
+          nodeIds: ["function:staged"],
+          contentHash: digest(actualStagedSource),
+        }),
+      ],
+      deletedFiles: [],
+      boundaries: [],
+    });
+
+    await writeFile(addedPath, untrackedSource, "utf8");
+    expect(await git(root, [
+      "ls-files",
+      "--others",
+      "--exclude-standard",
+      "--",
+      "src/added.ts",
+    ])).toBe("src/added.ts");
+
+    const actualSnapshot = await captureFencedSnapshot(root, headCommit);
+    expect(actualSnapshot.changes).toHaveLength(4);
+    const addedChange = actualSnapshot.changes.find(
+      (change) => change.path === "src/added.ts",
+    );
+    const liveChange = actualSnapshot.changes.find(
+      (change) => change.path === "src/live.ts",
+    );
+    const stagedChange = actualSnapshot.changes.find(
+      (change) => change.path === "src/staged.ts",
+    );
+    const stagedAddedChange = actualSnapshot.changes.find(
+      (change) => change.path === "src/staged-added.ts",
+    );
+    expect(addedChange).toEqual({
+      id: addedChange?.id,
+      path: "src/added.ts",
+      source: "untracked",
+      kind: "added",
+      contentDigest: digest(untrackedSource),
+    });
+    expect(liveChange).toEqual({
+      id: liveChange?.id,
+      path: "src/live.ts",
+      source: "unstaged",
+      kind: "modified",
+      contentDigest: digest(actualLiveSource),
+    });
+    expect(stagedChange).toEqual({
+      id: stagedChange?.id,
+      path: "src/staged.ts",
+      source: "staged",
+      kind: "modified",
+      contentDigest: digest(actualStagedSource),
+    });
+    expect(stagedAddedChange).toEqual({
+      id: stagedAddedChange?.id,
+      path: "src/staged-added.ts",
+      source: "staged",
+      kind: "added",
+      contentDigest: digest(stagedAddedSource),
+    });
+    const actualChangeIds = actualSnapshot.changes
+      .map((change) => change.id)
+      .sort();
+    const input = {
+      taskId: "task:mixed-staged-live-analysis",
+      baselineSnapshot,
+      actualSnapshot,
+    };
+    const complete = await provider.analyzeTaskChanges(input);
+    expect(await provider.analyzeTaskChanges(input)).toEqual(complete);
+    expect(complete).toEqual({
+      status: "complete",
+      hunks: [
+        expect.objectContaining({
+          actualChangeIds: [addedChange!.id],
+          filePath: "src/added.ts",
+          newLineRange: [1, 1],
+          nodeIds: ["function:untracked"],
+          contentHash: digest(untrackedSource),
+        }),
+        expect.objectContaining({
+          actualChangeIds: [liveChange!.id],
+          filePath: "src/live.ts",
+          newLineRange: [1, 1],
+          nodeIds: ["function:live"],
+          contentHash: digest(actualLiveSource),
+        }),
+        expect.objectContaining({
+          actualChangeIds: [stagedAddedChange!.id],
+          filePath: "src/staged-added.ts",
+          newLineRange: [1, 1],
+          nodeIds: ["function:staged-added"],
+          contentHash: digest(stagedAddedSource),
+        }),
+        expect.objectContaining({
+          actualChangeIds: [stagedChange!.id],
+          filePath: "src/staged.ts",
+          newLineRange: [1, 1],
+          nodeIds: ["function:staged"],
+          contentHash: digest(actualStagedSource),
+        }),
+      ],
+      deletedFiles: [],
+      boundaries: [],
+    });
+
+    const samePathWorktreeSource =
+      "export function staged() { return 'same-path-worktree'; }\n";
+    await writeFile(stagedPath, samePathWorktreeSource, "utf8");
+    const duplicatePathSnapshot = await captureFencedSnapshot(root, headCommit);
+    const duplicatePathChanges = duplicatePathSnapshot.changes.filter(
+      (change) => change.path === "src/staged.ts",
+    );
+    expect(duplicatePathChanges).toHaveLength(2);
+    const duplicateStagedChange = duplicatePathChanges.find(
+      (change) => change.source === "staged",
+    );
+    const duplicateUnstagedChange = duplicatePathChanges.find(
+      (change) => change.source === "unstaged",
+    );
+    expect(duplicateStagedChange).toEqual({
+      id: duplicateStagedChange?.id,
+      path: "src/staged.ts",
+      source: "staged",
+      kind: "modified",
+      contentDigest: digest(actualStagedSource),
+    });
+    expect(duplicateUnstagedChange).toEqual({
+      id: duplicateUnstagedChange?.id,
+      path: "src/staged.ts",
+      source: "unstaged",
+      kind: "modified",
+      contentDigest: digest(samePathWorktreeSource),
+    });
+    const duplicatePathChangeIds = duplicatePathSnapshot.changes
+      .map((change) => change.id)
+      .sort();
+    const duplicatePath = await provider.analyzeTaskChanges({
+      ...input,
+      actualSnapshot: duplicatePathSnapshot,
+    });
+    expect(duplicatePath).toEqual({
+      status: "unknown",
+      hunks: [],
+      deletedFiles: [],
+      boundaries: [{
+        code: "unsupported_source",
+        reason:
+          "Alpha live untracked analysis requires one to sixteen unique untracked added or unstaged modified paths, including at least one untracked path and no other changes.",
+        actualChangeIds: duplicatePathChangeIds,
+      }],
+    });
+    expect(duplicatePath.boundaries[0]).not.toHaveProperty("filePath");
+    await writeFile(stagedPath, actualStagedSource, "utf8");
+
+    const expectWholeUnknown = (value: Awaited<ReturnType<
+      RepositoryTaskContextProvider["analyzeTaskChanges"]
+    >>) => {
+      expect(value).toEqual({
+        status: "unknown",
+        hunks: [],
+        deletedFiles: [],
+        boundaries: [{
+          code: "content_changed",
+          reason: expect.any(String),
+          actualChangeIds,
+        }],
+      });
+      expect(value.boundaries).toHaveLength(1);
+      expect(value.boundaries[0]).not.toHaveProperty("filePath");
+    };
+
+    await git(root, ["add", "--", "src/live.ts"]);
+    expectWholeUnknown(await provider.analyzeTaskChanges(input));
+    await git(root, ["restore", "--staged", "--", "src/live.ts"]);
+
+    await writeFile(livePath, `${actualLiveSource}// worktree drift\n`, "utf8");
+    expectWholeUnknown(await provider.analyzeTaskChanges(input));
+    await writeFile(livePath, actualLiveSource, "utf8");
+
+    const unrelatedPath = path.join(root, "src/unrelated.ts");
+    await writeFile(unrelatedPath, "export const unrelated = true;\n", "utf8");
+    expectWholeUnknown(await provider.analyzeTaskChanges(input));
+    await rm(unrelatedPath);
+
+    const staleSnapshot = RepositorySnapshotV1Schema.parse({
+      ...actualSnapshot,
+      snapshotId: "snapshot:stale-mixed-staged-live",
+    });
+    expectWholeUnknown(await provider.analyzeTaskChanges({
+      ...input,
+      actualSnapshot: staleSnapshot,
+    }));
+  });
+
   it("derives an exact baseline-bound staged deletion beside a staged hunk and rejects live authority drift", async () => {
     const baselineTaskSource =
       "export function task() { return 'staged-before'; }\n";

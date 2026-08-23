@@ -4603,4 +4603,223 @@ describe("TaskEngine persistent integration", () => {
       contentHash: deletedDigest,
     }));
   });
+
+  it("keeps a staged planned modification complete while different live paths remain independently unplanned", async () => {
+    const { store } = await openStore();
+    const addedDigest = `sha256:${"1".repeat(64)}`;
+    const liveDigest = `sha256:${"2".repeat(64)}`;
+    const mixedGraph: KnowledgeGraph = {
+      ...graphFixture(),
+      nodes: [
+        ...graphFixture().nodes,
+        node("mixed-added-handler", "MixedAddedHandler", "src/mixed-added.ts", {
+          lineRange: [1, 1],
+        }),
+        node("mixed-live-handler", "MixedLiveHandler", "src/mixed-live.ts", {
+          lineRange: [1, 1],
+        }),
+      ],
+    };
+    const taskEngine = engine(store, {
+      contextProvider: {
+        async loadTaskContext() {
+          return {
+            graph: mixedGraph,
+            existingFilePaths: ["src/task.ts", "src/mixed-live.ts"],
+            sourceEvidence: [{
+              nodeId: "task-handler",
+              filePath: "src/task.ts",
+              lineRange: [1, 1] as [number, number],
+              contentHash: SOURCE_DIGEST,
+              commit: "a".repeat(40),
+              kind: "source" as const,
+            }],
+          };
+        },
+        async analyzeTaskChanges() {
+          return {
+            status: "complete" as const,
+            hunks: [
+              {
+                id: "hunk:mixed-added-handler",
+                actualChangeIds: ["change:mixed-added-handler"],
+                filePath: "src/mixed-added.ts",
+                newLineRange: [1, 1] as [number, number],
+                nodeIds: ["mixed-added-handler"],
+                contentHash: addedDigest,
+              },
+              {
+                id: "hunk:mixed-live-handler",
+                actualChangeIds: ["change:mixed-live-handler"],
+                filePath: "src/mixed-live.ts",
+                newLineRange: [1, 1] as [number, number],
+                nodeIds: ["mixed-live-handler"],
+                contentHash: liveDigest,
+              },
+              {
+                id: "hunk:mixed-task-handler",
+                actualChangeIds: ["change:mixed-task-handler"],
+                filePath: "src/task.ts",
+                newLineRange: [1, 1] as [number, number],
+                nodeIds: ["task-handler"],
+                contentHash: SOURCE_DIGEST,
+              },
+            ],
+            deletedFiles: [],
+            boundaries: [],
+          };
+        },
+      },
+    });
+    const built = await taskEngine.buildTaskBrief({
+      ...buildInput("mixed-staged-live"),
+      task: "Update TaskHandler behavior.",
+      scope: ["src/task.ts"],
+      maxCandidates: 1,
+    }, auth());
+    expect(built.brief.plannedChanges).toHaveLength(1);
+    const taskPlan = built.brief.plannedChanges[0]!;
+    expect(taskPlan).toMatchObject({
+      filePath: "src/task.ts",
+      symbolId: "task-handler",
+    });
+
+    let revision = built.task.revision;
+    for (const [action, key] of [
+      [{ type: "confirm_goal", claimId: built.brief.goalClaimId }, "mixed-staged-live-goal"],
+      [{
+        type: "confirm_acceptance_criteria",
+        claimIds: built.brief.acceptanceClaimIds,
+      }, "mixed-staged-live-acceptance"],
+      [{
+        type: "confirm_plan",
+        plannedChangeIds: [taskPlan.id] as string[],
+      }, "mixed-staged-live-plan"],
+      [{ type: "transition_status", to: "planned" }, "mixed-staged-live-planned"],
+      [{ type: "transition_status", to: "in_progress" }, "mixed-staged-live-progress"],
+    ] as const) {
+      const updated = await taskEngine.updateTask({
+        taskId: built.task.taskId,
+        action,
+        expectedRevision: revision,
+        idempotencyKey: key,
+        actor: ACTOR,
+      }, auth());
+      revision = updated.task.revision;
+    }
+
+    const actualSnapshotId = "snapshot:mixed-staged-live";
+    const base = RepositorySnapshotArtifactV1Schema.parse(
+      await repositorySnapshot(
+        actualSnapshotId,
+        "2026-08-23T09:00:00.000Z",
+        "a".repeat(40),
+      ),
+    );
+    const mixedPayload = {
+      ...base.payload,
+      changes: [
+        {
+          id: "change:mixed-added-handler",
+          path: "src/mixed-added.ts",
+          source: "untracked" as const,
+          kind: "added" as const,
+          contentDigest: addedDigest,
+        },
+        {
+          id: "change:mixed-live-handler",
+          path: "src/mixed-live.ts",
+          source: "unstaged" as const,
+          kind: "modified" as const,
+          contentDigest: liveDigest,
+        },
+        {
+          id: "change:mixed-task-handler",
+          path: "src/task.ts",
+          source: "staged" as const,
+          kind: "modified" as const,
+          contentDigest: SOURCE_DIGEST,
+        },
+      ],
+    };
+    await store.persistArtifact(RepositorySnapshotArtifactV1Schema.parse({
+      ...base,
+      contentDigest: sha256CanonicalJson(mixedPayload),
+      payload: mixedPayload,
+    }));
+    await publishPulseForSnapshot(store, actualSnapshotId, "a".repeat(40));
+    const captured = await taskEngine.updateTask({
+      taskId: built.task.taskId,
+      action: { type: "transition_status", to: "check_required" },
+      expectedRevision: revision,
+      idempotencyKey: "mixed-staged-live-check-required",
+      actor: ACTOR,
+    }, auth());
+    const checked = await taskEngine.checkChange({
+      taskId: built.task.taskId,
+      actualSnapshotId,
+      includeWorktree: true,
+      expectedRevision: captured.task.revision,
+      idempotencyKey: "mixed-staged-live-check",
+      actor: ACTOR,
+    }, auth(["task:update"]));
+    expect(checked.changeCheck.findings.map((finding) => finding.type).sort())
+      .toEqual(["planned_completed", "unplanned_change", "unplanned_change"]);
+    expect(checked.changeCheck.findings.some(
+      (finding) =>
+        finding.type === "cannot_determine" ||
+        finding.type === "possible_omission",
+    )).toBe(false);
+    const completed = checked.changeCheck.findings.find(
+      (finding) => finding.type === "planned_completed",
+    );
+    const addedFinding = checked.changeCheck.findings.find(
+      (finding) => finding.actualChangeIds.includes("change:mixed-added-handler"),
+    );
+    const liveFinding = checked.changeCheck.findings.find(
+      (finding) => finding.actualChangeIds.includes("change:mixed-live-handler"),
+    );
+    expect(completed).toMatchObject({
+      blocking: false,
+      plannedChangeIds: [taskPlan.id],
+      actualChangeIds: ["change:mixed-task-handler"],
+    });
+    expect(completed?.evidenceIds).toHaveLength(1);
+    for (const [finding, changeId] of [
+      [addedFinding, "change:mixed-added-handler"],
+      [liveFinding, "change:mixed-live-handler"],
+    ] as const) {
+      expect(finding).toMatchObject({
+        type: "unplanned_change",
+        blocking: true,
+        plannedChangeIds: [],
+        actualChangeIds: [changeId],
+      });
+      expect(finding?.evidenceIds).toHaveLength(1);
+    }
+    if (completed === undefined || addedFinding === undefined || liveFinding === undefined) {
+      throw new TypeError("The mixed staged/live Check must retain all exact Findings.");
+    }
+    const persisted = await store.readTaskBundle(built.task.taskId);
+    if (!("brief" in persisted.bundle)) {
+      throw new TypeError("The mixed staged/live Check must remain contextual.");
+    }
+    const expectedEvidence = [
+      [completed.evidenceIds[0], "src/task.ts", "task-handler", SOURCE_DIGEST],
+      [addedFinding.evidenceIds[0], "src/mixed-added.ts", "mixed-added-handler", addedDigest],
+      [liveFinding.evidenceIds[0], "src/mixed-live.ts", "mixed-live-handler", liveDigest],
+    ] as const;
+    for (const [evidenceId, filePath, nodeId, contentHash] of expectedEvidence) {
+      const evidence = persisted.bundle.evidence.find((item) => item.id === evidenceId);
+      expect(evidence).toEqual(expect.objectContaining({
+        kind: "source",
+        freshness: "current",
+        observedAtSnapshotId: actualSnapshotId,
+        filePath,
+        lineRange: [1, 1],
+        nodeIds: [nodeId],
+        contentHash,
+      }));
+    }
+  });
 });

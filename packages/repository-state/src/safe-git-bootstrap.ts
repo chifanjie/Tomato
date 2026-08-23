@@ -14,11 +14,13 @@ import {
 import { TextDecoder } from "node:util";
 
 import {
+  bindNativeSafeGitRepositoryControlV1,
   closeNativeSafeGitDescriptorBootstrapV1,
   openNativeSafeGitDescriptorBootstrapV1,
   revalidateNativeSafeGitDescriptorBootstrapV1,
   type NativeSafeGitDescriptorBindingV1,
   type NativeSafeGitDescriptorLayoutV1,
+  type NativeSafeGitRepositoryControlInspectionV1,
 } from "@understand-code/native-kernel-bridge";
 
 import { getSafeGitBootstrapTestHooksInternalV1 } from "./safe-git-bootstrap-testing-internal.js";
@@ -49,6 +51,15 @@ export const SAFE_GIT_DESCRIPTOR_BOOTSTRAP_REQUIRED_NEXT_V1 = Object.freeze([
   "hmac_identity",
   "strong_writer",
 ] as const);
+export const SAFE_GIT_REPOSITORY_CONTROL_PROFILE_V1 =
+  "descriptor_bound_safe_git_repository_control_v1" as const;
+export const SAFE_GIT_REPOSITORY_CONTROL_REQUIRED_NEXT_V1 = Object.freeze([
+  "empty_hooks_directory",
+  "handle_bound_execution",
+  "os_sandbox",
+  "hmac_identity",
+  "strong_writer",
+] as const);
 
 export type SafeGitBootstrapErrorCodeV1 =
   | "unsupported_platform"
@@ -62,6 +73,7 @@ export type SafeGitBootstrapErrorCodeV1 =
   | "malformed_git_pointer"
   | "external_git_target"
   | "backpointer_mismatch"
+  | "repository_control_invalid"
   | "binding_changed";
 
 const ERROR_MESSAGES_V1: Readonly<Record<SafeGitBootstrapErrorCodeV1, string>> =
@@ -81,6 +93,8 @@ const ERROR_MESSAGES_V1: Readonly<Record<SafeGitBootstrapErrorCodeV1, string>> =
       "filesystem bootstrap target is not a linked-worktree control directory",
     backpointer_mismatch:
       "filesystem bootstrap linked-worktree backpointer does not match",
+    repository_control_invalid:
+      "repository control metadata is unsupported or could not be verified",
     binding_changed: "filesystem bootstrap binding changed during validation",
   });
 
@@ -122,10 +136,47 @@ export interface SafeGitDescriptorBootstrapInspectionV1 {
   ];
 }
 
+/** Path-redacted proof that the bound repository has only local, supported control state. */
+export interface SafeGitRepositoryControlInspectionV1 {
+  readonly profile: typeof SAFE_GIT_REPOSITORY_CONTROL_PROFILE_V1;
+  readonly status: "verified_candidate";
+  readonly layout: "ordinary" | "linked_worktree";
+  readonly filesystemBinding: "verified";
+  readonly linkedWorktreeBackpointer: "not_applicable" | "verified";
+  readonly descriptorRelativeTraversal: "verified";
+  readonly extendedAccessControl: "verified";
+  readonly nativeHandleCustody: "verified";
+  readonly repositoryControlShape: "verified";
+  readonly repositoryControlReader: "verified";
+  readonly localObjectDatabase: "verified";
+  readonly refBackend: "verified";
+  readonly objectFormat: "sha1" | "sha256";
+  readonly objectDatabase: "local_only_verified";
+  readonly repositoryConfig: "verified";
+  readonly worktreeConfig: "absent" | "verified";
+  readonly emptyHooksDirectory: "locked";
+  readonly handleBoundExecution: "locked";
+  readonly osSandbox: "locked";
+  readonly hmacIdentity: "locked";
+  readonly strongWrites: "locked";
+  readonly requiredNext: readonly [
+    "empty_hooks_directory",
+    "handle_bound_execution",
+    "os_sandbox",
+    "hmac_identity",
+    "strong_writer",
+  ];
+}
+
+export type SafeGitDescriptorBoundInspectionV1 =
+  | SafeGitDescriptorBootstrapInspectionV1
+  | SafeGitRepositoryControlInspectionV1;
+
 export interface SafeGitDescriptorBoundCapabilityV1 {
   readonly profile: typeof SAFE_GIT_DESCRIPTOR_BOOTSTRAP_PROFILE_V1;
   readonly closed: boolean;
-  revalidate(): Promise<SafeGitDescriptorBootstrapInspectionV1>;
+  bindRepositoryControl(): Promise<SafeGitRepositoryControlInspectionV1>;
+  revalidate(): Promise<SafeGitDescriptorBoundInspectionV1>;
   close(): Promise<void>;
 }
 
@@ -151,6 +202,7 @@ class SafeGitBootstrapCapabilityInternalV1
   readonly profile = SAFE_GIT_DESCRIPTOR_BOOTSTRAP_PROFILE_V1;
   #binding: NativeSafeGitDescriptorBindingV1 | undefined;
   readonly #layout: NativeSafeGitDescriptorLayoutV1;
+  #repositoryControl: NativeSafeGitRepositoryControlInspectionV1 | undefined;
   #usable = true;
   #closed = false;
   #closing: Promise<void> | undefined;
@@ -169,7 +221,22 @@ class SafeGitBootstrapCapabilityInternalV1
     return this.#closed;
   }
 
-  async revalidate(): Promise<SafeGitDescriptorBootstrapInspectionV1> {
+  async bindRepositoryControl(): Promise<SafeGitRepositoryControlInspectionV1> {
+    const binding = this.#binding;
+    if (this.#closed || !this.#usable || binding === undefined) {
+      throw new SafeGitBootstrapErrorV1("binding_changed");
+    }
+    try {
+      const control = bindNativeSafeGitRepositoryControlV1(binding);
+      this.#repositoryControl = control;
+      return repositoryControlInspectionV1(this.#layout, control);
+    } catch {
+      this.#poisonBinding(binding);
+      throw new SafeGitBootstrapErrorV1("repository_control_invalid");
+    }
+  }
+
+  async revalidate(): Promise<SafeGitDescriptorBoundInspectionV1> {
     const binding = this.#binding;
     if (this.#closed || !this.#usable || binding === undefined) {
       throw new SafeGitBootstrapErrorV1("binding_changed");
@@ -179,18 +246,24 @@ class SafeGitBootstrapCapabilityInternalV1
       if (layout !== this.#layout) {
         throw new SafeGitBootstrapErrorV1("binding_changed");
       }
-      return inspectionV1(layout);
+      return this.#repositoryControl === undefined
+        ? inspectionV1(layout)
+        : repositoryControlInspectionV1(layout, this.#repositoryControl);
     } catch {
-      this.#usable = false;
-      try {
-        closeNativeSafeGitDescriptorBootstrapV1(binding);
-        this.#binding = undefined;
-        this.#closed = true;
-        CAPABILITIES_V1.delete(this);
-      } catch {
-        // Keep the genuine capability recognizable so close() can be retried.
-      }
+      this.#poisonBinding(binding);
       throw new SafeGitBootstrapErrorV1("binding_changed");
+    }
+  }
+
+  #poisonBinding(binding: NativeSafeGitDescriptorBindingV1): void {
+    this.#usable = false;
+    try {
+      closeNativeSafeGitDescriptorBootstrapV1(binding);
+      this.#binding = undefined;
+      this.#closed = true;
+      CAPABILITIES_V1.delete(this);
+    } catch {
+      // Keep the genuine capability recognizable so close() can be retried.
     }
   }
 
@@ -548,6 +621,37 @@ function inspectionV1(
     hmacIdentity: "locked",
     strongWrites: "locked",
     requiredNext: SAFE_GIT_DESCRIPTOR_BOOTSTRAP_REQUIRED_NEXT_V1,
+  });
+}
+
+function repositoryControlInspectionV1(
+  layout: SafeGitRepositoryControlInspectionV1["layout"],
+  control: NativeSafeGitRepositoryControlInspectionV1,
+): SafeGitRepositoryControlInspectionV1 {
+  return Object.freeze({
+    profile: SAFE_GIT_REPOSITORY_CONTROL_PROFILE_V1,
+    status: "verified_candidate",
+    layout,
+    filesystemBinding: "verified",
+    linkedWorktreeBackpointer:
+      layout === "ordinary" ? "not_applicable" : "verified",
+    descriptorRelativeTraversal: "verified",
+    extendedAccessControl: "verified",
+    nativeHandleCustody: "verified",
+    repositoryControlShape: "verified",
+    repositoryControlReader: "verified",
+    localObjectDatabase: "verified",
+    refBackend: "verified",
+    objectFormat: control.objectFormat,
+    objectDatabase: control.objectDatabase,
+    repositoryConfig: control.repositoryConfig,
+    worktreeConfig: control.worktreeConfig,
+    emptyHooksDirectory: "locked",
+    handleBoundExecution: "locked",
+    osSandbox: "locked",
+    hmacIdentity: "locked",
+    strongWrites: "locked",
+    requiredNext: SAFE_GIT_REPOSITORY_CONTROL_REQUIRED_NEXT_V1,
   });
 }
 

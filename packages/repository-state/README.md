@@ -23,6 +23,8 @@ payloads defined by `@understand-code/contracts`.
 - Provides a descriptor-bound SafeGit bootstrap candidate that validates an
   ordinary `.git` directory layout or linked-worktree control relationship,
   retains native handle custody, and never launches Git.
+- Promotes that opaque binding only after descriptor-relative repository config,
+  local-object-database, and files-ref-backend admission succeeds.
 
 ## Snapshot
 
@@ -97,13 +99,22 @@ Successful results carry the distinct
 filesystem-only candidate API is intentionally replaced rather than silently
 changing its V1 contract.
 
-This candidate is not the complete SafeGit adapter. Its projection keeps
-descriptor-relative traversal, native handle custody, and extended-access-
-control admission `verified`. The repository control reader, local ODB and ref
-backend verification, handle-bound execution, OS sandboxing, HMAC identity,
-and strong writes remain explicitly `locked`. It is not connected to the
-legacy Snapshot producer and does not authorize Git execution, Provider I/O,
-or any public strong capability.
+Call `capability.bindRepositoryControl()` to request the next, independently
+versioned `descriptor_bound_safe_git_repository_control_v1` proof. The native
+reader operates only through retained descriptors. It verifies strict local
+repository/worktree config, rejects includes and executable-valued controls,
+rejects alternate/promisor/partial-clone/grafts/replace-object state, binds a
+local `objects` hierarchy, and admits only the files ref backend. Its result
+exposes only `sha1 | sha256` and fixed verification labels; no path, descriptor,
+inode, config bytes, ref, or object identifier crosses the API. Later
+`revalidate()` calls recheck the promoted control binding and fail closed on
+drift.
+
+This is still not the complete SafeGit adapter. Handle-bound execution, the
+fixed invocation environment, hooks proof, OS sandbox/resource containment,
+HMAC identity, and strong writes remain explicitly `locked`. It is not
+connected to the legacy Snapshot producer and does not authorize Git execution,
+Provider I/O, or any public strong capability.
 
 ## Security and boundaries
 

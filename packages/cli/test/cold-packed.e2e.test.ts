@@ -48,6 +48,7 @@ async function assertInstalledNativeKernelPeerV1(
   expect(metadata.mode & 0o777).toBe(0o644);
 
   const addon = requireV1(nativePath) as {
+    readonly bindSafeGitRepositoryControl?: (binding: object) => unknown;
     readonly closeSafeGitDescriptorBootstrap?: (binding: object) => unknown;
     readonly getKernelBridgeProfile?: () => unknown;
     readonly openSafeGitDescriptorBootstrap?: (root: string) => unknown;
@@ -57,6 +58,7 @@ async function assertInstalledNativeKernelPeerV1(
   expect(addon.getKernelBridgeProfile?.()).toBe("native_kernel_bridge_v1");
   expect(addon.readPeerCredentials).toBeTypeOf("function");
   expect(addon.openSafeGitDescriptorBootstrap).toBeTypeOf("function");
+  expect(addon.bindSafeGitRepositoryControl).toBeTypeOf("function");
   expect(addon.revalidateSafeGitDescriptorBootstrap).toBeTypeOf("function");
   expect(addon.closeSafeGitDescriptorBootstrap).toBeTypeOf("function");
   const opened = addon.openSafeGitDescriptorBootstrap!(
@@ -64,6 +66,14 @@ async function assertInstalledNativeKernelPeerV1(
   ) as { readonly binding?: unknown; readonly layout?: unknown };
   expect(opened.layout).toBe("ordinary");
   expect(opened.binding).toBeTypeOf("object");
+  expect(addon.bindSafeGitRepositoryControl!(opened.binding as object)).toEqual({
+    profile: "native_safe_git_repository_control_v1",
+    objectFormat: expect.stringMatching(/^(?:sha1|sha256)$/u),
+    objectDatabase: "local_only_verified",
+    refBackend: "files_verified",
+    repositoryConfig: "verified",
+    worktreeConfig: "absent",
+  });
   expect(addon.revalidateSafeGitDescriptorBootstrap!(opened.binding as object)).toEqual({
     layout: "ordinary",
   });

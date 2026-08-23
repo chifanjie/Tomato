@@ -32,11 +32,21 @@ export interface NativeSafeGitDescriptorBootstrapResultV1 {
   readonly layout: NativeSafeGitDescriptorLayoutV1;
 }
 
+export interface NativeSafeGitRepositoryControlInspectionV1 {
+  readonly profile: "native_safe_git_repository_control_v1";
+  readonly objectFormat: "sha1" | "sha256";
+  readonly objectDatabase: "local_only_verified";
+  readonly refBackend: "files_verified";
+  readonly repositoryConfig: "verified";
+  readonly worktreeConfig: "absent" | "verified";
+}
+
 interface NativeKernelBridgeAddonV1 {
   readonly assertFdHasNoExtendedAccessControl: (
     fileDescriptor: number,
     expectedKind: ProviderRuntimeNativeFdAccessControlOptionsV1["expectedKind"],
   ) => unknown;
+  readonly bindSafeGitRepositoryControl: (binding: object) => unknown;
   readonly closeSafeGitDescriptorBootstrap: (binding: object) => unknown;
   readonly getKernelBridgeProfile: () => unknown;
   readonly openSafeGitDescriptorBootstrap: (root: string) => unknown;
@@ -123,6 +133,7 @@ function loadNativeAddonV1(): NativeKernelBridgeAddonV1 {
         typeof candidate.readPeerCredentials !== "function" ||
         typeof candidate.assertFdHasNoExtendedAccessControl !== "function" ||
         typeof candidate.getKernelBridgeProfile !== "function" ||
+        typeof candidate.bindSafeGitRepositoryControl !== "function" ||
         typeof candidate.openSafeGitDescriptorBootstrap !== "function" ||
         typeof candidate.revalidateSafeGitDescriptorBootstrap !== "function" ||
         typeof candidate.closeSafeGitDescriptorBootstrap !== "function"
@@ -135,6 +146,8 @@ function loadNativeAddonV1(): NativeKernelBridgeAddonV1 {
       loadedAddonV1 = Object.freeze({
         assertFdHasNoExtendedAccessControl:
           candidate.assertFdHasNoExtendedAccessControl,
+        bindSafeGitRepositoryControl:
+          candidate.bindSafeGitRepositoryControl,
         closeSafeGitDescriptorBootstrap:
           candidate.closeSafeGitDescriptorBootstrap,
         getKernelBridgeProfile: candidate.getKernelBridgeProfile,
@@ -313,6 +326,46 @@ function safeGitBindingStateV1(
   return [value, state] as const;
 }
 
+function parseSafeGitRepositoryControlV1(
+  value: unknown,
+): NativeSafeGitRepositoryControlInspectionV1 {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw safeGitUnavailableV1();
+  }
+  const candidate = value as Record<string, unknown>;
+  const keys = Object.keys(candidate).sort();
+  if (
+    keys.length !== 6 ||
+    keys.join("\0") !==
+      [
+        "objectDatabase",
+        "objectFormat",
+        "profile",
+        "refBackend",
+        "repositoryConfig",
+        "worktreeConfig",
+      ].join("\0") ||
+    candidate.profile !== "native_safe_git_repository_control_v1" ||
+    (candidate.objectFormat !== "sha1" &&
+      candidate.objectFormat !== "sha256") ||
+    candidate.objectDatabase !== "local_only_verified" ||
+    candidate.refBackend !== "files_verified" ||
+    candidate.repositoryConfig !== "verified" ||
+    (candidate.worktreeConfig !== "absent" &&
+      candidate.worktreeConfig !== "verified")
+  ) {
+    throw safeGitUnavailableV1();
+  }
+  return Object.freeze({
+    profile: candidate.profile,
+    objectFormat: candidate.objectFormat,
+    objectDatabase: candidate.objectDatabase,
+    refBackend: candidate.refBackend,
+    repositoryConfig: candidate.repositoryConfig,
+    worktreeConfig: candidate.worktreeConfig,
+  });
+}
+
 /**
  * Reads credentials for this exact live connected Unix-domain socket from the
  * kernel. Addon load, descriptor, socket-family, and syscall failures are all
@@ -388,6 +441,27 @@ export function revalidateNativeSafeGitDescriptorBootstrapV1(
       throw safeGitUnavailableV1();
     }
     return layout;
+  } catch {
+    throw safeGitUnavailableV1();
+  }
+}
+
+/**
+ * Promotes an existing descriptor bootstrap into a descriptor-relative,
+ * read-only repository control authority. No path, descriptor, config bytes,
+ * or filesystem identity crosses this boundary.
+ */
+export function bindNativeSafeGitRepositoryControlV1(
+  binding: NativeSafeGitDescriptorBindingV1,
+): NativeSafeGitRepositoryControlInspectionV1 {
+  try {
+    const [nativeBinding, state] = safeGitBindingStateV1(binding);
+    if (state.closed) {
+      throw safeGitUnavailableV1();
+    }
+    return parseSafeGitRepositoryControlV1(
+      loadNativeAddonV1().bindSafeGitRepositoryControl(nativeBinding),
+    );
   } catch {
     throw safeGitUnavailableV1();
   }

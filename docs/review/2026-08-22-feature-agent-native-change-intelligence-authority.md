@@ -2,7 +2,7 @@
 
 > 生成时间：2026-08-24 CST
 > 分支：feature/agent-native-change-intelligence-authority
-> 当前增量基于 commit：e4356283bda097026bd0ccb05dc5b135406a1759 `feat(repository-state): add SafeGit bootstrap candidate`
+> 当前增量基于 commit：c31be2a4d5c0710ad441d99de6a8ca7faae05a0a `feat(repository-state): bind SafeGit bootstrap to native descriptors`
 
 ## 背景与动机
 
@@ -29,6 +29,13 @@ bridge 逐组件使用 `openat/fstatat + O_NOFOLLOW + O_CLOEXEC`，原生持有 
 immutable/append flags。descriptor traversal、native handle custody 与 ACL admission 现在可声明
 `verified`；repository control reader、local ODB/ref、HMAC、handle-bound Git execution、sandbox 与
 strong writes 仍保持 `locked`。
+
+本轮再把该 opaque binding 以显式 promotion 升级为 repository-control candidate：native 只经已保留
+descriptor 读取并 pin common/worktree config，绑定 local `objects/info/pack` layout 与 files refs backend，
+拒绝 alternate/http-alternate、grafts、replace refs、promisor/partial clone/shallow、reftable/unknown extension
+以及非固定 allowlist 配置。promotion 前后与后续 `revalidate()` 都重验 descriptor、control bytes、absence
+proof 和 bounded directory snapshot；投影只公开 object format 与固定 verification labels。empty hooks、
+handle-bound Git execution、sandbox、HMAC identity 与 strong writer 仍锁定。
 
 ## 改动策略
 
@@ -61,8 +68,8 @@ strong writes 仍保持 `locked`。
 | Snapshot/Pulse contracts | `packages/contracts/src/repository.ts` | 新增 legacy/strong persisted unions、strong invariants/trusted validators、strict Surface unions |
 | MCP/JSON Schema | `packages/contracts/src/mcp.ts`、`src/json-schema.ts`、`schemas/v1/*` | `get_repo_pulse` 改用 strict Surface/meta；发布 6 个新 Schema 并更新 3 个既有 Schema |
 | Surface projector | `packages/repository-state/src/surface.ts`、`src/index.ts` | 逐字段投影 legacy redacted/strong safe view |
-| Native kernel bridge | `packages/native-kernel-bridge/*`、Provider Runtime re-export、CLI native asset wiring | 单一 N-API asset 保留 peer/ACL ABI，并新增 opaque descriptor-bound SafeGit open/revalidate/close |
-| SafeGit bootstrap candidate | `packages/repository-state/src/safe-git-bootstrap.ts`、testing internal、package export | 逐组件 no-follow、真实 linked-worktree 双向绑定、ACL/flags admission、发布握手与显式 remaining locks |
+| Native kernel bridge | `packages/native-kernel-bridge/*`、Provider Runtime re-export、CLI native asset wiring | 单一 N-API asset 保留 peer/ACL ABI，并新增 opaque descriptor-bound SafeGit open/control-promotion/revalidate/close |
+| SafeGit bootstrap/control candidate | `packages/repository-state/src/safe-git-bootstrap.ts`、testing internal、package export | 逐组件 no-follow、真实 linked-worktree 双向绑定、ACL/flags admission、strict config/local ODB/files refs promotion 与显式 remaining locks |
 | CLI capability boundary | `packages/cli/src/errors/tool-errors.ts`、handlers、runtime、registry | 统一 exact provider error；公开 Task 读写、refresh 和 Workbench 在副作用前锁定；工具描述与能力一致 |
 | Task quarantine | `packages/task-engine/src/engine.ts`、`src/change-intelligence.ts` | public context recovery capability lock；底层强 Artifact 拒绝与零写保护 |
 | Workbench/Preview | Dashboard component/loader、`packages/preview/src/server.mjs` | Task fail closed；legacy/unauthorized strong state 不进入 HTTP/HTML/DOM；保留安全 Graph/Wiki |
@@ -126,6 +133,15 @@ Review baseline 由 D-29 accepted authority 明确：
     `O_NONBLOCK|O_NOCTTY`，并补 special-file rejection 门禁。
 16. Preview fresh runner 最初不会先构建新 native package；现 Preview build 首步构建 bridge，cold-packed
     CLI 从安装包真实加载 profile 并执行 descriptor open/revalidate/close。
+17. Directory snapshot 最初用 duplicated fd 读取并共享 open-file-description offset；现 descriptor-relative
+    reopen `.` 获得独立 offset，并覆盖连续 promotion/revalidate。
+18. Config parser 曾把 quoted/escaped trailing whitespace误 trim，并以 denylist 漏过 executable-valued key；
+    现保留 Git 语义、拒绝 control whitespace，并使用 scope-aware fail-closed allowlist。
+19. packed-refs 曾漏拒 packed replace ref 与 component-level `.lock`/dot prefix；现按 files ref component
+    grammar校验并覆盖 hostile fixtures。
+20. promotion 中途失败曾可能保留 partial directory snapshot，使同一 binding 重试越界；现失败永久
+    poison native binding、释放 partial state，重复 bind/revalidate稳定 fail closed。
+21. Directory snapshot entry 数组曾逐项 realloc 形成同步 O(n²) 风险；现使用有 hard cap 的几何扩容。
 
 没有使用测试侧 unlock、旧 runtime overlay、放宽 Schema/timeout、恢复 legacy writer 或 skip 取得
 绿色结果。
@@ -136,13 +152,15 @@ Review baseline 由 D-29 accepted authority 明确：
 
 - Contracts：typecheck；58 generated schemas；28 fixtures；13 files / 147 tests；14 packed entry
   points distribution smoke。
-- Native Kernel Bridge：Darwin arm64 build/typecheck；7/7，覆盖 ordinary、真实 linked worktree、正常
-  worktree/index churn、symlink、namespace drift、FIFO 与 close/revalidate；Provider native compatibility 4/4。
-- Repository State：typecheck/build；6 files / 112 passed，1 个既有 Linux-only 平台条件 skip；其中
-  descriptor-bound SafeGit focused 25/25。
+- Native Kernel Bridge：Darwin arm64 build/typecheck、14/14；覆盖 ordinary、SHA-256、真实 linked worktree、strict
+  config/local ODB/files refs、hostile control、snapshot cap、promotion poison、symlink/namespace drift/FIFO；
+  Provider native compatibility 4/4 复跑通过。
+- Repository State：typecheck/build；6 files / 118 passed、1 个既有 Linux-only skip；descriptor-bound SafeGit
+  focused 31/31，覆盖 bootstrap、control promotion、真实 linked worktree、worktree config、
+  alternate/reftable/include 与 config replacement。
 - Provider Runtime：typecheck/build；25 files / 109 tests；最终 native compatibility 4/4 复跑通过。
-- CLI：typecheck/build；cold-packed install 1/1，并从 tgz 内唯一 native asset 真实执行 profile 与
-  descriptor open/revalidate/close。
+- CLI：typecheck/build；cold-packed install 1/1，并从 tgz 内唯一 native asset 真实执行 profile、
+  descriptor open/control-promotion/revalidate/close。
 - Preview：从 `clean:build` 开始 build/typecheck；runtime 8/8，证明独立 runner 不依赖 stale native dist。
 - CI：新增 Ubuntu/macOS native descriptor-binding matrix，并纳入最终 `quality` 汇总阻断。
 - CLI：typecheck；15 files / 93 tests，包含 cold packed、installed dual-host、全部公开 capability
@@ -175,13 +193,16 @@ Review baseline 由 D-29 accepted authority 明确：
 - SafeGit descriptor-bound candidate 可在不调用 Git 的情况下逐组件 no-follow 验证 ordinary layout 与
   真实 linked worktree 双向 backpointer；native handles、ACL/flags 与 namespace 可重验，错误和 inspection
   均不含 Host path/fd/inode/digest，capability close 或失败重验后失效。
+- repository-control promotion 可 descriptor-relative 验证 strict common/worktree config、完整 local ODB
+  layout 与 files ref backend；alternate/promisor/replace/shallow/reftable 和 drift 均 fail closed，projection
+  不含 config bytes、ref/OID 或 Host locator。
 
 ## 不可声明与剩余边界
 
 - 不得声称 HMAC identity/key lifecycle、完整 SafeGit adapter、security scanner、strong Snapshot/Pulse writer、
   Provider Store bootstrap/ownership/recovery 已实现。
-- SafeGit candidate 仍不是完整 adapter；不得声称 repository control reader/shape、local ODB/ref backend、
-  pinned binary/handle exec、fixed env/argv、OS sandbox/resource containment 或八类 control read-set 已闭合。
+- SafeGit candidate 仍不是完整 adapter；不得声称 empty-hooks proof、object/ref content reader、pinned
+  binary/handle exec、fixed env/argv、OS sandbox/resource containment 或八类 control read-set 已全部闭合。
 - 不得声称 `strongWrites`、strong Task baseline、formal Actual/Hunk/Check 或
   `evidence_backed_v1` 已开放。
 - strong Surface projector 是冻结的结构投影；当前 public runtime 仍拒绝无 terminal Store authority
@@ -193,6 +214,6 @@ Review baseline 由 D-29 accepted authority 明确：
 
 ## 结论
 
-最终独立 review 未发现剩余 P0/P1。本 bounded D-29 security/capability + SafeGit descriptor-bound bootstrap
-slice 可提交；总体目标保持 active，继续 Step 15 的 control reader/local ODB/ref、HMAC identity、
-path-safe writer、Task baseline 与 strong Check，不得将总目标标记 complete。
+最终独立 review 未发现剩余 P0/P1。本 bounded D-29 security/capability + SafeGit descriptor-bound
+bootstrap/control slice 可提交；总体目标保持 active，继续 Step 15 的 empty-hooks、handle-bound execution、
+OS sandbox、HMAC identity、path-safe writer、Task baseline 与 strong Check，不得将总目标标记 complete。

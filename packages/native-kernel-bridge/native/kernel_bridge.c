@@ -3,6 +3,7 @@
 #endif
 
 #include <errno.h>
+#include <dirent.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <math.h>
@@ -32,7 +33,12 @@
 #define SAFE_GIT_POINTER_LIMIT ((size_t)4096)
 #define SAFE_GIT_PATH_LIMIT ((size_t)4096)
 #define SAFE_GIT_BOUND_NODE_LIMIT ((size_t)128)
-#define SAFE_GIT_ABSENCE_LIMIT ((size_t)4)
+#define SAFE_GIT_ABSENCE_LIMIT ((size_t)16)
+#define SAFE_GIT_CONTROL_FILE_LIMIT ((size_t)16777216)
+#define SAFE_GIT_CONFIG_FILE_LIMIT ((size_t)1048576)
+#define SAFE_GIT_DIRECTORY_ENTRY_LIMIT ((size_t)16384)
+#define SAFE_GIT_DIRECTORY_NAME_BYTES_LIMIT ((size_t)4194304)
+#define SAFE_GIT_CONFIG_KEY_LIMIT ((size_t)16384)
 
 enum safe_git_bound_kind {
   SAFE_GIT_BOUND_DIRECTORY = 1,
@@ -42,6 +48,24 @@ enum safe_git_bound_kind {
 enum safe_git_layout {
   SAFE_GIT_LAYOUT_ORDINARY = 1,
   SAFE_GIT_LAYOUT_LINKED_WORKTREE = 2,
+};
+
+enum safe_git_object_format {
+  SAFE_GIT_OBJECT_FORMAT_UNBOUND = 0,
+  SAFE_GIT_OBJECT_FORMAT_SHA1 = 1,
+  SAFE_GIT_OBJECT_FORMAT_SHA256 = 2,
+};
+
+struct safe_git_directory_entry_snapshot {
+  unsigned char *name;
+  size_t name_length;
+  struct stat metadata;
+};
+
+struct safe_git_directory_snapshot {
+  int node_index;
+  size_t entry_count;
+  struct safe_git_directory_entry_snapshot *entries;
 };
 
 struct safe_git_bound_node {
@@ -67,6 +91,14 @@ struct safe_git_descriptor_binding {
   size_t absence_count;
   struct safe_git_bound_node nodes[SAFE_GIT_BOUND_NODE_LIMIT];
   struct safe_git_absence absences[SAFE_GIT_ABSENCE_LIMIT];
+  int workspace_root_index;
+  int git_directory_index;
+  int common_directory_index;
+  int repository_control_bound;
+  int worktree_config_present;
+  enum safe_git_object_format object_format;
+  size_t directory_snapshot_count;
+  struct safe_git_directory_snapshot directory_snapshots[2];
 };
 
 static const napi_type_tag SAFE_GIT_BINDING_TYPE_TAG = {
@@ -461,6 +493,22 @@ static void safe_git_release_binding(
   if (binding == NULL) {
     return;
   }
+  for (index = 0; index < binding->directory_snapshot_count; index += 1) {
+    struct safe_git_directory_snapshot *snapshot =
+        &binding->directory_snapshots[index];
+    size_t entry_index;
+    for (entry_index = 0; entry_index < snapshot->entry_count;
+         entry_index += 1) {
+      free(snapshot->entries[entry_index].name);
+      snapshot->entries[entry_index].name = NULL;
+      snapshot->entries[entry_index].name_length = 0;
+    }
+    free(snapshot->entries);
+    snapshot->entries = NULL;
+    snapshot->entry_count = 0;
+    snapshot->node_index = -1;
+  }
+  binding->directory_snapshot_count = 0;
   for (index = binding->node_count; index > 0; index -= 1) {
     struct safe_git_bound_node *node = &binding->nodes[index - 1];
     if (node->file_descriptor >= 0) {
@@ -472,6 +520,8 @@ static void safe_git_release_binding(
     node->expected_content_length = 0;
   }
   binding->node_count = 0;
+  binding->repository_control_bound = 0;
+  binding->object_format = SAFE_GIT_OBJECT_FORMAT_UNBOUND;
   binding->closed = 1;
 }
 
@@ -803,6 +853,1372 @@ static int safe_git_read_pointer(struct safe_git_descriptor_binding *binding,
   return 1;
 }
 
+static int safe_git_read_and_pin_file(
+    struct safe_git_descriptor_binding *binding, int node_index,
+    size_t maximum_length, int allow_empty, const unsigned char **content,
+    size_t *content_length) {
+  struct safe_git_bound_node *node;
+  struct stat after;
+  unsigned char *bytes = NULL;
+  size_t length;
+
+  if (binding == NULL || node_index < 0 ||
+      (size_t)node_index >= binding->node_count || content == NULL ||
+      content_length == NULL) {
+    return 0;
+  }
+  node = &binding->nodes[node_index];
+  if (node->kind != SAFE_GIT_BOUND_REGULAR_FILE || node->snapshot.st_size < 0 ||
+      (uint64_t)node->snapshot.st_size > maximum_length ||
+      (!allow_empty && node->snapshot.st_size == 0) ||
+      node->expected_content != NULL) {
+    return 0;
+  }
+  length = (size_t)node->snapshot.st_size;
+  bytes = (unsigned char *)malloc(length == 0 ? 1 : length);
+  if (bytes == NULL ||
+      !safe_git_pread_exact(node->file_descriptor, bytes, length)) {
+    free(bytes);
+    return 0;
+  }
+  memset(&after, 0, sizeof(after));
+  if (fstat(node->file_descriptor, &after) != 0 ||
+      !stat_snapshot_matches(&node->snapshot, &after)) {
+    free(bytes);
+    return 0;
+  }
+  node->expected_content = bytes;
+  node->expected_content_length = length;
+  *content = bytes;
+  *content_length = length;
+  return 1;
+}
+
+static int safe_git_add_absence(struct safe_git_descriptor_binding *binding,
+                                int parent_index, const char *component);
+static int safe_git_revalidate_binding(
+    struct safe_git_descriptor_binding *binding);
+
+static int safe_git_open_optional_child(
+    struct safe_git_descriptor_binding *binding, int parent_index,
+    const char *component, enum safe_git_bound_kind kind, int owner_safe,
+    int *present, int *node_index) {
+  struct stat metadata;
+
+  if (binding == NULL || present == NULL || node_index == NULL ||
+      parent_index < 0 || (size_t)parent_index >= binding->node_count ||
+      !safe_git_component_is_valid(component)) {
+    return 0;
+  }
+  memset(&metadata, 0, sizeof(metadata));
+  errno = 0;
+  if (fstatat(binding->nodes[parent_index].file_descriptor, component,
+              &metadata, AT_SYMLINK_NOFOLLOW) != 0) {
+    if (errno != ENOENT || !safe_git_add_absence(binding, parent_index,
+                                                  component)) {
+      return 0;
+    }
+    *present = 0;
+    *node_index = -1;
+    return 1;
+  }
+  if (!safe_git_kind_matches(&metadata, kind) ||
+      !safe_git_open_child(binding, parent_index, component, kind, owner_safe,
+                           node_index)) {
+    return 0;
+  }
+  *present = 1;
+  return 1;
+}
+
+static int safe_git_ascii_equal_case_insensitive(const unsigned char *left,
+                                                 size_t left_length,
+                                                 const char *right) {
+  size_t index;
+  size_t right_length = strlen(right);
+  if (left_length != right_length) {
+    return 0;
+  }
+  for (index = 0; index < left_length; index += 1) {
+    unsigned char value = left[index];
+    if (value >= (unsigned char)'A' && value <= (unsigned char)'Z') {
+      value = (unsigned char)(value + ((unsigned char)'a' - (unsigned char)'A'));
+    }
+    if (value != (unsigned char)right[index]) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+static void safe_git_ascii_lower(unsigned char *bytes, size_t length) {
+  size_t index;
+  for (index = 0; index < length; index += 1) {
+    if (bytes[index] >= (unsigned char)'A' &&
+        bytes[index] <= (unsigned char)'Z') {
+      bytes[index] = (unsigned char)(
+          bytes[index] + ((unsigned char)'a' - (unsigned char)'A'));
+    }
+  }
+}
+
+static int safe_git_is_ascii_space(unsigned char value) {
+  return value == (unsigned char)' ' || value == (unsigned char)'\t';
+}
+
+static void safe_git_trim_span(const unsigned char *bytes, size_t *start,
+                               size_t *end) {
+  while (*start < *end && safe_git_is_ascii_space(bytes[*start])) {
+    *start += 1;
+  }
+  while (*end > *start && safe_git_is_ascii_space(bytes[*end - 1])) {
+    *end -= 1;
+  }
+}
+
+static int safe_git_config_identifier(const unsigned char *bytes,
+                                      size_t length, int section) {
+  size_t index;
+  if (length == 0 || length > 255 ||
+      !((bytes[0] >= (unsigned char)'A' && bytes[0] <= (unsigned char)'Z') ||
+        (bytes[0] >= (unsigned char)'a' && bytes[0] <= (unsigned char)'z'))) {
+    return 0;
+  }
+  for (index = 1; index < length; index += 1) {
+    unsigned char value = bytes[index];
+    if (!((value >= (unsigned char)'A' && value <= (unsigned char)'Z') ||
+          (value >= (unsigned char)'a' && value <= (unsigned char)'z') ||
+          (value >= (unsigned char)'0' && value <= (unsigned char)'9') ||
+          value == (unsigned char)'-')) {
+      return 0;
+    }
+  }
+  (void)section;
+  return 1;
+}
+
+static int safe_git_decode_config_value(const unsigned char *bytes,
+                                        size_t length,
+                                        unsigned char **decoded,
+                                        size_t *decoded_length) {
+  unsigned char *output;
+  size_t output_length = 0;
+  size_t semantic_length = 0;
+  size_t index;
+  int quoted = 0;
+
+  if (decoded == NULL || decoded_length == NULL) {
+    return 0;
+  }
+  output = (unsigned char *)malloc(length + 1);
+  if (output == NULL) {
+    return 0;
+  }
+  for (index = 0; index < length; index += 1) {
+    unsigned char value = bytes[index];
+    int escaped_semantic = 0;
+    if (value == 0 || value == (unsigned char)'\r' ||
+        value == (unsigned char)'\n') {
+      free(output);
+      return 0;
+    }
+    if (value == (unsigned char)'"') {
+      quoted = !quoted;
+      continue;
+    }
+    if (!quoted && (value == (unsigned char)'#' ||
+                    value == (unsigned char)';')) {
+      break;
+    }
+    if (value == (unsigned char)'\\') {
+      unsigned char escaped;
+      if (index + 1 >= length) {
+        free(output);
+        return 0;
+      }
+      escaped = bytes[++index];
+      escaped_semantic = 1;
+      if (escaped == (unsigned char)'n') {
+        value = (unsigned char)'\n';
+      } else if (escaped == (unsigned char)'t') {
+        value = (unsigned char)'\t';
+      } else if (escaped == (unsigned char)'b') {
+        value = (unsigned char)'\b';
+      } else if (escaped == (unsigned char)'\\' ||
+                 escaped == (unsigned char)'"') {
+        value = escaped;
+      } else {
+        free(output);
+        return 0;
+      }
+    }
+    output[output_length++] = value;
+    if (quoted || escaped_semantic || !safe_git_is_ascii_space(value)) {
+      semantic_length = output_length;
+    }
+  }
+  if (quoted) {
+    free(output);
+    return 0;
+  }
+  output_length = semantic_length;
+  output[output_length] = 0;
+  *decoded = output;
+  *decoded_length = output_length;
+  return 1;
+}
+
+static int safe_git_config_semantic_bytes_are_valid(
+    const unsigned char *bytes, size_t length) {
+  size_t index;
+  if (!safe_git_utf8_is_valid(bytes, length)) {
+    return 0;
+  }
+  for (index = 0; index < length; index += 1) {
+    if (bytes[index] < 0x20U || bytes[index] == 0x7fU) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+struct safe_git_config_parse_state {
+  enum safe_git_object_format object_format;
+  int repository_format_version;
+  int repository_format_seen;
+  int object_format_seen;
+  int ref_storage_seen;
+  int worktree_config_seen;
+  int worktree_config_enabled;
+  char **keys;
+  size_t key_count;
+};
+
+static void safe_git_release_config_parse_state(
+    struct safe_git_config_parse_state *state) {
+  size_t index;
+  if (state == NULL) {
+    return;
+  }
+  for (index = 0; index < state->key_count; index += 1) {
+    free(state->keys[index]);
+  }
+  free(state->keys);
+  state->keys = NULL;
+  state->key_count = 0;
+}
+
+static int safe_git_record_config_key(
+    struct safe_git_config_parse_state *state, int worktree_scope,
+    const unsigned char *section,
+    size_t section_length, const unsigned char *subsection,
+    size_t subsection_length, const unsigned char *name, size_t name_length) {
+  size_t length = section_length + subsection_length + name_length + 5;
+  char *key;
+  char **next_keys;
+  size_t index;
+
+  if (state == NULL || state->key_count >= SAFE_GIT_CONFIG_KEY_LIMIT) {
+    return 0;
+  }
+  key = (char *)malloc(length);
+  if (key == NULL) {
+    return 0;
+  }
+  key[0] = worktree_scope ? 'w' : 'c';
+  key[1] = '\x1f';
+  memcpy(key + 2, section, section_length);
+  key[section_length + 2] = '\x1f';
+  memcpy(key + section_length + 3, subsection, subsection_length);
+  key[section_length + 3 + subsection_length] = '\x1f';
+  memcpy(key + section_length + 4 + subsection_length, name, name_length);
+  key[length - 1] = '\0';
+  for (index = 0; index < state->key_count; index += 1) {
+    if (strcmp(state->keys[index], key) == 0) {
+      free(key);
+      return 0;
+    }
+  }
+  next_keys = (char **)realloc(state->keys,
+                               (state->key_count + 1) * sizeof(char *));
+  if (next_keys == NULL) {
+    free(key);
+    return 0;
+  }
+  state->keys = next_keys;
+  state->keys[state->key_count++] = key;
+  return 1;
+}
+
+static int safe_git_parse_boolean(const unsigned char *value,
+                                  size_t value_length, int *result) {
+  if (safe_git_ascii_equal_case_insensitive(value, value_length, "true") ||
+      safe_git_ascii_equal_case_insensitive(value, value_length, "yes") ||
+      safe_git_ascii_equal_case_insensitive(value, value_length, "on") ||
+      (value_length == 1 && value[0] == (unsigned char)'1')) {
+    *result = 1;
+    return 1;
+  }
+  if (safe_git_ascii_equal_case_insensitive(value, value_length, "false") ||
+      safe_git_ascii_equal_case_insensitive(value, value_length, "no") ||
+      safe_git_ascii_equal_case_insensitive(value, value_length, "off") ||
+      (value_length == 1 && value[0] == (unsigned char)'0')) {
+    *result = 0;
+    return 1;
+  }
+  return 0;
+}
+
+static int safe_git_config_key_is_allowed(
+    int worktree_scope, const unsigned char *section, size_t section_length,
+    size_t subsection_length, const unsigned char *name, size_t name_length) {
+  if (safe_git_ascii_equal_case_insensitive(section, section_length, "core")) {
+    if (subsection_length != 0) {
+      return 0;
+    }
+    if (safe_git_ascii_equal_case_insensitive(name, name_length,
+                                               "sparsecheckout") ||
+        safe_git_ascii_equal_case_insensitive(name, name_length,
+                                               "sparsecheckoutcone")) {
+      return 1;
+    }
+    if (worktree_scope) {
+      return 0;
+    }
+    return safe_git_ascii_equal_case_insensitive(
+               name, name_length, "repositoryformatversion") ||
+           safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                  "filemode") ||
+           safe_git_ascii_equal_case_insensitive(name, name_length, "bare") ||
+           safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                  "logallrefupdates") ||
+           safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                  "ignorecase") ||
+           safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                  "precomposeunicode") ||
+           safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                  "symlinks") ||
+           safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                  "protecthfs") ||
+           safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                  "protectntfs");
+  }
+  if (!worktree_scope &&
+      safe_git_ascii_equal_case_insensitive(section, section_length,
+                                             "extensions")) {
+    if (subsection_length != 0) {
+      return 0;
+    }
+    return safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                  "objectformat") ||
+           safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                  "refstorage") ||
+           safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                  "worktreeconfig");
+  }
+  if (worktree_scope) {
+    return 0;
+  }
+  if (safe_git_ascii_equal_case_insensitive(section, section_length,
+                                             "remote")) {
+    return subsection_length > 0 &&
+           (safe_git_ascii_equal_case_insensitive(name, name_length, "url") ||
+            safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                   "pushurl") ||
+            safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                   "fetch") ||
+            safe_git_ascii_equal_case_insensitive(name, name_length, "push") ||
+            safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                   "tagopt") ||
+            safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                   "prune") ||
+            safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                   "mirror"));
+  }
+  if (safe_git_ascii_equal_case_insensitive(section, section_length,
+                                             "branch")) {
+    return subsection_length > 0 &&
+           (safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                   "remote") ||
+            safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                   "merge") ||
+            safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                   "pushremote") ||
+            safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                   "rebase") ||
+            safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                   "description"));
+  }
+  if (subsection_length != 0) {
+    return 0;
+  }
+  if (safe_git_ascii_equal_case_insensitive(section, section_length, "user")) {
+    return safe_git_ascii_equal_case_insensitive(name, name_length, "name") ||
+           safe_git_ascii_equal_case_insensitive(name, name_length, "email");
+  }
+  if (safe_git_ascii_equal_case_insensitive(section, section_length, "init")) {
+    return safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                  "defaultbranch");
+  }
+  return 0;
+}
+
+static int safe_git_nonempty_config_atom(const unsigned char *value,
+                                         size_t value_length) {
+  return value_length > 0 && value[0] != (unsigned char)'-';
+}
+
+static int safe_git_remote_url_is_non_executable(const unsigned char *value,
+                                                 size_t value_length) {
+  size_t index;
+  if (!safe_git_nonempty_config_atom(value, value_length) ||
+      value[0] == (unsigned char)'!') {
+    return 0;
+  }
+  for (index = 1; index < value_length; index += 1) {
+    if (value[index - 1] == (unsigned char)':' &&
+        value[index] == (unsigned char)':') {
+      /* Git's <transport>:: syntax dispatches a remote-helper executable. */
+      return 0;
+    }
+  }
+  return 1;
+}
+
+static int safe_git_ref_components_are_safe(const unsigned char *value,
+                                            size_t value_length) {
+  size_t component_start = 0;
+  size_t index;
+  for (index = 0; index <= value_length; index += 1) {
+    if (index == value_length || value[index] == (unsigned char)'/') {
+      size_t component_length = index - component_start;
+      if (component_length == 0 ||
+          value[component_start] == (unsigned char)'.' ||
+          (component_length >= 5 &&
+           memcmp(value + index - 5, ".lock", 5) == 0)) {
+        return 0;
+      }
+      component_start = index + 1;
+    }
+  }
+  return 1;
+}
+
+static int safe_git_branch_name_is_safe(const unsigned char *value,
+                                        size_t value_length) {
+  size_t index;
+  if (!safe_git_nonempty_config_atom(value, value_length) ||
+      value[value_length - 1] == (unsigned char)'/' ||
+      value[value_length - 1] == (unsigned char)'.' ||
+      !safe_git_ref_components_are_safe(value, value_length)) {
+    return 0;
+  }
+  for (index = 0; index < value_length; index += 1) {
+    unsigned char byte = value[index];
+    if (byte == (unsigned char)'~' || byte == (unsigned char)'^' ||
+        byte == (unsigned char)':' || byte == (unsigned char)'?' ||
+        byte == (unsigned char)'*' || byte == (unsigned char)'[' ||
+        byte == (unsigned char)'\\' ||
+        (index > 0 && byte == (unsigned char)'/' &&
+         value[index - 1] == (unsigned char)'/') ||
+        (index > 0 && byte == (unsigned char)'.' &&
+         value[index - 1] == (unsigned char)'.') ||
+        (index > 0 && byte == (unsigned char)'{' &&
+         value[index - 1] == (unsigned char)'@')) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+static int safe_git_parse_config(
+    const unsigned char *bytes, size_t length, int worktree_scope,
+    struct safe_git_config_parse_state *state) {
+  unsigned char section[256];
+  size_t section_length = 0;
+  unsigned char subsection[1025];
+  size_t subsection_length = 0;
+  size_t cursor = 0;
+
+  if (state == NULL || (bytes == NULL && length != 0)) {
+    return 0;
+  }
+  while (cursor < length) {
+    size_t line_start = cursor;
+    size_t line_end;
+    size_t start;
+    size_t end;
+    size_t index;
+
+    while (cursor < length && bytes[cursor] != (unsigned char)'\n') {
+      if (bytes[cursor] == 0) {
+        return 0;
+      }
+      cursor += 1;
+    }
+    line_end = cursor;
+    if (cursor < length) {
+      cursor += 1;
+    }
+    if (line_end > line_start && bytes[line_end - 1] == (unsigned char)'\r') {
+      line_end -= 1;
+    }
+    if (line_end - line_start > 8192) {
+      return 0;
+    }
+    start = line_start;
+    end = line_end;
+    safe_git_trim_span(bytes, &start, &end);
+    if (start == end || bytes[start] == (unsigned char)'#' ||
+        bytes[start] == (unsigned char)';') {
+      continue;
+    }
+    if (bytes[start] == (unsigned char)'[') {
+      size_t closing = end;
+      size_t section_start;
+      size_t section_end;
+      size_t subsection_start;
+      size_t subsection_end;
+      int escaped = 0;
+
+      while (closing > start && bytes[closing - 1] != (unsigned char)']') {
+        closing -= 1;
+      }
+      if (closing <= start + 1 || bytes[closing - 1] != (unsigned char)']') {
+        return 0;
+      }
+      for (index = closing; index < end; index += 1) {
+        if (!safe_git_is_ascii_space(bytes[index]) &&
+            bytes[index] != (unsigned char)'#' &&
+            bytes[index] != (unsigned char)';') {
+          return 0;
+        }
+        if (bytes[index] == (unsigned char)'#' ||
+            bytes[index] == (unsigned char)';') {
+          break;
+        }
+      }
+      section_start = start + 1;
+      section_end = section_start;
+      while (section_end < closing - 1 &&
+             !safe_git_is_ascii_space(bytes[section_end])) {
+        section_end += 1;
+      }
+      if (!safe_git_config_identifier(bytes + section_start,
+                                      section_end - section_start, 1) ||
+          section_end - section_start >= sizeof(section)) {
+        return 0;
+      }
+      section_length = section_end - section_start;
+      memcpy(section, bytes + section_start, section_length);
+      safe_git_ascii_lower(section, section_length);
+      subsection_length = 0;
+      while (section_end < closing - 1 &&
+             safe_git_is_ascii_space(bytes[section_end])) {
+        section_end += 1;
+      }
+      if (section_end < closing - 1) {
+        if (bytes[section_end] != (unsigned char)'"') {
+          return 0;
+        }
+        subsection_start = section_end + 1;
+        subsection_end = subsection_start;
+        while (subsection_end < closing - 1) {
+          unsigned char value = bytes[subsection_end++];
+          if (escaped) {
+            if (value != (unsigned char)'"' && value != (unsigned char)'\\') {
+              return 0;
+            }
+            if (subsection_length >= sizeof(subsection) - 1) {
+              return 0;
+            }
+            subsection[subsection_length++] = value;
+            escaped = 0;
+          } else if (value == (unsigned char)'\\') {
+            escaped = 1;
+          } else if (value == (unsigned char)'"') {
+            break;
+          } else {
+            if (value == 0 || value == (unsigned char)'\n' ||
+                value == (unsigned char)'\r' ||
+                subsection_length >= sizeof(subsection) - 1) {
+              return 0;
+            }
+            subsection[subsection_length++] = value;
+          }
+        }
+        if (escaped || subsection_end == subsection_start ||
+            bytes[subsection_end - 1] != (unsigned char)'"') {
+          return 0;
+        }
+        while (subsection_end < closing - 1 &&
+               safe_git_is_ascii_space(bytes[subsection_end])) {
+          subsection_end += 1;
+        }
+        if (subsection_end != closing - 1) {
+          return 0;
+        }
+        if (!safe_git_config_semantic_bytes_are_valid(subsection,
+                                                      subsection_length)) {
+          return 0;
+        }
+      }
+      continue;
+    }
+
+    if (section_length == 0) {
+      return 0;
+    }
+    {
+      size_t name_start = start;
+      size_t name_end = name_start;
+      size_t value_start;
+      unsigned char name[256];
+      size_t name_length;
+      unsigned char *value = NULL;
+      size_t value_length = 0;
+
+      while (name_end < end && !safe_git_is_ascii_space(bytes[name_end]) &&
+             bytes[name_end] != (unsigned char)'=') {
+        name_end += 1;
+      }
+      name_length = name_end - name_start;
+      if (!safe_git_config_identifier(bytes + name_start, name_length, 0) ||
+          name_length >= sizeof(name)) {
+        return 0;
+      }
+      memcpy(name, bytes + name_start, name_length);
+      safe_git_ascii_lower(name, name_length);
+      value_start = name_end;
+      while (value_start < end && safe_git_is_ascii_space(bytes[value_start])) {
+        value_start += 1;
+      }
+      if (value_start < end && bytes[value_start] == (unsigned char)'=') {
+        value_start += 1;
+        while (value_start < end && safe_git_is_ascii_space(bytes[value_start])) {
+          value_start += 1;
+        }
+        if (!safe_git_decode_config_value(bytes + value_start,
+                                          end - value_start, &value,
+                                          &value_length)) {
+          return 0;
+        }
+      } else if (value_start == end) {
+        value = (unsigned char *)malloc(5);
+        if (value == NULL) {
+          return 0;
+        }
+        memcpy(value, "true", 5);
+        value_length = 4;
+      } else {
+        return 0;
+      }
+
+      if (!safe_git_config_semantic_bytes_are_valid(value, value_length)) {
+        free(value);
+        return 0;
+      }
+
+      if ((safe_git_ascii_equal_case_insensitive(section, section_length,
+                                                  "remote") ||
+           safe_git_ascii_equal_case_insensitive(section, section_length,
+                                                  "branch")) &&
+          !safe_git_branch_name_is_safe(subsection, subsection_length)) {
+        free(value);
+        return 0;
+      }
+
+      if (!safe_git_record_config_key(state, worktree_scope, section,
+                                      section_length,
+                                      subsection, subsection_length, name,
+                                      name_length) ||
+          !safe_git_config_key_is_allowed(
+              worktree_scope, section, section_length, subsection_length,
+              name, name_length)) {
+        free(value);
+        return 0;
+      }
+
+      if (safe_git_ascii_equal_case_insensitive(section, section_length,
+                                                 "core") &&
+          safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                 "repositoryformatversion")) {
+        if (worktree_scope || state->repository_format_seen ||
+            (value_length != 1 ||
+             (value[0] != (unsigned char)'0' &&
+              value[0] != (unsigned char)'1'))) {
+          free(value);
+          return 0;
+        }
+        state->repository_format_seen = 1;
+        state->repository_format_version = value[0] - (unsigned char)'0';
+      } else if (safe_git_ascii_equal_case_insensitive(
+                     section, section_length, "core") &&
+                 safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "bare")) {
+        int bare;
+        if (!safe_git_parse_boolean(value, value_length, &bare) || bare) {
+          free(value);
+          return 0;
+        }
+      } else if (safe_git_ascii_equal_case_insensitive(
+                     section, section_length, "core") &&
+                 (safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "filemode") ||
+                  safe_git_ascii_equal_case_insensitive(
+                      name, name_length, "logallrefupdates") ||
+                  safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "ignorecase") ||
+                  safe_git_ascii_equal_case_insensitive(
+                      name, name_length, "precomposeunicode") ||
+                  safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "symlinks") ||
+                  safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "protecthfs") ||
+                  safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "protectntfs") ||
+                  safe_git_ascii_equal_case_insensitive(
+                      name, name_length, "sparsecheckout") ||
+                  safe_git_ascii_equal_case_insensitive(
+                      name, name_length, "sparsecheckoutcone"))) {
+        int ignored_boolean;
+        if (!safe_git_parse_boolean(value, value_length, &ignored_boolean)) {
+          free(value);
+          return 0;
+        }
+      } else if (safe_git_ascii_equal_case_insensitive(section, section_length,
+                                                        "extensions") &&
+                 safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "objectformat")) {
+        if (worktree_scope || state->object_format_seen) {
+          free(value);
+          return 0;
+        }
+        state->object_format_seen = 1;
+        if (safe_git_ascii_equal_case_insensitive(value, value_length, "sha1")) {
+          state->object_format = SAFE_GIT_OBJECT_FORMAT_SHA1;
+        } else if (safe_git_ascii_equal_case_insensitive(value, value_length,
+                                                          "sha256")) {
+          state->object_format = SAFE_GIT_OBJECT_FORMAT_SHA256;
+        } else {
+          free(value);
+          return 0;
+        }
+      } else if (safe_git_ascii_equal_case_insensitive(section, section_length,
+                                                        "extensions") &&
+                 safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "refstorage")) {
+        if (worktree_scope || state->ref_storage_seen ||
+            !safe_git_ascii_equal_case_insensitive(value, value_length,
+                                                    "files")) {
+          free(value);
+          return 0;
+        }
+        state->ref_storage_seen = 1;
+      } else if (safe_git_ascii_equal_case_insensitive(section, section_length,
+                                                        "extensions") &&
+                 safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "worktreeconfig")) {
+        int enabled;
+        if (worktree_scope || state->worktree_config_seen ||
+            !safe_git_parse_boolean(value, value_length, &enabled)) {
+          free(value);
+          return 0;
+        }
+        state->worktree_config_seen = 1;
+        state->worktree_config_enabled = enabled;
+      } else if (safe_git_ascii_equal_case_insensitive(section, section_length,
+                                                        "extensions") &&
+                 safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "partialclone")) {
+        free(value);
+        return 0;
+      } else if (safe_git_ascii_equal_case_insensitive(
+                     section, section_length, "extensions")) {
+        /* repositoryFormatVersion=1 assigns semantic authority to every
+         * extension. This reader only admits its exact frozen allowlist. */
+        free(value);
+        return 0;
+      } else if (safe_git_ascii_equal_case_insensitive(
+                     section, section_length, "remote") &&
+                 (safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "url") ||
+                  safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "pushurl"))) {
+        if (!safe_git_remote_url_is_non_executable(value, value_length)) {
+          free(value);
+          return 0;
+        }
+      } else if (safe_git_ascii_equal_case_insensitive(
+                     section, section_length, "remote") &&
+                 (safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "fetch") ||
+                  safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "push"))) {
+        if (value_length == 0) {
+          free(value);
+          return 0;
+        }
+      } else if (safe_git_ascii_equal_case_insensitive(
+                     section, section_length, "remote") &&
+                 safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "tagopt")) {
+        if (!(safe_git_ascii_equal_case_insensitive(value, value_length,
+                                                     "--tags") ||
+              safe_git_ascii_equal_case_insensitive(value, value_length,
+                                                     "--no-tags"))) {
+          free(value);
+          return 0;
+        }
+      } else if (safe_git_ascii_equal_case_insensitive(
+                     section, section_length, "remote") &&
+                 (safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "prune") ||
+                  safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "mirror"))) {
+        int ignored_boolean;
+        if (!safe_git_parse_boolean(value, value_length, &ignored_boolean)) {
+          free(value);
+          return 0;
+        }
+      } else if (safe_git_ascii_equal_case_insensitive(
+                     section, section_length, "branch") &&
+                 (safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "remote") ||
+                  safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "pushremote"))) {
+        if (!safe_git_nonempty_config_atom(value, value_length) &&
+            !(value_length == 1 && value[0] == (unsigned char)'.')) {
+          free(value);
+          return 0;
+        }
+      } else if (safe_git_ascii_equal_case_insensitive(
+                     section, section_length, "branch") &&
+                 safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "merge")) {
+        if (!safe_git_branch_name_is_safe(value, value_length) ||
+            value_length < 6 || memcmp(value, "refs/", 5) != 0) {
+          free(value);
+          return 0;
+        }
+      } else if (safe_git_ascii_equal_case_insensitive(
+                     section, section_length, "branch") &&
+                 safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "rebase")) {
+        int ignored_boolean;
+        if (!safe_git_parse_boolean(value, value_length, &ignored_boolean) &&
+            !safe_git_ascii_equal_case_insensitive(value, value_length,
+                                                   "merges") &&
+            !safe_git_ascii_equal_case_insensitive(value, value_length,
+                                                   "interactive")) {
+          free(value);
+          return 0;
+        }
+      } else if (safe_git_ascii_equal_case_insensitive(
+                     section, section_length, "user") &&
+                 (safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "name") ||
+                  safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "email"))) {
+        if (value_length == 0) {
+          free(value);
+          return 0;
+        }
+      } else if (safe_git_ascii_equal_case_insensitive(
+                     section, section_length, "init") &&
+                 safe_git_ascii_equal_case_insensitive(name, name_length,
+                                                        "defaultbranch")) {
+        if (!safe_git_branch_name_is_safe(value, value_length)) {
+          free(value);
+          return 0;
+        }
+      }
+      free(value);
+    }
+  }
+  return 1;
+}
+
+static int safe_git_directory_entry_compare(const void *left_value,
+                                            const void *right_value) {
+  const struct safe_git_directory_entry_snapshot *left =
+      (const struct safe_git_directory_entry_snapshot *)left_value;
+  const struct safe_git_directory_entry_snapshot *right =
+      (const struct safe_git_directory_entry_snapshot *)right_value;
+  size_t shared = left->name_length < right->name_length ? left->name_length
+                                                         : right->name_length;
+  int compared = memcmp(left->name, right->name, shared);
+  if (compared != 0) {
+    return compared;
+  }
+  if (left->name_length < right->name_length) {
+    return -1;
+  }
+  if (left->name_length > right->name_length) {
+    return 1;
+  }
+  return 0;
+}
+
+static void safe_git_release_directory_snapshot(
+    struct safe_git_directory_snapshot *snapshot) {
+  size_t index;
+  if (snapshot == NULL) {
+    return;
+  }
+  for (index = 0; index < snapshot->entry_count; index += 1) {
+    free(snapshot->entries[index].name);
+  }
+  free(snapshot->entries);
+  snapshot->entries = NULL;
+  snapshot->entry_count = 0;
+  snapshot->node_index = -1;
+}
+
+static int safe_git_name_has_suffix(const unsigned char *name,
+                                    size_t name_length,
+                                    const char *suffix) {
+  size_t suffix_length = strlen(suffix);
+  return name_length >= suffix_length &&
+         memcmp(name + name_length - suffix_length, suffix, suffix_length) == 0;
+}
+
+static int safe_git_is_lower_hex(unsigned char value) {
+  return (value >= (unsigned char)'0' && value <= (unsigned char)'9') ||
+         (value >= (unsigned char)'a' && value <= (unsigned char)'f');
+}
+
+static int safe_git_object_root_entry_is_valid(const unsigned char *name,
+                                               size_t name_length,
+                                               const struct stat *metadata) {
+  if (!S_ISDIR(metadata->st_mode)) {
+    return 0;
+  }
+  if ((name_length == 4 && memcmp(name, "info", 4) == 0) ||
+      (name_length == 4 && memcmp(name, "pack", 4) == 0)) {
+    return 1;
+  }
+  return name_length == 2 && safe_git_is_lower_hex(name[0]) &&
+         safe_git_is_lower_hex(name[1]);
+}
+
+static int safe_git_capture_directory_snapshot(
+    const struct safe_git_descriptor_binding *binding, int node_index,
+    int reject_promisor, struct safe_git_directory_snapshot *snapshot) {
+  struct stat before;
+  struct stat after;
+  DIR *directory = NULL;
+  int duplicated = -1;
+  size_t name_bytes = 0;
+  size_t entry_capacity = 0;
+  struct dirent *entry;
+
+  if (binding == NULL || snapshot == NULL || node_index < 0 ||
+      (size_t)node_index >= binding->node_count ||
+      binding->nodes[node_index].kind != SAFE_GIT_BOUND_DIRECTORY) {
+    return 0;
+  }
+  memset(snapshot, 0, sizeof(*snapshot));
+  snapshot->node_index = node_index;
+  memset(&before, 0, sizeof(before));
+  if (fstat(binding->nodes[node_index].file_descriptor, &before) != 0) {
+    return 0;
+  }
+  /* A duplicated fd shares the directory stream offset with the retained
+   * authority. Reopen "." descriptor-relatively so every observation owns an
+   * independent open-file description. */
+  duplicated = openat(binding->nodes[node_index].file_descriptor, ".",
+                      O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+  if (duplicated < 0 || (directory = fdopendir(duplicated)) == NULL) {
+    if (duplicated >= 0) {
+      (void)close(duplicated);
+    }
+    return 0;
+  }
+  duplicated = -1;
+  errno = 0;
+  while ((entry = readdir(directory)) != NULL) {
+    size_t name_length = strlen(entry->d_name);
+    struct safe_git_directory_entry_snapshot *next_entries;
+    struct safe_git_directory_entry_snapshot *candidate;
+    if ((name_length == 1 && entry->d_name[0] == '.') ||
+        (name_length == 2 && entry->d_name[0] == '.' &&
+         entry->d_name[1] == '.')) {
+      errno = 0;
+      continue;
+    }
+    if (name_length == 0 || name_length > NAME_MAX ||
+        snapshot->entry_count >= SAFE_GIT_DIRECTORY_ENTRY_LIMIT ||
+        name_bytes > SAFE_GIT_DIRECTORY_NAME_BYTES_LIMIT - name_length ||
+        (reject_promisor && safe_git_name_has_suffix(
+                                (const unsigned char *)entry->d_name,
+                                name_length, ".promisor"))) {
+      (void)closedir(directory);
+      safe_git_release_directory_snapshot(snapshot);
+      return 0;
+    }
+    if (snapshot->entry_count == entry_capacity) {
+      size_t next_capacity =
+          entry_capacity == 0 ? 32 : entry_capacity * 2;
+      if (next_capacity > SAFE_GIT_DIRECTORY_ENTRY_LIMIT) {
+        next_capacity = SAFE_GIT_DIRECTORY_ENTRY_LIMIT;
+      }
+      if (next_capacity <= entry_capacity) {
+        (void)closedir(directory);
+        safe_git_release_directory_snapshot(snapshot);
+        return 0;
+      }
+      next_entries = (struct safe_git_directory_entry_snapshot *)realloc(
+          snapshot->entries,
+          next_capacity *
+              sizeof(struct safe_git_directory_entry_snapshot));
+      if (next_entries == NULL) {
+        (void)closedir(directory);
+        safe_git_release_directory_snapshot(snapshot);
+        return 0;
+      }
+      snapshot->entries = next_entries;
+      entry_capacity = next_capacity;
+    }
+    candidate = &snapshot->entries[snapshot->entry_count];
+    memset(candidate, 0, sizeof(*candidate));
+    candidate->name = (unsigned char *)malloc(name_length);
+    if (candidate->name == NULL ||
+        fstatat(binding->nodes[node_index].file_descriptor, entry->d_name,
+                &candidate->metadata, AT_SYMLINK_NOFOLLOW) != 0) {
+      free(candidate->name);
+      candidate->name = NULL;
+      (void)closedir(directory);
+      safe_git_release_directory_snapshot(snapshot);
+      return 0;
+    }
+    if ((reject_promisor && !S_ISREG(candidate->metadata.st_mode)) ||
+        (!reject_promisor &&
+         !safe_git_object_root_entry_is_valid(
+             (const unsigned char *)entry->d_name, name_length,
+             &candidate->metadata))) {
+      free(candidate->name);
+      candidate->name = NULL;
+      (void)closedir(directory);
+      safe_git_release_directory_snapshot(snapshot);
+      return 0;
+    }
+    memcpy(candidate->name, entry->d_name, name_length);
+    candidate->name_length = name_length;
+    snapshot->entry_count += 1;
+    name_bytes += name_length;
+    errno = 0;
+  }
+  if (errno != 0 || closedir(directory) != 0) {
+    safe_git_release_directory_snapshot(snapshot);
+    return 0;
+  }
+  memset(&after, 0, sizeof(after));
+  if (fstat(binding->nodes[node_index].file_descriptor, &after) != 0 ||
+      !stat_snapshot_matches(&before, &after)) {
+    safe_git_release_directory_snapshot(snapshot);
+    return 0;
+  }
+  qsort(snapshot->entries, snapshot->entry_count,
+        sizeof(struct safe_git_directory_entry_snapshot),
+        safe_git_directory_entry_compare);
+  return 1;
+}
+
+static int safe_git_directory_snapshots_equal(
+    const struct safe_git_directory_snapshot *left,
+    const struct safe_git_directory_snapshot *right) {
+  size_t index;
+  if (left->node_index != right->node_index ||
+      left->entry_count != right->entry_count) {
+    return 0;
+  }
+  for (index = 0; index < left->entry_count; index += 1) {
+    if (left->entries[index].name_length != right->entries[index].name_length ||
+        memcmp(left->entries[index].name, right->entries[index].name,
+               left->entries[index].name_length) != 0 ||
+        !stat_snapshot_matches(&left->entries[index].metadata,
+                               &right->entries[index].metadata)) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+static int safe_git_ref_name_is_valid(const unsigned char *bytes,
+                                      size_t length) {
+  size_t index;
+  if (length < 6 || memcmp(bytes, "refs/", 5) != 0 ||
+      (length >= 13 && memcmp(bytes, "refs/replace/", 13) == 0) ||
+      (length == 12 && memcmp(bytes, "refs/replace", 12) == 0) ||
+      !safe_git_ref_components_are_safe(bytes, length) ||
+      bytes[length - 1] == (unsigned char)'/' ||
+      bytes[length - 1] == (unsigned char)'.') {
+    return 0;
+  }
+  for (index = 0; index < length; index += 1) {
+    unsigned char value = bytes[index];
+    if (value <= 0x20U || value == 0x7fU || value == (unsigned char)'~' ||
+        value == (unsigned char)'^' || value == (unsigned char)':' ||
+        value == (unsigned char)'?' || value == (unsigned char)'*' ||
+        value == (unsigned char)'[' || value == (unsigned char)'\\' ||
+        (index > 0 && value == (unsigned char)'/' &&
+         bytes[index - 1] == (unsigned char)'/') ||
+        (index > 0 && value == (unsigned char)'.' &&
+         bytes[index - 1] == (unsigned char)'.') ||
+        (index > 0 && value == (unsigned char)'{' &&
+         bytes[index - 1] == (unsigned char)'@')) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+static int safe_git_oid_bytes_are_valid(const unsigned char *bytes,
+                                        size_t length,
+                                        enum safe_git_object_format format) {
+  size_t expected = format == SAFE_GIT_OBJECT_FORMAT_SHA256 ? 64 : 40;
+  size_t index;
+  if (length != expected) {
+    return 0;
+  }
+  for (index = 0; index < length; index += 1) {
+    unsigned char value = bytes[index];
+    if (!((value >= (unsigned char)'0' && value <= (unsigned char)'9') ||
+          (value >= (unsigned char)'a' && value <= (unsigned char)'f'))) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+static int safe_git_validate_packed_refs(
+    const unsigned char *bytes, size_t length,
+    enum safe_git_object_format object_format) {
+  size_t cursor = 0;
+  const unsigned char *previous_ref = NULL;
+  size_t previous_ref_length = 0;
+  int prior_ref = 0;
+  if (length == 0 || bytes == NULL || bytes[length - 1] != (unsigned char)'\n') {
+    return 0;
+  }
+  while (cursor < length) {
+    size_t start = cursor;
+    size_t end;
+    while (cursor < length && bytes[cursor] != (unsigned char)'\n') {
+      if (bytes[cursor] == 0 || bytes[cursor] == (unsigned char)'\r') {
+        return 0;
+      }
+      cursor += 1;
+    }
+    end = cursor;
+    cursor += 1;
+    if (end == start) {
+      return 0;
+    }
+    if (bytes[start] == (unsigned char)'#') {
+      prior_ref = 0;
+      continue;
+    }
+    if (bytes[start] == (unsigned char)'^') {
+      if (!prior_ref || !safe_git_oid_bytes_are_valid(
+                            bytes + start + 1, end - start - 1,
+                            object_format)) {
+        return 0;
+      }
+      prior_ref = 0;
+      continue;
+    }
+    {
+      size_t separator = start;
+      while (separator < end && bytes[separator] != (unsigned char)' ') {
+        separator += 1;
+      }
+      if (separator == end ||
+          !safe_git_oid_bytes_are_valid(bytes + start, separator - start,
+                                        object_format) ||
+          !safe_git_ref_name_is_valid(bytes + separator + 1,
+                                      end - separator - 1)) {
+        return 0;
+      }
+      {
+        const unsigned char *current_ref = bytes + separator + 1;
+        size_t current_ref_length = end - separator - 1;
+        if (previous_ref != NULL) {
+          size_t shared = previous_ref_length < current_ref_length
+                              ? previous_ref_length
+                              : current_ref_length;
+          int order = memcmp(previous_ref, current_ref, shared);
+          if (order > 0 ||
+              (order == 0 && previous_ref_length >= current_ref_length)) {
+            return 0;
+          }
+        }
+        previous_ref = current_ref;
+        previous_ref_length = current_ref_length;
+      }
+      prior_ref = 1;
+    }
+  }
+  return 1;
+}
+
+static int safe_git_bind_repository_control(
+    struct safe_git_descriptor_binding *binding) {
+  struct safe_git_config_parse_state config_state;
+  const unsigned char *repository_config_bytes = NULL;
+  size_t repository_config_length = 0;
+  int repository_config_index;
+  int worktree_config_present;
+  int worktree_config_index;
+  int objects_index;
+  int objects_info_index;
+  int objects_pack_index;
+  int common_info_index;
+  int refs_index;
+  int packed_refs_present;
+  int packed_refs_index;
+  int product_namespace_present;
+  int product_namespace_index;
+  int ignored_index;
+  int ignored_present;
+  const unsigned char *packed_refs_bytes = NULL;
+  size_t packed_refs_length = 0;
+
+  if (binding == NULL || binding->closed ||
+      binding->workspace_root_index < 0 || binding->git_directory_index < 0 ||
+      binding->common_directory_index < 0 ||
+      !safe_git_revalidate_binding(binding)) {
+    return 0;
+  }
+  if (binding->repository_control_bound) {
+    return binding->directory_snapshot_count == 2 &&
+           safe_git_revalidate_binding(binding);
+  }
+  /* Promotion is single-shot. A non-zero partial snapshot count can only be
+   * the residue of an interrupted promotion and must never be indexed again. */
+  if (binding->directory_snapshot_count != 0) {
+    return 0;
+  }
+  memset(&config_state, 0, sizeof(config_state));
+  config_state.object_format = SAFE_GIT_OBJECT_FORMAT_SHA1;
+  config_state.repository_format_version = 0;
+
+  if (!safe_git_open_child(binding, binding->common_directory_index, "config",
+                           SAFE_GIT_BOUND_REGULAR_FILE, 1,
+                           &repository_config_index) ||
+      !safe_git_read_and_pin_file(binding, repository_config_index,
+                                  SAFE_GIT_CONFIG_FILE_LIMIT, 0,
+                                  &repository_config_bytes,
+                                  &repository_config_length) ||
+      !safe_git_parse_config(repository_config_bytes, repository_config_length,
+                             0, &config_state) ||
+      ((config_state.object_format_seen || config_state.ref_storage_seen ||
+        config_state.worktree_config_seen) &&
+       config_state.repository_format_version != 1)) {
+    safe_git_release_config_parse_state(&config_state);
+    return 0;
+  }
+
+  if (!safe_git_open_optional_child(
+          binding, binding->git_directory_index, "config.worktree",
+          SAFE_GIT_BOUND_REGULAR_FILE, 1, &worktree_config_present,
+          &worktree_config_index)) {
+    safe_git_release_config_parse_state(&config_state);
+    return 0;
+  }
+  if (worktree_config_present) {
+    const unsigned char *worktree_config_bytes = NULL;
+    size_t worktree_config_length = 0;
+    if (!config_state.worktree_config_enabled ||
+        !safe_git_read_and_pin_file(binding, worktree_config_index,
+                                    SAFE_GIT_CONFIG_FILE_LIMIT, 1,
+                                    &worktree_config_bytes,
+                                    &worktree_config_length) ||
+        !safe_git_parse_config(worktree_config_bytes, worktree_config_length,
+                               1, &config_state)) {
+      safe_git_release_config_parse_state(&config_state);
+      return 0;
+    }
+  }
+
+  if (!safe_git_open_child(binding, binding->common_directory_index, "objects",
+                           SAFE_GIT_BOUND_DIRECTORY, 1, &objects_index) ||
+      !safe_git_open_child(binding, objects_index, "info",
+                           SAFE_GIT_BOUND_DIRECTORY, 1,
+                           &objects_info_index) ||
+      !safe_git_open_child(binding, objects_index, "pack",
+                           SAFE_GIT_BOUND_DIRECTORY, 1,
+                           &objects_pack_index) ||
+      !safe_git_add_absence(binding, objects_info_index, "alternates") ||
+      !safe_git_add_absence(binding, objects_info_index, "http-alternates") ||
+      !safe_git_open_child(binding, binding->common_directory_index, "info",
+                           SAFE_GIT_BOUND_DIRECTORY, 1, &common_info_index) ||
+      !safe_git_add_absence(binding, common_info_index, "grafts") ||
+      !safe_git_open_child(binding, binding->common_directory_index, "refs",
+                           SAFE_GIT_BOUND_DIRECTORY, 1, &refs_index) ||
+      !safe_git_add_absence(binding, refs_index, "replace") ||
+      !safe_git_add_absence(binding, binding->common_directory_index,
+                            "reftable") ||
+      !safe_git_add_absence(binding, binding->common_directory_index,
+                            "reftable-list") ||
+      !safe_git_open_optional_child(
+          binding, binding->common_directory_index, "packed-refs",
+          SAFE_GIT_BOUND_REGULAR_FILE, 1, &packed_refs_present,
+          &packed_refs_index) ||
+      !safe_git_open_optional_child(
+          binding, refs_index, "understand-code", SAFE_GIT_BOUND_DIRECTORY, 1,
+          &product_namespace_present, &product_namespace_index)) {
+    safe_git_release_config_parse_state(&config_state);
+    return 0;
+  }
+  (void)product_namespace_present;
+  (void)product_namespace_index;
+
+  if (packed_refs_present &&
+      (!safe_git_read_and_pin_file(binding, packed_refs_index,
+                                   SAFE_GIT_CONTROL_FILE_LIMIT, 0,
+                                   &packed_refs_bytes, &packed_refs_length) ||
+       !safe_git_validate_packed_refs(packed_refs_bytes, packed_refs_length,
+                                     config_state.object_format))) {
+    safe_git_release_config_parse_state(&config_state);
+    return 0;
+  }
+
+  /* Reject repository-level partial clone markers independent of config. */
+  if (!safe_git_open_optional_child(
+          binding, binding->common_directory_index, "shallow",
+          SAFE_GIT_BOUND_REGULAR_FILE, 1, &ignored_present, &ignored_index)) {
+    safe_git_release_config_parse_state(&config_state);
+    return 0;
+  }
+  if (ignored_present) {
+    /* A shallow repository is not a complete local object database. */
+    safe_git_release_config_parse_state(&config_state);
+    return 0;
+  }
+
+  if (!safe_git_capture_directory_snapshot(
+          binding, objects_index, 0,
+          &binding->directory_snapshots[binding->directory_snapshot_count]) ) {
+    safe_git_release_config_parse_state(&config_state);
+    return 0;
+  }
+  binding->directory_snapshot_count += 1;
+  if (!safe_git_capture_directory_snapshot(
+          binding, objects_pack_index, 1,
+          &binding->directory_snapshots[binding->directory_snapshot_count])) {
+    safe_git_release_config_parse_state(&config_state);
+    return 0;
+  }
+  binding->directory_snapshot_count += 1;
+  binding->object_format = config_state.object_format;
+  binding->worktree_config_present = worktree_config_present;
+  binding->repository_control_bound = 1;
+  safe_git_release_config_parse_state(&config_state);
+  return safe_git_revalidate_binding(binding);
+}
+
 static int safe_git_add_absence(struct safe_git_descriptor_binding *binding,
                                 int parent_index, const char *component) {
   struct stat metadata;
@@ -877,16 +2293,22 @@ static int safe_git_revalidate_binding(
       }
     }
     if (node->expected_content != NULL) {
-      unsigned char bytes[SAFE_GIT_POINTER_LIMIT];
+      unsigned char *bytes = NULL;
       struct stat after;
-      if (!safe_git_pread_exact(node->file_descriptor, bytes,
+      bytes = (unsigned char *)malloc(
+          node->expected_content_length == 0 ? 1
+                                             : node->expected_content_length);
+      if (bytes == NULL ||
+          !safe_git_pread_exact(node->file_descriptor, bytes,
                                 node->expected_content_length) ||
           memcmp(bytes, node->expected_content,
                  node->expected_content_length) != 0 ||
           fstat(node->file_descriptor, &after) != 0 ||
           !stat_snapshot_matches(&node->snapshot, &after)) {
+        free(bytes);
         return 0;
       }
+      free(bytes);
     }
   }
   for (index = 0; index < binding->absence_count; index += 1) {
@@ -898,6 +2320,21 @@ static int safe_git_revalidate_binding(
         errno != ENOENT) {
       return 0;
     }
+  }
+  for (index = 0; index < binding->directory_snapshot_count; index += 1) {
+    struct safe_git_directory_snapshot observed;
+    int reject_promisor = index == 1;
+    if (!safe_git_capture_directory_snapshot(
+            binding, binding->directory_snapshots[index].node_index,
+            reject_promisor, &observed)) {
+      return 0;
+    }
+    if (!safe_git_directory_snapshots_equal(
+            &binding->directory_snapshots[index], &observed)) {
+      safe_git_release_directory_snapshot(&observed);
+      return 0;
+    }
+    safe_git_release_directory_snapshot(&observed);
   }
   return 1;
 }
@@ -919,6 +2356,10 @@ static struct safe_git_descriptor_binding *safe_git_open_binding(
   if (binding == NULL) {
     return NULL;
   }
+  binding->workspace_root_index = -1;
+  binding->git_directory_index = -1;
+  binding->common_directory_index = -1;
+  binding->object_format = SAFE_GIT_OBJECT_FORMAT_UNBOUND;
   if (!safe_git_open_process_root(binding, &process_root_index) ||
       process_root_index != 0 ||
       !safe_git_resolve_path(binding, process_root_index, root_path,
@@ -948,6 +2389,8 @@ static struct safe_git_descriptor_binding *safe_git_open_binding(
       return NULL;
     }
     binding->layout = SAFE_GIT_LAYOUT_ORDINARY;
+    binding->git_directory_index = dot_git_index;
+    binding->common_directory_index = dot_git_index;
   } else if (S_ISREG(dot_git_metadata.st_mode)) {
     char git_directory_path[SAFE_GIT_POINTER_LIMIT + 1];
     char common_directory_path[SAFE_GIT_POINTER_LIMIT + 1];
@@ -1012,11 +2455,15 @@ static struct safe_git_descriptor_binding *safe_git_open_binding(
       return NULL;
     }
     binding->layout = SAFE_GIT_LAYOUT_LINKED_WORKTREE;
+    binding->git_directory_index = git_directory_index;
+    binding->common_directory_index = common_directory_index;
   } else {
     safe_git_release_binding(binding);
     free(binding);
     return NULL;
   }
+
+  binding->workspace_root_index = workspace_root_index;
 
   if (!safe_git_revalidate_binding(binding)) {
     safe_git_release_binding(binding);
@@ -1085,6 +2532,50 @@ static int safe_git_create_layout_result(
   return 1;
 }
 
+static int safe_git_set_string_property(napi_env env, napi_value object,
+                                        const char *name,
+                                        const char *value_text) {
+  napi_value value;
+  return napi_create_string_utf8(env, value_text, NAPI_AUTO_LENGTH, &value) ==
+             napi_ok &&
+         napi_set_named_property(env, object, name, value) == napi_ok;
+}
+
+static int safe_git_create_repository_control_result(
+    napi_env env, const struct safe_git_descriptor_binding *binding,
+    napi_value *result) {
+  const char *object_format;
+  const char *worktree_config;
+  if (binding == NULL || result == NULL || !binding->repository_control_bound) {
+    return 0;
+  }
+  if (binding->object_format == SAFE_GIT_OBJECT_FORMAT_SHA1) {
+    object_format = "sha1";
+  } else if (binding->object_format == SAFE_GIT_OBJECT_FORMAT_SHA256) {
+    object_format = "sha256";
+  } else {
+    return 0;
+  }
+  worktree_config = binding->worktree_config_present ? "verified" : "absent";
+  if (!(napi_create_object(env, result) == napi_ok &&
+         safe_git_set_string_property(
+             env, *result, "profile",
+             "native_safe_git_repository_control_v1") &&
+         safe_git_set_string_property(env, *result, "objectFormat",
+                                      object_format) &&
+         safe_git_set_string_property(env, *result, "objectDatabase",
+                                      "local_only_verified") &&
+         safe_git_set_string_property(env, *result, "refBackend",
+                                      "files_verified") &&
+         safe_git_set_string_property(env, *result, "repositoryConfig",
+                                      "verified") &&
+         safe_git_set_string_property(env, *result, "worktreeConfig",
+                                      worktree_config))) {
+    return 0;
+  }
+  return 1;
+}
+
 static int safe_git_unwrap_argument(
     napi_env env, napi_callback_info info,
     struct safe_git_descriptor_binding **binding) {
@@ -1143,6 +2634,25 @@ static napi_value revalidate_safe_git_descriptor_bootstrap(
   if (!safe_git_unwrap_argument(env, info, &binding) ||
       !safe_git_revalidate_binding(binding) ||
       !safe_git_create_layout_result(env, binding, NULL, &result)) {
+    return throw_safe_git_unavailable(env);
+  }
+  return result;
+}
+
+static napi_value bind_safe_git_repository_control(
+    napi_env env, napi_callback_info info) {
+  struct safe_git_descriptor_binding *binding;
+  napi_value result;
+
+  if (!safe_git_unwrap_argument(env, info, &binding)) {
+    return throw_safe_git_unavailable(env);
+  }
+  if (!safe_git_bind_repository_control(binding) ||
+      !safe_git_create_repository_control_result(env, binding, &result)) {
+    /* Promotion mutates retained authority incrementally. Any failure poisons
+     * and releases the whole opaque binding so retry cannot resume from a
+     * partial node/absence/snapshot set. */
+    safe_git_release_binding(binding);
     return throw_safe_git_unavailable(env);
   }
   return result;
@@ -1309,6 +2819,8 @@ NAPI_MODULE_INIT() {
       {"revalidateSafeGitDescriptorBootstrap", NULL,
        revalidate_safe_git_descriptor_bootstrap, NULL, NULL, NULL, napi_default,
        NULL},
+      {"bindSafeGitRepositoryControl", NULL,
+       bind_safe_git_repository_control, NULL, NULL, NULL, napi_default, NULL},
       {"closeSafeGitDescriptorBootstrap", NULL,
        close_safe_git_descriptor_bootstrap, NULL, NULL, NULL, napi_default,
        NULL},

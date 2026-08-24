@@ -10,9 +10,13 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import type {
+  NativeSafeGitDescriptorBindingV1,
+} from "@understand-code/native-kernel-bridge";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   SAFE_GIT_DESCRIPTOR_BOOTSTRAP_PROFILE_V1,
+  SAFE_GIT_REPOSITORY_IDENTITY_PROFILE_V1,
   SAFE_GIT_REPOSITORY_CONTROL_PROFILE_V1,
   SafeGitBootstrapErrorV1,
   bootstrapSafeGitDescriptorBoundCandidateV1 as bootstrapSafeGitFilesystemCandidateV1,
@@ -26,7 +30,43 @@ import {
   temporaryDirectory,
 } from "./helpers.js";
 
-afterEach(cleanupTemporaryDirectories);
+const identityAuthorityTestStateV1 = vi.hoisted(() => ({
+  derivations: 0,
+  keyByte: 0x41,
+  unavailable: false,
+}));
+
+vi.mock(
+  "@understand-code/durable-object-provider-authority/internal/acceptance-store",
+  async () => {
+    const native = await vi.importActual<
+      typeof import("@understand-code/native-kernel-bridge")
+    >("@understand-code/native-kernel-bridge");
+    return {
+      deriveProviderAcceptanceSafeGitPathIdentityInternalV1: async (
+        binding: NativeSafeGitDescriptorBindingV1,
+      ) => {
+        identityAuthorityTestStateV1.derivations += 1;
+        if (identityAuthorityTestStateV1.unavailable) {
+          throw new Error("test identity authority unavailable");
+        }
+        const key = Buffer.alloc(32, identityAuthorityTestStateV1.keyByte);
+        try {
+          return native.deriveNativeSafeGitPathIdentityV1(binding, key);
+        } finally {
+          key.fill(0);
+        }
+      },
+    };
+  },
+);
+
+afterEach(() => {
+  identityAuthorityTestStateV1.derivations = 0;
+  identityAuthorityTestStateV1.keyByte = 0x41;
+  identityAuthorityTestStateV1.unavailable = false;
+  cleanupTemporaryDirectories();
+});
 
 async function expectBootstrapFailure(
   operation: Promise<unknown>,
@@ -210,6 +250,136 @@ describe("descriptor-bound SafeGit bootstrap candidate", () => {
     expect(JSON.stringify(control)).not.toContain(linkedRoot);
     await expect(result.capability.revalidate()).resolves.toEqual(control);
     await result.capability.close();
+  });
+
+  it("keeps path-safe HMAC identities stable across ordinary repository restarts", async () => {
+    const root = initializeRepository();
+    const first = await bootstrapSafeGitFilesystemCandidateV1(root);
+    await first.capability.bindRepositoryControl();
+    const firstControl = await first.capability.bindRepositoryIdentity();
+    await first.capability.close();
+
+    const restarted = await bootstrapSafeGitFilesystemCandidateV1(root);
+    await restarted.capability.bindRepositoryControl();
+    const restartedControl =
+      await restarted.capability.bindRepositoryIdentity();
+    expect(restartedControl).toMatchObject({
+      profile: SAFE_GIT_REPOSITORY_IDENTITY_PROFILE_V1,
+      hmacIdentity: "verified",
+      emptyHooksDirectory: "locked",
+      handleBoundExecution: "locked",
+      osSandbox: "locked",
+      strongWrites: "locked",
+      requiredNext: [
+        "empty_hooks_directory",
+        "handle_bound_execution",
+        "os_sandbox",
+        "strong_writer",
+      ],
+    });
+    expect(restartedControl.repositoryId).toMatch(/^repo-hmac-[0-9a-f]{64}$/u);
+    expect(restartedControl.worktreeId).toMatch(
+      /^worktree-hmac-[0-9a-f]{64}$/u,
+    );
+    expect(restartedControl.rootIdentity).toMatch(
+      /^root-hmac-[0-9a-f]{64}$/u,
+    );
+    expect({
+      repositoryId: restartedControl.repositoryId,
+      worktreeId: restartedControl.worktreeId,
+      rootIdentity: restartedControl.rootIdentity,
+    }).toEqual({
+      repositoryId: firstControl.repositoryId,
+      worktreeId: firstControl.worktreeId,
+      rootIdentity: firstControl.rootIdentity,
+    });
+    expect(JSON.stringify(restartedControl)).not.toContain(root);
+    await expect(restarted.capability.revalidate()).resolves.toEqual(
+      restartedControl,
+    );
+    await restarted.capability.close();
+    expect(restarted.capability.closed).toBe(true);
+    await expectBootstrapFailure(
+      restarted.capability.revalidate(),
+      "binding_changed",
+      root,
+    );
+  });
+
+  it("does not open installation identity before repository control is bound", async () => {
+    const root = initializeRepository();
+    const result = await bootstrapSafeGitFilesystemCandidateV1(root);
+
+    await expectBootstrapFailure(
+      result.capability.bindRepositoryIdentity(),
+      "repository_identity_invalid",
+      root,
+    );
+    expect(identityAuthorityTestStateV1.derivations).toBe(0);
+    expect(result.capability.closed).toBe(false);
+    await expect(result.capability.bindRepositoryControl()).resolves.toMatchObject({
+      profile: SAFE_GIT_REPOSITORY_CONTROL_PROFILE_V1,
+      hmacIdentity: "locked",
+    });
+    await result.capability.close();
+  });
+
+  it("shares repository identity but isolates real linked worktree and root identities", async () => {
+    const root = initializeRepository();
+    const linkedParent = temporaryDirectory("safe-git-identity-linked");
+    const linkedRoot = join(linkedParent, "worktree");
+    git(root, ["worktree", "add", "-q", linkedRoot]);
+
+    const ordinary = await bootstrapSafeGitFilesystemCandidateV1(root);
+    const linked = await bootstrapSafeGitFilesystemCandidateV1(linkedRoot);
+    await ordinary.capability.bindRepositoryControl();
+    await linked.capability.bindRepositoryControl();
+    const ordinaryControl =
+      await ordinary.capability.bindRepositoryIdentity();
+    const linkedControl = await linked.capability.bindRepositoryIdentity();
+
+    expect(linkedControl.repositoryId).toBe(ordinaryControl.repositoryId);
+    expect(linkedControl.worktreeId).not.toBe(ordinaryControl.worktreeId);
+    expect(linkedControl.rootIdentity).not.toBe(ordinaryControl.rootIdentity);
+    expect(JSON.stringify({ ordinaryControl, linkedControl })).not.toContain(root);
+    expect(JSON.stringify({ ordinaryControl, linkedControl })).not.toContain(
+      linkedRoot,
+    );
+    await Promise.all([
+      ordinary.capability.close(),
+      linked.capability.close(),
+    ]);
+  });
+
+  it("poisons a promoted capability when installation identity drifts", async () => {
+    const root = initializeRepository();
+    const result = await bootstrapSafeGitFilesystemCandidateV1(root);
+    await result.capability.bindRepositoryControl();
+    await result.capability.bindRepositoryIdentity();
+    identityAuthorityTestStateV1.keyByte = 0x42;
+
+    await expectBootstrapFailure(
+      result.capability.revalidate(),
+      "binding_changed",
+      root,
+    );
+    expect(result.capability.closed).toBe(true);
+    expect(isSafeGitBootstrapCapabilityV1(result.capability)).toBe(false);
+  });
+
+  it("fails closed without exposing repository paths when identity authority is unavailable", async () => {
+    const root = initializeRepository();
+    const result = await bootstrapSafeGitFilesystemCandidateV1(root);
+    await result.capability.bindRepositoryControl();
+    identityAuthorityTestStateV1.unavailable = true;
+
+    await expectBootstrapFailure(
+      result.capability.bindRepositoryIdentity(),
+      "repository_identity_invalid",
+      root,
+    );
+    expect(result.capability.closed).toBe(true);
+    expect(isSafeGitBootstrapCapabilityV1(result.capability)).toBe(false);
   });
 
   it("verifies explicitly enabled worktree-scoped configuration", async () => {

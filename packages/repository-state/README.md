@@ -104,17 +104,24 @@ versioned `descriptor_bound_safe_git_repository_control_v1` proof. The native
 reader operates only through retained descriptors. It verifies strict local
 repository/worktree config, rejects includes and executable-valued controls,
 rejects alternate/promisor/partial-clone/grafts/replace-object state, binds a
-local `objects` hierarchy, and admits only the files ref backend. Its result
-exposes only `sha1 | sha256` and fixed verification labels; no path, descriptor,
-inode, config bytes, ref, or object identifier crosses the API. Later
-`revalidate()` calls recheck the promoted control binding and fail closed on
-drift.
+local `objects` hierarchy, and admits only the files ref backend.
+
+After repository control is bound, call `capability.bindRepositoryIdentity()`
+to request the separately versioned
+`descriptor_bound_safe_git_repository_identity_v1` proof. The Provider
+installation-identity authority derives descriptor-bound repository,
+worktree, and root HMAC identities without exposing its key or canonical path
+bytes. This result exposes only branded path-safe IDs, `sha1 | sha256`, and
+fixed verification labels; no path, descriptor, inode, config bytes, ref, or
+object identifier crosses the API. Later `revalidate()` calls recheck the
+current promotion stage, including the installation-keyed identity once bound,
+and fail closed on drift.
 
 This is still not the complete SafeGit adapter. Handle-bound execution, the
 fixed invocation environment, hooks proof, OS sandbox/resource containment,
-HMAC identity, and strong writes remain explicitly `locked`. It is not
-connected to the legacy Snapshot producer and does not authorize Git execution,
-Provider I/O, or any public strong capability.
+and strong writes remain explicitly `locked`. It is not connected to the
+legacy Snapshot producer and does not authorize Git execution, Provider I/O,
+or any public strong capability.
 
 ## Security and boundaries
 

@@ -1,9 +1,12 @@
 import { execFileSync } from "node:child_process";
+import { createHmac } from "node:crypto";
 import {
   appendFileSync,
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -11,14 +14,28 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
+import { userInfo } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  acquireNativeInstallationIdentityInitializationLockV1,
+  assertNativeInstallationStateAuthorityFreshV1,
+  assertNativeInstallationStateAuthoritySeparatedFromSafeGitV1,
+  assertNativeResolvedInstallationStateRootSeparatedFromSafeGitV1,
   bindNativeSafeGitRepositoryControlV1,
+  closeNativeInstallationStateAuthorityV1,
   closeNativeSafeGitDescriptorBootstrapV1,
+  createNativeInstallationIdentityArtifactV1,
+  deriveNativeSafeGitPathIdentityV1,
+  openNativeTestInstallationStateAuthorityV1,
   openNativeSafeGitDescriptorBootstrapV1,
+  readNativeInstallationIdentityArtifactV1,
+  releaseNativeInstallationIdentityInitializationLockV1,
+  replaceNativeInstallationIdentityInitStageV1,
+  revalidateNativeInstallationStateAuthorityV1,
   revalidateNativeSafeGitDescriptorBootstrapV1,
+  resolveNativeInstallationStateRootV1,
   type NativeSafeGitDescriptorBindingV1,
 } from "../src/index.js";
 
@@ -43,6 +60,23 @@ function expectSafeGitUnavailableV1(callback: () => unknown): void {
   );
 }
 
+function expectInstallationAuthorityUnavailableV1(callback: () => unknown): void {
+  expect(callback).toThrowError(
+    expect.objectContaining({
+      code: "ERR_NATIVE_KERNEL_BRIDGE_INSTALLATION_STATE_AUTHORITY_UNAVAILABLE",
+      message: "native installation state authority is unavailable",
+    }),
+  );
+}
+
+function canonicalLocatorV1(path: string): string {
+  return `base64url:${Buffer.from(realpathSync(path), "utf8").toString("base64url")}`;
+}
+
+function hmacHexV1(key: Buffer, value: unknown): string {
+  return createHmac("sha256", key).update(JSON.stringify(value)).digest("hex");
+}
+
 afterEach(() => {
   for (const root of fixtureRootsV1) {
     rmSync(root, { force: true, recursive: true });
@@ -53,6 +87,260 @@ afterEach(() => {
 describe.runIf(process.platform === "darwin" || process.platform === "linux")(
   "native kernel bridge loader",
   () => {
+    it("owns fixed identity artifacts, a nonblocking kernel lock, and active reopen", () => {
+      const fixture = createFixtureRootV1();
+      const authorityRoot = join(fixture, "authority");
+      const opened = openNativeTestInstallationStateAuthorityV1(authorityRoot, {
+        create: true,
+      });
+      expect(opened).toMatchObject({
+        profile: "native_installation_state_authority_v1",
+        resolverId: "test-explicit-temporary-root-v1",
+        rootCreated: true,
+        rootIdentity: {
+          platform: "posix",
+          device: expect.stringMatching(/^(0|[1-9][0-9]*)$/u),
+          inode: expect.stringMatching(/^(0|[1-9][0-9]*)$/u),
+        },
+      });
+      expect(
+        Buffer.from(opened.canonicalStateRootBytes.slice("base64url:".length), "base64url").toString("utf8"),
+      ).toBe(authorityRoot);
+      expect(
+        Buffer.from(opened.ownerIdentity.slice("base64url:".length), "base64url").toString("utf8"),
+      ).toBe(`posix-uid:${process.geteuid?.() ?? process.getuid?.()}`);
+      revalidateNativeInstallationStateAuthorityV1(opened.authority);
+
+      const firstLock = acquireNativeInstallationIdentityInitializationLockV1(
+        opened.authority,
+      );
+      expect(firstLock).toBeDefined();
+      const reopened = openNativeTestInstallationStateAuthorityV1(authorityRoot, {
+        create: false,
+      });
+      expect(reopened.rootCreated).toBe(false);
+      expect(reopened.rootIdentity).toEqual(opened.rootIdentity);
+      expect(
+        acquireNativeInstallationIdentityInitializationLockV1(reopened.authority),
+      ).toBeUndefined();
+      releaseNativeInstallationIdentityInitializationLockV1(firstLock!);
+      const secondLock = acquireNativeInstallationIdentityInitializationLockV1(
+        reopened.authority,
+      );
+      expect(secondLock).toBeDefined();
+      releaseNativeInstallationIdentityInitializationLockV1(secondLock!);
+      assertNativeInstallationStateAuthorityFreshV1(reopened.authority);
+
+      expect(readNativeInstallationIdentityArtifactV1(opened.authority, "key")).toBeUndefined();
+      expect(readNativeInstallationIdentityArtifactV1(opened.authority, "init")).toBeUndefined();
+      const key = Buffer.alloc(32, 0x5a);
+      createNativeInstallationIdentityArtifactV1(opened.authority, "key", key);
+      expectInstallationAuthorityUnavailableV1(() =>
+        createNativeInstallationIdentityArtifactV1(opened.authority, "key", key),
+      );
+      const readKey = readNativeInstallationIdentityArtifactV1(opened.authority, "key");
+      expect(readKey).toEqual(key);
+      readKey!.fill(0);
+      expect(readNativeInstallationIdentityArtifactV1(opened.authority, "key")).toEqual(key);
+
+      const stage = Buffer.from('{"profile":"initializing"}', "utf8");
+      createNativeInstallationIdentityArtifactV1(opened.authority, "init_stage", stage);
+      replaceNativeInstallationIdentityInitStageV1(opened.authority);
+      expect(readNativeInstallationIdentityArtifactV1(opened.authority, "init")).toEqual(stage);
+      expect(readNativeInstallationIdentityArtifactV1(opened.authority, "init_stage")).toBeUndefined();
+      const active = Buffer.from('{"profile":"active"}', "utf8");
+      createNativeInstallationIdentityArtifactV1(opened.authority, "init_stage", active);
+      replaceNativeInstallationIdentityInitStageV1(opened.authority);
+      expect(readNativeInstallationIdentityArtifactV1(opened.authority, "init")).toEqual(active);
+      expect(readNativeInstallationIdentityArtifactV1(opened.authority, "init_stage")).toBeUndefined();
+
+      closeNativeInstallationStateAuthorityV1(opened.authority);
+      expectInstallationAuthorityUnavailableV1(() =>
+        revalidateNativeInstallationStateAuthorityV1(opened.authority),
+      );
+      expect(readNativeInstallationIdentityArtifactV1(reopened.authority, "key")).toEqual(key);
+      closeNativeInstallationStateAuthorityV1(reopened.authority);
+    });
+
+    it("rejects fresh-namespace drift and pinned init-stage replacement races", () => {
+      const fixture = createFixtureRootV1();
+      const authorityRoot = join(fixture, "authority");
+      const opened = openNativeTestInstallationStateAuthorityV1(authorityRoot, {
+        create: true,
+      });
+      const lock = acquireNativeInstallationIdentityInitializationLockV1(opened.authority);
+      expect(lock).toBeDefined();
+      releaseNativeInstallationIdentityInitializationLockV1(lock!);
+      writeFileSync(join(authorityRoot, "runtime-state", "private", "unknown"), "x", {
+        mode: 0o600,
+      });
+      expectInstallationAuthorityUnavailableV1(() =>
+        assertNativeInstallationStateAuthorityFreshV1(opened.authority),
+      );
+      const providerCompatible = openNativeTestInstallationStateAuthorityV1(
+        authorityRoot,
+        { create: false },
+      );
+      closeNativeInstallationStateAuthorityV1(providerCompatible.authority);
+      writeFileSync(join(authorityRoot, "unexpected-root-entry"), "x", {
+        mode: 0o600,
+      });
+      expectInstallationAuthorityUnavailableV1(() =>
+        openNativeTestInstallationStateAuthorityV1(authorityRoot, {
+          create: false,
+        }),
+      );
+
+      expect(readNativeInstallationIdentityArtifactV1(opened.authority, "init")).toBeUndefined();
+      createNativeInstallationIdentityArtifactV1(
+        opened.authority,
+        "init_stage",
+        Buffer.from("original", "utf8"),
+      );
+      writeFileSync(
+        join(authorityRoot, "runtime-state", "private", ".installation-identity-v1.init.stage"),
+        "replaced",
+      );
+      expectInstallationAuthorityUnavailableV1(() =>
+        replaceNativeInstallationIdentityInitStageV1(opened.authority),
+      );
+      closeNativeInstallationStateAuthorityV1(opened.authority);
+    });
+
+    it("does not adopt or mutate a pre-existing empty state root", () => {
+      const fixture = createFixtureRootV1();
+      const authorityRoot = join(fixture, "preexisting");
+      mkdirSync(authorityRoot, { mode: 0o700 });
+      expectInstallationAuthorityUnavailableV1(() =>
+        openNativeTestInstallationStateAuthorityV1(authorityRoot, {
+          create: true,
+        }),
+      );
+      expect(readdirSync(authorityRoot)).toEqual([]);
+    });
+
+    it("rejects owner-mode drift on an established state root", () => {
+      const fixture = createFixtureRootV1();
+      const authorityRoot = join(fixture, "authority");
+      const opened = openNativeTestInstallationStateAuthorityV1(authorityRoot, {
+        create: true,
+      });
+      closeNativeInstallationStateAuthorityV1(opened.authority);
+      chmodSync(authorityRoot, 0o770);
+      expectInstallationAuthorityUnavailableV1(() =>
+        openNativeTestInstallationStateAuthorityV1(authorityRoot, {
+          create: false,
+        }),
+      );
+      chmodSync(authorityRoot, 0o700);
+    });
+
+    it.runIf(process.platform === "darwin")(
+      "rejects extended ACL and immutable-flag state roots",
+      () => {
+        const fixture = createFixtureRootV1();
+        const authorityRoot = join(fixture, "authority");
+        const opened = openNativeTestInstallationStateAuthorityV1(authorityRoot, {
+          create: true,
+        });
+        closeNativeInstallationStateAuthorityV1(opened.authority);
+        execFileSync("chmod", ["+a", "everyone allow read", authorityRoot]);
+        try {
+          expectInstallationAuthorityUnavailableV1(() =>
+            openNativeTestInstallationStateAuthorityV1(authorityRoot, {
+              create: false,
+            }),
+          );
+        } finally {
+          execFileSync("chmod", ["-N", authorityRoot]);
+        }
+        execFileSync("chflags", ["uchg", authorityRoot]);
+        try {
+          expectInstallationAuthorityUnavailableV1(() =>
+            openNativeTestInstallationStateAuthorityV1(authorityRoot, {
+              create: false,
+            }),
+          );
+        } finally {
+          execFileSync("chflags", ["nouchg", authorityRoot]);
+        }
+      },
+    );
+
+    it("rejects equal and descendant state authorities against descriptor-bound Git roots", () => {
+      const fixture = createFixtureRootV1();
+      const repository = join(fixture, "repository");
+      const equal = openNativeTestInstallationStateAuthorityV1(repository, {
+        create: true,
+      });
+      execFileSync("git", ["init", "--quiet", repository], { stdio: "pipe" });
+      const binding = openNativeSafeGitDescriptorBootstrapV1(repository);
+      assertNativeResolvedInstallationStateRootSeparatedFromSafeGitV1(binding.binding);
+
+      expectInstallationAuthorityUnavailableV1(() =>
+        assertNativeInstallationStateAuthoritySeparatedFromSafeGitV1(
+          equal.authority,
+          binding.binding,
+        ),
+      );
+      const descendant = openNativeTestInstallationStateAuthorityV1(
+        join(repository, "state"),
+        { create: true },
+      );
+      expectInstallationAuthorityUnavailableV1(() =>
+        assertNativeInstallationStateAuthoritySeparatedFromSafeGitV1(
+          descendant.authority,
+          binding.binding,
+        ),
+      );
+      const separate = openNativeTestInstallationStateAuthorityV1(
+        join(fixture, "separate"),
+        { create: true },
+      );
+      assertNativeInstallationStateAuthoritySeparatedFromSafeGitV1(
+        separate.authority,
+        binding.binding,
+      );
+      closeNativeInstallationStateAuthorityV1(equal.authority);
+      closeNativeInstallationStateAuthorityV1(descendant.authority);
+      closeNativeInstallationStateAuthorityV1(separate.authority);
+      closeNativeSafeGitDescriptorBootstrapV1(binding.binding);
+    });
+    it("resolves the effective account state root independently of environment", () => {
+      const accountHome = userInfo().homedir;
+      const originalHome = process.env.HOME;
+      const originalXdgStateHome = process.env.XDG_STATE_HOME;
+      const originalTmpdir = process.env.TMPDIR;
+      try {
+        process.env.HOME = "/environment/home/must-not-be-used";
+        process.env.XDG_STATE_HOME = "/environment/xdg/must-not-be-used";
+        process.env.TMPDIR = "/environment/tmp/must-not-be-used";
+        const resolved = resolveNativeInstallationStateRootV1();
+        expect(resolved).toEqual({
+          profile: "native_installation_state_resolver_v1",
+          resolverId:
+            process.platform === "darwin"
+              ? "darwin-user-domain-application-support-v1"
+              : "linux-getpwuid-effective-user-state-v1",
+          root:
+            process.platform === "darwin"
+              ? join(accountHome, "Library", "Application Support", "understand-code")
+              : join(accountHome, ".local", "state", "understand-code"),
+          uid: process.geteuid?.() ?? process.getuid?.(),
+          gid: process.getegid?.() ?? process.getgid?.(),
+        });
+        expect(Object.isFrozen(resolved)).toBe(true);
+        expect(resolved.root).not.toContain("environment");
+      } finally {
+        if (originalHome === undefined) delete process.env.HOME;
+        else process.env.HOME = originalHome;
+        if (originalXdgStateHome === undefined) delete process.env.XDG_STATE_HOME;
+        else process.env.XDG_STATE_HOME = originalXdgStateHome;
+        if (originalTmpdir === undefined) delete process.env.TMPDIR;
+        else process.env.TMPDIR = originalTmpdir;
+      }
+    });
+
     it("opens, revalidates, and idempotently closes an ordinary repository binding", () => {
       const root = createFixtureRootV1();
       const repository = join(root, "repository");
@@ -139,6 +427,125 @@ describe.runIf(process.platform === "darwin" || process.platform === "linux")(
       });
       expect(revalidateNativeSafeGitDescriptorBootstrapV1(opened.binding)).toBe(
         "linked_worktree",
+      );
+      closeNativeSafeGitDescriptorBootstrapV1(opened.binding);
+    });
+
+    it("derives frozen JCS path identities without exposing native locators", () => {
+      const root = createFixtureRootV1();
+      const repository = join(root, "main");
+      const linkedWorktree = join(root, "linked");
+      initializeRepositoryV1(repository);
+      execFileSync(
+        "git",
+        [
+          "-C",
+          repository,
+          "-c",
+          "user.name=Understand Code",
+          "-c",
+          "user.email=understand-code@example.invalid",
+          "commit",
+          "--quiet",
+          "--allow-empty",
+          "-m",
+          "initial",
+        ],
+        { stdio: "pipe" },
+      );
+      execFileSync(
+        "git",
+        ["-C", repository, "worktree", "add", "--quiet", "--detach", linkedWorktree],
+        { stdio: "pipe" },
+      );
+      const key = Buffer.from(
+        "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "hex",
+      );
+      const ordinary = openNativeSafeGitDescriptorBootstrapV1(repository);
+      const linked = openNativeSafeGitDescriptorBootstrapV1(linkedWorktree);
+      bindNativeSafeGitRepositoryControlV1(ordinary.binding);
+      bindNativeSafeGitRepositoryControlV1(linked.binding);
+
+      const ordinaryIdentity = deriveNativeSafeGitPathIdentityV1(
+        ordinary.binding,
+        key,
+      );
+      const linkedIdentity = deriveNativeSafeGitPathIdentityV1(linked.binding, key);
+      const common = canonicalLocatorV1(join(repository, ".git"));
+      const expectedRepositoryId = `repo-hmac-${hmacHexV1(key, [
+        "repository-identity-v1",
+        { canonicalCommonGitDir: common },
+      ])}`;
+      const expectedLinkedRoot = canonicalLocatorV1(linkedWorktree);
+      const expectedLinkedGit = canonicalLocatorV1(
+        join(repository, ".git", "worktrees", "linked"),
+      );
+
+      expect(ordinaryIdentity.repositoryId).toBe(expectedRepositoryId);
+      expect(linkedIdentity.repositoryId).toBe(expectedRepositoryId);
+      expect(
+        deriveNativeSafeGitPathIdentityV1(ordinary.binding, key),
+      ).toEqual(ordinaryIdentity);
+      expect(linkedIdentity).toEqual({
+        profile: "native_safe_git_path_identity_v1",
+        repositoryId: expectedRepositoryId,
+        worktreeId: `worktree-hmac-${hmacHexV1(key, [
+          "worktree-identity-v1",
+          {
+            canonicalGitDir: expectedLinkedGit,
+            canonicalRoot: expectedLinkedRoot,
+            repositoryId: expectedRepositoryId,
+          },
+        ])}`,
+        rootIdentity: `root-hmac-${hmacHexV1(key, [
+          "root-identity-v1",
+          { canonicalRoot: expectedLinkedRoot },
+        ])}`,
+      });
+      expect(ordinaryIdentity.worktreeId).not.toBe(linkedIdentity.worktreeId);
+      expect(ordinaryIdentity.rootIdentity).not.toBe(linkedIdentity.rootIdentity);
+      expect(JSON.stringify([ordinaryIdentity, linkedIdentity])).not.toContain(root);
+      expect(Object.isFrozen(ordinaryIdentity)).toBe(true);
+      expect(key.toString("hex")).toBe(
+        "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      );
+
+      closeNativeSafeGitDescriptorBootstrapV1(ordinary.binding);
+      closeNativeSafeGitDescriptorBootstrapV1(linked.binding);
+      expectSafeGitUnavailableV1(() =>
+        deriveNativeSafeGitPathIdentityV1(linked.binding, key),
+      );
+    });
+
+    it("strictly rejects non-32-byte keys and poisons identity on revalidation failure", () => {
+      const root = createFixtureRootV1();
+      const repository = join(root, "repository");
+      initializeRepositoryV1(repository);
+      const opened = openNativeSafeGitDescriptorBootstrapV1(repository);
+      bindNativeSafeGitRepositoryControlV1(opened.binding);
+      expectSafeGitUnavailableV1(() =>
+        deriveNativeSafeGitPathIdentityV1(opened.binding, Buffer.alloc(31)),
+      );
+      expectSafeGitUnavailableV1(() =>
+        deriveNativeSafeGitPathIdentityV1(
+          opened.binding,
+          new Uint8Array(32) as unknown as Buffer,
+        ),
+      );
+      expect(() =>
+        deriveNativeSafeGitPathIdentityV1(opened.binding, Buffer.alloc(32, 7)),
+      ).not.toThrow();
+
+      const config = join(repository, ".git", "config");
+      const moved = join(repository, ".git", "config.moved");
+      renameSync(config, moved);
+      expectSafeGitUnavailableV1(() =>
+        deriveNativeSafeGitPathIdentityV1(opened.binding, Buffer.alloc(32, 7)),
+      );
+      renameSync(moved, config);
+      expectSafeGitUnavailableV1(() =>
+        deriveNativeSafeGitPathIdentityV1(opened.binding, Buffer.alloc(32, 7)),
       );
       closeNativeSafeGitDescriptorBootstrapV1(opened.binding);
     });

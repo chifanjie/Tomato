@@ -20,8 +20,20 @@ import {
   revalidateNativeSafeGitDescriptorBootstrapV1,
   type NativeSafeGitDescriptorBindingV1,
   type NativeSafeGitDescriptorLayoutV1,
+  type NativeSafeGitPathIdentityV1,
   type NativeSafeGitRepositoryControlInspectionV1,
 } from "@understand-code/native-kernel-bridge";
+import {
+  PathSafeRepositoryIdV1Schema,
+  PathSafeRootIdentityV1Schema,
+  PathSafeWorktreeIdV1Schema,
+  type PathSafeRepositoryIdV1,
+  type PathSafeRootIdentityV1,
+  type PathSafeWorktreeIdV1,
+} from "@understand-code/contracts";
+import {
+  deriveProviderAcceptanceSafeGitPathIdentityInternalV1,
+} from "@understand-code/durable-object-provider-authority/internal/acceptance-store";
 
 import { getSafeGitBootstrapTestHooksInternalV1 } from "./safe-git-bootstrap-testing-internal.js";
 
@@ -60,6 +72,14 @@ export const SAFE_GIT_REPOSITORY_CONTROL_REQUIRED_NEXT_V1 = Object.freeze([
   "hmac_identity",
   "strong_writer",
 ] as const);
+export const SAFE_GIT_REPOSITORY_IDENTITY_PROFILE_V1 =
+  "descriptor_bound_safe_git_repository_identity_v1" as const;
+export const SAFE_GIT_REPOSITORY_IDENTITY_REQUIRED_NEXT_V1 = Object.freeze([
+  "empty_hooks_directory",
+  "handle_bound_execution",
+  "os_sandbox",
+  "strong_writer",
+] as const);
 
 export type SafeGitBootstrapErrorCodeV1 =
   | "unsupported_platform"
@@ -74,6 +94,7 @@ export type SafeGitBootstrapErrorCodeV1 =
   | "external_git_target"
   | "backpointer_mismatch"
   | "repository_control_invalid"
+  | "repository_identity_invalid"
   | "binding_changed";
 
 const ERROR_MESSAGES_V1: Readonly<Record<SafeGitBootstrapErrorCodeV1, string>> =
@@ -95,6 +116,8 @@ const ERROR_MESSAGES_V1: Readonly<Record<SafeGitBootstrapErrorCodeV1, string>> =
       "filesystem bootstrap linked-worktree backpointer does not match",
     repository_control_invalid:
       "repository control metadata is unsupported or could not be verified",
+    repository_identity_invalid:
+      "repository identity authority is unavailable or could not be verified",
     binding_changed: "filesystem bootstrap binding changed during validation",
   });
 
@@ -168,14 +191,35 @@ export interface SafeGitRepositoryControlInspectionV1 {
   ];
 }
 
+/** Descriptor-bound control proof promoted with installation-keyed identities. */
+export interface SafeGitRepositoryIdentityInspectionV1
+  extends Omit<
+    SafeGitRepositoryControlInspectionV1,
+    "profile" | "hmacIdentity" | "requiredNext"
+  > {
+  readonly profile: typeof SAFE_GIT_REPOSITORY_IDENTITY_PROFILE_V1;
+  readonly repositoryId: PathSafeRepositoryIdV1;
+  readonly worktreeId: PathSafeWorktreeIdV1;
+  readonly rootIdentity: PathSafeRootIdentityV1;
+  readonly hmacIdentity: "verified";
+  readonly requiredNext: readonly [
+    "empty_hooks_directory",
+    "handle_bound_execution",
+    "os_sandbox",
+    "strong_writer",
+  ];
+}
+
 export type SafeGitDescriptorBoundInspectionV1 =
   | SafeGitDescriptorBootstrapInspectionV1
-  | SafeGitRepositoryControlInspectionV1;
+  | SafeGitRepositoryControlInspectionV1
+  | SafeGitRepositoryIdentityInspectionV1;
 
 export interface SafeGitDescriptorBoundCapabilityV1 {
   readonly profile: typeof SAFE_GIT_DESCRIPTOR_BOOTSTRAP_PROFILE_V1;
   readonly closed: boolean;
   bindRepositoryControl(): Promise<SafeGitRepositoryControlInspectionV1>;
+  bindRepositoryIdentity(): Promise<SafeGitRepositoryIdentityInspectionV1>;
   revalidate(): Promise<SafeGitDescriptorBoundInspectionV1>;
   close(): Promise<void>;
 }
@@ -203,6 +247,7 @@ class SafeGitBootstrapCapabilityInternalV1
   #binding: NativeSafeGitDescriptorBindingV1 | undefined;
   readonly #layout: NativeSafeGitDescriptorLayoutV1;
   #repositoryControl: NativeSafeGitRepositoryControlInspectionV1 | undefined;
+  #pathIdentity: NativeSafeGitPathIdentityV1 | undefined;
   #usable = true;
   #closed = false;
   #closing: Promise<void> | undefined;
@@ -236,6 +281,31 @@ class SafeGitBootstrapCapabilityInternalV1
     }
   }
 
+  async bindRepositoryIdentity(): Promise<SafeGitRepositoryIdentityInspectionV1> {
+    const binding = this.#binding;
+    const control = this.#repositoryControl;
+    if (
+      this.#closed || !this.#usable || binding === undefined ||
+      control === undefined
+    ) {
+      throw new SafeGitBootstrapErrorV1("repository_identity_invalid");
+    }
+    try {
+      const pathIdentity =
+        await deriveProviderAcceptanceSafeGitPathIdentityInternalV1(binding);
+      validatePathIdentityV1(pathIdentity);
+      this.#pathIdentity = pathIdentity;
+      return repositoryIdentityInspectionV1(
+        this.#layout,
+        control,
+        pathIdentity,
+      );
+    } catch {
+      this.#poisonBinding(binding);
+      throw new SafeGitBootstrapErrorV1("repository_identity_invalid");
+    }
+  }
+
   async revalidate(): Promise<SafeGitDescriptorBoundInspectionV1> {
     const binding = this.#binding;
     if (this.#closed || !this.#usable || binding === undefined) {
@@ -246,9 +316,22 @@ class SafeGitBootstrapCapabilityInternalV1
       if (layout !== this.#layout) {
         throw new SafeGitBootstrapErrorV1("binding_changed");
       }
-      return this.#repositoryControl === undefined
-        ? inspectionV1(layout)
-        : repositoryControlInspectionV1(layout, this.#repositoryControl);
+      if (this.#repositoryControl === undefined) return inspectionV1(layout);
+      const expectedIdentity = this.#pathIdentity;
+      if (expectedIdentity === undefined) {
+        return repositoryControlInspectionV1(layout, this.#repositoryControl);
+      }
+      const currentIdentity =
+        await deriveProviderAcceptanceSafeGitPathIdentityInternalV1(binding);
+      validatePathIdentityV1(currentIdentity);
+      if (!samePathIdentityV1(expectedIdentity, currentIdentity)) {
+        throw new SafeGitBootstrapErrorV1("binding_changed");
+      }
+      return repositoryIdentityInspectionV1(
+        layout,
+        this.#repositoryControl,
+        expectedIdentity,
+      );
     } catch {
       this.#poisonBinding(binding);
       throw new SafeGitBootstrapErrorV1("binding_changed");
@@ -653,6 +736,64 @@ function repositoryControlInspectionV1(
     strongWrites: "locked",
     requiredNext: SAFE_GIT_REPOSITORY_CONTROL_REQUIRED_NEXT_V1,
   });
+}
+
+function repositoryIdentityInspectionV1(
+  layout: SafeGitRepositoryIdentityInspectionV1["layout"],
+  control: NativeSafeGitRepositoryControlInspectionV1,
+  pathIdentity: NativeSafeGitPathIdentityV1,
+): SafeGitRepositoryIdentityInspectionV1 {
+  return Object.freeze({
+    profile: SAFE_GIT_REPOSITORY_IDENTITY_PROFILE_V1,
+    status: "verified_candidate",
+    layout,
+    filesystemBinding: "verified",
+    linkedWorktreeBackpointer:
+      layout === "ordinary" ? "not_applicable" : "verified",
+    descriptorRelativeTraversal: "verified",
+    extendedAccessControl: "verified",
+    nativeHandleCustody: "verified",
+    repositoryControlShape: "verified",
+    repositoryControlReader: "verified",
+    localObjectDatabase: "verified",
+    refBackend: "verified",
+    objectFormat: control.objectFormat,
+    objectDatabase: control.objectDatabase,
+    repositoryConfig: control.repositoryConfig,
+    worktreeConfig: control.worktreeConfig,
+    repositoryId: PathSafeRepositoryIdV1Schema.parse(pathIdentity.repositoryId),
+    worktreeId: PathSafeWorktreeIdV1Schema.parse(pathIdentity.worktreeId),
+    rootIdentity: PathSafeRootIdentityV1Schema.parse(pathIdentity.rootIdentity),
+    emptyHooksDirectory: "locked",
+    handleBoundExecution: "locked",
+    osSandbox: "locked",
+    hmacIdentity: "verified",
+    strongWrites: "locked",
+    requiredNext: SAFE_GIT_REPOSITORY_IDENTITY_REQUIRED_NEXT_V1,
+  });
+}
+
+function validatePathIdentityV1(
+  identity: NativeSafeGitPathIdentityV1,
+): void {
+  if (
+    identity.profile !== "native_safe_git_path_identity_v1" ||
+    !PathSafeRepositoryIdV1Schema.safeParse(identity.repositoryId).success ||
+    !PathSafeWorktreeIdV1Schema.safeParse(identity.worktreeId).success ||
+    !PathSafeRootIdentityV1Schema.safeParse(identity.rootIdentity).success
+  ) {
+    throw new SafeGitBootstrapErrorV1("repository_identity_invalid");
+  }
+}
+
+function samePathIdentityV1(
+  left: NativeSafeGitPathIdentityV1,
+  right: NativeSafeGitPathIdentityV1,
+): boolean {
+  return left.profile === right.profile &&
+    left.repositoryId === right.repositoryId &&
+    left.worktreeId === right.worktreeId &&
+    left.rootIdentity === right.rootIdentity;
 }
 
 async function bootstrapSafeGitDescriptorBoundCandidateCoreV1(

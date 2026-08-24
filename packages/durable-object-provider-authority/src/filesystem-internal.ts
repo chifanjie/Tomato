@@ -50,7 +50,20 @@ function exactModeV1(mode: number): number {
 async function syncDirectoryV1(path: string): Promise<void> {
   let handle: FileHandle | undefined;
   try {
-    handle = await open(path, constants.O_RDONLY | CLOEXEC_V1);
+    if (
+      NOFOLLOW_V1 === 0 || typeof constants.O_DIRECTORY !== "number" ||
+      constants.O_DIRECTORY === 0
+    ) {
+      throw new ProviderAcceptanceAuthorityErrorV1("invalid_layout");
+    }
+    handle = await open(
+      path,
+      constants.O_RDONLY | NOFOLLOW_V1 | constants.O_DIRECTORY | CLOEXEC_V1,
+    );
+    const metadata = await handle.stat();
+    if (!metadata.isDirectory()) {
+      throw new ProviderAcceptanceAuthorityErrorV1("invalid_layout");
+    }
     await handle.sync();
   } catch (error) {
     if (error instanceof ProviderAcceptanceAuthorityErrorV1) throw error;
@@ -64,6 +77,46 @@ export async function syncParentDirectoryInternalV1(path: string): Promise<void>
   await syncDirectoryV1(dirname(path));
 }
 
+async function verifyTrustedParentDirectoryInternalV1(
+  path: string,
+  layout: ProviderAcceptanceAuthorityLayoutInternalV1,
+): Promise<void> {
+  let handle: FileHandle | undefined;
+  try {
+    const before = await lstat(path, { bigint: true });
+    if (
+      before.isSymbolicLink() || !before.isDirectory() ||
+      before.uid !== BigInt(layout.authorityUid) ||
+      (before.mode & 0o022n) !== 0n
+    ) {
+      throw new ProviderAcceptanceAuthorityErrorV1("invalid_layout");
+    }
+    handle = await open(
+      path,
+      constants.O_RDONLY | NOFOLLOW_V1 |
+        (typeof constants.O_DIRECTORY === "number" ? constants.O_DIRECTORY : 0) |
+        CLOEXEC_V1,
+    );
+    const opened = await handle.stat({ bigint: true });
+    const after = await lstat(path, { bigint: true });
+    if (
+      !opened.isDirectory() || opened.dev !== before.dev ||
+      opened.ino !== before.ino || after.dev !== opened.dev ||
+      after.ino !== opened.ino || after.uid !== opened.uid ||
+      after.gid !== opened.gid || after.mode !== opened.mode ||
+      (opened.mode & 0o022n) !== 0n
+    ) {
+      throw new ProviderAcceptanceAuthorityErrorV1("invalid_layout");
+    }
+  } catch (error) {
+    if (isMissingFileInternalV1(error)) throw error;
+    if (error instanceof ProviderAcceptanceAuthorityErrorV1) throw error;
+    throw new ProviderAcceptanceAuthorityErrorV1("invalid_layout");
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
 export async function ensureProviderAcceptanceAuthorityDirectoriesInternalV1(
   layout: ProviderAcceptanceAuthorityLayoutInternalV1,
   create: boolean,
@@ -71,6 +124,34 @@ export async function ensureProviderAcceptanceAuthorityDirectoriesInternalV1(
   complete: boolean;
   privateNamespaceAvailable: boolean;
 }>> {
+  if (
+    NOFOLLOW_V1 === 0 || typeof constants.O_DIRECTORY !== "number" ||
+    constants.O_DIRECTORY === 0
+  ) {
+    throw new ProviderAcceptanceAuthorityErrorV1("invalid_layout");
+  }
+  for (
+    let index = 0;
+    index < layout.trustedParentDirectories.length;
+    index += 1
+  ) {
+      const path = layout.trustedParentDirectories[index]!;
+      try {
+        try {
+          await verifyTrustedParentDirectoryInternalV1(path, layout);
+        } catch (error) {
+          if (
+            !isMissingFileInternalV1(error) || !create || index === 0
+          ) throw error;
+          await mkdir(path, { mode: DIRECTORY_MODE_V1 });
+          await verifyTrustedParentDirectoryInternalV1(path, layout);
+          await syncParentDirectoryInternalV1(path);
+        }
+      } catch (error) {
+        if (error instanceof ProviderAcceptanceAuthorityErrorV1) throw error;
+        throw new ProviderAcceptanceAuthorityErrorV1("invalid_layout");
+      }
+  }
   let complete = true;
   for (let index = 0; index < layout.directories.length; index += 1) {
     const path = layout.directories[index]!;

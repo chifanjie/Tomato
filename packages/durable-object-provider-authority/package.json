@@ -31,7 +31,8 @@
     "test": "pnpm run build && vitest run"
   },
   "dependencies": {
-    "@understand-code/durable-object-provider-contracts": "workspace:*"
+    "@understand-code/durable-object-provider-contracts": "workspace:*",
+    "@understand-code/native-kernel-bridge": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

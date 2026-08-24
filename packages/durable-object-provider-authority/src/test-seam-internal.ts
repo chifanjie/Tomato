@@ -1,6 +1,6 @@
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import {
   classifyProviderAcceptanceAuthorityAdmissionInternalV1,
@@ -13,7 +13,11 @@ import {
   type ProviderAcceptanceAuthorityStoreOpenOptionsInternalV1,
 } from "./acceptance-store-core-internal.js";
 import { ProviderAcceptanceAuthorityErrorV1 } from "./errors.js";
-import { provisionProviderAcceptanceInstallationIdentityForTestInternalV1 } from "./key-custody-internal.js";
+import {
+  openOrInitializeProviderAcceptanceInstallationIdentityInternalV1,
+  provisionProviderAcceptanceInstallationIdentityForTestInternalV1,
+  type ProviderAcceptanceInstallationIdentityInitializationOptionsInternalV1,
+} from "./key-custody-internal.js";
 import {
   createProviderAcceptanceAuthorityTestLayoutInternalV1,
   type ProviderAcceptanceAuthorityLayoutInternalV1,
@@ -35,6 +39,12 @@ import {
   type ProviderStrongMutationTrustEvidenceSnapshotAdmissionResultInternalV1,
   type ProviderStrongMutationTrustVerifierCapabilityInternalV1,
 } from "./strong-mutation-trust-verifier-core-internal.js";
+import {
+  assertNativeInstallationStateAuthoritySeparatedFromSafeGitV1,
+  deriveNativeSafeGitPathIdentityV1,
+  type NativeSafeGitDescriptorBindingV1,
+  type NativeSafeGitPathIdentityV1,
+} from "@understand-code/native-kernel-bridge";
 
 declare const providerAcceptanceAuthorityTestLayoutCapabilityBrandInternalV1:
   unique symbol;
@@ -79,7 +89,17 @@ export function createProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1(
     // real existing fixture root to the real tmp root, not their spellings.
     candidate = realpathSync(resolve(root));
   } catch {
-    throw new ProviderAcceptanceAuthorityErrorV1("invalid_layout");
+    const resolved = resolve(root);
+    try {
+      const parent = realpathSync(dirname(resolved));
+      const leaf = basename(resolved);
+      if (leaf === "" || leaf === "." || leaf === "..") {
+        throw new ProviderAcceptanceAuthorityErrorV1("invalid_layout");
+      }
+      candidate = join(parent, leaf);
+    } catch {
+      throw new ProviderAcceptanceAuthorityErrorV1("invalid_layout");
+    }
   }
   const child = relative(temporaryRoot, candidate);
   if (
@@ -109,6 +129,42 @@ export function provisionProviderAcceptanceAuthorityForTestInternalV1(
   return provisionProviderAcceptanceInstallationIdentityForTestInternalV1(
     requireCapabilityV1(capability),
     input,
+  );
+}
+
+export async function openOrInitializeProviderAcceptanceAuthorityForTestInternalV1(
+  capability: ProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1,
+  options: ProviderAcceptanceInstallationIdentityInitializationOptionsInternalV1 = {},
+): Promise<Readonly<{ installationIdentityGenerationId: string }>> {
+  const identity =
+    await openOrInitializeProviderAcceptanceInstallationIdentityInternalV1(
+      requireCapabilityV1(capability),
+      options,
+    );
+  return Object.freeze({
+    installationIdentityGenerationId:
+      identity.installationIdentityGenerationId,
+  });
+}
+
+export async function deriveProviderAcceptanceSafeGitPathIdentityForTestInternalV1(
+  capability: ProviderAcceptanceAuthorityTestLayoutCapabilityInternalV1,
+  binding: NativeSafeGitDescriptorBindingV1,
+): Promise<NativeSafeGitPathIdentityV1> {
+  const identity =
+    await openOrInitializeProviderAcceptanceInstallationIdentityInternalV1(
+      requireCapabilityV1(capability),
+      {
+        authorizeNativeAuthority(opened) {
+          assertNativeInstallationStateAuthoritySeparatedFromSafeGitV1(
+            opened.authority,
+            binding,
+          );
+        },
+      },
+    );
+  return identity.withKey(async (key) =>
+    deriveNativeSafeGitPathIdentityV1(binding, key)
   );
 }
 

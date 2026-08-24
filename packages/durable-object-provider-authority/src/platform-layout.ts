@@ -1,5 +1,7 @@
 import { userInfo } from "node:os";
-import { isAbsolute, join, normalize, parse, resolve } from "node:path";
+import { dirname, isAbsolute, join, normalize, parse, resolve } from "node:path";
+
+import { resolveNativeInstallationStateRootV1 } from "@understand-code/native-kernel-bridge";
 
 import { ProviderAcceptanceAuthorityErrorV1 } from "./errors.js";
 
@@ -49,10 +51,14 @@ export interface ProviderAcceptanceAuthorityLayoutInternalV1 {
   readonly authorityRoot: string;
   readonly authorityUid: number;
   readonly authorityGid: number;
+  readonly authorityResolverId: string;
+  readonly trustedParentDirectories: readonly string[];
   readonly directories: readonly string[];
   readonly installationIdentityKeyPath: string;
   readonly installationIdentityInitializationMarkerPath: string;
   readonly installationIdentityStatePath: string;
+  readonly installationIdentityInitializationLockPath: string;
+  readonly installationIdentityMarkerStagePath: string;
   readonly canonicalSnapshotPath: string;
   readonly deterministicSnapshotStagePath: string;
   readonly canonicalPublicationPinPath: string;
@@ -98,16 +104,28 @@ function createLayoutV1(
   authorityRoot: string,
   authorityUid: number,
   authorityGid: number,
+  authorityResolverId: string,
 ): ProviderAcceptanceAuthorityLayoutInternalV1 {
   const root = safeAuthorityRootV1(authorityRoot);
   const runtimeState = join(root, "runtime-state");
   const privateRoot = join(runtimeState, "private");
   const providerRoot = join(root, "provider");
   const acceptanceRoot = join(providerRoot, "acceptance");
+  const parent = dirname(root);
+  const trustedParentDirectories = authorityResolverId ===
+      "test-explicit-temporary-root-v1"
+    ? Object.freeze([])
+    : Object.freeze([
+        dirname(dirname(parent)),
+        dirname(parent),
+        parent,
+      ]);
   return Object.freeze({
     authorityRoot: root,
     authorityUid,
     authorityGid,
+    authorityResolverId,
+    trustedParentDirectories,
     directories: Object.freeze([
       root,
       runtimeState,
@@ -129,6 +147,14 @@ function createLayoutV1(
       root,
       PROVIDER_ACCEPTANCE_AUTHORITY_LOGICAL_LOCATORS_V1
         .installationIdentityState,
+    ),
+    installationIdentityInitializationLockPath: join(
+      root,
+      "runtime-state/private/.installation-identity-v1.lock",
+    ),
+    installationIdentityMarkerStagePath: join(
+      root,
+      "runtime-state/private/.installation-identity-v1.init.stage",
     ),
     canonicalSnapshotPath: join(
       root,
@@ -192,23 +218,29 @@ function createLayoutV1(
 
 /** Resolve production storage without consulting HOME, XDG, cwd, or tmp. */
 export function resolveProviderAcceptanceAuthorityProductionLayoutInternalV1(): ProviderAcceptanceAuthorityLayoutInternalV1 {
-  if (process.platform !== "darwin" && process.platform !== "linux") {
+  try {
+    const resolved = resolveNativeInstallationStateRootV1();
+    if (
+      resolved.profile !== "native_installation_state_resolver_v1" ||
+      ![
+        "darwin-user-domain-application-support-v1",
+        "linux-getpwuid-effective-user-state-v1",
+      ].includes(resolved.resolverId) ||
+      resolved.uid !== exactEffectiveUidV1() ||
+      !Number.isSafeInteger(resolved.gid) || resolved.gid < 0
+    ) {
+      throw new ProviderAcceptanceAuthorityErrorV1("invalid_layout");
+    }
+    return createLayoutV1(
+      resolved.root,
+      resolved.uid,
+      resolved.gid,
+      resolved.resolverId,
+    );
+  } catch (error) {
+    if (error instanceof ProviderAcceptanceAuthorityErrorV1) throw error;
     throw new ProviderAcceptanceAuthorityErrorV1("invalid_layout");
   }
-  const account = userInfo({ encoding: "utf8" });
-  const effectiveUid = exactEffectiveUidV1();
-  if (
-    account.uid !== effectiveUid ||
-    !Number.isSafeInteger(account.gid) ||
-    account.gid < 0 ||
-    !isAbsolute(account.homedir)
-  ) {
-    throw new ProviderAcceptanceAuthorityErrorV1("invalid_layout");
-  }
-  const root = process.platform === "darwin"
-    ? join(account.homedir, "Library", "Application Support", "understand-code")
-    : join(account.homedir, ".local", "state", "understand-code");
-  return createLayoutV1(root, account.uid, account.gid);
 }
 
 /** Package-private constructor; only the sealed test seam calls this. */
@@ -220,7 +252,12 @@ export function createProviderAcceptanceAuthorityTestLayoutInternalV1(
   if (account.uid !== effectiveUid) {
     throw new ProviderAcceptanceAuthorityErrorV1("invalid_layout");
   }
-  return createLayoutV1(root, account.uid, account.gid);
+  return createLayoutV1(
+    root,
+    account.uid,
+    account.gid,
+    "test-explicit-temporary-root-v1",
+  );
 }
 
 export function providerAcceptanceGenerationLogicalLocatorInternalV1(

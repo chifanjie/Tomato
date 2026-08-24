@@ -49,6 +49,7 @@
   },
   "dependencies": {
     "@understand-code/contracts": "workspace:*",
+    "@understand-code/durable-object-provider-authority": "workspace:*",
     "@understand-code/native-kernel-bridge": "workspace:*"
   },
   "devDependencies": {

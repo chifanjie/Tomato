@@ -63,6 +63,8 @@ const platformArguments =
         "-bundle",
         "-undefined",
         "dynamic_lookup",
+        "-framework",
+        "CoreServices",
         "-mmacosx-version-min=13.0",
       ]
     : ["-shared", "-lm"];

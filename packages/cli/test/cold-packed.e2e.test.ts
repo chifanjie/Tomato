@@ -50,15 +50,22 @@ async function assertInstalledNativeKernelPeerV1(
   const addon = requireV1(nativePath) as {
     readonly bindSafeGitRepositoryControl?: (binding: object) => unknown;
     readonly closeSafeGitDescriptorBootstrap?: (binding: object) => unknown;
+    readonly deriveSafeGitPathIdentity?: (
+      binding: object,
+      key: Buffer,
+    ) => unknown;
     readonly getKernelBridgeProfile?: () => unknown;
     readonly openSafeGitDescriptorBootstrap?: (root: string) => unknown;
     readonly readPeerCredentials?: (fileDescriptor: number) => unknown;
+    readonly resolveInstallationStateRoot?: () => unknown;
     readonly revalidateSafeGitDescriptorBootstrap?: (binding: object) => unknown;
   };
   expect(addon.getKernelBridgeProfile?.()).toBe("native_kernel_bridge_v1");
   expect(addon.readPeerCredentials).toBeTypeOf("function");
   expect(addon.openSafeGitDescriptorBootstrap).toBeTypeOf("function");
   expect(addon.bindSafeGitRepositoryControl).toBeTypeOf("function");
+  expect(addon.deriveSafeGitPathIdentity).toBeTypeOf("function");
+  expect(addon.resolveInstallationStateRoot).toBeTypeOf("function");
   expect(addon.revalidateSafeGitDescriptorBootstrap).toBeTypeOf("function");
   expect(addon.closeSafeGitDescriptorBootstrap).toBeTypeOf("function");
   const opened = addon.openSafeGitDescriptorBootstrap!(
@@ -73,6 +80,30 @@ async function assertInstalledNativeKernelPeerV1(
     refBackend: "files_verified",
     repositoryConfig: "verified",
     worktreeConfig: "absent",
+  });
+  expect(
+    addon.deriveSafeGitPathIdentity!(
+      opened.binding as object,
+      Buffer.from(
+        "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "hex",
+      ),
+    ),
+  ).toEqual({
+    profile: "native_safe_git_path_identity_v1",
+    repositoryId: expect.stringMatching(/^repo-hmac-[0-9a-f]{64}$/u),
+    worktreeId: expect.stringMatching(/^worktree-hmac-[0-9a-f]{64}$/u),
+    rootIdentity: expect.stringMatching(/^root-hmac-[0-9a-f]{64}$/u),
+  });
+  expect(addon.resolveInstallationStateRoot!()).toEqual({
+    profile: "native_installation_state_resolver_v1",
+    resolverId:
+      process.platform === "darwin"
+        ? "darwin-user-domain-application-support-v1"
+        : "linux-getpwuid-effective-user-state-v1",
+    root: expect.stringMatching(/^\//u),
+    uid: process.geteuid?.() ?? process.getuid?.(),
+    gid: process.getegid?.() ?? process.getgid?.(),
   });
   expect(addon.revalidateSafeGitDescriptorBootstrap!(opened.binding as object)).toEqual({
     layout: "ordinary",
